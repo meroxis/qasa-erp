@@ -1,8 +1,8 @@
 import { isIsoDate } from './dates.ts';
 import { isCurrency, isMinorAmount, toBaseBalanced, type CurrencyCode } from './money.ts';
 
-/** receipt = سند قبض · payment = سند صرف · journal = قيد يومية · reversal = قيد عكسي */
-export type EntryType = 'journal' | 'receipt' | 'payment' | 'reversal';
+/** receipt = سند قبض · payment = سند صرف · journal = قيد يومية · reversal = قيد عكسي · sale/purchase = posted by an invoice */
+export type EntryType = 'journal' | 'receipt' | 'payment' | 'reversal' | 'sale' | 'purchase';
 
 /**
  * Approval chain used on Iraqi vouchers:
@@ -16,7 +16,9 @@ export const NUMBER_PREFIX: Record<EntryType, string> = {
   receipt: 'RV',
   payment: 'PV',
   journal: 'JV',
-  reversal: 'RJ'
+  reversal: 'RJ',
+  sale: 'INV',
+  purchase: 'PI'
 };
 
 export interface LineInput {
@@ -25,6 +27,14 @@ export interface LineInput {
   debit: number;
   credit: number;
   description?: string;
+  /** Customer or supplier this line belongs to (for their balance and statement). */
+  partyId?: string;
+  /**
+   * Exact IQD amounts for lines whose value is already known in IQD (e.g. cost of goods sold on a USD invoice).
+   * When given, the line is not converted with the rate.
+   */
+  baseDebit?: number;
+  baseCredit?: number;
 }
 
 export interface EntryInput {
@@ -38,7 +48,7 @@ export interface EntryInput {
   lines: LineInput[];
 }
 
-export interface LineWithBase extends LineInput {
+export interface LineWithBase extends Omit<LineInput, 'baseDebit' | 'baseCredit'> {
   baseDebit: number;
   baseCredit: number;
 }
@@ -96,9 +106,16 @@ export function validateEntry(input: EntryInput, ctx: EntryContext): EntryError[
 /** Adds base-currency (IQD) amounts to each line, keeping the base totals balanced. */
 export function withBaseAmounts(input: Pick<EntryInput, 'currency' | 'rateX100' | 'lines'>): LineWithBase[] {
   const rate = input.currency === 'IQD' ? 100 : input.rateX100;
-  const debits = toBaseBalanced(input.lines.map((l) => l.debit), input.currency, rate);
-  const credits = toBaseBalanced(input.lines.map((l) => l.credit), input.currency, rate);
-  return input.lines.map((l, i) => ({ ...l, baseDebit: debits[i] ?? 0, baseCredit: credits[i] ?? 0 }));
+  const convert = input.lines.map((l, i) => (l.baseDebit === undefined || l.baseCredit === undefined ? i : -1)).filter((i) => i >= 0);
+  const debits = toBaseBalanced(convert.map((i) => input.lines[i]!.debit), input.currency, rate);
+  const credits = toBaseBalanced(convert.map((i) => input.lines[i]!.credit), input.currency, rate);
+  return input.lines.map((l, i) => {
+    const { baseDebit: explicitDebit, baseCredit: explicitCredit, ...rest } = l;
+    const k = convert.indexOf(i);
+    return k >= 0
+      ? { ...rest, baseDebit: debits[k] ?? 0, baseCredit: credits[k] ?? 0 }
+      : { ...rest, baseDebit: explicitDebit ?? 0, baseCredit: explicitCredit ?? 0 };
+  });
 }
 
 export interface VoucherInput {
@@ -111,7 +128,7 @@ export interface VoucherInput {
   currency: CurrencyCode;
   rateX100: number;
   /** Counter accounts: credited on a receipt voucher, debited on a payment voucher. */
-  items: { accountCode: string; amount: number; description?: string }[];
+  items: { accountCode: string; amount: number; description?: string; partyId?: string }[];
 }
 
 /**
@@ -124,8 +141,8 @@ export function voucherToEntry(v: VoucherInput): EntryInput {
     ? { accountCode: v.cashAccountCode, debit: total, credit: 0, description: v.description }
     : { accountCode: v.cashAccountCode, debit: 0, credit: total, description: v.description };
   const itemLines: LineInput[] = v.items.map((it) => (v.kind === 'receipt'
-    ? { accountCode: it.accountCode, debit: 0, credit: it.amount, description: it.description ?? v.description }
-    : { accountCode: it.accountCode, debit: it.amount, credit: 0, description: it.description ?? v.description }));
+    ? { accountCode: it.accountCode, debit: 0, credit: it.amount, description: it.description ?? v.description, ...(it.partyId ? { partyId: it.partyId } : {}) }
+    : { accountCode: it.accountCode, debit: it.amount, credit: 0, description: it.description ?? v.description, ...(it.partyId ? { partyId: it.partyId } : {}) }));
   const entry: EntryInput = {
     type: v.kind,
     date: v.date,
@@ -139,14 +156,23 @@ export function voucherToEntry(v: VoucherInput): EntryInput {
 }
 
 /** Lines of the reversal entry: every debit becomes a credit and vice versa. */
-export function reverseLines<T extends LineInput>(lines: T[]): LineInput[] {
-  return lines.map((l) => ({ accountCode: l.accountCode, debit: l.credit, credit: l.debit, ...(l.description ? { description: l.description } : {}) }));
+export function reverseLines(lines: (LineInput | LineWithBase)[]): LineInput[] {
+  return lines.map((l) => ({
+    accountCode: l.accountCode,
+    debit: l.credit,
+    credit: l.debit,
+    ...(l.description ? { description: l.description } : {}),
+    ...(l.partyId ? { partyId: l.partyId } : {}),
+    ...(l.baseDebit !== undefined && l.baseCredit !== undefined ? { baseDebit: l.baseCredit, baseCredit: l.baseDebit } : {})
+  }));
 }
 
 export type EntryAction = 'check' | 'approve' | 'return' | 'edit' | 'delete' | 'reverse';
 
 /** Which actions are allowed in each status. */
-export function allowedActions(status: EntryStatus, opts: { reversed: boolean; isReversal: boolean }): EntryAction[] {
+export function allowedActions(status: EntryStatus, opts: { reversed: boolean; isReversal: boolean; fromInvoice?: boolean }): EntryAction[] {
+  // Invoice postings are cancelled from the invoice, which also returns the stock.
+  if (opts.fromInvoice) return [];
   if (status === 'draft') return ['edit', 'delete', 'check'];
   if (status === 'checked') return ['approve', 'return'];
   return opts.reversed || opts.isReversal ? [] : ['reverse'];

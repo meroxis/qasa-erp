@@ -1,7 +1,8 @@
-import type { Names } from '@qasa/core';
+import { DEFAULT_POSTING_ACCOUNTS, type Names, type PostingAccounts } from '@qasa/core';
 import type { Db } from './db.ts';
 import { audit } from './audit.ts';
 import { transaction } from './db.ts';
+import { invalid } from './errors.ts';
 
 export interface Settings {
   companyName: Names;
@@ -9,7 +10,14 @@ export interface Settings {
   defaultRateX100: number;
   /** "MM-DD" */
   fiscalYearStart: string;
+  /** Accounts that invoices post to. */
+  postingAccounts: PostingAccounts;
 }
+
+/** Where each posting account must sit in the unified chart. */
+const POSTING_ACCOUNT_PARENTS: Record<keyof PostingAccounts, string> = {
+  customers: '16', suppliers: '26', sales: '4', costOfSales: '3', cash: '18'
+};
 
 function read(db: Db, key: string): string | undefined {
   return (db.prepare('SELECT value FROM settings WHERE key = ?').get(key) as { value: string } | undefined)?.value;
@@ -19,19 +27,38 @@ function write(db: Db, key: string, value: string): void {
   db.prepare('INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value').run(key, value);
 }
 
+export function getPostingAccounts(db: Db): PostingAccounts {
+  return { ...DEFAULT_POSTING_ACCOUNTS, ...(JSON.parse(read(db, 'posting_accounts') ?? '{}') as Partial<PostingAccounts>) };
+}
+
 export function getSettings(db: Db): Settings {
   return {
     companyName: JSON.parse(read(db, 'company_name') ?? '{"ar":"","en":"","ku":""}') as Names,
     defaultRateX100: Number(read(db, 'default_rate_x100') ?? '142000'),
-    fiscalYearStart: read(db, 'fiscal_year_start') ?? '01-01'
+    fiscalYearStart: read(db, 'fiscal_year_start') ?? '01-01',
+    postingAccounts: getPostingAccounts(db)
   };
 }
 
+function assertPostingAccounts(db: Db, accounts: PostingAccounts): void {
+  const exists = db.prepare('SELECT 1 FROM accounts WHERE code = ?');
+  const hasChildren = db.prepare("SELECT 1 FROM accounts WHERE code LIKE ? || '%' AND code <> ? LIMIT 1");
+  const errors: { code: string; field: string }[] = [];
+  for (const key of Object.keys(POSTING_ACCOUNT_PARENTS) as (keyof PostingAccounts)[]) {
+    const code = accounts[key];
+    if (!code || !code.startsWith(POSTING_ACCOUNT_PARENTS[key]) || !exists.get(code)) errors.push({ code: 'account_invalid', field: key });
+    else if (hasChildren.get(code, code)) errors.push({ code: 'account_not_postable', field: key });
+  }
+  if (errors.length) throw invalid(errors);
+}
+
 export function updateSettings(db: Db, patch: Partial<Settings>, user: string): Settings {
+  if (patch.postingAccounts) assertPostingAccounts(db, { ...getPostingAccounts(db), ...patch.postingAccounts });
   transaction(db, () => {
     if (patch.companyName) write(db, 'company_name', JSON.stringify(patch.companyName));
     if (patch.defaultRateX100 !== undefined) write(db, 'default_rate_x100', String(patch.defaultRateX100));
     if (patch.fiscalYearStart) write(db, 'fiscal_year_start', patch.fiscalYearStart);
+    if (patch.postingAccounts) write(db, 'posting_accounts', JSON.stringify({ ...getPostingAccounts(db), ...patch.postingAccounts }));
     audit(db, user, 'update', 'settings', null, patch);
   });
   return getSettings(db);

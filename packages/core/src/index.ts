@@ -6,3 +6,5 @@ export * from './accounts.ts';
 export * from './chart-iraq.ts';
 export * from './journal.ts';
 export * from './reports.ts';
+export * from './inventory.ts';
+export * from './invoices.ts';

@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
-import { MONTHS, rateFromX100, todayIso, toWesternDigits, type Names } from '@qasa/core';
+import { MONTHS, rateFromX100, todayIso, toWesternDigits, type Names, type PostingAccounts } from '@qasa/core';
 import { api, currentUser, setCurrentUser } from '../api.ts';
-import { ErrorBox, useData, useLoad, useToast } from '../components.tsx';
+import { AccountCombo, ErrorBox, useData, useLoad, useToast } from '../components.tsx';
 import { isKey, useI18n } from '../i18n.ts';
 
 export function Settings() {
@@ -70,6 +70,8 @@ export function Settings() {
         <div><button type="button" className="btn primary" onClick={save}>{t('save')}</button></div>
       </div>
 
+      <PostingAccountsCard />
+
       <div className="card pad stack">
         <h2>{t('periods')} — <span className="num">{i18n.digitsOf(year)}</span></h2>
         <div className="muted small">{t('periodsHelp')}</div>
@@ -106,6 +108,58 @@ export function Settings() {
           </tbody>
         </table>
       </div>
+    </div>
+  );
+}
+
+const POSTING_FIELDS: { key: keyof PostingAccounts; root: string }[] = [
+  { key: 'sales', root: '4' },
+  { key: 'costOfSales', root: '3' },
+  { key: 'customers', root: '16' },
+  { key: 'suppliers', root: '26' },
+  { key: 'cash', root: '18' }
+];
+
+/** Which accounts invoices post to (sales 42, cost of sales 35, customers 1611 …). */
+function PostingAccountsCard() {
+  const { t } = useI18n();
+  const toast = useToast();
+  const { settings, reloadSettings } = useData();
+  const [accounts, setAccounts] = useState<PostingAccounts | null>(null);
+  const [error, setError] = useState<unknown>(null);
+
+  useEffect(() => {
+    if (settings) setAccounts(settings.postingAccounts);
+  }, [settings]);
+
+  if (!accounts) return null;
+
+  async function save() {
+    if (!accounts) return;
+    setError(null);
+    try {
+      await api.updateSettings({ postingAccounts: accounts });
+      await reloadSettings();
+      toast(t('saved'));
+    } catch (e) {
+      setError(e);
+    }
+  }
+
+  return (
+    <div className="card pad stack">
+      <h2>{t('postingAccounts')}</h2>
+      <div className="muted small">{t('postingHelp')}</div>
+      <div className="grid-3">
+        {POSTING_FIELDS.map((f) => (
+          <div key={f.key} className="field">
+            <span>{t(`pa_${f.key}`)}</span>
+            <AccountCombo value={accounts[f.key]} onChange={(code) => setAccounts({ ...accounts, [f.key]: code })} filter={(a) => a.code.startsWith(f.root)} ariaLabel={t(`pa_${f.key}`)} />
+          </div>
+        ))}
+      </div>
+      <ErrorBox error={error} />
+      <div><button type="button" className="btn primary" onClick={save}>{t('save')}</button></div>
     </div>
   );
 }

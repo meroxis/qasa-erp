@@ -11,6 +11,9 @@ import { EntryDetail } from './pages/EntryDetail.tsx';
 import { Accounts } from './pages/Accounts.tsx';
 import { Statement, TrialBalance } from './pages/Reports.tsx';
 import { Settings } from './pages/Settings.tsx';
+import { Parties, PartyDetail } from './pages/Parties.tsx';
+import { ItemDetail, Items } from './pages/Items.tsx';
+import { InvoiceDetail, InvoiceEditor, Invoices } from './pages/Invoices.tsx';
 
 function stored<T extends string>(key: string, fallback: T, valid: (v: string) => boolean): T {
   try {
@@ -28,7 +31,22 @@ function remember(key: string, value: string): void {
 interface NavItem { key: Key; icon: string; path?: string; match?: string[] }
 const NAV: { group: Key; items: NavItem[] }[] = [
   { group: 'gOverview', items: [{ key: 'home', icon: 'home', path: '', match: ['', 'home'] }] },
-  { group: 'gSales', items: [{ key: 'invoices', icon: 'invoice' }, { key: 'installments', icon: 'cal' }, { key: 'pipeline', icon: 'trend' }] },
+  {
+    group: 'gSales',
+    items: [
+      { key: 'invoices', icon: 'invoice', path: 'sales', match: ['sales', 'new-invoice:sale'] },
+      { key: 'customers', icon: 'contact', path: 'customers', match: ['customers'] },
+      { key: 'installments', icon: 'cal' },
+      { key: 'pipeline', icon: 'trend' }
+    ]
+  },
+  {
+    group: 'gPurchases',
+    items: [
+      { key: 'purchaseInvoices', icon: 'cart', path: 'purchases', match: ['purchases', 'new-invoice:purchase'] },
+      { key: 'suppliers', icon: 'truck', path: 'suppliers', match: ['suppliers'] }
+    ]
+  },
   {
     group: 'gAccounting',
     items: [
@@ -38,7 +56,7 @@ const NAV: { group: Key; items: NavItem[] }[] = [
       { key: 'statement', icon: 'doc', path: 'statement', match: ['statement'] }
     ]
   },
-  { group: 'gStock', items: [{ key: 'items', icon: 'box' }] },
+  { group: 'gStock', items: [{ key: 'items', icon: 'box', path: 'items', match: ['items', 'item'] }] },
   { group: 'gPeople', items: [{ key: 'hr', icon: 'idcard' }, { key: 'salaries', icon: 'users' }] },
   { group: 'gSystem', items: [{ key: 'settings', icon: 'sliders', path: 'settings', match: ['settings'] }] }
 ];
@@ -85,7 +103,7 @@ export function App() {
 
   const data = useMemo(() => ({ accounts, settings, online, reloadAccounts, reloadSettings }), [accounts, settings, online, reloadAccounts, reloadSettings]);
   const { t } = i18n;
-  const [page, arg] = route;
+  const [page, arg, arg2] = route;
 
   let title: string = t('home');
   let content: ReactNode;
@@ -121,6 +139,48 @@ export function App() {
     case 'statement':
       title = t('statement');
       content = <Statement key={arg ?? ''} {...(arg ? { code: arg } : {})} />;
+      break;
+    case 'sales':
+      title = t('invoices');
+      content = <Invoices key="sale" kind="sale" />;
+      break;
+    case 'purchases':
+      title = t('purchaseInvoices');
+      content = <Invoices key="purchase" kind="purchase" />;
+      break;
+    case 'new-invoice': {
+      const kind = arg === 'purchase' ? 'purchase' : 'sale';
+      title = kind === 'sale' ? t('newSale') : t('newPurchase');
+      content = <InvoiceEditor key={`new-${kind}-${arg2 ?? ''}`} kind={kind} {...(arg2 ? { partyId: arg2 } : {})} />;
+      break;
+    }
+    case 'edit-invoice':
+      title = t('editTitle');
+      content = arg ? <InvoiceEditor key={'edit-' + arg} id={arg} /> : null;
+      break;
+    case 'invoice':
+      title = t('invoices');
+      content = arg ? <InvoiceDetail key={arg} id={arg} /> : null;
+      break;
+    case 'customers':
+      title = t('customers');
+      content = <Parties key="customer" type="customer" />;
+      break;
+    case 'suppliers':
+      title = t('suppliers');
+      content = <Parties key="supplier" type="supplier" />;
+      break;
+    case 'party':
+      title = t('statement');
+      content = arg ? <PartyDetail key={arg} id={arg} /> : null;
+      break;
+    case 'items':
+      title = t('items');
+      content = <Items />;
+      break;
+    case 'item':
+      title = t('items');
+      content = arg ? <ItemDetail key={arg} id={arg} /> : null;
       break;
     case 'settings':
       title = t('settings');
@@ -161,7 +221,7 @@ export function App() {
                         </button>
                       );
                     }
-                    const active = (item.match ?? []).includes(page ?? '');
+                    const active = (item.match ?? []).some((m) => m === (page ?? '') || m === `${page}:${arg}`);
                     return (
                       <a key={item.key} className={'nav-item' + (active ? ' active' : '')} href={href(item.path)} aria-current={active ? 'page' : undefined}>
                         <Icon name={item.icon} /><span>{t(item.key)}</span>

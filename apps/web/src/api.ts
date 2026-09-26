@@ -1,4 +1,6 @@
-import type { CurrencyCode, EntryAction, EntryStatus, EntryType, Names, Nature } from '@qasa/core';
+import type {
+  CurrencyCode, EntryAction, EntryStatus, EntryType, InvoiceInput, InvoiceKind, InvoiceStatus, Names, Nature, PaymentMode, PostingAccounts, UnitCode
+} from '@qasa/core';
 
 export interface AccountView {
   code: string;
@@ -20,6 +22,8 @@ export interface EntryLineView {
   baseDebit: number;
   baseCredit: number;
   description: string;
+  partyId: string | null;
+  partyName: string | null;
 }
 
 export interface EntrySummary {
@@ -48,12 +52,14 @@ export interface EntrySummary {
 export interface EntryView extends EntrySummary {
   lines: EntryLineView[];
   actions: EntryAction[];
+  invoiceId: string | null;
 }
 
 export interface Settings {
   companyName: Names;
   defaultRateX100: number;
   fiscalYearStart: string;
+  postingAccounts: PostingAccounts;
 }
 
 export interface TrialBalanceReport {
@@ -90,7 +96,7 @@ export interface JournalInput {
   party?: string;
   currency: CurrencyCode;
   rateX100: number;
-  lines: { accountCode: string; debit: number; credit: number; description?: string }[];
+  lines: { accountCode: string; debit: number; credit: number; description?: string; partyId?: string }[];
 }
 
 export interface VoucherInput {
@@ -101,8 +107,133 @@ export interface VoucherInput {
   description: string;
   currency: CurrencyCode;
   rateX100: number;
-  items: { accountCode: string; amount: number; description?: string }[];
+  items: { accountCode: string; amount: number; description?: string; partyId?: string }[];
 }
+
+export type PartyType = 'customer' | 'supplier';
+
+export interface PartyView {
+  id: string;
+  type: PartyType;
+  code: string;
+  name: string;
+  phone: string;
+  address: string;
+  accountCode: string;
+  creditLimit: number | null;
+  notes: string;
+  active: boolean;
+  /** IQD, in the party's own direction (customer owes us / we owe supplier). */
+  balance: number;
+  hasEntries: boolean;
+}
+
+export interface PartyInput {
+  name: string;
+  phone?: string;
+  address?: string;
+  accountCode?: string;
+  creditLimit?: number | null;
+  notes?: string;
+  active?: boolean;
+}
+
+export interface PartyStatement {
+  party: PartyView;
+  opening: number;
+  closing: number;
+  totalDebit: number;
+  totalCredit: number;
+  lines: { entryId: string; invoiceId: string | null; number: string; date: string; description: string; debit: number; credit: number; balance: number }[];
+}
+
+export interface WarehouseView {
+  id: string;
+  code: string;
+  name: Names;
+  accountCode: string;
+  active: boolean;
+  value: number;
+}
+
+export interface ItemView {
+  id: string;
+  code: string;
+  barcode: string;
+  name: Names;
+  unit: UnitCode;
+  salePrice: number;
+  saleCurrency: CurrencyCode;
+  trackStock: boolean;
+  active: boolean;
+  qtyMilli: number;
+  value: number;
+  hasMoves: boolean;
+}
+
+export interface ItemInput {
+  code?: string;
+  barcode?: string;
+  name: Names;
+  unit: UnitCode;
+  salePrice: number;
+  saleCurrency: CurrencyCode;
+  trackStock?: boolean;
+  active?: boolean;
+}
+
+export interface ItemDetail extends ItemView {
+  stock: { warehouseId: string; warehouseCode: string; warehouseName: Names; qtyMilli: number; value: number }[];
+  moves: { id: number; date: string; warehouseCode: string; qtyMilli: number; value: number; sourceType: string; sourceId: string | null; sourceNumber: string | null; balanceQtyMilli: number }[];
+}
+
+export interface InvoiceSummary {
+  id: string;
+  kind: InvoiceKind;
+  status: InvoiceStatus;
+  number: string | null;
+  date: string;
+  partyId: string | null;
+  partyCode: string | null;
+  partyName: string | null;
+  warehouseId: string;
+  currency: CurrencyCode;
+  rateX100: number;
+  payment: PaymentMode;
+  cashAccountCode: string | null;
+  discount: number;
+  subtotal: number;
+  total: number;
+  baseTotal: number;
+  notes: string;
+  createdBy: string;
+  createdAt: string;
+}
+
+export type InvoiceAction = 'edit' | 'delete' | 'post' | 'cancel';
+
+export interface InvoiceView extends InvoiceSummary {
+  partyPhone: string | null;
+  partyAddress: string | null;
+  warehouseCode: string;
+  warehouseName: Names;
+  cashAccountName: Names | null;
+  entryId: string | null;
+  entryNumber: string | null;
+  cancelEntryId: string | null;
+  cancelEntryNumber: string | null;
+  postedBy: string | null;
+  postedAt: string | null;
+  cancelledBy: string | null;
+  cancelledAt: string | null;
+  lines: {
+    lineNo: number; itemId: string; itemCode: string; itemName: Names; unit: UnitCode; trackStock: boolean;
+    description: string; qtyMilli: number; unitPrice: number; amount: number; cost: number | null;
+  }[];
+  actions: InvoiceAction[];
+}
+
+export type { InvoiceInput };
 
 export class ApiError extends Error {
   readonly status: number;
@@ -180,5 +311,29 @@ export const api = {
   periods: () => request<{ period: string; lockedBy: string; lockedAt: string }[]>('GET', '/api/periods'),
   lockPeriod: (period: string) => request<unknown>('POST', `/api/periods/${period}/lock`, {}),
   unlockPeriod: (period: string) => request<unknown>('DELETE', `/api/periods/${period}/lock`),
-  audit: (limit = 100) => request<AuditRow[]>('GET', `/api/audit?limit=${limit}`)
+  audit: (limit = 100) => request<AuditRow[]>('GET', `/api/audit?limit=${limit}`),
+
+  parties: (f: { type?: PartyType; q?: string; active?: string } = {}) => request<PartyView[]>('GET', '/api/parties' + qs(f)),
+  party: (id: string) => request<PartyView>('GET', `/api/parties/${id}`),
+  createParty: (type: PartyType, input: PartyInput) => request<PartyView>('POST', '/api/parties', { type, ...input }),
+  updateParty: (id: string, input: PartyInput) => request<PartyView>('PUT', `/api/parties/${id}`, input),
+  deleteParty: (id: string) => request<void>('DELETE', `/api/parties/${id}`),
+  partyStatement: (id: string, from?: string, to?: string) => request<PartyStatement>('GET', `/api/parties/${id}/statement` + qs({ from, to })),
+
+  warehouses: () => request<WarehouseView[]>('GET', '/api/warehouses'),
+  createWarehouse: (input: { code: string; name: Names }) => request<WarehouseView>('POST', '/api/warehouses', input),
+  updateWarehouse: (id: string, input: { name: Names; active?: boolean }) => request<WarehouseView>('PUT', `/api/warehouses/${id}`, input),
+  items: (f: { q?: string; warehouseId?: string; active?: string } = {}) => request<ItemView[]>('GET', '/api/items' + qs(f)),
+  item: (id: string) => request<ItemDetail>('GET', `/api/items/${id}`),
+  createItem: (input: ItemInput) => request<ItemView>('POST', '/api/items', input),
+  updateItem: (id: string, input: ItemInput) => request<ItemView>('PUT', `/api/items/${id}`, input),
+  deleteItem: (id: string) => request<void>('DELETE', `/api/items/${id}`),
+
+  invoices: (f: { kind?: InvoiceKind; status?: string; partyId?: string; q?: string; from?: string; to?: string } = {}) => request<InvoiceSummary[]>('GET', '/api/invoices' + qs(f)),
+  invoice: (id: string) => request<InvoiceView>('GET', `/api/invoices/${id}`),
+  createInvoice: (input: InvoiceInput) => request<InvoiceView>('POST', '/api/invoices', input),
+  updateInvoice: (id: string, input: InvoiceInput) => request<InvoiceView>('PUT', `/api/invoices/${id}`, input),
+  deleteInvoice: (id: string) => request<void>('DELETE', `/api/invoices/${id}`),
+  postInvoice: (id: string) => request<InvoiceView>('POST', `/api/invoices/${id}/post`, {}),
+  cancelInvoice: (id: string, date: string) => request<InvoiceView>('POST', `/api/invoices/${id}/cancel`, { date })
 };

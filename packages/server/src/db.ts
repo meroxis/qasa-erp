@@ -1,9 +1,15 @@
 import { DatabaseSync } from 'node:sqlite';
-import { IRAQI_UNIFIED_CHART, STARTER_SUB_ACCOUNTS } from '@qasa/core';
+import { DEFAULT_POSTING_ACCOUNTS, IRAQI_UNIFIED_CHART, STARTER_SUB_ACCOUNTS } from '@qasa/core';
 
 export type Db = DatabaseSync;
 
-const MIGRATIONS: string[] = [
+interface Migration {
+  sql: string;
+  /** Rebuilds an existing table: runs with foreign keys off, then checks them. */
+  rebuild?: boolean;
+}
+
+const V1 =
   // 1 — accounting core
   `
   CREATE TABLE settings (
@@ -107,8 +113,178 @@ const MIGRATIONS: string[] = [
   -- The audit log is append-only.
   CREATE TRIGGER audit_no_update BEFORE UPDATE ON audit_log BEGIN SELECT RAISE(ABORT, 'audit_log_is_append_only'); END;
   CREATE TRIGGER audit_no_delete BEFORE DELETE ON audit_log BEGIN SELECT RAISE(ABORT, 'audit_log_is_append_only'); END;
+  `;
+
+const V2 =
+  // 2 — customers & suppliers, items, warehouses, stock, invoices
   `
-];
+  -- entries: allow invoice postings ('sale', 'purchase')
+  CREATE TABLE entries_v2 (
+    id TEXT PRIMARY KEY,
+    type TEXT NOT NULL CHECK (type IN ('journal', 'receipt', 'payment', 'reversal', 'sale', 'purchase')),
+    number TEXT UNIQUE,
+    date TEXT NOT NULL,
+    description TEXT NOT NULL,
+    party TEXT,
+    currency TEXT NOT NULL CHECK (currency IN ('IQD', 'USD')),
+    rate_x100 INTEGER NOT NULL CHECK (rate_x100 > 0),
+    status TEXT NOT NULL CHECK (status IN ('draft', 'checked', 'approved')),
+    cash_account TEXT REFERENCES accounts(code),
+    reverses_id TEXT REFERENCES entries(id),
+    reversed_by_id TEXT REFERENCES entries(id),
+    prepared_by TEXT NOT NULL,
+    prepared_at TEXT NOT NULL,
+    checked_by TEXT,
+    checked_at TEXT,
+    approved_by TEXT,
+    approved_at TEXT,
+    updated_at TEXT NOT NULL
+  );
+  INSERT INTO entries_v2 SELECT id, type, number, date, description, party, currency, rate_x100, status, cash_account,
+    reverses_id, reversed_by_id, prepared_by, prepared_at, checked_by, checked_at, approved_by, approved_at, updated_at FROM entries;
+  DROP TABLE entries;
+  ALTER TABLE entries_v2 RENAME TO entries;
+  CREATE INDEX entries_date ON entries(date);
+  CREATE INDEX entries_status ON entries(status);
+
+  CREATE TRIGGER posted_entries_no_delete BEFORE DELETE ON entries
+  WHEN OLD.status = 'approved'
+  BEGIN SELECT RAISE(ABORT, 'posted_entry_is_permanent'); END;
+
+  CREATE TRIGGER posted_entries_no_edit BEFORE UPDATE ON entries
+  WHEN OLD.status = 'approved' AND (
+    NEW.status IS NOT OLD.status OR NEW.type IS NOT OLD.type OR NEW.number IS NOT OLD.number OR
+    NEW.date IS NOT OLD.date OR NEW.description IS NOT OLD.description OR NEW.party IS NOT OLD.party OR
+    NEW.currency IS NOT OLD.currency OR NEW.rate_x100 IS NOT OLD.rate_x100 OR NEW.cash_account IS NOT OLD.cash_account OR
+    NEW.approved_by IS NOT OLD.approved_by OR NEW.approved_at IS NOT OLD.approved_at
+  )
+  BEGIN SELECT RAISE(ABORT, 'posted_entry_is_permanent'); END;
+
+  -- customers (الزبائن) and suppliers (المجهزون)
+  CREATE TABLE parties (
+    id TEXT PRIMARY KEY,
+    type TEXT NOT NULL CHECK (type IN ('customer', 'supplier')),
+    code TEXT NOT NULL UNIQUE,
+    name TEXT NOT NULL,
+    phone TEXT,
+    address TEXT,
+    account_code TEXT NOT NULL REFERENCES accounts(code),
+    credit_limit INTEGER CHECK (credit_limit IS NULL OR credit_limit >= 0),
+    notes TEXT,
+    active INTEGER NOT NULL DEFAULT 1,
+    created_at TEXT NOT NULL
+  );
+  ALTER TABLE entry_lines ADD COLUMN party_id TEXT REFERENCES parties(id);
+  CREATE INDEX entry_lines_party ON entry_lines(party_id);
+
+  CREATE TABLE warehouses (
+    id TEXT PRIMARY KEY,
+    code TEXT NOT NULL UNIQUE,
+    name_ar TEXT NOT NULL,
+    name_en TEXT NOT NULL,
+    name_ku TEXT NOT NULL,
+    account_code TEXT NOT NULL REFERENCES accounts(code),
+    active INTEGER NOT NULL DEFAULT 1,
+    created_at TEXT NOT NULL
+  );
+
+  CREATE TABLE items (
+    id TEXT PRIMARY KEY,
+    code TEXT NOT NULL UNIQUE,
+    barcode TEXT,
+    name_ar TEXT NOT NULL,
+    name_en TEXT NOT NULL,
+    name_ku TEXT NOT NULL,
+    unit TEXT NOT NULL,
+    sale_price INTEGER NOT NULL DEFAULT 0 CHECK (sale_price >= 0),
+    sale_currency TEXT NOT NULL CHECK (sale_currency IN ('IQD', 'USD')),
+    track_stock INTEGER NOT NULL DEFAULT 1,
+    active INTEGER NOT NULL DEFAULT 1,
+    created_at TEXT NOT NULL
+  );
+  CREATE UNIQUE INDEX items_barcode ON items(barcode) WHERE barcode IS NOT NULL AND barcode <> '';
+
+  CREATE TABLE invoices (
+    id TEXT PRIMARY KEY,
+    kind TEXT NOT NULL CHECK (kind IN ('sale', 'purchase')),
+    status TEXT NOT NULL CHECK (status IN ('draft', 'posted', 'cancelled')),
+    number TEXT UNIQUE,
+    date TEXT NOT NULL,
+    party_id TEXT REFERENCES parties(id),
+    warehouse_id TEXT NOT NULL REFERENCES warehouses(id),
+    currency TEXT NOT NULL CHECK (currency IN ('IQD', 'USD')),
+    rate_x100 INTEGER NOT NULL CHECK (rate_x100 > 0),
+    payment TEXT NOT NULL CHECK (payment IN ('cash', 'credit')),
+    cash_account TEXT REFERENCES accounts(code),
+    discount INTEGER NOT NULL DEFAULT 0 CHECK (discount >= 0),
+    subtotal INTEGER NOT NULL,
+    total INTEGER NOT NULL,
+    notes TEXT,
+    entry_id TEXT REFERENCES entries(id),
+    cancel_entry_id TEXT REFERENCES entries(id),
+    created_by TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    posted_by TEXT,
+    posted_at TEXT,
+    cancelled_by TEXT,
+    cancelled_at TEXT,
+    updated_at TEXT NOT NULL
+  );
+  CREATE INDEX invoices_date ON invoices(date);
+
+  CREATE TABLE invoice_lines (
+    invoice_id TEXT NOT NULL REFERENCES invoices(id) ON DELETE CASCADE,
+    line_no INTEGER NOT NULL,
+    item_id TEXT NOT NULL REFERENCES items(id),
+    description TEXT,
+    qty_milli INTEGER NOT NULL CHECK (qty_milli > 0),
+    unit_price INTEGER NOT NULL CHECK (unit_price >= 0),
+    amount INTEGER NOT NULL,
+    cost INTEGER,
+    PRIMARY KEY (invoice_id, line_no)
+  );
+
+  -- every stock change, in quantity and IQD value; never edited or deleted
+  CREATE TABLE stock_moves (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    item_id TEXT NOT NULL REFERENCES items(id),
+    warehouse_id TEXT NOT NULL REFERENCES warehouses(id),
+    date TEXT NOT NULL,
+    qty_milli INTEGER NOT NULL,
+    value INTEGER NOT NULL,
+    source_type TEXT NOT NULL,
+    source_id TEXT,
+    created_at TEXT NOT NULL
+  );
+  CREATE INDEX stock_moves_item ON stock_moves(item_id, warehouse_id);
+  CREATE TRIGGER stock_moves_no_update BEFORE UPDATE ON stock_moves BEGIN SELECT RAISE(ABORT, 'stock_moves_are_permanent'); END;
+  CREATE TRIGGER stock_moves_no_delete BEFORE DELETE ON stock_moves BEGIN SELECT RAISE(ABORT, 'stock_moves_are_permanent'); END;
+
+  -- posted invoices are permanent; they can only be cancelled (which reverses their entry and stock)
+  CREATE TRIGGER posted_invoice_lines_no_insert BEFORE INSERT ON invoice_lines
+  WHEN (SELECT status FROM invoices WHERE id = NEW.invoice_id) <> 'draft'
+  BEGIN SELECT RAISE(ABORT, 'posted_invoice_is_permanent'); END;
+  CREATE TRIGGER posted_invoice_lines_no_update BEFORE UPDATE ON invoice_lines
+  WHEN (SELECT status FROM invoices WHERE id = OLD.invoice_id) <> 'draft'
+  BEGIN SELECT RAISE(ABORT, 'posted_invoice_is_permanent'); END;
+  CREATE TRIGGER posted_invoice_lines_no_delete BEFORE DELETE ON invoice_lines
+  WHEN (SELECT status FROM invoices WHERE id = OLD.invoice_id) <> 'draft'
+  BEGIN SELECT RAISE(ABORT, 'posted_invoice_is_permanent'); END;
+  CREATE TRIGGER posted_invoices_no_delete BEFORE DELETE ON invoices
+  WHEN OLD.status <> 'draft'
+  BEGIN SELECT RAISE(ABORT, 'posted_invoice_is_permanent'); END;
+  CREATE TRIGGER posted_invoices_no_edit BEFORE UPDATE ON invoices
+  WHEN OLD.status = 'cancelled' OR (OLD.status = 'posted' AND (
+    NEW.number IS NOT OLD.number OR NEW.date IS NOT OLD.date OR NEW.party_id IS NOT OLD.party_id OR
+    NEW.warehouse_id IS NOT OLD.warehouse_id OR NEW.currency IS NOT OLD.currency OR NEW.rate_x100 IS NOT OLD.rate_x100 OR
+    NEW.payment IS NOT OLD.payment OR NEW.cash_account IS NOT OLD.cash_account OR NEW.discount IS NOT OLD.discount OR
+    NEW.subtotal IS NOT OLD.subtotal OR NEW.total IS NOT OLD.total OR NEW.entry_id IS NOT OLD.entry_id OR
+    NEW.status NOT IN ('posted', 'cancelled')
+  ))
+  BEGIN SELECT RAISE(ABORT, 'posted_invoice_is_permanent'); END;
+  `;
+
+const MIGRATIONS: Migration[] = [{ sql: V1 }, { sql: V2, rebuild: true }];
 
 export function openDatabase(file: string): Db {
   const db = new DatabaseSync(file);
@@ -119,37 +295,95 @@ export function openDatabase(file: string): Db {
     db.exec('PRAGMA synchronous = FULL');
   }
   migrate(db);
-  seedChartIfEmpty(db);
+  ensureDefaults(db);
   return db;
 }
 
-function migrate(db: Db): void {
+export function schemaVersion(db: Db): number {
+  return (db.prepare('SELECT version FROM schema_version').get() as { version: number } | undefined)?.version ?? 0;
+}
+
+/** Applies pending migrations, optionally stopping at `target` (used by the upgrade test). */
+export function migrate(db: Db, target = MIGRATIONS.length): void {
   db.exec('CREATE TABLE IF NOT EXISTS schema_version (version INTEGER NOT NULL)');
-  const row = db.prepare('SELECT version FROM schema_version').get() as { version: number } | undefined;
-  let version = row?.version ?? 0;
-  if (!row) db.prepare('INSERT INTO schema_version (version) VALUES (0)').run();
-  while (version < MIGRATIONS.length) {
-    const sql = MIGRATIONS[version]!;
-    transaction(db, () => {
-      db.exec(sql);
-      db.prepare('UPDATE schema_version SET version = ?').run(version + 1);
-    });
-    version += 1;
+  if (!db.prepare('SELECT version FROM schema_version').get()) db.prepare('INSERT INTO schema_version (version) VALUES (0)').run();
+  let version = schemaVersion(db);
+  while (version < target) {
+    const migration = MIGRATIONS[version]!;
+    const next = version + 1;
+    if (migration.rebuild) {
+      // SQLite's documented way to change a table: foreign keys off, rebuild, verify, foreign keys on.
+      db.exec('PRAGMA foreign_keys = OFF');
+      db.exec('PRAGMA legacy_alter_table = ON');
+      try {
+        transaction(db, () => {
+          db.exec(migration.sql);
+          const broken = db.prepare('PRAGMA foreign_key_check').all();
+          if (broken.length) throw new Error(`Migration ${next} broke foreign keys: ${JSON.stringify(broken.slice(0, 3))}`);
+          db.prepare('UPDATE schema_version SET version = ?').run(next);
+        });
+      } finally {
+        db.exec('PRAGMA legacy_alter_table = OFF');
+        db.exec('PRAGMA foreign_keys = ON');
+      }
+    } else {
+      transaction(db, () => {
+        db.exec(migration.sql);
+        db.prepare('UPDATE schema_version SET version = ?').run(next);
+      });
+    }
+    version = next;
   }
 }
 
-function seedChartIfEmpty(db: Db): void {
-  const count = (db.prepare('SELECT COUNT(*) AS n FROM accounts').get() as { n: number }).n;
-  if (count > 0) return;
+function hasLines(db: Db, code: string): boolean {
+  return !!db.prepare('SELECT 1 FROM entry_lines WHERE account_code = ? LIMIT 1').get(code);
+}
+
+function accountExists(db: Db, code: string): boolean {
+  return !!db.prepare('SELECT 1 FROM accounts WHERE code = ?').get(code);
+}
+
+function hasChildren(db: Db, code: string): boolean {
+  return !!db.prepare("SELECT 1 FROM accounts WHERE code LIKE ? || '%' AND code <> ? LIMIT 1").get(code, code);
+}
+
+/** Creates the chart, settings and default warehouse on a new database, and fills in anything a newer version needs. Safe to run every time. */
+function ensureDefaults(db: Db): void {
   const now = new Date().toISOString();
-  const insert = db.prepare('INSERT INTO accounts (code, name_ar, name_en, name_ku, system, created_at) VALUES (?, ?, ?, ?, ?, ?)');
+  const insertAccount = db.prepare('INSERT INTO accounts (code, name_ar, name_en, name_ku, system, created_at) VALUES (?, ?, ?, ?, ?, ?)');
   transaction(db, () => {
-    for (const a of IRAQI_UNIFIED_CHART) insert.run(a.code, a.name.ar, a.name.en, a.name.ku, 1, now);
-    for (const a of STARTER_SUB_ACCOUNTS) insert.run(a.code, a.name.ar, a.name.en, a.name.ku, 0, now);
+    const empty = (db.prepare('SELECT COUNT(*) AS n FROM accounts').get() as { n: number }).n === 0;
+    if (empty) {
+      for (const a of IRAQI_UNIFIED_CHART) insertAccount.run(a.code, a.name.ar, a.name.en, a.name.ku, 1, now);
+    }
+    for (const a of STARTER_SUB_ACCOUNTS) {
+      if (accountExists(db, a.code)) continue;
+      const parent = a.code.slice(0, -1);
+      // Never split an account that already holds entries — its lines would end up on a parent account.
+      if (!accountExists(db, parent) || hasLines(db, parent)) continue;
+      insertAccount.run(a.code, a.name.ar, a.name.en, a.name.ku, 0, now);
+    }
+
     const setting = db.prepare('INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)');
     setting.run('company_name', JSON.stringify({ ar: '', en: '', ku: '' }));
     setting.run('default_rate_x100', '142000');
     setting.run('fiscal_year_start', '01-01');
+    const postable = (code: string, fallback: string) => (accountExists(db, code) && !hasChildren(db, code) ? code : fallback);
+    setting.run('posting_accounts', JSON.stringify({
+      customers: postable(DEFAULT_POSTING_ACCOUNTS.customers, '161'),
+      suppliers: postable(DEFAULT_POSTING_ACCOUNTS.suppliers, '261'),
+      sales: DEFAULT_POSTING_ACCOUNTS.sales,
+      costOfSales: DEFAULT_POSTING_ACCOUNTS.costOfSales,
+      cash: postable(DEFAULT_POSTING_ACCOUNTS.cash, '181')
+    }));
+
+    const warehouses = (db.prepare('SELECT COUNT(*) AS n FROM warehouses').get() as { n: number }).n;
+    if (warehouses === 0) {
+      const account = accountExists(db, '1371') && !hasChildren(db, '1371') ? '1371' : '137';
+      db.prepare('INSERT INTO warehouses (id, code, name_ar, name_en, name_ku, account_code, active, created_at) VALUES (?, ?, ?, ?, ?, ?, 1, ?)')
+        .run(crypto.randomUUID(), 'MAIN', 'المخزن الرئيسي', 'Main warehouse', 'کۆگای سەرەکی', account, now);
+    }
   });
 }
 
@@ -170,4 +404,13 @@ export function transaction<T>(db: Db, fn: () => T): T {
   } finally {
     depth -= 1;
   }
+}
+
+/** Returns the next number of a named counter (1, 2, 3 …). Call inside a transaction. */
+export function nextSequence(db: Db, key: string): number {
+  const row = db.prepare('SELECT next FROM sequences WHERE key = ?').get(key) as { next: number } | undefined;
+  const seq = row?.next ?? 1;
+  if (row) db.prepare('UPDATE sequences SET next = ? WHERE key = ?').run(seq + 1, key);
+  else db.prepare('INSERT INTO sequences (key, next) VALUES (?, ?)').run(key, seq + 1);
+  return seq;
 }

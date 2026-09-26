@@ -19,7 +19,7 @@ import {
   type VoucherInput
 } from '@qasa/core';
 import type { Db } from './db.ts';
-import { transaction } from './db.ts';
+import { nextSequence, transaction } from './db.ts';
 import { audit } from './audit.ts';
 import { conflict, invalid, notFound } from './errors.ts';
 import { loadAccounts } from './accounts.ts';
@@ -35,7 +35,7 @@ interface EntryRow {
 
 interface LineRow {
   line_no: number; account_code: string; debit: number; credit: number; base_debit: number; base_credit: number; description: string | null;
-  name_ar: string; name_en: string; name_ku: string;
+  name_ar: string; name_en: string; name_ku: string; party_id: string | null; party_name: string | null;
 }
 
 export interface EntryLineView {
@@ -47,6 +47,8 @@ export interface EntryLineView {
   baseDebit: number;
   baseCredit: number;
   description: string;
+  partyId: string | null;
+  partyName: string | null;
 }
 
 export interface EntryView {
@@ -74,9 +76,13 @@ export interface EntryView {
   baseTotal: number;
   lines: EntryLineView[];
   actions: EntryAction[];
+  /** The invoice that posted (or cancelled) this entry, if any. */
+  invoiceId: string | null;
 }
 
-export type EntrySummary = Omit<EntryView, 'lines' | 'actions'>;
+export type EntrySummary = Omit<EntryView, 'lines' | 'actions' | 'invoiceId'>;
+
+const isInvoiceType = (type: EntryType) => type === 'sale' || type === 'purchase';
 
 function entryContext(db: Db) {
   const accounts = new Map(loadAccounts(db).map((a) => [a.code, a]));
@@ -87,8 +93,12 @@ function entryContext(db: Db) {
   };
 }
 
-function assertValid(db: Db, input: EntryInput): void {
-  const errors = validateEntry(input, entryContext(db));
+export function assertValid(db: Db, input: EntryInput): void {
+  const errors: { code: string; line?: number }[] = validateEntry(input, entryContext(db));
+  const partyExists = db.prepare('SELECT 1 FROM parties WHERE id = ?');
+  input.lines.forEach((l, i) => {
+    if (l.partyId && !partyExists.get(l.partyId)) errors.push({ code: 'party_invalid', line: i + 1 });
+  });
   if (errors.length) throw invalid(errors);
 }
 
@@ -104,13 +114,14 @@ function assertValidVoucher(db: Db, v: VoucherInput): EntryInput {
 }
 
 function insertLines(db: Db, id: string, input: EntryInput): void {
-  const insert = db.prepare('INSERT INTO entry_lines (entry_id, line_no, account_code, debit, credit, base_debit, base_credit, description) VALUES (?, ?, ?, ?, ?, ?, ?, ?)');
+  const insert = db.prepare(`INSERT INTO entry_lines (entry_id, line_no, account_code, debit, credit, base_debit, base_credit, description, party_id)
+                             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`);
   withBaseAmounts(input).forEach((l, i) => {
-    insert.run(id, i + 1, l.accountCode, l.debit, l.credit, l.baseDebit, l.baseCredit, l.description?.trim() || null);
+    insert.run(id, i + 1, l.accountCode, l.debit, l.credit, l.baseDebit, l.baseCredit, l.description?.trim() || null, l.partyId ?? null);
   });
 }
 
-function insertEntry(db: Db, input: EntryInput, user: string, cashAccountCode: string | null, status: EntryStatus = 'draft'): string {
+export function insertEntry(db: Db, input: EntryInput, user: string, cashAccountCode: string | null, status: EntryStatus = 'draft'): string {
   const id = randomUUID();
   const now = new Date().toISOString();
   db.prepare(`INSERT INTO entries (id, type, date, description, party, currency, rate_x100, status, cash_account, prepared_by, prepared_at, updated_at)
@@ -149,7 +160,7 @@ function loadRow(db: Db, id: string): EntryRow {
 }
 
 function requireAction(row: EntryRow, action: EntryAction): void {
-  const actions = allowedActions(row.status, { reversed: !!row.reversed_by_id, isReversal: row.type === 'reversal' });
+  const actions = allowedActions(row.status, { reversed: !!row.reversed_by_id, isReversal: row.type === 'reversal', fromInvoice: isInvoiceType(row.type) });
   if (!actions.includes(action)) throw conflict('action_not_allowed', { status: row.status, action });
 }
 
@@ -201,7 +212,7 @@ function revalidateStored(db: Db, id: string): void {
   const view = getEntry(db, id);
   assertValid(db, {
     type: view.type, date: view.date, description: view.description, currency: view.currency, rateX100: view.rateX100,
-    lines: view.lines.map((l) => ({ accountCode: l.accountCode, debit: l.debit, credit: l.credit }))
+    lines: view.lines.map((l) => ({ accountCode: l.accountCode, debit: l.debit, credit: l.credit, ...(l.partyId ? { partyId: l.partyId } : {}) }))
   });
 }
 
@@ -229,14 +240,9 @@ export function returnEntry(db: Db, id: string, user: string): EntryView {
   return getEntry(db, id);
 }
 
-function nextNumber(db: Db, type: EntryType, date: string): string {
+export function nextNumber(db: Db, type: EntryType, date: string): string {
   const year = yearOf(date);
-  const key = `${type}:${year}`;
-  const row = db.prepare('SELECT next FROM sequences WHERE key = ?').get(key) as { next: number } | undefined;
-  const seq = row?.next ?? 1;
-  if (row) db.prepare('UPDATE sequences SET next = ? WHERE key = ?').run(seq + 1, key);
-  else db.prepare('INSERT INTO sequences (key, next) VALUES (?, ?)').run(key, seq + 1);
-  return entryNumber(type, year, seq);
+  return entryNumber(type, year, nextSequence(db, `${type}:${year}`));
 }
 
 /** المصادق: checked → approved (posted). The voucher number is assigned now, so posted numbers have no gaps. */
@@ -255,9 +261,14 @@ export function approveEntry(db: Db, id: string, user: string): EntryView {
 
 /** Corrects a posted entry with an opposite entry (قيد عكسي). Both stay in the books. */
 export function reverseEntry(db: Db, id: string, user: string, date?: string): EntryView {
-  const row = loadRow(db, id);
-  requireAction(row, 'reverse');
+  requireAction(loadRow(db, id), 'reverse');
+  return getEntry(db, reverseEntryInternal(db, id, user, date));
+}
+
+/** Creates and posts the reversal of a posted entry; also used when an invoice is cancelled. Returns the reversal's id. */
+export function reverseEntryInternal(db: Db, id: string, user: string, date?: string): string {
   const original = getEntry(db, id);
+  if (original.status !== 'approved' || original.reversedById) throw conflict('action_not_allowed', { status: original.status, action: 'reverse' });
   const reversalDate = date ?? todayIso();
   if (!isIsoDate(reversalDate)) throw invalid([{ code: 'date_invalid' }]);
   const input: EntryInput = {
@@ -266,7 +277,11 @@ export function reverseEntry(db: Db, id: string, user: string, date?: string): E
     description: `${original.number ?? ''} — ${original.description}`.trim(),
     currency: original.currency,
     rateX100: original.rateX100,
-    lines: reverseLines(original.lines)
+    lines: reverseLines(original.lines.map((l) => ({
+      accountCode: l.accountCode, debit: l.debit, credit: l.credit, baseDebit: l.baseDebit, baseCredit: l.baseCredit,
+      ...(l.description ? { description: l.description } : {}),
+      ...(l.partyId ? { partyId: l.partyId } : {})
+    })))
   };
   if (original.party) input.party = original.party;
   assertValid(db, input);
@@ -280,10 +295,10 @@ export function reverseEntry(db: Db, id: string, user: string, date?: string): E
     audit(db, user, 'reverse', 'entry', id, { reversalId, number });
     return reversalId;
   });
-  return getEntry(db, newId);
+  return newId;
 }
 
-function toView(row: EntryRow, lines: LineRow[]): EntryView {
+function toView(row: EntryRow, lines: LineRow[], invoiceId: string | null = null): EntryView {
   const view: EntryView = {
     id: row.id, type: row.type, number: row.number, date: row.date, description: row.description, party: row.party,
     currency: row.currency, rateX100: row.rate_x100, status: row.status, cashAccountCode: row.cash_account,
@@ -294,19 +309,24 @@ function toView(row: EntryRow, lines: LineRow[]): EntryView {
     baseTotal: lines.reduce((s, l) => s + l.base_debit, 0),
     lines: lines.map((l) => ({
       lineNo: l.line_no, accountCode: l.account_code, accountName: { ar: l.name_ar, en: l.name_en, ku: l.name_ku },
-      debit: l.debit, credit: l.credit, baseDebit: l.base_debit, baseCredit: l.base_credit, description: l.description ?? ''
+      debit: l.debit, credit: l.credit, baseDebit: l.base_debit, baseCredit: l.base_credit, description: l.description ?? '',
+      partyId: l.party_id, partyName: l.party_name
     })),
-    actions: allowedActions(row.status, { reversed: !!row.reversed_by_id, isReversal: row.type === 'reversal' })
+    actions: allowedActions(row.status, { reversed: !!row.reversed_by_id, isReversal: row.type === 'reversal', fromInvoice: isInvoiceType(row.type) }),
+    invoiceId
   };
   return view;
 }
 
-const LINES_SQL = `SELECT l.line_no, l.account_code, l.debit, l.credit, l.base_debit, l.base_credit, l.description, a.name_ar, a.name_en, a.name_ku
-                   FROM entry_lines l JOIN accounts a ON a.code = l.account_code WHERE l.entry_id = ? ORDER BY l.line_no`;
+const LINES_SQL = `SELECT l.line_no, l.account_code, l.debit, l.credit, l.base_debit, l.base_credit, l.description, a.name_ar, a.name_en, a.name_ku,
+                          l.party_id, p.name AS party_name
+                   FROM entry_lines l JOIN accounts a ON a.code = l.account_code LEFT JOIN parties p ON p.id = l.party_id
+                   WHERE l.entry_id = ? ORDER BY l.line_no`;
 
 export function getEntry(db: Db, id: string): EntryView {
   const row = loadRow(db, id);
-  return toView(row, db.prepare(LINES_SQL).all(id) as unknown as LineRow[]);
+  const invoice = db.prepare('SELECT id FROM invoices WHERE entry_id = ? OR cancel_entry_id = ?').get(id, id) as { id: string } | undefined;
+  return toView(row, db.prepare(LINES_SQL).all(id) as unknown as LineRow[], invoice?.id ?? null);
 }
 
 export interface EntryFilters {
@@ -337,18 +357,26 @@ export function listEntries(db: Db, f: EntryFilters = {}): EntrySummary[] {
   params.push(f.limit ?? 500);
   const found = db.prepare(sql).all(...params) as unknown as (EntryRow & { total: number; base_total: number })[];
   return found.map((row) => {
-    const { lines: _lines, actions: _actions, ...summary } = toView(row, []);
+    const { lines: _lines, actions: _actions, invoiceId: _invoiceId, ...summary } = toView(row, []);
     return { ...summary, total: row.total ?? 0, baseTotal: row.base_total ?? 0 };
   });
 }
 
 /** Lines of approved entries in IQD — the input for every report. */
-export function postedLines(db: Db, opts: { to?: string } = {}): PostedLine[] {
-  const rows = db.prepare(`SELECT e.id, e.number, e.date, l.account_code, l.base_debit, l.base_credit, COALESCE(l.description, e.description) AS description
+export function postedLines(db: Db, opts: { to?: string; partyId?: string } = {}): (PostedLine & { partyId: string | null })[] {
+  const where = ["e.status = 'approved'"];
+  const params: string[] = [];
+  if (opts.to) { where.push('e.date <= ?'); params.push(opts.to); }
+  if (opts.partyId) { where.push('l.party_id = ?'); params.push(opts.partyId); }
+  const rows = db.prepare(`SELECT e.id, e.number, e.date, l.account_code, l.base_debit, l.base_credit, l.party_id,
+                                  COALESCE(l.description, e.description) AS description
                            FROM entry_lines l JOIN entries e ON e.id = l.entry_id
-                           WHERE e.status = 'approved' ${opts.to ? 'AND e.date <= ?' : ''}
-                           ORDER BY e.date, e.number, l.line_no`).all(...(opts.to ? [opts.to] : [])) as {
-    id: string; number: string; date: string; account_code: string; base_debit: number; base_credit: number; description: string;
+                           WHERE ${where.join(' AND ')}
+                           ORDER BY e.date, e.number, l.line_no`).all(...params) as {
+    id: string; number: string; date: string; account_code: string; base_debit: number; base_credit: number; party_id: string | null; description: string;
   }[];
-  return rows.map((r) => ({ entryId: r.id, number: r.number, date: r.date, accountCode: r.account_code, debit: r.base_debit, credit: r.base_credit, description: r.description }));
+  return rows.map((r) => ({
+    entryId: r.id, number: r.number, date: r.date, accountCode: r.account_code, debit: r.base_debit, credit: r.base_credit,
+    description: r.description, partyId: r.party_id
+  }));
 }

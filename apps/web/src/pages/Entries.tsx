@@ -40,7 +40,7 @@ export function EntriesTable({ entries }: { entries: EntrySummary[] }) {
   );
 }
 
-const TYPES: (EntryType | '')[] = ['', 'receipt', 'payment', 'journal', 'reversal'];
+const TYPES: (EntryType | '')[] = ['', 'receipt', 'payment', 'journal', 'sale', 'purchase', 'reversal'];
 const STATUSES: (EntryStatus | '')[] = ['', 'draft', 'checked', 'approved'];
 
 export function Entries() {

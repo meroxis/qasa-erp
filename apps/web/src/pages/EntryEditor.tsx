@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { amountInWords, rateFromX100, todayIso, toWesternDigits, type CurrencyCode } from '@qasa/core';
 import { api, ApiError, type EntryView, type JournalInput, type VoucherInput } from '../api.ts';
-import { AccountCombo, AmountInput, ErrorBox, Icon, useData, useToast } from '../components.tsx';
+import { AccountCombo, AmountInput, ErrorBox, Icon, SearchCombo, useData, useLoad, useToast } from '../components.tsx';
 import { useI18n } from '../i18n.ts';
 import { go } from '../router.ts';
 
@@ -13,10 +13,14 @@ interface Row {
   debit: number | null;
   credit: number | null;
   description: string;
+  partyId: string;
 }
 
 let rowKey = 1;
-const emptyRow = (): Row => ({ key: rowKey++, accountCode: '', debit: null, credit: null, description: '' });
+const emptyRow = (): Row => ({ key: rowKey++, accountCode: '', debit: null, credit: null, description: '', partyId: '' });
+
+/** Lines on customer (16…) or supplier (26…) accounts can name who they belong to, so it shows on their statement. */
+const partyTypeFor = (code: string) => (code.startsWith('16') ? 'customer' : code.startsWith('26') ? 'supplier' : null);
 
 /** Parses "1420", "1,420.50" or "١٤٢٠" into IQD per USD × 100. */
 function parseRate(text: string): number | null {
@@ -43,6 +47,7 @@ export function EntryEditor({ kind: initialKind, id }: { kind?: Kind; id?: strin
   const [rows, setRows] = useState<Row[]>(() => [emptyRow(), emptyRow()]);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<unknown>(null);
+  const parties = useLoad(() => api.parties({ active: 'true' }), []);
 
   // defaults for a new voucher
   useEffect(() => {
@@ -63,11 +68,11 @@ export function EntryEditor({ kind: initialKind, id }: { kind?: Kind; id?: strin
       setCurrency(e.currency);
       setRateText(String(rateFromX100(e.rateX100)));
       if (k === 'journal') {
-        setRows(e.lines.map((l) => ({ key: rowKey++, accountCode: l.accountCode, debit: l.debit || null, credit: l.credit || null, description: l.description })));
+        setRows(e.lines.map((l) => ({ key: rowKey++, accountCode: l.accountCode, debit: l.debit || null, credit: l.credit || null, description: l.description, partyId: l.partyId ?? '' })));
       } else {
         setCashAccount(e.cashAccountCode ?? '');
         const items = e.lines.filter((l) => l.accountCode !== e.cashAccountCode || (k === 'receipt' ? l.credit > 0 : l.debit > 0));
-        setRows(items.map((l) => ({ key: rowKey++, accountCode: l.accountCode, debit: k === 'receipt' ? l.credit : l.debit, credit: null, description: l.description === e.description ? '' : l.description })));
+        setRows(items.map((l) => ({ key: rowKey++, accountCode: l.accountCode, debit: k === 'receipt' ? l.credit : l.debit, credit: null, description: l.description === e.description ? '' : l.description, partyId: l.partyId ?? '' })));
       }
       setReady(true);
     }, setLoadError);
@@ -96,14 +101,14 @@ export function EntryEditor({ kind: initialKind, id }: { kind?: Kind; id?: strin
       if (isVoucher) {
         const input: VoucherInput = {
           kind: kind as 'receipt' | 'payment', date, cashAccountCode: cashAccount, description, currency, rateX100: rate,
-          items: rows.filter((r) => r.accountCode || r.debit).map((r) => ({ accountCode: r.accountCode, amount: r.debit ?? 0, ...(r.description.trim() ? { description: r.description.trim() } : {}) }))
+          items: rows.filter((r) => r.accountCode || r.debit).map((r) => ({ accountCode: r.accountCode, amount: r.debit ?? 0, ...(r.description.trim() ? { description: r.description.trim() } : {}), ...(r.partyId && partyTypeFor(r.accountCode) ? { partyId: r.partyId } : {}) }))
         };
         if (party.trim()) input.party = party.trim();
         saved = id ? await api.updateVoucher(id, input) : await api.createVoucher(input);
       } else {
         const input: JournalInput = {
           date, description, currency, rateX100: rate,
-          lines: rows.filter((r) => r.accountCode || r.debit || r.credit).map((r) => ({ accountCode: r.accountCode, debit: r.debit ?? 0, credit: r.credit ?? 0, ...(r.description.trim() ? { description: r.description.trim() } : {}) }))
+          lines: rows.filter((r) => r.accountCode || r.debit || r.credit).map((r) => ({ accountCode: r.accountCode, debit: r.debit ?? 0, credit: r.credit ?? 0, ...(r.description.trim() ? { description: r.description.trim() } : {}), ...(r.partyId && partyTypeFor(r.accountCode) ? { partyId: r.partyId } : {}) }))
         };
         if (party.trim()) input.party = party.trim();
         saved = id ? await api.updateJournal(id, input) : await api.createJournal(input);
@@ -176,7 +181,25 @@ export function EntryEditor({ kind: initialKind, id }: { kind?: Kind; id?: strin
           <tbody>
             {rows.map((r) => (
               <tr key={r.key}>
-                <td><AccountCombo value={r.accountCode} onChange={(code) => update(r.key, { accountCode: code })} /></td>
+                <td>
+                  <AccountCombo value={r.accountCode} onChange={(code) => update(r.key, { accountCode: code })} />
+                  {partyTypeFor(r.accountCode) && (
+                    <div style={{ marginTop: 6 }}>
+                      <SearchCombo
+                        value={r.partyId}
+                        options={(parties.data ?? []).filter((p) => p.type === partyTypeFor(r.accountCode)).map((p) => ({ id: p.id, code: p.code, label: p.name, search: p.phone, hint: p.balance ? i18n.money(p.balance, 'IQD') : '' }))}
+                        onChange={(partyId) => {
+                          const p = parties.data?.find((x) => x.id === partyId);
+                          update(r.key, { partyId, ...(p ? { accountCode: p.accountCode } : {}) });
+                          if (p && !party.trim()) setParty(p.name);
+                        }}
+                        placeholder={partyTypeFor(r.accountCode) === 'customer' ? t('chooseCustomer') : t('chooseSupplier')}
+                        ariaLabel={t('customerOrSupplier')}
+                        emptyLabel="—"
+                      />
+                    </div>
+                  )}
+                </td>
                 <td><AmountInput value={r.debit} currency={currency} onChange={(v) => update(r.key, { debit: v })} ariaLabel={isVoucher ? t('amount') : t('debit')} /></td>
                 {!isVoucher && <td><AmountInput value={r.credit} currency={currency} onChange={(v) => update(r.key, { credit: v })} ariaLabel={t('credit')} /></td>}
                 <td><input className="input" value={r.description} onChange={(e) => update(r.key, { description: e.target.value })} aria-label={t('lineNote')} /></td>

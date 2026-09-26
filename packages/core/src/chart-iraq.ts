@@ -83,5 +83,21 @@ export const STARTER_SUB_ACCOUNTS: AccountSeed[] = [
   { code: '1832', name: { ar: 'الحساب المصرفي — دولار', en: 'Bank account — USD', ku: 'هەژماری بانکی — دۆلار' } },
   { code: '1611', name: { ar: 'زبائن البيع الآجل', en: 'Credit customers', ku: 'کڕیارانی قەرز' } },
   { code: '1612', name: { ar: 'زبائن التقسيط', en: 'Installment customers', ku: 'کڕیارانی قیست' } },
-  { code: '1661', name: { ar: 'سلف الموظفين', en: 'Employee advances', ku: 'سولفەی کارمەندان' } }
+  { code: '1661', name: { ar: 'سلف الموظفين', en: 'Employee advances', ku: 'سولفەی کارمەندان' } },
+  { code: '1371', name: { ar: 'المخزن الرئيسي', en: 'Main warehouse', ku: 'کۆگای سەرەکی' } },
+  { code: '2611', name: { ar: 'المجهزون المحليون', en: 'Local suppliers', ku: 'دابینکەرانی ناوخۆ' } }
 ];
+
+/**
+ * Default posting accounts for invoices. Editable in settings; to be confirmed by the company's accountant.
+ * sales → 42 إيراد النشاط التجاري · cost of goods sold → 35 مشتريات بضائع بغرض البيع
+ */
+export const DEFAULT_POSTING_ACCOUNTS = {
+  customers: '1611',
+  suppliers: '2611',
+  sales: '42',
+  costOfSales: '35',
+  cash: '1811'
+} as const;
+
+export type PostingAccounts = { [K in keyof typeof DEFAULT_POSTING_ACCOUNTS]: string };

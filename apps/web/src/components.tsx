@@ -1,5 +1,5 @@
 import { createContext, useCallback, useContext, useEffect, useId, useMemo, useRef, useState, type ReactNode } from 'react';
-import { normalizeForSearch, parseAmount, formatAmount, type CurrencyCode, type EntryStatus, type EntryType } from '@qasa/core';
+import { formatQty, normalizeForSearch, parseAmount, parseQty, formatAmount, type CurrencyCode, type EntryStatus, type EntryType, type InvoiceStatus } from '@qasa/core';
 import { ApiError, type AccountView, type Settings } from './api.ts';
 import { isKey, useI18n, type I18n } from './i18n.ts';
 
@@ -62,7 +62,7 @@ export const useToast = () => useContext(ToastContext);
 
 /* ---------- errors ---------- */
 
-interface Detail { code?: string; line?: number; accountCode?: string; period?: string }
+interface Detail { code?: string; line?: number; accountCode?: string; period?: string; available?: number }
 
 export function errorMessages(error: unknown, i18n: I18n): string[] {
   const { t } = i18n;
@@ -70,7 +70,7 @@ export function errorMessages(error: unknown, i18n: I18n): string[] {
     if (error.code === 'validation' && Array.isArray(error.details)) {
       const messages = (error.details as Detail[]).map((d) => {
         const key = 'err_' + (d.code ?? 'internal');
-        return isKey(key) ? t(key, { n: d.line ?? '', c: d.accountCode ?? '', p: d.period ?? '' }) : t('err_internal');
+        return isKey(key) ? t(key, { n: d.line ?? '', c: d.accountCode ?? '', p: d.period ?? '', a: d.available === undefined ? '' : formatQty(d.available) }) : t('err_internal');
       });
       return [...new Set(messages)];
     }
@@ -98,6 +98,12 @@ export function StatusChip({ status, reversed }: { status: EntryStatus; reversed
   if (reversed) return <span className="chip bad">{t('reversedTag')}</span>;
   const cls = status === 'approved' ? 'ok' : status === 'checked' ? 'info' : 'warn';
   return <span className={'chip ' + cls}>{t(status)}</span>;
+}
+
+export function InvoiceStatusChip({ status }: { status: InvoiceStatus }) {
+  const { t } = useI18n();
+  const cls = status === 'posted' ? 'ok' : status === 'cancelled' ? 'bad' : 'warn';
+  return <span className={'chip ' + cls}>{t(status === 'draft' ? 'draft' : status)}</span>;
 }
 
 export function typeName(type: EntryType, i18n: I18n): string {
@@ -141,7 +147,10 @@ const PATHS: Record<string, string> = {
   download: 'M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3',
   chevron: 'm9 18 6-6-6-6',
   undo: 'M3 7v6h6M21 17a9 9 0 0 0-9-9 9 9 0 0 0-6 2.3L3 13',
-  edit: 'M12 20h9M16.5 3.5a2.1 2.1 0 1 1 3 3L7 19l-4 1 1-4Z'
+  edit: 'M12 20h9M16.5 3.5a2.1 2.1 0 1 1 3 3L7 19l-4 1 1-4Z',
+  cart: 'M8 21a1 1 0 1 0 0-2 1 1 0 0 0 0 2M19 21a1 1 0 1 0 0-2 1 1 0 0 0 0 2M2.05 2.05h2l2.66 12.42a2 2 0 0 0 2 1.58h9.78a2 2 0 0 0 1.95-1.57l1.65-7.43H5.12',
+  truck: 'M14 18V6a2 2 0 0 0-2-2H4a2 2 0 0 0-2 2v11a1 1 0 0 0 1 1h2M15 18H9M19 18h2a1 1 0 0 0 1-1v-3.65a1 1 0 0 0-.22-.62l-3.48-4.35A1 1 0 0 0 17.52 8H14M9 18a2 2 0 1 1-4 0 2 2 0 0 1 4 0M19 18a2 2 0 1 1-4 0 2 2 0 0 1 4 0',
+  contact: 'M16 2v2M7 22v-2a2 2 0 0 1 2-2h6a2 2 0 0 1 2 2v2M8 2v2M12 13a3 3 0 1 0 0-6 3 3 0 0 0 0 6M3 6a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z'
 };
 
 export function Icon({ name, size = 18 }: { name: keyof typeof PATHS | string; size?: number }) {
@@ -227,6 +236,110 @@ export function AccountCombo({ value, onChange, filter, invalid, ariaLabel, incl
         </ul>
       )}
     </div>
+  );
+}
+
+/* ---------- search picker (customers, suppliers, items) ---------- */
+
+export interface PickOption {
+  id: string;
+  code: string;
+  label: string;
+  /** Extra text shown on the right, e.g. stock or balance. */
+  hint?: string;
+  /** Extra words to search, e.g. names in the other languages, phone, barcode. */
+  search?: string;
+}
+
+export function SearchCombo({ value, options, onChange, placeholder, ariaLabel, invalid, emptyLabel }: {
+  value: string;
+  options: PickOption[];
+  onChange(id: string): void;
+  placeholder: string;
+  ariaLabel?: string;
+  invalid?: boolean;
+  /** When set, the list starts with a "none" choice with this label. */
+  emptyLabel?: string;
+}) {
+  const i18n = useI18n();
+  const listId = useId();
+  const [open, setOpen] = useState(false);
+  const [query, setQuery] = useState('');
+  const [active, setActive] = useState(0);
+  const selected = options.find((o) => o.id === value);
+  const matches = useMemo(() => {
+    const q = normalizeForSearch(query);
+    const found = q ? options.filter((o) => normalizeForSearch(`${o.code} ${o.label} ${o.search ?? ''}`).includes(q)) : options;
+    const list = found.slice(0, 80);
+    return emptyLabel !== undefined && !q ? [{ id: '', code: '', label: emptyLabel }, ...list] : list;
+  }, [options, query, emptyLabel]);
+
+  const pick = (id: string) => {
+    onChange(id);
+    setOpen(false);
+    setQuery('');
+  };
+
+  return (
+    <div className="combo">
+      <input
+        className={'input' + (invalid ? ' invalid' : '')}
+        role="combobox"
+        aria-expanded={open}
+        aria-controls={listId}
+        aria-label={ariaLabel ?? placeholder}
+        placeholder={selected ? '' : emptyLabel ?? placeholder}
+        value={open ? query : selected ? `${selected.code} — ${selected.label}` : ''}
+        onFocus={() => { setOpen(true); setQuery(''); setActive(0); }}
+        onBlur={() => window.setTimeout(() => setOpen(false), 150)}
+        onChange={(e) => { setQuery(e.target.value); setActive(0); setOpen(true); }}
+        onKeyDown={(e) => {
+          if (e.key === 'ArrowDown') { e.preventDefault(); setActive((i) => Math.min(i + 1, matches.length - 1)); }
+          else if (e.key === 'ArrowUp') { e.preventDefault(); setActive((i) => Math.max(i - 1, 0)); }
+          else if (e.key === 'Enter' && open && matches[active]) { e.preventDefault(); pick(matches[active]!.id); }
+          else if (e.key === 'Escape') setOpen(false);
+        }}
+      />
+      {open && (
+        <ul className="combo-list" id={listId} role="listbox">
+          {matches.length === 0 && <li className="muted">{i18n.t('noMatch')}</li>}
+          {matches.map((o, i) => (
+            <li key={o.id || 'none'} role="option" aria-selected={i === active} onMouseDown={(e) => { e.preventDefault(); pick(o.id); }} onMouseEnter={() => setActive(i)}>
+              {o.code && <span className="code">{o.code}</span>}
+              <span style={{ flex: 1 }}>{o.label}</span>
+              {o.hint && <span className="muted small num">{o.hint}</span>}
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}
+
+/* ---------- quantity input ---------- */
+
+/** Quantity with up to 3 decimals (2.5 kg); reports thousandths or null. */
+export function QtyInput({ value, onChange, ariaLabel }: { value: number | null; onChange(value: number | null): void; ariaLabel?: string }) {
+  const [text, setText] = useState(value === null ? '' : formatQty(value));
+  const [focused, setFocused] = useState(false);
+  useEffect(() => {
+    if (!focused) setText(value === null ? '' : formatQty(value));
+  }, [value, focused]);
+  const invalid = text.trim() !== '' && parseQty(text) === null;
+  return (
+    <input
+      className={'input amount' + (invalid ? ' invalid' : '')}
+      inputMode="decimal"
+      aria-label={ariaLabel}
+      aria-invalid={invalid}
+      value={text}
+      onFocus={() => setFocused(true)}
+      onBlur={() => setFocused(false)}
+      onChange={(e) => {
+        setText(e.target.value);
+        onChange(e.target.value.trim() === '' ? null : parseQty(e.target.value));
+      }}
+    />
   );
 }
 

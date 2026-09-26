@@ -92,7 +92,7 @@ export function EntryDetail({ id }: { id: string }) {
         <button type="button" className="btn" onClick={() => window.print()}><Icon name="printer" size={16} />{t('print')}</button>
       </div>
       <ErrorBox error={actionError} />
-      {e.status === 'approved' && <div className="alert info no-print">{t('postedNote')}</div>}
+      {e.status === 'approved' && <div className="alert info no-print">{e.invoiceId ? t('fromInvoiceNote') : t('postedNote')}</div>}
 
       <div className="paper">
         <div className="paper-head">
@@ -112,11 +112,17 @@ export function EntryDetail({ id }: { id: string }) {
           {e.party && (
             <div className="row"><span className="muted" style={{ width: 130 }}>{e.type === 'payment' ? t('paidTo') : e.type === 'receipt' ? t('receivedFrom') : t('colParty')}</span><strong>{e.party}</strong></div>
           )}
-          <div className="row"><span className="muted" style={{ width: 130 }}>{t('amount')}</span><strong style={{ fontSize: 18 }} className="num">{i18n.money(e.total, e.currency)}</strong>
-            {e.currency === 'USD' && <span className="muted">({t('iqdEquivalent')}: {i18n.money(e.baseTotal, 'IQD')})</span>}
-          </div>
-          <div className="row" style={{ alignItems: 'flex-start' }}><span className="muted" style={{ width: 130, paddingTop: 10 }}>{t('inWords')}</span><div className="words" style={{ flex: 1 }}>{i18n.digitsOf(amountInWords(e.total, e.currency, i18n.lang))}</div></div>
+          {/* An invoice posting mixes the sale with its cost, so its total is not an amount anyone pays — the invoice shows that. */}
+          {!e.invoiceId && (
+            <>
+              <div className="row"><span className="muted" style={{ width: 130 }}>{t('amount')}</span><strong style={{ fontSize: 18 }} className="num">{i18n.money(e.total, e.currency)}</strong>
+                {e.currency === 'USD' && <span className="muted">({t('iqdEquivalent')}: {i18n.money(e.baseTotal, 'IQD')})</span>}
+              </div>
+              <div className="row" style={{ alignItems: 'flex-start' }}><span className="muted" style={{ width: 130, paddingTop: 10 }}>{t('inWords')}</span><div className="words" style={{ flex: 1 }}>{i18n.digitsOf(amountInWords(e.total, e.currency, i18n.lang))}</div></div>
+            </>
+          )}
           <div className="row"><span className="muted" style={{ width: 130 }}>{isVoucher ? t('forLabel') : t('description')}</span><span>{e.description}</span></div>
+          {e.invoiceId && <div className="row"><span className="muted" style={{ width: 130 }}>{t('e_invoice')}</span><a href={href(`invoice/${e.invoiceId}`)}>{t('openInvoice')}</a></div>}
           {e.reversesId && <div className="row"><span className="muted" style={{ width: 130 }}>{t('reverses')}</span><a href={href(`entry/${e.reversesId}`)}>{t('open')}</a></div>}
           {e.reversedById && <div className="row"><span className="muted" style={{ width: 130 }}>{t('reversedBy')}</span><a href={href(`entry/${e.reversedById}`)}>{t('open')}</a></div>}
         </div>
@@ -129,7 +135,7 @@ export function EntryDetail({ id }: { id: string }) {
             {e.lines.map((l) => (
               <tr key={l.lineNo}>
                 <td><span className="tree-code">{l.accountCode}</span></td>
-                <td>{i18n.name(l.accountName)}{l.description && l.description !== e.description && <div className="muted small">{l.description}</div>}</td>
+                <td>{i18n.name(l.accountName)}{l.partyName && <span className="chip info" style={{ marginInlineStart: 8 }}>{l.partyName}</span>}{l.description && l.description !== e.description && <div className="muted small">{l.description}</div>}</td>
                 <td className="amount">{l.debit ? i18n.money(l.debit, e.currency) : ''}</td>
                 <td className="amount">{l.credit ? i18n.money(l.credit, e.currency) : ''}</td>
               </tr>

@@ -4,6 +4,7 @@ import { transaction } from './db.ts';
 import { audit } from './audit.ts';
 import { conflict, invalid, notFound } from './errors.ts';
 import { postedLines } from './journal.ts';
+import { getPostingAccounts } from './settings.ts';
 
 export interface AccountView extends Account {
   nature: Nature;
@@ -61,6 +62,9 @@ export function deleteAccount(db: Db, code: string, user: string): void {
   if (account.system) throw conflict('account_is_standard');
   if (!account.postable) throw conflict('account_has_children');
   if (accountsWithEntries(db).has(code)) throw conflict('account_has_entries');
+  const inUse = db.prepare('SELECT 1 FROM parties WHERE account_code = ? UNION SELECT 1 FROM warehouses WHERE account_code = ?').get(code, code)
+    || Object.values(getPostingAccounts(db)).includes(code);
+  if (inUse) throw conflict('account_in_use');
   transaction(db, () => {
     db.prepare('DELETE FROM accounts WHERE code = ?').run(code);
     audit(db, user, 'delete', 'account', code);
