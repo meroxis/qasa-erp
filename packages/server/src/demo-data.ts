@@ -8,7 +8,7 @@ import { createItem, listWarehouses } from './items.ts';
 import { createInvoice, postInvoice } from './invoices.ts';
 
 /**
- * A small sample company — Nahrain General Trading — with customers, suppliers, items, invoices and vouchers.
+ * A small sample company — Meroxis — with customers, suppliers, items, invoices and vouchers.
  * Used by `npm run seed:demo` and by the demo on the website. Expects an empty, initialised database.
  */
 export function seedDemo(db: Db): void {
@@ -18,7 +18,7 @@ export function seedDemo(db: Db): void {
   const sales = 'هيمن جلال';
 
   updateSettings(db, {
-    companyName: { ar: 'شركة النهرين للتجارة العامة', en: 'Nahrain General Trading Co.', ku: 'کۆمپانیای نەهرەین بۆ بازرگانیی گشتی' },
+    companyName: { ar: 'شركة ميروكسيس', en: 'Meroxis Company', ku: 'کۆمپانیای مێرۆکسیس' },
     defaultRateX100: 142000
   }, accountant);
 
@@ -41,11 +41,11 @@ export function seedDemo(db: Db): void {
   }, accountant).id);
 
   // ——— customers, suppliers and items ———
-  const zagros = createParty(db, 'customer', { name: 'شركة زاگرۆس للمقاولات', phone: '0750 445 1290', address: 'أربيل — شارع 100' }, accountant);
-  const ali = createParty(db, 'customer', { name: 'تجارة علي حسين', phone: '0770 318 6642', address: 'بغداد — الكرادة' }, accountant);
+  const sanos = createParty(db, 'customer', { name: 'Sanos Company', phone: '0750 445 1290', address: 'أربيل — شارع 100' }, accountant);
+  const rapidnet = createParty(db, 'customer', { name: 'RapidNet Ltd', phone: '0770 318 6642', address: 'بغداد — الكرادة' }, accountant);
   const karwan = createParty(db, 'customer', { name: 'کاروان عومەر', phone: '0751 902 3317', address: 'السليمانية — سالم', creditLimit: 5_000_000 }, accountant);
-  const rafidain = createParty(db, 'supplier', { name: 'شركة الرافدين للأجهزة الكهربائية', phone: '0780 110 4455', address: 'بغداد — الشورجة' }, accountant);
-  const solar = createParty(db, 'supplier', { name: 'شركة أربيل للطاقة الشمسية', phone: '0750 660 7788', address: 'أربيل — المنطقة الصناعية' }, accountant);
+  const sanosSupply = createParty(db, 'supplier', { name: 'Sanos Company', phone: '0780 110 4455', address: 'بغداد — الشورجة' }, accountant);
+  const rapidnetSupply = createParty(db, 'supplier', { name: 'RapidNet Ltd', phone: '0750 660 7788', address: 'أربيل — المنطقة الصناعية' }, accountant);
 
   const ac = createItem(db, { code: 'AC-18', name: { ar: 'مكيف سبلت 18 ألف وحدة', en: 'Split AC 18,000 BTU', ku: 'سپلیتی ١٨ هەزار' }, unit: 'piece', salePrice: 823_600, saleCurrency: 'IQD' }, accountant);
   const pv = createItem(db, { code: 'PV-550', barcode: '6291041500550', name: { ar: 'لوح شمسي 550 واط', en: 'Solar panel 550 W', ku: 'پانێڵی خۆر ٥٥٠ وات' }, unit: 'piece', salePrice: 134_900, saleCurrency: 'IQD' }, accountant);
@@ -62,18 +62,18 @@ export function seedDemo(db: Db): void {
 
   // ——— purchases ———
   invoice({
-    kind: 'purchase', date: '2026-09-02', partyId: rafidain.id, payment: 'credit', discount: 300_000, notes: 'فاتورة المجهز 0932',
+    kind: 'purchase', date: '2026-09-02', partyId: sanosSupply.id, payment: 'credit', discount: 300_000, notes: 'فاتورة المجهز 0932',
     lines: [{ itemId: ac.id, qtyMilli: qty(20), unitPrice: 610_000 }, { itemId: pipe.id, qtyMilli: qty(200), unitPrice: 8_000 }]
   }, accountant);
   invoice({
-    kind: 'purchase', date: '2026-09-04', partyId: solar.id, payment: 'cash', cashAccountCode: '1831', discount: 0,
+    kind: 'purchase', date: '2026-09-04', partyId: rapidnetSupply.id, payment: 'cash', cashAccountCode: '1831', discount: 0,
     lines: [{ itemId: pv.id, qtyMilli: qty(60), unitPrice: 98_000 }, { itemId: inverter.id, qtyMilli: qty(10), unitPrice: 690_000 }]
   }, accountant);
 
   post(createVoucher(db, {
-    kind: 'payment', date: '2026-09-05', cashAccountCode: '1831', party: rafidain.name,
+    kind: 'payment', date: '2026-09-05', cashAccountCode: '1831', party: sanosSupply.name,
     description: 'دفعة من حساب فاتورة الشراء PI-2026-0001', currency: 'IQD', rateX100: 100,
-    items: [{ accountCode: '2611', amount: 6_000_000, partyId: rafidain.id }]
+    items: [{ accountCode: '2611', amount: 6_000_000, partyId: sanosSupply.id }]
   }, accountant).id);
 
   // ——— sales ———
@@ -82,7 +82,7 @@ export function seedDemo(db: Db): void {
     lines: [{ itemId: ac.id, qtyMilli: qty(1), unitPrice: 823_600 }, { itemId: install.id, qtyMilli: qty(1), unitPrice: 50_000 }]
   }, sales);
   invoice({
-    kind: 'sale', date: '2026-09-12', partyId: zagros.id, payment: 'credit', discount: 35_200, notes: 'مشروع فندق أربيل — المرحلة الأولى',
+    kind: 'sale', date: '2026-09-12', partyId: sanos.id, payment: 'credit', discount: 35_200, notes: 'مشروع فندق أربيل — المرحلة الأولى',
     lines: [
       { itemId: ac.id, qtyMilli: qty(2), unitPrice: 823_600 },
       { itemId: pv.id, qtyMilli: qty(8), unitPrice: 134_900 },
@@ -90,7 +90,7 @@ export function seedDemo(db: Db): void {
     ]
   }, sales);
   invoice({
-    kind: 'sale', date: '2026-09-18', partyId: ali.id, payment: 'credit', currency: 'USD', rateX100: 142_000, discount: 0,
+    kind: 'sale', date: '2026-09-18', partyId: rapidnet.id, payment: 'credit', currency: 'USD', rateX100: 142_000, discount: 0,
     lines: [{ itemId: ac.id, qtyMilli: qty(5), unitPrice: 580_00 }]
   }, sales);
   invoice({
@@ -99,20 +99,20 @@ export function seedDemo(db: Db): void {
   }, sales);
   // a quotation-like draft, not posted yet
   invoice({
-    kind: 'sale', date: '2026-09-27', partyId: zagros.id, payment: 'credit', discount: 0, notes: 'المرحلة الثانية',
+    kind: 'sale', date: '2026-09-27', partyId: sanos.id, payment: 'credit', discount: 0, notes: 'المرحلة الثانية',
     lines: [{ itemId: inverter.id, qtyMilli: qty(2), unitPrice: 908_800 }, { itemId: install.id, qtyMilli: qty(2), unitPrice: 50_000 }]
   }, sales, false);
 
   // ——— customers paying ———
   post(createVoucher(db, {
-    kind: 'receipt', date: '2026-09-20', cashAccountCode: '1811', party: zagros.name,
+    kind: 'receipt', date: '2026-09-20', cashAccountCode: '1811', party: sanos.name,
     description: 'دفعة من حساب الفاتورة INV-2026-0002', currency: 'IQD', rateX100: 100,
-    items: [{ accountCode: '1611', amount: 2_000_000, partyId: zagros.id }]
+    items: [{ accountCode: '1611', amount: 2_000_000, partyId: sanos.id }]
   }, accountant).id);
   post(createVoucher(db, {
-    kind: 'receipt', date: '2026-09-22', cashAccountCode: '1832', party: ali.name,
+    kind: 'receipt', date: '2026-09-22', cashAccountCode: '1832', party: rapidnet.name,
     description: 'دفعة بالدولار — INV-2026-0003', currency: 'USD', rateX100: 142000,
-    items: [{ accountCode: '1611', amount: 1_500_00, partyId: ali.id }]
+    items: [{ accountCode: '1611', amount: 1_500_00, partyId: rapidnet.id }]
   }, accountant).id);
 
   // ——— expenses and installments ———

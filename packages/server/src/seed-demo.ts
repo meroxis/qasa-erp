@@ -20,4 +20,4 @@ if (count > 0) {
 
 seedDemo(db);
 db.close();
-console.log('Demo data added: Nahrain General Trading Co. — 3 customers, 2 suppliers, 5 items, 6 posted invoices + 1 draft, 8 vouchers.');
+console.log('Demo data added: Meroxis Company — 3 customers, 2 suppliers, 5 items, 6 posted invoices + 1 draft, 8 vouchers.');

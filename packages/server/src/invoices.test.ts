@@ -20,8 +20,8 @@ beforeEach(async () => {
   db = openDatabase(':memory:');
   app = buildApp(db);
   warehouseId = (await get('/api/warehouses')).json()[0].id;
-  customerId = (await post('/api/parties', { type: 'customer', name: 'شركة زاگرۆس للمقاولات', phone: '0750 123 4567' })).json().id;
-  supplierId = (await post('/api/parties', { type: 'supplier', name: 'Gree Iraq — Baghdad' })).json().id;
+  customerId = (await post('/api/parties', { type: 'customer', name: 'Sanos Company', phone: '0750 123 4567' })).json().id;
+  supplierId = (await post('/api/parties', { type: 'supplier', name: 'RapidNet Ltd' })).json().id;
   acId = (await post('/api/items', { code: 'AC-18', name: { ar: 'مكيف 18 ألف وحدة', en: 'AC 18,000 BTU', ku: 'سپلیتی ١٨ هەزار' }, unit: 'piece', salePrice: 823_600, saleCurrency: 'IQD' })).json().id;
   installId = (await post('/api/items', { name: { ar: 'نصب وتشغيل', en: 'Installation', ku: 'دامەزراندن' }, unit: 'service', salePrice: 50_000, saleCurrency: 'IQD' })).json().id;
 });
@@ -66,7 +66,9 @@ describe('customers, suppliers and items', () => {
     const wrongAccount = await post('/api/parties', { type: 'customer', name: 'x', accountCode: '2611' });
     expect(wrongAccount.json().details[0].code).toBe('account_invalid');
     // Kurdish/Arabic letter variants find the same customer
-    expect((await get(`/api/parties?q=${encodeURIComponent('زاگروس')}`)).json()).toHaveLength(1);
+    await post('/api/parties', { type: 'customer', name: 'کاروان عومەر' });
+    expect((await get(`/api/parties?q=${encodeURIComponent('كاروان')}`)).json()).toHaveLength(1);
+    expect((await get('/api/parties?q=sanos')).json()).toHaveLength(1);
 
     const install = (await get(`/api/items/${installId}`)).json();
     expect(install).toMatchObject({ code: 'I-0001', trackStock: false });
@@ -110,7 +112,7 @@ describe('purchase and sale invoices', () => {
     expect(entry.lines.map((l: { accountCode: string; debit: number; credit: number }) => [l.accountCode, l.debit, l.credit])).toEqual([
       ['1611', 2_520_800, 0], ['42', 0, 2_520_800], ['35', 1_860_000, 0], ['1371', 0, 1_860_000]
     ]);
-    expect(entry.lines[0].partyName).toBe('شركة زاگرۆس للمقاولات');
+    expect(entry.lines[0].partyName).toBe('Sanos Company');
 
     expect(await stock()).toEqual({ qty: 17, value: 10_540_000 });
     expect((await get(`/api/parties/${customerId}`)).json().balance).toBe(2_520_800);
@@ -133,7 +135,7 @@ describe('purchase and sale invoices', () => {
     expect(res.json().details[0]).toMatchObject({ code: 'stock_insufficient', line: 1, available: 2000 });
     expect(await stock()).toEqual({ qty: 2, value: 1_200_000 });
 
-    await app.inject({ method: 'PUT', url: `/api/parties/${customerId}`, payload: { name: 'شركة زاگرۆس للمقاولات', creditLimit: 1_000_000 }, headers });
+    await app.inject({ method: 'PUT', url: `/api/parties/${customerId}`, payload: { name: 'Sanos Company', creditLimit: 1_000_000 }, headers });
     const limited = await postNew(sale({ lines: [{ itemId: acId, qtyMilli: 2000, unitPrice: 823_600 }] }));
     expect(limited.statusCode).toBe(409);
     expect(limited.json().error).toBe('credit_limit_exceeded');
