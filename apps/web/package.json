@@ -7,20 +7,26 @@
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "build:demo": "vite build --mode demo"
   },
   "dependencies": {
     "@fontsource/ibm-plex-sans": "^5.3.0",
     "@fontsource/noto-kufi-arabic": "^5.3.0",
     "@fontsource/noto-sans-arabic": "^5.3.0",
     "@qasa/core": "0.1.0",
+    "@qasa/server": "0.1.0",
     "react": "^19.3.0",
-    "react-dom": "^19.3.0"
+    "react-dom": "^19.3.0",
+    "sql.js": "^1.14.2"
   },
   "devDependencies": {
     "@types/react": "^19.3.0",
     "@types/react-dom": "^19.3.0",
+    "@types/sql.js": "^1.4.11",
     "@vitejs/plugin-react": "^6.1.1",
     "vite": "^8.3.1"
-  }
+  },
+  "author": "Meroxis",
+  "license": "AGPL-3.0-or-later"
 }

@@ -27,6 +27,7 @@ const D = {
   language: ['اللغة', 'Language', 'زمان'],
   digits: ['شكل الأرقام', 'Digits', 'شێوەی ژمارە'],
   localMode: ['البيانات على هذا الحاسوب', 'Data is on this PC', 'داتا لەسەر ئەم کۆمپیوتەرەیە'],
+  demoMode: ['نسخة تجريبية — البيانات في متصفحك فقط وتعود كما كانت عند إعادة تحميل الصفحة', 'Demo — the data stays in your browser and resets when you reload', 'وەشانی تاقیکردنەوە — داتا تەنها لە وێبگەڕەکەتدایە و بە نوێکردنەوەی پەڕە دەگەڕێتەوە سەرەتا'],
   serverDown: ['الخادم لا يعمل', 'Server is not running', 'سێرڤەر کار ناکات'],
   noCompany: ['شركتك', 'Your company', 'کۆمپانیاکەت'],
 

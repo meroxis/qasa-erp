@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import { DatabaseSync } from 'node:sqlite';
 import { DEFAULT_POSTING_ACCOUNTS, IRAQI_UNIFIED_CHART, STARTER_SUB_ACCOUNTS } from '@qasa/core';
 
@@ -294,9 +295,14 @@ export function openDatabase(file: string): Db {
     db.exec('PRAGMA journal_mode = WAL');
     db.exec('PRAGMA synchronous = FULL');
   }
+  initDatabase(db);
+  return db;
+}
+
+/** Brings any database (a file, or the in-browser demo) to the current schema and fills in the defaults. */
+export function initDatabase(db: Db): void {
   migrate(db);
   ensureDefaults(db);
-  return db;
 }
 
 export function schemaVersion(db: Db): number {
@@ -382,7 +388,7 @@ function ensureDefaults(db: Db): void {
     if (warehouses === 0) {
       const account = accountExists(db, '1371') && !hasChildren(db, '1371') ? '1371' : '137';
       db.prepare('INSERT INTO warehouses (id, code, name_ar, name_en, name_ku, account_code, active, created_at) VALUES (?, ?, ?, ?, ?, ?, 1, ?)')
-        .run(crypto.randomUUID(), 'MAIN', 'المخزن الرئيسي', 'Main warehouse', 'کۆگای سەرەکی', account, now);
+        .run(randomUUID(), 'MAIN', 'المخزن الرئيسي', 'Main warehouse', 'کۆگای سەرەکی', account, now);
     }
   });
 }

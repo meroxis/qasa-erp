@@ -2,7 +2,7 @@
   "name": "qasa-erp",
   "version": "0.1.0",
   "private": true,
-  "description": "Qasa ERP — Iraqi company accounting, inventory, HR and sales in Arabic, English and Kurdish",
+  "description": "Accounting software for Iraqi companies, built on the Iraqi Unified Accounting System. Arabic, English and Kurdish.",
   "type": "module",
   "workspaces": [
     "packages/*",
@@ -22,5 +22,12 @@
     "tsx": "^4.23.15",
     "typescript": "^7.0.2",
     "vitest": "^5.0.2"
+  },
+  "author": "Meroxis",
+  "license": "AGPL-3.0-or-later",
+  "homepage": "https://qasaerp.com",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/meroxis/qasa-erp.git"
   }
 }

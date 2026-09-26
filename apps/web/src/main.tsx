@@ -13,8 +13,17 @@ import '@fontsource/noto-kufi-arabic/700.css';
 import './styles.css';
 import { App } from './App.tsx';
 
-createRoot(document.getElementById('root')!).render(
-  <StrictMode>
-    <App />
-  </StrictMode>
-);
+async function start() {
+  // The website demo runs the whole API inside the page (see src/demo); the real app talks to its server.
+  if (import.meta.env.MODE === 'demo') {
+    const { startDemoBackend } = await import('./demo/backend.ts');
+    await startDemoBackend();
+  }
+  createRoot(document.getElementById('root')!).render(
+    <StrictMode>
+      <App />
+    </StrictMode>
+  );
+}
+
+void start();

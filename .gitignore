@@ -1,5 +1,6 @@
 node_modules/
 dist/
+dist-demo/
 coverage/
 *.log
 .DS_Store
@@ -16,3 +17,6 @@ data/
 .vscode/*
 !.vscode/extensions.json
 .idea/
+
+# the website (qasaerp.com) lives in its own repository
+/website/

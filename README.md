@@ -1,9 +1,32 @@
-# Qasa ERP · قاصة ERP · قاسە ERP
+<h1 align="center">Qasa ERP · قاصة ERP · قاسە ERP</h1>
 
-Accounting software for Iraqi companies — built on the Iraqi Unified Accounting System
-(النظام المحاسبي الموحد), in Arabic, English and Kurdish (Sorani).
-PC, office network and online editions share one codebase.
+<p align="center">
+  <strong>Accounting software for Iraqi companies, built on the Iraqi Unified Accounting System.<br>Arabic, English and Kurdish. Dinars and dollars. Open source.</strong>
+</p>
 
+<p align="center">
+  <a href="https://github.com/meroxis/qasa-erp/actions/workflows/tests.yml"><img src="https://github.com/meroxis/qasa-erp/actions/workflows/tests.yml/badge.svg" alt="Tests"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-AGPL--3.0-1D5FD1" alt="License: AGPL-3.0"></a>
+  <img src="https://img.shields.io/badge/Node.js-24-1D5FD1" alt="Node.js 24">
+  <a href="https://github.com/sponsors/meroxis"><img src="https://img.shields.io/badge/sponsor-meroxis-1D5FD1" alt="Sponsor"></a>
+</p>
+
+<p align="center">
+  <a href="https://qasaerp.com">Website</a> ·
+  <a href="https://qasaerp.com/demo/">Live demo</a> ·
+  <a href="#run-it">Run it</a> ·
+  <a href="#accounting-rules-the-code-enforces">Accounting rules</a> ·
+  <a href="#license">License</a>
+</p>
+
+Qasa ERP keeps the books of an Iraqi company the way its finance department already works: the unified chart of accounts
+(النظام المحاسبي الموحد), receipt and payment vouchers that go from preparer to checker to approver, sales and purchase
+invoices, stock at average cost, customers and suppliers with statements, and reports — in Arabic, English and
+Kurdish (Sorani), in dinars and dollars. PC, office network and online editions share one codebase.
+
+> **Status: Release 1 in progress.** Accounting, vouchers, reports, invoices and stock work today. See the [progress list](#release-1-progress).
+>
+> **Try it:** the [live demo](https://qasaerp.com/demo/) runs entirely in your browser with a sample company. Nothing is sent to a server, and a reload starts it afresh.
 
 ## Run it
 
@@ -24,8 +47,8 @@ The database is `data/qasa.sqlite` (set `QASA_DATA_DIR` to move it). Delete the 
 | Folder | What it is |
 |---|---|
 | `packages/core` | Accounting rules with no UI or database: money in minor units, IQD/USD, amount in words (ar/en/ku), the unified chart of accounts, journal validation, vouchers, trial balance, account statement |
-| `packages/server` | Node.js API (Fastify) + SQLite (`node:sqlite`). Posted entries are protected by database triggers; the audit log is append-only |
-| `apps/web` | React screens, right-to-left and left-to-right, fonts bundled for offline use |
+| `packages/server` | Node.js API (Fastify) + SQLite (`node:sqlite`). Posted entries are protected by database triggers; the audit log is append-only. The routes (`routes.ts`) don't depend on Fastify, so the website demo runs them in the browser |
+| `apps/web` | React screens, right-to-left and left-to-right, fonts bundled for offline use. `npm run build:demo -w @qasa/web` builds the browser-only demo (SQLite in WebAssembly) into `apps/web/dist-demo` |
 | `scripts/dev.mjs` | Starts server and app together |
 
 ## Accounting rules the code enforces
@@ -56,3 +79,11 @@ The database is `data/qasa.sqlite` (set `QASA_DATA_DIR` to move it). Delete the 
 - [ ] More reports (balance sheet, profit and loss, final accounts)
 - [ ] Users, roles and sign-in; office-network (server) mode
 - [ ] Windows app (Tauri) and installer, licensing, backups
+
+## License
+
+Qasa ERP is a product of Meroxis. It is free software under the [GNU Affero General Public License v3.0 or later](LICENSE),
+with the additional terms in [NOTICE](NOTICE): copies must keep the "Made with Qasa ERP" credit printed on invoices,
+unless you have a Pro or Business license from [qasaerp.com](https://qasaerp.com). The name and logo belong to Meroxis.
+
+© 2026 Meroxis

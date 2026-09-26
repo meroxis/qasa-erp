@@ -249,8 +249,9 @@ export function App() {
               <main className="content">{content}</main>
               <footer className="statusbar">
                 <span className={'dot' + (online ? '' : ' off')} />
-                <span>{online ? t('localMode') : t('serverDown')}</span>
+                <span>{import.meta.env.MODE === 'demo' ? t('demoMode') : online ? t('localMode') : t('serverDown')}</span>
                 <span className="spacer" />
+                {import.meta.env.MODE === 'demo' && <a href="../" className="ltr">qasaerp.com</a>}
                 <span className="ltr">Qasa ERP 0.1.0</span>
               </footer>
             </div>

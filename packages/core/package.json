@@ -8,5 +8,7 @@
   },
   "scripts": {
     "typecheck": "tsc --noEmit"
-  }
+  },
+  "author": "Meroxis",
+  "license": "AGPL-3.0-or-later"
 }
