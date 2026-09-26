@@ -1,0 +1,26 @@
+{
+  "name": "qasa-erp",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Qasa ERP — Iraqi company accounting, inventory, HR and sales in Arabic, English and Kurdish",
+  "type": "module",
+  "workspaces": [
+    "packages/*",
+    "apps/*"
+  ],
+  "scripts": {
+    "dev": "node scripts/dev.mjs",
+    "test": "vitest run",
+    "typecheck": "tsc -p packages/core --noEmit && tsc -p packages/server --noEmit && tsc -p apps/web --noEmit",
+    "seed:demo": "npm run seed:demo -w @qasa/server"
+  },
+  "engines": {
+    "node": ">=24"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.3",
+    "tsx": "^4.23.15",
+    "typescript": "^7.0.2",
+    "vitest": "^5.0.2"
+  }
+}

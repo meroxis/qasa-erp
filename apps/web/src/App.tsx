@@ -1,0 +1,202 @@
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
+import { htmlLang, isLang, type DigitStyle, type Lang } from '@qasa/core';
+import { api, currentUser, type AccountView, type Settings as SettingsData } from './api.ts';
+import { DataContext, Icon, Logo, ToastProvider } from './components.tsx';
+import { I18nContext, makeI18n, type Key } from './i18n.ts';
+import { href, useRoute } from './router.ts';
+import { Home } from './pages/Home.tsx';
+import { Entries } from './pages/Entries.tsx';
+import { EntryEditor } from './pages/EntryEditor.tsx';
+import { EntryDetail } from './pages/EntryDetail.tsx';
+import { Accounts } from './pages/Accounts.tsx';
+import { Statement, TrialBalance } from './pages/Reports.tsx';
+import { Settings } from './pages/Settings.tsx';
+
+function stored<T extends string>(key: string, fallback: T, valid: (v: string) => boolean): T {
+  try {
+    const v = localStorage.getItem(key);
+    return v && valid(v) ? (v as T) : fallback;
+  } catch {
+    return fallback;
+  }
+}
+
+function remember(key: string, value: string): void {
+  try { localStorage.setItem(key, value); } catch { /* not available */ }
+}
+
+interface NavItem { key: Key; icon: string; path?: string; match?: string[] }
+const NAV: { group: Key; items: NavItem[] }[] = [
+  { group: 'gOverview', items: [{ key: 'home', icon: 'home', path: '', match: ['', 'home'] }] },
+  { group: 'gSales', items: [{ key: 'invoices', icon: 'invoice' }, { key: 'installments', icon: 'cal' }, { key: 'pipeline', icon: 'trend' }] },
+  {
+    group: 'gAccounting',
+    items: [
+      { key: 'vouchers', icon: 'receipt', path: 'entries', match: ['entries', 'entry', 'new', 'edit'] },
+      { key: 'accounts', icon: 'tree', path: 'accounts', match: ['accounts'] },
+      { key: 'trialBalance', icon: 'chart', path: 'trial-balance', match: ['trial-balance'] },
+      { key: 'statement', icon: 'doc', path: 'statement', match: ['statement'] }
+    ]
+  },
+  { group: 'gStock', items: [{ key: 'items', icon: 'box' }] },
+  { group: 'gPeople', items: [{ key: 'hr', icon: 'idcard' }, { key: 'salaries', icon: 'users' }] },
+  { group: 'gSystem', items: [{ key: 'settings', icon: 'sliders', path: 'settings', match: ['settings'] }] }
+];
+
+export function App() {
+  const [lang, setLangState] = useState<Lang>(() => stored<Lang>('qasa.lang', 'ar', isLang));
+  const [digits, setDigitsState] = useState<DigitStyle>(() => stored<DigitStyle>('qasa.digits', 'western', (v) => v === 'western' || v === 'eastern'));
+  const [accounts, setAccounts] = useState<AccountView[]>([]);
+  const [settings, setSettings] = useState<SettingsData | null>(null);
+  const [online, setOnline] = useState(true);
+  const route = useRoute();
+
+  const setLang = useCallback((l: Lang) => { setLangState(l); remember('qasa.lang', l); }, []);
+  const setDigits = useCallback((d: DigitStyle) => { setDigitsState(d); remember('qasa.digits', d); }, []);
+  const i18n = useMemo(() => makeI18n(lang, digits, setLang, setDigits), [lang, digits, setLang, setDigits]);
+
+  useEffect(() => {
+    document.documentElement.lang = htmlLang(lang);
+    document.documentElement.dir = i18n.dir;
+    document.title = i18n.t('appName');
+  }, [lang, i18n]);
+
+  const reloadAccounts = useCallback(async () => {
+    try {
+      setAccounts(await api.accounts());
+      setOnline(true);
+    } catch {
+      setOnline(false);
+    }
+  }, []);
+  const reloadSettings = useCallback(async () => {
+    try {
+      setSettings(await api.settings());
+      setOnline(true);
+    } catch {
+      setOnline(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    void reloadAccounts();
+    void reloadSettings();
+  }, [reloadAccounts, reloadSettings]);
+
+  const data = useMemo(() => ({ accounts, settings, online, reloadAccounts, reloadSettings }), [accounts, settings, online, reloadAccounts, reloadSettings]);
+  const { t } = i18n;
+  const [page, arg] = route;
+
+  let title: string = t('home');
+  let content: ReactNode;
+  switch (page ?? '') {
+    case '':
+    case 'home':
+      content = <Home />;
+      break;
+    case 'entries':
+      title = t('vouchers');
+      content = <Entries />;
+      break;
+    case 'new':
+      title = arg === 'payment' ? t('newPayment') : arg === 'journal' ? t('newJournal') : t('newReceipt');
+      content = <EntryEditor key={'new-' + arg} kind={arg === 'payment' || arg === 'journal' ? arg : 'receipt'} />;
+      break;
+    case 'edit':
+      title = t('editTitle');
+      content = arg ? <EntryEditor key={'edit-' + arg} id={arg} /> : null;
+      break;
+    case 'entry':
+      title = t('vouchers');
+      content = arg ? <EntryDetail key={arg} id={arg} /> : null;
+      break;
+    case 'accounts':
+      title = t('accounts');
+      content = <Accounts />;
+      break;
+    case 'trial-balance':
+      title = t('trialBalance');
+      content = <TrialBalance />;
+      break;
+    case 'statement':
+      title = t('statement');
+      content = <Statement key={arg ?? ''} {...(arg ? { code: arg } : {})} />;
+      break;
+    case 'settings':
+      title = t('settings');
+      content = <Settings />;
+      break;
+    default:
+      content = <Home />;
+  }
+
+  const company = settings ? i18n.name(settings.companyName) : '';
+  const user = currentUser();
+
+  return (
+    <I18nContext.Provider value={i18n}>
+      <DataContext.Provider value={data}>
+        <ToastProvider>
+          <div className="app">
+            <nav className="sidebar" aria-label={t('appName')}>
+              <div className="brand">
+                <Logo />
+                <div>
+                  <div className="brand-name">{t('appName')}</div>
+                  <div className="brand-tag">{t('tagline')}</div>
+                </div>
+              </div>
+              <div className="company-card">
+                <strong>{company || t('noCompany')}</strong>
+                {user && <span className="small" style={{ color: 'var(--navy-muted)' }}>{user}</span>}
+              </div>
+              {NAV.map((g) => (
+                <div key={g.group} style={{ display: 'contents' }}>
+                  <div className="nav-group">{t(g.group)}</div>
+                  {g.items.map((item) => {
+                    if (item.path === undefined) {
+                      return (
+                        <button key={item.key} type="button" className="nav-item" disabled>
+                          <Icon name={item.icon} /><span>{t(item.key)}</span><span className="soon">{t('soon')}</span>
+                        </button>
+                      );
+                    }
+                    const active = (item.match ?? []).includes(page ?? '');
+                    return (
+                      <a key={item.key} className={'nav-item' + (active ? ' active' : '')} href={href(item.path)} aria-current={active ? 'page' : undefined}>
+                        <Icon name={item.icon} /><span>{t(item.key)}</span>
+                      </a>
+                    );
+                  })}
+                </div>
+              ))}
+            </nav>
+            <div className="main">
+              <header className="topbar">
+                <h1>{title}</h1>
+                <span className="spacer" />
+                <div className="track" role="group" aria-label={t('language')}>
+                  {([['ar', 'عربي'], ['en', 'EN'], ['ku', 'کوردی']] as const).map(([l, label]) => (
+                    <button key={l} type="button" lang={htmlLang(l)} aria-pressed={lang === l} onClick={() => setLang(l)}>{label}</button>
+                  ))}
+                </div>
+                {lang !== 'en' && (
+                  <button type="button" className="btn small" title={t('digits')} aria-label={t('digits')} onClick={() => setDigits(digits === 'eastern' ? 'western' : 'eastern')}>
+                    {digits === 'eastern' ? '١٢٣' : '123'}
+                  </button>
+                )}
+              </header>
+              <main className="content">{content}</main>
+              <footer className="statusbar">
+                <span className={'dot' + (online ? '' : ' off')} />
+                <span>{online ? t('localMode') : t('serverDown')}</span>
+                <span className="spacer" />
+                <span className="ltr">Qasa ERP 0.1.0</span>
+              </footer>
+            </div>
+          </div>
+        </ToastProvider>
+      </DataContext.Provider>
+    </I18nContext.Provider>
+  );
+}
