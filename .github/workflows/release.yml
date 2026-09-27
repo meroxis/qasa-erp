@@ -1,0 +1,54 @@
+name: Release
+
+# Push a tag like v0.1.1 (matching apps/desktop/package.json "version") to build the Windows installer on a clean
+# machine and publish it as a GitHub release. Installed copies of Qasa ERP find it and update themselves.
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    name: Windows installer
+
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: npm
+
+      - run: npm ci
+
+      - name: Electron binary
+        run: node node_modules/electron/install.js
+
+      - name: Tag matches the app version
+        shell: bash
+        run: |
+          version=$(node -p "require('./apps/desktop/package.json').version")
+          if [ "v$version" != "$GITHUB_REF_NAME" ]; then
+            echo "Tag $GITHUB_REF_NAME does not match apps/desktop/package.json version $version"; exit 1
+          fi
+
+      - run: npm run typecheck
+      - run: npm test
+
+      - name: Build and publish the installer
+        run: npm run release -w @qasa/desktop
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Stable download link (releases/latest/download/Qasa-ERP-Setup.exe)
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          version=$(node -p "require('./apps/desktop/package.json').version")
+          cp "apps/desktop/release/Qasa-ERP-Setup-$version.exe" Qasa-ERP-Setup.exe
+          gh release upload "$GITHUB_REF_NAME" Qasa-ERP-Setup.exe --clobber
+          gh release edit "$GITHUB_REF_NAME" --latest
