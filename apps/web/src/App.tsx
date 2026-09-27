@@ -15,6 +15,7 @@ import { Parties, PartyDetail } from './pages/Parties.tsx';
 import { ItemDetail, Items } from './pages/Items.tsx';
 import { InvoiceDetail, InvoiceEditor, Invoices } from './pages/Invoices.tsx';
 import { Plans } from './pages/Plans.tsx';
+import { FinalAccounts } from './pages/FinalAccounts.tsx';
 
 function stored<T extends string>(key: string, fallback: T, valid: (v: string) => boolean): T {
   try {
@@ -54,6 +55,7 @@ const NAV: { group: Key; items: NavItem[] }[] = [
       { key: 'vouchers', icon: 'receipt', path: 'entries', match: ['entries', 'entry', 'new', 'edit'] },
       { key: 'accounts', icon: 'tree', path: 'accounts', match: ['accounts'] },
       { key: 'trialBalance', icon: 'chart', path: 'trial-balance', match: ['trial-balance'] },
+      { key: 'finalAccounts', icon: 'book', path: 'final-accounts', match: ['final-accounts'] },
       { key: 'statement', icon: 'doc', path: 'statement', match: ['statement'] }
     ]
   },
@@ -205,6 +207,10 @@ export function App() {
     case 'settings':
       title = t('settings');
       content = <Settings />;
+      break;
+    case 'final-accounts':
+      title = t('finalAccounts');
+      content = <FinalAccounts />;
       break;
     case 'plans':
       title = t('planLicense');

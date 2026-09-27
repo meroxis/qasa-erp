@@ -33,9 +33,11 @@ export function seedDemo(db: Db): void {
   }
 
   post(createJournalEntry(db, {
-    date: '2026-01-01', description: 'القيد الافتتاحي — رأس المال', currency: 'IQD', rateX100: 100,
+    date: '2026-01-01', description: 'القيد الافتتاحي — رأس المال وأرصدة التقسيط', currency: 'IQD', rateX100: 100,
     lines: [
-      { accountCode: '1811', debit: 50_000_000, credit: 0 },
+      { accountCode: '1811', debit: 46_500_000, credit: 0 },
+      // installments still owed from contracts made before the company started using Qasa ERP
+      { accountCode: '1612', debit: 3_500_000, credit: 0 },
       { accountCode: '1831', debit: 150_000_000, credit: 0 },
       { accountCode: '21', debit: 0, credit: 200_000_000 }
     ]

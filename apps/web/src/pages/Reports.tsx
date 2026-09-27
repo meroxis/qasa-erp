@@ -5,14 +5,14 @@ import { AccountCombo, ErrorBox, Icon, downloadCsv, useData, useLoad } from '../
 import { useI18n } from '../i18n.ts';
 import { go, href } from '../router.ts';
 
-function yearStart(fiscalYearStart: string | undefined): string {
+export function yearStart(fiscalYearStart: string | undefined): string {
   const today = todayIso();
   const mmdd = fiscalYearStart ?? '01-01';
   const thisYear = `${today.slice(0, 4)}-${mmdd}`;
   return thisYear <= today ? thisYear : `${Number(today.slice(0, 4)) - 1}-${mmdd}`;
 }
 
-function PeriodPicker({ from, to, onFrom, onTo }: { from: string; to: string; onFrom(v: string): void; onTo(v: string): void }) {
+export function PeriodPicker({ from, to, onFrom, onTo }: { from: string; to: string; onFrom(v: string): void; onTo(v: string): void }) {
   const { t } = useI18n();
   return (
     <>

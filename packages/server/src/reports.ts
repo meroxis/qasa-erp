@@ -1,4 +1,4 @@
-import { accountStatement, trialBalance, type Names } from '@qasa/core';
+import { accountStatement, finalAccounts, trialBalance, type Names } from '@qasa/core';
 import type { Db } from './db.ts';
 import { loadAccounts } from './accounts.ts';
 import { postedLines } from './journal.ts';
@@ -26,4 +26,18 @@ export function statementReport(db: Db, code: string, opts: { from?: string | un
   if (opts.to) range.to = opts.to;
   const st = accountStatement(code, postedLines(db), range);
   return { ...st, name, rows: st.rows.map((r) => ({ ...r, accountName: byCode.get(r.accountCode) ?? name })) };
+}
+
+/** Final accounts for a period, with the account names the app shows. */
+export function finalAccountsReport(db: Db, opts: { from: string; to: string }) {
+  const byCode = names(db);
+  const name = (code: string) => byCode.get(code) ?? { ar: code, en: code, ku: code };
+  const withNames = (details: { code: string; amount: number }[]) => details.map((d) => ({ ...d, name: name(d.code) }));
+  const fa = finalAccounts(postedLines(db, { to: opts.to }), opts);
+  const group = (g: { code: string; amount: number; details: { code: string; amount: number }[] }) => ({ ...g, name: name(g.code), details: withNames(g.details) });
+  return {
+    ...fa,
+    sections: fa.sections.map((s) => ({ ...s, rows: s.rows.map((r) => ({ ...r, details: withNames(r.details) })) })),
+    balanceSheet: { ...fa.balanceSheet, assets: fa.balanceSheet.assets.map(group), liabilities: fa.balanceSheet.liabilities.map(group) }
+  };
 }

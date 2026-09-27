@@ -93,7 +93,8 @@ npm run dist:win    # build apps/desktop/release/Qasa-ERP-Setup-<version>.exe
 - [ ] Opening stock, purchase/sales returns, stock transfers between warehouses
 - [ ] Installment sales and sales pipeline
 - [ ] HR, salaries and employee advances
-- [ ] More reports (balance sheet, profit and loss, final accounts)
+- [x] Final accounts: trading, current operations and profit and loss accounts, and the balance sheet (unified-system layout, to be reviewed by a licensed accountant)
+- [ ] Year-end closing
 - [ ] Users, roles and sign-in; office-network (server) mode
 - [x] Windows app and installer with automatic updates
 - [x] Plans (Free, Pro, Business) with offline license keys and a 30-day Pro trial

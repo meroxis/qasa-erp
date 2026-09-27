@@ -72,6 +72,23 @@ export interface PlanStatus extends PlanResolution {
   nudge: boolean;
 }
 
+export interface NamedAmount { code: string; name: Names; amount: number }
+
+export interface FinalAccountsReport {
+  from: string;
+  to: string;
+  sections: { id: 'trading' | 'operations' | 'profitLoss'; rows: { id: string; kind: 'line' | 'subtotal'; sign: 1 | -1; groups: string[]; amount: number; details: NamedAmount[] }[] }[];
+  netResult: number;
+  balanceSheet: {
+    assets: (NamedAmount & { details: NamedAmount[] })[];
+    liabilities: (NamedAmount & { details: NamedAmount[] })[];
+    priorResult: number;
+    currentResult: number;
+    totalAssets: number;
+    totalLiabilities: number;
+  };
+}
+
 export interface TrialBalanceReport {
   rows: { code: string; name: Names; debit: number; credit: number; balance: number }[];
   totalDebit: number;
@@ -317,6 +334,7 @@ export const api = {
   entryAction: (id: string, action: 'check' | 'return' | 'approve') => request<EntryView>('POST', `/api/entries/${id}/${action}`, {}),
   reverse: (id: string, date: string) => request<EntryView>('POST', `/api/entries/${id}/reverse`, { date }),
   trialBalance: (from?: string, to?: string) => request<TrialBalanceReport>('GET', '/api/reports/trial-balance' + qs({ from, to })),
+  finalAccounts: (from: string, to: string) => request<FinalAccountsReport>('GET', '/api/reports/final-accounts' + qs({ from, to })),
   statement: (account: string, from?: string, to?: string) => request<StatementReport>('GET', '/api/reports/statement' + qs({ account, from, to })),
   periods: () => request<{ period: string; lockedBy: string; lockedAt: string }[]>('GET', '/api/periods'),
   lockPeriod: (period: string) => request<unknown>('POST', `/api/periods/${period}/lock`, {}),

@@ -7,7 +7,7 @@ import {
   approveEntry, checkEntry, createJournalEntry, createVoucher, deleteEntry, getEntry, listEntries,
   returnEntry, reverseEntry, updateJournalEntry, updateVoucher
 } from './journal.ts';
-import { statementReport, trialBalanceReport } from './reports.ts';
+import { finalAccountsReport, statementReport, trialBalanceReport } from './reports.ts';
 import { getSettings, lockPeriod, lockedPeriods, unlockPeriod, updateSettings } from './settings.ts';
 import { listAudit } from './audit.ts';
 import { createParty, deleteParty, getParty, listParties, partyStatement, updateParty } from './parties.ts';
@@ -253,6 +253,11 @@ export function apiRoutes(db: Db): Route[] {
   app.get('/api/reports/trial-balance', async (req) => {
     const q = parse(z.object({ from: isoDate.optional(), to: isoDate.optional() }), req.query);
     return trialBalanceReport(db, q);
+  });
+  app.get('/api/reports/final-accounts', async (req) => {
+    const q = parse(z.object({ from: isoDate, to: isoDate }), req.query);
+    if (q.from > q.to) throw invalid([{ code: 'date_invalid' }]);
+    return finalAccountsReport(db, q);
   });
   app.get('/api/reports/statement', async (req) => {
     const q = parse(z.object({ account: z.string().min(1).max(12), from: isoDate.optional(), to: isoDate.optional() }), req.query);
