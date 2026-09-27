@@ -235,7 +235,10 @@ export function InvoicesTable({ invoices, showParty = true }: { invoices: Invoic
       <tbody>
         {invoices.map((v) => (
           <tr key={v.id} className="click" onClick={() => go(`invoice/${v.id}`)}>
-            <td>{v.number ? <a href={href(`invoice/${v.id}`)} className="ltr num" onClick={(e) => e.stopPropagation()}>{v.number}</a> : <span className="muted">{t('draft')}</span>}</td>
+            <td>
+              {v.number ? <a href={href(`invoice/${v.id}`)} className="ltr num" onClick={(e) => e.stopPropagation()}>{v.number}</a> : <span className="muted">{t('draft')}</span>}
+              {v.returnOf && <> <span className="chip warn">{t(v.kind)}</span></>}
+            </td>
             <td className="num">{i18n.date(v.date)}</td>
             {showParty && <td>{v.partyName ?? <span className="muted">{t('walkIn')}</span>}</td>}
             <td>{v.payment === 'cash' ? t('payCash') : t('payCredit')}</td>

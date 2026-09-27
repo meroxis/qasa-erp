@@ -1,6 +1,6 @@
 import type {
   LicenseInfo, LicenseState, PlanResolution,
-  CurrencyCode, EntryAction, EntryStatus, EntryType, InvoiceInput, InvoiceKind, InvoiceStatus, Names, Nature, PaymentMode, PostingAccounts, UnitCode
+  CurrencyCode, EntryAction, EntryStatus, EntryType, InvoiceDocKind, InvoiceInput, InvoiceKind, InvoiceStatus, Names, Nature, PaymentMode, PostingAccounts, UnitCode
 } from '@qasa/core';
 
 export interface AccountView {
@@ -54,6 +54,7 @@ export interface EntryView extends EntrySummary {
   lines: EntryLineView[];
   actions: EntryAction[];
   invoiceId: string | null;
+  stockDocId: string | null;
 }
 
 export interface Settings {
@@ -216,7 +217,7 @@ export interface ItemDetail extends ItemView {
 
 export interface InvoiceSummary {
   id: string;
-  kind: InvoiceKind;
+  kind: InvoiceDocKind;
   status: InvoiceStatus;
   number: string | null;
   date: string;
@@ -233,11 +234,12 @@ export interface InvoiceSummary {
   total: number;
   baseTotal: number;
   notes: string;
+  returnOf: string | null;
   createdBy: string;
   createdAt: string;
 }
 
-export type InvoiceAction = 'edit' | 'delete' | 'post' | 'cancel';
+export type InvoiceAction = 'edit' | 'delete' | 'post' | 'cancel' | 'return';
 
 export interface InvoiceView extends InvoiceSummary {
   partyPhone: string | null;
@@ -256,8 +258,62 @@ export interface InvoiceView extends InvoiceSummary {
   lines: {
     lineNo: number; itemId: string; itemCode: string; itemName: Names; unit: UnitCode; trackStock: boolean;
     description: string; qtyMilli: number; unitPrice: number; amount: number; cost: number | null;
+    sourceLine: number | null; returnedQtyMilli: number;
   }[];
   actions: InvoiceAction[];
+  returnOfNumber: string | null;
+  returns: { id: string; kind: InvoiceDocKind; number: string | null; date: string; status: InvoiceStatus; total: number }[];
+}
+
+export interface ReturnInput {
+  date: string;
+  payment: PaymentMode;
+  cashAccountCode?: string;
+  notes?: string;
+  lines: { lineNo: number; qtyMilli: number }[];
+}
+
+export type StockDocKind = 'opening' | 'transfer';
+export type StockDocAction = 'edit' | 'delete' | 'post' | 'cancel';
+
+export interface StockDocSummary {
+  id: string;
+  kind: StockDocKind;
+  status: InvoiceStatus;
+  number: string | null;
+  date: string;
+  warehouseId: string;
+  warehouseName: Names;
+  toWarehouseId: string | null;
+  toWarehouseName: Names | null;
+  totalValue: number;
+  notes: string;
+  createdBy: string;
+}
+
+export interface StockDocView extends StockDocSummary {
+  counterAccountCode: string | null;
+  counterAccountName: Names | null;
+  entryId: string | null;
+  entryNumber: string | null;
+  cancelEntryId: string | null;
+  cancelEntryNumber: string | null;
+  postedBy: string | null;
+  postedAt: string | null;
+  cancelledBy: string | null;
+  cancelledAt: string | null;
+  lines: { lineNo: number; itemId: string; itemCode: string; itemName: Names; unit: UnitCode; qtyMilli: number; unitCost: number | null; value: number | null }[];
+  actions: StockDocAction[];
+}
+
+export interface StockDocInput {
+  kind: StockDocKind;
+  date: string;
+  warehouseId: string;
+  toWarehouseId?: string;
+  counterAccountCode?: string;
+  notes?: string;
+  lines: { itemId: string; qtyMilli: number; unitCost?: number }[];
 }
 
 export type { InvoiceInput };
@@ -362,11 +418,20 @@ export const api = {
   updateItem: (id: string, input: ItemInput) => request<ItemView>('PUT', `/api/items/${id}`, input),
   deleteItem: (id: string) => request<void>('DELETE', `/api/items/${id}`),
 
-  invoices: (f: { kind?: InvoiceKind; status?: string; partyId?: string; q?: string; from?: string; to?: string } = {}) => request<InvoiceSummary[]>('GET', '/api/invoices' + qs(f)),
+  invoices: (f: { kind?: InvoiceDocKind; status?: string; partyId?: string; q?: string; from?: string; to?: string } = {}) => request<InvoiceSummary[]>('GET', '/api/invoices' + qs(f)),
   invoice: (id: string) => request<InvoiceView>('GET', `/api/invoices/${id}`),
   createInvoice: (input: InvoiceInput) => request<InvoiceView>('POST', '/api/invoices', input),
   updateInvoice: (id: string, input: InvoiceInput) => request<InvoiceView>('PUT', `/api/invoices/${id}`, input),
   deleteInvoice: (id: string) => request<void>('DELETE', `/api/invoices/${id}`),
   postInvoice: (id: string) => request<InvoiceView>('POST', `/api/invoices/${id}/post`, {}),
-  cancelInvoice: (id: string, date: string) => request<InvoiceView>('POST', `/api/invoices/${id}/cancel`, { date })
+  cancelInvoice: (id: string, date: string) => request<InvoiceView>('POST', `/api/invoices/${id}/cancel`, { date }),
+  createReturn: (id: string, input: ReturnInput) => request<InvoiceView>('POST', `/api/invoices/${id}/returns`, input),
+
+  stockDocs: (f: { kind?: StockDocKind; status?: string } = {}) => request<StockDocSummary[]>('GET', '/api/stock-docs' + qs(f)),
+  stockDoc: (id: string) => request<StockDocView>('GET', `/api/stock-docs/${id}`),
+  createStockDoc: (input: StockDocInput) => request<StockDocView>('POST', '/api/stock-docs', input),
+  updateStockDoc: (id: string, input: StockDocInput) => request<StockDocView>('PUT', `/api/stock-docs/${id}`, input),
+  deleteStockDoc: (id: string) => request<void>('DELETE', `/api/stock-docs/${id}`),
+  postStockDoc: (id: string) => request<StockDocView>('POST', `/api/stock-docs/${id}/post`, {}),
+  cancelStockDoc: (id: string, date: string) => request<StockDocView>('POST', `/api/stock-docs/${id}/cancel`, { date })
 };

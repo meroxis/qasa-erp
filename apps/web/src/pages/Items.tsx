@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { formatQty, roundHalfUp, UNITS, type CurrencyCode, type Names, type UnitCode } from '@qasa/core';
 import { api, type ItemInput, type ItemView, type WarehouseView } from '../api.ts';
 import { AmountInput, ErrorBox, Icon, Modal, downloadCsv, useData, useLoad, useToast } from '../components.tsx';
-import { useI18n, type I18n } from '../i18n.ts';
+import { useI18n, type I18n, isKey, type Key } from '../i18n.ts';
 import { go, href } from '../router.ts';
 
 export function qtyText(i18n: I18n, milli: number): string {
@@ -259,7 +259,9 @@ export function ItemDetail({ id }: { id: string }) {
   if (error) return <ErrorBox error={error} />;
   if (!data) return null;
   const it = data;
-  const sourceKey = (s: string) => (s === 'sale' || s === 'purchase' || s === 'sale_cancel' || s === 'purchase_cancel' ? (`src_${s}` as const) : null);
+  const sourceKey = (s: string) => (isKey(`src_${s}`) ? (`src_${s}` as Key) : null);
+  // opening stock and transfers open their stock document; everything else came from an invoice or a return
+  const sourcePath = (s: string, id: string) => (s.startsWith('opening') || s.startsWith('transfer') ? `stock-doc/${id}` : `invoice/${id}`);
 
   return (
     <div className="stack" style={{ maxWidth: 1100 }}>
@@ -316,7 +318,7 @@ export function ItemDetail({ id }: { id: string }) {
               {it.moves.map((m) => {
                 const key = sourceKey(m.sourceType);
                 return (
-                  <tr key={m.id} className={m.sourceId ? 'click' : ''} onClick={() => m.sourceId && go(`invoice/${m.sourceId}`)}>
+                  <tr key={m.id} className={m.sourceId ? 'click' : ''} onClick={() => m.sourceId && go(sourcePath(m.sourceType, m.sourceId))}>
                     <td className="num">{i18n.date(m.date)}</td>
                     <td>{key ? t(key) : m.sourceType}</td>
                     <td><span className="ltr num">{m.sourceNumber ?? ''}</span></td>

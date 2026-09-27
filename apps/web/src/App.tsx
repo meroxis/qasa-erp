@@ -16,6 +16,7 @@ import { ItemDetail, Items } from './pages/Items.tsx';
 import { InvoiceDetail, InvoiceEditor, Invoices } from './pages/Invoices.tsx';
 import { Plans } from './pages/Plans.tsx';
 import { FinalAccounts } from './pages/FinalAccounts.tsx';
+import { StockDocDetail, StockDocEditor, StockDocs } from './pages/StockDocs.tsx';
 
 function stored<T extends string>(key: string, fallback: T, valid: (v: string) => boolean): T {
   try {
@@ -38,6 +39,7 @@ const NAV: { group: Key; items: NavItem[] }[] = [
     items: [
       { key: 'invoices', icon: 'invoice', path: 'sales', match: ['sales', 'new-invoice:sale'] },
       { key: 'customers', icon: 'contact', path: 'customers', match: ['customers'] },
+      { key: 'salesReturns', icon: 'undo', path: 'sales-returns', match: ['sales-returns'] },
       { key: 'installments', icon: 'cal' },
       { key: 'pipeline', icon: 'trend' }
     ]
@@ -46,7 +48,8 @@ const NAV: { group: Key; items: NavItem[] }[] = [
     group: 'gPurchases',
     items: [
       { key: 'purchaseInvoices', icon: 'cart', path: 'purchases', match: ['purchases', 'new-invoice:purchase'] },
-      { key: 'suppliers', icon: 'truck', path: 'suppliers', match: ['suppliers'] }
+      { key: 'suppliers', icon: 'truck', path: 'suppliers', match: ['suppliers'] },
+      { key: 'purchaseReturns', icon: 'undo', path: 'purchase-returns', match: ['purchase-returns'] }
     ]
   },
   {
@@ -59,7 +62,13 @@ const NAV: { group: Key; items: NavItem[] }[] = [
       { key: 'statement', icon: 'doc', path: 'statement', match: ['statement'] }
     ]
   },
-  { group: 'gStock', items: [{ key: 'items', icon: 'box', path: 'items', match: ['items', 'item'] }] },
+  {
+    group: 'gStock',
+    items: [
+      { key: 'items', icon: 'box', path: 'items', match: ['items', 'item'] },
+      { key: 'stockDocs', icon: 'swap', path: 'stock-docs', match: ['stock-docs', 'stock-doc', 'new-stock-doc', 'edit-stock-doc'] }
+    ]
+  },
   { group: 'gPeople', items: [{ key: 'hr', icon: 'idcard' }, { key: 'salaries', icon: 'users' }] },
   {
     group: 'gSystem',
@@ -183,6 +192,32 @@ export function App() {
     case 'invoice':
       title = t('invoices');
       content = arg ? <InvoiceDetail key={arg} id={arg} /> : null;
+      break;
+    case 'sales-returns':
+      title = t('salesReturns');
+      content = <Invoices key="sale_return" kind="sale_return" />;
+      break;
+    case 'purchase-returns':
+      title = t('purchaseReturns');
+      content = <Invoices key="purchase_return" kind="purchase_return" />;
+      break;
+    case 'stock-docs':
+      title = t('stockDocs');
+      content = <StockDocs />;
+      break;
+    case 'new-stock-doc': {
+      const kind = arg === 'transfer' ? 'transfer' : 'opening';
+      title = kind === 'transfer' ? t('newTransfer') : t('newOpeningStock');
+      content = <StockDocEditor key={'new-' + kind} kind={kind} />;
+      break;
+    }
+    case 'edit-stock-doc':
+      title = t('editTitle');
+      content = arg ? <StockDocEditor key={'edit-' + arg} id={arg} /> : null;
+      break;
+    case 'stock-doc':
+      title = t('stockDocs');
+      content = arg ? <StockDocDetail key={arg} id={arg} /> : null;
       break;
     case 'customers':
       title = t('customers');

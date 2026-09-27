@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import {
-  amountInWords, invoiceTotals, rateFromX100, roundHalfUp, toBase, todayIso, toWesternDigits,
-  type CurrencyCode, type InvoiceInput, type InvoiceKind, type InvoiceStatus, type PaymentMode
+  amountInWords, invoiceTotals, lineAmount, rateFromX100, roundHalfUp, toBase, todayIso, toWesternDigits,
+  type CurrencyCode, type InvoiceDocKind, type InvoiceInput, type InvoiceKind, type InvoiceStatus, type PaymentMode
 } from '@qasa/core';
 import { api, ApiError, type InvoiceView, type ItemView } from '../api.ts';
 import {
@@ -14,8 +14,10 @@ import { averageCost, qtyText, unitName } from './Items.tsx';
 
 const STATUSES: (InvoiceStatus | '')[] = ['', 'draft', 'posted', 'cancelled'];
 
-/** فواتير المبيعات / فواتير الشراء */
-export function Invoices({ kind }: { kind: InvoiceKind }) {
+const isReturnKind = (kind: InvoiceDocKind) => kind === 'sale_return' || kind === 'purchase_return';
+
+/** فواتير المبيعات / فواتير الشراء / المردودات */
+export function Invoices({ kind }: { kind: InvoiceDocKind }) {
   const { t } = useI18n();
   const [status, setStatus] = useState<InvoiceStatus | ''>('');
   const [q, setQ] = useState('');
@@ -23,14 +25,18 @@ export function Invoices({ kind }: { kind: InvoiceKind }) {
   return (
     <div className="stack">
       <div className="row">
-        <a className="btn primary" href={href(`new-invoice/${kind}`)}><Icon name="plus" size={16} />{kind === 'sale' ? t('newSale') : t('newPurchase')}</a>
-        <a className="btn" href={href(kind === 'sale' ? 'customers' : 'suppliers')}>{kind === 'sale' ? t('customers') : t('suppliers')}</a>
+        {isReturnKind(kind) ? <span className="muted">{t('returnsHelp')}</span> : (
+          <>
+            <a className="btn primary" href={href(`new-invoice/${kind}`)}><Icon name="plus" size={16} />{kind === 'sale' ? t('newSale') : t('newPurchase')}</a>
+            <a className="btn" href={href(kind === 'sale' ? 'customers' : 'suppliers')}>{kind === 'sale' ? t('customers') : t('suppliers')}</a>
+          </>
+        )}
         <span className="spacer" />
         <input className="input" style={{ width: 240 }} type="search" placeholder={t('search')} aria-label={t('search')} value={q} onChange={(e) => setQ(e.target.value)} />
       </div>
       <div className="row">
         <div className="track">
-          {STATUSES.map((s) => <button key={s || 'all'} type="button" aria-pressed={status === s} onClick={() => setStatus(s)}>{s ? t(s) : t('all')}</button>)}
+          {STATUSES.filter((s) => !isReturnKind(kind) || s !== 'draft').map((s) => <button key={s || 'all'} type="button" aria-pressed={status === s} onClick={() => setStatus(s)}>{s ? t(s) : t('all')}</button>)}
         </div>
       </div>
       <ErrorBox error={error} />
@@ -98,8 +104,8 @@ export function InvoiceEditor({ kind: initialKind, id, partyId: initialParty }: 
   useEffect(() => {
     if (!id) return;
     api.invoice(id).then((v: InvoiceView) => {
-      if (!v.actions.includes('edit')) { go(`invoice/${v.id}`); return; }
-      setKind(v.kind);
+      if (!v.actions.includes('edit') || isReturnKind(v.kind)) { go(`invoice/${v.id}`); return; }
+      setKind(v.kind as InvoiceKind);
       setDate(v.date);
       setPartyId(v.partyId ?? '');
       setWarehouseId(v.warehouseId);
@@ -310,6 +316,7 @@ export function InvoiceDetail({ id }: { id: string }) {
   const [busy, setBusy] = useState(false);
   const [actionError, setActionError] = useState<unknown>(null);
   const [cancelling, setCancelling] = useState(false);
+  const [returning, setReturning] = useState(false);
   const [cancelDate, setCancelDate] = useState(todayIso());
 
   if (error) return <ErrorBox error={error} />;
@@ -317,6 +324,8 @@ export function InvoiceDetail({ id }: { id: string }) {
   const v = data;
   const company = settings ? i18n.name(settings.companyName) : '';
   const totalCost = v.lines.reduce((s, l) => s + (l.cost ?? 0), 0);
+  const isRet = isReturnKind(v.kind);
+  const saleSide = v.kind === 'sale' || v.kind === 'sale_return';
 
   async function act(fn: () => Promise<unknown>, message: string) {
     setBusy(true);
@@ -340,7 +349,7 @@ export function InvoiceDetail({ id }: { id: string }) {
     try {
       await api.deleteInvoice(id);
       toast(t('a_delete'));
-      go(v.kind === 'sale' ? 'sales' : 'purchases');
+      go(saleSide ? 'sales' : 'purchases');
     } catch (e) {
       setActionError(e);
       setBusy(false);
@@ -359,11 +368,13 @@ export function InvoiceDetail({ id }: { id: string }) {
             <Icon name="check" size={16} />{t('actPost')}
           </button>
         )}
+        {v.actions.includes('return') && <button type="button" className="btn" disabled={busy} onClick={() => setReturning(true)}><Icon name="undo" size={16} />{t('actReturnItems')}</button>}
         {v.actions.includes('cancel') && <button type="button" className="btn danger" disabled={busy} onClick={() => setCancelling(true)}><Icon name="undo" size={16} />{t('actCancelInvoice')}</button>}
         <button type="button" className="btn" onClick={() => window.print()}><Icon name="printer" size={16} />{t('print')}</button>
       </div>
       <ErrorBox error={cancelling ? null : actionError} />
       {v.status === 'posted' && <div className="alert info no-print">{t('invoicePostedNote')}</div>}
+      {v.status === 'posted' && !isRet && v.returns.some((r) => r.status === 'posted') && <div className="alert warn no-print">{t('hasReturnsNote')}</div>}
 
       <div className="paper invoice">
         <div className="paper-head">
@@ -376,14 +387,15 @@ export function InvoiceDetail({ id }: { id: string }) {
           <div className="paper-meta">
             <span className="muted">{t('number')}</span><strong className="ltr">{v.number ?? t('draft')}</strong>
             <span className="muted">{t('date')}</span><strong className="num">{i18n.date(v.date)}</strong>
-            <span className="muted">{t('paymentMode')}</span><strong>{v.payment === 'cash' ? t('payCash') : t('payCredit')}</strong>
+            {isRet && v.returnOf && <><span className="muted">{t('returnFrom')}</span><strong><a className="ltr" href={href(`invoice/${v.returnOf}`)}>{v.returnOfNumber}</a></strong></>}
+            <span className="muted">{t('paymentMode')}</span><strong>{isRet ? (v.payment === 'cash' ? t('refundCash') : t('refundCredit')) : v.payment === 'cash' ? t('payCash') : t('payCredit')}</strong>
             {v.currency === 'USD' && <><span className="muted">{t('exchangeRate')}</span><strong className="num">{i18n.digitsOf(String(rateFromX100(v.rateX100)))}</strong></>}
           </div>
         </div>
 
         <div className="grid-2" style={{ marginBottom: 14 }}>
           <div>
-            <div className="muted small">{v.kind === 'sale' ? t('billTo') : t('supplier')}</div>
+            <div className="muted small">{v.kind === 'sale' ? t('billTo') : saleSide ? t('customer') : t('supplier')}</div>
             <div style={{ fontWeight: 700, fontSize: 16 }}>{v.partyName ?? t('walkIn')}</div>
             {v.partyPhone && <div className="small ltr" style={{ textAlign: 'start' }}>{i18n.digitsOf(v.partyPhone)}</div>}
             {v.partyAddress && <div className="small">{v.partyAddress}</div>}
@@ -408,7 +420,10 @@ export function InvoiceDetail({ id }: { id: string }) {
                 <td className="num">{i18n.int(l.lineNo)}</td>
                 <td><span className="ltr">{l.itemCode}</span></td>
                 <td>{i18n.name(l.itemName)}{l.description && <div className="muted small">{l.description}</div>}</td>
-                <td className="amount">{qtyText(i18n, l.qtyMilli)} <span className="muted small">{unitName(i18n, l.unit)}</span></td>
+                <td className="amount">
+                  {qtyText(i18n, l.qtyMilli)} <span className="muted small">{unitName(i18n, l.unit)}</span>
+                  {l.returnedQtyMilli > 0 && <div className="small no-print" style={{ color: 'var(--warn)' }}>{t('returnedQty')}: {qtyText(i18n, l.returnedQtyMilli)}</div>}
+                </td>
                 <td className="amount">{i18n.money(l.unitPrice, v.currency)}</td>
                 <td className="amount">{i18n.money(l.amount, v.currency)}</td>
               </tr>
@@ -432,7 +447,7 @@ export function InvoiceDetail({ id }: { id: string }) {
 
         <div className="sigs" style={{ gridTemplateColumns: 'repeat(2, minmax(0, 1fr))' }}>
           <div className="sig done"><div className="muted small">{t('preparedBy')}</div><div className="who">{v.createdBy}</div></div>
-          <div className="sig"><div className="muted small">{v.kind === 'sale' ? t('customer') : t('supplier')}</div><div className="who">&nbsp;</div></div>
+          <div className="sig"><div className="muted small">{saleSide ? t('customer') : t('supplier')}</div><div className="who">&nbsp;</div></div>
         </div>
         {/* Required on Free by the license (NOTICE, additional term 1); Pro and Business remove it. */}
         {!plan?.features.includes('noBranding') && <div className="made-with">{t('madeWith')} · <span className="ltr">qasaerp.com</span></div>}
@@ -448,6 +463,26 @@ export function InvoiceDetail({ id }: { id: string }) {
         </div>
       )}
 
+      {v.returns.length > 0 && (
+        <div className="card no-print">
+          <div style={{ padding: '14px 16px 6px' }}><h2>{t('returnsOfInvoice')}</h2></div>
+          <table className="table">
+            <tbody>
+              {v.returns.map((r) => (
+                <tr key={r.id} className="click" onClick={() => go(`invoice/${r.id}`)}>
+                  <td><a className="ltr num" href={href(`invoice/${r.id}`)} onClick={(e) => e.stopPropagation()}>{r.number}</a></td>
+                  <td className="num">{i18n.date(r.date)}</td>
+                  <td className="amount">{i18n.money(r.total, v.currency)}</td>
+                  <td><InvoiceStatusChip status={r.status} /></td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {returning && <ReturnModal invoice={v} onClose={() => setReturning(false)} />}
+
       {cancelling && (
         <Modal title={t('cancelTitle')} onClose={() => setCancelling(false)}>
           <div className="stack">
@@ -462,5 +497,91 @@ export function InvoiceDetail({ id }: { id: string }) {
         </Modal>
       )}
     </div>
+  );
+}
+
+/** Takes goods back from a posted invoice (مردودات): pick the quantities, how the money goes back, and post. */
+function ReturnModal({ invoice: v, onClose }: { invoice: InvoiceView; onClose(): void }) {
+  const i18n = useI18n();
+  const { t } = i18n;
+  const toast = useToast();
+  const { settings, reloadAccounts } = useData();
+  const today = todayIso();
+  const [date, setDate] = useState(today < v.date ? v.date : today);
+  const [payment, setPayment] = useState<PaymentMode>(v.partyId ? 'credit' : 'cash');
+  const [cashAccount, setCashAccount] = useState(v.cashAccountCode ?? settings?.postingAccounts.cash ?? '');
+  const [notes, setNotes] = useState('');
+  const [qty, setQty] = useState<Record<number, number | null>>({});
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<unknown>(null);
+  const lines = v.lines.map((l) => ({ ...l, left: l.qtyMilli - l.returnedQtyMilli })).filter((l) => l.left > 0);
+  const chosen = lines.filter((l) => (qty[l.lineNo] ?? 0) > 0);
+  const gross = chosen.reduce((sum, l) => sum + lineAmount(qty[l.lineNo]!, l.unitPrice), 0);
+
+  async function submit() {
+    if (chosen.length === 0) { setError(new ApiError(400, 'validation', [{ code: 'lines_required' }])); return; }
+    if (!window.confirm(t('returnConfirm'))) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const ret = await api.createReturn(v.id, {
+        date, payment, lines: chosen.map((l) => ({ lineNo: l.lineNo, qtyMilli: qty[l.lineNo]! })),
+        ...(payment === 'cash' ? { cashAccountCode: cashAccount } : {}),
+        ...(notes.trim() ? { notes: notes.trim() } : {})
+      });
+      await reloadAccounts();
+      toast(t('a_post'));
+      go(`invoice/${ret.id}`);
+    } catch (e) {
+      setError(e);
+      setBusy(false);
+    }
+  }
+
+  return (
+    <Modal title={t('returnTitle', { n: v.number ?? '' })} onClose={onClose}>
+      <div className="stack return-modal">
+        <table className="table">
+          <thead>
+            <tr><th>{t('item')}</th><th className="amount">{t('qty')}</th><th className="amount">{t('canReturn')}</th><th className="amount" style={{ width: 130 }}>{t('returnQty')}</th></tr>
+          </thead>
+          <tbody>
+            {lines.map((l) => (
+              <tr key={l.lineNo}>
+                <td>{i18n.name(l.itemName)}<div className="muted small">{i18n.money(l.unitPrice, v.currency)}</div></td>
+                <td className="amount">{qtyText(i18n, l.qtyMilli)}</td>
+                <td className="amount">{qtyText(i18n, l.left)}</td>
+                <td><QtyInput value={qty[l.lineNo] ?? null} onChange={(value) => setQty((q) => ({ ...q, [l.lineNo]: value }))} ariaLabel={t('returnQty')} /></td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+        <div className="grid-2">
+          <label className="field"><span>{t('date')}</span><input className="input" type="date" value={date} min={v.date} onChange={(e) => setDate(e.target.value)} /></label>
+          <div className="field">
+            <span>{t('paymentMode')}</span>
+            <div className="track" style={{ alignSelf: 'flex-start' }}>
+              {v.partyId && <button type="button" aria-pressed={payment === 'credit'} onClick={() => setPayment('credit')}>{t('refundCredit')}</button>}
+              <button type="button" aria-pressed={payment === 'cash'} onClick={() => setPayment('cash')}>{t('refundCash')}</button>
+            </div>
+          </div>
+          {payment === 'cash' && (
+            <div className="field"><span>{t('cashAccount')}</span><AccountCombo value={cashAccount} onChange={setCashAccount} filter={(a) => a.code.startsWith('18')} ariaLabel={t('cashAccount')} /></div>
+          )}
+          <label className="field"><span>{t('notes')}</span><input className="input" value={notes} onChange={(e) => setNotes(e.target.value)} /></label>
+        </div>
+        {gross > 0 && (
+          <div className="muted">
+            {t('subtotal')}: <strong className="num">{i18n.money(gross, v.currency)}</strong>
+            {v.discount > 0 && <> · {t('discount')}</>}
+          </div>
+        )}
+        <ErrorBox error={error} />
+        <div className="row">
+          <button type="button" className="btn primary" disabled={busy} onClick={() => void submit()}><Icon name="undo" size={16} />{t('returnPost')}</button>
+          <button type="button" className="btn" onClick={onClose}>{t('cancel')}</button>
+        </div>
+      </div>
+    </Modal>
   );
 }

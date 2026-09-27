@@ -90,7 +90,7 @@ npm run dist:win    # build apps/desktop/release/Qasa-ERP-Setup-<version>.exe
 - [x] Receipt / payment vouchers, journal entries, approvals, reversals, period locking, audit log
 - [x] Trial balance and account statement (print + Excel export)
 - [x] Sales & purchase invoices, customers & suppliers (with statements), items, warehouses, weighted-average stock
-- [ ] Opening stock, purchase/sales returns, stock transfers between warehouses
+- [x] Opening stock, sales and purchase returns, stock transfers between warehouses
 - [ ] Installment sales and sales pipeline
 - [ ] HR, salaries and employee advances
 - [x] Final accounts: trading, current operations and profit and loss accounts, and the balance sheet (unified-system layout, to be reviewed by a licensed accountant)
