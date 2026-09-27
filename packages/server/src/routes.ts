@@ -16,6 +16,8 @@ import {
 } from './items.ts';
 import { activateLicense, planStatus, removeLicense, startTrial } from './license.ts';
 import { cancelInvoice, createInvoice, deleteInvoice, getInvoice, listInvoices, postInvoice, updateInvoice } from './invoices.ts';
+import { createReturn } from './returns.ts';
+import { cancelStockDoc, createStockDoc, deleteStockDoc, getStockDoc, listStockDocs, postStockDoc, updateStockDoc } from './stock-docs.ts';
 
 const isoDate = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
 const period = z.string().regex(/^\d{4}-(0[1-9]|1[0-2])$/);
@@ -52,7 +54,7 @@ const voucherSchema = z.object({
 });
 
 const entryFilters = z.object({
-  type: z.enum(['journal', 'receipt', 'payment', 'reversal', 'sale', 'purchase']).optional(),
+  type: z.enum(['journal', 'receipt', 'payment', 'reversal', 'sale', 'purchase', 'sale_return', 'purchase_return', 'opening_stock', 'transfer']).optional(),
   status: z.enum(['draft', 'checked', 'approved']).optional(),
   from: isoDate.optional(),
   to: isoDate.optional(),
@@ -97,6 +99,24 @@ const invoiceSchema = z.object({
     unitPrice: z.number().int(),
     description: z.string().max(500).optional()
   })).max(500)
+});
+
+const returnSchema = z.object({
+  date: isoDate,
+  payment: z.enum(['cash', 'credit']),
+  cashAccountCode: z.string().max(12).optional(),
+  notes: z.string().max(1000).optional(),
+  lines: z.array(z.object({ lineNo: z.number().int().positive(), qtyMilli: z.number().int() })).max(500)
+});
+
+const stockDocSchema = z.object({
+  kind: z.enum(['opening', 'transfer']),
+  date: isoDate,
+  warehouseId: z.string().min(1).max(64),
+  toWarehouseId: z.string().max(64).optional(),
+  counterAccountCode: z.string().max(12).optional(),
+  notes: z.string().max(1000).optional(),
+  lines: z.array(z.object({ itemId: z.string().min(1).max(64), qtyMilli: z.number().int(), unitCost: z.number().int().optional() })).max(1000)
 });
 
 const idParam = z.object({ id: z.string().min(1).max(64) });
@@ -161,7 +181,7 @@ export interface Route {
 export function errorResponse(error: unknown): { status: number; body: { error: string; details: unknown } } {
   if (error instanceof AppError) return { status: error.status, body: { error: error.code, details: error.details ?? null } };
   const message = error instanceof Error ? error.message : String(error);
-  for (const code of ['posted_entry_is_permanent', 'posted_invoice_is_permanent', 'stock_moves_are_permanent']) {
+  for (const code of ['posted_entry_is_permanent', 'posted_invoice_is_permanent', 'posted_document_is_permanent', 'stock_moves_are_permanent']) {
     if (message.includes(code)) return { status: 409, body: { error: code, details: null } };
   }
   return { status: 500, body: { error: 'internal', details: null } };
@@ -313,7 +333,7 @@ export function apiRoutes(db: Db): Route[] {
   // invoices
   app.get('/api/invoices', async (req) => {
     const q = parse(z.object({
-      kind: z.enum(['sale', 'purchase']).optional(), status: z.enum(['draft', 'posted', 'cancelled']).optional(),
+      kind: z.enum(['sale', 'purchase', 'sale_return', 'purchase_return']).optional(), status: z.enum(['draft', 'posted', 'cancelled']).optional(),
       partyId: z.string().max(64).optional(), from: isoDate.optional(), to: isoDate.optional(), q: z.string().max(100).optional()
     }), req.query);
     return listInvoices(db, q);
@@ -329,6 +349,28 @@ export function apiRoutes(db: Db): Route[] {
   app.post('/api/invoices/:id/cancel', async (req) => {
     const body = parse(z.object({ date: isoDate.optional() }), req.body ?? {});
     return cancelInvoice(db, parse(idParam, req.params).id, userOf(req), body.date);
+  });
+
+  // returns (مردودات), made from a posted invoice
+  app.post('/api/invoices/:id/returns', async (req, reply) =>
+    reply.status(201).send(createReturn(db, parse(idParam, req.params).id, withoutUndefined(parse(returnSchema, req.body)), userOf(req))));
+
+  // stock documents: opening stock and transfers between warehouses
+  app.get('/api/stock-docs', async (req) => {
+    const q = parse(z.object({ kind: z.enum(['opening', 'transfer']).optional(), status: z.enum(['draft', 'posted', 'cancelled']).optional() }), req.query);
+    return listStockDocs(db, q);
+  });
+  app.get('/api/stock-docs/:id', async (req) => getStockDoc(db, parse(idParam, req.params).id));
+  app.post('/api/stock-docs', async (req, reply) => reply.status(201).send(createStockDoc(db, withoutUndefined(parse(stockDocSchema, req.body)), userOf(req))));
+  app.put('/api/stock-docs/:id', async (req) => updateStockDoc(db, parse(idParam, req.params).id, withoutUndefined(parse(stockDocSchema, req.body)), userOf(req)));
+  app.delete('/api/stock-docs/:id', async (req, reply) => {
+    deleteStockDoc(db, parse(idParam, req.params).id, userOf(req));
+    return reply.status(204).send();
+  });
+  app.post('/api/stock-docs/:id/post', async (req) => postStockDoc(db, parse(idParam, req.params).id, userOf(req)));
+  app.post('/api/stock-docs/:id/cancel', async (req) => {
+    const body = parse(z.object({ date: isoDate.optional() }), req.body ?? {});
+    return cancelStockDoc(db, parse(idParam, req.params).id, userOf(req), body.date);
   });
 
   // plan & license

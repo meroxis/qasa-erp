@@ -7,6 +7,14 @@ export type InvoiceKind = 'sale' | 'purchase';
 /** cash = نقدي (paid now into/out of a safe or bank) · credit = آجل (customer/supplier owes) */
 export type PaymentMode = 'cash' | 'credit';
 export type InvoiceStatus = 'draft' | 'posted' | 'cancelled';
+/** sale_return = مردودات المبيعات · purchase_return = مردودات المشتريات; always made from a posted invoice */
+export type ReturnKind = 'sale_return' | 'purchase_return';
+/** Every kind of document kept in the invoices list. */
+export type InvoiceDocKind = InvoiceKind | ReturnKind;
+
+export function returnKindOf(kind: InvoiceKind): ReturnKind {
+  return kind === 'sale' ? 'sale_return' : 'purchase_return';
+}
 
 export interface InvoiceLineInput {
   itemId: string;

@@ -1,8 +1,15 @@
 import { isIsoDate } from './dates.ts';
 import { isCurrency, isMinorAmount, toBaseBalanced, type CurrencyCode } from './money.ts';
 
-/** receipt = سند قبض · payment = سند صرف · journal = قيد يومية · reversal = قيد عكسي · sale/purchase = posted by an invoice */
-export type EntryType = 'journal' | 'receipt' | 'payment' | 'reversal' | 'sale' | 'purchase';
+/**
+ * receipt = سند قبض · payment = سند صرف · journal = قيد يومية · reversal = قيد عكسي ·
+ * sale/purchase = posted by an invoice · sale_return/purchase_return = by a return (مردودات) ·
+ * opening_stock = بضاعة أول المدة · transfer = مناقلة بين المخازن
+ */
+export type EntryType = 'journal' | 'receipt' | 'payment' | 'reversal' | 'sale' | 'purchase' | 'sale_return' | 'purchase_return' | 'opening_stock' | 'transfer';
+
+/** Entry types that a document (invoice, return, stock document) posts; they are corrected by cancelling that document. */
+export const DOCUMENT_ENTRY_TYPES: readonly EntryType[] = ['sale', 'purchase', 'sale_return', 'purchase_return', 'opening_stock', 'transfer'];
 
 /**
  * Approval chain used on Iraqi vouchers:
@@ -18,7 +25,11 @@ export const NUMBER_PREFIX: Record<EntryType, string> = {
   journal: 'JV',
   reversal: 'RJ',
   sale: 'INV',
-  purchase: 'PI'
+  purchase: 'PI',
+  sale_return: 'SR',
+  purchase_return: 'PR',
+  opening_stock: 'OS',
+  transfer: 'ST'
 };
 
 export interface LineInput {
@@ -171,7 +182,7 @@ export type EntryAction = 'check' | 'approve' | 'return' | 'edit' | 'delete' | '
 
 /** Which actions are allowed in each status. */
 export function allowedActions(status: EntryStatus, opts: { reversed: boolean; isReversal: boolean; fromInvoice?: boolean }): EntryAction[] {
-  // Invoice postings are cancelled from the invoice, which also returns the stock.
+  // Document postings are cancelled from the document, which also puts the stock right.
   if (opts.fromInvoice) return [];
   if (status === 'draft') return ['edit', 'delete', 'check'];
   if (status === 'checked') return ['approve', 'return'];

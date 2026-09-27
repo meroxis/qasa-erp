@@ -11,6 +11,7 @@ import {
   validateInvoice,
   type CurrencyCode,
   type EntryInput,
+  type InvoiceDocKind,
   type InvoiceInput,
   type InvoiceKind,
   type InvoiceStatus,
@@ -29,7 +30,7 @@ import { getParty } from './parties.ts';
 import { addStockMove, stockOf } from './items.ts';
 import { getPostingAccounts, isPeriodLocked } from './settings.ts';
 
-export type InvoiceAction = 'edit' | 'delete' | 'post' | 'cancel';
+export type InvoiceAction = 'edit' | 'delete' | 'post' | 'cancel' | 'return';
 
 export interface InvoiceLineView {
   lineNo: number;
@@ -44,11 +45,15 @@ export interface InvoiceLineView {
   amount: number;
   /** IQD: cost of goods sold (sales) or value added to stock (purchases). Set when posted. */
   cost: number | null;
+  /** On a return: the line of the original invoice it gives back. */
+  sourceLine: number | null;
+  /** On a posted invoice: how much of the line posted returns have given back. */
+  returnedQtyMilli: number;
 }
 
 export interface InvoiceSummary {
   id: string;
-  kind: InvoiceKind;
+  kind: InvoiceDocKind;
   status: InvoiceStatus;
   number: string | null;
   date: string;
@@ -66,6 +71,8 @@ export interface InvoiceSummary {
   /** Total in IQD. */
   baseTotal: number;
   notes: string;
+  /** On a return: the invoice it returns goods from. */
+  returnOf: string | null;
   createdBy: string;
   createdAt: string;
 }
@@ -86,20 +93,42 @@ export interface InvoiceView extends InvoiceSummary {
   cancelledAt: string | null;
   lines: InvoiceLineView[];
   actions: InvoiceAction[];
+  returnOfNumber: string | null;
+  /** Returns made from this invoice. */
+  returns: { id: string; kind: InvoiceDocKind; number: string | null; date: string; status: InvoiceStatus; total: number }[];
 }
 
 interface InvoiceRow {
-  id: string; kind: InvoiceKind; status: InvoiceStatus; number: string | null; date: string; party_id: string | null;
+  id: string; kind: InvoiceDocKind; return_of: string | null; status: InvoiceStatus; number: string | null; date: string; party_id: string | null;
   warehouse_id: string; currency: CurrencyCode; rate_x100: number; payment: PaymentMode; cash_account: string | null;
   discount: number; subtotal: number; total: number; notes: string | null; entry_id: string | null; cancel_entry_id: string | null;
   created_by: string; created_at: string; posted_by: string | null; posted_at: string | null; cancelled_by: string | null; cancelled_at: string | null;
   party_code: string | null; party_name: string | null;
 }
 
-function actionsFor(status: InvoiceStatus): InvoiceAction[] {
-  if (status === 'draft') return ['edit', 'delete', 'post'];
-  if (status === 'posted') return ['cancel'];
-  return [];
+export const isReturn = (kind: InvoiceDocKind) => kind === 'sale_return' || kind === 'purchase_return';
+
+function hasPostedReturns(db: Db, id: string): boolean {
+  return !!db.prepare("SELECT 1 FROM invoices WHERE return_of = ? AND status = 'posted' LIMIT 1").get(id);
+}
+
+/** What posted returns have already given back, per line of the original invoice. */
+export function returnedByLine(db: Db, originalId: string): Map<number, { qtyMilli: number; amount: number; discount: number; cost: number }> {
+  const rows = db.prepare(`SELECT l.source_line, SUM(l.qty_milli) AS qty, SUM(l.amount) AS amount, SUM(COALESCE(l.discount_share, 0)) AS discount, SUM(COALESCE(l.cost, 0)) AS cost
+                           FROM invoice_lines l JOIN invoices r ON r.id = l.invoice_id
+                           WHERE r.return_of = ? AND r.status = 'posted' GROUP BY l.source_line`).all(originalId) as
+    { source_line: number; qty: number; amount: number; discount: number; cost: number }[];
+  return new Map(rows.map((r) => [r.source_line, { qtyMilli: r.qty, amount: r.amount, discount: r.discount, cost: r.cost }]));
+}
+
+function actionsFor(db: Db, row: Pick<InvoiceRow, 'id' | 'kind' | 'status'>, anyLeftToReturn = false): InvoiceAction[] {
+  if (row.status === 'draft') return ['edit', 'delete', 'post'];
+  if (row.status !== 'posted') return [];
+  if (isReturn(row.kind)) return ['cancel'];
+  // an invoice with returns is cancelled only after its returns are
+  const actions: InvoiceAction[] = hasPostedReturns(db, row.id) ? [] : ['cancel'];
+  if (anyLeftToReturn) actions.push('return');
+  return actions;
 }
 
 function toSummary(r: InvoiceRow): InvoiceSummary {
@@ -107,7 +136,7 @@ function toSummary(r: InvoiceRow): InvoiceSummary {
     id: r.id, kind: r.kind, status: r.status, number: r.number, date: r.date, partyId: r.party_id, partyCode: r.party_code, partyName: r.party_name,
     warehouseId: r.warehouse_id, currency: r.currency, rateX100: r.rate_x100, payment: r.payment, cashAccountCode: r.cash_account,
     discount: r.discount, subtotal: r.subtotal, total: r.total, baseTotal: toBase(r.total, r.currency, r.rate_x100), notes: r.notes ?? '',
-    createdBy: r.created_by, createdAt: r.created_at
+    returnOf: r.return_of, createdBy: r.created_by, createdAt: r.created_at
   };
 }
 
@@ -127,12 +156,17 @@ export function getInvoice(db: Db, id: string): InvoiceView {
   const numberOf = (entryId: string | null) => entryId ? (db.prepare('SELECT number FROM entries WHERE id = ?').get(entryId) as { number: string | null }).number : null;
   const lines = (db.prepare(`SELECT l.*, i.code, i.name_ar, i.name_en, i.name_ku, i.unit, i.track_stock FROM invoice_lines l JOIN items i ON i.id = l.item_id
                              WHERE l.invoice_id = ? ORDER BY l.line_no`).all(id) as {
-    line_no: number; item_id: string; description: string | null; qty_milli: number; unit_price: number; amount: number; cost: number | null;
+    line_no: number; item_id: string; description: string | null; qty_milli: number; unit_price: number; amount: number; cost: number | null; source_line: number | null;
     code: string; name_ar: string; name_en: string; name_ku: string; unit: UnitCode; track_stock: number;
-  }[]).map((l) => ({
+  }[]);
+  const returned = r.status === 'posted' && !isReturn(r.kind) ? returnedByLine(db, id) : new Map<number, { qtyMilli: number }>();
+  const lineViews: InvoiceLineView[] = lines.map((l) => ({
     lineNo: l.line_no, itemId: l.item_id, itemCode: l.code, itemName: { ar: l.name_ar, en: l.name_en, ku: l.name_ku }, unit: l.unit,
-    trackStock: l.track_stock === 1, description: l.description ?? '', qtyMilli: l.qty_milli, unitPrice: l.unit_price, amount: l.amount, cost: l.cost
+    trackStock: l.track_stock === 1, description: l.description ?? '', qtyMilli: l.qty_milli, unitPrice: l.unit_price, amount: l.amount, cost: l.cost,
+    sourceLine: l.source_line, returnedQtyMilli: returned.get(l.line_no)?.qtyMilli ?? 0
   }));
+  const returns = db.prepare('SELECT id, kind, number, date, status, total FROM invoices WHERE return_of = ? ORDER BY date, created_at').all(id) as
+    { id: string; kind: InvoiceDocKind; number: string | null; date: string; status: InvoiceStatus; total: number }[];
   return {
     ...toSummary(r),
     partyPhone: party?.phone ?? null, partyAddress: party?.address ?? null,
@@ -140,12 +174,14 @@ export function getInvoice(db: Db, id: string): InvoiceView {
     cashAccountName: cash ? { ar: cash.name_ar, en: cash.name_en, ku: cash.name_ku } : null,
     entryId: r.entry_id, entryNumber: numberOf(r.entry_id), cancelEntryId: r.cancel_entry_id, cancelEntryNumber: numberOf(r.cancel_entry_id),
     postedBy: r.posted_by, postedAt: r.posted_at, cancelledBy: r.cancelled_by, cancelledAt: r.cancelled_at,
-    lines, actions: actionsFor(r.status)
+    lines: lineViews, actions: actionsFor(db, r, lineViews.some((l) => l.returnedQtyMilli < l.qtyMilli)),
+    returnOfNumber: r.return_of ? (db.prepare('SELECT number FROM invoices WHERE id = ?').get(r.return_of) as { number: string | null }).number : null,
+    returns
   };
 }
 
 export interface InvoiceFilters {
-  kind?: InvoiceKind | undefined;
+  kind?: InvoiceDocKind | undefined;
   status?: InvoiceStatus | undefined;
   partyId?: string | undefined;
   from?: string | undefined;
@@ -233,14 +269,16 @@ export function createInvoice(db: Db, raw: InvoiceInput, user: string): InvoiceV
   return getInvoice(db, id);
 }
 
-function requireAction(row: InvoiceRow, action: InvoiceAction): void {
-  if (!actionsFor(row.status).includes(action)) throw conflict('action_not_allowed', { status: row.status, action });
+function requireAction(db: Db, row: InvoiceRow, action: InvoiceAction): void {
+  if (action === 'cancel' && row.status === 'posted' && !isReturn(row.kind) && hasPostedReturns(db, row.id)) throw conflict('has_returns');
+  if (!actionsFor(db, row, action === 'return').includes(action)) throw conflict('action_not_allowed', { status: row.status, action });
 }
 
 export function updateInvoice(db: Db, id: string, raw: InvoiceInput, user: string): InvoiceView {
   const row = loadRow(db, id);
-  requireAction(row, 'edit');
-  const input = normalize({ ...raw, kind: row.kind });
+  requireAction(db, row, 'edit');
+  if (isReturn(row.kind)) throw conflict('action_not_allowed', { status: row.status, action: 'edit' });
+  const input = normalize({ ...raw, kind: row.kind as InvoiceKind });
   assertInvoice(db, input);
   transaction(db, () => {
     writeDraft(db, id, input);
@@ -251,7 +289,7 @@ export function updateInvoice(db: Db, id: string, raw: InvoiceInput, user: strin
 
 export function deleteInvoice(db: Db, id: string, user: string): void {
   const row = loadRow(db, id);
-  requireAction(row, 'delete');
+  requireAction(db, row, 'delete');
   transaction(db, () => {
     db.prepare('DELETE FROM invoices WHERE id = ?').run(id);
     audit(db, user, 'delete', 'invoice', id, { kind: row.kind });
@@ -260,7 +298,7 @@ export function deleteInvoice(db: Db, id: string, user: string): void {
 
 function storedInput(view: InvoiceView): InvoiceInput {
   return {
-    kind: view.kind, date: view.date, warehouseId: view.warehouseId, currency: view.currency, rateX100: view.rateX100, payment: view.payment,
+    kind: view.kind as InvoiceKind, date: view.date, warehouseId: view.warehouseId, currency: view.currency, rateX100: view.rateX100, payment: view.payment,
     discount: view.discount, notes: view.notes,
     ...(view.partyId ? { partyId: view.partyId } : {}),
     ...(view.cashAccountCode ? { cashAccountCode: view.cashAccountCode } : {}),
@@ -269,7 +307,7 @@ function storedInput(view: InvoiceView): InvoiceInput {
 }
 
 /** IQD → invoice currency, for cost lines that must still balance in the entry currency. */
-function fromBase(amountIqd: number, currency: CurrencyCode, rateX100: number): number {
+export function fromBase(amountIqd: number, currency: CurrencyCode, rateX100: number): number {
   if (currency === 'IQD') return amountIqd;
   return Math.max(1, roundHalfUp((amountIqd * 10000) / rateX100));
 }
@@ -281,7 +319,7 @@ function fromBase(amountIqd: number, currency: CurrencyCode, rateX100: number): 
  */
 export function postInvoice(db: Db, id: string, user: string): InvoiceView {
   const view = getInvoice(db, id);
-  requireAction(loadRow(db, id), 'post');
+  requireAction(db, loadRow(db, id), 'post');
   const input = storedInput(view);
   assertInvoice(db, input);
   const accounts = getPostingAccounts(db);
@@ -361,14 +399,16 @@ export function postInvoice(db: Db, id: string, user: string): InvoiceView {
  */
 export function cancelInvoice(db: Db, id: string, user: string, date?: string): InvoiceView {
   const view = getInvoice(db, id);
-  requireAction(loadRow(db, id), 'cancel');
+  requireAction(db, loadRow(db, id), 'cancel');
   const cancelDate = date ?? todayIso();
+  // cancelling a sale or a purchase return puts the goods back; a purchase or a sales return takes them out again
+  const back = view.kind === 'sale' || view.kind === 'purchase_return';
   const moves = view.lines.filter((l) => l.trackStock && l.cost !== null).map((l) => ({
     itemId: l.itemId, lineNo: l.lineNo,
-    qtyMilli: view.kind === 'sale' ? l.qtyMilli : -l.qtyMilli,
-    value: view.kind === 'sale' ? l.cost! : -l.cost!
+    qtyMilli: back ? l.qtyMilli : -l.qtyMilli,
+    value: back ? l.cost! : -l.cost!
   }));
-  if (view.kind === 'purchase') {
+  if (!back) {
     const remaining = new Map<string, { qtyMilli: number; value: number }>();
     const errors: { code: string; line: number; available?: number }[] = [];
     for (const m of moves) {
@@ -381,7 +421,7 @@ export function cancelInvoice(db: Db, id: string, user: string, date?: string): 
     if (errors.length) throw invalid(errors);
   }
   transaction(db, () => {
-    const reversalId = reverseEntryInternal(db, view.entryId!, user, cancelDate);
+    const reversalId = view.entryId ? reverseEntryInternal(db, view.entryId, user, cancelDate) : null;
     for (const m of moves) addStockMove(db, { itemId: m.itemId, warehouseId: view.warehouseId, date: cancelDate, qtyMilli: m.qtyMilli, value: m.value, sourceType: `${view.kind}_cancel`, sourceId: id });
     const now = new Date().toISOString();
     db.prepare(`UPDATE invoices SET status = 'cancelled', cancel_entry_id = ?, cancelled_by = ?, cancelled_at = ?, updated_at = ? WHERE id = ?`)

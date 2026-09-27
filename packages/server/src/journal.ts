@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import {
   allowedActions,
+  DOCUMENT_ENTRY_TYPES,
   entryNumber,
   isIsoDate,
   isMinorAmount,
@@ -78,11 +79,13 @@ export interface EntryView {
   actions: EntryAction[];
   /** The invoice that posted (or cancelled) this entry, if any. */
   invoiceId: string | null;
+  /** The opening-stock or transfer document that posted this entry. */
+  stockDocId: string | null;
 }
 
-export type EntrySummary = Omit<EntryView, 'lines' | 'actions' | 'invoiceId'>;
+export type EntrySummary = Omit<EntryView, 'lines' | 'actions' | 'invoiceId' | 'stockDocId'>;
 
-const isInvoiceType = (type: EntryType) => type === 'sale' || type === 'purchase';
+const isInvoiceType = (type: EntryType) => DOCUMENT_ENTRY_TYPES.includes(type);
 
 function entryContext(db: Db) {
   const accounts = new Map(loadAccounts(db).map((a) => [a.code, a]));
@@ -298,7 +301,7 @@ export function reverseEntryInternal(db: Db, id: string, user: string, date?: st
   return newId;
 }
 
-function toView(row: EntryRow, lines: LineRow[], invoiceId: string | null = null): EntryView {
+function toView(row: EntryRow, lines: LineRow[], invoiceId: string | null = null, stockDocId: string | null = null): EntryView {
   const view: EntryView = {
     id: row.id, type: row.type, number: row.number, date: row.date, description: row.description, party: row.party,
     currency: row.currency, rateX100: row.rate_x100, status: row.status, cashAccountCode: row.cash_account,
@@ -313,7 +316,8 @@ function toView(row: EntryRow, lines: LineRow[], invoiceId: string | null = null
       partyId: l.party_id, partyName: l.party_name
     })),
     actions: allowedActions(row.status, { reversed: !!row.reversed_by_id, isReversal: row.type === 'reversal', fromInvoice: isInvoiceType(row.type) }),
-    invoiceId
+    invoiceId,
+    stockDocId
   };
   return view;
 }
@@ -326,7 +330,8 @@ const LINES_SQL = `SELECT l.line_no, l.account_code, l.debit, l.credit, l.base_d
 export function getEntry(db: Db, id: string): EntryView {
   const row = loadRow(db, id);
   const invoice = db.prepare('SELECT id FROM invoices WHERE entry_id = ? OR cancel_entry_id = ?').get(id, id) as { id: string } | undefined;
-  return toView(row, db.prepare(LINES_SQL).all(id) as unknown as LineRow[], invoice?.id ?? null);
+  const doc = invoice ? undefined : db.prepare('SELECT id FROM stock_docs WHERE entry_id = ? OR cancel_entry_id = ?').get(id, id) as { id: string } | undefined;
+  return toView(row, db.prepare(LINES_SQL).all(id) as unknown as LineRow[], invoice?.id ?? null, doc?.id ?? null);
 }
 
 export interface EntryFilters {
@@ -357,7 +362,7 @@ export function listEntries(db: Db, f: EntryFilters = {}): EntrySummary[] {
   params.push(f.limit ?? 500);
   const found = db.prepare(sql).all(...params) as unknown as (EntryRow & { total: number; base_total: number })[];
   return found.map((row) => {
-    const { lines: _lines, actions: _actions, invoiceId: _invoiceId, ...summary } = toView(row, []);
+    const { lines: _lines, actions: _actions, invoiceId: _invoiceId, stockDocId: _stockDocId, ...summary } = toView(row, []);
     return { ...summary, total: row.total ?? 0, baseTotal: row.base_total ?? 0 };
   });
 }

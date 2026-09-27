@@ -88,7 +88,7 @@ describe('purchase and sale invoices', () => {
   it('posts a purchase into stock and the supplier account', async () => {
     const res = await postNew(purchase(10, 600_000, { discount: 100_000 }));
     const invoice = res.json();
-    expect(invoice).toMatchObject({ status: 'posted', number: 'PI-2026-0001', total: 5_900_000, entryNumber: 'PI-2026-0001', actions: ['cancel'] });
+    expect(invoice).toMatchObject({ status: 'posted', number: 'PI-2026-0001', total: 5_900_000, entryNumber: 'PI-2026-0001', actions: ['cancel', 'return'] });
     expect(invoice.lines[0].cost).toBe(5_900_000);
     expect(await stock()).toEqual({ qty: 10, value: 5_900_000 });
     expect((await get(`/api/parties/${supplierId}`)).json().balance).toBe(5_900_000);
@@ -200,7 +200,7 @@ describe('posted invoices are permanent', () => {
 });
 
 describe('upgrading an existing company file', () => {
-  it('moves a version-1 database to version 2 without losing posted entries', () => {
+  it('moves a version-1 database to the current version without losing posted entries', () => {
     const old = new DatabaseSync(':memory:');
     old.exec('PRAGMA foreign_keys = ON');
     migrate(old, 1);
@@ -212,7 +212,7 @@ describe('upgrading an existing company file', () => {
     old.prepare("UPDATE entries SET status = 'approved' WHERE id = 'e1'").run();
 
     migrate(old);
-    expect(schemaVersion(old)).toBe(2);
+    expect(schemaVersion(old)).toBe(3);
     expect(old.prepare("SELECT number FROM entries WHERE id = 'e1'").get()).toEqual({ number: 'RV-2026-0001' });
     expect(old.prepare("SELECT COUNT(*) AS n FROM entry_lines WHERE entry_id = 'e1'").get()).toEqual({ n: 2 });
     expect(() => old.prepare("UPDATE entries SET description = 'x' WHERE id = 'e1'").run()).toThrow(/posted_entry_is_permanent/);

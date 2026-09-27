@@ -230,9 +230,11 @@ export interface StockMoveView {
 /** بطاقة المادة — every stock move of an item, oldest first, with a running quantity per warehouse. */
 export function itemMoves(db: Db, itemId: string): StockMoveView[] {
   getItem(db, itemId);
-  const rows = db.prepare(`SELECT m.id, m.date, m.qty_milli, m.value, m.source_type, m.source_id, m.warehouse_id, w.code AS warehouse_code, i.number
+  const rows = db.prepare(`SELECT m.id, m.date, m.qty_milli, m.value, m.source_type, m.source_id, m.warehouse_id, w.code AS warehouse_code,
+                                  COALESCE(i.number, d.number) AS number
                            FROM stock_moves m JOIN warehouses w ON w.id = m.warehouse_id
                            LEFT JOIN invoices i ON i.id = m.source_id
+                           LEFT JOIN stock_docs d ON d.id = m.source_id
                            WHERE m.item_id = ? ORDER BY m.date, m.id`).all(itemId) as
     { id: number; date: string; qty_milli: number; value: number; source_type: string; source_id: string | null; warehouse_id: string; warehouse_code: string; number: string | null }[];
   const running = new Map<string, number>();
