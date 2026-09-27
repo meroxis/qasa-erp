@@ -43,12 +43,14 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Stable download link (releases/latest/download/Qasa-ERP-Setup.exe)
+      - name: Stable download link and update block map
         shell: bash
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           version=$(node -p "require('./apps/desktop/package.json').version")
           cp "apps/desktop/release/Qasa-ERP-Setup-$version.exe" Qasa-ERP-Setup.exe
+          # releases/latest/download/Qasa-ERP-Setup.exe always points at the newest installer (the website links to it)
           gh release upload "$GITHUB_REF_NAME" Qasa-ERP-Setup.exe --clobber
-          gh release edit "$GITHUB_REF_NAME" --latest
+          # the block map lets the next update download only the parts that changed
+          gh release upload "$GITHUB_REF_NAME" "apps/desktop/release/Qasa-ERP-Setup-$version.exe.blockmap" --clobber
