@@ -1,6 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useId, useMemo, useRef, useState, type ReactNode } from 'react';
 import { formatQty, normalizeForSearch, parseAmount, parseQty, formatAmount, type CurrencyCode, type EntryStatus, type EntryType, type InvoiceStatus } from '@qasa/core';
-import { ApiError, type AccountView, type Settings } from './api.ts';
+import { ApiError, type AccountView, type PlanStatus, type Settings } from './api.ts';
 import { isKey, useI18n, type I18n } from './i18n.ts';
 
 /* ---------- shared data ---------- */
@@ -8,9 +8,12 @@ import { isKey, useI18n, type I18n } from './i18n.ts';
 export interface AppData {
   accounts: AccountView[];
   settings: Settings | null;
+  /** null until loaded; treat as Free */
+  plan: PlanStatus | null;
   online: boolean;
   reloadAccounts(): Promise<void>;
   reloadSettings(): Promise<void>;
+  reloadPlan(): Promise<void>;
 }
 
 export const DataContext = createContext<AppData | null>(null);
@@ -74,7 +77,9 @@ export function errorMessages(error: unknown, i18n: I18n): string[] {
       });
       return [...new Set(messages)];
     }
-    const key = 'err_' + error.code;
+    // plan limits have a message per limit ("err_plan_limit_warehouses"), with a general one to fall back on
+    const limit = error.code === 'plan_limit' ? (error.details as { limit?: string } | null)?.limit : undefined;
+    const key = limit && isKey(`err_plan_limit_${limit}`) ? `err_plan_limit_${limit}` : 'err_' + error.code;
     return [isKey(key) ? t(key) : t('err_internal')];
   }
   return [t('err_internal')];
@@ -150,6 +155,8 @@ const PATHS: Record<string, string> = {
   edit: 'M12 20h9M16.5 3.5a2.1 2.1 0 1 1 3 3L7 19l-4 1 1-4Z',
   cart: 'M8 21a1 1 0 1 0 0-2 1 1 0 0 0 0 2M19 21a1 1 0 1 0 0-2 1 1 0 0 0 0 2M2.05 2.05h2l2.66 12.42a2 2 0 0 0 2 1.58h9.78a2 2 0 0 0 1.95-1.57l1.65-7.43H5.12',
   truck: 'M14 18V6a2 2 0 0 0-2-2H4a2 2 0 0 0-2 2v11a1 1 0 0 0 1 1h2M15 18H9M19 18h2a1 1 0 0 0 1-1v-3.65a1 1 0 0 0-.22-.62l-3.48-4.35A1 1 0 0 0 17.52 8H14M9 18a2 2 0 1 1-4 0 2 2 0 0 1 4 0M19 18a2 2 0 1 1-4 0 2 2 0 0 1 4 0',
+  star: 'M12 2.5l2.9 6 6.6.9-4.8 4.6 1.2 6.5L12 17.4l-5.9 3.1 1.2-6.5-4.8-4.6 6.6-.9z',
+  mail: 'M22 6a2 2 0 0 0-2-2H4a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2zM22 7l-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7',
   contact: 'M16 2v2M7 22v-2a2 2 0 0 1 2-2h6a2 2 0 0 1 2 2v2M8 2v2M12 13a3 3 0 1 0 0-6 3 3 0 0 0 0 6M3 6a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z'
 };
 

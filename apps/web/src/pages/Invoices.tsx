@@ -305,7 +305,7 @@ export function InvoiceDetail({ id }: { id: string }) {
   const i18n = useI18n();
   const { t } = i18n;
   const toast = useToast();
-  const { settings, reloadAccounts } = useData();
+  const { settings, plan, reloadAccounts } = useData();
   const { data, error, reload } = useLoad(() => api.invoice(id), [id]);
   const [busy, setBusy] = useState(false);
   const [actionError, setActionError] = useState<unknown>(null);
@@ -434,7 +434,8 @@ export function InvoiceDetail({ id }: { id: string }) {
           <div className="sig done"><div className="muted small">{t('preparedBy')}</div><div className="who">{v.createdBy}</div></div>
           <div className="sig"><div className="muted small">{v.kind === 'sale' ? t('customer') : t('supplier')}</div><div className="who">&nbsp;</div></div>
         </div>
-        <div className="made-with">{t('madeWith')} · <span className="ltr">qasaerp.com</span></div>
+        {/* Required on Free by the license (NOTICE, additional term 1); Pro and Business remove it. */}
+        {!plan?.features.includes('noBranding') && <div className="made-with">{t('madeWith')} · <span className="ltr">qasaerp.com</span></div>}
       </div>
 
       {(v.entryId || v.cancelEntryId) && (

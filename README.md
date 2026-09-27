@@ -16,6 +16,7 @@
   <a href="https://qasaerp.com/demo/">Live demo</a> ·
   <a href="#run-it">Run it</a> ·
   <a href="#accounting-rules-the-code-enforces">Accounting rules</a> ·
+  <a href="#plans">Plans</a> ·
   <a href="#license">License</a>
 </p>
 
@@ -95,7 +96,27 @@ npm run dist:win    # build apps/desktop/release/Qasa-ERP-Setup-<version>.exe
 - [ ] More reports (balance sheet, profit and loss, final accounts)
 - [ ] Users, roles and sign-in; office-network (server) mode
 - [x] Windows app and installer with automatic updates
-- [ ] Code signing, licensing, backups
+- [x] Plans (Free, Pro, Business) with offline license keys and a 30-day Pro trial
+- [ ] Code signing, backups
+
+## Plans
+
+Free is the complete accounting product for one company on one PC, with no time limit. Pro and Business add what a
+growing company needs, and the app shows the full comparison under **Plan & license**.
+
+| | Free | Pro | Business |
+|---|---|---|---|
+| Accounting, vouchers, invoices, stock, trial balance | ✓ | ✓ | ✓ |
+| Warehouses | 1 | unlimited | unlimited |
+| "Made with Qasa ERP" on invoices | shown | removed | removed |
+| Users | 1 on one PC | up to 5 on the office network | unlimited, online too |
+| Companies | 1 | 3 | unlimited |
+| Installments, payroll, cloud backup, final-account exports | | ✓ | ✓ |
+
+Some Pro features are still being built; the app marks them as coming soon. A plan never locks anyone out of their
+data: when a license ends, the company keeps everything and continues on the Free features. Pro can be tried
+free for 30 days. Licenses are offline keys signed by Meroxis (Ed25519) and are available from
+[info@qasaerp.com](mailto:info@qasaerp.com).
 
 ## License
 

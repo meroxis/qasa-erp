@@ -76,6 +76,7 @@ describe('customers, suppliers and items', () => {
   });
 
   it('gives a new warehouse its own inventory account under 137', async () => {
+    await post('/api/plan/trial'); // Free has one warehouse; the Pro trial allows more
     const erbil = (await post('/api/warehouses', { code: 'erbil', name: { ar: 'مخزن أربيل', en: 'Erbil store', ku: 'کۆگای هەولێر' } })).json();
     expect(erbil).toMatchObject({ code: 'ERBIL', accountCode: '1372' });
     const accounts = (await get('/api/accounts')).json() as { code: string }[];

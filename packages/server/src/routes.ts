@@ -13,6 +13,7 @@ import { createParty, deleteParty, getParty, listParties, partyStatement, update
 import {
   createItem, createWarehouse, deleteItem, getItem, itemMoves, itemStock, listItems, listWarehouses, updateItem, updateWarehouse
 } from './items.ts';
+import { activateLicense, planStatus, removeLicense, startTrial } from './license.ts';
 import { cancelInvoice, createInvoice, deleteInvoice, getInvoice, listInvoices, postInvoice, updateInvoice } from './invoices.ts';
 
 const isoDate = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
@@ -323,6 +324,12 @@ export function apiRoutes(db: Db): Route[] {
     const body = parse(z.object({ date: isoDate.optional() }), req.body ?? {});
     return cancelInvoice(db, parse(idParam, req.params).id, userOf(req), body.date);
   });
+
+  // plan & license
+  app.get('/api/plan', async () => planStatus(db));
+  app.post('/api/plan/license', async (req) => activateLicense(db, parse(z.object({ key: z.string().min(1).max(4000) }), req.body).key, userOf(req)));
+  app.delete('/api/plan/license', async (req) => removeLicense(db, userOf(req)));
+  app.post('/api/plan/trial', async (req) => startTrial(db, userOf(req)));
 
   app.get('/api/audit', async (req) => {
     const q = parse(z.object({ limit: z.coerce.number().int().min(1).max(1000).optional() }), req.query);

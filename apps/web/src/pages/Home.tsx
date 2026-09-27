@@ -1,3 +1,4 @@
+import { useEffect } from 'react';
 import { todayIso } from '@qasa/core';
 import { api } from '../api.ts';
 import { ErrorBox, Icon, useData, useLoad } from '../components.tsx';
@@ -8,7 +9,9 @@ import { EntriesTable } from './Entries.tsx';
 export function Home() {
   const i18n = useI18n();
   const { t } = i18n;
-  const { accounts, settings } = useData();
+  const { accounts, settings, plan, reloadPlan } = useData();
+  // this month's invoice count feeds the "growing" note
+  useEffect(() => { void reloadPlan(); }, [reloadPlan]);
   const { data: entries, error } = useLoad(() => api.entries(), []);
   const month = todayIso().slice(0, 7);
   const sales = useLoad(() => api.invoices({ kind: 'sale', status: 'posted', from: `${month}-01` }), [month]);
@@ -33,6 +36,19 @@ export function Home() {
     <div className="stack">
       {noCompany && (
         <div className="alert info">{t('setupCompany')} <a href={href('settings')}>{t('settings')}</a></div>
+      )}
+      {plan?.license?.state === 'expired' && plan.license.expires && (
+        <div className="alert bad plan-banner">
+          <span>{t('expiredNote', { p: t(`plan_${plan.license.plan}`), d: i18n.date(plan.license.expires) })}</span>
+          <a href={href('plans')}>{t('planLicense')}</a>
+        </div>
+      )}
+      {plan?.nudge && (
+        <div className="alert info plan-banner">
+          <strong>{t('nudgeTitle')}</strong>
+          <span>{t('nudgeText', { n: plan.usage.salesThisMonth })}</span>
+          <a href={href('plans')}>{t('seePlans')}</a>
+        </div>
       )}
       <div className="grid-3">
         {tiles.map((tile) => (

@@ -19,23 +19,27 @@ const POSTING_ACCOUNT_PARENTS: Record<keyof PostingAccounts, string> = {
   customers: '16', suppliers: '26', sales: '4', costOfSales: '3', cash: '18'
 };
 
-function read(db: Db, key: string): string | undefined {
+export function readSetting(db: Db, key: string): string | undefined {
   return (db.prepare('SELECT value FROM settings WHERE key = ?').get(key) as { value: string } | undefined)?.value;
 }
 
-function write(db: Db, key: string, value: string): void {
+export function writeSetting(db: Db, key: string, value: string): void {
   db.prepare('INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value').run(key, value);
 }
 
+export function deleteSetting(db: Db, key: string): void {
+  db.prepare('DELETE FROM settings WHERE key = ?').run(key);
+}
+
 export function getPostingAccounts(db: Db): PostingAccounts {
-  return { ...DEFAULT_POSTING_ACCOUNTS, ...(JSON.parse(read(db, 'posting_accounts') ?? '{}') as Partial<PostingAccounts>) };
+  return { ...DEFAULT_POSTING_ACCOUNTS, ...(JSON.parse(readSetting(db, 'posting_accounts') ?? '{}') as Partial<PostingAccounts>) };
 }
 
 export function getSettings(db: Db): Settings {
   return {
-    companyName: JSON.parse(read(db, 'company_name') ?? '{"ar":"","en":"","ku":""}') as Names,
-    defaultRateX100: Number(read(db, 'default_rate_x100') ?? '142000'),
-    fiscalYearStart: read(db, 'fiscal_year_start') ?? '01-01',
+    companyName: JSON.parse(readSetting(db, 'company_name') ?? '{"ar":"","en":"","ku":""}') as Names,
+    defaultRateX100: Number(readSetting(db, 'default_rate_x100') ?? '142000'),
+    fiscalYearStart: readSetting(db, 'fiscal_year_start') ?? '01-01',
     postingAccounts: getPostingAccounts(db)
   };
 }
@@ -55,10 +59,10 @@ function assertPostingAccounts(db: Db, accounts: PostingAccounts): void {
 export function updateSettings(db: Db, patch: Partial<Settings>, user: string): Settings {
   if (patch.postingAccounts) assertPostingAccounts(db, { ...getPostingAccounts(db), ...patch.postingAccounts });
   transaction(db, () => {
-    if (patch.companyName) write(db, 'company_name', JSON.stringify(patch.companyName));
-    if (patch.defaultRateX100 !== undefined) write(db, 'default_rate_x100', String(patch.defaultRateX100));
-    if (patch.fiscalYearStart) write(db, 'fiscal_year_start', patch.fiscalYearStart);
-    if (patch.postingAccounts) write(db, 'posting_accounts', JSON.stringify({ ...getPostingAccounts(db), ...patch.postingAccounts }));
+    if (patch.companyName) writeSetting(db, 'company_name', JSON.stringify(patch.companyName));
+    if (patch.defaultRateX100 !== undefined) writeSetting(db, 'default_rate_x100', String(patch.defaultRateX100));
+    if (patch.fiscalYearStart) writeSetting(db, 'fiscal_year_start', patch.fiscalYearStart);
+    if (patch.postingAccounts) writeSetting(db, 'posting_accounts', JSON.stringify({ ...getPostingAccounts(db), ...patch.postingAccounts }));
     audit(db, user, 'update', 'settings', null, patch);
   });
   return getSettings(db);

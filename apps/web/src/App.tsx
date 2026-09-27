@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { htmlLang, isLang, type DigitStyle, type Lang } from '@qasa/core';
-import { api, currentUser, type AccountView, type Settings as SettingsData } from './api.ts';
+import { api, currentUser, type AccountView, type PlanStatus, type Settings as SettingsData } from './api.ts';
 import { DataContext, Icon, Logo, ToastProvider } from './components.tsx';
 import { I18nContext, makeI18n, type Key } from './i18n.ts';
 import { href, useRoute } from './router.ts';
@@ -14,6 +14,7 @@ import { Settings } from './pages/Settings.tsx';
 import { Parties, PartyDetail } from './pages/Parties.tsx';
 import { ItemDetail, Items } from './pages/Items.tsx';
 import { InvoiceDetail, InvoiceEditor, Invoices } from './pages/Invoices.tsx';
+import { Plans } from './pages/Plans.tsx';
 
 function stored<T extends string>(key: string, fallback: T, valid: (v: string) => boolean): T {
   try {
@@ -58,7 +59,13 @@ const NAV: { group: Key; items: NavItem[] }[] = [
   },
   { group: 'gStock', items: [{ key: 'items', icon: 'box', path: 'items', match: ['items', 'item'] }] },
   { group: 'gPeople', items: [{ key: 'hr', icon: 'idcard' }, { key: 'salaries', icon: 'users' }] },
-  { group: 'gSystem', items: [{ key: 'settings', icon: 'sliders', path: 'settings', match: ['settings'] }] }
+  {
+    group: 'gSystem',
+    items: [
+      { key: 'settings', icon: 'sliders', path: 'settings', match: ['settings'] },
+      { key: 'planLicense', icon: 'star', path: 'plans', match: ['plans'] }
+    ]
+  }
 ];
 
 export function App() {
@@ -66,6 +73,7 @@ export function App() {
   const [digits, setDigitsState] = useState<DigitStyle>(() => stored<DigitStyle>('qasa.digits', 'western', (v) => v === 'western' || v === 'eastern'));
   const [accounts, setAccounts] = useState<AccountView[]>([]);
   const [settings, setSettings] = useState<SettingsData | null>(null);
+  const [plan, setPlan] = useState<PlanStatus | null>(null);
   const [online, setOnline] = useState(true);
   const route = useRoute();
 
@@ -96,12 +104,24 @@ export function App() {
     }
   }, []);
 
+  const reloadPlan = useCallback(async () => {
+    try {
+      setPlan(await api.plan());
+    } catch {
+      // keeps the last known plan; the status bar already shows when the server is unreachable
+    }
+  }, []);
+
   useEffect(() => {
     void reloadAccounts();
     void reloadSettings();
-  }, [reloadAccounts, reloadSettings]);
+    void reloadPlan();
+  }, [reloadAccounts, reloadSettings, reloadPlan]);
 
-  const data = useMemo(() => ({ accounts, settings, online, reloadAccounts, reloadSettings }), [accounts, settings, online, reloadAccounts, reloadSettings]);
+  const data = useMemo(
+    () => ({ accounts, settings, plan, online, reloadAccounts, reloadSettings, reloadPlan }),
+    [accounts, settings, plan, online, reloadAccounts, reloadSettings, reloadPlan]
+  );
   const { t } = i18n;
   const [page, arg, arg2] = route;
 
@@ -186,6 +206,10 @@ export function App() {
       title = t('settings');
       content = <Settings />;
       break;
+    case 'plans':
+      title = t('planLicense');
+      content = <Plans />;
+      break;
     default:
       content = <Home />;
   }
@@ -209,6 +233,11 @@ export function App() {
               <div className="company-card">
                 <strong>{company || t('noCompany')}</strong>
                 {user && <span className="small" style={{ color: 'var(--navy-muted)' }}>{user}</span>}
+                {plan && (
+                  <a className={'plan-chip' + (plan.plan === 'free' ? '' : ' paid')} href={href('plans')}>
+                    {plan.source === 'trial' ? t('planTrialChip') : t(`plan_${plan.plan}`)}
+                  </a>
+                )}
               </div>
               {NAV.map((g) => (
                 <div key={g.group} style={{ display: 'contents' }}>
@@ -246,7 +275,15 @@ export function App() {
                   </button>
                 )}
               </header>
-              <main className="content">{content}</main>
+              <main className="content">
+                {plan?.license?.state === 'grace' && plan.license.expires && plan.graceEnds && page !== 'plans' && (
+                  <div className="alert warn plan-banner no-print" style={{ marginBottom: 14 }}>
+                    <span>{t('graceNote', { p: t(`plan_${plan.license.plan}`), d: i18n.date(plan.license.expires), g: i18n.date(plan.graceEnds) })}</span>
+                    <a href={href('plans')}>{t('planLicense')}</a>
+                  </div>
+                )}
+                {content}
+              </main>
               <footer className="statusbar">
                 <span className={'dot' + (online ? '' : ' off')} />
                 <span>{import.meta.env.MODE === 'demo' ? t('demoMode') : online ? t('localMode') : t('serverDown')}</span>

@@ -1,4 +1,5 @@
 import type {
+  LicenseInfo, LicenseState, PlanResolution,
   CurrencyCode, EntryAction, EntryStatus, EntryType, InvoiceInput, InvoiceKind, InvoiceStatus, Names, Nature, PaymentMode, PostingAccounts, UnitCode
 } from '@qasa/core';
 
@@ -60,6 +61,15 @@ export interface Settings {
   defaultRateX100: number;
   fiscalYearStart: string;
   postingAccounts: PostingAccounts;
+}
+
+export interface PlanStatus extends PlanResolution {
+  /** The activated license, also after it ended. */
+  license: (LicenseInfo & { state: LicenseState }) | null;
+  trialAvailable: boolean;
+  trialStarted: string | null;
+  usage: { warehouses: number; salesThisMonth: number };
+  nudge: boolean;
 }
 
 export interface TrialBalanceReport {
@@ -312,6 +322,11 @@ export const api = {
   lockPeriod: (period: string) => request<unknown>('POST', `/api/periods/${period}/lock`, {}),
   unlockPeriod: (period: string) => request<unknown>('DELETE', `/api/periods/${period}/lock`),
   audit: (limit = 100) => request<AuditRow[]>('GET', `/api/audit?limit=${limit}`),
+
+  plan: () => request<PlanStatus>('GET', '/api/plan'),
+  activateLicense: (key: string) => request<PlanStatus>('POST', '/api/plan/license', { key }),
+  removeLicense: () => request<PlanStatus>('DELETE', '/api/plan/license'),
+  startTrial: () => request<PlanStatus>('POST', '/api/plan/trial', {}),
 
   parties: (f: { type?: PartyType; q?: string; active?: string } = {}) => request<PartyView[]>('GET', '/api/parties' + qs(f)),
   party: (id: string) => request<PartyView>('GET', `/api/parties/${id}`),

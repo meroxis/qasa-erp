@@ -186,16 +186,17 @@ async function createWindow(url: string): Promise<void> {
     webPreferences: { contextIsolation: true, sandbox: true, nodeIntegration: false, spellcheck: false }
   });
 
-  // Only the app itself opens inside the window; web links go to the browser.
+  // Only the app itself opens inside the window; web links go to the browser and email links to the mail app.
   const origin = new URL(url).origin;
+  const external = (target: string) => /^(https?:\/\/|mailto:)/.test(target) && !target.startsWith(origin);
   win.webContents.setWindowOpenHandler(({ url: target }) => {
-    if (/^https?:\/\//.test(target) && !target.startsWith(origin)) void shell.openExternal(target);
+    if (external(target)) void shell.openExternal(target);
     return { action: 'deny' };
   });
   win.webContents.on('will-navigate', (event, target) => {
     if (!target.startsWith(origin)) {
       event.preventDefault();
-      if (/^https?:\/\//.test(target)) void shell.openExternal(target);
+      if (external(target)) void shell.openExternal(target);
     }
   });
 

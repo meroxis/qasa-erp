@@ -4,6 +4,7 @@ import type { Db } from './db.ts';
 import { nextSequence, transaction } from './db.ts';
 import { audit } from './audit.ts';
 import { conflict, invalid, notFound } from './errors.ts';
+import { assertWithinLimit } from './license.ts';
 
 // ——— Warehouses (المخازن) ———
 
@@ -45,6 +46,7 @@ export function createWarehouse(db: Db, input: { code: string; name: Names }, us
   if (!/^[A-Z0-9-]{1,12}$/.test(code)) throw invalid([{ code: 'code_invalid' }]);
   assertNames(input.name);
   if (db.prepare('SELECT 1 FROM warehouses WHERE code = ?').get(code)) throw conflict('code_exists');
+  assertWithinLimit(db, 'warehouses', (db.prepare('SELECT COUNT(*) AS n FROM warehouses').get() as { n: number }).n);
   if (db.prepare("SELECT 1 FROM entry_lines WHERE account_code = '137' LIMIT 1").get()) throw conflict('parent_has_entries');
   const id = randomUUID();
   transaction(db, () => {

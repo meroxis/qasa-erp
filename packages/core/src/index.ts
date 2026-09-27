@@ -8,3 +8,4 @@ export * from './journal.ts';
 export * from './reports.ts';
 export * from './inventory.ts';
 export * from './invoices.ts';
+export * from './plans.ts';
