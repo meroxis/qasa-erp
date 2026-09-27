@@ -1,0 +1,82 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Qasa ERP</title>
+<style>
+@font-face { font-family: 'Plex'; font-weight: 400; src: url('../../node_modules/@fontsource/ibm-plex-sans/files/ibm-plex-sans-latin-400-normal.woff2') format('woff2'); }
+@font-face { font-family: 'Plex'; font-weight: 600; src: url('../../node_modules/@fontsource/ibm-plex-sans/files/ibm-plex-sans-latin-600-normal.woff2') format('woff2'); }
+@font-face { font-family: 'Plex'; font-weight: 700; src: url('../../node_modules/@fontsource/ibm-plex-sans/files/ibm-plex-sans-latin-700-normal.woff2') format('woff2'); }
+@font-face { font-family: 'Kufi'; font-weight: 700; src: url('../../node_modules/@fontsource/noto-kufi-arabic/files/noto-kufi-arabic-arabic-700-normal.woff2') format('woff2'); }
+@font-face { font-family: 'NotoAr'; font-weight: 400; src: url('../../node_modules/@fontsource/noto-sans-arabic/files/noto-sans-arabic-arabic-400-normal.woff2') format('woff2'); }
+@font-face { font-family: 'NotoAr'; font-weight: 600; src: url('../../node_modules/@fontsource/noto-sans-arabic/files/noto-sans-arabic-arabic-600-normal.woff2') format('woff2'); }
+
+html, body { margin: 0; }
+body {
+  width: 1280px; height: 720px; overflow: hidden; position: relative;
+  background: #0F1E3D; color: #D3DDF0; font-family: 'Plex', 'NotoAr', sans-serif;
+}
+.copy { position: absolute; left: 64px; top: 64px; width: 470px; display: flex; flex-direction: column; gap: 22px; }
+.brand { display: flex; align-items: center; gap: 14px; }
+.brand-name { font-size: 30px; font-weight: 700; color: #fff; line-height: 1.1; }
+.brand-ar { font-family: 'Kufi', sans-serif; font-size: 17px; color: #93A4C6; margin-top: 4px; }
+h1 { margin: 6px 0 0; font-size: 46px; line-height: 1.08; font-weight: 700; color: #fff; letter-spacing: -0.5px; }
+p { margin: 0; font-size: 17px; line-height: 1.55; }
+.chips { display: flex; flex-wrap: wrap; gap: 8px; }
+.chip { padding: 6px 12px; border-radius: 999px; font-size: 14px; font-weight: 600; background: #1A2B52; color: #D3DDF0; }
+.chip.accent { background: #F2A33A; color: #0F1E3D; }
+.taglines { position: absolute; left: 64px; bottom: 44px; display: flex; gap: 14px; align-items: center; font-size: 15px; color: #93A4C6; }
+.taglines .ar { font-family: 'NotoAr', sans-serif; font-weight: 600; }
+.taglines .dot { color: #3A4F7D; }
+.site { position: absolute; left: 64px; bottom: 76px; color: #F2A33A; font-weight: 600; font-size: 17px; }
+
+.window {
+  position: absolute; left: 588px; top: 92px; width: 900px;
+  border-radius: 12px; overflow: hidden; background: #fff;
+  box-shadow: 0 30px 80px rgba(0, 0, 0, 0.45), 0 0 0 1px rgba(255, 255, 255, 0.08);
+}
+.titlebar { height: 34px; display: flex; align-items: center; gap: 10px; padding: 0 14px; background: #E9EDF4; color: #3B4863; font-size: 13px; font-weight: 600; }
+.titlebar .spacer { flex: 1; }
+.titlebar .ctl { width: 12px; height: 12px; border: 1.5px solid #7A869E; border-radius: 2px; }
+.titlebar .ctl.min { height: 0; border-width: 1.5px 0 0; border-radius: 0; }
+.titlebar .ctl.close { border: none; position: relative; }
+.titlebar .ctl.close::before, .titlebar .ctl.close::after { content: ''; position: absolute; left: 5px; top: -1px; width: 1.6px; height: 14px; background: #7A869E; transform: rotate(45deg); }
+.titlebar .ctl.close::after { transform: rotate(-45deg); }
+.window img { display: block; width: 900px; }
+</style>
+</head>
+<body>
+<div class="copy">
+  <div class="brand">
+    <svg width="54" height="54" viewBox="0 0 28 28" aria-hidden="true">
+      <rect x="1" y="1" width="26" height="26" rx="7" fill="#F2A33A"></rect>
+      <circle cx="14" cy="13.5" r="6.5" fill="none" stroke="#0F1E3D" stroke-width="2.6"></circle>
+      <path d="M18.3 17.8 22 21.5" stroke="#0F1E3D" stroke-width="2.6" stroke-linecap="round"></path>
+      <path d="M14 4.8v2.2M5.3 13.5h2.2M20.5 13.5h2.2" stroke="#0F1E3D" stroke-width="1.6" stroke-linecap="round"></path>
+    </svg>
+    <div>
+      <div class="brand-name">Qasa ERP</div>
+      <div class="brand-ar">قاصة ERP · قاسە ERP</div>
+    </div>
+  </div>
+  <h1>Accounting software for Iraqi companies</h1>
+  <p>Built on the Iraqi Unified Accounting System: vouchers from preparer to checker to approver, invoices and stock, and the final accounts — in Arabic, English and Kurdish, in dinars and dollars.</p>
+  <div class="chips">
+    <span class="chip accent">Free for one PC</span>
+    <span class="chip">Windows app</span>
+    <span class="chip">Office network</span>
+    <span class="chip">Open source</span>
+  </div>
+</div>
+<div class="taglines">
+  <span class="ar" dir="rtl">كل دينار محسوب</span><span class="dot">•</span>
+  <span>Every dinar, counted</span><span class="dot">•</span>
+  <span class="ar" dir="rtl">هەموو دینارێک ژمێردراوە</span>
+</div>
+<div class="site">qasaerp.com</div>
+<div class="window">
+  <div class="titlebar"><span>Qasa ERP</span><span class="spacer"></span><span class="ctl min"></span><span class="ctl"></span><span class="ctl close"></span></div>
+  <img src="../../docs/screenshots/dashboard.png" alt="">
+</div>
+</body>
+</html>

@@ -124,7 +124,7 @@ export function seedDemo(db: Db): void {
   post(createVoucher(db, {
     kind: 'payment', date: '2026-09-10', cashAccountCode: '1811', party: 'مالك مخزن بغداد',
     description: 'إيجار مخزن بغداد — أيلول', currency: 'IQD', rateX100: 100,
-    items: [{ accountCode: '331', amount: 3_500_000 }]
+    items: [{ accountCode: '331', amount: 1_250_000 }]
   }, accountant).id);
 
   post(createVoucher(db, {

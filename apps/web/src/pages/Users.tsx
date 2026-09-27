@@ -1,4 +1,5 @@
 import { useState, type FormEvent } from 'react';
+import { todayIso } from '@qasa/core';
 import { api, ROLES, type Me, type Role, type UserView } from '../api.ts';
 import { ErrorBox, Icon, Logo, Modal, useData, useLoad, useToast } from '../components.tsx';
 import { useI18n, type Key } from '../i18n.ts';
@@ -198,7 +199,7 @@ export function Users({ me, onMeChanged }: { me: Me; onMeChanged(me: Me | null):
                 </td>
                 <td className="ltr" style={{ textAlign: 'start' }}>{u.username}</td>
                 <td>{u.roles.map((r) => <span key={r} className="chip" style={{ marginInlineEnd: 4 }}>{t(`role_${r}` as Key)}</span>)}</td>
-                <td className="num">{u.lastLoginAt ? i18n.date(u.lastLoginAt.slice(0, 10)) : '—'}</td>
+                <td className="num">{u.lastLoginAt ? i18n.date(todayIso(new Date(u.lastLoginAt))) : '—'}</td>
                 <td>
                   {u.active ? <span className="chip ok">{t('userActive')}</span> : <span className="chip bad">{t('inactive')}</span>}
                   {!u.hasPassword && <span className="chip warn" style={{ marginInlineStart: 4 }}>{t('noPassword')}</span>}

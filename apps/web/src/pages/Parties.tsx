@@ -40,7 +40,7 @@ export function Parties({ type }: { type: PartyType }) {
                 <tr key={p.id} className="click" onClick={() => go(`party/${p.id}`)}>
                   <td><span className="tree-code">{p.code}</span></td>
                   <td>
-                    <strong>{p.name}</strong>
+                    <strong className="bidi">{p.name}</strong>
                     {!p.active && <span className="chip" style={{ marginInlineStart: 8 }}>{t('inactive')}</span>}
                     {p.address && <div className="muted small">{p.address}</div>}
                   </td>
@@ -240,7 +240,7 @@ export function InvoicesTable({ invoices, showParty = true }: { invoices: Invoic
               {v.returnOf && <> <span className="chip warn">{t(v.kind)}</span></>}
             </td>
             <td className="num">{i18n.date(v.date)}</td>
-            {showParty && <td>{v.partyName ?? <span className="muted">{t('walkIn')}</span>}</td>}
+            {showParty && <td className="bidi">{v.partyName ?? <span className="muted">{t('walkIn')}</span>}</td>}
             <td>{v.payment === 'cash' ? t('payCash') : t('payCredit')}</td>
             <td className="amount">{i18n.money(v.total, v.currency)}</td>
             <td><InvoiceStatusChip status={v.status} /></td>

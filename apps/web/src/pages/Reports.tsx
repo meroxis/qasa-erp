@@ -60,7 +60,7 @@ export function TrialBalance() {
           <div className="row" style={{ padding: '14px 16px 8px' }}>
             <h2>{t('trialBalance')} <span className="muted small">{i18n.date(from)} — {i18n.date(to)}</span></h2>
             <span className="spacer" />
-            {rows.length > 0 && (ok ? <span className="chip ok">{t('balanced')}</span> : <span className="chip bad">{t('notBalanced')}</span>)}
+            {rows.length > 0 && (ok ? <span className="chip ok">{t('tbBalanced')}</span> : <span className="chip bad">{t('tbNotBalanced')}</span>)}
           </div>
           {rows.length === 0 ? <p className="muted" style={{ padding: '0 16px 16px' }}>{t('noData')}</p> : (
             <table className="table">

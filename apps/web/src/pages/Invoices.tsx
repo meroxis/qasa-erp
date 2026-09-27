@@ -397,7 +397,7 @@ export function InvoiceDetail({ id }: { id: string }) {
           <div>
             <div className="muted small">{v.kind === 'sale' ? t('billTo') : saleSide ? t('customer') : t('supplier')}</div>
             <div style={{ fontWeight: 700, fontSize: 16 }}>{v.partyName ?? t('walkIn')}</div>
-            {v.partyPhone && <div className="small ltr" style={{ textAlign: 'start' }}>{i18n.digitsOf(v.partyPhone)}</div>}
+            {v.partyPhone && <div className="small"><span className="ltr">{i18n.digitsOf(v.partyPhone)}</span></div>}
             {v.partyAddress && <div className="small">{v.partyAddress}</div>}
           </div>
           <div>

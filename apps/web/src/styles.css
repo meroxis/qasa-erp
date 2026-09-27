@@ -44,6 +44,10 @@ button, input, select, textarea { font: inherit; color: inherit; }
 a { color: var(--blue-dark); }
 .num { font-variant-numeric: tabular-nums; }
 .ltr { direction: ltr; unicode-bidi: isolate; }
+/* text people type (names, descriptions) keeps the word order of its own language, aligned like its column */
+.bidi { unicode-bidi: plaintext; }
+html[dir='ltr'] .bidi { text-align: left; }
+html[dir='rtl'] .bidi { text-align: right; }
 .muted { color: var(--ink-3); }
 .small { font-size: 12.5px; }
 

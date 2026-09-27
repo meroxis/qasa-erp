@@ -1,33 +1,105 @@
+<p align="center">
+  <img src="docs/screenshots/hero.png" alt="Qasa ERP: accounting software for Iraqi companies, shown with its dashboard" width="100%">
+</p>
+
 <h1 align="center">Qasa ERP · قاصة ERP · قاسە ERP</h1>
 
 <p align="center">
-  <strong>Accounting software for Iraqi companies, built on the Iraqi Unified Accounting System.<br>Arabic, English and Kurdish. Dinars and dollars. Open source.</strong>
+  <strong>Accounting software for Iraqi companies, built on the Iraqi Unified Accounting System.<br>Arabic, English and Kurdish. Dinars and dollars. Free for one PC.</strong>
 </p>
 
 <p align="center">
+  <a href="https://github.com/meroxis/qasa-erp/releases/latest/download/Qasa-ERP-Setup.exe"><img src="https://img.shields.io/badge/Download_for_Windows-10_%26_11-F2A33A?style=for-the-badge&labelColor=0F1E3D" alt="Download for Windows 10 and 11"></a>
+  <a href="https://qasaerp.com/demo/"><img src="https://img.shields.io/badge/Live_demo-in_your_browser-1D5FD1?style=for-the-badge&labelColor=0F1E3D" alt="Try the live demo in your browser"></a>
+</p>
+
+<p align="center">
+  <a href="https://github.com/meroxis/qasa-erp/releases/latest"><img src="https://img.shields.io/github/v/release/meroxis/qasa-erp?color=1D5FD1&label=version" alt="Latest version"></a>
   <a href="https://github.com/meroxis/qasa-erp/actions/workflows/tests.yml"><img src="https://github.com/meroxis/qasa-erp/actions/workflows/tests.yml/badge.svg" alt="Tests"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-AGPL--3.0-1D5FD1" alt="License: AGPL-3.0"></a>
-  <img src="https://img.shields.io/badge/Node.js-24-1D5FD1" alt="Node.js 24">
   <a href="https://github.com/sponsors/meroxis"><img src="https://img.shields.io/badge/sponsor-meroxis-1D5FD1" alt="Sponsor"></a>
 </p>
 
 <p align="center">
   <a href="https://qasaerp.com">Website</a> ·
-  <a href="https://qasaerp.com/demo/">Live demo</a> ·
-  <a href="#run-it">Run it</a> ·
-  <a href="#accounting-rules-the-code-enforces">Accounting rules</a> ·
+  <a href="#what-it-does">Features</a> ·
+  <a href="#screenshots">Screenshots</a> ·
   <a href="#plans">Plans</a> ·
+  <a href="#run-it">Run it</a> ·
   <a href="#license">License</a>
 </p>
 
-Qasa ERP keeps the books of an Iraqi company the way its finance department already works: the unified chart of accounts
-(النظام المحاسبي الموحد), receipt and payment vouchers that go from preparer to checker to approver, sales and purchase
-invoices, stock at average cost, customers and suppliers with statements, and reports — in Arabic, English and
-Kurdish (Sorani), in dinars and dollars. PC, office network and online editions share one codebase.
+## What it does
 
-> **Status: Release 1 in progress.** Accounting, vouchers, reports, invoices and stock work today. See the [progress list](#release-1-progress).
->
-> **Try it:** the [live demo](https://qasaerp.com/demo/) runs entirely in your browser with a sample company. Nothing is sent to a server, and a reload starts it afresh.
+Qasa ERP keeps the books of an Iraqi company the way its finance department already works.
+
+- **The books, the Iraqi way.** The unified chart of accounts (النظام المحاسبي الموحد), receipt and payment vouchers and
+  journal entries that go from preparer (المنظم) to checker (المدقق) to approver (المصادق), gap-free numbers,
+  corrections by reversal rather than editing, period locking and a full audit log.
+- **Sales, purchases and stock.** Invoices with the total in words (تفقيط), returns, customers and suppliers with
+  statements and credit limits, warehouses, opening stock and transfers, all valued at weighted average cost.
+- **Reports that close the year.** Trial balance, account statements and the final accounts: the trading, current
+  operations and profit and loss accounts, and the balance sheet.
+- **Three languages, two currencies.** Arabic, English and Kurdish (Sorani), switchable at any time, with Arabic-Indic
+  digits if you prefer; dinars and dollars at the day's rate.
+- **A team, with controls.** Sign-in, roles, and separate duties, so whoever prepares a voucher cannot approve it.
+- **On your own PC.** The Windows app keeps the company file on your computer, works without internet and updates
+  itself. An office-network edition and an online edition share the same code.
+
+> **Status: Release 1 in progress.** See the [progress list](#release-1-progress). The [live demo](https://qasaerp.com/demo/)
+> runs entirely in your browser with a sample company: nothing is sent to a server, and a reload starts it afresh.
+
+## Screenshots
+
+<p align="center">
+  <img src="docs/screenshots/languages.png" alt="The same dashboard in Arabic, English and Kurdish" width="100%">
+</p>
+
+<table>
+  <tr>
+    <td width="50%" valign="top">
+      <img src="docs/screenshots/dashboard.png" alt="Dashboard in English">
+      <p><strong>Dashboard</strong><br><sub>Cash and banks, this month's sales, what customers and suppliers owe, and the vouchers waiting for check or approval.</sub></p>
+    </td>
+    <td width="50%" valign="top">
+      <img src="docs/screenshots/invoice-ar.png" alt="A sales invoice in Arabic">
+      <p><strong>Sales invoice · Arabic</strong><br><sub>Ready to print, with the discount and the total in words. Returns are made from here.</sub></p>
+    </td>
+  </tr>
+  <tr>
+    <td width="50%" valign="top">
+      <img src="docs/screenshots/voucher-ku.png" alt="A receipt voucher in Kurdish">
+      <p><strong>Receipt voucher · Kurdish</strong><br><sub>Prepared, checked and approved by different people; each signature is recorded with its time.</sub></p>
+    </td>
+    <td width="50%" valign="top">
+      <img src="docs/screenshots/final-accounts.png" alt="Final accounts and balance sheet">
+      <p><strong>Final accounts</strong><br><sub>Trading, current operations and profit and loss accounts, and a balance sheet that checks itself.</sub></p>
+    </td>
+  </tr>
+  <tr>
+    <td width="50%" valign="top">
+      <img src="docs/screenshots/trial-balance-ar.png" alt="Trial balance in Arabic">
+      <p><strong>Trial balance · Arabic</strong><br><sub>Movements and balances in two columns, as Iraqi accountants expect, with Excel export.</sub></p>
+    </td>
+    <td width="50%" valign="top">
+      <img src="docs/screenshots/stock-card.png" alt="Stock card of an item">
+      <p><strong>Stock card</strong><br><sub>Every move of an item, with the running quantity and its value at average cost.</sub></p>
+    </td>
+  </tr>
+  <tr>
+    <td width="50%" valign="top">
+      <img src="docs/screenshots/users.png" alt="Users, roles and sign-in">
+      <p><strong>Users and roles</strong><br><sub>Sign-in, roles for each person and separate duties for a team (Pro).</sub></p>
+    </td>
+    <td width="50%" valign="middle" align="center">
+      <p><strong>Try it yourself</strong></p>
+      <p><a href="https://qasaerp.com/demo/">Open the live demo</a><br><sub>No sign-up, no download</sub></p>
+      <p><a href="https://github.com/meroxis/qasa-erp/releases/latest/download/Qasa-ERP-Setup.exe">Download for Windows</a><br><sub>Free for one PC</sub></p>
+    </td>
+  </tr>
+</table>
+
+<sub>The screenshots show the sample company that comes with the app (<code>npm run seed:demo</code>). <code>node scripts/screenshots.mjs</code> takes them again.</sub>
 
 ## Run it
 
@@ -52,7 +124,7 @@ npm run desktop     # run the Windows app from source
 npm run dist:win    # build apps/desktop/release/Qasa-ERP-Setup-<version>.exe
 ```
 
-- The company file is `%APPDATA%Qasa ERPdataqasa.sqlite`; the support log is `%APPDATA%Qasa ERPlogsmain.log`.
+- The company file is `%APPDATA%\Qasa ERP\data\qasa.sqlite`; the support log is `%APPDATA%\Qasa ERP\logs\main.log`.
 - The built-in server listens on 127.0.0.1 only and answers only the app's own window (a new secret each launch).
 - The window has no Node access (sandbox, context isolation) and loads nothing but the app. Electron fuses stop the
   program being used as a plain Node runtime and make it reject tampered app files.
@@ -108,12 +180,15 @@ growing company needs, and the app shows the full comparison under **Plan & lice
 
 | | Free | Pro | Business |
 |---|---|---|---|
-| Accounting, vouchers, invoices, stock, trial balance | ✓ | ✓ | ✓ |
+| Accounting, vouchers, invoices, returns, stock, trial balance | ✓ | ✓ | ✓ |
+| Final accounts | on screen | print and Excel | print and Excel |
 | Warehouses | 1 | unlimited | unlimited |
 | "Made with Qasa ERP" on invoices | shown | removed | removed |
-| Users | 1 on one PC | up to 5 on the office network | unlimited, online too |
+| Users, with sign-in | 1 | up to 5, with roles and separate duties | unlimited |
+| Office network (several PCs on one company file) | | coming soon | coming soon |
 | Companies | 1 | 3 | unlimited |
-| Installments, payroll, cloud backup, final-account exports | | ✓ | ✓ |
+| Installments, payroll, cloud backup, year-end closing | | coming soon | coming soon |
+| Online edition, branches | | | coming soon |
 
 Some Pro features are still being built; the app marks them as coming soon. A plan never locks anyone out of their
 data: when a license ends, the company keeps everything and continues on the Free features. Pro can be tried

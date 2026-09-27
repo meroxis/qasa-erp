@@ -28,8 +28,8 @@ export function EntriesTable({ entries }: { entries: EntrySummary[] }) {
             <td>{t(e.type)}</td>
             <td className="num">{i18n.date(e.date)}</td>
             <td>
-              <div style={{ fontWeight: 600 }}>{e.party || e.description}</div>
-              {e.party && <div className="muted small">{e.description}</div>}
+              <div className="bidi" style={{ fontWeight: 600 }}>{e.party || e.description}</div>
+              {e.party && <div className="muted small bidi">{e.description}</div>}
             </td>
             <td className="amount">{i18n.money(e.total, e.currency)}</td>
             <td><StatusChip status={e.status} reversed={!!e.reversedById} /></td>

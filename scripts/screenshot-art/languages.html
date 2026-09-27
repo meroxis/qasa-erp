@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Qasa ERP in three languages</title>
+<style>
+@font-face { font-family: 'Plex'; font-weight: 400; src: url('../../node_modules/@fontsource/ibm-plex-sans/files/ibm-plex-sans-latin-400-normal.woff2') format('woff2'); }
+@font-face { font-family: 'Plex'; font-weight: 700; src: url('../../node_modules/@fontsource/ibm-plex-sans/files/ibm-plex-sans-latin-700-normal.woff2') format('woff2'); }
+@font-face { font-family: 'NotoAr'; font-weight: 600; src: url('../../node_modules/@fontsource/noto-sans-arabic/files/noto-sans-arabic-arabic-600-normal.woff2') format('woff2'); }
+
+html, body { margin: 0; }
+body {
+  width: 1280px; height: 500px; overflow: hidden;
+  background: #0F1E3D; color: #D3DDF0; font-family: 'Plex', 'NotoAr', sans-serif;
+  box-sizing: border-box; padding: 56px 64px;
+}
+h1 { margin: 0; font-size: 32px; font-weight: 700; color: #fff; }
+p { margin: 10px 0 0; font-size: 17px; }
+.row { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 24px; margin-top: 40px; }
+figure { margin: 0; display: flex; flex-direction: column; gap: 14px; align-items: center; }
+.frame { width: 100%; border-radius: 10px; overflow: hidden; background: #fff; box-shadow: 0 18px 44px rgba(0, 0, 0, 0.45), 0 0 0 1px rgba(255, 255, 255, 0.08); }
+.frame img { display: block; width: 100%; }
+figcaption { height: 34px; padding: 0 16px; display: flex; align-items: center; border-radius: 999px; background: #1A2B52; font-size: 16px; font-weight: 600; line-height: 1; color: #fff; }
+figcaption.ar { font-family: 'NotoAr', sans-serif; }
+</style>
+</head>
+<body>
+<h1>One app, three languages</h1>
+<p>Switch between Arabic, English and Kurdish (Sorani) at any time — printed vouchers and invoices included.</p>
+<div class="row">
+  <figure><div class="frame"><img src="../../docs/screenshots/dashboard-ar.png" alt=""></div><figcaption class="ar" dir="rtl">العربية</figcaption></figure>
+  <figure><div class="frame"><img src="../../docs/screenshots/dashboard.png" alt=""></div><figcaption>English</figcaption></figure>
+  <figure><div class="frame"><img src="../../docs/screenshots/dashboard-ku.png" alt=""></div><figcaption class="ar" dir="rtl">کوردی</figcaption></figure>
+</div>
+</body>
+</html>
