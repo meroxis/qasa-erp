@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
-import { htmlLang, isLang, type DigitStyle, type Lang } from '@qasa/core';
+import { APP_VERSION, htmlLang, isLang, type DigitStyle, type Lang } from '@qasa/core';
 import { api, currentUser, type AccountView, type PlanStatus, type Settings as SettingsData } from './api.ts';
 import { DataContext, Icon, Logo, ToastProvider } from './components.tsx';
 import { I18nContext, makeI18n, type Key } from './i18n.ts';
@@ -289,7 +289,7 @@ export function App() {
                 <span>{import.meta.env.MODE === 'demo' ? t('demoMode') : online ? t('localMode') : t('serverDown')}</span>
                 <span className="spacer" />
                 {import.meta.env.MODE === 'demo' && <a href="../" className="ltr">qasaerp.com</a>}
-                <span className="ltr">Qasa ERP 0.1.0</span>
+                <span className="ltr">Qasa ERP {APP_VERSION}</span>
               </footer>
             </div>
           </div>

@@ -1,7 +1,7 @@
 {
   "name": "@qasa/desktop",
   "productName": "Qasa ERP",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "private": true,
   "description": "Qasa ERP for Windows — accounting software for Iraqi companies",
   "author": "Meroxis",

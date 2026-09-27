@@ -12,7 +12,7 @@ let supplierId: string;
 let acId: string;
 let installId: string;
 
-const headers = { 'x-qasa-user': encodeURIComponent('ديلان رستم') };
+const headers = { 'x-qasa-user': encodeURIComponent('Mer Las') };
 const post = (url: string, body: unknown = {}) => app.inject({ method: 'POST', url, payload: body as object, headers });
 const get = (url: string) => app.inject(url);
 
@@ -66,8 +66,8 @@ describe('customers, suppliers and items', () => {
     const wrongAccount = await post('/api/parties', { type: 'customer', name: 'x', accountCode: '2611' });
     expect(wrongAccount.json().details[0].code).toBe('account_invalid');
     // Kurdish/Arabic letter variants find the same customer
-    await post('/api/parties', { type: 'customer', name: 'کاروان عومەر' });
-    expect((await get(`/api/parties?q=${encodeURIComponent('كاروان')}`)).json()).toHaveLength(1);
+    await post('/api/parties', { type: 'customer', name: 'کۆمپانیای مێرۆکسیس' });
+    expect((await get(`/api/parties?q=${encodeURIComponent('ميروكسيس')}`)).json()).toHaveLength(1);
     expect((await get('/api/parties?q=sanos')).json()).toHaveLength(1);
 
     const install = (await get(`/api/items/${installId}`)).json();

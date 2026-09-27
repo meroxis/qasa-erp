@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { APP_VERSION } from '@qasa/core';
 import type { Db } from './db.ts';
 import { AppError, invalid } from './errors.ts';
 import { createAccount, deleteAccount, listAccounts, renameAccount } from './accounts.ts';
@@ -172,7 +173,7 @@ export function apiRoutes(db: Db): Route[] {
   const add = (method: HttpMethod) => (path: string, handler: Route['handler']) => { routes.push({ method, path, handler }); };
   const app = { get: add('GET'), post: add('POST'), put: add('PUT'), patch: add('PATCH'), delete: add('DELETE') };
 
-  app.get('/api/health', async () => ({ ok: true, app: 'qasa-erp', version: '0.1.0' }));
+  app.get('/api/health', async () => ({ ok: true, app: 'qasa-erp', version: APP_VERSION }));
 
   // settings & periods
   app.get('/api/settings', async () => getSettings(db));

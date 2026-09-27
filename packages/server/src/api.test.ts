@@ -18,7 +18,7 @@ afterEach(async () => {
 
 const user = (name: string) => ({ 'x-qasa-user': encodeURIComponent(name) });
 
-async function post(url: string, body: unknown = {}, headers = user('ديلان رستم')) {
+async function post(url: string, body: unknown = {}, headers = user('Mer Las')) {
   return app.inject({ method: 'POST', url, payload: body as object, headers });
 }
 
@@ -26,7 +26,7 @@ const receipt = {
   kind: 'receipt',
   date: '2026-09-26',
   cashAccountCode: '1811',
-  party: 'ريباز سالار',
+  party: 'Raz',
   description: 'القسط 6 من 12 — عقد INS-0087',
   currency: 'IQD',
   rateX100: 142000,
@@ -66,14 +66,14 @@ describe('vouchers', () => {
     expect(draft.lines[0]).toMatchObject({ accountCode: '1811', debit: 375000 });
     expect(draft.actions).toEqual(['edit', 'delete', 'check']);
 
-    const checked = (await post(`/api/entries/${draft.id}/check`, {}, user('كاوه رشيد'))).json();
+    const checked = (await post(`/api/entries/${draft.id}/check`, {}, user('Raz'))).json();
     expect(checked.status).toBe('checked');
-    expect(checked.checkedBy).toBe('كاوه رشيد');
+    expect(checked.checkedBy).toBe('Raz');
 
-    const approved = (await post(`/api/entries/${draft.id}/approve`, {}, user('صلاح نوري'))).json();
+    const approved = (await post(`/api/entries/${draft.id}/approve`, {}, user('Mer Las'))).json();
     expect(approved.status).toBe('approved');
     expect(approved.number).toBe('RV-2026-0001');
-    expect(approved.approvedBy).toBe('صلاح نوري');
+    expect(approved.approvedBy).toBe('Mer Las');
 
     const second = (await post('/api/vouchers', receipt)).json();
     await post(`/api/entries/${second.id}/check`);
@@ -155,7 +155,7 @@ describe('reports', () => {
   it('keeps an append-only audit log', async () => {
     await post('/api/vouchers', receipt);
     const log = (await app.inject('/api/audit')).json();
-    expect(log[0]).toMatchObject({ action: 'create', entity: 'entry', user: 'ديلان رستم' });
+    expect(log[0]).toMatchObject({ action: 'create', entity: 'entry', user: 'Mer Las' });
     expect(() => db.prepare('DELETE FROM audit_log').run()).toThrow(/append_only/);
   });
 });

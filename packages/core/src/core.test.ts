@@ -73,8 +73,8 @@ describe('dates and search', () => {
     expect(isIsoDate('26/09/2026')).toBe(false);
   });
   it('matches Arabic-keyboard and Kurdish-keyboard spellings', () => {
-    expect(normalizeForSearch('علي')).toBe(normalizeForSearch('علی'));
-    expect(normalizeForSearch('كاروان')).toBe(normalizeForSearch('کاروان'));
+    expect(normalizeForSearch('كيلو')).toBe(normalizeForSearch('کیلو'));
+    expect(normalizeForSearch('ميروكسيس')).toBe(normalizeForSearch('مێرۆکسیس'));
   });
 });
 
@@ -119,7 +119,7 @@ describe('journal', () => {
 
   it('turns a receipt voucher into a balanced entry', () => {
     const entry = voucherToEntry({
-      kind: 'receipt', date: '2026-09-26', cashAccountCode: '1811', party: 'Rebaz Salar',
+      kind: 'receipt', date: '2026-09-26', cashAccountCode: '1811', party: 'Raz',
       description: 'Installment 6 of 12', currency: 'IQD', rateX100: 0,
       items: [{ accountCode: '1612', amount: 375_000 }]
     });

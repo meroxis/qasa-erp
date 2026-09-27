@@ -33,7 +33,7 @@ function makeKey(payload: object, signer: KeyObject = privateKey): string {
 }
 
 const pro = (extra: object = {}) => ({ v: 1, id: 'QL-2026-0001', plan: 'pro', to: 'Sanos Company', issued: '2026-09-27', expires: '2027-09-26', ...extra });
-const headers = { 'x-qasa-user': encodeURIComponent('ديلان رستم') };
+const headers = { 'x-qasa-user': encodeURIComponent('Mer Las') };
 const post = (url: string, body: unknown = {}) => app.inject({ method: 'POST', url, payload: body as object, headers });
 const addWarehouse = (code: string) => post('/api/warehouses', { code, name: { ar: code, en: code, ku: code } });
 
