@@ -42,6 +42,22 @@ npm run typecheck
 
 The database is `data/qasa.sqlite` (set `QASA_DATA_DIR` to move it). Delete the `data` folder to start fresh.
 
+## Windows app
+
+`apps/desktop` wraps the same server and screens in Electron:
+
+```bash
+npm run desktop     # run the Windows app from source
+npm run dist:win    # build apps/desktop/release/Qasa-ERP-Setup-<version>.exe
+```
+
+- The company file is `%APPDATA%Qasa ERPdataqasa.sqlite`; the support log is `%APPDATA%Qasa ERPlogsmain.log`.
+- The built-in server listens on 127.0.0.1 only and answers only the app's own window (a new secret each launch).
+- The window has no Node access (sandbox, context isolation) and loads nothing but the app. Electron fuses stop the
+  program being used as a plain Node runtime and make it reject tampered app files.
+- Updates: the app checks GitHub releases of this repository at start and every six hours, downloads in the background
+  and asks before restarting.
+
 ## Project layout
 
 | Folder | What it is |
@@ -78,7 +94,8 @@ The database is `data/qasa.sqlite` (set `QASA_DATA_DIR` to move it). Delete the 
 - [ ] HR, salaries and employee advances
 - [ ] More reports (balance sheet, profit and loss, final accounts)
 - [ ] Users, roles and sign-in; office-network (server) mode
-- [ ] Windows app (Tauri) and installer, licensing, backups
+- [x] Windows app and installer with automatic updates
+- [ ] Code signing, licensing, backups
 
 ## License
 

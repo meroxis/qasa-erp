@@ -1,0 +1,23 @@
+{
+  "name": "@qasa/desktop",
+  "productName": "Qasa ERP",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Qasa ERP for Windows — accounting software for Iraqi companies",
+  "author": "Meroxis",
+  "license": "AGPL-3.0-or-later",
+  "homepage": "https://qasaerp.com",
+  "main": "dist/main.cjs",
+  "scripts": {
+    "build": "node build.mjs",
+    "start": "node build.mjs && electron .",
+    "dist": "node build.mjs && electron-builder --win --publish never",
+    "release": "node build.mjs && electron-builder --win --publish always",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "electron": "44.4.5",
+    "electron-builder": "26.15.3",
+    "electron-updater": "^6.8.9"
+  }
+}

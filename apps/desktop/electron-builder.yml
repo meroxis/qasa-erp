@@ -1,0 +1,46 @@
+appId: com.meroxis.qasaerp
+productName: Qasa ERP
+copyright: © 2026 Meroxis
+directories:
+  output: release
+  buildResources: build
+files:
+  - dist/**/*
+  - package.json
+asar: true
+compression: maximum
+electronLanguages: [en-US, ar]
+# Hardening: the app can't be used as a plain Node runtime, and it refuses tampered app files.
+electronFuses:
+  runAsNode: false
+  enableCookieEncryption: true
+  enableNodeOptionsEnvironmentVariable: false
+  enableNodeCliInspectArguments: false
+  enableEmbeddedAsarIntegrityValidation: true
+  onlyLoadAppFromAsar: true
+  loadBrowserProcessSpecificV8Snapshot: false
+  grantFileProtocolExtraPrivileges: false
+npmRebuild: false
+win:
+  target:
+    - target: nsis
+      arch: [x64]
+  icon: build/icon.png
+  artifactName: Qasa-ERP-Setup-${version}.${ext}
+nsis:
+  oneClick: false
+  perMachine: false
+  allowToChangeInstallationDirectory: true
+  createDesktopShortcut: always
+  createStartMenuShortcut: true
+  shortcutName: Qasa ERP
+  uninstallDisplayName: Qasa ERP
+  multiLanguageInstaller: true
+  installerLanguages: [en_US, ar_SA]
+  license: ../../LICENSE
+  deleteAppDataOnUninstall: false
+publish:
+  provider: github
+  owner: meroxis
+  repo: qasa-erp
+  releaseType: release

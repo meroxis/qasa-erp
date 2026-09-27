@@ -11,8 +11,10 @@
   "scripts": {
     "dev": "node scripts/dev.mjs",
     "test": "vitest run",
-    "typecheck": "tsc -p packages/core --noEmit && tsc -p packages/server --noEmit && tsc -p apps/web --noEmit",
-    "seed:demo": "npm run seed:demo -w @qasa/server"
+    "typecheck": "tsc -p packages/core --noEmit && tsc -p packages/server --noEmit && tsc -p apps/web --noEmit && tsc -p apps/desktop --noEmit",
+    "seed:demo": "npm run seed:demo -w @qasa/server",
+    "desktop": "npm run start -w @qasa/desktop",
+    "dist:win": "npm run dist -w @qasa/desktop"
   },
   "engines": {
     "node": ">=24"
