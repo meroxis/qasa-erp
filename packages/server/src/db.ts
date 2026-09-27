@@ -445,7 +445,43 @@ const V3 =
   BEGIN SELECT RAISE(ABORT, 'posted_document_is_permanent'); END;
   `;
 
-const MIGRATIONS: Migration[] = [{ sql: V1 }, { sql: V2, rebuild: true }, { sql: V3, rebuild: true }];
+const V4 =
+  // 4 — users, sign-in and roles
+  `
+  CREATE TABLE users (
+    id TEXT PRIMARY KEY,
+    username TEXT NOT NULL UNIQUE COLLATE NOCASE,
+    -- the name printed on vouchers ("prepared by")
+    name TEXT NOT NULL,
+    -- scrypt hash; NULL until a password is set (then the user cannot sign in)
+    password_hash TEXT,
+    -- JSON array of roles
+    roles TEXT NOT NULL,
+    active INTEGER NOT NULL DEFAULT 1,
+    created_at TEXT NOT NULL,
+    last_login_at TEXT
+  );
+
+  -- only a hash of each session token is kept; the token itself lives in the signed-in browser's cookie
+  CREATE TABLE sessions (
+    token_hash TEXT PRIMARY KEY,
+    user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    created_at TEXT NOT NULL,
+    last_seen_at TEXT NOT NULL,
+    expires_at TEXT NOT NULL,
+    device TEXT
+  );
+  CREATE INDEX sessions_user ON sessions(user_id);
+
+  -- who prepared and who checked a voucher, for "separate duties"
+  ALTER TABLE entries ADD COLUMN prepared_by_id TEXT REFERENCES users(id);
+  ALTER TABLE entries ADD COLUMN checked_by_id TEXT REFERENCES users(id);
+  `;
+
+const MIGRATIONS: Migration[] = [{ sql: V1 }, { sql: V2, rebuild: true }, { sql: V3, rebuild: true }, { sql: V4 }];
+
+/** The schema version this build writes. */
+export const SCHEMA_VERSION = MIGRATIONS.length;
 
 export function openDatabase(file: string): Db {
   const db = new DatabaseSync(file);
@@ -543,6 +579,12 @@ function ensureDefaults(db: Db): void {
       costOfSales: DEFAULT_POSTING_ACCOUNTS.costOfSales,
       cash: postable(DEFAULT_POSTING_ACCOUNTS.cash, '181')
     }));
+
+    // the owner: the one user a company starts with; the app opens as this user until sign-in is switched on
+    if ((db.prepare('SELECT COUNT(*) AS n FROM users').get() as { n: number }).n === 0) {
+      db.prepare("INSERT INTO users (id, username, name, password_hash, roles, active, created_at) VALUES (?, 'admin', 'Admin', NULL, '[\"admin\"]', 1, ?)")
+        .run(randomUUID(), now);
+    }
 
     const warehouses = (db.prepare('SELECT COUNT(*) AS n FROM warehouses').get() as { n: number }).n;
     if (warehouses === 0) {

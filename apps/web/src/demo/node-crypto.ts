@@ -8,6 +8,20 @@ export function randomUUID(): string {
   return `${h.slice(0, 8)}-${h.slice(8, 12)}-${h.slice(12, 16)}-${h.slice(16, 20)}-${h.slice(20)}`;
 }
 
+/** Passwords and sessions belong to the Windows app and the office server; the demo never signs anyone in. */
+export function createHash(): never {
+  throw new Error('not in the demo');
+}
+export function randomBytes(): never {
+  throw new Error('not in the demo');
+}
+export function scryptSync(): never {
+  throw new Error('not in the demo');
+}
+export function timingSafeEqual(): never {
+  throw new Error('not in the demo');
+}
+
 /** License keys are activated in the Windows app, not in the demo: here every key is refused. */
 export function createPublicKey(): object {
   return {};

@@ -265,6 +265,28 @@ export interface InvoiceView extends InvoiceSummary {
   returns: { id: string; kind: InvoiceDocKind; number: string | null; date: string; status: InvoiceStatus; total: number }[];
 }
 
+export type Role = 'admin' | 'preparer' | 'checker' | 'approver' | 'sales' | 'purchasing' | 'storekeeper' | 'viewer';
+export const ROLES: Role[] = ['admin', 'preparer', 'checker', 'approver', 'sales', 'purchasing', 'storekeeper', 'viewer'];
+export type Permission = 'admin' | 'entries.prepare' | 'entries.check' | 'entries.approve' | 'sales' | 'purchases' | 'stock';
+
+export interface Me {
+  signInRequired: boolean;
+  separateDuties: boolean;
+  demo: boolean;
+  user: { id: string | null; name: string; username: string; roles: Role[]; permissions: Permission[] } | null;
+}
+
+export interface UserView {
+  id: string;
+  username: string;
+  name: string;
+  roles: Role[];
+  active: boolean;
+  hasPassword: boolean;
+  createdAt: string;
+  lastLoginAt: string | null;
+}
+
 export interface ReturnInput {
   date: string;
   payment: PaymentMode;
@@ -348,8 +370,12 @@ export function setCurrentUser(name: string): void {
   }
 }
 
+/** Fired when the server says nobody is signed in (a session ended); the app shows the sign-in page. */
+export const SIGNED_OUT_EVENT = 'qasa:signed-out';
+
 async function request<T>(method: string, url: string, body?: unknown): Promise<T> {
-  const headers: Record<string, string> = {};
+  // marks requests as coming from the app itself; the server refuses changes without it once sign-in is on
+  const headers: Record<string, string> = { 'x-qasa-client': '1' };
   const user = currentUser();
   if (user) headers['x-qasa-user'] = encodeURIComponent(user);
   if (body !== undefined) headers['content-type'] = 'application/json';
@@ -361,6 +387,7 @@ async function request<T>(method: string, url: string, body?: unknown): Promise<
   }
   if (res.status === 204) return undefined as T;
   const data = await res.json().catch(() => null);
+  if (res.status === 401 && data?.error === 'unauthorized') window.dispatchEvent(new Event(SIGNED_OUT_EVENT));
   if (!res.ok) throw new ApiError(res.status, data?.error ?? 'internal', data?.details ?? null);
   return data as T;
 }
@@ -396,6 +423,17 @@ export const api = {
   lockPeriod: (period: string) => request<unknown>('POST', `/api/periods/${period}/lock`, {}),
   unlockPeriod: (period: string) => request<unknown>('DELETE', `/api/periods/${period}/lock`),
   audit: (limit = 100) => request<AuditRow[]>('GET', `/api/audit?limit=${limit}`),
+
+  me: () => request<Me>('GET', '/api/auth/me'),
+  login: (username: string, password: string) => request<Me>('POST', '/api/auth/login', { username, password }),
+  logout: () => request<{ ok: boolean }>('POST', '/api/auth/logout', {}),
+  changePassword: (current: string | undefined, password: string) => request<{ ok: boolean }>('POST', '/api/auth/password', { ...(current ? { current } : {}), password }),
+  setSignIn: (on: boolean) => request<Me>('PUT', '/api/auth/signin', { on }),
+  setSeparateDuties: (on: boolean) => request<Me>('PUT', '/api/auth/separate-duties', { on }),
+  users: () => request<UserView[]>('GET', '/api/users'),
+  createUser: (input: { username: string; name: string; roles: Role[]; password?: string }) => request<UserView>('POST', '/api/users', input),
+  updateUser: (id: string, input: { username: string; name: string; roles: Role[]; active: boolean }) => request<UserView>('PUT', `/api/users/${id}`, input),
+  setUserPassword: (id: string, password: string) => request<UserView>('POST', `/api/users/${id}/password`, { password }),
 
   plan: () => request<PlanStatus>('GET', '/api/plan'),
   activateLicense: (key: string) => request<PlanStatus>('POST', '/api/plan/license', { key }),

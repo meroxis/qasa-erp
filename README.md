@@ -95,7 +95,8 @@ npm run dist:win    # build apps/desktop/release/Qasa-ERP-Setup-<version>.exe
 - [ ] HR, salaries and employee advances
 - [x] Final accounts: trading, current operations and profit and loss accounts, and the balance sheet (unified-system layout, to be reviewed by a licensed accountant)
 - [ ] Year-end closing
-- [ ] Users, roles and sign-in; office-network (server) mode
+- [x] Users, roles and sign-in (Free: one password-protected user; Pro: up to 5 users with roles and separate duties)
+- [ ] Office-network (server) mode
 - [x] Windows app and installer with automatic updates
 - [x] Plans (Free, Pro, Business) with offline license keys and a 30-day Pro trial
 - [ ] Code signing, backups

@@ -18,7 +18,7 @@ const ROWS: Row[] = [
   { label: 'f_branding', cells: ['v_shown', 'v_removed', 'v_removed'] },
   { label: 'f_users', cells: ['v_onePc', { key: 'v_upToNetwork', n: pro.limits.users ?? 0 }, 'v_unlimitedOnline'], soon: true },
   { label: 'f_companies', cells: [{ limit: free.limits.companies }, { limit: pro.limits.companies }, { limit: business.limits.companies }], soon: true },
-  { label: 'f_roles', cells: ['v_onePerson', true, true], soon: true },
+  { label: 'f_roles', cells: ['v_onePerson', true, true] },
   { label: 'f_installments', cells: [false, true, true], soon: true },
   { label: 'f_payroll', cells: [false, true, true], soon: true },
   { label: 'f_finalAccounts', cells: ['v_viewOnScreen', 'v_printExcel', 'v_printExcel'] },

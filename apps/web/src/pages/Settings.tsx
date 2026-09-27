@@ -13,6 +13,9 @@ export function Settings() {
   const [rate, setRate] = useState('');
   const [fiscal, setFiscal] = useState('01-01');
   const [user, setUser] = useState(currentUser());
+  // with sign-in on, the name on vouchers is the signed-in user's
+  const [signInOn, setSignInOn] = useState(false);
+  useEffect(() => { api.me().then((m) => setSignInOn(m.signInRequired), () => undefined); }, []);
   const [error, setError] = useState<unknown>(null);
   const year = todayIso().slice(0, 4);
   const periods = useLoad(() => api.periods(), []);
@@ -64,7 +67,7 @@ export function Settings() {
           <label className="field"><span>{t('nameKu')}</span><input className="input" dir="rtl" lang="ckb" value={name.ku} onChange={(e) => setName({ ...name, ku: e.target.value })} /></label>
           <label className="field"><span>{t('defaultRate')} <span className="muted">({t('perUsd')})</span></span><input className="input amount" inputMode="decimal" value={rate} onChange={(e) => setRate(e.target.value)} /></label>
           <label className="field"><span>{t('fiscalStart')}</span><input className="input ltr" value={fiscal} onChange={(e) => setFiscal(e.target.value)} /></label>
-          <label className="field"><span>{t('yourName')}</span><input className="input" value={user} onChange={(e) => setUser(e.target.value)} /></label>
+          {!signInOn && <label className="field"><span>{t('yourName')}</span><input className="input" value={user} onChange={(e) => setUser(e.target.value)} /></label>}
         </div>
         <ErrorBox error={error} />
         <div><button type="button" className="btn primary" onClick={save}>{t('save')}</button></div>

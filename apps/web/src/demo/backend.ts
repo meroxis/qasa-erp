@@ -15,7 +15,7 @@ export async function startDemoBackend(): Promise<void> {
   initDatabase(db);
   seedDemo(db);
 
-  const routes = apiRoutes(db).map((route) => ({ route, pattern: compile(route.path) }));
+  const routes = apiRoutes(db, { demo: true }).map((route) => ({ route, pattern: compile(route.path) }));
   const realFetch = window.fetch.bind(window);
 
   window.fetch = async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {

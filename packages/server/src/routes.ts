@@ -1,7 +1,11 @@
 import { z } from 'zod';
 import { APP_VERSION } from '@qasa/core';
 import type { Db } from './db.ts';
-import { AppError, invalid } from './errors.ts';
+import { AppError, conflict, invalid } from './errors.ts';
+import {
+  changeOwnPassword, createUser, listUsers, login, logout, ownerActor, ROLES, separateDuties, SESSION_COOKIE, sessionActor, sessionCookie,
+  setPassword, setSeparateDuties, setSignInRequired, signInRequired, updateUser, type Actor, type Permission
+} from './auth.ts';
 import { createAccount, deleteAccount, listAccounts, renameAccount } from './accounts.ts';
 import {
   approveEntry, checkEntry, createJournalEntry, createVoucher, deleteEntry, getEntry, listEntries,
@@ -127,16 +131,39 @@ function parse<T>(schema: z.ZodType<T>, value: unknown): T {
   return result.data;
 }
 
-/** The acting user. Until sign-in arrives, the client sends the name in a header (URL-encoded, so Arabic/Kurdish names work). */
-function userOf(req: ApiRequest): string {
-  const raw = req.headers['x-qasa-user'];
-  const value = Array.isArray(raw) ? raw[0] : raw;
-  if (!value) return 'Admin';
+function header(req: ApiRequest, name: string): string | undefined {
+  const raw = req.headers[name];
+  return Array.isArray(raw) ? raw[0] : raw;
+}
+
+/** Without sign-in, the name typed on this PC (URL-encoded, so Arabic/Kurdish names work) is printed on vouchers. */
+function typedName(req: ApiRequest): string | undefined {
+  const value = header(req, 'x-qasa-user');
+  if (!value) return undefined;
   try {
-    return decodeURIComponent(value).slice(0, 100) || 'Admin';
+    return decodeURIComponent(value).trim().slice(0, 100) || undefined;
   } catch {
-    return 'Admin';
+    return undefined;
   }
+}
+
+function cookie(req: ApiRequest, name: string): string | undefined {
+  for (const part of (header(req, 'cookie') ?? '').split(';')) {
+    const [k, ...v] = part.trim().split('=');
+    if (k === name) return v.join('=');
+  }
+  return undefined;
+}
+
+/** The signed-in user (or, without sign-in, the owner). Set on every request by apiRoutes. */
+function actorOf(req: ApiRequest): Actor {
+  const actor = (req as ApiRequest & { actor?: Actor }).actor;
+  if (!actor) throw new AppError(401, 'unauthorized');
+  return actor;
+}
+
+function userOf(req: ApiRequest): string {
+  return actorOf(req).name;
 }
 
 function withoutUndefined<T extends object>(value: T): T {
@@ -149,6 +176,8 @@ export interface ApiRequest {
   query: unknown;
   body: unknown;
   headers: Record<string, string | string[] | undefined>;
+  /** true when the request came over https */
+  secure?: boolean;
 }
 
 /** Lets a route choose its status code (201, 204); otherwise the returned value is sent with 200. */
@@ -156,6 +185,12 @@ export class ApiReply {
   statusCode = 200;
   payload: unknown = undefined;
   sent = false;
+  headers: Record<string, string> = {};
+
+  header(name: string, value: string): this {
+    this.headers[name] = value;
+    return this;
+  }
 
   status(code: number): this {
     this.statusCode = code;
@@ -188,10 +223,79 @@ export function errorResponse(error: unknown): { status: number; body: { error: 
 }
 
 /** Every API route. Fastify serves them on the PC and network editions; the demo website runs them in the browser. */
-export function apiRoutes(db: Db): Route[] {
+export function apiRoutes(db: Db, options: { demo?: boolean } = {}): Route[] {
   const routes: Route[] = [];
-  const add = (method: HttpMethod) => (path: string, handler: Route['handler']) => { routes.push({ method, path, handler }); };
+
+  function authenticate(req: ApiRequest): Actor | null {
+    if (!signInRequired(db)) return ownerActor(db, typedName(req));
+    const token = cookie(req, SESSION_COOKIE);
+    return token ? sessionActor(db, token) : null;
+  }
+
+  const kindOf = (id: unknown) => (db.prepare('SELECT kind FROM invoices WHERE id = ?').get(String(id)) as { kind: string } | undefined)?.kind;
+  const invoicePermission = (kind: unknown): Permission => (kind === 'purchase' || kind === 'purchase_return' ? 'purchases' : 'sales');
+  const partyPermission = (type: unknown): Permission => (type === 'supplier' ? 'purchases' : 'sales');
+  const idOf = (req: ApiRequest) => (req.params as { id?: string }).id;
+
+  /** What each change needs. Anything not listed: reading is open to every signed-in user, changing needs admin. */
+  const RULES: Record<string, Permission | null | ((req: ApiRequest) => Permission)> = {
+    'POST /api/auth/password': null,
+    'POST /api/entries': 'entries.prepare', 'PUT /api/entries/:id': 'entries.prepare', 'DELETE /api/entries/:id': 'entries.prepare',
+    'POST /api/vouchers': 'entries.prepare', 'PUT /api/vouchers/:id': 'entries.prepare',
+    'POST /api/entries/:id/check': 'entries.check', 'POST /api/entries/:id/return': 'entries.check',
+    'POST /api/entries/:id/approve': 'entries.approve', 'POST /api/entries/:id/reverse': 'entries.approve',
+    'POST /api/parties': (req) => partyPermission((req.body as { type?: string } | undefined)?.type),
+    'PUT /api/parties/:id': (req) => partyPermission((db.prepare('SELECT type FROM parties WHERE id = ?').get(String(idOf(req))) as { type: string } | undefined)?.type),
+    'DELETE /api/parties/:id': (req) => partyPermission((db.prepare('SELECT type FROM parties WHERE id = ?').get(String(idOf(req))) as { type: string } | undefined)?.type),
+    'POST /api/items': 'stock', 'PUT /api/items/:id': 'stock', 'DELETE /api/items/:id': 'stock',
+    'POST /api/invoices': (req) => invoicePermission((req.body as { kind?: string } | undefined)?.kind),
+    'PUT /api/invoices/:id': (req) => invoicePermission(kindOf(idOf(req))),
+    'DELETE /api/invoices/:id': (req) => invoicePermission(kindOf(idOf(req))),
+    'POST /api/invoices/:id/post': (req) => invoicePermission(kindOf(idOf(req))),
+    'POST /api/invoices/:id/cancel': (req) => invoicePermission(kindOf(idOf(req))),
+    'POST /api/invoices/:id/returns': (req) => invoicePermission(kindOf(idOf(req))),
+    'POST /api/stock-docs': 'stock', 'PUT /api/stock-docs/:id': 'stock', 'DELETE /api/stock-docs/:id': 'stock',
+    'POST /api/stock-docs/:id/post': 'stock', 'POST /api/stock-docs/:id/cancel': 'stock',
+    'GET /api/audit': 'admin', 'GET /api/users': 'admin'
+  };
+  const PUBLIC = new Set(['GET /api/health', 'GET /api/auth/me', 'POST /api/auth/login', 'POST /api/auth/logout']);
+
+  /** Hides the buttons a user may not use: the server refuses those actions anyway. */
+  const ENTRY_ACTION: Record<string, Permission> = {
+    edit: 'entries.prepare', delete: 'entries.prepare', check: 'entries.check', return: 'entries.check', approve: 'entries.approve', reverse: 'entries.approve'
+  };
+  function forActor(path: string, value: unknown, actor: Actor | null): unknown {
+    if (!actor || !value || typeof value !== 'object' || !Array.isArray((value as { actions?: unknown }).actions)) return value;
+    const v = value as { actions: string[]; kind?: string };
+    const need = (action: string): Permission | undefined => path.startsWith('/api/invoices') ? invoicePermission(v.kind)
+      : path.startsWith('/api/stock-docs') ? 'stock'
+      : path.startsWith('/api/entries') || path.startsWith('/api/vouchers') ? ENTRY_ACTION[action] : undefined;
+    return { ...v, actions: v.actions.filter((a) => { const p = need(a); return !p || actor.permissions.includes(p); }) };
+  }
+
+  const add = (method: HttpMethod) => (path: string, handler: Route['handler']) => {
+    const key = `${method} ${path}`;
+    routes.push({
+      method, path,
+      handler: async (req, reply) => {
+        const actor = authenticate(req);
+        if (!PUBLIC.has(key)) {
+          if (!actor) throw new AppError(401, 'unauthorized');
+          // with sign-in (a cookie session), changes must come from the app itself, not from another site
+          if (method !== 'GET' && signInRequired(db) && header(req, 'x-qasa-client') !== '1') throw new AppError(403, 'forbidden');
+          const rule = key in RULES ? RULES[key] : method === 'GET' ? null : 'admin';
+          const need = typeof rule === 'function' ? rule(req) : rule;
+          if (need && !actor.permissions.includes(need)) throw new AppError(403, 'forbidden', { need });
+        }
+        (req as ApiRequest & { actor?: Actor | null }).actor = actor;
+        const result = await handler(req, reply);
+        if (reply.sent) reply.payload = forActor(path, reply.payload, actor);
+        return forActor(path, result, actor);
+      }
+    });
+  };
   const app = { get: add('GET'), post: add('POST'), put: add('PUT'), patch: add('PATCH'), delete: add('DELETE') };
+  const notInDemo = () => { if (options.demo) throw conflict('demo_unavailable'); };
 
   app.get('/api/health', async () => ({ ok: true, app: 'qasa-erp', version: APP_VERSION }));
 
@@ -242,7 +346,7 @@ export function apiRoutes(db: Db): Route[] {
   app.get('/api/entries/:id', async (req) => getEntry(db, parse(z.object({ id: z.string() }), req.params).id));
   app.post('/api/entries', async (req, reply) => {
     const body = parse(journalSchema, req.body);
-    return reply.status(201).send(createJournalEntry(db, withoutUndefined(body), userOf(req)));
+    return reply.status(201).send(createJournalEntry(db, withoutUndefined(body), userOf(req), actorOf(req).id));
   });
   app.put('/api/entries/:id', async (req) => {
     const { id } = parse(z.object({ id: z.string() }), req.params);
@@ -250,7 +354,7 @@ export function apiRoutes(db: Db): Route[] {
   });
   app.post('/api/vouchers', async (req, reply) => {
     const body = parse(voucherSchema, req.body);
-    return reply.status(201).send(createVoucher(db, withoutUndefined(body), userOf(req)));
+    return reply.status(201).send(createVoucher(db, withoutUndefined(body), userOf(req), actorOf(req).id));
   });
   app.put('/api/vouchers/:id', async (req) => {
     const { id } = parse(z.object({ id: z.string() }), req.params);
@@ -260,9 +364,9 @@ export function apiRoutes(db: Db): Route[] {
     deleteEntry(db, parse(z.object({ id: z.string() }), req.params).id, userOf(req));
     return reply.status(204).send();
   });
-  app.post('/api/entries/:id/check', async (req) => checkEntry(db, parse(z.object({ id: z.string() }), req.params).id, userOf(req)));
+  app.post('/api/entries/:id/check', async (req) => checkEntry(db, parse(z.object({ id: z.string() }), req.params).id, userOf(req), actorOf(req).id));
   app.post('/api/entries/:id/return', async (req) => returnEntry(db, parse(z.object({ id: z.string() }), req.params).id, userOf(req)));
-  app.post('/api/entries/:id/approve', async (req) => approveEntry(db, parse(z.object({ id: z.string() }), req.params).id, userOf(req)));
+  app.post('/api/entries/:id/approve', async (req) => approveEntry(db, parse(z.object({ id: z.string() }), req.params).id, userOf(req), actorOf(req).id));
   app.post('/api/entries/:id/reverse', async (req) => {
     const { id } = parse(z.object({ id: z.string() }), req.params);
     const body = parse(z.object({ date: isoDate.optional() }), req.body ?? {});
@@ -371,6 +475,54 @@ export function apiRoutes(db: Db): Route[] {
   app.post('/api/stock-docs/:id/cancel', async (req) => {
     const body = parse(z.object({ date: isoDate.optional() }), req.body ?? {});
     return cancelStockDoc(db, parse(idParam, req.params).id, userOf(req), body.date);
+  });
+
+  // sign-in and users
+  const roleSchema = z.enum(ROLES as [string, ...string[]]).transform((r) => r as (typeof ROLES)[number]);
+  const userSchema = z.object({ username: z.string().max(32), name: z.string().max(100), roles: z.array(roleSchema).max(ROLES.length) });
+  const me = (actor: Actor | null) => ({
+    signInRequired: signInRequired(db), separateDuties: separateDuties(db), demo: !!options.demo,
+    user: actor ? { id: actor.id, name: actor.name, username: actor.username, roles: actor.roles, permissions: actor.permissions } : null
+  });
+  app.get('/api/auth/me', async (req) => me((req as ApiRequest & { actor?: Actor | null }).actor ?? null));
+  app.post('/api/auth/login', async (req, reply) => {
+    notInDemo();
+    const body = parse(z.object({ username: z.string().min(1).max(64), password: z.string().min(1).max(200) }), req.body);
+    const { token, actor } = login(db, body.username, body.password, header(req, 'user-agent'));
+    reply.header('set-cookie', sessionCookie(token, !!req.secure));
+    return me(actor);
+  });
+  app.post('/api/auth/logout', async (req, reply) => {
+    const token = cookie(req, SESSION_COOKIE);
+    if (token) logout(db, token);
+    reply.header('set-cookie', sessionCookie('', !!req.secure, 0));
+    return { ok: true };
+  });
+  app.post('/api/auth/password', async (req) => {
+    notInDemo();
+    const body = parse(z.object({ current: z.string().max(200).optional(), password: z.string().max(200) }), req.body);
+    changeOwnPassword(db, actorOf(req), body.current, body.password, cookie(req, SESSION_COOKIE));
+    return { ok: true };
+  });
+  app.put('/api/auth/signin', async (req) => {
+    notInDemo();
+    setSignInRequired(db, parse(z.object({ on: z.boolean() }), req.body).on, actorOf(req));
+    return me(signInRequired(db) ? null : ownerActor(db, typedName(req)));
+  });
+  app.put('/api/auth/separate-duties', async (req) => {
+    setSeparateDuties(db, parse(z.object({ on: z.boolean() }), req.body).on, actorOf(req));
+    return me(actorOf(req));
+  });
+  app.get('/api/users', async () => listUsers(db));
+  app.post('/api/users', async (req, reply) => {
+    const body = parse(userSchema.extend({ password: z.string().max(200).optional() }), req.body);
+    if (body.password !== undefined) notInDemo();
+    return reply.status(201).send(createUser(db, body, userOf(req)));
+  });
+  app.put('/api/users/:id', async (req) => updateUser(db, parse(idParam, req.params).id, parse(userSchema.extend({ active: z.boolean() }), req.body), actorOf(req)));
+  app.post('/api/users/:id/password', async (req) => {
+    notInDemo();
+    return setPassword(db, parse(idParam, req.params).id, parse(z.object({ password: z.string().max(200) }), req.body).password, userOf(req));
   });
 
   // plan & license

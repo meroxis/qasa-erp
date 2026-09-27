@@ -13,6 +13,8 @@ import { createInvoice, postInvoice } from './invoices.ts';
  */
 export function seedDemo(db: Db): void {
   // Sample people are only ever Mer Las and Raz: Mer Las prepares and sells, Raz checks and approves.
+  // the owner the demo opens as
+  db.prepare("UPDATE users SET name = 'Mer Las', username = 'merlas' WHERE username = 'admin'").run();
   const accountant = 'Mer Las';
   const checker = 'Raz';
   const director = 'Raz';

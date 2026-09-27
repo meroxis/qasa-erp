@@ -24,7 +24,7 @@ import { nextSequence, transaction } from './db.ts';
 import { audit } from './audit.ts';
 import { conflict, invalid, notFound } from './errors.ts';
 import { loadAccounts } from './accounts.ts';
-import { isPeriodLocked } from './settings.ts';
+import { isPeriodLocked, readSetting } from './settings.ts';
 
 interface EntryRow {
   id: string; type: EntryType; number: string | null; date: string; description: string; party: string | null;
@@ -32,6 +32,7 @@ interface EntryRow {
   reverses_id: string | null; reversed_by_id: string | null;
   prepared_by: string; prepared_at: string; checked_by: string | null; checked_at: string | null;
   approved_by: string | null; approved_at: string | null;
+  prepared_by_id: string | null; checked_by_id: string | null;
 }
 
 interface LineRow {
@@ -135,21 +136,28 @@ export function insertEntry(db: Db, input: EntryInput, user: string, cashAccount
   return id;
 }
 
-export function createJournalEntry(db: Db, input: Omit<EntryInput, 'type'>, user: string): EntryView {
+/** "Separate duties" (a Pro setting): the one who prepared a voucher can neither check nor approve it. */
+function assertNotPreparer(db: Db, row: EntryRow, actorId: string | null | undefined): void {
+  if (actorId && row.prepared_by_id === actorId && readSetting(db, 'separate_duties') === '1') throw conflict('same_person');
+}
+
+export function createJournalEntry(db: Db, input: Omit<EntryInput, 'type'>, user: string, actorId?: string | null): EntryView {
   const entry: EntryInput = { ...input, type: 'journal' };
   assertValid(db, entry);
   const id = transaction(db, () => {
     const newId = insertEntry(db, entry, user, null);
+    if (actorId) db.prepare('UPDATE entries SET prepared_by_id = ? WHERE id = ?').run(actorId, newId);
     audit(db, user, 'create', 'entry', newId, { type: 'journal' });
     return newId;
   });
   return getEntry(db, id);
 }
 
-export function createVoucher(db: Db, v: VoucherInput, user: string): EntryView {
+export function createVoucher(db: Db, v: VoucherInput, user: string, actorId?: string | null): EntryView {
   const entry = assertValidVoucher(db, v);
   const id = transaction(db, () => {
     const newId = insertEntry(db, entry, user, v.cashAccountCode);
+    if (actorId) db.prepare('UPDATE entries SET prepared_by_id = ? WHERE id = ?').run(actorId, newId);
     audit(db, user, 'create', 'entry', newId, { type: v.kind });
     return newId;
   });
@@ -220,13 +228,14 @@ function revalidateStored(db: Db, id: string): void {
 }
 
 /** المدقق: draft → checked */
-export function checkEntry(db: Db, id: string, user: string): EntryView {
+export function checkEntry(db: Db, id: string, user: string, actorId?: string | null): EntryView {
   const row = loadRow(db, id);
   requireAction(row, 'check');
+  assertNotPreparer(db, row, actorId);
   revalidateStored(db, id);
   transaction(db, () => {
     const now = new Date().toISOString();
-    db.prepare("UPDATE entries SET status = 'checked', checked_by = ?, checked_at = ?, updated_at = ? WHERE id = ?").run(user, now, now, id);
+    db.prepare("UPDATE entries SET status = 'checked', checked_by = ?, checked_by_id = ?, checked_at = ?, updated_at = ? WHERE id = ?").run(user, actorId ?? null, now, now, id);
     audit(db, user, 'check', 'entry', id);
   });
   return getEntry(db, id);
@@ -237,7 +246,7 @@ export function returnEntry(db: Db, id: string, user: string): EntryView {
   const row = loadRow(db, id);
   requireAction(row, 'return');
   transaction(db, () => {
-    db.prepare("UPDATE entries SET status = 'draft', checked_by = NULL, checked_at = NULL, updated_at = ? WHERE id = ?").run(new Date().toISOString(), id);
+    db.prepare("UPDATE entries SET status = 'draft', checked_by = NULL, checked_by_id = NULL, checked_at = NULL, updated_at = ? WHERE id = ?").run(new Date().toISOString(), id);
     audit(db, user, 'return', 'entry', id);
   });
   return getEntry(db, id);
@@ -249,9 +258,10 @@ export function nextNumber(db: Db, type: EntryType, date: string): string {
 }
 
 /** المصادق: checked → approved (posted). The voucher number is assigned now, so posted numbers have no gaps. */
-export function approveEntry(db: Db, id: string, user: string): EntryView {
+export function approveEntry(db: Db, id: string, user: string, actorId?: string | null): EntryView {
   const row = loadRow(db, id);
   requireAction(row, 'approve');
+  assertNotPreparer(db, row, actorId);
   revalidateStored(db, id);
   transaction(db, () => {
     const now = new Date().toISOString();

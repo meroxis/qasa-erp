@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { APP_VERSION, htmlLang, isLang, type DigitStyle, type Lang } from '@qasa/core';
-import { api, currentUser, type AccountView, type PlanStatus, type Settings as SettingsData } from './api.ts';
+import { api, currentUser, SIGNED_OUT_EVENT, type AccountView, type Me, type PlanStatus, type Settings as SettingsData } from './api.ts';
 import { DataContext, Icon, Logo, ToastProvider } from './components.tsx';
 import { I18nContext, makeI18n, type Key } from './i18n.ts';
 import { href, useRoute } from './router.ts';
@@ -17,6 +17,7 @@ import { InvoiceDetail, InvoiceEditor, Invoices } from './pages/Invoices.tsx';
 import { Plans } from './pages/Plans.tsx';
 import { FinalAccounts } from './pages/FinalAccounts.tsx';
 import { StockDocDetail, StockDocEditor, StockDocs } from './pages/StockDocs.tsx';
+import { PasswordModal, SignIn, Users } from './pages/Users.tsx';
 
 function stored<T extends string>(key: string, fallback: T, valid: (v: string) => boolean): T {
   try {
@@ -31,7 +32,7 @@ function remember(key: string, value: string): void {
   try { localStorage.setItem(key, value); } catch { /* not available */ }
 }
 
-interface NavItem { key: Key; icon: string; path?: string; match?: string[] }
+interface NavItem { key: Key; icon: string; path?: string; match?: string[]; adminOnly?: boolean }
 const NAV: { group: Key; items: NavItem[] }[] = [
   { group: 'gOverview', items: [{ key: 'home', icon: 'home', path: '', match: ['', 'home'] }] },
   {
@@ -73,8 +74,9 @@ const NAV: { group: Key; items: NavItem[] }[] = [
   {
     group: 'gSystem',
     items: [
-      { key: 'settings', icon: 'sliders', path: 'settings', match: ['settings'] },
-      { key: 'planLicense', icon: 'star', path: 'plans', match: ['plans'] }
+      { key: 'settings', icon: 'sliders', path: 'settings', match: ['settings'], adminOnly: true },
+      { key: 'users', icon: 'users', path: 'users', match: ['users'], adminOnly: true },
+      { key: 'planLicense', icon: 'star', path: 'plans', match: ['plans'], adminOnly: true }
     ]
   }
 ];
@@ -85,6 +87,9 @@ export function App() {
   const [accounts, setAccounts] = useState<AccountView[]>([]);
   const [settings, setSettings] = useState<SettingsData | null>(null);
   const [plan, setPlan] = useState<PlanStatus | null>(null);
+  /** null while loading; with sign-in on and nobody signed in, the sign-in page shows instead of the app */
+  const [me, setMe] = useState<Me | null>(null);
+  const [changingPassword, setChangingPassword] = useState(false);
   const [online, setOnline] = useState(true);
   const route = useRoute();
 
@@ -123,11 +128,30 @@ export function App() {
     }
   }, []);
 
+  const reloadMe = useCallback(async () => {
+    try {
+      setMe(await api.me());
+      setOnline(true);
+    } catch {
+      setOnline(false);
+    }
+  }, []);
+
   useEffect(() => {
+    void reloadMe();
+    const signedOut = () => setMe((m) => (m ? { ...m, user: null } : m));
+    window.addEventListener(SIGNED_OUT_EVENT, signedOut);
+    return () => window.removeEventListener(SIGNED_OUT_EVENT, signedOut);
+  }, [reloadMe]);
+
+  // the books load once someone is in (the owner, without sign-in)
+  const userId = me?.user?.id ?? (me?.user ? 'owner' : null);
+  useEffect(() => {
+    if (!userId) return;
     void reloadAccounts();
     void reloadSettings();
     void reloadPlan();
-  }, [reloadAccounts, reloadSettings, reloadPlan]);
+  }, [userId, reloadAccounts, reloadSettings, reloadPlan]);
 
   const data = useMemo(
     () => ({ accounts, settings, plan, online, reloadAccounts, reloadSettings, reloadPlan }),
@@ -138,7 +162,9 @@ export function App() {
 
   let title: string = t('home');
   let content: ReactNode;
-  switch (page ?? '') {
+  // admin pages open for admins only; everyone else lands on the home page
+  const adminPage = ['settings', 'users', 'plans'].includes(page ?? '') && !me?.user?.permissions.includes('admin');
+  switch (adminPage ? '' : page ?? '') {
     case '':
     case 'home':
       content = <Home />;
@@ -247,6 +273,10 @@ export function App() {
       title = t('finalAccounts');
       content = <FinalAccounts />;
       break;
+    case 'users':
+      title = t('users');
+      content = me ? <Users me={me} onMeChanged={(m) => { if (m) setMe(m); else void reloadMe(); }} /> : null;
+      break;
     case 'plans':
       title = t('planLicense');
       content = <Plans />;
@@ -256,7 +286,24 @@ export function App() {
   }
 
   const company = settings ? i18n.name(settings.companyName) : '';
-  const user = currentUser();
+  const isAdmin = !!me?.user?.permissions.includes('admin');
+  const user = me?.signInRequired ? me.user?.name ?? '' : currentUser() || me?.user?.name || '';
+
+  if (me?.signInRequired && !me.user) {
+    return (
+      <I18nContext.Provider value={i18n}>
+        <ToastProvider>
+          <SignIn company="" onSignedIn={(m) => setMe(m)} />
+        </ToastProvider>
+      </I18nContext.Provider>
+    );
+  }
+  if (!me) return online ? null : <div className="signin-page"><div className="card pad">{t('serverDown')}</div></div>;
+
+  async function signOut() {
+    try { await api.logout(); } catch { /* signed out either way */ }
+    setMe((m) => (m ? { ...m, user: null } : m));
+  }
 
   return (
     <I18nContext.Provider value={i18n}>
@@ -274,6 +321,12 @@ export function App() {
               <div className="company-card">
                 <strong>{company || t('noCompany')}</strong>
                 {user && <span className="small" style={{ color: 'var(--navy-muted)' }}>{user}</span>}
+                {me.signInRequired && (
+                  <div className="row user-actions">
+                    <button type="button" className="link-btn" onClick={() => setChangingPassword(true)}>{t('changePassword')}</button>
+                    <button type="button" className="link-btn" onClick={() => void signOut()}>{t('signOut')}</button>
+                  </div>
+                )}
                 {plan && (
                   <a className={'plan-chip' + (plan.plan === 'free' ? '' : ' paid')} href={href('plans')}>
                     {plan.source === 'trial' ? t('planTrialChip') : t(`plan_${plan.plan}`)}
@@ -283,7 +336,7 @@ export function App() {
               {NAV.map((g) => (
                 <div key={g.group} style={{ display: 'contents' }}>
                   <div className="nav-group">{t(g.group)}</div>
-                  {g.items.map((item) => {
+                  {g.items.filter((item) => !item.adminOnly || isAdmin).map((item) => {
                     if (item.path === undefined) {
                       return (
                         <button key={item.key} type="button" className="nav-item" disabled>
@@ -316,6 +369,7 @@ export function App() {
                   </button>
                 )}
               </header>
+              {changingPassword && <PasswordModal needsCurrent onClose={() => setChangingPassword(false)} />}
               <main className="content">
                 {plan?.license?.state === 'grace' && plan.license.expires && plan.graceEnds && page !== 'plans' && (
                   <div className="alert warn plan-banner no-print" style={{ marginBottom: 14 }}>

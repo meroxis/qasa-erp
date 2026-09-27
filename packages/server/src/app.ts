@@ -21,7 +21,9 @@ export function buildApp(db: Db): FastifyInstance {
       url: route.path,
       handler: async (req, reply) => {
         const out = new ApiReply();
-        const result = await route.handler(req as unknown as ApiRequest, out);
+        const request: ApiRequest = { params: req.params, query: req.query, body: req.body, headers: req.headers, secure: req.protocol === 'https' };
+        const result = await route.handler(request, out);
+        for (const [name, value] of Object.entries(out.headers)) reply.header(name, value);
         return out.sent ? reply.status(out.statusCode).send(out.payload) : result;
       }
     });

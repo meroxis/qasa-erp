@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { DatabaseSync } from 'node:sqlite';
 import type { FastifyInstance } from 'fastify';
-import { migrate, openDatabase, schemaVersion, type Db } from './db.ts';
+import { migrate, openDatabase, SCHEMA_VERSION, schemaVersion, type Db } from './db.ts';
 import { buildApp } from './app.ts';
 
 let db: Db;
@@ -218,7 +218,7 @@ describe('upgrading a version-2 company file', () => {
     old.prepare("UPDATE invoices SET status = 'posted', number = 'PI-2026-0001' WHERE id = 'v1'").run();
 
     migrate(old);
-    expect(schemaVersion(old)).toBe(3);
+    expect(schemaVersion(old)).toBe(SCHEMA_VERSION);
     expect(old.prepare("SELECT kind, number, return_of FROM invoices WHERE id = 'v1'").get()).toEqual({ kind: 'purchase', number: 'PI-2026-0001', return_of: null });
     expect(() => old.prepare("UPDATE invoices SET total = 1 WHERE id = 'v1'").run()).toThrow(/posted_invoice_is_permanent/);
     expect(() => old.prepare("DELETE FROM invoice_lines WHERE invoice_id = 'v1'").run()).toThrow(/posted_invoice_is_permanent/);
