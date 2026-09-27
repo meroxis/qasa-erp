@@ -12,6 +12,8 @@ import { extname, join, normalize, sep } from 'node:path';
 import type { FastifyInstance } from 'fastify';
 import { buildApp, openDatabase, type Db } from '@qasa/server';
 import { isLang, text, type Lang, type TextKey } from './texts.ts';
+// the official builds include the Pro module; public builds get pro-none.ts (see build.mjs)
+import { proModule } from '@qasa/pro-module';
 
 const { autoUpdater } = electronUpdater;
 const WEB_DIR = join(__dirname, 'web');
@@ -115,10 +117,19 @@ async function startServer(): Promise<string> {
   await server.listen({ host: '127.0.0.1', port: await choosePort() });
   const address = server.server.address();
   if (!address || typeof address === 'string') throw new Error('The local server has no port');
+  if (proModule) {
+    log(`${proModule.name} ${proModule.version}`);
+    try {
+      await proModule.start?.({ db, server, userDataDir: app.getPath('userData'), log });
+    } catch (error) {
+      log('Pro module did not start:', error);
+    }
+  }
   return `http://127.0.0.1:${address.port}`;
 }
 
 async function stopServer(): Promise<void> {
+  try { await proModule?.stop?.(); } catch { /* stopping anyway */ }
   try { await server?.close(); } catch { /* already closed */ }
   try { db?.close(); } catch { /* already closed */ }
   server = null;

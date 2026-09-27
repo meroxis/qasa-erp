@@ -23,3 +23,6 @@ data/
 
 # license issuing tools and keys (Meroxis only, private repository)
 /licensing/
+
+# the Pro module (private repository meroxis/qasa-erp-pro), checked out here for official builds
+/pro/

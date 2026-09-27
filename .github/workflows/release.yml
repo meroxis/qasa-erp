@@ -25,6 +25,15 @@ jobs:
 
       - run: npm ci
 
+      # Official builds include the Pro module from the private repository (read-only deploy key).
+      - name: Pro module
+        uses: actions/checkout@v5
+        with:
+          repository: meroxis/qasa-erp-pro
+          ssh-key: ${{ secrets.PRO_DEPLOY_KEY }}
+          path: pro
+          persist-credentials: false
+
       - name: Electron binary
         run: node node_modules/electron/install.js
 
