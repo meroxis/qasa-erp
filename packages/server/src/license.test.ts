@@ -7,13 +7,15 @@ import { buildApp } from './app.ts';
 import { activateLicense, planStatus, readLicenseKey, setLicensePublicKeyForTests } from './license.ts';
 
 let privateKey: KeyObject;
+let publicX: string;
 let db: Db;
 let app: FastifyInstance;
 
 beforeAll(() => {
   const pair = generateKeyPairSync('ed25519');
   privateKey = pair.privateKey;
-  setLicensePublicKeyForTests(pair.publicKey.export({ format: 'jwk' }).x!);
+  publicX = pair.publicKey.export({ format: 'jwk' }).x!;
+  setLicensePublicKeyForTests(publicX);
 });
 
 beforeEach(() => {
@@ -75,6 +77,20 @@ describe('plans', () => {
     const key = makeKey(pro());
     const wrapped = key.match(/.{1,40}/g)!.join('\n  ');
     expect(readLicenseKey(wrapped)?.licensee).toBe('Sanos Company');
+  });
+
+  it('accepts keys from each trusted signer (the offline tool and the customer portal)', () => {
+    const offline = generateKeyPairSync('ed25519');
+    const portal = generateKeyPairSync('ed25519');
+    const x = (pair: typeof offline) => pair.publicKey.export({ format: 'jwk' }).x!;
+    setLicensePublicKeyForTests(x(offline), x(portal));
+    try {
+      expect(readLicenseKey(makeKey(pro(), offline.privateKey))?.id).toBe('QL-2026-0001');
+      expect(readLicenseKey(makeKey(pro({ id: 'QP-2026-0001' }), portal.privateKey))?.id).toBe('QP-2026-0001');
+      expect(readLicenseKey(makeKey(pro({ id: 'QP-2026-0002' }), privateKey))).toBeNull();
+    } finally {
+      setLicensePublicKeyForTests(publicX);
+    }
   });
 
   it('refuses forged, edited and made-up keys', async () => {

@@ -26,3 +26,6 @@ data/
 
 # the Pro module (private repository meroxis/qasa-erp-pro), checked out here for official builds
 /pro/
+
+# the customer portal my.qasaerp.com (private repository meroxis/qasa-erp-portal)
+/portal/

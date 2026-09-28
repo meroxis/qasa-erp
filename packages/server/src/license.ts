@@ -11,10 +11,15 @@ import { AppError, conflict } from './errors.ts';
 import { deleteSetting, readSetting, writeSetting } from './settings.ts';
 
 /**
- * Meroxis' license-signing public key (Ed25519, base64url). Keys are signed with the private half, which
- * never leaves Meroxis; the app can only check them. A key works offline, on any PC of the licensed company.
+ * The public keys Meroxis signs licenses with (Ed25519, base64url). Keys are signed with the private halves,
+ * which never leave Meroxis; the app can only check them. A key works offline, on any PC of the licensed company.
  */
-const LICENSE_PUBLIC_KEY = 'fEaDX9tiI7598uVB-udxo5b0FfwGjBC0W9l0QlURoe0';
+const LICENSE_PUBLIC_KEYS: readonly string[] = [
+  // Meroxis' offline key (licensing/issue.mjs)
+  'fEaDX9tiI7598uVB-udxo5b0FfwGjBC0W9l0QlURoe0',
+  // the customer portal, my.qasaerp.com (its private half never leaves that server)
+  '2La4PsoYPOuS5wrVsEWrFLSDmi0q5xG5LZkJFwFycus'
+];
 /** "QASA1.<payload>.<signature>"; the version tag is part of the signed text. */
 const PREFIX = 'QASA1';
 
@@ -34,12 +39,14 @@ const payloadSchema = z.object({
   expires: isoDate.nullable()
 });
 
-let publicKey: KeyObject | undefined;
+let publicKeys: KeyObject[] | undefined;
 let lastChecked: { text: string; info: LicenseInfo | null } | undefined;
 
-/** The tests sign keys with a key pair of their own. */
-export function setLicensePublicKeyForTests(x: string): void {
-  publicKey = createPublicKey({ key: { kty: 'OKP', crv: 'Ed25519', x }, format: 'jwk' });
+const toKey = (x: string): KeyObject => createPublicKey({ key: { kty: 'OKP', crv: 'Ed25519', x }, format: 'jwk' });
+
+/** The tests sign keys with key pairs of their own. */
+export function setLicensePublicKeyForTests(...x: string[]): void {
+  publicKeys = x.map(toKey);
   lastChecked = undefined;
 }
 
@@ -51,8 +58,10 @@ export function readLicenseKey(text: string): LicenseInfo | null {
   const parts = key.split('.');
   if (parts.length === 3 && parts[0] === PREFIX) {
     try {
-      publicKey ??= createPublicKey({ key: { kty: 'OKP', crv: 'Ed25519', x: LICENSE_PUBLIC_KEY }, format: 'jwk' });
-      if (verify(null, Buffer.from(`${parts[0]}.${parts[1]}`), publicKey, Buffer.from(parts[2]!, 'base64url'))) {
+      publicKeys ??= LICENSE_PUBLIC_KEYS.map(toKey);
+      const body = Buffer.from(`${parts[0]}.${parts[1]}`);
+      const signature = Buffer.from(parts[2]!, 'base64url');
+      if (publicKeys.some((publicKey) => verify(null, body, publicKey, signature))) {
         const p = payloadSchema.parse(JSON.parse(Buffer.from(parts[1]!, 'base64url').toString('utf8')));
         info = {
           id: p.id, plan: p.plan, licensee: p.to, issued: p.issued, expires: p.expires,
