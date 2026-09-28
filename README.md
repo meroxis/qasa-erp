@@ -25,6 +25,8 @@
   <a href="#what-it-does">Features</a> ·
   <a href="#screenshots">Screenshots</a> ·
   <a href="#plans">Plans</a> ·
+  <a href="https://qasaerp.com/en/compare/">Compare</a> ·
+  <a href="https://qasaerp.com/en/switch/">Switch from Excel</a> ·
   <a href="#run-it">Run it</a> ·
   <a href="#license">License</a>
 </p>
@@ -45,6 +47,25 @@ Qasa ERP keeps the books of an Iraqi company the way its finance department alre
 - **A team, with controls.** Sign-in, roles, and separate duties, so whoever prepares a voucher cannot approve it.
 - **On your own PC.** The Windows app keeps the company file on your computer, works without internet and updates
   itself. An office-network edition and an online edition share the same code.
+
+<div dir="rtl" lang="ar">
+
+**بالعربية:** قاصة ERP برنامج محاسبة مجاني ومفتوح المصدر للشركات العراقية، مبني على النظام المحاسبي الموحد: سندات القبض
+والصرف والقيود اليومية بتسلسل المنظم والمدقق والمصادق، وفواتير المبيعات والمشتريات ومردوداتها، والمخزن بمتوسط الكلفة،
+وميزان المراجعة والحسابات الختامية، بالدينار والدولار. يعمل على ويندوز دون إنترنت، وبالعربية والكوردية والإنجليزية.
+[جرّب النسخة التجريبية](https://qasaerp.com/demo/) أو [نزّل البرنامج](https://github.com/meroxis/qasa-erp/releases/latest/download/Qasa-ERP-Setup.exe).
+
+</div>
+
+<div dir="rtl" lang="ckb">
+
+**بە کوردی:** قاسە ERP بەرنامەیەکی ژمێریاریی بەخۆڕایی و سەرچاوەکراوەیە بۆ کۆمپانیا عێراقییەکان، لەسەر سیستەمی ژمێریاریی
+یەکگرتوو: سەنەدی وەرگرتن و پارەدان و تۆماری ڕۆژانە بە زنجیرەی ئامادەکار و وردبین و پەسەندکەر، پسوولەی فرۆشتن و کڕین و
+گەڕاندنەوەکانیان، کۆگا بە تێچووی مامناوەند، تەرازووی پێداچوونەوە و هەژمارە کۆتاییەکان، بە دینار و دۆلار. لەسەر ویندۆز بێ
+ئینتەرنێت کار دەکات، بە کوردی و عەرەبی و ئینگلیزی.
+[وەشانی تاقیکردنەوە](https://qasaerp.com/demo/) یان [داگرتنی بەرنامەکە](https://github.com/meroxis/qasa-erp/releases/latest/download/Qasa-ERP-Setup.exe).
+
+</div>
 
 > **Status: Release 1 in progress.** See the [progress list](#release-1-progress). The [live demo](https://qasaerp.com/demo/)
 > runs entirely in your browser with a sample company: nothing is sent to a server, and a reload starts it afresh.
@@ -194,6 +215,20 @@ Some Pro features are still being built; the app marks them as coming soon. A pl
 data: when a license ends, the company keeps everything and continues on the Free features. Pro can be tried
 free for 30 days. Licenses are offline keys signed by Meroxis (Ed25519) and are available from
 [info@qasaerp.com](mailto:info@qasaerp.com).
+
+## Trust and security
+
+- **Open source:** every line of the app is here, under the AGPL. Anyone can read how each dinar is posted.
+- **Tested on every change:** the accounting rules, the API and the database upgrades have automated tests, run by
+  GitHub Actions on every push (see the Tests badge).
+- **Your data stays with you:** the Windows app keeps the company file on your PC and works without internet; the
+  demo runs entirely in your browser.
+- **Books that can't be rewritten:** the database refuses edits to posted vouchers, invoices and stock moves, and
+  keeps an append-only audit log.
+- **Releases** are built from this repository by GitHub Actions and published under [Releases](https://github.com/meroxis/qasa-erp/releases).
+
+How the app protects data, and how to report a vulnerability: [SECURITY.md](SECURITY.md). How to help:
+[CONTRIBUTING.md](CONTRIBUTING.md). Our [code of conduct](CODE_OF_CONDUCT.md).
 
 ## License
 

@@ -1,0 +1,52 @@
+name: Report a problem · الإبلاغ عن مشكلة · ڕاپۆرتی کێشە
+description: Something in Qasa ERP doesn't work or gives a wrong result. Arabic, Kurdish and English are all welcome.
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thank you. Please don't include real customer names, amounts or other private data from your company.
+        شكراً لك. لا تكتب أسماء زبائن أو مبالغ حقيقية من شركتك · سوپاس. ناوی کڕیار یان بڕی ڕاستەقینەی کۆمپانیاکەت مەنووسە.
+        Security problems: please email info@qasaerp.com instead (see SECURITY.md).
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened? · ماذا حدث؟ · چی ڕوویدا؟
+      description: What did you expect, and what happened instead?
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce · خطوات تكرار المشكلة · هەنگاوەکان
+      placeholder: |
+        1. Open …
+        2. Click …
+        3. …
+    validations:
+      required: true
+  - type: dropdown
+    id: where
+    attributes:
+      label: Where · أين · لە کوێ
+      options:
+        - Windows app
+        - Live demo (qasaerp.com/demo)
+        - Running from source
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Version · الإصدار · وەشان
+      description: Help → About in the app, e.g. 0.1.3
+  - type: dropdown
+    id: language
+    attributes:
+      label: App language · لغة البرنامج · زمانی بەرنامە
+      options: [العربية, English, کوردی]
+  - type: textarea
+    id: extra
+    attributes:
+      label: Anything else · معلومات أخرى · زانیاریی تر
+      description: Screenshots help a lot. The support log is at %APPDATA%\Qasa ERP\logs\main.log

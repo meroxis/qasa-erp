@@ -1,0 +1,25 @@
+name: Suggest a feature · اقتراح ميزة · پێشنیاری تایبەتمەندی
+description: Something your office needs from Qasa ERP. Arabic, Kurdish and English are all welcome.
+labels: [enhancement]
+body:
+  - type: textarea
+    id: need
+    attributes:
+      label: What do you need to do? · ماذا تحتاج أن تفعل؟ · پێویستە چی بکەیت؟
+      description: Describe the work, not the button. For example "we sell on installments with a guarantor and collect monthly".
+    validations:
+      required: true
+  - type: textarea
+    id: today
+    attributes:
+      label: How do you do it today? · كيف تفعله اليوم؟ · ئێستا چۆنی دەکەیت؟
+      description: In another program, in Excel, on paper… A sample printout or form (without private data) helps.
+  - type: dropdown
+    id: who
+    attributes:
+      label: Who are you? · من أنت؟ · تۆ کێیت؟
+      options:
+        - Accountant · محاسب · ژمێریار
+        - Business owner · صاحب عمل · خاوەنکار
+        - Developer · مطوّر · گەشەپێدەر
+        - Other · آخر · تر

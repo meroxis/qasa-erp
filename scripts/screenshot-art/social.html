@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Qasa ERP social image</title>
+<style>
+@font-face { font-family: 'Plex'; font-weight: 400; src: url('../../node_modules/@fontsource/ibm-plex-sans/files/ibm-plex-sans-latin-400-normal.woff2') format('woff2'); }
+@font-face { font-family: 'Plex'; font-weight: 700; src: url('../../node_modules/@fontsource/ibm-plex-sans/files/ibm-plex-sans-latin-700-normal.woff2') format('woff2'); }
+@font-face { font-family: 'Kufi'; font-weight: 700; src: url('../../node_modules/@fontsource/noto-kufi-arabic/files/noto-kufi-arabic-arabic-700-normal.woff2') format('woff2'); }
+@font-face { font-family: 'NotoAr'; font-weight: 400; src: url('../../node_modules/@fontsource/noto-sans-arabic/files/noto-sans-arabic-arabic-400-normal.woff2') format('woff2'); }
+@font-face { font-family: 'NotoAr'; font-weight: 600; src: url('../../node_modules/@fontsource/noto-sans-arabic/files/noto-sans-arabic-arabic-600-normal.woff2') format('woff2'); }
+
+html, body { margin: 0; }
+body {
+  width: 100vw; height: 100vh; overflow: hidden; position: relative;
+  background: #0F1E3D; color: #D3DDF0; font-family: 'Plex', 'NotoAr', sans-serif;
+}
+[dir='rtl'] body { font-family: 'NotoAr', 'Plex', sans-serif; }
+.copy { position: absolute; inset-inline-start: 60px; top: 64px; width: 470px; display: flex; flex-direction: column; gap: 22px; }
+.brand { display: flex; align-items: center; gap: 14px; }
+.brand-name { font-size: 30px; font-weight: 700; color: #fff; line-height: 1.1; }
+[dir='rtl'] .brand-name { font-family: 'Kufi', sans-serif; font-size: 28px; }
+h1 { margin: 8px 0 0; font-size: 50px; line-height: 1.08; font-weight: 700; color: #fff; letter-spacing: -0.5px; }
+[dir='rtl'] h1 { font-family: 'Kufi', sans-serif; font-size: 44px; line-height: 1.35; letter-spacing: 0; }
+.sub { font-size: 20px; line-height: 1.55; white-space: pre-line; }
+.chip { align-self: flex-start; padding: 8px 16px; border-radius: 999px; font-size: 18px; font-weight: 700; background: #F2A33A; color: #0F1E3D; }
+.site { position: absolute; inset-inline-start: 60px; bottom: 48px; color: #F2A33A; font-weight: 700; font-size: 22px; font-family: 'Plex', sans-serif; }
+.window {
+  position: absolute; inset-inline-start: 580px; top: 70px; width: 820px;
+  border-radius: 12px; overflow: hidden; background: #fff;
+  box-shadow: 0 30px 80px rgba(0, 0, 0, 0.45), 0 0 0 1px rgba(255, 255, 255, 0.08);
+}
+.window img { display: block; width: 820px; }
+</style>
+</head>
+<body>
+<div class="copy">
+  <div class="brand">
+    <svg width="54" height="54" viewBox="0 0 28 28" aria-hidden="true">
+      <rect x="1" y="1" width="26" height="26" rx="7" fill="#F2A33A"></rect>
+      <circle cx="14" cy="13.5" r="6.5" fill="none" stroke="#0F1E3D" stroke-width="2.6"></circle>
+      <path d="M18.3 17.8 22 21.5" stroke="#0F1E3D" stroke-width="2.6" stroke-linecap="round"></path>
+      <path d="M14 4.8v2.2M5.3 13.5h2.2M20.5 13.5h2.2" stroke="#0F1E3D" stroke-width="1.6" stroke-linecap="round"></path>
+    </svg>
+    <div class="brand-name" id="name">Qasa ERP</div>
+  </div>
+  <h1 id="headline">Accounting software for Iraqi companies</h1>
+  <div class="sub" id="sub"></div>
+  <div class="chip" id="chip">Free for one PC</div>
+</div>
+<div class="site">qasaerp.com</div>
+<div class="window"><img id="shot" src="../../docs/screenshots/dashboard.png" alt=""></div>
+<script>
+  // ?lang=ar|en|ku picks the texts and the screenshot
+  const T = {
+    en: { name: 'Qasa ERP', headline: 'Accounting software for Iraqi companies', sub: ['Iraqi Unified Accounting System', 'Arabic, English and Kurdish', 'Dinars and dollars'], chip: 'Free for one PC', shot: 'dashboard.png' },
+    ar: { name: 'قاصة ERP', headline: 'برنامج محاسبة للشركات العراقية', sub: ['وفق النظام المحاسبي الموحد', 'بالعربية والكوردية والإنجليزية', 'بالدينار والدولار'], chip: 'مجاني لحاسوب واحد', shot: 'dashboard-ar.png' },
+    ku: { name: 'قاسە ERP', headline: 'بەرنامەی ژمێریاری بۆ کۆمپانیا عێراقییەکان', sub: ['بەپێی سیستەمی ژمێریاریی یەکگرتوو', 'بە کوردی، عەرەبی و ئینگلیزی', 'بە دینار و دۆلار'], chip: 'بەخۆڕایی بۆ یەک کۆمپیوتەر', shot: 'dashboard-ku.png' }
+  };
+  // one point per line
+  for (const v of Object.values(T)) v.sub = v.sub.join('\n');
+  const lang = new URLSearchParams(location.search).get('lang') || 'en';
+  const t = T[lang] || T.en;
+  document.documentElement.lang = lang === 'ku' ? 'ckb' : lang;
+  document.documentElement.dir = lang === 'en' ? 'ltr' : 'rtl';
+  for (const k of ['name', 'headline', 'sub', 'chip']) document.getElementById(k).textContent = t[k];
+  document.getElementById('shot').src = '../../docs/screenshots/' + t.shot;
+</script>
+</body>
+</html>

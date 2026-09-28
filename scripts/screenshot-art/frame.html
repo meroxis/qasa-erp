@@ -1,0 +1,18 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Screenshot frame</title>
+<style>
+html, body { margin: 0; background: #F4F6FA; }
+img { display: block; width: 100vw; }
+</style>
+</head>
+<body>
+<img id="shot" alt="">
+<script>
+  // ?img=dashboard.png shows one screenshot across the whole width (the top of it, in the frame's proportions)
+  document.getElementById('shot').src = '../../docs/screenshots/' + new URLSearchParams(location.search).get('img');
+</script>
+</body>
+</html>

@@ -1,0 +1,11 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Try the live demo · جرّب النسخة التجريبية · وەشانی تاقیکردنەوە
+    url: https://qasaerp.com/demo/
+    about: The whole app in your browser with a sample company. Nothing is sent to a server.
+  - name: Questions, plans and licenses · الأسئلة والباقات والتراخيص · پرسیار، پلان و مۆڵەت
+    url: https://qasaerp.com/en/#faq
+    about: Answers on the website, or email info@qasaerp.com.
+  - name: Report a security problem privately · الإبلاغ عن ثغرة أمنية · ڕاپۆرتی کێشەی ئاسایش
+    url: https://github.com/meroxis/qasa-erp/blob/main/SECURITY.md
+    about: Please don't open a public issue for security problems.

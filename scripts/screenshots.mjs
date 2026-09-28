@@ -74,6 +74,7 @@ const SHOTS = [
   { file: 'dashboard-ku.png', lang: 'ku', path: '' },
   { file: 'invoice-ar.png', lang: 'ar', path: `invoice/${invoice.id}`, height: 1040 },
   { file: 'voucher-ku.png', lang: 'ku', path: `entry/${receipt.id}`, height: 1000 },
+  { file: 'invoice-ku.png', lang: 'ku', path: `invoice/${invoice.id}`, height: 1040 },
   { file: 'trial-balance-ar.png', lang: 'ar', path: 'trial-balance' },
   { file: 'final-accounts.png', lang: 'en', path: 'final-accounts', height: 1320 },
   { file: 'stock-card.png', lang: 'en', path: `item/${ac.id}` },
@@ -154,12 +155,40 @@ for (const shot of artOnly ? [] : SHOTS) {
 }
 
 // ——— the branded images, from HTML templates next to this script ———
-for (const art of [{ file: 'hero.png', page: 'hero.html', width: 1280, height: 720 }, { file: 'languages.png', page: 'languages.html', width: 1280, height: 500 }]) {
-  await send('Emulation.setDeviceMetricsOverride', { width: art.width, height: art.height, deviceScaleFactor: 2, mobile: false });
-  await send('Page.navigate', { url: pathToFileURL(join(root, 'scripts', 'screenshot-art', art.page)).href });
+// social images: GitHub's preview (English) and, when the website repository sits next to this one, a share image
+// per language for the site (WhatsApp, Facebook and the rest show these)
+const website = join(root, 'website', 'assets');
+const ARTS = [
+  { file: 'hero.png', page: 'hero.html', width: 1280, height: 720, scale: 2 },
+  { file: 'languages.png', page: 'languages.html', width: 1280, height: 500, scale: 2 },
+  { file: 'social-preview.png', page: 'social.html?lang=en', width: 1280, height: 640, scale: 1 },
+  ...(existsSync(website) ? ['ar', 'en', 'ku'].map((l) => ({ file: `og-${l}.png`, page: `social.html?lang=${l}`, width: 1200, height: 630, scale: 1, dir: website })) : [])
+];
+for (const art of ARTS) {
+  await send('Emulation.setDeviceMetricsOverride', { width: art.width, height: art.height, deviceScaleFactor: art.scale, mobile: false });
+  const [page, query] = art.page.split('?');
+  await send('Page.navigate', { url: pathToFileURL(join(root, 'scripts', 'screenshot-art', page)).href + (query ? `?${query}` : '') });
   await sleep(500);
   await evaluate('document.fonts.ready.then(() => new Promise((r) => setTimeout(r, 400)))');
-  await capture(art.file);
+  const { data } = await send('Page.captureScreenshot', { format: 'png', fromSurface: true });
+  writeFileSync(join(art.dir ?? out, art.file), Buffer.from(data, 'base64'));
+  console.log(art.dir ? `website/assets/${art.file}` : `docs/screenshots/${art.file}`);
+}
+
+// the website's galleries: light WebP copies, 1200 wide, in the app's 16:10 proportions
+if (existsSync(website)) {
+  const shots = join(website, 'shots');
+  mkdirSync(shots, { recursive: true });
+  const GALLERY = ['dashboard', 'final-accounts', 'stock-card', 'dashboard-ar', 'invoice-ar', 'trial-balance-ar', 'dashboard-ku', 'voucher-ku', 'invoice-ku'];
+  await send('Emulation.setDeviceMetricsOverride', { width: 1200, height: 750, deviceScaleFactor: 1, mobile: false });
+  for (const name of GALLERY) {
+    await send('Page.navigate', { url: pathToFileURL(join(root, 'scripts', 'screenshot-art', 'frame.html')).href + `?img=${name}.png` });
+    await sleep(400);
+    await evaluate(`new Promise((r) => { const i = document.getElementById('shot'); i.complete ? r() : i.onload = r; })`);
+    const { data } = await send('Page.captureScreenshot', { format: 'webp', quality: 80, fromSurface: true });
+    writeFileSync(join(shots, `${name}.webp`), Buffer.from(data, 'base64'));
+    console.log(`website/assets/shots/${name}.webp`);
+  }
 }
 
 // leave the demo company as it was: no sign-in
