@@ -213,8 +213,8 @@ growing company needs, and the app shows the full comparison under **Plan & lice
 
 Some Pro features are still being built; the app marks them as coming soon. A plan never locks anyone out of their
 data: when a license ends, the company keeps everything and continues on the Free features. Pro can be tried
-free for 30 days. Licenses are offline keys signed by Meroxis (Ed25519) and are available from
-[info@qasaerp.com](mailto:info@qasaerp.com).
+free for 30 days. Licenses are offline keys signed by Meroxis (Ed25519). Buy or renew one in the customer portal,
+[my.qasaerp.com](https://my.qasaerp.com), and pay with Wayl, a bank transfer or cash.
 
 ## Trust and security
 

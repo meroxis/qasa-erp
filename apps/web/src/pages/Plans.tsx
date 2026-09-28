@@ -6,6 +6,8 @@ import { useI18n, type I18n, type Key } from '../i18n.ts';
 
 const demo = import.meta.env.MODE === 'demo';
 const CONTACT = 'mailto:info@qasaerp.com?subject=' + encodeURIComponent('Qasa ERP Pro / Business');
+/** The customer portal in the app's language, at its buy page (it asks the customer to sign in first). */
+const PORTAL = (lang: string) => `https://my.qasaerp.com/lang/${lang}?back=/buy`;
 
 /** A cell of the comparison: a text, a tick or a dash, or a limit (null = unlimited). */
 type Cell = Key | boolean | { limit: number | null } | { key: Key; n: number };
@@ -177,10 +179,10 @@ export function Plans() {
         <h2>{t('getPlan')}</h2>
         <p style={{ margin: 0 }}>{t('buyHelp')}</p>
         <div className="row">
-          <a className="btn primary" href={CONTACT}><Icon name="mail" size={16} />{t('emailUs')}</a>
-          <span className="ltr muted">info@qasaerp.com</span>
+          <a className="btn primary" href={PORTAL(i18n.lang)} target="_blank" rel="noopener noreferrer"><Icon name="cart" size={16} />{t('buyOnline')}</a>
+          <span className="ltr muted">my.qasaerp.com</span>
           <span className="spacer" />
-          <a className="btn ghost" href="https://qasaerp.com/#plans" target="_blank" rel="noopener noreferrer">qasaerp.com</a>
+          <a className="btn ghost" href={CONTACT}><Icon name="mail" size={16} />{t('emailUs')}</a>
         </div>
       </div>
     </div>
