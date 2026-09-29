@@ -192,7 +192,8 @@ npm run dist:win    # build apps/desktop/release/Qasa-ERP-Setup-<version>.exe
 - [x] Office-network (server) mode: other PCs work on one PC's company file over the office network (encrypted, with a pairing code), each person with their own user
 - [x] Windows app and installer with automatic updates
 - [x] Plans (Free, Pro, Business) with offline license keys and a 30-day Pro trial
-- [ ] Code signing, backups
+- [x] Backups: a daily checked copy of the company file in a folder of your choice, and restore
+- [ ] Code signing
 
 ## Plans
 
@@ -208,7 +209,8 @@ growing company needs, and the app shows the full comparison under **Plan & lice
 | Users, with sign-in | 1 | up to 5, with roles and separate duties | unlimited |
 | Office network (several PCs on one company file) | | ✓ | ✓ |
 | Companies | 1 | 3 | unlimited |
-| Installments, payroll, cloud backup, year-end closing | | coming soon | coming soon |
+| Daily backups to a folder of your choice (OneDrive, Google Drive, USB) | | ✓ | ✓ |
+| Installments, payroll, year-end closing | | coming soon | coming soon |
 | Online edition, branches | | | coming soon |
 
 Some Pro features are still being built; the app marks them as coming soon. A plan never locks anyone out of their

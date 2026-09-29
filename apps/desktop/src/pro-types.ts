@@ -26,5 +26,13 @@ export interface ProContext {
   serveWeb(server: FastifyInstance): void;
   /** The headers every answer of the app carries (content security policy and the like). */
   securityHeaders: Readonly<Record<string, string>>;
+  /** The Windows Documents folder (the default place for backups). */
+  documentsDir: string;
+  /** Windows' folder picker on this PC's window; null when cancelled. */
+  chooseFolder(): Promise<string | null>;
+  /** Windows' file picker for a backup to restore; null when cancelled. */
+  chooseBackupFile(): Promise<string | null>;
+  /** Replaces the company file with a checked backup and restarts the app; the current file is kept aside. */
+  restoreDatabase(file: string): Promise<void>;
   log(...args: unknown[]): void;
 }

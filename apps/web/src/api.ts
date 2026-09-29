@@ -411,10 +411,28 @@ export interface NetworkStatus {
   signedIn: number;
 }
 
+/** Backups (Pro module): a daily checked copy of the company file in a chosen folder. Missing (404) without Pro. */
+export interface BackupStatus {
+  available: boolean;
+  on: boolean;
+  folder: string;
+  keep: number;
+  last: { at: string; file: string; size: number } | null;
+  lastError: string | null;
+  next: string | null;
+  files: { name: string; size: number; at: string }[];
+}
+
 export const api = {
   health: () => request<{ ok: boolean }>('GET', '/api/health'),
   network: () => request<NetworkStatus>('GET', '/api/network'),
   setNetwork: (on: boolean) => request<NetworkStatus>('PUT', '/api/network', { on }),
+  backup: () => request<BackupStatus>('GET', '/api/backup'),
+  setBackup: (patch: { on?: boolean; keep?: number }) => request<BackupStatus>('PUT', '/api/backup', patch),
+  chooseBackupFolder: () => request<BackupStatus>('POST', '/api/backup/folder', {}),
+  runBackup: () => request<BackupStatus>('POST', '/api/backup/run', {}),
+  /** by name from the list, or (without a name) from a file chosen in Windows' file picker */
+  restoreBackup: (name?: string) => request<{ restarting: boolean }>('POST', '/api/backup/restore', name ? { name } : {}),
   settings: () => request<Settings>('GET', '/api/settings'),
   updateSettings: (patch: Partial<Settings>) => request<Settings>('PUT', '/api/settings', patch),
   accounts: () => request<AccountView[]>('GET', '/api/accounts'),

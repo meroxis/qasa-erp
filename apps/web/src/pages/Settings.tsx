@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { MONTHS, rateFromX100, todayIso, toWesternDigits, type Names, type PostingAccounts } from '@qasa/core';
-import { api, ApiError, currentUser, setCurrentUser, type NetworkStatus } from '../api.ts';
+import { api, ApiError, currentUser, setCurrentUser, type BackupStatus, type NetworkStatus } from '../api.ts';
 import { AccountCombo, ErrorBox, useData, useLoad, useToast } from '../components.tsx';
 import { isKey, useI18n } from '../i18n.ts';
 import { href } from '../router.ts';
@@ -77,6 +77,8 @@ export function Settings() {
       <PostingAccountsCard />
 
       <OfficeNetworkCard />
+
+      <BackupCard />
 
       <div className="card pad stack">
         <h2>{t('periods')} — <span className="num">{i18n.digitsOf(year)}</span></h2>
@@ -185,6 +187,120 @@ function OfficeNetworkCard() {
           </button>
         </div>
       )}
+    </div>
+  );
+}
+
+const KEEP_CHOICES = [7, 14, 30, 60, 90, 365];
+
+/** A daily copy of the company file in a chosen folder, and restoring one (the Pro module; absent without it). */
+function BackupCard() {
+  const { t, digitsOf } = useI18n();
+  const toast = useToast();
+  const [status, setStatus] = useState<BackupStatus | null>(null);
+  const [absent, setAbsent] = useState(false);
+  const [error, setError] = useState<unknown>(null);
+  const [busy, setBusy] = useState(false);
+  const [restarting, setRestarting] = useState(false);
+
+  useEffect(() => {
+    api.backup().then(setStatus, (e) => {
+      if (e instanceof ApiError && e.status === 404) setAbsent(true);
+      else setError(e);
+    });
+  }, []);
+
+  async function act(work: () => Promise<BackupStatus>, done?: string) {
+    setBusy(true);
+    setError(null);
+    try {
+      setStatus(await work());
+      if (done) toast(done);
+    } catch (e) {
+      setError(e);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function restore(name?: string, when?: string) {
+    if (!window.confirm(name ? t('bkRestoreQ', { when: when ?? name }) : t('bkRestoreOtherQ'))) return;
+    setBusy(true);
+    setError(null);
+    try {
+      if ((await api.restoreBackup(name)).restarting) setRestarting(true);
+    } catch (e) {
+      setError(e);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  // isolated left-to-right, so "244 KB" and the date keep their order inside Arabic and Kurdish text
+  const ltr = (s: string) => `⁦${s}⁩`;
+  const when = (iso: string) => ltr(digitsOf(new Date(iso).toLocaleString('en-GB', { dateStyle: 'medium', timeStyle: 'short' })));
+  const size = (bytes: number) => ltr(digitsOf(bytes >= 1048576 ? `${(bytes / 1048576).toFixed(1)} MB` : `${Math.max(1, Math.round(bytes / 1024))} KB`));
+
+  return (
+    <div className="card pad stack">
+      <div className="row" style={{ justifyContent: 'space-between' }}>
+        <h2>{t('bkTitle')}</h2>
+        {status?.available && <span className={'chip ' + (status.on ? 'ok' : '')}>{status.on ? t('switchedOn') : t('switchedOff')}</span>}
+      </div>
+      <p className="muted" style={{ margin: 0 }}>{t('bkHelp')}</p>
+      {absent && <div className="alert">{t('bkOfficial')} {t('bkManual')}</div>}
+      {restarting && <div className="alert ok" role="status">{t('bkRestarting')}</div>}
+      {status && (
+        <>
+          {!status.available && <div className="alert">{t('bkNeedsPro')} <a href={href('plans')}>{t('planLicense')}</a></div>}
+          <div className="grid-2">
+            <div className="field">
+              <span>{t('bkFolder')}</span>
+              <div className="row" style={{ gap: 8, flexWrap: 'wrap' }}>
+                <span className="ltr small" style={{ overflowWrap: 'anywhere' }}>{status.folder}</span>
+                <button type="button" className="btn small" disabled={busy || restarting} onClick={() => act(() => api.chooseBackupFolder())}>{t('bkChooseFolder')}</button>
+              </div>
+            </div>
+            <label className="field">
+              <span>{t('bkKeep')}</span>
+              <select className="input" value={status.keep} disabled={busy || restarting} onChange={(e) => act(() => api.setBackup({ keep: Number(e.target.value) }), t('saved'))}>
+                {KEEP_CHOICES.map((n) => <option key={n} value={n}>{t('bkCopies', { n: String(n) })}</option>)}
+              </select>
+            </label>
+          </div>
+          <div className="small">{status.last ? t('bkLast', { when: when(status.last.at), size: size(status.last.size) }) : t('bkNone')}</div>
+          {status.lastError && <div className="alert bad" role="alert">{t('bkFailed', { e: status.lastError })}</div>}
+          <ErrorBox error={error} />
+          <div className="row" style={{ gap: 8, flexWrap: 'wrap' }}>
+            {status.available && <button type="button" className="btn primary" disabled={busy || restarting} onClick={() => act(() => api.runBackup(), t('saved'))}>{t('bkNow')}</button>}
+            {status.available && (
+              <button type="button" className="btn" disabled={busy || restarting} onClick={() => act(() => api.setBackup({ on: !status.on }), t('saved'))}>
+                {status.on ? t('bkTurnOff') : t('bkTurnOn')}
+              </button>
+            )}
+            <button type="button" className="btn" disabled={busy || restarting} onClick={() => restore()}>{t('bkRestoreOther')}</button>
+          </div>
+          {status.files.length > 0 && (
+            <div className="stack" style={{ gap: 6 }}>
+              <h3 style={{ margin: 0 }}>{t('bkCopiesTitle')}</h3>
+              <table className="table">
+                <tbody>
+                  {status.files.map((f) => (
+                    <tr key={f.name}>
+                      <td className="num small">{when(f.at)}</td>
+                      <td className="num small">{size(f.size)}</td>
+                      <td style={{ textAlign: 'end' }}>
+                        <button type="button" className="btn small" disabled={busy || restarting} onClick={() => restore(f.name, when(f.at))}>{t('bkRestore')}</button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </>
+      )}
+      {!status && !absent && <ErrorBox error={error} />}
     </div>
   );
 }

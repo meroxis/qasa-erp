@@ -31,7 +31,10 @@ const T = {
   workHere: ['العمل على هذا الحاسوب', 'Work on this PC', 'کارکردن لەسەر ئەم کۆمپیوتەرە'],
   serverDown: ['خادم المكتب {host} لا يجيب. هل الحاسوب يعمل وقاصة ERP مفتوح عليه؟', 'The office server {host} doesn’t answer. Is that PC on, with Qasa ERP open?', 'سێرڤەری نووسینگە {host} وەڵام ناداتەوە. ئەو کۆمپیوتەرە هەڵکراوە و قاسە ERP لەسەری کراوەیە؟'],
   serverChanged: ['شهادة خادم المكتب {host} تغيّرت، فلا يمكن التأكد أنه الخادم نفسه. اتصل من جديد برمز الاقتران الذي يظهر عليه.', 'The certificate of the office server {host} has changed, so it can’t be confirmed as the same server. Connect again with the pairing code it shows.', 'بڕوانامەی سێرڤەری نووسینگە {host} گۆڕاوە، بۆیە ناتوانرێت دڵنیا بین هەمان سێرڤەرە. بە کۆدی جووتبوونی سەر ئەو دووبارە پەیوەندی بکەرەوە.'],
-  tryAgain: ['حاول مجدداً', 'Try again', 'دووبارە هەوڵ بدەرەوە']
+  tryAgain: ['حاول مجدداً', 'Try again', 'دووبارە هەوڵ بدەرەوە'],
+  // backups (Settings)
+  backupFolder: ['اختر مجلد النسخ الاحتياطية', 'Choose the folder for backups', 'بوخچەی باکئەپەکان هەڵبژێرە'],
+  restoreFile: ['اختر النسخة الاحتياطية المراد استرجاعها', 'Choose the backup to restore', 'ئەو باکئەپە هەڵبژێرە کە دەتەوێت بیگەڕێنیتەوە']
 } as const;
 
 export type TextKey = keyof typeof T;

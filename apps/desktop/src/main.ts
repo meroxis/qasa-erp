@@ -6,7 +6,7 @@
 import { app, BrowserWindow, dialog, ipcMain, Menu, session, shell, type MenuItemConstructorOptions } from 'electron';
 import electronUpdater from 'electron-updater';
 import { randomBytes } from 'node:crypto';
-import { appendFileSync, mkdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
+import { appendFileSync, copyFileSync, existsSync, mkdirSync, readFileSync, renameSync, statSync, writeFileSync } from 'node:fs';
 import { createServer } from 'node:net';
 import { extname, join, normalize, sep } from 'node:path';
 import type { FastifyInstance } from 'fastify';
@@ -102,7 +102,21 @@ async function startServer(): Promise<string> {
   serveWeb(server);
 
   // the Pro module adds its routes now: a server takes no more once it listens
-  const ctx: ProContext = { db, server, userDataDir: app.getPath('userData'), appVersion: app.getVersion(), serveWeb, securityHeaders: SECURITY_HEADERS, log };
+  const ctx: ProContext = {
+    db, server, userDataDir: app.getPath('userData'), appVersion: app.getVersion(), serveWeb, securityHeaders: SECURITY_HEADERS, log,
+    documentsDir: app.getPath('documents'),
+    chooseFolder: async () => {
+      const options = { title: t('backupFolder'), properties: ['openDirectory', 'createDirectory'] as ('openDirectory' | 'createDirectory')[] };
+      const r = win ? await dialog.showOpenDialog(win, options) : await dialog.showOpenDialog(options);
+      return r.canceled ? null : r.filePaths[0] ?? null;
+    },
+    chooseBackupFile: async () => {
+      const options = { title: t('restoreFile'), properties: ['openFile'] as 'openFile'[], filters: [{ name: 'Qasa ERP', extensions: ['sqlite'] }] };
+      const r = win ? await dialog.showOpenDialog(win, options) : await dialog.showOpenDialog(options);
+      return r.canceled ? null : r.filePaths[0] ?? null;
+    },
+    restoreDatabase
+  };
   if (proModule) {
     log(`${proModule.name} ${proModule.version}`);
     try {
@@ -123,6 +137,24 @@ async function startServer(): Promise<string> {
     }
   }
   return `http://127.0.0.1:${address.port}`;
+}
+
+/**
+ * Puts a (checked) backup in place of the company file and restarts. Nothing is deleted: the current file, with its
+ * write-ahead log, is kept in the data folder as qasa-before-restore-<time>.sqlite.
+ */
+async function restoreDatabase(file: string): Promise<void> {
+  const dataDir = join(app.getPath('userData'), 'data');
+  const live = join(dataDir, 'qasa.sqlite');
+  log('restoring the company file from', file);
+  await stopServer();
+  const stamp = new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-');
+  for (const suffix of ['', '-wal', '-shm']) {
+    if (existsSync(live + suffix)) renameSync(live + suffix, join(dataDir, `qasa-before-restore-${stamp}.sqlite${suffix}`));
+  }
+  copyFileSync(file, live);
+  app.relaunch();
+  app.exit(0);
 }
 
 /** The app's screens come from the same server as the API, so /api is same-origin (here and on the office network). */
