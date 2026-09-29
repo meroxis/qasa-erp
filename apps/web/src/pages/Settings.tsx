@@ -1,8 +1,9 @@
 import { useEffect, useState } from 'react';
 import { MONTHS, rateFromX100, todayIso, toWesternDigits, type Names, type PostingAccounts } from '@qasa/core';
-import { api, currentUser, setCurrentUser } from '../api.ts';
+import { api, ApiError, currentUser, setCurrentUser, type NetworkStatus } from '../api.ts';
 import { AccountCombo, ErrorBox, useData, useLoad, useToast } from '../components.tsx';
 import { isKey, useI18n } from '../i18n.ts';
+import { href } from '../router.ts';
 
 export function Settings() {
   const i18n = useI18n();
@@ -75,6 +76,8 @@ export function Settings() {
 
       <PostingAccountsCard />
 
+      <OfficeNetworkCard />
+
       <div className="card pad stack">
         <h2>{t('periods')} — <span className="num">{i18n.digitsOf(year)}</span></h2>
         <div className="muted small">{t('periodsHelp')}</div>
@@ -111,6 +114,77 @@ export function Settings() {
           </tbody>
         </table>
       </div>
+    </div>
+  );
+}
+
+/** Other PCs in the office working on this company file (the Pro module; absent in builds without it). */
+function OfficeNetworkCard() {
+  const { t, digitsOf } = useI18n();
+  const toast = useToast();
+  const [status, setStatus] = useState<NetworkStatus | null>(null);
+  const [absent, setAbsent] = useState(false);
+  const [error, setError] = useState<unknown>(null);
+  const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    api.network().then(setStatus, (e) => {
+      if (e instanceof ApiError && e.status === 404) setAbsent(true);
+      else setError(e);
+    });
+  }, []);
+
+  async function toggle(on: boolean) {
+    setBusy(true);
+    setError(null);
+    try {
+      setStatus(await api.setNetwork(on));
+      toast(t('saved'));
+    } catch (e) {
+      setError(e);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  const address = (a: string) => (status && status.port !== 47420 ? `${a}:${status.port}` : a);
+  return (
+    <div className="card pad stack">
+      <div className="row" style={{ justifyContent: 'space-between' }}>
+        <h2>{t('netTitle')}</h2>
+        {status && <span className={'chip ' + (status.on ? 'ok' : '')}>{status.on ? t('switchedOn') : t('switchedOff')}</span>}
+      </div>
+      <p className="muted" style={{ margin: 0 }}>{t('netHelp')}</p>
+      {absent && <div className="alert">{t('netOfficial')}</div>}
+      {status && !status.available && <div className="alert">{t('netNeedsPro')} <a href={href('plans')}>{t('planLicense')}</a></div>}
+      {status && status.available && !status.signInRequired && <div className="alert">{t('netNeedsSignIn')} <a href={href('users')}>{t('users')}</a></div>}
+      {status?.on && (
+        <div className="stack" style={{ gap: 10 }}>
+          <div className="grid-2">
+            <div className="field">
+              <span>{t('netAddress')}</span>
+              {status.addresses.length
+                ? status.addresses.map((a) => <strong key={a} className="ltr num" style={{ fontSize: 18 }}>{address(a)}</strong>)
+                : <span className="muted">{t('netNoAddress')}</span>}
+            </div>
+            <div className="field">
+              <span>{t('netCode')}</span>
+              <strong className="ltr num" style={{ fontSize: 22, letterSpacing: '.06em' }}>{status.code}</strong>
+            </div>
+          </div>
+          <p style={{ margin: 0 }}>{t('netSteps')}</p>
+          <p className="muted small" style={{ margin: 0 }}>{t('netFirewall')}</p>
+          <p className="muted small" style={{ margin: 0 }}>{t('netSignedIn', { n: digitsOf(String(status.signedIn)) })}</p>
+        </div>
+      )}
+      <ErrorBox error={error} />
+      {status && status.available && (status.on || status.signInRequired) && (
+        <div>
+          <button type="button" className={'btn ' + (status.on ? '' : 'primary')} disabled={busy} onClick={() => toggle(!status.on)}>
+            {status.on ? t('netTurnOff') : t('netTurnOn')}
+          </button>
+        </div>
+      )}
     </div>
   );
 }

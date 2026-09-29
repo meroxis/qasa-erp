@@ -3,7 +3,7 @@
  * 127.0.0.1, the window shows the app from it, and the company file lives in the user's profile:
  *   %APPDATA%\Qasa ERP\data\qasa.sqlite
  */
-import { app, BrowserWindow, dialog, Menu, session, shell, type MenuItemConstructorOptions } from 'electron';
+import { app, BrowserWindow, dialog, ipcMain, Menu, session, shell, type MenuItemConstructorOptions } from 'electron';
 import electronUpdater from 'electron-updater';
 import { randomBytes } from 'node:crypto';
 import { appendFileSync, mkdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
@@ -12,6 +12,8 @@ import { extname, join, normalize, sep } from 'node:path';
 import type { FastifyInstance } from 'fastify';
 import { buildApp, openDatabase, type Db } from '@qasa/server';
 import { isLang, text, type Lang, type TextKey } from './texts.ts';
+import type { ProContext } from './pro-types.ts';
+import { pair, parseAddress, pemFingerprint, type PairResult, type Remote } from './office.ts';
 // the official builds include the Pro module; public builds get pro-none.ts (see build.mjs)
 import { proModule } from '@qasa/pro-module';
 
@@ -97,9 +99,35 @@ async function startServer(): Promise<string> {
   server.addHook('onSend', async (_req, reply) => {
     for (const [name, value] of Object.entries(SECURITY_HEADERS)) reply.header(name, value);
   });
+  serveWeb(server);
 
-  // The app's screens are served by the same server, so /api is same-origin.
-  server.setNotFoundHandler((req, reply) => {
+  // the Pro module adds its routes now: a server takes no more once it listens
+  const ctx: ProContext = { db, server, userDataDir: app.getPath('userData'), appVersion: app.getVersion(), serveWeb, securityHeaders: SECURITY_HEADERS, log };
+  if (proModule) {
+    log(`${proModule.name} ${proModule.version}`);
+    try {
+      proModule.register?.(ctx);
+    } catch (error) {
+      log('Pro module could not register:', error);
+    }
+  }
+
+  await server.listen({ host: '127.0.0.1', port: await choosePort() });
+  const address = server.server.address();
+  if (!address || typeof address === 'string') throw new Error('The local server has no port');
+  if (proModule) {
+    try {
+      await proModule.start?.(ctx);
+    } catch (error) {
+      log('Pro module did not start:', error);
+    }
+  }
+  return `http://127.0.0.1:${address.port}`;
+}
+
+/** The app's screens come from the same server as the API, so /api is same-origin (here and on the office network). */
+function serveWeb(target: FastifyInstance): void {
+  target.setNotFoundHandler((req, reply) => {
     const path = decodeURIComponent((req.url.split('?')[0] ?? '/'));
     if (req.method !== 'GET' || path.startsWith('/api/')) return reply.status(404).send({ error: 'not_found', details: null });
     const file = normalize(join(WEB_DIR, path === '/' ? 'index.html' : path));
@@ -113,19 +141,6 @@ async function startServer(): Promise<string> {
       .header('cache-control', target.endsWith('index.html') ? 'no-cache' : 'public, max-age=31536000, immutable')
       .send(readFileSync(target));
   });
-
-  await server.listen({ host: '127.0.0.1', port: await choosePort() });
-  const address = server.server.address();
-  if (!address || typeof address === 'string') throw new Error('The local server has no port');
-  if (proModule) {
-    log(`${proModule.name} ${proModule.version}`);
-    try {
-      await proModule.start?.({ db, server, userDataDir: app.getPath('userData'), log });
-    } catch (error) {
-      log('Pro module did not start:', error);
-    }
-  }
-  return `http://127.0.0.1:${address.port}`;
 }
 
 async function stopServer(): Promise<void> {
@@ -134,6 +149,104 @@ async function stopServer(): Promise<void> {
   try { db?.close(); } catch { /* already closed */ }
   server = null;
   db = null;
+}
+
+// ——— the office network: this PC works on another PC's company file ———
+
+/** The office server this PC uses instead of its own company file, pinned to its certificate. */
+let remote: Remote | null = null;
+let connectWin: BrowserWindow | null = null;
+
+function networkFile(): string {
+  return join(app.getPath('userData'), 'network.json');
+}
+
+function readRemote(): Remote | null {
+  try {
+    const r = JSON.parse(readFileSync(networkFile(), 'utf8')) as Record<string, unknown>;
+    if (r.mode === 'remote' && typeof r.host === 'string' && parseAddress(r.host) && Number.isInteger(r.port) && typeof r.fingerprint === 'string' && /^[0-9a-f]{64}$/.test(r.fingerprint)) {
+      return { host: r.host, port: r.port as number, fingerprint: r.fingerprint };
+    }
+  } catch { /* no file: this PC works on its own company file */ }
+  return null;
+}
+
+function saveRemote(next: Remote | null): void {
+  writeFileSync(networkFile(), JSON.stringify(next ? { mode: 'remote', ...next } : { mode: 'local' }));
+}
+
+/** The window accepts the office server only with exactly the certificate it was paired with. */
+function pinCertificate(target: Remote): void {
+  session.defaultSession.setCertificateVerifyProc((request, callback) => {
+    if (request.hostname !== target.host) return callback(-3); // anything else: Chromium's own checks
+    callback(pemFingerprint(request.certificate.data) === target.fingerprint ? 0 : -2);
+  });
+}
+
+/** Pairing (office.ts), then this PC remembers the server and restarts on it. */
+async function pairAndSave(address: string, code: string): Promise<PairResult> {
+  const result = await pair(address, code);
+  if ('ok' in result) {
+    saveRemote(result.remote);
+    log(`paired with the office server ${result.remote.host}:${result.remote.port}`);
+  }
+  return result;
+}
+
+/** Restarts the app, on the office server or on this PC's own company file. */
+async function restartApp(): Promise<void> {
+  await stopServer();
+  app.relaunch();
+  app.exit(0);
+}
+
+function openConnectWindow(): void {
+  if (connectWin) return void connectWin.focus();
+  connectWin = new BrowserWindow({
+    width: 480, height: 560, resizable: false, minimizable: false, maximizable: false, parent: win ?? undefined, modal: !!win,
+    title: t('connect'), backgroundColor: '#F4F6FA', autoHideMenuBar: true, icon: join(__dirname, 'icon.png'),
+    webPreferences: { preload: join(__dirname, 'connect-preload.cjs'), contextIsolation: true, sandbox: true, nodeIntegration: false, spellcheck: false }
+  });
+  connectWin.setMenu(null);
+  connectWin.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
+  connectWin.webContents.on('will-navigate', (event) => event.preventDefault());
+  connectWin.on('closed', () => { connectWin = null; });
+  void connectWin.loadFile(join(__dirname, 'connect.html'), { query: { lang } });
+}
+
+ipcMain.handle('network:pair', async (event, address: unknown, code: unknown) => {
+  if (!connectWin || event.sender !== connectWin.webContents) return { error: 'address' };
+  const result = await pairAndSave(String(address ?? ''), String(code ?? ''));
+  if ('ok' in result) setTimeout(() => void restartApp(), 900);
+  return result;
+});
+ipcMain.on('network:close', (event) => {
+  if (connectWin && event.sender === connectWin.webContents) connectWin.close();
+});
+
+async function workHere(): Promise<void> {
+  saveRemote(null);
+  log('back to this PC’s own company file');
+  await restartApp();
+}
+
+/** The office server doesn't answer, or its certificate changed: say so and offer the ways out. */
+async function officeServerProblem(certificate: boolean): Promise<void> {
+  if (!win || !remote) return;
+  win.show();
+  const host = `${remote.host}:${remote.port}`;
+  const { response } = await dialog.showMessageBox(win, {
+    type: 'warning', title: 'Qasa ERP', message: t(certificate ? 'serverChanged' : 'serverDown', { host }),
+    buttons: certificate ? [t('connect'), t('workHere'), t('quit')] : [t('tryAgain'), t('workHere'), t('quit')], defaultId: 0, cancelId: 2
+  });
+  if (response === 0) {
+    if (certificate) openConnectWindow();
+    else void win.loadURL(`https://${remote.host}:${remote.port}/`);
+  } else if (response === 1) {
+    await workHere();
+  } else {
+    app.quit();
+  }
 }
 
 // ——— window and menu ———
@@ -149,11 +262,20 @@ function buildMenu(): void {
   const template: MenuItemConstructorOptions[] = [
     {
       label: t('file'),
-      submenu: [
-        { label: t('openData'), click: () => void shell.openPath(join(app.getPath('userData'), 'data')) },
-        { type: 'separator' },
-        { label: t('quit'), role: 'quit' }
-      ]
+      submenu: remote
+        ? [
+            { label: t('connectedTo', { host: `${remote.host}:${remote.port}` }), enabled: false },
+            { label: t('connect'), click: () => openConnectWindow() },
+            { label: t('workHere'), click: () => void workHere() },
+            { type: 'separator' },
+            { label: t('quit'), role: 'quit' }
+          ]
+        : [
+            { label: t('openData'), click: () => void shell.openPath(join(app.getPath('userData'), 'data')) },
+            { label: t('connect'), click: () => openConnectWindow() },
+            { type: 'separator' },
+            { label: t('quit'), role: 'quit' }
+          ]
     },
     {
       label: t('view'),
@@ -185,7 +307,8 @@ function buildMenu(): void {
 
 async function createWindow(url: string): Promise<void> {
   const ses = session.defaultSession;
-  await ses.cookies.set({ url, name: 'qasa_session', value: SESSION_KEY, httpOnly: true, sameSite: 'strict' });
+  // the key that opens this PC's own server; the office server needs none (everyone signs in there)
+  if (!remote) await ses.cookies.set({ url, name: 'qasa_session', value: SESSION_KEY, httpOnly: true, sameSite: 'strict' });
   // Qasa needs no camera, microphone, location, notifications or other device access.
   ses.setPermissionRequestHandler((_contents, _permission, callback) => callback(false));
   ses.setPermissionCheckHandler(() => false);
@@ -218,6 +341,16 @@ async function createWindow(url: string): Promise<void> {
   });
   win.on('closed', () => { log('window closed'); win = null; });
   win.webContents.on('render-process-gone', (_e, details) => log('screen process ended:', details.reason));
+  if (remote) {
+    // Chromium's certificate errors are -200 to -299
+    win.webContents.on('did-fail-load', (_e, code, description, _url, mainFrame) => {
+      if (!mainFrame || code === -3) return; // -3: a navigation was replaced, not a failure
+      log('office server did not load:', code, description);
+      void officeServerProblem(code <= -200 && code > -300);
+    });
+    await win.loadURL(url).catch(() => { /* reported by did-fail-load */ });
+    return;
+  }
   await win.loadURL(url);
 }
 
@@ -283,11 +416,19 @@ if (!app.requestSingleInstanceLock()) {
 
   app.whenReady().then(async () => {
     app.setAppUserModelId('com.meroxis.qasaerp');
+    remote = readRemote();
     buildMenu();
     try {
-      const url = await startServer();
-      log(`Qasa ERP ${app.getVersion()} started — server on ${url}, data in ${join(app.getPath('userData'), 'data')}`);
-      await createWindow(url);
+      if (remote) {
+        // an office PC: the company file is on the office server; this PC's own server doesn't start
+        pinCertificate(remote);
+        log(`Qasa ERP ${app.getVersion()} started — on the office server ${remote.host}:${remote.port}`);
+        await createWindow(`https://${remote.host}:${remote.port}/`);
+      } else {
+        const url = await startServer();
+        log(`Qasa ERP ${app.getVersion()} started — server on ${url}, data in ${join(app.getPath('userData'), 'data')}`);
+        await createWindow(url);
+      }
       setupUpdates();
     } catch (error) {
       dialog.showErrorBox(t('startFailed'), error instanceof Error ? error.message : String(error));

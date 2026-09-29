@@ -399,8 +399,22 @@ const qs = (params: Record<string, string | undefined>) => {
   return s ? '?' + s : '';
 };
 
+/** The office network (Pro module): other PCs work on this company file. Missing (404) in builds without Pro. */
+export interface NetworkStatus {
+  available: boolean;
+  signInRequired: boolean;
+  on: boolean;
+  port: number;
+  addresses: string[];
+  hostname: string;
+  code: string | null;
+  signedIn: number;
+}
+
 export const api = {
   health: () => request<{ ok: boolean }>('GET', '/api/health'),
+  network: () => request<NetworkStatus>('GET', '/api/network'),
+  setNetwork: (on: boolean) => request<NetworkStatus>('PUT', '/api/network', { on }),
   settings: () => request<Settings>('GET', '/api/settings'),
   updateSettings: (patch: Partial<Settings>) => request<Settings>('PUT', '/api/settings', patch),
   accounts: () => request<AccountView[]>('GET', '/api/accounts'),

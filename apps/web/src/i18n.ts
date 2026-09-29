@@ -584,7 +584,24 @@ const D = {
   err_item_has_moves: ['للمادة حركات — لا يمكن حذفها أو تغيير تتبعها', 'The item has moves, so it can’t be deleted or switch tracking', 'کاڵاکە جووڵەی هەیە، بۆیە ناسڕدرێتەوە'],
   err_party_has_entries: ['لهذا الاسم حركات — أوقفه بدلاً من حذفه', 'This name has movements — set it inactive instead', 'ئەم ناوە جووڵەی هەیە — لە جیاتی سڕینەوە ناچالاکی بکە'],
   err_wrong_entry_type: ['نوع السند غير صحيح', 'Wrong voucher type', 'جۆری سەنەد هەڵەیە'],
-  err_internal: ['حدث خطأ غير متوقع', 'Something went wrong', 'هەڵەیەکی چاوەڕواننەکراو ڕوویدا']
+  err_internal: ['حدث خطأ غير متوقع', 'Something went wrong', 'هەڵەیەکی چاوەڕواننەکراو ڕوویدا'],
+  // the office network (Settings)
+  netTitle: ['شبكة المكتب', 'Office network', 'تۆڕی نووسینگە'],
+  netHelp: ['يمكن لحواسيب أخرى في المكتب العمل على ملف هذه الشركة في الوقت نفسه، كل شخص باسم مستخدمه. يبقى الملف على هذا الحاسوب، فأبقِه يعمل وقاصة ERP مفتوحاً أثناء عمل الآخرين.', 'Other PCs in the office can work on this company file at the same time, each person with their own user. The file stays on this PC: keep it on, with Qasa ERP open, while others work.', 'کۆمپیوتەرەکانی تری نووسینگە دەتوانن لە هەمان کاتدا لەسەر فایلی ئەم کۆمپانیایە کار بکەن، هەر کەسێک بە بەکارهێنەری خۆی. فایلەکە لەسەر ئەم کۆمپیوتەرە دەمێنێتەوە: کاتێک ئەوانی تر کار دەکەن، هەڵکراو و قاسە ERP کراوە بیهێڵەوە.'],
+  netOfficial: ['شبكة المكتب جزء من Pro في تطبيق قاصة ERP لويندوز.', 'The office network comes with Pro in the Qasa ERP app for Windows.', 'تۆڕی نووسینگە بەشێکە لە Pro لە بەرنامەی قاسە ERP بۆ ویندۆز.'],
+  netNeedsPro: ['تحتاج شبكة المكتب إلى خطة Pro أو Business.', 'The office network needs the Pro or Business plan.', 'تۆڕی نووسینگە پێویستی بە پلانی Pro یان Business هەیە.'],
+  netNeedsSignIn: ['شغّل «تسجيل الدخول» أولاً في صفحة المستخدمين: على الشبكة يدخل كل شخص باسمه وكلمة مروره.', 'First switch on sign-in on the Users page: on the network, everyone signs in with their own user and password.', 'سەرەتا «چوونەژوورەوە» لە پەڕەی بەکارهێنەران هەڵبکە: لەسەر تۆڕ، هەر کەسێک بە بەکارهێنەر و وشەی نهێنیی خۆی دەچێتە ژوورەوە.'],
+  netTurnOn: ['تشغيل شبكة المكتب', 'Switch on the office network', 'هەڵکردنی تۆڕی نووسینگە'],
+  netTurnOff: ['إيقاف شبكة المكتب', 'Switch off the office network', 'کوژاندنەوەی تۆڕی نووسینگە'],
+  netAddress: ['عنوان هذا الحاسوب', 'This PC’s address', 'ناونیشانی ئەم کۆمپیوتەرە'],
+  netCode: ['رمز الاقتران', 'Pairing code', 'کۆدی جووتبوون'],
+  netNoAddress: ['هذا الحاسوب غير متصل بشبكة المكتب الآن.', 'This PC isn’t connected to the office network right now.', 'ئەم کۆمپیوتەرە ئێستا بە تۆڕی نووسینگەوە نەبەستراوە.'],
+  netSteps: ['على كل حاسوب آخر: ثبّت قاصة ERP من qasaerp.com، ثم من قائمة «ملف» اختر «الاتصال بخادم المكتب…» واكتب العنوان والرمز، ثم يسجّل الشخص دخوله باسم مستخدمه (أنشئ المستخدمين في صفحة المستخدمين).', 'On each other PC: install Qasa ERP from qasaerp.com, choose File → Connect to an office server…, enter the address and the code, then sign in with that person’s user (create users on the Users page).', 'لەسەر هەر کۆمپیوتەرێکی تر: قاسە ERP لە qasaerp.com دابمەزرێنە، پاشان لە لیستی «فایل» «پەیوەندی بە سێرڤەری نووسینگەوە…» هەڵبژێرە و ناونیشان و کۆدەکە بنووسە، پاشان کەسەکە بە بەکارهێنەری خۆی دەچێتە ژوورەوە (بەکارهێنەران لە پەڕەی بەکارهێنەران دروست بکە).'],
+  netFirewall: ['في المرة الأولى قد يسأل ويندوز إن كان يُسمح لقاصة ERP باستخدام الشبكة: اسمح له على الشبكات الخاصة.', 'The first time, Windows may ask whether Qasa ERP may use the network: allow it on private networks.', 'یەکەم جار لەوانەیە ویندۆز بپرسێت ئایا قاسە ERP دەتوانێت تۆڕ بەکاربهێنێت: ڕێگەی پێبدە لەسەر تۆڕە تایبەتەکان.'],
+  netSignedIn: ['مسجّلو الدخول الآن: {n}', 'Signed in now: {n}', 'ئێستا لە ژوورەوەن: {n}'],
+  err_network_needs_signin: ['شبكة المكتب تحتاج «تسجيل الدخول» مفعّلاً، ولا يمكن إيقافه ما دامت الشبكة تعمل.', 'The office network needs sign-in switched on, and sign-in can’t be switched off while the network is on.', 'تۆڕی نووسینگە پێویستی بە «چوونەژوورەوە»ی هەڵکراو هەیە، و تا تۆڕەکە هەڵکراو بێت ناتوانرێت بکوژێنرێتەوە.'],
+  err_network_port_busy: ['برنامج آخر على هذا الحاسوب يستخدم منفذ شبكة المكتب (47420). أغلقه ثم حاول مجدداً.', 'Another program on this PC uses the office network’s port (47420). Close it and try again.', 'بەرنامەیەکی تر لەسەر ئەم کۆمپیوتەرە دەرگای تۆڕی نووسینگە (47420) بەکاردەهێنێت. دایبخە و دووبارە هەوڵ بدەرەوە.'],
+  err_plan_limit_officeNetwork: ['شبكة المكتب من مزايا Pro — راجع «الخطة والترخيص».', 'The office network is part of Pro. See Plan & license.', 'تۆڕی نووسینگە بەشێکە لە Pro — «پلان و مۆڵەت» ببینە.']
 } as const satisfies Record<string, readonly [string, string, string]>;
 
 export type Key = keyof typeof D;

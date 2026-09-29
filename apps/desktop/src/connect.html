@@ -1,0 +1,87 @@
+<!doctype html>
+<html lang="en" dir="ltr">
+<head>
+<meta charset="utf-8">
+<!-- build.mjs puts the hash of the one script below here: nothing else may run -->
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'sha256-{{scriptHash}}'; style-src 'unsafe-inline'; form-action 'none'; base-uri 'none'">
+<title>Qasa ERP</title>
+<style>
+  :root { --navy: #0F1E3D; --blue: #1D5FD1; --ink: #141B2D; --ink-2: #4B5569; --line: #E1E6EF; --paper: #F4F6FA; --bad: #B42318; --ok: #0B6B45; }
+  * { box-sizing: border-box; }
+  body { margin: 0; font: 15px/1.55 'Segoe UI', Tahoma, system-ui, sans-serif; color: var(--ink); background: var(--paper); }
+  main { padding: 26px 28px; display: grid; gap: 14px; }
+  h1 { margin: 0; font-size: 20px; color: var(--navy); }
+  p { margin: 0; color: var(--ink-2); }
+  label { display: grid; gap: 6px; font-weight: 600; }
+  input { font: inherit; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; background: #fff; direction: ltr; text-align: left; letter-spacing: .04em; }
+  input:focus { outline: 2px solid var(--blue); outline-offset: 1px; border-color: var(--blue); }
+  small { font-weight: 400; color: var(--ink-2); }
+  .row { display: flex; gap: 10px; justify-content: flex-end; margin-top: 4px; }
+  button { font: inherit; font-weight: 700; min-height: 40px; padding: 0 18px; border-radius: 10px; border: 1px solid var(--line); background: #fff; color: var(--ink); cursor: pointer; }
+  button.primary { background: var(--blue); border-color: var(--blue); color: #fff; }
+  button:disabled { opacity: .6; cursor: default; }
+  .msg { min-height: 1.5em; font-weight: 600; }
+  .msg.bad { color: var(--bad); }
+  .msg.ok { color: var(--ok); }
+</style>
+</head>
+<body>
+<main>
+  <h1 data-t="title">Connect to an office server</h1>
+  <p data-t="lead"></p>
+  <form id="form" autocomplete="off">
+    <div style="display:grid;gap:14px">
+      <label><span data-t="address"></span><input id="address" required maxlength="260" spellcheck="false" placeholder="192.168.1.20"><small data-t="addressHint"></small></label>
+      <label><span data-t="code"></span><input id="code" required maxlength="40" spellcheck="false" placeholder="XXXX-XXXX-XXXX-XXXX"></label>
+      <div class="msg" id="msg" role="status"></div>
+      <div class="row"><button type="button" id="cancel" data-t="cancel"></button><button type="submit" class="primary" id="go" data-t="connect"></button></div>
+    </div>
+  </form>
+</main>
+<script>
+(() => {
+  const T = {
+    title: ['الاتصال بخادم المكتب', 'Connect to an office server', 'پەیوەندی بە سێرڤەری نووسینگەوە'],
+    lead: ['على حاسوب خادم المكتب افتح الإعدادات ← شبكة المكتب، ستجد هناك العنوان ورمز الاقتران. بعد الاتصال يعمل هذا الحاسوب على بيانات ذلك الحاسوب، ويسجّل كل شخص دخوله باسمه.', 'On the office server PC, open Settings → Office network: it shows the address and the pairing code. Once connected, this PC works on that PC’s company file, and everyone signs in with their own user.', 'لەسەر کۆمپیوتەری سێرڤەری نووسینگە، ڕێکخستنەکان ← تۆڕی نووسینگە بکەرەوە: ناونیشان و کۆدی جووتبوون پیشان دەدات. دوای پەیوەندیکردن، ئەم کۆمپیوتەرە لەسەر فایلی کۆمپانیای ئەو کۆمپیوتەرە کار دەکات، و هەر کەسێک بە بەکارهێنەری خۆی دەچێتە ژوورەوە.'],
+    address: ['عنوان خادم المكتب', 'Office server address', 'ناونیشانی سێرڤەری نووسینگە'],
+    addressHint: ['مثل 192.168.1.20 أو 192.168.1.20:47420', 'Like 192.168.1.20 or 192.168.1.20:47420', 'وەک 192.168.1.20 یان 192.168.1.20:47420'],
+    code: ['رمز الاقتران', 'Pairing code', 'کۆدی جووتبوون'],
+    connect: ['اتصال', 'Connect', 'پەیوەندی بکە'],
+    cancel: ['إلغاء', 'Cancel', 'پاشگەزبوونەوە'],
+    checking: ['جارٍ التحقق من الخادم…', 'Checking the server…', 'پشکنینی سێرڤەرەکە…'],
+    ok: ['تم الاقتران. يُعاد تشغيل قاصة ERP على خادم المكتب…', 'Paired. Qasa ERP restarts on the office server…', 'جووتکرا. قاسە ERP لەسەر سێرڤەری نووسینگە دەستپێدەکاتەوە…'],
+    e_address: ['اكتب عنوان خادم المكتب، مثل 192.168.1.20.', 'Enter the office server’s address, like 192.168.1.20.', 'ناونیشانی سێرڤەری نووسینگە بنووسە، وەک 192.168.1.20.'],
+    e_code: ['رمز الاقتران 16 حرفاً ورقماً، مثل 3F9A-1C22-7B0E-44D1.', 'The pairing code has 16 letters and digits, like 3F9A-1C22-7B0E-44D1.', 'کۆدی جووتبوون ١٦ پیت و ژمارەیە، وەک 3F9A-1C22-7B0E-44D1.'],
+    e_unreachable: ['لا يجيب أي خادم على هذا العنوان. تأكد أن الحاسوب يعمل وقاصة ERP مفتوح عليه وشبكة المكتب مفعّلة، وأن جدار حماية ويندوز يسمح لقاصة ERP.', 'Nothing answers at that address. Check that the PC is on with Qasa ERP open and the office network switched on, and that Windows Firewall allows Qasa ERP.', 'هیچ سێرڤەرێک لەو ناونیشانە وەڵام ناداتەوە. دڵنیابە کۆمپیوتەرەکە هەڵکراوە و قاسە ERP کراوەیە و تۆڕی نووسینگە هەڵکراوە، و فایەرواڵی ویندۆز ڕێگە بە قاسە ERP دەدات.'],
+    e_mismatch: ['الرمز لا يطابق الخادم على هذا العنوان. تأكد من الرمز: قد يكون جهاز آخر ينتحل صفة الخادم.', 'The code doesn’t match the server at that address. Check the code: another device may be pretending to be the server.', 'کۆدەکە لەگەڵ سێرڤەری ئەو ناونیشانە ناگونجێت. کۆدەکە بپشکنە: لەوانەیە ئامێرێکی تر خۆی وەک سێرڤەرەکە پیشان بدات.'],
+    e_not_qasa: ['الجهاز على هذا العنوان ليس خادم قاصة ERP.', 'The device at that address isn’t a Qasa ERP server.', 'ئامێری ئەو ناونیشانە سێرڤەری قاسە ERP نییە.']
+  };
+  const lang = ['ar', 'en', 'ku'].includes(new URLSearchParams(location.search).get('lang')) ? new URLSearchParams(location.search).get('lang') : 'ar';
+  const i = lang === 'ar' ? 0 : lang === 'ku' ? 2 : 1;
+  const t = (k) => T[k][i];
+  document.documentElement.lang = lang === 'ku' ? 'ckb' : lang;
+  document.documentElement.dir = lang === 'en' ? 'ltr' : 'rtl';
+  document.title = t('title');
+  for (const el of document.querySelectorAll('[data-t]')) el.textContent = t(el.dataset.t);
+  const msg = document.getElementById('msg');
+  const go = document.getElementById('go');
+  const say = (text, tone) => { msg.textContent = text; msg.className = 'msg' + (tone ? ' ' + tone : ''); };
+  document.getElementById('cancel').addEventListener('click', () => window.qasaConnect.close());
+  document.getElementById('form').addEventListener('submit', async (event) => {
+    event.preventDefault();
+    go.disabled = true;
+    say(t('checking'));
+    try {
+      const result = await window.qasaConnect.pair(document.getElementById('address').value, document.getElementById('code').value);
+      if (result && result.ok) return say(t('ok'), 'ok');
+      say(t('e_' + ((result && result.error) || 'unreachable')), 'bad');
+    } catch {
+      say(t('e_unreachable'), 'bad');
+    }
+    go.disabled = false;
+  });
+  document.getElementById('address').focus();
+})();
+</script>
+</body>
+</html>

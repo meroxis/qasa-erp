@@ -24,7 +24,14 @@ const T = {
   upToDate: ['لديك أحدث إصدار ({v}).', 'You have the latest version ({v}).', 'نوێترین وەشانت هەیە ({v}).'],
   downloading: ['يوجد إصدار جديد ({v})، يجري تنزيله وسننبّهك عند جاهزيته.', 'A new version ({v}) is downloading. We’ll let you know when it’s ready.', 'وەشانێکی نوێ ({v}) دادەبەزێت. کاتێک ئامادە بوو ئاگادارت دەکەینەوە.'],
   updateError: ['تعذر التحقق من التحديثات. تحقق من الاتصال بالإنترنت وحاول لاحقاً.', 'Couldn’t check for updates. Check the internet connection and try again later.', 'نەتوانرا نوێکردنەوە بپشکنرێت. پەیوەندیی ئینتەرنێت بپشکنە و دواتر هەوڵ بدەرەوە.'],
-  startFailed: ['تعذر تشغيل قاصة ERP', 'Qasa ERP couldn’t start', 'قاسە ERP نەتوانرا دەستپێبکات']
+  startFailed: ['تعذر تشغيل قاصة ERP', 'Qasa ERP couldn’t start', 'قاسە ERP نەتوانرا دەستپێبکات'],
+  // the office network, on the other PCs
+  connect: ['الاتصال بخادم المكتب…', 'Connect to an office server…', 'پەیوەندی بە سێرڤەری نووسینگەوە…'],
+  connectedTo: ['متصل بـ {host}', 'Connected to {host}', 'پەیوەستە بە {host}'],
+  workHere: ['العمل على هذا الحاسوب', 'Work on this PC', 'کارکردن لەسەر ئەم کۆمپیوتەرە'],
+  serverDown: ['خادم المكتب {host} لا يجيب. هل الحاسوب يعمل وقاصة ERP مفتوح عليه؟', 'The office server {host} doesn’t answer. Is that PC on, with Qasa ERP open?', 'سێرڤەری نووسینگە {host} وەڵام ناداتەوە. ئەو کۆمپیوتەرە هەڵکراوە و قاسە ERP لەسەری کراوەیە؟'],
+  serverChanged: ['شهادة خادم المكتب {host} تغيّرت، فلا يمكن التأكد أنه الخادم نفسه. اتصل من جديد برمز الاقتران الذي يظهر عليه.', 'The certificate of the office server {host} has changed, so it can’t be confirmed as the same server. Connect again with the pairing code it shows.', 'بڕوانامەی سێرڤەری نووسینگە {host} گۆڕاوە، بۆیە ناتوانرێت دڵنیا بین هەمان سێرڤەرە. بە کۆدی جووتبوونی سەر ئەو دووبارە پەیوەندی بکەرەوە.'],
+  tryAgain: ['حاول مجدداً', 'Try again', 'دووبارە هەوڵ بدەرەوە']
 } as const;
 
 export type TextKey = keyof typeof T;

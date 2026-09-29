@@ -1,7 +1,8 @@
 // Builds the Windows app: the screens (apps/web) and one bundled main process (server included).
 //   node build.mjs
 import { spawnSync } from 'node:child_process';
-import { copyFileSync, cpSync, existsSync, rmSync } from 'node:fs';
+import { createHash } from 'node:crypto';
+import { copyFileSync, cpSync, existsSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { build } from 'vite';
@@ -40,6 +41,27 @@ await build({
   }
 });
 
+// The "Connect to an office server" window: its bridge (preload) and its page, whose one script is allowed by hash.
+await build({
+  configFile: false,
+  root: here,
+  logLevel: 'warn',
+  ssr: { noExternal: true, target: 'node' },
+  build: {
+    ssr: join(here, 'src', 'connect-preload.ts'),
+    outDir: dist,
+    emptyOutDir: false,
+    target: 'node24',
+    minify: false,
+    sourcemap: false,
+    rollupOptions: { external: ['electron'], output: { format: 'cjs', entryFileNames: 'connect-preload.cjs' } }
+  }
+});
+const page = readFileSync(join(here, 'src', 'connect.html'), 'utf8');
+const script = /<script>([\s\S]*?)<\/script>/.exec(page)?.[1];
+if (script === undefined) throw new Error('connect.html has no script');
+writeFileSync(join(dist, 'connect.html'), page.replace('{{scriptHash}}', createHash('sha256').update(script).digest('base64')));
+
 cpSync(join(root, 'apps', 'web', 'dist'), join(dist, 'web'), { recursive: true });
 copyFileSync(join(here, 'build', 'icon.png'), join(dist, 'icon.png'));
-console.log('dist/ ready: main.cjs, web/, icon.png');
+console.log('dist/ ready: main.cjs, connect-preload.cjs, connect.html, web/, icon.png');

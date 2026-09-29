@@ -204,6 +204,8 @@ export function signInRequired(db: Db): boolean {
 /** Switching sign-in on needs an admin who can sign in (with a password), so nobody is locked out. */
 export function setSignInRequired(db: Db, on: boolean, actor: Actor): void {
   if (on && signInAdmins(db) === 0) throw conflict('admin_password_required');
+  // other PCs reach this company over the office network only with sign-in (the Pro module sets network_on)
+  if (!on && readSetting(db, 'network_on') === '1') throw conflict('network_needs_signin');
   transaction(db, () => {
     writeSetting(db, 'signin_required', on ? '1' : '0');
     if (!on) db.prepare('DELETE FROM sessions').run();

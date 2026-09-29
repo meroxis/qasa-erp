@@ -2,8 +2,9 @@ import Fastify, { type FastifyInstance } from 'fastify';
 import type { Db } from './db.ts';
 import { ApiReply, apiRoutes, errorResponse, type ApiRequest } from './routes.ts';
 
-export function buildApp(db: Db): FastifyInstance {
-  const app = Fastify({ logger: false });
+/** https: the office network serves the same app over TLS with its own certificate (the Pro module). */
+export function buildApp(db: Db, options: { https?: { key: string; cert: string } } = {}): FastifyInstance {
+  const app = (options.https ? Fastify({ logger: false, https: options.https }) : Fastify({ logger: false })) as unknown as FastifyInstance;
 
   app.setErrorHandler((error, _req, reply) => {
     const response = errorResponse(error);

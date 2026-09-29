@@ -189,7 +189,7 @@ npm run dist:win    # build apps/desktop/release/Qasa-ERP-Setup-<version>.exe
 - [x] Final accounts: trading, current operations and profit and loss accounts, and the balance sheet (unified-system layout, to be reviewed by a licensed accountant)
 - [ ] Year-end closing
 - [x] Users, roles and sign-in (Free: one password-protected user; Pro: up to 5 users with roles and separate duties)
-- [ ] Office-network (server) mode
+- [x] Office-network (server) mode: other PCs work on one PC's company file over the office network (encrypted, with a pairing code), each person with their own user
 - [x] Windows app and installer with automatic updates
 - [x] Plans (Free, Pro, Business) with offline license keys and a 30-day Pro trial
 - [ ] Code signing, backups
@@ -206,7 +206,7 @@ growing company needs, and the app shows the full comparison under **Plan & lice
 | Warehouses | 1 | unlimited | unlimited |
 | "Made with Qasa ERP" on invoices | shown | removed | removed |
 | Users, with sign-in | 1 | up to 5, with roles and separate duties | unlimited |
-| Office network (several PCs on one company file) | | coming soon | coming soon |
+| Office network (several PCs on one company file) | | ✓ | ✓ |
 | Companies | 1 | 3 | unlimited |
 | Installments, payroll, cloud backup, year-end closing | | coming soon | coming soon |
 | Online edition, branches | | | coming soon |

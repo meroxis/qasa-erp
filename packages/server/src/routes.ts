@@ -155,6 +155,17 @@ function cookie(req: ApiRequest, name: string): string | undefined {
   return undefined;
 }
 
+/**
+ * Who is asking, for routes added outside apiRoutes (the Pro module's): the owner without sign-in, otherwise the
+ * user of the session cookie, or null.
+ */
+export function requestActor(db: Db, headers: ApiRequest['headers']): Actor | null {
+  const req = { params: {}, query: {}, body: undefined, headers, secure: false } as ApiRequest;
+  if (!signInRequired(db)) return ownerActor(db, typedName(req));
+  const token = cookie(req, SESSION_COOKIE);
+  return token ? sessionActor(db, token) : null;
+}
+
 /** The signed-in user (or, without sign-in, the owner). Set on every request by apiRoutes. */
 function actorOf(req: ApiRequest): Actor {
   const actor = (req as ApiRequest & { actor?: Actor }).actor;
