@@ -152,12 +152,35 @@ npm run dist:win    # build apps/desktop/release/Qasa-ERP-Setup-<version>.exe
 - Updates: the app checks GitHub releases of this repository at start and every six hours, downloads in the background
   and asks before restarting.
 
+### The company database on a MariaDB or MySQL server (Business)
+
+Instead of the company file, a company can keep its books on its own MariaDB (10.6 or newer) or MySQL (8.0.16 or newer)
+server: **Settings → Company database → Move the company to a database server**.
+
+- One PC (the one that moves) works on the server; the other PCs keep connecting to that PC through the office network.
+  The server holds a lock per database, so a second Qasa ERP on the same database is refused.
+- The move copies the whole company into an empty database and compares every table, row for row and in money, before
+  anything switches; the PC's company file is kept aside, untouched. **Move the company back** copies it into a new
+  company file the same way. Backups keep working and are always company files.
+- The same schema and rules as SQLite (`packages/server/src/schema-mysql.ts`, checked against the SQLite schema by
+  `schema.test.ts`): posted vouchers, invoices and stock moves are protected by triggers, text compares byte for byte.
+- Security: TLS is required (only a server on the same PC may go without). Nothing, not even the user name, goes to the
+  server before its certificate passes — a public certificate for its name, one signed by the certificate authority you
+  give (MySQL's `ca.pem`), or exactly the self-signed certificate you confirmed by its SHA-256 fingerprint (MariaDB).
+  The password is kept only on that PC, protected for its Windows user (DPAPI). Use a database user with rights on that
+  one database only; the app warns about an account with rights on the whole server.
+- MySQL with binary logging (the default) lets an ordinary user create triggers only with
+  `log_bin_trust_function_creators = ON`; the check says so before anything is moved.
+- The app's code stays synchronous, as with SQLite: the connection lives on a worker thread and each statement waits
+  for its answer (`pro/`, Meroxis builds only). To run the whole test suite on a server:
+  `QASA_TEST_DB=mariadb|mysql QASA_TEST_SERVERS=<test-servers.json> npx vitest run`.
+
 ## Project layout
 
 | Folder | What it is |
 |---|---|
 | `packages/core` | Accounting rules with no UI or database: money in minor units, IQD/USD, amount in words (ar/en/ku), the unified chart of accounts, journal validation, vouchers, trial balance, account statement |
-| `packages/server` | Node.js API (Fastify) + SQLite (`node:sqlite`). Posted entries are protected by database triggers; the audit log is append-only. The routes (`routes.ts`) don't depend on Fastify, so the website demo runs them in the browser |
+| `packages/server` | Node.js API (Fastify) + SQLite (`node:sqlite`), or a MariaDB/MySQL server through the same `Db` interface. Posted entries are protected by database triggers; the audit log is append-only. The routes (`routes.ts`) don't depend on Fastify, so the website demo runs them in the browser |
 | `apps/web` | React screens, right-to-left and left-to-right, fonts bundled for offline use. `npm run build:demo -w @qasa/web` builds the browser-only demo (SQLite in WebAssembly) into `apps/web/dist-demo` |
 | `scripts/dev.mjs` | Starts server and app together |
 
@@ -193,6 +216,7 @@ npm run dist:win    # build apps/desktop/release/Qasa-ERP-Setup-<version>.exe
 - [x] Windows app and installer with automatic updates
 - [x] Plans (Free, Pro, Business) with offline license keys and a 30-day Pro trial
 - [x] Backups: a daily checked copy of the company file in a folder of your choice, and restore
+- [x] The company database on the company's own MariaDB or MySQL server (Business), with move there and back
 - [ ] Code signing
 
 ## Plans
@@ -211,6 +235,7 @@ growing company needs, and the app shows the full comparison under **Plan & lice
 | Companies | 1 | 3 | unlimited |
 | Daily backups to a folder of your choice (OneDrive, Google Drive, USB) | | ✓ | ✓ |
 | Year-end closing (closing entry, locked months, reopen by reversal) | | ✓ | ✓ |
+| Company database on your own MariaDB or MySQL server | | | ✓ |
 | Installments, payroll | | coming soon | coming soon |
 | Online edition, branches | | | coming soon |
 
@@ -224,8 +249,8 @@ free for 30 days. Licenses are offline keys signed by Meroxis (Ed25519). Buy or 
 - **Open source:** every line of the app is here, under the AGPL. Anyone can read how each dinar is posted.
 - **Tested on every change:** the accounting rules, the API and the database upgrades have automated tests, run by
   GitHub Actions on every push (see the Tests badge).
-- **Your data stays with you:** the Windows app keeps the company file on your PC and works without internet; the
-  demo runs entirely in your browser.
+- **Your data stays with you:** the Windows app keeps the company file on your PC and works without internet (or, on
+  Business, on your own MariaDB or MySQL server); the demo runs entirely in your browser.
 - **Books that can't be rewritten:** the database refuses edits to posted vouchers, invoices and stock moves, and
   keeps an append-only audit log.
 - **Releases** are built from this repository by GitHub Actions and published under [Releases](https://github.com/meroxis/qasa-erp/releases).

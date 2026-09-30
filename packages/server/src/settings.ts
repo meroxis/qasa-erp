@@ -1,7 +1,7 @@
 import { DEFAULT_POSTING_ACCOUNTS, type Names, type PostingAccounts } from '@qasa/core';
 import type { Db } from './db.ts';
 import { audit } from './audit.ts';
-import { transaction } from './db.ts';
+import { insertOrKeep, isMysql, transaction } from './db.ts';
 import { invalid } from './errors.ts';
 
 export interface Settings {
@@ -20,15 +20,17 @@ const POSTING_ACCOUNT_PARENTS: Record<keyof PostingAccounts, string> = {
 };
 
 export function readSetting(db: Db, key: string): string | undefined {
-  return (db.prepare('SELECT value FROM settings WHERE key = ?').get(key) as { value: string } | undefined)?.value;
+  return (db.prepare('SELECT value FROM settings WHERE "key" = ?').get(key) as { value: string } | undefined)?.value;
 }
 
 export function writeSetting(db: Db, key: string, value: string): void {
-  db.prepare('INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value').run(key, value);
+  db.prepare(isMysql(db)
+    ? 'INSERT INTO settings ("key", value) VALUES (?, ?) ON DUPLICATE KEY UPDATE value = ?'
+    : 'INSERT INTO settings ("key", value) VALUES (?, ?) ON CONFLICT ("key") DO UPDATE SET value = ?').run(key, value, value);
 }
 
 export function deleteSetting(db: Db, key: string): void {
-  db.prepare('DELETE FROM settings WHERE key = ?').run(key);
+  db.prepare('DELETE FROM settings WHERE "key" = ?').run(key);
 }
 
 export function getPostingAccounts(db: Db): PostingAccounts {
@@ -83,7 +85,7 @@ export function isPeriodLocked(db: Db, isoDate: string): boolean {
 
 export function lockPeriod(db: Db, period: string, user: string): void {
   transaction(db, () => {
-    db.prepare('INSERT OR IGNORE INTO locked_periods (period, locked_by, locked_at) VALUES (?, ?, ?)').run(period, user, new Date().toISOString());
+    insertOrKeep(db, 'locked_periods', ['period', 'locked_by', 'locked_at'], 'period').run(period, user, new Date().toISOString());
     audit(db, user, 'lock', 'period', period);
   });
 }

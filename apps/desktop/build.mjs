@@ -41,6 +41,25 @@ await build({
   }
 });
 
+// Pro: the worker thread that holds the connection to a company database on a MariaDB/MySQL server.
+if (withPro) {
+  await build({
+    configFile: false,
+    root: here,
+    logLevel: 'warn',
+    ssr: { noExternal: true, target: 'node' },
+    build: {
+      ssr: join(root, 'pro', 'src', 'mysql', 'worker.ts'),
+      outDir: dist,
+      emptyOutDir: false,
+      target: 'node24',
+      minify: false,
+      sourcemap: false,
+      rollupOptions: { output: { format: 'cjs', entryFileNames: 'db-worker.cjs' } }
+    }
+  });
+}
+
 // The "Connect to an office server" window: its bridge (preload) and its page, whose one script is allowed by hash.
 await build({
   configFile: false,
@@ -66,4 +85,4 @@ writeFileSync(join(dist, 'connect.html'), page.replace('{{scriptHash}}', createH
 
 cpSync(join(root, 'apps', 'web', 'dist'), join(dist, 'web'), { recursive: true });
 copyFileSync(join(here, 'build', 'icon.png'), join(dist, 'icon.png'));
-console.log('dist/ ready: main.cjs, connect-preload.cjs, connect.html, web/, icon.png');
+console.log(`dist/ ready: main.cjs${withPro ? ', db-worker.cjs' : ''}, connect-preload.cjs, connect.html, web/, icon.png`);

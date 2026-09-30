@@ -34,6 +34,13 @@ jobs:
           path: pro
           persist-credentials: false
 
+      # its own dependencies (the MariaDB/MySQL driver), exactly as locked, with no install scripts
+      - name: Pro module dependencies
+        shell: bash
+        run: |
+          npm ci --prefix pro --ignore-scripts
+          npm audit --prefix pro --omit=dev --audit-level=high
+
       - name: Electron binary
         run: node node_modules/electron/install.js
 

@@ -1,6 +1,6 @@
 import { fiscalYear, fiscalYearOf, todayIso, type EntryInput, type PostedLine } from '@qasa/core';
 import type { Db } from './db.ts';
-import { transaction } from './db.ts';
+import { insertOrKeep, transaction } from './db.ts';
 import { audit } from './audit.ts';
 import { loadAccounts } from './accounts.ts';
 import { conflict, invalid } from './errors.ts';
@@ -92,7 +92,7 @@ function statusOf(db: Db, year: number, start: string, lines: PostedLine[], toda
     }
     const entries = (db.prepare("SELECT COUNT(*) AS n FROM entries WHERE status IN ('draft', 'checked') AND date BETWEEN ? AND ?").get(from, to) as { n: number }).n;
     if (entries) blockers.push({ code: 'unfinished_entries', count: entries });
-    const documents = (db.prepare("SELECT (SELECT COUNT(*) FROM invoices WHERE status = 'draft' AND date BETWEEN ?1 AND ?2) + (SELECT COUNT(*) FROM stock_docs WHERE status = 'draft' AND date BETWEEN ?1 AND ?2) AS n").get(from, to) as { n: number }).n;
+    const documents = (db.prepare("SELECT (SELECT COUNT(*) FROM invoices WHERE status = 'draft' AND date BETWEEN ? AND ?) + (SELECT COUNT(*) FROM stock_docs WHERE status = 'draft' AND date BETWEEN ? AND ?) AS n").get(from, to, from, to) as { n: number }).n;
     if (documents) blockers.push({ code: 'unfinished_documents', count: documents });
     if (!resultAccounts(lines, (l) => l.date >= from && l.date <= to).size) blockers.push({ code: 'nothing_to_close' });
   }
@@ -161,7 +161,7 @@ export function closeYear(db: Db, year: number, actor: Actor, today: string = to
     db.prepare(`UPDATE entries SET status = 'approved', number = ?, prepared_by_id = ?, checked_by = ?, checked_at = ?, checked_by_id = ?,
                 approved_by = ?, approved_at = ?, updated_at = ? WHERE id = ?`)
       .run(number, actor.id, actor.name, now, actor.id, actor.name, now, now, entryId);
-    const lock = db.prepare('INSERT OR IGNORE INTO locked_periods (period, locked_by, locked_at) VALUES (?, ?, ?)');
+    const lock = insertOrKeep(db, 'locked_periods', ['period', 'locked_by', 'locked_at'], 'period');
     for (const p of months) lock.run(p, actor.name, now);
     audit(db, actor.name, 'close_year', 'year', String(year), { number, result: -total, account: target, locked: months });
     return entryId;

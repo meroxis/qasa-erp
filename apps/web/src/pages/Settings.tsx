@@ -1,6 +1,8 @@
 import { useEffect, useState } from 'react';
 import { formatAmount, MONTHS, rateFromX100, todayIso, toWesternDigits, type Names, type PostingAccounts } from '@qasa/core';
-import { api, ApiError, currentUser, setCurrentUser, type BackupStatus, type NetworkStatus, type YearEndStatus } from '../api.ts';
+import {
+  api, ApiError, currentUser, setCurrentUser, type BackupStatus, type DatabaseCheck, type DatabaseInput, type DatabaseStatus, type NetworkStatus, type YearEndStatus
+} from '../api.ts';
 import { AccountCombo, ErrorBox, Modal, useData, useLoad, useToast } from '../components.tsx';
 import { isKey, useI18n } from '../i18n.ts';
 import { href } from '../router.ts';
@@ -79,6 +81,8 @@ export function Settings() {
       <OfficeNetworkCard />
 
       <BackupCard />
+
+      <DatabaseCard />
 
       <div className="card pad stack">
         <h2>{t('periods')} — <span className="num">{i18n.digitsOf(year)}</span></h2>
@@ -188,6 +192,186 @@ function OfficeNetworkCard() {
             {status.on ? t('netTurnOff') : t('netTurnOn')}
           </button>
         </div>
+      )}
+    </div>
+  );
+}
+
+/**
+ * Where the company database is: the company file on this PC, or (Business) the company's own MariaDB/MySQL server.
+ * Moving is check first (the server's certificate is settled before any password goes to it), then copy and restart.
+ * Hidden in builds without Pro.
+ */
+function DatabaseCard() {
+  const { t, digitsOf } = useI18n();
+  const [status, setStatus] = useState<DatabaseStatus | null>(null);
+  const [error, setError] = useState<unknown>(null);
+  const [busy, setBusy] = useState(false);
+  const [restarting, setRestarting] = useState(false);
+  const [open, setOpen] = useState(false);
+  // the port as typed (a number in the field would move the cursor while typing)
+  const [form, setForm] = useState<Omit<DatabaseInput, 'port'> & { port: string }>({ host: '', port: '3306', database: 'qasa', user: '', password: '' });
+  const [showCa, setShowCa] = useState(false);
+  const [check, setCheck] = useState<DatabaseCheck | null>(null);
+  const [matches, setMatches] = useState(false);
+  /** the self-signed certificate's fingerprint the admin confirmed; it goes with every later check and the move */
+  const [confirmed, setConfirmed] = useState<string | null>(null);
+
+  useEffect(() => {
+    api.database().then(setStatus, (e) => {
+      if (!(e instanceof ApiError && e.status === 404)) setError(e);
+    });
+  }, []);
+
+  // any change to the form means the server has to be checked again
+  function change(patch: Partial<typeof form>) {
+    setForm({ ...form, ...patch });
+    setCheck(null);
+    setMatches(false);
+    setConfirmed(null);
+  }
+
+  const input = (): DatabaseInput => ({
+    host: form.host.trim(), port: Number(form.port), database: form.database.trim(), user: form.user, password: form.password,
+    ...(showCa && form.ca?.trim() ? { ca: form.ca.trim() } : {}),
+    ...(confirmed ? { fingerprint: confirmed } : {})
+  });
+
+  async function runCheck() {
+    setBusy(true);
+    setError(null);
+    try {
+      const result = await api.checkDatabase(input());
+      setCheck(result);
+      if (result.step === 'needs_ca') setShowCa(true);
+      if (result.step !== 'confirm_certificate') setMatches(false);
+    } catch (e) {
+      setCheck(null);
+      setError(e);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function move(mode: 'copy' | 'use') {
+    if (!window.confirm(t(mode === 'copy' ? 'dbMoveQ' : 'dbUseQ', { host: form.host.trim() }))) return;
+    setBusy(true);
+    setError(null);
+    try {
+      if ((await api.moveDatabase(input(), mode)).restarting) setRestarting(true);
+    } catch (e) {
+      setError(e);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function leave() {
+    if (!window.confirm(t('dbLeaveQ'))) return;
+    setBusy(true);
+    setError(null);
+    try {
+      if ((await api.leaveDatabase()).restarting) setRestarting(true);
+    } catch (e) {
+      setError(e);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  if (!status) return error ? <div className="card pad stack"><h2>{t('dbTitle')}</h2><ErrorBox error={error} /></div> : null;
+  const ltr = (x: string) => `⁦${x}⁩`;
+  const server = status.server;
+  const disabled = busy || restarting;
+  const confirmedPath = check?.step === 'confirm_certificate' && matches;
+
+  return (
+    <div className="card pad stack">
+      <div className="row" style={{ justifyContent: 'space-between' }}>
+        <h2>{t('dbTitle')}</h2>
+        <span className={'chip ' + (status.kind === 'server' ? 'ok' : '')}>{status.kind === 'server' ? t('dbOnServer') : t('dbOnFile')}</span>
+      </div>
+      {restarting && <div className="alert ok" role="status">{t('dbRestarting')}</div>}
+
+      {status.kind === 'server' && server && (
+        <>
+          <p className="muted" style={{ margin: 0 }}>{t('dbOnServerHelp')}</p>
+          <div className="grid-2">
+            <div className="field"><span>{t('dbServer')}</span><strong className="ltr">{server.host}:{server.port} / {server.database}</strong></div>
+            <div className="field"><span>{t('dbUser')}</span><span className="ltr">{server.user}</span></div>
+            <div className="field"><span>{t('dbTls')}</span><span>{t(`dbTls_${server.tls}`)}</span></div>
+            <div className="field"><span>{t('dbSince')}</span><span className="num">{ltr(digitsOf(server.since.slice(0, 10)))}{server.version ? <span className="muted small"> · <span className="ltr">{server.version}</span></span> : null}</span></div>
+          </div>
+          <ErrorBox error={error} />
+          <div><button type="button" className="btn" disabled={disabled} onClick={() => void leave()}>{t('dbLeave')}</button></div>
+        </>
+      )}
+
+      {status.kind === 'file' && (
+        <>
+          <p className="muted" style={{ margin: 0 }}>{t('dbHelp')}</p>
+          {!status.available && <div className="alert">{t('dbNeedsBusiness')} <a href={href('plans')}>{t('planLicense')}</a></div>}
+          {status.available && !open && <div><button type="button" className="btn" onClick={() => setOpen(true)}>{t('dbMoveOpen')}</button></div>}
+          {status.available && open && (
+            <div className="stack" style={{ gap: 10, padding: 12, border: '1px solid var(--line)', borderRadius: 10 }}>
+              <div className="muted small">{t('dbFormHelp')}</div>
+              <div className="grid-2">
+                <label className="field"><span>{t('dbHost')}</span><input className="input ltr" spellCheck={false} autoComplete="off" maxLength={253} placeholder="192.168.1.30" value={form.host} onChange={(e) => change({ host: e.target.value })} /></label>
+                <label className="field"><span>{t('dbPort')}</span><input className="input ltr num" inputMode="numeric" maxLength={5} value={form.port} onChange={(e) => change({ port: toWesternDigits(e.target.value).replace(/\D/g, '') })} /></label>
+                <label className="field"><span>{t('dbName')}</span><input className="input ltr" spellCheck={false} autoComplete="off" maxLength={64} value={form.database} onChange={(e) => change({ database: e.target.value })} /></label>
+                <label className="field"><span>{t('dbUser')}</span><input className="input ltr" spellCheck={false} autoComplete="off" maxLength={80} value={form.user} onChange={(e) => change({ user: e.target.value })} /></label>
+                <label className="field"><span>{t('dbPassword')}</span><input className="input ltr" type="password" autoComplete="new-password" maxLength={500} value={form.password} onChange={(e) => change({ password: e.target.value })} /></label>
+              </div>
+              <label className="row small" style={{ gap: 6 }}>
+                <input type="checkbox" checked={showCa} onChange={(e) => { setShowCa(e.target.checked); setCheck(null); }} /> {t('dbCa')}
+              </label>
+              {showCa && (
+                <label className="field">
+                  <span className="muted small">{t('dbCaHelp')}</span>
+                  <textarea className="input ltr" rows={4} spellCheck={false} autoComplete="off" maxLength={32000} placeholder="-----BEGIN CERTIFICATE-----" value={form.ca ?? ''} onChange={(e) => change({ ca: e.target.value })} />
+                </label>
+              )}
+
+              {check?.step === 'confirm_certificate' && (
+                <div className="alert warn stack" style={{ gap: 8 }}>
+                  <strong>{t('dbCertTitle')}</strong>
+                  <div className="small">{t('dbCertSelf')}</div>
+                  <div className="field"><span>{t('dbFingerprint')}</span><code className="ltr" style={{ overflowWrap: 'anywhere', fontSize: 13 }}>{check.certificate.fingerprint}</code></div>
+                  <div className="small">{t('dbValidTo')}: <span className="ltr">{check.certificate.validTo}</span></div>
+                  <div className="small">{t('dbCertHow')} <code className="ltr">openssl x509 -in server-cert.pem -noout -fingerprint -sha256</code></div>
+                  <label className="row" style={{ gap: 6 }}><input type="checkbox" checked={matches} onChange={(e) => { setMatches(e.target.checked); setConfirmed(e.target.checked ? check.certificate.fingerprint : null); }} /> {t('dbCertMatches')}</label>
+                </div>
+              )}
+              {check?.step === 'needs_ca' && <div className="alert warn">{t('dbNeedsCa', { issuer: check.certificate.issuer.replace(/\n/g, ', ') })}</div>}
+              {check?.step === 'ready' && (
+                <div className="alert ok stack" style={{ gap: 6 }}>
+                  <strong>{t('dbReady')}</strong>
+                  <div className="small">{t('dbServer')}: <span className="ltr">{check.server.version}</span> · {t('dbTls')}: {t(`dbTls_${check.tls}`)}</div>
+                  {check.state === 'empty'
+                    ? <div className="small">{t('dbEmpty')}</div>
+                    : <div className="small">{t('dbHasCompany', { name: check.company?.name || '—', n: digitsOf(String(check.company?.entries ?? 0)) })}</div>}
+                  {check.inUse && <div className="small" style={{ color: 'var(--bad)' }}>{t('dbInUseNow')}</div>}
+                  {check.broadAccount && <div className="alert warn small" role="status">{t('dbBroadAccount')}</div>}
+                </div>
+              )}
+              <ErrorBox error={error} />
+              <div className="row" style={{ gap: 8, flexWrap: 'wrap' }}>
+                {(check?.step !== 'ready') && (
+                  <button type="button" className={'btn ' + (confirmedPath ? 'primary' : '')} disabled={disabled || !form.host || !form.user || !form.password || (check?.step === 'confirm_certificate' && !matches)} onClick={() => void runCheck()}>
+                    {check ? t('dbCheckAgain') : t('dbCheck')}
+                  </button>
+                )}
+                {check?.step === 'ready' && !check.inUse && (
+                  <button type="button" className="btn primary" disabled={disabled} onClick={() => void move(check.state === 'empty' ? 'copy' : 'use')}>
+                    {check.state === 'empty' ? t('dbMove') : t('dbUse')}
+                  </button>
+                )}
+                {check?.step === 'ready' && <button type="button" className="btn" disabled={disabled} onClick={() => void runCheck()}>{t('dbCheckAgain')}</button>}
+              </div>
+            </div>
+          )}
+          {!open && <ErrorBox error={error} />}
+        </>
       )}
     </div>
   );

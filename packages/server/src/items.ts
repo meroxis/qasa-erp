@@ -54,7 +54,7 @@ export function createWarehouse(db: Db, input: { code: string; name: Names }, us
     while (db.prepare('SELECT 1 FROM accounts WHERE code = ?').get(`137${n}`)) n += 1;
     const accountCode = `137${n}`;
     const now = new Date().toISOString();
-    db.prepare('INSERT INTO accounts (code, name_ar, name_en, name_ku, system, created_at) VALUES (?, ?, ?, ?, 0, ?)')
+    db.prepare('INSERT INTO accounts (code, name_ar, name_en, name_ku, "system", created_at) VALUES (?, ?, ?, ?, 0, ?)')
       .run(accountCode, input.name.ar.trim() || input.name.en.trim(), input.name.en.trim() || input.name.ar.trim(), input.name.ku.trim() || input.name.ar.trim(), now);
     db.prepare('INSERT INTO warehouses (id, code, name_ar, name_en, name_ku, account_code, active, created_at) VALUES (?, ?, ?, ?, ?, ?, 1, ?)')
       .run(id, code, input.name.ar.trim(), input.name.en.trim(), input.name.ku.trim(), accountCode, now);
@@ -148,9 +148,9 @@ function assertItem(db: Db, input: ItemInput, id: string | null): void {
   if (input.code !== undefined && input.code.trim() && !/^[\p{L}\p{N}._\/-]{1,24}$/u.test(input.code.trim())) errors.push({ code: 'code_invalid' });
   if (errors.length) throw invalid(errors);
   const code = input.code?.trim();
-  if (code && db.prepare('SELECT 1 FROM items WHERE code = ? AND id IS NOT ?').get(code, id)) throw conflict('code_exists');
+  if (code && db.prepare("SELECT 1 FROM items WHERE code = ? AND id <> COALESCE(?, '')").get(code, id ?? null)) throw conflict('code_exists');
   const barcode = input.barcode?.trim();
-  if (barcode && db.prepare('SELECT 1 FROM items WHERE barcode = ? AND id IS NOT ?').get(barcode, id)) throw conflict('barcode_exists');
+  if (barcode && db.prepare("SELECT 1 FROM items WHERE barcode = ? AND id <> COALESCE(?, '')").get(barcode, id ?? null)) throw conflict('barcode_exists');
 }
 
 export function createItem(db: Db, input: ItemInput, user: string): ItemView {

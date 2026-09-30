@@ -19,7 +19,8 @@ export type Feature =
   | 'noBranding' // invoices without "Made with Qasa ERP"
   | 'cloudBackup'
   | 'onlineEdition'
-  | 'branches';
+  | 'branches'
+  | 'databaseServer'; // the company database on the company's own MariaDB or MySQL server
 
 export interface PlanLimits {
   /** null = unlimited */
@@ -41,7 +42,7 @@ const PRO_FEATURES: readonly Feature[] = ['officeNetwork', 'roles', 'installment
 export const PLANS: Record<PlanId, PlanDefinition> = {
   free: { id: 'free', limits: { companies: 1, users: 1, warehouses: 1 }, features: [] },
   pro: { id: 'pro', limits: { companies: 3, users: 5, warehouses: null }, features: PRO_FEATURES },
-  business: { id: 'business', limits: { companies: null, users: null, warehouses: null }, features: [...PRO_FEATURES, 'onlineEdition', 'branches'] }
+  business: { id: 'business', limits: { companies: null, users: null, warehouses: null }, features: [...PRO_FEATURES, 'onlineEdition', 'branches', 'databaseServer'] }
 };
 
 /** Length of the free Pro trial, once per company. */

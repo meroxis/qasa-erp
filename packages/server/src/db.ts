@@ -1,13 +1,37 @@
 import { randomUUID } from 'node:crypto';
 import { DatabaseSync } from 'node:sqlite';
 import { DEFAULT_POSTING_ACCOUNTS, IRAQI_UNIFIED_CHART, STARTER_SUB_ACCOUNTS } from '@qasa/core';
+import { MYSQL_TABLES, MYSQL_TRIGGERS, mysqlCollations, mysqlTableSql } from './schema-mysql.ts';
 
-export type Db = DatabaseSync;
+export type SqlParam = null | number | bigint | string | Uint8Array;
+export type SqlValue = null | number | bigint | string | Uint8Array;
+
+export interface DbStatement {
+  run(...params: SqlParam[]): { changes: number | bigint; lastInsertRowid: number | bigint };
+  get(...params: SqlParam[]): Record<string, SqlValue> | undefined;
+  all(...params: SqlParam[]): Record<string, SqlValue>[];
+}
+
+/**
+ * The company database: an SQLite file (node:sqlite, or sql.js in the website demo) or, with Pro, a MariaDB or
+ * MySQL server (dialect 'mysql'). The app's SQL is written to mean the same on both; where the two differ, the
+ * helpers below (insertOrKeep, quoteId) and the server schema in schema-mysql.ts give each its own words.
+ */
+export interface Db {
+  exec(sql: string): void;
+  prepare(sql: string): DbStatement;
+  close(): void;
+  readonly dialect?: 'sqlite' | 'mysql';
+}
+
+export const isMysql = (db: Db): boolean => db.dialect === 'mysql';
 
 interface Migration {
   sql: string;
   /** Rebuilds an existing table: runs with foreign keys off, then checks them. */
   rebuild?: boolean;
+  /** The same change on a MariaDB or MySQL server, one statement each (versions 1–5 are in schema-mysql.ts). */
+  mysql?: readonly string[];
 }
 
 const V1 =
@@ -532,7 +556,7 @@ const MIGRATIONS: Migration[] = [{ sql: V1 }, { sql: V2, rebuild: true }, { sql:
 export const SCHEMA_VERSION = MIGRATIONS.length;
 
 export function openDatabase(file: string): Db {
-  const db = new DatabaseSync(file);
+  const db: Db = new DatabaseSync(file);
   db.exec('PRAGMA foreign_keys = ON');
   if (file !== ':memory:') {
     // WAL + FULL sync: a committed voucher survives a power cut (generator switch-over).
@@ -555,6 +579,7 @@ export function schemaVersion(db: Db): number {
 
 /** Applies pending migrations, optionally stopping at `target` (used by the upgrade test). */
 export function migrate(db: Db, target = MIGRATIONS.length): void {
+  if (isMysql(db)) return migrateMysql(db);
   db.exec('CREATE TABLE IF NOT EXISTS schema_version (version INTEGER NOT NULL)');
   if (!db.prepare('SELECT version FROM schema_version').get()) db.prepare('INSERT INTO schema_version (version) VALUES (0)').run();
   let version = schemaVersion(db);
@@ -586,6 +611,69 @@ export function migrate(db: Db, target = MIGRATIONS.length): void {
   }
 }
 
+/** Tables of a Qasa company (every table but schema_version), in the order their foreign keys allow filling them. */
+export const COMPANY_TABLES: readonly string[] = MYSQL_TABLES.map((t) => t.name);
+
+/**
+ * A server database starts empty and gets the whole current schema at once; later versions bring their own server
+ * SQL. The server commits each CREATE on its own, so the version is written last: a half-made schema is refused
+ * next time (database_not_empty) instead of being taken for a company.
+ */
+function migrateMysql(db: Db, options: { triggers?: boolean } = {}): void {
+  db.exec('CREATE TABLE IF NOT EXISTS schema_version (version INT NOT NULL PRIMARY KEY)');
+  let version = schemaVersion(db);
+  if (version === 0) {
+    if (mysqlCompanyTables(db).length) throw new Error('database_not_empty');
+    createMysqlSchema(db, options);
+    db.prepare('DELETE FROM schema_version').run();
+    db.prepare('INSERT INTO schema_version (version) VALUES (?)').run(MIGRATIONS.length);
+    return;
+  }
+  while (version < MIGRATIONS.length) {
+    const steps = MIGRATIONS[version]!.mysql;
+    if (!steps) throw new Error(`Migration ${version + 1} has no MariaDB/MySQL version`);
+    for (const step of steps) db.exec(step);
+    version += 1;
+    db.prepare('UPDATE schema_version SET version = ?').run(version);
+  }
+}
+
+/** The company tables already in a server database (a Qasa company, or something else that must not be touched). */
+export function mysqlCompanyTables(db: Db): string[] {
+  const names = db.prepare('SELECT table_name AS name FROM information_schema.tables WHERE table_schema = DATABASE()').all() as { name: string }[];
+  const ours = new Set(COMPANY_TABLES);
+  return names.map((t) => t.name).filter((n) => ours.has(n));
+}
+
+/** Makes the tables of an empty server database, with or without the triggers (a copy adds them after the rows, see db-copy.ts). */
+export function createMysqlSchema(db: Db, options: { triggers?: boolean } = {}): void {
+  const version = String((db.prepare('SELECT VERSION() AS v').get() as { v: string }).v);
+  const collations = mysqlCollations(version);
+  for (const table of MYSQL_TABLES) db.exec(mysqlTableSql(table.sql, collations));
+  if (options.triggers !== false) createMysqlTriggers(db);
+}
+
+export function createMysqlTriggers(db: Db): void {
+  for (const trigger of MYSQL_TRIGGERS) db.exec(trigger.sql);
+}
+
+/** Starts a server database with the tables only (no rows, no triggers), ready for copyCompany. */
+export function prepareMysqlForCopy(db: Db): void {
+  migrateMysql(db, { triggers: false });
+}
+
+/** An INSERT that leaves an existing row with the same key alone. Any other error (a missing account, a bad value) still fails. */
+export function insertOrKeep(db: Db, table: string, columns: readonly string[], key: string): DbStatement {
+  const cols = columns.map(quoteId).join(', ');
+  const marks = columns.map(() => '?').join(', ');
+  return db.prepare(isMysql(db)
+    ? `INSERT INTO ${table} (${cols}) VALUES (${marks}) ON DUPLICATE KEY UPDATE ${quoteId(key)} = ${quoteId(key)}`
+    : `INSERT INTO ${table} (${cols}) VALUES (${marks}) ON CONFLICT (${quoteId(key)}) DO NOTHING`);
+}
+
+/** A column name that may be a reserved word ("key", "system"): double quotes mean a name in SQLite and in the server session (ANSI_QUOTES). */
+export const quoteId = (name: string): string => `"${name}"`;
+
 function hasLines(db: Db, code: string): boolean {
   return !!db.prepare('SELECT 1 FROM entry_lines WHERE account_code = ? LIMIT 1').get(code);
 }
@@ -601,7 +689,7 @@ function hasChildren(db: Db, code: string): boolean {
 /** Creates the chart, settings and default warehouse on a new database, and fills in anything a newer version needs. Safe to run every time. */
 function ensureDefaults(db: Db): void {
   const now = new Date().toISOString();
-  const insertAccount = db.prepare('INSERT INTO accounts (code, name_ar, name_en, name_ku, system, created_at) VALUES (?, ?, ?, ?, ?, ?)');
+  const insertAccount = db.prepare('INSERT INTO accounts (code, name_ar, name_en, name_ku, "system", created_at) VALUES (?, ?, ?, ?, ?, ?)');
   transaction(db, () => {
     const empty = (db.prepare('SELECT COUNT(*) AS n FROM accounts').get() as { n: number }).n === 0;
     if (empty) {
@@ -615,7 +703,7 @@ function ensureDefaults(db: Db): void {
       insertAccount.run(a.code, a.name.ar, a.name.en, a.name.ku, 0, now);
     }
 
-    const setting = db.prepare('INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)');
+    const setting = insertOrKeep(db, 'settings', ['key', 'value'], 'key');
     setting.run('company_name', JSON.stringify({ ar: '', en: '', ku: '' }));
     setting.run('default_rate_x100', '142000');
     setting.run('fiscal_year_start', '01-01');
@@ -649,14 +737,18 @@ let depth = 0;
 /** Runs `fn` in a transaction. Nested calls join the outer transaction. */
 export function transaction<T>(db: Db, fn: () => T): T {
   if (depth > 0) return fn();
-  db.exec('BEGIN IMMEDIATE');
+  db.exec(isMysql(db) ? 'START TRANSACTION' : 'BEGIN IMMEDIATE');
   depth += 1;
   try {
     const result = fn();
     db.exec('COMMIT');
     return result;
   } catch (error) {
-    db.exec('ROLLBACK');
+    try {
+      db.exec('ROLLBACK');
+    } catch {
+      // a lost server connection has rolled back already; the error that stopped the work is the one to report
+    }
     throw error;
   } finally {
     depth -= 1;
@@ -665,9 +757,9 @@ export function transaction<T>(db: Db, fn: () => T): T {
 
 /** Returns the next number of a named counter (1, 2, 3 …). Call inside a transaction. */
 export function nextSequence(db: Db, key: string): number {
-  const row = db.prepare('SELECT next FROM sequences WHERE key = ?').get(key) as { next: number } | undefined;
+  const row = db.prepare('SELECT next FROM sequences WHERE "key" = ?').get(key) as { next: number } | undefined;
   const seq = row?.next ?? 1;
-  if (row) db.prepare('UPDATE sequences SET next = ? WHERE key = ?').run(seq + 1, key);
-  else db.prepare('INSERT INTO sequences (key, next) VALUES (?, ?)').run(key, seq + 1);
+  if (row) db.prepare('UPDATE sequences SET next = ? WHERE "key" = ?').run(seq + 1, key);
+  else db.prepare('INSERT INTO sequences ("key", next) VALUES (?, ?)').run(key, seq + 1);
   return seq;
 }

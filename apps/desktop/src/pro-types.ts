@@ -14,6 +14,30 @@ export interface ProModule {
   start?(ctx: ProContext): Promise<void> | void;
   /** Called before the app quits. */
   stop?(): Promise<void> | void;
+  /**
+   * At start, before anything else: the company database on a MariaDB/MySQL server when this PC uses one, or null
+   * for the company file. Throws a problem with a code, host, database and localCopy when the server can't be used.
+   */
+  openDatabase?(ctx: DatabaseStartContext): Db | null;
+  /** After openDatabase failed: stop using the server, back to the company file kept aside at the move (its name in the data folder), or null. */
+  useLocalCopyInstead?(ctx: DatabaseStartContext): string | null;
+}
+
+export interface DatabaseStartContext {
+  userDataDir: string;
+  /** where the company file is (qasa.sqlite) */
+  dataDir: string;
+  /** the database worker's code (dist/db-worker.cjs in the app) */
+  workerSource: { file: string } | { code: string };
+  revealSecret(stored: string): string;
+  log(...args: unknown[]): void;
+}
+
+export interface RestartOptions {
+  /** keeps the current company file aside under this name (in the data folder) */
+  setAsideCompanyFile?: string;
+  /** makes this file (in the data folder) the company file */
+  useCompanyFile?: string;
 }
 
 export interface ProContext {
@@ -21,6 +45,12 @@ export interface ProContext {
   server: FastifyInstance;
   /** The folder with the company data and the app's settings. */
   userDataDir: string;
+  /** The folder with the company file (qasa.sqlite). */
+  dataDir: string;
+  /** The database worker's code, for a company database on a server. */
+  workerSource: { file: string } | { code: string };
+  /** Stops the app's server, moves company files as asked, and starts the app again. */
+  restart(options?: RestartOptions): Promise<void>;
   appVersion: string;
   /** Serves the app's screens (the built web app) from a server, the way the app's own server does. */
   serveWeb(server: FastifyInstance): void;

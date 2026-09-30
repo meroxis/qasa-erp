@@ -31,6 +31,13 @@ best protection.
   voucher can neither check nor approve it.
 - **The books can't be rewritten:** the database itself refuses edits to posted vouchers, invoices and stock moves,
   and the audit log is append-only.
+- **A company database on a MariaDB or MySQL server** (Business) is reached only over TLS (only a server on the same
+  PC may go without), and nothing — not even the user name — is sent before the server's certificate passes: a public
+  certificate for its name, one signed by the certificate authority the admin gives, or exactly the self-signed
+  certificate the admin confirmed by its SHA-256 fingerprint. The database password is kept on one PC only, protected
+  for its Windows user (DPAPI). Every statement is parameterized, one statement per call, and the driver never sends
+  local files to the server. The app asks for a user with rights on its own database only and warns about one with
+  rights on the whole server.
 - **The Windows app is locked down:** the window has no Node.js access (sandbox and context isolation), and Electron
   fuses stop the program running as a plain Node runtime and make it reject tampered app files.
 - **Updates** come only from this repository's releases, which are built by GitHub Actions.

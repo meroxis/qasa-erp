@@ -365,8 +365,8 @@ export function listEntries(db: Db, f: EntryFilters = {}): EntrySummary[] {
   if (f.from) { where.push('e.date >= ?'); params.push(f.from); }
   if (f.to) { where.push('e.date <= ?'); params.push(f.to); }
   if (f.q) {
-    where.push("(e.description LIKE ? OR IFNULL(e.party, '') LIKE ? OR IFNULL(e.number, '') LIKE ?)");
-    const like = `%${f.q}%`;
+    where.push("(LOWER(e.description) LIKE ? OR LOWER(IFNULL(e.party, '')) LIKE ? OR LOWER(IFNULL(e.number, '')) LIKE ?)");
+    const like = `%${f.q.toLowerCase()}%`;
     params.push(like, like, like);
   }
   const sql = `SELECT e.*, (SELECT SUM(debit) FROM entry_lines WHERE entry_id = e.id) AS total,

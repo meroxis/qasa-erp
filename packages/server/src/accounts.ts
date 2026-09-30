@@ -15,7 +15,7 @@ export interface AccountView extends Account {
 interface AccountRow { code: string; name_ar: string; name_en: string; name_ku: string; system: number }
 
 function rows(db: Db): AccountRow[] {
-  return db.prepare('SELECT code, name_ar, name_en, name_ku, system FROM accounts').all() as unknown as AccountRow[];
+  return db.prepare('SELECT code, name_ar, name_en, name_ku, "system" FROM accounts').all() as unknown as AccountRow[];
 }
 
 export function loadAccounts(db: Db): Account[] {
@@ -40,7 +40,7 @@ export function createAccount(db: Db, input: { parentCode: string; code: string;
   if (error) throw error === 'code_exists' || error === 'parent_has_entries' ? conflict(error) : invalid([{ code: error }]);
   if (!input.name.ar.trim() && !input.name.en.trim() && !input.name.ku.trim()) throw invalid([{ code: 'name_required' }]);
   transaction(db, () => {
-    db.prepare('INSERT INTO accounts (code, name_ar, name_en, name_ku, system, created_at) VALUES (?, ?, ?, ?, 0, ?)')
+    db.prepare('INSERT INTO accounts (code, name_ar, name_en, name_ku, "system", created_at) VALUES (?, ?, ?, ?, 0, ?)')
       .run(input.code, input.name.ar.trim(), input.name.en.trim(), input.name.ku.trim(), new Date().toISOString());
     audit(db, user, 'create', 'account', input.code, input);
   });

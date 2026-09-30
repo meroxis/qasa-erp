@@ -12,7 +12,7 @@ import { extname, join, normalize, sep } from 'node:path';
 import type { FastifyInstance } from 'fastify';
 import { buildApp, openDatabase, type Db } from '@qasa/server';
 import { isLang, text, type Lang, type TextKey } from './texts.ts';
-import type { ProContext } from './pro-types.ts';
+import type { DatabaseStartContext, ProContext, RestartOptions } from './pro-types.ts';
 import { pair, parseAddress, pemFingerprint, type PairResult, type Remote } from './office.ts';
 // the official builds include the Pro module; public builds get pro-none.ts (see build.mjs)
 import { proModule } from '@qasa/pro-module';
@@ -97,10 +97,104 @@ async function choosePort(): Promise<number> {
   return 0;
 }
 
+const dataDir = () => join(app.getPath('userData'), 'data');
+
+// DPAPI: only this Windows user on this PC can read it back
+function protectSecret(plain: string): string {
+  if (!safeStorage.isEncryptionAvailable()) throw new Error('Windows cannot protect secrets here');
+  return safeStorage.encryptString(plain).toString('base64');
+}
+const revealSecret = (stored: string) => safeStorage.decryptString(Buffer.from(stored, 'base64'));
+
+/**
+ * The database worker for a company database on a server (built into dist/ with Pro). It runs from its text: a
+ * worker thread can't load its script from inside the app's package, but reading the text works.
+ */
+function workerSource(): { code: string } {
+  return { code: readFileSync(join(__dirname, 'db-worker.cjs'), 'utf8') };
+}
+
+function startContext(): DatabaseStartContext {
+  return { userDataDir: app.getPath('userData'), dataDir: dataDir(), get workerSource() { return workerSource(); }, revealSecret, log };
+}
+
+const stampNow = () => new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-');
+/** Only plain file names of the data folder (the Pro module names them). */
+const SAFE_NAME = /^qasa-[\w.-]{1,80}\.sqlite$/;
+
+/** Moves a company file (with SQLite's -wal and -shm files) to another name. */
+function moveCompanyFile(from: string, to: string): void {
+  for (const suffix of ['', '-wal', '-shm']) {
+    if (existsSync(from + suffix)) renameSync(from + suffix, to + suffix);
+  }
+}
+
+/** Makes a file of the data folder the company file; a company file already there is kept aside, never deleted. */
+function placeCompanyFile(name: string): void {
+  if (!SAFE_NAME.test(name)) throw new Error(`not a company file name: ${name}`);
+  const live = join(dataDir(), 'qasa.sqlite');
+  if (existsSync(live)) moveCompanyFile(live, join(dataDir(), `qasa-before-${stampNow()}.sqlite`));
+  moveCompanyFile(join(dataDir(), name), live);
+}
+
+/** The reason a server database didn't open, in words for the dialog. */
+function databaseReason(code: string): string {
+  if (/^(ECONN|ETIMEDOUT|EHOST|ENET|ENOTFOUND|EAI_AGAIN|EPIPE|PROTOCOL_|database_timeout|database_worker_failed|ER_SERVER_SHUTDOWN|ER_CON_COUNT|ER_TOO_MANY|ER_NET_)/.test(code)) return t('dbWhyUnavailable');
+  if (/^(ER_ACCESS_DENIED|ER_DBACCESS_DENIED|ER_BAD_DB|ER_HOST_NOT_PRIVILEGED|ER_HOST_IS_BLOCKED)/.test(code)) return t('dbWhyLogin');
+  if (code === 'database_in_use') return t('dbWhyInUse');
+  if (/CERT|SSL|TLS|SIGNATURE|LEAF/.test(code)) return t('dbWhyCertificate');
+  if (code === 'password_unreadable') return t('dbWhyPassword');
+  if (code === 'config_unreadable') return t('dbWhyConfig');
+  return t('dbWhyOther', { code });
+}
+
+/**
+ * The company database: the company file, or (Pro) the company's MariaDB/MySQL server. When the server can't be
+ * used, the admin can try again, quit, or go back to the company file kept aside when the company moved.
+ */
+async function openCompanyDatabase(): Promise<Db> {
+  const file = join(dataDir(), 'qasa.sqlite');
+  for (;;) {
+    try {
+      return proModule?.openDatabase?.(startContext()) ?? openDatabase(file);
+    } catch (error) {
+      const problem = error as { code?: string; host?: string; database?: string; localCopy?: { file: string; since: string } | null };
+      if (!proModule?.openDatabase || typeof problem.host !== 'string') throw error;
+      const buttons = [t('tryAgain'), ...(problem.localCopy ? [t('dbUseLocalCopy')] : []), t('quit')];
+      const { response } = await dialog.showMessageBox({
+        type: 'warning', title: 'Qasa ERP', message: t('dbServerProblem', { host: problem.host, database: problem.database ?? '' }),
+        detail: databaseReason(problem.code ?? ''), buttons, defaultId: 0, cancelId: buttons.length - 1, noLink: true
+      });
+      if (response === 0) continue;
+      if (problem.localCopy && response === 1) {
+        const sure = await dialog.showMessageBox({
+          type: 'warning', title: 'Qasa ERP', message: t('dbLocalCopyConfirm', { date: problem.localCopy.since.slice(0, 10) }),
+          buttons: [t('dbUseLocalCopy'), t('cancel')], defaultId: 1, cancelId: 1, noLink: true
+        });
+        if (sure.response !== 0) continue;
+        const name = proModule.useLocalCopyInstead?.(startContext());
+        if (name) placeCompanyFile(name);
+        continue;
+      }
+      app.exit(0);
+      throw new Error('quit');
+    }
+  }
+}
+
+/** Restarts the app, moving company files as the Pro module asks (moving to a database server and back). */
+async function restartWith(options: RestartOptions = {}): Promise<void> {
+  await stopServer();
+  const live = join(dataDir(), 'qasa.sqlite');
+  if (options.setAsideCompanyFile && SAFE_NAME.test(options.setAsideCompanyFile)) moveCompanyFile(live, join(dataDir(), options.setAsideCompanyFile));
+  if (options.useCompanyFile) placeCompanyFile(options.useCompanyFile);
+  app.relaunch();
+  app.exit(0);
+}
+
 async function startServer(): Promise<string> {
-  const dataDir = join(app.getPath('userData'), 'data');
-  mkdirSync(dataDir, { recursive: true });
-  db = openDatabase(join(dataDir, 'qasa.sqlite'));
+  mkdirSync(dataDir(), { recursive: true });
+  db = await openCompanyDatabase();
   server = buildApp(db);
 
   server.addHook('onRequest', async (req, reply) => {
@@ -114,8 +208,10 @@ async function startServer(): Promise<string> {
 
   // the Pro module adds its routes now: a server takes no more once it listens
   const ctx: ProContext = {
-    db, server, userDataDir: app.getPath('userData'), appVersion: app.getVersion(), serveWeb, securityHeaders: SECURITY_HEADERS, log,
+    db, server, userDataDir: app.getPath('userData'), dataDir: dataDir(), appVersion: app.getVersion(), serveWeb, securityHeaders: SECURITY_HEADERS, log,
     documentsDir: app.getPath('documents'),
+    get workerSource() { return workerSource(); },
+    restart: restartWith,
     chooseFolder: async () => {
       const options = { title: t('backupFolder'), properties: ['openDirectory', 'createDirectory'] as ('openDirectory' | 'createDirectory')[] };
       const r = win ? await dialog.showOpenDialog(win, options) : await dialog.showOpenDialog(options);
@@ -127,12 +223,8 @@ async function startServer(): Promise<string> {
       return r.canceled ? null : r.filePaths[0] ?? null;
     },
     restoreDatabase,
-    // DPAPI: only this Windows user on this PC can read it back
-    protectSecret: (plain) => {
-      if (!safeStorage.isEncryptionAvailable()) throw new Error('Windows cannot protect secrets here');
-      return safeStorage.encryptString(plain).toString('base64');
-    },
-    revealSecret: (stored) => safeStorage.decryptString(Buffer.from(stored, 'base64'))
+    protectSecret,
+    revealSecret
   };
   if (proModule) {
     log(`${proModule.name} ${proModule.version}`);
@@ -161,14 +253,10 @@ async function startServer(): Promise<string> {
  * write-ahead log, is kept in the data folder as qasa-before-restore-<time>.sqlite.
  */
 async function restoreDatabase(file: string): Promise<void> {
-  const dataDir = join(app.getPath('userData'), 'data');
-  const live = join(dataDir, 'qasa.sqlite');
+  const live = join(dataDir(), 'qasa.sqlite');
   log('restoring the company file from', file);
   await stopServer();
-  const stamp = new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-');
-  for (const suffix of ['', '-wal', '-shm']) {
-    if (existsSync(live + suffix)) renameSync(live + suffix, join(dataDir, `qasa-before-restore-${stamp}.sqlite${suffix}`));
-  }
+  moveCompanyFile(live, join(dataDir(), `qasa-before-restore-${stampNow()}.sqlite`));
   copyFileSync(file, live);
   app.relaunch();
   app.exit(0);

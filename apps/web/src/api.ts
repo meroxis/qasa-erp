@@ -426,6 +426,20 @@ export interface BackupStatus {
   files: { name: string; size: number; at: string; encrypted: boolean }[];
 }
 
+/** Where the company database is (Pro module): the company file, or the company's MariaDB/MySQL server. Missing (404) without Pro. */
+export type DatabaseTls = 'verified' | 'ca' | 'pinned' | 'off';
+export interface DatabaseStatus {
+  kind: 'file' | 'server';
+  available: boolean;
+  server: { host: string; port: number; database: string; user: string; tls: DatabaseTls; version: string | null; since: string } | null;
+  localCopy: string | null;
+}
+export interface DatabaseInput { host: string; port: number; database: string; user: string; password: string; ca?: string; fingerprint?: string }
+export type DatabaseCheck =
+  | { step: 'confirm_certificate'; certificate: { fingerprint: string; subject: string; validTo: string } }
+  | { step: 'needs_ca'; certificate: { subject: string; issuer: string } }
+  | { step: 'ready'; server: { version: string; mariadb: boolean }; tls: DatabaseTls; state: 'empty' | 'company'; company: { name: string; entries: number; version: number } | null; inUse: boolean; broadAccount: boolean };
+
 /** Year-end closing: each fiscal year, newest first, with why it can't be closed yet. */
 export interface YearEndStatus {
   fiscalYearStart: string;
@@ -454,6 +468,10 @@ export const api = {
   /** by name from the list, by the token of a picked file, or (with neither) from a file chosen in Windows' file picker */
   restoreBackup: (req: { name?: string; pick?: string; password?: string } = {}) => request<{ restarting: boolean }>('POST', '/api/backup/restore', req),
   setBackupPassword: (password: string | null) => request<BackupStatus>('PUT', '/api/backup/password', { password }),
+  database: () => request<DatabaseStatus>('GET', '/api/database'),
+  checkDatabase: (input: DatabaseInput) => request<DatabaseCheck>('POST', '/api/database/check', input),
+  moveDatabase: (input: DatabaseInput, mode: 'copy' | 'use') => request<{ restarting: boolean }>('POST', '/api/database/move', { ...input, mode }),
+  leaveDatabase: () => request<{ restarting: boolean }>('POST', '/api/database/leave', {}),
   settings: () => request<Settings>('GET', '/api/settings'),
   updateSettings: (patch: Partial<Settings>) => request<Settings>('PUT', '/api/settings', patch),
   accounts: () => request<AccountView[]>('GET', '/api/accounts'),
