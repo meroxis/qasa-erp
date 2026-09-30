@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { formatAmount, MONTHS, rateFromX100, todayIso, toWesternDigits, type Names, type PostingAccounts } from '@qasa/core';
 import { api, ApiError, currentUser, setCurrentUser, type BackupStatus, type NetworkStatus, type YearEndStatus } from '../api.ts';
-import { AccountCombo, ErrorBox, useData, useLoad, useToast } from '../components.tsx';
+import { AccountCombo, ErrorBox, Modal, useData, useLoad, useToast } from '../components.tsx';
 import { isKey, useI18n } from '../i18n.ts';
 import { href } from '../router.ts';
 
@@ -298,18 +298,43 @@ function BackupCard() {
     }
   }
 
-  async function restore(name?: string, when?: string) {
-    if (!window.confirm(name ? t('bkRestoreQ', { when: when ?? name }) : t('bkRestoreOtherQ'))) return;
+  /** An encrypted copy that needs its password: the copy's name, or the token of a file picked in Windows. */
+  const [asking, setAsking] = useState<{ name?: string; pick?: string; wrong: boolean } | null>(null);
+  const [password, setPassword] = useState('');
+  const [newPassword, setNewPassword] = useState({ a: '', b: '' });
+
+  async function send(req: { name?: string; pick?: string; password?: string }) {
     setBusy(true);
     setError(null);
     try {
-      if ((await api.restoreBackup(name)).restarting) setRestarting(true);
+      if ((await api.restoreBackup(req)).restarting) {
+        setAsking(null);
+        setRestarting(true);
+      }
     } catch (e) {
-      setError(e);
+      if (e instanceof ApiError && (e.code === 'backup_password_required' || e.code === 'backup_password_wrong')) {
+        const pick = (e.details as { pick?: string | null } | null)?.pick ?? undefined;
+        setAsking({ ...(req.name ? { name: req.name } : {}), ...(pick ? { pick } : {}), wrong: e.code === 'backup_password_wrong' });
+      } else {
+        setAsking(null);
+        setError(e);
+      }
     } finally {
       setBusy(false);
     }
   }
+
+  function restore(name?: string, when?: string) {
+    if (!window.confirm(name ? t('bkRestoreQ', { when: when ?? name }) : t('bkRestoreOtherQ'))) return;
+    void send(name ? { name } : {});
+  }
+
+  async function savePassword(value: string | null) {
+    await act(() => api.setBackupPassword(value), t('saved'));
+    setNewPassword({ a: '', b: '' });
+  }
+  const passwordProblem = newPassword.a.length > 0 && newPassword.a.length < 10 ? t('bkPasswordShort')
+    : newPassword.b.length > 0 && newPassword.a !== newPassword.b ? t('bkPasswordMismatch') : null;
 
   // isolated left-to-right, so "244 KB" and the date keep their order inside Arabic and Kurdish text
   const ltr = (s: string) => `⁦${s}⁩`;
@@ -345,6 +370,25 @@ function BackupCard() {
           </div>
           <div className="small">{status.last ? t('bkLast', { when: when(status.last.at), size: size(status.last.size) }) : t('bkNone')}</div>
           {status.lastError && <div className="alert bad" role="alert">{t('bkFailed', { e: status.lastError })}</div>}
+          {status.available && (
+            <div className="stack" style={{ gap: 8, padding: 12, border: '1px solid var(--line)', borderRadius: 10 }}>
+              <div className="row" style={{ justifyContent: 'space-between' }}>
+                <strong>{t('bkEncryption')}</strong>
+                <span className={'chip ' + (status.encrypted ? 'ok' : status.cloudFolder ? 'warn' : '')}>{status.encrypted ? t('bkEncrypted') : t('bkNotEncrypted')}</span>
+              </div>
+              {!status.encrypted && status.cloudFolder && <div className="alert warn" role="status">{t('bkCloudWarning')}</div>}
+              <div className="muted small">{t('bkEncryptionHelp')}</div>
+              <div className="grid-2">
+                <label className="field"><span>{status.encrypted ? t('bkNewPassword') : t('bkPassword')}</span><input className="input ltr" type="password" autoComplete="new-password" maxLength={200} value={newPassword.a} onChange={(e) => setNewPassword({ ...newPassword, a: e.target.value })} /></label>
+                <label className="field"><span>{t('bkPasswordAgain')}</span><input className="input ltr" type="password" autoComplete="new-password" maxLength={200} value={newPassword.b} onChange={(e) => setNewPassword({ ...newPassword, b: e.target.value })} /></label>
+              </div>
+              {passwordProblem && <div className="small" style={{ color: 'var(--bad)' }}>{passwordProblem}</div>}
+              <div className="row" style={{ gap: 8, flexWrap: 'wrap' }}>
+                <button type="button" className="btn primary" disabled={busy || restarting || !newPassword.a || newPassword.a !== newPassword.b || newPassword.a.length < 10} onClick={() => void savePassword(newPassword.a)}>{status.encrypted ? t('bkChangePassword') : t('bkEncrypt')}</button>
+                {status.encrypted && <button type="button" className="btn" disabled={busy || restarting} onClick={() => { if (window.confirm(t('bkStopEncryptingQ'))) void savePassword(null); }}>{t('bkStopEncrypting')}</button>}
+              </div>
+            </div>
+          )}
           <ErrorBox error={error} />
           <div className="row" style={{ gap: 8, flexWrap: 'wrap' }}>
             {status.available && <button type="button" className="btn primary" disabled={busy || restarting} onClick={() => act(() => api.runBackup(), t('saved'))}>{t('bkNow')}</button>}
@@ -362,7 +406,7 @@ function BackupCard() {
                 <tbody>
                   {status.files.map((f) => (
                     <tr key={f.name}>
-                      <td className="num small">{when(f.at)}</td>
+                      <td className="num small">{when(f.at)} {f.encrypted && <span className="chip ok" title={t('bkEncrypted')}>{t('bkLocked')}</span>}</td>
                       <td className="num small">{size(f.size)}</td>
                       <td style={{ textAlign: 'end' }}>
                         <button type="button" className="btn small" disabled={busy || restarting} onClick={() => restore(f.name, when(f.at))}>{t('bkRestore')}</button>
@@ -376,6 +420,19 @@ function BackupCard() {
         </>
       )}
       {!status && !absent && <ErrorBox error={error} />}
+      {asking && (
+        <Modal title={t('bkPasswordTitle')} onClose={() => { setAsking(null); setPassword(''); }}>
+          <form className="stack" onSubmit={(e) => { e.preventDefault(); void send({ ...(asking.name ? { name: asking.name } : {}), ...(asking.pick ? { pick: asking.pick } : {}), password }); setPassword(''); }}>
+            <p style={{ margin: 0 }}>{t('bkPasswordAsk')}</p>
+            <label className="field"><span>{t('bkPassword')}</span><input className="input ltr" type="password" autoComplete="off" autoFocus maxLength={200} value={password} onChange={(e) => setPassword(e.target.value)} /></label>
+            {asking.wrong && <div className="alert bad" role="alert">{t('err_backup_password_wrong')}</div>}
+            <div className="row" style={{ gap: 8, justifyContent: 'flex-end' }}>
+              <button type="button" className="btn" onClick={() => { setAsking(null); setPassword(''); }}>{t('cancel')}</button>
+              <button type="submit" className="btn primary" disabled={busy || !password}>{t('bkRestore')}</button>
+            </div>
+          </form>
+        </Modal>
+      )}
     </div>
   );
 }

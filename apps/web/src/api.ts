@@ -420,7 +420,10 @@ export interface BackupStatus {
   last: { at: string; file: string; size: number } | null;
   lastError: string | null;
   next: string | null;
-  files: { name: string; size: number; at: string }[];
+  encrypted: boolean;
+  /** the folder is synced to a cloud service */
+  cloudFolder: boolean;
+  files: { name: string; size: number; at: string; encrypted: boolean }[];
 }
 
 /** Year-end closing: each fiscal year, newest first, with why it can't be closed yet. */
@@ -448,8 +451,9 @@ export const api = {
   setBackup: (patch: { on?: boolean; keep?: number }) => request<BackupStatus>('PUT', '/api/backup', patch),
   chooseBackupFolder: () => request<BackupStatus>('POST', '/api/backup/folder', {}),
   runBackup: () => request<BackupStatus>('POST', '/api/backup/run', {}),
-  /** by name from the list, or (without a name) from a file chosen in Windows' file picker */
-  restoreBackup: (name?: string) => request<{ restarting: boolean }>('POST', '/api/backup/restore', name ? { name } : {}),
+  /** by name from the list, by the token of a picked file, or (with neither) from a file chosen in Windows' file picker */
+  restoreBackup: (req: { name?: string; pick?: string; password?: string } = {}) => request<{ restarting: boolean }>('POST', '/api/backup/restore', req),
+  setBackupPassword: (password: string | null) => request<BackupStatus>('PUT', '/api/backup/password', { password }),
   settings: () => request<Settings>('GET', '/api/settings'),
   updateSettings: (patch: Partial<Settings>) => request<Settings>('PUT', '/api/settings', patch),
   accounts: () => request<AccountView[]>('GET', '/api/accounts'),

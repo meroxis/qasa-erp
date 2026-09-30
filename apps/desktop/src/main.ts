@@ -3,7 +3,7 @@
  * 127.0.0.1, the window shows the app from it, and the company file lives in the user's profile:
  *   %APPDATA%\Qasa ERP\data\qasa.sqlite
  */
-import { app, BrowserWindow, dialog, ipcMain, Menu, session, shell, type MenuItemConstructorOptions } from 'electron';
+import { app, BrowserWindow, dialog, ipcMain, Menu, safeStorage, session, shell, type MenuItemConstructorOptions } from 'electron';
 import electronUpdater from 'electron-updater';
 import { randomBytes } from 'node:crypto';
 import { appendFileSync, copyFileSync, existsSync, mkdirSync, readFileSync, renameSync, statSync, writeFileSync } from 'node:fs';
@@ -111,11 +111,17 @@ async function startServer(): Promise<string> {
       return r.canceled ? null : r.filePaths[0] ?? null;
     },
     chooseBackupFile: async () => {
-      const options = { title: t('restoreFile'), properties: ['openFile'] as 'openFile'[], filters: [{ name: 'Qasa ERP', extensions: ['sqlite'] }] };
+      const options = { title: t('restoreFile'), properties: ['openFile'] as 'openFile'[], filters: [{ name: 'Qasa ERP', extensions: ['qbak', 'sqlite'] }] };
       const r = win ? await dialog.showOpenDialog(win, options) : await dialog.showOpenDialog(options);
       return r.canceled ? null : r.filePaths[0] ?? null;
     },
-    restoreDatabase
+    restoreDatabase,
+    // DPAPI: only this Windows user on this PC can read it back
+    protectSecret: (plain) => {
+      if (!safeStorage.isEncryptionAvailable()) throw new Error('Windows cannot protect secrets here');
+      return safeStorage.encryptString(plain).toString('base64');
+    },
+    revealSecret: (stored) => safeStorage.decryptString(Buffer.from(stored, 'base64'))
   };
   if (proModule) {
     log(`${proModule.name} ${proModule.version}`);

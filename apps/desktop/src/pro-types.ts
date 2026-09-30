@@ -34,5 +34,9 @@ export interface ProContext {
   chooseBackupFile(): Promise<string | null>;
   /** Replaces the company file with a checked backup and restarts the app; the current file is kept aside. */
   restoreDatabase(file: string): Promise<void>;
+  /** Protects a secret for this Windows user (DPAPI); throws when Windows can't. The result is safe to store in a file. */
+  protectSecret(plain: string): string;
+  /** Reads back a secret from protectSecret. */
+  revealSecret(stored: string): string;
   log(...args: unknown[]): void;
 }
