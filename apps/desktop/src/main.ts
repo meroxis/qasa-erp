@@ -3,7 +3,7 @@
  * 127.0.0.1, the window shows the app from it, and the company file lives in the user's profile:
  *   %APPDATA%\Qasa ERP\data\qasa.sqlite
  */
-import { app, BrowserWindow, dialog, ipcMain, Menu, safeStorage, session, shell, type MenuItemConstructorOptions } from 'electron';
+import { app, BrowserWindow, dialog, ipcMain, Menu, protocol, safeStorage, session, shell, type MenuItemConstructorOptions } from 'electron';
 import electronUpdater from 'electron-updater';
 import { randomBytes } from 'node:crypto';
 import { appendFileSync, copyFileSync, existsSync, mkdirSync, readFileSync, renameSync, statSync, writeFileSync } from 'node:fs';
@@ -39,13 +39,24 @@ let manualCheck = false;
 const t = (key: TextKey, vars?: Record<string, string>) => text(lang, key, vars);
 
 /** A plain log for support: %APPDATA%\Qasa ERP\logs\main.log */
+let logFallback: string | null = null;
 function log(...parts: unknown[]): void {
   const line = `${new Date().toISOString()} ${parts.map((p) => (p instanceof Error ? p.stack ?? p.message : String(p))).join(' ')}`;
-  console.log(line);
+  try { console.log(line); } catch { /* no console in the installed app */ }
   try {
     const dir = join(app.getPath('userData'), 'logs');
     mkdirSync(dir, { recursive: true });
-    appendFileSync(join(dir, 'main.log'), line + '\n');
+    if (!logFallback) {
+      try {
+        appendFileSync(join(dir, 'main.log'), line + '\n');
+        return;
+      } catch (error) {
+        // main.log can't be written: a dated file next to it, which says why once
+        logFallback = join(dir, `main-${new Date().toISOString().slice(0, 10)}.log`);
+        appendFileSync(logFallback, `${new Date().toISOString()} main.log could not be written: ${(error as NodeJS.ErrnoException).code ?? String(error)}\n`);
+      }
+    }
+    appendFileSync(logFallback, line + '\n');
   } catch { /* logging must never stop the app */ }
 }
 process.on('uncaughtException', (error) => log('uncaught exception:', error));
@@ -249,7 +260,7 @@ function openConnectWindow(): void {
   connectWin.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
   connectWin.webContents.on('will-navigate', (event) => event.preventDefault());
   connectWin.on('closed', () => { connectWin = null; });
-  void connectWin.loadFile(join(__dirname, 'connect.html'), { query: { lang } });
+  void connectWin.loadURL(`${APP_SCHEME}://connect/connect.html?lang=${lang}`).catch((error) => log('connect window did not load:', error));
 }
 
 ipcMain.handle('network:pair', async (event, address: unknown, code: unknown) => {
@@ -442,6 +453,21 @@ function checkForUpdates(manual: boolean): void {
 
 // ——— app lifecycle ———
 
+// The connect window's page comes from this private scheme: with the grantFileProtocolExtraPrivileges fuse off,
+// file:// can't read inside app.asar. It serves that one page and nothing else.
+const APP_SCHEME = 'qasa-app';
+protocol.registerSchemesAsPrivileged([{ scheme: APP_SCHEME, privileges: { standard: true, secure: true } }]);
+
+function serveAppScheme(): void {
+  protocol.handle(APP_SCHEME, (request) => {
+    const url = new URL(request.url);
+    if (request.method !== 'GET' || url.host !== 'connect' || url.pathname !== '/connect.html') return new Response('Not found', { status: 404 });
+    return new Response(readFileSync(join(__dirname, 'connect.html')), {
+      headers: { 'content-type': 'text/html; charset=utf-8', 'x-content-type-options': 'nosniff', 'cache-control': 'no-store' }
+    });
+  });
+}
+
 if (!app.requestSingleInstanceLock()) {
   app.quit();
 } else {
@@ -454,6 +480,7 @@ if (!app.requestSingleInstanceLock()) {
 
   app.whenReady().then(async () => {
     app.setAppUserModelId('com.meroxis.qasaerp');
+    serveAppScheme();
     remote = readRemote();
     buildMenu();
     try {
