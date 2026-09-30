@@ -44,3 +44,19 @@ publish:
   owner: meroxis
   repo: qasa-erp
   releaseType: release
+# The Microsoft Store package (npm run dist:store): Microsoft signs it when the Store accepts it. The identity is the one
+# Partner Center gave the reserved "Qasa ERP" (Store ID 9NRTX5BBK9DW). build/appxmanifest.xml keeps the company data in
+# %APPDATA%\Qasa ERP (not virtualized), so uninstalling never deletes the books; build/appx has the tiles.
+appx:
+  identityName: meroxis.QasaERP
+  publisher: CN=6A390DDD-1980-41EB-A7B5-643F47981235
+  publisherDisplayName: meroxis
+  applicationId: QasaERP
+  displayName: Qasa ERP
+  backgroundColor: "#0F1E3D"
+  showNameOnTiles: true
+  languages: [en-US, ar, ku-Arab]
+  minVersion: 10.0.17763.0
+  maxVersionTested: 10.0.26100.0
+  customManifestPath: appxmanifest.xml
+  artifactName: Qasa-ERP-Store-${version}.${ext}

@@ -74,6 +74,18 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
+      # The Microsoft Store package from the same build (not signed: the Store signs it when it accepts it). It is kept
+      # with the run for upload to Partner Center, not attached to the release (Windows won't install it unsigned).
+      - name: Microsoft Store package
+        run: node apps/desktop/store.mjs
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: microsoft-store-package
+          path: apps/desktop/release/Qasa-ERP-Store-*.appx
+          if-no-files-found: error
+          retention-days: 90
+
       - name: Stable download link and update block map
         shell: bash
         env:

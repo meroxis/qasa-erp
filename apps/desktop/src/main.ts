@@ -18,6 +18,9 @@ import { pair, parseAddress, pemFingerprint, type PairResult, type Remote } from
 import { proModule } from '@qasa/pro-module';
 
 const { autoUpdater } = electronUpdater;
+/** Installed from the Microsoft Store: the Store signs and updates it, so the app's own updater stays off. */
+const FROM_STORE = process.windowsStore === true;
+const STORE_PAGE = 'ms-windows-store://pdp/?productid=9NRTX5BBK9DW';
 const WEB_DIR = join(__dirname, 'web');
 const UPDATE_EVERY_MS = 6 * 60 * 60 * 1000;
 const DEFAULT_PORT = 47417;
@@ -494,7 +497,7 @@ async function createWindow(url: string): Promise<void> {
 // ——— updates (GitHub releases of meroxis/qasa-erp) ———
 
 function setupUpdates(): void {
-  if (!app.isPackaged) return;
+  if (!app.isPackaged || FROM_STORE) return;
   autoUpdater.autoDownload = true;
   autoUpdater.autoInstallOnAppQuit = true;
 
@@ -531,6 +534,11 @@ function setupUpdates(): void {
 }
 
 function checkForUpdates(manual: boolean): void {
+  if (FROM_STORE) {
+    // the Store's page shows whether an update is waiting, and installs it
+    if (manual) void shell.openExternal(STORE_PAGE);
+    return;
+  }
   if (!app.isPackaged) {
     if (manual && win) void dialog.showMessageBox(win, { type: 'info', title: 'Qasa ERP', message: t('upToDate', { v: app.getVersion() }), buttons: [t('ok')] });
     return;
@@ -579,7 +587,7 @@ if (!app.requestSingleInstanceLock()) {
         await createWindow(`https://${remote.host}:${remote.port}/`);
       } else {
         const url = await startServer();
-        log(`Qasa ERP ${app.getVersion()} started — server on ${url}, data in ${join(app.getPath('userData'), 'data')}`);
+        log(`Qasa ERP ${app.getVersion()}${FROM_STORE ? ' (Microsoft Store)' : ''} started — server on ${url}, data in ${join(app.getPath('userData'), 'data')}`);
         await createWindow(url);
       }
       setupUpdates();

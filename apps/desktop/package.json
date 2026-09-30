@@ -13,7 +13,8 @@
     "start": "node build.mjs && electron .",
     "dist": "node build.mjs && electron-builder --win --publish never",
     "release": "node build.mjs && electron-builder --win --publish always",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "dist:store": "node build.mjs && node store.mjs"
   },
   "devDependencies": {
     "electron": "44.4.5",
