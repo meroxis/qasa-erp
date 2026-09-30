@@ -25,7 +25,7 @@ const ROWS: Row[] = [
   { label: 'f_installments', cells: [false, true, true], soon: true },
   { label: 'f_payroll', cells: [false, true, true], soon: true },
   { label: 'f_finalAccounts', cells: ['v_viewOnScreen', 'v_printExcel', 'v_printExcel'] },
-  { label: 'f_yearEnd', cells: [false, true, true], soon: true },
+  { label: 'f_yearEnd', cells: [false, true, true] },
   { label: 'f_backup', cells: [false, true, true] },
   { label: 'f_branches', cells: [false, false, true], soon: true },
   { label: 'f_support', cells: ['v_supportFree', 'v_supportPro', 'v_supportBusiness'] }

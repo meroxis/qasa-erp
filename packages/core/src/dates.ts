@@ -34,6 +34,20 @@ export function addDays(isoDate: string, days: number): string {
   return new Date(Date.UTC(y, m - 1, d + days)).toISOString().slice(0, 10);
 }
 
+/**
+ * The fiscal year named after the calendar year it starts in, for a start day "MM-DD" (the company setting):
+ * with "01-01", 2026 is 2026-01-01 … 2026-12-31; with "07-01", 2026 is 2026-07-01 … 2027-06-30.
+ */
+export function fiscalYear(year: number, start: string): { from: string; to: string } {
+  return { from: `${year}-${start}`, to: addDays(`${year + 1}-${start}`, -1) };
+}
+
+/** The fiscal year a day falls in (see fiscalYear). */
+export function fiscalYearOf(isoDate: string, start: string): number {
+  const year = yearOf(isoDate);
+  return isoDate.slice(5) >= start ? year : year - 1;
+}
+
 /** Whole days from `from` to `to` (negative when `to` is earlier). */
 export function daysBetween(from: string, to: string): number {
   const utc = (iso: string) => { const [y, m, d] = iso.split('-').map(Number) as [number, number, number]; return Date.UTC(y, m - 1, d); };

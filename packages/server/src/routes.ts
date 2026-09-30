@@ -20,6 +20,7 @@ import {
 } from './items.ts';
 import { activateLicense, planStatus, removeLicense, startTrial } from './license.ts';
 import { cancelInvoice, createInvoice, deleteInvoice, getInvoice, listInvoices, postInvoice, updateInvoice } from './invoices.ts';
+import { closeYear, reopenYear, yearStatuses } from './closing.ts';
 import { createReturn } from './returns.ts';
 import { cancelStockDoc, createStockDoc, deleteStockDoc, getStockDoc, listStockDocs, postStockDoc, updateStockDoc } from './stock-docs.ts';
 
@@ -58,7 +59,7 @@ const voucherSchema = z.object({
 });
 
 const entryFilters = z.object({
-  type: z.enum(['journal', 'receipt', 'payment', 'reversal', 'sale', 'purchase', 'sale_return', 'purchase_return', 'opening_stock', 'transfer']).optional(),
+  type: z.enum(['journal', 'receipt', 'payment', 'reversal', 'sale', 'purchase', 'sale_return', 'purchase_return', 'opening_stock', 'transfer', 'closing']).optional(),
   status: z.enum(['draft', 'checked', 'approved']).optional(),
   from: isoDate.optional(),
   to: isoDate.optional(),
@@ -318,11 +319,25 @@ export function apiRoutes(db: Db, options: { demo?: boolean } = {}): Route[] {
       defaultRateX100: z.number().int().positive().optional(),
       fiscalYearStart: z.string().regex(/^(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])$/).optional(),
       postingAccounts: z.object({
-        customers: z.string().max(12), suppliers: z.string().max(12), sales: z.string().max(12), costOfSales: z.string().max(12), cash: z.string().max(12)
+        customers: z.string().max(12), suppliers: z.string().max(12), sales: z.string().max(12), costOfSales: z.string().max(12), cash: z.string().max(12),
+        yearResult: z.string().max(12).optional()
       }).optional()
     }), req.body);
-    return updateSettings(db, withoutUndefined(body), userOf(req));
+    const { postingAccounts, ...rest } = withoutUndefined(body);
+    return updateSettings(db, { ...rest, ...(postingAccounts ? { postingAccounts: { ...getSettings(db).postingAccounts, ...withoutUndefined(postingAccounts) } } : {}) }, userOf(req));
   });
+  // year-end closing: every year's state; closing and reopening need an admin (the default for changes)
+  const yearParam = z.object({ year: z.coerce.number().int().min(1900).max(2999) });
+  app.get('/api/year-end', async () => ({ fiscalYearStart: getSettings(db).fiscalYearStart, years: yearStatuses(db) }));
+  app.post('/api/year-end/:year/close', async (req) => {
+    notInDemo();
+    return closeYear(db, parse(yearParam, req.params).year, actorOf(req));
+  });
+  app.post('/api/year-end/:year/reopen', async (req) => {
+    notInDemo();
+    return reopenYear(db, parse(yearParam, req.params).year, actorOf(req));
+  });
+
   app.get('/api/periods', async () => lockedPeriods(db));
   app.post('/api/periods/:period/lock', async (req) => {
     const { period: p } = parse(z.object({ period }), req.params);

@@ -112,7 +112,8 @@ export function InvoiceStatusChip({ status }: { status: InvoiceStatus }) {
 }
 
 export function typeName(type: EntryType, i18n: I18n): string {
-  return i18n.t(type);
+  // "closing" alone is the closing balance of a statement
+  return type === 'closing' ? i18n.t('closingEntry') : i18n.t(type);
 }
 
 export function Modal({ title, onClose, children }: { title: string; onClose(): void; children: ReactNode }) {

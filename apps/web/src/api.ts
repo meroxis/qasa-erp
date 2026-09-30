@@ -423,8 +423,25 @@ export interface BackupStatus {
   files: { name: string; size: number; at: string }[];
 }
 
+/** Year-end closing: each fiscal year, newest first, with why it can't be closed yet. */
+export interface YearEndStatus {
+  fiscalYearStart: string;
+  years: {
+    year: number;
+    from: string;
+    to: string;
+    ended: boolean;
+    closing: { entryId: string; number: string | null; by: string | null; at: string | null } | null;
+    result: number;
+    blockers: { code: string; year?: number; count?: number }[];
+  }[];
+}
+
 export const api = {
   health: () => request<{ ok: boolean }>('GET', '/api/health'),
+  yearEnd: () => request<YearEndStatus>('GET', '/api/year-end'),
+  closeYear: (year: number) => request<EntryView>('POST', `/api/year-end/${year}/close`, {}),
+  reopenYear: (year: number) => request<EntryView>('POST', `/api/year-end/${year}/reopen`, {}),
   network: () => request<NetworkStatus>('GET', '/api/network'),
   setNetwork: (on: boolean) => request<NetworkStatus>('PUT', '/api/network', { on }),
   backup: () => request<BackupStatus>('GET', '/api/backup'),

@@ -43,9 +43,9 @@ export interface FinalAccounts {
   balanceSheet: {
     assets: BalanceGroup[];
     liabilities: BalanceGroup[];
-    /** Profit or loss of everything before `from` that has not been closed into capital. */
+    /** Profit or loss of everything before `from` that has not been closed into reserves. */
     priorResult: number;
-    /** = netResult */
+    /** The period's result not yet closed into reserves: netResult, or 0 once the year-end closing moved it. */
     currentResult: number;
     totalAssets: number;
     totalLiabilities: number;
@@ -130,7 +130,8 @@ function resultOf(net: Map<string, number>): number {
 
 export function finalAccounts(lines: PostedLine[], opts: { from: string; to: string }): FinalAccounts {
   const { from, to } = opts;
-  const period = netByAccount(lines, (l) => l.date >= from && l.date <= to);
+  // the year-end closing entry empties the revenue and expense accounts; the year's own result leaves it out
+  const period = netByAccount(lines, (l) => l.date >= from && l.date <= to && !l.closing);
 
   // each postable result account belongs to exactly one line
   const byGroup = new Map<string, Map<string, number>>();
@@ -179,9 +180,11 @@ export function finalAccounts(lines: PostedLine[], opts: { from: string; to: str
   };
   const assets = side('1');
   const liabilities = side('2');
+  // closings count here: a closed year's result is in the reserves (class 2), no longer in revenue and expenses
   const priorResult = resultOf(before);
+  const currentResult = resultOf(netByAccount(lines, (l) => l.date >= from && l.date <= to));
   const totalAssets = assets.reduce((s, g) => s + g.amount, 0);
-  const totalLiabilities = liabilities.reduce((s, g) => s + g.amount, 0) + priorResult + netResult;
+  const totalLiabilities = liabilities.reduce((s, g) => s + g.amount, 0) + priorResult + currentResult;
 
-  return { from, to, sections, netResult, balanceSheet: { assets, liabilities, priorResult, currentResult: netResult, totalAssets, totalLiabilities } };
+  return { from, to, sections, netResult, balanceSheet: { assets, liabilities, priorResult, currentResult, totalAssets, totalLiabilities } };
 }

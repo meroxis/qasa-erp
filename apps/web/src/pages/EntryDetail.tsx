@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { amountInWords, rateFromX100, todayIso } from '@qasa/core';
 import { api, type EntryView } from '../api.ts';
-import { ErrorBox, Icon, Modal, StatusChip, useData, useLoad, useToast } from '../components.tsx';
+import { ErrorBox, Icon, Modal, StatusChip, typeName, useData, useLoad, useToast } from '../components.tsx';
 import { useI18n } from '../i18n.ts';
 import { go, href } from '../router.ts';
 
@@ -98,7 +98,7 @@ export function EntryDetail({ id }: { id: string }) {
         <div className="paper-head">
           <div style={{ flex: 1 }}>
             <div className="muted">{company}</div>
-            <div className="paper-title">{t(e.type)}</div>
+            <div className="paper-title">{typeName(e.type, i18n)}</div>
             <div style={{ marginTop: 4 }}><StatusChip status={e.status} reversed={!!e.reversedById} /></div>
           </div>
           <div className="paper-meta">

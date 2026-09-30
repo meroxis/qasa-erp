@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import type { EntryStatus, EntryType } from '@qasa/core';
 import { api, type EntrySummary } from '../api.ts';
-import { ErrorBox, Icon, StatusChip, useLoad } from '../components.tsx';
+import { ErrorBox, Icon, StatusChip, typeName, useLoad } from '../components.tsx';
 import { useI18n } from '../i18n.ts';
 import { go, href } from '../router.ts';
 
@@ -25,7 +25,7 @@ export function EntriesTable({ entries }: { entries: EntrySummary[] }) {
         {entries.map((e) => (
           <tr key={e.id} className="click" onClick={() => go(`entry/${e.id}`)}>
             <td>{e.number ? <a href={href(`entry/${e.id}`)} className="ltr num" onClick={(ev) => ev.stopPropagation()}>{e.number}</a> : <span className="muted">{t('draft')}</span>}</td>
-            <td>{t(e.type)}</td>
+            <td>{typeName(e.type, i18n)}</td>
             <td className="num">{i18n.date(e.date)}</td>
             <td>
               <div className="bidi" style={{ fontWeight: 600 }}>{e.party || e.description}</div>
@@ -40,11 +40,12 @@ export function EntriesTable({ entries }: { entries: EntrySummary[] }) {
   );
 }
 
-const TYPES: (EntryType | '')[] = ['', 'receipt', 'payment', 'journal', 'sale', 'purchase', 'reversal'];
+const TYPES: (EntryType | '')[] = ['', 'receipt', 'payment', 'journal', 'sale', 'purchase', 'reversal', 'closing'];
 const STATUSES: (EntryStatus | '')[] = ['', 'draft', 'checked', 'approved'];
 
 export function Entries() {
-  const { t } = useI18n();
+  const i18n = useI18n();
+  const { t } = i18n;
   const [type, setType] = useState<EntryType | ''>('');
   const [status, setStatus] = useState<EntryStatus | ''>('');
   const [q, setQ] = useState('');
@@ -61,7 +62,7 @@ export function Entries() {
       </div>
       <div className="tabs">
         {TYPES.map((ty) => (
-          <button key={ty || 'all'} type="button" aria-pressed={type === ty} onClick={() => setType(ty)}>{ty ? t(ty) : t('all')}</button>
+          <button key={ty || 'all'} type="button" aria-pressed={type === ty} onClick={() => setType(ty)}>{ty ? typeName(ty, i18n) : t('all')}</button>
         ))}
       </div>
       <div className="row">

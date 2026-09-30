@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
-import { MONTHS, rateFromX100, todayIso, toWesternDigits, type Names, type PostingAccounts } from '@qasa/core';
-import { api, ApiError, currentUser, setCurrentUser, type BackupStatus, type NetworkStatus } from '../api.ts';
+import { formatAmount, MONTHS, rateFromX100, todayIso, toWesternDigits, type Names, type PostingAccounts } from '@qasa/core';
+import { api, ApiError, currentUser, setCurrentUser, type BackupStatus, type NetworkStatus, type YearEndStatus } from '../api.ts';
 import { AccountCombo, ErrorBox, useData, useLoad, useToast } from '../components.tsx';
 import { isKey, useI18n } from '../i18n.ts';
 import { href } from '../router.ts';
@@ -97,6 +97,8 @@ export function Settings() {
         </div>
       </div>
 
+      <YearEndCard onChanged={() => { periods.reload(); audit.reload(); }} />
+
       <div className="card">
         <div style={{ padding: '14px 16px 6px' }}>
           <h2>{t('auditLog')}</h2>
@@ -186,6 +188,79 @@ function OfficeNetworkCard() {
             {status.on ? t('netTurnOff') : t('netTurnOn')}
           </button>
         </div>
+      )}
+    </div>
+  );
+}
+
+/** Year-end closing: each fiscal year's result and state; an admin closes a year that has ended, or reopens it. */
+function YearEndCard({ onChanged }: { onChanged(): void }) {
+  const { t, digitsOf } = useI18n();
+  const toast = useToast();
+  const { settings } = useData();
+  const data = useLoad(() => api.yearEnd(), []);
+  const [error, setError] = useState<unknown>(null);
+  const [busy, setBusy] = useState(false);
+
+  async function act(work: () => Promise<unknown>, done: string) {
+    setBusy(true);
+    setError(null);
+    try {
+      await work();
+      toast(done);
+      data.reload();
+      onChanged();
+    } catch (e) {
+      setError(e);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  type Year = YearEndStatus['years'][number];
+  const name = (y: Year) => digitsOf(data.data?.fiscalYearStart === '01-01' ? String(y.year) : `${y.from} – ${y.to}`);
+  const money = (n: number) => digitsOf(formatAmount(Math.abs(n), 'IQD'));
+  const why = (y: Year, b: Year['blockers'][number]) =>
+    b.code === 'year_not_ended' ? t('bl_year_not_ended', { d: y.to })
+      : b.code === 'close_previous_year_first' ? t('bl_close_previous_year_first', { y: String(b.year ?? '') })
+        : isKey(`bl_${b.code}`) ? t(`bl_${b.code}` as 'bl_plan_limit', { n: String(b.count ?? '') }) : b.code;
+
+  return (
+    <div className="card pad stack">
+      <h2>{t('ye_title')}</h2>
+      <div className="muted small">{t('ye_help')}</div>
+      <ErrorBox error={data.error ?? error} />
+      {data.data && data.data.years.length === 0 && <div className="muted">{t('ye_none')}</div>}
+      {data.data && data.data.years.length > 0 && (
+        <table className="table">
+          <thead><tr><th>{t('ye_year')}</th><th>{t('ye_result')}</th><th>{t('ye_state')}</th><th /></tr></thead>
+          <tbody>
+            {data.data.years.map((y) => (
+              <tr key={y.year}>
+                <td className="num">{name(y)}</td>
+                <td className="num">{y.result === 0 ? digitsOf('0') : t(y.result > 0 ? 'ye_profit' : 'ye_loss', { a: money(y.result) })}</td>
+                <td>
+                  {y.closing
+                    ? <><span className="chip ok">{t('ye_closed')}</span> <a href={href(`entry/${y.closing.entryId}`)} className="ltr num small">{y.closing.number}</a></>
+                    : <span className={'chip ' + (y.ended ? 'warn' : '')}>{y.ended ? t('ye_open') : t('ye_running')}</span>}
+                  {!y.closing && y.ended && y.blockers.length > 0 && (
+                    <ul className="muted small" style={{ margin: '6px 0 0', paddingInlineStart: 18 }}>
+                      {y.blockers.map((b) => <li key={b.code}>{why(y, b)}</li>)}
+                    </ul>
+                  )}
+                </td>
+                <td style={{ textAlign: 'end' }}>
+                  {y.closing && (
+                    <button type="button" className="btn small" disabled={busy} onClick={() => { if (window.confirm(t('ye_reopenQ', { y: name(y) }))) void act(() => api.reopenYear(y.year), t('ye_reopened')); }}>{t('ye_reopen')}</button>
+                  )}
+                  {!y.closing && y.ended && y.blockers.length === 0 && (
+                    <button type="button" className="btn small primary" disabled={busy} onClick={() => { if (window.confirm(t('ye_closeQ', { y: name(y), d: y.to, c: settings?.postingAccounts.yearResult ?? '229' }))) void act(() => api.closeYear(y.year), t('ye_done')); }}>{t('ye_close')}</button>
+                  )}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
       )}
     </div>
   );
@@ -310,7 +385,8 @@ const POSTING_FIELDS: { key: keyof PostingAccounts; root: string }[] = [
   { key: 'costOfSales', root: '3' },
   { key: 'customers', root: '16' },
   { key: 'suppliers', root: '26' },
-  { key: 'cash', root: '18' }
+  { key: 'cash', root: '18' },
+  { key: 'yearResult', root: '22' }
 ];
 
 /** Which accounts invoices post to (sales 42, cost of sales 35, customers 1611 …). */

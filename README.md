@@ -187,7 +187,7 @@ npm run dist:win    # build apps/desktop/release/Qasa-ERP-Setup-<version>.exe
 - [ ] Installment sales and sales pipeline
 - [ ] HR, salaries and employee advances
 - [x] Final accounts: trading, current operations and profit and loss accounts, and the balance sheet (unified-system layout, to be reviewed by a licensed accountant)
-- [ ] Year-end closing
+- [x] Year-end closing: a closing entry moves revenue and expenses into the accumulated result (229) and locks the year; reopen by reversal
 - [x] Users, roles and sign-in (Free: one password-protected user; Pro: up to 5 users with roles and separate duties)
 - [x] Office-network (server) mode: other PCs work on one PC's company file over the office network (encrypted, with a pairing code), each person with their own user
 - [x] Windows app and installer with automatic updates
@@ -210,7 +210,8 @@ growing company needs, and the app shows the full comparison under **Plan & lice
 | Office network (several PCs on one company file) | | ✓ | ✓ |
 | Companies | 1 | 3 | unlimited |
 | Daily backups to a folder of your choice (OneDrive, Google Drive, USB) | | ✓ | ✓ |
-| Installments, payroll, year-end closing | | coming soon | coming soon |
+| Year-end closing (closing entry, locked months, reopen by reversal) | | ✓ | ✓ |
+| Installments, payroll | | coming soon | coming soon |
 | Online edition, branches | | | coming soon |
 
 Some Pro features are still being built; the app marks them as coming soon. A plan never locks anyone out of their

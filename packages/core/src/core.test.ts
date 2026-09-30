@@ -6,6 +6,8 @@ import {
   allowedActions,
   amountInWords,
   buildAccounts,
+  fiscalYear,
+  fiscalYearOf,
   findParentCode,
   formatAmount,
   isIsoDate,
@@ -71,6 +73,14 @@ describe('dates and search', () => {
     expect(isIsoDate('2026-09-26')).toBe(true);
     expect(isIsoDate('2026-02-30')).toBe(false);
     expect(isIsoDate('26/09/2026')).toBe(false);
+  });
+  it('knows the fiscal year of a day, for years starting in January or in July', () => {
+    expect(fiscalYear(2026, '01-01')).toEqual({ from: '2026-01-01', to: '2026-12-31' });
+    expect(fiscalYear(2026, '07-01')).toEqual({ from: '2026-07-01', to: '2027-06-30' });
+    expect(fiscalYear(2027, '03-01')).toEqual({ from: '2027-03-01', to: '2028-02-29' });
+    expect(fiscalYearOf('2026-09-30', '01-01')).toBe(2026);
+    expect(fiscalYearOf('2027-06-30', '07-01')).toBe(2026);
+    expect(fiscalYearOf('2027-07-01', '07-01')).toBe(2027);
   });
   it('matches Arabic-keyboard and Kurdish-keyboard spellings', () => {
     expect(normalizeForSearch('كيلو')).toBe(normalizeForSearch('کیلو'));

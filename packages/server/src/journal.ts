@@ -170,9 +170,13 @@ function loadRow(db: Db, id: string): EntryRow {
   return row;
 }
 
+/** What may be done with an entry. Documents are corrected from the document; a closing entry only by reopening the year. */
+function actionsOf(row: EntryRow): EntryAction[] {
+  return allowedActions(row.status, { reversed: !!row.reversed_by_id, isReversal: row.type === 'reversal', fromInvoice: isInvoiceType(row.type) || row.type === 'closing' });
+}
+
 function requireAction(row: EntryRow, action: EntryAction): void {
-  const actions = allowedActions(row.status, { reversed: !!row.reversed_by_id, isReversal: row.type === 'reversal', fromInvoice: isInvoiceType(row.type) });
-  if (!actions.includes(action)) throw conflict('action_not_allowed', { status: row.status, action });
+  if (!actionsOf(row).includes(action)) throw conflict('action_not_allowed', { status: row.status, action });
 }
 
 /** Replaces a draft journal entry. */
@@ -325,7 +329,7 @@ function toView(row: EntryRow, lines: LineRow[], invoiceId: string | null = null
       debit: l.debit, credit: l.credit, baseDebit: l.base_debit, baseCredit: l.base_credit, description: l.description ?? '',
       partyId: l.party_id, partyName: l.party_name
     })),
-    actions: allowedActions(row.status, { reversed: !!row.reversed_by_id, isReversal: row.type === 'reversal', fromInvoice: isInvoiceType(row.type) }),
+    actions: actionsOf(row),
     invoiceId,
     stockDocId
   };
@@ -384,14 +388,15 @@ export function postedLines(db: Db, opts: { to?: string; partyId?: string } = {}
   if (opts.to) { where.push('e.date <= ?'); params.push(opts.to); }
   if (opts.partyId) { where.push('l.party_id = ?'); params.push(opts.partyId); }
   const rows = db.prepare(`SELECT e.id, e.number, e.date, l.account_code, l.base_debit, l.base_credit, l.party_id,
-                                  COALESCE(l.description, e.description) AS description
+                                  COALESCE(l.description, e.description) AS description,
+                                  (e.type = 'closing' OR (e.type = 'reversal' AND EXISTS (SELECT 1 FROM entries c WHERE c.id = e.reverses_id AND c.type = 'closing'))) AS closing
                            FROM entry_lines l JOIN entries e ON e.id = l.entry_id
                            WHERE ${where.join(' AND ')}
                            ORDER BY e.date, e.number, l.line_no`).all(...params) as {
-    id: string; number: string; date: string; account_code: string; base_debit: number; base_credit: number; party_id: string | null; description: string;
+    id: string; number: string; date: string; account_code: string; base_debit: number; base_credit: number; party_id: string | null; description: string; closing: number;
   }[];
   return rows.map((r) => ({
     entryId: r.id, number: r.number, date: r.date, accountCode: r.account_code, debit: r.base_debit, credit: r.base_credit,
-    description: r.description, partyId: r.party_id
+    description: r.description, partyId: r.party_id, ...(r.closing ? { closing: true } : {})
   }));
 }

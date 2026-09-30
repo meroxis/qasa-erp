@@ -4,9 +4,9 @@ import { isCurrency, isMinorAmount, toBaseBalanced, type CurrencyCode } from './
 /**
  * receipt = سند قبض · payment = سند صرف · journal = قيد يومية · reversal = قيد عكسي ·
  * sale/purchase = posted by an invoice · sale_return/purchase_return = by a return (مردودات) ·
- * opening_stock = بضاعة أول المدة · transfer = مناقلة بين المخازن
+ * opening_stock = بضاعة أول المدة · transfer = مناقلة بين المخازن · closing = قيد الإقفال (year-end closing)
  */
-export type EntryType = 'journal' | 'receipt' | 'payment' | 'reversal' | 'sale' | 'purchase' | 'sale_return' | 'purchase_return' | 'opening_stock' | 'transfer';
+export type EntryType = 'journal' | 'receipt' | 'payment' | 'reversal' | 'sale' | 'purchase' | 'sale_return' | 'purchase_return' | 'opening_stock' | 'transfer' | 'closing';
 
 /** Entry types that a document (invoice, return, stock document) posts; they are corrected by cancelling that document. */
 export const DOCUMENT_ENTRY_TYPES: readonly EntryType[] = ['sale', 'purchase', 'sale_return', 'purchase_return', 'opening_stock', 'transfer'];
@@ -29,7 +29,8 @@ export const NUMBER_PREFIX: Record<EntryType, string> = {
   sale_return: 'SR',
   purchase_return: 'PR',
   opening_stock: 'OS',
-  transfer: 'ST'
+  transfer: 'ST',
+  closing: 'CL'
 };
 
 export interface LineInput {

@@ -85,7 +85,9 @@ export const STARTER_SUB_ACCOUNTS: AccountSeed[] = [
   { code: '1612', name: { ar: 'زبائن التقسيط', en: 'Installment customers', ku: 'کڕیارانی قیست' } },
   { code: '1661', name: { ar: 'سلف الموظفين', en: 'Employee advances', ku: 'سولفەی کارمەندان' } },
   { code: '1371', name: { ar: 'المخزن الرئيسي', en: 'Main warehouse', ku: 'کۆگای سەرەکی' } },
-  { code: '2611', name: { ar: 'المجهزون المحليون', en: 'Local suppliers', ku: 'دابینکەرانی ناوخۆ' } }
+  { code: '2611', name: { ar: 'المجهزون المحليون', en: 'Local suppliers', ku: 'دابینکەرانی ناوخۆ' } },
+  // where the year-end closing puts each year's profit or loss (to be confirmed by the company's accountant)
+  { code: '229', name: { ar: 'الفائض (العجز) المتراكم', en: 'Accumulated surplus (deficit)', ku: 'زیادە (کورتهێنان)ی کەڵەکەبوو' } }
 ];
 
 /**
@@ -97,7 +99,9 @@ export const DEFAULT_POSTING_ACCOUNTS = {
   suppliers: '2611',
   sales: '42',
   costOfSales: '35',
-  cash: '1811'
+  cash: '1811',
+  /** the year-end closing moves each year's result here */
+  yearResult: '229'
 } as const;
 
 export type PostingAccounts = { [K in keyof typeof DEFAULT_POSTING_ACCOUNTS]: string };

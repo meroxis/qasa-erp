@@ -9,6 +9,8 @@ export interface PostedLine {
   debit: number;
   credit: number;
   description: string;
+  /** A line of a year-end closing entry (or of its reversal): left out of that year's own result. */
+  closing?: boolean;
 }
 
 export interface TrialBalanceRow {

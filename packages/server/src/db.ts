@@ -478,7 +478,55 @@ const V4 =
   ALTER TABLE entries ADD COLUMN checked_by_id TEXT REFERENCES users(id);
   `;
 
-const MIGRATIONS: Migration[] = [{ sql: V1 }, { sql: V2, rebuild: true }, { sql: V3, rebuild: true }, { sql: V4 }];
+const V5 =
+  // 5 — year-end closing: the closing entry (قيد الإقفال) moves each year's result into the reserves
+  `
+  CREATE TABLE entries_v5 (
+    id TEXT PRIMARY KEY,
+    type TEXT NOT NULL CHECK (type IN ('journal', 'receipt', 'payment', 'reversal', 'sale', 'purchase', 'sale_return', 'purchase_return', 'opening_stock', 'transfer', 'closing')),
+    number TEXT UNIQUE,
+    date TEXT NOT NULL,
+    description TEXT NOT NULL,
+    party TEXT,
+    currency TEXT NOT NULL CHECK (currency IN ('IQD', 'USD')),
+    rate_x100 INTEGER NOT NULL CHECK (rate_x100 > 0),
+    status TEXT NOT NULL CHECK (status IN ('draft', 'checked', 'approved')),
+    cash_account TEXT REFERENCES accounts(code),
+    reverses_id TEXT REFERENCES entries(id),
+    reversed_by_id TEXT REFERENCES entries(id),
+    prepared_by TEXT NOT NULL,
+    prepared_at TEXT NOT NULL,
+    checked_by TEXT,
+    checked_at TEXT,
+    approved_by TEXT,
+    approved_at TEXT,
+    updated_at TEXT NOT NULL,
+    prepared_by_id TEXT REFERENCES users(id),
+    checked_by_id TEXT REFERENCES users(id)
+  );
+  INSERT INTO entries_v5 SELECT id, type, number, date, description, party, currency, rate_x100, status, cash_account,
+    reverses_id, reversed_by_id, prepared_by, prepared_at, checked_by, checked_at, approved_by, approved_at, updated_at,
+    prepared_by_id, checked_by_id FROM entries;
+  DROP TABLE entries;
+  ALTER TABLE entries_v5 RENAME TO entries;
+  CREATE INDEX entries_date ON entries(date);
+  CREATE INDEX entries_status ON entries(status);
+
+  CREATE TRIGGER posted_entries_no_delete BEFORE DELETE ON entries
+  WHEN OLD.status = 'approved'
+  BEGIN SELECT RAISE(ABORT, 'posted_entry_is_permanent'); END;
+
+  CREATE TRIGGER posted_entries_no_edit BEFORE UPDATE ON entries
+  WHEN OLD.status = 'approved' AND (
+    NEW.status IS NOT OLD.status OR NEW.type IS NOT OLD.type OR NEW.number IS NOT OLD.number OR
+    NEW.date IS NOT OLD.date OR NEW.description IS NOT OLD.description OR NEW.party IS NOT OLD.party OR
+    NEW.currency IS NOT OLD.currency OR NEW.rate_x100 IS NOT OLD.rate_x100 OR NEW.cash_account IS NOT OLD.cash_account OR
+    NEW.approved_by IS NOT OLD.approved_by OR NEW.approved_at IS NOT OLD.approved_at
+  )
+  BEGIN SELECT RAISE(ABORT, 'posted_entry_is_permanent'); END;
+  `;
+
+const MIGRATIONS: Migration[] = [{ sql: V1 }, { sql: V2, rebuild: true }, { sql: V3, rebuild: true }, { sql: V4 }, { sql: V5, rebuild: true }];
 
 /** The schema version this build writes. */
 export const SCHEMA_VERSION = MIGRATIONS.length;
@@ -577,7 +625,8 @@ function ensureDefaults(db: Db): void {
       suppliers: postable(DEFAULT_POSTING_ACCOUNTS.suppliers, '261'),
       sales: DEFAULT_POSTING_ACCOUNTS.sales,
       costOfSales: DEFAULT_POSTING_ACCOUNTS.costOfSales,
-      cash: postable(DEFAULT_POSTING_ACCOUNTS.cash, '181')
+      cash: postable(DEFAULT_POSTING_ACCOUNTS.cash, '181'),
+      yearResult: postable(DEFAULT_POSTING_ACCOUNTS.yearResult, '22')
     }));
 
     // the owner: the one user a company starts with; the app opens as this user until sign-in is switched on

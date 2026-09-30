@@ -16,7 +16,7 @@ export interface Settings {
 
 /** Where each posting account must sit in the unified chart. */
 const POSTING_ACCOUNT_PARENTS: Record<keyof PostingAccounts, string> = {
-  customers: '16', suppliers: '26', sales: '4', costOfSales: '3', cash: '18'
+  customers: '16', suppliers: '26', sales: '4', costOfSales: '3', cash: '18', yearResult: '22'
 };
 
 export function readSetting(db: Db, key: string): string | undefined {
@@ -32,7 +32,11 @@ export function deleteSetting(db: Db, key: string): void {
 }
 
 export function getPostingAccounts(db: Db): PostingAccounts {
-  return { ...DEFAULT_POSTING_ACCOUNTS, ...(JSON.parse(readSetting(db, 'posting_accounts') ?? '{}') as Partial<PostingAccounts>) };
+  const stored = JSON.parse(readSetting(db, 'posting_accounts') ?? '{}') as Partial<PostingAccounts>;
+  // a company from before the year-end closing where 229 could not be added (22 already had entries): 22 itself
+  const yearResult = stored.yearResult
+    ?? (db.prepare('SELECT 1 FROM accounts WHERE code = ?').get(DEFAULT_POSTING_ACCOUNTS.yearResult) ? DEFAULT_POSTING_ACCOUNTS.yearResult : '22');
+  return { ...DEFAULT_POSTING_ACCOUNTS, ...stored, yearResult };
 }
 
 export function getSettings(db: Db): Settings {
