@@ -57,7 +57,9 @@ await build({
     rollupOptions: { external: ['electron'], output: { format: 'cjs', entryFileNames: 'connect-preload.cjs' } }
   }
 });
-const page = readFileSync(join(here, 'src', 'connect.html'), 'utf8');
+// The browser reads a page with CRLF as LF and hashes the script that way; a Windows checkout has CRLF, so the page
+// is written with LF and hashed as the browser will see it.
+const page = readFileSync(join(here, 'src', 'connect.html'), 'utf8').replace(/\r\n?/g, '\n');
 const script = /<script>([\s\S]*?)<\/script>/.exec(page)?.[1];
 if (script === undefined) throw new Error('connect.html has no script');
 writeFileSync(join(dist, 'connect.html'), page.replace('{{scriptHash}}', createHash('sha256').update(script).digest('base64')));
