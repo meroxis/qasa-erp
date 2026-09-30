@@ -1,0 +1,67 @@
+{
+  "_about": "The Microsoft Store listing of Qasa ERP (Partner Center → Qasa ERP → Store listings), one entry per package language. Keep it in step with the website and the release notes.",
+  "copyright": "© 2026 Meroxis",
+  "developedBy": "Meroxis",
+  "website": "https://qasaerp.com",
+  "privacyPolicy": "https://qasaerp.com/privacy/",
+  "additionalLicenseTerms": "Qasa ERP is free software under the GNU Affero General Public License v3.0 or later, with the additional terms in its NOTICE file (https://github.com/meroxis/qasa-erp). Terms of use: https://qasaerp.com/terms/",
+  "screenshots": {
+    "en-us": ["dashboard.png", "final-accounts.png", "stock-card.png", "users.png"],
+    "ar": ["dashboard-ar.png", "invoice-ar.png", "trial-balance-ar.png"],
+    "ku-arab": ["dashboard-ku.png", "invoice-ku.png", "voucher-ku.png"]
+  },
+  "listings": {
+    "en-us": {
+      "shortDescription": "Accounting for Iraqi companies on the Unified Accounting System: vouchers, invoices, stock, installments and reports in IQD and USD — in Arabic, English and Kurdish.",
+      "description": "Qasa ERP is accounting software for Iraqi companies, built on the Iraqi Unified Accounting System. Keep your books in Iraqi dinars and US dollars, in Arabic, English or Kurdish (Sorani).\n\n• The unified chart of accounts, ready in three languages; add your own sub-accounts under it.\n• Receipt and payment vouchers and journal entries with the Iraqi approval chain: preparer → checker → approver. A posted entry never changes; it can only be reversed.\n• Sales and purchase invoices, cash or credit, with discounts and the amount in words. Returns, and every invoice posts its own entry.\n• Stock in several warehouses at weighted average cost, opening stock and transfers.\n• Customers and suppliers with statements and credit limits.\n• Installment sales with guarantors: a schedule for each contract, collections, overdue aging and a printed contract with the guarantor's pledge (Pro).\n• Trial balance, account statements and the final accounts: trading, operations and profit and loss accounts, and the balance sheet.\n• Users with their own sign-in and roles; the office network for several PCs, daily encrypted backups and year-end closing (Pro); your books on your own MariaDB or MySQL server (Business).\n\nFree for one company on one PC, with no time limit. Pro and Business add a team, more warehouses and companies; licenses are sold at my.qasaerp.com. Your data stays on your computer, and the app works without internet.\n\nQasa ERP is open source: github.com/meroxis/qasa-erp",
+      "features": [
+        "Iraqi Unified Accounting System chart of accounts in Arabic, English and Kurdish",
+        "Iraqi dinars and US dollars, with the day's rate",
+        "Vouchers with preparer, checker and approver; posted entries never change",
+        "Sales and purchase invoices, returns, and the amount in words",
+        "Stock at weighted average cost in several warehouses",
+        "Installment sales with guarantors, collections and overdue aging",
+        "Trial balance, statements, final accounts and the balance sheet",
+        "Office network for several PCs, encrypted backups, year-end closing",
+        "Works without internet; your data stays on your PC"
+      ],
+      "searchTerms": ["accounting", "Iraq", "invoices", "installments", "ERP", "IQD", "bookkeeping"],
+      "releaseNotes": "Installment sales with guarantors: contracts from a credit sale, schedules, collections by receipt voucher, overdue aging and a printed contract with the guarantor's pledge. The company's books can also live on your own MariaDB or MySQL server (Business)."
+    },
+    "ar": {
+      "shortDescription": "برنامج محاسبة للشركات العراقية على النظام المحاسبي الموحد: سندات وفواتير ومخزن وتقسيط وتقارير بالدينار والدولار — بالعربية والإنجليزية والكردية.",
+      "description": "قاصة ERP برنامج محاسبة للشركات العراقية، مبني على النظام المحاسبي الموحد. سجّل حسابات شركتك بالدينار العراقي والدولار الأمريكي، بالعربية أو الإنجليزية أو الكردية (السورانية).\n\n• الدليل المحاسبي الموحد جاهز بثلاث لغات، وتضيف حساباتك الفرعية تحته.\n• سندات القبض والصرف والقيود بتسلسل المصادقة العراقي: المنظم ← المدقق ← المصادق. القيد المرحّل لا يتغير أبداً، ويُعكس فقط.\n• فواتير المبيعات والشراء نقداً أو آجلاً، مع الخصم والمبلغ كتابةً، والمردودات، وكل فاتورة تُرحّل قيدها تلقائياً.\n• المخزن بمتوسط الكلفة في عدة مخازن، مع بضاعة أول المدة والمناقلة.\n• الزبائن والمجهزون مع كشوف الحساب وحد الائتمان.\n• البيع بالتقسيط مع الكفيل: جدول أقساط لكل عقد، واستلام الأقساط، وأعمار المتأخر منها، وطباعة العقد مع تعهد الكفيل (Pro).\n• ميزان المراجعة وكشف الحساب والحسابات الختامية: المتاجرة والعمليات الجارية والأرباح والخسائر، والميزانية العمومية.\n• مستخدمون بدخول وصلاحيات لكل شخص، وشبكة المكتب لعدة حواسيب، ونسخ احتياطي مشفّر يومي، وإقفال السنة (Pro)، وقاعدة بيانات على خادم MariaDB أو MySQL خاص بك (Business).\n\nمجاني لشركة واحدة على حاسوب واحد ودون مدة. تضيف خطتا Pro وBusiness فريق العمل ومخازن وشركات أكثر، وتُشترى التراخيص من my.qasaerp.com. بياناتك تبقى على حاسوبك، والبرنامج يعمل دون إنترنت.\n\nقاصة ERP مفتوح المصدر: github.com/meroxis/qasa-erp",
+      "features": [
+        "الدليل المحاسبي الموحد العراقي بالعربية والإنجليزية والكردية",
+        "الدينار العراقي والدولار الأمريكي بسعر اليوم",
+        "سندات بتسلسل المنظم والمدقق والمصادق، والقيد المرحّل لا يتغير",
+        "فواتير المبيعات والشراء والمردودات والمبلغ كتابةً",
+        "المخزن بمتوسط الكلفة في عدة مخازن",
+        "البيع بالتقسيط مع الكفيل واستلام الأقساط وأعمار المتأخر",
+        "ميزان المراجعة وكشوف الحساب والحسابات الختامية والميزانية",
+        "شبكة المكتب لعدة حواسيب ونسخ احتياطي مشفّر وإقفال السنة",
+        "يعمل دون إنترنت وبياناتك تبقى على حاسوبك"
+      ],
+      "searchTerms": ["محاسبة", "حسابات", "فواتير", "تقسيط", "العراق", "مخزن", "ERP"],
+      "releaseNotes": "البيع بالتقسيط مع الكفيل: عقود من فواتير البيع الآجل، وجدول أقساط، واستلام الأقساط بسند قبض، وأعمار المتأخر، وطباعة العقد مع تعهد الكفيل. ويمكن أيضاً حفظ دفاتر الشركة على خادم MariaDB أو MySQL خاص بك (Business)."
+    },
+    "ku-arab": {
+      "shortDescription": "ژمێریاری بۆ کۆمپانیا عێراقییەکان بەپێی سیستەمی ژمێریاریی یەکگرتوو: سەنەد، پسوولە، کۆگا، قیست و ڕاپۆرت بە دینار و دۆلار — بە کوردی و عەرەبی و ئینگلیزی.",
+      "description": "قاسە ERP نەرمەکاڵای ژمێریارییە بۆ کۆمپانیا عێراقییەکان، لەسەر بنەمای سیستەمی ژمێریاریی یەکگرتووی عێراقی. ژمێریاریی کۆمپانیاکەت بە دیناری عێراقی و دۆلاری ئەمریکی بپارێزە، بە کوردی (سۆرانی)، عەرەبی یان ئینگلیزی.\n\n• ڕێبەری هەژماری یەکگرتوو بە سێ زمان ئامادەیە، و هەژمارە لاوەکییەکانی خۆتی لە ژێردا زیاد دەکەیت.\n• سەنەدی وەرگرتن و پارەدان و تۆمار بە زنجیرەی پەسەندکردنی عێراقی: ئامادەکەر ← پشکنەر ← پەسەندکەر. تۆماری پۆستکراو هەرگیز ناگۆڕدرێت، تەنها پێچەوانە دەکرێتەوە.\n• پسوولەی فرۆشتن و کڕین بە نەقد یان قەرز، لەگەڵ داشکاندن و بڕ بە نووسین، و گەڕاندنەوە، و هەر پسوولەیەک تۆماری خۆی دەکات.\n• کۆگا بە تێچووی مامناوەند لە چەند کۆگایەکدا، لەگەڵ کاڵای سەرەتای ماوە و گواستنەوە.\n• کڕیاران و دابینکەران لەگەڵ کەشفی هەژمار و سنووری قەرز.\n• فرۆشتن بە قیست لەگەڵ کەفیل: خشتەی قیست بۆ هەر گرێبەستێک، وەرگرتنی قیست، تەمەنی دواکەوتووەکان، و چاپی گرێبەست لەگەڵ بەڵێننامەی کەفیل (Pro).\n• تەرازووی پێداچوونەوە، کەشفی هەژمار و هەژمارە کۆتاییەکان: بازرگانی، کارە بەردەوامەکان، قازانج و زیان، و بودجەی گشتی.\n• بەکارهێنەران بە چوونەژوورەوە و ڕۆڵی خۆیان، تۆڕی نووسینگە بۆ چەند کۆمپیوتەرێک، باکئەپی ڕۆژانەی شفرکراو و داخستنی ساڵ (Pro)، و بنکەدراوە لەسەر سێرڤەری MariaDB یان MySQLـی خۆت (Business).\n\nبەخۆڕاییە بۆ یەک کۆمپانیا لەسەر یەک کۆمپیوتەر، بێ سنووری کات. Pro و Business تیمی کار و کۆگا و کۆمپانیای زیاتر زیاد دەکەن؛ مۆڵەتەکان لە my.qasaerp.com دەفرۆشرێن. داتاکانت لەسەر کۆمپیوتەرەکەت دەمێننەوە، و بەرنامەکە بەبێ ئینتەرنێت کار دەکات.\n\nقاسە ERP سەرچاوە-کراوەیە: github.com/meroxis/qasa-erp",
+      "features": [
+        "ڕێبەری هەژماری یەکگرتووی عێراقی بە کوردی و عەرەبی و ئینگلیزی",
+        "دیناری عێراقی و دۆلاری ئەمریکی بە نرخی ڕۆژ",
+        "سەنەد بە ئامادەکەر و پشکنەر و پەسەندکەر؛ تۆماری پۆستکراو ناگۆڕدرێت",
+        "پسوولەی فرۆشتن و کڕین، گەڕاندنەوە و بڕ بە نووسین",
+        "کۆگا بە تێچووی مامناوەند لە چەند کۆگایەکدا",
+        "فرۆشتن بە قیست لەگەڵ کەفیل، وەرگرتنی قیست و تەمەنی دواکەوتوو",
+        "تەرازووی پێداچوونەوە، کەشفی هەژمار، هەژمارە کۆتاییەکان و بودجە",
+        "تۆڕی نووسینگە، باکئەپی شفرکراو و داخستنی ساڵ",
+        "بەبێ ئینتەرنێت کار دەکات و داتاکانت لەسەر کۆمپیوتەرەکەت دەمێننەوە"
+      ],
+      "searchTerms": ["ژمێریاری", "پسوولە", "قیست", "کۆگا", "عێراق", "کوردستان", "ERP"],
+      "releaseNotes": "فرۆشتن بە قیست لەگەڵ کەفیل: گرێبەست لە پسوولەی فرۆشتنی قەرزی، خشتەی قیست، وەرگرتنی قیست بە سەنەدی وەرگرتن، تەمەنی دواکەوتووەکان و چاپی گرێبەست لەگەڵ بەڵێننامەی کەفیل. هەروەها دەتوانرێت دەفتەرەکانی کۆمپانیا لەسەر سێرڤەری MariaDB یان MySQLـی خۆت هەڵبگیرێت (Business)."
+    }
+  },
+  "certificationNotes": "Qasa ERP is an Electron desktop accounting app (full trust). unvirtualizedResources with desktop6:FileSystemWriteVirtualization disabled keeps the company's accounting database in %APPDATA%\\Qasa ERP instead of the package's private folder: uninstalling or reinstalling the Store app must never delete a company's books, and the same data is shared with the app installed from qasaerp.com. The app runs a local web server on 127.0.0.1 for its own window; the optional office network (Pro) listens on the local network with a self-signed certificate and pairing code. Licenses for paid plans are sold outside the Store at https://my.qasaerp.com. No sign-in is needed to test: the app opens on an empty company; a sample company can be tried in the browser demo at https://qasaerp.com/demo/."
+}
