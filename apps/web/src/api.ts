@@ -1,5 +1,5 @@
 import type {
-  LicenseInfo, LicenseState, PlanResolution,
+  Lang, LicenseInfo, LicenseState, PlanResolution,
   CurrencyCode, EntryAction, EntryStatus, EntryType, InvoiceDocKind, InvoiceInput, InvoiceKind, InvoiceStatus, Names, Nature, PaymentMode, PostingAccounts, UnitCode
 } from '@qasa/core';
 
@@ -263,6 +263,8 @@ export interface InvoiceView extends InvoiceSummary {
   actions: InvoiceAction[];
   returnOfNumber: string | null;
   returns: { id: string; kind: InvoiceDocKind; number: string | null; date: string; status: InvoiceStatus; total: number }[];
+  /** the installment contract that schedules this sale (Pro), while it is active */
+  installmentContract: { id: string; number: string } | null;
 }
 
 export type Role = 'admin' | 'preparer' | 'checker' | 'approver' | 'sales' | 'purchasing' | 'storekeeper' | 'viewer';
@@ -440,6 +442,48 @@ export type DatabaseCheck =
   | { step: 'needs_ca'; certificate: { subject: string; issuer: string } }
   | { step: 'ready'; server: { version: string; mariadb: boolean }; tls: DatabaseTls; state: 'empty' | 'company'; company: { name: string; entries: number; version: number } | null; inUse: boolean; broadAccount: boolean };
 
+/** Installment sales (Pro module). Missing (404) in builds without Pro. */
+export type ContractState = 'active' | 'overdue' | 'paid' | 'cancelled';
+export type InstallmentState = 'paid' | 'overdue' | 'due' | 'upcoming';
+export type Money2 = { IQD: number; USD: number };
+export interface ScheduleRowView { seq: number; dueDate: string; amount: number; paid: number; state: InstallmentState; daysLate: number }
+export interface GuarantorView {
+  id: string; name: string; phone: string; idNumber: string; address: string; workplace: string; notes: string;
+  contracts: number; exposure: Money2;
+}
+export interface GuarantorInput { name: string; phone?: string; idNumber?: string; address?: string; workplace?: string; notes?: string }
+export interface ContractSummaryView {
+  id: string; number: string; date: string; status: ContractState;
+  party: { id: string; code: string; name: string; phone: string };
+  guarantor: { id: string; name: string; phone: string } | null;
+  invoice: { id: string; number: string | null } | null;
+  description: string; currency: CurrencyCode; total: number; downPayment: number; months: number;
+  paid: number; remaining: number; overdue: number;
+  next: { seq: number; dueDate: string; amount: number; daysLate: number } | null;
+}
+export interface ContractView extends Omit<ContractSummaryView, 'party' | 'guarantor'> {
+  party: ContractSummaryView['party'] & { address: string; accountCode: string };
+  guarantor: GuarantorView | null;
+  notes: string; createdBy: string; createdAt: string; cancelledBy: string | null; cancelledAt: string | null;
+  schedule: ScheduleRowView[];
+  receipts: { entryId: string; number: string | null; date: string; amount: number; reversed: boolean; by: string }[];
+  actions: ('collect' | 'cancel' | 'edit')[];
+}
+export interface InstallmentTerms { date: string; firstDue: string; total: number; downPayment: number; months: number; currency: CurrencyCode }
+export interface ContractInput extends InstallmentTerms {
+  partyId: string; invoiceId?: string; description: string; guarantorId?: string; guarantor?: GuarantorInput; notes?: string;
+  downPaymentCashAccount?: string; rateX100?: number; lang: Lang;
+}
+export interface InstallmentsSummaryView {
+  available: boolean; active: number; outstanding: Money2;
+  dueThisWeek: { contracts: number; amount: Money2 }; overdue: { contracts: number; amount: Money2 }; collectedThisMonth: Money2;
+}
+export type AgingBucket = 'd30' | 'd60' | 'd90' | 'over90';
+export interface AgingView {
+  rows: { contract: Pick<ContractSummaryView, 'id' | 'number' | 'party' | 'guarantor' | 'currency'>; buckets: Record<AgingBucket, number>; total: number; oldestDays: number }[];
+  totals: Record<CurrencyCode, Record<AgingBucket, number>>;
+}
+
 /** Year-end closing: each fiscal year, newest first, with why it can't be closed yet. */
 export interface YearEndStatus {
   fiscalYearStart: string;
@@ -468,6 +512,20 @@ export const api = {
   /** by name from the list, by the token of a picked file, or (with neither) from a file chosen in Windows' file picker */
   restoreBackup: (req: { name?: string; pick?: string; password?: string } = {}) => request<{ restarting: boolean }>('POST', '/api/backup/restore', req),
   setBackupPassword: (password: string | null) => request<BackupStatus>('PUT', '/api/backup/password', { password }),
+  installmentsSummary: () => request<InstallmentsSummaryView>('GET', '/api/installments/summary'),
+  installments: (f: { status?: string; partyId?: string; q?: string } = {}) => request<ContractSummaryView[]>('GET', '/api/installments' + qs(f)),
+  installment: (id: string) => request<ContractView>('GET', `/api/installments/${id}`),
+  previewInstallments: (terms: InstallmentTerms) => request<{ seq: number; dueDate: string; amount: number }[]>('POST', '/api/installments/preview', terms),
+  createInstallment: (input: ContractInput) => request<ContractView>('POST', '/api/installments', input),
+  updateInstallment: (id: string, patch: { description?: string; guarantorId?: string | null; notes?: string }) => request<ContractView>('PUT', `/api/installments/${id}`, patch),
+  collectInstallment: (id: string, body: { date: string; amount: number; cashAccountCode: string; rateX100?: number; lang: Lang }) =>
+    request<ContractView>('POST', `/api/installments/${id}/collect`, body),
+  cancelInstallment: (id: string, reason: string) => request<ContractView>('POST', `/api/installments/${id}/cancel`, reason ? { reason } : {}),
+  installmentsAging: () => request<AgingView>('GET', '/api/installments/aging'),
+  guarantors: () => request<GuarantorView[]>('GET', '/api/guarantors'),
+  createGuarantor: (input: GuarantorInput) => request<GuarantorView>('POST', '/api/guarantors', input),
+  updateGuarantor: (id: string, input: GuarantorInput) => request<GuarantorView>('PUT', `/api/guarantors/${id}`, input),
+  deleteGuarantor: (id: string) => request<void>('DELETE', `/api/guarantors/${id}`),
   database: () => request<DatabaseStatus>('GET', '/api/database'),
   checkDatabase: (input: DatabaseInput) => request<DatabaseCheck>('POST', '/api/database/check', input),
   moveDatabase: (input: DatabaseInput, mode: 'copy' | 'use') => request<{ restarting: boolean }>('POST', '/api/database/move', { ...input, mode }),

@@ -47,6 +47,7 @@ export function createReturn(db: Db, originalId: string, input: ReturnInput, use
   if ((original.kind !== 'sale' && original.kind !== 'purchase') || original.status !== 'posted') {
     throw conflict('action_not_allowed', { status: original.status, action: 'return' });
   }
+  if (original.installmentContract) throw conflict('invoice_has_contract', { contract: original.installmentContract.number });
   const kind = returnKindOf(original.kind);
   const errors: { code: string; line?: number; period?: string; available?: number }[] = [];
   if (!isIsoDate(input.date)) errors.push({ code: 'date_invalid' });

@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { DatabaseSync } from 'node:sqlite';
 import { DEFAULT_POSTING_ACCOUNTS, IRAQI_UNIFIED_CHART, STARTER_SUB_ACCOUNTS } from '@qasa/core';
-import { MYSQL_TABLES, MYSQL_TRIGGERS, mysqlCollations, mysqlTableSql } from './schema-mysql.ts';
+import { MYSQL_TABLES, MYSQL_TRIGGERS, mysqlCollations, mysqlTableSql, type MysqlCollations } from './schema-mysql.ts';
 
 export type SqlParam = null | number | bigint | string | Uint8Array;
 export type SqlValue = null | number | bigint | string | Uint8Array;
@@ -30,8 +30,11 @@ interface Migration {
   sql: string;
   /** Rebuilds an existing table: runs with foreign keys off, then checks them. */
   rebuild?: boolean;
-  /** The same change on a MariaDB or MySQL server, one statement each (versions 1–5 are in schema-mysql.ts). */
-  mysql?: readonly string[];
+  /**
+   * The same change on a MariaDB or MySQL server (versions 1–5 are in schema-mysql.ts): 'tables' when it only adds the
+   * tables and triggers schema-mysql.ts marks `since` this version, else its own statements, one each.
+   */
+  mysql?: 'tables' | ((collations: MysqlCollations) => readonly string[]);
 }
 
 const V1 =
@@ -550,7 +553,91 @@ const V5 =
   BEGIN SELECT RAISE(ABORT, 'posted_entry_is_permanent'); END;
   `;
 
-const MIGRATIONS: Migration[] = [{ sql: V1 }, { sql: V2, rebuild: true }, { sql: V3, rebuild: true }, { sql: V4 }, { sql: V5, rebuild: true }];
+const V6 =
+  // 6 — installment sales (البيع بالتقسيط): contracts with their schedule and collections, and guarantors (الكفلاء)
+  `
+  CREATE TABLE guarantors (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    phone TEXT,
+    -- the national ID card number (رقم البطاقة الوطنية), as the pledge shows it
+    id_number TEXT,
+    address TEXT,
+    -- where the guarantor works (جهة العمل)
+    workplace TEXT,
+    notes TEXT,
+    created_at TEXT NOT NULL
+  );
+
+  -- a contract schedules what a customer owes: a posted credit sale (invoice_id), or a balance from before Qasa ERP
+  CREATE TABLE installment_contracts (
+    id TEXT PRIMARY KEY,
+    number TEXT NOT NULL UNIQUE,
+    status TEXT NOT NULL CHECK (status IN ('active', 'cancelled')),
+    date TEXT NOT NULL,
+    party_id TEXT NOT NULL REFERENCES parties(id),
+    guarantor_id TEXT REFERENCES guarantors(id),
+    invoice_id TEXT REFERENCES invoices(id),
+    description TEXT NOT NULL,
+    currency TEXT NOT NULL CHECK (currency IN ('IQD', 'USD')),
+    total INTEGER NOT NULL CHECK (total > 0),
+    down_payment INTEGER NOT NULL DEFAULT 0,
+    months INTEGER NOT NULL CHECK (months BETWEEN 1 AND 120),
+    notes TEXT,
+    created_by TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    cancelled_by TEXT,
+    cancelled_at TEXT,
+    updated_at TEXT NOT NULL,
+    CHECK (down_payment >= 0 AND down_payment < total)
+  );
+  CREATE INDEX installment_contracts_party ON installment_contracts(party_id);
+  CREATE INDEX installment_contracts_invoice ON installment_contracts(invoice_id);
+
+  -- seq 0 is the down payment, then one row a month
+  CREATE TABLE installment_schedule (
+    contract_id TEXT NOT NULL REFERENCES installment_contracts(id),
+    seq INTEGER NOT NULL CHECK (seq >= 0),
+    due_date TEXT NOT NULL,
+    amount INTEGER NOT NULL CHECK (amount > 0),
+    PRIMARY KEY (contract_id, seq)
+  );
+
+  -- the receipt vouchers that collected a contract's installments (in the contract's currency)
+  CREATE TABLE installment_receipts (
+    contract_id TEXT NOT NULL REFERENCES installment_contracts(id),
+    entry_id TEXT NOT NULL UNIQUE REFERENCES entries(id),
+    amount INTEGER NOT NULL CHECK (amount > 0),
+    created_at TEXT NOT NULL,
+    PRIMARY KEY (contract_id, entry_id)
+  );
+
+  -- a contract's terms, schedule and collections never change; a contract can only be cancelled (its collections stay)
+  CREATE TRIGGER installment_contracts_no_delete BEFORE DELETE ON installment_contracts
+  BEGIN SELECT RAISE(ABORT, 'installment_contract_is_permanent'); END;
+  CREATE TRIGGER installment_contracts_no_edit BEFORE UPDATE ON installment_contracts
+  WHEN OLD.status = 'cancelled' OR NEW.number IS NOT OLD.number OR NEW.date IS NOT OLD.date OR NEW.party_id IS NOT OLD.party_id OR
+    NEW.invoice_id IS NOT OLD.invoice_id OR NEW.currency IS NOT OLD.currency OR NEW.total IS NOT OLD.total OR
+    NEW.down_payment IS NOT OLD.down_payment OR NEW.months IS NOT OLD.months OR NEW.created_by IS NOT OLD.created_by OR
+    NEW.created_at IS NOT OLD.created_at
+  BEGIN SELECT RAISE(ABORT, 'installment_contract_is_permanent'); END;
+  CREATE TRIGGER installment_schedule_no_update BEFORE UPDATE ON installment_schedule
+  BEGIN SELECT RAISE(ABORT, 'installment_contract_is_permanent'); END;
+  CREATE TRIGGER installment_schedule_no_delete BEFORE DELETE ON installment_schedule
+  BEGIN SELECT RAISE(ABORT, 'installment_contract_is_permanent'); END;
+  CREATE TRIGGER installment_receipts_no_update BEFORE UPDATE ON installment_receipts
+  BEGIN SELECT RAISE(ABORT, 'installment_contract_is_permanent'); END;
+  CREATE TRIGGER installment_receipts_no_delete BEFORE DELETE ON installment_receipts
+  BEGIN SELECT RAISE(ABORT, 'installment_contract_is_permanent'); END;
+  `;
+
+const MIGRATIONS: Migration[] = [
+  { sql: V1 }, { sql: V2, rebuild: true }, { sql: V3, rebuild: true }, { sql: V4 }, { sql: V5, rebuild: true },
+  { sql: V6, mysql: 'tables' }
+];
+
+/** Server databases began at this version: its schema is in schema-mysql.ts (tables and triggers without `since`). */
+const MYSQL_BASE_VERSION = 5;
 
 /** The schema version this build writes. */
 export const SCHEMA_VERSION = MIGRATIONS.length;
@@ -629,11 +716,19 @@ function migrateMysql(db: Db, options: { triggers?: boolean } = {}): void {
     db.prepare('INSERT INTO schema_version (version) VALUES (?)').run(MIGRATIONS.length);
     return;
   }
+  if (version < MYSQL_BASE_VERSION) throw new Error(`A server database can't be at version ${version}`);
+  const collations = mysqlCollations(String((db.prepare('SELECT VERSION() AS v').get() as { v: string }).v));
   while (version < MIGRATIONS.length) {
-    const steps = MIGRATIONS[version]!.mysql;
-    if (!steps) throw new Error(`Migration ${version + 1} has no MariaDB/MySQL version`);
-    for (const step of steps) db.exec(step);
-    version += 1;
+    const next = version + 1;
+    const mysql = MIGRATIONS[version]!.mysql;
+    if (!mysql) throw new Error(`Migration ${next} has no MariaDB/MySQL version`);
+    if (mysql === 'tables') {
+      for (const table of MYSQL_TABLES.filter((t) => t.since === next)) db.exec(mysqlTableSql(table.sql, collations));
+      for (const trigger of MYSQL_TRIGGERS.filter((t) => t.since === next)) db.exec(trigger.sql);
+    } else {
+      for (const step of mysql(collations)) db.exec(step);
+    }
+    version = next;
     db.prepare('UPDATE schema_version SET version = ?').run(version);
   }
 }

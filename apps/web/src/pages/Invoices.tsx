@@ -370,10 +370,22 @@ export function InvoiceDetail({ id }: { id: string }) {
         )}
         {v.actions.includes('return') && <button type="button" className="btn" disabled={busy} onClick={() => setReturning(true)}><Icon name="undo" size={16} />{t('actReturnItems')}</button>}
         {v.actions.includes('cancel') && <button type="button" className="btn danger" disabled={busy} onClick={() => setCancelling(true)}><Icon name="undo" size={16} />{t('actCancelInvoice')}</button>}
+        {v.kind === 'sale' && v.status === 'posted' && v.payment === 'credit' && !v.installmentContract && plan?.features.includes('installments') && (
+          <a className="btn" href={href(`new-installment/${v.id}`)}><Icon name="cal" size={16} />{t('makeContract')}</a>
+        )}
         <button type="button" className="btn" onClick={() => window.print()}><Icon name="printer" size={16} />{t('print')}</button>
       </div>
       <ErrorBox error={cancelling ? null : actionError} />
       {v.status === 'posted' && <div className="alert info no-print">{t('invoicePostedNote')}</div>}
+      {v.installmentContract && (
+        <div className="alert warn no-print">
+          {(() => {
+            // the contract number in the sentence is the link to it
+            const [before, after] = t('invoiceUnderContract', { n: '\u0000' }).split('\u0000');
+            return <>{before}<a className="ltr" href={href(`installment/${v.installmentContract.id}`)}>{v.installmentContract.number}</a>{after}</>;
+          })()}
+        </div>
+      )}
       {v.status === 'posted' && !isRet && v.returns.some((r) => r.status === 'posted') && <div className="alert warn no-print">{t('hasReturnsNote')}</div>}
 
       <div className="paper invoice">

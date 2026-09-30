@@ -228,14 +228,24 @@ export interface Route {
 export function errorResponse(error: unknown): { status: number; body: { error: string; details: unknown } } {
   if (error instanceof AppError) return { status: error.status, body: { error: error.code, details: error.details ?? null } };
   const message = error instanceof Error ? error.message : String(error);
-  for (const code of ['posted_entry_is_permanent', 'posted_invoice_is_permanent', 'posted_document_is_permanent', 'stock_moves_are_permanent']) {
+  for (const code of ['posted_entry_is_permanent', 'posted_invoice_is_permanent', 'posted_document_is_permanent', 'stock_moves_are_permanent', 'installment_contract_is_permanent']) {
     if (message.includes(code)) return { status: 409, body: { error: code, details: null } };
   }
   return { status: 500, body: { error: 'internal', details: null } };
 }
 
+/**
+ * Routes a module adds to the API (the Pro module's installments …). They are served next to the app's own, on this
+ * PC and on the office network, behind the same sign-in, permission and same-site checks: `rules` says which
+ * permission each change needs ("POST /api/…": 'sales'); a change not listed needs an admin, as the app's own do.
+ */
+export interface ApiExtension {
+  rules?: Record<string, Permission | null>;
+  routes(db: Db, helpers: { actorOf(req: ApiRequest): Actor }): Route[];
+}
+
 /** Every API route. Fastify serves them on the PC and network editions; the demo website runs them in the browser. */
-export function apiRoutes(db: Db, options: { demo?: boolean } = {}): Route[] {
+export function apiRoutes(db: Db, options: { demo?: boolean; extensions?: readonly ApiExtension[] } = {}): Route[] {
   const routes: Route[] = [];
 
   function authenticate(req: ApiRequest): Actor | null {
@@ -270,6 +280,7 @@ export function apiRoutes(db: Db, options: { demo?: boolean } = {}): Route[] {
     'POST /api/stock-docs/:id/post': 'stock', 'POST /api/stock-docs/:id/cancel': 'stock',
     'GET /api/audit': 'admin', 'GET /api/users': 'admin'
   };
+  for (const extension of options.extensions ?? []) Object.assign(RULES, extension.rules ?? {});
   const PUBLIC = new Set(['GET /api/health', 'GET /api/auth/me', 'POST /api/auth/login', 'POST /api/auth/logout']);
 
   /** Hides the buttons a user may not use: the server refuses those actions anyway. */
@@ -561,6 +572,13 @@ export function apiRoutes(db: Db, options: { demo?: boolean } = {}): Route[] {
     const q = parse(z.object({ limit: z.coerce.number().int().min(1).max(1000).optional() }), req.query);
     return listAudit(db, q.limit ?? 200);
   });
+
+  // the modules' routes, behind the same checks as the app's own (not in the website demo)
+  if (!options.demo) {
+    for (const extension of options.extensions ?? []) {
+      for (const route of extension.routes(db, { actorOf })) add(route.method)(route.path, route.handler);
+    }
+  }
 
   return routes;
 }

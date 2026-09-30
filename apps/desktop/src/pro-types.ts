@@ -1,5 +1,5 @@
 import type { FastifyInstance } from 'fastify';
-import type { Db } from '@qasa/server';
+import type { ApiExtension, Db } from '@qasa/server';
 
 /**
  * The Pro module (office network and other paid features) is developed separately and included only in the
@@ -8,6 +8,8 @@ import type { Db } from '@qasa/server';
 export interface ProModule {
   name: string;
   version: string;
+  /** API routes of its own, served with the app's (and on the office network), behind the same checks. */
+  apiExtensions?: readonly ApiExtension[];
   /** Called before the app's own server starts listening: the only moment it can take more routes. */
   register?(ctx: ProContext): void;
   /** Called once the app's own server is running. */

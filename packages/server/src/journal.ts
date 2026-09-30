@@ -141,6 +141,21 @@ function assertNotPreparer(db: Db, row: EntryRow, actorId: string | null | undef
   if (actorId && row.prepared_by_id === actorId && readSetting(db, 'separate_duties') === '1') throw conflict('same_person');
 }
 
+/**
+ * A receipt or payment that a document makes (an installment collected): checked like any voucher, then numbered and
+ * approved at once by whoever made it, as invoices post their entries. Call inside a transaction.
+ */
+export function postVoucherNow(db: Db, v: VoucherInput, actor: { id: string | null; name: string }): string {
+  const entry = assertValidVoucher(db, v);
+  const id = insertEntry(db, entry, actor.name, v.cashAccountCode);
+  const now = new Date().toISOString();
+  db.prepare(`UPDATE entries SET status = 'approved', number = ?, prepared_by_id = ?, checked_by = ?, checked_at = ?, checked_by_id = ?,
+              approved_by = ?, approved_at = ?, updated_at = ? WHERE id = ?`)
+    .run(nextNumber(db, entry.type, entry.date), actor.id, actor.name, now, actor.id, actor.name, now, now, id);
+  audit(db, actor.name, 'post', 'entry', id, { type: entry.type });
+  return id;
+}
+
 export function createJournalEntry(db: Db, input: Omit<EntryInput, 'type'>, user: string, actorId?: string | null): EntryView {
   const entry: EntryInput = { ...input, type: 'journal' };
   assertValid(db, entry);

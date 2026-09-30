@@ -22,7 +22,7 @@ const ROWS: Row[] = [
   { label: 'f_network', cells: [false, true, true] },
   { label: 'f_companies', cells: [{ limit: free.limits.companies }, { limit: pro.limits.companies }, { limit: business.limits.companies }], soon: true },
   { label: 'f_roles', cells: ['v_onePerson', true, true] },
-  { label: 'f_installments', cells: [false, true, true], soon: true },
+  { label: 'f_installments', cells: [false, true, true] },
   { label: 'f_payroll', cells: [false, true, true], soon: true },
   { label: 'f_finalAccounts', cells: ['v_viewOnScreen', 'v_printExcel', 'v_printExcel'] },
   { label: 'f_yearEnd', cells: [false, true, true] },

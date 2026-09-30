@@ -195,7 +195,7 @@ async function restartWith(options: RestartOptions = {}): Promise<void> {
 async function startServer(): Promise<string> {
   mkdirSync(dataDir(), { recursive: true });
   db = await openCompanyDatabase();
-  server = buildApp(db);
+  server = buildApp(db, { extensions: proModule?.apiExtensions ?? [] });
 
   server.addHook('onRequest', async (req, reply) => {
     const cookies = (req.headers.cookie ?? '').split(';').map((c) => c.trim());

@@ -18,6 +18,7 @@ import { Plans } from './pages/Plans.tsx';
 import { FinalAccounts } from './pages/FinalAccounts.tsx';
 import { StockDocDetail, StockDocEditor, StockDocs } from './pages/StockDocs.tsx';
 import { PasswordModal, SignIn, Users } from './pages/Users.tsx';
+import { Guarantors, InstallmentDetail, InstallmentEditor, Installments, InstallmentsAging } from './pages/Installments.tsx';
 
 function stored<T extends string>(key: string, fallback: T, valid: (v: string) => boolean): T {
   try {
@@ -41,7 +42,7 @@ const NAV: { group: Key; items: NavItem[] }[] = [
       { key: 'invoices', icon: 'invoice', path: 'sales', match: ['sales', 'new-invoice:sale'] },
       { key: 'customers', icon: 'contact', path: 'customers', match: ['customers'] },
       { key: 'salesReturns', icon: 'undo', path: 'sales-returns', match: ['sales-returns'] },
-      { key: 'installments', icon: 'cal' },
+      { key: 'installments', icon: 'cal', path: 'installments', match: ['installments', 'installment', 'new-installment', 'guarantors', 'installments-aging'] },
       { key: 'pipeline', icon: 'trend' }
     ]
   },
@@ -244,6 +245,26 @@ export function App() {
     case 'stock-doc':
       title = t('stockDocs');
       content = arg ? <StockDocDetail key={arg} id={arg} /> : null;
+      break;
+    case 'installments':
+      title = t('installments');
+      content = <Installments />;
+      break;
+    case 'installment':
+      title = t('installments');
+      content = arg ? <InstallmentDetail key={arg} id={arg} /> : null;
+      break;
+    case 'new-installment':
+      title = t('insNew');
+      content = <InstallmentEditor key={'new-' + (arg ?? '')} {...(arg ? { invoiceId: arg } : {})} />;
+      break;
+    case 'guarantors':
+      title = t('guarantors');
+      content = <Guarantors />;
+      break;
+    case 'installments-aging':
+      title = t('aging');
+      content = <InstallmentsAging />;
       break;
     case 'customers':
       title = t('customers');

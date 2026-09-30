@@ -198,6 +198,11 @@ server: **Settings → Company database → Move the company to a database serve
   a purchase whose goods were already sold can't be cancelled.
 - A sale can't take more than the warehouse holds, and a credit sale can't pass the customer's credit limit.
 - Each warehouse has its own inventory account, so its stock value always equals its ledger balance.
+- An installment contract (INS-) schedules a posted credit sale: the invoice is the sale at the installment price, so the
+  contract posts nothing itself. Each collection is a receipt voucher (Dr the safe, Cr the customer), posted at once and
+  counted against the oldest installments; reversing it takes the payment back. The terms, the schedule and the
+  collections can't be edited, only the contract cancelled, and a sale under an active contract can't be cancelled or
+  returned. Monthly amounts are round (whole thousands of dinars or whole dollars), the last one taking the rest.
 
 ## Release 1 progress
 
@@ -207,7 +212,8 @@ server: **Settings → Company database → Move the company to a database serve
 - [x] Trial balance and account statement (print + Excel export)
 - [x] Sales & purchase invoices, customers & suppliers (with statements), items, warehouses, weighted-average stock
 - [x] Opening stock, sales and purchase returns, stock transfers between warehouses
-- [ ] Installment sales and sales pipeline
+- [x] Installment sales (Pro): contracts from a credit sale or an earlier balance, guarantors, schedule, collection by receipt voucher, overdue aging, printed contract with the guarantor's pledge
+- [ ] Sales pipeline
 - [ ] HR, salaries and employee advances
 - [x] Final accounts: trading, current operations and profit and loss accounts, and the balance sheet (unified-system layout, to be reviewed by a licensed accountant)
 - [x] Year-end closing: a closing entry moves revenue and expenses into the accumulated result (229) and locks the year; reopen by reversal
@@ -236,7 +242,8 @@ growing company needs, and the app shows the full comparison under **Plan & lice
 | Daily backups to a folder of your choice (OneDrive, Google Drive, USB) | | ✓ | ✓ |
 | Year-end closing (closing entry, locked months, reopen by reversal) | | ✓ | ✓ |
 | Company database on your own MariaDB or MySQL server | | | ✓ |
-| Installments, payroll | | coming soon | coming soon |
+| Installment sales with guarantors | | ✓ | ✓ |
+| Payroll | | coming soon | coming soon |
 | Online edition, branches | | | coming soon |
 
 Some Pro features are still being built; the app marks them as coming soon. A plan never locks anyone out of their

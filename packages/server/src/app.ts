@@ -1,9 +1,12 @@
 import Fastify, { type FastifyInstance } from 'fastify';
 import type { Db } from './db.ts';
-import { ApiReply, apiRoutes, errorResponse, type ApiRequest } from './routes.ts';
+import { ApiReply, apiRoutes, errorResponse, type ApiExtension, type ApiRequest } from './routes.ts';
 
-/** https: the office network serves the same app over TLS with its own certificate (the Pro module). */
-export function buildApp(db: Db, options: { https?: { key: string; cert: string } } = {}): FastifyInstance {
+/**
+ * https: the office network serves the same app over TLS with its own certificate (the Pro module).
+ * extensions: routes a module adds (the Pro module's), served with the app's own.
+ */
+export function buildApp(db: Db, options: { https?: { key: string; cert: string }; extensions?: readonly ApiExtension[] } = {}): FastifyInstance {
   const app = (options.https ? Fastify({ logger: false, https: options.https }) : Fastify({ logger: false })) as unknown as FastifyInstance;
 
   app.setErrorHandler((error, _req, reply) => {
@@ -16,7 +19,7 @@ export function buildApp(db: Db, options: { https?: { key: string; cert: string 
     return reply.status(response.status).send(response.body);
   });
 
-  for (const route of apiRoutes(db)) {
+  for (const route of apiRoutes(db, { extensions: options.extensions ?? [] })) {
     app.route({
       method: route.method,
       url: route.path,

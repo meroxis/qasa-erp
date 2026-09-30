@@ -96,6 +96,8 @@ export interface InvoiceView extends InvoiceSummary {
   returnOfNumber: string | null;
   /** Returns made from this invoice. */
   returns: { id: string; kind: InvoiceDocKind; number: string | null; date: string; status: InvoiceStatus; total: number }[];
+  /** The installment contract that schedules this sale (Pro), while it is active. */
+  installmentContract: { id: string; number: string } | null;
 }
 
 interface InvoiceRow {
@@ -121,10 +123,17 @@ export function returnedByLine(db: Db, originalId: string): Map<number, { qtyMil
   return new Map(rows.map((r) => [r.source_line, { qtyMilli: r.qty, amount: r.amount, discount: r.discount, cost: r.cost }]));
 }
 
+/** The active installment contract that schedules a sale; while there is one, the sale is neither cancelled nor returned. */
+export function activeContractOf(db: Db, invoiceId: string): { id: string; number: string } | null {
+  return (db.prepare("SELECT id, number FROM installment_contracts WHERE invoice_id = ? AND status = 'active'").get(invoiceId) as
+    { id: string; number: string } | undefined) ?? null;
+}
+
 function actionsFor(db: Db, row: Pick<InvoiceRow, 'id' | 'kind' | 'status'>, anyLeftToReturn = false): InvoiceAction[] {
   if (row.status === 'draft') return ['edit', 'delete', 'post'];
   if (row.status !== 'posted') return [];
   if (isReturn(row.kind)) return ['cancel'];
+  if (activeContractOf(db, row.id)) return [];
   // an invoice with returns is cancelled only after its returns are
   const actions: InvoiceAction[] = hasPostedReturns(db, row.id) ? [] : ['cancel'];
   if (anyLeftToReturn) actions.push('return');
@@ -176,7 +185,8 @@ export function getInvoice(db: Db, id: string): InvoiceView {
     postedBy: r.posted_by, postedAt: r.posted_at, cancelledBy: r.cancelled_by, cancelledAt: r.cancelled_at,
     lines: lineViews, actions: actionsFor(db, r, lineViews.some((l) => l.returnedQtyMilli < l.qtyMilli)),
     returnOfNumber: r.return_of ? (db.prepare('SELECT number FROM invoices WHERE id = ?').get(r.return_of) as { number: string | null }).number : null,
-    returns
+    returns,
+    installmentContract: activeContractOf(db, id)
   };
 }
 
@@ -399,6 +409,7 @@ export function postInvoice(db: Db, id: string, user: string): InvoiceView {
  */
 export function cancelInvoice(db: Db, id: string, user: string, date?: string): InvoiceView {
   const view = getInvoice(db, id);
+  if (view.installmentContract) throw conflict('invoice_has_contract', { contract: view.installmentContract.number });
   requireAction(db, loadRow(db, id), 'cancel');
   const cancelDate = date ?? todayIso();
   // cancelling a sale or a purchase return puts the goods back; a purchase or a sales return takes them out again

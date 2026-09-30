@@ -1,8 +1,9 @@
 /**
  * The company database on a MariaDB or MySQL server: the same tables, columns and rules as the SQLite schema in
- * db.ts, at schema version 5. The SQLite schema grew by migrations; a server database starts at the current version,
- * and each later migration in db.ts brings its own server SQL (`mysql`). schema.test.ts checks that both keep the
- * same tables, columns and triggers.
+ * db.ts, at the current schema version. The SQLite schema grew by migrations; a server database starts at the current
+ * version. A table or trigger added later says since which version (`since`), so a server database at an older
+ * version gets just those (a migration's `mysql: 'tables'`); other changes bring their own server SQL. schema.test.ts
+ * checks that both keep the same tables, columns and triggers.
  *
  * Differences from SQLite, each keeping SQLite's behaviour:
  * - text is compared byte for byte (a binary, no-pad collation), as SQLite does; user names ignore case (NOCASE);
@@ -26,7 +27,10 @@ export function mysqlCollations(serverVersion: string): MysqlCollations {
 }
 
 /** The tables in an order where each one's foreign keys point at tables made before it. */
-export const MYSQL_TABLES: readonly { name: string; sql: string }[] = [
+/** Tables and triggers without `since` are those of version 5, when server databases began. */
+export interface MysqlObject { name: string; sql: string; since?: number }
+
+export const MYSQL_TABLES: readonly MysqlObject[] = [
   {
     name: 'settings',
     sql: `CREATE TABLE settings (
@@ -320,12 +324,82 @@ export const MYSQL_TABLES: readonly { name: string; sql: string }[] = [
       FOREIGN KEY (doc_id) REFERENCES stock_docs(id) ON DELETE CASCADE,
       FOREIGN KEY (item_id) REFERENCES items(id)
     )`
+  },
+  {
+    name: 'guarantors',
+    since: 6,
+    sql: `CREATE TABLE guarantors (
+      id ${ID} NOT NULL PRIMARY KEY,
+      name TEXT NOT NULL,
+      phone TEXT,
+      id_number TEXT,
+      address TEXT,
+      workplace TEXT,
+      notes TEXT,
+      created_at ${WHEN} NOT NULL
+    )`
+  },
+  {
+    name: 'installment_contracts',
+    since: 6,
+    sql: `CREATE TABLE installment_contracts (
+      id ${ID} NOT NULL PRIMARY KEY,
+      number ${ID} NOT NULL UNIQUE,
+      status ${WORD} NOT NULL CHECK (status IN ('active', 'cancelled')),
+      date ${WHEN} NOT NULL,
+      party_id ${ID} NOT NULL,
+      guarantor_id ${ID},
+      invoice_id ${ID},
+      description TEXT NOT NULL,
+      currency ${WORD} NOT NULL CHECK (currency IN ('IQD', 'USD')),
+      total BIGINT NOT NULL CHECK (total > 0),
+      down_payment BIGINT NOT NULL DEFAULT 0,
+      months INT NOT NULL CHECK (months BETWEEN 1 AND 120),
+      notes TEXT,
+      created_by TEXT NOT NULL,
+      created_at ${WHEN} NOT NULL,
+      cancelled_by TEXT,
+      cancelled_at ${WHEN},
+      updated_at ${WHEN} NOT NULL,
+      CHECK (down_payment >= 0 AND down_payment < total),
+      INDEX installment_contracts_party (party_id),
+      INDEX installment_contracts_invoice (invoice_id),
+      FOREIGN KEY (party_id) REFERENCES parties(id),
+      FOREIGN KEY (guarantor_id) REFERENCES guarantors(id),
+      FOREIGN KEY (invoice_id) REFERENCES invoices(id)
+    )`
+  },
+  {
+    name: 'installment_schedule',
+    since: 6,
+    sql: `CREATE TABLE installment_schedule (
+      contract_id ${ID} NOT NULL,
+      seq INT NOT NULL CHECK (seq >= 0),
+      due_date ${WHEN} NOT NULL,
+      amount BIGINT NOT NULL CHECK (amount > 0),
+      PRIMARY KEY (contract_id, seq),
+      FOREIGN KEY (contract_id) REFERENCES installment_contracts(id)
+    )`
+  },
+  {
+    name: 'installment_receipts',
+    since: 6,
+    sql: `CREATE TABLE installment_receipts (
+      contract_id ${ID} NOT NULL,
+      entry_id ${ID} NOT NULL UNIQUE,
+      amount BIGINT NOT NULL CHECK (amount > 0),
+      created_at ${WHEN} NOT NULL,
+      PRIMARY KEY (contract_id, entry_id),
+      FOREIGN KEY (contract_id) REFERENCES installment_contracts(id),
+      FOREIGN KEY (entry_id) REFERENCES entries(id)
+    )`
   }
 ];
 
 const refuse = (message: string) => `SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = '${message}'`;
-const trigger = (name: string, timing: string, table: string, condition: string | null, message: string) => ({
+const trigger = (name: string, timing: string, table: string, condition: string | null, message: string, since?: number): MysqlObject => ({
   name,
+  ...(since ? { since } : {}),
   sql: `CREATE TRIGGER ${name} ${timing} ON ${table} FOR EACH ROW ` +
     (condition ? `BEGIN IF ${condition} THEN ${refuse(message)}; END IF; END` : `BEGIN ${refuse(message)}; END`)
 });
@@ -333,7 +407,7 @@ const trigger = (name: string, timing: string, table: string, condition: string 
 const changed = (...columns: string[]) => columns.map((c) => `NOT (NEW.${c} <=> OLD.${c})`).join(' OR ');
 
 /** The rules the database itself enforces: posted vouchers, invoices, stock documents and moves, and the audit log never change. */
-export const MYSQL_TRIGGERS: readonly { name: string; sql: string }[] = [
+export const MYSQL_TRIGGERS: readonly MysqlObject[] = [
   trigger('posted_lines_no_insert', 'BEFORE INSERT', 'entry_lines', `(SELECT status FROM entries WHERE id = NEW.entry_id) = 'approved'`, 'posted_entry_is_permanent'),
   trigger('posted_lines_no_update', 'BEFORE UPDATE', 'entry_lines', `(SELECT status FROM entries WHERE id = OLD.entry_id) = 'approved'`, 'posted_entry_is_permanent'),
   trigger('posted_lines_no_delete', 'BEFORE DELETE', 'entry_lines', `(SELECT status FROM entries WHERE id = OLD.entry_id) = 'approved'`, 'posted_entry_is_permanent'),
@@ -360,7 +434,16 @@ export const MYSQL_TRIGGERS: readonly { name: string; sql: string }[] = [
   trigger('posted_stock_docs_no_delete', 'BEFORE DELETE', 'stock_docs', `OLD.status <> 'draft'`, 'posted_document_is_permanent'),
   trigger('posted_stock_docs_no_edit', 'BEFORE UPDATE', 'stock_docs',
     `OLD.status = 'cancelled' OR (OLD.status = 'posted' AND (${changed('number', 'date', 'warehouse_id', 'to_warehouse_id', 'counter_account', 'total_value', 'entry_id')} OR NEW.status NOT IN ('posted', 'cancelled')))`,
-    'posted_document_is_permanent')
+    'posted_document_is_permanent'),
+  // 6: a contract's terms, schedule and collections never change; a contract can only be cancelled (its collections stay)
+  trigger('installment_contracts_no_delete', 'BEFORE DELETE', 'installment_contracts', null, 'installment_contract_is_permanent', 6),
+  trigger('installment_contracts_no_edit', 'BEFORE UPDATE', 'installment_contracts',
+    `OLD.status = 'cancelled' OR ${changed('number', 'date', 'party_id', 'invoice_id', 'currency', 'total', 'down_payment', 'months', 'created_by', 'created_at')}`,
+    'installment_contract_is_permanent', 6),
+  trigger('installment_schedule_no_update', 'BEFORE UPDATE', 'installment_schedule', null, 'installment_contract_is_permanent', 6),
+  trigger('installment_schedule_no_delete', 'BEFORE DELETE', 'installment_schedule', null, 'installment_contract_is_permanent', 6),
+  trigger('installment_receipts_no_update', 'BEFORE UPDATE', 'installment_receipts', null, 'installment_contract_is_permanent', 6),
+  trigger('installment_receipts_no_delete', 'BEFORE DELETE', 'installment_receipts', null, 'installment_contract_is_permanent', 6)
 ];
 
 /** A table's columns as its CREATE statement lists them, with the primary key's. */
