@@ -195,36 +195,38 @@ function requireAction(row: EntryRow, action: EntryAction): void {
 }
 
 /** Replaces a draft journal entry. */
-export function updateJournalEntry(db: Db, id: string, input: Omit<EntryInput, 'type'>, user: string): EntryView {
+export function updateJournalEntry(db: Db, id: string, input: Omit<EntryInput, 'type'>, user: string, actorId?: string | null): EntryView {
   const row = loadRow(db, id);
   if (row.type !== 'journal') throw conflict('wrong_entry_type');
   requireAction(row, 'edit');
   const entry: EntryInput = { ...input, type: 'journal' };
   assertValid(db, entry);
   transaction(db, () => {
-    replaceDraft(db, id, entry, null);
+    replaceDraft(db, id, entry, null, user, actorId);
     audit(db, user, 'update', 'entry', id);
   });
   return getEntry(db, id);
 }
 
 /** Replaces a draft receipt/payment voucher. */
-export function updateVoucher(db: Db, id: string, v: VoucherInput, user: string): EntryView {
+export function updateVoucher(db: Db, id: string, v: VoucherInput, user: string, actorId?: string | null): EntryView {
   const row = loadRow(db, id);
   if (row.type !== v.kind) throw conflict('wrong_entry_type');
   requireAction(row, 'edit');
   const entry = assertValidVoucher(db, v);
   transaction(db, () => {
-    replaceDraft(db, id, entry, v.cashAccountCode);
+    replaceDraft(db, id, entry, v.cashAccountCode, user, actorId);
     audit(db, user, 'update', 'entry', id);
   });
   return getEntry(db, id);
 }
 
-function replaceDraft(db: Db, id: string, entry: EntryInput, cashAccountCode: string | null): void {
-  db.prepare('UPDATE entries SET date = ?, description = ?, party = ?, currency = ?, rate_x100 = ?, cash_account = ?, updated_at = ? WHERE id = ?')
+function replaceDraft(db: Db, id: string, entry: EntryInput, cashAccountCode: string | null, user: string, actorId?: string | null): void {
+  const now = new Date().toISOString();
+  // The editor is responsible for the current draft; earlier preparation stays in the audit trail.
+  db.prepare('UPDATE entries SET date = ?, description = ?, party = ?, currency = ?, rate_x100 = ?, cash_account = ?, prepared_by = ?, prepared_by_id = ?, prepared_at = ?, updated_at = ? WHERE id = ?')
     .run(entry.date, entry.description.trim(), entry.party?.trim() || null, entry.currency, entry.currency === 'IQD' ? 100 : entry.rateX100,
-      cashAccountCode, new Date().toISOString(), id);
+      cashAccountCode, user, actorId ?? null, now, now, id);
   db.prepare('DELETE FROM entry_lines WHERE entry_id = ?').run(id);
   insertLines(db, id, entry);
 }

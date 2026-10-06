@@ -138,6 +138,33 @@ describe('with sign-in', () => {
     expect((await req('POST', `/api/entries/${id}/approve`, {}, raz)).json().status).toBe('approved');
   });
 
+  it.each(['journal', 'receipt', 'payment'] as const)('keeps the editor of a %s independent from checking and approval', async (kind) => {
+    await officeWithSignIn([{ username: 'mer', roles: ['preparer'] }, { username: 'raz', roles: ['preparer', 'checker', 'approver'] }]);
+    const owner = await signIn('admin', 'owner-pass-1');
+    const mer = await signIn('mer', 'mer-pass-1');
+    const raz = await signIn('raz', 'raz-pass-1');
+    expect((await req('PUT', '/api/auth/separate-duties', { on: true }, owner)).statusCode).toBe(200);
+    const path = kind === 'journal' ? '/api/entries' : '/api/vouchers';
+    const body = (amount: number) => kind === 'journal' ? {
+      date: voucher.date, description: 'meroxis review', currency: 'IQD', rateX100: 100,
+      lines: [{ accountCode: '1811', debit: amount, credit: 0 }, { accountCode: '42', debit: 0, credit: amount }]
+    } : { ...voucher, kind, items: [{ accountCode: '1612', amount }] };
+    const created = await req('POST', path, body(1000), mer);
+    expect(created.statusCode, created.body).toBe(201);
+    const id = created.json().id as string;
+    const updated = await req('PUT', `${path}/${id}`, body(9000), raz);
+    expect(updated.statusCode, updated.body).toBe(200);
+    expect(updated.json()).toMatchObject({ preparedBy: 'Raz', total: 9000 });
+    expect((await req('POST', `/api/entries/${id}/check`, {}, raz)).json().error).toBe('same_person');
+    expect((await req('POST', `/api/entries/${id}/check`, {}, owner)).statusCode).toBe(200);
+    expect((await req('POST', `/api/entries/${id}/approve`, {}, raz)).json().error).toBe('same_person');
+    expect((await req('POST', `/api/entries/${id}/return`, {}, owner)).statusCode).toBe(200);
+    expect((await req('PUT', `${path}/${id}`, body(9500), raz)).statusCode).toBe(200);
+    expect((await req('POST', `/api/entries/${id}/check`, {}, raz)).json().error).toBe('same_person');
+    expect((await req('POST', `/api/entries/${id}/check`, {}, owner)).statusCode).toBe(200);
+    expect((await req('POST', `/api/entries/${id}/approve`, {}, owner)).json()).toMatchObject({ status: 'approved', total: 9500 });
+  });
+
   it('ends sessions when a password is changed or a user is switched off, and never locks out the last admin', async () => {
     await officeWithSignIn([{ username: 'mer', roles: ['preparer'] }]);
     const owner = await signIn('admin', 'owner-pass-1');

@@ -6,6 +6,7 @@ import {
   invoiceTotals,
   lineAmount,
   parseQty,
+  remainingShare,
   reverseLines,
   validateInvoice,
   withBaseAmounts,
@@ -29,6 +30,19 @@ describe('quantities', () => {
 });
 
 describe('average cost', () => {
+  it('caps cumulative fractional shares and leaves the exact remainder', () => {
+    let taken = 0;
+    const parts = [250, 250, 250, 250].map((qty, i) => {
+      const amount = remainingShare(2, taken, qty, i * 250, 1000);
+      taken += amount;
+      return amount;
+    });
+    expect(parts).toEqual([1, 0, 1, 0]);
+    expect(taken).toBe(2);
+    expect(remainingShare(43, 28, 1, 2, 3)).toBe(15);
+    expect(remainingShare(Number.MAX_SAFE_INTEGER, 0, 1000, 0, 1000)).toBe(Number.MAX_SAFE_INTEGER);
+  });
+
   it('takes cost in proportion and empties the value with the last unit', () => {
     expect(costOut(3000, 1000, 1000)).toBe(333);
     expect(costOut(2000, 667, 2000)).toBe(667);

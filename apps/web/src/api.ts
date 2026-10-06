@@ -258,7 +258,7 @@ export interface InvoiceView extends InvoiceSummary {
   lines: {
     lineNo: number; itemId: string; itemCode: string; itemName: Names; unit: UnitCode; trackStock: boolean;
     description: string; qtyMilli: number; unitPrice: number; amount: number; cost: number | null;
-    sourceLine: number | null; returnedQtyMilli: number;
+    sourceLine: number | null; returnedQtyMilli: number; returnedAmount: number;
   }[];
   actions: InvoiceAction[];
   returnOfNumber: string | null;

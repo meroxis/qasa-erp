@@ -40,6 +40,21 @@ function assertNames(name: Names): void {
   if (!name.ar.trim() && !name.en.trim() && !name.ku.trim()) throw invalid([{ code: 'name_required' }]);
 }
 
+/** Fixed-width leaves stay siblings. Skip entire branches already occupied by other accounts. */
+function nextWarehouseAccount(db: Db): string {
+  const codes = (db.prepare("SELECT code FROM accounts WHERE code LIKE '137%' AND code <> '137'").all() as { code: string }[]).map((r) => r.code);
+  for (let n = 1; n <= 999_999;) {
+    const code = `137${String(n).padStart(6, '0')}`;
+    const parent = codes.find((c) => code.startsWith(c));
+    if (parent) {
+      const block = 10 ** (code.length - parent.length);
+      n = (Math.floor(n / block) + 1) * block;
+    } else if (codes.some((c) => c.startsWith(code))) n += 1;
+    else return code;
+  }
+  throw conflict('warehouse_accounts_full');
+}
+
 /** A new warehouse gets its own inventory account under 137, so the trial balance shows stock per warehouse. */
 export function createWarehouse(db: Db, input: { code: string; name: Names }, user: string): WarehouseView {
   const code = input.code.trim().toUpperCase();
@@ -50,9 +65,7 @@ export function createWarehouse(db: Db, input: { code: string; name: Names }, us
   if (db.prepare("SELECT 1 FROM entry_lines WHERE account_code = '137' LIMIT 1").get()) throw conflict('parent_has_entries');
   const id = randomUUID();
   transaction(db, () => {
-    let n = 1;
-    while (db.prepare('SELECT 1 FROM accounts WHERE code = ?').get(`137${n}`)) n += 1;
-    const accountCode = `137${n}`;
+    const accountCode = nextWarehouseAccount(db);
     const now = new Date().toISOString();
     db.prepare('INSERT INTO accounts (code, name_ar, name_en, name_ku, "system", created_at) VALUES (?, ?, ?, ?, 0, ?)')
       .run(accountCode, input.name.ar.trim() || input.name.en.trim(), input.name.en.trim() || input.name.ar.trim(), input.name.ku.trim() || input.name.ar.trim(), now);
@@ -249,6 +262,10 @@ export function itemMoves(db: Db, itemId: string): StockMoveView[] {
 }
 
 export function addStockMove(db: Db, move: { itemId: string; warehouseId: string; date: string; qtyMilli: number; value: number; sourceType: string; sourceId: string }): void {
+  // Costs are calculated in posting order. A backdated move would invalidate the dated stock history.
+  const latest = (db.prepare('SELECT MAX(date) AS date FROM stock_moves WHERE item_id = ? AND warehouse_id = ?')
+    .get(move.itemId, move.warehouseId) as { date: string | null }).date;
+  if (latest && move.date < latest) throw invalid([{ code: 'stock_date_before_latest', date: latest }]);
   db.prepare('INSERT INTO stock_moves (item_id, warehouse_id, date, qty_milli, value, source_type, source_id, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)')
     .run(move.itemId, move.warehouseId, move.date, move.qtyMilli, move.value, move.sourceType, move.sourceId, new Date().toISOString());
 }

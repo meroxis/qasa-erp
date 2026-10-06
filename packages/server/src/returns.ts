@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import {
-  allocateDiscount, isIsoDate, lineAmount, returnKindOf, roundHalfUp, toBase,
+  allocateDiscount, isIsoDate, remainingShare, returnKindOf, roundHalfUp,
   type EntryInput, type LineInput, type PaymentMode
 } from '@qasa/core';
 import type { Db } from './db.ts';
@@ -12,7 +12,7 @@ import { assertValid, insertEntry, nextNumber } from './journal.ts';
 import { getParty } from './parties.ts';
 import { addStockMove, stockOf } from './items.ts';
 import { getPostingAccounts, isPeriodLocked } from './settings.ts';
-import { fromBase, getInvoice, returnedByLine, type InvoiceView } from './invoices.ts';
+import { fromBase, getInvoice, returnedByLine, returnedTotals, type InvoiceView } from './invoices.ts';
 
 export interface ReturnInput {
   date: string;
@@ -82,33 +82,40 @@ export function createReturn(db: Db, originalId: string, input: ReturnInput, use
   const lines: ReturnLine[] = [...wanted.entries()].sort((a, b) => a[0] - b[0]).map(([lineNo, qty]) => {
     const { line: ol, index } = byLine.get(lineNo)!;
     const prev = returned.get(lineNo) ?? { qtyMilli: 0, amount: 0, discount: 0, cost: 0 };
-    // the return that gives back the rest of a line takes exactly what is left, so rounding never adds up past the original
-    const completes = prev.qtyMilli + qty === ol.qtyMilli;
     const share = shares[index] ?? 0;
+    if (prev.amount > ol.amount || prev.discount > share || prev.discount > prev.amount) throw conflict('return_totals_invalid');
+    const amount = remainingShare(ol.amount, prev.amount, qty, prev.qtyMilli, ol.qtyMilli);
+    const discountLeft = share - prev.discount;
+    // Keep both this refund and the remaining refund non-negative, even on a one-cent line.
+    const discountShare = Math.max(0, discountLeft - (ol.amount - prev.amount - amount),
+      Math.min(amount, remainingShare(share, prev.discount, qty, prev.qtyMilli, ol.qtyMilli)));
     return {
       sourceLine: lineNo, itemId: ol.itemId, trackStock: ol.trackStock, qtyMilli: qty, unitPrice: ol.unitPrice,
-      amount: completes ? ol.amount - prev.amount : lineAmount(qty, ol.unitPrice),
-      discountShare: completes ? share - prev.discount : Math.floor((share * qty) / ol.qtyMilli),
-      cost: ol.cost === null ? null : completes ? ol.cost - prev.cost : roundHalfUp((ol.cost * qty) / ol.qtyMilli)
+      amount, discountShare,
+      cost: ol.cost === null ? null : remainingShare(ol.cost, prev.cost, qty, prev.qtyMilli, ol.qtyMilli)
     };
   });
 
   const subtotal = lines.reduce((s, l) => s + l.amount, 0);
   const discount = lines.reduce((s, l) => s + l.discountShare, 0);
   const total = subtotal - discount;
+  if (total < 0 || lines.some((l) => l.discountShare > l.amount)) throw conflict('return_totals_invalid');
   const accounts = getPostingAccounts(db);
   const warehouseAccount = (db.prepare('SELECT account_code FROM warehouses WHERE id = ?').get(original.warehouseId) as { account_code: string }).account_code;
   const party = original.partyId ? getParty(db, original.partyId) : null;
   const counterAccount = input.payment === 'cash' ? input.cashAccountCode! : party!.accountCode;
   const counterParty = input.payment === 'credit' && party ? { partyId: party.id } : {};
   const { currency, rateX100 } = original;
+  const refunded = returnedTotals(db, originalId);
+  if (refunded.total > original.total || refunded.baseTotal > original.baseTotal) throw conflict('return_totals_invalid');
+  const baseTotal = remainingShare(original.baseTotal, refunded.baseTotal, total, refunded.total, original.total);
   const entryLines: LineInput[] = [];
   const moves: { itemId: string; qtyMilli: number; value: number }[] = [];
 
   if (kind === 'sale_return') {
     if (total > 0) {
-      entryLines.push({ accountCode: accounts.sales, debit: total, credit: 0 });
-      entryLines.push({ accountCode: counterAccount, debit: 0, credit: total, ...counterParty });
+      entryLines.push({ accountCode: accounts.sales, debit: total, credit: 0, baseDebit: baseTotal, baseCredit: 0 });
+      entryLines.push({ accountCode: counterAccount, debit: 0, credit: total, baseDebit: 0, baseCredit: baseTotal, ...counterParty });
     }
     const totalCost = lines.reduce((s, l) => s + (l.trackStock ? l.cost ?? 0 : 0), 0);
     if (totalCost > 0) {
@@ -132,12 +139,10 @@ export function createReturn(db: Db, originalId: string, input: ReturnInput, use
     }
     if (stockErrors.length) throw invalid(stockErrors);
     const totalOut = lines.reduce((s, l) => s + (l.trackStock ? l.cost ?? 0 : 0), 0);
-    const baseTotal = toBase(total, currency, rateX100);
     const diff = baseTotal - totalOut;
     // amounts in the invoice currency split in the same proportion, so the entry balances in both currencies
-    let warehouseCur = currency === 'IQD' ? totalOut : baseTotal > 0 ? roundHalfUp((total * totalOut) / baseTotal) : fromBase(totalOut, currency, rateX100);
-    let diffCur = total - warehouseCur;
-    if (diff !== 0 && diffCur === 0) { diffCur = diff > 0 ? 1 : -1; warehouseCur = total - diffCur; }
+    const warehouseCur = currency === 'IQD' ? totalOut : baseTotal > 0 ? roundHalfUp((total * totalOut) / baseTotal) : fromBase(totalOut, currency, rateX100);
+    const diffCur = total - warehouseCur;
     if (total > 0) entryLines.push({ accountCode: counterAccount, debit: total, credit: 0, baseDebit: baseTotal, baseCredit: 0, ...counterParty });
     if (totalOut > 0) entryLines.push({ accountCode: warehouseAccount, debit: 0, credit: warehouseCur, baseDebit: 0, baseCredit: totalOut });
     if (diff > 0) entryLines.push({ accountCode: accounts.costOfSales, debit: 0, credit: diffCur, baseDebit: 0, baseCredit: diff });

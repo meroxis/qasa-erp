@@ -49,6 +49,8 @@ export interface InvoiceLineView {
   sourceLine: number | null;
   /** On a posted invoice: how much of the line posted returns have given back. */
   returnedQtyMilli: number;
+  /** Rounded gross amount already returned; used when previewing another partial return. */
+  returnedAmount: number;
 }
 
 export interface InvoiceSummary {
@@ -106,6 +108,7 @@ interface InvoiceRow {
   discount: number; subtotal: number; total: number; notes: string | null; entry_id: string | null; cancel_entry_id: string | null;
   created_by: string; created_at: string; posted_by: string | null; posted_at: string | null; cancelled_by: string | null; cancelled_at: string | null;
   party_code: string | null; party_name: string | null;
+  settlement_base: number | null;
 }
 
 export const isReturn = (kind: InvoiceDocKind) => kind === 'sale_return' || kind === 'purchase_return';
@@ -144,12 +147,25 @@ function toSummary(r: InvoiceRow): InvoiceSummary {
   return {
     id: r.id, kind: r.kind, status: r.status, number: r.number, date: r.date, partyId: r.party_id, partyCode: r.party_code, partyName: r.party_name,
     warehouseId: r.warehouse_id, currency: r.currency, rateX100: r.rate_x100, payment: r.payment, cashAccountCode: r.cash_account,
-    discount: r.discount, subtotal: r.subtotal, total: r.total, baseTotal: toBase(r.total, r.currency, r.rate_x100), notes: r.notes ?? '',
+    discount: r.discount, subtotal: r.subtotal, total: r.total, baseTotal: r.settlement_base ?? toBase(r.total, r.currency, r.rate_x100), notes: r.notes ?? '',
     returnOf: r.return_of, createdBy: r.created_by, createdAt: r.created_at
   };
 }
 
-const SELECT_INVOICE = `SELECT v.*, p.code AS party_code, p.name AS party_name FROM invoices v LEFT JOIN parties p ON p.id = v.party_id`;
+const SELECT_INVOICE = `SELECT v.*, p.code AS party_code, p.name AS party_name,
+  (SELECT SUM(CASE WHEN v.kind IN ('purchase', 'sale_return') THEN l.base_credit - l.base_debit ELSE l.base_debit - l.base_credit END)
+   FROM entry_lines l WHERE l.entry_id = v.entry_id AND
+     ((v.payment = 'cash' AND l.account_code = v.cash_account) OR (v.payment = 'credit' AND l.party_id = v.party_id))) AS settlement_base
+  FROM invoices v LEFT JOIN parties p ON p.id = v.party_id`;
+
+/** Active refunds in both currencies. Read the posted settlement, including its rounding allocation. */
+export function returnedTotals(db: Db, originalId: string): { total: number; baseTotal: number } {
+  const rows = db.prepare(`${SELECT_INVOICE} WHERE v.return_of = ? AND v.status = 'posted'`).all(originalId) as unknown as InvoiceRow[];
+  return rows.reduce((sum, row) => {
+    const value = toSummary(row);
+    return { total: sum.total + value.total, baseTotal: sum.baseTotal + value.baseTotal };
+  }, { total: 0, baseTotal: 0 });
+}
 
 function loadRow(db: Db, id: string): InvoiceRow {
   const row = db.prepare(`${SELECT_INVOICE} WHERE v.id = ?`).get(id) as unknown as InvoiceRow | undefined;
@@ -168,11 +184,11 @@ export function getInvoice(db: Db, id: string): InvoiceView {
     line_no: number; item_id: string; description: string | null; qty_milli: number; unit_price: number; amount: number; cost: number | null; source_line: number | null;
     code: string; name_ar: string; name_en: string; name_ku: string; unit: UnitCode; track_stock: number;
   }[]);
-  const returned = r.status === 'posted' && !isReturn(r.kind) ? returnedByLine(db, id) : new Map<number, { qtyMilli: number }>();
+  const returned = r.status === 'posted' && !isReturn(r.kind) ? returnedByLine(db, id) : new Map<number, { qtyMilli: number; amount: number }>();
   const lineViews: InvoiceLineView[] = lines.map((l) => ({
     lineNo: l.line_no, itemId: l.item_id, itemCode: l.code, itemName: { ar: l.name_ar, en: l.name_en, ku: l.name_ku }, unit: l.unit,
     trackStock: l.track_stock === 1, description: l.description ?? '', qtyMilli: l.qty_milli, unitPrice: l.unit_price, amount: l.amount, cost: l.cost,
-    sourceLine: l.source_line, returnedQtyMilli: returned.get(l.line_no)?.qtyMilli ?? 0
+    sourceLine: l.source_line, returnedQtyMilli: returned.get(l.line_no)?.qtyMilli ?? 0, returnedAmount: returned.get(l.line_no)?.amount ?? 0
   }));
   const returns = db.prepare('SELECT id, kind, number, date, status, total FROM invoices WHERE return_of = ? ORDER BY date, created_at').all(id) as
     { id: string; kind: InvoiceDocKind; number: string | null; date: string; status: InvoiceStatus; total: number }[];
@@ -412,6 +428,7 @@ export function cancelInvoice(db: Db, id: string, user: string, date?: string): 
   if (view.installmentContract) throw conflict('invoice_has_contract', { contract: view.installmentContract.number });
   requireAction(db, loadRow(db, id), 'cancel');
   const cancelDate = date ?? todayIso();
+  if (isPeriodLocked(db, cancelDate)) throw invalid([{ code: 'period_locked', period: cancelDate.slice(0, 7) }]);
   // cancelling a sale or a purchase return puts the goods back; a purchase or a sales return takes them out again
   const back = view.kind === 'sale' || view.kind === 'purchase_return';
   const moves = view.lines.filter((l) => l.trackStock && l.cost !== null).map((l) => ({

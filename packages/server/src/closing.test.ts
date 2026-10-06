@@ -118,6 +118,34 @@ describe('year-end closing', () => {
     expect(await balance('229')).toBe(-400_000);
   });
 
+  it('requires reopening the year before a month can be unlocked or amended', async () => {
+    pro();
+    await trade(LAST);
+    expect((await post(`/api/year-end/${LAST}/close`)).statusCode).toBe(200);
+    const unlock = await app.inject({ method: 'DELETE', url: `/api/periods/${LAST}-06/lock`, headers });
+    expect(unlock.statusCode).toBe(409);
+    expect(unlock.json().error).toBe('period_in_closed_year');
+    const lines = [{ accountCode: '1811', debit: 50, credit: 0 }, { accountCode: '42', debit: 0, credit: 50 }];
+    expect((await post('/api/entries', { date: `${LAST}-06-01`, description: 'meroxis review', currency: 'IQD', rateX100: 100, lines })).statusCode).toBe(400);
+    expect(await balance('229')).toBe(-400_000);
+    expect((await post(`/api/year-end/${LAST}/reopen`)).statusCode).toBe(200);
+    await posted(`${LAST}-06-01`, lines);
+    expect((await post(`/api/year-end/${LAST}/close`)).statusCode).toBe(200);
+    expect(await balance('229')).toBe(-400_050);
+  });
+
+  it('protects both boundary months of a non-calendar year', async () => {
+    pro();
+    writeSetting(db, 'fiscal_year_start', '04-15');
+    await posted(`${BEFORE}-05-01`, [{ accountCode: '1811', debit: 100, credit: 0 }, { accountCode: '42', debit: 0, credit: 100 }]);
+    expect((await post(`/api/year-end/${BEFORE}/close`)).statusCode).toBe(200);
+    for (const period of [`${BEFORE}-04`, `${LAST}-04`]) {
+      expect((await app.inject({ method: 'DELETE', url: `/api/periods/${period}/lock`, headers })).json().error).toBe('period_in_closed_year');
+    }
+    await post(`/api/periods/${Y}-08/lock`);
+    expect((await app.inject({ method: 'DELETE', url: `/api/periods/${Y}-08/lock`, headers })).statusCode).toBe(200);
+  });
+
   it('closes years in order and reopens the latest first', async () => {
     pro();
     await trade(BEFORE);
