@@ -24,6 +24,7 @@ import {
   voucherToEntry,
   withBaseAmounts,
   type EntryContext,
+  type EntryInput,
   type PostedLine
 } from './index.ts';
 
@@ -162,6 +163,21 @@ describe('journal', () => {
     expect(codes).toContain('account_not_postable');
     expect(codes).toContain('line_zero');
     expect(codes).toContain('not_balanced');
+  });
+
+  it('allows a USD rounding line with a nonzero IQD allocation but still rejects empty lines', () => {
+    const input: EntryInput = {
+      type: 'purchase_return', date: '2026-09-26', description: 'meroxis review', currency: 'USD', rateX100: 142_000,
+      lines: [
+        { accountCode: '1811', debit: 1, credit: 0, baseDebit: 14, baseCredit: 0 },
+        { accountCode: '1612', debit: 0, credit: 1, baseDebit: 0, baseCredit: 7 },
+        { accountCode: '31', debit: 0, credit: 0, baseDebit: 0, baseCredit: 7 }
+      ]
+    };
+    expect(validateEntry(input, ctx)).toEqual([]);
+    expect(validateEntry({ ...input, lines: [...input.lines, { accountCode: '31', debit: 0, credit: 0 }] }, ctx))
+      .toContainEqual({ code: 'line_zero', line: 4 });
+    expect(withBaseAmounts(input).reduce((s, l) => s + l.baseDebit - l.baseCredit, 0)).toBe(0);
   });
 
   it('converts USD entries to IQD and keeps them balanced', () => {

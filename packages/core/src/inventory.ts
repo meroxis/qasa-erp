@@ -27,6 +27,14 @@ export function lineAmount(qtyMilli: number, unitPrice: number): number {
   return roundHalfUp((qtyMilli * unitPrice) / QTY_SCALE);
 }
 
+/** The next cumulative share, capped by what remains after earlier allocations (or cancellations). */
+export function remainingShare(total: number, taken: number, qty: number, takenQty: number, fullQty: number): number {
+  if (total <= 0 || qty <= 0) return 0;
+  const denominator = BigInt(fullQty);
+  const target = Number((2n * BigInt(total) * BigInt(takenQty + qty) + denominator) / (2n * denominator));
+  return Math.max(0, Math.min(total - taken, target - taken));
+}
+
 /**
  * Weighted-average cost of `outQty` taken from a stock of `stockQty` worth `stockValue` (IQD).
  * Taking the whole stock takes its whole value, so the value never drifts from zero when stock runs out.

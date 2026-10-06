@@ -387,7 +387,7 @@ export function apiRoutes(db: Db, options: { demo?: boolean; extensions?: readon
   });
   app.put('/api/entries/:id', async (req) => {
     const { id } = parse(z.object({ id: z.string() }), req.params);
-    return updateJournalEntry(db, id, withoutUndefined(parse(journalSchema, req.body)), userOf(req));
+    return updateJournalEntry(db, id, withoutUndefined(parse(journalSchema, req.body)), userOf(req), actorOf(req).id);
   });
   app.post('/api/vouchers', async (req, reply) => {
     const body = parse(voucherSchema, req.body);
@@ -395,7 +395,7 @@ export function apiRoutes(db: Db, options: { demo?: boolean; extensions?: readon
   });
   app.put('/api/vouchers/:id', async (req) => {
     const { id } = parse(z.object({ id: z.string() }), req.params);
-    return updateVoucher(db, id, withoutUndefined(parse(voucherSchema, req.body)), userOf(req));
+    return updateVoucher(db, id, withoutUndefined(parse(voucherSchema, req.body)), userOf(req), actorOf(req).id);
   });
   app.delete('/api/entries/:id', async (req, reply) => {
     deleteEntry(db, parse(z.object({ id: z.string() }), req.params).id, userOf(req));

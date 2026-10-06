@@ -1,8 +1,8 @@
-import { DEFAULT_POSTING_ACCOUNTS, type Names, type PostingAccounts } from '@qasa/core';
+import { DEFAULT_POSTING_ACCOUNTS, fiscalYear, fiscalYearOf, type Names, type PostingAccounts } from '@qasa/core';
 import type { Db } from './db.ts';
 import { audit } from './audit.ts';
 import { insertOrKeep, isMysql, transaction } from './db.ts';
-import { invalid } from './errors.ts';
+import { conflict, invalid } from './errors.ts';
 
 export interface Settings {
   companyName: Names;
@@ -92,6 +92,12 @@ export function lockPeriod(db: Db, period: string, user: string): void {
 
 export function unlockPeriod(db: Db, period: string, user: string): void {
   transaction(db, () => {
+    const start = getSettings(db).fiscalYearStart;
+    const closings = db.prepare("SELECT date FROM entries WHERE type = 'closing' AND status = 'approved' AND reversed_by_id IS NULL").all() as { date: string }[];
+    for (const closing of closings) {
+      const { from, to } = fiscalYear(fiscalYearOf(closing.date, start), start);
+      if (period >= from.slice(0, 7) && period <= to.slice(0, 7)) throw conflict('period_in_closed_year');
+    }
     db.prepare('DELETE FROM locked_periods WHERE period = ?').run(period);
     audit(db, user, 'unlock', 'period', period);
   });

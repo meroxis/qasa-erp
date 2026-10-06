@@ -78,9 +78,12 @@ describe('customers, suppliers and items', () => {
   it('gives a new warehouse its own inventory account under 137', async () => {
     await post('/api/plan/trial'); // Free has one warehouse; the Pro trial allows more
     const erbil = (await post('/api/warehouses', { code: 'erbil', name: { ar: 'مخزن أربيل', en: 'Erbil store', ku: 'کۆگای هەولێر' } })).json();
-    expect(erbil).toMatchObject({ code: 'ERBIL', accountCode: '1372' });
-    const accounts = (await get('/api/accounts')).json() as { code: string }[];
-    expect(accounts.some((a) => a.code === '1372')).toBe(true);
+    expect(erbil.code).toBe('ERBIL');
+    const accounts = (await get('/api/accounts')).json();
+    expect(accounts).toEqual(expect.arrayContaining([
+      expect.objectContaining({ code: erbil.accountCode, parentCode: '137', postable: true }),
+      expect.objectContaining({ code: '1371', postable: true })
+    ]));
   });
 });
 

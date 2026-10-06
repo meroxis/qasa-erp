@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import {
-  amountInWords, invoiceTotals, lineAmount, rateFromX100, roundHalfUp, toBase, todayIso, toWesternDigits,
+  amountInWords, invoiceTotals, remainingShare, rateFromX100, roundHalfUp, toBase, todayIso, toWesternDigits,
   type CurrencyCode, type InvoiceDocKind, type InvoiceInput, type InvoiceKind, type InvoiceStatus, type PaymentMode
 } from '@qasa/core';
 import { api, ApiError, type InvoiceView, type ItemView } from '../api.ts';
@@ -123,6 +123,8 @@ export function InvoiceEditor({ kind: initialKind, id, partyId: initialParty }: 
   }, [id]);
 
   const rateX100 = currency === 'USD' ? parseRate(rateText) : 100;
+  // The IQD document rate is 100; USD catalog prices still need the company's exchange rate.
+  const priceRateX100 = currency === 'USD' ? rateX100 : settings?.defaultRateX100;
   const itemById = useMemo(() => new Map((items.data ?? []).map((it) => [it.id, it])), [items.data]);
   const lines = rows.filter((r) => r.itemId || r.unitPrice);
   const totals = invoiceTotals(lines.map((r) => ({ qtyMilli: r.qtyMilli ?? 0, unitPrice: r.unitPrice ?? 0 })), discount ?? 0);
@@ -141,10 +143,10 @@ export function InvoiceEditor({ kind: initialKind, id, partyId: initialParty }: 
   function pickItem(key: number, itemId: string) {
     const it: ItemView | undefined = itemById.get(itemId);
     let price: number | null = null;
-    if (it && rateX100) {
+    if (it && priceRateX100) {
       price = kind === 'sale'
-        ? convert(it.salePrice, it.saleCurrency, currency, rateX100)
-        : it.qtyMilli > 0 ? convert(averageCost(it.qtyMilli, it.value), 'IQD', currency, rateX100) : null;
+        ? convert(it.salePrice, it.saleCurrency, currency, priceRateX100)
+        : it.qtyMilli > 0 ? convert(averageCost(it.qtyMilli, it.value), 'IQD', currency, priceRateX100) : null;
     }
     setRows((rs) => {
       const next = rs.map((r) => (r.key === key ? { ...r, itemId, unitPrice: price ?? r.unitPrice } : r));
@@ -528,7 +530,7 @@ function ReturnModal({ invoice: v, onClose }: { invoice: InvoiceView; onClose():
   const [error, setError] = useState<unknown>(null);
   const lines = v.lines.map((l) => ({ ...l, left: l.qtyMilli - l.returnedQtyMilli })).filter((l) => l.left > 0);
   const chosen = lines.filter((l) => (qty[l.lineNo] ?? 0) > 0);
-  const gross = chosen.reduce((sum, l) => sum + lineAmount(qty[l.lineNo]!, l.unitPrice), 0);
+  const gross = chosen.reduce((sum, l) => sum + remainingShare(l.amount, l.returnedAmount, qty[l.lineNo]!, l.returnedQtyMilli, l.qtyMilli), 0);
 
   async function submit() {
     if (chosen.length === 0) { setError(new ApiError(400, 'validation', [{ code: 'lines_required' }])); return; }

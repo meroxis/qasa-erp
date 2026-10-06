@@ -105,7 +105,10 @@ export function validateEntry(input: EntryInput, ctx: EntryContext): EntryError[
       return;
     }
     if (line.debit > 0 && line.credit > 0) errors.push({ code: 'line_both_sides', line: n });
-    if (line.debit === 0 && line.credit === 0) errors.push({ code: 'line_zero', line: n });
+    // A return's IQD rounding allocation can be smaller than one USD cent.
+    const baseOnly = input.currency === 'USD' && isMinorAmount(line.baseDebit) && isMinorAmount(line.baseCredit)
+      && ((line.baseDebit! > 0 && line.baseCredit === 0) || (line.baseCredit! > 0 && line.baseDebit === 0));
+    if (line.debit === 0 && line.credit === 0 && !baseOnly) errors.push({ code: 'line_zero', line: n });
     if (!ctx.accountExists(line.accountCode)) errors.push({ code: 'account_unknown', line: n, accountCode: line.accountCode });
     else if (!ctx.isPostable(line.accountCode)) errors.push({ code: 'account_not_postable', line: n, accountCode: line.accountCode });
     debit += line.debit;
