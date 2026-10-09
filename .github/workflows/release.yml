@@ -1,8 +1,11 @@
 name: Release
 
 # Push a tag like v0.1.1 (matching apps/desktop/package.json "version"; notes in apps/desktop/release-notes/0.1.1.md)
-# to build the Windows installer on a clean
-# machine and publish it as a GitHub release. Installed copies of Qasa ERP find it and update themselves.
+# to build the Windows installer on a clean machine and publish it as a GitHub release: copies installed with the
+# installer find it and update themselves. The run also keeps the Microsoft Store package (artifact
+# microsoft-store-package): submit it in Partner Center with the "What's new" text from apps/desktop/store-listing.json;
+# Store copies update once Microsoft certifies it. Store copies can be a release behind, and 0.1.8 there doesn't refuse
+# newer books: get a release with the database_newer check into the Store before publishing one that adds a migration.
 on:
   push:
     tags: ['v*']
