@@ -162,6 +162,7 @@ async function openCompanyDatabase(): Promise<Db> {
       return proModule?.openDatabase?.(startContext()) ?? openDatabase(file);
     } catch (error) {
       const problem = error as { code?: string; host?: string; database?: string; localCopy?: { file: string; since: string } | null };
+      if (problem.code === 'database_newer') return refuseNewerBooks();
       if (!proModule?.openDatabase || typeof problem.host !== 'string') throw error;
       const buttons = [t('tryAgain'), ...(problem.localCopy ? [t('dbUseLocalCopy')] : []), t('quit')];
       const { response } = await dialog.showMessageBox({
@@ -183,6 +184,28 @@ async function openCompanyDatabase(): Promise<Db> {
       throw new Error('quit');
     }
   }
+}
+
+/**
+ * Windows draws message boxes left to right. Each Arabic or Kurdish line is embedded right to left, so a Latin word in
+ * it (ERP, qasaerp.com, a version number) keeps its place in the sentence.
+ */
+const rtlLines = (s: string): string => (lang === 'en' ? s : s.split('\n').map((line) => `\u202B${line}\u202C`).join('\n'));
+
+/**
+ * Books from a newer Qasa ERP (the company file, or the company database on a server): this version leaves them as
+ * they are, says so, and offers the way to the latest version — the Store page for the Store version, the website
+ * for the installer. It never returns: the app quits.
+ */
+async function refuseNewerBooks(): Promise<never> {
+  const buttons = [t('getLatest'), t('quit')];
+  const { response } = await dialog.showMessageBox({
+    type: 'warning', title: 'Qasa ERP', message: rtlLines(t('newerBooks', { v: app.getVersion() })),
+    detail: rtlLines(t(FROM_STORE ? 'newerFromStore' : 'newerFromSite')), buttons, defaultId: 0, cancelId: 1, noLink: true
+  });
+  if (response === 0) await shell.openExternal(FROM_STORE ? STORE_PAGE : `https://qasaerp.com${{ ar: '/', en: '/en/', ku: '/ku/' }[lang]}#download`);
+  app.exit(0);
+  throw new Error('quit');
 }
 
 /** Restarts the app, moving company files as the Pro module asks (moving to a database server and back). */
@@ -437,7 +460,7 @@ function buildMenu(): void {
         { type: 'separator' },
         {
           label: t('about'),
-          click: () => void dialog.showMessageBox(win!, { type: 'info', title: 'Qasa ERP', message: t('aboutText', { v: app.getVersion() }), buttons: [t('ok')] })
+          click: () => void dialog.showMessageBox(win!, { type: 'info', title: 'Qasa ERP', message: t('aboutText', { v: `${app.getVersion()}${FROM_STORE ? ' (Microsoft Store)' : ''}` }), buttons: [t('ok')] })
         }
       ]
     }
