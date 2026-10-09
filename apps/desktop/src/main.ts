@@ -391,9 +391,18 @@ ipcMain.handle('network:pair', async (event, address: unknown, code: unknown) =>
   if ('ok' in result) setTimeout(() => void restartApp(), 900);
   return result;
 });
+/** The origin the app window shows (this PC's server or the office server); nothing else may use its bridge. */
+let appOrigin = '';
+const originOf = (address: string) => { try { return new URL(address).origin; } catch { return ''; } };
+/** A message from the app window's own page: its main frame, on the app's origin. */
+function fromAppPage(event: Electron.IpcMainEvent): boolean {
+  const frame = event.senderFrame;
+  return !!win && event.sender === win.webContents && !!frame && frame === win.webContents.mainFrame && originOf(frame.url) === appOrigin;
+}
+
 // the app window says when the user picks another language (app-preload.ts), so the menus follow at once
 ipcMain.on('app:language', (event, value: unknown) => {
-  if (!win || event.sender !== win.webContents || !isLang(value) || value === lang) return;
+  if (!fromAppPage(event) || !isLang(value) || value === lang) return;
   useLanguage(value);
   buildMenu();
 });
@@ -520,13 +529,16 @@ async function createWindow(url: string): Promise<void> {
 
   // Only the app itself opens inside the window; web links go to the browser and email links to the mail app.
   const origin = new URL(url).origin;
-  const external = (target: string) => /^(https?:\/\/|mailto:)/.test(target) && !target.startsWith(origin);
+  appOrigin = origin;
+  // compare real origins: a text prefix would let "http://127.0.0.1:port@elsewhere/" into the app window
+  const sameOrigin = (target: string) => originOf(target) === origin;
+  const external = (target: string) => /^(https?:\/\/|mailto:)/.test(target) && !sameOrigin(target);
   win.webContents.setWindowOpenHandler(({ url: target }) => {
     if (external(target)) void shell.openExternal(target);
     return { action: 'deny' };
   });
   win.webContents.on('will-navigate', (event, target) => {
-    if (!target.startsWith(origin)) {
+    if (!sameOrigin(target)) {
       event.preventDefault();
       if (external(target)) void shell.openExternal(target);
     }
