@@ -162,7 +162,7 @@ async function openCompanyDatabase(): Promise<Db> {
       return proModule?.openDatabase?.(startContext()) ?? openDatabase(file);
     } catch (error) {
       const problem = error as { code?: string; host?: string; database?: string; localCopy?: { file: string; since: string } | null };
-      if (problem.code === 'database_newer') return refuseNewerBooks();
+      if (problem.code === 'database_newer') return refuseNewerBooks(error);
       if (!proModule?.openDatabase || typeof problem.host !== 'string') throw error;
       const buttons = [t('tryAgain'), ...(problem.localCopy ? [t('dbUseLocalCopy')] : []), t('quit')];
       const { response } = await dialog.showMessageBox({
@@ -181,10 +181,13 @@ async function openCompanyDatabase(): Promise<Db> {
         continue;
       }
       app.exit(0);
-      throw new Error('quit');
+      throw new Quitting();
     }
   }
 }
+
+/** Thrown after app.exit() from a start dialog, so the start stops without an error box. */
+class Quitting extends Error {}
 
 /**
  * Windows draws message boxes left to right. Each Arabic or Kurdish line is embedded right to left, so a Latin word in
@@ -197,15 +200,20 @@ const rtlLines = (s: string): string => (lang === 'en' ? s : s.split('\n').map((
  * they are, says so, and offers the way to the latest version — the Store page for the Store version, the website
  * for the installer. It never returns: the app quits.
  */
-async function refuseNewerBooks(): Promise<never> {
+async function refuseNewerBooks(error: unknown): Promise<never> {
+  log('the company books come from a newer Qasa ERP:', JSON.stringify((error as { details?: unknown }).details ?? null),
+    'this is', app.getVersion(), FROM_STORE ? '(Microsoft Store)' : '');
   const buttons = [t('getLatest'), t('quit')];
   const { response } = await dialog.showMessageBox({
     type: 'warning', title: 'Qasa ERP', message: rtlLines(t('newerBooks', { v: app.getVersion() })),
     detail: rtlLines(t(FROM_STORE ? 'newerFromStore' : 'newerFromSite')), buttons, defaultId: 0, cancelId: 1, noLink: true
   });
-  if (response === 0) await shell.openExternal(FROM_STORE ? STORE_PAGE : `https://qasaerp.com${{ ar: '/', en: '/en/', ku: '/ku/' }[lang]}#download`);
+  if (response === 0) {
+    const url = FROM_STORE ? STORE_PAGE : `https://qasaerp.com${{ ar: '/', en: '/en/', ku: '/ku/' }[lang]}#download`;
+    await shell.openExternal(url).catch((e: unknown) => log('could not open', url, e));
+  }
   app.exit(0);
-  throw new Error('quit');
+  throw new Quitting();
 }
 
 /** Restarts the app, moving company files as the Pro module asks (moving to a database server and back). */
@@ -417,8 +425,20 @@ async function officeServerProblem(certificate: boolean): Promise<void> {
 async function readLanguage(): Promise<void> {
   try {
     const saved = await win?.webContents.executeJavaScript("localStorage.getItem('qasa.lang')", true);
-    if (isLang(saved)) lang = saved;
+    if (isLang(saved) && saved !== lang) {
+      lang = saved;
+      writeFileSync(languageFile(), JSON.stringify({ lang }));
+    }
   } catch { /* keep the default */ }
+}
+
+/** The app's language is in the window; a copy here lets the dialogs before the window (at start) use it too. */
+const languageFile = () => join(app.getPath('userData'), 'language.json');
+function readSavedLanguage(): void {
+  try {
+    const saved = (JSON.parse(readFileSync(languageFile(), 'utf8')) as { lang?: unknown }).lang;
+    if (isLang(saved)) lang = saved;
+  } catch { /* first start: Arabic */ }
 }
 
 function buildMenu(): void {
@@ -460,7 +480,7 @@ function buildMenu(): void {
         { type: 'separator' },
         {
           label: t('about'),
-          click: () => void dialog.showMessageBox(win!, { type: 'info', title: 'Qasa ERP', message: t('aboutText', { v: `${app.getVersion()}${FROM_STORE ? ' (Microsoft Store)' : ''}` }), buttons: [t('ok')] })
+          click: () => void dialog.showMessageBox(win!, { type: 'info', title: 'Qasa ERP', message: rtlLines(t('aboutText', { v: `${app.getVersion()}${FROM_STORE ? ' (Microsoft Store)\u200E' : ''}` })), buttons: [t('ok')] })
         }
       ]
     }
@@ -600,6 +620,7 @@ if (!app.requestSingleInstanceLock()) {
   app.whenReady().then(async () => {
     app.setAppUserModelId('com.meroxis.qasaerp');
     serveAppScheme();
+    readSavedLanguage();
     remote = readRemote();
     buildMenu();
     try {
@@ -615,6 +636,7 @@ if (!app.requestSingleInstanceLock()) {
       }
       setupUpdates();
     } catch (error) {
+      if (error instanceof Quitting) return;
       dialog.showErrorBox(t('startFailed'), error instanceof Error ? error.message : String(error));
       app.quit();
     }

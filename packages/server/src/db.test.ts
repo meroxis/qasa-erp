@@ -15,12 +15,14 @@ const errorOf = (run: () => unknown): unknown => {
 };
 
 describe('books from a newer Qasa ERP', () => {
-  it('a company file is refused, closed and left exactly as it was', () => {
+  // WAL is how this app keeps its files; a copy from elsewhere (a restored backup) may be in rollback mode
+  it.each(['wal', 'delete'])('a company file (journal mode %s) is refused, closed and left exactly as it was', (mode) => {
     const dir = mkdtempSync(join(tmpdir(), 'qasa-newer-'));
     try {
       const file = join(dir, 'qasa.sqlite');
       const db = openDatabase(file);
       db.prepare('UPDATE schema_version SET version = ?').run(SCHEMA_VERSION + 1);
+      db.exec(`PRAGMA journal_mode = ${mode}`);
       db.close();
       const hash = () => createHash('sha256').update(readFileSync(file)).digest('hex');
       const before = hash();

@@ -646,6 +646,8 @@ export const SCHEMA_VERSION = MIGRATIONS.length;
 export function openDatabase(file: string): Db {
   const db: Db = new DatabaseSync(file);
   try {
+    // books from a newer version are refused before anything here writes to the file (even the journal mode)
+    if (db.prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'schema_version'").get()) refuseNewer(schemaVersion(db));
     db.exec('PRAGMA foreign_keys = ON');
     if (file !== ':memory:') {
       // WAL + FULL sync: a committed voucher survives a power cut (generator switch-over).
