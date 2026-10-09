@@ -1,11 +1,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { APP_VERSION, htmlLang, isLang, type DigitStyle, type Lang } from '@qasa/core';
 import { api, currentUser, SIGNED_OUT_EVENT, type AccountView, type Me, type PlanStatus, type Settings as SettingsData } from './api.ts';
-import { DataContext, DisplayContext, Icon, isDensity, isTheme, Logo, ToastProvider, type Density, type Theme } from './components.tsx';
+import { DataContext, DisplayContext, Icon, isDensity, isTheme, Logo, PageNavContext, ToastProvider, type Density, type PageNav, type Theme } from './components.tsx';
 import { I18nContext, isKey, makeI18n, useI18n, type Key } from './i18n.ts';
 import { href, useRoute } from './router.ts';
 import { Home } from './pages/Home.tsx';
 import { Entries } from './pages/Entries.tsx';
+import type { EntryStatus } from '@qasa/core';
 import { EntryEditor } from './pages/EntryEditor.tsx';
 import { EntryDetail } from './pages/EntryDetail.tsx';
 import { Accounts } from './pages/Accounts.tsx';
@@ -94,6 +95,9 @@ export function App() {
   const [theme, setThemeState] = useState<Theme>(() => stored<Theme>('qasa.theme', 'system', isTheme));
   const [density, setDensityState] = useState<Density>(() => stored<Density>('qasa.density', 'comfortable', isDensity));
   const [systemDark, setSystemDark] = useState(() => window.matchMedia?.('(prefers-color-scheme: dark)').matches ?? false);
+  // which list a detail page belongs to, kept with the route it was said on
+  const [pageNavState, setPageNavState] = useState<(PageNav & { route: string }) | null>(null);
+  const navRef = useRef<HTMLDivElement>(null);
   const [accounts, setAccounts] = useState<AccountView[]>([]);
   const [settings, setSettings] = useState<SettingsData | null>(null);
   const [plan, setPlan] = useState<PlanStatus | null>(null);
@@ -130,6 +134,10 @@ export function App() {
     query.addEventListener('change', changed);
     return () => query.removeEventListener('change', changed);
   }, []);
+  // the current page stays in view in the pane (at 1366x768 the list scrolls)
+  useEffect(() => {
+    navRef.current?.querySelector<HTMLElement>('.nav-item.active')?.scrollIntoView({ block: 'nearest' });
+  });
   // the Windows app learns the saved choice once (its own copy may predate it)
   useEffect(() => { window.qasaDesktop?.setTheme?.(theme); }, []); // eslint-disable-line react-hooks/exhaustive-deps
   const i18n = useMemo(() => makeI18n(lang, digits, setLang, setDigits), [lang, digits, setLang, setDigits]);
@@ -196,6 +204,11 @@ export function App() {
   );
   const { t } = i18n;
   const [page, arg, arg2] = route;
+  const routeKey = `${page ?? ''}/${arg ?? ''}`;
+  const routeRef = useRef(routeKey);
+  routeRef.current = routeKey;
+  const setPageNav = useCallback((nav: PageNav | null) => setPageNavState(nav ? { ...nav, route: routeRef.current } : null), []);
+  const pageNav = pageNavState && pageNavState.route === routeKey ? pageNavState : null;
 
   let title: string = t('home');
   let content: ReactNode;
@@ -209,7 +222,7 @@ export function App() {
       break;
     case 'entries':
       title = t('vouchers');
-      content = <Entries />;
+      content = <Entries key={arg ?? ''} {...(arg === 'draft' || arg === 'checked' || arg === 'approved' ? { status: arg as EntryStatus } : {})} />;
       break;
     case 'new':
       title = arg === 'payment' ? t('newPayment') : arg === 'journal' ? t('newJournal') : t('newReceipt');
@@ -343,10 +356,13 @@ export function App() {
       content = <Home />;
   }
 
+  if (pageNav?.title) title = t(pageNav.title);
   const company = settings ? i18n.name(settings.companyName) : '';
   const user = me?.signInRequired ? me.user?.name ?? '' : currentUser() || me?.user?.name || '';
-  // the header shows where a page sits: "Sales › Sales invoices"
-  const group = NAV.find((g) => g.items.some((item) => (item.match ?? []).some((m) => m === (page ?? '') || m === `${page}:${arg}`)))?.group;
+  // the header shows where a page sits: "Sales › Sales invoices" (a page refused to a non-admin shows Home)
+  const shown = adminPage ? '' : page ?? '';
+  const matches = (item: NavItem) => (pageNav ? item.key === pageNav.key : (item.match ?? []).some((m) => m === shown || m === `${shown}:${arg}`));
+  const group = pageNav?.group ?? NAV.find((g) => g.items.some(matches))?.group;
   const crumb = group && group !== 'gOverview' ? group : null;
 
   if (me?.signInRequired && !me.user) {
@@ -366,12 +382,12 @@ export function App() {
     return items.filter((item) => !item.adminOnly || isAdmin).map((item) => {
       if (item.path === undefined) {
         return (
-          <button key={item.key} type="button" className="nav-item" disabled>
+          <button key={item.key} type="button" className="nav-item" disabled title={t(item.key)}>
             <Icon name={item.icon} /><span>{t(item.key)}</span><span className="soon">{t('soon')}</span>
           </button>
         );
       }
-      const active = (item.match ?? []).some((m) => m === (page ?? '') || m === `${page}:${arg}`);
+      const active = matches(item);
       return (
         <a key={item.key} className={'nav-item' + (active ? ' active' : '')} href={href(item.path)} aria-current={active ? 'page' : undefined}>
           <Icon name={item.icon} /><span>{t(item.key)}</span>
@@ -389,6 +405,7 @@ export function App() {
     <I18nContext.Provider value={i18n}>
       <DataContext.Provider value={data}>
        <DisplayContext.Provider value={display}>
+       <PageNavContext.Provider value={setPageNav}>
         <ToastProvider>
           <div className="app">
             <nav className="sidebar" aria-label={t('appName')}>
@@ -403,7 +420,7 @@ export function App() {
                 <span className="avatar mark"><Icon name="building" size={16} /></span>
                 <div><span className="label">{t('company')}</span><strong className="bidi">{company || t('noCompany')}</strong></div>
               </div>
-              <div className="nav-scroll">
+              <div className="nav-scroll" ref={navRef}>
                 {NAV.filter((g) => g.group !== 'gSystem').map((g) => (
                   <div key={g.group} style={{ display: 'contents' }}>
                     <div className="nav-group">{t(g.group)}</div>
@@ -416,7 +433,7 @@ export function App() {
             <div className="main">
               <header className="topbar">
                 <h1>
-                  {crumb && <><span className="crumb">{t(crumb)}</span><Icon name="chevron" size={16} className="flip" /></>}
+                  {crumb && <><span className="crumb" aria-hidden="true">{t(crumb)}</span><Icon name="chevron" size={16} className="flip" /></>}
                   <span>{title}</span>
                 </h1>
                 <span className="spacer" />
@@ -426,7 +443,7 @@ export function App() {
                 <span className="topbar-sep" />
                 <UserMenu
                   name={user || t('owner')}
-                  role={me.signInRequired && me.user ? me.user.roles.map((r) => (isKey('role_' + r) ? t(('role_' + r) as Key) : r)).join('، ') : t('owner')}
+                  role={me.signInRequired && me.user ? me.user.roles.map((r) => (isKey('role_' + r) ? t(('role_' + r) as Key) : r)).join(lang === 'en' ? ', ' : '، ') : t('role_admin')}
                   plan={plan ? { label: plan.source === 'trial' ? t('planTrialChip') : t(`plan_${plan.plan}`), paid: plan.plan !== 'free' } : null}
                   admin={isAdmin}
                   signInRequired={me.signInRequired}
@@ -454,6 +471,7 @@ export function App() {
             </div>
           </div>
         </ToastProvider>
+       </PageNavContext.Provider>
        </DisplayContext.Provider>
       </DataContext.Provider>
     </I18nContext.Provider>
@@ -489,11 +507,11 @@ function UserMenu({ name, role, plan, admin, signInRequired, onChangePassword, o
       document.removeEventListener('keydown', key);
     };
   }, [open]);
-  const initials = name.trim().split(/\s+/).slice(0, 2).map((w) => [...w][0] ?? '').join('').toUpperCase();
+  const initials = name.trim().split(/\s+/).slice(0, 2).map((w) => [...w.replace(/^ال(?=\p{L}{2})/u, '')][0] ?? '').join(/\p{Script=Arabic}/u.test(name) ? '\u200C' : '').toUpperCase();
   const close = () => setOpen(false);
   const planChip = plan && <span className={'plan-chip' + (plan.paid ? ' paid' : '')}>{plan.label}</span>;
   return (
-    <div className="menu-anchor" ref={box}>
+    <div className="menu-anchor" ref={box} onBlur={(e) => { const next = e.relatedTarget as Node | null; if (open && next && !e.currentTarget.contains(next)) setOpen(false); }}>
       <button ref={button} type="button" className="user-btn" aria-expanded={open} aria-label={`${t('userMenu')}: ${name}`} onClick={() => setOpen(!open)}>
         <span className="avatar">{initials}</span>
         <span className="bidi">{name}</span>
@@ -512,7 +530,7 @@ function UserMenu({ name, role, plan, admin, signInRequired, onChangePassword, o
           <div className="menu-sep" />
           <a className="menu-item" href={href('settings')} onClick={close}><Icon name="globe" size={16} />{t('displayTitle')}</a>
           {admin && <a className="menu-item" href={href('plans')} onClick={close}><Icon name="star" size={16} />{t('planLicense')}</a>}
-          {signInRequired && <button type="button" className="menu-item" onClick={() => { close(); onChangePassword(); }}><Icon name="key" size={16} />{t('changePassword')}</button>}
+          {signInRequired && <button type="button" className="menu-item" onClick={() => { close(); button.current?.focus(); onChangePassword(); }}><Icon name="key" size={16} />{t('changePassword')}</button>}
           {signInRequired && (
             <>
               <div className="menu-sep" />

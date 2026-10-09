@@ -60,8 +60,7 @@ export function Home() {
         <a className="btn" href={href('new/receipt')}><Icon name="plus" size={16} />{t('newReceipt')}</a>
         <a className="btn" href={href('new/payment')}><Icon name="plus" size={16} />{t('newPayment')}</a>
         <a className="btn" href={href('new/journal')}><Icon name="plus" size={16} />{t('newJournal')}</a>
-        <span className="sep" />
-        <a className="btn" href={href('trial-balance')}><Icon name="chart" size={16} />{t('trialBalance')}</a>
+        <a className="btn" style={{ marginInlineStart: 'auto' }} href={href('trial-balance')}><Icon name="chart" size={16} />{t('trialBalance')}</a>
       </nav>
       <div className="grid-4">
         {tiles.map((tile) => (
@@ -79,7 +78,7 @@ export function Home() {
         {flow.map((step, i) => (
           <div key={step.status} style={{ display: 'contents' }}>
             {i > 0 && <Icon name="chevron" className="flip" />}
-            <a className="step" href={href('entries')}>
+            <a className="step" href={href(`entries/${step.status}`)}>
               <span className="step-top"><span className="value num">{i18n.int(step.value)}</span><StatusChip status={step.status} /></span>
               <span className="label">{step.label}</span>
             </a>

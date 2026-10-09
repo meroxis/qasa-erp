@@ -391,6 +391,7 @@ ipcMain.handle('network:pair', async (event, address: unknown, code: unknown) =>
   if ('ok' in result) setTimeout(() => void restartApp(), 900);
   return result;
 });
+
 /** The origin the app window shows (this PC's server or the office server); nothing else may use its bridge. */
 let appOrigin = '';
 const originOf = (address: string) => { try { return new URL(address).origin; } catch { return ''; } };
@@ -678,6 +679,7 @@ if (!app.requestSingleInstanceLock()) {
     serveAppScheme();
     readSavedLanguage();
     readSavedTheme();
+    nativeTheme.on('updated', () => { if (win && !win.isDestroyed()) win.setBackgroundColor(windowBackground()); });
     remote = readRemote();
     buildMenu();
     try {

@@ -28,7 +28,7 @@ const D = {
   digits: ['شكل الأرقام', 'Digits', 'شێوەی ژمارە'],
   // Settings → Language and display (each person's own, kept on this PC)
   displayTitle: ['اللغة والعرض', 'Language and display', 'زمان و پیشاندان'],
-  displayHelp: ['تُحفظ على هذا الحاسوب، ولكل مستخدم اختياره.', 'Kept on this PC; each person chooses their own.', 'لەسەر ئەم کۆمپیوتەرە هەڵدەگیرێن، و هەر کەسێک بۆ خۆی هەڵیدەبژێرێت.'],
+  displayHelp: ['تُحفظ على هذا الحاسوب فقط، ولا تؤثر في الحواسيب الأخرى.', 'Kept on this PC only; other PCs keep their own.', 'تەنها لەسەر ئەم کۆمپیوتەرە هەڵدەگیرێن و کار لە کۆمپیوتەرەکانی تر ناکەن.'],
   languageHelp: ['لغة القوائم والتقارير والمستندات المطبوعة.', 'The language of menus, reports and printed documents.', 'زمانی لیستەکان، ڕاپۆرتەکان و بەڵگەنامە چاپکراوەکان.'],
   digitsHelp: ['للعربية والكردية؛ الإنجليزية تستعمل 123 دائماً.', 'For Arabic and Kurdish; English always uses 123.', 'بۆ عەرەبی و کوردی؛ ئینگلیزی هەمیشە 123 بەکاردەهێنێت.'],
   appearance: ['المظهر', 'Appearance', 'ڕووکار'],

@@ -1,7 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useId, useMemo, useRef, useState, type ReactNode } from 'react';
 import { formatQty, normalizeForSearch, parseAmount, parseQty, formatAmount, type CurrencyCode, type EntryStatus, type EntryType, type InvoiceStatus } from '@qasa/core';
 import { ApiError, type AccountView, type PlanStatus, type Settings } from './api.ts';
-import { isKey, useI18n, type I18n } from './i18n.ts';
+import { isKey, useI18n, type I18n, type Key } from './i18n.ts';
 
 /* ---------- shared data ---------- */
 
@@ -26,6 +26,15 @@ export const DisplayContext = createContext<Display>({ theme: 'system', density:
 export const useDisplay = () => useContext(DisplayContext);
 export const isTheme = (v: string): v is Theme => v === 'light' || v === 'dark' || v === 'system';
 export const isDensity = (v: string): v is Density => v === 'comfortable' || v === 'compact';
+
+/** A detail page says which list it belongs to (a purchase invoice is under Purchases), for the title band and the pane. */
+export interface PageNav { key: Key; group: Key; title?: Key }
+export const PageNavContext = createContext<(nav: PageNav | null) => void>(() => {});
+export function usePageNav(nav: PageNav | null): void {
+  const set = useContext(PageNavContext);
+  const key = nav ? `${nav.group}/${nav.key}/${nav.title ?? ''}` : '';
+  useEffect(() => { set(nav); }, [set, key]); // eslint-disable-line react-hooks/exhaustive-deps
+}
 
 export function useData(): AppData {
   const ctx = useContext(DataContext);

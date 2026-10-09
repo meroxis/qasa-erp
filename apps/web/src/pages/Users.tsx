@@ -80,8 +80,8 @@ export function PasswordModal({ onClose, needsCurrent }: { onClose(): void; need
   return (
     <Modal title={t('changePassword')} onClose={onClose}>
       <form className="stack" onSubmit={submit}>
-        {needsCurrent && <label className="field"><span>{t('currentPassword')}</span><input className="input ltr" type="password" autoComplete="current-password" value={current} onChange={(e) => setCurrent(e.target.value)} /></label>}
-        <label className="field"><span>{t('newPassword')}</span><input className="input ltr" type="password" autoComplete="new-password" value={next} onChange={(e) => setNext(e.target.value)} /></label>
+        {needsCurrent && <label className="field"><span>{t('currentPassword')}</span><input className="input ltr" type="password" autoComplete="current-password" autoFocus value={current} onChange={(e) => setCurrent(e.target.value)} /></label>}
+        <label className="field"><span>{t('newPassword')}</span><input className="input ltr" type="password" autoComplete="new-password" autoFocus={!needsCurrent} value={next} onChange={(e) => setNext(e.target.value)} /></label>
         <p className="muted small" style={{ margin: 0 }}>{t('passwordHelp')}</p>
         <ErrorBox error={error} />
         <div className="row">
