@@ -8,7 +8,7 @@ Please email **info@qasaerp.com** with "Security" in the subject, and include:
 
 - what you found and where (the Windows app, the office network, the website or the demo);
 - the steps to reproduce it, and what an attacker could do with it;
-- the version you tested (Help → About in the app).
+- the version you tested (Help → About in the app), and whether it came from the Microsoft Store or the installer.
 
 Please don't open a public issue or discuss it publicly until a fix is released. We will confirm that we received
 your report, keep you informed, and credit you in the release notes if you wish.
@@ -17,8 +17,9 @@ The same contact is published at [qasaerp.com/.well-known/security.txt](https://
 
 ## Supported versions
 
-Security fixes go into the latest release. The Windows app updates itself, so staying on the latest version is the
-best protection.
+Security fixes go into the latest release. The installer version updates itself from this repository's releases; the
+Microsoft Store version gets the same release through the Store once Microsoft has certified it. Staying on the
+latest version is the best protection.
 
 ## How Qasa ERP protects a company's data
 
@@ -40,6 +41,11 @@ best protection.
   rights on the whole server.
 - **The Windows app is locked down:** the window has no Node.js access (sandbox and context isolation), and Electron
   fuses stop the program running as a plain Node runtime and make it reject tampered app files.
-- **Updates** come only from this repository's releases, which are built by GitHub Actions.
+- **Updates:** the installer version updates only from this repository's releases, which are built by GitHub Actions,
+  and checks each download against the SHA-512 in the release's `latest.yml`. The Microsoft Store version is updated
+  only by the Store, with packages built by the same workflow and signed by Microsoft.
+- **Signatures:** the Microsoft Store version is signed by Microsoft. The installer (`Qasa-ERP-Setup.exe`) isn't
+  code-signed yet: download it only from this repository's releases or from qasaerp.com, which links there. GitHub shows
+  each release file's SHA-256 next to it.
 - **The website and demo** send no data anywhere: the demo runs entirely in the browser. The site sets a strict
   Content Security Policy and is served through Cloudflare.

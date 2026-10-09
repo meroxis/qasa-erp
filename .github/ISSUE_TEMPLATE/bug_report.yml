@@ -30,7 +30,8 @@ body:
     attributes:
       label: Where · أين · لە کوێ
       options:
-        - Windows app
+        - Windows app from the Microsoft Store · من Microsoft Store · لە Microsoft Store
+        - Windows app from the installer · من ملف التثبيت · لە فایلی دامەزراندن
         - Live demo (qasaerp.com/demo)
         - Running from source
     validations:
@@ -39,7 +40,7 @@ body:
     id: version
     attributes:
       label: Version · الإصدار · وەشان
-      description: Help → About in the app, e.g. 0.1.3
+      description: Help → About in the app, e.g. 0.1.8
   - type: dropdown
     id: language
     attributes:
