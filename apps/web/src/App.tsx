@@ -20,6 +20,11 @@ import { StockDocDetail, StockDocEditor, StockDocs } from './pages/StockDocs.tsx
 import { PasswordModal, SignIn, Users } from './pages/Users.tsx';
 import { Guarantors, InstallmentDetail, InstallmentEditor, Installments, InstallmentsAging } from './pages/Installments.tsx';
 
+declare global {
+  /** Only in the Windows app: its bridge to the desktop shell (apps/desktop/src/app-preload.ts). */
+  interface Window { qasaDesktop?: { setLanguage(lang: string): void } }
+}
+
 function stored<T extends string>(key: string, fallback: T, valid: (v: string) => boolean): T {
   try {
     const v = localStorage.getItem(key);
@@ -94,7 +99,11 @@ export function App() {
   const [online, setOnline] = useState(true);
   const route = useRoute();
 
-  const setLang = useCallback((l: Lang) => { setLangState(l); remember('qasa.lang', l); }, []);
+  const setLang = useCallback((l: Lang) => {
+    setLangState(l);
+    remember('qasa.lang', l);
+    window.qasaDesktop?.setLanguage(l); // the Windows app's menus and start dialogs follow
+  }, []);
   const setDigits = useCallback((d: DigitStyle) => { setDigitsState(d); remember('qasa.digits', d); }, []);
   const i18n = useMemo(() => makeI18n(lang, digits, setLang, setDigits), [lang, digits, setLang, setDigits]);
 

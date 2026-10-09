@@ -391,6 +391,13 @@ ipcMain.handle('network:pair', async (event, address: unknown, code: unknown) =>
   if ('ok' in result) setTimeout(() => void restartApp(), 900);
   return result;
 });
+// the app window says when the user picks another language (app-preload.ts), so the menus follow at once
+ipcMain.on('app:language', (event, value: unknown) => {
+  if (!win || event.sender !== win.webContents || !isLang(value) || value === lang) return;
+  useLanguage(value);
+  buildMenu();
+});
+
 ipcMain.on('network:close', (event) => {
   if (connectWin && event.sender === connectWin.webContents) connectWin.close();
 });
@@ -425,11 +432,19 @@ async function officeServerProblem(certificate: boolean): Promise<void> {
 async function readLanguage(): Promise<void> {
   try {
     const saved = await win?.webContents.executeJavaScript("localStorage.getItem('qasa.lang')", true);
-    if (isLang(saved) && saved !== lang) {
-      lang = saved;
-      writeFileSync(languageFile(), JSON.stringify({ lang }));
-    }
+    if (isLang(saved)) useLanguage(saved);
   } catch { /* keep the default */ }
+}
+
+/** The language the user picked: for the menus now and, saved, for the dialogs at the next start. */
+function useLanguage(next: Lang): void {
+  if (next === lang) return;
+  lang = next;
+  try {
+    writeFileSync(languageFile(), JSON.stringify({ lang }));
+  } catch (error) {
+    log('could not save the language:', error);
+  }
 }
 
 /** The app's language is in the window; a copy here lets the dialogs before the window (at start) use it too. */
@@ -500,7 +515,7 @@ async function createWindow(url: string): Promise<void> {
     width: 1360, height: 860, minWidth: 1024, minHeight: 640,
     title: 'Qasa ERP', backgroundColor: '#F4F6FA', show: false, autoHideMenuBar: false,
     icon: join(__dirname, 'icon.png'),
-    webPreferences: { contextIsolation: true, sandbox: true, nodeIntegration: false, spellcheck: false }
+    webPreferences: { preload: join(__dirname, 'app-preload.cjs'), contextIsolation: true, sandbox: true, nodeIntegration: false, spellcheck: false }
   });
 
   // Only the app itself opens inside the window; web links go to the browser and email links to the mail app.

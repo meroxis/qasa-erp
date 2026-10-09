@@ -644,10 +644,9 @@ const MYSQL_BASE_VERSION = 5;
 export const SCHEMA_VERSION = MIGRATIONS.length;
 
 export function openDatabase(file: string): Db {
+  if (file !== ':memory:') refuseNewerFile(file);
   const db: Db = new DatabaseSync(file);
   try {
-    // books from a newer version are refused before anything here writes to the file (even the journal mode)
-    if (db.prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'schema_version'").get()) refuseNewer(schemaVersion(db));
     db.exec('PRAGMA foreign_keys = ON');
     if (file !== ':memory:') {
       // WAL + FULL sync: a committed voucher survives a power cut (generator switch-over).
@@ -678,6 +677,28 @@ export function schemaVersion(db: Db): number {
  */
 function refuseNewer(version: number): void {
   if (version > MIGRATIONS.length) throw new AppError(409, 'database_newer', { version, app: MIGRATIONS.length });
+}
+
+/**
+ * Looks at an existing company file read-only before it is opened for writing. Closing a writable connection would
+ * checkpoint changes a newer version left in the write-ahead log (after a crash) into the file; a read-only one reads
+ * them but never checkpoints, so refused books stay exactly as they were, -wal file included.
+ */
+function refuseNewerFile(file: string): void {
+  let probe: DatabaseSync;
+  try {
+    probe = new DatabaseSync(file, { readOnly: true });
+  } catch {
+    return; // no file yet: a new company
+  }
+  try {
+    if (probe.prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'schema_version'").get()) refuseNewer(schemaVersion(probe));
+  } catch (error) {
+    if (error instanceof AppError) throw error;
+    // anything else (a damaged file, a lock): the normal open below decides, as it always did
+  } finally {
+    probe.close();
+  }
 }
 
 /** Applies pending migrations, optionally stopping at `target` (used by the upgrade test). */
