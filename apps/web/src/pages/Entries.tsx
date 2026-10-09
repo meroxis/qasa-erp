@@ -43,11 +43,11 @@ export function EntriesTable({ entries }: { entries: EntrySummary[] }) {
 const TYPES: (EntryType | '')[] = ['', 'receipt', 'payment', 'journal', 'sale', 'purchase', 'reversal', 'closing'];
 const STATUSES: (EntryStatus | '')[] = ['', 'draft', 'checked', 'approved'];
 
-export function Entries() {
+export function Entries({ status: initialStatus }: { status?: EntryStatus } = {}) {
   const i18n = useI18n();
   const { t } = i18n;
   const [type, setType] = useState<EntryType | ''>('');
-  const [status, setStatus] = useState<EntryStatus | ''>('');
+  const [status, setStatus] = useState<EntryStatus | ''>(initialStatus ?? '');
   const [q, setQ] = useState('');
   const { data, error } = useLoad(() => api.entries({ type, status, q: q.trim() }), [type, status, q]);
 

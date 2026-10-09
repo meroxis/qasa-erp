@@ -31,7 +31,7 @@ vi.mock('../components.tsx', () => ({
   AccountCombo: 'AccountCombo', AmountInput: 'AmountInput', ErrorBox: 'ErrorBox', Icon: 'Icon', InvoiceStatusChip: 'InvoiceStatusChip',
   Modal: 'Modal', QtyInput: 'QtyInput', SearchCombo: 'SearchCombo',
   useData: () => ({ settings: { defaultRateX100: 142000, postingAccounts: { cash: '1811' } }, reloadAccounts: async () => {} }),
-  useLoad: (fn: () => unknown) => ({ data: fn() }), useToast: () => () => {}
+  useLoad: (fn: () => unknown) => ({ data: fn() }), usePageNav: () => {}, useToast: () => () => {}
 }));
 vi.mock('../i18n.ts', () => ({ useI18n: () => ({
   t: (s: string) => s, name: (n: { en: string }) => n.en, int: String, money: String, digitsOf: String, lang: 'en'
