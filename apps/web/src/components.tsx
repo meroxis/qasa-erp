@@ -18,6 +18,15 @@ export interface AppData {
 
 export const DataContext = createContext<AppData | null>(null);
 
+/** How the app looks on this PC (Settings → Language and display), next to the language in I18n. */
+export type Theme = 'light' | 'dark' | 'system';
+export type Density = 'comfortable' | 'compact';
+export interface Display { theme: Theme; density: Density; setTheme(theme: Theme): void; setDensity(density: Density): void }
+export const DisplayContext = createContext<Display>({ theme: 'system', density: 'comfortable', setTheme: () => {}, setDensity: () => {} });
+export const useDisplay = () => useContext(DisplayContext);
+export const isTheme = (v: string): v is Theme => v === 'light' || v === 'dark' || v === 'system';
+export const isDensity = (v: string): v is Density => v === 'comfortable' || v === 'compact';
+
 export function useData(): AppData {
   const ctx = useContext(DataContext);
   if (!ctx) throw new Error('DataContext missing');
@@ -160,12 +169,25 @@ const PATHS: Record<string, string> = {
   swap: 'M16 3l4 4-4 4M20 7H4M8 21l-4-4 4-4M4 17h16',
   star: 'M12 2.5l2.9 6 6.6.9-4.8 4.6 1.2 6.5L12 17.4l-5.9 3.1 1.2-6.5-4.8-4.6 6.6-.9z',
   mail: 'M22 6a2 2 0 0 0-2-2H4a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2zM22 7l-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7',
-  contact: 'M16 2v2M7 22v-2a2 2 0 0 1 2-2h6a2 2 0 0 1 2 2v2M8 2v2M12 13a3 3 0 1 0 0-6 3 3 0 0 0 0 6M3 6a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z'
+  contact: 'M16 2v2M7 22v-2a2 2 0 0 1 2-2h6a2 2 0 0 1 2 2v2M8 2v2M12 13a3 3 0 1 0 0-6 3 3 0 0 0 0 6M3 6a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z',
+  chevronDown: 'm6 9 6 6 6-6',
+  search: 'm21 21-4.3-4.3M19 11a8 8 0 1 1-16 0 8 8 0 0 1 16 0',
+  moon: 'M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z',
+  sun: 'M16 12a4 4 0 1 1-8 0 4 4 0 0 1 8 0M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41',
+  globe: 'M22 12a10 10 0 1 1-20 0 10 10 0 0 1 20 0M2 12h20M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10',
+  hash: 'M4 9h16M4 15h16M10 3 8 21M16 3l-2 18',
+  contrast: 'M22 12a10 10 0 1 1-20 0 10 10 0 0 1 20 0M12 18a6 6 0 0 0 0-12z',
+  rows: 'M3 5h18M3 12h18M3 19h18',
+  building: 'M6 22V4a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v18ZM6 12H4a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h2M18 9h2a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2h-2M10 6h4M10 10h4M10 14h4M10 18h4',
+  wallet: 'M19 7V4a1 1 0 0 0-1-1H5a2 2 0 0 0 0 4h15a1 1 0 0 1 1 1v4h-3a2 2 0 0 0 0 4h3a1 1 0 0 0 1-1v-2a1 1 0 0 0-1-1M3 5v14a2 2 0 0 0 2 2h15a1 1 0 0 0 1-1v-4',
+  key: 'm15.5 7.5 2.3 2.3a1 1 0 0 0 1.4 0l2.1-2.1a1 1 0 0 0 0-1.4L19 4M21 2l-9.6 9.6M13 15.5a5.5 5.5 0 1 1-11 0 5.5 5.5 0 0 1 11 0',
+  logout: 'M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9'
 };
 
-export function Icon({ name, size = 18 }: { name: keyof typeof PATHS | string; size?: number }) {
+/** A line icon; className "flip" mirrors a directional one (chevron, sign out) in Arabic and Kurdish. */
+export function Icon({ name, size = 18, className }: { name: keyof typeof PATHS | string; size?: number; className?: string }) {
   return (
-    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+    <svg className={className} width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
       <path d={PATHS[name] ?? ''} />
     </svg>
   );

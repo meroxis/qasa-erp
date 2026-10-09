@@ -3,7 +3,7 @@
  * 127.0.0.1, the window shows the app from it, and the company file lives in the user's profile:
  *   %APPDATA%\Qasa ERP\data\qasa.sqlite
  */
-import { app, BrowserWindow, dialog, ipcMain, Menu, protocol, safeStorage, session, shell, type MenuItemConstructorOptions } from 'electron';
+import { app, BrowserWindow, dialog, ipcMain, Menu, nativeTheme, protocol, safeStorage, session, shell, type MenuItemConstructorOptions } from 'electron';
 import electronUpdater from 'electron-updater';
 import { randomBytes } from 'node:crypto';
 import { appendFileSync, copyFileSync, existsSync, mkdirSync, readFileSync, renameSync, statSync, writeFileSync } from 'node:fs';
@@ -400,6 +400,13 @@ function fromAppPage(event: Electron.IpcMainEvent): boolean {
   return !!win && event.sender === win.webContents && !!frame && frame === win.webContents.mainFrame && originOf(frame.url) === appOrigin;
 }
 
+// the app window says when the user picks another appearance: Electron's title bar, menus and dialogs follow
+ipcMain.on('app:theme', (event, value: unknown) => {
+  if (!fromAppPage(event) || !isThemeSource(value)) return;
+  useTheme(value);
+  win?.setBackgroundColor(windowBackground());
+});
+
 // the app window says when the user picks another language (app-preload.ts), so the menus follow at once
 ipcMain.on('app:language', (event, value: unknown) => {
   if (!fromAppPage(event) || !isLang(value) || value === lang) return;
@@ -455,6 +462,28 @@ function useLanguage(next: Lang): void {
     log('could not save the language:', error);
   }
 }
+
+/** Light, dark or as Windows: the title bar, the menus and the dialogs follow the app's choice (Settings → Appearance). */
+type ThemeSource = typeof nativeTheme.themeSource;
+const isThemeSource = (v: unknown): v is ThemeSource => v === 'light' || v === 'dark' || v === 'system';
+const themeFile = () => join(app.getPath('userData'), 'theme.json');
+function readSavedTheme(): void {
+  try {
+    const saved = (JSON.parse(readFileSync(themeFile(), 'utf8')) as { theme?: unknown }).theme;
+    if (isThemeSource(saved)) nativeTheme.themeSource = saved;
+  } catch { /* first start: as Windows */ }
+}
+function useTheme(next: ThemeSource): void {
+  if (next === nativeTheme.themeSource) return;
+  nativeTheme.themeSource = next;
+  try {
+    writeFileSync(themeFile(), JSON.stringify({ theme: next }));
+  } catch (error) {
+    log('could not save the appearance:', error);
+  }
+}
+/** The window's colour before the page paints, so it never flashes white in dark mode. */
+const windowBackground = () => (nativeTheme.shouldUseDarkColors ? '#11151C' : '#EDF0F5');
 
 /** The app's language is in the window; a copy here lets the dialogs before the window (at start) use it too. */
 const languageFile = () => join(app.getPath('userData'), 'language.json');
@@ -522,7 +551,7 @@ async function createWindow(url: string): Promise<void> {
 
   win = new BrowserWindow({
     width: 1360, height: 860, minWidth: 1024, minHeight: 640,
-    title: 'Qasa ERP', backgroundColor: '#F4F6FA', show: false, autoHideMenuBar: false,
+    title: 'Qasa ERP', backgroundColor: windowBackground(), show: false, autoHideMenuBar: false,
     icon: join(__dirname, 'icon.png'),
     webPreferences: { preload: join(__dirname, 'app-preload.cjs'), contextIsolation: true, sandbox: true, nodeIntegration: false, spellcheck: false }
   });
@@ -648,6 +677,7 @@ if (!app.requestSingleInstanceLock()) {
     app.setAppUserModelId('com.meroxis.qasaerp');
     serveAppScheme();
     readSavedLanguage();
+    readSavedTheme();
     remote = readRemote();
     buildMenu();
     try {

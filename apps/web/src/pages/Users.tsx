@@ -1,5 +1,5 @@
 import { useState, type FormEvent } from 'react';
-import { todayIso } from '@qasa/core';
+import { htmlLang, todayIso } from '@qasa/core';
 import { api, ROLES, type Me, type Role, type UserView } from '../api.ts';
 import { ErrorBox, Icon, Logo, Modal, useData, useLoad, useToast } from '../components.tsx';
 import { useI18n, type Key } from '../i18n.ts';
@@ -7,7 +7,7 @@ import { href } from '../router.ts';
 
 /** The page shown instead of the app while nobody is signed in. */
 export function SignIn({ company, onSignedIn }: { company: string; onSignedIn(me: Me): void }) {
-  const { t } = useI18n();
+  const { t, lang, setLang } = useI18n();
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [busy, setBusy] = useState(false);
@@ -30,7 +30,17 @@ export function SignIn({ company, onSignedIn }: { company: string; onSignedIn(me
   return (
     <div className="signin-page">
       <form className="card pad stack signin-card" onSubmit={submit}>
-        <div className="row"><Logo size={40} /><div><div className="brand-name" style={{ color: 'var(--ink)' }}>{t('appName')}</div><div className="muted small">{t('tagline')}</div></div></div>
+        <div className="row">
+          <Logo size={40} />
+          <div><div className="brand-name">{t('appName')}</div><div className="muted small">{t('tagline')}</div></div>
+          <span className="spacer" />
+          {/* the language is chosen before signing in too (in the app it lives in Settings) */}
+          <div className="track" role="group" aria-label={t('language')}>
+            {([['ar', 'عربي'], ['en', 'EN'], ['ku', 'کوردی']] as const).map(([l, label]) => (
+              <button key={l} type="button" lang={htmlLang(l)} aria-pressed={lang === l} onClick={() => setLang(l)}>{label}</button>
+            ))}
+          </div>
+        </div>
         <h2>{company ? t('signInTitle', { c: company }) : t('signIn')}</h2>
         <label className="field"><span>{t('username')}</span>
           <input className="input ltr" autoComplete="username" autoFocus value={username} onChange={(e) => setUsername(e.target.value)} required maxLength={32} />
