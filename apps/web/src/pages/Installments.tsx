@@ -38,7 +38,7 @@ function whatsappNumber(phone: string): string | null {
 
 function NotAvailable() {
   const { t } = useI18n();
-  return <div className="card pad"><div className="alert">{t('insOfficial')}</div></div>;
+  return <div className="alert info">{t('insOfficial')}</div>;
 }
 
 /* ---------- list ---------- */

@@ -25,6 +25,11 @@ const T = {
   downloading: ['يوجد إصدار جديد ({v})، يجري تنزيله وسننبّهك عند جاهزيته.', 'A new version ({v}) is downloading. We’ll let you know when it’s ready.', 'وەشانێکی نوێ ({v}) دادەبەزێت. کاتێک ئامادە بوو ئاگادارت دەکەینەوە.'],
   updateError: ['تعذر التحقق من التحديثات. تحقق من الاتصال بالإنترنت وحاول لاحقاً.', 'Couldn’t check for updates. Check the internet connection and try again later.', 'نەتوانرا نوێکردنەوە بپشکنرێت. پەیوەندیی ئینتەرنێت بپشکنە و دواتر هەوڵ بدەرەوە.'],
   startFailed: ['تعذر تشغيل قاصة ERP', 'Qasa ERP couldn’t start', 'قاسە ERP نەتوانرا دەستپێبکات'],
+  // books a newer version has already upgraded (the Store version can be a release behind the installer)
+  newerBooks: ['هذه الدفاتر من إصدار أحدث لقاصة ERP، ولا يستطيع هذا الإصدار ({v}) فتحها. لم يتغيّر فيها شيء.', 'These books come from a newer Qasa ERP, and this version ({v}) can’t open them. Nothing in them was changed.', 'ئەم دەفتەرانە لە وەشانێکی نوێتری قاسە ERP ـەوەن، و ئەم وەشانە ({v}) ناتوانێت بیانکاتەوە. هیچ شتێکیان تێدا نەگۆڕاوە.'],
+  newerFromStore: ['حدّث قاصة ERP في Microsoft Store، ثم افتحه من جديد. إن لم يتوفر التحديث في Microsoft Store بعد، فأحدث إصدار موجود على qasaerp.com.', 'Update Qasa ERP in the Microsoft Store, then open it again. If the update isn’t in the Microsoft Store yet, the latest version is on qasaerp.com.', 'قاسە ERP لە Microsoft Store نوێ بکەرەوە، پاشان دووبارە بیکەرەوە. ئەگەر نوێکردنەوەکە هێشتا لە Microsoft Store نییە، نوێترین وەشان لە qasaerp.com هەیە.'],
+  newerFromSite: ['ثبّت أحدث إصدار من qasaerp.com، ثم افتحه من جديد.', 'Install the latest version from qasaerp.com, then open it again.', 'نوێترین وەشان لە qasaerp.com دابمەزرێنە، پاشان دووبارە بیکەرەوە.'],
+  getLatest: ['احصل على أحدث إصدار', 'Get the latest version', 'نوێترین وەشان وەربگرە'],
   // the office network, on the other PCs
   connect: ['الاتصال بخادم المكتب…', 'Connect to an office server…', 'پەیوەندی بە سێرڤەری نووسینگەوە…'],
   connectedTo: ['متصل بـ {host}', 'Connected to {host}', 'پەیوەستە بە {host}'],

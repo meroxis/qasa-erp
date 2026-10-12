@@ -5,7 +5,7 @@ import {
 } from '@qasa/core';
 import { api, ApiError, type InvoiceView, type ItemView } from '../api.ts';
 import {
-  AccountCombo, AmountInput, ErrorBox, Icon, InvoiceStatusChip, Modal, QtyInput, SearchCombo, useData, useLoad, useToast, type PickOption
+  AccountCombo, AmountInput, ErrorBox, Icon, InvoiceStatusChip, Modal, QtyInput, SearchCombo, useData, useLoad, usePageNav, useToast, type PageNav, type PickOption
 } from '../components.tsx';
 import { useI18n } from '../i18n.ts';
 import { go, href } from '../router.ts';
@@ -73,6 +73,7 @@ export function InvoiceEditor({ kind: initialKind, id, partyId: initialParty }: 
   const [savedId, setSavedId] = useState<string | undefined>(id);
   const [ready, setReady] = useState(!id);
   const [loadError, setLoadError] = useState<unknown>(null);
+  usePageNav(id && ready ? INVOICE_NAV[kind] : null);
   const [date, setDate] = useState(todayIso());
   const [partyId, setPartyId] = useState(initialParty ?? '');
   const [warehouseId, setWarehouseId] = useState('');
@@ -309,12 +310,20 @@ export function InvoiceEditor({ kind: initialKind, id, partyId: initialParty }: 
 
 /* ---------- view & print ---------- */
 
+const INVOICE_NAV: Record<InvoiceDocKind, PageNav> = {
+  sale: { key: 'invoices', group: 'gSales' },
+  purchase: { key: 'purchaseInvoices', group: 'gPurchases' },
+  sale_return: { key: 'salesReturns', group: 'gSales' },
+  purchase_return: { key: 'purchaseReturns', group: 'gPurchases' }
+};
+
 export function InvoiceDetail({ id }: { id: string }) {
   const i18n = useI18n();
   const { t } = i18n;
   const toast = useToast();
   const { settings, plan, reloadAccounts } = useData();
   const { data, error, reload } = useLoad(() => api.invoice(id), [id]);
+  usePageNav(data ? { ...INVOICE_NAV[data.kind], title: INVOICE_NAV[data.kind].key } : null);
   const [busy, setBusy] = useState(false);
   const [actionError, setActionError] = useState<unknown>(null);
   const [cancelling, setCancelling] = useState(false);

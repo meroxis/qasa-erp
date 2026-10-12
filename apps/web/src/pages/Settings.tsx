@@ -1,13 +1,87 @@
 import { useEffect, useState } from 'react';
-import { formatAmount, MONTHS, rateFromX100, todayIso, toWesternDigits, type Names, type PostingAccounts } from '@qasa/core';
+import { formatAmount, htmlLang, MONTHS, rateFromX100, todayIso, toWesternDigits, type Lang, type Names, type PostingAccounts } from '@qasa/core';
 import {
   api, ApiError, currentUser, setCurrentUser, type BackupStatus, type DatabaseCheck, type DatabaseInput, type DatabaseStatus, type NetworkStatus, type YearEndStatus
 } from '../api.ts';
-import { AccountCombo, ErrorBox, Modal, useData, useLoad, useToast } from '../components.tsx';
+import { AccountCombo, ErrorBox, Icon, Modal, useData, useDisplay, useLoad, useToast, type Density, type Theme } from '../components.tsx';
 import { isKey, useI18n } from '../i18n.ts';
 import { href } from '../router.ts';
 
-export function Settings() {
+/** Language and display are each person's own; the company's settings are for admins. */
+export function Settings({ admin }: { admin: boolean }) {
+  return (
+    <div className="stack" style={{ maxWidth: 1000 }}>
+      <DisplaySettings />
+      {admin && <CompanySettings />}
+    </div>
+  );
+}
+
+const LANGUAGES: [Lang, string][] = [['ar', 'عربي'], ['en', 'English'], ['ku', 'کوردی']];
+
+/** Settings → Language and display, Windows-style: what it is on one side, the control on the other. */
+function DisplaySettings() {
+  const { t, lang, digits, setLang, setDigits } = useI18n();
+  const { theme, density, setTheme, setDensity } = useDisplay();
+  const themes: [Theme, string, string][] = [['light', 'sun', t('themeLight')], ['dark', 'moon', t('themeDark')], ['system', 'contrast', t('themeSystem')]];
+  const densities: [Density, string][] = [['comfortable', t('densityComfortable')], ['compact', t('densityCompact')]];
+  const english = lang === 'en';
+  return (
+    <section className="stack" aria-labelledby="display-title">
+      <div className="section-head">
+        <h2 id="display-title">{t('displayTitle')}</h2>
+        <p>{t('displayHelp')}</p>
+      </div>
+      <div className="settings-group">
+        <div className="setting">
+          <Icon name="globe" size={20} className="setting-icon" />
+          <div className="setting-text"><strong>{t('language')}</strong><span>{t('languageHelp')}</span></div>
+          <div className="setting-ctl">
+            <div className="track" role="group" aria-label={t('language')}>
+              {LANGUAGES.map(([l, label]) => (
+                <button key={l} type="button" lang={htmlLang(l)} aria-pressed={lang === l} onClick={() => setLang(l)}>{label}</button>
+              ))}
+            </div>
+          </div>
+        </div>
+        <div className={'setting' + (english ? ' disabled' : '')}>
+          <Icon name="hash" size={20} className="setting-icon" />
+          <div className="setting-text"><strong>{t('digits')}</strong><span>{t('digitsHelp')}</span></div>
+          <div className="setting-ctl">
+            <div className="track" role="group" aria-label={t('digits')}>
+              <button type="button" lang="ar" aria-pressed={!english && digits === 'eastern'} disabled={english} onClick={() => setDigits('eastern')}>١٢٣</button>
+              <button type="button" aria-pressed={english || digits === 'western'} disabled={english} onClick={() => setDigits('western')}>123</button>
+            </div>
+          </div>
+        </div>
+        <div className="setting">
+          <Icon name="contrast" size={20} className="setting-icon" />
+          <div className="setting-text"><strong>{t('appearance')}</strong><span>{t('appearanceHelp')}</span></div>
+          <div className="setting-ctl">
+            <div className="track" role="group" aria-label={t('appearance')}>
+              {themes.map(([v, icon, label]) => (
+                <button key={v} type="button" aria-pressed={theme === v} onClick={() => setTheme(v)} style={{ gap: 6 }}><Icon name={icon} size={14} />{label}</button>
+              ))}
+            </div>
+          </div>
+        </div>
+        <div className="setting">
+          <Icon name="rows" size={20} className="setting-icon" />
+          <div className="setting-text"><strong>{t('density')}</strong><span>{t('densityHelp')}</span></div>
+          <div className="setting-ctl">
+            <div className="track" role="group" aria-label={t('density')}>
+              {densities.map(([v, label]) => (
+                <button key={v} type="button" aria-pressed={density === v} onClick={() => setDensity(v)}>{label}</button>
+              ))}
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function CompanySettings() {
   const i18n = useI18n();
   const { t } = i18n;
   const toast = useToast();
@@ -61,7 +135,7 @@ export function Settings() {
   const entityLabel = (e: string) => (isKey('e_' + e) ? t(('e_' + e) as 'e_entry') : e);
 
   return (
-    <div className="stack" style={{ maxWidth: 1000 }}>
+    <>
       <div className="card pad stack">
         <h2>{t('company')}</h2>
         <div className="grid-3">
@@ -122,7 +196,7 @@ export function Settings() {
           </tbody>
         </table>
       </div>
-    </div>
+    </>
   );
 }
 
@@ -280,7 +354,7 @@ function DatabaseCard() {
   }
 
   if (!status) return error ? <div className="card pad stack"><h2>{t('dbTitle')}</h2><ErrorBox error={error} /></div> : null;
-  const ltr = (x: string) => `⁦${x}⁩`;
+  const ltr = (x: string) => `\u2066${x}\u2069`;
   const server = status.server;
   const disabled = busy || restarting;
   const confirmedPath = check?.step === 'confirm_certificate' && matches;
@@ -521,7 +595,7 @@ function BackupCard() {
     : newPassword.b.length > 0 && newPassword.a !== newPassword.b ? t('bkPasswordMismatch') : null;
 
   // isolated left-to-right, so "244 KB" and the date keep their order inside Arabic and Kurdish text
-  const ltr = (s: string) => `⁦${s}⁩`;
+  const ltr = (s: string) => `\u2066${s}\u2069`;
   const when = (iso: string) => ltr(digitsOf(new Date(iso).toLocaleString('en-GB', { dateStyle: 'medium', timeStyle: 'short' })));
   const size = (bytes: number) => ltr(digitsOf(bytes >= 1048576 ? `${(bytes / 1048576).toFixed(1)} MB` : `${Math.max(1, Math.round(bytes / 1024))} KB`));
 
