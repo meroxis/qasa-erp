@@ -9,8 +9,12 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/meroxis/qasa-erp/releases/latest/download/Qasa-ERP-Setup.exe"><img src="https://img.shields.io/badge/Download_for_Windows-10_%26_11-F2A33A?style=for-the-badge&labelColor=0F1E3D" alt="Download for Windows 10 and 11"></a>
+  <a href="https://apps.microsoft.com/detail/9NRTX5BBK9DW?hl=en-US&amp;referrer=appbadge&amp;cid=github-readme"><img src="https://get.microsoft.com/images/en-us%20dark.svg" alt="Get Qasa ERP from the Microsoft Store" height="52"></a>
+</p>
+
+<p align="center">
   <a href="https://qasaerp.com/demo/"><img src="https://img.shields.io/badge/Live_demo-in_your_browser-1D5FD1?style=for-the-badge&labelColor=0F1E3D" alt="Try the live demo in your browser"></a>
+  <a href="#install"><img src="https://img.shields.io/badge/Installer-Windows_10_%26_11-F2A33A?style=for-the-badge&labelColor=0F1E3D" alt="Or download the installer for Windows 10 and 11"></a>
 </p>
 
 <p align="center">
@@ -22,6 +26,7 @@
 
 <p align="center">
   <a href="https://qasaerp.com">Website</a> ·
+  <a href="#install">Install</a> ·
   <a href="#what-it-does">Features</a> ·
   <a href="#screenshots">Screenshots</a> ·
   <a href="#plans">Plans</a> ·
@@ -45,15 +50,16 @@ Qasa ERP keeps the books of an Iraqi company the way its finance department alre
 - **Three languages, two currencies.** Arabic, English and Kurdish (Sorani), switchable at any time, with Arabic-Indic
   digits if you prefer; dinars and dollars at the day's rate.
 - **A team, with controls.** Sign-in, roles, and separate duties, so whoever prepares a voucher cannot approve it.
-- **On your own PC.** The Windows app keeps the company file on your computer, works without internet and updates
-  itself. An office-network edition and an online edition share the same code.
+- **On your own PC.** The Windows app, from the Microsoft Store or our installer, keeps the company file on your
+  computer, works without internet and stays up to date. An office-network edition and an online edition share the
+  same code.
 
 <div dir="rtl" lang="ar">
 
 **بالعربية:** قاصة ERP برنامج محاسبة مجاني ومفتوح المصدر للشركات العراقية، مبني على النظام المحاسبي الموحد: سندات القبض
 والصرف والقيود اليومية بتسلسل المنظم والمدقق والمصادق، وفواتير المبيعات والمشتريات ومردوداتها، والمخزن بمتوسط الكلفة،
 وميزان المراجعة والحسابات الختامية، بالدينار والدولار. يعمل على ويندوز دون إنترنت، وبالعربية والكوردية والإنجليزية.
-[جرّب النسخة التجريبية](https://qasaerp.com/demo/) أو [نزّل البرنامج](https://github.com/meroxis/qasa-erp/releases/latest/download/Qasa-ERP-Setup.exe).
+[جرّب النسخة التجريبية](https://qasaerp.com/demo/) أو [ثبّته من Microsoft Store](https://apps.microsoft.com/detail/9NRTX5BBK9DW?hl=ar-IQ) أو [نزّل ملف التثبيت](https://github.com/meroxis/qasa-erp/releases/latest/download/Qasa-ERP-Setup.exe).
 
 </div>
 
@@ -63,12 +69,27 @@ Qasa ERP keeps the books of an Iraqi company the way its finance department alre
 یەکگرتوو: سەنەدی وەرگرتن و پارەدان و تۆماری ڕۆژانە بە زنجیرەی ئامادەکار و وردبین و پەسەندکەر، پسوولەی فرۆشتن و کڕین و
 گەڕاندنەوەکانیان، کۆگا بە تێچووی مامناوەند، تەرازووی پێداچوونەوە و هەژمارە کۆتاییەکان، بە دینار و دۆلار. لەسەر ویندۆز بێ
 ئینتەرنێت کار دەکات، بە کوردی و عەرەبی و ئینگلیزی.
-[وەشانی تاقیکردنەوە](https://qasaerp.com/demo/) یان [داگرتنی بەرنامەکە](https://github.com/meroxis/qasa-erp/releases/latest/download/Qasa-ERP-Setup.exe).
+[وەشانی تاقیکردنەوە بکەرەوە](https://qasaerp.com/demo/)، [لە Microsoft Store دایبمەزرێنە](https://apps.microsoft.com/detail/9NRTX5BBK9DW) یان [فایلی دامەزراندن دابگرە](https://github.com/meroxis/qasa-erp/releases/latest/download/Qasa-ERP-Setup.exe).
 
 </div>
 
 > **Status: Release 1 in progress.** See the [progress list](#release-1-progress). The [live demo](https://qasaerp.com/demo/)
 > runs entirely in your browser with a sample company: nothing is sent to a server, and a reload starts it afresh.
+
+## Install
+
+- **[Microsoft Store](https://apps.microsoft.com/detail/9NRTX5BBK9DW)** (recommended): free, signed by Microsoft so Windows installs it without a warning,
+  and kept up to date by the Store. Windows 10 version 1903 or later, or Windows 11, with 2 GB of memory.
+- **Installer:** [Qasa-ERP-Setup.exe](https://github.com/meroxis/qasa-erp/releases/latest/download/Qasa-ERP-Setup.exe) from [Releases](https://github.com/meroxis/qasa-erp/releases) or
+  [qasaerp.com](https://qasaerp.com/en/#download), for PCs without the Microsoft Store (Windows 10 and 11, 64-bit). It
+  isn't code-signed yet, so Windows SmartScreen may show "Windows protected your PC" or "Unknown publisher": click
+  **More info**, then **Run anyway**. GitHub shows each release file's SHA-256 next to it. The installed app updates
+  itself from this repository's releases.
+
+Both keep the company in `%APPDATA%\Qasa ERP`, so you can move from one to the other without losing your books
+(install the same version or a newer one; Help → About shows it), and uninstalling either keeps them. Keep only one on
+a PC: install the new one, then uninstall the other. Pro and Business
+licenses from [my.qasaerp.com](https://my.qasaerp.com) work in both; the Store doesn't sell them.
 
 ## Screenshots
 
@@ -115,7 +136,7 @@ Qasa ERP keeps the books of an Iraqi company the way its finance department alre
     <td width="50%" valign="middle" align="center">
       <p><strong>Try it yourself</strong></p>
       <p><a href="https://qasaerp.com/demo/">Open the live demo</a><br><sub>No sign-up, no download</sub></p>
-      <p><a href="https://github.com/meroxis/qasa-erp/releases/latest/download/Qasa-ERP-Setup.exe">Download for Windows</a><br><sub>Free for one PC</sub></p>
+      <p><a href="https://apps.microsoft.com/detail/9NRTX5BBK9DW">Get it from the Microsoft Store</a><br><sub>Free for one PC · <a href="#install">or the installer</a></sub></p>
     </td>
   </tr>
 </table>
@@ -143,14 +164,18 @@ The database is `data/qasa.sqlite` (set `QASA_DATA_DIR` to move it). Delete the 
 ```bash
 npm run desktop     # run the Windows app from source
 npm run dist:win    # build apps/desktop/release/Qasa-ERP-Setup-<version>.exe
+npm run dist:store -w @qasa/desktop   # …and the Microsoft Store package (Microsoft signs it when the Store accepts it)
 ```
 
-- The company file is `%APPDATA%\Qasa ERP\data\qasa.sqlite`; the support log is `%APPDATA%\Qasa ERP\logs\main.log`.
+- The company file is `%APPDATA%\Qasa ERP\data\qasa.sqlite`; the support log is `%APPDATA%\Qasa ERP\logs\main.log`. The
+  Microsoft Store version uses the same folder (its package doesn't virtualize it), so both versions work on the same
+  books.
 - The built-in server listens on 127.0.0.1 only and answers only the app's own window (a new secret each launch).
 - The window has no Node access (sandbox, context isolation) and loads nothing but the app. Electron fuses stop the
   program being used as a plain Node runtime and make it reject tampered app files.
-- Updates: the app checks GitHub releases of this repository at start and every six hours, downloads in the background
-  and asks before restarting.
+- Updates: the installer version checks GitHub releases of this repository at start and every six hours, downloads in
+  the background and asks before restarting. The Microsoft Store version is updated by the Store, from the package the
+  same release workflow builds; its Help → Check for updates opens the Store page.
 
 ### The company database on a MariaDB or MySQL server (Business)
 
@@ -220,10 +245,11 @@ server: **Settings → Company database → Move the company to a database serve
 - [x] Users, roles and sign-in (Free: one password-protected user; Pro: up to 5 users with roles and separate duties)
 - [x] Office-network (server) mode: other PCs work on one PC's company file over the office network (encrypted, with a pairing code), each person with their own user
 - [x] Windows app and installer with automatic updates
+- [x] In the Microsoft Store, signed by Microsoft
 - [x] Plans (Free, Pro, Business) with offline license keys and a 30-day Pro trial
 - [x] Backups: a daily checked copy of the company file in a folder of your choice, and restore
 - [x] The company database on the company's own MariaDB or MySQL server (Business), with move there and back
-- [ ] Code signing
+- [ ] Code signing of the installer (the Microsoft Store version is signed by Microsoft)
 
 ## Plans
 
@@ -249,7 +275,8 @@ growing company needs, and the app shows the full comparison under **Plan & lice
 Some Pro features are still being built; the app marks them as coming soon. A plan never locks anyone out of their
 data: when a license ends, the company keeps everything and continues on the Free features. Pro can be tried
 free for 30 days. Licenses are offline keys signed by Meroxis (Ed25519). Buy or renew one in the customer portal,
-[my.qasaerp.com](https://my.qasaerp.com), and pay with Wayl, a bank transfer or cash.
+[my.qasaerp.com](https://my.qasaerp.com), and pay with Wayl, a bank transfer or cash. Licenses aren't sold in the
+Microsoft Store; a key from the portal works the same in the Store version and the installer.
 
 ## Trust and security
 
@@ -260,7 +287,9 @@ free for 30 days. Licenses are offline keys signed by Meroxis (Ed25519). Buy or 
   Business, on your own MariaDB or MySQL server); the demo runs entirely in your browser.
 - **Books that can't be rewritten:** the database refuses edits to posted vouchers, invoices and stock moves, and
   keeps an append-only audit log.
-- **Releases** are built from this repository by GitHub Actions and published under [Releases](https://github.com/meroxis/qasa-erp/releases).
+- **Releases** are built from this repository by GitHub Actions and published under [Releases](https://github.com/meroxis/qasa-erp/releases);
+  the same build goes to the [Microsoft Store](https://apps.microsoft.com/detail/9NRTX5BBK9DW), where Microsoft checks and signs it. The installer isn't
+  code-signed yet: get it only from this repository or qasaerp.com.
 
 How the app protects data, and how to report a vulnerability: [SECURITY.md](SECURITY.md). How to help:
 [CONTRIBUTING.md](CONTRIBUTING.md). Our [code of conduct](CODE_OF_CONDUCT.md).
