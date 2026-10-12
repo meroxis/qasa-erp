@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { api, type InvoiceSummary, type PartyInput, type PartyType, type PartyView } from '../api.ts';
-import { AccountCombo, AmountInput, ErrorBox, Icon, InvoiceStatusChip, Modal, downloadCsv, useLoad, useToast } from '../components.tsx';
+import { AccountCombo, AmountInput, ErrorBox, Icon, InvoiceStatusChip, Modal, downloadCsv, useLoad, usePageNav, useToast } from '../components.tsx';
 import { useI18n } from '../i18n.ts';
 import { go, href } from '../router.ts';
 
@@ -134,6 +134,7 @@ export function PartyDetail({ id }: { id: string }) {
   const [to, setTo] = useState('');
   const [editing, setEditing] = useState(false);
   const { data, error, reload } = useLoad(() => api.partyStatement(id, from || undefined, to || undefined), [id, from, to]);
+  usePageNav(data ? (data.party.type === 'customer' ? { key: 'customers', group: 'gSales' } : { key: 'suppliers', group: 'gPurchases' }) : null);
   const invoices = useLoad(() => api.invoices({ partyId: id }), [id]);
 
   if (error) return <ErrorBox error={error} />;
