@@ -3,7 +3,7 @@
  * 127.0.0.1, the window shows the app from it, and the company file lives in the user's profile:
  *   %APPDATA%\Qasa ERP\data\qasa.sqlite
  */
-import { app, BrowserWindow, dialog, ipcMain, Menu, protocol, safeStorage, session, shell, type MenuItemConstructorOptions } from 'electron';
+import { app, BrowserWindow, dialog, ipcMain, Menu, nativeTheme, protocol, safeStorage, session, shell, type MenuItemConstructorOptions } from 'electron';
 import electronUpdater from 'electron-updater';
 import { randomBytes } from 'node:crypto';
 import { appendFileSync, copyFileSync, existsSync, mkdirSync, readFileSync, renameSync, statSync, writeFileSync } from 'node:fs';
@@ -162,6 +162,7 @@ async function openCompanyDatabase(): Promise<Db> {
       return proModule?.openDatabase?.(startContext()) ?? openDatabase(file);
     } catch (error) {
       const problem = error as { code?: string; host?: string; database?: string; localCopy?: { file: string; since: string } | null };
+      if (problem.code === 'database_newer') return refuseNewerBooks(error);
       if (!proModule?.openDatabase || typeof problem.host !== 'string') throw error;
       const buttons = [t('tryAgain'), ...(problem.localCopy ? [t('dbUseLocalCopy')] : []), t('quit')];
       const { response } = await dialog.showMessageBox({
@@ -180,9 +181,39 @@ async function openCompanyDatabase(): Promise<Db> {
         continue;
       }
       app.exit(0);
-      throw new Error('quit');
+      throw new Quitting();
     }
   }
+}
+
+/** Thrown after app.exit() from a start dialog, so the start stops without an error box. */
+class Quitting extends Error {}
+
+/**
+ * Windows draws message boxes left to right. Each Arabic or Kurdish line is embedded right to left, so a Latin word in
+ * it (ERP, qasaerp.com, a version number) keeps its place in the sentence.
+ */
+const rtlLines = (s: string): string => (lang === 'en' ? s : s.split('\n').map((line) => `\u202B${line}\u202C`).join('\n'));
+
+/**
+ * Books from a newer Qasa ERP (the company file, or the company database on a server): this version leaves them as
+ * they are, says so, and offers the way to the latest version — the Store page for the Store version, the website
+ * for the installer. It never returns: the app quits.
+ */
+async function refuseNewerBooks(error: unknown): Promise<never> {
+  log('the company books come from a newer Qasa ERP:', JSON.stringify((error as { details?: unknown }).details ?? null),
+    'this is', app.getVersion(), FROM_STORE ? '(Microsoft Store)' : '');
+  const buttons = [t('getLatest'), t('quit')];
+  const { response } = await dialog.showMessageBox({
+    type: 'warning', title: 'Qasa ERP', message: rtlLines(t('newerBooks', { v: app.getVersion() })),
+    detail: rtlLines(t(FROM_STORE ? 'newerFromStore' : 'newerFromSite')), buttons, defaultId: 0, cancelId: 1, noLink: true
+  });
+  if (response === 0) {
+    const url = FROM_STORE ? STORE_PAGE : `https://qasaerp.com${{ ar: '/', en: '/en/', ku: '/ku/' }[lang]}#download`;
+    await shell.openExternal(url).catch((e: unknown) => log('could not open', url, e));
+  }
+  app.exit(0);
+  throw new Quitting();
 }
 
 /** Restarts the app, moving company files as the Pro module asks (moving to a database server and back). */
@@ -360,6 +391,30 @@ ipcMain.handle('network:pair', async (event, address: unknown, code: unknown) =>
   if ('ok' in result) setTimeout(() => void restartApp(), 900);
   return result;
 });
+
+/** The origin the app window shows (this PC's server or the office server); nothing else may use its bridge. */
+let appOrigin = '';
+const originOf = (address: string) => { try { return new URL(address).origin; } catch { return ''; } };
+/** A message from the app window's own page: its main frame, on the app's origin. */
+function fromAppPage(event: Electron.IpcMainEvent): boolean {
+  const frame = event.senderFrame;
+  return !!win && event.sender === win.webContents && !!frame && frame === win.webContents.mainFrame && originOf(frame.url) === appOrigin;
+}
+
+// the app window says when the user picks another appearance: Electron's title bar, menus and dialogs follow
+ipcMain.on('app:theme', (event, value: unknown) => {
+  if (!fromAppPage(event) || !isThemeSource(value)) return;
+  useTheme(value);
+  win?.setBackgroundColor(windowBackground());
+});
+
+// the app window says when the user picks another language (app-preload.ts), so the menus follow at once
+ipcMain.on('app:language', (event, value: unknown) => {
+  if (!fromAppPage(event) || !isLang(value) || value === lang) return;
+  useLanguage(value);
+  buildMenu();
+});
+
 ipcMain.on('network:close', (event) => {
   if (connectWin && event.sender === connectWin.webContents) connectWin.close();
 });
@@ -394,8 +449,50 @@ async function officeServerProblem(certificate: boolean): Promise<void> {
 async function readLanguage(): Promise<void> {
   try {
     const saved = await win?.webContents.executeJavaScript("localStorage.getItem('qasa.lang')", true);
-    if (isLang(saved)) lang = saved;
+    if (isLang(saved)) useLanguage(saved);
   } catch { /* keep the default */ }
+}
+
+/** The language the user picked: for the menus now and, saved, for the dialogs at the next start. */
+function useLanguage(next: Lang): void {
+  if (next === lang) return;
+  lang = next;
+  try {
+    writeFileSync(languageFile(), JSON.stringify({ lang }));
+  } catch (error) {
+    log('could not save the language:', error);
+  }
+}
+
+/** Light, dark or as Windows: the title bar, the menus and the dialogs follow the app's choice (Settings → Appearance). */
+type ThemeSource = typeof nativeTheme.themeSource;
+const isThemeSource = (v: unknown): v is ThemeSource => v === 'light' || v === 'dark' || v === 'system';
+const themeFile = () => join(app.getPath('userData'), 'theme.json');
+function readSavedTheme(): void {
+  try {
+    const saved = (JSON.parse(readFileSync(themeFile(), 'utf8')) as { theme?: unknown }).theme;
+    if (isThemeSource(saved)) nativeTheme.themeSource = saved;
+  } catch { /* first start: as Windows */ }
+}
+function useTheme(next: ThemeSource): void {
+  if (next === nativeTheme.themeSource) return;
+  nativeTheme.themeSource = next;
+  try {
+    writeFileSync(themeFile(), JSON.stringify({ theme: next }));
+  } catch (error) {
+    log('could not save the appearance:', error);
+  }
+}
+/** The window's colour before the page paints, so it never flashes white in dark mode. */
+const windowBackground = () => (nativeTheme.shouldUseDarkColors ? '#11151C' : '#EDF0F5');
+
+/** The app's language is in the window; a copy here lets the dialogs before the window (at start) use it too. */
+const languageFile = () => join(app.getPath('userData'), 'language.json');
+function readSavedLanguage(): void {
+  try {
+    const saved = (JSON.parse(readFileSync(languageFile(), 'utf8')) as { lang?: unknown }).lang;
+    if (isLang(saved)) lang = saved;
+  } catch { /* first start: Arabic */ }
 }
 
 function buildMenu(): void {
@@ -437,7 +534,7 @@ function buildMenu(): void {
         { type: 'separator' },
         {
           label: t('about'),
-          click: () => void dialog.showMessageBox(win!, { type: 'info', title: 'Qasa ERP', message: t('aboutText', { v: app.getVersion() }), buttons: [t('ok')] })
+          click: () => void dialog.showMessageBox(win!, { type: 'info', title: 'Qasa ERP', message: rtlLines(t('aboutText', { v: `${app.getVersion()}${FROM_STORE ? ' (Microsoft Store)\u200E' : ''}` })), buttons: [t('ok')] })
         }
       ]
     }
@@ -455,20 +552,23 @@ async function createWindow(url: string): Promise<void> {
 
   win = new BrowserWindow({
     width: 1360, height: 860, minWidth: 1024, minHeight: 640,
-    title: 'Qasa ERP', backgroundColor: '#F4F6FA', show: false, autoHideMenuBar: false,
+    title: 'Qasa ERP', backgroundColor: windowBackground(), show: false, autoHideMenuBar: false,
     icon: join(__dirname, 'icon.png'),
-    webPreferences: { contextIsolation: true, sandbox: true, nodeIntegration: false, spellcheck: false }
+    webPreferences: { preload: join(__dirname, 'app-preload.cjs'), contextIsolation: true, sandbox: true, nodeIntegration: false, spellcheck: false }
   });
 
   // Only the app itself opens inside the window; web links go to the browser and email links to the mail app.
   const origin = new URL(url).origin;
-  const external = (target: string) => /^(https?:\/\/|mailto:)/.test(target) && !target.startsWith(origin);
+  appOrigin = origin;
+  // compare real origins: a text prefix would let "http://127.0.0.1:port@elsewhere/" into the app window
+  const sameOrigin = (target: string) => originOf(target) === origin;
+  const external = (target: string) => /^(https?:\/\/|mailto:)/.test(target) && !sameOrigin(target);
   win.webContents.setWindowOpenHandler(({ url: target }) => {
     if (external(target)) void shell.openExternal(target);
     return { action: 'deny' };
   });
   win.webContents.on('will-navigate', (event, target) => {
-    if (!target.startsWith(origin)) {
+    if (!sameOrigin(target)) {
       event.preventDefault();
       if (external(target)) void shell.openExternal(target);
     }
@@ -577,6 +677,9 @@ if (!app.requestSingleInstanceLock()) {
   app.whenReady().then(async () => {
     app.setAppUserModelId('com.meroxis.qasaerp');
     serveAppScheme();
+    readSavedLanguage();
+    readSavedTheme();
+    nativeTheme.on('updated', () => { if (win && !win.isDestroyed()) win.setBackgroundColor(windowBackground()); });
     remote = readRemote();
     buildMenu();
     try {
@@ -592,6 +695,7 @@ if (!app.requestSingleInstanceLock()) {
       }
       setupUpdates();
     } catch (error) {
+      if (error instanceof Quitting) return;
       dialog.showErrorBox(t('startFailed'), error instanceof Error ? error.message : String(error));
       app.quit();
     }

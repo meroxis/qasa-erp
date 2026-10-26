@@ -60,22 +60,25 @@ if (withPro) {
   });
 }
 
-// The "Connect to an office server" window: its bridge (preload) and its page, whose one script is allowed by hash.
-await build({
-  configFile: false,
-  root: here,
-  logLevel: 'warn',
-  ssr: { noExternal: true, target: 'node' },
-  build: {
-    ssr: join(here, 'src', 'connect-preload.ts'),
-    outDir: dist,
-    emptyOutDir: false,
-    target: 'node24',
-    minify: false,
-    sourcemap: false,
-    rollupOptions: { external: ['electron'], output: { format: 'cjs', entryFileNames: 'connect-preload.cjs' } }
-  }
-});
+// The windows' bridges (preloads): the app window's (its language) and the "Connect to an office server" window's,
+// whose page (below) has one script, allowed by hash.
+for (const preload of ['app-preload', 'connect-preload']) {
+  await build({
+    configFile: false,
+    root: here,
+    logLevel: 'warn',
+    ssr: { noExternal: true, target: 'node' },
+    build: {
+      ssr: join(here, 'src', `${preload}.ts`),
+      outDir: dist,
+      emptyOutDir: false,
+      target: 'node24',
+      minify: false,
+      sourcemap: false,
+      rollupOptions: { external: ['electron'], output: { format: 'cjs', entryFileNames: `${preload}.cjs` } }
+    }
+  });
+}
 // The browser reads a page with CRLF as LF and hashes the script that way; a Windows checkout has CRLF, so the page
 // is written with LF and hashed as the browser will see it.
 const page = readFileSync(join(here, 'src', 'connect.html'), 'utf8').replace(/\r\n?/g, '\n');
@@ -85,4 +88,4 @@ writeFileSync(join(dist, 'connect.html'), page.replace('{{scriptHash}}', createH
 
 cpSync(join(root, 'apps', 'web', 'dist'), join(dist, 'web'), { recursive: true });
 copyFileSync(join(here, 'build', 'icon.png'), join(dist, 'icon.png'));
-console.log(`dist/ ready: main.cjs${withPro ? ', db-worker.cjs' : ''}, connect-preload.cjs, connect.html, web/, icon.png`);
+console.log(`dist/ ready: main.cjs${withPro ? ', db-worker.cjs' : ''}, app-preload.cjs, connect-preload.cjs, connect.html, web/, icon.png`);

@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { DatabaseSync } from 'node:sqlite';
 import { DEFAULT_POSTING_ACCOUNTS, IRAQI_UNIFIED_CHART, STARTER_SUB_ACCOUNTS } from '@qasa/core';
+import { AppError } from './errors.ts';
 import { MYSQL_TABLES, MYSQL_TRIGGERS, mysqlCollations, mysqlTableSql, type MysqlCollations } from './schema-mysql.ts';
 
 export type SqlParam = null | number | bigint | string | Uint8Array;
@@ -643,14 +644,20 @@ const MYSQL_BASE_VERSION = 5;
 export const SCHEMA_VERSION = MIGRATIONS.length;
 
 export function openDatabase(file: string): Db {
+  if (file !== ':memory:') refuseNewerFile(file);
   const db: Db = new DatabaseSync(file);
-  db.exec('PRAGMA foreign_keys = ON');
-  if (file !== ':memory:') {
-    // WAL + FULL sync: a committed voucher survives a power cut (generator switch-over).
-    db.exec('PRAGMA journal_mode = WAL');
-    db.exec('PRAGMA synchronous = FULL');
+  try {
+    db.exec('PRAGMA foreign_keys = ON');
+    if (file !== ':memory:') {
+      // WAL + FULL sync: a committed voucher survives a power cut (generator switch-over).
+      db.exec('PRAGMA journal_mode = WAL');
+      db.exec('PRAGMA synchronous = FULL');
+    }
+    initDatabase(db);
+  } catch (error) {
+    db.close();
+    throw error;
   }
-  initDatabase(db);
   return db;
 }
 
@@ -664,12 +671,43 @@ export function schemaVersion(db: Db): number {
   return (db.prepare('SELECT version FROM schema_version').get() as { version: number } | undefined)?.version ?? 0;
 }
 
+/**
+ * Books a newer Qasa ERP has already upgraded (the Microsoft Store version can be a release behind the installer, and
+ * both use the same data folder): this version doesn't know their tables or rules, so it changes nothing and says so.
+ */
+function refuseNewer(version: number): void {
+  if (version > MIGRATIONS.length) throw new AppError(409, 'database_newer', { version, app: MIGRATIONS.length });
+}
+
+/**
+ * Looks at an existing company file read-only before it is opened for writing. Closing a writable connection would
+ * checkpoint changes a newer version left in the write-ahead log (after a crash) into the file; a read-only one reads
+ * them but never checkpoints, so refused books stay exactly as they were, -wal file included.
+ */
+function refuseNewerFile(file: string): void {
+  let probe: DatabaseSync;
+  try {
+    probe = new DatabaseSync(file, { readOnly: true });
+  } catch {
+    return; // no file yet: a new company
+  }
+  try {
+    if (probe.prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'schema_version'").get()) refuseNewer(schemaVersion(probe));
+  } catch (error) {
+    if (error instanceof AppError) throw error;
+    // anything else (a damaged file, a lock): the normal open below decides, as it always did
+  } finally {
+    probe.close();
+  }
+}
+
 /** Applies pending migrations, optionally stopping at `target` (used by the upgrade test). */
 export function migrate(db: Db, target = MIGRATIONS.length): void {
   if (isMysql(db)) return migrateMysql(db);
   db.exec('CREATE TABLE IF NOT EXISTS schema_version (version INTEGER NOT NULL)');
   if (!db.prepare('SELECT version FROM schema_version').get()) db.prepare('INSERT INTO schema_version (version) VALUES (0)').run();
   let version = schemaVersion(db);
+  refuseNewer(version);
   while (version < target) {
     const migration = MIGRATIONS[version]!;
     const next = version + 1;
@@ -709,6 +747,7 @@ export const COMPANY_TABLES: readonly string[] = MYSQL_TABLES.map((t) => t.name)
 function migrateMysql(db: Db, options: { triggers?: boolean } = {}): void {
   db.exec('CREATE TABLE IF NOT EXISTS schema_version (version INT NOT NULL PRIMARY KEY)');
   let version = schemaVersion(db);
+  refuseNewer(version);
   if (version === 0) {
     if (mysqlCompanyTables(db).length) throw new Error('database_not_empty');
     createMysqlSchema(db, options);
