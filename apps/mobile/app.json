@@ -1,0 +1,46 @@
+{
+  "expo": {
+    "name": "Qasa ERP",
+    "slug": "qasa-erp",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "light",
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "iq.qasaerp.mobile",
+      "infoPlist": {
+        "NSLocalNetworkUsageDescription": "Qasa connects to your Qasa ERP PC on the same Wi-Fi."
+      }
+    },
+    "android": {
+      "adaptiveIcon": {
+        "backgroundColor": "#E6F4FE",
+        "foregroundImage": "./assets/android-icon-foreground.png",
+        "backgroundImage": "./assets/android-icon-background.png",
+        "monochromeImage": "./assets/android-icon-monochrome.png"
+      },
+      "predictiveBackGestureEnabled": false,
+      "package": "iq.qasaerp.mobile",
+      "permissions": [
+        "android.permission.CAMERA",
+        "android.permission.VIBRATE"
+      ]
+    },
+    "web": {
+      "favicon": "./assets/favicon.png"
+    },
+    "plugins": [
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "Qasa uses the camera to scan barcodes and take item photos.",
+          "recordAudioAndroid": false
+        }
+      ],
+      "expo-secure-store",
+      "expo-localization"
+    ],
+    "scheme": "qasa"
+  }
+}

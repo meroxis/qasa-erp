@@ -6,6 +6,7 @@ import {
 import { AccountCombo, ErrorBox, Icon, Modal, useData, useDisplay, useLoad, useToast, type Density, type Theme } from '../components.tsx';
 import { isKey, useI18n, type Key } from '../i18n.ts';
 import { href } from '../router.ts';
+import { encodeQr, qrSvgPath } from '../industry/qr.ts';
 
 /** Language and display are each person's own; the company's settings are for admins. */
 export function Settings({ admin }: { admin: boolean }) {
@@ -153,6 +154,8 @@ function CompanySettings() {
       <PostingAccountsCard />
 
       <OfficeNetworkCard />
+
+      <PhonesCard />
 
       <BackupCard />
 
@@ -995,6 +998,155 @@ function PostingAccountsCard() {
       </div>
       <ErrorBox error={error} />
       <div><button type="button" className="btn primary" onClick={save}>{t('save')}</button></div>
+    </div>
+  );
+}
+
+// ——— Settings → Phones: the Qasa phone app (Pro module, pro/src/phone) ———
+
+interface PhonesStatus {
+  available: boolean;
+  listening: boolean;
+  port: number;
+  addresses: string[];
+  devices: { id: string; name: string; userId: string | null; userName: string | null; pairedAt: string; lastSeen: string | null; online: boolean }[];
+  users: { id: string; name: string }[];
+  counts: { id: string; device: string; at: string; warehouseId: string | null; lines: { itemId: string; code: string; name: string; qty: number }[] }[];
+  signInRequired: boolean;
+}
+
+/** Pairing a phone: a QR code the phone app scans, with this PC's key and a one-time secret (10 minutes). */
+function PhonesCard() {
+  const { t, digitsOf, date } = useI18n();
+  const toast = useToast();
+  const [status, setStatus] = useState<PhonesStatus | null>(null);
+  const [absent, setAbsent] = useState(false);
+  const [error, setError] = useState<unknown>(null);
+  const [pairing, setPairing] = useState<{ code: string; expiresAt: string } | null>(null);
+  const [userId, setUserId] = useState('');
+  const [busy, setBusy] = useState(false);
+
+  const load = () => request<PhonesStatus>('GET', '/api/phones').then((s) => { setStatus(s); setUserId((u) => u || s.users[0]?.id || ''); }, (e) => {
+    if (e instanceof ApiError && e.status === 404) setAbsent(true);
+    else setError(e);
+  });
+  useEffect(() => { void load(); }, []);
+  // while a QR code is shown, watch for the phone to arrive (and drop the code when it runs out)
+  useEffect(() => {
+    if (!pairing) return;
+    const timer = window.setInterval(() => {
+      if (Date.parse(pairing.expiresAt) < Date.now()) setPairing(null);
+      void load();
+    }, 3000);
+    return () => window.clearInterval(timer);
+  }, [pairing]);
+
+  async function pair() {
+    setBusy(true);
+    setError(null);
+    try {
+      setPairing(await request<{ code: string; expiresAt: string }>('POST', '/api/phones/pair', status?.signInRequired ? { userId } : {}));
+    } catch (e) {
+      setError(e);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function remove(id: string) {
+    try {
+      await request('DELETE', `/api/phones/${id}`);
+      toast(t('ph_removed'));
+      await load();
+    } catch (e) {
+      setError(e);
+    }
+  }
+
+  function downloadCount(c: PhonesStatus['counts'][number]) {
+    const rows = [['code', 'name', 'qty'], ...c.lines.map((l) => [l.code, l.name, String(l.qty)])];
+    const csv = '﻿' + rows.map((r) => r.map((v) => `"${v.replace(/"/g, '""')}"`).join(',')).join('\r\n');
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' }));
+    a.download = `stock-count-${c.at.slice(0, 10)}.csv`;
+    a.click();
+    URL.revokeObjectURL(a.href);
+  }
+
+  if (absent) return null;
+  const qr = pairing ? qrSvgPath(encodeQr(pairing.code, 'L'), 4) : null;
+  const known = new Set(status?.devices.map((d) => d.id));
+  return (
+    <div className="card pad stack">
+      <div className="row" style={{ justifyContent: 'space-between' }}>
+        <h2>{t('ph_title')}</h2>
+        {status && <span className="chip">{digitsOf(String(status.devices.length))}</span>}
+      </div>
+      <p className="muted" style={{ margin: 0 }}>{t('ph_help')}</p>
+      {status && !status.available && <div className="alert">{t('ph_needsPro')} <a href={href('plans')}>{t('planLicense')}</a></div>}
+      {status?.devices.length ? (
+        <table className="table">
+          <thead><tr><th>{t('ph_phone')}</th><th>{t('ph_actsAs')}</th><th>{t('ph_lastSeen')}</th><th /></tr></thead>
+          <tbody>
+            {status.devices.map((d) => (
+              <tr key={d.id}>
+                <td>{d.name} {d.online && <span className="chip ok">{t('ph_online')}</span>}</td>
+                <td>{d.userName ?? t('ph_owner')}</td>
+                <td className="num small">{d.lastSeen ? digitsOf(new Date(d.lastSeen).toLocaleString('en-GB')) : '—'}</td>
+                <td><button type="button" className="btn small" onClick={() => void remove(d.id)}>{t('ph_remove')}</button></td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      ) : null}
+      {pairing && qr ? (
+        <div className="row" style={{ gap: 20, alignItems: 'center', flexWrap: 'wrap' }}>
+          <svg viewBox={`0 0 ${qr.size} ${qr.size}`} width={240} height={240} role="img" aria-label={t('ph_qrLabel')} shapeRendering="crispEdges" style={{ background: '#fff', borderRadius: 8 }}>
+            <path d={qr.path} fill="#000" />
+          </svg>
+          <div className="stack" style={{ gap: 6, flex: 1, minWidth: 220 }}>
+            <strong>{t('ph_scanThis')}</strong>
+            <ol style={{ margin: 0, paddingInlineStart: 20 }}>
+              <li>{t('ph_step1')}</li>
+              <li>{t('ph_step2')}</li>
+              <li>{t('ph_step3')}</li>
+            </ol>
+            <span className="muted small">{t('ph_expires', { time: digitsOf(new Date(pairing.expiresAt).toLocaleTimeString('en-GB').slice(0, 5)) })}</span>
+            <span className="muted small">{t('ph_sameNetwork')}</span>
+            <div><button type="button" className="btn small" onClick={() => { setPairing(null); void request('POST', '/api/phones/pair/cancel', {}); }}>{t('cancel')}</button></div>
+          </div>
+        </div>
+      ) : status?.available ? (
+        <div className="row" style={{ gap: 10, alignItems: 'end', flexWrap: 'wrap' }}>
+          {status.signInRequired && (
+            <label className="field" style={{ minWidth: 220 }}>
+              <span>{t('ph_actsAs')}</span>
+              <select className="input" value={userId} onChange={(e) => setUserId(e.target.value)}>
+                {status.users.map((u) => <option key={u.id} value={u.id}>{u.name}</option>)}
+              </select>
+            </label>
+          )}
+          <button type="button" className="btn primary" disabled={busy || (status.signInRequired && !userId)} onClick={() => void pair()}>
+            <Icon name="plus" size={16} /> {t('ph_add')}
+          </button>
+        </div>
+      ) : null}
+      {status && pairing && status.devices.some((d) => !known.has(d.id)) && <div className="alert">{t('ph_paired')}</div>}
+      {status?.counts.length ? (
+        <div className="stack" style={{ gap: 6 }}>
+          <h3 style={{ margin: 0 }}>{t('ph_counts')}</h3>
+          {status.counts.map((c) => (
+            <div key={c.id} className="row" style={{ justifyContent: 'space-between', gap: 10 }}>
+              <span>{c.device} · <span className="num">{date(c.at.slice(0, 10))}</span> · {t('ph_lines', { n: digitsOf(String(c.lines.length)) })}</span>
+              <span className="row" style={{ gap: 6 }}>
+                <button type="button" className="btn small" onClick={() => downloadCount(c)}>{t('ph_download')}</button>
+                <button type="button" className="btn small" onClick={() => void request('DELETE', `/api/phones/counts/${c.id}`).then(load)}>{t('ph_remove')}</button>
+              </span>
+            </div>
+          ))}
+        </div>
+      ) : null}
+      <ErrorBox error={error} />
     </div>
   );
 }
