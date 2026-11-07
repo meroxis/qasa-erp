@@ -19,6 +19,7 @@ export type Feature =
   | 'generators' // generator owners: subscribers by amps, monthly billing, collectors
   | 'websiteApi' // API keys and webhooks for websites and online shops
   | 'phoneApp' // the Qasa phone app: scanning with the camera, prices, stock, items with photos
+  | 'bankReconciliation' // matching the bank statement to the books
   | 'electricalSolar' // electrical and solar installers: system quotes, installed equipment and warranty, maintenance
   | 'finalAccountsExport' // print and Excel of the final accounts, year-end closing
   | 'noBranding' // invoices without "Made with Qasa ERP"
@@ -46,7 +47,7 @@ export interface PlanDefinition {
   features: readonly Feature[];
 }
 
-const PRO_FEATURES: readonly Feature[] = ['officeNetwork', 'roles', 'installments', 'payroll', 'finalAccountsExport', 'noBranding', 'cloudBackup', 'mobileShop', 'autoParts', 'engineeringWorks', 'pipeline', 'generators', 'websiteApi', 'phoneApp', 'electricalSolar'];
+const PRO_FEATURES: readonly Feature[] = ['officeNetwork', 'roles', 'installments', 'payroll', 'finalAccountsExport', 'noBranding', 'cloudBackup', 'mobileShop', 'autoParts', 'engineeringWorks', 'pipeline', 'generators', 'websiteApi', 'phoneApp', 'electricalSolar', 'bankReconciliation'];
 
 export const PLANS: Record<PlanId, PlanDefinition> = {
   free: { id: 'free', limits: { companies: 1, users: 1, warehouses: 1 }, features: [] },
