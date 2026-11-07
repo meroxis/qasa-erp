@@ -349,6 +349,36 @@ export function chequeSummary(db: Db, today = todayIso()): ChequeSummary {
   return s;
 }
 
+export interface ChequeAlert {
+  id: string; direction: ChequeDirection; number: string; bank: string; partyId: string; party: string; phone: string;
+  currency: CurrencyCode; amount: number; dueDate: string;
+  /** days past its due date (0 when due today or later) */
+  daysLate: number;
+}
+
+/**
+ * For the Daily Brief and the home page: cheques still open (in hand, deposited or written) that fall due within the next
+ * week — or are already past due — and cheques that bounced in the last 30 days.
+ */
+export function chequesAhead(db: Db, today = todayIso(), limit = 20): { due: ChequeAlert[]; bounced: ChequeAlert[]; dueTotal: Money } {
+  const weekEnd = new Date(Date.parse(today + 'T00:00:00Z') + 7 * DAY).toISOString().slice(0, 10);
+  const since = new Date(Date.parse(today + 'T00:00:00Z') - 30 * DAY).toISOString();
+  const select = `SELECT c.id, c.direction, c.number, c.bank, c.party_id, p.name AS party, p.phone, c.currency, c.amount, c.due_date
+                  FROM cheques c JOIN parties p ON p.id = c.party_id`;
+  type Row = { id: string; direction: ChequeDirection; number: string; bank: string; party_id: string; party: string; phone: string | null; currency: CurrencyCode; amount: number; due_date: string };
+  const view = (r: Row): ChequeAlert => ({
+    id: r.id, direction: r.direction, number: r.number, bank: r.bank, partyId: r.party_id, party: r.party, phone: r.phone ?? '',
+    currency: r.currency, amount: num(r.amount), dueDate: r.due_date,
+    daysLate: r.due_date < today ? Math.round((Date.parse(today + 'T00:00:00Z') - Date.parse(r.due_date + 'T00:00:00Z')) / DAY) : 0
+  });
+  const due = (db.prepare(`${select} WHERE c.status IN ('in_hand', 'deposited', 'pending') AND c.due_date <= ? ORDER BY c.due_date, c.number`)
+    .all(weekEnd) as Row[]).map(view);
+  const bounced = (db.prepare(`${select} WHERE c.status = 'bounced' AND c.updated_at >= ? ORDER BY c.updated_at DESC`).all(since) as Row[]).map(view);
+  const dueTotal = zero();
+  for (const c of due) dueTotal[c.currency] += c.amount;
+  return { due: due.slice(0, limit), bounced: bounced.slice(0, limit), dueTotal };
+}
+
 export interface ChequeInput {
   number: string;
   bank: string;

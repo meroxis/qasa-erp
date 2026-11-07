@@ -7,6 +7,7 @@ import {
   realEstateApi, UNIT_KINDS, type ReProjectDetail, type ReProjectView, type ReSummary, type ReUnitInput, type ReUnitView, type UnitKind, type UnitStatus
 } from '../industry/real-estate-api.ts';
 import { go, href } from '../router.ts';
+import { UnitDeposits } from '../industry/RealEstateDeposits.tsx';
 
 /**
  * العقارات (Business): projects and their units on a map — available, reserved for a customer, or sold — with reserving,
@@ -325,7 +326,7 @@ export function RealEstateProject({ id }: { id: string }) {
         </div>
 
         <div className="card pad stack" style={{ position: 'sticky', insetBlockStart: 16 }}>
-          {unit ? <UnitPanel unit={unit} project={p} onAction={setDialog} /> : <div className="muted">{t('re_mapHelp')}</div>}
+          {unit ? <UnitPanel unit={unit} project={p} onAction={setDialog} onChanged={() => void done()} /> : <div className="muted">{t('re_mapHelp')}</div>}
         </div>
       </div>
 
@@ -339,7 +340,7 @@ export function RealEstateProject({ id }: { id: string }) {
   );
 }
 
-function UnitPanel({ unit: u, project: p, onAction }: { unit: ReUnitView; project: ReProjectDetail; onAction(d: Dialog): void }) {
+function UnitPanel({ unit: u, project: p, onAction, onChanged }: { unit: ReUnitView; project: ReProjectDetail; onAction(d: Dialog): void; onChanged(): void }) {
   const i18n = useI18n();
   const { t } = i18n;
   const wa = u.party?.phone ? whatsappNumber(u.party.phone) : null;
@@ -383,6 +384,8 @@ function UnitPanel({ unit: u, project: p, onAction }: { unit: ReUnitView; projec
         {u.actions.includes('release') && <button type="button" className="btn" onClick={() => onAction('release')}><Icon name="undo" size={16} />{u.status === 'sold' ? t('re_releaseSold') : t('re_release')}</button>}
         {u.actions.includes('edit') && <button type="button" className="btn" onClick={() => onAction('unit')}><Icon name="edit" size={16} />{t('re_editUnit')}</button>}
       </div>
+      {u.status === 'reserved' && u.depositHeld > 0 && !u.actions.includes('release') && <p className="small muted" style={{ margin: 0 }}>{t('dep_releaseHelp')}</p>}
+      <UnitDeposits unit={u} currency={p.currency} onChanged={onChanged} />
     </>
   );
 }
@@ -685,6 +688,7 @@ function SellModal({ unit: u, project: p, onClose, onDone }: { unit: ReUnitView;
           <button type="button" aria-pressed={payment === 'installments'} onClick={() => setPayment('installments')}>{t('re_payInstallments')}</button>
         </div>
         <p className="muted small" style={{ margin: 0 }}>{payment === 'cash' ? t('re_cashHelp') : t('re_installmentsHelp')}</p>
+        {u.depositHeld > 0 && <div className="alert info">{t(payment === 'cash' ? 'dep_inSaleCash' : 'dep_inSaleInstallments', { a: i18n.money(u.depositHeld, p.currency) })}</div>}
         {payment === 'installments' && (
           <div className="grid-3">
             <label className="field"><span>{t('downPayment')}</span><AmountInput value={down} currency={p.currency} onChange={setDown} ariaLabel={t('downPayment')} /></label>

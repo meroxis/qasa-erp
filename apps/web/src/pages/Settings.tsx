@@ -163,6 +163,16 @@ function CompanySettings() {
         <div><button type="button" className="btn primary" onClick={save}>{t('save')}</button></div>
       </div>
 
+      <div className="card pad row" style={{ flexWrap: 'wrap' }}>
+        <Icon name="printer" size={18} />
+        <div className="stack" style={{ gap: 2, flex: 1, minWidth: 220 }}>
+          <strong>{t('pd_title')}</strong>
+          <span className="muted small">{t('pp_help')}</span>
+        </div>
+        <a className="btn" href={href('print-design')}>{t('pd_title')}</a>
+        <a className="btn" href={href('labels')}><Icon name="tag" size={16} />{t('lb_title')}</a>
+      </div>
+
       <PostingAccountsCard />
 
       <OfficeNetworkCard />

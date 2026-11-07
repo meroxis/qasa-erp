@@ -13,6 +13,10 @@ import { InvoicesTable } from './Parties.tsx';
 import { averageCost, qtyText, unitName } from './Items.tsx';
 import { InvoiceQr } from '../industry/InvoiceQr.tsx';
 import { pricesApi } from '../industry/prices-api.ts';
+import { DesignedPrint } from '../industry/PrintDocument.tsx';
+import { invoiceModel } from '../industry/print-model.ts';
+import { useRatePrefill } from '../industry/fx-prefill.ts';
+import { InvoiceWhatsApp } from '../industry/WhatsAppShare.tsx';
 
 const STATUSES: (InvoiceStatus | '')[] = ['', 'draft', 'posted', 'cancelled'];
 
@@ -83,6 +87,8 @@ export function InvoiceEditor({ kind: initialKind, id, partyId: initialParty }: 
   const [warehouseId, setWarehouseId] = useState('');
   const [currency, setCurrency] = useState<CurrencyCode>('IQD');
   const [rateText, setRateText] = useState('');
+  // a new invoice in dollars takes the rate board's rate for its date
+  const ratePrefill = useRatePrefill({ active: !id, currency, date, setRateText });
   const [payment, setPayment] = useState<PaymentMode>(initialParty || initialKind === 'purchase' ? 'credit' : 'cash');
   const [cashAccount, setCashAccount] = useState('');
   const [discount, setDiscount] = useState<number | null>(null);
@@ -258,7 +264,7 @@ export function InvoiceEditor({ kind: initialKind, id, partyId: initialParty }: 
                 {(['IQD', 'USD'] as const).map((c) => <button key={c} type="button" aria-pressed={currency === c} onClick={() => setCurrency(c)}>{c === 'IQD' ? t('iqdName') : t('usdName')}</button>)}
               </div>
               {currency === 'USD' && (
-                <input className={'input amount' + (rateX100 ? '' : ' invalid')} style={{ width: 120 }} inputMode="decimal" aria-label={t('rate')} title={t('perUsd')} value={rateText} onChange={(e) => setRateText(e.target.value)} />
+                <input className={'input amount' + (rateX100 ? '' : ' invalid')} style={{ width: 120 }} inputMode="decimal" aria-label={t('rate')} title={t('perUsd')} value={rateText} onChange={(e) => { ratePrefill.typed(); setRateText(e.target.value); }} />
               )}
             </div>
           </div>
@@ -410,6 +416,7 @@ export function InvoiceDetail({ id }: { id: string }) {
         {v.kind === 'sale' && v.status === 'posted' && v.payment === 'credit' && !v.installmentContract && plan?.features.includes('installments') && (
           <a className="btn" href={href(`new-installment/${v.id}`)}><Icon name="cal" size={16} />{t('makeContract')}</a>
         )}
+        <InvoiceWhatsApp company={company} invoice={v} />
         <button type="button" className="btn" onClick={() => window.print()}><Icon name="printer" size={16} />{t('print')}</button>
       </div>
       <ErrorBox error={cancelling ? null : actionError} />
@@ -425,7 +432,9 @@ export function InvoiceDetail({ id }: { id: string }) {
       )}
       {v.status === 'posted' && !isRet && v.returns.some((r) => r.status === 'posted') && <div className="alert warn no-print">{t('hasReturnsNote')}</div>}
 
-      <div className="paper invoice">
+      {/* printed with the company's print design (Settings → Print design); the screen keeps this view */}
+      <DesignedPrint model={invoiceModel(v)} balanceOf={v.partyId && v.status === 'posted' ? { partyId: v.partyId, date: v.date } : null} />
+      <div className="paper invoice no-print">
         <div className="paper-head">
           <div style={{ flex: 1 }}>
             <div className="company-line">{company}</div>

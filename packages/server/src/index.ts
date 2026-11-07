@@ -13,7 +13,7 @@ export { configureLicensing, machineId } from './activation.ts';
 export { getSettings, readSetting, writeSetting } from './settings.ts';
 export { audit } from './audit.ts';
 export { AppError, conflict, invalid, notFound } from './errors.ts';
-export { createJournalEntry, deleteEntry, getEntry, postVoucherNow, type EntryView } from './journal.ts';
+export { createJournalEntry, createVoucher, deleteEntry, getEntry, postVoucherNow, type EntryView } from './journal.ts';
 export { loadAccounts } from './accounts.ts';
 export { createInvoice, getInvoice, postInvoice, type InvoiceView } from './invoices.ts';
 export { createItem, listWarehouses } from './items.ts';

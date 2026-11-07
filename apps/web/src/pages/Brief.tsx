@@ -5,6 +5,7 @@ import { ErrorBox, Icon, Modal, useLoad, usePageNav, useToast } from '../compone
 import { useI18n, type I18n } from '../i18n.ts';
 import { href } from '../router.ts';
 import { copyText, openWhatsApp, whatsappNumber, whatsappUrl } from '../share.ts';
+import { chequeBriefLines, ChequesBriefSection } from '../industry/ChequesAhead.tsx';
 
 /**
  * The Daily Brief: the whole business on one page for a day — sales against the same day last week, the cash in
@@ -53,6 +54,7 @@ export function briefText(i18n: I18n, b: BriefView): string {
   }
   if (b.installments.overdue.length) lines.push('', `📌 ${t('br_installmentsLate')}: ${i18n.int(b.installments.overdue.length)} · ${moneyBoth(i18n, b.installments.overdueTotal)}`);
   if (b.installments.dueTomorrow.length) lines.push(`🗓️ ${t('br_dueTomorrow')}: ${i18n.int(b.installments.dueTomorrow.length)}`);
+  lines.push(...chequeBriefLines(i18n, b.cheques));
   if (b.lowStock.length) lines.push('', `📦 ${t('br_lowStock')}: ${b.lowStock.slice(0, 5).map((s) => i18n.name(s.name)).join('، ')}`);
   const waiting = b.approvals.waitingCheck + b.approvals.waitingApproval;
   if (waiting) lines.push('', `✍️ ${t('br_waitingApprovals', { n: i18n.int(waiting) })}`);
@@ -228,6 +230,8 @@ export function Brief() {
                 ))}
               </ul>
             </Section>
+
+            <ChequesBriefSection cheques={b.cheques} />
 
             <Section title={t('br_approvals')} icon="receipt" empty={!waiting}>
               <div style={{ display: 'flex', gap: 12, padding: '0 16px 16px', flexWrap: 'wrap' }}>

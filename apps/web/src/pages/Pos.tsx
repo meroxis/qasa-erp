@@ -7,6 +7,9 @@ import { useI18n, type I18n } from '../i18n.ts';
 import { href } from '../router.ts';
 import { posApi, type Money2, type ShiftReport, type ShiftView } from '../industry/pos-api.ts';
 import '../pos.css';
+import { PrintDocument } from '../industry/PrintDocument.tsx';
+import { invoiceModel } from '../industry/print-model.ts';
+import { usePrintSetup } from '../industry/print-api.ts';
 
 /**
  * Point of sale (every plan). Made for a cashier with no training: the search box always has the focus, so a barcode
@@ -429,7 +432,21 @@ function Receipt({ invoice, shift }: { invoice: InvoiceView; shift: ShiftView })
   const i18n = useI18n();
   const { t } = i18n;
   const { settings, plan } = useData();
+  const setup = usePrintSetup();
   const company = settings ? i18n.name(settings.companyName) : '';
+  // a receipt design of the company's own (Settings → Print design) replaces the standard receipt
+  if (setup.designs.pos) {
+    return createPortal(
+      <div className="pos-receipt-host" dir={i18n.dir} lang={i18n.lang === 'ku' ? 'ckb' : i18n.lang}>
+        <PrintDocument
+          model={invoiceModel(invoice, { pos: true })} design={setup.designs.pos} profile={setup.profile}
+          company={settings?.companyName ?? { ar: '', en: '', ku: '' }} branding={!plan?.features.includes('noBranding')}
+          defaultRateX100={settings?.defaultRateX100}
+        />
+      </div>,
+      document.body
+    );
+  }
   return createPortal(
     <div className="pos-receipt-host" dir={i18n.dir} lang={i18n.lang === 'ku' ? 'ckb' : i18n.lang}>
       <div className="pos-receipt">

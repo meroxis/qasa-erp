@@ -5,7 +5,16 @@ import { qs, request, type GuarantorInput, type Money2 } from '../api.ts';
 
 export type UnitKind = 'apartment' | 'villa' | 'house' | 'shop' | 'office' | 'land';
 export type UnitStatus = 'available' | 'reserved' | 'sold';
-export type UnitAction = 'edit' | 'delete' | 'reserve' | 'release' | 'sell';
+export type UnitAction = 'edit' | 'delete' | 'reserve' | 'release' | 'sell' | 'deposit';
+export type DepositStatus = 'held' | 'applied' | 'refunded' | 'forfeited';
+
+export interface ReDepositView {
+  entryId: string; entryNumber: string | null; unitId: string; party: { id: string; name: string; phone: string };
+  date: string; currency: CurrencyCode; amount: number; status: DepositStatus; reversed: boolean; invoiceId: string | null;
+  closeEntry: { id: string; number: string | null; status: string; type: string } | null;
+  actions: ('refund' | 'forfeit' | 'reopen')[];
+}
+export interface ReDepositInput { partyId: string; amount: number; date: string; cashAccountCode: string; rateX100?: number; until?: string; lang: Lang }
 export const UNIT_KINDS: readonly UnitKind[] = ['apartment', 'villa', 'house', 'shop', 'office', 'land'];
 
 export interface UnitCounts { available: number; reserved: number; sold: number; total: number }
@@ -22,6 +31,10 @@ export interface ReUnitView {
   reservedUntil: string | null; expired: boolean;
   invoice: { id: string; number: string | null; status: string; total: number } | null;
   contract: { id: string; number: string; status: string } | null;
+  /** deposits held on it, in the project's currency */
+  depositHeld: number;
+  /** only on the single-unit call */
+  deposits?: ReDepositView[];
   actions: UnitAction[];
 }
 
@@ -52,5 +65,11 @@ export const realEstateApi = {
   deleteUnit: (id: string) => request<void>('DELETE', `/api/real-estate/units/${id}`),
   reserve: (id: string, body: { partyId: string; until?: string; notes?: string }) => request<ReUnitView>('POST', `/api/real-estate/units/${id}/reserve`, body),
   release: (id: string, reason?: string) => request<ReUnitView>('POST', `/api/real-estate/units/${id}/release`, reason ? { reason } : {}),
-  sell: (id: string, body: ReSellInput) => request<ReUnitView>('POST', `/api/real-estate/units/${id}/sell`, body)
+  sell: (id: string, body: ReSellInput) => request<ReUnitView>('POST', `/api/real-estate/units/${id}/sell`, body),
+  takeDeposit: (unitId: string, body: ReDepositInput) => request<ReUnitView>('POST', `/api/real-estate/units/${unitId}/deposits`, body),
+  refundDeposit: (entryId: string, body: { date: string; cashAccountCode: string; rateX100?: number; lang: Lang }) =>
+    request<ReUnitView>('POST', `/api/real-estate/deposits/${entryId}/refund`, body),
+  forfeitDeposit: (entryId: string, body: { date: string; accountCode?: string; lang: Lang }) =>
+    request<ReUnitView>('POST', `/api/real-estate/deposits/${entryId}/forfeit`, body),
+  reopenDeposit: (entryId: string) => request<ReUnitView>('POST', `/api/real-estate/deposits/${entryId}/reopen`, {})
 };

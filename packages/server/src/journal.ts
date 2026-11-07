@@ -241,6 +241,8 @@ export function deleteEntry(db: Db, id: string, user: string): void {
   // a depreciation month or an asset disposal is taken back from the fixed assets page
   if (db.prepare('SELECT 1 FROM depreciation_runs WHERE entry_id = ?').get(id)) throw conflict('entry_belongs_to_depreciation');
   if (db.prepare('SELECT 1 FROM fixed_assets WHERE disposal_entry_id = ?').get(id)) throw conflict('entry_belongs_to_disposal');
+  // a reservation deposit's refund or forfeit is taken back from the unit's page
+  if (db.prepare('SELECT 1 FROM re_deposits WHERE close_entry_id = ?').get(id)) throw conflict('entry_belongs_to_deposit');
   transaction(db, () => {
     db.prepare('DELETE FROM entries WHERE id = ?').run(id);
     audit(db, user, 'delete', 'entry', id, { type: row.type });

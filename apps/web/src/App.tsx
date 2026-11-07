@@ -86,6 +86,8 @@ const StockAdjustments = lazyPage(() => import('./pages/StockAdjustments.tsx'), 
 const StockAdjustmentEditor = lazyPage(() => import('./pages/StockAdjustments.tsx'), 'StockAdjustmentEditor');
 const StockAdjustmentDetail = lazyPage(() => import('./pages/StockAdjustments.tsx'), 'StockAdjustmentDetail');
 const StockCount = lazyPage(() => import('./pages/StockAdjustments.tsx'), 'StockCount');
+const PrintDesignPage = lazyPage(() => import('./pages/PrintDesign.tsx'), 'PrintDesignPage');
+const Labels = lazyPage(() => import('./pages/Labels.tsx'), 'Labels');
 const Companies = lazyPage(() => import('./pages/Companies.tsx'), 'Companies');
 const FixedAssets = lazyPage(() => import('./pages/FixedAssets.tsx'), 'FixedAssets');
 const FixedAssetDetail = lazyPage(() => import('./pages/FixedAssets.tsx'), 'FixedAssetDetail');
@@ -285,7 +287,7 @@ export function App() {
   const isAdmin = !!me?.user?.permissions.includes('admin');
   const viewer: NavViewer = { admin: isAdmin, permissions: me?.user?.permissions ?? [], businessTypes: settings?.businessTypes ?? [] };
   // admin pages open for admins only; everyone else lands on the home page
-  const adminPage = ['users', 'plans'].includes(page ?? '') && !isAdmin;
+  const adminPage = ['users', 'plans', 'print-design', 'companies'].includes(page ?? '') && !isAdmin;
   switch (adminPage ? '' : page ?? '') {
     case '':
     case 'home':
@@ -490,6 +492,14 @@ export function App() {
     case 'stock-count':
       title = t('adj_count');
       content = <StockCount />;
+      break;
+    case 'print-design':
+      title = t('pd_title');
+      content = <PrintDesignPage />;
+      break;
+    case 'labels':
+      title = t('lb_title');
+      content = <Labels />;
       break;
     case 'companies':
       title = t('co_title');

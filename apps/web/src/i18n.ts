@@ -22,10 +22,12 @@ import { SOLAR_TEXT } from './i18n/solar.ts';
 import { LEGAL_TEXT } from './i18n/legal.ts';
 import { BRANCH_TEXT } from './i18n/branches.ts';
 import { BANK_TEXT } from './i18n/banking.ts';
+import { WAVE2_TEXT } from './i18n/wave2.ts';
 import { ASSET_TEXT } from './i18n/assets.ts';
 import { ADJ_TEXT } from './i18n/adjustments.ts';
 import { PO_TEXT } from './i18n/purchasing.ts';
 import { COMPANY_TEXT } from './i18n/companies.ts';
+import { LABEL_TEXT } from './i18n/labels.ts';
 import { UI_TEXT } from './i18n/ui.ts';
 import { formatAmount, formatDate, formatInteger, LANGS, toEasternDigits, type CurrencyCode, type DigitStyle, type Lang, type Names } from '@qasa/core';
 
@@ -969,7 +971,7 @@ const BASE = {
 
 /** The industry features keep their texts in files of their own (i18n/), in the same three languages. */
 const D = { ...BASE, ...REAL_ESTATE_TEXT, ...MOBILE_TEXT, ...PARTS_TEXT, ...ENGINEERING_TEXT,
-  ...PAYROLL_TEXT, ...POS_TEXT, ...QUOTES_TEXT, ...PIPELINE_TEXT, ...MEDIA_TEXT, ...BRIEF_TEXT, ...CLOUD_TEXT, ...RELAY_TEXT, ...ACTIVATION_TEXT, ...FX_TEXT, ...VERIFY_TEXT, ...GEN_TEXT, ...WEBAPI_TEXT, ...PHONE_TEXT, ...USAGE_TEXT, ...SOLAR_TEXT, ...LEGAL_TEXT, ...BRANCH_TEXT, ...BANK_TEXT, ...ASSET_TEXT, ...ADJ_TEXT, ...PO_TEXT, ...COMPANY_TEXT, ...UI_TEXT };
+  ...PAYROLL_TEXT, ...POS_TEXT, ...QUOTES_TEXT, ...PIPELINE_TEXT, ...MEDIA_TEXT, ...BRIEF_TEXT, ...CLOUD_TEXT, ...RELAY_TEXT, ...ACTIVATION_TEXT, ...FX_TEXT, ...VERIFY_TEXT, ...GEN_TEXT, ...WEBAPI_TEXT, ...PHONE_TEXT, ...USAGE_TEXT, ...SOLAR_TEXT, ...LEGAL_TEXT, ...BRANCH_TEXT, ...BANK_TEXT, ...WAVE2_TEXT, ...ASSET_TEXT, ...ADJ_TEXT, ...PO_TEXT, ...COMPANY_TEXT, ...LABEL_TEXT, ...UI_TEXT };
 
 export type Key = keyof typeof D;
 

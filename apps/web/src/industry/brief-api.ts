@@ -1,5 +1,6 @@
 import type { Names } from '@qasa/core';
 import { qs, request } from '../api.ts';
+import type { ChequeCounts, ChequesAheadView } from './ChequesAhead.tsx';
 
 /** The owner's dashboard, the Daily Brief, the management reports and quick expenses. Amounts in IQD unless said. */
 export type Money2 = { IQD: number; USD: number };
@@ -28,6 +29,8 @@ export interface BriefView {
   installments: { overdue: InstallmentDueView[]; dueTomorrow: InstallmentDueView[]; overdueTotal: Money2 };
   lowStock: LowStockView[];
   approvals: { waitingCheck: number; waitingApproval: number };
+  /** older servers leave it out */
+  cheques?: ChequesAheadView;
   ownerPhone: string;
 }
 
@@ -40,6 +43,7 @@ export interface DashboardView {
   receivables: number;
   payables: number;
   months: { month: string; sales: number; profit: number }[];
+  cheques?: ChequeCounts;
 }
 
 export const EXPENSE_CATEGORIES = ['rent', 'power', 'fuel', 'salaries', 'internet', 'maintenance', 'transport', 'other'] as const;

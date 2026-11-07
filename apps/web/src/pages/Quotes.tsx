@@ -7,6 +7,10 @@ import {
   QUOTE_STATUSES, quotesApi, type QuoteInput, type QuoteLineInput, type QuoteMove, type QuoteStatus, type QuoteSummaryView, type QuoteView
 } from '../industry/quotes-api.ts';
 import { go, href } from '../router.ts';
+import { useRatePrefill } from '../industry/fx-prefill.ts';
+import { quoteMessage, WhatsAppButton } from '../industry/WhatsAppShare.tsx';
+import { DesignedPrint } from '../industry/PrintDocument.tsx';
+import { quoteModel } from '../industry/print-model.ts';
 
 /**
  * عروض الأسعار — quotations, on every plan. Routes: `quotes` (the list), `new-quote`, `edit-quote/:id`, and `quote/:id`
@@ -301,6 +305,7 @@ export function QuoteDetail({ id }: { id: string }) {
         {can('reopen') && <button type="button" className="btn" disabled={busy} onClick={() => void move('reopen')}><Icon name="undo" size={16} />{t('qt_reopen')}</button>}
         {can('edit') && <a className="btn" href={href(`edit-quote/${id}`)}><Icon name="edit" size={16} />{t('qt_edit')}</a>}
         {can('duplicate') && <button type="button" className="btn" disabled={busy} onClick={() => void duplicate()}><Icon name="doc" size={16} />{t('qt_duplicate')}</button>}
+        {x.status !== 'cancelled' && <WhatsAppButton phone={x.party?.phone} text={quoteMessage(i18n, company, { ...x, customerName: x.party?.name ?? x.customerName })} />}
         <button type="button" className="btn" onClick={() => window.print()}><Icon name="printer" size={16} />{t('print')}</button>
         {can('cancel') && <button type="button" className="btn danger" disabled={busy} onClick={() => setModal('cancel')}><Icon name="x" size={16} />{t('qt_cancel')}</button>}
       </div>
@@ -309,7 +314,8 @@ export function QuoteDetail({ id }: { id: string }) {
         <div className="alert info no-print">{t('qt_invoicedAs')} <a href={href(`invoice/${x.invoice.id}`)} className="ltr">{x.invoice.number ?? t('qt_draftInvoice')}</a></div>
       )}
       {x.expired && <div className="alert no-print">{t('qt_expiredHelp')}</div>}
-      <Paper quote={x} company={company} />
+      <DesignedPrint model={quoteModel(x)} />
+      <div className="no-print"><Paper quote={x} company={company} /></div>
       {modal === 'convert' && <ConvertModal quote={x} onClose={() => setModal(null)} onDone={() => { setModal(null); toast(t('qt_converted')); reload(); }} />}
       {modal === 'cancel' && <CancelModal quote={x} onClose={() => setModal(null)} onDone={() => { setModal(null); reload(); }} />}
     </div>
@@ -382,6 +388,8 @@ function ConvertModal({ quote: x, onClose, onDone }: { quote: QuoteView; onClose
   const { settings } = useData();
   const [date, setDate] = useState(todayIso() < x.date ? x.date : todayIso());
   const [rate, setRate] = useState(String(rateFromX100(settings?.defaultRateX100 ?? 142000)));
+  // dollars: the rate board's rate for the chosen date, until a rate is typed
+  const ratePrefill = useRatePrefill({ active: true, currency: x.currency, date, setRateText: setRate });
   const [phone, setPhone] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<unknown>(null);
@@ -405,7 +413,7 @@ function ConvertModal({ quote: x, onClose, onDone }: { quote: QuoteView; onClose
       <div className="stack">
         <p className="muted" style={{ margin: 0 }}>{t('qt_convertHelp')}</p>
         <label className="field"><span>{t('date')}</span><input className="input num" type="date" value={date} onChange={(e) => setDate(e.target.value)} /></label>
-        {x.currency === 'USD' && <label className="field"><span>{t('rate')}</span><input className="input num" inputMode="decimal" value={rate} onChange={(e) => setRate(e.target.value)} /></label>}
+        {x.currency === 'USD' && <label className="field"><span>{t('rate')}</span><input className="input num" inputMode="decimal" value={rate} onChange={(e) => { ratePrefill.typed(); setRate(e.target.value); }} /></label>}
         {!x.party && (
           <>
             <div className="alert info">{t('qt_becomesCustomer', { n: x.customerName })}</div>

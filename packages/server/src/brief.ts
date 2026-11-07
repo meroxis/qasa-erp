@@ -8,6 +8,7 @@ import type { ApiExtension, ApiRequest } from './routes.ts';
 import { readSetting, writeSetting } from './settings.ts';
 import { AppError } from './errors.ts';
 import { scopeLists, scopeOf } from './branches.ts';
+import { chequesAhead, type ChequeAlert } from './banking.ts';
 
 /** A branch's warehouses and safes (null: the whole company). See branches.ts. */
 export type BranchFilter = { warehouses: string[]; accounts: string[] } | null;
@@ -320,6 +321,8 @@ export interface BriefView {
   installments: { overdue: InstallmentDue[]; dueTomorrow: InstallmentDue[]; overdueTotal: Money };
   lowStock: LowStock[];
   approvals: { waitingCheck: number; waitingApproval: number };
+  /** cheques due within a week (or past due) and cheques bounced in the last 30 days */
+  cheques: { due: ChequeAlert[]; bounced: ChequeAlert[]; dueTotal: Money };
   ownerPhone: string;
 }
 
@@ -354,6 +357,7 @@ export function dailyBrief(db: Db, date: string, branch: BranchFilter = null): B
     installments: { overdue: inst.overdue.slice(0, 10), dueTomorrow: inst.dueTomorrow, overdueTotal },
     lowStock: lowStock(db, date, 10),
     approvals: { waitingCheck: num(approvals.draft), waitingApproval: num(approvals.checked) },
+    cheques: chequesAhead(db, date, 10),
     ownerPhone: readSetting(db, 'brief_phone') ?? ''
   };
 }
@@ -370,6 +374,8 @@ export interface DashboardView {
   payables: number;
   /** the last six months, oldest first: month (YYYY-MM) and net sales */
   months: { month: string; sales: number; profit: number }[];
+  /** open cheques due within a week (late ones included), how many of those are late, and bounces in the last 30 days */
+  cheques: { due: number; late: number; bounced: number; dueTotal: Money };
 }
 
 export function dashboard(db: Db, date: string, branch: BranchFilter = null): DashboardView {
@@ -392,7 +398,11 @@ export function dashboard(db: Db, date: string, branch: BranchFilter = null): Da
     cash: { total, base: accounts.reduce((s, a) => s + a.base, 0) },
     receivables: aging(db, 'customer', date).reduce((s, r) => s + r.balance, 0),
     payables: aging(db, 'supplier', date).reduce((s, r) => s + r.balance, 0),
-    months
+    months,
+    cheques: (() => {
+      const c = chequesAhead(db, date, Number.MAX_SAFE_INTEGER);
+      return { due: c.due.length, late: c.due.filter((x) => x.daysLate > 0).length, bounced: c.bounced.length, dueTotal: c.dueTotal };
+    })()
   };
 }
 

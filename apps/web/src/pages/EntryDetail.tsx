@@ -4,6 +4,8 @@ import { api, type EntryView } from '../api.ts';
 import { ErrorBox, Icon, Modal, StatusChip, typeName, useData, useLoad, useToast } from '../components.tsx';
 import { useI18n } from '../i18n.ts';
 import { go, href } from '../router.ts';
+import { DesignedPrint } from '../industry/PrintDocument.tsx';
+import { entryModel } from '../industry/print-model.ts';
 
 function time(iso: string | null): string {
   if (!iso) return '';
@@ -94,7 +96,8 @@ export function EntryDetail({ id }: { id: string }) {
       <ErrorBox error={actionError} />
       {e.status === 'approved' && <div className="alert info no-print">{e.invoiceId ? t('fromInvoiceNote') : e.stockDocId ? t('fromStockDocNote') : t('postedNote')}</div>}
 
-      <div className="paper">
+      <DesignedPrint model={entryModel(e)} />
+      <div className="paper no-print">
         <div className="paper-head">
           <div style={{ flex: 1 }}>
             <div className="muted">{company}</div>

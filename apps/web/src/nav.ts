@@ -54,6 +54,7 @@ export const NAV: NavGroup[] = [
     items: [
       { key: 'items', icon: 'box', path: 'items', match: ['items', 'item'] },
       { key: 'stockDocs', icon: 'swap', path: 'stock-docs', match: ['stock-docs', 'stock-doc', 'new-stock-doc', 'edit-stock-doc'] },
+      { key: 'lb_title', icon: 'tag', path: 'labels', match: ['labels'] },
       { key: 'adj_title', icon: 'tag', path: 'stock-adjustments', match: ['stock-adjustments', 'stock-adjustment', 'new-stock-adjustment', 'edit-stock-adjustment', 'stock-count'] }
     ]
   },
@@ -96,6 +97,7 @@ export const NAV: NavGroup[] = [
       // everyone: Language and display is each person's own; the company sections show to admins only
       { key: 'settings', icon: 'sliders', path: 'settings', match: ['settings'] },
       { key: 'bizType', icon: 'building', path: 'business-type', match: ['business-type'], adminOnly: true },
+      { key: 'pd_title', icon: 'printer', path: 'print-design', match: ['print-design'], adminOnly: true },
       { key: 'co_title', icon: 'building', path: 'companies', match: ['companies'], adminOnly: true, tile: false },
       { key: 'md_title', icon: 'download', path: 'import', match: ['import'], adminOnly: true },
       { key: 'wa_nav', icon: 'globe', path: 'website-api', match: ['website-api'], adminOnly: true },

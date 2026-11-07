@@ -1072,13 +1072,21 @@ export const MYSQL_TABLES: readonly MysqlObject[] = [
       entry_id ${ID} NOT NULL PRIMARY KEY,
       unit_id ${ID} NOT NULL,
       party_id ${ID} NOT NULL,
+      currency ${WORD} NOT NULL CHECK (currency IN ('IQD', 'USD')),
       amount BIGINT NOT NULL CHECK (amount > 0),
-      status ${WORD} NOT NULL CHECK (status IN ('held', 'applied', 'refunded')),
+      date ${WHEN} NOT NULL,
+      status ${WORD} NOT NULL CHECK (status IN ('held', 'applied', 'refunded', 'forfeited')),
+      invoice_id ${ID},
+      close_entry_id ${ID},
+      created_by TEXT NOT NULL,
       created_at ${WHEN} NOT NULL,
+      closed_at ${WHEN},
       INDEX re_deposits_unit (unit_id),
       FOREIGN KEY (entry_id) REFERENCES entries(id),
       FOREIGN KEY (unit_id) REFERENCES re_units(id),
-      FOREIGN KEY (party_id) REFERENCES parties(id)
+      FOREIGN KEY (party_id) REFERENCES parties(id),
+      FOREIGN KEY (invoice_id) REFERENCES invoices(id),
+      FOREIGN KEY (close_entry_id) REFERENCES entries(id)
     )`
   },
   {

@@ -1199,13 +1199,23 @@ const V7 =
 
   -- a real estate reservation's deposit (عربون الحجز): a receipt voucher, counted towards the sale
   CREATE TABLE re_deposits (
+    -- the receipt voucher that took it (posted at once, as document receipts are)
     entry_id TEXT PRIMARY KEY REFERENCES entries(id),
     unit_id TEXT NOT NULL REFERENCES re_units(id),
     party_id TEXT NOT NULL REFERENCES parties(id),
+    -- in the project's currency
+    currency TEXT NOT NULL CHECK (currency IN ('IQD', 'USD')),
     amount INTEGER NOT NULL CHECK (amount > 0),
-    -- what happened to it: kept with the reservation, counted in the sale, or refunded
-    status TEXT NOT NULL CHECK (status IN ('held', 'applied', 'refunded')),
-    created_at TEXT NOT NULL
+    date TEXT NOT NULL,
+    -- what happened to it: kept with the reservation, counted in the sale, paid back, or kept by the company
+    status TEXT NOT NULL CHECK (status IN ('held', 'applied', 'refunded', 'forfeited')),
+    -- the sale invoice it was counted in
+    invoice_id TEXT REFERENCES invoices(id),
+    -- the draft payment voucher (refund) or journal entry (forfeit) that closed it, through checking and approval
+    close_entry_id TEXT REFERENCES entries(id),
+    created_by TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    closed_at TEXT
   );
   CREATE INDEX re_deposits_unit ON re_deposits(unit_id);
 

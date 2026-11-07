@@ -7,6 +7,7 @@ import {
   PO_STATUSES, purchasingApi, type PoInput, type PoMove, type PoStatus, type PoSummaryView, type PoView, type ReorderGroup
 } from '../industry/purchasing-api.ts';
 import { go, href } from '../router.ts';
+import { useRatePrefill } from '../industry/fx-prefill.ts';
 
 /**
  * أوامر الشراء — purchase orders. Routes: `purchase-orders` (list + reorder suggestions), `new-purchase-order`,
@@ -456,6 +457,8 @@ function ReceiveModal({ order: x, onClose, onDone }: { order: PoView; onClose():
   const [date, setDate] = useState(todayIso() < x.date ? x.date : todayIso());
   const [warehouseId, setWarehouseId] = useState(x.warehouse?.id ?? '');
   const [rate, setRate] = useState(String(rateFromX100(settings?.defaultRateX100 ?? 142000)));
+  // dollars: the rate board's rate for the chosen date, until a rate is typed
+  const ratePrefill = useRatePrefill({ active: true, currency: x.currency, date, setRateText: setRate });
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<unknown>(null);
   async function submit() {
@@ -483,7 +486,7 @@ function ReceiveModal({ order: x, onClose, onDone }: { order: PoView; onClose():
             {warehouses.map((w) => <option key={w.id} value={w.id}>{i18n.name(w.name)}</option>)}
           </select>
         </label>
-        {x.currency === 'USD' && <label className="field"><span>{t('rate')}</span><input className="input num" inputMode="decimal" value={rate} onChange={(e) => setRate(e.target.value)} /></label>}
+        {x.currency === 'USD' && <label className="field"><span>{t('rate')}</span><input className="input num" inputMode="decimal" value={rate} onChange={(e) => { ratePrefill.typed(); setRate(e.target.value); }} /></label>}
         <ErrorBox error={error} />
         <div className="row"><span className="spacer" /><button type="button" className="btn" onClick={onClose}>{t('cancel')}</button>
           <button type="button" className="btn primary" disabled={busy} onClick={() => void submit()}><Icon name="truck" size={16} />{t('po_receive')}</button></div>
