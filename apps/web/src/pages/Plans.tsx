@@ -21,7 +21,7 @@ const ROWS: Row[] = [
   { label: 'f_branding', cells: ['v_shown', 'v_removed', 'v_removed'] },
   { label: 'f_users', cells: [{ limit: free.limits.users }, { limit: pro.limits.users }, { limit: business.limits.users }] },
   { label: 'f_network', cells: [false, true, true] },
-  { label: 'f_companies', cells: [{ limit: free.limits.companies }, { limit: pro.limits.companies }, { limit: business.limits.companies }], soon: true },
+  { label: 'f_companies', cells: [{ limit: free.limits.companies }, { limit: pro.limits.companies }, { limit: business.limits.companies }] },
   { label: 'f_roles', cells: ['v_onePerson', true, true] },
   { label: 'f_quotes', cells: [true, true, true] },
   { label: 'f_pos', cells: [true, true, true] },

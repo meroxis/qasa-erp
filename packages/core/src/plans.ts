@@ -127,7 +127,8 @@ export function resolvePlan(input: { license: LicenseInfo | null; trialStarted: 
     // the first month: everything Qasa ERP does (Business), so every kind of company can try its own pages
     plan = 'business';
     source = 'trial';
-    limits = PLANS.business.limits;
+    // every page, but up to as many company files as Pro: a month's trial is no way to keep many companies
+    limits = { ...PLANS.business.limits, companies: PLANS.pro.limits.companies };
   }
   return { plan, source, licenseState: state, graceEnds, trialEnds, trialActive, limits: { ...limits }, features: [...PLANS[plan].features] };
 }
@@ -146,4 +147,12 @@ export const BUSINESS_FEATURE: Record<BusinessType, Feature | null> = {
 
 export function isBusinessType(value: unknown): value is BusinessType {
   return typeof value === 'string' && (BUSINESS_TYPES as readonly string[]).includes(value);
+}
+
+/**
+ * May one more company be made on this PC? `count` is how many it keeps now (the first one included).
+ * null limit = unlimited (Business).
+ */
+export function canAddCompany(limits: Pick<PlanLimits, 'companies'>, count: number): boolean {
+  return limits.companies === null || count < limits.companies;
 }

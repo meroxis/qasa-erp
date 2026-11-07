@@ -96,6 +96,7 @@ export const NAV: NavGroup[] = [
       // everyone: Language and display is each person's own; the company sections show to admins only
       { key: 'settings', icon: 'sliders', path: 'settings', match: ['settings'] },
       { key: 'bizType', icon: 'building', path: 'business-type', match: ['business-type'], adminOnly: true },
+      { key: 'co_title', icon: 'building', path: 'companies', match: ['companies'], adminOnly: true, tile: false },
       { key: 'md_title', icon: 'download', path: 'import', match: ['import'], adminOnly: true },
       { key: 'wa_nav', icon: 'globe', path: 'website-api', match: ['website-api'], adminOnly: true },
       { key: 'bn_title', icon: 'branch', path: 'branches', match: ['branches'], adminOnly: true },

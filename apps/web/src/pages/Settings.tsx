@@ -12,6 +12,7 @@ import { HelpPanel } from '../industry/SupportButton.tsx';
 import { UpdateSettings } from '../industry/UpdateSettings.tsx';
 import { LegalPanel } from '../industry/LegalPanel.tsx';
 import { GraphicsSetting } from '../industry/GraphicsSetting.tsx';
+import { CompaniesSetting } from './Companies.tsx';
 
 /** Language and display are each person's own; the company's settings are for admins. */
 export function Settings({ admin }: { admin: boolean }) {
@@ -19,6 +20,7 @@ export function Settings({ admin }: { admin: boolean }) {
     <div className="stack" style={{ maxWidth: 1000 }}>
       <DisplaySettings />
       {admin && <CompanySettings />}
+      {admin && <CompaniesSetting />}
       <HelpPanel />
       <UpdateSettings />
       <UsageCard admin={admin} />

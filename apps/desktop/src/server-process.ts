@@ -8,7 +8,9 @@ import { appendFileSync, copyFileSync, existsSync, mkdirSync, readFileSync, rena
 import { createServer } from 'node:net';
 import { extname, join, normalize, sep } from 'node:path';
 import type { FastifyInstance } from 'fastify';
-import { buildApp, configureLicensing, openDatabase, startUsagePings, type Db } from '@qasa/server';
+import { buildApp, configureLicensing, openDatabase, planStatus, startUsagePings, type Db } from '@qasa/server';
+import { companyDirOf, isCompanyId, MAIN_COMPANY, readRegistry } from './companies.ts';
+import { companyApi } from './company-api.ts';
 import { Bridge, type Carrier } from './bridge.ts';
 import { makeSecretBox, type SecretBox } from './secrets.ts';
 import type { DatabaseStartContext, ProContext, RestartOptions } from './pro-types.ts';
@@ -27,6 +29,8 @@ export interface ServerInit {
   /** Where the licence addon is (resources\qasa_licence.node in the installed app). */
   resourcesPath: string;
   fromStore: boolean;
+  /** The company to open (companies.ts): 'main' (the app's own folder) or another company's id. */
+  companyId?: string;
 }
 
 export const SECURITY_HEADERS: Record<string, string> = {
@@ -57,7 +61,10 @@ const cfg = (): ServerInit => {
   if (!init) throw new Error('the server process has not been started');
   return init;
 };
-const dataDir = () => join(cfg().userDataDir, 'data');
+/** The company open now: its id, and its folder (the app's own folder for the first company). */
+const companyId = () => (isCompanyId(cfg().companyId) ? cfg().companyId! : MAIN_COMPANY);
+const companyDir = () => companyDirOf(cfg().userDataDir, companyId());
+const dataDir = () => join(companyDir(), 'data');
 
 /** %APPDATA%\Qasa ERP\logs\server.log (main.log is the window process's). */
 export function log(...parts: unknown[]): void {
@@ -111,7 +118,8 @@ function workerSource(): { code: string } {
 }
 
 function startContext(): DatabaseStartContext {
-  return { userDataDir: cfg().userDataDir, dataDir: dataDir(), get workerSource() { return workerSource(); }, revealSecret, log };
+  // the Pro module keeps each company's own settings (backups, database server, office network) in its folder
+  return { userDataDir: companyDir(), dataDir: dataDir(), get workerSource() { return workerSource(); }, revealSecret, log };
 }
 
 const stampNow = () => new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-');
@@ -206,8 +214,27 @@ async function startServer(bridge: Bridge, given: ServerInit): Promise<string> {
   // Pro module) also check every licence in the Rust module shipped beside app.asar
   configureLicensing({ strict: true, dataDir: given.userDataDir, requireNative: !!proModule });
   // the anonymous daily usage ping (Settings → Anonymous usage statistics; can be switched off)
-  pings = startUsagePings(db, { dataDir: given.userDataDir, version: given.appVersion, os: process.platform === 'win32' ? 'windows' : process.platform });
-  server = buildApp(db, { extensions: proModule?.apiExtensions ?? [] });
+  pings = startUsagePings(db, {
+    dataDir: given.userDataDir, version: given.appVersion, os: process.platform === 'win32' ? 'windows' : process.platform,
+    companies: () => readRegistry(given.userDataDir).list.length
+  });
+  const open = db;
+  const companies = companyApi({
+    db: open, userDataDir: given.userDataDir, currentId: companyId(), log,
+    limit: () => planStatus(open).limits.companies,
+    makeCompanyFile: (file, prepare) => {
+      const made = openDatabase(file);
+      try { prepare(made); } finally { made.close(); }
+    },
+    chooseFolder: () => bridge.call<string | null>('chooseFolder', [], { timeoutMs: 0 }),
+    switchTo: (id) => {
+      void (async () => {
+        await stopServer();
+        await bridge.call('switchCompany', [id], { timeoutMs: 0 });
+      })().catch((error: unknown) => log('could not open the other company:', error));
+    }
+  });
+  server = buildApp(db, { extensions: [...(proModule?.apiExtensions ?? []), companies] });
 
   server.addHook('onRequest', async (req, reply) => {
     const cookies = (req.headers.cookie ?? '').split(';').map((c) => c.trim());
@@ -241,7 +268,7 @@ async function startServer(bridge: Bridge, given: ServerInit): Promise<string> {
 
   // the Pro module adds its routes now: a server takes no more once it listens
   const ctx: ProContext = {
-    db, server, userDataDir: given.userDataDir, dataDir: dataDir(), appVersion: given.appVersion, serveWeb, securityHeaders: SECURITY_HEADERS, log,
+    db, server, userDataDir: companyDir(), dataDir: dataDir(), appVersion: given.appVersion, serveWeb, securityHeaders: SECURITY_HEADERS, log,
     documentsDir: given.documentsDir,
     get workerSource() { return workerSource(); },
     restart,
@@ -272,7 +299,7 @@ async function startServer(bridge: Bridge, given: ServerInit): Promise<string> {
     }
   }
   const url = `http://127.0.0.1:${address.port}`;
-  log(`server ${given.appVersion}${given.fromStore ? ' (Microsoft Store)' : ''} on ${url}, data in ${dataDir()}`);
+  log(`server ${given.appVersion}${given.fromStore ? ' (Microsoft Store)' : ''} on ${url}, company ${companyId()}, data in ${dataDir()}`);
   return url;
 }
 

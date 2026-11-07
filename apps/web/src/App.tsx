@@ -16,6 +16,7 @@ import { CommandPalette } from './industry/CommandPalette.tsx';
 import { Tour, TOUR_EVENT, tourDone } from './industry/Tour.tsx';
 import { UpdateBanner } from './industry/UpdateBanner.tsx';
 import { isReportTab, isSolarTab } from './pages/tabs.ts';
+import { canSwitchCompanies } from './industry/companies-api.ts';
 
 /**
  * Pages load when they are first opened, not with the app: the first screen comes up quickly and the window holds only
@@ -85,6 +86,7 @@ const StockAdjustments = lazyPage(() => import('./pages/StockAdjustments.tsx'), 
 const StockAdjustmentEditor = lazyPage(() => import('./pages/StockAdjustments.tsx'), 'StockAdjustmentEditor');
 const StockAdjustmentDetail = lazyPage(() => import('./pages/StockAdjustments.tsx'), 'StockAdjustmentDetail');
 const StockCount = lazyPage(() => import('./pages/StockAdjustments.tsx'), 'StockCount');
+const Companies = lazyPage(() => import('./pages/Companies.tsx'), 'Companies');
 const FixedAssets = lazyPage(() => import('./pages/FixedAssets.tsx'), 'FixedAssets');
 const FixedAssetDetail = lazyPage(() => import('./pages/FixedAssets.tsx'), 'FixedAssetDetail');
 const GenRun = lazyPage(() => import('./pages/Generators.tsx'), 'GenRun');
@@ -489,6 +491,10 @@ export function App() {
       title = t('adj_count');
       content = <StockCount />;
       break;
+    case 'companies':
+      title = t('co_title');
+      content = <Companies />;
+      break;
     case 'fixed-assets':
       title = t('fa_title');
       content = <FixedAssets key={arg ?? 'list'} tab={arg === 'runs' ? 'runs' : undefined} />;
@@ -803,6 +809,7 @@ function UserMenu({ name, role, plan, admin, signInRequired, onChangePassword, o
           <div className="menu-sep" />
           <a className="menu-item" href={href('settings')} onClick={close}><Icon name="globe" size={16} />{t('displayTitle')}</a>
           {admin && <a className="menu-item" href={href('plans')} onClick={close}><Icon name="star" size={16} />{t('planLicense')}</a>}
+          {admin && canSwitchCompanies() && <a className="menu-item" href={href('companies')} onClick={close}><Icon name="building" size={16} />{t('co_menu')}</a>}
           {signInRequired && <button type="button" className="menu-item" onClick={() => { close(); button.current?.focus(); onChangePassword(); }}><Icon name="key" size={16} />{t('changePassword')}</button>}
           {signInRequired && (
             <>

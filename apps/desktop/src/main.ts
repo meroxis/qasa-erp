@@ -10,6 +10,7 @@ import { randomBytes } from 'node:crypto';
 import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { Bridge } from './bridge.ts';
+import { companyDirOf, isCompanyId, readRegistry } from './companies.ts';
 import { isLang, text, type Lang, type TextKey } from './texts.ts';
 import { pair, parseAddress, parseOfficeId, pemFingerprint, startTunnel, type PairResult, type Remote } from './office.ts';
 
@@ -104,7 +105,9 @@ async function relaunchApp(): Promise<void> {
 // heavy request never stops the window from answering. This process starts it, gives it what it needs, and answers
 // what only it can do: dialogs and pickers, restarting the app.
 
-const dataDir = () => join(app.getPath('userData'), 'data');
+/** The company open now (companies.ts): the one companies.json names, else the first. */
+let companyId = 'main';
+const dataDir = () => join(companyDirOf(app.getPath('userData'), companyId), 'data');
 let child: UtilityProcess | null = null;
 let bridge: Bridge | null = null;
 /** True once this process asked the server process to stop (or to restart the app): its end is then expected. */
@@ -195,6 +198,7 @@ async function refuseNewerBooks(details: unknown): Promise<void> {
 /** Starts the server process and its server; resolves with the address the window loads. */
 async function startServer(): Promise<string> {
   childEnding = false;
+  companyId = readRegistry(app.getPath('userData')).current;
   const proc = utilityProcess.fork(join(__dirname, 'server-process.cjs'), [], { serviceName: 'Qasa ERP server', stdio: 'ignore' });
   child = proc;
   const link = new Bridge({ postMessage: (m) => proc.postMessage(m), listen: (fn) => proc.on('message', fn) });
@@ -212,6 +216,12 @@ async function startServer(): Promise<string> {
       const r = win ? await dialog.showOpenDialog(win, options) : await dialog.showOpenDialog(options);
       return r.canceled ? null : r.filePaths[0] ?? null;
     }) as never)
+    // Settings → Companies: the server process has closed this company; open the other one in the same window
+    .handle('switchCompany', ((id: unknown) => {
+      if (!isCompanyId(id)) return;
+      childEnding = true;
+      setImmediate(() => void openOtherCompany());
+    }) as never)
     // the server process has closed the company file (and moved files as asked): start again
     .handle('relaunch', (() => {
       childEnding = true;
@@ -219,14 +229,45 @@ async function startServer(): Promise<string> {
     }) as never);
   proc.on('exit', (code) => {
     link.close();
-    if (child === proc) { child = null; bridge = null; }
     log(`server process ended (${code})`);
+    // a process already replaced (another company opened): its end was expected
+    if (child !== proc) return;
+    child = null;
+    bridge = null;
     if (!childEnding && win) void serverGone(code);
   });
   return link.call<string>('init', [{
     userDataDir: app.getPath('userData'), documentsDir: app.getPath('documents'), appVersion: app.getVersion(), sessionKey: SESSION_KEY,
-    secretsKey: secretsKey(), resourcesPath: process.resourcesPath, fromStore: FROM_STORE
+    secretsKey: secretsKey(), resourcesPath: process.resourcesPath, fromStore: FROM_STORE, companyId
   }], { timeoutMs: 0 });
+}
+
+/**
+ * Another company (companies.json now names it): a new server process on its folder, and the window reloads on it.
+ * Nobody is signed in there: the person signs in to that company if it asks for sign-in. If the server comes up on
+ * another port, the whole app restarts so the window's origin checks stay exact.
+ */
+async function openOtherCompany(): Promise<void> {
+  try {
+    await stopServer();
+    const url = await startServer();
+    log(`company ${companyId} open — server process on ${url}`);
+    if (!win || win.isDestroyed()) return;
+    if (originOf(url) !== appOrigin) {
+      app.relaunch();
+      app.exit(0);
+      return;
+    }
+    const ses = session.defaultSession;
+    await ses.cookies.remove(url, 'qasa_auth');
+    await ses.cookies.set({ url, name: 'qasa_session', value: SESSION_KEY, httpOnly: true, sameSite: 'strict' });
+    await win.loadURL(url);
+    buildMenu();
+  } catch (error) {
+    log('the other company did not open:', error);
+    app.relaunch();
+    app.exit(0);
+  }
 }
 
 /** The server process ended by itself (a crash): say so plainly, keep the logs, offer a restart. */
@@ -465,7 +506,7 @@ function buildMenu(): void {
             { label: t('quit'), role: 'quit' }
           ]
         : [
-            { label: t('openData'), click: () => void shell.openPath(join(app.getPath('userData'), 'data')) },
+            { label: t('openData'), click: () => void shell.openPath(dataDir()) },
             { label: t('connect'), click: () => openConnectWindow() },
             { type: 'separator' },
             { label: t('quit'), role: 'quit' }

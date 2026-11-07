@@ -6,7 +6,9 @@ contextBridge.exposeInMainWorld('qasaDesktop', {
   setTheme: (theme: string) => ipcRenderer.send('app:theme', String(theme)),
   getGraphics: () => ipcRenderer.invoke('app:graphics') as Promise<{ on: boolean; running: boolean } | null>,
   setGraphics: (on: boolean) => ipcRenderer.invoke('app:graphics:set', on === true) as Promise<{ on: boolean; running: boolean } | null>,
-  relaunch: () => ipcRenderer.send('app:relaunch')
+  relaunch: () => ipcRenderer.send('app:relaunch'),
+  /** This app can keep several companies (Settings → Companies; the routes are on its own server, admins only). */
+  companies: true
 });
 
 /** Updates: the banner and Settings → Updates (main.ts, "updates"). Nothing installs without the person's click. */
