@@ -1083,6 +1083,130 @@ const V7 =
     PRIMARY KEY (source, external_id)
   );
 
+  -- stock adjustments (damaged, lost, expired, count differences, used in the company or issued to a job): quantities in
+  -- (+) or out (−) of a warehouse at cost, posted against an expense or income account
+  CREATE TABLE stock_adjustments (
+    id TEXT PRIMARY KEY,
+    number TEXT UNIQUE,
+    date TEXT NOT NULL,
+    warehouse_id TEXT NOT NULL REFERENCES warehouses(id),
+    reason TEXT NOT NULL CHECK (reason IN ('damaged', 'lost', 'expired', 'count', 'internal_use', 'job', 'other')),
+    -- the account the value goes to (a loss or expense, or a gain for a count surplus)
+    account_code TEXT REFERENCES accounts(code),
+    job_id TEXT REFERENCES jobs(id),
+    status TEXT NOT NULL CHECK (status IN ('draft', 'posted', 'cancelled')),
+    entry_id TEXT REFERENCES entries(id),
+    notes TEXT,
+    created_by TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+  );
+  CREATE TABLE stock_adjustment_lines (
+    adjustment_id TEXT NOT NULL REFERENCES stock_adjustments(id),
+    seq INTEGER NOT NULL,
+    item_id TEXT NOT NULL REFERENCES items(id),
+    -- thousandths; negative takes out, positive adds
+    qty_milli INTEGER NOT NULL CHECK (qty_milli <> 0),
+    -- IQD per unit for additions (taken out at the weighted average cost)
+    unit_cost INTEGER,
+    PRIMARY KEY (adjustment_id, seq)
+  );
+
+  -- purchase orders: ordered from a supplier, received (fully or in part) into a purchase invoice
+  CREATE TABLE purchase_orders (
+    id TEXT PRIMARY KEY,
+    number TEXT NOT NULL UNIQUE,
+    date TEXT NOT NULL,
+    party_id TEXT NOT NULL REFERENCES parties(id),
+    warehouse_id TEXT REFERENCES warehouses(id),
+    currency TEXT NOT NULL CHECK (currency IN ('IQD', 'USD')),
+    expected_date TEXT,
+    status TEXT NOT NULL CHECK (status IN ('draft', 'sent', 'partial', 'received', 'cancelled')),
+    notes TEXT,
+    created_by TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+  );
+  CREATE TABLE purchase_order_lines (
+    order_id TEXT NOT NULL REFERENCES purchase_orders(id),
+    seq INTEGER NOT NULL,
+    item_id TEXT NOT NULL REFERENCES items(id),
+    qty_milli INTEGER NOT NULL CHECK (qty_milli > 0),
+    unit_price INTEGER NOT NULL CHECK (unit_price >= 0),
+    PRIMARY KEY (order_id, seq)
+  );
+  -- the purchase invoices that received an order (one order can be received over several)
+  CREATE TABLE purchase_order_receipts (
+    order_id TEXT NOT NULL REFERENCES purchase_orders(id),
+    invoice_id TEXT NOT NULL REFERENCES invoices(id),
+    PRIMARY KEY (order_id, invoice_id)
+  );
+
+  -- which price a customer pays by default: retail (the item's sale price) or wholesale (part_details / item_prices)
+  CREATE TABLE party_price_lists (
+    party_id TEXT PRIMARY KEY REFERENCES parties(id),
+    list TEXT NOT NULL CHECK (list IN ('retail', 'wholesale'))
+  );
+  CREATE TABLE item_prices (
+    item_id TEXT NOT NULL REFERENCES items(id),
+    list TEXT NOT NULL CHECK (list IN ('wholesale')),
+    price INTEGER NOT NULL CHECK (price >= 0),
+    PRIMARY KEY (item_id, list)
+  );
+
+  -- fixed assets (الموجودات الثابتة) and their monthly depreciation
+  CREATE TABLE fixed_assets (
+    id TEXT PRIMARY KEY,
+    code TEXT NOT NULL UNIQUE,
+    name TEXT NOT NULL,
+    -- the asset account (11…), its accumulated depreciation account and the depreciation expense account
+    asset_account TEXT NOT NULL REFERENCES accounts(code),
+    accum_account TEXT NOT NULL REFERENCES accounts(code),
+    expense_account TEXT NOT NULL REFERENCES accounts(code),
+    acquired TEXT NOT NULL,
+    -- in IQD
+    cost INTEGER NOT NULL CHECK (cost > 0),
+    salvage INTEGER NOT NULL DEFAULT 0 CHECK (salvage >= 0),
+    life_months INTEGER NOT NULL CHECK (life_months > 0),
+    method TEXT NOT NULL CHECK (method IN ('straight_line')),
+    -- depreciation already taken before Qasa ERP
+    opening_accum INTEGER NOT NULL DEFAULT 0 CHECK (opening_accum >= 0),
+    location TEXT,
+    status TEXT NOT NULL CHECK (status IN ('active', 'disposed')),
+    disposed_on TEXT,
+    notes TEXT,
+    created_by TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+  );
+  CREATE TABLE depreciation_runs (
+    id TEXT PRIMARY KEY,
+    -- YYYY-MM
+    period TEXT NOT NULL UNIQUE,
+    entry_id TEXT REFERENCES entries(id),
+    status TEXT NOT NULL CHECK (status IN ('draft', 'posted', 'cancelled')),
+    created_by TEXT NOT NULL,
+    created_at TEXT NOT NULL
+  );
+  CREATE TABLE depreciation_lines (
+    run_id TEXT NOT NULL REFERENCES depreciation_runs(id),
+    asset_id TEXT NOT NULL REFERENCES fixed_assets(id),
+    amount INTEGER NOT NULL CHECK (amount >= 0),
+    PRIMARY KEY (run_id, asset_id)
+  );
+
+  -- a real estate reservation's deposit (عربون الحجز): a receipt voucher, counted towards the sale
+  CREATE TABLE re_deposits (
+    entry_id TEXT PRIMARY KEY REFERENCES entries(id),
+    unit_id TEXT NOT NULL REFERENCES re_units(id),
+    party_id TEXT NOT NULL REFERENCES parties(id),
+    amount INTEGER NOT NULL CHECK (amount > 0),
+    -- what happened to it: kept with the reservation, counted in the sale, or refunded
+    status TEXT NOT NULL CHECK (status IN ('held', 'applied', 'refunded')),
+    created_at TEXT NOT NULL
+  );
+  CREATE INDEX re_deposits_unit ON re_deposits(unit_id);
+
   -- banking: cheques received and written (الصكوك) with their life from in hand to cleared or bounced
   CREATE TABLE cheques (
     id TEXT PRIMARY KEY,

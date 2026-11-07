@@ -909,6 +909,177 @@ export const MYSQL_TABLES: readonly MysqlObject[] = [
     )`
   },
   {
+    name: 'stock_adjustments',
+    since: 7,
+    sql: `CREATE TABLE stock_adjustments (
+      id ${ID} NOT NULL PRIMARY KEY,
+      number ${ID} UNIQUE,
+      date ${WHEN} NOT NULL,
+      warehouse_id ${ID} NOT NULL,
+      reason ${WORD} NOT NULL CHECK (reason IN ('damaged', 'lost', 'expired', 'count', 'internal_use', 'job', 'other')),
+      account_code ${ID},
+      job_id ${ID},
+      status ${WORD} NOT NULL CHECK (status IN ('draft', 'posted', 'cancelled')),
+      entry_id ${ID},
+      notes TEXT,
+      created_by TEXT NOT NULL,
+      created_at ${WHEN} NOT NULL,
+      updated_at ${WHEN} NOT NULL,
+      FOREIGN KEY (warehouse_id) REFERENCES warehouses(id),
+      FOREIGN KEY (account_code) REFERENCES accounts(code),
+      FOREIGN KEY (job_id) REFERENCES jobs(id),
+      FOREIGN KEY (entry_id) REFERENCES entries(id)
+    )`
+  },
+  {
+    name: 'stock_adjustment_lines',
+    since: 7,
+    sql: `CREATE TABLE stock_adjustment_lines (
+      adjustment_id ${ID} NOT NULL,
+      seq INT NOT NULL,
+      item_id ${ID} NOT NULL,
+      qty_milli BIGINT NOT NULL CHECK (qty_milli <> 0),
+      unit_cost BIGINT,
+      PRIMARY KEY (adjustment_id, seq),
+      FOREIGN KEY (adjustment_id) REFERENCES stock_adjustments(id),
+      FOREIGN KEY (item_id) REFERENCES items(id)
+    )`
+  },
+  {
+    name: 'purchase_orders',
+    since: 7,
+    sql: `CREATE TABLE purchase_orders (
+      id ${ID} NOT NULL PRIMARY KEY,
+      number ${ID} NOT NULL UNIQUE,
+      date ${WHEN} NOT NULL,
+      party_id ${ID} NOT NULL,
+      warehouse_id ${ID},
+      currency ${WORD} NOT NULL CHECK (currency IN ('IQD', 'USD')),
+      expected_date ${WHEN},
+      status ${WORD} NOT NULL CHECK (status IN ('draft', 'sent', 'partial', 'received', 'cancelled')),
+      notes TEXT,
+      created_by TEXT NOT NULL,
+      created_at ${WHEN} NOT NULL,
+      updated_at ${WHEN} NOT NULL,
+      FOREIGN KEY (party_id) REFERENCES parties(id),
+      FOREIGN KEY (warehouse_id) REFERENCES warehouses(id)
+    )`
+  },
+  {
+    name: 'purchase_order_lines',
+    since: 7,
+    sql: `CREATE TABLE purchase_order_lines (
+      order_id ${ID} NOT NULL,
+      seq INT NOT NULL,
+      item_id ${ID} NOT NULL,
+      qty_milli BIGINT NOT NULL CHECK (qty_milli > 0),
+      unit_price BIGINT NOT NULL CHECK (unit_price >= 0),
+      PRIMARY KEY (order_id, seq),
+      FOREIGN KEY (order_id) REFERENCES purchase_orders(id),
+      FOREIGN KEY (item_id) REFERENCES items(id)
+    )`
+  },
+  {
+    name: 'purchase_order_receipts',
+    since: 7,
+    sql: `CREATE TABLE purchase_order_receipts (
+      order_id ${ID} NOT NULL,
+      invoice_id ${ID} NOT NULL,
+      PRIMARY KEY (order_id, invoice_id),
+      FOREIGN KEY (order_id) REFERENCES purchase_orders(id),
+      FOREIGN KEY (invoice_id) REFERENCES invoices(id)
+    )`
+  },
+  {
+    name: 'party_price_lists',
+    since: 7,
+    sql: `CREATE TABLE party_price_lists (
+      party_id ${ID} NOT NULL PRIMARY KEY,
+      list ${WORD} NOT NULL CHECK (list IN ('retail', 'wholesale')),
+      FOREIGN KEY (party_id) REFERENCES parties(id)
+    )`
+  },
+  {
+    name: 'item_prices',
+    since: 7,
+    sql: `CREATE TABLE item_prices (
+      item_id ${ID} NOT NULL,
+      list ${WORD} NOT NULL CHECK (list IN ('wholesale')),
+      price BIGINT NOT NULL CHECK (price >= 0),
+      PRIMARY KEY (item_id, list),
+      FOREIGN KEY (item_id) REFERENCES items(id)
+    )`
+  },
+  {
+    name: 'fixed_assets',
+    since: 7,
+    sql: `CREATE TABLE fixed_assets (
+      id ${ID} NOT NULL PRIMARY KEY,
+      code ${ID} NOT NULL UNIQUE,
+      name TEXT NOT NULL,
+      asset_account ${ID} NOT NULL,
+      accum_account ${ID} NOT NULL,
+      expense_account ${ID} NOT NULL,
+      acquired ${WHEN} NOT NULL,
+      cost BIGINT NOT NULL CHECK (cost > 0),
+      salvage BIGINT NOT NULL DEFAULT 0 CHECK (salvage >= 0),
+      life_months INT NOT NULL CHECK (life_months > 0),
+      method ${WORD} NOT NULL CHECK (method IN ('straight_line')),
+      opening_accum BIGINT NOT NULL DEFAULT 0 CHECK (opening_accum >= 0),
+      location TEXT,
+      status ${WORD} NOT NULL CHECK (status IN ('active', 'disposed')),
+      disposed_on ${WHEN},
+      notes TEXT,
+      created_by TEXT NOT NULL,
+      created_at ${WHEN} NOT NULL,
+      updated_at ${WHEN} NOT NULL,
+      FOREIGN KEY (asset_account) REFERENCES accounts(code),
+      FOREIGN KEY (accum_account) REFERENCES accounts(code),
+      FOREIGN KEY (expense_account) REFERENCES accounts(code)
+    )`
+  },
+  {
+    name: 'depreciation_runs',
+    since: 7,
+    sql: `CREATE TABLE depreciation_runs (
+      id ${ID} NOT NULL PRIMARY KEY,
+      period ${WORD} NOT NULL UNIQUE,
+      entry_id ${ID},
+      status ${WORD} NOT NULL CHECK (status IN ('draft', 'posted', 'cancelled')),
+      created_by TEXT NOT NULL,
+      created_at ${WHEN} NOT NULL,
+      FOREIGN KEY (entry_id) REFERENCES entries(id)
+    )`
+  },
+  {
+    name: 'depreciation_lines',
+    since: 7,
+    sql: `CREATE TABLE depreciation_lines (
+      run_id ${ID} NOT NULL,
+      asset_id ${ID} NOT NULL,
+      amount BIGINT NOT NULL CHECK (amount >= 0),
+      PRIMARY KEY (run_id, asset_id),
+      FOREIGN KEY (run_id) REFERENCES depreciation_runs(id),
+      FOREIGN KEY (asset_id) REFERENCES fixed_assets(id)
+    )`
+  },
+  {
+    name: 're_deposits',
+    since: 7,
+    sql: `CREATE TABLE re_deposits (
+      entry_id ${ID} NOT NULL PRIMARY KEY,
+      unit_id ${ID} NOT NULL,
+      party_id ${ID} NOT NULL,
+      amount BIGINT NOT NULL CHECK (amount > 0),
+      status ${WORD} NOT NULL CHECK (status IN ('held', 'applied', 'refunded')),
+      created_at ${WHEN} NOT NULL,
+      INDEX re_deposits_unit (unit_id),
+      FOREIGN KEY (entry_id) REFERENCES entries(id),
+      FOREIGN KEY (unit_id) REFERENCES re_units(id),
+      FOREIGN KEY (party_id) REFERENCES parties(id)
+    )`
+  },
+  {
     name: 'cheques',
     since: 7,
     sql: `CREATE TABLE cheques (
