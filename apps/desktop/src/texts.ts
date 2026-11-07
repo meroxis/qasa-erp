@@ -23,6 +23,7 @@ const T = {
   later: ['لاحقاً', 'Later', 'دواتر'],
   upToDate: ['لديك أحدث إصدار ({v}).', 'You have the latest version ({v}).', 'نوێترین وەشانت هەیە ({v}).'],
   downloading: ['يوجد إصدار جديد ({v})، يجري تنزيله وسننبّهك عند جاهزيته.', 'A new version ({v}) is downloading. We’ll let you know when it’s ready.', 'وەشانێکی نوێ ({v}) دادەبەزێت. کاتێک ئامادە بوو ئاگادارت دەکەینەوە.'],
+  updateWaiting: ['الإصدار {v} جاهز للتثبيت. اختر «أعد التشغيل للتحديث» في الشريط أعلى النافذة، أو سيُثبَّت عند إغلاق البرنامج.', 'Qasa ERP {v} is ready to install. Click “Restart to update” in the bar at the top of the window, or it installs when you close the app.', 'وەشانی {v} ئامادەیە بۆ دامەزراندن. لە شریتی سەرەوەی پەنجەرەکە «دووبارە بیکەرەوە بۆ نوێکردنەوە» هەڵبژێرە، یان کاتێک بەرنامەکە دادەخەیت دادەمەزرێت.'],
   updateError: ['تعذر التحقق من التحديثات. تحقق من الاتصال بالإنترنت وحاول لاحقاً.', 'Couldn’t check for updates. Check the internet connection and try again later.', 'نەتوانرا نوێکردنەوە بپشکنرێت. پەیوەندیی ئینتەرنێت بپشکنە و دواتر هەوڵ بدەرەوە.'],
   startFailed: ['تعذر تشغيل قاصة ERP', 'Qasa ERP couldn’t start', 'قاسە ERP نەتوانرا دەستپێبکات'],
   // books a newer version has already upgraded (the Store version can be a release behind the installer)

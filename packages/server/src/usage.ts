@@ -37,6 +37,8 @@ export interface UsagePayload {
   users: number;
   /** True on the first ping an installation ever sends. */
   firstRun: boolean;
+  /** The update channel this copy follows (Settings → Updates → beta). */
+  channel: 'stable' | 'beta';
 }
 
 interface UsageState {
@@ -115,13 +117,28 @@ function writeState(dataDir: string, state: UsageState): void {
 
 const activeUsers = (db: Db) => Number((db.prepare('SELECT COUNT(*) AS n FROM users WHERE active = 1').get() as { n: number }).n);
 
+/**
+ * The update channel, from the file the Windows app keeps next to usage.json (updates.json, apps/desktop/src/main.ts):
+ * the saved choice, else beta only when this is a beta version (same rule as updates-logic.ts channelOf).
+ */
+export function updateChannel(dataDir: string, version: string): 'stable' | 'beta' {
+  try {
+    const saved = (JSON.parse(readFileSync(join(dataDir, 'updates.json'), 'utf8')) as { channel?: unknown }).channel;
+    if (saved === 'stable' || saved === 'beta') return saved;
+  } catch {
+    /* no choice saved */
+  }
+  return /^\d+\.\d+\.\d+-/.test(version) ? 'beta' : 'stable';
+}
+
 /** The ping's content, built from the plan, the business types and counts only. */
 export function usagePayload(db: Db, options: UsageOptions, state: UsageState): UsagePayload {
   const plan = planStatus(db);
   const activated = plan.source === 'license' && plan.activation.state === 'active';
+  const version = options.version ?? APP_VERSION;
   return {
     install: state.install,
-    version: options.version ?? APP_VERSION,
+    version,
     os: osName(options.os),
     lang: state.lang,
     plan: plan.source === 'trial' ? 'trial' : plan.plan,
@@ -129,7 +146,8 @@ export function usagePayload(db: Db, options: UsageOptions, state: UsageState): 
     businessTypes: [...(getSettings(db).businessTypes ?? [])],
     companies: Math.max(1, Math.floor(options.companies?.() ?? 1)),
     users: activeUsers(db),
-    firstRun: state.lastSent === null
+    firstRun: state.lastSent === null,
+    channel: updateChannel(options.dataDir, version)
   };
 }
 

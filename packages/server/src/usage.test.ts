@@ -1,4 +1,4 @@
-import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
@@ -48,13 +48,24 @@ describe('the anonymous usage ping', () => {
     expect(sent).toHaveLength(1);
     expect(sent[0]!.url).toBe('https://my.qasaerp.com/api/v1/ping');
     const body = sent[0]!.body;
-    expect(Object.keys(body).sort()).toEqual(['businessTypes', 'companies', 'firstRun', 'install', 'lang', 'licence', 'os', 'plan', 'users', 'version']);
+    expect(Object.keys(body).sort()).toEqual(['businessTypes', 'channel', 'companies', 'firstRun', 'install', 'lang', 'licence', 'os', 'plan', 'users', 'version']);
     expect({ ...body, install: '<id>' }).toEqual({
       install: '<id>', version: APP_VERSION, os: 'windows', lang: 'ar', plan: 'free', licence: null,
-      businessTypes: ['trade', 'autoParts'], companies: 2, users: 1, firstRun: true
+      businessTypes: ['trade', 'autoParts'], companies: 2, users: 1, firstRun: true, channel: 'stable'
     });
     expect(body.install).toMatch(/^[0-9a-f-]{36}$/);
     expect(JSON.stringify(body)).not.toMatch(/Secret|سرية|نهێنی/);
+  });
+
+  it('says which update channel the copy follows', async () => {
+    writeFileSync(join(dir, 'updates.json'), JSON.stringify({ channel: 'beta', at: '2026-11-07T00:00:00Z' }));
+    await start().pingNow();
+    expect(sent[0]!.body.channel).toBe('beta');
+    writeFileSync(join(dir, 'updates.json'), '{not json');
+    await start({ version: '0.2.0-beta.1' }).pingNow();
+    expect(sent[1]!.body.channel).toBe('beta');
+    await start({ version: '0.2.0' }).pingNow();
+    expect(sent[2]!.body.channel).toBe('stable');
   });
 
   it('keeps the install id in the app data folder, the same across pings, and says firstRun only once', async () => {

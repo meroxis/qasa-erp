@@ -13,6 +13,7 @@ export interface UsagePayload {
   companies: number;
   users: number;
   firstRun: boolean;
+  channel: 'stable' | 'beta';
 }
 
 export interface UsageView {

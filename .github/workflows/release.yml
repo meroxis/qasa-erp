@@ -6,6 +6,10 @@ name: Release
 # microsoft-store-package): submit it in Partner Center with the "What's new" text from apps/desktop/store-listing.json;
 # Store copies update once Microsoft certifies it. Store copies can be a release behind, and 0.1.8 there doesn't refuse
 # newer books: get a release with the database_newer check into the Store before publishing one that adds a migration.
+#
+# A tag like v0.2.0-beta.1 (version 0.2.0-beta.1) is a beta: a GitHub prerelease that only copies on the beta channel
+# (Settings → Updates → Join the beta) install. Betas get no Microsoft Store package and don't move the stable download
+# link. See docs/releasing.md.
 on:
   push:
     tags: ['v*']
@@ -64,6 +68,19 @@ jobs:
             echo "Tag $GITHUB_REF_NAME does not match apps/desktop/package.json version $version"; exit 1
           fi
 
+      # vX.Y.Z is stable; vX.Y.Z-beta.N is a beta. Anything else (alpha, rc, beta without a number) is refused.
+      - name: Stable or beta
+        id: kind
+        shell: bash
+        run: |
+          if [[ "$GITHUB_REF_NAME" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "beta=false" >> "$GITHUB_OUTPUT"
+          elif [[ "$GITHUB_REF_NAME" =~ ^v[0-9]+\.[0-9]+\.[0-9]+-beta\.[0-9]+$ ]]; then
+            echo "beta=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "Tag $GITHUB_REF_NAME must be vX.Y.Z or vX.Y.Z-beta.N"; exit 1
+          fi
+
       - run: npm run typecheck
       - run: npm test
 
@@ -72,18 +89,29 @@ jobs:
         shell: bash
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          BETA: ${{ steps.kind.outputs.beta }}
         run: |
           version=$(node -p "require('./apps/desktop/package.json').version")
           notes="apps/desktop/release-notes/$version.md"
+          title="Qasa ERP $version"
+          extra=()
+          if [ "$BETA" = "true" ]; then title="Qasa ERP $version (beta)"; extra=(--prerelease); fi
           if [ -f "$notes" ]; then
-            gh release create "$GITHUB_REF_NAME" --draft --title "Qasa ERP $version" --notes-file "$notes"
+            gh release create "$GITHUB_REF_NAME" --draft "${extra[@]}" --title "$title" --notes-file "$notes"
           else
-            gh release create "$GITHUB_REF_NAME" --draft --title "Qasa ERP $version" --generate-notes
+            gh release create "$GITHUB_REF_NAME" --draft "${extra[@]}" --title "$title" --generate-notes
           fi
 
       - name: Build and publish the installer
-        run: npm run release -w @qasa/desktop
+        shell: bash
+        run: |
+          if [ "$BETA" = "true" ]; then
+            npm run release -w @qasa/desktop -- -c.publish.releaseType=prerelease
+          else
+            npm run release -w @qasa/desktop
+          fi
         env:
+          BETA: ${{ steps.kind.outputs.beta }}
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           # signs app.asar's hash for the licence addon's integrity check (after-pack.cjs; native/licence/README.md)
           QASA_INTEGRITY_KEY: ${{ secrets.QASA_INTEGRITY_KEY }}
@@ -94,12 +122,15 @@ jobs:
 
       # The Microsoft Store package from the same build (not signed: the Store signs it when it accepts it). It is kept
       # with the run for upload to Partner Center, not attached to the release (Windows won't install it unsigned).
+      # (stable releases only: the Store has no beta channel here)
       - name: Microsoft Store package
+        if: steps.kind.outputs.beta != 'true'
         run: node apps/desktop/store.mjs
         env:
           QASA_INTEGRITY_KEY: ${{ secrets.QASA_INTEGRITY_KEY }}
 
       - uses: actions/upload-artifact@v7
+        if: steps.kind.outputs.beta != 'true'
         with:
           name: microsoft-store-package
           path: apps/desktop/release/Qasa-ERP-Store-*.appx
@@ -110,11 +141,14 @@ jobs:
         shell: bash
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          BETA: ${{ steps.kind.outputs.beta }}
         run: |
           version=$(node -p "require('./apps/desktop/package.json').version")
-          cp "apps/desktop/release/Qasa-ERP-Setup-$version.exe" Qasa-ERP-Setup.exe
-          # releases/latest/download/Qasa-ERP-Setup.exe always points at the newest installer (the website links to it)
-          gh release upload "$GITHUB_REF_NAME" Qasa-ERP-Setup.exe --clobber
+          if [ "$BETA" != "true" ]; then
+            cp "apps/desktop/release/Qasa-ERP-Setup-$version.exe" Qasa-ERP-Setup.exe
+            # releases/latest/download/Qasa-ERP-Setup.exe always points at the newest stable installer (the website links to it)
+            gh release upload "$GITHUB_REF_NAME" Qasa-ERP-Setup.exe --clobber
+          fi
           # the block map lets the next update download only the parts that changed
           gh release upload "$GITHUB_REF_NAME" "apps/desktop/release/Qasa-ERP-Setup-$version.exe.blockmap" --clobber
 
@@ -122,4 +156,11 @@ jobs:
         shell: bash
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: gh release edit "$GITHUB_REF_NAME" --draft=false --latest
+          BETA: ${{ steps.kind.outputs.beta }}
+        run: |
+          if [ "$BETA" = "true" ]; then
+            # a prerelease never becomes "latest": the website link and stable copies stay on the last stable
+            gh release edit "$GITHUB_REF_NAME" --draft=false --prerelease --latest=false
+          else
+            gh release edit "$GITHUB_REF_NAME" --draft=false --latest
+          fi

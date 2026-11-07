@@ -45,10 +45,14 @@ nsis:
   installerLanguages: [en_US, ar_SA]
   license: ../../LICENSE
   deleteAppDataOnUninstall: false
+# Update channels: a stable version (1.2.0) writes latest.yml and beta.yml, so beta testers get stable releases too; a
+# beta version (1.2.0-beta.1) writes only beta.yml, so it reaches nobody but the testers (docs/releasing.md).
+generateUpdatesFilesForAllChannels: true
 publish:
   provider: github
   owner: meroxis
   repo: qasa-erp
+  # a beta build passes -c.publish.releaseType=prerelease (.github/workflows/release.yml)
   releaseType: release
 # The Microsoft Store package (npm run dist:store): Microsoft signs it when the Store accepts it. The identity is the one
 # Partner Center gave "Qasa ERP" (Store ID 9NRTX5BBK9DW, https://apps.microsoft.com/detail/9NRTX5BBK9DW).

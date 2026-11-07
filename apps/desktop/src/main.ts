@@ -5,6 +5,7 @@
  */
 import { app, BrowserWindow, dialog, ipcMain, Menu, nativeTheme, protocol, safeStorage, session, shell, utilityProcess, type MenuItemConstructorOptions, type UtilityProcess } from 'electron';
 import electronUpdater from 'electron-updater';
+import { channelOf, notesText, updaterOptions, type UpdateChannel, type UpdateState } from './updates-logic.ts';
 import { randomBytes } from 'node:crypto';
 import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -551,44 +552,88 @@ async function createWindow(url: string): Promise<void> {
 }
 
 // ——— updates (GitHub releases of meroxis/qasa-erp) ———
+// The app window shows a calm banner (found → downloading → ready, with "Restart to update", "Later" and "What's new")
+// and Settings → Updates (check now, join the beta). Nothing restarts by itself: an update downloaded in the background
+// installs when the person clicks Restart, or when the app quits; the server process closes the company file first.
+
+const updatesFile = () => join(app.getPath('userData'), 'updates.json');
+let updateState: UpdateState = {
+  current: app.getVersion(), fromStore: FROM_STORE, development: !app.isPackaged, channel: 'stable',
+  status: 'idle', version: null, percent: null, notes: null, lastChecked: null, error: null
+};
+
+function readChannel(): UpdateChannel {
+  try {
+    return channelOf((JSON.parse(readFileSync(updatesFile(), 'utf8')) as { channel?: unknown }).channel, app.getVersion());
+  } catch {
+    return channelOf(undefined, app.getVersion());
+  }
+}
+
+function saveChannel(channel: UpdateChannel): void {
+  try {
+    mkdirSync(app.getPath('userData'), { recursive: true });
+    writeFileSync(updatesFile(), JSON.stringify({ channel, at: new Date().toISOString() }));
+  } catch (error) {
+    log('could not save the update channel:', error);
+  }
+}
+
+function applyChannel(channel: UpdateChannel): void {
+  const options = updaterOptions(channel === 'beta');
+  // the channel first: setting it turns allowDowngrade on, which the next line turns off again
+  autoUpdater.channel = options.channel;
+  autoUpdater.allowPrerelease = options.allowPrerelease;
+  autoUpdater.allowDowngrade = options.allowDowngrade;
+}
+
+function setUpdateState(patch: Partial<UpdateState>): void {
+  updateState = { ...updateState, ...patch };
+  if (win && !win.isDestroyed()) win.webContents.send('updates:state', updateState);
+}
 
 function setupUpdates(): void {
+  updateState = { ...updateState, channel: readChannel() };
   if (!app.isPackaged || FROM_STORE) return;
   autoUpdater.autoDownload = true;
   autoUpdater.autoInstallOnAppQuit = true;
+  applyChannel(updateState.channel);
 
   autoUpdater.logger = { info: (m: unknown) => log('updater:', m), warn: (m: unknown) => log('updater warning:', m), error: (m: unknown) => log('updater error:', m), debug: () => {} };
+  autoUpdater.on('checking-for-update', () => {
+    if (updateState.status !== 'downloading' && updateState.status !== 'ready') setUpdateState({ status: 'checking', error: null });
+  });
   autoUpdater.on('update-available', (info) => {
     log('update available:', info.version);
-    if (manualCheck && win) void dialog.showMessageBox(win, { type: 'info', title: 'Qasa ERP', message: t('downloading', { v: info.version }), buttons: [t('ok')] });
+    setUpdateState({ status: 'downloading', version: info.version, percent: 0, notes: notesText(info.releaseNotes), lastChecked: new Date().toISOString() });
+  });
+  autoUpdater.on('download-progress', (progress) => {
+    setUpdateState({ status: 'downloading', percent: Math.max(0, Math.min(100, Math.round(progress.percent))) });
   });
   autoUpdater.on('update-not-available', () => {
     if (manualCheck && win) void dialog.showMessageBox(win, { type: 'info', title: 'Qasa ERP', message: t('upToDate', { v: app.getVersion() }), buttons: [t('ok')] });
     manualCheck = false;
+    if (updateState.status !== 'ready') setUpdateState({ status: 'none', lastChecked: new Date().toISOString() });
   });
   autoUpdater.on('error', (error) => {
     log('update check failed:', error?.message ?? error);
     if (manualCheck && win) void dialog.showMessageBox(win, { type: 'warning', title: 'Qasa ERP', message: t('updateError'), buttons: [t('ok')] });
     manualCheck = false;
+    // a failure while one is already downloaded keeps "ready": it still installs
+    if (updateState.status !== 'ready') setUpdateState({ status: 'error', error: 'update_failed', percent: null, lastChecked: new Date().toISOString() });
   });
-  autoUpdater.on('update-downloaded', async (info) => {
+  autoUpdater.on('update-downloaded', (info) => {
     log('update downloaded:', info.version);
     manualCheck = false;
-    if (!win) return;
-    const { response } = await dialog.showMessageBox(win, {
-      type: 'question', title: t('updateReadyTitle'), message: t('updateReady', { v: info.version }),
-      buttons: [t('restartNow'), t('later')], defaultId: 0, cancelId: 1
-    });
-    if (response === 0) {
-      await stopServer();
-      autoUpdater.quitAndInstall();
-    }
+    // no dialog: the banner offers "Restart to update"; otherwise it installs when the app quits
+    setUpdateState({ status: 'ready', version: info.version, percent: 100, notes: notesText(info.releaseNotes) ?? updateState.notes, lastChecked: new Date().toISOString() });
   });
 
   setTimeout(() => checkForUpdates(false), 15_000);
   setInterval(() => checkForUpdates(false), UPDATE_EVERY_MS);
 }
 
+/** From the menu (manual: a dialog says "up to date" or the error) or Settings and the timer (the banner and card show it). */
 function checkForUpdates(manual: boolean): void {
   if (FROM_STORE) {
     // the Store's page shows whether an update is waiting, and installs it
@@ -599,9 +644,49 @@ function checkForUpdates(manual: boolean): void {
     if (manual && win) void dialog.showMessageBox(win, { type: 'info', title: 'Qasa ERP', message: t('upToDate', { v: app.getVersion() }), buttons: [t('ok')] });
     return;
   }
+  if (updateState.status === 'downloading' || updateState.status === 'ready') {
+    if (manual && win && updateState.status === 'ready') void dialog.showMessageBox(win, { type: 'info', title: 'Qasa ERP', message: t('updateWaiting', { v: updateState.version ?? '' }), buttons: [t('ok')] });
+    return;
+  }
   manualCheck = manual;
   autoUpdater.checkForUpdates().catch(() => { /* reported by the 'error' event */ });
 }
+
+/** "Restart to update": only on the person's click. The server process closes the company file first. */
+async function installUpdate(): Promise<void> {
+  if (updateState.status !== 'ready') return;
+  log('installing update', updateState.version);
+  await stopServer();
+  autoUpdater.quitAndInstall();
+}
+
+// Settings → Updates and the banner (app-preload.ts → qasaUpdates)
+ipcMain.handle('updates:get', (event) => (invokedByAppPage(event) ? updateState : null));
+ipcMain.handle('updates:check', (event) => {
+  if (!invokedByAppPage(event)) return null;
+  checkForUpdates(false);
+  return updateState;
+});
+ipcMain.handle('updates:install', async (event) => {
+  if (!invokedByAppPage(event)) return null;
+  await installUpdate();
+  return updateState;
+});
+ipcMain.handle('updates:channel', (event, channel: unknown) => {
+  if (!invokedByAppPage(event) || (channel !== 'stable' && channel !== 'beta')) return null;
+  saveChannel(channel);
+  log(`update channel: ${channel}`);
+  setUpdateState({ channel });
+  if (app.isPackaged && !FROM_STORE) {
+    applyChannel(channel);
+    // joining looks for a beta at once; leaving only changes what later checks take (no downgrade)
+    if (channel === 'beta') checkForUpdates(false);
+  }
+  return updateState;
+});
+ipcMain.on('updates:store', (event) => {
+  if (fromAppPage(event)) void shell.openExternal(STORE_PAGE);
+});
 
 // ——— app lifecycle ———
 

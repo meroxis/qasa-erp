@@ -8,3 +8,17 @@ contextBridge.exposeInMainWorld('qasaDesktop', {
   setGraphics: (on: boolean) => ipcRenderer.invoke('app:graphics:set', on === true) as Promise<{ on: boolean; running: boolean } | null>,
   relaunch: () => ipcRenderer.send('app:relaunch')
 });
+
+/** Updates: the banner and Settings → Updates (main.ts, "updates"). Nothing installs without the person's click. */
+contextBridge.exposeInMainWorld('qasaUpdates', {
+  get: () => ipcRenderer.invoke('updates:get') as Promise<unknown>,
+  check: () => ipcRenderer.invoke('updates:check') as Promise<unknown>,
+  install: () => ipcRenderer.invoke('updates:install') as Promise<unknown>,
+  setChannel: (channel: 'stable' | 'beta') => ipcRenderer.invoke('updates:channel', channel === 'beta' ? 'beta' : 'stable') as Promise<unknown>,
+  openStore: () => ipcRenderer.send('updates:store'),
+  onState: (listener: (state: unknown) => void) => {
+    const handler = (_event: unknown, state: unknown) => listener(state);
+    ipcRenderer.on('updates:state', handler);
+    return () => { ipcRenderer.removeListener('updates:state', handler); };
+  }
+});
