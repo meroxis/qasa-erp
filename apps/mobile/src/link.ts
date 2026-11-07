@@ -3,10 +3,25 @@ import {
 } from './protocol';
 
 /**
- * The phone's side of the link to the office PC: tries the office's addresses on the Wi-Fi, does the handshake from
+ * The phone's side of the link to the office PC: tries the office's addresses on the Wi-Fi first, then — when the
+ * office is reachable over the internet — Qasa Relay (wss://…/v1/phone?office=ID), does the handshake from
  * protocol.ts, then sends requests ({id, m, p, b}) and matches the answers ({id, s, b}). Everything on the wire is
- * encrypted; the WebSocket only carries the bytes (plain ws:// is fine for that reason).
+ * encrypted and authenticated end to end; the WebSocket only carries the bytes (plain ws:// on the Wi-Fi is fine for
+ * that reason, and the relay can't read anything).
  */
+
+/** Meroxis' relay; a test build can point elsewhere with EXPO_PUBLIC_QASA_RELAY_URL (inlined by Expo at build time). */
+export const DEFAULT_RELAY_URL = 'wss://relay.qasaerp.com';
+
+function relayBase(): string {
+  const fromBuild = typeof process !== 'undefined' ? process.env?.EXPO_PUBLIC_QASA_RELAY_URL : undefined;
+  return (fromBuild || DEFAULT_RELAY_URL).replace(/\/+$/, '');
+}
+
+/** Where to reach an office through the relay ("ABCDE-FGH23" as shown, or without the dash). */
+export function relayPhoneUrl(base: string, officeId: string): string {
+  return `${base.replace(/\/+$/, '')}/v1/phone?office=${encodeURIComponent(officeId.replace(/-/g, '').toUpperCase())}`;
+}
 
 export interface OfficeInfo {
   /** the office's static public key from the QR code (base64url) */
@@ -39,7 +54,10 @@ export class LinkError extends Error {
   }
 }
 
-const CONNECT_TIMEOUT_MS = 4000;
+/** On the Wi-Fi an office answers at once: give up on an address quickly and move on (or to the relay). */
+const LAN_TIMEOUT_MS = 2500;
+/** Through the relay the office opens a connection for the phone first: allow longer. */
+const RELAY_TIMEOUT_MS = 10_000;
 const REQUEST_TIMEOUT_MS = 20_000;
 
 function bytesOf(data: unknown): Uint8Array | null {
@@ -63,6 +81,8 @@ export class OfficeLink {
     /** first pairing only (from the QR code) */
     pairing?: { id: string; secret: Uint8Array } | undefined;
     socket: (url: string) => SocketLike;
+    /** the relay to use when the office is reachable over the internet (default: Meroxis' relay) */
+    relayUrl?: string | undefined;
     onState?: ((state: LinkState, detail?: string) => void) | undefined;
     /** the office's answer on first pairing: keep the device id and company name */
     onPaired?: ((deviceId: string, company: string) => void) | undefined;
@@ -73,7 +93,7 @@ export class OfficeLink {
     this.options.onState?.(state, detail);
   }
 
-  /** Connects (once at a time): each LAN address in turn. */
+  /** Connects (once at a time): each LAN address in turn, then the relay. */
   connect(): Promise<void> {
     if (this.state === 'online') return Promise.resolve();
     if (!this.connecting) {
@@ -82,12 +102,20 @@ export class OfficeLink {
     return this.connecting;
   }
 
+  /** The places to try, in order: the office's Wi-Fi addresses, then the relay when the office is on it. */
+  routes(): { url: string; timeoutMs: number }[] {
+    const { addresses, port, relay } = this.options.office;
+    const list = addresses.map((address) => ({ url: `ws://${address}:${port}/phone`, timeoutMs: LAN_TIMEOUT_MS }));
+    if (relay) list.push({ url: relayPhoneUrl(this.options.relayUrl ?? relayBase(), relay), timeoutMs: RELAY_TIMEOUT_MS });
+    return list;
+  }
+
   private async tryAll(): Promise<void> {
     this.setState('connecting');
     let last: LinkError = new LinkError('unreachable');
-    for (const address of this.options.office.addresses) {
+    for (const route of this.routes()) {
       try {
-        await this.tryOne(`ws://${address}:${this.options.office.port}/phone`);
+        await this.tryOne(route.url, route.timeoutMs);
         this.setState('online');
         return;
       } catch (error) {
@@ -100,7 +128,7 @@ export class OfficeLink {
     throw last;
   }
 
-  private tryOne(url: string): Promise<void> {
+  private tryOne(url: string, timeoutMs: number): Promise<void> {
     return new Promise((resolve, reject) => {
       let settled = false;
       const socket = this.options.socket(url);
@@ -115,7 +143,7 @@ export class OfficeLink {
         try { socket.close(); } catch { /* already closed */ }
         reject(e);
       };
-      const timer = setTimeout(() => fail(new LinkError('timeout')), CONNECT_TIMEOUT_MS);
+      const timer = setTimeout(() => fail(new LinkError('timeout')), timeoutMs);
       socket.onopen = () => socket.send(hs.message1);
       socket.onerror = () => fail(new LinkError('unreachable'));
       socket.onclose = () => {

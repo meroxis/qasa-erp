@@ -1,7 +1,7 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { LinkError, OfficeLink, type OfficeInfo, type SocketLike } from '../src/link';
+import { LinkError, OfficeLink, relayPhoneUrl, type OfficeInfo, type SocketLike } from '../src/link';
 import { generateKeyPair, officeHandshake, refusalMessage, toB64, type Session } from '../src/protocol';
 
 /** An office in the test: answers the handshake and then requests, like pro/src/phone/phone.ts. */
@@ -74,6 +74,39 @@ describe('the phone app\'s link to the office', () => {
     });
     await expect(silent.connect()).rejects.toBeInstanceOf(LinkError);
     expect(silent.state).toBe('offline');
+  });
+
+  it('tries the Wi-Fi first, then Qasa Relay when the office is on it', async () => {
+    const o = fakeOffice();
+    const unreachable = (url: string): SocketLike => {
+      const s: SocketLike & { url: string } = { url, binaryType: '', onopen: null, onmessage: null, onclose: null, onerror: null, send() {}, close() {} };
+      setTimeout(() => s.onerror?.(), 0);
+      return s;
+    };
+    const tried: string[] = [];
+    const link = new OfficeLink({
+      office: { ...o.office, addresses: ['10.0.0.9', '192.168.1.5'], relay: 'ABCDE-FGH23' }, phone: generateKeyPair(), name: 'x',
+      pairing: { id: 'pair-1', secret: o.secret }, relayUrl: 'wss://relay.test/',
+      // the office isn't on this Wi-Fi: only the relay answers
+      socket: (url) => { tried.push(url); return url.startsWith('wss://') ? o.socket(url) : unreachable(url); }
+    });
+    await link.connect();
+    expect(link.state).toBe('online');
+    expect(tried).toEqual(['ws://10.0.0.9:47421/phone', 'ws://192.168.1.5:47421/phone', 'wss://relay.test/v1/phone?office=ABCDEFGH23']);
+    expect(await link.request('GET', '/api/items')).toEqual({ s: 200, b: { echo: '/api/items' } });
+  });
+
+  it('stops at a refusal from the office on the Wi-Fi (no relay try), and needs no relay when the office has none', async () => {
+    const refusing = fakeOffice({ refuse: 'unknown_device' });
+    const tried: string[] = [];
+    const link = new OfficeLink({
+      office: { ...refusing.office, relay: 'ABCDE-FGH23' }, phone: generateKeyPair(), name: 'x',
+      socket: (url) => { tried.push(url); return refusing.socket(url); }
+    });
+    await expect(link.connect()).rejects.toMatchObject({ code: 'unknown_device' });
+    expect(tried).toEqual(['ws://10.0.0.9:47421/phone']);
+    expect(new OfficeLink({ office: refusing.office, phone: generateKeyPair(), name: 'x', socket: refusing.socket }).routes()).toHaveLength(1);
+    expect(relayPhoneUrl('wss://relay.qasaerp.com', 'abcde-fgh23')).toBe('wss://relay.qasaerp.com/v1/phone?office=ABCDEFGH23');
   });
 
   it('the app\'s copy of the protocol is the Pro module\'s (when pro/ is here)', () => {
