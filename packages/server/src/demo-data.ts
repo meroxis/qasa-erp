@@ -12,13 +12,13 @@ import { createInvoice, postInvoice } from './invoices.ts';
  * Used by `npm run seed:demo` and by the demo on the website. Expects an empty, initialised database.
  */
 export function seedDemo(db: Db): void {
-  // Sample people are only ever Mer Las and Raz: Mer Las prepares and sells, Raz checks and approves.
+  // Sample people are only ever Mer, Las and Raz: Mer prepares, Las sells, Raz checks and approves.
   // the owner the demo opens as
-  db.prepare("UPDATE users SET name = 'Mer Las', username = 'merlas' WHERE username = 'admin'").run();
-  const accountant = 'Mer Las';
+  db.prepare("UPDATE users SET name = 'Mer', username = 'mer' WHERE username = 'admin'").run();
+  const accountant = 'Mer';
   const checker = 'Raz';
   const director = 'Raz';
-  const sales = 'Mer Las';
+  const sales = 'Las';
 
   updateSettings(db, {
     companyName: { ar: 'شركة ميروكسيس', en: 'Meroxis Company', ku: 'کۆمپانیای مێرۆکسیس' },
@@ -142,7 +142,7 @@ export function seedDemo(db: Db): void {
   checkEntry(db, waiting.id, checker);
 
   createVoucher(db, {
-    kind: 'receipt', date: '2026-09-27', cashAccountCode: '1811', party: 'Mer Las',
+    kind: 'receipt', date: '2026-09-27', cashAccountCode: '1811', party: 'Las',
     description: 'القسط 4 من 10 — عقد INS-0091', currency: 'IQD', rateX100: 100,
     items: [{ accountCode: '1612', amount: 120_000 }]
   }, accountant);

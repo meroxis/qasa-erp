@@ -12,7 +12,7 @@ let supplierId: string;
 let acId: string;
 let installId: string;
 
-const headers = { 'x-qasa-user': encodeURIComponent('Mer Las') };
+const headers = { 'x-qasa-user': encodeURIComponent('Mer') };
 const post = (url: string, body: unknown = {}) => app.inject({ method: 'POST', url, payload: body as object, headers });
 const get = (url: string) => app.inject(url);
 

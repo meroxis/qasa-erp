@@ -186,6 +186,6 @@ export function sampleModel(doc: PrintDoc): PrintModel {
     notes: '',
     terms: '',
     verifyInvoiceId: doc === 'sale' || doc === 'pos' ? 'sample' : null,
-    preparedBy: 'Mer Las'
+    preparedBy: 'Mer'
   };
 }

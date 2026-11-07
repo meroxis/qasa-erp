@@ -15,7 +15,7 @@ let pipeId: string;
 let cableId: string;
 
 type Headers = Record<string, string>;
-const headers: Headers = { 'x-qasa-user': encodeURIComponent('Mer Las') };
+const headers: Headers = { 'x-qasa-user': encodeURIComponent('Mer') };
 const post = (url: string, body: unknown = {}, h: Headers = headers) => app.inject({ method: 'POST', url, payload: body as object, headers: h });
 const put = (url: string, body: unknown = {}, h: Headers = headers) => app.inject({ method: 'PUT', url, payload: body as object, headers: h });
 const get = (url: string, h: Headers = headers) => app.inject({ method: 'GET', url, headers: h });
@@ -149,7 +149,7 @@ describe('stock adjustments', () => {
     await stockUp();
     const now = new Date().toISOString();
     db.prepare(`INSERT INTO jobs (id, number, date, party_id, title, category, currency, status, created_by, created_at, updated_at)
-                VALUES ('job-1', 'JOB-2026-0001', '2026-09-01', ?, 'Gate for Sanos', 'steel', 'IQD', 'fabricating', 'Mer Las', ?, ?)`).run(customerId, now, now);
+                VALUES ('job-1', 'JOB-2026-0001', '2026-09-01', ?, 'Gate for Sanos', 'steel', 'IQD', 'fabricating', 'Mer', ?, ?)`).run(customerId, now, now);
     // only outs on a job
     expect((await post('/api/adjustments', { date: '2026-09-10', warehouseId, reason: 'job', jobId: 'job-1', lines: [{ itemId: pipeId, qtyMilli: 1000, unitCost: 1 }] })).json().details)
       .toEqual([{ code: 'adj_job_outs_only', line: 1 }]);

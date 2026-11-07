@@ -43,7 +43,7 @@ async function officeWithSignIn(users: { username: string; roles: string[] }[] =
   await req('POST', '/api/plan/trial');
   await req('POST', `/api/users/${ownerId}/password`, { password: 'owner-pass-1' });
   for (const u of users) {
-    const res = await req('POST', '/api/users', { username: u.username, name: u.username === 'mer' ? 'Mer Las' : 'Raz', roles: u.roles, password: `${u.username}-pass-1` });
+    const res = await req('POST', '/api/users', { username: u.username, name: u.username === 'mer' ? 'Mer' : 'Raz', roles: u.roles, password: `${u.username}-pass-1` });
     expect(res.statusCode, res.body).toBe(201);
   }
   expect((await req('PUT', '/api/auth/signin', { on: true })).statusCode).toBe(200);
@@ -51,10 +51,10 @@ async function officeWithSignIn(users: { username: string; roles: string[] }[] =
 
 describe('without sign-in', () => {
   it('opens as the owner, with the name typed on this PC on vouchers', async () => {
-    const me = (await req('GET', '/api/auth/me', undefined, { 'x-qasa-user': encodeURIComponent('Mer Las') })).json();
-    expect(me).toMatchObject({ signInRequired: false, user: { id: ownerId, name: 'Mer Las', roles: ['admin'] } });
-    const entry = (await req('POST', '/api/vouchers', voucher, { 'x-qasa-user': encodeURIComponent('Mer Las') })).json();
-    expect(entry).toMatchObject({ preparedBy: 'Mer Las', actions: ['edit', 'delete', 'check'] });
+    const me = (await req('GET', '/api/auth/me', undefined, { 'x-qasa-user': encodeURIComponent('Mer') })).json();
+    expect(me).toMatchObject({ signInRequired: false, user: { id: ownerId, name: 'Mer', roles: ['admin'] } });
+    const entry = (await req('POST', '/api/vouchers', voucher, { 'x-qasa-user': encodeURIComponent('Mer') })).json();
+    expect(entry).toMatchObject({ preparedBy: 'Mer', actions: ['edit', 'delete', 'check'] });
   });
 
   it('allows one user on Free; more with Pro', async () => {
@@ -110,7 +110,7 @@ describe('with sign-in', () => {
 
     const created = await req('POST', '/api/vouchers', voucher, mer);
     expect(created.statusCode).toBe(201);
-    expect(created.json()).toMatchObject({ preparedBy: 'Mer Las', actions: ['edit', 'delete'] }); // no "check" for a preparer
+    expect(created.json()).toMatchObject({ preparedBy: 'Mer', actions: ['edit', 'delete'] }); // no "check" for a preparer
     const id = created.json().id;
     expect((await req('POST', `/api/entries/${id}/check`, {}, mer)).json()).toMatchObject({ error: 'forbidden', details: { need: 'entries.check' } });
     expect((await req('GET', `/api/entries/${id}`, undefined, raz)).json().actions).toEqual(['check']);
@@ -175,7 +175,7 @@ describe('with sign-in', () => {
     expect((await req('POST', '/api/auth/password', { current: 'mer-pass-1', password: 'mer-pass-2' }, mer)).statusCode).toBe(200);
     const mer2 = await signIn('mer', 'mer-pass-2');
 
-    expect((await req('PUT', `/api/users/${merId}`, { username: 'mer', name: 'Mer Las', roles: ['preparer'], active: false }, owner)).json().active).toBe(false);
+    expect((await req('PUT', `/api/users/${merId}`, { username: 'mer', name: 'Mer', roles: ['preparer'], active: false }, owner)).json().active).toBe(false);
     expect((await req('GET', '/api/accounts', undefined, mer2)).statusCode).toBe(401);
     expect((await req('POST', '/api/auth/login', { username: 'mer', password: 'mer-pass-2' })).statusCode).toBe(401);
 

@@ -18,7 +18,7 @@ afterEach(async () => {
 
 const user = (name: string) => ({ 'x-qasa-user': encodeURIComponent(name) });
 
-async function post(url: string, body: unknown = {}, headers = user('Mer Las')) {
+async function post(url: string, body: unknown = {}, headers = user('Mer')) {
   return app.inject({ method: 'POST', url, payload: body as object, headers });
 }
 
@@ -70,10 +70,10 @@ describe('vouchers', () => {
     expect(checked.status).toBe('checked');
     expect(checked.checkedBy).toBe('Raz');
 
-    const approved = (await post(`/api/entries/${draft.id}/approve`, {}, user('Mer Las'))).json();
+    const approved = (await post(`/api/entries/${draft.id}/approve`, {}, user('Mer'))).json();
     expect(approved.status).toBe('approved');
     expect(approved.number).toBe('RV-2026-0001');
-    expect(approved.approvedBy).toBe('Mer Las');
+    expect(approved.approvedBy).toBe('Mer');
 
     const second = (await post('/api/vouchers', receipt)).json();
     await post(`/api/entries/${second.id}/check`);
@@ -155,7 +155,7 @@ describe('reports', () => {
   it('keeps an append-only audit log', async () => {
     await post('/api/vouchers', receipt);
     const log = (await app.inject('/api/audit')).json();
-    expect(log[0]).toMatchObject({ action: 'create', entity: 'entry', user: 'Mer Las' });
+    expect(log[0]).toMatchObject({ action: 'create', entity: 'entry', user: 'Mer' });
     expect(() => db.prepare('DELETE FROM audit_log').run()).toThrow(/append_only/);
   });
 });

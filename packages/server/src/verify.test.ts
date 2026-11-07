@@ -14,7 +14,7 @@ let itemId: string;
 let warehouseId: string;
 let licensor: KeyObject;
 
-const headers = { 'x-qasa-user': encodeURIComponent('Mer Las'), 'x-qasa-client': '1' };
+const headers = { 'x-qasa-user': encodeURIComponent('Mer'), 'x-qasa-client': '1' };
 const post = (url: string, body: unknown = {}) => app.inject({ method: 'POST', url, payload: body as object, headers });
 const get = (url: string) => app.inject({ url, headers });
 

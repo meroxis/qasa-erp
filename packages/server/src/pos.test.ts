@@ -11,7 +11,7 @@ let customerId: string;
 let teaId: string;
 let cupId: string;
 
-const headers = { 'x-qasa-user': encodeURIComponent('Mer Las'), 'x-qasa-client': '1' };
+const headers = { 'x-qasa-user': encodeURIComponent('Mer'), 'x-qasa-client': '1' };
 const post = (url: string, body: unknown = {}, h: Record<string, string> = headers) => app.inject({ method: 'POST', url, payload: body as object, headers: h });
 const get = (url: string, h: Record<string, string> = headers) => app.inject({ url, headers: h });
 
@@ -101,7 +101,7 @@ describe('point of sale', () => {
     const closed = await post(`/api/pos/shifts/${shift.id}/close`, { countedCash: 54_000, countedUsd: 500, notes: 'short 1,000' });
     expect(closed.statusCode, closed.body).toBe(200);
     expect(closed.json()).toMatchObject({
-      status: 'closed', closedBy: 'Mer Las', expected: { IQD: 55_000, USD: 500 }, counted: { IQD: 54_000, USD: 500 },
+      status: 'closed', closedBy: 'Mer', expected: { IQD: 55_000, USD: 500 }, counted: { IQD: 54_000, USD: 500 },
       difference: { IQD: -1_000, USD: 0 }, notes: 'short 1,000', actions: []
     });
     const row = db.prepare('SELECT expected_cash, counted_cash, expected_usd, counted_usd, notes FROM pos_shifts WHERE id = ?').get(shift.id);
@@ -135,7 +135,7 @@ describe('point of sale', () => {
     const boss = await login('admin', 'admin-pass-123');
 
     expect((await post('/api/pos/shifts', { register: 'Counter 9', cashAccountCode: '1811', warehouseId, openingCash: 0 }, karo)).statusCode).toBe(403);
-    // Sara can't sell on Mer Las' shift; the admin can
+    // Sara can't sell on Mer' shift; the admin can
     const sale = { currency: 'IQD', lines: [{ itemId: cupId, qtyMilli: 1000, unitPrice: 1_000 }] };
     expect((await post(`/api/pos/shifts/${shift.id}/sales`, sale, sara)).statusCode).toBe(403);
     expect((await get(`/api/pos/shifts/${shift.id}`, sara)).json().actions).toEqual([]);

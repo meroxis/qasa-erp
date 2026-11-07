@@ -14,7 +14,7 @@ function company(): Db {
   seedDemo(db);
   // a reversal and the entry it reverses point at each other: the copy must not trip over that
   const posted = db.prepare("SELECT id FROM entries WHERE status = 'approved' AND type = 'journal' LIMIT 1").get() as { id: string };
-  reverseEntry(db, posted.id, 'Mer Las');
+  reverseEntry(db, posted.id, 'Mer');
   return db;
 }
 

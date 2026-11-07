@@ -11,7 +11,7 @@ let customerId: string;
 let warehouseId: string;
 let serviceId: string;
 
-const headers = { 'x-qasa-client': '1', 'x-qasa-user': encodeURIComponent('Mer Las') };
+const headers = { 'x-qasa-client': '1', 'x-qasa-user': encodeURIComponent('Mer') };
 const post = (url: string, body: unknown = {}) => app.inject({ method: 'POST', url, payload: body as object, headers });
 const get = (url: string) => app.inject({ url, headers });
 const del = (url: string) => app.inject({ method: 'DELETE', url, headers });
@@ -66,7 +66,7 @@ describe('the rate board', () => {
     expect((await get(`/api/fx/rate?date=${day(-30)}`)).json()).toMatchObject({ date: null, source: 'default' });
     const list = (await get('/api/fx/rates?days=30')).json();
     expect(list.map((r: { date: string }) => r.date)).toEqual([todayIso(), day(-2)]);
-    expect(list[1]).toMatchObject({ source: 'Kurdistan market', createdBy: 'Mer Las' });
+    expect(list[1]).toMatchObject({ source: 'Kurdistan market', createdBy: 'Mer' });
 
     expect((await del(`/api/fx/rates/${day(-2)}`)).statusCode).toBe(204);
     expect((await get('/api/fx/rates')).json()).toHaveLength(1);

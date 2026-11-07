@@ -10,7 +10,7 @@ let db: Db;
 let app: FastifyInstance;
 let itemId: string;
 
-const headers = { 'x-qasa-user': encodeURIComponent('Mer Las'), 'x-qasa-client': '1' };
+const headers = { 'x-qasa-user': encodeURIComponent('Mer'), 'x-qasa-client': '1' };
 const send = (method: 'GET' | 'POST' | 'PUT' | 'DELETE', url: string, body?: unknown) =>
   app.inject({ method, url, headers, ...(body === undefined ? {} : { payload: body as object }) });
 

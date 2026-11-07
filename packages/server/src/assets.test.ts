@@ -8,7 +8,7 @@ import { writeSetting } from './settings.ts';
 let db: Db;
 let app: FastifyInstance;
 
-const headers = { 'x-qasa-client': '1', 'x-qasa-user': encodeURIComponent('Mer Las') };
+const headers = { 'x-qasa-client': '1', 'x-qasa-user': encodeURIComponent('Mer') };
 type H = Record<string, string>;
 const post = (url: string, body: unknown = {}, h: H = headers) => app.inject({ method: 'POST', url, payload: body as object, headers: h });
 const put = (url: string, body: unknown, h: H = headers) => app.inject({ method: 'PUT', url, payload: body as object, headers: h });

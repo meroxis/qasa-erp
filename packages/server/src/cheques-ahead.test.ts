@@ -8,7 +8,7 @@ import { chequesAhead } from './banking.ts';
 let db: Db;
 let app: FastifyInstance;
 let partyId: string;
-const headers = { 'x-qasa-client': '1', 'x-qasa-user': encodeURIComponent('Mer Las') };
+const headers = { 'x-qasa-client': '1', 'x-qasa-user': encodeURIComponent('Mer') };
 const day = (offset: number) => new Date(Date.parse(todayIso() + 'T00:00:00Z') + offset * 86_400_000).toISOString().slice(0, 10);
 let n = 0;
 

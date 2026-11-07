@@ -23,14 +23,14 @@ afterEach(async () => {
   db.close();
 });
 
-const headers = { 'x-qasa-user': encodeURIComponent('Mer Las') };
+const headers = { 'x-qasa-user': encodeURIComponent('Mer') };
 const post = (url: string, body: unknown = {}) => app.inject({ method: 'POST', url, payload: body as object, headers });
 const get = (url: string) => app.inject({ method: 'GET', url, headers });
 const pro = () => writeSetting(db, 'trial_started', todayIso());
 
 /** A journal entry taken through check and approval. */
 async function posted(date: string, lines: { accountCode: string; debit: number; credit: number }[]): Promise<string> {
-  const created = await post('/api/entries', { date, description: 'Mer Las books', currency: 'IQD', rateX100: 100, lines });
+  const created = await post('/api/entries', { date, description: 'Mer books', currency: 'IQD', rateX100: 100, lines });
   expect(created.statusCode).toBe(201);
   const id = (created.json() as { id: string }).id;
   expect((await post(`/api/entries/${id}/check`)).statusCode).toBe(200);

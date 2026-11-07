@@ -10,7 +10,7 @@ import { MAX_LOGO_BYTES, printProfileApi } from './print-profile.ts';
 let db: Db;
 let app: FastifyInstance;
 
-const owner = { 'x-qasa-client': '1', 'x-qasa-user': encodeURIComponent('Mer Las') };
+const owner = { 'x-qasa-client': '1', 'x-qasa-user': encodeURIComponent('Mer') };
 type Headers = Record<string, string>;
 const send = (method: 'GET' | 'PUT' | 'POST' | 'DELETE', url: string, body?: unknown, headers: Headers = owner) =>
   app.inject({ method, url, headers, ...(body === undefined ? {} : { payload: body as object }) });

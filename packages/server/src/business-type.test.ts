@@ -5,7 +5,7 @@ import { openDatabase, type Db } from './db.ts';
 
 let db: Db;
 let app: FastifyInstance;
-const headers = { 'x-qasa-client': '1', 'x-qasa-user': 'Mer Las' };
+const headers = { 'x-qasa-client': '1', 'x-qasa-user': 'Mer' };
 
 beforeEach(() => {
   db = openDatabase(':memory:');

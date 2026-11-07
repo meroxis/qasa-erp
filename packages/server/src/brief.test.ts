@@ -13,7 +13,7 @@ let lateId: string;
 let supplierId: string;
 let acId: string;
 
-const headers = { 'x-qasa-user': encodeURIComponent('Mer Las'), 'x-qasa-client': '1' };
+const headers = { 'x-qasa-user': encodeURIComponent('Mer'), 'x-qasa-client': '1' };
 const post = (url: string, body: unknown = {}) => app.inject({ method: 'POST', url, payload: body as object, headers });
 const put = (url: string, body: unknown = {}) => app.inject({ method: 'PUT', url, payload: body as object, headers });
 const get = (url: string) => app.inject({ url, headers });
@@ -95,7 +95,7 @@ describe('the Daily Brief', () => {
   it('shows overdue installments and those due tomorrow, oldest paid first', async () => {
     // an installment contract written straight into the public tables (the Pro module makes them in the app)
     db.prepare(`INSERT INTO installment_contracts (id, number, status, date, party_id, description, currency, total, down_payment, months, created_by, created_at, updated_at)
-                VALUES ('c1', 'INS-2026-0001', 'active', '2026-07-01', ?, 'AC', 'IQD', 300000, 0, 3, 'Mer Las', '2026-07-01', '2026-07-01')`).run(customerId);
+                VALUES ('c1', 'INS-2026-0001', 'active', '2026-07-01', ?, 'AC', 'IQD', 300000, 0, 3, 'Mer', '2026-07-01', '2026-07-01')`).run(customerId);
     for (const [seq, due] of [[1, '2026-08-15'], [2, '2026-09-15'], [3, '2026-10-16']] as const) {
       db.prepare('INSERT INTO installment_schedule (contract_id, seq, due_date, amount) VALUES (?, ?, ?, 100000)').run('c1', seq, due);
     }

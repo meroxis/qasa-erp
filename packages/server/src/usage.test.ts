@@ -14,7 +14,7 @@ let dir: string;
 let app: FastifyInstance;
 let sent: { url: string; body: UsagePayload }[];
 let answer: () => Response | Promise<Response>;
-const headers = { 'x-qasa-client': '1', 'x-qasa-user': 'Mer Las' };
+const headers = { 'x-qasa-client': '1', 'x-qasa-user': 'Mer' };
 
 const fakeFetch = (async (url: string | URL | Request, init?: RequestInit) => {
   sent.push({ url: String(url), body: JSON.parse(String(init?.body)) as UsagePayload });

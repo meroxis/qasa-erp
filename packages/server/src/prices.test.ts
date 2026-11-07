@@ -13,7 +13,7 @@ let supplierId: string;
 let filterId: string;
 let usdId: string;
 
-const headers = { 'x-qasa-user': encodeURIComponent('Mer Las') };
+const headers = { 'x-qasa-user': encodeURIComponent('Mer') };
 const post = (url: string, body: unknown = {}, h: Record<string, string> = headers) => app.inject({ method: 'POST', url, payload: body as object, headers: h });
 const put = (url: string, body: unknown = {}, h: Record<string, string> = headers) => app.inject({ method: 'PUT', url, payload: body as object, headers: h });
 const get = (url: string, h: Record<string, string> = headers) => app.inject({ url, headers: h });

@@ -7,7 +7,7 @@ import { buildApp, openDatabase, readSetting, writeSetting, type Db } from '@qas
 import { companyApi } from './company-api.ts';
 import { MAIN_COMPANY, readRegistry } from './companies.ts';
 
-const headers = { 'x-qasa-client': '1', 'x-qasa-user': 'Mer Las' };
+const headers = { 'x-qasa-client': '1', 'x-qasa-user': 'Mer' };
 let dir: string;
 let backups: string;
 let db: Db;

@@ -26,7 +26,7 @@ const signed = (prefix: string, payload: object) => {
 };
 const iso = (ms: number) => new Date(ms).toISOString().slice(0, 10);
 const licenceKey = (id = 'QP-2026-0001', expires: string | null = null) =>
-  signed('QASA1', { v: 1, id, plan: 'pro', to: 'Mer Las', issued: iso(clock), expires });
+  signed('QASA1', { v: 1, id, plan: 'pro', to: 'Mer', issued: iso(clock), expires });
 
 /** A stand-in for my.qasaerp.com: seats per licence, revocation, going offline, a renewed key. */
 const portal = {
@@ -70,7 +70,7 @@ const fakeFetch = (async (url: string | URL, init?: RequestInit) => {
   return json({ error: 'not_found' }, 404);
 }) as typeof fetch;
 
-const headers = { 'x-qasa-client': '1', 'x-qasa-user': 'Mer Las' };
+const headers = { 'x-qasa-client': '1', 'x-qasa-user': 'Mer' };
 const post = (url: string, payload: object = {}) => app.inject({ method: 'POST', url, headers, payload });
 
 beforeEach(() => {
