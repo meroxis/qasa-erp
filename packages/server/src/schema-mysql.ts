@@ -621,6 +621,199 @@ export const MYSQL_TABLES: readonly MysqlObject[] = [
       FOREIGN KEY (job_id) REFERENCES jobs(id),
       FOREIGN KEY (entry_id) REFERENCES entries(id)
     )`
+  },
+  {
+    name: 'item_images',
+    since: 7,
+    sql: `CREATE TABLE item_images (
+      item_id ${ID} NOT NULL PRIMARY KEY,
+      mime ${WORD} NOT NULL CHECK (mime IN ('image/jpeg', 'image/png', 'image/webp')),
+      data MEDIUMBLOB NOT NULL,
+      updated_at ${WHEN} NOT NULL,
+      FOREIGN KEY (item_id) REFERENCES items(id)
+    )`
+  },
+  {
+    name: 'quotes',
+    since: 7,
+    sql: `CREATE TABLE quotes (
+      id ${ID} NOT NULL PRIMARY KEY,
+      number ${ID} NOT NULL UNIQUE,
+      date ${WHEN} NOT NULL,
+      valid_until ${WHEN},
+      party_id ${ID},
+      customer_name TEXT,
+      currency ${WORD} NOT NULL CHECK (currency IN ('IQD', 'USD')),
+      discount BIGINT NOT NULL DEFAULT 0 CHECK (discount >= 0),
+      status ${WORD} NOT NULL CHECK (status IN ('draft', 'sent', 'accepted', 'rejected', 'invoiced', 'cancelled')),
+      invoice_id ${ID},
+      notes TEXT,
+      terms TEXT,
+      created_by TEXT NOT NULL,
+      created_at ${WHEN} NOT NULL,
+      updated_at ${WHEN} NOT NULL,
+      CHECK (party_id IS NOT NULL OR customer_name IS NOT NULL),
+      FOREIGN KEY (party_id) REFERENCES parties(id),
+      FOREIGN KEY (invoice_id) REFERENCES invoices(id)
+    )`
+  },
+  {
+    name: 'quote_lines',
+    since: 7,
+    sql: `CREATE TABLE quote_lines (
+      quote_id ${ID} NOT NULL,
+      seq INT NOT NULL,
+      item_id ${ID},
+      description TEXT NOT NULL,
+      qty_milli BIGINT NOT NULL CHECK (qty_milli > 0),
+      unit_price BIGINT NOT NULL CHECK (unit_price >= 0),
+      PRIMARY KEY (quote_id, seq),
+      FOREIGN KEY (quote_id) REFERENCES quotes(id),
+      FOREIGN KEY (item_id) REFERENCES items(id)
+    )`
+  },
+  {
+    name: 'deals',
+    since: 7,
+    sql: `CREATE TABLE deals (
+      id ${ID} NOT NULL PRIMARY KEY,
+      title TEXT NOT NULL,
+      party_id ${ID},
+      contact_name TEXT,
+      phone TEXT,
+      source TEXT,
+      stage ${WORD} NOT NULL CHECK (stage IN ('lead', 'contacted', 'quoted', 'negotiating', 'won', 'lost')),
+      currency ${WORD} NOT NULL CHECK (currency IN ('IQD', 'USD')),
+      value BIGINT NOT NULL DEFAULT 0 CHECK (value >= 0),
+      expected_date ${WHEN},
+      next_step TEXT,
+      next_date ${WHEN},
+      owner TEXT,
+      quote_id ${ID},
+      lost_reason TEXT,
+      notes TEXT,
+      created_by TEXT NOT NULL,
+      created_at ${WHEN} NOT NULL,
+      updated_at ${WHEN} NOT NULL,
+      closed_at ${WHEN},
+      FOREIGN KEY (party_id) REFERENCES parties(id),
+      FOREIGN KEY (quote_id) REFERENCES quotes(id)
+    )`
+  },
+  {
+    name: 'pos_shifts',
+    since: 7,
+    sql: `CREATE TABLE pos_shifts (
+      id ${ID} NOT NULL PRIMARY KEY,
+      number ${ID} NOT NULL UNIQUE,
+      register TEXT NOT NULL,
+      cash_account ${ID} NOT NULL,
+      warehouse_id ${ID} NOT NULL,
+      status ${WORD} NOT NULL CHECK (status IN ('open', 'closed')),
+      opened_by TEXT NOT NULL,
+      opened_at ${WHEN} NOT NULL,
+      opening_cash BIGINT NOT NULL DEFAULT 0 CHECK (opening_cash >= 0),
+      closed_by TEXT,
+      closed_at ${WHEN},
+      expected_cash BIGINT,
+      counted_cash BIGINT,
+      notes TEXT,
+      FOREIGN KEY (cash_account) REFERENCES accounts(code),
+      FOREIGN KEY (warehouse_id) REFERENCES warehouses(id)
+    )`
+  },
+  {
+    name: 'pos_sales',
+    since: 7,
+    sql: `CREATE TABLE pos_sales (
+      invoice_id ${ID} NOT NULL PRIMARY KEY,
+      shift_id ${ID} NOT NULL,
+      INDEX pos_sales_shift (shift_id),
+      FOREIGN KEY (invoice_id) REFERENCES invoices(id),
+      FOREIGN KEY (shift_id) REFERENCES pos_shifts(id)
+    )`
+  },
+  {
+    name: 'employees',
+    since: 7,
+    sql: `CREATE TABLE employees (
+      id ${ID} NOT NULL PRIMARY KEY,
+      code ${ID} NOT NULL UNIQUE,
+      name TEXT NOT NULL,
+      job_title TEXT,
+      department TEXT,
+      phone TEXT,
+      id_number TEXT,
+      hire_date ${WHEN},
+      end_date ${WHEN},
+      currency ${WORD} NOT NULL CHECK (currency IN ('IQD', 'USD')),
+      base_salary BIGINT NOT NULL CHECK (base_salary >= 0),
+      allowances BIGINT NOT NULL DEFAULT 0 CHECK (allowances >= 0),
+      social_security INT NOT NULL DEFAULT 0,
+      bank_account TEXT,
+      active INT NOT NULL DEFAULT 1,
+      notes TEXT,
+      created_at ${WHEN} NOT NULL,
+      updated_at ${WHEN} NOT NULL
+    )`
+  },
+  {
+    name: 'payroll_runs',
+    since: 7,
+    sql: `CREATE TABLE payroll_runs (
+      id ${ID} NOT NULL PRIMARY KEY,
+      period ${WORD} NOT NULL,
+      date ${WHEN} NOT NULL,
+      currency ${WORD} NOT NULL CHECK (currency IN ('IQD', 'USD')),
+      status ${WORD} NOT NULL CHECK (status IN ('draft', 'posted', 'cancelled')),
+      entry_id ${ID},
+      notes TEXT,
+      created_by TEXT NOT NULL,
+      created_at ${WHEN} NOT NULL,
+      updated_at ${WHEN} NOT NULL,
+      INDEX payroll_runs_period (period),
+      FOREIGN KEY (entry_id) REFERENCES entries(id)
+    )`
+  },
+  {
+    name: 'payroll_lines',
+    since: 7,
+    sql: `CREATE TABLE payroll_lines (
+      run_id ${ID} NOT NULL,
+      employee_id ${ID} NOT NULL,
+      base BIGINT NOT NULL,
+      allowances BIGINT NOT NULL DEFAULT 0,
+      overtime BIGINT NOT NULL DEFAULT 0,
+      bonus BIGINT NOT NULL DEFAULT 0,
+      absence BIGINT NOT NULL DEFAULT 0,
+      advance_deduction BIGINT NOT NULL DEFAULT 0,
+      social_security BIGINT NOT NULL DEFAULT 0,
+      other_deductions BIGINT NOT NULL DEFAULT 0,
+      net BIGINT NOT NULL,
+      notes TEXT,
+      PRIMARY KEY (run_id, employee_id),
+      FOREIGN KEY (run_id) REFERENCES payroll_runs(id),
+      FOREIGN KEY (employee_id) REFERENCES employees(id)
+    )`
+  },
+  {
+    name: 'employee_advances',
+    since: 7,
+    sql: `CREATE TABLE employee_advances (
+      id ${ID} NOT NULL PRIMARY KEY,
+      employee_id ${ID} NOT NULL,
+      date ${WHEN} NOT NULL,
+      currency ${WORD} NOT NULL CHECK (currency IN ('IQD', 'USD')),
+      amount BIGINT NOT NULL CHECK (amount > 0),
+      monthly BIGINT NOT NULL CHECK (monthly > 0),
+      entry_id ${ID},
+      notes TEXT,
+      created_by TEXT NOT NULL,
+      created_at ${WHEN} NOT NULL,
+      INDEX employee_advances_employee (employee_id),
+      FOREIGN KEY (employee_id) REFERENCES employees(id),
+      FOREIGN KEY (entry_id) REFERENCES entries(id)
+    )`
   }
 ];
 

@@ -633,7 +633,8 @@ const V6 =
   `;
 
 const V7 =
-  // 7 — industry features: real estate (Business), mobile shops (Pro), car parts (Pro), engineering works (Pro)
+  // 7 — release 1.0: industry features (real estate on Business; mobile shops, car parts, engineering works on Pro),
+  // item pictures, quotations, the sales pipeline (Pro), point of sale, payroll (Pro)
   `
   CREATE TABLE re_projects (
     id TEXT PRIMARY KEY,
@@ -832,6 +833,163 @@ const V7 =
     created_at TEXT NOT NULL,
     PRIMARY KEY (job_id, entry_id)
   );
+
+  -- a picture for each item (shown in lists, the parts counter, POS and invoices), kept small (resized before saving)
+  CREATE TABLE item_images (
+    item_id TEXT PRIMARY KEY REFERENCES items(id),
+    mime TEXT NOT NULL CHECK (mime IN ('image/jpeg', 'image/png', 'image/webp')),
+    data BLOB NOT NULL,
+    updated_at TEXT NOT NULL
+  );
+
+  -- quotations (عروض الأسعار): priced offers that become a sale invoice when the customer accepts
+  CREATE TABLE quotes (
+    id TEXT PRIMARY KEY,
+    number TEXT NOT NULL UNIQUE,
+    date TEXT NOT NULL,
+    valid_until TEXT,
+    party_id TEXT REFERENCES parties(id),
+    -- for someone not (yet) a customer
+    customer_name TEXT,
+    currency TEXT NOT NULL CHECK (currency IN ('IQD', 'USD')),
+    discount INTEGER NOT NULL DEFAULT 0 CHECK (discount >= 0),
+    status TEXT NOT NULL CHECK (status IN ('draft', 'sent', 'accepted', 'rejected', 'invoiced', 'cancelled')),
+    invoice_id TEXT REFERENCES invoices(id),
+    notes TEXT,
+    terms TEXT,
+    created_by TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    CHECK (party_id IS NOT NULL OR customer_name IS NOT NULL)
+  );
+
+  CREATE TABLE quote_lines (
+    quote_id TEXT NOT NULL REFERENCES quotes(id),
+    seq INTEGER NOT NULL,
+    item_id TEXT REFERENCES items(id),
+    description TEXT NOT NULL,
+    qty_milli INTEGER NOT NULL CHECK (qty_milli > 0),
+    unit_price INTEGER NOT NULL CHECK (unit_price >= 0),
+    PRIMARY KEY (quote_id, seq)
+  );
+
+  -- the sales pipeline (Pro): leads and deals from first contact to won or lost
+  CREATE TABLE deals (
+    id TEXT PRIMARY KEY,
+    title TEXT NOT NULL,
+    party_id TEXT REFERENCES parties(id),
+    contact_name TEXT,
+    phone TEXT,
+    source TEXT,
+    stage TEXT NOT NULL CHECK (stage IN ('lead', 'contacted', 'quoted', 'negotiating', 'won', 'lost')),
+    currency TEXT NOT NULL CHECK (currency IN ('IQD', 'USD')),
+    value INTEGER NOT NULL DEFAULT 0 CHECK (value >= 0),
+    expected_date TEXT,
+    next_step TEXT,
+    next_date TEXT,
+    owner TEXT,
+    quote_id TEXT REFERENCES quotes(id),
+    lost_reason TEXT,
+    notes TEXT,
+    created_by TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    closed_at TEXT
+  );
+
+  -- point of sale: a cashier's shift on a register, from opening cash to the counted cash at closing
+  CREATE TABLE pos_shifts (
+    id TEXT PRIMARY KEY,
+    number TEXT NOT NULL UNIQUE,
+    register TEXT NOT NULL,
+    cash_account TEXT NOT NULL REFERENCES accounts(code),
+    warehouse_id TEXT NOT NULL REFERENCES warehouses(id),
+    status TEXT NOT NULL CHECK (status IN ('open', 'closed')),
+    opened_by TEXT NOT NULL,
+    opened_at TEXT NOT NULL,
+    opening_cash INTEGER NOT NULL DEFAULT 0 CHECK (opening_cash >= 0),
+    closed_by TEXT,
+    closed_at TEXT,
+    expected_cash INTEGER,
+    counted_cash INTEGER,
+    notes TEXT
+  );
+  CREATE TABLE pos_sales (
+    invoice_id TEXT PRIMARY KEY REFERENCES invoices(id),
+    shift_id TEXT NOT NULL REFERENCES pos_shifts(id)
+  );
+  CREATE INDEX pos_sales_shift ON pos_sales(shift_id);
+
+  -- payroll (Pro): employees, a run per month that posts one journal entry, and advances paid back from salaries
+  CREATE TABLE employees (
+    id TEXT PRIMARY KEY,
+    code TEXT NOT NULL UNIQUE,
+    name TEXT NOT NULL,
+    job_title TEXT,
+    department TEXT,
+    phone TEXT,
+    id_number TEXT,
+    hire_date TEXT,
+    end_date TEXT,
+    currency TEXT NOT NULL CHECK (currency IN ('IQD', 'USD')),
+    base_salary INTEGER NOT NULL CHECK (base_salary >= 0),
+    -- fixed monthly allowances (transport, food, housing …)
+    allowances INTEGER NOT NULL DEFAULT 0 CHECK (allowances >= 0),
+    -- in the social security scheme (الضمان الاجتماعي)
+    social_security INTEGER NOT NULL DEFAULT 0,
+    bank_account TEXT,
+    active INTEGER NOT NULL DEFAULT 1,
+    notes TEXT,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+  );
+
+  CREATE TABLE payroll_runs (
+    id TEXT PRIMARY KEY,
+    -- the month, YYYY-MM
+    period TEXT NOT NULL,
+    date TEXT NOT NULL,
+    currency TEXT NOT NULL CHECK (currency IN ('IQD', 'USD')),
+    status TEXT NOT NULL CHECK (status IN ('draft', 'posted', 'cancelled')),
+    -- the journal entry it posts (it then follows the preparer, checker and approver)
+    entry_id TEXT REFERENCES entries(id),
+    notes TEXT,
+    created_by TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+  );
+  CREATE INDEX payroll_runs_period ON payroll_runs(period);
+
+  CREATE TABLE payroll_lines (
+    run_id TEXT NOT NULL REFERENCES payroll_runs(id),
+    employee_id TEXT NOT NULL REFERENCES employees(id),
+    base INTEGER NOT NULL,
+    allowances INTEGER NOT NULL DEFAULT 0,
+    overtime INTEGER NOT NULL DEFAULT 0,
+    bonus INTEGER NOT NULL DEFAULT 0,
+    absence INTEGER NOT NULL DEFAULT 0,
+    advance_deduction INTEGER NOT NULL DEFAULT 0,
+    social_security INTEGER NOT NULL DEFAULT 0,
+    other_deductions INTEGER NOT NULL DEFAULT 0,
+    net INTEGER NOT NULL,
+    notes TEXT,
+    PRIMARY KEY (run_id, employee_id)
+  );
+
+  -- an advance (سلفة) paid to an employee by payment voucher, taken back from salaries month by month
+  CREATE TABLE employee_advances (
+    id TEXT PRIMARY KEY,
+    employee_id TEXT NOT NULL REFERENCES employees(id),
+    date TEXT NOT NULL,
+    currency TEXT NOT NULL CHECK (currency IN ('IQD', 'USD')),
+    amount INTEGER NOT NULL CHECK (amount > 0),
+    monthly INTEGER NOT NULL CHECK (monthly > 0),
+    entry_id TEXT REFERENCES entries(id),
+    notes TEXT,
+    created_by TEXT NOT NULL,
+    created_at TEXT NOT NULL
+  );
+  CREATE INDEX employee_advances_employee ON employee_advances(employee_id);
   `;
 
 const MIGRATIONS: Migration[] = [
