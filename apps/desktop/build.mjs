@@ -2,7 +2,7 @@
 //   node build.mjs
 import { spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { copyFileSync, cpSync, existsSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { copyFileSync, cpSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { build } from 'vite';
@@ -99,4 +99,15 @@ writeFileSync(join(dist, 'connect.html'), page.replace('{{scriptHash}}', createH
 
 cpSync(join(root, 'apps', 'web', 'dist'), join(dist, 'web'), { recursive: true });
 copyFileSync(join(here, 'build', 'icon.png'), join(dist, 'icon.png'));
+
+// The compiled licence checks (native/licence, Rust): built beforehand with `node native/licence/build.mjs`, shipped
+// next to app.asar (electron-builder extraResources from native-out/) where packages/server/src/native-licence.ts
+// finds it. A build without it (public source, no Rust) still works; callers decide what a missing addon means.
+const nativeOut = join(here, 'native-out');
+rmSync(nativeOut, { recursive: true, force: true });
+mkdirSync(nativeOut, { recursive: true });
+const addon = join(root, 'native', 'licence', 'dist', 'qasa_licence.node');
+const withNative = existsSync(addon);
+if (withNative) copyFileSync(addon, join(nativeOut, 'qasa_licence.node'));
+console.log(withNative ? 'Licence addon: included' : 'Licence addon: not built (node native/licence/build.mjs)');
 console.log(`dist/ ready: main.cjs${withPro ? ', db-worker.cjs' : ''}, app-preload.cjs, connect-preload.cjs, connect.html, web/, icon.png`);

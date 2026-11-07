@@ -47,6 +47,15 @@ jobs:
       - name: Electron binary
         run: node node_modules/electron/install.js
 
+      # The compiled licence checks (native/licence, Rust): the runner has rustup with the MSVC toolchain.
+      - name: Licence addon (Rust)
+        shell: bash
+        run: |
+          rustup toolchain install stable --profile minimal
+          rustup default stable
+          node native/licence/build.mjs
+          test -f native/licence/dist/qasa_licence.node
+
       - name: Tag matches the app version
         shell: bash
         run: |
@@ -76,6 +85,8 @@ jobs:
         run: npm run release -w @qasa/desktop
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # signs app.asar's hash for the licence addon's integrity check (after-pack.cjs; native/licence/README.md)
+          QASA_INTEGRITY_KEY: ${{ secrets.QASA_INTEGRITY_KEY }}
           # Pro cloud backup (Google Drive, OneDrive): see pro/docs/cloud-backup-setup.md
           QASA_GOOGLE_CLIENT_ID: ${{ secrets.QASA_GOOGLE_CLIENT_ID }}
           QASA_GOOGLE_CLIENT_SECRET: ${{ secrets.QASA_GOOGLE_CLIENT_SECRET }}
@@ -85,6 +96,8 @@ jobs:
       # with the run for upload to Partner Center, not attached to the release (Windows won't install it unsigned).
       - name: Microsoft Store package
         run: node apps/desktop/store.mjs
+        env:
+          QASA_INTEGRITY_KEY: ${{ secrets.QASA_INTEGRITY_KEY }}
 
       - uses: actions/upload-artifact@v7
         with:

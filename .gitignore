@@ -29,3 +29,7 @@ data/
 
 # the customer portal my.qasaerp.com (private repository meroxis/qasa-erp-portal)
 /portal/
+
+# the compiled licence addon (native/licence): build output
+/native/licence/target/
+/native/licence/dist/

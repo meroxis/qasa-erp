@@ -21,6 +21,12 @@ electronFuses:
   loadBrowserProcessSpecificV8Snapshot: false
   grantFileProtocolExtraPrivileges: false
 npmRebuild: false
+# The compiled licence checks (native/licence) next to app.asar, and the app.asar signature they check (after-pack.cjs).
+extraResources:
+  - from: native-out
+    to: .
+    filter: ['*.node']
+afterPack: ./after-pack.cjs
 win:
   target:
     - target: nsis
