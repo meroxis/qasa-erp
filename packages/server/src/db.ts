@@ -1083,6 +1083,58 @@ const V7 =
     PRIMARY KEY (source, external_id)
   );
 
+  -- banking: cheques received and written (الصكوك) with their life from in hand to cleared or bounced
+  CREATE TABLE cheques (
+    id TEXT PRIMARY KEY,
+    direction TEXT NOT NULL CHECK (direction IN ('received', 'issued')),
+    number TEXT NOT NULL,
+    bank TEXT NOT NULL,
+    party_id TEXT NOT NULL REFERENCES parties(id),
+    currency TEXT NOT NULL CHECK (currency IN ('IQD', 'USD')),
+    amount INTEGER NOT NULL CHECK (amount > 0),
+    issue_date TEXT NOT NULL,
+    -- the date it may be cashed (post-dated cheques are common)
+    due_date TEXT NOT NULL,
+    status TEXT NOT NULL CHECK (status IN ('in_hand', 'deposited', 'cleared', 'bounced', 'cancelled', 'pending')),
+    -- the bank account it was deposited to or drawn on
+    bank_account TEXT REFERENCES accounts(code),
+    -- the entries of its life: receiving or writing it, depositing, clearing, bouncing
+    entry_id TEXT REFERENCES entries(id),
+    clear_entry_id TEXT REFERENCES entries(id),
+    bounce_entry_id TEXT REFERENCES entries(id),
+    notes TEXT,
+    created_by TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+  );
+  CREATE INDEX cheques_due ON cheques(status, due_date);
+
+  -- bank reconciliation: lines of a bank statement brought in from the bank's Excel/CSV, matched to entry lines
+  CREATE TABLE bank_statements (
+    id TEXT PRIMARY KEY,
+    account_code TEXT NOT NULL REFERENCES accounts(code),
+    period_from TEXT NOT NULL,
+    period_to TEXT NOT NULL,
+    opening INTEGER NOT NULL,
+    closing INTEGER NOT NULL,
+    status TEXT NOT NULL CHECK (status IN ('open', 'reconciled')),
+    created_by TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+  );
+  CREATE TABLE bank_statement_lines (
+    statement_id TEXT NOT NULL REFERENCES bank_statements(id),
+    seq INTEGER NOT NULL,
+    date TEXT NOT NULL,
+    description TEXT NOT NULL,
+    reference TEXT,
+    -- money in is positive, money out negative, in the account's currency
+    amount INTEGER NOT NULL,
+    -- the voucher it matches (one entry may match several lines and the other way round only through split, kept simple)
+    entry_id TEXT REFERENCES entries(id),
+    PRIMARY KEY (statement_id, seq)
+  );
+
   -- branches (Business): a branch groups warehouses and safes/banks, and users can be limited to their branches; an
   -- invoice belongs to its warehouse's branch and a voucher to its safe's, so the documents need no column of their own
   CREATE TABLE branches (

@@ -909,6 +909,69 @@ export const MYSQL_TABLES: readonly MysqlObject[] = [
     )`
   },
   {
+    name: 'cheques',
+    since: 7,
+    sql: `CREATE TABLE cheques (
+      id ${ID} NOT NULL PRIMARY KEY,
+      direction ${WORD} NOT NULL CHECK (direction IN ('received', 'issued')),
+      number ${ID} NOT NULL,
+      bank TEXT NOT NULL,
+      party_id ${ID} NOT NULL,
+      currency ${WORD} NOT NULL CHECK (currency IN ('IQD', 'USD')),
+      amount BIGINT NOT NULL CHECK (amount > 0),
+      issue_date ${WHEN} NOT NULL,
+      due_date ${WHEN} NOT NULL,
+      status ${WORD} NOT NULL CHECK (status IN ('in_hand', 'deposited', 'cleared', 'bounced', 'cancelled', 'pending')),
+      bank_account ${ID},
+      entry_id ${ID},
+      clear_entry_id ${ID},
+      bounce_entry_id ${ID},
+      notes TEXT,
+      created_by TEXT NOT NULL,
+      created_at ${WHEN} NOT NULL,
+      updated_at ${WHEN} NOT NULL,
+      INDEX cheques_due (status, due_date),
+      FOREIGN KEY (party_id) REFERENCES parties(id),
+      FOREIGN KEY (bank_account) REFERENCES accounts(code),
+      FOREIGN KEY (entry_id) REFERENCES entries(id),
+      FOREIGN KEY (clear_entry_id) REFERENCES entries(id),
+      FOREIGN KEY (bounce_entry_id) REFERENCES entries(id)
+    )`
+  },
+  {
+    name: 'bank_statements',
+    since: 7,
+    sql: `CREATE TABLE bank_statements (
+      id ${ID} NOT NULL PRIMARY KEY,
+      account_code ${ID} NOT NULL,
+      period_from ${WHEN} NOT NULL,
+      period_to ${WHEN} NOT NULL,
+      opening BIGINT NOT NULL,
+      closing BIGINT NOT NULL,
+      status ${WORD} NOT NULL CHECK (status IN ('open', 'reconciled')),
+      created_by TEXT NOT NULL,
+      created_at ${WHEN} NOT NULL,
+      updated_at ${WHEN} NOT NULL,
+      FOREIGN KEY (account_code) REFERENCES accounts(code)
+    )`
+  },
+  {
+    name: 'bank_statement_lines',
+    since: 7,
+    sql: `CREATE TABLE bank_statement_lines (
+      statement_id ${ID} NOT NULL,
+      seq INT NOT NULL,
+      date ${WHEN} NOT NULL,
+      description TEXT NOT NULL,
+      reference TEXT,
+      amount BIGINT NOT NULL,
+      entry_id ${ID},
+      PRIMARY KEY (statement_id, seq),
+      FOREIGN KEY (statement_id) REFERENCES bank_statements(id),
+      FOREIGN KEY (entry_id) REFERENCES entries(id)
+    )`
+  },
+  {
     name: 'branches',
     since: 7,
     sql: `CREATE TABLE branches (
