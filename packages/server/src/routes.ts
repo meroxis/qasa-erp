@@ -242,6 +242,11 @@ export function errorResponse(error: unknown): { status: number; body: { error: 
  */
 export interface ApiExtension {
   rules?: Record<string, Permission | null>;
+  /**
+   * Routes ("GET /api/…") that check who is asking themselves, with an API key in the Authorization header: no
+   * session and no same-site check (no cookie is involved, so a page on another site can't ride on one).
+   */
+  public?: readonly string[];
   routes(db: Db, helpers: { actorOf(req: ApiRequest): Actor }): Route[];
 }
 
@@ -283,6 +288,7 @@ export function apiRoutes(db: Db, options: { demo?: boolean; extensions?: readon
   };
   for (const extension of [...BUILT_IN_FEATURES, ...(options.extensions ?? [])]) Object.assign(RULES, extension.rules ?? {});
   const PUBLIC = new Set(['GET /api/health', 'GET /api/auth/me', 'POST /api/auth/login', 'POST /api/auth/logout']);
+  for (const extension of [...BUILT_IN_FEATURES, ...(options.extensions ?? [])]) for (const route of extension.public ?? []) PUBLIC.add(route);
 
   /** Hides the buttons a user may not use: the server refuses those actions anyway. */
   const ENTRY_ACTION: Record<string, Permission> = {

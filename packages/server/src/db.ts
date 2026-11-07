@@ -1074,6 +1074,15 @@ const V7 =
     revoked_at TEXT
   );
 
+  -- orders a website sent, by its own order number, so sending one again never makes a second invoice
+  CREATE TABLE webapi_orders (
+    source TEXT NOT NULL,
+    external_id TEXT NOT NULL,
+    invoice_id TEXT NOT NULL REFERENCES invoices(id),
+    created_at TEXT NOT NULL,
+    PRIMARY KEY (source, external_id)
+  );
+
   CREATE TABLE webhooks (
     id TEXT PRIMARY KEY,
     url TEXT NOT NULL,

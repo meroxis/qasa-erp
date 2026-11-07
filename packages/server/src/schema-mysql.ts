@@ -909,6 +909,18 @@ export const MYSQL_TABLES: readonly MysqlObject[] = [
     )`
   },
   {
+    name: 'webapi_orders',
+    since: 7,
+    sql: `CREATE TABLE webapi_orders (
+      source ${ID} NOT NULL,
+      external_id ${ID} NOT NULL,
+      invoice_id ${ID} NOT NULL,
+      created_at ${WHEN} NOT NULL,
+      PRIMARY KEY (source, external_id),
+      FOREIGN KEY (invoice_id) REFERENCES invoices(id)
+    )`
+  },
+  {
     name: 'webhooks',
     since: 7,
     sql: `CREATE TABLE webhooks (

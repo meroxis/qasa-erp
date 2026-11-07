@@ -35,6 +35,7 @@ import { Expenses } from './pages/Expenses.tsx';
 import { isReportTab, MoreReports } from './pages/MoreReports.tsx';
 import { Rates } from './pages/Rates.tsx';
 import { GenRun, Generators } from './pages/Generators.tsx';
+import { WebsiteApi } from './pages/WebsiteApi.tsx';
 import { BUSINESS_FEATURE, type BusinessType } from '@qasa/core';
 
 declare global {
@@ -124,6 +125,7 @@ const NAV: { group: Key; items: NavItem[] }[] = [
       { key: 'settings', icon: 'sliders', path: 'settings', match: ['settings'] },
       { key: 'bizType', icon: 'building', path: 'business-type', match: ['business-type'], adminOnly: true },
       { key: 'md_title', icon: 'download', path: 'import', match: ['import'], adminOnly: true },
+      { key: 'wa_nav', icon: 'swap', path: 'website-api', match: ['website-api'], adminOnly: true },
       { key: 'users', icon: 'users', path: 'users', match: ['users'], adminOnly: true },
       { key: 'planLicense', icon: 'star', path: 'plans', match: ['plans'], adminOnly: true }
     ]
@@ -396,6 +398,10 @@ export function App() {
     case 'pos-shift':
       title = t('pos_title');
       content = arg ? <PosShiftReport key={arg} id={arg} /> : null;
+      break;
+    case 'website-api':
+      title = t('wa_nav');
+      content = <WebsiteApi />;
       break;
     case 'generators':
       title = t('gen_title');
