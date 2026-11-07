@@ -36,6 +36,7 @@ import { isReportTab, MoreReports } from './pages/MoreReports.tsx';
 import { Rates } from './pages/Rates.tsx';
 import { GenRun, Generators } from './pages/Generators.tsx';
 import { WebsiteApi } from './pages/WebsiteApi.tsx';
+import { SupportButton } from './industry/SupportButton.tsx';
 import { BUSINESS_FEATURE, type BusinessType } from '@qasa/core';
 
 declare global {
@@ -584,6 +585,7 @@ export function App() {
                   <span>{title}</span>
                 </h1>
                 <span className="spacer" />
+                <SupportButton compact />
                 <button type="button" className="btn subtle icon" title={dark ? t('lightMode') : t('darkMode')} aria-label={dark ? t('lightMode') : t('darkMode')} onClick={() => setTheme(dark ? 'light' : 'dark')}>
                   <Icon name={dark ? 'sun' : 'moon'} size={16} />
                 </button>

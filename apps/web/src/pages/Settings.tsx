@@ -7,6 +7,8 @@ import { AccountCombo, ErrorBox, Icon, Modal, useData, useDisplay, useLoad, useT
 import { isKey, useI18n, type Key } from '../i18n.ts';
 import { href } from '../router.ts';
 import { encodeQr, qrSvgPath } from '../industry/qr.ts';
+import { UsageCard } from '../industry/UsageCard.tsx';
+import { HelpPanel } from '../industry/SupportButton.tsx';
 
 /** Language and display are each person's own; the company's settings are for admins. */
 export function Settings({ admin }: { admin: boolean }) {
@@ -14,6 +16,8 @@ export function Settings({ admin }: { admin: boolean }) {
     <div className="stack" style={{ maxWidth: 1000 }}>
       <DisplaySettings />
       {admin && <CompanySettings />}
+      <HelpPanel />
+      <UsageCard admin={admin} />
     </div>
   );
 }

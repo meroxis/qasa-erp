@@ -18,3 +18,4 @@ export { loadAccounts } from './accounts.ts';
 export { createInvoice, getInvoice, postInvoice, type InvoiceView } from './invoices.ts';
 export { createItem, listWarehouses } from './items.ts';
 export { createParty, getParty, updateParty } from './parties.ts';
+export { startUsagePings, usageApi } from './usage.ts';
