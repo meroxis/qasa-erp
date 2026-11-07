@@ -48,6 +48,8 @@ const BASE = {
   bt_autoPartsText: ['أرقام القطع والبدائل، البحث حسب السيارة، الرفوف وسعر الجملة.', 'Part numbers and alternatives, search by car, shelves and wholesale prices.', 'ژمارەی پارچە و جێگرەوەکان، گەڕان بەپێی ئۆتۆمبێل، ڕەف و نرخی کۆ.'],
   bt_engineeringWorks: ['أعمال هندسية', 'Engineering works', 'کاری ئەندازیاری'],
   bt_engineeringWorksText: ['لحام وحدادة وألمنيوم وMDF: عرض السعر، القياس، الورشة، التركيب.', 'Welding, steel, aluminium and MDF: quote, measuring, workshop, installing.', 'لەحیم، ئاسنگەری، ئەلەمنیۆم و MDF: نرخ، پێوان، وەرشە، دامەزراندن.'],
+  bt_generators: ['مولدات أهلية', 'Generator owners', 'مۆلیدەی ئەهلی'],
+  bt_generatorsText: ['المشتركون حسب الأمبير، الفاتورة الشهرية، الجباية والديون.', 'Subscribers by amps, the monthly bill, collectors and debts.', 'بەشداربووان بەپێی ئەمپێر، پسوولەی مانگانە، کۆکردنەوە و قەرز.'],
   gPeople: ['الموظفون', 'People', 'کارمەندان'],
   hr: ['الموارد البشرية', 'HR', 'سەرچاوە مرۆییەکان'],
   salaries: ['الرواتب والسلف', 'Salaries & advances', 'مووچە و سولفە'],

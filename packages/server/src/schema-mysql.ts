@@ -818,6 +818,80 @@ export const MYSQL_TABLES: readonly MysqlObject[] = [
       FOREIGN KEY (employee_id) REFERENCES employees(id),
       FOREIGN KEY (entry_id) REFERENCES entries(id)
     )`
+  },
+  {
+    name: 'fx_rates',
+    since: 7,
+    sql: `CREATE TABLE fx_rates (
+      date ${WHEN} NOT NULL PRIMARY KEY,
+      rate_x100 BIGINT NOT NULL CHECK (rate_x100 > 0),
+      source TEXT,
+      created_by TEXT NOT NULL,
+      created_at ${WHEN} NOT NULL
+    )`
+  },
+  {
+    name: 'gen_subscribers',
+    since: 7,
+    sql: `CREATE TABLE gen_subscribers (
+      party_id ${ID} NOT NULL PRIMARY KEY,
+      code ${ID} NOT NULL UNIQUE,
+      amps_x10 INT NOT NULL CHECK (amps_x10 > 0),
+      line ${WORD} NOT NULL CHECK (line IN ('normal', 'golden')),
+      area TEXT,
+      route TEXT,
+      status ${WORD} NOT NULL CHECK (status IN ('active', 'suspended', 'ended')),
+      start_date ${WHEN},
+      notes TEXT,
+      created_at ${WHEN} NOT NULL,
+      updated_at ${WHEN} NOT NULL,
+      FOREIGN KEY (party_id) REFERENCES parties(id)
+    )`
+  },
+  {
+    name: 'gen_runs',
+    since: 7,
+    sql: `CREATE TABLE gen_runs (
+      id ${ID} NOT NULL PRIMARY KEY,
+      period ${WORD} NOT NULL UNIQUE,
+      date ${WHEN} NOT NULL,
+      price_normal BIGINT NOT NULL CHECK (price_normal >= 0),
+      price_golden BIGINT NOT NULL CHECK (price_golden >= 0),
+      status ${WORD} NOT NULL CHECK (status IN ('draft', 'posted', 'cancelled')),
+      entry_id ${ID},
+      created_by TEXT NOT NULL,
+      created_at ${WHEN} NOT NULL,
+      updated_at ${WHEN} NOT NULL,
+      FOREIGN KEY (entry_id) REFERENCES entries(id)
+    )`
+  },
+  {
+    name: 'gen_bills',
+    since: 7,
+    sql: `CREATE TABLE gen_bills (
+      run_id ${ID} NOT NULL,
+      party_id ${ID} NOT NULL,
+      amps_x10 INT NOT NULL,
+      line ${WORD} NOT NULL CHECK (line IN ('normal', 'golden')),
+      amount BIGINT NOT NULL CHECK (amount >= 0),
+      PRIMARY KEY (run_id, party_id),
+      FOREIGN KEY (run_id) REFERENCES gen_runs(id),
+      FOREIGN KEY (party_id) REFERENCES gen_subscribers(party_id)
+    )`
+  },
+  {
+    name: 'gen_collections',
+    since: 7,
+    sql: `CREATE TABLE gen_collections (
+      entry_id ${ID} NOT NULL PRIMARY KEY,
+      party_id ${ID} NOT NULL,
+      collector TEXT,
+      amount BIGINT NOT NULL CHECK (amount > 0),
+      created_at ${WHEN} NOT NULL,
+      INDEX gen_collections_party (party_id),
+      FOREIGN KEY (entry_id) REFERENCES entries(id),
+      FOREIGN KEY (party_id) REFERENCES gen_subscribers(party_id)
+    )`
   }
 ];
 

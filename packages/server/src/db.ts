@@ -634,7 +634,8 @@ const V6 =
 
 const V7 =
   // 7 — release 1.0: industry features (real estate on Business; mobile shops, car parts, engineering works on Pro),
-  // item pictures, quotations, the sales pipeline (Pro), point of sale, payroll (Pro)
+  // item pictures, quotations, the sales pipeline (Pro), point of sale, payroll (Pro), the dollar rate history, generator
+  // owners (Pro)
   `
   CREATE TABLE re_projects (
     id TEXT PRIMARY KEY,
@@ -994,6 +995,69 @@ const V7 =
     created_at TEXT NOT NULL
   );
   CREATE INDEX employee_advances_employee ON employee_advances(employee_id);
+
+  -- the day's dollar rate (سعر الصرف) as the company enters it, kept as a history
+  CREATE TABLE fx_rates (
+    date TEXT PRIMARY KEY,
+    -- IQD per 1 USD × 100
+    rate_x100 INTEGER NOT NULL CHECK (rate_x100 > 0),
+    source TEXT,
+    created_by TEXT NOT NULL,
+    created_at TEXT NOT NULL
+  );
+
+  -- generator owners (المولدات, Pro): subscribers by amps, a billing run each month, and collections
+  CREATE TABLE gen_subscribers (
+    -- each subscriber is a customer (their balance and statement)
+    party_id TEXT PRIMARY KEY REFERENCES parties(id),
+    code TEXT NOT NULL UNIQUE,
+    -- amps × 10 (2.5 A → 25)
+    amps_x10 INTEGER NOT NULL CHECK (amps_x10 > 0),
+    -- normal hours, or the 24-hour line (الذهبي)
+    line TEXT NOT NULL CHECK (line IN ('normal', 'golden')),
+    area TEXT,
+    route TEXT,
+    status TEXT NOT NULL CHECK (status IN ('active', 'suspended', 'ended')),
+    start_date TEXT,
+    notes TEXT,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+  );
+
+  CREATE TABLE gen_runs (
+    id TEXT PRIMARY KEY,
+    -- the month, YYYY-MM
+    period TEXT NOT NULL UNIQUE,
+    date TEXT NOT NULL,
+    -- the price of one amp for the month, in dinars, per line
+    price_normal INTEGER NOT NULL CHECK (price_normal >= 0),
+    price_golden INTEGER NOT NULL CHECK (price_golden >= 0),
+    status TEXT NOT NULL CHECK (status IN ('draft', 'posted', 'cancelled')),
+    -- the journal entry that bills every subscriber (Dr each customer, Cr generator revenue)
+    entry_id TEXT REFERENCES entries(id),
+    created_by TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+  );
+
+  CREATE TABLE gen_bills (
+    run_id TEXT NOT NULL REFERENCES gen_runs(id),
+    party_id TEXT NOT NULL REFERENCES gen_subscribers(party_id),
+    amps_x10 INTEGER NOT NULL,
+    line TEXT NOT NULL CHECK (line IN ('normal', 'golden')),
+    amount INTEGER NOT NULL CHECK (amount >= 0),
+    PRIMARY KEY (run_id, party_id)
+  );
+
+  -- a collector's receipt (وصل الجباية): a receipt voucher posted at once
+  CREATE TABLE gen_collections (
+    entry_id TEXT PRIMARY KEY REFERENCES entries(id),
+    party_id TEXT NOT NULL REFERENCES gen_subscribers(party_id),
+    collector TEXT,
+    amount INTEGER NOT NULL CHECK (amount > 0),
+    created_at TEXT NOT NULL
+  );
+  CREATE INDEX gen_collections_party ON gen_collections(party_id);
   `;
 
 const MIGRATIONS: Migration[] = [

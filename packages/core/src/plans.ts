@@ -16,6 +16,7 @@ export type Feature =
   | 'installments'
   | 'payroll'
   | 'pipeline' // the sales pipeline: leads and deals
+  | 'generators' // generator owners: subscribers by amps, monthly billing, collectors
   | 'finalAccountsExport' // print and Excel of the final accounts, year-end closing
   | 'noBranding' // invoices without "Made with Qasa ERP"
   | 'cloudBackup'
@@ -42,7 +43,7 @@ export interface PlanDefinition {
   features: readonly Feature[];
 }
 
-const PRO_FEATURES: readonly Feature[] = ['officeNetwork', 'roles', 'installments', 'payroll', 'finalAccountsExport', 'noBranding', 'cloudBackup', 'mobileShop', 'autoParts', 'engineeringWorks', 'pipeline'];
+const PRO_FEATURES: readonly Feature[] = ['officeNetwork', 'roles', 'installments', 'payroll', 'finalAccountsExport', 'noBranding', 'cloudBackup', 'mobileShop', 'autoParts', 'engineeringWorks', 'pipeline', 'generators'];
 
 export const PLANS: Record<PlanId, PlanDefinition> = {
   free: { id: 'free', limits: { companies: 1, users: 1, warehouses: 1 }, features: [] },
@@ -130,12 +131,12 @@ export function resolvePlan(input: { license: LicenseInfo | null; trialStarted: 
  * What a company does. It decides which industry pages show in the menu (chosen at the start, changed in Settings);
  * the plan still decides which of them can be used. 'trade' is the general accounting, sales, purchases and stock.
  */
-export const BUSINESS_TYPES = ['trade', 'realEstate', 'mobileShop', 'autoParts', 'engineeringWorks'] as const;
+export const BUSINESS_TYPES = ['trade', 'realEstate', 'mobileShop', 'autoParts', 'engineeringWorks', 'generators'] as const;
 export type BusinessType = (typeof BUSINESS_TYPES)[number];
 
 /** The plan feature each industry needs (general trade needs none). */
 export const BUSINESS_FEATURE: Record<BusinessType, Feature | null> = {
-  trade: null, realEstate: 'realEstate', mobileShop: 'mobileShop', autoParts: 'autoParts', engineeringWorks: 'engineeringWorks'
+  trade: null, realEstate: 'realEstate', mobileShop: 'mobileShop', autoParts: 'autoParts', engineeringWorks: 'engineeringWorks', generators: 'generators'
 };
 
 export function isBusinessType(value: unknown): value is BusinessType {

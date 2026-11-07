@@ -9,7 +9,8 @@ const CHOICES: Record<BusinessType, { icon: string; title: Key; text: Key }> = {
   realEstate: { icon: 'building', title: 'bt_realEstate', text: 'bt_realEstateText' },
   mobileShop: { icon: 'idcard', title: 'bt_mobileShop', text: 'bt_mobileShopText' },
   autoParts: { icon: 'box', title: 'bt_autoParts', text: 'bt_autoPartsText' },
-  engineeringWorks: { icon: 'swap', title: 'bt_engineeringWorks', text: 'bt_engineeringWorksText' }
+  engineeringWorks: { icon: 'swap', title: 'bt_engineeringWorks', text: 'bt_engineeringWorksText' },
+  generators: { icon: 'zap', title: 'bt_generators', text: 'bt_generatorsText' }
 };
 
 /** The cheapest plan that includes an industry, for the badge on its card. */
