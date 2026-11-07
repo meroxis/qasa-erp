@@ -2,6 +2,7 @@ import type {
   BusinessType, Lang, LicenseInfo, LicenseState, PlanResolution,
   CurrencyCode, EntryAction, EntryStatus, EntryType, InvoiceDocKind, InvoiceInput, InvoiceKind, InvoiceStatus, Names, Nature, PaymentMode, PostingAccounts, UnitCode
 } from '@qasa/core';
+import { currentBranchHeader } from './industry/branches-api.ts';
 
 export interface AccountView {
   code: string;
@@ -388,7 +389,8 @@ export const SIGNED_OUT_EVENT = 'qasa:signed-out';
 
 export async function request<T>(method: string, url: string, body?: unknown): Promise<T> {
   // marks requests as coming from the app itself; the server refuses changes without it once sign-in is on
-  const headers: Record<string, string> = { 'x-qasa-client': '1' };
+  // the branch picked in the topbar (for someone working in several), so lists and reports follow it
+  const headers: Record<string, string> = { 'x-qasa-client': '1', ...currentBranchHeader() };
   const user = currentUser();
   if (user) headers['x-qasa-user'] = encodeURIComponent(user);
   if (body !== undefined) headers['content-type'] = 'application/json';

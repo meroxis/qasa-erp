@@ -38,6 +38,9 @@ import { GenRun, Generators } from './pages/Generators.tsx';
 import { WebsiteApi } from './pages/WebsiteApi.tsx';
 import { SupportButton } from './industry/SupportButton.tsx';
 import { isSolarTab, Solar, SolarSystem } from './pages/Solar.tsx';
+import { Branches } from './pages/Branches.tsx';
+import { BranchSwitcher } from './industry/BranchSwitcher.tsx';
+import { BRANCH_EVENT } from './industry/branches-api.ts';
 import { BUSINESS_FEATURE, type BusinessType } from '@qasa/core';
 
 declare global {
@@ -129,6 +132,7 @@ const NAV: { group: Key; items: NavItem[] }[] = [
       { key: 'bizType', icon: 'building', path: 'business-type', match: ['business-type'], adminOnly: true },
       { key: 'md_title', icon: 'download', path: 'import', match: ['import'], adminOnly: true },
       { key: 'wa_nav', icon: 'swap', path: 'website-api', match: ['website-api'], adminOnly: true },
+      { key: 'bn_title', icon: 'building', path: 'branches', match: ['branches'], adminOnly: true },
       { key: 'users', icon: 'users', path: 'users', match: ['users'], adminOnly: true },
       { key: 'planLicense', icon: 'star', path: 'plans', match: ['plans'], adminOnly: true }
     ]
@@ -152,6 +156,13 @@ export function App() {
   const [changingPassword, setChangingPassword] = useState(false);
   const [online, setOnline] = useState(true);
   const route = useRoute();
+  // the page reloads its data when the branch picked in the topbar changes
+  const [branchKey, setBranchKey] = useState(0);
+  useEffect(() => {
+    const bump = () => setBranchKey((k) => k + 1);
+    window.addEventListener(BRANCH_EVENT, bump);
+    return () => window.removeEventListener(BRANCH_EVENT, bump);
+  }, []);
 
   const setLang = useCallback((l: Lang) => {
     setLangState(l);
@@ -410,6 +421,10 @@ export function App() {
       title = t('sl_title');
       content = arg ? <SolarSystem key={arg} id={arg} /> : null;
       break;
+    case 'branches':
+      title = t('bn_title');
+      content = <Branches />;
+      break;
     case 'website-api':
       title = t('wa_nav');
       content = <WebsiteApi />;
@@ -595,6 +610,7 @@ export function App() {
                   <span>{title}</span>
                 </h1>
                 <span className="spacer" />
+                <BranchSwitcher user={user} />
                 <SupportButton compact />
                 <button type="button" className="btn subtle icon" title={dark ? t('lightMode') : t('darkMode')} aria-label={dark ? t('lightMode') : t('darkMode')} onClick={() => setTheme(dark ? 'light' : 'dark')}>
                   <Icon name={dark ? 'sun' : 'moon'} size={16} />
@@ -622,7 +638,7 @@ export function App() {
                     <a href={href('plans')}>{t('planLicense')}</a>
                   </div>
                 )}
-                {content}
+                <div key={branchKey} style={{ display: 'contents' }}>{content}</div>
               </main>
               <footer className="statusbar">
                 <span className={'dot' + (online ? '' : ' off')} />

@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { BUILT_IN_FEATURES } from './features.ts';
+import { checkBranchRequest, filterBranchResult } from './branches.ts';
 import { APP_VERSION, BUSINESS_TYPES } from '@qasa/core';
 import type { Db } from './db.ts';
 import { AppError, conflict, invalid } from './errors.ts';
@@ -318,9 +319,11 @@ export function apiRoutes(db: Db, options: { demo?: boolean; extensions?: readon
           if (need && !actor.permissions.includes(need)) throw new AppError(403, 'forbidden', { need });
         }
         (req as ApiRequest & { actor?: Actor | null }).actor = actor;
+        // a user limited to some branches works only with their warehouses and safes (branches.ts)
+        checkBranchRequest(db, actor, method, path, req);
         const result = await handler(req, reply);
         if (reply.sent) reply.payload = forActor(path, reply.payload, actor);
-        return forActor(path, result, actor);
+        return forActor(path, filterBranchResult(db, actor, method, path, result), actor);
       }
     });
   };

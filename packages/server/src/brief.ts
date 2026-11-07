@@ -7,6 +7,13 @@ import { invalid } from './errors.ts';
 import type { ApiExtension, ApiRequest } from './routes.ts';
 import { readSetting, writeSetting } from './settings.ts';
 import { AppError } from './errors.ts';
+import { scopeLists, scopeOf } from './branches.ts';
+
+/** A branch's warehouses and safes (null: the whole company). See branches.ts. */
+export type BranchFilter = { warehouses: string[]; accounts: string[] } | null;
+const marks = (list: string[]) => (list.length ? list.map(() => '?').join(', ') : 'NULL');
+/** `AND <col> IN (…)` for a branch, with its parameters; nothing for the whole company. */
+const inBranch = (col: string, list: string[] | undefined): [string, string[]] => (list ? [` AND ${col} IN (${marks(list)})`, list] : ['', []]);
 
 /**
  * The owner's view of the business: the Daily Brief (one page for a day: sales, cash, what came in and went out, who
@@ -45,9 +52,10 @@ function lastDayOfMonth(iso: string): string {
 // ——— sales ———
 
 /** Net sales in IQD (sales less sale returns) of posted invoices between two dates, and how many sale invoices. */
-export function salesBetween(db: Db, from: string, to: string): { amount: number; invoices: number } {
+export function salesBetween(db: Db, from: string, to: string, branch: BranchFilter = null): { amount: number; invoices: number } {
+  const [w, wp] = inBranch('i.warehouse_id', branch?.warehouses);
   const r = db.prepare(`SELECT COALESCE(SUM(${SIGN} * ${BASE('i.total')}), 0) AS amount, COALESCE(SUM(i.kind = 'sale'), 0) AS invoices
-                        FROM invoices i WHERE i.status = 'posted' AND i.kind IN ('sale', 'sale_return') AND i.date BETWEEN ? AND ?`).get(from, to) as
+                        FROM invoices i WHERE i.status = 'posted' AND i.kind IN ('sale', 'sale_return') AND i.date BETWEEN ? AND ?${w}`).get(from, to, ...wp) as
     { amount: number; invoices: number };
   return { amount: num(r.amount), invoices: num(r.invoices) };
 }
@@ -55,14 +63,15 @@ export function salesBetween(db: Db, from: string, to: string): { amount: number
 export interface ItemSales { itemId: string; code: string; name: Names; qtyMilli: number; sales: number; cost: number; profit: number }
 
 /** Sales, cost and profit by item (IQD), returns taken off, best sellers first. */
-export function salesByItem(db: Db, from: string, to: string, limit = 500): ItemSales[] {
+export function salesByItem(db: Db, from: string, to: string, limit = 500, branch: BranchFilter = null): ItemSales[] {
+  const [w, wp] = inBranch('i.warehouse_id', branch?.warehouses);
   const rows = db.prepare(`SELECT it.id, it.code, it.name_ar, it.name_en, it.name_ku,
                                   SUM(${SIGN} * l.qty_milli) AS qty,
                                   SUM(${SIGN} * ${BASE(LINE_NET)}) AS sales,
                                   SUM(${SIGN} * COALESCE(l.cost, 0)) AS cost
                            FROM invoice_lines l JOIN invoices i ON i.id = l.invoice_id JOIN items it ON it.id = l.item_id
-                           WHERE i.status = 'posted' AND i.kind IN ('sale', 'sale_return') AND i.date BETWEEN ? AND ?
-                           GROUP BY it.id ORDER BY sales DESC LIMIT ?`).all(from, to, limit) as
+                           WHERE i.status = 'posted' AND i.kind IN ('sale', 'sale_return') AND i.date BETWEEN ? AND ?${w}
+                           GROUP BY it.id ORDER BY sales DESC LIMIT ?`).all(from, to, ...wp, limit) as
     { id: string; code: string; name_ar: string; name_en: string; name_ku: string; qty: number; sales: number; cost: number }[];
   return rows.map((r) => {
     const sales = Math.round(num(r.sales));
@@ -74,11 +83,12 @@ export function salesByItem(db: Db, from: string, to: string, limit = 500): Item
 export interface CustomerSales { partyId: string | null; code: string; name: string; invoices: number; sales: number }
 
 /** Net sales by customer (IQD); cash sales without a customer are one row (partyId null). */
-export function salesByCustomer(db: Db, from: string, to: string): CustomerSales[] {
+export function salesByCustomer(db: Db, from: string, to: string, branch: BranchFilter = null): CustomerSales[] {
+  const [w, wp] = inBranch('i.warehouse_id', branch?.warehouses);
   const rows = db.prepare(`SELECT p.id, p.code, p.name, COALESCE(SUM(i.kind = 'sale'), 0) AS invoices, SUM(${SIGN} * ${BASE('i.total')}) AS sales
                            FROM invoices i LEFT JOIN parties p ON p.id = i.party_id
-                           WHERE i.status = 'posted' AND i.kind IN ('sale', 'sale_return') AND i.date BETWEEN ? AND ?
-                           GROUP BY p.id ORDER BY sales DESC`).all(from, to) as { id: string | null; code: string | null; name: string | null; invoices: number; sales: number }[];
+                           WHERE i.status = 'posted' AND i.kind IN ('sale', 'sale_return') AND i.date BETWEEN ? AND ?${w}
+                           GROUP BY p.id ORDER BY sales DESC`).all(from, to, ...wp) as { id: string | null; code: string | null; name: string | null; invoices: number; sales: number }[];
   return rows.map((r) => ({ partyId: r.id, code: r.code ?? '', name: r.name ?? '', invoices: num(r.invoices), sales: num(r.sales) }));
 }
 
@@ -87,8 +97,8 @@ export function salesByCustomer(db: Db, from: string, to: string): CustomerSales
 export interface CashAccount { code: string; name: Names; balance: Money; base: number }
 
 /** Each safe and bank account (under 18) with its balance in each currency it holds, and in IQD. */
-export function cashAccounts(db: Db, asOf: string): CashAccount[] {
-  const accounts = loadAccounts(db).filter((a) => a.postable && a.code.startsWith('18'));
+export function cashAccounts(db: Db, asOf: string, branch: BranchFilter = null): CashAccount[] {
+  const accounts = loadAccounts(db).filter((a) => a.postable && a.code.startsWith('18') && (!branch || branch.accounts.includes(a.code)));
   const rows = db.prepare(`SELECT l.account_code AS code, e.currency, SUM(l.debit - l.credit) AS amount, SUM(l.base_debit - l.base_credit) AS base
                            FROM entry_lines l JOIN entries e ON e.id = l.entry_id
                            WHERE e.status = 'approved' AND l.account_code LIKE '18%' AND e.date <= ?
@@ -109,11 +119,12 @@ export function cashAccounts(db: Db, asOf: string): CashAccount[] {
  * Money into and out of the safes and banks on a day (IQD), not counting moves between them: the cash lines of
  * approved entries that also touch something other than cash.
  */
-export function cashFlowOn(db: Db, date: string): { in: number; out: number } {
+export function cashFlowOn(db: Db, date: string, branch: BranchFilter = null): { in: number; out: number } {
+  const [a, ap] = inBranch('l.account_code', branch?.accounts);
   const r = db.prepare(`SELECT COALESCE(SUM(l.base_debit), 0) AS cin, COALESCE(SUM(l.base_credit), 0) AS cout
                         FROM entry_lines l JOIN entries e ON e.id = l.entry_id
-                        WHERE e.status = 'approved' AND e.date = ? AND l.account_code LIKE '18%'
-                          AND EXISTS (SELECT 1 FROM entry_lines o WHERE o.entry_id = e.id AND o.account_code NOT LIKE '18%')`).get(date) as { cin: number; cout: number };
+                        WHERE e.status = 'approved' AND e.date = ? AND l.account_code LIKE '18%'${a}
+                          AND EXISTS (SELECT 1 FROM entry_lines o WHERE o.entry_id = e.id AND o.account_code NOT LIKE '18%')`).get(date, ...ap) as { cin: number; cout: number };
   return { in: num(r.cin), out: num(r.cout) };
 }
 
@@ -261,14 +272,15 @@ export function lowStock(db: Db, date: string, limit = 20): LowStock[] {
 export interface StockValueRow { warehouseId: string; warehouseCode: string; warehouseName: Names; items: number; qtyMilli: number; value: number }
 
 /** What the stock is worth in each warehouse (IQD, at average cost) on a day. */
-export function stockValuation(db: Db, asOf: string): { warehouses: StockValueRow[]; items: (LowStock & { warehouseId: string; value: number })[] } {
+export function stockValuation(db: Db, asOf: string, branch: BranchFilter = null): { warehouses: StockValueRow[]; items: (LowStock & { warehouseId: string; value: number })[] } {
+  const [w, wp] = inBranch('m.warehouse_id', branch?.warehouses);
   const items = db.prepare(`SELECT m.warehouse_id, it.id, it.code, it.name_ar, it.name_en, it.name_ku, SUM(m.qty_milli) AS qty, SUM(m.value) AS value
-                            FROM stock_moves m JOIN items it ON it.id = m.item_id WHERE m.date <= ?
+                            FROM stock_moves m JOIN items it ON it.id = m.item_id WHERE m.date <= ?${w}
                             GROUP BY m.warehouse_id, it.id HAVING SUM(m.qty_milli) <> 0 OR SUM(m.value) <> 0
-                            ORDER BY value DESC`).all(asOf) as
+                            ORDER BY value DESC`).all(asOf, ...wp) as
     { warehouse_id: string; id: string; code: string; name_ar: string; name_en: string; name_ku: string; qty: number; value: number }[];
   const warehouses = (db.prepare('SELECT id, code, name_ar, name_en, name_ku FROM warehouses ORDER BY code').all() as
-    { id: string; code: string; name_ar: string; name_en: string; name_ku: string }[]).map((w) => {
+    { id: string; code: string; name_ar: string; name_en: string; name_ku: string }[]).filter((x) => !branch || branch.warehouses.includes(x.id)).map((w) => {
     const mine = items.filter((i) => i.warehouse_id === w.id);
     return {
       warehouseId: w.id, warehouseCode: w.code, warehouseName: name(w), items: mine.length,
@@ -311,12 +323,12 @@ export interface BriefView {
   ownerPhone: string;
 }
 
-export function dailyBrief(db: Db, date: string): BriefView {
+export function dailyBrief(db: Db, date: string, branch: BranchFilter = null): BriefView {
   const company = (() => {
     try { return JSON.parse(readSetting(db, 'company_name') ?? '') as Names; } catch { return { ar: '', en: '', ku: '' }; }
   })();
-  const today = salesBetween(db, date, date);
-  const accounts = cashAccounts(db, date);
+  const today = salesBetween(db, date, date, branch);
+  const accounts = cashAccounts(db, date, branch);
   const total: Money = { IQD: 0, USD: 0 };
   for (const a of accounts) { total.IQD += a.balance.IQD; total.USD += a.balance.USD; }
   const customers = aging(db, 'customer', date);
@@ -330,12 +342,12 @@ export function dailyBrief(db: Db, date: string): BriefView {
     company,
     sales: {
       today: today.amount, invoices: today.invoices,
-      sameDayLastWeek: salesBetween(db, addDays(date, -7), addDays(date, -7)).amount,
-      month: salesBetween(db, monthStart(date), date).amount
+      sameDayLastWeek: salesBetween(db, addDays(date, -7), addDays(date, -7), branch).amount,
+      month: salesBetween(db, monthStart(date), date, branch).amount
     },
     cash: { accounts: accounts.filter((a) => a.balance.IQD !== 0 || a.balance.USD !== 0 || a.base !== 0), total, base: accounts.reduce((s, a) => s + a.base, 0) },
-    flow: cashFlowOn(db, date),
-    topItems: salesByItem(db, date, date, 5),
+    flow: cashFlowOn(db, date, branch),
+    topItems: salesByItem(db, date, date, 5, branch),
     // late: something owed for over 30 days
     lateCustomers: customers.filter((c) => c.oldestDays > 30).sort((a, b) => b.oldestDays - a.oldestDays || b.balance - a.balance).slice(0, 8),
     receivables: customers.reduce((s, c) => s + c.balance, 0),
@@ -360,22 +372,22 @@ export interface DashboardView {
   months: { month: string; sales: number; profit: number }[];
 }
 
-export function dashboard(db: Db, date: string): DashboardView {
+export function dashboard(db: Db, date: string, branch: BranchFilter = null): DashboardView {
   const start = monthStart(date);
-  const accounts = cashAccounts(db, date);
+  const accounts = cashAccounts(db, date, branch);
   const total: Money = { IQD: 0, USD: 0 };
   for (const a of accounts) { total.IQD += a.balance.IQD; total.USD += a.balance.USD; }
   const months = [];
   for (let i = 5; i >= 0; i--) {
     const from = shiftMonth(date, -i);
     const to = i === 0 ? date : lastDayOfMonth(from);
-    months.push({ month: from.slice(0, 7), sales: salesBetween(db, from, to).amount, profit: profitBetween(db, from, to).profit });
+    months.push({ month: from.slice(0, 7), sales: salesBetween(db, from, to, branch).amount, profit: profitBetween(db, from, to).profit });
   }
   const lastFrom = shiftMonth(date, -1);
   return {
     date,
-    salesMonth: salesBetween(db, start, date).amount,
-    salesLastMonth: salesBetween(db, lastFrom, lastDayOfMonth(lastFrom)).amount,
+    salesMonth: salesBetween(db, start, date, branch).amount,
+    salesLastMonth: salesBetween(db, lastFrom, lastDayOfMonth(lastFrom), branch).amount,
     profitMonth: profitBetween(db, start, date),
     cash: { total, base: accounts.reduce((s, a) => s + a.base, 0) },
     receivables: aging(db, 'customer', date).reduce((s, r) => s + r.balance, 0),
@@ -459,6 +471,19 @@ function parse<T>(schema: z.ZodType<T>, value: unknown): T {
   return r.data;
 }
 
+/**
+ * The branch a report is for: `branchId` in the query, or the x-qasa-branch header the app sends from the branch
+ * switcher. A user limited to some branches always gets theirs (asking for another is refused); others get the whole
+ * company unless they pick a branch.
+ */
+function branchOf(db: Db, req: ApiRequest, actor: Parameters<typeof scopeOf>[1]): BranchFilter {
+  const q = (req.query ?? {}) as { branchId?: unknown };
+  const raw = req.headers['x-qasa-branch'];
+  const wanted = typeof q.branchId === 'string' && q.branchId ? q.branchId : typeof raw === 'string' && raw ? raw : null;
+  if (wanted && !db.prepare('SELECT 1 FROM branches WHERE id = ?').get(wanted)) throw invalid([{ code: 'bn_branch_invalid' }]);
+  return scopeLists(scopeOf(db, actor, wanted));
+}
+
 function period(req: ApiRequest): { from: string; to: string } {
   const q = parse(range, req.query ?? {});
   const to = q.to ?? todayIso();
@@ -476,11 +501,11 @@ export const briefApi: ApiExtension = {
     return [
       {
         method: 'GET', path: '/api/brief',
-        handler: async (req) => dailyBrief(db, parse(z.object({ date: date.optional() }), req.query ?? {}).date ?? todayIso())
+        handler: async (req) => dailyBrief(db, parse(z.object({ date: date.optional() }), req.query ?? {}).date ?? todayIso(), branchOf(db, req, actorOf(req)))
       },
       {
         method: 'GET', path: '/api/brief/dashboard',
-        handler: async (req) => dashboard(db, parse(z.object({ date: date.optional() }), req.query ?? {}).date ?? todayIso())
+        handler: async (req) => dashboard(db, parse(z.object({ date: date.optional() }), req.query ?? {}).date ?? todayIso(), branchOf(db, req, actorOf(req)))
       },
       {
         method: 'GET', path: '/api/brief/settings',
@@ -509,8 +534,8 @@ export const briefApi: ApiExtension = {
           return monthExpenses(db, q.month ?? todayIso().slice(0, 7));
         }
       },
-      { method: 'GET', path: '/api/brief/reports/sales-by-item', handler: async (req) => { const p = period(req); return { ...p, rows: salesByItem(db, p.from, p.to) }; } },
-      { method: 'GET', path: '/api/brief/reports/sales-by-customer', handler: async (req) => { const p = period(req); return { ...p, rows: salesByCustomer(db, p.from, p.to) }; } },
+      { method: 'GET', path: '/api/brief/reports/sales-by-item', handler: async (req) => { const p = period(req); return { ...p, rows: salesByItem(db, p.from, p.to, 500, branchOf(db, req, actorOf(req))) }; } },
+      { method: 'GET', path: '/api/brief/reports/sales-by-customer', handler: async (req) => { const p = period(req); return { ...p, rows: salesByCustomer(db, p.from, p.to, branchOf(db, req, actorOf(req))) }; } },
       {
         method: 'GET', path: '/api/brief/reports/aging',
         handler: async (req) => {
@@ -523,7 +548,7 @@ export const briefApi: ApiExtension = {
         method: 'GET', path: '/api/brief/reports/stock-value',
         handler: async (req) => {
           const asOf = parse(z.object({ date: date.optional() }), req.query ?? {}).date ?? todayIso();
-          return { date: asOf, ...stockValuation(db, asOf) };
+          return { date: asOf, ...stockValuation(db, asOf, branchOf(db, req, actorOf(req))) };
         }
       }
     ];
