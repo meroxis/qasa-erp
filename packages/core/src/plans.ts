@@ -15,6 +15,7 @@ export type Feature =
   | 'roles' // separate sign-ins for the preparer, checker and approver
   | 'installments'
   | 'payroll'
+  | 'pipeline' // the sales pipeline: leads and deals
   | 'finalAccountsExport' // print and Excel of the final accounts, year-end closing
   | 'noBranding' // invoices without "Made with Qasa ERP"
   | 'cloudBackup'
@@ -41,7 +42,7 @@ export interface PlanDefinition {
   features: readonly Feature[];
 }
 
-const PRO_FEATURES: readonly Feature[] = ['officeNetwork', 'roles', 'installments', 'payroll', 'finalAccountsExport', 'noBranding', 'cloudBackup', 'mobileShop', 'autoParts', 'engineeringWorks'];
+const PRO_FEATURES: readonly Feature[] = ['officeNetwork', 'roles', 'installments', 'payroll', 'finalAccountsExport', 'noBranding', 'cloudBackup', 'mobileShop', 'autoParts', 'engineeringWorks', 'pipeline'];
 
 export const PLANS: Record<PlanId, PlanDefinition> = {
   free: { id: 'free', limits: { companies: 1, users: 1, warehouses: 1 }, features: [] },

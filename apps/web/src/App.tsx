@@ -27,6 +27,9 @@ import { EngineeringWorks, JobDetail } from './pages/EngineeringWorks.tsx';
 import { BusinessTypeChooser, BusinessTypePage } from './pages/BusinessType.tsx';
 import { Pos, PosShiftReport } from './pages/Pos.tsx';
 import { Payroll, PayrollRun } from './pages/Payroll.tsx';
+import { Import } from './pages/Import.tsx';
+import { QuoteDetail, QuoteEditor, Quotes } from './pages/Quotes.tsx';
+import { Pipeline } from './pages/Pipeline.tsx';
 import { BUSINESS_FEATURE, type BusinessType } from '@qasa/core';
 
 declare global {
@@ -55,11 +58,12 @@ const NAV: { group: Key; items: NavItem[] }[] = [
     group: 'gSales',
     items: [
       { key: 'pos_title', icon: 'wallet', path: 'pos', match: ['pos', 'pos-shift'] },
+      { key: 'qt_title', icon: 'doc', path: 'quotes', match: ['quotes', 'quote', 'new-quote', 'edit-quote'] },
       { key: 'invoices', icon: 'invoice', path: 'sales', match: ['sales', 'new-invoice:sale'] },
       { key: 'customers', icon: 'contact', path: 'customers', match: ['customers'] },
       { key: 'salesReturns', icon: 'undo', path: 'sales-returns', match: ['sales-returns'] },
       { key: 'installments', icon: 'cal', path: 'installments', match: ['installments', 'installment', 'new-installment', 'guarantors', 'installments-aging'] },
-      { key: 'pipeline', icon: 'trend' }
+      { key: 'pl_title', icon: 'trend', path: 'pipeline', match: ['pipeline'] }
     ]
   },
   {
@@ -104,6 +108,7 @@ const NAV: { group: Key; items: NavItem[] }[] = [
       // everyone: Language and display is each person's own; the company sections show to admins only
       { key: 'settings', icon: 'sliders', path: 'settings', match: ['settings'] },
       { key: 'bizType', icon: 'building', path: 'business-type', match: ['business-type'], adminOnly: true },
+      { key: 'md_title', icon: 'download', path: 'import', match: ['import'], adminOnly: true },
       { key: 'users', icon: 'users', path: 'users', match: ['users'], adminOnly: true },
       { key: 'planLicense', icon: 'star', path: 'plans', match: ['plans'], adminOnly: true }
     ]
@@ -376,6 +381,30 @@ export function App() {
     case 'pos-shift':
       title = t('pos_title');
       content = arg ? <PosShiftReport key={arg} id={arg} /> : null;
+      break;
+    case 'quotes':
+      title = t('qt_title');
+      content = <Quotes />;
+      break;
+    case 'new-quote':
+      title = t('qt_title');
+      content = <QuoteEditor key="new" />;
+      break;
+    case 'edit-quote':
+      title = t('qt_title');
+      content = arg ? <QuoteEditor key={arg} id={arg} /> : null;
+      break;
+    case 'quote':
+      title = t('qt_title');
+      content = arg ? <QuoteDetail key={arg} id={arg} /> : null;
+      break;
+    case 'pipeline':
+      title = t('pl_title');
+      content = <Pipeline />;
+      break;
+    case 'import':
+      title = t('md_title');
+      content = <Import />;
       break;
     case 'business-type':
       title = t('bizType');

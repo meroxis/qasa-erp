@@ -62,7 +62,12 @@ export const PAYROLL_TEXT = {
   pay_unpostHelp: ['يُحذف القيد ما دام لم يُدقَّق بعد.', 'Its entry is deleted, as it hasn’t been checked yet.', 'تۆمارەکەی دەسڕدرێتەوە چونکە هێشتا وردبینی نەکراوە.'],
   pay_cancelRun: ['إلغاء الكشف', 'Cancel this month', 'هەڵوەشاندنەوەی ئەم مانگە'],
   pay_cancelConfirm: ['يُلغى هذا الكشف ويمكن تحضير الشهر من جديد.', 'This sheet is cancelled and the month can be prepared again.', 'ئەم لیستە هەڵدەوەشێتەوە و دەتوانرێت مانگەکە دووبارە ئامادە بکرێتەوە.'],
-  pay_paySalariesHint: ['بعد المصادقة، ادفع الرواتب بسند صرف من حساب الرواتب المستحقة.', 'Once approved, pay the salaries with a payment voucher from salaries payable.', 'دوای پەسەندکردن، مووچەکان بە سەنەدی پارەدان لە هەژماری مووچەی شایستە بدە.'],
+  pay_paySalaries: ['صرف الرواتب', 'Pay salaries', 'پێدانی مووچەکان'],
+  pay_payHelp: ['يُرحَّل سند صرف الآن بصافي الرواتب: من حـ/ الرواتب المستحقة إلى حـ/ القاصة أو المصرف.', 'A payment voucher for the total net pay is posted now: Dr salaries payable, Cr the safe or bank.', 'سەنەدێکی پارەدان بە کۆی پاکی مووچە ئێستا تۆمار دەکرێت: قەرزار مووچەی شایستە، خاوەن قەرز قاسە یان بانک.'],
+  pay_paid: ['مدفوعة', 'Paid', 'دراوە'],
+  pay_unpaid: ['غير مدفوعة', 'Not paid yet', 'هێشتا نەدراوە'],
+  pay_paidDone: ['صُرفت الرواتب: {n}', 'Salaries paid: {n}', 'مووچەکان دران: {n}'],
+  pay_waitApproval: ['تُصرف الرواتب بعد مصادقة القيد.', 'Salaries can be paid once the entry is approved.', 'دوای پەسەندکردنی تۆمارەکە مووچەکان دەدرێن.'],
   pay_printSheet: ['طباعة الكشف', 'Print the sheet', 'چاپکردنی لیست'],
   pay_printSlips: ['طباعة قسائم الرواتب', 'Print payslips', 'چاپکردنی پسوولەی مووچە'],
   pay_exportCsv: ['تصدير Excel', 'Export to Excel', 'ناردنە دەرەوە بۆ Excel'],
@@ -108,6 +113,9 @@ export const PAYROLL_TEXT = {
   err_payroll_period_exists: ['رواتب هذا الشهر بهذه العملة محضّرة مسبقاً. افتحها من القائمة.', 'This month’s salaries in that currency are already prepared. Open them from the list.', 'مووچەی ئەم مانگە بەم دراوە پێشتر ئامادە کراوە. لە لیستەکەوە بیکەرەوە.'],
   err_payroll_no_employees: ['لا يوجد موظفون حاليون بهذه العملة.', 'No current employees are paid in that currency.', 'هیچ کارمەندێکی ئێستا بەم دراوە مووچە وەرناگرێت.'],
   err_payroll_net_negative: ['السطر {n}: الاستقطاعات أكبر من الراتب.', 'Line {n}: the deductions are more than the pay.', 'دێڕی {n}: بڕینەکان لە مووچە زیاترن.'],
+  err_payroll_already_paid: ['رواتب هذا الشهر مدفوعة مسبقاً.', 'This month’s salaries are already paid.', 'مووچەی ئەم مانگە پێشتر دراوە.'],
+  err_payroll_not_approved: ['تُصرف الرواتب بعد مصادقة قيدها.', 'The salaries can be paid once their entry is approved.', 'مووچەکان دوای پەسەندکردنی تۆمارەکەیان دەدرێن.'],
+  err_payroll_pay_before_entry: ['تاريخ الصرف قبل تاريخ قيد الرواتب.', 'The payment date is before the salaries entry.', 'بەرواری پارەدان پێش تۆماری مووچەکانە.'],
   err_employee_invalid: ['السطر {n}: الموظف غير موجود.', 'Line {n}: that employee doesn’t exist.', 'دێڕی {n}: ئەو کارمەندە نییە.'],
   err_employee_inactive: ['هذا الموظف ترك العمل.', 'That employee has left.', 'ئەو کارمەندە کاری جێهێشتووە.'],
   err_employee_twice: ['السطر {n}: الموظف مكرر.', 'Line {n}: that employee is listed twice.', 'دێڕی {n}: کارمەندەکە دوو جار هاتووە.'],
@@ -127,5 +135,6 @@ export const PAYROLL_TEXT = {
   e_payroll_run: ['رواتب شهر', 'Monthly payroll', 'مووچەی مانگ'],
   e_advance: ['سلفة', 'Advance', 'سولفە'],
   e_payroll_settings: ['إعدادات الرواتب', 'Payroll settings', 'ڕێکخستنی مووچە'],
-  a_unpost: ['إرجاع إلى مسودة', 'Back to draft', 'گەڕاندنەوە بۆ ڕەشنووس']
+  a_unpost: ['إرجاع إلى مسودة', 'Back to draft', 'گەڕاندنەوە بۆ ڕەشنووس'],
+  a_pay: ['صرف', 'Paid', 'دراوە']
 } as const satisfies Record<string, readonly [string, string, string]>;

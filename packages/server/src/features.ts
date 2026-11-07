@@ -1,8 +1,10 @@
 import type { ApiExtension } from './routes.ts';
+import { mediaApi } from './media.ts';
 import { posApi } from './pos.ts';
+import { quotesApi } from './quotes.ts';
 
 /**
  * The app's own features that are built like modules (each in a file of its own, as an ApiExtension): served on every
  * edition, the website demo included, behind the same sign-in, permission and same-site checks as the rest of the API.
  */
-export const BUILT_IN_FEATURES: readonly ApiExtension[] = [posApi];
+export const BUILT_IN_FEATURES: readonly ApiExtension[] = [posApi, mediaApi, quotesApi];

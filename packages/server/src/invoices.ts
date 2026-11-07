@@ -317,6 +317,8 @@ export function deleteInvoice(db: Db, id: string, user: string): void {
   const row = loadRow(db, id);
   requireAction(db, row, 'delete');
   transaction(db, () => {
+    // a draft made from a quotation: the quotation goes back to accepted, ready to be invoiced again
+    db.prepare("UPDATE quotes SET invoice_id = NULL, status = 'accepted' WHERE invoice_id = ?").run(id);
     db.prepare('DELETE FROM invoices WHERE id = ?').run(id);
     audit(db, user, 'delete', 'invoice', id, { kind: row.kind });
   });

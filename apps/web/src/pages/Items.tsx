@@ -4,6 +4,7 @@ import { api, type ItemInput, type ItemView, type WarehouseView } from '../api.t
 import { AmountInput, ErrorBox, Icon, Modal, downloadCsv, useData, useLoad, useToast } from '../components.tsx';
 import { useI18n, type I18n, isKey, type Key } from '../i18n.ts';
 import { go, href } from '../router.ts';
+import { ImagePicker, ItemImage } from '../industry/ItemImage.tsx';
 
 export function qtyText(i18n: I18n, milli: number): string {
   return formatQty(milli, i18n.digits === 'eastern' && i18n.lang !== 'en' ? 'eastern' : 'western');
@@ -79,9 +80,14 @@ export function Items() {
                     <tr key={it.id} className="click" onClick={() => go(`item/${it.id}`)}>
                       <td><span className="tree-code">{it.code}</span></td>
                       <td>
-                        <strong>{i18n.name(it.name)}</strong>
-                        {!it.active && <span className="chip" style={{ marginInlineStart: 8 }}>{t('inactive')}</span>}
-                        {it.barcode && <div className="muted small ltr">{it.barcode}</div>}
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                          <ItemImage itemId={it.id} name={i18n.name(it.name)} size={36} />
+                          <div>
+                            <strong>{i18n.name(it.name)}</strong>
+                            {!it.active && <span className="chip" style={{ marginInlineStart: 8 }}>{t('inactive')}</span>}
+                            {it.barcode && <div className="muted small ltr">{it.barcode}</div>}
+                          </div>
+                        </div>
                       </td>
                       <td className="amount">
                         {it.trackStock
@@ -273,10 +279,13 @@ export function ItemDetail({ id }: { id: string }) {
       </div>
 
       <div className="grid-4">
-        <div className="card pad tile" style={{ gridColumn: 'span 2' }}>
-          <div className="label"><span className="ltr">{it.code}</span>{it.barcode && <> · <span className="ltr">{it.barcode}</span></>}</div>
-          <div className="value" style={{ fontSize: 20 }}>{i18n.name(it.name)}</div>
-          <div className="muted small">{t('salePrice')}: {i18n.money(it.salePrice, it.saleCurrency)} / {unitName(i18n, it.unit)}</div>
+        <div className="card pad tile" style={{ gridColumn: 'span 2', flexDirection: 'row', alignItems: 'center', gap: 16 }}>
+          <ImagePicker itemId={it.id} name={i18n.name(it.name)} />
+          <div className="stack" style={{ gap: 6, minWidth: 0 }}>
+            <div className="label"><span className="ltr">{it.code}</span>{it.barcode && <> · <span className="ltr">{it.barcode}</span></>}</div>
+            <div className="value" style={{ fontSize: 20, whiteSpace: 'normal' }}>{i18n.name(it.name)}</div>
+            <div className="muted small">{t('salePrice')}: {i18n.money(it.salePrice, it.saleCurrency)} / {unitName(i18n, it.unit)}</div>
+          </div>
         </div>
         <div className="card pad tile">
           <div className="label">{t('available')}</div>

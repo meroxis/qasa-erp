@@ -128,7 +128,7 @@ function Months({ summary, onChange }: { summary: PayrollSummary | null; onChang
                   <td className="amount num">{i18n.money(r.totals.gross, r.currency)}</td>
                   <td className="amount num"><strong>{i18n.money(r.totals.net, r.currency)}</strong></td>
                   <td>{r.entry ? <a className="ltr num" href={href(`entry/${r.entry.id}`)} onClick={(e) => e.stopPropagation()}>{r.entry.number ?? t(`pay_st_draft`)}</a> : '—'}</td>
-                  <td><RunChip status={r.status} /></td>
+                  <td><RunChip status={r.status} />{r.payment && <span className="chip ok">{t('pay_paid')}</span>}</td>
                 </tr>
               ))}
             </tbody>
@@ -242,7 +242,7 @@ export function PayrollRun({ id }: { id: string }) {
   const [dirty, setDirty] = useState(false);
   const [busy, setBusy] = useState(false);
   const [actionError, setActionError] = useState<unknown>(null);
-  const [modal, setModal] = useState<'post' | 'cancel' | null>(null);
+  const [modal, setModal] = useState<'post' | 'cancel' | 'pay' | null>(null);
   const [print, setPrint] = useState<'sheet' | 'slips' | null>(null);
 
   useEffect(() => { if (run) { setLines(run.lines.map(editable)); setDirty(false); } }, [run]);
@@ -297,6 +297,7 @@ export function PayrollRun({ id }: { id: string }) {
         <span className="spacer" />
         {canEdit && dirty && <button type="button" className="btn primary" disabled={busy} onClick={() => void save()}><Icon name="check" size={16} />{t('pay_save')}</button>}
         {run.actions.includes('post') && !dirty && <button type="button" className="btn primary" disabled={busy} onClick={() => setModal('post')}><Icon name="receipt" size={16} />{t('pay_post')}</button>}
+        {run.actions.includes('pay') && <button type="button" className="btn primary" disabled={busy} onClick={() => setModal('pay')}><Icon name="receipt" size={16} />{t('pay_paySalaries')}</button>}
         {run.actions.includes('unpost') && <button type="button" className="btn" disabled={busy} title={t('pay_unpostHelp')} onClick={() => void act(() => payrollApi.unpost(id))}><Icon name="undo" size={16} />{t('pay_unpost')}</button>}
         <button type="button" className="btn" onClick={() => setPrint('sheet')}><Icon name="printer" size={16} />{t('pay_printSheet')}</button>
         <button type="button" className="btn" onClick={() => setPrint('slips')}><Icon name="printer" size={16} />{t('pay_printSlips')}</button>
@@ -315,7 +316,9 @@ export function PayrollRun({ id }: { id: string }) {
               {run.entry && <div className="small"><a className="ltr num" href={href(`entry/${run.entry.id}`)}>{run.entry.number ?? t('pay_st_draft')}</a></div>}
             </div>
           </div>
-          {run.status === 'posted' && <div className="alert info">{t('pay_paySalariesHint')}</div>}
+          {run.status === 'posted' && (run.payment
+            ? <div className="alert ok">{t('pay_paid')}: <a className="ltr num" href={href(`entry/${run.payment.id}`)}>{run.payment.number}</a> · <span className="num">{i18n.date(run.payment.date)}</span></div>
+            : !run.actions.includes('pay') && run.entry?.status !== 'approved' && <div className="alert info">{t('pay_waitApproval')}</div>)}
           <div className="card table-wrap">
             <table className="table">
               <thead>
@@ -369,6 +372,16 @@ export function PayrollRun({ id }: { id: string }) {
             onCancel={() => setModal(null)} error={actionError} />
         </Modal>
       )}
+      {modal === 'pay' && (
+        <Modal title={`${t('pay_paySalaries')} — ${i18n.digitsOf(run.period)}`} onClose={() => setModal(null)}>
+          <PayForm run={run} busy={busy} error={actionError} onCancel={() => setModal(null)}
+            onPay={(body) => void act(async () => {
+              const after = await payrollApi.pay(id, { ...body, lang: i18n.lang });
+              toast(t('pay_paidDone', { n: after.payment?.number ?? '' }));
+              return after;
+            })} />
+        </Modal>
+      )}
       {modal === 'cancel' && (
         <Modal title={t('pay_cancelRun')} onClose={() => setModal(null)}>
           <div className="stack">
@@ -405,6 +418,36 @@ function PostForm({ run, busy, defaultRate, onPost, onCancel, error }: {
       <ErrorBox error={error} />
       <div className="row">
         <button type="button" className="btn primary" disabled={busy} onClick={() => onPost(parseRate(rate))}><Icon name="check" size={16} />{t('pay_post')}</button>
+        <button type="button" className="btn" onClick={onCancel}>{t('cancel')}</button>
+      </div>
+    </div>
+  );
+}
+
+function PayForm({ run, busy, error, onPay, onCancel }: {
+  run: RunView; busy: boolean; error: unknown; onPay(body: { date: string; cashAccountCode: string; rateX100?: number }): void; onCancel(): void;
+}) {
+  const i18n = useI18n();
+  const { t } = i18n;
+  const { settings } = useData();
+  const [date, setDate] = useState(todayIso() < run.date ? run.date : todayIso());
+  const [cash, setCash] = useState(settings?.postingAccounts.cash ?? '');
+  const [rate, setRate] = useState(String(rateFromX100(settings?.defaultRateX100 ?? 142000)));
+  return (
+    <div className="stack">
+      <p className="muted small" style={{ margin: 0 }}>{t('pay_payHelp')}</p>
+      <div className="totals"><strong>{t('pay_net')}</strong><strong>{i18n.money(run.totals.net, run.currency)}</strong></div>
+      <div className="grid-2">
+        <label className="field"><span>{t('date')}</span><input className="input" type="date" value={date} onChange={(e) => setDate(e.target.value)} /></label>
+        <div className="field"><span>{t('cashAccount')}</span><AccountCombo value={cash} onChange={setCash} filter={(a) => a.code.startsWith('18')} ariaLabel={t('cashAccount')} /></div>
+        {run.currency === 'USD' && <label className="field"><span>{t('exchangeRate')}</span><input className="input num ltr" inputMode="decimal" value={rate} onChange={(e) => setRate(e.target.value)} /></label>}
+      </div>
+      <ErrorBox error={error} />
+      <div className="row">
+        <button type="button" className="btn primary" disabled={busy || !cash || !date}
+          onClick={() => onPay({ date, cashAccountCode: cash, ...(run.currency === 'USD' ? { rateX100: parseRate(rate) } : {}) })}>
+          <Icon name="check" size={16} />{t('pay_paySalaries')}
+        </button>
         <button type="button" className="btn" onClick={onCancel}>{t('cancel')}</button>
       </div>
     </div>

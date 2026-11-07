@@ -31,14 +31,15 @@ export interface PayLineView {
 }
 
 export type RunStatus = 'draft' | 'posted' | 'cancelled';
-export type RunAction = 'edit' | 'post' | 'cancel' | 'unpost';
+export type RunAction = 'edit' | 'post' | 'cancel' | 'unpost' | 'pay';
 export interface RunTotals {
   gross: number; allowances: number; overtime: number; bonus: number; absence: number;
   advanceDeduction: number; socialSecurity: number; otherDeductions: number; net: number;
 }
 export interface RunSummary {
   id: string; period: string; date: string; currency: CurrencyCode; status: RunStatus; employees: number; totals: RunTotals;
-  entry: { id: string; number: string | null; status: string } | null; createdBy: string; createdAt: string;
+  entry: { id: string; number: string | null; status: string } | null;
+  payment: { id: string; number: string | null; date: string } | null; createdBy: string; createdAt: string;
 }
 export interface RunView extends RunSummary { notes: string; lines: PayLineView[]; actions: RunAction[] }
 
@@ -67,6 +68,7 @@ export const payrollApi = {
   prepare: (body: { period: string; currency: CurrencyCode; date?: string; notes?: string }) => request<RunView>('POST', '/api/payroll/runs', body),
   updateRun: (id: string, body: { date?: string; notes?: string; lines: PayLineInput[] }) => request<RunView>('PUT', `/api/payroll/runs/${id}`, body),
   post: (id: string, body: { rateX100?: number; lang: Lang }) => request<RunView>('POST', `/api/payroll/runs/${id}/post`, body),
+  pay: (id: string, body: { date: string; cashAccountCode: string; rateX100?: number; lang: Lang }) => request<RunView>('POST', `/api/payroll/runs/${id}/pay`, body),
   unpost: (id: string) => request<RunView>('POST', `/api/payroll/runs/${id}/unpost`, {}),
   cancel: (id: string) => request<RunView>('POST', `/api/payroll/runs/${id}/cancel`, {}),
   advances: (f: { employeeId?: string; open?: 'true' | 'false' } = {}) => request<AdvanceView[]>('GET', '/api/payroll/advances' + qs(f)),
