@@ -28,7 +28,7 @@ function planFor(type: BusinessType): 'pro' | 'business' | null {
  */
 export function BusinessTypeChooser({ onDone, first }: { onDone?: () => void; first?: boolean }) {
   const { t } = useI18n();
-  const { settings, plan, reloadSettings } = useData();
+  const { settings, plan, reloadSettings, reloadPlan } = useData();
   const toast = useToast();
   const [picked, setPicked] = useState<BusinessType[]>(settings?.businessTypes ?? ['trade']);
   const [error, setError] = useState<unknown>(null);
@@ -43,6 +43,10 @@ export function BusinessTypeChooser({ onDone, first }: { onDone?: () => void; fi
     setError(null);
     try {
       await api.updateSettings({ businessTypes: BUSINESS_TYPES.filter((b) => picked.includes(b)) });
+      // the first month's free trial (every paid feature) starts by itself the first time
+      if (first && plan?.trialAvailable) {
+        try { await api.startTrial(); reloadPlan(); } catch { /* the plan page offers it again */ }
+      }
       reloadSettings();
       toast(t('saved'));
       onDone?.();

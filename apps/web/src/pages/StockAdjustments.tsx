@@ -1,0 +1,755 @@
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { lineAmount, todayIso } from '@qasa/core';
+import { api } from '../api.ts';
+import {
+  AccountCombo, AmountInput, ErrorBox, Icon, InvoiceStatusChip, Modal, QtyInput, SearchCombo, downloadCsv, useData, useLoad, useToast, type PickOption
+} from '../components.tsx';
+import { useI18n, type Key } from '../i18n.ts';
+import { go, href } from '../router.ts';
+import { averageCost, qtyText, unitName } from './Items.tsx';
+import {
+  ADJUSTMENT_REASONS, adjustmentsApi, parseCountText,
+  type AdjustmentAccounts, type AdjustmentInput, type AdjustmentReason, type AdjustmentView, type CountSheetRow
+} from '../industry/adjustments-api.ts';
+import { worksApi, type JobSummaryView } from '../industry/works-api.ts';
+
+/**
+ * تسوية المخزون — stock adjustments (damaged, lost, expired, used, issued to a job) and the stock count.
+ * Routes: stock-adjustments, new-stock-adjustment, edit-stock-adjustment/:id, stock-adjustment/:id, stock-count.
+ */
+
+const reasonKey = (r: AdjustmentReason) => `adj_r_${r}` as Key;
+
+function useActiveWarehouses() {
+  const warehouses = useLoad(() => api.warehouses(), []);
+  return (warehouses.data ?? []).filter((w) => w.active);
+}
+
+// ——— list ———
+
+export function StockAdjustments() {
+  const i18n = useI18n();
+  const { t } = i18n;
+  const [reason, setReason] = useState<AdjustmentReason | ''>('');
+  const [status, setStatus] = useState<'' | 'draft' | 'posted' | 'cancelled'>('');
+  const { data, error } = useLoad(() => adjustmentsApi.list({ ...(reason ? { reason } : {}), ...(status ? { status } : {}) }), [reason, status]);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+
+  return (
+    <div className="stack">
+      <p className="muted" style={{ margin: 0 }}>{t('adj_help')}</p>
+      <div className="row">
+        <a className="btn primary" href={href('new-stock-adjustment')}><Icon name="plus" size={16} />{t('adj_new')}</a>
+        <a className="btn" href={href('stock-count')}><Icon name="rows" size={16} />{t('adj_count')}</a>
+        <button type="button" className="btn" onClick={() => setSettingsOpen(true)}><Icon name="gear" size={16} />{t('adj_settings')}</button>
+        <span className="spacer" />
+        <select className="input" style={{ width: 'auto' }} value={reason} onChange={(e) => setReason(e.target.value as AdjustmentReason | '')} aria-label={t('adj_reason')}>
+          <option value="">{t('adj_reason')}: {t('all')}</option>
+          {ADJUSTMENT_REASONS.map((r) => <option key={r} value={r}>{t(reasonKey(r))}</option>)}
+        </select>
+        <div className="track">
+          {(['', 'draft', 'posted', 'cancelled'] as const).map((s) => (
+            <button key={s || 'all'} type="button" aria-pressed={status === s} onClick={() => setStatus(s)}>{s ? t(s) : t('all')}</button>
+          ))}
+        </div>
+      </div>
+      <ErrorBox error={error} />
+      <div className="card">
+        {data && (data.length === 0 ? <p className="muted" style={{ padding: '14px 16px', margin: 0 }}>{t('adj_none')}</p> : (
+          <table className="table">
+            <thead>
+              <tr>
+                <th>{t('colNumber')}</th><th>{t('colDate')}</th><th>{t('adj_reason')}</th><th>{t('warehouse')}</th>
+                <th className="amount">{t('adj_valueOut')}</th><th className="amount">{t('adj_valueIn')}</th><th>{t('colStatus')}</th>
+              </tr>
+            </thead>
+            <tbody>
+              {data.map((d) => (
+                <tr key={d.id} className="click" onClick={() => go(`stock-adjustment/${d.id}`)}>
+                  <td>{d.number ? <a href={href(`stock-adjustment/${d.id}`)} className="ltr num" onClick={(e) => e.stopPropagation()}>{d.number}</a> : <span className="muted">{t('draft')}</span>}</td>
+                  <td className="num">{i18n.date(d.date)}</td>
+                  <td>{t(reasonKey(d.reason))}{d.job && <span className="muted small"> · <span className="ltr">{d.job.number}</span></span>}</td>
+                  <td>{i18n.name(d.warehouseName)}</td>
+                  <td className="amount">{d.valueOut ? i18n.money(d.valueOut, 'IQD') : ''}</td>
+                  <td className="amount">{d.valueIn ? i18n.money(d.valueIn, 'IQD') : ''}</td>
+                  <td><InvoiceStatusChip status={d.status} /></td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        ))}
+      </div>
+      {settingsOpen && <AccountsSettings onClose={() => setSettingsOpen(false)} />}
+    </div>
+  );
+}
+
+const SETTING_KEYS: { key: keyof AdjustmentAccounts; label: Key }[] = [
+  { key: 'damaged', label: 'adj_r_damaged' }, { key: 'lost', label: 'adj_r_lost' }, { key: 'expired', label: 'adj_r_expired' },
+  { key: 'internal_use', label: 'adj_r_internal_use' }, { key: 'job', label: 'adj_r_job' }, { key: 'other', label: 'adj_r_other' },
+  { key: 'count', label: 'adj_countShortage' }, { key: 'gain', label: 'adj_gainAccount' }
+];
+
+function AccountsSettings({ onClose }: { onClose(): void }) {
+  const { t } = useI18n();
+  const toast = useToast();
+  const [accounts, setAccounts] = useState<AdjustmentAccounts | null>(null);
+  const [defaults, setDefaults] = useState<AdjustmentAccounts | null>(null);
+  const [error, setError] = useState<unknown>(null);
+  const [busy, setBusy] = useState(false);
+  useEffect(() => {
+    adjustmentsApi.settings().then((s) => { setAccounts(s.accounts); setDefaults(s.defaults); }, setError);
+  }, []);
+
+  async function save() {
+    if (!accounts) return;
+    setBusy(true);
+    setError(null);
+    try {
+      await adjustmentsApi.saveSettings(accounts);
+      toast(t('saved'));
+      onClose();
+    } catch (e) {
+      setError(e);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <Modal title={t('adj_settings')} onClose={onClose}>
+      <div className="stack">
+        <p className="muted" style={{ margin: 0 }}>{t('adj_settingsHelp')}</p>
+        {accounts && SETTING_KEYS.map(({ key, label }) => (
+          <div className="field" key={key}>
+            <span>{t(label)}</span>
+            <AccountCombo value={accounts[key]} onChange={(code) => setAccounts({ ...accounts, [key]: code })} filter={(a) => !a.code.startsWith('13')} ariaLabel={t(label)} />
+          </div>
+        ))}
+        <ErrorBox error={error} />
+        <div className="row">
+          <button type="button" className="btn primary" disabled={busy || !accounts} onClick={save}>{busy ? t('saving') : t('save')}</button>
+          {defaults && <button type="button" className="btn" onClick={() => setAccounts(defaults)}>{t('adj_restoreDefaults')}</button>}
+          <button type="button" className="btn" onClick={onClose}>{t('cancel')}</button>
+        </div>
+      </div>
+    </Modal>
+  );
+}
+
+// ——— editor ———
+
+interface Row { key: number; itemId: string; dir: 'out' | 'in'; qtyMilli: number | null; unitCost: number | null }
+let rowKey = 1;
+const emptyRow = (dir: 'out' | 'in' = 'out'): Row => ({ key: rowKey++, itemId: '', dir, qtyMilli: 1000, unitCost: null });
+
+export function StockAdjustmentEditor({ id }: { id?: string }) {
+  const i18n = useI18n();
+  const { t } = i18n;
+  const toast = useToast();
+  const { reloadAccounts } = useData();
+  const [savedId, setSavedId] = useState<string | undefined>(id);
+  const [ready, setReady] = useState(!id);
+  const [loadError, setLoadError] = useState<unknown>(null);
+  const [date, setDate] = useState(todayIso());
+  const [warehouseId, setWarehouseId] = useState('');
+  const [reason, setReason] = useState<AdjustmentReason>('damaged');
+  const [accountOverride, setAccountOverride] = useState<string | null>(null);
+  const [jobId, setJobId] = useState('');
+  const [notes, setNotes] = useState('');
+  const [rows, setRows] = useState<Row[]>(() => [emptyRow()]);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<unknown>(null);
+
+  const active = useActiveWarehouses();
+  const settings = useLoad(() => adjustmentsApi.settings(), []);
+  const items = useLoad(() => api.items({ active: 'true', ...(warehouseId ? { warehouseId } : {}) }), [warehouseId]);
+  // jobs come from Engineering works (Pro); without it there are none to pick
+  const jobs = useLoad(() => worksApi.jobs({ status: 'open' }).catch((): JobSummaryView[] => []), []);
+
+  useEffect(() => {
+    if (!warehouseId && active[0]) setWarehouseId(active[0].id);
+  }, [active, warehouseId]);
+
+  useEffect(() => {
+    if (!id) return;
+    adjustmentsApi.get(id).then((d: AdjustmentView) => {
+      if (!d.actions.includes('edit')) { go(`stock-adjustment/${d.id}`); return; }
+      setDate(d.date);
+      setWarehouseId(d.warehouseId);
+      setReason(d.reason);
+      setJobId(d.job?.id ?? '');
+      setNotes(d.notes);
+      setRows(d.lines.map((l) => ({ key: rowKey++, itemId: l.itemId, dir: l.qtyMilli < 0 ? 'out' : 'in', qtyMilli: Math.abs(l.qtyMilli), unitCost: l.unitCost })));
+      setReady(true);
+    }, setLoadError);
+  }, [id]);
+
+  // the saved document's own account (when it differs from the reason's default) shows as an override
+  useEffect(() => {
+    if (!id || !settings.data) return;
+    adjustmentsApi.get(id).then((d) => {
+      if (d.accountCode !== settings.data!.accounts[d.reason]) setAccountOverride(d.accountCode);
+    }, () => {});
+  }, [id, settings.data]);
+
+  const defaultAccount = settings.data?.accounts[reason] ?? '';
+  const account = accountOverride ?? defaultAccount;
+  const allowIn = reason !== 'job';
+
+  const itemById = useMemo(() => new Map((items.data ?? []).map((it) => [it.id, it])), [items.data]);
+  const itemOptions: PickOption[] = (items.data ?? []).filter((it) => it.trackStock).map((it) => ({
+    id: it.id, code: it.code, label: i18n.name(it.name), search: `${it.name.ar} ${it.name.en} ${it.name.ku} ${it.barcode}`,
+    hint: `${qtyText(i18n, it.qtyMilli)} ${unitName(i18n, it.unit)}`
+  }));
+  const jobOptions: PickOption[] = (jobs.data ?? []).map((j) => ({ id: j.id, code: j.number, label: j.title, hint: j.party.name, search: j.party.name }));
+
+  const lines = rows.filter((r) => r.itemId);
+  const valueOf = (r: Row) => {
+    const it = itemById.get(r.itemId);
+    if (!it) return 0;
+    if (r.dir === 'in' && r.unitCost !== null) return lineAmount(r.qtyMilli ?? 0, r.unitCost);
+    return lineAmount(r.qtyMilli ?? 0, averageCost(it.qtyMilli, it.value));
+  };
+  const totalOut = lines.filter((r) => r.dir === 'out').reduce((s, r) => s + valueOf(r), 0);
+  const totalIn = lines.filter((r) => r.dir === 'in').reduce((s, r) => s + valueOf(r), 0);
+
+  const update = (key: number, patch: Partial<Row>) => setRows((rs) => rs.map((r) => (r.key === key ? { ...r, ...patch } : r)));
+  const remove = (key: number) => setRows((rs) => (rs.length > 1 ? rs.filter((r) => r.key !== key) : [emptyRow()]));
+  function pickItem(key: number, itemId: string) {
+    setRows((rs) => {
+      const next = rs.map((r) => (r.key === key ? { ...r, itemId } : r));
+      const last = next[next.length - 1];
+      return last?.itemId ? [...next, emptyRow(last.dir)] : next;
+    });
+  }
+  function changeReason(r: AdjustmentReason) {
+    setReason(r);
+    setAccountOverride(null);
+    if (r !== 'job') setJobId('');
+    if (r === 'job') setRows((rs) => rs.map((x) => ({ ...x, dir: 'out' })));
+  }
+
+  function input(): AdjustmentInput {
+    return {
+      date, warehouseId, reason, notes,
+      ...(accountOverride && accountOverride !== defaultAccount ? { accountCode: accountOverride } : {}),
+      ...(reason === 'job' && jobId ? { jobId } : {}),
+      lines: lines.map((r) => ({
+        itemId: r.itemId,
+        qtyMilli: (r.dir === 'out' ? -1 : 1) * (r.qtyMilli ?? 0),
+        ...(r.dir === 'in' && r.unitCost !== null ? { unitCost: r.unitCost } : {})
+      }))
+    };
+  }
+
+  async function save(post: boolean) {
+    if (post && !window.confirm(t('adj_postConfirm'))) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const body = input();
+      const saved = savedId ? await adjustmentsApi.update(savedId, body) : await adjustmentsApi.create(body);
+      setSavedId(saved.id);
+      if (post) {
+        await adjustmentsApi.post(saved.id);
+        await reloadAccounts();
+        toast(t('a_post'));
+      } else {
+        toast(t('saved'));
+      }
+      go(`stock-adjustment/${saved.id}`);
+    } catch (e) {
+      setError(e);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  if (loadError) return <ErrorBox error={loadError} />;
+  if (!ready) return null;
+
+  return (
+    <div className="stack" style={{ maxWidth: 1100 }}>
+      <div className="card pad stack">
+        <h2 style={{ fontSize: 18 }}>{savedId ? `${t('editTitle')} — ${t('adj_one')}` : t('adj_new')}</h2>
+        <div className="field">
+          <span>{t('adj_reason')}</span>
+          <div className="track" style={{ flexWrap: 'wrap' }}>
+            {ADJUSTMENT_REASONS.filter((r) => r !== 'count' || reason === 'count').map((r) => (
+              <button key={r} type="button" aria-pressed={reason === r} onClick={() => changeReason(r)}>{t(reasonKey(r))}</button>
+            ))}
+          </div>
+        </div>
+        <div className="grid-3">
+          <label className="field"><span>{t('date')}</span><input className="input" type="date" value={date} onChange={(e) => setDate(e.target.value)} /></label>
+          <label className="field">
+            <span>{t('warehouse')}</span>
+            <select className="input" value={warehouseId} onChange={(e) => setWarehouseId(e.target.value)}>
+              {active.map((w) => <option key={w.id} value={w.id}>{i18n.name(w.name)}</option>)}
+            </select>
+          </label>
+          {reason === 'job' ? (
+            <div className="field">
+              <span>{t('adj_job')}</span>
+              {jobOptions.length
+                ? <SearchCombo value={jobId} options={jobOptions} onChange={setJobId} placeholder={t('adj_chooseJob')} ariaLabel={t('adj_job')} />
+                : <span className="muted small">{t('adj_noJobs')}</span>}
+            </div>
+          ) : (
+            <div className="field">
+              <span>{t('adj_account')}</span>
+              {settings.data && <AccountCombo value={account} onChange={setAccountOverride} filter={(a) => !a.code.startsWith('13')} ariaLabel={t('adj_account')} />}
+              <span className="muted small">{t('adj_accountHint')}</span>
+            </div>
+          )}
+        </div>
+      </div>
+
+      <div className="card">
+        <div style={{ padding: '14px 16px 8px' }}><h2>{t('adj_lines')}</h2></div>
+        <table className="table">
+          <thead>
+            <tr>
+              <th style={{ width: 36 }}>#</th>
+              <th style={{ width: '34%' }}>{t('item')}</th>
+              {allowIn && <th style={{ width: 150 }}>{t('adj_direction')}</th>}
+              <th className="amount" style={{ width: 130 }}>{t('qty')}</th>
+              <th className="amount" style={{ width: 170 }}>{t('unitCost')}</th>
+              <th className="amount">{t('moveValue')}</th>
+              <th style={{ width: 44 }} />
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((r, i) => {
+              const it = itemById.get(r.itemId);
+              const short = it && r.dir === 'out' && (r.qtyMilli ?? 0) > it.qtyMilli;
+              const avg = it ? averageCost(it.qtyMilli, it.value) : 0;
+              return (
+                <tr key={r.key}>
+                  <td className="muted num">{i18n.int(i + 1)}</td>
+                  <td>
+                    <SearchCombo value={r.itemId} options={itemOptions} onChange={(v) => pickItem(r.key, v)} placeholder={t('chooseItem')} ariaLabel={t('item')} />
+                    {it && (
+                      <div className="small" style={{ marginTop: 3, color: short ? 'var(--bad)' : undefined }}>
+                        <span className={short ? '' : 'muted'}>{t('adj_onHand')}: {qtyText(i18n, it.qtyMilli)}</span>
+                        <span className="muted"> · {t('adj_after')}: {qtyText(i18n, it.qtyMilli + (r.dir === 'out' ? -1 : 1) * (r.qtyMilli ?? 0))}</span>
+                      </div>
+                    )}
+                  </td>
+                  {allowIn && (
+                    <td>
+                      <div className="track">
+                        <button type="button" aria-pressed={r.dir === 'out'} onClick={() => update(r.key, { dir: 'out' })}>{t('adj_outShort')} −</button>
+                        <button type="button" aria-pressed={r.dir === 'in'} onClick={() => update(r.key, { dir: 'in' })}>{t('adj_inShort')} +</button>
+                      </div>
+                    </td>
+                  )}
+                  <td>
+                    <QtyInput value={r.qtyMilli} onChange={(v) => update(r.key, { qtyMilli: v })} ariaLabel={t('qty')} />
+                    {it && <div className="muted small" style={{ textAlign: 'end', marginTop: 2 }}>{unitName(i18n, it.unit)}</div>}
+                  </td>
+                  <td>
+                    {r.dir === 'in'
+                      ? <AmountInput value={r.unitCost} currency="IQD" onChange={(v) => update(r.key, { unitCost: v })} ariaLabel={t('unitCost')} />
+                      : <div className="amount muted" title={t('adj_avgCost')}>{it ? i18n.money(avg, 'IQD') : ''}</div>}
+                  </td>
+                  <td className="amount" style={{ color: r.itemId ? (r.dir === 'out' ? 'var(--bad)' : 'var(--ok)') : undefined }}>
+                    {r.itemId ? `${r.dir === 'out' ? '−' : '+'}${i18n.money(valueOf(r), 'IQD')}` : ''}
+                  </td>
+                  <td><button type="button" className="btn icon danger" onClick={() => remove(r.key)} aria-label={t('removeLine')} title={t('removeLine')}><Icon name="x" size={16} /></button></td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+        <div className="row" style={{ padding: '10px 16px 14px' }}>
+          <button type="button" className="btn small" onClick={() => setRows((rs) => [...rs, emptyRow()])}><Icon name="plus" size={15} />{t('addLine')}</button>
+          <span className="spacer" />
+          <div className="stack" style={{ gap: 2, alignItems: 'flex-end' }}>
+            {totalOut > 0 && <div className="totals"><span>{t('adj_valueOut')}</span><strong className="num">{i18n.money(totalOut, 'IQD')}</strong></div>}
+            {totalIn > 0 && <div className="totals"><span>{t('adj_valueIn')}</span><strong className="num">{i18n.money(totalIn, 'IQD')}</strong></div>}
+            {(totalOut > 0 || totalIn > 0) && <span className="muted small">{t('adj_estimate')}</span>}
+          </div>
+        </div>
+        {allowIn && <p className="muted small" style={{ margin: 0, padding: '0 16px 14px' }}>{t('adj_costHint')}</p>}
+      </div>
+
+      <label className="field"><span>{t('notes')}</span><input className="input" value={notes} maxLength={500} onChange={(e) => setNotes(e.target.value)} /></label>
+
+      <ErrorBox error={error} />
+      <div className="row">
+        <button type="button" className="btn primary" onClick={() => save(true)} disabled={busy || lines.length === 0}><Icon name="check" size={16} />{t('adj_post')}</button>
+        <button type="button" className="btn" onClick={() => save(false)} disabled={busy || lines.length === 0}>{busy ? t('saving') : t('saveDraft')}</button>
+        <button type="button" className="btn" onClick={() => history.back()}>{t('cancel')}</button>
+      </div>
+    </div>
+  );
+}
+
+// ——— detail ———
+
+export function StockAdjustmentDetail({ id }: { id: string }) {
+  const i18n = useI18n();
+  const { t } = i18n;
+  const toast = useToast();
+  const { settings, reloadAccounts } = useData();
+  const { data, error, reload } = useLoad(() => adjustmentsApi.get(id), [id]);
+  const [busy, setBusy] = useState(false);
+  const [actionError, setActionError] = useState<unknown>(null);
+  const [cancelling, setCancelling] = useState(false);
+  const [cancelDate, setCancelDate] = useState(todayIso());
+
+  if (error) return <ErrorBox error={error} />;
+  if (!data) return null;
+  const d = data;
+  const company = settings ? i18n.name(settings.companyName) : '';
+  const hasIn = d.lines.some((l) => l.qtyMilli > 0);
+
+  async function act(fn: () => Promise<unknown>, message: string) {
+    setBusy(true);
+    setActionError(null);
+    try {
+      await fn();
+      await reloadAccounts();
+      toast(message);
+      setCancelling(false);
+      reload();
+    } catch (e) {
+      setActionError(e);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function remove() {
+    if (!window.confirm(t('confirmDelete'))) return;
+    setBusy(true);
+    try {
+      await adjustmentsApi.remove(id);
+      toast(t('a_delete'));
+      go('stock-adjustments');
+    } catch (e) {
+      setActionError(e);
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="stack" style={{ maxWidth: 980 }}>
+      <div className="row no-print">
+        <button type="button" className="btn" onClick={() => history.back()}>{t('back')}</button>
+        <span className="spacer" />
+        {d.actions.includes('edit') && <a className="btn" href={href(`edit-stock-adjustment/${d.id}`)}>{t('actEdit')}</a>}
+        {d.actions.includes('delete') && <button type="button" className="btn danger" disabled={busy} onClick={remove}>{t('actDelete')}</button>}
+        {d.actions.includes('post') && (
+          <button type="button" className="btn primary" disabled={busy} onClick={() => { if (window.confirm(t('adj_postConfirm'))) void act(() => adjustmentsApi.post(id), t('a_post')); }}>
+            <Icon name="check" size={16} />{t('adj_post')}
+          </button>
+        )}
+        {d.actions.includes('cancel') && <button type="button" className="btn danger" disabled={busy} onClick={() => setCancelling(true)}><Icon name="undo" size={16} />{t('adj_cancel')}</button>}
+        <button type="button" className="btn" onClick={() => window.print()}><Icon name="printer" size={16} />{t('print')}</button>
+      </div>
+      <ErrorBox error={cancelling ? null : actionError} />
+      {d.status === 'posted' && <div className="alert info no-print">{t('adj_postedNote')}</div>}
+
+      <div className="paper">
+        <div className="paper-head">
+          <div style={{ flex: 1 }}>
+            <div className="company-line">{company}</div>
+            <div className="paper-title">{t('adj_one')} — {t(reasonKey(d.reason))}</div>
+            <div style={{ marginTop: 4 }} className="no-print"><InvoiceStatusChip status={d.status} /></div>
+            {d.status === 'cancelled' && <div className="print-only" style={{ color: 'var(--bad)', fontWeight: 700 }}>{t('cancelled')}</div>}
+          </div>
+          <div className="paper-meta">
+            <span className="muted">{t('number')}</span><strong className="ltr">{d.number ?? t('draft')}</strong>
+            <span className="muted">{t('date')}</span><strong className="num">{i18n.date(d.date)}</strong>
+          </div>
+        </div>
+
+        <div className="grid-2" style={{ marginBottom: 14 }}>
+          <div>
+            <div className="muted small">{t('warehouse')}</div>
+            <div style={{ fontWeight: 700 }}>{i18n.name(d.warehouseName)}</div>
+          </div>
+          <div>
+            {d.job ? (
+              <><div className="muted small">{t('adj_job')}</div><div><span className="ltr">{d.job.number}</span> — {d.job.title}</div></>
+            ) : (
+              <><div className="muted small">{t('adj_account')}</div><div><span className="tree-code">{d.accountCode}</span> {d.accountName ? i18n.name(d.accountName) : ''}</div></>
+            )}
+            {hasIn && <div className="muted small" style={{ marginTop: 4 }}>{t('adj_gainAccount')}: <span className="tree-code">{d.gainAccountCode}</span></div>}
+          </div>
+        </div>
+
+        <table className="table">
+          <thead>
+            <tr>
+              <th style={{ width: 36 }}>#</th><th style={{ width: 90 }}>{t('code')}</th><th>{t('item')}</th>
+              <th>{t('adj_direction')}</th><th className="amount">{t('qty')}</th><th className="amount">{t('moveValue')}</th>
+            </tr>
+          </thead>
+          <tbody>
+            {d.lines.map((l) => (
+              <tr key={l.seq}>
+                <td className="num">{i18n.int(l.seq)}</td>
+                <td><span className="ltr">{l.itemCode}</span></td>
+                <td>{i18n.name(l.itemName)}</td>
+                <td><span className={`chip ${l.qtyMilli < 0 ? 'bad' : 'ok'}`}>{l.qtyMilli < 0 ? t('adj_outShort') : t('adj_inShort')}</span></td>
+                <td className="amount">{qtyText(i18n, Math.abs(l.qtyMilli))} <span className="muted small">{unitName(i18n, l.unit)}</span></td>
+                <td className="amount">
+                  {l.value !== null ? i18n.money(Math.abs(l.value), 'IQD') : l.qtyMilli > 0 && l.unitCost !== null ? i18n.money(lineAmount(l.qtyMilli, l.unitCost), 'IQD') : ''}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+          {d.status !== 'draft' && (
+            <tfoot>
+              {d.valueOut > 0 && <tr><td colSpan={5}>{t('adj_valueOut')}</td><td className="amount">{i18n.money(d.valueOut, 'IQD')}</td></tr>}
+              {d.valueIn > 0 && <tr><td colSpan={5}>{t('adj_valueIn')}</td><td className="amount">{i18n.money(d.valueIn, 'IQD')}</td></tr>}
+            </tfoot>
+          )}
+        </table>
+        {d.notes && <p className="small"><span className="muted">{t('notes')}: </span>{d.notes}</p>}
+        <div className="sigs" style={{ gridTemplateColumns: 'repeat(2, minmax(0, 1fr))' }}>
+          <div className="sig done"><div className="muted small">{t('preparedBy')}</div><div className="who">{d.createdBy}</div></div>
+          <div className="sig"><div className="muted small">{t('warehouse')}</div><div className="who">&nbsp;</div></div>
+        </div>
+      </div>
+
+      {(d.entry || d.reversal) && (
+        <div className="card pad no-print row">
+          {d.entry && <span>{t('postingEntry')}: <a href={href(`entry/${d.entry.id}`)} className="ltr">{d.entry.number}</a></span>}
+          {d.reversal && <span>· {t('cancelEntry')}: <a href={href(`entry/${d.reversal.id}`)} className="ltr">{d.reversal.number}</a></span>}
+        </div>
+      )}
+
+      {cancelling && (
+        <Modal title={t('adj_cancel')} onClose={() => setCancelling(false)}>
+          <div className="stack">
+            <p style={{ margin: 0 }}>{t('adj_cancelHelp')}</p>
+            <label className="field"><span>{t('cancelDate')}</span><input className="input" type="date" value={cancelDate} onChange={(e) => setCancelDate(e.target.value)} /></label>
+            <ErrorBox error={actionError} />
+            <div className="row">
+              <button type="button" className="btn danger" disabled={busy} onClick={() => act(() => adjustmentsApi.cancel(id, cancelDate), t('a_cancel'))}>{t('confirm')}</button>
+              <button type="button" className="btn" onClick={() => setCancelling(false)}>{t('cancel')}</button>
+            </div>
+          </div>
+        </Modal>
+      )}
+    </div>
+  );
+}
+
+// ——— stock count ———
+
+export function StockCount() {
+  const i18n = useI18n();
+  const { t } = i18n;
+  const toast = useToast();
+  const active = useActiveWarehouses();
+  const [warehouseId, setWarehouseId] = useState('');
+  const [date, setDate] = useState(todayIso());
+  const [counted, setCounted] = useState<Map<string, number>>(new Map());
+  const [query, setQuery] = useState('');
+  const [view, setView] = useState<'all' | 'counted' | 'diff'>('all');
+  const [full, setFull] = useState(false);
+  const [notes, setNotes] = useState('');
+  const [pasting, setPasting] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<unknown>(null);
+  const [message, setMessage] = useState('');
+  const scanRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (!warehouseId && active[0]) setWarehouseId(active[0].id);
+  }, [active, warehouseId]);
+  const sheet = useLoad(() => (warehouseId ? adjustmentsApi.countSheet(warehouseId) : Promise.resolve([] as CountSheetRow[])), [warehouseId]);
+  useEffect(() => { setCounted(new Map()); }, [warehouseId]);
+
+  const rows = sheet.data ?? [];
+  const byCode = useMemo(() => {
+    const m = new Map<string, CountSheetRow>();
+    for (const r of rows) {
+      m.set(r.code.trim().toUpperCase(), r);
+      if (r.barcode) m.set(r.barcode.trim().toUpperCase(), r);
+    }
+    return m;
+  }, [rows]);
+
+  const countedOf = (r: CountSheetRow) => counted.get(r.itemId) ?? (full ? 0 : null);
+  const diffOf = (r: CountSheetRow) => {
+    const c = countedOf(r);
+    return c === null ? null : c - r.stockMilli;
+  };
+  const q = query.trim().toLowerCase();
+  const shown = rows.filter((r) => {
+    if (q && !`${r.code} ${r.barcode} ${r.name.ar} ${r.name.en} ${r.name.ku}`.toLowerCase().includes(q)) return false;
+    if (view === 'counted' && !counted.has(r.itemId)) return false;
+    if (view === 'diff' && !diffOf(r)) return false;
+    return true;
+  });
+  const differences = rows.filter((r) => !!diffOf(r)).length;
+
+  const setOne = (itemId: string, v: number | null) => setCounted((m) => {
+    const next = new Map(m);
+    if (v === null) next.delete(itemId); else next.set(itemId, v);
+    return next;
+  });
+
+  /** A scanner types the code and Enter: one more of that item. */
+  function scan() {
+    const hit = byCode.get(query.trim().toUpperCase());
+    if (!hit) return;
+    setOne(hit.itemId, (counted.get(hit.itemId) ?? 0) + 1000);
+    setQuery('');
+    scanRef.current?.focus();
+  }
+
+  function applyText(text: string) {
+    const parsed = parseCountText(text);
+    if (!Array.isArray(parsed)) { setMessage(t('adj_badRow', { n: parsed.badRow })); return; }
+    const unknown: string[] = [];
+    setCounted((m) => {
+      const next = new Map(m);
+      for (const p of parsed) {
+        const hit = byCode.get(p.code.trim().toUpperCase());
+        if (!hit) { unknown.push(p.code); continue; }
+        next.set(hit.itemId, (next.get(hit.itemId) ?? 0) + p.countedMilli);
+      }
+      return next;
+    });
+    setMessage([t('adj_applied', { n: parsed.length }), unknown.length ? t('adj_unknownCodes', { c: unknown.slice(0, 20).join(', ') }) : ''].filter(Boolean).join(' '));
+    setPasting(false);
+  }
+
+  function exportSheet() {
+    downloadCsv(`count-sheet-${date}.csv`, [
+      ['code', 'barcode', 'name', 'books', 'counted'],
+      ...rows.map((r) => [r.code, r.barcode, i18n.name(r.name), r.stockMilli / 1000, ''])
+    ]);
+  }
+
+  async function makeDraft() {
+    setBusy(true);
+    setError(null);
+    try {
+      const result = await adjustmentsApi.count({
+        date, warehouseId, full, ...(notes.trim() ? { notes: notes.trim() } : {}),
+        counts: [...counted].map(([itemId, countedMilli]) => ({ itemId, countedMilli }))
+      });
+      if (result.adjustment) {
+        toast(t('saved'));
+        go(`stock-adjustment/${result.adjustment.id}`);
+      } else {
+        setMessage(t('adj_noDifferences'));
+      }
+    } catch (e) {
+      setError(e);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="stack" style={{ maxWidth: 1100 }}>
+      <div className="card pad stack">
+        <h2 style={{ fontSize: 18 }}>{t('adj_count')}</h2>
+        <p className="muted" style={{ margin: 0 }}>{t('adj_countHelp')}</p>
+        <div className="grid-3">
+          <label className="field">
+            <span>{t('warehouse')}</span>
+            <select className="input" value={warehouseId} onChange={(e) => setWarehouseId(e.target.value)}>
+              {active.map((w) => <option key={w.id} value={w.id}>{i18n.name(w.name)}</option>)}
+            </select>
+          </label>
+          <label className="field"><span>{t('date')}</span><input className="input" type="date" value={date} onChange={(e) => setDate(e.target.value)} /></label>
+          <label className="field"><span>{t('notes')}</span><input className="input" value={notes} maxLength={500} onChange={(e) => setNotes(e.target.value)} /></label>
+        </div>
+        <label className="row" style={{ gap: 8 }}>
+          <input type="checkbox" checked={full} onChange={(e) => setFull(e.target.checked)} />
+          <span>{t('adj_full')}</span>
+        </label>
+      </div>
+
+      <div className="row no-print">
+        <input
+          ref={scanRef} className="input" style={{ maxWidth: 340 }} value={query} placeholder={t('adj_searchCount')} aria-label={t('adj_searchCount')}
+          onChange={(e) => setQuery(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); scan(); } }}
+        />
+        <div className="track">
+          <button type="button" aria-pressed={view === 'all'} onClick={() => setView('all')}>{t('all')}</button>
+          <button type="button" aria-pressed={view === 'counted'} onClick={() => setView('counted')}>{t('adj_onlyCounted')}</button>
+          <button type="button" aria-pressed={view === 'diff'} onClick={() => setView('diff')}>{t('adj_onlyDiff')}</button>
+        </div>
+        <span className="spacer" />
+        <button type="button" className="btn" onClick={() => setPasting(true)}><Icon name="upload" size={16} />{t('adj_paste')}</button>
+        <button type="button" className="btn" onClick={exportSheet} disabled={!rows.length}><Icon name="download" size={16} />{t('adj_exportSheet')}</button>
+        <button type="button" className="btn" onClick={() => window.print()}><Icon name="printer" size={16} />{t('adj_printSheet')}</button>
+      </div>
+      {message && <div className="alert info">{message}</div>}
+      <ErrorBox error={sheet.error ?? error} />
+
+      <div className="card">
+        <table className="table">
+          <thead>
+            <tr>
+              <th style={{ width: 100 }}>{t('code')}</th><th>{t('item')}</th>
+              <th className="amount">{t('adj_books')}</th><th className="amount" style={{ width: 150 }}>{t('adj_counted')}</th><th className="amount">{t('adj_difference')}</th>
+            </tr>
+          </thead>
+          <tbody>
+            {shown.map((r) => {
+              const diff = diffOf(r);
+              return (
+                <tr key={r.itemId}>
+                  <td><span className="ltr">{r.code}</span></td>
+                  <td>{i18n.name(r.name)} <span className="muted small">{unitName(i18n, r.unit)}</span></td>
+                  <td className="amount">{qtyText(i18n, r.stockMilli)}</td>
+                  <td><QtyInput value={counted.get(r.itemId) ?? null} onChange={(v) => setOne(r.itemId, v)} ariaLabel={`${t('adj_counted')} ${r.code}`} /></td>
+                  <td className="amount" style={{ color: diff ? (diff < 0 ? 'var(--bad)' : 'var(--ok)') : undefined, fontWeight: diff ? 700 : undefined }}>
+                    {diff === null ? '' : `${diff > 0 ? '+' : diff < 0 ? '−' : ''}${qtyText(i18n, Math.abs(diff))}`}
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+
+      <div className="row no-print">
+        <button type="button" className="btn primary" disabled={busy || (!full && counted.size === 0)} onClick={makeDraft}><Icon name="check" size={16} />{t('adj_makeDraft')}</button>
+        <span className="muted">{t('adj_countedSummary', { n: counted.size })} · {t('adj_diffSummary', { n: differences })}</span>
+        <span className="spacer" />
+        <button type="button" className="btn" onClick={() => history.back()}>{t('cancel')}</button>
+      </div>
+
+      {pasting && <PasteCounts onApply={applyText} onClose={() => setPasting(false)} />}
+    </div>
+  );
+}
+
+function PasteCounts({ onApply, onClose }: { onApply(text: string): void; onClose(): void }) {
+  const { t } = useI18n();
+  const [text, setText] = useState('');
+  async function readFile(file: File | undefined) {
+    if (!file || file.size > 5_000_000) return;
+    setText(await file.text());
+  }
+  return (
+    <Modal title={t('adj_paste')} onClose={onClose}>
+      <div className="stack">
+        <p className="muted" style={{ margin: 0 }}>{t('adj_pasteHelp')}</p>
+        <textarea className="input ltr" rows={10} value={text} onChange={(e) => setText(e.target.value)} placeholder={'PIPE-1, 12\n6260000000011, 4'} style={{ fontFamily: 'monospace' }} />
+        <label className="btn" style={{ alignSelf: 'flex-start' }}>
+          <Icon name="upload" size={16} />{t('adj_importCsv')}
+          <input type="file" accept=".csv,.txt,text/csv,text/plain" hidden onChange={(e) => void readFile(e.target.files?.[0])} />
+        </label>
+        <div className="row">
+          <button type="button" className="btn primary" disabled={!text.trim()} onClick={() => onApply(text)}>{t('adj_apply')}</button>
+          <button type="button" className="btn" onClick={onClose}>{t('cancel')}</button>
+        </div>
+      </div>
+    </Modal>
+  );
+}

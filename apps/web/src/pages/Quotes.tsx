@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { amountInWords, formatQty, lineAmount, rateFromX100, todayIso, toWesternDigits, type CurrencyCode } from '@qasa/core';
 import { api } from '../api.ts';
-import { AmountInput, ErrorBox, Icon, Modal, QtyInput, SearchCombo, useData, useLoad, usePageNav, useToast, type PickOption } from '../components.tsx';
+import { EmptyState, AmountInput, ErrorBox, Icon, Modal, QtyInput, SearchCombo, useData, useLoad, usePageNav, useToast, type PickOption } from '../components.tsx';
 import { useI18n, type I18n, type Key } from '../i18n.ts';
 import {
   QUOTE_STATUSES, quotesApi, type QuoteInput, type QuoteLineInput, type QuoteMove, type QuoteStatus, type QuoteSummaryView, type QuoteView
@@ -78,7 +78,7 @@ export function Quotes() {
 function QuotesTable({ quotes }: { quotes: QuoteSummaryView[] }) {
   const i18n = useI18n();
   const { t } = i18n;
-  if (!quotes.length) return <div className="pad muted">{t('qt_none')}</div>;
+  if (!quotes.length) return <EmptyState icon="invoice" title={t('es_quotes')} text={t('es_quotesText')} />;
   return (
     <table className="table">
       <thead>

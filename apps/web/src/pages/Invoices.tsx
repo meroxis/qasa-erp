@@ -1,17 +1,18 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   amountInWords, invoiceTotals, remainingShare, rateFromX100, roundHalfUp, toBase, todayIso, toWesternDigits,
   type CurrencyCode, type InvoiceDocKind, type InvoiceInput, type InvoiceKind, type InvoiceStatus, type PaymentMode
 } from '@qasa/core';
 import { api, ApiError, type InvoiceView, type ItemView } from '../api.ts';
 import {
-  AccountCombo, AmountInput, ErrorBox, Icon, InvoiceStatusChip, Modal, QtyInput, SearchCombo, useData, useLoad, usePageNav, useToast, type PageNav, type PickOption
+  AccountCombo, AmountInput, EmptyState, ErrorBox, Icon, InvoiceStatusChip, Modal, QtyInput, SearchCombo, useData, useLoad, usePageNav, useToast, type PageNav, type PickOption
 } from '../components.tsx';
 import { useI18n } from '../i18n.ts';
 import { go, href } from '../router.ts';
 import { InvoicesTable } from './Parties.tsx';
 import { averageCost, qtyText, unitName } from './Items.tsx';
 import { InvoiceQr } from '../industry/InvoiceQr.tsx';
+import { pricesApi } from '../industry/prices-api.ts';
 
 const STATUSES: (InvoiceStatus | '')[] = ['', 'draft', 'posted', 'cancelled'];
 
@@ -41,7 +42,9 @@ export function Invoices({ kind }: { kind: InvoiceDocKind }) {
         </div>
       </div>
       <ErrorBox error={error} />
-      <div className="card">{data && <InvoicesTable invoices={data} />}</div>
+      <div className="card">{data && (data.length > 0 ? <InvoicesTable invoices={data} /> : q.trim() || status
+        ? <EmptyState compact icon="search" title={t('es_search')} text={t('es_searchText')} />
+        : <EmptyState icon="invoice" title={t('es_invoices')} text={t('es_invoicesText')} action={isReturnKind(kind) ? undefined : { label: kind === 'sale' ? t('newSale') : t('newPurchase'), icon: 'plus', href: href(`new-invoice/${kind}`) }} />)}</div>
     </div>
   );
 }
@@ -142,6 +145,26 @@ export function InvoiceEditor({ kind: initialKind, id, partyId: initialParty }: 
   const update = (key: number, patch: Partial<Row>) => setRows((rs) => rs.map((r) => (r.key === key ? { ...r, ...patch } : r)));
   const remove = (key: number) => setRows((rs) => (rs.length > 1 ? rs.filter((r) => r.key !== key) : [emptyRow()]));
 
+  // Sale prices the program filled in (not typed by the user), by line: the customer's price list
+  // (wholesale or retail) replaces them, and they follow a change of customer or currency.
+  const autoPrices = useRef(new Map<number, number | null>());
+  function askPrice(key: number, itemId: string, expected: number | null) {
+    if (kind !== 'sale') return;
+    autoPrices.current.set(key, expected);
+    pricesApi.priceFor(itemId, partyId || null, currency).then((q) => {
+      setRows((rs) => rs.map((r) => {
+        if (r.key !== key || r.itemId !== itemId || autoPrices.current.get(key) !== r.unitPrice) return r;
+        autoPrices.current.set(key, q.price);
+        return { ...r, unitPrice: q.price };
+      }));
+    }).catch(() => { /* the catalog price stays */ });
+  }
+  useEffect(() => {
+    if (kind !== 'sale') return;
+    for (const r of rows) if (r.itemId && autoPrices.current.has(r.key) && autoPrices.current.get(r.key) === r.unitPrice) askPrice(r.key, r.itemId, r.unitPrice);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [partyId, currency]);
+
   function pickItem(key: number, itemId: string) {
     const it: ItemView | undefined = itemById.get(itemId);
     let price: number | null = null;
@@ -150,10 +173,12 @@ export function InvoiceEditor({ kind: initialKind, id, partyId: initialParty }: 
         ? convert(it.salePrice, it.saleCurrency, currency, priceRateX100)
         : it.qtyMilli > 0 ? convert(averageCost(it.qtyMilli, it.value), 'IQD', currency, priceRateX100) : null;
     }
+    const filled = price ?? rows.find((r) => r.key === key)?.unitPrice ?? null;
     setRows((rs) => {
-      const next = rs.map((r) => (r.key === key ? { ...r, itemId, unitPrice: price ?? r.unitPrice } : r));
+      const next = rs.map((r) => (r.key === key ? { ...r, itemId, unitPrice: filled } : r));
       return next[next.length - 1]?.itemId ? [...next, emptyRow()] : next;
     });
+    askPrice(key, itemId, filled);
   }
 
   function input(): InvoiceInput | null {

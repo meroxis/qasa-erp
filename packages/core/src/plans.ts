@@ -55,7 +55,7 @@ export const PLANS: Record<PlanId, PlanDefinition> = {
   business: { id: 'business', limits: { companies: null, users: null, warehouses: null }, features: [...PRO_FEATURES, 'onlineEdition', 'branches', 'databaseServer', 'realEstate'] }
 };
 
-/** Length of the free Pro trial, once per company. */
+/** Length of the free trial (every paid feature), once per company and PC; it starts by itself on the first run. */
 export const TRIAL_DAYS = 30;
 /** Days after a license's last day during which it keeps working (with a reminder), to allow for renewal. */
 export const GRACE_DAYS = 14;
@@ -124,9 +124,10 @@ export function resolvePlan(input: { license: LicenseInfo | null; trialStarted: 
       ...(license.companies !== undefined ? { companies: license.companies } : {})
     };
   } else if (trialActive) {
-    plan = 'pro';
+    // the first month: everything Qasa ERP does (Business), so every kind of company can try its own pages
+    plan = 'business';
     source = 'trial';
-    limits = PLANS.pro.limits;
+    limits = PLANS.business.limits;
   }
   return { plan, source, licenseState: state, graceEnds, trialEnds, trialActive, limits: { ...limits }, features: [...PLANS[plan].features] };
 }

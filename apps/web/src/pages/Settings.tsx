@@ -9,6 +9,7 @@ import { href } from '../router.ts';
 import { encodeQr, qrSvgPath } from '../industry/qr.ts';
 import { UsageCard } from '../industry/UsageCard.tsx';
 import { HelpPanel } from '../industry/SupportButton.tsx';
+import { UpdateSettings } from '../industry/UpdateSettings.tsx';
 import { LegalPanel } from '../industry/LegalPanel.tsx';
 import { GraphicsSetting } from '../industry/GraphicsSetting.tsx';
 
@@ -19,6 +20,7 @@ export function Settings({ admin }: { admin: boolean }) {
       <DisplaySettings />
       {admin && <CompanySettings />}
       <HelpPanel />
+      <UpdateSettings />
       <UsageCard admin={admin} />
       <LegalPanel />
     </div>

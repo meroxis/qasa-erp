@@ -21,6 +21,11 @@ import { USAGE_TEXT } from './i18n/usage.ts';
 import { SOLAR_TEXT } from './i18n/solar.ts';
 import { LEGAL_TEXT } from './i18n/legal.ts';
 import { BRANCH_TEXT } from './i18n/branches.ts';
+import { BANK_TEXT } from './i18n/banking.ts';
+import { ASSET_TEXT } from './i18n/assets.ts';
+import { ADJ_TEXT } from './i18n/adjustments.ts';
+import { PO_TEXT } from './i18n/purchasing.ts';
+import { UI_TEXT } from './i18n/ui.ts';
 import { formatAmount, formatDate, formatInteger, LANGS, toEasternDigits, type CurrencyCode, type DigitStyle, type Lang, type Names } from '@qasa/core';
 
 /** Every UI string in Arabic, English and Kurdish (Sorani) — in that order. */
@@ -43,6 +48,8 @@ const BASE = {
   gIndustry: ['نشاط الشركة', 'Your business', 'چالاکیی کۆمپانیا'],
   err_entry_belongs_to_payroll: ['هذا القيد لرواتب شهر؛ أرجِعه إلى مسودة من صفحة الرواتب.', 'This entry belongs to a payroll month; take it back to draft from the Payroll page.', 'ئەم تۆمارە هی مووچەی مانگێکە؛ لە پەڕەی مووچەوە بیگەڕێنەوە بۆ ڕەشنووس.'],
   err_entry_belongs_to_generator_run: ['هذا القيد لفواتير المولدة لشهر؛ أرجِعه إلى مسودة من صفحة المولدة.', 'This entry bills a generator month; take it back to draft from the Generators page.', 'ئەم تۆمارە پسوولەی مۆلیدەی مانگێکە؛ لە پەڕەی مۆلیدەوە بیگەڕێنەوە بۆ ڕەشنووس.'],
+  err_entry_belongs_to_depreciation: ['هذا القيد لشهر إهلاك؛ ألغِ الشهر من صفحة الموجودات الثابتة.', 'This entry belongs to a depreciation month; cancel the month from the Fixed assets page.', 'ئەم تۆمارە هی مانگێکی داخورانە؛ مانگەکە لە پەڕەی سامانە جێگیرەکان هەڵبوەشێنەوە.'],
+  err_entry_belongs_to_disposal: ['هذا القيد لاستبعاد موجود ثابت؛ تراجع عنه من صفحة الموجود.', 'This entry belongs to an asset disposal; take the disposal back from the asset’s page.', 'ئەم تۆمارە هی لابردنی سامانێکە؛ لە پەڕەی سامانەکەوە بیگەڕێنەوە.'],
   f_phoneApp: ['تطبيق قاصة للموبايل: المسح بالكاميرا، الأسعار والمخزون وإضافة المواد بالصور', 'Qasa phone app: scan with the camera, prices, stock and new items with photos', 'ئەپی قاسە بۆ مۆبایل: سکان بە کامێرا، نرخ و کۆگا و زیادکردنی کاڵا بە وێنە'],
   f_websiteApi: ['ربط المواقع والمتاجر الإلكترونية (API وWooCommerce)', 'Connect websites and online shops (API and WooCommerce)', 'بەستنەوەی ماڵپەڕ و دوکانی ئۆنلاین (API و WooCommerce)'],
   f_generators: ['المولدات الأهلية: المشتركون بالأمبير والجباية والديون', 'Generator owners: subscribers by amps, collections and debts', 'مۆلیدەی ئەهلی: بەشداربووان بە ئەمپێر، کۆکردنەوە و قەرز'],
@@ -588,6 +595,7 @@ const BASE = {
   f_quotes: ['عروض الأسعار وتحويلها إلى فواتير', 'Quotations that become invoices', 'نرخدانان و گۆڕینیان بۆ پسوولە'],
   f_pos: ['نقطة البيع (كاشير) مع الباركود وطابعة الوصولات', 'Point of sale with barcode and receipt printer', 'خاڵی فرۆشتن (کاشێر) لەگەڵ بارکۆد و چاپکەری پسوولە'],
   f_pipeline: ['متابعة المبيعات من أول اتصال إلى الصفقة', 'Sales pipeline from first contact to the deal', 'بەدواداچوونی فرۆشتن لە یەکەم پەیوەندییەوە تا ڕێککەوتن'],
+  f_bankReconciliation: ['مطابقة كشف المصرف مع الدفاتر', 'Bank reconciliation with the books', 'بەراوردکردنی کەشفی بانک لەگەڵ دەفتەرەکان'],
   f_cloudBackup: ['نسخ احتياطي تلقائي مشفّر إلى Google Drive وOneDrive', 'Automatic encrypted backup to Google Drive and OneDrive', 'باکئەپی خۆکاری شفرەکراو بۆ Google Drive و OneDrive'],
   f_branches: ['الفروع والعمل أونلاين', 'Branches and working online', 'لق و کارکردنی ئۆنلاین'],
   f_support: ['الدعم', 'Support', 'پشتگیری'],
@@ -960,7 +968,7 @@ const BASE = {
 
 /** The industry features keep their texts in files of their own (i18n/), in the same three languages. */
 const D = { ...BASE, ...REAL_ESTATE_TEXT, ...MOBILE_TEXT, ...PARTS_TEXT, ...ENGINEERING_TEXT,
-  ...PAYROLL_TEXT, ...POS_TEXT, ...QUOTES_TEXT, ...PIPELINE_TEXT, ...MEDIA_TEXT, ...BRIEF_TEXT, ...CLOUD_TEXT, ...RELAY_TEXT, ...ACTIVATION_TEXT, ...FX_TEXT, ...VERIFY_TEXT, ...GEN_TEXT, ...WEBAPI_TEXT, ...PHONE_TEXT, ...USAGE_TEXT, ...SOLAR_TEXT, ...LEGAL_TEXT, ...BRANCH_TEXT };
+  ...PAYROLL_TEXT, ...POS_TEXT, ...QUOTES_TEXT, ...PIPELINE_TEXT, ...MEDIA_TEXT, ...BRIEF_TEXT, ...CLOUD_TEXT, ...RELAY_TEXT, ...ACTIVATION_TEXT, ...FX_TEXT, ...VERIFY_TEXT, ...GEN_TEXT, ...WEBAPI_TEXT, ...PHONE_TEXT, ...USAGE_TEXT, ...SOLAR_TEXT, ...LEGAL_TEXT, ...BRANCH_TEXT, ...BANK_TEXT, ...ASSET_TEXT, ...ADJ_TEXT, ...PO_TEXT, ...UI_TEXT };
 
 export type Key = keyof typeof D;
 

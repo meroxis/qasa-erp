@@ -1,7 +1,7 @@
 import { Fragment, useEffect, useMemo, useState, type CSSProperties } from 'react';
 import { rateFromX100, rateToX100, todayIso, toWesternDigits, type CurrencyCode } from '@qasa/core';
 import { api, ApiError, type GuarantorInput, type GuarantorView, type PartyView } from '../api.ts';
-import { AccountCombo, AmountInput, ErrorBox, Icon, Modal, SearchCombo, useData, useLoad, usePageNav, useToast, type PickOption } from '../components.tsx';
+import { EmptyState, AccountCombo, AmountInput, ErrorBox, Icon, Modal, SearchCombo, useData, useLoad, usePageNav, useToast, type PickOption } from '../components.tsx';
 import { useI18n, type I18n } from '../i18n.ts';
 import {
   realEstateApi, UNIT_KINDS, type ReProjectDetail, type ReProjectView, type ReSummary, type ReUnitInput, type ReUnitView, type UnitKind, type UnitStatus
@@ -103,7 +103,7 @@ export function RealEstate() {
         {summary?.available && <button type="button" className="btn primary" onClick={() => setCreating(true)}><Icon name="plus" size={16} />{t('re_newProject')}</button>}
       </div>
       <ErrorBox error={error} />
-      {data && !data.length && <div className="card pad muted">{t('re_noProjects')}</div>}
+      {data && !data.length && <div className="card"><EmptyState icon="building" title={t('es_projects')} text={t('es_projectsText')} /></div>}
       {data && data.length > 0 && (
         <div className="grid-3">
           {data.map((p) => <ProjectCard key={p.id} project={p} />)}

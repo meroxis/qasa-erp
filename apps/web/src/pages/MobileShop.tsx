@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { rateFromX100, todayIso, toWesternDigits, type CurrencyCode } from '@qasa/core';
 import { api, ApiError } from '../api.ts';
-import { AccountCombo, AmountInput, ErrorBox, Icon, Modal, SearchCombo, useData, useLoad, useToast, type PickOption } from '../components.tsx';
+import { EmptyState, AccountCombo, AmountInput, ErrorBox, Icon, Modal, SearchCombo, useData, useLoad, useToast, type PickOption } from '../components.tsx';
 import { useI18n, type I18n, type Key } from '../i18n.ts';
 import {
   mobileApi, OPEN_REPAIR, type MobileSummary, type RepairFilter, type RepairInput, type RepairStatus, type RepairView, type SerialLookup,
@@ -184,7 +184,7 @@ function Devices({ available, onChange }: { available: boolean; onChange(): void
 function SerialsTable({ serials, onPick }: { serials: SerialView[]; onPick(s: SerialView): void }) {
   const i18n = useI18n();
   const { t } = i18n;
-  if (!serials.length) return <div className="pad muted">{t('mob_noDevices')}</div>;
+  if (!serials.length) return <EmptyState icon="phone" title={t('es_serials')} text={t('es_serialsText')} />;
   return (
     <table className="table">
       <thead>
@@ -496,7 +496,7 @@ function Repairs({ available, onChange }: { available: boolean; onChange(): void
 function RepairsTable({ repairs, onMove }: { repairs: RepairView[]; onMove?(r: RepairView, s: RepairStatus): void }) {
   const i18n = useI18n();
   const { t } = i18n;
-  if (!repairs.length) return <div className="pad muted">{t('mob_noRepairs')}</div>;
+  if (!repairs.length) return <EmptyState icon="tool" title={t('es_repairs')} text={t('es_repairsText')} />;
   return (
     <table className="table">
       <thead>

@@ -18,8 +18,15 @@ vi.mock('react', () => ({
     }];
   },
   useEffect(fn: () => void) { if (fixture.first) fixture.effects.push(fn); },
-  useMemo<T>(fn: () => T) { return fn(); }
+  useMemo<T>(fn: () => T) { return fn(); },
+  useRef<T>(initial: T) {
+    const i = fixture.cursor++;
+    if (!(i in fixture.states)) fixture.states[i] = { current: initial };
+    return fixture.states[i];
+  }
 }));
+// the price list answer never arrives here, so the catalog price is what gets saved
+vi.mock('../industry/prices-api.ts', () => ({ pricesApi: { priceFor: () => new Promise(() => {}) } }));
 vi.mock('../api.ts', () => ({
   ApiError: Error,
   api: {

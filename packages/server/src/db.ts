@@ -1174,6 +1174,8 @@ const V7 =
     location TEXT,
     status TEXT NOT NULL CHECK (status IN ('active', 'disposed')),
     disposed_on TEXT,
+    -- the draft/posted entry that took the asset off the books (cleared when the disposal is taken back)
+    disposal_entry_id TEXT REFERENCES entries(id),
     notes TEXT,
     created_by TEXT NOT NULL,
     created_at TEXT NOT NULL,

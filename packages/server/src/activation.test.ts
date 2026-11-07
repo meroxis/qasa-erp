@@ -200,10 +200,10 @@ describe('online activation (the official app)', () => {
 describe('the free trial in the official app', () => {
   it('cannot be started again on the same PC, even with the company file reset or a new company', async () => {
     expect((await post('/api/plan/trial')).statusCode).toBe(200);
-    expect(planStatus(db)).toMatchObject({ plan: 'pro', source: 'trial' });
+    expect(planStatus(db)).toMatchObject({ plan: 'business', source: 'trial' });
     deleteSetting(db, 'trial_started');
     deleteSetting(db, 'trial_seal');
-    expect(planStatus(db)).toMatchObject({ plan: 'pro', source: 'trial', trialAvailable: false });
+    expect(planStatus(db)).toMatchObject({ plan: 'business', source: 'trial', trialAvailable: false });
     expect((await post('/api/plan/trial')).statusCode).toBe(409);
     const other = openDatabase(':memory:');
     try {
@@ -217,7 +217,7 @@ describe('the free trial in the official app', () => {
     await post('/api/plan/trial');
     writeSetting(db, 'trial_started', iso(clock + 20 * DAY));
     clock += 25 * DAY;
-    expect(planStatus(db).plan).toBe('pro');
+    expect(planStatus(db).plan).toBe('business');
     clock += 10 * DAY;
     expect(planStatus(db)).toMatchObject({ plan: 'free', trialActive: false });
   });

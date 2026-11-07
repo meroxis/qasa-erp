@@ -319,6 +319,8 @@ export function deleteInvoice(db: Db, id: string, user: string): void {
   transaction(db, () => {
     // a draft made from a quotation: the quotation goes back to accepted, ready to be invoiced again
     db.prepare("UPDATE quotes SET invoice_id = NULL, status = 'accepted' WHERE invoice_id = ?").run(id);
+    // a draft receipt of a purchase order: the order is free to be received again
+    db.prepare('DELETE FROM purchase_order_receipts WHERE invoice_id = ?').run(id);
     db.prepare('DELETE FROM invoices WHERE id = ?').run(id);
     audit(db, user, 'delete', 'invoice', id, { kind: row.kind });
   });

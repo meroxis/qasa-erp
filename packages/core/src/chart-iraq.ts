@@ -32,6 +32,7 @@ export const IRAQI_UNIFIED_CHART: AccountSeed[] = [
   { code: '15', name: { ar: 'الاستثمارات', en: 'Investments', ku: 'وەبەرهێنانەکان' } },
   { code: '16', name: { ar: 'المدينون', en: 'Debtors', ku: 'قەرزارەکان' } },
   { code: '161', name: { ar: 'العملاء', en: 'Customers', ku: 'کڕیاران' } },
+  { code: '162', name: { ar: 'أوراق القبض', en: 'Notes receivable', ku: 'بەڵگەنامەکانی وەرگرتن' } },
   { code: '166', name: { ar: 'حسابات مدينة متنوعة', en: 'Other receivables', ku: 'هەژمارە قەرزارە جۆراوجۆرەکان' } },
   { code: '18', name: { ar: 'النقود', en: 'Cash', ku: 'پارە' } },
   { code: '181', name: { ar: 'نقدية لدى الصندوق', en: 'Cash on hand', ku: 'پارە لە قاسە' } },

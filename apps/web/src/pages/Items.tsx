@@ -1,10 +1,11 @@
 import { useState } from 'react';
 import { formatQty, roundHalfUp, UNITS, type CurrencyCode, type Names, type UnitCode } from '@qasa/core';
 import { api, type ItemInput, type ItemView, type WarehouseView } from '../api.ts';
-import { AmountInput, ErrorBox, Icon, Modal, downloadCsv, useData, useLoad, useToast } from '../components.tsx';
+import { EmptyState, AmountInput, ErrorBox, Icon, Modal, downloadCsv, useData, useLoad, useToast } from '../components.tsx';
 import { useI18n, type I18n, isKey, type Key } from '../i18n.ts';
 import { go, href } from '../router.ts';
 import { ImagePicker, ItemImage } from '../industry/ItemImage.tsx';
+import { WholesalePriceField } from '../industry/WholesalePriceField.tsx';
 
 export function qtyText(i18n: I18n, milli: number): string {
   return formatQty(milli, i18n.digits === 'eastern' && i18n.lang !== 'en' ? 'eastern' : 'western');
@@ -61,7 +62,9 @@ export function Items() {
           </div>
           <ErrorBox error={items.error} />
           <div className="card">
-            {items.data && items.data.length === 0 && <p className="muted" style={{ padding: '14px 16px', margin: 0 }}>{t('noItems')}</p>}
+            {items.data && items.data.length === 0 && (q.trim() || warehouseId
+              ? <EmptyState compact icon="search" title={t('es_search')} text={t('es_searchText')} />
+              : <EmptyState icon="box" title={t('es_items')} text={t('es_itemsText')} action={{ label: t('newItem'), icon: 'plus', onClick: () => setEditing('new') }} secondary={{ label: t('importExcel'), icon: 'upload', href: href('import') }} />)}
             {items.data && items.data.length > 0 && (
               <table className="table">
                 <thead>
@@ -297,6 +300,8 @@ export function ItemDetail({ id }: { id: string }) {
           {it.trackStock && <div className="muted small">{t('stockValue')}: {i18n.money(it.value, 'IQD')}</div>}
         </div>
       </div>
+
+      <div className="no-print"><WholesalePriceField itemId={it.id} /></div>
 
       {it.stock.length > 1 && (
         <div className="card">

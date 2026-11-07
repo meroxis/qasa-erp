@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { amountInWords, formatQty, lineAmount, rateFromX100, todayIso, toBase, toWesternDigits, type CurrencyCode } from '@qasa/core';
 import { api, ApiError } from '../api.ts';
-import { AccountCombo, AmountInput, ErrorBox, Icon, Modal, QtyInput, SearchCombo, useData, useLoad, usePageNav, useToast, type PickOption } from '../components.tsx';
+import { EmptyState, AccountCombo, AmountInput, ErrorBox, Icon, Modal, QtyInput, SearchCombo, useData, useLoad, usePageNav, useToast, type PickOption } from '../components.tsx';
 import { useI18n, type I18n, type Key } from '../i18n.ts';
 import {
   COST_CATEGORIES, JOB_CATEGORIES, JOB_FLOW, LINE_UNITS, worksApi, type CostCategory, type JobCategory, type JobFilter, type JobInput, type JobLineInput,
@@ -120,7 +120,7 @@ export function EngineeringWorks() {
 function Board({ jobs }: { jobs: JobSummaryView[] }) {
   const i18n = useI18n();
   const { t } = i18n;
-  if (!jobs.length) return <div className="card pad muted">{t('ew_noJobs')}</div>;
+  if (!jobs.length) return <div className="card"><EmptyState icon="tool" title={t('es_jobs')} text={t('es_jobsText')} /></div>;
   return (
     <div style={{ display: 'grid', gridAutoFlow: 'column', gridAutoColumns: 'minmax(220px, 1fr)', gap: 12, overflowX: 'auto', paddingBottom: 4 }}>
       {JOB_FLOW.map((s) => {
@@ -154,7 +154,7 @@ function daysSince(iso: string): number {
 function JobsTable({ jobs }: { jobs: JobSummaryView[] }) {
   const i18n = useI18n();
   const { t } = i18n;
-  if (!jobs.length) return <div className="pad muted">{t('ew_noJobs')}</div>;
+  if (!jobs.length) return <EmptyState icon="tool" title={t('es_jobs')} text={t('es_jobsText')} />;
   return (
     <table className="table">
       <thead>

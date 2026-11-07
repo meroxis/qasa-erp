@@ -1029,10 +1029,12 @@ export const MYSQL_TABLES: readonly MysqlObject[] = [
       location TEXT,
       status ${WORD} NOT NULL CHECK (status IN ('active', 'disposed')),
       disposed_on ${WHEN},
+      disposal_entry_id ${ID},
       notes TEXT,
       created_by TEXT NOT NULL,
       created_at ${WHEN} NOT NULL,
       updated_at ${WHEN} NOT NULL,
+      FOREIGN KEY (disposal_entry_id) REFERENCES entries(id),
       FOREIGN KEY (asset_account) REFERENCES accounts(code),
       FOREIGN KEY (accum_account) REFERENCES accounts(code),
       FOREIGN KEY (expense_account) REFERENCES accounts(code)

@@ -1,5 +1,5 @@
-import { useEffect } from 'react';
-import { todayIso } from '@qasa/core';
+import { useEffect, useState } from 'react';
+import { BUSINESS_FEATURE, todayIso } from '@qasa/core';
 import { api } from '../api.ts';
 import { ErrorBox, Icon, StatusChip, useData, useLoad } from '../components.tsx';
 import { useI18n } from '../i18n.ts';
@@ -7,9 +7,10 @@ import { href } from '../router.ts';
 import { EntriesTable } from './Entries.tsx';
 import { briefApi, type DashboardView } from '../industry/brief-api.ts';
 import { moneyBoth } from './Brief.tsx';
-import type { I18n } from '../i18n.ts';
+import type { I18n, Key } from '../i18n.ts';
+import { NAV, toggleFavourite, visibleItems, type NavItem, type NavViewer } from '../nav.ts';
 
-export function Home() {
+export function Home({ viewer, user, favourites }: { viewer: NavViewer; user: string; favourites: string[] }) {
   const i18n = useI18n();
   const { t } = i18n;
   const { accounts, settings, plan, reloadPlan } = useData();
@@ -85,7 +86,7 @@ export function Home() {
           <Icon name="chevron" size={18} />
         </a>
       )}
-      <div className={d ? 'grid-3' : 'grid-4'} style={d ? { gridTemplateColumns: 'repeat(auto-fit, minmax(190px, 1fr))' } : undefined}>
+      <div className={(d ? 'grid-3' : 'grid-4') + ' kpi-grid'} style={d ? { gridTemplateColumns: 'repeat(auto-fit, minmax(190px, 1fr))' } : undefined}>
         {tiles.map((tile) => (
           <div key={tile.label} className="card pad tile">
             <div className="label"><span className="ico"><Icon name={tile.icon} size={18} /></span>{tile.link ? <a href={href(tile.link)}>{tile.label}</a> : tile.label}</div>
@@ -94,6 +95,8 @@ export function Home() {
           </div>
         ))}
       </div>
+      <FirstSteps viewer={viewer} />
+      <Launcher viewer={viewer} user={user} favourites={favourites} />
       {d && <SalesChart d={d} />}
       <div className="card flow">
         <div className="flow-title">
@@ -166,4 +169,107 @@ function compact(v: number): string {
   const a = Math.abs(v);
   const s = a >= 1e9 ? `${+(a / 1e9).toFixed(2)}B` : a >= 1e6 ? `${+(a / 1e6).toFixed(2)}M` : a >= 1e3 ? `${+(a / 1e3).toFixed(0)}K` : String(a);
   return (v < 0 ? '−' : '') + s;
+}
+
+/** The home screen's big tiles, in sections, from the same list as the menu: only what this person may open and what the
+ * company does; ★ pins a page to Favourites at the top of the menu. */
+function Launcher({ viewer, user, favourites }: { viewer: NavViewer; user: string; favourites: string[] }) {
+  const { t } = useI18n();
+  const { plan } = useData();
+  const brief = NAV.flatMap((g) => g.items).find((i) => i.key === 'br_title');
+  const sections = NAV
+    .filter((g) => g.group !== 'gOverview' && g.group !== 'gSystem')
+    .map((g) => ({
+      group: g.group,
+      items: [...(g.group === 'gReports' && brief ? [brief] : []), ...visibleItems(g.items, viewer)].filter((i) => i.tile !== false && i.path !== undefined)
+    }))
+    .filter((s) => s.items.length);
+  return (
+    <section className="launcher no-print" aria-label={t('launchTitle')} data-tour="launcher">
+      {sections.map((s) => (
+        <div key={s.group} className={'launch-section g-' + s.group}>
+          <div className="launch-head">
+            <span className="launch-bar" aria-hidden="true" />
+            <h2>{t(s.group)}</h2>
+            {s.group === 'gIndustry' && <span className="launch-note">{t('bizSectionNote')}</span>}
+          </div>
+          <div className="launch-grid">
+            {s.items.map((item) => <LaunchTile key={item.key} item={item} pinned={favourites.includes(item.key)} user={user} locked={lockOf(item, plan?.features ?? null)} />)}
+          </div>
+        </div>
+      ))}
+    </section>
+  );
+}
+
+function lockOf(item: NavItem, features: readonly string[] | null): string | null {
+  const feature = item.business ? BUSINESS_FEATURE[item.business] : null;
+  if (!feature || !features || features.includes(feature)) return null;
+  return feature === 'realEstate' ? 'Business' : 'Pro';
+}
+
+function LaunchTile({ item, pinned, user, locked }: { item: NavItem; pinned: boolean; user: string; locked: string | null }) {
+  const { t } = useI18n();
+  return (
+    <div className="launch-tile" data-tour={item.key === 'br_title' ? 'brief' : undefined}>
+      <a href={href(item.path ?? '')}>
+        <span className="launch-ico"><Icon name={item.icon} size={22} /></span>
+        <span className="launch-label">{t(item.key)}</span>
+        {locked && <span className="launch-lock">{locked}</span>}
+      </a>
+      <button
+        type="button" className={'launch-pin' + (pinned ? ' on' : '')} aria-pressed={pinned}
+        aria-label={`${t(pinned ? 'pinRemove' : 'pinAdd')}: ${t(item.key)}`} title={t(pinned ? 'pinRemove' : 'pinAdd')}
+        onClick={() => toggleFavourite(user, item.key)}
+      >
+        <svg width="15" height="15" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2.5l2.9 6 6.6.9-4.8 4.6 1.2 6.5L12 17.4l-5.9 3.1 1.2-6.5-4.8-4.6 6.6-.9z" fill={pinned ? 'currentColor' : 'none'} stroke="currentColor" strokeWidth="1.8" strokeLinejoin="round" /></svg>
+      </button>
+    </div>
+  );
+}
+
+const STEPS_HIDDEN = 'qasa.firstSteps.hidden';
+
+/** A new company's first steps, worked out from its own books; hidden once done (or when the person hides it). */
+function FirstSteps({ viewer }: { viewer: NavViewer }) {
+  const i18n = useI18n();
+  const { t } = i18n;
+  const { settings } = useData();
+  const [hidden, setHidden] = useState(() => { try { return localStorage.getItem(STEPS_HIDDEN) === '1'; } catch { return false; } });
+  const parties = useLoad(() => api.parties(), []);
+  const items = useLoad(() => api.items(), []);
+  const sales = useLoad(() => api.invoices({ kind: 'sale', status: 'posted' }), []);
+  const users = useLoad(() => (viewer.admin ? api.users() : Promise.resolve(null)), [viewer.admin]);
+  if (hidden || !settings || !parties.data || !items.data || !sales.data) return null;
+  const named = !!(settings.companyName.ar || settings.companyName.en || settings.companyName.ku);
+  const steps: { key: Key; hint: Key; done: boolean; link: string; icon: string }[] = [
+    { key: 'fsCompany', hint: 'fsCompanyHint', done: named, link: 'settings', icon: 'building' },
+    { key: 'fsImport', hint: 'fsImportHint', done: parties.data.length > 0 || items.data.length > 0, link: viewer.admin ? 'import' : 'items', icon: 'upload' },
+    { key: 'fsInvoice', hint: 'fsInvoiceHint', done: sales.data.length > 0, link: 'new-invoice/sale', icon: 'invoice' }
+  ];
+  if (viewer.admin && users.data) steps.push({ key: 'fsUsers', hint: 'fsUsersHint', done: users.data.length > 1, link: 'users', icon: 'users' });
+  const done = steps.filter((s) => s.done).length;
+  if (done === steps.length) return null;
+  const hide = () => { try { localStorage.setItem(STEPS_HIDDEN, '1'); } catch { /* not available */ } setHidden(true); };
+  return (
+    <section className="card pad first-steps no-print" aria-labelledby="first-steps-title">
+      <div className="fs-head">
+        <h2 id="first-steps-title">{t('fsTitle')}</h2>
+        <span className="small muted">{t('fsProgress', { n: i18n.int(done), m: i18n.int(steps.length) })}</span>
+        <span className="fs-meter" role="progressbar" aria-valuemin={0} aria-valuemax={steps.length} aria-valuenow={done}><span style={{ inlineSize: `${(done / steps.length) * 100}%` }} /></span>
+        <button type="button" className="btn ghost small" onClick={hide}>{t('fsHide')}</button>
+      </div>
+      <ol className="fs-steps">
+        {steps.map((s) => (
+          <li key={s.key} className={s.done ? 'done' : ''}>
+            <a href={href(s.link)}>
+              <span className="fs-dot" aria-hidden="true">{s.done ? <Icon name="check" size={14} /> : <Icon name={s.icon} size={15} />}</span>
+              <span className="fs-text"><strong>{t(s.key)}</strong><span>{t(s.hint)}</span></span>
+              <span className="visually-hidden">{s.done ? t('fsDone') : ''}</span>
+            </a>
+          </li>
+        ))}
+      </ol>
+    </section>
+  );
 }

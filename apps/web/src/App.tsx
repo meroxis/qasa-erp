@@ -10,7 +10,11 @@ import { PasswordModal, SignIn, Users } from './pages/Users.tsx';
 import { SupportButton } from './industry/SupportButton.tsx';
 import { BranchSwitcher } from './industry/BranchSwitcher.tsx';
 import { BRANCH_EVENT } from './industry/branches-api.ts';
-import { BUSINESS_FEATURE, type BusinessType } from '@qasa/core';
+import { BUSINESS_FEATURE } from '@qasa/core';
+import { canSee, FAVOURITES_EVENT, favourites, findPage, NAV, navCollapsed, setNavCollapsed, type NavItem, type NavViewer } from './nav.ts';
+import { CommandPalette } from './industry/CommandPalette.tsx';
+import { Tour, TOUR_EVENT, tourDone } from './industry/Tour.tsx';
+import { UpdateBanner } from './industry/UpdateBanner.tsx';
 import { isReportTab, isSolarTab } from './pages/tabs.ts';
 
 /**
@@ -71,6 +75,18 @@ const Brief = lazyPage(() => import('./pages/Brief.tsx'), 'Brief');
 const Expenses = lazyPage(() => import('./pages/Expenses.tsx'), 'Expenses');
 const MoreReports = lazyPage(() => import('./pages/MoreReports.tsx'), 'MoreReports');
 const Rates = lazyPage(() => import('./pages/Rates.tsx'), 'Rates');
+const Banking = lazyPage(() => import('./pages/Banking.tsx'), 'Banking');
+const ChequeDetail = lazyPage(() => import('./pages/Banking.tsx'), 'ChequeDetail');
+const StatementDetail = lazyPage(() => import('./pages/Banking.tsx'), 'StatementDetail');
+const PurchaseOrders = lazyPage(() => import('./pages/PurchaseOrders.tsx'), 'PurchaseOrders');
+const PurchaseOrderEditor = lazyPage(() => import('./pages/PurchaseOrders.tsx'), 'PurchaseOrderEditor');
+const PurchaseOrderDetail = lazyPage(() => import('./pages/PurchaseOrders.tsx'), 'PurchaseOrderDetail');
+const StockAdjustments = lazyPage(() => import('./pages/StockAdjustments.tsx'), 'StockAdjustments');
+const StockAdjustmentEditor = lazyPage(() => import('./pages/StockAdjustments.tsx'), 'StockAdjustmentEditor');
+const StockAdjustmentDetail = lazyPage(() => import('./pages/StockAdjustments.tsx'), 'StockAdjustmentDetail');
+const StockCount = lazyPage(() => import('./pages/StockAdjustments.tsx'), 'StockCount');
+const FixedAssets = lazyPage(() => import('./pages/FixedAssets.tsx'), 'FixedAssets');
+const FixedAssetDetail = lazyPage(() => import('./pages/FixedAssets.tsx'), 'FixedAssetDetail');
 const GenRun = lazyPage(() => import('./pages/Generators.tsx'), 'GenRun');
 const Generators = lazyPage(() => import('./pages/Generators.tsx'), 'Generators');
 const WebsiteApi = lazyPage(() => import('./pages/WebsiteApi.tsx'), 'WebsiteApi');
@@ -96,84 +112,6 @@ function remember(key: string, value: string): void {
   try { localStorage.setItem(key, value); } catch { /* not available */ }
 }
 
-/** `business`: shown only when the company does that (Settings → Business type). */
-interface NavItem { key: Key; icon: string; path?: string; match?: string[]; adminOnly?: boolean; business?: BusinessType }
-const NAV: { group: Key; items: NavItem[] }[] = [
-  {
-    group: 'gOverview',
-    items: [
-      { key: 'home', icon: 'home', path: '', match: ['', 'home'] },
-      { key: 'br_title', icon: 'sun', path: 'brief', match: ['brief'] }
-    ]
-  },
-  {
-    group: 'gSales',
-    items: [
-      { key: 'pos_title', icon: 'wallet', path: 'pos', match: ['pos', 'pos-shift'] },
-      { key: 'qt_title', icon: 'doc', path: 'quotes', match: ['quotes', 'quote', 'new-quote', 'edit-quote'] },
-      { key: 'invoices', icon: 'invoice', path: 'sales', match: ['sales', 'new-invoice:sale'] },
-      { key: 'customers', icon: 'contact', path: 'customers', match: ['customers'] },
-      { key: 'salesReturns', icon: 'undo', path: 'sales-returns', match: ['sales-returns'] },
-      { key: 'installments', icon: 'cal', path: 'installments', match: ['installments', 'installment', 'new-installment', 'guarantors', 'installments-aging'] },
-      { key: 'pl_title', icon: 'trend', path: 'pipeline', match: ['pipeline'] }
-    ]
-  },
-  {
-    group: 'gPurchases',
-    items: [
-      { key: 'purchaseInvoices', icon: 'cart', path: 'purchases', match: ['purchases', 'new-invoice:purchase'] },
-      { key: 'suppliers', icon: 'truck', path: 'suppliers', match: ['suppliers'] },
-      { key: 'purchaseReturns', icon: 'undo', path: 'purchase-returns', match: ['purchase-returns'] }
-    ]
-  },
-  {
-    group: 'gAccounting',
-    items: [
-      { key: 'vouchers', icon: 'receipt', path: 'entries', match: ['entries', 'entry', 'new', 'edit'] },
-      { key: 'accounts', icon: 'tree', path: 'accounts', match: ['accounts'] },
-      { key: 'trialBalance', icon: 'chart', path: 'trial-balance', match: ['trial-balance'] },
-      { key: 'finalAccounts', icon: 'book', path: 'final-accounts', match: ['final-accounts'] },
-      { key: 'statement', icon: 'doc', path: 'statement', match: ['statement'] },
-      { key: 'fx_title', icon: 'trend', path: 'rates', match: ['rates'] },
-      { key: 'br_expenses', icon: 'wallet', path: 'expenses', match: ['expenses'] },
-      { key: 'br_reports', icon: 'chart', path: 'reports-more/sales-items', match: ['reports-more'] }
-    ]
-  },
-  {
-    group: 'gStock',
-    items: [
-      { key: 'items', icon: 'box', path: 'items', match: ['items', 'item'] },
-      { key: 'stockDocs', icon: 'swap', path: 'stock-docs', match: ['stock-docs', 'stock-doc', 'new-stock-doc', 'edit-stock-doc'] }
-    ]
-  },
-  {
-    // the industry features (Pro and Business)
-    group: 'gIndustry',
-    items: [
-      { key: 're_title', icon: 'building', path: 'real-estate', match: ['real-estate', 'real-estate-project'], business: 'realEstate' },
-      { key: 'mob_nav', icon: 'idcard', path: 'mobile', match: ['mobile', 'repair'], business: 'mobileShop' },
-      { key: 'pt_title', icon: 'box', path: 'car-parts', match: ['car-parts'], business: 'autoParts' },
-      { key: 'ew_jobs', icon: 'swap', path: 'works', match: ['works', 'job'], business: 'engineeringWorks' },
-      { key: 'sl_title', icon: 'sun', path: 'solar', match: ['solar', 'solar-system'], business: 'electricalSolar' },
-      { key: 'gen_title', icon: 'zap', path: 'generators', match: ['generators', 'gen-run'], business: 'generators' }
-    ]
-  },
-  { group: 'gPeople', items: [{ key: 'pay_title', icon: 'users', path: 'payroll', match: ['payroll', 'payroll-run'], adminOnly: true }] },
-  {
-    group: 'gSystem',
-    items: [
-      // everyone: Language and display is each person's own; the company sections show to admins only
-      { key: 'settings', icon: 'sliders', path: 'settings', match: ['settings'] },
-      { key: 'bizType', icon: 'building', path: 'business-type', match: ['business-type'], adminOnly: true },
-      { key: 'md_title', icon: 'download', path: 'import', match: ['import'], adminOnly: true },
-      { key: 'wa_nav', icon: 'swap', path: 'website-api', match: ['website-api'], adminOnly: true },
-      { key: 'bn_title', icon: 'building', path: 'branches', match: ['branches'], adminOnly: true },
-      { key: 'users', icon: 'users', path: 'users', match: ['users'], adminOnly: true },
-      { key: 'planLicense', icon: 'star', path: 'plans', match: ['plans'], adminOnly: true }
-    ]
-  }
-];
-
 export function App() {
   const [lang, setLangState] = useState<Lang>(() => stored<Lang>('qasa.lang', 'ar', isLang));
   const [digits, setDigitsState] = useState<DigitStyle>(() => stored<DigitStyle>('qasa.digits', 'western', (v) => v === 'western' || v === 'eastern'));
@@ -191,6 +129,44 @@ export function App() {
   const [changingPassword, setChangingPassword] = useState(false);
   const [online, setOnline] = useState(true);
   const route = useRoute();
+  // the menu: shrunk to icons (remembered on this PC), which section is open (undefined: the current page's), pinned pages
+  const [collapsed, setCollapsed] = useState(navCollapsed);
+  const [openGroup, setOpenGroup] = useState<string | null | undefined>(undefined);
+  const [searching, setSearching] = useState(false);
+  const [favs, setFavs] = useState<string[]>([]);
+  const favUser = me?.signInRequired ? me.user?.name ?? '' : currentUser() || me?.user?.name || '';
+  useEffect(() => {
+    const load = () => setFavs(favourites(favUser));
+    load();
+    window.addEventListener(FAVOURITES_EVENT, load);
+    return () => window.removeEventListener(FAVOURITES_EVENT, load);
+  }, [favUser]);
+  // a new page opens its own section of the menu
+  const routePage = route[0] ?? '';
+  useEffect(() => { setOpenGroup(undefined); }, [routePage]);
+  // Ctrl+K (⌘K) opens the search from anywhere
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && !e.altKey && e.key.toLowerCase() === 'k') {
+        e.preventDefault();
+        setSearching(true);
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, []);
+  // the welcome tour: once per person, after the company has said what it does; again from Help or Ctrl+K
+  const [touring, setTouring] = useState(false);
+  useEffect(() => {
+    const open = () => { setSearching(false); setTouring(true); };
+    window.addEventListener(TOUR_EVENT, open);
+    return () => window.removeEventListener(TOUR_EVENT, open);
+  }, []);
+  const tourReady = !!settings && settings.businessTypes !== null && !!me?.user && import.meta.env.MODE !== 'demo';
+  useEffect(() => {
+    if (tourReady && (routePage === '' || routePage === 'home') && !tourDone(favUser)) setTouring(true);
+    // only when the company becomes ready or the person changes, not on every page
+  }, [tourReady, favUser]);
   // the page reloads its data when the branch picked in the topbar changes
   const [branchKey, setBranchKey] = useState(0);
   useEffect(() => {
@@ -305,12 +281,13 @@ export function App() {
   let title: string = t('home');
   let content: ReactNode;
   const isAdmin = !!me?.user?.permissions.includes('admin');
+  const viewer: NavViewer = { admin: isAdmin, permissions: me?.user?.permissions ?? [], businessTypes: settings?.businessTypes ?? [] };
   // admin pages open for admins only; everyone else lands on the home page
   const adminPage = ['users', 'plans'].includes(page ?? '') && !isAdmin;
   switch (adminPage ? '' : page ?? '') {
     case '':
     case 'home':
-      content = <Home />;
+      content = <Home viewer={viewer} user={favUser} favourites={favs} />;
       break;
     case 'entries':
       title = t('vouchers');
@@ -472,6 +449,62 @@ export function App() {
       title = t('gen_title');
       content = arg ? <GenRun key={arg} id={arg} /> : null;
       break;
+    case 'banking':
+      title = t('bk_title');
+      content = <Banking key={arg ?? 'accounts'} tab={arg === 'transfer' || arg === 'cheques' || arg === 'reconcile' ? arg : 'accounts'} />;
+      break;
+    case 'purchase-orders':
+      title = t('po_title');
+      content = <PurchaseOrders />;
+      break;
+    case 'new-purchase-order':
+      title = t('po_title');
+      content = <PurchaseOrderEditor key="new" />;
+      break;
+    case 'edit-purchase-order':
+      title = t('po_title');
+      content = arg ? <PurchaseOrderEditor key={arg} id={arg} /> : null;
+      break;
+    case 'purchase-order':
+      title = t('po_title');
+      content = arg ? <PurchaseOrderDetail key={arg} id={arg} /> : null;
+      break;
+    case 'stock-adjustments':
+      title = t('adj_title');
+      content = <StockAdjustments />;
+      break;
+    case 'new-stock-adjustment':
+      title = t('adj_title');
+      content = <StockAdjustmentEditor key="new" />;
+      break;
+    case 'edit-stock-adjustment':
+      title = t('adj_title');
+      content = arg ? <StockAdjustmentEditor key={arg} id={arg} /> : null;
+      break;
+    case 'stock-adjustment':
+      title = t('adj_title');
+      content = arg ? <StockAdjustmentDetail key={arg} id={arg} /> : null;
+      break;
+    case 'stock-count':
+      title = t('adj_count');
+      content = <StockCount />;
+      break;
+    case 'fixed-assets':
+      title = t('fa_title');
+      content = <FixedAssets key={arg ?? 'list'} tab={arg === 'runs' ? 'runs' : undefined} />;
+      break;
+    case 'fixed-asset':
+      title = t('fa_title');
+      content = arg ? <FixedAssetDetail key={arg} id={arg} /> : null;
+      break;
+    case 'cheque':
+      title = t('bk_title');
+      content = arg ? <ChequeDetail key={arg} id={arg} /> : null;
+      break;
+    case 'bank-statement':
+      title = t('bk_title');
+      content = arg ? <StatementDetail key={arg} id={arg} /> : null;
+      break;
     case 'rates':
       title = t('fx_title');
       content = <Rates key={arg ?? 'rates'} tab={arg === 'revaluation' ? 'revaluation' : 'rates'} />;
@@ -557,7 +590,7 @@ export function App() {
       content = <Plans />;
       break;
     default:
-      content = <Home />;
+      content = <Home viewer={viewer} user={favUser} favourites={favs} />;
   }
 
   if (pageNav?.title) title = t(pageNav.title);
@@ -582,26 +615,26 @@ export function App() {
   }
   if (!me) return online ? null : <div className="signin-page"><div className="card pad">{t('serverDown')}</div></div>;
 
-  const chosen = settings?.businessTypes ?? [];
-  const shownItems = (items: NavItem[]) => items.filter((item) => (!item.adminOnly || isAdmin) && (!item.business || chosen.includes(item.business)));
-  function navItems(items: NavItem[]) {
-    return shownItems(items).map((item) => {
-      if (item.path === undefined) {
-        return (
-          <button key={item.key} type="button" className="nav-item" disabled title={t(item.key)}>
-            <Icon name={item.icon} /><span>{t(item.key)}</span><span className="soon">{t('soon')}</span>
-          </button>
-        );
-      }
-      const active = matches(item);
-      const feature = item.business ? BUSINESS_FEATURE[item.business] : null;
-      const locked = !!feature && !!plan && !plan.features.includes(feature);
+  const shownItems = (items: NavItem[]) => items.filter((item) => canSee(item, viewer));
+  const activeGroup = NAV.find((g) => shownItems(g.items).some(matches))?.group ?? null;
+  const groupOpen = (g: string) => (openGroup === undefined ? g === activeGroup : openGroup === g);
+  const favItems = favs.map((k) => findPage(k)).filter((i): i is NavItem => !!i && i.path !== undefined && canSee(i, viewer));
+  function navLink(item: NavItem, extra = '') {
+    if (item.path === undefined) {
       return (
-        <a key={item.key} className={'nav-item' + (active ? ' active' : '')} href={href(item.path)} aria-current={active ? 'page' : undefined}>
-          <Icon name={item.icon} /><span>{t(item.key)}</span>{locked && <span className="soon">{feature === 'realEstate' ? 'Business' : 'Pro'}</span>}
-        </a>
+        <button key={item.key} type="button" className="nav-item" disabled title={t(item.key)}>
+          <Icon name={item.icon} /><span>{t(item.key)}</span><span className="soon">{t('soon')}</span>
+        </button>
       );
-    });
+    }
+    const active = matches(item);
+    const feature = item.business ? BUSINESS_FEATURE[item.business] : null;
+    const locked = !!feature && !!plan && !plan.features.includes(feature);
+    return (
+      <a key={extra + item.key} className={'nav-item' + (active ? ' active' : '')} href={href(item.path)} aria-current={active ? 'page' : undefined} title={collapsed ? t(item.key) : undefined}>
+        <Icon name={item.icon} /><span>{t(item.key)}</span>{locked && !collapsed && <span className="soon">{feature === 'realEstate' ? 'Business' : 'Pro'}</span>}
+      </a>
+    );
   }
 
   async function signOut() {
@@ -617,27 +650,44 @@ export function App() {
         <ToastProvider>
           <BusyBar />
           <div className="app">
-            <nav className="sidebar" aria-label={t('appName')}>
+            <nav className={'sidebar' + (collapsed ? ' collapsed' : '')} aria-label={t('appName')}>
               <div className="brand">
                 <Logo size={28} />
-                <div>
+                <div className="brand-text">
                   <div className="brand-name">{t('appName')}</div>
                   <div className="brand-tag">{t('tagline')}</div>
                 </div>
+                <button type="button" className="btn subtle icon nav-toggle" aria-label={collapsed ? t('navExpand') : t('navCollapse')} title={collapsed ? t('navExpand') : t('navCollapse')} aria-pressed={collapsed} onClick={() => { setCollapsed(!collapsed); setNavCollapsed(!collapsed); }}>
+                  <Icon name="panel" size={16} className="flip" />
+                </button>
               </div>
-              <div className="company-card">
+              <div className="company-card" title={collapsed ? company || t('noCompany') : undefined}>
                 <span className="avatar mark"><Icon name="building" size={16} /></span>
                 <div><span className="label">{t('company')}</span><strong className="bidi">{company || t('noCompany')}</strong></div>
               </div>
               <div className="nav-scroll" ref={navRef}>
-                {NAV.filter((g) => g.group !== 'gSystem' && shownItems(g.items).length).map((g) => (
-                  <div key={g.group} style={{ display: 'contents' }}>
-                    <div className="nav-group">{t(g.group)}</div>
-                    {navItems(g.items)}
+                {favItems.length > 0 && (
+                  <div className="nav-section">
+                    <div className="nav-group">{t('navFavourites')}</div>
+                    {favItems.map((item) => navLink(item, 'fav-'))}
                   </div>
-                ))}
+                )}
+                {NAV.filter((g) => shownItems(g.items).length).map((g) => {
+                  const open = collapsed || groupOpen(g.group);
+                  const id = `nav-${g.group}`;
+                  return (
+                    <div key={g.group} className={'nav-section' + (open ? ' open' : '')}>
+                      {!collapsed && (
+                        <button type="button" className="nav-group nav-group-btn" aria-expanded={open} aria-controls={id} onClick={() => setOpenGroup(open ? null : g.group)}>
+                          <span>{t(g.group)}</span>
+                          <Icon name="chevronDown" size={14} />
+                        </button>
+                      )}
+                      {open && <div id={id} className="nav-items">{shownItems(g.items).map((item) => navLink(item))}</div>}
+                    </div>
+                  );
+                })}
               </div>
-              <div className="pane-footer">{navItems(NAV.find((g) => g.group === 'gSystem')?.items ?? [])}</div>
             </nav>
             <div className="main">
               <header className="topbar">
@@ -646,6 +696,11 @@ export function App() {
                   <span>{title}</span>
                 </h1>
                 <span className="spacer" />
+                <button type="button" className="search-trigger no-print" onClick={() => setSearching(true)} aria-label={t('searchHint')} aria-keyshortcuts="Control+K">
+                  <Icon name="search" size={16} />
+                  <span>{t('searchHint')}</span>
+                  <kbd className="ltr">Ctrl K</kbd>
+                </button>
                 <BranchSwitcher user={user} />
                 <SupportButton compact />
                 <button type="button" className="btn subtle icon" title={dark ? t('lightMode') : t('darkMode')} aria-label={dark ? t('lightMode') : t('darkMode')} onClick={() => setTheme(dark ? 'light' : 'dark')}>
@@ -663,10 +718,13 @@ export function App() {
                 />
               </header>
               {changingPassword && <PasswordModal needsCurrent onClose={() => setChangingPassword(false)} />}
+              {searching && <CommandPalette viewer={viewer} onClose={() => setSearching(false)} />}
+              {touring && settings && settings.businessTypes !== null && <Tour user={favUser} businessTypes={settings.businessTypes} onClose={() => setTouring(false)} />}
               {/* the first time an admin opens the company: what does it do? (decides the menu; changed later under System) */}
               {isAdmin && settings && settings.businessTypes === null && import.meta.env.MODE !== 'demo' && (
                 <div className="backdrop"><div className="modal biz-modal" role="dialog" aria-modal="true" aria-label={t('bizWelcome')}><Suspense fallback={<PageLoading />}><BusinessTypeChooser first /></Suspense></div></div>
               )}
+              <UpdateBanner />
               <main className="content">
                 {plan?.license?.state === 'grace' && plan.license.expires && plan.graceEnds && page !== 'plans' && (
                   <div className="alert warn plan-banner no-print" style={{ marginBottom: 14 }}>

@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { api, type AccountView, type UserView, type WarehouseView } from '../api.ts';
-import { ErrorBox, Icon, Modal, useLoad, usePageNav, useToast } from '../components.tsx';
+import { EmptyState, ErrorBox, Icon, Modal, useLoad, usePageNav, useToast } from '../components.tsx';
 import { useI18n } from '../i18n.ts';
 import { branchesApi, type BranchView } from '../industry/branches-api.ts';
 
@@ -31,7 +31,7 @@ export function Branches() {
       <div className="row">
         <button type="button" className="btn primary" disabled={!available} onClick={() => setEditing('new')}><Icon name="plus" size={16} />{t('bn_new')}</button>
       </div>
-      {branches.length === 0 && data.data && <div className="card pad muted">{t('bn_none')}</div>}
+      {branches.length === 0 && data.data && <div className="card"><EmptyState icon="branch" title={t('es_branches')} text={t('es_branchesText')} /></div>}
       <div className="grid-2">
         {branches.map((b) => (
           <div key={b.id} className="card pad stack">

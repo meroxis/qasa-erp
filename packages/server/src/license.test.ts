@@ -50,7 +50,7 @@ describe('plans', () => {
 
   it('gives a 30-day Pro trial once, then falls back to Free without touching the data', async () => {
     const started = (await post('/api/plan/trial')).json();
-    expect(started).toMatchObject({ plan: 'pro', source: 'trial', trialActive: true, trialAvailable: false, trialEnds: addDays(todayIso(), 29) });
+    expect(started).toMatchObject({ plan: 'business', source: 'trial', trialActive: true, trialAvailable: false, trialEnds: addDays(todayIso(), 29) });
     expect(started.features).toContain('noBranding');
     expect((await addWarehouse('ERBIL')).statusCode).toBe(201);
     expect((await post('/api/plan/trial')).json().error).toBe('trial_unavailable');

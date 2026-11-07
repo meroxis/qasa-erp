@@ -30,6 +30,7 @@ const ROWS: Row[] = [
   { label: 'f_phoneApp', cells: [false, true, true] },
   { label: 'f_websiteApi', cells: [false, true, true] },
   { label: 'f_cloudBackup', cells: [false, true, true] },
+  { label: 'f_bankReconciliation', cells: [false, true, true] },
   { label: 'f_payroll', cells: [false, true, true] },
   { label: 'f_finalAccounts', cells: ['v_viewOnScreen', 'v_printExcel', 'v_printExcel'] },
   { label: 'f_yearEnd', cells: [false, true, true] },

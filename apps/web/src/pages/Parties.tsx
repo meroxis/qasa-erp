@@ -1,8 +1,9 @@
 import { useState } from 'react';
 import { api, type InvoiceSummary, type PartyInput, type PartyType, type PartyView } from '../api.ts';
-import { AccountCombo, AmountInput, ErrorBox, Icon, InvoiceStatusChip, Modal, downloadCsv, useLoad, usePageNav, useToast } from '../components.tsx';
+import { EmptyState, AccountCombo, AmountInput, ErrorBox, Icon, InvoiceStatusChip, Modal, downloadCsv, useLoad, usePageNav, useToast } from '../components.tsx';
 import { useI18n } from '../i18n.ts';
 import { go, href } from '../router.ts';
+import { PriceListField } from '../industry/PriceListField.tsx';
 
 /** الزبائن / المجهزون */
 export function Parties({ type }: { type: PartyType }) {
@@ -23,7 +24,9 @@ export function Parties({ type }: { type: PartyType }) {
       </div>
       <ErrorBox error={error} />
       <div className="card">
-        {data && data.length === 0 && <p className="muted" style={{ padding: '14px 16px', margin: 0 }}>{t('noParties')}</p>}
+        {data && data.length === 0 && (q.trim()
+          ? <EmptyState compact icon="search" title={t('es_search')} text={t('es_searchText')} />
+          : <EmptyState icon="users" title={t('es_parties')} text={t('es_partiesText')} action={{ label: type === 'customer' ? t('newCustomer') : t('newSupplier'), icon: 'plus', onClick: () => setEditing('new') }} secondary={{ label: t('importExcel'), icon: 'upload', href: href('import') }} />)}
         {data && data.length > 0 && (
           <table className="table">
             <thead>
@@ -175,6 +178,8 @@ export function PartyDetail({ id }: { id: string }) {
           <div className="value num" style={{ fontSize: 18 }}>{isCustomer ? (p.creditLimit === null ? t('noLimit') : i18n.money(p.creditLimit, 'IQD')) : <span className="ltr">{p.accountCode}</span>}</div>
         </div>
       </div>
+
+      {isCustomer && <div className="no-print"><PriceListField partyId={p.id} /></div>}
 
       <div className="card">
         <div className="row" style={{ padding: '12px 16px' }}>

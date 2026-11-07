@@ -1,6 +1,7 @@
 import { APP_VERSION } from '@qasa/core';
 import { useData } from '../components.tsx';
 import { useI18n, type I18n } from '../i18n.ts';
+import { showTour } from './Tour.tsx';
 
 /** Meroxis' WhatsApp support line. */
 export const SUPPORT_WHATSAPP = 'https://wa.me/rapidnetisp';
@@ -38,7 +39,7 @@ export function SupportButton({ compact = false }: { compact?: boolean }) {
   const { plan } = useData();
   const open = () => window.open(supportLink(i18n, plan), '_blank', 'noopener,noreferrer');
   return (
-    <button type="button" className={'btn subtle' + (compact ? ' icon' : '')} onClick={open} title={i18n.t('us_support')} aria-label={i18n.t('us_support')}>
+    <button type="button" className={'btn subtle' + (compact ? ' icon' : '')} data-tour={compact ? 'support' : undefined} onClick={open} title={i18n.t('us_support')} aria-label={i18n.t('us_support')}>
       <ChatIcon />
       {!compact && <span>{i18n.t('us_supportShort')}</span>}
     </button>
@@ -60,6 +61,7 @@ export function HelpPanel() {
           <ChatIcon /> {t('us_support')}
         </a>
         <a className="btn" href={WEBSITE} target="_blank" rel="noopener noreferrer">{t('us_website')}</a>
+        <button type="button" className="btn" onClick={showTour}>{t('tour_show')}</button>
       </div>
       <div className="grid-2">
         <div className="field"><span>{t('us_version')}</span><strong className="ltr num">{APP_VERSION}</strong></div>

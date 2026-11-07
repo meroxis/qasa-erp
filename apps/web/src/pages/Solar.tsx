@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { addDays, lineAmount, todayIso, toBase, type CurrencyCode } from '@qasa/core';
 import { api, ApiError, type ItemView } from '../api.ts';
-import { AccountCombo, AmountInput, ErrorBox, Icon, Modal, QtyInput, SearchCombo, useData, useLoad, usePageNav, useToast, type PickOption } from '../components.tsx';
+import { EmptyState, AccountCombo, AmountInput, ErrorBox, Icon, Modal, QtyInput, SearchCombo, useData, useLoad, usePageNav, useToast, type PickOption } from '../components.tsx';
 import { useI18n, type I18n, type Key } from '../i18n.ts';
 import { ItemImage } from '../industry/ItemImage.tsx';
 import {
@@ -134,7 +134,7 @@ function Home({ summary }: { summary: SolarSummaryView | null }) {
         <div className="card">
           <h2 style={{ margin: 0, padding: '14px 16px 6px' }}>{t('sl_openJobs')}</h2>
           <ErrorBox error={solar.error && !isAbsent(solar.error) ? solar.error : null} />
-          {jobs.length === 0 ? <div className="pad muted small">{t('sl_noJobs')}</div> : <JobsList jobs={jobs} />}
+          {jobs.length === 0 ? <EmptyState compact icon="sun" title={t('es_solar')} text={t('es_solarText')} /> : <JobsList jobs={jobs} />}
         </div>
         <div className="card">
           <h2 style={{ margin: 0, padding: '14px 16px 6px' }}>{t('sl_dueVisits')}</h2>

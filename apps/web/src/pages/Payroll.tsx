@@ -1,7 +1,7 @@
 import { Fragment, useEffect, useState, type ChangeEvent } from 'react';
 import { rateFromX100, todayIso, toWesternDigits, type CurrencyCode } from '@qasa/core';
 import { ApiError } from '../api.ts';
-import { AccountCombo, AmountInput, downloadCsv, ErrorBox, Icon, Modal, SearchCombo, useData, useLoad, usePageNav, useToast, type PickOption } from '../components.tsx';
+import { EmptyState, AccountCombo, AmountInput, downloadCsv, ErrorBox, Icon, Modal, SearchCombo, useData, useLoad, usePageNav, useToast, type PickOption } from '../components.tsx';
 import { useI18n, type I18n, type Key } from '../i18n.ts';
 import { go, href } from '../router.ts';
 import {
@@ -563,7 +563,7 @@ function Employees({ canChange, onChange }: { canChange: boolean; onChange(): vo
       </div>
       <ErrorBox error={error} />
       <div className="card">
-        {data && !data.length && <div className="pad muted">{t('pay_noEmployees')}</div>}
+        {data && !data.length && <EmptyState icon="users" title={t('es_employees')} text={t('es_employeesText')} />}
         {data && !!data.length && (
           <table className="table">
             <thead>

@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { todayIso, toWesternDigits } from '@qasa/core';
 import { ApiError } from '../api.ts';
-import { AccountCombo, AmountInput, ErrorBox, Icon, Modal, useData, useLoad, usePageNav, useToast } from '../components.tsx';
+import { EmptyState, AccountCombo, AmountInput, ErrorBox, Icon, Modal, useData, useLoad, usePageNav, useToast } from '../components.tsx';
 import { useI18n, type Key } from '../i18n.ts';
 import { go, href } from '../router.ts';
 import {
@@ -345,7 +345,7 @@ function Subscribers({ summary, onChange }: { summary: GenSummary | null; onChan
       </div>
       <ErrorBox error={error ?? actionError} />
       <div className="card">
-        {data && !data.length && <div className="pad muted">{t('gen_noSubscribers')}</div>}
+        {data && !data.length && <EmptyState icon="zap" title={t('es_subscribers')} text={t('es_subscribersText')} />}
         {data && !!data.length && (
           <div className="table-wrap">
             <table className="table">
