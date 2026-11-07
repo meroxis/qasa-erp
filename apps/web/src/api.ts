@@ -1,5 +1,5 @@
 import type {
-  Lang, LicenseInfo, LicenseState, PlanResolution,
+  BusinessType, Lang, LicenseInfo, LicenseState, PlanResolution,
   CurrencyCode, EntryAction, EntryStatus, EntryType, InvoiceDocKind, InvoiceInput, InvoiceKind, InvoiceStatus, Names, Nature, PaymentMode, PostingAccounts, UnitCode
 } from '@qasa/core';
 
@@ -62,6 +62,8 @@ export interface Settings {
   defaultRateX100: number;
   fiscalYearStart: string;
   postingAccounts: PostingAccounts;
+  /** What the company does; null until chosen (the app asks at the start). */
+  businessTypes: BusinessType[] | null;
 }
 
 export interface PlanStatus extends PlanResolution {

@@ -124,3 +124,19 @@ export function resolvePlan(input: { license: LicenseInfo | null; trialStarted: 
   }
   return { plan, source, licenseState: state, graceEnds, trialEnds, trialActive, limits: { ...limits }, features: [...PLANS[plan].features] };
 }
+
+/**
+ * What a company does. It decides which industry pages show in the menu (chosen at the start, changed in Settings);
+ * the plan still decides which of them can be used. 'trade' is the general accounting, sales, purchases and stock.
+ */
+export const BUSINESS_TYPES = ['trade', 'realEstate', 'mobileShop', 'autoParts', 'engineeringWorks'] as const;
+export type BusinessType = (typeof BUSINESS_TYPES)[number];
+
+/** The plan feature each industry needs (general trade needs none). */
+export const BUSINESS_FEATURE: Record<BusinessType, Feature | null> = {
+  trade: null, realEstate: 'realEstate', mobileShop: 'mobileShop', autoParts: 'autoParts', engineeringWorks: 'engineeringWorks'
+};
+
+export function isBusinessType(value: unknown): value is BusinessType {
+  return typeof value === 'string' && (BUSINESS_TYPES as readonly string[]).includes(value);
+}

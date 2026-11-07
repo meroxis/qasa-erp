@@ -1,4 +1,4 @@
-import { DEFAULT_POSTING_ACCOUNTS, fiscalYear, fiscalYearOf, type Names, type PostingAccounts } from '@qasa/core';
+import { DEFAULT_POSTING_ACCOUNTS, fiscalYear, fiscalYearOf, isBusinessType, type BusinessType, type Names, type PostingAccounts } from '@qasa/core';
 import type { Db } from './db.ts';
 import { audit } from './audit.ts';
 import { insertOrKeep, isMysql, transaction } from './db.ts';
@@ -12,6 +12,8 @@ export interface Settings {
   fiscalYearStart: string;
   /** Accounts that invoices post to. */
   postingAccounts: PostingAccounts;
+  /** What the company does (which industry pages the menu shows); null until it is chosen. */
+  businessTypes: BusinessType[] | null;
 }
 
 /** Where each posting account must sit in the unified chart. */
@@ -41,12 +43,24 @@ export function getPostingAccounts(db: Db): PostingAccounts {
   return { ...DEFAULT_POSTING_ACCOUNTS, ...stored, yearResult };
 }
 
+function businessTypes(db: Db): BusinessType[] | null {
+  const stored = readSetting(db, 'business_types');
+  if (!stored) return null;
+  try {
+    const list = JSON.parse(stored) as unknown;
+    return Array.isArray(list) ? list.filter(isBusinessType) : null;
+  } catch {
+    return null;
+  }
+}
+
 export function getSettings(db: Db): Settings {
   return {
     companyName: JSON.parse(readSetting(db, 'company_name') ?? '{"ar":"","en":"","ku":""}') as Names,
     defaultRateX100: Number(readSetting(db, 'default_rate_x100') ?? '142000'),
     fiscalYearStart: readSetting(db, 'fiscal_year_start') ?? '01-01',
-    postingAccounts: getPostingAccounts(db)
+    postingAccounts: getPostingAccounts(db),
+    businessTypes: businessTypes(db)
   };
 }
 
@@ -69,6 +83,7 @@ export function updateSettings(db: Db, patch: Partial<Settings>, user: string): 
     if (patch.defaultRateX100 !== undefined) writeSetting(db, 'default_rate_x100', String(patch.defaultRateX100));
     if (patch.fiscalYearStart) writeSetting(db, 'fiscal_year_start', patch.fiscalYearStart);
     if (patch.postingAccounts) writeSetting(db, 'posting_accounts', JSON.stringify({ ...getPostingAccounts(db), ...patch.postingAccounts }));
+    if (patch.businessTypes) writeSetting(db, 'business_types', JSON.stringify([...new Set(patch.businessTypes)]));
     audit(db, user, 'update', 'settings', null, patch);
   });
   return getSettings(db);

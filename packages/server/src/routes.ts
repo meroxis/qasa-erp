@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import { BUILT_IN_FEATURES } from './features.ts';
-import { APP_VERSION } from '@qasa/core';
+import { APP_VERSION, BUSINESS_TYPES } from '@qasa/core';
 import type { Db } from './db.ts';
 import { AppError, conflict, invalid } from './errors.ts';
 import {
@@ -333,7 +333,8 @@ export function apiRoutes(db: Db, options: { demo?: boolean; extensions?: readon
       postingAccounts: z.object({
         customers: z.string().max(12), suppliers: z.string().max(12), sales: z.string().max(12), costOfSales: z.string().max(12), cash: z.string().max(12),
         yearResult: z.string().max(12).optional()
-      }).optional()
+      }).optional(),
+      businessTypes: z.array(z.enum(BUSINESS_TYPES)).min(1).max(BUSINESS_TYPES.length).optional()
     }), req.body);
     const { postingAccounts, ...rest } = withoutUndefined(body);
     return updateSettings(db, { ...rest, ...(postingAccounts ? { postingAccounts: { ...getSettings(db).postingAccounts, ...withoutUndefined(postingAccounts) } } : {}) }, userOf(req));

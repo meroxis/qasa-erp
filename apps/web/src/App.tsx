@@ -24,6 +24,8 @@ import { RealEstate, RealEstateProject } from './pages/RealEstate.tsx';
 import { MobileShop, RepairDetail } from './pages/MobileShop.tsx';
 import { CarParts } from './pages/CarParts.tsx';
 import { EngineeringWorks, JobDetail } from './pages/EngineeringWorks.tsx';
+import { BusinessTypeChooser, BusinessTypePage } from './pages/BusinessType.tsx';
+import { BUSINESS_FEATURE, type BusinessType } from '@qasa/core';
 
 declare global {
   /** Only in the Windows app: its bridge to the desktop shell (apps/desktop/src/app-preload.ts). */
@@ -43,7 +45,8 @@ function remember(key: string, value: string): void {
   try { localStorage.setItem(key, value); } catch { /* not available */ }
 }
 
-interface NavItem { key: Key; icon: string; path?: string; match?: string[]; adminOnly?: boolean }
+/** `business`: shown only when the company does that (Settings → Business type). */
+interface NavItem { key: Key; icon: string; path?: string; match?: string[]; adminOnly?: boolean; business?: BusinessType }
 const NAV: { group: Key; items: NavItem[] }[] = [
   { group: 'gOverview', items: [{ key: 'home', icon: 'home', path: '', match: ['', 'home'] }] },
   {
@@ -85,10 +88,10 @@ const NAV: { group: Key; items: NavItem[] }[] = [
     // the industry features (Pro and Business)
     group: 'gIndustry',
     items: [
-      { key: 're_title', icon: 'building', path: 'real-estate', match: ['real-estate', 'real-estate-project'] },
-      { key: 'mob_nav', icon: 'idcard', path: 'mobile', match: ['mobile', 'repair'] },
-      { key: 'pt_title', icon: 'box', path: 'car-parts', match: ['car-parts'] },
-      { key: 'ew_jobs', icon: 'swap', path: 'works', match: ['works', 'job'] }
+      { key: 're_title', icon: 'building', path: 'real-estate', match: ['real-estate', 'real-estate-project'], business: 'realEstate' },
+      { key: 'mob_nav', icon: 'idcard', path: 'mobile', match: ['mobile', 'repair'], business: 'mobileShop' },
+      { key: 'pt_title', icon: 'box', path: 'car-parts', match: ['car-parts'], business: 'autoParts' },
+      { key: 'ew_jobs', icon: 'swap', path: 'works', match: ['works', 'job'], business: 'engineeringWorks' }
     ]
   },
   { group: 'gPeople', items: [{ key: 'hr', icon: 'idcard' }, { key: 'salaries', icon: 'users' }] },
@@ -97,6 +100,7 @@ const NAV: { group: Key; items: NavItem[] }[] = [
     items: [
       // everyone: Language and display is each person's own; the company sections show to admins only
       { key: 'settings', icon: 'sliders', path: 'settings', match: ['settings'] },
+      { key: 'bizType', icon: 'building', path: 'business-type', match: ['business-type'], adminOnly: true },
       { key: 'users', icon: 'users', path: 'users', match: ['users'], adminOnly: true },
       { key: 'planLicense', icon: 'star', path: 'plans', match: ['plans'], adminOnly: true }
     ]
@@ -354,6 +358,10 @@ export function App() {
       title = t('ew_jobs');
       content = arg ? <JobDetail key={arg} id={arg} /> : null;
       break;
+    case 'business-type':
+      title = t('bizType');
+      content = <BusinessTypePage />;
+      break;
     case 'car-parts':
       title = t('pt_title');
       content = <CarParts />;
@@ -420,8 +428,10 @@ export function App() {
   }
   if (!me) return online ? null : <div className="signin-page"><div className="card pad">{t('serverDown')}</div></div>;
 
+  const chosen = settings?.businessTypes ?? [];
+  const shownItems = (items: NavItem[]) => items.filter((item) => (!item.adminOnly || isAdmin) && (!item.business || chosen.includes(item.business)));
   function navItems(items: NavItem[]) {
-    return items.filter((item) => !item.adminOnly || isAdmin).map((item) => {
+    return shownItems(items).map((item) => {
       if (item.path === undefined) {
         return (
           <button key={item.key} type="button" className="nav-item" disabled title={t(item.key)}>
@@ -430,9 +440,11 @@ export function App() {
         );
       }
       const active = matches(item);
+      const feature = item.business ? BUSINESS_FEATURE[item.business] : null;
+      const locked = !!feature && !!plan && !plan.features.includes(feature);
       return (
         <a key={item.key} className={'nav-item' + (active ? ' active' : '')} href={href(item.path)} aria-current={active ? 'page' : undefined}>
-          <Icon name={item.icon} /><span>{t(item.key)}</span>
+          <Icon name={item.icon} /><span>{t(item.key)}</span>{locked && <span className="soon">{feature === 'realEstate' ? 'Business' : 'Pro'}</span>}
         </a>
       );
     });
@@ -463,7 +475,7 @@ export function App() {
                 <div><span className="label">{t('company')}</span><strong className="bidi">{company || t('noCompany')}</strong></div>
               </div>
               <div className="nav-scroll" ref={navRef}>
-                {NAV.filter((g) => g.group !== 'gSystem').map((g) => (
+                {NAV.filter((g) => g.group !== 'gSystem' && shownItems(g.items).length).map((g) => (
                   <div key={g.group} style={{ display: 'contents' }}>
                     <div className="nav-group">{t(g.group)}</div>
                     {navItems(g.items)}
@@ -494,6 +506,10 @@ export function App() {
                 />
               </header>
               {changingPassword && <PasswordModal needsCurrent onClose={() => setChangingPassword(false)} />}
+              {/* the first time an admin opens the company: what does it do? (decides the menu; changed later under System) */}
+              {isAdmin && settings && settings.businessTypes === null && import.meta.env.MODE !== 'demo' && (
+                <div className="backdrop"><div className="modal biz-modal" role="dialog" aria-modal="true" aria-label={t('bizWelcome')}><BusinessTypeChooser first /></div></div>
+              )}
               <main className="content">
                 {plan?.license?.state === 'grace' && plan.license.expires && plan.graceEnds && page !== 'plans' && (
                   <div className="alert warn plan-banner no-print" style={{ marginBottom: 14 }}>

@@ -848,3 +848,24 @@ a.plan-chip:hover { text-decoration: underline; }
   .nav-item.active::before { forced-color-adjust: none; background: Highlight; inline-size: 4px; }
   .tabs button[aria-pressed='true']::after { forced-color-adjust: none; background: Highlight; }
 }
+
+/* business type: "What does your company do?" */
+.modal.biz-modal { inline-size: min(820px, 100%); }
+.biz-chooser h2 { margin: 0 0 var(--sp-2); font-size: var(--fs-title, 1.4rem); }
+.biz-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: var(--sp-3); margin: var(--sp-4) 0; }
+.biz-card {
+  position: relative; display: flex; gap: var(--sp-3); align-items: flex-start; text-align: start; padding: var(--sp-4);
+  border: 2px solid var(--line); border-radius: 12px; background: var(--surface); color: inherit; font: inherit; cursor: pointer;
+}
+.biz-card:hover { border-color: var(--accent); }
+.biz-card.on { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 8%, var(--surface)); }
+.biz-card .biz-icon { flex-shrink: 0; display: grid; place-items: center; inline-size: 40px; block-size: 40px; border-radius: 10px; background: var(--surface-2, var(--bg)); }
+.biz-card .biz-text { display: flex; flex-direction: column; gap: 4px; padding-inline-end: var(--sp-5); }
+.biz-card .biz-text span { color: var(--muted); font-size: 0.9em; line-height: 1.45; }
+.biz-card .chip { position: absolute; inset-block-end: var(--sp-2); inset-inline-end: var(--sp-2); }
+.biz-card .chip::before { display: none; }
+.biz-card .biz-check {
+  position: absolute; inset-block-start: var(--sp-3); inset-inline-end: var(--sp-3); inline-size: 22px; block-size: 22px; border-radius: 50%;
+  border: 2px solid var(--line); display: grid; place-items: center; color: #fff;
+}
+.biz-card.on .biz-check { background: var(--accent); border-color: var(--accent); }
