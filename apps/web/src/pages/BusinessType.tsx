@@ -10,6 +10,7 @@ const CHOICES: Record<BusinessType, { icon: string; title: Key; text: Key }> = {
   mobileShop: { icon: 'idcard', title: 'bt_mobileShop', text: 'bt_mobileShopText' },
   autoParts: { icon: 'box', title: 'bt_autoParts', text: 'bt_autoPartsText' },
   engineeringWorks: { icon: 'swap', title: 'bt_engineeringWorks', text: 'bt_engineeringWorksText' },
+  electricalSolar: { icon: 'sun', title: 'bt_electricalSolar', text: 'bt_electricalSolarText' },
   generators: { icon: 'zap', title: 'bt_generators', text: 'bt_generatorsText' }
 };
 

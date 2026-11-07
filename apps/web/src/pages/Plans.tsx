@@ -37,6 +37,7 @@ const ROWS: Row[] = [
   { label: 'f_mobileShop', cells: [false, true, true] },
   { label: 'f_autoParts', cells: [false, true, true] },
   { label: 'f_engineeringWorks', cells: [false, true, true] },
+  { label: 'f_electricalSolar', cells: [false, true, true] },
   { label: 'f_generators', cells: [false, true, true] },
   { label: 'f_realEstate', cells: [false, false, true] },
   { label: 'f_branches', cells: [false, false, true], soon: true },

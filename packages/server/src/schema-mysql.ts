@@ -558,7 +558,7 @@ export const MYSQL_TABLES: readonly MysqlObject[] = [
       date ${WHEN} NOT NULL,
       party_id ${ID} NOT NULL,
       title TEXT NOT NULL,
-      category ${WORD} NOT NULL CHECK (category IN ('welding', 'steel', 'aluminium', 'mdf', 'openings', 'general')),
+      category ${WORD} NOT NULL CHECK (category IN ('welding', 'steel', 'aluminium', 'mdf', 'openings', 'electrical', 'solar', 'general')),
       site TEXT,
       currency ${WORD} NOT NULL CHECK (currency IN ('IQD', 'USD')),
       status ${WORD} NOT NULL CHECK (status IN ('quote', 'measuring', 'approved', 'fabricating', 'installing', 'done', 'invoiced', 'cancelled')),
@@ -906,6 +906,53 @@ export const MYSQL_TABLES: readonly MysqlObject[] = [
       created_at ${WHEN} NOT NULL,
       last_used_at ${WHEN},
       revoked_at ${WHEN}
+    )`
+  },
+  {
+    name: 'maint_plans',
+    since: 7,
+    sql: `CREATE TABLE maint_plans (
+      id ${ID} NOT NULL PRIMARY KEY,
+      party_id ${ID} NOT NULL,
+      job_id ${ID},
+      title TEXT NOT NULL,
+      site TEXT,
+      every_months INT NOT NULL CHECK (every_months BETWEEN 1 AND 24),
+      next_date ${WHEN} NOT NULL,
+      currency ${WORD} NOT NULL CHECK (currency IN ('IQD', 'USD')),
+      price BIGINT NOT NULL DEFAULT 0 CHECK (price >= 0),
+      status ${WORD} NOT NULL CHECK (status IN ('active', 'paused', 'ended')),
+      notes TEXT,
+      created_by TEXT NOT NULL,
+      created_at ${WHEN} NOT NULL,
+      updated_at ${WHEN} NOT NULL,
+      INDEX maint_plans_party (party_id),
+      FOREIGN KEY (party_id) REFERENCES parties(id),
+      FOREIGN KEY (job_id) REFERENCES jobs(id)
+    )`
+  },
+  {
+    name: 'maint_visits',
+    since: 7,
+    sql: `CREATE TABLE maint_visits (
+      id ${ID} NOT NULL PRIMARY KEY,
+      number ${ID} NOT NULL UNIQUE,
+      plan_id ${ID},
+      party_id ${ID} NOT NULL,
+      date ${WHEN} NOT NULL,
+      kind ${WORD} NOT NULL CHECK (kind IN ('service', 'repair', 'inspection', 'installation')),
+      technician TEXT,
+      status ${WORD} NOT NULL CHECK (status IN ('scheduled', 'done', 'cancelled')),
+      findings TEXT,
+      work_done TEXT,
+      invoice_id ${ID},
+      created_by TEXT NOT NULL,
+      created_at ${WHEN} NOT NULL,
+      updated_at ${WHEN} NOT NULL,
+      INDEX maint_visits_party (party_id),
+      FOREIGN KEY (plan_id) REFERENCES maint_plans(id),
+      FOREIGN KEY (party_id) REFERENCES parties(id),
+      FOREIGN KEY (invoice_id) REFERENCES invoices(id)
     )`
   },
   {

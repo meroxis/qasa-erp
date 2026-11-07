@@ -782,7 +782,7 @@ const V7 =
     date TEXT NOT NULL,
     party_id TEXT NOT NULL REFERENCES parties(id),
     title TEXT NOT NULL,
-    category TEXT NOT NULL CHECK (category IN ('welding', 'steel', 'aluminium', 'mdf', 'openings', 'general')),
+    category TEXT NOT NULL CHECK (category IN ('welding', 'steel', 'aluminium', 'mdf', 'openings', 'electrical', 'solar', 'general')),
     site TEXT,
     currency TEXT NOT NULL CHECK (currency IN ('IQD', 'USD')),
     status TEXT NOT NULL CHECK (status IN ('quote', 'measuring', 'approved', 'fabricating', 'installing', 'done', 'invoiced', 'cancelled')),
@@ -1082,6 +1082,47 @@ const V7 =
     created_at TEXT NOT NULL,
     PRIMARY KEY (source, external_id)
   );
+
+  -- electrical and solar (Pro): maintenance plans (periodic service of an installed system) and the visits made
+  CREATE TABLE maint_plans (
+    id TEXT PRIMARY KEY,
+    party_id TEXT NOT NULL REFERENCES parties(id),
+    -- the installation it looks after (a job order), if any
+    job_id TEXT REFERENCES jobs(id),
+    title TEXT NOT NULL,
+    site TEXT,
+    every_months INTEGER NOT NULL CHECK (every_months BETWEEN 1 AND 24),
+    next_date TEXT NOT NULL,
+    currency TEXT NOT NULL CHECK (currency IN ('IQD', 'USD')),
+    -- the price of one visit (0 while under warranty or prepaid)
+    price INTEGER NOT NULL DEFAULT 0 CHECK (price >= 0),
+    status TEXT NOT NULL CHECK (status IN ('active', 'paused', 'ended')),
+    notes TEXT,
+    created_by TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+  );
+  CREATE INDEX maint_plans_party ON maint_plans(party_id);
+
+  CREATE TABLE maint_visits (
+    id TEXT PRIMARY KEY,
+    number TEXT NOT NULL UNIQUE,
+    plan_id TEXT REFERENCES maint_plans(id),
+    party_id TEXT NOT NULL REFERENCES parties(id),
+    date TEXT NOT NULL,
+    kind TEXT NOT NULL CHECK (kind IN ('service', 'repair', 'inspection', 'installation')),
+    technician TEXT,
+    status TEXT NOT NULL CHECK (status IN ('scheduled', 'done', 'cancelled')),
+    -- what was found and done (readings: panel output, battery health …)
+    findings TEXT,
+    work_done TEXT,
+    -- the sale invoice that charged it, if it was paid
+    invoice_id TEXT REFERENCES invoices(id),
+    created_by TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+  );
+  CREATE INDEX maint_visits_party ON maint_visits(party_id);
 
   CREATE TABLE webhooks (
     id TEXT PRIMARY KEY,
