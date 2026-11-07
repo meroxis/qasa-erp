@@ -892,6 +892,36 @@ export const MYSQL_TABLES: readonly MysqlObject[] = [
       FOREIGN KEY (entry_id) REFERENCES entries(id),
       FOREIGN KEY (party_id) REFERENCES gen_subscribers(party_id)
     )`
+  },
+  {
+    name: 'api_keys',
+    since: 7,
+    sql: `CREATE TABLE api_keys (
+      id ${ID} NOT NULL PRIMARY KEY,
+      name TEXT NOT NULL,
+      prefix ${WORD} NOT NULL,
+      hash ${ID} NOT NULL UNIQUE,
+      scopes TEXT NOT NULL,
+      created_by TEXT NOT NULL,
+      created_at ${WHEN} NOT NULL,
+      last_used_at ${WHEN},
+      revoked_at ${WHEN}
+    )`
+  },
+  {
+    name: 'webhooks',
+    since: 7,
+    sql: `CREATE TABLE webhooks (
+      id ${ID} NOT NULL PRIMARY KEY,
+      url TEXT NOT NULL,
+      events TEXT NOT NULL,
+      secret TEXT NOT NULL,
+      active INT NOT NULL DEFAULT 1,
+      last_status INT,
+      last_delivery_at ${WHEN},
+      created_by TEXT NOT NULL,
+      created_at ${WHEN} NOT NULL
+    )`
   }
 ];
 

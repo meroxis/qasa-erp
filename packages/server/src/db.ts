@@ -1058,6 +1058,35 @@ const V7 =
     created_at TEXT NOT NULL
   );
   CREATE INDEX gen_collections_party ON gen_collections(party_id);
+
+  -- the website API (Pro): keys a website or app uses (only a hash is kept), and the addresses told about changes
+  CREATE TABLE api_keys (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    -- the first characters, shown so the owner can tell keys apart
+    prefix TEXT NOT NULL,
+    hash TEXT NOT NULL UNIQUE,
+    -- what the key may do, e.g. ["items:read","orders:write"]
+    scopes TEXT NOT NULL,
+    created_by TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    last_used_at TEXT,
+    revoked_at TEXT
+  );
+
+  CREATE TABLE webhooks (
+    id TEXT PRIMARY KEY,
+    url TEXT NOT NULL,
+    -- e.g. ["stock.changed","price.changed","order.updated"]
+    events TEXT NOT NULL,
+    -- signs each delivery (HMAC); kept as given, shown once
+    secret TEXT NOT NULL,
+    active INTEGER NOT NULL DEFAULT 1,
+    last_status INTEGER,
+    last_delivery_at TEXT,
+    created_by TEXT NOT NULL,
+    created_at TEXT NOT NULL
+  );
   `;
 
 const MIGRATIONS: Migration[] = [
