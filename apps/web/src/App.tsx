@@ -37,6 +37,7 @@ import { Rates } from './pages/Rates.tsx';
 import { GenRun, Generators } from './pages/Generators.tsx';
 import { WebsiteApi } from './pages/WebsiteApi.tsx';
 import { SupportButton } from './industry/SupportButton.tsx';
+import { isSolarTab, Solar, SolarSystem } from './pages/Solar.tsx';
 import { BUSINESS_FEATURE, type BusinessType } from '@qasa/core';
 
 declare global {
@@ -115,6 +116,7 @@ const NAV: { group: Key; items: NavItem[] }[] = [
       { key: 'mob_nav', icon: 'idcard', path: 'mobile', match: ['mobile', 'repair'], business: 'mobileShop' },
       { key: 'pt_title', icon: 'box', path: 'car-parts', match: ['car-parts'], business: 'autoParts' },
       { key: 'ew_jobs', icon: 'swap', path: 'works', match: ['works', 'job'], business: 'engineeringWorks' },
+      { key: 'sl_title', icon: 'sun', path: 'solar', match: ['solar', 'solar-system'], business: 'electricalSolar' },
       { key: 'gen_title', icon: 'zap', path: 'generators', match: ['generators', 'gen-run'], business: 'generators' }
     ]
   },
@@ -399,6 +401,14 @@ export function App() {
     case 'pos-shift':
       title = t('pos_title');
       content = arg ? <PosShiftReport key={arg} id={arg} /> : null;
+      break;
+    case 'solar':
+      title = t('sl_title');
+      content = <Solar key={arg ?? 'home'} tab={isSolarTab(arg) ? arg : 'home'} />;
+      break;
+    case 'solar-system':
+      title = t('sl_title');
+      content = arg ? <SolarSystem key={arg} id={arg} /> : null;
       break;
     case 'website-api':
       title = t('wa_nav');

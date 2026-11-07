@@ -1083,6 +1083,40 @@ const V7 =
     PRIMARY KEY (source, external_id)
   );
 
+  -- branches (Business): a branch groups warehouses and safes/banks, and users can be limited to their branches; an
+  -- invoice belongs to its warehouse's branch and a voucher to its safe's, so the documents need no column of their own
+  CREATE TABLE branches (
+    id TEXT PRIMARY KEY,
+    code TEXT NOT NULL UNIQUE,
+    name TEXT NOT NULL,
+    city TEXT,
+    active INTEGER NOT NULL DEFAULT 1,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+  );
+  CREATE TABLE branch_warehouses (
+    warehouse_id TEXT PRIMARY KEY REFERENCES warehouses(id),
+    branch_id TEXT NOT NULL REFERENCES branches(id)
+  );
+  CREATE TABLE branch_accounts (
+    account_code TEXT PRIMARY KEY REFERENCES accounts(code),
+    branch_id TEXT NOT NULL REFERENCES branches(id)
+  );
+  -- a user listed here works only in these branches (not listed: every branch)
+  CREATE TABLE user_branches (
+    user_id TEXT NOT NULL REFERENCES users(id),
+    branch_id TEXT NOT NULL REFERENCES branches(id),
+    PRIMARY KEY (user_id, branch_id)
+  );
+
+  -- electrical and solar (Pro): a solar system's design on its job order (sizing, which quote lines are stock items,
+  -- equipment waiting for the sale), as JSON
+  CREATE TABLE solar_designs (
+    job_id TEXT PRIMARY KEY REFERENCES jobs(id),
+    design TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+  );
+
   -- electrical and solar (Pro): maintenance plans (periodic service of an installed system) and the visits made
   CREATE TABLE maint_plans (
     id TEXT PRIMARY KEY,

@@ -3,13 +3,13 @@ import { qs, request } from '../api.ts';
 
 /** Engineering works (Pro module): job orders, quotes, deposits, costs and billing. Missing (404) in builds without Pro. */
 
-export type JobCategory = 'welding' | 'steel' | 'aluminium' | 'mdf' | 'openings' | 'general';
+export type JobCategory = 'welding' | 'steel' | 'aluminium' | 'mdf' | 'openings' | 'electrical' | 'solar' | 'general';
 export type JobStatus = 'quote' | 'measuring' | 'approved' | 'fabricating' | 'installing' | 'done' | 'invoiced' | 'cancelled';
 export type LineUnit = 'm2' | 'm' | 'piece' | 'kg' | 'set' | 'lump';
 export type CostCategory = 'materials' | 'labour' | 'subcontract' | 'transport' | 'other';
 export type JobAction = 'edit' | 'editLines' | 'deposit' | 'invoice' | 'cancel' | 'costs';
 
-export const JOB_CATEGORIES: readonly JobCategory[] = ['welding', 'steel', 'aluminium', 'mdf', 'openings', 'general'];
+export const JOB_CATEGORIES: readonly JobCategory[] = ['welding', 'steel', 'aluminium', 'mdf', 'openings', 'electrical', 'solar', 'general'];
 export const JOB_FLOW: readonly JobStatus[] = ['quote', 'measuring', 'approved', 'fabricating', 'installing', 'done'];
 export const LINE_UNITS: readonly LineUnit[] = ['m2', 'm', 'piece', 'kg', 'set', 'lump'];
 export const COST_CATEGORIES: readonly CostCategory[] = ['materials', 'labour', 'subcontract', 'transport', 'other'];

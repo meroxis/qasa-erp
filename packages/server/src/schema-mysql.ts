@@ -909,6 +909,60 @@ export const MYSQL_TABLES: readonly MysqlObject[] = [
     )`
   },
   {
+    name: 'branches',
+    since: 7,
+    sql: `CREATE TABLE branches (
+      id ${ID} NOT NULL PRIMARY KEY,
+      code ${ID} NOT NULL UNIQUE,
+      name TEXT NOT NULL,
+      city TEXT,
+      active INT NOT NULL DEFAULT 1,
+      created_at ${WHEN} NOT NULL,
+      updated_at ${WHEN} NOT NULL
+    )`
+  },
+  {
+    name: 'branch_warehouses',
+    since: 7,
+    sql: `CREATE TABLE branch_warehouses (
+      warehouse_id ${ID} NOT NULL PRIMARY KEY,
+      branch_id ${ID} NOT NULL,
+      FOREIGN KEY (warehouse_id) REFERENCES warehouses(id),
+      FOREIGN KEY (branch_id) REFERENCES branches(id)
+    )`
+  },
+  {
+    name: 'branch_accounts',
+    since: 7,
+    sql: `CREATE TABLE branch_accounts (
+      account_code ${ID} NOT NULL PRIMARY KEY,
+      branch_id ${ID} NOT NULL,
+      FOREIGN KEY (account_code) REFERENCES accounts(code),
+      FOREIGN KEY (branch_id) REFERENCES branches(id)
+    )`
+  },
+  {
+    name: 'user_branches',
+    since: 7,
+    sql: `CREATE TABLE user_branches (
+      user_id ${ID} NOT NULL,
+      branch_id ${ID} NOT NULL,
+      PRIMARY KEY (user_id, branch_id),
+      FOREIGN KEY (user_id) REFERENCES users(id),
+      FOREIGN KEY (branch_id) REFERENCES branches(id)
+    )`
+  },
+  {
+    name: 'solar_designs',
+    since: 7,
+    sql: `CREATE TABLE solar_designs (
+      job_id ${ID} NOT NULL PRIMARY KEY,
+      design MEDIUMTEXT NOT NULL,
+      updated_at ${WHEN} NOT NULL,
+      FOREIGN KEY (job_id) REFERENCES jobs(id)
+    )`
+  },
+  {
     name: 'maint_plans',
     since: 7,
     sql: `CREATE TABLE maint_plans (

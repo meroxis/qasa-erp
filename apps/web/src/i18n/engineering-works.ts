@@ -19,6 +19,8 @@ export const ENGINEERING_TEXT = {
   ew_cat_aluminium: ['ألمنيوم', 'Aluminium', 'ئەلەمنیۆم'],
   ew_cat_mdf: ['ديكورات MDF', 'MDF decor', 'دیکۆری MDF'],
   ew_cat_openings: ['أبواب وشبابيك', 'Doors & windows', 'دەرگا و پەنجەرە'],
+  ew_cat_electrical: ['أعمال كهربائية', 'Electrical works', 'کاری کارەبایی'],
+  ew_cat_solar: ['منظومات طاقة شمسية', 'Solar systems', 'سیستەمی وزەی خۆر'],
   ew_cat_general: ['أعمال عامة', 'General works', 'کاری گشتی'],
   ew_site: ['الموقع', 'Site', 'شوێن'],
   ew_dueDate: ['موعد التسليم', 'Due', 'کاتی ڕادەستکردن'],
