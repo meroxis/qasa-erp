@@ -17,4 +17,4 @@ export { createJournalEntry, deleteEntry, getEntry, postVoucherNow, type EntryVi
 export { loadAccounts } from './accounts.ts';
 export { createInvoice, getInvoice, postInvoice, type InvoiceView } from './invoices.ts';
 export { createItem, listWarehouses } from './items.ts';
-export { getParty } from './parties.ts';
+export { createParty, getParty, updateParty } from './parties.ts';

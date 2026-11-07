@@ -34,6 +34,7 @@ import { Brief } from './pages/Brief.tsx';
 import { Expenses } from './pages/Expenses.tsx';
 import { isReportTab, MoreReports } from './pages/MoreReports.tsx';
 import { Rates } from './pages/Rates.tsx';
+import { GenRun, Generators } from './pages/Generators.tsx';
 import { BUSINESS_FEATURE, type BusinessType } from '@qasa/core';
 
 declare global {
@@ -111,7 +112,8 @@ const NAV: { group: Key; items: NavItem[] }[] = [
       { key: 're_title', icon: 'building', path: 'real-estate', match: ['real-estate', 'real-estate-project'], business: 'realEstate' },
       { key: 'mob_nav', icon: 'idcard', path: 'mobile', match: ['mobile', 'repair'], business: 'mobileShop' },
       { key: 'pt_title', icon: 'box', path: 'car-parts', match: ['car-parts'], business: 'autoParts' },
-      { key: 'ew_jobs', icon: 'swap', path: 'works', match: ['works', 'job'], business: 'engineeringWorks' }
+      { key: 'ew_jobs', icon: 'swap', path: 'works', match: ['works', 'job'], business: 'engineeringWorks' },
+      { key: 'gen_title', icon: 'zap', path: 'generators', match: ['generators', 'gen-run'], business: 'generators' }
     ]
   },
   { group: 'gPeople', items: [{ key: 'pay_title', icon: 'users', path: 'payroll', match: ['payroll', 'payroll-run'], adminOnly: true }] },
@@ -394,6 +396,14 @@ export function App() {
     case 'pos-shift':
       title = t('pos_title');
       content = arg ? <PosShiftReport key={arg} id={arg} /> : null;
+      break;
+    case 'generators':
+      title = t('gen_title');
+      content = <Generators key={arg ?? 'collect'} tab={arg === 'subscribers' || arg === 'months' || arg === 'debts' ? arg : 'collect'} />;
+      break;
+    case 'gen-run':
+      title = t('gen_title');
+      content = arg ? <GenRun key={arg} id={arg} /> : null;
       break;
     case 'rates':
       title = t('fx_title');

@@ -3,7 +3,8 @@ import type { FastifyInstance } from 'fastify';
 import { buildApp } from './app.ts';
 import { resetLoginThrottle } from './auth.ts';
 import { openDatabase, type Db } from './db.ts';
-import { fromBase64, imageMime, MAX_IMAGE_BYTES, mediaApi, toBase64 } from './media.ts';
+import { fetchGoogleSheet, fromBase64, googleSheetCsvUrl, imageMime, MAX_IMAGE_BYTES, mediaApi, suggestAccounts, toBase64 } from './media.ts';
+import { loadAccounts } from './accounts.ts';
 
 let db: Db;
 let app: FastifyInstance;
@@ -172,5 +173,102 @@ describe('who may do what, once sign-in is on', () => {
     expect((await app.inject({ method: 'GET', url: `/api/items/${itemId}/image`, headers: sale })).statusCode).toBe(200);
     const imp = await app.inject({ method: 'POST', url: '/api/import', headers: store, payload: { kind: 'customers', rows: [{ name: 'X' }], dryRun: true } });
     expect(imp.statusCode).toBe(403);
+  });
+});
+
+describe('a trial balance from another program', () => {
+  it('suggests where each account belongs: same code, a code it starts with, the usual words, and alike names', () => {
+    const chart = loadAccounts(db);
+    expect(suggestAccounts(chart, { code: '1811', name: 'whatever' })[0]).toMatchObject({ code: '1811', score: 1 });
+    expect(suggestAccounts(chart, { code: '18115', name: '' })[0]!.code).toBe('1811');
+    expect(suggestAccounts(chart, { name: 'الصندوق' })[0]!.code).toBe('1811');
+    expect(suggestAccounts(chart, { name: 'Accounts receivable' })[0]!.code).toBe('1611');
+    expect(suggestAccounts(chart, { name: 'رأس المال' })[0]!.code).toBe('21');
+    expect(suggestAccounts(chart, { name: 'Furniture & office equipment' })[0]!.code).toBe('116');
+    expect(suggestAccounts(chart, { name: 'zzzz qqqq' })).toEqual([]);
+  });
+
+  const rows = [
+    { account: 'Cash', target: '1811', debit: '5,000,000', credit: '' },
+    { account: 'Toyota pickup', target: '114', newName: 'Toyota pickup', debit: '20000000', credit: '' },
+    { account: 'Capital', target: '21', debit: '', credit: '25000000' },
+    { account: 'Empty', target: '1811', debit: '0', credit: '0' }
+  ];
+
+  it('makes one balanced draft opening entry, with a new sub-account where asked, all or nothing', async () => {
+    const check = await send('POST', '/api/import', { kind: 'trial_balance', rows, dryRun: true });
+    expect(check.statusCode, check.body).toBe(200);
+    expect(check.json()).toMatchObject({ created: 3, skipped: [{ line: 5, reason: 'zero' }] });
+    // the dry run made nothing, not even the sub-account
+    expect(db.prepare("SELECT 1 FROM accounts WHERE code = '1141'").get()).toBeUndefined();
+    const res = await send('POST', '/api/import', { kind: 'trial_balance', rows, dryRun: false });
+    expect(res.statusCode, res.body).toBe(200);
+    const entry = (await send('GET', `/api/entries/${res.json().documents[0].id}`)).json();
+    expect(entry).toMatchObject({ status: 'draft', type: 'journal' });
+    expect(entry.lines.map((l: { accountCode: string; debit: number; credit: number }) => [l.accountCode, l.debit, l.credit]))
+      .toEqual([['1811', 5_000_000, 0], ['1141', 20_000_000, 0], ['21', 0, 25_000_000]]);
+  });
+
+  it('says by how much it is out of balance, or puts the difference where it is told', async () => {
+    const short = rows.slice(0, 2);
+    const res = await send('POST', '/api/import', { kind: 'trial_balance', rows: short, dryRun: true });
+    expect(res.statusCode).toBe(400);
+    expect(res.json().details[0]).toMatchObject({ code: 'md_not_balanced', a: 25_000_000 });
+    const ok = await send('POST', '/api/import', { kind: 'trial_balance', rows: short, dryRun: true, options: { counterAccountCode: '21' } });
+    expect(ok.statusCode, ok.body).toBe(200);
+  });
+
+  it('refuses a group account without a new sub-account, and a row with no account chosen', async () => {
+    const res = await send('POST', '/api/import', { kind: 'trial_balance', dryRun: true, rows: [
+      { account: 'Banks', target: '18', debit: '100', credit: '' },
+      { account: 'Mystery', target: '', debit: '', credit: '100' }
+    ] });
+    expect(res.statusCode).toBe(400);
+    expect(res.json().details).toEqual(expect.arrayContaining([
+      expect.objectContaining({ code: 'md_account_not_postable', line: 2 }),
+      expect.objectContaining({ code: 'md_account_not_chosen', line: 3 })
+    ]));
+  });
+
+  it('serves the suggestions to admins', async () => {
+    const res = await send('POST', '/api/import/suggest-accounts', { accounts: [{ name: 'Bank' }, { code: '261', name: '' }] });
+    expect(res.statusCode, res.body).toBe(200);
+    expect(res.json()[0][0].code).toBe('1831');
+    expect(res.json()[1][0].code).toBe('261');
+  });
+});
+
+describe('a Google Sheet shared by link', () => {
+  it('builds the CSV address from the sheet link only', () => {
+    const id = '1AbCdEfGhIjKlMnOpQrStUvWxYz0123456789';
+    expect(googleSheetCsvUrl(`https://docs.google.com/spreadsheets/d/${id}/edit?usp=sharing`))
+      .toBe(`https://docs.google.com/spreadsheets/d/${id}/export?format=csv&gid=0`);
+    expect(googleSheetCsvUrl(`https://docs.google.com/spreadsheets/d/${id}/edit#gid=777`)).toContain('gid=777');
+    expect(googleSheetCsvUrl(`https://docs.google.com/spreadsheets/d/e/2PACX-${id}/pubhtml`))
+      .toBe(`https://docs.google.com/spreadsheets/d/e/2PACX-${id}/pub?output=csv&gid=0`);
+    for (const bad of ['http://docs.google.com/spreadsheets/d/' + id, 'https://evil.com/spreadsheets/d/' + id, 'https://docs.google.com.evil.com/spreadsheets/d/' + id, 'https://docs.google.com/document/d/' + id, 'not a link']) {
+      expect(googleSheetCsvUrl(bad)).toBeNull();
+    }
+  });
+
+  const link = 'https://docs.google.com/spreadsheets/d/1AbCdEfGhIjKlMnOpQrStUvWxYz0123456789/edit';
+  const reply = (status: number, body: string, h: Record<string, string> = {}) => new Response(status >= 300 && status < 400 ? null : body, { status, headers: h });
+
+  it('follows Google redirects, and reads the CSV', async () => {
+    const seen: string[] = [];
+    const fake = (async (url: string) => {
+      seen.push(url);
+      return seen.length === 1 ? reply(307, '', { location: 'https://doc-0s-1c.googleusercontent.com/export/abc' }) : reply(200, 'name,phone\nRaz,0750', { 'content-type': 'text/csv' });
+    }) as unknown as typeof fetch;
+    expect(await fetchGoogleSheet(link, fake)).toEqual({ csv: 'name,phone\nRaz,0750' });
+    expect(seen[1]).toBe('https://doc-0s-1c.googleusercontent.com/export/abc');
+  });
+
+  it('never follows a redirect off Google, and says when the sheet is not shared', async () => {
+    const off = (async () => reply(302, '', { location: 'http://169.254.169.254/latest' })) as unknown as typeof fetch;
+    await expect(fetchGoogleSheet(link, off)).rejects.toMatchObject({ details: [{ code: 'md_sheet_not_shared' }] });
+    const signIn = (async () => reply(200, '<html>Sign in</html>', { 'content-type': 'text/html; charset=utf-8' })) as unknown as typeof fetch;
+    await expect(fetchGoogleSheet(link, signIn)).rejects.toMatchObject({ details: [{ code: 'md_sheet_not_shared' }] });
+    await expect(fetchGoogleSheet('https://example.com/x', signIn)).rejects.toMatchObject({ details: [{ code: 'md_sheet_link_invalid' }] });
   });
 });

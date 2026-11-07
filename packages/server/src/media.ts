@@ -11,6 +11,8 @@ import { createItem } from './items.ts';
 import { createParty } from './parties.ts';
 import { createStockDoc } from './stock-docs.ts';
 import { createJournalEntry } from './journal.ts';
+import { createAccount, loadAccounts } from './accounts.ts';
+import type { Account } from '@qasa/core';
 import type { ApiExtension, ApiRequest } from './routes.ts';
 import type { Actor } from './auth.ts';
 
@@ -111,7 +113,7 @@ export function deleteItemImage(db: Db, itemId: string, user: string): void {
 
 /* ---------- import ---------- */
 
-export const IMPORT_KINDS = ['customers', 'suppliers', 'items', 'opening_stock', 'opening_balances'] as const;
+export const IMPORT_KINDS = ['customers', 'suppliers', 'items', 'opening_stock', 'opening_balances', 'trial_balance'] as const;
 export type ImportKind = (typeof IMPORT_KINDS)[number];
 
 export interface ImportOptions {
@@ -125,6 +127,8 @@ export interface ImportOptions {
   partyType?: 'customer' | 'supplier' | undefined;
   /** opening balances in USD: IQD per USD × 100 */
   rateX100?: number | undefined;
+  /** trial balance: the currency its amounts are in (default IQD) */
+  currency?: CurrencyCode | undefined;
 }
 
 export interface ImportInput { kind: ImportKind; rows: Record<string, unknown>[]; dryRun: boolean; options?: ImportOptions | undefined }
@@ -185,7 +189,8 @@ const OPTIONS = z.object({
   warehouseId: z.string().min(1).max(64).optional(),
   counterAccountCode: z.string().regex(/^[1-4]\d{0,11}$/).optional(),
   partyType: z.enum(['customer', 'supplier']).optional(),
-  rateX100: z.number().int().positive().max(100_000_000).optional()
+  rateX100: z.number().int().positive().max(100_000_000).optional(),
+  currency: z.enum(['IQD', 'USD']).optional()
 });
 
 const INPUT = z.object({
@@ -416,12 +421,231 @@ const importOpeningBalances: Importer = (db, input, actor, result) => {
   }
 };
 
+
+/* ---------- a trial balance from another program (ميزان مراجعة) → the unified chart + one opening entry ---------- */
+
+/**
+ * Words people use for accounts, pointing at the unified chart (Arabic, English, Kurdish). Name similarity does the
+ * rest; these catch the accounts every company has, whatever the other program called them.
+ */
+const ACCOUNT_WORDS: [string[], string][] = [
+  [['صندوق', 'الصندوق', 'قاصة', 'القاصة', 'خزينة', 'الخزينة', 'cash', 'cash on hand', 'petty cash', 'safe', 'قاسە', 'سندوق'], '1811'],
+  [['مصرف', 'المصرف', 'بنك', 'البنك', 'bank', 'بانک'], '1831'],
+  [['زبائن', 'الزبائن', 'عملاء', 'العملاء', 'مدينون', 'المدينون', 'ذمم مدينة', 'customers', 'receivable', 'receivables', 'accounts receivable', 'debtors', 'کڕیاران', 'قەرزداران'], '1611'],
+  [['مجهزون', 'المجهزون', 'موردون', 'الموردون', 'دائنون', 'الدائنون', 'ذمم دائنة', 'suppliers', 'vendors', 'payable', 'payables', 'accounts payable', 'creditors', 'دابینکەران'], '2611'],
+  [['مخزون', 'المخزون', 'بضاعة', 'البضاعة', 'بضاعة اول المدة', 'inventory', 'stock', 'goods', 'کۆگا'], '1371'],
+  [['راس المال', 'رأس المال', 'capital', 'equity', "owner's equity", 'سەرمایە'], '21'],
+  [['ارباح محتجزة', 'الأرباح المحتجزة', 'فائض متراكم', 'retained earnings', 'accumulated surplus'], '229'],
+  [['رواتب', 'الرواتب', 'اجور', 'الأجور', 'salaries', 'wages', 'payroll', 'مووچە'], '31'],
+  [['مبيعات', 'المبيعات', 'ايراد المبيعات', 'sales', 'revenue', 'income', 'فرۆشتن'], '42'],
+  [['مشتريات', 'المشتريات', 'purchases', 'کڕین'], '35'],
+  [['ايجار', 'الإيجار', 'rent', 'کرێ'], '36'],
+  [['سلف الموظفين', 'سلف', 'employee advances', 'advances', 'سولفە'], '1661'],
+  [['اثاث', 'الأثاث', 'furniture', 'office equipment'], '116'],
+  [['سيارات', 'وسائط نقل', 'vehicles', 'cars', 'ئۆتۆمبێل'], '114'],
+  [['مكائن', 'معدات', 'machinery', 'equipment'], '113'],
+  [['مباني', 'المباني', 'buildings'], '112'],
+  [['اراضي', 'الأراضي', 'land'], '111'],
+  [['اندثار متراكم', 'مخصص الاندثار', 'accumulated depreciation'], '231'],
+  [['قروض', 'القروض', 'loans', 'loan'], '24']
+];
+
+const words = (s: string) => normalizeForSearch(s).replace(/[^\p{L}\p{N}\s]/gu, ' ').split(/\s+/).filter((w) => w.length > 1);
+
+/** How alike two names are, 0–1, by the words they share. */
+function likeness(a: string, b: string): number {
+  const x = new Set(words(a));
+  const y = new Set(words(b));
+  if (!x.size || !y.size) return 0;
+  let common = 0;
+  for (const w of x) if (y.has(w)) common++;
+  return common / Math.max(x.size, y.size);
+}
+
+export interface AccountSuggestion { code: string; score: number }
+
+/**
+ * The best places in this company's chart for an account from another program (its code and name, as written there):
+ * the same code, the longest of our codes its number starts with, words every company uses for its cash, bank,
+ * customers …, and how alike the names are in Arabic, English and Kurdish. Up to three, best first.
+ */
+export function suggestAccounts(chart: readonly Account[], source: { code?: string | undefined; name: string }): AccountSuggestion[] {
+  const scores = new Map<string, number>();
+  const add = (code: string, score: number) => {
+    if (!chart.some((a) => a.code === code)) return;
+    scores.set(code, Math.max(scores.get(code) ?? 0, score));
+  };
+  const code = toWesternDigits(source.code ?? '').replace(/\D/g, '');
+  if (code) {
+    if (chart.some((a) => a.code === code)) add(code, 1);
+    const prefix = chart.filter((a) => code.startsWith(a.code) && a.code !== code).sort((a, b) => b.code.length - a.code.length)[0];
+    if (prefix) add(prefix.code, 0.55 + Math.min(prefix.code.length, 4) * 0.05);
+  }
+  const name = normalizeForSearch(source.name);
+  for (const [list, target] of ACCOUNT_WORDS) {
+    for (const w of list) {
+      const nw = normalizeForSearch(w);
+      if (name === nw) add(target, 0.95);
+      else if (` ${name} `.includes(` ${nw} `)) add(target, 0.8);
+    }
+  }
+  for (const a of chart) {
+    const best = Math.max(likeness(source.name, a.name.ar), likeness(source.name, a.name.en), likeness(source.name, a.name.ku));
+    if (best > 0) add(a.code, best * 0.85);
+  }
+  return [...scores].map(([c, score]) => ({ code: c, score: Math.round(score * 100) / 100 }))
+    .sort((a, b) => b.score - a.score || a.code.length - b.code.length).slice(0, 3);
+}
+
+/** The next free code under a parent: one more digit (1–9), then two. */
+function nextChildCode(db: Db, parent: string): string | null {
+  const taken = new Set((db.prepare("SELECT code FROM accounts WHERE code LIKE ? || '%'").all(parent) as { code: string }[]).map((r) => r.code));
+  for (let d = 1; d <= 9; d++) if (!taken.has(parent + d)) return parent + d;
+  for (let d = 10; d <= 99; d++) if (!taken.has(parent + d)) return parent + d;
+  return null;
+}
+
+/**
+ * Rows: the account as the other program named it, the chart account chosen for it (`target`) — or, with `newName`, a
+ * new sub-account made under `target` — and its debit and credit. Accounts named twice are added together. The
+ * result is one draft opening entry (it follows the preparer, checker and approver); a difference between the
+ * debits and credits goes to `counterAccountCode` when one is given, otherwise the check says by how much.
+ */
+const importTrialBalance: Importer = (db, input, actor, result) => {
+  const errors: RowError[] = [];
+  const o = input.options ?? {};
+  const currency = o.currency ?? 'IQD';
+  if (currency === 'USD' && !o.rateX100) errors.push({ code: 'md_rate_required' });
+  let chart = loadAccounts(db);
+  const byCode = () => new Map(chart.map((a) => [a.code, a]));
+  let map = byCode();
+  const made = new Map<string, string>(); // "parent|name" → new code
+  const amounts = new Map<string, number>(); // account → debit − credit
+  for (const [i, r] of input.rows.entries()) {
+    const line = lineOf(i);
+    const debit = text(r.debit) ? signedAmount(text(r.debit), currency) : 0;
+    const credit = text(r.credit) ? signedAmount(text(r.credit), currency) : 0;
+    if (debit === null || credit === null) { errors.push({ code: 'md_amount_invalid', line }); continue; }
+    const net = debit - credit;
+    if (net === 0) { result.skipped.push({ line, reason: 'zero' }); continue; }
+    const target = text(r.target);
+    const newName = text(r.newName);
+    const account = map.get(target);
+    if (!account) { errors.push({ code: 'md_account_not_chosen', line }); continue; }
+    let code = target;
+    if (newName) {
+      const key = `${target}|${normalizeForSearch(newName)}`;
+      const existing = made.get(key) ?? chart.find((a) => a.parentCode === target && [a.name.ar, a.name.en, a.name.ku].some((n) => normalizeForSearch(n) === normalizeForSearch(newName)))?.code;
+      if (existing) code = existing;
+      else {
+        const next = nextChildCode(db, target);
+        if (!next) { errors.push({ code: 'md_account_full', line }); continue; }
+        const created = atRow(errors, line, () => createAccount(db, { parentCode: target, code: next, name: { ar: newName, en: newName, ku: newName } }, actor.name));
+        if (!created) continue;
+        made.set(key, next);
+        chart = loadAccounts(db);
+        map = byCode();
+        code = next;
+      }
+    } else if (!account.postable) {
+      errors.push({ code: 'md_account_not_postable', line, c: target });
+      continue;
+    }
+    amounts.set(code, (amounts.get(code) ?? 0) + net);
+  }
+  fail(errors);
+  const lines = [...amounts].filter(([, v]) => v !== 0).map(([accountCode, v]) => ({ accountCode, debit: v > 0 ? v : 0, credit: v < 0 ? -v : 0 }));
+  if (!lines.length) throw invalid([{ code: 'md_no_rows' }]);
+  const difference = lines.reduce((s, l) => s + l.debit - l.credit, 0);
+  if (difference !== 0) {
+    if (!o.counterAccountCode) throw invalid([{ code: 'md_not_balanced', a: difference, cur: currency }]);
+    lines.push({ accountCode: o.counterAccountCode, debit: difference < 0 ? -difference : 0, credit: difference > 0 ? difference : 0 });
+  }
+  const entry = atRow(errors, undefined, () => createJournalEntry(db, {
+    date: o.date ?? todayIso(), description: 'Opening balances (imported trial balance)',
+    currency, rateX100: currency === 'IQD' ? 100 : o.rateX100!, lines
+  }, actor.name, actor.id));
+  fail(errors);
+  result.created = amounts.size;
+  result.documents.push({ type: 'entry', id: entry!.id, currency });
+};
+
+/* ---------- a Google Sheet shared by link ---------- */
+
+/**
+ * The CSV address of a Google Sheet from the link people copy ("Share → Anyone with the link", or "Publish to the
+ * web"). Only docs.google.com sheet links are accepted, and the address is rebuilt from the sheet's id, never passed on.
+ */
+export function googleSheetCsvUrl(link: string): string | null {
+  let url: URL;
+  try { url = new URL(link.trim()); } catch { return null; }
+  if (url.protocol !== 'https:' || url.hostname !== 'docs.google.com') return null;
+  const gidMatch = /(?:^|[#&?])gid=(\d{1,12})/.exec(url.hash + '&' + url.search);
+  const gid = gidMatch ? gidMatch[1]! : '0';
+  const published = /^\/spreadsheets\/d\/e\/([A-Za-z0-9_-]{20,200})\//.exec(url.pathname);
+  if (published) return `https://docs.google.com/spreadsheets/d/e/${published[1]}/pub?output=csv&gid=${gid}`;
+  const shared = /^\/spreadsheets\/d\/([A-Za-z0-9_-]{20,200})(?:\/|$)/.exec(url.pathname);
+  if (shared) return `https://docs.google.com/spreadsheets/d/${shared[1]}/export?format=csv&gid=${gid}`;
+  return null;
+}
+
+const SHEET_HOSTS = /^(docs\.google\.com|[a-z0-9-]+\.googleusercontent\.com)$/;
+const MAX_SHEET_BYTES = 5 * 1024 * 1024;
+
+/**
+ * Fetches a shared sheet as CSV on the app's own server (the page itself may only talk to the app). It follows
+ * Google's redirects only within Google's own addresses, stops after 15 seconds or 5 MB, and says so plainly when the
+ * sheet isn't shared ("anyone with the link"): Google then answers with its sign-in page.
+ */
+export async function fetchGoogleSheet(link: string, fetchFn: typeof fetch = fetch): Promise<{ csv: string }> {
+  let next = googleSheetCsvUrl(link);
+  if (!next) throw invalid([{ code: 'md_sheet_link_invalid' }]);
+  const signal = AbortSignal.timeout(15_000);
+  for (let hop = 0; hop < 6; hop++) {
+    let res: Response;
+    try {
+      res = await fetchFn(next, { redirect: 'manual', signal, headers: { accept: 'text/csv,text/plain;q=0.9' } });
+    } catch {
+      throw invalid([{ code: 'md_sheet_unreachable' }]);
+    }
+    if (res.status >= 300 && res.status < 400) {
+      const location = res.headers.get('location');
+      if (!location) break;
+      const target = new URL(location, next);
+      if (target.protocol !== 'https:' || !SHEET_HOSTS.test(target.hostname)) throw invalid([{ code: 'md_sheet_not_shared' }]);
+      next = target.toString();
+      continue;
+    }
+    if (res.status === 401 || res.status === 403 || res.status === 404) throw invalid([{ code: 'md_sheet_not_shared' }]);
+    if (!res.ok) throw invalid([{ code: 'md_sheet_unreachable' }]);
+    const type = res.headers.get('content-type') ?? '';
+    if (type.includes('text/html')) throw invalid([{ code: 'md_sheet_not_shared' }]);
+    const reader = res.body?.getReader();
+    if (!reader) return { csv: '' };
+    const chunks: Uint8Array[] = [];
+    let size = 0;
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      size += value.length;
+      if (size > MAX_SHEET_BYTES) { await reader.cancel(); throw invalid([{ code: 'md_sheet_too_large' }]); }
+      chunks.push(value);
+    }
+    const bytes = new Uint8Array(size);
+    let at = 0;
+    for (const c of chunks) { bytes.set(c, at); at += c.length; }
+    return { csv: new TextDecoder().decode(bytes) };
+  }
+  throw invalid([{ code: 'md_sheet_unreachable' }]);
+}
+
 const IMPORTERS: Record<ImportKind, Importer> = {
   customers: importParties('customer'),
   suppliers: importParties('supplier'),
   items: importItems,
   opening_stock: importOpeningStock,
-  opening_balances: importOpeningBalances
+  opening_balances: importOpeningBalances,
+  trial_balance: importTrialBalance
 };
 
 /* ---------- routes ---------- */
@@ -435,8 +659,9 @@ function parse<T>(schema: z.ZodType<T>, value: unknown): T {
 const idParam = z.object({ id: z.string().min(1).max(64) });
 
 /**
- * Pictures: anyone signed in sees them; changing one needs the stock permission. Importing needs an admin (it isn't
- * listed in rules, so the app's own rule applies).
+ * Pictures: anyone signed in sees them; changing one needs the stock permission. Importing, the account suggestions
+ * and fetching a Google Sheet need an admin (they aren't listed in rules, so the app's own rule applies — and POST
+ * routes are changes, so a non-admin is refused even for the read-only suggestions).
  */
 export const mediaApi: ApiExtension = {
   rules: {
@@ -470,6 +695,19 @@ export const mediaApi: ApiExtension = {
           if (body.kind === 'opening_balances' && !body.options?.partyType) throw invalid([{ code: 'md_party_type_required' }]);
           return runImport(db, { kind: body.kind, rows: body.rows, dryRun: body.dryRun, options: body.options }, actor(req));
         }
+      },
+      {
+        // where each account of another program's trial balance most likely belongs in this company's chart
+        method: 'POST', path: '/api/import/suggest-accounts',
+        handler: async (req) => {
+          const body = parse(z.object({ accounts: z.array(z.object({ code: z.string().max(40).optional(), name: z.string().max(300) })).max(MAX_IMPORT_ROWS) }), req.body);
+          const chart = loadAccounts(db);
+          return body.accounts.map((a) => suggestAccounts(chart, a));
+        }
+      },
+      {
+        method: 'POST', path: '/api/import/google-sheet',
+        handler: async (req) => fetchGoogleSheet(parse(z.object({ url: z.string().min(10).max(2000) }), req.body).url)
       }
     ];
   }

@@ -11,6 +11,7 @@ import { useI18n } from '../i18n.ts';
 import { go, href } from '../router.ts';
 import { InvoicesTable } from './Parties.tsx';
 import { averageCost, qtyText, unitName } from './Items.tsx';
+import { InvoiceQr } from '../industry/InvoiceQr.tsx';
 
 const STATUSES: (InvoiceStatus | '')[] = ['', 'draft', 'posted', 'cancelled'];
 
@@ -472,6 +473,8 @@ export function InvoiceDetail({ id }: { id: string }) {
           <div className="sig done"><div className="muted small">{t('preparedBy')}</div><div className="who">{v.createdBy}</div></div>
           <div className="sig"><div className="muted small">{saleSide ? t('customer') : t('supplier')}</div><div className="who">&nbsp;</div></div>
         </div>
+        {/* a posted sale: a code the customer scans to check the invoice (qasaerp.com/v/) */}
+        {v.kind === 'sale' && v.status === 'posted' && <div style={{ marginTop: 12 }}><InvoiceQr invoiceId={v.id} /></div>}
         {/* Required on Free by the license (NOTICE, additional term 1); Pro and Business remove it. */}
         {!plan?.features.includes('noBranding') && <div className="made-with">{t('madeWith')} · <span className="ltr">qasaerp.com</span></div>}
       </div>

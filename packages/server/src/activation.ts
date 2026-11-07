@@ -13,6 +13,8 @@ import { deleteSetting, readSetting, writeSetting } from './settings.ts';
 import { planStatus, readLicenseKey, verifyLicenseSignature, type PlanStatus } from './license.ts';
 import type { ApiExtension } from './routes.ts';
 import { loadNative } from './native-licence.ts';
+// the company's invoice-signing key goes to the portal, so qasaerp.com/v can show who issued an invoice
+import { companyVerifyKey } from './verify.ts';
 
 /**
  * Online activation (my.qasaerp.com). A licence key is activated once on a PC, online: the portal keeps a seat for
@@ -316,7 +318,7 @@ export async function activateOnline(db: Db, user: string): Promise<PlanStatus> 
   const keyText = readSetting(db, 'license_key');
   const license = keyText ? readLicenseKey(keyText) : null;
   if (!keyText || !license) throw new AppError(400, 'license_invalid');
-  const { status, data } = await call('/api/v1/activate', {
+  const { status, data } = await call('/api/v1/activate', { verifyKey: companyVerifyKey(db),
     key: keyText, machine: machineId(db), label: hostname().slice(0, 60), appVersion: APP_VERSION
   });
   const token = typeof data.token === 'string' ? data.token : null;
@@ -340,7 +342,7 @@ export async function checkOnline(db: Db, user = 'Qasa ERP'): Promise<PlanStatus
   const tokenText = readSetting(db, TOKEN_SETTING);
   const keyText = readSetting(db, 'license_key');
   if (!tokenText || !keyText) return planStatus(db);
-  const { status, data } = await call('/api/v1/check', { token: tokenText, appVersion: APP_VERSION });
+  const { status, data } = await call('/api/v1/check', { token: tokenText, appVersion: APP_VERSION, verifyKey: companyVerifyKey(db) });
   const checked = new Date(nowMs()).toISOString();
   if (data.revoked === true) {
     const reason = typeof data.reason === 'string' ? data.reason : 'revoked';

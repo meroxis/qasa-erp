@@ -13,6 +13,8 @@ import { CLOUD_TEXT } from './i18n/cloud.ts';
 import { RELAY_TEXT } from './i18n/relay.ts';
 import { ACTIVATION_TEXT } from './i18n/activation.ts';
 import { FX_TEXT } from './i18n/fx.ts';
+import { VERIFY_TEXT } from './i18n/verify.ts';
+import { GEN_TEXT } from './i18n/generators.ts';
 import { formatAmount, formatDate, formatInteger, LANGS, toEasternDigits, type CurrencyCode, type DigitStyle, type Lang, type Names } from '@qasa/core';
 
 /** Every UI string in Arabic, English and Kurdish (Sorani) — in that order. */
@@ -34,6 +36,8 @@ const BASE = {
   items: ['المواد والمخزون', 'Items & stock', 'کاڵا و کۆگا'],
   gIndustry: ['نشاط الشركة', 'Your business', 'چالاکیی کۆمپانیا'],
   err_entry_belongs_to_payroll: ['هذا القيد لرواتب شهر؛ أرجِعه إلى مسودة من صفحة الرواتب.', 'This entry belongs to a payroll month; take it back to draft from the Payroll page.', 'ئەم تۆمارە هی مووچەی مانگێکە؛ لە پەڕەی مووچەوە بیگەڕێنەوە بۆ ڕەشنووس.'],
+  err_entry_belongs_to_generator_run: ['هذا القيد لفواتير المولدة لشهر؛ أرجِعه إلى مسودة من صفحة المولدة.', 'This entry bills a generator month; take it back to draft from the Generators page.', 'ئەم تۆمارە پسوولەی مۆلیدەی مانگێکە؛ لە پەڕەی مۆلیدەوە بیگەڕێنەوە بۆ ڕەشنووس.'],
+  f_generators: ['المولدات الأهلية: المشتركون بالأمبير والجباية والديون', 'Generator owners: subscribers by amps, collections and debts', 'مۆلیدەی ئەهلی: بەشداربووان بە ئەمپێر، کۆکردنەوە و قەرز'],
   bizType: ['نشاط الشركة', 'Business type', 'جۆری چالاکی'],
   bizWelcome: ['أهلاً بك في قاصة ERP', 'Welcome to Qasa ERP', 'بەخێربێیت بۆ قاسە ERP'],
   bizQuestion: ['ماذا تعمل شركتك؟ اختر واحداً أو أكثر — القائمة تعرض ما يناسبك فقط.', 'What does your company do? Pick one or more — the menu shows only what fits you.', 'کۆمپانیاکەت چی دەکات؟ یەک یان زیاتر هەڵبژێرە — لیستەکە تەنها ئەوەی بۆت گونجاوە پیشان دەدات.'],
@@ -945,7 +949,7 @@ const BASE = {
 
 /** The industry features keep their texts in files of their own (i18n/), in the same three languages. */
 const D = { ...BASE, ...REAL_ESTATE_TEXT, ...MOBILE_TEXT, ...PARTS_TEXT, ...ENGINEERING_TEXT,
-  ...PAYROLL_TEXT, ...POS_TEXT, ...QUOTES_TEXT, ...PIPELINE_TEXT, ...MEDIA_TEXT, ...BRIEF_TEXT, ...CLOUD_TEXT, ...RELAY_TEXT, ...ACTIVATION_TEXT, ...FX_TEXT };
+  ...PAYROLL_TEXT, ...POS_TEXT, ...QUOTES_TEXT, ...PIPELINE_TEXT, ...MEDIA_TEXT, ...BRIEF_TEXT, ...CLOUD_TEXT, ...RELAY_TEXT, ...ACTIVATION_TEXT, ...FX_TEXT, ...VERIFY_TEXT, ...GEN_TEXT };
 
 export type Key = keyof typeof D;
 

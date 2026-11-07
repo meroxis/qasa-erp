@@ -236,6 +236,8 @@ export function deleteEntry(db: Db, id: string, user: string): void {
   requireAction(row, 'delete');
   // a payroll month's draft entry is taken back from the payroll page ("Back to draft"), which keeps both in step
   if (db.prepare('SELECT 1 FROM payroll_runs WHERE entry_id = ?').get(id)) throw conflict('entry_belongs_to_payroll');
+  // the same for a generator month's billing entry (from the generators page)
+  if (db.prepare('SELECT 1 FROM gen_runs WHERE entry_id = ?').get(id)) throw conflict('entry_belongs_to_generator_run');
   transaction(db, () => {
     db.prepare('DELETE FROM entries WHERE id = ?').run(id);
     audit(db, user, 'delete', 'entry', id, { type: row.type });
