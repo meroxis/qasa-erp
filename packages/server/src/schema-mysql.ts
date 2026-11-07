@@ -393,6 +393,234 @@ export const MYSQL_TABLES: readonly MysqlObject[] = [
       FOREIGN KEY (contract_id) REFERENCES installment_contracts(id),
       FOREIGN KEY (entry_id) REFERENCES entries(id)
     )`
+  },
+  {
+    name: 're_projects',
+    since: 7,
+    sql: `CREATE TABLE re_projects (
+      id ${ID} NOT NULL PRIMARY KEY,
+      code ${ID} NOT NULL UNIQUE,
+      name TEXT NOT NULL,
+      city TEXT,
+      address TEXT,
+      currency ${WORD} NOT NULL CHECK (currency IN ('IQD', 'USD')),
+      item_id ${ID} NOT NULL,
+      active INT NOT NULL DEFAULT 1,
+      notes TEXT,
+      created_at ${WHEN} NOT NULL,
+      updated_at ${WHEN} NOT NULL,
+      FOREIGN KEY (item_id) REFERENCES items(id)
+    )`
+  },
+  {
+    name: 're_units',
+    since: 7,
+    sql: `CREATE TABLE re_units (
+      id ${ID} NOT NULL PRIMARY KEY,
+      project_id ${ID} NOT NULL,
+      building ${ID} NOT NULL DEFAULT '',
+      code ${ID} NOT NULL,
+      floor INT NOT NULL DEFAULT 0,
+      kind ${WORD} NOT NULL CHECK (kind IN ('apartment', 'villa', 'house', 'shop', 'office', 'land')),
+      bedrooms INT NOT NULL DEFAULT 0 CHECK (bedrooms >= 0),
+      area_x100 BIGINT NOT NULL DEFAULT 0 CHECK (area_x100 >= 0),
+      price BIGINT NOT NULL CHECK (price >= 0),
+      view TEXT,
+      status ${WORD} NOT NULL CHECK (status IN ('available', 'reserved', 'sold')),
+      party_id ${ID},
+      reserved_until ${WHEN},
+      invoice_id ${ID},
+      contract_id ${ID},
+      notes TEXT,
+      created_at ${WHEN} NOT NULL,
+      updated_at ${WHEN} NOT NULL,
+      CHECK ((status = 'available') = (party_id IS NULL)),
+      CHECK (status = 'sold' OR (invoice_id IS NULL AND contract_id IS NULL)),
+      UNIQUE KEY re_units_code (project_id, building, code),
+      INDEX re_units_project (project_id),
+      INDEX re_units_party (party_id),
+      FOREIGN KEY (project_id) REFERENCES re_projects(id),
+      FOREIGN KEY (party_id) REFERENCES parties(id),
+      FOREIGN KEY (invoice_id) REFERENCES invoices(id),
+      FOREIGN KEY (contract_id) REFERENCES installment_contracts(id)
+    )`
+  },
+  {
+    name: 'serials',
+    since: 7,
+    sql: `CREATE TABLE serials (
+      id ${ID} NOT NULL PRIMARY KEY,
+      item_id ${ID} NOT NULL,
+      serial ${ID} NOT NULL UNIQUE,
+      grade ${WORD} NOT NULL CHECK (grade IN ('new', 'used')),
+      status ${WORD} NOT NULL CHECK (status IN ('in_stock', 'sold', 'returned', 'defective')),
+      purchase_invoice_id ${ID},
+      from_party_id ${ID},
+      cost BIGINT,
+      sale_invoice_id ${ID},
+      party_id ${ID},
+      sold_at ${WHEN},
+      warranty_until ${WHEN},
+      notes TEXT,
+      created_by TEXT NOT NULL,
+      created_at ${WHEN} NOT NULL,
+      updated_at ${WHEN} NOT NULL,
+      CHECK (status <> 'sold' OR sale_invoice_id IS NOT NULL),
+      INDEX serials_item (item_id),
+      INDEX serials_sale (sale_invoice_id),
+      FOREIGN KEY (item_id) REFERENCES items(id),
+      FOREIGN KEY (purchase_invoice_id) REFERENCES invoices(id),
+      FOREIGN KEY (from_party_id) REFERENCES parties(id),
+      FOREIGN KEY (sale_invoice_id) REFERENCES invoices(id),
+      FOREIGN KEY (party_id) REFERENCES parties(id)
+    )`
+  },
+  {
+    name: 'repair_orders',
+    since: 7,
+    sql: `CREATE TABLE repair_orders (
+      id ${ID} NOT NULL PRIMARY KEY,
+      number ${ID} NOT NULL UNIQUE,
+      date ${WHEN} NOT NULL,
+      party_id ${ID} NOT NULL,
+      device TEXT NOT NULL,
+      serial TEXT,
+      problem TEXT NOT NULL,
+      accessories TEXT,
+      passcode_given INT NOT NULL DEFAULT 0,
+      technician TEXT,
+      status ${WORD} NOT NULL CHECK (status IN ('received', 'diagnosing', 'waiting_parts', 'repairing', 'ready', 'delivered', 'cancelled')),
+      currency ${WORD} NOT NULL CHECK (currency IN ('IQD', 'USD')),
+      estimate BIGINT NOT NULL DEFAULT 0 CHECK (estimate >= 0),
+      promised_date ${WHEN},
+      invoice_id ${ID},
+      notes TEXT,
+      created_by TEXT NOT NULL,
+      created_at ${WHEN} NOT NULL,
+      delivered_at ${WHEN},
+      updated_at ${WHEN} NOT NULL,
+      INDEX repair_orders_party (party_id),
+      FOREIGN KEY (party_id) REFERENCES parties(id),
+      FOREIGN KEY (invoice_id) REFERENCES invoices(id)
+    )`
+  },
+  {
+    name: 'part_details',
+    since: 7,
+    sql: `CREATE TABLE part_details (
+      item_id ${ID} NOT NULL PRIMARY KEY,
+      shelf TEXT,
+      brand TEXT,
+      origin TEXT,
+      wholesale_price BIGINT CHECK (wholesale_price IS NULL OR wholesale_price >= 0),
+      reorder_milli BIGINT CHECK (reorder_milli IS NULL OR reorder_milli >= 0),
+      updated_at ${WHEN} NOT NULL,
+      FOREIGN KEY (item_id) REFERENCES items(id)
+    )`
+  },
+  {
+    name: 'part_numbers',
+    since: 7,
+    sql: `CREATE TABLE part_numbers (
+      item_id ${ID} NOT NULL,
+      number TEXT NOT NULL,
+      number_key ${ID} NOT NULL,
+      kind ${WORD} NOT NULL CHECK (kind IN ('oem', 'alt')),
+      maker TEXT,
+      PRIMARY KEY (item_id, number_key),
+      INDEX part_numbers_key (number_key),
+      FOREIGN KEY (item_id) REFERENCES items(id)
+    )`
+  },
+  {
+    name: 'part_fitments',
+    since: 7,
+    sql: `CREATE TABLE part_fitments (
+      id ${ID} NOT NULL PRIMARY KEY,
+      item_id ${ID} NOT NULL,
+      make ${ID} NOT NULL,
+      model ${ID} NOT NULL,
+      year_from INT,
+      year_to INT,
+      engine TEXT,
+      CHECK (year_from IS NULL OR year_to IS NULL OR year_from <= year_to),
+      INDEX part_fitments_item (item_id),
+      INDEX part_fitments_car (make, model),
+      FOREIGN KEY (item_id) REFERENCES items(id)
+    )`
+  },
+  {
+    name: 'jobs',
+    since: 7,
+    sql: `CREATE TABLE jobs (
+      id ${ID} NOT NULL PRIMARY KEY,
+      number ${ID} NOT NULL UNIQUE,
+      date ${WHEN} NOT NULL,
+      party_id ${ID} NOT NULL,
+      title TEXT NOT NULL,
+      category ${WORD} NOT NULL CHECK (category IN ('welding', 'steel', 'aluminium', 'mdf', 'openings', 'general')),
+      site TEXT,
+      currency ${WORD} NOT NULL CHECK (currency IN ('IQD', 'USD')),
+      status ${WORD} NOT NULL CHECK (status IN ('quote', 'measuring', 'approved', 'fabricating', 'installing', 'done', 'invoiced', 'cancelled')),
+      discount BIGINT NOT NULL DEFAULT 0 CHECK (discount >= 0),
+      due_date ${WHEN},
+      assigned_to TEXT,
+      invoice_id ${ID},
+      notes TEXT,
+      created_by TEXT NOT NULL,
+      created_at ${WHEN} NOT NULL,
+      updated_at ${WHEN} NOT NULL,
+      INDEX jobs_party (party_id),
+      FOREIGN KEY (party_id) REFERENCES parties(id),
+      FOREIGN KEY (invoice_id) REFERENCES invoices(id)
+    )`
+  },
+  {
+    name: 'job_lines',
+    since: 7,
+    sql: `CREATE TABLE job_lines (
+      job_id ${ID} NOT NULL,
+      seq INT NOT NULL,
+      description TEXT NOT NULL,
+      unit ${WORD} NOT NULL CHECK (unit IN ('m2', 'm', 'piece', 'kg', 'set', 'lump')),
+      qty_milli BIGINT NOT NULL CHECK (qty_milli > 0),
+      unit_price BIGINT NOT NULL CHECK (unit_price >= 0),
+      PRIMARY KEY (job_id, seq),
+      FOREIGN KEY (job_id) REFERENCES jobs(id)
+    )`
+  },
+  {
+    name: 'job_costs',
+    since: 7,
+    sql: `CREATE TABLE job_costs (
+      id ${ID} NOT NULL PRIMARY KEY,
+      job_id ${ID} NOT NULL,
+      category ${WORD} NOT NULL CHECK (category IN ('materials', 'labour', 'subcontract', 'transport', 'other')),
+      invoice_id ${ID},
+      entry_id ${ID},
+      amount BIGINT NOT NULL CHECK (amount > 0),
+      description TEXT,
+      created_by TEXT NOT NULL,
+      created_at ${WHEN} NOT NULL,
+      CHECK ((invoice_id IS NULL) <> (entry_id IS NULL)),
+      INDEX job_costs_job (job_id),
+      FOREIGN KEY (job_id) REFERENCES jobs(id),
+      FOREIGN KEY (invoice_id) REFERENCES invoices(id),
+      FOREIGN KEY (entry_id) REFERENCES entries(id)
+    )`
+  },
+  {
+    name: 'job_receipts',
+    since: 7,
+    sql: `CREATE TABLE job_receipts (
+      job_id ${ID} NOT NULL,
+      entry_id ${ID} NOT NULL UNIQUE,
+      amount BIGINT NOT NULL CHECK (amount > 0),
+      created_at ${WHEN} NOT NULL,
+      PRIMARY KEY (job_id, entry_id),
+      FOREIGN KEY (job_id) REFERENCES jobs(id),
+      FOREIGN KEY (entry_id) REFERENCES entries(id)
+    )`
   }
 ];
 

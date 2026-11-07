@@ -20,6 +20,10 @@ export type Feature =
   | 'cloudBackup'
   | 'onlineEdition'
   | 'branches'
+  | 'realEstate' // projects, units, reservations and unit sales
+  | 'mobileShop' // IMEI tracking, trade-ins, repair orders
+  | 'autoParts' // part numbers, fitments, shelves, wholesale prices
+  | 'engineeringWorks' // job orders: quotes, measured lines, workshop progress, deposits, job costs
   | 'databaseServer'; // the company database on the company's own MariaDB or MySQL server
 
 export interface PlanLimits {
@@ -37,12 +41,12 @@ export interface PlanDefinition {
   features: readonly Feature[];
 }
 
-const PRO_FEATURES: readonly Feature[] = ['officeNetwork', 'roles', 'installments', 'payroll', 'finalAccountsExport', 'noBranding', 'cloudBackup'];
+const PRO_FEATURES: readonly Feature[] = ['officeNetwork', 'roles', 'installments', 'payroll', 'finalAccountsExport', 'noBranding', 'cloudBackup', 'mobileShop', 'autoParts', 'engineeringWorks'];
 
 export const PLANS: Record<PlanId, PlanDefinition> = {
   free: { id: 'free', limits: { companies: 1, users: 1, warehouses: 1 }, features: [] },
   pro: { id: 'pro', limits: { companies: 3, users: 5, warehouses: null }, features: PRO_FEATURES },
-  business: { id: 'business', limits: { companies: null, users: null, warehouses: null }, features: [...PRO_FEATURES, 'onlineEdition', 'branches', 'databaseServer'] }
+  business: { id: 'business', limits: { companies: null, users: null, warehouses: null }, features: [...PRO_FEATURES, 'onlineEdition', 'branches', 'databaseServer', 'realEstate'] }
 };
 
 /** Length of the free Pro trial, once per company. */

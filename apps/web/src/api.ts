@@ -375,7 +375,7 @@ export function setCurrentUser(name: string): void {
 /** Fired when the server says nobody is signed in (a session ended); the app shows the sign-in page. */
 export const SIGNED_OUT_EVENT = 'qasa:signed-out';
 
-async function request<T>(method: string, url: string, body?: unknown): Promise<T> {
+export async function request<T>(method: string, url: string, body?: unknown): Promise<T> {
   // marks requests as coming from the app itself; the server refuses changes without it once sign-in is on
   const headers: Record<string, string> = { 'x-qasa-client': '1' };
   const user = currentUser();
@@ -394,7 +394,7 @@ async function request<T>(method: string, url: string, body?: unknown): Promise<
   return data as T;
 }
 
-const qs = (params: Record<string, string | undefined>) => {
+export const qs = (params: Record<string, string | undefined>) => {
   const p = new URLSearchParams();
   for (const [k, v] of Object.entries(params)) if (v) p.set(k, v);
   const s = p.toString();

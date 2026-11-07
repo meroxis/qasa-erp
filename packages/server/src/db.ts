@@ -632,9 +632,211 @@ const V6 =
   BEGIN SELECT RAISE(ABORT, 'installment_contract_is_permanent'); END;
   `;
 
+const V7 =
+  // 7 — industry features: real estate (Business), mobile shops (Pro), car parts (Pro), engineering works (Pro)
+  `
+  CREATE TABLE re_projects (
+    id TEXT PRIMARY KEY,
+    code TEXT NOT NULL UNIQUE,
+    name TEXT NOT NULL,
+    city TEXT,
+    address TEXT,
+    -- units are priced and sold in this currency
+    currency TEXT NOT NULL CHECK (currency IN ('IQD', 'USD')),
+    -- the service item its sale invoices use (made with the project)
+    item_id TEXT NOT NULL REFERENCES items(id),
+    active INTEGER NOT NULL DEFAULT 1,
+    notes TEXT,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+  );
+
+  CREATE TABLE re_units (
+    id TEXT PRIMARY KEY,
+    project_id TEXT NOT NULL REFERENCES re_projects(id),
+    -- the building or block within the project ('' when it has one)
+    building TEXT NOT NULL DEFAULT '',
+    code TEXT NOT NULL,
+    floor INTEGER NOT NULL DEFAULT 0,
+    kind TEXT NOT NULL CHECK (kind IN ('apartment', 'villa', 'house', 'shop', 'office', 'land')),
+    bedrooms INTEGER NOT NULL DEFAULT 0 CHECK (bedrooms >= 0),
+    -- square metres × 100
+    area_x100 INTEGER NOT NULL DEFAULT 0 CHECK (area_x100 >= 0),
+    -- the asking price, in the project's currency
+    price INTEGER NOT NULL CHECK (price >= 0),
+    view TEXT,
+    status TEXT NOT NULL CHECK (status IN ('available', 'reserved', 'sold')),
+    -- the customer it is reserved for or sold to
+    party_id TEXT REFERENCES parties(id),
+    reserved_until TEXT,
+    -- the sale invoice and, when sold by installments, its contract
+    invoice_id TEXT REFERENCES invoices(id),
+    contract_id TEXT REFERENCES installment_contracts(id),
+    notes TEXT,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    UNIQUE (project_id, building, code),
+    CHECK ((status = 'available') = (party_id IS NULL)),
+    CHECK (status = 'sold' OR (invoice_id IS NULL AND contract_id IS NULL))
+  );
+  CREATE INDEX re_units_project ON re_units(project_id);
+  CREATE INDEX re_units_party ON re_units(party_id);
+
+  -- mobile shops (Pro): each phone by its IMEI or serial number, and repair orders
+  CREATE TABLE serials (
+    id TEXT PRIMARY KEY,
+    item_id TEXT NOT NULL REFERENCES items(id),
+    -- the IMEI or serial number, upper case without spaces
+    serial TEXT NOT NULL UNIQUE,
+    grade TEXT NOT NULL CHECK (grade IN ('new', 'used')),
+    status TEXT NOT NULL CHECK (status IN ('in_stock', 'sold', 'returned', 'defective')),
+    -- where it came from: a purchase invoice, or bought from a customer (trade-in)
+    purchase_invoice_id TEXT REFERENCES invoices(id),
+    from_party_id TEXT REFERENCES parties(id),
+    cost INTEGER,
+    -- the sale that took it, and the customer's warranty
+    sale_invoice_id TEXT REFERENCES invoices(id),
+    party_id TEXT REFERENCES parties(id),
+    sold_at TEXT,
+    warranty_until TEXT,
+    notes TEXT,
+    created_by TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    CHECK (status <> 'sold' OR sale_invoice_id IS NOT NULL)
+  );
+  CREATE INDEX serials_item ON serials(item_id);
+  CREATE INDEX serials_sale ON serials(sale_invoice_id);
+
+  CREATE TABLE repair_orders (
+    id TEXT PRIMARY KEY,
+    number TEXT NOT NULL UNIQUE,
+    date TEXT NOT NULL,
+    party_id TEXT NOT NULL REFERENCES parties(id),
+    device TEXT NOT NULL,
+    serial TEXT,
+    problem TEXT NOT NULL,
+    -- what the customer left with the device (charger, case, SIM …) and its state on arrival
+    accessories TEXT,
+    passcode_given INTEGER NOT NULL DEFAULT 0,
+    technician TEXT,
+    status TEXT NOT NULL CHECK (status IN ('received', 'diagnosing', 'waiting_parts', 'repairing', 'ready', 'delivered', 'cancelled')),
+    currency TEXT NOT NULL CHECK (currency IN ('IQD', 'USD')),
+    estimate INTEGER NOT NULL DEFAULT 0 CHECK (estimate >= 0),
+    promised_date TEXT,
+    -- the sale invoice that charged the repair, made at delivery
+    invoice_id TEXT REFERENCES invoices(id),
+    notes TEXT,
+    created_by TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    delivered_at TEXT,
+    updated_at TEXT NOT NULL
+  );
+  CREATE INDEX repair_orders_party ON repair_orders(party_id);
+
+  -- car parts (Pro): shelf, brand and origin, part numbers (OEM and alternatives) and the cars a part fits
+  CREATE TABLE part_details (
+    item_id TEXT PRIMARY KEY REFERENCES items(id),
+    shelf TEXT,
+    brand TEXT,
+    -- genuine, or the country it was made in
+    origin TEXT,
+    -- the price for garages and wholesalers, in the item's sale currency
+    wholesale_price INTEGER CHECK (wholesale_price IS NULL OR wholesale_price >= 0),
+    -- reorder when stock falls to this (thousandths)
+    reorder_milli INTEGER CHECK (reorder_milli IS NULL OR reorder_milli >= 0),
+    updated_at TEXT NOT NULL
+  );
+
+  CREATE TABLE part_numbers (
+    item_id TEXT NOT NULL REFERENCES items(id),
+    -- as written, and upper case without spaces, dots or dashes for searching
+    number TEXT NOT NULL,
+    number_key TEXT NOT NULL,
+    kind TEXT NOT NULL CHECK (kind IN ('oem', 'alt')),
+    maker TEXT,
+    PRIMARY KEY (item_id, number_key)
+  );
+  CREATE INDEX part_numbers_key ON part_numbers(number_key);
+
+  CREATE TABLE part_fitments (
+    id TEXT PRIMARY KEY,
+    item_id TEXT NOT NULL REFERENCES items(id),
+    make TEXT NOT NULL,
+    model TEXT NOT NULL,
+    year_from INTEGER,
+    year_to INTEGER,
+    engine TEXT,
+    CHECK (year_from IS NULL OR year_to IS NULL OR year_from <= year_to)
+  );
+  CREATE INDEX part_fitments_item ON part_fitments(item_id);
+  CREATE INDEX part_fitments_car ON part_fitments(make, model);
+
+  -- engineering works (Pro): job orders for welding, steelwork, aluminium, MDF, doors and windows — the quote and its
+  -- measured lines, the job's progress from measuring to installing, deposits, what it cost, and the final sale invoice
+  CREATE TABLE jobs (
+    id TEXT PRIMARY KEY,
+    number TEXT NOT NULL UNIQUE,
+    date TEXT NOT NULL,
+    party_id TEXT NOT NULL REFERENCES parties(id),
+    title TEXT NOT NULL,
+    category TEXT NOT NULL CHECK (category IN ('welding', 'steel', 'aluminium', 'mdf', 'openings', 'general')),
+    site TEXT,
+    currency TEXT NOT NULL CHECK (currency IN ('IQD', 'USD')),
+    status TEXT NOT NULL CHECK (status IN ('quote', 'measuring', 'approved', 'fabricating', 'installing', 'done', 'invoiced', 'cancelled')),
+    -- discount on the quote, in the job's currency
+    discount INTEGER NOT NULL DEFAULT 0 CHECK (discount >= 0),
+    due_date TEXT,
+    assigned_to TEXT,
+    -- the sale invoice that billed it
+    invoice_id TEXT REFERENCES invoices(id),
+    notes TEXT,
+    created_by TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+  );
+  CREATE INDEX jobs_party ON jobs(party_id);
+
+  -- the quote: measured lines (2.40 m × 1.80 m of aluminium, a gate, labour …)
+  CREATE TABLE job_lines (
+    job_id TEXT NOT NULL REFERENCES jobs(id),
+    seq INTEGER NOT NULL,
+    description TEXT NOT NULL,
+    unit TEXT NOT NULL CHECK (unit IN ('m2', 'm', 'piece', 'kg', 'set', 'lump')),
+    qty_milli INTEGER NOT NULL CHECK (qty_milli > 0),
+    unit_price INTEGER NOT NULL CHECK (unit_price >= 0),
+    PRIMARY KEY (job_id, seq)
+  );
+
+  -- what a job cost: a posted purchase invoice (materials bought for it) or an approved voucher (wages, transport …)
+  CREATE TABLE job_costs (
+    id TEXT PRIMARY KEY,
+    job_id TEXT NOT NULL REFERENCES jobs(id),
+    category TEXT NOT NULL CHECK (category IN ('materials', 'labour', 'subcontract', 'transport', 'other')),
+    invoice_id TEXT REFERENCES invoices(id),
+    entry_id TEXT REFERENCES entries(id),
+    -- in IQD
+    amount INTEGER NOT NULL CHECK (amount > 0),
+    description TEXT,
+    created_by TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    CHECK ((invoice_id IS NULL) <> (entry_id IS NULL))
+  );
+  CREATE INDEX job_costs_job ON job_costs(job_id);
+
+  -- deposits (العربون) and payments the customer made on a job: receipt vouchers
+  CREATE TABLE job_receipts (
+    job_id TEXT NOT NULL REFERENCES jobs(id),
+    entry_id TEXT NOT NULL UNIQUE REFERENCES entries(id),
+    amount INTEGER NOT NULL CHECK (amount > 0),
+    created_at TEXT NOT NULL,
+    PRIMARY KEY (job_id, entry_id)
+  );
+  `;
+
 const MIGRATIONS: Migration[] = [
   { sql: V1 }, { sql: V2, rebuild: true }, { sql: V3, rebuild: true }, { sql: V4 }, { sql: V5, rebuild: true },
-  { sql: V6, mysql: 'tables' }
+  { sql: V6, mysql: 'tables' }, { sql: V7, mysql: 'tables' }
 ];
 
 /** Server databases began at this version: its schema is in schema-mysql.ts (tables and triggers without `since`). */

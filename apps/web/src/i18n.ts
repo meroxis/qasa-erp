@@ -1,8 +1,12 @@
 import { createContext, useContext } from 'react';
+import { ENGINEERING_TEXT } from './i18n/engineering-works.ts';
+import { MOBILE_TEXT } from './i18n/mobile.ts';
+import { PARTS_TEXT } from './i18n/parts.ts';
+import { REAL_ESTATE_TEXT } from './i18n/real-estate.ts';
 import { formatAmount, formatDate, formatInteger, LANGS, toEasternDigits, type CurrencyCode, type DigitStyle, type Lang, type Names } from '@qasa/core';
 
 /** Every UI string in Arabic, English and Kurdish (Sorani) — in that order. */
-const D = {
+const BASE = {
   appName: ['قاصة ERP', 'Qasa ERP', 'قاسە ERP'],
   tagline: ['كل دينار محسوب', 'Every dinar, counted', 'هەموو دینارێک ژمێردراوە'],
   gOverview: ['عام', 'Overview', 'گشتی'],
@@ -901,6 +905,9 @@ const D = {
   e_installment: ['عقد تقسيط', 'Installment contract', 'گرێبەستی قیست'],
   e_guarantor: ['كفيل', 'Guarantor', 'کەفیل']
 } as const satisfies Record<string, readonly [string, string, string]>;
+
+/** The industry features keep their texts in files of their own (i18n/), in the same three languages. */
+const D = { ...BASE, ...REAL_ESTATE_TEXT, ...MOBILE_TEXT, ...PARTS_TEXT, ...ENGINEERING_TEXT };
 
 export type Key = keyof typeof D;
 

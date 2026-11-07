@@ -13,5 +13,6 @@ export { getSettings, readSetting, writeSetting } from './settings.ts';
 export { audit } from './audit.ts';
 export { AppError, conflict, invalid, notFound } from './errors.ts';
 export { getEntry, postVoucherNow, type EntryView } from './journal.ts';
-export { getInvoice, type InvoiceView } from './invoices.ts';
+export { createInvoice, getInvoice, postInvoice, type InvoiceView } from './invoices.ts';
+export { createItem, listWarehouses } from './items.ts';
 export { getParty } from './parties.ts';
