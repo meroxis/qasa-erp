@@ -13,7 +13,7 @@ import type { FastifyInstance } from 'fastify';
 import { buildApp, openDatabase, type Db } from '@qasa/server';
 import { isLang, text, type Lang, type TextKey } from './texts.ts';
 import type { DatabaseStartContext, ProContext, RestartOptions } from './pro-types.ts';
-import { pair, parseAddress, pemFingerprint, type PairResult, type Remote } from './office.ts';
+import { pair, parseAddress, parseOfficeId, pemFingerprint, startTunnel, type PairResult, type Remote } from './office.ts';
 // the official builds include the Pro module; public builds get pro-none.ts (see build.mjs)
 import { proModule } from '@qasa/pro-module';
 
@@ -336,6 +336,11 @@ function readRemote(): Remote | null {
   try {
     const r = JSON.parse(readFileSync(networkFile(), 'utf8')) as Record<string, unknown>;
     if (r.mode === 'remote' && typeof r.host === 'string' && parseAddress(r.host) && Number.isInteger(r.port) && typeof r.fingerprint === 'string' && /^[0-9a-f]{64}$/.test(r.fingerprint)) {
+      // through Qasa Relay: the tunnel's local port is chosen when the app starts
+      const relay = r.relay as { url?: unknown; office?: unknown } | undefined;
+      if (relay && typeof relay.url === 'string' && /^https:\/\//.test(relay.url) && typeof relay.office === 'string' && parseOfficeId(relay.office)) {
+        return { host: '127.0.0.1', port: 0, fingerprint: r.fingerprint, relay: { url: relay.url, office: parseOfficeId(relay.office)! } };
+      }
       return { host: r.host, port: r.port as number, fingerprint: r.fingerprint };
     }
   } catch { /* no file: this PC works on its own company file */ }
@@ -359,7 +364,7 @@ async function pairAndSave(address: string, code: string): Promise<PairResult> {
   const result = await pair(address, code);
   if ('ok' in result) {
     saveRemote(result.remote);
-    log(`paired with the office server ${result.remote.host}:${result.remote.port}`);
+    log(result.remote.relay ? `paired with office ${result.remote.relay.office} through Qasa Relay` : `paired with the office server ${result.remote.host}:${result.remote.port}`);
   }
   return result;
 }
@@ -501,7 +506,7 @@ function buildMenu(): void {
       label: t('file'),
       submenu: remote
         ? [
-            { label: t('connectedTo', { host: `${remote.host}:${remote.port}` }), enabled: false },
+            { label: t('connectedTo', { host: remote.relay ? `Qasa Relay · ${remote.relay.office.slice(0, 5)}-${remote.relay.office.slice(5)}` : `${remote.host}:${remote.port}` }), enabled: false },
             { label: t('connect'), click: () => openConnectWindow() },
             { label: t('workHere'), click: () => void workHere() },
             { type: 'separator' },
@@ -685,6 +690,12 @@ if (!app.requestSingleInstanceLock()) {
     try {
       if (remote) {
         // an office PC: the company file is on the office server; this PC's own server doesn't start
+        if (remote.relay) {
+          // over the internet: this PC's end of the tunnel through Qasa Relay, on 127.0.0.1 only
+          const tunnel = await startTunnel(remote.relay);
+          remote = { ...remote, port: tunnel.port };
+          log(`Qasa Relay tunnel to office ${remote.relay!.office} on 127.0.0.1:${tunnel.port}`);
+        }
         pinCertificate(remote);
         log(`Qasa ERP ${app.getVersion()} started — on the office server ${remote.host}:${remote.port}`);
         await createWindow(`https://${remote.host}:${remote.port}/`);

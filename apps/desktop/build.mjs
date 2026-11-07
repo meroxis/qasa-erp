@@ -34,7 +34,9 @@ await build({
       google: process.env.QASA_GOOGLE_CLIENT_ID ?? '',
       googleSecret: process.env.QASA_GOOGLE_CLIENT_SECRET ?? '',
       onedrive: process.env.QASA_MS_CLIENT_ID ?? ''
-    })
+    }),
+    // Qasa Relay (the office network over the internet); empty means the default, https://relay.qasaerp.com
+    __QASA_RELAY_URL__: JSON.stringify(process.env.QASA_RELAY_URL ?? '')
   },
   build: {
     ssr: join(here, 'src', 'main.ts'),

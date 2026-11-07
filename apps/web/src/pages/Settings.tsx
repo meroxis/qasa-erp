@@ -4,7 +4,7 @@ import {
   api, ApiError, currentUser, request, setCurrentUser, type BackupStatus, type DatabaseCheck, type DatabaseInput, type DatabaseStatus, type NetworkStatus, type YearEndStatus
 } from '../api.ts';
 import { AccountCombo, ErrorBox, Icon, Modal, useData, useDisplay, useLoad, useToast, type Density, type Theme } from '../components.tsx';
-import { isKey, useI18n } from '../i18n.ts';
+import { isKey, useI18n, type Key } from '../i18n.ts';
 import { href } from '../router.ts';
 
 /** Language and display are each person's own; the company's settings are for admins. */
@@ -257,6 +257,7 @@ function OfficeNetworkCard() {
           <p style={{ margin: 0 }}>{t('netSteps')}</p>
           <p className="muted small" style={{ margin: 0 }}>{t('netFirewall')}</p>
           <p className="muted small" style={{ margin: 0 }}>{t('netSignedIn', { n: digitsOf(String(status.signedIn)) })}</p>
+          <RelaySection status={status as NetworkStatus & RelayFields} onChange={setStatus} />
         </div>
       )}
       <ErrorBox error={error} />
@@ -267,6 +268,77 @@ function OfficeNetworkCard() {
           </button>
         </div>
       )}
+    </div>
+  );
+}
+
+/** What the office network's status adds for Qasa Relay (the Pro module's /api/network). */
+interface RelayFields {
+  relayWanted?: boolean;
+  relay?: { state: 'connecting' | 'online' | 'waiting' | 'refused'; officeIdShown: string; clients: number; lastError: string | null; onlineSince: string | null } | null;
+}
+
+/** Qasa Relay: the office network reachable over the internet, with no public IP or router setup. */
+function RelaySection({ status, onChange }: { status: NetworkStatus & RelayFields; onChange(s: NetworkStatus): void }) {
+  const { t, digitsOf } = useI18n();
+  const toast = useToast();
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<unknown>(null);
+  const relay = status.relay ?? null;
+  const on = !!status.relayWanted;
+
+  async function toggle(next: boolean) {
+    setBusy(true);
+    setError(null);
+    try {
+      onChange(await request<NetworkStatus>('PUT', '/api/network/relay', { on: next }));
+      toast(t('saved'));
+    } catch (e) {
+      setError(e);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  // the link changes by itself (connecting, online, a lost connection): look again every few seconds while it's on
+  useEffect(() => {
+    if (!on) return;
+    const timer = setInterval(() => { api.network().then(onChange, () => {}); }, 5000);
+    return () => clearInterval(timer);
+  }, [on, onChange]);
+
+  const state = relay?.state ?? 'waiting';
+  const chip = state === 'online' ? 'ok' : state === 'refused' ? 'bad' : 'warn';
+  const errorKey = relay?.lastError ? ('rl_e_' + relay.lastError) : null;
+  return (
+    <div className="stack" style={{ gap: 10, borderBlockStart: '1px solid var(--line)', paddingBlockStart: 14, marginBlockStart: 4 }}>
+      <div className="row" style={{ justifyContent: 'space-between' }}>
+        <h3 style={{ margin: 0 }}>{t('rl_title')}</h3>
+        <span className={'chip ' + (on ? chip : '')}>{on ? t(('rl_state_' + state) as Key) : t('switchedOff')}</span>
+      </div>
+      <p className="muted" style={{ margin: 0 }}>{t('rl_help')}</p>
+      {on && relay && (
+        <div className="grid-2">
+          <div className="field">
+            <span>{t('rl_officeId')}</span>
+            <strong className="ltr num" style={{ fontSize: 22, letterSpacing: '.06em' }}>{relay.officeIdShown}</strong>
+          </div>
+          <div className="field">
+            <span>{t('netCode')}</span>
+            <strong className="ltr num" style={{ fontSize: 22, letterSpacing: '.06em' }}>{status.code}</strong>
+          </div>
+        </div>
+      )}
+      {on && relay && <p style={{ margin: 0 }}>{t('rl_steps')}</p>}
+      {on && relay && <p className="muted small" style={{ margin: 0 }}>{t('rl_clients', { n: digitsOf(String(relay.clients)) })}</p>}
+      {on && errorKey && isKey(errorKey) && <div className="alert">{t(errorKey)}</div>}
+      <p className="muted small" style={{ margin: 0 }}>{t('rl_private')}</p>
+      <ErrorBox error={error} />
+      <div>
+        <button type="button" className={'btn ' + (on ? '' : 'primary')} disabled={busy} onClick={() => void toggle(!on)}>
+          {on ? t('rl_turnOff') : t('rl_turnOn')}
+        </button>
+      </div>
     </div>
   );
 }
