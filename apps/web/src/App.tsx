@@ -33,6 +33,7 @@ import { Pipeline } from './pages/Pipeline.tsx';
 import { Brief } from './pages/Brief.tsx';
 import { Expenses } from './pages/Expenses.tsx';
 import { isReportTab, MoreReports } from './pages/MoreReports.tsx';
+import { Rates } from './pages/Rates.tsx';
 import { BUSINESS_FEATURE, type BusinessType } from '@qasa/core';
 
 declare global {
@@ -91,6 +92,7 @@ const NAV: { group: Key; items: NavItem[] }[] = [
       { key: 'trialBalance', icon: 'chart', path: 'trial-balance', match: ['trial-balance'] },
       { key: 'finalAccounts', icon: 'book', path: 'final-accounts', match: ['final-accounts'] },
       { key: 'statement', icon: 'doc', path: 'statement', match: ['statement'] },
+      { key: 'fx_title', icon: 'trend', path: 'rates', match: ['rates'] },
       { key: 'br_expenses', icon: 'wallet', path: 'expenses', match: ['expenses'] },
       { key: 'br_reports', icon: 'chart', path: 'reports-more/sales-items', match: ['reports-more'] }
     ]
@@ -392,6 +394,10 @@ export function App() {
     case 'pos-shift':
       title = t('pos_title');
       content = arg ? <PosShiftReport key={arg} id={arg} /> : null;
+      break;
+    case 'rates':
+      title = t('fx_title');
+      content = <Rates key={arg ?? 'rates'} tab={arg === 'revaluation' ? 'revaluation' : 'rates'} />;
       break;
     case 'brief':
       title = t('br_title');
