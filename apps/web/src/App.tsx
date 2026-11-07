@@ -20,6 +20,10 @@ import { FinalAccounts } from './pages/FinalAccounts.tsx';
 import { StockDocDetail, StockDocEditor, StockDocs } from './pages/StockDocs.tsx';
 import { PasswordModal, SignIn, Users } from './pages/Users.tsx';
 import { Guarantors, InstallmentDetail, InstallmentEditor, Installments, InstallmentsAging } from './pages/Installments.tsx';
+import { RealEstate, RealEstateProject } from './pages/RealEstate.tsx';
+import { MobileShop, RepairDetail } from './pages/MobileShop.tsx';
+import { CarParts } from './pages/CarParts.tsx';
+import { EngineeringWorks, JobDetail } from './pages/EngineeringWorks.tsx';
 
 declare global {
   /** Only in the Windows app: its bridge to the desktop shell (apps/desktop/src/app-preload.ts). */
@@ -75,6 +79,16 @@ const NAV: { group: Key; items: NavItem[] }[] = [
     items: [
       { key: 'items', icon: 'box', path: 'items', match: ['items', 'item'] },
       { key: 'stockDocs', icon: 'swap', path: 'stock-docs', match: ['stock-docs', 'stock-doc', 'new-stock-doc', 'edit-stock-doc'] }
+    ]
+  },
+  {
+    // the industry features (Pro and Business)
+    group: 'gIndustry',
+    items: [
+      { key: 're_title', icon: 'building', path: 'real-estate', match: ['real-estate', 'real-estate-project'] },
+      { key: 'mob_nav', icon: 'idcard', path: 'mobile', match: ['mobile', 'repair'] },
+      { key: 'pt_title', icon: 'box', path: 'car-parts', match: ['car-parts'] },
+      { key: 'ew_jobs', icon: 'swap', path: 'works', match: ['works', 'job'] }
     ]
   },
   { group: 'gPeople', items: [{ key: 'hr', icon: 'idcard' }, { key: 'salaries', icon: 'users' }] },
@@ -315,6 +329,34 @@ export function App() {
     case 'installments-aging':
       title = t('aging');
       content = <InstallmentsAging />;
+      break;
+    case 'real-estate':
+      title = t('re_title');
+      content = <RealEstate />;
+      break;
+    case 'real-estate-project':
+      title = t('re_title');
+      content = arg ? <RealEstateProject key={arg} id={arg} /> : null;
+      break;
+    case 'mobile':
+      title = t(arg === 'repairs' ? 'mob_navRepairs' : 'mob_nav');
+      content = <MobileShop key={arg ?? 'devices'} tab={arg === 'repairs' ? 'repairs' : 'devices'} />;
+      break;
+    case 'repair':
+      title = t('mob_navRepairs');
+      content = arg ? <RepairDetail key={arg} id={arg} /> : null;
+      break;
+    case 'works':
+      title = t('ew_jobs');
+      content = <EngineeringWorks />;
+      break;
+    case 'job':
+      title = t('ew_jobs');
+      content = arg ? <JobDetail key={arg} id={arg} /> : null;
+      break;
+    case 'car-parts':
+      title = t('pt_title');
+      content = <CarParts />;
       break;
     case 'customers':
       title = t('customers');

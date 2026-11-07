@@ -28,6 +28,10 @@ const ROWS: Row[] = [
   { label: 'f_yearEnd', cells: [false, true, true] },
   { label: 'f_backup', cells: [false, true, true] },
   { label: 'f_dbServer', cells: [false, false, true] },
+  { label: 'f_mobileShop', cells: [false, true, true] },
+  { label: 'f_autoParts', cells: [false, true, true] },
+  { label: 'f_engineeringWorks', cells: [false, true, true] },
+  { label: 'f_realEstate', cells: [false, false, true] },
   { label: 'f_branches', cells: [false, false, true], soon: true },
   { label: 'f_support', cells: ['v_supportFree', 'v_supportPro', 'v_supportBusiness'] }
 ];
