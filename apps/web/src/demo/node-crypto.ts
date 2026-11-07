@@ -15,7 +15,7 @@ export function createHash(): never {
 export function randomBytes(): never {
   throw new Error('not in the demo');
 }
-export function scryptSync(): never {
+export function scrypt(): never {
   throw new Error('not in the demo');
 }
 export function timingSafeEqual(): never {

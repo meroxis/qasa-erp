@@ -387,7 +387,28 @@ export function setCurrentUser(name: string): void {
 /** Fired when the server says nobody is signed in (a session ended); the app shows the sign-in page. */
 export const SIGNED_OUT_EVENT = 'qasa:signed-out';
 
+/** Requests still waiting for the server; the app shows a thin bar when one takes a moment (see BusyBar). */
+let inFlight = 0;
+const busyListeners = new Set<(n: number) => void>();
+export function onBusyChange(fn: (n: number) => void): () => void {
+  busyListeners.add(fn);
+  return () => { busyListeners.delete(fn); };
+}
+function setInFlight(n: number) {
+  inFlight = n;
+  for (const fn of busyListeners) fn(n);
+}
+
 export async function request<T>(method: string, url: string, body?: unknown): Promise<T> {
+  setInFlight(inFlight + 1);
+  try {
+    return await send<T>(method, url, body);
+  } finally {
+    setInFlight(inFlight - 1);
+  }
+}
+
+async function send<T>(method: string, url: string, body?: unknown): Promise<T> {
   // marks requests as coming from the app itself; the server refuses changes without it once sign-in is on
   // the branch picked in the topbar (for someone working in several), so lists and reports follow it
   const headers: Record<string, string> = { 'x-qasa-client': '1', ...currentBranchHeader() };

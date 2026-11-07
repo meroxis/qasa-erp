@@ -11,16 +11,13 @@ import { PeriodPicker } from './Reports.tsx';
  * the stock is worth in each warehouse. From posted invoices and approved entries only, in dinars.
  */
 
-export const REPORT_TABS = ['sales-items', 'sales-customers', 'profit', 'aging', 'supplier-aging', 'stock-value'] as const;
-export type ReportTab = (typeof REPORT_TABS)[number];
+import { REPORT_TABS, type ReportTab } from './tabs.ts';
+export { isReportTab, REPORT_TABS, type ReportTab } from './tabs.ts';
 const TAB_LABEL: Record<ReportTab, Key> = {
   'sales-items': 'br_rSalesItems', 'sales-customers': 'br_rSalesCustomers', profit: 'br_rProfit',
   aging: 'br_rAging', 'supplier-aging': 'br_rSupplierAging', 'stock-value': 'br_rStockValue'
 };
 
-export function isReportTab(v: string | undefined): v is ReportTab {
-  return !!v && (REPORT_TABS as readonly string[]).includes(v);
-}
 
 const monthStart = () => todayIso().slice(0, 8) + '01';
 const qty = (i18n: I18n, milli: number) => i18n.digitsOf(String(milli / 1000));

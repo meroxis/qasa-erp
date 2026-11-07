@@ -49,6 +49,13 @@ const T = {
   dbWhyOther: ['السبب: {code}', 'Reason: {code}', 'هۆکار: {code}'],
   dbUseLocalCopy: ['استخدام ملف الشركة من قبل النقل', 'Use the company file from before the move', 'بەکارهێنانی فایلی کۆمپانیا لە پێش گواستنەوە'],
   dbLocalCopyConfirm: ['سيفتح قاصة ERP ملف الشركة كما كان في {date}، يوم نُقلت الشركة إلى الخادم. لا يحتوي على شيء أُدخل على الخادم بعد ذلك، ويتوقف هذا الحاسوب عن استخدام الخادم. هل تتابع؟', 'Qasa ERP opens the company file as it was on {date}, when the company moved to the server. Nothing entered on the server since then is in it, and this PC stops using the server. Continue?', 'قاسە ERP فایلی کۆمپانیا دەکاتەوە وەک ئەوەی لە {date} بوو، ئەو ڕۆژەی کۆمپانیا گوازرایەوە بۆ سێرڤەر. هیچ شتێک کە دواتر لەسەر سێرڤەر تۆمارکراوە تێیدا نییە، و ئەم کۆمپیوتەرە واز لە بەکارهێنانی سێرڤەر دەهێنێت. بەردەوام دەبیت؟'],
+  // the server process (server-process.ts) ended by itself
+  serverCrashed: ['توقف جزء الخادم في قاصة ERP بشكل غير متوقع. بياناتك محفوظة في ملف الشركة.', 'Qasa ERP’s server part stopped unexpectedly. Your data is safe in the company file.', 'بەشی سێرڤەری قاسە ERP لەناکاو وەستا. داتاکانت لە فایلی کۆمپانیادا پارێزراون.'],
+  serverCrashedDetail: ['أعد التشغيل للمتابعة. إن تكرر ذلك، أرسل ملفات السجل (server.log) إلى الدعم. الرمز: {code}', 'Restart to carry on. If it happens again, send the log files (server.log) to support. Code: {code}', 'دەستپێبکەرەوە بۆ بەردەوامبوون. ئەگەر دووبارە بووەوە، فایلەکانی تۆمار (server.log) بنێرە بۆ پشتگیری. کۆد: {code}'],
+  openLogs: ['فتح مجلد السجلات', 'Open the logs folder', 'کردنەوەی بوخچەی تۆمارەکان'],
+  // graphics acceleration (Settings → Language and display)
+  gpuOffTitle: ['تم إيقاف تسريع الرسوميات', 'Graphics acceleration turned off', 'خێراکردنی گرافیک ڕاگیرا'],
+  gpuOff: ['توقف معالج الرسوميات في هذا الحاسوب عدة مرات، لذلك أوقف قاصة ERP تسريع الرسوميات. أعد التشغيل ليعمل بسلاسة. يمكنك إعادة تشغيله من الإعدادات ← اللغة والعرض.', 'This PC’s graphics stopped several times, so Qasa ERP turned graphics acceleration off. Restart for it to run smoothly. You can turn it back on in Settings → Language and display.', 'گرافیکی ئەم کۆمپیوتەرە چەند جارێک وەستا، بۆیە قاسە ERP خێراکردنی گرافیکی ڕاگرت. دەستپێبکەرەوە بۆ ئەوەی بە نەرمی کار بکات. دەتوانیت لە ڕێکخستنەکان ← زمان و پیشاندان دووبارە هەڵیبکەیتەوە.'],
   // backups (Settings)
   backupFolder: ['اختر مجلد النسخ الاحتياطية', 'Choose the folder for backups', 'بوخچەی باکئەپەکان هەڵبژێرە'],
   restoreFile: ['اختر النسخة الاحتياطية المراد استرجاعها', 'Choose the backup to restore', 'ئەو باکئەپە هەڵبژێرە کە دەتەوێت بیگەڕێنیتەوە']

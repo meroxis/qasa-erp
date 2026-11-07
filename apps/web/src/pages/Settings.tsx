@@ -10,6 +10,7 @@ import { encodeQr, qrSvgPath } from '../industry/qr.ts';
 import { UsageCard } from '../industry/UsageCard.tsx';
 import { HelpPanel } from '../industry/SupportButton.tsx';
 import { LegalPanel } from '../industry/LegalPanel.tsx';
+import { GraphicsSetting } from '../industry/GraphicsSetting.tsx';
 
 /** Language and display are each person's own; the company's settings are for admins. */
 export function Settings({ admin }: { admin: boolean }) {
@@ -83,6 +84,7 @@ function DisplaySettings() {
             </div>
           </div>
         </div>
+        <GraphicsSetting />
       </div>
     </section>
   );

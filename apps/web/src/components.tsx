@@ -1,6 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useId, useMemo, useRef, useState, type ReactNode } from 'react';
 import { formatQty, normalizeForSearch, parseAmount, parseQty, formatAmount, type CurrencyCode, type EntryStatus, type EntryType, type InvoiceStatus } from '@qasa/core';
-import { ApiError, type AccountView, type PlanStatus, type Settings } from './api.ts';
+import { ApiError, onBusyChange, type AccountView, type PlanStatus, type Settings } from './api.ts';
 import { isKey, useI18n, type I18n, type Key } from './i18n.ts';
 
 /* ---------- shared data ---------- */
@@ -433,4 +433,21 @@ export function downloadCsv(filename: string, rows: (string | number)[][]): void
   a.download = filename;
   a.click();
   URL.revokeObjectURL(url);
+}
+
+/**
+ * A thin bar along the top while the app waits on the server. It appears only when a wait passes 400 ms, so quick
+ * clicks don't flicker; long reports, saves and backups show that the app is working rather than frozen.
+ */
+export function BusyBar() {
+  const [show, setShow] = useState(false);
+  useEffect(() => {
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const off = onBusyChange((n) => {
+      if (n > 0 && !timer) timer = setTimeout(() => { timer = undefined; setShow(true); }, 400);
+      if (n === 0) { if (timer) clearTimeout(timer); timer = undefined; setShow(false); }
+    });
+    return () => { off(); if (timer) clearTimeout(timer); };
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  return show ? <div className="busy-bar" role="progressbar" aria-busy="true" aria-label="…" /> : null;
 }

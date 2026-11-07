@@ -3,39 +3,24 @@
  * 127.0.0.1, the window shows the app from it, and the company file lives in the user's profile:
  *   %APPDATA%\Qasa ERP\data\qasa.sqlite
  */
-import { app, BrowserWindow, dialog, ipcMain, Menu, nativeTheme, protocol, safeStorage, session, shell, type MenuItemConstructorOptions } from 'electron';
+import { app, BrowserWindow, dialog, ipcMain, Menu, nativeTheme, protocol, safeStorage, session, shell, utilityProcess, type MenuItemConstructorOptions, type UtilityProcess } from 'electron';
 import electronUpdater from 'electron-updater';
 import { randomBytes } from 'node:crypto';
-import { appendFileSync, copyFileSync, existsSync, mkdirSync, readFileSync, renameSync, statSync, writeFileSync } from 'node:fs';
-import { createServer } from 'node:net';
-import { extname, join, normalize, sep } from 'node:path';
-import type { FastifyInstance } from 'fastify';
-import { buildApp, configureLicensing, openDatabase, startUsagePings, type Db } from '@qasa/server';
+import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
+import { Bridge } from './bridge.ts';
 import { isLang, text, type Lang, type TextKey } from './texts.ts';
-import type { DatabaseStartContext, ProContext, RestartOptions } from './pro-types.ts';
 import { pair, parseAddress, parseOfficeId, pemFingerprint, startTunnel, type PairResult, type Remote } from './office.ts';
-// the official builds include the Pro module; public builds get pro-none.ts (see build.mjs)
-import { proModule } from '@qasa/pro-module';
 
 const { autoUpdater } = electronUpdater;
 /** Installed from the Microsoft Store: the Store signs and updates it, so the app's own updater stays off. */
 const FROM_STORE = process.windowsStore === true;
 const STORE_PAGE = 'ms-windows-store://pdp/?productid=9NRTX5BBK9DW';
-const WEB_DIR = join(__dirname, 'web');
 const UPDATE_EVERY_MS = 6 * 60 * 60 * 1000;
-const DEFAULT_PORT = 47417;
 /** A new secret each launch. Only this app's window holds it (as a cookie), so other programs and other Windows users can't use the local server. */
 const SESSION_KEY = randomBytes(32).toString('hex');
-const SECURITY_HEADERS: Record<string, string> = {
-  'content-security-policy': "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'; connect-src 'self'; object-src 'none'; base-uri 'self'; form-action 'none'; frame-ancestors 'none'",
-  'x-content-type-options': 'nosniff',
-  'x-frame-options': 'DENY',
-  'referrer-policy': 'no-referrer'
-};
 
 let win: BrowserWindow | null = null;
-let server: FastifyInstance | null = null;
-let db: Db | null = null;
 let lang: Lang = 'ar';
 let manualCheck = false;
 
@@ -65,80 +50,82 @@ function log(...parts: unknown[]): void {
 process.on('uncaughtException', (error) => log('uncaught exception:', error));
 process.on('unhandledRejection', (error) => log('unhandled rejection:', error));
 
-// ——— the local server ———
-
-const TYPES: Record<string, string> = {
-  '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8',
-  '.svg': 'image/svg+xml', '.png': 'image/png', '.ico': 'image/x-icon', '.json': 'application/json',
-  '.woff2': 'font/woff2', '.woff': 'font/woff', '.wasm': 'application/wasm'
-};
-
-/** The port stays the same per installation, so the window keeps its saved settings (they belong to the address). */
-function portFile(): string {
-  return join(app.getPath('userData'), 'port.json');
-}
-
-function isFree(port: number): Promise<boolean> {
-  return new Promise((resolve) => {
-    const probe = createServer();
-    probe.once('error', () => resolve(false));
-    probe.once('listening', () => probe.close(() => resolve(true)));
-    probe.listen(port, '127.0.0.1');
-  });
-}
-
-async function choosePort(): Promise<number> {
-  let saved = DEFAULT_PORT;
-  try { saved = Number(JSON.parse(readFileSync(portFile(), 'utf8')).port) || DEFAULT_PORT; } catch { /* first run */ }
-  if (await isFree(saved)) return saved;
-  for (let port = 47418; port < 47500; port += 1) {
-    if (await isFree(port)) {
-      try { writeFileSync(portFile(), JSON.stringify({ port })); } catch { /* keep going */ }
-      return port;
-    }
+// ——— graphics acceleration ———
+// On some laptops (old or unusual graphics drivers) Chromium's graphics process hangs or crashes, and the window
+// freezes or goes blank. Settings → Language and display can turn acceleration off (it takes effect at the next
+// start), the app turns it off by itself after the graphics process crashes twice, and `--disable-gpu` on the
+// command line does the same for one start.
+const graphicsFile = () => join(app.getPath('userData'), 'graphics.json');
+function graphicsOn(): boolean {
+  try {
+    return (JSON.parse(readFileSync(graphicsFile(), 'utf8')) as { acceleration?: unknown }).acceleration !== false;
+  } catch {
+    return true;
   }
-  return 0;
 }
+function saveGraphics(on: boolean, reason: string): void {
+  try {
+    mkdirSync(app.getPath('userData'), { recursive: true });
+    writeFileSync(graphicsFile(), JSON.stringify({ acceleration: on, reason, at: new Date().toISOString() }));
+  } catch (error) {
+    log('could not save the graphics setting:', error);
+  }
+}
+/** What this start runs with (a change shows after a restart). */
+const graphicsAtStart = graphicsOn() && !app.commandLine.hasSwitch('disable-gpu');
+if (!graphicsAtStart) app.disableHardwareAcceleration();
+
+let gpuCrashes = 0;
+app.on('child-process-gone', (_event, details) => {
+  if (details.type !== 'GPU' || details.reason === 'clean-exit') return;
+  gpuCrashes += 1;
+  log(`graphics process ended (${details.reason}, ${details.exitCode}), ${gpuCrashes} time(s)`);
+  if (gpuCrashes < 2 || !graphicsOn()) return;
+  saveGraphics(false, `gpu-${details.reason}`);
+  if (!app.isReady()) return;
+  void (async () => {
+    const { response } = await dialog.showMessageBox({
+      type: 'warning', title: t('gpuOffTitle'), message: t('gpuOff'), buttons: [t('restartNow'), t('later')], defaultId: 0, cancelId: 1, noLink: true
+    });
+    if (response === 0) await relaunchApp();
+  })();
+});
+
+/** Stops the server process cleanly, then starts the app again. */
+async function relaunchApp(): Promise<void> {
+  await stopServer();
+  app.relaunch();
+  app.exit(0);
+}
+
+// ——— the server process ———
+// The API server, the company database and the Pro module run in a process of their own (server-process.ts), so a
+// heavy request never stops the window from answering. This process starts it, gives it what it needs, and answers
+// what only it can do: dialogs and pickers, restarting the app.
 
 const dataDir = () => join(app.getPath('userData'), 'data');
-let pings: { stop(): void } | null = null;
-
-// DPAPI: only this Windows user on this PC can read it back
-function protectSecret(plain: string): string {
-  if (!safeStorage.isEncryptionAvailable()) throw new Error('Windows cannot protect secrets here');
-  return safeStorage.encryptString(plain).toString('base64');
-}
-const revealSecret = (stored: string) => safeStorage.decryptString(Buffer.from(stored, 'base64'));
+let child: UtilityProcess | null = null;
+let bridge: Bridge | null = null;
+/** True once this process asked the server process to stop (or to restart the app): its end is then expected. */
+let childEnding = false;
 
 /**
- * The database worker for a company database on a server (built into dist/ with Pro). It runs from its text: a
- * worker thread can't load its script from inside the app's package, but reading the text works.
+ * The server process's own key for the secrets it keeps (secrets.ts): made once, kept protected with safeStorage
+ * (Windows DPAPI, this Windows user only) in secret-key.bin, handed to it at each start.
  */
-function workerSource(): { code: string } {
-  return { code: readFileSync(join(__dirname, 'db-worker.cjs'), 'utf8') };
-}
-
-function startContext(): DatabaseStartContext {
-  return { userDataDir: app.getPath('userData'), dataDir: dataDir(), get workerSource() { return workerSource(); }, revealSecret, log };
-}
-
-const stampNow = () => new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-');
-/** Only plain file names of the data folder (the Pro module names them). */
-const SAFE_NAME = /^qasa-[\w.-]{1,80}\.sqlite$/;
-
-/** Moves a company file (with SQLite's -wal and -shm files) to another name. */
-function moveCompanyFile(from: string, to: string): void {
-  for (const suffix of ['', '-wal', '-shm']) {
-    if (existsSync(from + suffix)) renameSync(from + suffix, to + suffix);
+function secretsKey(): string | null {
+  if (!safeStorage.isEncryptionAvailable()) return null;
+  const file = join(app.getPath('userData'), 'secret-key.bin');
+  try {
+    if (existsSync(file)) return safeStorage.decryptString(readFileSync(file));
+    const key = randomBytes(32).toString('hex');
+    mkdirSync(app.getPath('userData'), { recursive: true });
+    writeFileSync(file, safeStorage.encryptString(key), { mode: 0o600 });
+    return key;
+  } catch (error) {
+    log('the secrets key could not be read or made:', error);
+    return null;
   }
-}
-
-/** Makes a file of the data folder the company file; a company file already there is kept aside, never deleted. */
-function placeCompanyFile(name: string): void {
-  if (!SAFE_NAME.test(name)) throw new Error(`not a company file name: ${name}`);
-  const live = join(dataDir(), 'qasa.sqlite');
-  if (existsSync(live)) moveCompanyFile(live, join(dataDir(), `qasa-before-${stampNow()}.sqlite`));
-  moveCompanyFile(join(dataDir(), name), live);
 }
 
 /** The reason a server database didn't open, in words for the dialog. */
@@ -153,42 +140,30 @@ function databaseReason(code: string): string {
 }
 
 /**
- * The company database: the company file, or (Pro) the company's MariaDB/MySQL server. When the server can't be
- * used, the admin can try again, quit, or go back to the company file kept aside when the company moved.
+ * (Pro) The company's MariaDB/MySQL server can't be used: the admin can try again, quit, or go back to the company
+ * file kept aside when the company moved. The server process does what is chosen.
  */
-async function openCompanyDatabase(): Promise<Db> {
-  const file = join(dataDir(), 'qasa.sqlite');
+async function databaseProblem(problem: { code: string; host: string; database: string; localCopy: { file: string; since: string } | null }): Promise<'retry' | 'local' | 'quit'> {
   for (;;) {
-    try {
-      return proModule?.openDatabase?.(startContext()) ?? openDatabase(file);
-    } catch (error) {
-      const problem = error as { code?: string; host?: string; database?: string; localCopy?: { file: string; since: string } | null };
-      if (problem.code === 'database_newer') return refuseNewerBooks(error);
-      if (!proModule?.openDatabase || typeof problem.host !== 'string') throw error;
-      const buttons = [t('tryAgain'), ...(problem.localCopy ? [t('dbUseLocalCopy')] : []), t('quit')];
-      const { response } = await dialog.showMessageBox({
-        type: 'warning', title: 'Qasa ERP', message: t('dbServerProblem', { host: problem.host, database: problem.database ?? '' }),
-        detail: databaseReason(problem.code ?? ''), buttons, defaultId: 0, cancelId: buttons.length - 1, noLink: true
+    const buttons = [t('tryAgain'), ...(problem.localCopy ? [t('dbUseLocalCopy')] : []), t('quit')];
+    const { response } = await dialog.showMessageBox({
+      type: 'warning', title: 'Qasa ERP', message: t('dbServerProblem', { host: problem.host, database: problem.database }),
+      detail: databaseReason(problem.code), buttons, defaultId: 0, cancelId: buttons.length - 1, noLink: true
+    });
+    if (response === 0) return 'retry';
+    if (problem.localCopy && response === 1) {
+      const sure = await dialog.showMessageBox({
+        type: 'warning', title: 'Qasa ERP', message: t('dbLocalCopyConfirm', { date: problem.localCopy.since.slice(0, 10) }),
+        buttons: [t('dbUseLocalCopy'), t('cancel')], defaultId: 1, cancelId: 1, noLink: true
       });
-      if (response === 0) continue;
-      if (problem.localCopy && response === 1) {
-        const sure = await dialog.showMessageBox({
-          type: 'warning', title: 'Qasa ERP', message: t('dbLocalCopyConfirm', { date: problem.localCopy.since.slice(0, 10) }),
-          buttons: [t('dbUseLocalCopy'), t('cancel')], defaultId: 1, cancelId: 1, noLink: true
-        });
-        if (sure.response !== 0) continue;
-        const name = proModule.useLocalCopyInstead?.(startContext());
-        if (name) placeCompanyFile(name);
-        continue;
-      }
-      app.exit(0);
-      throw new Quitting();
+      if (sure.response !== 0) continue;
+      return 'local';
     }
+    childEnding = true;
+    setImmediate(() => app.exit(0));
+    return 'quit';
   }
 }
-
-/** Thrown after app.exit() from a start dialog, so the start stops without an error box. */
-class Quitting extends Error {}
 
 /**
  * Windows draws message boxes left to right. Each Arabic or Kurdish line is embedded right to left, so a Latin word in
@@ -199,11 +174,10 @@ const rtlLines = (s: string): string => (lang === 'en' ? s : s.split('\n').map((
 /**
  * Books from a newer Qasa ERP (the company file, or the company database on a server): this version leaves them as
  * they are, says so, and offers the way to the latest version — the Store page for the Store version, the website
- * for the installer. It never returns: the app quits.
+ * for the installer. The app then quits.
  */
-async function refuseNewerBooks(error: unknown): Promise<never> {
-  log('the company books come from a newer Qasa ERP:', JSON.stringify((error as { details?: unknown }).details ?? null),
-    'this is', app.getVersion(), FROM_STORE ? '(Microsoft Store)' : '');
+async function refuseNewerBooks(details: unknown): Promise<void> {
+  log('the company books come from a newer Qasa ERP:', JSON.stringify(details ?? null), 'this is', app.getVersion(), FROM_STORE ? '(Microsoft Store)' : '');
   const buttons = [t('getLatest'), t('quit')];
   const { response } = await dialog.showMessageBox({
     type: 'warning', title: 'Qasa ERP', message: rtlLines(t('newerBooks', { v: app.getVersion() })),
@@ -213,120 +187,69 @@ async function refuseNewerBooks(error: unknown): Promise<never> {
     const url = FROM_STORE ? STORE_PAGE : `https://qasaerp.com${{ ar: '/', en: '/en/', ku: '/ku/' }[lang]}#download`;
     await shell.openExternal(url).catch((e: unknown) => log('could not open', url, e));
   }
-  app.exit(0);
-  throw new Quitting();
-}
-
-/** Restarts the app, moving company files as the Pro module asks (moving to a database server and back). */
-async function restartWith(options: RestartOptions = {}): Promise<void> {
-  await stopServer();
-  const live = join(dataDir(), 'qasa.sqlite');
-  if (options.setAsideCompanyFile && SAFE_NAME.test(options.setAsideCompanyFile)) moveCompanyFile(live, join(dataDir(), options.setAsideCompanyFile));
-  if (options.useCompanyFile) placeCompanyFile(options.useCompanyFile);
-  app.relaunch();
+  childEnding = true;
   app.exit(0);
 }
 
+/** Starts the server process and its server; resolves with the address the window loads. */
 async function startServer(): Promise<string> {
-  mkdirSync(dataDir(), { recursive: true });
-  db = await openCompanyDatabase();
-  // paid plans need an activation for this PC (online once, then a check every few weeks); official builds (with the
-  // Pro module) also check every licence in the Rust module shipped beside app.asar
-  configureLicensing({ strict: true, dataDir: app.getPath('userData'), requireNative: !!proModule });
-  // the anonymous daily usage ping (Settings → Anonymous usage statistics; can be switched off)
-  pings?.stop();
-  pings = startUsagePings(db, { dataDir: app.getPath('userData'), version: app.getVersion(), os: process.platform === 'win32' ? 'windows' : process.platform });
-  server = buildApp(db, { extensions: proModule?.apiExtensions ?? [] });
-
-  server.addHook('onRequest', async (req, reply) => {
-    const cookies = (req.headers.cookie ?? '').split(';').map((c) => c.trim());
-    if (!cookies.includes(`qasa_session=${SESSION_KEY}`)) return reply.status(403).send({ error: 'forbidden', details: null });
-  });
-  server.addHook('onSend', async (_req, reply) => {
-    for (const [name, value] of Object.entries(SECURITY_HEADERS)) reply.header(name, value);
-  });
-  serveWeb(server);
-
-  // the Pro module adds its routes now: a server takes no more once it listens
-  const ctx: ProContext = {
-    db, server, userDataDir: app.getPath('userData'), dataDir: dataDir(), appVersion: app.getVersion(), serveWeb, securityHeaders: SECURITY_HEADERS, log,
-    documentsDir: app.getPath('documents'),
-    get workerSource() { return workerSource(); },
-    restart: restartWith,
-    chooseFolder: async () => {
+  childEnding = false;
+  const proc = utilityProcess.fork(join(__dirname, 'server-process.cjs'), [], { serviceName: 'Qasa ERP server', stdio: 'ignore' });
+  child = proc;
+  const link = new Bridge({ postMessage: (m) => proc.postMessage(m), listen: (fn) => proc.on('message', fn) });
+  bridge = link;
+  link
+    .handle('dbProblem', ((problem: Parameters<typeof databaseProblem>[0]) => databaseProblem(problem)) as never)
+    .handle('newerBooks', ((details: unknown) => refuseNewerBooks(details)) as never)
+    .handle('chooseFolder', (async () => {
       const options = { title: t('backupFolder'), properties: ['openDirectory', 'createDirectory'] as ('openDirectory' | 'createDirectory')[] };
       const r = win ? await dialog.showOpenDialog(win, options) : await dialog.showOpenDialog(options);
       return r.canceled ? null : r.filePaths[0] ?? null;
-    },
-    chooseBackupFile: async () => {
+    }) as never)
+    .handle('chooseBackupFile', (async () => {
       const options = { title: t('restoreFile'), properties: ['openFile'] as 'openFile'[], filters: [{ name: 'Qasa ERP', extensions: ['qbak', 'sqlite'] }] };
       const r = win ? await dialog.showOpenDialog(win, options) : await dialog.showOpenDialog(options);
       return r.canceled ? null : r.filePaths[0] ?? null;
-    },
-    restoreDatabase,
-    protectSecret,
-    revealSecret
-  };
-  if (proModule) {
-    log(`${proModule.name} ${proModule.version}`);
-    try {
-      proModule.register?.(ctx);
-    } catch (error) {
-      log('Pro module could not register:', error);
-    }
-  }
-
-  await server.listen({ host: '127.0.0.1', port: await choosePort() });
-  const address = server.server.address();
-  if (!address || typeof address === 'string') throw new Error('The local server has no port');
-  if (proModule) {
-    try {
-      await proModule.start?.(ctx);
-    } catch (error) {
-      log('Pro module did not start:', error);
-    }
-  }
-  return `http://127.0.0.1:${address.port}`;
+    }) as never)
+    // the server process has closed the company file (and moved files as asked): start again
+    .handle('relaunch', (() => {
+      childEnding = true;
+      setImmediate(() => { app.relaunch(); app.exit(0); });
+    }) as never);
+  proc.on('exit', (code) => {
+    link.close();
+    if (child === proc) { child = null; bridge = null; }
+    log(`server process ended (${code})`);
+    if (!childEnding && win) void serverGone(code);
+  });
+  return link.call<string>('init', [{
+    userDataDir: app.getPath('userData'), documentsDir: app.getPath('documents'), appVersion: app.getVersion(), sessionKey: SESSION_KEY,
+    secretsKey: secretsKey(), resourcesPath: process.resourcesPath, fromStore: FROM_STORE
+  }], { timeoutMs: 0 });
 }
 
-/**
- * Puts a (checked) backup in place of the company file and restarts. Nothing is deleted: the current file, with its
- * write-ahead log, is kept in the data folder as qasa-before-restore-<time>.sqlite.
- */
-async function restoreDatabase(file: string): Promise<void> {
-  const live = join(dataDir(), 'qasa.sqlite');
-  log('restoring the company file from', file);
-  await stopServer();
-  moveCompanyFile(live, join(dataDir(), `qasa-before-restore-${stampNow()}.sqlite`));
-  copyFileSync(file, live);
+/** The server process ended by itself (a crash): say so plainly, keep the logs, offer a restart. */
+async function serverGone(code: number): Promise<void> {
+  log(`the server process stopped unexpectedly (${code}); see server.log`);
+  const { response } = await dialog.showMessageBox({
+    type: 'error', title: 'Qasa ERP', message: t('serverCrashed'), detail: t('serverCrashedDetail', { code: String(code) }),
+    buttons: [t('restartNow'), t('openLogs'), t('quit')], defaultId: 0, cancelId: 2, noLink: true
+  });
+  if (response === 1) await shell.openPath(join(app.getPath('userData'), 'logs'));
+  if (response === 2) return app.quit();
   app.relaunch();
   app.exit(0);
 }
 
-/** The app's screens come from the same server as the API, so /api is same-origin (here and on the office network). */
-function serveWeb(target: FastifyInstance): void {
-  target.setNotFoundHandler((req, reply) => {
-    const path = decodeURIComponent((req.url.split('?')[0] ?? '/'));
-    if (req.method !== 'GET' || path.startsWith('/api/')) return reply.status(404).send({ error: 'not_found', details: null });
-    const file = normalize(join(WEB_DIR, path === '/' ? 'index.html' : path));
-    const safe = file.startsWith(WEB_DIR + sep) || file === join(WEB_DIR, 'index.html');
-    let target = join(WEB_DIR, 'index.html');
-    try {
-      if (safe && statSync(file).isFile()) target = file;
-    } catch { /* unknown path: the app's own router handles it */ }
-    return reply
-      .header('content-type', TYPES[extname(target)] ?? 'application/octet-stream')
-      .header('cache-control', target.endsWith('index.html') ? 'no-cache' : 'public, max-age=31536000, immutable')
-      .send(readFileSync(target));
-  });
-}
-
+/** Asks the server process to close the company file and stop; ends it if it doesn't within a few seconds. */
 async function stopServer(): Promise<void> {
-  try { await proModule?.stop?.(); } catch { /* stopping anyway */ }
-  try { await server?.close(); } catch { /* already closed */ }
-  try { db?.close(); } catch { /* already closed */ }
-  server = null;
-  db = null;
+  const proc = child;
+  if (!proc) return;
+  childEnding = true;
+  try { await bridge?.call('stop', [], { timeoutMs: 8000 }); } catch (error) { log('the server process did not stop cleanly:', error); }
+  proc.kill();
+  child = null;
+  bridge = null;
 }
 
 // ——— the office network: this PC works on another PC's company file ———
@@ -425,6 +348,27 @@ ipcMain.on('app:language', (event, value: unknown) => {
   if (!fromAppPage(event) || !isLang(value) || value === lang) return;
   useLanguage(value);
   buildMenu();
+});
+
+/** A call from the app window's own page (ipcMain.handle). */
+function invokedByAppPage(event: Electron.IpcMainInvokeEvent): boolean {
+  const frame = event.senderFrame;
+  return !!win && event.sender === win.webContents && !!frame && frame === win.webContents.mainFrame && originOf(frame.url) === appOrigin;
+}
+
+// Settings → Language and display → Graphics acceleration
+ipcMain.handle('app:graphics', (event) => {
+  if (!invokedByAppPage(event)) return null;
+  return { on: graphicsOn(), running: graphicsAtStart };
+});
+ipcMain.handle('app:graphics:set', (event, on: unknown) => {
+  if (!invokedByAppPage(event) || typeof on !== 'boolean') return null;
+  saveGraphics(on, 'settings');
+  log(`graphics acceleration ${on ? 'on' : 'off'} from the next start`);
+  return { on: graphicsOn(), running: graphicsAtStart };
+});
+ipcMain.on('app:relaunch', (event) => {
+  if (fromAppPage(event)) void relaunchApp();
 });
 
 ipcMain.on('network:close', (event) => {
@@ -708,17 +652,25 @@ if (!app.requestSingleInstanceLock()) {
         await createWindow(`https://${remote.host}:${remote.port}/`);
       } else {
         const url = await startServer();
-        log(`Qasa ERP ${app.getVersion()}${FROM_STORE ? ' (Microsoft Store)' : ''} started — server on ${url}, data in ${join(app.getPath('userData'), 'data')}`);
+        log(`Qasa ERP ${app.getVersion()}${FROM_STORE ? ' (Microsoft Store)' : ''} started — server process on ${url}, data in ${dataDir()}`);
         await createWindow(url);
       }
       setupUpdates();
     } catch (error) {
-      if (error instanceof Quitting) return;
+      if (childEnding) return; // the start was ended on purpose (a dialog's Quit, newer books)
+      log('start failed:', error);
       dialog.showErrorBox(t('startFailed'), error instanceof Error ? error.message : String(error));
       app.quit();
     }
   });
 
-  app.on('before-quit', () => { log('quitting'); pings?.stop(); void stopServer(); });
+  // let the server process close the company file before the app ends
+  let quitReady = false;
+  app.on('before-quit', (event) => {
+    if (quitReady || !child) return;
+    event.preventDefault();
+    log('quitting');
+    void stopServer().finally(() => { quitReady = true; app.quit(); });
+  });
   app.on('window-all-closed', () => app.quit());
 }

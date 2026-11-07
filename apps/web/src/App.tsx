@@ -1,47 +1,82 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState, type ComponentType, type ReactNode } from 'react';
 import { APP_VERSION, htmlLang, isLang, type DigitStyle, type Lang } from '@qasa/core';
 import { api, currentUser, SIGNED_OUT_EVENT, type AccountView, type Me, type PlanStatus, type Settings as SettingsData } from './api.ts';
-import { DataContext, DisplayContext, Icon, isDensity, isTheme, Logo, PageNavContext, ToastProvider, type Density, type PageNav, type Theme } from './components.tsx';
+import { BusyBar, DataContext, DisplayContext, Icon, isDensity, isTheme, Logo, PageNavContext, ToastProvider, type Density, type PageNav, type Theme } from './components.tsx';
 import { I18nContext, isKey, makeI18n, useI18n, type Key } from './i18n.ts';
 import { href, useRoute } from './router.ts';
 import { Home } from './pages/Home.tsx';
-import { Entries } from './pages/Entries.tsx';
 import type { EntryStatus } from '@qasa/core';
-import { EntryEditor } from './pages/EntryEditor.tsx';
-import { EntryDetail } from './pages/EntryDetail.tsx';
-import { Accounts } from './pages/Accounts.tsx';
-import { Statement, TrialBalance } from './pages/Reports.tsx';
-import { Settings } from './pages/Settings.tsx';
-import { Parties, PartyDetail } from './pages/Parties.tsx';
-import { ItemDetail, Items } from './pages/Items.tsx';
-import { InvoiceDetail, InvoiceEditor, Invoices } from './pages/Invoices.tsx';
-import { Plans } from './pages/Plans.tsx';
-import { FinalAccounts } from './pages/FinalAccounts.tsx';
-import { StockDocDetail, StockDocEditor, StockDocs } from './pages/StockDocs.tsx';
 import { PasswordModal, SignIn, Users } from './pages/Users.tsx';
-import { Guarantors, InstallmentDetail, InstallmentEditor, Installments, InstallmentsAging } from './pages/Installments.tsx';
-import { RealEstate, RealEstateProject } from './pages/RealEstate.tsx';
-import { MobileShop, RepairDetail } from './pages/MobileShop.tsx';
-import { CarParts } from './pages/CarParts.tsx';
-import { EngineeringWorks, JobDetail } from './pages/EngineeringWorks.tsx';
-import { BusinessTypeChooser, BusinessTypePage } from './pages/BusinessType.tsx';
-import { Pos, PosShiftReport } from './pages/Pos.tsx';
-import { Payroll, PayrollRun } from './pages/Payroll.tsx';
-import { Import } from './pages/Import.tsx';
-import { QuoteDetail, QuoteEditor, Quotes } from './pages/Quotes.tsx';
-import { Pipeline } from './pages/Pipeline.tsx';
-import { Brief } from './pages/Brief.tsx';
-import { Expenses } from './pages/Expenses.tsx';
-import { isReportTab, MoreReports } from './pages/MoreReports.tsx';
-import { Rates } from './pages/Rates.tsx';
-import { GenRun, Generators } from './pages/Generators.tsx';
-import { WebsiteApi } from './pages/WebsiteApi.tsx';
 import { SupportButton } from './industry/SupportButton.tsx';
-import { isSolarTab, Solar, SolarSystem } from './pages/Solar.tsx';
-import { Branches } from './pages/Branches.tsx';
 import { BranchSwitcher } from './industry/BranchSwitcher.tsx';
 import { BRANCH_EVENT } from './industry/branches-api.ts';
 import { BUSINESS_FEATURE, type BusinessType } from '@qasa/core';
+import { isReportTab, isSolarTab } from './pages/tabs.ts';
+
+/**
+ * Pages load when they are first opened, not with the app: the first screen comes up quickly and the window holds only
+ * what is in use. Each page module becomes its own small file in the build.
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any -- each page has its own props
+function lazyPage<M extends Record<string, unknown>, K extends keyof M & string>(load: () => Promise<M>, name: K): M[K] {
+  return lazy(async () => ({ default: (await load())[name] as unknown as ComponentType<any> })) as unknown as M[K];
+}
+/** Shown for the moment a page's file is loading (first visit only). */
+function PageLoading() {
+  return <div className="page-loading" role="status" aria-busy="true"><span className="spinner" aria-hidden="true" /></div>;
+}
+const Entries = lazyPage(() => import('./pages/Entries.tsx'), 'Entries');
+const EntryEditor = lazyPage(() => import('./pages/EntryEditor.tsx'), 'EntryEditor');
+const EntryDetail = lazyPage(() => import('./pages/EntryDetail.tsx'), 'EntryDetail');
+const Accounts = lazyPage(() => import('./pages/Accounts.tsx'), 'Accounts');
+const Statement = lazyPage(() => import('./pages/Reports.tsx'), 'Statement');
+const TrialBalance = lazyPage(() => import('./pages/Reports.tsx'), 'TrialBalance');
+const Settings = lazyPage(() => import('./pages/Settings.tsx'), 'Settings');
+const Parties = lazyPage(() => import('./pages/Parties.tsx'), 'Parties');
+const PartyDetail = lazyPage(() => import('./pages/Parties.tsx'), 'PartyDetail');
+const ItemDetail = lazyPage(() => import('./pages/Items.tsx'), 'ItemDetail');
+const Items = lazyPage(() => import('./pages/Items.tsx'), 'Items');
+const InvoiceDetail = lazyPage(() => import('./pages/Invoices.tsx'), 'InvoiceDetail');
+const InvoiceEditor = lazyPage(() => import('./pages/Invoices.tsx'), 'InvoiceEditor');
+const Invoices = lazyPage(() => import('./pages/Invoices.tsx'), 'Invoices');
+const Plans = lazyPage(() => import('./pages/Plans.tsx'), 'Plans');
+const FinalAccounts = lazyPage(() => import('./pages/FinalAccounts.tsx'), 'FinalAccounts');
+const StockDocDetail = lazyPage(() => import('./pages/StockDocs.tsx'), 'StockDocDetail');
+const StockDocEditor = lazyPage(() => import('./pages/StockDocs.tsx'), 'StockDocEditor');
+const StockDocs = lazyPage(() => import('./pages/StockDocs.tsx'), 'StockDocs');
+const Guarantors = lazyPage(() => import('./pages/Installments.tsx'), 'Guarantors');
+const InstallmentDetail = lazyPage(() => import('./pages/Installments.tsx'), 'InstallmentDetail');
+const InstallmentEditor = lazyPage(() => import('./pages/Installments.tsx'), 'InstallmentEditor');
+const Installments = lazyPage(() => import('./pages/Installments.tsx'), 'Installments');
+const InstallmentsAging = lazyPage(() => import('./pages/Installments.tsx'), 'InstallmentsAging');
+const RealEstate = lazyPage(() => import('./pages/RealEstate.tsx'), 'RealEstate');
+const RealEstateProject = lazyPage(() => import('./pages/RealEstate.tsx'), 'RealEstateProject');
+const MobileShop = lazyPage(() => import('./pages/MobileShop.tsx'), 'MobileShop');
+const RepairDetail = lazyPage(() => import('./pages/MobileShop.tsx'), 'RepairDetail');
+const CarParts = lazyPage(() => import('./pages/CarParts.tsx'), 'CarParts');
+const EngineeringWorks = lazyPage(() => import('./pages/EngineeringWorks.tsx'), 'EngineeringWorks');
+const JobDetail = lazyPage(() => import('./pages/EngineeringWorks.tsx'), 'JobDetail');
+const BusinessTypeChooser = lazyPage(() => import('./pages/BusinessType.tsx'), 'BusinessTypeChooser');
+const BusinessTypePage = lazyPage(() => import('./pages/BusinessType.tsx'), 'BusinessTypePage');
+const Pos = lazyPage(() => import('./pages/Pos.tsx'), 'Pos');
+const PosShiftReport = lazyPage(() => import('./pages/Pos.tsx'), 'PosShiftReport');
+const Payroll = lazyPage(() => import('./pages/Payroll.tsx'), 'Payroll');
+const PayrollRun = lazyPage(() => import('./pages/Payroll.tsx'), 'PayrollRun');
+const Import = lazyPage(() => import('./pages/Import.tsx'), 'Import');
+const QuoteDetail = lazyPage(() => import('./pages/Quotes.tsx'), 'QuoteDetail');
+const QuoteEditor = lazyPage(() => import('./pages/Quotes.tsx'), 'QuoteEditor');
+const Quotes = lazyPage(() => import('./pages/Quotes.tsx'), 'Quotes');
+const Pipeline = lazyPage(() => import('./pages/Pipeline.tsx'), 'Pipeline');
+const Brief = lazyPage(() => import('./pages/Brief.tsx'), 'Brief');
+const Expenses = lazyPage(() => import('./pages/Expenses.tsx'), 'Expenses');
+const MoreReports = lazyPage(() => import('./pages/MoreReports.tsx'), 'MoreReports');
+const Rates = lazyPage(() => import('./pages/Rates.tsx'), 'Rates');
+const GenRun = lazyPage(() => import('./pages/Generators.tsx'), 'GenRun');
+const Generators = lazyPage(() => import('./pages/Generators.tsx'), 'Generators');
+const WebsiteApi = lazyPage(() => import('./pages/WebsiteApi.tsx'), 'WebsiteApi');
+const Solar = lazyPage(() => import('./pages/Solar.tsx'), 'Solar');
+const SolarSystem = lazyPage(() => import('./pages/Solar.tsx'), 'SolarSystem');
+const Branches = lazyPage(() => import('./pages/Branches.tsx'), 'Branches');
 
 declare global {
   /** Only in the Windows app: its bridge to the desktop shell (apps/desktop/src/app-preload.ts). */
@@ -580,6 +615,7 @@ export function App() {
        <DisplayContext.Provider value={display}>
        <PageNavContext.Provider value={setPageNav}>
         <ToastProvider>
+          <BusyBar />
           <div className="app">
             <nav className="sidebar" aria-label={t('appName')}>
               <div className="brand">
@@ -629,7 +665,7 @@ export function App() {
               {changingPassword && <PasswordModal needsCurrent onClose={() => setChangingPassword(false)} />}
               {/* the first time an admin opens the company: what does it do? (decides the menu; changed later under System) */}
               {isAdmin && settings && settings.businessTypes === null && import.meta.env.MODE !== 'demo' && (
-                <div className="backdrop"><div className="modal biz-modal" role="dialog" aria-modal="true" aria-label={t('bizWelcome')}><BusinessTypeChooser first /></div></div>
+                <div className="backdrop"><div className="modal biz-modal" role="dialog" aria-modal="true" aria-label={t('bizWelcome')}><Suspense fallback={<PageLoading />}><BusinessTypeChooser first /></Suspense></div></div>
               )}
               <main className="content">
                 {plan?.license?.state === 'grace' && plan.license.expires && plan.graceEnds && page !== 'plans' && (
@@ -638,7 +674,7 @@ export function App() {
                     <a href={href('plans')}>{t('planLicense')}</a>
                   </div>
                 )}
-                <div key={branchKey} style={{ display: 'contents' }}>{content}</div>
+                <div key={branchKey} style={{ display: 'contents' }}><Suspense fallback={<PageLoading />}>{content}</Suspense></div>
               </main>
               <footer className="statusbar">
                 <span className={'dot' + (online ? '' : ' off')} />

@@ -536,7 +536,7 @@ export function apiRoutes(db: Db, options: { demo?: boolean; extensions?: readon
   app.post('/api/auth/login', async (req, reply) => {
     notInDemo();
     const body = parse(z.object({ username: z.string().min(1).max(64), password: z.string().min(1).max(200) }), req.body);
-    const { token, actor } = login(db, body.username, body.password, header(req, 'user-agent'));
+    const { token, actor } = await login(db, body.username, body.password, header(req, 'user-agent'));
     reply.header('set-cookie', sessionCookie(token, !!req.secure));
     return me(actor);
   });
@@ -549,7 +549,7 @@ export function apiRoutes(db: Db, options: { demo?: boolean; extensions?: readon
   app.post('/api/auth/password', async (req) => {
     notInDemo();
     const body = parse(z.object({ current: z.string().max(200).optional(), password: z.string().max(200) }), req.body);
-    changeOwnPassword(db, actorOf(req), body.current, body.password, cookie(req, SESSION_COOKIE));
+    await changeOwnPassword(db, actorOf(req), body.current, body.password, cookie(req, SESSION_COOKIE));
     return { ok: true };
   });
   app.put('/api/auth/signin', async (req) => {
@@ -565,12 +565,12 @@ export function apiRoutes(db: Db, options: { demo?: boolean; extensions?: readon
   app.post('/api/users', async (req, reply) => {
     const body = parse(userSchema.extend({ password: z.string().max(200).optional() }), req.body);
     if (body.password !== undefined) notInDemo();
-    return reply.status(201).send(createUser(db, body, userOf(req)));
+    return reply.status(201).send(await createUser(db, body, userOf(req)));
   });
   app.put('/api/users/:id', async (req) => updateUser(db, parse(idParam, req.params).id, parse(userSchema.extend({ active: z.boolean() }), req.body), actorOf(req)));
   app.post('/api/users/:id/password', async (req) => {
     notInDemo();
-    return setPassword(db, parse(idParam, req.params).id, parse(z.object({ password: z.string().max(200) }), req.body).password, userOf(req));
+    return await setPassword(db, parse(idParam, req.params).id, parse(z.object({ password: z.string().max(200) }), req.body).password, userOf(req));
   });
 
   // plan & license

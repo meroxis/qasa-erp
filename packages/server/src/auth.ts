@@ -1,4 +1,4 @@
-import { createHash, randomBytes, randomUUID, scryptSync, timingSafeEqual } from 'node:crypto';
+import { createHash, randomBytes, randomUUID, scrypt, timingSafeEqual } from 'node:crypto';
 import type { Db } from './db.ts';
 import { transaction } from './db.ts';
 import { audit } from './audit.ts';
@@ -62,17 +62,22 @@ export const SESSION_COOKIE = 'qasa_auth';
 
 const SCRYPT = { N: 16384, r: 8, p: 1, keylen: 64 };
 
-export function hashPassword(password: string): string {
+/** scrypt off the event loop (Node's thread pool), so a sign-in never holds up other requests. */
+function scryptAsync(password: string, salt: Buffer, keylen: number, options: { N: number; r: number; p: number }): Promise<Buffer> {
+  return new Promise((resolve, reject) => scrypt(password, salt, keylen, options, (error, key) => (error ? reject(error) : resolve(key))));
+}
+
+export async function hashPassword(password: string): Promise<string> {
   const salt = randomBytes(16);
-  const hash = scryptSync(password, salt, SCRYPT.keylen, { N: SCRYPT.N, r: SCRYPT.r, p: SCRYPT.p });
+  const hash = await scryptAsync(password, salt, SCRYPT.keylen, { N: SCRYPT.N, r: SCRYPT.r, p: SCRYPT.p });
   return `scrypt$${SCRYPT.N}$${SCRYPT.r}$${SCRYPT.p}$${salt.toString('base64url')}$${hash.toString('base64url')}`;
 }
 
-export function verifyPassword(password: string, stored: string): boolean {
+export async function verifyPassword(password: string, stored: string): Promise<boolean> {
   const [scheme, n, r, p, salt, hash] = stored.split('$');
   if (scheme !== 'scrypt' || !salt || !hash) return false;
   const expected = Buffer.from(hash, 'base64url');
-  const actual = scryptSync(password, Buffer.from(salt, 'base64url'), expected.length, { N: Number(n), r: Number(r), p: Number(p) });
+  const actual = await scryptAsync(password, Buffer.from(salt, 'base64url'), expected.length, { N: Number(n), r: Number(r), p: Number(p) });
   return actual.length === expected.length && timingSafeEqual(actual, expected);
 }
 
@@ -135,15 +140,19 @@ function assertUserFields(db: Db, input: { username: string; name: string; roles
   if (errors.length) throw invalid(errors);
 }
 
-export function createUser(db: Db, input: { username: string; name: string; roles: Role[]; password?: string | undefined }, by: string): UserView {
+export async function createUser(db: Db, input: { username: string; name: string; roles: Role[]; password?: string | undefined }, by: string): Promise<UserView> {
   assertUserFields(db, input);
   if (input.password !== undefined) assertPassword(input.password);
   // more than one user is a Pro feature (users limit of the plan)
   assertWithinLimit(db, 'users', activeCount(db));
   const id = randomUUID();
+  const hash = input.password !== undefined ? await hashPassword(input.password) : null;
+  // checked again after the hashing (another request may have run meanwhile)
+  assertUserFields(db, input);
+  assertWithinLimit(db, 'users', activeCount(db));
   transaction(db, () => {
     db.prepare('INSERT INTO users (id, username, name, password_hash, roles, active, created_at) VALUES (?, ?, ?, ?, ?, 1, ?)')
-      .run(id, input.username, input.name.trim(), input.password !== undefined ? hashPassword(input.password) : null, JSON.stringify(input.roles), new Date().toISOString());
+      .run(id, input.username, input.name.trim(), hash, JSON.stringify(input.roles), new Date().toISOString());
     audit(db, by, 'create', 'user', id, { username: input.username, roles: input.roles });
   });
   return toView(loadUser(db, id));
@@ -169,11 +178,13 @@ export function updateUser(db: Db, id: string, input: { username: string; name: 
 }
 
 /** An admin sets (or resets) someone's password; their other sessions end. */
-export function setPassword(db: Db, id: string, password: string, by: string): UserView {
+export async function setPassword(db: Db, id: string, password: string, by: string): Promise<UserView> {
   loadUser(db, id);
   assertPassword(password);
+  const hash = await hashPassword(password);
+  loadUser(db, id);
   transaction(db, () => {
-    db.prepare('UPDATE users SET password_hash = ? WHERE id = ?').run(hashPassword(password), id);
+    db.prepare('UPDATE users SET password_hash = ? WHERE id = ?').run(hash, id);
     db.prepare('DELETE FROM sessions WHERE user_id = ?').run(id);
     audit(db, by, 'password', 'user', id);
   });
@@ -181,13 +192,14 @@ export function setPassword(db: Db, id: string, password: string, by: string): U
 }
 
 /** A user changes their own password; the current one is required when there is one. */
-export function changeOwnPassword(db: Db, actor: Actor, current: string | undefined, next: string, keepToken?: string): void {
+export async function changeOwnPassword(db: Db, actor: Actor, current: string | undefined, next: string, keepToken?: string): Promise<void> {
   if (!actor.id) throw new AppError(401, 'unauthorized');
   const row = loadUser(db, actor.id);
-  if (row.password_hash && !verifyPassword(current ?? '', row.password_hash)) throw invalid([{ code: 'password_wrong' }]);
+  if (row.password_hash && !(await verifyPassword(current ?? '', row.password_hash))) throw invalid([{ code: 'password_wrong' }]);
   assertPassword(next);
+  const hash = await hashPassword(next);
   transaction(db, () => {
-    db.prepare('UPDATE users SET password_hash = ? WHERE id = ?').run(hashPassword(next), actor.id);
+    db.prepare('UPDATE users SET password_hash = ? WHERE id = ?').run(hash, actor.id);
     // sign out everywhere else
     const keep = keepToken ? tokenHash(keepToken) : '';
     db.prepare('DELETE FROM sessions WHERE user_id = ? AND token_hash <> ?').run(actor.id, keep);
@@ -265,7 +277,7 @@ export function sessionActor(db: Db, token: string): Actor | null {
 /** Failed sign-ins per username: after 5 in a row the account waits, 1 minute doubling up to 15. */
 const failures = new Map<string, { count: number; lockedUntil: number }>();
 
-export function login(db: Db, username: string, password: string, device?: string): { token: string; actor: Actor } {
+export async function login(db: Db, username: string, password: string, device?: string): Promise<{ token: string; actor: Actor }> {
   const key = username.trim().toLowerCase();
   const state = failures.get(key);
   if (state && state.lockedUntil > Date.now()) {
@@ -273,7 +285,7 @@ export function login(db: Db, username: string, password: string, device?: strin
   }
   const row = db.prepare('SELECT * FROM users WHERE username = ?').get(username.trim()) as unknown as UserRow | undefined;
   // the same answer, after the same work, for an unknown user, a wrong password, a user without a password and an inactive user
-  const passwordOk = verifyPassword(password, row?.password_hash ?? DUMMY_HASH);
+  const passwordOk = await verifyPassword(password, row?.password_hash ?? DUMMY_HASH);
   const ok = !!row && row.active === 1 && !!row.password_hash && passwordOk;
   if (!ok || !row) {
     const count = (state?.count ?? 0) + 1;

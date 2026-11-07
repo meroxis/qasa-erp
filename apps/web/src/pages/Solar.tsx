@@ -19,9 +19,9 @@ import { go, href } from '../router.ts';
  * `solar-system/:id` (one system).
  */
 
-export type SolarTab = 'home' | 'new' | 'electrical' | 'maintenance' | 'warranty';
-const TABS: SolarTab[] = ['home', 'new', 'electrical', 'maintenance', 'warranty'];
-export const isSolarTab = (v: string | undefined): v is SolarTab => !!v && (TABS as string[]).includes(v);
+import { SOLAR_TABS, type SolarTab } from './tabs.ts';
+export { isSolarTab, type SolarTab } from './tabs.ts';
+const TABS = SOLAR_TABS;
 const NAV = { key: 'sl_title' as Key, group: 'gIndustry' as Key };
 const isAbsent = (e: unknown) => e instanceof ApiError && e.status === 404 && !(e.details as { what?: string } | null)?.what;
 
