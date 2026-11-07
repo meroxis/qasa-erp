@@ -26,6 +26,7 @@ import { CarParts } from './pages/CarParts.tsx';
 import { EngineeringWorks, JobDetail } from './pages/EngineeringWorks.tsx';
 import { BusinessTypeChooser, BusinessTypePage } from './pages/BusinessType.tsx';
 import { Pos, PosShiftReport } from './pages/Pos.tsx';
+import { Payroll, PayrollRun } from './pages/Payroll.tsx';
 import { BUSINESS_FEATURE, type BusinessType } from '@qasa/core';
 
 declare global {
@@ -96,7 +97,7 @@ const NAV: { group: Key; items: NavItem[] }[] = [
       { key: 'ew_jobs', icon: 'swap', path: 'works', match: ['works', 'job'], business: 'engineeringWorks' }
     ]
   },
-  { group: 'gPeople', items: [{ key: 'hr', icon: 'idcard' }, { key: 'salaries', icon: 'users' }] },
+  { group: 'gPeople', items: [{ key: 'pay_title', icon: 'users', path: 'payroll', match: ['payroll', 'payroll-run'], adminOnly: true }] },
   {
     group: 'gSystem',
     items: [
@@ -359,6 +360,14 @@ export function App() {
     case 'job':
       title = t('ew_jobs');
       content = arg ? <JobDetail key={arg} id={arg} /> : null;
+      break;
+    case 'payroll':
+      title = t('pay_title');
+      content = <Payroll key={arg ?? 'months'} tab={arg === 'employees' ? 'employees' : arg === 'advances' ? 'advances' : 'months'} />;
+      break;
+    case 'payroll-run':
+      title = t('pay_title');
+      content = arg ? <PayrollRun key={arg} id={arg} /> : null;
       break;
     case 'pos':
       title = t('pos_title');

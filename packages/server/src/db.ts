@@ -954,8 +954,9 @@ const V7 =
     date TEXT NOT NULL,
     currency TEXT NOT NULL CHECK (currency IN ('IQD', 'USD')),
     status TEXT NOT NULL CHECK (status IN ('draft', 'posted', 'cancelled')),
-    -- the journal entry it posts (it then follows the preparer, checker and approver)
+    -- the journal entry it posts (it then follows the preparer, checker and approver), and the payment voucher that paid it
     entry_id TEXT REFERENCES entries(id),
+    payment_entry_id TEXT REFERENCES entries(id),
     notes TEXT,
     created_by TEXT NOT NULL,
     created_at TEXT NOT NULL,

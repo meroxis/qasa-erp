@@ -76,6 +76,10 @@ jobs:
         run: npm run release -w @qasa/desktop
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Pro cloud backup (Google Drive, OneDrive): see pro/docs/cloud-backup-setup.md
+          QASA_GOOGLE_CLIENT_ID: ${{ secrets.QASA_GOOGLE_CLIENT_ID }}
+          QASA_GOOGLE_CLIENT_SECRET: ${{ secrets.QASA_GOOGLE_CLIENT_SECRET }}
+          QASA_MS_CLIENT_ID: ${{ secrets.QASA_MS_CLIENT_ID }}
 
       # The Microsoft Store package from the same build (not signed: the Store signs it when it accepts it). It is kept
       # with the run for upload to Partner Center, not attached to the release (Windows won't install it unsigned).

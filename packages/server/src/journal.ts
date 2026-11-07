@@ -234,6 +234,8 @@ function replaceDraft(db: Db, id: string, entry: EntryInput, cashAccountCode: st
 export function deleteEntry(db: Db, id: string, user: string): void {
   const row = loadRow(db, id);
   requireAction(row, 'delete');
+  // a payroll month's draft entry is taken back from the payroll page ("Back to draft"), which keeps both in step
+  if (db.prepare('SELECT 1 FROM payroll_runs WHERE entry_id = ?').get(id)) throw conflict('entry_belongs_to_payroll');
   transaction(db, () => {
     db.prepare('DELETE FROM entries WHERE id = ?').run(id);
     audit(db, user, 'delete', 'entry', id, { type: row.type });

@@ -9,6 +9,7 @@ import { QUOTES_TEXT } from './i18n/quotes.ts';
 import { PIPELINE_TEXT } from './i18n/pipeline.ts';
 import { MEDIA_TEXT } from './i18n/media.ts';
 import { BRIEF_TEXT } from './i18n/brief.ts';
+import { CLOUD_TEXT } from './i18n/cloud.ts';
 import { formatAmount, formatDate, formatInteger, LANGS, toEasternDigits, type CurrencyCode, type DigitStyle, type Lang, type Names } from '@qasa/core';
 
 /** Every UI string in Arabic, English and Kurdish (Sorani) — in that order. */
@@ -29,6 +30,7 @@ const BASE = {
   gStock: ['المخزن', 'Inventory', 'کۆگا'],
   items: ['المواد والمخزون', 'Items & stock', 'کاڵا و کۆگا'],
   gIndustry: ['نشاط الشركة', 'Your business', 'چالاکیی کۆمپانیا'],
+  err_entry_belongs_to_payroll: ['هذا القيد لرواتب شهر؛ أرجِعه إلى مسودة من صفحة الرواتب.', 'This entry belongs to a payroll month; take it back to draft from the Payroll page.', 'ئەم تۆمارە هی مووچەی مانگێکە؛ لە پەڕەی مووچەوە بیگەڕێنەوە بۆ ڕەشنووس.'],
   bizType: ['نشاط الشركة', 'Business type', 'جۆری چالاکی'],
   bizWelcome: ['أهلاً بك في قاصة ERP', 'Welcome to Qasa ERP', 'بەخێربێیت بۆ قاسە ERP'],
   bizQuestion: ['ماذا تعمل شركتك؟ اختر واحداً أو أكثر — القائمة تعرض ما يناسبك فقط.', 'What does your company do? Pick one or more — the menu shows only what fits you.', 'کۆمپانیاکەت چی دەکات؟ یەک یان زیاتر هەڵبژێرە — لیستەکە تەنها ئەوەی بۆت گونجاوە پیشان دەدات.'],
@@ -934,7 +936,7 @@ const BASE = {
 
 /** The industry features keep their texts in files of their own (i18n/), in the same three languages. */
 const D = { ...BASE, ...REAL_ESTATE_TEXT, ...MOBILE_TEXT, ...PARTS_TEXT, ...ENGINEERING_TEXT,
-  ...PAYROLL_TEXT, ...POS_TEXT, ...QUOTES_TEXT, ...PIPELINE_TEXT, ...MEDIA_TEXT, ...BRIEF_TEXT };
+  ...PAYROLL_TEXT, ...POS_TEXT, ...QUOTES_TEXT, ...PIPELINE_TEXT, ...MEDIA_TEXT, ...BRIEF_TEXT, ...CLOUD_TEXT };
 
 export type Key = keyof typeof D;
 

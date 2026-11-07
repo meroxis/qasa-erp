@@ -27,6 +27,15 @@ await build({
   logLevel: 'warn',
   resolve: { alias: { '@qasa/pro-module': withPro ? proEntry : join(here, 'src', 'pro-none.ts') } },
   ssr: { noExternal: true, target: 'node' },
+  // Pro cloud backup: the OAuth client IDs of the Google and Microsoft apps (from the release's secrets; empty in other
+  // builds, which then say "Not available in this build"). Google's desktop "secret" ships in every copy by design.
+  define: {
+    __QASA_CLOUD_IDS__: JSON.stringify({
+      google: process.env.QASA_GOOGLE_CLIENT_ID ?? '',
+      googleSecret: process.env.QASA_GOOGLE_CLIENT_SECRET ?? '',
+      onedrive: process.env.QASA_MS_CLIENT_ID ?? ''
+    })
+  },
   build: {
     ssr: join(here, 'src', 'main.ts'),
     outDir: dist,

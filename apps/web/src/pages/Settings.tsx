@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { formatAmount, htmlLang, MONTHS, rateFromX100, todayIso, toWesternDigits, type Lang, type Names, type PostingAccounts } from '@qasa/core';
 import {
-  api, ApiError, currentUser, setCurrentUser, type BackupStatus, type DatabaseCheck, type DatabaseInput, type DatabaseStatus, type NetworkStatus, type YearEndStatus
+  api, ApiError, currentUser, request, setCurrentUser, type BackupStatus, type DatabaseCheck, type DatabaseInput, type DatabaseStatus, type NetworkStatus, type YearEndStatus
 } from '../api.ts';
 import { AccountCombo, ErrorBox, Icon, Modal, useData, useDisplay, useLoad, useToast, type Density, type Theme } from '../components.tsx';
 import { isKey, useI18n } from '../i18n.ts';
@@ -647,6 +647,7 @@ function BackupCard() {
               </div>
             </div>
           )}
+          <CloudBackup encrypted={status.encrypted} disabled={restarting} onRestarting={() => setRestarting(true)} />
           <ErrorBox error={error} />
           <div className="row" style={{ gap: 8, flexWrap: 'wrap' }}>
             {status.available && <button type="button" className="btn primary" disabled={busy || restarting} onClick={() => act(() => api.runBackup(), t('saved'))}>{t('bkNow')}</button>}
@@ -681,6 +682,184 @@ function BackupCard() {
       {asking && (
         <Modal title={t('bkPasswordTitle')} onClose={() => { setAsking(null); setPassword(''); }}>
           <form className="stack" onSubmit={(e) => { e.preventDefault(); void send({ ...(asking.name ? { name: asking.name } : {}), ...(asking.pick ? { pick: asking.pick } : {}), password }); setPassword(''); }}>
+            <p style={{ margin: 0 }}>{t('bkPasswordAsk')}</p>
+            <label className="field"><span>{t('bkPassword')}</span><input className="input ltr" type="password" autoComplete="off" autoFocus maxLength={200} value={password} onChange={(e) => setPassword(e.target.value)} /></label>
+            {asking.wrong && <div className="alert bad" role="alert">{t('err_backup_password_wrong')}</div>}
+            <div className="row" style={{ gap: 8, justifyContent: 'flex-end' }}>
+              <button type="button" className="btn" onClick={() => { setAsking(null); setPassword(''); }}>{t('cancel')}</button>
+              <button type="submit" className="btn primary" disabled={busy || !password}>{t('bkRestore')}</button>
+            </div>
+          </form>
+        </Modal>
+      )}
+    </div>
+  );
+}
+
+/** Cloud backup (Pro): what the server says about the connected Google Drive or OneDrive. */
+interface CloudStatus {
+  available: boolean;
+  configured: { google: boolean; onedrive: boolean };
+  needsPassword: boolean;
+  provider: 'google' | 'onedrive' | null;
+  account: string | null;
+  connectedAt: string | null;
+  last: { at: string; file: string; size: number } | null;
+  lastError: string | null;
+  connecting: 'google' | 'onedrive' | null;
+  uploading: boolean;
+}
+interface CloudFile { id: string; name: string; size: number; at: string }
+const cloudApi = {
+  status: () => request<CloudStatus>('GET', '/api/backup/cloud'),
+  connect: (provider: 'google' | 'onedrive') => request<{ url: string; status: CloudStatus }>('POST', '/api/backup/cloud/connect', { provider }),
+  cancel: () => request<CloudStatus>('POST', '/api/backup/cloud/cancel', {}),
+  disconnect: () => request<CloudStatus>('POST', '/api/backup/cloud/disconnect', {}),
+  upload: () => request<CloudStatus>('POST', '/api/backup/cloud/upload', {}),
+  files: () => request<CloudFile[]>('GET', '/api/backup/cloud/files'),
+  restore: (id: string, password?: string) => request<{ restarting: boolean }>('POST', '/api/backup/cloud/restore', { id, ...(password ? { password } : {}) })
+};
+
+/**
+ * Google Drive / OneDrive with one click: the browser opens to sign in, and the screen follows along until the account
+ * is connected. Only encrypted copies go up, so it asks for the backup password first.
+ */
+function CloudBackup({ encrypted, disabled, onRestarting }: { encrypted: boolean; disabled: boolean; onRestarting(): void }) {
+  const { t, digitsOf } = useI18n();
+  const toast = useToast();
+  const [status, setStatus] = useState<CloudStatus | null>(null);
+  const [error, setError] = useState<unknown>(null);
+  const [busy, setBusy] = useState(false);
+  const [signInUrl, setSignInUrl] = useState<string | null>(null);
+  const [files, setFiles] = useState<CloudFile[] | null>(null);
+  const [asking, setAsking] = useState<{ id: string; wrong: boolean } | null>(null);
+  const [password, setPassword] = useState('');
+
+  const load = () => cloudApi.status().then(setStatus, (e) => { if (!(e instanceof ApiError && e.status === 404)) setError(e); });
+  useEffect(() => { void load(); }, [encrypted]);
+  // while signing in or uploading, follow along
+  useEffect(() => {
+    if (!status?.connecting && !status?.uploading) return;
+    const timer = setInterval(() => void load(), 2000);
+    return () => clearInterval(timer);
+  }, [status?.connecting, status?.uploading]);
+
+  if (!status) return error ? <ErrorBox error={error} /> : null;
+  const name = (p: 'google' | 'onedrive') => t(p === 'google' ? 'cl_google' : 'cl_onedrive');
+  const ltr = (v: string) => `⁦${v}⁩`;
+  const when = (iso: string) => ltr(digitsOf(new Date(iso).toLocaleString('en-GB', { dateStyle: 'medium', timeStyle: 'short' })));
+  const size = (bytes: number) => ltr(digitsOf(bytes >= 1048576 ? `${(bytes / 1048576).toFixed(1)} MB` : `${Math.max(1, Math.round(bytes / 1024))} KB`));
+  const errorText = (code: string) => { const key = `err_${code}`; return isKey(key) ? t(key) : code; };
+
+  async function act<T>(work: () => Promise<T>, after?: (v: T) => void) {
+    setBusy(true);
+    setError(null);
+    try {
+      const v = await work();
+      after?.(v);
+    } catch (e) {
+      setError(e);
+    } finally {
+      setBusy(false);
+      void load();
+    }
+  }
+
+  const connect = (p: 'google' | 'onedrive') => act(() => cloudApi.connect(p), (r) => {
+    setSignInUrl(r.url);
+    setStatus(r.status);
+    // the Windows app opens this in the customer's own browser
+    window.open(r.url, '_blank', 'noopener');
+  });
+
+  async function restore(id: string, pass?: string) {
+    setBusy(true);
+    setError(null);
+    try {
+      if ((await cloudApi.restore(id, pass)).restarting) {
+        setAsking(null);
+        setFiles(null);
+        onRestarting();
+      }
+    } catch (e) {
+      if (e instanceof ApiError && (e.code === 'backup_password_required' || e.code === 'backup_password_wrong')) setAsking({ id, wrong: e.code === 'backup_password_wrong' });
+      else setError(e);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  const off = busy || disabled;
+  return (
+    <div className="stack" style={{ gap: 10, padding: 12, border: '1px solid var(--line)', borderRadius: 10 }}>
+      <div className="row" style={{ justifyContent: 'space-between' }}>
+        <strong>{t('cl_title')}</strong>
+        {status.provider && <span className="chip ok">{t('cl_connectedTo', { p: name(status.provider) })}</span>}
+      </div>
+      <div className="muted small">{t('cl_help')}</div>
+
+      {!status.provider && status.available && status.needsPassword && <div className="alert warn" role="status">{t('cl_needsPassword')}</div>}
+
+      {!status.provider && status.available && !status.needsPassword && !status.connecting && (
+        <div className="row" style={{ gap: 8, flexWrap: 'wrap' }}>
+          {(['google', 'onedrive'] as const).map((p) => (
+            <button key={p} type="button" className="btn primary" disabled={off || !status.configured[p]} onClick={() => void connect(p)}
+              title={status.configured[p] ? undefined : t('cl_notSetUp')}>
+              <Icon name="globe" size={16} /> {t('cl_connect', { p: name(p) })}
+            </button>
+          ))}
+          {(!status.configured.google || !status.configured.onedrive) && <span className="muted small">{!status.configured.google && !status.configured.onedrive ? t('cl_notSetUp') : ''}</span>}
+        </div>
+      )}
+
+      {status.connecting && (
+        <div className="alert" role="status">
+          <div>{t('cl_waiting')}</div>
+          <div className="row" style={{ gap: 8, marginTop: 8, flexWrap: 'wrap' }}>
+            {signInUrl && <a className="btn small" href={signInUrl} target="_blank" rel="noopener noreferrer">{t('cl_openAgain')}</a>}
+            <button type="button" className="btn small" disabled={busy} onClick={() => act(() => cloudApi.cancel(), setStatus)}>{t('cancel')}</button>
+          </div>
+        </div>
+      )}
+
+      {status.provider && (
+        <>
+          {status.account && <div className="small">{t('cl_account', { a: ltr(status.account) })}</div>}
+          <div className="small">{status.uploading ? t('cl_uploading') : status.last ? t('cl_last', { when: when(status.last.at), size: size(status.last.size) }) : t('cl_none')}</div>
+          <div className="muted small">{t('cl_where')}</div>
+          <div className="row" style={{ gap: 8, flexWrap: 'wrap' }}>
+            {status.available && <button type="button" className="btn" disabled={off || status.uploading} onClick={() => act(() => cloudApi.upload(), () => toast(t('cl_uploaded')))}>{t('cl_uploadNow')}</button>}
+            <button type="button" className="btn" disabled={off} onClick={() => act(() => cloudApi.files(), setFiles)}>{t('cl_restoreFrom')}</button>
+            <button type="button" className="btn" disabled={off} onClick={() => { if (window.confirm(t('cl_disconnectQ'))) void act(() => cloudApi.disconnect(), setStatus); }}>{t('cl_disconnect')}</button>
+          </div>
+        </>
+      )}
+      {status.lastError && !status.connecting && <div className="alert bad" role="alert">{t('cl_failed', { e: errorText(status.lastError) })}</div>}
+      <ErrorBox error={error} />
+
+      {files && status.provider && (
+        <Modal title={t('cl_cloudCopies', { p: name(status.provider) })} onClose={() => setFiles(null)}>
+          {files.length === 0 ? <p className="muted">{t('cl_noCopies')}</p> : (
+            <table className="table">
+              <tbody>
+                {files.map((f) => (
+                  <tr key={f.id}>
+                    <td className="num small">{when(f.at)}</td>
+                    <td className="num small">{size(f.size)}</td>
+                    <td style={{ textAlign: 'end' }}>
+                      <button type="button" className="btn small" disabled={busy}
+                        onClick={() => { if (window.confirm(t('bkRestoreQ', { when: when(f.at) }))) void restore(f.id); }}>{t('bkRestore')}</button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </Modal>
+      )}
+      {asking && (
+        <Modal title={t('bkPasswordTitle')} onClose={() => { setAsking(null); setPassword(''); }}>
+          <form className="stack" onSubmit={(e) => { e.preventDefault(); void restore(asking.id, password); setPassword(''); }}>
             <p style={{ margin: 0 }}>{t('bkPasswordAsk')}</p>
             <label className="field"><span>{t('bkPassword')}</span><input className="input ltr" type="password" autoComplete="off" autoFocus maxLength={200} value={password} onChange={(e) => setPassword(e.target.value)} /></label>
             {asking.wrong && <div className="alert bad" role="alert">{t('err_backup_password_wrong')}</div>}

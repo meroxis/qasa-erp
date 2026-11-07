@@ -769,12 +769,14 @@ export const MYSQL_TABLES: readonly MysqlObject[] = [
       currency ${WORD} NOT NULL CHECK (currency IN ('IQD', 'USD')),
       status ${WORD} NOT NULL CHECK (status IN ('draft', 'posted', 'cancelled')),
       entry_id ${ID},
+      payment_entry_id ${ID},
       notes TEXT,
       created_by TEXT NOT NULL,
       created_at ${WHEN} NOT NULL,
       updated_at ${WHEN} NOT NULL,
       INDEX payroll_runs_period (period),
-      FOREIGN KEY (entry_id) REFERENCES entries(id)
+      FOREIGN KEY (entry_id) REFERENCES entries(id),
+      FOREIGN KEY (payment_entry_id) REFERENCES entries(id)
     )`
   },
   {
