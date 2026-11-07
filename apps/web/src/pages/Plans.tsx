@@ -3,6 +3,7 @@ import { daysBetween, PLAN_IDS, PLANS, TRIAL_DAYS, todayIso } from '@qasa/core';
 import { api, request, type PlanStatus } from '../api.ts';
 import { ErrorBox, Icon, useData, useToast } from '../components.tsx';
 import { useI18n, type I18n, type Key } from '../i18n.ts';
+import { AgreeLine } from '../industry/LegalPanel.tsx';
 
 const demo = import.meta.env.MODE === 'demo';
 const CONTACT = 'mailto:info@qasaerp.com?subject=' + encodeURIComponent('Qasa ERP Pro / Business');
@@ -40,7 +41,7 @@ const ROWS: Row[] = [
   { label: 'f_electricalSolar', cells: [false, true, true] },
   { label: 'f_generators', cells: [false, true, true] },
   { label: 'f_realEstate', cells: [false, false, true] },
-  { label: 'f_branches', cells: [false, false, true], soon: true },
+  { label: 'f_branches', cells: [false, false, true] },
   { label: 'f_support', cells: ['v_supportFree', 'v_supportPro', 'v_supportBusiness'] }
 ];
 
@@ -74,6 +75,7 @@ function ActivationNote({ plan, busy, act }: { plan: PlanStatus; busy: boolean; 
     return (
       <div className="alert info stack">
         <span>{t('ac_needs')}</span>
+        <AgreeLine paid />
         <div><button type="button" className="btn primary" disabled={busy} onClick={activate}>{t('ac_activateNow')}</button></div>
       </div>
     );

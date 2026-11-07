@@ -3,6 +3,7 @@ import { BUSINESS_FEATURE, BUSINESS_TYPES, PLANS, type BusinessType } from '@qas
 import { api } from '../api.ts';
 import { ErrorBox, Icon, useData, useToast } from '../components.tsx';
 import { useI18n, type Key } from '../i18n.ts';
+import { AgreeLine } from '../industry/LegalPanel.tsx';
 
 const CHOICES: Record<BusinessType, { icon: string; title: Key; text: Key }> = {
   trade: { icon: 'cart', title: 'bt_trade', text: 'bt_tradeText' },
@@ -78,6 +79,7 @@ export function BusinessTypeChooser({ onDone, first }: { onDone?: () => void; fi
       </div>
       <p className="muted small">{t('bizHelp')}</p>
       <ErrorBox error={error} />
+      {first && <AgreeLine />}
       <div className="actions">
         <button type="button" className="btn primary" disabled={!picked.length || saving} onClick={() => void save()}>
           {t(first ? 'bizStart' : 'save')}
