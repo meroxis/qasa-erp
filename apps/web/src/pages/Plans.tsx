@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { daysBetween, PLAN_IDS, PLANS, TRIAL_DAYS, todayIso } from '@qasa/core';
-import { api, type PlanStatus } from '../api.ts';
+import { api, request, type PlanStatus } from '../api.ts';
 import { ErrorBox, Icon, useData, useToast } from '../components.tsx';
 import { useI18n, type I18n, type Key } from '../i18n.ts';
 
@@ -49,6 +49,48 @@ function cellText(cell: Cell, i18n: I18n) {
   return t(cell.key, { n: cell.n });
 }
 
+/** Where the licence stands on this PC: activated (until when offline), waiting for activation, or stopped and why. */
+function ActivationNote({ plan, busy, act }: { plan: PlanStatus; busy: boolean; act(fn: () => Promise<PlanStatus>, message: string): Promise<boolean> }) {
+  const i18n = useI18n();
+  const { t } = i18n;
+  const a = plan.activation;
+  const activate = () => void act(() => request<PlanStatus>('POST', '/api/plan/activate', {}), t('ac_activated'));
+  const check = () => void act(() => request<PlanStatus>('POST', '/api/plan/check', {}), t('ac_checked'));
+  const planName = t(`plan_${plan.license?.plan ?? 'pro'}` as Key);
+  if (a.state === 'active') {
+    return (
+      <div className="row" style={{ gap: 8 }}>
+        <span className="chip ok">{t('ac_active')}</span>
+        {a.offlineUntil && <span className="muted small">{t('ac_activeHelp', { d: i18n.date(a.offlineUntil) })}</span>}
+        {a.lastChecked && <span className="muted small">{t('ac_lastChecked')}: <span className="num">{i18n.date(a.lastChecked.slice(0, 10))}</span></span>}
+      </div>
+    );
+  }
+  if (a.state === 'needs_activation') {
+    return (
+      <div className="alert info stack">
+        <span>{t('ac_needs')}</span>
+        <div><button type="button" className="btn primary" disabled={busy} onClick={activate}>{t('ac_activateNow')}</button></div>
+      </div>
+    );
+  }
+  if (a.state === 'revoked') {
+    const reason = a.revokedReason === 'released' ? 'ac_revoked_released' : a.revokedReason === 'unknown' ? 'ac_revoked_unknown' : 'ac_revoked_revoked';
+    return (
+      <div className="alert bad stack">
+        <span>{t(reason)}</span>
+        {a.revokedReason === 'released' && <div><button type="button" className="btn" disabled={busy} onClick={activate}>{t('ac_activateNow')}</button></div>}
+      </div>
+    );
+  }
+  return (
+    <div className="alert warn stack">
+      <span>{a.state === 'clock' ? t('ac_clock') : t('ac_stale', { p: planName })}</span>
+      <div><button type="button" className="btn primary" disabled={busy} onClick={check}>{t('ac_checkNow')}</button></div>
+    </div>
+  );
+}
+
 export function Plans() {
   const i18n = useI18n();
   const { t } = i18n;
@@ -94,6 +136,10 @@ export function Plans() {
         {plan.source === 'free' && <p style={{ margin: 0 }}>{t('freePlanNote')}</p>}
         {plan.source === 'free' && !license && plan.trialStarted && !plan.trialActive && <div className="alert info">{t('trialEndedNote')}</div>}
 
+        {license && plan.activation.required && (
+          <ActivationNote plan={plan} busy={busy} act={act} />
+        )}
+
         {license && (
           <>
             {license.state === 'grace' && license.expires && plan.graceEnds && (
@@ -123,6 +169,11 @@ export function Plans() {
               <Icon name="star" size={16} />{t('startTrial', { n: TRIAL_DAYS })}
             </button>
           )}
+          {license && !demo && plan.activation.required && plan.activation.state === 'active' && (
+            <button type="button" className="btn" disabled={busy} onClick={() => { if (window.confirm(t('ac_moveConfirm'))) void act(() => request<PlanStatus>('POST', '/api/plan/deactivate', {}), t('ac_moved')); }}>
+              {t('ac_moveToPc')}
+            </button>
+          )}
           {license && !demo && (
             <button type="button" className="btn danger" disabled={busy} onClick={() => { if (window.confirm(t('removeLicenseConfirm'))) void act(() => api.removeLicense(), t('licenseRemoved')); }}>
               {t('removeLicense')}
@@ -147,7 +198,11 @@ export function Plans() {
             <div className="row">
               <button
                 type="button" className="btn primary" disabled={busy || !key.trim()}
-                onClick={() => void act(() => api.activateLicense(key), t('licenseActivated')).then((ok) => { if (ok) setKey(''); })}
+                onClick={() => void act(async () => {
+                  // the key, then (in the official app) its activation on this PC, online, in one go
+                  const entered = await api.activateLicense(key);
+                  return entered.activation.required ? request<PlanStatus>('POST', '/api/plan/activate', {}) : entered;
+                }, t('licenseActivated')).then((ok) => { if (ok) setKey(''); })}
               >
                 {t('activate')}
               </button>

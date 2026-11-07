@@ -73,6 +73,15 @@ export interface PlanStatus extends PlanResolution {
   trialStarted: string | null;
   usage: { warehouses: number; salesThisMonth: number };
   nudge: boolean;
+  /** Online activation of the licence on this PC: required in the official app before the licence counts. */
+  activation: {
+    required: boolean;
+    state: 'none' | 'active' | 'needs_activation' | 'stale' | 'revoked' | 'clock';
+    checkBy: string | null;
+    offlineUntil: string | null;
+    lastChecked: string | null;
+    revokedReason: string | null;
+  };
 }
 
 export interface NamedAmount { code: string; name: Names; amount: number }

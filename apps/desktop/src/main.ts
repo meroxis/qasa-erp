@@ -10,7 +10,7 @@ import { appendFileSync, copyFileSync, existsSync, mkdirSync, readFileSync, rena
 import { createServer } from 'node:net';
 import { extname, join, normalize, sep } from 'node:path';
 import type { FastifyInstance } from 'fastify';
-import { buildApp, openDatabase, type Db } from '@qasa/server';
+import { buildApp, configureLicensing, openDatabase, type Db } from '@qasa/server';
 import { isLang, text, type Lang, type TextKey } from './texts.ts';
 import type { DatabaseStartContext, ProContext, RestartOptions } from './pro-types.ts';
 import { pair, parseAddress, parseOfficeId, pemFingerprint, startTunnel, type PairResult, type Remote } from './office.ts';
@@ -229,6 +229,9 @@ async function restartWith(options: RestartOptions = {}): Promise<void> {
 async function startServer(): Promise<string> {
   mkdirSync(dataDir(), { recursive: true });
   db = await openCompanyDatabase();
+  // paid plans need an activation for this PC (online once, then a check every few weeks); official builds (with the
+  // Pro module) also check every licence in the Rust module shipped beside app.asar
+  configureLicensing({ strict: true, dataDir: app.getPath('userData'), requireNative: !!proModule });
   server = buildApp(db, { extensions: proModule?.apiExtensions ?? [] });
 
   server.addHook('onRequest', async (req, reply) => {
