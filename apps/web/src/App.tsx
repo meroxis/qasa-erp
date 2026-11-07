@@ -30,6 +30,9 @@ import { Payroll, PayrollRun } from './pages/Payroll.tsx';
 import { Import } from './pages/Import.tsx';
 import { QuoteDetail, QuoteEditor, Quotes } from './pages/Quotes.tsx';
 import { Pipeline } from './pages/Pipeline.tsx';
+import { Brief } from './pages/Brief.tsx';
+import { Expenses } from './pages/Expenses.tsx';
+import { isReportTab, MoreReports } from './pages/MoreReports.tsx';
 import { BUSINESS_FEATURE, type BusinessType } from '@qasa/core';
 
 declare global {
@@ -53,7 +56,13 @@ function remember(key: string, value: string): void {
 /** `business`: shown only when the company does that (Settings → Business type). */
 interface NavItem { key: Key; icon: string; path?: string; match?: string[]; adminOnly?: boolean; business?: BusinessType }
 const NAV: { group: Key; items: NavItem[] }[] = [
-  { group: 'gOverview', items: [{ key: 'home', icon: 'home', path: '', match: ['', 'home'] }] },
+  {
+    group: 'gOverview',
+    items: [
+      { key: 'home', icon: 'home', path: '', match: ['', 'home'] },
+      { key: 'br_title', icon: 'sun', path: 'brief', match: ['brief'] }
+    ]
+  },
   {
     group: 'gSales',
     items: [
@@ -81,7 +90,9 @@ const NAV: { group: Key; items: NavItem[] }[] = [
       { key: 'accounts', icon: 'tree', path: 'accounts', match: ['accounts'] },
       { key: 'trialBalance', icon: 'chart', path: 'trial-balance', match: ['trial-balance'] },
       { key: 'finalAccounts', icon: 'book', path: 'final-accounts', match: ['final-accounts'] },
-      { key: 'statement', icon: 'doc', path: 'statement', match: ['statement'] }
+      { key: 'statement', icon: 'doc', path: 'statement', match: ['statement'] },
+      { key: 'br_expenses', icon: 'wallet', path: 'expenses', match: ['expenses'] },
+      { key: 'br_reports', icon: 'chart', path: 'reports-more/sales-items', match: ['reports-more'] }
     ]
   },
   {
@@ -381,6 +392,18 @@ export function App() {
     case 'pos-shift':
       title = t('pos_title');
       content = arg ? <PosShiftReport key={arg} id={arg} /> : null;
+      break;
+    case 'brief':
+      title = t('br_title');
+      content = <Brief />;
+      break;
+    case 'expenses':
+      title = t('br_expenses');
+      content = <Expenses />;
+      break;
+    case 'reports-more':
+      title = t('br_reports');
+      content = <MoreReports key={arg ?? ''} tab={isReportTab(arg) ? arg : 'sales-items'} />;
       break;
     case 'quotes':
       title = t('qt_title');
