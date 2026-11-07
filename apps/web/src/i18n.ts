@@ -3,6 +3,12 @@ import { ENGINEERING_TEXT } from './i18n/engineering-works.ts';
 import { MOBILE_TEXT } from './i18n/mobile.ts';
 import { PARTS_TEXT } from './i18n/parts.ts';
 import { REAL_ESTATE_TEXT } from './i18n/real-estate.ts';
+import { PAYROLL_TEXT } from './i18n/payroll.ts';
+import { POS_TEXT } from './i18n/pos.ts';
+import { QUOTES_TEXT } from './i18n/quotes.ts';
+import { PIPELINE_TEXT } from './i18n/pipeline.ts';
+import { MEDIA_TEXT } from './i18n/media.ts';
+import { BRIEF_TEXT } from './i18n/brief.ts';
 import { formatAmount, formatDate, formatInteger, LANGS, toEasternDigits, type CurrencyCode, type DigitStyle, type Lang, type Names } from '@qasa/core';
 
 /** Every UI string in Arabic, English and Kurdish (Sorani) — in that order. */
@@ -912,7 +918,8 @@ const BASE = {
 } as const satisfies Record<string, readonly [string, string, string]>;
 
 /** The industry features keep their texts in files of their own (i18n/), in the same three languages. */
-const D = { ...BASE, ...REAL_ESTATE_TEXT, ...MOBILE_TEXT, ...PARTS_TEXT, ...ENGINEERING_TEXT };
+const D = { ...BASE, ...REAL_ESTATE_TEXT, ...MOBILE_TEXT, ...PARTS_TEXT, ...ENGINEERING_TEXT,
+  ...PAYROLL_TEXT, ...POS_TEXT, ...QUOTES_TEXT, ...PIPELINE_TEXT, ...MEDIA_TEXT, ...BRIEF_TEXT };
 
 export type Key = keyof typeof D;
 

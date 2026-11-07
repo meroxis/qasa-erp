@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { BUILT_IN_FEATURES } from './features.ts';
 import { APP_VERSION } from '@qasa/core';
 import type { Db } from './db.ts';
 import { AppError, conflict, invalid } from './errors.ts';
@@ -280,7 +281,7 @@ export function apiRoutes(db: Db, options: { demo?: boolean; extensions?: readon
     'POST /api/stock-docs/:id/post': 'stock', 'POST /api/stock-docs/:id/cancel': 'stock',
     'GET /api/audit': 'admin', 'GET /api/users': 'admin'
   };
-  for (const extension of options.extensions ?? []) Object.assign(RULES, extension.rules ?? {});
+  for (const extension of [...BUILT_IN_FEATURES, ...(options.extensions ?? [])]) Object.assign(RULES, extension.rules ?? {});
   const PUBLIC = new Set(['GET /api/health', 'GET /api/auth/me', 'POST /api/auth/login', 'POST /api/auth/logout']);
 
   /** Hides the buttons a user may not use: the server refuses those actions anyway. */
@@ -573,7 +574,10 @@ export function apiRoutes(db: Db, options: { demo?: boolean; extensions?: readon
     return listAudit(db, q.limit ?? 200);
   });
 
-  // the modules' routes, behind the same checks as the app's own (not in the website demo)
+  // the app's own module-style features, then the modules' routes (not in the website demo), behind the same checks
+  for (const feature of BUILT_IN_FEATURES) {
+    for (const route of feature.routes(db, { actorOf })) add(route.method)(route.path, route.handler);
+  }
   if (!options.demo) {
     for (const extension of options.extensions ?? []) {
       for (const route of extension.routes(db, { actorOf })) add(route.method)(route.path, route.handler);
