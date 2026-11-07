@@ -37,6 +37,8 @@ const BASE = {
   gIndustry: ['نشاط الشركة', 'Your business', 'چالاکیی کۆمپانیا'],
   err_entry_belongs_to_payroll: ['هذا القيد لرواتب شهر؛ أرجِعه إلى مسودة من صفحة الرواتب.', 'This entry belongs to a payroll month; take it back to draft from the Payroll page.', 'ئەم تۆمارە هی مووچەی مانگێکە؛ لە پەڕەی مووچەوە بیگەڕێنەوە بۆ ڕەشنووس.'],
   err_entry_belongs_to_generator_run: ['هذا القيد لفواتير المولدة لشهر؛ أرجِعه إلى مسودة من صفحة المولدة.', 'This entry bills a generator month; take it back to draft from the Generators page.', 'ئەم تۆمارە پسوولەی مۆلیدەی مانگێکە؛ لە پەڕەی مۆلیدەوە بیگەڕێنەوە بۆ ڕەشنووس.'],
+  f_phoneApp: ['تطبيق قاصة للموبايل: المسح بالكاميرا، الأسعار والمخزون وإضافة المواد بالصور', 'Qasa phone app: scan with the camera, prices, stock and new items with photos', 'ئەپی قاسە بۆ مۆبایل: سکان بە کامێرا، نرخ و کۆگا و زیادکردنی کاڵا بە وێنە'],
+  f_websiteApi: ['ربط المواقع والمتاجر الإلكترونية (API وWooCommerce)', 'Connect websites and online shops (API and WooCommerce)', 'بەستنەوەی ماڵپەڕ و دوکانی ئۆنلاین (API و WooCommerce)'],
   f_generators: ['المولدات الأهلية: المشتركون بالأمبير والجباية والديون', 'Generator owners: subscribers by amps, collections and debts', 'مۆلیدەی ئەهلی: بەشداربووان بە ئەمپێر، کۆکردنەوە و قەرز'],
   bizType: ['نشاط الشركة', 'Business type', 'جۆری چالاکی'],
   bizWelcome: ['أهلاً بك في قاصة ERP', 'Welcome to Qasa ERP', 'بەخێربێیت بۆ قاسە ERP'],
