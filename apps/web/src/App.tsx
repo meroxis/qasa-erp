@@ -25,6 +25,7 @@ import { MobileShop, RepairDetail } from './pages/MobileShop.tsx';
 import { CarParts } from './pages/CarParts.tsx';
 import { EngineeringWorks, JobDetail } from './pages/EngineeringWorks.tsx';
 import { BusinessTypeChooser, BusinessTypePage } from './pages/BusinessType.tsx';
+import { Pos, PosShiftReport } from './pages/Pos.tsx';
 import { BUSINESS_FEATURE, type BusinessType } from '@qasa/core';
 
 declare global {
@@ -52,6 +53,7 @@ const NAV: { group: Key; items: NavItem[] }[] = [
   {
     group: 'gSales',
     items: [
+      { key: 'pos_title', icon: 'wallet', path: 'pos', match: ['pos', 'pos-shift'] },
       { key: 'invoices', icon: 'invoice', path: 'sales', match: ['sales', 'new-invoice:sale'] },
       { key: 'customers', icon: 'contact', path: 'customers', match: ['customers'] },
       { key: 'salesReturns', icon: 'undo', path: 'sales-returns', match: ['sales-returns'] },
@@ -357,6 +359,14 @@ export function App() {
     case 'job':
       title = t('ew_jobs');
       content = arg ? <JobDetail key={arg} id={arg} /> : null;
+      break;
+    case 'pos':
+      title = t('pos_title');
+      content = <Pos />;
+      break;
+    case 'pos-shift':
+      title = t('pos_title');
+      content = arg ? <PosShiftReport key={arg} id={arg} /> : null;
       break;
     case 'business-type':
       title = t('bizType');

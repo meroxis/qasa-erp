@@ -910,8 +910,11 @@ const V7 =
     opening_cash INTEGER NOT NULL DEFAULT 0 CHECK (opening_cash >= 0),
     closed_by TEXT,
     closed_at TEXT,
+    -- dinars and dollars are counted apart at closing
     expected_cash INTEGER,
     counted_cash INTEGER,
+    expected_usd INTEGER,
+    counted_usd INTEGER,
     notes TEXT
   );
   CREATE TABLE pos_sales (

@@ -717,6 +717,8 @@ export const MYSQL_TABLES: readonly MysqlObject[] = [
       closed_at ${WHEN},
       expected_cash BIGINT,
       counted_cash BIGINT,
+      expected_usd BIGINT,
+      counted_usd BIGINT,
       notes TEXT,
       FOREIGN KEY (cash_account) REFERENCES accounts(code),
       FOREIGN KEY (warehouse_id) REFERENCES warehouses(id)
