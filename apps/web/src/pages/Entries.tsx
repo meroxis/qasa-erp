@@ -1,14 +1,14 @@
 import { useState } from 'react';
 import type { EntryStatus, EntryType } from '@qasa/core';
 import { api, type EntrySummary } from '../api.ts';
-import { ErrorBox, Icon, StatusChip, typeName, useLoad } from '../components.tsx';
+import { EmptyState, ErrorBox, Icon, StatusChip, typeName, useLoad } from '../components.tsx';
 import { useI18n } from '../i18n.ts';
 import { go, href } from '../router.ts';
 
 export function EntriesTable({ entries }: { entries: EntrySummary[] }) {
   const i18n = useI18n();
   const { t } = i18n;
-  if (entries.length === 0) return <p className="muted" style={{ padding: '14px 16px', margin: 0 }}>{t('noEntries')}</p>;
+  if (entries.length === 0) return <EmptyState compact icon="book" title={t('es_vouchers')} text={t('es_vouchersText')} />;
   return (
     <table className="table">
       <thead>

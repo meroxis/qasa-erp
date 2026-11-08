@@ -1,11 +1,19 @@
 import { useEffect, useState } from 'react';
-import { formatAmount, htmlLang, MONTHS, rateFromX100, todayIso, toWesternDigits, type Lang, type Names, type PostingAccounts } from '@qasa/core';
+import { formatAmount, MONTHS, rateFromX100, todayIso, toWesternDigits, type Names, type PostingAccounts } from '@qasa/core';
 import {
-  api, ApiError, currentUser, setCurrentUser, type BackupStatus, type DatabaseCheck, type DatabaseInput, type DatabaseStatus, type NetworkStatus, type YearEndStatus
+  api, ApiError, currentUser, request, setCurrentUser, type BackupStatus, type DatabaseCheck, type DatabaseInput, type DatabaseStatus, type NetworkStatus, type YearEndStatus
 } from '../api.ts';
-import { AccountCombo, ErrorBox, Icon, Modal, useData, useDisplay, useLoad, useToast, type Density, type Theme } from '../components.tsx';
-import { isKey, useI18n } from '../i18n.ts';
+import { AccountCombo, ErrorBox, Icon, LanguageSwitch, Modal, downloadCsv, useData, useDisplay, useLoad, useToast, type Density, type Theme } from '../components.tsx';
+import { isKey, useI18n, type Key } from '../i18n.ts';
 import { href } from '../router.ts';
+import { encodeQr, qrSvgPath } from '../industry/qr.ts';
+import { UsageCard } from '../industry/UsageCard.tsx';
+import { HelpPanel } from '../industry/SupportButton.tsx';
+import { GuideLink } from '../industry/GuideLink.tsx';
+import { UpdateSettings } from '../industry/UpdateSettings.tsx';
+import { LegalPanel } from '../industry/LegalPanel.tsx';
+import { GraphicsSetting } from '../industry/GraphicsSetting.tsx';
+import { CompaniesSetting } from './Companies.tsx';
 
 /** Language and display are each person's own; the company's settings are for admins. */
 export function Settings({ admin }: { admin: boolean }) {
@@ -13,15 +21,18 @@ export function Settings({ admin }: { admin: boolean }) {
     <div className="stack" style={{ maxWidth: 1000 }}>
       <DisplaySettings />
       {admin && <CompanySettings />}
+      {admin && <CompaniesSetting />}
+      <HelpPanel />
+      <UpdateSettings />
+      <UsageCard admin={admin} />
+      <LegalPanel />
     </div>
   );
 }
 
-const LANGUAGES: [Lang, string][] = [['ar', 'عربي'], ['en', 'English'], ['ku', 'کوردی']];
-
 /** Settings → Language and display, Windows-style: what it is on one side, the control on the other. */
 function DisplaySettings() {
-  const { t, lang, digits, setLang, setDigits } = useI18n();
+  const { t, lang, digits, setDigits } = useI18n();
   const { theme, density, setTheme, setDensity } = useDisplay();
   const themes: [Theme, string, string][] = [['light', 'sun', t('themeLight')], ['dark', 'moon', t('themeDark')], ['system', 'contrast', t('themeSystem')]];
   const densities: [Density, string][] = [['comfortable', t('densityComfortable')], ['compact', t('densityCompact')]];
@@ -37,11 +48,7 @@ function DisplaySettings() {
           <Icon name="globe" size={20} className="setting-icon" />
           <div className="setting-text"><strong>{t('language')}</strong><span>{t('languageHelp')}</span></div>
           <div className="setting-ctl">
-            <div className="track" role="group" aria-label={t('language')}>
-              {LANGUAGES.map(([l, label]) => (
-                <button key={l} type="button" lang={htmlLang(l)} aria-pressed={lang === l} onClick={() => setLang(l)}>{label}</button>
-              ))}
-            </div>
+            <LanguageSwitch />
           </div>
         </div>
         <div className={'setting' + (english ? ' disabled' : '')}>
@@ -76,6 +83,7 @@ function DisplaySettings() {
             </div>
           </div>
         </div>
+        <GraphicsSetting />
       </div>
     </section>
   );
@@ -137,7 +145,7 @@ function CompanySettings() {
   return (
     <>
       <div className="card pad stack">
-        <h2>{t('company')}</h2>
+        <div className="card-head"><h2>{t('company')}</h2><GuideLink slug="company-setup-and-opening-balances" /></div>
         <div className="grid-3">
           <label className="field"><span>{t('nameAr')}</span><input className="input" dir="rtl" lang="ar" value={name.ar} onChange={(e) => setName({ ...name, ar: e.target.value })} /></label>
           <label className="field"><span>{t('nameEn')}</span><input className="input" dir="ltr" lang="en" value={name.en} onChange={(e) => setName({ ...name, en: e.target.value })} /></label>
@@ -150,9 +158,21 @@ function CompanySettings() {
         <div><button type="button" className="btn primary" onClick={save}>{t('save')}</button></div>
       </div>
 
+      <div className="card pad row" style={{ flexWrap: 'wrap' }}>
+        <Icon name="printer" size={18} />
+        <div className="stack" style={{ gap: 2, flex: 1, minWidth: 220 }}>
+          <strong>{t('pd_title')}</strong>
+          <span className="muted small">{t('pp_help')}</span>
+        </div>
+        <a className="btn" href={href('print-design')}>{t('pd_title')}</a>
+        <a className="btn" href={href('labels')}><Icon name="tag" size={16} />{t('lb_title')}</a>
+      </div>
+
       <PostingAccountsCard />
 
       <OfficeNetworkCard />
+
+      <PhonesCard />
 
       <BackupCard />
 
@@ -233,7 +253,7 @@ function OfficeNetworkCard() {
   return (
     <div className="card pad stack">
       <div className="row" style={{ justifyContent: 'space-between' }}>
-        <h2>{t('netTitle')}</h2>
+        <div className="card-head"><h2>{t('netTitle')}</h2><GuideLink slug="office-network-and-qasa-relay" /></div>
         {status && <span className={'chip ' + (status.on ? 'ok' : '')}>{status.on ? t('switchedOn') : t('switchedOff')}</span>}
       </div>
       <p className="muted" style={{ margin: 0 }}>{t('netHelp')}</p>
@@ -257,6 +277,7 @@ function OfficeNetworkCard() {
           <p style={{ margin: 0 }}>{t('netSteps')}</p>
           <p className="muted small" style={{ margin: 0 }}>{t('netFirewall')}</p>
           <p className="muted small" style={{ margin: 0 }}>{t('netSignedIn', { n: digitsOf(String(status.signedIn)) })}</p>
+          <RelaySection status={status as NetworkStatus & RelayFields} onChange={setStatus} />
         </div>
       )}
       <ErrorBox error={error} />
@@ -267,6 +288,77 @@ function OfficeNetworkCard() {
           </button>
         </div>
       )}
+    </div>
+  );
+}
+
+/** What the office network's status adds for Qasa Relay (the Pro module's /api/network). */
+interface RelayFields {
+  relayWanted?: boolean;
+  relay?: { state: 'connecting' | 'online' | 'waiting' | 'refused'; officeIdShown: string; clients: number; lastError: string | null; onlineSince: string | null } | null;
+}
+
+/** Qasa Relay: the office network reachable over the internet, with no public IP or router setup. */
+function RelaySection({ status, onChange }: { status: NetworkStatus & RelayFields; onChange(s: NetworkStatus): void }) {
+  const { t, digitsOf } = useI18n();
+  const toast = useToast();
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<unknown>(null);
+  const relay = status.relay ?? null;
+  const on = !!status.relayWanted;
+
+  async function toggle(next: boolean) {
+    setBusy(true);
+    setError(null);
+    try {
+      onChange(await request<NetworkStatus>('PUT', '/api/network/relay', { on: next }));
+      toast(t('saved'));
+    } catch (e) {
+      setError(e);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  // the link changes by itself (connecting, online, a lost connection): look again every few seconds while it's on
+  useEffect(() => {
+    if (!on) return;
+    const timer = setInterval(() => { api.network().then(onChange, () => {}); }, 5000);
+    return () => clearInterval(timer);
+  }, [on, onChange]);
+
+  const state = relay?.state ?? 'waiting';
+  const chip = state === 'online' ? 'ok' : state === 'refused' ? 'bad' : 'warn';
+  const errorKey = relay?.lastError ? ('rl_e_' + relay.lastError) : null;
+  return (
+    <div className="stack" style={{ gap: 10, borderBlockStart: '1px solid var(--line)', paddingBlockStart: 14, marginBlockStart: 4 }}>
+      <div className="row" style={{ justifyContent: 'space-between' }}>
+        <h3 style={{ margin: 0 }}>{t('rl_title')}</h3>
+        <span className={'chip ' + (on ? chip : '')}>{on ? t(('rl_state_' + state) as Key) : t('switchedOff')}</span>
+      </div>
+      <p className="muted" style={{ margin: 0 }}>{t('rl_help')}</p>
+      {on && relay && (
+        <div className="grid-2">
+          <div className="field">
+            <span>{t('rl_officeId')}</span>
+            <strong className="ltr num" style={{ fontSize: 22, letterSpacing: '.06em' }}>{relay.officeIdShown}</strong>
+          </div>
+          <div className="field">
+            <span>{t('netCode')}</span>
+            <strong className="ltr num" style={{ fontSize: 22, letterSpacing: '.06em' }}>{status.code}</strong>
+          </div>
+        </div>
+      )}
+      {on && relay && <p style={{ margin: 0 }}>{t('rl_steps')}</p>}
+      {on && relay && <p className="muted small" style={{ margin: 0 }}>{t('rl_clients', { n: digitsOf(String(relay.clients)) })}</p>}
+      {on && errorKey && isKey(errorKey) && <div className="alert">{t(errorKey)}</div>}
+      <p className="muted small" style={{ margin: 0 }}>{t('rl_private')}</p>
+      <ErrorBox error={error} />
+      <div>
+        <button type="button" className={'btn ' + (on ? '' : 'primary')} disabled={busy} onClick={() => void toggle(!on)}>
+          {on ? t('rl_turnOff') : t('rl_turnOn')}
+        </button>
+      </div>
     </div>
   );
 }
@@ -485,7 +577,7 @@ function YearEndCard({ onChanged }: { onChanged(): void }) {
 
   return (
     <div className="card pad stack">
-      <h2>{t('ye_title')}</h2>
+      <div className="card-head"><h2>{t('ye_title')}</h2><GuideLink slug="reports-final-accounts-year-end" /></div>
       <div className="muted small">{t('ye_help')}</div>
       <ErrorBox error={data.error ?? error} />
       {data.data && data.data.years.length === 0 && <div className="muted">{t('ye_none')}</div>}
@@ -525,6 +617,31 @@ function YearEndCard({ onChanged }: { onChanged(): void }) {
 }
 
 const KEEP_CHOICES = [7, 14, 30, 60, 90, 365];
+
+/**
+ * One copy in a backup list (the folder's or the cloud's): when, size, and Restore. A copy made by another company or
+ * on another PC (own: false) says so, and restoring it asks with its own warning; it is never refused (a new PC must
+ * always be able to restore).
+ */
+export function BackupCopyRow({ copy, when, size, disabled, onRestore }: {
+  copy: { encrypted?: boolean; own?: boolean }; when: string; size: string; disabled: boolean; onRestore(): void;
+}) {
+  const { t } = useI18n();
+  const foreign = copy.own === false;
+  return (
+    <tr>
+      <td className="num small">
+        {when} {copy.encrypted && <span className="chip ok" title={t('bkEncrypted')}>{t('bkLocked')}</span>}
+        {foreign && <> <span className="chip warn">{t('bkForeign')}</span></>}
+      </td>
+      <td className="num small">{size}</td>
+      <td style={{ textAlign: 'end' }}>
+        <button type="button" className="btn small" disabled={disabled}
+          onClick={() => { if (window.confirm(t(foreign ? 'bkRestoreForeignQ' : 'bkRestoreQ', { when }))) onRestore(); }}>{t('bkRestore')}</button>
+      </td>
+    </tr>
+  );
+}
 
 /** A daily copy of the company file in a chosen folder, and restoring one (the Pro module; absent without it). */
 function BackupCard() {
@@ -582,9 +699,10 @@ function BackupCard() {
     }
   }
 
-  function restore(name?: string, when?: string) {
-    if (!window.confirm(name ? t('bkRestoreQ', { when: when ?? name }) : t('bkRestoreOtherQ'))) return;
-    void send(name ? { name } : {});
+  /** A file picked in Windows (a copy in the list asks in its own row: BackupCopyRow). */
+  function restoreOther() {
+    if (!window.confirm(t('bkRestoreOtherQ'))) return;
+    void send({});
   }
 
   async function savePassword(value: string | null) {
@@ -602,7 +720,7 @@ function BackupCard() {
   return (
     <div className="card pad stack">
       <div className="row" style={{ justifyContent: 'space-between' }}>
-        <h2>{t('bkTitle')}</h2>
+        <div className="card-head"><h2>{t('bkTitle')}</h2><GuideLink slug="backups-restore-and-companies" /></div>
         {status?.available && <span className={'chip ' + (status.on ? 'ok' : '')}>{status.on ? t('switchedOn') : t('switchedOff')}</span>}
       </div>
       <p className="muted" style={{ margin: 0 }}>{t('bkHelp')}</p>
@@ -647,6 +765,7 @@ function BackupCard() {
               </div>
             </div>
           )}
+          <CloudBackup encrypted={status.encrypted} disabled={restarting} onRestarting={() => setRestarting(true)} />
           <ErrorBox error={error} />
           <div className="row" style={{ gap: 8, flexWrap: 'wrap' }}>
             {status.available && <button type="button" className="btn primary" disabled={busy || restarting} onClick={() => act(() => api.runBackup(), t('saved'))}>{t('bkNow')}</button>}
@@ -655,7 +774,7 @@ function BackupCard() {
                 {status.on ? t('bkTurnOff') : t('bkTurnOn')}
               </button>
             )}
-            <button type="button" className="btn" disabled={busy || restarting} onClick={() => restore()}>{t('bkRestoreOther')}</button>
+            <button type="button" className="btn" disabled={busy || restarting} onClick={restoreOther}>{t('bkRestoreOther')}</button>
           </div>
           {status.files.length > 0 && (
             <div className="stack" style={{ gap: 6 }}>
@@ -663,13 +782,7 @@ function BackupCard() {
               <table className="table">
                 <tbody>
                   {status.files.map((f) => (
-                    <tr key={f.name}>
-                      <td className="num small">{when(f.at)} {f.encrypted && <span className="chip ok" title={t('bkEncrypted')}>{t('bkLocked')}</span>}</td>
-                      <td className="num small">{size(f.size)}</td>
-                      <td style={{ textAlign: 'end' }}>
-                        <button type="button" className="btn small" disabled={busy || restarting} onClick={() => restore(f.name, when(f.at))}>{t('bkRestore')}</button>
-                      </td>
-                    </tr>
+                    <BackupCopyRow key={f.name} copy={f} when={when(f.at)} size={size(f.size)} disabled={busy || restarting} onRestore={() => void send({ name: f.name })} />
                   ))}
                 </tbody>
               </table>
@@ -681,6 +794,178 @@ function BackupCard() {
       {asking && (
         <Modal title={t('bkPasswordTitle')} onClose={() => { setAsking(null); setPassword(''); }}>
           <form className="stack" onSubmit={(e) => { e.preventDefault(); void send({ ...(asking.name ? { name: asking.name } : {}), ...(asking.pick ? { pick: asking.pick } : {}), password }); setPassword(''); }}>
+            <p style={{ margin: 0 }}>{t('bkPasswordAsk')}</p>
+            <label className="field"><span>{t('bkPassword')}</span><input className="input ltr" type="password" autoComplete="off" autoFocus maxLength={200} value={password} onChange={(e) => setPassword(e.target.value)} /></label>
+            {asking.wrong && <div className="alert bad" role="alert">{t('err_backup_password_wrong')}</div>}
+            <div className="row" style={{ gap: 8, justifyContent: 'flex-end' }}>
+              <button type="button" className="btn" onClick={() => { setAsking(null); setPassword(''); }}>{t('cancel')}</button>
+              <button type="submit" className="btn primary" disabled={busy || !password}>{t('bkRestore')}</button>
+            </div>
+          </form>
+        </Modal>
+      )}
+    </div>
+  );
+}
+
+/** Cloud backup (Pro): what the server says about the connected Google Drive or OneDrive. */
+interface CloudStatus {
+  available: boolean;
+  configured: { google: boolean; onedrive: boolean };
+  needsPassword: boolean;
+  provider: 'google' | 'onedrive' | null;
+  account: string | null;
+  connectedAt: string | null;
+  last: { at: string; file: string; size: number } | null;
+  lastError: string | null;
+  connecting: 'google' | 'onedrive' | null;
+  uploading: boolean;
+}
+/** `own: false`: a copy made by another company or on another PC (left out by older servers). */
+interface CloudFile { id: string; name: string; size: number; at: string; own?: boolean }
+const cloudApi = {
+  status: () => request<CloudStatus>('GET', '/api/backup/cloud'),
+  connect: (provider: 'google' | 'onedrive') => request<{ url: string; status: CloudStatus }>('POST', '/api/backup/cloud/connect', { provider }),
+  cancel: () => request<CloudStatus>('POST', '/api/backup/cloud/cancel', {}),
+  disconnect: () => request<CloudStatus>('POST', '/api/backup/cloud/disconnect', {}),
+  upload: () => request<CloudStatus>('POST', '/api/backup/cloud/upload', {}),
+  files: () => request<CloudFile[]>('GET', '/api/backup/cloud/files'),
+  restore: (id: string, password?: string) => request<{ restarting: boolean }>('POST', '/api/backup/cloud/restore', { id, ...(password ? { password } : {}) })
+};
+
+/**
+ * Google Drive / OneDrive with one click: the browser opens to sign in, and the screen follows along until the account
+ * is connected. Only encrypted copies go up, so it asks for the backup password first.
+ */
+function CloudBackup({ encrypted, disabled, onRestarting }: { encrypted: boolean; disabled: boolean; onRestarting(): void }) {
+  const { t, digitsOf } = useI18n();
+  const toast = useToast();
+  const [status, setStatus] = useState<CloudStatus | null>(null);
+  const [error, setError] = useState<unknown>(null);
+  const [busy, setBusy] = useState(false);
+  const [signInUrl, setSignInUrl] = useState<string | null>(null);
+  const [files, setFiles] = useState<CloudFile[] | null>(null);
+  const [asking, setAsking] = useState<{ id: string; wrong: boolean } | null>(null);
+  const [password, setPassword] = useState('');
+
+  const load = () => cloudApi.status().then(setStatus, (e) => { if (!(e instanceof ApiError && e.status === 404)) setError(e); });
+  useEffect(() => { void load(); }, [encrypted]);
+  // while signing in or uploading, follow along
+  useEffect(() => {
+    if (!status?.connecting && !status?.uploading) return;
+    const timer = setInterval(() => void load(), 2000);
+    return () => clearInterval(timer);
+  }, [status?.connecting, status?.uploading]);
+
+  if (!status) return error ? <ErrorBox error={error} /> : null;
+  const name = (p: 'google' | 'onedrive') => t(p === 'google' ? 'cl_google' : 'cl_onedrive');
+  const ltr = (v: string) => `⁦${v}⁩`;
+  const when = (iso: string) => ltr(digitsOf(new Date(iso).toLocaleString('en-GB', { dateStyle: 'medium', timeStyle: 'short' })));
+  const size = (bytes: number) => ltr(digitsOf(bytes >= 1048576 ? `${(bytes / 1048576).toFixed(1)} MB` : `${Math.max(1, Math.round(bytes / 1024))} KB`));
+  const errorText = (code: string) => { const key = `err_${code}`; return isKey(key) ? t(key) : code; };
+
+  async function act<T>(work: () => Promise<T>, after?: (v: T) => void) {
+    setBusy(true);
+    setError(null);
+    try {
+      const v = await work();
+      after?.(v);
+    } catch (e) {
+      setError(e);
+    } finally {
+      setBusy(false);
+      void load();
+    }
+  }
+
+  const connect = (p: 'google' | 'onedrive') => act(() => cloudApi.connect(p), (r) => {
+    setSignInUrl(r.url);
+    setStatus(r.status);
+    // the Windows app opens this in the customer's own browser
+    window.open(r.url, '_blank', 'noopener');
+  });
+
+  async function restore(id: string, pass?: string) {
+    setBusy(true);
+    setError(null);
+    try {
+      if ((await cloudApi.restore(id, pass)).restarting) {
+        setAsking(null);
+        setFiles(null);
+        onRestarting();
+      }
+    } catch (e) {
+      if (e instanceof ApiError && (e.code === 'backup_password_required' || e.code === 'backup_password_wrong')) setAsking({ id, wrong: e.code === 'backup_password_wrong' });
+      else setError(e);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  const off = busy || disabled;
+  return (
+    <div className="stack" style={{ gap: 10, padding: 12, border: '1px solid var(--line)', borderRadius: 10 }}>
+      <div className="row" style={{ justifyContent: 'space-between' }}>
+        <strong>{t('cl_title')}</strong>
+        {status.provider && <span className="chip ok">{t('cl_connectedTo', { p: name(status.provider) })}</span>}
+      </div>
+      <div className="muted small">{t('cl_help')}</div>
+
+      {!status.provider && status.available && status.needsPassword && <div className="alert warn" role="status">{t('cl_needsPassword')}</div>}
+
+      {!status.provider && status.available && !status.needsPassword && !status.connecting && (
+        <div className="row" style={{ gap: 8, flexWrap: 'wrap' }}>
+          {(['google', 'onedrive'] as const).map((p) => (
+            <button key={p} type="button" className="btn primary" disabled={off || !status.configured[p]} onClick={() => void connect(p)}
+              title={status.configured[p] ? undefined : t('cl_notSetUp')}>
+              <Icon name="globe" size={16} /> {t('cl_connect', { p: name(p) })}
+            </button>
+          ))}
+          {(!status.configured.google || !status.configured.onedrive) && <span className="muted small">{!status.configured.google && !status.configured.onedrive ? t('cl_notSetUp') : ''}</span>}
+        </div>
+      )}
+
+      {status.connecting && (
+        <div className="alert" role="status">
+          <div>{t('cl_waiting')}</div>
+          <div className="row" style={{ gap: 8, marginTop: 8, flexWrap: 'wrap' }}>
+            {signInUrl && <a className="btn small" href={signInUrl} target="_blank" rel="noopener noreferrer">{t('cl_openAgain')}</a>}
+            <button type="button" className="btn small" disabled={busy} onClick={() => act(() => cloudApi.cancel(), setStatus)}>{t('cancel')}</button>
+          </div>
+        </div>
+      )}
+
+      {status.provider && (
+        <>
+          {status.account && <div className="small">{t('cl_account', { a: ltr(status.account) })}</div>}
+          <div className="small">{status.uploading ? t('cl_uploading') : status.last ? t('cl_last', { when: when(status.last.at), size: size(status.last.size) }) : t('cl_none')}</div>
+          <div className="muted small">{t('cl_where')}</div>
+          <div className="row" style={{ gap: 8, flexWrap: 'wrap' }}>
+            {status.available && <button type="button" className="btn" disabled={off || status.uploading} onClick={() => act(() => cloudApi.upload(), () => toast(t('cl_uploaded')))}>{t('cl_uploadNow')}</button>}
+            <button type="button" className="btn" disabled={off} onClick={() => act(() => cloudApi.files(), setFiles)}>{t('cl_restoreFrom')}</button>
+            <button type="button" className="btn" disabled={off} onClick={() => { if (window.confirm(t('cl_disconnectQ'))) void act(() => cloudApi.disconnect(), setStatus); }}>{t('cl_disconnect')}</button>
+          </div>
+        </>
+      )}
+      {status.lastError && !status.connecting && <div className="alert bad" role="alert">{t('cl_failed', { e: errorText(status.lastError) })}</div>}
+      <ErrorBox error={error} />
+
+      {files && status.provider && (
+        <Modal title={t('cl_cloudCopies', { p: name(status.provider) })} onClose={() => setFiles(null)}>
+          {files.length === 0 ? <p className="muted">{t('cl_noCopies')}</p> : (
+            <table className="table">
+              <tbody>
+                {files.map((f) => (
+                  <BackupCopyRow key={f.id} copy={f} when={when(f.at)} size={size(f.size)} disabled={busy} onRestore={() => void restore(f.id)} />
+                ))}
+              </tbody>
+            </table>
+          )}
+        </Modal>
+      )}
+      {asking && (
+        <Modal title={t('bkPasswordTitle')} onClose={() => { setAsking(null); setPassword(''); }}>
+          <form className="stack" onSubmit={(e) => { e.preventDefault(); void restore(asking.id, password); setPassword(''); }}>
             <p style={{ margin: 0 }}>{t('bkPasswordAsk')}</p>
             <label className="field"><span>{t('bkPassword')}</span><input className="input ltr" type="password" autoComplete="off" autoFocus maxLength={200} value={password} onChange={(e) => setPassword(e.target.value)} /></label>
             {asking.wrong && <div className="alert bad" role="alert">{t('err_backup_password_wrong')}</div>}
@@ -744,6 +1029,156 @@ function PostingAccountsCard() {
       </div>
       <ErrorBox error={error} />
       <div><button type="button" className="btn primary" onClick={save}>{t('save')}</button></div>
+    </div>
+  );
+}
+
+// ——— Settings → Phones: the Qasa phone app (Pro module, pro/src/phone) ———
+
+interface PhonesStatus {
+  available: boolean;
+  listening: boolean;
+  port: number;
+  addresses: string[];
+  devices: { id: string; name: string; userId: string | null; userName: string | null; pairedAt: string; lastSeen: string | null; online: boolean }[];
+  users: { id: string; name: string }[];
+  counts: { id: string; device: string; at: string; warehouseId: string | null; lines: { itemId: string; code: string; name: string; qty: number }[] }[];
+  signInRequired: boolean;
+}
+
+/**
+ * The phone app is not in 1.0 (owner's decision): Settings → Phones says it is coming and offers no pairing. The
+ * pairing below stays in the code for the release that ships the app; phones paired before can still be removed.
+ */
+export const PHONE_APP_READY = false;
+
+/** Pairing a phone: a QR code the phone app scans, with this PC's key and a one-time secret (10 minutes). */
+export function PhonesCard({ ready = PHONE_APP_READY }: { ready?: boolean }) {
+  const { t, digitsOf, date } = useI18n();
+  const toast = useToast();
+  const [status, setStatus] = useState<PhonesStatus | null>(null);
+  const [absent, setAbsent] = useState(false);
+  const [error, setError] = useState<unknown>(null);
+  const [pairing, setPairing] = useState<{ code: string; expiresAt: string } | null>(null);
+  const [userId, setUserId] = useState('');
+  const [busy, setBusy] = useState(false);
+
+  const load = () => request<PhonesStatus>('GET', '/api/phones').then((s) => { setStatus(s); setUserId((u) => u || s.users[0]?.id || ''); }, (e) => {
+    if (e instanceof ApiError && e.status === 404) setAbsent(true);
+    else setError(e);
+  });
+  useEffect(() => { void load(); }, []);
+  // while a QR code is shown, watch for the phone to arrive (and drop the code when it runs out)
+  useEffect(() => {
+    if (!pairing) return;
+    const timer = window.setInterval(() => {
+      if (Date.parse(pairing.expiresAt) < Date.now()) setPairing(null);
+      void load();
+    }, 3000);
+    return () => window.clearInterval(timer);
+  }, [pairing]);
+
+  async function pair() {
+    setBusy(true);
+    setError(null);
+    try {
+      setPairing(await request<{ code: string; expiresAt: string }>('POST', '/api/phones/pair', status?.signInRequired ? { userId } : {}));
+    } catch (e) {
+      setError(e);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function remove(id: string) {
+    try {
+      await request('DELETE', `/api/phones/${id}`);
+      toast(t('ph_removed'));
+      await load();
+    } catch (e) {
+      setError(e);
+    }
+  }
+
+  function downloadCount(c: PhonesStatus['counts'][number]) {
+    // through downloadCsv, so a name typed on a phone can't run as a formula in Excel
+    downloadCsv(`stock-count-${c.at.slice(0, 10)}.csv`, [['code', 'name', 'qty'], ...c.lines.map((l) => [l.code, l.name, String(l.qty)])]);
+  }
+
+  if (absent) return null;
+  const qr = pairing ? qrSvgPath(encodeQr(pairing.code, 'L'), 4) : null;
+  const known = new Set(status?.devices.map((d) => d.id));
+  return (
+    <div className="card pad stack">
+      <div className="row" style={{ justifyContent: 'space-between' }}>
+        <h2>{t('ph_title')}</h2>
+        {ready ? status && <span className="chip">{digitsOf(String(status.devices.length))}</span> : <span className="chip">{t('soon')}</span>}
+      </div>
+      <p className="muted" style={{ margin: 0 }}>{ready ? t('ph_help') : t('ph_soonNote')}</p>
+      {ready && status && !status.available && <div className="alert">{t('ph_needsPro')} <a href={href('plans')}>{t('planLicense')}</a></div>}
+      {status?.devices.length ? (
+        <table className="table">
+          <thead><tr><th>{t('ph_phone')}</th><th>{t('ph_actsAs')}</th><th>{t('ph_lastSeen')}</th><th /></tr></thead>
+          <tbody>
+            {status.devices.map((d) => (
+              <tr key={d.id}>
+                <td>{d.name} {d.online && <span className="chip ok">{t('ph_online')}</span>}</td>
+                <td>{d.userName ?? t('ph_owner')}</td>
+                <td className="num small">{d.lastSeen ? digitsOf(new Date(d.lastSeen).toLocaleString('en-GB')) : '—'}</td>
+                <td><button type="button" className="btn small" onClick={() => void remove(d.id)}>{t('ph_remove')}</button></td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      ) : null}
+      {!ready ? null : pairing && qr ? (
+        <div className="row" style={{ gap: 20, alignItems: 'center', flexWrap: 'wrap' }}>
+          <svg viewBox={`0 0 ${qr.size} ${qr.size}`} width={240} height={240} role="img" aria-label={t('ph_qrLabel')} shapeRendering="crispEdges" style={{ background: '#fff', borderRadius: 8 }}>
+            <path d={qr.path} fill="#000" />
+          </svg>
+          <div className="stack" style={{ gap: 6, flex: 1, minWidth: 220 }}>
+            <strong>{t('ph_scanThis')}</strong>
+            <ol style={{ margin: 0, paddingInlineStart: 20 }}>
+              <li>{t('ph_step1')}</li>
+              <li>{t('ph_step2')}</li>
+              <li>{t('ph_step3')}</li>
+            </ol>
+            <span className="muted small">{t('ph_expires', { time: digitsOf(new Date(pairing.expiresAt).toLocaleTimeString('en-GB').slice(0, 5)) })}</span>
+            <span className="muted small">{t('ph_sameNetwork')}</span>
+            <div><button type="button" className="btn small" onClick={() => { setPairing(null); void request('POST', '/api/phones/pair/cancel', {}); }}>{t('cancel')}</button></div>
+          </div>
+        </div>
+      ) : status?.available ? (
+        <div className="row" style={{ gap: 10, alignItems: 'end', flexWrap: 'wrap' }}>
+          {status.signInRequired && (
+            <label className="field" style={{ minWidth: 220 }}>
+              <span>{t('ph_actsAs')}</span>
+              <select className="input" value={userId} onChange={(e) => setUserId(e.target.value)}>
+                {status.users.map((u) => <option key={u.id} value={u.id}>{u.name}</option>)}
+              </select>
+            </label>
+          )}
+          <button type="button" className="btn primary" disabled={busy || (status.signInRequired && !userId)} onClick={() => void pair()}>
+            <Icon name="plus" size={16} /> {t('ph_add')}
+          </button>
+        </div>
+      ) : null}
+      {status && pairing && status.devices.some((d) => !known.has(d.id)) && <div className="alert">{t('ph_paired')}</div>}
+      {status?.counts.length ? (
+        <div className="stack" style={{ gap: 6 }}>
+          <h3 style={{ margin: 0 }}>{t('ph_counts')}</h3>
+          {status.counts.map((c) => (
+            <div key={c.id} className="row" style={{ justifyContent: 'space-between', gap: 10 }}>
+              <span>{c.device} · <span className="num">{date(c.at.slice(0, 10))}</span> · {t('ph_lines', { n: digitsOf(String(c.lines.length)) })}</span>
+              <span className="row" style={{ gap: 6 }}>
+                <button type="button" className="btn small" onClick={() => downloadCount(c)}>{t('ph_download')}</button>
+                <button type="button" className="btn small" onClick={() => void request('DELETE', `/api/phones/counts/${c.id}`).then(load)}>{t('ph_remove')}</button>
+              </span>
+            </div>
+          ))}
+        </div>
+      ) : null}
+      <ErrorBox error={error} />
     </div>
   );
 }

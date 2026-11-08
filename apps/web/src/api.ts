@@ -1,7 +1,8 @@
 import type {
-  Lang, LicenseInfo, LicenseState, PlanResolution,
+  BusinessType, Lang, LicenseInfo, LicenseState, PlanResolution,
   CurrencyCode, EntryAction, EntryStatus, EntryType, InvoiceDocKind, InvoiceInput, InvoiceKind, InvoiceStatus, Names, Nature, PaymentMode, PostingAccounts, UnitCode
 } from '@qasa/core';
+import { currentBranchHeader } from './industry/branches-api.ts';
 
 export interface AccountView {
   code: string;
@@ -62,6 +63,8 @@ export interface Settings {
   defaultRateX100: number;
   fiscalYearStart: string;
   postingAccounts: PostingAccounts;
+  /** What the company does; null until chosen (the app asks at the start). */
+  businessTypes: BusinessType[] | null;
 }
 
 export interface PlanStatus extends PlanResolution {
@@ -71,6 +74,19 @@ export interface PlanStatus extends PlanResolution {
   trialStarted: string | null;
   usage: { warehouses: number; salesThisMonth: number };
   nudge: boolean;
+  /** Online activation of the licence on this PC: required in the official app before the licence counts. */
+  activation: {
+    required: boolean;
+    state: 'none' | 'active' | 'needs_activation' | 'stale' | 'revoked' | 'clock';
+    checkBy: string | null;
+    offlineUntil: string | null;
+    lastChecked: string | null;
+    revokedReason: string | null;
+    /** A key from 0.1.8 never activated: the last day it keeps counting while the app activates it online (null otherwise; left out by older servers). */
+    graceUntil?: string | null;
+    /** The key counts now under that grace (the state is still needs_activation). */
+    inGrace?: boolean;
+  };
 }
 
 export interface NamedAmount { code: string; name: Names; amount: number }
@@ -375,9 +391,31 @@ export function setCurrentUser(name: string): void {
 /** Fired when the server says nobody is signed in (a session ended); the app shows the sign-in page. */
 export const SIGNED_OUT_EVENT = 'qasa:signed-out';
 
-async function request<T>(method: string, url: string, body?: unknown): Promise<T> {
+/** Requests still waiting for the server; the app shows a thin bar when one takes a moment (see BusyBar). */
+let inFlight = 0;
+const busyListeners = new Set<(n: number) => void>();
+export function onBusyChange(fn: (n: number) => void): () => void {
+  busyListeners.add(fn);
+  return () => { busyListeners.delete(fn); };
+}
+function setInFlight(n: number) {
+  inFlight = n;
+  for (const fn of busyListeners) fn(n);
+}
+
+export async function request<T>(method: string, url: string, body?: unknown): Promise<T> {
+  setInFlight(inFlight + 1);
+  try {
+    return await send<T>(method, url, body);
+  } finally {
+    setInFlight(inFlight - 1);
+  }
+}
+
+async function send<T>(method: string, url: string, body?: unknown): Promise<T> {
   // marks requests as coming from the app itself; the server refuses changes without it once sign-in is on
-  const headers: Record<string, string> = { 'x-qasa-client': '1' };
+  // the branch picked in the topbar (for someone working in several), so lists and reports follow it
+  const headers: Record<string, string> = { 'x-qasa-client': '1', ...currentBranchHeader() };
   const user = currentUser();
   if (user) headers['x-qasa-user'] = encodeURIComponent(user);
   if (body !== undefined) headers['content-type'] = 'application/json';
@@ -394,7 +432,7 @@ async function request<T>(method: string, url: string, body?: unknown): Promise<
   return data as T;
 }
 
-const qs = (params: Record<string, string | undefined>) => {
+export const qs = (params: Record<string, string | undefined>) => {
   const p = new URLSearchParams();
   for (const [k, v] of Object.entries(params)) if (v) p.set(k, v);
   const s = p.toString();
@@ -425,7 +463,8 @@ export interface BackupStatus {
   encrypted: boolean;
   /** the folder is synced to a cloud service */
   cloudFolder: boolean;
-  files: { name: string; size: number; at: string; encrypted: boolean }[];
+  /** `own: false`: a copy made by another company or on another PC (left out by older servers: treated as this company's). */
+  files: { name: string; size: number; at: string; encrypted: boolean; own?: boolean }[];
 }
 
 /** Where the company database is (Pro module): the company file, or the company's MariaDB/MySQL server. Missing (404) without Pro. */

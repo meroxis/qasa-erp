@@ -4,7 +4,7 @@ import {
   api, ApiError, type AgingBucket, type ContractState, type ContractSummaryView, type ContractView, type GuarantorInput, type GuarantorView,
   type InstallmentState, type InstallmentsSummaryView, type InvoiceSummary, type Money2, type PartyView
 } from '../api.ts';
-import { AccountCombo, AmountInput, ErrorBox, Icon, Modal, SearchCombo, useData, useLoad, useToast, type PickOption } from '../components.tsx';
+import { EmptyState, AccountCombo, AmountInput, ErrorBox, Icon, Modal, SearchCombo, useData, useLoad, useToast, type PickOption } from '../components.tsx';
 import { useI18n, type I18n } from '../i18n.ts';
 import { go, href } from '../router.ts';
 
@@ -102,7 +102,7 @@ export function Installments() {
 export function ContractsTable({ contracts }: { contracts: ContractSummaryView[] }) {
   const i18n = useI18n();
   const { t } = i18n;
-  if (!contracts.length) return <div className="pad muted">{t('noContracts')}</div>;
+  if (!contracts.length) return <EmptyState icon="clock" title={t('es_installments')} text={t('es_installmentsText')} />;
   return (
     <table className="table">
       <thead>

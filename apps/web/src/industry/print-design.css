@@ -1,0 +1,158 @@
+/* ---------- designed papers (the print designer) ---------- */
+
+.qd-paper {
+  --qd-accent: #1f4e79; --qd-fs: 10pt; --qd-margin: 14mm; --qd-logo-h: 18mm;
+  font-size: var(--qd-fs); line-height: 1.45; color: #111; background: #fff;
+  display: flex; flex-direction: column; gap: 3mm;
+}
+.qd-paper .ltr { direction: ltr; unicode-bidi: isolate; }
+.qd-paper .num { font-variant-numeric: tabular-nums; }
+.qd-muted { color: #555; font-size: 0.9em; }
+.qd-second { display: block; font-size: 0.72em; font-weight: 400; color: #555; line-height: 1.2; }
+
+/* the preview in the designer: a sheet of paper at its real proportions */
+.qd-preview { box-shadow: 0 2px 14px rgba(0, 0, 0, .14); border: 1px solid #ddd; padding: var(--qd-margin); margin-inline: auto; }
+.qd-preview.qd-a4 { inline-size: 210mm; min-block-size: 297mm; }
+.qd-preview.qd-a5 { inline-size: 148mm; min-block-size: 210mm; }
+.qd-preview.qd-80mm { inline-size: 80mm; }
+
+/* header: the logo goes left, right or in the middle, whatever the writing direction */
+.qd-head { display: flex; align-items: center; gap: 4mm; direction: ltr; }
+.qd-head .qd-company { flex: 1; direction: inherit; }
+.qd-paper[dir='rtl'] .qd-head .qd-company { direction: rtl; }
+.qd-logo { block-size: var(--qd-logo-h); max-inline-size: 60mm; object-fit: contain; }
+.qd-logo-left .qd-logo { order: 0; }
+.qd-logo-left .qd-company { order: 1; text-align: right; }
+.qd-logo-right .qd-logo { order: 1; }
+.qd-logo-right .qd-company { order: 0; text-align: left; }
+.qd-paper[dir='rtl'].qd-logo-left .qd-company { text-align: left; }
+.qd-paper[dir='rtl'].qd-logo-right .qd-company { text-align: right; }
+.qd-logo-center .qd-head { flex-direction: column; text-align: center; }
+.qd-logo-center .qd-company { text-align: center; }
+.qd-company-name { font-weight: 700; font-size: 1.35em; color: var(--qd-accent); }
+.qd-company-meta { display: flex; gap: 4mm; flex-wrap: wrap; justify-content: inherit; }
+.qd-logo-center .qd-company-meta { justify-content: center; }
+
+.qd-title-row { display: flex; justify-content: space-between; align-items: flex-start; gap: 6mm; }
+.qd-title { font-size: 1.6em; font-weight: 700; color: var(--qd-accent); }
+.qd-stamp-cancelled { margin-inline-start: 4mm; padding: 0 2mm; border: 2px solid #b00020; color: #b00020; font-size: 0.6em; vertical-align: middle; }
+.qd-draft { margin-inline-start: 4mm; color: #777; font-size: 0.6em; vertical-align: middle; }
+.qd-meta { display: grid; grid-template-columns: auto auto; gap: 1mm 4mm; margin: 0; }
+.qd-meta dt { color: #555; }
+.qd-meta dd { margin: 0; font-weight: 600; }
+
+.qd-party { padding: 2mm 3mm; border-inline-start: 3px solid var(--qd-accent); background: #f6f7f9; }
+.qd-party-label { color: #555; font-size: 0.9em; }
+.qd-party-name { font-weight: 700; font-size: 1.1em; }
+
+.qd-table { inline-size: 100%; border-collapse: collapse; }
+.qd-table th { text-align: start; font-weight: 700; padding: 1.5mm 2mm; vertical-align: bottom; }
+.qd-table td { padding: 1.5mm 2mm; border-block-end: 1px solid #e3e5e8; vertical-align: top; }
+.qd-table .qd-num { text-align: end; white-space: nowrap; }
+.qd-table .qd-n { inline-size: 1%; white-space: nowrap; color: #666; }
+.qd-table .qd-img { inline-size: 1%; }
+.qd-table .qd-name { inline-size: 40%; }
+.qd-table tr { break-inside: avoid; }
+.qd-table thead { display: table-header-group; }
+
+.qd-bottom { display: flex; justify-content: space-between; align-items: flex-start; gap: 6mm; break-inside: avoid; }
+.qd-words { flex: 1; color: #333; font-style: italic; }
+.qd-totals { display: grid; grid-template-columns: auto auto; gap: 1mm 6mm; margin: 0; min-inline-size: 60mm; }
+.qd-totals dt { color: #444; }
+.qd-totals dd { margin: 0; text-align: end; }
+.qd-totals .qd-grand { font-weight: 700; font-size: 1.15em; color: var(--qd-accent); border-block-start: 1.5px solid var(--qd-accent); padding-block-start: 1mm; }
+
+.qd-notes, .qd-terms, .qd-bank { white-space: pre-wrap; break-inside: avoid; }
+.qd-block-title { font-weight: 700; color: var(--qd-accent); }
+
+.qd-sign-row { display: flex; align-items: flex-end; gap: 6mm; margin-block-start: 4mm; break-inside: avoid; }
+.qd-sig { flex: 1; border-block-start: 1px solid #999; padding-block-start: 1.5mm; min-block-size: 14mm; }
+.qd-sig-name { font-weight: 600; }
+.qd-stamp { inline-size: 30mm; block-size: 30mm; border: 1.5px dashed #999; border-radius: 50%; display: grid; place-items: center; color: #999; text-align: center; font-size: 0.85em; }
+.qd-qr { flex: none; background: #fff; }
+
+.qd-foot { margin-block-start: auto; padding-block-start: 2mm; border-block-start: 1px solid #ddd; text-align: center; color: #444; font-size: 0.9em; white-space: pre-wrap; }
+.qd-made { font-size: 0.85em; color: #777; }
+
+.qd-barcode { display: inline-flex; flex-direction: column; align-items: center; font-size: 0.75em; }
+.qd-barcode svg { inline-size: 28mm; block-size: 6mm; }
+
+/* Classic: ruled header row in the accent colour */
+.qd-classic .qd-table thead th { border-block-end: 2px solid var(--qd-accent); }
+.qd-classic .qd-head { padding-block-end: 3mm; border-block-end: 2px solid var(--qd-accent); }
+
+/* Modern: a solid band of colour, rounded party card, zebra rows */
+.qd-modern .qd-table thead th { background: var(--qd-accent); color: #fff; }
+.qd-modern .qd-table thead .qd-second { color: rgba(255, 255, 255, .85); }
+.qd-modern .qd-table tbody tr:nth-child(even) td { background: #f6f7f9; }
+.qd-modern .qd-table td { border-block-end: none; }
+.qd-modern .qd-party { border-inline-start: none; border-radius: 3mm; }
+.qd-modern .qd-title { text-transform: uppercase; letter-spacing: .02em; }
+
+/* Compact: tighter, smaller headings, everything on fewer pages */
+.qd-compact { gap: 1.5mm; line-height: 1.3; }
+.qd-compact .qd-title { font-size: 1.25em; }
+.qd-compact .qd-table th, .qd-compact .qd-table td { padding: 0.8mm 1.2mm; }
+.qd-compact .qd-table thead th { border-block-end: 1px solid #333; }
+.qd-compact .qd-party { padding: 1mm 2mm; background: none; }
+
+/* 80 mm receipt: one column, lines as name then quantity × price = amount */
+.qd-receipt80 { gap: 2mm; }
+.qd-receipt80 .qd-head, .qd-receipt80 .qd-title-row, .qd-receipt80 .qd-bottom, .qd-receipt80 .qd-sign-row { flex-direction: column; align-items: stretch; text-align: center; gap: 1.5mm; }
+.qd-receipt80 .qd-logo { align-self: center; }
+.qd-receipt80 .qd-company { text-align: center !important; }
+.qd-receipt80 .qd-title { font-size: 1.2em; }
+.qd-receipt80 .qd-meta { justify-content: center; }
+.qd-receipt80 .qd-party { background: none; border: none; padding: 0; text-align: center; }
+.qd-receipt80 .qd-totals { min-inline-size: 0; }
+.qd-receipt80 .qd-words { display: none; }
+.qd-receipt80 .qd-qr { align-self: center; }
+.qd-receipt-lines { border-block: 1px dashed #333; padding-block: 1.5mm; display: flex; flex-direction: column; gap: 1.5mm; }
+.qd-rcalc { display: flex; justify-content: space-between; gap: 2mm; }
+
+@media print {
+  .qd-print-host { display: block; }
+  .qd-paper { box-shadow: none; border: none; padding: 0; inline-size: auto; min-block-size: 0; }
+  .qd-modern .qd-table thead th, .qd-modern .qd-table tbody tr:nth-child(even) td, .qd-party { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+}
+
+/* ---------- the designer page ---------- */
+.pd-layout { display: grid; grid-template-columns: minmax(340px, 460px) minmax(0, 1fr); gap: 16px; align-items: start; }
+@media (max-width: 1100px) { .pd-layout { grid-template-columns: 1fr; } }
+.pd-fields { border: none; margin: 0; min-inline-size: 0; }
+.pd-fields:disabled { opacity: .55; }
+.pd-checks { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px 12px; }
+.pd-preview-col { position: sticky; inset-block-start: 0; min-inline-size: 0; }
+.pd-preview-scroll { overflow: auto; max-block-size: calc(100vh - 200px); padding: 12px; background: var(--fill, #eef0f3); border-radius: 10px; }
+.pp-logo-box { inline-size: 120px; block-size: 72px; display: grid; place-items: center; border: 1px dashed var(--line-2, #ccc); border-radius: 8px; background: #fff; }
+.pp-logo-box img { max-inline-size: 110px; max-block-size: 64px; object-fit: contain; }
+@media print { .pd-page { display: none !important; } }
+
+/* ---------- barcode labels ---------- */
+.lb-sheet { display: grid; grid-template-columns: repeat(var(--lb-cols), var(--lb-w)); gap: 3mm; justify-content: start; }
+.lb-label {
+  inline-size: var(--lb-w); block-size: var(--lb-h); box-sizing: border-box; padding: 1.2mm 2mm; overflow: hidden;
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 0.4mm;
+  background: #fff; color: #000; border: 1px dashed #bbb; text-align: center; line-height: 1.1;
+}
+.lb-company { font-size: 6pt; font-weight: 700; }
+.lb-name { font-size: 7pt; max-inline-size: 100%; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+.lb-bars { inline-size: 100%; flex: 1 1 auto; min-block-size: 6mm; max-block-size: 14mm; }
+.lb-code { font-size: 7pt; letter-spacing: .04em; font-family: var(--font-mono, monospace); }
+.lb-price { font-size: 9pt; font-weight: 700; }
+.lb-a4 .lb-label { padding: 2mm 4mm; }
+.lb-a4 .lb-name { font-size: 8.5pt; }
+.lb-a4 .lb-price { font-size: 11pt; }
+
+@media print {
+  .lb-page .lb-sheet { gap: 0; }
+  .lb-label { border: none; }
+  .lb-blank { visibility: hidden; }
+  /* a label printer: one label per page */
+  .lb-roll { display: block; }
+  .lb-roll .lb-label { break-after: page; }
+  .lb-roll .lb-label:last-child { break-after: auto; }
+}
+.qd-letterhead { margin-block-end: 4mm; }
+.qd-letterfoot { margin-block-start: 6mm; }
+@media print { .qd-80mm { inline-size: 72mm; } }

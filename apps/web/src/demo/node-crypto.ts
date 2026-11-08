@@ -15,7 +15,7 @@ export function createHash(): never {
 export function randomBytes(): never {
   throw new Error('not in the demo');
 }
-export function scryptSync(): never {
+export function scrypt(): never {
   throw new Error('not in the demo');
 }
 export function timingSafeEqual(): never {
@@ -29,4 +29,18 @@ export function createPublicKey(): object {
 
 export function verify(): boolean {
   return false;
+}
+
+/** Activation and invoice QR signing belong to the Windows app; the demo shows no QR code (backend.ts). */
+export function createHmac(): never {
+  throw new Error('not in the demo');
+}
+export function createPrivateKey(): never {
+  throw new Error('not in the demo');
+}
+export function generateKeyPairSync(): never {
+  throw new Error('not in the demo');
+}
+export function sign(): never {
+  throw new Error('not in the demo');
 }

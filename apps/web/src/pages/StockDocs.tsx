@@ -7,6 +7,7 @@ import {
 import { useI18n } from '../i18n.ts';
 import { go, href } from '../router.ts';
 import { averageCost, qtyText, unitName } from './Items.tsx';
+import { reverseDefaultDate } from '../industry/ReverseModal.tsx';
 
 const kindKey = (kind: StockDocKind) => (kind === 'opening' ? 'opening_stock' : 'transfer');
 
@@ -303,7 +304,7 @@ export function StockDocDetail({ id }: { id: string }) {
             <Icon name="check" size={16} />{t('actPostDoc')}
           </button>
         )}
-        {d.actions.includes('cancel') && <button type="button" className="btn danger" disabled={busy} onClick={() => setCancelling(true)}><Icon name="undo" size={16} />{t('actCancelDoc')}</button>}
+        {d.actions.includes('cancel') && <button type="button" className="btn danger" disabled={busy} onClick={() => { setCancelDate(reverseDefaultDate(d.date)); setCancelling(true); }}><Icon name="undo" size={16} />{t('actCancelDoc')}</button>}
         <button type="button" className="btn" onClick={() => window.print()}><Icon name="printer" size={16} />{t('print')}</button>
       </div>
       <ErrorBox error={cancelling ? null : actionError} />
@@ -377,7 +378,7 @@ export function StockDocDetail({ id }: { id: string }) {
         <Modal title={t('cancelDocTitle')} onClose={() => setCancelling(false)}>
           <div className="stack">
             <p style={{ margin: 0 }}>{t('cancelDocHelp')}</p>
-            <label className="field"><span>{t('cancelDate')}</span><input className="input" type="date" value={cancelDate} onChange={(e) => setCancelDate(e.target.value)} /></label>
+            <label className="field"><span>{t('cancelDate')}</span><input className="input" type="date" min={d.date} value={cancelDate} onChange={(e) => setCancelDate(e.target.value)} /></label>
             <ErrorBox error={actionError} />
             <div className="row">
               <button type="button" className="btn danger" disabled={busy} onClick={() => act(() => api.cancelStockDoc(id, cancelDate), t('a_cancel'))}>{t('confirm')}</button>

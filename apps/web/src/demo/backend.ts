@@ -22,6 +22,8 @@ export async function startDemoBackend(): Promise<void> {
     const url = new URL(typeof input === 'string' ? input : input instanceof URL ? input.href : input.url, window.location.href);
     if (url.origin !== window.location.origin || !url.pathname.startsWith('/api/')) return realFetch(input, init);
     const method = (init?.method ?? 'GET').toUpperCase();
+    // invoice QR codes are signed by the Windows app only; the demo prints invoices without one
+    if (url.pathname.startsWith('/api/verify/')) return json(404, { error: 'not_found', details: null });
     for (const { route, pattern } of routes) {
       if (route.method !== method) continue;
       const match = pattern.exec(url.pathname);

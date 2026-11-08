@@ -1,6 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useId, useMemo, useRef, useState, type ReactNode } from 'react';
-import { formatQty, normalizeForSearch, parseAmount, parseQty, formatAmount, type CurrencyCode, type EntryStatus, type EntryType, type InvoiceStatus } from '@qasa/core';
-import { ApiError, type AccountView, type PlanStatus, type Settings } from './api.ts';
+import { formatQty, htmlLang, normalizeForSearch, parseAmount, parseQty, formatAmount, type CurrencyCode, type EntryStatus, type EntryType, type InvoiceStatus, type Lang } from '@qasa/core';
+import { ApiError, onBusyChange, type AccountView, type PlanStatus, type Settings } from './api.ts';
 import { isKey, useI18n, type I18n, type Key } from './i18n.ts';
 
 /* ---------- shared data ---------- */
@@ -83,14 +83,16 @@ export const useToast = () => useContext(ToastContext);
 
 /* ---------- errors ---------- */
 
-interface Detail { code?: string; line?: number; accountCode?: string; period?: string; available?: number }
+interface Detail { code?: string; line?: number; accountCode?: string; period?: string; available?: number; field?: string }
 
 export function errorMessages(error: unknown, i18n: I18n): string[] {
   const { t } = i18n;
   if (error instanceof ApiError) {
     if (error.code === 'validation' && Array.isArray(error.details)) {
       const messages = (error.details as Detail[]).map((d) => {
-        const key = 'err_' + (d.code ?? 'internal');
+        // a message for the field when there is one ("err_account_invalid_gain"), else the code's own
+        const byField = d.field ? `err_${d.code ?? 'internal'}_${d.field}` : '';
+        const key = byField && isKey(byField) ? byField : 'err_' + (d.code ?? 'internal');
         return isKey(key) ? t(key, { n: d.line ?? '', c: d.accountCode ?? '', p: d.period ?? '', a: d.available === undefined ? '' : formatQty(d.available) }) : t('err_internal');
       });
       return [...new Set(messages)];
@@ -101,6 +103,24 @@ export function errorMessages(error: unknown, i18n: I18n): string[] {
     return [isKey(key) ? t(key) : t('err_internal')];
   }
   return [t('err_internal')];
+}
+
+/** Each language by its own name, so anyone finds theirs whatever the screen is in now. */
+export const LANGUAGE_NAMES: readonly [Lang, string][] = [['ar', 'عربي'], ['en', 'English'], ['ku', 'کوردی']];
+
+/**
+ * The language buttons (عربي / English / کوردی). They change the language the same way Settings does: the whole app
+ * at once, remembered on this PC, and in the Windows app its menus too (setLang tells qasaDesktop).
+ */
+export function LanguageSwitch({ className }: { className?: string }) {
+  const { t, lang, setLang } = useI18n();
+  return (
+    <div className={'track' + (className ? ' ' + className : '')} role="group" aria-label={t('language')}>
+      {LANGUAGE_NAMES.map(([l, label]) => (
+        <button key={l} type="button" lang={htmlLang(l)} aria-pressed={lang === l} onClick={() => setLang(l)}>{label}</button>
+      ))}
+    </div>
+  );
 }
 
 export function ErrorBox({ error }: { error: unknown }) {
@@ -188,10 +208,58 @@ const PATHS: Record<string, string> = {
   contrast: 'M22 12a10 10 0 1 1-20 0 10 10 0 0 1 20 0M12 18a6 6 0 0 0 0-12z',
   rows: 'M3 5h18M3 12h18M3 19h18',
   building: 'M6 22V4a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v18ZM6 12H4a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h2M18 9h2a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2h-2M10 6h4M10 10h4M10 14h4M10 18h4',
+  bank: 'M3 10h18M5 10v8M9.5 10v8M14.5 10v8M19 10v8M3 21h18M12 3 3 8h18Z',
+  clipboard: 'M9 4h6v3H9zM8 5H6a1 1 0 0 0-1 1v14a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V6a1 1 0 0 0-1-1h-2M9 12h6M9 16h4',
+  layers: 'm12 3 9 5-9 5-9-5ZM3 13l9 5 9-5',
+  tag: 'M3 12V4a1 1 0 0 1 1-1h8l9 9-9 9ZM8 8h.01',
+  zap: 'M13 2 3 14h9l-1 8 10-12h-9l1-8Z',
   wallet: 'M19 7V4a1 1 0 0 0-1-1H5a2 2 0 0 0 0 4h15a1 1 0 0 1 1 1v4h-3a2 2 0 0 0 0 4h3a1 1 0 0 0 1-1v-2a1 1 0 0 0-1-1M3 5v14a2 2 0 0 0 2 2h15a1 1 0 0 0 1-1v-4',
   key: 'm15.5 7.5 2.3 2.3a1 1 0 0 0 1.4 0l2.1-2.1a1 1 0 0 0 0-1.4L19 4M21 2l-9.6 9.6M13 15.5a5.5 5.5 0 1 1-11 0 5.5 5.5 0 0 1 11 0',
-  logout: 'M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9'
+  logout: 'M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9',
+  phone: 'M7 2h10a2 2 0 0 1 2 2v16a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2ZM11 18h2',
+  gear: 'M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1Z',
+  tool: 'M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76Z',
+  dollar: 'M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6',
+  scale: 'M12 3v18M7 21h10M3 7h18M6 7l-3 7a3 3 0 0 0 6 0ZM18 7l-3 7a3 3 0 0 0 6 0Z',
+  branch: 'M6 3v12M18 9a3 3 0 1 0 0-6 3 3 0 0 0 0 6M6 21a3 3 0 1 0 0-6 3 3 0 0 0 0 6M18 9a9 9 0 0 1-9 9',
+  panel: 'M3 5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2ZM9 3v18',
+  inbox: 'M22 12h-6l-2 3h-4l-2-3H2M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11Z',
+  upload: 'M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M17 8l-5-5-5 5M12 3v12',
+  clock: 'M22 12a10 10 0 1 1-20 0 10 10 0 0 1 20 0M12 6v6l4 2',
+  circle: 'M22 12a10 10 0 1 1-20 0 10 10 0 0 1 20 0'
 };
+
+/**
+ * What an empty list shows: what the page is for and the one thing to do next (and importing from Excel where it fits),
+ * instead of an empty table.
+ */
+export function EmptyState({ icon = 'inbox', title, text, action, secondary, compact }: {
+  icon?: string;
+  title: string;
+  text?: string;
+  action?: { label: string; href?: string; onClick?: () => void; icon?: string };
+  secondary?: { label: string; href?: string; onClick?: () => void; icon?: string };
+  compact?: boolean;
+}) {
+  const button = (a: NonNullable<typeof action>, primary: boolean) => {
+    const cls = 'btn' + (primary ? ' primary' : '');
+    const inner = <>{a.icon && <Icon name={a.icon} size={16} />}{a.label}</>;
+    return a.href ? <a className={cls} href={a.href}>{inner}</a> : <button type="button" className={cls} onClick={a.onClick}>{inner}</button>;
+  };
+  return (
+    <div className={'empty-state' + (compact ? ' compact' : '')} role="status">
+      <span className="empty-ico" aria-hidden="true"><Icon name={icon} size={compact ? 22 : 28} /></span>
+      <strong>{title}</strong>
+      {text && <p>{text}</p>}
+      {(action || secondary) && (
+        <div className="empty-actions">
+          {action && button(action, true)}
+          {secondary && button(secondary, false)}
+        </div>
+      )}
+    </div>
+  );
+}
 
 /** A line icon; className "flip" mirrors a directional one (chevron, sign out) in Arabic and Kurdish. */
 export function Icon({ name, size = 18, className }: { name: keyof typeof PATHS | string; size?: number; className?: string }) {
@@ -420,11 +488,19 @@ export function AmountInput({ value, currency, onChange, ariaLabel }: {
 
 /* ---------- CSV export (opens in Excel with Arabic/Kurdish intact) ---------- */
 
+/**
+ * One CSV cell. Text that starts like a formula (= + - @, a tab or a line break) gets a leading apostrophe, so a name
+ * typed by a shop customer or read from someone's sheet ("=HYPERLINK(…)") shows as text in Excel instead of running;
+ * plain numbers ("-5000", "1,250.50") stay numbers. Quoted when it holds a quote, a comma or a line break.
+ */
+export function csvCell(cell: string | number): string {
+  let s = String(cell);
+  if (typeof cell === 'string' && /^[=+\-@\t\r]/.test(s) && !/^[-+]?\d[\d,]*(\.\d+)?$/.test(s)) s = "'" + s;
+  return /[",\r\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
+}
+
 export function downloadCsv(filename: string, rows: (string | number)[][]): void {
-  const csv = rows.map((r) => r.map((cell) => {
-    const s = String(cell);
-    return /[",\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
-  }).join(',')).join('\r\n');
+  const csv = rows.map((r) => r.map(csvCell).join(',')).join('\r\n');
   const blob = new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8' });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
@@ -432,4 +508,21 @@ export function downloadCsv(filename: string, rows: (string | number)[][]): void
   a.download = filename;
   a.click();
   URL.revokeObjectURL(url);
+}
+
+/**
+ * A thin bar along the top while the app waits on the server. It appears only when a wait passes 400 ms, so quick
+ * clicks don't flicker; long reports, saves and backups show that the app is working rather than frozen.
+ */
+export function BusyBar() {
+  const [show, setShow] = useState(false);
+  useEffect(() => {
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const off = onBusyChange((n) => {
+      if (n > 0 && !timer) timer = setTimeout(() => { timer = undefined; setShow(true); }, 400);
+      if (n === 0) { if (timer) clearTimeout(timer); timer = undefined; setShow(false); }
+    });
+    return () => { off(); if (timer) clearTimeout(timer); };
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  return show ? <div className="busy-bar" role="progressbar" aria-busy="true" aria-label="…" /> : null;
 }
