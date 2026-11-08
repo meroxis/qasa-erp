@@ -156,7 +156,7 @@ function AssetForm({ asset, onClose, onDone }: { asset?: AssetDetail; onClose():
     setError(null);
     try {
       const common = { name, location, notes };
-      const figures = { assetAccount, accumAccount, expenseAccount, acquired, cost: cost ?? 0, salvage: salvage ?? 0, lifeMonths, openingAccum: opening ?? 0 };
+      const figures = { ...(category ? { category } : {}), assetAccount, accumAccount, expenseAccount, acquired, cost: cost ?? 0, salvage: salvage ?? 0, lifeMonths, openingAccum: opening ?? 0 };
       const saved = asset
         ? await assetsApi.update(asset.id, locked ? common : { ...common, ...figures })
         : await assetsApi.create({ ...common, ...figures });

@@ -149,6 +149,47 @@ describe('branches', () => {
     expect((await post(`/api/stock-docs/${incoming.id}/post`, {}, raz)).statusCode).toBe(403);
   });
 
+  it('stock adjustments and counts, purchase orders and till shifts of another branch are neither listed, opened nor changed', async () => {
+    const { raz, owner } = await erbilBranch();
+    const pipe = (await post('/api/items', { code: 'PIPE', name: { ar: 'أنبوب', en: 'Pipe', ku: 'بۆری' }, unit: 'piece', salePrice: 30_000, saleCurrency: 'IQD' }, owner)).json().id;
+    const adjustment = (warehouseId: string) => ({ date: '2026-10-01', warehouseId, reason: 'other', lines: [{ itemId: pipe, qtyMilli: 2000, unitCost: 20_000 }] });
+    const hqDraft = (await post('/api/adjustments', adjustment(hq), owner)).json();
+    const hqPosted = (await post('/api/adjustments', adjustment(hq), owner)).json();
+    expect((await post(`/api/adjustments/${hqPosted.id}/post`, {}, owner)).statusCode).toBe(200);
+    const mine = await post('/api/adjustments', adjustment(erbil), raz);
+    expect(mine.statusCode, mine.body).toBe(201);
+    // the head office's adjustments: not listed, not opened, not posted, cancelled, changed or deleted
+    expect((await get('/api/adjustments', raz)).json().map((a: { id: string }) => a.id)).toEqual([mine.json().id]);
+    expect((await get('/api/adjustments', owner)).json()).toHaveLength(3);
+    for (const res of [
+      await get(`/api/adjustments/${hqDraft.id}`, raz),
+      await post(`/api/adjustments/${hqDraft.id}/post`, {}, raz),
+      await post(`/api/adjustments/${hqPosted.id}/cancel`, {}, raz),
+      await put(`/api/adjustments/${hqDraft.id}`, adjustment(erbil), raz),
+      await req('DELETE', `/api/adjustments/${hqDraft.id}`, undefined, raz)
+    ]) expect(res.json()).toMatchObject({ error: 'branch_forbidden' });
+    expect((await get(`/api/adjustments/${hqDraft.id}`, owner)).json().status).toBe('draft');
+    expect((await get(`/api/adjustments/${hqPosted.id}`, owner)).json().status).toBe('posted');
+    expect((await get(`/api/adjustments/${mine.json().id}`, raz)).statusCode).toBe(200);
+    // a count sheet shows what the books hold in a warehouse: only the branch's own
+    expect((await get(`/api/adjustments/count-sheet?warehouseId=${hq}`, raz)).json()).toMatchObject({ error: 'branch_forbidden' });
+    expect((await get(`/api/adjustments/count-sheet?warehouseId=${erbil}`, raz)).statusCode).toBe(200);
+    // a purchase order for the head office's warehouse; one with no warehouse yet belongs to no branch
+    const supplier = (await post('/api/parties', { type: 'supplier', name: 'Las Trading' }, owner)).json().id;
+    const order = (warehouseId?: string) => ({ date: '2026-10-01', partyId: supplier, currency: 'IQD', ...(warehouseId ? { warehouseId } : {}), lines: [{ itemId: pipe, qtyMilli: 1000, unitPrice: 20_000 }] });
+    const hqOrder = (await post('/api/purchase-orders', order(hq), owner)).json();
+    const anyOrder = (await post('/api/purchase-orders', order(), owner)).json();
+    expect((await get(`/api/purchase-orders/${hqOrder.id}`, raz)).json()).toMatchObject({ error: 'branch_forbidden' });
+    expect((await get(`/api/purchase-orders/${anyOrder.id}`, raz)).statusCode).toBe(200);
+    expect((await get('/api/purchase-orders', raz)).json().map((o: { id: string }) => o.id)).toEqual([anyOrder.id]);
+    // the head office's till shift
+    const shift = await post('/api/pos/shifts', { register: 'Counter 1', cashAccountCode: '1811', warehouseId: hq, openingCash: 0 }, owner);
+    expect(shift.statusCode, shift.body).toBe(201);
+    expect((await get(`/api/pos/shifts/${shift.json().id}`, raz)).json()).toMatchObject({ error: 'branch_forbidden' });
+    expect((await get('/api/pos/shifts', raz)).json()).toEqual([]);
+    expect((await get('/api/pos/shifts', owner)).json()).toHaveLength(1);
+  });
+
   it('reports follow the branch: picked by an admin, forced for a limited user', async () => {
     const { branchId, raz, owner } = await erbilBranch();
     for (const [w, h] of [[erbil, raz], [hq, owner]] as const) {
@@ -168,6 +209,27 @@ describe('branches', () => {
     expect(brief.cash.accounts.every((a: { code: string }) => a.code === '1812')).toBe(true);
     const stock = (await get('/api/brief/reports/stock-value?date=2026-10-31', raz)).json();
     expect(stock.warehouses.map((w: { warehouseId: string }) => w.warehouseId)).toEqual([erbil]);
+  });
+
+  it('ages what customers owe to the branch: the aging report, the brief and the dashboard', async () => {
+    const { branchId, raz, owner } = await erbilBranch();
+    for (const [w, h] of [[erbil, raz], [hq, owner]] as const) {
+      const inv = (await post('/api/invoices', sale(w), h)).json();
+      expect((await post(`/api/invoices/${inv.id}/post`, {}, owner)).statusCode).toBe(200);
+    }
+    // the branch's safe took 50,000 of it; the head office's safe another 50,000 (the brief counts approved entries)
+    for (const [safe, h] of [['1812', raz], ['1811', owner]] as const) {
+      const v = (await post('/api/vouchers', receipt(safe), h)).json();
+      expect((await post(`/api/entries/${v.id}/check`, {}, owner)).statusCode).toBe(200);
+      expect((await post(`/api/entries/${v.id}/approve`, {}, owner)).statusCode).toBe(200);
+    }
+    const owed = async (h: Headers, q = '') => (await get(`/api/brief/reports/aging?type=customer&date=2026-10-31${q}`, h)).json().rows.map((r: { balance: number }) => r.balance);
+    expect(await owed(owner)).toEqual([100_000]);
+    expect(await owed(owner, `&branchId=${branchId}`)).toEqual([50_000]);
+    expect(await owed(raz)).toEqual([50_000]);
+    expect((await get('/api/brief?date=2026-10-31', raz)).json().receivables).toBe(50_000);
+    expect((await get('/api/brief/dashboard?date=2026-10-31', raz)).json().receivables).toBe(50_000);
+    expect((await get('/api/brief/dashboard?date=2026-10-31', owner)).json().receivables).toBe(100_000);
   });
 
   it('lists what the switcher offers', async () => {

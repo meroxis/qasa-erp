@@ -842,7 +842,11 @@ export function autoMatch(db: Db, id: string, actor: Actor): { matched: number; 
   const s = loadStatement(db, id);
   requireOpen(s);
   const view = getStatement(db, id);
-  const free = view.book.filter((b) => !b.matched);
+  // as by hand: a reversal, or an entry reversed since, is no money the bank moved
+  const reversed = new Set((db.prepare(`SELECT DISTINCT e.id FROM entries e JOIN entry_lines l ON l.entry_id = e.id
+                                        WHERE l.account_code = ? AND e.date >= ? AND e.date <= ? AND (e.type = 'reversal' OR e.reversed_by_id IS NOT NULL)`)
+    .all(s.account_code, shift(s.period_from, -3), shift(s.period_to, 3)) as { id: string }[]).map((r) => r.id));
+  const free = view.book.filter((b) => !b.matched && !reversed.has(b.entryId));
   const used = new Set<string>();
   const update = db.prepare('UPDATE bank_statement_lines SET entry_id = ? WHERE statement_id = ? AND seq = ?');
   let matched = 0;

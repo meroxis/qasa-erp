@@ -176,6 +176,22 @@ export interface AgingRow {
   buckets: [number, number, number, number];
 }
 
+/**
+ * `AND <the entry belongs to the branch>` for entries `alias`, with its parameters (nothing for the whole company):
+ * made on one of its safes or banks, by an invoice of one of its warehouses (or its cancellation), for a cheque on one
+ * of its banks, or the reversal of such an entry. Plain journals and cheques still in hand belong to no branch.
+ */
+function entryInBranch(alias: string, branch: BranchFilter): [string, string[]] {
+  if (!branch) return ['', []];
+  const { warehouses: wh, accounts: acc } = branch;
+  const own = (a: string): [string, string[]] => [`(${a}.cash_account IN (${marks(acc)})
+      OR EXISTS (SELECT 1 FROM invoices bi WHERE (bi.entry_id = ${a}.id OR bi.cancel_entry_id = ${a}.id) AND bi.warehouse_id IN (${marks(wh)}))
+      OR EXISTS (SELECT 1 FROM cheques bc WHERE bc.entry_id = ${a}.id AND bc.bank_account IN (${marks(acc)})))`, [...acc, ...wh, ...acc]];
+  const [mine, mp] = own(alias);
+  const [reversed, rp] = own('br');
+  return [` AND (${mine} OR EXISTS (SELECT 1 FROM entries br WHERE br.id = ${alias}.reverses_id AND ${reversed}))`, [...mp, ...rp]];
+}
+
 const BUCKET_LIMITS = [30, 60, 90] as const;
 function bucketOf(days: number): 0 | 1 | 2 | 3 {
   return days <= BUCKET_LIMITS[0] ? 0 : days <= BUCKET_LIMITS[1] ? 1 : days <= BUCKET_LIMITS[2] ? 2 : 3;
@@ -184,22 +200,23 @@ function bucketOf(days: number): 0 | 1 | 2 | 3 {
 /**
  * Customer (or supplier) balances aged first in, first out: payments settle the oldest charges, so what is still owed
  * is made of the newest charges. Buckets: 0–30, 31–60, 61–90 and over 90 days. Only those who owe (customers) or are
- * owed (suppliers) appear, largest first.
+ * owed (suppliers) appear, largest first. For one branch, only the branch's entries count (entryInBranch).
  */
-export function aging(db: Db, type: 'customer' | 'supplier', asOf: string): AgingRow[] {
+export function aging(db: Db, type: 'customer' | 'supplier', asOf: string, branch: BranchFilter = null): AgingRow[] {
   const owed = type === 'customer' ? 'l.base_debit - l.base_credit' : 'l.base_credit - l.base_debit';
+  const [b, bp] = entryInBranch('e', branch);
   const parties = db.prepare(`SELECT p.id, p.code, p.name, COALESCE(p.phone, '') AS phone, SUM(${owed}) AS balance
                               FROM parties p JOIN entry_lines l ON l.party_id = p.id JOIN entries e ON e.id = l.entry_id
-                              WHERE p.type = ? AND e.status = 'approved' AND e.date <= ?
-                              GROUP BY p.id HAVING SUM(${owed}) > 0`).all(type, asOf) as { id: string; code: string; name: string; phone: string; balance: number }[];
+                              WHERE p.type = ? AND e.status = 'approved' AND e.date <= ?${b}
+                              GROUP BY p.id HAVING SUM(${owed}) > 0`).all(type, asOf, ...bp) as { id: string; code: string; name: string; phone: string; balance: number }[];
   if (!parties.length) return [];
   // the charges (customer debits, supplier credits), newest first, of everyone above in one go
   const charge = type === 'customer' ? 'l.base_debit' : 'l.base_credit';
   const charges = db.prepare(`SELECT l.party_id AS party, e.date, ${charge} AS amount
                               FROM entry_lines l JOIN entries e ON e.id = l.entry_id JOIN parties p ON p.id = l.party_id
                               WHERE p.type = ? AND e.status = 'approved' AND e.date <= ? AND ${charge} > 0
-                                AND e.reversed_by_id IS NULL AND e.reverses_id IS NULL
-                              ORDER BY l.party_id, e.date DESC, e.number DESC`).all(type, asOf) as { party: string; date: string; amount: number }[];
+                                AND e.reversed_by_id IS NULL AND e.reverses_id IS NULL${b}
+                              ORDER BY l.party_id, e.date DESC, e.number DESC`).all(type, asOf, ...bp) as { party: string; date: string; amount: number }[];
   const byParty = new Map<string, { date: string; amount: number }[]>();
   for (const c of charges) {
     const list = byParty.get(c.party) ?? [];
@@ -235,7 +252,8 @@ export interface InstallmentDue {
 
 /**
  * Installment contracts (when the company uses them): what is overdue on a day, and what falls due the next day.
- * Collections cover the oldest installments first, as the installments module counts them.
+ * Collections cover the oldest installments first, as the installments module counts them. Only collections made by
+ * the day count (a brief for an earlier day shows what was owed then); one reversed after the day still counted then.
  */
 export function installmentsOn(db: Db, date: string): { overdue: InstallmentDue[]; dueTomorrow: InstallmentDue[] } {
   const contracts = db.prepare(`SELECT c.id, c.number, c.party_id, c.currency, p.name, COALESCE(p.phone, '') AS phone
@@ -244,7 +262,9 @@ export function installmentsOn(db: Db, date: string): { overdue: InstallmentDue[
   if (!contracts.length) return { overdue: [], dueTomorrow: [] };
   const paid = new Map((db.prepare(`SELECT r.contract_id AS id, COALESCE(SUM(r.amount), 0) AS paid
                                     FROM installment_receipts r JOIN entries e ON e.id = r.entry_id
-                                    WHERE e.status = 'approved' AND e.reversed_by_id IS NULL GROUP BY r.contract_id`).all() as { id: string; paid: number }[])
+                                    WHERE e.status = 'approved' AND e.date <= ?
+                                      AND (e.reversed_by_id IS NULL OR EXISTS (SELECT 1 FROM entries rv WHERE rv.id = e.reversed_by_id AND rv.date > ?))
+                                    GROUP BY r.contract_id`).all(date, date) as { id: string; paid: number }[])
     .map((r) => [r.id, num(r.paid)]));
   const schedule = db.prepare('SELECT contract_id AS id, due_date, amount FROM installment_schedule ORDER BY contract_id, seq').all() as
     { id: string; due_date: string; amount: number }[];
@@ -372,7 +392,7 @@ export function dailyBrief(db: Db, date: string, branch: BranchFilter = null): B
   const accounts = cashAccounts(db, date, branch);
   const total: Money = { IQD: 0, USD: 0 };
   for (const a of accounts) { total.IQD += a.balance.IQD; total.USD += a.balance.USD; }
-  const customers = aging(db, 'customer', date);
+  const customers = aging(db, 'customer', date, branch);
   const inst = installmentsOn(db, date);
   const overdueTotal: Money = { IQD: 0, USD: 0 };
   for (const o of inst.overdue) overdueTotal[o.currency] += o.amount;
@@ -435,8 +455,8 @@ export function dashboard(db: Db, date: string, branch: BranchFilter = null): Da
     salesLastMonth: salesBetween(db, lastFrom, lastDayOfMonth(lastFrom), branch).amount,
     profitMonth: branch ? null : profitBetween(db, start, date),
     cash: { total, base: accounts.reduce((s, a) => s + a.base, 0) },
-    receivables: aging(db, 'customer', date).reduce((s, r) => s + r.balance, 0),
-    payables: aging(db, 'supplier', date).reduce((s, r) => s + r.balance, 0),
+    receivables: aging(db, 'customer', date, branch).reduce((s, r) => s + r.balance, 0),
+    payables: aging(db, 'supplier', date, branch).reduce((s, r) => s + r.balance, 0),
     months,
     cheques: (() => {
       const c = chequesAhead(db, date, Number.MAX_SAFE_INTEGER);
@@ -607,7 +627,7 @@ export const briefApi: ApiExtension = {
         handler: async (req) => {
           const q = parse(z.object({ type: z.enum(['customer', 'supplier']), date: date.optional() }), req.query ?? {});
           const asOf = q.date ?? todayIso();
-          return { date: asOf, type: q.type, rows: aging(db, q.type, asOf) };
+          return { date: asOf, type: q.type, rows: aging(db, q.type, asOf, branchOf(db, req, actorOf(req))) };
         }
       },
       {

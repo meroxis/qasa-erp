@@ -107,6 +107,28 @@ describe('the Daily Brief', () => {
     expect(b.installments.overdueTotal).toEqual({ IQD: 50_000, USD: 0 });
   });
 
+  it('counts only the installment collections made by the day of the brief', async () => {
+    db.prepare(`INSERT INTO installment_contracts (id, number, status, date, party_id, description, currency, total, down_payment, months, created_by, created_at, updated_at)
+                VALUES ('c1', 'INS-2026-0001', 'active', '2026-07-01', ?, 'AC', 'IQD', 300000, 0, 3, 'Mer', '2026-07-01', '2026-07-01')`).run(customerId);
+    for (const [seq, due] of [[1, '2026-08-15'], [2, '2026-09-15'], [3, '2026-10-16']] as const) {
+      db.prepare('INSERT INTO installment_schedule (contract_id, seq, due_date, amount) VALUES (?, ?, ?, 100000)').run('c1', seq, due);
+    }
+    const collect = async (date: string, amount: number) => {
+      const r = await approvedVoucher({ kind: 'receipt', date, cashAccountCode: '1811', description: 'Installment', items: [{ accountCode: '1611', amount, partyId: customerId }] });
+      db.prepare("INSERT INTO installment_receipts (contract_id, entry_id, amount, created_at) VALUES ('c1', ?, ?, ?)").run(r.id, amount, date);
+      return r;
+    };
+    const first = await collect('2026-08-15', 150_000);
+    await collect('2026-10-20', 100_000); // after the day: it had not come in yet
+    // taken back after the day: on the day it still counted
+    expect((await post(`/api/entries/${first.id}/reverse`, { date: '2026-10-21' })).statusCode).toBe(200);
+    const b = (await get(`/api/brief?date=${DAY}`)).json();
+    expect(b.installments.overdue).toEqual([expect.objectContaining({ amount: 50_000, dueDate: '2026-09-15', daysLate: 30 })]);
+    expect(b.installments.dueTomorrow).toEqual([expect.objectContaining({ amount: 100_000, dueDate: '2026-10-16' })]);
+    // after the reversal only the second collection counts
+    expect((await get('/api/brief?date=2026-10-25')).json().installments.overdue).toEqual([expect.objectContaining({ amount: 200_000, dueDate: '2026-09-15' })]);
+  });
+
   it('refuses a bad date and keeps the owner’s number', async () => {
     expect((await get('/api/brief?date=2026-13-40')).statusCode).toBe(400);
     expect((await put('/api/brief/settings', { ownerPhone: '<script>' })).statusCode).toBe(400);

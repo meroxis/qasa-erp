@@ -89,11 +89,27 @@ export function checkBranchRequest(db: Db, actor: Actor | null, method: string, 
       for (const line of list as { accountCode?: unknown }[]) if (isCash(line?.accountCode) && !scope.accounts.has(line.accountCode)) throw forbidden();
     }
   }
+  // a warehouse asked for in the query: a count sheet, a list narrowed to one warehouse
+  const query = (req.query && typeof req.query === 'object' ? req.query : {}) as Record<string, unknown>;
+  if (typeof query.warehouseId === 'string' && query.warehouseId && !scope.warehouses.has(query.warehouseId)) throw forbidden();
   const id = (req.params as { id?: unknown } | undefined)?.id;
   if (typeof id !== 'string') return;
+  /** A document of one warehouse: refused when that warehouse is outside the user's branches (none: no branch). */
+  const ofWarehouse = (sql: string) => {
+    const row = db.prepare(sql).get(id) as { warehouse_id: string | null } | undefined;
+    if (row?.warehouse_id && !scope.warehouses.has(row.warehouse_id)) throw forbidden();
+  };
   if (path.startsWith('/api/invoices/:id')) {
-    const row = db.prepare('SELECT warehouse_id FROM invoices WHERE id = ?').get(id) as { warehouse_id: string } | undefined;
-    if (row && !scope.warehouses.has(row.warehouse_id)) throw forbidden();
+    ofWarehouse('SELECT warehouse_id FROM invoices WHERE id = ?');
+  } else if (path.startsWith('/api/adjustments/:id')) {
+    // a stock adjustment or a stock count belongs to its warehouse's branch
+    ofWarehouse('SELECT warehouse_id FROM stock_adjustments WHERE id = ?');
+  } else if (path.startsWith('/api/purchase-orders/:id')) {
+    // an order with no warehouse yet belongs to no branch
+    ofWarehouse('SELECT warehouse_id FROM purchase_orders WHERE id = ?');
+  } else if (path.startsWith('/api/pos/shifts/:id')) {
+    const row = db.prepare('SELECT warehouse_id, cash_account FROM pos_shifts WHERE id = ?').get(id) as { warehouse_id: string; cash_account: string } | undefined;
+    if (row && (!scope.warehouses.has(row.warehouse_id) || !scope.accounts.has(row.cash_account))) throw forbidden();
   } else if (path.startsWith('/api/stock-docs/:id')) {
     const row = db.prepare('SELECT warehouse_id, to_warehouse_id FROM stock_docs WHERE id = ?').get(id) as { warehouse_id: string; to_warehouse_id: string | null } | undefined;
     // the receiving branch may look at a transfer; only the sending one changes it
@@ -157,6 +173,18 @@ export function filterBranchResult(db: Db, actor: Actor | null, method: string, 
     case '/api/stock-docs':
       return (result as { warehouseId: string; toWarehouseId: string | null }[])
         .filter((d) => scope.warehouses.has(d.warehouseId) || (!!d.toWarehouseId && scope.warehouses.has(d.toWarehouseId)));
+    case '/api/adjustments':
+      return (result as { warehouseId: string }[]).filter((a) => scope.warehouses.has(a.warehouseId));
+    case '/api/pos/shifts':
+      return (result as { warehouseId: string; cashAccountCode: string }[]).filter((s) => scope.warehouses.has(s.warehouseId) && scope.accounts.has(s.cashAccountCode));
+    case '/api/purchase-orders': {
+      // the list carries no warehouse: an order with none belongs to no branch and stays listed
+      const rows = result as { id: string }[];
+      if (!rows.length) return rows;
+      const elsewhere = new Set((db.prepare(`SELECT id, warehouse_id FROM purchase_orders WHERE id IN (${rows.map(() => '?').join(', ')})`).all(...rows.map((r) => r.id)) as
+        { id: string; warehouse_id: string | null }[]).filter((o) => o.warehouse_id && !scope.warehouses.has(o.warehouse_id)).map((o) => o.id));
+      return rows.filter((r) => !elsewhere.has(r.id));
+    }
     case '/api/entries': {
       const rows = result as { id: string }[];
       const visible = visibleEntries(db, scope, rows.map((r) => r.id));

@@ -301,6 +301,21 @@ describe('bank reconciliation', () => {
     expect((await del(`/api/banking/statements/${second.id}`)).statusCode).toBe(204);
   });
 
+  it('never auto-matches a reversed entry or its reversal, as matching by hand refuses them', async () => {
+    await post('/api/plan/trial');
+    await fund('1811', 5_000_000);
+    const t = (await post('/api/banking/transfers', { date: day(-6), from: '1811', to: '1831', currency: 'IQD', amount: 400_000, description: 'Deposit slip 7701' })).json();
+    await approve(t.id);
+    const back = await post(`/api/entries/${t.id}/reverse`, { date: day(-5) });
+    expect(back.statusCode, back.body).toBe(200);
+    const lines = [{ date: day(-6), description: 'CASH DEP', reference: '7701', amount: 400_000 }, { date: day(-5), description: 'RETURNED', reference: '7701', amount: -400_000 }];
+    const st = (await post('/api/banking/statements', { accountCode: '1831', currency: 'IQD', from: day(-10), to: day(0), opening: 0, closing: 0, lines })).json();
+    const auto = (await post(`/api/banking/statements/${st.id}/auto-match`)).json();
+    expect(auto.matched).toBe(0);
+    expect(auto.statement.lines.map((l: { entry: unknown }) => l.entry)).toEqual([null, null]);
+    expect((await post(`/api/banking/statements/${st.id}/lines/1/match`, { entryId: t.id })).json().details).toEqual([{ code: 'bk_match_invalid' }]);
+  });
+
   it('leaves equal candidates for the person when nothing tells them apart', async () => {
     await post('/api/plan/trial');
     await fund('1811', 5_000_000);

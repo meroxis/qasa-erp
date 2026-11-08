@@ -137,6 +137,50 @@ describe('fixed assets', () => {
     expect((await post(`/api/assets/depreciation/${again2.id}/cancel`)).statusCode).toBe(409);
   });
 
+  it('runs months in order: an earlier month would take again what a later one caught up', async () => {
+    const a = await addAsset({ cost: 1_200_000, lifeMonths: 12, acquired: '2025-01-01' });
+    const march = await run('2025-03'); // January and February caught up
+    expect(march.total).toBe(300_000);
+    const before = { error: 'validation', details: [{ code: 'fa_period_before_last', field: 'period', period: '2025-03' }] };
+    expect((await get('/api/assets/depreciation/preview?period=2025-01')).json()).toEqual(before);
+    expect((await post('/api/assets/depreciation', { period: '2025-01', lang: 'en' })).json()).toEqual(before);
+    expect((await get(`/api/assets/${a.id}`)).json().accumulated).toBe(300_000);
+    // a month already run still says so
+    expect((await get('/api/assets/depreciation/preview?period=2025-03')).json().alreadyRun).toBe(true);
+    // the months left out before the latest run are in it: disposing next month asks for nothing more
+    const d = await post(`/api/assets/${a.id}/dispose`, { date: '2025-04-10', lang: 'en' });
+    expect(d.statusCode, d.body).toBe(200);
+    expect(d.json().disposal.gain).toBe(-900_000);
+  });
+
+  it('takes months back newest first', async () => {
+    await addAsset({ cost: 1_200_000, lifeMonths: 12, acquired: '2025-01-01' });
+    const jan = await run('2025-01');
+    const feb = await run('2025-02');
+    expect((await get(`/api/assets/depreciation/${jan.id}`)).json().actions).toEqual([]);
+    expect((await post(`/api/assets/depreciation/${jan.id}/cancel`)).json()).toMatchObject({ error: 'fa_later_months_run', details: { period: '2025-02' } });
+    expect((await post(`/api/assets/depreciation/${feb.id}/cancel`)).statusCode).toBe(204);
+    expect((await post(`/api/assets/depreciation/${jan.id}/cancel`)).statusCode).toBe(204);
+    expect((await run('2025-01')).total).toBe(100_000);
+  });
+
+  it('keeps the category picked: computers share account 116 with furniture', async () => {
+    const laptop = await addAsset({ name: 'Laptops', category: 'computers', assetAccount: '116', cost: 4_800_000, lifeMonths: 48 });
+    const desks = await addAsset({ name: 'Office desks', assetAccount: '116', cost: 1_200_000, lifeMonths: 120 });
+    expect(laptop.category).toBe('computers');
+    expect(desks.category).toBe('furniture'); // none picked: the account's
+    expect((await get('/api/assets')).json().map((x: { category: string }) => x.category)).toEqual(['computers', 'furniture']);
+    expect((await get('/api/assets/depreciation/preview?period=2025-01')).json().lines.map((l: { category: string }) => l.category)).toEqual(['computers', 'furniture']);
+    const r = await run('2025-01');
+    expect(r.lines.map((l: { category: string }) => l.category)).toEqual(['computers', 'furniture']);
+    const descriptions = (await entry(r.entry.id)).lines.map((l: { description: string; debit: number }) => [l.description, l.debit]);
+    expect(descriptions).toEqual(expect.arrayContaining([['Depreciation for 2025-01 · Computers', 100_000], ['Depreciation for 2025-01 · Furniture & office equipment', 10_000]]));
+    // a new account without a category: the category follows the account again
+    const other = await addAsset({ name: 'Scanner', category: 'computers', assetAccount: '116', cost: 480_000, lifeMonths: 48, acquired: '2025-02-20' });
+    expect((await put(`/api/assets/${other.id}`, { assetAccount: '115' })).json().category).toBe('tools');
+    expect((await put(`/api/assets/${other.id}`, { category: 'computers', assetAccount: '116' })).json().category).toBe('computers');
+  });
+
   it('counts opening accumulated depreciation and stops at cost less salvage', async () => {
     // 1,200,000 over 12 months with 200,000 salvage → 1,000,000 depreciable; 950,000 taken before Qasa
     const a = await addAsset({ cost: 1_200_000, salvage: 200_000, lifeMonths: 12, openingAccum: 950_000 });

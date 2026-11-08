@@ -63,6 +63,8 @@ export interface AssetDefaults {
 
 export interface AssetInput {
   name: string;
+  /** computers and furniture share account 116: the category tells them apart */
+  category?: AssetCategory;
   assetAccount: string;
   accumAccount: string;
   expenseAccount: string;

@@ -1019,6 +1019,7 @@ export const MYSQL_TABLES: readonly MysqlObject[] = [
       id ${ID} NOT NULL PRIMARY KEY,
       code ${ID} NOT NULL UNIQUE,
       name TEXT NOT NULL,
+      category ${WORD} CHECK (category IN ('land', 'buildings', 'machinery', 'vehicles', 'tools', 'furniture', 'computers')),
       asset_account ${ID} NOT NULL,
       accum_account ${ID} NOT NULL,
       expense_account ${ID} NOT NULL,

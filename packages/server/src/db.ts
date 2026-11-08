@@ -1161,6 +1161,8 @@ const V7 =
     id TEXT PRIMARY KEY,
     code TEXT NOT NULL UNIQUE,
     name TEXT NOT NULL,
+    -- the category picked on the register (furniture and computers share account 116); NULL: taken from the account
+    category TEXT CHECK (category IN ('land', 'buildings', 'machinery', 'vehicles', 'tools', 'furniture', 'computers')),
     -- the asset account (11…), its accumulated depreciation account and the depreciation expense account
     asset_account TEXT NOT NULL REFERENCES accounts(code),
     accum_account TEXT NOT NULL REFERENCES accounts(code),

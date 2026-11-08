@@ -26,7 +26,9 @@ import type { ApiExtension, ApiRequest } from './routes.ts';
  *
  * A month's run is one draft journal entry (it follows the preparer, checker and approver): Dr the depreciation
  * expense accounts, Cr the accumulated depreciation accounts, a line per account and asset category. One run per
- * month; a run whose entry is still a draft can be cancelled, which frees the month.
+ * month, in order: a month before the latest one run is refused (the later month already caught up the months left
+ * out before it). A run whose entry is still a draft can be cancelled, which frees the month; months are taken back
+ * newest first.
  *
  * Disposal (sale or scrapping) makes a draft entry too: Dr accumulated depreciation, Dr the account the proceeds went
  * to (if any), Cr the asset account at cost, and the difference to gain (49 other revenue) or loss (39 other
@@ -137,7 +139,7 @@ export interface AssetsSummary {
 }
 
 interface AssetRow {
-  id: string; code: string; name: string; asset_account: string; accum_account: string; expense_account: string; acquired: string;
+  id: string; code: string; name: string; category: AssetCategory | null; asset_account: string; accum_account: string; expense_account: string; acquired: string;
   cost: number; salvage: number; life_months: number; method: string; opening_accum: number; location: string | null;
   status: 'active' | 'disposed'; disposed_on: string | null; notes: string | null; created_at: string; updated_at: string;
 }
@@ -198,6 +200,12 @@ function categoryOf(assetAccount: string): AssetCategory | null {
   return null;
 }
 
+/**
+ * An asset's category: the one picked on the register (computers and furniture share account 116, so the account
+ * alone can't tell them apart), else the one its account belongs to.
+ */
+const categoryFor = (r: { category: AssetCategory | null; asset_account: string }): AssetCategory | null => r.category ?? categoryOf(r.asset_account);
+
 function accountErrors(db: Db, input: { assetAccount: string; accumAccount: string; expenseAccount: string }): { code: string; field: string; accountCode: string }[] {
   const accounts = accountMap(db);
   const errors: { code: string; field: string; accountCode: string }[] = [];
@@ -219,6 +227,11 @@ function accumulatedRuns(db: Db, assetId?: string): Map<string, number> {
                            JOIN depreciation_runs r ON r.id = l.run_id WHERE r.status <> 'cancelled' ${assetId ? 'AND l.asset_id = ?' : ''}
                            GROUP BY l.asset_id`).all(...(assetId ? [assetId] : [])) as { id: string; total: number }[];
   return new Map(rows.map((r) => [r.id, Number(r.total)]));
+}
+
+/** The latest month run (YYYY-MM), or null before the first run. */
+function lastRunPeriod(db: Db): string | null {
+  return (db.prepare("SELECT MAX(period) AS p FROM depreciation_runs WHERE status <> 'cancelled'").get() as { p: string | null }).p;
 }
 
 function hasRuns(db: Db, assetId: string): boolean {
@@ -265,7 +278,7 @@ function view(db: Db, r: AssetRow, accounts: ReturnType<typeof accountMap>, runs
     actions.push('undispose');
   }
   return {
-    id: r.id, code: r.code, name: r.name, category: categoryOf(r.asset_account),
+    id: r.id, code: r.code, name: r.name, category: categoryFor(r),
     assetAccount: ref(accounts, r.asset_account), accumAccount: ref(accounts, r.accum_account), expenseAccount: ref(accounts, r.expense_account),
     acquired: r.acquired, cost: Number(r.cost), salvage: Number(r.salvage), lifeMonths: Number(r.life_months), openingAccum: Number(r.opening_accum),
     accumulated, bookValue: Number(r.cost) - accumulated, monthly: depreciated ? Math.round(depreciable / Number(r.life_months)) : 0, depreciated,
@@ -317,7 +330,7 @@ function scheduleOf(db: Db, a: AssetView): ScheduleRow[] {
   const depreciable = a.cost - a.salvage;
   const lastRun = runRows.length ? runRows[runRows.length - 1]!.period : null;
   // planned months: from the next month the company will run (after its last run, or this month) and after this asset's last run
-  const globalLast = (db.prepare("SELECT MAX(period) AS p FROM depreciation_runs WHERE status <> 'cancelled'").get() as { p: string | null }).p;
+  const globalLast = lastRunPeriod(db);
   let index = Math.max(monthIndex(a.startMonth), globalLast ? monthIndex(globalLast) + 1 : monthIndex(todayIso().slice(0, 7)), lastRun ? monthIndex(lastRun) + 1 : 0);
   for (let i = 0; i < 600 && accumulated < depreciable; i++, index++) {
     const period = periodOf(index);
@@ -333,7 +346,7 @@ function scheduleOf(db: Db, a: AssetView): ScheduleRow[] {
 
 export function summary(db: Db): AssetsSummary {
   const assets = listAssets(db);
-  const lastRun = (db.prepare("SELECT MAX(period) AS p FROM depreciation_runs WHERE status <> 'cancelled'").get() as { p: string | null }).p;
+  const lastRun = lastRunPeriod(db);
   return {
     count: assets.length,
     active: assets.filter((a) => a.status === 'active').length,
@@ -378,9 +391,9 @@ export function createAsset(db: Db, input: AssetInput, actor: Actor): AssetDetai
   transaction(db, () => {
     const code = `FA-${String(nextSequence(db, 'fixed_asset')).padStart(4, '0')}`;
     const now = new Date().toISOString();
-    db.prepare(`INSERT INTO fixed_assets (id, code, name, asset_account, accum_account, expense_account, acquired, cost, salvage, life_months, method,
-                opening_accum, location, status, notes, created_by, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'straight_line', ?, ?, 'active', ?, ?, ?, ?)`)
-      .run(id, code, input.name.trim(), input.assetAccount, input.accumAccount, input.expenseAccount, input.acquired, input.cost, input.salvage ?? 0,
+    db.prepare(`INSERT INTO fixed_assets (id, code, name, category, asset_account, accum_account, expense_account, acquired, cost, salvage, life_months, method,
+                opening_accum, location, status, notes, created_by, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'straight_line', ?, ?, 'active', ?, ?, ?, ?)`)
+      .run(id, code, input.name.trim(), input.category ?? null, input.assetAccount, input.accumAccount, input.expenseAccount, input.acquired, input.cost, input.salvage ?? 0,
         input.lifeMonths, input.openingAccum ?? 0, trimmed(input.location), trimmed(input.notes), actor.name, now, now);
     audit(db, actor.name, 'create', 'fixed_asset', id, { code, cost: input.cost });
   });
@@ -392,11 +405,13 @@ export function updateAsset(db: Db, id: string, input: Partial<AssetInput>, acto
   const r = row(db, id);
   const current = getAsset(db, id);
   if (!current.actions.includes('edit')) throw conflict('action_not_allowed', { action: 'edit' });
-  const figures = (['assetAccount', 'accumAccount', 'expenseAccount', 'acquired', 'cost', 'salvage', 'lifeMonths', 'openingAccum'] as const)
+  const figures = (['category', 'assetAccount', 'accumAccount', 'expenseAccount', 'acquired', 'cost', 'salvage', 'lifeMonths', 'openingAccum'] as const)
     .some((k) => input[k] !== undefined);
   if (figures && !current.actions.includes('editAll')) throw conflict('fa_has_depreciation');
+  // a new asset account without a category: the category follows the account again
+  const category = input.category !== undefined ? input.category : input.assetAccount !== undefined && input.assetAccount !== r.asset_account ? null : r.category;
   const merged: AssetInput = {
-    name: input.name ?? r.name, assetAccount: input.assetAccount ?? r.asset_account, accumAccount: input.accumAccount ?? r.accum_account,
+    name: input.name ?? r.name, category: category ?? undefined, assetAccount: input.assetAccount ?? r.asset_account, accumAccount: input.accumAccount ?? r.accum_account,
     expenseAccount: input.expenseAccount ?? r.expense_account, acquired: input.acquired ?? r.acquired, cost: input.cost ?? Number(r.cost),
     salvage: input.salvage ?? Number(r.salvage), lifeMonths: input.lifeMonths ?? Number(r.life_months), openingAccum: input.openingAccum ?? Number(r.opening_accum),
     location: input.location ?? r.location ?? undefined, notes: input.notes ?? r.notes ?? undefined
@@ -404,9 +419,9 @@ export function updateAsset(db: Db, id: string, input: Partial<AssetInput>, acto
   const errors = inputErrors(db, merged).filter((e) => !(e.code === 'fa_acquired_future' && merged.acquired === r.acquired));
   if (errors.length) throw invalid(errors);
   transaction(db, () => {
-    db.prepare(`UPDATE fixed_assets SET name = ?, asset_account = ?, accum_account = ?, expense_account = ?, acquired = ?, cost = ?, salvage = ?,
+    db.prepare(`UPDATE fixed_assets SET name = ?, category = ?, asset_account = ?, accum_account = ?, expense_account = ?, acquired = ?, cost = ?, salvage = ?,
                 life_months = ?, opening_accum = ?, location = ?, notes = ?, updated_at = ? WHERE id = ?`)
-      .run(merged.name.trim(), merged.assetAccount, merged.accumAccount, merged.expenseAccount, merged.acquired, merged.cost, merged.salvage ?? 0,
+      .run(merged.name.trim(), category, merged.assetAccount, merged.accumAccount, merged.expenseAccount, merged.acquired, merged.cost, merged.salvage ?? 0,
         merged.lifeMonths, merged.openingAccum ?? 0, trimmed(merged.location), trimmed(merged.notes), new Date().toISOString(), id);
     audit(db, actor.name, 'update', 'fixed_asset', id, input);
   });
@@ -442,6 +457,10 @@ const runDate = (period: string) => (lastDay(period) > todayIso() ? todayIso() :
 export function previewRun(db: Db, period: string): PreviewView {
   if (!PERIOD.test(period)) throw invalid([{ code: 'fa_period_invalid' }]);
   if (period > todayIso().slice(0, 7)) throw invalid([{ code: 'fa_period_future' }]);
+  const alreadyRun = !!db.prepare("SELECT 1 FROM depreciation_runs WHERE period = ? AND status <> 'cancelled'").get(period);
+  // months are run in order: a later month already caught up the ones left out before it, so an earlier one would take them twice
+  const last = lastRunPeriod(db);
+  if (!alreadyRun && last && period < last) throw invalid([{ code: 'fa_period_before_last', field: 'period', period: last }]);
   const runs = accumulatedRuns(db);
   const rows = db.prepare('SELECT * FROM fixed_assets ORDER BY code').all() as unknown as AssetRow[];
   const lines: RunLineView[] = [];
@@ -451,9 +470,8 @@ export function previewRun(db: Db, period: string): PreviewView {
     if (r.status === 'disposed') continue;
     const amount = monthAmount({ acquired: r.acquired, cost: Number(r.cost), salvage: Number(r.salvage), lifeMonths: Number(r.life_months),
       accumulated: Number(r.opening_accum) + (runs.get(r.id) ?? 0) }, period);
-    if (amount > 0) lines.push({ assetId: r.id, code: r.code, name: r.name, category: categoryOf(r.asset_account), amount });
+    if (amount > 0) lines.push({ assetId: r.id, code: r.code, name: r.name, category: categoryFor(r), amount });
   }
-  const alreadyRun = !!db.prepare("SELECT 1 FROM depreciation_runs WHERE period = ? AND status <> 'cancelled'").get(period);
   return { period, date: runDate(period), total: lines.reduce((s, l) => s + l.amount, 0), lines, alreadyRun };
 }
 
@@ -465,17 +483,19 @@ function runRow(db: Db, id: string): { id: string; period: string; entry_id: str
 
 export function getRun(db: Db, id: string): RunView {
   const r = runRow(db, id);
-  const lines = db.prepare(`SELECT l.asset_id, l.amount, a.code, a.name, a.asset_account FROM depreciation_lines l JOIN fixed_assets a ON a.id = l.asset_id
-                            WHERE l.run_id = ? ORDER BY a.code`).all(id) as { asset_id: string; amount: number; code: string; name: string; asset_account: string }[];
+  const lines = db.prepare(`SELECT l.asset_id, l.amount, a.code, a.name, a.category, a.asset_account FROM depreciation_lines l JOIN fixed_assets a ON a.id = l.asset_id
+                            WHERE l.run_id = ? ORDER BY a.code`).all(id) as { asset_id: string; amount: number; code: string; name: string; category: AssetCategory | null; asset_account: string }[];
   const entry = r.entry_id ? entryRef(db, r.entry_id) : null;
   // a month that took depreciation from an asset since disposed stays: the disposal was worked out with it
   const disposed = !!db.prepare(`SELECT 1 FROM depreciation_lines l JOIN fixed_assets a ON a.id = l.asset_id WHERE l.run_id = ? AND a.status = 'disposed' LIMIT 1`).get(id);
   const approvedEntry = !!r.entry_id && !!db.prepare("SELECT 1 FROM entries WHERE id = ? AND status = 'approved' AND reversed_by_id IS NULL").get(r.entry_id);
-  const actions: RunView['actions'] = disposed ? [] : !entry || entry.status === 'draft' ? ['cancel'] : approvedEntry ? ['reverse'] : [];
+  // months are taken back newest first, so that the months run stay in order (see previewRun)
+  const latest = r.period === lastRunPeriod(db);
+  const actions: RunView['actions'] = disposed || !latest ? [] : !entry || entry.status === 'draft' ? ['cancel'] : approvedEntry ? ['reverse'] : [];
   return {
     id: r.id, period: r.period, status: 'posted', entry,
     total: lines.reduce((s, l) => s + Number(l.amount), 0),
-    lines: lines.map((l) => ({ assetId: l.asset_id, code: l.code, name: l.name, category: categoryOf(l.asset_account), amount: Number(l.amount) })),
+    lines: lines.map((l) => ({ assetId: l.asset_id, code: l.code, name: l.name, category: categoryFor(l), amount: Number(l.amount) })),
     createdBy: r.created_by, createdAt: r.created_at,
     actions
   };
@@ -491,13 +511,13 @@ export function runDepreciation(db: Db, period: string, lang: Lang, actor: Actor
   const preview = previewRun(db, period);
   if (preview.alreadyRun) throw conflict('fa_period_done', { period });
   if (preview.total <= 0) throw conflict('fa_nothing_to_run', { period });
-  const assets = new Map((db.prepare('SELECT id, accum_account, expense_account, asset_account FROM fixed_assets').all() as
-    { id: string; accum_account: string; expense_account: string; asset_account: string }[]).map((a) => [a.id, a]));
+  const assets = new Map((db.prepare('SELECT id, accum_account, expense_account FROM fixed_assets').all() as
+    { id: string; accum_account: string; expense_account: string }[]).map((a) => [a.id, a]));
   const debit = new Map<string, number>();
   const credit = new Map<string, number>();
   for (const l of preview.lines) {
     const a = assets.get(l.assetId)!;
-    const cat = categoryOf(a.asset_account);
+    const cat = l.category;
     const dk = `${a.expense_account}|${cat ?? ''}`;
     const ck = `${a.accum_account}|${cat ?? ''}`;
     debit.set(dk, (debit.get(dk) ?? 0) + l.amount);
@@ -527,10 +547,17 @@ function assertNoDisposedAsset(run: RunView, db: Db): void {
   }
 }
 
+/** Months are taken back newest first: a later month was worked out with this one already in the books. */
+function assertLatest(run: RunView, db: Db): void {
+  const last = lastRunPeriod(db);
+  if (last && run.period < last) throw conflict('fa_later_months_run', { period: last });
+}
+
 /** While its entry is still a draft, a month can be cancelled: the entry and the run go, and the month is free again. */
 export function cancelRun(db: Db, id: string, actor: Actor): void {
   const run = getRun(db, id);
   assertNoDisposedAsset(run, db);
+  assertLatest(run, db);
   if (!run.actions.includes('cancel')) throw conflict('action_not_allowed', { action: 'cancel' });
   transaction(db, () => {
     db.prepare('DELETE FROM depreciation_lines WHERE run_id = ?').run(id);
@@ -547,6 +574,7 @@ export function cancelRun(db: Db, id: string, actor: Actor): void {
 export function reverseRun(db: Db, id: string, actor: Actor, date?: string): void {
   const run = getRun(db, id);
   assertNoDisposedAsset(run, db);
+  assertLatest(run, db);
   if (!run.actions.includes('reverse') || !run.entry) throw conflict('action_not_allowed', { action: 'reverse' });
   const entryId = run.entry.id;
   transaction(db, () => {
@@ -560,17 +588,15 @@ export function reverseRun(db: Db, id: string, actor: Actor, date?: string): voi
 /**
  * The first month, from the asset's start up to the month before the disposal, that the company has not run while it
  * runs depreciation in Qasa (from its first run): disposing first would leave that month's depreciation out for good.
+ * Months are run in order and a month left out is caught up by the next one run, so only the months after the latest
+ * run can still be missing.
  */
 function monthNotRun(db: Db, a: AssetDetail, disposalDate: string): string | null {
   if (!a.depreciated || a.accumulated >= a.cost - a.salvage) return null;
-  const first = (db.prepare("SELECT MIN(period) AS p FROM depreciation_runs WHERE status <> 'cancelled'").get() as { p: string | null }).p;
-  if (!first) return null;
-  const ran = new Set((db.prepare("SELECT period FROM depreciation_runs WHERE status <> 'cancelled'").all() as { period: string }[]).map((r) => r.period));
-  const end = monthIndex(disposalDate.slice(0, 7));
-  for (let i = Math.max(monthIndex(a.startMonth), monthIndex(first)); i < end; i++) {
-    if (!ran.has(periodOf(i))) return periodOf(i);
-  }
-  return null;
+  const last = lastRunPeriod(db);
+  if (!last) return null;
+  const next = Math.max(monthIndex(a.startMonth), monthIndex(last) + 1);
+  return next < monthIndex(disposalDate.slice(0, 7)) ? periodOf(next) : null;
 }
 
 // ——— disposal ———

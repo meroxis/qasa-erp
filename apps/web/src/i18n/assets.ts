@@ -135,6 +135,16 @@ export const ASSET_TEXT = {
   err_fa_period_future: ['لا يمكن احتساب شهر لم يبدأ بعد', 'A month that hasn’t started can’t be run', 'مانگێک کە دەستی پێنەکردووە حیساب ناکرێت'],
   err_fa_period_done: ['تم احتساب هذا الشهر من قبل', 'This month has already been run', 'ئەم مانگە پێشتر حیساب کراوە'],
   err_fa_nothing_to_run: ['لا يوجد اندثار لهذا الشهر', 'Nothing to depreciate for this month', 'بۆ ئەم مانگە هیچ داخورانێک نییە'],
+  err_fa_period_before_last: [
+    'احتُسب الاندثار حتى شهر {p}؛ لا يُحتسب شهر قبله. الشهر الذي تُرك يُستدرك في الشهر التالي.',
+    'Depreciation has been run up to {p}; an earlier month can’t be run. A month left out is caught up in the next month run.',
+    'داخوران تا مانگی {p} حیساب کراوە؛ مانگێکی پێشتر حیساب ناکرێت. مانگێکی بەجێماو لە مانگی داهاتوودا قەرەبوو دەکرێتەوە.'
+  ],
+  err_fa_later_months_run: [
+    'احتُسب شهر بعد هذا الشهر؛ ألغِ الأشهر اللاحقة أو اعكسها أولاً، من الأحدث.',
+    'A later month has been run; cancel or reverse the later months first, newest first.',
+    'مانگێکی دوای ئەمە حیساب کراوە؛ سەرەتا مانگە دواترەکان هەڵبوەشێنەوە یان بیانگەڕێنەوە، لە نوێترینەوە.'
+  ],
   err_fa_dispose_before_acquired: ['تاريخ الاستبعاد قبل تاريخ الاقتناء', 'The disposal date is before the acquisition date', 'بەرواری دەرکردن پێش بەرواری بەدەستهێنانە'],
   err_fa_dispose_future: ['تاريخ الاستبعاد في المستقبل', 'The disposal date is in the future', 'بەرواری دەرکردن لە داهاتوودایە'],
   err_fa_proceeds_invalid: ['المتحصلات غير صحيحة', 'The proceeds are not valid', 'داهاتەکە دروست نییە'],

@@ -14,7 +14,7 @@ it('has its own message, in Arabic, English and Kurdish, for every new error cod
   const codes = [
     'database_newer', 'company_damaged', 'company_backup_use_settings', 'company_open_it_first', 'in_use', 'item_in_use',
     'invoice_has_unit', 'unit_has_deposits', 'account_invalid', 'same_person', 'fa_months_not_run', 'fa_run_has_disposed_asset',
-    'account_invalid_gain', 'account_invalid_accountCode', 'reversal_before_entry'
+    'account_invalid_gain', 'account_invalid_accountCode', 'reversal_before_entry', 'fa_period_before_last', 'fa_later_months_run'
   ];
   const missing = codes.filter((c) => !isKey(`err_${c}`));
   expect(missing).toEqual([]);
@@ -25,6 +25,14 @@ it('has its own message, in Arabic, English and Kurdish, for every new error cod
   }
   // the undo of a cheque step and of a depreciation month have their own words too
   for (const k of ['bk_undo', 'bk_undoDraft', 'bk_undoApproved', 'fa_reverseRun', 'fa_reverseRunNote', 'fa_undisposeApproved', 'adj_countCostHelp']) expect(isKey(k), k).toBe(true);
+});
+
+it('names the month depreciation was run up to when an earlier one is picked, and sends the asset category picked', () => {
+  const error = new ApiError(400, 'validation', [{ code: 'fa_period_before_last', field: 'period', period: '2026-09' }]);
+  expect(errorMessages(error, en)[0]).toContain('2026-09');
+  // computers and furniture share account 116: the form sends the category, or the server can't tell them apart
+  const form = readFileSync(new URL('./pages/FixedAssets.tsx', import.meta.url), 'utf8');
+  expect(form).toContain('const figures = { ...(category ? { category } : {}), assetAccount');
 });
 
 it('says which adjustment account is wrong, instead of a general message', () => {
