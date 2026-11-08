@@ -24,6 +24,8 @@ export function averageCost(qtyMilli: number, value: number): number {
 export function Items() {
   const i18n = useI18n();
   const { t } = i18n;
+  // the warehouse account's statement is the company's books: no link for someone limited to branches
+  const books = useData().companyBooks !== false;
   const [tab, setTab] = useState<'items' | 'warehouses'>('items');
   const [q, setQ] = useState('');
   const [warehouseId, setWarehouseId] = useState('');
@@ -132,7 +134,7 @@ export function Items() {
                     <tr key={w.id}>
                       <td><span className="tree-code">{w.code}</span></td>
                       <td>{i18n.name(w.name)}</td>
-                      <td><a href={href(`statement/${w.accountCode}`)} className="ltr">{w.accountCode}</a></td>
+                      <td>{books ? <a href={href(`statement/${w.accountCode}`)} className="ltr">{w.accountCode}</a> : <span className="ltr">{w.accountCode}</span>}</td>
                       <td className="amount">{i18n.money(w.value, 'IQD')}</td>
                     </tr>
                   ))}

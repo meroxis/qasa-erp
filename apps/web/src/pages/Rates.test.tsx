@@ -47,3 +47,11 @@ it('reloads the settings after a rate is deleted, so new documents stop using th
   (dialog.props.onDone as () => void)();
   expect(fixture.reloadSettings).toHaveBeenCalledTimes(1);
 });
+
+it('offers no revaluation (worked out from the company books) to someone limited to branches', () => {
+  fixture.cursor = 0;
+  const nodes = flatten(Rates({ tab: 'revaluation', revaluation: false }));
+  expect(nodes.some((n) => n.type === 'button' && n.props.children === 'fx_tabRevaluation')).toBe(false);
+  expect(nodes.some((n) => typeof n.type === 'function' && n.type.name === 'Revaluation')).toBe(false);
+  expect(nodes.some((n) => typeof n.type === 'function' && n.type.name === 'Board')).toBe(true);
+});

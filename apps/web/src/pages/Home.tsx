@@ -14,7 +14,9 @@ import { NAV, toggleFavourite, visibleItems, type NavItem, type NavViewer } from
 export function Home({ viewer, user, favourites }: { viewer: NavViewer; user: string; favourites: string[] }) {
   const i18n = useI18n();
   const { t } = i18n;
-  const { accounts, settings, plan, reloadPlan } = useData();
+  const { accounts, settings, plan, reloadPlan, companyBooks } = useData();
+  // the trial balance and the final accounts are the company's books: no link for someone limited to branches
+  const books = companyBooks !== false;
   // this month's invoice count feeds the "growing" note
   useEffect(() => { void reloadPlan(); }, [reloadPlan]);
   const { data: entries, error } = useLoad(() => api.entries(), []);
@@ -33,7 +35,7 @@ export function Home({ viewer, user, favourites }: { viewer: NavViewer; user: st
   const tiles = (d ? [
     { label: t('salesThisMonth'), value: i18n.money(d.salesMonth, 'IQD'), link: 'sales', icon: 'trend', sub: trendText(i18n, d.salesMonth, d.salesLastMonth) },
     { label: t('cashAndBanks'), value: moneyBoth(i18n, d.cash.total), icon: 'wallet', link: 'brief' },
-    ...(d.profitMonth ? [{ label: t('br_profitMonth'), value: i18n.money(d.profitMonth.profit, 'IQD'), icon: 'chart', link: 'final-accounts', tone: d.profitMonth.profit < 0 ? 'bad' : 'ok' }] : []),
+    ...(d.profitMonth ? [{ label: t('br_profitMonth'), value: i18n.money(d.profitMonth.profit, 'IQD'), icon: 'chart', ...(books ? { link: 'final-accounts' } : {}), tone: d.profitMonth.profit < 0 ? 'bad' : 'ok' }] : []),
     { label: t('receivables'), value: i18n.money(d.receivables, 'IQD'), link: 'reports-more/aging', icon: 'contact' },
     { label: t('payables'), value: i18n.money(d.payables, 'IQD'), link: 'reports-more/supplier-aging', icon: 'truck' }
   ] : [
@@ -75,7 +77,7 @@ export function Home({ viewer, user, favourites }: { viewer: NavViewer; user: st
         <a className="btn" href={href('new/payment')}><Icon name="plus" size={16} />{t('newPayment')}</a>
         <a className="btn" href={href('new/journal')}><Icon name="plus" size={16} />{t('newJournal')}</a>
         <a className="btn" href={href('expenses')}><Icon name="wallet" size={16} />{t('br_newExpense')}</a>
-        <a className="btn" style={{ marginInlineStart: 'auto' }} href={href('trial-balance')}><Icon name="chart" size={16} />{t('trialBalance')}</a>
+        {books && <a className="btn" style={{ marginInlineStart: 'auto' }} href={href('trial-balance')}><Icon name="chart" size={16} />{t('trialBalance')}</a>}
       </nav>
       <ChequesHomeNote counts={d?.cheques} />
       {d && (

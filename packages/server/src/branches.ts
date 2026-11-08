@@ -42,11 +42,24 @@ function requirePlan(db: Db): void {
 
 const anyBranches = (db: Db) => !!db.prepare('SELECT 1 FROM branches LIMIT 1').get();
 
-/** The branches a user is limited to, or null when they work in every branch (admins always do). */
+/**
+ * Whether a user is limited to some branches (admins never are). An assignment to a branch that was made inactive still
+ * limits the user: it gives them nothing (scopeOf), and never the whole company.
+ */
+export function isBranchLimited(db: Db, actor: Actor | null | undefined): boolean {
+  if (!actor || !actor.id || actor.permissions.includes('admin')) return false;
+  return !!db.prepare('SELECT 1 FROM user_branches WHERE user_id = ? LIMIT 1').get(actor.id);
+}
+
+/**
+ * The branches a user is limited to, or null when they work in every branch (admins always do). Only active branches
+ * count: deactivating a branch takes its warehouses and safes away from the users assigned to it, and a user whose
+ * branches are all inactive gets an empty scope (no warehouse, no safe), never the whole company.
+ */
 export function scopeOf(db: Db, actor: Actor | null | undefined, only?: string | null): BranchScope | null {
-  if (!actor || !actor.id || actor.permissions.includes('admin')) return only ? scopeOfBranches(db, [only]) : null;
-  const limited = (db.prepare('SELECT branch_id FROM user_branches WHERE user_id = ?').all(actor.id) as { branch_id: string }[]).map((r) => r.branch_id);
-  if (!limited.length) return only ? scopeOfBranches(db, [only]) : null;
+  if (!actor || !actor.id || !isBranchLimited(db, actor)) return only ? scopeOfBranches(db, [only]) : null;
+  const limited = (db.prepare(`SELECT ub.branch_id FROM user_branches ub JOIN branches b ON b.id = ub.branch_id
+                               WHERE ub.user_id = ? AND b.active = 1`).all(actor.id) as { branch_id: string }[]).map((r) => r.branch_id);
   if (only) {
     if (!limited.includes(only)) throw new AppError(403, 'branch_forbidden');
     return scopeOfBranches(db, [only]);
@@ -55,6 +68,7 @@ export function scopeOf(db: Db, actor: Actor | null | undefined, only?: string |
 }
 
 function scopeOfBranches(db: Db, ids: string[]): BranchScope {
+  if (!ids.length) return { branchIds: [], warehouses: new Set(), accounts: new Set() };
   const marks = ids.map(() => '?').join(', ');
   const warehouses = (db.prepare(`SELECT warehouse_id AS id FROM branch_warehouses WHERE branch_id IN (${marks})`).all(...ids) as { id: string }[]).map((r) => r.id);
   const accounts = (db.prepare(`SELECT account_code AS code FROM branch_accounts WHERE branch_id IN (${marks})`).all(...ids) as { code: string }[]).map((r) => r.code);
@@ -79,16 +93,62 @@ export function scopeLists(scope: BranchScope | null): { warehouses: string[]; a
   return scope ? { warehouses: [...scope.warehouses], accounts: [...scope.accounts] } : null;
 }
 
+/** The warehouses and safes of the branches a user is limited to, for report queries (null: not limited). */
+export function userBranchLists(db: Db, actor: Actor | null | undefined): { warehouses: string[]; accounts: string[] } | null {
+  return scopeLists(scopeOf(db, actor));
+}
+
+const sqlList = (list: readonly string[]) => (list.length ? list.map(() => '?').join(', ') : 'NULL');
+
+/** SQL: entry `a` was made on one of the safes or banks, by a document of one of the warehouses, or for a cheque on a bank. */
+function ownEntry(a: string, wh: readonly string[], acc: readonly string[]): [string, string[]] {
+  return [`(${a}.cash_account IN (${sqlList(acc)})
+      OR EXISTS (SELECT 1 FROM invoices bi WHERE (bi.entry_id = ${a}.id OR bi.cancel_entry_id = ${a}.id) AND bi.warehouse_id IN (${sqlList(wh)}))
+      OR EXISTS (SELECT 1 FROM stock_docs bd WHERE (bd.entry_id = ${a}.id OR bd.cancel_entry_id = ${a}.id)
+                 AND (bd.warehouse_id IN (${sqlList(wh)}) OR bd.to_warehouse_id IN (${sqlList(wh)})))
+      OR EXISTS (SELECT 1 FROM stock_adjustments ba WHERE ba.entry_id = ${a}.id AND ba.warehouse_id IN (${sqlList(wh)}))
+      OR EXISTS (SELECT 1 FROM cheques bc WHERE (bc.entry_id = ${a}.id OR bc.clear_entry_id = ${a}.id OR bc.bounce_entry_id = ${a}.id)
+                 AND bc.bank_account IN (${sqlList(acc)})))`, [...acc, ...wh, ...wh, ...wh, ...wh, ...acc]];
+}
+
+/**
+ * `AND <entry belongs to the branch>` for the entries aliased `alias`, with its parameters (nothing for the whole
+ * company). An entry belongs to a branch when it is on one of its safes or banks, comes from an invoice, a stock
+ * document or a stock adjustment of one of its warehouses (or cancels one), is for a cheque on one of its banks, or
+ * reverses such an entry. Plain journals and cheques still in hand belong to no branch. The same rule serves the
+ * aging report, the Daily Brief and customer and supplier statements (SQLite, MySQL and MariaDB alike).
+ */
+export function entryInBranchSql(alias: string, branch: { warehouses: readonly string[]; accounts: readonly string[] } | null): [string, string[]] {
+  if (!branch) return ['', []];
+  const [cond, params] = branchEntry(alias, branch.warehouses, branch.accounts);
+  return [` AND ${cond}`, params];
+}
+
+function branchEntry(alias: string, wh: readonly string[], acc: readonly string[]): [string, string[]] {
+  const [mine, mp] = ownEntry(alias, wh, acc);
+  const [reversed, rp] = ownEntry('br', wh, acc);
+  return [`(${mine} OR EXISTS (SELECT 1 FROM entries br WHERE br.id = ${alias}.reverses_id AND ${reversed}))`, [...mp, ...rp]];
+}
+
 // ——— keeping limited users inside their branches (called by the router for every request) ———
 
 const isCash = (code: unknown): code is string => typeof code === 'string' && code.startsWith('18');
 const forbidden = () => new AppError(403, 'branch_forbidden');
+
+/**
+ * The company's own books: reports computed from every posted line (the trial balance, final accounts, account
+ * statements and the general ledger, the year-end closing, the currency revaluation) and the fixed assets register.
+ * The books have no branch, so a user limited to branches gets none of them (admins are never limited).
+ */
+export const COMPANY_BOOKS: readonly string[] = ['/api/reports/', '/api/year-end', '/api/fx/revaluation', '/api/assets'];
+export const isCompanyBooks = (path: string): boolean => COMPANY_BOOKS.some((p) => path === p || path.startsWith(p.endsWith('/') ? p : p + '/'));
 
 /** Refuses a request that touches a warehouse or safe outside the user's branches. */
 export function checkBranchRequest(db: Db, actor: Actor | null, method: string, path: string, req: ApiRequest): void {
   if (!actor || actor.permissions.includes('admin') || !anyBranches(db)) return;
   const scope = scopeOf(db, actor);
   if (!scope) return;
+  if (isCompanyBooks(path)) throw forbidden();
   const body = (req.body && typeof req.body === 'object' ? req.body : {}) as Record<string, unknown>;
   if (method !== 'GET') {
     // a document's own warehouse and safe (the destination of a transfer may be any branch)
@@ -140,21 +200,21 @@ export function checkBranchRequest(db: Db, actor: Actor | null, method: string, 
   }
 }
 
-/** Entries a scope may see: on one of its safes, made by one of its invoices or stock documents, or plain journals. */
+/**
+ * Entries a scope may see: those of its branches (entryInBranchSql), and plain journals (no safe of their own, not made
+ * by an invoice, a stock document or a stock adjustment) none of whose lines is on a safe or bank outside the scope. A
+ * journal an admin wrote on another branch's (or the head office's) safe is that branch's business, not theirs.
+ */
 function visibleEntries(db: Db, scope: BranchScope, ids: string[]): Set<string> {
   if (!ids.length) return new Set();
-  const wh = [...scope.warehouses];
   const acc = [...scope.accounts];
-  const list = (n: number) => (n ? Array(n).fill('?').join(', ') : 'NULL');
-  const linkedInvoice = 'EXISTS (SELECT 1 FROM invoices i WHERE i.entry_id = e.id OR i.cancel_entry_id = e.id)';
-  const linkedDoc = 'EXISTS (SELECT 1 FROM stock_docs d WHERE d.entry_id = e.id OR d.cancel_entry_id = e.id)';
-  const rows = db.prepare(`SELECT e.id FROM entries e WHERE e.id IN (${list(ids.length)}) AND (
-      e.cash_account IN (${list(acc.length)})
-      OR EXISTS (SELECT 1 FROM invoices i WHERE (i.entry_id = e.id OR i.cancel_entry_id = e.id) AND i.warehouse_id IN (${list(wh.length)}))
-      OR EXISTS (SELECT 1 FROM stock_docs d WHERE (d.entry_id = e.id OR d.cancel_entry_id = e.id)
-                 AND (d.warehouse_id IN (${list(wh.length)}) OR d.to_warehouse_id IN (${list(wh.length)})))
-      OR (e.cash_account IS NULL AND NOT ${linkedInvoice} AND NOT ${linkedDoc}))`)
-    .all(...ids, ...acc, ...wh, ...wh, ...wh) as { id: string }[];
+  const [own, ownParams] = branchEntry('e', [...scope.warehouses], acc);
+  const linked = ['invoices', 'stock_docs'].map((t) => `EXISTS (SELECT 1 FROM ${t} x WHERE x.entry_id = e.id OR x.cancel_entry_id = e.id)`)
+    .concat('EXISTS (SELECT 1 FROM stock_adjustments x WHERE x.entry_id = e.id)');
+  const plain = `(e.cash_account IS NULL AND ${linked.map((l) => `NOT ${l}`).join(' AND ')}
+      AND NOT EXISTS (SELECT 1 FROM entry_lines jl WHERE jl.entry_id = e.id AND jl.account_code LIKE '18%'${acc.length ? ` AND jl.account_code NOT IN (${sqlList(acc)})` : ''}))`;
+  const rows = db.prepare(`SELECT e.id FROM entries e WHERE e.id IN (${sqlList(ids)}) AND (${own} OR ${plain})`)
+    .all(...ids, ...ownParams, ...acc) as { id: string }[];
   return new Set(rows.map((r) => r.id));
 }
 

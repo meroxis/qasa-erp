@@ -124,21 +124,52 @@ function startContext(): DatabaseStartContext {
 
 const stampNow = () => new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-');
 
-/** Moves a company file (with SQLite's -wal and -shm files) to another name. */
-function moveCompanyFile(from: string, to: string): void {
-  for (const suffix of ['', '-wal', '-shm']) {
-    if (existsSync(from + suffix)) renameSync(from + suffix, to + suffix);
+/** Renames a file (renameSync; tests pass one that fails, as a -wal file locked by another program does). */
+export type Rename = (from: string, to: string) => void;
+const COMPANY_FILE_PARTS = ['', '-wal', '-shm'] as const;
+
+/**
+ * Moves a company file (with SQLite's -wal and -shm files) to another name, all or nothing: when one of them can't
+ * be moved (a -wal file locked by another program), the ones already moved are moved back, last first, before the
+ * error is thrown. A file that can't even be moved back stays under the new name, never deleted.
+ */
+function moveCompanyFile(from: string, to: string, rename: Rename = renameSync): void {
+  const moved: string[] = [];
+  try {
+    for (const suffix of COMPANY_FILE_PARTS) {
+      if (!existsSync(from + suffix)) continue;
+      rename(from + suffix, to + suffix);
+      moved.push(suffix);
+    }
+  } catch (error) {
+    for (const suffix of moved.reverse()) {
+      try { rename(to + suffix, from + suffix); } catch { /* kept under the new name; the caller looks at what is where */ }
+    }
+    throw error;
   }
 }
+
+/**
+ * A restore that failed and could not put the company file back: `keptAside` is the name it is kept under in the data
+ * folder (with its -wal and -shm), so the app says so instead of "nothing changed", and puts it back at the next start.
+ */
+export interface StrandedRestore extends Error { keptAside: string }
+export const keptAsideOf = (error: unknown): string | null =>
+  error && typeof error === 'object' && typeof (error as Partial<StrandedRestore>).keptAside === 'string' ? (error as StrandedRestore).keptAside : null;
+
+/** The note a failed restore leaves when the company file could not be put back: the next start puts it back. */
+const PUT_BACK_NOTE = 'restore-put-back.json';
+const ASIDE_NAME = /^qasa-before-restore-[\d-]{1,40}\.sqlite$/;
 
 /**
  * Puts a copy of `file` in place of the data folder's company file. The copy is made and flushed to disk under a
  * temporary name first, so a copy that fails (a USB disk pulled out, a full disk, a locked file) leaves the company
  * file exactly as it was. Only then is the company file (with its -wal and -shm) moved aside as
- * qasa-before-restore-<stamp>.sqlite (never deleted) and the copy renamed into its place; if that rename fails, the
- * company file is moved back.
+ * qasa-before-restore-<stamp>.sqlite (never deleted) and the copy renamed into its place. Moving it aside is all or
+ * nothing, and when any step fails every file moved is moved back (last first) before the error is thrown. In the
+ * rare case that a file can't be moved back either, the error carries `keptAside` (and a note for the next start).
  */
-export function swapInCompanyFile(dir: string, file: string, stamp: string): void {
+export function swapInCompanyFile(dir: string, file: string, stamp: string, rename: Rename = renameSync): void {
   const live = join(dir, 'qasa.sqlite');
   const incoming = live + '.restoring';
   rmSync(incoming, { force: true });
@@ -150,14 +181,54 @@ export function swapInCompanyFile(dir: string, file: string, stamp: string): voi
     rmSync(incoming, { force: true });
     throw error;
   }
-  const aside = join(dir, `qasa-before-restore-${stamp}.sqlite`);
-  moveCompanyFile(live, aside);
+  const name = `qasa-before-restore-${stamp}.sqlite`;
+  const aside = join(dir, name);
   try {
-    renameSync(incoming, live);
+    moveCompanyFile(live, aside, rename);
+    rename(incoming, live);
   } catch (error) {
-    if (!existsSync(live)) moveCompanyFile(aside, live);
     rmSync(incoming, { force: true });
+    // the copy is not in place: whatever of the company file is still aside goes back (moveCompanyFile already tried)
+    try { putBackParts(aside, live, rename); } catch { /* checked just below */ }
+    if (COMPANY_FILE_PARTS.some((s) => existsSync(aside + s))) {
+      // still (partly) aside: say so, and leave a note so the next start puts it back
+      try { writeFileSync(join(dir, PUT_BACK_NOTE), JSON.stringify({ aside: name })); } catch { /* the message still tells */ }
+      throw Object.assign(error instanceof Error ? error : new Error(String(error)), { keptAside: name });
+    }
     throw error;
+  }
+}
+
+/**
+ * At the start, after a restore that could not put the company file back (swapInCompanyFile): moves it back from
+ * where it was kept, before the company file is opened (so no empty company is made in its place). Returns the name
+ * it came back from, or null when there was nothing to do; throws when it still can't be moved (nothing is opened).
+ */
+export function putBackCompanyFile(dir: string, rename: Rename = renameSync): string | null {
+  const note = join(dir, PUT_BACK_NOTE);
+  if (!existsSync(note)) return null;
+  let name = '';
+  try { name = String((JSON.parse(readFileSync(note, 'utf8')) as { aside?: unknown }).aside ?? ''); } catch { /* checked below */ }
+  const live = join(dir, 'qasa.sqlite');
+  const aside = join(dir, name);
+  if (!ASIDE_NAME.test(name) || !COMPANY_FILE_PARTS.some((s) => existsSync(aside + s))) {
+    rmSync(note, { force: true });
+    return null;
+  }
+  putBackParts(aside, live, rename);
+  rmSync(note, { force: true });
+  return name;
+}
+
+/**
+ * Moves each part of a company file kept aside (the file, its -wal, its -shm) back to the company file's name, last
+ * first. A part whose place is taken is never overwritten: that is an error, and the part stays aside.
+ */
+function putBackParts(aside: string, live: string, rename: Rename): void {
+  for (const s of [...COMPANY_FILE_PARTS].reverse()) {
+    if (!existsSync(aside + s)) continue;
+    if (existsSync(live + s)) throw new Error(`${live + s} is in the way of ${aside + s}`);
+    rename(aside + s, live + s);
   }
 }
 
@@ -264,6 +335,10 @@ async function startServer(bridge: Bridge, given: ServerInit): Promise<string> {
   if (existsSync(addon)) process.env.QASA_NATIVE_LICENCE = addon;
   else delete process.env.QASA_NATIVE_LICENCE;
   mkdirSync(dataDir(), { recursive: true });
+  // a restore that could not put the company file back left it aside: back in place before anything opens (or makes)
+  // one; when it still can't be moved, the server does not start rather than open an empty company in its place
+  const putBack = putBackCompanyFile(dataDir());
+  if (putBack) log('the company file kept aside by a failed restore is back in place:', putBack);
   db = await openCompanyDatabase(bridge);
   // paid plans need an activation for this PC (online once, then a check every few weeks); official builds (with the
   // Pro module) also check every licence in the Rust module shipped beside app.asar
@@ -316,15 +391,18 @@ async function startServer(bridge: Bridge, given: ServerInit): Promise<string> {
     log('restoring the company file from', file);
     await stopServer();
     let failed: string | null = null;
+    let keptAside: string | null = null;
     try {
       swapInCompanyFile(dataDir(), file, stampNow());
     } catch (error) {
-      // the company file is as it was: no record of a restore that didn't happen, and the app still comes back
+      // no record of a restore that didn't happen, and the app still comes back
       failed = (error as NodeJS.ErrnoException).code ?? (error instanceof Error ? error.message : String(error));
-      log('the restore did not happen; the company file is unchanged:', error);
+      keptAside = keptAsideOf(error);
+      if (keptAside) log('the restore did not happen, and the company file could not be put back; it is kept as', keptAside, 'and goes back at the next start:', error);
+      else log('the restore did not happen; the company file is unchanged:', error);
       rmSync(join(companyDir(), 'restore-note.json'), { force: true });
     }
-    await bridge.call('relaunch', [failed ? { restoreFailed: failed.slice(0, 200) } : {}], { timeoutMs: 0 });
+    await bridge.call('relaunch', [failed ? { restoreFailed: failed.slice(0, 200), ...(keptAside ? { keptAside } : {}) } : {}], { timeoutMs: 0 });
   };
 
   // the Pro module adds its routes now: a server takes no more once it listens

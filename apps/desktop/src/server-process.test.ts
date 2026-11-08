@@ -1,10 +1,10 @@
 import { MessageChannel } from 'node:worker_threads';
-import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { basename, join } from 'node:path';
 import { afterAll, describe, expect, it } from 'vitest';
 import { Bridge, type Carrier } from './bridge.ts';
-import { serve, stopServer, swapInCompanyFile } from './server-process.ts';
+import { keptAsideOf, putBackCompanyFile, serve, stopServer, swapInCompanyFile } from './server-process.ts';
 import { openDatabase } from '@qasa/server';
 import { companyVerifyKey } from '../../../packages/server/src/verify.ts';
 import { readSetting } from '../../../packages/server/src/settings.ts';
@@ -37,6 +37,51 @@ describe('putting a backup in place of the company file', () => {
     expect(existsSync(join(d, 'qasa.sqlite-wal'))).toBe(false);
     expect(readFileSync(join(d, 'qasa-before-restore-2026-11-08-10-00-00.sqlite'), 'utf8')).toBe('the books');
     expect(readFileSync(join(d, 'qasa-before-restore-2026-11-08-10-00-00.sqlite-wal'), 'utf8')).toBe('the log');
+  });
+
+  it('moves the company file back, all of it, when its -wal file can\'t be moved aside (locked by another program)', () => {
+    const d = data();
+    writeFileSync(join(d, 'qasa.sqlite-shm'), 'the index');
+    writeFileSync(join(dir, 'copy.sqlite'), 'the backup');
+    const tried: string[] = [];
+    const lockedWal = (from: string, to: string) => {
+      tried.push(`${basename(from)} > ${basename(to)}`);
+      if (from.endsWith('qasa.sqlite-wal')) throw Object.assign(new Error('EBUSY: resource busy or locked'), { code: 'EBUSY' });
+      renameSync(from, to);
+    };
+    expect(() => swapInCompanyFile(d, join(dir, 'copy.sqlite'), '2026-11-08-10-00-00', lockedWal)).toThrow(/EBUSY/);
+    // the company file moved aside first, then back once its -wal could not follow; the copy never went in
+    expect(tried).toEqual(['qasa.sqlite > qasa-before-restore-2026-11-08-10-00-00.sqlite', 'qasa.sqlite-wal > qasa-before-restore-2026-11-08-10-00-00.sqlite-wal', 'qasa-before-restore-2026-11-08-10-00-00.sqlite > qasa.sqlite']);
+    expect(readFileSync(join(d, 'qasa.sqlite'), 'utf8')).toBe('the books');
+    expect(readFileSync(join(d, 'qasa.sqlite-wal'), 'utf8')).toBe('the log');
+    expect(readFileSync(join(d, 'qasa.sqlite-shm'), 'utf8')).toBe('the index');
+    expect(readdirSync(d).sort()).toEqual(['qasa.sqlite', 'qasa.sqlite-shm', 'qasa.sqlite-wal']);
+  });
+
+  it('when the copy can\'t go in and the company file can\'t come back either, says where it is kept and puts it back at the next start', () => {
+    const d = data();
+    writeFileSync(join(dir, 'copy.sqlite'), 'the backup');
+    // the copy can't be renamed into place, and the company file then can't be moved back (still locked)
+    let stuck = true;
+    const flaky = (from: string, to: string) => {
+      if (from.endsWith('.restoring') || (stuck && from.includes('qasa-before-restore-'))) throw Object.assign(new Error('EPERM: operation not permitted'), { code: 'EPERM' });
+      renameSync(from, to);
+    };
+    let thrown: unknown = null;
+    try { swapInCompanyFile(d, join(dir, 'copy.sqlite'), '2026-11-08-10-00-00', flaky); } catch (error) { thrown = error; }
+    expect(keptAsideOf(thrown)).toBe('qasa-before-restore-2026-11-08-10-00-00.sqlite');
+    expect(existsSync(join(d, 'qasa.sqlite'))).toBe(false);
+    expect(readFileSync(join(d, 'qasa-before-restore-2026-11-08-10-00-00.sqlite'), 'utf8')).toBe('the books');
+    expect(existsSync(join(d, 'qasa.sqlite.restoring'))).toBe(false);
+    // the next start: still locked, nothing is opened in its place; once free, it goes back whole
+    expect(() => putBackCompanyFile(d, flaky)).toThrow(/EPERM/);
+    expect(existsSync(join(d, 'qasa.sqlite'))).toBe(false);
+    stuck = false;
+    expect(putBackCompanyFile(d, flaky)).toBe('qasa-before-restore-2026-11-08-10-00-00.sqlite');
+    expect(readFileSync(join(d, 'qasa.sqlite'), 'utf8')).toBe('the books');
+    expect(readFileSync(join(d, 'qasa.sqlite-wal'), 'utf8')).toBe('the log');
+    expect(readdirSync(d).sort()).toEqual(['qasa.sqlite', 'qasa.sqlite-wal']);
+    expect(putBackCompanyFile(d)).toBeNull();
   });
 
   it('leaves the company file exactly as it was when the copy fails (a USB disk pulled out)', () => {

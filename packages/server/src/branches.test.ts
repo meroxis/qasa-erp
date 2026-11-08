@@ -286,6 +286,156 @@ describe('branches', () => {
   });
 });
 
+describe('the company books and other branches stay out of a limited user\'s reach', () => {
+  /** Erbil sells 100,000 to Mer (raz), the head office another 100,000 (owner); each safe takes 50,000 of it. */
+  async function twoBranchesOfSales() {
+    const ctx = await erbilBranch();
+    const { raz, owner } = ctx;
+    for (const [w, h] of [[erbil, raz], [hq, owner]] as const) {
+      const inv = (await post('/api/invoices', sale(w), h)).json();
+      expect((await post(`/api/invoices/${inv.id}/post`, {}, owner)).statusCode).toBe(200);
+    }
+    for (const [safe, h] of [['1812', raz], ['1811', owner]] as const) {
+      const v = (await post('/api/vouchers', receipt(safe), h)).json();
+      expect((await post(`/api/entries/${v.id}/check`, {}, owner)).statusCode).toBe(200);
+      expect((await post(`/api/entries/${v.id}/approve`, {}, owner)).statusCode).toBe(200);
+    }
+    return ctx;
+  }
+
+  it('refuses the company-wide accounting reports to a limited user; an admin still reads them', async () => {
+    const { raz, owner } = await twoBranchesOfSales();
+    const books = [
+      '/api/reports/trial-balance?to=2026-10-31', '/api/reports/final-accounts?from=2026-01-01&to=2026-12-31',
+      '/api/reports/statement?account=1812', '/api/reports/statement?account=1811', '/api/year-end', '/api/fx/revaluation?date=2026-10-31',
+      '/api/assets', '/api/assets/summary'
+    ];
+    for (const url of books) {
+      expect((await get(url, raz)).json(), url).toMatchObject({ error: 'branch_forbidden' });
+      expect((await get(url, owner)).statusCode, url).toBe(200);
+    }
+    // the app hides those pages for them
+    expect((await get('/api/auth/me', raz)).json().user.branchLimited).toBe(true);
+    expect((await get('/api/auth/me', owner)).json().user.branchLimited).toBe(false);
+  });
+
+  it('a customer statement and balance show only the branch\'s own entries, as the aging does', async () => {
+    const { raz, owner } = await twoBranchesOfSales();
+    const mine = (await get(`/api/parties/${customerId}/statement`, raz)).json();
+    expect(mine).toMatchObject({ totalDebit: 100_000, totalCredit: 50_000, closing: 50_000, party: { balance: 50_000 } });
+    expect(mine.lines).toHaveLength(2);
+    const all = (await get(`/api/parties/${customerId}/statement`, owner)).json();
+    expect(all).toMatchObject({ totalDebit: 200_000, totalCredit: 100_000, closing: 100_000 });
+    expect(all.lines).toHaveLength(4);
+    expect((await get('/api/parties?type=customer', raz)).json().find((p: { id: string }) => p.id === customerId).balance).toBe(50_000);
+    expect((await get(`/api/parties/${customerId}`, raz)).json().balance).toBe(50_000);
+    expect((await put(`/api/parties/${customerId}`, { name: 'Mer', accountCode: '1612' }, owner)).json().balance).toBe(100_000);
+    expect((await get(`/api/parties/${customerId}`, owner)).json().balance).toBe(100_000);
+    // the chart of accounts' balances (the trial balance in another form) follow the same rule
+    const balanceOf = async (h: Headers, code: string) => (await get('/api/accounts', h)).json().find((a: { code: string }) => a.code === code).balance;
+    expect(await balanceOf(raz, '1612')).toBe(50_000);
+    expect(await balanceOf(owner, '1612')).toBe(100_000);
+  });
+
+  it('an item\'s stock, value, warehouses and stock card are the branch\'s own', async () => {
+    const { raz, owner } = await erbilBranch();
+    const panel = (await post('/api/items', { code: 'PANEL', name: { ar: 'لوح', en: 'Panel', ku: 'پانێڵ' }, unit: 'piece', salePrice: 90_000, saleCurrency: 'IQD' }, owner)).json().id;
+    for (const [w, qty] of [[erbil, 2_000], [hq, 5_000]] as const) {
+      const doc = (await post('/api/stock-docs', { kind: 'opening', date: '2026-10-01', warehouseId: w, counterAccountCode: '21', lines: [{ itemId: panel, qtyMilli: qty, unitCost: 10_000 }] }, owner)).json();
+      expect((await post(`/api/stock-docs/${doc.id}/post`, {}, owner)).statusCode).toBe(200);
+    }
+    const listed = (await get('/api/items', raz)).json().find((i: { id: string }) => i.id === panel);
+    expect(listed).toMatchObject({ qtyMilli: 2_000, value: 20_000, hasMoves: true });
+    expect((await get('/api/items', owner)).json().find((i: { id: string }) => i.id === panel)).toMatchObject({ qtyMilli: 7_000, value: 70_000 });
+    const detail = (await get(`/api/items/${panel}`, raz)).json();
+    expect(detail).toMatchObject({ qtyMilli: 2_000, value: 20_000 });
+    expect(detail.stock.map((s: { warehouseId: string }) => s.warehouseId)).toEqual([erbil]);
+    expect(detail.moves.map((m: { warehouseCode: string }) => m.warehouseCode)).toEqual(['ERB']);
+    const all = (await get(`/api/items/${panel}`, owner)).json();
+    expect(all.stock).toHaveLength(2);
+    expect(all.moves).toHaveLength(2);
+    // the head office's warehouse asked for by name is refused, as before
+    expect((await get(`/api/items?warehouseId=${hq}`, raz)).json()).toMatchObject({ error: 'branch_forbidden' });
+  });
+
+  it('a manual journal on another branch\'s (or the head office\'s) safe is neither listed nor opened', async () => {
+    const { raz, owner } = await erbilBranch();
+    expect((await post('/api/accounts', { parentCode: '181', code: '1813', name: { ar: 'قاصة بغداد', en: 'Baghdad safe', ku: 'قاسەی بەغدا' } }, owner)).statusCode).toBe(201);
+    const baghdad = (await post('/api/branches', { code: 'BGD', name: 'Baghdad' }, owner)).json().id;
+    expect((await put(`/api/branches/${baghdad}/accounts`, { accounts: ['1813'] }, owner)).statusCode).toBe(200);
+    const journal = async (debit: string) => {
+      const res = await post('/api/entries', { date: '2026-10-01', description: `to ${debit}`, currency: 'IQD', rateX100: 100, lines: [{ accountCode: debit, debit: 5_000, credit: 0 }, { accountCode: '42', debit: 0, credit: 5_000 }] }, owner);
+      expect(res.statusCode, res.body).toBe(201);
+      return res.json().id as string;
+    };
+    const theirs = await journal('1813');
+    const headOffice = await journal('1811');
+    const mine = await journal('1812');
+    const plain = await journal('21');
+    const listed = (await get('/api/entries', raz)).json().map((e: { id: string }) => e.id);
+    expect(listed).toEqual(expect.arrayContaining([mine, plain]));
+    expect(listed).not.toContain(theirs);
+    expect(listed).not.toContain(headOffice);
+    expect((await get(`/api/entries/${theirs}`, raz)).json()).toMatchObject({ error: 'branch_forbidden' });
+    expect((await get(`/api/entries/${headOffice}`, raz)).statusCode).toBe(403);
+    expect((await get(`/api/entries/${mine}`, raz)).statusCode).toBe(200);
+    expect((await get(`/api/entries/${plain}`, raz)).statusCode).toBe(200);
+    expect((await get('/api/entries', owner)).json().map((e: { id: string }) => e.id)).toEqual(expect.arrayContaining([theirs, headOffice, mine, plain]));
+  });
+
+  it('expenses, cheques due, low stock and reorder suggestions count the branch\'s own only', async () => {
+    const { branchId, raz, owner } = await erbilBranch();
+    expect((await put(`/api/branches/${branchId}/accounts`, { accounts: ['1812', '1832'] }, owner)).statusCode).toBe(200);
+    for (const [safe, h, amount] of [['1812', raz, 10_000], ['1811', owner, 70_000]] as const) {
+      const v = await post('/api/vouchers', { kind: 'payment', date: '2026-10-05', cashAccountCode: safe, description: 'Fuel', currency: 'IQD', rateX100: 100, items: [{ accountCode: '39', amount }] }, h);
+      expect(v.statusCode, v.body).toBe(201);
+    }
+    expect((await get('/api/brief/expenses?month=2026-10', raz)).json().total).toBe(10_000);
+    expect((await get('/api/brief/expenses?month=2026-10', owner)).json().total).toBe(80_000);
+    // a cheque written on the head office's bank: not in the branch's summary
+    const supplierId = (await post('/api/parties', { type: 'supplier', name: 'Las Trading' }, owner)).json().id;
+    const cheque = (bankAccount: string, amount: number) => ({ direction: 'issued', number: `N${bankAccount}`, bank: 'Rafidain', partyId: supplierId, currency: 'IQD', amount, issueDate: '2026-10-01', dueDate: '2026-10-05', bankAccount });
+    expect((await post('/api/banking/cheques', cheque('1831', 9_000), owner)).statusCode).toBe(201);
+    expect((await post('/api/banking/cheques', cheque('1832', 4_000), owner)).statusCode).toBe(201);
+    expect((await get('/api/banking/cheques/summary', raz)).json()).toMatchObject({ issuedPending: { IQD: 4_000 }, issuedPendingCount: 1 });
+    expect((await get('/api/banking/cheques/summary', owner)).json()).toMatchObject({ issuedPending: { IQD: 13_000 }, issuedPendingCount: 2 });
+    // stock only in the head office: the branch has none of it to sell, so it is suggested there and not at the head office
+    const pipe = (await post('/api/items', { code: 'PIPE', name: { ar: 'أنبوب', en: 'Pipe', ku: 'بۆری' }, unit: 'piece', salePrice: 30_000, saleCurrency: 'IQD' }, owner)).json().id;
+    const doc = (await post('/api/stock-docs', { kind: 'opening', date: '2026-10-01', warehouseId: hq, counterAccountCode: '21', lines: [{ itemId: pipe, qtyMilli: 5_000, unitCost: 10_000 }] }, owner)).json();
+    expect((await post(`/api/stock-docs/${doc.id}/post`, {}, owner)).statusCode).toBe(200);
+    const sold = (await post('/api/invoices', { ...sale(hq), lines: [{ itemId: pipe, qtyMilli: 5_000, unitPrice: 30_000 }] }, owner)).json();
+    expect((await post(`/api/invoices/${sold.id}/post`, {}, owner)).statusCode).toBe(200);
+    const low = async (h: Headers) => (await get('/api/brief?date=2026-10-05', h)).json().lowStock.map((i: { itemId: string }) => i.itemId);
+    expect(await low(owner)).toContain(pipe);
+    expect(await low(raz)).not.toContain(pipe);
+    const suggested = async (h: Headers) => (await get('/api/purchase-orders/suggest', h)).json().flatMap((g: { lines: { itemId: string }[] }) => g.lines.map((l) => l.itemId));
+    expect(await suggested(owner)).toContain(pipe);
+    expect(await suggested(raz)).not.toContain(pipe);
+  });
+
+  it('deactivating a branch takes its warehouses and safes away from its users, and never opens the whole company', async () => {
+    const { branchId, raz, owner } = await erbilBranch();
+    const hqInvoice = (await post('/api/invoices', sale(hq), owner)).json().id;
+    expect((await post('/api/invoices', sale(erbil), raz)).statusCode).toBe(201);
+    expect((await put(`/api/branches/${branchId}`, { code: 'ERB', name: 'Erbil', city: 'Erbil', active: false }, owner)).statusCode).toBe(200);
+    // the warehouse and the safe of the inactive branch are refused
+    expect((await post('/api/invoices', sale(erbil), raz)).json()).toMatchObject({ error: 'branch_forbidden' });
+    expect((await post('/api/vouchers', receipt('1812'), raz)).json()).toMatchObject({ error: 'branch_forbidden' });
+    expect((await post('/api/invoices', sale(hq), raz)).json()).toMatchObject({ error: 'branch_forbidden' });
+    // an empty scope: nothing listed, not everything
+    expect((await get('/api/warehouses', raz)).json()).toEqual([]);
+    expect((await get('/api/invoices', raz)).json()).toEqual([]);
+    expect((await get(`/api/invoices/${hqInvoice}`, raz)).statusCode).toBe(403);
+    expect((await get('/api/branches/mine', raz)).json()).toEqual({ limited: true, branches: [] });
+    expect((await get('/api/reports/trial-balance', raz)).statusCode).toBe(403);
+    expect((await get('/api/brief/reports/sales-by-customer?from=2026-10-01&to=2026-10-31', raz)).json().rows).toEqual([]);
+    expect((await get('/api/auth/me', raz)).json().user.branchLimited).toBe(true);
+    // made active again, the branch is theirs again
+    expect((await put(`/api/branches/${branchId}`, { code: 'ERB', name: 'Erbil', active: true }, owner)).statusCode).toBe(200);
+    expect((await get('/api/warehouses', raz)).json().map((w: { id: string }) => w.id)).toEqual([erbil]);
+  });
+});
+
 describe('banking inside a branch', () => {
   it('a limited user moves money and handles cheques only on the branch’s safes and banks, and sees only theirs', async () => {
     const { branchId, raz, owner } = await erbilBranch();

@@ -11,6 +11,8 @@ export interface AppData {
   /** null until loaded; treat as Free */
   plan: PlanStatus | null;
   online: boolean;
+  /** false for someone limited to branches: no links to the trial balance, final accounts or account statements */
+  companyBooks?: boolean;
   reloadAccounts(): Promise<void>;
   reloadSettings(): Promise<void>;
   reloadPlan(): Promise<void>;

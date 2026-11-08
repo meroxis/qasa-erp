@@ -111,7 +111,9 @@ function Accounts() {
   const i18n = useI18n();
   const { t } = i18n;
   const list = useMoneyAccounts();
-  const { reloadAccounts } = useData();
+  const { reloadAccounts, companyBooks } = useData();
+  // an account's statement is the company's books: no link for someone limited to branches
+  const books = companyBooks !== false;
   const [adding, setAdding] = useState(false);
   const [editing, setEditing] = useState<MoneyAccountView | null>(null);
   const accounts = list.data?.accounts ?? [];
@@ -163,7 +165,7 @@ function Accounts() {
                     <td className="num">{i18n.money(a.balance.USD, 'USD')}</td>
                     <td className="num">
                       <span className="row" style={{ gap: 4, justifyContent: 'flex-end' }}>
-                        <a className="btn subtle icon" title={t('bk_statement')} aria-label={t('bk_statement') + ' ' + a.code} href={href(`statement/${a.code}`)}><Icon name="doc" size={16} /></a>
+                        {books && <a className="btn subtle icon" title={t('bk_statement')} aria-label={t('bk_statement') + ' ' + a.code} href={href(`statement/${a.code}`)}><Icon name="doc" size={16} /></a>}
                         <button type="button" className="btn subtle icon" title={t('bk_editAccount')} aria-label={t('bk_editAccount') + ' ' + a.code} onClick={() => setEditing(a)}><Icon name="edit" size={16} /></button>
                       </span>
                     </td>

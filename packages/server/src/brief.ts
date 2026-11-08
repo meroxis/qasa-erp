@@ -7,7 +7,7 @@ import { invalid } from './errors.ts';
 import type { ApiExtension, ApiRequest } from './routes.ts';
 import { readSetting, writeSetting } from './settings.ts';
 import { AppError } from './errors.ts';
-import { scopeLists, scopeOf } from './branches.ts';
+import { entryInBranchSql, scopeLists, scopeOf } from './branches.ts';
 import { chequesAhead, type ChequeAlert } from './banking.ts';
 
 /** A branch's warehouses and safes (null: the whole company). See branches.ts. */
@@ -178,19 +178,10 @@ export interface AgingRow {
 
 /**
  * `AND <the entry belongs to the branch>` for entries `alias`, with its parameters (nothing for the whole company):
- * made on one of its safes or banks, by an invoice of one of its warehouses (or its cancellation), for a cheque on one
- * of its banks, or the reversal of such an entry. Plain journals and cheques still in hand belong to no branch.
+ * the one rule of branches.ts (its safes and banks, its warehouses' invoices and stock documents, its cheques, and
+ * their reversals), shared with customer and supplier statements. Plain journals belong to no branch.
  */
-function entryInBranch(alias: string, branch: BranchFilter): [string, string[]] {
-  if (!branch) return ['', []];
-  const { warehouses: wh, accounts: acc } = branch;
-  const own = (a: string): [string, string[]] => [`(${a}.cash_account IN (${marks(acc)})
-      OR EXISTS (SELECT 1 FROM invoices bi WHERE (bi.entry_id = ${a}.id OR bi.cancel_entry_id = ${a}.id) AND bi.warehouse_id IN (${marks(wh)}))
-      OR EXISTS (SELECT 1 FROM cheques bc WHERE bc.entry_id = ${a}.id AND bc.bank_account IN (${marks(acc)})))`, [...acc, ...wh, ...acc]];
-  const [mine, mp] = own(alias);
-  const [reversed, rp] = own('br');
-  return [` AND (${mine} OR EXISTS (SELECT 1 FROM entries br WHERE br.id = ${alias}.reverses_id AND ${reversed}))`, [...mp, ...rp]];
-}
+const entryInBranch = (alias: string, branch: BranchFilter): [string, string[]] => entryInBranchSql(alias, branch);
 
 const BUCKET_LIMITS = [30, 60, 90] as const;
 function bucketOf(days: number): 0 | 1 | 2 | 3 {
@@ -310,12 +301,15 @@ export interface LowStock { itemId: string; code: string; name: Names; qtyMilli:
  * Items running out: those at or below their reorder level (car parts), and those with nothing left that sold in the
  * last 30 days. Services and items without stock tracking are left out.
  */
-export function lowStock(db: Db, date: string, limit = 20): LowStock[] {
+export function lowStock(db: Db, date: string, limit = 20, branch: BranchFilter = null): LowStock[] {
   const since = addDays(date, -30);
+  // for one branch: the stock and the sales of its warehouses only
+  const [sw, swp] = inBranch('warehouse_id', branch?.warehouses);
+  const [iw, iwp] = inBranch('i.warehouse_id', branch?.warehouses);
   const hasReorder = !!db.prepare("SELECT 1 FROM part_details WHERE reorder_milli IS NOT NULL LIMIT 1").get();
-  const rows = db.prepare(`WITH stock AS (SELECT item_id, SUM(qty_milli) AS qty FROM stock_moves WHERE date <= ? GROUP BY item_id),
+  const rows = db.prepare(`WITH stock AS (SELECT item_id, SUM(qty_milli) AS qty FROM stock_moves WHERE date <= ?${sw} GROUP BY item_id),
                                 sold AS (SELECT l.item_id, SUM(l.qty_milli) AS qty FROM invoice_lines l JOIN invoices i ON i.id = l.invoice_id
-                                         WHERE i.status = 'posted' AND i.kind = 'sale' AND i.date BETWEEN ? AND ? GROUP BY l.item_id)
+                                         WHERE i.status = 'posted' AND i.kind = 'sale' AND i.date BETWEEN ? AND ?${iw} GROUP BY l.item_id)
                            SELECT it.id, it.code, it.name_ar, it.name_en, it.name_ku, COALESCE(s.qty, 0) AS qty,
                                   ${hasReorder ? 'pd.reorder_milli' : 'NULL'} AS reorder, COALESCE(so.qty, 0) AS sold
                            FROM items it LEFT JOIN stock s ON s.item_id = it.id LEFT JOIN sold so ON so.item_id = it.id
@@ -323,7 +317,7 @@ export function lowStock(db: Db, date: string, limit = 20): LowStock[] {
                            WHERE it.active = 1 AND it.track_stock = 1 AND (
                              ${hasReorder ? '(pd.reorder_milli IS NOT NULL AND COALESCE(s.qty, 0) <= pd.reorder_milli) OR' : ''}
                              (COALESCE(s.qty, 0) <= 0 AND COALESCE(so.qty, 0) > 0))
-                           ORDER BY sold DESC, qty ASC LIMIT ?`).all(date, since, date, limit) as
+                           ORDER BY sold DESC, qty ASC LIMIT ?`).all(date, ...swp, since, date, ...iwp, limit) as
     { id: string; code: string; name_ar: string; name_en: string; name_ku: string; qty: number; reorder: number | null; sold: number }[];
   return rows.map((r) => ({ itemId: r.id, code: r.code, name: name(r), qtyMilli: num(r.qty), reorderMilli: r.reorder === null ? null : num(r.reorder), soldMilli: num(r.sold) }));
 }
@@ -413,9 +407,9 @@ export function dailyBrief(db: Db, date: string, branch: BranchFilter = null): B
     lateCustomers: customers.filter((c) => c.oldestDays > 30).sort((a, b) => b.oldestDays - a.oldestDays || b.balance - a.balance).slice(0, 8),
     receivables: customers.reduce((s, c) => s + c.balance, 0),
     installments: { overdue: inst.overdue.slice(0, 10), dueTomorrow: inst.dueTomorrow, overdueTotal },
-    lowStock: lowStock(db, date, 10),
+    lowStock: lowStock(db, date, 10, branch),
     approvals: { waitingCheck: num(approvals.draft), waitingApproval: num(approvals.checked) },
-    cheques: chequesAhead(db, date, 10),
+    cheques: chequesAhead(db, date, 10, branch?.accounts ?? null),
     ownerPhone: readSetting(db, 'brief_phone') ?? ''
   };
 }
@@ -459,7 +453,7 @@ export function dashboard(db: Db, date: string, branch: BranchFilter = null): Da
     payables: aging(db, 'supplier', date, branch).reduce((s, r) => s + r.balance, 0),
     months,
     cheques: (() => {
-      const c = chequesAhead(db, date, Number.MAX_SAFE_INTEGER);
+      const c = chequesAhead(db, date, Number.MAX_SAFE_INTEGER, branch?.accounts ?? null);
       return { due: c.due.length, late: c.due.filter((x) => x.daysLate > 0).length, bounced: c.bounced.length, dueTotal: c.dueTotal };
     })()
   };
@@ -517,18 +511,20 @@ export interface ExpenseAccountTotal { accountCode: string; name: Names; categor
  * share 33, so such a line has no kind (null) and is shown under its account's name, never as "rent". `byAccount`
  * adds up every line by account; `byCategory` only the lines whose kind is known.
  */
-export function monthExpenses(db: Db, month: string): { rows: ExpenseRow[]; byCategory: Record<string, number>; byAccount: ExpenseAccountTotal[]; total: number } {
+export function monthExpenses(db: Db, month: string, branch: BranchFilter = null): { rows: ExpenseRow[]; byCategory: Record<string, number>; byAccount: ExpenseAccountTotal[]; total: number } {
   const from = `${month}-01`;
   const to = lastDayOfMonth(from);
   const map = expenseAccounts(db);
+  // for one branch: the payments of its own safes (entryInBranch)
+  const [b, bp] = entryInBranch('e', branch);
   const categoryOf = (code: string): ExpenseCategory | null => {
     const kinds = EXPENSE_CATEGORIES.filter((c) => map[c] === code);
     return kinds.length === 1 ? kinds[0]! : null;
   };
   const rows = (db.prepare(`SELECT e.id, e.number, e.date, e.status, e.description, e.cash_account, e.currency, l.account_code, l.debit, l.base_debit
                             FROM entries e JOIN entry_lines l ON l.entry_id = e.id
-                            WHERE e.type = 'payment' AND e.reversed_by_id IS NULL AND e.date BETWEEN ? AND ? AND l.account_code LIKE '3%' AND l.debit > 0
-                            ORDER BY e.date DESC, e.number DESC`).all(from, to) as
+                            WHERE e.type = 'payment' AND e.reversed_by_id IS NULL AND e.date BETWEEN ? AND ? AND l.account_code LIKE '3%' AND l.debit > 0${b}
+                            ORDER BY e.date DESC, e.number DESC`).all(from, to, ...bp) as
     { id: string; number: string | null; date: string; status: string; description: string; cash_account: string | null; currency: 'IQD' | 'USD'; account_code: string; debit: number; base_debit: number }[])
     .map((r) => ({
       entryId: r.id, number: r.number, date: r.date, status: r.status, description: r.description, cashAccountCode: r.cash_account,
@@ -617,7 +613,7 @@ export const briefApi: ApiExtension = {
         method: 'GET', path: '/api/brief/expenses',
         handler: async (req) => {
           const q = parse(z.object({ month: z.string().regex(/^\d{4}-(0[1-9]|1[0-2])$/).optional() }), req.query ?? {});
-          return monthExpenses(db, q.month ?? todayIso().slice(0, 7));
+          return monthExpenses(db, q.month ?? todayIso().slice(0, 7), branchOf(db, req, actorOf(req)));
         }
       },
       { method: 'GET', path: '/api/brief/reports/sales-by-item', handler: async (req) => { const p = period(req); return { ...p, rows: salesByItem(db, p.from, p.to, 500, branchOf(db, req, actorOf(req))) }; } },

@@ -11,7 +11,7 @@ import { SupportButton } from './industry/SupportButton.tsx';
 import { BranchSwitcher } from './industry/BranchSwitcher.tsx';
 import { BRANCH_EVENT } from './industry/branches-api.ts';
 import { BUSINESS_FEATURE } from '@qasa/core';
-import { ADMIN_PAGES, canSee, FAVOURITES_EVENT, favourites, findPage, NAV, navCollapsed, setNavCollapsed, type NavItem, type NavViewer } from './nav.ts';
+import { ADMIN_PAGES, canSee, COMPANY_BOOK_PAGES, FAVOURITES_EVENT, seesCompanyBooks, favourites, findPage, NAV, navCollapsed, setNavCollapsed, type NavItem, type NavViewer } from './nav.ts';
 import { CommandPalette } from './industry/CommandPalette.tsx';
 import { Tour, TOUR_EVENT, tourDone } from './industry/Tour.tsx';
 import { UpdateBanner } from './industry/UpdateBanner.tsx';
@@ -282,9 +282,11 @@ export function App() {
     void reloadPlan();
   }, [userId, reloadAccounts, reloadSettings, reloadPlan]);
 
+  // someone limited to branches gets no link to the company's own books (the server refuses them anyway)
+  const companyBooks = seesCompanyBooks({ admin: !!me?.user?.permissions.includes('admin'), branchLimited: !!me?.user?.branchLimited });
   const data = useMemo(
-    () => ({ accounts, settings, plan, online, reloadAccounts, reloadSettings, reloadPlan }),
-    [accounts, settings, plan, online, reloadAccounts, reloadSettings, reloadPlan]
+    () => ({ accounts, settings, plan, online, companyBooks, reloadAccounts, reloadSettings, reloadPlan }),
+    [accounts, settings, plan, online, companyBooks, reloadAccounts, reloadSettings, reloadPlan]
   );
   const { t } = i18n;
   const [page, arg, arg2] = route;
@@ -297,9 +299,11 @@ export function App() {
   let title: string = t('home');
   let content: ReactNode;
   const isAdmin = !!me?.user?.permissions.includes('admin');
-  const viewer: NavViewer = { admin: isAdmin, permissions: me?.user?.permissions ?? [], businessTypes: settings?.businessTypes ?? [] };
-  // admin pages (the menu's admin-only items) open for admins only; everyone else lands on the home page
-  const adminPage = ADMIN_PAGES.has(page ?? '') && !isAdmin;
+  const viewer: NavViewer = { admin: isAdmin, permissions: me?.user?.permissions ?? [], businessTypes: settings?.businessTypes ?? [], branchLimited: !!me?.user?.branchLimited };
+  const books = seesCompanyBooks(viewer);
+  // admin pages (the menu's admin-only items) open for admins only, and the company's books (trial balance, final
+  // accounts, statements) not for someone limited to branches; everyone else lands on the home page
+  const adminPage = (ADMIN_PAGES.has(page ?? '') && !isAdmin) || (COMPANY_BOOK_PAGES.has(page ?? '') && !books);
   switch (adminPage ? '' : page ?? '') {
     case '':
     case 'home':
@@ -535,7 +539,8 @@ export function App() {
       break;
     case 'rates':
       title = t('fx_title');
-      content = <Rates key={arg ?? 'rates'} tab={arg === 'revaluation' ? 'revaluation' : 'rates'} />;
+      // the revaluation is worked out from the company's books: not for someone limited to branches
+      content = <Rates key={arg ?? 'rates'} tab={arg === 'revaluation' && books ? 'revaluation' : 'rates'} revaluation={books} />;
       break;
     case 'brief':
       title = t('br_title');

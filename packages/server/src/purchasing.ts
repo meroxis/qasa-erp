@@ -6,7 +6,7 @@ import { nextSequence, transaction } from './db.ts';
 import { audit } from './audit.ts';
 import { AppError, conflict, invalid, notFound } from './errors.ts';
 import { createInvoice } from './invoices.ts';
-import { defaultWarehouseId } from './branches.ts';
+import { defaultWarehouseId, userBranchLists } from './branches.ts';
 import { getSettings } from './settings.ts';
 import type { Actor } from './auth.ts';
 import type { ApiExtension } from './routes.ts';
@@ -240,8 +240,13 @@ export function listPurchaseOrders(db: Db, f: { status?: PoStatus | 'open'; part
   }));
 }
 
-export function purchaseOrdersSummary(db: Db): { draft: number; open: number; partial: number; overdue: number } {
-  const all = listPurchaseOrders(db, { status: 'open' });
+/** `warehouses`: a user limited to branches counts only orders with no warehouse yet or for one of theirs. */
+export function purchaseOrdersSummary(db: Db, warehouses: readonly string[] | null = null): { draft: number; open: number; partial: number; overdue: number } {
+  const elsewhere = warehouses
+    ? new Set((db.prepare('SELECT id, warehouse_id FROM purchase_orders WHERE warehouse_id IS NOT NULL').all() as { id: string; warehouse_id: string }[])
+      .filter((o) => !warehouses.includes(o.warehouse_id)).map((o) => o.id))
+    : null;
+  const all = listPurchaseOrders(db, { status: 'open' }).filter((o) => !elsewhere?.has(o.id));
   return {
     draft: all.filter((x) => x.status === 'draft').length,
     open: all.filter((x) => x.status === 'sent' || x.status === 'partial').length,
@@ -371,14 +376,17 @@ export interface ReorderGroup {
   lines: ReorderLine[];
 }
 
-export function reorderSuggestions(db: Db): ReorderGroup[] {
+/** `warehouses`: for a user limited to branches, the stock on hand in their branches' warehouses only. */
+export function reorderSuggestions(db: Db, warehouses: readonly string[] | null = null): ReorderGroup[] {
+  const inWarehouses = warehouses ? ` AND m.warehouse_id IN (${warehouses.length ? warehouses.map(() => '?').join(', ') : 'NULL'})` : '';
+  const wp = warehouses ?? [];
   // part_details is in every schema (SQLite and server databases alike): the reorder level of a part
   const items = db.prepare(`
     SELECT i.id, i.code, i.name_ar, i.name_en, i.name_ku, i.unit,
-      (SELECT COALESCE(SUM(m.qty_milli), 0) FROM stock_moves m WHERE m.item_id = i.id) AS on_hand,
-      (SELECT COUNT(*) FROM stock_moves m WHERE m.item_id = i.id) AS moves
+      (SELECT COALESCE(SUM(m.qty_milli), 0) FROM stock_moves m WHERE m.item_id = i.id${inWarehouses}) AS on_hand,
+      (SELECT COUNT(*) FROM stock_moves m WHERE m.item_id = i.id${inWarehouses}) AS moves
       , (SELECT d.reorder_milli FROM part_details d WHERE d.item_id = i.id) AS reorder
-    FROM items i WHERE i.active = 1 AND i.track_stock = 1 ORDER BY i.code`).all() as {
+    FROM items i WHERE i.active = 1 AND i.track_stock = 1 ORDER BY i.code`).all(...wp, ...wp) as {
       id: string; code: string; name_ar: string; name_en: string; name_ku: string; unit: string; on_hand: number; moves: number; reorder: number | null;
     }[];
   // still to come on open orders
@@ -436,8 +444,9 @@ export const purchasingApi: ApiExtension = {
   },
   routes(db, { actorOf }) {
     return [
-      { method: 'GET', path: '/api/purchase-orders/summary', handler: async () => purchaseOrdersSummary(db) },
-      { method: 'GET', path: '/api/purchase-orders/suggest', handler: async () => reorderSuggestions(db) },
+      // a user limited to branches: counted and suggested from their branches' orders and stock, as the list shows them
+      { method: 'GET', path: '/api/purchase-orders/summary', handler: async (req) => purchaseOrdersSummary(db, userBranchLists(db, actorOf(req))?.warehouses ?? null) },
+      { method: 'GET', path: '/api/purchase-orders/suggest', handler: async (req) => reorderSuggestions(db, userBranchLists(db, actorOf(req))?.warehouses ?? null) },
       {
         method: 'GET', path: '/api/purchase-orders',
         handler: async (req) => {

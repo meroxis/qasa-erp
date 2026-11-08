@@ -291,7 +291,8 @@ export interface Me {
   signInRequired: boolean;
   separateDuties: boolean;
   demo: boolean;
-  user: { id: string | null; name: string; username: string; roles: Role[]; permissions: Permission[] } | null;
+  /** branchLimited: limited to some branches (never an admin), so the company's own books are not for them */
+  user: { id: string | null; name: string; username: string; roles: Role[]; permissions: Permission[]; branchLimited?: boolean } | null;
 }
 
 export interface UserView {

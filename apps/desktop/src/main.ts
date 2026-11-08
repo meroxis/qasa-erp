@@ -267,13 +267,15 @@ async function startServer(): Promise<string> {
       setImmediate(() => void openOtherCompany());
     }) as never)
     // the server process has closed the company file (and moved files as asked): start again
-    .handle('relaunch', ((options?: { restoreFailed?: unknown }) => {
+    .handle('relaunch', ((options?: { restoreFailed?: unknown; keptAside?: unknown }) => {
       childEnding = true;
       setImmediate(() => void (async () => {
-        // a restore that didn't happen: say so before the app comes back on the unchanged company file
+        // a restore that didn't happen: say so before the app comes back on the unchanged company file, or (when the
+        // company file could not even be put back) where it is kept; the next start puts it back (server-process.ts)
         if (options && typeof options.restoreFailed === 'string') {
+          const keptAside = typeof options.keptAside === 'string' ? options.keptAside.slice(0, 100) : null;
           await dialog.showMessageBox({
-            type: 'error', title: 'Qasa ERP', message: rtlLines(t('restoreFailed')), detail: options.restoreFailed.slice(0, 200),
+            type: 'error', title: 'Qasa ERP', message: rtlLines(keptAside ? t('restoreFailedAside', { file: keptAside }) : t('restoreFailed')), detail: options.restoreFailed.slice(0, 200),
             buttons: [t('ok')], noLink: true
           }).catch(() => {});
         }

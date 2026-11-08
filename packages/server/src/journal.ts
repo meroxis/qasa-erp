@@ -25,6 +25,7 @@ import { audit } from './audit.ts';
 import { conflict, invalid, notFound } from './errors.ts';
 import { loadAccounts } from './accounts.ts';
 import { isPeriodLocked, readSetting } from './settings.ts';
+import { entryInBranchSql } from './branches.ts';
 
 interface EntryRow {
   id: string; type: EntryType; number: string | null; date: string; description: string; party: string | null;
@@ -444,11 +445,19 @@ export function listEntries(db: Db, f: EntryFilters = {}): EntrySummary[] {
 }
 
 /** Lines of approved entries in IQD — the input for every report. */
-export function postedLines(db: Db, opts: { to?: string; partyId?: string } = {}): (PostedLine & { partyId: string | null })[] {
+export function postedLines(
+  db: Db, opts: { to?: string; partyId?: string; branch?: { warehouses: string[]; accounts: string[] } | null } = {}
+): (PostedLine & { partyId: string | null })[] {
   const where = ["e.status = 'approved'"];
   const params: string[] = [];
   if (opts.to) { where.push('e.date <= ?'); params.push(opts.to); }
   if (opts.partyId) { where.push('l.party_id = ?'); params.push(opts.partyId); }
+  // one branch's entries only (branches.ts), for a user limited to branches
+  if (opts.branch) {
+    const [sql, p] = entryInBranchSql('e', opts.branch);
+    where.push(sql.replace(/^ AND /, ''));
+    params.push(...p);
+  }
   const rows = db.prepare(`SELECT e.id, e.number, e.date, l.account_code, l.base_debit, l.base_credit, l.party_id,
                                   COALESCE(l.description, e.description) AS description,
                                   (e.type = 'closing' OR (e.type = 'reversal' AND EXISTS (SELECT 1 FROM entries c WHERE c.id = e.reverses_id AND c.type = 'closing'))) AS closing

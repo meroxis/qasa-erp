@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import { BUILT_IN_FEATURES } from './features.ts';
-import { checkBranchRequest, filterBranchResult } from './branches.ts';
+import { checkBranchRequest, filterBranchResult, isBranchLimited, userBranchLists } from './branches.ts';
 import { APP_VERSION, BUSINESS_TYPES } from '@qasa/core';
 import type { Db } from './db.ts';
 import { AppError, conflict, invalid } from './errors.ts';
@@ -375,7 +375,7 @@ export function apiRoutes(db: Db, options: { demo?: boolean; extensions?: readon
   });
 
   // chart of accounts
-  app.get('/api/accounts', async () => listAccounts(db));
+  app.get('/api/accounts', async (req) => listAccounts(db, userBranchLists(db, actorOf(req))));
   app.post('/api/accounts', async (req, reply) => {
     const body = parse(z.object({ parentCode: z.string().min(1).max(12), code: z.string().min(1).max(12), name: names }), req.body);
     return reply.status(201).send(createAccount(db, body, userOf(req)));
@@ -440,26 +440,33 @@ export function apiRoutes(db: Db, options: { demo?: boolean; extensions?: readon
 
   // customers & suppliers
   const partyFilters = z.object({ type: z.enum(['customer', 'supplier']).optional(), q: z.string().max(100).optional(), active: z.enum(['true', 'false']).optional() });
+  // a user limited to branches sees balances and statements made of their branches' entries only (as in the aging)
+  const branchOfUser = (req: ApiRequest) => userBranchLists(db, actorOf(req));
   app.get('/api/parties', async (req) => {
     const q = parse(partyFilters, req.query);
-    return listParties(db, { type: q.type, q: q.q, active: q.active === undefined ? undefined : q.active === 'true' });
+    return listParties(db, { type: q.type, q: q.q, active: q.active === undefined ? undefined : q.active === 'true' }, branchOfUser(req));
   });
-  app.get('/api/parties/:id', async (req) => getParty(db, parse(idParam, req.params).id));
+  app.get('/api/parties/:id', async (req) => getParty(db, parse(idParam, req.params).id, branchOfUser(req)));
   app.post('/api/parties', async (req, reply) => {
     const { type, ...input } = parse(partySchema.extend({ type: z.enum(['customer', 'supplier']) }), req.body);
     return reply.status(201).send(createParty(db, type, withoutUndefined(input), userOf(req)));
   });
-  app.put('/api/parties/:id', async (req) => updateParty(db, parse(idParam, req.params).id, withoutUndefined(parse(partySchema, req.body)), userOf(req)));
+  app.put('/api/parties/:id', async (req) => {
+    const { id } = parse(idParam, req.params);
+    updateParty(db, id, withoutUndefined(parse(partySchema, req.body)), userOf(req));
+    return getParty(db, id, branchOfUser(req));
+  });
   app.delete('/api/parties/:id', async (req, reply) => {
     deleteParty(db, parse(idParam, req.params).id, userOf(req));
     return reply.status(204).send();
   });
   app.get('/api/parties/:id/statement', async (req) => {
     const q = parse(z.object({ from: isoDate.optional(), to: isoDate.optional() }), req.query);
-    return partyStatement(db, parse(idParam, req.params).id, q);
+    return partyStatement(db, parse(idParam, req.params).id, q, branchOfUser(req));
   });
 
   // warehouses, items & stock
+  const warehousesOfUser = (req: ApiRequest) => branchOfUser(req)?.warehouses ?? null;
   app.get('/api/warehouses', async () => listWarehouses(db));
   app.post('/api/warehouses', async (req, reply) => {
     const body = parse(z.object({ code: z.string().max(12), name: names }), req.body);
@@ -471,14 +478,20 @@ export function apiRoutes(db: Db, options: { demo?: boolean; extensions?: readon
   });
   app.get('/api/items', async (req) => {
     const q = parse(z.object({ q: z.string().max(100).optional(), warehouseId: z.string().max(64).optional(), active: z.enum(['true', 'false']).optional() }), req.query);
-    return listItems(db, { q: q.q, warehouseId: q.warehouseId, active: q.active === undefined ? undefined : q.active === 'true' });
+    // without a warehouse, a user limited to branches gets the stock of their branches' warehouses (null: every one)
+    return listItems(db, { q: q.q, warehouseId: q.warehouseId, active: q.active === undefined ? undefined : q.active === 'true' }, warehousesOfUser(req));
   });
   app.get('/api/items/:id', async (req) => {
     const { id } = parse(idParam, req.params);
-    return { ...getItem(db, id), stock: itemStock(db, id), moves: itemMoves(db, id) };
+    const warehouses = warehousesOfUser(req);
+    return { ...getItem(db, id, warehouses), stock: itemStock(db, id, warehouses), moves: itemMoves(db, id, warehouses) };
   });
   app.post('/api/items', async (req, reply) => reply.status(201).send(createItem(db, withoutUndefined(parse(itemSchema, req.body)), userOf(req))));
-  app.put('/api/items/:id', async (req) => updateItem(db, parse(idParam, req.params).id, withoutUndefined(parse(itemSchema, req.body)), userOf(req)));
+  app.put('/api/items/:id', async (req) => {
+    const { id } = parse(idParam, req.params);
+    updateItem(db, id, withoutUndefined(parse(itemSchema, req.body)), userOf(req));
+    return getItem(db, id, warehousesOfUser(req));
+  });
   app.delete('/api/items/:id', async (req, reply) => {
     deleteItem(db, parse(idParam, req.params).id, userOf(req));
     return reply.status(204).send();
@@ -532,7 +545,11 @@ export function apiRoutes(db: Db, options: { demo?: boolean; extensions?: readon
   const userSchema = z.object({ username: z.string().max(32), name: z.string().max(100), roles: z.array(roleSchema).max(ROLES.length) });
   const me = (actor: Actor | null) => ({
     signInRequired: signInRequired(db), separateDuties: separateDuties(db), demo: !!options.demo,
-    user: actor ? { id: actor.id, name: actor.name, username: actor.username, roles: actor.roles, permissions: actor.permissions } : null
+    user: actor ? {
+      id: actor.id, name: actor.name, username: actor.username, roles: actor.roles, permissions: actor.permissions,
+      // limited to some branches: the company's own books (trial balance, final accounts, statements…) are not for them
+      branchLimited: isBranchLimited(db, actor)
+    } : null
   });
   app.get('/api/auth/me', async (req) => me((req as ApiRequest & { actor?: Actor | null }).actor ?? null));
   app.post('/api/auth/login', async (req, reply) => {

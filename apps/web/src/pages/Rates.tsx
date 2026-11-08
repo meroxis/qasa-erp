@@ -22,9 +22,11 @@ function parseRate(text: string): number | null {
 
 const rateText = (i18n: I18n, rateX100: number) => i18n.int(rateX100);
 
-export function Rates({ tab = 'rates' }: { tab?: 'rates' | 'revaluation' }) {
+/** `revaluation`: false for someone limited to branches (it is worked out from the company's own books). */
+export function Rates({ tab = 'rates', revaluation = true }: { tab?: 'rates' | 'revaluation'; revaluation?: boolean }) {
   const { t } = useI18n();
   usePageNav(NAV);
+  if (!revaluation) return <div className="stack"><Board /></div>;
   return (
     <div className="stack">
       <div className="tabs" role="group">

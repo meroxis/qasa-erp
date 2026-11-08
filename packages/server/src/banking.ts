@@ -8,6 +8,7 @@ import { AppError, conflict, invalid, notFound } from './errors.ts';
 import { createAccount, loadAccounts } from './accounts.ts';
 import { createJournalEntry, createVoucher, deleteEntry, getEntry, reverseEntryInternal, type EntryView } from './journal.ts';
 import { planStatus } from './license.ts';
+import { userBranchLists } from './branches.ts';
 import { readSetting, writeSetting } from './settings.ts';
 import type { Actor } from './auth.ts';
 import type { ApiExtension, ApiRequest } from './routes.ts';
@@ -337,10 +338,20 @@ export interface ChequeSummary {
   overdue: number;
 }
 
-/** For the cheques page and the Daily Brief: what is in hand, written, and due. */
-export function chequeSummary(db: Db, today = todayIso()): ChequeSummary {
+/**
+ * For a user limited to branches: `AND` the cheque is still in hand (no bank yet, no branch) or on one of their banks,
+ * as the cheques list shows them (branches.ts); nothing for everyone else.
+ */
+function chequeInBanks(alias: string, banks: readonly string[] | null | undefined): [string, string[]] {
+  if (!banks) return ['', []];
+  return [` AND (${alias}.bank_account IS NULL${banks.length ? ` OR ${alias}.bank_account IN (${banks.map(() => '?').join(', ')})` : ''})`, [...banks]];
+}
+
+/** For the cheques page and the Daily Brief: what is in hand, written, and due (`banks`: only those of a branch). */
+export function chequeSummary(db: Db, today = todayIso(), banks: readonly string[] | null = null): ChequeSummary {
   const weekEnd = new Date(Date.parse(today + 'T00:00:00Z') + 7 * DAY).toISOString().slice(0, 10);
-  const rows = db.prepare(`SELECT direction, currency, due_date, amount FROM cheques WHERE status IN ('in_hand', 'deposited', 'pending')`).all() as
+  const [b, bp] = chequeInBanks('c', banks);
+  const rows = db.prepare(`SELECT direction, currency, due_date, amount FROM cheques c WHERE status IN ('in_hand', 'deposited', 'pending')${b}`).all(...bp) as
     { direction: ChequeDirection; currency: CurrencyCode; due_date: string; amount: number }[];
   const s: ChequeSummary = { inHand: zero(), inHandCount: 0, issuedPending: zero(), issuedPendingCount: 0, dueToday: 0, dueThisWeek: 0, overdue: 0 };
   for (const r of rows) {
@@ -364,7 +375,8 @@ export interface ChequeAlert {
  * For the Daily Brief and the home page: cheques still open (in hand, deposited or written) that fall due within the next
  * week — or are already past due — and cheques that bounced in the last 30 days.
  */
-export function chequesAhead(db: Db, today = todayIso(), limit = 20): { due: ChequeAlert[]; bounced: ChequeAlert[]; dueTotal: Money } {
+export function chequesAhead(db: Db, today = todayIso(), limit = 20, banks: readonly string[] | null = null): { due: ChequeAlert[]; bounced: ChequeAlert[]; dueTotal: Money } {
+  const [b, bp] = chequeInBanks('c', banks);
   const weekEnd = new Date(Date.parse(today + 'T00:00:00Z') + 7 * DAY).toISOString().slice(0, 10);
   const since = new Date(Date.parse(today + 'T00:00:00Z') - 30 * DAY).toISOString();
   const select = `SELECT c.id, c.direction, c.number, c.bank, c.party_id, p.name AS party, p.phone, c.currency, c.amount, c.due_date
@@ -375,9 +387,9 @@ export function chequesAhead(db: Db, today = todayIso(), limit = 20): { due: Che
     currency: r.currency, amount: num(r.amount), dueDate: r.due_date,
     daysLate: r.due_date < today ? Math.round((Date.parse(today + 'T00:00:00Z') - Date.parse(r.due_date + 'T00:00:00Z')) / DAY) : 0
   });
-  const due = (db.prepare(`${select} WHERE c.status IN ('in_hand', 'deposited', 'pending') AND c.due_date <= ? ORDER BY c.due_date, c.number`)
-    .all(weekEnd) as Row[]).map(view);
-  const bounced = (db.prepare(`${select} WHERE c.status = 'bounced' AND c.updated_at >= ? ORDER BY c.updated_at DESC`).all(since) as Row[]).map(view);
+  const due = (db.prepare(`${select} WHERE c.status IN ('in_hand', 'deposited', 'pending') AND c.due_date <= ?${b} ORDER BY c.due_date, c.number`)
+    .all(weekEnd, ...bp) as Row[]).map(view);
+  const bounced = (db.prepare(`${select} WHERE c.status = 'bounced' AND c.updated_at >= ?${b} ORDER BY c.updated_at DESC`).all(since, ...bp) as Row[]).map(view);
   const dueTotal = zero();
   for (const c of due) dueTotal[c.currency] += c.amount;
   return { due: due.slice(0, limit), bounced: bounced.slice(0, limit), dueTotal };
@@ -1027,7 +1039,7 @@ export const bankingApi: ApiExtension = {
           return undefined;
         }
       },
-      { method: 'GET', path: '/api/banking/cheques/summary', handler: async () => chequeSummary(db) },
+      { method: 'GET', path: '/api/banking/cheques/summary', handler: async (req) => chequeSummary(db, todayIso(), userBranchLists(db, actorOf(req))?.accounts ?? null) },
       {
         method: 'GET', path: '/api/banking/cheques',
         handler: async (req) => {

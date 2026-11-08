@@ -6,6 +6,7 @@ import type { Key } from './i18n.ts';
  * Every page the menu, the home screen's tiles and the search (Ctrl+K) know about, in one place.
  * - `business`: shown only when the company does that (Settings → Business type)
  * - `adminOnly` / `permission`: shown only to someone who may use it (the server refuses the rest anyway)
+ * - `companyBooks`: a report of the company's own books (every posted line); not for a user limited to branches
  * - `tile: false`: in the menu but not a tile on the home screen
  */
 export interface NavItem {
@@ -14,6 +15,7 @@ export interface NavItem {
   path?: string;
   match?: string[];
   adminOnly?: boolean;
+  companyBooks?: boolean;
   permission?: Permission;
   business?: BusinessType;
   tile?: boolean;
@@ -79,7 +81,7 @@ export const NAV: NavGroup[] = [
       { key: 'br_expenses', icon: 'wallet', path: 'expenses', match: ['expenses'] },
       { key: 'fx_title', icon: 'dollar', path: 'rates', match: ['rates'] },
       { key: 'accounts', icon: 'tree', path: 'accounts', match: ['accounts'] },
-      { key: 'statement', icon: 'doc', path: 'statement', match: ['statement'], tile: false }
+      { key: 'statement', icon: 'doc', path: 'statement', match: ['statement'], tile: false, companyBooks: true }
     ]
   },
   { group: 'gPeople', items: [{ key: 'pay_title', icon: 'users', path: 'payroll', match: ['payroll', 'payroll-run'], adminOnly: true }] },
@@ -87,8 +89,8 @@ export const NAV: NavGroup[] = [
     group: 'gReports',
     items: [
       { key: 'br_reports', icon: 'chart', path: 'reports-more/sales-items', match: ['reports-more'] },
-      { key: 'trialBalance', icon: 'scale', path: 'trial-balance', match: ['trial-balance'] },
-      { key: 'finalAccounts', icon: 'book', path: 'final-accounts', match: ['final-accounts'] }
+      { key: 'trialBalance', icon: 'scale', path: 'trial-balance', match: ['trial-balance'], companyBooks: true },
+      { key: 'finalAccounts', icon: 'book', path: 'final-accounts', match: ['final-accounts'], companyBooks: true }
     ]
   },
   {
@@ -108,11 +110,15 @@ export const NAV: NavGroup[] = [
   }
 ];
 
-/** Who is looking: decides which pages they see. */
-export interface NavViewer { admin: boolean; permissions: readonly Permission[]; businessTypes: readonly BusinessType[] }
+/** Who is looking: decides which pages they see. `branchLimited`: limited to some branches (the server says so). */
+export interface NavViewer { admin: boolean; permissions: readonly Permission[]; businessTypes: readonly BusinessType[]; branchLimited?: boolean }
+
+/** Whether this person may read the company's own books (the trial balance, final accounts, account statements). */
+export const seesCompanyBooks = (v: Pick<NavViewer, 'admin' | 'branchLimited'>): boolean => v.admin || !v.branchLimited;
 
 export function canSee(item: NavItem, v: NavViewer): boolean {
   if (item.adminOnly && !v.admin) return false;
+  if (item.companyBooks && !seesCompanyBooks(v)) return false;
   if (item.permission && !v.admin && !v.permissions.includes(item.permission)) return false;
   if (item.business && !v.businessTypes.includes(item.business)) return false;
   return true;
@@ -126,6 +132,14 @@ export const visibleItems = (items: readonly NavItem[], v: NavViewer): NavItem[]
  */
 export const ADMIN_PAGES: ReadonlySet<string> = new Set(
   NAV.flatMap((g) => g.items).filter((i) => i.adminOnly).flatMap((i) => i.match ?? (i.path !== undefined ? [i.path] : []))
+);
+
+/**
+ * The routes of the company-books pages: App.tsx opens them only for someone who may read the books (anyone limited to
+ * branches lands on Home), so a typed, bookmarked or favourite link never shows a page the server refuses.
+ */
+export const COMPANY_BOOK_PAGES: ReadonlySet<string> = new Set(
+  NAV.flatMap((g) => g.items).filter((i) => i.companyBooks).flatMap((i) => i.match ?? (i.path !== undefined ? [i.path] : []))
 );
 
 /** Every page that has a path, once (for favourites and the search). */
