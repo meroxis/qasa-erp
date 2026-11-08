@@ -3,6 +3,7 @@ import { DatabaseSync } from 'node:sqlite';
 import type { FastifyInstance } from 'fastify';
 import { migrate, openDatabase, SCHEMA_VERSION, schemaVersion, type Db } from './db.ts';
 import { buildApp } from './app.ts';
+import { todayIso } from '@qasa/core';
 
 let db: Db;
 let app: FastifyInstance;
@@ -12,7 +13,7 @@ let supplierId: string;
 let acId: string;
 let installId: string;
 
-const headers = { 'x-qasa-user': encodeURIComponent('Mer Las') };
+const headers = { 'x-qasa-user': encodeURIComponent('Mer') };
 const post = (url: string, body: unknown = {}) => app.inject({ method: 'POST', url, payload: body as object, headers });
 const get = (url: string) => app.inject(url);
 
@@ -20,7 +21,7 @@ beforeEach(async () => {
   db = openDatabase(':memory:');
   app = buildApp(db);
   warehouseId = (await get('/api/warehouses')).json()[0].id;
-  customerId = (await post('/api/parties', { type: 'customer', name: 'Sanos Company' })).json().id;
+  customerId = (await post('/api/parties', { type: 'customer', name: 'Bazaar Trading Company' })).json().id;
   supplierId = (await post('/api/parties', { type: 'supplier', name: 'RapidNet Ltd' })).json().id;
   acId = (await post('/api/items', { code: 'AC-18', name: { ar: 'مكيف', en: 'AC 18,000 BTU', ku: 'سپلیت' }, unit: 'piece', salePrice: 823_600, saleCurrency: 'IQD' })).json().id;
   installId = (await post('/api/items', { name: { ar: 'نصب', en: 'Installation', ku: 'دامەزراندن' }, unit: 'service', salePrice: 50_000, saleCurrency: 'IQD' })).json().id;
@@ -173,6 +174,16 @@ describe('opening stock', () => {
     await post(`/api/stock-docs/${doc.id}/post`);
     await sell();
     expect((await post(`/api/stock-docs/${doc.id}/cancel`, { date: '2026-09-11' })).json().details).toEqual([{ code: 'stock_insufficient', line: 1, available: 0 }]);
+  });
+
+  it('is cancelled without a date given even when dated ahead: the reversal is dated on the document\'s own date', async () => {
+    const ahead = todayIso(new Date(Date.now() + 10 * 86_400_000));
+    const doc = (await post('/api/stock-docs', opening([{ itemId: acId, qtyMilli: 3000, unitCost: 500_000 }], { date: ahead }))).json();
+    expect((await post(`/api/stock-docs/${doc.id}/post`)).statusCode).toBe(200);
+    const res = await post(`/api/stock-docs/${doc.id}/cancel`);
+    expect(res.statusCode, res.body).toBe(200);
+    expect(res.json()).toMatchObject({ status: 'cancelled' });
+    expect((await get(`/api/entries/${res.json().cancelEntryId}`)).json()).toMatchObject({ date: ahead, type: 'reversal' });
   });
 });
 

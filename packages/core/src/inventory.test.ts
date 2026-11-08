@@ -17,6 +17,9 @@ describe('quantities', () => {
   it('parses and formats quantities with up to 3 decimals', () => {
     expect(parseQty('2.5')).toBe(2500);
     expect(parseQty('١٢')).toBe(12000);
+    expect(parseQty('2,5')).toBeNull();
+    expect(parseQty('1,500')).toBe(1_500_000);
+    expect(parseQty('1,500.25')).toBe(1_500_250);
     expect(parseQty('1.2345')).toBeNull();
     expect(formatQty(2500)).toBe('2.5');
     expect(formatQty(12000)).toBe('12');

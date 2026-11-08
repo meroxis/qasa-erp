@@ -18,7 +18,7 @@ afterEach(async () => {
 
 const user = (name: string) => ({ 'x-qasa-user': encodeURIComponent(name) });
 
-async function post(url: string, body: unknown = {}, headers = user('Mer Las')) {
+async function post(url: string, body: unknown = {}, headers = user('Mer')) {
   return app.inject({ method: 'POST', url, payload: body as object, headers });
 }
 
@@ -70,10 +70,10 @@ describe('vouchers', () => {
     expect(checked.status).toBe('checked');
     expect(checked.checkedBy).toBe('Raz');
 
-    const approved = (await post(`/api/entries/${draft.id}/approve`, {}, user('Mer Las'))).json();
+    const approved = (await post(`/api/entries/${draft.id}/approve`, {}, user('Mer'))).json();
     expect(approved.status).toBe('approved');
     expect(approved.number).toBe('RV-2026-0001');
-    expect(approved.approvedBy).toBe('Mer Las');
+    expect(approved.approvedBy).toBe('Mer');
 
     const second = (await post('/api/vouchers', receipt)).json();
     await post(`/api/entries/${second.id}/check`);
@@ -112,6 +112,28 @@ describe('vouchers', () => {
     const original = (await app.inject(`/api/entries/${draft.id}`)).json();
     expect(original.reversedById).toBe(reversal.id);
     expect(original.actions).toEqual([]);
+  });
+
+  it('never dates a reversal before the entry it reverses', async () => {
+    const approve = async (date: string) => {
+      const draft = (await post('/api/vouchers', { ...receipt, date })).json();
+      await post(`/api/entries/${draft.id}/check`);
+      await post(`/api/entries/${draft.id}/approve`);
+      return draft.id as string;
+    };
+    const id = await approve('2026-09-26');
+    const early = await post(`/api/entries/${id}/reverse`, { date: '2026-09-25' });
+    expect(early.statusCode).toBe(400);
+    expect(early.json().details).toEqual([{ code: 'reversal_before_entry' }]);
+    // nothing was written: the entry can still be reversed, on its own date
+    expect((await app.inject(`/api/entries/${id}`)).json()).toMatchObject({ reversedById: null, actions: ['reverse'] });
+    expect((await post(`/api/entries/${id}/reverse`, { date: '2026-09-26' })).json()).toMatchObject({ type: 'reversal', date: '2026-09-26' });
+
+    // with no date given, an entry dated ahead is reversed on its own date, not today
+    const ahead = await approve('2099-01-15');
+    const reversal = await post(`/api/entries/${ahead}/reverse`, {});
+    expect(reversal.statusCode, reversal.body).toBe(200);
+    expect(reversal.json().date).toBe('2099-01-15');
   });
 
   it('respects locked periods', async () => {
@@ -155,7 +177,7 @@ describe('reports', () => {
   it('keeps an append-only audit log', async () => {
     await post('/api/vouchers', receipt);
     const log = (await app.inject('/api/audit')).json();
-    expect(log[0]).toMatchObject({ action: 'create', entity: 'entry', user: 'Mer Las' });
+    expect(log[0]).toMatchObject({ action: 'create', entity: 'entry', user: 'Mer' });
     expect(() => db.prepare('DELETE FROM audit_log').run()).toThrow(/append_only/);
   });
 });

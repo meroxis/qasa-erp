@@ -195,9 +195,10 @@ export function Users({ me, onMeChanged }: { me: Me; onMeChanged(me: Me | null):
           </button>
         </div>
         {plan?.plan === 'free' && <p className="muted small" style={{ padding: '0 16px', margin: 0 }}>{t('usersPlanNote')}</p>}
+        <div className="table-wrap">
         <table className="table">
           <thead>
-            <tr><th>{t('name')}</th><th>{t('username')}</th><th>{t('roles')}</th><th>{t('lastSignIn')}</th><th>{t('colStatus')}</th><th /></tr>
+            <tr><th>{t('name')}</th><th>{t('username')}</th><th>{t('roles')}</th><th>{t('lastSignIn')}</th><th>{t('colStatus')}</th><th className="cell-actions" /></tr>
           </thead>
           <tbody>
             {list.map((u) => (
@@ -214,14 +215,18 @@ export function Users({ me, onMeChanged }: { me: Me; onMeChanged(me: Me | null):
                   {u.active ? <span className="chip ok">{t('userActive')}</span> : <span className="chip bad">{t('inactive')}</span>}
                   {!u.hasPassword && <span className="chip warn" style={{ marginInlineStart: 4 }}>{t('noPassword')}</span>}
                 </td>
-                <td className="row" style={{ gap: 6, justifyContent: 'flex-end' }}>
-                  <button type="button" className="btn small" onClick={() => { setFormError(null); setEditing({ id: u.id, username: u.username, name: u.name, roles: u.roles, active: u.active, password: '' }); }}>{t('actEdit')}</button>
-                  {!me.demo && <button type="button" className="btn small" onClick={() => { setFormError(null); setPasswordFor(u); setNewPassword(''); }}>{u.hasPassword ? t('changePassword') : t('setPassword')}</button>}
+                {/* a flex <td> stops being a table cell and its buttons spilled over the rows: the cell stays a cell and holds the flex row */}
+                <td className="cell-actions">
+                  <div className="row cell-actions-row">
+                    <button type="button" className="btn small" onClick={() => { setFormError(null); setEditing({ id: u.id, username: u.username, name: u.name, roles: u.roles, active: u.active, password: '' }); }}>{t('actEdit')}</button>
+                    {!me.demo && <button type="button" className="btn small" onClick={() => { setFormError(null); setPasswordFor(u); setNewPassword(''); }}>{u.hasPassword ? t('changePassword') : t('setPassword')}</button>}
+                  </div>
                 </td>
               </tr>
             ))}
           </tbody>
         </table>
+        </div>
       </div>
 
       {editing && (

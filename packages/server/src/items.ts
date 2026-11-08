@@ -130,24 +130,41 @@ function toView(r: ItemRow): ItemView {
   };
 }
 
-function itemRows(db: Db, where: string, params: string[], warehouseId?: string): ItemRow[] {
-  const stockFilter = warehouseId ? 'AND m.warehouse_id = ?' : '';
-  return db.prepare(`SELECT i.*, s.qty, s.value, s.moves FROM items i
-                     LEFT JOIN (SELECT item_id, SUM(qty_milli) AS qty, SUM(value) AS value, COUNT(*) AS moves
-                                FROM stock_moves m WHERE 1 = 1 ${stockFilter} GROUP BY item_id) s ON s.item_id = i.id
-                     ${where} ORDER BY i.code`).all(...(warehouseId ? [warehouseId] : []), ...params) as unknown as ItemRow[];
+/**
+ * Warehouses to count stock in: undefined or null = every warehouse; a list = only those (an empty list = none, for
+ * a user limited to branches that have no warehouse).
+ */
+export type WarehouseFilter = readonly string[] | null | undefined;
+const whereWarehouse = (col: string, warehouses: WarehouseFilter): [string, string[]] =>
+  warehouses ? [` AND ${col} IN (${warehouses.length ? warehouses.map(() => '?').join(', ') : 'NULL'})`, [...warehouses]] : ['', []];
+
+function itemRows(db: Db, where: string, params: string[], warehouses?: WarehouseFilter): ItemRow[] {
+  const [stockFilter, stockParams] = whereWarehouse('m.warehouse_id', warehouses);
+  // hasMoves is about the item itself (it decides whether stock tracking may still be switched), so it counts everywhere
+  return db.prepare(`SELECT i.*, s.qty, s.value, a.moves FROM items i
+                     LEFT JOIN (SELECT item_id, SUM(qty_milli) AS qty, SUM(value) AS value
+                                FROM stock_moves m WHERE 1 = 1${stockFilter} GROUP BY item_id) s ON s.item_id = i.id
+                     LEFT JOIN (SELECT item_id, COUNT(*) AS moves FROM stock_moves GROUP BY item_id) a ON a.item_id = i.id
+                     ${where} ORDER BY i.code`).all(...stockParams, ...params) as unknown as ItemRow[];
 }
 
-export function listItems(db: Db, filters: { q?: string | undefined; warehouseId?: string | undefined; active?: boolean | undefined } = {}): ItemView[] {
+/**
+ * The items with their stock: in the warehouse asked for, or else in `warehouses` (a user limited to branches: their
+ * branches' warehouses only), or else in every warehouse.
+ */
+export function listItems(
+  db: Db, filters: { q?: string | undefined; warehouseId?: string | undefined; active?: boolean | undefined } = {}, warehouses: WarehouseFilter = null
+): ItemView[] {
   const where = filters.active === undefined ? '' : `WHERE i.active = ${filters.active ? 1 : 0}`;
   const q = filters.q ? normalizeForSearch(filters.q) : '';
-  return itemRows(db, where, [], filters.warehouseId)
+  return itemRows(db, where, [], filters.warehouseId ? [filters.warehouseId] : warehouses)
     .filter((r) => !q || normalizeForSearch(`${r.code} ${r.barcode ?? ''} ${r.name_ar} ${r.name_en} ${r.name_ku}`).includes(q))
     .map(toView);
 }
 
-export function getItem(db: Db, id: string): ItemView {
-  const row = itemRows(db, 'WHERE i.id = ?', [id])[0];
+/** An item with its stock in `warehouses` (null: every warehouse). */
+export function getItem(db: Db, id: string, warehouses: WarehouseFilter = null): ItemView {
+  const row = itemRows(db, 'WHERE i.id = ?', [id], warehouses)[0];
   if (!row) throw notFound('item');
   return toView(row);
 }
@@ -205,7 +222,15 @@ export function deleteItem(db: Db, id: string, user: string): void {
   if (db.prepare('SELECT 1 FROM invoice_lines WHERE item_id = ? UNION SELECT 1 FROM stock_moves WHERE item_id = ? LIMIT 1').get(id, id)) {
     throw conflict('item_has_moves');
   }
+  // documents that are not in the books yet still name the item: deleting it would break them
+  const usedBy = ['quote_lines', 'purchase_order_lines', 'stock_doc_lines', 'stock_adjustment_lines', 'serials', 're_projects']
+    .map((table) => `SELECT 1 FROM ${table} WHERE item_id = ?`).join(' UNION ALL ');
+  if (db.prepare(`${usedBy} LIMIT 1`).get(id, id, id, id, id, id)) throw conflict('item_in_use');
   transaction(db, () => {
+    // what belongs to the item alone goes with it: its picture, its price-list prices and its car-part details
+    for (const table of ['item_images', 'item_prices', 'part_fitments', 'part_numbers', 'part_details']) {
+      db.prepare(`DELETE FROM ${table} WHERE item_id = ?`).run(id);
+    }
     db.prepare('DELETE FROM items WHERE id = ?').run(id);
     audit(db, user, 'delete', 'item', id);
   });
@@ -220,9 +245,12 @@ export function stockOf(db: Db, itemId: string, warehouseId: string): { qtyMilli
 
 export interface StockByWarehouse { warehouseId: string; warehouseCode: string; warehouseName: Names; qtyMilli: number; value: number }
 
-export function itemStock(db: Db, itemId: string): StockByWarehouse[] {
+/** An item's stock per warehouse (only `warehouses` when given: a user limited to branches sees their own). */
+export function itemStock(db: Db, itemId: string, warehouses: WarehouseFilter = null): StockByWarehouse[] {
+  const [w, wp] = whereWarehouse('m.warehouse_id', warehouses);
   return (db.prepare(`SELECT w.id, w.code, w.name_ar, w.name_en, w.name_ku, SUM(m.qty_milli) AS qty, SUM(m.value) AS value
-                      FROM stock_moves m JOIN warehouses w ON w.id = m.warehouse_id WHERE m.item_id = ? GROUP BY w.id ORDER BY w.code`).all(itemId) as
+                      FROM stock_moves m JOIN warehouses w ON w.id = m.warehouse_id WHERE m.item_id = ?${w}
+                      GROUP BY w.id, w.code, w.name_ar, w.name_en, w.name_ku ORDER BY w.code`).all(itemId, ...wp) as
     { id: string; code: string; name_ar: string; name_en: string; name_ku: string; qty: number; value: number }[])
     .map((r) => ({ warehouseId: r.id, warehouseCode: r.code, warehouseName: { ar: r.name_ar, en: r.name_en, ku: r.name_ku }, qtyMilli: r.qty, value: r.value }));
 }
@@ -240,15 +268,19 @@ export interface StockMoveView {
   balanceQtyMilli: number;
 }
 
-/** بطاقة المادة — every stock move of an item, oldest first, with a running quantity per warehouse. */
-export function itemMoves(db: Db, itemId: string): StockMoveView[] {
+/**
+ * بطاقة المادة — every stock move of an item, oldest first, with a running quantity per warehouse (only the moves of
+ * `warehouses` when given; the running quantity is per warehouse, so it is the same either way).
+ */
+export function itemMoves(db: Db, itemId: string, warehouses: WarehouseFilter = null): StockMoveView[] {
   getItem(db, itemId);
+  const [w, wp] = whereWarehouse('m.warehouse_id', warehouses);
   const rows = db.prepare(`SELECT m.id, m.date, m.qty_milli, m.value, m.source_type, m.source_id, m.warehouse_id, w.code AS warehouse_code,
                                   COALESCE(i.number, d.number) AS number
                            FROM stock_moves m JOIN warehouses w ON w.id = m.warehouse_id
                            LEFT JOIN invoices i ON i.id = m.source_id
                            LEFT JOIN stock_docs d ON d.id = m.source_id
-                           WHERE m.item_id = ? ORDER BY m.date, m.id`).all(itemId) as
+                           WHERE m.item_id = ?${w} ORDER BY m.date, m.id`).all(itemId, ...wp) as
     { id: number; date: string; qty_milli: number; value: number; source_type: string; source_id: string | null; warehouse_id: string; warehouse_code: string; number: string | null }[];
   const running = new Map<string, number>();
   return rows.map((r) => {

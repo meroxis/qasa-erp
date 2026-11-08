@@ -44,6 +44,8 @@ Before you open a pull request, run `npm test` and `npm run typecheck`, and desc
 
 ## Licence of contributions
 
-Qasa ERP is published under the [GNU AGPL v3.0 or later](LICENSE), with the additional terms in [NOTICE](NOTICE).
+The core of Qasa ERP is published under the [GNU AGPL v3.0 or later](LICENSE), with the additional terms in
+[NOTICE](NOTICE). The licence addon in `native/licence` is proprietary ([its LICENSE](native/licence/LICENSE)) and is not
+open for contributions.
 Meroxis also offers commercial licences and builds. By submitting a contribution you confirm that you have the right
 to submit it, and you agree that Meroxis may distribute it under the AGPL and under Meroxis's commercial licences.

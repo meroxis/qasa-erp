@@ -4,6 +4,9 @@ import { api, type EntryView } from '../api.ts';
 import { ErrorBox, Icon, Modal, StatusChip, typeName, useData, useLoad, useToast } from '../components.tsx';
 import { useI18n } from '../i18n.ts';
 import { go, href } from '../router.ts';
+import { DesignedPrint } from '../industry/PrintDocument.tsx';
+import { reverseDefaultDate } from '../industry/ReverseModal.tsx';
+import { entryModel } from '../industry/print-model.ts';
 
 function time(iso: string | null): string {
   if (!iso) return '';
@@ -88,13 +91,14 @@ export function EntryDetail({ id }: { id: string }) {
         {e.actions.includes('return') && <button type="button" className="btn" disabled={busy} onClick={() => run(() => api.entryAction(id, 'return'), t('a_return'))}>{t('actReturn')}</button>}
         {e.actions.includes('check') && <button type="button" className="btn primary" disabled={busy} onClick={() => run(() => api.entryAction(id, 'check'), t('a_check'))}><Icon name="check" size={16} />{t('actCheck')}</button>}
         {e.actions.includes('approve') && <button type="button" className="btn primary" disabled={busy} onClick={() => run(() => api.entryAction(id, 'approve'), t('a_approve'))}><Icon name="check" size={16} />{t('actApprove')}</button>}
-        {e.actions.includes('reverse') && <button type="button" className="btn danger" disabled={busy} onClick={() => setReversing(true)}><Icon name="undo" size={16} />{t('actReverse')}</button>}
+        {e.actions.includes('reverse') && <button type="button" className="btn danger" disabled={busy} onClick={() => { setReverseDate(reverseDefaultDate(e.date)); setReversing(true); }}><Icon name="undo" size={16} />{t('actReverse')}</button>}
         <button type="button" className="btn" onClick={() => window.print()}><Icon name="printer" size={16} />{t('print')}</button>
       </div>
       <ErrorBox error={actionError} />
       {e.status === 'approved' && <div className="alert info no-print">{e.invoiceId ? t('fromInvoiceNote') : e.stockDocId ? t('fromStockDocNote') : t('postedNote')}</div>}
 
-      <div className="paper">
+      <DesignedPrint model={entryModel(e)} />
+      <div className="paper no-print">
         <div className="paper-head">
           <div style={{ flex: 1 }}>
             <div className="muted">{company}</div>
@@ -162,7 +166,7 @@ export function EntryDetail({ id }: { id: string }) {
         <Modal title={t('reverseTitle')} onClose={() => setReversing(false)}>
           <div className="stack">
             <p style={{ margin: 0 }}>{t('reverseHelp')}</p>
-            <label className="field"><span>{t('reversalDate')}</span><input className="input" type="date" value={reverseDate} onChange={(ev) => setReverseDate(ev.target.value)} /></label>
+            <label className="field"><span>{t('reversalDate')}</span><input className="input" type="date" min={e.date} value={reverseDate} onChange={(ev) => setReverseDate(ev.target.value)} /></label>
             <ErrorBox error={actionError} />
             <div className="row">
               <button type="button" className="btn danger" disabled={busy} onClick={reverse}>{t('confirm')}</button>

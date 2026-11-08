@@ -21,6 +21,17 @@ electronFuses:
   loadBrowserProcessSpecificV8Snapshot: false
   grantFileProtocolExtraPrivileges: false
 npmRebuild: false
+# The compiled licence checks (native/licence) next to app.asar. (Their app.asar self-check is off in 1.0, so no
+# signature file ships: INTEGRITY_CHECK in after-pack.cjs.)
+extraResources:
+  - from: native-out
+    to: .
+    filter: ['*.node']
+  # the open-source components in the app with their licence texts (scripts/third-party-notices.mjs; the release run
+  # writes it again after building the Rust module), installed next to app.asar so it travels with every copy
+  - from: ../../THIRD_PARTY_NOTICES.md
+    to: THIRD_PARTY_NOTICES.md
+afterPack: ./after-pack.cjs
 win:
   target:
     - target: nsis
@@ -39,10 +50,15 @@ nsis:
   installerLanguages: [en_US, ar_SA]
   license: ../../LICENSE
   deleteAppDataOnUninstall: false
+# Update channels: with GitHub each release has one update file. A stable version (1.2.0) writes latest.yml; beta
+# testers still get it, because electron-updater falls back to latest.yml when prereleases are allowed. A beta version
+# (1.2.0-beta.1) writes beta.yml and is published as a prerelease, so it reaches nobody but the testers
+# (docs/releasing.md).
 publish:
   provider: github
   owner: meroxis
   repo: qasa-erp
+  # a beta build passes -c.publish.releaseType=prerelease (.github/workflows/release.yml)
   releaseType: release
 # The Microsoft Store package (npm run dist:store): Microsoft signs it when the Store accepts it. The identity is the one
 # Partner Center gave "Qasa ERP" (Store ID 9NRTX5BBK9DW, https://apps.microsoft.com/detail/9NRTX5BBK9DW).

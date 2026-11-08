@@ -286,7 +286,8 @@ export function postStockDoc(db: Db, id: string, user: string): StockDocView {
 export function cancelStockDoc(db: Db, id: string, user: string, date?: string): StockDocView {
   const view = getStockDoc(db, id);
   requireAction(loadRow(db, id), 'cancel');
-  const cancelDate = date ?? todayIso();
+  // (no date: today, or the document's own date when that is later: a reversal is never dated before what it reverses)
+  const cancelDate = date ?? (todayIso() < view.date ? view.date : todayIso());
   if (!isIsoDate(cancelDate)) throw invalid([{ code: 'date_invalid' }]);
   // goods leave the warehouse they went into (opening: that warehouse; transfer: the receiving one) and a transfer puts them back
   const into = view.kind === 'opening' ? view.warehouseId : view.toWarehouseId!;

@@ -3,6 +3,8 @@ import { DatabaseSync } from 'node:sqlite';
 import type { FastifyInstance } from 'fastify';
 import { migrate, openDatabase, SCHEMA_VERSION, schemaVersion, type Db } from './db.ts';
 import { buildApp } from './app.ts';
+import { postInvoice } from './invoices.ts';
+import { todayIso } from '@qasa/core';
 
 let db: Db;
 let app: FastifyInstance;
@@ -12,7 +14,7 @@ let supplierId: string;
 let acId: string;
 let installId: string;
 
-const headers = { 'x-qasa-user': encodeURIComponent('Mer Las') };
+const headers = { 'x-qasa-user': encodeURIComponent('Mer') };
 const post = (url: string, body: unknown = {}) => app.inject({ method: 'POST', url, payload: body as object, headers });
 const get = (url: string) => app.inject(url);
 
@@ -20,7 +22,7 @@ beforeEach(async () => {
   db = openDatabase(':memory:');
   app = buildApp(db);
   warehouseId = (await get('/api/warehouses')).json()[0].id;
-  customerId = (await post('/api/parties', { type: 'customer', name: 'Sanos Company', phone: '0750 123 4567' })).json().id;
+  customerId = (await post('/api/parties', { type: 'customer', name: 'Bazaar Trading Company', phone: '0750 123 4567' })).json().id;
   supplierId = (await post('/api/parties', { type: 'supplier', name: 'RapidNet Ltd' })).json().id;
   acId = (await post('/api/items', { code: 'AC-18', name: { ar: 'مكيف 18 ألف وحدة', en: 'AC 18,000 BTU', ku: 'سپلیتی ١٨ هەزار' }, unit: 'piece', salePrice: 823_600, saleCurrency: 'IQD' })).json().id;
   installId = (await post('/api/items', { name: { ar: 'نصب وتشغيل', en: 'Installation', ku: 'دامەزراندن' }, unit: 'service', salePrice: 50_000, saleCurrency: 'IQD' })).json().id;
@@ -68,7 +70,7 @@ describe('customers, suppliers and items', () => {
     // Kurdish/Arabic letter variants find the same customer
     await post('/api/parties', { type: 'customer', name: 'کۆمپانیای مێرۆکسیس' });
     expect((await get(`/api/parties?q=${encodeURIComponent('ميروكسيس')}`)).json()).toHaveLength(1);
-    expect((await get('/api/parties?q=sanos')).json()).toHaveLength(1);
+    expect((await get('/api/parties?q=bazaar')).json()).toHaveLength(1);
 
     const install = (await get(`/api/items/${installId}`)).json();
     expect(install).toMatchObject({ code: 'I-0001', trackStock: false });
@@ -116,7 +118,7 @@ describe('purchase and sale invoices', () => {
     expect(entry.lines.map((l: { accountCode: string; debit: number; credit: number }) => [l.accountCode, l.debit, l.credit])).toEqual([
       ['1611', 2_520_800, 0], ['42', 0, 2_520_800], ['35', 1_860_000, 0], ['1371', 0, 1_860_000]
     ]);
-    expect(entry.lines[0].partyName).toBe('Sanos Company');
+    expect(entry.lines[0].partyName).toBe('Bazaar Trading Company');
 
     expect(await stock()).toEqual({ qty: 17, value: 10_540_000 });
     expect((await get(`/api/parties/${customerId}`)).json().balance).toBe(2_520_800);
@@ -139,10 +141,23 @@ describe('purchase and sale invoices', () => {
     expect(res.json().details[0]).toMatchObject({ code: 'stock_insufficient', line: 1, available: 2000 });
     expect(await stock()).toEqual({ qty: 2, value: 1_200_000 });
 
-    await app.inject({ method: 'PUT', url: `/api/parties/${customerId}`, payload: { name: 'Sanos Company', creditLimit: 1_000_000 }, headers });
+    await app.inject({ method: 'PUT', url: `/api/parties/${customerId}`, payload: { name: 'Bazaar Trading Company', creditLimit: 1_000_000 }, headers });
     const limited = await postNew(sale({ lines: [{ itemId: acId, qtyMilli: 2000, unitPrice: 823_600 }] }));
     expect(limited.statusCode).toBe(409);
     expect(limited.json().error).toBe('credit_limit_exceeded');
+  });
+
+  it('leaves the part collected in the same transaction out of the credit limit (internal callers only)', async () => {
+    await postNew(purchase(5, 600_000));
+    await app.inject({ method: 'PUT', url: `/api/parties/${customerId}`, payload: { name: 'Bazaar Trading Company', creditLimit: 1_000_000 }, headers });
+    const draft = (await post('/api/invoices', sale({ lines: [{ itemId: acId, qtyMilli: 2000, unitPrice: 823_600 }] }))).json();
+    // the whole 1,647,200 on credit is over the limit; with 1,000,000 of it collected at once, 647,200 is not
+    expect(() => postInvoice(db, draft.id, 'Mer')).toThrow(/credit_limit_exceeded/);
+    expect(() => postInvoice(db, draft.id, 'Mer', { settledNow: 500_000 })).toThrow(/credit_limit_exceeded/);
+    expect(postInvoice(db, draft.id, 'Mer', { settledNow: 1_000_000 }).status).toBe('posted');
+    // a request cannot pass it: the route takes no options
+    const other = (await post('/api/invoices', sale({ lines: [{ itemId: acId, qtyMilli: 2000, unitPrice: 823_600 }] }))).json();
+    expect((await post(`/api/invoices/${other.id}/post`, { settledNow: 9_999_999 })).json().error).toBe('credit_limit_exceeded');
   });
 
   it('validates parties, items and payment', async () => {
@@ -186,6 +201,17 @@ describe('posted invoices are permanent', () => {
     const tb = await trialBalance();
     expect(tb.get('1371')).toBe(6_000_000);
     expect(tb.get('42') ?? 0).toBe(0);
+  });
+
+  it('cancels an invoice dated ahead without a date given: the reversal is dated on the invoice\'s own date', async () => {
+    const ahead = todayIso(new Date(Date.now() + 10 * 86_400_000));
+    await postNew(purchase(10, 600_000));
+    const invoice = (await postNew(sale({ date: ahead }))).json();
+    const res = await post(`/api/invoices/${invoice.id}/cancel`);
+    expect(res.statusCode, res.body).toBe(200);
+    expect(res.json()).toMatchObject({ status: 'cancelled' });
+    expect((await get(`/api/entries/${res.json().cancelEntryId}`)).json()).toMatchObject({ date: ahead, type: 'reversal' });
+    expect(await stock()).toEqual({ qty: 10, value: 6_000_000 });
   });
 
   it('will not cancel a purchase whose goods were already sold', async () => {

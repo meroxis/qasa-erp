@@ -17,7 +17,9 @@ export function Accounts() {
   const i18n = useI18n();
   const { t } = i18n;
   const toast = useToast();
-  const { accounts, reloadAccounts } = useData();
+  const { accounts, reloadAccounts, companyBooks } = useData();
+  // an account's statement is the company's books: no link for someone limited to branches
+  const books = companyBooks !== false;
   const [open, setOpen] = useState<Set<string>>(() => new Set(['1', '18', '181', '183', '16']));
   const [query, setQuery] = useState('');
   const [adding, setAdding] = useState<AccountView | null>(null);
@@ -119,7 +121,7 @@ export function Accounts() {
                     <div className="row" style={{ gap: 4, justifyContent: 'flex-end', flexWrap: 'nowrap' }}>
                       {!(a.postable && a.hasEntries) && <button type="button" className="btn icon small" title={t('addSub')} aria-label={t('addSub') + ' ' + a.code} onClick={() => setAdding(a)}><Icon name="plus" size={15} /></button>}
                       <button type="button" className="btn icon small" title={t('rename')} aria-label={t('rename') + ' ' + a.code} onClick={() => setRenaming(a)}><Icon name="edit" size={15} /></button>
-                      <a className="btn icon small" title={t('statement')} aria-label={t('statement') + ' ' + a.code} href={href(`statement/${a.code}`)}><Icon name="doc" size={15} /></a>
+                      {books && <a className="btn icon small" title={t('statement')} aria-label={t('statement') + ' ' + a.code} href={href(`statement/${a.code}`)}><Icon name="doc" size={15} /></a>}
                       {!a.system && a.postable && !a.hasEntries && <button type="button" className="btn icon small danger" title={t('actDelete')} aria-label={t('actDelete') + ' ' + a.code} onClick={() => remove(a)}><Icon name="x" size={15} /></button>}
                     </div>
                   </td>

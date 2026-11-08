@@ -23,14 +23,14 @@ afterEach(async () => {
   db.close();
 });
 
-const headers = { 'x-qasa-user': encodeURIComponent('Mer Las') };
+const headers = { 'x-qasa-user': encodeURIComponent('Mer') };
 const post = (url: string, body: unknown = {}) => app.inject({ method: 'POST', url, payload: body as object, headers });
 const get = (url: string) => app.inject({ method: 'GET', url, headers });
 const pro = () => writeSetting(db, 'trial_started', todayIso());
 
 /** A journal entry taken through check and approval. */
 async function posted(date: string, lines: { accountCode: string; debit: number; credit: number }[]): Promise<string> {
-  const created = await post('/api/entries', { date, description: 'Mer Las books', currency: 'IQD', rateX100: 100, lines });
+  const created = await post('/api/entries', { date, description: 'Mer books', currency: 'IQD', rateX100: 100, lines });
   expect(created.statusCode).toBe(201);
   const id = (created.json() as { id: string }).id;
   expect((await post(`/api/entries/${id}/check`)).statusCode).toBe(200);
@@ -169,6 +169,23 @@ describe('year-end closing', () => {
     // a year with only balance-sheet movements has nothing to close
     await posted(`${BEFORE}-01-15`, [{ accountCode: '1811', debit: 50, credit: 0 }, { accountCode: '229', debit: 0, credit: 50 }]);
     expect((await yearOf(BEFORE)).blockers.map((b) => b.code)).toContain('nothing_to_close');
+    expect((await post(`/api/year-end/${LAST}/close`)).statusCode).toBe(200);
+  });
+
+  it('waits for a draft stock adjustment (a count) and a draft payroll month dated in the year', async () => {
+    pro();
+    await trade(LAST);
+    const wh = (await get('/api/warehouses')).json()[0].id;
+    const now = new Date().toISOString();
+    db.prepare(`INSERT INTO stock_adjustments (id, number, date, warehouse_id, reason, account_code, job_id, status, entry_id, notes, created_by, created_at, updated_at)
+                VALUES ('adj-1', NULL, ?, ?, 'count', NULL, NULL, 'draft', NULL, NULL, 'Mer', ?, ?)`).run(`${LAST}-12-31`, wh, now, now);
+    db.prepare(`INSERT INTO payroll_runs (id, period, date, currency, status, created_by, created_at, updated_at)
+                VALUES ('run-1', ?, ?, 'IQD', 'draft', 'Mer', ?, ?)`).run(`${LAST}-12`, `${LAST}-12-31`, now, now);
+    expect((await yearOf(LAST)).blockers).toContainEqual({ code: 'unfinished_documents', count: 2 });
+    expect((await post(`/api/year-end/${LAST}/close`)).json().error).toBe('unfinished_documents');
+    // one statement per call: a database server runs no second statement in one (multipleStatements is off)
+    db.exec("UPDATE stock_adjustments SET status = 'cancelled'");
+    db.exec("UPDATE payroll_runs SET status = 'cancelled'");
     expect((await post(`/api/year-end/${LAST}/close`)).statusCode).toBe(200);
   });
 

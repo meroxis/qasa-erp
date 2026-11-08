@@ -393,6 +393,910 @@ export const MYSQL_TABLES: readonly MysqlObject[] = [
       FOREIGN KEY (contract_id) REFERENCES installment_contracts(id),
       FOREIGN KEY (entry_id) REFERENCES entries(id)
     )`
+  },
+  {
+    name: 're_projects',
+    since: 7,
+    sql: `CREATE TABLE re_projects (
+      id ${ID} NOT NULL PRIMARY KEY,
+      code ${ID} NOT NULL UNIQUE,
+      name TEXT NOT NULL,
+      city TEXT,
+      address TEXT,
+      currency ${WORD} NOT NULL CHECK (currency IN ('IQD', 'USD')),
+      item_id ${ID} NOT NULL,
+      active INT NOT NULL DEFAULT 1,
+      notes TEXT,
+      created_at ${WHEN} NOT NULL,
+      updated_at ${WHEN} NOT NULL,
+      FOREIGN KEY (item_id) REFERENCES items(id)
+    )`
+  },
+  {
+    name: 're_units',
+    since: 7,
+    sql: `CREATE TABLE re_units (
+      id ${ID} NOT NULL PRIMARY KEY,
+      project_id ${ID} NOT NULL,
+      building ${ID} NOT NULL DEFAULT '',
+      code ${ID} NOT NULL,
+      floor INT NOT NULL DEFAULT 0,
+      kind ${WORD} NOT NULL CHECK (kind IN ('apartment', 'villa', 'house', 'shop', 'office', 'land')),
+      bedrooms INT NOT NULL DEFAULT 0 CHECK (bedrooms >= 0),
+      area_x100 BIGINT NOT NULL DEFAULT 0 CHECK (area_x100 >= 0),
+      price BIGINT NOT NULL CHECK (price >= 0),
+      view TEXT,
+      status ${WORD} NOT NULL CHECK (status IN ('available', 'reserved', 'sold')),
+      party_id ${ID},
+      reserved_until ${WHEN},
+      invoice_id ${ID},
+      contract_id ${ID},
+      notes TEXT,
+      created_at ${WHEN} NOT NULL,
+      updated_at ${WHEN} NOT NULL,
+      CHECK ((status = 'available') = (party_id IS NULL)),
+      CHECK (status = 'sold' OR (invoice_id IS NULL AND contract_id IS NULL)),
+      UNIQUE KEY re_units_code (project_id, building, code),
+      INDEX re_units_project (project_id),
+      INDEX re_units_party (party_id),
+      FOREIGN KEY (project_id) REFERENCES re_projects(id),
+      FOREIGN KEY (party_id) REFERENCES parties(id),
+      FOREIGN KEY (invoice_id) REFERENCES invoices(id),
+      FOREIGN KEY (contract_id) REFERENCES installment_contracts(id)
+    )`
+  },
+  {
+    name: 'serials',
+    since: 7,
+    sql: `CREATE TABLE serials (
+      id ${ID} NOT NULL PRIMARY KEY,
+      item_id ${ID} NOT NULL,
+      serial ${ID} NOT NULL UNIQUE,
+      grade ${WORD} NOT NULL CHECK (grade IN ('new', 'used')),
+      status ${WORD} NOT NULL CHECK (status IN ('in_stock', 'sold', 'returned', 'defective')),
+      purchase_invoice_id ${ID},
+      from_party_id ${ID},
+      cost BIGINT,
+      sale_invoice_id ${ID},
+      party_id ${ID},
+      sold_at ${WHEN},
+      warranty_until ${WHEN},
+      notes TEXT,
+      created_by TEXT NOT NULL,
+      created_at ${WHEN} NOT NULL,
+      updated_at ${WHEN} NOT NULL,
+      CHECK (status <> 'sold' OR sale_invoice_id IS NOT NULL),
+      INDEX serials_item (item_id),
+      INDEX serials_sale (sale_invoice_id),
+      FOREIGN KEY (item_id) REFERENCES items(id),
+      FOREIGN KEY (purchase_invoice_id) REFERENCES invoices(id),
+      FOREIGN KEY (from_party_id) REFERENCES parties(id),
+      FOREIGN KEY (sale_invoice_id) REFERENCES invoices(id),
+      FOREIGN KEY (party_id) REFERENCES parties(id)
+    )`
+  },
+  {
+    name: 'serial_sales',
+    since: 7,
+    sql: `CREATE TABLE serial_sales (
+      id ${ID} NOT NULL PRIMARY KEY,
+      serial_id ${ID} NOT NULL,
+      invoice_id ${ID} NOT NULL,
+      warranty_until ${WHEN},
+      created_at ${WHEN} NOT NULL,
+      INDEX serial_sales_serial (serial_id),
+      INDEX serial_sales_invoice (invoice_id),
+      FOREIGN KEY (serial_id) REFERENCES serials(id),
+      FOREIGN KEY (invoice_id) REFERENCES invoices(id)
+    )`
+  },
+  {
+    name: 'repair_orders',
+    since: 7,
+    sql: `CREATE TABLE repair_orders (
+      id ${ID} NOT NULL PRIMARY KEY,
+      number ${ID} NOT NULL UNIQUE,
+      date ${WHEN} NOT NULL,
+      party_id ${ID} NOT NULL,
+      device TEXT NOT NULL,
+      serial TEXT,
+      problem TEXT NOT NULL,
+      accessories TEXT,
+      passcode_given INT NOT NULL DEFAULT 0,
+      technician TEXT,
+      status ${WORD} NOT NULL CHECK (status IN ('received', 'diagnosing', 'waiting_parts', 'repairing', 'ready', 'delivered', 'cancelled')),
+      currency ${WORD} NOT NULL CHECK (currency IN ('IQD', 'USD')),
+      estimate BIGINT NOT NULL DEFAULT 0 CHECK (estimate >= 0),
+      promised_date ${WHEN},
+      invoice_id ${ID},
+      notes TEXT,
+      created_by TEXT NOT NULL,
+      created_at ${WHEN} NOT NULL,
+      delivered_at ${WHEN},
+      updated_at ${WHEN} NOT NULL,
+      INDEX repair_orders_party (party_id),
+      FOREIGN KEY (party_id) REFERENCES parties(id),
+      FOREIGN KEY (invoice_id) REFERENCES invoices(id)
+    )`
+  },
+  {
+    name: 'part_details',
+    since: 7,
+    sql: `CREATE TABLE part_details (
+      item_id ${ID} NOT NULL PRIMARY KEY,
+      shelf TEXT,
+      brand TEXT,
+      origin TEXT,
+      wholesale_price BIGINT CHECK (wholesale_price IS NULL OR wholesale_price >= 0),
+      reorder_milli BIGINT CHECK (reorder_milli IS NULL OR reorder_milli >= 0),
+      updated_at ${WHEN} NOT NULL,
+      FOREIGN KEY (item_id) REFERENCES items(id)
+    )`
+  },
+  {
+    name: 'part_numbers',
+    since: 7,
+    sql: `CREATE TABLE part_numbers (
+      item_id ${ID} NOT NULL,
+      number TEXT NOT NULL,
+      number_key ${ID} NOT NULL,
+      kind ${WORD} NOT NULL CHECK (kind IN ('oem', 'alt')),
+      maker TEXT,
+      PRIMARY KEY (item_id, number_key),
+      INDEX part_numbers_key (number_key),
+      FOREIGN KEY (item_id) REFERENCES items(id)
+    )`
+  },
+  {
+    name: 'part_fitments',
+    since: 7,
+    sql: `CREATE TABLE part_fitments (
+      id ${ID} NOT NULL PRIMARY KEY,
+      item_id ${ID} NOT NULL,
+      make ${ID} NOT NULL,
+      model ${ID} NOT NULL,
+      year_from INT,
+      year_to INT,
+      engine TEXT,
+      CHECK (year_from IS NULL OR year_to IS NULL OR year_from <= year_to),
+      INDEX part_fitments_item (item_id),
+      INDEX part_fitments_car (make, model),
+      FOREIGN KEY (item_id) REFERENCES items(id)
+    )`
+  },
+  {
+    name: 'jobs',
+    since: 7,
+    sql: `CREATE TABLE jobs (
+      id ${ID} NOT NULL PRIMARY KEY,
+      number ${ID} NOT NULL UNIQUE,
+      date ${WHEN} NOT NULL,
+      party_id ${ID} NOT NULL,
+      title TEXT NOT NULL,
+      category ${WORD} NOT NULL CHECK (category IN ('welding', 'steel', 'aluminium', 'mdf', 'openings', 'electrical', 'solar', 'general')),
+      site TEXT,
+      currency ${WORD} NOT NULL CHECK (currency IN ('IQD', 'USD')),
+      status ${WORD} NOT NULL CHECK (status IN ('quote', 'measuring', 'approved', 'fabricating', 'installing', 'done', 'invoiced', 'cancelled')),
+      discount BIGINT NOT NULL DEFAULT 0 CHECK (discount >= 0),
+      due_date ${WHEN},
+      assigned_to TEXT,
+      invoice_id ${ID},
+      notes TEXT,
+      created_by TEXT NOT NULL,
+      created_at ${WHEN} NOT NULL,
+      updated_at ${WHEN} NOT NULL,
+      INDEX jobs_party (party_id),
+      FOREIGN KEY (party_id) REFERENCES parties(id),
+      FOREIGN KEY (invoice_id) REFERENCES invoices(id)
+    )`
+  },
+  {
+    name: 'job_lines',
+    since: 7,
+    sql: `CREATE TABLE job_lines (
+      job_id ${ID} NOT NULL,
+      seq INT NOT NULL,
+      description TEXT NOT NULL,
+      unit ${WORD} NOT NULL CHECK (unit IN ('m2', 'm', 'piece', 'kg', 'set', 'lump')),
+      qty_milli BIGINT NOT NULL CHECK (qty_milli > 0),
+      unit_price BIGINT NOT NULL CHECK (unit_price >= 0),
+      PRIMARY KEY (job_id, seq),
+      FOREIGN KEY (job_id) REFERENCES jobs(id)
+    )`
+  },
+  {
+    name: 'job_costs',
+    since: 7,
+    sql: `CREATE TABLE job_costs (
+      id ${ID} NOT NULL PRIMARY KEY,
+      job_id ${ID} NOT NULL,
+      category ${WORD} NOT NULL CHECK (category IN ('materials', 'labour', 'subcontract', 'transport', 'other')),
+      invoice_id ${ID},
+      entry_id ${ID},
+      amount BIGINT NOT NULL CHECK (amount > 0),
+      description TEXT,
+      created_by TEXT NOT NULL,
+      created_at ${WHEN} NOT NULL,
+      CHECK ((invoice_id IS NULL) <> (entry_id IS NULL)),
+      INDEX job_costs_job (job_id),
+      FOREIGN KEY (job_id) REFERENCES jobs(id),
+      FOREIGN KEY (invoice_id) REFERENCES invoices(id),
+      FOREIGN KEY (entry_id) REFERENCES entries(id)
+    )`
+  },
+  {
+    name: 'job_receipts',
+    since: 7,
+    sql: `CREATE TABLE job_receipts (
+      job_id ${ID} NOT NULL,
+      entry_id ${ID} NOT NULL UNIQUE,
+      amount BIGINT NOT NULL CHECK (amount > 0),
+      created_at ${WHEN} NOT NULL,
+      PRIMARY KEY (job_id, entry_id),
+      FOREIGN KEY (job_id) REFERENCES jobs(id),
+      FOREIGN KEY (entry_id) REFERENCES entries(id)
+    )`
+  },
+  {
+    name: 'item_images',
+    since: 7,
+    sql: `CREATE TABLE item_images (
+      item_id ${ID} NOT NULL PRIMARY KEY,
+      mime ${WORD} NOT NULL CHECK (mime IN ('image/jpeg', 'image/png', 'image/webp')),
+      data MEDIUMBLOB NOT NULL,
+      updated_at ${WHEN} NOT NULL,
+      FOREIGN KEY (item_id) REFERENCES items(id)
+    )`
+  },
+  {
+    name: 'quotes',
+    since: 7,
+    sql: `CREATE TABLE quotes (
+      id ${ID} NOT NULL PRIMARY KEY,
+      number ${ID} NOT NULL UNIQUE,
+      date ${WHEN} NOT NULL,
+      valid_until ${WHEN},
+      party_id ${ID},
+      customer_name TEXT,
+      currency ${WORD} NOT NULL CHECK (currency IN ('IQD', 'USD')),
+      discount BIGINT NOT NULL DEFAULT 0 CHECK (discount >= 0),
+      status ${WORD} NOT NULL CHECK (status IN ('draft', 'sent', 'accepted', 'rejected', 'invoiced', 'cancelled')),
+      invoice_id ${ID},
+      notes TEXT,
+      terms TEXT,
+      created_by TEXT NOT NULL,
+      created_at ${WHEN} NOT NULL,
+      updated_at ${WHEN} NOT NULL,
+      CHECK (party_id IS NOT NULL OR customer_name IS NOT NULL),
+      FOREIGN KEY (party_id) REFERENCES parties(id),
+      FOREIGN KEY (invoice_id) REFERENCES invoices(id)
+    )`
+  },
+  {
+    name: 'quote_lines',
+    since: 7,
+    sql: `CREATE TABLE quote_lines (
+      quote_id ${ID} NOT NULL,
+      seq INT NOT NULL,
+      item_id ${ID},
+      description TEXT NOT NULL,
+      qty_milli BIGINT NOT NULL CHECK (qty_milli > 0),
+      unit_price BIGINT NOT NULL CHECK (unit_price >= 0),
+      PRIMARY KEY (quote_id, seq),
+      FOREIGN KEY (quote_id) REFERENCES quotes(id),
+      FOREIGN KEY (item_id) REFERENCES items(id)
+    )`
+  },
+  {
+    name: 'deals',
+    since: 7,
+    sql: `CREATE TABLE deals (
+      id ${ID} NOT NULL PRIMARY KEY,
+      title TEXT NOT NULL,
+      party_id ${ID},
+      contact_name TEXT,
+      phone TEXT,
+      source TEXT,
+      stage ${WORD} NOT NULL CHECK (stage IN ('lead', 'contacted', 'quoted', 'negotiating', 'won', 'lost')),
+      currency ${WORD} NOT NULL CHECK (currency IN ('IQD', 'USD')),
+      value BIGINT NOT NULL DEFAULT 0 CHECK (value >= 0),
+      expected_date ${WHEN},
+      next_step TEXT,
+      next_date ${WHEN},
+      owner TEXT,
+      quote_id ${ID},
+      lost_reason TEXT,
+      notes TEXT,
+      created_by TEXT NOT NULL,
+      created_at ${WHEN} NOT NULL,
+      updated_at ${WHEN} NOT NULL,
+      closed_at ${WHEN},
+      FOREIGN KEY (party_id) REFERENCES parties(id),
+      FOREIGN KEY (quote_id) REFERENCES quotes(id)
+    )`
+  },
+  {
+    name: 'pos_shifts',
+    since: 7,
+    sql: `CREATE TABLE pos_shifts (
+      id ${ID} NOT NULL PRIMARY KEY,
+      number ${ID} NOT NULL UNIQUE,
+      register TEXT NOT NULL,
+      cash_account ${ID} NOT NULL,
+      warehouse_id ${ID} NOT NULL,
+      status ${WORD} NOT NULL CHECK (status IN ('open', 'closed')),
+      opened_by TEXT NOT NULL,
+      opened_at ${WHEN} NOT NULL,
+      opening_cash BIGINT NOT NULL DEFAULT 0 CHECK (opening_cash >= 0),
+      closed_by TEXT,
+      closed_at ${WHEN},
+      expected_cash BIGINT,
+      counted_cash BIGINT,
+      expected_usd BIGINT,
+      counted_usd BIGINT,
+      notes TEXT,
+      FOREIGN KEY (cash_account) REFERENCES accounts(code),
+      FOREIGN KEY (warehouse_id) REFERENCES warehouses(id)
+    )`
+  },
+  {
+    name: 'pos_sales',
+    since: 7,
+    sql: `CREATE TABLE pos_sales (
+      invoice_id ${ID} NOT NULL PRIMARY KEY,
+      shift_id ${ID} NOT NULL,
+      INDEX pos_sales_shift (shift_id),
+      FOREIGN KEY (invoice_id) REFERENCES invoices(id),
+      FOREIGN KEY (shift_id) REFERENCES pos_shifts(id)
+    )`
+  },
+  {
+    name: 'employees',
+    since: 7,
+    sql: `CREATE TABLE employees (
+      id ${ID} NOT NULL PRIMARY KEY,
+      code ${ID} NOT NULL UNIQUE,
+      name TEXT NOT NULL,
+      job_title TEXT,
+      department TEXT,
+      phone TEXT,
+      id_number TEXT,
+      hire_date ${WHEN},
+      end_date ${WHEN},
+      currency ${WORD} NOT NULL CHECK (currency IN ('IQD', 'USD')),
+      base_salary BIGINT NOT NULL CHECK (base_salary >= 0),
+      allowances BIGINT NOT NULL DEFAULT 0 CHECK (allowances >= 0),
+      social_security INT NOT NULL DEFAULT 0,
+      bank_account TEXT,
+      active INT NOT NULL DEFAULT 1,
+      notes TEXT,
+      created_at ${WHEN} NOT NULL,
+      updated_at ${WHEN} NOT NULL
+    )`
+  },
+  {
+    name: 'payroll_runs',
+    since: 7,
+    sql: `CREATE TABLE payroll_runs (
+      id ${ID} NOT NULL PRIMARY KEY,
+      period ${WORD} NOT NULL,
+      date ${WHEN} NOT NULL,
+      currency ${WORD} NOT NULL CHECK (currency IN ('IQD', 'USD')),
+      status ${WORD} NOT NULL CHECK (status IN ('draft', 'posted', 'cancelled')),
+      entry_id ${ID},
+      payment_entry_id ${ID},
+      notes TEXT,
+      created_by TEXT NOT NULL,
+      created_at ${WHEN} NOT NULL,
+      updated_at ${WHEN} NOT NULL,
+      INDEX payroll_runs_period (period),
+      FOREIGN KEY (entry_id) REFERENCES entries(id),
+      FOREIGN KEY (payment_entry_id) REFERENCES entries(id)
+    )`
+  },
+  {
+    name: 'payroll_lines',
+    since: 7,
+    sql: `CREATE TABLE payroll_lines (
+      run_id ${ID} NOT NULL,
+      employee_id ${ID} NOT NULL,
+      base BIGINT NOT NULL,
+      allowances BIGINT NOT NULL DEFAULT 0,
+      overtime BIGINT NOT NULL DEFAULT 0,
+      bonus BIGINT NOT NULL DEFAULT 0,
+      absence BIGINT NOT NULL DEFAULT 0,
+      advance_deduction BIGINT NOT NULL DEFAULT 0,
+      social_security BIGINT NOT NULL DEFAULT 0,
+      other_deductions BIGINT NOT NULL DEFAULT 0,
+      net BIGINT NOT NULL,
+      notes TEXT,
+      PRIMARY KEY (run_id, employee_id),
+      FOREIGN KEY (run_id) REFERENCES payroll_runs(id),
+      FOREIGN KEY (employee_id) REFERENCES employees(id)
+    )`
+  },
+  {
+    name: 'employee_advances',
+    since: 7,
+    sql: `CREATE TABLE employee_advances (
+      id ${ID} NOT NULL PRIMARY KEY,
+      employee_id ${ID} NOT NULL,
+      date ${WHEN} NOT NULL,
+      currency ${WORD} NOT NULL CHECK (currency IN ('IQD', 'USD')),
+      amount BIGINT NOT NULL CHECK (amount > 0),
+      monthly BIGINT NOT NULL CHECK (monthly > 0),
+      entry_id ${ID},
+      notes TEXT,
+      created_by TEXT NOT NULL,
+      created_at ${WHEN} NOT NULL,
+      INDEX employee_advances_employee (employee_id),
+      FOREIGN KEY (employee_id) REFERENCES employees(id),
+      FOREIGN KEY (entry_id) REFERENCES entries(id)
+    )`
+  },
+  {
+    name: 'fx_rates',
+    since: 7,
+    sql: `CREATE TABLE fx_rates (
+      date ${WHEN} NOT NULL PRIMARY KEY,
+      rate_x100 BIGINT NOT NULL CHECK (rate_x100 > 0),
+      source TEXT,
+      created_by TEXT NOT NULL,
+      created_at ${WHEN} NOT NULL
+    )`
+  },
+  {
+    name: 'gen_subscribers',
+    since: 7,
+    sql: `CREATE TABLE gen_subscribers (
+      party_id ${ID} NOT NULL PRIMARY KEY,
+      code ${ID} NOT NULL UNIQUE,
+      amps_x10 INT NOT NULL CHECK (amps_x10 > 0),
+      line ${WORD} NOT NULL CHECK (line IN ('normal', 'golden')),
+      area TEXT,
+      route TEXT,
+      status ${WORD} NOT NULL CHECK (status IN ('active', 'suspended', 'ended')),
+      start_date ${WHEN},
+      notes TEXT,
+      created_at ${WHEN} NOT NULL,
+      updated_at ${WHEN} NOT NULL,
+      FOREIGN KEY (party_id) REFERENCES parties(id)
+    )`
+  },
+  {
+    name: 'gen_runs',
+    since: 7,
+    sql: `CREATE TABLE gen_runs (
+      id ${ID} NOT NULL PRIMARY KEY,
+      period ${WORD} NOT NULL UNIQUE,
+      date ${WHEN} NOT NULL,
+      price_normal BIGINT NOT NULL CHECK (price_normal >= 0),
+      price_golden BIGINT NOT NULL CHECK (price_golden >= 0),
+      status ${WORD} NOT NULL CHECK (status IN ('draft', 'posted', 'cancelled')),
+      entry_id ${ID},
+      created_by TEXT NOT NULL,
+      created_at ${WHEN} NOT NULL,
+      updated_at ${WHEN} NOT NULL,
+      FOREIGN KEY (entry_id) REFERENCES entries(id)
+    )`
+  },
+  {
+    name: 'gen_bills',
+    since: 7,
+    sql: `CREATE TABLE gen_bills (
+      run_id ${ID} NOT NULL,
+      party_id ${ID} NOT NULL,
+      amps_x10 INT NOT NULL,
+      line ${WORD} NOT NULL CHECK (line IN ('normal', 'golden')),
+      amount BIGINT NOT NULL CHECK (amount >= 0),
+      PRIMARY KEY (run_id, party_id),
+      FOREIGN KEY (run_id) REFERENCES gen_runs(id),
+      FOREIGN KEY (party_id) REFERENCES gen_subscribers(party_id)
+    )`
+  },
+  {
+    name: 'gen_collections',
+    since: 7,
+    sql: `CREATE TABLE gen_collections (
+      entry_id ${ID} NOT NULL PRIMARY KEY,
+      party_id ${ID} NOT NULL,
+      collector TEXT,
+      amount BIGINT NOT NULL CHECK (amount > 0),
+      created_at ${WHEN} NOT NULL,
+      INDEX gen_collections_party (party_id),
+      FOREIGN KEY (entry_id) REFERENCES entries(id),
+      FOREIGN KEY (party_id) REFERENCES gen_subscribers(party_id)
+    )`
+  },
+  {
+    name: 'api_keys',
+    since: 7,
+    sql: `CREATE TABLE api_keys (
+      id ${ID} NOT NULL PRIMARY KEY,
+      name TEXT NOT NULL,
+      prefix ${WORD} NOT NULL,
+      hash ${ID} NOT NULL UNIQUE,
+      scopes TEXT NOT NULL,
+      created_by TEXT NOT NULL,
+      created_at ${WHEN} NOT NULL,
+      last_used_at ${WHEN},
+      revoked_at ${WHEN}
+    )`
+  },
+  {
+    name: 'stock_adjustments',
+    since: 7,
+    sql: `CREATE TABLE stock_adjustments (
+      id ${ID} NOT NULL PRIMARY KEY,
+      number ${ID} UNIQUE,
+      date ${WHEN} NOT NULL,
+      warehouse_id ${ID} NOT NULL,
+      reason ${WORD} NOT NULL CHECK (reason IN ('damaged', 'lost', 'expired', 'count', 'internal_use', 'job', 'other')),
+      account_code ${ID},
+      job_id ${ID},
+      status ${WORD} NOT NULL CHECK (status IN ('draft', 'posted', 'cancelled')),
+      entry_id ${ID},
+      notes TEXT,
+      created_by TEXT NOT NULL,
+      prepared_by_id ${ID},
+      created_at ${WHEN} NOT NULL,
+      updated_at ${WHEN} NOT NULL,
+      FOREIGN KEY (warehouse_id) REFERENCES warehouses(id),
+      FOREIGN KEY (account_code) REFERENCES accounts(code),
+      FOREIGN KEY (job_id) REFERENCES jobs(id),
+      FOREIGN KEY (entry_id) REFERENCES entries(id),
+      FOREIGN KEY (prepared_by_id) REFERENCES users(id)
+    )`
+  },
+  {
+    name: 'stock_adjustment_lines',
+    since: 7,
+    sql: `CREATE TABLE stock_adjustment_lines (
+      adjustment_id ${ID} NOT NULL,
+      seq INT NOT NULL,
+      item_id ${ID} NOT NULL,
+      qty_milli BIGINT NOT NULL CHECK (qty_milli <> 0),
+      unit_cost BIGINT,
+      PRIMARY KEY (adjustment_id, seq),
+      FOREIGN KEY (adjustment_id) REFERENCES stock_adjustments(id),
+      FOREIGN KEY (item_id) REFERENCES items(id)
+    )`
+  },
+  {
+    name: 'purchase_orders',
+    since: 7,
+    sql: `CREATE TABLE purchase_orders (
+      id ${ID} NOT NULL PRIMARY KEY,
+      number ${ID} NOT NULL UNIQUE,
+      date ${WHEN} NOT NULL,
+      party_id ${ID} NOT NULL,
+      warehouse_id ${ID},
+      currency ${WORD} NOT NULL CHECK (currency IN ('IQD', 'USD')),
+      expected_date ${WHEN},
+      status ${WORD} NOT NULL CHECK (status IN ('draft', 'sent', 'partial', 'received', 'cancelled')),
+      notes TEXT,
+      created_by TEXT NOT NULL,
+      created_at ${WHEN} NOT NULL,
+      updated_at ${WHEN} NOT NULL,
+      FOREIGN KEY (party_id) REFERENCES parties(id),
+      FOREIGN KEY (warehouse_id) REFERENCES warehouses(id)
+    )`
+  },
+  {
+    name: 'purchase_order_lines',
+    since: 7,
+    sql: `CREATE TABLE purchase_order_lines (
+      order_id ${ID} NOT NULL,
+      seq INT NOT NULL,
+      item_id ${ID} NOT NULL,
+      qty_milli BIGINT NOT NULL CHECK (qty_milli > 0),
+      unit_price BIGINT NOT NULL CHECK (unit_price >= 0),
+      PRIMARY KEY (order_id, seq),
+      FOREIGN KEY (order_id) REFERENCES purchase_orders(id),
+      FOREIGN KEY (item_id) REFERENCES items(id)
+    )`
+  },
+  {
+    name: 'purchase_order_receipts',
+    since: 7,
+    sql: `CREATE TABLE purchase_order_receipts (
+      order_id ${ID} NOT NULL,
+      invoice_id ${ID} NOT NULL,
+      PRIMARY KEY (order_id, invoice_id),
+      FOREIGN KEY (order_id) REFERENCES purchase_orders(id),
+      FOREIGN KEY (invoice_id) REFERENCES invoices(id)
+    )`
+  },
+  {
+    name: 'party_price_lists',
+    since: 7,
+    sql: `CREATE TABLE party_price_lists (
+      party_id ${ID} NOT NULL PRIMARY KEY,
+      list ${WORD} NOT NULL CHECK (list IN ('retail', 'wholesale')),
+      FOREIGN KEY (party_id) REFERENCES parties(id)
+    )`
+  },
+  {
+    name: 'item_prices',
+    since: 7,
+    sql: `CREATE TABLE item_prices (
+      item_id ${ID} NOT NULL,
+      list ${WORD} NOT NULL CHECK (list IN ('wholesale')),
+      price BIGINT NOT NULL CHECK (price >= 0),
+      PRIMARY KEY (item_id, list),
+      FOREIGN KEY (item_id) REFERENCES items(id)
+    )`
+  },
+  {
+    name: 'fixed_assets',
+    since: 7,
+    sql: `CREATE TABLE fixed_assets (
+      id ${ID} NOT NULL PRIMARY KEY,
+      code ${ID} NOT NULL UNIQUE,
+      name TEXT NOT NULL,
+      category ${WORD} CHECK (category IN ('land', 'buildings', 'machinery', 'vehicles', 'tools', 'furniture', 'computers')),
+      asset_account ${ID} NOT NULL,
+      accum_account ${ID} NOT NULL,
+      expense_account ${ID} NOT NULL,
+      acquired ${WHEN} NOT NULL,
+      cost BIGINT NOT NULL CHECK (cost > 0),
+      salvage BIGINT NOT NULL DEFAULT 0 CHECK (salvage >= 0),
+      life_months INT NOT NULL CHECK (life_months > 0),
+      method ${WORD} NOT NULL CHECK (method IN ('straight_line')),
+      opening_accum BIGINT NOT NULL DEFAULT 0 CHECK (opening_accum >= 0),
+      location TEXT,
+      status ${WORD} NOT NULL CHECK (status IN ('active', 'disposed')),
+      disposed_on ${WHEN},
+      disposal_entry_id ${ID},
+      notes TEXT,
+      created_by TEXT NOT NULL,
+      created_at ${WHEN} NOT NULL,
+      updated_at ${WHEN} NOT NULL,
+      FOREIGN KEY (disposal_entry_id) REFERENCES entries(id),
+      FOREIGN KEY (asset_account) REFERENCES accounts(code),
+      FOREIGN KEY (accum_account) REFERENCES accounts(code),
+      FOREIGN KEY (expense_account) REFERENCES accounts(code)
+    )`
+  },
+  {
+    name: 'depreciation_runs',
+    since: 7,
+    sql: `CREATE TABLE depreciation_runs (
+      id ${ID} NOT NULL PRIMARY KEY,
+      period ${WORD} NOT NULL UNIQUE,
+      entry_id ${ID},
+      status ${WORD} NOT NULL CHECK (status IN ('draft', 'posted', 'cancelled')),
+      created_by TEXT NOT NULL,
+      created_at ${WHEN} NOT NULL,
+      FOREIGN KEY (entry_id) REFERENCES entries(id)
+    )`
+  },
+  {
+    name: 'depreciation_lines',
+    since: 7,
+    sql: `CREATE TABLE depreciation_lines (
+      run_id ${ID} NOT NULL,
+      asset_id ${ID} NOT NULL,
+      amount BIGINT NOT NULL CHECK (amount >= 0),
+      PRIMARY KEY (run_id, asset_id),
+      FOREIGN KEY (run_id) REFERENCES depreciation_runs(id),
+      FOREIGN KEY (asset_id) REFERENCES fixed_assets(id)
+    )`
+  },
+  {
+    name: 're_deposits',
+    since: 7,
+    sql: `CREATE TABLE re_deposits (
+      entry_id ${ID} NOT NULL PRIMARY KEY,
+      unit_id ${ID} NOT NULL,
+      party_id ${ID} NOT NULL,
+      currency ${WORD} NOT NULL CHECK (currency IN ('IQD', 'USD')),
+      amount BIGINT NOT NULL CHECK (amount > 0),
+      date ${WHEN} NOT NULL,
+      status ${WORD} NOT NULL CHECK (status IN ('held', 'applied', 'refunded', 'forfeited')),
+      invoice_id ${ID},
+      close_entry_id ${ID},
+      created_by TEXT NOT NULL,
+      created_at ${WHEN} NOT NULL,
+      closed_at ${WHEN},
+      INDEX re_deposits_unit (unit_id),
+      FOREIGN KEY (entry_id) REFERENCES entries(id),
+      FOREIGN KEY (unit_id) REFERENCES re_units(id),
+      FOREIGN KEY (party_id) REFERENCES parties(id),
+      FOREIGN KEY (invoice_id) REFERENCES invoices(id),
+      FOREIGN KEY (close_entry_id) REFERENCES entries(id)
+    )`
+  },
+  {
+    name: 'cheques',
+    since: 7,
+    sql: `CREATE TABLE cheques (
+      id ${ID} NOT NULL PRIMARY KEY,
+      direction ${WORD} NOT NULL CHECK (direction IN ('received', 'issued')),
+      number ${ID} NOT NULL,
+      bank TEXT NOT NULL,
+      party_id ${ID} NOT NULL,
+      currency ${WORD} NOT NULL CHECK (currency IN ('IQD', 'USD')),
+      amount BIGINT NOT NULL CHECK (amount > 0),
+      issue_date ${WHEN} NOT NULL,
+      due_date ${WHEN} NOT NULL,
+      status ${WORD} NOT NULL CHECK (status IN ('in_hand', 'deposited', 'cleared', 'bounced', 'cancelled', 'pending')),
+      bank_account ${ID},
+      entry_id ${ID},
+      clear_entry_id ${ID},
+      bounce_entry_id ${ID},
+      notes TEXT,
+      created_by TEXT NOT NULL,
+      created_at ${WHEN} NOT NULL,
+      updated_at ${WHEN} NOT NULL,
+      INDEX cheques_due (status, due_date),
+      FOREIGN KEY (party_id) REFERENCES parties(id),
+      FOREIGN KEY (bank_account) REFERENCES accounts(code),
+      FOREIGN KEY (entry_id) REFERENCES entries(id),
+      FOREIGN KEY (clear_entry_id) REFERENCES entries(id),
+      FOREIGN KEY (bounce_entry_id) REFERENCES entries(id)
+    )`
+  },
+  {
+    name: 'bank_statements',
+    since: 7,
+    sql: `CREATE TABLE bank_statements (
+      id ${ID} NOT NULL PRIMARY KEY,
+      account_code ${ID} NOT NULL,
+      period_from ${WHEN} NOT NULL,
+      period_to ${WHEN} NOT NULL,
+      opening BIGINT NOT NULL,
+      closing BIGINT NOT NULL,
+      status ${WORD} NOT NULL CHECK (status IN ('open', 'reconciled')),
+      created_by TEXT NOT NULL,
+      created_at ${WHEN} NOT NULL,
+      updated_at ${WHEN} NOT NULL,
+      FOREIGN KEY (account_code) REFERENCES accounts(code)
+    )`
+  },
+  {
+    name: 'bank_statement_lines',
+    since: 7,
+    sql: `CREATE TABLE bank_statement_lines (
+      statement_id ${ID} NOT NULL,
+      seq INT NOT NULL,
+      date ${WHEN} NOT NULL,
+      description TEXT NOT NULL,
+      reference TEXT,
+      amount BIGINT NOT NULL,
+      entry_id ${ID},
+      PRIMARY KEY (statement_id, seq),
+      FOREIGN KEY (statement_id) REFERENCES bank_statements(id),
+      FOREIGN KEY (entry_id) REFERENCES entries(id)
+    )`
+  },
+  {
+    name: 'branches',
+    since: 7,
+    sql: `CREATE TABLE branches (
+      id ${ID} NOT NULL PRIMARY KEY,
+      code ${ID} NOT NULL UNIQUE,
+      name TEXT NOT NULL,
+      city TEXT,
+      active INT NOT NULL DEFAULT 1,
+      created_at ${WHEN} NOT NULL,
+      updated_at ${WHEN} NOT NULL
+    )`
+  },
+  {
+    name: 'branch_warehouses',
+    since: 7,
+    sql: `CREATE TABLE branch_warehouses (
+      warehouse_id ${ID} NOT NULL PRIMARY KEY,
+      branch_id ${ID} NOT NULL,
+      FOREIGN KEY (warehouse_id) REFERENCES warehouses(id),
+      FOREIGN KEY (branch_id) REFERENCES branches(id)
+    )`
+  },
+  {
+    name: 'branch_accounts',
+    since: 7,
+    sql: `CREATE TABLE branch_accounts (
+      account_code ${ID} NOT NULL PRIMARY KEY,
+      branch_id ${ID} NOT NULL,
+      FOREIGN KEY (account_code) REFERENCES accounts(code),
+      FOREIGN KEY (branch_id) REFERENCES branches(id)
+    )`
+  },
+  {
+    name: 'user_branches',
+    since: 7,
+    sql: `CREATE TABLE user_branches (
+      user_id ${ID} NOT NULL,
+      branch_id ${ID} NOT NULL,
+      PRIMARY KEY (user_id, branch_id),
+      FOREIGN KEY (user_id) REFERENCES users(id),
+      FOREIGN KEY (branch_id) REFERENCES branches(id)
+    )`
+  },
+  {
+    name: 'solar_designs',
+    since: 7,
+    sql: `CREATE TABLE solar_designs (
+      job_id ${ID} NOT NULL PRIMARY KEY,
+      design MEDIUMTEXT NOT NULL,
+      updated_at ${WHEN} NOT NULL,
+      FOREIGN KEY (job_id) REFERENCES jobs(id)
+    )`
+  },
+  {
+    name: 'maint_plans',
+    since: 7,
+    sql: `CREATE TABLE maint_plans (
+      id ${ID} NOT NULL PRIMARY KEY,
+      party_id ${ID} NOT NULL,
+      job_id ${ID},
+      title TEXT NOT NULL,
+      site TEXT,
+      every_months INT NOT NULL CHECK (every_months BETWEEN 1 AND 24),
+      next_date ${WHEN} NOT NULL,
+      currency ${WORD} NOT NULL CHECK (currency IN ('IQD', 'USD')),
+      price BIGINT NOT NULL DEFAULT 0 CHECK (price >= 0),
+      status ${WORD} NOT NULL CHECK (status IN ('active', 'paused', 'ended')),
+      notes TEXT,
+      created_by TEXT NOT NULL,
+      created_at ${WHEN} NOT NULL,
+      updated_at ${WHEN} NOT NULL,
+      INDEX maint_plans_party (party_id),
+      FOREIGN KEY (party_id) REFERENCES parties(id),
+      FOREIGN KEY (job_id) REFERENCES jobs(id)
+    )`
+  },
+  {
+    name: 'maint_visits',
+    since: 7,
+    sql: `CREATE TABLE maint_visits (
+      id ${ID} NOT NULL PRIMARY KEY,
+      number ${ID} NOT NULL UNIQUE,
+      plan_id ${ID},
+      party_id ${ID} NOT NULL,
+      date ${WHEN} NOT NULL,
+      kind ${WORD} NOT NULL CHECK (kind IN ('service', 'repair', 'inspection', 'installation')),
+      technician TEXT,
+      status ${WORD} NOT NULL CHECK (status IN ('scheduled', 'done', 'cancelled')),
+      findings TEXT,
+      work_done TEXT,
+      invoice_id ${ID},
+      created_by TEXT NOT NULL,
+      created_at ${WHEN} NOT NULL,
+      updated_at ${WHEN} NOT NULL,
+      INDEX maint_visits_party (party_id),
+      FOREIGN KEY (plan_id) REFERENCES maint_plans(id),
+      FOREIGN KEY (party_id) REFERENCES parties(id),
+      FOREIGN KEY (invoice_id) REFERENCES invoices(id)
+    )`
+  },
+  {
+    name: 'webapi_orders',
+    since: 7,
+    sql: `CREATE TABLE webapi_orders (
+      source ${ID} NOT NULL,
+      external_id ${ID} NOT NULL,
+      invoice_id ${ID} NOT NULL,
+      created_at ${WHEN} NOT NULL,
+      PRIMARY KEY (source, external_id),
+      FOREIGN KEY (invoice_id) REFERENCES invoices(id)
+    )`
+  },
+  {
+    name: 'webhooks',
+    since: 7,
+    sql: `CREATE TABLE webhooks (
+      id ${ID} NOT NULL PRIMARY KEY,
+      url TEXT NOT NULL,
+      events TEXT NOT NULL,
+      secret TEXT NOT NULL,
+      active INT NOT NULL DEFAULT 1,
+      last_status INT,
+      last_delivery_at ${WHEN},
+      created_by TEXT NOT NULL,
+      created_at ${WHEN} NOT NULL
+    )`
   }
 ];
 

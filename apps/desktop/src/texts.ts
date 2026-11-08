@@ -12,6 +12,7 @@ const T = {
   zoomReset: ['الحجم الأصلي', 'Actual size', 'قەبارەی ئاسایی'],
   fullScreen: ['ملء الشاشة', 'Full screen', 'پڕ بە شاشە'],
   help: ['مساعدة', 'Help', 'یارمەتی'],
+  guide: ['دليل الاستخدام', 'User guide', 'ڕێنمایی بەکارهێنان'],
   checkUpdates: ['التحقق من التحديثات', 'Check for updates', 'پشکنینی نوێکردنەوە'],
   website: ['موقع qasaerp.com', 'qasaerp.com website', 'ماڵپەڕی qasaerp.com'],
   about: ['حول قاصة ERP', 'About Qasa ERP', 'دەربارەی قاسە ERP'],
@@ -23,6 +24,7 @@ const T = {
   later: ['لاحقاً', 'Later', 'دواتر'],
   upToDate: ['لديك أحدث إصدار ({v}).', 'You have the latest version ({v}).', 'نوێترین وەشانت هەیە ({v}).'],
   downloading: ['يوجد إصدار جديد ({v})، يجري تنزيله وسننبّهك عند جاهزيته.', 'A new version ({v}) is downloading. We’ll let you know when it’s ready.', 'وەشانێکی نوێ ({v}) دادەبەزێت. کاتێک ئامادە بوو ئاگادارت دەکەینەوە.'],
+  updateWaiting: ['الإصدار {v} جاهز للتثبيت. اختر «أعد التشغيل للتحديث» في الشريط أعلى النافذة، أو سيُثبَّت عند إغلاق البرنامج.', 'Qasa ERP {v} is ready to install. Click “Restart to update” in the bar at the top of the window, or it installs when you close the app.', 'وەشانی {v} ئامادەیە بۆ دامەزراندن. لە شریتی سەرەوەی پەنجەرەکە «دووبارە بیکەرەوە بۆ نوێکردنەوە» هەڵبژێرە، یان کاتێک بەرنامەکە دادەخەیت دادەمەزرێت.'],
   updateError: ['تعذر التحقق من التحديثات. تحقق من الاتصال بالإنترنت وحاول لاحقاً.', 'Couldn’t check for updates. Check the internet connection and try again later.', 'نەتوانرا نوێکردنەوە بپشکنرێت. پەیوەندیی ئینتەرنێت بپشکنە و دواتر هەوڵ بدەرەوە.'],
   startFailed: ['تعذر تشغيل قاصة ERP', 'Qasa ERP couldn’t start', 'قاسە ERP نەتوانرا دەستپێبکات'],
   // books a newer version has already upgraded (the Store version can be a release behind the installer)
@@ -49,9 +51,26 @@ const T = {
   dbWhyOther: ['السبب: {code}', 'Reason: {code}', 'هۆکار: {code}'],
   dbUseLocalCopy: ['استخدام ملف الشركة من قبل النقل', 'Use the company file from before the move', 'بەکارهێنانی فایلی کۆمپانیا لە پێش گواستنەوە'],
   dbLocalCopyConfirm: ['سيفتح قاصة ERP ملف الشركة كما كان في {date}، يوم نُقلت الشركة إلى الخادم. لا يحتوي على شيء أُدخل على الخادم بعد ذلك، ويتوقف هذا الحاسوب عن استخدام الخادم. هل تتابع؟', 'Qasa ERP opens the company file as it was on {date}, when the company moved to the server. Nothing entered on the server since then is in it, and this PC stops using the server. Continue?', 'قاسە ERP فایلی کۆمپانیا دەکاتەوە وەک ئەوەی لە {date} بوو، ئەو ڕۆژەی کۆمپانیا گوازرایەوە بۆ سێرڤەر. هیچ شتێک کە دواتر لەسەر سێرڤەر تۆمارکراوە تێیدا نییە، و ئەم کۆمپیوتەرە واز لە بەکارهێنانی سێرڤەر دەهێنێت. بەردەوام دەبیت؟'],
+  // the server process (server-process.ts) ended by itself
+  serverCrashed: ['توقف جزء الخادم في قاصة ERP بشكل غير متوقع. بياناتك محفوظة في ملف الشركة.', 'Qasa ERP’s server part stopped unexpectedly. Your data is safe in the company file.', 'بەشی سێرڤەری قاسە ERP لەناکاو وەستا. داتاکانت لە فایلی کۆمپانیادا پارێزراون.'],
+  serverCrashedDetail: ['أعد التشغيل للمتابعة. إن تكرر ذلك، أرسل ملفات السجل (server.log) إلى الدعم. الرمز: {code}', 'Restart to carry on. If it happens again, send the log files (server.log) to support. Code: {code}', 'دەستپێبکەرەوە بۆ بەردەوامبوون. ئەگەر دووبارە بووەوە، فایلەکانی تۆمار (server.log) بنێرە بۆ پشتگیری. کۆد: {code}'],
+  openLogs: ['فتح مجلد السجلات', 'Open the logs folder', 'کردنەوەی بوخچەی تۆمارەکان'],
+  // graphics acceleration (Settings → Language and display)
+  gpuOffTitle: ['تم إيقاف تسريع الرسوميات', 'Graphics acceleration turned off', 'خێراکردنی گرافیک ڕاگیرا'],
+  gpuOff: ['توقف معالج الرسوميات في هذا الحاسوب عدة مرات، لذلك أوقف قاصة ERP تسريع الرسوميات. أعد التشغيل ليعمل بسلاسة. يمكنك إعادة تشغيله من الإعدادات ← اللغة والعرض.', 'This PC’s graphics stopped several times, so Qasa ERP turned graphics acceleration off. Restart for it to run smoothly. You can turn it back on in Settings → Language and display.', 'گرافیکی ئەم کۆمپیوتەرە چەند جارێک وەستا، بۆیە قاسە ERP خێراکردنی گرافیکی ڕاگرت. دەستپێبکەرەوە بۆ ئەوەی بە نەرمی کار بکات. دەتوانیت لە ڕێکخستنەکان ← زمان و پیشاندان دووبارە هەڵیبکەیتەوە.'],
   // backups (Settings)
   backupFolder: ['اختر مجلد النسخ الاحتياطية', 'Choose the folder for backups', 'بوخچەی باکئەپەکان هەڵبژێرە'],
-  restoreFile: ['اختر النسخة الاحتياطية المراد استرجاعها', 'Choose the backup to restore', 'ئەو باکئەپە هەڵبژێرە کە دەتەوێت بیگەڕێنیتەوە']
+  restoreFile: ['اختر النسخة الاحتياطية المراد استرجاعها', 'Choose the backup to restore', 'ئەو باکئەپە هەڵبژێرە کە دەتەوێت بیگەڕێنیتەوە'],
+  // a restore that could not put the copy in place (server-process.ts): the company file was left as it was
+  restoreFailed: ['تعذّر استرجاع النسخة الاحتياطية، ولم يتغيّر شيء في ملف الشركة. تأكد أن القرص متصل وفيه مساحة كافية، ثم حاول مرة أخرى.', 'The backup couldn’t be restored, and nothing in the company file was changed. Check that the disk is connected and has enough free space, then try again.', 'باکئەپەکە نەگەڕێندرایەوە، و هیچ شتێک لە فایلی کۆمپانیادا نەگۆڕا. دڵنیابە کە دیسکەکە بەستراوە و شوێنی بەتاڵی بەس هەیە، پاشان دووبارە هەوڵ بدەرەوە.'],
+  // a restore that failed and could not even put the company file back (server-process.ts): it is kept aside, and the
+  // next start puts it back
+  restoreFailedAside: ['تعذّر استرجاع النسخة الاحتياطية، وتعذّرت إعادة ملف الشركة إلى مكانه: إنه محفوظ دون تغيير في مجلد البيانات باسم {file}. سيعيده قاصة ERP إلى مكانه عند التشغيل التالي. إن لم يتمكن، أغلق البرامج التي قد تستخدم مجلد البيانات (أداة نسخ احتياطي أو مزامنة)، ثم شغّل قاصة ERP مرة أخرى.', 'The backup couldn’t be restored, and the company file couldn’t be put back in its place: it is kept, unchanged, in the data folder as {file}. Qasa ERP puts it back when it starts again. If it can’t, close any program that may be using the data folder (a backup or sync tool), then start Qasa ERP again.', 'باکئەپەکە نەگەڕێندرایەوە، و فایلی کۆمپانیا نەگەڕێندرایەوە شوێنی خۆی: بێ گۆڕان لە بوخچەی داتادا بە ناوی {file} پارێزراوە. قاسە ERP کاتێک دووبارە دەستپێدەکاتەوە دەیگەڕێنێتەوە شوێنی خۆی. ئەگەر نەیتوانی، ئەو بەرنامانە دابخە کە لەوانەیە بوخچەی داتا بەکاربهێنن (ئامرازی باکئەپ یان هاوکاتکردن)، پاشان دووبارە قاسە ERP دەستپێبکەرەوە.'],
+  // the company file can't be opened at the start
+  dbDamaged: ['تعذّر فتح ملف الشركة. قد يكون تالفاً أو ليس ملف شركة لقاصة ERP.', 'The company file can’t be opened. It may be damaged, or it isn’t a Qasa ERP company file.', 'فایلی کۆمپانیا ناکرێتەوە. لەوانەیە تێکچووبێت، یان فایلی کۆمپانیای قاسە ERP نەبێت.'],
+  dbDamagedDetail: ['«الاسترجاع من نسخة احتياطية» يحفظ هذا الملف جانباً في مجلد البيانات (لا يُحذف شيء)، ثم يفتح شركة فارغة. استرجع نسختك منها فوراً من الإعدادات ← النسخ الاحتياطية، ولا تُدخل فيها أي بيانات قبل ذلك.\nالسبب: {reason}', '“Restore from a backup” keeps this file aside in the data folder (nothing is deleted), then opens an empty company. Restore your backup in it straight away from Settings → Backups, and enter nothing in it before that.\nReason: {reason}', '«گەڕاندنەوە لە باکئەپێک» ئەم فایلە لە بوخچەی داتادا بە لاوە دادەنێت (هیچ ناسڕدرێتەوە)، پاشان کۆمپانیایەکی بەتاڵ دەکاتەوە. یەکسەر لە ڕێکخستنەکان ← باکئەپەکان باکئەپەکەتی تێدا بگەڕێنەوە، و پێش ئەوە هیچ داتایەکی تێدا تۆمار مەکە.\nهۆکار: {reason}'],
+  dbRestoreFromBackup: ['الاسترجاع من نسخة احتياطية', 'Restore from a backup', 'گەڕاندنەوە لە باکئەپێک'],
+  openFirstCompany: ['فتح الشركة الأولى', 'Open the first company', 'کردنەوەی کۆمپانیای یەکەم']
 } as const;
 
 export type TextKey = keyof typeof T;

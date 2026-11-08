@@ -60,10 +60,21 @@ export function toBaseBalanced(amounts: number[], currency: CurrencyCode, rateX1
   return converted;
 }
 
+/**
+ * Western digits, the Arabic decimal mark as ".", spaces gone, and commas (or "٬") only as thousands separators:
+ * "1,250,000.5" → "1250000.5". A comma anywhere else ("2,5", the decimal mark of comma-decimal Excel files) is not
+ * guessed at: the result is null, so the caller reports the value as invalid instead of reading ten times the amount.
+ */
+export function normalizeNumber(text: string): string | null {
+  const s = toWesternDigits(text).replace(/\s/g, '').replace(/٬/g, ',').replace('٫', '.');
+  if (!s.includes(',')) return s;
+  return /^\d{1,3}(,\d{3})+(\.\d+)?$/.test(s) ? s.replace(/,/g, '') : null;
+}
+
 /** Parses user input such as "1,250,000", "١٬٢٥٠٬٠٠٠" or "12.5" into minor units. Returns null when invalid. */
 export function parseAmount(text: string, currency: CurrencyCode): number | null {
-  const normalized = toWesternDigits(text).replace(/[,\s٬]/g, '').replace('٫', '.');
-  if (normalized === '') return null;
+  const normalized = normalizeNumber(text);
+  if (normalized === null || normalized === '') return null;
   if (!/^\d+(\.\d+)?$/.test(normalized)) return null;
   const decimals = CURRENCIES[currency].decimals;
   const [whole = '0', fraction = ''] = normalized.split('.');

@@ -92,7 +92,13 @@ function statusOf(db: Db, year: number, start: string, lines: PostedLine[], toda
     }
     const entries = (db.prepare("SELECT COUNT(*) AS n FROM entries WHERE status IN ('draft', 'checked') AND date BETWEEN ? AND ?").get(from, to) as { n: number }).n;
     if (entries) blockers.push({ code: 'unfinished_entries', count: entries });
-    const documents = (db.prepare("SELECT (SELECT COUNT(*) FROM invoices WHERE status = 'draft' AND date BETWEEN ? AND ?) + (SELECT COUNT(*) FROM stock_docs WHERE status = 'draft' AND date BETWEEN ? AND ?) AS n").get(from, to, from, to) as { n: number }).n;
+    // drafts that will post into the year: invoices, stock documents and adjustments (counts), payroll and generator months
+    const documents = Number((db.prepare(`SELECT (SELECT COUNT(*) FROM invoices WHERE status = 'draft' AND date BETWEEN ? AND ?)
+                                               + (SELECT COUNT(*) FROM stock_docs WHERE status = 'draft' AND date BETWEEN ? AND ?)
+                                               + (SELECT COUNT(*) FROM stock_adjustments WHERE status = 'draft' AND date BETWEEN ? AND ?)
+                                               + (SELECT COUNT(*) FROM payroll_runs WHERE status = 'draft' AND date BETWEEN ? AND ?)
+                                               + (SELECT COUNT(*) FROM gen_runs WHERE status = 'draft' AND date BETWEEN ? AND ?) AS n`)
+      .get(from, to, from, to, from, to, from, to, from, to) as { n: number }).n);
     if (documents) blockers.push({ code: 'unfinished_documents', count: documents });
     if (!resultAccounts(lines, (l) => l.date >= from && l.date <= to).size) blockers.push({ code: 'nothing_to_close' });
   }

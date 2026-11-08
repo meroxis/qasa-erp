@@ -1,4 +1,4 @@
-import { createHash, randomBytes, randomUUID, scryptSync, timingSafeEqual } from 'node:crypto';
+import { createHash, randomBytes, randomUUID, scrypt, timingSafeEqual } from 'node:crypto';
 import type { Db } from './db.ts';
 import { transaction } from './db.ts';
 import { audit } from './audit.ts';
@@ -62,17 +62,22 @@ export const SESSION_COOKIE = 'qasa_auth';
 
 const SCRYPT = { N: 16384, r: 8, p: 1, keylen: 64 };
 
-export function hashPassword(password: string): string {
+/** scrypt off the event loop (Node's thread pool), so a sign-in never holds up other requests. */
+function scryptAsync(password: string, salt: Buffer, keylen: number, options: { N: number; r: number; p: number }): Promise<Buffer> {
+  return new Promise((resolve, reject) => scrypt(password, salt, keylen, options, (error, key) => (error ? reject(error) : resolve(key))));
+}
+
+export async function hashPassword(password: string): Promise<string> {
   const salt = randomBytes(16);
-  const hash = scryptSync(password, salt, SCRYPT.keylen, { N: SCRYPT.N, r: SCRYPT.r, p: SCRYPT.p });
+  const hash = await scryptAsync(password, salt, SCRYPT.keylen, { N: SCRYPT.N, r: SCRYPT.r, p: SCRYPT.p });
   return `scrypt$${SCRYPT.N}$${SCRYPT.r}$${SCRYPT.p}$${salt.toString('base64url')}$${hash.toString('base64url')}`;
 }
 
-export function verifyPassword(password: string, stored: string): boolean {
+export async function verifyPassword(password: string, stored: string): Promise<boolean> {
   const [scheme, n, r, p, salt, hash] = stored.split('$');
   if (scheme !== 'scrypt' || !salt || !hash) return false;
   const expected = Buffer.from(hash, 'base64url');
-  const actual = scryptSync(password, Buffer.from(salt, 'base64url'), expected.length, { N: Number(n), r: Number(r), p: Number(p) });
+  const actual = await scryptAsync(password, Buffer.from(salt, 'base64url'), expected.length, { N: Number(n), r: Number(r), p: Number(p) });
   return actual.length === expected.length && timingSafeEqual(actual, expected);
 }
 
@@ -126,24 +131,31 @@ function signInAdmins(db: Db, except?: string): number {
     .filter((u) => u.id !== except && parseRoles(u.roles).includes('admin')).length;
 }
 
+/** What a username may be: plain Latin letters, digits, '.', '_' and '-', 3 to 32 of them. */
+const USERNAME_PATTERN = /^[A-Za-z0-9._-]{3,32}$/;
+
 function assertUserFields(db: Db, input: { username: string; name: string; roles: Role[] }, id?: string): void {
   const errors: { code: string }[] = [];
-  if (!/^[A-Za-z0-9._-]{3,32}$/.test(input.username)) errors.push({ code: 'username_invalid' });
+  if (!USERNAME_PATTERN.test(input.username)) errors.push({ code: 'username_invalid' });
   else if (db.prepare('SELECT 1 FROM users WHERE username = ? AND id <> ?').get(input.username, id ?? '')) errors.push({ code: 'username_taken' });
   if (!input.name.trim() || input.name.trim().length > 100) errors.push({ code: 'name_required' });
   if (!Array.isArray(input.roles) || input.roles.length === 0 || input.roles.some((r) => !ROLES.includes(r))) errors.push({ code: 'roles_required' });
   if (errors.length) throw invalid(errors);
 }
 
-export function createUser(db: Db, input: { username: string; name: string; roles: Role[]; password?: string | undefined }, by: string): UserView {
+export async function createUser(db: Db, input: { username: string; name: string; roles: Role[]; password?: string | undefined }, by: string): Promise<UserView> {
   assertUserFields(db, input);
   if (input.password !== undefined) assertPassword(input.password);
   // more than one user is a Pro feature (users limit of the plan)
   assertWithinLimit(db, 'users', activeCount(db));
   const id = randomUUID();
+  const hash = input.password !== undefined ? await hashPassword(input.password) : null;
+  // checked again after the hashing (another request may have run meanwhile)
+  assertUserFields(db, input);
+  assertWithinLimit(db, 'users', activeCount(db));
   transaction(db, () => {
     db.prepare('INSERT INTO users (id, username, name, password_hash, roles, active, created_at) VALUES (?, ?, ?, ?, ?, 1, ?)')
-      .run(id, input.username, input.name.trim(), input.password !== undefined ? hashPassword(input.password) : null, JSON.stringify(input.roles), new Date().toISOString());
+      .run(id, input.username, input.name.trim(), hash, JSON.stringify(input.roles), new Date().toISOString());
     audit(db, by, 'create', 'user', id, { username: input.username, roles: input.roles });
   });
   return toView(loadUser(db, id));
@@ -169,11 +181,13 @@ export function updateUser(db: Db, id: string, input: { username: string; name: 
 }
 
 /** An admin sets (or resets) someone's password; their other sessions end. */
-export function setPassword(db: Db, id: string, password: string, by: string): UserView {
+export async function setPassword(db: Db, id: string, password: string, by: string): Promise<UserView> {
   loadUser(db, id);
   assertPassword(password);
+  const hash = await hashPassword(password);
+  loadUser(db, id);
   transaction(db, () => {
-    db.prepare('UPDATE users SET password_hash = ? WHERE id = ?').run(hashPassword(password), id);
+    db.prepare('UPDATE users SET password_hash = ? WHERE id = ?').run(hash, id);
     db.prepare('DELETE FROM sessions WHERE user_id = ?').run(id);
     audit(db, by, 'password', 'user', id);
   });
@@ -181,13 +195,14 @@ export function setPassword(db: Db, id: string, password: string, by: string): U
 }
 
 /** A user changes their own password; the current one is required when there is one. */
-export function changeOwnPassword(db: Db, actor: Actor, current: string | undefined, next: string, keepToken?: string): void {
+export async function changeOwnPassword(db: Db, actor: Actor, current: string | undefined, next: string, keepToken?: string): Promise<void> {
   if (!actor.id) throw new AppError(401, 'unauthorized');
   const row = loadUser(db, actor.id);
-  if (row.password_hash && !verifyPassword(current ?? '', row.password_hash)) throw invalid([{ code: 'password_wrong' }]);
+  if (row.password_hash && !(await verifyPassword(current ?? '', row.password_hash))) throw invalid([{ code: 'password_wrong' }]);
   assertPassword(next);
+  const hash = await hashPassword(next);
   transaction(db, () => {
-    db.prepare('UPDATE users SET password_hash = ? WHERE id = ?').run(hashPassword(next), actor.id);
+    db.prepare('UPDATE users SET password_hash = ? WHERE id = ?').run(hash, actor.id);
     // sign out everywhere else
     const keep = keepToken ? tokenHash(keepToken) : '';
     db.prepare('DELETE FROM sessions WHERE user_id = ? AND token_hash <> ?').run(actor.id, keep);
@@ -262,26 +277,51 @@ export function sessionActor(db: Db, token: string): Actor | null {
 
 // ——— signing in ———
 
-/** Failed sign-ins per username: after 5 in a row the account waits, 1 minute doubling up to 15. */
+/**
+ * Failed sign-ins per account: after 5 in a row the account waits, 1 minute doubling up to 15. The counter is keyed
+ * by the user's id when the name finds a user, so every spelling that reaches the same user (a MySQL server compares
+ * names without case or accents) shares one lock; an unknown name is keyed by its lower-case text.
+ */
 const failures = new Map<string, { count: number; lockedUntil: number }>();
 
-export function login(db: Db, username: string, password: string, device?: string): { token: string; actor: Actor } {
-  const key = username.trim().toLowerCase();
+/** Refuses a sign-in while its counter waits out a lock. */
+function assertNotLocked(key: string): void {
   const state = failures.get(key);
   if (state && state.lockedUntil > Date.now()) {
     throw new AppError(429, 'too_many_attempts', { retryAfterSeconds: Math.ceil((state.lockedUntil - Date.now()) / 1000) });
   }
-  const row = db.prepare('SELECT * FROM users WHERE username = ?').get(username.trim()) as unknown as UserRow | undefined;
+}
+
+/** Counts one more failed sign-in under the key (from the fifth on it waits) and gives the new count. */
+function countFailure(key: string): number {
+  const count = (failures.get(key)?.count ?? 0) + 1;
+  const lockedUntil = count >= 5 ? Date.now() + Math.min(15, 2 ** (count - 5)) * 60_000 : 0;
+  // made-up usernames must not fill the memory
+  if (failures.size > 5000) for (const [k, v] of failures) if (v.lockedUntil < Date.now()) failures.delete(k);
+  failures.set(key, { count, lockedUntil });
+  return count;
+}
+
+export async function login(db: Db, username: string, password: string, device?: string): Promise<{ token: string; actor: Actor }> {
+  const typed = username.trim();
+  // a name no user can have (the pattern users are created with) is refused before any lookup or password work, yet
+  // counted and locked like any unknown name (by its first 64 characters); only the tries up to the lock are written to
+  // the audit log, so one such name sent again and again adds no rows after its fifth
+  if (!USERNAME_PATTERN.test(typed)) {
+    const key = `name:${typed.toLowerCase().slice(0, 64)}`;
+    assertNotLocked(key);
+    if (countFailure(key) <= 5) audit(db, typed.slice(0, 100) || '?', 'login_failed', 'user', null);
+    throw new AppError(401, 'invalid_login');
+  }
+  const row = db.prepare('SELECT * FROM users WHERE username = ?').get(typed) as unknown as UserRow | undefined;
+  const key = row ? `id:${row.id}` : `name:${typed.toLowerCase()}`;
+  assertNotLocked(key);
   // the same answer, after the same work, for an unknown user, a wrong password, a user without a password and an inactive user
-  const passwordOk = verifyPassword(password, row?.password_hash ?? DUMMY_HASH);
+  const passwordOk = await verifyPassword(password, row?.password_hash ?? DUMMY_HASH);
   const ok = !!row && row.active === 1 && !!row.password_hash && passwordOk;
   if (!ok || !row) {
-    const count = (state?.count ?? 0) + 1;
-    const lockedUntil = count >= 5 ? Date.now() + Math.min(15, 2 ** (count - 5)) * 60_000 : 0;
-    // made-up usernames must not fill the memory
-    if (failures.size > 5000) for (const [k, v] of failures) if (v.lockedUntil < Date.now()) failures.delete(k);
-    failures.set(key, { count, lockedUntil });
-    audit(db, username.trim().slice(0, 100) || '?', 'login_failed', 'user', row?.id ?? null);
+    countFailure(key);
+    audit(db, typed.slice(0, 100) || '?', 'login_failed', 'user', row?.id ?? null);
     throw new AppError(401, 'invalid_login');
   }
   failures.delete(key);

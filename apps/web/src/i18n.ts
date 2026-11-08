@@ -1,8 +1,38 @@
 import { createContext, useContext } from 'react';
+import { ENGINEERING_TEXT } from './i18n/engineering-works.ts';
+import { MOBILE_TEXT } from './i18n/mobile.ts';
+import { PARTS_TEXT } from './i18n/parts.ts';
+import { REAL_ESTATE_TEXT } from './i18n/real-estate.ts';
+import { PAYROLL_TEXT } from './i18n/payroll.ts';
+import { POS_TEXT } from './i18n/pos.ts';
+import { QUOTES_TEXT } from './i18n/quotes.ts';
+import { PIPELINE_TEXT } from './i18n/pipeline.ts';
+import { MEDIA_TEXT } from './i18n/media.ts';
+import { BRIEF_TEXT } from './i18n/brief.ts';
+import { CLOUD_TEXT } from './i18n/cloud.ts';
+import { RELAY_TEXT } from './i18n/relay.ts';
+import { ACTIVATION_TEXT } from './i18n/activation.ts';
+import { FX_TEXT } from './i18n/fx.ts';
+import { VERIFY_TEXT } from './i18n/verify.ts';
+import { GEN_TEXT } from './i18n/generators.ts';
+import { WEBAPI_TEXT } from './i18n/webapi.ts';
+import { PHONE_TEXT } from './i18n/phone.ts';
+import { USAGE_TEXT } from './i18n/usage.ts';
+import { SOLAR_TEXT } from './i18n/solar.ts';
+import { LEGAL_TEXT } from './i18n/legal.ts';
+import { BRANCH_TEXT } from './i18n/branches.ts';
+import { BANK_TEXT } from './i18n/banking.ts';
+import { WAVE2_TEXT } from './i18n/wave2.ts';
+import { ASSET_TEXT } from './i18n/assets.ts';
+import { ADJ_TEXT } from './i18n/adjustments.ts';
+import { PO_TEXT } from './i18n/purchasing.ts';
+import { COMPANY_TEXT } from './i18n/companies.ts';
+import { LABEL_TEXT } from './i18n/labels.ts';
+import { UI_TEXT } from './i18n/ui.ts';
 import { formatAmount, formatDate, formatInteger, LANGS, toEasternDigits, type CurrencyCode, type DigitStyle, type Lang, type Names } from '@qasa/core';
 
 /** Every UI string in Arabic, English and Kurdish (Sorani) — in that order. */
-const D = {
+const BASE = {
   appName: ['قاصة ERP', 'Qasa ERP', 'قاسە ERP'],
   tagline: ['كل دينار محسوب', 'Every dinar, counted', 'هەموو دینارێک ژمێردراوە'],
   gOverview: ['عام', 'Overview', 'گشتی'],
@@ -18,6 +48,41 @@ const D = {
   statement: ['كشف حساب', 'Account statement', 'کەشفی هەژمار'],
   gStock: ['المخزن', 'Inventory', 'کۆگا'],
   items: ['المواد والمخزون', 'Items & stock', 'کاڵا و کۆگا'],
+  gIndustry: ['نشاط الشركة', 'Your business', 'چالاکیی کۆمپانیا'],
+  err_entry_belongs_to_payroll: ['هذا القيد لرواتب شهر؛ أرجِعه إلى مسودة من صفحة الرواتب.', 'This entry belongs to a payroll month; take it back to draft from the Payroll page.', 'ئەم تۆمارە هی مووچەی مانگێکە؛ لە پەڕەی مووچەوە بیگەڕێنەوە بۆ ڕەشنووس.'],
+  err_entry_belongs_to_generator_run: ['هذا القيد لفواتير المولدة لشهر؛ أرجِعه إلى مسودة من صفحة المولدة.', 'This entry bills a generator month; take it back to draft from the Generators page.', 'ئەم تۆمارە پسوولەی مۆلیدەی مانگێکە؛ لە پەڕەی مۆلیدەوە بیگەڕێنەوە بۆ ڕەشنووس.'],
+  err_entry_belongs_to_depreciation: ['هذا القيد لشهر إهلاك؛ ألغِ الشهر أو اعكسه من صفحة الموجودات الثابتة.', 'This entry belongs to a depreciation month; cancel or reverse the month from the Fixed assets page.', 'ئەم تۆمارە هی مانگێکی داخورانە؛ مانگەکە لە پەڕەی سامانە جێگیرەکانەوە هەڵبوەشێنەوە یان بیگەڕێنەوە.'],
+  err_entry_belongs_to_disposal: ['هذا القيد لاستبعاد موجود ثابت؛ تراجع عنه من صفحة الموجود.', 'This entry belongs to an asset disposal; take the disposal back from the asset’s page.', 'ئەم تۆمارە هی لابردنی سامانێکە؛ لە پەڕەی سامانەکەوە بیگەڕێنەوە.'],
+  err_entry_belongs_to_cheque: ['هذا القيد لصك؛ تراجع عن الخطوة أو ألغِ الصك من صفحة الصكوك.', 'This entry belongs to a cheque; undo the step or cancel the cheque from the Cheques page.', 'ئەم تۆمارە هی چەکێکە؛ لە پەڕەی چەکەکانەوە هەنگاوەکە بگەڕێنەوە یان چەکەکە هەڵبوەشێنەوە.'],
+  err_entry_belongs_to_adjustment: ['هذا القيد لتسوية مخزنية؛ ألغِ التسوية من صفحة تسويات المخزن.', 'This entry belongs to a stock adjustment; cancel the adjustment from the Stock adjustments page.', 'ئەم تۆمارە هی ڕێکخستنێکی کۆگایە؛ لە پەڕەی ڕێکخستنەکانی کۆگاوە هەڵیبوەشێنەوە.'],
+  err_entry_matched_to_statement: ['هذا القيد مطابَق مع سطر في كشف المصرف؛ ألغِ المطابقة أولاً.', 'This entry is matched to a bank statement line; unmatch it first.', 'ئەم تۆمارە لەگەڵ هێڵێکی کەشفی بانک یەکخراوە؛ سەرەتا یەکخستنەکە لابە.'],
+  err_bk_statement_unposted: ['بعض القيود المطابَقة لم تُصادق بعد أو عُكست؛ صادق عليها أو طابق غيرها.', 'Some matched entries are not approved yet or were reversed; approve them or match others.', 'هەندێک لە تۆمارە یەکخراوەکان هێشتا پەسەند نەکراون یان گەڕێنراونەتەوە؛ پەسەندیان بکە یان تۆماری تر یەکبخە.'],
+  err_fa_months_not_run: ['لم يُحتسب الاندثار لكل الأشهر قبل تاريخ الاستبعاد؛ احتسبها أولاً.', 'Depreciation has not been run for every month before the disposal date; run those months first.', 'داخوران بۆ هەموو مانگەکانی پێش بەرواری دەرکردن حیساب نەکراوە؛ سەرەتا ئەو مانگانە حیساب بکە.'],
+  err_fa_run_has_disposed_asset: ['هذا الشهر احتُسب لموجود استُبعد بعده؛ تراجع عن الاستبعاد أولاً.', 'This month included an asset disposed of since; take the disposal back first.', 'ئەم مانگە سامانێکی تێدایە کە دواتر دەرکراوە؛ سەرەتا دەرکردنەکە بگەڕێنەوە.'],
+  err_fx_revaluation_pending: ['إعادة تقييم سابقة بانتظار المصادقة؛ صادق عليها أو احذفها أولاً.', 'An earlier revaluation is waiting for approval; approve or delete it first.', 'هەڵسەنگاندنەوەیەکی پێشوو چاوەڕێی پەسەندکردنە؛ سەرەتا پەسەندی بکە یان بیسڕەوە.'],
+  f_phoneApp: ['تطبيق قاصة للموبايل: المسح بالكاميرا، الأسعار والمخزون وإضافة المواد بالصور', 'Qasa phone app: scan with the camera, prices, stock and new items with photos', 'ئەپی قاسە بۆ مۆبایل: سکان بە کامێرا، نرخ و کۆگا و زیادکردنی کاڵا بە وێنە'],
+  f_websiteApi: ['ربط المواقع والمتاجر الإلكترونية (API وWooCommerce)', 'Connect websites and online shops (API and WooCommerce)', 'بەستنەوەی ماڵپەڕ و دوکانی ئۆنلاین (API و WooCommerce)'],
+  f_generators: ['المولدات الأهلية: المشتركون بالأمبير والجباية والديون', 'Generator owners: subscribers by amps, collections and debts', 'مۆلیدەی ئەهلی: بەشداربووان بە ئەمپێر، کۆکردنەوە و قەرز'],
+  bizType: ['نشاط الشركة', 'Business type', 'جۆری چالاکی'],
+  bizWelcome: ['أهلاً بك في قاصة ERP', 'Welcome to Qasa ERP', 'بەخێربێیت بۆ قاسە ERP'],
+  bizQuestion: ['ماذا تعمل شركتك؟ اختر واحداً أو أكثر — القائمة تعرض ما يناسبك فقط.', 'What does your company do? Pick one or more — the menu shows only what fits you.', 'کۆمپانیاکەت چی دەکات؟ یەک یان زیاتر هەڵبژێرە — لیستەکە تەنها ئەوەی بۆت گونجاوە پیشان دەدات.'],
+  bizHelp: ['يمكنك تغيير هذا في أي وقت من «النظام ← نشاط الشركة». الإخفاء لا يحذف أي بيانات.', 'You can change this any time under System → Business type. Hiding something never deletes its data.', 'هەر کاتێک دەتوانیت ئەمە بگۆڕیت لە «سیستەم ← جۆری چالاکی». شاردنەوە هیچ داتایەک ناسڕێتەوە.'],
+  bizStart: ['ابدأ', 'Start', 'دەست پێبکە'],
+  bt_trade: ['تجارة ومحلات عامة', 'Trading & shops', 'بازرگانی و دوکان'],
+  bt_tradeText: ['المبيعات والمشتريات والمخزن والحسابات — لكل شركة.', 'Sales, purchases, stock and the books — for every company.', 'فرۆشتن، کڕین، کۆگا و ژمێریاری — بۆ هەموو کۆمپانیایەک.'],
+  bt_realEstate: ['عقارات', 'Real estate', 'خانووبەرە'],
+  bt_realEstateText: ['مشاريع ووحدات، خريطة الوحدات، الحجز والبيع نقداً وبالتقسيط.', 'Projects and units, the unit map, reservations, cash and installment sales.', 'پرۆژە و یەکە، نەخشەی یەکەکان، پێشگرتن و فرۆشتن بە نەقد و قیست.'],
+  bt_mobileShop: ['محل موبايل', 'Mobile shop', 'دوکانی مۆبایل'],
+  bt_mobileShopText: ['كل جهاز برقم IMEI، الشراء من الزبائن، الضمان والصيانة.', 'Every phone by IMEI, buying from customers, warranty and repairs.', 'هەر مۆبایلێک بە IMEI، کڕینەوە لە کڕیار، گەرەنتی و چاککردنەوە.'],
+  bt_autoParts: ['قطع غيار سيارات', 'Car parts', 'پارچەی ئۆتۆمبێل'],
+  bt_autoPartsText: ['أرقام القطع والبدائل، البحث حسب السيارة، الرفوف وسعر الجملة.', 'Part numbers and alternatives, search by car, shelves and wholesale prices.', 'ژمارەی پارچە و جێگرەوەکان، گەڕان بەپێی ئۆتۆمبێل، ڕەف و نرخی کۆ.'],
+  bt_engineeringWorks: ['أعمال هندسية', 'Engineering works', 'کاری ئەندازیاری'],
+  bt_engineeringWorksText: ['لحام وحدادة وألمنيوم وMDF: عرض السعر، القياس، الورشة، التركيب.', 'Welding, steel, aluminium and MDF: quote, measuring, workshop, installing.', 'لەحیم، ئاسنگەری، ئەلەمنیۆم و MDF: نرخ، پێوان، وەرشە، دامەزراندن.'],
+  bt_electricalSolar: ['كهرباء وطاقة شمسية', 'Electrical & solar', 'کارەبا و وزەی خۆر'],
+  bt_electricalSolarText: ['عرض منظومة شمسية، التركيب، الأجهزة بأرقامها والضمان، والصيانة الدورية.', 'Solar system quotes, installation, equipment by serial number with warranty, and regular maintenance.', 'نرخی سیستەمی خۆر، دامەزراندن، ئامێرەکان بە ژمارە و گەرەنتی، و چاککردنەوەی خولی.'],
+  f_electricalSolar: ['الكهرباء والطاقة الشمسية: عروض المنظومات والضمان والصيانة', 'Electrical & solar: system quotes, warranty and maintenance', 'کارەبا و وزەی خۆر: نرخی سیستەم، گەرەنتی و چاککردنەوە'],
+  bt_generators: ['مولدات أهلية', 'Generator owners', 'مۆلیدەی ئەهلی'],
+  bt_generatorsText: ['المشتركون حسب الأمبير، الفاتورة الشهرية، الجباية والديون.', 'Subscribers by amps, the monthly bill, collectors and debts.', 'بەشداربووان بەپێی ئەمپێر، پسوولەی مانگانە، کۆکردنەوە و قەرز.'],
   gPeople: ['الموظفون', 'People', 'کارمەندان'],
   hr: ['الموارد البشرية', 'HR', 'سەرچاوە مرۆییەکان'],
   salaries: ['الرواتب والسلف', 'Salaries & advances', 'مووچە و سولفە'],
@@ -45,6 +110,7 @@ const D = {
   userMenu: ['قائمة المستخدم', 'User menu', 'لیستی بەکارهێنەر'],
   voucherFlow: ['مسار السندات', 'Voucher workflow', 'ڕێڕەوی سەنەدەکان'],
   localMode: ['البيانات على هذا الحاسوب', 'Data is on this PC', 'داتا لەسەر ئەم کۆمپیوتەرەیە'],
+  demoPhoneNote: ['هذه النسخة التجريبية مصممة لشاشة الحاسوب، مثل قاصة ERP نفسه (برنامج لويندوز). على الهاتف أدِر الشاشة بالعرض، أو افتحها على حاسوب.', 'This demo is made for a computer screen, like Qasa ERP itself (a Windows app). On a phone, turn it sideways, or open it on a PC.', 'ئەم وەشانی تاقیکردنەوەیە بۆ شاشەی کۆمپیوتەر دروستکراوە، وەک خودی قاسە ERP (بەرنامەیەکی ویندۆز). لە مۆبایلدا شاشەکە بە پانی بسووڕێنە، یان لەسەر کۆمپیوتەر بیکەرەوە.'],
   demoMode: ['نسخة تجريبية — البيانات في متصفحك فقط وتعود كما كانت عند إعادة تحميل الصفحة', 'Demo — the data stays in your browser and resets when you reload', 'وەشانی تاقیکردنەوە — داتا تەنها لە وێبگەڕەکەتدایە و بە نوێکردنەوەی پەڕە دەگەڕێتەوە سەرەتا'],
   serverDown: ['الخادم لا يعمل', 'Server is not running', 'سێرڤەر کار ناکات'],
   noCompany: ['شركتك', 'Your company', 'کۆمپانیاکەت'],
@@ -374,7 +440,7 @@ const D = {
   err_cannot_lock_yourself_out: ['لا يمكنك إيقاف حسابك أو نزع صلاحية المدير عنه', 'You can’t switch off your own account or take its admin role away', 'ناتوانیت هەژماری خۆت ناچالاک بکەیت یان ڕۆڵی بەڕێوەبەری لێ بسەنیتەوە'],
   err_last_admin: ['يجب أن يبقى مدير واحد على الأقل يمكنه الدخول', 'At least one admin who can sign in must remain', 'دەبێت لانیکەم یەک بەڕێوەبەر بمێنێت کە بتوانێت بچێتە ژوورەوە'],
   err_admin_password_required: ['ضع كلمة مرور لمدير النظام أولاً', 'Set a password for an admin first', 'سەرەتا وشەی نهێنی بۆ بەڕێوەبەرێک دابنێ'],
-  err_same_person: ['من نظّم السند لا يدققه ولا يصادقه (فصل المهام)', 'Whoever prepared the voucher can’t check or approve it (separate duties)', 'ئەوەی سەنەدەکەی ئامادە کردووە ناتوانێت وردبینی یان پەسەندی بکات (جیاکردنەوەی ئەرکەکان)'],
+  err_same_person: ['من نظّم السند أو التسوية لا يدققه ولا يصادقه ولا يرحّله؛ يقوم بذلك شخص آخر (فصل المهام).', 'Whoever prepared a voucher or adjustment can’t check, approve or post it; someone else does that (separate duties).', 'ئەوەی سەنەد یان ڕێکخستنێکی ئامادە کردووە ناتوانێت وردبینی یان پەسەندی بکات یان تۆماری بکات؛ کەسێکی تر ئەوە دەکات (جیاکردنەوەی ئەرکەکان).'],
   err_demo_unavailable: ['غير متاح في النسخة التجريبية', 'Not available in the demo', 'لە وەشانی تاقیکردنەوەدا بەردەست نییە'],
   err_plan_limit_users: ['الخطة المجانية لمستخدم واحد، وPro يضيف حتى 5 مستخدمين — راجع «الخطة والترخيص».', 'The Free plan has one user; Pro adds up to 5. See Plan & license.', 'پلانی بەخۆڕایی یەک بەکارهێنەری هەیە و Pro تا ٥ زیاد دەکات — «پلان و مۆڵەت» ببینە.'],
   err_plan_limit_roles: ['فصل المهام من مزايا Pro — راجع «الخطة والترخيص».', 'Separate duties is part of Pro. See Plan & license.', 'جیاکردنەوەی ئەرکەکان بەشێکە لە Pro — «پلان و مۆڵەت» ببینە.'],
@@ -429,6 +495,7 @@ const D = {
   src_transfer_cancel: ['إلغاء مناقلة', 'Transfer cancelled', 'هەڵوەشاندنەوەی گواستنەوە'],
   err_return_qty_exceeded: ['السطر {n}: الكمية أكثر مما يمكن إرجاعه (المتاح {a})', 'Line {n}: more than can be returned (up to {a})', 'ڕیزی {n}: لەوە زیاترە کە دەگەڕێتەوە (تا {a})'],
   err_return_before_invoice: ['تاريخ المرتجع قبل تاريخ الفاتورة', 'The return is dated before the invoice', 'بەرواری گەڕاندنەوە پێش بەرواری پسوولەکەیە'],
+  err_reversal_before_entry: ['تاريخ القيد العكسي قبل تاريخ القيد الذي يعكسه؛ اختر تاريخه أو تاريخاً بعده.', 'The reversal is dated before the entry it reverses; choose that entry’s date or a later one.', 'بەرواری تۆماری پێچەوانە پێش بەرواری ئەو تۆمارەیە کە پێچەوانەی دەکاتەوە؛ هەمان بەروار یان بەروارێکی دواتر هەڵبژێرە.'],
   err_return_totals_invalid: ['مبالغ المرتجعات السابقة غير متطابقة؛ ألغها قبل إنشاء مرتجع آخر', 'Previous return amounts do not reconcile; cancel them before making another return', 'بڕی گەڕاندنەوەکانی پێشوو یەک ناگرنەوە؛ پێش گەڕاندنەوەیەکی تر هەڵیانبوەشێنەرەوە'],
   err_stock_date_before_latest: ['اختر تاريخاً لا يسبق آخر حركة لهذه المادة في المخزن', 'Choose a date on or after the latest stock movement for this item and warehouse', 'بەروارێک هەڵبژێرە کە هەمان بەروار یان دوای دوا جووڵەی ئەم مادەیە لەم کۆگایە بێت'],
   err_period_in_closed_year: ['أعد فتح السنة المالية قبل فتح هذا الشهر', 'Reopen the financial year before unlocking this month', 'پێش کردنەوەی ئەم مانگە، ساڵی دارایی دووبارە بکەرەوە'],
@@ -488,7 +555,7 @@ const D = {
   plan_free: ['مجاني', 'Free', 'بەخۆڕایی'],
   plan_pro: ['Pro', 'Pro', 'Pro'],
   plan_business: ['Business', 'Business', 'Business'],
-  planTrialChip: ['تجربة Pro', 'Pro trial', 'تاقیکردنەوەی Pro'],
+  planTrialChip: ['الشهر المجاني', 'Free month', 'مانگی بەخۆڕایی'],
   yourPlan: ['خطتك', 'Your plan', 'پلانەکەت'],
   freePlanNote: ['كل الحسابات والفواتير والمخزن لشركة واحدة على حاسوب واحد، مجاناً وبلا مدة.', 'All accounting, invoices and stock for one company on one PC, free and with no time limit.', 'هەموو ژمێریاری و پسوولە و کۆگا بۆ یەک کۆمپانیا لەسەر یەک کۆمپیوتەر، بەخۆڕایی و بێ سنووری کات.'],
   licensedTo: ['مرخّص لـ', 'Licensed to', 'مۆڵەتدراو بۆ'],
@@ -498,20 +565,20 @@ const D = {
   inGrace: ['فترة سماح', 'Grace period', 'ماوەی دەرفەت'],
   ended: ['منتهٍ', 'Ended', 'کۆتایی هاتووە'],
   trialEnds: ['تنتهي التجربة في {d} — بقي {n} يوماً.', 'The trial ends on {d} ({n} days left).', 'تاقیکردنەوە لە {d} کۆتایی دێت ({n} ڕۆژ ماوە).'],
-  trialEndedNote: ['انتهت تجربة Pro، والبرنامج يعمل بالخطة المجانية. كل بياناتك باقية.', 'The Pro trial has ended and Qasa ERP runs on the Free plan. All your data is still here.', 'تاقیکردنەوەی Pro کۆتایی هات و قاسە ERP بە پلانی بەخۆڕایی کار دەکات. هەموو داتاکانت ماون.'],
+  trialEndedNote: ['انتهى شهرك المجاني على هذا الحاسوب، والبرنامج يعمل بالخطة المجانية. كل بياناتك باقية.', 'Your free month on this PC has ended and Qasa ERP runs on the Free plan. All your data is still here.', 'مانگی بەخۆڕاییت لەسەر ئەم کۆمپیوتەرە کۆتایی هات و قاسە ERP بە پلانی بەخۆڕایی کار دەکات. هەموو داتاکانت ماون.'],
   graceNote: ['انتهى ترخيص {p} في {d} ويستمر العمل حتى {g}. جدّد الترخيص لتبقى المزايا — بياناتك محفوظة دائماً.', 'Your {p} license ended on {d}. It keeps working until {g}; renew to keep these features. Your data is always safe.', 'مۆڵەتی {p} لە {d} کۆتایی هات و تا {g} کار دەکات. نوێی بکەرەوە بۆ مانەوەی تایبەتمەندییەکان — داتاکانت هەمیشە پارێزراون.'],
   expiredNote: ['انتهى ترخيص {p} في {d}، والبرنامج يعمل الآن بالخطة المجانية. كل بياناتك باقية — جدّد الترخيص لتعود المزايا.', 'Your {p} license ended on {d}, so Qasa ERP now runs on the Free plan. All your data is still here; renew to get the features back.', 'مۆڵەتی {p} لە {d} کۆتایی هات و ئێستا قاسە ERP بە پلانی بەخۆڕایی کار دەکات. هەموو داتاکانت ماون — نوێی بکەرەوە بۆ گەڕانەوەی تایبەتمەندییەکان.'],
   activateTitle: ['تفعيل ترخيص', 'Activate a license', 'چالاککردنی مۆڵەت'],
-  activateHelp: ['الصق مفتاح الترخيص الذي وصلك من Meroxis. يعمل دون إنترنت.', 'Paste the license key you received from Meroxis. It works without internet.', 'ئەو کلیلی مۆڵەتەی لە Meroxis ـەوە پێت گەیشتووە لێرە دابنێ. بێ ئینتەرنێت کار دەکات.'],
+  activateHelp: ['الصق مفتاح الترخيص الذي وصلك من Meroxis. التفعيل يحتاج إنترنت مرة واحدة، وبعدها يعمل البرنامج دون إنترنت.', 'Paste the license key you received from Meroxis. Activating needs the internet once; after that it works offline.', 'ئەو کلیلی مۆڵەتەی لە Meroxis ـەوە پێت گەیشتووە لێرە دابنێ. چالاککردن یەک جار ئینتەرنێتی پێویستە، دوای ئەوە بێ ئینتەرنێت کار دەکات.'],
   licenseKey: ['مفتاح الترخيص', 'License key', 'کلیلی مۆڵەت'],
   activate: ['تفعيل', 'Activate', 'چالاککردن'],
   licenseActivated: ['تم تفعيل الترخيص', 'License activated', 'مۆڵەت چالاک کرا'],
   removeLicense: ['إزالة الترخيص من هذا الحاسوب', 'Remove the license from this PC', 'لابردنی مۆڵەت لەم کۆمپیوتەرە'],
-  removeLicenseConfirm: ['إزالة الترخيص؟ يعود البرنامج إلى الخطة المجانية وتبقى كل البيانات، ويمكنك تفعيل المفتاح نفسه على حاسوب آخر.', 'Remove the license? Qasa ERP goes back to the Free plan and keeps all data. You can activate the same key on another PC.', 'مۆڵەت لاببرێت؟ قاسە ERP دەگەڕێتەوە بۆ پلانی بەخۆڕایی و هەموو داتاکان دەمێنن. دەتوانیت هەمان کلیل لەسەر کۆمپیوتەرێکی تر چالاک بکەیت.'],
+  removeLicenseConfirm: ['إزالة الترخيص؟ يعود البرنامج إلى الخطة المجانية وتبقى كل البيانات. يُعاد مقعد هذا الحاسوب لتفعّل المفتاح نفسه على حاسوب آخر؛ وإن كان هذا الحاسوب غير متصل بالإنترنت فحرّر مقعده من my.qasaerp.com.', 'Remove the license? Qasa ERP goes back to the Free plan and keeps all data. This PC’s seat is given back so you can activate the same key on another PC; if this PC is offline, free its seat at my.qasaerp.com.', 'مۆڵەت لاببرێت؟ قاسە ERP دەگەڕێتەوە بۆ پلانی بەخۆڕایی و هەموو داتاکان دەمێنن. شوێنی ئەم کۆمپیوتەرە دەگەڕێتەوە تا هەمان کلیل لەسەر کۆمپیوتەرێکی تر چالاک بکەیت؛ ئەگەر ئەم کۆمپیوتەرە بە ئینتەرنێتەوە نەبەستراوە، شوێنەکەی لە my.qasaerp.com ئازاد بکە.'],
   licenseRemoved: ['أزيل الترخيص', 'License removed', 'مۆڵەت لابرا'],
-  startTrial: ['جرّب Pro مجاناً لمدة {n} يوماً', 'Try Pro free for {n} days', '{n} ڕۆژ Pro بەخۆڕایی تاقی بکەرەوە'],
-  trialHelp: ['تجربة واحدة لكل شركة، بلا مفتاح ولا دفع. بعد انتهائها تعود للخطة المجانية وتبقى كل بياناتك.', 'One trial per company, no key or payment needed. When it ends you return to Free and keep all your data.', 'یەک تاقیکردنەوە بۆ هەر کۆمپانیایەک، بێ کلیل و بێ پارەدان. دوای کۆتاییهاتنی دەگەڕێیتەوە بۆ بەخۆڕایی و هەموو داتاکانت دەمێنن.'],
-  trialStarted: ['بدأت تجربة Pro', 'Pro trial started', 'تاقیکردنەوەی Pro دەستیپێکرد'],
+  startTrial: ['ابدأ شهرك المجاني ({n} يوماً)', 'Start your free month ({n} days)', 'مانگی بەخۆڕاییت دەست پێبکە ({n} ڕۆژ)'],
+  trialHelp: ['شهر مجاني واحد لكل حاسوب، بلا مفتاح ولا دفع، فيه كل الميزات عدا Qasa Relay. بعد انتهائه تعود للخطة المجانية وتبقى كل بياناتك.', 'One free month per PC, no key or payment needed, with every feature except Qasa Relay. When it ends you return to Free and keep all your data.', 'یەک مانگی بەخۆڕایی بۆ هەر کۆمپیوتەرێک، بێ کلیل و بێ پارەدان، بە هەموو تایبەتمەندییەکانەوە جگە لە Qasa Relay. دوای کۆتاییهاتنی دەگەڕێیتەوە بۆ بەخۆڕایی و هەموو داتاکانت دەمێنن.'],
+  trialStarted: ['بدأ شهرك المجاني', 'Your free month has started', 'مانگی بەخۆڕاییت دەستیپێکرد'],
   getPlan: ['اطلب Pro أو Business', 'Get Pro or Business', 'Pro یان Business وەربگرە'],
   buyHelp: ['اشترِ الترخيص أو جدّده من بوابة العملاء، وادفع عبر Wayl أو حوالة مصرفية أو نقداً. يصلك مفتاح الترخيص بالبريد، فالصقه في خانة مفتاح الترخيص هنا.', 'Buy or renew a license in the customer portal, and pay with Wayl, a bank transfer or cash. The license key comes by email: paste it into the license key box on this page.', 'مۆڵەت لە دەروازەی کڕیاران بکڕە یان نوێی بکەرەوە، و بە Wayl یان گواستنەوەی بانکی یان بە نەختی پارە بدە. کلیلی مۆڵەتەکە بە ئیمەیڵ دێت: لە خانەی کلیلی مۆڵەتی ئەم پەڕەیەدا دایبنێ.'],
   buyOnline: ['اشترِ عبر الإنترنت', 'Buy online', 'ئۆنلاین بیکڕە'],
@@ -533,17 +600,28 @@ const D = {
   v_shown: ['تظهر', 'Shown', 'دەردەکەوێت'],
   v_removed: ['لا تظهر', 'Removed', 'لابراوە'],
   f_backup: ['نسخ احتياطي يومي تلقائي (OneDrive أو Google Drive أو USB)', 'Automatic daily backups (OneDrive, Google Drive or USB)', 'باکئەپی ڕۆژانەی خۆکار (OneDrive، Google Drive یان USB)'],
-  f_branches: ['الفروع والعمل أونلاين', 'Branches and working online', 'لق و کارکردنی ئۆنلاین'],
+  f_mobileShop: ['محلات الموبايل: تتبع IMEI والشراء من الزبائن والصيانة', 'Mobile shops: IMEI tracking, trade-ins and repairs', 'دوکانی مۆبایل: بەدواداچوونی IMEI، کڕینەوە لە کڕیار و چاککردنەوە'],
+  f_autoParts: ['قطع غيار السيارات: أرقام القطع والبدائل وحسب السيارة', 'Car parts: part numbers, alternatives and search by car', 'پارچەی ئۆتۆمبێل: ژمارەی پارچە، جێگرەوەکان و گەڕان بەپێی ئۆتۆمبێل'],
+  f_engineeringWorks: ['الأعمال الهندسية: أوامر العمل وعروض الأسعار والعربون وكلفة كل عمل', 'Engineering works: job orders, quotes, deposits and job costs', 'کاری ئەندازیاری: فەرمانی کار، نرخدانان، پێشەکی و تێچووی هەر کارێک'],
+  f_realEstate: ['العقارات: المشاريع والوحدات والحجز والبيع نقداً وبالتقسيط', 'Real estate: projects, units, reservations, cash and installment sales', 'خانوبەرە: پرۆژە، یەکە، پێشگرتن و فرۆشتن بە نەقد و قیست'],
+  f_quotes: ['عروض الأسعار وتحويلها إلى فواتير', 'Quotations that become invoices', 'نرخدانان و گۆڕینیان بۆ پسوولە'],
+  f_pos: ['نقطة البيع (كاشير) مع الباركود وطابعة الوصولات', 'Point of sale with barcode and receipt printer', 'خاڵی فرۆشتن (کاشێر) لەگەڵ بارکۆد و چاپکەری پسوولە'],
+  f_pipeline: ['متابعة المبيعات من أول اتصال إلى الصفقة', 'Sales pipeline from first contact to the deal', 'بەدواداچوونی فرۆشتن لە یەکەم پەیوەندییەوە تا ڕێککەوتن'],
+  f_bankReconciliation: ['مطابقة كشف المصرف مع الدفاتر', 'Bank reconciliation with the books', 'بەراوردکردنی کەشفی بانک لەگەڵ دەفتەرەکان'],
+  f_cloudBackup: ['نسخ احتياطي تلقائي مشفّر إلى Google Drive وOneDrive', 'Automatic encrypted backup to Google Drive and OneDrive', 'باکئەپی خۆکاری شفرەکراو بۆ Google Drive و OneDrive'],
+  f_branches: ['الفروع', 'Branches', 'لقەکان'],
+  f_online: ['النسخة الإلكترونية في المتصفح', 'Online edition (in the browser)', 'وەشانی ئۆنلاین (لە وێبگەڕدا)'],
+  f_relay: ['Qasa Relay: شبكة المكتب من أي مكان دون IP عام (لا يشمله الشهر المجاني)', 'Qasa Relay: the office network from anywhere, with no public IP (not in the free month)', 'Qasa Relay: تۆڕی نووسینگە لە هەر شوێنێکەوە بێ IPی گشتی (لە مانگی بەخۆڕاییدا نییە)'],
   f_support: ['الدعم', 'Support', 'پشتگیری'],
-  v_supportFree: ['المجتمع وGitHub', 'Community and GitHub', 'کۆمەڵگە و GitHub'],
+  v_supportFree: ['واتساب', 'WhatsApp', 'واتسئەپ'],
   v_supportPro: ['واتساب وبريد إلكتروني', 'WhatsApp and email', 'واتسئەپ و ئیمەیڵ'],
-  v_supportBusiness: ['أولوية، مع زيارة للإعداد', 'Priority, with a setup visit', 'لە پێشینە، لەگەڵ سەردانی ڕێکخستن'],
+  v_supportBusiness: ['أولوية، عبر واتساب والبريد الإلكتروني', 'Priority, by WhatsApp and email', 'لە پێشینە، بە واتسئەپ و ئیمەیڵ'],
   nudgeTitle: ['عملك يكبر', 'Your business is growing', 'کارەکەت گەورە دەبێت'],
   nudgeText: ['رحّلت {n} فاتورة مبيعات هذا الشهر. Pro يضيف فريق عمل على شبكة المكتب والتقسيط والرواتب والنسخ الاحتياطي.', 'You posted {n} sales invoices this month. Pro adds a team on the office network, installments, payroll and backups.', 'ئەم مانگە {n} پسوولەی فرۆشتنت تۆمار کردووە. Pro تیمێک لەسەر تۆڕی نووسینگە، قیست، مووچە و باکئەپ زیاد دەکات.'],
   seePlans: ['اعرض الخطط', 'See plans', 'پلانەکان ببینە'],
   demoLicenseNote: ['في النسخة التجريبية يمكنك تجربة Pro؛ مفاتيح الترخيص تُفعّل في برنامج ويندوز.', 'In the demo you can try Pro; license keys are activated in the Windows app.', 'لە وەشانی تاقیکردنەوەدا دەتوانیت Pro تاقی بکەیتەوە؛ کلیلی مۆڵەت لە بەرنامەی ویندۆزدا چالاک دەکرێت.'],
   e_license: ['ترخيص', 'License', 'مۆڵەت'],
-  e_trial: ['تجربة Pro', 'Pro trial', 'تاقیکردنەوەی Pro'],
+  e_trial: ['الشهر المجاني', 'Free month', 'مانگی بەخۆڕایی'],
   a_activate: ['تفعيل', 'Activated', 'چالاککرا'],
   a_remove: ['إزالة', 'Removed', 'لابرا'],
   a_start: ['بدء', 'Started', 'دەستیپێکرد'],
@@ -551,7 +629,7 @@ const D = {
   err_plan_limit_warehouses: ['الخطة المجانية تشمل مخزناً واحداً، وPro يضيف ما تحتاجه من مخازن — راجع «الخطة والترخيص».', 'The Free plan includes one warehouse; Pro adds as many as you need. See Plan & license.', 'پلانی بەخۆڕایی یەک کۆگای تێدایە و Pro هەر چەند کۆگایەک پێویستت بێت زیاد دەکات — «پلان و مۆڵەت» ببینە.'],
   err_license_invalid: ['مفتاح الترخيص غير صحيح. انسخه كاملاً كما وصلك.', 'That license key isn’t valid. Copy it in full, exactly as you received it.', 'کلیلی مۆڵەت دروست نییە. بە تەواوی و وەک خۆی کۆپی بکە.'],
   err_license_expired: ['انتهت مدة هذا الترخيص — اطلب تجديده.', 'This license has already ended. Ask us for a renewal.', 'ماوەی ئەم مۆڵەتە تەواو بووە — داوای نوێکردنەوە بکە.'],
-  err_trial_unavailable: ['استُخدمت التجربة المجانية لهذه الشركة من قبل.', 'The free trial was already used for this company.', 'تاقیکردنەوەی بەخۆڕایی پێشتر بۆ ئەم کۆمپانیایە بەکارهاتووە.'],
+  err_trial_unavailable: ['استُخدم الشهر المجاني على هذا الحاسوب من قبل.', 'The free month was already used on this PC.', 'مانگی بەخۆڕایی پێشتر لەسەر ئەم کۆمپیوتەرە بەکارهاتووە.'],
 
   err_date_invalid: ['التاريخ غير صحيح', 'The date is not valid', 'بەروار دروست نییە'],
   err_period_locked: ['الفترة {p} مقفلة', 'Period {p} is locked', 'ماوەی {p} داخراوە'],
@@ -604,6 +682,8 @@ const D = {
   err_code_invalid: ['الرمز يحتوي على رموز غير مسموحة', 'The code has characters that aren’t allowed', 'کۆدەکە پیتی ڕێگەپێنەدراوی تێدایە'],
   err_barcode_exists: ['هذا الباركود مستخدم', 'This barcode is already used', 'ئەم بارکۆدە بەکارهاتووە'],
   err_item_has_moves: ['للمادة حركات — لا يمكن حذفها أو تغيير تتبعها', 'The item has moves, so it can’t be deleted or switch tracking', 'کاڵاکە جووڵەی هەیە، بۆیە ناسڕدرێتەوە'],
+  err_item_in_use: ['المادة مذكورة في عروض أسعار أو أوامر شراء أو مستندات مخزن أو تسويات أو أرقام تسلسلية أو مشاريع، فلا تُحذف.', 'The item is named on quotes, purchase orders, stock documents, adjustments, serial numbers or projects, so it can’t be deleted.', 'کاڵاکە لە نرخدانان، داواکاری کڕین، بەڵگەنامەی کۆگا، ڕێکخستن، ژمارەی زنجیرەیی یان پرۆژەدا هاتووە، بۆیە ناسڕدرێتەوە.'],
+  err_in_use: ['هذا مستخدم في سجلات أخرى، فلا يُحذف.', 'This is used by other records, so it can’t be deleted.', 'ئەمە لە تۆماری تردا بەکارهاتووە، بۆیە ناسڕدرێتەوە.'],
   err_party_has_entries: ['لهذا الاسم حركات — أوقفه بدلاً من حذفه', 'This name has movements — set it inactive instead', 'ئەم ناوە جووڵەی هەیە — لە جیاتی سڕینەوە ناچالاکی بکە'],
   err_wrong_entry_type: ['نوع السند غير صحيح', 'Wrong voucher type', 'جۆری سەنەد هەڵەیە'],
   err_internal: ['حدث خطأ غير متوقع', 'Something went wrong', 'هەڵەیەکی چاوەڕواننەکراو ڕوویدا'],
@@ -768,7 +848,7 @@ const D = {
   err_database_denied: ['هذا المستخدم لا يملك صلاحية على قاعدة البيانات هذه.', 'This user has no rights on that database.', 'ئەم بەکارهێنەرە هیچ مافێکی لەسەر ئەو بنکەدراوەیە نییە.'],
   err_database_not_found: ['لا توجد قاعدة بيانات بهذا الاسم على الخادم. أنشئها أولاً.', 'There is no database with that name on the server. Create it first.', 'هیچ بنکەدراوەیەک بەو ناوە لەسەر سێرڤەرەکە نییە. سەرەتا دروستی بکە.'],
   err_database_other_tables: ['في قاعدة البيانات هذه جداول لبرنامج آخر. استخدم قاعدة بيانات فارغة خاصة بقاصة ERP.', 'That database has another program’s tables. Use an empty database just for Qasa ERP.', 'ئەو بنکەدراوەیە خشتەی بەرنامەیەکی تری تێدایە. بنکەدراوەیەکی بەتاڵ تەنها بۆ قاسە ERP بەکاربهێنە.'],
-  err_database_newer: ['الشركة في قاعدة البيانات هذه من إصدار أحدث من قاصة ERP. حدّث البرنامج أولاً.', 'The company in that database comes from a newer Qasa ERP. Update the app first.', 'کۆمپانیای ناو ئەو بنکەدراوەیە لە وەشانێکی نوێتری قاسە ERPـەوەیە. سەرەتا بەرنامەکە نوێ بکەرەوە.'],
+  err_database_newer: ['حُفظت هذه الشركة بإصدار أحدث من قاصة ERP؛ حدّث البرنامج لتفتحها.', 'This company was saved by a newer Qasa ERP; update the app to open it.', 'ئەم کۆمپانیایە بە وەشانێکی نوێتری قاسە ERP پاشەکەوت کراوە؛ بەرنامەکە نوێ بکەرەوە بۆ ئەوەی بیکەیتەوە.'],
   err_database_trigger_privilege: ['خادم MySQL لا يسمح لهذا المستخدم بإنشاء القواعد (triggers) التي تحمي القيود المرحّلة، لأن السجل الثنائي مفعّل. اطلب من مسؤول الخادم ضبط log_bin_trust_function_creators = ON.', 'The MySQL server won’t let this user make the rules (triggers) that protect posted entries, because binary logging is on. Ask the server’s administrator to set log_bin_trust_function_creators = ON.', 'سێرڤەری MySQL ڕێگە بەم بەکارهێنەرە نادات ئەو یاسایانە (triggers) دروست بکات کە تۆمارە پۆستکراوەکان دەپارێزن، چونکە binary logging هەڵکراوە. داوا لە بەڕێوەبەری سێرڤەرەکە بکە log_bin_trust_function_creators = ON دابنێت.'],
   err_database_create_denied: ['هذا المستخدم لا يستطيع إنشاء الجداول في قاعدة البيانات هذه. امنحه كل الصلاحيات عليها.', 'This user can’t create tables in that database. Give it all rights on it.', 'ئەم بەکارهێنەرە ناتوانێت خشتە لەو بنکەدراوەیەدا دروست بکات. هەموو مافەکانی لەسەری پێبدە.'],
   err_database_in_use: ['قاصة ERP على حاسوب آخر يعمل على قاعدة البيانات هذه الآن.', 'Qasa ERP on another PC is working on that database now.', 'قاسە ERP لەسەر کۆمپیوتەرێکی تر ئێستا لەسەر ئەو بنکەدراوەیە کار دەکات.'],
@@ -901,6 +981,10 @@ const D = {
   e_installment: ['عقد تقسيط', 'Installment contract', 'گرێبەستی قیست'],
   e_guarantor: ['كفيل', 'Guarantor', 'کەفیل']
 } as const satisfies Record<string, readonly [string, string, string]>;
+
+/** The industry features keep their texts in files of their own (i18n/), in the same three languages. */
+const D = { ...BASE, ...REAL_ESTATE_TEXT, ...MOBILE_TEXT, ...PARTS_TEXT, ...ENGINEERING_TEXT,
+  ...PAYROLL_TEXT, ...POS_TEXT, ...QUOTES_TEXT, ...PIPELINE_TEXT, ...MEDIA_TEXT, ...BRIEF_TEXT, ...CLOUD_TEXT, ...RELAY_TEXT, ...ACTIVATION_TEXT, ...FX_TEXT, ...VERIFY_TEXT, ...GEN_TEXT, ...WEBAPI_TEXT, ...PHONE_TEXT, ...USAGE_TEXT, ...SOLAR_TEXT, ...LEGAL_TEXT, ...BRANCH_TEXT, ...BANK_TEXT, ...WAVE2_TEXT, ...ASSET_TEXT, ...ADJ_TEXT, ...PO_TEXT, ...COMPANY_TEXT, ...LABEL_TEXT, ...UI_TEXT };
 
 export type Key = keyof typeof D;
 

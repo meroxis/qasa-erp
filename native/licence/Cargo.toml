@@ -1,0 +1,33 @@
+[package]
+name = "qasa-licence"
+version = "0.1.0"
+edition = "2021"
+license = "LicenseRef-Proprietary"
+description = "Qasa ERP: licence, activation and tamper checks, compiled (Node-API addon)"
+publish = false
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+napi = { version = "2", default-features = false, features = ["napi4"] }
+napi-derive = "2"
+ed25519-dalek = "2"
+sha2 = "0.10"
+hmac = "0.12"
+base64 = "0.22"
+serde_json = "1"
+
+[target.'cfg(windows)'.dependencies]
+winreg = "0.55"
+
+[build-dependencies]
+napi-build = "2"
+
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1
+panic = "abort"
+strip = true
+debug = false

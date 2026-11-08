@@ -4,6 +4,7 @@ import { api, ApiError, type EntryView, type JournalInput, type VoucherInput } f
 import { AccountCombo, AmountInput, ErrorBox, Icon, SearchCombo, useData, useLoad, useToast } from '../components.tsx';
 import { useI18n } from '../i18n.ts';
 import { go } from '../router.ts';
+import { useRatePrefill } from '../industry/fx-prefill.ts';
 
 type Kind = 'receipt' | 'payment' | 'journal';
 
@@ -43,6 +44,8 @@ export function EntryEditor({ kind: initialKind, id }: { kind?: Kind; id?: strin
   const [party, setParty] = useState('');
   const [currency, setCurrency] = useState<CurrencyCode>('IQD');
   const [rateText, setRateText] = useState('');
+  // a new voucher in dollars takes the rate board's rate for its date
+  const ratePrefill = useRatePrefill({ active: !id, currency, date, setRateText });
   const [cashAccount, setCashAccount] = useState('');
   const [rows, setRows] = useState<Row[]>(() => [emptyRow(), emptyRow()]);
   const [saving, setSaving] = useState(false);
@@ -145,7 +148,7 @@ export function EntryEditor({ kind: initialKind, id }: { kind?: Kind; id?: strin
           {currency === 'USD' ? (
             <label className="field">
               <span>{t('rate')} <span className="muted">({t('perUsd')})</span></span>
-              <input className={'input amount' + (rateX100 ? '' : ' invalid')} inputMode="decimal" value={rateText} onChange={(e) => setRateText(e.target.value)} />
+              <input className={'input amount' + (rateX100 ? '' : ' invalid')} inputMode="decimal" value={rateText} onChange={(e) => { ratePrefill.typed(); setRateText(e.target.value); }} />
             </label>
           ) : <div />}
           {isVoucher && (

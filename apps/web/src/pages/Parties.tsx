@@ -1,8 +1,12 @@
 import { useState } from 'react';
 import { api, type InvoiceSummary, type PartyInput, type PartyType, type PartyView } from '../api.ts';
-import { AccountCombo, AmountInput, ErrorBox, Icon, InvoiceStatusChip, Modal, downloadCsv, useLoad, usePageNav, useToast } from '../components.tsx';
+import { EmptyState, AccountCombo, AmountInput, ErrorBox, Icon, InvoiceStatusChip, Modal, downloadCsv, useData, useLoad, usePageNav, useToast } from '../components.tsx';
 import { useI18n } from '../i18n.ts';
 import { go, href } from '../router.ts';
+import { PriceListField } from '../industry/PriceListField.tsx';
+import { CompanyPrintFooter, CompanyPrintHeader } from '../industry/PrintDocument.tsx';
+import { StatementWhatsApp } from '../industry/WhatsAppShare.tsx';
+import { todayIso } from '@qasa/core';
 
 /** الزبائن / المجهزون */
 export function Parties({ type }: { type: PartyType }) {
@@ -23,7 +27,9 @@ export function Parties({ type }: { type: PartyType }) {
       </div>
       <ErrorBox error={error} />
       <div className="card">
-        {data && data.length === 0 && <p className="muted" style={{ padding: '14px 16px', margin: 0 }}>{t('noParties')}</p>}
+        {data && data.length === 0 && (q.trim()
+          ? <EmptyState compact icon="search" title={t('es_search')} text={t('es_searchText')} />
+          : <EmptyState icon="users" title={t('es_parties')} text={t('es_partiesText')} action={{ label: type === 'customer' ? t('newCustomer') : t('newSupplier'), icon: 'plus', onClick: () => setEditing('new') }} secondary={{ label: t('importExcel'), icon: 'upload', href: href('import') }} />)}
         {data && data.length > 0 && (
           <table className="table">
             <thead>
@@ -130,6 +136,7 @@ export function PartyForm({ type, party, onClose, onSaved }: { type: PartyType; 
 export function PartyDetail({ id }: { id: string }) {
   const i18n = useI18n();
   const { t } = i18n;
+  const { settings } = useData();
   const [from, setFrom] = useState('');
   const [to, setTo] = useState('');
   const [editing, setEditing] = useState(false);
@@ -141,6 +148,7 @@ export function PartyDetail({ id }: { id: string }) {
   if (!data) return null;
   const p = data.party;
   const isCustomer = p.type === 'customer';
+  const company = settings ? i18n.name(settings.companyName) : '';
 
   const exportCsv = () => downloadCsv(`${p.code}-statement.csv`, [
     [t('date'), t('number'), t('description'), t('debit'), t('credit'), t('balance')],
@@ -151,11 +159,13 @@ export function PartyDetail({ id }: { id: string }) {
 
   return (
     <div className="stack" style={{ maxWidth: 1100 }}>
+      <CompanyPrintHeader title={t('statement')} />
       <div className="row no-print">
         <button type="button" className="btn" onClick={() => history.back()}>{t('back')}</button>
         <span className="spacer" />
         <button type="button" className="btn" onClick={() => setEditing(true)}><Icon name="edit" size={16} />{t('actEdit')}</button>
         <a className="btn primary" href={href(isCustomer ? `new-invoice/sale/${p.id}` : `new-invoice/purchase/${p.id}`)}><Icon name="plus" size={16} />{isCustomer ? t('newSale') : t('newPurchase')}</a>
+        <StatementWhatsApp company={company} name={p.name} phone={p.phone} balance={data.closing} date={to || todayIso()} />
         <button type="button" className="btn" onClick={exportCsv}><Icon name="download" size={16} />{t('exportExcel')}</button>
         <button type="button" className="btn" onClick={() => window.print()}><Icon name="printer" size={16} />{t('print')}</button>
       </div>
@@ -175,6 +185,8 @@ export function PartyDetail({ id }: { id: string }) {
           <div className="value num" style={{ fontSize: 18 }}>{isCustomer ? (p.creditLimit === null ? t('noLimit') : i18n.money(p.creditLimit, 'IQD')) : <span className="ltr">{p.accountCode}</span>}</div>
         </div>
       </div>
+
+      {isCustomer && <div className="no-print"><PriceListField partyId={p.id} /></div>}
 
       <div className="card">
         <div className="row" style={{ padding: '12px 16px' }}>
@@ -212,6 +224,7 @@ export function PartyDetail({ id }: { id: string }) {
         {invoices.data && <InvoicesTable invoices={invoices.data} showParty={false} />}
       </div>
 
+      <CompanyPrintFooter />
       {editing && <PartyForm type={p.type} party={p} onClose={() => setEditing(false)} onSaved={() => { setEditing(false); reload(); }} />}
     </div>
   );

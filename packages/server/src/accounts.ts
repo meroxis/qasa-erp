@@ -26,9 +26,13 @@ export function accountsWithEntries(db: Db): Set<string> {
   return new Set((db.prepare('SELECT DISTINCT account_code AS code FROM entry_lines').all() as { code: string }[]).map((r) => r.code));
 }
 
-export function listAccounts(db: Db): AccountView[] {
+/**
+ * The chart of accounts with each account's balance. For a user limited to branches (`branch`), the balances are made
+ * of their branches' entries only (branches.ts): the company-wide balances are the trial balance, which is not theirs.
+ */
+export function listAccounts(db: Db, branch: { warehouses: string[]; accounts: string[] } | null = null): AccountView[] {
   const accounts = loadAccounts(db);
-  const balances = rollupBalances(accounts, postedLines(db));
+  const balances = rollupBalances(accounts, postedLines(db, { branch }));
   const used = accountsWithEntries(db);
   return accounts.map((a) => ({ ...a, nature: natureOf(a.code), balance: balances.get(a.code) ?? 0, hasEntries: used.has(a.code) }));
 }

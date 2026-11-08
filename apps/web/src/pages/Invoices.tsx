@@ -1,16 +1,23 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   amountInWords, invoiceTotals, remainingShare, rateFromX100, roundHalfUp, toBase, todayIso, toWesternDigits,
   type CurrencyCode, type InvoiceDocKind, type InvoiceInput, type InvoiceKind, type InvoiceStatus, type PaymentMode
 } from '@qasa/core';
 import { api, ApiError, type InvoiceView, type ItemView } from '../api.ts';
 import {
-  AccountCombo, AmountInput, ErrorBox, Icon, InvoiceStatusChip, Modal, QtyInput, SearchCombo, useData, useLoad, usePageNav, useToast, type PageNav, type PickOption
+  AccountCombo, AmountInput, EmptyState, ErrorBox, Icon, InvoiceStatusChip, Modal, QtyInput, SearchCombo, useData, useLoad, usePageNav, useToast, type PageNav, type PickOption
 } from '../components.tsx';
 import { useI18n } from '../i18n.ts';
 import { go, href } from '../router.ts';
 import { InvoicesTable } from './Parties.tsx';
 import { averageCost, qtyText, unitName } from './Items.tsx';
+import { InvoiceQr } from '../industry/InvoiceQr.tsx';
+import { pricesApi } from '../industry/prices-api.ts';
+import { DesignedPrint } from '../industry/PrintDocument.tsx';
+import { invoiceModel } from '../industry/print-model.ts';
+import { useRatePrefill } from '../industry/fx-prefill.ts';
+import { InvoiceWhatsApp } from '../industry/WhatsAppShare.tsx';
+import { reverseDefaultDate } from '../industry/ReverseModal.tsx';
 
 const STATUSES: (InvoiceStatus | '')[] = ['', 'draft', 'posted', 'cancelled'];
 
@@ -40,7 +47,9 @@ export function Invoices({ kind }: { kind: InvoiceDocKind }) {
         </div>
       </div>
       <ErrorBox error={error} />
-      <div className="card">{data && <InvoicesTable invoices={data} />}</div>
+      <div className="card">{data && (data.length > 0 ? <InvoicesTable invoices={data} /> : q.trim() || status
+        ? <EmptyState compact icon="search" title={t('es_search')} text={t('es_searchText')} />
+        : <EmptyState icon="invoice" title={t('es_invoices')} text={t('es_invoicesText')} action={isReturnKind(kind) ? undefined : { label: kind === 'sale' ? t('newSale') : t('newPurchase'), icon: 'plus', href: href(`new-invoice/${kind}`) }} />)}</div>
     </div>
   );
 }
@@ -79,6 +88,8 @@ export function InvoiceEditor({ kind: initialKind, id, partyId: initialParty }: 
   const [warehouseId, setWarehouseId] = useState('');
   const [currency, setCurrency] = useState<CurrencyCode>('IQD');
   const [rateText, setRateText] = useState('');
+  // a new invoice in dollars takes the rate board's rate for its date
+  const ratePrefill = useRatePrefill({ active: !id, currency, date, setRateText });
   const [payment, setPayment] = useState<PaymentMode>(initialParty || initialKind === 'purchase' ? 'credit' : 'cash');
   const [cashAccount, setCashAccount] = useState('');
   const [discount, setDiscount] = useState<number | null>(null);
@@ -141,6 +152,28 @@ export function InvoiceEditor({ kind: initialKind, id, partyId: initialParty }: 
   const update = (key: number, patch: Partial<Row>) => setRows((rs) => rs.map((r) => (r.key === key ? { ...r, ...patch } : r)));
   const remove = (key: number) => setRows((rs) => (rs.length > 1 ? rs.filter((r) => r.key !== key) : [emptyRow()]));
 
+  // Sale prices the program filled in (not typed by the user), by line: the customer's price list
+  // (wholesale or retail) replaces them, and they follow a change of customer or currency.
+  const autoPrices = useRef(new Map<number, number | null>());
+  function askPrice(key: number, itemId: string, expected: number | null) {
+    if (kind !== 'sale') return;
+    autoPrices.current.set(key, expected);
+    // a price in the other currency is converted at this invoice's own rate, not the company's default rate
+    const own = itemById.get(itemId)?.saleCurrency;
+    pricesApi.priceFor(itemId, partyId || null, currency, own && own !== currency ? priceRateX100 : null).then((q) => {
+      setRows((rs) => rs.map((r) => {
+        if (r.key !== key || r.itemId !== itemId || autoPrices.current.get(key) !== r.unitPrice) return r;
+        autoPrices.current.set(key, q.price);
+        return { ...r, unitPrice: q.price };
+      }));
+    }).catch(() => { /* the catalog price stays */ });
+  }
+  useEffect(() => {
+    if (kind !== 'sale') return;
+    for (const r of rows) if (r.itemId && autoPrices.current.has(r.key) && autoPrices.current.get(r.key) === r.unitPrice) askPrice(r.key, r.itemId, r.unitPrice);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [partyId, currency]);
+
   function pickItem(key: number, itemId: string) {
     const it: ItemView | undefined = itemById.get(itemId);
     let price: number | null = null;
@@ -149,10 +182,12 @@ export function InvoiceEditor({ kind: initialKind, id, partyId: initialParty }: 
         ? convert(it.salePrice, it.saleCurrency, currency, priceRateX100)
         : it.qtyMilli > 0 ? convert(averageCost(it.qtyMilli, it.value), 'IQD', currency, priceRateX100) : null;
     }
+    const filled = price ?? rows.find((r) => r.key === key)?.unitPrice ?? null;
     setRows((rs) => {
-      const next = rs.map((r) => (r.key === key ? { ...r, itemId, unitPrice: price ?? r.unitPrice } : r));
+      const next = rs.map((r) => (r.key === key ? { ...r, itemId, unitPrice: filled } : r));
       return next[next.length - 1]?.itemId ? [...next, emptyRow()] : next;
     });
+    askPrice(key, itemId, filled);
   }
 
   function input(): InvoiceInput | null {
@@ -232,7 +267,7 @@ export function InvoiceEditor({ kind: initialKind, id, partyId: initialParty }: 
                 {(['IQD', 'USD'] as const).map((c) => <button key={c} type="button" aria-pressed={currency === c} onClick={() => setCurrency(c)}>{c === 'IQD' ? t('iqdName') : t('usdName')}</button>)}
               </div>
               {currency === 'USD' && (
-                <input className={'input amount' + (rateX100 ? '' : ' invalid')} style={{ width: 120 }} inputMode="decimal" aria-label={t('rate')} title={t('perUsd')} value={rateText} onChange={(e) => setRateText(e.target.value)} />
+                <input className={'input amount' + (rateX100 ? '' : ' invalid')} style={{ width: 120 }} inputMode="decimal" aria-label={t('rate')} title={t('perUsd')} value={rateText} onChange={(e) => { ratePrefill.typed(); setRateText(e.target.value); }} />
               )}
             </div>
           </div>
@@ -380,10 +415,11 @@ export function InvoiceDetail({ id }: { id: string }) {
           </button>
         )}
         {v.actions.includes('return') && <button type="button" className="btn" disabled={busy} onClick={() => setReturning(true)}><Icon name="undo" size={16} />{t('actReturnItems')}</button>}
-        {v.actions.includes('cancel') && <button type="button" className="btn danger" disabled={busy} onClick={() => setCancelling(true)}><Icon name="undo" size={16} />{t('actCancelInvoice')}</button>}
+        {v.actions.includes('cancel') && <button type="button" className="btn danger" disabled={busy} onClick={() => { setCancelDate(reverseDefaultDate(v.date)); setCancelling(true); }}><Icon name="undo" size={16} />{t('actCancelInvoice')}</button>}
         {v.kind === 'sale' && v.status === 'posted' && v.payment === 'credit' && !v.installmentContract && plan?.features.includes('installments') && (
           <a className="btn" href={href(`new-installment/${v.id}`)}><Icon name="cal" size={16} />{t('makeContract')}</a>
         )}
+        <InvoiceWhatsApp company={company} invoice={v} />
         <button type="button" className="btn" onClick={() => window.print()}><Icon name="printer" size={16} />{t('print')}</button>
       </div>
       <ErrorBox error={cancelling ? null : actionError} />
@@ -399,7 +435,9 @@ export function InvoiceDetail({ id }: { id: string }) {
       )}
       {v.status === 'posted' && !isRet && v.returns.some((r) => r.status === 'posted') && <div className="alert warn no-print">{t('hasReturnsNote')}</div>}
 
-      <div className="paper invoice">
+      {/* printed with the company's print design (Settings → Print design); the screen keeps this view */}
+      <DesignedPrint model={invoiceModel(v)} balanceOf={v.partyId && v.status === 'posted' ? { partyId: v.partyId, date: v.date } : null} />
+      <div className="paper invoice no-print">
         <div className="paper-head">
           <div style={{ flex: 1 }}>
             <div className="company-line">{company}</div>
@@ -472,6 +510,8 @@ export function InvoiceDetail({ id }: { id: string }) {
           <div className="sig done"><div className="muted small">{t('preparedBy')}</div><div className="who">{v.createdBy}</div></div>
           <div className="sig"><div className="muted small">{saleSide ? t('customer') : t('supplier')}</div><div className="who">&nbsp;</div></div>
         </div>
+        {/* a posted sale: a code the customer scans to check the invoice (qasaerp.com/v/) */}
+        {v.kind === 'sale' && v.status === 'posted' && <div style={{ marginTop: 12 }}><InvoiceQr invoiceId={v.id} /></div>}
         {/* Required on Free by the license (NOTICE, additional term 1); Pro and Business remove it. */}
         {!plan?.features.includes('noBranding') && <div className="made-with">{t('madeWith')} · <span className="ltr">qasaerp.com</span></div>}
       </div>
@@ -510,10 +550,10 @@ export function InvoiceDetail({ id }: { id: string }) {
         <Modal title={t('cancelTitle')} onClose={() => setCancelling(false)}>
           <div className="stack">
             <p style={{ margin: 0 }}>{t('cancelHelp')}</p>
-            <label className="field"><span>{t('cancelDate')}</span><input className="input" type="date" value={cancelDate} onChange={(e) => setCancelDate(e.target.value)} /></label>
+            <label className="field"><span>{t('cancelDate')}</span><input className="input" type="date" min={v.date} value={cancelDate} onChange={(e) => setCancelDate(e.target.value)} /></label>
             <ErrorBox error={actionError} />
             <div className="row">
-              <button type="button" className="btn danger" disabled={busy} onClick={() => act(() => api.cancelInvoice(id, cancelDate), t('a_cancel'))}>{t('confirm')}</button>
+              <button type="button" className="btn danger" disabled={busy || !cancelDate} onClick={() => act(() => api.cancelInvoice(id, cancelDate), t('a_cancel'))}>{t('confirm')}</button>
               <button type="button" className="btn" onClick={() => setCancelling(false)}>{t('cancel')}</button>
             </div>
           </div>

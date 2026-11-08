@@ -1,8 +1,9 @@
 import { useState } from 'react';
 import { daysBetween, PLAN_IDS, PLANS, TRIAL_DAYS, todayIso } from '@qasa/core';
-import { api, type PlanStatus } from '../api.ts';
+import { api, request, type PlanStatus } from '../api.ts';
 import { ErrorBox, Icon, useData, useToast } from '../components.tsx';
 import { useI18n, type I18n, type Key } from '../i18n.ts';
+import { AgreeLine } from '../industry/LegalPanel.tsx';
 
 const demo = import.meta.env.MODE === 'demo';
 const CONTACT = 'mailto:info@qasaerp.com?subject=' + encodeURIComponent('Qasa ERP Pro / Business');
@@ -14,21 +15,41 @@ type Cell = Key | boolean | { limit: number | null } | { key: Key; n: number };
 interface Row { label: Key; cells: [Cell, Cell, Cell]; soon?: boolean }
 
 const { free, pro, business } = PLANS;
-const ROWS: Row[] = [
+/** The plan comparison table (exported for its test). */
+export const ROWS: Row[] = [
   { label: 'f_core', cells: [true, true, true] },
   { label: 'f_warehouses', cells: [{ limit: free.limits.warehouses }, { limit: pro.limits.warehouses }, { limit: business.limits.warehouses }] },
   { label: 'f_branding', cells: ['v_shown', 'v_removed', 'v_removed'] },
   { label: 'f_users', cells: [{ limit: free.limits.users }, { limit: pro.limits.users }, { limit: business.limits.users }] },
   { label: 'f_network', cells: [false, true, true] },
-  { label: 'f_companies', cells: [{ limit: free.limits.companies }, { limit: pro.limits.companies }, { limit: business.limits.companies }], soon: true },
+  // Qasa Relay needs an activated Pro or Business licence (the free month leaves it out, as its label says)
+  { label: 'f_relay', cells: [false, true, true] },
+  { label: 'f_companies', cells: [{ limit: free.limits.companies }, { limit: pro.limits.companies }, { limit: business.limits.companies }] },
   { label: 'f_roles', cells: ['v_onePerson', true, true] },
+  { label: 'f_quotes', cells: [true, true, true] },
+  { label: 'f_pos', cells: [true, true, true] },
   { label: 'f_installments', cells: [false, true, true] },
-  { label: 'f_payroll', cells: [false, true, true], soon: true },
+  { label: 'f_pipeline', cells: [false, true, true] },
+  // the phone app is not in 1.0: shown as coming, never as included
+  { label: 'f_phoneApp', cells: [false, true, true], soon: true },
+  { label: 'f_websiteApi', cells: [false, true, true] },
+  { label: 'f_cloudBackup', cells: [false, true, true] },
+  { label: 'f_bankReconciliation', cells: [false, true, true] },
+  { label: 'f_payroll', cells: [false, true, true] },
   { label: 'f_finalAccounts', cells: ['v_viewOnScreen', 'v_printExcel', 'v_printExcel'] },
   { label: 'f_yearEnd', cells: [false, true, true] },
   { label: 'f_backup', cells: [false, true, true] },
   { label: 'f_dbServer', cells: [false, false, true] },
-  { label: 'f_branches', cells: [false, false, true], soon: true },
+  { label: 'f_mobileShop', cells: [false, true, true] },
+  { label: 'f_autoParts', cells: [false, true, true] },
+  { label: 'f_engineeringWorks', cells: [false, true, true] },
+  { label: 'f_electricalSolar', cells: [false, true, true] },
+  { label: 'f_generators', cells: [false, true, true] },
+  { label: 'f_realEstate', cells: [false, false, true] },
+  { label: 'f_branches', cells: [false, false, true] },
+  // the online edition (in the browser) is not in 1.0 yet: the plan table must not promise it as included. Working from
+  // anywhere on the office network is Qasa Relay (f_relay), on Pro and Business.
+  { label: 'f_online', cells: [false, false, true], soon: true },
   { label: 'f_support', cells: ['v_supportFree', 'v_supportPro', 'v_supportBusiness'] }
 ];
 
@@ -39,6 +60,49 @@ function cellText(cell: Cell, i18n: I18n) {
   if (typeof cell === 'string') return t(cell);
   if ('limit' in cell) return cell.limit === null ? t('unlimited') : i18n.int(cell.limit);
   return t(cell.key, { n: cell.n });
+}
+
+/** Where the licence stands on this PC: activated (until when offline), waiting for activation, or stopped and why. */
+function ActivationNote({ plan, busy, act }: { plan: PlanStatus; busy: boolean; act(fn: () => Promise<PlanStatus>, message: string): Promise<boolean> }) {
+  const i18n = useI18n();
+  const { t } = i18n;
+  const a = plan.activation;
+  const activate = () => void act(() => request<PlanStatus>('POST', '/api/plan/activate', {}), t('ac_activated'));
+  const check = () => void act(() => request<PlanStatus>('POST', '/api/plan/check', {}), t('ac_checked'));
+  const planName = t(`plan_${plan.license?.plan ?? 'pro'}` as Key);
+  if (a.state === 'active') {
+    return (
+      <div className="row" style={{ gap: 8 }}>
+        <span className="chip ok">{t('ac_active')}</span>
+        {a.offlineUntil && <span className="muted small">{t('ac_activeHelp', { d: i18n.date(a.offlineUntil) })}</span>}
+        {a.lastChecked && <span className="muted small">{t('ac_lastChecked')}: <span className="num">{i18n.date(a.lastChecked.slice(0, 10))}</span></span>}
+      </div>
+    );
+  }
+  if (a.state === 'needs_activation') {
+    return (
+      <div className="alert info stack">
+        <span>{a.inGrace && a.graceUntil ? t('ac_needsGrace', { d: i18n.date(a.graceUntil) }) : t('ac_needs')}</span>
+        <AgreeLine paid />
+        <div><button type="button" className="btn primary" disabled={busy} onClick={activate}>{t('ac_activateNow')}</button></div>
+      </div>
+    );
+  }
+  if (a.state === 'revoked') {
+    const reason = a.revokedReason === 'released' ? 'ac_revoked_released' : a.revokedReason === 'unknown' ? 'ac_revoked_unknown' : 'ac_revoked_revoked';
+    return (
+      <div className="alert bad stack">
+        <span>{t(reason)}</span>
+        {a.revokedReason === 'released' && <div><button type="button" className="btn" disabled={busy} onClick={activate}>{t('ac_activateNow')}</button></div>}
+      </div>
+    );
+  }
+  return (
+    <div className="alert warn stack">
+      <span>{a.state === 'clock' ? t('ac_clock') : t('ac_stale', { p: planName })}</span>
+      <div><button type="button" className="btn primary" disabled={busy} onClick={check}>{t('ac_checkNow')}</button></div>
+    </div>
+  );
 }
 
 export function Plans() {
@@ -86,6 +150,10 @@ export function Plans() {
         {plan.source === 'free' && <p style={{ margin: 0 }}>{t('freePlanNote')}</p>}
         {plan.source === 'free' && !license && plan.trialStarted && !plan.trialActive && <div className="alert info">{t('trialEndedNote')}</div>}
 
+        {license && plan.activation.required && (
+          <ActivationNote plan={plan} busy={busy} act={act} />
+        )}
+
         {license && (
           <>
             {license.state === 'grace' && license.expires && plan.graceEnds && (
@@ -115,6 +183,11 @@ export function Plans() {
               <Icon name="star" size={16} />{t('startTrial', { n: TRIAL_DAYS })}
             </button>
           )}
+          {license && !demo && plan.activation.required && plan.activation.state === 'active' && (
+            <button type="button" className="btn" disabled={busy} onClick={() => { if (window.confirm(t('ac_moveConfirm'))) void act(() => request<PlanStatus>('POST', '/api/plan/deactivate', {}), t('ac_moved')); }}>
+              {t('ac_moveToPc')}
+            </button>
+          )}
           {license && !demo && (
             <button type="button" className="btn danger" disabled={busy} onClick={() => { if (window.confirm(t('removeLicenseConfirm'))) void act(() => api.removeLicense(), t('licenseRemoved')); }}>
               {t('removeLicense')}
@@ -139,7 +212,11 @@ export function Plans() {
             <div className="row">
               <button
                 type="button" className="btn primary" disabled={busy || !key.trim()}
-                onClick={() => void act(() => api.activateLicense(key), t('licenseActivated')).then((ok) => { if (ok) setKey(''); })}
+                onClick={() => void act(async () => {
+                  // the key, then (in the official app) its activation on this PC, online, in one go
+                  const entered = await api.activateLicense(key);
+                  return entered.activation.required ? request<PlanStatus>('POST', '/api/plan/activate', {}) : entered;
+                }, t('licenseActivated')).then((ok) => { if (ok) setKey(''); })}
               >
                 {t('activate')}
               </button>

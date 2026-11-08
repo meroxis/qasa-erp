@@ -3,6 +3,7 @@ import type { ReactElement } from 'react';
 import type { CurrencyCode } from '@qasa/core';
 import { InvoiceEditor } from './Invoices.tsx';
 import { api } from '../api.ts';
+import { pricesApi } from '../industry/prices-api.ts';
 
 // Exercise the editor's actual selection and save callbacks without a browser or company database.
 const fixture = vi.hoisted(() => ({
@@ -18,8 +19,15 @@ vi.mock('react', () => ({
     }];
   },
   useEffect(fn: () => void) { if (fixture.first) fixture.effects.push(fn); },
-  useMemo<T>(fn: () => T) { return fn(); }
+  useMemo<T>(fn: () => T) { return fn(); },
+  useRef<T>(initial: T) {
+    const i = fixture.cursor++;
+    if (!(i in fixture.states)) fixture.states[i] = { current: initial };
+    return fixture.states[i];
+  }
 }));
+// the price list answer never arrives here, so the catalog price is what gets saved
+vi.mock('../industry/prices-api.ts', () => ({ pricesApi: { priceFor: vi.fn(() => new Promise(() => {})) } }));
 vi.mock('../api.ts', () => ({
   ApiError: Error,
   api: {
@@ -73,4 +81,17 @@ it.each([
     currency: to, rateX100: to === 'IQD' ? 100 : 142000,
     lines: [{ itemId: 'sample', qtyMilli: 1000, unitPrice: expected }]
   }));
+});
+
+it('asks for the customer price at the invoice\'s own rate when the item is priced in the other currency', () => {
+  fixture.item.saleCurrency = 'IQD'; fixture.item.salePrice = 15000;
+  render(); fixture.effects.forEach((fn) => fn()); fixture.first = false;
+  invoke(render().find((n) => n.type === 'button' && n.props.children === 'usdName')!.props.onClick);
+  invoke(render().find((n) => n.type === 'input' && n.props['aria-label'] === 'rate')!.props.onChange, { target: { value: '1500' } });
+  invoke(render().find((n) => n.type === 'SearchCombo' && n.props.ariaLabel === 'item')!.props.onChange, fixture.item.id);
+  expect(pricesApi.priceFor).toHaveBeenLastCalledWith('sample', null, 'USD', 150000);
+  // the same currency needs no conversion, so no rate is sent
+  invoke(render().find((n) => n.type === 'button' && n.props.children === 'iqdName')!.props.onClick);
+  invoke(render().find((n) => n.type === 'SearchCombo' && n.props.ariaLabel === 'item')!.props.onChange, fixture.item.id);
+  expect(pricesApi.priceFor).toHaveBeenLastCalledWith('sample', null, 'IQD', null);
 });

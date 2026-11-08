@@ -1,5 +1,7 @@
 import { z } from 'zod';
-import { APP_VERSION } from '@qasa/core';
+import { BUILT_IN_FEATURES } from './features.ts';
+import { checkBranchRequest, filterBranchResult, isBranchLimited, userBranchLists } from './branches.ts';
+import { APP_VERSION, BUSINESS_TYPES } from '@qasa/core';
 import type { Db } from './db.ts';
 import { AppError, conflict, invalid } from './errors.ts';
 import {
@@ -14,7 +16,7 @@ import {
 import { finalAccountsReport, statementReport, trialBalanceReport } from './reports.ts';
 import { getSettings, lockPeriod, lockedPeriods, unlockPeriod, updateSettings } from './settings.ts';
 import { listAudit } from './audit.ts';
-import { createParty, deleteParty, getParty, listParties, partyStatement, updateParty } from './parties.ts';
+import { createParty, deleteParty, getParty, isForeignKeyFailure, listParties, partyStatement, updateParty } from './parties.ts';
 import {
   createItem, createWarehouse, deleteItem, getItem, itemMoves, itemStock, listItems, listWarehouses, updateItem, updateWarehouse
 } from './items.ts';
@@ -231,6 +233,8 @@ export function errorResponse(error: unknown): { status: number; body: { error: 
   for (const code of ['posted_entry_is_permanent', 'posted_invoice_is_permanent', 'posted_document_is_permanent', 'stock_moves_are_permanent', 'installment_contract_is_permanent']) {
     if (message.includes(code)) return { status: 409, body: { error: code, details: null } };
   }
+  // a delete the database refused because other records still point at the row: nothing changed, say so plainly
+  if (isForeignKeyFailure(error)) return { status: 409, body: { error: 'in_use', details: null } };
   return { status: 500, body: { error: 'internal', details: null } };
 }
 
@@ -241,6 +245,11 @@ export function errorResponse(error: unknown): { status: number; body: { error: 
  */
 export interface ApiExtension {
   rules?: Record<string, Permission | null>;
+  /**
+   * Routes ("GET /api/…") that check who is asking themselves, with an API key in the Authorization header: no
+   * session and no same-site check (no cookie is involved, so a page on another site can't ride on one).
+   */
+  public?: readonly string[];
   routes(db: Db, helpers: { actorOf(req: ApiRequest): Actor }): Route[];
 }
 
@@ -280,8 +289,9 @@ export function apiRoutes(db: Db, options: { demo?: boolean; extensions?: readon
     'POST /api/stock-docs/:id/post': 'stock', 'POST /api/stock-docs/:id/cancel': 'stock',
     'GET /api/audit': 'admin', 'GET /api/users': 'admin'
   };
-  for (const extension of options.extensions ?? []) Object.assign(RULES, extension.rules ?? {});
+  for (const extension of [...BUILT_IN_FEATURES, ...(options.extensions ?? [])]) Object.assign(RULES, extension.rules ?? {});
   const PUBLIC = new Set(['GET /api/health', 'GET /api/auth/me', 'POST /api/auth/login', 'POST /api/auth/logout']);
+  for (const extension of [...BUILT_IN_FEATURES, ...(options.extensions ?? [])]) for (const route of extension.public ?? []) PUBLIC.add(route);
 
   /** Hides the buttons a user may not use: the server refuses those actions anyway. */
   const ENTRY_ACTION: Record<string, Permission> = {
@@ -311,9 +321,11 @@ export function apiRoutes(db: Db, options: { demo?: boolean; extensions?: readon
           if (need && !actor.permissions.includes(need)) throw new AppError(403, 'forbidden', { need });
         }
         (req as ApiRequest & { actor?: Actor | null }).actor = actor;
+        // a user limited to some branches works only with their warehouses and safes (branches.ts)
+        checkBranchRequest(db, actor, method, path, req);
         const result = await handler(req, reply);
         if (reply.sent) reply.payload = forActor(path, reply.payload, actor);
-        return forActor(path, result, actor);
+        return forActor(path, filterBranchResult(db, actor, method, path, result), actor);
       }
     });
   };
@@ -332,7 +344,8 @@ export function apiRoutes(db: Db, options: { demo?: boolean; extensions?: readon
       postingAccounts: z.object({
         customers: z.string().max(12), suppliers: z.string().max(12), sales: z.string().max(12), costOfSales: z.string().max(12), cash: z.string().max(12),
         yearResult: z.string().max(12).optional()
-      }).optional()
+      }).optional(),
+      businessTypes: z.array(z.enum(BUSINESS_TYPES)).min(1).max(BUSINESS_TYPES.length).optional()
     }), req.body);
     const { postingAccounts, ...rest } = withoutUndefined(body);
     return updateSettings(db, { ...rest, ...(postingAccounts ? { postingAccounts: { ...getSettings(db).postingAccounts, ...withoutUndefined(postingAccounts) } } : {}) }, userOf(req));
@@ -362,7 +375,7 @@ export function apiRoutes(db: Db, options: { demo?: boolean; extensions?: readon
   });
 
   // chart of accounts
-  app.get('/api/accounts', async () => listAccounts(db));
+  app.get('/api/accounts', async (req) => listAccounts(db, userBranchLists(db, actorOf(req))));
   app.post('/api/accounts', async (req, reply) => {
     const body = parse(z.object({ parentCode: z.string().min(1).max(12), code: z.string().min(1).max(12), name: names }), req.body);
     return reply.status(201).send(createAccount(db, body, userOf(req)));
@@ -427,26 +440,33 @@ export function apiRoutes(db: Db, options: { demo?: boolean; extensions?: readon
 
   // customers & suppliers
   const partyFilters = z.object({ type: z.enum(['customer', 'supplier']).optional(), q: z.string().max(100).optional(), active: z.enum(['true', 'false']).optional() });
+  // a user limited to branches sees balances and statements made of their branches' entries only (as in the aging)
+  const branchOfUser = (req: ApiRequest) => userBranchLists(db, actorOf(req));
   app.get('/api/parties', async (req) => {
     const q = parse(partyFilters, req.query);
-    return listParties(db, { type: q.type, q: q.q, active: q.active === undefined ? undefined : q.active === 'true' });
+    return listParties(db, { type: q.type, q: q.q, active: q.active === undefined ? undefined : q.active === 'true' }, branchOfUser(req));
   });
-  app.get('/api/parties/:id', async (req) => getParty(db, parse(idParam, req.params).id));
+  app.get('/api/parties/:id', async (req) => getParty(db, parse(idParam, req.params).id, branchOfUser(req)));
   app.post('/api/parties', async (req, reply) => {
     const { type, ...input } = parse(partySchema.extend({ type: z.enum(['customer', 'supplier']) }), req.body);
     return reply.status(201).send(createParty(db, type, withoutUndefined(input), userOf(req)));
   });
-  app.put('/api/parties/:id', async (req) => updateParty(db, parse(idParam, req.params).id, withoutUndefined(parse(partySchema, req.body)), userOf(req)));
+  app.put('/api/parties/:id', async (req) => {
+    const { id } = parse(idParam, req.params);
+    updateParty(db, id, withoutUndefined(parse(partySchema, req.body)), userOf(req));
+    return getParty(db, id, branchOfUser(req));
+  });
   app.delete('/api/parties/:id', async (req, reply) => {
     deleteParty(db, parse(idParam, req.params).id, userOf(req));
     return reply.status(204).send();
   });
   app.get('/api/parties/:id/statement', async (req) => {
     const q = parse(z.object({ from: isoDate.optional(), to: isoDate.optional() }), req.query);
-    return partyStatement(db, parse(idParam, req.params).id, q);
+    return partyStatement(db, parse(idParam, req.params).id, q, branchOfUser(req));
   });
 
   // warehouses, items & stock
+  const warehousesOfUser = (req: ApiRequest) => branchOfUser(req)?.warehouses ?? null;
   app.get('/api/warehouses', async () => listWarehouses(db));
   app.post('/api/warehouses', async (req, reply) => {
     const body = parse(z.object({ code: z.string().max(12), name: names }), req.body);
@@ -458,14 +478,20 @@ export function apiRoutes(db: Db, options: { demo?: boolean; extensions?: readon
   });
   app.get('/api/items', async (req) => {
     const q = parse(z.object({ q: z.string().max(100).optional(), warehouseId: z.string().max(64).optional(), active: z.enum(['true', 'false']).optional() }), req.query);
-    return listItems(db, { q: q.q, warehouseId: q.warehouseId, active: q.active === undefined ? undefined : q.active === 'true' });
+    // without a warehouse, a user limited to branches gets the stock of their branches' warehouses (null: every one)
+    return listItems(db, { q: q.q, warehouseId: q.warehouseId, active: q.active === undefined ? undefined : q.active === 'true' }, warehousesOfUser(req));
   });
   app.get('/api/items/:id', async (req) => {
     const { id } = parse(idParam, req.params);
-    return { ...getItem(db, id), stock: itemStock(db, id), moves: itemMoves(db, id) };
+    const warehouses = warehousesOfUser(req);
+    return { ...getItem(db, id, warehouses), stock: itemStock(db, id, warehouses), moves: itemMoves(db, id, warehouses) };
   });
   app.post('/api/items', async (req, reply) => reply.status(201).send(createItem(db, withoutUndefined(parse(itemSchema, req.body)), userOf(req))));
-  app.put('/api/items/:id', async (req) => updateItem(db, parse(idParam, req.params).id, withoutUndefined(parse(itemSchema, req.body)), userOf(req)));
+  app.put('/api/items/:id', async (req) => {
+    const { id } = parse(idParam, req.params);
+    updateItem(db, id, withoutUndefined(parse(itemSchema, req.body)), userOf(req));
+    return getItem(db, id, warehousesOfUser(req));
+  });
   app.delete('/api/items/:id', async (req, reply) => {
     deleteItem(db, parse(idParam, req.params).id, userOf(req));
     return reply.status(204).send();
@@ -519,13 +545,17 @@ export function apiRoutes(db: Db, options: { demo?: boolean; extensions?: readon
   const userSchema = z.object({ username: z.string().max(32), name: z.string().max(100), roles: z.array(roleSchema).max(ROLES.length) });
   const me = (actor: Actor | null) => ({
     signInRequired: signInRequired(db), separateDuties: separateDuties(db), demo: !!options.demo,
-    user: actor ? { id: actor.id, name: actor.name, username: actor.username, roles: actor.roles, permissions: actor.permissions } : null
+    user: actor ? {
+      id: actor.id, name: actor.name, username: actor.username, roles: actor.roles, permissions: actor.permissions,
+      // limited to some branches: the company's own books (trial balance, final accounts, statements…) are not for them
+      branchLimited: isBranchLimited(db, actor)
+    } : null
   });
   app.get('/api/auth/me', async (req) => me((req as ApiRequest & { actor?: Actor | null }).actor ?? null));
   app.post('/api/auth/login', async (req, reply) => {
     notInDemo();
     const body = parse(z.object({ username: z.string().min(1).max(64), password: z.string().min(1).max(200) }), req.body);
-    const { token, actor } = login(db, body.username, body.password, header(req, 'user-agent'));
+    const { token, actor } = await login(db, body.username, body.password, header(req, 'user-agent'));
     reply.header('set-cookie', sessionCookie(token, !!req.secure));
     return me(actor);
   });
@@ -538,7 +568,7 @@ export function apiRoutes(db: Db, options: { demo?: boolean; extensions?: readon
   app.post('/api/auth/password', async (req) => {
     notInDemo();
     const body = parse(z.object({ current: z.string().max(200).optional(), password: z.string().max(200) }), req.body);
-    changeOwnPassword(db, actorOf(req), body.current, body.password, cookie(req, SESSION_COOKIE));
+    await changeOwnPassword(db, actorOf(req), body.current, body.password, cookie(req, SESSION_COOKIE));
     return { ok: true };
   });
   app.put('/api/auth/signin', async (req) => {
@@ -554,12 +584,12 @@ export function apiRoutes(db: Db, options: { demo?: boolean; extensions?: readon
   app.post('/api/users', async (req, reply) => {
     const body = parse(userSchema.extend({ password: z.string().max(200).optional() }), req.body);
     if (body.password !== undefined) notInDemo();
-    return reply.status(201).send(createUser(db, body, userOf(req)));
+    return reply.status(201).send(await createUser(db, body, userOf(req)));
   });
   app.put('/api/users/:id', async (req) => updateUser(db, parse(idParam, req.params).id, parse(userSchema.extend({ active: z.boolean() }), req.body), actorOf(req)));
   app.post('/api/users/:id/password', async (req) => {
     notInDemo();
-    return setPassword(db, parse(idParam, req.params).id, parse(z.object({ password: z.string().max(200) }), req.body).password, userOf(req));
+    return await setPassword(db, parse(idParam, req.params).id, parse(z.object({ password: z.string().max(200) }), req.body).password, userOf(req));
   });
 
   // plan & license
@@ -573,7 +603,10 @@ export function apiRoutes(db: Db, options: { demo?: boolean; extensions?: readon
     return listAudit(db, q.limit ?? 200);
   });
 
-  // the modules' routes, behind the same checks as the app's own (not in the website demo)
+  // the app's own module-style features, then the modules' routes (not in the website demo), behind the same checks
+  for (const feature of BUILT_IN_FEATURES) {
+    for (const route of feature.routes(db, { actorOf })) add(route.method)(route.path, route.handler);
+  }
   if (!options.demo) {
     for (const extension of options.extensions ?? []) {
       for (const route of extension.routes(db, { actorOf })) add(route.method)(route.path, route.handler);

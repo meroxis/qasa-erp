@@ -6,6 +6,10 @@ import { audit } from './audit.ts';
 import { conflict, invalid, notFound } from './errors.ts';
 import { loadAccounts } from './accounts.ts';
 import { postedLines } from './journal.ts';
+import { entryInBranchSql } from './branches.ts';
+
+/** The warehouses and safes of the branches a user is limited to (null: the whole company). See branches.ts. */
+export type PartyBranch = { warehouses: string[]; accounts: string[] } | null;
 import { getPostingAccounts } from './settings.ts';
 
 export type PartyType = 'customer' | 'supplier';
@@ -46,10 +50,12 @@ interface PartyRow {
 const ACCOUNT_ROOT: Record<PartyType, string> = { customer: '16', supplier: '26' };
 const CODE_PREFIX: Record<PartyType, string> = { customer: 'C', supplier: 'S' };
 
-function balances(db: Db): Map<string, { debit: number; credit: number }> {
+/** Each party's approved debits and credits; for a user limited to branches, only their branches' entries count. */
+function balances(db: Db, branch: PartyBranch = null): Map<string, { debit: number; credit: number }> {
+  const [b, bp] = entryInBranchSql('e', branch);
   const rows = db.prepare(`SELECT l.party_id, SUM(l.base_debit) AS debit, SUM(l.base_credit) AS credit
                            FROM entry_lines l JOIN entries e ON e.id = l.entry_id
-                           WHERE e.status = 'approved' AND l.party_id IS NOT NULL GROUP BY l.party_id`).all() as
+                           WHERE e.status = 'approved' AND l.party_id IS NOT NULL${b} GROUP BY l.party_id`).all(...bp) as
     { party_id: string; debit: number; credit: number }[];
   return new Map(rows.map((r) => [r.party_id, { debit: r.debit, credit: r.credit }]));
 }
@@ -65,19 +71,41 @@ function toView(row: PartyRow, sums: { debit: number; credit: number } | undefin
   };
 }
 
+/**
+ * Every record that keeps a customer or supplier (besides its own price list, which goes with it): such a party can
+ * be made inactive but not deleted. A new table that refers to parties belongs in this list.
+ */
+const PARTY_USERS: readonly [table: string, column: string][] = [
+  ['entry_lines', 'party_id'], ['invoices', 'party_id'], ['quotes', 'party_id'], ['deals', 'party_id'], ['jobs', 'party_id'],
+  ['purchase_orders', 'party_id'], ['cheques', 'party_id'], ['installment_contracts', 'party_id'], ['gen_subscribers', 'party_id'],
+  ['re_units', 'party_id'], ['re_deposits', 'party_id'], ['repair_orders', 'party_id'], ['serials', 'party_id'],
+  ['serials', 'from_party_id'], ['maint_plans', 'party_id'], ['maint_visits', 'party_id']
+];
+
 function usedParties(db: Db): Set<string> {
-  const rows = db.prepare(`SELECT DISTINCT party_id AS id FROM entry_lines WHERE party_id IS NOT NULL
-                           UNION SELECT DISTINCT party_id FROM invoices WHERE party_id IS NOT NULL`).all() as { id: string }[];
+  const rows = db.prepare(PARTY_USERS.map(([t, c]) => `SELECT DISTINCT ${c} AS id FROM ${t} WHERE ${c} IS NOT NULL`).join(' UNION ')).all() as { id: string }[];
   return new Set(rows.map((r) => r.id));
 }
 
-export function listParties(db: Db, filters: { type?: PartyType | undefined; q?: string | undefined; active?: boolean | undefined } = {}): PartyView[] {
+/**
+ * A write refused by the database over a reference (SQLite or MySQL/MariaDB): a delete of a row something still refers
+ * to (1451), or a row pointing at one that is not there (1452), which SQLite reports with the same message.
+ */
+export function isForeignKeyFailure(error: unknown): boolean {
+  const e = error as { message?: unknown; code?: unknown; errno?: unknown } | null;
+  return !!e && (String(e.message ?? '').includes('FOREIGN KEY constraint failed')
+    || e.code === 'ER_ROW_IS_REFERENCED_2' || e.errno === 1451 || e.code === 'ER_NO_REFERENCED_ROW_2' || e.errno === 1452);
+}
+
+export function listParties(
+  db: Db, filters: { type?: PartyType | undefined; q?: string | undefined; active?: boolean | undefined } = {}, branch: PartyBranch = null
+): PartyView[] {
   const where: string[] = [];
   const params: string[] = [];
   if (filters.type) { where.push('type = ?'); params.push(filters.type); }
   if (filters.active !== undefined) where.push(`active = ${filters.active ? 1 : 0}`);
   const rows = db.prepare(`SELECT * FROM parties ${where.length ? 'WHERE ' + where.join(' AND ') : ''} ORDER BY code`).all(...params) as unknown as PartyRow[];
-  const sums = balances(db);
+  const sums = balances(db, branch);
   const used = usedParties(db);
   const q = filters.q ? normalizeForSearch(filters.q) : '';
   return rows
@@ -91,9 +119,9 @@ function loadRow(db: Db, id: string): PartyRow {
   return row;
 }
 
-export function getParty(db: Db, id: string): PartyView {
+export function getParty(db: Db, id: string, branch: PartyBranch = null): PartyView {
   const row = loadRow(db, id);
-  return toView(row, balances(db).get(id), usedParties(db).has(id));
+  return toView(row, balances(db, branch).get(id), usedParties(db).has(id));
 }
 
 function assertInput(db: Db, type: PartyType, input: PartyInput, accountCode: string): void {
@@ -140,10 +168,18 @@ export function updateParty(db: Db, id: string, input: PartyInput, user: string)
 export function deleteParty(db: Db, id: string, user: string): void {
   loadRow(db, id);
   if (usedParties(db).has(id)) throw conflict('party_has_entries');
-  transaction(db, () => {
-    db.prepare('DELETE FROM parties WHERE id = ?').run(id);
-    audit(db, user, 'delete', 'party', id);
-  });
+  try {
+    transaction(db, () => {
+      // the party's own price list goes with it
+      db.prepare('DELETE FROM party_price_lists WHERE party_id = ?').run(id);
+      db.prepare('DELETE FROM parties WHERE id = ?').run(id);
+      audit(db, user, 'delete', 'party', id);
+    });
+  } catch (error) {
+    // something not in PARTY_USERS still refers to it: say so instead of a server error
+    if (isForeignKeyFailure(error)) throw conflict('party_has_entries');
+    throw error;
+  }
 }
 
 export interface PartyStatementLine {
@@ -169,9 +205,12 @@ export interface PartyStatement {
   closing: number;
 }
 
-/** كشف حساب زبون / مجهز — every posted line tagged with this party, in IQD. */
-export function partyStatement(db: Db, id: string, range: { from?: string | undefined; to?: string | undefined } = {}): PartyStatement {
-  const party = getParty(db, id);
+/**
+ * كشف حساب زبون / مجهز — every posted line tagged with this party, in IQD. For a user limited to branches (`branch`),
+ * only the lines of their branches' entries, as in the aging report: another branch's sales and receipts stay out.
+ */
+export function partyStatement(db: Db, id: string, range: { from?: string | undefined; to?: string | undefined } = {}, branch: PartyBranch = null): PartyStatement {
+  const party = getParty(db, id, branch);
   const sign = party.type === 'customer' ? 1 : -1;
   const invoiceOf = new Map((db.prepare('SELECT id, entry_id, cancel_entry_id FROM invoices WHERE party_id = ?').all(id) as
     { id: string; entry_id: string | null; cancel_entry_id: string | null }[])
@@ -181,7 +220,7 @@ export function partyStatement(db: Db, id: string, range: { from?: string | unde
   const lines: PartyStatementLine[] = [];
   let totalDebit = 0;
   let totalCredit = 0;
-  for (const l of postedLines(db, { partyId: id, ...(range.to ? { to: range.to } : {}) })) {
+  for (const l of postedLines(db, { partyId: id, ...(range.to ? { to: range.to } : {}), branch })) {
     const change = sign * (l.debit - l.credit);
     if (range.from && l.date < range.from) { opening += change; continue; }
     if (lines.length === 0) running = opening;

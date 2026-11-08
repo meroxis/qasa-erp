@@ -48,6 +48,9 @@ export function createReturn(db: Db, originalId: string, input: ReturnInput, use
     throw conflict('action_not_allowed', { status: original.status, action: 'return' });
   }
   if (original.installmentContract) throw conflict('invoice_has_contract', { contract: original.installmentContract.number });
+  // a property unit's sale is undone by cancelling it, so the unit goes back on sale with the books (a return would
+  // leave the unit sold)
+  if (original.kind === 'sale' && db.prepare('SELECT 1 FROM re_units WHERE invoice_id = ?').get(originalId)) throw conflict('invoice_has_unit');
   const kind = returnKindOf(original.kind);
   const errors: { code: string; line?: number; period?: string; available?: number }[] = [];
   if (!isIsoDate(input.date)) errors.push({ code: 'date_invalid' });

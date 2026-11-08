@@ -12,6 +12,11 @@ WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY
 or FITNESS FOR A PARTICULAR PURPOSE. See the GNU Affero General Public
 License for more details.
 
+Not covered by this license: the licence module in native/licence, which
+is proprietary to Meroxis with all rights reserved (see
+native/licence/LICENSE), and the Pro module, which is not in this
+repository. Neither is open source.
+
 
 ADDITIONAL TERMS (section 7 of the GNU AGPL version 3)
 ------------------------------------------------------

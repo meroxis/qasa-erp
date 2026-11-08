@@ -6,8 +6,11 @@ import { ApiReply, apiRoutes, errorResponse, type ApiExtension, type ApiRequest 
  * https: the office network serves the same app over TLS with its own certificate (the Pro module).
  * extensions: routes a module adds (the Pro module's), served with the app's own.
  */
+/** Large enough for an Excel import of a few thousand rows and an item picture; the default (1 MB) is too small. */
+const BODY_LIMIT = 8 * 1024 * 1024;
+
 export function buildApp(db: Db, options: { https?: { key: string; cert: string }; extensions?: readonly ApiExtension[] } = {}): FastifyInstance {
-  const app = (options.https ? Fastify({ logger: false, https: options.https }) : Fastify({ logger: false })) as unknown as FastifyInstance;
+  const app = (options.https ? Fastify({ logger: false, https: options.https, bodyLimit: BODY_LIMIT }) : Fastify({ logger: false, bodyLimit: BODY_LIMIT })) as unknown as FastifyInstance;
 
   app.setErrorHandler((error, _req, reply) => {
     const response = errorResponse(error);
