@@ -61,6 +61,19 @@ function scopeOfBranches(db: Db, ids: string[]): BranchScope {
   return { branchIds: ids, warehouses: new Set(warehouses), accounts: new Set(accounts) };
 }
 
+/**
+ * The warehouse a document falls back to when none is chosen: the first active one (by code) the user may use, as
+ * elsewhere. A user limited to branches only gets one of their branches' warehouses; when those have no active one, the
+ * user is asked to choose a warehouse instead of the document landing in another branch's (or the head office's).
+ */
+export function defaultWarehouseId(db: Db, actor: Actor | null | undefined): string {
+  const active = (db.prepare('SELECT id FROM warehouses WHERE active = 1 ORDER BY code').all() as { id: string }[]).map((r) => r.id);
+  const scope = anyBranches(db) ? scopeOf(db, actor) : null;
+  const id = scope ? active.find((w) => scope.warehouses.has(w)) : active[0];
+  if (!id) throw invalid([{ code: scope ? 'bn_warehouse_choose' : 'warehouse_invalid' }]);
+  return id;
+}
+
 /** For report queries: the warehouses and safes of a scope (null = no filter). */
 export function scopeLists(scope: BranchScope | null): { warehouses: string[]; accounts: string[] } | null {
   return scope ? { warehouses: [...scope.warehouses], accounts: [...scope.accounts] } : null;

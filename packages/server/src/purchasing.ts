@@ -6,7 +6,7 @@ import { nextSequence, transaction } from './db.ts';
 import { audit } from './audit.ts';
 import { AppError, conflict, invalid, notFound } from './errors.ts';
 import { createInvoice } from './invoices.ts';
-import { listWarehouses } from './items.ts';
+import { defaultWarehouseId } from './branches.ts';
 import { getSettings } from './settings.ts';
 import type { Actor } from './auth.ts';
 import type { ApiExtension } from './routes.ts';
@@ -334,8 +334,8 @@ export function receivePurchaseOrder(db: Db, id: string, input: ReceiveInput, ac
   const r = loadRow(db, id);
   requireAction(db, r, 'receive');
   if (!isIsoDate(input.date)) throw invalid([{ code: 'date_invalid' }]);
-  const warehouseId = input.warehouseId || r.warehouse_id || listWarehouses(db).find((w) => w.active)?.id;
-  if (!warehouseId) throw invalid([{ code: 'warehouse_invalid' }]);
+  // none on the order or the request: the first active one the user may use (a limited user's own branches only)
+  const warehouseId = input.warehouseId || r.warehouse_id || defaultWarehouseId(db, actor);
   const rate = r.currency === 'USD' ? input.rateX100 ?? getSettings(db).defaultRateX100 : 100;
   const lines = progress(db, id).filter((l) => l.remaining > 0).map((l) => ({ itemId: l.item_id, qtyMilli: l.remaining, unitPrice: l.unit_price }));
   let invoiceId = '';

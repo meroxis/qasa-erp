@@ -190,6 +190,53 @@ describe('branches', () => {
     expect((await get('/api/pos/shifts', owner)).json()).toHaveLength(1);
   });
 
+  it('receiving an order with no warehouse falls back to a warehouse of the user\'s own branch, or asks for one', async () => {
+    const { branchId, raz, owner } = await erbilBranch();
+    db.prepare("UPDATE users SET roles = ? WHERE username = 'raz'").run(JSON.stringify(['purchasing', 'storekeeper']));
+    // a head office warehouse that comes first by code: the old fallback (first active warehouse) picked it
+    expect((await post('/api/warehouses', { code: 'AAA', name: { ar: 'أ', en: 'A', ku: 'ئ' } }, owner)).statusCode).toBe(201);
+    const pipe = (await post('/api/items', { code: 'PIPE', name: { ar: 'أنبوب', en: 'Pipe', ku: 'بۆری' }, unit: 'piece', salePrice: 30_000, saleCurrency: 'IQD' }, owner)).json().id;
+    const supplier = (await post('/api/parties', { type: 'supplier', name: 'Las Trading' }, owner)).json().id;
+    const openOrder = async () => {
+      const po = (await post('/api/purchase-orders', { date: '2026-10-01', partyId: supplier, currency: 'IQD', lines: [{ itemId: pipe, qtyMilli: 1000, unitPrice: 20_000 }] }, owner)).json();
+      expect((await post(`/api/purchase-orders/${po.id}/status`, { action: 'send' }, owner)).statusCode).toBe(200);
+      return po.id as string;
+    };
+    const received = await post(`/api/purchase-orders/${await openOrder()}/receive`, { date: '2026-10-05' }, raz);
+    expect(received.statusCode, received.body).toBe(201);
+    const invoice = (db.prepare('SELECT warehouse_id FROM invoices WHERE id = ?').get(received.json().invoiceId) as { warehouse_id: string }).warehouse_id;
+    expect(invoice).toBe(erbil);
+    // an unrestricted user keeps the company's first active warehouse
+    const byOwner = await post(`/api/purchase-orders/${await openOrder()}/receive`, { date: '2026-10-05' }, owner);
+    expect(byOwner.statusCode, byOwner.body).toBe(201);
+    expect((db.prepare('SELECT w.code FROM invoices i JOIN warehouses w ON w.id = i.warehouse_id WHERE i.id = ?').get(byOwner.json().invoiceId) as { code: string }).code).toBe('AAA');
+    // a branch with no warehouse: the user is asked to choose one, nothing is made in another branch's
+    expect((await put(`/api/branches/${branchId}/warehouses`, { warehouseIds: [] }, owner)).statusCode).toBe(200);
+    const none = await post(`/api/purchase-orders/${await openOrder()}/receive`, { date: '2026-10-05' }, raz);
+    expect(none.statusCode).toBe(400);
+    expect(none.json().details).toContainEqual({ code: 'bn_warehouse_choose' });
+  });
+
+  it('turning a quote into an invoice with no warehouse uses a warehouse of the user\'s own branch, or asks for one', async () => {
+    const { branchId, raz, owner } = await erbilBranch();
+    // a head office warehouse that comes first by code: the old fallback (first active warehouse) picked it
+    expect((await post('/api/warehouses', { code: 'AAA', name: { ar: 'أ', en: 'A', ku: 'ئ' } }, owner)).statusCode).toBe(201);
+    const customer = (await post('/api/parties', { type: 'customer', name: 'Mer' }, owner)).json().id;
+    const accepted = async () => {
+      const q = (await post('/api/quotes', { date: '2026-10-01', validUntil: '2026-10-30', partyId: customer, currency: 'IQD', discount: 0, lines: [{ description: 'Installation', qtyMilli: 1000, unitPrice: 50_000 }] }, owner)).json();
+      expect((await post(`/api/quotes/${q.id}/status`, { action: 'accept' }, owner)).statusCode).toBe(200);
+      return q.id as string;
+    };
+    const done = await post(`/api/quotes/${await accepted()}/convert`, { date: '2026-10-05' }, raz);
+    expect(done.statusCode, done.body).toBe(200);
+    expect((db.prepare('SELECT warehouse_id FROM invoices WHERE id = ?').get(done.json().invoice.id) as { warehouse_id: string }).warehouse_id).toBe(erbil);
+    // a branch with no warehouse: asked to choose one, no invoice in another branch's warehouse
+    expect((await put(`/api/branches/${branchId}/warehouses`, { warehouseIds: [] }, owner)).statusCode).toBe(200);
+    const none = await post(`/api/quotes/${await accepted()}/convert`, { date: '2026-10-05' }, raz);
+    expect(none.statusCode).toBe(400);
+    expect(none.json().details).toContainEqual({ code: 'bn_warehouse_choose' });
+  });
+
   it('reports follow the branch: picked by an admin, forced for a limited user', async () => {
     const { branchId, raz, owner } = await erbilBranch();
     for (const [w, h] of [[erbil, raz], [hq, owner]] as const) {

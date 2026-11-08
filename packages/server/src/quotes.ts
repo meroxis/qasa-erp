@@ -6,7 +6,8 @@ import { nextSequence, transaction } from './db.ts';
 import { audit } from './audit.ts';
 import { AppError, conflict, invalid, notFound } from './errors.ts';
 import { createInvoice } from './invoices.ts';
-import { createItem, listWarehouses } from './items.ts';
+import { createItem } from './items.ts';
+import { defaultWarehouseId } from './branches.ts';
 import { createParty } from './parties.ts';
 import { getSettings } from './settings.ts';
 import type { Actor } from './auth.ts';
@@ -307,7 +308,8 @@ export function convertQuote(db: Db, id: string, input: ConvertInput, actor: Act
   else if (input.date < q.date) errors.push({ code: 'qt_invoice_before_quote' });
   const rate = q.currency === 'USD' ? input.rateX100 ?? getSettings(db).defaultRateX100 : 100;
   if (!Number.isSafeInteger(rate) || rate <= 0) errors.push({ code: 'rate_invalid' });
-  const warehouseId = input.warehouseId ?? listWarehouses(db).find((w) => w.active)?.id;
+  // (no warehouse chosen: a branch-limited user's own branch, never another branch's first warehouse)
+  const warehouseId = input.warehouseId ?? defaultWarehouseId(db, actor);
   if (!warehouseId) errors.push({ code: 'warehouse_invalid' });
   if (q.party && !(db.prepare('SELECT active FROM parties WHERE id = ?').get(q.party.id) as { active: number }).active) errors.push({ code: 'party_inactive' });
   if (errors.length) throw invalid(errors);

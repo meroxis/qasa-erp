@@ -28,6 +28,7 @@ export const BRANCH_TEXT = {
   err_bn_code_taken: ['هذا الرمز مستعمل لفرع آخر.', 'Another branch has that code.', 'ئەم کۆدە هی لقێکی ترە.'],
   err_bn_name_required: ['اكتب الرمز والاسم.', 'Enter the code and the name.', 'کۆد و ناو بنووسە.'],
   err_bn_warehouse_in_other_branch: ['هذا المخزن تابع لفرع آخر؛ أزله منه أولاً.', 'That warehouse belongs to another branch; take it off there first.', 'ئەم کۆگایە هی لقێکی ترە؛ سەرەتا لەوێ لایبەرە.'],
+  err_bn_warehouse_choose: ['اختر المخزن؛ لا يوجد مخزن فعّال في فرعك.', 'Choose the warehouse; your branch has no active warehouse.', 'کۆگاکە هەڵبژێرە؛ لقەکەت هیچ کۆگایەکی چالاکی نییە.'],
   err_bn_account_in_other_branch: ['هذه القاصة تابعة لفرع آخر؛ أزلها منه أولاً.', 'That safe belongs to another branch; take it off there first.', 'ئەم قاسەیە هی لقێکی ترە؛ سەرەتا لەوێ لایبەرە.'],
   err_bn_account_invalid: ['اختر قاصة أو مصرفاً (حساباً فرعياً تحت 18).', 'Choose a safe or bank (a postable account under 18).', 'قاسە یان بانکێک هەڵبژێرە (هەژمارێکی وردی ژێر 18).'],
   err_bn_branch_invalid: ['هذا الفرع غير موجود.', 'That branch doesn’t exist.', 'ئەم لقە نییە.'],
