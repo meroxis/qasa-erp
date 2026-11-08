@@ -498,7 +498,7 @@ const printing = printingHandlers({
 ipcMain.handle('printers:list', (event) => printing.list(event));
 ipcMain.handle('printers:get', (event) => printing.get(event));
 ipcMain.handle('printers:set', (event, kind: unknown, choice: unknown) => printing.set(event, kind, choice));
-ipcMain.handle('printers:print', (event, kind: unknown) => printing.print(event, kind));
+ipcMain.handle('printers:print', (event, kind: unknown, layout: unknown) => printing.print(event, kind, layout));
 
 ipcMain.on('network:close', (event) => {
   if (connectWin && event.sender === connectWin.webContents) connectWin.close();

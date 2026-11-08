@@ -272,3 +272,28 @@ describe('saving a choice', () => {
     expect(await saveChoice(app.desktop, 'receipt', receipt, ['Receipts'])).toBeNull();
   });
 });
+
+describe('labels', () => {
+  const label = { printer: 'Office Laser', paper: 'label38x25', margins: 'none', copies: 1, silent: true } as const;
+
+  it('print on the paper of the layout picked on the labels page, with the saved printer', async () => {
+    const app = windowsApp({ status: 'printed' }, { label });
+    const run = (labelLayout?: 'a4_3x8' | '50x30') =>
+      printDocument('label', { desktop: app.desktop, dialog: app.dialog, paint: app.paint, notify: () => {}, markPaper: (p) => app.papers.push(p), ...(labelLayout ? { labelLayout } : {}) });
+    expect(await run('a4_3x8')).toBe('printed');
+    expect(app.desktop.print).toHaveBeenLastCalledWith('label', 'a4_3x8');
+    expect(await run('50x30')).toBe('printed');
+    expect(app.desktop.print).toHaveBeenLastCalledWith('label', '50x30');
+    expect(await run()).toBe('printed');
+    expect(app.desktop.print).toHaveBeenLastCalledWith('label');
+    // the page is drawn for A4 while the sheet prints, not for the saved 38 × 25 label
+    expect(app.papers).toEqual(['A4', null, 'label50x30', null, 'label38x25', null]);
+  });
+
+  it('a layout goes with labels only', async () => {
+    const app = windowsApp({ status: 'printed' });
+    await printDocument('receipt', { desktop: app.desktop, dialog: app.dialog, notify: () => {}, markPaper: (p) => app.papers.push(p), labelLayout: 'a4_3x8' });
+    expect(app.desktop.print).toHaveBeenCalledWith('receipt');
+    expect(app.papers).toEqual(['receipt58', null]);
+  });
+});

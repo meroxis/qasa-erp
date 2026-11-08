@@ -641,6 +641,10 @@ export function startCountSession(db: Db, input: { warehouseId: string; date: st
     db.prepare(`INSERT INTO stock_counts (id, warehouse_id, date, notes, count_all, status, adjustment_id, created_by, created_at, updated_by, updated_at)
                 VALUES (?, ?, ?, ?, ?, 'open', NULL, ?, ?, ?, ?)`)
       .run(made, input.warehouseId, input.date, input.notes?.trim() || null, input.full ? 1 : 0, actor.name, now, actor.name, now);
+    // the items on the count sheet now: "count all" counts only these as zero when not counted (an item made or
+    // switched on again during the count was never on the sheet). Fixed for every count, as "count all" can be
+    // ticked later.
+    db.prepare('INSERT INTO stock_count_items (count_id, item_id) SELECT ?, id FROM items WHERE track_stock = 1 AND active = 1').run(made);
     audit(db, actor.name, 'create', 'stock_count', made, { warehouseId: input.warehouseId });
     return made;
   });
@@ -710,9 +714,21 @@ function countDifferences(counted: Map<string, { qty: number; book: number; cost
 }
 
 /**
+ * The items "count all" counts as zero when not counted: those on the count sheet when the count started. A count
+ * started before that list was kept has none, and covers only the items counted in it: never every item there is now,
+ * which would take an item made during the count for a shortage.
+ */
+function countCovers(db: Db, id: string): Set<string> {
+  const fixed = db.prepare('SELECT item_id FROM stock_count_items WHERE count_id = ?').all(id) as { item_id: string }[];
+  if (fixed.length) return new Set(fixed.map((r) => r.item_id));
+  return new Set((db.prepare('SELECT item_id FROM stock_count_lines WHERE count_id = ?').all(id) as { item_id: string }[]).map((r) => r.item_id));
+}
+
+/**
  * Finishes a count: the differences against the frozen book quantities become a draft "count" adjustment (posted as
- * any adjustment is, with its entry). With "count all", an item not counted counts as zero against what the books say
- * now. Nothing is made when everything agrees.
+ * any adjustment is, with its entry). With "count all", an item on the count sheet when the count started that was not
+ * counted counts as zero against what the books say now; items made or switched on again during the count are left
+ * alone. Nothing is made when everything agrees.
  */
 export function finishCountSession(db: Db, id: string, actor: Actor): CountResult & { session: CountSession } {
   const row = loadCount(db, id);
@@ -721,7 +737,10 @@ export function finishCountSession(db: Db, id: string, actor: Actor): CountResul
   if (!session.lines.length && !session.full) throw invalid([{ code: 'lines_required' }]);
   const counted = new Map<string, { qty: number; book: number; cost?: number | undefined }>();
   for (const l of session.lines) counted.set(l.itemId, { qty: l.countedMilli, book: l.bookMilli, ...(l.unitCost !== null ? { cost: l.unitCost } : {}) });
-  if (session.full) for (const r of countSheet(db, session.warehouseId)) if (!counted.has(r.itemId)) counted.set(r.itemId, { qty: 0, book: r.stockMilli });
+  if (session.full) {
+    const covered = countCovers(db, id);
+    for (const r of countSheet(db, session.warehouseId)) if (covered.has(r.itemId) && !counted.has(r.itemId)) counted.set(r.itemId, { qty: 0, book: r.stockMilli });
+  }
   const lines = countDifferences(counted);
   const adjustment = transaction(db, () => {
     assertOpen(loadCount(db, id), 'finish');

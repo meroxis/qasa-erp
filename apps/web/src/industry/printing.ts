@@ -1,5 +1,5 @@
 import {
-  checkPrinterChoice, isPrintKind, isPrinterName, readPrinterChoices,
+  checkPrinterChoice, choiceForPrint, isPrintKind, isPrinterName, readPrinterChoices, type LabelLayout,
   type PrinterChoice, type PrinterChoices, type PrinterEntry, type PrintKind, type PrintOutcome
 } from '@qasa/core';
 
@@ -14,7 +14,8 @@ export interface DesktopPrinters {
   list(): Promise<unknown>;
   get(): Promise<unknown>;
   set(kind: string, choice: PrinterChoice | null): Promise<unknown>;
-  print(kind: string): Promise<unknown>;
+  /** labels may name the layout picked on the labels page: its paper is used instead of the saved one */
+  print(kind: string, layout?: string): Promise<unknown>;
 }
 
 export function desktopPrinters(): DesktopPrinters | null {
@@ -93,7 +94,7 @@ export interface PrintEnv {
  */
 export type PrintResult = 'printed' | 'dialog' | 'failed' | 'busy';
 
-export async function printDocument(kind: PrintKind, env: Partial<PrintEnv> = {}): Promise<PrintResult> {
+export async function printDocument(kind: PrintKind, env: Partial<PrintEnv> & { labelLayout?: LabelLayout } = {}): Promise<PrintResult> {
   const desktop = env.desktop !== undefined ? env.desktop : desktopPrinters();
   const dialog = env.dialog ?? (() => window.print());
   const notify = env.notify ?? noticePage;
@@ -115,11 +116,13 @@ export async function printDocument(kind: PrintKind, env: Partial<PrintEnv> = {}
   } catch {
     choice = undefined;
   }
-  if (choice?.printer) mark(choice.paper);
+  // labels print on the paper of the layout picked on the labels page (A4 sheets on A4), with the saved printer
+  const layout = kind === 'label' ? env.labelLayout : undefined;
+  if (choice?.printer) mark(choiceForPrint(kind, choice, layout).paper);
   try {
     let outcome: PrintOutcome | null;
     try {
-      outcome = outcomeOf(await desktop.print(kind));
+      outcome = outcomeOf(await (layout ? desktop.print(kind, layout) : desktop.print(kind)));
     } catch {
       outcome = null;
     }

@@ -7,8 +7,8 @@
  * prints the app window, never another one. Every value from the page or from the file is checked again.
  */
 import {
-  checkPrinterChoice, devicePrintOptions, isPrintKind, isPrinterName, readPrinterChoices,
-  type PrinterChoice, type PrinterChoices, type PrinterEntry, type PrintOutcome
+  checkPrinterChoice, choiceForPrint, devicePrintOptions, isLabelLayout, isPrintKind, isPrinterName, readPrinterChoices,
+  type LabelLayout, type PrinterChoice, type PrinterChoices, type PrinterEntry, type PrintOutcome
 } from '@qasa/core';
 
 /** What printing needs of the app window's webContents (a stand-in in the tests). */
@@ -156,9 +156,14 @@ export function printingHandlers(deps: PrintingDeps) {
       return next;
     },
 
-    /** Prints the app window for one kind of paper, as saved for it. */
-    async print(event: { sender: unknown }, kind: unknown): Promise<PrintOutcome> {
+    /**
+     * Prints the app window for one kind of paper, as saved for it. Labels may name the layout picked on the labels
+     * page (`layout`), whose paper then replaces the saved one; any other value, or a layout for another kind, is
+     * refused.
+     */
+    async print(event: { sender: unknown }, kind: unknown, layout?: unknown): Promise<PrintOutcome> {
       if (!allowed(event) || !isPrintKind(kind)) return { status: 'refused' };
+      if (layout !== undefined && (kind !== 'label' || !isLabelLayout(layout))) return { status: 'refused' };
       const saved: PrinterChoice | undefined = read()[kind];
       if (!saved || saved.printer === null) return { status: 'ask' };
       if (busy) return { status: 'busy' };
@@ -178,7 +183,7 @@ export function printingHandlers(deps: PrintingDeps) {
         // the printer must still be one Windows lists, and every value is checked again before it reaches the driver
         const choice = checkPrinterChoice(saved, names);
         if (!choice || choice.printer === null) return { status: 'missing', printer: saved.printer };
-        const options = devicePrintOptions({ ...choice, printer: choice.printer });
+        const options = devicePrintOptions({ ...choiceForPrint(kind, choice, layout as LabelLayout | undefined), printer: choice.printer });
         sentSilently = options.silent;
         let unwatch = () => {};
         const outcome = await new Promise<PrintOutcome>((resolve) => {

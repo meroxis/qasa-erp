@@ -42,13 +42,32 @@ export interface TrialBalance {
 
 const split = (net: number) => (net > 0 ? { dr: net, cr: 0 } : { dr: 0, cr: 0 - net });
 
+/** The code a period whose From is later than its To is refused with. */
+export const DATE_RANGE_REVERSED = 'date_range_reversed';
+
+/** A period whose From is later than its To (ISO dates; an open end never is). */
+export function isReversedRange(from: string | undefined, to: string | undefined): boolean {
+  return !!from && !!to && from > to;
+}
+
+/** A report asked for with From later than To: its figures would mean nothing, so none are made. */
+export class DateRangeError extends Error {
+  readonly code = DATE_RANGE_REVERSED;
+  constructor(readonly from: string, readonly to: string) {
+    super(`From (${from}) is later than To (${to})`);
+    this.name = 'DateRangeError';
+  }
+}
+
 /**
  * Trial balance (ميزان المراجعة) of postable accounts in the six-column layout: opening (lines before `from`),
  * movement (lines from `from` to `to`) and closing balance (lines up to `to`), each as debit and credit.
  * Without `from` every line up to `to` is movement and the opening is empty. A closed year's closing entry is dated
  * on its last day, so the next year opens with revenue and expense accounts at zero and the result in the reserves.
+ * Throws DateRangeError when `from` is later than `to`.
  */
 export function trialBalance(lines: PostedLine[], opts: { from?: string; to?: string } = {}): TrialBalance {
+  if (isReversedRange(opts.from, opts.to)) throw new DateRangeError(opts.from!, opts.to!);
   const sums = new Map<string, { opening: number; debit: number; credit: number }>();
   for (const l of lines) {
     if (opts.to && l.date > opts.to) continue;

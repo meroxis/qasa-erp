@@ -6,6 +6,7 @@ import {
   allowedActions,
   amountInWords,
   buildAccounts,
+  DateRangeError,
   fiscalYear,
   fiscalYearOf,
   findParentCode,
@@ -237,6 +238,18 @@ describe('reports', () => {
     expect(tb.totalCredit).toBe(250_000);
     expect(tb.balanceDebitTotal).toBe(tb.balanceCreditTotal);
     expect(tb.balanceDebitTotal).toBe(1_000_000);
+  });
+
+  it('refuses a trial balance whose From is later than its To', () => {
+    expect(() => trialBalance(lines, { from: '2026-12-31', to: '2026-01-01' })).toThrow(DateRangeError);
+    try {
+      trialBalance(lines, { from: '2026-12-31', to: '2026-01-01' });
+    } catch (e) {
+      expect(e).toMatchObject({ code: 'date_range_reversed', from: '2026-12-31', to: '2026-01-01' });
+    }
+    // the same day, or an open end, is a period
+    expect(trialBalance(lines, { from: '2026-02-10', to: '2026-02-10' }).totalDebit).toBe(250_000);
+    expect(trialBalance(lines, { from: '2026-12-31' }).rows.length).toBeGreaterThan(0);
   });
 
   it('opens a second fiscal year with the balances of the year before, and a closed year with the result in the reserves', () => {

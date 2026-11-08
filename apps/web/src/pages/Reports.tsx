@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { formatAmount, todayIso, type Names } from '@qasa/core';
+import { formatAmount, isReversedRange, todayIso, type Names } from '@qasa/core';
 import { api, type TrialBalanceReport } from '../api.ts';
 import { AccountCombo, ErrorBox, Icon, downloadCsv, useData, useLoad } from '../components.tsx';
 import { useI18n } from '../i18n.ts';
@@ -41,7 +41,9 @@ export function TrialBalance() {
   const { settings } = useData();
   const [from, setFrom] = useState(() => yearStart(settings?.fiscalYearStart));
   const [to, setTo] = useState(todayIso());
-  const { data, error } = useLoad(() => api.trialBalance(from || undefined, to || undefined), [from, to]);
+  // From later than To is no period: say so, and don't ask the server for it
+  const reversed = isReversedRange(from || undefined, to || undefined);
+  const { data, error } = useLoad(() => (reversed ? Promise.resolve(null) : api.trialBalance(from || undefined, to || undefined)), [from, to]);
 
   const rows = data?.rows ?? [];
   const ok = data && data.totalDebit === data.totalCredit && data.openingDebitTotal === data.openingCreditTotal && data.balanceDebitTotal === data.balanceCreditTotal;
@@ -61,8 +63,9 @@ export function TrialBalance() {
         <button type="button" className="btn" onClick={() => void printDocument('report')}><Icon name="printer" size={16} />{t('print')}</button>
       </div>
       <div className="muted small">{t('onlyPosted')} {t('tbOpeningHelp')}</div>
+      {reversed && <div className="alert bad" role="alert">{t('err_date_range_reversed')}</div>}
       <ErrorBox error={error} />
-      {data && (
+      {data && !reversed && (
         <div className="card">
           <div className="row" style={{ padding: '14px 16px 8px' }}>
             <h2>{t('trialBalance')} <span className="muted small">{i18n.date(from)} — {i18n.date(to)}</span></h2>

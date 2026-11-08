@@ -97,6 +97,25 @@ export const PAPER_MICRONS: Readonly<Partial<Record<PrinterPaper, { readonly wid
   label50x30: { width: 50_000, height: 30_000 }
 };
 
+/**
+ * The layouts of the barcode labels page and the paper each is printed on: a label printer's label as it is, an A4
+ * label sheet on A4.
+ */
+export const LABEL_LAYOUT_PAPER = { '38x25': 'label38x25', '50x30': 'label50x30', a4_3x8: 'A4', a4_4x10: 'A4' } as const satisfies Readonly<Record<string, PrinterPaper>>;
+export type LabelLayout = keyof typeof LABEL_LAYOUT_PAPER;
+export const LABEL_LAYOUTS = Object.keys(LABEL_LAYOUT_PAPER) as readonly LabelLayout[];
+export const isLabelLayout = (v: unknown): v is LabelLayout => oneOf(LABEL_LAYOUTS, v);
+
+/**
+ * The choice one print uses: the saved one, except that labels take the paper of the layout picked on the labels page
+ * (A4 sheets on A4, a 38 × 25 label on 38 × 25), whatever paper was saved; the saved printer, margins, copies and
+ * printing without asking still apply. Without a layout, or for any other kind, the saved choice as it is.
+ */
+export function choiceForPrint(kind: PrintKind, choice: PrinterChoice, layout?: LabelLayout): PrinterChoice {
+  if (kind !== 'label' || !isLabelLayout(layout)) return choice;
+  return { ...choice, paper: LABEL_LAYOUT_PAPER[layout] };
+}
+
 /** What Electron's webContents.print takes, from a saved choice with a printer. */
 export interface DevicePrintOptions {
   silent: boolean;

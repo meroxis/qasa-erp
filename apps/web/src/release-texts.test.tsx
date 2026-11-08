@@ -15,7 +15,7 @@ it('has its own message, in Arabic, English and Kurdish, for every new error cod
     'database_newer', 'company_damaged', 'company_backup_use_settings', 'company_open_it_first', 'in_use', 'item_in_use',
     'invoice_has_unit', 'unit_has_deposits', 'account_invalid', 'same_person', 'fa_months_not_run', 'fa_run_has_disposed_asset',
     'account_invalid_gain', 'account_invalid_accountCode', 'reversal_before_entry', 'fa_period_before_last', 'fa_later_months_run',
-    'bn_warehouse_choose'
+    'bn_warehouse_choose', 'date_range_reversed'
   ];
   const missing = codes.filter((c) => !isKey(`err_${c}`));
   expect(missing).toEqual([]);

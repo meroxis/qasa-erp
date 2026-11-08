@@ -1332,6 +1332,17 @@ export const MYSQL_TABLES: readonly MysqlObject[] = [
       FOREIGN KEY (count_id) REFERENCES stock_counts(id),
       FOREIGN KEY (item_id) REFERENCES items(id)
     )`
+  },
+  {
+    name: 'stock_count_items',
+    since: 9,
+    sql: `CREATE TABLE stock_count_items (
+      count_id ${ID} NOT NULL,
+      item_id ${ID} NOT NULL,
+      PRIMARY KEY (count_id, item_id),
+      FOREIGN KEY (count_id) REFERENCES stock_counts(id),
+      FOREIGN KEY (item_id) REFERENCES items(id)
+    )`
   }
 ];
 

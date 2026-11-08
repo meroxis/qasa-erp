@@ -110,6 +110,25 @@ describe('printing', () => {
     expect(win.print).not.toHaveBeenCalled();
   });
 
+  it('prints labels on the paper of the layout picked on the labels page, with the saved printer', async () => {
+    const label = { printer: 'Office Laser', paper: 'label38x25', margins: 'none', copies: 1, silent: true };
+    const { handlers, event, win } = setup({ file: saved({ label, receipt: choice }) });
+    expect(await handlers.print(event, 'label', 'a4_3x8')).toEqual({ status: 'printed' });
+    expect(win.print.mock.calls[0]![0]).toEqual({
+      silent: true, deviceName: 'Office Laser', printBackground: true, copies: 1, margins: { marginType: 'none' }, pageSize: 'A4'
+    });
+    expect(await handlers.print(event, 'label', '50x30')).toEqual({ status: 'printed' });
+    expect(win.print.mock.calls[1]![0]).toMatchObject({ deviceName: 'Office Laser', pageSize: { width: 50_000, height: 30_000 } });
+    // without a layout, the saved paper
+    expect(await handlers.print(event, 'label')).toEqual({ status: 'printed' });
+    expect(win.print.mock.calls[2]![0]).toMatchObject({ pageSize: { width: 38_000, height: 25_000 } });
+    // anything that is not a layout, or a layout for another kind, is refused
+    for (const [kind, layout] of [['label', 'A4'], ['label', '__proto__'], ['label', 7], ['label', null], ['receipt', 'a4_3x8']] as const) {
+      expect(await handlers.print(event, kind, layout), `${kind} ${String(layout)}`).toEqual({ status: 'refused' });
+    }
+    expect(win.print).toHaveBeenCalledTimes(3);
+  });
+
   it('prints the app window with the saved choice', async () => {
     const { handlers, event, win } = setup({ file: saved({ receipt: choice }) });
     expect(await handlers.print(event, 'receipt')).toEqual({ status: 'printed' });

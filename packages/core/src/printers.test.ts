@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   checkPrinterChoice, DEFAULT_PRINTER_CHOICE, devicePrintOptions, isPrinterName, isPrintKind, MAX_PRINT_COPIES, PAPER_MICRONS, PRINT_KINDS,
-  PRINTER_PAPERS, readPrinterChoices, USUAL_PAPER, type PrinterChoice
+  PRINTER_PAPERS, readPrinterChoices, USUAL_PAPER, choiceForPrint, isLabelLayout, LABEL_LAYOUT_PAPER, type PrinterChoice
 } from './printers.ts';
 
 const ok: PrinterChoice = { printer: 'Office Laser', paper: 'A4', margins: 'default', copies: 1, silent: false };
@@ -120,5 +120,36 @@ describe('the options Electron prints with', () => {
         expect(PAPER_MICRONS[paper]!.width).not.toBe(1);
       }
     }
+  });
+});
+
+describe('the paper labels print on', () => {
+  const printer = 'Zebra ZD220';
+  const label: PrinterChoice = { printer, paper: 'label38x25', margins: 'none', copies: 2, silent: true };
+
+  it('takes the layout picked on the labels page over the saved paper: an A4 sheet prints on A4', () => {
+    const choice = choiceForPrint('label', label, 'a4_3x8');
+    expect(choice).toEqual({ ...label, paper: 'A4' });
+    // the saved printer, margins, copies and printing without asking still apply
+    expect(devicePrintOptions({ ...choice, printer })).toEqual({
+      silent: true, deviceName: printer, printBackground: true, copies: 2, margins: { marginType: 'none' }, pageSize: 'A4'
+    });
+    expect(devicePrintOptions({ ...choiceForPrint('label', label, 'a4_4x10'), printer }).pageSize).toBe('A4');
+  });
+
+  it('prints a label printer layout on that label size, whatever paper was saved', () => {
+    const a4 = { ...label, paper: 'A4' as const };
+    expect(devicePrintOptions({ ...choiceForPrint('label', a4, '38x25'), printer }).pageSize).toEqual({ width: 38_000, height: 25_000 });
+    expect(devicePrintOptions({ ...choiceForPrint('label', a4, '50x30'), printer }).pageSize).toEqual({ width: 50_000, height: 30_000 });
+    expect(LABEL_LAYOUT_PAPER).toEqual({ '38x25': 'label38x25', '50x30': 'label50x30', a4_3x8: 'A4', a4_4x10: 'A4' });
+  });
+
+  it('keeps the saved choice without a layout, for other kinds, and for anything that is not a layout', () => {
+    expect(choiceForPrint('label', label)).toBe(label);
+    expect(choiceForPrint('invoice', { ...ok }, 'a4_3x8').paper).toBe('A4');
+    expect(choiceForPrint('receipt', { ...ok, paper: 'receipt80' }, '38x25').paper).toBe('receipt80');
+    expect(choiceForPrint('label', label, 'A5' as never)).toBe(label);
+    expect(isLabelLayout('a4_3x8')).toBe(true);
+    expect(isLabelLayout('__proto__')).toBe(false);
   });
 });

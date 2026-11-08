@@ -1411,9 +1411,20 @@ const V8 =
   );
   `;
 
+const V9 =
+  // 9 — the items a count covers, fixed when it starts: with "count all", an item made or switched on again while the
+  // shelves are being counted was never on the count sheet, so finishing the count does not take it for a shortage
+  `
+  CREATE TABLE stock_count_items (
+    count_id TEXT NOT NULL REFERENCES stock_counts(id),
+    item_id TEXT NOT NULL REFERENCES items(id),
+    PRIMARY KEY (count_id, item_id)
+  );
+  `;
+
 const MIGRATIONS: Migration[] = [
   { sql: V1 }, { sql: V2, rebuild: true }, { sql: V3, rebuild: true }, { sql: V4 }, { sql: V5, rebuild: true },
-  { sql: V6, mysql: 'tables' }, { sql: V7, mysql: 'tables' }, { sql: V8, mysql: 'tables' }
+  { sql: V6, mysql: 'tables' }, { sql: V7, mysql: 'tables' }, { sql: V8, mysql: 'tables' }, { sql: V9, mysql: 'tables' }
 ];
 
 /** Server databases began at this version: its schema is in schema-mysql.ts (tables and triggers without `since`). */

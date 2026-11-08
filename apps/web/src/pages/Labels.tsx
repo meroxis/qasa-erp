@@ -135,7 +135,7 @@ export function Labels() {
           </div>
           {tooMany && <div className="alert bad">{t('lb_tooMany')}</div>}
           <div className="row" style={{ flexWrap: 'wrap' }}>
-            <button type="button" className="btn primary" disabled={printable.length === 0 || tooMany} onClick={() => void printDocument('label')}><Icon name="printer" size={16} />{t('lb_print')}</button>
+            <button type="button" className="btn primary" disabled={printable.length === 0 || tooMany} onClick={() => void printDocument('label', { labelLayout: size })}><Icon name="printer" size={16} />{t('lb_print')}</button>
             <span className="muted">{t('lb_total', { n: run.filter(Boolean).length })}</span>
           </div>
           <p className="muted small" style={{ margin: 0 }}>{t('lb_printerTip')}</p>

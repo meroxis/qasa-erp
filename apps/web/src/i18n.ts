@@ -634,6 +634,11 @@ const BASE = {
   err_trial_unavailable: ['استُخدم الشهر المجاني على هذا الحاسوب من قبل.', 'The free month was already used on this PC.', 'مانگی بەخۆڕایی پێشتر لەسەر ئەم کۆمپیوتەرە بەکارهاتووە.'],
 
   err_date_invalid: ['التاريخ غير صحيح', 'The date is not valid', 'بەروار دروست نییە'],
+  err_date_range_reversed: [
+    'تاريخ "من" بعد تاريخ "إلى". اختر "من" قبل "إلى" أو في اليوم نفسه.',
+    'The From date is later than the To date. Pick a From date on or before the To date.',
+    'بەرواری "لە" دوای بەرواری "تا"یە. بەرواری "لە" پێش "تا" یان هەمان ڕۆژ هەڵبژێرە.'
+  ],
   err_period_locked: ['الفترة {p} مقفلة', 'Period {p} is locked', 'ماوەی {p} داخراوە'],
   err_currency_invalid: ['العملة غير صحيحة', 'Invalid currency', 'دراو دروست نییە'],
   err_rate_invalid: ['أدخل سعر الدولار', 'Enter the USD rate', 'نرخی دۆلار بنووسە'],

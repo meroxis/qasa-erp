@@ -22,7 +22,9 @@ contextBridge.exposeInMainWorld('qasaDesktop', {
     list: () => ipcRenderer.invoke('printers:list') as Promise<unknown>,
     get: () => ipcRenderer.invoke('printers:get') as Promise<unknown>,
     set: (kind: string, choice: unknown) => ipcRenderer.invoke('printers:set', String(kind), choiceOf(choice)) as Promise<unknown>,
-    print: (kind: string) => ipcRenderer.invoke('printers:print', String(kind)) as Promise<unknown>
+    // labels may name the layout picked on the labels page (its paper is used); the main process checks it
+    print: (kind: string, layout?: string) =>
+      (layout === undefined ? ipcRenderer.invoke('printers:print', String(kind)) : ipcRenderer.invoke('printers:print', String(kind), String(layout))) as Promise<unknown>
   }
 });
 

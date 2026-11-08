@@ -228,7 +228,8 @@ export function deleteItem(db: Db, id: string, user: string): void {
   if (db.prepare(`${usedBy} LIMIT 1`).get(id, id, id, id, id, id)) throw conflict('item_in_use');
   transaction(db, () => {
     // what belongs to the item alone goes with it: its picture, its price-list prices and its car-part details
-    for (const table of ['item_images', 'item_prices', 'part_fitments', 'part_numbers', 'part_details']) {
+    // (and its place on the item list a stock count fixed when it started: that is no document)
+    for (const table of ['item_images', 'item_prices', 'part_fitments', 'part_numbers', 'part_details', 'stock_count_items']) {
       db.prepare(`DELETE FROM ${table} WHERE item_id = ?`).run(id);
     }
     db.prepare('DELETE FROM items WHERE id = ?').run(id);

@@ -139,6 +139,42 @@ describe('stock count sessions', () => {
     expect((await send('POST', `/api/adjustments/counts/${agree.id}/finish`)).json()).toMatchObject({ adjustment: null, differences: 0 });
   });
 
+  it('with "count all", an item made or switched on again during the count is no shortage when it is finished', async () => {
+    const wire = { code: 'WIRE-2', name: { ar: 'سلك', en: 'Wire', ku: 'وایەر' }, unit: 'piece', salePrice: 2_000, saleCurrency: 'IQD' };
+    const wireId = (await send('POST', '/api/items', { ...wire, active: false })).json().id;
+    const session = await start();
+    await save(session.id, [{ itemId: pipeId, countedMilli: 20_000 }, { itemId: cableId, countedMilli: 10_000 }], { full: true });
+    // while the shelves are counted, a new item is made and bought, and a switched-off one is switched on and bought
+    const lampId = (await send('POST', '/api/items', { code: 'LAMP-1', name: { ar: 'مصباح', en: 'Lamp', ku: 'چرا' }, unit: 'piece', salePrice: 8_000, saleCurrency: 'IQD' })).json().id;
+    expect((await send('PUT', `/api/items/${wireId}`, { ...wire, active: true })).statusCode).toBe(200);
+    for (const [itemId, qtyMilli] of [[lampId, 5_000], [wireId, 3_000]] as const) {
+      const draft = await send('POST', '/api/invoices', {
+        kind: 'purchase', date: '2026-09-10', partyId: supplierId, warehouseId, currency: 'IQD', rateX100: 100, payment: 'credit', discount: 0,
+        lines: [{ itemId, qtyMilli, unitPrice: 1_000 }]
+      });
+      expect((await send('POST', `/api/invoices/${draft.json().id}/post`)).statusCode).toBe(200);
+    }
+    // they were never on the count sheet: everything counted agrees, so nothing is made
+    expect((await send('POST', `/api/adjustments/counts/${session.id}/finish`)).json()).toMatchObject({ adjustment: null, differences: 0 });
+    expect(db.prepare('SELECT COUNT(*) AS n FROM stock_moves WHERE item_id IN (?, ?) AND qty_milli < 0').get(lampId, wireId)).toMatchObject({ n: 0 });
+  });
+
+  it('a "count all" begun before the items were fixed at its start covers only what was counted in it', async () => {
+    // an open count kept by an older version: no stock_count_items rows
+    const session = await start();
+    db.prepare('DELETE FROM stock_count_items WHERE count_id = ?').run(session.id);
+    await save(session.id, [{ itemId: pipeId, countedMilli: 18_000 }], { full: true });
+    const result = (await send('POST', `/api/adjustments/counts/${session.id}/finish`)).json();
+    // the cable (not counted) is left alone instead of being taken for a shortage of all 10
+    expect(result.adjustment.lines.map((l: { itemId: string; qtyMilli: number }) => [l.itemId, l.qtyMilli])).toEqual([[pipeId, -2_000]]);
+  });
+
+  it('an item a count started with can still be deleted when it was never used', async () => {
+    const spare = (await send('POST', '/api/items', { code: 'SPARE-1', name: { ar: 'قطعة', en: 'Spare', ku: 'پارچە' }, unit: 'piece', salePrice: 1_000, saleCurrency: 'IQD' })).json().id;
+    await start();
+    expect((await send('DELETE', `/api/items/${spare}`)).statusCode).toBe(204);
+  });
+
   it('a finished or discarded count can no longer change, and bad input is refused', async () => {
     const session = await start();
     expect((await save(session.id, [{ itemId: pipeId, countedMilli: -1 }])).statusCode).toBe(400);
