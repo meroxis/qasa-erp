@@ -47,6 +47,8 @@ export interface ProContext {
   server: FastifyInstance;
   /** The folder with the company data and the app's settings. */
   userDataDir: string;
+  /** The company open now on this PC (companies.ts): 'main' or another company's id; missing means 'main'. */
+  companyId?: string;
   /** The folder with the company file (qasa.sqlite). */
   dataDir: string;
   /** The database worker's code, for a company database on a server. */

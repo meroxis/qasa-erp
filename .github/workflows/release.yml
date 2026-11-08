@@ -1,11 +1,15 @@
 name: Release
 
-# Push a tag like v0.1.1 (matching apps/desktop/package.json "version"; notes in apps/desktop/release-notes/0.1.1.md)
-# to build the Windows installer on a clean machine and publish it as a GitHub release: copies installed with the
-# installer find it and update themselves. The run also keeps the Microsoft Store package (artifact
-# microsoft-store-package): submit it in Partner Center with the "What's new" text from apps/desktop/store-listing.json;
+# Push a tag like v0.1.1 (matching apps/desktop/package.json "version"; notes in apps/desktop/release-notes/0.1.1.md),
+# after pushing the same tag on qasa-erp-pro at the Pro commit that goes with it (merged into Pro main first), to build
+# the Windows installer on a clean machine and publish it as a GitHub release: copies installed with the installer find
+# it and update themselves. The run also keeps the Microsoft Store package (artifact microsoft-store-package): submit it in Partner Center with the "What's new" text from apps/desktop/store-listing.json;
 # Store copies update once Microsoft certifies it. Store copies can be a release behind, and 0.1.8 there doesn't refuse
 # newer books: get a release with the database_newer check into the Store before publishing one that adds a migration.
+#
+# A tag like v0.2.0-beta.1 (version 0.2.0-beta.1) is a beta: a GitHub prerelease that only copies on the beta channel
+# (Settings → Updates → Join the beta) install. Betas get no Microsoft Store package and don't move the stable download
+# link. See docs/releasing.md.
 on:
   push:
     tags: ['v*']
@@ -19,20 +23,35 @@ jobs:
     name: Windows installer
 
     steps:
+      # The token with write access to releases is never left in .git/config, where any script run later in this job
+      # (a dependency's, a build step's) could read it; the steps that publish get it only through GH_TOKEN.
       - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
 
       - uses: actions/setup-node@v5
         with:
           node-version: 24
           cache: npm
 
-      - run: npm ci
+      # Exactly as locked, with no install scripts: a package's script never runs in the job that can publish a
+      # release. The few that are needed run below by name (the Electron binary is downloaded in its own step).
+      - name: Dependencies
+        shell: bash
+        run: |
+          npm ci --ignore-scripts
+          node node_modules/esbuild/install.js
+          node node_modules/electron-winstaller/script/select-7z-arch.js
 
-      # Official builds include the Pro module from the private repository (read-only deploy key).
+      # Official builds include the Pro module from the private repository (read-only deploy key), at the tag of the same
+      # name as this app tag (push tag vX.Y.Z on qasa-erp-pro first). Never its default branch: that would build
+      # whatever Pro happens to be there today (also when an old tag is rebuilt), and an unmerged Pro branch would
+      # silently ship without its features. No such tag in Pro: the run stops here.
       - name: Pro module
         uses: actions/checkout@v5
         with:
           repository: meroxis/qasa-erp-pro
+          ref: refs/tags/${{ github.ref_name }}
           ssh-key: ${{ secrets.PRO_DEPLOY_KEY }}
           path: pro
           persist-credentials: false
@@ -47,12 +66,39 @@ jobs:
       - name: Electron binary
         run: node node_modules/electron/install.js
 
+      # The compiled licence checks (native/licence, Rust): the runner has rustup with the MSVC toolchain.
+      - name: Licence addon (Rust)
+        shell: bash
+        run: |
+          rustup toolchain install stable --profile minimal
+          rustup default stable
+          node native/licence/build.mjs
+          test -f native/licence/dist/qasa_licence.node
+
+      # The third-party notices shipped with the app (electron-builder.yml extraResources), written again now that every
+      # npm package and Rust crate is here, so each shipped component's licence text is in it.
+      - name: Third-party notices
+        run: node scripts/third-party-notices.mjs
+
       - name: Tag matches the app version
         shell: bash
         run: |
           version=$(node -p "require('./apps/desktop/package.json').version")
           if [ "v$version" != "$GITHUB_REF_NAME" ]; then
             echo "Tag $GITHUB_REF_NAME does not match apps/desktop/package.json version $version"; exit 1
+          fi
+
+      # vX.Y.Z is stable; vX.Y.Z-beta.N is a beta. Anything else (alpha, rc, beta without a number) is refused.
+      - name: Stable or beta
+        id: kind
+        shell: bash
+        run: |
+          if [[ "$GITHUB_REF_NAME" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "beta=false" >> "$GITHUB_OUTPUT"
+          elif [[ "$GITHUB_REF_NAME" =~ ^v[0-9]+\.[0-9]+\.[0-9]+-beta\.[0-9]+$ ]]; then
+            echo "beta=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "Tag $GITHUB_REF_NAME must be vX.Y.Z or vX.Y.Z-beta.N"; exit 1
           fi
 
       - run: npm run typecheck
@@ -63,26 +109,46 @@ jobs:
         shell: bash
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          BETA: ${{ steps.kind.outputs.beta }}
         run: |
           version=$(node -p "require('./apps/desktop/package.json').version")
           notes="apps/desktop/release-notes/$version.md"
+          title="Qasa ERP $version"
+          extra=()
+          if [ "$BETA" = "true" ]; then title="Qasa ERP $version (beta)"; extra=(--prerelease); fi
           if [ -f "$notes" ]; then
-            gh release create "$GITHUB_REF_NAME" --draft --title "Qasa ERP $version" --notes-file "$notes"
+            gh release create "$GITHUB_REF_NAME" --draft "${extra[@]}" --title "$title" --notes-file "$notes"
           else
-            gh release create "$GITHUB_REF_NAME" --draft --title "Qasa ERP $version" --generate-notes
+            gh release create "$GITHUB_REF_NAME" --draft "${extra[@]}" --title "$title" --generate-notes
           fi
 
       - name: Build and publish the installer
-        run: npm run release -w @qasa/desktop
+        shell: bash
+        run: |
+          if [ "$BETA" = "true" ]; then
+            npm run release -w @qasa/desktop -- -c.publish.releaseType=prerelease
+          else
+            npm run release -w @qasa/desktop
+          fi
         env:
+          BETA: ${{ steps.kind.outputs.beta }}
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # No QASA_INTEGRITY_KEY: the app.asar self-check is off in 1.0 (INTEGRITY_CHECK in after-pack.cjs), so the build
+          # never gets the signing key. Add the secret back here (and to the Store step) only when that check is turned on.
+          # Pro cloud backup (Google Drive, OneDrive): see pro/docs/cloud-backup-setup.md
+          QASA_GOOGLE_CLIENT_ID: ${{ secrets.QASA_GOOGLE_CLIENT_ID }}
+          QASA_GOOGLE_CLIENT_SECRET: ${{ secrets.QASA_GOOGLE_CLIENT_SECRET }}
+          QASA_MS_CLIENT_ID: ${{ secrets.QASA_MS_CLIENT_ID }}
 
       # The Microsoft Store package from the same build (not signed: the Store signs it when it accepts it). It is kept
       # with the run for upload to Partner Center, not attached to the release (Windows won't install it unsigned).
+      # (stable releases only: the Store has no beta channel here)
       - name: Microsoft Store package
+        if: steps.kind.outputs.beta != 'true'
         run: node apps/desktop/store.mjs
 
       - uses: actions/upload-artifact@v7
+        if: steps.kind.outputs.beta != 'true'
         with:
           name: microsoft-store-package
           path: apps/desktop/release/Qasa-ERP-Store-*.appx
@@ -93,11 +159,14 @@ jobs:
         shell: bash
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          BETA: ${{ steps.kind.outputs.beta }}
         run: |
           version=$(node -p "require('./apps/desktop/package.json').version")
-          cp "apps/desktop/release/Qasa-ERP-Setup-$version.exe" Qasa-ERP-Setup.exe
-          # releases/latest/download/Qasa-ERP-Setup.exe always points at the newest installer (the website links to it)
-          gh release upload "$GITHUB_REF_NAME" Qasa-ERP-Setup.exe --clobber
+          if [ "$BETA" != "true" ]; then
+            cp "apps/desktop/release/Qasa-ERP-Setup-$version.exe" Qasa-ERP-Setup.exe
+            # releases/latest/download/Qasa-ERP-Setup.exe always points at the newest stable installer (the website links to it)
+            gh release upload "$GITHUB_REF_NAME" Qasa-ERP-Setup.exe --clobber
+          fi
           # the block map lets the next update download only the parts that changed
           gh release upload "$GITHUB_REF_NAME" "apps/desktop/release/Qasa-ERP-Setup-$version.exe.blockmap" --clobber
 
@@ -105,4 +174,11 @@ jobs:
         shell: bash
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: gh release edit "$GITHUB_REF_NAME" --draft=false --latest
+          BETA: ${{ steps.kind.outputs.beta }}
+        run: |
+          if [ "$BETA" = "true" ]; then
+            # a prerelease never becomes "latest": the website link and stable copies stay on the last stable
+            gh release edit "$GITHUB_REF_NAME" --draft=false --prerelease --latest=false
+          else
+            gh release edit "$GITHUB_REF_NAME" --draft=false --latest
+          fi

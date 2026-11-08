@@ -1,0 +1,75 @@
+import { MessageChannel } from 'node:worker_threads';
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { afterAll, describe, expect, it } from 'vitest';
+import { Bridge, type Carrier } from './bridge.ts';
+import { serve, stopServer, swapInCompanyFile } from './server-process.ts';
+import { openDatabase } from '@qasa/server';
+import { companyVerifyKey } from '../../../packages/server/src/verify.ts';
+import { readSetting } from '../../../packages/server/src/settings.ts';
+
+const dir = mkdtempSync(join(tmpdir(), 'qasa-server-process-'));
+const ch = new MessageChannel();
+afterAll(async () => {
+  await stopServer();
+  ch.port1.close();
+  ch.port2.close();
+  rmSync(dir, { recursive: true, force: true });
+});
+
+const carrier = (port: MessageChannel['port1']): Carrier => ({ postMessage: (m) => port.postMessage(m), listen: (fn) => port.on('message', fn) });
+
+describe('putting a backup in place of the company file', () => {
+  const data = () => {
+    const d = join(dir, 'swap-' + Math.random().toString(16).slice(2));
+    mkdirSync(d, { recursive: true });
+    writeFileSync(join(d, 'qasa.sqlite'), 'the books');
+    writeFileSync(join(d, 'qasa.sqlite-wal'), 'the log');
+    return d;
+  };
+
+  it('keeps the company file aside, never deleted, and puts the copy in its place', () => {
+    const d = data();
+    writeFileSync(join(dir, 'copy.sqlite'), 'the backup');
+    swapInCompanyFile(d, join(dir, 'copy.sqlite'), '2026-11-08-10-00-00');
+    expect(readFileSync(join(d, 'qasa.sqlite'), 'utf8')).toBe('the backup');
+    expect(existsSync(join(d, 'qasa.sqlite-wal'))).toBe(false);
+    expect(readFileSync(join(d, 'qasa-before-restore-2026-11-08-10-00-00.sqlite'), 'utf8')).toBe('the books');
+    expect(readFileSync(join(d, 'qasa-before-restore-2026-11-08-10-00-00.sqlite-wal'), 'utf8')).toBe('the log');
+  });
+
+  it('leaves the company file exactly as it was when the copy fails (a USB disk pulled out)', () => {
+    const d = data();
+    expect(() => swapInCompanyFile(d, join(dir, 'gone', 'copy.sqlite'), '2026-11-08-10-00-00')).toThrow();
+    expect(readFileSync(join(d, 'qasa.sqlite'), 'utf8')).toBe('the books');
+    expect(readFileSync(join(d, 'qasa.sqlite-wal'), 'utf8')).toBe('the log');
+    expect(readdirSync(d).sort()).toEqual(['qasa.sqlite', 'qasa.sqlite-wal']);
+  });
+});
+
+describe('the server process', () => {
+  it('starts the API server on 127.0.0.1 when the main process asks, only for the window holding the session key, and stops', async () => {
+    process.env.QASA_NO_PING = '1';
+    serve(carrier(ch.port2));
+    const main = new Bridge(carrier(ch.port1));
+    const url = await main.call<string>('init', [{
+      userDataDir: dir, documentsDir: dir, appVersion: '1.0.0-test', sessionKey: 'k'.repeat(64), secretsKey: 'ab'.repeat(32), resourcesPath: dir, fromStore: false
+    }], { timeoutMs: 20_000 });
+    expect(url).toMatch(/^http:\/\/127\.0\.0\.1:\d+$/);
+    // the invoice QR signing key is kept protected with this process's secrets, never in the clear (desktop-sec-6)
+    const books = openDatabase(':memory:');
+    try {
+      companyVerifyKey(books);
+      expect(readSetting(books, 'verify_private_key')).toMatch(/^v1:q1:/);
+    } finally {
+      books.close();
+    }
+    const ok = await fetch(`${url}/api/health`, { headers: { cookie: `qasa_session=${'k'.repeat(64)}` } });
+    expect(ok.status).toBe(200);
+    expect(ok.headers.get('x-frame-options')).toBe('DENY');
+    expect((await fetch(`${url}/api/health`)).status).toBe(403);
+    await main.call('stop');
+    await expect(fetch(`${url}/api/health`)).rejects.toThrow();
+  }, 30_000);
+});

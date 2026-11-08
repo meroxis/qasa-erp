@@ -1,0 +1,14 @@
+Qasa ERP licence module (native/licence)
+
+Copyright (c) 2026 Meroxis. All rights reserved.
+
+This folder (the source code of the licence module and the compiled qasa_licence.node built from it) is proprietary
+software of Meroxis. It is not open source, and it is not covered by the GNU Affero General Public License that applies
+to the core of Qasa ERP in the rest of this repository.
+
+No licence is granted to copy, modify, distribute, sublicense or create derivative works of it, except as Meroxis
+allows in writing. It ships only inside the official builds of Qasa ERP, where its use is governed by the Qasa ERP
+licence agreement (EULA): https://qasaerp.com/eula/
+
+The third-party components it is built with (see native/licence/Cargo.lock and THIRD_PARTY_NOTICES.md) keep their
+own licences.
