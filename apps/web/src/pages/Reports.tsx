@@ -1,9 +1,10 @@
 import { useState } from 'react';
-import { formatAmount, todayIso } from '@qasa/core';
-import { api } from '../api.ts';
+import { formatAmount, todayIso, type Names } from '@qasa/core';
+import { api, type TrialBalanceReport } from '../api.ts';
 import { AccountCombo, ErrorBox, Icon, downloadCsv, useData, useLoad } from '../components.tsx';
 import { useI18n } from '../i18n.ts';
 import { go, href } from '../router.ts';
+import { printDocument } from '../industry/printing.ts';
 
 export function yearStart(fiscalYearStart: string | undefined): string {
   const today = todayIso();
@@ -22,6 +23,18 @@ export function PeriodPicker({ from, to, onFrom, onTo }: { from: string; to: str
   );
 }
 
+type TbKey = 'code' | 'account' | 'openingDebit' | 'openingCredit' | 'movementDebit' | 'movementCredit' | 'closingDebit' | 'closingCredit' | 'totals';
+
+/** The trial balance as Excel rows: opening, movement in the period and closing balance, each as debit and credit. */
+export function trialBalanceCsv(data: TrialBalanceReport, t: (k: TbKey) => string, nameOf: (n: Names) => string): string[][] {
+  const iqd = (n: number) => formatAmount(n, 'IQD');
+  return [
+    [t('code'), t('account'), t('openingDebit'), t('openingCredit'), t('movementDebit'), t('movementCredit'), t('closingDebit'), t('closingCredit')],
+    ...data.rows.map((r) => [r.code, nameOf(r.name), iqd(r.openingDebit), iqd(r.openingCredit), iqd(r.debit), iqd(r.credit), iqd(r.closingDebit), iqd(r.closingCredit)]),
+    [t('totals'), '', iqd(data.openingDebitTotal), iqd(data.openingCreditTotal), iqd(data.totalDebit), iqd(data.totalCredit), iqd(data.balanceDebitTotal), iqd(data.balanceCreditTotal)]
+  ];
+}
+
 export function TrialBalance() {
   const i18n = useI18n();
   const { t } = i18n;
@@ -30,19 +43,13 @@ export function TrialBalance() {
   const [to, setTo] = useState(todayIso());
   const { data, error } = useLoad(() => api.trialBalance(from || undefined, to || undefined), [from, to]);
 
-  const rows = (data?.rows ?? []).map((r) => {
-    const net = r.debit - r.credit;
-    return { ...r, balDebit: net > 0 ? net : 0, balCredit: net < 0 ? -net : 0 };
-  });
-  const ok = data && data.totalDebit === data.totalCredit && data.balanceDebitTotal === data.balanceCreditTotal;
+  const rows = data?.rows ?? [];
+  const ok = data && data.totalDebit === data.totalCredit && data.openingDebitTotal === data.openingCreditTotal && data.balanceDebitTotal === data.balanceCreditTotal;
+  const cell = (n: number) => (n ? i18n.money(n, 'IQD') : '');
 
   function exportCsv() {
     if (!data) return;
-    downloadCsv(`trial-balance_${from}_${to}.csv`, [
-      [t('code'), t('account'), t('movementDebit'), t('movementCredit'), t('balDebit'), t('balCredit')],
-      ...rows.map((r) => [r.code, i18n.name(r.name), formatAmount(r.debit, 'IQD'), formatAmount(r.credit, 'IQD'), formatAmount(r.balDebit, 'IQD'), formatAmount(r.balCredit, 'IQD')]),
-      [t('totals'), '', formatAmount(data.totalDebit, 'IQD'), formatAmount(data.totalCredit, 'IQD'), formatAmount(data.balanceDebitTotal, 'IQD'), formatAmount(data.balanceCreditTotal, 'IQD')]
-    ]);
+    downloadCsv(`trial-balance_${from}_${to}.csv`, trialBalanceCsv(data, t, i18n.name));
   }
 
   return (
@@ -51,9 +58,9 @@ export function TrialBalance() {
         <PeriodPicker from={from} to={to} onFrom={setFrom} onTo={setTo} />
         <span className="spacer" />
         <button type="button" className="btn" onClick={exportCsv} disabled={!data}><Icon name="download" size={16} />{t('exportExcel')}</button>
-        <button type="button" className="btn" onClick={() => window.print()}><Icon name="printer" size={16} />{t('print')}</button>
+        <button type="button" className="btn" onClick={() => void printDocument('report')}><Icon name="printer" size={16} />{t('print')}</button>
       </div>
-      <div className="muted small">{t('onlyPosted')}</div>
+      <div className="muted small">{t('onlyPosted')} {t('tbOpeningHelp')}</div>
       <ErrorBox error={error} />
       {data && (
         <div className="card">
@@ -63,36 +70,48 @@ export function TrialBalance() {
             {rows.length > 0 && (ok ? <span className="chip ok">{t('tbBalanced')}</span> : <span className="chip bad">{t('tbNotBalanced')}</span>)}
           </div>
           {rows.length === 0 ? <p className="muted" style={{ padding: '0 16px 16px' }}>{t('noData')}</p> : (
-            <table className="table">
-              <thead>
-                <tr>
-                  <th style={{ width: 80 }}>{t('code')}</th><th>{t('account')}</th>
-                  <th className="amount">{t('movementDebit')}</th><th className="amount">{t('movementCredit')}</th>
-                  <th className="amount">{t('balDebit')}</th><th className="amount">{t('balCredit')}</th>
-                </tr>
-              </thead>
-              <tbody>
-                {rows.map((r) => (
-                  <tr key={r.code} className="click" onClick={() => go(`statement/${r.code}`)}>
-                    <td><span className="tree-code">{r.code}</span></td>
-                    <td>{i18n.name(r.name)}</td>
-                    <td className="amount">{i18n.money(r.debit, 'IQD')}</td>
-                    <td className="amount">{i18n.money(r.credit, 'IQD')}</td>
-                    <td className="amount">{r.balDebit ? i18n.money(r.balDebit, 'IQD') : ''}</td>
-                    <td className="amount">{r.balCredit ? i18n.money(r.balCredit, 'IQD') : ''}</td>
+            <div className="table-wrap">
+              <table className="table tb-six">
+                <thead>
+                  <tr>
+                    <th rowSpan={2} style={{ width: 80 }}>{t('code')}</th><th rowSpan={2}>{t('account')}</th>
+                    <th colSpan={2} className="tb-group">{t('opening')}</th>
+                    <th colSpan={2} className="tb-group">{t('tbMovement')}</th>
+                    <th colSpan={2} className="tb-group">{t('closing')}</th>
                   </tr>
-                ))}
-              </tbody>
-              <tfoot>
-                <tr>
-                  <td /><td>{t('totals')}</td>
-                  <td className="amount">{i18n.money(data.totalDebit, 'IQD')}</td>
-                  <td className="amount">{i18n.money(data.totalCredit, 'IQD')}</td>
-                  <td className="amount">{i18n.money(data.balanceDebitTotal, 'IQD')}</td>
-                  <td className="amount">{i18n.money(data.balanceCreditTotal, 'IQD')}</td>
-                </tr>
-              </tfoot>
-            </table>
+                  <tr>
+                    <th className="amount">{t('debit')}</th><th className="amount">{t('credit')}</th>
+                    <th className="amount">{t('debit')}</th><th className="amount">{t('credit')}</th>
+                    <th className="amount">{t('debit')}</th><th className="amount">{t('credit')}</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {rows.map((r) => (
+                    <tr key={r.code} className="click" onClick={() => go(`statement/${r.code}`)}>
+                      <td><span className="tree-code">{r.code}</span></td>
+                      <td>{i18n.name(r.name)}</td>
+                      <td className="amount">{cell(r.openingDebit)}</td>
+                      <td className="amount">{cell(r.openingCredit)}</td>
+                      <td className="amount">{cell(r.debit)}</td>
+                      <td className="amount">{cell(r.credit)}</td>
+                      <td className="amount">{cell(r.closingDebit)}</td>
+                      <td className="amount">{cell(r.closingCredit)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+                <tfoot>
+                  <tr>
+                    <td /><td>{t('totals')}</td>
+                    <td className="amount">{i18n.money(data.openingDebitTotal, 'IQD')}</td>
+                    <td className="amount">{i18n.money(data.openingCreditTotal, 'IQD')}</td>
+                    <td className="amount">{i18n.money(data.totalDebit, 'IQD')}</td>
+                    <td className="amount">{i18n.money(data.totalCredit, 'IQD')}</td>
+                    <td className="amount">{i18n.money(data.balanceDebitTotal, 'IQD')}</td>
+                    <td className="amount">{i18n.money(data.balanceCreditTotal, 'IQD')}</td>
+                  </tr>
+                </tfoot>
+              </table>
+            </div>
           )}
         </div>
       )}
@@ -130,7 +149,7 @@ export function Statement({ code: initialCode }: { code?: string }) {
         <PeriodPicker from={from} to={to} onFrom={setFrom} onTo={setTo} />
         <span className="spacer" />
         <button type="button" className="btn" onClick={exportCsv} disabled={!data}><Icon name="download" size={16} />{t('exportExcel')}</button>
-        <button type="button" className="btn" onClick={() => window.print()} disabled={!data}><Icon name="printer" size={16} />{t('print')}</button>
+        <button type="button" className="btn" onClick={() => void printDocument('report')} disabled={!data}><Icon name="printer" size={16} />{t('print')}</button>
       </div>
       {!code && <div className="alert info">{t('pickAccount')}</div>}
       <ErrorBox error={error} />

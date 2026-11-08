@@ -107,7 +107,10 @@ export interface FinalAccountsReport {
 }
 
 export interface TrialBalanceReport {
-  rows: { code: string; name: Names; debit: number; credit: number; balance: number }[];
+  /** Opening (before From), movement (From to To) and closing balance, each as debit and credit. */
+  rows: { code: string; name: Names; openingDebit: number; openingCredit: number; debit: number; credit: number; closingDebit: number; closingCredit: number; balance: number }[];
+  openingDebitTotal: number;
+  openingCreditTotal: number;
   totalDebit: number;
   totalCredit: number;
   balanceDebitTotal: number;
@@ -466,6 +469,11 @@ export interface BackupStatus {
   cloudFolder: boolean;
   /** `own: false`: a copy made by another company or on another PC (left out by older servers: treated as this company's). */
   files: { name: string; size: number; at: string; encrypted: boolean; own?: boolean }[];
+  /**
+   * What needs the admin: the plan has no automatic copies (Free, or a trial that ended) and none was saved for 3 days,
+   * they were turned off and none was saved for 3 days, the last one failed, or the last one is over 3 days old.
+   */
+  notice?: 'plan' | 'off' | 'old' | 'failed' | null;
 }
 
 /** Where the company database is (Pro module): the company file, or the company's MariaDB/MySQL server. Missing (404) without Pro. */
@@ -597,7 +605,10 @@ export const api = {
   login: (username: string, password: string) => request<Me>('POST', '/api/auth/login', { username, password }),
   logout: () => request<{ ok: boolean }>('POST', '/api/auth/logout', {}),
   changePassword: (current: string | undefined, password: string) => request<{ ok: boolean }>('POST', '/api/auth/password', { ...(current ? { current } : {}), password }),
-  setSignIn: (on: boolean) => request<Me>('PUT', '/api/auth/signin', { on }),
+  /** Switched on: the admin's recovery code comes with it, this once. */
+  setSignIn: (on: boolean) => request<Me & { recoveryCode?: string }>('PUT', '/api/auth/signin', { on }),
+  /** A new admin recovery code (the one before stops working); used only in the Windows app's File menu. */
+  newRecoveryCode: () => request<{ recoveryCode: string }>('POST', '/api/auth/recovery-code', {}),
   setSeparateDuties: (on: boolean) => request<Me>('PUT', '/api/auth/separate-duties', { on }),
   users: () => request<UserView[]>('GET', '/api/users'),
   createUser: (input: { username: string; name: string; roles: Role[]; password?: string }) => request<UserView>('POST', '/api/users', input),

@@ -98,6 +98,33 @@ describe('year-end closing', () => {
     expect((await yearOf(LAST)).closing?.number).toBe(`CL-${LAST}-0001`);
   });
 
+  it('opens the next fiscal year with the balances brought forward in the trial balance', async () => {
+    pro();
+    await trade(LAST);
+    await posted(`${Y}-01-05`, [{ accountCode: '1811', debit: 50_000, credit: 0 }, { accountCode: '42', debit: 0, credit: 50_000 }]);
+    type Row = { code: string; openingDebit: number; openingCredit: number; debit: number; credit: number; closingDebit: number; closingCredit: number };
+    type Tb = { rows: Row[]; openingDebitTotal: number; openingCreditTotal: number; balanceDebitTotal: number; balanceCreditTotal: number };
+    const tb = async () => (await get(`/api/reports/trial-balance?from=${Y}-01-01&to=${Y}-12-31`)).json() as Tb;
+    const row = (t: Tb, code: string) => t.rows.find((r) => r.code === code);
+
+    // the year before is not closed yet: cash and the open revenue come forward as they stand
+    let t = await tb();
+    expect(row(t, '1811')).toMatchObject({ openingDebit: 400_000, openingCredit: 0, debit: 50_000, credit: 0, closingDebit: 450_000 });
+    expect(row(t, '42')).toMatchObject({ openingCredit: 1_000_000, credit: 50_000, closingCredit: 1_050_000 });
+    expect(t.openingDebitTotal).toBe(t.openingCreditTotal);
+
+    // closed: revenue and expenses open at zero and the result sits in 229
+    expect((await post(`/api/year-end/${LAST}/close`)).statusCode).toBe(200);
+    t = await tb();
+    expect(row(t, '1811')).toMatchObject({ openingDebit: 400_000, closingDebit: 450_000 });
+    expect(row(t, '42')).toMatchObject({ openingDebit: 0, openingCredit: 0, credit: 50_000, closingCredit: 50_000 });
+    expect(row(t, '35')).toBeUndefined();
+    expect(row(t, '229')).toMatchObject({ openingCredit: 400_000, debit: 0, credit: 0, closingCredit: 400_000 });
+    expect(t.openingDebitTotal).toBe(400_000);
+    expect(t.openingCreditTotal).toBe(400_000);
+    expect(t.balanceDebitTotal).toBe(t.balanceCreditTotal);
+  });
+
   it('can only be undone by reopening: a reversal, the months unlocked, and it can close again', async () => {
     pro();
     await trade(LAST);

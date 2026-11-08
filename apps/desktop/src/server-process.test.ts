@@ -4,7 +4,8 @@ import { tmpdir } from 'node:os';
 import { basename, join } from 'node:path';
 import { afterAll, describe, expect, it } from 'vitest';
 import { Bridge, type Carrier } from './bridge.ts';
-import { keptAsideOf, putBackCompanyFile, serve, stopServer, swapInCompanyFile } from './server-process.ts';
+import { companyFileProblem, keptAsideOf, putBackCompanyFile, serve, stopServer, swapInCompanyFile } from './server-process.ts';
+import { text } from './texts.ts';
 import { openDatabase } from '@qasa/server';
 import { companyVerifyKey } from '../../../packages/server/src/verify.ts';
 import { readSetting } from '../../../packages/server/src/settings.ts';
@@ -117,4 +118,18 @@ describe('the server process', () => {
     await main.call('stop');
     await expect(fetch(`${url}/api/health`)).rejects.toThrow();
   }, 30_000);
+});
+
+describe('a company file that had no room for its copy before an update', () => {
+  it('is told apart from a damaged file, and the dialog says so without offering a backup', () => {
+    const full = Object.assign(new Error('update_copy_failed'), { code: 'update_copy_failed', details: { reason: 'database or disk is full' } });
+    expect(companyFileProblem(full, true)).toEqual({ main: true, reason: 'database or disk is full', cause: 'update_copy' });
+    expect(companyFileProblem(new Error('file is not a database'), false)).toEqual({ main: false, reason: 'file is not a database', cause: 'damaged' });
+    for (const lang of ['ar', 'en', 'ku'] as const) {
+      expect(text(lang, 'dbUpdateCopyFailed')).not.toBe(text(lang, 'dbDamaged'));
+      expect(text(lang, 'dbUpdateCopyFailedDetail', { reason: 'R' })).toContain('R');
+    }
+    expect(text('en', 'dbUpdateCopyFailed')).toContain('copy');
+    expect(text('en', 'dbUpdateCopyFailedDetail')).toContain('disk space');
+  });
 });

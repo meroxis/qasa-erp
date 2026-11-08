@@ -224,6 +224,53 @@ describe('reports', () => {
     expect(tb.rows.find((r) => r.code === '1811')?.balance).toBe(750_000);
   });
 
+  it('carries everything dated before From into the opening columns (opening, movement, closing as Dr/Cr)', () => {
+    const tb = trialBalance(lines, { from: '2026-02-01', to: '2026-12-31' });
+    const cash = tb.rows.find((r) => r.code === '1811')!;
+    expect(cash).toMatchObject({ openingDebit: 1_000_000, openingCredit: 0, debit: 0, credit: 250_000, closingDebit: 750_000, closingCredit: 0, balance: 750_000 });
+    const capital = tb.rows.find((r) => r.code === '21')!;
+    // no movement this period, but the account still shows with its balance brought forward
+    expect(capital).toMatchObject({ openingDebit: 0, openingCredit: 1_000_000, debit: 0, credit: 0, closingDebit: 0, closingCredit: 1_000_000, balance: 1_000_000 });
+    expect(tb.openingDebitTotal).toBe(1_000_000);
+    expect(tb.openingCreditTotal).toBe(1_000_000);
+    expect(tb.totalDebit).toBe(250_000);
+    expect(tb.totalCredit).toBe(250_000);
+    expect(tb.balanceDebitTotal).toBe(tb.balanceCreditTotal);
+    expect(tb.balanceDebitTotal).toBe(1_000_000);
+  });
+
+  it('opens a second fiscal year with the balances of the year before, and a closed year with the result in the reserves', () => {
+    const year1: PostedLine[] = [
+      ...lines,
+      { entryId: 'c', number: 'RV-2026-0001', date: '2026-05-01', accountCode: '1811', debit: 400_000, credit: 0, description: 'Sales' },
+      { entryId: 'c', number: 'RV-2026-0001', date: '2026-05-01', accountCode: '42', debit: 0, credit: 400_000, description: 'Sales' }
+    ];
+    const year2: PostedLine[] = [
+      { entryId: 'd', number: 'RV-2027-0001', date: '2027-02-01', accountCode: '1811', debit: 100_000, credit: 0, description: 'Sales' },
+      { entryId: 'd', number: 'RV-2027-0001', date: '2027-02-01', accountCode: '42', debit: 0, credit: 100_000, description: 'Sales' }
+    ];
+    // year 1 not closed: its revenue and expenses are still open in year 2's opening column
+    const open = trialBalance([...year1, ...year2], { from: '2027-01-01', to: '2027-12-31' });
+    expect(open.rows.find((r) => r.code === '1811')).toMatchObject({ openingDebit: 1_150_000, debit: 100_000, closingDebit: 1_250_000 });
+    expect(open.rows.find((r) => r.code === '42')).toMatchObject({ openingCredit: 400_000, credit: 100_000, closingCredit: 500_000 });
+    expect(open.openingDebitTotal).toBe(open.openingCreditTotal);
+    expect(open.balanceDebitTotal).toBe(open.balanceCreditTotal);
+
+    // year 1 closed on its last day: revenue and expenses open at zero, the 150,000 profit sits in 229
+    const closing: PostedLine[] = [
+      { entryId: 'e', number: 'CL-2026-0001', date: '2026-12-31', accountCode: '42', debit: 400_000, credit: 0, description: 'Closing', closing: true },
+      { entryId: 'e', number: 'CL-2026-0001', date: '2026-12-31', accountCode: '33', debit: 0, credit: 250_000, description: 'Closing', closing: true },
+      { entryId: 'e', number: 'CL-2026-0001', date: '2026-12-31', accountCode: '229', debit: 0, credit: 150_000, description: 'Closing', closing: true }
+    ];
+    const closed = trialBalance([...year1, ...closing, ...year2], { from: '2027-01-01', to: '2027-12-31' });
+    expect(closed.rows.find((r) => r.code === '42')).toMatchObject({ openingDebit: 0, openingCredit: 0, credit: 100_000, closingCredit: 100_000 });
+    expect(closed.rows.find((r) => r.code === '33')).toBeUndefined();
+    expect(closed.rows.find((r) => r.code === '229')).toMatchObject({ openingCredit: 150_000, debit: 0, credit: 0, closingCredit: 150_000 });
+    expect(closed.openingDebitTotal).toBe(1_150_000);
+    expect(closed.openingCreditTotal).toBe(1_150_000);
+    expect(closed.balanceDebitTotal).toBe(closed.balanceCreditTotal);
+  });
+
   it('builds an account statement with opening balance and running balance', () => {
     const st = accountStatement('181', lines, { from: '2026-02-01' });
     expect(st.opening).toBe(1_000_000);

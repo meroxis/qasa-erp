@@ -28,6 +28,8 @@ import { ADJ_TEXT } from './i18n/adjustments.ts';
 import { PO_TEXT } from './i18n/purchasing.ts';
 import { COMPANY_TEXT } from './i18n/companies.ts';
 import { LABEL_TEXT } from './i18n/labels.ts';
+import { PRINTER_TEXT } from './i18n/printers.ts';
+import { SAFETY_TEXT } from './i18n/safety.ts';
 import { UI_TEXT } from './i18n/ui.ts';
 import { formatAmount, formatDate, formatInteger, LANGS, toEasternDigits, type CurrencyCode, type DigitStyle, type Lang, type Names } from '@qasa/core';
 
@@ -711,7 +713,7 @@ const BASE = {
   bkHelp: ['نسخة من ملف الشركة كل يوم في مجلد تختاره. اختر مجلد OneDrive أو Google Drive أو قرص USB لتبقى نسخة سليمة حتى لو تعطّل هذا الحاسوب.', 'A copy of the company file every day, in a folder you choose. Pick a OneDrive, Google Drive or USB folder, so a copy stays safe even if this PC fails.', 'هەموو ڕۆژێک کۆپییەک لە فایلی کۆمپانیا لە بوخچەیەکدا کە هەڵیدەبژێریت. بوخچەیەکی OneDrive یان Google Drive یان USB هەڵبژێرە، تا ئەگەر ئەم کۆمپیوتەرە تێکچوو کۆپییەکی سەلامەت بمێنێت.'],
   bkOfficial: ['النسخ الاحتياطي التلقائي جزء من Pro في تطبيق قاصة ERP لويندوز.', 'Automatic backups come with Pro in the Qasa ERP app for Windows.', 'باکئەپی خۆکار بەشێکە لە Pro لە بەرنامەی قاسە ERP بۆ ویندۆز.'],
   bkManual: ['ويمكنك دائماً نسخ ملف الشركة بنفسك: قائمة «ملف» ← «فتح مجلد البيانات».', 'You can always copy the company file yourself: File → Open data folder.', 'هەمیشە دەتوانیت فایلی کۆمپانیا خۆت کۆپی بکەیت: «فایل» ← «کردنەوەی بوخچەی داتا».'],
-  bkNeedsPro: ['النسخ التلقائي يحتاج خطة Pro أو Business. استرجاع النسخ الموجودة متاح دائماً.', 'Automatic backups need the Pro or Business plan. Restoring the copies you have is always possible.', 'باکئەپی خۆکار پێویستی بە پلانی Pro یان Business هەیە. گەڕاندنەوەی ئەو کۆپییانەی هەتە هەمیشە دەکرێت.'],
+  bkNeedsPro: ['النسخ التلقائي اليومي يحتاج خطة Pro أو Business. أما «احفظ نسخة احتياطية الآن» واسترجاع النسخ فمتاحان في كل الخطط.', 'Automatic daily backups need the Pro or Business plan. Save a backup now and restoring copies work on every plan.', 'باکئەپی خۆکاری ڕۆژانە پێویستی بە پلانی Pro یان Business هەیە. «ئێستا باکئەپێک پاشەکەوت بکە» و گەڕاندنەوەی کۆپییەکان لە هەموو پلانەکاندا کار دەکەن.'],
   bkFolder: ['المجلد', 'Folder', 'بوخچە'],
   bkChooseFolder: ['اختيار المجلد…', 'Choose folder…', 'هەڵبژاردنی بوخچە…'],
   bkKeep: ['الاحتفاظ بآخر', 'Keep the last', 'هێشتنەوەی دوایین'],
@@ -719,7 +721,7 @@ const BASE = {
   bkLast: ['آخر نسخة: {when} ({size})', 'Last copy: {when} ({size})', 'دوایین کۆپی: {when} ({size})'],
   bkNone: ['لا توجد نسخة بعد.', 'No copy yet.', 'هێشتا هیچ کۆپییەک نییە.'],
   bkFailed: ['فشلت آخر محاولة نسخ: {e}', 'The last backup failed: {e}', 'دوایین باکئەپ سەرکەوتوو نەبوو: {e}'],
-  bkNow: ['انسخ الآن', 'Back up now', 'ئێستا باکئەپ بکە'],
+  bkNow: ['احفظ نسخة احتياطية الآن', 'Save a backup now', 'ئێستا باکئەپێک پاشەکەوت بکە'],
   bkTurnOn: ['تشغيل النسخ اليومي', 'Switch on daily backups', 'هەڵکردنی باکئەپی ڕۆژانە'],
   bkTurnOff: ['إيقاف النسخ اليومي', 'Switch off daily backups', 'کوژاندنەوەی باکئەپی ڕۆژانە'],
   bkCopiesTitle: ['النسخ في المجلد', 'Copies in the folder', 'کۆپییەکانی ناو بوخچەکە'],
@@ -984,7 +986,7 @@ const BASE = {
 
 /** The industry features keep their texts in files of their own (i18n/), in the same three languages. */
 const D = { ...BASE, ...REAL_ESTATE_TEXT, ...MOBILE_TEXT, ...PARTS_TEXT, ...ENGINEERING_TEXT,
-  ...PAYROLL_TEXT, ...POS_TEXT, ...QUOTES_TEXT, ...PIPELINE_TEXT, ...MEDIA_TEXT, ...BRIEF_TEXT, ...CLOUD_TEXT, ...RELAY_TEXT, ...ACTIVATION_TEXT, ...FX_TEXT, ...VERIFY_TEXT, ...GEN_TEXT, ...WEBAPI_TEXT, ...PHONE_TEXT, ...USAGE_TEXT, ...SOLAR_TEXT, ...LEGAL_TEXT, ...BRANCH_TEXT, ...BANK_TEXT, ...WAVE2_TEXT, ...ASSET_TEXT, ...ADJ_TEXT, ...PO_TEXT, ...COMPANY_TEXT, ...LABEL_TEXT, ...UI_TEXT };
+  ...PAYROLL_TEXT, ...POS_TEXT, ...QUOTES_TEXT, ...PIPELINE_TEXT, ...MEDIA_TEXT, ...BRIEF_TEXT, ...CLOUD_TEXT, ...RELAY_TEXT, ...ACTIVATION_TEXT, ...FX_TEXT, ...VERIFY_TEXT, ...GEN_TEXT, ...WEBAPI_TEXT, ...PHONE_TEXT, ...USAGE_TEXT, ...SOLAR_TEXT, ...LEGAL_TEXT, ...BRANCH_TEXT, ...BANK_TEXT, ...WAVE2_TEXT, ...ASSET_TEXT, ...ADJ_TEXT, ...PO_TEXT, ...COMPANY_TEXT, ...LABEL_TEXT, ...PRINTER_TEXT, ...SAFETY_TEXT, ...UI_TEXT };
 
 export type Key = keyof typeof D;
 

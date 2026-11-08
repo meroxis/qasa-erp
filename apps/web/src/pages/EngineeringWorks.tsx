@@ -8,6 +8,7 @@ import {
   type JobStatus, type JobSummaryView, type JobView, type LinkableDocView, type LineUnit, type WorksSummaryView
 } from '../industry/works-api.ts';
 import { go, href } from '../router.ts';
+import { printDocument } from '../industry/printing.ts';
 
 /**
  * الأعمال الهندسية (Pro): job orders for welding, steelwork, aluminium, MDF, doors and windows — the measured quote, the
@@ -316,7 +317,7 @@ export function JobDetail({ id }: { id: string }) {
           ? <a className="btn primary" href={href(`solar-system/${j.id}`)}><Icon name="invoice" size={16} />{t('sl_sell')}</a>
           : <button type="button" className="btn primary" onClick={() => setModal('bill')}><Icon name="invoice" size={16} />{t('ew_bill')}</button>)}
         {j.actions.includes('edit') && <button type="button" className="btn" onClick={() => setModal('edit')}><Icon name="edit" size={16} />{t('ew_editJob')}</button>}
-        <button type="button" className="btn" onClick={() => window.print()}><Icon name="printer" size={16} />{t('ew_print')}</button>
+        <button type="button" className="btn" onClick={() => void printDocument('quote')}><Icon name="printer" size={16} />{t('ew_print')}</button>
         {j.actions.includes('cancel') && <button type="button" className="btn danger" onClick={() => setModal('cancel')}><Icon name="x" size={16} />{t('ew_cancelJob')}</button>}
       </div>
 

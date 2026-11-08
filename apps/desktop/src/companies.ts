@@ -137,9 +137,10 @@ export type DamagedChoice = 'retry' | 'aside' | 'first' | 'quit';
 /**
  * The buttons when a company file can't be opened at the start, and which one Enter presses. Enter is always Try
  * again: a file only locked for a moment (antivirus, a OneDrive sync, a second copy of the app) must never be set aside
- * with one keypress. Escape quits.
+ * with one keypress. Escape quits. A file that is fine but could not be updated, because no copy of it could be kept
+ * first (`update_copy`: a full disk), is never offered to be set aside for a backup: it needs room, then Try again.
  */
-export function damagedFileChoices(main: boolean): { choices: DamagedChoice[]; defaultId: number; cancelId: number } {
-  const choices: DamagedChoice[] = ['retry', 'aside', ...(main ? [] : ['first' as const]), 'quit'];
+export function damagedFileChoices(main: boolean, cause: 'damaged' | 'update_copy' = 'damaged'): { choices: DamagedChoice[]; defaultId: number; cancelId: number } {
+  const choices: DamagedChoice[] = ['retry', ...(cause === 'damaged' ? ['aside' as const] : []), ...(main ? [] : ['first' as const]), 'quit'];
   return { choices, defaultId: choices.indexOf('retry'), cancelId: choices.length - 1 };
 }

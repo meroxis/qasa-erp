@@ -12,6 +12,7 @@ import { PeriodPicker } from './Reports.tsx';
  */
 
 import { REPORT_TABS, type ReportTab } from './tabs.ts';
+import { printDocument } from '../industry/printing.ts';
 export { isReportTab, REPORT_TABS, type ReportTab } from './tabs.ts';
 const TAB_LABEL: Record<ReportTab, Key> = {
   'sales-items': 'br_rSalesItems', 'sales-customers': 'br_rSalesCustomers', profit: 'br_rProfit',
@@ -60,7 +61,7 @@ function Toolbar({ onCsv, disabled }: { onCsv(): void; disabled: boolean }) {
   return (
     <div className="row no-print" style={{ justifyContent: 'flex-end', gap: 8 }}>
       <button type="button" className="btn" onClick={onCsv} disabled={disabled}><Icon name="download" size={16} />{t('exportExcel')}</button>
-      <button type="button" className="btn" onClick={() => window.print()} disabled={disabled}><Icon name="printer" size={16} />{t('print')}</button>
+      <button type="button" className="btn" onClick={() => void printDocument('report')} disabled={disabled}><Icon name="printer" size={16} />{t('print')}</button>
     </div>
   );
 }

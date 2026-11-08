@@ -5,6 +5,7 @@ import { ErrorBox, Icon, downloadCsv, useData, useLoad } from '../components.tsx
 import { isKey, useI18n, type I18n, type Key } from '../i18n.ts';
 import { href } from '../router.ts';
 import { PeriodPicker, yearStart } from './Reports.tsx';
+import { printDocument } from '../industry/printing.ts';
 
 /** Financial-statement style: losses and deductions in parentheses. */
 function amountText(i18n: I18n, value: number): string {
@@ -62,7 +63,7 @@ export function FinalAccounts() {
         {canExport ? (
           <>
             <button type="button" className="btn" onClick={() => data && exportCsv(data)} disabled={!data}><Icon name="download" size={16} />{t('exportExcel')}</button>
-            <button type="button" className="btn" onClick={() => window.print()} disabled={!data}><Icon name="printer" size={16} />{t('print')}</button>
+            <button type="button" className="btn" onClick={() => void printDocument('report')} disabled={!data}><Icon name="printer" size={16} />{t('print')}</button>
           </>
         ) : (
           <a className="btn" href={href('plans')} title={t('exportNeedsPro')}>

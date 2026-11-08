@@ -11,6 +11,7 @@ import { PrintDocument } from '../industry/PrintDocument.tsx';
 import { invoiceModel } from '../industry/print-model.ts';
 import { usePrintSetup } from '../industry/print-api.ts';
 import { addRefusal, parseScan, priceIn, priceRateFor, tilePrice } from './pos-logic.ts';
+import { printAlone, printDocument } from '../industry/printing.ts';
 
 /**
  * Point of sale (every plan). Made for a cashier with no training: the search box always has the focus, so a barcode
@@ -282,7 +283,7 @@ function Register({ initial, onClosed }: { initial: ShiftView; onClosed(): void 
       else if (e.key === 'F4') { e.preventDefault(); clear(); }
       else if (e.key === 'F8') { e.preventDefault(); document.getElementById('pos-discount')?.querySelector('input')?.focus(); }
       else if (e.key === 'F9') { e.preventDefault(); void payRef.current(); }
-      else if (e.key === 'F10' && receipt) { e.preventDefault(); printReceipt(); }
+      else if (e.key === 'F10' && receipt) { e.preventDefault(); void printReceipt(); }
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
@@ -403,7 +404,7 @@ function Register({ initial, onClosed }: { initial: ShiftView; onClosed(): void 
               </button>
             </div>
             {receipt && (
-              <button type="button" className="link-btn small" onClick={printReceipt}>
+              <button type="button" className="link-btn small" onClick={() => void printReceipt()}>
                 <Icon name="printer" size={14} /> {t('pos_printLast', { n: receipt.number ?? '' })} <span className="kbd">F10</span>
               </button>
             )}
@@ -419,12 +420,9 @@ function Register({ initial, onClosed }: { initial: ShiftView; onClosed(): void 
 
 /* ---------- the receipt (80 mm) ---------- */
 
+/** The receipt alone, on the printer chosen for receipts (Settings → Printers) or through the print window. */
 function printReceipt() {
-  document.body.classList.add('pos-printing');
-  const done = () => { document.body.classList.remove('pos-printing'); window.removeEventListener('afterprint', done); };
-  window.addEventListener('afterprint', done);
-  window.print();
-  window.setTimeout(done, 1000);
+  return printAlone('receipt', 'pos-printing');
 }
 
 function Receipt({ invoice, shift }: { invoice: InvoiceView; shift: ShiftView }) {
@@ -558,7 +556,7 @@ export function PosShiftReport({ id }: { id: string }) {
     <div className="stack">
       <div className="row no-print">
         <a className="btn" href={href('pos')}>{t('pos_backToRegister')}</a>
-        <button type="button" className="btn primary" onClick={() => window.print()}><Icon name="printer" size={16} />{t('pos_print')}</button>
+        <button type="button" className="btn primary" onClick={() => void printDocument('report')}><Icon name="printer" size={16} />{t('pos_print')}</button>
       </div>
       <div className="card pad stack paper">
         <div className="paper-head">

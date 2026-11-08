@@ -33,3 +33,6 @@ data/
 # the compiled licence addon (native/licence): build output
 /native/licence/target/
 /native/licence/dist/
+
+# the online shop (Qasa Store), its own repository
+/store/

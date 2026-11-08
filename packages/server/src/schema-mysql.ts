@@ -1297,6 +1297,41 @@ export const MYSQL_TABLES: readonly MysqlObject[] = [
       created_by TEXT NOT NULL,
       created_at ${WHEN} NOT NULL
     )`
+  },
+  {
+    name: 'stock_counts',
+    since: 8,
+    sql: `CREATE TABLE stock_counts (
+      id ${ID} NOT NULL PRIMARY KEY,
+      warehouse_id ${ID} NOT NULL,
+      date ${WHEN} NOT NULL,
+      notes TEXT,
+      count_all INT NOT NULL DEFAULT 0,
+      status ${WORD} NOT NULL CHECK (status IN ('open', 'done', 'discarded')),
+      adjustment_id ${ID},
+      created_by TEXT NOT NULL,
+      created_at ${WHEN} NOT NULL,
+      updated_by TEXT NOT NULL,
+      updated_at ${WHEN} NOT NULL,
+      INDEX stock_counts_warehouse (warehouse_id, status),
+      FOREIGN KEY (warehouse_id) REFERENCES warehouses(id),
+      FOREIGN KEY (adjustment_id) REFERENCES stock_adjustments(id)
+    )`
+  },
+  {
+    name: 'stock_count_lines',
+    since: 8,
+    sql: `CREATE TABLE stock_count_lines (
+      count_id ${ID} NOT NULL,
+      item_id ${ID} NOT NULL,
+      counted_milli BIGINT NOT NULL CHECK (counted_milli >= 0),
+      book_milli BIGINT NOT NULL,
+      unit_cost BIGINT,
+      counted_at ${WHEN} NOT NULL,
+      PRIMARY KEY (count_id, item_id),
+      FOREIGN KEY (count_id) REFERENCES stock_counts(id),
+      FOREIGN KEY (item_id) REFERENCES items(id)
+    )`
   }
 ];
 

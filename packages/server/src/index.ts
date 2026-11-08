@@ -7,7 +7,7 @@ export { MYSQL_TRIGGERS } from './schema-mysql.ts';
 export { buildApp } from './app.ts';
 // for the Pro module: who is asking, the plan, settings, the audit log, and routes of its own (ApiExtension)
 export { ApiReply, requestActor, type ApiExtension, type ApiRequest, type HttpMethod, type Route } from './routes.ts';
-export { signInRequired, type Actor, type Permission } from './auth.ts';
+export { adminUsernames, auditUnconfirmedReset, recoverAdminWithCode, resetAdminOnThisPc, signInRequired, type Actor, type Permission } from './auth.ts';
 export { planStatus } from './license.ts';
 export { configureLicensing, machineId, noteFirstStartBeforeCarry } from './activation.ts';
 export { getSettings, readSetting, writeSetting } from './settings.ts';

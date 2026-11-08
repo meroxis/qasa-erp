@@ -5,7 +5,7 @@ import { APP_VERSION, BUSINESS_TYPES } from '@qasa/core';
 import type { Db } from './db.ts';
 import { AppError, conflict, invalid } from './errors.ts';
 import {
-  changeOwnPassword, createUser, listUsers, login, logout, ownerActor, ROLES, separateDuties, SESSION_COOKIE, sessionActor, sessionCookie,
+  changeOwnPassword, createUser, hasRecoveryCode, issueRecoveryCode, listUsers, login, logout, ownerActor, ROLES, separateDuties, SESSION_COOKIE, sessionActor, sessionCookie,
   setPassword, setSeparateDuties, setSignInRequired, signInRequired, updateUser, type Actor, type Permission
 } from './auth.ts';
 import { createAccount, deleteAccount, listAccounts, renameAccount } from './accounts.ts';
@@ -287,7 +287,7 @@ export function apiRoutes(db: Db, options: { demo?: boolean; extensions?: readon
     'POST /api/invoices/:id/returns': (req) => invoicePermission(kindOf(idOf(req))),
     'POST /api/stock-docs': 'stock', 'PUT /api/stock-docs/:id': 'stock', 'DELETE /api/stock-docs/:id': 'stock',
     'POST /api/stock-docs/:id/post': 'stock', 'POST /api/stock-docs/:id/cancel': 'stock',
-    'GET /api/audit': 'admin', 'GET /api/users': 'admin'
+    'GET /api/audit': 'admin', 'GET /api/users': 'admin', 'GET /api/auth/recovery-code': 'admin'
   };
   for (const extension of [...BUILT_IN_FEATURES, ...(options.extensions ?? [])]) Object.assign(RULES, extension.rules ?? {});
   const PUBLIC = new Set(['GET /api/health', 'GET /api/auth/me', 'POST /api/auth/login', 'POST /api/auth/logout']);
@@ -573,8 +573,20 @@ export function apiRoutes(db: Db, options: { demo?: boolean; extensions?: readon
   });
   app.put('/api/auth/signin', async (req) => {
     notInDemo();
-    setSignInRequired(db, parse(z.object({ on: z.boolean() }), req.body).on, actorOf(req));
-    return me(signInRequired(db) ? null : ownerActor(db, typedName(req)));
+    const on = parse(z.object({ on: z.boolean() }), req.body).on;
+    const wasOn = signInRequired(db);
+    const actor = actorOf(req);
+    setSignInRequired(db, on, actor);
+    // switched on: the admin's recovery code, shown this once (only its hash is kept)
+    const recoveryCode = on && !wasOn ? await issueRecoveryCode(db, actor.name) : undefined;
+    return { ...me(signInRequired(db) ? null : ownerActor(db, typedName(req))), ...(recoveryCode ? { recoveryCode } : {}) };
+  });
+  // a new admin recovery code (the one before stops working); using one is only possible in the Windows app itself
+  app.get('/api/auth/recovery-code', async () => ({ set: hasRecoveryCode(db) }));
+  app.post('/api/auth/recovery-code', async (req) => {
+    notInDemo();
+    if (!signInRequired(db)) throw conflict('signin_off');
+    return { recoveryCode: await issueRecoveryCode(db, userOf(req)) };
   });
   app.put('/api/auth/separate-duties', async (req) => {
     setSeparateDuties(db, parse(z.object({ on: z.boolean() }), req.body).on, actorOf(req));

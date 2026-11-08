@@ -95,6 +95,28 @@ export function PasswordModal({ onClose, needsCurrent }: { onClose(): void; need
 
 interface Editing { id?: string; username: string; name: string; roles: Role[]; active: boolean; password: string }
 
+/**
+ * The admin recovery code, shown this once: written down (or printed) and kept away from the PC, it resets a
+ * forgotten admin password in the Windows app (File → Reset admin password). Only its hash is kept.
+ */
+export function RecoveryCodeModal({ code, onDone }: { code: string; onDone(): void }) {
+  const { t } = useI18n();
+  const [kept, setKept] = useState(false);
+  return (
+    <Modal title={t('recoveryTitle')} onClose={() => { if (kept) onDone(); }}>
+      <div className="stack">
+        <p style={{ margin: 0 }}>{t('recoveryShownOnce')}</p>
+        <div className="ltr recovery-code" aria-label={t('recoveryTitle')}>{code}</div>
+        <p className="muted small" style={{ margin: 0 }}>{t('recoveryWhere')}</p>
+        <label className="row" style={{ gap: 8 }}><input type="checkbox" checked={kept} onChange={(e) => setKept(e.target.checked)} /><span>{t('recoveryKept')}</span></label>
+        <div className="row" style={{ justifyContent: 'flex-end' }}>
+          <button type="button" className="btn primary" disabled={!kept} onClick={onDone}>{t('recoveryDone')}</button>
+        </div>
+      </div>
+    </Modal>
+  );
+}
+
 /** المستخدمون: people, their roles and passwords, the sign-in switch and "separate duties". */
 export function Users({ me, onMeChanged }: { me: Me; onMeChanged(me: Me | null): void }) {
   const i18n = useI18n();
@@ -108,6 +130,8 @@ export function Users({ me, onMeChanged }: { me: Me; onMeChanged(me: Me | null):
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<unknown>(null);
   const [formError, setFormError] = useState<unknown>(null);
+  /** The admin recovery code just made, shown once; `then` runs when it is put away. */
+  const [recovery, setRecovery] = useState<{ code: string; then?: () => void } | null>(null);
 
   const list = users.data ?? [];
   const self = list.find((u) => u.id === me.user?.id);
@@ -125,6 +149,24 @@ export function Users({ me, onMeChanged }: { me: Me; onMeChanged(me: Me | null):
       users.reload();
     } catch (e) {
       if (editing || passwordFor) setFormError(e); else setError(e);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  /**
+   * Switching sign-in on shows the admin recovery code first, this once; the sign-in screen comes when it is put away.
+   * Nothing is reloaded meanwhile: without a session yet, any request would take the page to sign-in at once.
+   */
+  async function switchSignInOn() {
+    setBusy(true);
+    setError(null);
+    try {
+      const on = await api.setSignIn(true);
+      if (on.recoveryCode) setRecovery({ code: on.recoveryCode, then: () => onMeChanged(null) });
+      else onMeChanged(null);
+    } catch (e) {
+      setError(e);
     } finally {
       setBusy(false);
     }
@@ -160,7 +202,7 @@ export function Users({ me, onMeChanged }: { me: Me; onMeChanged(me: Me | null):
             {me.signInRequired ? (
               <button type="button" className="btn" disabled={busy} onClick={() => { if (window.confirm(t('signInOffConfirm'))) void run(async () => onMeChanged(await api.setSignIn(false)), t('saved')); }}>{t('signInTurnOff')}</button>
             ) : self?.hasPassword ? (
-              <button type="button" className="btn primary" disabled={busy} onClick={() => void run(async () => { await api.setSignIn(true); onMeChanged(null); }, t('saved'))}>{t('signInTurnOn')}</button>
+              <button type="button" className="btn primary" disabled={busy} onClick={() => void switchSignInOn()}>{t('signInTurnOn')}</button>
             ) : (
               <>
                 <span className="muted">{t('signInNeedsPassword')}</span>
@@ -169,8 +211,16 @@ export function Users({ me, onMeChanged }: { me: Me; onMeChanged(me: Me | null):
             )}
           </div>
         )}
+        {!me.demo && me.signInRequired && (
+          <div className="row" style={{ gap: 8, flexWrap: 'wrap' }}>
+            <span className="muted small">{t('recoveryHelp')}</span>
+            <button type="button" className="btn small" disabled={busy}
+              onClick={() => { if (window.confirm(t('recoveryNewQ'))) void run(async () => setRecovery({ code: (await api.newRecoveryCode()).recoveryCode }), t('saved')); }}>{t('recoveryNew')}</button>
+          </div>
+        )}
         <ErrorBox error={error} />
       </div>
+      {recovery && <RecoveryCodeModal code={recovery.code} onDone={() => { const then = recovery.then; setRecovery(null); then?.(); }} />}
 
       <div className="card pad stack">
         <div className="row">

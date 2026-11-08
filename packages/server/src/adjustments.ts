@@ -520,10 +520,18 @@ export interface CountResult {
   differences: number;
 }
 
-/** Counted quantities → a draft "count" adjustment with the differences (nothing is made when all agree). */
+/**
+ * Counted quantities → a draft "count" adjustment with the differences (nothing is made when all agree). Refused while
+ * the warehouse has an open count session (count_session_open).
+ */
 export function stockCount(db: Db, input: CountInput, actor: Actor): CountResult {
   if (!isIsoDate(input.date)) throw invalid([{ code: 'date_invalid' }]);
   const sheet = countSheet(db, input.warehouseId);
+  // a count of this warehouse is open (saved as it is typed, with book quantities frozen as items are counted):
+  // a second count measured against today's books beside it would count the same shelves twice, or make false
+  // differences of what was sold meanwhile. Its quantities go into that count, on the count page, instead.
+  const open = db.prepare("SELECT id FROM stock_counts WHERE warehouse_id = ? AND status = 'open'").get(input.warehouseId) as { id: string } | undefined;
+  if (open) throw conflict('count_session_open', { countId: open.id });
   const byId = new Map(sheet.map((r) => [r.itemId, r]));
   const byCode = new Map<string, CountSheetRow>();
   for (const r of sheet) {
@@ -559,6 +567,185 @@ export function stockCount(db: Db, input: CountInput, actor: Actor): CountResult
   return { adjustment, unknown, counted: counted.size, differences: lines.length };
 }
 
+// ——— a count saved as it is typed (count sessions) ———
+
+/**
+ * A stock count takes hours, while the shop keeps selling. A count session keeps what has been counted on the server
+ * (saved as it is typed, so leaving the page or a closed laptop loses nothing), and freezes each item's book quantity
+ * the moment it is first counted: a sale made after an item was counted lowers the books and the shelf alike, so it
+ * is no difference. Finishing makes the draft "count" adjustment from the frozen quantities. One open count per
+ * warehouse.
+ */
+
+export interface CountSessionLine {
+  itemId: string;
+  countedMilli: number;
+  /** The book quantity frozen when the item was first counted. */
+  bookMilli: number;
+  unitCost: number | null;
+  countedAt: string;
+}
+
+export interface CountSession {
+  id: string;
+  warehouseId: string;
+  date: string;
+  notes: string;
+  full: boolean;
+  status: 'open' | 'done' | 'discarded';
+  adjustmentId: string | null;
+  createdBy: string;
+  updatedBy: string;
+  updatedAt: string;
+  lines: CountSessionLine[];
+}
+
+interface CountRow {
+  id: string; warehouse_id: string; date: string; notes: string | null; count_all: number; status: CountSession['status'];
+  adjustment_id: string | null; created_by: string; updated_by: string; updated_at: string;
+}
+
+function loadCount(db: Db, id: string): CountRow {
+  const row = db.prepare('SELECT * FROM stock_counts WHERE id = ?').get(id) as unknown as CountRow | undefined;
+  if (!row) throw notFound('stock_count');
+  return row;
+}
+
+export function getCountSession(db: Db, id: string): CountSession {
+  const r = loadCount(db, id);
+  const lines = (db.prepare('SELECT item_id, counted_milli, book_milli, unit_cost, counted_at FROM stock_count_lines WHERE count_id = ? ORDER BY counted_at, item_id').all(id) as
+    { item_id: string; counted_milli: number; book_milli: number; unit_cost: number | null; counted_at: string }[])
+    .map((l) => ({ itemId: l.item_id, countedMilli: Number(l.counted_milli), bookMilli: Number(l.book_milli), unitCost: l.unit_cost === null ? null : Number(l.unit_cost), countedAt: l.counted_at }));
+  return {
+    id: r.id, warehouseId: r.warehouse_id, date: r.date, notes: r.notes ?? '', full: Number(r.count_all) === 1, status: r.status,
+    adjustmentId: r.adjustment_id, createdBy: r.created_by, updatedBy: r.updated_by, updatedAt: r.updated_at, lines
+  };
+}
+
+/** The open count of a warehouse, or null. */
+export function openCountSession(db: Db, warehouseId: string): CountSession | null {
+  const row = db.prepare("SELECT id FROM stock_counts WHERE warehouse_id = ? AND status = 'open' ORDER BY created_at DESC").get(warehouseId) as { id: string } | undefined;
+  return row ? getCountSession(db, row.id) : null;
+}
+
+/** Starts a count of a warehouse, or gives the one already open there (two people counting share it). */
+export function startCountSession(db: Db, input: { warehouseId: string; date: string; notes?: string | undefined; full?: boolean | undefined }, actor: Actor): CountSession {
+  if (!isIsoDate(input.date)) throw invalid([{ code: 'date_invalid' }]);
+  const wh = db.prepare('SELECT active FROM warehouses WHERE id = ?').get(input.warehouseId) as { active: number } | undefined;
+  if (!wh || Number(wh.active) !== 1) throw invalid([{ code: 'warehouse_invalid' }]);
+  const id = transaction(db, () => {
+    const open = db.prepare("SELECT id FROM stock_counts WHERE warehouse_id = ? AND status = 'open'").get(input.warehouseId) as { id: string } | undefined;
+    if (open) return open.id;
+    const made = randomUUID();
+    const now = new Date().toISOString();
+    db.prepare(`INSERT INTO stock_counts (id, warehouse_id, date, notes, count_all, status, adjustment_id, created_by, created_at, updated_by, updated_at)
+                VALUES (?, ?, ?, ?, ?, 'open', NULL, ?, ?, ?, ?)`)
+      .run(made, input.warehouseId, input.date, input.notes?.trim() || null, input.full ? 1 : 0, actor.name, now, actor.name, now);
+    audit(db, actor.name, 'create', 'stock_count', made, { warehouseId: input.warehouseId });
+    return made;
+  });
+  return getCountSession(db, id);
+}
+
+function assertOpen(row: CountRow, action: string): void {
+  if (row.status !== 'open') throw conflict('action_not_allowed', { status: row.status, action });
+}
+
+/**
+ * Saves what was counted since the last save. An item counted for the first time gets its book quantity frozen now;
+ * one counted before keeps the quantity frozen then. `countedMilli: null` takes an item off the count (counted again
+ * later, it is frozen again then).
+ */
+export function saveCountLines(
+  db: Db, id: string,
+  input: { date?: string | undefined; notes?: string | undefined; full?: boolean | undefined; counts: { itemId: string; countedMilli: number | null; unitCost?: number | undefined }[] },
+  actor: Actor
+): CountSession {
+  const row = loadCount(db, id);
+  assertOpen(row, 'edit');
+  if (input.date !== undefined && !isIsoDate(input.date)) throw invalid([{ code: 'date_invalid' }]);
+  const errors: { code: string; row: number }[] = [];
+  const item = db.prepare('SELECT track_stock, active FROM items WHERE id = ?');
+  input.counts.forEach((c, i) => {
+    const it = item.get(c.itemId) as { track_stock: number; active: number } | undefined;
+    if (!it || Number(it.active) !== 1 || Number(it.track_stock) !== 1) errors.push({ code: 'item_invalid', row: i + 1 });
+    if (c.countedMilli !== null && (!Number.isSafeInteger(c.countedMilli) || c.countedMilli < 0)) errors.push({ code: 'line_qty_invalid', row: i + 1 });
+    if (c.unitCost !== undefined && (!Number.isSafeInteger(c.unitCost) || c.unitCost < 0)) errors.push({ code: 'line_price_invalid', row: i + 1 });
+  });
+  if (errors.length) throw invalid(errors);
+  transaction(db, () => {
+    // checked again inside: another PC may have finished or discarded it meanwhile
+    assertOpen(loadCount(db, id), 'edit');
+    const now = new Date().toISOString();
+    const existing = db.prepare('SELECT book_milli FROM stock_count_lines WHERE count_id = ? AND item_id = ?');
+    const insert = db.prepare('INSERT INTO stock_count_lines (count_id, item_id, counted_milli, book_milli, unit_cost, counted_at) VALUES (?, ?, ?, ?, ?, ?)');
+    const update = db.prepare('UPDATE stock_count_lines SET counted_milli = ?, unit_cost = ?, counted_at = ? WHERE count_id = ? AND item_id = ?');
+    const remove = db.prepare('DELETE FROM stock_count_lines WHERE count_id = ? AND item_id = ?');
+    for (const c of input.counts) {
+      if (c.countedMilli === null) {
+        remove.run(id, c.itemId);
+        continue;
+      }
+      if (existing.get(id, c.itemId)) update.run(c.countedMilli, c.unitCost ?? null, now, id, c.itemId);
+      else insert.run(id, c.itemId, c.countedMilli, stockOf(db, c.itemId, row.warehouse_id).qtyMilli, c.unitCost ?? null, now);
+    }
+    db.prepare('UPDATE stock_counts SET date = ?, notes = ?, count_all = ?, updated_by = ?, updated_at = ? WHERE id = ?').run(
+      input.date ?? row.date,
+      input.notes !== undefined ? input.notes.trim() || null : row.notes,
+      input.full !== undefined ? (input.full ? 1 : 0) : Number(row.count_all),
+      actor.name, now, id
+    );
+  });
+  return getCountSession(db, id);
+}
+
+/** Lines of a "count" adjustment: counted − book for every item that differs (a surplus at its given cost, if any). */
+function countDifferences(counted: Map<string, { qty: number; book: number; cost?: number | undefined }>): AdjustmentLineInput[] {
+  const lines: AdjustmentLineInput[] = [];
+  for (const [itemId, c] of counted) {
+    const diff = c.qty - c.book;
+    if (diff !== 0) lines.push({ itemId, qtyMilli: diff, ...(diff > 0 && c.cost !== undefined ? { unitCost: c.cost } : {}) });
+  }
+  return lines;
+}
+
+/**
+ * Finishes a count: the differences against the frozen book quantities become a draft "count" adjustment (posted as
+ * any adjustment is, with its entry). With "count all", an item not counted counts as zero against what the books say
+ * now. Nothing is made when everything agrees.
+ */
+export function finishCountSession(db: Db, id: string, actor: Actor): CountResult & { session: CountSession } {
+  const row = loadCount(db, id);
+  assertOpen(row, 'finish');
+  const session = getCountSession(db, id);
+  if (!session.lines.length && !session.full) throw invalid([{ code: 'lines_required' }]);
+  const counted = new Map<string, { qty: number; book: number; cost?: number | undefined }>();
+  for (const l of session.lines) counted.set(l.itemId, { qty: l.countedMilli, book: l.bookMilli, ...(l.unitCost !== null ? { cost: l.unitCost } : {}) });
+  if (session.full) for (const r of countSheet(db, session.warehouseId)) if (!counted.has(r.itemId)) counted.set(r.itemId, { qty: 0, book: r.stockMilli });
+  const lines = countDifferences(counted);
+  const adjustment = transaction(db, () => {
+    assertOpen(loadCount(db, id), 'finish');
+    const made = lines.length
+      ? createAdjustment(db, { date: session.date, warehouseId: session.warehouseId, reason: 'count', notes: session.notes || undefined, lines }, actor)
+      : null;
+    const now = new Date().toISOString();
+    db.prepare("UPDATE stock_counts SET status = 'done', adjustment_id = ?, updated_by = ?, updated_at = ? WHERE id = ?").run(made?.id ?? null, actor.name, now, id);
+    audit(db, actor.name, 'finish', 'stock_count', id, { adjustmentId: made?.id ?? null, differences: lines.length });
+    return made;
+  });
+  return { adjustment, unknown: [], counted: counted.size, differences: lines.length, session: getCountSession(db, id) };
+}
+
+/** Drops an open count (it is kept, marked discarded). */
+export function discardCountSession(db: Db, id: string, actor: Actor): void {
+  const row = loadCount(db, id);
+  assertOpen(row, 'delete');
+  transaction(db, () => {
+    db.prepare("UPDATE stock_counts SET status = 'discarded', updated_by = ?, updated_at = ? WHERE id = ?").run(actor.name, new Date().toISOString(), id);
+    audit(db, actor.name, 'discard', 'stock_count', id);
+  });
+}
+
 // ——— API ———
 
 function parse<T>(schema: z.ZodType<T>, value: unknown): T {
@@ -588,7 +775,11 @@ export const adjustmentsApi: ApiExtension = {
     'DELETE /api/adjustments/:id': 'stock',
     'POST /api/adjustments/:id/post': 'stock',
     'POST /api/adjustments/:id/cancel': 'stock',
-    'POST /api/adjustments/count': 'stock'
+    'POST /api/adjustments/count': 'stock',
+    'POST /api/adjustments/counts': 'stock',
+    'PUT /api/adjustments/counts/:id': 'stock',
+    'POST /api/adjustments/counts/:id/finish': 'stock',
+    'DELETE /api/adjustments/counts/:id': 'stock'
     // PUT /api/adjustments/settings is not listed: admin only
   },
   routes(db, { actorOf }) {
@@ -629,6 +820,42 @@ export const adjustmentsApi: ApiExtension = {
             })).min(1).max(COUNT_LIMIT)
           }), req.body);
           return stockCount(db, body, actor(req));
+        }
+      },
+      // a count saved as it is typed (count sessions)
+      {
+        method: 'GET', path: '/api/adjustments/counts/open',
+        handler: async (req) => openCountSession(db, parse(z.object({ warehouseId: id }), req.query).warehouseId)
+      },
+      {
+        method: 'POST', path: '/api/adjustments/counts',
+        handler: async (req, reply) => {
+          const body = parse(z.object({ date, warehouseId: id, notes: z.string().max(500).optional(), full: z.boolean().optional() }), req.body);
+          reply.status(201).send(startCountSession(db, body, actor(req)));
+          return undefined;
+        }
+      },
+      { method: 'GET', path: '/api/adjustments/counts/:id', handler: async (req) => getCountSession(db, parse(idParam, req.params).id) },
+      {
+        method: 'PUT', path: '/api/adjustments/counts/:id',
+        handler: async (req) => {
+          const body = parse(z.object({
+            date: date.optional(), notes: z.string().max(500).optional(), full: z.boolean().optional(),
+            counts: z.array(z.object({
+              itemId: id, countedMilli: z.number().int().min(0).max(1e12).nullable(),
+              unitCost: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER).optional()
+            })).max(COUNT_LIMIT)
+          }), req.body);
+          return saveCountLines(db, parse(idParam, req.params).id, body, actor(req));
+        }
+      },
+      { method: 'POST', path: '/api/adjustments/counts/:id/finish', handler: async (req) => finishCountSession(db, parse(idParam, req.params).id, actor(req)) },
+      {
+        method: 'DELETE', path: '/api/adjustments/counts/:id',
+        handler: async (req, reply) => {
+          discardCountSession(db, parse(idParam, req.params).id, actor(req));
+          reply.status(204).send();
+          return undefined;
         }
       },
       { method: 'GET', path: '/api/adjustments/:id', handler: async (req) => getAdjustment(db, parse(idParam, req.params).id) },

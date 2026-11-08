@@ -6,6 +6,7 @@ import { useI18n, type I18n } from '../i18n.ts';
 import { href } from '../router.ts';
 import { copyText, openWhatsApp, whatsappNumber, whatsappUrl } from '../share.ts';
 import { chequeBriefLines, ChequesBriefSection } from '../industry/ChequesAhead.tsx';
+import { printDocument } from '../industry/printing.ts';
 
 /**
  * The Daily Brief: the whole business on one page for a day — sales against the same day last week, the cash in
@@ -124,7 +125,7 @@ export function Brief() {
         <span className="spacer" />
         <button type="button" className="btn primary" onClick={send} disabled={!b}><Icon name="mail" size={16} />{t('br_sendWhatsApp')}</button>
         <button type="button" className="btn" onClick={() => void copy()} disabled={!b}><Icon name="doc" size={16} />{t('br_copy')}</button>
-        <button type="button" className="btn" onClick={() => window.print()} disabled={!b}><Icon name="printer" size={16} />{t('br_print')}</button>
+        <button type="button" className="btn" onClick={() => void printDocument('report')} disabled={!b}><Icon name="printer" size={16} />{t('br_print')}</button>
         <button type="button" className="btn ghost" onClick={() => setPhoneModal(true)} aria-label={t('br_ownerPhone')}><Icon name="sliders" size={16} /></button>
       </div>
       <ErrorBox error={error} />

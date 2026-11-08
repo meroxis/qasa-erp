@@ -8,6 +8,7 @@ import { useI18n } from '../i18n.ts';
 import { go, href } from '../router.ts';
 import { averageCost, qtyText, unitName } from './Items.tsx';
 import { reverseDefaultDate } from '../industry/ReverseModal.tsx';
+import { printDocument } from '../industry/printing.ts';
 
 const kindKey = (kind: StockDocKind) => (kind === 'opening' ? 'opening_stock' : 'transfer');
 
@@ -305,7 +306,7 @@ export function StockDocDetail({ id }: { id: string }) {
           </button>
         )}
         {d.actions.includes('cancel') && <button type="button" className="btn danger" disabled={busy} onClick={() => { setCancelDate(reverseDefaultDate(d.date)); setCancelling(true); }}><Icon name="undo" size={16} />{t('actCancelDoc')}</button>}
-        <button type="button" className="btn" onClick={() => window.print()}><Icon name="printer" size={16} />{t('print')}</button>
+        <button type="button" className="btn" onClick={() => void printDocument('voucher')}><Icon name="printer" size={16} />{t('print')}</button>
       </div>
       <ErrorBox error={cancelling ? null : actionError} />
       {d.status === 'posted' && <div className="alert info no-print">{t('docPostedNote')}</div>}

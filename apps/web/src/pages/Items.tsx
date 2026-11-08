@@ -6,6 +6,7 @@ import { useI18n, type I18n, isKey, type Key } from '../i18n.ts';
 import { go, href } from '../router.ts';
 import { ImagePicker, ItemImage } from '../industry/ItemImage.tsx';
 import { WholesalePriceField } from '../industry/WholesalePriceField.tsx';
+import { printDocument } from '../industry/printing.ts';
 
 export function qtyText(i18n: I18n, milli: number): string {
   return formatQty(milli, i18n.digits === 'eastern' && i18n.lang !== 'en' ? 'eastern' : 'western');
@@ -280,7 +281,7 @@ export function ItemDetail({ id }: { id: string }) {
         <button type="button" className="btn" onClick={() => history.back()}>{t('back')}</button>
         <span className="spacer" />
         <button type="button" className="btn" onClick={() => setEditing(true)}><Icon name="edit" size={16} />{t('actEdit')}</button>
-        <button type="button" className="btn" onClick={() => window.print()}><Icon name="printer" size={16} />{t('print')}</button>
+        <button type="button" className="btn" onClick={() => void printDocument('report')}><Icon name="printer" size={16} />{t('print')}</button>
       </div>
 
       <div className="grid-4">

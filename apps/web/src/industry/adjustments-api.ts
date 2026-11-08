@@ -1,5 +1,6 @@
 import type { Lang, Names, UnitCode } from '@qasa/core';
 import { qs, request } from '../api.ts';
+import type { CountChange, CountSessionView } from './count-session.ts';
 
 /** Stock adjustments (every plan): damaged, lost, expired, used, issued to a job, and stock-count differences. */
 
@@ -83,7 +84,14 @@ export const adjustmentsApi = {
   settings: () => request<{ accounts: AdjustmentAccounts; defaults: AdjustmentAccounts }>('GET', '/api/adjustments/settings'),
   saveSettings: (patch: Partial<AdjustmentAccounts>) => request<{ accounts: AdjustmentAccounts; defaults: AdjustmentAccounts }>('PUT', '/api/adjustments/settings', patch),
   countSheet: (warehouseId: string) => request<CountSheetRow[]>('GET', '/api/adjustments/count-sheet' + qs({ warehouseId })),
-  count: (body: CountInput) => request<CountResult>('POST', '/api/adjustments/count', body)
+  count: (body: CountInput) => request<CountResult>('POST', '/api/adjustments/count', body),
+  /** A count saved as it is typed (count-session.ts): the warehouse's open count, or null. */
+  openCount: (warehouseId: string) => request<CountSessionView | null>('GET', '/api/adjustments/counts/open' + qs({ warehouseId })),
+  startCount: (body: { warehouseId: string; date: string; notes?: string; full?: boolean }) => request<CountSessionView>('POST', '/api/adjustments/counts', body),
+  saveCount: (id: string, body: { date: string; notes: string; full: boolean; counts: CountChange[] }) =>
+    request<CountSessionView>('PUT', `/api/adjustments/counts/${encodeURIComponent(id)}`, { ...body, notes: body.notes.slice(0, 500) }),
+  finishCount: (id: string) => request<CountResult & { session: CountSessionView }>('POST', `/api/adjustments/counts/${encodeURIComponent(id)}/finish`, {}),
+  discardCount: (id: string) => request<void>('DELETE', `/api/adjustments/counts/${encodeURIComponent(id)}`)
 };
 
 /** Reads pasted or imported count lines: "code,qty", "code;qty", "code<TAB>qty" or "code qty"; a header row is skipped. */

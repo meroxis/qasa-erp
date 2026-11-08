@@ -2,8 +2,9 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   checkPrintDesign, DEFAULT_PRINT_DESIGN, DEFAULT_RECEIPT_DESIGN, designFor, LANGS, LOGO_POSITIONS, PRINT_DOCS, PRINT_FIELDS,
   PRINT_LABELS, PRINT_LAYOUTS, PRINT_LIMITS, PRINT_PAPERS, readPrintDesignFile,
-  type DesignProblem, type Lang, type PrintDesign, type PrintDoc, type PrintDesignFile, type PrintLayout
+  type DesignProblem, type Lang, type PrintDesign, type PrintDoc, type PrintDesignFile, type PrintKind, type PrintLayout
 } from '@qasa/core';
+import { printDocument } from '../industry/printing.ts';
 import { ErrorBox, Icon, useData, usePageNav, useToast } from '../components.tsx';
 import { isKey, useI18n, type Key } from '../i18n.ts';
 import { PrintDocument } from '../industry/PrintDocument.tsx';
@@ -33,6 +34,11 @@ export const DESIGNER_FIELDS = PRINT_FIELDS.filter((f) => f !== 'discount');
 export function problemText(t: (k: Key) => string, p: DesignProblem): string {
   const key = `err_${p.code}`;
   return (isKey(key) ? t(key) : p.code) + (p.path ? ` (${p.path})` : '');
+}
+
+/** The printer a design's kind of paper prints on (Settings → Printers). */
+export function printKindOf(doc: PrintDoc): PrintKind {
+  return doc === 'pos' ? 'receipt' : doc === 'quote' ? 'quote' : doc === 'voucher' ? 'voucher' : 'invoice';
 }
 
 /** Choosing the thermal receipt puts it on 80 mm paper, and leaving it puts the paper back on A4. */
@@ -145,8 +151,17 @@ export function PrintDesignPage() {
   const model = useMemo(() => sampleModel(doc), [doc]);
   const zoom = shown.paper === '80mm' ? 1 : shown.paper === 'A5' ? 0.8 : 0.62;
 
+  const company = settings?.companyName ?? { ar: 'شركتي', en: 'My company', ku: 'کۆمپانیاکەم' };
+
   return (
-    <div className="stack pd-page">
+    <div className="stack pd-page no-print-content">
+      {/* "Print the sample": the paper as the design draws it, alone, on the printer chosen for its kind (Settings → Printers) */}
+      <div className="print-only">
+        <PrintDocument
+          model={model} design={shown} profile={setup.profile} company={company}
+          lang={lang} branding={!plan?.features.includes('noBranding')} defaultRateX100={settings?.defaultRateX100}
+        />
+      </div>
       <p className="muted" style={{ margin: 0 }}>{t('pd_help')}</p>
       <div className="tabs" role="tablist">
         {PRINT_DOCS.map((d) => (
@@ -267,6 +282,7 @@ export function PrintDesignPage() {
           <div className="row">
             <strong>{t('pp_preview')}</strong>
             <span className="spacer" />
+            <button type="button" className="btn small" onClick={() => void printDocument(printKindOf(doc))}><Icon name="printer" size={14} />{t('prn_printSample')}</button>
             <label className="row small" style={{ gap: 6 }}>{t('pd_previewLang')}
               <select className="input" value={lang} onChange={(e) => setLang(e.target.value as Lang)}>
                 {LANGS.map((l) => <option key={l} value={l}>{LANG_NAMES[l]}</option>)}
@@ -276,7 +292,7 @@ export function PrintDesignPage() {
           <div className="pd-preview-scroll">
             <div style={{ zoom }}>
               <PrintDocument
-                model={model} design={shown} profile={setup.profile} company={settings?.companyName ?? { ar: 'شركتي', en: 'My company', ku: 'کۆمپانیاکەم' }}
+                model={model} design={shown} profile={setup.profile} company={company}
                 lang={lang} branding={!plan?.features.includes('noBranding')} defaultRateX100={settings?.defaultRateX100} preview
               />
             </div>

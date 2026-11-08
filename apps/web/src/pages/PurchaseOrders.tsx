@@ -9,6 +9,7 @@ import {
 import { go, href } from '../router.ts';
 import { useRatePrefill } from '../industry/fx-prefill.ts';
 import { convertLines } from './currency-switch.ts';
+import { printDocument } from '../industry/printing.ts';
 
 /**
  * أوامر الشراء — purchase orders. Routes: `purchase-orders` (list + reorder suggestions), `new-purchase-order`,
@@ -358,7 +359,7 @@ export function PurchaseOrderDetail({ id }: { id: string }) {
         {can('send') && <button type="button" className="btn" disabled={busy} onClick={() => void move('send')}><Icon name="check" size={16} />{t('po_markSent')}</button>}
         {can('reopen') && <button type="button" className="btn" disabled={busy} onClick={() => void move('reopen')}><Icon name="undo" size={16} />{t('po_reopen')}</button>}
         {can('edit') && <a className="btn" href={href(`edit-purchase-order/${id}`)}><Icon name="edit" size={16} />{t('po_edit')}</a>}
-        <button type="button" className="btn" onClick={() => window.print()}><Icon name="printer" size={16} />{t('print')}</button>
+        <button type="button" className="btn" onClick={() => void printDocument('quote')}><Icon name="printer" size={16} />{t('print')}</button>
         {can('cancel') && <button type="button" className="btn danger" disabled={busy} onClick={() => setModal('cancel')}><Icon name="x" size={16} />{t('po_cancel')}</button>}
       </div>
       <ErrorBox error={actError} />

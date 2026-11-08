@@ -13,3 +13,4 @@ export * from './version.ts';
 export * from './final-accounts.ts';
 export * from './print-design.ts';
 export * from './guide.ts';
+export * from './printers.ts';
