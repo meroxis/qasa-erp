@@ -41,7 +41,8 @@ jobs:
         run: |
           npm ci --ignore-scripts
           node node_modules/esbuild/install.js
-          node node_modules/electron-winstaller/script/select-7z-arch.js
+          # (its script copies vendor/7z-<arch>.exe relative to the working folder, so it runs inside the package)
+          (cd node_modules/electron-winstaller && node script/select-7z-arch.js)
 
       # Official builds include the Pro module from the private repository (read-only deploy key), at the tag of the same
       # name as this app tag (push tag vX.Y.Z on qasa-erp-pro first). Never its default branch: that would build

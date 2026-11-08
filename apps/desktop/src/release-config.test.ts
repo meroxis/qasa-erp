@@ -50,7 +50,8 @@ describe('the release workflow', () => {
     for (const line of installs) expect(line).toContain('--ignore-scripts');
     expect(workflow).toContain('node node_modules/esbuild/install.js');
     expect(workflow).toContain('node node_modules/electron/install.js');
-    expect(workflow).toContain('node node_modules/electron-winstaller/script/select-7z-arch.js');
+    // inside its package: the script copies vendor/7z-<arch>.exe relative to the working folder
+    expect(workflow).toContain('(cd node_modules/electron-winstaller && node script/select-7z-arch.js)');
   });
 
   it('writes the third-party notices again after the Rust module and before the installer', () => {
