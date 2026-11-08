@@ -1,12 +1,13 @@
-import { roundHalfUp, toEasternDigits, toWesternDigits, type DigitStyle } from './money.ts';
+import { normalizeNumber, roundHalfUp, toEasternDigits, type DigitStyle } from './money.ts';
 import type { Names } from './lang.ts';
 
 /** Quantities are whole numbers of thousandths, so 2.5 kg is stored as 2500. */
 export const QTY_SCALE = 1000;
 
 export function parseQty(text: string): number | null {
-  const s = toWesternDigits(text).replace(/[,٬\s]/g, '').replace('٫', '.');
-  if (!/^\d+(\.\d{1,3})?$/.test(s)) return null;
+  // commas only as thousands separators: "2,5" is refused rather than read as 25
+  const s = normalizeNumber(text);
+  if (s === null || !/^\d+(\.\d{1,3})?$/.test(s)) return null;
   const [whole = '0', fraction = ''] = s.split('.');
   const milli = Number(whole) * QTY_SCALE + Number(fraction.padEnd(3, '0') || '0');
   return Number.isSafeInteger(milli) ? milli : null;

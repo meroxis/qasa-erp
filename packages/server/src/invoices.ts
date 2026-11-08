@@ -317,6 +317,10 @@ export function deleteInvoice(db: Db, id: string, user: string): void {
   const row = loadRow(db, id);
   requireAction(db, row, 'delete');
   transaction(db, () => {
+    // a draft made from a quotation: the quotation goes back to accepted, ready to be invoiced again
+    db.prepare("UPDATE quotes SET invoice_id = NULL, status = 'accepted' WHERE invoice_id = ?").run(id);
+    // a draft receipt of a purchase order: the order is free to be received again
+    db.prepare('DELETE FROM purchase_order_receipts WHERE invoice_id = ?').run(id);
     db.prepare('DELETE FROM invoices WHERE id = ?').run(id);
     audit(db, user, 'delete', 'invoice', id, { kind: row.kind });
   });
@@ -342,8 +346,11 @@ export function fromBase(amountIqd: number, currency: CurrencyCode, rateX100: nu
  * Posts a draft invoice: numbers it (INV / PI), writes its journal entry and moves the stock, all in one transaction.
  * Sale:     Dr safe or customer / Cr sales (42);  Dr cost of sales (35) / Cr warehouse stock at average cost.
  * Purchase: Dr warehouse stock / Cr supplier or safe; the discount lowers the cost of each line.
+ * `settledNow` (internal callers only, never from a request): the part of a credit sale's total, in the invoice's
+ * currency, that the caller collects in the same transaction (a cash sale whose deposit put it on credit). Only that
+ * part is left out of the customer's credit limit check; nothing else changes.
  */
-export function postInvoice(db: Db, id: string, user: string): InvoiceView {
+export function postInvoice(db: Db, id: string, user: string, opts: { settledNow?: number } = {}): InvoiceView {
   const view = getInvoice(db, id);
   requireAction(db, loadRow(db, id), 'post');
   const input = storedInput(view);
@@ -361,7 +368,9 @@ export function postInvoice(db: Db, id: string, user: string): InvoiceView {
   const lines: LineInput[] = [];
 
   if (view.kind === 'sale') {
-    if (party && view.payment === 'credit' && party.creditLimit !== null && party.balance + baseTotal > party.creditLimit) {
+    const settled = Number.isSafeInteger(opts.settledNow) ? Math.min(Math.max(opts.settledNow!, 0), total) : 0;
+    const onCredit = baseTotal - (settled ? toBase(settled, view.currency, view.rateX100) : 0);
+    if (party && view.payment === 'credit' && party.creditLimit !== null && party.balance + onCredit > party.creditLimit) {
       throw conflict('credit_limit_exceeded', { balance: party.balance, limit: party.creditLimit, total: baseTotal });
     }
     const stock = new Map<string, { qtyMilli: number; value: number }>();
@@ -427,7 +436,8 @@ export function cancelInvoice(db: Db, id: string, user: string, date?: string): 
   const view = getInvoice(db, id);
   if (view.installmentContract) throw conflict('invoice_has_contract', { contract: view.installmentContract.number });
   requireAction(db, loadRow(db, id), 'cancel');
-  const cancelDate = date ?? todayIso();
+  // (no date: today, or the document's own date when that is later: a reversal is never dated before what it reverses)
+  const cancelDate = date ?? (todayIso() < view.date ? view.date : todayIso());
   if (isPeriodLocked(db, cancelDate)) throw invalid([{ code: 'period_locked', period: cancelDate.slice(0, 7) }]);
   // cancelling a sale or a purchase return puts the goods back; a purchase or a sales return takes them out again
   const back = view.kind === 'sale' || view.kind === 'purchase_return';
@@ -454,6 +464,12 @@ export function cancelInvoice(db: Db, id: string, user: string, date?: string): 
     const now = new Date().toISOString();
     db.prepare(`UPDATE invoices SET status = 'cancelled', cancel_entry_id = ?, cancelled_by = ?, cancelled_at = ?, updated_at = ? WHERE id = ?`)
       .run(reversalId, user, now, now, id);
+    // phones this sale took are back in stock, with no customer and no warranty. A job's bill (solar) keeps its
+    // equipment linked: the job shows it waiting for the next bill, and reads it as unsold meanwhile
+    if (view.kind === 'sale' && !db.prepare('SELECT 1 FROM jobs WHERE invoice_id = ?').get(id)) {
+      db.prepare(`UPDATE serials SET status = 'in_stock', sale_invoice_id = NULL, party_id = NULL, sold_at = NULL, warranty_until = NULL, updated_at = ?
+                  WHERE sale_invoice_id = ? AND status = 'sold'`).run(now, id);
+    }
     audit(db, user, 'cancel', 'invoice', id, { reversalId });
   });
   return getInvoice(db, id);

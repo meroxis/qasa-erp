@@ -11,3 +11,5 @@ export * from './invoices.ts';
 export * from './plans.ts';
 export * from './version.ts';
 export * from './final-accounts.ts';
+export * from './print-design.ts';
+export * from './guide.ts';

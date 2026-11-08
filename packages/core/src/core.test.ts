@@ -48,6 +48,11 @@ describe('money', () => {
     expect(parseAmount('12.555', 'USD')).toBeNull();
     expect(parseAmount('1.5', 'IQD')).toBeNull();
     expect(parseAmount('abc', 'IQD')).toBeNull();
+    // a comma is a thousands separator only: the decimal comma of some Excel files is refused, not read as ten times more
+    expect(parseAmount('1,5', 'USD')).toBeNull();
+    expect(parseAmount('12,50', 'USD')).toBeNull();
+    expect(parseAmount('1,250.75', 'USD')).toBe(1_250_75);
+    expect(parseAmount('1 250 000', 'IQD')).toBe(1_250_000);
   });
 
   it('formats amounts', () => {

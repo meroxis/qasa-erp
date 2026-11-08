@@ -34,8 +34,8 @@ function makeKey(payload: object, signer: KeyObject = privateKey): string {
   return `${body}.${sign(null, Buffer.from(body), signer).toString('base64url')}`;
 }
 
-const pro = (extra: object = {}) => ({ v: 1, id: 'QL-2026-0001', plan: 'pro', to: 'Sanos Company', issued: '2026-09-27', expires: '2027-09-26', ...extra });
-const headers = { 'x-qasa-user': encodeURIComponent('Mer Las') };
+const pro = (extra: object = {}) => ({ v: 1, id: 'QL-2026-0001', plan: 'pro', to: 'Bazaar Trading Company', issued: '2026-09-27', expires: '2027-09-26', ...extra });
+const headers = { 'x-qasa-user': encodeURIComponent('Mer') };
 const post = (url: string, body: unknown = {}) => app.inject({ method: 'POST', url, payload: body as object, headers });
 const addWarehouse = (code: string) => post('/api/warehouses', { code, name: { ar: code, en: code, ku: code } });
 
@@ -50,7 +50,7 @@ describe('plans', () => {
 
   it('gives a 30-day Pro trial once, then falls back to Free without touching the data', async () => {
     const started = (await post('/api/plan/trial')).json();
-    expect(started).toMatchObject({ plan: 'pro', source: 'trial', trialActive: true, trialAvailable: false, trialEnds: addDays(todayIso(), 29) });
+    expect(started).toMatchObject({ plan: 'business', source: 'trial', trialActive: true, trialAvailable: false, trialEnds: addDays(todayIso(), 29) });
     expect(started.features).toContain('noBranding');
     expect((await addWarehouse('ERBIL')).statusCode).toBe(201);
     expect((await post('/api/plan/trial')).json().error).toBe('trial_unavailable');
@@ -66,7 +66,7 @@ describe('plans', () => {
     expect(res.statusCode).toBe(200);
     expect(res.json()).toMatchObject({
       plan: 'pro', source: 'license', trialAvailable: false,
-      license: { id: 'QL-2026-0001', licensee: 'Sanos Company', state: 'active', users: 12 },
+      license: { id: 'QL-2026-0001', licensee: 'Bazaar Trading Company', state: 'active', users: 12 },
       limits: { users: 12, companies: 3, warehouses: null }
     });
     const audit = (await app.inject('/api/audit')).json();
@@ -76,7 +76,7 @@ describe('plans', () => {
   it('accepts a key broken over several lines by a chat app', () => {
     const key = makeKey(pro());
     const wrapped = key.match(/.{1,40}/g)!.join('\n  ');
-    expect(readLicenseKey(wrapped)?.licensee).toBe('Sanos Company');
+    expect(readLicenseKey(wrapped)?.licensee).toBe('Bazaar Trading Company');
   });
 
   it('accepts keys from each trusted signer (the offline tool and the customer portal)', () => {

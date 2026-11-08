@@ -1,8 +1,8 @@
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { FastifyInstance } from 'fastify';
 import { openDatabase, type Db } from './db.ts';
 import { buildApp } from './app.ts';
-import { resetLoginThrottle } from './auth.ts';
+import { login, resetLoginThrottle } from './auth.ts';
 
 let db: Db;
 let app: FastifyInstance;
@@ -43,7 +43,7 @@ async function officeWithSignIn(users: { username: string; roles: string[] }[] =
   await req('POST', '/api/plan/trial');
   await req('POST', `/api/users/${ownerId}/password`, { password: 'owner-pass-1' });
   for (const u of users) {
-    const res = await req('POST', '/api/users', { username: u.username, name: u.username === 'mer' ? 'Mer Las' : 'Raz', roles: u.roles, password: `${u.username}-pass-1` });
+    const res = await req('POST', '/api/users', { username: u.username, name: u.username === 'mer' ? 'Mer' : 'Raz', roles: u.roles, password: `${u.username}-pass-1` });
     expect(res.statusCode, res.body).toBe(201);
   }
   expect((await req('PUT', '/api/auth/signin', { on: true })).statusCode).toBe(200);
@@ -51,10 +51,10 @@ async function officeWithSignIn(users: { username: string; roles: string[] }[] =
 
 describe('without sign-in', () => {
   it('opens as the owner, with the name typed on this PC on vouchers', async () => {
-    const me = (await req('GET', '/api/auth/me', undefined, { 'x-qasa-user': encodeURIComponent('Mer Las') })).json();
-    expect(me).toMatchObject({ signInRequired: false, user: { id: ownerId, name: 'Mer Las', roles: ['admin'] } });
-    const entry = (await req('POST', '/api/vouchers', voucher, { 'x-qasa-user': encodeURIComponent('Mer Las') })).json();
-    expect(entry).toMatchObject({ preparedBy: 'Mer Las', actions: ['edit', 'delete', 'check'] });
+    const me = (await req('GET', '/api/auth/me', undefined, { 'x-qasa-user': encodeURIComponent('Mer') })).json();
+    expect(me).toMatchObject({ signInRequired: false, user: { id: ownerId, name: 'Mer', roles: ['admin'] } });
+    const entry = (await req('POST', '/api/vouchers', voucher, { 'x-qasa-user': encodeURIComponent('Mer') })).json();
+    expect(entry).toMatchObject({ preparedBy: 'Mer', actions: ['edit', 'delete', 'check'] });
   });
 
   it('allows one user on Free; more with Pro', async () => {
@@ -103,6 +103,50 @@ describe('with sign-in', () => {
     expect(locked.json()).toMatchObject({ error: 'too_many_attempts', details: { retryAfterSeconds: 60 } });
   });
 
+  it('keeps one lock per user when the database compares names without accents (MySQL)', async () => {
+    await officeWithSignIn();
+    // a MySQL server's _ai_ci collation finds 'admin' for 'ádmin'; emulate that lookup on SQLite
+    const fold = (s: string) => s.normalize('NFD').replace(/\p{M}/gu, '');
+    const mysqlLike: Db = {
+      exec: (sql) => db.exec(sql),
+      close: () => undefined,
+      prepare: (sql) => {
+        const st = db.prepare(sql);
+        if (!sql.startsWith('SELECT * FROM users WHERE username')) return st;
+        return { ...st, run: st.run.bind(st), all: st.all.bind(st), get: (name) => st.get(typeof name === 'string' ? fold(name) : name) };
+      }
+    };
+    for (let i = 0; i < 5; i++) await expect(login(mysqlLike, 'admin', 'wrong-password')).rejects.toMatchObject({ code: 'invalid_login' });
+    await expect(login(mysqlLike, 'admin', 'owner-pass-1')).rejects.toMatchObject({ code: 'too_many_attempts' });
+    // another spelling of the same name gets no fresh tries, even with the right password
+    for (const other of ['ádmin', 'àdmin', 'admín']) await expect(login(mysqlLike, other, 'owner-pass-1')).rejects.toMatchObject({ code: 'invalid_login' });
+    // a name with a stray space or other case still meets the same lock
+    await expect(login(mysqlLike, ' ADMIN ', 'owner-pass-1')).rejects.toMatchObject({ code: 'too_many_attempts' });
+  });
+
+  it('counts names no user can have like any other: five tries, then a wait, and no audit rows past the fifth', async () => {
+    await officeWithSignIn();
+    const failedRows = () => (db.prepare("SELECT COUNT(*) AS n FROM audit_log WHERE action = 'login_failed'").get() as { n: number }).n;
+    const before = failedRows();
+    const bad = 'no such name! '.repeat(8); // fails the username pattern; 112 characters
+    vi.useFakeTimers({ toFake: ['Date'] });
+    try {
+      for (let i = 0; i < 5; i++) await expect(login(db, bad, 'x')).rejects.toMatchObject({ code: 'invalid_login' });
+      // other case, or anything after the first 64 characters, meets the same lock
+      await expect(login(db, bad.toUpperCase() + 'more', 'x')).rejects.toMatchObject({ code: 'too_many_attempts' });
+      expect(failedRows() - before).toBe(5);
+      // after the wait: one more try, refused as before but no longer written to the audit log, then a longer wait
+      vi.setSystemTime(Date.now() + 61_000);
+      await expect(login(db, bad, 'x')).rejects.toMatchObject({ code: 'invalid_login' });
+      await expect(login(db, bad, 'x')).rejects.toMatchObject({ code: 'too_many_attempts', details: { retryAfterSeconds: 120 } });
+      expect(failedRows() - before).toBe(5);
+    } finally {
+      vi.useRealTimers();
+    }
+    // the real users are not held up by it
+    await expect(login(db, 'admin', 'owner-pass-1')).resolves.toMatchObject({ actor: { username: 'admin' } });
+  });
+
   it('lets each role do its own part of the approval chain', async () => {
     await officeWithSignIn([{ username: 'mer', roles: ['preparer', 'sales'] }, { username: 'raz', roles: ['checker', 'approver'] }]);
     const mer = await signIn('mer', 'mer-pass-1');
@@ -110,7 +154,7 @@ describe('with sign-in', () => {
 
     const created = await req('POST', '/api/vouchers', voucher, mer);
     expect(created.statusCode).toBe(201);
-    expect(created.json()).toMatchObject({ preparedBy: 'Mer Las', actions: ['edit', 'delete'] }); // no "check" for a preparer
+    expect(created.json()).toMatchObject({ preparedBy: 'Mer', actions: ['edit', 'delete'] }); // no "check" for a preparer
     const id = created.json().id;
     expect((await req('POST', `/api/entries/${id}/check`, {}, mer)).json()).toMatchObject({ error: 'forbidden', details: { need: 'entries.check' } });
     expect((await req('GET', `/api/entries/${id}`, undefined, raz)).json().actions).toEqual(['check']);
@@ -175,7 +219,7 @@ describe('with sign-in', () => {
     expect((await req('POST', '/api/auth/password', { current: 'mer-pass-1', password: 'mer-pass-2' }, mer)).statusCode).toBe(200);
     const mer2 = await signIn('mer', 'mer-pass-2');
 
-    expect((await req('PUT', `/api/users/${merId}`, { username: 'mer', name: 'Mer Las', roles: ['preparer'], active: false }, owner)).json().active).toBe(false);
+    expect((await req('PUT', `/api/users/${merId}`, { username: 'mer', name: 'Mer', roles: ['preparer'], active: false }, owner)).json().active).toBe(false);
     expect((await req('GET', '/api/accounts', undefined, mer2)).statusCode).toBe(401);
     expect((await req('POST', '/api/auth/login', { username: 'mer', password: 'mer-pass-2' })).statusCode).toBe(401);
 

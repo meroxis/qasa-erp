@@ -205,7 +205,15 @@ export function deleteItem(db: Db, id: string, user: string): void {
   if (db.prepare('SELECT 1 FROM invoice_lines WHERE item_id = ? UNION SELECT 1 FROM stock_moves WHERE item_id = ? LIMIT 1').get(id, id)) {
     throw conflict('item_has_moves');
   }
+  // documents that are not in the books yet still name the item: deleting it would break them
+  const usedBy = ['quote_lines', 'purchase_order_lines', 'stock_doc_lines', 'stock_adjustment_lines', 'serials', 're_projects']
+    .map((table) => `SELECT 1 FROM ${table} WHERE item_id = ?`).join(' UNION ALL ');
+  if (db.prepare(`${usedBy} LIMIT 1`).get(id, id, id, id, id, id)) throw conflict('item_in_use');
   transaction(db, () => {
+    // what belongs to the item alone goes with it: its picture, its price-list prices and its car-part details
+    for (const table of ['item_images', 'item_prices', 'part_fitments', 'part_numbers', 'part_details']) {
+      db.prepare(`DELETE FROM ${table} WHERE item_id = ?`).run(id);
+    }
     db.prepare('DELETE FROM items WHERE id = ?').run(id);
     audit(db, user, 'delete', 'item', id);
   });

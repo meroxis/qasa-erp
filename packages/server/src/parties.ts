@@ -65,10 +65,26 @@ function toView(row: PartyRow, sums: { debit: number; credit: number } | undefin
   };
 }
 
+/**
+ * Every record that keeps a customer or supplier (besides its own price list, which goes with it): such a party can
+ * be made inactive but not deleted. A new table that refers to parties belongs in this list.
+ */
+const PARTY_USERS: readonly [table: string, column: string][] = [
+  ['entry_lines', 'party_id'], ['invoices', 'party_id'], ['quotes', 'party_id'], ['deals', 'party_id'], ['jobs', 'party_id'],
+  ['purchase_orders', 'party_id'], ['cheques', 'party_id'], ['installment_contracts', 'party_id'], ['gen_subscribers', 'party_id'],
+  ['re_units', 'party_id'], ['re_deposits', 'party_id'], ['repair_orders', 'party_id'], ['serials', 'party_id'],
+  ['serials', 'from_party_id'], ['maint_plans', 'party_id'], ['maint_visits', 'party_id']
+];
+
 function usedParties(db: Db): Set<string> {
-  const rows = db.prepare(`SELECT DISTINCT party_id AS id FROM entry_lines WHERE party_id IS NOT NULL
-                           UNION SELECT DISTINCT party_id FROM invoices WHERE party_id IS NOT NULL`).all() as { id: string }[];
+  const rows = db.prepare(PARTY_USERS.map(([t, c]) => `SELECT DISTINCT ${c} AS id FROM ${t} WHERE ${c} IS NOT NULL`).join(' UNION ')).all() as { id: string }[];
   return new Set(rows.map((r) => r.id));
+}
+
+/** A delete refused by the database because something still refers to the row (SQLite or MySQL/MariaDB). */
+export function isForeignKeyFailure(error: unknown): boolean {
+  const e = error as { message?: unknown; code?: unknown; errno?: unknown } | null;
+  return !!e && (String(e.message ?? '').includes('FOREIGN KEY constraint failed') || e.code === 'ER_ROW_IS_REFERENCED_2' || e.errno === 1451);
 }
 
 export function listParties(db: Db, filters: { type?: PartyType | undefined; q?: string | undefined; active?: boolean | undefined } = {}): PartyView[] {
@@ -140,10 +156,18 @@ export function updateParty(db: Db, id: string, input: PartyInput, user: string)
 export function deleteParty(db: Db, id: string, user: string): void {
   loadRow(db, id);
   if (usedParties(db).has(id)) throw conflict('party_has_entries');
-  transaction(db, () => {
-    db.prepare('DELETE FROM parties WHERE id = ?').run(id);
-    audit(db, user, 'delete', 'party', id);
-  });
+  try {
+    transaction(db, () => {
+      // the party's own price list goes with it
+      db.prepare('DELETE FROM party_price_lists WHERE party_id = ?').run(id);
+      db.prepare('DELETE FROM parties WHERE id = ?').run(id);
+      audit(db, user, 'delete', 'party', id);
+    });
+  } catch (error) {
+    // something not in PARTY_USERS still refers to it: say so instead of a server error
+    if (isForeignKeyFailure(error)) throw conflict('party_has_entries');
+    throw error;
+  }
 }
 
 export interface PartyStatementLine {

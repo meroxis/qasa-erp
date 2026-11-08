@@ -90,7 +90,11 @@ describe('the server SQL means the same on SQLite and on a MariaDB/MySQL server'
     ['two-argument MAX/MIN (use CASE)', /\b(MAX|MIN)\s*\([^()]*,[^()]*\)/i],
     // db-copy.ts switches SQLite's foreign keys in its SQLite branch only
     ['PRAGMA', /\bPRAGMA\b/i, ['db-copy.ts']],
-    ['RETURNING', /\bRETURNING\b/i]
+    ['RETURNING', /\bRETURNING\b/i],
+    // the server has no sqlite_master: every table is in both schemas, so ask for it directly (db-copy.ts reads SQLite only)
+    ['sqlite_master (SQLite only)', /\bsqlite_master\b/i, ['db-copy.ts']],
+    // words MariaDB/MySQL reserves fail as bare aliases (COUNT(*) AS lines): write line_count, row_count …
+    ['a reserved word as a bare alias', /\bAS\s+(lines|rows|row|rank|range|order|group|groups|key|keys|interval|read|reads|condition|usage|window|over|lead|lag|function|release|return|leave|loop|repeat|signal|starting|terminated|change|check|column|default|index|left|right|limit|match|option|references|require|schema|separator|sql|table|to|trigger|union|unique|update|use|values|with)\b/i]
   ];
   for (const [label, pattern, allowed = []] of rules) {
     it(`uses no ${label}`, () => {

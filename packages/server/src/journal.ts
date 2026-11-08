@@ -185,20 +185,55 @@ function loadRow(db: Db, id: string): EntryRow {
   return row;
 }
 
-/** What may be done with an entry. Documents are corrected from the document; a closing entry only by reopening the year. */
-function actionsOf(row: EntryRow): EntryAction[] {
-  return allowedActions(row.status, { reversed: !!row.reversed_by_id, isReversal: row.type === 'reversal', fromInvoice: isInvoiceType(row.type) || row.type === 'closing' });
+/**
+ * The feature an entry belongs to, if any. Such an entry is edited, deleted and reversed only from that feature's page,
+ * which keeps its own records (stock, cheques, the asset register, payroll and generator months, deposits) in step with
+ * the books. Receipts and payments that features post at once (installments, collections, deposits taken, payroll
+ * payments, advances) are not listed: those features count a reversed voucher as taken back.
+ */
+const ENTRY_OWNERS: readonly { owner: string; sql: string; marks: number }[] = [
+  { owner: 'adjustment', sql: 'SELECT 1 FROM stock_adjustments WHERE entry_id = ?', marks: 1 },
+  { owner: 'cheque', sql: 'SELECT 1 FROM cheques WHERE entry_id = ? OR clear_entry_id = ? OR bounce_entry_id = ?', marks: 3 },
+  { owner: 'depreciation', sql: 'SELECT 1 FROM depreciation_runs WHERE entry_id = ?', marks: 1 },
+  { owner: 'disposal', sql: 'SELECT 1 FROM fixed_assets WHERE disposal_entry_id = ?', marks: 1 },
+  { owner: 'payroll', sql: 'SELECT 1 FROM payroll_runs WHERE entry_id = ?', marks: 1 },
+  { owner: 'generator_run', sql: 'SELECT 1 FROM gen_runs WHERE entry_id = ?', marks: 1 },
+  { owner: 'deposit', sql: 'SELECT 1 FROM re_deposits WHERE close_entry_id = ?', marks: 1 }
+];
+
+export function entryOwner(db: Db, id: string): string | null {
+  for (const o of ENTRY_OWNERS) {
+    if (db.prepare(o.sql).get(...Array.from({ length: o.marks }, () => id))) return o.owner;
+  }
+  return null;
 }
 
-function requireAction(row: EntryRow, action: EntryAction): void {
-  if (!actionsOf(row).includes(action)) throw conflict('action_not_allowed', { status: row.status, action });
+/** Actions that change an entry's lines or take it out of the books: for an owned entry, only its feature does them. */
+const OWNER_ONLY: readonly EntryAction[] = ['edit', 'delete', 'reverse'];
+
+/**
+ * What may be done with an entry. Documents are corrected from the document; a closing entry only by reopening the year;
+ * an entry a feature owns is checked, returned and approved here but changed only from that feature.
+ */
+function actionsOf(db: Db, row: EntryRow): EntryAction[] {
+  const actions = allowedActions(row.status, { reversed: !!row.reversed_by_id, isReversal: row.type === 'reversal', fromInvoice: isInvoiceType(row.type) || row.type === 'closing' });
+  if (!actions.some((a) => OWNER_ONLY.includes(a)) || !entryOwner(db, row.id)) return actions;
+  return actions.filter((a) => !OWNER_ONLY.includes(a));
+}
+
+function requireAction(db: Db, row: EntryRow, action: EntryAction): void {
+  if (OWNER_ONLY.includes(action)) {
+    const owner = entryOwner(db, row.id);
+    if (owner) throw conflict(`entry_belongs_to_${owner}`);
+  }
+  if (!actionsOf(db, row).includes(action)) throw conflict('action_not_allowed', { status: row.status, action });
 }
 
 /** Replaces a draft journal entry. */
 export function updateJournalEntry(db: Db, id: string, input: Omit<EntryInput, 'type'>, user: string, actorId?: string | null): EntryView {
   const row = loadRow(db, id);
   if (row.type !== 'journal') throw conflict('wrong_entry_type');
-  requireAction(row, 'edit');
+  requireAction(db, row, 'edit');
   const entry: EntryInput = { ...input, type: 'journal' };
   assertValid(db, entry);
   transaction(db, () => {
@@ -212,7 +247,7 @@ export function updateJournalEntry(db: Db, id: string, input: Omit<EntryInput, '
 export function updateVoucher(db: Db, id: string, v: VoucherInput, user: string, actorId?: string | null): EntryView {
   const row = loadRow(db, id);
   if (row.type !== v.kind) throw conflict('wrong_entry_type');
-  requireAction(row, 'edit');
+  requireAction(db, row, 'edit');
   const entry = assertValidVoucher(db, v);
   transaction(db, () => {
     replaceDraft(db, id, entry, v.cashAccountCode, user, actorId);
@@ -233,7 +268,11 @@ function replaceDraft(db: Db, id: string, entry: EntryInput, cashAccountCode: st
 
 export function deleteEntry(db: Db, id: string, user: string): void {
   const row = loadRow(db, id);
-  requireAction(row, 'delete');
+  // an entry a feature owns (a payroll or generator month, a depreciation month, a disposal, a deposit's refund, a
+  // cheque's step, a stock adjustment) is taken back from that feature's page, which unlinks it before deleting it
+  requireAction(db, row, 'delete');
+  // a draft matched to a bank statement line is unmatched on the reconciliation page first
+  if (db.prepare('SELECT 1 FROM bank_statement_lines WHERE entry_id = ?').get(id)) throw conflict('entry_matched_to_statement');
   transaction(db, () => {
     db.prepare('DELETE FROM entries WHERE id = ?').run(id);
     audit(db, user, 'delete', 'entry', id, { type: row.type });
@@ -251,7 +290,7 @@ function revalidateStored(db: Db, id: string): void {
 /** المدقق: draft → checked */
 export function checkEntry(db: Db, id: string, user: string, actorId?: string | null): EntryView {
   const row = loadRow(db, id);
-  requireAction(row, 'check');
+  requireAction(db, row, 'check');
   assertNotPreparer(db, row, actorId);
   revalidateStored(db, id);
   transaction(db, () => {
@@ -265,7 +304,7 @@ export function checkEntry(db: Db, id: string, user: string, actorId?: string | 
 /** Sends a checked entry back to the preparer. */
 export function returnEntry(db: Db, id: string, user: string): EntryView {
   const row = loadRow(db, id);
-  requireAction(row, 'return');
+  requireAction(db, row, 'return');
   transaction(db, () => {
     db.prepare("UPDATE entries SET status = 'draft', checked_by = NULL, checked_by_id = NULL, checked_at = NULL, updated_at = ? WHERE id = ?").run(new Date().toISOString(), id);
     audit(db, user, 'return', 'entry', id);
@@ -281,7 +320,7 @@ export function nextNumber(db: Db, type: EntryType, date: string): string {
 /** المصادق: checked → approved (posted). The voucher number is assigned now, so posted numbers have no gaps. */
 export function approveEntry(db: Db, id: string, user: string, actorId?: string | null): EntryView {
   const row = loadRow(db, id);
-  requireAction(row, 'approve');
+  requireAction(db, row, 'approve');
   assertNotPreparer(db, row, actorId);
   revalidateStored(db, id);
   transaction(db, () => {
@@ -295,16 +334,22 @@ export function approveEntry(db: Db, id: string, user: string, actorId?: string 
 
 /** Corrects a posted entry with an opposite entry (قيد عكسي). Both stay in the books. */
 export function reverseEntry(db: Db, id: string, user: string, date?: string): EntryView {
-  requireAction(loadRow(db, id), 'reverse');
+  requireAction(db, loadRow(db, id), 'reverse');
   return getEntry(db, reverseEntryInternal(db, id, user, date));
 }
 
-/** Creates and posts the reversal of a posted entry; also used when an invoice is cancelled. Returns the reversal's id. */
+/**
+ * Creates and posts the reversal of a posted entry; also used when an invoice is cancelled. Returns the reversal's id.
+ * A reversal is never dated before the entry it reverses (the books would show the correction before the mistake);
+ * with no date it is today, or the entry's own date when that is still ahead.
+ */
 export function reverseEntryInternal(db: Db, id: string, user: string, date?: string): string {
   const original = getEntry(db, id);
   if (original.status !== 'approved' || original.reversedById) throw conflict('action_not_allowed', { status: original.status, action: 'reverse' });
-  const reversalDate = date ?? todayIso();
+  const today = todayIso();
+  const reversalDate = date ?? (today < original.date ? original.date : today);
   if (!isIsoDate(reversalDate)) throw invalid([{ code: 'date_invalid' }]);
+  if (reversalDate < original.date) throw invalid([{ code: 'reversal_before_entry' }]);
   const input: EntryInput = {
     type: 'reversal',
     date: reversalDate,
@@ -332,7 +377,7 @@ export function reverseEntryInternal(db: Db, id: string, user: string, date?: st
   return newId;
 }
 
-function toView(row: EntryRow, lines: LineRow[], invoiceId: string | null = null, stockDocId: string | null = null): EntryView {
+function toView(db: Db, row: EntryRow, lines: LineRow[], invoiceId: string | null = null, stockDocId: string | null = null, withActions = true): EntryView {
   const view: EntryView = {
     id: row.id, type: row.type, number: row.number, date: row.date, description: row.description, party: row.party,
     currency: row.currency, rateX100: row.rate_x100, status: row.status, cashAccountCode: row.cash_account,
@@ -346,7 +391,7 @@ function toView(row: EntryRow, lines: LineRow[], invoiceId: string | null = null
       debit: l.debit, credit: l.credit, baseDebit: l.base_debit, baseCredit: l.base_credit, description: l.description ?? '',
       partyId: l.party_id, partyName: l.party_name
     })),
-    actions: actionsOf(row),
+    actions: withActions ? actionsOf(db, row) : [],
     invoiceId,
     stockDocId
   };
@@ -362,7 +407,7 @@ export function getEntry(db: Db, id: string): EntryView {
   const row = loadRow(db, id);
   const invoice = db.prepare('SELECT id FROM invoices WHERE entry_id = ? OR cancel_entry_id = ?').get(id, id) as { id: string } | undefined;
   const doc = invoice ? undefined : db.prepare('SELECT id FROM stock_docs WHERE entry_id = ? OR cancel_entry_id = ?').get(id, id) as { id: string } | undefined;
-  return toView(row, db.prepare(LINES_SQL).all(id) as unknown as LineRow[], invoice?.id ?? null, doc?.id ?? null);
+  return toView(db, row, db.prepare(LINES_SQL).all(id) as unknown as LineRow[], invoice?.id ?? null, doc?.id ?? null);
 }
 
 export interface EntryFilters {
@@ -393,7 +438,7 @@ export function listEntries(db: Db, f: EntryFilters = {}): EntrySummary[] {
   params.push(f.limit ?? 500);
   const found = db.prepare(sql).all(...params) as unknown as (EntryRow & { total: number; base_total: number })[];
   return found.map((row) => {
-    const { lines: _lines, actions: _actions, invoiceId: _invoiceId, stockDocId: _stockDocId, ...summary } = toView(row, []);
+    const { lines: _lines, actions: _actions, invoiceId: _invoiceId, stockDocId: _stockDocId, ...summary } = toView(db, row, [], null, null, false);
     return { ...summary, total: row.total ?? 0, baseTotal: row.base_total ?? 0 };
   });
 }

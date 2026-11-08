@@ -3,7 +3,7 @@ import { copyFileSync, existsSync, mkdtempSync, readFileSync, rmSync, statSync }
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { migrate, openDatabase, SCHEMA_VERSION, schemaVersion } from './db.ts';
+import { migrate, openDatabase, SCHEMA_VERSION, schemaVersion, type SqlValue } from './db.ts';
 
 const sha256 = (file: string) => createHash('sha256').update(readFileSync(file)).digest('hex');
 
@@ -93,5 +93,48 @@ describe('books from a newer Qasa ERP', () => {
     expect(errorOf(() => migrate(db))).toMatchObject({ code: 'database_newer' });
     expect(schemaVersion(db)).toBe(SCHEMA_VERSION + 1);
     db.close();
+  });
+});
+
+describe('a server database upgrade cut off half way', () => {
+  it('makes only the tables and triggers still missing on the next start, and then records the version', async () => {
+    const { MYSQL_TABLES, MYSQL_TRIGGERS } = await import('./schema-mysql.ts');
+    const since7 = MYSQL_TABLES.filter((t) => t.since === 7).map((t) => t.name);
+    // the server already has every table up to version 6 and the first ten of version 7 (the connection dropped there)
+    const existing = new Set([...MYSQL_TABLES.filter((t) => !t.since || t.since < 7).map((t) => t.name), ...since7.slice(0, 10)]);
+    const triggers = new Set(MYSQL_TRIGGERS.filter((t) => !t.since || t.since < 7).map((t) => t.name));
+    let version = 6;
+    const made: string[] = [];
+    const fake = {
+      dialect: 'mysql' as const,
+      close() {},
+      exec(sql: string) {
+        const table = /^CREATE TABLE (?!IF )(\w+)/.exec(sql.trim())?.[1];
+        if (table) {
+          if (existing.has(table)) throw new Error(`Table '${table}' already exists`);
+          existing.add(table);
+          made.push(table);
+        }
+        const trigger = /CREATE TRIGGER (\w+)/.exec(sql)?.[1];
+        if (trigger) {
+          if (triggers.has(trigger)) throw new Error(`Trigger '${trigger}' already exists`);
+          triggers.add(trigger);
+        }
+      },
+      prepare(sql: string) {
+        return {
+          run: (...params: unknown[]) => {
+            if (/UPDATE schema_version/.test(sql)) version = Number(params[0]);
+            return { changes: 1, lastInsertRowid: 0 };
+          },
+          get: (): Record<string, SqlValue> | undefined => (/schema_version/.test(sql) ? { version } : /VERSION\(\)/.test(sql) ? { v: '10.11.6-MariaDB' } : undefined),
+          all: () => /information_schema\.tables/.test(sql) ? [...existing].map((name) => ({ name }))
+            : /information_schema\.triggers/.test(sql) ? [...triggers].map((name) => ({ name })) : []
+        };
+      }
+    };
+    migrate(fake);
+    expect(made).toEqual(since7.slice(10));
+    expect(version).toBe(SCHEMA_VERSION);
   });
 });

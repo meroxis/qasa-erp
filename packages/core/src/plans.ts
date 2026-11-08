@@ -15,11 +15,21 @@ export type Feature =
   | 'roles' // separate sign-ins for the preparer, checker and approver
   | 'installments'
   | 'payroll'
+  | 'pipeline' // the sales pipeline: leads and deals
+  | 'generators' // generator owners: subscribers by amps, monthly billing, collectors
+  | 'websiteApi' // API keys and webhooks for websites and online shops
+  | 'phoneApp' // the Qasa phone app: scanning with the camera, prices, stock, items with photos
+  | 'bankReconciliation' // matching the bank statement to the books
+  | 'electricalSolar' // electrical and solar installers: system quotes, installed equipment and warranty, maintenance
   | 'finalAccountsExport' // print and Excel of the final accounts, year-end closing
   | 'noBranding' // invoices without "Made with Qasa ERP"
   | 'cloudBackup'
   | 'onlineEdition'
   | 'branches'
+  | 'realEstate' // projects, units, reservations and unit sales
+  | 'mobileShop' // IMEI tracking, trade-ins, repair orders
+  | 'autoParts' // part numbers, fitments, shelves, wholesale prices
+  | 'engineeringWorks' // job orders: quotes, measured lines, workshop progress, deposits, job costs
   | 'databaseServer'; // the company database on the company's own MariaDB or MySQL server
 
 export interface PlanLimits {
@@ -37,15 +47,15 @@ export interface PlanDefinition {
   features: readonly Feature[];
 }
 
-const PRO_FEATURES: readonly Feature[] = ['officeNetwork', 'roles', 'installments', 'payroll', 'finalAccountsExport', 'noBranding', 'cloudBackup'];
+const PRO_FEATURES: readonly Feature[] = ['officeNetwork', 'roles', 'installments', 'payroll', 'finalAccountsExport', 'noBranding', 'cloudBackup', 'mobileShop', 'autoParts', 'engineeringWorks', 'pipeline', 'generators', 'websiteApi', 'phoneApp', 'electricalSolar', 'bankReconciliation'];
 
 export const PLANS: Record<PlanId, PlanDefinition> = {
   free: { id: 'free', limits: { companies: 1, users: 1, warehouses: 1 }, features: [] },
   pro: { id: 'pro', limits: { companies: 3, users: 5, warehouses: null }, features: PRO_FEATURES },
-  business: { id: 'business', limits: { companies: null, users: null, warehouses: null }, features: [...PRO_FEATURES, 'onlineEdition', 'branches', 'databaseServer'] }
+  business: { id: 'business', limits: { companies: null, users: null, warehouses: null }, features: [...PRO_FEATURES, 'onlineEdition', 'branches', 'databaseServer', 'realEstate'] }
 };
 
-/** Length of the free Pro trial, once per company. */
+/** Length of the free trial (every paid feature), once per company and PC; it starts by itself on the first run. */
 export const TRIAL_DAYS = 30;
 /** Days after a license's last day during which it keeps working (with a reminder), to allow for renewal. */
 export const GRACE_DAYS = 14;
@@ -114,9 +124,35 @@ export function resolvePlan(input: { license: LicenseInfo | null; trialStarted: 
       ...(license.companies !== undefined ? { companies: license.companies } : {})
     };
   } else if (trialActive) {
-    plan = 'pro';
+    // the first month: everything Qasa ERP does (Business), so every kind of company can try its own pages
+    plan = 'business';
     source = 'trial';
-    limits = PLANS.pro.limits;
+    // every page, but up to as many company files as Pro: a month's trial is no way to keep many companies
+    limits = { ...PLANS.business.limits, companies: PLANS.pro.limits.companies };
   }
   return { plan, source, licenseState: state, graceEnds, trialEnds, trialActive, limits: { ...limits }, features: [...PLANS[plan].features] };
+}
+
+/**
+ * What a company does. It decides which industry pages show in the menu (chosen at the start, changed in Settings);
+ * the plan still decides which of them can be used. 'trade' is the general accounting, sales, purchases and stock.
+ */
+export const BUSINESS_TYPES = ['trade', 'realEstate', 'mobileShop', 'autoParts', 'engineeringWorks', 'electricalSolar', 'generators'] as const;
+export type BusinessType = (typeof BUSINESS_TYPES)[number];
+
+/** The plan feature each industry needs (general trade needs none). */
+export const BUSINESS_FEATURE: Record<BusinessType, Feature | null> = {
+  trade: null, realEstate: 'realEstate', mobileShop: 'mobileShop', autoParts: 'autoParts', engineeringWorks: 'engineeringWorks', electricalSolar: 'electricalSolar', generators: 'generators'
+};
+
+export function isBusinessType(value: unknown): value is BusinessType {
+  return typeof value === 'string' && (BUSINESS_TYPES as readonly string[]).includes(value);
+}
+
+/**
+ * May one more company be made on this PC? `count` is how many it keeps now (the first one included).
+ * null limit = unlimited (Business).
+ */
+export function canAddCompany(limits: Pick<PlanLimits, 'companies'>, count: number): boolean {
+  return limits.companies === null || count < limits.companies;
 }

@@ -632,9 +632,740 @@ const V6 =
   BEGIN SELECT RAISE(ABORT, 'installment_contract_is_permanent'); END;
   `;
 
+const V7 =
+  // 7 — release 1.0: industry features (real estate on Business; mobile shops, car parts, engineering works on Pro),
+  // item pictures, quotations, the sales pipeline (Pro), point of sale, payroll (Pro), the dollar rate history, generator
+  // owners (Pro)
+  `
+  CREATE TABLE re_projects (
+    id TEXT PRIMARY KEY,
+    code TEXT NOT NULL UNIQUE,
+    name TEXT NOT NULL,
+    city TEXT,
+    address TEXT,
+    -- units are priced and sold in this currency
+    currency TEXT NOT NULL CHECK (currency IN ('IQD', 'USD')),
+    -- the service item its sale invoices use (made with the project)
+    item_id TEXT NOT NULL REFERENCES items(id),
+    active INTEGER NOT NULL DEFAULT 1,
+    notes TEXT,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+  );
+
+  CREATE TABLE re_units (
+    id TEXT PRIMARY KEY,
+    project_id TEXT NOT NULL REFERENCES re_projects(id),
+    -- the building or block within the project ('' when it has one)
+    building TEXT NOT NULL DEFAULT '',
+    code TEXT NOT NULL,
+    floor INTEGER NOT NULL DEFAULT 0,
+    kind TEXT NOT NULL CHECK (kind IN ('apartment', 'villa', 'house', 'shop', 'office', 'land')),
+    bedrooms INTEGER NOT NULL DEFAULT 0 CHECK (bedrooms >= 0),
+    -- square metres × 100
+    area_x100 INTEGER NOT NULL DEFAULT 0 CHECK (area_x100 >= 0),
+    -- the asking price, in the project's currency
+    price INTEGER NOT NULL CHECK (price >= 0),
+    view TEXT,
+    status TEXT NOT NULL CHECK (status IN ('available', 'reserved', 'sold')),
+    -- the customer it is reserved for or sold to
+    party_id TEXT REFERENCES parties(id),
+    reserved_until TEXT,
+    -- the sale invoice and, when sold by installments, its contract
+    invoice_id TEXT REFERENCES invoices(id),
+    contract_id TEXT REFERENCES installment_contracts(id),
+    notes TEXT,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    UNIQUE (project_id, building, code),
+    CHECK ((status = 'available') = (party_id IS NULL)),
+    CHECK (status = 'sold' OR (invoice_id IS NULL AND contract_id IS NULL))
+  );
+  CREATE INDEX re_units_project ON re_units(project_id);
+  CREATE INDEX re_units_party ON re_units(party_id);
+
+  -- mobile shops (Pro): each phone by its IMEI or serial number, and repair orders
+  CREATE TABLE serials (
+    id TEXT PRIMARY KEY,
+    item_id TEXT NOT NULL REFERENCES items(id),
+    -- the IMEI or serial number, upper case without spaces
+    serial TEXT NOT NULL UNIQUE,
+    grade TEXT NOT NULL CHECK (grade IN ('new', 'used')),
+    status TEXT NOT NULL CHECK (status IN ('in_stock', 'sold', 'returned', 'defective')),
+    -- where it came from: a purchase invoice, or bought from a customer (trade-in)
+    purchase_invoice_id TEXT REFERENCES invoices(id),
+    from_party_id TEXT REFERENCES parties(id),
+    cost INTEGER,
+    -- the sale that took it, and the customer's warranty
+    sale_invoice_id TEXT REFERENCES invoices(id),
+    party_id TEXT REFERENCES parties(id),
+    sold_at TEXT,
+    warranty_until TEXT,
+    notes TEXT,
+    created_by TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    CHECK (status <> 'sold' OR sale_invoice_id IS NOT NULL)
+  );
+  CREATE INDEX serials_item ON serials(item_id);
+  CREATE INDEX serials_sale ON serials(sale_invoice_id);
+
+  CREATE TABLE repair_orders (
+    id TEXT PRIMARY KEY,
+    number TEXT NOT NULL UNIQUE,
+    date TEXT NOT NULL,
+    party_id TEXT NOT NULL REFERENCES parties(id),
+    device TEXT NOT NULL,
+    serial TEXT,
+    problem TEXT NOT NULL,
+    -- what the customer left with the device (charger, case, SIM …) and its state on arrival
+    accessories TEXT,
+    passcode_given INTEGER NOT NULL DEFAULT 0,
+    technician TEXT,
+    status TEXT NOT NULL CHECK (status IN ('received', 'diagnosing', 'waiting_parts', 'repairing', 'ready', 'delivered', 'cancelled')),
+    currency TEXT NOT NULL CHECK (currency IN ('IQD', 'USD')),
+    estimate INTEGER NOT NULL DEFAULT 0 CHECK (estimate >= 0),
+    promised_date TEXT,
+    -- the sale invoice that charged the repair, made at delivery
+    invoice_id TEXT REFERENCES invoices(id),
+    notes TEXT,
+    created_by TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    delivered_at TEXT,
+    updated_at TEXT NOT NULL
+  );
+  CREATE INDEX repair_orders_party ON repair_orders(party_id);
+
+  -- car parts (Pro): shelf, brand and origin, part numbers (OEM and alternatives) and the cars a part fits
+  CREATE TABLE part_details (
+    item_id TEXT PRIMARY KEY REFERENCES items(id),
+    shelf TEXT,
+    brand TEXT,
+    -- genuine, or the country it was made in
+    origin TEXT,
+    -- the price for garages and wholesalers, in the item's sale currency
+    wholesale_price INTEGER CHECK (wholesale_price IS NULL OR wholesale_price >= 0),
+    -- reorder when stock falls to this (thousandths)
+    reorder_milli INTEGER CHECK (reorder_milli IS NULL OR reorder_milli >= 0),
+    updated_at TEXT NOT NULL
+  );
+
+  CREATE TABLE part_numbers (
+    item_id TEXT NOT NULL REFERENCES items(id),
+    -- as written, and upper case without spaces, dots or dashes for searching
+    number TEXT NOT NULL,
+    number_key TEXT NOT NULL,
+    kind TEXT NOT NULL CHECK (kind IN ('oem', 'alt')),
+    maker TEXT,
+    PRIMARY KEY (item_id, number_key)
+  );
+  CREATE INDEX part_numbers_key ON part_numbers(number_key);
+
+  CREATE TABLE part_fitments (
+    id TEXT PRIMARY KEY,
+    item_id TEXT NOT NULL REFERENCES items(id),
+    make TEXT NOT NULL,
+    model TEXT NOT NULL,
+    year_from INTEGER,
+    year_to INTEGER,
+    engine TEXT,
+    CHECK (year_from IS NULL OR year_to IS NULL OR year_from <= year_to)
+  );
+  CREATE INDEX part_fitments_item ON part_fitments(item_id);
+  CREATE INDEX part_fitments_car ON part_fitments(make, model);
+
+  -- engineering works (Pro): job orders for welding, steelwork, aluminium, MDF, doors and windows — the quote and its
+  -- measured lines, the job's progress from measuring to installing, deposits, what it cost, and the final sale invoice
+  CREATE TABLE jobs (
+    id TEXT PRIMARY KEY,
+    number TEXT NOT NULL UNIQUE,
+    date TEXT NOT NULL,
+    party_id TEXT NOT NULL REFERENCES parties(id),
+    title TEXT NOT NULL,
+    category TEXT NOT NULL CHECK (category IN ('welding', 'steel', 'aluminium', 'mdf', 'openings', 'electrical', 'solar', 'general')),
+    site TEXT,
+    currency TEXT NOT NULL CHECK (currency IN ('IQD', 'USD')),
+    status TEXT NOT NULL CHECK (status IN ('quote', 'measuring', 'approved', 'fabricating', 'installing', 'done', 'invoiced', 'cancelled')),
+    -- discount on the quote, in the job's currency
+    discount INTEGER NOT NULL DEFAULT 0 CHECK (discount >= 0),
+    due_date TEXT,
+    assigned_to TEXT,
+    -- the sale invoice that billed it
+    invoice_id TEXT REFERENCES invoices(id),
+    notes TEXT,
+    created_by TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+  );
+  CREATE INDEX jobs_party ON jobs(party_id);
+
+  -- the quote: measured lines (2.40 m × 1.80 m of aluminium, a gate, labour …)
+  CREATE TABLE job_lines (
+    job_id TEXT NOT NULL REFERENCES jobs(id),
+    seq INTEGER NOT NULL,
+    description TEXT NOT NULL,
+    unit TEXT NOT NULL CHECK (unit IN ('m2', 'm', 'piece', 'kg', 'set', 'lump')),
+    qty_milli INTEGER NOT NULL CHECK (qty_milli > 0),
+    unit_price INTEGER NOT NULL CHECK (unit_price >= 0),
+    PRIMARY KEY (job_id, seq)
+  );
+
+  -- what a job cost: a posted purchase invoice (materials bought for it) or an approved voucher (wages, transport …)
+  CREATE TABLE job_costs (
+    id TEXT PRIMARY KEY,
+    job_id TEXT NOT NULL REFERENCES jobs(id),
+    category TEXT NOT NULL CHECK (category IN ('materials', 'labour', 'subcontract', 'transport', 'other')),
+    invoice_id TEXT REFERENCES invoices(id),
+    entry_id TEXT REFERENCES entries(id),
+    -- in IQD
+    amount INTEGER NOT NULL CHECK (amount > 0),
+    description TEXT,
+    created_by TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    CHECK ((invoice_id IS NULL) <> (entry_id IS NULL))
+  );
+  CREATE INDEX job_costs_job ON job_costs(job_id);
+
+  -- deposits (العربون) and payments the customer made on a job: receipt vouchers
+  CREATE TABLE job_receipts (
+    job_id TEXT NOT NULL REFERENCES jobs(id),
+    entry_id TEXT NOT NULL UNIQUE REFERENCES entries(id),
+    amount INTEGER NOT NULL CHECK (amount > 0),
+    created_at TEXT NOT NULL,
+    PRIMARY KEY (job_id, entry_id)
+  );
+
+  -- a picture for each item (shown in lists, the parts counter, POS and invoices), kept small (resized before saving)
+  CREATE TABLE item_images (
+    item_id TEXT PRIMARY KEY REFERENCES items(id),
+    mime TEXT NOT NULL CHECK (mime IN ('image/jpeg', 'image/png', 'image/webp')),
+    data BLOB NOT NULL,
+    updated_at TEXT NOT NULL
+  );
+
+  -- quotations (عروض الأسعار): priced offers that become a sale invoice when the customer accepts
+  CREATE TABLE quotes (
+    id TEXT PRIMARY KEY,
+    number TEXT NOT NULL UNIQUE,
+    date TEXT NOT NULL,
+    valid_until TEXT,
+    party_id TEXT REFERENCES parties(id),
+    -- for someone not (yet) a customer
+    customer_name TEXT,
+    currency TEXT NOT NULL CHECK (currency IN ('IQD', 'USD')),
+    discount INTEGER NOT NULL DEFAULT 0 CHECK (discount >= 0),
+    status TEXT NOT NULL CHECK (status IN ('draft', 'sent', 'accepted', 'rejected', 'invoiced', 'cancelled')),
+    invoice_id TEXT REFERENCES invoices(id),
+    notes TEXT,
+    terms TEXT,
+    created_by TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    CHECK (party_id IS NOT NULL OR customer_name IS NOT NULL)
+  );
+
+  CREATE TABLE quote_lines (
+    quote_id TEXT NOT NULL REFERENCES quotes(id),
+    seq INTEGER NOT NULL,
+    item_id TEXT REFERENCES items(id),
+    description TEXT NOT NULL,
+    qty_milli INTEGER NOT NULL CHECK (qty_milli > 0),
+    unit_price INTEGER NOT NULL CHECK (unit_price >= 0),
+    PRIMARY KEY (quote_id, seq)
+  );
+
+  -- the sales pipeline (Pro): leads and deals from first contact to won or lost
+  CREATE TABLE deals (
+    id TEXT PRIMARY KEY,
+    title TEXT NOT NULL,
+    party_id TEXT REFERENCES parties(id),
+    contact_name TEXT,
+    phone TEXT,
+    source TEXT,
+    stage TEXT NOT NULL CHECK (stage IN ('lead', 'contacted', 'quoted', 'negotiating', 'won', 'lost')),
+    currency TEXT NOT NULL CHECK (currency IN ('IQD', 'USD')),
+    value INTEGER NOT NULL DEFAULT 0 CHECK (value >= 0),
+    expected_date TEXT,
+    next_step TEXT,
+    next_date TEXT,
+    owner TEXT,
+    quote_id TEXT REFERENCES quotes(id),
+    lost_reason TEXT,
+    notes TEXT,
+    created_by TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    closed_at TEXT
+  );
+
+  -- point of sale: a cashier's shift on a register, from opening cash to the counted cash at closing
+  CREATE TABLE pos_shifts (
+    id TEXT PRIMARY KEY,
+    number TEXT NOT NULL UNIQUE,
+    register TEXT NOT NULL,
+    cash_account TEXT NOT NULL REFERENCES accounts(code),
+    warehouse_id TEXT NOT NULL REFERENCES warehouses(id),
+    status TEXT NOT NULL CHECK (status IN ('open', 'closed')),
+    opened_by TEXT NOT NULL,
+    opened_at TEXT NOT NULL,
+    opening_cash INTEGER NOT NULL DEFAULT 0 CHECK (opening_cash >= 0),
+    closed_by TEXT,
+    closed_at TEXT,
+    -- dinars and dollars are counted apart at closing
+    expected_cash INTEGER,
+    counted_cash INTEGER,
+    expected_usd INTEGER,
+    counted_usd INTEGER,
+    notes TEXT
+  );
+  CREATE TABLE pos_sales (
+    invoice_id TEXT PRIMARY KEY REFERENCES invoices(id),
+    shift_id TEXT NOT NULL REFERENCES pos_shifts(id)
+  );
+  CREATE INDEX pos_sales_shift ON pos_sales(shift_id);
+
+  -- payroll (Pro): employees, a run per month that posts one journal entry, and advances paid back from salaries
+  CREATE TABLE employees (
+    id TEXT PRIMARY KEY,
+    code TEXT NOT NULL UNIQUE,
+    name TEXT NOT NULL,
+    job_title TEXT,
+    department TEXT,
+    phone TEXT,
+    id_number TEXT,
+    hire_date TEXT,
+    end_date TEXT,
+    currency TEXT NOT NULL CHECK (currency IN ('IQD', 'USD')),
+    base_salary INTEGER NOT NULL CHECK (base_salary >= 0),
+    -- fixed monthly allowances (transport, food, housing …)
+    allowances INTEGER NOT NULL DEFAULT 0 CHECK (allowances >= 0),
+    -- in the social security scheme (الضمان الاجتماعي)
+    social_security INTEGER NOT NULL DEFAULT 0,
+    bank_account TEXT,
+    active INTEGER NOT NULL DEFAULT 1,
+    notes TEXT,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+  );
+
+  CREATE TABLE payroll_runs (
+    id TEXT PRIMARY KEY,
+    -- the month, YYYY-MM
+    period TEXT NOT NULL,
+    date TEXT NOT NULL,
+    currency TEXT NOT NULL CHECK (currency IN ('IQD', 'USD')),
+    status TEXT NOT NULL CHECK (status IN ('draft', 'posted', 'cancelled')),
+    -- the journal entry it posts (it then follows the preparer, checker and approver), and the payment voucher that paid it
+    entry_id TEXT REFERENCES entries(id),
+    payment_entry_id TEXT REFERENCES entries(id),
+    notes TEXT,
+    created_by TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+  );
+  CREATE INDEX payroll_runs_period ON payroll_runs(period);
+
+  CREATE TABLE payroll_lines (
+    run_id TEXT NOT NULL REFERENCES payroll_runs(id),
+    employee_id TEXT NOT NULL REFERENCES employees(id),
+    base INTEGER NOT NULL,
+    allowances INTEGER NOT NULL DEFAULT 0,
+    overtime INTEGER NOT NULL DEFAULT 0,
+    bonus INTEGER NOT NULL DEFAULT 0,
+    absence INTEGER NOT NULL DEFAULT 0,
+    advance_deduction INTEGER NOT NULL DEFAULT 0,
+    social_security INTEGER NOT NULL DEFAULT 0,
+    other_deductions INTEGER NOT NULL DEFAULT 0,
+    net INTEGER NOT NULL,
+    notes TEXT,
+    PRIMARY KEY (run_id, employee_id)
+  );
+
+  -- an advance (سلفة) paid to an employee by payment voucher, taken back from salaries month by month
+  CREATE TABLE employee_advances (
+    id TEXT PRIMARY KEY,
+    employee_id TEXT NOT NULL REFERENCES employees(id),
+    date TEXT NOT NULL,
+    currency TEXT NOT NULL CHECK (currency IN ('IQD', 'USD')),
+    amount INTEGER NOT NULL CHECK (amount > 0),
+    monthly INTEGER NOT NULL CHECK (monthly > 0),
+    entry_id TEXT REFERENCES entries(id),
+    notes TEXT,
+    created_by TEXT NOT NULL,
+    created_at TEXT NOT NULL
+  );
+  CREATE INDEX employee_advances_employee ON employee_advances(employee_id);
+
+  -- the day's dollar rate (سعر الصرف) as the company enters it, kept as a history
+  CREATE TABLE fx_rates (
+    date TEXT PRIMARY KEY,
+    -- IQD per 1 USD × 100
+    rate_x100 INTEGER NOT NULL CHECK (rate_x100 > 0),
+    source TEXT,
+    created_by TEXT NOT NULL,
+    created_at TEXT NOT NULL
+  );
+
+  -- generator owners (المولدات, Pro): subscribers by amps, a billing run each month, and collections
+  CREATE TABLE gen_subscribers (
+    -- each subscriber is a customer (their balance and statement)
+    party_id TEXT PRIMARY KEY REFERENCES parties(id),
+    code TEXT NOT NULL UNIQUE,
+    -- amps × 10 (2.5 A → 25)
+    amps_x10 INTEGER NOT NULL CHECK (amps_x10 > 0),
+    -- normal hours, or the 24-hour line (الذهبي)
+    line TEXT NOT NULL CHECK (line IN ('normal', 'golden')),
+    area TEXT,
+    route TEXT,
+    status TEXT NOT NULL CHECK (status IN ('active', 'suspended', 'ended')),
+    start_date TEXT,
+    notes TEXT,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+  );
+
+  CREATE TABLE gen_runs (
+    id TEXT PRIMARY KEY,
+    -- the month, YYYY-MM
+    period TEXT NOT NULL UNIQUE,
+    date TEXT NOT NULL,
+    -- the price of one amp for the month, in dinars, per line
+    price_normal INTEGER NOT NULL CHECK (price_normal >= 0),
+    price_golden INTEGER NOT NULL CHECK (price_golden >= 0),
+    status TEXT NOT NULL CHECK (status IN ('draft', 'posted', 'cancelled')),
+    -- the journal entry that bills every subscriber (Dr each customer, Cr generator revenue)
+    entry_id TEXT REFERENCES entries(id),
+    created_by TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+  );
+
+  CREATE TABLE gen_bills (
+    run_id TEXT NOT NULL REFERENCES gen_runs(id),
+    party_id TEXT NOT NULL REFERENCES gen_subscribers(party_id),
+    amps_x10 INTEGER NOT NULL,
+    line TEXT NOT NULL CHECK (line IN ('normal', 'golden')),
+    amount INTEGER NOT NULL CHECK (amount >= 0),
+    PRIMARY KEY (run_id, party_id)
+  );
+
+  -- a collector's receipt (وصل الجباية): a receipt voucher posted at once
+  CREATE TABLE gen_collections (
+    entry_id TEXT PRIMARY KEY REFERENCES entries(id),
+    party_id TEXT NOT NULL REFERENCES gen_subscribers(party_id),
+    collector TEXT,
+    amount INTEGER NOT NULL CHECK (amount > 0),
+    created_at TEXT NOT NULL
+  );
+  CREATE INDEX gen_collections_party ON gen_collections(party_id);
+
+  -- the website API (Pro): keys a website or app uses (only a hash is kept), and the addresses told about changes
+  CREATE TABLE api_keys (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    -- the first characters, shown so the owner can tell keys apart
+    prefix TEXT NOT NULL,
+    hash TEXT NOT NULL UNIQUE,
+    -- what the key may do, e.g. ["items:read","orders:write"]
+    scopes TEXT NOT NULL,
+    created_by TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    last_used_at TEXT,
+    revoked_at TEXT
+  );
+
+  -- orders a website sent, by its own order number, so sending one again never makes a second invoice
+  CREATE TABLE webapi_orders (
+    source TEXT NOT NULL,
+    external_id TEXT NOT NULL,
+    invoice_id TEXT NOT NULL REFERENCES invoices(id),
+    created_at TEXT NOT NULL,
+    PRIMARY KEY (source, external_id)
+  );
+
+  -- stock adjustments (damaged, lost, expired, count differences, used in the company or issued to a job): quantities in
+  -- (+) or out (−) of a warehouse at cost, posted against an expense or income account
+  CREATE TABLE stock_adjustments (
+    id TEXT PRIMARY KEY,
+    number TEXT UNIQUE,
+    date TEXT NOT NULL,
+    warehouse_id TEXT NOT NULL REFERENCES warehouses(id),
+    reason TEXT NOT NULL CHECK (reason IN ('damaged', 'lost', 'expired', 'count', 'internal_use', 'job', 'other')),
+    -- the account the value goes to (a loss or expense, or a gain for a count surplus)
+    account_code TEXT REFERENCES accounts(code),
+    job_id TEXT REFERENCES jobs(id),
+    status TEXT NOT NULL CHECK (status IN ('draft', 'posted', 'cancelled')),
+    entry_id TEXT REFERENCES entries(id),
+    notes TEXT,
+    created_by TEXT NOT NULL,
+    -- who prepared the current draft: with separate duties, someone else posts it
+    prepared_by_id TEXT REFERENCES users(id),
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+  );
+  CREATE TABLE stock_adjustment_lines (
+    adjustment_id TEXT NOT NULL REFERENCES stock_adjustments(id),
+    seq INTEGER NOT NULL,
+    item_id TEXT NOT NULL REFERENCES items(id),
+    -- thousandths; negative takes out, positive adds
+    qty_milli INTEGER NOT NULL CHECK (qty_milli <> 0),
+    -- IQD per unit for additions (taken out at the weighted average cost)
+    unit_cost INTEGER,
+    PRIMARY KEY (adjustment_id, seq)
+  );
+
+  -- purchase orders: ordered from a supplier, received (fully or in part) into a purchase invoice
+  CREATE TABLE purchase_orders (
+    id TEXT PRIMARY KEY,
+    number TEXT NOT NULL UNIQUE,
+    date TEXT NOT NULL,
+    party_id TEXT NOT NULL REFERENCES parties(id),
+    warehouse_id TEXT REFERENCES warehouses(id),
+    currency TEXT NOT NULL CHECK (currency IN ('IQD', 'USD')),
+    expected_date TEXT,
+    status TEXT NOT NULL CHECK (status IN ('draft', 'sent', 'partial', 'received', 'cancelled')),
+    notes TEXT,
+    created_by TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+  );
+  CREATE TABLE purchase_order_lines (
+    order_id TEXT NOT NULL REFERENCES purchase_orders(id),
+    seq INTEGER NOT NULL,
+    item_id TEXT NOT NULL REFERENCES items(id),
+    qty_milli INTEGER NOT NULL CHECK (qty_milli > 0),
+    unit_price INTEGER NOT NULL CHECK (unit_price >= 0),
+    PRIMARY KEY (order_id, seq)
+  );
+  -- the purchase invoices that received an order (one order can be received over several)
+  CREATE TABLE purchase_order_receipts (
+    order_id TEXT NOT NULL REFERENCES purchase_orders(id),
+    invoice_id TEXT NOT NULL REFERENCES invoices(id),
+    PRIMARY KEY (order_id, invoice_id)
+  );
+
+  -- which price a customer pays by default: retail (the item's sale price) or wholesale (part_details / item_prices)
+  CREATE TABLE party_price_lists (
+    party_id TEXT PRIMARY KEY REFERENCES parties(id),
+    list TEXT NOT NULL CHECK (list IN ('retail', 'wholesale'))
+  );
+  CREATE TABLE item_prices (
+    item_id TEXT NOT NULL REFERENCES items(id),
+    list TEXT NOT NULL CHECK (list IN ('wholesale')),
+    price INTEGER NOT NULL CHECK (price >= 0),
+    PRIMARY KEY (item_id, list)
+  );
+
+  -- fixed assets (الموجودات الثابتة) and their monthly depreciation
+  CREATE TABLE fixed_assets (
+    id TEXT PRIMARY KEY,
+    code TEXT NOT NULL UNIQUE,
+    name TEXT NOT NULL,
+    -- the asset account (11…), its accumulated depreciation account and the depreciation expense account
+    asset_account TEXT NOT NULL REFERENCES accounts(code),
+    accum_account TEXT NOT NULL REFERENCES accounts(code),
+    expense_account TEXT NOT NULL REFERENCES accounts(code),
+    acquired TEXT NOT NULL,
+    -- in IQD
+    cost INTEGER NOT NULL CHECK (cost > 0),
+    salvage INTEGER NOT NULL DEFAULT 0 CHECK (salvage >= 0),
+    life_months INTEGER NOT NULL CHECK (life_months > 0),
+    method TEXT NOT NULL CHECK (method IN ('straight_line')),
+    -- depreciation already taken before Qasa ERP
+    opening_accum INTEGER NOT NULL DEFAULT 0 CHECK (opening_accum >= 0),
+    location TEXT,
+    status TEXT NOT NULL CHECK (status IN ('active', 'disposed')),
+    disposed_on TEXT,
+    -- the draft/posted entry that took the asset off the books (cleared when the disposal is taken back)
+    disposal_entry_id TEXT REFERENCES entries(id),
+    notes TEXT,
+    created_by TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+  );
+  CREATE TABLE depreciation_runs (
+    id TEXT PRIMARY KEY,
+    -- YYYY-MM
+    period TEXT NOT NULL UNIQUE,
+    entry_id TEXT REFERENCES entries(id),
+    status TEXT NOT NULL CHECK (status IN ('draft', 'posted', 'cancelled')),
+    created_by TEXT NOT NULL,
+    created_at TEXT NOT NULL
+  );
+  CREATE TABLE depreciation_lines (
+    run_id TEXT NOT NULL REFERENCES depreciation_runs(id),
+    asset_id TEXT NOT NULL REFERENCES fixed_assets(id),
+    amount INTEGER NOT NULL CHECK (amount >= 0),
+    PRIMARY KEY (run_id, asset_id)
+  );
+
+  -- a real estate reservation's deposit (عربون الحجز): a receipt voucher, counted towards the sale
+  CREATE TABLE re_deposits (
+    -- the receipt voucher that took it (posted at once, as document receipts are)
+    entry_id TEXT PRIMARY KEY REFERENCES entries(id),
+    unit_id TEXT NOT NULL REFERENCES re_units(id),
+    party_id TEXT NOT NULL REFERENCES parties(id),
+    -- in the project's currency
+    currency TEXT NOT NULL CHECK (currency IN ('IQD', 'USD')),
+    amount INTEGER NOT NULL CHECK (amount > 0),
+    date TEXT NOT NULL,
+    -- what happened to it: kept with the reservation, counted in the sale, paid back, or kept by the company
+    status TEXT NOT NULL CHECK (status IN ('held', 'applied', 'refunded', 'forfeited')),
+    -- the sale invoice it was counted in
+    invoice_id TEXT REFERENCES invoices(id),
+    -- the draft payment voucher (refund) or journal entry (forfeit) that closed it, through checking and approval
+    close_entry_id TEXT REFERENCES entries(id),
+    created_by TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    closed_at TEXT
+  );
+  CREATE INDEX re_deposits_unit ON re_deposits(unit_id);
+
+  -- banking: cheques received and written (الصكوك) with their life from in hand to cleared or bounced
+  CREATE TABLE cheques (
+    id TEXT PRIMARY KEY,
+    direction TEXT NOT NULL CHECK (direction IN ('received', 'issued')),
+    number TEXT NOT NULL,
+    bank TEXT NOT NULL,
+    party_id TEXT NOT NULL REFERENCES parties(id),
+    currency TEXT NOT NULL CHECK (currency IN ('IQD', 'USD')),
+    amount INTEGER NOT NULL CHECK (amount > 0),
+    issue_date TEXT NOT NULL,
+    -- the date it may be cashed (post-dated cheques are common)
+    due_date TEXT NOT NULL,
+    status TEXT NOT NULL CHECK (status IN ('in_hand', 'deposited', 'cleared', 'bounced', 'cancelled', 'pending')),
+    -- the bank account it was deposited to or drawn on
+    bank_account TEXT REFERENCES accounts(code),
+    -- the entries of its life: receiving or writing it, depositing, clearing, bouncing
+    entry_id TEXT REFERENCES entries(id),
+    clear_entry_id TEXT REFERENCES entries(id),
+    bounce_entry_id TEXT REFERENCES entries(id),
+    notes TEXT,
+    created_by TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+  );
+  CREATE INDEX cheques_due ON cheques(status, due_date);
+
+  -- bank reconciliation: lines of a bank statement brought in from the bank's Excel/CSV, matched to entry lines
+  CREATE TABLE bank_statements (
+    id TEXT PRIMARY KEY,
+    account_code TEXT NOT NULL REFERENCES accounts(code),
+    period_from TEXT NOT NULL,
+    period_to TEXT NOT NULL,
+    opening INTEGER NOT NULL,
+    closing INTEGER NOT NULL,
+    status TEXT NOT NULL CHECK (status IN ('open', 'reconciled')),
+    created_by TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+  );
+  CREATE TABLE bank_statement_lines (
+    statement_id TEXT NOT NULL REFERENCES bank_statements(id),
+    seq INTEGER NOT NULL,
+    date TEXT NOT NULL,
+    description TEXT NOT NULL,
+    reference TEXT,
+    -- money in is positive, money out negative, in the account's currency
+    amount INTEGER NOT NULL,
+    -- the voucher it matches (one entry may match several lines and the other way round only through split, kept simple)
+    entry_id TEXT REFERENCES entries(id),
+    PRIMARY KEY (statement_id, seq)
+  );
+
+  -- branches (Business): a branch groups warehouses and safes/banks, and users can be limited to their branches; an
+  -- invoice belongs to its warehouse's branch and a voucher to its safe's, so the documents need no column of their own
+  CREATE TABLE branches (
+    id TEXT PRIMARY KEY,
+    code TEXT NOT NULL UNIQUE,
+    name TEXT NOT NULL,
+    city TEXT,
+    active INTEGER NOT NULL DEFAULT 1,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+  );
+  CREATE TABLE branch_warehouses (
+    warehouse_id TEXT PRIMARY KEY REFERENCES warehouses(id),
+    branch_id TEXT NOT NULL REFERENCES branches(id)
+  );
+  CREATE TABLE branch_accounts (
+    account_code TEXT PRIMARY KEY REFERENCES accounts(code),
+    branch_id TEXT NOT NULL REFERENCES branches(id)
+  );
+  -- a user listed here works only in these branches (not listed: every branch)
+  CREATE TABLE user_branches (
+    user_id TEXT NOT NULL REFERENCES users(id),
+    branch_id TEXT NOT NULL REFERENCES branches(id),
+    PRIMARY KEY (user_id, branch_id)
+  );
+
+  -- electrical and solar (Pro): a solar system's design on its job order (sizing, which quote lines are stock items,
+  -- equipment waiting for the sale), as JSON
+  CREATE TABLE solar_designs (
+    job_id TEXT PRIMARY KEY REFERENCES jobs(id),
+    design TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+  );
+
+  -- electrical and solar (Pro): maintenance plans (periodic service of an installed system) and the visits made
+  CREATE TABLE maint_plans (
+    id TEXT PRIMARY KEY,
+    party_id TEXT NOT NULL REFERENCES parties(id),
+    -- the installation it looks after (a job order), if any
+    job_id TEXT REFERENCES jobs(id),
+    title TEXT NOT NULL,
+    site TEXT,
+    every_months INTEGER NOT NULL CHECK (every_months BETWEEN 1 AND 24),
+    next_date TEXT NOT NULL,
+    currency TEXT NOT NULL CHECK (currency IN ('IQD', 'USD')),
+    -- the price of one visit (0 while under warranty or prepaid)
+    price INTEGER NOT NULL DEFAULT 0 CHECK (price >= 0),
+    status TEXT NOT NULL CHECK (status IN ('active', 'paused', 'ended')),
+    notes TEXT,
+    created_by TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+  );
+  CREATE INDEX maint_plans_party ON maint_plans(party_id);
+
+  CREATE TABLE maint_visits (
+    id TEXT PRIMARY KEY,
+    number TEXT NOT NULL UNIQUE,
+    plan_id TEXT REFERENCES maint_plans(id),
+    party_id TEXT NOT NULL REFERENCES parties(id),
+    date TEXT NOT NULL,
+    kind TEXT NOT NULL CHECK (kind IN ('service', 'repair', 'inspection', 'installation')),
+    technician TEXT,
+    status TEXT NOT NULL CHECK (status IN ('scheduled', 'done', 'cancelled')),
+    -- what was found and done (readings: panel output, battery health …)
+    findings TEXT,
+    work_done TEXT,
+    -- the sale invoice that charged it, if it was paid
+    invoice_id TEXT REFERENCES invoices(id),
+    created_by TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+  );
+  CREATE INDEX maint_visits_party ON maint_visits(party_id);
+
+  CREATE TABLE webhooks (
+    id TEXT PRIMARY KEY,
+    url TEXT NOT NULL,
+    -- e.g. ["stock.changed","price.changed","order.updated"]
+    events TEXT NOT NULL,
+    -- signs each delivery (HMAC); kept as given, shown once
+    secret TEXT NOT NULL,
+    active INTEGER NOT NULL DEFAULT 1,
+    last_status INTEGER,
+    last_delivery_at TEXT,
+    created_by TEXT NOT NULL,
+    created_at TEXT NOT NULL
+  );
+  `;
+
 const MIGRATIONS: Migration[] = [
   { sql: V1 }, { sql: V2, rebuild: true }, { sql: V3, rebuild: true }, { sql: V4 }, { sql: V5, rebuild: true },
-  { sql: V6, mysql: 'tables' }
+  { sql: V6, mysql: 'tables' }, { sql: V7, mysql: 'tables' }
 ];
 
 /** Server databases began at this version: its schema is in schema-mysql.ts (tables and triggers without `since`). */
@@ -762,8 +1493,12 @@ function migrateMysql(db: Db, options: { triggers?: boolean } = {}): void {
     const mysql = MIGRATIONS[version]!.mysql;
     if (!mysql) throw new Error(`Migration ${next} has no MariaDB/MySQL version`);
     if (mysql === 'tables') {
-      for (const table of MYSQL_TABLES.filter((t) => t.since === next)) db.exec(mysqlTableSql(table.sql, collations));
-      for (const trigger of MYSQL_TRIGGERS.filter((t) => t.since === next)) db.exec(trigger.sql);
+      // the server commits each CREATE on its own: after an upgrade cut off half way (a dropped connection), the next
+      // start finds some of them made already and makes only the rest, instead of failing on "already exists" for good
+      const tables = new Set((db.prepare('SELECT table_name AS name FROM information_schema.tables WHERE table_schema = DATABASE()').all() as { name: string }[]).map((t) => t.name));
+      const triggers = new Set((db.prepare('SELECT trigger_name AS name FROM information_schema.triggers WHERE trigger_schema = DATABASE()').all() as { name: string }[]).map((t) => t.name));
+      for (const table of MYSQL_TABLES.filter((t) => t.since === next && !tables.has(t.name))) db.exec(mysqlTableSql(table.sql, collations));
+      for (const trigger of MYSQL_TRIGGERS.filter((t) => t.since === next && !triggers.has(t.name))) db.exec(trigger.sql);
     } else {
       for (const step of mysql(collations)) db.exec(step);
     }
