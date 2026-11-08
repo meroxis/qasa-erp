@@ -14,6 +14,7 @@ import { UpdateSettings } from '../industry/UpdateSettings.tsx';
 import { LegalPanel } from '../industry/LegalPanel.tsx';
 import { GraphicsSetting } from '../industry/GraphicsSetting.tsx';
 import { CompaniesSetting } from './Companies.tsx';
+import { cloudChoices } from './cloud-providers.ts';
 
 /** Language and display are each person's own; the company's settings are for admins. */
 export function Settings({ admin }: { admin: boolean }) {
@@ -915,13 +916,13 @@ function CloudBackup({ encrypted, disabled, onRestarting }: { encrypted: boolean
 
       {!status.provider && status.available && !status.needsPassword && !status.connecting && (
         <div className="row" style={{ gap: 8, flexWrap: 'wrap' }}>
-          {(['google', 'onedrive'] as const).map((p) => (
-            <button key={p} type="button" className="btn primary" disabled={off || !status.configured[p]} onClick={() => void connect(p)}
-              title={status.configured[p] ? undefined : t('cl_notSetUp')}>
+          {cloudChoices(status.configured).map(({ provider: p, state }) => state === 'connect' ? (
+            <button key={p} type="button" className="btn primary" disabled={off} onClick={() => void connect(p)}>
               <Icon name="globe" size={16} /> {t('cl_connect', { p: name(p) })}
             </button>
+          ) : (
+            <span key={p} className="chip info">{t('cl_soon', { p: name(p) })}</span>
           ))}
-          {(!status.configured.google || !status.configured.onedrive) && <span className="muted small">{!status.configured.google && !status.configured.onedrive ? t('cl_notSetUp') : ''}</span>}
         </div>
       )}
 
@@ -939,7 +940,7 @@ function CloudBackup({ encrypted, disabled, onRestarting }: { encrypted: boolean
         <>
           {status.account && <div className="small">{t('cl_account', { a: ltr(status.account) })}</div>}
           <div className="small">{status.uploading ? t('cl_uploading') : status.last ? t('cl_last', { when: when(status.last.at), size: size(status.last.size) }) : t('cl_none')}</div>
-          <div className="muted small">{t('cl_where')}</div>
+          <div className="muted small">{t(status.provider === 'google' ? 'cl_where_google' : 'cl_where_onedrive')}</div>
           <div className="row" style={{ gap: 8, flexWrap: 'wrap' }}>
             {status.available && <button type="button" className="btn" disabled={off || status.uploading} onClick={() => act(() => cloudApi.upload(), () => toast(t('cl_uploaded')))}>{t('cl_uploadNow')}</button>}
             <button type="button" className="btn" disabled={off} onClick={() => act(() => cloudApi.files(), setFiles)}>{t('cl_restoreFrom')}</button>
