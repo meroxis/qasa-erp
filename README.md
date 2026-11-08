@@ -51,8 +51,8 @@ Qasa ERP keeps the books of an Iraqi company the way its finance department alre
   digits if you prefer; dinars and dollars at the day's rate.
 - **A team, with controls.** Sign-in, roles, and separate duties, so whoever prepares a voucher cannot approve it.
 - **On your own PC.** The Windows app, from the Microsoft Store or our installer, keeps the company file on your
-  computer, works without internet and stays up to date. An office-network edition and an online edition share the
-  same code.
+  computer, works without internet and stays up to date. Several PCs can share it over the office network; an online
+  edition (in the browser) is coming later and will share the same code.
 
 <div dir="rtl" lang="ar">
 
@@ -238,15 +238,15 @@ server: **Settings → Company database → Move the company to a database serve
 - [x] Sales & purchase invoices, customers & suppliers (with statements), items, warehouses, weighted-average stock
 - [x] Opening stock, sales and purchase returns, stock transfers between warehouses
 - [x] Installment sales (Pro): contracts from a credit sale or an earlier balance, guarantors, schedule, collection by receipt voucher, overdue aging, printed contract with the guarantor's pledge
-- [ ] Sales pipeline
-- [ ] HR, salaries and employee advances
+- [x] Sales pipeline (Pro)
+- [x] Payroll (Pro)
 - [x] Final accounts: trading, current operations and profit and loss accounts, and the balance sheet (unified-system layout, to be reviewed by a licensed accountant)
 - [x] Year-end closing: a closing entry moves revenue and expenses into the accumulated result (229) and locks the year; reopen by reversal
 - [x] Users, roles and sign-in (Free: one password-protected user; Pro: up to 5 users with roles and separate duties)
 - [x] Office-network (server) mode: other PCs work on one PC's company file over the office network (encrypted, with a pairing code), each person with their own user
 - [x] Windows app and installer with automatic updates
 - [x] In the Microsoft Store, signed by Microsoft
-- [x] Plans (Free, Pro, Business) with offline license keys and a 30-day Pro trial
+- [x] Plans (Free, Pro, Business) with signed license keys and a free first month on each PC
 - [x] Backups: a daily checked copy of the company file in a folder of your choice, and restore
 - [x] The company database on the company's own MariaDB or MySQL server (Business), with move there and back
 - [ ] Code signing of the installer (the Microsoft Store version is signed by Microsoft)
@@ -269,22 +269,33 @@ growing company needs, and the app shows the full comparison under **Plan & lice
 | Year-end closing (closing entry, locked months, reopen by reversal) | | ✓ | ✓ |
 | Company database on your own MariaDB or MySQL server | | | ✓ |
 | Installment sales with guarantors | | ✓ | ✓ |
-| Payroll | | coming soon | coming soon |
-| Online edition, branches | | | coming soon |
+| Payroll | | ✓ | ✓ |
+| Branches | | | ✓ |
+| Online edition | | | coming soon |
 
-Some Pro features are still being built; the app marks them as coming soon. A plan never locks anyone out of their
-data: when a license ends, the company keeps everything and continues on the Free features. Pro can be tried
-free for 30 days. Licenses are offline keys signed by Meroxis (Ed25519). Buy or renew one in the customer portal,
+Some features are still being built; the app marks them as coming soon. A plan never locks anyone out of their
+data: when a license ends, the company keeps everything and continues on the Free features. The first month on each
+PC is free, with every feature except Qasa Relay; it starts by itself on the first run and is given once per PC, not
+once per company. Licenses are keys signed by Meroxis (Ed25519), activated online once on each PC. Buy or renew one
+in the customer portal,
 [my.qasaerp.com](https://my.qasaerp.com), and pay with Wayl, a bank transfer or cash. Licenses aren't sold in the
 Microsoft Store; a key from the portal works the same in the Store version and the installer.
 
 ## Trust and security
 
-- **Open source:** every line of the app is here, under the AGPL. Anyone can read how each dinar is posted.
+- **Open source:** the core app, with the rules that post every voucher and invoice, is here under the AGPL. Anyone
+  can read how each dinar is posted. Two parts are not open source: the Pro and Business features are a
+  separate proprietary module (`pro/`, not in this repository), and the compiled licence addon (`native/licence`) is
+  proprietary too, all rights reserved by Meroxis ([its LICENSE](native/licence/LICENSE)).
 - **Tested on every change:** the accounting rules, the API and the database upgrades have automated tests, run by
   GitHub Actions on every push (see the Tests badge).
 - **Your data stays with you:** the Windows app keeps the company file on your PC and works without internet (or, on
-  Business, on your own MariaDB or MySQL server); the demo runs entirely in your browser.
+  Business, on your own MariaDB or MySQL server); the demo runs entirely in your browser. On its own the app goes
+  online only to check for updates, to activate and check a license, and for a daily usage ping (installation number,
+  version, plan and counts; never the license number, so it is never linked to a license) that can be switched off in
+  Settings. The
+  books leave the PC only when you choose it: an encrypted cloud backup, the office network, Qasa Relay or the website
+  API (items, prices, stock, customers and orders shared with your own website).
 - **Books that can't be rewritten:** the database refuses edits to posted vouchers, invoices and stock moves, and
   keeps an append-only audit log.
 - **Releases** are built from this repository by GitHub Actions and published under [Releases](https://github.com/meroxis/qasa-erp/releases);
@@ -296,8 +307,13 @@ How the app protects data, and how to report a vulnerability: [SECURITY.md](SECU
 
 ## License
 
-Qasa ERP is a product of Meroxis. It is free software under the [GNU Affero General Public License v3.0 or later](LICENSE),
-with the additional terms in [NOTICE](NOTICE): copies must keep the "Made with Qasa ERP" credit printed on invoices,
-unless you have a Pro or Business license from [qasaerp.com](https://qasaerp.com). The name and logo belong to Meroxis.
+Qasa ERP is a product of Meroxis. Its core app (everything in this repository except `native/licence`) is free software
+under the [GNU Affero General Public License v3.0 or later](LICENSE), with the additional terms in [NOTICE](NOTICE):
+copies must keep the "Made with Qasa ERP" credit printed on invoices, unless you have a Pro or Business license from
+[qasaerp.com](https://qasaerp.com). The name and logo belong to Meroxis.
+
+Not under the AGPL, and not open source: the Pro module (`pro/`, a separate private repository) and the licence addon
+(`native/licence`, see [its LICENSE](native/licence/LICENSE)). Both are proprietary to Meroxis, all rights reserved, and
+ship only in the official builds under the [Qasa ERP license agreement (EULA)](https://qasaerp.com/eula/).
 
 © 2026 Meroxis
