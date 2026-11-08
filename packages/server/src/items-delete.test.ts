@@ -66,4 +66,11 @@ describe('a delete the database refuses', () => {
     expect(errorResponse(caught)).toEqual({ status: 409, body: { error: 'in_use', details: null } });
     expect(errorResponse(new Error('something else'))).toEqual({ status: 500, body: { error: 'internal', details: null } });
   });
+
+  it('answers the same on MySQL and MariaDB, for a delete of a row in use and a row pointing at one that is not there', () => {
+    const serverError = (code: string, errno: number) => Object.assign(new Error(`${code}: Cannot add or update a child row`), { code, errno });
+    for (const e of [serverError('ER_ROW_IS_REFERENCED_2', 1451), serverError('ER_NO_REFERENCED_ROW_2', 1452)]) {
+      expect(errorResponse(e)).toEqual({ status: 409, body: { error: 'in_use', details: null } });
+    }
+  });
 });

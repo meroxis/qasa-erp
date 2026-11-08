@@ -18,6 +18,8 @@ export { loadAccounts } from './accounts.ts';
 export { createInvoice, getInvoice, postInvoice, type InvoiceView } from './invoices.ts';
 export { createItem, listWarehouses } from './items.ts';
 export { createParty, getParty, updateParty } from './parties.ts';
+// for the Pro module: a user limited to some branches works only with their warehouses and safes (branches.ts)
+export { defaultWarehouseId, entryInBranchSql, scopeLists, scopeOf, visibleEntryIds, type BranchScope } from './branches.ts';
 export { startUsagePings, usageApi } from './usage.ts';
 // for the desktop app: keep the invoice QR signing key protected with the PC's own secret store
 export { configureVerifyKeyVault, type SecretVault } from './verify.ts';

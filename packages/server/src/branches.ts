@@ -218,6 +218,11 @@ function visibleEntries(db: Db, scope: BranchScope, ids: string[]): Set<string> 
   return new Set(rows.map((r) => r.id));
 }
 
+/** For modules (the Pro module's own records): the entries among `ids` a limited user may see, as in the journal. */
+export function visibleEntryIds(db: Db, scope: BranchScope, ids: readonly string[]): Set<string> {
+  return visibleEntries(db, scope, [...new Set(ids)]);
+}
+
 /** Narrows lists (warehouses, safes, invoices, vouchers, stock documents) to the user's branches. */
 export function filterBranchResult(db: Db, actor: Actor | null, method: string, path: string, result: unknown): unknown {
   if (method !== 'GET' || !result || typeof result !== 'object' || !actor || actor.permissions.includes('admin') || !anyBranches(db)) return result;

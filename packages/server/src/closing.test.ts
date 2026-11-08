@@ -183,7 +183,9 @@ describe('year-end closing', () => {
                 VALUES ('run-1', ?, ?, 'IQD', 'draft', 'Mer', ?, ?)`).run(`${LAST}-12`, `${LAST}-12-31`, now, now);
     expect((await yearOf(LAST)).blockers).toContainEqual({ code: 'unfinished_documents', count: 2 });
     expect((await post(`/api/year-end/${LAST}/close`)).json().error).toBe('unfinished_documents');
-    db.exec("UPDATE stock_adjustments SET status = 'cancelled'; UPDATE payroll_runs SET status = 'cancelled'");
+    // one statement per call: a database server runs no second statement in one (multipleStatements is off)
+    db.exec("UPDATE stock_adjustments SET status = 'cancelled'");
+    db.exec("UPDATE payroll_runs SET status = 'cancelled'");
     expect((await post(`/api/year-end/${LAST}/close`)).statusCode).toBe(200);
   });
 

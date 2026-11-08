@@ -87,10 +87,14 @@ function usedParties(db: Db): Set<string> {
   return new Set(rows.map((r) => r.id));
 }
 
-/** A delete refused by the database because something still refers to the row (SQLite or MySQL/MariaDB). */
+/**
+ * A write refused by the database over a reference (SQLite or MySQL/MariaDB): a delete of a row something still refers
+ * to (1451), or a row pointing at one that is not there (1452), which SQLite reports with the same message.
+ */
 export function isForeignKeyFailure(error: unknown): boolean {
   const e = error as { message?: unknown; code?: unknown; errno?: unknown } | null;
-  return !!e && (String(e.message ?? '').includes('FOREIGN KEY constraint failed') || e.code === 'ER_ROW_IS_REFERENCED_2' || e.errno === 1451);
+  return !!e && (String(e.message ?? '').includes('FOREIGN KEY constraint failed')
+    || e.code === 'ER_ROW_IS_REFERENCED_2' || e.errno === 1451 || e.code === 'ER_NO_REFERENCED_ROW_2' || e.errno === 1452);
 }
 
 export function listParties(
