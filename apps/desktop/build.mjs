@@ -6,6 +6,7 @@ import { copyFileSync, cpSync, existsSync, mkdirSync, readFileSync, rmSync, writ
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { build } from 'vite';
+import { cloudIds } from './cloud-ids.mjs';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const root = join(here, '..', '..');
@@ -41,11 +42,8 @@ rmSync(dist, { recursive: true, force: true });
 const defines = {
   // Pro cloud backup: the OAuth client IDs of the Google and Microsoft apps (from the release's secrets; empty in other
   // builds, which then say "Not available in this build"). Google's desktop "secret" ships in every copy by design.
-  __QASA_CLOUD_IDS__: JSON.stringify({
-    google: process.env.QASA_GOOGLE_CLIENT_ID ?? '',
-    googleSecret: process.env.QASA_GOOGLE_CLIENT_SECRET ?? '',
-    onedrive: process.env.QASA_MS_CLIENT_ID ?? ''
-  }),
+  // (cleaned of invisible characters such as a byte order mark, and checked: see cloud-ids.mjs)
+  __QASA_CLOUD_IDS__: JSON.stringify(cloudIds()),
   // Qasa Relay (the office network over the internet); empty means the default, https://relay.qasaerp.com
   __QASA_RELAY_URL__: JSON.stringify(process.env.QASA_RELAY_URL ?? '')
 };
