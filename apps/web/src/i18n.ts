@@ -608,7 +608,7 @@ const BASE = {
   f_pos: ['نقطة البيع (كاشير) مع الباركود وطابعة الوصولات', 'Point of sale with barcode and receipt printer', 'خاڵی فرۆشتن (کاشێر) لەگەڵ بارکۆد و چاپکەری پسوولە'],
   f_pipeline: ['متابعة المبيعات من أول اتصال إلى الصفقة', 'Sales pipeline from first contact to the deal', 'بەدواداچوونی فرۆشتن لە یەکەم پەیوەندییەوە تا ڕێککەوتن'],
   f_bankReconciliation: ['مطابقة كشف المصرف مع الدفاتر', 'Bank reconciliation with the books', 'بەراوردکردنی کەشفی بانک لەگەڵ دەفتەرەکان'],
-  f_cloudBackup: ['نسخ احتياطي تلقائي مشفّر إلى Google Drive وOneDrive', 'Automatic encrypted backup to Google Drive and OneDrive', 'باکئەپی خۆکاری شفرەکراو بۆ Google Drive و OneDrive'],
+  f_cloudBackup: ['نسخ احتياطي تلقائي مشفّر إلى Google Drive (وOneDrive قريباً)', 'Automatic encrypted backup to Google Drive (OneDrive coming soon)', 'باکئەپی خۆکاری شفرەکراو بۆ Google Drive (OneDrive بەم زووانە)'],
   f_branches: ['الفروع', 'Branches', 'لقەکان'],
   f_online: ['النسخة الإلكترونية في المتصفح', 'Online edition (in the browser)', 'وەشانی ئۆنلاین (لە وێبگەڕدا)'],
   f_relay: ['Qasa Relay: شبكة المكتب من أي مكان دون IP عام (لا يشمله الشهر المجاني)', 'Qasa Relay: the office network from anywhere, with no public IP (not in the free month)', 'Qasa Relay: تۆڕی نووسینگە لە هەر شوێنێکەوە بێ IPی گشتی (لە مانگی بەخۆڕاییدا نییە)'],

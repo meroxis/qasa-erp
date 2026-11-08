@@ -2,14 +2,15 @@
 export const CLOUD_TEXT = {
   cl_title: ['النسخ إلى السحابة', 'Cloud backup', 'باکئەپ بۆ هەور'],
   cl_help: [
-    'تُرفع كل نسخة يومية مشفّرة تلقائياً إلى Google Drive أو OneDrive. اضغط «ربط» وسجّل الدخول في المتصفح، فقط.',
-    'Each daily copy, encrypted, goes up to Google Drive or OneDrive by itself. Click Connect and sign in in your browser — that’s all.',
-    'هەموو کۆپییەکی ڕۆژانە، بە شفرەکراوی، خۆکارانە بۆ Google Drive یان OneDrive بەرز دەکرێتەوە. کلیک لە «پەیوەستکردن» بکە و لە وێبگەڕەکەت بچۆ ژوورەوە — تەواو.'
+    'تُرفع كل نسخة يومية مشفّرة تلقائياً إلى حسابك السحابي. اضغط «ربط» وسجّل الدخول في المتصفح، فقط.',
+    'Each daily copy, encrypted, goes up to your cloud account by itself. Click Connect and sign in in your browser — that’s all.',
+    'هەموو کۆپییەکی ڕۆژانە، بە شفرەکراوی، خۆکارانە بۆ هەژماری هەورەکەت بەرز دەکرێتەوە. کلیک لە «پەیوەستکردن» بکە و لە وێبگەڕەکەت بچۆ ژوورەوە — تەواو.'
   ],
   cl_google: ['Google Drive', 'Google Drive', 'Google Drive'],
   cl_onedrive: ['OneDrive', 'OneDrive', 'OneDrive'],
   cl_connect: ['ربط {p}', 'Connect {p}', 'پەیوەستکردنی {p}'],
-  cl_notSetUp: ['غير متاح في هذه النسخة', 'Not available in this build', 'لەم وەشانەدا بەردەست نییە'],
+  // a service this build has no sign-in for yet (OneDrive for now): shown as coming, never as a dead button or an error
+  cl_soon: ['{p}: قريباً', '{p}: coming soon', '{p}: بەم زووانە'],
   cl_needsPassword: [
     'عيّن كلمة مرور للنسخ الاحتياطية أعلاه أولاً: لا يُرفع إلى السحابة إلا نسخ مشفّرة لا يقرؤها أحد غيرك.',
     'Set a backup password above first: only encrypted copies go to the cloud, so nobody but you can read them.',
@@ -45,17 +46,22 @@ export const CLOUD_TEXT = {
     'پەیوەندی بپچڕێنرێت؟ ئەو کۆپییانەی لە هەورن دەمێننەوە، بەڵام کۆپیی نوێ بەرز ناکرێتەوە.'
   ],
   cl_failed: ['تعذّر الرفع: {e}', 'Upload failed: {e}', 'بەرزکردنەوە سەرنەکەوت: {e}'],
-  cl_where: [
-    'تجدها في Drive داخل مجلد «Qasa ERP backups»، وفي OneDrive داخل «Apps/Qasa ERP». لا يرى البرنامج أي ملف آخر في حسابك.',
-    'You’ll find them in Drive in the “Qasa ERP backups” folder, and in OneDrive under “Apps/Qasa ERP”. The app can’t see any other file in your account.',
-    'لە Drive لە بوخچەی «Qasa ERP backups» و لە OneDrive لە «Apps/Qasa ERP» دەیاندۆزیتەوە. بەرنامەکە هیچ فایلێکی تری هەژمارەکەت نابینێت.'
+  cl_where_google: [
+    'تجدها في Google Drive داخل مجلد «Qasa ERP backups». لا يرى البرنامج إلا الملفات التي أنشأها هو، ولا يرى أي ملف آخر في حسابك.',
+    'You’ll find them in Google Drive in the “Qasa ERP backups” folder. The app only sees the files it made itself, never any other file in your account.',
+    'لە Google Drive لە بوخچەی «Qasa ERP backups» دەیاندۆزیتەوە. بەرنامەکە تەنها ئەو فایلانە دەبینێت کە خۆی دروستی کردوون، هیچ فایلێکی تری هەژمارەکەت نابینێت.'
+  ],
+  cl_where_onedrive: [
+    'تجدها في OneDrive داخل «Apps/Qasa ERP». لا يرى البرنامج أي ملف آخر في حسابك.',
+    'You’ll find them in OneDrive under “Apps/Qasa ERP”. The app can’t see any other file in your account.',
+    'لە OneDrive لە «Apps/Qasa ERP» دەیاندۆزیتەوە. بەرنامەکە هیچ فایلێکی تری هەژمارەکەت نابینێت.'
   ],
   err_cloud_needs_password: [
     'عيّن كلمة مرور للنسخ الاحتياطية أولاً.',
     'Set a backup password first.',
     'سەرەتا وشەی نهێنی بۆ باکئەپەکان دابنێ.'
   ],
-  err_cloud_not_configured: ['هذه الخدمة غير متاحة في هذه النسخة من البرنامج.', 'That service isn’t available in this build of the app.', 'ئەم خزمەتگوزارییە لەم وەشانەی بەرنامەکەدا بەردەست نییە.'],
+  err_cloud_not_configured: ['هذه الخدمة قادمة قريباً، وهي غير متاحة بعد.', 'That service is coming soon; it isn’t available yet.', 'ئەم خزمەتگوزارییە بەم زووانە دێت؛ هێشتا بەردەست نییە.'],
   err_cloud_not_connected: ['لا توجد سحابة مربوطة.', 'No cloud is connected.', 'هیچ هەورێک پەیوەست نەکراوە.'],
   err_cloud_signed_out: [
     'انتهى الوصول إلى الحساب السحابي. اربطه مرة أخرى.',

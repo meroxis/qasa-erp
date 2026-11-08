@@ -105,33 +105,15 @@ describe('the Microsoft Store listing', () => {
   });
 });
 
-describe('the release notes and the Store "What\'s new" of this version', () => {
-  const version = (JSON.parse(read('apps/desktop/package.json')) as { version: string }).version;
-  const notes = read(`apps/desktop/release-notes/${version}.md`);
+describe('the release notes of 1.0.0 (kept as shipped)', () => {
+  const notes = read('apps/desktop/release-notes/1.0.0.md');
   const section = (lang: 'ar' | 'en' | 'ku') => new RegExp(`^::: ${lang}\\n([\\s\\S]*?)^:::$`, 'm').exec(notes)?.[1] ?? '';
-  const listing = JSON.parse(read('apps/desktop/store-listing.json')) as { listings: Record<'en-us' | 'ar' | 'ku-arab', { releaseNotes: string }> };
 
-  it('is 1.0.0, with notes in Arabic, English and Kurdish', () => {
-    expect(version).toBe('1.0.0');
-    for (const lang of ['ar', 'en', 'ku'] as const) expect(section(lang).trim().length).toBeGreaterThan(500);
-  });
-
-  it('tells the holders of 0.1.8 licences to connect once in the first month, in each language and in the Store text', () => {
-    expect(section('en')).toMatch(/0\.1\.8[\s\S]*connect this PC to the internet at least once during your first month/);
-    expect(section('ar')).toMatch(/0\.1\.8[\s\S]*فاربط هذا الحاسوب بالإنترنت مرة واحدة على الأقل خلال شهرك الأول/);
-    // «فصِل» read without its kasra means 'disconnect': never use it for this step
-    expect(notes + listing.listings.ar.releaseNotes).not.toMatch(/فصِل|فصل هذا الحاسوب/);
-    expect(section('ku')).toMatch(/0\.1\.8[\s\S]*لە مانگی یەکەمت[\s\S]*یەک جار ئەم کۆمپیوتەرە بە ئینتەرنێتەوە ببەستە/);
-    // the warning comes before the list of what is new
-    for (const lang of ['ar', 'en', 'ku'] as const) expect(section(lang).indexOf('0.1.8')).toBeLessThan(section(lang).indexOf('Qasa Relay'));
-    const store = listing.listings;
-    expect(store['en-us'].releaseNotes).toMatch(/0\.1\.8: connect this PC to the internet once during your first month/);
-    expect(store.ar.releaseNotes).toMatch(/0\.1\.8: اربط هذا الحاسوب بالإنترنت مرة واحدة خلال شهرك الأول/);
-    // 'it keeps working meanwhile', never 'it works until then'
-    expect(store.ar.releaseNotes).toContain('ويبقى يعمل في هذه الأثناء');
-    expect(store['ku-arab'].releaseNotes).toContain('لەو ماوەیەدا هەر کار دەکات');
-    expect(store.ar.releaseNotes + store['ku-arab'].releaseNotes).not.toMatch(/يبقى يعمل حتى ذلك|تا ئەو کاتە کار دەکات/);
-    expect(store['ku-arab'].releaseNotes).toMatch(/0\.1\.8: لە مانگی یەکەمت[^؛]*یەک جار ئەم کۆمپیوتەرە بە ئینتەرنێتەوە ببەستە/);
+  it('tells the holders of 0.1.8 licences to connect once in the first month, before the list of what is new', () => {
+    for (const lang of ['ar', 'en', 'ku'] as const) {
+      expect(section(lang).trim().length).toBeGreaterThan(500);
+      expect(section(lang).indexOf('0.1.8')).toBeLessThan(section(lang).indexOf('Qasa Relay'));
+    }
   });
 
   it('names the big 1.0 features, the language choice and the user guide', () => {
@@ -139,8 +121,8 @@ describe('the release notes and the Store "What\'s new" of this version', () => 
     for (const feature of ['Payroll', 'Point of sale', 'quotations', 'sales pipeline', 'Banks & cheques', 'Fixed assets', 'Print design', 'letterhead',
       'barcode labels', 'Branches', 'several companies on one PC', 'Cloud backup', 'Qasa Relay', 'WooCommerce', 'Activation', 'language on the first screen',
       'user guide', 'Security']) expect(en, feature).toContain(feature);
-    for (const text of [section('ar'), listing.listings.ar.releaseNotes]) for (const word of ['الرواتب', 'نقطة البيع', 'تصميم الطباعة', 'Qasa Relay', 'دليل الاستخدام']) expect(text).toContain(word);
-    for (const text of [section('ku'), listing.listings['ku-arab'].releaseNotes]) for (const word of ['مووچە', 'خاڵی فرۆشتن', 'دیزاینی چاپ', 'Qasa Relay', 'ڕێنمایی بەکارهێنان']) expect(text).toContain(word);
+    for (const word of ['الرواتب', 'نقطة البيع', 'تصميم الطباعة', 'Qasa Relay', 'دليل الاستخدام']) expect(section('ar')).toContain(word);
+    for (const word of ['مووچە', 'خاڵی فرۆشتن', 'دیزاینی چاپ', 'Qasa Relay', 'ڕێنمایی بەکارهێنان']) expect(section('ku')).toContain(word);
   });
 
   it('names the plan of the sales pipeline (Pro) and of branches (Business), and who connects in an office', () => {
@@ -153,6 +135,63 @@ describe('the release notes and the Store "What\'s new" of this version', () => 
     expect(section('en')).toMatch(/office network,\*\* the PC that keeps the company file is the one to connect/);
     for (const lang of ['ar', 'en', 'ku'] as const) expect(section(lang)).toContain('my.qasaerp.com');
     expect(section('ku')).not.toContain('مۆڵەتی چالاکی');
+  });
+});
+
+describe('the release notes and the Store "What\'s new" of this version', () => {
+  const version = (JSON.parse(read('apps/desktop/package.json')) as { version: string }).version;
+  const notes = read(`apps/desktop/release-notes/${version}.md`);
+  const section = (lang: 'ar' | 'en' | 'ku') => new RegExp(`^::: ${lang}\\n([\\s\\S]*?)^:::$`, 'm').exec(notes)?.[1] ?? '';
+  const listing = JSON.parse(read('apps/desktop/store-listing.json')) as { listings: Record<'en-us' | 'ar' | 'ku-arab', { releaseNotes: string }> };
+
+  const store = listing.listings;
+
+  it('is 1.0.1, the same in the app, the core and the lock file, with notes in Arabic, English and Kurdish', () => {
+    expect(version).toBe('1.0.1');
+    expect(read('packages/core/src/version.ts')).toContain(`APP_VERSION = '${version}'`);
+    const lock = JSON.parse(read('package-lock.json')) as { packages: Record<string, { version?: string }> };
+    expect(lock.packages['apps/desktop']?.version).toBe(version);
+    for (const lang of ['ar', 'en', 'ku'] as const) expect(section(lang).trim().length).toBeGreaterThan(300);
+    for (const lang of ['en-us', 'ar', 'ku-arab'] as const) expect(store[lang].releaseNotes).toContain(version);
+  });
+
+  it('says Google Drive backup works now, where to find it, and that only encrypted copies go up to files the app made itself', () => {
+    expect(section('en')).toContain('Settings → Backups → Cloud backup → **Connect Google Drive**');
+    expect(section('en')).toMatch(/Only \*\*encrypted\*\* copies go up/);
+    expect(section('en')).toMatch(/only sees the files it makes itself/);
+    expect(section('ar')).toContain('الإعدادات ← النسخ الاحتياطية ← النسخ إلى السحابة ← **ربط Google Drive**');
+    expect(section('ar')).toContain('**مشفّرة**');
+    expect(section('ku')).toContain('ڕێکخستنەکان ← باکئەپەکان ← باکئەپ بۆ هەور ← **پەیوەستکردنی Google Drive**');
+    expect(section('ku')).toContain('**شفرەکراو**');
+    expect(store['en-us'].releaseNotes).toMatch(/Google Drive now works[\s\S]*Only encrypted copies go up/);
+    expect(store.ar.releaseNotes).toMatch(/Google Drive يعمل الآن[\s\S]*نسخ مشفّرة/);
+    expect(store['ku-arab'].releaseNotes).toMatch(/Google Drive ئێستا کار دەکات[\s\S]*کۆپیی شفرەکراو/);
+  });
+
+  it('says OneDrive comes later, and never that it works now', () => {
+    expect(section('en')).toContain('**OneDrive comes in a later update.**');
+    expect(section('ar')).toContain('**OneDrive يأتي في تحديث لاحق.**');
+    expect(section('ku')).toContain('**OneDrive لە نوێکردنەوەیەکی داهاتوودا دێت.**');
+    expect(store['en-us'].releaseNotes).toContain('OneDrive comes in a later update');
+    expect(store.ar.releaseNotes).toContain('OneDrive يأتي في تحديث لاحق');
+    expect(store['ku-arab'].releaseNotes).toContain('OneDrive لە نوێکردنەوەیەکی داهاتوودا دێت');
+    const all = [notes, ...Object.values(store).map((l) => l.releaseNotes)].join('\n');
+    expect(all).not.toMatch(/Google Drive and OneDrive|Google Drive وOneDrive|Google Drive و OneDrive/);
+  });
+
+  it('still tells the holders of 0.1.8 licences to connect once in the first month, in each language and in the Store text', () => {
+    expect(section('en')).toMatch(/0\.1\.8[\s\S]*connect this PC to the internet at least once during your first month/);
+    expect(section('ar')).toMatch(/0\.1\.8[\s\S]*فاربط هذا الحاسوب بالإنترنت مرة واحدة على الأقل خلال شهرك الأول/);
+    // «فصِل» read without its kasra means 'disconnect': never use it for this step
+    expect(notes + listing.listings.ar.releaseNotes).not.toMatch(/فصِل|فصل هذا الحاسوب/);
+    expect(section('ku')).toMatch(/0\.1\.8[\s\S]*لە مانگی یەکەمت[\s\S]*یەک جار ئەم کۆمپیوتەرە بە ئینتەرنێتەوە ببەستە/);
+    expect(store['en-us'].releaseNotes).toMatch(/0\.1\.8: connect this PC to the internet once during your first month/);
+    expect(store.ar.releaseNotes).toMatch(/0\.1\.8: اربط هذا الحاسوب بالإنترنت مرة واحدة خلال شهرك الأول/);
+    // 'it keeps working meanwhile', never 'it works until then'
+    expect(store.ar.releaseNotes).toContain('ويبقى يعمل في هذه الأثناء');
+    expect(store['ku-arab'].releaseNotes).toContain('لەو ماوەیەدا هەر کار دەکات');
+    expect(store.ar.releaseNotes + store['ku-arab'].releaseNotes).not.toMatch(/يبقى يعمل حتى ذلك|تا ئەو کاتە کار دەکات/);
+    expect(store['ku-arab'].releaseNotes).toMatch(/0\.1\.8: لە مانگی یەکەمت[^؛]*یەک جار ئەم کۆمپیوتەرە بە ئینتەرنێتەوە ببەستە/);
   });
 
   it('the Store text says a paid licence is activated online, next to "works without internet"', () => {
