@@ -476,6 +476,21 @@ export const MYSQL_TABLES: readonly MysqlObject[] = [
     )`
   },
   {
+    name: 'serial_sales',
+    since: 7,
+    sql: `CREATE TABLE serial_sales (
+      id ${ID} NOT NULL PRIMARY KEY,
+      serial_id ${ID} NOT NULL,
+      invoice_id ${ID} NOT NULL,
+      warranty_until ${WHEN},
+      created_at ${WHEN} NOT NULL,
+      INDEX serial_sales_serial (serial_id),
+      INDEX serial_sales_invoice (invoice_id),
+      FOREIGN KEY (serial_id) REFERENCES serials(id),
+      FOREIGN KEY (invoice_id) REFERENCES invoices(id)
+    )`
+  },
+  {
     name: 'repair_orders',
     since: 7,
     sql: `CREATE TABLE repair_orders (

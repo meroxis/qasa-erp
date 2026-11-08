@@ -30,6 +30,7 @@ export const MOBILE_TEXT = {
   mob_markAs: ['تغيير الحالة إلى', 'Mark as', 'دۆخەکەی بگۆڕە بۆ'],
   mob_reason: ['السبب', 'Reason', 'هۆکار'],
   mob_repairHistory: ['سجل الصيانة', 'Repair history', 'مێژووی چاککردنەوە'],
+  mob_saleHistory: ['سجل البيع', 'Sales history', 'مێژووی فرۆشتن'],
   mob_noDevices: ['لا توجد أجهزة مسجلة بعد.', 'No phones registered yet.', 'هێشتا هیچ مۆبایلێک تۆمار نەکراوە.'],
   mob_imei: ['IMEI / الرقم التسلسلي', 'IMEI / serial', 'IMEI / ژمارەی زنجیرەیی'],
   mob_new: ['جديد', 'New', 'نوێ'],

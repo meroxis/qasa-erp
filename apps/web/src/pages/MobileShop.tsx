@@ -285,6 +285,18 @@ function LookupResult({ result, onChanged }: { result: SerialLookup; onChanged(m
           <ErrorBox error={error} />
         </>
       )}
+      {(result.sales?.length ?? 0) > 1 && (
+        <div className="small">
+          <div className="muted" style={{ marginBottom: 4 }}>{t('mob_saleHistory')}</div>
+          {result.sales!.map((s) => (
+            <div key={s.invoice.id}>
+              <a className="ltr" href={href(`invoice/${s.invoice.id}`)}>{s.invoice.number ?? '—'}</a> · <span className="num">{i18n.date(s.invoice.date)}</span>
+              {s.party && <> · <a href={href(`party/${s.party.id}`)}>{s.party.name}</a></>}
+              {s.invoice.status === 'cancelled' && <span className="chip bad" style={{ marginInlineStart: 6 }}>{t('cancelled')}</span>}
+            </div>
+          ))}
+        </div>
+      )}
       {result.repairs.length > 0 && (
         <div>
           <div className="muted small" style={{ marginBottom: 4 }}>{t('mob_repairHistory')}</div>

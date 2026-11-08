@@ -62,7 +62,15 @@ export interface MobileSummary {
   underWarranty: number;
 }
 
-export interface SerialLookup { serial: string; device: SerialView | null; repairs: RepairView[] }
+/** One sale that took a phone (a phone that came back and was sold again has several). */
+export interface SerialSale {
+  invoice: { id: string; number: string | null; date: string; status: string };
+  party: { id: string; name: string } | null;
+  warrantyUntil: string | null;
+}
+
+/** `sales`: every sale that took it, newest first (missing from a Pro module before sales history). */
+export interface SerialLookup { serial: string; device: SerialView | null; sales?: SerialSale[]; repairs: RepairView[] }
 
 export interface RepairInput {
   date: string;

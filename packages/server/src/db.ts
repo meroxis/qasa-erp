@@ -709,6 +709,16 @@ const V7 =
   );
   CREATE INDEX serials_item ON serials(item_id);
   CREATE INDEX serials_sale ON serials(sale_invoice_id);
+  -- every sale that took a serial, kept when it is sold again (serials.sale_invoice_id is only the latest)
+  CREATE TABLE serial_sales (
+    id TEXT PRIMARY KEY,
+    serial_id TEXT NOT NULL REFERENCES serials(id),
+    invoice_id TEXT NOT NULL REFERENCES invoices(id),
+    warranty_until TEXT,
+    created_at TEXT NOT NULL
+  );
+  CREATE INDEX serial_sales_serial ON serial_sales(serial_id);
+  CREATE INDEX serial_sales_invoice ON serial_sales(invoice_id);
 
   CREATE TABLE repair_orders (
     id TEXT PRIMARY KEY,
