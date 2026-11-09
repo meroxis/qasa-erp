@@ -50,7 +50,7 @@ it('tells an admin once, on any page, that copies stay on this PC while Document
   expect(JSON.stringify(inSettings.props.children)).not.toContain('#/settings');
   // "Got it" marks it read on the server, so it never comes back
   const button = (bar.props.children as Node[])[1]!.props.children as (Node | false)[];
-  (button.find((n) => n && n.type === 'button') as Node).props.onClick!();
+  ((button.find((n) => n && n.type === 'button') as Node).props.onClick as () => void)();
   expect(seen.calls).toBe(1);
   expect(render({ notice: null, localNotice: true }, false)).toBeNull();
   expect(render({ notice: null, localNotice: false })).toBeNull();
