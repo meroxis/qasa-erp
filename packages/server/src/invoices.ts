@@ -90,6 +90,14 @@ export interface InvoiceSummary {
   returnOf: string | null;
   createdBy: string;
   createdAt: string;
+  /** 1.1: online payments recorded on it (a website order), in its currency */
+  paidOnline: number;
+}
+
+/** Money taken for an invoice outside its own cash or credit: POS parts and online payments (1.1). */
+export interface InvoicePaymentView {
+  id: string; kind: 'pos' | 'online'; method: string; accountCode: string; amount: number; currency: CurrencyCode;
+  reference: string | null; source: string | null; entryId: string | null; entryNumber: string | null; entryStatus: string | null; createdAt: string;
 }
 
 export interface InvoiceView extends InvoiceSummary {
@@ -113,6 +121,7 @@ export interface InvoiceView extends InvoiceSummary {
   returns: { id: string; kind: InvoiceDocKind; number: string | null; date: string; status: InvoiceStatus; total: number }[];
   /** The installment contract that schedules this sale (Pro), while it is active. */
   installmentContract: { id: string; number: string } | null;
+  payments: InvoicePaymentView[];
 }
 
 interface InvoiceRow {
@@ -122,6 +131,7 @@ interface InvoiceRow {
   created_by: string; created_at: string; posted_by: string | null; posted_at: string | null; cancelled_by: string | null; cancelled_at: string | null;
   party_code: string | null; party_name: string | null;
   settlement_base: number | null;
+  online_paid: number | null;
 }
 
 export const isReturn = (kind: InvoiceDocKind) => kind === 'sale_return' || kind === 'purchase_return';
@@ -161,14 +171,15 @@ function toSummary(r: InvoiceRow): InvoiceSummary {
     id: r.id, kind: r.kind, status: r.status, number: r.number, date: r.date, partyId: r.party_id, partyCode: r.party_code, partyName: r.party_name,
     warehouseId: r.warehouse_id, currency: r.currency, rateX100: r.rate_x100, payment: r.payment, cashAccountCode: r.cash_account,
     discount: r.discount, subtotal: r.subtotal, total: r.total, baseTotal: r.settlement_base ?? toBase(r.total, r.currency, r.rate_x100), notes: r.notes ?? '',
-    returnOf: r.return_of, createdBy: r.created_by, createdAt: r.created_at
+    returnOf: r.return_of, createdBy: r.created_by, createdAt: r.created_at, paidOnline: Number(r.online_paid ?? 0)
   };
 }
 
 const SELECT_INVOICE = `SELECT v.*, p.code AS party_code, p.name AS party_name,
   (SELECT SUM(CASE WHEN v.kind IN ('purchase', 'sale_return') THEN l.base_credit - l.base_debit ELSE l.base_debit - l.base_credit END)
    FROM entry_lines l WHERE l.entry_id = v.entry_id AND
-     ((v.payment = 'cash' AND l.account_code = v.cash_account) OR (v.payment = 'credit' AND l.party_id = v.party_id))) AS settlement_base
+     ((v.payment = 'cash' AND l.account_code = v.cash_account) OR (v.payment = 'credit' AND l.party_id = v.party_id))) AS settlement_base,
+  (SELECT SUM(ip.amount) FROM invoice_payments ip WHERE ip.invoice_id = v.id AND ip.kind = 'online') AS online_paid
   FROM invoices v LEFT JOIN parties p ON p.id = v.party_id`;
 
 /** Active refunds in both currencies. Read the posted settlement, including its rounding allocation. */
@@ -221,8 +232,20 @@ export function getInvoice(db: Db, id: string): InvoiceView {
     lines: lineViews, actions: actionsFor(db, r, lineViews.some((l) => l.returnedQtyMilli < l.qtyMilli)),
     returnOfNumber: r.return_of ? (db.prepare('SELECT number FROM invoices WHERE id = ?').get(r.return_of) as { number: string | null }).number : null,
     returns,
-    installmentContract: activeContractOf(db, id)
+    installmentContract: activeContractOf(db, id),
+    payments: invoicePayments(db, id)
   };
+}
+
+export function invoicePayments(db: Db, invoiceId: string): InvoicePaymentView[] {
+  return (db.prepare(`SELECT p.*, e.number AS entry_number, e.status AS entry_status FROM invoice_payments p LEFT JOIN entries e ON e.id = p.entry_id
+                      WHERE p.invoice_id = ? ORDER BY p.created_at, p.id`).all(invoiceId) as {
+    id: string; kind: 'pos' | 'online'; method: string; account_code: string; amount: number; currency: CurrencyCode; reference: string | null; source: string | null;
+    entry_id: string | null; entry_number: string | null; entry_status: string | null; created_at: string;
+  }[]).map((p) => ({
+    id: p.id, kind: p.kind, method: p.method, accountCode: p.account_code, amount: Number(p.amount), currency: p.currency, reference: p.reference, source: p.source,
+    entryId: p.entry_id, entryNumber: p.entry_number, entryStatus: p.entry_status, createdAt: p.created_at
+  }));
 }
 
 export interface InvoiceFilters {

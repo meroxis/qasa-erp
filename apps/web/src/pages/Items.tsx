@@ -4,6 +4,7 @@ import { api, type ItemInput, type ItemView, type WarehouseView } from '../api.t
 import { EmptyState, AmountInput, ErrorBox, Icon, Modal, QtyInput, downloadCsv, useData, useLoad, useToast } from '../components.tsx';
 import { inUnits } from '../industry/units.ts';
 import { batchesApi } from '../industry/batches-api.ts';
+import { categoriesApi, type CategoryView } from '../industry/categories-api.ts';
 import { ExpiryChip } from './Expiry.tsx';
 import { useI18n, type I18n, isKey, type Key } from '../i18n.ts';
 import { go, href } from '../router.ts';
@@ -30,26 +31,51 @@ export function Items() {
   const { t } = i18n;
   // the warehouse account's statement is the company's books: no link for someone limited to branches
   const books = useData().companyBooks !== false;
-  const [tab, setTab] = useState<'items' | 'warehouses'>('items');
+  const toast = useToast();
+  const [tab, setTab] = useState<'items' | 'warehouses' | 'categories'>('items');
   const [q, setQ] = useState('');
   const [warehouseId, setWarehouseId] = useState('');
+  const [categoryId, setCategoryId] = useState('');
   const [editing, setEditing] = useState<ItemView | 'new' | null>(null);
   const [newWarehouse, setNewWarehouse] = useState(false);
-  const items = useLoad(() => api.items({ q: q.trim(), warehouseId }), [q, warehouseId]);
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [bulkCategory, setBulkCategory] = useState('');
+  const [bulkError, setBulkError] = useState<unknown>(null);
+  const items = useLoad(() => api.items({ q: q.trim(), warehouseId, ...(categoryId ? { categoryId } : {}) }), [q, warehouseId, categoryId]);
   const warehouses = useLoad(() => api.warehouses(), []);
+  const categories = useLoad(() => categoriesApi.list(), []);
+  const categoryCode = new Map((categories.data ?? []).map((c) => [c.id, c.code]));
   const totalValue = (items.data ?? []).reduce((s, it) => s + it.value, 0);
 
   const exportCsv = () => downloadCsv('items.csv', [
-    [t('code'), t('name'), t('unit'), t('available'), t('avgCost'), t('stockValue'), t('salePrice')],
-    ...(items.data ?? []).map((it) => [it.code, i18n.name(it.name), unitName(i18n, it.unit), formatQty(it.qtyMilli), averageCost(it.qtyMilli, it.value), it.value, it.salePrice])
+    [t('code'), t('name'), t('unit'), t('available'), t('avgCost'), t('stockValue'), t('salePrice'), t('cat_category')],
+    ...(items.data ?? []).map((it) => [it.code, i18n.name(it.name), unitName(i18n, it.unit), formatQty(it.qtyMilli), averageCost(it.qtyMilli, it.value), it.value, it.salePrice,
+      it.categoryId ? categoryCode.get(it.categoryId) ?? '' : ''])
   ]);
+
+  const toggle = (id: string) => setSelected((s) => { const n = new Set(s); if (n.has(id)) n.delete(id); else n.add(id); return n; });
+  async function setCategoryForSelected() {
+    setBulkError(null);
+    try {
+      const r = await categoriesApi.setForItems([...selected], bulkCategory === 'none' ? null : bulkCategory);
+      toast(t('cat_updated', { n: r.updated }));
+      setSelected(new Set());
+      items.reload();
+      categories.reload();
+    } catch (e) {
+      setBulkError(e);
+    }
+  }
 
   return (
     <div className="stack">
       <div className="tabs">
         <button type="button" aria-pressed={tab === 'items'} onClick={() => setTab('items')}>{t('items')}</button>
         <button type="button" aria-pressed={tab === 'warehouses'} onClick={() => setTab('warehouses')}>{t('warehouses')}</button>
+        <button type="button" aria-pressed={tab === 'categories'} onClick={() => setTab('categories')}>{t('cat_title')}</button>
       </div>
+
+      {tab === 'categories' && <Categories list={categories.data ?? []} error={categories.error} onChanged={() => { categories.reload(); items.reload(); }} />}
 
       {tab === 'items' && (
         <>
@@ -63,9 +89,29 @@ export function Items() {
                 {warehouses.data!.map((w) => <option key={w.id} value={w.id}>{i18n.name(w.name)}</option>)}
               </select>
             )}
+            {(categories.data?.length ?? 0) > 0 && (
+              <select className="input" style={{ width: 180 }} value={categoryId} onChange={(e) => setCategoryId(e.target.value)} aria-label={t('cat_category')}>
+                <option value="">{t('cat_all')}</option>
+                <option value="none">{t('cat_none')}</option>
+                {categories.data!.map((c) => <option key={c.id} value={c.id}>{i18n.name(c.name)}</option>)}
+              </select>
+            )}
             <input className="input" style={{ width: 240 }} type="search" placeholder={t('search')} aria-label={t('search')} value={q} onChange={(e) => setQ(e.target.value)} />
             <button type="button" className="btn" onClick={exportCsv}><Icon name="download" size={16} />{t('exportExcel')}</button>
           </div>
+          {selected.size > 0 && (
+            <div className="card pad row">
+              <span>{t('cat_setFor', { n: selected.size })}</span>
+              <select className="input" style={{ width: 200 }} value={bulkCategory} onChange={(e) => setBulkCategory(e.target.value)} aria-label={t('cat_category')}>
+                <option value="" />
+                <option value="none">{t('cat_none')}</option>
+                {(categories.data ?? []).filter((c) => c.active).map((c) => <option key={c.id} value={c.id}>{i18n.name(c.name)}</option>)}
+              </select>
+              <button type="button" className="btn primary" disabled={!bulkCategory} onClick={() => void setCategoryForSelected()}>{t('cat_set')}</button>
+              <button type="button" className="btn" onClick={() => setSelected(new Set())}>{t('cancel')}</button>
+              <ErrorBox error={bulkError} />
+            </div>
+          )}
           <ErrorBox error={items.error} />
           <div className="card">
             {items.data && items.data.length === 0 && (q.trim() || warehouseId
@@ -75,6 +121,7 @@ export function Items() {
               <table className="table">
                 <thead>
                   <tr>
+                    <th style={{ width: 32 }} />
                     <th style={{ width: 100 }}>{t('code')}</th>
                     <th>{t('item')}</th>
                     <th className="amount">{t('available')}</th>
@@ -87,6 +134,7 @@ export function Items() {
                 <tbody>
                   {items.data.map((it) => (
                     <tr key={it.id} className="click" onClick={() => go(`item/${it.id}`)}>
+                      <td onClick={(e) => e.stopPropagation()}><input type="checkbox" checked={selected.has(it.id)} onChange={() => toggle(it.id)} aria-label={it.code} /></td>
                       <td><span className="tree-code">{it.code}</span></td>
                       <td>
                         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
@@ -116,7 +164,7 @@ export function Items() {
                   ))}
                 </tbody>
                 <tfoot>
-                  <tr><td /><td>{t('total')}</td><td /><td /><td className="amount">{i18n.money(totalValue, 'IQD')}</td><td /><td /></tr>
+                  <tr><td /><td /><td>{t('total')}</td><td /><td /><td className="amount">{i18n.money(totalValue, 'IQD')}</td><td /><td /></tr>
                 </tfoot>
               </table>
             )}
@@ -175,6 +223,8 @@ export function ItemForm({ item, onClose, onSaved }: { item: ItemView | null; on
   const [units, setUnits] = useState<UnitRow[]>(() => (item?.units ?? []).map((u) => ({ key: unitKey++, unit: u.unit, factorMilli: u.factorMilli, barcode: u.barcode, salePrice: u.salePrice })));
   const [trackBatches, setTrackBatches] = useState(item?.trackBatches ?? false);
   const [trackExpiry, setTrackExpiry] = useState(item?.trackExpiry ?? false);
+  const [categoryId, setCategoryId] = useState(item?.categoryId ?? '');
+  const categories = useLoad(() => categoriesApi.list(), []);
   const [saleUnit, setSaleUnit] = useState<UnitCode | ''>(item?.saleUnit ?? '');
   const [purchaseUnit, setPurchaseUnit] = useState<UnitCode | ''>(item?.purchaseUnit ?? '');
   const [error, setError] = useState<unknown>(null);
@@ -190,6 +240,7 @@ export function ItemForm({ item, onClose, onSaved }: { item: ItemView | null; on
       // a default unit that is no longer listed falls back to the base unit
       saleUnit: saleUnit && listed.some((u) => u.unit === saleUnit) ? saleUnit : null,
       purchaseUnit: purchaseUnit && listed.some((u) => u.unit === purchaseUnit) ? purchaseUnit : null,
+      categoryId: categoryId || null,
       // a new item left as it is follows the company's setting for expiry dates
       ...(item || trackBatches || trackExpiry ? { trackBatches: trackBatches || trackExpiry, trackExpiry } : {})
     };
@@ -233,6 +284,15 @@ export function ItemForm({ item, onClose, onSaved }: { item: ItemView | null; on
         </div>
         {unit !== 'service' && (
           <label className="row" style={{ gap: 8 }}><input type="checkbox" checked={trackStock} disabled={item?.hasMoves} onChange={(e) => setTrackStock(e.target.checked)} />{t('trackStock')}</label>
+        )}
+        {(categories.data?.length ?? 0) > 0 && (
+          <label className="field">
+            <span>{t('cat_category')}</span>
+            <select className="input" value={categoryId} onChange={(e) => setCategoryId(e.target.value)}>
+              <option value="">{t('cat_none')}</option>
+              {categories.data!.filter((c) => c.active || c.id === categoryId).map((c) => <option key={c.id} value={c.id}>{i18n.name(c.name)}</option>)}
+            </select>
+          </label>
         )}
         {unit !== 'service' && trackStock && (
           <div className="stack" style={{ gap: 4 }}>
@@ -303,6 +363,92 @@ export function ItemForm({ item, onClose, onSaved }: { item: ItemView | null; on
         <ErrorBox error={error} />
         <div className="row">
           <button type="button" className="btn primary" disabled={busy} onClick={save}><Icon name="check" size={16} />{t('save')}</button>
+          <button type="button" className="btn" onClick={onClose}>{t('cancel')}</button>
+        </div>
+      </div>
+    </Modal>
+  );
+}
+
+/** The categories tab: add, rename in three languages, order, switch off; a category nothing uses can be deleted. */
+function Categories({ list, error, onChanged }: { list: CategoryView[]; error: unknown; onChanged(): void }) {
+  const i18n = useI18n();
+  const { t } = i18n;
+  const [editing, setEditing] = useState<CategoryView | 'new' | null>(null);
+  const [actionError, setActionError] = useState<unknown>(null);
+  async function act(fn: () => Promise<unknown>) {
+    setActionError(null);
+    try {
+      await fn();
+      onChanged();
+    } catch (e) {
+      setActionError(e);
+    }
+  }
+  return (
+    <div className="stack">
+      <p className="muted" style={{ margin: 0 }}>{t('cat_help')}</p>
+      <div className="row"><button type="button" className="btn primary" onClick={() => setEditing('new')}><Icon name="plus" size={16} />{t('cat_new')}</button></div>
+      <ErrorBox error={error ?? actionError} />
+      <div className="card">
+        {list.length === 0 ? <EmptyState compact icon="tag" title={t('cat_title')} text={t('cat_help')} /> : (
+          <table className="table">
+            <thead><tr><th style={{ width: 90 }}>{t('code')}</th><th>{t('name')}</th><th className="amount">{t('cat_order')}</th><th className="amount">{t('cat_items')}</th><th /></tr></thead>
+            <tbody>
+              {list.map((c) => (
+                <tr key={c.id}>
+                  <td><span className="tree-code">{c.code}</span></td>
+                  <td>{i18n.name(c.name)}{!c.active && <span className="chip" style={{ marginInlineStart: 8 }}>{t('inactive')}</span>}</td>
+                  <td className="amount num">{i18n.int(c.sort)}</td>
+                  <td className="amount num">{i18n.int(c.items)}</td>
+                  <td className="row" style={{ justifyContent: 'flex-end', gap: 4 }}>
+                    <button type="button" className="btn small" onClick={() => setEditing(c)}><Icon name="edit" size={14} />{t('actEdit')}</button>
+                    <button type="button" className="btn small" onClick={() => void act(() => categoriesApi.update(c.id, { code: c.code, name: c.name, sort: c.sort, active: !c.active }))}>{c.active ? t('cat_deactivate') : t('cat_activate')}</button>
+                    {c.items === 0 && <button type="button" className="btn small danger" aria-label={t('actDelete')} onClick={() => void act(() => categoriesApi.remove(c.id))}><Icon name="x" size={14} /></button>}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </div>
+      {editing && <CategoryForm category={editing === 'new' ? null : editing} onClose={() => setEditing(null)} onSaved={() => { setEditing(null); onChanged(); }} />}
+    </div>
+  );
+}
+
+function CategoryForm({ category, onClose, onSaved }: { category: CategoryView | null; onClose(): void; onSaved(): void }) {
+  const { t } = useI18n();
+  const toast = useToast();
+  const [code, setCode] = useState(category?.code ?? '');
+  const [name, setName] = useState<Names>(category?.name ?? { ar: '', en: '', ku: '' });
+  const [sort, setSort] = useState(category?.sort ?? 0);
+  const [error, setError] = useState<unknown>(null);
+  async function save() {
+    setError(null);
+    try {
+      const input = { ...(code.trim() ? { code: code.trim() } : {}), name, ...(category ? { sort } : {}) };
+      if (category) await categoriesApi.update(category.id, input);
+      else await categoriesApi.create(input);
+      toast(t('cat_saved'));
+      onSaved();
+    } catch (e) {
+      setError(e);
+    }
+  }
+  return (
+    <Modal title={category ? `${category.code}` : t('cat_new')} onClose={onClose}>
+      <div className="stack">
+        <label className="field"><span>{t('nameAr')}</span><input className="input" lang="ar" dir="rtl" value={name.ar} onChange={(e) => setName({ ...name, ar: e.target.value })} autoFocus /></label>
+        <label className="field"><span>{t('nameKu')}</span><input className="input" lang="ckb" dir="rtl" value={name.ku} onChange={(e) => setName({ ...name, ku: e.target.value })} /></label>
+        <label className="field"><span>{t('nameEn')}</span><input className="input" lang="en" dir="ltr" value={name.en} onChange={(e) => setName({ ...name, en: e.target.value })} /></label>
+        <div className="grid-2">
+          <label className="field"><span>{t('code')}</span><input className="input ltr" value={code} placeholder="C001" maxLength={24} onChange={(e) => setCode(e.target.value)} /></label>
+          {category && <label className="field"><span>{t('cat_order')}</span><input className="input num" type="number" min={0} max={100000} value={sort} onChange={(e) => setSort(Math.max(0, Math.floor(Number(e.target.value)) || 0))} /></label>}
+        </div>
+        <ErrorBox error={error} />
+        <div className="row">
+          <button type="button" className="btn primary" onClick={() => void save()}><Icon name="check" size={16} />{t('save')}</button>
           <button type="button" className="btn" onClick={onClose}>{t('cancel')}</button>
         </div>
       </div>

@@ -1,12 +1,13 @@
-import { useState, type FormEvent } from 'react';
+import { useEffect, useState, type FormEvent } from 'react';
 import { todayIso } from '@qasa/core';
 import { ErrorBox, Icon, Modal, useLoad, useToast } from '../components.tsx';
 import { useI18n, type Key } from '../i18n.ts';
 import { href } from '../router.ts';
-import { webApiClient, type NetworkForWeb, type WebEvent, type WebScope } from '../industry/webapi-api.ts';
+import { STORE_SCOPES, webApiClient, type NetworkForWeb, type OnlineMethod, type WebEvent, type WebScope } from '../industry/webapi-api.ts';
 
 const SCOPE_KEYS: Record<WebScope, Key> = {
-  'items:read': 'wa_scope_items', 'stock:read': 'wa_scope_stock', 'customers:write': 'wa_scope_customers', 'orders:write': 'wa_scope_orders'
+  'items:read': 'wa_scope_items', 'stock:read': 'wa_scope_stock', 'customers:write': 'wa_scope_customers', 'orders:write': 'wa_scope_orders',
+  'payments:write': 'wa_scope_payments'
 };
 const EVENT_KEYS: Record<WebEvent, Key> = { 'stock.changed': 'wa_event_stock', 'price.changed': 'wa_event_price', 'order.updated': 'wa_event_order' };
 
@@ -165,6 +166,9 @@ export function WebsiteApi() {
         onRenewKey={() => void run(async () => { await webApiClient.renewOfficeKey(); net.reload(); }, t('wa_officeKeyRenewed'))}
       />
 
+      {data.paymentMethods && <PaymentAccountsCard methods={data.paymentMethods} accounts={data.paymentAccounts ?? {}} disabled={!data.available || busy}
+        onSave={(accounts) => void run(() => webApiClient.setPaymentAccounts(accounts), t('saved'))} />}
+
       <div className="card">
         <div className="row" style={{ padding: '14px 16px 8px' }}>
           <h2>{t('wa_keys')}</h2>
@@ -257,6 +261,9 @@ export function WebsiteApi() {
             </label>
             <fieldset className="role-list">
               <legend>{t('wa_scopes')}</legend>
+              <button type="button" className="btn small" style={{ alignSelf: 'flex-start' }} onClick={() => setNewKey({ name: newKey.name || 'Qasa Store', scopes: STORE_SCOPES.filter((s) => data.scopes.includes(s)) })}>
+                {t('wa_storePreset')}
+              </button>
               {data.scopes.map((s) => (
                 <label key={s} className="role-option">
                   <input type="checkbox" checked={newKey.scopes.includes(s)}
@@ -300,6 +307,30 @@ export function WebsiteApi() {
       )}
 
       {secret && <OnceSecret label={secret.label} value={secret.value} onClose={() => setSecret(null)} />}
+    </div>
+  );
+}
+
+/** Online payment accounts: the safe or bank (under 18) each method a shop reports goes into. */
+function PaymentAccountsCard({ methods, accounts, disabled, onSave }: {
+  methods: OnlineMethod[]; accounts: Partial<Record<OnlineMethod, string>>; disabled: boolean; onSave(accounts: Partial<Record<OnlineMethod, string>>): void;
+}) {
+  const { t } = useI18n();
+  const [form, setForm] = useState(accounts);
+  useEffect(() => setForm(accounts), [accounts]);
+  return (
+    <div className="card pad stack">
+      <h2>{t('wa_payAccounts')}</h2>
+      <p className="muted small" style={{ margin: 0 }}>{t('wa_payAccountsHelp')}</p>
+      <div className="grid-3">
+        {methods.map((m) => (
+          <label key={m} className="field">
+            <span>{t(`pay_${m}` as Key)}</span>
+            <input className="input ltr" inputMode="numeric" placeholder="181" maxLength={12} value={form[m] ?? ''} onChange={(e) => setForm({ ...form, [m]: e.target.value.trim() })} />
+          </label>
+        ))}
+      </div>
+      <div className="row"><button type="button" className="btn primary" disabled={disabled} onClick={() => onSave(form)}><Icon name="check" size={16} />{t('save')}</button></div>
     </div>
   );
 }

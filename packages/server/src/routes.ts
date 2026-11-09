@@ -100,7 +100,8 @@ const itemSchema = z.object({
   saleUnit: unitCode.nullable().optional(),
   purchaseUnit: unitCode.nullable().optional(),
   trackBatches: z.boolean().optional(),
-  trackExpiry: z.boolean().optional()
+  trackExpiry: z.boolean().optional(),
+  categoryId: z.string().min(1).max(64).nullable().optional()
 });
 
 /** Batches (1.1): what a line brings in (a number of up to 40 characters and an expiry date), or the batch it is pinned to. */
@@ -500,12 +501,12 @@ export function apiRoutes(db: Db, options: { demo?: boolean; extensions?: readon
   app.get('/api/items', async (req) => {
     const q = parse(z.object({
       q: z.string().max(100).optional(), warehouseId: z.string().max(64).optional(), active: z.enum(['true', 'false']).optional(),
-      barcode: z.string().min(1).max(64).optional()
+      barcode: z.string().min(1).max(64).optional(), categoryId: z.string().min(1).max(64).optional()
     }), req.query);
     // a scan at the counter: the item and the unit the barcode belongs to (an item's own barcode: its base unit)
     if (q.barcode) return findByBarcode(db, q.barcode, q.warehouseId ? [q.warehouseId] : warehousesOfUser(req));
     // without a warehouse, a user limited to branches gets the stock of their branches' warehouses (null: every one)
-    return listItems(db, { q: q.q, warehouseId: q.warehouseId, active: q.active === undefined ? undefined : q.active === 'true' }, warehousesOfUser(req));
+    return listItems(db, { q: q.q, warehouseId: q.warehouseId, active: q.active === undefined ? undefined : q.active === 'true', categoryId: q.categoryId }, warehousesOfUser(req));
   });
   app.get('/api/items/:id', async (req) => {
     const { id } = parse(idParam, req.params);

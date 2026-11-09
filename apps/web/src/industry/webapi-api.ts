@@ -1,7 +1,10 @@
 import { request } from '../api.ts';
 
 /** The website API (Pro module): keys websites use, and webhooks. Missing (404) in builds without Pro. */
-export type WebScope = 'items:read' | 'stock:read' | 'customers:write' | 'orders:write';
+export type WebScope = 'items:read' | 'stock:read' | 'customers:write' | 'orders:write' | 'payments:write';
+export type OnlineMethod = 'fib' | 'zaincash' | 'qi' | 'card' | 'other';
+/** What the Qasa Store choice on the key form ticks. */
+export const STORE_SCOPES: WebScope[] = ['items:read', 'stock:read', 'customers:write', 'orders:write', 'payments:write'];
 export type WebEvent = 'stock.changed' | 'price.changed' | 'order.updated';
 
 export interface ApiKeyView {
@@ -10,7 +13,11 @@ export interface ApiKeyView {
 export interface WebhookView {
   id: string; url: string; events: WebEvent[]; active: boolean; lastStatus: number | null; lastDeliveryAt: string | null; createdBy: string; createdAt: string;
 }
-export interface WebApiOverview { available: boolean; keys: ApiKeyView[]; webhooks: WebhookView[]; scopes: WebScope[]; events: WebEvent[] }
+export interface WebApiOverview {
+  available: boolean; keys: ApiKeyView[]; webhooks: WebhookView[]; scopes: WebScope[]; events: WebEvent[];
+  /** 1.1 (older servers leave them out) */
+  paymentAccounts?: Partial<Record<OnlineMethod, string>>; paymentMethods?: OnlineMethod[];
+}
 
 /**
  * Only what the page needs from GET /api/network: over the internet the office ID and the office key a website seals
@@ -28,6 +35,8 @@ export const webApiClient = {
   overview: () => request<WebApiOverview>('GET', '/api/webapi'),
   createKey: (body: { name: string; scopes: WebScope[] }) => request<{ key: string; view: ApiKeyView }>('POST', '/api/webapi/keys', body),
   revokeKey: (id: string) => request<ApiKeyView>('POST', `/api/webapi/keys/${id}/revoke`, {}),
+  /** which safe or bank each online payment method goes into */
+  setPaymentAccounts: (body: Partial<Record<OnlineMethod, string>>) => request<Partial<Record<OnlineMethod, string>>>('PUT', '/api/webapi/payment-accounts', body),
   createWebhook: (body: { url: string; events: WebEvent[] }) => request<{ secret: string; view: WebhookView }>('POST', '/api/webapi/webhooks', body),
   updateWebhook: (id: string, body: { url?: string; events?: WebEvent[]; active?: boolean }) => request<WebhookView>('PUT', `/api/webapi/webhooks/${id}`, body),
   deleteWebhook: (id: string) => request<void>('DELETE', `/api/webapi/webhooks/${id}`),

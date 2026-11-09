@@ -7,7 +7,7 @@ import { api, ApiError, type InvoiceView, type ItemView } from '../api.ts';
 import {
   AccountCombo, AmountInput, EmptyState, ErrorBox, Icon, InvoiceStatusChip, Modal, QtyInput, SearchCombo, useData, useLoad, usePageNav, useToast, type PageNav, type PickOption
 } from '../components.tsx';
-import { useI18n } from '../i18n.ts';
+import { isKey, useI18n, type Key } from '../i18n.ts';
 import { go, href } from '../router.ts';
 import { InvoicesTable } from './Parties.tsx';
 import { averageCost, qtyText, unitName } from './Items.tsx';
@@ -595,6 +595,26 @@ export function InvoiceDetail({ id }: { id: string }) {
           {v.kind === 'sale' && v.status === 'posted' && totalCost > 0 && (
             <span className="muted">· {t('costOfGoods')}: {i18n.money(totalCost, 'IQD')}</span>
           )}
+        </div>
+      )}
+
+      {(v.payments?.length ?? 0) > 0 && (
+        <div className="card">
+          <div style={{ padding: '14px 16px 6px' }}><h2>{t('pay_payments')}</h2></div>
+          <table className="table">
+            <thead><tr><th>{t('paymentMode')}</th><th>{t('pay_reference')}</th><th>{t('cashAccount')}</th><th className="amount">{t('amount')}</th><th>{t('vouchers')}</th></tr></thead>
+            <tbody>
+              {v.payments!.map((p) => (
+                <tr key={p.id}>
+                  <td>{isKey(`pay_${p.method}`) ? t(`pay_${p.method}` as Key) : p.method}{p.kind === 'online' && <span className="chip" style={{ marginInlineStart: 6 }}>{t('pay_online')}</span>}</td>
+                  <td className="ltr">{p.reference ?? ''}</td>
+                  <td className="ltr">{p.accountCode}</td>
+                  <td className="amount">{i18n.money(p.amount, p.currency)}</td>
+                  <td>{p.entryId && p.entryId !== v.entryId ? <a href={href(`entry/${p.entryId}`)} className="ltr num">{p.entryNumber ?? t('draft')}</a> : ''}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
         </div>
       )}
 

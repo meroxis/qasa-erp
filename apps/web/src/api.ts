@@ -224,6 +224,7 @@ export interface ItemView {
   /** stock kept per batch number; an expiry date asked on the way in */
   trackBatches: boolean;
   trackExpiry: boolean;
+  categoryId: string | null;
 }
 
 /** One of an item's other units: base units in one (thousandths), its barcode and its own price (null: base × factor). */
@@ -243,6 +244,7 @@ export interface ItemInput {
   purchaseUnit?: UnitCode | null;
   trackBatches?: boolean;
   trackExpiry?: boolean;
+  categoryId?: string | null;
 }
 
 export interface ItemDetail extends ItemView {
@@ -272,6 +274,14 @@ export interface InvoiceSummary {
   returnOf: string | null;
   createdBy: string;
   createdAt: string;
+  /** 1.1: online payments recorded on it (a website order) */
+  paidOnline?: number;
+}
+
+/** Money taken for an invoice outside its own cash or credit: POS parts and online payments (1.1). */
+export interface InvoicePaymentView {
+  id: string; kind: 'pos' | 'online'; method: string; accountCode: string; amount: number; currency: CurrencyCode;
+  reference: string | null; source: string | null; entryId: string | null; entryNumber: string | null; entryStatus: string | null; createdAt: string;
 }
 
 export type InvoiceAction = 'edit' | 'delete' | 'post' | 'cancel' | 'return';
@@ -303,6 +313,8 @@ export interface InvoiceView extends InvoiceSummary {
   returns: { id: string; kind: InvoiceDocKind; number: string | null; date: string; status: InvoiceStatus; total: number }[];
   /** the installment contract that schedules this sale (Pro), while it is active */
   installmentContract: { id: string; number: string } | null;
+  /** 1.1 (older servers leave it out) */
+  payments?: InvoicePaymentView[];
 }
 
 export type Role = 'admin' | 'preparer' | 'checker' | 'approver' | 'sales' | 'purchasing' | 'storekeeper' | 'viewer';
@@ -653,7 +665,7 @@ export const api = {
   warehouses: () => request<WarehouseView[]>('GET', '/api/warehouses'),
   createWarehouse: (input: { code: string; name: Names }) => request<WarehouseView>('POST', '/api/warehouses', input),
   updateWarehouse: (id: string, input: { name: Names; active?: boolean }) => request<WarehouseView>('PUT', `/api/warehouses/${id}`, input),
-  items: (f: { q?: string; warehouseId?: string; active?: string } = {}) => request<ItemView[]>('GET', '/api/items' + qs(f)),
+  items: (f: { q?: string; warehouseId?: string; active?: string; categoryId?: string } = {}) => request<ItemView[]>('GET', '/api/items' + qs(f)),
   /** A scanned barcode: the item, and the unit when it is one of the item's units' barcodes (null: its own, the base unit). */
   itemByBarcode: (barcode: string, warehouseId?: string) => request<{ item: ItemView | null; unit: UnitCode | null }>('GET', '/api/items' + qs({ barcode, ...(warehouseId ? { warehouseId } : {}) })),
   item: (id: string) => request<ItemDetail>('GET', `/api/items/${id}`),

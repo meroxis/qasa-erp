@@ -4,7 +4,7 @@ import {
   type CurrencyCode, type UnitCode
 } from '@qasa/core';
 import type { Db } from './db.ts';
-import { transaction } from './db.ts';
+import { imageSha256, transaction } from './db.ts';
 import { audit } from './audit.ts';
 import { AppError, conflict, invalid, notFound } from './errors.ts';
 import { createItem } from './items.ts';
@@ -97,7 +97,9 @@ export function setItemImage(db: Db, itemId: string, base64: string, user: strin
   transaction(db, () => {
     // delete + insert works the same on SQLite and MariaDB/MySQL (no upsert syntax to tell apart)
     db.prepare('DELETE FROM item_images WHERE item_id = ?').run(itemId);
-    db.prepare('INSERT INTO item_images (item_id, mime, data, updated_at) VALUES (?, ?, ?, ?)').run(itemId, mime, bytes, now);
+    // the picture's hash tells an online shop when it changed (no need to download it to compare)
+    db.prepare('INSERT INTO item_images (item_id, mime, data, updated_at, sha256) VALUES (?, ?, ?, ?, ?)').run(itemId, mime, bytes, now, imageSha256(bytes));
+    db.prepare('UPDATE items SET updated_at = ? WHERE id = ?').run(now, itemId);
     audit(db, user, 'update', 'item_image', itemId, { mime, bytes: bytes.length });
   });
   return { itemId, mime, bytes: bytes.length, updatedAt: now };
@@ -107,6 +109,7 @@ export function deleteItemImage(db: Db, itemId: string, user: string): void {
   if (!itemExists(db, itemId)) throw notFound('item');
   transaction(db, () => {
     const removed = db.prepare('DELETE FROM item_images WHERE item_id = ?').run(itemId);
+    db.prepare('UPDATE items SET updated_at = ? WHERE id = ?').run(new Date().toISOString(), itemId);
     if (Number(removed.changes) > 0) audit(db, user, 'delete', 'item_image', itemId);
   });
 }
@@ -328,6 +331,7 @@ const importItems: Importer = (db, input, actor, result) => {
   const seenCodes = new Map<string, number>();
   const seenBarcodes = new Map<string, number>();
   const seenNames = new Map<string, number>();
+  const categories = new Map((db.prepare('SELECT id, code FROM item_categories WHERE active = 1').all() as { id: string; code: string }[]).map((c) => [c.code.toUpperCase(), c.id]));
   const rows = input.rows.map((r, i) => {
     const line = lineOf(i);
     const code = text(r.code);
@@ -343,6 +347,10 @@ const importItems: Importer = (db, input, actor, result) => {
     if (!currency) errors.push({ code: 'md_currency_invalid', line });
     const price = text(r.price) ? parseAmount(text(r.price), currency ?? 'IQD') : 0;
     if (price === null) errors.push({ code: 'md_price_invalid', line });
+    // 1.1: an optional category, by its code
+    const categoryCode = text(r.category).toUpperCase();
+    const categoryId = categoryCode ? categories.get(categoryCode) : undefined;
+    if (categoryCode && !categoryId) errors.push({ code: 'md_category_unknown', line });
     if (code) {
       const k = code.toLowerCase();
       if (seenCodes.has(k)) errors.push({ code: 'md_duplicate_in_file', line, other: seenCodes.get(k) });
@@ -359,7 +367,7 @@ const importItems: Importer = (db, input, actor, result) => {
       if (other !== undefined) errors.push({ code: 'md_duplicate_in_file', line, other });
     }
     for (const k of keys) if (!seenNames.has(k)) seenNames.set(k, line);
-    return { line, code, barcode, names, keys, unit, currency, price };
+    return { line, code, barcode, names, keys, unit, currency, price, categoryId };
   });
   fail(errors);
   for (const row of rows) {
@@ -368,7 +376,8 @@ const importItems: Importer = (db, input, actor, result) => {
     // or after a timeout, must not double the catalogue
     if (!row.code && row.keys.some((k) => names.has(k))) { result.skipped.push({ line: row.line, reason: 'exists' }); continue; }
     const made = atRow(errors, row.line, () => createItem(db, {
-      code: row.code || undefined, barcode: row.barcode || undefined, name: row.names, unit: row.unit!, salePrice: row.price!, saleCurrency: row.currency!
+      code: row.code || undefined, barcode: row.barcode || undefined, name: row.names, unit: row.unit!, salePrice: row.price!, saleCurrency: row.currency!,
+      ...(row.categoryId ? { categoryId: row.categoryId } : {})
     }, actor.name));
     if (made) result.created++;
   }

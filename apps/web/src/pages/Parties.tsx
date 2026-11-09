@@ -258,7 +258,7 @@ export function InvoicesTable({ invoices, showParty = true }: { invoices: Invoic
             {showParty && <td className="bidi">{v.partyName ?? <span className="muted">{t('walkIn')}</span>}</td>}
             <td>{v.payment === 'cash' ? t('payCash') : t('payCredit')}</td>
             <td className="amount">{i18n.money(v.total, v.currency)}</td>
-            <td><InvoiceStatusChip status={v.status} /></td>
+            <td><InvoiceStatusChip status={v.status} />{(v.paidOnline ?? 0) > 0 && <span className="chip ok" style={{ marginInlineStart: 6 }}>{t('pay_paidOnline')}</span>}</td>
           </tr>
         ))}
       </tbody>
