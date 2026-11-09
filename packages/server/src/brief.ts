@@ -175,6 +175,8 @@ export interface AgingRow {
   /** days since the oldest part of the balance (first in, first out) */
   oldestDays: number;
   buckets: [number, number, number, number];
+  /** 1.1: what is owed in dollars, in dollars (from dollar entries only; not in the buckets) */
+  usd: number;
 }
 
 /**
@@ -215,6 +217,11 @@ export function aging(db: Db, type: 'customer' | 'supplier', asOf: string, branc
     list.push({ date: c.date, amount: num(c.amount) });
     byParty.set(c.party, list);
   }
+  // 1.1: what each owes in dollars, in dollars (no buckets for dollars yet)
+  const usd = new Map((db.prepare(`SELECT l.party_id, SUM(${type === 'customer' ? 'l.debit - l.credit' : 'l.credit - l.debit'}) AS owed
+                                   FROM entry_lines l JOIN entries e ON e.id = l.entry_id JOIN parties p ON p.id = l.party_id
+                                   WHERE p.type = ? AND e.status = 'approved' AND e.date <= ? AND e.currency = 'USD'${b}
+                                   GROUP BY l.party_id`).all(type, asOf, ...bp) as { party_id: string; owed: number }[]).map((r) => [r.party_id, num(r.owed)]));
   const rows = parties.map((p) => {
     let left = num(p.balance);
     const buckets: [number, number, number, number] = [0, 0, 0, 0];
@@ -229,7 +236,7 @@ export function aging(db: Db, type: 'customer' | 'supplier', asOf: string, branc
     }
     // an opening balance with no charge line behind it counts as the oldest
     if (left > 0) buckets[3] += left;
-    return { partyId: p.id, code: p.code, name: p.name, phone: p.phone, balance: num(p.balance), oldestDays, buckets };
+    return { partyId: p.id, code: p.code, name: p.name, phone: p.phone, balance: num(p.balance), oldestDays, buckets, usd: usd.get(p.id) ?? 0 };
   });
   return rows.sort((a, b) => b.balance - a.balance);
 }

@@ -1,4 +1,4 @@
-import { accountStatement, DATE_RANGE_REVERSED, finalAccounts, isReversedRange, trialBalance, type Names } from '@qasa/core';
+import { accountStatement, DATE_RANGE_REVERSED, finalAccounts, isReversedRange, trialBalance, type CurrencyCode, type Names } from '@qasa/core';
 import type { Db } from './db.ts';
 import { loadAccounts } from './accounts.ts';
 import { postedLines } from './journal.ts';
@@ -19,15 +19,19 @@ export function trialBalanceReport(db: Db, opts: { from?: string | undefined; to
   return { ...tb, rows: tb.rows.map((r) => ({ ...r, name: byCode.get(r.code) ?? { ar: r.code, en: r.code, ku: r.code } })) };
 }
 
-export function statementReport(db: Db, code: string, opts: { from?: string | undefined; to?: string | undefined }) {
+export function statementReport(db: Db, code: string, opts: { from?: string | undefined; to?: string | undefined; currency?: CurrencyCode | undefined }) {
   const byCode = names(db);
   const name = byCode.get(code);
   if (!name) throw notFound('account');
   const range: { from?: string; to?: string } = {};
   if (opts.from) range.from = opts.from;
   if (opts.to) range.to = opts.to;
-  const st = accountStatement(code, postedLines(db), range);
-  return { ...st, name, rows: st.rows.map((r) => ({ ...r, accountName: byCode.get(r.accountCode) ?? name })) };
+  // one currency (1.1): that currency's lines in their own amounts, so a dollar safe runs a dollar balance
+  const lines = opts.currency
+    ? postedLines(db).filter((l) => l.currency === opts.currency).map((l) => ({ ...l, debit: l.ownDebit, credit: l.ownCredit }))
+    : postedLines(db);
+  const st = accountStatement(code, lines, range);
+  return { ...st, name, currency: opts.currency ?? null, rows: st.rows.map((r) => ({ ...r, accountName: byCode.get(r.accountCode) ?? name })) };
 }
 
 /** Final accounts for a period, with the account names the app shows. */

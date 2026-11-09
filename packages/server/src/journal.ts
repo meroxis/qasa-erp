@@ -17,7 +17,8 @@ import {
   type EntryType,
   type Names,
   type PostedLine,
-  type VoucherInput
+  type VoucherInput,
+  type CurrencyCode
 } from '@qasa/core';
 import type { Db } from './db.ts';
 import { nextSequence, transaction } from './db.ts';
@@ -447,7 +448,7 @@ export function listEntries(db: Db, f: EntryFilters = {}): EntrySummary[] {
 /** Lines of approved entries in IQD — the input for every report. */
 export function postedLines(
   db: Db, opts: { to?: string; partyId?: string; branch?: { warehouses: string[]; accounts: string[] } | null } = {}
-): (PostedLine & { partyId: string | null })[] {
+): (PostedLine & { partyId: string | null; currency: CurrencyCode; ownDebit: number; ownCredit: number })[] {
   const where = ["e.status = 'approved'"];
   const params: string[] = [];
   if (opts.to) { where.push('e.date <= ?'); params.push(opts.to); }
@@ -458,16 +459,19 @@ export function postedLines(
     where.push(sql.replace(/^ AND /, ''));
     params.push(...p);
   }
-  const rows = db.prepare(`SELECT e.id, e.number, e.date, l.account_code, l.base_debit, l.base_credit, l.party_id,
+  const rows = db.prepare(`SELECT e.id, e.number, e.date, e.currency, l.debit, l.credit, l.account_code, l.base_debit, l.base_credit, l.party_id,
                                   COALESCE(l.description, e.description) AS description,
                                   (e.type = 'closing' OR (e.type = 'reversal' AND EXISTS (SELECT 1 FROM entries c WHERE c.id = e.reverses_id AND c.type = 'closing'))) AS closing
                            FROM entry_lines l JOIN entries e ON e.id = l.entry_id
                            WHERE ${where.join(' AND ')}
                            ORDER BY e.date, e.number, l.line_no`).all(...params) as {
-    id: string; number: string; date: string; account_code: string; base_debit: number; base_credit: number; party_id: string | null; description: string; closing: number;
+    id: string; number: string; date: string; currency: CurrencyCode; debit: number; credit: number; account_code: string; base_debit: number; base_credit: number;
+    party_id: string | null; description: string; closing: number;
   }[];
+  // debit/credit: IQD at the entry's rate (the books); ownDebit/ownCredit: in the entry's own currency (1.1)
   return rows.map((r) => ({
     entryId: r.id, number: r.number, date: r.date, accountCode: r.account_code, debit: r.base_debit, credit: r.base_credit,
-    description: r.description, partyId: r.party_id, ...(r.closing ? { closing: true } : {})
+    description: r.description, partyId: r.party_id, currency: r.currency, ownDebit: Number(r.debit), ownCredit: Number(r.credit),
+    ...(r.closing ? { closing: true } : {})
   }));
 }

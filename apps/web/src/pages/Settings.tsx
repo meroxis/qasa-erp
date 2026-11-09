@@ -18,6 +18,7 @@ import { CompaniesSetting } from './Companies.tsx';
 import { cloudChoices } from './cloud-providers.ts';
 import { backupNoticeKey } from '../industry/BackupNotice.tsx';
 import { batchesApi, type BatchSettingsView } from '../industry/batches-api.ts';
+import { posApi, type PosAccounts } from '../industry/pos-api.ts';
 
 /** Language and display are each person's own; the company's settings are for admins. */
 export function Settings({ admin }: { admin: boolean }) {
@@ -176,6 +177,8 @@ function CompanySettings() {
       <PostingAccountsCard />
 
       <ExpirySettingsCard />
+
+      <PosAccountsCard />
 
       <OfficeNetworkCard />
 
@@ -998,6 +1001,42 @@ const POSTING_FIELDS: { key: keyof PostingAccounts; root: string }[] = [
 ];
 
 /** Which accounts invoices post to (sales 42, cost of sales 35, customers 1611 …). */
+/** The accounts card, FIB, ZainCash and Qi payments at the counter go into (an admin's setting). */
+function PosAccountsCard() {
+  const { t } = useI18n();
+  const toast = useToast();
+  const [accounts, setAccounts] = useState<PosAccounts | null>(null);
+  const [error, setError] = useState<unknown>(null);
+  useEffect(() => { posApi.paymentAccounts().then((r) => setAccounts(r.accounts), setError); }, []);
+  if (!accounts) return error ? <ErrorBox error={error} /> : null;
+  async function save() {
+    if (!accounts) return;
+    setError(null);
+    try {
+      setAccounts((await posApi.setPaymentAccounts(accounts)).accounts);
+      toast(t('saved'));
+    } catch (e) {
+      setError(e);
+    }
+  }
+  return (
+    <div className="card pad stack">
+      <h2>{t('pos_payAccounts')}</h2>
+      <div className="muted small">{t('pos_payAccountsHelp')}</div>
+      <div className="grid-3">
+        {(['card', 'fib', 'zaincash', 'qi'] as const).map((m) => (
+          <label key={m} className="field">
+            <span>{t(`pay_${m}`)}</span>
+            <AccountCombo value={accounts[m] ?? ''} onChange={(v) => setAccounts({ ...accounts, [m]: v })} filter={(a) => a.code.startsWith('18')} ariaLabel={t(`pay_${m}`)} />
+          </label>
+        ))}
+      </div>
+      <ErrorBox error={error} />
+      <div className="row"><button type="button" className="btn primary" onClick={() => void save()}><Icon name="check" size={16} />{t('save')}</button></div>
+    </div>
+  );
+}
+
 /** Settings → Stock: how many days before expiry to warn, whether expired stock may be sold, and new items' default. */
 function ExpirySettingsCard() {
   const { t } = useI18n();

@@ -37,6 +37,9 @@ import {
 
 export type InvoiceAction = 'edit' | 'delete' | 'post' | 'cancel' | 'return';
 
+/** A part of a sale paid another way (POS split payments): internal callers only, never from a request. */
+export interface SalePart { accountCode: string; amount: number; partyId?: string | undefined }
+
 export interface InvoiceLineView {
   lineNo: number;
   itemId: string;
@@ -178,7 +181,9 @@ function toSummary(r: InvoiceRow): InvoiceSummary {
 const SELECT_INVOICE = `SELECT v.*, p.code AS party_code, p.name AS party_name,
   (SELECT SUM(CASE WHEN v.kind IN ('purchase', 'sale_return') THEN l.base_credit - l.base_debit ELSE l.base_debit - l.base_credit END)
    FROM entry_lines l WHERE l.entry_id = v.entry_id AND
-     ((v.payment = 'cash' AND l.account_code = v.cash_account) OR (v.payment = 'credit' AND l.party_id = v.party_id))) AS settlement_base,
+     ((v.payment = 'cash' AND (l.account_code = v.cash_account
+         OR l.account_code IN (SELECT ip.account_code FROM invoice_payments ip WHERE ip.invoice_id = v.id AND ip.kind = 'pos' AND ip.entry_id = v.entry_id)))
+      OR (v.payment = 'credit' AND l.party_id = v.party_id))) AS settlement_base,
   (SELECT SUM(ip.amount) FROM invoice_payments ip WHERE ip.invoice_id = v.id AND ip.kind = 'online') AS online_paid
   FROM invoices v LEFT JOIN parties p ON p.id = v.party_id`;
 
@@ -415,7 +420,9 @@ export function fromBase(amountIqd: number, currency: CurrencyCode, rateX100: nu
  * `allowExpired`: the user confirmed selling stock past its expiry date (only under the 'warn' policy; written to the
  * audit log). Batch items take their batches earliest expiry first, or the batch a line is pinned to.
  */
-export function postInvoice(db: Db, id: string, user: string, opts: { settledNow?: number; allowExpired?: boolean } = {}): InvoiceView {
+export function postInvoice(
+  db: Db, id: string, user: string, opts: { settledNow?: number; allowExpired?: boolean; split?: readonly SalePart[] } = {}
+): InvoiceView {
   const view = getInvoice(db, id);
   requireAction(db, loadRow(db, id), 'post');
   const input = storedInput(view);
@@ -442,6 +449,17 @@ export function postInvoice(db: Db, id: string, user: string, opts: { settledNow
     if (party && view.payment === 'credit' && party.creditLimit !== null && party.balance + onCredit > party.creditLimit) {
       throw conflict('credit_limit_exceeded', { balance: party.balance, limit: party.creditLimit, total: baseTotal });
     }
+    // a split sale (POS): only the part put on the customer's account counts against their credit limit
+    if (opts.split?.length) {
+      if (opts.split.reduce((s, p) => s + p.amount, 0) !== total) throw invalid([{ code: 'payments_total_mismatch' }]);
+      const onAccount = toBase(opts.split.filter((p) => p.partyId).reduce((s, p) => s + p.amount, 0), view.currency, view.rateX100);
+      if (onAccount > 0) {
+        if (!party || opts.split.some((p) => p.partyId && p.partyId !== party.id)) throw invalid([{ code: 'party_required' }]);
+        if (party.creditLimit !== null && party.balance + onAccount > party.creditLimit) {
+          throw conflict('credit_limit_exceeded', { balance: party.balance, limit: party.creditLimit, total: onAccount });
+        }
+      }
+    }
     const stock = new Map<string, { qtyMilli: number; value: number }>();
     const errors: { code: string; line: number; available: number }[] = [];
     view.lines.forEach((l, i) => {
@@ -466,7 +484,10 @@ export function postInvoice(db: Db, id: string, user: string, opts: { settledNow
     });
     if (batchErrors.length) throw invalid(batchErrors);
     const totalCost = lineCosts.reduce<number>((s, c) => s + (c ?? 0), 0);
-    lines.push({ accountCode: counterAccount, debit: total, credit: 0, ...counterParty });
+    if (opts.split?.length) {
+      // one debit line per part: the safe for cash, a card or wallet account, or the customer for what goes on account
+      for (const p of opts.split) lines.push({ accountCode: p.accountCode, debit: p.amount, credit: 0, ...(p.partyId ? { partyId: p.partyId } : {}) });
+    } else lines.push({ accountCode: counterAccount, debit: total, credit: 0, ...counterParty });
     lines.push({ accountCode: accounts.sales, debit: 0, credit: total });
     if (totalCost > 0) {
       const cost = fromBase(totalCost, view.currency, view.rateX100);

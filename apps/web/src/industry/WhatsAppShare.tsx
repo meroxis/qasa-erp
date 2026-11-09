@@ -60,7 +60,9 @@ export function InvoiceWhatsApp({ company, invoice: v }: {
 }
 
 /** For a customer's or supplier's statement: the closing balance (in dinars). */
-export function StatementWhatsApp({ company, name, phone, balance, date }: { company: string; name: string; phone?: string | null; balance: number; date: string }) {
+export function StatementWhatsApp({ company, name, phone, balance, date, currency = 'IQD' }: {
+  company: string; name: string; phone?: string | null; balance: number; date: string; currency?: 'IQD' | 'USD';
+}) {
   const i18n = useI18n();
-  return <WhatsAppButton phone={phone} text={statementMessage(i18n, company, { name, balance, currency: 'IQD', date })} />;
+  return <WhatsAppButton phone={phone} text={statementMessage(i18n, company, { name, balance, currency, date })} />;
 }

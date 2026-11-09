@@ -173,6 +173,8 @@ export interface PartyView {
   /** IQD, in the party's own direction (customer owes us / we owe supplier). */
   balance: number;
   hasEntries: boolean;
+  /** 1.1: the same per currency, each in its own (older servers leave it out) */
+  balances?: Record<CurrencyCode, number>;
 }
 
 export interface PartyInput {
@@ -187,11 +189,16 @@ export interface PartyInput {
 
 export interface PartyStatement {
   party: PartyView;
+  /** 1.1: null = all lines in IQD at the book rates; IQD or USD = that currency's lines only, in it */
+  currency?: CurrencyCode | null;
   opening: number;
   closing: number;
   totalDebit: number;
   totalCredit: number;
-  lines: { entryId: string; invoiceId: string | null; number: string; date: string; description: string; debit: number; credit: number; balance: number }[];
+  lines: {
+    entryId: string; invoiceId: string | null; number: string; date: string; description: string; debit: number; credit: number; balance: number;
+    currency?: CurrencyCode; amount?: number;
+  }[];
 }
 
 export interface WarehouseView {
@@ -630,7 +637,7 @@ export const api = {
   reverse: (id: string, date: string) => request<EntryView>('POST', `/api/entries/${id}/reverse`, { date }),
   trialBalance: (from?: string, to?: string) => request<TrialBalanceReport>('GET', '/api/reports/trial-balance' + qs({ from, to })),
   finalAccounts: (from: string, to: string) => request<FinalAccountsReport>('GET', '/api/reports/final-accounts' + qs({ from, to })),
-  statement: (account: string, from?: string, to?: string) => request<StatementReport>('GET', '/api/reports/statement' + qs({ account, from, to })),
+  statement: (account: string, from?: string, to?: string, currency?: CurrencyCode) => request<StatementReport>('GET', '/api/reports/statement' + qs({ account, from, to, currency })),
   periods: () => request<{ period: string; lockedBy: string; lockedAt: string }[]>('GET', '/api/periods'),
   lockPeriod: (period: string) => request<unknown>('POST', `/api/periods/${period}/lock`, {}),
   unlockPeriod: (period: string) => request<unknown>('DELETE', `/api/periods/${period}/lock`),
@@ -660,7 +667,7 @@ export const api = {
   createParty: (type: PartyType, input: PartyInput) => request<PartyView>('POST', '/api/parties', { type, ...input }),
   updateParty: (id: string, input: PartyInput) => request<PartyView>('PUT', `/api/parties/${id}`, input),
   deleteParty: (id: string) => request<void>('DELETE', `/api/parties/${id}`),
-  partyStatement: (id: string, from?: string, to?: string) => request<PartyStatement>('GET', `/api/parties/${id}/statement` + qs({ from, to })),
+  partyStatement: (id: string, from?: string, to?: string, currency?: CurrencyCode) => request<PartyStatement>('GET', `/api/parties/${id}/statement` + qs({ from, to, currency })),
 
   warehouses: () => request<WarehouseView[]>('GET', '/api/warehouses'),
   createWarehouse: (input: { code: string; name: Names }) => request<WarehouseView>('POST', '/api/warehouses', input),

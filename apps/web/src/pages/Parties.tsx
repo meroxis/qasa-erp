@@ -17,6 +17,8 @@ export function Parties({ type }: { type: PartyType }) {
   const [editing, setEditing] = useState<PartyView | 'new' | null>(null);
   const { data, error, reload } = useLoad(() => api.parties({ type, q: q.trim() }), [type, q]);
   const total = (data ?? []).reduce((s, p) => s + p.balance, 0);
+  // a dollar column only when someone has dollar movement
+  const anyUsd = (data ?? []).some((p) => (p.balances?.USD ?? 0) !== 0);
 
   return (
     <div className="stack">
@@ -39,6 +41,7 @@ export function Parties({ type }: { type: PartyType }) {
                 <th>{t('name')}</th>
                 <th>{t('phone')}</th>
                 <th className="amount">{t('balanceDue')}</th>
+                {anyUsd && <th className="amount">{t('usdName')}</th>}
                 <th style={{ width: 44 }} />
               </tr>
             </thead>
@@ -53,6 +56,7 @@ export function Parties({ type }: { type: PartyType }) {
                   </td>
                   <td className="num ltr">{i18n.digitsOf(p.phone)}</td>
                   <td className="amount">{p.balance ? i18n.money(p.balance, 'IQD') : <span className="muted">—</span>}</td>
+                  {anyUsd && <td className="amount">{p.balances?.USD ? i18n.money(p.balances.USD, 'USD') : <span className="muted">—</span>}</td>}
                   <td>
                     <button type="button" className="btn icon ghost" title={t('actEdit')} aria-label={t('actEdit')} onClick={(e) => { e.stopPropagation(); setEditing(p); }}>
                       <Icon name="edit" size={16} />
@@ -140,8 +144,11 @@ export function PartyDetail({ id }: { id: string }) {
   const { settings } = useData();
   const [from, setFrom] = useState('');
   const [to, setTo] = useState('');
+  // all lines (IQD at the book rates), or one currency's lines in that currency
+  const [currency, setCurrency] = useState<'' | 'IQD' | 'USD'>('');
   const [editing, setEditing] = useState(false);
-  const { data, error, reload } = useLoad(() => api.partyStatement(id, from || undefined, to || undefined), [id, from, to]);
+  const { data, error, reload } = useLoad(() => api.partyStatement(id, from || undefined, to || undefined, currency || undefined), [id, from, to, currency]);
+  const cur = currency || 'IQD';
   usePageNav(data ? (data.party.type === 'customer' ? { key: 'customers', group: 'gSales' } : { key: 'suppliers', group: 'gPurchases' }) : null);
   const invoices = useLoad(() => api.invoices({ partyId: id }), [id]);
 
@@ -152,10 +159,10 @@ export function PartyDetail({ id }: { id: string }) {
   const company = settings ? i18n.name(settings.companyName) : '';
 
   const exportCsv = () => downloadCsv(`${p.code}-statement.csv`, [
-    [t('date'), t('number'), t('description'), t('debit'), t('credit'), t('balance')],
-    [from, '', t('opening'), '', '', data.opening],
-    ...data.lines.map((l) => [l.date, l.number, l.description, l.debit, l.credit, l.balance]),
-    ['', '', t('closing'), data.totalDebit, data.totalCredit, data.closing]
+    [t('date'), t('number'), t('description'), t('debit'), t('credit'), t('balance'), t('currency')],
+    [from, '', t('opening'), '', '', data.opening, cur],
+    ...data.lines.map((l) => [l.date, l.number, l.description, l.debit, l.credit, l.balance, l.currency ?? cur]),
+    ['', '', t('closing'), data.totalDebit, data.totalCredit, data.closing, cur]
   ]);
 
   return (
@@ -166,7 +173,7 @@ export function PartyDetail({ id }: { id: string }) {
         <span className="spacer" />
         <button type="button" className="btn" onClick={() => setEditing(true)}><Icon name="edit" size={16} />{t('actEdit')}</button>
         <a className="btn primary" href={href(isCustomer ? `new-invoice/sale/${p.id}` : `new-invoice/purchase/${p.id}`)}><Icon name="plus" size={16} />{isCustomer ? t('newSale') : t('newPurchase')}</a>
-        <StatementWhatsApp company={company} name={p.name} phone={p.phone} balance={data.closing} date={to || todayIso()} />
+        <StatementWhatsApp company={company} name={p.name} phone={p.phone} balance={data.closing} date={to || todayIso()} currency={cur} />
         <button type="button" className="btn" onClick={exportCsv}><Icon name="download" size={16} />{t('exportExcel')}</button>
         <button type="button" className="btn" onClick={() => void printDocument('report')}><Icon name="printer" size={16} />{t('print')}</button>
       </div>
@@ -180,6 +187,7 @@ export function PartyDetail({ id }: { id: string }) {
         <div className="card pad tile">
           <div className="label">{t('balanceDue')}</div>
           <div className="value num">{i18n.money(p.balance, 'IQD')}</div>
+          {(p.balances?.USD ?? 0) !== 0 && <div className="muted small num">{i18n.money(p.balances!.IQD, 'IQD')} + {i18n.money(p.balances!.USD, 'USD')}</div>}
         </div>
         <div className="card pad tile">
           <div className="label">{isCustomer ? t('creditLimit') : t('linkedAccount')}</div>
@@ -195,27 +203,33 @@ export function PartyDetail({ id }: { id: string }) {
           <span className="spacer" />
           <label className="row small no-print" style={{ gap: 6 }}>{t('from')}<input className="input" type="date" value={from} onChange={(e) => setFrom(e.target.value)} style={{ width: 160 }} /></label>
           <label className="row small no-print" style={{ gap: 6 }}>{t('to')}<input className="input" type="date" value={to} onChange={(e) => setTo(e.target.value)} style={{ width: 160 }} /></label>
+          <div className="track no-print" role="group" aria-label={t('currency')}>
+            <button type="button" aria-pressed={currency === ''} onClick={() => setCurrency('')}>{t('all')}</button>
+            <button type="button" aria-pressed={currency === 'IQD'} onClick={() => setCurrency('IQD')}>{t('iqdName')}</button>
+            <button type="button" aria-pressed={currency === 'USD'} onClick={() => setCurrency('USD')}>{t('usdName')}</button>
+          </div>
         </div>
+        {currency !== '' && <p className="muted small" style={{ margin: '0 16px 8px' }}>{t('usd_statementHint')}</p>}
         <table className="table">
           <thead>
             <tr><th>{t('date')}</th><th>{t('number')}</th><th>{t('description')}</th><th className="amount">{t('debit')}</th><th className="amount">{t('credit')}</th><th className="amount">{t('balance')}</th></tr>
           </thead>
           <tbody>
-            <tr><td /><td /><td className="muted">{t('opening')}</td><td /><td /><td className="amount">{i18n.money(data.opening, 'IQD')}</td></tr>
+            <tr><td /><td /><td className="muted">{t('opening')}</td><td /><td /><td className="amount">{i18n.money(data.opening, cur)}</td></tr>
             {data.lines.map((l, i) => (
               <tr key={i} className="click" onClick={() => go(l.invoiceId ? `invoice/${l.invoiceId}` : `entry/${l.entryId}`)}>
                 <td className="num">{i18n.date(l.date)}</td>
                 <td><span className="ltr num">{l.number}</span></td>
-                <td>{l.description}</td>
-                <td className="amount">{l.debit ? i18n.money(l.debit, 'IQD') : ''}</td>
-                <td className="amount">{l.credit ? i18n.money(l.credit, 'IQD') : ''}</td>
-                <td className="amount">{i18n.money(l.balance, 'IQD')}</td>
+                <td>{l.description}{!currency && l.currency === 'USD' && l.amount !== undefined && <span className="muted small"> ({i18n.money(Math.abs(l.amount), 'USD')})</span>}</td>
+                <td className="amount">{l.debit ? i18n.money(l.debit, cur) : ''}</td>
+                <td className="amount">{l.credit ? i18n.money(l.credit, cur) : ''}</td>
+                <td className="amount">{i18n.money(l.balance, cur)}</td>
               </tr>
             ))}
             {data.lines.length === 0 && <tr><td colSpan={6} className="muted">{t('noData')}</td></tr>}
           </tbody>
           <tfoot>
-            <tr><td /><td /><td>{t('closing')}</td><td className="amount">{i18n.money(data.totalDebit, 'IQD')}</td><td className="amount">{i18n.money(data.totalCredit, 'IQD')}</td><td className="amount">{i18n.money(data.closing, 'IQD')}</td></tr>
+            <tr><td /><td /><td>{t('closing')}</td><td className="amount">{i18n.money(data.totalDebit, cur)}</td><td className="amount">{i18n.money(data.totalCredit, cur)}</td><td className="amount">{i18n.money(data.closing, cur)}</td></tr>
           </tfoot>
         </table>
       </div>

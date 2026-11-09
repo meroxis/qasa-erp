@@ -456,7 +456,7 @@ export function apiRoutes(db: Db, options: { demo?: boolean; extensions?: readon
     return finalAccountsReport(db, q);
   });
   app.get('/api/reports/statement', async (req) => {
-    const q = parse(z.object({ account: z.string().min(1).max(12), from: isoDate.optional(), to: isoDate.optional() }), req.query);
+    const q = parse(z.object({ account: z.string().min(1).max(12), from: isoDate.optional(), to: isoDate.optional(), currency: currency.optional() }), req.query);
     return statementReport(db, q.account, q);
   });
 
@@ -483,7 +483,8 @@ export function apiRoutes(db: Db, options: { demo?: boolean; extensions?: readon
     return reply.status(204).send();
   });
   app.get('/api/parties/:id/statement', async (req) => {
-    const q = parse(z.object({ from: isoDate.optional(), to: isoDate.optional() }), req.query);
+    // currency (1.1): that currency's lines only, with a running balance in it
+    const q = parse(z.object({ from: isoDate.optional(), to: isoDate.optional(), currency: currency.optional() }), req.query);
     return partyStatement(db, parse(idParam, req.params).id, q, branchOfUser(req));
   });
 

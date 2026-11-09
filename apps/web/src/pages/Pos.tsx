@@ -3,9 +3,9 @@ import { createPortal } from 'react-dom';
 import { normalizeForSearch, rateFromX100, rateToX100, toWesternDigits, type CurrencyCode } from '@qasa/core';
 import { api, type InvoiceView, type ItemView, type PartyView, type WarehouseView } from '../api.ts';
 import { AccountCombo, AmountInput, ErrorBox, Icon, Modal, SearchCombo, useData, useLoad, usePageNav, useToast, type PickOption } from '../components.tsx';
-import { useI18n, type I18n } from '../i18n.ts';
+import { useI18n, type I18n, type Key } from '../i18n.ts';
 import { href } from '../router.ts';
-import { posApi, type Money2, type ShiftReport, type ShiftView } from '../industry/pos-api.ts';
+import { posApi, type Money2, type PosMethod, type ShiftReport, type ShiftView } from '../industry/pos-api.ts';
 import '../pos.css';
 import { PrintDocument } from '../industry/PrintDocument.tsx';
 import { invoiceModel } from '../industry/print-model.ts';
@@ -168,6 +168,10 @@ function Register({ initial, onClosed }: { initial: ShiftView; onClosed(): void 
   const [discount, setDiscount] = useState<number | null>(0);
   const [paid, setPaid] = useState<number | null>(null);
   const [partyId, setPartyId] = useState('');
+  // how it is paid (1.1): no parts = all cash, as before; else 1–4 parts that add up to the total
+  const [parts, setParts] = useState<{ method: PosMethod; amount: number | null }[]>([]);
+  const [methods, setMethods] = useState<PosMethod[]>(['cash']);
+  useEffect(() => { posApi.paymentAccounts().then((r) => setMethods(r.methods), () => {}); }, []);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<unknown>(null);
   const expired = useExpiredConfirm();
@@ -286,13 +290,23 @@ function Register({ initial, onClosed }: { initial: ShiftView; onClosed(): void 
   const subtotal = cart.reduce((s, l) => s + lineTotal(l), 0);
   const total = Math.max(0, subtotal - (discount ?? 0));
   const change = paid !== null ? paid - total : null;
-  const canPay = cart.length > 0 && !busy && (discount ?? 0) <= subtotal && (currency === 'IQD' || rateX100 > 0) && (change === null || change >= 0);
+  const split = parts.length > 0;
+  const left = total - parts.reduce((s, p) => s + (p.amount ?? 0), 0);
+  const splitOk = !split || (left === 0 && parts.every((p) => (p.amount ?? 0) > 0) && (!parts.some((p) => p.method === 'account') || !!partyId));
+  const canPay = cart.length > 0 && !busy && (discount ?? 0) <= subtotal && (currency === 'IQD' || rateX100 > 0) && (change === null || change >= 0) && splitOk;
+  /** A method button: the first one takes the whole total; later ones what is left. */
+  const pickMethod = (method: PosMethod) => {
+    setParts((ps) => (ps.length === 0
+      ? (method === 'cash' ? [] : [{ method, amount: total }])
+      : ps.length >= 4 || ps.some((p) => p.method === method) ? ps : [...ps, { method, amount: Math.max(0, left) }]));
+  };
 
   const clear = () => {
     setCart([]);
     setDiscount(0);
     setPaid(null);
     setPartyId('');
+    setParts([]);
     setError(null);
     setQ('');
     focusSearch();
@@ -307,7 +321,8 @@ function Register({ initial, onClosed }: { initial: ShiftView; onClosed(): void 
         currency, ...(currency === 'USD' ? { rateX100 } : {}), ...(partyId ? { partyId } : {}), discount: discount ?? 0,
         lines: cart.map((l) => (l.unit
           ? { itemId: l.item.id, unit: l.unit, unitQtyMilli: l.qtyMilli, unitPrice: l.unitPrice }
-          : { itemId: l.item.id, qtyMilli: l.qtyMilli, unitPrice: l.unitPrice }))
+          : { itemId: l.item.id, qtyMilli: l.qtyMilli, unitPrice: l.unitPrice })),
+        ...(split ? { payments: parts.map((p) => ({ method: p.method, amount: p.amount ?? 0 })) } : {})
       };
       let res;
       try {
@@ -467,6 +482,24 @@ function Register({ initial, onClosed }: { initial: ShiftView; onClosed(): void 
               <span>{t('pos_total')}</span>
               <strong className="num">{i18n.money(total, currency)}</strong>
             </div>
+            {methods.length > 1 && (
+              <div className="stack" style={{ gap: 6 }}>
+                <div className="track" role="group" aria-label={t('paymentMode')} style={{ flexWrap: 'wrap' }}>
+                  {methods.map((m) => (
+                    <button key={m} type="button" aria-pressed={split ? parts.some((p) => p.method === m) : m === 'cash'} onClick={() => pickMethod(m)}>{t(`pay_${m}` as Key)}</button>
+                  ))}
+                </div>
+                {parts.map((p, i) => (
+                  <div key={p.method} className="row" style={{ flexWrap: 'nowrap', gap: 6 }}>
+                    <span style={{ minWidth: 90 }}>{t(`pay_${p.method}` as Key)}</span>
+                    <AmountInput value={p.amount} currency={currency} onChange={(v) => setParts((ps) => ps.map((x, j) => (j === i ? { ...x, amount: v } : x)))} ariaLabel={t(`pay_${p.method}` as Key)} />
+                    <button type="button" className="btn icon ghost" aria-label={t('pos_remove')} onClick={() => setParts((ps) => ps.filter((_, j) => j !== i))}><Icon name="x" size={14} /></button>
+                  </div>
+                ))}
+                {split && left !== 0 && <div className="small" style={{ color: 'var(--bad)' }}>{t('pos_left')}: <span className="num">{i18n.money(left, currency)}</span></div>}
+                {parts.some((p) => p.method === 'account') && !partyId && <div className="small" style={{ color: 'var(--bad)' }}>{t('err_party_required')}</div>}
+              </div>
+            )}
             {change !== null && (
               <div className={'pos-change' + (change < 0 ? ' bad' : '')}>
                 <span>{change < 0 ? t('pos_short') : t('pos_change')}</span>
@@ -543,6 +576,9 @@ function Receipt({ invoice, shift }: { invoice: InvoiceView; shift: ShiftView })
         <div className="pos-r-sep" />
         {invoice.discount > 0 && <div className="pos-r-row"><span>{t('pos_discount')}</span><span className="num">−{i18n.money(invoice.discount, invoice.currency)}</span></div>}
         <div className="pos-r-row pos-r-total"><span>{t('pos_total')}</span><span className="num">{i18n.money(invoice.total, invoice.currency)}</span></div>
+        {(invoice.payments ?? []).filter((p) => p.kind === 'pos').map((p) => (
+          <div key={p.id} className="pos-r-row small"><span>{t(`pay_${p.method}` as Key)}</span><span className="num">{i18n.money(p.amount, p.currency)}</span></div>
+        ))}
         <div className="pos-r-sep" />
         <div className="pos-r-center small">{t('pos_thanks')}</div>
         {!plan?.features.includes('noBranding') && <div className="pos-r-center small">{t('madeWith')} · <span className="ltr">qasaerp.com</span></div>}
@@ -656,6 +692,7 @@ export function PosShiftReport({ id }: { id: string }) {
             <tr><td>{t('pos_openingCash')}</td><td className="num">{i18n.money(r.openingCash, 'IQD')}</td></tr>
             <tr><td>{t('pos_sales')}</td><td className="num">{money2(i18n, r.sales)}</td></tr>
             {(r.refunds.IQD > 0 || r.refunds.USD > 0) && <tr><td>{t('pos_refunds')}</td><td className="num">−{money2(i18n, r.refunds)}</td></tr>}
+            {Object.entries(r.methods ?? {}).filter(([m]) => m !== 'cash' || Object.keys(r.methods ?? {}).length > 1).map(([m, v]) => <tr key={m}><td>{t(`pay_${m}` as Key)}</td><td className="num">{money2(i18n, v as Money2)}</td></tr>)}
             <tr><td><strong>{t('pos_expected')}</strong></td><td className="num"><strong>{money2(i18n, r.expected)}</strong></td></tr>
             {r.counted && <tr><td>{t('pos_counted')}</td><td className="num">{money2(i18n, r.counted)}</td></tr>}
             {r.difference && <tr><td>{t('pos_difference')}</td><td className="num"><DiffText d={r.difference} /></td></tr>}
