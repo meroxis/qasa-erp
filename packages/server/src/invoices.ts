@@ -31,7 +31,7 @@ import { addStockMove, stockOf } from './items.ts';
 import { getPostingAccounts, isPeriodLocked } from './settings.ts';
 import { resolveLines } from './item-units.ts';
 import {
-  addTaken, allocateOut, assertReversible, batchColumns, batchMovesOf, batchTracking, inboundBatch, lineBatchErrors, reverseBatchMoves, writeBatchMoves,
+  addTaken, allocateOut, assertReversible, batchColumns, batchTracking, cancelBatchMoves, inboundBatch, lineBatchErrors, writeBatchMoves,
   type BatchError, type BatchMove
 } from './batches.ts';
 
@@ -184,7 +184,8 @@ const SELECT_INVOICE = `SELECT v.*, p.code AS party_code, p.name AS party_name,
      ((v.payment = 'cash' AND (l.account_code = v.cash_account
          OR l.account_code IN (SELECT ip.account_code FROM invoice_payments ip WHERE ip.invoice_id = v.id AND ip.kind = 'pos' AND ip.entry_id = v.entry_id)))
       OR (v.payment = 'credit' AND l.party_id = v.party_id))) AS settlement_base,
-  (SELECT SUM(ip.amount) FROM invoice_payments ip WHERE ip.invoice_id = v.id AND ip.kind = 'online') AS online_paid
+  (SELECT SUM(ip.amount) FROM invoice_payments ip JOIN entries ie ON ie.id = ip.entry_id
+   WHERE ip.invoice_id = v.id AND ip.kind = 'online' AND ie.reversed_by_id IS NULL) AS online_paid
   FROM invoices v LEFT JOIN parties p ON p.id = v.party_id`;
 
 /** Active refunds in both currencies. Read the posted settlement, including its rounding allocation. */
@@ -420,11 +421,22 @@ export function fromBase(amountIqd: number, currency: CurrencyCode, rateX100: nu
  * `allowExpired`: the user confirmed selling stock past its expiry date (only under the 'warn' policy; written to the
  * audit log). Batch items take their batches earliest expiry first, or the batch a line is pinned to.
  */
+/**
+ * What a sale's customer has paid online for it (website orders): the payments whose receipt voucher is still in the
+ * books. A rejected one (its draft voucher deleted) or a reversed one no longer counts.
+ */
+export function onlinePaidAmount(db: Db, invoiceId: string): number {
+  return Number((db.prepare(`SELECT COALESCE(SUM(p.amount), 0) AS s FROM invoice_payments p JOIN entries e ON e.id = p.entry_id
+                              WHERE p.invoice_id = ? AND p.kind = 'online' AND e.reversed_by_id IS NULL`).get(invoiceId) as { s: number }).s);
+}
+
 export function postInvoice(
   db: Db, id: string, user: string, opts: { settledNow?: number; allowExpired?: boolean; split?: readonly SalePart[] } = {}
 ): InvoiceView {
   const view = getInvoice(db, id);
   requireAction(db, loadRow(db, id), 'post');
+  // money already taken online for this order is on the customer's account: posted as cash too, it would be taken twice
+  if (view.kind === 'sale' && (view.payment !== 'credit' || opts.split?.length) && onlinePaidAmount(db, id) > 0) throw conflict('invoice_has_online_payments');
   const input = storedInput(view);
   assertInvoice(db, input);
   const accounts = getPostingAccounts(db);
@@ -576,7 +588,7 @@ export function cancelInvoice(db: Db, id: string, user: string, date?: string): 
   transaction(db, () => {
     const reversalId = view.entryId ? reverseEntryInternal(db, view.entryId, user, cancelDate) : null;
     for (const m of moves) addStockMove(db, { itemId: m.itemId, warehouseId: view.warehouseId, date: cancelDate, qtyMilli: m.qtyMilli, value: m.value, sourceType: `${view.kind}_cancel`, sourceId: id });
-    if (batchMovesOf(db, view.kind, id).length) reverseBatchMoves(db, view.kind, id, cancelDate);
+    cancelBatchMoves(db, view.kind, id, cancelDate, moves.map((m) => ({ itemId: m.itemId, warehouseId: view.warehouseId })));
     const now = new Date().toISOString();
     db.prepare(`UPDATE invoices SET status = 'cancelled', cancel_entry_id = ?, cancelled_by = ?, cancelled_at = ?, updated_at = ? WHERE id = ?`)
       .run(reversalId, user, now, now, id);

@@ -106,6 +106,9 @@ CREATE TABLE item_batches (
   UNIQUE (item_id, number)
 );
 CREATE INDEX item_batches_expiry ON item_batches(expiry);
+-- version 11 rebuilds item_batches with UNIQUE (item_id, number, expiry) in place of UNIQUE (item_id, number): stock
+-- with no number is one '' batch per expiry date (and one with no date). On a server: one ALTER adds the new key
+-- item_batches_number_expiry and drops item_batches_number (skipped when the new key is there)
 
 -- every batch quantity change, beside stock_moves (which keeps the value); never edited or deleted
 CREATE TABLE stock_batch_moves (
@@ -364,8 +367,8 @@ long. The new settings defaults go in here as well (section 2.2).
   no expiry) for the difference per warehouse. This covers both the first time and switching it on again. Switching
   it off is always allowed; batches are then simply not consulted.
 - **Inbound lines** (purchase, opening stock, adjustment in, sale return): `batch_no` and `expiry`. On posting, the
-  server finds or creates `item_batches(item_id, number)`. An existing number with a different expiry returns
-  `batch_expiry_differs`. A missing expiry on a `track_expiry` item returns `expiry_required`. An expiry before the
+  server finds or creates `item_batches(item_id, number)`; with no number, the `''` batch of that expiry date (one
+  per date, so a date is never lost). An existing number with a different expiry returns `batch_expiry_differs`. A missing expiry on a `track_expiry` item returns `expiry_required`. An expiry before the
   document date gives a warning, not an error, because expired stock can be received for a return to the supplier.
 - **Outbound lines** (sale, POS, adjustment out, transfer out, purchase return): `batch_id` pins one batch. Without
   it, **FEFO** applies: earliest expiry first, NULL expiry last, ties by `created_at`. One line may take from several
@@ -378,12 +381,16 @@ long. The new settings defaults go in here as well (section 2.2).
     (`sell_expired`).
   - Adjustments out (write-off) and purchase returns may always take expired batches.
 - **Transfers** move the same batch ids from one warehouse to the other (FEFO or pinned).
-- **Cancel** writes the negated batch moves of the source (`<type>_cancel`).
+- **Cancel** writes the negated batch moves of the source (`<type>_cancel`). For an item that tracks batches now but
+  did not when the document was posted, the batches are then brought back in line with the stock: what came back goes
+  into the `''` batch with no date, what goes out leaves that batch first, then FEFO.
 - **Sale return** puts quantity back into the batches the original line took, in reverse pick order, minus what
   earlier returns already put back. **Purchase return** takes from the batch the purchase line brought in, and
-  returns `batch_insufficient` if that batch no longer holds enough.
+  returns `batch_insufficient` if that batch no longer holds enough. A purchase from before tracking takes from the
+  `''` batch with no date first (where its goods went), then FEFO.
 - **Stock count** on a batch item: a shortage is taken FEFO (expired first is allowed). A surplus goes into the `''`
-  batch, unless the count line names a batch. Counting per batch is out of scope.
+  batch of its expiry date, unless the count line names a batch; an item with expiry dates needs the date
+  (`expiry_required`). Counting per batch is out of scope.
 - **Settings** (`settings.ts`, new keys, defaults filled in `ensureDefaults`):
   - `near_expiry_days` (default 90, range 1–730);
   - `expired_sales` (`block` | `warn`);
@@ -628,7 +635,12 @@ All of these sit inside the existing ext API (`/api/v1/ext/*`). That API works t
   5. The answer is 201 `{ id, externalId, source, method, amount, currency, reference, entryId, entryNumber: null,
      status: 'draft', created: true }`.
 - **Reading back.** `GET /api/v1/ext/orders/:externalId` adds `payments: [{ method, amount, currency, reference,
-  status }]` (the voucher's status: draft, checked or approved) and `paidAmount`.
+  status }]` (the voucher's status: draft, checked or approved; `rejected` when the draft voucher was deleted,
+  `reversed` when it was reversed) and `paidAmount`, which counts neither of those two.
+- **The voucher follows the payment.** It is checked, approved, deleted (rejected) or reversed in the journal, but
+  never edited (`entry_belongs_to_online_payment`). A rejected payment stays with the order without a voucher, so the
+  same reference gives it back. A payment on an order posted as a cash sale is refused (`order_not_on_credit`), and an
+  order with live online payments posts on credit only (`invoice_has_online_payments`).
 - **App screen.** The invoice detail lists its `invoice_payments` with links to the receipt vouchers. The invoices
   list shows a "paid online" chip.
 

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { expiryState, fefoOrder, isExpired, normalizeBatchNo, normalizeExpiry, pickFefo, returnToBatches, type BatchStock } from './index.ts';
+import { expiryState, fefoOrder, isExpired, normalizeBatchNo, normalizeExpiry, pickFefo, pickPlainFirst, returnToBatches, type BatchStock } from './index.ts';
 
 const b = (id: string, expiry: string | null, qtyMilli: number, createdAt = '2026-01-01T00:00:00Z'): BatchStock => ({ id, expiry, qtyMilli, createdAt });
 const TODAY = '2026-11-09';
@@ -59,5 +59,13 @@ describe('batches: earliest expiry first', () => {
     expect(normalizeExpiry('٢٠٢٧-٠١-٣١')).toBe('2027-01-31');
     expect(normalizeExpiry('2027-02-30')).toBe('invalid');
     expect(normalizeExpiry('')).toBeNull();
+  });
+
+  it('takes stock from before tracking out of the batch with no number first, then earliest expiry first, expired too', () => {
+    const batches = [b('plain', null, 3_000), b('n1', '2027-03-31', 5_000), b('old', '2020-01-01', 2_000)];
+    expect(pickPlainFirst(batches, 2_000, 'plain')).toEqual({ ok: true, picks: [{ id: 'plain', qtyMilli: 2_000 }], usedExpired: false });
+    expect(pickPlainFirst(batches, 6_000, 'plain')).toEqual({ ok: true, picks: [{ id: 'plain', qtyMilli: 3_000 }, { id: 'old', qtyMilli: 2_000 }, { id: 'n1', qtyMilli: 1_000 }], usedExpired: false });
+    expect(pickPlainFirst(batches, 4_000, null)).toEqual({ ok: true, picks: [{ id: 'old', qtyMilli: 2_000 }, { id: 'n1', qtyMilli: 2_000 }], usedExpired: false });
+    expect(pickPlainFirst(batches, 11_000, 'plain')).toEqual({ ok: false, code: 'batch_insufficient', availableMilli: 10_000 });
   });
 });

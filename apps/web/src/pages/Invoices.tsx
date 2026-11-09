@@ -656,6 +656,14 @@ export function InvoiceDetail({ id }: { id: string }) {
   );
 }
 
+/**
+ * The base quantity of a return line from what was typed: in the line's unit (a box) or, when `inBase`, in the item's
+ * base unit, so a single tablet of a line sold in boxes of 30 can go back (1/30 of a box has no exact thousandths).
+ */
+export function returnQtyBase(l: Pick<InvoiceView['lines'][number], 'lineUnit' | 'unitFactorMilli'>, typed: number, inBase: boolean): number | null {
+  return l.lineUnit && l.unitFactorMilli && !inBase ? toBaseQty(typed, l.unitFactorMilli) : typed;
+}
+
 /** Takes goods back from a posted invoice (مردودات): pick the quantities, how the money goes back, and post. */
 function ReturnModal({ invoice: v, onClose }: { invoice: InvoiceView; onClose(): void }) {
   const i18n = useI18n();
@@ -668,14 +676,13 @@ function ReturnModal({ invoice: v, onClose }: { invoice: InvoiceView; onClose():
   const [cashAccount, setCashAccount] = useState(v.cashAccountCode ?? settings?.postingAccounts.cash ?? '');
   const [notes, setNotes] = useState('');
   const [qty, setQty] = useState<Record<number, number | null>>({});
+  // lines sold in another unit: typed in the base unit instead (single tablets of a box)
+  const [inBase, setInBase] = useState<Record<number, boolean>>({});
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<unknown>(null);
   // a line sold in boxes is returned in boxes: the quantity typed is in the line's unit, at the factor kept with the line
   const unitOf = (l: InvoiceView['lines'][number]) => (l.lineUnit && l.unitFactorMilli ? { unit: l.lineUnit, factor: l.unitFactorMilli } : null);
-  const baseFor = (l: InvoiceView['lines'][number], typed: number) => {
-    const u = unitOf(l);
-    return u ? toBaseQty(typed, u.factor) : typed;
-  };
+  const baseFor = (l: InvoiceView['lines'][number], typed: number) => returnQtyBase(l, typed, !!inBase[l.lineNo]);
   const shown = (l: InvoiceView['lines'][number], base: number) => {
     const u = unitOf(l);
     const inUnit = u ? fromBaseQty(base, u.factor) : null;
@@ -721,7 +728,14 @@ function ReturnModal({ invoice: v, onClose }: { invoice: InvoiceView; onClose():
                 <td className="amount">{shown(l, l.left)}</td>
                 <td>
                   <QtyInput value={qty[l.lineNo] ?? null} onChange={(value) => setQty((q) => ({ ...q, [l.lineNo]: value }))} ariaLabel={t('returnQty')} />
-                  {unitOf(l) && <div className="muted small" style={{ textAlign: 'end' }}>{unitName(i18n, unitOf(l)!.unit)}</div>}
+                  {unitOf(l) && (
+                    <div style={{ textAlign: 'end' }}>
+                      <button type="button" className="chip" title={t('unit')} aria-label={`${t('unit')}: ${unitName(i18n, inBase[l.lineNo] ? l.unit : unitOf(l)!.unit)}`}
+                        onClick={() => { setInBase((b) => ({ ...b, [l.lineNo]: !b[l.lineNo] })); setQty((q) => ({ ...q, [l.lineNo]: null })); }}>
+                        {unitName(i18n, inBase[l.lineNo] ? l.unit : unitOf(l)!.unit)}
+                      </button>
+                    </div>
+                  )}
                 </td>
               </tr>
             ))}

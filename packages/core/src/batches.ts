@@ -121,3 +121,24 @@ export function normalizeExpiry(value: string | null | undefined): string | null
   const western = toWesternDigits(value.trim());
   return isIsoDate(western) ? western : 'invalid';
 }
+
+/**
+ * Stock leaving with no batch of its own (cancelling or returning a document made before the item tracked batches):
+ * it is the stock that went into the batch with no number and no date when tracking began (`plainId`), so that batch
+ * gives first, then the others earliest expiry first. Expired stock may go: this is never a sale.
+ */
+export function pickPlainFirst(batches: readonly BatchStock[], needMilli: number, plainId: string | null): FefoResult {
+  const plain = batches.find((b) => b.id === plainId && b.qtyMilli > 0);
+  const picks: { id: string; qtyMilli: number }[] = [];
+  let rest = needMilli;
+  if (plain) {
+    const take = Math.min(rest, plain.qtyMilli);
+    picks.push({ id: plain.id, qtyMilli: take });
+    rest -= take;
+  }
+  if (rest <= 0) return { ok: true, picks, usedExpired: false };
+  // the date only tells expired batches apart, and every batch may go: the earliest date is enough
+  const r = pickFefo(batches.filter((b) => b.id !== plain?.id), rest, '0000-01-01', 'warn', true);
+  if (!r.ok) return { ok: false, code: 'batch_insufficient', availableMilli: (plain?.qtyMilli ?? 0) + r.availableMilli };
+  return { ok: true, picks: [...picks, ...r.picks], usedExpired: false };
+}

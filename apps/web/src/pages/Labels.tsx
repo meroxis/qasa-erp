@@ -41,11 +41,14 @@ export function labelRows<R extends Row>(rows: R[], skip: number): (R | null)[] 
   return out;
 }
 
-/** The barcode text and price of a label: the unit's own when the row is for one of the item's units. */
+/**
+ * The barcode text and price of a label: the unit's own when the row is for one of the item's units. A unit with no
+ * barcode of its own gets none (the label can't be printed): the item's barcode would add one base unit at the counter.
+ */
 export function labelFace(item: ItemView, unit: UnitCode | null | undefined): { barcode: string; price: number } {
   const u = unit ? item.units.find((x) => x.unit === unit) : undefined;
   if (!u) return { barcode: item.barcode || item.code, price: item.salePrice };
-  return { barcode: u.barcode || item.barcode || item.code, price: unitPrice({ price: item.salePrice }, { factorMilli: u.factorMilli, salePrice: u.salePrice }) };
+  return { barcode: u.barcode ?? '', price: unitPrice({ price: item.salePrice }, { factorMilli: u.factorMilli, salePrice: u.salePrice }) };
 }
 
 /** The @page rule for the chosen size: a label printer gets one label per page; sheets are A4 with no margin. */
@@ -126,7 +129,7 @@ export function Labels() {
                     <tr key={key}>
                       <td className="ltr">{it?.code}</td>
                       <td>
-                        {it ? i18n.name(it.name) : ''}{!code && <div className="small" style={{ color: 'var(--bad)' }}>{t('lb_noCode')}</div>}
+                        {it ? i18n.name(it.name) : ''}{!code && <div className="small" style={{ color: 'var(--bad)' }}>{t(r.unit ? 'lb_noUnitCode' : 'lb_noCode')}</div>}
                         {it && it.units.length > 0 && <UnitPicker item={it} value={r.unit ?? null} onChange={(unit) => setUnit(key, unit)} />}
                       </td>
                       <td className="ltr">{code?.text ?? '—'}</td>

@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { formatQty, roundHalfUp, UNITS, type CurrencyCode, type Names, type UnitCode } from '@qasa/core';
 import { api, type ItemInput, type ItemView, type WarehouseView } from '../api.ts';
 import { EmptyState, AmountInput, ErrorBox, Icon, Modal, QtyInput, downloadCsv, useData, useLoad, useToast } from '../components.tsx';
@@ -11,6 +11,16 @@ import { go, href } from '../router.ts';
 import { ImagePicker, ItemImage } from '../industry/ItemImage.tsx';
 import { WholesalePriceField } from '../industry/WholesalePriceField.tsx';
 import { printDocument } from '../industry/printing.ts';
+
+/**
+ * What an item form sends for batches and expiry dates. What the form shows is sent, once it knows the company's
+ * setting (an edited item, or a new one after the setting loaded); before that, a new item left unticked follows the
+ * setting on the server.
+ */
+export function trackingInput(existing: boolean, defaultsKnown: boolean, trackBatches: boolean, trackExpiry: boolean): { trackBatches?: boolean; trackExpiry?: boolean } {
+  if (existing || defaultsKnown || trackBatches || trackExpiry) return { trackBatches: trackBatches || trackExpiry, trackExpiry };
+  return {};
+}
 
 export function qtyText(i18n: I18n, milli: number): string {
   return i18n.qty(milli);
@@ -114,7 +124,7 @@ export function Items() {
           )}
           <ErrorBox error={items.error} />
           <div className="card">
-            {items.data && items.data.length === 0 && (q.trim() || warehouseId
+            {items.data && items.data.length === 0 && (q.trim() || warehouseId || categoryId
               ? <EmptyState compact icon="search" title={t('es_search')} text={t('es_searchText')} />
               : <EmptyState icon="box" title={t('es_items')} text={t('es_itemsText')} action={{ label: t('newItem'), icon: 'plus', onClick: () => setEditing('new') }} secondary={{ label: t('importExcel'), icon: 'upload', href: href('import') }} />)}
             {items.data && items.data.length > 0 && (
@@ -222,7 +232,20 @@ export function ItemForm({ item, onClose, onSaved }: { item: ItemView | null; on
   const [active, setActive] = useState(item?.active ?? true);
   const [units, setUnits] = useState<UnitRow[]>(() => (item?.units ?? []).map((u) => ({ key: unitKey++, unit: u.unit, factorMilli: u.factorMilli, barcode: u.barcode, salePrice: u.salePrice })));
   const [trackBatches, setTrackBatches] = useState(item?.trackBatches ?? false);
-  const [trackExpiry, setTrackExpiry] = useState(item?.trackExpiry ?? false);
+  const [trackExpiry, setTrackExpiry] = useState(item ? item.trackExpiry : false);
+  // a new item starts from the company's setting for expiry dates (a pharmacy has it on), shown as it will be saved
+  const [defaultsKnown, setDefaultsKnown] = useState(!!item);
+  const trackingTouched = useRef(false);
+  useEffect(() => {
+    if (item) return;
+    let alive = true;
+    batchesApi.settings().then((s) => {
+      if (!alive) return;
+      if (!trackingTouched.current && s.defaultTrackExpiry) { setTrackExpiry(true); setTrackBatches(true); }
+      setDefaultsKnown(true);
+    }, () => {});
+    return () => { alive = false; };
+  }, [item]);
   const [categoryId, setCategoryId] = useState(item?.categoryId ?? '');
   const categories = useLoad(() => categoriesApi.list(), []);
   const [saleUnit, setSaleUnit] = useState<UnitCode | ''>(item?.saleUnit ?? '');
@@ -241,8 +264,7 @@ export function ItemForm({ item, onClose, onSaved }: { item: ItemView | null; on
       saleUnit: saleUnit && listed.some((u) => u.unit === saleUnit) ? saleUnit : null,
       purchaseUnit: purchaseUnit && listed.some((u) => u.unit === purchaseUnit) ? purchaseUnit : null,
       categoryId: categoryId || null,
-      // a new item left as it is follows the company's setting for expiry dates
-      ...(item || trackBatches || trackExpiry ? { trackBatches: trackBatches || trackExpiry, trackExpiry } : {})
+      ...trackingInput(!!item, defaultsKnown, trackBatches, trackExpiry)
     };
     if (code.trim()) input.code = code.trim();
     if (barcode.trim()) input.barcode = barcode.trim();
@@ -296,8 +318,8 @@ export function ItemForm({ item, onClose, onSaved }: { item: ItemView | null; on
         )}
         {unit !== 'service' && trackStock && (
           <div className="stack" style={{ gap: 4 }}>
-            <label className="row" style={{ gap: 8 }}><input type="checkbox" checked={trackBatches || trackExpiry} disabled={trackExpiry} onChange={(e) => setTrackBatches(e.target.checked)} />{t('ex_trackBatches')}</label>
-            <label className="row" style={{ gap: 8 }}><input type="checkbox" checked={trackExpiry} onChange={(e) => setTrackExpiry(e.target.checked)} />{t('ex_trackExpiry')}</label>
+            <label className="row" style={{ gap: 8 }}><input type="checkbox" checked={trackBatches || trackExpiry} disabled={trackExpiry} onChange={(e) => { trackingTouched.current = true; setTrackBatches(e.target.checked); }} />{t('ex_trackBatches')}</label>
+            <label className="row" style={{ gap: 8 }}><input type="checkbox" checked={trackExpiry} onChange={(e) => { trackingTouched.current = true; setTrackExpiry(e.target.checked); }} />{t('ex_trackExpiry')}</label>
             <span className="muted small">{t('ex_trackHelp')}</span>
           </div>
         )}

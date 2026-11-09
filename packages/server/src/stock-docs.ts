@@ -10,7 +10,7 @@ import { addStockMove, stockOf } from './items.ts';
 import { isPeriodLocked } from './settings.ts';
 import { resolveLines } from './item-units.ts';
 import {
-  addTaken, allocateOut, assertReversible, batchColumns, batchMovesOf, batchTracking, inboundBatch, lineBatchErrors, reverseBatchMoves, writeBatchMoves,
+  addTaken, allocateOut, assertReversible, batchColumns, batchTracking, cancelBatchMoves, inboundBatch, lineBatchErrors, writeBatchMoves,
   type BatchError, type BatchMove
 } from './batches.ts';
 
@@ -387,7 +387,7 @@ export function cancelStockDoc(db: Db, id: string, user: string, date?: string):
   transaction(db, () => {
     const reversalId = view.entryId ? reverseEntryInternal(db, view.entryId, user, cancelDate) : null;
     for (const m of moves) addStockMove(db, { itemId: m.itemId, warehouseId: m.warehouseId, date: cancelDate, qtyMilli: m.qtyMilli, value: m.value, sourceType: `${view.kind}_cancel`, sourceId: id });
-    if (batchMovesOf(db, view.kind, id).length) reverseBatchMoves(db, view.kind, id, cancelDate);
+    cancelBatchMoves(db, view.kind, id, cancelDate, moves);
     const now = new Date().toISOString();
     db.prepare(`UPDATE stock_docs SET status = 'cancelled', cancel_entry_id = ?, cancelled_by = ?, cancelled_at = ?, updated_at = ? WHERE id = ?`)
       .run(reversalId, user, now, now, id);

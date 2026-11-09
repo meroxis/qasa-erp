@@ -162,7 +162,7 @@ export const MYSQL_TABLES: readonly MysqlObject[] = [
       number ${BATCH} NOT NULL,
       expiry ${WHEN},
       created_at ${WHEN} NOT NULL,
-      UNIQUE KEY item_batches_number (item_id, number),
+      UNIQUE KEY item_batches_number_expiry (item_id, number, expiry),
       INDEX item_batches_expiry (expiry),
       FOREIGN KEY (item_id) REFERENCES items(id)
     )`
@@ -1567,7 +1567,8 @@ export const MYSQL_TRIGGERS: readonly MysqlObject[] = [
  */
 export type MysqlStep =
   | { kind: 'column'; table: string; column: string; sql: string }
-  | { kind: 'foreignKey'; table: string; column: string; parent: string; sql: string };
+  | { kind: 'foreignKey'; table: string; column: string; parent: string; sql: string }
+  | { kind: 'index'; table: string; index: string; sql: string };
 
 const NAME = /^\w+$/;
 
@@ -1611,14 +1612,28 @@ export const V10_MYSQL_STEPS: readonly MysqlStep[] = [
   mysqlAddColumn('item_images', 'sha256', 'VARCHAR(64)')
 ];
 
-/** What a server database has already, for pendingMysqlSteps: "table.column" and "table.column>parent". */
-export interface MysqlSchemaState { columns: ReadonlySet<string>; foreignKeys: ReadonlySet<string> }
+/**
+ * Version 11 on a server database at version 10: item_batches is unique per item, number AND expiry date (stock with
+ * no number is one batch per date). One ALTER adds the new key and drops the old one (the new key also serves the
+ * foreign key on item_id); skipped when the new key is there.
+ */
+export const V11_MYSQL_STEPS: readonly MysqlStep[] = [
+  {
+    kind: 'index', table: 'item_batches', index: 'item_batches_number_expiry',
+    sql: 'ALTER TABLE item_batches ADD UNIQUE KEY item_batches_number_expiry (item_id, number, expiry), DROP INDEX item_batches_number'
+  }
+];
+
+/** What a server database has already, for pendingMysqlSteps: "table.column", "table.column>parent" and "table.index". */
+export interface MysqlSchemaState { columns: ReadonlySet<string>; foreignKeys: ReadonlySet<string>; indexes?: ReadonlySet<string> }
 
 /** The statements of `steps` not done yet, in order. */
 export function pendingMysqlSteps(steps: readonly MysqlStep[], state: MysqlSchemaState): string[] {
-  return steps
-    .filter((s) => (s.kind === 'column' ? !state.columns.has(`${s.table}.${s.column}`) : !state.foreignKeys.has(`${s.table}.${s.column}>${s.parent}`)))
-    .map((s) => s.sql);
+  const done = (s: MysqlStep) =>
+    s.kind === 'column' ? state.columns.has(`${s.table}.${s.column}`)
+      : s.kind === 'foreignKey' ? state.foreignKeys.has(`${s.table}.${s.column}>${s.parent}`)
+        : !!state.indexes?.has(`${s.table}.${s.index}`);
+  return steps.filter((s) => !done(s)).map((s) => s.sql);
 }
 
 /** A table's columns as its CREATE statement lists them, with the primary key's. */

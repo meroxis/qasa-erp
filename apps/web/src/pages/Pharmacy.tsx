@@ -19,7 +19,7 @@ export function Pharmacy() {
   const [tab, setTab] = useState<Tab>('medicines');
   return (
     <div className="stack">
-      {!allowed && <div className="alert info">{t('ph_needsPro')} <a href={href('plans')}>Pro</a></div>}
+      {!allowed && <div className="alert info">{t('phm_needsPro')} <a href={href('plans')}>Pro</a></div>}
       <div className="tabs no-print">
         {(['medicines', 'alternatives', 'near', 'controlled'] as const).map((x) => (
           <button key={x} type="button" aria-pressed={tab === x} onClick={() => setTab(x)}>
@@ -124,7 +124,7 @@ function MedicineForm({ itemId, onClose, onSaved }: { itemId: string; onClose():
     }
   }
   return (
-    <Modal title={m ? `${m.code} — ${i18n.name(m.name)}` : t('ph_title')} onClose={onClose}>
+    <Modal title={m ? `${m.code} — ${i18n.name(m.name)}` : t('phm_title')} onClose={onClose}>
       <ErrorBox error={current.error} />
       {v && (
         <div className="stack">
@@ -266,6 +266,10 @@ function ControlledLog() {
   );
 }
 
+/** The lines a Record press saves: those with a patient (the others stay missing in the log, for later). */
+export const recordableLines = (values: readonly { patient: string }[]): number[] =>
+  values.flatMap((v, i) => (v.patient.trim() ? [i] : []));
+
 /** Asks for the patient (required), prescriber and prescription number of each controlled line; the POS opens it after a sale. */
 export function ControlledRecord({ lines, onDone }: { lines: Pick<ControlledLine, 'invoiceId' | 'lineNo' | 'itemName' | 'patient' | 'prescriber' | 'prescriptionNo'>[]; onDone(): void }) {
   const i18n = useI18n();
@@ -273,12 +277,14 @@ export function ControlledRecord({ lines, onDone }: { lines: Pick<ControlledLine
   const toast = useToast();
   const [values, setValues] = useState(() => lines.map((l) => ({ patient: l.patient ?? '', prescriber: l.prescriber ?? '', prescriptionNo: l.prescriptionNo ?? '' })));
   const [error, setError] = useState<unknown>(null);
+  const ready = recordableLines(values);
   async function save() {
     setError(null);
+    // nothing to save: no "Saved" for nothing (the button is off until a patient is typed)
+    if (ready.length === 0) return;
     try {
-      for (let i = 0; i < lines.length; i++) {
+      for (const i of ready) {
         const v = values[i]!;
-        if (!v.patient.trim()) continue;
         await pharmacyApi.record(lines[i]!.invoiceId, lines[i]!.lineNo, { patient: v.patient, prescriber: v.prescriber, prescriptionNo: v.prescriptionNo });
       }
       toast(t('saved'));
@@ -302,8 +308,9 @@ export function ControlledRecord({ lines, onDone }: { lines: Pick<ControlledLine
           </fieldset>
         ))}
         <ErrorBox error={error} />
+        {ready.length === 0 && <div className="small" style={{ color: 'var(--bad)' }}>{t('err_ph_patient_required')}</div>}
         <div className="row">
-          <button type="button" className="btn primary" onClick={() => void save()}><Icon name="check" size={16} />{t('ph_record')}</button>
+          <button type="button" className="btn primary" disabled={ready.length === 0} onClick={() => void save()}><Icon name="check" size={16} />{t('ph_record')}</button>
           <button type="button" className="btn" onClick={onDone}>{t('ph_later')}</button>
         </div>
       </div>

@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { lineAmount, todayIso } from '@qasa/core';
-import { api } from '../api.ts';
+import { lineAmount, todayIso, type UnitCode } from '@qasa/core';
+import { api, type ItemView } from '../api.ts';
 import {
   AccountCombo, AmountInput, ErrorBox, Icon, InvoiceStatusChip, Modal, QtyInput, SearchCombo, downloadCsv, useData, useLoad, useToast, type PickOption
 } from '../components.tsx';
@@ -16,7 +16,7 @@ import { reverseDefaultDate } from '../industry/ReverseModal.tsx';
 import { printDocument } from '../industry/printing.ts';
 import { CountSaver, costFor, fromSession, nothingToCount, useLeaveGuard, type CountSessionView, type SaveState } from '../industry/count-session.ts';
 import { UnitPicker } from '../industry/UnitPicker.tsx';
-import { baseQty, type LineUnit } from '../industry/units.ts';
+import { baseQty, inUnits, type LineUnit } from '../industry/units.ts';
 
 /**
  * تسوية المخزون — stock adjustments (damaged, lost, expired, used, issued to a job) and the stock count.
@@ -148,6 +148,21 @@ function AccountsSettings({ onClose }: { onClose(): void }) {
 interface Row { key: number; itemId: string; dir: 'out' | 'in'; qtyMilli: number | null; unitCost: number | null; unit?: LineUnit }
 let rowKey = 1;
 const emptyRow = (dir: 'out' | 'in' = 'out'): Row => ({ key: rowKey++, itemId: '', dir, qtyMilli: 1000, unitCost: null });
+
+/**
+ * An editor line against the stock on hand, both in the item's base unit: the quantity typed in a box is that many
+ * boxes (a quantity that is no whole thousandth of the base counts as 0 here; saving refuses it).
+ */
+export function stockAfter(item: Pick<ItemView, 'qtyMilli' | 'units'>, r: Pick<Row, 'dir' | 'qtyMilli' | 'unit'>): { short: boolean; after: number } {
+  const base = baseQty(item, r.unit ?? null, r.qtyMilli ?? 0) ?? 0;
+  return { short: r.dir === 'out' && base > item.qtyMilli, after: item.qtyMilli + (r.dir === 'out' ? -base : base) };
+}
+
+/** A draft line coming in, valued as posting will: its cost is per the unit it was typed in. */
+export function draftInValue(l: { qtyMilli: number; unitCost: number | null; lineUnit: UnitCode | null; unitQtyMilli: number | null }): number | null {
+  if (l.qtyMilli <= 0 || l.unitCost === null) return null;
+  return lineAmount(l.lineUnit && l.unitQtyMilli !== null ? l.unitQtyMilli : l.qtyMilli, l.unitCost);
+}
 
 export function StockAdjustmentEditor({ id }: { id?: string }) {
   const i18n = useI18n();
@@ -333,7 +348,8 @@ export function StockAdjustmentEditor({ id }: { id?: string }) {
           <tbody>
             {rows.map((r, i) => {
               const it = itemById.get(r.itemId);
-              const short = it && r.dir === 'out' && (r.qtyMilli ?? 0) > it.qtyMilli;
+              const check = it ? stockAfter(it, r) : null;
+              const short = !!check?.short;
               const avg = it ? averageCost(it.qtyMilli, it.value) : 0;
               return (
                 <tr key={r.key}>
@@ -343,7 +359,7 @@ export function StockAdjustmentEditor({ id }: { id?: string }) {
                     {it && (
                       <div className="small" style={{ marginTop: 3, color: short ? 'var(--bad)' : undefined }}>
                         <span className={short ? '' : 'muted'}>{t('adj_onHand')}: {qtyText(i18n, it.qtyMilli)}</span>
-                        <span className="muted"> · {t('adj_after')}: {qtyText(i18n, it.qtyMilli + (r.dir === 'out' ? -1 : 1) * (r.qtyMilli ?? 0))}</span>
+                        <span className="muted"> · {t('adj_after')}: {qtyText(i18n, check!.after)}</span>
                       </div>
                     )}
                   </td>
@@ -512,7 +528,7 @@ export function StockAdjustmentDetail({ id }: { id: string }) {
                     : <>{qtyText(i18n, Math.abs(l.qtyMilli))} <span className="muted small">{unitName(i18n, l.unit)}</span></>}
                 </td>
                 <td className="amount">
-                  {l.value !== null ? i18n.money(Math.abs(l.value), 'IQD') : l.qtyMilli > 0 && l.unitCost !== null ? i18n.money(lineAmount(l.qtyMilli, l.unitCost), 'IQD') : ''}
+                  {l.value !== null ? i18n.money(Math.abs(l.value), 'IQD') : (() => { const v = draftInValue(l); return v === null ? '' : i18n.money(v, 'IQD'); })()}
                 </td>
               </tr>
             ))}
@@ -856,6 +872,7 @@ export function StockCount() {
                   <td>{i18n.name(r.name)} <span className="muted small">{unitName(i18n, r.unit)}</span></td>
                   <td className="amount" title={moved ? t('adj_frozenNow', { n: qtyText(i18n, r.stockMilli) }) : undefined}>
                     {qtyText(i18n, book)}{moved && <span className="muted small"> *</span>}
+                    {(r.units?.length ?? 0) > 0 && book > 0 && <div className="muted small">{inUnits(i18n, { unit: r.unit, units: r.units ?? [] }, book)}</div>}
                   </td>
                   <td><QtyInput value={counted.get(r.itemId) ?? null} onChange={(v) => { if (ready) setOne(r.itemId, v); }} ariaLabel={`${t('adj_counted')} ${r.code}`} /></td>
                   <td className="amount" style={{ color: diff ? (diff < 0 ? 'var(--bad)' : 'var(--ok)') : undefined, fontWeight: diff ? 700 : undefined }}>

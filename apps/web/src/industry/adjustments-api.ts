@@ -50,7 +50,8 @@ export interface AdjustmentView extends AdjustmentSummary {
   actions: AdjustmentAction[];
 }
 
-export interface CountSheetRow { itemId: string; code: string; barcode: string; name: Names; unit: UnitCode; stockMilli: number }
+/** units (1.1): the item's other units and factors, to show the stock in boxes and strips (counts stay in base units). */
+export interface CountSheetRow { itemId: string; code: string; barcode: string; name: Names; unit: UnitCode; stockMilli: number; units?: { unit: UnitCode; factorMilli: number }[] }
 
 export interface CountInput {
   date: string;

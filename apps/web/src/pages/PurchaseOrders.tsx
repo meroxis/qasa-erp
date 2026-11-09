@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useState } from 'react';
-import { lineAmount, rateFromX100, todayIso, toWesternDigits, type CurrencyCode } from '@qasa/core';
+import { fromBaseQty, isUnit, lineAmount, rateFromX100, todayIso, toWesternDigits, type CurrencyCode } from '@qasa/core';
 import { api } from '../api.ts';
 import { EmptyState, AmountInput, ErrorBox, Icon, Modal, QtyInput, SearchCombo, useData, useLoad, usePageNav, useToast, type PickOption } from '../components.tsx';
-import { useI18n, type Key } from '../i18n.ts';
+import { useI18n, type I18n, type Key } from '../i18n.ts';
 import {
   PO_STATUSES, purchasingApi, type PoInput, type PoMove, type PoStatus, type PoSummaryView, type PoView, type ReorderGroup
 } from '../industry/purchasing-api.ts';
@@ -11,6 +11,7 @@ import { useRatePrefill } from '../industry/fx-prefill.ts';
 import { convertLines } from './currency-switch.ts';
 import { UnitPicker } from '../industry/UnitPicker.tsx';
 import { baseQty, unitLabel, type LineUnit } from '../industry/units.ts';
+import type { PoLineView } from '../industry/purchasing-api.ts';
 import { printDocument } from '../industry/printing.ts';
 
 /**
@@ -20,6 +21,16 @@ import { printDocument } from '../industry/printing.ts';
 
 const STATUS_CHIP: Record<PoStatus, string> = { draft: '', sent: 'info', partial: 'warn', received: 'ok', cancelled: 'bad' };
 const st = (s: PoStatus) => `po_st_${s}` as Key;
+
+/**
+ * A base quantity of a purchase order line in the unit it was ordered in (2 boxes), as the ordered column shows it;
+ * in the item's base unit, named, when it is not a whole number of thousandths of that unit (25 tablets of a box of 10).
+ */
+export function poQtyText(i18n: I18n, l: Pick<PoLineView, 'unit' | 'lineUnit' | 'unitFactorMilli'>, baseMilli: number): string {
+  const inUnit = l.lineUnit && l.unitFactorMilli ? fromBaseQty(baseMilli, l.unitFactorMilli) : null;
+  if (l.lineUnit && inUnit !== null) return `${i18n.qty(inUnit)} ${unitLabel(i18n, l.lineUnit)}`;
+  return isUnit(l.unit) ? `${i18n.qty(baseMilli)} ${unitLabel(i18n, l.unit)}` : i18n.qty(baseMilli);
+}
 
 export function PoChip({ status, overdue }: { status: PoStatus; overdue?: boolean }) {
   const { t } = useI18n();
@@ -448,8 +459,8 @@ function Paper({ order: x, company }: { order: PoView; company: string }) {
                 <td>{i18n.name(l.itemName)}<span className="muted small ltr" style={{ marginInlineStart: 6 }}>{l.itemCode}</span></td>
                 <td className="amount">{l.lineUnit && l.unitQtyMilli !== null ? `${i18n.qty(l.unitQtyMilli)} ${unitLabel(i18n, l.lineUnit)}` : i18n.qty(l.qtyMilli)}</td>
                 {showProgress && <>
-                  <td className="amount no-print">{i18n.qty(l.receivedMilli)}</td>
-                  <td className="amount no-print" style={l.remainingMilli ? { color: 'var(--warn)' } : undefined}>{i18n.qty(l.remainingMilli)}</td>
+                  <td className="amount no-print">{poQtyText(i18n, l, l.receivedMilli)}</td>
+                  <td className="amount no-print" style={l.remainingMilli ? { color: 'var(--warn)' } : undefined}>{poQtyText(i18n, l, l.remainingMilli)}</td>
                 </>}
                 <td className="amount">{i18n.money(l.unitPrice, x.currency)}</td>
                 <td className="amount">{i18n.money(l.amount, x.currency)}</td>

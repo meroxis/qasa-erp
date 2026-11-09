@@ -199,15 +199,84 @@ describe('batches and expiry dates', () => {
     expect(batchBalance(db, plain, mainId)).toEqual({ batches: 12_000, stock: 12_000 });
   });
 
-  it('a count shortage comes out earliest expiry first; a surplus goes into the batch with no number', async () => {
+  it('a count shortage comes out earliest expiry first; a surplus goes into the batch with no number, with its expiry date', async () => {
     await buyTwo();
     const short = await ok('POST', '/api/adjustments', { date: '2026-10-08', warehouseId: mainId, reason: 'count', lines: [{ itemId: medId, qtyMilli: -5_000 }] });
     await ok('POST', `/api/adjustments/${short.id}/post`);
     expect(await byNumber()).toEqual({ 'A-2701': 15_000, 'B-2706': 30_000 });
-    const surplus = await ok('POST', '/api/adjustments', { date: '2026-10-08', warehouseId: mainId, reason: 'count', lines: [{ itemId: medId, qtyMilli: 2_000 }] });
+    // an item with expiry dates: a surplus without its date is refused, numbered or not
+    const undated = await ok('POST', '/api/adjustments', { date: '2026-10-08', warehouseId: mainId, reason: 'count', lines: [{ itemId: medId, qtyMilli: 2_000 }] });
+    const refused = await call('POST', `/api/adjustments/${undated.id}/post`);
+    expect(refused.statusCode).toBe(400);
+    expect(refused.json().details).toEqual([{ code: 'expiry_required', line: 1 }]);
+    const surplus = await ok('POST', '/api/adjustments', { date: '2026-10-08', warehouseId: mainId, reason: 'count', lines: [{ itemId: medId, qtyMilli: 2_000, unitCost: 100, expiry: '2026-11-30' }] });
     await ok('POST', `/api/adjustments/${surplus.id}/post`);
-    expect(await byNumber()).toEqual({ '': 2_000, 'A-2701': 15_000, 'B-2706': 30_000 });
+    expect((await batches()).map((b) => [b.batch, b.expiry, b.qtyMilli])).toEqual([['', '2026-11-30', 2_000], ['A-2701', '2027-01-31', 15_000], ['B-2706', '2027-06-30', 30_000]]);
+    // so it is flagged, and sold first
+    expect((await call('GET', '/api/batches/report?state=near&date=2026-11-01')).json().rows.map((r: { batch: string }) => r.batch)).toEqual(['']);
     invariant();
+  });
+
+  it('stock with no batch number keeps the expiry date it came in with: one batch per date', async () => {
+    expect((await postNew(invoice('purchase', '2026-10-01', [{ itemId: medId, qtyMilli: 5_000, unitPrice: 200, expiry: '2026-12-31' }]))).statusCode).toBe(200);
+    expect((await postNew(invoice('purchase', '2026-10-02', [{ itemId: medId, qtyMilli: 20_000, unitPrice: 200, expiry: '2028-06-30' }]))).statusCode).toBe(200);
+    expect((await postNew(invoice('purchase', '2026-10-03', [{ itemId: medId, qtyMilli: 1_000, unitPrice: 200, expiry: '2026-12-31' }]))).statusCode).toBe(200);
+    expect((await batches()).map((b) => [b.batch, b.expiry, b.qtyMilli])).toEqual([['', '2026-12-31', 6_000], ['', '2028-06-30', 20_000]]);
+    // after the first date the later stock still sells; the expired stock is blocked, never sold as 2028
+    const sale = await postNew(invoice('sale', '2027-01-15', [{ itemId: medId, qtyMilli: 10_000, unitPrice: 250 }]));
+    expect(sale.statusCode, sale.body).toBe(200);
+    expect((await batches()).map((b) => [b.expiry, b.qtyMilli])).toEqual([['2026-12-31', 6_000], ['2028-06-30', 10_000]]);
+    const tooMuch = await postNew(invoice('sale', '2027-01-15', [{ itemId: medId, qtyMilli: 12_000, unitPrice: 250 }]));
+    expect(tooMuch.json()).toMatchObject({ error: 'validation', details: [{ code: 'batch_expired', available: 10_000 }] });
+    // one batch per date for stock with no number: moving one onto the other's date is refused
+    const [early, late] = await batches();
+    expect((await call('PUT', `/api/batches/${late!.batchId}`, { expiry: early!.expiry })).statusCode).toBe(409);
+    invariant();
+  });
+
+  it('cancelling documents posted before tracking was switched on keeps the batches equal to the stock', async () => {
+    const plain = (await ok('POST', '/api/items', { code: 'ORS', name: { ar: 'محلول', en: 'ORS', ku: 'گیراوە' }, unit: 'sachet', salePrice: 500, saleCurrency: 'IQD' })).id;
+    const p1 = (await postNew(invoice('purchase', '2026-10-01', [{ itemId: plain, qtyMilli: 10_000, unitPrice: 300 }]))).json();
+    await postNew(invoice('purchase', '2026-10-01', [{ itemId: plain, qtyMilli: 10_000, unitPrice: 300 }]));
+    const s = (await postNew(invoice('sale', '2026-10-02', [{ itemId: plain, qtyMilli: 4_000, unitPrice: 500 }]))).json();
+    const adj = await ok('POST', '/api/adjustments', { date: '2026-10-02', warehouseId: mainId, reason: 'count', lines: [{ itemId: plain, qtyMilli: 1_000, unitCost: 300 }] });
+    await ok('POST', `/api/adjustments/${adj.id}/post`);
+    const doc = await ok('POST', '/api/stock-docs', { kind: 'transfer', date: '2026-10-02', warehouseId: mainId, toWarehouseId: otherId, lines: [{ itemId: plain, qtyMilli: 2_000 }] });
+    await ok('POST', `/api/stock-docs/${doc.id}/post`);
+    const item = (await call('GET', `/api/items/${plain}`)).json();
+    await ok('PUT', `/api/items/${plain}`, { code: item.code, name: item.name, unit: item.unit, salePrice: 500, saleCurrency: 'IQD', trackBatches: true });
+    // a numbered batch bought after tracking began
+    expect((await postNew(invoice('purchase', '2026-10-03', [{ itemId: plain, qtyMilli: 5_000, unitPrice: 300, batchNo: 'N1', expiry: '2027-03-31' }]))).statusCode).toBe(200);
+    const balanced = () => { for (const w of [mainId, otherId]) { const b = batchBalance(db, plain, w); expect(b.batches, w).toBe(b.stock); } };
+    const numbers = async () => Object.fromEntries(((await call('GET', `/api/batches?itemId=${plain}&warehouseId=${mainId}`)).json() as { batch: string; qtyMilli: number }[]).map((b) => [b.batch, b.qtyMilli]));
+    // a purchase from before: its goods leave the batch with no number; the numbered batch keeps its stock
+    expect((await call('POST', `/api/invoices/${p1.id}/cancel`, { date: '2026-10-04' })).statusCode).toBe(200);
+    balanced();
+    expect(await numbers()).toEqual({ '': 5_000, N1: 5_000 });
+    // a sale from before: its goods come back into the batch with no number
+    expect((await call('POST', `/api/invoices/${s.id}/cancel`, { date: '2026-10-04' })).statusCode).toBe(200);
+    balanced();
+    expect(await numbers()).toEqual({ '': 9_000, N1: 5_000 });
+    expect((await call('POST', `/api/adjustments/${adj.id}/cancel`, { date: '2026-10-04' })).statusCode).toBe(200);
+    balanced();
+    expect((await call('POST', `/api/stock-docs/${doc.id}/cancel`, { date: '2026-10-04' })).statusCode).toBe(200);
+    balanced();
+    expect(await numbers()).toEqual({ '': 10_000, N1: 5_000 });
+    // and all of it can be sold
+    const all = await postNew(invoice('sale', '2026-10-05', [{ itemId: plain, qtyMilli: 15_000, unitPrice: 500 }]));
+    expect(all.statusCode, all.body).toBe(200);
+    balanced();
+  });
+
+  it('a purchase return of goods bought before tracking leaves the batch with no number, not a newer numbered one', async () => {
+    const plain = (await ok('POST', '/api/items', { code: 'ORS', name: { ar: 'محلول', en: 'ORS', ku: 'گیراوە' }, unit: 'sachet', salePrice: 500, saleCurrency: 'IQD' })).id;
+    const old = (await postNew(invoice('purchase', '2026-10-01', [{ itemId: plain, qtyMilli: 10_000, unitPrice: 300 }]))).json();
+    const item = (await call('GET', `/api/items/${plain}`)).json();
+    await ok('PUT', `/api/items/${plain}`, { code: item.code, name: item.name, unit: item.unit, salePrice: 500, saleCurrency: 'IQD', trackBatches: true });
+    expect((await postNew(invoice('purchase', '2026-10-02', [{ itemId: plain, qtyMilli: 5_000, unitPrice: 300, batchNo: 'N1', expiry: '2027-03-31' }]))).statusCode).toBe(200);
+    await ok('POST', `/api/invoices/${old.id}/returns`, { date: '2026-10-03', payment: 'credit', lines: [{ lineNo: 1, qtyMilli: 5_000 }] });
+    const rows = (await call('GET', `/api/batches?itemId=${plain}&warehouseId=${mainId}`)).json() as { batch: string; expiry: string | null; qtyMilli: number }[];
+    expect(Object.fromEntries(rows.map((b) => [b.batch, [b.qtyMilli, b.expiry]]))).toEqual({ '': [5_000, null], N1: [5_000, '2027-03-31'] });
   });
 
   it('reports expired and near batches with their value, for a branch user only their warehouses, and the brief warns', async () => {

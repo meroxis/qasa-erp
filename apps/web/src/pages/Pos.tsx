@@ -10,8 +10,8 @@ import '../pos.css';
 import { PrintDocument } from '../industry/PrintDocument.tsx';
 import { invoiceModel } from '../industry/print-model.ts';
 import { usePrintSetup } from '../industry/print-api.ts';
-import { addRefusal, parseScan, priceIn, priceRateFor, tilePrice } from './pos-logic.ts';
-import { salePriceFor, unitChoices, unitLabel, type LineUnit } from '../industry/units.ts';
+import { addRefusal, cashChange, changeLineUnit, parseScan, priceIn, priceRateFor, tileOffer } from './pos-logic.ts';
+import { inUnits, salePriceFor, unitChoices, unitLabel, type LineUnit } from '../industry/units.ts';
 import { useExpiredConfirm } from '../industry/BatchFields.tsx';
 import { pharmacyApi, type ControlledLine, type MedicineView } from '../industry/pharmacy-api.ts';
 import { ControlledRecord } from './Pharmacy.tsx';
@@ -275,21 +275,26 @@ function Register({ initial, onClosed }: { initial: ShiftView; onClosed(): void 
     setPaid(null);
   };
 
-  /** The unit chip: a tap takes the line to the item's next unit (base, then each of its units), re-priced. */
+  /**
+   * The unit chip: a tap takes the line to the item's next unit (base, then each of its units), re-priced; into the
+   * line of that unit when the cart has one already.
+   */
   const nextUnit = (key: string) => {
-    setCart((c) => c.map((l) => {
-      if (lineKey(l) !== key) return l;
+    setCart((c) => {
+      const i = c.findIndex((l) => lineKey(l) === key);
+      const l = c[i];
+      if (!l) return c;
       const choices = unitChoices(l.item);
       const at = choices.findIndex((u) => u.unit === l.unit);
       const unit = choices[(at + 1) % choices.length]?.unit ?? null;
-      return { ...l, unit, unitPrice: unitPriceOf(l.item, unit) };
-    }));
+      return changeLineUnit(c, i, unit, unitPriceOf(l.item, unit));
+    });
     setPaid(null);
   };
 
   const subtotal = cart.reduce((s, l) => s + lineTotal(l), 0);
   const total = Math.max(0, subtotal - (discount ?? 0));
-  const change = paid !== null ? paid - total : null;
+  const change = cashChange(paid, total, parts);
   const split = parts.length > 0;
   const left = total - parts.reduce((s, p) => s + (p.amount ?? 0), 0);
   const splitOk = !split || (left === 0 && parts.every((p) => (p.amount ?? 0) > 0) && (!parts.some((p) => p.method === 'account') || !!partyId));
@@ -412,7 +417,8 @@ function Register({ initial, onClosed }: { initial: ShiftView; onClosed(): void 
             {matches.map((it) => {
               const name = i18n.name(it.name);
               const out = it.trackStock && it.qtyMilli <= 0;
-              const price = tilePrice(it, currency, priceRate);
+              // the price of what a tap adds: the item's sale unit
+              const offer = tileOffer(it, currency, priceRate);
               return (
                 <button key={it.id} type="button" className={'pos-tile' + (out ? ' out' : '')} onClick={() => { add(it); focusSearch(); }}>
                   <ItemPicture item={it} name={name} />
@@ -423,8 +429,8 @@ function Register({ initial, onClosed }: { initial: ShiftView; onClosed(): void 
                       {medicines.get(it.id)!.rxOnly ? ' · Rx' : ''}
                     </span>
                   )}
-                  <span className="pos-tile-price num">{price === null ? '—' : i18n.money(price, currency)}</span>
-                  {it.trackStock && <span className={'pos-tile-stock small num' + (out ? ' bad' : '')}>{out ? t('pos_outOfStock') : `${t('pos_stock')}: ${i18n.qty(it.qtyMilli)}`}</span>}
+                  <span className="pos-tile-price num">{offer.price === null ? '—' : i18n.money(offer.price, currency)}{offer.unit && offer.price !== null ? ` / ${unitLabel(i18n, offer.unit)}` : ''}</span>
+                  {it.trackStock && <span className={'pos-tile-stock small num' + (out ? ' bad' : '')}>{out ? t('pos_outOfStock') : `${t('pos_stock')}: ${inUnits(i18n, it, it.qtyMilli)}`}</span>}
                 </button>
               );
             })}

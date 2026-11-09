@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { z } from 'zod';
 import {
-  addDays, daysBetween, DEFAULT_NEAR_EXPIRY_DAYS, EXPIRED_SALES_POLICIES, expiryState, isExpired, MAX_BATCH_NO, normalizeBatchNo, normalizeExpiry, pickFefo,
+  addDays, daysBetween, DEFAULT_NEAR_EXPIRY_DAYS, EXPIRED_SALES_POLICIES, expiryState, isExpired, MAX_BATCH_NO, normalizeBatchNo, normalizeExpiry, pickFefo, pickPlainFirst,
   returnToBatches, roundHalfUp, todayIso, type BatchStock, type ExpiredSalesPolicy, type Names, type UnitCode
 } from '@qasa/core';
 import type { Db } from './db.ts';
@@ -60,18 +60,26 @@ export interface BatchRow { id: string; number: string; expiry: string | null; c
 
 /**
  * The batch of an item with this number (made the first time it comes in). The same number with another expiry date
- * is refused: one number means one expiry. '' is the batch of stock with no number.
+ * is refused: one number means one expiry. Stock with no number ('') is kept apart per expiry date, so a date typed
+ * on the way in is never lost: one batch with no number for each date, and one with no date at all (the stock from
+ * before tracking).
  */
 export function ensureBatch(db: Db, itemId: string, numberRaw: string, expiryRaw: string | null, line?: number): string {
   const number = normalizeBatchNo(numberRaw);
   const expiry = normalizeExpiry(expiryRaw);
   if (expiry === 'invalid') throw invalid([{ code: 'expiry_invalid', ...(line ? { line } : {}) }]);
-  const found = db.prepare('SELECT id, expiry FROM item_batches WHERE item_id = ? AND number = ?').get(itemId, number) as { id: string; expiry: string | null } | undefined;
-  if (found) {
-    // a batch with no number keeps whatever came first; a numbered one keeps one expiry date
-    if (number && (found.expiry ?? null) !== expiry && expiry !== null) throw invalid([{ code: 'batch_expiry_differs', ...(line ? { line } : {}), expiry: found.expiry ?? '' }]);
-    if (number && found.expiry === null && expiry !== null) db.prepare('UPDATE item_batches SET expiry = ? WHERE id = ?').run(expiry, found.id);
-    return found.id;
+  if (!number) {
+    const plain = db.prepare("SELECT id FROM item_batches WHERE item_id = ? AND number = '' AND (expiry = ? OR (expiry IS NULL AND ? IS NULL)) ORDER BY created_at, id")
+      .get(itemId, expiry, expiry) as { id: string } | undefined;
+    if (plain) return plain.id;
+  } else {
+    const found = db.prepare('SELECT id, expiry FROM item_batches WHERE item_id = ? AND number = ?').get(itemId, number) as { id: string; expiry: string | null } | undefined;
+    if (found) {
+      // a numbered batch keeps one expiry date
+      if ((found.expiry ?? null) !== expiry && expiry !== null) throw invalid([{ code: 'batch_expiry_differs', ...(line ? { line } : {}), expiry: found.expiry ?? '' }]);
+      if (found.expiry === null && expiry !== null) db.prepare('UPDATE item_batches SET expiry = ? WHERE id = ?').run(expiry, found.id);
+      return found.id;
+    }
   }
   const id = randomUUID();
   db.prepare('INSERT INTO item_batches (id, item_id, number, expiry, created_at) VALUES (?, ?, ?, ?, ?)').run(id, itemId, number, expiry, new Date().toISOString());
@@ -174,25 +182,51 @@ export function reverseBatchMoves(db: Db, sourceType: string, sourceId: string, 
   writeBatchMoves(db, moves, date, `${sourceType}_cancel`, sourceId);
 }
 
+/** The batch with no number and no date, where the stock from before tracking is kept (null: none yet). */
+function plainBatchId(db: Db, itemId: string): string | null {
+  return (db.prepare("SELECT id FROM item_batches WHERE item_id = ? AND number = '' AND expiry IS NULL ORDER BY created_at, id").get(itemId) as { id: string } | undefined)?.id ?? null;
+}
+
+/**
+ * The batch moves that bring an item's batches in a warehouse back in line with its stock: what is missing goes into
+ * the batch with no number and no date, what is too much comes out of that batch first, then earliest expiry first.
+ */
+function alignMoves(db: Db, itemId: string, warehouseId: string): BatchMove[] {
+  const stock = Number((db.prepare('SELECT COALESCE(SUM(qty_milli), 0) AS q FROM stock_moves WHERE item_id = ? AND warehouse_id = ?').get(itemId, warehouseId) as { q: number }).q);
+  const batches = batchStock(db, itemId, warehouseId);
+  const diff = stock - batches.reduce((s, b) => s + b.qtyMilli, 0);
+  if (diff > 0) return [{ batchId: ensureBatch(db, itemId, '', null), itemId, warehouseId, qtyMilli: diff, lineNo: null }];
+  if (diff === 0) return [];
+  const r = pickPlainFirst(batches, -diff, plainBatchId(db, itemId));
+  return r.ok ? r.picks.map((p) => ({ batchId: p.id, itemId, warehouseId, qtyMilli: -p.qtyMilli, lineNo: null })) : [];
+}
+
 /**
  * Switching batches on for an item that has stock: what is not in a batch yet goes into its '' batch (no number, no
  * expiry), per warehouse, so the batches add up to the stock from now on. Switching it on again after a while off
- * does the same with the difference (what left meanwhile comes out earliest expiry first).
+ * does the same with the difference (what left meanwhile comes out of the '' batch first, then earliest expiry first).
  */
 export function startTracking(db: Db, itemId: string, date = todayIso()): void {
-  const stock = db.prepare('SELECT warehouse_id, SUM(qty_milli) AS qty FROM stock_moves WHERE item_id = ? GROUP BY warehouse_id').all(itemId) as { warehouse_id: string; qty: number }[];
-  const inBatches = new Map((db.prepare('SELECT warehouse_id, SUM(qty_milli) AS qty FROM stock_batch_moves WHERE item_id = ? GROUP BY warehouse_id').all(itemId) as
-    { warehouse_id: string; qty: number }[]).map((r) => [r.warehouse_id, Number(r.qty)]));
+  const warehouses = db.prepare('SELECT DISTINCT warehouse_id FROM stock_moves WHERE item_id = ?').all(itemId) as { warehouse_id: string }[];
+  writeBatchMoves(db, warehouses.flatMap((w) => alignMoves(db, itemId, w.warehouse_id)), date, 'batch_start', itemId);
+}
+
+/**
+ * Cancelling a document (inside its transaction, after its stock moves are undone): every batch move it made is
+ * negated, and for its items that track batches now but did not when it was posted (it made no batch moves for
+ * them), the batches follow the stock again, so they never hold more or less than the warehouse does.
+ */
+export function cancelBatchMoves(db: Db, sourceType: string, sourceId: string, date: string, touched: readonly { itemId: string; warehouseId: string }[]): void {
+  reverseBatchMoves(db, sourceType, sourceId, date);
+  const seen = new Set<string>();
   const moves: BatchMove[] = [];
-  for (const s of stock) {
-    const diff = Number(s.qty) - (inBatches.get(s.warehouse_id) ?? 0);
-    if (diff > 0) moves.push({ batchId: ensureBatch(db, itemId, '', null), itemId, warehouseId: s.warehouse_id, qtyMilli: diff, lineNo: null });
-    else if (diff < 0) {
-      const r = pickFefo(batchStock(db, itemId, s.warehouse_id), -diff, date, 'warn', true);
-      if (r.ok) for (const p of r.picks) moves.push({ batchId: p.id, itemId, warehouseId: s.warehouse_id, qtyMilli: -p.qtyMilli, lineNo: null });
-    }
+  for (const t of touched) {
+    const k = `${t.itemId}|${t.warehouseId}`;
+    if (seen.has(k) || !batchTracking(db, t.itemId).batches) continue;
+    seen.add(k);
+    moves.push(...alignMoves(db, t.itemId, t.warehouseId));
   }
-  writeBatchMoves(db, moves, date, 'batch_start', itemId);
+  writeBatchMoves(db, moves, date, `${sourceType}_cancel`, sourceId);
 }
 
 /** For the tests and the checks: the batch total and the stock of a tracked item in a warehouse. */
@@ -253,9 +287,11 @@ export function purchaseReturnPicks(db: Db, originalId: string, sourceLine: numb
   const brought = (db.prepare("SELECT batch_id, SUM(qty_milli) AS qty FROM stock_batch_moves WHERE source_type = 'purchase' AND source_id = ? AND line_no = ? GROUP BY batch_id")
     .all(originalId, sourceLine) as { batch_id: string; qty: number }[]);
   if (!brought.length) {
-    // bought before batches were tracked: as any other outbound line
-    const r = allocateOut(db, { itemId, warehouseId, qtyMilli, date: todayIso(), line: lineNo, purpose: 'other' }, taken);
-    return 'code' in r ? r : r.picks;
+    // bought before batches were tracked: its goods went into the batch with no number and no date when tracking
+    // began, so they leave from there first (then earliest expiry first, expired stock too: this is not a sale)
+    const left = batchStock(db, itemId, warehouseId).map((x) => ({ ...x, qtyMilli: x.qtyMilli - (taken.get(x.id) ?? 0) }));
+    const r = pickPlainFirst(left, qtyMilli, plainBatchId(db, itemId));
+    return r.ok ? r.picks.map((p) => ({ batchId: p.id, qtyMilli: p.qtyMilli })) : { code: 'batch_insufficient', line: lineNo, available: Math.max(0, r.availableMilli) };
   }
   const stock = new Map(batchStock(db, itemId, warehouseId).map((b) => [b.id, b.qtyMilli - (taken.get(b.id) ?? 0)]));
   const picks: BatchPick[] = [];
@@ -349,15 +385,26 @@ export function expiryAlert(db: Db, today: string, warehouses: readonly string[]
   };
 }
 
-/** Fixes a batch's number or expiry date, while nothing has gone out of it yet. */
-export function updateBatch(db: Db, id: string, input: { number?: string | undefined; expiry?: string | null | undefined }, user: string): BatchRow {
+/**
+ * Fixes a batch's number or expiry date, while nothing has gone out of it yet. A user limited to branches may fix only
+ * a batch held in their own warehouses alone (its date decides what another branch may sell).
+ */
+export function updateBatch(db: Db, id: string, input: { number?: string | undefined; expiry?: string | null | undefined }, user: string, warehouses: readonly string[] | null = null): BatchRow {
   const b = db.prepare('SELECT id, item_id, number, expiry, created_at FROM item_batches WHERE id = ?').get(id) as { id: string; item_id: string; number: string; expiry: string | null; created_at: string } | undefined;
   if (!b) throw notFound('batch');
+  if (warehouses) {
+    const held = db.prepare('SELECT DISTINCT warehouse_id FROM stock_batch_moves WHERE batch_id = ?').all(id) as { warehouse_id: string }[];
+    if (held.some((h) => !warehouses.includes(h.warehouse_id))) throw new AppError(403, 'forbidden', { need: 'branch' });
+  }
   if (db.prepare('SELECT 1 FROM stock_batch_moves WHERE batch_id = ? AND qty_milli < 0 LIMIT 1').get(id)) throw conflict('batch_in_use');
   const number = input.number === undefined ? b.number : normalizeBatchNo(input.number);
   const expiry = input.expiry === undefined ? b.expiry : normalizeExpiry(input.expiry);
   if (expiry === 'invalid') throw invalid([{ code: 'expiry_invalid' }]);
-  if (number !== b.number && db.prepare('SELECT 1 FROM item_batches WHERE item_id = ? AND number = ? AND id <> ?').get(b.item_id, number, id)) throw conflict('batch_number_taken');
+  // a number belongs to one batch; stock with no number is one batch per expiry date
+  const clash = number
+    ? db.prepare('SELECT 1 FROM item_batches WHERE item_id = ? AND number = ? AND id <> ?').get(b.item_id, number, id)
+    : db.prepare("SELECT 1 FROM item_batches WHERE item_id = ? AND number = '' AND (expiry = ? OR (expiry IS NULL AND ? IS NULL)) AND id <> ?").get(b.item_id, expiry, expiry, id);
+  if ((number !== b.number || expiry !== b.expiry) && clash) throw conflict(number ? 'batch_number_taken' : 'batch_expiry_taken');
   transaction(db, () => {
     db.prepare('UPDATE item_batches SET number = ?, expiry = ? WHERE id = ?').run(number, expiry, id);
     audit(db, user, 'update', 'batch', id, { before: { number: b.number, expiry: b.expiry }, after: { number, expiry } });
@@ -414,7 +461,8 @@ export const batchesApi: ApiExtension = {
         method: 'PUT', path: '/api/batches/:id',
         handler: async (req) => {
           const body = parse(z.object({ number: z.string().max(MAX_BATCH_NO * 2).optional(), expiry: isoDate.nullable().optional() }), req.body);
-          return updateBatch(db, parse(z.object({ id }), req.params).id, body, actorOf(req).name);
+          const actor = actorOf(req);
+          return updateBatch(db, parse(z.object({ id }), req.params).id, body, actor.name, scope(actor));
         }
       },
       {

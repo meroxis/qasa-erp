@@ -50,7 +50,7 @@ export function unitLabel(i18n: I18n, unit: UnitCode): string {
 }
 
 /** A base quantity in the item's units, largest first: "3 boxes 4 strips 2 tablets" (display only). */
-export function inUnits(i18n: I18n, item: Pick<ItemView, 'unit' | 'units'>, qtyMilli: number): string {
+export function inUnits(i18n: I18n, item: { unit: UnitCode; units?: readonly { unit: UnitCode; factorMilli: number }[] }, qtyMilli: number): string {
   return splitInUnits(qtyMilli, item.unit, item.units ?? []).map((p) => `${i18n.qty(p.qtyMilli)} ${unitLabel(i18n, p.unit)}`).join(' ');
 }
 

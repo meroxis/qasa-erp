@@ -526,7 +526,7 @@ export function App() {
       content = <Expiry />;
       break;
     case 'pharmacy':
-      title = t('ph_title');
+      title = t('phm_title');
       content = <Pharmacy />;
       break;
     case 'companies':

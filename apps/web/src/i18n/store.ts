@@ -51,7 +51,7 @@ export const STORE_TEXT = {
   ],
   err_payments_total_mismatch: ['مجموع الدفعات لا يساوي المبلغ الكلي.', 'The payments don’t add up to the total.', 'کۆی پارەدانەکان یەکسان نییە بە کۆی گشتی.'],
   err_pos_method_unavailable: ['طريقة الدفع هذه بلا حساب؛ يحدده المدير في الإعدادات.', 'This payment method has no account; an admin sets it in Settings.', 'ئەم ڕێگای پارەدانە هەژماری نییە؛ بەڕێوەبەر لە ڕێکخستنەکان دیاری دەکات.'],
-  err_payment_invalid: ['دفعة غير صحيحة.', 'A payment isn’t valid.', 'پارەدانێک دروست نییە.'],
+  err_pos_payment_invalid: ['دفعة غير صحيحة.', 'A payment isn’t valid.', 'پارەدانێک دروست نییە.'],
   err_payments_too_many: ['أربع طرق دفع على الأكثر.', 'At most four payment methods.', 'زۆرترین چوار ڕێگای پارەدان.'],
   pay_paidOnline: ['مدفوعة إلكترونياً', 'Paid online', 'بە ئۆنلاین دراوە'],
   pay_payments: ['الدفعات', 'Payments', 'پارەدانەکان'],
@@ -65,5 +65,16 @@ export const STORE_TEXT = {
     'These are this currency’s lines only, in their own amounts. A receipt in dinars against a dollar debt lowers the dinar figure and leaves the dollar one; the total at the book rates is the reference.',
     'ئەمانە تەنها هێڵەکانی ئەم دراوەن، بە بڕی خۆیان. وەرگرتنێک بە دینار بۆ قەرزێکی دۆلار ستوونی دینار کەم دەکاتەوە و ستوونی دۆلار وەک خۆی دەهێڵێت؛ کۆی گشتی بە نرخی تۆمارەکان سەرچاوەیە.'
   ],
+  err_entry_belongs_to_online_payment: [
+    'هذا السند لدفعة إلكترونية لطلب من الموقع؛ لا يُعدَّل. ارفضه بحذفه وهو مسودة، أو اعكسه بعد اعتماده.',
+    'This voucher is an online payment for a website order; it isn’t edited. Reject it by deleting it while a draft, or reverse it once approved.',
+    'ئەم سەنەدە پارەدانێکی ئۆنلاینە بۆ داواکارییەکی ماڵپەڕ؛ دەستکاری ناکرێت. بە سڕینەوەی لە کاتی ڕەشنووسدا ڕەتی بکەرەوە، یان دوای پەسەندکردن پێچەوانەی بکەرەوە.'
+  ],
+  err_invoice_has_online_payments: [
+    'دُفع هذا الطلب إلكترونياً؛ يُرحَّل بالآجل على حساب الزبون، لا نقداً.',
+    'This order was paid online; post it on credit to the customer’s account, not as cash.',
+    'ئەم داواکارییە بە ئۆنلاین دراوە؛ بە قەرز لەسەر هەژماری کڕیار تۆماری بکە، نەک بە نەختینە.'
+  ],
+  err_order_not_on_credit: ['الطلب مرحَّل بيعاً نقدياً؛ لا تُسجَّل عليه دفعة إلكترونية.', 'The order was posted as a cash sale; no online payment is recorded on it.', 'داواکارییەکە وەک فرۆشتنی نەختینە تۆمار کراوە؛ هیچ پارەدانێکی ئۆنلاینی لەسەر تۆمار ناکرێت.'],
   err_payment_account_missing: ['لا يوجد حساب لطريقة الدفع هذه.', 'There is no account for this payment method.', 'هیچ هەژمارێک بۆ ئەم ڕێگای پارەدانە نییە.']
 } as const;

@@ -13,7 +13,7 @@ import type { Actor } from './auth.ts';
 import type { ApiExtension, ApiRequest } from './routes.ts';
 import { resolveLines } from './item-units.ts';
 import {
-  addTaken, allocateOut, assertReversible, batchColumns, batchMovesOf, batchTracking, ensureBatch, inboundBatch, lineBatchErrors, reverseBatchMoves, writeBatchMoves,
+  addTaken, allocateOut, assertReversible, batchColumns, batchTracking, cancelBatchMoves, inboundBatch, lineBatchErrors, writeBatchMoves,
   type BatchError, type BatchMove
 } from './batches.ts';
 
@@ -455,7 +455,7 @@ export function postAdjustment(db: Db, id: string, actor: Actor, lang: Adjustmen
   if (errors.length) throw invalid(errors);
 
   // batch items: what leaves comes from the pinned batch or earliest expiry first (expired stock may be written off);
-  // what comes in goes into its named batch, else the batch with no number (a count surplus)
+  // what comes in goes into its named batch, else the batch with no number for its expiry date (a count surplus)
   const batchMoves: BatchMove[] = [];
   const inbound: { lineNo: number; itemId: string; qtyMilli: number; batchNo: string | null; expiry: string | null }[] = [];
   const taken = new Map<string, number>();
@@ -469,7 +469,8 @@ export function postAdjustment(db: Db, id: string, actor: Actor, lang: Adjustmen
       addTaken(taken, r.picks);
       for (const p of r.picks) batchMoves.push({ batchId: p.batchId, itemId: l.itemId, warehouseId: view.warehouseId, qtyMilli: -p.qtyMilli, lineNo: l.seq });
     } else {
-      if (l.batchNo && tracking.expiry && !l.expiry) batchErrors.push({ code: 'expiry_required', line: l.seq });
+      // a surplus of an item with expiry dates needs its date too, numbered or not (else it would never show as expired)
+      if (tracking.expiry && !l.expiry) batchErrors.push({ code: 'expiry_required', line: l.seq });
       inbound.push({ lineNo: l.seq, itemId: l.itemId, qtyMilli: l.qtyMilli, batchNo: l.batchNo, expiry: l.expiry });
     }
   }
@@ -505,7 +506,7 @@ export function postAdjustment(db: Db, id: string, actor: Actor, lang: Adjustmen
       addStockMove(db, { itemId: m.itemId, warehouseId: view.warehouseId, date: view.date, qtyMilli: m.qtyMilli, value: m.value, sourceType: 'adjustment', sourceId: id });
     }
     for (const l of inbound) {
-      const b = l.batchNo ? inboundBatch(db, l.itemId, l, l.lineNo, view.date) : { batchId: ensureBatch(db, l.itemId, '', null) };
+      const b = inboundBatch(db, l.itemId, l, l.lineNo, view.date);
       if (b) batchMoves.push({ batchId: b.batchId, itemId: l.itemId, warehouseId: view.warehouseId, qtyMilli: l.qtyMilli, lineNo: l.lineNo });
     }
     writeBatchMoves(db, batchMoves, view.date, 'adjustment', id);
@@ -553,7 +554,7 @@ export function cancelAdjustment(db: Db, id: string, actor: Actor, date?: string
     for (const m of moves) {
       addStockMove(db, { itemId: m.item_id, warehouseId: row.warehouse_id, date: cancelDate, qtyMilli: -Number(m.qty_milli), value: -Number(m.value), sourceType: 'adjustment_cancel', sourceId: id });
     }
-    if (batchMovesOf(db, 'adjustment', id).length) reverseBatchMoves(db, 'adjustment', id, cancelDate);
+    cancelBatchMoves(db, 'adjustment', id, cancelDate, moves.map((m) => ({ itemId: m.item_id, warehouseId: row.warehouse_id })));
     // the job no longer counts these materials
     if (row.entry_id) db.prepare('DELETE FROM job_costs WHERE entry_id = ?').run(row.entry_id);
     db.prepare("UPDATE stock_adjustments SET status = 'cancelled', updated_at = ? WHERE id = ?").run(new Date().toISOString(), id);
@@ -564,7 +565,8 @@ export function cancelAdjustment(db: Db, id: string, actor: Actor, date?: string
 
 // ——— stock count ———
 
-export interface CountSheetRow { itemId: string; code: string; barcode: string; name: Names; unit: UnitCode; stockMilli: number }
+/** units (1.1): the item's other units with their factors, so the sheet can show the stock in boxes and strips too (counts stay in base units). */
+export interface CountSheetRow { itemId: string; code: string; barcode: string; name: Names; unit: UnitCode; stockMilli: number; units: { unit: UnitCode; factorMilli: number }[] }
 
 /** The stock items with what the books say is in the warehouse, to count against. */
 export function countSheet(db: Db, warehouseId: string): CountSheetRow[] {
@@ -573,7 +575,14 @@ export function countSheet(db: Db, warehouseId: string): CountSheetRow[] {
                                   COALESCE((SELECT SUM(m.qty_milli) FROM stock_moves m WHERE m.item_id = i.id AND m.warehouse_id = ?), 0) AS qty
                            FROM items i WHERE i.track_stock = 1 AND i.active = 1 ORDER BY i.code`).all(warehouseId) as
     { id: string; code: string; barcode: string | null; name_ar: string; name_en: string; name_ku: string; unit: UnitCode; qty: number }[];
-  return rows.map((r) => ({ itemId: r.id, code: r.code, barcode: r.barcode ?? '', name: { ar: r.name_ar, en: r.name_en, ku: r.name_ku }, unit: r.unit, stockMilli: Number(r.qty) }));
+  const units = new Map<string, { unit: UnitCode; factorMilli: number }[]>();
+  for (const u of db.prepare('SELECT item_id, unit, factor_milli FROM item_units ORDER BY item_id, sort, unit').all() as { item_id: string; unit: UnitCode; factor_milli: number }[]) {
+    units.set(u.item_id, [...(units.get(u.item_id) ?? []), { unit: u.unit, factorMilli: Number(u.factor_milli) }]);
+  }
+  return rows.map((r) => ({
+    itemId: r.id, code: r.code, barcode: r.barcode ?? '', name: { ar: r.name_ar, en: r.name_en, ku: r.name_ku }, unit: r.unit, stockMilli: Number(r.qty),
+    units: units.get(r.id) ?? []
+  }));
 }
 
 export interface CountInput {

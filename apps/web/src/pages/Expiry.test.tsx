@@ -40,8 +40,8 @@ it('asks before selling expired stock only for that refusal', () => {
 
 it('has the pharmacy page among the industry pages, for the pharmacy business type, in three languages', () => {
   const industry = NAV.find((g) => g.group === 'gIndustry')!;
-  expect(industry.items.find((i) => i.path === 'pharmacy')).toMatchObject({ key: 'ph_title', icon: 'pill', business: 'pharmacy' });
-  for (const k of ['bt_pharmacy', 'bt_pharmacyText', 'ph_title', 'f_pharmacy', 'err_plan_limit_pharmacy', 'ph_recordHelp', 'err_ph_patient_required'] as Key[]) {
+  expect(industry.items.find((i) => i.path === 'pharmacy')).toMatchObject({ key: 'phm_title', icon: 'pill', business: 'pharmacy' });
+  for (const k of ['bt_pharmacy', 'bt_pharmacyText', 'phm_title', 'f_pharmacy', 'err_plan_limit_pharmacy', 'ph_recordHelp', 'err_ph_patient_required'] as Key[]) {
     expect(new Set(all(k)).size, k).toBe(3);
   }
 });

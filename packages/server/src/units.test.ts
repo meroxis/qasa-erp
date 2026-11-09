@@ -83,6 +83,12 @@ describe('units with conversions on the server', () => {
     expect(await stock()).toEqual({ qty: 200_000, value: 36_000 });
   });
 
+  it('the count sheet lists the units of each item with their factors (the stock shows in boxes and strips; counts stay in tablets)', async () => {
+    await postNew(invoice('purchase', [{ itemId: medId, unit: 'box', unitQtyMilli: 2_000, unitPrice: 18_000 }]));
+    const sheet = (await get(`/api/adjustments/count-sheet?warehouseId=${warehouseId}`)).json();
+    expect(sheet).toEqual([expect.objectContaining({ itemId: medId, unit: 'tablet', stockMilli: 200_000, units: [{ unit: 'strip', factorMilli: 10_000 }, { unit: 'box', factorMilli: 100_000 }] })]);
+  });
+
   it('a sale of 3 strips and 5 tablets takes 35 tablets at average cost; a strip comes back; cancelling puts the rest back', async () => {
     await postNew(invoice('purchase', [{ itemId: medId, unit: 'box', unitQtyMilli: 2_000, unitPrice: 18_000 }]));
     const sale = await postNew(invoice('sale', [

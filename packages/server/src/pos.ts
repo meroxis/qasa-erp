@@ -344,7 +344,7 @@ export function sell(db: Db, shiftId: string, input: SaleInput, actor: Actor): {
   const accounts = posPaymentAccounts(db);
   const errors: { code: string; method?: string }[] = [];
   for (const p of payments) {
-    if (!(POS_METHODS as readonly string[]).includes(p.method) || !Number.isSafeInteger(p.amount) || p.amount <= 0) errors.push({ code: 'payment_invalid', method: String(p.method) });
+    if (!(POS_METHODS as readonly string[]).includes(p.method) || !Number.isSafeInteger(p.amount) || p.amount <= 0) errors.push({ code: 'pos_payment_invalid', method: String(p.method) });
     // a method the admin gave no account is not offered at the counter, and refused here
     else if (p.method !== 'cash' && p.method !== 'account' && !accounts[p.method as keyof PosAccounts]) errors.push({ code: 'pos_method_unavailable', method: p.method });
     else if (p.method === 'account' && !input.partyId) errors.push({ code: 'party_required' });

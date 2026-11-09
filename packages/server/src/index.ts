@@ -15,7 +15,7 @@ export { audit } from './audit.ts';
 export { AppError, conflict, invalid, notFound } from './errors.ts';
 export { createJournalEntry, createVoucher, deleteEntry, getEntry, postVoucherNow, reverseEntryInternal, type EntryView } from './journal.ts';
 export { loadAccounts } from './accounts.ts';
-export { createInvoice, getInvoice, postInvoice, type InvoiceView } from './invoices.ts';
+export { createInvoice, getInvoice, onlinePaidAmount, postInvoice, type InvoiceView } from './invoices.ts';
 export { createItem, listWarehouses } from './items.ts';
 // for the Pro module (1.1): units, batches, categories and an invoice's payments
 export { itemUnits, unitsByItem, type ItemUnitView } from './item-units.ts';
