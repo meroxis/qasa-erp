@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
-  amountInWords, invoiceTotals, remainingShare, rateFromX100, roundHalfUp, toBase, todayIso, toWesternDigits,
+  amountInWords, fromBaseQty, invoiceTotals, remainingShare, rateFromX100, roundHalfUp, toBase, toBaseQty, todayIso, toWesternDigits,
   type CurrencyCode, type InvoiceDocKind, type InvoiceInput, type InvoiceKind, type InvoiceStatus, type PaymentMode
 } from '@qasa/core';
 import { api, ApiError, type InvoiceView, type ItemView } from '../api.ts';
@@ -19,6 +19,7 @@ import { useRatePrefill } from '../industry/fx-prefill.ts';
 import { InvoiceWhatsApp } from '../industry/WhatsAppShare.tsx';
 import { reverseDefaultDate } from '../industry/ReverseModal.tsx';
 import { printDocument } from '../industry/printing.ts';
+import { baseQty, factorOf, holdsText, salePriceFor, unitChoices, unitLabel, type LineUnit } from '../industry/units.ts';
 
 const STATUSES: (InvoiceStatus | '')[] = ['', 'draft', 'posted', 'cancelled'];
 
@@ -57,9 +58,11 @@ export function Invoices({ kind }: { kind: InvoiceDocKind }) {
 
 /* ---------- editor ---------- */
 
-interface Row { key: number; itemId: string; qtyMilli: number | null; unitPrice: number | null; description: string }
+/** qtyMilli: as typed in the line's unit (null: the item's base unit); unitPrice: per that unit. */
+interface Row { key: number; itemId: string; qtyMilli: number | null; unitPrice: number | null; description: string; unit: LineUnit }
+
 let rowKey = 1;
-const emptyRow = (): Row => ({ key: rowKey++, itemId: '', qtyMilli: 1000, unitPrice: null, description: '' });
+const emptyRow = (): Row => ({ key: rowKey++, itemId: '', qtyMilli: 1000, unitPrice: null, description: '', unit: null });
 
 function parseRate(text: string): number | null {
   const s = toWesternDigits(text).replace(/[,٬\s]/g, '').replace('٫', '.');
@@ -128,7 +131,10 @@ export function InvoiceEditor({ kind: initialKind, id, partyId: initialParty }: 
       setCashAccount(v.cashAccountCode ?? settings?.postingAccounts.cash ?? '');
       setDiscount(v.discount || null);
       setNotes(v.notes);
-      setRows(v.lines.map((l) => ({ key: rowKey++, itemId: l.itemId, qtyMilli: l.qtyMilli, unitPrice: l.unitPrice, description: l.description })));
+      setRows(v.lines.map((l) => ({
+        key: rowKey++, itemId: l.itemId, qtyMilli: l.lineUnit && l.unitQtyMilli !== null ? l.unitQtyMilli : l.qtyMilli, unitPrice: l.unitPrice,
+        description: l.description, unit: l.lineUnit
+      })));
       setReady(true);
     }, setLoadError);
     // settings only fills blanks; loading once is enough
@@ -156,16 +162,24 @@ export function InvoiceEditor({ kind: initialKind, id, partyId: initialParty }: 
   // Sale prices the program filled in (not typed by the user), by line: the customer's price list
   // (wholesale or retail) replaces them, and they follow a change of customer or currency.
   const autoPrices = useRef(new Map<number, number | null>());
+  /** A unit's own price in this invoice's currency, or null when it has none (base price × factor then). */
+  const ownUnitPrice = (it: ItemView | undefined, unit: LineUnit): number | null => {
+    const own = unit ? it?.units.find((u) => u.unit === unit)?.salePrice ?? null : null;
+    return own !== null && it && priceRateX100 ? convert(own, it.saleCurrency, currency, priceRateX100) : null;
+  };
   function askPrice(key: number, itemId: string, expected: number | null) {
     if (kind !== 'sale') return;
     autoPrices.current.set(key, expected);
     // a price in the other currency is converted at this invoice's own rate, not the company's default rate
-    const own = itemById.get(itemId)?.saleCurrency;
+    const it = itemById.get(itemId);
+    const own = it?.saleCurrency;
     pricesApi.priceFor(itemId, partyId || null, currency, own && own !== currency ? priceRateX100 : null).then((q) => {
       setRows((rs) => rs.map((r) => {
         if (r.key !== key || r.itemId !== itemId || autoPrices.current.get(key) !== r.unitPrice) return r;
-        autoPrices.current.set(key, q.price);
-        return { ...r, unitPrice: q.price };
+        // a customer's price list is per base unit: another unit is the list price × its factor
+        const price = salePriceFor(it, r.unit, q.price, { own: ownUnitPrice(it, r.unit), fromList: q.source !== 'retail' });
+        autoPrices.current.set(key, price);
+        return { ...r, unitPrice: price };
       }));
     }).catch(() => { /* the catalog price stays */ });
   }
@@ -175,20 +189,35 @@ export function InvoiceEditor({ kind: initialKind, id, partyId: initialParty }: 
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [partyId, currency]);
 
+  /** The price to fill in for one of `unit` of an item: its sale price (sales) or its average cost (purchases). */
+  function catalogPrice(it: ItemView | undefined, unit: LineUnit): number | null {
+    if (!it || !priceRateX100) return null;
+    if (kind === 'sale') return salePriceFor(it, unit, convert(it.salePrice, it.saleCurrency, currency, priceRateX100), { own: ownUnitPrice(it, unit) });
+    if (it.qtyMilli <= 0) return null;
+    return roundHalfUp((convert(averageCost(it.qtyMilli, it.value), 'IQD', currency, priceRateX100) * factorOf(it, unit)) / 1000);
+  }
+
   function pickItem(key: number, itemId: string) {
     const it: ItemView | undefined = itemById.get(itemId);
-    let price: number | null = null;
-    if (it && priceRateX100) {
-      price = kind === 'sale'
-        ? convert(it.salePrice, it.saleCurrency, currency, priceRateX100)
-        : it.qtyMilli > 0 ? convert(averageCost(it.qtyMilli, it.value), 'IQD', currency, priceRateX100) : null;
-    }
+    // a new line starts in the item's sale (or purchase) unit
+    const unit: LineUnit = (kind === 'sale' ? it?.saleUnit : it?.purchaseUnit) ?? null;
+    const price = catalogPrice(it, unit);
     const filled = price ?? rows.find((r) => r.key === key)?.unitPrice ?? null;
     setRows((rs) => {
-      const next = rs.map((r) => (r.key === key ? { ...r, itemId, unitPrice: filled } : r));
+      const next = rs.map((r) => (r.key === key ? { ...r, itemId, unitPrice: filled, unit } : r));
       return next[next.length - 1]?.itemId ? [...next, emptyRow()] : next;
     });
     askPrice(key, itemId, filled);
+  }
+
+  /** Another unit for a line: the price follows (the quantity stays as typed). */
+  function pickUnit(key: number, unit: LineUnit) {
+    const row = rows.find((r) => r.key === key);
+    if (!row) return;
+    const it = itemById.get(row.itemId);
+    const price = catalogPrice(it, unit);
+    setRows((rs) => rs.map((r) => (r.key === key ? { ...r, unit, unitPrice: price ?? r.unitPrice } : r)));
+    askPrice(key, row.itemId, price ?? row.unitPrice);
   }
 
   function input(): InvoiceInput | null {
@@ -200,7 +229,12 @@ export function InvoiceEditor({ kind: initialKind, id, partyId: initialParty }: 
       kind, date, warehouseId, currency, rateX100, payment, discount: discount ?? 0, notes,
       ...(partyId ? { partyId } : {}),
       ...(payment === 'cash' ? { cashAccountCode: cashAccount } : {}),
-      lines: lines.map((r) => ({ itemId: r.itemId, qtyMilli: r.qtyMilli ?? 0, unitPrice: r.unitPrice ?? 0, ...(r.description.trim() ? { description: r.description.trim() } : {}) }))
+      // a line in another unit sends the unit and the quantity typed in it: the server works the base quantity out
+      lines: lines.map((r) => ({
+        itemId: r.itemId, qtyMilli: (r.unit ? baseQty(itemById.get(r.itemId), r.unit, r.qtyMilli ?? 0) : r.qtyMilli) ?? 0, unitPrice: r.unitPrice ?? 0,
+        ...(r.unit ? { unit: r.unit, unitQtyMilli: r.qtyMilli ?? 0 } : {}),
+        ...(r.description.trim() ? { description: r.description.trim() } : {})
+      }))
     };
   }
 
@@ -292,7 +326,8 @@ export function InvoiceEditor({ kind: initialKind, id, partyId: initialParty }: 
           <tbody>
             {rows.map((r, i) => {
               const it = itemById.get(r.itemId);
-              const short = kind === 'sale' && it?.trackStock && (r.qtyMilli ?? 0) > it.qtyMilli;
+              const short = kind === 'sale' && it?.trackStock && (baseQty(it, r.unit, r.qtyMilli ?? 0) ?? 0) > it.qtyMilli;
+              const choices = unitChoices(it);
               return (
                 <tr key={r.key}>
                   <td className="muted num">{i18n.int(i + 1)}</td>
@@ -302,7 +337,11 @@ export function InvoiceEditor({ kind: initialKind, id, partyId: initialParty }: 
                   </td>
                   <td>
                     <QtyInput value={r.qtyMilli} onChange={(v) => update(r.key, { qtyMilli: v })} ariaLabel={t('qty')} />
-                    {it && <div className="muted small" style={{ textAlign: 'end', marginTop: 2 }}>{unitName(i18n, it.unit)}</div>}
+                    {it && choices.length > 1 ? (
+                      <select className="input small" style={{ marginTop: 2 }} value={r.unit ?? ''} aria-label={t('unit')} onChange={(e) => pickUnit(r.key, (e.target.value || null) as LineUnit)}>
+                        {choices.map((c) => <option key={c.code} value={c.unit ?? ''}>{unitLabel(i18n, c.code)}{c.unit ? ` (${holdsText(i18n, it, c.factorMilli)})` : ''}</option>)}
+                      </select>
+                    ) : it && <div className="muted small" style={{ textAlign: 'end', marginTop: 2 }}>{unitName(i18n, it.unit)}</div>}
                   </td>
                   <td><AmountInput value={r.unitPrice} currency={currency} onChange={(v) => update(r.key, { unitPrice: v })} ariaLabel={t('unitPrice')} /></td>
                   <td className="amount">{r.itemId ? i18n.money(invoiceTotals([{ qtyMilli: r.qtyMilli ?? 0, unitPrice: r.unitPrice ?? 0 }], 0).subtotal, currency) : ''}</td>
@@ -483,7 +522,9 @@ export function InvoiceDetail({ id }: { id: string }) {
                 <td><span className="ltr">{l.itemCode}</span></td>
                 <td>{i18n.name(l.itemName)}{l.description && <div className="muted small">{l.description}</div>}</td>
                 <td className="amount">
-                  {qtyText(i18n, l.qtyMilli)} <span className="muted small">{unitName(i18n, l.unit)}</span>
+                  {l.lineUnit && l.unitQtyMilli !== null
+                    ? <>{qtyText(i18n, l.unitQtyMilli)} <span className="muted small">{unitName(i18n, l.lineUnit)}</span><div className="muted small">{qtyText(i18n, l.qtyMilli)} {unitName(i18n, l.unit)}</div></>
+                    : <>{qtyText(i18n, l.qtyMilli)} <span className="muted small">{unitName(i18n, l.unit)}</span></>}
                   {l.returnedQtyMilli > 0 && <div className="small no-print" style={{ color: 'var(--warn)' }}>{t('returnedQty')}: {qtyText(i18n, l.returnedQtyMilli)}</div>}
                 </td>
                 <td className="amount">{i18n.money(l.unitPrice, v.currency)}</td>
@@ -578,9 +619,21 @@ function ReturnModal({ invoice: v, onClose }: { invoice: InvoiceView; onClose():
   const [qty, setQty] = useState<Record<number, number | null>>({});
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<unknown>(null);
+  // a line sold in boxes is returned in boxes: the quantity typed is in the line's unit, at the factor kept with the line
+  const unitOf = (l: InvoiceView['lines'][number]) => (l.lineUnit && l.unitFactorMilli ? { unit: l.lineUnit, factor: l.unitFactorMilli } : null);
+  const baseFor = (l: InvoiceView['lines'][number], typed: number) => {
+    const u = unitOf(l);
+    return u ? toBaseQty(typed, u.factor) : typed;
+  };
+  const shown = (l: InvoiceView['lines'][number], base: number) => {
+    const u = unitOf(l);
+    const inUnit = u ? fromBaseQty(base, u.factor) : null;
+    return u && inUnit !== null ? `${qtyText(i18n, inUnit)} ${unitName(i18n, u.unit)}` : `${qtyText(i18n, base)} ${unitName(i18n, l.unit)}`;
+  };
   const lines = v.lines.map((l) => ({ ...l, left: l.qtyMilli - l.returnedQtyMilli })).filter((l) => l.left > 0);
-  const chosen = lines.filter((l) => (qty[l.lineNo] ?? 0) > 0);
-  const gross = chosen.reduce((sum, l) => sum + remainingShare(l.amount, l.returnedAmount, qty[l.lineNo]!, l.returnedQtyMilli, l.qtyMilli), 0);
+  const baseOf = (l: InvoiceView['lines'][number]) => (qty[l.lineNo] ? baseFor(l, qty[l.lineNo]!) : null);
+  const chosen = lines.filter((l) => (baseOf(l) ?? 0) > 0);
+  const gross = chosen.reduce((sum, l) => sum + remainingShare(l.amount, l.returnedAmount, baseOf(l)!, l.returnedQtyMilli, l.qtyMilli), 0);
 
   async function submit() {
     if (chosen.length === 0) { setError(new ApiError(400, 'validation', [{ code: 'lines_required' }])); return; }
@@ -589,7 +642,7 @@ function ReturnModal({ invoice: v, onClose }: { invoice: InvoiceView; onClose():
     setError(null);
     try {
       const ret = await api.createReturn(v.id, {
-        date, payment, lines: chosen.map((l) => ({ lineNo: l.lineNo, qtyMilli: qty[l.lineNo]! })),
+        date, payment, lines: chosen.map((l) => ({ lineNo: l.lineNo, qtyMilli: baseOf(l)! })),
         ...(payment === 'cash' ? { cashAccountCode: cashAccount } : {}),
         ...(notes.trim() ? { notes: notes.trim() } : {})
       });
@@ -613,9 +666,12 @@ function ReturnModal({ invoice: v, onClose }: { invoice: InvoiceView; onClose():
             {lines.map((l) => (
               <tr key={l.lineNo}>
                 <td>{i18n.name(l.itemName)}<div className="muted small">{i18n.money(l.unitPrice, v.currency)}</div></td>
-                <td className="amount">{qtyText(i18n, l.qtyMilli)}</td>
-                <td className="amount">{qtyText(i18n, l.left)}</td>
-                <td><QtyInput value={qty[l.lineNo] ?? null} onChange={(value) => setQty((q) => ({ ...q, [l.lineNo]: value }))} ariaLabel={t('returnQty')} /></td>
+                <td className="amount">{shown(l, l.qtyMilli)}</td>
+                <td className="amount">{shown(l, l.left)}</td>
+                <td>
+                  <QtyInput value={qty[l.lineNo] ?? null} onChange={(value) => setQty((q) => ({ ...q, [l.lineNo]: value }))} ariaLabel={t('returnQty')} />
+                  {unitOf(l) && <div className="muted small" style={{ textAlign: 'end' }}>{unitName(i18n, unitOf(l)!.unit)}</div>}
+                </td>
               </tr>
             ))}
           </tbody>

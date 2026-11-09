@@ -11,6 +11,7 @@ import { PrintDocument } from '../industry/PrintDocument.tsx';
 import { invoiceModel } from '../industry/print-model.ts';
 import { usePrintSetup } from '../industry/print-api.ts';
 import { addRefusal, parseScan, priceIn, priceRateFor, tilePrice } from './pos-logic.ts';
+import { salePriceFor, unitChoices, unitLabel, type LineUnit } from '../industry/units.ts';
 import { printAlone, printDocument } from '../industry/printing.ts';
 
 /**
@@ -23,7 +24,9 @@ const REGISTER_KEY = 'qasa.pos.register';
 const remembered = () => { try { return localStorage.getItem(REGISTER_KEY) ?? ''; } catch { return ''; } };
 const remember = (v: string) => { try { localStorage.setItem(REGISTER_KEY, v); } catch { /* not available */ } };
 
-interface CartLine { item: ItemView; qtyMilli: number; unitPrice: number }
+/** qtyMilli: in the line's unit (null: the item's base unit); unitPrice: per that unit. */
+interface CartLine { item: ItemView; qtyMilli: number; unitPrice: number; unit: LineUnit }
+const lineKey = (l: Pick<CartLine, 'item' | 'unit'>) => `${l.item.id}|${l.unit ?? ''}`;
 
 const lineTotal = (l: CartLine) => Math.round((l.qtyMilli * l.unitPrice) / 1000);
 
@@ -197,22 +200,29 @@ function Register({ initial, onClosed }: { initial: ShiftView; onClosed(): void 
     return searchable.filter((s) => words.every((w) => s.key.includes(w))).slice(0, 40).map((s) => s.item);
   }, [q, items, searchable]);
 
-  const add = useCallback((item: ItemView, qtyMilli = 1000) => {
+  /** One of `unit` of an item, in the sale's currency: the unit's own price, or the base price × its factor. */
+  const unitPriceOf = useCallback((item: ItemView, unit: LineUnit) => {
+    const own = unit ? item.units.find((u) => u.unit === unit)?.salePrice ?? null : null;
+    const ownIn = own !== null ? priceIn({ salePrice: own, saleCurrency: item.saleCurrency }, currency, priceRate) : null;
+    return salePriceFor(item, unit, priceIn(item, currency, priceRate), { own: ownIn });
+  }, [currency, priceRate]);
+
+  const add = useCallback((item: ItemView, qtyMilli = 1000, unit: LineUnit = item.saleUnit ?? null) => {
     // a dollar-priced item cannot go into a dinar sale (or the reverse) without a rate to convert it
     if (addRefusal(item, currency, priceRate)) { setNotFound(''); setNoRate(item.code); return; }
     setCart((c) => {
-      const i = c.findIndex((l) => l.item.id === item.id);
+      const i = c.findIndex((l) => l.item.id === item.id && l.unit === unit);
       if (i >= 0) return c.map((l, j) => (j === i ? { ...l, qtyMilli: l.qtyMilli + qtyMilli } : l));
-      return [...c, { item, qtyMilli, unitPrice: priceIn(item, currency, priceRate) }];
+      return [...c, { item, qtyMilli, unit, unitPrice: unitPriceOf(item, unit) }];
     });
     setNotFound('');
     setNoRate('');
     setPaid(null);
-  }, [currency, priceRate]);
+  }, [currency, priceRate, unitPriceOf]);
 
   // a different currency or rate re-prices the cart
   useEffect(() => {
-    setCart((c) => c.map((l) => ({ ...l, unitPrice: priceIn(l.item, currency, priceRate) })));
+    setCart((c) => c.map((l) => ({ ...l, unitPrice: unitPriceOf(l.item, l.unit) })));
     setDiscount(0);
     setPaid(null);
   }, [currency, priceRate]);
@@ -221,10 +231,11 @@ function Register({ initial, onClosed }: { initial: ShiftView; onClosed(): void 
   const onEnter = () => {
     const raw = toWesternDigits(q).trim();
     if (!raw) return;
-    const { code, qtyMilli: qty, exact } = parseScan(raw, items);
+    const { code, qtyMilli: qty, exact, unit } = parseScan(raw, items);
     const pick = exact ?? (matches.length === 1 ? matches[0] : undefined);
     if (pick && qty > 0) {
-      add(pick, qty);
+      // a box's barcode adds a box; the item's own barcode its base unit; a search match its sale unit
+      add(pick, qty, exact ? unit : pick.saleUnit ?? null);
       setQ('');
     } else {
       setNoRate('');
@@ -232,8 +243,20 @@ function Register({ initial, onClosed }: { initial: ShiftView; onClosed(): void 
     }
   };
 
-  const setQty = (id: string, qtyMilli: number) => {
-    setCart((c) => (qtyMilli <= 0 ? c.filter((l) => l.item.id !== id) : c.map((l) => (l.item.id === id ? { ...l, qtyMilli } : l))));
+  const setQty = (key: string, qtyMilli: number) => {
+    setCart((c) => (qtyMilli <= 0 ? c.filter((l) => lineKey(l) !== key) : c.map((l) => (lineKey(l) === key ? { ...l, qtyMilli } : l))));
+    setPaid(null);
+  };
+
+  /** The unit chip: a tap takes the line to the item's next unit (base, then each of its units), re-priced. */
+  const nextUnit = (key: string) => {
+    setCart((c) => c.map((l) => {
+      if (lineKey(l) !== key) return l;
+      const choices = unitChoices(l.item);
+      const at = choices.findIndex((u) => u.unit === l.unit);
+      const unit = choices[(at + 1) % choices.length]?.unit ?? null;
+      return { ...l, unit, unitPrice: unitPriceOf(l.item, unit) };
+    }));
     setPaid(null);
   };
 
@@ -259,7 +282,9 @@ function Register({ initial, onClosed }: { initial: ShiftView; onClosed(): void 
     try {
       const res = await posApi.sell(shift.id, {
         currency, ...(currency === 'USD' ? { rateX100 } : {}), ...(partyId ? { partyId } : {}), discount: discount ?? 0,
-        lines: cart.map((l) => ({ itemId: l.item.id, qtyMilli: l.qtyMilli, unitPrice: l.unitPrice }))
+        lines: cart.map((l) => (l.unit
+          ? { itemId: l.item.id, unit: l.unit, unitQtyMilli: l.qtyMilli, unitPrice: l.unitPrice }
+          : { itemId: l.item.id, qtyMilli: l.qtyMilli, unitPrice: l.unitPrice }))
       });
       setShift(res.shift);
       setReceipt(res.invoice);
@@ -362,18 +387,23 @@ function Register({ initial, onClosed }: { initial: ShiftView; onClosed(): void 
           <div className="pos-lines">
             {cart.length === 0 && <p className="muted pos-empty">{t('pos_emptyCart')}</p>}
             {cart.map((l) => (
-              <div key={l.item.id} className="pos-line">
+              <div key={lineKey(l)} className="pos-line">
                 <div className="pos-line-name">
                   <span>{i18n.name(l.item.name)}</span>
                   <span className="muted small num">{i18n.money(l.unitPrice, currency)}</span>
+                  {l.item.units.length > 0 && (
+                    <button type="button" className="chip" title={t('unit')} aria-label={`${t('unit')}: ${unitLabel(i18n, l.unit ?? l.item.unit)}`} onClick={() => nextUnit(lineKey(l))}>
+                      {unitLabel(i18n, l.unit ?? l.item.unit)}
+                    </button>
+                  )}
                 </div>
                 <div className="pos-qty">
-                  <button type="button" className="btn pos-qty-btn" aria-label={t('pos_less')} onClick={() => setQty(l.item.id, l.qtyMilli - 1000)}>−</button>
+                  <button type="button" className="btn pos-qty-btn" aria-label={t('pos_less')} onClick={() => setQty(lineKey(l), l.qtyMilli - 1000)}>−</button>
                   <span className="num pos-qty-n">{i18n.qty(l.qtyMilli)}</span>
-                  <button type="button" className="btn pos-qty-btn" aria-label={t('pos_more')} onClick={() => setQty(l.item.id, l.qtyMilli + 1000)}>+</button>
+                  <button type="button" className="btn pos-qty-btn" aria-label={t('pos_more')} onClick={() => setQty(lineKey(l), l.qtyMilli + 1000)}>+</button>
                 </div>
                 <span className="num pos-line-total">{i18n.money(lineTotal(l), currency)}</span>
-                <button type="button" className="btn pos-remove" aria-label={t('pos_remove')} onClick={() => setQty(l.item.id, 0)}><Icon name="x" size={16} /></button>
+                <button type="button" className="btn pos-remove" aria-label={t('pos_remove')} onClick={() => setQty(lineKey(l), 0)}><Icon name="x" size={16} /></button>
               </div>
             ))}
           </div>
@@ -458,7 +488,7 @@ function Receipt({ invoice, shift }: { invoice: InvoiceView; shift: ShiftView })
           <div key={l.lineNo} className="pos-r-line">
             <div>{i18n.name(l.itemName)}</div>
             <div className="pos-r-row small">
-              <span className="num">{i18n.qty(l.qtyMilli)} × {i18n.money(l.unitPrice, invoice.currency)}</span>
+              <span className="num">{i18n.qty(l.lineUnit && l.unitQtyMilli !== null ? l.unitQtyMilli : l.qtyMilli)}{l.lineUnit ? ` ${unitLabel(i18n, l.lineUnit)}` : ''} × {i18n.money(l.unitPrice, invoice.currency)}</span>
               <span className="num">{i18n.money(l.amount, invoice.currency)}</span>
             </div>
           </div>

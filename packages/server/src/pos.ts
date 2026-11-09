@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { z } from 'zod';
-import { todayIso, type CurrencyCode } from '@qasa/core';
+import { todayIso, UNIT_CODES, type CurrencyCode, type UnitCode } from '@qasa/core';
 import type { Db } from './db.ts';
 import { nextSequence, transaction } from './db.ts';
 import { audit } from './audit.ts';
@@ -80,7 +80,8 @@ export interface SaleInput {
   partyId?: string | undefined;
   discount: number;
   notes?: string | undefined;
-  lines: { itemId: string; qtyMilli: number; unitPrice: number }[];
+  /** qtyMilli in base units, or (1.1) unit + unitQtyMilli: the quantity in one of the item's units, priced per that unit */
+  lines: { itemId: string; qtyMilli?: number | undefined; unitPrice: number; unit?: UnitCode | undefined; unitQtyMilli?: number | undefined }[];
 }
 
 export interface CloseInput {
@@ -276,7 +277,9 @@ export function sell(db: Db, shiftId: string, input: SaleInput, actor: Actor): {
       kind: 'sale', date: todayIso(), ...(input.partyId ? { partyId: input.partyId } : {}), warehouseId: row.warehouse_id,
       currency: input.currency, rateX100: input.currency === 'IQD' ? 100 : input.rateX100!, payment: 'cash', cashAccountCode: row.cash_account,
       discount: input.discount, ...(input.notes?.trim() ? { notes: input.notes.trim() } : {}),
-      lines: input.lines.map((l) => ({ itemId: l.itemId, qtyMilli: l.qtyMilli, unitPrice: l.unitPrice }))
+      lines: input.lines.map((l) => ({
+        itemId: l.itemId, qtyMilli: l.qtyMilli, unitPrice: l.unitPrice, ...(l.unit ? { unit: l.unit, unitQtyMilli: l.unitQtyMilli ?? l.qtyMilli } : {})
+      }))
     }, actor.name);
     const posted = postInvoice(db, draft.id, actor.name);
     db.prepare('INSERT INTO pos_sales (invoice_id, shift_id) VALUES (?, ?)').run(posted.id, shiftId);
@@ -357,7 +360,10 @@ export const posApi: ApiExtension = {
           const body = parse(z.object({
             currency: z.enum(['IQD', 'USD']), rateX100: z.number().int().positive().optional(), partyId: id.optional(), discount: amount.default(0),
             notes: text(500).optional(),
-            lines: z.array(z.object({ itemId: id, qtyMilli: z.number().int().positive().max(1e12), unitPrice: amount })).min(1).max(300)
+            lines: z.array(z.object({
+              itemId: id, qtyMilli: z.number().int().positive().max(1e12).optional(), unitPrice: amount,
+              unit: z.enum(UNIT_CODES).optional(), unitQtyMilli: z.number().int().positive().max(1e12).optional()
+            })).min(1).max(300)
           }), req.body);
           reply.status(201).send(sell(db, parse(idParam, req.params).id, body, actor(req)));
           return undefined;

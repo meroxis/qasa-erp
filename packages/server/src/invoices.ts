@@ -29,6 +29,7 @@ import { assertValid, insertEntry, nextNumber, reverseEntryInternal } from './jo
 import { getParty } from './parties.ts';
 import { addStockMove, stockOf } from './items.ts';
 import { getPostingAccounts, isPeriodLocked } from './settings.ts';
+import { resolveLines } from './item-units.ts';
 
 export type InvoiceAction = 'edit' | 'delete' | 'post' | 'cancel' | 'return';
 
@@ -51,6 +52,10 @@ export interface InvoiceLineView {
   returnedQtyMilli: number;
   /** Rounded gross amount already returned; used when previewing another partial return. */
   returnedAmount: number;
+  /** 1.1: the unit the line was typed in (null: the item's base unit), its factor then, and the quantity as typed */
+  lineUnit: UnitCode | null;
+  unitFactorMilli: number | null;
+  unitQtyMilli: number | null;
 }
 
 export interface InvoiceSummary {
@@ -179,16 +184,20 @@ export function getInvoice(db: Db, id: string): InvoiceView {
   const w = db.prepare('SELECT code, name_ar, name_en, name_ku FROM warehouses WHERE id = ?').get(r.warehouse_id) as { code: string; name_ar: string; name_en: string; name_ku: string };
   const cash = r.cash_account ? db.prepare('SELECT name_ar, name_en, name_ku FROM accounts WHERE code = ?').get(r.cash_account) as { name_ar: string; name_en: string; name_ku: string } : null;
   const numberOf = (entryId: string | null) => entryId ? (db.prepare('SELECT number FROM entries WHERE id = ?').get(entryId) as { number: string | null }).number : null;
-  const lines = (db.prepare(`SELECT l.*, i.code, i.name_ar, i.name_en, i.name_ku, i.unit, i.track_stock FROM invoice_lines l JOIN items i ON i.id = l.item_id
+  const lines = (db.prepare(`SELECT l.line_no, l.item_id, l.description, l.qty_milli, l.unit_price, l.amount, l.cost, l.source_line, l.unit AS line_unit, l.unit_factor_milli, l.unit_qty_milli, l.batch_no, l.expiry, l.batch_id, i.code, i.name_ar, i.name_en, i.name_ku, i.unit, i.track_stock FROM invoice_lines l JOIN items i ON i.id = l.item_id
                              WHERE l.invoice_id = ? ORDER BY l.line_no`).all(id) as {
     line_no: number; item_id: string; description: string | null; qty_milli: number; unit_price: number; amount: number; cost: number | null; source_line: number | null;
     code: string; name_ar: string; name_en: string; name_ku: string; unit: UnitCode; track_stock: number;
+    line_unit: UnitCode | null; unit_factor_milli: number | null; unit_qty_milli: number | null;
   }[]);
   const returned = r.status === 'posted' && !isReturn(r.kind) ? returnedByLine(db, id) : new Map<number, { qtyMilli: number; amount: number }>();
   const lineViews: InvoiceLineView[] = lines.map((l) => ({
     lineNo: l.line_no, itemId: l.item_id, itemCode: l.code, itemName: { ar: l.name_ar, en: l.name_en, ku: l.name_ku }, unit: l.unit,
     trackStock: l.track_stock === 1, description: l.description ?? '', qtyMilli: l.qty_milli, unitPrice: l.unit_price, amount: l.amount, cost: l.cost,
-    sourceLine: l.source_line, returnedQtyMilli: returned.get(l.line_no)?.qtyMilli ?? 0, returnedAmount: returned.get(l.line_no)?.amount ?? 0
+    sourceLine: l.source_line, returnedQtyMilli: returned.get(l.line_no)?.qtyMilli ?? 0, returnedAmount: returned.get(l.line_no)?.amount ?? 0,
+    lineUnit: l.line_unit ?? null,
+    unitFactorMilli: l.unit_factor_milli === null ? null : Number(l.unit_factor_milli),
+    unitQtyMilli: l.unit_qty_milli === null ? null : Number(l.unit_qty_milli)
   }));
   const returns = db.prepare('SELECT id, kind, number, date, status, total FROM invoices WHERE return_of = ? ORDER BY date, created_at').all(id) as
     { id: string; kind: InvoiceDocKind; number: string | null; date: string; status: InvoiceStatus; total: number }[];
@@ -241,6 +250,16 @@ function normalize(input: InvoiceInput): InvoiceInput {
   return { ...input, rateX100: input.currency === 'IQD' ? 100 : input.rateX100, partyId: input.partyId || undefined, cashAccountCode: input.payment === 'cash' ? input.cashAccountCode : undefined } as InvoiceInput;
 }
 
+/** What a request may send for a line: a base quantity, or a unit and the quantity typed in it (1.1). */
+export type InvoiceLineRequest = Omit<InvoiceInput['lines'][number], 'qtyMilli' | 'unitFactorMilli'> & { qtyMilli?: number | undefined };
+export type InvoiceRequest = Omit<InvoiceInput, 'lines'> & { lines: InvoiceLineRequest[] };
+
+/** A request's lines with their base quantities, from each item's units now (a factor is never taken from a request). */
+export function withUnits(db: Db, input: InvoiceRequest): InvoiceInput {
+  if (!Array.isArray(input.lines)) return input as InvoiceInput;
+  return { ...input, lines: resolveLines(db, input.lines) } as InvoiceInput;
+}
+
 function assertInvoice(db: Db, input: InvoiceInput): void {
   const errors: { code: string; line?: number; period?: string }[] = validateInvoice(input);
   if (input.partyId) {
@@ -276,12 +295,14 @@ function writeDraft(db: Db, id: string, input: InvoiceInput): void {
     .run(input.date, input.partyId ?? null, input.warehouseId, input.currency, input.rateX100, input.payment, input.cashAccountCode ?? null,
       input.discount, totals.subtotal, totals.total, input.notes?.trim() || null, new Date().toISOString(), id);
   db.prepare('DELETE FROM invoice_lines WHERE invoice_id = ?').run(id);
-  const insert = db.prepare('INSERT INTO invoice_lines (invoice_id, line_no, item_id, description, qty_milli, unit_price, amount) VALUES (?, ?, ?, ?, ?, ?, ?)');
-  input.lines.forEach((l, i) => insert.run(id, i + 1, l.itemId, l.description?.trim() || null, l.qtyMilli, l.unitPrice, totals.lineAmounts[i] ?? 0));
+  const insert = db.prepare(`INSERT INTO invoice_lines (invoice_id, line_no, item_id, description, qty_milli, unit_price, amount, unit, unit_factor_milli, unit_qty_milli)
+                             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`);
+  input.lines.forEach((l, i) => insert.run(id, i + 1, l.itemId, l.description?.trim() || null, l.qtyMilli, l.unitPrice, totals.lineAmounts[i] ?? 0,
+    l.unit ?? null, l.unit ? l.unitFactorMilli ?? null : null, l.unit ? l.unitQtyMilli ?? null : null));
 }
 
-export function createInvoice(db: Db, raw: InvoiceInput, user: string): InvoiceView {
-  const input = normalize(raw);
+export function createInvoice(db: Db, raw: InvoiceInput | InvoiceRequest, user: string): InvoiceView {
+  const input = normalize(withUnits(db, raw as InvoiceRequest));
   assertInvoice(db, input);
   const id = randomUUID();
   transaction(db, () => {
@@ -300,11 +321,11 @@ function requireAction(db: Db, row: InvoiceRow, action: InvoiceAction): void {
   if (!actionsFor(db, row, action === 'return').includes(action)) throw conflict('action_not_allowed', { status: row.status, action });
 }
 
-export function updateInvoice(db: Db, id: string, raw: InvoiceInput, user: string): InvoiceView {
+export function updateInvoice(db: Db, id: string, raw: InvoiceInput | InvoiceRequest, user: string): InvoiceView {
   const row = loadRow(db, id);
   requireAction(db, row, 'edit');
   if (isReturn(row.kind)) throw conflict('action_not_allowed', { status: row.status, action: 'edit' });
-  const input = normalize({ ...raw, kind: row.kind as InvoiceKind });
+  const input = normalize(withUnits(db, { ...(raw as InvoiceRequest), kind: row.kind as InvoiceKind }));
   assertInvoice(db, input);
   transaction(db, () => {
     writeDraft(db, id, input);
@@ -332,7 +353,11 @@ function storedInput(view: InvoiceView): InvoiceInput {
     discount: view.discount, notes: view.notes,
     ...(view.partyId ? { partyId: view.partyId } : {}),
     ...(view.cashAccountCode ? { cashAccountCode: view.cashAccountCode } : {}),
-    lines: view.lines.map((l) => ({ itemId: l.itemId, qtyMilli: l.qtyMilli, unitPrice: l.unitPrice, description: l.description }))
+    // the factor kept with the line, never the item's factor now: a later change of the factor leaves the line as it was
+    lines: view.lines.map((l) => ({
+      itemId: l.itemId, qtyMilli: l.qtyMilli, unitPrice: l.unitPrice, description: l.description,
+      ...(l.lineUnit ? { unit: l.lineUnit, unitFactorMilli: l.unitFactorMilli ?? undefined, unitQtyMilli: l.unitQtyMilli ?? undefined } : {})
+    }))
   };
 }
 

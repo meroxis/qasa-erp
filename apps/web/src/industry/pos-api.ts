@@ -1,4 +1,4 @@
-import type { CurrencyCode, Names } from '@qasa/core';
+import type { CurrencyCode, Names, UnitCode } from '@qasa/core';
 import { qs, request, type InvoiceView } from '../api.ts';
 
 /** Point of sale (every plan): shifts on a register, and cash sales posted at once. */
@@ -42,7 +42,8 @@ export interface SaleInput {
   partyId?: string;
   discount: number;
   notes?: string;
-  lines: { itemId: string; qtyMilli: number; unitPrice: number }[];
+  /** qtyMilli in base units, or unit + unitQtyMilli: the quantity in one of the item's units, priced per that unit */
+  lines: ({ itemId: string; qtyMilli: number; unitPrice: number } | { itemId: string; unit: UnitCode; unitQtyMilli: number; unitPrice: number })[];
 }
 
 export const posApi = {

@@ -21,9 +21,9 @@ it('refuses a foreign-priced item when no rate is known, instead of selling it f
 
 it('reads an exact code that looks like "12x5" as a code, and "3*code" as a quantity', () => {
   const items = [{ code: '12x5', barcode: '' }, { code: '5', barcode: '' }, { code: 'A1', barcode: '628100' }];
-  expect(parseScan('12x5', items)).toEqual({ code: '12x5', qtyMilli: 1000, exact: items[0] });
-  expect(parseScan('3*a1', items)).toEqual({ code: 'a1', qtyMilli: 3000, exact: items[2] });
-  expect(parseScan('2 x 628100', items)).toEqual({ code: '628100', qtyMilli: 2000, exact: items[2] });
+  expect(parseScan('12x5', items)).toEqual({ code: '12x5', qtyMilli: 1000, exact: items[0], unit: null });
+  expect(parseScan('3*a1', items)).toEqual({ code: 'a1', qtyMilli: 3000, exact: items[2], unit: null });
+  expect(parseScan('2 x 628100', items)).toEqual({ code: '628100', qtyMilli: 2000, exact: items[2], unit: null });
   expect(parseScan('nothing', items).exact).toBeUndefined();
 });
 

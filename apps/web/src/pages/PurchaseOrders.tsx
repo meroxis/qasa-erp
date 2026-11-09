@@ -9,6 +9,8 @@ import {
 import { go, href } from '../router.ts';
 import { useRatePrefill } from '../industry/fx-prefill.ts';
 import { convertLines } from './currency-switch.ts';
+import { UnitPicker } from '../industry/UnitPicker.tsx';
+import { baseQty, unitLabel, type LineUnit } from '../industry/units.ts';
 import { printDocument } from '../industry/printing.ts';
 
 /**
@@ -177,7 +179,8 @@ function Suggestions() {
 
 /* ---------- writing an order ---------- */
 
-interface Row { key: number; itemId: string; qtyMilli: number; unitPrice: number }
+/** qtyMilli: as typed in the line's unit (null: the base unit); unitPrice: per that unit. */
+interface Row { key: number; itemId: string; qtyMilli: number; unitPrice: number; unit?: LineUnit }
 let rowKey = 0;
 const emptyRow = (): Row => ({ key: ++rowKey, itemId: '', qtyMilli: 1000, unitPrice: 0 });
 
@@ -213,7 +216,7 @@ export function PurchaseOrderEditor({ id }: { id?: string }) {
     const x = existing.data;
     if (!x) return;
     setForm({ date: x.date, partyId: x.party.id, warehouseId: x.warehouse?.id ?? '', currency: x.currency, expectedDate: x.expectedDate ?? '', notes: x.notes });
-    setRows(x.lines.map((l) => ({ key: ++rowKey, itemId: l.itemId, qtyMilli: l.qtyMilli, unitPrice: l.unitPrice })));
+    setRows(x.lines.map((l) => ({ key: ++rowKey, itemId: l.itemId, qtyMilli: l.lineUnit && l.unitQtyMilli !== null ? l.unitQtyMilli : l.qtyMilli, unitPrice: l.unitPrice, unit: l.lineUnit })));
   }, [existing.data]);
 
   const set = <K extends keyof typeof form>(k: K, v: (typeof form)[K]) => setForm((f) => ({ ...f, [k]: v }));
@@ -237,7 +240,9 @@ export function PurchaseOrderEditor({ id }: { id?: string }) {
     const input: PoInput = {
       date: form.date, partyId: form.partyId, warehouseId: form.warehouseId || null, currency: form.currency,
       expectedDate: form.expectedDate || null, notes: form.notes,
-      lines: rows.filter((r) => r.itemId || r.unitPrice).map(({ key: _k, ...r }) => ({ ...r, qtyMilli: r.qtyMilli || 0, unitPrice: r.unitPrice || 0 }))
+      lines: rows.filter((r) => r.itemId || r.unitPrice).map(({ key: _k, unit, ...r }) => (unit
+        ? { itemId: r.itemId, unit, unitQtyMilli: r.qtyMilli || 0, qtyMilli: baseQty(items.find((it) => it.id === r.itemId), unit, r.qtyMilli || 0) ?? 0, unitPrice: r.unitPrice || 0 }
+        : { itemId: r.itemId, qtyMilli: r.qtyMilli || 0, unitPrice: r.unitPrice || 0 }))
     };
     try {
       const saved = id ? await purchasingApi.update(id, input) : await purchasingApi.create(input);
@@ -287,8 +292,11 @@ export function PurchaseOrderEditor({ id }: { id?: string }) {
               {rows.map((r, i) => (
                 <tr key={r.key}>
                   <td className="muted num">{i18n.int(i + 1)}</td>
-                  <td><SearchCombo value={r.itemId} options={itemOptions} onChange={(v) => update(r.key, { itemId: v })} placeholder={t('po_pickItem')} ariaLabel={t('item')} /></td>
-                  <td><QtyInput value={r.qtyMilli || null} onChange={(v) => update(r.key, { qtyMilli: v ?? 0 })} ariaLabel={t('qty')} /></td>
+                  <td><SearchCombo value={r.itemId} options={itemOptions} onChange={(v) => update(r.key, { itemId: v, unit: items.find((it) => it.id === v)?.purchaseUnit ?? null })} placeholder={t('po_pickItem')} ariaLabel={t('item')} /></td>
+                  <td>
+                    <QtyInput value={r.qtyMilli || null} onChange={(v) => update(r.key, { qtyMilli: v ?? 0 })} ariaLabel={t('qty')} />
+                    <UnitPicker item={items.find((it) => it.id === r.itemId)} value={r.unit ?? null} onChange={(unit) => update(r.key, { unit })} />
+                  </td>
                   <td><AmountInput value={r.unitPrice || null} currency={form.currency} onChange={(v) => update(r.key, { unitPrice: v ?? 0 })} ariaLabel={t('unitPrice')} /></td>
                   <td className="amount">{i18n.money(lineAmount(r.qtyMilli || 0, r.unitPrice || 0), form.currency)}</td>
                   <td><button type="button" className="btn icon danger" onClick={() => setRows((rs) => (rs.length > 1 ? rs.filter((x) => x.key !== r.key) : [emptyRow()]))} aria-label={t('removeLine')} title={t('removeLine')}><Icon name="x" size={16} /></button></td>
@@ -438,7 +446,7 @@ function Paper({ order: x, company }: { order: PoView; company: string }) {
               <tr key={l.seq}>
                 <td className="muted num">{i18n.int(l.seq)}</td>
                 <td>{i18n.name(l.itemName)}<span className="muted small ltr" style={{ marginInlineStart: 6 }}>{l.itemCode}</span></td>
-                <td className="amount">{i18n.qty(l.qtyMilli)}</td>
+                <td className="amount">{l.lineUnit && l.unitQtyMilli !== null ? `${i18n.qty(l.unitQtyMilli)} ${unitLabel(i18n, l.lineUnit)}` : i18n.qty(l.qtyMilli)}</td>
                 {showProgress && <>
                   <td className="amount no-print">{i18n.qty(l.receivedMilli)}</td>
                   <td className="amount no-print" style={l.remainingMilli ? { color: 'var(--warn)' } : undefined}>{i18n.qty(l.remainingMilli)}</td>

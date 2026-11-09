@@ -216,7 +216,15 @@ export interface ItemView {
   qtyMilli: number;
   value: number;
   hasMoves: boolean;
+  /** 1.1: the other units (boxes, strips …), the units sale and purchase lines start in (null: the base unit) */
+  units: ItemUnitView[];
+  saleUnit: UnitCode | null;
+  purchaseUnit: UnitCode | null;
+  updatedAt: string | null;
 }
+
+/** One of an item's other units: base units in one (thousandths), its barcode and its own price (null: base × factor). */
+export interface ItemUnitView { unit: UnitCode; factorMilli: number; barcode: string; salePrice: number | null }
 
 export interface ItemInput {
   code?: string;
@@ -227,6 +235,9 @@ export interface ItemInput {
   saleCurrency: CurrencyCode;
   trackStock?: boolean;
   active?: boolean;
+  units?: { unit: UnitCode; factorMilli: number; barcode?: string; salePrice?: number | null }[];
+  saleUnit?: UnitCode | null;
+  purchaseUnit?: UnitCode | null;
 }
 
 export interface ItemDetail extends ItemView {
@@ -278,6 +289,8 @@ export interface InvoiceView extends InvoiceSummary {
     lineNo: number; itemId: string; itemCode: string; itemName: Names; unit: UnitCode; trackStock: boolean;
     description: string; qtyMilli: number; unitPrice: number; amount: number; cost: number | null;
     sourceLine: number | null; returnedQtyMilli: number; returnedAmount: number;
+    /** 1.1: the unit the line was typed in (null: the base unit), its factor then and the quantity typed */
+    lineUnit: UnitCode | null; unitFactorMilli: number | null; unitQtyMilli: number | null;
   }[];
   actions: InvoiceAction[];
   returnOfNumber: string | null;
@@ -346,7 +359,10 @@ export interface StockDocView extends StockDocSummary {
   postedAt: string | null;
   cancelledBy: string | null;
   cancelledAt: string | null;
-  lines: { lineNo: number; itemId: string; itemCode: string; itemName: Names; unit: UnitCode; qtyMilli: number; unitCost: number | null; value: number | null }[];
+  lines: {
+    lineNo: number; itemId: string; itemCode: string; itemName: Names; unit: UnitCode; qtyMilli: number; unitCost: number | null; value: number | null;
+    lineUnit: UnitCode | null; unitFactorMilli: number | null; unitQtyMilli: number | null;
+  }[];
   actions: StockDocAction[];
 }
 
@@ -357,7 +373,7 @@ export interface StockDocInput {
   toWarehouseId?: string;
   counterAccountCode?: string;
   notes?: string;
-  lines: { itemId: string; qtyMilli: number; unitCost?: number }[];
+  lines: { itemId: string; qtyMilli: number; unitCost?: number; unit?: UnitCode; unitQtyMilli?: number }[];
 }
 
 export type { InvoiceInput };
@@ -631,6 +647,8 @@ export const api = {
   createWarehouse: (input: { code: string; name: Names }) => request<WarehouseView>('POST', '/api/warehouses', input),
   updateWarehouse: (id: string, input: { name: Names; active?: boolean }) => request<WarehouseView>('PUT', `/api/warehouses/${id}`, input),
   items: (f: { q?: string; warehouseId?: string; active?: string } = {}) => request<ItemView[]>('GET', '/api/items' + qs(f)),
+  /** A scanned barcode: the item, and the unit when it is one of the item's units' barcodes (null: its own, the base unit). */
+  itemByBarcode: (barcode: string, warehouseId?: string) => request<{ item: ItemView | null; unit: UnitCode | null }>('GET', '/api/items' + qs({ barcode, ...(warehouseId ? { warehouseId } : {}) })),
   item: (id: string) => request<ItemDetail>('GET', `/api/items/${id}`),
   createItem: (input: ItemInput) => request<ItemView>('POST', '/api/items', input),
   updateItem: (id: string, input: ItemInput) => request<ItemView>('PUT', `/api/items/${id}`, input),

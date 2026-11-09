@@ -1,4 +1,4 @@
-import type { CurrencyCode } from '@qasa/core';
+import type { CurrencyCode, UnitCode } from '@qasa/core';
 import type { ItemView } from '../api.ts';
 
 /**
@@ -35,14 +35,26 @@ export const addRefusal = (item: Pick<ItemView, 'saleCurrency'>, currency: Curre
 
 /**
  * What the cashier typed or scanned: an exact barcode or code wins (a code such as "12x5" is a code, not 12 × "5");
- * otherwise "3*code" or "3x code" sells three of that code.
+ * otherwise "3*code" or "3x code" sells three of that code. A barcode of one of an item's units (a box, a strip) finds
+ * the item with that unit (`unit`; null: the item's own barcode or code, its base unit).
  */
-export function parseScan<T extends Pick<ItemView, 'barcode' | 'code'>>(raw: string, items: readonly T[]): { code: string; qtyMilli: number; exact: T | undefined } {
-  const find = (code: string) => items.find((it) => it.barcode === code || it.code.toLowerCase() === code.toLowerCase());
+export function parseScan<T extends Pick<ItemView, 'barcode' | 'code'> & { units?: ItemView['units'] }>(raw: string, items: readonly T[]): {
+  code: string; qtyMilli: number; exact: T | undefined; unit: UnitCode | null;
+} {
+  const find = (code: string): { item: T; unit: UnitCode | null } | undefined => {
+    const own = items.find((it) => it.barcode === code || it.code.toLowerCase() === code.toLowerCase());
+    if (own) return { item: own, unit: null };
+    for (const it of items) {
+      const u = it.units?.find((x) => x.barcode && x.barcode === code);
+      if (u) return { item: it, unit: u.unit };
+    }
+    return undefined;
+  };
   const whole = find(raw);
-  if (whole) return { code: raw, qtyMilli: 1000, exact: whole };
+  if (whole) return { code: raw, qtyMilli: 1000, exact: whole.item, unit: whole.unit };
   const star = /^(\d+(?:\.\d+)?)\s*[*x×]\s*(.+)$/i.exec(raw);
-  if (!star) return { code: raw, qtyMilli: 1000, exact: undefined };
+  if (!star) return { code: raw, qtyMilli: 1000, exact: undefined, unit: null };
   const code = star[2]!.trim();
-  return { code, qtyMilli: Math.round(Number(star[1]) * 1000), exact: find(code) };
+  const found = find(code);
+  return { code, qtyMilli: Math.round(Number(star[1]) * 1000), exact: found?.item, unit: found?.unit ?? null };
 }

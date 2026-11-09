@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { costOut, isIsoDate, lineAmount, todayIso, type EntryInput, type Names, type UnitCode } from '@qasa/core';
+import { costOut, isIsoDate, lineAmount, priceQty, todayIso, type EntryInput, type Names, type UnitCode } from '@qasa/core';
 import type { Db } from './db.ts';
 import { transaction } from './db.ts';
 import { audit } from './audit.ts';
@@ -8,6 +8,7 @@ import { loadAccounts } from './accounts.ts';
 import { assertValid, insertEntry, nextNumber, reverseEntryInternal } from './journal.ts';
 import { addStockMove, stockOf } from './items.ts';
 import { isPeriodLocked } from './settings.ts';
+import { resolveLines } from './item-units.ts';
 
 /** opening = بضاعة أول المدة (goods on hand when the company starts with Qasa ERP) · transfer = مناقلة بين المخازن */
 export type StockDocKind = 'opening' | 'transfer';
@@ -24,9 +25,24 @@ export interface StockDocInput {
   /** Opening stock: the account credited for the goods' value (usually capital, 21). */
   counterAccountCode?: string;
   notes?: string;
-  /** unitCost: opening stock only, IQD per unit. */
-  lines: { itemId: string; qtyMilli: number; unitCost?: number }[];
+  /**
+   * unitCost: opening stock only, IQD per unit (per the line's own unit when it has one). unit + unitQtyMilli (1.1): the
+   * quantity typed in one of the item's units; qtyMilli is then worked out from the item's factor.
+   */
+  lines: StockDocLineInput[];
 }
+
+export interface StockDocLineInput {
+  itemId: string;
+  qtyMilli: number;
+  unitCost?: number | undefined;
+  unit?: UnitCode | undefined;
+  unitQtyMilli?: number | undefined;
+  unitFactorMilli?: number | undefined;
+}
+
+/** What a request may send: lines with a base quantity, or a unit and the quantity typed in it. */
+export type StockDocRequest = Omit<StockDocInput, 'lines'> & { lines: (Omit<StockDocLineInput, 'qtyMilli' | 'unitFactorMilli'> & { qtyMilli?: number | undefined })[] };
 
 export interface StockDocLineView {
   lineNo: number;
@@ -38,6 +54,10 @@ export interface StockDocLineView {
   unitCost: number | null;
   /** IQD value that moved; set when posted. */
   value: number | null;
+  /** 1.1: the unit the line was typed in (null: the base unit), its factor then and the quantity as typed */
+  lineUnit: UnitCode | null;
+  unitFactorMilli: number | null;
+  unitQtyMilli: number | null;
 }
 
 export interface StockDocSummary {
@@ -103,12 +123,15 @@ function toSummary(r: DocRow): StockDocSummary {
 
 export function getStockDoc(db: Db, id: string): StockDocView {
   const r = loadRow(db, id);
-  const lines = (db.prepare(`SELECT l.*, i.code, i.name_ar, i.name_en, i.name_ku, i.unit FROM stock_doc_lines l JOIN items i ON i.id = l.item_id
+  const lines = (db.prepare(`SELECT l.line_no, l.item_id, l.qty_milli, l.unit_cost, l.value, l.unit AS line_unit, l.unit_factor_milli, l.unit_qty_milli, l.batch_no, l.expiry, l.batch_id, i.code, i.name_ar, i.name_en, i.name_ku, i.unit FROM stock_doc_lines l JOIN items i ON i.id = l.item_id
                              WHERE l.doc_id = ? ORDER BY l.line_no`).all(id) as {
     line_no: number; item_id: string; qty_milli: number; unit_cost: number | null; value: number | null; code: string; name_ar: string; name_en: string; name_ku: string; unit: UnitCode;
+    line_unit: UnitCode | null; unit_factor_milli: number | null; unit_qty_milli: number | null;
   }[]).map((l) => ({
     lineNo: l.line_no, itemId: l.item_id, itemCode: l.code, itemName: { ar: l.name_ar, en: l.name_en, ku: l.name_ku }, unit: l.unit,
-    qtyMilli: l.qty_milli, unitCost: l.unit_cost, value: l.value
+    qtyMilli: l.qty_milli, unitCost: l.unit_cost, value: l.value,
+    lineUnit: l.line_unit ?? null, unitFactorMilli: l.unit_factor_milli === null ? null : Number(l.unit_factor_milli),
+    unitQtyMilli: l.unit_qty_milli === null ? null : Number(l.unit_qty_milli)
   }));
   const counter = r.counter_account ? db.prepare('SELECT name_ar, name_en, name_ku FROM accounts WHERE code = ?').get(r.counter_account) as { name_ar: string; name_en: string; name_ku: string } | undefined : undefined;
   const numberOf = (entryId: string | null) => entryId ? (db.prepare('SELECT number FROM entries WHERE id = ?').get(entryId) as { number: string | null }).number : null;
@@ -160,16 +183,21 @@ function assertDoc(db: Db, input: StockDocInput): void {
 }
 
 function writeDraft(db: Db, id: string, input: StockDocInput): void {
-  const total = input.kind === 'opening' ? input.lines.reduce((s, l) => s + lineAmount(l.qtyMilli, l.unitCost ?? 0), 0) : 0;
+  const total = input.kind === 'opening' ? input.lines.reduce((s, l) => s + lineAmount(priceQty(l), l.unitCost ?? 0), 0) : 0;
   db.prepare('UPDATE stock_docs SET date = ?, warehouse_id = ?, to_warehouse_id = ?, counter_account = ?, notes = ?, total_value = ?, updated_at = ? WHERE id = ?')
     .run(input.date, input.warehouseId, input.kind === 'transfer' ? input.toWarehouseId! : null, input.kind === 'opening' ? input.counterAccountCode! : null,
       input.notes?.trim() || null, total, new Date().toISOString(), id);
   db.prepare('DELETE FROM stock_doc_lines WHERE doc_id = ?').run(id);
-  const insert = db.prepare('INSERT INTO stock_doc_lines (doc_id, line_no, item_id, qty_milli, unit_cost) VALUES (?, ?, ?, ?, ?)');
-  input.lines.forEach((l, i) => insert.run(id, i + 1, l.itemId, l.qtyMilli, input.kind === 'opening' ? l.unitCost ?? 0 : null));
+  const insert = db.prepare('INSERT INTO stock_doc_lines (doc_id, line_no, item_id, qty_milli, unit_cost, unit, unit_factor_milli, unit_qty_milli) VALUES (?, ?, ?, ?, ?, ?, ?, ?)');
+  input.lines.forEach((l, i) => insert.run(id, i + 1, l.itemId, l.qtyMilli, input.kind === 'opening' ? l.unitCost ?? 0 : null,
+    l.unit ?? null, l.unit ? l.unitFactorMilli ?? null : null, l.unit ? l.unitQtyMilli ?? null : null));
 }
 
-export function createStockDoc(db: Db, input: StockDocInput, user: string): StockDocView {
+const withUnits = (db: Db, input: StockDocRequest): StockDocInput =>
+  (Array.isArray(input.lines) ? { ...input, lines: resolveLines(db, input.lines) } : input) as StockDocInput;
+
+export function createStockDoc(db: Db, raw: StockDocInput | StockDocRequest, user: string): StockDocView {
+  const input = withUnits(db, raw as StockDocRequest);
   assertDoc(db, input);
   const id = randomUUID();
   transaction(db, () => {
@@ -187,10 +215,10 @@ function requireAction(row: DocRow, action: StockDocAction): void {
   if (!actionsFor(row.status).includes(action)) throw conflict('action_not_allowed', { status: row.status, action });
 }
 
-export function updateStockDoc(db: Db, id: string, raw: StockDocInput, user: string): StockDocView {
+export function updateStockDoc(db: Db, id: string, raw: StockDocInput | StockDocRequest, user: string): StockDocView {
   const row = loadRow(db, id);
   requireAction(row, 'edit');
-  const input = { ...raw, kind: row.kind };
+  const input = withUnits(db, { ...(raw as StockDocRequest), kind: row.kind });
   assertDoc(db, input);
   transaction(db, () => {
     writeDraft(db, id, input);
@@ -217,7 +245,10 @@ function storedInput(v: StockDocView): StockDocInput {
     kind: v.kind, date: v.date, warehouseId: v.warehouseId, notes: v.notes,
     ...(v.toWarehouseId ? { toWarehouseId: v.toWarehouseId } : {}),
     ...(v.counterAccountCode ? { counterAccountCode: v.counterAccountCode } : {}),
-    lines: v.lines.map((l) => ({ itemId: l.itemId, qtyMilli: l.qtyMilli, ...(l.unitCost !== null ? { unitCost: l.unitCost } : {}) }))
+    lines: v.lines.map((l) => ({
+      itemId: l.itemId, qtyMilli: l.qtyMilli, ...(l.unitCost !== null ? { unitCost: l.unitCost } : {}),
+      ...(l.lineUnit ? { unit: l.lineUnit, unitFactorMilli: l.unitFactorMilli ?? undefined, unitQtyMilli: l.unitQtyMilli ?? undefined } : {})
+    }))
   };
 }
 
@@ -234,7 +265,7 @@ export function postStockDoc(db: Db, id: string, user: string): StockDocView {
 
   if (view.kind === 'opening') {
     for (const l of view.lines) {
-      const value = lineAmount(l.qtyMilli, l.unitCost ?? 0);
+      const value = lineAmount(l.lineUnit && l.unitQtyMilli !== null ? l.unitQtyMilli : l.qtyMilli, l.unitCost ?? 0);
       values.push(value);
       moves.push({ itemId: l.itemId, warehouseId: view.warehouseId, qtyMilli: l.qtyMilli, value });
     }

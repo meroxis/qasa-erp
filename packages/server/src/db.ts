@@ -1,10 +1,12 @@
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { existsSync, readdirSync, renameSync, rmSync, unlinkSync } from 'node:fs';
 import { basename, dirname, join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { DEFAULT_POSTING_ACCOUNTS, IRAQI_UNIFIED_CHART, STARTER_SUB_ACCOUNTS } from '@qasa/core';
 import { AppError } from './errors.ts';
-import { MYSQL_TABLES, MYSQL_TRIGGERS, mysqlCollations, mysqlTableSql, type MysqlCollations } from './schema-mysql.ts';
+import {
+  MYSQL_TABLES, MYSQL_TRIGGERS, mysqlCollations, mysqlTableSql, pendingMysqlSteps, V10_MYSQL_STEPS, type MysqlCollations, type MysqlStep
+} from './schema-mysql.ts';
 
 export type SqlParam = null | number | bigint | string | Uint8Array;
 export type SqlValue = null | number | bigint | string | Uint8Array;
@@ -35,9 +37,10 @@ interface Migration {
   rebuild?: boolean;
   /**
    * The same change on a MariaDB or MySQL server (versions 1–5 are in schema-mysql.ts): 'tables' when it only adds the
-   * tables and triggers schema-mysql.ts marks `since` this version, else its own statements, one each.
+   * tables and triggers schema-mysql.ts marks `since` this version; { tables, steps } when it also changes tables
+   * already there (each step skipped when it is done already); else its own statements, one each.
    */
-  mysql?: 'tables' | ((collations: MysqlCollations) => readonly string[]);
+  mysql?: 'tables' | { tables: true; steps: (collations: MysqlCollations) => readonly MysqlStep[] } | ((collations: MysqlCollations) => readonly string[]);
 }
 
 const V1 =
@@ -1422,9 +1425,155 @@ const V9 =
   );
   `;
 
+const V10 =
+  // 10 — 1.1: units with conversions, item categories, batches and expiry dates, payments kept with an invoice (POS
+  // split payments and online payments), the pharmacy pack. Old rows are never rewritten: NULL in a new line column
+  // means "the base unit, no batch", which is what every line made before 1.1 was
+  `
+  CREATE TABLE item_categories (
+    id TEXT PRIMARY KEY,
+    code TEXT NOT NULL UNIQUE,
+    name_ar TEXT NOT NULL,
+    name_en TEXT NOT NULL,
+    name_ku TEXT NOT NULL,
+    sort INTEGER NOT NULL DEFAULT 0,
+    active INTEGER NOT NULL DEFAULT 1,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+  );
+
+  CREATE TABLE item_batches (
+    id TEXT PRIMARY KEY,
+    item_id TEXT NOT NULL REFERENCES items(id),
+    -- '' = stock that was there before batches were tracked, or a surplus with no number
+    number TEXT NOT NULL,
+    expiry TEXT,
+    created_at TEXT NOT NULL,
+    UNIQUE (item_id, number)
+  );
+  CREATE INDEX item_batches_expiry ON item_batches(expiry);
+
+  ALTER TABLE items ADD COLUMN category_id TEXT REFERENCES item_categories(id);
+  -- the unit picked by default on sale and on purchase lines (NULL = the base unit, items.unit)
+  ALTER TABLE items ADD COLUMN sale_unit TEXT;
+  ALTER TABLE items ADD COLUMN purchase_unit TEXT;
+  -- 0/1: stock kept per batch number; expiry asked on the way in
+  ALTER TABLE items ADD COLUMN track_batches INTEGER NOT NULL DEFAULT 0;
+  ALTER TABLE items ADD COLUMN track_expiry INTEGER NOT NULL DEFAULT 0;
+  ALTER TABLE items ADD COLUMN updated_at TEXT;
+  CREATE INDEX items_category ON items(category_id);
+
+  -- the other units an item is bought or sold in; the base unit (items.unit) is never listed here
+  CREATE TABLE item_units (
+    item_id TEXT NOT NULL REFERENCES items(id),
+    unit TEXT NOT NULL,
+    -- base units in one of this unit, in thousandths (box = 100 tablets: 100000; a gram of a kg item: 1)
+    factor_milli INTEGER NOT NULL CHECK (factor_milli > 0),
+    barcode TEXT,
+    -- price of one of this unit, in the item's sale currency; NULL = the base price × the factor
+    sale_price INTEGER CHECK (sale_price IS NULL OR sale_price >= 0),
+    sort INTEGER NOT NULL DEFAULT 0,
+    PRIMARY KEY (item_id, unit)
+  );
+  CREATE UNIQUE INDEX item_units_barcode ON item_units(barcode);
+
+  -- what a line was typed in. NULL unit = the base unit (every line made before 1.1); qty_milli stays the BASE quantity
+  ALTER TABLE invoice_lines ADD COLUMN unit TEXT;
+  ALTER TABLE invoice_lines ADD COLUMN unit_factor_milli INTEGER;
+  ALTER TABLE invoice_lines ADD COLUMN unit_qty_milli INTEGER;
+  -- batches: what came in (purchase) or the batch picked by hand (sale); NULL = automatic (earliest expiry first)
+  ALTER TABLE invoice_lines ADD COLUMN batch_no TEXT;
+  ALTER TABLE invoice_lines ADD COLUMN expiry TEXT;
+  ALTER TABLE invoice_lines ADD COLUMN batch_id TEXT REFERENCES item_batches(id);
+  ALTER TABLE stock_doc_lines ADD COLUMN unit TEXT;
+  ALTER TABLE stock_doc_lines ADD COLUMN unit_factor_milli INTEGER;
+  ALTER TABLE stock_doc_lines ADD COLUMN unit_qty_milli INTEGER;
+  ALTER TABLE stock_doc_lines ADD COLUMN batch_no TEXT;
+  ALTER TABLE stock_doc_lines ADD COLUMN expiry TEXT;
+  ALTER TABLE stock_doc_lines ADD COLUMN batch_id TEXT REFERENCES item_batches(id);
+  ALTER TABLE stock_adjustment_lines ADD COLUMN unit TEXT;
+  ALTER TABLE stock_adjustment_lines ADD COLUMN unit_factor_milli INTEGER;
+  ALTER TABLE stock_adjustment_lines ADD COLUMN unit_qty_milli INTEGER;
+  ALTER TABLE stock_adjustment_lines ADD COLUMN batch_no TEXT;
+  ALTER TABLE stock_adjustment_lines ADD COLUMN expiry TEXT;
+  ALTER TABLE stock_adjustment_lines ADD COLUMN batch_id TEXT REFERENCES item_batches(id);
+  ALTER TABLE purchase_order_lines ADD COLUMN unit TEXT;
+  ALTER TABLE purchase_order_lines ADD COLUMN unit_factor_milli INTEGER;
+  ALTER TABLE purchase_order_lines ADD COLUMN unit_qty_milli INTEGER;
+
+  -- every batch quantity change, beside stock_moves (which keeps the value); never edited or deleted
+  CREATE TABLE stock_batch_moves (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    batch_id TEXT NOT NULL REFERENCES item_batches(id),
+    item_id TEXT NOT NULL REFERENCES items(id),
+    warehouse_id TEXT NOT NULL REFERENCES warehouses(id),
+    date TEXT NOT NULL,
+    qty_milli INTEGER NOT NULL,
+    source_type TEXT NOT NULL,
+    source_id TEXT,
+    line_no INTEGER,
+    created_at TEXT NOT NULL
+  );
+  CREATE INDEX stock_batch_moves_batch ON stock_batch_moves(batch_id, warehouse_id);
+  CREATE INDEX stock_batch_moves_item ON stock_batch_moves(item_id, warehouse_id);
+  CREATE INDEX stock_batch_moves_source ON stock_batch_moves(source_type, source_id);
+  CREATE TRIGGER stock_batch_moves_no_update BEFORE UPDATE ON stock_batch_moves BEGIN SELECT RAISE(ABORT, 'stock_moves_are_permanent'); END;
+  CREATE TRIGGER stock_batch_moves_no_delete BEFORE DELETE ON stock_batch_moves BEGIN SELECT RAISE(ABORT, 'stock_moves_are_permanent'); END;
+
+  -- money taken for an invoice outside its own cash/credit: POS split payments (in the sale's own entry) and online
+  -- payments recorded through the website API (a receipt voucher of their own)
+  CREATE TABLE invoice_payments (
+    id TEXT PRIMARY KEY,
+    invoice_id TEXT NOT NULL REFERENCES invoices(id),
+    kind TEXT NOT NULL CHECK (kind IN ('pos', 'online')),
+    method TEXT NOT NULL CHECK (method IN ('cash', 'card', 'fib', 'zaincash', 'qi', 'account', 'other')),
+    account_code TEXT NOT NULL REFERENCES accounts(code),
+    amount INTEGER NOT NULL CHECK (amount > 0),
+    currency TEXT NOT NULL CHECK (currency IN ('IQD', 'USD')),
+    entry_id TEXT REFERENCES entries(id),
+    source TEXT,
+    reference TEXT,
+    created_by TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    UNIQUE (source, reference)
+  );
+  CREATE INDEX invoice_payments_invoice ON invoice_payments(invoice_id);
+
+  -- the content hash of an item's picture, so a shop knows when it changed (filled in for old pictures at start-up)
+  ALTER TABLE item_images ADD COLUMN sha256 TEXT;
+
+  -- pharmacy (Pro)
+  CREATE TABLE pharma_details (
+    item_id TEXT PRIMARY KEY REFERENCES items(id),
+    generic_name TEXT NOT NULL DEFAULT '',
+    -- generic_name through normalizeForSearch: alternatives and search
+    generic_key TEXT NOT NULL DEFAULT '',
+    form TEXT NOT NULL DEFAULT 'other' CHECK (form IN ('tablet', 'capsule', 'syrup', 'suspension', 'injection', 'drops', 'cream', 'ointment', 'inhaler', 'suppository', 'sachet', 'spray', 'other')),
+    strength TEXT NOT NULL DEFAULT '',
+    manufacturer TEXT NOT NULL DEFAULT '',
+    rx_only INTEGER NOT NULL DEFAULT 0,
+    controlled INTEGER NOT NULL DEFAULT 0,
+    shelf TEXT NOT NULL DEFAULT '',
+    updated_at TEXT NOT NULL
+  );
+  CREATE INDEX pharma_details_generic ON pharma_details(generic_key);
+  CREATE TABLE pharma_controlled_log (
+    invoice_id TEXT NOT NULL REFERENCES invoices(id),
+    line_no INTEGER NOT NULL,
+    patient TEXT NOT NULL,
+    prescriber TEXT NOT NULL DEFAULT '',
+    prescription_no TEXT NOT NULL DEFAULT '',
+    notes TEXT,
+    recorded_by TEXT NOT NULL,
+    recorded_at TEXT NOT NULL,
+    PRIMARY KEY (invoice_id, line_no)
+  );
+  `;
+
 const MIGRATIONS: Migration[] = [
   { sql: V1 }, { sql: V2, rebuild: true }, { sql: V3, rebuild: true }, { sql: V4 }, { sql: V5, rebuild: true },
-  { sql: V6, mysql: 'tables' }, { sql: V7, mysql: 'tables' }, { sql: V8, mysql: 'tables' }, { sql: V9, mysql: 'tables' }
+  { sql: V6, mysql: 'tables' }, { sql: V7, mysql: 'tables' }, { sql: V8, mysql: 'tables' }, { sql: V9, mysql: 'tables' },
+  { sql: V10, mysql: { tables: true, steps: () => V10_MYSQL_STEPS } }
 ];
 
 /** Server databases began at this version: its schema is in schema-mysql.ts (tables and triggers without `since`). */
@@ -1518,6 +1667,7 @@ function copyBeforeUpdate(db: Db, file: string, now: Date): string | null {
 export function initDatabase(db: Db): void {
   migrate(db);
   ensureDefaults(db);
+  fillImageHashes(db);
 }
 
 export function schemaVersion(db: Db): number {
@@ -1528,8 +1678,8 @@ export function schemaVersion(db: Db): number {
  * Books a newer Qasa ERP has already upgraded (the Microsoft Store version can be a release behind the installer, and
  * both use the same data folder): this version doesn't know their tables or rules, so it changes nothing and says so.
  */
-function refuseNewer(version: number): void {
-  if (version > MIGRATIONS.length) throw new AppError(409, 'database_newer', { version, app: MIGRATIONS.length });
+function refuseNewer(version: number, app = MIGRATIONS.length): void {
+  if (version > app) throw new AppError(409, 'database_newer', { version, app });
 }
 
 /**
@@ -1560,7 +1710,8 @@ export function migrate(db: Db, target = MIGRATIONS.length): void {
   db.exec('CREATE TABLE IF NOT EXISTS schema_version (version INTEGER NOT NULL)');
   if (!db.prepare('SELECT version FROM schema_version').get()) db.prepare('INSERT INTO schema_version (version) VALUES (0)').run();
   let version = schemaVersion(db);
-  refuseNewer(version);
+  // (a target below the current version is what an older app would do: the upgrade test asks for that)
+  refuseNewer(version, Math.min(target, MIGRATIONS.length));
   while (version < target) {
     const migration = MIGRATIONS[version]!;
     const next = version + 1;
@@ -1615,18 +1766,39 @@ function migrateMysql(db: Db, options: { triggers?: boolean } = {}): void {
     const mysql = MIGRATIONS[version]!.mysql;
     if (!mysql) throw new Error(`Migration ${next} has no MariaDB/MySQL version`);
     if (mysql === 'tables') {
-      // the server commits each CREATE on its own: after an upgrade cut off half way (a dropped connection), the next
-      // start finds some of them made already and makes only the rest, instead of failing on "already exists" for good
-      const tables = new Set((db.prepare('SELECT table_name AS name FROM information_schema.tables WHERE table_schema = DATABASE()').all() as { name: string }[]).map((t) => t.name));
-      const triggers = new Set((db.prepare('SELECT trigger_name AS name FROM information_schema.triggers WHERE trigger_schema = DATABASE()').all() as { name: string }[]).map((t) => t.name));
-      for (const table of MYSQL_TABLES.filter((t) => t.since === next && !tables.has(t.name))) db.exec(mysqlTableSql(table.sql, collations));
-      for (const trigger of MYSQL_TRIGGERS.filter((t) => t.since === next && !triggers.has(t.name))) db.exec(trigger.sql);
+      createSinceObjects(db, next, collations);
+    } else if (typeof mysql === 'object') {
+      // new tables first (the new columns point at them), then each column and foreign key not there yet
+      createSinceObjects(db, next, collations);
+      for (const step of pendingMysqlSteps(mysql.steps(collations), mysqlSchemaState(db))) db.exec(step);
     } else {
       for (const step of mysql(collations)) db.exec(step);
     }
     version = next;
     db.prepare('UPDATE schema_version SET version = ?').run(version);
   }
+}
+
+/**
+ * The tables and triggers schema-mysql.ts marks `since` a version. The server commits each CREATE on its own: after an
+ * upgrade cut off half way (a dropped connection), the next start finds some of them made already and makes only the
+ * rest, instead of failing on "already exists" for good.
+ */
+function createSinceObjects(db: Db, version: number, collations: MysqlCollations): void {
+  const tables = new Set((db.prepare('SELECT table_name AS name FROM information_schema.tables WHERE table_schema = DATABASE()').all() as { name: string }[]).map((t) => t.name));
+  const triggers = new Set((db.prepare('SELECT trigger_name AS name FROM information_schema.triggers WHERE trigger_schema = DATABASE()').all() as { name: string }[]).map((t) => t.name));
+  for (const table of MYSQL_TABLES.filter((t) => t.since === version && !tables.has(t.name))) db.exec(mysqlTableSql(table.sql, collations));
+  for (const trigger of MYSQL_TRIGGERS.filter((t) => t.since === version && !triggers.has(t.name))) db.exec(trigger.sql);
+}
+
+/** The columns and foreign keys a server database has, for the migration steps to skip what is done. */
+function mysqlSchemaState(db: Db): { columns: Set<string>; foreignKeys: Set<string> } {
+  const columns = new Set((db.prepare('SELECT table_name AS t, column_name AS c FROM information_schema.columns WHERE table_schema = DATABASE()').all() as { t: string; c: string }[])
+    .map((r) => `${r.t}.${r.c}`));
+  const foreignKeys = new Set((db.prepare(`SELECT table_name AS t, column_name AS c, referenced_table_name AS p FROM information_schema.key_column_usage
+                                           WHERE table_schema = DATABASE() AND referenced_table_name IS NOT NULL`).all() as { t: string; c: string; p: string }[])
+    .map((r) => `${r.t}.${r.c}>${r.p}`));
+  return { columns, foreignKeys };
 }
 
 /** The company tables already in a server database (a Qasa company, or something else that must not be touched). */
@@ -1714,6 +1886,11 @@ function ensureDefaults(db: Db): void {
         .run(randomUUID(), now);
     }
 
+    // 1.1: batches and expiry dates (Settings → Stock)
+    setting.run('near_expiry_days', '90');
+    setting.run('expired_sales', 'block');
+    setting.run('default_track_expiry', '0');
+
     const warehouses = (db.prepare('SELECT COUNT(*) AS n FROM warehouses').get() as { n: number }).n;
     if (warehouses === 0) {
       const account = accountExists(db, '1371') && !hasChildren(db, '1371') ? '1371' : '137';
@@ -1721,6 +1898,38 @@ function ensureDefaults(db: Db): void {
         .run(randomUUID(), 'MAIN', 'المخزن الرئيسي', 'Main warehouse', 'کۆگای سەرەکی', account, now);
     }
   });
+}
+
+/** Pictures hashed per start-up, so a large picture table never holds the start up for long. */
+export const IMAGE_HASHES_PER_START = 50;
+
+/** The SHA-256 (hex) of a picture, or null where hashing is not available (the website demo). */
+export function imageSha256(data: Uint8Array): string | null {
+  try {
+    return createHash('sha256').update(data).digest('hex');
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Fills in the content hash of pictures saved before 1.1 (a shop sees when a picture changed by it), a few each start.
+ * Returns how many it filled.
+ */
+export function fillImageHashes(db: Db, limit = IMAGE_HASHES_PER_START): number {
+  const rows = db.prepare('SELECT item_id, data FROM item_images WHERE sha256 IS NULL ORDER BY item_id LIMIT ?').all(limit) as { item_id: string; data: Uint8Array }[];
+  if (!rows.length) return 0;
+  let filled = 0;
+  transaction(db, () => {
+    const set = db.prepare('UPDATE item_images SET sha256 = ? WHERE item_id = ? AND sha256 IS NULL');
+    for (const r of rows) {
+      const hash = imageSha256(r.data);
+      if (!hash) return;
+      set.run(hash, r.item_id);
+      filled += 1;
+    }
+  });
+  return filled;
 }
 
 let depth = 0;

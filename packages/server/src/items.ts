@@ -1,10 +1,11 @@
 import { randomUUID } from 'node:crypto';
-import { isCurrency, isMinorAmount, isUnit, normalizeForSearch, type CurrencyCode, type Names, type UnitCode } from '@qasa/core';
+import { isCurrency, isMinorAmount, isUnit, normalizeForSearch, type CurrencyCode, type ItemUnit, type Names, type UnitCode } from '@qasa/core';
 import type { Db } from './db.ts';
 import { nextSequence, transaction } from './db.ts';
 import { audit } from './audit.ts';
 import { conflict, invalid, notFound } from './errors.ts';
 import { assertWithinLimit } from './license.ts';
+import { assertItemUnits, replaceItemUnits, unitsByItem, type ItemUnitView } from './item-units.ts';
 
 // ——— Warehouses (المخازن) ———
 
@@ -98,6 +99,11 @@ export interface ItemInput {
   saleCurrency: CurrencyCode;
   trackStock?: boolean | undefined;
   active?: boolean | undefined;
+  /** 1.1: the other units (absent on an update: kept as they are) */
+  units?: ItemUnit[] | undefined;
+  /** the unit sale and purchase lines start in (null: the base unit; absent on an update: kept) */
+  saleUnit?: UnitCode | null | undefined;
+  purchaseUnit?: UnitCode | null | undefined;
 }
 
 export interface ItemView {
@@ -114,19 +120,26 @@ export interface ItemView {
   qtyMilli: number;
   value: number;
   hasMoves: boolean;
+  /** 1.1: the other units, the default sale and purchase units (null: the base unit), and when the item last changed */
+  units: ItemUnitView[];
+  saleUnit: UnitCode | null;
+  purchaseUnit: UnitCode | null;
+  updatedAt: string | null;
 }
 
 interface ItemRow {
   id: string; code: string; barcode: string | null; name_ar: string; name_en: string; name_ku: string; unit: UnitCode;
   sale_price: number; sale_currency: CurrencyCode; track_stock: number; active: number;
+  sale_unit: UnitCode | null; purchase_unit: UnitCode | null; updated_at: string | null;
   qty: number | null; value: number | null; moves: number | null;
 }
 
-function toView(r: ItemRow): ItemView {
+function toView(r: ItemRow, units: ItemUnitView[] = []): ItemView {
   return {
     id: r.id, code: r.code, barcode: r.barcode ?? '', name: { ar: r.name_ar, en: r.name_en, ku: r.name_ku }, unit: r.unit,
     salePrice: r.sale_price, saleCurrency: r.sale_currency, trackStock: r.track_stock === 1, active: r.active === 1,
-    qtyMilli: r.qty ?? 0, value: r.value ?? 0, hasMoves: (r.moves ?? 0) > 0
+    qtyMilli: r.qty ?? 0, value: r.value ?? 0, hasMoves: (r.moves ?? 0) > 0,
+    units, saleUnit: r.sale_unit ?? null, purchaseUnit: r.purchase_unit ?? null, updatedAt: r.updated_at ?? null
   };
 }
 
@@ -157,16 +170,19 @@ export function listItems(
 ): ItemView[] {
   const where = filters.active === undefined ? '' : `WHERE i.active = ${filters.active ? 1 : 0}`;
   const q = filters.q ? normalizeForSearch(filters.q) : '';
+  const units = unitsByItem(db);
+  // a unit's barcode finds its item too
+  const unitBarcodes = (id: string) => (units.get(id) ?? []).map((u) => u.barcode).join(' ');
   return itemRows(db, where, [], filters.warehouseId ? [filters.warehouseId] : warehouses)
-    .filter((r) => !q || normalizeForSearch(`${r.code} ${r.barcode ?? ''} ${r.name_ar} ${r.name_en} ${r.name_ku}`).includes(q))
-    .map(toView);
+    .filter((r) => !q || normalizeForSearch(`${r.code} ${r.barcode ?? ''} ${unitBarcodes(r.id)} ${r.name_ar} ${r.name_en} ${r.name_ku}`).includes(q))
+    .map((r) => toView(r, units.get(r.id)));
 }
 
 /** An item with its stock in `warehouses` (null: every warehouse). */
 export function getItem(db: Db, id: string, warehouses: WarehouseFilter = null): ItemView {
   const row = itemRows(db, 'WHERE i.id = ?', [id], warehouses)[0];
   if (!row) throw notFound('item');
-  return toView(row);
+  return toView(row, unitsByItem(db, [id]).get(id));
 }
 
 function assertItem(db: Db, input: ItemInput, id: string | null): void {
@@ -181,6 +197,13 @@ function assertItem(db: Db, input: ItemInput, id: string | null): void {
   if (code && db.prepare("SELECT 1 FROM items WHERE code = ? AND id <> COALESCE(?, '')").get(code, id ?? null)) throw conflict('code_exists');
   const barcode = input.barcode?.trim();
   if (barcode && db.prepare("SELECT 1 FROM items WHERE barcode = ? AND id <> COALESCE(?, '')").get(barcode, id ?? null)) throw conflict('barcode_exists');
+  if (input.unit === 'service' && input.units?.length) throw invalid([{ code: 'unit_invalid' }]);
+  const current = id ? (db.prepare('SELECT sale_unit, purchase_unit FROM items WHERE id = ?').get(id) as { sale_unit: string | null; purchase_unit: string | null } | undefined) : undefined;
+  assertItemUnits(db, {
+    unit: input.unit, barcode: input.barcode, units: input.units,
+    saleUnit: input.saleUnit === undefined ? current?.sale_unit : input.saleUnit,
+    purchaseUnit: input.purchaseUnit === undefined ? current?.purchase_unit : input.purchaseUnit
+  }, id);
 }
 
 export function createItem(db: Db, input: ItemInput, user: string): ItemView {
@@ -191,11 +214,14 @@ export function createItem(db: Db, input: ItemInput, user: string): ItemView {
     while (!code || db.prepare('SELECT 1 FROM items WHERE code = ?').get(code)) {
       code = `I-${String(nextSequence(db, 'item')).padStart(4, '0')}`;
     }
-    db.prepare(`INSERT INTO items (id, code, barcode, name_ar, name_en, name_ku, unit, sale_price, sale_currency, track_stock, active, created_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+    const now = new Date().toISOString();
+    db.prepare(`INSERT INTO items (id, code, barcode, name_ar, name_en, name_ku, unit, sale_price, sale_currency, track_stock, active, created_at,
+                                   sale_unit, purchase_unit, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
       .run(id, code, input.barcode?.trim() || null, input.name.ar.trim(), input.name.en.trim(), input.name.ku.trim(), input.unit,
         input.salePrice, input.saleCurrency, input.unit === 'service' || input.trackStock === false ? 0 : 1, input.active === false ? 0 : 1,
-        new Date().toISOString());
+        now, input.saleUnit ?? null, input.purchaseUnit ?? null, now);
+    if (input.units?.length) replaceItemUnits(db, id, input.units);
     audit(db, user, 'create', 'item', id, { code });
   });
   return getItem(db, id);
@@ -204,14 +230,19 @@ export function createItem(db: Db, input: ItemInput, user: string): ItemView {
 export function updateItem(db: Db, id: string, input: ItemInput, user: string): ItemView {
   const current = getItem(db, id);
   assertItem(db, input, id);
+  // the base unit is what stock and every posted line count in: it changes only while nothing has moved
+  if (input.unit !== current.unit && current.hasMoves) throw conflict('item_has_moves');
   const trackStock = input.unit === 'service' || input.trackStock === false ? false : true;
   // Switching stock tracking on or off would leave the stock and the books telling different stories.
   if (trackStock !== current.trackStock && current.hasMoves) throw conflict('item_has_moves');
   transaction(db, () => {
     db.prepare(`UPDATE items SET code = ?, barcode = ?, name_ar = ?, name_en = ?, name_ku = ?, unit = ?, sale_price = ?, sale_currency = ?,
-                track_stock = ?, active = ? WHERE id = ?`)
+                track_stock = ?, active = ?, sale_unit = ?, purchase_unit = ?, updated_at = ? WHERE id = ?`)
       .run(input.code?.trim() || current.code, input.barcode?.trim() || null, input.name.ar.trim(), input.name.en.trim(), input.name.ku.trim(),
-        input.unit, input.salePrice, input.saleCurrency, trackStock ? 1 : 0, input.active === false ? 0 : 1, id);
+        input.unit, input.salePrice, input.saleCurrency, trackStock ? 1 : 0, input.active === false ? 0 : 1,
+        input.saleUnit === undefined ? current.saleUnit : input.saleUnit, input.purchaseUnit === undefined ? current.purchaseUnit : input.purchaseUnit,
+        new Date().toISOString(), id);
+    if (input.units) replaceItemUnits(db, id, input.units);
     audit(db, user, 'update', 'item', id, input);
   });
   return getItem(db, id);
@@ -229,7 +260,7 @@ export function deleteItem(db: Db, id: string, user: string): void {
   transaction(db, () => {
     // what belongs to the item alone goes with it: its picture, its price-list prices and its car-part details
     // (and its place on the item list a stock count fixed when it started: that is no document)
-    for (const table of ['item_images', 'item_prices', 'part_fitments', 'part_numbers', 'part_details', 'stock_count_items']) {
+    for (const table of ['item_images', 'item_prices', 'part_fitments', 'part_numbers', 'part_details', 'stock_count_items', 'item_units', 'pharma_details']) {
       db.prepare(`DELETE FROM ${table} WHERE item_id = ?`).run(id);
     }
     db.prepare('DELETE FROM items WHERE id = ?').run(id);
@@ -292,6 +323,19 @@ export function itemMoves(db: Db, itemId: string, warehouses: WarehouseFilter = 
       sourceId: r.source_id, sourceNumber: r.number, balanceQtyMilli: balance
     };
   });
+}
+
+/**
+ * A scanned barcode: an item's own (its base unit) or one of its units' (that unit). Inactive items are found too, as
+ * by the item list; the screen decides.
+ */
+export function findByBarcode(db: Db, barcode: string, warehouses: WarehouseFilter = null): { item: ItemView | null; unit: UnitCode | null } {
+  const code = barcode.trim();
+  if (!code) return { item: null, unit: null };
+  const own = db.prepare('SELECT id FROM items WHERE barcode = ?').get(code) as { id: string } | undefined;
+  if (own) return { item: getItem(db, own.id, warehouses), unit: null };
+  const unit = db.prepare('SELECT item_id, unit FROM item_units WHERE barcode = ?').get(code) as { item_id: string; unit: UnitCode } | undefined;
+  return unit ? { item: getItem(db, unit.item_id, warehouses), unit: unit.unit } : { item: null, unit: null };
 }
 
 export function addStockMove(db: Db, move: { itemId: string; warehouseId: string; date: string; qtyMilli: number; value: number; sourceType: string; sourceId: string }): void {

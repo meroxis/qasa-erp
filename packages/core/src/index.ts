@@ -8,6 +8,8 @@ export * from './journal.ts';
 export * from './reports.ts';
 export * from './inventory.ts';
 export * from './invoices.ts';
+export * from './units.ts';
+export * from './batches.ts';
 export * from './plans.ts';
 export * from './version.ts';
 export * from './final-accounts.ts';

@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import { BUILT_IN_FEATURES } from './features.ts';
 import { checkBranchRequest, filterBranchResult, isBranchLimited, userBranchLists } from './branches.ts';
-import { APP_VERSION, BUSINESS_TYPES } from '@qasa/core';
+import { APP_VERSION, BUSINESS_TYPES, MAX_ITEM_UNITS, MAX_UNIT_FACTOR_MILLI, UNIT_CODES } from '@qasa/core';
 import type { Db } from './db.ts';
 import { AppError, conflict, invalid } from './errors.ts';
 import {
@@ -18,7 +18,7 @@ import { getSettings, lockPeriod, lockedPeriods, unlockPeriod, updateSettings } 
 import { listAudit } from './audit.ts';
 import { createParty, deleteParty, getParty, isForeignKeyFailure, listParties, partyStatement, updateParty } from './parties.ts';
 import {
-  createItem, createWarehouse, deleteItem, getItem, itemMoves, itemStock, listItems, listWarehouses, updateItem, updateWarehouse
+  createItem, createWarehouse, deleteItem, findByBarcode, getItem, itemMoves, itemStock, listItems, listWarehouses, updateItem, updateWarehouse
 } from './items.ts';
 import { activateLicense, planStatus, removeLicense, startTrial } from './license.ts';
 import { cancelInvoice, createInvoice, deleteInvoice, getInvoice, listInvoices, postInvoice, updateInvoice } from './invoices.ts';
@@ -78,16 +78,31 @@ const partySchema = z.object({
   active: z.boolean().optional()
 });
 
+// one list of units (core UNITS), never a second one written here
+const unitCode = z.enum(UNIT_CODES);
+
 const itemSchema = z.object({
   code: z.string().max(24).optional(),
   barcode: z.string().max(64).optional(),
   name: names,
-  unit: z.enum(['piece', 'carton', 'box', 'set', 'kg', 'm', 'l', 'service']),
+  unit: unitCode,
   salePrice: amount,
   saleCurrency: currency,
   trackStock: z.boolean().optional(),
-  active: z.boolean().optional()
+  active: z.boolean().optional(),
+  // 1.1: the other units (boxes, strips …), each with how many base units it holds (thousandths), a barcode and a price
+  units: z.array(z.object({
+    unit: unitCode,
+    factorMilli: z.number().int().positive().max(MAX_UNIT_FACTOR_MILLI),
+    barcode: z.string().max(64).optional(),
+    salePrice: amount.nullable().optional()
+  })).max(MAX_ITEM_UNITS).optional(),
+  saleUnit: unitCode.nullable().optional(),
+  purchaseUnit: unitCode.nullable().optional()
 });
+
+/** A document line's quantity: a base quantity (as before 1.1), or one of the item's units and the quantity typed in it. */
+const lineQty = { qtyMilli: z.number().int().optional(), unit: unitCode.optional(), unitQtyMilli: z.number().int().positive().max(1e12).optional() };
 
 const invoiceSchema = z.object({
   kind: z.enum(['sale', 'purchase']),
@@ -102,7 +117,7 @@ const invoiceSchema = z.object({
   notes: z.string().max(1000).optional(),
   lines: z.array(z.object({
     itemId: z.string().min(1).max(64),
-    qtyMilli: z.number().int(),
+    ...lineQty,
     unitPrice: z.number().int(),
     description: z.string().max(500).optional()
   })).max(500)
@@ -123,7 +138,7 @@ const stockDocSchema = z.object({
   toWarehouseId: z.string().max(64).optional(),
   counterAccountCode: z.string().max(12).optional(),
   notes: z.string().max(1000).optional(),
-  lines: z.array(z.object({ itemId: z.string().min(1).max(64), qtyMilli: z.number().int(), unitCost: z.number().int().optional() })).max(1000)
+  lines: z.array(z.object({ itemId: z.string().min(1).max(64), ...lineQty, unitCost: z.number().int().optional() })).max(1000)
 });
 
 const idParam = z.object({ id: z.string().min(1).max(64) });
@@ -477,7 +492,12 @@ export function apiRoutes(db: Db, options: { demo?: boolean; extensions?: readon
     return updateWarehouse(db, parse(idParam, req.params).id, body, userOf(req));
   });
   app.get('/api/items', async (req) => {
-    const q = parse(z.object({ q: z.string().max(100).optional(), warehouseId: z.string().max(64).optional(), active: z.enum(['true', 'false']).optional() }), req.query);
+    const q = parse(z.object({
+      q: z.string().max(100).optional(), warehouseId: z.string().max(64).optional(), active: z.enum(['true', 'false']).optional(),
+      barcode: z.string().min(1).max(64).optional()
+    }), req.query);
+    // a scan at the counter: the item and the unit the barcode belongs to (an item's own barcode: its base unit)
+    if (q.barcode) return findByBarcode(db, q.barcode, q.warehouseId ? [q.warehouseId] : warehousesOfUser(req));
     // without a warehouse, a user limited to branches gets the stock of their branches' warehouses (null: every one)
     return listItems(db, { q: q.q, warehouseId: q.warehouseId, active: q.active === undefined ? undefined : q.active === 'true' }, warehousesOfUser(req));
   });

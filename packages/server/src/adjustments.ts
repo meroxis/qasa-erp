@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { z } from 'zod';
-import { costOut, isIsoDate, lineAmount, todayIso, type EntryInput, type Names, type UnitCode } from '@qasa/core';
+import { costOut, isIsoDate, lineAmount, todayIso, UNIT_CODES, type EntryInput, type Names, type UnitCode } from '@qasa/core';
 import type { Db } from './db.ts';
 import { nextSequence, transaction } from './db.ts';
 import { audit } from './audit.ts';
@@ -11,6 +11,7 @@ import { addStockMove, stockOf } from './items.ts';
 import { isPeriodLocked, readSetting, writeSetting } from './settings.ts';
 import type { Actor } from './auth.ts';
 import type { ApiExtension, ApiRequest } from './routes.ts';
+import { resolveLines } from './item-units.ts';
 
 /**
  * Stock adjustments (every plan): goods that leave a warehouse without a sale (damaged, lost, expired, used in the
@@ -47,7 +48,21 @@ export const DEFAULT_ADJUSTMENT_ACCOUNTS: AdjustmentAccounts = {
 
 const SETTING = 'adjustment_accounts';
 
-export interface AdjustmentLineInput { itemId: string; qtyMilli: number; unitCost?: number | undefined }
+/**
+ * qtyMilli: + in, − out, in base units. unit + unitQtyMilli (1.1): the quantity typed in one of the item's units (with
+ * its sign); unitCost is then per that unit.
+ */
+export interface AdjustmentLineInput {
+  itemId: string;
+  qtyMilli: number;
+  unitCost?: number | undefined;
+  unit?: UnitCode | undefined;
+  unitQtyMilli?: number | undefined;
+  unitFactorMilli?: number | undefined;
+}
+
+/** What a request may send for a line: a base quantity, or a unit and the quantity typed in it. */
+export type AdjustmentLineRequest = Omit<AdjustmentLineInput, 'qtyMilli' | 'unitFactorMilli'> & { qtyMilli?: number | undefined };
 
 export interface AdjustmentInput {
   date: string;
@@ -72,6 +87,10 @@ export interface AdjustmentLineView {
   value: number | null;
   /** On hand in the warehouse now. */
   stockMilli: number;
+  /** 1.1: the unit the line was typed in (null: the base unit), its factor then and the quantity as typed */
+  lineUnit: UnitCode | null;
+  unitFactorMilli: number | null;
+  unitQtyMilli: number | null;
 }
 
 export interface AdjustmentSummary {
@@ -206,9 +225,13 @@ function summaryOf(db: Db, r: Row, lineCount: number): AdjustmentSummary {
 
 export function getAdjustment(db: Db, id: string): AdjustmentView {
   const r = loadRow(db, id);
-  const lines = db.prepare(`SELECT l.seq, l.item_id, l.qty_milli, l.unit_cost, i.code, i.name_ar, i.name_en, i.name_ku, i.unit
+  const lines = db.prepare(`SELECT l.seq, l.item_id, l.qty_milli, l.unit_cost, l.unit AS line_unit, l.unit_factor_milli, l.unit_qty_milli,
+                                   i.code, i.name_ar, i.name_en, i.name_ku, i.unit
                             FROM stock_adjustment_lines l JOIN items i ON i.id = l.item_id WHERE l.adjustment_id = ? ORDER BY l.seq`)
-    .all(id) as { seq: number; item_id: string; qty_milli: number; unit_cost: number | null; code: string; name_ar: string; name_en: string; name_ku: string; unit: UnitCode }[];
+    .all(id) as {
+      seq: number; item_id: string; qty_milli: number; unit_cost: number | null; code: string; name_ar: string; name_en: string; name_ku: string; unit: UnitCode;
+      line_unit: UnitCode | null; unit_factor_milli: number | null; unit_qty_milli: number | null;
+    }[];
   const moved = r.status === 'draft' ? new Map<string, { qty: number; value: number }[]>() : movedValues(db, id);
   const account = lossAccountOf(db, r);
   const accounts = loadAccounts(db);
@@ -232,7 +255,9 @@ export function getAdjustment(db: Db, id: string): AdjustmentView {
       return {
         seq: l.seq, itemId: l.item_id, itemCode: l.code, itemName: { ar: l.name_ar, en: l.name_en, ku: l.name_ku }, unit: l.unit,
         qtyMilli: Number(l.qty_milli), unitCost: l.unit_cost === null ? null : Number(l.unit_cost), value: m ? m.value : null,
-        stockMilli: stockOf(db, l.item_id, r.warehouse_id).qtyMilli
+        stockMilli: stockOf(db, l.item_id, r.warehouse_id).qtyMilli,
+        lineUnit: l.line_unit ?? null, unitFactorMilli: l.unit_factor_milli === null ? null : Number(l.unit_factor_milli),
+        unitQtyMilli: l.unit_qty_milli === null ? null : Number(l.unit_qty_milli)
       };
     }),
     actions: actionsFor(r)
@@ -303,11 +328,17 @@ function assertInput(db: Db, input: AdjustmentInput): void {
 
 function writeLines(db: Db, id: string, lines: AdjustmentLineInput[]): void {
   db.prepare('DELETE FROM stock_adjustment_lines WHERE adjustment_id = ?').run(id);
-  const insert = db.prepare('INSERT INTO stock_adjustment_lines (adjustment_id, seq, item_id, qty_milli, unit_cost) VALUES (?, ?, ?, ?, ?)');
-  lines.forEach((l, i) => insert.run(id, i + 1, l.itemId, l.qtyMilli, l.qtyMilli > 0 && l.unitCost !== undefined ? l.unitCost : null));
+  const insert = db.prepare(`INSERT INTO stock_adjustment_lines (adjustment_id, seq, item_id, qty_milli, unit_cost, unit, unit_factor_milli, unit_qty_milli)
+                             VALUES (?, ?, ?, ?, ?, ?, ?, ?)`);
+  lines.forEach((l, i) => insert.run(id, i + 1, l.itemId, l.qtyMilli, l.qtyMilli > 0 && l.unitCost !== undefined ? l.unitCost : null,
+    l.unit ?? null, l.unit ? l.unitFactorMilli ?? null : null, l.unit ? l.unitQtyMilli ?? null : null));
 }
 
-export function createAdjustment(db: Db, input: AdjustmentInput, actor: Actor): AdjustmentView {
+const withUnits = <T extends { lines: (AdjustmentLineInput | AdjustmentLineRequest)[] }>(db: Db, input: T): T =>
+  (Array.isArray(input.lines) ? { ...input, lines: resolveLines(db, input.lines) } : input);
+
+export function createAdjustment(db: Db, raw: AdjustmentInput | (Omit<AdjustmentInput, 'lines'> & { lines: AdjustmentLineRequest[] }), actor: Actor): AdjustmentView {
+  const input = withUnits(db, raw) as AdjustmentInput;
   assertInput(db, input);
   const id = randomUUID();
   transaction(db, () => {
@@ -321,9 +352,10 @@ export function createAdjustment(db: Db, input: AdjustmentInput, actor: Actor): 
   return getAdjustment(db, id);
 }
 
-export function updateAdjustment(db: Db, id: string, input: AdjustmentInput, actor: Actor): AdjustmentView {
+export function updateAdjustment(db: Db, id: string, raw: AdjustmentInput | (Omit<AdjustmentInput, 'lines'> & { lines: AdjustmentLineRequest[] }), actor: Actor): AdjustmentView {
   const row = loadRow(db, id);
   if (row.status !== 'draft') throw conflict('action_not_allowed', { status: row.status, action: 'edit' });
+  const input = withUnits(db, raw) as AdjustmentInput;
   assertInput(db, input);
   transaction(db, () => {
     // the editor is responsible for the draft now (as for a voucher)
@@ -395,7 +427,7 @@ export function postAdjustment(db: Db, id: string, actor: Actor, lang: Adjustmen
       moves.push({ itemId: l.itemId, qtyMilli: l.qtyMilli, value: -value });
     } else {
       let value: number;
-      if (l.unitCost !== null) value = lineAmount(l.qtyMilli, l.unitCost);
+      if (l.unitCost !== null) value = lineAmount(l.lineUnit && l.unitQtyMilli !== null ? l.unitQtyMilli : l.qtyMilli, l.unitCost);
       else if (s.qtyMilli > 0) value = Math.round((s.value * l.qtyMilli) / s.qtyMilli);
       else {
         errors.push({ code: 'adj_cost_required', line: l.seq });
@@ -784,7 +816,11 @@ const adjustmentBody = z.object({
   date, warehouseId: id, reason: z.enum(ADJUSTMENT_REASONS), accountCode: accountCode.optional(), jobId: id.optional(),
   notes: z.string().max(500).optional(),
   // as many lines as a full count can make
-  lines: z.array(z.object({ itemId: id, qtyMilli: qty, unitCost: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER).optional() })).min(1).max(COUNT_LIMIT)
+  // 1.1: a line in one of the item's units (unitQtyMilli, signed as qtyMilli); the base quantity is worked out
+  lines: z.array(z.object({
+    itemId: id, qtyMilli: qty.optional(), unitCost: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER).optional(),
+    unit: z.enum(UNIT_CODES).optional(), unitQtyMilli: qty.optional()
+  })).min(1).max(COUNT_LIMIT)
 });
 
 export const adjustmentsApi: ApiExtension = {

@@ -15,6 +15,8 @@ import { worksApi, type JobSummaryView } from '../industry/works-api.ts';
 import { reverseDefaultDate } from '../industry/ReverseModal.tsx';
 import { printDocument } from '../industry/printing.ts';
 import { CountSaver, costFor, fromSession, nothingToCount, useLeaveGuard, type CountSessionView, type SaveState } from '../industry/count-session.ts';
+import { UnitPicker } from '../industry/UnitPicker.tsx';
+import { baseQty, type LineUnit } from '../industry/units.ts';
 
 /**
  * تسوية المخزون — stock adjustments (damaged, lost, expired, used, issued to a job) and the stock count.
@@ -142,7 +144,8 @@ function AccountsSettings({ onClose }: { onClose(): void }) {
 
 // ——— editor ———
 
-interface Row { key: number; itemId: string; dir: 'out' | 'in'; qtyMilli: number | null; unitCost: number | null }
+/** qtyMilli: as typed in the line's unit (null: the base unit); unitCost: per that unit. */
+interface Row { key: number; itemId: string; dir: 'out' | 'in'; qtyMilli: number | null; unitCost: number | null; unit?: LineUnit }
 let rowKey = 1;
 const emptyRow = (dir: 'out' | 'in' = 'out'): Row => ({ key: rowKey++, itemId: '', dir, qtyMilli: 1000, unitCost: null });
 
@@ -183,7 +186,10 @@ export function StockAdjustmentEditor({ id }: { id?: string }) {
       setReason(d.reason);
       setJobId(d.job?.id ?? '');
       setNotes(d.notes);
-      setRows(d.lines.map((l) => ({ key: rowKey++, itemId: l.itemId, dir: l.qtyMilli < 0 ? 'out' : 'in', qtyMilli: Math.abs(l.qtyMilli), unitCost: l.unitCost })));
+      setRows(d.lines.map((l) => ({
+        key: rowKey++, itemId: l.itemId, dir: l.qtyMilli < 0 ? 'out' : 'in',
+        qtyMilli: Math.abs(l.lineUnit && l.unitQtyMilli !== null ? l.unitQtyMilli : l.qtyMilli), unitCost: l.unitCost, unit: l.lineUnit
+      })));
       setReady(true);
     }, setLoadError);
   }, [id]);
@@ -212,7 +218,7 @@ export function StockAdjustmentEditor({ id }: { id?: string }) {
     const it = itemById.get(r.itemId);
     if (!it) return 0;
     if (r.dir === 'in' && r.unitCost !== null) return lineAmount(r.qtyMilli ?? 0, r.unitCost);
-    return lineAmount(r.qtyMilli ?? 0, averageCost(it.qtyMilli, it.value));
+    return lineAmount(baseQty(it, r.unit ?? null, r.qtyMilli ?? 0) ?? 0, averageCost(it.qtyMilli, it.value));
   };
   const totalOut = lines.filter((r) => r.dir === 'out').reduce((s, r) => s + valueOf(r), 0);
   const totalIn = lines.filter((r) => r.dir === 'in').reduce((s, r) => s + valueOf(r), 0);
@@ -240,7 +246,8 @@ export function StockAdjustmentEditor({ id }: { id?: string }) {
       ...(reason === 'job' && jobId ? { jobId } : {}),
       lines: lines.map((r) => ({
         itemId: r.itemId,
-        qtyMilli: (r.dir === 'out' ? -1 : 1) * (r.qtyMilli ?? 0),
+        qtyMilli: (r.dir === 'out' ? -1 : 1) * ((r.unit ? baseQty(itemById.get(r.itemId), r.unit, r.qtyMilli ?? 0) : r.qtyMilli) ?? 0),
+        ...(r.unit ? { unit: r.unit, unitQtyMilli: (r.dir === 'out' ? -1 : 1) * (r.qtyMilli ?? 0) } : {}),
         ...(r.dir === 'in' && r.unitCost !== null ? { unitCost: r.unitCost } : {})
       }))
     };
@@ -350,7 +357,7 @@ export function StockAdjustmentEditor({ id }: { id?: string }) {
                   )}
                   <td>
                     <QtyInput value={r.qtyMilli} onChange={(v) => update(r.key, { qtyMilli: v })} ariaLabel={t('qty')} />
-                    {it && <div className="muted small" style={{ textAlign: 'end', marginTop: 2 }}>{unitName(i18n, it.unit)}</div>}
+                    <UnitPicker item={it} value={r.unit ?? null} onChange={(unit) => update(r.key, { unit })} />
                   </td>
                   <td>
                     {r.dir === 'in'
@@ -499,7 +506,11 @@ export function StockAdjustmentDetail({ id }: { id: string }) {
                 <td><span className="ltr">{l.itemCode}</span></td>
                 <td>{i18n.name(l.itemName)}</td>
                 <td><span className={`chip ${l.qtyMilli < 0 ? 'bad' : 'ok'}`}>{l.qtyMilli < 0 ? t('adj_outShort') : t('adj_inShort')}</span></td>
-                <td className="amount">{qtyText(i18n, Math.abs(l.qtyMilli))} <span className="muted small">{unitName(i18n, l.unit)}</span></td>
+                <td className="amount">
+                  {l.lineUnit && l.unitQtyMilli !== null
+                    ? <>{qtyText(i18n, Math.abs(l.unitQtyMilli))} <span className="muted small">{unitName(i18n, l.lineUnit)}</span></>
+                    : <>{qtyText(i18n, Math.abs(l.qtyMilli))} <span className="muted small">{unitName(i18n, l.unit)}</span></>}
+                </td>
                 <td className="amount">
                   {l.value !== null ? i18n.money(Math.abs(l.value), 'IQD') : l.qtyMilli > 0 && l.unitCost !== null ? i18n.money(lineAmount(l.qtyMilli, l.unitCost), 'IQD') : ''}
                 </td>

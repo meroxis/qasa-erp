@@ -13,7 +13,8 @@ export interface AdjustmentAccounts {
   damaged: string; lost: string; expired: string; internal_use: string; job: string; other: string; count: string; gain: string;
 }
 
-export interface AdjustmentLineInput { itemId: string; qtyMilli: number; unitCost?: number }
+/** qtyMilli: + in, − out, base units; or (1.1) unit + unitQtyMilli (signed the same way), with unitCost per that unit. */
+export interface AdjustmentLineInput { itemId: string; qtyMilli: number; unitCost?: number; unit?: UnitCode; unitQtyMilli?: number }
 
 export interface AdjustmentInput {
   date: string;
@@ -31,6 +32,7 @@ export interface AdjustmentLineView {
   /** IQD that moved (out negative), once posted */
   value: number | null;
   stockMilli: number;
+  lineUnit: UnitCode | null; unitFactorMilli: number | null; unitQtyMilli: number | null;
 }
 
 export interface AdjustmentSummary {

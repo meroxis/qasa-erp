@@ -15,6 +15,8 @@
 const ID = 'VARCHAR(191)';
 const WHEN = 'VARCHAR(40)';
 const WORD = 'VARCHAR(32)';
+/** a batch number (40 characters as kept, with room) */
+const BATCH = 'VARCHAR(64)';
 
 /** Collations: byte-for-byte text as in SQLite, and a case-insensitive one for user names. */
 export interface MysqlCollations { bin: string; ci: string }
@@ -108,7 +110,24 @@ export const MYSQL_TABLES: readonly MysqlObject[] = [
     )`
   },
   {
-    // SQLite's barcode index skips NULL and ''; the app stores no barcode as NULL, which a UNIQUE key allows many of
+    // before items, which point at it (a fresh server database makes the tables in this order)
+    name: 'item_categories',
+    since: 10,
+    sql: `CREATE TABLE item_categories (
+      id ${ID} NOT NULL PRIMARY KEY,
+      code ${ID} NOT NULL UNIQUE,
+      name_ar TEXT NOT NULL,
+      name_en TEXT NOT NULL,
+      name_ku TEXT NOT NULL,
+      sort INT NOT NULL DEFAULT 0,
+      active INT NOT NULL DEFAULT 1,
+      created_at ${WHEN} NOT NULL,
+      updated_at ${WHEN} NOT NULL
+    )`
+  },
+  {
+    // SQLite's barcode index skips NULL and ''; the app stores no barcode as NULL, which a UNIQUE key allows many of.
+    // The columns after created_at came with version 10 (ALTER ... ADD COLUMN puts them last, as SQLite does)
     name: 'items',
     sql: `CREATE TABLE items (
       id ${ID} NOT NULL PRIMARY KEY,
@@ -123,7 +142,29 @@ export const MYSQL_TABLES: readonly MysqlObject[] = [
       track_stock INT NOT NULL DEFAULT 1,
       active INT NOT NULL DEFAULT 1,
       created_at ${WHEN} NOT NULL,
-      UNIQUE KEY items_barcode (barcode)
+      category_id ${ID},
+      sale_unit ${WORD},
+      purchase_unit ${WORD},
+      track_batches INT NOT NULL DEFAULT 0,
+      track_expiry INT NOT NULL DEFAULT 0,
+      updated_at ${WHEN},
+      UNIQUE KEY items_barcode (barcode),
+      FOREIGN KEY (category_id) REFERENCES item_categories(id)
+    )`
+  },
+  {
+    // before the document lines, which point at it
+    name: 'item_batches',
+    since: 10,
+    sql: `CREATE TABLE item_batches (
+      id ${ID} NOT NULL PRIMARY KEY,
+      item_id ${ID} NOT NULL,
+      number ${BATCH} NOT NULL,
+      expiry ${WHEN},
+      created_at ${WHEN} NOT NULL,
+      UNIQUE KEY item_batches_number (item_id, number),
+      INDEX item_batches_expiry (expiry),
+      FOREIGN KEY (item_id) REFERENCES items(id)
     )`
   },
   {
@@ -258,9 +299,16 @@ export const MYSQL_TABLES: readonly MysqlObject[] = [
       cost BIGINT,
       source_line INT,
       discount_share BIGINT,
+      unit ${WORD},
+      unit_factor_milli BIGINT,
+      unit_qty_milli BIGINT,
+      batch_no ${BATCH},
+      expiry ${WHEN},
+      batch_id ${ID},
       PRIMARY KEY (invoice_id, line_no),
       FOREIGN KEY (invoice_id) REFERENCES invoices(id) ON DELETE CASCADE,
-      FOREIGN KEY (item_id) REFERENCES items(id)
+      FOREIGN KEY (item_id) REFERENCES items(id),
+      FOREIGN KEY (batch_id) REFERENCES item_batches(id)
     )`
   },
   {
@@ -320,9 +368,16 @@ export const MYSQL_TABLES: readonly MysqlObject[] = [
       qty_milli BIGINT NOT NULL CHECK (qty_milli > 0),
       unit_cost BIGINT CHECK (unit_cost IS NULL OR unit_cost >= 0),
       value BIGINT,
+      unit ${WORD},
+      unit_factor_milli BIGINT,
+      unit_qty_milli BIGINT,
+      batch_no ${BATCH},
+      expiry ${WHEN},
+      batch_id ${ID},
       PRIMARY KEY (doc_id, line_no),
       FOREIGN KEY (doc_id) REFERENCES stock_docs(id) ON DELETE CASCADE,
-      FOREIGN KEY (item_id) REFERENCES items(id)
+      FOREIGN KEY (item_id) REFERENCES items(id),
+      FOREIGN KEY (batch_id) REFERENCES item_batches(id)
     )`
   },
   {
@@ -645,6 +700,7 @@ export const MYSQL_TABLES: readonly MysqlObject[] = [
       mime ${WORD} NOT NULL CHECK (mime IN ('image/jpeg', 'image/png', 'image/webp')),
       data MEDIUMBLOB NOT NULL,
       updated_at ${WHEN} NOT NULL,
+      sha256 VARCHAR(64),
       FOREIGN KEY (item_id) REFERENCES items(id)
     )`
   },
@@ -957,9 +1013,16 @@ export const MYSQL_TABLES: readonly MysqlObject[] = [
       item_id ${ID} NOT NULL,
       qty_milli BIGINT NOT NULL CHECK (qty_milli <> 0),
       unit_cost BIGINT,
+      unit ${WORD},
+      unit_factor_milli BIGINT,
+      unit_qty_milli BIGINT,
+      batch_no ${BATCH},
+      expiry ${WHEN},
+      batch_id ${ID},
       PRIMARY KEY (adjustment_id, seq),
       FOREIGN KEY (adjustment_id) REFERENCES stock_adjustments(id),
-      FOREIGN KEY (item_id) REFERENCES items(id)
+      FOREIGN KEY (item_id) REFERENCES items(id),
+      FOREIGN KEY (batch_id) REFERENCES item_batches(id)
     )`
   },
   {
@@ -991,6 +1054,9 @@ export const MYSQL_TABLES: readonly MysqlObject[] = [
       item_id ${ID} NOT NULL,
       qty_milli BIGINT NOT NULL CHECK (qty_milli > 0),
       unit_price BIGINT NOT NULL CHECK (unit_price >= 0),
+      unit ${WORD},
+      unit_factor_milli BIGINT,
+      unit_qty_milli BIGINT,
       PRIMARY KEY (order_id, seq),
       FOREIGN KEY (order_id) REFERENCES purchase_orders(id),
       FOREIGN KEY (item_id) REFERENCES items(id)
@@ -1343,6 +1409,102 @@ export const MYSQL_TABLES: readonly MysqlObject[] = [
       FOREIGN KEY (count_id) REFERENCES stock_counts(id),
       FOREIGN KEY (item_id) REFERENCES items(id)
     )`
+  },
+  {
+    // many NULL barcodes are allowed by a UNIQUE key, as by SQLite's unique index; the app stores no barcode as NULL
+    name: 'item_units',
+    since: 10,
+    sql: `CREATE TABLE item_units (
+      item_id ${ID} NOT NULL,
+      unit ${WORD} NOT NULL,
+      factor_milli BIGINT NOT NULL CHECK (factor_milli > 0),
+      barcode ${ID},
+      sale_price BIGINT CHECK (sale_price IS NULL OR sale_price >= 0),
+      sort INT NOT NULL DEFAULT 0,
+      PRIMARY KEY (item_id, unit),
+      UNIQUE KEY item_units_barcode (barcode),
+      FOREIGN KEY (item_id) REFERENCES items(id)
+    )`
+  },
+  {
+    name: 'stock_batch_moves',
+    since: 10,
+    sql: `CREATE TABLE stock_batch_moves (
+      id BIGINT NOT NULL AUTO_INCREMENT PRIMARY KEY,
+      batch_id ${ID} NOT NULL,
+      item_id ${ID} NOT NULL,
+      warehouse_id ${ID} NOT NULL,
+      date ${WHEN} NOT NULL,
+      qty_milli BIGINT NOT NULL,
+      source_type ${WORD} NOT NULL,
+      source_id ${ID},
+      line_no INT,
+      created_at ${WHEN} NOT NULL,
+      INDEX stock_batch_moves_batch (batch_id, warehouse_id),
+      INDEX stock_batch_moves_item (item_id, warehouse_id),
+      INDEX stock_batch_moves_source (source_type, source_id),
+      FOREIGN KEY (batch_id) REFERENCES item_batches(id),
+      FOREIGN KEY (item_id) REFERENCES items(id),
+      FOREIGN KEY (warehouse_id) REFERENCES warehouses(id)
+    )`
+  },
+  {
+    name: 'invoice_payments',
+    since: 10,
+    sql: `CREATE TABLE invoice_payments (
+      id ${ID} NOT NULL PRIMARY KEY,
+      invoice_id ${ID} NOT NULL,
+      kind ${WORD} NOT NULL CHECK (kind IN ('pos', 'online')),
+      method ${WORD} NOT NULL CHECK (method IN ('cash', 'card', 'fib', 'zaincash', 'qi', 'account', 'other')),
+      account_code ${ID} NOT NULL,
+      amount BIGINT NOT NULL CHECK (amount > 0),
+      currency ${WORD} NOT NULL CHECK (currency IN ('IQD', 'USD')),
+      entry_id ${ID},
+      source VARCHAR(64),
+      reference VARCHAR(191),
+      created_by TEXT NOT NULL,
+      created_at ${WHEN} NOT NULL,
+      UNIQUE KEY invoice_payments_ref (source, reference),
+      INDEX invoice_payments_invoice (invoice_id),
+      FOREIGN KEY (invoice_id) REFERENCES invoices(id),
+      FOREIGN KEY (account_code) REFERENCES accounts(code),
+      FOREIGN KEY (entry_id) REFERENCES entries(id)
+    )`
+  },
+  {
+    name: 'pharma_details',
+    since: 10,
+    sql: `CREATE TABLE pharma_details (
+      item_id ${ID} NOT NULL PRIMARY KEY,
+      generic_name VARCHAR(200) NOT NULL DEFAULT '',
+      generic_key VARCHAR(200) NOT NULL DEFAULT '',
+      form ${WORD} NOT NULL DEFAULT 'other' CHECK (form IN ('tablet', 'capsule', 'syrup', 'suspension', 'injection', 'drops', 'cream', 'ointment', 'inhaler', 'suppository', 'sachet', 'spray', 'other')),
+      strength VARCHAR(60) NOT NULL DEFAULT '',
+      manufacturer VARCHAR(200) NOT NULL DEFAULT '',
+      rx_only INT NOT NULL DEFAULT 0,
+      controlled INT NOT NULL DEFAULT 0,
+      shelf VARCHAR(60) NOT NULL DEFAULT '',
+      updated_at ${WHEN} NOT NULL,
+      INDEX pharma_details_generic (generic_key),
+      FOREIGN KEY (item_id) REFERENCES items(id)
+    )`
+  },
+  {
+    // the app always writes every column (TEXT takes no default on every server)
+    name: 'pharma_controlled_log',
+    since: 10,
+    sql: `CREATE TABLE pharma_controlled_log (
+      invoice_id ${ID} NOT NULL,
+      line_no INT NOT NULL,
+      patient TEXT NOT NULL,
+      prescriber TEXT NOT NULL,
+      prescription_no TEXT NOT NULL,
+      notes TEXT,
+      recorded_by TEXT NOT NULL,
+      recorded_at ${WHEN} NOT NULL,
+      PRIMARY KEY (invoice_id, line_no),
+      FOREIGN KEY (invoice_id) REFERENCES invoices(id)
+    )`
   }
 ];
 
@@ -1393,8 +1555,71 @@ export const MYSQL_TRIGGERS: readonly MysqlObject[] = [
   trigger('installment_schedule_no_update', 'BEFORE UPDATE', 'installment_schedule', null, 'installment_contract_is_permanent', 6),
   trigger('installment_schedule_no_delete', 'BEFORE DELETE', 'installment_schedule', null, 'installment_contract_is_permanent', 6),
   trigger('installment_receipts_no_update', 'BEFORE UPDATE', 'installment_receipts', null, 'installment_contract_is_permanent', 6),
-  trigger('installment_receipts_no_delete', 'BEFORE DELETE', 'installment_receipts', null, 'installment_contract_is_permanent', 6)
+  trigger('installment_receipts_no_delete', 'BEFORE DELETE', 'installment_receipts', null, 'installment_contract_is_permanent', 6),
+  // 10: batch quantity moves are kept forever, as stock moves are
+  trigger('stock_batch_moves_no_update', 'BEFORE UPDATE', 'stock_batch_moves', null, 'stock_moves_are_permanent', 10),
+  trigger('stock_batch_moves_no_delete', 'BEFORE DELETE', 'stock_batch_moves', null, 'stock_moves_are_permanent', 10)
 ];
+
+/**
+ * A step of a server migration that changes a table already there (version 10 is the first). Each says what it adds,
+ * so a step already done (an upgrade cut off half way: the server commits each ALTER on its own) is skipped next time.
+ */
+export type MysqlStep =
+  | { kind: 'column'; table: string; column: string; sql: string }
+  | { kind: 'foreignKey'; table: string; column: string; parent: string; sql: string };
+
+const NAME = /^\w+$/;
+
+/** ALTER TABLE … ADD COLUMN, last in the table (as SQLite's ADD COLUMN puts it); skipped when the column is there. */
+export function mysqlAddColumn(table: string, column: string, definition: string): MysqlStep {
+  if (!NAME.test(table) || !NAME.test(column)) throw new Error(`bad name ${table}.${column}`);
+  return { kind: 'column', table, column, sql: `ALTER TABLE ${table} ADD COLUMN ${column} ${definition}` };
+}
+
+/** ALTER TABLE … ADD CONSTRAINT … FOREIGN KEY; skipped when the column already points at that table. */
+export function mysqlAddForeignKey(table: string, column: string, parent: string, parentColumn: string): MysqlStep {
+  if (![table, column, parent, parentColumn].every((n) => NAME.test(n))) throw new Error('bad name');
+  return {
+    kind: 'foreignKey', table, column, parent,
+    sql: `ALTER TABLE ${table} ADD CONSTRAINT ${table}_${column}_fk FOREIGN KEY (${column}) REFERENCES ${parent}(${parentColumn})`
+  };
+}
+
+const lineColumns = (table: string, batches: boolean): MysqlStep[] => [
+  mysqlAddColumn(table, 'unit', WORD),
+  mysqlAddColumn(table, 'unit_factor_milli', 'BIGINT'),
+  mysqlAddColumn(table, 'unit_qty_milli', 'BIGINT'),
+  ...(batches
+    ? [mysqlAddColumn(table, 'batch_no', BATCH), mysqlAddColumn(table, 'expiry', WHEN), mysqlAddColumn(table, 'batch_id', ID), mysqlAddForeignKey(table, 'batch_id', 'item_batches', 'id')]
+    : [])
+];
+
+/** Version 10 on a server database at version 9: the columns its tables gain (its new tables come from MYSQL_TABLES). */
+export const V10_MYSQL_STEPS: readonly MysqlStep[] = [
+  mysqlAddColumn('items', 'category_id', ID),
+  mysqlAddColumn('items', 'sale_unit', WORD),
+  mysqlAddColumn('items', 'purchase_unit', WORD),
+  mysqlAddColumn('items', 'track_batches', 'INT NOT NULL DEFAULT 0'),
+  mysqlAddColumn('items', 'track_expiry', 'INT NOT NULL DEFAULT 0'),
+  mysqlAddColumn('items', 'updated_at', WHEN),
+  mysqlAddForeignKey('items', 'category_id', 'item_categories', 'id'),
+  ...lineColumns('invoice_lines', true),
+  ...lineColumns('stock_doc_lines', true),
+  ...lineColumns('stock_adjustment_lines', true),
+  ...lineColumns('purchase_order_lines', false),
+  mysqlAddColumn('item_images', 'sha256', 'VARCHAR(64)')
+];
+
+/** What a server database has already, for pendingMysqlSteps: "table.column" and "table.column>parent". */
+export interface MysqlSchemaState { columns: ReadonlySet<string>; foreignKeys: ReadonlySet<string> }
+
+/** The statements of `steps` not done yet, in order. */
+export function pendingMysqlSteps(steps: readonly MysqlStep[], state: MysqlSchemaState): string[] {
+  return steps
+    .filter((s) => (s.kind === 'column' ? !state.columns.has(`${s.table}.${s.column}`) : !state.foreignKeys.has(`${s.table}.${s.column}>${s.parent}`)))
+    .map((s) => s.sql);
+}
 
 /** A table's columns as its CREATE statement lists them, with the primary key's. */
 export function tableColumns(name: string): { columns: string[]; primaryKey: string[] } {

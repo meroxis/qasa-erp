@@ -1,7 +1,8 @@
 import { useState } from 'react';
 import { formatQty, roundHalfUp, UNITS, type CurrencyCode, type Names, type UnitCode } from '@qasa/core';
 import { api, type ItemInput, type ItemView, type WarehouseView } from '../api.ts';
-import { EmptyState, AmountInput, ErrorBox, Icon, Modal, downloadCsv, useData, useLoad, useToast } from '../components.tsx';
+import { EmptyState, AmountInput, ErrorBox, Icon, Modal, QtyInput, downloadCsv, useData, useLoad, useToast } from '../components.tsx';
+import { inUnits } from '../industry/units.ts';
 import { useI18n, type I18n, isKey, type Key } from '../i18n.ts';
 import { go, href } from '../router.ts';
 import { ImagePicker, ItemImage } from '../industry/ItemImage.tsx';
@@ -99,6 +100,7 @@ export function Items() {
                         {it.trackStock
                           ? <span style={{ color: it.qtyMilli <= 0 ? 'var(--bad)' : undefined }}>{qtyText(i18n, it.qtyMilli)} <span className="muted small">{unitName(i18n, it.unit)}</span></span>
                           : <span className="muted small">{unitName(i18n, it.unit)}</span>}
+                        {it.trackStock && it.units.length > 0 && it.qtyMilli > 0 && <div className="muted small">{inUnits(i18n, it, it.qtyMilli)}</div>}
                       </td>
                       <td className="amount">{it.trackStock && it.qtyMilli > 0 ? i18n.money(averageCost(it.qtyMilli, it.value), 'IQD') : ''}</td>
                       <td className="amount">{it.trackStock ? i18n.money(it.value, 'IQD') : ''}</td>
@@ -152,6 +154,10 @@ export function Items() {
   );
 }
 
+interface UnitRow { key: number; unit: UnitCode | ''; factorMilli: number | null; barcode: string; salePrice: number | null }
+let unitKey = 1;
+const UNIT_CHOICES = Object.keys(UNITS) as UnitCode[];
+
 export function ItemForm({ item, onClose, onSaved }: { item: ItemView | null; onClose(): void; onSaved(item: ItemView): void }) {
   const i18n = useI18n();
   const { t } = i18n;
@@ -164,13 +170,23 @@ export function ItemForm({ item, onClose, onSaved }: { item: ItemView | null; on
   const [saleCurrency, setSaleCurrency] = useState<CurrencyCode>(item?.saleCurrency ?? 'IQD');
   const [trackStock, setTrackStock] = useState(item?.trackStock ?? true);
   const [active, setActive] = useState(item?.active ?? true);
+  const [units, setUnits] = useState<UnitRow[]>(() => (item?.units ?? []).map((u) => ({ key: unitKey++, unit: u.unit, factorMilli: u.factorMilli, barcode: u.barcode, salePrice: u.salePrice })));
+  const [saleUnit, setSaleUnit] = useState<UnitCode | ''>(item?.saleUnit ?? '');
+  const [purchaseUnit, setPurchaseUnit] = useState<UnitCode | ''>(item?.purchaseUnit ?? '');
   const [error, setError] = useState<unknown>(null);
   const [busy, setBusy] = useState(false);
+  const listed = units.filter((u) => u.unit);
 
   async function save() {
     setBusy(true);
     setError(null);
-    const input: ItemInput = { name, unit, salePrice: salePrice ?? 0, saleCurrency, trackStock: unit !== 'service' && trackStock, active };
+    const input: ItemInput = {
+      name, unit, salePrice: salePrice ?? 0, saleCurrency, trackStock: unit !== 'service' && trackStock, active,
+      units: unit === 'service' ? [] : listed.map((u) => ({ unit: u.unit as UnitCode, factorMilli: u.factorMilli ?? 0, barcode: u.barcode.trim(), salePrice: u.salePrice })),
+      // a default unit that is no longer listed falls back to the base unit
+      saleUnit: saleUnit && listed.some((u) => u.unit === saleUnit) ? saleUnit : null,
+      purchaseUnit: purchaseUnit && listed.some((u) => u.unit === purchaseUnit) ? purchaseUnit : null
+    };
     if (code.trim()) input.code = code.trim();
     if (barcode.trim()) input.barcode = barcode.trim();
     try {
@@ -211,6 +227,64 @@ export function ItemForm({ item, onClose, onSaved }: { item: ItemView | null; on
         </div>
         {unit !== 'service' && (
           <label className="row" style={{ gap: 8 }}><input type="checkbox" checked={trackStock} disabled={item?.hasMoves} onChange={(e) => setTrackStock(e.target.checked)} />{t('trackStock')}</label>
+        )}
+        {unit !== 'service' && (
+          <fieldset className="card pad stack" style={{ gap: 8 }}>
+            <legend className="small"><strong>{t('un_other')}</strong></legend>
+            <p className="muted small" style={{ margin: 0 }}>{t('un_baseHelp')}</p>
+            {units.length > 0 && (
+              <table className="table">
+                <thead>
+                  <tr><th>{t('unit')}</th><th className="amount">{t('un_holds')}</th><th>{t('barcode')}</th><th className="amount">{t('un_ownPrice')}</th><th style={{ width: 40 }} /></tr>
+                </thead>
+                <tbody>
+                  {units.map((u) => (
+                    <tr key={u.key}>
+                      <td>
+                        <select className="input" value={u.unit} aria-label={t('unit')} onChange={(e) => setUnits((us) => us.map((x) => (x.key === u.key ? { ...x, unit: e.target.value as UnitCode } : x)))}>
+                          <option value="" />
+                          {UNIT_CHOICES.filter((c) => c !== unit && c !== 'service').map((c) => <option key={c} value={c}>{unitName(i18n, c)}</option>)}
+                        </select>
+                      </td>
+                      <td>
+                        <div className="row" style={{ flexWrap: 'nowrap', gap: 6 }}>
+                          <QtyInput value={u.factorMilli} onChange={(v) => setUnits((us) => us.map((x) => (x.key === u.key ? { ...x, factorMilli: v } : x)))} ariaLabel={t('un_holds')} />
+                          <span className="muted small">{unitName(i18n, unit)}</span>
+                        </div>
+                      </td>
+                      <td><input className="input ltr" value={u.barcode} aria-label={t('barcode')} onChange={(e) => setUnits((us) => us.map((x) => (x.key === u.key ? { ...x, barcode: e.target.value } : x)))} /></td>
+                      <td>
+                        <AmountInput value={u.salePrice} currency={saleCurrency} ariaLabel={t('un_ownPrice')} onChange={(v) => setUnits((us) => us.map((x) => (x.key === u.key ? { ...x, salePrice: v } : x)))} />
+                        <div className="muted small">{t('un_ownPriceHint')}</div>
+                      </td>
+                      <td><button type="button" className="btn icon danger" title={t('un_remove')} aria-label={t('un_remove')} onClick={() => setUnits((us) => us.filter((x) => x.key !== u.key))}><Icon name="x" size={16} /></button></td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+            <div className="row">
+              {units.length < 10 && <button type="button" className="btn small" onClick={() => setUnits((us) => [...us, { key: unitKey++, unit: '', factorMilli: null, barcode: '', salePrice: null }])}><Icon name="plus" size={15} />{t('un_add')}</button>}
+            </div>
+            {listed.length > 0 && (
+              <div className="grid-2">
+                <label className="field">
+                  <span>{t('un_saleUnit')}</span>
+                  <select className="input" value={saleUnit} onChange={(e) => setSaleUnit(e.target.value as UnitCode | '')}>
+                    <option value="">{unitName(i18n, unit)}</option>
+                    {listed.map((u) => <option key={u.key} value={u.unit}>{unitName(i18n, u.unit as UnitCode)}</option>)}
+                  </select>
+                </label>
+                <label className="field">
+                  <span>{t('un_purchaseUnit')}</span>
+                  <select className="input" value={purchaseUnit} onChange={(e) => setPurchaseUnit(e.target.value as UnitCode | '')}>
+                    <option value="">{unitName(i18n, unit)}</option>
+                    {listed.map((u) => <option key={u.key} value={u.unit}>{unitName(i18n, u.unit as UnitCode)}</option>)}
+                  </select>
+                </label>
+              </div>
+            )}
+          </fieldset>
         )}
         {item && <label className="row" style={{ gap: 8 }}><input type="checkbox" checked={active} onChange={(e) => setActive(e.target.checked)} />{t('active')}</label>}
         <ErrorBox error={error} />
@@ -296,6 +370,7 @@ export function ItemDetail({ id }: { id: string }) {
         <div className="card pad tile">
           <div className="label">{t('available')}</div>
           <div className="value num">{it.trackStock ? qtyText(i18n, it.qtyMilli) : '—'} <span className="small muted">{unitName(i18n, it.unit)}</span></div>
+          {it.trackStock && it.units.length > 0 && it.qtyMilli > 0 && <div className="muted small">{inUnits(i18n, it, it.qtyMilli)}</div>}
         </div>
         <div className="card pad tile">
           <div className="label">{t('avgCost')}</div>
