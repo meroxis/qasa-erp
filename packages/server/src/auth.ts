@@ -466,8 +466,14 @@ function countFailure(key: string, limit = SOURCE_LIMIT): number {
   const before = failures.get(key);
   const count = (before && now - before.last < FORGET_AFTER_MS ? before.count : 0) + 1;
   const lockedUntil = count >= limit ? now + Math.min(15, 2 ** (count - limit)) * 60_000 : 0;
-  // made-up usernames must not fill the memory
-  if (failures.size > 5000) for (const [k, v] of failures) if (v.lockedUntil < now) failures.delete(k);
+  // made-up usernames must not fill the memory; a user's own counter for all places (one per user) stays for its day,
+  // or a flood of made-up names from a few places would wipe it and let guessing from many places go on
+  if (failures.size > 5000) {
+    for (const [k, v] of failures) {
+      const userCounter = k.startsWith('id:') && !k.includes('@');
+      if (v.lockedUntil < now && (!userCounter || now - v.last >= FORGET_AFTER_MS)) failures.delete(k);
+    }
+  }
   failures.set(key, { count, lockedUntil, last: now });
   return count;
 }

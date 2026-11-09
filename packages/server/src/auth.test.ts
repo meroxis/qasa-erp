@@ -146,6 +146,15 @@ describe('with sign-in', () => {
     }
   });
 
+  it('keeps counting an account\'s failures from many places when made-up names fill the memory', async () => {
+    await officeWithSignIn();
+    for (let i = 0; i < 29; i++) await expect(login(db, 'admin', 'wrong-password', undefined, `net:10.9.0.${i}`)).rejects.toMatchObject({ code: 'invalid_login' });
+    // over 5000 made-up names (cheap: no password work) must not wipe the admin's own counter
+    for (let i = 0; i <= 5001; i++) await expect(login(db, `x${i}!`, 'p', undefined, 'net:10.8.0.1')).rejects.toMatchObject({ code: 'invalid_login' });
+    await expect(login(db, 'admin', 'wrong-password', undefined, 'net:10.9.1.0')).rejects.toMatchObject({ code: 'invalid_login' });
+    await expect(login(db, 'admin', 'owner-pass-1', undefined, 'net:10.9.1.1')).rejects.toMatchObject({ code: 'too_many_attempts' });
+  });
+
   it('keeps one lock per user when the database compares names without accents (MySQL)', async () => {
     await officeWithSignIn();
     // a MySQL server's _ai_ci collation finds 'admin' for 'ádmin'; emulate that lookup on SQLite
