@@ -43,6 +43,7 @@
 .pos-line { display: grid; grid-template-columns: minmax(0, 1fr) auto auto auto; gap: 8px; align-items: center; padding: 8px 0; border-bottom: 1px solid var(--border, #e4e7ec); }
 .pos-line-name { display: flex; flex-direction: column; min-width: 0; }
 .pos-line-name > span:first-child { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pos-line-name select { max-width: 100%; }
 .pos-qty { display: flex; align-items: center; gap: 4px; }
 .pos-qty-btn.btn { min-width: 40px; min-height: 40px; padding: 0; justify-content: center; font-size: 1.2rem; font-weight: 700; }
 .pos-qty-n { min-width: 34px; text-align: center; font-weight: 700; }

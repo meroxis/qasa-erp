@@ -10,11 +10,11 @@ import '../pos.css';
 import { PrintDocument } from '../industry/PrintDocument.tsx';
 import { invoiceModel } from '../industry/print-model.ts';
 import { usePrintSetup } from '../industry/print-api.ts';
-import { addRefusal, cashChange, changeLineUnit, parseScan, priceIn, priceRateFor, tileOffer } from './pos-logic.ts';
+import { addRefusal, cashChange, changeLineUnit, parseScan, posSaleLine, priceIn, priceRateFor, tileOffer } from './pos-logic.ts';
 import { inUnits, salePriceFor, unitChoices, unitLabel, type LineUnit } from '../industry/units.ts';
-import { useExpiredConfirm } from '../industry/BatchFields.tsx';
-import { pharmacyApi, type ControlledLine, type MedicineView } from '../industry/pharmacy-api.ts';
-import { ControlledRecord } from './Pharmacy.tsx';
+import { BatchPick, useExpiredConfirm } from '../industry/BatchFields.tsx';
+import { pharmacyApi, type MedicineView } from '../industry/pharmacy-api.ts';
+import { RxTick, useControlledPrompt, useRxItems } from '../industry/PharmacyPrompts.tsx';
 import { printAlone, printDocument } from '../industry/printing.ts';
 
 /**
@@ -27,8 +27,11 @@ const REGISTER_KEY = 'qasa.pos.register';
 const remembered = () => { try { return localStorage.getItem(REGISTER_KEY) ?? ''; } catch { return ''; } };
 const remember = (v: string) => { try { localStorage.setItem(REGISTER_KEY, v); } catch { /* not available */ } };
 
-/** qtyMilli: in the line's unit (null: the item's base unit); unitPrice: per that unit. */
-interface CartLine { item: ItemView; qtyMilli: number; unitPrice: number; unit: LineUnit }
+/**
+ * qtyMilli: in the line's unit (null: the item's base unit); unitPrice: per that unit. batchId: the batch picked by
+ * hand ('' automatic); rxSeen: a pharmacy's "prescription seen" tick (a reminder, not sent).
+ */
+interface CartLine { item: ItemView; qtyMilli: number; unitPrice: number; unit: LineUnit; batchId?: string; rxSeen?: boolean }
 const lineKey = (l: Pick<CartLine, 'item' | 'unit'>) => `${l.item.id}|${l.unit ?? ''}`;
 
 const lineTotal = (l: CartLine) => Math.round((l.qtyMilli * l.unitPrice) / 1000);
@@ -205,7 +208,8 @@ function Register({ initial, onClosed }: { initial: ShiftView; onClosed(): void 
   const { plan, settings: companySettings } = useData();
   const pharmacy = !!plan?.features.includes('pharmacy') && !!companySettings?.businessTypes?.includes('pharmacy');
   const [medicines, setMedicines] = useState<Map<string, MedicineView>>(new Map());
-  const [controlled, setControlled] = useState<ControlledLine[] | null>(null);
+  const controlled = useControlledPrompt();
+  const rxItems = useRxItems(pharmacy);
   useEffect(() => {
     if (!pharmacy || !q.trim()) return;
     let alive = true;
@@ -270,6 +274,10 @@ function Register({ initial, onClosed }: { initial: ShiftView; onClosed(): void 
     }
   };
 
+  const setLine = (key: string, patch: Pick<CartLine, 'batchId'> | Pick<CartLine, 'rxSeen'>) => {
+    setCart((c) => c.map((l) => (lineKey(l) === key ? { ...l, ...patch } : l)));
+  };
+
   const setQty = (key: string, qtyMilli: number) => {
     setCart((c) => (qtyMilli <= 0 ? c.filter((l) => lineKey(l) !== key) : c.map((l) => (lineKey(l) === key ? { ...l, qtyMilli } : l))));
     setPaid(null);
@@ -324,9 +332,7 @@ function Register({ initial, onClosed }: { initial: ShiftView; onClosed(): void 
     try {
       const sale = {
         currency, ...(currency === 'USD' ? { rateX100 } : {}), ...(partyId ? { partyId } : {}), discount: discount ?? 0,
-        lines: cart.map((l) => (l.unit
-          ? { itemId: l.item.id, unit: l.unit, unitQtyMilli: l.qtyMilli, unitPrice: l.unitPrice }
-          : { itemId: l.item.id, qtyMilli: l.qtyMilli, unitPrice: l.unitPrice })),
+        lines: cart.map(posSaleLine),
         ...(split ? { payments: parts.map((p) => ({ method: p.method, amount: p.amount ?? 0 })) } : {})
       };
       let res;
@@ -343,13 +349,7 @@ function Register({ initial, onClosed }: { initial: ShiftView; onClosed(): void 
       loadItems(); // stock changed
       toast(t('pos_saved', { n: res.invoice.number ?? '' }));
       // controlled medicines sold: the patient and the prescription, now or later from the pharmacy log
-      if (pharmacy) {
-        const sold = res.invoice.id;
-        pharmacyApi.controlled({ missing: '1' }).then((lines) => {
-          const mine = lines.filter((l) => l.invoiceId === sold);
-          if (mine.length) setControlled(mine);
-        }, () => {});
-      }
+      controlled.check(res.invoice.id);
     } catch (e) {
       setError(e);
     } finally {
@@ -378,7 +378,7 @@ function Register({ initial, onClosed }: { initial: ShiftView; onClosed(): void 
   return (
     <div className="pos">
       {expired.dialog}
-      {controlled && <ControlledRecord lines={controlled} onDone={() => setControlled(null)} />}
+      {controlled.dialog}
       <div className="pos-bar no-print">
         <div className="pos-shift-info">
           <strong>{shift.register}</strong>
@@ -464,6 +464,8 @@ function Register({ initial, onClosed }: { initial: ShiftView; onClosed(): void 
                       {unitLabel(i18n, l.unit ?? l.item.unit)}
                     </button>
                   )}
+                  <BatchPick item={l.item} warehouseId={shift.warehouseId} value={l.batchId ?? ''} onChange={(batchId) => setLine(lineKey(l), { batchId })} />
+                  {rxItems.has(l.item.id) && <RxTick seen={!!l.rxSeen} onChange={(rxSeen) => setLine(lineKey(l), { rxSeen })} />}
                 </div>
                 <div className="pos-qty">
                   <button type="button" className="btn pos-qty-btn" aria-label={t('pos_less')} onClick={() => setQty(lineKey(l), l.qtyMilli - 1000)}>−</button>

@@ -14,7 +14,8 @@ export interface AdjustmentAccounts {
 }
 
 /** qtyMilli: + in, − out, base units; or (1.1) unit + unitQtyMilli (signed the same way), with unitCost per that unit. */
-export interface AdjustmentLineInput { itemId: string; qtyMilli: number; unitCost?: number; unit?: UnitCode; unitQtyMilli?: number }
+/** batches (1.1): a line going out may be pinned to one batch (batchId); a line coming in names its batch and expiry date. */
+export interface AdjustmentLineInput { itemId: string; qtyMilli: number; unitCost?: number; unit?: UnitCode; unitQtyMilli?: number; batchNo?: string; expiry?: string; batchId?: string }
 
 export interface AdjustmentInput {
   date: string;
@@ -33,6 +34,7 @@ export interface AdjustmentLineView {
   value: number | null;
   stockMilli: number;
   lineUnit: UnitCode | null; unitFactorMilli: number | null; unitQtyMilli: number | null;
+  batchNo?: string | null; expiry?: string | null; batchId?: string | null;
 }
 
 export interface AdjustmentSummary {

@@ -21,6 +21,7 @@ import { reverseDefaultDate } from '../industry/ReverseModal.tsx';
 import { printDocument } from '../industry/printing.ts';
 import { baseQty, factorOf, holdsText, salePriceFor, unitChoices, unitLabel, type LineUnit } from '../industry/units.ts';
 import { BatchInFields, BatchPick, useExpiredConfirm } from '../industry/BatchFields.tsx';
+import { askControlledOnOpen, RxTick, useControlledPrompt, usePharmacyOn, useRxItems } from '../industry/PharmacyPrompts.tsx';
 
 const STATUSES: (InvoiceStatus | '')[] = ['', 'draft', 'posted', 'cancelled'];
 
@@ -64,6 +65,8 @@ interface Row {
   key: number; itemId: string; qtyMilli: number | null; unitPrice: number | null; description: string; unit: LineUnit;
   /** batches: what a purchase line brings in; the batch a sale line is pinned to ('' automatic) */
   batchNo?: string; expiry?: string; batchId?: string;
+  /** a pharmacy's sale line of a prescription-only medicine: the "prescription seen" tick (a reminder, not sent) */
+  rxSeen?: boolean;
 }
 
 let rowKey = 1;
@@ -107,6 +110,7 @@ export function InvoiceEditor({ kind: initialKind, id, partyId: initialParty }: 
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<unknown>(null);
   const expired = useExpiredConfirm();
+  const rxItems = useRxItems(usePharmacyOn() && kind === 'sale');
 
   const partyType = kind === 'sale' ? 'customer' : 'supplier';
   const parties = useLoad(() => api.parties({ type: partyType, active: 'true' }), [partyType]);
@@ -266,6 +270,8 @@ export function InvoiceEditor({ kind: initialKind, id, partyId: initialParty }: 
         }
         await reloadAccounts();
         toast(t('a_post'));
+        // controlled medicines sold: their page asks for the patient and the prescription
+        if (kind === 'sale') askControlledOnOpen(saved.id);
       } else {
         toast(t('saved'));
       }
@@ -351,8 +357,9 @@ export function InvoiceEditor({ kind: initialKind, id, partyId: initialParty }: 
                     <SearchCombo value={r.itemId} options={itemOptions} onChange={(v) => pickItem(r.key, v)} placeholder={t('chooseItem')} ariaLabel={t('item')} />
                     {short && <div className="small" style={{ color: 'var(--bad)', marginTop: 3 }}>{t('available')}: {qtyText(i18n, it.qtyMilli)}</div>}
                     {kind === 'purchase'
-                      ? <BatchInFields item={it} batchNo={r.batchNo ?? ''} expiry={r.expiry ?? ''} onChange={(v) => update(r.key, v)} />
+                      ? <BatchInFields item={it} batchNo={r.batchNo ?? ''} expiry={r.expiry ?? ''} date={date} onChange={(v) => update(r.key, v)} />
                       : <BatchPick item={it} warehouseId={warehouseId} value={r.batchId ?? ''} onChange={(batchId) => update(r.key, { batchId })} />}
+                    {kind === 'sale' && it && rxItems.has(it.id) && <RxTick seen={!!r.rxSeen} onChange={(rxSeen) => update(r.key, { rxSeen })} />}
                   </td>
                   <td>
                     <QtyInput value={r.qtyMilli} onChange={(v) => update(r.key, { qtyMilli: v })} ariaLabel={t('qty')} />
@@ -424,6 +431,8 @@ export function InvoiceDetail({ id }: { id: string }) {
   const [returning, setReturning] = useState(false);
   const [cancelDate, setCancelDate] = useState(todayIso());
   const expired = useExpiredConfirm();
+  // a pharmacy's sale with controlled medicines: the patient and the prescription, asked once it is posted
+  const controlled = useControlledPrompt(id);
 
   if (error) return <ErrorBox error={error} />;
   if (!data) return null;
@@ -436,6 +445,7 @@ export function InvoiceDetail({ id }: { id: string }) {
       if (!(await expired.ask(e))) throw e;
       await api.postInvoice(id, { allowExpired: true });
     }
+    if (data.kind === 'sale') controlled.check(id);
   };
   const company = settings ? i18n.name(settings.companyName) : '';
   const totalCost = v.lines.reduce((s, l) => s + (l.cost ?? 0), 0);
@@ -637,6 +647,7 @@ export function InvoiceDetail({ id }: { id: string }) {
       )}
 
       {expired.dialog}
+      {controlled.dialog}
       {returning && <ReturnModal invoice={v} onClose={() => setReturning(false)} />}
 
       {cancelling && (

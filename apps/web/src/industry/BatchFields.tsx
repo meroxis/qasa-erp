@@ -4,19 +4,37 @@ import { useI18n } from '../i18n.ts';
 import { Icon, Modal } from '../components.tsx';
 import { batchesApi, type BatchReportRow } from './batches-api.ts';
 
-/** A line coming in (purchase, opening stock): its batch number and expiry date, for an item that tracks batches. */
-export function BatchInFields({ item, batchNo, expiry, onChange }: {
-  item: Pick<ItemView, 'trackBatches' | 'trackExpiry'> | undefined; batchNo: string; expiry: string; onChange(v: { batchNo: string; expiry: string }): void;
+const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
+
+/**
+ * Goods that arrive already past their expiry date (before the document's date). Allowed (they may be bought back to
+ * go back to the supplier), but the screen says so before the document is saved.
+ */
+export const arrivesExpired = (expiry: string | null | undefined, date: string | null | undefined): boolean =>
+  !!expiry && !!date && ISO_DATE.test(expiry) && ISO_DATE.test(date) && expiry < date;
+
+/**
+ * A line coming in (purchase, opening stock, an adjustment in): its batch number and expiry date, for an item that
+ * tracks batches. `date`: the document's date, to warn about goods that arrive already expired.
+ */
+export function BatchInFields({ item, batchNo, expiry, date, onChange }: {
+  item: Pick<ItemView, 'trackBatches' | 'trackExpiry'> | undefined; batchNo: string; expiry: string; date?: string; onChange(v: { batchNo: string; expiry: string }): void;
 }) {
-  const { t } = useI18n();
+  const i18n = useI18n();
+  const { t } = i18n;
   if (!item?.trackBatches) return null;
   return (
-    <div className="row" style={{ gap: 6, marginTop: 4, flexWrap: 'nowrap' }}>
-      <input className="input small ltr" style={{ width: 110 }} placeholder={t('ex_batchNo')} aria-label={t('ex_batchNo')} maxLength={40} value={batchNo} onChange={(e) => onChange({ batchNo: e.target.value, expiry })} />
-      {item.trackExpiry && (
-        <input className={'input small' + (!expiry ? ' invalid' : '')} type="date" aria-label={t('ex_expiry')} title={t('ex_expiry')} value={expiry} onChange={(e) => onChange({ batchNo, expiry: e.target.value })} />
+    <>
+      <div className="row" style={{ gap: 6, marginTop: 4, flexWrap: 'nowrap' }}>
+        <input className="input small ltr" style={{ width: 110 }} placeholder={t('ex_batchNo')} aria-label={t('ex_batchNo')} maxLength={40} value={batchNo} onChange={(e) => onChange({ batchNo: e.target.value, expiry })} />
+        {item.trackExpiry && (
+          <input className={'input small' + (!expiry ? ' invalid' : '')} type="date" aria-label={t('ex_expiry')} title={t('ex_expiry')} value={expiry} onChange={(e) => onChange({ batchNo, expiry: e.target.value })} />
+        )}
+      </div>
+      {arrivesExpired(expiry, date) && (
+        <div className="small" role="status" style={{ color: 'var(--warn)', marginTop: 3 }}>{t('ex_arrivesExpired', { date: i18n.date(expiry) })}</div>
       )}
-    </div>
+    </>
   );
 }
 

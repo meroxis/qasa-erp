@@ -38,6 +38,8 @@ it('sends a line in another unit as the unit and the quantity typed, never a fac
   const invoices = readFileSync(new URL('../pages/Invoices.tsx', import.meta.url), 'utf8');
   expect(invoices).toContain('unit: r.unit, unitQtyMilli: r.qtyMilli ?? 0');
   expect(invoices).not.toMatch(/unitFactorMilli:\s*factor/);
-  const pos = readFileSync(new URL('../pages/Pos.tsx', import.meta.url), 'utf8');
-  expect(pos).toContain('{ itemId: l.item.id, unit: l.unit, unitQtyMilli: l.qtyMilli, unitPrice: l.unitPrice }');
+  // the POS sends its cart lines through posSaleLine (pos-logic.ts)
+  const pos = readFileSync(new URL('../pages/pos-logic.ts', import.meta.url), 'utf8');
+  expect(pos).toContain('{ itemId: l.item.id, unit: l.unit, unitQtyMilli: l.qtyMilli, unitPrice: l.unitPrice, ...batch }');
+  expect(pos).not.toMatch(/unitFactorMilli/);
 });

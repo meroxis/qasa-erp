@@ -6,7 +6,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import type { FastifyInstance } from 'fastify';
 import { COMPANY_TABLES, migrate, openDatabase, SCHEMA_VERSION, schemaVersion, updateCopies, type Db, type SqlValue } from './db.ts';
 import { buildApp } from './app.ts';
-import { pendingMysqlSteps, tableColumns, V10_MYSQL_STEPS, V11_MYSQL_STEPS, MYSQL_TABLES } from './schema-mysql.ts';
+import { pendingMysqlSteps, tableColumns, V10_MYSQL_STEPS, MYSQL_TABLES } from './schema-mysql.ts';
 import { AppError } from './errors.ts';
 
 // QASA_TEST_DB runs the suite on a server: these build and open SQLite files themselves
@@ -176,23 +176,17 @@ describe('version 10 on a server database', () => {
     let version = 9;
     const existing = new Set(MYSQL_TABLES.filter((t) => !t.since || t.since < 10).map((t) => t.name));
     const columns = new Set(['items.category_id', 'items.sale_unit']);
-    const indexes = new Set<string>();
     const ran: string[] = [];
     const fake: Db = {
       dialect: 'mysql',
       close() {},
-      exec(sql: string) {
-        ran.push(sql.trim().split('\n')[0]!.replace(/\s+/g, ' '));
-        // the table made at version 10 comes with the keys of the current schema
-        if (/CREATE TABLE item_batches\b/.test(sql)) indexes.add('item_batches.item_batches_number_expiry');
-      },
+      exec(sql: string) { ran.push(sql.trim().split('\n')[0]!.replace(/\s+/g, ' ')); },
       prepare(sql: string) {
         return {
           run: (...p: unknown[]) => { if (/UPDATE schema_version/.test(sql)) version = Number(p[0]); return { changes: 1, lastInsertRowid: 0 }; },
           get: (): Record<string, SqlValue> | undefined => (/schema_version/.test(sql) ? { version } : /VERSION\(\)/.test(sql) ? { v: '8.4.3' } : undefined),
           all: (): Record<string, SqlValue>[] => /information_schema\.tables/.test(sql) ? [...existing].map((name) => ({ name }))
-            : /information_schema\.columns/.test(sql) ? [...columns].map((c) => ({ t: c.split('.')[0]!, c: c.split('.')[1]! }))
-              : /information_schema\.statistics/.test(sql) ? [...indexes].map((k) => ({ t: k.split('.')[0]!, i: k.split('.')[1]! })) : []
+            : /information_schema\.columns/.test(sql) ? [...columns].map((c) => ({ t: c.split('.')[0]!, c: c.split('.')[1]! })) : []
         };
       }
     };
@@ -206,52 +200,67 @@ describe('version 10 on a server database', () => {
     expect(alters).toContain('ALTER TABLE items ADD CONSTRAINT items_category_id_fk FOREIGN KEY (category_id) REFERENCES item_categories(id)');
     expect(alters).toHaveLength(V10_MYSQL_STEPS.length - 2);
   });
+
+  it('upgrades a server database from version 6: a table whose key points at a table of a later version is made with key checks off for that one CREATE', () => {
+    let version = 6;
+    const existing = new Set(MYSQL_TABLES.filter((t) => !t.since || t.since <= 6).map((t) => t.name));
+    const ran: string[] = [];
+    const fake: Db = {
+      dialect: 'mysql',
+      close() {},
+      exec(sql: string) {
+        ran.push(sql.trim().split('\n')[0]!.replace(/\s+/g, ' '));
+        const made = /^\s*CREATE TABLE (\w+)/.exec(sql);
+        if (made) existing.add(made[1]!);
+      },
+      prepare(sql: string) {
+        return {
+          run: (...p: unknown[]) => { if (/UPDATE schema_version/.test(sql)) version = Number(p[0]); return { changes: 1, lastInsertRowid: 0 }; },
+          get: (): Record<string, SqlValue> | undefined => (/schema_version/.test(sql) ? { version } : /VERSION\(\)/.test(sql) ? { v: '10.11.14-MariaDB' } : undefined),
+          all: (): Record<string, SqlValue>[] => /information_schema\.tables/.test(sql) ? [...existing].map((name) => ({ name })) : []
+        };
+      }
+    };
+    migrate(fake);
+    expect(version).toBe(SCHEMA_VERSION);
+    // stock_adjustment_lines (version 7) points at item_batches (version 10): the server refuses it with checks on
+    const at = ran.findIndex((s) => s.startsWith('CREATE TABLE stock_adjustment_lines'));
+    expect(ran.slice(at - 1, at + 2).map((s) => s.split(' (')[0])).toEqual(['SET FOREIGN_KEY_CHECKS = 0', 'CREATE TABLE stock_adjustment_lines', 'SET FOREIGN_KEY_CHECKS = 1']);
+    expect(ran.filter((s) => s === 'SET FOREIGN_KEY_CHECKS = 0')).toHaveLength(1);
+    expect(ran.indexOf('CREATE TABLE item_batches (')).toBeGreaterThan(at);
+  });
 });
 
-describe('version 11: stock with no batch number is one batch per expiry date', () => {
-  it.skipIf(onServer)('a version-10 file keeps every batch and its stock, and can then hold dated stock with no number apart', async () => {
-    const file = join(dir, 'v10.sqlite');
-    const old = new DatabaseSync(file);
-    migrate(old as unknown as Db, 10);
-    old.close();
-    // a 1.1 build of version 10: an item with a batch with no number (no date) and a numbered one
-    const v10 = openDatabaseAt10(file);
-    const itemId = 'item-1';
-    v10.prepare("INSERT INTO items (id, code, name_ar, name_en, name_ku, unit, sale_price, sale_currency, track_stock, track_batches, track_expiry, active, created_at) VALUES (?, 'AMOX', 'a', 'Amox', 'k', 'capsule', 250, 'IQD', 1, 1, 1, 1, '2026-10-01T00:00:00Z')").run(itemId);
-    v10.prepare("INSERT INTO item_batches (id, item_id, number, expiry, created_at) VALUES ('b-plain', ?, '', NULL, '2026-10-01T00:00:00Z'), ('b-n1', ?, 'N1', '2027-03-31', '2026-10-01T00:00:00Z')").run(itemId, itemId);
-    const before = v10.prepare('SELECT * FROM item_batches ORDER BY id').all();
-    v10.close();
-
-    const db = openDatabase(file, { now: () => new Date(2026, 10, 9, 9, 0, 0) });
+describe('batches are unique per item, number and expiry date from version 10 on', () => {
+  it.skipIf(onServer)('a version-9 file upgraded to 10 keeps dated stock with no number apart, one batch per date', async () => {
+    const { full } = await booksOf103();
+    const file = join(dir, 'v9.sqlite');
+    asVersion9(full, file);
+    full.close();
+    const db = openDatabase(file);
     try {
-      expect(schemaVersion(db)).toBe(SCHEMA_VERSION);
-      expect(updateCopies(file).map((f) => basename(f))).toEqual(['v10-before-update-v10-20261109-090000.sqlite']);
-      expect(db.prepare('SELECT * FROM item_batches ORDER BY id').all()).toEqual(before);
-      expect(db.prepare('PRAGMA foreign_key_check').all()).toEqual([]);
-      // the document lines still point at item_batches
-      const fk = db.prepare('PRAGMA foreign_key_list(invoice_lines)').all() as { table: string; from: string }[];
-      expect(fk.find((f) => f.from === 'batch_id')?.table).toBe('item_batches');
+      expect(SCHEMA_VERSION).toBe(10);
+      expect(schemaVersion(db)).toBe(10);
+      const unique = (db.prepare('PRAGMA index_list(item_batches)').all() as { name: string; unique: number; origin: string }[]).filter((i) => i.unique && i.origin !== 'pk');
+      expect(unique.map((i) => (db.prepare(`PRAGMA index_info(${i.name})`).all() as { name: string }[]).map((c) => c.name))).toEqual([['item_id', 'number', 'expiry']]);
+      const itemId = (db.prepare('SELECT id FROM items').get() as { id: string }).id;
       const add = db.prepare("INSERT INTO item_batches (id, item_id, number, expiry, created_at) VALUES (?, ?, ?, ?, '2026-11-09T00:00:00Z')");
       add.run('b-d1', itemId, '', '2026-12-31');
       add.run('b-d2', itemId, '', '2028-06-30');
+      add.run('b-n1', itemId, 'N1', '2027-03-31');
       expect(() => add.run('b-d3', itemId, '', '2026-12-31')).toThrow(/UNIQUE/);
+      expect(() => add.run('b-n2', itemId, 'N1', '2027-03-31')).toThrow(/UNIQUE/);
+      expect(db.prepare('PRAGMA foreign_key_check').all()).toEqual([]);
     } finally {
       db.close();
     }
   });
 
-  it('on a server database at version 10: adds the new key and drops the old one in one step, once', () => {
-    expect(V11_MYSQL_STEPS.map((s) => s.sql)).toEqual(['ALTER TABLE item_batches ADD UNIQUE KEY item_batches_number_expiry (item_id, number, expiry), DROP INDEX item_batches_number']);
-    expect(pendingMysqlSteps(V11_MYSQL_STEPS, { columns: new Set(), foreignKeys: new Set(), indexes: new Set(['item_batches.item_batches_number']) })).toHaveLength(1);
-    expect(pendingMysqlSteps(V11_MYSQL_STEPS, { columns: new Set(), foreignKeys: new Set(), indexes: new Set(['item_batches.item_batches_number_expiry']) })).toEqual([]);
-    // a fresh server database gets the new key from the start
-    expect(MYSQL_TABLES.find((t) => t.name === 'item_batches')!.sql).toContain('UNIQUE KEY item_batches_number_expiry (item_id, number, expiry)');
+  it('the server table made at version 10 has the same key, and the version-10 steps never touch it', () => {
+    const table = MYSQL_TABLES.find((t) => t.name === 'item_batches')!;
+    expect(table.since).toBe(10);
+    expect(table.sql).toContain('UNIQUE KEY item_batches_number_expiry (item_id, number, expiry)');
+    expect(table.sql).not.toMatch(/UNIQUE KEY item_batches_number \(/);
+    expect(V10_MYSQL_STEPS.some((s) => s.table === 'item_batches')).toBe(false);
   });
 });
-
-/** A version-10 file opened without migrating further (as the 1.1 builds before version 11 left it). */
-function openDatabaseAt10(file: string): Db {
-  const db = new DatabaseSync(file) as unknown as Db;
-  db.exec('PRAGMA foreign_keys = ON');
-  return db;
-}

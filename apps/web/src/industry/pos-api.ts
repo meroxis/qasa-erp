@@ -49,7 +49,7 @@ export interface SaleInput {
   /** 1.1: how it was paid, 1–4 parts adding up to the total; none = all cash */
   payments?: { method: PosMethod; amount: number }[];
   /** qtyMilli in base units, or unit + unitQtyMilli: the quantity in one of the item's units, priced per that unit */
-  lines: ({ itemId: string; qtyMilli: number; unitPrice: number } | { itemId: string; unit: UnitCode; unitQtyMilli: number; unitPrice: number })[];
+  lines: (({ itemId: string; qtyMilli: number; unitPrice: number } | { itemId: string; unit: UnitCode; unitQtyMilli: number; unitPrice: number }) & { batchId?: string })[];
 }
 
 /** How a customer pays at the counter (1.1). */

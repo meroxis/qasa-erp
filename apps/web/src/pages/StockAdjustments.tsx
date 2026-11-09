@@ -17,6 +17,7 @@ import { printDocument } from '../industry/printing.ts';
 import { CountSaver, costFor, fromSession, nothingToCount, useLeaveGuard, type CountSessionView, type SaveState } from '../industry/count-session.ts';
 import { UnitPicker } from '../industry/UnitPicker.tsx';
 import { baseQty, inUnits, type LineUnit } from '../industry/units.ts';
+import { BatchInFields, BatchPick } from '../industry/BatchFields.tsx';
 
 /**
  * تسوية المخزون — stock adjustments (damaged, lost, expired, used, issued to a job) and the stock count.
@@ -144,8 +145,11 @@ function AccountsSettings({ onClose }: { onClose(): void }) {
 
 // ——— editor ———
 
-/** qtyMilli: as typed in the line's unit (null: the base unit); unitCost: per that unit. */
-interface Row { key: number; itemId: string; dir: 'out' | 'in'; qtyMilli: number | null; unitCost: number | null; unit?: LineUnit }
+/**
+ * qtyMilli: as typed in the line's unit (null: the base unit); unitCost: per that unit. Batches: a line going out may be
+ * pinned to one batch (batchId, '' automatic: earliest expiry first); a line coming in names its batch and expiry.
+ */
+interface Row { key: number; itemId: string; dir: 'out' | 'in'; qtyMilli: number | null; unitCost: number | null; unit?: LineUnit; batchId?: string; batchNo?: string; expiry?: string }
 let rowKey = 1;
 const emptyRow = (dir: 'out' | 'in' = 'out'): Row => ({ key: rowKey++, itemId: '', dir, qtyMilli: 1000, unitCost: null });
 
@@ -156,6 +160,12 @@ const emptyRow = (dir: 'out' | 'in' = 'out'): Row => ({ key: rowKey++, itemId: '
 export function stockAfter(item: Pick<ItemView, 'qtyMilli' | 'units'>, r: Pick<Row, 'dir' | 'qtyMilli' | 'unit'>): { short: boolean; after: number } {
   const base = baseQty(item, r.unit ?? null, r.qtyMilli ?? 0) ?? 0;
   return { short: r.dir === 'out' && base > item.qtyMilli, after: item.qtyMilli + (r.dir === 'out' ? -base : base) };
+}
+
+/** The batch part of an adjustment line as sent: out, the batch picked by hand (if any); in, its number and expiry date. */
+export function adjustmentBatch(r: Pick<Row, 'dir' | 'batchId' | 'batchNo' | 'expiry'>): { batchId?: string; batchNo?: string; expiry?: string } {
+  if (r.dir === 'out') return r.batchId ? { batchId: r.batchId } : {};
+  return { ...(r.batchNo?.trim() ? { batchNo: r.batchNo.trim() } : {}), ...(r.expiry ? { expiry: r.expiry } : {}) };
 }
 
 /** A draft line coming in, valued as posting will: its cost is per the unit it was typed in. */
@@ -203,7 +213,9 @@ export function StockAdjustmentEditor({ id }: { id?: string }) {
       setNotes(d.notes);
       setRows(d.lines.map((l) => ({
         key: rowKey++, itemId: l.itemId, dir: l.qtyMilli < 0 ? 'out' : 'in',
-        qtyMilli: Math.abs(l.lineUnit && l.unitQtyMilli !== null ? l.unitQtyMilli : l.qtyMilli), unitCost: l.unitCost, unit: l.lineUnit
+        qtyMilli: Math.abs(l.lineUnit && l.unitQtyMilli !== null ? l.unitQtyMilli : l.qtyMilli), unitCost: l.unitCost, unit: l.lineUnit,
+        // a write-off draft's lines are pinned to their expired batches: they stay pinned when it is edited
+        batchId: l.batchId ?? '', batchNo: l.batchNo ?? '', expiry: l.expiry ?? ''
       })));
       setReady(true);
     }, setLoadError);
@@ -242,7 +254,7 @@ export function StockAdjustmentEditor({ id }: { id?: string }) {
   const remove = (key: number) => setRows((rs) => (rs.length > 1 ? rs.filter((r) => r.key !== key) : [emptyRow()]));
   function pickItem(key: number, itemId: string) {
     setRows((rs) => {
-      const next = rs.map((r) => (r.key === key ? { ...r, itemId } : r));
+      const next = rs.map((r) => (r.key === key ? { ...r, itemId, batchId: '', batchNo: '', expiry: '' } : r));
       const last = next[next.length - 1];
       return last?.itemId ? [...next, emptyRow(last.dir)] : next;
     });
@@ -263,7 +275,8 @@ export function StockAdjustmentEditor({ id }: { id?: string }) {
         itemId: r.itemId,
         qtyMilli: (r.dir === 'out' ? -1 : 1) * ((r.unit ? baseQty(itemById.get(r.itemId), r.unit, r.qtyMilli ?? 0) : r.qtyMilli) ?? 0),
         ...(r.unit ? { unit: r.unit, unitQtyMilli: (r.dir === 'out' ? -1 : 1) * (r.qtyMilli ?? 0) } : {}),
-        ...(r.dir === 'in' && r.unitCost !== null ? { unitCost: r.unitCost } : {})
+        ...(r.dir === 'in' && r.unitCost !== null ? { unitCost: r.unitCost } : {}),
+        ...adjustmentBatch(r)
       }))
     };
   }
@@ -310,7 +323,7 @@ export function StockAdjustmentEditor({ id }: { id?: string }) {
           <label className="field"><span>{t('date')}</span><input className="input" type="date" value={date} onChange={(e) => setDate(e.target.value)} /></label>
           <label className="field">
             <span>{t('warehouse')}</span>
-            <select className="input" value={warehouseId} onChange={(e) => setWarehouseId(e.target.value)}>
+            <select className="input" value={warehouseId} onChange={(e) => { setWarehouseId(e.target.value); setRows((rs) => rs.map((r) => ({ ...r, batchId: '' }))); }}>
               {active.map((w) => <option key={w.id} value={w.id}>{i18n.name(w.name)}</option>)}
             </select>
           </label>
@@ -362,6 +375,9 @@ export function StockAdjustmentEditor({ id }: { id?: string }) {
                         <span className="muted"> · {t('adj_after')}: {qtyText(i18n, check!.after)}</span>
                       </div>
                     )}
+                    {r.dir === 'out'
+                      ? <BatchPick item={it} warehouseId={warehouseId} value={r.batchId ?? ''} onChange={(batchId) => update(r.key, { batchId })} />
+                      : <BatchInFields item={it} batchNo={r.batchNo ?? ''} expiry={r.expiry ?? ''} date={date} onChange={(v) => update(r.key, v)} />}
                   </td>
                   {allowIn && (
                     <td>

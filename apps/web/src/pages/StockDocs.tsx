@@ -228,7 +228,7 @@ export function StockDocEditor({ kind: initialKind, id }: { kind?: StockDocKind;
                     <SearchCombo value={r.itemId} options={itemOptions} onChange={(v) => pickItem(r.key, v)} placeholder={t('chooseItem')} ariaLabel={t('item')} />
                     {short && <div className="small" style={{ color: 'var(--bad)', marginTop: 3 }}>{t('available')}: {qtyText(i18n, it.qtyMilli)}</div>}
                     {kind === 'opening'
-                      ? <BatchInFields item={it} batchNo={r.batchNo ?? ''} expiry={r.expiry ?? ''} onChange={(v) => update(r.key, v)} />
+                      ? <BatchInFields item={it} batchNo={r.batchNo ?? ''} expiry={r.expiry ?? ''} date={date} onChange={(v) => update(r.key, v)} />
                       : <BatchPick item={it} warehouseId={warehouseId} value={r.batchId ?? ''} onChange={(batchId) => update(r.key, { batchId })} />}
                   </td>
                   <td>

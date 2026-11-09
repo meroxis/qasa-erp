@@ -72,6 +72,18 @@ export function cashChange(paid: number | null, total: number, parts: readonly {
 }
 
 /**
+ * A cart line as the sale sends it: in its unit (or the base unit), and pinned to the batch the cashier picked ('':
+ * automatic, the earliest expiry first).
+ */
+export function posSaleLine(l: { item: { id: string }; unit: UnitCode | null; qtyMilli: number; unitPrice: number; batchId?: string }):
+  ({ itemId: string; qtyMilli: number; unitPrice: number } | { itemId: string; unit: UnitCode; unitQtyMilli: number; unitPrice: number }) & { batchId?: string } {
+  const batch = l.batchId ? { batchId: l.batchId } : {};
+  return l.unit
+    ? { itemId: l.item.id, unit: l.unit, unitQtyMilli: l.qtyMilli, unitPrice: l.unitPrice, ...batch }
+    : { itemId: l.item.id, qtyMilli: l.qtyMilli, unitPrice: l.unitPrice, ...batch };
+}
+
+/**
  * A cart line taken to another unit (the unit chip): when the cart already has a line of that item in that unit, the
  * two become one (that line takes the quantity), so the cart never holds two lines with the same item and unit.
  */

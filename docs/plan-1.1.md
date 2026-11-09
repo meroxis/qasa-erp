@@ -99,16 +99,15 @@ ALTER TABLE purchase_order_lines ADD COLUMN unit_qty_milli INTEGER;
 CREATE TABLE item_batches (
   id TEXT PRIMARY KEY,
   item_id TEXT NOT NULL REFERENCES items(id),
-  -- '' = stock that was there before batches were tracked, or a surplus with no number
+  -- '' = stock with no number: from before batches were tracked (no expiry), else one batch per expiry date
   number TEXT NOT NULL,
   expiry TEXT,
-  created_at TEXT NOT NULL,
-  UNIQUE (item_id, number)
+  created_at TEXT NOT NULL
 );
 CREATE INDEX item_batches_expiry ON item_batches(expiry);
--- version 11 rebuilds item_batches with UNIQUE (item_id, number, expiry) in place of UNIQUE (item_id, number): stock
--- with no number is one '' batch per expiry date (and one with no date). On a server: one ALTER adds the new key
--- item_batches_number_expiry and drops item_batches_number (skipped when the new key is there)
+-- unique per number AND expiry date (on a server: UNIQUE KEY item_batches_number_expiry). 1.1 ships schema 10: files
+-- from 1.1 development builds are not supported, only released version-9 files and new ones
+CREATE UNIQUE INDEX item_batches_number_expiry ON item_batches(item_id, number, expiry);
 
 -- every batch quantity change, beside stock_moves (which keeps the value); never edited or deleted
 CREATE TABLE stock_batch_moves (

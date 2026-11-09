@@ -5,7 +5,7 @@ import { DatabaseSync } from 'node:sqlite';
 import { DEFAULT_POSTING_ACCOUNTS, IRAQI_UNIFIED_CHART, STARTER_SUB_ACCOUNTS } from '@qasa/core';
 import { AppError } from './errors.ts';
 import {
-  MYSQL_TABLES, MYSQL_TRIGGERS, mysqlCollations, mysqlTableSql, pendingMysqlSteps, V10_MYSQL_STEPS, V11_MYSQL_STEPS, type MysqlCollations, type MysqlStep
+  MYSQL_TABLES, MYSQL_TRIGGERS, mysqlCollations, mysqlTableSql, pendingMysqlSteps, V10_MYSQL_STEPS, type MysqlCollations, type MysqlStep
 } from './schema-mysql.ts';
 
 export type SqlParam = null | number | bigint | string | Uint8Array;
@@ -1445,13 +1445,15 @@ const V10 =
   CREATE TABLE item_batches (
     id TEXT PRIMARY KEY,
     item_id TEXT NOT NULL REFERENCES items(id),
-    -- '' = stock that was there before batches were tracked, or a surplus with no number
+    -- '' = stock with no number: from before batches were tracked (no expiry), else one batch per expiry date
     number TEXT NOT NULL,
     expiry TEXT,
-    created_at TEXT NOT NULL,
-    UNIQUE (item_id, number)
+    created_at TEXT NOT NULL
   );
   CREATE INDEX item_batches_expiry ON item_batches(expiry);
+  -- unique per number AND expiry date, so a date typed on the way in is never lost (a numbered batch still keeps one
+  -- date: the app checks that)
+  CREATE UNIQUE INDEX item_batches_number_expiry ON item_batches(item_id, number, expiry);
 
   ALTER TABLE items ADD COLUMN category_id TEXT REFERENCES item_categories(id);
   -- the unit picked by default on sale and on purchase lines (NULL = the base unit, items.unit)
@@ -1570,31 +1572,10 @@ const V10 =
   );
   `;
 
-const V11 =
-  // 11 — stock with no batch number is kept apart per expiry date, so a date typed on the way in is never lost: an
-  // item's batches are unique per number and expiry date (a numbered batch still keeps one date: the app checks that).
-  // Every row and id stays as it was; only the unique key changes
-  `
-  CREATE TABLE item_batches_v11 (
-    id TEXT PRIMARY KEY,
-    item_id TEXT NOT NULL REFERENCES items(id),
-    -- '' = stock with no number: from before batches were tracked (no expiry), else one batch per expiry date
-    number TEXT NOT NULL,
-    expiry TEXT,
-    created_at TEXT NOT NULL
-  );
-  INSERT INTO item_batches_v11 (id, item_id, number, expiry, created_at) SELECT id, item_id, number, expiry, created_at FROM item_batches;
-  DROP TABLE item_batches;
-  ALTER TABLE item_batches_v11 RENAME TO item_batches;
-  CREATE INDEX item_batches_expiry ON item_batches(expiry);
-  CREATE UNIQUE INDEX item_batches_number_expiry ON item_batches(item_id, number, expiry);
-  `;
-
 const MIGRATIONS: Migration[] = [
   { sql: V1 }, { sql: V2, rebuild: true }, { sql: V3, rebuild: true }, { sql: V4 }, { sql: V5, rebuild: true },
   { sql: V6, mysql: 'tables' }, { sql: V7, mysql: 'tables' }, { sql: V8, mysql: 'tables' }, { sql: V9, mysql: 'tables' },
-  { sql: V10, mysql: { tables: true, steps: () => V10_MYSQL_STEPS } },
-  { sql: V11, rebuild: true, mysql: { tables: true, steps: () => V11_MYSQL_STEPS } }
+  { sql: V10, mysql: { tables: true, steps: () => V10_MYSQL_STEPS } }
 ];
 
 /** Server databases began at this version: its schema is in schema-mysql.ts (tables and triggers without `since`). */
@@ -1804,24 +1785,37 @@ function migrateMysql(db: Db, options: { triggers?: boolean } = {}): void {
  * The tables and triggers schema-mysql.ts marks `since` a version. The server commits each CREATE on its own: after an
  * upgrade cut off half way (a dropped connection), the next start finds some of them made already and makes only the
  * rest, instead of failing on "already exists" for good.
+ *
+ * A table is made as the current schema has it, so an old database (version 6 to 9) may get a table whose key points
+ * at a table of a later version (stock_adjustment_lines.batch_id → item_batches, made at 10): the server refuses that
+ * (errno 150) unless foreign key checks are off for that one CREATE. The later version then makes the table it points
+ * at, and its step for that key finds the key there already.
  */
 function createSinceObjects(db: Db, version: number, collations: MysqlCollations): void {
   const tables = new Set((db.prepare('SELECT table_name AS name FROM information_schema.tables WHERE table_schema = DATABASE()').all() as { name: string }[]).map((t) => t.name));
   const triggers = new Set((db.prepare('SELECT trigger_name AS name FROM information_schema.triggers WHERE trigger_schema = DATABASE()').all() as { name: string }[]).map((t) => t.name));
-  for (const table of MYSQL_TABLES.filter((t) => t.since === version && !tables.has(t.name))) db.exec(mysqlTableSql(table.sql, collations));
+  for (const table of MYSQL_TABLES.filter((t) => t.since === version && !tables.has(t.name))) {
+    const parents = [...table.sql.matchAll(/REFERENCES (\w+)\(/g)].map((m) => m[1]!);
+    const ahead = parents.some((p) => p !== table.name && !tables.has(p));
+    if (ahead) db.exec('SET FOREIGN_KEY_CHECKS = 0');
+    try {
+      db.exec(mysqlTableSql(table.sql, collations));
+    } finally {
+      if (ahead) db.exec('SET FOREIGN_KEY_CHECKS = 1');
+    }
+    tables.add(table.name);
+  }
   for (const trigger of MYSQL_TRIGGERS.filter((t) => t.since === version && !triggers.has(t.name))) db.exec(trigger.sql);
 }
 
-/** The columns, foreign keys and indexes a server database has, for the migration steps to skip what is done. */
-function mysqlSchemaState(db: Db): { columns: Set<string>; foreignKeys: Set<string>; indexes: Set<string> } {
+/** The columns and foreign keys a server database has, for the migration steps to skip what is done. */
+function mysqlSchemaState(db: Db): { columns: Set<string>; foreignKeys: Set<string> } {
   const columns = new Set((db.prepare('SELECT table_name AS t, column_name AS c FROM information_schema.columns WHERE table_schema = DATABASE()').all() as { t: string; c: string }[])
     .map((r) => `${r.t}.${r.c}`));
   const foreignKeys = new Set((db.prepare(`SELECT table_name AS t, column_name AS c, referenced_table_name AS p FROM information_schema.key_column_usage
                                            WHERE table_schema = DATABASE() AND referenced_table_name IS NOT NULL`).all() as { t: string; c: string; p: string }[])
     .map((r) => `${r.t}.${r.c}>${r.p}`));
-  const indexes = new Set((db.prepare('SELECT DISTINCT table_name AS t, index_name AS i FROM information_schema.statistics WHERE table_schema = DATABASE()').all() as { t: string; i: string }[])
-    .map((r) => `${r.t}.${r.i}`));
-  return { columns, foreignKeys, indexes };
+  return { columns, foreignKeys };
 }
 
 /** The company tables already in a server database (a Qasa company, or something else that must not be touched). */

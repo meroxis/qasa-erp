@@ -21,7 +21,17 @@ export interface ControlledLine {
 
 export const pharmacyApi = {
   status: () => request<{ available: boolean; forms: DosageForm[] }>('GET', '/api/pharmacy'),
-  medicines: (f: { q?: string; form?: DosageForm; rx?: '0' | '1'; controlled?: '0' | '1' } = {}) => request<{ items: MedicineView[]; total: number }>('GET', '/api/pharmacy/items' + qs(f)),
+  medicines: (f: { q?: string; form?: DosageForm; rx?: '0' | '1'; controlled?: '0' | '1'; limit?: string; offset?: string } = {}) => request<{ items: MedicineView[]; total: number }>('GET', '/api/pharmacy/items' + qs(f)),
+  /** Every prescription-only medicine's item id (for the Rx badge on sale lines), a page of 500 at a time. */
+  rxItemIds: async (): Promise<string[]> => {
+    const ids: string[] = [];
+    for (let offset = 0; offset < 20_000; offset += 500) {
+      const page = await pharmacyApi.medicines({ rx: '1', limit: '500', offset: String(offset) });
+      ids.push(...page.items.map((m) => m.itemId));
+      if (page.items.length < 500 || ids.length >= page.total) break;
+    }
+    return ids;
+  },
   medicine: (itemId: string) => request<MedicineDetail>('GET', `/api/pharmacy/items/${itemId}`),
   save: (itemId: string, body: PharmaDetails) => request<MedicineDetail>('PUT', `/api/pharmacy/items/${itemId}`, body),
   search: (q: string) => request<MedicineView[]>('GET', '/api/pharmacy/search' + qs({ q })),

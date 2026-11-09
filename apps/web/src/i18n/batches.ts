@@ -29,6 +29,11 @@ export const BATCH_TEXT = {
     'Quantities are kept per batch number; with expiry dates the date is asked on the way in and the earliest expiry sells first.',
     'بڕ بۆ هەر ژمارەی وەجبەیەک دەپارێزرێت؛ لەگەڵ بەرواری بەسەرچوون، بەروار لە کاتی کڕین دەپرسرێت و نزیکترین بەسەرچوون یەکەم دەفرۆشرێت.'
   ],
+  ex_arrivesExpired: [
+    'تاريخ الانتهاء {date} قبل تاريخ المستند: تصل هذه البضاعة منتهية الصلاحية.',
+    'The expiry date {date} is before the document date: these goods arrive already expired.',
+    'بەرواری بەسەرچوونی {date} پێش بەرواری بەڵگەنامەکەیە: ئەم کاڵایە بەسەرچوو دەگات.'
+  ],
   ex_auto: ['تلقائي (الأقرب انتهاءً)', 'Automatic (earliest expiry)', 'خۆکار (نزیکترین بەسەرچوون)'],
   ex_batchNo: ['رقم الوجبة', 'Batch no.', 'ژمارەی وەجبە'],
   ex_confirmExpired: [
