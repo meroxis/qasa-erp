@@ -17,6 +17,7 @@ import { PrintersCard } from '../industry/Printers.tsx';
 import { CompaniesSetting } from './Companies.tsx';
 import { cloudChoices } from './cloud-providers.ts';
 import { backupNoticeKey } from '../industry/BackupNotice.tsx';
+import { batchesApi, type BatchSettingsView } from '../industry/batches-api.ts';
 
 /** Language and display are each person's own; the company's settings are for admins. */
 export function Settings({ admin }: { admin: boolean }) {
@@ -173,6 +174,8 @@ function CompanySettings() {
       </div>
 
       <PostingAccountsCard />
+
+      <ExpirySettingsCard />
 
       <OfficeNetworkCard />
 
@@ -995,6 +998,50 @@ const POSTING_FIELDS: { key: keyof PostingAccounts; root: string }[] = [
 ];
 
 /** Which accounts invoices post to (sales 42, cost of sales 35, customers 1611 …). */
+/** Settings → Stock: how many days before expiry to warn, whether expired stock may be sold, and new items' default. */
+function ExpirySettingsCard() {
+  const { t } = useI18n();
+  const toast = useToast();
+  const [s, setS] = useState<BatchSettingsView | null>(null);
+  const [error, setError] = useState<unknown>(null);
+  useEffect(() => { batchesApi.settings().then(setS, setError); }, []);
+  if (!s) return error ? <ErrorBox error={error} /> : null;
+  async function save() {
+    if (!s) return;
+    setError(null);
+    try {
+      setS(await batchesApi.saveSettings(s));
+      toast(t('saved'));
+    } catch (e) {
+      setError(e);
+    }
+  }
+  return (
+    <div className="card pad stack">
+      <h2>{t('ex_settings')}</h2>
+      <div className="muted small">{t('ex_trackHelp')}</div>
+      <div className="grid-3">
+        <label className="field">
+          <span>{t('ex_nearDays')}</span>
+          <input className="input num" type="number" min={1} max={730} value={s.nearExpiryDays} onChange={(e) => setS({ ...s, nearExpiryDays: Math.max(1, Math.min(730, Math.floor(Number(e.target.value)) || 1)) })} />
+        </label>
+        <label className="field">
+          <span>{t('ex_policy')}</span>
+          <select className="input" value={s.expiredSales} onChange={(e) => setS({ ...s, expiredSales: e.target.value as 'block' | 'warn' })}>
+            <option value="block">{t('ex_policyBlock')}</option>
+            <option value="warn">{t('ex_policyWarn')}</option>
+          </select>
+        </label>
+        <label className="row" style={{ gap: 8, alignSelf: 'end' }}>
+          <input type="checkbox" checked={s.defaultTrackExpiry} onChange={(e) => setS({ ...s, defaultTrackExpiry: e.target.checked })} />{t('ex_defaultExpiry')}
+        </label>
+      </div>
+      <ErrorBox error={error} />
+      <div className="row"><button type="button" className="btn primary" onClick={() => void save()}><Icon name="check" size={16} />{t('save')}</button></div>
+    </div>
+  );
+}
+
 function PostingAccountsCard() {
   const { t } = useI18n();
   const toast = useToast();

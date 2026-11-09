@@ -20,6 +20,7 @@ import { InvoiceWhatsApp } from '../industry/WhatsAppShare.tsx';
 import { reverseDefaultDate } from '../industry/ReverseModal.tsx';
 import { printDocument } from '../industry/printing.ts';
 import { baseQty, factorOf, holdsText, salePriceFor, unitChoices, unitLabel, type LineUnit } from '../industry/units.ts';
+import { BatchInFields, BatchPick, useExpiredConfirm } from '../industry/BatchFields.tsx';
 
 const STATUSES: (InvoiceStatus | '')[] = ['', 'draft', 'posted', 'cancelled'];
 
@@ -59,7 +60,11 @@ export function Invoices({ kind }: { kind: InvoiceDocKind }) {
 /* ---------- editor ---------- */
 
 /** qtyMilli: as typed in the line's unit (null: the item's base unit); unitPrice: per that unit. */
-interface Row { key: number; itemId: string; qtyMilli: number | null; unitPrice: number | null; description: string; unit: LineUnit }
+interface Row {
+  key: number; itemId: string; qtyMilli: number | null; unitPrice: number | null; description: string; unit: LineUnit;
+  /** batches: what a purchase line brings in; the batch a sale line is pinned to ('' automatic) */
+  batchNo?: string; expiry?: string; batchId?: string;
+}
 
 let rowKey = 1;
 const emptyRow = (): Row => ({ key: rowKey++, itemId: '', qtyMilli: 1000, unitPrice: null, description: '', unit: null });
@@ -101,6 +106,7 @@ export function InvoiceEditor({ kind: initialKind, id, partyId: initialParty }: 
   const [rows, setRows] = useState<Row[]>(() => [emptyRow()]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<unknown>(null);
+  const expired = useExpiredConfirm();
 
   const partyType = kind === 'sale' ? 'customer' : 'supplier';
   const parties = useLoad(() => api.parties({ type: partyType, active: 'true' }), [partyType]);
@@ -133,7 +139,7 @@ export function InvoiceEditor({ kind: initialKind, id, partyId: initialParty }: 
       setNotes(v.notes);
       setRows(v.lines.map((l) => ({
         key: rowKey++, itemId: l.itemId, qtyMilli: l.lineUnit && l.unitQtyMilli !== null ? l.unitQtyMilli : l.qtyMilli, unitPrice: l.unitPrice,
-        description: l.description, unit: l.lineUnit
+        description: l.description, unit: l.lineUnit, batchNo: l.batchNo ?? '', expiry: l.expiry ?? '', batchId: l.batchId ?? ''
       })));
       setReady(true);
     }, setLoadError);
@@ -233,6 +239,9 @@ export function InvoiceEditor({ kind: initialKind, id, partyId: initialParty }: 
       lines: lines.map((r) => ({
         itemId: r.itemId, qtyMilli: (r.unit ? baseQty(itemById.get(r.itemId), r.unit, r.qtyMilli ?? 0) : r.qtyMilli) ?? 0, unitPrice: r.unitPrice ?? 0,
         ...(r.unit ? { unit: r.unit, unitQtyMilli: r.qtyMilli ?? 0 } : {}),
+        ...(kind === 'purchase' && r.batchNo?.trim() ? { batchNo: r.batchNo.trim() } : {}),
+        ...(kind === 'purchase' && r.expiry ? { expiry: r.expiry } : {}),
+        ...(kind === 'sale' && r.batchId ? { batchId: r.batchId } : {}),
         ...(r.description.trim() ? { description: r.description.trim() } : {})
       }))
     };
@@ -248,7 +257,13 @@ export function InvoiceEditor({ kind: initialKind, id, partyId: initialParty }: 
       const saved = savedId ? await api.updateInvoice(savedId, body) : await api.createInvoice(body);
       setSavedId(saved.id);
       if (post) {
-        await api.postInvoice(saved.id);
+        try {
+          await api.postInvoice(saved.id);
+        } catch (e) {
+          // stock past its expiry date: the company may allow it after the user confirms (written to the audit log)
+          if (!(await expired.ask(e))) throw e;
+          await api.postInvoice(saved.id, { allowExpired: true });
+        }
         await reloadAccounts();
         toast(t('a_post'));
       } else {
@@ -267,6 +282,7 @@ export function InvoiceEditor({ kind: initialKind, id, partyId: initialParty }: 
 
   return (
     <div className="stack" style={{ maxWidth: 1180 }}>
+      {expired.dialog}
       <div className="card pad stack">
         <h2 style={{ fontSize: 18 }}>{savedId ? `${t('editTitle')} — ${t(kind)}` : t(kind)}</h2>
         <div className="grid-3">
@@ -334,6 +350,9 @@ export function InvoiceEditor({ kind: initialKind, id, partyId: initialParty }: 
                   <td>
                     <SearchCombo value={r.itemId} options={itemOptions} onChange={(v) => pickItem(r.key, v)} placeholder={t('chooseItem')} ariaLabel={t('item')} />
                     {short && <div className="small" style={{ color: 'var(--bad)', marginTop: 3 }}>{t('available')}: {qtyText(i18n, it.qtyMilli)}</div>}
+                    {kind === 'purchase'
+                      ? <BatchInFields item={it} batchNo={r.batchNo ?? ''} expiry={r.expiry ?? ''} onChange={(v) => update(r.key, v)} />
+                      : <BatchPick item={it} warehouseId={warehouseId} value={r.batchId ?? ''} onChange={(batchId) => update(r.key, { batchId })} />}
                   </td>
                   <td>
                     <QtyInput value={r.qtyMilli} onChange={(v) => update(r.key, { qtyMilli: v })} ariaLabel={t('qty')} />
@@ -404,10 +423,20 @@ export function InvoiceDetail({ id }: { id: string }) {
   const [cancelling, setCancelling] = useState(false);
   const [returning, setReturning] = useState(false);
   const [cancelDate, setCancelDate] = useState(todayIso());
+  const expired = useExpiredConfirm();
 
   if (error) return <ErrorBox error={error} />;
   if (!data) return null;
   const v = data;
+  /** Posting a draft: stock past its expiry date asks first, when the company allows it at all. */
+  const postIt = async () => {
+    try {
+      await api.postInvoice(id);
+    } catch (e) {
+      if (!(await expired.ask(e))) throw e;
+      await api.postInvoice(id, { allowExpired: true });
+    }
+  };
   const company = settings ? i18n.name(settings.companyName) : '';
   const totalCost = v.lines.reduce((s, l) => s + (l.cost ?? 0), 0);
   const isRet = isReturnKind(v.kind);
@@ -450,7 +479,7 @@ export function InvoiceDetail({ id }: { id: string }) {
         {v.actions.includes('edit') && <a className="btn" href={href(`edit-invoice/${v.id}`)}>{t('actEdit')}</a>}
         {v.actions.includes('delete') && <button type="button" className="btn danger" disabled={busy} onClick={remove}>{t('actDelete')}</button>}
         {v.actions.includes('post') && (
-          <button type="button" className="btn primary" disabled={busy} onClick={() => { if (window.confirm(t('postConfirm'))) void act(() => api.postInvoice(id), t('a_post')); }}>
+          <button type="button" className="btn primary" disabled={busy} onClick={() => { if (window.confirm(t('postConfirm'))) void act(postIt, t('a_post')); }}>
             <Icon name="check" size={16} />{t('actPost')}
           </button>
         )}
@@ -522,6 +551,7 @@ export function InvoiceDetail({ id }: { id: string }) {
                 <td><span className="ltr">{l.itemCode}</span></td>
                 <td>{i18n.name(l.itemName)}{l.description && <div className="muted small">{l.description}</div>}</td>
                 <td className="amount">
+                  {(l.batchNo || l.expiry) && <div className="muted small ltr">{l.batchNo}{l.expiry ? ` · ${i18n.date(l.expiry)}` : ''}</div>}
                   {l.lineUnit && l.unitQtyMilli !== null
                     ? <>{qtyText(i18n, l.unitQtyMilli)} <span className="muted small">{unitName(i18n, l.lineUnit)}</span><div className="muted small">{qtyText(i18n, l.qtyMilli)} {unitName(i18n, l.unit)}</div></>
                     : <>{qtyText(i18n, l.qtyMilli)} <span className="muted small">{unitName(i18n, l.unit)}</span></>}
@@ -586,6 +616,7 @@ export function InvoiceDetail({ id }: { id: string }) {
         </div>
       )}
 
+      {expired.dialog}
       {returning && <ReturnModal invoice={v} onClose={() => setReturning(false)} />}
 
       {cancelling && (

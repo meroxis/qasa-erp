@@ -12,6 +12,7 @@ import { invoiceModel } from '../industry/print-model.ts';
 import { usePrintSetup } from '../industry/print-api.ts';
 import { addRefusal, parseScan, priceIn, priceRateFor, tilePrice } from './pos-logic.ts';
 import { salePriceFor, unitChoices, unitLabel, type LineUnit } from '../industry/units.ts';
+import { useExpiredConfirm } from '../industry/BatchFields.tsx';
 import { printAlone, printDocument } from '../industry/printing.ts';
 
 /**
@@ -167,6 +168,7 @@ function Register({ initial, onClosed }: { initial: ShiftView; onClosed(): void 
   const [partyId, setPartyId] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<unknown>(null);
+  const expired = useExpiredConfirm();
   const [receipt, setReceipt] = useState<InvoiceView | null>(null);
   const [closing, setClosing] = useState(false);
   const [notFound, setNotFound] = useState('');
@@ -280,12 +282,20 @@ function Register({ initial, onClosed }: { initial: ShiftView; onClosed(): void 
     setBusy(true);
     setError(null);
     try {
-      const res = await posApi.sell(shift.id, {
+      const sale = {
         currency, ...(currency === 'USD' ? { rateX100 } : {}), ...(partyId ? { partyId } : {}), discount: discount ?? 0,
         lines: cart.map((l) => (l.unit
           ? { itemId: l.item.id, unit: l.unit, unitQtyMilli: l.qtyMilli, unitPrice: l.unitPrice }
           : { itemId: l.item.id, qtyMilli: l.qtyMilli, unitPrice: l.unitPrice }))
-      });
+      };
+      let res;
+      try {
+        res = await posApi.sell(shift.id, sale);
+      } catch (e) {
+        // stock past its expiry date: the company may allow it after the cashier confirms (written to the audit log)
+        if (!(await expired.ask(e))) throw e;
+        res = await posApi.sell(shift.id, { ...sale, allowExpired: true });
+      }
       setShift(res.shift);
       setReceipt(res.invoice);
       clear();
@@ -318,6 +328,7 @@ function Register({ initial, onClosed }: { initial: ShiftView; onClosed(): void 
 
   return (
     <div className="pos">
+      {expired.dialog}
       <div className="pos-bar no-print">
         <div className="pos-shift-info">
           <strong>{shift.register}</strong>

@@ -3,6 +3,8 @@ import { formatQty, roundHalfUp, UNITS, type CurrencyCode, type Names, type Unit
 import { api, type ItemInput, type ItemView, type WarehouseView } from '../api.ts';
 import { EmptyState, AmountInput, ErrorBox, Icon, Modal, QtyInput, downloadCsv, useData, useLoad, useToast } from '../components.tsx';
 import { inUnits } from '../industry/units.ts';
+import { batchesApi } from '../industry/batches-api.ts';
+import { ExpiryChip } from './Expiry.tsx';
 import { useI18n, type I18n, isKey, type Key } from '../i18n.ts';
 import { go, href } from '../router.ts';
 import { ImagePicker, ItemImage } from '../industry/ItemImage.tsx';
@@ -171,6 +173,8 @@ export function ItemForm({ item, onClose, onSaved }: { item: ItemView | null; on
   const [trackStock, setTrackStock] = useState(item?.trackStock ?? true);
   const [active, setActive] = useState(item?.active ?? true);
   const [units, setUnits] = useState<UnitRow[]>(() => (item?.units ?? []).map((u) => ({ key: unitKey++, unit: u.unit, factorMilli: u.factorMilli, barcode: u.barcode, salePrice: u.salePrice })));
+  const [trackBatches, setTrackBatches] = useState(item?.trackBatches ?? false);
+  const [trackExpiry, setTrackExpiry] = useState(item?.trackExpiry ?? false);
   const [saleUnit, setSaleUnit] = useState<UnitCode | ''>(item?.saleUnit ?? '');
   const [purchaseUnit, setPurchaseUnit] = useState<UnitCode | ''>(item?.purchaseUnit ?? '');
   const [error, setError] = useState<unknown>(null);
@@ -185,7 +189,9 @@ export function ItemForm({ item, onClose, onSaved }: { item: ItemView | null; on
       units: unit === 'service' ? [] : listed.map((u) => ({ unit: u.unit as UnitCode, factorMilli: u.factorMilli ?? 0, barcode: u.barcode.trim(), salePrice: u.salePrice })),
       // a default unit that is no longer listed falls back to the base unit
       saleUnit: saleUnit && listed.some((u) => u.unit === saleUnit) ? saleUnit : null,
-      purchaseUnit: purchaseUnit && listed.some((u) => u.unit === purchaseUnit) ? purchaseUnit : null
+      purchaseUnit: purchaseUnit && listed.some((u) => u.unit === purchaseUnit) ? purchaseUnit : null,
+      // a new item left as it is follows the company's setting for expiry dates
+      ...(item || trackBatches || trackExpiry ? { trackBatches: trackBatches || trackExpiry, trackExpiry } : {})
     };
     if (code.trim()) input.code = code.trim();
     if (barcode.trim()) input.barcode = barcode.trim();
@@ -227,6 +233,13 @@ export function ItemForm({ item, onClose, onSaved }: { item: ItemView | null; on
         </div>
         {unit !== 'service' && (
           <label className="row" style={{ gap: 8 }}><input type="checkbox" checked={trackStock} disabled={item?.hasMoves} onChange={(e) => setTrackStock(e.target.checked)} />{t('trackStock')}</label>
+        )}
+        {unit !== 'service' && trackStock && (
+          <div className="stack" style={{ gap: 4 }}>
+            <label className="row" style={{ gap: 8 }}><input type="checkbox" checked={trackBatches || trackExpiry} disabled={trackExpiry} onChange={(e) => setTrackBatches(e.target.checked)} />{t('ex_trackBatches')}</label>
+            <label className="row" style={{ gap: 8 }}><input type="checkbox" checked={trackExpiry} onChange={(e) => setTrackExpiry(e.target.checked)} />{t('ex_trackExpiry')}</label>
+            <span className="muted small">{t('ex_trackHelp')}</span>
+          </div>
         )}
         {unit !== 'service' && (
           <fieldset className="card pad stack" style={{ gap: 8 }}>
@@ -294,6 +307,34 @@ export function ItemForm({ item, onClose, onSaved }: { item: ItemView | null; on
         </div>
       </div>
     </Modal>
+  );
+}
+
+/** The item card's batches: each batch with its expiry (coloured by how near it is) and its quantity per warehouse. */
+function ItemBatches({ itemId }: { itemId: string }) {
+  const i18n = useI18n();
+  const { t } = i18n;
+  const { data } = useLoad(() => batchesApi.ofItem(itemId), [itemId]);
+  const rows = (data ?? []).filter((b) => b.qtyMilli !== 0);
+  return (
+    <div className="card">
+      <div style={{ padding: '12px 16px' }}><h2>{t('ex_title')}</h2></div>
+      {rows.length === 0 ? <p className="muted" style={{ padding: '0 16px 14px', margin: 0 }}>{t('ex_none')}</p> : (
+        <table className="table">
+          <thead><tr><th>{t('ex_batch')}</th><th>{t('ex_expiry')}</th><th>{t('warehouse')}</th><th className="amount">{t('qty')}</th></tr></thead>
+          <tbody>
+            {rows.map((b) => (
+              <tr key={`${b.batchId}|${b.warehouseId}`}>
+                <td className="ltr">{b.batch || t('ex_noNumber')}</td>
+                <td><ExpiryChip state={b.state} expiry={b.expiry} i18n={i18n} /></td>
+                <td>{i18n.name(b.warehouseName)}</td>
+                <td className="amount">{i18n.qty(b.qtyMilli)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+    </div>
   );
 }
 
@@ -380,6 +421,8 @@ export function ItemDetail({ id }: { id: string }) {
       </div>
 
       <div className="no-print"><WholesalePriceField itemId={it.id} /></div>
+
+      {it.trackBatches && <ItemBatches itemId={it.id} />}
 
       {it.stock.length > 1 && (
         <div className="card">

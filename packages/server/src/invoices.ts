@@ -30,6 +30,10 @@ import { getParty } from './parties.ts';
 import { addStockMove, stockOf } from './items.ts';
 import { getPostingAccounts, isPeriodLocked } from './settings.ts';
 import { resolveLines } from './item-units.ts';
+import {
+  addTaken, allocateOut, assertReversible, batchColumns, batchMovesOf, batchTracking, inboundBatch, lineBatchErrors, reverseBatchMoves, writeBatchMoves,
+  type BatchError, type BatchMove
+} from './batches.ts';
 
 export type InvoiceAction = 'edit' | 'delete' | 'post' | 'cancel' | 'return';
 
@@ -56,6 +60,10 @@ export interface InvoiceLineView {
   lineUnit: UnitCode | null;
   unitFactorMilli: number | null;
   unitQtyMilli: number | null;
+  /** 1.1: the batch a purchase line brought in (number and expiry), or the batch a sale line was pinned to (null: earliest expiry first) */
+  batchNo: string | null;
+  expiry: string | null;
+  batchId: string | null;
 }
 
 export interface InvoiceSummary {
@@ -189,6 +197,7 @@ export function getInvoice(db: Db, id: string): InvoiceView {
     line_no: number; item_id: string; description: string | null; qty_milli: number; unit_price: number; amount: number; cost: number | null; source_line: number | null;
     code: string; name_ar: string; name_en: string; name_ku: string; unit: UnitCode; track_stock: number;
     line_unit: UnitCode | null; unit_factor_milli: number | null; unit_qty_milli: number | null;
+    batch_no: string | null; expiry: string | null; batch_id: string | null;
   }[]);
   const returned = r.status === 'posted' && !isReturn(r.kind) ? returnedByLine(db, id) : new Map<number, { qtyMilli: number; amount: number }>();
   const lineViews: InvoiceLineView[] = lines.map((l) => ({
@@ -197,7 +206,8 @@ export function getInvoice(db: Db, id: string): InvoiceView {
     sourceLine: l.source_line, returnedQtyMilli: returned.get(l.line_no)?.qtyMilli ?? 0, returnedAmount: returned.get(l.line_no)?.amount ?? 0,
     lineUnit: l.line_unit ?? null,
     unitFactorMilli: l.unit_factor_milli === null ? null : Number(l.unit_factor_milli),
-    unitQtyMilli: l.unit_qty_milli === null ? null : Number(l.unit_qty_milli)
+    unitQtyMilli: l.unit_qty_milli === null ? null : Number(l.unit_qty_milli),
+    batchNo: l.batch_no ?? null, expiry: l.expiry ?? null, batchId: l.batch_id ?? null
   }));
   const returns = db.prepare('SELECT id, kind, number, date, status, total FROM invoices WHERE return_of = ? ORDER BY date, created_at').all(id) as
     { id: string; kind: InvoiceDocKind; number: string | null; date: string; status: InvoiceStatus; total: number }[];
@@ -279,6 +289,7 @@ function assertInvoice(db: Db, input: InvoiceInput): void {
       const item = find.get(l.itemId) as ItemInfo | undefined;
       if (!item || item.active !== 1) errors.push({ code: 'item_invalid', line: i + 1 });
       else if (input.kind === 'purchase' && item.track_stock !== 1) errors.push({ code: 'item_not_stock', line: i + 1 });
+      else errors.push(...lineBatchErrors(db, l.itemId, l, i + 1));
     });
     if (!errors.some((e) => e.code.startsWith('line_') || e.code === 'discount_invalid') && invoiceTotals(input.lines, input.discount).total <= 0) {
       errors.push({ code: 'total_invalid' });
@@ -295,10 +306,13 @@ function writeDraft(db: Db, id: string, input: InvoiceInput): void {
     .run(input.date, input.partyId ?? null, input.warehouseId, input.currency, input.rateX100, input.payment, input.cashAccountCode ?? null,
       input.discount, totals.subtotal, totals.total, input.notes?.trim() || null, new Date().toISOString(), id);
   db.prepare('DELETE FROM invoice_lines WHERE invoice_id = ?').run(id);
-  const insert = db.prepare(`INSERT INTO invoice_lines (invoice_id, line_no, item_id, description, qty_milli, unit_price, amount, unit, unit_factor_milli, unit_qty_milli)
-                             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`);
+  const insert = db.prepare(`INSERT INTO invoice_lines (invoice_id, line_no, item_id, description, qty_milli, unit_price, amount, unit, unit_factor_milli, unit_qty_milli,
+                                                        batch_no, expiry, batch_id)
+                             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`);
   input.lines.forEach((l, i) => insert.run(id, i + 1, l.itemId, l.description?.trim() || null, l.qtyMilli, l.unitPrice, totals.lineAmounts[i] ?? 0,
-    l.unit ?? null, l.unit ? l.unitFactorMilli ?? null : null, l.unit ? l.unitQtyMilli ?? null : null));
+    l.unit ?? null, l.unit ? l.unitFactorMilli ?? null : null, l.unit ? l.unitQtyMilli ?? null : null,
+    // a purchase line brings a batch in (number, expiry); a sale line may be pinned to one
+    ...(input.kind === 'purchase' ? batchColumns({ batchNo: l.batchNo, expiry: l.expiry }) : batchColumns({ batchId: l.batchId }))));
 }
 
 export function createInvoice(db: Db, raw: InvoiceInput | InvoiceRequest, user: string): InvoiceView {
@@ -356,7 +370,8 @@ function storedInput(view: InvoiceView): InvoiceInput {
     // the factor kept with the line, never the item's factor now: a later change of the factor leaves the line as it was
     lines: view.lines.map((l) => ({
       itemId: l.itemId, qtyMilli: l.qtyMilli, unitPrice: l.unitPrice, description: l.description,
-      ...(l.lineUnit ? { unit: l.lineUnit, unitFactorMilli: l.unitFactorMilli ?? undefined, unitQtyMilli: l.unitQtyMilli ?? undefined } : {})
+      ...(l.lineUnit ? { unit: l.lineUnit, unitFactorMilli: l.unitFactorMilli ?? undefined, unitQtyMilli: l.unitQtyMilli ?? undefined } : {}),
+      ...(l.batchNo ? { batchNo: l.batchNo } : {}), ...(l.expiry ? { expiry: l.expiry } : {}), ...(l.batchId ? { batchId: l.batchId } : {})
     }))
   };
 }
@@ -374,8 +389,10 @@ export function fromBase(amountIqd: number, currency: CurrencyCode, rateX100: nu
  * `settledNow` (internal callers only, never from a request): the part of a credit sale's total, in the invoice's
  * currency, that the caller collects in the same transaction (a cash sale whose deposit put it on credit). Only that
  * part is left out of the customer's credit limit check; nothing else changes.
+ * `allowExpired`: the user confirmed selling stock past its expiry date (only under the 'warn' policy; written to the
+ * audit log). Batch items take their batches earliest expiry first, or the batch a line is pinned to.
  */
-export function postInvoice(db: Db, id: string, user: string, opts: { settledNow?: number } = {}): InvoiceView {
+export function postInvoice(db: Db, id: string, user: string, opts: { settledNow?: number; allowExpired?: boolean } = {}): InvoiceView {
   const view = getInvoice(db, id);
   requireAction(db, loadRow(db, id), 'post');
   const input = storedInput(view);
@@ -391,6 +408,10 @@ export function postInvoice(db: Db, id: string, user: string, opts: { settledNow
   const lineCosts: (number | null)[] = [];
   const moves: { itemId: string; qtyMilli: number; value: number }[] = [];
   const lines: LineInput[] = [];
+  // batch items: which batches each line takes (sales) or brings in (purchases, made in the transaction)
+  const batchMoves: BatchMove[] = [];
+  const inbound: { lineNo: number; itemId: string; qtyMilli: number; batchNo: string | null; expiry: string | null }[] = [];
+  let usedExpired = false;
 
   if (view.kind === 'sale') {
     const settled = Number.isSafeInteger(opts.settledNow) ? Math.min(Math.max(opts.settledNow!, 0), total) : 0;
@@ -410,6 +431,17 @@ export function postInvoice(db: Db, id: string, user: string, opts: { settledNow
       moves.push({ itemId: l.itemId, qtyMilli: -l.qtyMilli, value: -cost });
     });
     if (errors.length) throw invalid(errors);
+    const taken = new Map<string, number>();
+    const batchErrors: BatchError[] = [];
+    view.lines.forEach((l, i) => {
+      if (!l.trackStock || !batchTracking(db, l.itemId).batches) return;
+      const r = allocateOut(db, { itemId: l.itemId, warehouseId: view.warehouseId, qtyMilli: l.qtyMilli, date: view.date, line: i + 1, purpose: 'sale', allowExpired: opts.allowExpired, pinned: l.batchId }, taken);
+      if ('code' in r) { batchErrors.push(r); return; }
+      addTaken(taken, r.picks);
+      if (r.usedExpired) usedExpired = true;
+      for (const p of r.picks) batchMoves.push({ batchId: p.batchId, itemId: l.itemId, warehouseId: view.warehouseId, qtyMilli: -p.qtyMilli, lineNo: i + 1 });
+    });
+    if (batchErrors.length) throw invalid(batchErrors);
     const totalCost = lineCosts.reduce<number>((s, c) => s + (c ?? 0), 0);
     lines.push({ accountCode: counterAccount, debit: total, credit: 0, ...counterParty });
     lines.push({ accountCode: accounts.sales, debit: 0, credit: total });
@@ -426,6 +458,11 @@ export function postInvoice(db: Db, id: string, user: string, opts: { settledNow
       const value = values[i] ?? 0;
       lineCosts.push(value);
       moves.push({ itemId: l.itemId, qtyMilli: l.qtyMilli, value });
+      const tracking = batchTracking(db, l.itemId);
+      if (tracking.batches) {
+        if (tracking.expiry && !l.expiry) throw invalid([{ code: 'expiry_required', line: i + 1 }]);
+        inbound.push({ lineNo: i + 1, itemId: l.itemId, qtyMilli: l.qtyMilli, batchNo: l.batchNo, expiry: l.expiry });
+      }
     });
     lines.push({ accountCode: warehouseAccount, debit: total, credit: 0, baseDebit: baseTotal, baseCredit: 0 });
     lines.push({ accountCode: counterAccount, debit: 0, credit: total, baseDebit: 0, baseCredit: baseTotal, ...counterParty });
@@ -446,9 +483,16 @@ export function postInvoice(db: Db, id: string, user: string, opts: { settledNow
     const setCost = db.prepare('UPDATE invoice_lines SET cost = ? WHERE invoice_id = ? AND line_no = ?');
     lineCosts.forEach((c, i) => setCost.run(c, id, i + 1));
     for (const m of moves) addStockMove(db, { ...m, warehouseId: view.warehouseId, date: view.date, sourceType: view.kind, sourceId: id });
+    for (const l of inbound) {
+      const b = inboundBatch(db, l.itemId, l, l.lineNo, view.date);
+      if (b) batchMoves.push({ batchId: b.batchId, itemId: l.itemId, warehouseId: view.warehouseId, qtyMilli: l.qtyMilli, lineNo: l.lineNo });
+    }
+    writeBatchMoves(db, batchMoves, view.date, view.kind, id);
     db.prepare(`UPDATE invoices SET status = 'posted', number = ?, entry_id = ?, posted_by = ?, posted_at = ?, updated_at = ? WHERE id = ?`)
       .run(number, entryId, user, now, now, id);
     audit(db, user, 'post', 'invoice', id, { number, entryId });
+    // selling stock past its date (the user confirmed it, under the 'warn' policy) is kept on record
+    if (usedExpired) audit(db, user, 'sell_expired', 'invoice', id, { number, batches: batchMoves.map((m) => m.batchId) });
   });
   return getInvoice(db, id);
 }
@@ -482,10 +526,13 @@ export function cancelInvoice(db: Db, id: string, user: string, date?: string): 
       remaining.set(m.itemId, after);
     }
     if (errors.length) throw invalid(errors);
+    // the batches it brought in must still hold what comes out again
+    assertReversible(db, view.kind, id);
   }
   transaction(db, () => {
     const reversalId = view.entryId ? reverseEntryInternal(db, view.entryId, user, cancelDate) : null;
     for (const m of moves) addStockMove(db, { itemId: m.itemId, warehouseId: view.warehouseId, date: cancelDate, qtyMilli: m.qtyMilli, value: m.value, sourceType: `${view.kind}_cancel`, sourceId: id });
+    if (batchMovesOf(db, view.kind, id).length) reverseBatchMoves(db, view.kind, id, cancelDate);
     const now = new Date().toISOString();
     db.prepare(`UPDATE invoices SET status = 'cancelled', cancel_entry_id = ?, cancelled_by = ?, cancelled_at = ?, updated_at = ? WHERE id = ?`)
       .run(reversalId, user, now, now, id);

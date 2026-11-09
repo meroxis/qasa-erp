@@ -57,6 +57,7 @@ export const NAV: NavGroup[] = [
       { key: 'items', icon: 'box', path: 'items', match: ['items', 'item'] },
       { key: 'stockDocs', icon: 'swap', path: 'stock-docs', match: ['stock-docs', 'stock-doc', 'new-stock-doc', 'edit-stock-doc'] },
       { key: 'lb_title', icon: 'tag', path: 'labels', match: ['labels'] },
+      { key: 'ex_title', icon: 'clock', path: 'expiry', match: ['expiry'] },
       { key: 'adj_title', icon: 'tag', path: 'stock-adjustments', match: ['stock-adjustments', 'stock-adjustment', 'new-stock-adjustment', 'edit-stock-adjustment', 'stock-count'] }
     ]
   },

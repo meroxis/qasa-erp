@@ -24,6 +24,8 @@ export const PAGE_GUIDE: Readonly<Record<string, GuideSlug>> = {
   'edit-stock-doc': 'stock-items-warehouses-counts', 'stock-adjustments': 'stock-items-warehouses-counts',
   'stock-adjustment': 'stock-items-warehouses-counts', 'new-stock-adjustment': 'stock-items-warehouses-counts',
   'edit-stock-adjustment': 'stock-items-warehouses-counts', 'stock-count': 'stock-items-warehouses-counts',
+  // 1.1: batches and expiry dates are part of the stock topic
+  expiry: 'stock-items-warehouses-counts',
   pos: 'point-of-sale', 'pos-shift': 'point-of-sale',
   banking: 'banks-safes-and-cheques', cheque: 'banks-safes-and-cheques', 'bank-statement': 'banks-safes-and-cheques',
   'trial-balance': 'reports-final-accounts-year-end', statement: 'reports-final-accounts-year-end',

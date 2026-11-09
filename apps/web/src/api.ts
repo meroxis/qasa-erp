@@ -221,6 +221,9 @@ export interface ItemView {
   saleUnit: UnitCode | null;
   purchaseUnit: UnitCode | null;
   updatedAt: string | null;
+  /** stock kept per batch number; an expiry date asked on the way in */
+  trackBatches: boolean;
+  trackExpiry: boolean;
 }
 
 /** One of an item's other units: base units in one (thousandths), its barcode and its own price (null: base × factor). */
@@ -238,6 +241,8 @@ export interface ItemInput {
   units?: { unit: UnitCode; factorMilli: number; barcode?: string; salePrice?: number | null }[];
   saleUnit?: UnitCode | null;
   purchaseUnit?: UnitCode | null;
+  trackBatches?: boolean;
+  trackExpiry?: boolean;
 }
 
 export interface ItemDetail extends ItemView {
@@ -291,6 +296,7 @@ export interface InvoiceView extends InvoiceSummary {
     sourceLine: number | null; returnedQtyMilli: number; returnedAmount: number;
     /** 1.1: the unit the line was typed in (null: the base unit), its factor then and the quantity typed */
     lineUnit: UnitCode | null; unitFactorMilli: number | null; unitQtyMilli: number | null;
+    batchNo: string | null; expiry: string | null; batchId: string | null;
   }[];
   actions: InvoiceAction[];
   returnOfNumber: string | null;
@@ -362,6 +368,7 @@ export interface StockDocView extends StockDocSummary {
   lines: {
     lineNo: number; itemId: string; itemCode: string; itemName: Names; unit: UnitCode; qtyMilli: number; unitCost: number | null; value: number | null;
     lineUnit: UnitCode | null; unitFactorMilli: number | null; unitQtyMilli: number | null;
+    batchNo: string | null; expiry: string | null; batchId: string | null;
   }[];
   actions: StockDocAction[];
 }
@@ -373,7 +380,7 @@ export interface StockDocInput {
   toWarehouseId?: string;
   counterAccountCode?: string;
   notes?: string;
-  lines: { itemId: string; qtyMilli: number; unitCost?: number; unit?: UnitCode; unitQtyMilli?: number }[];
+  lines: { itemId: string; qtyMilli: number; unitCost?: number; unit?: UnitCode; unitQtyMilli?: number; batchNo?: string; expiry?: string; batchId?: string }[];
 }
 
 export type { InvoiceInput };
@@ -659,7 +666,7 @@ export const api = {
   createInvoice: (input: InvoiceInput) => request<InvoiceView>('POST', '/api/invoices', input),
   updateInvoice: (id: string, input: InvoiceInput) => request<InvoiceView>('PUT', `/api/invoices/${id}`, input),
   deleteInvoice: (id: string) => request<void>('DELETE', `/api/invoices/${id}`),
-  postInvoice: (id: string) => request<InvoiceView>('POST', `/api/invoices/${id}/post`, {}),
+  postInvoice: (id: string, opts: { allowExpired?: boolean } = {}) => request<InvoiceView>('POST', `/api/invoices/${id}/post`, opts.allowExpired ? { allowExpired: true } : {}),
   cancelInvoice: (id: string, date: string) => request<InvoiceView>('POST', `/api/invoices/${id}/cancel`, { date }),
   createReturn: (id: string, input: ReturnInput) => request<InvoiceView>('POST', `/api/invoices/${id}/returns`, input),
 

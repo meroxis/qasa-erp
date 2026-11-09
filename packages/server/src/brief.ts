@@ -9,6 +9,7 @@ import { readSetting, writeSetting } from './settings.ts';
 import { AppError } from './errors.ts';
 import { entryInBranchSql, scopeLists, scopeOf } from './branches.ts';
 import { chequesAhead, type ChequeAlert } from './banking.ts';
+import { expiryAlert, type BatchReportRow } from './batches.ts';
 
 /** A branch's warehouses and safes (null: the whole company). See branches.ts. */
 export type BranchFilter = { warehouses: string[]; accounts: string[] } | null;
@@ -376,6 +377,8 @@ export interface BriefView {
   /** cheques due within a week (or past due) and cheques bounced in the last 30 days */
   cheques: { due: ChequeAlert[]; bounced: ChequeAlert[]; dueTotal: Money };
   ownerPhone: string;
+  /** 1.1: batches with stock past their expiry date or near it (null: no item tracks expiry dates) */
+  expiry: { expired: number; near: number; days: number; top: BatchReportRow[] } | null;
 }
 
 export function dailyBrief(db: Db, date: string, branch: BranchFilter = null): BriefView {
@@ -410,7 +413,8 @@ export function dailyBrief(db: Db, date: string, branch: BranchFilter = null): B
     lowStock: lowStock(db, date, 10, branch),
     approvals: { waitingCheck: num(approvals.draft), waitingApproval: num(approvals.checked) },
     cheques: chequesAhead(db, date, 10, branch?.accounts ?? null),
-    ownerPhone: readSetting(db, 'brief_phone') ?? ''
+    ownerPhone: readSetting(db, 'brief_phone') ?? '',
+    expiry: expiryAlert(db, date, branch?.warehouses ?? null)
   };
 }
 

@@ -42,6 +42,8 @@ export interface SaleInput {
   partyId?: string;
   discount: number;
   notes?: string;
+  /** the cashier confirmed selling stock past its expiry date (only when the company allows it) */
+  allowExpired?: boolean;
   /** qtyMilli in base units, or unit + unitQtyMilli: the quantity in one of the item's units, priced per that unit */
   lines: ({ itemId: string; qtyMilli: number; unitPrice: number } | { itemId: string; unit: UnitCode; unitQtyMilli: number; unitPrice: number })[];
 }

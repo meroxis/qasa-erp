@@ -32,6 +32,8 @@ export interface BriefView {
   /** older servers leave it out */
   cheques?: ChequesAheadView;
   ownerPhone: string;
+  /** 1.1: batches past their expiry date or near it (null: no item tracks expiry; older servers leave it out) */
+  expiry?: { expired: number; near: number; days: number; top: { itemId: string; itemName: Names; batch: string; expiry: string | null; qtyMilli: number; state: string | null }[] } | null;
 }
 
 export interface DashboardView {

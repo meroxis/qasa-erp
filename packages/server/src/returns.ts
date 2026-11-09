@@ -13,6 +13,7 @@ import { getParty } from './parties.ts';
 import { addStockMove, stockOf } from './items.ts';
 import { getPostingAccounts, isPeriodLocked } from './settings.ts';
 import { fromBase, getInvoice, returnedByLine, returnedTotals, type InvoiceView } from './invoices.ts';
+import { addTaken, batchTracking, ensureBatch, purchaseReturnPicks, saleReturnPicks, writeBatchMoves, type BatchError, type BatchMove } from './batches.ts';
 
 export interface ReturnInput {
   date: string;
@@ -125,6 +126,9 @@ export function createReturn(db: Db, originalId: string, input: ReturnInput, use
   const baseTotal = remainingShare(original.baseTotal, refunded.baseTotal, total, refunded.total, original.total);
   const entryLines: LineInput[] = [];
   const moves: { itemId: string; qtyMilli: number; value: number }[] = [];
+  const batchMoves: BatchMove[] = [];
+  // a sale return goes back into the batches the line took (those sold before tracking: into the batch with no number)
+  const backInto: { lineNo: number; itemId: string; qtyMilli: number; sourceLine: number }[] = [];
 
   if (kind === 'sale_return') {
     if (total > 0) {
@@ -137,7 +141,10 @@ export function createReturn(db: Db, originalId: string, input: ReturnInput, use
       entryLines.push({ accountCode: warehouseAccount, debit: cost, credit: 0, baseDebit: totalCost, baseCredit: 0 });
       entryLines.push({ accountCode: accounts.costOfSales, debit: 0, credit: cost, baseDebit: 0, baseCredit: totalCost });
     }
-    for (const l of lines) if (l.trackStock && l.cost !== null) moves.push({ itemId: l.itemId, qtyMilli: l.qtyMilli, value: l.cost });
+    lines.forEach((l, i) => {
+      if (l.trackStock && l.cost !== null) moves.push({ itemId: l.itemId, qtyMilli: l.qtyMilli, value: l.cost });
+      if (l.trackStock && batchTracking(db, l.itemId).batches) backInto.push({ lineNo: i + 1, itemId: l.itemId, qtyMilli: l.qtyMilli, sourceLine: l.sourceLine });
+    });
   } else {
     // the goods must still be in the warehouse; they leave at their purchase cost, never more than the stock is worth
     const stock = new Map<string, { qtyMilli: number; value: number }>();
@@ -152,6 +159,17 @@ export function createReturn(db: Db, originalId: string, input: ReturnInput, use
       moves.push({ itemId: l.itemId, qtyMilli: -l.qtyMilli, value: -value });
     }
     if (stockErrors.length) throw invalid(stockErrors);
+    // batch items leave from the batch the purchase line brought in
+    const taken = new Map<string, number>();
+    const batchErrors: BatchError[] = [];
+    lines.forEach((l, i) => {
+      if (!l.trackStock || !batchTracking(db, l.itemId).batches) return;
+      const r = purchaseReturnPicks(db, originalId, l.sourceLine, original.warehouseId, l.itemId, l.qtyMilli, l.sourceLine, taken);
+      if ('code' in r) { batchErrors.push(r); return; }
+      addTaken(taken, r);
+      for (const p of r) batchMoves.push({ batchId: p.batchId, itemId: l.itemId, warehouseId: original.warehouseId, qtyMilli: -p.qtyMilli, lineNo: i + 1 });
+    });
+    if (batchErrors.length) throw invalid(batchErrors);
     const totalOut = lines.reduce((s, l) => s + (l.trackStock ? l.cost ?? 0 : 0), 0);
     const diff = baseTotal - totalOut;
     // amounts in the invoice currency split in the same proportion, so the entry balances in both currencies
@@ -192,6 +210,13 @@ export function createReturn(db: Db, originalId: string, input: ReturnInput, use
         .run(number, user, now, user, now, now, entryId);
     }
     for (const m of moves) addStockMove(db, { ...m, warehouseId: original.warehouseId, date: input.date, sourceType: kind, sourceId: id });
+    for (const b of backInto) {
+      const picks = saleReturnPicks(db, originalId, b.sourceLine, b.qtyMilli);
+      const placed = picks.reduce((s, p) => s + p.qtyMilli, 0);
+      for (const p of picks) batchMoves.push({ batchId: p.batchId, itemId: b.itemId, warehouseId: original.warehouseId, qtyMilli: p.qtyMilli, lineNo: b.lineNo });
+      if (placed < b.qtyMilli) batchMoves.push({ batchId: ensureBatch(db, b.itemId, '', null), itemId: b.itemId, warehouseId: original.warehouseId, qtyMilli: b.qtyMilli - placed, lineNo: b.lineNo });
+    }
+    writeBatchMoves(db, batchMoves, input.date, kind, id);
     db.prepare(`UPDATE invoices SET status = 'posted', number = ?, entry_id = ?, posted_by = ?, posted_at = ?, updated_at = ? WHERE id = ?`)
       .run(number, entryId, user, now, now, id);
     audit(db, user, 'post', 'invoice', id, { kind, number, returnOf: original.number });

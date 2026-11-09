@@ -9,6 +9,10 @@ import { assertValid, insertEntry, nextNumber, reverseEntryInternal } from './jo
 import { addStockMove, stockOf } from './items.ts';
 import { isPeriodLocked } from './settings.ts';
 import { resolveLines } from './item-units.ts';
+import {
+  addTaken, allocateOut, assertReversible, batchColumns, batchMovesOf, batchTracking, inboundBatch, lineBatchErrors, reverseBatchMoves, writeBatchMoves,
+  type BatchError, type BatchMove
+} from './batches.ts';
 
 /** opening = بضاعة أول المدة (goods on hand when the company starts with Qasa ERP) · transfer = مناقلة بين المخازن */
 export type StockDocKind = 'opening' | 'transfer';
@@ -39,6 +43,10 @@ export interface StockDocLineInput {
   unit?: UnitCode | undefined;
   unitQtyMilli?: number | undefined;
   unitFactorMilli?: number | undefined;
+  /** 1.1 batches: opening stock brings a batch in (number, expiry); a transfer line may be pinned to a batch */
+  batchNo?: string | null | undefined;
+  expiry?: string | null | undefined;
+  batchId?: string | null | undefined;
 }
 
 /** What a request may send: lines with a base quantity, or a unit and the quantity typed in it. */
@@ -58,6 +66,9 @@ export interface StockDocLineView {
   lineUnit: UnitCode | null;
   unitFactorMilli: number | null;
   unitQtyMilli: number | null;
+  batchNo: string | null;
+  expiry: string | null;
+  batchId: string | null;
 }
 
 export interface StockDocSummary {
@@ -127,11 +138,13 @@ export function getStockDoc(db: Db, id: string): StockDocView {
                              WHERE l.doc_id = ? ORDER BY l.line_no`).all(id) as {
     line_no: number; item_id: string; qty_milli: number; unit_cost: number | null; value: number | null; code: string; name_ar: string; name_en: string; name_ku: string; unit: UnitCode;
     line_unit: UnitCode | null; unit_factor_milli: number | null; unit_qty_milli: number | null;
+    batch_no: string | null; expiry: string | null; batch_id: string | null;
   }[]).map((l) => ({
     lineNo: l.line_no, itemId: l.item_id, itemCode: l.code, itemName: { ar: l.name_ar, en: l.name_en, ku: l.name_ku }, unit: l.unit,
     qtyMilli: l.qty_milli, unitCost: l.unit_cost, value: l.value,
     lineUnit: l.line_unit ?? null, unitFactorMilli: l.unit_factor_milli === null ? null : Number(l.unit_factor_milli),
-    unitQtyMilli: l.unit_qty_milli === null ? null : Number(l.unit_qty_milli)
+    unitQtyMilli: l.unit_qty_milli === null ? null : Number(l.unit_qty_milli),
+    batchNo: l.batch_no ?? null, expiry: l.expiry ?? null, batchId: l.batch_id ?? null
   }));
   const counter = r.counter_account ? db.prepare('SELECT name_ar, name_en, name_ku FROM accounts WHERE code = ?').get(r.counter_account) as { name_ar: string; name_en: string; name_ku: string } | undefined : undefined;
   const numberOf = (entryId: string | null) => entryId ? (db.prepare('SELECT number FROM entries WHERE id = ?').get(entryId) as { number: string | null }).number : null;
@@ -177,6 +190,7 @@ function assertDoc(db: Db, input: StockDocInput): void {
       else if (item.track_stock !== 1) errors.push({ code: 'item_not_stock', line: i + 1 });
       if (!Number.isSafeInteger(l.qtyMilli) || l.qtyMilli <= 0) errors.push({ code: 'line_qty_invalid', line: i + 1 });
       if (input.kind === 'opening' && (l.unitCost === undefined || !Number.isSafeInteger(l.unitCost) || l.unitCost < 0)) errors.push({ code: 'line_price_invalid', line: i + 1 });
+      if (item) errors.push(...lineBatchErrors(db, l.itemId, l, i + 1));
     });
   }
   if (errors.length) throw invalid(errors);
@@ -188,9 +202,11 @@ function writeDraft(db: Db, id: string, input: StockDocInput): void {
     .run(input.date, input.warehouseId, input.kind === 'transfer' ? input.toWarehouseId! : null, input.kind === 'opening' ? input.counterAccountCode! : null,
       input.notes?.trim() || null, total, new Date().toISOString(), id);
   db.prepare('DELETE FROM stock_doc_lines WHERE doc_id = ?').run(id);
-  const insert = db.prepare('INSERT INTO stock_doc_lines (doc_id, line_no, item_id, qty_milli, unit_cost, unit, unit_factor_milli, unit_qty_milli) VALUES (?, ?, ?, ?, ?, ?, ?, ?)');
+  const insert = db.prepare(`INSERT INTO stock_doc_lines (doc_id, line_no, item_id, qty_milli, unit_cost, unit, unit_factor_milli, unit_qty_milli, batch_no, expiry, batch_id)
+                             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`);
   input.lines.forEach((l, i) => insert.run(id, i + 1, l.itemId, l.qtyMilli, input.kind === 'opening' ? l.unitCost ?? 0 : null,
-    l.unit ?? null, l.unit ? l.unitFactorMilli ?? null : null, l.unit ? l.unitQtyMilli ?? null : null));
+    l.unit ?? null, l.unit ? l.unitFactorMilli ?? null : null, l.unit ? l.unitQtyMilli ?? null : null,
+    ...(input.kind === 'opening' ? batchColumns({ batchNo: l.batchNo, expiry: l.expiry }) : batchColumns({ batchId: l.batchId }))));
 }
 
 const withUnits = (db: Db, input: StockDocRequest): StockDocInput =>
@@ -247,7 +263,8 @@ function storedInput(v: StockDocView): StockDocInput {
     ...(v.counterAccountCode ? { counterAccountCode: v.counterAccountCode } : {}),
     lines: v.lines.map((l) => ({
       itemId: l.itemId, qtyMilli: l.qtyMilli, ...(l.unitCost !== null ? { unitCost: l.unitCost } : {}),
-      ...(l.lineUnit ? { unit: l.lineUnit, unitFactorMilli: l.unitFactorMilli ?? undefined, unitQtyMilli: l.unitQtyMilli ?? undefined } : {})
+      ...(l.lineUnit ? { unit: l.lineUnit, unitFactorMilli: l.unitFactorMilli ?? undefined, unitQtyMilli: l.unitQtyMilli ?? undefined } : {}),
+      ...(l.batchNo ? { batchNo: l.batchNo } : {}), ...(l.expiry ? { expiry: l.expiry } : {}), ...(l.batchId ? { batchId: l.batchId } : {})
     }))
   };
 }
@@ -262,12 +279,19 @@ export function postStockDoc(db: Db, id: string, user: string): StockDocView {
   assertDoc(db, storedInput(view));
   const moves: { itemId: string; warehouseId: string; qtyMilli: number; value: number }[] = [];
   const values: number[] = [];
+  const batchMoves: BatchMove[] = [];
+  const inbound: { lineNo: number; itemId: string; qtyMilli: number; batchNo: string | null; expiry: string | null }[] = [];
 
   if (view.kind === 'opening') {
     for (const l of view.lines) {
       const value = lineAmount(l.lineUnit && l.unitQtyMilli !== null ? l.unitQtyMilli : l.qtyMilli, l.unitCost ?? 0);
       values.push(value);
       moves.push({ itemId: l.itemId, warehouseId: view.warehouseId, qtyMilli: l.qtyMilli, value });
+      const tracking = batchTracking(db, l.itemId);
+      if (tracking.batches) {
+        if (tracking.expiry && !l.expiry) throw invalid([{ code: 'expiry_required', line: l.lineNo }]);
+        inbound.push({ lineNo: l.lineNo, itemId: l.itemId, qtyMilli: l.qtyMilli, batchNo: l.batchNo, expiry: l.expiry });
+      }
     }
   } else {
     const stock = new Map<string, { qtyMilli: number; value: number }>();
@@ -282,6 +306,20 @@ export function postStockDoc(db: Db, id: string, user: string): StockDocView {
       moves.push({ itemId: l.itemId, warehouseId: view.toWarehouseId!, qtyMilli: l.qtyMilli, value });
     });
     if (errors.length) throw invalid(errors);
+    // batch items move with their batches: the same batch leaves one warehouse and arrives in the other
+    const taken = new Map<string, number>();
+    const batchErrors: BatchError[] = [];
+    for (const l of view.lines) {
+      if (!batchTracking(db, l.itemId).batches) continue;
+      const r = allocateOut(db, { itemId: l.itemId, warehouseId: view.warehouseId, qtyMilli: l.qtyMilli, date: view.date, line: l.lineNo, purpose: 'other', pinned: l.batchId }, taken);
+      if ('code' in r) { batchErrors.push(r); continue; }
+      addTaken(taken, r.picks);
+      for (const p of r.picks) {
+        batchMoves.push({ batchId: p.batchId, itemId: l.itemId, warehouseId: view.warehouseId, qtyMilli: -p.qtyMilli, lineNo: l.lineNo });
+        batchMoves.push({ batchId: p.batchId, itemId: l.itemId, warehouseId: view.toWarehouseId!, qtyMilli: p.qtyMilli, lineNo: l.lineNo });
+      }
+    }
+    if (batchErrors.length) throw invalid(batchErrors);
   }
   const total = values.reduce((s, v) => s + v, 0);
   const entryType = view.kind === 'opening' ? 'opening_stock' : 'transfer';
@@ -306,6 +344,11 @@ export function postStockDoc(db: Db, id: string, user: string): StockDocView {
     const setValue = db.prepare('UPDATE stock_doc_lines SET value = ? WHERE doc_id = ? AND line_no = ?');
     values.forEach((v, i) => setValue.run(v, id, i + 1));
     for (const m of moves) addStockMove(db, { ...m, date: view.date, sourceType: view.kind, sourceId: id });
+    for (const l of inbound) {
+      const b = inboundBatch(db, l.itemId, l, l.lineNo, view.date);
+      if (b) batchMoves.push({ batchId: b.batchId, itemId: l.itemId, warehouseId: view.warehouseId, qtyMilli: l.qtyMilli, lineNo: l.lineNo });
+    }
+    writeBatchMoves(db, batchMoves, view.date, view.kind, id);
     db.prepare(`UPDATE stock_docs SET status = 'posted', number = ?, total_value = ?, entry_id = ?, posted_by = ?, posted_at = ?, updated_at = ? WHERE id = ?`)
       .run(number, total, entryId, user, now, now, id);
     audit(db, user, 'post', 'stock_doc', id, { number, entryId });
@@ -340,9 +383,11 @@ export function cancelStockDoc(db: Db, id: string, user: string, date?: string):
   }
   if (errors.length) throw invalid(errors);
   if (isPeriodLocked(db, cancelDate)) throw invalid([{ code: 'period_locked', period: cancelDate.slice(0, 7) }]);
+  assertReversible(db, view.kind, id);
   transaction(db, () => {
     const reversalId = view.entryId ? reverseEntryInternal(db, view.entryId, user, cancelDate) : null;
     for (const m of moves) addStockMove(db, { itemId: m.itemId, warehouseId: m.warehouseId, date: cancelDate, qtyMilli: m.qtyMilli, value: m.value, sourceType: `${view.kind}_cancel`, sourceId: id });
+    if (batchMovesOf(db, view.kind, id).length) reverseBatchMoves(db, view.kind, id, cancelDate);
     const now = new Date().toISOString();
     db.prepare(`UPDATE stock_docs SET status = 'cancelled', cancel_entry_id = ?, cancelled_by = ?, cancelled_at = ?, updated_at = ? WHERE id = ?`)
       .run(reversalId, user, now, now, id);

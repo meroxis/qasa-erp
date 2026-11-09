@@ -98,8 +98,13 @@ const itemSchema = z.object({
     salePrice: amount.nullable().optional()
   })).max(MAX_ITEM_UNITS).optional(),
   saleUnit: unitCode.nullable().optional(),
-  purchaseUnit: unitCode.nullable().optional()
+  purchaseUnit: unitCode.nullable().optional(),
+  trackBatches: z.boolean().optional(),
+  trackExpiry: z.boolean().optional()
 });
+
+/** Batches (1.1): what a line brings in (a number of up to 40 characters and an expiry date), or the batch it is pinned to. */
+const lineBatch = { batchNo: z.string().max(80).optional(), expiry: isoDate.optional(), batchId: z.string().min(1).max(64).optional() };
 
 /** A document line's quantity: a base quantity (as before 1.1), or one of the item's units and the quantity typed in it. */
 const lineQty = { qtyMilli: z.number().int().optional(), unit: unitCode.optional(), unitQtyMilli: z.number().int().positive().max(1e12).optional() };
@@ -118,6 +123,7 @@ const invoiceSchema = z.object({
   lines: z.array(z.object({
     itemId: z.string().min(1).max(64),
     ...lineQty,
+    ...lineBatch,
     unitPrice: z.number().int(),
     description: z.string().max(500).optional()
   })).max(500)
@@ -138,7 +144,7 @@ const stockDocSchema = z.object({
   toWarehouseId: z.string().max(64).optional(),
   counterAccountCode: z.string().max(12).optional(),
   notes: z.string().max(1000).optional(),
-  lines: z.array(z.object({ itemId: z.string().min(1).max(64), ...lineQty, unitCost: z.number().int().optional() })).max(1000)
+  lines: z.array(z.object({ itemId: z.string().min(1).max(64), ...lineQty, ...lineBatch, unitCost: z.number().int().optional() })).max(1000)
 });
 
 const idParam = z.object({ id: z.string().min(1).max(64) });
@@ -532,7 +538,11 @@ export function apiRoutes(db: Db, options: { demo?: boolean; extensions?: readon
     deleteInvoice(db, parse(idParam, req.params).id, userOf(req));
     return reply.status(204).send();
   });
-  app.post('/api/invoices/:id/post', async (req) => postInvoice(db, parse(idParam, req.params).id, userOf(req)));
+  app.post('/api/invoices/:id/post', async (req) => {
+    // allowExpired: the user confirmed selling stock past its expiry date (only the 'warn' policy allows it)
+    const body = parse(z.object({ allowExpired: z.boolean().optional() }), req.body ?? {});
+    return postInvoice(db, parse(idParam, req.params).id, userOf(req), { allowExpired: body.allowExpired === true });
+  });
   app.post('/api/invoices/:id/cancel', async (req) => {
     const body = parse(z.object({ date: isoDate.optional() }), req.body ?? {});
     return cancelInvoice(db, parse(idParam, req.params).id, userOf(req), body.date);

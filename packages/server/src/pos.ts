@@ -81,7 +81,9 @@ export interface SaleInput {
   discount: number;
   notes?: string | undefined;
   /** qtyMilli in base units, or (1.1) unit + unitQtyMilli: the quantity in one of the item's units, priced per that unit */
-  lines: { itemId: string; qtyMilli?: number | undefined; unitPrice: number; unit?: UnitCode | undefined; unitQtyMilli?: number | undefined }[];
+  lines: { itemId: string; qtyMilli?: number | undefined; unitPrice: number; unit?: UnitCode | undefined; unitQtyMilli?: number | undefined; batchId?: string | undefined }[];
+  /** the cashier confirmed selling stock past its expiry date (only the 'warn' policy allows it) */
+  allowExpired?: boolean | undefined;
 }
 
 export interface CloseInput {
@@ -278,10 +280,11 @@ export function sell(db: Db, shiftId: string, input: SaleInput, actor: Actor): {
       currency: input.currency, rateX100: input.currency === 'IQD' ? 100 : input.rateX100!, payment: 'cash', cashAccountCode: row.cash_account,
       discount: input.discount, ...(input.notes?.trim() ? { notes: input.notes.trim() } : {}),
       lines: input.lines.map((l) => ({
-        itemId: l.itemId, qtyMilli: l.qtyMilli, unitPrice: l.unitPrice, ...(l.unit ? { unit: l.unit, unitQtyMilli: l.unitQtyMilli ?? l.qtyMilli } : {})
+        itemId: l.itemId, qtyMilli: l.qtyMilli, unitPrice: l.unitPrice, ...(l.unit ? { unit: l.unit, unitQtyMilli: l.unitQtyMilli ?? l.qtyMilli } : {}),
+        ...(l.batchId ? { batchId: l.batchId } : {})
       }))
     }, actor.name);
-    const posted = postInvoice(db, draft.id, actor.name);
+    const posted = postInvoice(db, draft.id, actor.name, { allowExpired: input.allowExpired === true });
     db.prepare('INSERT INTO pos_sales (invoice_id, shift_id) VALUES (?, ?)').run(posted.id, shiftId);
     return posted.id;
   });
@@ -362,8 +365,9 @@ export const posApi: ApiExtension = {
             notes: text(500).optional(),
             lines: z.array(z.object({
               itemId: id, qtyMilli: z.number().int().positive().max(1e12).optional(), unitPrice: amount,
-              unit: z.enum(UNIT_CODES).optional(), unitQtyMilli: z.number().int().positive().max(1e12).optional()
-            })).min(1).max(300)
+              unit: z.enum(UNIT_CODES).optional(), unitQtyMilli: z.number().int().positive().max(1e12).optional(), batchId: id.optional()
+            })).min(1).max(300),
+            allowExpired: z.boolean().optional()
           }), req.body);
           reply.status(201).send(sell(db, parse(idParam, req.params).id, body, actor(req)));
           return undefined;

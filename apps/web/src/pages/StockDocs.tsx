@@ -9,6 +9,7 @@ import { go, href } from '../router.ts';
 import { averageCost, qtyText, unitName } from './Items.tsx';
 import { UnitPicker } from '../industry/UnitPicker.tsx';
 import { baseQty, factorOf, type LineUnit } from '../industry/units.ts';
+import { BatchInFields, BatchPick } from '../industry/BatchFields.tsx';
 import { reverseDefaultDate } from '../industry/ReverseModal.tsx';
 import { printDocument } from '../industry/printing.ts';
 
@@ -64,7 +65,7 @@ export function StockDocs() {
 }
 
 /** qtyMilli: as typed in the line's unit (null: the base unit); unitCost: per that unit. */
-interface Row { key: number; itemId: string; qtyMilli: number | null; unitCost: number | null; unit?: LineUnit }
+interface Row { key: number; itemId: string; qtyMilli: number | null; unitCost: number | null; unit?: LineUnit; batchNo?: string; expiry?: string; batchId?: string }
 let rowKey = 1;
 const emptyRow = (): Row => ({ key: rowKey++, itemId: '', qtyMilli: 1000, unitCost: null });
 
@@ -106,7 +107,10 @@ export function StockDocEditor({ kind: initialKind, id }: { kind?: StockDocKind;
       setToWarehouseId(d.toWarehouseId ?? '');
       setCounterAccount(d.counterAccountCode ?? '21');
       setNotes(d.notes);
-      setRows(d.lines.map((l) => ({ key: rowKey++, itemId: l.itemId, qtyMilli: l.lineUnit && l.unitQtyMilli !== null ? l.unitQtyMilli : l.qtyMilli, unitCost: l.unitCost, unit: l.lineUnit })));
+      setRows(d.lines.map((l) => ({
+        key: rowKey++, itemId: l.itemId, qtyMilli: l.lineUnit && l.unitQtyMilli !== null ? l.unitQtyMilli : l.qtyMilli, unitCost: l.unitCost, unit: l.lineUnit,
+        batchNo: l.batchNo ?? '', expiry: l.expiry ?? '', batchId: l.batchId ?? ''
+      })));
       setReady(true);
     }, setLoadError);
   }, [id]);
@@ -135,6 +139,9 @@ export function StockDocEditor({ kind: initialKind, id }: { kind?: StockDocKind;
       lines: lines.map((r) => ({
         itemId: r.itemId, qtyMilli: (r.unit ? baseQty(itemById.get(r.itemId), r.unit, r.qtyMilli ?? 0) : r.qtyMilli) ?? 0,
         ...(r.unit ? { unit: r.unit, unitQtyMilli: r.qtyMilli ?? 0 } : {}),
+        ...(kind === 'opening' && r.batchNo?.trim() ? { batchNo: r.batchNo.trim() } : {}),
+        ...(kind === 'opening' && r.expiry ? { expiry: r.expiry } : {}),
+        ...(kind === 'transfer' && r.batchId ? { batchId: r.batchId } : {}),
         ...(kind === 'opening' ? { unitCost: r.unitCost ?? -1 } : {})
       }))
     };
@@ -220,6 +227,9 @@ export function StockDocEditor({ kind: initialKind, id }: { kind?: StockDocKind;
                   <td>
                     <SearchCombo value={r.itemId} options={itemOptions} onChange={(v) => pickItem(r.key, v)} placeholder={t('chooseItem')} ariaLabel={t('item')} />
                     {short && <div className="small" style={{ color: 'var(--bad)', marginTop: 3 }}>{t('available')}: {qtyText(i18n, it.qtyMilli)}</div>}
+                    {kind === 'opening'
+                      ? <BatchInFields item={it} batchNo={r.batchNo ?? ''} expiry={r.expiry ?? ''} onChange={(v) => update(r.key, v)} />
+                      : <BatchPick item={it} warehouseId={warehouseId} value={r.batchId ?? ''} onChange={(batchId) => update(r.key, { batchId })} />}
                   </td>
                   <td>
                     <QtyInput value={r.qtyMilli} onChange={(v) => update(r.key, { qtyMilli: v })} ariaLabel={t('qty')} />

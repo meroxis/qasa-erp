@@ -29,6 +29,10 @@ export interface InvoiceLineInput {
   unitQtyMilli?: number | undefined;
   /** base units in one of that unit, in thousandths (a copy kept with the line) */
   unitFactorMilli?: number | undefined;
+  /** 1.1 batches: the batch a purchase line brings in (number, expiry), or the batch a sale line is pinned to */
+  batchNo?: string | null | undefined;
+  expiry?: string | null | undefined;
+  batchId?: string | null | undefined;
 }
 
 export interface InvoiceInput {
