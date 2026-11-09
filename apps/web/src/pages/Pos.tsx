@@ -13,6 +13,8 @@ import { usePrintSetup } from '../industry/print-api.ts';
 import { addRefusal, parseScan, priceIn, priceRateFor, tilePrice } from './pos-logic.ts';
 import { salePriceFor, unitChoices, unitLabel, type LineUnit } from '../industry/units.ts';
 import { useExpiredConfirm } from '../industry/BatchFields.tsx';
+import { pharmacyApi, type ControlledLine, type MedicineView } from '../industry/pharmacy-api.ts';
+import { ControlledRecord } from './Pharmacy.tsx';
 import { printAlone, printDocument } from '../industry/printing.ts';
 
 /**
@@ -195,12 +197,31 @@ function Register({ initial, onClosed }: { initial: ShiftView; onClosed(): void 
     key: normalizeForSearch([it.code, it.barcode, it.name.ar, it.name.en, it.name.ku].join(' '))
   })), [items]);
 
+  // a pharmacy (Pro): the search also finds medicines by their generic name, and a tile shows it with the shelf
+  const { plan, settings: companySettings } = useData();
+  const pharmacy = !!plan?.features.includes('pharmacy') && !!companySettings?.businessTypes?.includes('pharmacy');
+  const [medicines, setMedicines] = useState<Map<string, MedicineView>>(new Map());
+  const [controlled, setControlled] = useState<ControlledLine[] | null>(null);
+  useEffect(() => {
+    if (!pharmacy || !q.trim()) return;
+    let alive = true;
+    const timer = window.setTimeout(() => {
+      pharmacyApi.search(q.trim()).then((found) => {
+        if (alive) setMedicines((m) => new Map([...m, ...found.map((x) => [x.itemId, x] as const)]));
+      }, () => {});
+    }, 250);
+    return () => { alive = false; window.clearTimeout(timer); };
+  }, [pharmacy, q]);
+
   const matches = useMemo(() => {
     const n = normalizeForSearch(q);
     if (!n) return items.slice(0, 40);
     const words = n.split(/\s+/).filter(Boolean);
-    return searchable.filter((s) => words.every((w) => s.key.includes(w))).slice(0, 40).map((s) => s.item);
-  }, [q, items, searchable]);
+    const direct = searchable.filter((s) => words.every((w) => s.key.includes(w))).map((s) => s.item);
+    // medicines whose generic name matched
+    const generic = pharmacy ? items.filter((it) => !direct.includes(it) && normalizeForSearch(medicines.get(it.id)?.genericName ?? '').includes(n)) : [];
+    return [...direct, ...generic].slice(0, 40);
+  }, [q, items, searchable, pharmacy, medicines]);
 
   /** One of `unit` of an item, in the sale's currency: the unit's own price, or the base price × its factor. */
   const unitPriceOf = useCallback((item: ItemView, unit: LineUnit) => {
@@ -301,6 +322,14 @@ function Register({ initial, onClosed }: { initial: ShiftView; onClosed(): void 
       clear();
       loadItems(); // stock changed
       toast(t('pos_saved', { n: res.invoice.number ?? '' }));
+      // controlled medicines sold: the patient and the prescription, now or later from the pharmacy log
+      if (pharmacy) {
+        const sold = res.invoice.id;
+        pharmacyApi.controlled({ missing: '1' }).then((lines) => {
+          const mine = lines.filter((l) => l.invoiceId === sold);
+          if (mine.length) setControlled(mine);
+        }, () => {});
+      }
     } catch (e) {
       setError(e);
     } finally {
@@ -329,6 +358,7 @@ function Register({ initial, onClosed }: { initial: ShiftView; onClosed(): void 
   return (
     <div className="pos">
       {expired.dialog}
+      {controlled && <ControlledRecord lines={controlled} onDone={() => setControlled(null)} />}
       <div className="pos-bar no-print">
         <div className="pos-shift-info">
           <strong>{shift.register}</strong>
@@ -372,6 +402,12 @@ function Register({ initial, onClosed }: { initial: ShiftView; onClosed(): void 
                 <button key={it.id} type="button" className={'pos-tile' + (out ? ' out' : '')} onClick={() => { add(it); focusSearch(); }}>
                   <ItemPicture item={it} name={name} />
                   <span className="pos-tile-name">{name}</span>
+                  {medicines.get(it.id)?.genericName && (
+                    <span className="small muted">
+                      {medicines.get(it.id)!.genericName}{medicines.get(it.id)!.shelf ? ` · ${medicines.get(it.id)!.shelf}` : ''}
+                      {medicines.get(it.id)!.rxOnly ? ' · Rx' : ''}
+                    </span>
+                  )}
                   <span className="pos-tile-price num">{price === null ? '—' : i18n.money(price, currency)}</span>
                   {it.trackStock && <span className={'pos-tile-stock small num' + (out ? ' bad' : '')}>{out ? t('pos_outOfStock') : `${t('pos_stock')}: ${i18n.qty(it.qtyMilli)}`}</span>}
                 </button>

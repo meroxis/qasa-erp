@@ -93,6 +93,7 @@ const StockCount = lazyPage(() => import('./pages/StockAdjustments.tsx'), 'Stock
 const PrintDesignPage = lazyPage(() => import('./pages/PrintDesign.tsx'), 'PrintDesignPage');
 const Labels = lazyPage(() => import('./pages/Labels.tsx'), 'Labels');
 const Expiry = lazyPage(() => import('./pages/Expiry.tsx'), 'Expiry');
+const Pharmacy = lazyPage(() => import('./pages/Pharmacy.tsx'), 'Pharmacy');
 const Companies = lazyPage(() => import('./pages/Companies.tsx'), 'Companies');
 const FixedAssets = lazyPage(() => import('./pages/FixedAssets.tsx'), 'FixedAssets');
 const FixedAssetDetail = lazyPage(() => import('./pages/FixedAssets.tsx'), 'FixedAssetDetail');
@@ -523,6 +524,10 @@ export function App() {
     case 'expiry':
       title = t('ex_title');
       content = <Expiry />;
+      break;
+    case 'pharmacy':
+      title = t('ph_title');
+      content = <Pharmacy />;
       break;
     case 'companies':
       title = t('co_title');

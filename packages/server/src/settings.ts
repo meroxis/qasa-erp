@@ -83,6 +83,8 @@ export function updateSettings(db: Db, patch: Partial<Settings>, user: string): 
     if (patch.defaultRateX100 !== undefined) writeSetting(db, 'default_rate_x100', String(patch.defaultRateX100));
     if (patch.fiscalYearStart) writeSetting(db, 'fiscal_year_start', patch.fiscalYearStart);
     if (patch.postingAccounts) writeSetting(db, 'posting_accounts', JSON.stringify({ ...getPostingAccounts(db), ...patch.postingAccounts }));
+    // a pharmacy starts its new items with expiry dates (1.1); switching it off later is the company's own choice
+    if (patch.businessTypes?.includes('pharmacy') && !businessTypes(db)?.includes('pharmacy')) writeSetting(db, 'default_track_expiry', '1');
     if (patch.businessTypes) writeSetting(db, 'business_types', JSON.stringify([...new Set(patch.businessTypes)]));
     audit(db, user, 'update', 'settings', null, patch);
   });

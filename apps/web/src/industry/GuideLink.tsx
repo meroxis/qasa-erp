@@ -39,7 +39,7 @@ export const PAGE_GUIDE: Readonly<Record<string, GuideSlug>> = {
   'new-installment': 'industry-tools', guarantors: 'industry-tools', 'installments-aging': 'industry-tools',
   'real-estate': 'industry-tools', 'real-estate-project': 'industry-tools', mobile: 'industry-tools', repair: 'industry-tools',
   'car-parts': 'industry-tools', works: 'industry-tools', job: 'industry-tools', solar: 'industry-tools',
-  'solar-system': 'industry-tools', generators: 'industry-tools', 'gen-run': 'industry-tools'
+  'solar-system': 'industry-tools', generators: 'industry-tools', 'gen-run': 'industry-tools', pharmacy: 'industry-tools'
 };
 
 /** The guide topic for a page; a new invoice is a sale or a purchase by its argument ("new-invoice/purchase"). */
