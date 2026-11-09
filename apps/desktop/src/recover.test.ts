@@ -6,7 +6,7 @@ import { issueRecoveryCode, login, resetLoginThrottle, setPassword, setSignInReq
 import { Bridge, type Carrier } from './bridge.ts';
 import { handleRecoverRequest, parseRecoverRequest, recoverableAdmins } from './recover.ts';
 import { serve } from './server-process.ts';
-import { confirmWithHello, HELLO_SCRIPT, parseHelloOutput, resetWithWindows, windowsAccount, type HelloResult } from './windows-confirm.ts';
+import { confirmWithHello, HELLO_SCRIPT, parseHelloOutput, resetWithWindows, systemFolder, windowsAccount, type HelloResult } from './windows-confirm.ts';
 
 let db: Db;
 let code: string;
@@ -135,10 +135,21 @@ describe('confirming with Windows (main process side)', () => {
       .toEqual({ ok: false, error: 'hello_unavailable' });
   });
 
-  it('names the Windows user as DOMAIN\\name', () => {
-    expect(windowsAccount({ USERNAME: 'Las', USERDOMAIN: 'OFFICE' }, 'ignored', 'PC')).toBe('OFFICE\\Las');
-    expect(windowsAccount({}, 'Raz', 'PC-2')).toBe('PC-2\\Raz');
-    expect(windowsAccount({}, '', '')).toBe('unknown');
+  it('names the Windows user as PC\\name, from the account itself, never from variables whoever starts the app sets', () => {
+    expect(windowsAccount('Raz', 'PC-2')).toBe('PC-2\\Raz');
+    expect(windowsAccount('', '')).toBe('unknown');
+    const main = readFileSync(new URL('./main.ts', import.meta.url), 'utf8');
+    expect(main).toContain('windowsAccount(userInfo().username, hostname())');
+    expect(main).not.toMatch(/env\.USER(NAME|DOMAIN)/);
+  });
+
+  it('runs Windows PowerShell from Windows\' own System32, never one found through PATH or the working folder', () => {
+    expect(systemFolder(() => ['C:\\Program Files\\Qasa ERP\\Qasa ERP.exe', 'C:\\WINDOWS\\SYSTEM32\\ntdll.dll'])).toBe('C:\\WINDOWS\\SYSTEM32');
+    expect(systemFolder(() => ['ntdll.dll', '\\\\server\\share\\ntdll.dll'])).toBeNull();
+    expect(systemFolder(() => { throw new Error('no report'); })).toBeNull();
+    const source = readFileSync(new URL('./windows-confirm.ts', import.meta.url), 'utf8');
+    expect(source).not.toContain("execFile('powershell.exe'");
+    expect(source).not.toContain('...process.env');
   });
 });
 

@@ -57,7 +57,25 @@ describe('the release workflow', () => {
   it('writes the third-party notices again after the Rust module and before the installer', () => {
     const at = (text: string) => workflow.indexOf(text);
     expect(at('node scripts/third-party-notices.mjs')).toBeGreaterThan(at('node native/licence/build.mjs'));
-    expect(at('node scripts/third-party-notices.mjs')).toBeLessThan(at('npm run release -w @qasa/desktop'));
+    expect(at('node scripts/third-party-notices.mjs')).toBeLessThan(at('npm run dist -w @qasa/desktop'));
+  });
+
+  it('builds with no token that writes releases; a second job that runs no project code checks the files and publishes them', () => {
+    const jobs = workflow.split('\n  publish:\n');
+    expect(jobs).toHaveLength(2);
+    const [build, publish] = jobs as [string, string];
+    expect(build).toMatch(/^permissions:\n  contents: read/m);
+    expect(build).not.toContain('contents: write');
+    expect(build).not.toContain('GITHUB_TOKEN');
+    expect(build).not.toContain('--publish always');
+    expect(build).toContain('npm run dist -w @qasa/desktop');
+    expect(build).toContain('sha256sum * > SHA256SUMS');
+    expect(publish).toContain('contents: write');
+    expect(publish).toContain('environment: release');
+    expect(publish).toContain('sha256sum --check --strict SHA256SUMS');
+    // nothing of the repository runs where the token is: no checkout, no npm, no node
+    expect(publish).not.toMatch(/actions\/checkout|npm |node /);
+    expect(read('native/licence/build.mjs')).toContain("'--locked'");
   });
 });
 

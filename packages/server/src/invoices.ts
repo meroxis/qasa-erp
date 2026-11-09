@@ -23,12 +23,13 @@ import {
 import type { Db } from './db.ts';
 import { transaction } from './db.ts';
 import { audit } from './audit.ts';
-import { conflict, invalid, notFound } from './errors.ts';
+import { AppError, conflict, invalid, notFound } from './errors.ts';
+import type { Actor } from './auth.ts';
 import { loadAccounts } from './accounts.ts';
 import { assertValid, insertEntry, nextNumber, reverseEntryInternal } from './journal.ts';
 import { getParty } from './parties.ts';
 import { addStockMove, stockOf } from './items.ts';
-import { getPostingAccounts, isPeriodLocked } from './settings.ts';
+import { getPostingAccounts, isPeriodLocked, readSetting } from './settings.ts';
 import { resolveLines } from './item-units.ts';
 import {
   addTaken, allocateOut, assertReversible, batchColumns, batchTracking, cancelBatchMoves, inboundBatch, lineBatchErrors, writeBatchMoves,
@@ -557,10 +558,23 @@ export function postInvoice(
  * Cancels a posted invoice: its entry is reversed (قيد عكسي) and its stock moves are undone. Both stay on record.
  * A purchase whose goods were already sold cannot be cancelled — the stock it brought in is gone.
  */
-export function cancelInvoice(db: Db, id: string, user: string, date?: string): InvoiceView {
+/**
+ * Separate duties (Settings): voiding a till sale, or paying one back in cash, takes the drawer's money out of what the
+ * shift expects; so, like posting a stock adjustment or reversing an entry, it is done by an approver, and never by
+ * whoever rang the sale up. (Without separate duties the sales permission does it, as with any other sale.)
+ */
+export function assertMayUndoPosSale(db: Db, invoiceId: string, postedBy: string | null, actor?: Pick<Actor, 'name' | 'permissions'>): void {
+  if (!actor || readSetting(db, 'separate_duties') !== '1') return;
+  if (!db.prepare('SELECT 1 FROM pos_sales WHERE invoice_id = ?').get(invoiceId)) return;
+  if (!actor.permissions.includes('entries.approve')) throw new AppError(403, 'forbidden', { need: 'entries.approve' });
+  if (postedBy && postedBy === actor.name) throw conflict('same_person');
+}
+
+export function cancelInvoice(db: Db, id: string, user: string, date?: string, actor?: Pick<Actor, 'name' | 'permissions'>): InvoiceView {
   const view = getInvoice(db, id);
   if (view.installmentContract) throw conflict('invoice_has_contract', { contract: view.installmentContract.number });
   requireAction(db, loadRow(db, id), 'cancel');
+  if (view.kind === 'sale') assertMayUndoPosSale(db, id, view.postedBy, actor);
   // (no date: today, or the document's own date when that is later: a reversal is never dated before what it reverses)
   const cancelDate = date ?? (todayIso() < view.date ? view.date : todayIso());
   if (isPeriodLocked(db, cancelDate)) throw invalid([{ code: 'period_locked', period: cancelDate.slice(0, 7) }]);

@@ -153,8 +153,9 @@ export function checkBranchRequest(db: Db, actor: Actor | null, method: string, 
   if (method !== 'GET') {
     // a document's own warehouse and safe (the destination of a transfer may be any branch)
     if (typeof body.warehouseId === 'string' && !scope.warehouses.has(body.warehouseId)) throw forbidden();
-    // every safe or bank named in the body: a voucher's, a bank transfer's both ends, a cheque's or a statement's bank
-    for (const key of ['cashAccountCode', 'cashAccount', 'downPaymentCashAccount', 'from', 'to', 'bankAccount', 'accountCode']) {
+    // every safe or bank named in the body: a voucher's, a bank transfer's both ends, a cheque's or a statement's bank,
+    // and the account an opening stock document credits
+    for (const key of ['cashAccountCode', 'cashAccount', 'downPaymentCashAccount', 'from', 'to', 'bankAccount', 'accountCode', 'counterAccountCode']) {
       if (isCash(body[key]) && !scope.accounts.has(body[key])) throw forbidden();
     }
     for (const list of [body.lines, body.items]) {
@@ -172,7 +173,8 @@ export function checkBranchRequest(db: Db, actor: Actor | null, method: string, 
     const row = db.prepare(sql).get(id) as { warehouse_id: string | null } | undefined;
     if (row?.warehouse_id && !scope.warehouses.has(row.warehouse_id)) throw forbidden();
   };
-  if (path.startsWith('/api/invoices/:id')) {
+  if (path.startsWith('/api/invoices/:id') || path.startsWith('/api/verify/invoices/:id')) {
+    // (an invoice's verification code tells its number, date, total and customer: for its own branch only)
     ofWarehouse('SELECT warehouse_id FROM invoices WHERE id = ?');
   } else if (path.startsWith('/api/adjustments/counts/:id')) {
     // a count session belongs to its warehouse's branch

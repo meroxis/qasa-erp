@@ -296,6 +296,8 @@ function activeAdmin(db: Db, username: string): UserRow | null {
 function replaceAdminPassword(db: Db, row: UserRow, hash: string, by: string, details: Record<string, unknown>): void {
   db.prepare('UPDATE users SET password_hash = ? WHERE id = ?').run(hash, row.id);
   db.prepare('DELETE FROM sessions WHERE user_id = ?').run(row.id);
+  // a lock someone else caused (wrong passwords sent for this admin) must not refuse the new password
+  clearLoginFailures(`id:${row.id}`);
   audit(db, by, 'password_recovered', 'user', row.id, { username: row.username, ...details });
 }
 
@@ -428,11 +430,27 @@ export function sessionActor(db: Db, token: string): Actor | null {
 // ——— signing in ———
 
 /**
- * Failed sign-ins per account: after 5 in a row the account waits, 1 minute doubling up to 15. The counter is keyed
- * by the user's id when the name finds a user, so every spelling that reaches the same user (a MySQL server compares
- * names without case or accents) shares one lock; an unknown name is keyed by its lower-case text.
+ * Failed sign-ins are counted per account and per place they come from (the `source`: this PC's own server, or a PC
+ * or phone on the office network, each by its own address). After 5 in a row from one place, that place waits for that
+ * account, 1 minute doubling up to 15, while the account's owner signs in from anywhere else as usual: someone who
+ * keeps typing wrong passwords for the admin locks out only themselves. Guessing from many places at once is limited
+ * by the account's own counter: after 30 failures in all, every place waits, except this PC's own server and the
+ * places this account already signed in from. A counter with no failure for a day starts over, and an admin's
+ * password reset (recovery code, Windows Hello) clears the account's counters.
+ *
+ * The account is keyed by the user's id when the name finds a user, so every spelling that reaches the same user (a
+ * MySQL server compares names without case or accents) shares one counter; an unknown name is keyed by its lower-case
+ * text, and counted the same way.
  */
-const failures = new Map<string, { count: number; lockedUntil: number }>();
+const SOURCE_LIMIT = 5;
+const ACCOUNT_LIMIT = 30;
+const FORGET_AFTER_MS = 24 * 3_600_000;
+const failures = new Map<string, { count: number; lockedUntil: number; last: number }>();
+/** Places each account signed in from (in this run of the app): never held up by the account's own counter. */
+const knownSources = new Map<string, Set<string>>();
+
+/** Where a sign-in on this PC's own server (the app on this PC) comes from: see app.ts. */
+export const isThisPcSource = (source: string): boolean => source.startsWith('local:');
 
 /** Refuses a sign-in while its counter waits out a lock. */
 function assertNotLocked(key: string): void {
@@ -442,39 +460,58 @@ function assertNotLocked(key: string): void {
   }
 }
 
-/** Counts one more failed sign-in under the key (from the fifth on it waits) and gives the new count. */
-function countFailure(key: string): number {
-  const count = (failures.get(key)?.count ?? 0) + 1;
-  const lockedUntil = count >= 5 ? Date.now() + Math.min(15, 2 ** (count - 5)) * 60_000 : 0;
+/** Counts one more failed sign-in under the key (from the `limit`th on it waits) and gives the new count. */
+function countFailure(key: string, limit = SOURCE_LIMIT): number {
+  const now = Date.now();
+  const before = failures.get(key);
+  const count = (before && now - before.last < FORGET_AFTER_MS ? before.count : 0) + 1;
+  const lockedUntil = count >= limit ? now + Math.min(15, 2 ** (count - limit)) * 60_000 : 0;
   // made-up usernames must not fill the memory
-  if (failures.size > 5000) for (const [k, v] of failures) if (v.lockedUntil < Date.now()) failures.delete(k);
-  failures.set(key, { count, lockedUntil });
+  if (failures.size > 5000) for (const [k, v] of failures) if (v.lockedUntil < now) failures.delete(k);
+  failures.set(key, { count, lockedUntil, last: now });
   return count;
 }
 
-export async function login(db: Db, username: string, password: string, device?: string): Promise<{ token: string; actor: Actor }> {
+/** Forgets an account's failed sign-ins everywhere (its password was just reset by an admin's recovery). */
+function clearLoginFailures(account: string): void {
+  for (const key of [...failures.keys()]) if (key === account || key.startsWith(`${account}@`)) failures.delete(key);
+}
+
+/**
+ * Signs in. `source` says where the request comes from ('local:<address>' for this PC's own server, 'net:<address>'
+ * for the office network); without one, every caller counts as one unknown place.
+ */
+export async function login(db: Db, username: string, password: string, device?: string, source = 'unknown'): Promise<{ token: string; actor: Actor }> {
   const typed = username.trim();
+  const place = String(source).slice(0, 100);
   // a name no user can have (the pattern users are created with) is refused before any lookup or password work, yet
   // counted and locked like any unknown name (by its first 64 characters); only the tries up to the lock are written to
   // the audit log, so one such name sent again and again adds no rows after its fifth
   if (!USERNAME_PATTERN.test(typed)) {
-    const key = `name:${typed.toLowerCase().slice(0, 64)}`;
+    const key = `name:${typed.toLowerCase().slice(0, 64)}@${place}`;
     assertNotLocked(key);
-    if (countFailure(key) <= 5) audit(db, typed.slice(0, 100) || '?', 'login_failed', 'user', null);
+    if (countFailure(key) <= SOURCE_LIMIT) audit(db, typed.slice(0, 100) || '?', 'login_failed', 'user', null, { source: place });
     throw new AppError(401, 'invalid_login');
   }
   const row = db.prepare('SELECT * FROM users WHERE username = ?').get(typed) as unknown as UserRow | undefined;
-  const key = row ? `id:${row.id}` : `name:${typed.toLowerCase()}`;
+  const account = row ? `id:${row.id}` : `name:${typed.toLowerCase()}`;
+  const key = `${account}@${place}`;
   assertNotLocked(key);
+  // guessing from many places: held up everywhere but on this PC and where the account already signed in
+  if (!isThisPcSource(place) && !knownSources.get(account)?.has(place)) assertNotLocked(account);
   // the same answer, after the same work, for an unknown user, a wrong password, a user without a password and an inactive user
   const passwordOk = await verifyPassword(password, row?.password_hash ?? DUMMY_HASH);
   const ok = !!row && row.active === 1 && !!row.password_hash && passwordOk;
   if (!ok || !row) {
     countFailure(key);
-    audit(db, typed.slice(0, 100) || '?', 'login_failed', 'user', row?.id ?? null);
+    countFailure(account, ACCOUNT_LIMIT);
+    audit(db, typed.slice(0, 100) || '?', 'login_failed', 'user', row?.id ?? null, { source: place });
     throw new AppError(401, 'invalid_login');
   }
   failures.delete(key);
+  const known = knownSources.get(account) ?? new Set<string>();
+  if (known.size < 50) known.add(place);
+  knownSources.set(account, known);
   const token = randomBytes(32).toString('base64url');
   const now = new Date();
   transaction(db, () => {
@@ -494,6 +531,7 @@ export function logout(db: Db, token: string): void {
 /** For tests: forget failed attempts. */
 export function resetLoginThrottle(): void {
   failures.clear();
+  knownSources.clear();
 }
 
 const DUMMY_HASH = 'scrypt$16384$8$1$AAAAAAAAAAAAAAAAAAAAAA$' + 'A'.repeat(86);

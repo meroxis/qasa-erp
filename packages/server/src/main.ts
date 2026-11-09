@@ -14,7 +14,10 @@ const port = Number(process.env.QASA_PORT ?? 4417);
 const host = process.env.QASA_HOST ?? '127.0.0.1';
 
 const db = openDatabase(dbFile);
-const app = buildApp(db);
+// Only this PC's own names are answered (a site pointed at 127.0.0.1 can't reach the books). Serving the office from
+// here (QASA_HOST=0.0.0.0) needs the names the other PCs use: QASA_ALLOWED_HOSTS=192.168.1.20,office-pc
+const allowedHosts = (process.env.QASA_ALLOWED_HOSTS ?? '').split(',').map((h) => h.trim()).filter(Boolean);
+const app = buildApp(db, { allowedHosts });
 
 app.listen({ port, host }).then(() => {
   console.log(`Qasa ERP server running at http://${host}:${port}`);

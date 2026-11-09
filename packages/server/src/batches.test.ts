@@ -1,10 +1,10 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { FastifyInstance } from 'fastify';
 import { openDatabase, type Db } from './db.ts';
 import { buildApp } from './app.ts';
-import { batchBalance, batchReport } from './batches.ts';
+import { batchBalance, batchReport, updateBatch } from './batches.ts';
 import { dailyBrief } from './brief.ts';
 
 let db: Db;
@@ -55,6 +55,9 @@ async function buyTwo(date = '2026-10-01') {
 }
 
 beforeEach(async () => {
+  // the documents here run into 2027 (sales on expired batches): today is after them, as stock moves can't be dated ahead
+  vi.useFakeTimers({ toFake: ['Date'] });
+  vi.setSystemTime(new Date('2027-03-01T09:00:00Z'));
   db = openDatabase(':memory:');
   app = buildApp(db);
   mainId = (await call('GET', '/api/warehouses')).json()[0].id;
@@ -68,6 +71,7 @@ beforeEach(async () => {
 });
 
 afterEach(async () => {
+  vi.useRealTimers();
   await app.close();
   db.close();
 });
@@ -308,7 +312,27 @@ describe('batches and expiry dates', () => {
     expect((await call('PUT', `/api/batches/${a.batchId}`, { number: 'Z' })).json().error).toBe('batch_in_use');
   });
 
+  it('makes an expired batch sellable again (a later date, or none) only for an approver', async () => {
+    await buyTwo();
+    const a = (await batches()).find((x) => x.batch === 'A-2701')!;
+    expect(a.expiry).toBe('2027-01-31');
+    // a storekeeper alone: refused, the date stays
+    for (const expiry of ['2027-12-31', null]) {
+      expect(() => updateBatch(db, a.batchId, { expiry }, 'Raz', null, ['stock'])).toThrow(expect.objectContaining({ code: 'forbidden', details: { need: 'entries.approve' } }));
+    }
+    expect((await batches()).find((x) => x.batch === 'A-2701')!.expiry).toBe('2027-01-31');
+    // an earlier date, or the number only, is still theirs to fix
+    expect(updateBatch(db, a.batchId, { expiry: '2027-01-30' }, 'Raz', null, ['stock']).expiry).toBe('2027-01-30');
+    expect(updateBatch(db, a.batchId, { number: 'A-2701X' }, 'Raz', null, ['stock']).number).toBe('A-2701X');
+    // a batch not yet expired can be moved as before; an approver may revive an expired one
+    const b = (await batches()).find((x) => x.batch === 'B-2706')!;
+    expect(updateBatch(db, b.batchId, { expiry: '2027-07-31' }, 'Raz', null, ['stock']).expiry).toBe('2027-07-31');
+    expect(updateBatch(db, a.batchId, { expiry: '2027-12-31' }, 'Las', null, ['stock', 'entries.approve']).expiry).toBe('2027-12-31');
+  });
+
   it('sells through the POS with a batch pinned, earliest expiry first otherwise', async () => {
+    // a till sale is dated today: a day before batch A expires
+    vi.setSystemTime(new Date('2026-11-15T09:00:00Z'));
     await buyTwo();
     const shift = await ok('POST', '/api/pos/shifts', { register: 'Counter 1', cashAccountCode: '1811', warehouseId: mainId, openingCash: 0 });
     const sold = await call('POST', `/api/pos/shifts/${shift.id}/sales`, { currency: 'IQD', discount: 0, lines: [{ itemId: medId, qtyMilli: 3_000, unitPrice: 250 }] });

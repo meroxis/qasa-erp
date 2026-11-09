@@ -530,6 +530,58 @@ describe('a licence from 0.1.8 (entered before activation existed) after the upd
       copied.close();
     }
   });
+
+  it('removing the records starts no new grace: one per PC whatever the key, keys from before 1.0 only, none after its last day', async () => {
+    const oldKey = licenceKey(); // issued 2026-11-07, before 1.0
+    const otherOldKey = licenceKey('QP-2026-0009');
+    fromOldVersion(oldKey);
+    portal.online = false;
+    expect(planStatus(db)).toMatchObject({ plan: 'pro', activation: { graceUntil: '2026-12-06', inGrace: true } });
+    await settleBackgroundCheck();
+    clock += 40 * DAY;
+    const forget = () => { for (const key of ['activation_grace_from', 'activation_token', 'activation_checked', 'activation_revoked', 'clock_high']) deleteSetting(db, key); };
+    // the company's record removed: the PC's own record still holds the first grace's days, for this key or another
+    for (const key of [oldKey, otherOldKey]) {
+      forget();
+      writeSetting(db, 'license_key', key);
+      expect(planStatus(db)).toMatchObject({ plan: 'free', activation: { graceUntil: '2026-12-06', inGrace: false } });
+      await settleBackgroundCheck();
+    }
+    // both records removed: a key issued since 1.0 gets none (it is activated online, like every new key)
+    rmSync(join(dir, 'trial-used.json'), { force: true });
+    forget();
+    writeSetting(db, 'license_key', licenceKey('QP-2026-0010'));
+    expect(planStatus(db)).toMatchObject({ plan: 'free', activation: { graceUntil: null, inGrace: false } });
+    await settleBackgroundCheck();
+    // and after the last day a grace could start, not even a key from before 1.0
+    clock = Date.parse('2027-02-01T10:00:00Z');
+    rmSync(join(dir, 'trial-used.json'), { force: true });
+    forget();
+    writeSetting(db, 'license_key', oldKey);
+    expect(planStatus(db)).toMatchObject({ plan: 'free', activation: { graceUntil: null, inGrace: false } });
+  });
+
+  it('a latest time seen that was removed counts as a clock turned back, for an activated licence and in the grace', async () => {
+    await enterAndActivate();
+    deleteSetting(db, 'clock_high');
+    expect(planStatus(db)).toMatchObject({ plan: 'free', activation: { state: 'clock' } });
+    await settleBackgroundCheck();
+    // the next check-in with the portal sets it right
+    expect((await post('/api/plan/check')).json()).toMatchObject({ plan: 'pro', activation: { state: 'active' } });
+
+    const old = openDatabase(':memory:');
+    try {
+      writeSetting(old, 'license_key', licenceKey('QP-2026-0003'));
+      portal.online = false;
+      expect(planStatus(old)).toMatchObject({ plan: 'pro', activation: { inGrace: true } });
+      await settleBackgroundCheck();
+      deleteSetting(old, 'clock_high');
+      expect(planStatus(old)).toMatchObject({ plan: 'free', activation: { inGrace: false } });
+      await settleBackgroundCheck();
+    } finally {
+      old.close();
+    }
+  });
 });
 
 describe('a licence key handed to another company on this PC (Companies → Add, or opening one without a key)', () => {

@@ -156,6 +156,25 @@ describe('POS payment methods and split payments', () => {
     expect(over.json().error).toBe('credit_limit_exceeded');
     expect((await call('GET', `/api/pos/shifts/${shiftId}`)).json().expected.IQD).toBe(15_000);
   });
+
+  it('pays a split sale back the way it was paid: never more cash from the drawer than came into it', async () => {
+    await ok('PUT', '/api/pos/payment-accounts', { card: '1831' });
+    const inv = (await ok('POST', `/api/pos/shifts/${shiftId}/sales`, {
+      currency: 'IQD', discount: 0, lines: [{ itemId, qtyMilli: 3000, unitPrice: 10_000 }], payments: [{ method: 'card', amount: 20_000 }, { method: 'cash', amount: 10_000 }]
+    })).invoice;
+    const refund = (qtyMilli: number, cashAccountCode: string) =>
+      call('POST', `/api/invoices/${inv.id}/returns`, { date: inv.date, payment: 'cash', cashAccountCode, lines: [{ lineNo: 1, qtyMilli }] });
+    // the card part (20,000) never came into the drawer: it can't be taken out of it
+    const fromDrawer = await refund(2000, '1811');
+    expect(fromDrawer.statusCode).toBe(400);
+    expect(fromDrawer.json().details).toEqual([{ code: 'refund_more_than_paid', available: 10_000 }]);
+    expect((await call('GET', `/api/pos/shifts/${shiftId}`)).json().expected.IQD).toBe(20_000);
+    // the cash part from the drawer, the card part back to the card's account
+    expect((await refund(1000, '1811')).statusCode).toBe(201);
+    expect((await refund(1000, '1811')).json().details).toEqual([{ code: 'refund_more_than_paid', available: 0 }]);
+    expect((await refund(2000, '1831')).statusCode).toBe(201);
+    expect((await call('GET', `/api/pos/shifts/${shiftId}`)).json().expected.IQD).toBe(10_000);
+  });
 });
 
 describe('a copy of the books with units, batches and payments', () => {

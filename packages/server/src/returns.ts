@@ -12,7 +12,8 @@ import { assertValid, insertEntry, nextNumber } from './journal.ts';
 import { getParty } from './parties.ts';
 import { addStockMove, stockOf } from './items.ts';
 import { getPostingAccounts, isPeriodLocked } from './settings.ts';
-import { fromBase, getInvoice, returnedByLine, returnedTotals, type InvoiceView } from './invoices.ts';
+import { assertMayUndoPosSale, fromBase, getInvoice, returnedByLine, returnedTotals, type InvoiceView } from './invoices.ts';
+import type { Actor } from './auth.ts';
 import { addTaken, batchTracking, ensureBatch, purchaseReturnPicks, saleReturnPicks, writeBatchMoves, type BatchError, type BatchMove } from './batches.ts';
 
 export interface ReturnInput {
@@ -47,7 +48,22 @@ interface ReturnLine {
  * Sales return:    Dr sales (42) / Cr customer or safe;   Dr warehouse / Cr cost of sales (35), at the original cost.
  * Purchase return: Dr supplier or safe / Cr warehouse at the purchase cost; any difference goes to cost of sales.
  */
-export function createReturn(db: Db, originalId: string, input: ReturnInput, user: string): InvoiceView {
+/**
+ * A sale that recorded how it was paid (the POS: cash, card, a wallet, on account) is paid back the same way: a cash
+ * refund into a safe or bank gives back at most what came into that account for the sale, less what was already paid
+ * back from it. A card sale is never paid back from the drawer (that would take cash out of it that never came in);
+ * what went on the customer's account comes back as credit.
+ */
+function assertPaidBackAsPaid(db: Db, originalId: string, accountCode: string, total: number): void {
+  const parts = db.prepare("SELECT account_code, amount FROM invoice_payments WHERE invoice_id = ? AND kind = 'pos'").all(originalId) as { account_code: string; amount: number }[];
+  if (!parts.length) return;
+  const paidIn = parts.filter((p) => p.account_code === accountCode).reduce((s, p) => s + Number(p.amount), 0);
+  const paidBack = Number((db.prepare("SELECT COALESCE(SUM(total), 0) AS t FROM invoices WHERE return_of = ? AND status = 'posted' AND payment = 'cash' AND cash_account = ?")
+    .get(originalId, accountCode) as { t: number }).t);
+  if (paidBack + total > paidIn) throw invalid([{ code: 'refund_more_than_paid', available: Math.max(0, paidIn - paidBack) }]);
+}
+
+export function createReturn(db: Db, originalId: string, input: ReturnInput, user: string, actor?: Pick<Actor, 'name' | 'permissions'>): InvoiceView {
   const original = getInvoice(db, originalId);
   if ((original.kind !== 'sale' && original.kind !== 'purchase') || original.status !== 'posted') {
     throw conflict('action_not_allowed', { status: original.status, action: 'return' });
@@ -57,6 +73,8 @@ export function createReturn(db: Db, originalId: string, input: ReturnInput, use
   // leave the unit sold)
   if (original.kind === 'sale' && db.prepare('SELECT 1 FROM re_units WHERE invoice_id = ?').get(originalId)) throw conflict('invoice_has_unit');
   const kind = returnKindOf(original.kind);
+  // money back in cash from a till sale leaves the drawer: with separate duties, an approver pays it (invoices.ts)
+  if (original.kind === 'sale' && input.payment === 'cash') assertMayUndoPosSale(db, originalId, original.postedBy, actor);
   const errors: { code: string; line?: number; period?: string; available?: number }[] = [];
   if (!isIsoDate(input.date)) errors.push({ code: 'date_invalid' });
   else {
@@ -115,6 +133,7 @@ export function createReturn(db: Db, originalId: string, input: ReturnInput, use
   const discount = lines.reduce((s, l) => s + l.discountShare, 0);
   const total = subtotal - discount;
   if (total < 0 || lines.some((l) => l.discountShare > l.amount)) throw conflict('return_totals_invalid');
+  if (kind === 'sale_return' && input.payment === 'cash') assertPaidBackAsPaid(db, originalId, input.cashAccountCode!, total);
   const accounts = getPostingAccounts(db);
   const warehouseAccount = (db.prepare('SELECT account_code FROM warehouses WHERE id = ?').get(original.warehouseId) as { account_code: string }).account_code;
   const party = original.partyId ? getParty(db, original.partyId) : null;

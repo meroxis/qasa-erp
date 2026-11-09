@@ -3,7 +3,8 @@ import type { FastifyInstance } from 'fastify';
 import { openDatabase, type Db } from './db.ts';
 import { buildApp } from './app.ts';
 import {
-  adminUsernames, auditUnconfirmedReset, hasRecoveryCode, makeRecoveryCode, normalizeRecoveryCode, recoverAdminWithCode, resetAdminOnThisPc, resetLoginThrottle
+  adminUsernames, auditUnconfirmedReset, hasRecoveryCode, login, makeRecoveryCode, normalizeRecoveryCode, recoverAdminWithCode, resetAdminOnThisPc,
+  resetLoginThrottle
 } from './auth.ts';
 import { readSetting } from './settings.ts';
 
@@ -106,6 +107,22 @@ describe('admin recovery code', () => {
     // a short new password is refused before anything changes
     resetLoginThrottle();
     await expect(recoverAdminWithCode(db, { username: 'admin', code, password: 'short' }, 'x')).rejects.toMatchObject({ code: 'validation' });
+  });
+
+  it('ends a lock others caused on the admin: the new password works at once, by the code or by Windows Hello', async () => {
+    const code = await signInOn();
+    const lockOut = async () => {
+      for (let i = 0; i < 30; i++) await expect(login(db, 'admin', 'wrong-password', undefined, `net:10.9.0.${i}`)).rejects.toMatchObject({ code: 'invalid_login' });
+      for (let i = 0; i < 5; i++) await login(db, 'admin', 'wrong-password', undefined, 'net:10.0.0.7').catch(() => undefined);
+      await expect(login(db, 'admin', 'owner-pass-1', undefined, 'net:10.0.0.7')).rejects.toMatchObject({ code: 'too_many_attempts' });
+    };
+    await lockOut();
+    await recoverAdminWithCode(db, { username: 'admin', code, password: 'new-owner-pass' }, 'Windows: PC\\Mer');
+    await expect(login(db, 'admin', 'new-owner-pass', undefined, 'net:10.0.0.7')).resolves.toBeTruthy();
+    await lockOut().catch(() => undefined);
+    for (let i = 0; i < 5; i++) await login(db, 'admin', 'wrong-password', undefined, 'net:10.0.0.8').catch(() => undefined);
+    await resetAdminOnThisPc(db, { username: 'admin', password: 'newer-owner-pass', windowsUser: 'PC\\Mer', computer: 'PC', method: 'windows_hello' });
+    await expect(login(db, 'admin', 'newer-owner-pass', undefined, 'net:10.0.0.8')).resolves.toBeTruthy();
   });
 
   it('can only be used in the Windows app: no web or network route takes a code or resets a password without one', async () => {

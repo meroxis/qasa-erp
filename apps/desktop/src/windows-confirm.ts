@@ -1,4 +1,7 @@
 import { execFile } from 'node:child_process';
+import { win32 } from 'node:path';
+
+const { dirname, join } = win32;
 
 /**
  * "Confirm with Windows" for File → Reset admin password: Windows Hello (PIN, fingerprint, face or the Windows
@@ -44,9 +47,32 @@ export function parseHelloOutput(output: string): HelloResult {
 
 export type RunScript = (script: string, env: Record<string, string>) => Promise<string>;
 
+/**
+ * Windows' own System32 folder: where Windows itself loaded ntdll.dll into this process from. Never taken from the
+ * environment (PATH, SystemRoot) or the working folder, which whoever starts the app can point anywhere: a
+ * powershell.exe of their own that prints "result:Verified" would reset an admin without Windows Hello.
+ */
+export function systemFolder(loaded: () => readonly string[] = loadedLibraries): string | null {
+  try {
+    const ntdll = loaded().find((file) => /^[a-z]:\\.+\\ntdll\.dll$/i.test(file));
+    return ntdll ? dirname(ntdll) : null;
+  } catch {
+    return null;
+  }
+}
+
+function loadedLibraries(): readonly string[] {
+  const report = (process as { report?: { getReport(): unknown } }).report?.getReport() as { sharedObjects?: unknown } | undefined;
+  return Array.isArray(report?.sharedObjects) ? report.sharedObjects.filter((f): f is string => typeof f === 'string') : [];
+}
+
 const runPowerShell: RunScript = (script, env) => new Promise((resolve, reject) => {
-  execFile('powershell.exe', ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-Command', script], {
-    env: { ...process.env, ...env }, windowsHide: true, timeout: 180_000, encoding: 'utf8'
+  const system = systemFolder();
+  if (!system) { reject(new Error('no_system_folder')); return; }
+  const windows = dirname(system);
+  // Windows PowerShell by its full path, with none of this process's environment (no PATH, no PSModulePath)
+  execFile(join(system, 'WindowsPowerShell', 'v1.0', 'powershell.exe'), ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-Command', script], {
+    env: { SystemRoot: windows, windir: windows, ...env }, cwd: system, windowsHide: true, timeout: 180_000, encoding: 'utf8'
   }, (error, stdout) => (error ? reject(error) : resolve(String(stdout))));
 });
 
@@ -80,9 +106,13 @@ export async function resetWithWindows(
   return { ok: false, error: outcome };
 }
 
-/** The Windows user as the audit log writes it: DOMAIN\name (or the PC's name\name), never empty. */
-export function windowsAccount(env: NodeJS.ProcessEnv, fallbackUser: string, computer: string): string {
-  const user = (env.USERNAME ?? fallbackUser ?? '').trim() || 'unknown';
-  const domain = (env.USERDOMAIN ?? computer ?? '').trim();
-  return (domain ? `${domain}\\${user}` : user).slice(0, 100);
+/**
+ * The Windows user as the audit log writes it: PC\name, never empty. The name is the signed-in account's own
+ * (os.userInfo(), read from the process's Windows token) and the PC's its own (os.hostname()), never the USERNAME or
+ * USERDOMAIN variables: whoever starts the app sets those, and could make the audit log name somebody else.
+ */
+export function windowsAccount(user: string, computer: string): string {
+  const name = (user ?? '').trim() || 'unknown';
+  const pc = (computer ?? '').trim();
+  return (pc ? `${pc}\\${name}` : name).slice(0, 100);
 }

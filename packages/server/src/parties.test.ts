@@ -50,3 +50,15 @@ describe('deleting a customer', () => {
     expect(isForeignKeyFailure(new Error('database is locked'))).toBe(false);
   });
 });
+
+describe('a customer\'s credit limit', () => {
+  it('stays as it is when an edit leaves it out; it goes only when the edit says null', async () => {
+    const put = (id: string, body: object) => app.inject({ method: 'PUT', url: `/api/parties/${id}`, payload: body, headers });
+    const id = (await post('/api/parties', { type: 'customer', name: 'Raz', creditLimit: 100_000 })).json().id as string;
+    expect((await put(id, { type: 'customer', name: 'Raz Trading' })).json()).toMatchObject({ name: 'Raz Trading', creditLimit: 100_000 });
+    expect((await put(id, { type: 'customer', name: 'Raz Trading', creditLimit: 150_000 })).json().creditLimit).toBe(150_000);
+    const audit = db.prepare("SELECT details FROM audit_log WHERE action = 'update' AND entity = 'party' ORDER BY id DESC LIMIT 1").get() as { details: string };
+    expect(JSON.parse(audit.details)).toMatchObject({ creditLimitBefore: 100_000, creditLimit: 150_000 });
+    expect((await put(id, { type: 'customer', name: 'Raz Trading', creditLimit: null })).json().creditLimit).toBeNull();
+  });
+});

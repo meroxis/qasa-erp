@@ -174,11 +174,14 @@ export function updateParty(db: Db, id: string, input: PartyInput, user: string)
   const row = loadRow(db, id);
   const accountCode = input.accountCode || row.account_code;
   assertInput(db, row.type, input, accountCode);
+  // a customer's credit limit changes only when the request names it (null: no limit); left out, it stays as it is
+  const before = row.credit_limit === null ? null : Number(row.credit_limit);
+  const creditLimit = row.type !== 'customer' ? null : input.creditLimit === undefined ? before : input.creditLimit;
   transaction(db, () => {
     db.prepare('UPDATE parties SET name = ?, phone = ?, address = ?, account_code = ?, credit_limit = ?, notes = ?, active = ? WHERE id = ?')
       .run(input.name.trim(), input.phone?.trim() || null, input.address?.trim() || null, accountCode,
-        row.type === 'customer' ? input.creditLimit ?? null : null, input.notes?.trim() || null, input.active === false ? 0 : 1, id);
-    audit(db, user, 'update', 'party', id, input);
+        creditLimit, input.notes?.trim() || null, input.active === false ? 0 : 1, id);
+    audit(db, user, 'update', 'party', id, { ...input, ...(creditLimit !== before ? { creditLimitBefore: before, creditLimit } : {}) });
   });
   return getParty(db, id);
 }

@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { isCurrency, isMinorAmount, isUnit, normalizeForSearch, type CurrencyCode, type ItemUnit, type Names, type UnitCode } from '@qasa/core';
+import { addDays, isCurrency, isMinorAmount, isUnit, normalizeForSearch, todayIso, type CurrencyCode, type ItemUnit, type Names, type UnitCode } from '@qasa/core';
 import type { Db } from './db.ts';
 import { nextSequence, transaction } from './db.ts';
 import { audit } from './audit.ts';
@@ -370,7 +370,16 @@ export function findByBarcode(db: Db, barcode: string, warehouses: WarehouseFilt
   return unit ? { item: getItem(db, unit.item_id, warehouses), unit: unit.unit } : { item: null, unit: null };
 }
 
+/**
+ * How far ahead of today a stock move may be dated. Every later move of the same item in the same warehouse must be on
+ * or after the newest one, and moves are never changed or deleted, so a move dated far ahead (a mistyped year, or on
+ * purpose) would block that item there until that day, with no way back short of a backup.
+ */
+export const STOCK_DATE_AHEAD_DAYS = 31;
+
 export function addStockMove(db: Db, move: { itemId: string; warehouseId: string; date: string; qtyMilli: number; value: number; sourceType: string; sourceId: string }): void {
+  const latestAllowed = addDays(todayIso(), STOCK_DATE_AHEAD_DAYS);
+  if (move.date > latestAllowed) throw invalid([{ code: 'stock_date_too_far', date: latestAllowed }]);
   // Costs are calculated in posting order. A backdated move would invalidate the dated stock history.
   const latest = (db.prepare('SELECT MAX(date) AS date FROM stock_moves WHERE item_id = ? AND warehouse_id = ?')
     .get(move.itemId, move.warehouseId) as { date: string | null }).date;

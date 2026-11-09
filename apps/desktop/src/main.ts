@@ -528,7 +528,7 @@ function openRecoverWindow(): void {
 const fromRecoverWindow = (event: Electron.IpcMainInvokeEvent | Electron.IpcMainEvent) =>
   !!recoverWin && !remote && event.sender === recoverWin.webContents && event.senderFrame === recoverWin.webContents.mainFrame;
 
-const thisWindowsUser = () => windowsAccount(process.env, userInfo().username, hostname());
+const thisWindowsUser = () => windowsAccount(userInfo().username, hostname());
 
 ipcMain.handle('recover:admins', async (event) => {
   if (!fromRecoverWindow(event) || !bridge) return [];

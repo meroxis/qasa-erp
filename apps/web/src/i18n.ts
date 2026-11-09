@@ -504,6 +504,16 @@ const BASE = {
   err_reversal_before_entry: ['تاريخ القيد العكسي قبل تاريخ القيد الذي يعكسه؛ اختر تاريخه أو تاريخاً بعده.', 'The reversal is dated before the entry it reverses; choose that entry’s date or a later one.', 'بەرواری تۆماری پێچەوانە پێش بەرواری ئەو تۆمارەیە کە پێچەوانەی دەکاتەوە؛ هەمان بەروار یان بەروارێکی دواتر هەڵبژێرە.'],
   err_return_totals_invalid: ['مبالغ المرتجعات السابقة غير متطابقة؛ ألغها قبل إنشاء مرتجع آخر', 'Previous return amounts do not reconcile; cancel them before making another return', 'بڕی گەڕاندنەوەکانی پێشوو یەک ناگرنەوە؛ پێش گەڕاندنەوەیەکی تر هەڵیانبوەشێنەرەوە'],
   err_stock_date_before_latest: ['اختر تاريخاً لا يسبق آخر حركة لهذه المادة في المخزن', 'Choose a date on or after the latest stock movement for this item and warehouse', 'بەروارێک هەڵبژێرە کە هەمان بەروار یان دوای دوا جووڵەی ئەم مادەیە لەم کۆگایە بێت'],
+  err_refund_more_than_paid: [
+    'يُردّ المبلغ بالطريقة التي دُفع بها: من هذه القاصة أو هذا الحساب لا يُردّ أكثر مما دخله من هذه الفاتورة.',
+    'Money goes back the way it was paid: no more can be paid back from this safe or account than came into it for this sale.',
+    'پارە بەو شێوەیە دەگەڕێنرێتەوە کە دراوە: لەم قاسە یان هەژمارە زیاتر لەوەی بۆ ئەم فرۆشتنە هاتووەتە ناوی ناگەڕێنرێتەوە.'
+  ],
+  err_stock_date_too_far: [
+    'التاريخ بعيد جداً في المستقبل: حركة المخزن تُؤرَّخ بشهر من اليوم على الأكثر.',
+    'That date is too far ahead: a stock movement can be dated at most a month from today.',
+    'ئەو بەروارە زۆر لە داهاتوودایە: جووڵەی کۆگا دەتوانرێت تەنها تا مانگێک دوای ئەمڕۆ بەروار بکرێت.'
+  ],
   err_period_in_closed_year: ['أعد فتح السنة المالية قبل فتح هذا الشهر', 'Reopen the financial year before unlocking this month', 'پێش کردنەوەی ئەم مانگە، ساڵی دارایی دووبارە بکەرەوە'],
   err_warehouse_accounts_full: ['لا توجد مساحة لحساب مخزن جديد ضمن الحساب 137 دون تفريع حساب موجود', 'There is no room for another warehouse account under 137 without splitting an existing account', 'لە ژێر هەژماری 137 شوێن بۆ هەژماری کۆگایەکی تر نییە بەبێ لقکردنی هەژمارێکی هەبوو'],
   err_has_returns: ['لهذه الفاتورة مردودات — ألغِ المردودات أولاً', 'This invoice has returns — cancel them first', 'ئەم پسوولەیە گەڕاندنەوەی هەیە — سەرەتا ئەوان هەڵبوەشێنەوە'],
@@ -687,6 +697,11 @@ const BASE = {
   err_posted_invoice_is_permanent: ['الفاتورة المُرحّلة لا تُعدّل', 'Posted invoices can’t be changed', 'پسوولەی تۆمارکراو ناگۆڕدرێت'],
   err_stock_moves_are_permanent: ['حركات المخزن لا تُعدّل', 'Stock moves can’t be changed', 'جووڵەکانی کۆگا ناگۆڕدرێن'],
   err_account_invalid: ['الحساب غير مناسب هنا', 'That account doesn’t fit here', 'ئەو هەژمارە لێرە گونجاو نییە'],
+  err_account_invalid_counterAccountCode: [
+    'بضاعة أول المدة تُقيَّد على رأس المال (21) أو الاحتياطيات (22) فقط.',
+    'Opening stock is credited to capital (21) or reserves (22) only.',
+    'کاڵای سەرەتای ماوە تەنها لەسەر سەرمایە (21) یان یەدەگەکان (22) تۆمار دەکرێت.'
+  ],
   err_account_in_use: ['الحساب مستخدم لزبون أو مخزن أو في الإعدادات', 'The account is used by a customer, warehouse or setting', 'هەژمارەکە بۆ کڕیار، کۆگا یان ڕێکخستن بەکاردێت'],
   err_unit_invalid: ['اختر الوحدة', 'Choose a unit', 'یەکە هەڵبژێرە'],
   err_price_invalid: ['السعر غير صحيح', 'Invalid price', 'نرخ دروست نییە'],

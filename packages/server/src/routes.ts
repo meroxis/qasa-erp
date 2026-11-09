@@ -214,6 +214,12 @@ export interface ApiRequest {
   headers: Record<string, string | string[] | undefined>;
   /** true when the request came over https */
   secure?: boolean;
+  /**
+   * Where the request comes from, set by the server, never by the request: 'local:<address>' on this PC's own server,
+   * 'net:<address>' on the office network (a PC or phone through Qasa Relay by its own address). Sign-in failures
+   * are counted per account and per source (auth.ts).
+   */
+  source?: string;
 }
 
 /** Lets a route choose its status code (201, 204); otherwise the returned value is sent with 200. */
@@ -547,12 +553,12 @@ export function apiRoutes(db: Db, options: { demo?: boolean; extensions?: readon
   });
   app.post('/api/invoices/:id/cancel', async (req) => {
     const body = parse(z.object({ date: isoDate.optional() }), req.body ?? {});
-    return cancelInvoice(db, parse(idParam, req.params).id, userOf(req), body.date);
+    return cancelInvoice(db, parse(idParam, req.params).id, userOf(req), body.date, actorOf(req));
   });
 
   // returns (مردودات), made from a posted invoice
   app.post('/api/invoices/:id/returns', async (req, reply) =>
-    reply.status(201).send(createReturn(db, parse(idParam, req.params).id, withoutUndefined(parse(returnSchema, req.body)), userOf(req))));
+    reply.status(201).send(createReturn(db, parse(idParam, req.params).id, withoutUndefined(parse(returnSchema, req.body)), userOf(req), actorOf(req))));
 
   // stock documents: opening stock and transfers between warehouses
   app.get('/api/stock-docs', async (req) => {
@@ -566,7 +572,7 @@ export function apiRoutes(db: Db, options: { demo?: boolean; extensions?: readon
     deleteStockDoc(db, parse(idParam, req.params).id, userOf(req));
     return reply.status(204).send();
   });
-  app.post('/api/stock-docs/:id/post', async (req) => postStockDoc(db, parse(idParam, req.params).id, userOf(req)));
+  app.post('/api/stock-docs/:id/post', async (req) => postStockDoc(db, parse(idParam, req.params).id, userOf(req), actorOf(req)));
   app.post('/api/stock-docs/:id/cancel', async (req) => {
     const body = parse(z.object({ date: isoDate.optional() }), req.body ?? {});
     return cancelStockDoc(db, parse(idParam, req.params).id, userOf(req), body.date);
@@ -587,7 +593,7 @@ export function apiRoutes(db: Db, options: { demo?: boolean; extensions?: readon
   app.post('/api/auth/login', async (req, reply) => {
     notInDemo();
     const body = parse(z.object({ username: z.string().min(1).max(64), password: z.string().min(1).max(200) }), req.body);
-    const { token, actor } = await login(db, body.username, body.password, header(req, 'user-agent'));
+    const { token, actor } = await login(db, body.username, body.password, header(req, 'user-agent'), req.source);
     reply.header('set-cookie', sessionCookie(token, !!req.secure));
     return me(actor);
   });

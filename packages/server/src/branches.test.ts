@@ -458,3 +458,24 @@ describe('banking inside a branch', () => {
     expect((await post(`/api/banking/cheques/${hqCheque.id}/cancel`, {}, raz)).statusCode).toBe(403);
   });
 });
+
+describe('accounts and invoices a limited user names by code or id', () => {
+  it('an opening stock document credits no safe of another branch, nor any safe at all', async () => {
+    const { raz } = await erbilBranch();
+    const opening = (counterAccountCode: string) => ({ kind: 'opening', date: '2026-10-01', warehouseId: erbil, counterAccountCode, lines: [{ itemId, qtyMilli: 1000, unitCost: 1 }] });
+    // the head office's safe, from the user's own warehouse
+    expect((await post('/api/stock-docs', opening('1811'), raz)).json()).toMatchObject({ error: 'branch_forbidden' });
+    // the branch's own safe: not an account opening stock may credit
+    expect((await post('/api/stock-docs', opening('1812'), raz)).json().details).toContainEqual({ code: 'account_invalid', field: 'counterAccountCode' });
+  });
+
+  it('the verification code of another branch\'s invoice is refused like the invoice itself', async () => {
+    const { raz, owner } = await erbilBranch();
+    const theirs = (await post('/api/invoices', sale(hq), owner)).json();
+    expect((await post(`/api/invoices/${theirs.id}/post`, {}, owner)).statusCode).toBe(200);
+    expect((await get(`/api/invoices/${theirs.id}`, raz)).statusCode).toBe(403);
+    expect((await get(`/api/verify/invoices/${theirs.id}`, raz)).json()).toMatchObject({ error: 'branch_forbidden' });
+    const mine = (await post('/api/invoices', sale(erbil), raz)).json();
+    expect((await get(`/api/verify/invoices/${mine.id}`, raz)).statusCode).not.toBe(403);
+  });
+});

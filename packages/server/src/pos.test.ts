@@ -223,4 +223,39 @@ describe('point of sale', () => {
     expect((await get('/api/pos/current', first)).json().shift.id).toBe(shift.id);
     expect((await post(`/api/pos/shifts/${shift.id}/sales`, sale, first)).statusCode).toBe(201);
   });
+
+  it('with separate duties, a cashier neither voids a till sale nor pays it back in cash: an approver does, never the one who rang it up', async () => {
+    await post('/api/plan/trial');
+    const ownerId = (await get('/api/users')).json()[0].id;
+    expect((await post(`/api/users/${ownerId}/password`, { password: 'admin-pass-123' })).statusCode).toBe(200);
+    expect((await post('/api/users', { username: 'raz', name: 'Raz', password: 'raz-pass-123', roles: ['sales'] })).statusCode).toBe(201);
+    expect((await post('/api/users', { username: 'las', name: 'Las', password: 'las-pass-123', roles: ['sales', 'approver'] })).statusCode).toBe(201);
+    expect((await app.inject({ method: 'PUT', url: '/api/auth/separate-duties', payload: { on: true }, headers })).statusCode).toBe(200);
+    expect((await app.inject({ method: 'PUT', url: '/api/auth/signin', payload: { on: true }, headers })).statusCode).toBe(200);
+    const login = async (username: string) => {
+      const res = await app.inject({ method: 'POST', url: '/api/auth/login', payload: { username, password: `${username}-pass-123` }, headers: { 'x-qasa-client': '1' } });
+      expect(res.statusCode, res.body).toBe(200);
+      return { cookie: String(res.headers['set-cookie']).split(';')[0]!, 'x-qasa-client': '1' };
+    };
+    const raz = await login('raz');
+    const las = await login('las');
+    const shift = (await post('/api/pos/shifts', { register: 'Counter 7', cashAccountCode: '1811', warehouseId, openingCash: 0 }, raz)).json();
+    const sell = async () => (await post(`/api/pos/shifts/${shift.id}/sales`, { currency: 'IQD', lines: [{ itemId: teaId, qtyMilli: 1000, unitPrice: 2_500 }] }, raz)).json().invoice;
+    const first = await sell();
+    const second = await sell();
+    expect((await get(`/api/pos/shifts/${shift.id}`, raz)).json().expected.IQD).toBe(5_000);
+    // the cashier: neither a void nor a cash refund
+    expect((await post(`/api/invoices/${first.id}/cancel`, {}, raz)).json()).toMatchObject({ error: 'forbidden', details: { need: 'entries.approve' } });
+    const refund = { date: first.date, payment: 'cash', cashAccountCode: '1811', lines: [{ lineNo: 1, qtyMilli: 1000 }] };
+    expect((await post(`/api/invoices/${first.id}/returns`, refund, raz)).json()).toMatchObject({ error: 'forbidden', details: { need: 'entries.approve' } });
+    expect((await get(`/api/pos/shifts/${shift.id}`, raz)).json().expected.IQD).toBe(5_000);
+    // an approver does both
+    expect((await post(`/api/invoices/${first.id}/cancel`, {}, las)).statusCode).toBe(200);
+    expect((await post(`/api/invoices/${second.id}/returns`, refund, las)).statusCode).toBe(201);
+    expect((await get(`/api/pos/shifts/${shift.id}`, raz)).json().expected.IQD).toBe(0);
+    // but never on a sale they rang up themselves
+    const own = (await post('/api/pos/shifts', { register: 'Counter 8', cashAccountCode: '1811', warehouseId, openingCash: 0 }, las)).json();
+    const theirs = (await post(`/api/pos/shifts/${own.id}/sales`, { currency: 'IQD', lines: [{ itemId: teaId, qtyMilli: 1000, unitPrice: 2_500 }] }, las)).json().invoice;
+    expect((await post(`/api/invoices/${theirs.id}/cancel`, {}, las)).json().error).toBe('same_person');
+  });
 });

@@ -387,9 +387,14 @@ export function expiryAlert(db: Db, today: string, warehouses: readonly string[]
 
 /**
  * Fixes a batch's number or expiry date, while nothing has gone out of it yet. A user limited to branches may fix only
- * a batch held in their own warehouses alone (its date decides what another branch may sell).
+ * a batch held in their own warehouses alone (its date decides what another branch may sell). A batch that has expired
+ * is made sellable again (a later date, or none) only by an approver: the stock permission alone would get round the
+ * 'block expired sales' setting, for medicines too.
  */
-export function updateBatch(db: Db, id: string, input: { number?: string | undefined; expiry?: string | null | undefined }, user: string, warehouses: readonly string[] | null = null): BatchRow {
+export function updateBatch(
+  db: Db, id: string, input: { number?: string | undefined; expiry?: string | null | undefined }, user: string, warehouses: readonly string[] | null = null,
+  permissions?: readonly string[]
+): BatchRow {
   const b = db.prepare('SELECT id, item_id, number, expiry, created_at FROM item_batches WHERE id = ?').get(id) as { id: string; item_id: string; number: string; expiry: string | null; created_at: string } | undefined;
   if (!b) throw notFound('batch');
   if (warehouses) {
@@ -400,6 +405,8 @@ export function updateBatch(db: Db, id: string, input: { number?: string | undef
   const number = input.number === undefined ? b.number : normalizeBatchNo(input.number);
   const expiry = input.expiry === undefined ? b.expiry : normalizeExpiry(input.expiry);
   if (expiry === 'invalid') throw invalid([{ code: 'expiry_invalid' }]);
+  const revived = isExpired(b.expiry, todayIso()) && (expiry === null || expiry > b.expiry!);
+  if (revived && permissions && !permissions.includes('entries.approve')) throw new AppError(403, 'forbidden', { need: 'entries.approve' });
   // a number belongs to one batch; stock with no number is one batch per expiry date
   const clash = number
     ? db.prepare('SELECT 1 FROM item_batches WHERE item_id = ? AND number = ? AND id <> ?').get(b.item_id, number, id)
@@ -462,7 +469,7 @@ export const batchesApi: ApiExtension = {
         handler: async (req) => {
           const body = parse(z.object({ number: z.string().max(MAX_BATCH_NO * 2).optional(), expiry: isoDate.nullable().optional() }), req.body);
           const actor = actorOf(req);
-          return updateBatch(db, parse(z.object({ id }), req.params).id, body, actor.name, scope(actor));
+          return updateBatch(db, parse(z.object({ id }), req.params).id, body, actor.name, scope(actor), actor.permissions);
         }
       },
       {

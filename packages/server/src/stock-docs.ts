@@ -3,11 +3,12 @@ import { costOut, isIsoDate, lineAmount, priceQty, todayIso, type EntryInput, ty
 import type { Db } from './db.ts';
 import { transaction } from './db.ts';
 import { audit } from './audit.ts';
-import { conflict, invalid, notFound } from './errors.ts';
+import { AppError, conflict, invalid, notFound } from './errors.ts';
+import type { Actor } from './auth.ts';
 import { loadAccounts } from './accounts.ts';
 import { assertValid, insertEntry, nextNumber, reverseEntryInternal } from './journal.ts';
 import { addStockMove, stockOf } from './items.ts';
-import { isPeriodLocked } from './settings.ts';
+import { isPeriodLocked, readSetting } from './settings.ts';
 import { resolveLines } from './item-units.ts';
 import {
   addTaken, allocateOut, assertReversible, batchColumns, batchTracking, cancelBatchMoves, inboundBatch, lineBatchErrors, writeBatchMoves,
@@ -26,7 +27,7 @@ export interface StockDocInput {
   warehouseId: string;
   /** Transfer: the warehouse they go to. */
   toWarehouseId?: string;
-  /** Opening stock: the account credited for the goods' value (usually capital, 21). */
+  /** Opening stock: the account credited for the goods' value: capital (21) or reserves (22), nothing else. */
   counterAccountCode?: string;
   notes?: string;
   /**
@@ -166,8 +167,11 @@ export function listStockDocs(db: Db, f: { kind?: StockDocKind | undefined; stat
     .map(toSummary);
 }
 
+/** The accounts an opening stock document may credit: capital (21) and reserves (22), with their sub-accounts. */
+export const isOpeningCounterAccount = (code: string): boolean => code.startsWith('21') || code.startsWith('22');
+
 function assertDoc(db: Db, input: StockDocInput): void {
-  const errors: { code: string; line?: number; period?: string }[] = [];
+  const errors: { code: string; line?: number; period?: string; field?: string }[] = [];
   if (!isIsoDate(input.date)) errors.push({ code: 'date_invalid' });
   else if (isPeriodLocked(db, input.date)) errors.push({ code: 'period_locked', period: input.date.slice(0, 7) });
   const active = db.prepare('SELECT active FROM warehouses WHERE id = ?');
@@ -178,8 +182,10 @@ function assertDoc(db: Db, input: StockDocInput): void {
     else if (input.toWarehouseId === input.warehouseId) errors.push({ code: 'same_warehouse' });
   } else {
     const account = input.counterAccountCode ? loadAccounts(db).find((a) => a.code === input.counterAccountCode) : undefined;
-    // any postable account except stock itself; normally capital (21)
-    if (!account || !account.postable || account.code.startsWith('13')) errors.push({ code: 'account_invalid' });
+    // goods a company starts with are its owners' money: capital (21) or reserves (22, the accumulated result among
+    // them). A stock user posts this entry with no checker, so it never reaches a safe, a bank, a customer, a
+    // supplier, revenue or an expense (that would hide missing cash, or move value out of another branch's safe)
+    if (!account || !account.postable || !isOpeningCounterAccount(account.code)) errors.push({ code: 'account_invalid', field: 'counterAccountCode' });
   }
   if (!Array.isArray(input.lines) || input.lines.length === 0) errors.push({ code: 'lines_required' });
   else {
@@ -225,6 +231,16 @@ export function createStockDoc(db: Db, raw: StockDocInput | StockDocRequest, use
     audit(db, user, 'create', 'stock_doc', id, { kind: input.kind });
   });
   return getStockDoc(db, id);
+}
+
+/**
+ * Separate duties (Settings): opening stock writes an approved entry with values someone typed, so like a stock
+ * adjustment it is posted by an approver other than its maker (the document keeps its maker's name only).
+ */
+function assertMayPostOpening(db: Db, row: DocRow, actor: Pick<Actor, 'name' | 'permissions'>): void {
+  if (readSetting(db, 'separate_duties') !== '1') return;
+  if (!actor.permissions.includes('entries.approve')) throw new AppError(403, 'forbidden', { need: 'entries.approve' });
+  if (row.created_by === actor.name) throw conflict('same_person');
 }
 
 function requireAction(row: DocRow, action: StockDocAction): void {
@@ -273,9 +289,11 @@ function storedInput(v: StockDocView): StockDocInput {
  * Posts a stock document: numbers it (OS / ST), moves the stock and writes its entry in IQD.
  * Opening stock: Dr warehouse / Cr the chosen account (capital).  Transfer: Dr receiving warehouse / Cr sending warehouse, at average cost.
  */
-export function postStockDoc(db: Db, id: string, user: string): StockDocView {
+export function postStockDoc(db: Db, id: string, user: string, actor?: Pick<Actor, 'name' | 'permissions'>): StockDocView {
   const view = getStockDoc(db, id);
-  requireAction(loadRow(db, id), 'post');
+  const row = loadRow(db, id);
+  requireAction(row, 'post');
+  if (row.kind === 'opening' && actor) assertMayPostOpening(db, row, actor);
   assertDoc(db, storedInput(view));
   const moves: { itemId: string; warehouseId: string; qtyMilli: number; value: number }[] = [];
   const values: number[] = [];

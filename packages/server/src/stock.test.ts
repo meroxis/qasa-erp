@@ -3,7 +3,7 @@ import { DatabaseSync } from 'node:sqlite';
 import type { FastifyInstance } from 'fastify';
 import { migrate, openDatabase, SCHEMA_VERSION, schemaVersion, type Db } from './db.ts';
 import { buildApp } from './app.ts';
-import { todayIso } from '@qasa/core';
+import { addDays, todayIso } from '@qasa/core';
 
 let db: Db;
 let app: FastifyInstance;
@@ -165,8 +165,47 @@ describe('opening stock', () => {
   it('checks its lines and account', async () => {
     const res = await post('/api/stock-docs', opening([{ itemId: installId, qtyMilli: 1000, unitCost: 1 }, { itemId: acId, qtyMilli: 0, unitCost: 5 }, { itemId: acId, qtyMilli: 1000 }], { counterAccountCode: '1371' }));
     expect(res.json().details).toEqual(expect.arrayContaining([
-      { code: 'account_invalid' }, { code: 'item_not_stock', line: 1 }, { code: 'line_qty_invalid', line: 2 }, { code: 'line_price_invalid', line: 3 }
+      { code: 'account_invalid', field: 'counterAccountCode' }, { code: 'item_not_stock', line: 1 }, { code: 'line_qty_invalid', line: 2 }, { code: 'line_price_invalid', line: 3 }
     ]));
+  });
+
+  it('credits capital or reserves only: never a safe, a bank, a customer, a supplier, revenue or an expense', async () => {
+    const line = [{ itemId: acId, qtyMilli: 1000, unitCost: 5_000_000 }];
+    for (const code of ['1811', '1831', '1611', '2611', '411', '31']) {
+      const res = await post('/api/stock-docs', opening(line, { counterAccountCode: code }));
+      expect(res.statusCode, code).toBe(400);
+      expect(res.json().details, code).toEqual([{ code: 'account_invalid', field: 'counterAccountCode' }]);
+    }
+    for (const code of ['21', '229']) expect((await post('/api/stock-docs', opening(line, { counterAccountCode: code }))).statusCode, code).toBe(201);
+    // a draft saved before this check can't be posted against a safe either
+    const draft = (await post('/api/stock-docs', opening(line))).json();
+    db.prepare("UPDATE stock_docs SET counter_account = '1811' WHERE id = ?").run(draft.id);
+    expect((await post(`/api/stock-docs/${draft.id}/post`)).statusCode).toBe(400);
+    expect(db.prepare("SELECT COUNT(*) AS n FROM entry_lines WHERE account_code = '1811'").get()).toEqual({ n: 0 });
+  });
+
+  it('with separate duties, a storekeeper makes opening stock and an approver who did not make it posts it', async () => {
+    await post('/api/plan/trial');
+    const ownerId = (await get('/api/users')).json()[0].id;
+    expect((await post(`/api/users/${ownerId}/password`, { password: 'admin-pass-123' })).statusCode).toBe(200);
+    expect((await post('/api/users', { username: 'raz', name: 'Raz', password: 'raz-pass-123', roles: ['storekeeper'] })).statusCode).toBe(201);
+    expect((await post('/api/users', { username: 'las', name: 'Las', password: 'las-pass-123', roles: ['storekeeper', 'approver'] })).statusCode).toBe(201);
+    expect((await app.inject({ method: 'PUT', url: '/api/auth/separate-duties', payload: { on: true }, headers })).statusCode).toBe(200);
+    expect((await app.inject({ method: 'PUT', url: '/api/auth/signin', payload: { on: true }, headers })).statusCode).toBe(200);
+    const login = async (username: string) => {
+      const res = await app.inject({ method: 'POST', url: '/api/auth/login', payload: { username, password: `${username}-pass-123` }, headers: { 'x-qasa-client': '1' } });
+      expect(res.statusCode, res.body).toBe(200);
+      return { cookie: String(res.headers['set-cookie']).split(';')[0]!, 'x-qasa-client': '1' };
+    };
+    const as = (h: Record<string, string>) => (url: string, body: object = {}) => app.inject({ method: 'POST', url, payload: body, headers: h });
+    const raz = as(await login('raz'));
+    const las = as(await login('las'));
+    const draft = (await raz('/api/stock-docs', opening([{ itemId: acId, qtyMilli: 1000, unitCost: 500_000 }]))).json();
+    expect((await raz(`/api/stock-docs/${draft.id}/post`)).json()).toMatchObject({ error: 'forbidden', details: { need: 'entries.approve' } });
+    const own = (await las('/api/stock-docs', opening([{ itemId: acId, qtyMilli: 1000, unitCost: 500_000 }]))).json();
+    expect((await las(`/api/stock-docs/${own.id}/post`)).json().error).toBe('same_person');
+    const posted = await las(`/api/stock-docs/${draft.id}/post`);
+    expect(posted.statusCode, posted.body).toBe(200);
   });
 
   it('can be cancelled only while its goods are still there', async () => {
@@ -235,5 +274,28 @@ describe('upgrading a version-2 company file', () => {
     expect(() => old.prepare("DELETE FROM invoice_lines WHERE invoice_id = 'v1'").run()).toThrow(/posted_invoice_is_permanent/);
     expect(old.prepare('PRAGMA foreign_key_check').all()).toEqual([]);
     old.close();
+  });
+});
+
+describe('stock dated ahead', () => {
+  it('refuses a stock move dated more than a month ahead, so no document can block an item\'s later moves', async () => {
+    await buy(5);
+    const far = await post('/api/invoices', {
+      kind: 'purchase', date: '9999-12-31', partyId: supplierId, warehouseId, currency: 'IQD', rateX100: 100, payment: 'credit', discount: 0,
+      lines: [{ itemId: acId, qtyMilli: 1000, unitPrice: 1 }]
+    });
+    expect(far.statusCode, far.body).toBe(201);
+    const refused = await post(`/api/invoices/${far.json().id}/post`);
+    expect(refused.statusCode).toBe(400);
+    expect(refused.json().details).toEqual([{ code: 'stock_date_too_far', date: addDays(todayIso(), 31) }]);
+    // cancelling a sale far ahead is refused too
+    const sale = await sell();
+    expect((await post(`/api/invoices/${sale.id}/cancel`, { date: '9999-12-31' })).json().details).toEqual([{ code: 'stock_date_too_far', date: addDays(todayIso(), 31) }]);
+    // the item keeps moving as usual
+    expect((await post(`/api/invoices/${sale.id}/cancel`, { date: todayIso() })).statusCode).toBe(200);
+    expect((await sell({ date: todayIso() })).status).toBe('posted');
+    // a month ahead is still allowed
+    const ahead = (await post('/api/stock-docs', { kind: 'opening', date: addDays(todayIso(), 31), warehouseId, counterAccountCode: '21', lines: [{ itemId: acId, qtyMilli: 1000, unitCost: 1 }] })).json();
+    expect((await post(`/api/stock-docs/${ahead.id}/post`)).statusCode).toBe(200);
   });
 });

@@ -170,7 +170,7 @@ describe('dated stock and locked periods', () => {
   });
 
   it('keeps a zero-value return unchanged when cancelling into a locked month', async () => {
-    const opening = (await post('/api/stock-docs', { kind: 'opening', date: '2025-06-01', warehouseId: warehouse, counterAccountCode: '1811', lines: [{ itemId: item, qtyMilli: 1000, unitCost: 0 }] })).json();
+    const opening = (await post('/api/stock-docs', { kind: 'opening', date: '2025-06-01', warehouseId: warehouse, counterAccountCode: '21', lines: [{ itemId: item, qtyMilli: 1000, unitCost: 0 }] })).json();
     expect((await post(`/api/stock-docs/${opening.id}/post`)).statusCode).toBe(200);
     const invoice = await posted('sale', '2025-06-02', item, 0, {
       lines: [{ itemId: item, qtyMilli: 1000, unitPrice: 0 }, { itemId: service, qtyMilli: 1000, unitPrice: 100 }]

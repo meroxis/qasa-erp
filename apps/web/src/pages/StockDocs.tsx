@@ -196,7 +196,7 @@ export function StockDocEditor({ kind: initialKind, id }: { kind?: StockDocKind;
           ) : (
             <div className="field">
               <span>{t('counterAccount')}</span>
-              <AccountCombo value={counterAccount} onChange={setCounterAccount} filter={(a) => !a.code.startsWith('13')} ariaLabel={t('counterAccount')} />
+              <AccountCombo value={counterAccount} onChange={setCounterAccount} filter={(a) => a.code.startsWith('21') || a.code.startsWith('22')} ariaLabel={t('counterAccount')} />
             </div>
           )}
         </div>
