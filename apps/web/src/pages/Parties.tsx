@@ -7,6 +7,7 @@ import { PriceListField } from '../industry/PriceListField.tsx';
 import { CompanyPrintFooter, CompanyPrintHeader } from '../industry/PrintDocument.tsx';
 import { StatementWhatsApp } from '../industry/WhatsAppShare.tsx';
 import { todayIso } from '@qasa/core';
+import { printDocument } from '../industry/printing.ts';
 
 /** الزبائن / المجهزون */
 export function Parties({ type }: { type: PartyType }) {
@@ -167,7 +168,7 @@ export function PartyDetail({ id }: { id: string }) {
         <a className="btn primary" href={href(isCustomer ? `new-invoice/sale/${p.id}` : `new-invoice/purchase/${p.id}`)}><Icon name="plus" size={16} />{isCustomer ? t('newSale') : t('newPurchase')}</a>
         <StatementWhatsApp company={company} name={p.name} phone={p.phone} balance={data.closing} date={to || todayIso()} />
         <button type="button" className="btn" onClick={exportCsv}><Icon name="download" size={16} />{t('exportExcel')}</button>
-        <button type="button" className="btn" onClick={() => window.print()}><Icon name="printer" size={16} />{t('print')}</button>
+        <button type="button" className="btn" onClick={() => void printDocument('report')}><Icon name="printer" size={16} />{t('print')}</button>
       </div>
 
       <div className="grid-4">

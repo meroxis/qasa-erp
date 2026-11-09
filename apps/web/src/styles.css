@@ -680,6 +680,13 @@ input.input, select.input { block-size: var(--control-h); padding-block: 0; }
 .table td.amount, .table th.amount { text-align: end; font-family: var(--font-num); font-variant-numeric: tabular-nums; white-space: nowrap; }
 /* a row of buttons in the last column: the cell shrinks to its buttons, they stay on one line, and the table scrolls inside .table-wrap when narrow */
 .table :is(td, th).cell-actions { inline-size: 1%; white-space: nowrap; }
+/* the admin recovery code, shown once: big, monospaced, easy to copy by hand */
+.recovery-code { font-family: var(--font-mono); font-size: 20px; letter-spacing: .06em; padding: 12px 14px; border: 1px dashed var(--line); border-radius: 10px; text-align: center; user-select: all; overflow-wrap: anywhere; }
+/* six-column trial balance: opening, movement and closing, each over its debit and credit */
+.tb-six th.tb-group { text-align: center; border-block-end: 1px solid var(--line-soft); }
+.tb-six th[rowspan] { vertical-align: bottom; }
+.tb-six :is(tbody, tfoot) td:nth-child(2n+3), .tb-six th.tb-group, .tb-six thead tr + tr th:nth-child(odd) { border-inline-start: 1px solid var(--line-soft); }
+@media print { .tb-six { font-size: 9pt; } .tb-six :is(td, th) { padding-inline: 4px; } }
 .table .cell-actions-row { flex-wrap: nowrap; gap: 6px; justify-content: flex-end; }
 .table tfoot td { font-weight: 700; background: var(--fill); border-block-start: 1px solid var(--line-2); border-block-end: none; }
 /* tables that sit in a card line up with the card's padding and its rounded corners */
@@ -1091,4 +1098,25 @@ html[dir='rtl'] .tour-card.center { transform: translate(50%, -50%); }
   .card > .table :is(th, td), .card > .table-wrap > .table :is(th, td) { white-space: nowrap; }
   .statusbar { padding-inline: var(--sp-2); gap: var(--sp-1); }
   .statusbar > span:not(.dot):not(.spacer) { min-inline-size: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+}
+
+/* Settings → Printers: the table of papers, and the test page printed alone (Printers.tsx) */
+.printers-table td { vertical-align: top; }
+.printers-table select { min-inline-size: 8em; }
+.printers-table td:first-child { min-inline-size: 12em; }
+.print-notice { display: flex; align-items: center; gap: 12px; max-inline-size: min(640px, calc(100vw - 32px)); }
+.print-test-host { display: none; }
+/* the sheet and the box get their size for the chosen paper from Printers.tsx (testSheetLayout); the box's size is its outer edge */
+.print-test { display: flex; flex-direction: column; gap: 2mm; box-sizing: border-box; color: #000; font-size: 10pt; line-height: 1.4; overflow-wrap: anywhere; }
+.print-test-title { font-size: 12pt; }
+.print-test-box { box-sizing: border-box; flex: none; display: flex; align-items: center; justify-content: center; border: 0.4mm solid #000; font-size: 8pt; }
+.print-test.fit-roll { margin-inline: auto; font-size: 9pt; }
+.print-test.fit-roll .print-test-title { font-size: 10pt; }
+.print-test.fit-label { margin: 0 auto; gap: 0.8mm; overflow: hidden; font-size: 6.5pt; line-height: 1.15; page-break-inside: avoid; break-inside: avoid; }
+.print-test.fit-label > :not(.print-test-box) { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.print-test.fit-label .print-test-title { font-size: 7pt; }
+.print-test.fit-label .print-test-box { font-size: 6pt; }
+@media print {
+  body.print-testing .app, body.print-testing .toast, body.print-testing .backdrop, body.print-testing .busy-bar { display: none !important; }
+  body.print-testing .print-test-host { display: block; }
 }

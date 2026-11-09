@@ -1,0 +1,136 @@
+<!doctype html>
+<html lang="en" dir="ltr">
+<head>
+<meta charset="utf-8">
+<!-- build.mjs puts the hash of the one script below here: nothing else may run -->
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'sha256-{{scriptHash}}'; style-src 'unsafe-inline'; form-action 'none'; base-uri 'none'">
+<title>Qasa ERP</title>
+<style>
+  :root { --navy: #0F1E3D; --blue: #1D5FD1; --ink: #141B2D; --ink-2: #4B5569; --line: #E1E6EF; --paper: #F4F6FA; --bad: #B42318; --ok: #0B6B45; }
+  * { box-sizing: border-box; }
+  body { margin: 0; font: 15px/1.55 'Segoe UI', Tahoma, system-ui, sans-serif; color: var(--ink); background: var(--paper); }
+  main { padding: 22px 26px; display: grid; gap: 12px; }
+  h1 { margin: 0; font-size: 20px; color: var(--navy); }
+  p { margin: 0; color: var(--ink-2); }
+  label { display: grid; gap: 6px; font-weight: 600; }
+  input, select { font: inherit; padding: 9px 12px; border: 1px solid var(--line); border-radius: 10px; background: #fff; }
+  input.ltr, select { direction: ltr; text-align: left; }
+  input:focus, select:focus { outline: 2px solid var(--blue); outline-offset: 1px; border-color: var(--blue); }
+  fieldset { border: 1px solid var(--line); border-radius: 12px; padding: 10px 14px 12px; display: grid; gap: 10px; }
+  legend { font-weight: 700; padding: 0 6px; }
+  .choice { display: flex; gap: 8px; align-items: flex-start; font-weight: 600; }
+  .choice input { margin-top: 5px; }
+  small { font-weight: 400; color: var(--ink-2); }
+  .row { display: flex; gap: 10px; justify-content: flex-end; margin-top: 4px; }
+  button { font: inherit; font-weight: 700; min-height: 40px; padding: 0 18px; border-radius: 10px; border: 1px solid var(--line); background: #fff; color: var(--ink); cursor: pointer; }
+  button.primary { background: var(--blue); border-color: var(--blue); color: #fff; }
+  button:disabled { opacity: .6; cursor: default; }
+  .msg { min-height: 1.5em; font-weight: 600; }
+  .msg.bad { color: var(--bad); }
+  .msg.ok { color: var(--ok); }
+  .code { direction: ltr; font: 600 18px/1.4 Consolas, 'Cascadia Mono', monospace; letter-spacing: .06em; padding: 10px; border: 1px dashed var(--ink-2); border-radius: 10px; text-align: center; user-select: all; }
+  [hidden] { display: none !important; }
+</style>
+</head>
+<body>
+<main>
+  <h1 data-t="title"></h1>
+  <p data-t="lead"></p>
+  <form id="form" autocomplete="off">
+    <div style="display:grid;gap:12px">
+      <label><span data-t="admin"></span><select id="admin" required></select></label>
+      <fieldset>
+        <legend data-t="how"></legend>
+        <label class="choice"><input type="radio" name="how" value="code" checked><span><span data-t="byCode"></span><br><small data-t="byCodeHint"></small></span></label>
+        <label id="codeField"><span data-t="code"></span><input id="code" class="ltr" maxlength="80" spellcheck="false" placeholder="XXXXX-XXXXX-XXXXX-XXXXX-XXXXX"></label>
+        <label class="choice"><input type="radio" name="how" value="windows"><span><span data-t="byWindows"></span><br><small data-t="byWindowsHint"></small></span></label>
+      </fieldset>
+      <label><span data-t="password"></span><input id="password" class="ltr" type="password" required minlength="8" maxlength="200"><small data-t="passwordHint"></small></label>
+      <label><span data-t="again"></span><input id="again" class="ltr" type="password" required minlength="8" maxlength="200"></label>
+      <div class="msg" id="msg" role="status"></div>
+      <div id="newCode" hidden><p data-t="newCode"></p><div class="code" id="newCodeText"></div></div>
+      <div class="row"><button type="button" id="cancel" data-t="cancel"></button><button type="submit" class="primary" id="go" data-t="reset"></button></div>
+    </div>
+  </form>
+</main>
+<script>
+(() => {
+  const T = {
+    title: ['إعادة تعيين كلمة مرور المدير', 'Reset admin password', 'ڕێکخستنەوەی وشەی نهێنیی بەڕێوەبەر'],
+    lead: ['لمدير نسي كلمة مروره، على هذا الحاسوب فقط. تُسجَّل كل محاولة في سجل التدقيق.', 'For an admin who forgot their password, on this PC only. Every try is written to the audit log.', 'بۆ بەڕێوەبەرێک کە وشەی نهێنیی خۆی بیرچووەتەوە، تەنها لەسەر ئەم کۆمپیوتەرە. هەموو هەوڵێک لە تۆماری چاودێریدا دەنووسرێت.'],
+    admin: ['المدير', 'Admin', 'بەڕێوەبەر'],
+    how: ['كيف تؤكد أنك مخوّل؟', 'How do you confirm you may?', 'چۆن دڵنیای دەکەیتەوە کە ڕێگەپێدراویت؟'],
+    byCode: ['برمز استعادة المدير', 'With the admin recovery code', 'بە کۆدی گەڕاندنەوەی بەڕێوەبەر'],
+    byCodeHint: ['الرمز الذي ظهر عند تفعيل تسجيل الدخول.', 'The code shown when sign-in was switched on.', 'ئەو کۆدەی کاتی چالاککردنی چوونەژوورەوە پیشان درا.'],
+    code: ['رمز الاستعادة', 'Recovery code', 'کۆدی گەڕاندنەوە'],
+    byWindows: ['بمستخدم ويندوز على هذا الحاسوب', 'As the Windows user on this PC', 'وەک بەکارهێنەری ویندۆز لەسەر ئەم کۆمپیوتەرە'],
+    byWindowsHint: ['يطلب ويندوز تأكيد هويتك بـ Windows Hello (رمز PIN أو البصمة أو الوجه). إن لم يكن Windows Hello مُعدّاً لمستخدم ويندوز هذا، فاستخدم رمز الاستعادة.', 'Windows asks you to confirm who you are with Windows Hello (PIN, fingerprint or face). If Windows Hello is not set up for this Windows user, use the recovery code.', 'ویندۆز داوات لێدەکات بە Windows Hello (PIN، پەنجەمۆر یان ڕووخسار) دڵنیای بکەیتەوە کێیت. ئەگەر Windows Hello بۆ ئەم بەکارهێنەری ویندۆزە ڕێکنەخرابێت، کۆدی گەڕاندنەوە بەکاربهێنە.'],
+    password: ['كلمة المرور الجديدة', 'New password', 'وشەی نهێنیی نوێ'],
+    passwordHint: ['8 أحرف على الأقل.', 'At least 8 characters.', 'لانیکەم ٨ پیت.'],
+    again: ['أعد كتابة كلمة المرور', 'New password again', 'دووبارە وشەی نهێنیی نوێ'],
+    reset: ['إعادة التعيين', 'Reset', 'ڕێکخستنەوە'],
+    cancel: ['إغلاق', 'Close', 'داخستن'],
+    working: ['جارٍ…', 'Working…', 'کار دەکات…'],
+    ok: ['تم تغيير كلمة المرور. سجّل الدخول بها الآن.', 'The password is changed. Sign in with it now.', 'وشەی نهێنی گۆڕدرا. ئێستا پێی بچۆ ژوورەوە.'],
+    newCode: ['استُخدم رمز الاستعادة. هذا رمزك الجديد، يظهر مرة واحدة: اكتبه واحفظه بعيداً عن الحاسوب.', 'The recovery code is used up. This is your new one, shown once: write it down and keep it away from the PC.', 'کۆدی گەڕاندنەوەکە بەکارهات. ئەمە کۆدە نوێیەکەتە، تەنها یەک جار پیشان دەدرێت: بینووسە و دوور لە کۆمپیوتەرەکە بیپارێزە.'],
+    e_mismatch: ['كلمتا المرور غير متطابقتين.', 'The two passwords are not the same.', 'دوو وشە نهێنییەکە وەک یەک نین.'],
+    e_password_short: ['كلمة المرور قصيرة: 8 أحرف على الأقل.', 'The password is too short: at least 8 characters.', 'وشەی نهێنی کورتە: لانیکەم ٨ پیت.'],
+    e_password_long: ['كلمة المرور طويلة جداً.', 'The password is too long.', 'وشەی نهێنی زۆر درێژە.'],
+    e_recovery_failed: ['الرمز غير صحيح، أو هذا المستخدم ليس مديراً فعّالاً.', 'The code is not right, or this user is not an active admin.', 'کۆدەکە دروست نییە، یان ئەم بەکارهێنەرە بەڕێوەبەرێکی چالاک نییە.'],
+    e_too_many_attempts: ['محاولات خاطئة كثيرة. انتظر {s} ثانية ثم حاول مجدداً.', 'Too many wrong tries. Wait {s} seconds, then try again.', 'هەوڵی هەڵەی زۆر. {s} چرکە چاوەڕێ بکە، پاشان دووبارە هەوڵ بدەرەوە.'],
+    e_not_admin: ['هذا المستخدم ليس مديراً فعّالاً.', 'This user is not an active admin.', 'ئەم بەکارهێنەرە بەڕێوەبەرێکی چالاک نییە.'],
+    e_cancelled: ['أُلغي التأكيد في ويندوز، فلم يتغيّر شيء.', 'Windows confirmation was cancelled, so nothing changed.', 'دڵنیاکردنەوەی ویندۆز هەڵوەشێندرایەوە، بۆیە هیچ نەگۆڕا.'],
+    e_windows_failed: ['لم يؤكد ويندوز هويتك، فلم يتغيّر شيء.', 'Windows did not confirm who you are, so nothing changed.', 'ویندۆز دڵنیای نەکردەوە کە تۆ کێیت، بۆیە هیچ نەگۆڕا.'],
+    e_hello_unavailable: ['Windows Hello غير مُعدّ لمستخدم ويندوز هذا، فلم يتغيّر شيء. استخدم رمز استعادة المدير بدلاً منه.', 'Windows Hello is not set up for this Windows user, so nothing changed. Use the admin recovery code instead.', 'Windows Hello بۆ ئەم بەکارهێنەری ویندۆزە ڕێکنەخراوە، بۆیە هیچ نەگۆڕا. لە جیاتی ئەوە کۆدی گەڕاندنەوەی بەڕێوەبەر بەکاربهێنە.'],
+    e_no_admins: ['لا يوجد مدير فعّال في هذه الشركة.', 'This company has no active admin.', 'ئەم کۆمپانیایە هیچ بەڕێوەبەرێکی چالاکی نییە.'],
+    e_error: ['تعذّرت إعادة التعيين. حاول مرة أخرى.', 'The reset didn’t work. Try again.', 'ڕێکخستنەوەکە سەرکەوتوو نەبوو. دووبارە هەوڵ بدەرەوە.']
+  };
+  const lang = ['ar', 'en', 'ku'].includes(new URLSearchParams(location.search).get('lang')) ? new URLSearchParams(location.search).get('lang') : 'ar';
+  const i = lang === 'ar' ? 0 : lang === 'ku' ? 2 : 1;
+  const t = (k, s) => (T[k] || T.e_error)[i].replace('{s}', String(s ?? ''));
+  document.documentElement.lang = lang === 'ku' ? 'ckb' : lang;
+  document.documentElement.dir = lang === 'en' ? 'ltr' : 'rtl';
+  document.title = t('title');
+  for (const el of document.querySelectorAll('[data-t]')) el.textContent = t(el.dataset.t);
+  const $ = (id) => document.getElementById(id);
+  const msg = $('msg');
+  const go = $('go');
+  const say = (text, tone) => { msg.textContent = text; msg.className = 'msg' + (tone ? ' ' + tone : ''); };
+  const how = () => document.querySelector('input[name="how"]:checked').value;
+  const sync = () => { $('codeField').hidden = how() !== 'code'; $('code').required = how() === 'code'; };
+  for (const r of document.querySelectorAll('input[name="how"]')) r.addEventListener('change', sync);
+  sync();
+  window.qasaRecover.admins().then((names) => {
+    const list = Array.isArray(names) ? names : [];
+    for (const n of list) { const o = document.createElement('option'); o.value = n; o.textContent = n; $('admin').appendChild(o); }
+    if (!list.length) { say(t('e_no_admins'), 'bad'); go.disabled = true; }
+  }, () => say(t('e_error'), 'bad'));
+  $('cancel').addEventListener('click', () => window.qasaRecover.close());
+  $('form').addEventListener('submit', async (event) => {
+    event.preventDefault();
+    if ($('password').value !== $('again').value) return say(t('e_mismatch'), 'bad');
+    go.disabled = true;
+    say(t('working'));
+    try {
+      const r = how() === 'code'
+        ? await window.qasaRecover.withCode($('admin').value, $('code').value, $('password').value)
+        : await window.qasaRecover.withWindows($('admin').value, $('password').value);
+      if (r && r.ok) {
+        $('password').value = ''; $('again').value = ''; $('code').value = '';
+        say(t('ok'), 'ok');
+        if (r.recoveryCode) { $('newCodeText').textContent = r.recoveryCode; $('newCode').hidden = false; }
+        return;
+      }
+      say(t('e_' + ((r && r.error) || 'error'), r && r.retryAfterSeconds), 'bad');
+      // no Windows Hello on this PC: the recovery code is the only way, so the window turns to it
+      if (r && r.error === 'hello_unavailable') { document.querySelector('input[name="how"][value="code"]').checked = true; sync(); $('code').focus(); }
+    } catch {
+      say(t('e_error'), 'bad');
+    }
+    go.disabled = false;
+  });
+  $('admin').focus();
+})();
+</script>
+</body>
+</html>

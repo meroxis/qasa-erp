@@ -8,6 +8,7 @@ import {
   type SerialStatus, type SerialView
 } from '../industry/mobile-api.ts';
 import { go, href } from '../router.ts';
+import { printDocument } from '../industry/printing.ts';
 
 /**
  * Mobile shop (Pro): phones by IMEI or serial number — registered when they come in, named on the sale that took them,
@@ -641,7 +642,7 @@ export function RepairDetail({ id }: { id: string }) {
         {r.actions.includes('deliver') && <button type="button" className="btn primary" onClick={() => setModal('deliver')}><Icon name="check" size={16} />{t('mob_deliver')}</button>}
         {r.actions.includes('edit') && <button type="button" className="btn" onClick={() => setModal('edit')}><Icon name="edit" size={16} />{t('mob_editRepair')}</button>}
         {r.actions.includes('cancel') && <button type="button" className="btn danger" onClick={() => setModal('cancel')}><Icon name="undo" size={16} />{t('mob_cancelRepair')}</button>}
-        <button type="button" className="btn" onClick={() => window.print()}><Icon name="printer" size={16} />{t('mob_printTicket')}</button>
+        <button type="button" className="btn" onClick={() => void printDocument('voucher')}><Icon name="printer" size={16} />{t('mob_printTicket')}</button>
       </div>
 
       {r.actions.includes('status') && (

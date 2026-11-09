@@ -18,6 +18,7 @@ import { invoiceModel } from '../industry/print-model.ts';
 import { useRatePrefill } from '../industry/fx-prefill.ts';
 import { InvoiceWhatsApp } from '../industry/WhatsAppShare.tsx';
 import { reverseDefaultDate } from '../industry/ReverseModal.tsx';
+import { printDocument } from '../industry/printing.ts';
 
 const STATUSES: (InvoiceStatus | '')[] = ['', 'draft', 'posted', 'cancelled'];
 
@@ -420,7 +421,7 @@ export function InvoiceDetail({ id }: { id: string }) {
           <a className="btn" href={href(`new-installment/${v.id}`)}><Icon name="cal" size={16} />{t('makeContract')}</a>
         )}
         <InvoiceWhatsApp company={company} invoice={v} />
-        <button type="button" className="btn" onClick={() => window.print()}><Icon name="printer" size={16} />{t('print')}</button>
+        <button type="button" className="btn" onClick={() => void printDocument('invoice')}><Icon name="printer" size={16} />{t('print')}</button>
       </div>
       <ErrorBox error={cancelling ? null : actionError} />
       {v.status === 'posted' && <div className="alert info no-print">{t('invoicePostedNote')}</div>}

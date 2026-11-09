@@ -6,6 +6,7 @@ import { useI18n, type I18n } from '../i18n.ts';
 import { href } from '../router.ts';
 import { copyText, openWhatsApp, whatsappNumber, whatsappUrl } from '../share.ts';
 import { chequeBriefLines, ChequesBriefSection } from '../industry/ChequesAhead.tsx';
+import { printDocument } from '../industry/printing.ts';
 
 /**
  * The Daily Brief: the whole business on one page for a day — sales against the same day last week, the cash in
@@ -39,7 +40,7 @@ export function briefText(i18n: I18n, b: BriefView): string {
     `*${t('br_title')}${company ? ` — ${company}` : ''}*`,
     i18n.date(b.date),
     '',
-    `💰 ${t('br_salesToday')}: ${i18n.money(b.sales.today, 'IQD')}${pct !== null ? ` (${pct >= 0 ? '+' : ''}${i18n.int(pct)}% ${t('br_vsLastWeek')})` : ''}`,
+    `💰 ${t('br_salesToday')}: ${i18n.money(b.sales.today, 'IQD')}${pct !== null ? ` (${i18n.ltr(`${pct >= 0 ? '+' : '-'}${i18n.int(Math.abs(pct))}%`)} ${t('br_vsLastWeek')})` : ''}`,
     `🏦 ${t('br_cashNow')}: ${moneyBoth(i18n, b.cash.total)}`,
     `⬇️ ${t('br_moneyIn')}: ${i18n.money(b.flow.in, 'IQD')}   ⬆️ ${t('br_moneyOut')}: ${i18n.money(b.flow.out, 'IQD')}`,
     `📅 ${t('br_salesMonth')}: ${i18n.money(b.sales.month, 'IQD')}`
@@ -124,7 +125,7 @@ export function Brief() {
         <span className="spacer" />
         <button type="button" className="btn primary" onClick={send} disabled={!b}><Icon name="mail" size={16} />{t('br_sendWhatsApp')}</button>
         <button type="button" className="btn" onClick={() => void copy()} disabled={!b}><Icon name="doc" size={16} />{t('br_copy')}</button>
-        <button type="button" className="btn" onClick={() => window.print()} disabled={!b}><Icon name="printer" size={16} />{t('br_print')}</button>
+        <button type="button" className="btn" onClick={() => void printDocument('report')} disabled={!b}><Icon name="printer" size={16} />{t('br_print')}</button>
         <button type="button" className="btn ghost" onClick={() => setPhoneModal(true)} aria-label={t('br_ownerPhone')}><Icon name="sliders" size={16} /></button>
       </div>
       <ErrorBox error={error} />
@@ -225,7 +226,7 @@ export function Brief() {
                   <li key={s.itemId} style={itemStyle}>
                     <span style={{ flex: 1 }}><a href={href(`item/${s.itemId}`)}>{i18n.name(s.name)}</a> <span className="small muted">{i18n.digitsOf(s.code)}</span></span>
                     <span className="small muted">{t('br_soldMonth', { n: i18n.digitsOf(String(s.soldMilli / 1000)) })}</span>
-                    <strong className="num" style={{ color: s.qtyMilli <= 0 ? bad : undefined }}>{i18n.digitsOf(String(s.qtyMilli / 1000))}</strong>
+                    <strong className="num" style={{ color: s.qtyMilli <= 0 ? bad : undefined }}>{i18n.qty(s.qtyMilli)}</strong>
                   </li>
                 ))}
               </ul>

@@ -8,13 +8,16 @@ import electronUpdater from 'electron-updater';
 import { channelOf, notesText, updaterOptions, type UpdateChannel, type UpdateState } from './updates-logic.ts';
 import { randomBytes } from 'node:crypto';
 import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { hostname, userInfo } from 'node:os';
 import { join } from 'node:path';
 import { Bridge } from './bridge.ts';
+import { confirmWithHello, resetWithWindows, windowsAccount, type ResetAnswer } from './windows-confirm.ts';
 import { companyDirOf, damagedFileChoices, isCompanyId, MAIN_COMPANY, readRegistry, writeRegistry, type DamagedChoice } from './companies.ts';
 import { guideUrl, isGuideUrl } from '@qasa/core';
 import { isAllowedExternal, refusedForLog } from './external-links.ts';
 import { isLang, text, type Lang, type TextKey } from './texts.ts';
 import { openNotices } from './notices.ts';
+import { printingHandlers } from './printing.ts';
 import { pair, parseAddress, parseOfficeId, pemFingerprint, startTunnel, type PairResult, type Remote } from './office.ts';
 
 const { autoUpdater } = electronUpdater;
@@ -218,16 +221,20 @@ function openFirstCompanyNext(): void {
 
 /**
  * The company file can't be opened at the start (damaged, or not a company file): try again, keep it aside and open
- * an empty company to restore a backup into, open the first company instead, or quit.
+ * an empty company to restore a backup into, open the first company instead, or quit. When the file is fine but the
+ * copy kept before a schema update could not be written (no space, no access), it says that, and there is no
+ * "Restore from a backup": the file needs room, not replacing.
  */
-async function companyFileDamaged(problem: { main?: unknown; reason?: unknown }): Promise<DamagedChoice> {
-  log('the company file could not be opened:', String(problem.reason ?? ''));
+async function companyFileDamaged(problem: { main?: unknown; reason?: unknown; cause?: unknown }): Promise<DamagedChoice> {
+  const updateCopy = problem.cause === 'update_copy';
+  log(updateCopy ? 'the company file was not updated (no copy could be kept first):' : 'the company file could not be opened:', String(problem.reason ?? ''));
   // Enter is Try again: a file locked only for a moment is never set aside with one keypress
-  const { choices, defaultId, cancelId } = damagedFileChoices(problem.main !== false);
+  const { choices, defaultId, cancelId } = damagedFileChoices(problem.main !== false, updateCopy ? 'update_copy' : 'damaged');
   const label = { retry: t('tryAgain'), aside: t('dbRestoreFromBackup'), first: t('openFirstCompany'), quit: t('quit') };
+  const reason = String(problem.reason ?? '').slice(0, 200);
   const { response } = await dialog.showMessageBox({
-    type: 'error', title: 'Qasa ERP', message: rtlLines(t('dbDamaged')),
-    detail: rtlLines(t('dbDamagedDetail', { reason: String(problem.reason ?? '').slice(0, 200) })),
+    type: 'error', title: 'Qasa ERP', message: rtlLines(t(updateCopy ? 'dbUpdateCopyFailed' : 'dbDamaged')),
+    detail: rtlLines(t(updateCopy ? 'dbUpdateCopyFailedDetail' : 'dbDamagedDetail', { reason })),
     buttons: choices.map((c) => label[c]), defaultId, cancelId, noLink: true
   });
   const choice = choices[response] ?? 'quit';
@@ -249,7 +256,7 @@ async function startServer(): Promise<string> {
   link
     .handle('dbProblem', ((problem: Parameters<typeof databaseProblem>[0]) => databaseProblem(problem)) as never)
     .handle('newerBooks', ((details: unknown) => refuseNewerBooks(details)) as never)
-    .handle('dbDamaged', ((problem: { main?: unknown; reason?: unknown }) => companyFileDamaged(problem ?? {})) as never)
+    .handle('dbDamaged', ((problem: { main?: unknown; reason?: unknown; cause?: unknown }) => companyFileDamaged(problem ?? {})) as never)
     .handle('chooseFolder', (async () => {
       const options = { title: t('backupFolder'), properties: ['openDirectory', 'createDirectory'] as ('openDirectory' | 'createDirectory')[] };
       const r = win ? await dialog.showOpenDialog(win, options) : await dialog.showOpenDialog(options);
@@ -475,8 +482,85 @@ ipcMain.handle('app:notices', async (event) => {
   return openNotices(process.resourcesPath, (path) => shell.openPath(path), log);
 });
 
+// Settings → Printers and every Print button (app-preload.ts → qasaDesktop.printers, printing.ts): this PC's printers,
+// the choice saved for each kind of paper (printers.json), and printing the app window with it. Never another window.
+const printersFile = () => join(app.getPath('userData'), 'printers.json');
+const printing = printingHandlers({
+  target: () => (win && !win.isDestroyed() ? win.webContents : null),
+  fromAppPage: (event) => invokedByAppPage(event as Electron.IpcMainInvokeEvent),
+  readFile: () => { try { return readFileSync(printersFile(), 'utf8'); } catch { return null; } },
+  writeFile: (text) => {
+    mkdirSync(app.getPath('userData'), { recursive: true });
+    writeFileSync(printersFile(), text);
+  },
+  log
+});
+ipcMain.handle('printers:list', (event) => printing.list(event));
+ipcMain.handle('printers:get', (event) => printing.get(event));
+ipcMain.handle('printers:set', (event, kind: unknown, choice: unknown) => printing.set(event, kind, choice));
+ipcMain.handle('printers:print', (event, kind: unknown, layout: unknown) => printing.print(event, kind, layout));
+
 ipcMain.on('network:close', (event) => {
   if (connectWin && event.sender === connectWin.webContents) connectWin.close();
+});
+
+// ——— File → Reset admin password (this PC's own company only) ———
+// The window (recover.html) asks the main process; the main process asks the server process over the bridge. No web
+// page and nothing on the network can reach either step (recover.ts, windows-confirm.ts).
+let recoverWin: BrowserWindow | null = null;
+
+function openRecoverWindow(): void {
+  if (remote) return; // on another PC's office server: that PC resets its own admins
+  if (recoverWin) return void recoverWin.focus();
+  recoverWin = new BrowserWindow({
+    width: 520, height: 720, resizable: false, minimizable: false, maximizable: false, parent: win ?? undefined, modal: !!win,
+    title: t('resetAdmin'), backgroundColor: '#F4F6FA', autoHideMenuBar: true, icon: join(__dirname, 'icon.png'),
+    webPreferences: { preload: join(__dirname, 'recover-preload.cjs'), contextIsolation: true, sandbox: true, nodeIntegration: false, spellcheck: false }
+  });
+  recoverWin.setMenu(null);
+  recoverWin.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
+  recoverWin.webContents.on('will-navigate', (event) => event.preventDefault());
+  recoverWin.on('closed', () => { recoverWin = null; });
+  void recoverWin.loadURL(`${APP_SCHEME}://recover/recover.html?lang=${lang}`).catch((error) => log('reset window did not load:', error));
+}
+
+/** A call from the reset window's own page, nothing else. */
+const fromRecoverWindow = (event: Electron.IpcMainInvokeEvent | Electron.IpcMainEvent) =>
+  !!recoverWin && !remote && event.sender === recoverWin.webContents && event.senderFrame === recoverWin.webContents.mainFrame;
+
+const thisWindowsUser = () => windowsAccount(process.env, userInfo().username, hostname());
+
+ipcMain.handle('recover:admins', async (event) => {
+  if (!fromRecoverWindow(event) || !bridge) return [];
+  return bridge.call<string[]>('recoverAdmins', []).catch(() => []);
+});
+
+ipcMain.handle('recover:code', async (event, username: unknown, code: unknown, password: unknown) => {
+  if (!fromRecoverWindow(event) || !bridge) return { ok: false, error: 'error' };
+  const answer = await bridge.call<{ ok: boolean; error?: string }>('recoverAdmin', [{
+    mode: 'code', username: String(username ?? ''), code: String(code ?? ''), password: String(password ?? ''), windowsUser: thisWindowsUser()
+  }], { timeoutMs: 60_000 }).catch(() => ({ ok: false, error: 'error' }));
+  log(`admin password reset with the recovery code for "${String(username).slice(0, 64)}": ${answer.ok ? 'done' : answer.error}`);
+  return answer;
+});
+
+ipcMain.handle('recover:windows', async (event, username: unknown, password: unknown) => {
+  if (!fromRecoverWindow(event) || !bridge) return { ok: false, error: 'error' };
+  const user = String(username ?? '').slice(0, 64);
+  const windowsUser = thisWindowsUser();
+  const link = bridge;
+  // Windows Hello only: without it, the recovery code is the way (windows-confirm.ts); every try is audited
+  const answer = await resetWithWindows(
+    { username: user, password: String(password ?? ''), windowsUser, computer: hostname() },
+    () => confirmWithHello(t('helloMessage', { u: user })),
+    (request) => link.call<ResetAnswer>('recoverAdmin', [request], { timeoutMs: 60_000 }).catch(() => ({ ok: false, error: 'error' }))
+  );
+  log(`admin password reset by the Windows user ${windowsUser} (Windows Hello) for "${user}": ${answer.ok ? 'done' : answer.error}`);
+  return answer;
+});
+
+ipcMain.on('recover:close', (event) => {
+  if (recoverWin && event.sender === recoverWin.webContents) recoverWin.close();
 });
 
 async function workHere(): Promise<void> {
@@ -578,6 +662,8 @@ function buildMenu(): void {
         : [
             { label: t('openData'), click: () => void shell.openPath(dataDir()) },
             { label: t('connect'), click: () => openConnectWindow() },
+            { type: 'separator' },
+            { label: t('resetAdmin'), click: () => openRecoverWindow() },
             { type: 'separator' },
             { label: t('quit'), role: 'quit' }
           ]
@@ -815,8 +901,10 @@ protocol.registerSchemesAsPrivileged([{ scheme: APP_SCHEME, privileges: { standa
 function serveAppScheme(): void {
   protocol.handle(APP_SCHEME, (request) => {
     const url = new URL(request.url);
-    if (request.method !== 'GET' || url.host !== 'connect' || url.pathname !== '/connect.html') return new Response('Not found', { status: 404 });
-    return new Response(readFileSync(join(__dirname, 'connect.html')), {
+    // the two small windows' pages, each from its own host: Connect to an office server, and Reset admin password
+    const page = url.host === 'connect' && url.pathname === '/connect.html' ? 'connect.html' : url.host === 'recover' && url.pathname === '/recover.html' ? 'recover.html' : null;
+    if (request.method !== 'GET' || !page) return new Response('Not found', { status: 404 });
+    return new Response(readFileSync(join(__dirname, page)), {
       headers: { 'content-type': 'text/html; charset=utf-8', 'x-content-type-options': 'nosniff', 'cache-control': 'no-store' }
     });
   });

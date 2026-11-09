@@ -4,6 +4,9 @@ export type Lang = 'ar' | 'en' | 'ku';
 const T = {
   file: ['ملف', 'File', 'فایل'],
   openData: ['فتح مجلد البيانات', 'Open data folder', 'کردنەوەی بوخچەی داتا'],
+  // File → Reset admin password (recover.html, windows-confirm.ts)
+  resetAdmin: ['إعادة تعيين كلمة مرور المدير…', 'Reset admin password…', 'ڕێکخستنەوەی وشەی نهێنیی بەڕێوەبەر…'],
+  helloMessage: ['تأكيد إعادة تعيين كلمة مرور المدير «{u}» في قاصة ERP', 'Confirm resetting the password of admin “{u}” in Qasa ERP', 'دڵنیابوونەوە لە ڕێکخستنەوەی وشەی نهێنیی بەڕێوەبەر «{u}» لە قاسە ERP'],
   quit: ['خروج', 'Quit', 'دەرچوون'],
   view: ['عرض', 'View', 'پیشاندان'],
   reload: ['إعادة تحميل', 'Reload', 'نوێکردنەوە'],
@@ -69,6 +72,17 @@ const T = {
   // the company file can't be opened at the start
   dbDamaged: ['تعذّر فتح ملف الشركة. قد يكون تالفاً أو ليس ملف شركة لقاصة ERP.', 'The company file can’t be opened. It may be damaged, or it isn’t a Qasa ERP company file.', 'فایلی کۆمپانیا ناکرێتەوە. لەوانەیە تێکچووبێت، یان فایلی کۆمپانیای قاسە ERP نەبێت.'],
   dbDamagedDetail: ['«الاسترجاع من نسخة احتياطية» يحفظ هذا الملف جانباً في مجلد البيانات (لا يُحذف شيء)، ثم يفتح شركة فارغة. استرجع نسختك منها فوراً من الإعدادات ← النسخ الاحتياطية، ولا تُدخل فيها أي بيانات قبل ذلك.\nالسبب: {reason}', '“Restore from a backup” keeps this file aside in the data folder (nothing is deleted), then opens an empty company. Restore your backup in it straight away from Settings → Backups, and enter nothing in it before that.\nReason: {reason}', '«گەڕاندنەوە لە باکئەپێک» ئەم فایلە لە بوخچەی داتادا بە لاوە دادەنێت (هیچ ناسڕدرێتەوە)، پاشان کۆمپانیایەکی بەتاڵ دەکاتەوە. یەکسەر لە ڕێکخستنەکان ← باکئەپەکان باکئەپەکەتی تێدا بگەڕێنەوە، و پێش ئەوە هیچ داتایەکی تێدا تۆمار مەکە.\nهۆکار: {reason}'],
+  // the company file is fine, but the copy kept before a schema update could not be written (server-process.ts)
+  dbUpdateCopyFailed: [
+    'تعذّر تحديث ملف الشركة، لأنه لم يمكن حفظ نسخة منه أولاً. الملف سليم ولم يتغيّر فيه شيء.',
+    'The company file couldn’t be updated, because a copy of it couldn’t be kept first. The file is fine and nothing in it changed.',
+    'فایلی کۆمپانیا نوێ نەکرایەوە، چونکە نەتوانرا سەرەتا کۆپییەکی لێ بپارێزرێت. فایلەکە ساغە و هیچ شتێکی تێدا نەگۆڕاوە.'
+  ],
+  dbUpdateCopyFailedDetail: [
+    'قبل كل تحديث يحفظ قاصة ERP نسخة من ملف الشركة بجانبه في مجلد البيانات. وفّر مساحة على القرص (أو تأكد أن مجلد البيانات غير مقفل وأن لديك صلاحية الكتابة فيه)، ثم اختر «حاول مجدداً». لا تسترجع نسخة احتياطية: ملفك لا يحتاج إلى ذلك.\nالسبب: {reason}',
+    'Before each update Qasa ERP keeps a copy of the company file beside it in the data folder. Free some disk space (or check that the data folder isn’t locked and you may write to it), then choose Try again. Don’t restore a backup: your file doesn’t need it.\nReason: {reason}',
+    'پێش هەر نوێکردنەوەیەک قاسە ERP کۆپییەکی فایلی کۆمپانیا لە تەنیشتیەوە لە بوخچەی داتادا دەپارێزێت. هەندێک شوێن لە دیسکەکەدا بەتاڵ بکە (یان دڵنیابە کە بوخچەی داتا داخراو نییە و مۆڵەتی نووسینت تێیدا هەیە)، پاشان «دووبارە هەوڵ بدەرەوە» هەڵبژێرە. باکئەپ مەگەڕێنەوە: فایلەکەت پێویستی پێی نییە.\nهۆکار: {reason}'
+  ],
   dbRestoreFromBackup: ['الاسترجاع من نسخة احتياطية', 'Restore from a backup', 'گەڕاندنەوە لە باکئەپێک'],
   openFirstCompany: ['فتح الشركة الأولى', 'Open the first company', 'کردنەوەی کۆمپانیای یەکەم']
 } as const;

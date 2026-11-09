@@ -12,6 +12,7 @@ import {
 import { ReverseModal } from '../industry/ReverseModal.tsx';
 // the 80 mm receipt styles of the point of sale (.pos-receipt …), shared by the collector's receipt
 import '../pos.css';
+import { printAlone, printDocument } from '../industry/printing.ts';
 
 /**
  * المولدات الأهلية (Pro): subscribers by amps on the normal or the 24-hour golden line, a monthly bill for everyone in
@@ -217,7 +218,7 @@ function Collect({ summary, onChange }: { summary: GenSummary | null; onChange()
         <div className="alert info row" style={{ alignItems: 'center' }}>
           <span>{t('gen_receiptReady', { n: receipt.number ?? '' })}</span>
           <span className="spacer" />
-          <button type="button" className="btn primary" onClick={() => printReceipt()}><Icon name="printer" size={16} />{t('gen_printReceipt')}</button>
+          <button type="button" className="btn primary" onClick={() => void printReceipt()}><Icon name="printer" size={16} />{t('gen_printReceipt')}</button>
           <ReceiptPrint c={receipt} />
         </div>
       )}
@@ -257,12 +258,9 @@ function Collect({ summary, onChange }: { summary: GenSummary | null; onChange()
   );
 }
 
+/** The receipt alone, on the printer chosen for receipts (Settings → Printers) or through the print window. */
 function printReceipt() {
-  document.body.classList.add('pos-printing');
-  const done = () => { document.body.classList.remove('pos-printing'); window.removeEventListener('afterprint', done); };
-  window.addEventListener('afterprint', done);
-  window.print();
-  window.setTimeout(done, 1000);
+  return printAlone('receipt', 'pos-printing');
 }
 
 /** The collector's receipt (وصل) on 80 mm paper, printed alone. */
@@ -677,7 +675,7 @@ export function GenRun({ id }: { id: string }) {
       <div className="row no-print" style={{ flexWrap: 'wrap' }}>
         <a className="btn" href={href('generators/months')}>{t('back')}</a>
         <span className="spacer" />
-        <button type="button" className="btn" onClick={() => window.print()}><Icon name="printer" size={16} />{t('print')}</button>
+        <button type="button" className="btn" onClick={() => void printDocument('report')}><Icon name="printer" size={16} />{t('print')}</button>
         {run.actions.includes('post') && (
           <button type="button" className="btn primary" disabled={busy || pricesChanged} onClick={() => void act(() => generatorsApi.postRun(run.id, i18n.lang), 'gen_posted')}>
             <Icon name="check" size={16} />{t('gen_post')}
@@ -780,7 +778,7 @@ function Debts({ summary }: { summary: GenSummary | null }) {
           </select>
         )}
         <span className="spacer" />
-        <button type="button" className="btn" onClick={() => window.print()}><Icon name="printer" size={16} />{t(min >= 1 ? 'gen_printCutOff' : 'print')}</button>
+        <button type="button" className="btn" onClick={() => void printDocument('report')}><Icon name="printer" size={16} />{t(min >= 1 ? 'gen_printCutOff' : 'print')}</button>
       </div>
       <ErrorBox error={error} />
       <div className="card pad">

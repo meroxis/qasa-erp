@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { amountInWords, formatQty, lineAmount, rateFromX100, todayIso, toBase, toWesternDigits, type CurrencyCode } from '@qasa/core';
+import { amountInWords, lineAmount, rateFromX100, todayIso, toBase, toWesternDigits, type CurrencyCode } from '@qasa/core';
 import { api, ApiError } from '../api.ts';
 import { EmptyState, AccountCombo, AmountInput, ErrorBox, Icon, Modal, QtyInput, SearchCombo, useData, useLoad, usePageNav, useToast, type PickOption } from '../components.tsx';
 import { useI18n, type I18n, type Key } from '../i18n.ts';
@@ -8,6 +8,7 @@ import {
   type JobStatus, type JobSummaryView, type JobView, type LinkableDocView, type LineUnit, type WorksSummaryView
 } from '../industry/works-api.ts';
 import { go, href } from '../router.ts';
+import { printDocument } from '../industry/printing.ts';
 
 /**
  * الأعمال الهندسية (Pro): job orders for welding, steelwork, aluminium, MDF, doors and windows — the measured quote, the
@@ -316,7 +317,7 @@ export function JobDetail({ id }: { id: string }) {
           ? <a className="btn primary" href={href(`solar-system/${j.id}`)}><Icon name="invoice" size={16} />{t('sl_sell')}</a>
           : <button type="button" className="btn primary" onClick={() => setModal('bill')}><Icon name="invoice" size={16} />{t('ew_bill')}</button>)}
         {j.actions.includes('edit') && <button type="button" className="btn" onClick={() => setModal('edit')}><Icon name="edit" size={16} />{t('ew_editJob')}</button>}
-        <button type="button" className="btn" onClick={() => window.print()}><Icon name="printer" size={16} />{t('ew_print')}</button>
+        <button type="button" className="btn" onClick={() => void printDocument('quote')}><Icon name="printer" size={16} />{t('ew_print')}</button>
         {j.actions.includes('cancel') && <button type="button" className="btn danger" onClick={() => setModal('cancel')}><Icon name="x" size={16} />{t('ew_cancelJob')}</button>}
       </div>
 
@@ -552,7 +553,7 @@ function Quotation({ job: j, company, validDays, terms, onSaved }: { job: JobVie
                   <>
                     <td>{r.description}</td>
                     <td>{t(unitKey(r.unit))}</td>
-                    <td className="amount">{i18n.digitsOf(formatQty(r.qtyMilli))}</td>
+                    <td className="amount">{i18n.qty(r.qtyMilli)}</td>
                     <td className="amount">{i18n.money(r.unitPrice, j.currency)}</td>
                   </>
                 )}

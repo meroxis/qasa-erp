@@ -75,3 +75,9 @@
   .pos-r-line { margin: 2px 0; }
   .pos-r-total { font-weight: 700; font-size: 13pt; }
 }
+
+/* Settings → Printers: a 58 mm roll chosen for receipts draws the receipt narrower while it prints (printing.ts) */
+@media print {
+  html[data-print-paper='receipt58'] .pos-receipt { width: 48mm; }
+  html[data-print-paper='receipt58'] .qd-80mm { inline-size: 48mm; }
+}

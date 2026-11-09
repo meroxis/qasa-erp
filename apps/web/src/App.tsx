@@ -15,6 +15,8 @@ import { ADMIN_PAGES, canSee, COMPANY_BOOK_PAGES, FAVOURITES_EVENT, seesCompanyB
 import { CommandPalette } from './industry/CommandPalette.tsx';
 import { Tour, TOUR_EVENT, tourDone } from './industry/Tour.tsx';
 import { UpdateBanner } from './industry/UpdateBanner.tsx';
+import { BackupNoticeBar } from './industry/BackupNotice.tsx';
+import { PrintNotices } from './industry/Printers.tsx';
 import { GuideLink, pageGuide } from './industry/GuideLink.tsx';
 import { activationNoticeFor } from './industry/activation-notice.ts';
 import { isReportTab, isSolarTab } from './pages/tabs.ts';
@@ -761,6 +763,7 @@ export function App() {
                 <div className="backdrop"><div className="modal biz-modal" role="dialog" aria-modal="true" aria-label={t('bizWelcome')}><Suspense fallback={<PageLoading />}><BusinessTypeChooser first /></Suspense></div></div>
               )}
               <UpdateBanner />
+              <PrintNotices />
               <main className="content">
                 {import.meta.env.MODE === 'demo' && narrow && <div className="alert info demo-phone no-print" role="note" style={{ marginBottom: 14 }}>{t('demoPhoneNote')}</div>}
                 {plan?.license?.state === 'grace' && plan.license.expires && plan.graceEnds && page !== 'plans' && (
@@ -776,6 +779,7 @@ export function App() {
                     {isAdmin && <a href={href('plans')}>{t('planLicense')}</a>}
                   </div>
                 )}
+                {import.meta.env.MODE !== 'demo' && <BackupNoticeBar admin={isAdmin} page={page} />}
                 <div key={branchKey} style={{ display: 'contents' }}><Suspense fallback={<PageLoading />}>{content}</Suspense></div>
               </main>
               <footer className="statusbar">

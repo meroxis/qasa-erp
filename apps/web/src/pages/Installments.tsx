@@ -7,6 +7,7 @@ import {
 import { EmptyState, AccountCombo, AmountInput, ErrorBox, Icon, Modal, SearchCombo, useData, useLoad, useToast, type PickOption } from '../components.tsx';
 import { useI18n, type I18n } from '../i18n.ts';
 import { go, href } from '../router.ts';
+import { printDocument } from '../industry/printing.ts';
 
 /**
  * البيع بالتقسيط (Pro): contracts that schedule what a customer owes, with a guarantor, collections posted as receipt
@@ -167,7 +168,7 @@ export function InstallmentDetail({ id }: { id: string }) {
         {reminder && <a className="btn" href={reminder} target="_blank" rel="noopener noreferrer"><Icon name="mail" size={16} />{t('remind')}</a>}
         {c.actions.includes('edit') && <button type="button" className="btn" onClick={() => setModal('edit')}><Icon name="edit" size={16} />{t('editContract')}</button>}
         {c.actions.includes('cancel') && <button type="button" className="btn danger" onClick={() => setModal('cancel')}><Icon name="undo" size={16} />{t('cancelContract')}</button>}
-        <button type="button" className="btn" onClick={() => window.print()}><Icon name="printer" size={16} />{t('printContract')}</button>
+        <button type="button" className="btn" onClick={() => void printDocument('invoice')}><Icon name="printer" size={16} />{t('printContract')}</button>
       </div>
 
       <div className="grid-4 no-print">
@@ -714,7 +715,7 @@ export function InstallmentsAging() {
       <div className="row no-print">
         <a className="btn" href={href('installments')}>{t('installments')}</a>
         <span className="spacer" />
-        <button type="button" className="btn" onClick={() => window.print()}><Icon name="printer" size={16} />{t('print')}</button>
+        <button type="button" className="btn" onClick={() => void printDocument('report')}><Icon name="printer" size={16} />{t('print')}</button>
       </div>
       <ErrorBox error={error} />
       {data && (

@@ -8,11 +8,13 @@ import { useI18n, type Key } from '../i18n.ts';
 import { go, href } from '../router.ts';
 import { averageCost, qtyText, unitName } from './Items.tsx';
 import {
-  ADJUSTMENT_REASONS, adjustmentsApi, countLines, parseCountText,
+  ADJUSTMENT_REASONS, adjustmentsApi, parseCountText,
   type AdjustmentAccounts, type AdjustmentInput, type AdjustmentReason, type AdjustmentView, type CountSheetRow
 } from '../industry/adjustments-api.ts';
 import { worksApi, type JobSummaryView } from '../industry/works-api.ts';
 import { reverseDefaultDate } from '../industry/ReverseModal.tsx';
+import { printDocument } from '../industry/printing.ts';
+import { CountSaver, costFor, fromSession, nothingToCount, useLeaveGuard, type CountSessionView, type SaveState } from '../industry/count-session.ts';
 
 /**
  * تسوية المخزون — stock adjustments (damaged, lost, expired, used, issued to a job) and the stock count.
@@ -356,7 +358,7 @@ export function StockAdjustmentEditor({ id }: { id?: string }) {
                       : <div className="amount muted" title={t('adj_avgCost')}>{it ? i18n.money(avg, 'IQD') : ''}</div>}
                   </td>
                   <td className="amount" style={{ color: r.itemId ? (r.dir === 'out' ? 'var(--bad)' : 'var(--ok)') : undefined }}>
-                    {r.itemId ? `${r.dir === 'out' ? '−' : '+'}${i18n.money(valueOf(r), 'IQD')}` : ''}
+                    {r.itemId ? i18n.money(r.dir === 'out' ? -valueOf(r) : valueOf(r), 'IQD', { plus: true }) : ''}
                   </td>
                   <td><button type="button" className="btn icon danger" onClick={() => remove(r.key)} aria-label={t('removeLine')} title={t('removeLine')}><Icon name="x" size={16} /></button></td>
                 </tr>
@@ -449,7 +451,7 @@ export function StockAdjustmentDetail({ id }: { id: string }) {
           </button>
         )}
         {d.actions.includes('cancel') && <button type="button" className="btn danger" disabled={busy} onClick={() => { setCancelDate(reverseDefaultDate(d.date)); setCancelling(true); }}><Icon name="undo" size={16} />{t('adj_cancel')}</button>}
-        <button type="button" className="btn" onClick={() => window.print()}><Icon name="printer" size={16} />{t('print')}</button>
+        <button type="button" className="btn" onClick={() => void printDocument('voucher')}><Icon name="printer" size={16} />{t('print')}</button>
       </div>
       <ErrorBox error={cancelling ? null : actionError} />
       {d.status === 'posted' && <div className="alert info no-print">{t('adj_postedNote')}</div>}
@@ -544,6 +546,19 @@ export function StockAdjustmentDetail({ id }: { id: string }) {
 
 // ——— stock count ———
 
+/** The day of a moment on this PC's calendar (the server keeps UTC times). */
+const localDay = (iso: string) => {
+  const d = new Date(iso);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+};
+
+/**
+ * The count is kept on the server as it is typed (count-session.ts): leaving the page and coming back, or another PC
+ * opening the same warehouse, carries on where it stopped. Each item's book quantity is frozen when it is first
+ * counted, so what is sold meanwhile is not taken for a surplus.
+ */
+const NO_ROWS: CountSheetRow[] = [];
+
 export function StockCount() {
   const i18n = useI18n();
   const { t } = i18n;
@@ -554,6 +569,8 @@ export function StockCount() {
   const [counted, setCounted] = useState<Map<string, number>>(new Map());
   // unit costs for surpluses of items the books show none of (their average cost is unknown)
   const [costs, setCosts] = useState<Map<string, number>>(new Map());
+  // the book quantity the server froze when each item was first counted
+  const [frozen, setFrozen] = useState<Map<string, number>>(new Map());
   const [query, setQuery] = useState('');
   const [view, setView] = useState<'all' | 'counted' | 'diff'>('all');
   const [full, setFull] = useState(false);
@@ -562,15 +579,68 @@ export function StockCount() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<unknown>(null);
   const [message, setMessage] = useState('');
+  const [saveState, setSaveState] = useState<SaveState>('saved');
+  const [resumed, setResumed] = useState<CountSessionView | null>(null);
+  const [ready, setReady] = useState(false);
+  // bumped when the count was closed on another PC: the warehouse's count is read again
+  const [reopen, setReopen] = useState(0);
   const scanRef = useRef<HTMLInputElement>(null);
+  const saverRef = useRef<CountSaver | null>(null);
 
   useEffect(() => {
     if (!warehouseId && active[0]) setWarehouseId(active[0].id);
   }, [active, warehouseId]);
-  const sheet = useLoad(() => (warehouseId ? adjustmentsApi.countSheet(warehouseId) : Promise.resolve([] as CountSheetRow[])), [warehouseId]);
-  useEffect(() => { setCounted(new Map()); setCosts(new Map()); }, [warehouseId]);
+  // the sheet says which warehouse it is of: while another one loads, the last one's quantities are never used
+  const sheet = useLoad(() => (warehouseId ? adjustmentsApi.countSheet(warehouseId) : Promise.resolve([] as CountSheetRow[])).then((list) => ({ warehouseId, rows: list })), [warehouseId]);
 
-  const rows = sheet.data ?? [];
+  /** A fresh count of the warehouse, or the one still open there. */
+  function openSaver(session: CountSessionView | null) {
+    saverRef.current?.dispose();
+    const f = session ? fromSession(session) : { counted: new Map<string, number>(), costs: new Map<string, number>(), frozen: new Map<string, number>() };
+    setCounted(f.counted);
+    setCosts(f.costs);
+    setFrozen(f.frozen);
+    setResumed(session && session.lines.length ? session : null);
+    const meta = session ? { date: session.date, notes: session.notes, full: session.full } : { date, notes, full };
+    if (session) { setDate(session.date); setNotes(session.notes); setFull(session.full); }
+    setSaveState('saved');
+    // an old saver (another warehouse, or a count already finished) may still answer: only the current one is heard
+    const saver: CountSaver = new CountSaver(
+      { start: adjustmentsApi.startCount, save: adjustmentsApi.saveCount }, warehouseId, meta,
+      {
+        saved: (s) => { if (saverRef.current === saver) setFrozen(fromSession(s).frozen); },
+        state: (state) => { if (saverRef.current === saver) setSaveState(state); },
+        closed: () => {
+          if (saverRef.current !== saver) return;
+          setMessage(t('adj_countClosedElsewhere'));
+          setReopen((n) => n + 1);
+          sheet.reload();
+        }
+      },
+      session?.id ?? null
+    );
+    saver.frozen = f.frozen;
+    saverRef.current = saver;
+  }
+
+  useEffect(() => {
+    if (!warehouseId) return;
+    let live = true;
+    setReady(false);
+    saverRef.current?.dispose();
+    saverRef.current = null;
+    adjustmentsApi.openCount(warehouseId).then((session) => {
+      if (!live) return;
+      openSaver(session);
+      setReady(true);
+    }, (e) => { if (live) setError(e); });
+    return () => { live = false; };
+  }, [warehouseId, reopen]);
+  // leaving the page: what is still waiting goes to the server
+  useEffect(() => () => saverRef.current?.dispose(), []);
+  useLeaveGuard(() => !!saverRef.current?.dirty, t('adj_leaveCount'));
+
+  const rows = sheet.data && sheet.data.warehouseId === warehouseId ? sheet.data.rows : NO_ROWS;
   const byCode = useMemo(() => {
     const m = new Map<string, CountSheetRow>();
     for (const r of rows) {
@@ -580,10 +650,11 @@ export function StockCount() {
     return m;
   }, [rows]);
 
+  const bookOf = (r: CountSheetRow) => frozen.get(r.itemId) ?? r.stockMilli;
   const countedOf = (r: CountSheetRow) => counted.get(r.itemId) ?? (full ? 0 : null);
   const diffOf = (r: CountSheetRow) => {
     const c = countedOf(r);
-    return c === null ? null : c - r.stockMilli;
+    return c === null ? null : c - bookOf(r);
   };
   const q = query.trim().toLowerCase();
   const shown = rows.filter((r) => {
@@ -594,11 +665,40 @@ export function StockCount() {
   });
   const differences = rows.filter((r) => !!diffOf(r)).length;
 
-  const setOne = (itemId: string, v: number | null) => setCounted((m) => {
-    const next = new Map(m);
+  /**
+   * Sends one item's count (and its cost, for a surplus) on its way to the server, against the book quantity the
+   * current saver froze for its own warehouse (or this warehouse's sheet for an item not counted before).
+   */
+  function queue(itemId: string, v: number | null, typedCost?: number | null) {
+    // a cost just cleared (null) goes as no cost, never as the one kept before it
+    const cost = costFor(costs, itemId, typedCost);
+    saverRef.current?.count(itemId, v, cost, rows.find((r) => r.itemId === itemId)?.stockMilli);
+  }
+
+  function applyCounts(next: Map<string, number>, changed: Iterable<string>) {
+    setCounted(next);
+    for (const itemId of changed) queue(itemId, next.get(itemId) ?? null);
+  }
+
+  const setOne = (itemId: string, v: number | null) => {
+    const next = new Map(counted);
     if (v === null) next.delete(itemId); else next.set(itemId, v);
-    return next;
-  });
+    applyCounts(next, [itemId]);
+  };
+
+  const setCost = (itemId: string, v: number | null) => {
+    const next = new Map(costs);
+    if (v === null) next.delete(itemId); else next.set(itemId, v);
+    setCosts(next);
+    queue(itemId, counted.get(itemId) ?? null, v);
+  };
+
+  function setMeta(patch: { date?: string; notes?: string; full?: boolean }) {
+    if (patch.date !== undefined) setDate(patch.date);
+    if (patch.notes !== undefined) setNotes(patch.notes);
+    if (patch.full !== undefined) setFull(patch.full);
+    saverRef.current?.setMeta(patch);
+  }
 
   /** A scanner types the code and Enter: one more of that item. */
   function scan() {
@@ -613,15 +713,15 @@ export function StockCount() {
     const parsed = parseCountText(text);
     if (!Array.isArray(parsed)) { setMessage(t('adj_badRow', { n: parsed.badRow })); return; }
     const unknown: string[] = [];
-    setCounted((m) => {
-      const next = new Map(m);
-      for (const p of parsed) {
-        const hit = byCode.get(p.code.trim().toUpperCase());
-        if (!hit) { unknown.push(p.code); continue; }
-        next.set(hit.itemId, (next.get(hit.itemId) ?? 0) + p.countedMilli);
-      }
-      return next;
-    });
+    const next = new Map(counted);
+    const changed = new Set<string>();
+    for (const p of parsed) {
+      const hit = byCode.get(p.code.trim().toUpperCase());
+      if (!hit) { unknown.push(p.code); continue; }
+      next.set(hit.itemId, (next.get(hit.itemId) ?? 0) + p.countedMilli);
+      changed.add(hit.itemId);
+    }
+    applyCounts(next, changed);
     setMessage([t('adj_applied', { n: parsed.length }), unknown.length ? t('adj_unknownCodes', { c: unknown.slice(0, 20).join(', ') }) : ''].filter(Boolean).join(' '));
     setPasting(false);
   }
@@ -629,18 +729,23 @@ export function StockCount() {
   function exportSheet() {
     downloadCsv(`count-sheet-${date}.csv`, [
       ['code', 'barcode', 'name', 'books', 'counted'],
-      ...rows.map((r) => [r.code, r.barcode, i18n.name(r.name), r.stockMilli / 1000, ''])
+      ...rows.map((r) => [r.code, r.barcode, i18n.name(r.name), bookOf(r) / 1000, ''])
     ]);
   }
 
   async function makeDraft() {
+    const saver = saverRef.current;
+    if (!saver) return;
+    // nothing counted and not "count all": nothing to finish, so no count is started on the server for it
+    if (nothingToCount(full, counted)) { setMessage(t('adj_nothingCounted')); return; }
     setBusy(true);
     setError(null);
     try {
-      const result = await adjustmentsApi.count({
-        date, warehouseId, full, ...(notes.trim() ? { notes: notes.trim() } : {}),
-        counts: countLines(counted, costs, new Map(rows.map((r) => [r.itemId, r.stockMilli])))
-      });
+      // a full count with nothing typed still needs its session on the server
+      if (!saver.sessionId) saver.setMeta({ full });
+      await saver.flush();
+      const result = await adjustmentsApi.finishCount(saver.sessionId!);
+      openSaver(null);
       if (result.adjustment) {
         toast(t('saved'));
         go(`stock-adjustment/${result.adjustment.id}`);
@@ -648,37 +753,64 @@ export function StockCount() {
         setMessage(t('adj_noDifferences'));
       }
     } catch (e) {
+      // closed on another PC: the page has said so and reads the warehouse again
+      if (saver.state !== 'closed') setError(e);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function discard() {
+    const saver = saverRef.current;
+    if (!saver || !window.confirm(t('adj_discardCountQ'))) return;
+    setBusy(true);
+    setError(null);
+    try {
+      await saver.flush().catch(() => {});
+      // closed on another PC meanwhile: the page has said so and reads the warehouse again
+      if (saver.state === 'closed') return;
+      if (saver.sessionId) await adjustmentsApi.discardCount(saver.sessionId);
+      openSaver(null);
+      setMessage('');
+    } catch (e) {
       setError(e);
     } finally {
       setBusy(false);
     }
   }
 
+  const saveText = saveState === 'closed' ? t('adj_countClosedElsewhere') : saveState === 'saving' ? t('adj_countSaving') : saveState === 'pending' ? t('adj_countUnsaved') : saveState === 'error' ? t('adj_countSaveFailed') : t('adj_countSaved');
+
   return (
     <div className="stack" style={{ maxWidth: 1100 }}>
       <div className="card pad stack">
         <h2 style={{ fontSize: 18 }}>{t('adj_count')}</h2>
-        <p className="muted" style={{ margin: 0 }}>{t('adj_countHelp')}</p>
+        <p className="muted" style={{ margin: 0 }}>{t('adj_countHelp')} {t('adj_countKept')}</p>
         <div className="grid-3">
           <label className="field">
             <span>{t('warehouse')}</span>
-            <select className="input" value={warehouseId} onChange={(e) => setWarehouseId(e.target.value)}>
+            <select className="input" value={warehouseId} disabled={busy} onChange={(e) => { if (!saverRef.current?.dirty || window.confirm(t('adj_leaveCount'))) setWarehouseId(e.target.value); }}>
               {active.map((w) => <option key={w.id} value={w.id}>{i18n.name(w.name)}</option>)}
             </select>
           </label>
-          <label className="field"><span>{t('date')}</span><input className="input" type="date" value={date} onChange={(e) => setDate(e.target.value)} /></label>
-          <label className="field"><span>{t('notes')}</span><input className="input" value={notes} maxLength={500} onChange={(e) => setNotes(e.target.value)} /></label>
+          <label className="field"><span>{t('date')}</span><input className="input" type="date" value={date} disabled={!ready} onChange={(e) => setMeta({ date: e.target.value })} /></label>
+          <label className="field"><span>{t('notes')}</span><input className="input" value={notes} maxLength={500} disabled={!ready} onChange={(e) => setMeta({ notes: e.target.value })} /></label>
         </div>
         <label className="row" style={{ gap: 8 }}>
-          <input type="checkbox" checked={full} onChange={(e) => setFull(e.target.checked)} />
+          <input type="checkbox" checked={full} disabled={!ready} onChange={(e) => setMeta({ full: e.target.checked })} />
           <span>{t('adj_full')}</span>
         </label>
+        {resumed && (
+          <div className="alert info" role="status">
+            {t('adj_countResumed', { who: resumed.updatedBy, when: i18n.date(localDay(resumed.updatedAt)), n: String(resumed.lines.length) })}
+          </div>
+        )}
       </div>
 
       <div className="row no-print">
         <input
           ref={scanRef} className="input" style={{ maxWidth: 340 }} value={query} placeholder={t('adj_searchCount')} aria-label={t('adj_searchCount')}
-          onChange={(e) => setQuery(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); scan(); } }}
+          onChange={(e) => setQuery(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); if (ready) scan(); } }}
         />
         <div className="track">
           <button type="button" aria-pressed={view === 'all'} onClick={() => setView('all')}>{t('all')}</button>
@@ -686,9 +818,9 @@ export function StockCount() {
           <button type="button" aria-pressed={view === 'diff'} onClick={() => setView('diff')}>{t('adj_onlyDiff')}</button>
         </div>
         <span className="spacer" />
-        <button type="button" className="btn" onClick={() => setPasting(true)}><Icon name="upload" size={16} />{t('adj_paste')}</button>
+        <button type="button" className="btn" disabled={!ready} onClick={() => setPasting(true)}><Icon name="upload" size={16} />{t('adj_paste')}</button>
         <button type="button" className="btn" onClick={exportSheet} disabled={!rows.length}><Icon name="download" size={16} />{t('adj_exportSheet')}</button>
-        <button type="button" className="btn" onClick={() => window.print()}><Icon name="printer" size={16} />{t('adj_printSheet')}</button>
+        <button type="button" className="btn" onClick={() => void printDocument('report')}><Icon name="printer" size={16} />{t('adj_printSheet')}</button>
       </div>
       {message && <div className="alert info">{message}</div>}
       <ErrorBox error={sheet.error ?? error} />
@@ -698,28 +830,28 @@ export function StockCount() {
           <thead>
             <tr>
               <th style={{ width: 100 }}>{t('code')}</th><th>{t('item')}</th>
-              <th className="amount">{t('adj_books')}</th><th className="amount" style={{ width: 150 }}>{t('adj_counted')}</th><th className="amount">{t('adj_difference')}</th>
+              <th className="amount" title={t('adj_frozenHelp')}>{t('adj_books')}</th><th className="amount" style={{ width: 150 }}>{t('adj_counted')}</th><th className="amount">{t('adj_difference')}</th>
               <th className="amount" style={{ width: 170 }} title={t('adj_countCostHelp')}>{t('unitCost')}</th>
             </tr>
           </thead>
           <tbody>
             {shown.map((r) => {
               const diff = diffOf(r);
+              const book = bookOf(r);
+              const moved = frozen.has(r.itemId) && book !== r.stockMilli;
               return (
                 <tr key={r.itemId}>
                   <td><span className="ltr">{r.code}</span></td>
                   <td>{i18n.name(r.name)} <span className="muted small">{unitName(i18n, r.unit)}</span></td>
-                  <td className="amount">{qtyText(i18n, r.stockMilli)}</td>
-                  <td><QtyInput value={counted.get(r.itemId) ?? null} onChange={(v) => setOne(r.itemId, v)} ariaLabel={`${t('adj_counted')} ${r.code}`} /></td>
-                  <td className="amount" style={{ color: diff ? (diff < 0 ? 'var(--bad)' : 'var(--ok)') : undefined, fontWeight: diff ? 700 : undefined }}>
-                    {diff === null ? '' : `${diff > 0 ? '+' : diff < 0 ? '−' : ''}${qtyText(i18n, Math.abs(diff))}`}
+                  <td className="amount" title={moved ? t('adj_frozenNow', { n: qtyText(i18n, r.stockMilli) }) : undefined}>
+                    {qtyText(i18n, book)}{moved && <span className="muted small"> *</span>}
                   </td>
-                  <td>{diff !== null && diff > 0 && r.stockMilli <= 0 && (
-                    <AmountInput value={costs.get(r.itemId) ?? null} currency="IQD" ariaLabel={`${t('unitCost')} ${r.code}`} onChange={(v) => setCosts((m) => {
-                      const next = new Map(m);
-                      if (v === null) next.delete(r.itemId); else next.set(r.itemId, v);
-                      return next;
-                    })} />
+                  <td><QtyInput value={counted.get(r.itemId) ?? null} onChange={(v) => { if (ready) setOne(r.itemId, v); }} ariaLabel={`${t('adj_counted')} ${r.code}`} /></td>
+                  <td className="amount" style={{ color: diff ? (diff < 0 ? 'var(--bad)' : 'var(--ok)') : undefined, fontWeight: diff ? 700 : undefined }}>
+                    {diff === null ? '' : i18n.qty(diff, { plus: true })}
+                  </td>
+                  <td>{diff !== null && diff > 0 && book <= 0 && (
+                    <AmountInput value={costs.get(r.itemId) ?? null} currency="IQD" ariaLabel={`${t('unitCost')} ${r.code}`} onChange={(v) => setCost(r.itemId, v)} />
                   )}</td>
                 </tr>
               );
@@ -729,10 +861,12 @@ export function StockCount() {
       </div>
 
       <div className="row no-print">
-        <button type="button" className="btn primary" disabled={busy || (!full && counted.size === 0)} onClick={makeDraft}><Icon name="check" size={16} />{t('adj_makeDraft')}</button>
+        <button type="button" className="btn primary" disabled={busy || !ready || (!full && counted.size === 0)} onClick={makeDraft}><Icon name="check" size={16} />{t('adj_makeDraft')}</button>
         <span className="muted">{t('adj_countedSummary', { n: counted.size })} · {t('adj_diffSummary', { n: differences })}</span>
+        <span className={'small' + (saveState === 'error' ? '' : ' muted')} style={saveState === 'error' ? { color: 'var(--bad)', fontWeight: 600 } : undefined} role="status" aria-live="polite">{saveText}</span>
         <span className="spacer" />
-        <button type="button" className="btn" onClick={() => history.back()}>{t('cancel')}</button>
+        <button type="button" className="btn" disabled={busy || !ready || (!saverRef.current?.sessionId && counted.size === 0)} onClick={() => void discard()}>{t('adj_discardCount')}</button>
+        <button type="button" className="btn" onClick={() => history.back()}>{t('back')}</button>
       </div>
 
       {pasting && <PasteCounts onApply={applyText} onClose={() => setPasting(false)} />}

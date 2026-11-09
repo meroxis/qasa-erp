@@ -1,4 +1,6 @@
 import { randomUUID } from 'node:crypto';
+import { existsSync, readdirSync, renameSync, rmSync, unlinkSync } from 'node:fs';
+import { basename, dirname, join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { DEFAULT_POSTING_ACCOUNTS, IRAQI_UNIFIED_CHART, STARTER_SUB_ACCOUNTS } from '@qasa/core';
 import { AppError } from './errors.ts';
@@ -1375,9 +1377,54 @@ const V7 =
   );
   `;
 
+const V8 =
+  // 8 — stock counts saved as they are typed: a count session per warehouse, and each item's book quantity frozen the
+  // moment it is first counted (sales during the count don't turn into surpluses)
+  `
+  CREATE TABLE stock_counts (
+    id TEXT PRIMARY KEY,
+    warehouse_id TEXT NOT NULL REFERENCES warehouses(id),
+    date TEXT NOT NULL,
+    notes TEXT,
+    -- items not counted count as zero when it is finished
+    count_all INTEGER NOT NULL DEFAULT 0,
+    status TEXT NOT NULL CHECK (status IN ('open', 'done', 'discarded')),
+    -- the draft "count" adjustment it made when finished (none when everything agreed)
+    adjustment_id TEXT REFERENCES stock_adjustments(id),
+    created_by TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    updated_by TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+  );
+  CREATE INDEX stock_counts_warehouse ON stock_counts(warehouse_id, status);
+  CREATE TABLE stock_count_lines (
+    count_id TEXT NOT NULL REFERENCES stock_counts(id),
+    item_id TEXT NOT NULL REFERENCES items(id),
+    -- thousandths, as counted on the shelves
+    counted_milli INTEGER NOT NULL CHECK (counted_milli >= 0),
+    -- what the books said when the item was first counted: the difference is taken against this
+    book_milli INTEGER NOT NULL,
+    -- IQD per unit for a surplus of an item without an average cost
+    unit_cost INTEGER,
+    counted_at TEXT NOT NULL,
+    PRIMARY KEY (count_id, item_id)
+  );
+  `;
+
+const V9 =
+  // 9 — the items a count covers, fixed when it starts: with "count all", an item made or switched on again while the
+  // shelves are being counted was never on the count sheet, so finishing the count does not take it for a shortage
+  `
+  CREATE TABLE stock_count_items (
+    count_id TEXT NOT NULL REFERENCES stock_counts(id),
+    item_id TEXT NOT NULL REFERENCES items(id),
+    PRIMARY KEY (count_id, item_id)
+  );
+  `;
+
 const MIGRATIONS: Migration[] = [
   { sql: V1 }, { sql: V2, rebuild: true }, { sql: V3, rebuild: true }, { sql: V4 }, { sql: V5, rebuild: true },
-  { sql: V6, mysql: 'tables' }, { sql: V7, mysql: 'tables' }
+  { sql: V6, mysql: 'tables' }, { sql: V7, mysql: 'tables' }, { sql: V8, mysql: 'tables' }, { sql: V9, mysql: 'tables' }
 ];
 
 /** Server databases began at this version: its schema is in schema-mysql.ts (tables and triggers without `since`). */
@@ -1386,7 +1433,7 @@ const MYSQL_BASE_VERSION = 5;
 /** The schema version this build writes. */
 export const SCHEMA_VERSION = MIGRATIONS.length;
 
-export function openDatabase(file: string): Db {
+export function openDatabase(file: string, options: { now?: () => Date } = {}): Db {
   if (file !== ':memory:') refuseNewerFile(file);
   const db: Db = new DatabaseSync(file);
   try {
@@ -1395,6 +1442,7 @@ export function openDatabase(file: string): Db {
       // WAL + FULL sync: a committed voucher survives a power cut (generator switch-over).
       db.exec('PRAGMA journal_mode = WAL');
       db.exec('PRAGMA synchronous = FULL');
+      copyBeforeUpdate(db, file, options.now?.() ?? new Date());
     }
     initDatabase(db);
   } catch (error) {
@@ -1402,6 +1450,68 @@ export function openDatabase(file: string): Db {
     throw error;
   }
   return db;
+}
+
+/** How many copies made before a schema update are kept next to each company file (the newest). */
+export const UPDATE_COPIES_KEPT = 3;
+
+/** The copies made before a schema update of `file`, newest first (their names sort by time). */
+export function updateCopies(file: string): string[] {
+  const dir = dirname(file);
+  const pattern = updateCopyName(file);
+  let names: string[];
+  try {
+    names = readdirSync(dir);
+  } catch {
+    return [];
+  }
+  return names.filter((n) => pattern.test(n)).sort((a, b) => updateCopyStamp(b, pattern).localeCompare(updateCopyStamp(a, pattern)) || b.localeCompare(a)).map((n) => join(dir, n));
+}
+
+/** <company file name>-before-update-v<old version>-<YYYYMMDD-HHMMSS>[-n].sqlite, beside the company file. */
+function updateCopyName(file: string): RegExp {
+  const stem = basename(file).replace(/\.sqlite$/i, '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  return new RegExp(`^${stem}-before-update-v(\\d{1,4})-(\\d{8}-\\d{6})(?:-\\d{1,3})?\\.sqlite$`);
+}
+
+function updateCopyStamp(name: string, pattern: RegExp): string {
+  return pattern.exec(name)?.[2] ?? '';
+}
+
+/**
+ * Before this version changes the schema of an existing company file, a consistent copy of it as it is (SQLite's
+ * VACUUM INTO, so work still in the write-ahead log is in it) goes beside it, and only the newest
+ * UPDATE_COPIES_KEPT are kept. A new file (no schema yet) and a file already up to date are left alone. When the copy
+ * can't be made (a full disk) the schema is not changed: the file opens on a later try, never updated without a copy.
+ * That failure is its own error (update_copy_failed), so the app never takes the file for a damaged one.
+ */
+function copyBeforeUpdate(db: Db, file: string, now: Date): string | null {
+  if (!db.prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'schema_version'").get()) return null;
+  const version = schemaVersion(db);
+  if (version === 0 || version >= MIGRATIONS.length) return null;
+  const p = (n: number, w = 2) => String(n).padStart(w, '0');
+  const stamp = `${now.getFullYear()}${p(now.getMonth() + 1)}${p(now.getDate())}-${p(now.getHours())}${p(now.getMinutes())}${p(now.getSeconds())}`;
+  const stem = `${basename(file).replace(/\.sqlite$/i, '')}-before-update-v${version}-${stamp}`;
+  let target = join(dirname(file), `${stem}.sqlite`);
+  for (let i = 2; existsSync(target); i += 1) target = join(dirname(file), `${stem}-${i}.sqlite`);
+  const part = `${target}.part`;
+  try {
+    rmSync(part, { force: true });
+    db.exec(`VACUUM INTO '${part.replace(/'/g, "''")}'`);
+    renameSync(part, target);
+  } catch (error) {
+    // a part left in the way (even a folder) must not hide why the copy failed
+    try { rmSync(part, { force: true }); } catch { /* left for next time */ }
+    // the file itself is fine: it is not damaged, there was only no room (or no access) for its copy
+    throw new AppError(507, 'update_copy_failed', { reason: (error instanceof Error ? error.message : String(error)).slice(0, 300) });
+  }
+  // only this company file's own copies are ever removed, the oldest first
+  for (const old of updateCopies(file).slice(UPDATE_COPIES_KEPT)) {
+    try {
+      unlinkSync(old);
+    } catch { /* a copy in use stays until next time */ }
+  }
+  return target;
 }
 
 /** Brings any database (a file, or the in-browser demo) to the current schema and fills in the defaults. */

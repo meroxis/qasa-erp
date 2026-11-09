@@ -11,6 +11,7 @@ import { guessStatementColumns, rowsToStatement, splitPasted, type ColumnMap, ty
 import { MAX_FILE_BYTES, parseCsv, readXlsx } from './Import.tsx';
 import { go, href } from '../router.ts';
 import { reverseDefaultDate } from '../industry/ReverseModal.tsx';
+import { printDocument } from '../industry/printing.ts';
 
 /**
  * البنوك والصكوك: safes, banks and e-wallets with their balances, moving money between them, cheques received and
@@ -544,7 +545,7 @@ export function ChequeDetail({ id }: { id: string }) {
         {c.actions.includes('bounce') && <button type="button" className="btn danger" onClick={() => setStep('bounce')}><Icon name="undo" size={16} />{t('bk_actBounce')}</button>}
         {c.actions.includes('cancel') && <button type="button" className="btn" onClick={() => setStep('cancel')}><Icon name="x" size={16} />{t('bk_actCancel')}</button>}
         {c.actions.includes('undo') && <button type="button" className="btn" onClick={() => setStep('undo')}><Icon name="undo" size={16} />{t('bk_undo')}</button>}
-        <button type="button" className="btn" onClick={() => window.print()}><Icon name="printer" size={16} />{t('print')}</button>
+        <button type="button" className="btn" onClick={() => void printDocument('voucher')}><Icon name="printer" size={16} />{t('print')}</button>
       </div>
       {waiting && <div className="alert info no-print">{t('bk_waitApproval')}</div>}
 

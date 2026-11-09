@@ -20,6 +20,7 @@ import { go, href } from '../router.ts';
  */
 
 import { SOLAR_TABS, type SolarTab } from './tabs.ts';
+import { printDocument } from '../industry/printing.ts';
 export { isSolarTab, type SolarTab } from './tabs.ts';
 const TABS = SOLAR_TABS;
 const NAV = { key: 'sl_title' as Key, group: 'gIndustry' as Key };
@@ -524,7 +525,7 @@ export function SolarSystem({ id }: { id: string }) {
         <a className="btn" href={href(`job/${j.id}`)}><Icon name="swap" size={16} />{t('sl_openJob')}</a>
         {j.status !== 'cancelled' && <button type="button" className="btn" onClick={() => setModal('equipment')}><Icon name="plus" size={16} />{t('sl_addEquipment')}</button>}
         {j.actions.includes('invoice') && <button type="button" className="btn primary" onClick={() => setModal('sell')}><Icon name="invoice" size={16} />{t('sl_sell')}</button>}
-        <button type="button" className="btn" onClick={() => window.print()}><Icon name="printer" size={16} />{t('sl_print')}</button>
+        <button type="button" className="btn" onClick={() => void printDocument('quote')}><Icon name="printer" size={16} />{t('sl_print')}</button>
       </div>
       {!j.actions.includes('invoice') && j.status !== 'invoiced' && j.status !== 'cancelled' && (
         <div className="alert info no-print">{t('sl_sellWhenDone', { s: t(`ew_st_${j.status}` as Key) })}</div>

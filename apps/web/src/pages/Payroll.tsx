@@ -9,6 +9,7 @@ import {
   type PayrollSummary, type RunStatus, type RunView
 } from '../industry/payroll-api.ts';
 import { ReverseModal } from '../industry/ReverseModal.tsx';
+import { printDocument } from '../industry/printing.ts';
 
 /**
  * الرواتب (Pro, admins only): employees, a payroll sheet per month (prepared in one click, edited, posted as one journal
@@ -249,10 +250,13 @@ export function PayrollRun({ id }: { id: string }) {
   useEffect(() => { if (run) { setLines(run.lines.map(editable)); setDirty(false); } }, [run]);
   useEffect(() => {
     if (!print) return;
-    const done = () => setPrint(null);
+    // the sheet or the slips stay drawn until the print window closes or the paper went to the printer; a print that
+    // ends after another one started never clears that one
+    let live = true;
+    const done = () => { if (live) setPrint(null); };
     window.addEventListener('afterprint', done, { once: true });
-    const timer = window.setTimeout(() => window.print(), 50);
-    return () => { window.clearTimeout(timer); window.removeEventListener('afterprint', done); };
+    const timer = window.setTimeout(() => void printDocument('report').finally(done), 50);
+    return () => { live = false; window.clearTimeout(timer); window.removeEventListener('afterprint', done); };
   }, [print]);
 
   if (error) return <Unavailable error={error} />;

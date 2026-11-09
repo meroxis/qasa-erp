@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { formatQty, normalizeForSearch, rateFromX100, rateToX100, toWesternDigits, type CurrencyCode } from '@qasa/core';
+import { normalizeForSearch, rateFromX100, rateToX100, toWesternDigits, type CurrencyCode } from '@qasa/core';
 import { api, type InvoiceView, type ItemView, type PartyView, type WarehouseView } from '../api.ts';
 import { AccountCombo, AmountInput, ErrorBox, Icon, Modal, SearchCombo, useData, useLoad, usePageNav, useToast, type PickOption } from '../components.tsx';
 import { useI18n, type I18n } from '../i18n.ts';
@@ -11,6 +11,7 @@ import { PrintDocument } from '../industry/PrintDocument.tsx';
 import { invoiceModel } from '../industry/print-model.ts';
 import { usePrintSetup } from '../industry/print-api.ts';
 import { addRefusal, parseScan, priceIn, priceRateFor, tilePrice } from './pos-logic.ts';
+import { printAlone, printDocument } from '../industry/printing.ts';
 
 /**
  * Point of sale (every plan). Made for a cashier with no training: the search box always has the focus, so a barcode
@@ -282,7 +283,7 @@ function Register({ initial, onClosed }: { initial: ShiftView; onClosed(): void 
       else if (e.key === 'F4') { e.preventDefault(); clear(); }
       else if (e.key === 'F8') { e.preventDefault(); document.getElementById('pos-discount')?.querySelector('input')?.focus(); }
       else if (e.key === 'F9') { e.preventDefault(); void payRef.current(); }
-      else if (e.key === 'F10' && receipt) { e.preventDefault(); printReceipt(); }
+      else if (e.key === 'F10' && receipt) { e.preventDefault(); void printReceipt(); }
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
@@ -336,7 +337,7 @@ function Register({ initial, onClosed }: { initial: ShiftView; onClosed(): void 
                   <ItemPicture item={it} name={name} />
                   <span className="pos-tile-name">{name}</span>
                   <span className="pos-tile-price num">{price === null ? '—' : i18n.money(price, currency)}</span>
-                  {it.trackStock && <span className={'pos-tile-stock small num' + (out ? ' bad' : '')}>{out ? t('pos_outOfStock') : `${t('pos_stock')}: ${i18n.digitsOf(formatQty(it.qtyMilli))}`}</span>}
+                  {it.trackStock && <span className={'pos-tile-stock small num' + (out ? ' bad' : '')}>{out ? t('pos_outOfStock') : `${t('pos_stock')}: ${i18n.qty(it.qtyMilli)}`}</span>}
                 </button>
               );
             })}
@@ -368,7 +369,7 @@ function Register({ initial, onClosed }: { initial: ShiftView; onClosed(): void 
                 </div>
                 <div className="pos-qty">
                   <button type="button" className="btn pos-qty-btn" aria-label={t('pos_less')} onClick={() => setQty(l.item.id, l.qtyMilli - 1000)}>−</button>
-                  <span className="num pos-qty-n">{i18n.digitsOf(formatQty(l.qtyMilli))}</span>
+                  <span className="num pos-qty-n">{i18n.qty(l.qtyMilli)}</span>
                   <button type="button" className="btn pos-qty-btn" aria-label={t('pos_more')} onClick={() => setQty(l.item.id, l.qtyMilli + 1000)}>+</button>
                 </div>
                 <span className="num pos-line-total">{i18n.money(lineTotal(l), currency)}</span>
@@ -403,7 +404,7 @@ function Register({ initial, onClosed }: { initial: ShiftView; onClosed(): void 
               </button>
             </div>
             {receipt && (
-              <button type="button" className="link-btn small" onClick={printReceipt}>
+              <button type="button" className="link-btn small" onClick={() => void printReceipt()}>
                 <Icon name="printer" size={14} /> {t('pos_printLast', { n: receipt.number ?? '' })} <span className="kbd">F10</span>
               </button>
             )}
@@ -419,12 +420,9 @@ function Register({ initial, onClosed }: { initial: ShiftView; onClosed(): void 
 
 /* ---------- the receipt (80 mm) ---------- */
 
+/** The receipt alone, on the printer chosen for receipts (Settings → Printers) or through the print window. */
 function printReceipt() {
-  document.body.classList.add('pos-printing');
-  const done = () => { document.body.classList.remove('pos-printing'); window.removeEventListener('afterprint', done); };
-  window.addEventListener('afterprint', done);
-  window.print();
-  window.setTimeout(done, 1000);
+  return printAlone('receipt', 'pos-printing');
 }
 
 function Receipt({ invoice, shift }: { invoice: InvoiceView; shift: ShiftView }) {
@@ -460,7 +458,7 @@ function Receipt({ invoice, shift }: { invoice: InvoiceView; shift: ShiftView })
           <div key={l.lineNo} className="pos-r-line">
             <div>{i18n.name(l.itemName)}</div>
             <div className="pos-r-row small">
-              <span className="num">{i18n.digitsOf(formatQty(l.qtyMilli))} × {i18n.money(l.unitPrice, invoice.currency)}</span>
+              <span className="num">{i18n.qty(l.qtyMilli)} × {i18n.money(l.unitPrice, invoice.currency)}</span>
               <span className="num">{i18n.money(l.amount, invoice.currency)}</span>
             </div>
           </div>
@@ -558,7 +556,7 @@ export function PosShiftReport({ id }: { id: string }) {
     <div className="stack">
       <div className="row no-print">
         <a className="btn" href={href('pos')}>{t('pos_backToRegister')}</a>
-        <button type="button" className="btn primary" onClick={() => window.print()}><Icon name="printer" size={16} />{t('pos_print')}</button>
+        <button type="button" className="btn primary" onClick={() => void printDocument('report')}><Icon name="printer" size={16} />{t('pos_print')}</button>
       </div>
       <div className="card pad stack paper">
         <div className="paper-head">
@@ -594,7 +592,7 @@ export function PosShiftReport({ id }: { id: string }) {
             <thead><tr><th>{t('pos_item')}</th><th className="num">{t('pos_qty')}</th><th className="num">{t('pos_amount')}</th></tr></thead>
             <tbody>
               {r.items.map((it) => (
-                <tr key={it.itemId}><td>{it.code} — {i18n.name(it.name)}</td><td className="num">{i18n.digitsOf(formatQty(it.qtyMilli))}</td><td className="num">{money2(i18n, it.amount)}</td></tr>
+                <tr key={it.itemId}><td>{it.code} — {i18n.name(it.name)}</td><td className="num">{i18n.qty(it.qtyMilli)}</td><td className="num">{money2(i18n, it.amount)}</td></tr>
               ))}
               {r.items.length === 0 && <tr><td colSpan={3} className="muted">{t('pos_noSales')}</td></tr>}
             </tbody>

@@ -1,14 +1,16 @@
-import { accountStatement, finalAccounts, trialBalance, type Names } from '@qasa/core';
+import { accountStatement, DATE_RANGE_REVERSED, finalAccounts, isReversedRange, trialBalance, type Names } from '@qasa/core';
 import type { Db } from './db.ts';
 import { loadAccounts } from './accounts.ts';
 import { postedLines } from './journal.ts';
-import { notFound } from './errors.ts';
+import { AppError, notFound } from './errors.ts';
 
 function names(db: Db): Map<string, Names> {
   return new Map(loadAccounts(db).map((a) => [a.code, a.name]));
 }
 
 export function trialBalanceReport(db: Db, opts: { from?: string | undefined; to?: string | undefined }) {
+  // refused before the books are read (core refuses it too)
+  if (isReversedRange(opts.from, opts.to)) throw new AppError(400, DATE_RANGE_REVERSED, { from: opts.from, to: opts.to });
   const byCode = names(db);
   const range: { from?: string; to?: string } = {};
   if (opts.from) range.from = opts.from;

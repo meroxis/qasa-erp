@@ -15,52 +15,94 @@ export interface PostedLine {
 
 export interface TrialBalanceRow {
   code: string;
+  /** Balance brought forward: every posted line dated before From, as one Dr or Cr figure. */
+  openingDebit: number;
+  openingCredit: number;
+  /** Movement inside the period (From to To). */
   debit: number;
   credit: number;
-  /** Closing balance on the account's normal side (debit accounts: debit − credit). */
+  /** Balance at To (opening + movement), as one Dr or Cr figure. */
+  closingDebit: number;
+  closingCredit: number;
+  /** Closing balance on the account's normal side (debit accounts: debit − credit), opening included. */
   balance: number;
 }
 
 export interface TrialBalance {
   rows: TrialBalanceRow[];
+  openingDebitTotal: number;
+  openingCreditTotal: number;
+  /** Movement totals of the period. */
   totalDebit: number;
   totalCredit: number;
-  /** Balances presented in two columns, as Iraqi trial balances usually are. */
+  /** Closing balances presented in two columns, as Iraqi trial balances usually are. */
   balanceDebitTotal: number;
   balanceCreditTotal: number;
 }
 
-function inRange(date: string, from?: string, to?: string): boolean {
-  return (!from || date >= from) && (!to || date <= to);
+const split = (net: number) => (net > 0 ? { dr: net, cr: 0 } : { dr: 0, cr: 0 - net });
+
+/** The code a period whose From is later than its To is refused with. */
+export const DATE_RANGE_REVERSED = 'date_range_reversed';
+
+/** A period whose From is later than its To (ISO dates; an open end never is). */
+export function isReversedRange(from: string | undefined, to: string | undefined): boolean {
+  return !!from && !!to && from > to;
 }
 
-/** Trial balance (ميزان المراجعة) of postable accounts for the lines dated up to `to` (and from `from`, if given). */
+/** A report asked for with From later than To: its figures would mean nothing, so none are made. */
+export class DateRangeError extends Error {
+  readonly code = DATE_RANGE_REVERSED;
+  constructor(readonly from: string, readonly to: string) {
+    super(`From (${from}) is later than To (${to})`);
+    this.name = 'DateRangeError';
+  }
+}
+
+/**
+ * Trial balance (ميزان المراجعة) of postable accounts in the six-column layout: opening (lines before `from`),
+ * movement (lines from `from` to `to`) and closing balance (lines up to `to`), each as debit and credit.
+ * Without `from` every line up to `to` is movement and the opening is empty. A closed year's closing entry is dated
+ * on its last day, so the next year opens with revenue and expense accounts at zero and the result in the reserves.
+ * Throws DateRangeError when `from` is later than `to`.
+ */
 export function trialBalance(lines: PostedLine[], opts: { from?: string; to?: string } = {}): TrialBalance {
-  const sums = new Map<string, { debit: number; credit: number }>();
+  if (isReversedRange(opts.from, opts.to)) throw new DateRangeError(opts.from!, opts.to!);
+  const sums = new Map<string, { opening: number; debit: number; credit: number }>();
   for (const l of lines) {
-    if (!inRange(l.date, opts.from, opts.to)) continue;
-    const s = sums.get(l.accountCode) ?? { debit: 0, credit: 0 };
-    s.debit += l.debit;
-    s.credit += l.credit;
+    if (opts.to && l.date > opts.to) continue;
+    const s = sums.get(l.accountCode) ?? { opening: 0, debit: 0, credit: 0 };
+    if (opts.from && l.date < opts.from) s.opening += l.debit - l.credit;
+    else {
+      s.debit += l.debit;
+      s.credit += l.credit;
+    }
     sums.set(l.accountCode, s);
   }
-  const rows = [...sums.entries()]
-    .map(([code, s]) => ({ code, debit: s.debit, credit: s.credit, balance: natureOf(code) === 'debit' ? s.debit - s.credit : s.credit - s.debit }))
-    .filter((r) => r.debit !== 0 || r.credit !== 0)
+  const rows: TrialBalanceRow[] = [...sums.entries()]
+    .map(([code, s]) => {
+      const opening = split(s.opening);
+      const net = s.opening + s.debit - s.credit;
+      const closing = split(net);
+      return {
+        code,
+        openingDebit: opening.dr, openingCredit: opening.cr,
+        debit: s.debit, credit: s.credit,
+        closingDebit: closing.dr, closingCredit: closing.cr,
+        balance: natureOf(code) === 'debit' ? net : 0 - net
+      };
+    })
+    .filter((r) => r.openingDebit !== 0 || r.openingCredit !== 0 || r.debit !== 0 || r.credit !== 0)
     .sort((a, b) => (a.code < b.code ? -1 : 1));
-  let balanceDebitTotal = 0;
-  let balanceCreditTotal = 0;
-  for (const r of rows) {
-    const net = r.debit - r.credit;
-    if (net > 0) balanceDebitTotal += net;
-    else balanceCreditTotal += -net;
-  }
+  const total = (key: keyof Omit<TrialBalanceRow, 'code'>) => rows.reduce((s, r) => s + r[key], 0);
   return {
     rows,
-    totalDebit: rows.reduce((s, r) => s + r.debit, 0),
-    totalCredit: rows.reduce((s, r) => s + r.credit, 0),
-    balanceDebitTotal,
-    balanceCreditTotal
+    openingDebitTotal: total('openingDebit'),
+    openingCreditTotal: total('openingCredit'),
+    totalDebit: total('debit'),
+    totalCredit: total('credit'),
+    balanceDebitTotal: total('closingDebit'),
+    balanceCreditTotal: total('closingCredit')
   };
 }
 

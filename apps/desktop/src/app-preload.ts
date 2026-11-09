@@ -13,8 +13,28 @@ contextBridge.exposeInMainWorld('qasaDesktop', {
   /** Settings → About → Legal: opens the installed THIRD_PARTY_NOTICES.md (main.ts, notices.ts). False when it could not. */
   openNotices: () => ipcRenderer.invoke('app:notices') as Promise<boolean>,
   /** This app can keep several companies (Settings → Companies; the routes are on its own server, admins only). */
-  companies: true
+  companies: true,
+  /**
+   * Settings → Printers and the Print buttons (main.ts, printing.ts): four fixed calls. The page names a kind of paper;
+   * the main process checks everything it gets and prints only this window, with the choice saved for that kind.
+   */
+  printers: {
+    list: () => ipcRenderer.invoke('printers:list') as Promise<unknown>,
+    get: () => ipcRenderer.invoke('printers:get') as Promise<unknown>,
+    set: (kind: string, choice: unknown) => ipcRenderer.invoke('printers:set', String(kind), choiceOf(choice)) as Promise<unknown>,
+    // labels may name the layout picked on the labels page (its paper is used); the main process checks it
+    print: (kind: string, layout?: string) =>
+      (layout === undefined ? ipcRenderer.invoke('printers:print', String(kind)) : ipcRenderer.invoke('printers:print', String(kind), String(layout))) as Promise<unknown>
+  }
 });
+
+/** Only the fields of a printer choice cross to the main process (which checks each one again); null means "Ask every time". */
+function choiceOf(choice: unknown): unknown {
+  if (choice === null) return null;
+  if (typeof choice !== 'object') return {}; // refused by the main process
+  const c = choice as Record<string, unknown>;
+  return { printer: c.printer ?? null, paper: c.paper, margins: c.margins, copies: c.copies, silent: c.silent };
+}
 
 /** Updates: the banner and Settings → Updates (main.ts, "updates"). Nothing installs without the person's click. */
 contextBridge.exposeInMainWorld('qasaUpdates', {

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { formatQty, lineAmount, rateFromX100, todayIso, toWesternDigits, type CurrencyCode } from '@qasa/core';
+import { lineAmount, rateFromX100, todayIso, toWesternDigits, type CurrencyCode } from '@qasa/core';
 import { api } from '../api.ts';
 import { EmptyState, AmountInput, ErrorBox, Icon, Modal, QtyInput, SearchCombo, useData, useLoad, usePageNav, useToast, type PickOption } from '../components.tsx';
 import { useI18n, type Key } from '../i18n.ts';
@@ -9,6 +9,7 @@ import {
 import { go, href } from '../router.ts';
 import { useRatePrefill } from '../industry/fx-prefill.ts';
 import { convertLines } from './currency-switch.ts';
+import { printDocument } from '../industry/printing.ts';
 
 /**
  * أوامر الشراء — purchase orders. Routes: `purchase-orders` (list + reorder suggestions), `new-purchase-order`,
@@ -158,10 +159,10 @@ function Suggestions() {
                 {g.lines.map((l) => (
                   <tr key={l.itemId}>
                     <td>{i18n.name(l.itemName)} <span className="muted small ltr">{l.itemCode}</span></td>
-                    <td className="amount">{i18n.digitsOf(formatQty(l.onHandMilli))}</td>
-                    <td className="amount">{l.reorderMilli === null ? '—' : i18n.digitsOf(formatQty(l.reorderMilli))}</td>
-                    <td className="amount">{l.onOrderMilli ? i18n.digitsOf(formatQty(l.onOrderMilli)) : '—'}</td>
-                    <td className="amount"><strong>{i18n.digitsOf(formatQty(l.suggestMilli))}</strong></td>
+                    <td className="amount">{i18n.qty(l.onHandMilli)}</td>
+                    <td className="amount">{l.reorderMilli === null ? '—' : i18n.qty(l.reorderMilli)}</td>
+                    <td className="amount">{l.onOrderMilli ? i18n.qty(l.onOrderMilli) : '—'}</td>
+                    <td className="amount"><strong>{i18n.qty(l.suggestMilli)}</strong></td>
                     <td className="amount">{l.lastPrice === null ? '—' : i18n.money(l.lastPrice, g.currency)}</td>
                   </tr>
                 ))}
@@ -358,7 +359,7 @@ export function PurchaseOrderDetail({ id }: { id: string }) {
         {can('send') && <button type="button" className="btn" disabled={busy} onClick={() => void move('send')}><Icon name="check" size={16} />{t('po_markSent')}</button>}
         {can('reopen') && <button type="button" className="btn" disabled={busy} onClick={() => void move('reopen')}><Icon name="undo" size={16} />{t('po_reopen')}</button>}
         {can('edit') && <a className="btn" href={href(`edit-purchase-order/${id}`)}><Icon name="edit" size={16} />{t('po_edit')}</a>}
-        <button type="button" className="btn" onClick={() => window.print()}><Icon name="printer" size={16} />{t('print')}</button>
+        <button type="button" className="btn" onClick={() => void printDocument('quote')}><Icon name="printer" size={16} />{t('print')}</button>
         {can('cancel') && <button type="button" className="btn danger" disabled={busy} onClick={() => setModal('cancel')}><Icon name="x" size={16} />{t('po_cancel')}</button>}
       </div>
       <ErrorBox error={actError} />
@@ -437,10 +438,10 @@ function Paper({ order: x, company }: { order: PoView; company: string }) {
               <tr key={l.seq}>
                 <td className="muted num">{i18n.int(l.seq)}</td>
                 <td>{i18n.name(l.itemName)}<span className="muted small ltr" style={{ marginInlineStart: 6 }}>{l.itemCode}</span></td>
-                <td className="amount">{i18n.digitsOf(formatQty(l.qtyMilli))}</td>
+                <td className="amount">{i18n.qty(l.qtyMilli)}</td>
                 {showProgress && <>
-                  <td className="amount no-print">{i18n.digitsOf(formatQty(l.receivedMilli))}</td>
-                  <td className="amount no-print" style={l.remainingMilli ? { color: 'var(--warn)' } : undefined}>{i18n.digitsOf(formatQty(l.remainingMilli))}</td>
+                  <td className="amount no-print">{i18n.qty(l.receivedMilli)}</td>
+                  <td className="amount no-print" style={l.remainingMilli ? { color: 'var(--warn)' } : undefined}>{i18n.qty(l.remainingMilli)}</td>
                 </>}
                 <td className="amount">{i18n.money(l.unitPrice, x.currency)}</td>
                 <td className="amount">{i18n.money(l.amount, x.currency)}</td>

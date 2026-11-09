@@ -1,9 +1,10 @@
 import { createHash } from 'node:crypto';
-import { copyFileSync, existsSync, mkdtempSync, readFileSync, rmSync, statSync } from 'node:fs';
+import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { basename, join } from 'node:path';
+import { DatabaseSync } from 'node:sqlite';
 import { describe, expect, it } from 'vitest';
-import { migrate, openDatabase, SCHEMA_VERSION, schemaVersion, type SqlValue } from './db.ts';
+import { migrate, openDatabase, SCHEMA_VERSION, schemaVersion, UPDATE_COPIES_KEPT, updateCopies, type Db, type SqlValue } from './db.ts';
 
 const sha256 = (file: string) => createHash('sha256').update(readFileSync(file)).digest('hex');
 
@@ -134,7 +135,89 @@ describe('a server database upgrade cut off half way', () => {
       }
     };
     migrate(fake);
-    expect(made).toEqual(since7.slice(10));
+    // the rest of version 7, then every table of the versions after it
+    expect(made).toEqual([...since7.slice(10), ...MYSQL_TABLES.filter((t) => (t.since ?? 0) > 7).map((t) => t.name)]);
     expect(version).toBe(SCHEMA_VERSION);
+  });
+});
+
+describe('a copy before the schema is updated', () => {
+  /** A company file left by an older version (one schema version behind), with a voucher still in its write-ahead log. */
+  function olderFile(file: string, note: string): void {
+    const old = new DatabaseSync(file);
+    old.exec('PRAGMA journal_mode = WAL');
+    old.exec('PRAGMA wal_autocheckpoint = 0');
+    migrate(old as unknown as Db, SCHEMA_VERSION - 1);
+    old.exec("CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT NOT NULL)");
+    old.prepare("INSERT OR REPLACE INTO settings (key, value) VALUES ('company_note', ?)").run(note);
+    old.close();
+  }
+  const at = (h: number) => () => new Date(2026, 10, 9, h, 30, 0);
+
+  it('keeps a consistent copy of the old file beside it, then updates; files already up to date get none', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'qasa-update-copy-'));
+    try {
+      const file = join(dir, 'qasa.sqlite');
+      olderFile(file, 'Mer books');
+      const db = openDatabase(file, { now: at(9) });
+      expect(schemaVersion(db)).toBe(SCHEMA_VERSION);
+      db.close();
+      const copies = updateCopies(file);
+      expect(copies.map((c) => basename(c))).toEqual([`qasa-before-update-v${SCHEMA_VERSION - 1}-20261109-093000.sqlite`]);
+      const copy = new DatabaseSync(copies[0]!, { readOnly: true });
+      expect((copy.prepare('SELECT version FROM schema_version').get() as { version: number }).version).toBe(SCHEMA_VERSION - 1);
+      expect((copy.prepare("SELECT value FROM settings WHERE key = 'company_note'").get() as { value: string }).value).toBe('Mer books');
+      copy.close();
+      expect(readdirSync(dir).some((n) => n.endsWith('.part'))).toBe(false);
+
+      // up to date: opening again makes no copy; a new company file makes none either
+      openDatabase(file, { now: at(10) }).close();
+      openDatabase(join(dir, 'new.sqlite'), { now: at(10) }).close();
+      expect(readdirSync(dir).filter((n) => n.includes('before-update'))).toHaveLength(1);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('keeps the newest 3 copies of this company file only, and never touches other files', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'qasa-update-keep-'));
+    try {
+      const file = join(dir, 'qasa.sqlite');
+      const other = join(dir, 'other-before-update-v1-20200101-000000.sqlite');
+      writeFileSync(other, 'another company file copy');
+      for (let h = 1; h <= 5; h += 1) {
+        rmSync(file, { force: true });
+        rmSync(`${file}-wal`, { force: true });
+        rmSync(`${file}-shm`, { force: true });
+        olderFile(file, `Las books ${h}`);
+        openDatabase(file, { now: at(h) }).close();
+      }
+      expect(UPDATE_COPIES_KEPT).toBe(3);
+      expect(updateCopies(file).map((c) => basename(c))).toEqual(
+        [5, 4, 3].map((h) => `qasa-before-update-v${SCHEMA_VERSION - 1}-20261109-0${h}3000.sqlite`)
+      );
+      expect(existsSync(other)).toBe(true);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('leaves the file as it was when the copy cannot be made', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'qasa-update-fail-'));
+    try {
+      const file = join(dir, 'qasa.sqlite');
+      olderFile(file, 'Raz books');
+      // a folder where the copy should go: VACUUM INTO can't write it
+      mkdirSync(join(dir, `qasa-before-update-v${SCHEMA_VERSION - 1}-20261109-093000.sqlite.part`));
+      const name = `qasa-before-update-v${SCHEMA_VERSION - 1}-20261109-093000.sqlite`;
+      expect(existsSync(join(dir, name))).toBe(false);
+      // its own error, never taken for a damaged file: the file is fine, only its copy could not be written
+      expect(errorOf(() => openDatabase(file, { now: at(9) }))).toMatchObject({ code: 'update_copy_failed', details: { reason: expect.any(String) } });
+      const still = new DatabaseSync(file, { readOnly: true });
+      expect((still.prepare('SELECT version FROM schema_version').get() as { version: number }).version).toBe(SCHEMA_VERSION - 1);
+      still.close();
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 });

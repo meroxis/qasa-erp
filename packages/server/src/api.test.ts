@@ -174,6 +174,13 @@ describe('reports', () => {
     expect(accounts.find((a) => a.code === '1')?.balance).toBe(9_750_000);
   });
 
+  it('refuses a trial balance whose From is later than its To with a clear code', async () => {
+    const res = await app.inject('/api/reports/trial-balance?from=2026-12-31&to=2026-01-01');
+    expect(res.statusCode).toBe(400);
+    expect(res.json()).toMatchObject({ error: 'date_range_reversed', details: { from: '2026-12-31', to: '2026-01-01' } });
+    expect((await app.inject('/api/reports/trial-balance?from=2026-01-01&to=2026-01-01')).statusCode).toBe(200);
+  });
+
   it('keeps an append-only audit log', async () => {
     await post('/api/vouchers', receipt);
     const log = (await app.inject('/api/audit')).json();

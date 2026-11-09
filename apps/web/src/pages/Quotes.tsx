@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { amountInWords, formatQty, lineAmount, rateFromX100, todayIso, toWesternDigits, type CurrencyCode } from '@qasa/core';
+import { amountInWords, lineAmount, rateFromX100, todayIso, toWesternDigits, type CurrencyCode } from '@qasa/core';
 import { api } from '../api.ts';
 import { EmptyState, AmountInput, ErrorBox, Icon, Modal, QtyInput, SearchCombo, useData, useLoad, usePageNav, useToast, type PickOption } from '../components.tsx';
 import { useI18n, type I18n, type Key } from '../i18n.ts';
@@ -12,6 +12,7 @@ import { convertAmount, convertLines } from './currency-switch.ts';
 import { quoteMessage, WhatsAppButton } from '../industry/WhatsAppShare.tsx';
 import { DesignedPrint } from '../industry/PrintDocument.tsx';
 import { quoteModel } from '../industry/print-model.ts';
+import { printDocument } from '../industry/printing.ts';
 
 /**
  * عروض الأسعار — quotations, on every plan. Routes: `quotes` (the list), `new-quote`, `edit-quote/:id`, and `quote/:id`
@@ -323,7 +324,7 @@ export function QuoteDetail({ id }: { id: string }) {
         {can('edit') && <a className="btn" href={href(`edit-quote/${id}`)}><Icon name="edit" size={16} />{t('qt_edit')}</a>}
         {can('duplicate') && <button type="button" className="btn" disabled={busy} onClick={() => void duplicate()}><Icon name="doc" size={16} />{t('qt_duplicate')}</button>}
         {x.status !== 'cancelled' && <WhatsAppButton phone={x.party?.phone} text={quoteMessage(i18n, company, { ...x, customerName: x.party?.name ?? x.customerName })} />}
-        <button type="button" className="btn" onClick={() => window.print()}><Icon name="printer" size={16} />{t('print')}</button>
+        <button type="button" className="btn" onClick={() => void printDocument('quote')}><Icon name="printer" size={16} />{t('print')}</button>
         {can('cancel') && <button type="button" className="btn danger" disabled={busy} onClick={() => setModal('cancel')}><Icon name="x" size={16} />{t('qt_cancel')}</button>}
       </div>
       <ErrorBox error={actError} />
@@ -373,7 +374,7 @@ function Paper({ quote: x, company }: { quote: QuoteView; company: string }) {
               <tr key={l.seq}>
                 <td className="muted num">{i18n.int(l.seq)}</td>
                 <td>{l.description}{l.itemCode && <span className="muted small ltr" style={{ marginInlineStart: 6 }}>{l.itemCode}</span>}</td>
-                <td className="amount">{i18n.digitsOf(formatQty(l.qtyMilli))}</td>
+                <td className="amount">{i18n.qty(l.qtyMilli)}</td>
                 <td className="amount">{i18n.money(l.unitPrice, x.currency)}</td>
                 <td className="amount">{i18n.money(l.amount, x.currency)}</td>
               </tr>

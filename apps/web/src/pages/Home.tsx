@@ -133,7 +133,7 @@ export function Home({ viewer, user, favourites }: { viewer: NavViewer; user: st
 function trendText(i18n: I18n, now: number, before: number): string {
   if (!before) return '';
   const pct = Math.round(((now - before) / Math.abs(before)) * 100);
-  return i18n.t('br_vsLastMonth', { p: `${pct >= 0 ? '+' : '−'}${i18n.int(Math.abs(pct))}%` });
+  return i18n.t('br_vsLastMonth', { p: i18n.ltr(`${pct >= 0 ? '+' : '-'}${i18n.int(Math.abs(pct))}%`) });
 }
 
 /** Sales of the last six months as bars, with the month's profit underneath; no chart library. */
@@ -148,7 +148,7 @@ function SalesChart({ d }: { d: DashboardView }) {
       <div role="img" aria-label={t('br_salesSixMonths')} style={{ display: 'grid', gridTemplateColumns: `repeat(${d.months.length}, minmax(0, 1fr))`, gap: 12, alignItems: 'end', height: 200, padding: '8px 16px 0' }}>
         {d.months.map((m, n) => (
           <div key={m.month} title={i18n.money(m.sales, 'IQD')} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'flex-end', height: '100%', gap: 6 }}>
-            <span className="small num" style={{ fontWeight: 600 }}>{m.sales ? i18n.digitsOf(compact(m.sales)) : ''}</span>
+            <span className="small num" style={{ fontWeight: 600 }}>{m.sales ? i18n.ltr(i18n.digitsOf(compact(m.sales))) : ''}</span>
             <span style={{
               width: '100%', maxWidth: 56, height: `${Math.max(2, (m.sales / max) * 150)}px`, borderRadius: '6px 6px 2px 2px',
               background: n === d.months.length - 1 ? 'var(--accent, #1D5FD1)' : 'var(--accent-soft, #BCD0F5)'
@@ -160,7 +160,7 @@ function SalesChart({ d }: { d: DashboardView }) {
         {d.months.map((m) => (
           <div key={m.month} className="small">
             <div className="muted">{monthName(m.month)}</div>
-            <div className="num" style={{ color: (m.profit ?? 0) < 0 ? 'var(--bad, #A4271A)' : 'var(--ok, #1F7A52)' }} title={t('br_profit')}>{m.profit ? i18n.digitsOf(compact(m.profit)) : '—'}</div>
+            <div className="num" style={{ color: (m.profit ?? 0) < 0 ? 'var(--bad, #A4271A)' : 'var(--ok, #1F7A52)' }} title={t('br_profit')}>{m.profit ? i18n.ltr(i18n.digitsOf(compact(m.profit))) : '—'}</div>
           </div>
         ))}
       </div>
@@ -172,7 +172,7 @@ function SalesChart({ d }: { d: DashboardView }) {
 function compact(v: number): string {
   const a = Math.abs(v);
   const s = a >= 1e9 ? `${+(a / 1e9).toFixed(2)}B` : a >= 1e6 ? `${+(a / 1e6).toFixed(2)}M` : a >= 1e3 ? `${+(a / 1e3).toFixed(0)}K` : String(a);
-  return (v < 0 ? '−' : '') + s;
+  return (v < 0 ? '-' : '') + s;
 }
 
 /** The home screen's big tiles, in sections, from the same list as the menu: only what this person may open and what the

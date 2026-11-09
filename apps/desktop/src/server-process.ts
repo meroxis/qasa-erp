@@ -11,6 +11,7 @@ import type { FastifyInstance } from 'fastify';
 import { buildApp, configureLicensing, configureVerifyKeyVault, openDatabase, planStatus, startUsagePings, type Db } from '@qasa/server';
 import { companyDirOf, isCompanyId, MAIN_COMPANY, readRegistry, writeRegistry } from './companies.ts';
 import { companyApi } from './company-api.ts';
+import { handleRecoverRequest, recoverableAdmins } from './recover.ts';
 import { Bridge, type Carrier } from './bridge.ts';
 import { makeSecretBox, type SecretBox } from './secrets.ts';
 import type { DatabaseStartContext, ProContext, RestartOptions } from './pro-types.ts';
@@ -241,6 +242,19 @@ function placeCompanyFile(name: string): void {
 }
 
 /**
+ * What the main process is told when the company file can't be opened at the start. `cause` tells a file that is
+ * damaged (or not a company file) from one that is fine but could not be updated, because the copy kept before a
+ * schema update could not be written (a full disk, no access): that one must never be set aside as damaged.
+ */
+export function companyFileProblem(error: unknown, main: boolean): { main: boolean; reason: string; cause: 'update_copy' | 'damaged' } {
+  const e = error as { code?: unknown; details?: { reason?: unknown } | null } | null;
+  if (e && e.code === 'update_copy_failed') {
+    return { main, reason: String(e.details?.reason ?? '').slice(0, 200), cause: 'update_copy' };
+  }
+  return { main, reason: error instanceof Error ? error.message.slice(0, 200) : String(error).slice(0, 200), cause: 'damaged' };
+}
+
+/**
  * The company database: the company file, or (Pro) the company's MariaDB/MySQL server. When the server can't be
  * used, the main process asks the admin: try again, go back to the company file kept aside, or quit (it then ends the
  * app, this process included).
@@ -259,11 +273,11 @@ async function openCompanyDatabase(bridge: Bridge): Promise<Db> {
       }
       if (typeof problem.host !== 'string') {
         // the company file itself can't be opened (damaged, or not a company file): never a raw error and a quit,
-        // because restoring a backup is exactly what this needs
-        const choice = await bridge.call<'retry' | 'aside' | 'first' | 'quit'>('dbDamaged', [{
-          main: companyId() === MAIN_COMPANY, reason: error instanceof Error ? error.message.slice(0, 200) : String(error).slice(0, 200)
-        }], { timeoutMs: 0 });
-        if (choice === 'aside') {
+        // because restoring a backup is exactly what this needs. A file that is fine but had no room for its copy
+        // before an update is said so, and is never set aside (companyFileProblem).
+        const fileProblem = companyFileProblem(error, companyId() === MAIN_COMPANY);
+        const choice = await bridge.call<'retry' | 'aside' | 'first' | 'quit'>('dbDamaged', [fileProblem], { timeoutMs: 0 });
+        if (choice === 'aside' && fileProblem.cause === 'damaged') {
           // kept, never deleted; an empty company opens so Settings → Backups can restore a copy over it
           const aside = join(dataDir(), `qasa-damaged-${stampNow()}.sqlite`);
           moveCompanyFile(file, aside);
@@ -448,6 +462,9 @@ export function serve(carrier: Carrier): Bridge {
   const bridge = new Bridge(carrier);
   bridge.handle('init', ((given: ServerInit) => startServer(bridge, given)) as never);
   bridge.handle('stop', (() => stopServer()) as never);
+  // File → Reset admin password: only the main process can ask (no HTTP route takes a recovery code), see recover.ts
+  bridge.handle('recoverAdmins', (() => recoverableAdmins(db)) as never);
+  bridge.handle('recoverAdmin', ((request: unknown) => handleRecoverRequest(db, request)) as never);
   return bridge;
 }
 

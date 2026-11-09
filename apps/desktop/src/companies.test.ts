@@ -116,4 +116,14 @@ describe('a company file that cannot be opened at the start', () => {
     expect(damagedFileChoices(true).choices).toEqual(['retry', 'aside', 'quit']);
     expect(damagedFileChoices(false).choices).toEqual(['retry', 'aside', 'first', 'quit']);
   });
+
+  it('a file that is fine but had no room for its copy before an update is never offered to be set aside for a backup', () => {
+    expect(damagedFileChoices(true, 'update_copy').choices).toEqual(['retry', 'quit']);
+    expect(damagedFileChoices(false, 'update_copy').choices).toEqual(['retry', 'first', 'quit']);
+    for (const main of [true, false]) {
+      const { choices, defaultId, cancelId } = damagedFileChoices(main, 'update_copy');
+      expect(choices[defaultId]).toBe('retry');
+      expect(choices[cancelId]).toBe('quit');
+    }
+  });
 });

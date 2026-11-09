@@ -241,6 +241,156 @@ export function setSeparateDuties(db: Db, on: boolean, actor: Actor): void {
   });
 }
 
+// ——— admin recovery ———
+
+/**
+ * A forgotten admin password must not lock a company out of its own books, and must not open a way around sign-in.
+ * When sign-in is switched on the admin is shown a recovery code once; only its scrypt hash is kept (like a password).
+ * The code, or Windows itself on this PC, resets an admin password, and only from the Windows app's own menu (through
+ * its private bridge to this server, see apps/desktop): there is no web or network route that takes either. Each use is
+ * written to the audit log, and a used code is replaced by a new one.
+ */
+const RECOVERY_SETTING = 'admin_recovery_hash';
+/** Crockford's base32: no I, L, O or U, so a code read off paper is not misread. 25 characters, 125 random bits. */
+const RECOVERY_ALPHABET = '0123456789ABCDEFGHJKMNPQRSTVWXYZ';
+const RECOVERY_LENGTH = 25;
+
+/** A new recovery code, as shown: five groups of five. */
+export function makeRecoveryCode(): string {
+  const bytes = randomBytes(RECOVERY_LENGTH);
+  // 32 symbols: the low 5 bits of each byte are uniform
+  const chars = [...bytes].map((b) => RECOVERY_ALPHABET[b & 31]!).join('');
+  return chars.match(/.{5}/g)!.join('-');
+}
+
+/** A code as typed (spaces, dashes, small letters, O for 0, I or L for 1) in its stored form, or null when it can't be one. */
+export function normalizeRecoveryCode(typed: string): string | null {
+  if (typeof typed !== 'string' || typed.length > 80) return null;
+  const plain = typed.toUpperCase().replace(/[\s-]/g, '').replace(/O/g, '0').replace(/[IL]/g, '1');
+  return plain.length === RECOVERY_LENGTH && [...plain].every((c) => RECOVERY_ALPHABET.includes(c)) ? plain : null;
+}
+
+export function hasRecoveryCode(db: Db): boolean {
+  return !!readSetting(db, RECOVERY_SETTING);
+}
+
+/** Makes a new recovery code (the one before stops working) and gives it once; only its hash is kept. */
+export async function issueRecoveryCode(db: Db, by: string): Promise<string> {
+  const code = makeRecoveryCode();
+  const hash = await hashPassword(normalizeRecoveryCode(code)!);
+  transaction(db, () => {
+    writeSetting(db, RECOVERY_SETTING, hash);
+    audit(db, by, 'recovery_code', 'settings', null);
+  });
+  return code;
+}
+
+/** An active admin by username, or null. */
+function activeAdmin(db: Db, username: string): UserRow | null {
+  if (!USERNAME_PATTERN.test(username)) return null;
+  const row = db.prepare('SELECT * FROM users WHERE username = ? AND active = 1').get(username) as unknown as UserRow | undefined;
+  return row && parseRoles(row.roles).includes('admin') ? row : null;
+}
+
+/** The new password goes in and every session of that admin ends. */
+function replaceAdminPassword(db: Db, row: UserRow, hash: string, by: string, details: Record<string, unknown>): void {
+  db.prepare('UPDATE users SET password_hash = ? WHERE id = ?').run(hash, row.id);
+  db.prepare('DELETE FROM sessions WHERE user_id = ?').run(row.id);
+  audit(db, by, 'password_recovered', 'user', row.id, { username: row.username, ...details });
+}
+
+/**
+ * Resets an active admin's password with the recovery code. Wrong tries count like sign-ins (after 5 in a row it
+ * waits, up to 15 minutes) and every try is audited. The code is used up: a new one is made and given back once.
+ */
+export async function recoverAdminWithCode(db: Db, input: { username: string; code: string; password: string }, via: string): Promise<{ recoveryCode: string }> {
+  const key = 'recovery';
+  assertNotLocked(key);
+  assertPassword(input.password);
+  const username = String(input.username ?? '').trim();
+  const code = normalizeRecoveryCode(input.code);
+  const stored = readSetting(db, RECOVERY_SETTING);
+  const row = activeAdmin(db, username);
+  // the same work whether or not there is a code, a user, or a well-formed code
+  const codeOk = await verifyPassword(code ?? 'x', stored ?? DUMMY_HASH);
+  if (!codeOk || !code || !stored || !row) {
+    countFailure(key);
+    audit(db, `${via}`.slice(0, 100), 'recovery_failed', 'user', row?.id ?? null, { username: username.slice(0, 64) });
+    throw new AppError(401, 'recovery_failed');
+  }
+  failures.delete(key);
+  const hash = await hashPassword(input.password);
+  const next = makeRecoveryCode();
+  const nextHash = await hashPassword(normalizeRecoveryCode(next)!);
+  transaction(db, () => {
+    // used once: checked again inside the transaction, so two tries with one code can't both get through
+    if (readSetting(db, RECOVERY_SETTING) !== stored) throw new AppError(401, 'recovery_failed');
+    replaceAdminPassword(db, row, hash, via, { method: 'recovery_code' });
+    writeSetting(db, RECOVERY_SETTING, nextHash);
+    audit(db, via, 'recovery_code', 'settings', null, { after: 'used' });
+  });
+  return { recoveryCode: next };
+}
+
+/** How a reset on this PC may be confirmed: Windows Hello only. Without Hello, only the recovery code resets an admin. */
+export type ThisPcResetMethod = 'windows_hello';
+
+/** What the audit log keeps of a reset tried on this PC: the Windows user and PC, the admin asked for, how it ended. */
+function auditThisPcAttempt(
+  db: Db, input: { username: string; windowsUser: string; computer: string }, rowId: string | null, details: Record<string, unknown>
+): void {
+  const windowsUser = String(input.windowsUser ?? '').slice(0, 100);
+  audit(db, `Windows: ${windowsUser}`, 'recovery_failed', 'user', rowId, {
+    username: String(input.username ?? '').slice(0, 64), windowsUser, computer: String(input.computer ?? '').slice(0, 100), ...details
+  });
+}
+
+/**
+ * Resets an active admin's password on this PC, confirmed by the signed-in Windows user with Windows Hello. Only the
+ * Windows app's main process can ask for this, through its private bridge to this server. Any other confirmation is
+ * refused (a click on a dialog proves nothing about who is at the PC). Every try is audited: who (the Windows user
+ * and PC), for which admin, and how it ended.
+ */
+export async function resetAdminOnThisPc(
+  db: Db, input: { username: string; password: string; windowsUser: string; computer: string; method: ThisPcResetMethod }
+): Promise<void> {
+  const row = activeAdmin(db, String(input.username ?? '').trim());
+  if (input.method !== 'windows_hello') {
+    auditThisPcAttempt(db, input, row?.id ?? null, { method: String(input.method).slice(0, 40), outcome: 'method_refused' });
+    throw invalid([{ code: 'recovery_method_invalid' }]);
+  }
+  try {
+    assertPassword(input.password);
+  } catch (error) {
+    auditThisPcAttempt(db, input, row?.id ?? null, { method: input.method, outcome: 'password_invalid' });
+    throw error;
+  }
+  if (!row) {
+    auditThisPcAttempt(db, input, null, { method: input.method, outcome: 'not_admin' });
+    throw invalid([{ code: 'recovery_not_admin' }]);
+  }
+  const hash = await hashPassword(input.password);
+  const windowsUser = String(input.windowsUser).slice(0, 100);
+  transaction(db, () => {
+    replaceAdminPassword(db, row, hash, `Windows: ${windowsUser}`, { method: input.method, windowsUser, computer: String(input.computer).slice(0, 100) });
+  });
+}
+
+/**
+ * A reset on this PC that Windows did not confirm (no Windows Hello here, cancelled, or it failed): nothing changes,
+ * but the try is written to the audit log like any other.
+ */
+export function auditUnconfirmedReset(db: Db, input: { username: string; windowsUser: string; computer: string; outcome: string }): void {
+  const row = activeAdmin(db, String(input.username ?? '').trim());
+  auditThisPcAttempt(db, input, row?.id ?? null, { method: 'windows_hello', outcome: String(input.outcome).slice(0, 40) });
+}
+
+/** The active admins that can be reset (usernames), for the Windows app's reset window. */
+export function adminUsernames(db: Db): string[] {
+  return (db.prepare('SELECT username, roles FROM users WHERE active = 1 ORDER BY created_at').all() as { username: string; roles: string }[])
+    .filter((u) => parseRoles(u.roles).includes('admin')).map((u) => u.username);
+}
+
 // ——— who is asking ———
 
 /** Without sign-in: the owner, under the name typed on this PC (kept from before users existed). */

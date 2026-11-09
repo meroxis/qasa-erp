@@ -13,14 +13,17 @@ import { GuideLink } from '../industry/GuideLink.tsx';
 import { UpdateSettings } from '../industry/UpdateSettings.tsx';
 import { LegalPanel } from '../industry/LegalPanel.tsx';
 import { GraphicsSetting } from '../industry/GraphicsSetting.tsx';
+import { PrintersCard } from '../industry/Printers.tsx';
 import { CompaniesSetting } from './Companies.tsx';
 import { cloudChoices } from './cloud-providers.ts';
+import { backupNoticeKey } from '../industry/BackupNotice.tsx';
 
 /** Language and display are each person's own; the company's settings are for admins. */
 export function Settings({ admin }: { admin: boolean }) {
   return (
     <div className="stack" style={{ maxWidth: 1000 }}>
       <DisplaySettings />
+      <PrintersCard />
       {admin && <CompanySettings />}
       {admin && <CompaniesSetting />}
       <HelpPanel />
@@ -747,29 +750,30 @@ function BackupCard() {
           </div>
           <div className="small">{status.last ? t('bkLast', { when: when(status.last.at), size: size(status.last.size) }) : t('bkNone')}</div>
           {status.lastError && <div className="alert bad" role="alert">{t('bkFailed', { e: status.lastError })}</div>}
-          {status.available && (
-            <div className="stack" style={{ gap: 8, padding: 12, border: '1px solid var(--line)', borderRadius: 10 }}>
-              <div className="row" style={{ justifyContent: 'space-between' }}>
-                <strong>{t('bkEncryption')}</strong>
-                <span className={'chip ' + (status.encrypted ? 'ok' : status.cloudFolder ? 'warn' : '')}>{status.encrypted ? t('bkEncrypted') : t('bkNotEncrypted')}</span>
-              </div>
-              {!status.encrypted && status.cloudFolder && <div className="alert warn" role="status">{t('bkCloudWarning')}</div>}
-              <div className="muted small">{t('bkEncryptionHelp')}</div>
-              <div className="grid-2">
-                <label className="field"><span>{status.encrypted ? t('bkNewPassword') : t('bkPassword')}</span><input className="input ltr" type="password" autoComplete="new-password" maxLength={200} value={newPassword.a} onChange={(e) => setNewPassword({ ...newPassword, a: e.target.value })} /></label>
-                <label className="field"><span>{t('bkPasswordAgain')}</span><input className="input ltr" type="password" autoComplete="new-password" maxLength={200} value={newPassword.b} onChange={(e) => setNewPassword({ ...newPassword, b: e.target.value })} /></label>
-              </div>
-              {passwordProblem && <div className="small" style={{ color: 'var(--bad)' }}>{passwordProblem}</div>}
-              <div className="row" style={{ gap: 8, flexWrap: 'wrap' }}>
-                <button type="button" className="btn primary" disabled={busy || restarting || !newPassword.a || newPassword.a !== newPassword.b || newPassword.a.length < 10} onClick={() => void savePassword(newPassword.a)}>{status.encrypted ? t('bkChangePassword') : t('bkEncrypt')}</button>
-                {status.encrypted && <button type="button" className="btn" disabled={busy || restarting} onClick={() => { if (window.confirm(t('bkStopEncryptingQ'))) void savePassword(null); }}>{t('bkStopEncrypting')}</button>}
-              </div>
+          {!status.lastError && backupNoticeKey(status) && <div className="alert warn" role="status">{t(backupNoticeKey(status)!)}</div>}
+          {/* encrypting copies is for every plan: a saved copy may go to a USB disk or a synced folder */}
+          <div className="stack" style={{ gap: 8, padding: 12, border: '1px solid var(--line)', borderRadius: 10 }}>
+            <div className="row" style={{ justifyContent: 'space-between' }}>
+              <strong>{t('bkEncryption')}</strong>
+              <span className={'chip ' + (status.encrypted ? 'ok' : status.cloudFolder ? 'warn' : '')}>{status.encrypted ? t('bkEncrypted') : t('bkNotEncrypted')}</span>
             </div>
-          )}
+            {!status.encrypted && status.cloudFolder && <div className="alert warn" role="status">{t('bkCloudWarning')}</div>}
+            <div className="muted small">{t('bkEncryptionHelp')}</div>
+            <div className="grid-2">
+              <label className="field"><span>{status.encrypted ? t('bkNewPassword') : t('bkPassword')}</span><input className="input ltr" type="password" autoComplete="new-password" maxLength={200} value={newPassword.a} onChange={(e) => setNewPassword({ ...newPassword, a: e.target.value })} /></label>
+              <label className="field"><span>{t('bkPasswordAgain')}</span><input className="input ltr" type="password" autoComplete="new-password" maxLength={200} value={newPassword.b} onChange={(e) => setNewPassword({ ...newPassword, b: e.target.value })} /></label>
+            </div>
+            {passwordProblem && <div className="small" style={{ color: 'var(--bad)' }}>{passwordProblem}</div>}
+            <div className="row" style={{ gap: 8, flexWrap: 'wrap' }}>
+              <button type="button" className="btn primary" disabled={busy || restarting || !newPassword.a || newPassword.a !== newPassword.b || newPassword.a.length < 10} onClick={() => void savePassword(newPassword.a)}>{status.encrypted ? t('bkChangePassword') : t('bkEncrypt')}</button>
+              {status.encrypted && <button type="button" className="btn" disabled={busy || restarting} onClick={() => { if (window.confirm(t('bkStopEncryptingQ'))) void savePassword(null); }}>{t('bkStopEncrypting')}</button>}
+            </div>
+          </div>
           <CloudBackup encrypted={status.encrypted} disabled={restarting} onRestarting={() => setRestarting(true)} />
           <ErrorBox error={error} />
           <div className="row" style={{ gap: 8, flexWrap: 'wrap' }}>
-            {status.available && <button type="button" className="btn primary" disabled={busy || restarting} onClick={() => act(() => api.runBackup(), t('saved'))}>{t('bkNow')}</button>}
+            {/* every plan, Free included: only the automatic daily copies need the plan */}
+            <button type="button" className="btn primary" disabled={busy || restarting} onClick={() => act(() => api.runBackup(), t('bkSavedNow'))}>{t('bkNow')}</button>
             {status.available && (
               <button type="button" className="btn" disabled={busy || restarting} onClick={() => act(() => api.setBackup({ on: !status.on }), t('saved'))}>
                 {status.on ? t('bkTurnOff') : t('bkTurnOn')}

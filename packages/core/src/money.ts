@@ -108,6 +108,30 @@ export function formatAmount(amountMinor: number, currency: CurrencyCode, digits
   return digits === 'eastern' ? toEasternDigits(text).replace('.', '٫') : text;
 }
 
+/** Unicode left-to-right isolate (LRI … PDI). */
+export const LTR_ISOLATE_START = '⁦';
+export const LTR_ISOLATE_END = '⁩';
+
+/**
+ * Keeps a signed number reading left to right inside Arabic or Kurdish text. Without the isolate the bidi algorithm
+ * moves a leading "-", "−" or "+" to the right of the digits, so -2 shows as "2-". Text that already is isolated
+ * is returned unchanged, so wrapping twice is harmless.
+ */
+export function ltrIsolate(text: string): string {
+  if (text.startsWith(LTR_ISOLATE_START) && text.endsWith(LTR_ISOLATE_END)) return text;
+  return LTR_ISOLATE_START + text + LTR_ISOLATE_END;
+}
+
+/** Removes the isolate marks again, for text that leaves the screen (CSV cells, clipboard, parsing). */
+export function stripBidiIsolates(text: string): string {
+  return text.replace(/[⁦-⁩]/g, '');
+}
+
+/** True when the formatted number starts with a sign ("-", "−" or "+"), the case that needs an isolate in RTL. */
+export function hasLeadingSign(text: string): boolean {
+  return /^[-−+]/.test(text);
+}
+
 export function formatInteger(value: number, digits: DigitStyle = 'western'): string {
   const text = String(value).replace(/\B(?=(\d{3})+(?!\d))/g, ',');
   return digits === 'eastern' ? toEasternDigits(text) : text;

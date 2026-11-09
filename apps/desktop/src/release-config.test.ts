@@ -171,16 +171,37 @@ describe('the release notes of 1.0.1 (kept as shipped)', () => {
   });
 });
 
+describe('the release notes of 1.0.2 (kept as shipped)', () => {
+  const notes = read('apps/desktop/release-notes/1.0.2.md');
+  const section = (lang: 'ar' | 'en' | 'ku') => new RegExp(`^::: ${lang}\\n([\\s\\S]*?)^:::$`, 'm').exec(notes)?.[1] ?? '';
+
+  it('says Google Drive backup connects again and that the 1.0.1 sign-in error invalid_client is fixed', () => {
+    expect(section('en')).toContain('**Google Drive backup connects again.**');
+    expect(section('ar')).toContain('**ربط Google Drive يعمل من جديد.**');
+    expect(section('ku')).toContain('**پەیوەستکردنی Google Drive دیسان کار دەکات.**');
+    for (const lang of ['ar', 'en', 'ku'] as const) expect(section(lang)).toMatch(/1\.0\.1[\s\S]*Error 401: invalid_client/);
+  });
+
+  it('says OneDrive comes later, and never that it works now', () => {
+    expect(section('en')).toContain('**OneDrive comes in a later update.**');
+    expect(section('ar')).toContain('**OneDrive يأتي في تحديث لاحق.**');
+    expect(section('ku')).toContain('**OneDrive لە نوێکردنەوەیەکی داهاتوودا دێت.**');
+    expect(notes).not.toMatch(/Google Drive and OneDrive|Google Drive وOneDrive|Google Drive و OneDrive/);
+  });
+});
+
 describe('the release notes and the Store "What\'s new" of this version', () => {
   const version = (JSON.parse(read('apps/desktop/package.json')) as { version: string }).version;
   const notes = read(`apps/desktop/release-notes/${version}.md`);
   const section = (lang: 'ar' | 'en' | 'ku') => new RegExp(`^::: ${lang}\\n([\\s\\S]*?)^:::$`, 'm').exec(notes)?.[1] ?? '';
-  const listing = JSON.parse(read('apps/desktop/store-listing.json')) as { listings: Record<'en-us' | 'ar' | 'ku-arab', { releaseNotes: string }> };
+  const listing = JSON.parse(read('apps/desktop/store-listing.json')) as {
+    listings: Record<'en-us' | 'ar' | 'ku-arab', { releaseNotes: string; features: string[]; description: string }>;
+  };
 
   const store = listing.listings;
 
-  it('is 1.0.2, the same in the app, the core and the lock file, with notes in Arabic, English and Kurdish', () => {
-    expect(version).toBe('1.0.2');
+  it('is 1.0.3, the same in the app, the core and the lock file, with notes in Arabic, English and Kurdish', () => {
+    expect(version).toBe('1.0.3');
     expect(read('packages/core/src/version.ts')).toContain(`APP_VERSION = '${version}'`);
     const lock = JSON.parse(read('package-lock.json')) as { packages: Record<string, { version?: string }> };
     expect(lock.packages['apps/desktop']?.version).toBe(version);
@@ -188,45 +209,56 @@ describe('the release notes and the Store "What\'s new" of this version', () => 
     for (const lang of ['en-us', 'ar', 'ku-arab'] as const) expect(store[lang].releaseNotes).toContain(version);
   });
 
-  it('says Google Drive backup connects again and that the 1.0.1 sign-in error invalid_client is fixed', () => {
-    expect(section('en')).toContain('**Google Drive backup connects again.**');
-    expect(section('ar')).toContain('**ربط Google Drive يعمل من جديد.**');
-    expect(section('ku')).toContain('**پەیوەستکردنی Google Drive دیسان کار دەکات.**');
-    for (const lang of ['ar', 'en', 'ku'] as const) expect(section(lang)).toMatch(/1\.0\.1[\s\S]*Error 401: invalid_client/);
-    expect(store['en-us'].releaseNotes).toMatch(/Google Drive backup connects again: the 1\.0\.1 sign-in error \(invalid_client\) is fixed/);
-    expect(store.ar.releaseNotes).toMatch(/ربط Google Drive يعمل من جديد[\s\S]*1\.0\.1 \(invalid_client\)/);
-    expect(store['ku-arab'].releaseNotes).toMatch(/پەیوەستکردنی Google Drive دیسان کار دەکات[\s\S]*1\.0\.1 \(invalid_client\) چاک کراوە/);
+  it('keeps each Store "What\'s new" within the 1500 characters Partner Center takes, and each feature within 200', () => {
+    for (const lang of ['en-us', 'ar', 'ku-arab'] as const) {
+      expect(store[lang].releaseNotes.length).toBeLessThanOrEqual(1500);
+      expect(store[lang].features.length).toBeLessThanOrEqual(20);
+      for (const feature of store[lang].features) expect(feature.length).toBeLessThanOrEqual(200);
+    }
   });
 
-  it('writes the Kurdish suffix straight onto Latin words, with no tatweel', () => {
+  it('names the printer settings, where they are, the 80 mm and 58 mm rolls and printing without the print window', () => {
+    expect(section('en')).toContain('Settings → **Printers**');
+    expect(section('ar')).toContain('الإعدادات ← **الطابعات**');
+    expect(section('ku')).toContain('ڕێکخستنەکان ← **چاپکەرەکان**');
+    for (const lang of ['ar', 'en', 'ku'] as const) expect(section(lang)).toMatch(/80[\s\S]*58/);
+    expect(section('en')).toContain('**Print without asking**');
+    expect(section('ar')).toContain('**الطباعة دون سؤال**');
+    expect(section('ku')).toContain('**چاپ بێ پرسیار**');
+    expect(store['en-us'].releaseNotes).toMatch(/Settings → Printers[\s\S]*80 mm and 58 mm[\s\S]*without the print window/);
+    expect(store.ar.releaseNotes).toMatch(/الإعدادات ← الطابعات[\s\S]*80 مم و58 مم[\s\S]*دون نافذة الطباعة/);
+    expect(store['ku-arab'].releaseNotes).toMatch(/ڕێکخستنەکان ← چاپکەرەکان[\s\S]*80 ملم و 58 ملم[\s\S]*بێ پەنجەرەی چاپ/);
+    expect(store['en-us'].features.some((f) => /printer for each kind of paper/.test(f))).toBe(true);
+    expect(store.ar.features.some((f) => /طابعة لكل نوع من الأوراق/.test(f))).toBe(true);
+    expect(store['ku-arab'].features.some((f) => /چاپکەرێک بۆ هەر جۆرە پەڕەیەک/.test(f))).toBe(true);
+  });
+
+  it('names the 6-column trial balance, backups on every plan, the copy before updates, the recovery code and saved counts', () => {
+    expect(section('en')).toContain('opening, period and closing, each as debit and credit');
+    expect(section('ar')).toContain('الافتتاحي والحركة خلال المدة والختامي، كل منها مدين ودائن');
+    expect(section('ku')).toContain('سەرەتا، جووڵەی ماوەکە و کۆتایی، هەر یەکەیان قەرزار و قەرزدەر');
+    expect(section('en')).toContain('**Save a backup now**');
+    expect(section('ar')).toContain('**احفظ نسخة احتياطية الآن**');
+    expect(section('ku')).toContain('**ئێستا باکئەپێک پاشەکەوت بکە**');
+    expect(section('en')).toContain('File → **Reset admin password**');
+    expect(section('ar')).toContain('ملف ← **إعادة تعيين كلمة مرور المدير**');
+    expect(section('ku')).toContain('فایل ← **ڕێکخستنەوەی وشەی نهێنیی بەڕێوەبەر**');
+    for (const lang of ['ar', 'en', 'ku'] as const) expect(section(lang)).toContain('Windows Hello');
+    expect(section('en')).toContain('before an update changes the company file, a copy of it is kept');
+    expect(section('en')).toMatch(/saved on the server while you type[\s\S]*another PC/);
+    expect(section('ar')).toMatch(/يُحفظ الجرد على الخادم أثناء الكتابة[\s\S]*حاسوب آخر/);
+    expect(section('ku')).toMatch(/لەسەر سێرڤەر پاشەکەوت دەکرێت[\s\S]*کۆمپیوتەرێکی تر/);
+  });
+
+  it('never says the automatic daily backups came to Free: they stay with Pro and Business', () => {
+    const all = [notes, ...Object.values(store).flatMap((l) => [l.releaseNotes, ...l.features])].join('\n');
+    expect(all).not.toMatch(/automatic (daily )?backups? on every plan|daily backups? on (every plan|Free)/i);
+    expect(all).not.toMatch(/النسخ (الاحتياطي )?(اليومي|التلقائي) في كل الخطط|باکئەپی (ڕۆژانە|خۆکار)[^.]*هەموو پلانەکان/);
+  });
+
+  it('writes Kurdish with no tatweel', () => {
     expect(section('ku')).not.toContain('ـ');
     expect(store['ku-arab'].releaseNotes).not.toContain('ـ');
-    expect(section('ku')).toContain('Driveەکەتدا');
-    expect(store['ku-arab'].releaseNotes).toContain('Driveەکەتدا');
-  });
-
-  it('still says where cloud backup is, and that only encrypted copies go up to files the app made itself', () => {
-    expect(section('en')).toContain('Settings → Backups → Cloud backup → **Connect Google Drive**');
-    expect(section('en')).toMatch(/Only \*\*encrypted\*\* copies go up/);
-    expect(section('en')).toMatch(/only sees the files it makes itself/);
-    expect(section('ar')).toContain('الإعدادات ← النسخ الاحتياطية ← النسخ إلى السحابة ← **ربط Google Drive**');
-    expect(section('ar')).toContain('**مشفّرة**');
-    expect(section('ku')).toContain('ڕێکخستنەکان ← باکئەپەکان ← باکئەپ بۆ هەور ← **پەیوەستکردنی Google Drive**');
-    expect(section('ku')).toContain('**شفرەکراو**');
-    expect(store['en-us'].releaseNotes).toMatch(/Settings → Backups → Cloud backup → Connect Google Drive[\s\S]*Only encrypted copies go up/);
-    expect(store.ar.releaseNotes).toMatch(/الإعدادات ← النسخ الاحتياطية ← النسخ إلى السحابة ← ربط Google Drive[\s\S]*نسخ مشفّرة/);
-    expect(store['ku-arab'].releaseNotes).toMatch(/ڕێکخستنەکان ← باکئەپەکان ← باکئەپ بۆ هەور ← پەیوەستکردنی Google Drive[\s\S]*کۆپیی شفرەکراو/);
-  });
-
-  it('says OneDrive comes later, and never that it works now', () => {
-    expect(section('en')).toContain('**OneDrive comes in a later update.**');
-    expect(section('ar')).toContain('**OneDrive يأتي في تحديث لاحق.**');
-    expect(section('ku')).toContain('**OneDrive لە نوێکردنەوەیەکی داهاتوودا دێت.**');
-    expect(store['en-us'].releaseNotes).toContain('OneDrive comes in a later update');
-    expect(store.ar.releaseNotes).toContain('OneDrive يأتي في تحديث لاحق');
-    expect(store['ku-arab'].releaseNotes).toContain('OneDrive لە نوێکردنەوەیەکی داهاتوودا دێت');
-    const all = [notes, ...Object.values(store).map((l) => l.releaseNotes)].join('\n');
-    expect(all).not.toMatch(/Google Drive and OneDrive|Google Drive وOneDrive|Google Drive و OneDrive/);
   });
 
   it('still tells the holders of 0.1.8 licences to connect once in the first month, in each language and in the Store text', () => {

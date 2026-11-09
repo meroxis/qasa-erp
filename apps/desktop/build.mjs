@@ -95,9 +95,9 @@ if (withPro) {
   });
 }
 
-// The windows' bridges (preloads): the app window's (its language) and the "Connect to an office server" window's,
-// whose page (below) has one script, allowed by hash.
-for (const preload of ['app-preload', 'connect-preload']) {
+// The windows' bridges (preloads): the app window's (its language), the "Connect to an office server" window's and
+// the "Reset admin password" window's, whose pages (below) each have one script, allowed by hash.
+for (const preload of ['app-preload', 'connect-preload', 'recover-preload']) {
   await build({
     configFile: false,
     root: here,
@@ -116,10 +116,13 @@ for (const preload of ['app-preload', 'connect-preload']) {
 }
 // The browser reads a page with CRLF as LF and hashes the script that way; a Windows checkout has CRLF, so the page
 // is written with LF and hashed as the browser will see it.
-const page = readFileSync(join(here, 'src', 'connect.html'), 'utf8').replace(/\r\n?/g, '\n');
-const script = /<script>([\s\S]*?)<\/script>/.exec(page)?.[1];
-if (script === undefined) throw new Error('connect.html has no script');
-writeFileSync(join(dist, 'connect.html'), page.replace('{{scriptHash}}', createHash('sha256').update(script).digest('base64')));
+// (the same for the "Reset admin password" window's page)
+for (const name of ['connect.html', 'recover.html']) {
+  const page = readFileSync(join(here, 'src', name), 'utf8').replace(/\r\n?/g, '\n');
+  const script = /<script>([\s\S]*?)<\/script>/.exec(page)?.[1];
+  if (script === undefined) throw new Error(`${name} has no script`);
+  writeFileSync(join(dist, name), page.replace('{{scriptHash}}', createHash('sha256').update(script).digest('base64')));
+}
 
 cpSync(join(root, 'apps', 'web', 'dist'), join(dist, 'web'), { recursive: true });
 copyFileSync(join(here, 'build', 'icon.png'), join(dist, 'icon.png'));
@@ -134,4 +137,4 @@ const addon = join(root, 'native', 'licence', 'dist', 'qasa_licence.node');
 const withNative = existsSync(addon);
 if (withNative) copyFileSync(addon, join(nativeOut, 'qasa_licence.node'));
 console.log(withNative ? 'Licence addon: included' : 'Licence addon: not built (node native/licence/build.mjs)');
-console.log(`dist/ ready: main.cjs, server-process.cjs${withPro ? ', db-worker.cjs' : ''}, app-preload.cjs, connect-preload.cjs, connect.html, web/, icon.png`);
+console.log(`dist/ ready: main.cjs, server-process.cjs${withPro ? ', db-worker.cjs' : ''}, app-preload.cjs, connect-preload.cjs, recover-preload.cjs, connect.html, recover.html, web/, icon.png`);

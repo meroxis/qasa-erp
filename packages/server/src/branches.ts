@@ -174,6 +174,9 @@ export function checkBranchRequest(db: Db, actor: Actor | null, method: string, 
   };
   if (path.startsWith('/api/invoices/:id')) {
     ofWarehouse('SELECT warehouse_id FROM invoices WHERE id = ?');
+  } else if (path.startsWith('/api/adjustments/counts/:id')) {
+    // a count session belongs to its warehouse's branch
+    ofWarehouse('SELECT warehouse_id FROM stock_counts WHERE id = ?');
   } else if (path.startsWith('/api/adjustments/:id')) {
     // a stock adjustment or a stock count belongs to its warehouse's branch
     ofWarehouse('SELECT warehouse_id FROM stock_adjustments WHERE id = ?');

@@ -28,8 +28,10 @@ import { ADJ_TEXT } from './i18n/adjustments.ts';
 import { PO_TEXT } from './i18n/purchasing.ts';
 import { COMPANY_TEXT } from './i18n/companies.ts';
 import { LABEL_TEXT } from './i18n/labels.ts';
+import { PRINTER_TEXT } from './i18n/printers.ts';
+import { SAFETY_TEXT } from './i18n/safety.ts';
 import { UI_TEXT } from './i18n/ui.ts';
-import { formatAmount, formatDate, formatInteger, LANGS, toEasternDigits, type CurrencyCode, type DigitStyle, type Lang, type Names } from '@qasa/core';
+import { formatAmount, formatDate, formatInteger, formatQty, hasLeadingSign, LANGS, ltrIsolate, toEasternDigits, type CurrencyCode, type DigitStyle, type Lang, type Names } from '@qasa/core';
 
 /** Every UI string in Arabic, English and Kurdish (Sorani) — in that order. */
 const BASE = {
@@ -632,6 +634,11 @@ const BASE = {
   err_trial_unavailable: ['استُخدم الشهر المجاني على هذا الحاسوب من قبل.', 'The free month was already used on this PC.', 'مانگی بەخۆڕایی پێشتر لەسەر ئەم کۆمپیوتەرە بەکارهاتووە.'],
 
   err_date_invalid: ['التاريخ غير صحيح', 'The date is not valid', 'بەروار دروست نییە'],
+  err_date_range_reversed: [
+    'تاريخ "من" بعد تاريخ "إلى". اختر "من" قبل "إلى" أو في اليوم نفسه.',
+    'The From date is later than the To date. Pick a From date on or before the To date.',
+    'بەرواری "لە" دوای بەرواری "تا"یە. بەرواری "لە" پێش "تا" یان هەمان ڕۆژ هەڵبژێرە.'
+  ],
   err_period_locked: ['الفترة {p} مقفلة', 'Period {p} is locked', 'ماوەی {p} داخراوە'],
   err_currency_invalid: ['العملة غير صحيحة', 'Invalid currency', 'دراو دروست نییە'],
   err_rate_invalid: ['أدخل سعر الدولار', 'Enter the USD rate', 'نرخی دۆلار بنووسە'],
@@ -711,7 +718,7 @@ const BASE = {
   bkHelp: ['نسخة من ملف الشركة كل يوم في مجلد تختاره. اختر مجلد OneDrive أو Google Drive أو قرص USB لتبقى نسخة سليمة حتى لو تعطّل هذا الحاسوب.', 'A copy of the company file every day, in a folder you choose. Pick a OneDrive, Google Drive or USB folder, so a copy stays safe even if this PC fails.', 'هەموو ڕۆژێک کۆپییەک لە فایلی کۆمپانیا لە بوخچەیەکدا کە هەڵیدەبژێریت. بوخچەیەکی OneDrive یان Google Drive یان USB هەڵبژێرە، تا ئەگەر ئەم کۆمپیوتەرە تێکچوو کۆپییەکی سەلامەت بمێنێت.'],
   bkOfficial: ['النسخ الاحتياطي التلقائي جزء من Pro في تطبيق قاصة ERP لويندوز.', 'Automatic backups come with Pro in the Qasa ERP app for Windows.', 'باکئەپی خۆکار بەشێکە لە Pro لە بەرنامەی قاسە ERP بۆ ویندۆز.'],
   bkManual: ['ويمكنك دائماً نسخ ملف الشركة بنفسك: قائمة «ملف» ← «فتح مجلد البيانات».', 'You can always copy the company file yourself: File → Open data folder.', 'هەمیشە دەتوانیت فایلی کۆمپانیا خۆت کۆپی بکەیت: «فایل» ← «کردنەوەی بوخچەی داتا».'],
-  bkNeedsPro: ['النسخ التلقائي يحتاج خطة Pro أو Business. استرجاع النسخ الموجودة متاح دائماً.', 'Automatic backups need the Pro or Business plan. Restoring the copies you have is always possible.', 'باکئەپی خۆکار پێویستی بە پلانی Pro یان Business هەیە. گەڕاندنەوەی ئەو کۆپییانەی هەتە هەمیشە دەکرێت.'],
+  bkNeedsPro: ['النسخ التلقائي اليومي يحتاج خطة Pro أو Business. أما «احفظ نسخة احتياطية الآن» واسترجاع النسخ فمتاحان في كل الخطط.', 'Automatic daily backups need the Pro or Business plan. Save a backup now and restoring copies work on every plan.', 'باکئەپی خۆکاری ڕۆژانە پێویستی بە پلانی Pro یان Business هەیە. «ئێستا باکئەپێک پاشەکەوت بکە» و گەڕاندنەوەی کۆپییەکان لە هەموو پلانەکاندا کار دەکەن.'],
   bkFolder: ['المجلد', 'Folder', 'بوخچە'],
   bkChooseFolder: ['اختيار المجلد…', 'Choose folder…', 'هەڵبژاردنی بوخچە…'],
   bkKeep: ['الاحتفاظ بآخر', 'Keep the last', 'هێشتنەوەی دوایین'],
@@ -719,7 +726,7 @@ const BASE = {
   bkLast: ['آخر نسخة: {when} ({size})', 'Last copy: {when} ({size})', 'دوایین کۆپی: {when} ({size})'],
   bkNone: ['لا توجد نسخة بعد.', 'No copy yet.', 'هێشتا هیچ کۆپییەک نییە.'],
   bkFailed: ['فشلت آخر محاولة نسخ: {e}', 'The last backup failed: {e}', 'دوایین باکئەپ سەرکەوتوو نەبوو: {e}'],
-  bkNow: ['انسخ الآن', 'Back up now', 'ئێستا باکئەپ بکە'],
+  bkNow: ['احفظ نسخة احتياطية الآن', 'Save a backup now', 'ئێستا باکئەپێک پاشەکەوت بکە'],
   bkTurnOn: ['تشغيل النسخ اليومي', 'Switch on daily backups', 'هەڵکردنی باکئەپی ڕۆژانە'],
   bkTurnOff: ['إيقاف النسخ اليومي', 'Switch off daily backups', 'کوژاندنەوەی باکئەپی ڕۆژانە'],
   bkCopiesTitle: ['النسخ في المجلد', 'Copies in the folder', 'کۆپییەکانی ناو بوخچەکە'],
@@ -984,7 +991,7 @@ const BASE = {
 
 /** The industry features keep their texts in files of their own (i18n/), in the same three languages. */
 const D = { ...BASE, ...REAL_ESTATE_TEXT, ...MOBILE_TEXT, ...PARTS_TEXT, ...ENGINEERING_TEXT,
-  ...PAYROLL_TEXT, ...POS_TEXT, ...QUOTES_TEXT, ...PIPELINE_TEXT, ...MEDIA_TEXT, ...BRIEF_TEXT, ...CLOUD_TEXT, ...RELAY_TEXT, ...ACTIVATION_TEXT, ...FX_TEXT, ...VERIFY_TEXT, ...GEN_TEXT, ...WEBAPI_TEXT, ...PHONE_TEXT, ...USAGE_TEXT, ...SOLAR_TEXT, ...LEGAL_TEXT, ...BRANCH_TEXT, ...BANK_TEXT, ...WAVE2_TEXT, ...ASSET_TEXT, ...ADJ_TEXT, ...PO_TEXT, ...COMPANY_TEXT, ...LABEL_TEXT, ...UI_TEXT };
+  ...PAYROLL_TEXT, ...POS_TEXT, ...QUOTES_TEXT, ...PIPELINE_TEXT, ...MEDIA_TEXT, ...BRIEF_TEXT, ...CLOUD_TEXT, ...RELAY_TEXT, ...ACTIVATION_TEXT, ...FX_TEXT, ...VERIFY_TEXT, ...GEN_TEXT, ...WEBAPI_TEXT, ...PHONE_TEXT, ...USAGE_TEXT, ...SOLAR_TEXT, ...LEGAL_TEXT, ...BRANCH_TEXT, ...BANK_TEXT, ...WAVE2_TEXT, ...ASSET_TEXT, ...ADJ_TEXT, ...PO_TEXT, ...COMPANY_TEXT, ...LABEL_TEXT, ...PRINTER_TEXT, ...SAFETY_TEXT, ...UI_TEXT };
 
 export type Key = keyof typeof D;
 
@@ -1001,8 +1008,13 @@ export interface I18n {
   t(key: Key, vars?: Record<string, string | number>): string;
   /** Picks the name in the current language, falling back to the other two. */
   name(names: Names): string;
-  money(amountMinor: number, currency: CurrencyCode): string;
-  int(value: number): string;
+  /** An amount with its currency; `plus` shows "+" on positive amounts. Signed amounts keep their sign on the left in RTL. */
+  money(amountMinor: number, currency: CurrencyCode, opts?: { plus?: boolean }): string;
+  int(value: number, opts?: { plus?: boolean }): string;
+  /** A quantity in thousandths (2500 → 2.5); `plus` shows "+" on positive quantities. */
+  qty(milli: number, opts?: { plus?: boolean }): string;
+  /** Keeps signed or mixed text (e.g. "−12%") reading left to right in Arabic and Kurdish; plain text in English. */
+  ltr(text: string): string;
   date(iso: string): string;
   /** Applies the digit setting to arbitrary text (codes and numbers inside sentences). */
   digitsOf(text: string): string;
@@ -1012,6 +1024,12 @@ export function makeI18n(lang: Lang, digits: DigitStyle, setLang: (l: Lang) => v
   const index = LANGS.indexOf(lang);
   const eastern = digits === 'eastern' && lang !== 'en';
   const digitsOf = (text: string) => (eastern ? toEasternDigits(text) : text);
+  const style: DigitStyle = eastern ? 'eastern' : 'western';
+  const rtl = lang !== 'en';
+  // in Arabic and Kurdish a leading sign would otherwise land on the right of the digits ("2-" for -2)
+  const ltr = (text: string) => (rtl ? ltrIsolate(text) : text);
+  const signed = (text: string, number = text) => (hasLeadingSign(number) ? ltr(text) : text);
+  const plus = (text: string, value: number, opts?: { plus?: boolean }) => (opts?.plus && value > 0 ? '+' + text : text);
   const t = (key: Key, vars?: Record<string, string | number>) => {
     let text: string = D[key][index] ?? D[key][1];
     if (vars) for (const [k, v] of Object.entries(vars)) text = text.replace(`{${k}}`, digitsOf(String(v)));
@@ -1025,11 +1043,14 @@ export function makeI18n(lang: Lang, digits: DigitStyle, setLang: (l: Lang) => v
     setDigits,
     t,
     name: (n) => n[lang] || n.ar || n.en || n.ku,
-    money: (amountMinor, currency) => {
-      const text = formatAmount(amountMinor, currency, eastern ? 'eastern' : 'western');
-      return currency === 'USD' ? '$' + text : text + ' ' + t('iqdShort');
+    money: (amountMinor, currency, opts) => {
+      const text = plus(formatAmount(amountMinor, currency, style), amountMinor, opts);
+      // the sign (and "$") stay with the digits; the dinar abbreviation stays where it always was
+      return currency === 'USD' ? signed('$' + text, text) : signed(text) + ' ' + t('iqdShort');
     },
-    int: (value) => formatInteger(value, eastern ? 'eastern' : 'western'),
+    int: (value, opts) => signed(plus(formatInteger(value, style), value, opts)),
+    qty: (milli, opts) => signed(plus(formatQty(milli, style), milli, opts)),
+    ltr,
     date: (iso) => digitsOf(formatDate(iso)),
     digitsOf
   };
