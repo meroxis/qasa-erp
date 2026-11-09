@@ -43,7 +43,11 @@ export function TrialBalance() {
   const [to, setTo] = useState(todayIso());
   // From later than To is no period: say so, and don't ask the server for it
   const reversed = isReversedRange(from || undefined, to || undefined);
-  const { data, error } = useLoad(() => (reversed ? Promise.resolve(null) : api.trialBalance(from || undefined, to || undefined)), [from, to]);
+  const loaded = useLoad(() => (reversed ? Promise.resolve(null) : api.trialBalance(from || undefined, to || undefined).then((report) => ({ from, to, report }))), [from, to]);
+  const { error } = loaded;
+  // a report shows (and exports) only for the dates it was made for: while the next one loads, or when the range turns
+  // invalid, the previous figures are gone at once instead of staying on screen (and in Export) under the new dates
+  const data = !reversed && loaded.data && loaded.data.from === from && loaded.data.to === to ? loaded.data.report : null;
 
   const rows = data?.rows ?? [];
   const ok = data && data.totalDebit === data.totalCredit && data.openingDebitTotal === data.openingCreditTotal && data.balanceDebitTotal === data.balanceCreditTotal;

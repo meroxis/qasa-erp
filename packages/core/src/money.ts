@@ -95,6 +95,19 @@ export function toEasternDigits(text: string): string {
 
 export type DigitStyle = 'western' | 'eastern';
 
+/**
+ * Puts the app's own wording (labels, messages, help texts) in one digit style, so a screen never mixes "٣٠" from a
+ * text with "30" from an amount. With "western" every Eastern digit becomes 0–9. With "eastern" the numbers become
+ * Eastern, except numbers that belong to a Latin name or a dotted number ("AES-256", "80mm", "MariaDB 10.6",
+ * "192.168.1.30"), which stay as written. Only for app texts: what a user typed is never passed through this.
+ */
+export function textDigits(text: string, digits: DigitStyle): string {
+  if (digits === 'western') return toWesternDigits(text);
+  // runs between Arabic-script letters; a run with a Latin letter or a dotted number keeps its digits
+  return text.replace(/[^ء-يٮ-ۓەۮۯۺ-ۿ]+/g, (run) =>
+    /[A-Za-z]|\d\.\d/.test(run) ? run : run.replace(/[0-9]+%?/g, (n) => toEasternDigits(n)));
+}
+
 /** Formats minor units with thousands separators, e.g. 3600000 IQD → "3,600,000", 253512 USD → "2,535.12". */
 export function formatAmount(amountMinor: number, currency: CurrencyCode, digits: DigitStyle = 'western'): string {
   const decimals = CURRENCIES[currency].decimals;
