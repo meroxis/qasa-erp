@@ -212,7 +212,7 @@ function CompanySettings() {
           <tbody>
             {(audit.data ?? []).map((r) => (
               <tr key={r.id}>
-                <td className="num small">{i18n.digitsOf(new Date(r.at).toLocaleString('en-GB'))}</td>
+                <td className="num small">{i18n.dateTime(r.at)}</td>
                 <td>{r.user}</td>
                 <td>{actionLabel(r.action)} · {entityLabel(r.entity)} {r.entityId && <span className="muted small ltr">{r.entityId.length > 12 ? r.entityId.slice(0, 8) : r.entityId}</span>}</td>
               </tr>
@@ -649,7 +649,7 @@ export function BackupCopyRow({ copy, when, size, disabled, onRestore }: {
 
 /** A daily copy of the company file in a chosen folder, and restoring one (the Pro module; absent without it). */
 function BackupCard() {
-  const { t, digitsOf } = useI18n();
+  const { t, digitsOf, dateTime } = useI18n();
   const toast = useToast();
   const [status, setStatus] = useState<BackupStatus | null>(null);
   const [absent, setAbsent] = useState(false);
@@ -718,7 +718,7 @@ function BackupCard() {
 
   // isolated left-to-right, so "244 KB" and the date keep their order inside Arabic and Kurdish text
   const ltr = (s: string) => `\u2066${s}\u2069`;
-  const when = (iso: string) => ltr(digitsOf(new Date(iso).toLocaleString('en-GB', { dateStyle: 'medium', timeStyle: 'short' })));
+  const when = (iso: string) => dateTime(iso);
   const size = (bytes: number) => ltr(digitsOf(bytes >= 1048576 ? `${(bytes / 1048576).toFixed(1)} MB` : `${Math.max(1, Math.round(bytes / 1024))} KB`));
 
   return (
@@ -843,7 +843,7 @@ const cloudApi = {
  * is connected. Only encrypted copies go up, so it asks for the backup password first.
  */
 function CloudBackup({ encrypted, disabled, onRestarting }: { encrypted: boolean; disabled: boolean; onRestarting(): void }) {
-  const { t, digitsOf } = useI18n();
+  const { t, digitsOf, dateTime } = useI18n();
   const toast = useToast();
   const [status, setStatus] = useState<CloudStatus | null>(null);
   const [error, setError] = useState<unknown>(null);
@@ -865,7 +865,7 @@ function CloudBackup({ encrypted, disabled, onRestarting }: { encrypted: boolean
   if (!status) return error ? <ErrorBox error={error} /> : null;
   const name = (p: 'google' | 'onedrive') => t(p === 'google' ? 'cl_google' : 'cl_onedrive');
   const ltr = (v: string) => `⁦${v}⁩`;
-  const when = (iso: string) => ltr(digitsOf(new Date(iso).toLocaleString('en-GB', { dateStyle: 'medium', timeStyle: 'short' })));
+  const when = (iso: string) => dateTime(iso);
   const size = (bytes: number) => ltr(digitsOf(bytes >= 1048576 ? `${(bytes / 1048576).toFixed(1)} MB` : `${Math.max(1, Math.round(bytes / 1024))} KB`));
   const errorText = (code: string) => { const key = `err_${code}`; return isKey(key) ? t(key) : code; };
 
@@ -1059,7 +1059,7 @@ export const PHONE_APP_READY = false;
 
 /** Pairing a phone: a QR code the phone app scans, with this PC's key and a one-time secret (10 minutes). */
 export function PhonesCard({ ready = PHONE_APP_READY }: { ready?: boolean }) {
-  const { t, digitsOf, date } = useI18n();
+  const { t, digitsOf, date, dateTime, time } = useI18n();
   const toast = useToast();
   const [status, setStatus] = useState<PhonesStatus | null>(null);
   const [absent, setAbsent] = useState(false);
@@ -1129,7 +1129,7 @@ export function PhonesCard({ ready = PHONE_APP_READY }: { ready?: boolean }) {
               <tr key={d.id}>
                 <td>{d.name} {d.online && <span className="chip ok">{t('ph_online')}</span>}</td>
                 <td>{d.userName ?? t('ph_owner')}</td>
-                <td className="num small">{d.lastSeen ? digitsOf(new Date(d.lastSeen).toLocaleString('en-GB')) : '—'}</td>
+                <td className="num small">{d.lastSeen ? dateTime(d.lastSeen) : '—'}</td>
                 <td><button type="button" className="btn small" onClick={() => void remove(d.id)}>{t('ph_remove')}</button></td>
               </tr>
             ))}
@@ -1148,7 +1148,7 @@ export function PhonesCard({ ready = PHONE_APP_READY }: { ready?: boolean }) {
               <li>{t('ph_step2')}</li>
               <li>{t('ph_step3')}</li>
             </ol>
-            <span className="muted small">{t('ph_expires', { time: digitsOf(new Date(pairing.expiresAt).toLocaleTimeString('en-GB').slice(0, 5)) })}</span>
+            <span className="muted small">{t('ph_expires', { time: time(pairing.expiresAt) })}</span>
             <span className="muted small">{t('ph_sameNetwork')}</span>
             <div><button type="button" className="btn small" onClick={() => { setPairing(null); void request('POST', '/api/phones/pair/cancel', {}); }}>{t('cancel')}</button></div>
           </div>

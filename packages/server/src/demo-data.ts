@@ -53,9 +53,9 @@ export function seedDemo(db: Db): void {
   const lasSupply = createParty(db, 'supplier', { name: 'Las', phone: '0780 110 4455', address: 'بغداد — الشورجة' }, accountant);
   const razSupply = createParty(db, 'supplier', { name: 'Raz', phone: '0750 660 7788', address: 'أربيل — المنطقة الصناعية' }, accountant);
 
-  const ac = createItem(db, { code: 'AC-18', name: { ar: 'مكيف سبلت 18 ألف وحدة', en: 'Split AC 18,000 BTU', ku: 'سپلیتی ١٨ هەزار' }, unit: 'piece', salePrice: 823_600, saleCurrency: 'IQD' }, accountant);
-  const pv = createItem(db, { code: 'PV-550', barcode: '6291041500550', name: { ar: 'لوح شمسي 550 واط', en: 'Solar panel 550 W', ku: 'پانێڵی خۆر ٥٥٠ وات' }, unit: 'piece', salePrice: 134_900, saleCurrency: 'IQD' }, accountant);
-  const inverter = createItem(db, { code: 'INV-5K', name: { ar: 'انفرتر 5 كيلوواط', en: 'Inverter 5 kW', ku: 'ئینڤێرتەری ٥ کیلۆوات' }, unit: 'piece', salePrice: 908_800, saleCurrency: 'IQD' }, accountant);
+  const ac = createItem(db, { code: 'AC-18', name: { ar: 'مكيف سبلت 18 ألف وحدة', en: 'Split AC 18,000 BTU', ku: 'سپلیتی 18 هەزار' }, unit: 'piece', salePrice: 823_600, saleCurrency: 'IQD' }, accountant);
+  const pv = createItem(db, { code: 'PV-550', barcode: '6291041500550', name: { ar: 'لوح شمسي 550 واط', en: 'Solar panel 550 W', ku: 'پانێڵی خۆر 550 وات' }, unit: 'piece', salePrice: 134_900, saleCurrency: 'IQD' }, accountant);
+  const inverter = createItem(db, { code: 'INV-5K', name: { ar: 'انفرتر 5 كيلوواط', en: 'Inverter 5 kW', ku: 'ئینڤێرتەری 5 کیلۆوات' }, unit: 'piece', salePrice: 908_800, saleCurrency: 'IQD' }, accountant);
   const pipe = createItem(db, { code: 'CU-PIPE', name: { ar: 'أنبوب نحاس للتبريد', en: 'Copper pipe', ku: 'بۆری مس' }, unit: 'm', salePrice: 12_500, saleCurrency: 'IQD' }, accountant);
   const install = createItem(db, { code: 'SRV-INST', name: { ar: 'نصب وتشغيل', en: 'Installation', ku: 'دامەزراندن' }, unit: 'service', salePrice: 50_000, saleCurrency: 'IQD' }, accountant);
   const main = listWarehouses(db)[0]!.id;

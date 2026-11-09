@@ -13,3 +13,14 @@ it('gives the demo parties neutral addresses, with no street named after a perso
   for (const p of parties) expect(p.address ?? '', p.name).not.toMatch(/سالم|Salim|Salem/);
   db.close();
 });
+
+// The sample items' Kurdish names had "١٨" and "٥٥٠" while their Arabic and English names and every amount used 0–9:
+// a Kurdish screen then mixed two digit styles. The digit setting decides how the app's numbers show.
+it('writes the numbers in sample item names with the same digits in every language', () => {
+  const db = openDatabase(':memory:');
+  seedDemo(db);
+  const items = db.prepare('SELECT name_ar AS ar, name_en AS en, name_ku AS ku FROM items').all() as { ar: string; en: string; ku: string }[];
+  expect(items.length).toBeGreaterThan(3);
+  for (const item of items) expect(`${item.ar} ${item.en} ${item.ku}`, item.en).not.toMatch(/[\u0660-\u0669\u06F0-\u06F9]/);
+  db.close();
+});

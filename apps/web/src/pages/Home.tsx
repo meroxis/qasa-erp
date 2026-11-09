@@ -141,7 +141,8 @@ function SalesChart({ d }: { d: DashboardView }) {
   const i18n = useI18n();
   const { t } = i18n;
   const max = Math.max(1, ...d.months.map((m) => m.sales));
-  const monthName = (ym: string) => new Intl.DateTimeFormat(i18n.lang === 'ku' ? 'ckb-IQ' : i18n.lang === 'ar' ? 'ar-IQ' : 'en-GB', { month: 'short' }).format(new Date(ym + '-15T00:00:00'));
+  // Arabic and Kurdish month names come from the app's own list (a browser without Kurdish data would show "Nov")
+  const monthName = (ym: string) => (i18n.lang === 'en' ? new Intl.DateTimeFormat('en-GB', { month: 'short' }).format(new Date(ym + '-15T00:00:00')) : i18n.month(ym));
   return (
     <div className="card">
       <div className="card-head"><h2>{t('br_salesSixMonths')}</h2><span className="spacer" /><a className="btn ghost small" href={href('reports-more')}>{t('br_reports')}</a></div>

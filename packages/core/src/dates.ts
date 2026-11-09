@@ -21,6 +21,28 @@ export function formatDate(isoDate: string): string {
   return `${d}/${m}/${y}`;
 }
 
+/**
+ * A moment (an ISO timestamp) in the computer's local time, in the same numeric order as formatDate:
+ * "2026-11-09T11:05:00Z" → "09/11/2026 14:05" in Baghdad. Never month names, so it reads the same in every language.
+ */
+export function formatDateTime(iso: string): string {
+  const at = new Date(iso);
+  if (Number.isNaN(at.getTime())) return iso;
+  return `${formatDate(todayIso(at))} ${formatTime(iso)}`;
+}
+
+/** The local hour and minute of an ISO timestamp, 24-hour: "14:05". */
+export function formatTime(iso: string): string {
+  const at = new Date(iso);
+  if (Number.isNaN(at.getTime())) return iso;
+  return `${String(at.getHours()).padStart(2, '0')}:${String(at.getMinutes()).padStart(2, '0')}`;
+}
+
+/** "2026-11" → the month's name in the language: "تشرين الثاني", "November", "تشرینی دووەم". */
+export function monthName(period: string, lang: keyof typeof MONTHS): string {
+  return MONTHS[lang][Number(period.slice(5, 7)) - 1] ?? period;
+}
+
 export function todayIso(now: Date = new Date()): string {
   const y = now.getFullYear();
   const m = String(now.getMonth() + 1).padStart(2, '0');

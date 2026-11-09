@@ -21,7 +21,7 @@ describe('negative numbers in Arabic and Kurdish', () => {
 
   it('leaves positive amounts and English as they were', () => {
     expect(ar.money(2000, 'IQD')).toBe('2,000 د.ع');
-    expect(ar.money(250, 'USD')).toBe('$2.50');
+    expect(ar.money(250, 'USD')).toBe(`${LRI}$2.50${PDI}`);
     expect(en.money(-2000, 'IQD')).toBe('-2,000 IQD');
     expect(en.money(-250, 'USD')).toBe('$-2.50');
   });

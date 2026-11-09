@@ -9,7 +9,7 @@ import { desktopUpdates, upd, useUpdates, type UpdateState } from './updates.ts'
  * the beta. A Microsoft Store copy says the Store updates it.
  */
 export function UpdateSettings() {
-  const { lang, date } = useI18n();
+  const { lang, dateTime } = useI18n();
   const live = useUpdates();
   const [local, setLocal] = useState<UpdateState | null>(null);
   const [asking, setAsking] = useState(false);
@@ -21,7 +21,7 @@ export function UpdateSettings() {
   if (!api || !state) return null;
 
   const when = state.lastChecked
-    ? upd(lang, 'up_lastChecked', { d: `${date(state.lastChecked.slice(0, 10))} ${new Date(state.lastChecked).toLocaleTimeString(lang === 'en' ? 'en-GB' : 'ar-IQ', { hour: '2-digit', minute: '2-digit' })}` })
+    ? upd(lang, 'up_lastChecked', { d: dateTime(state.lastChecked) })
     : upd(lang, 'up_never');
   const status =
     state.development ? upd(lang, 'up_devBuild')
