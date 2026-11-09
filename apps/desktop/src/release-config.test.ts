@@ -14,6 +14,14 @@ describe('the installer build (electron-builder.yml)', () => {
     expect(config).not.toMatch(/^generateUpdatesFilesForAllChannels/m);
   });
 
+  it('says how a beta becomes a prerelease the way the workflow really does it: gh in the publish job, not a -c flag', () => {
+    expect(config).not.toContain('-c.publish.releaseType');
+    expect(read('.github/workflows/release.yml')).not.toContain('releaseType');
+    expect(config).toContain('gh release create --prerelease');
+    expect(read('.github/workflows/release.yml')).toMatch(/extra=\(--prerelease\)/);
+    expect(read('apps/desktop/package.json')).toContain('electron-builder --win --publish never');
+  });
+
   it('installs the third-party notices with the app (promises-15)', () => {
     expect(config).toMatch(/- from: \.\.\/\.\.\/THIRD_PARTY_NOTICES\.md\n\s+to: THIRD_PARTY_NOTICES\.md/);
   });

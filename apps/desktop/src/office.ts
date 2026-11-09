@@ -9,7 +9,8 @@ import { newWsKey, wsAccept, wsStream, WS_PING_MS } from './ws-stream.ts';
 /**
  * Pairing an office PC with the office server (no Electron here, so it can be tested on its own).
  * The server's certificate is self-signed; what vouches for it is the pairing code shown on the server PC:
- * the first 16 hex digits of its SHA-256 fingerprint. After pairing, the full fingerprint is pinned.
+ * the first 32 hex digits (128 bits) of its SHA-256 fingerprint. After pairing, the full fingerprint is pinned, so a PC
+ * paired with the shorter code of before keeps working.
  */
 
 export const OFFICE_PORT = 47420;
@@ -37,8 +38,9 @@ export async function pair(address: string, code: string, timeoutMs = 8000, rela
   const office = parseOfficeId(String(address).slice(0, 300));
   const target = office ? { host: '127.0.0.1', port: 0 } : parseAddress(String(address).slice(0, 300));
   if (!target) return { error: 'address' };
-  const wanted = String(code).slice(0, 64).replace(/[\s-]/g, '').toLowerCase();
-  if (!/^[0-9a-f]{16}$/.test(wanted)) return { error: 'code' };
+  const wanted = String(code).slice(0, 100).replace(/[\s-]/g, '').toLowerCase();
+  // 128 bits: a certificate made to start with a shorter code is within reach of a determined attacker
+  if (!/^[0-9a-f]{32}$/.test(wanted)) return { error: 'code' };
   let stream: Duplex | undefined;
   if (office) {
     try {

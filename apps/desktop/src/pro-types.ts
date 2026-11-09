@@ -62,6 +62,11 @@ export interface ProContext {
   securityHeaders: Readonly<Record<string, string>>;
   /** The Windows Documents folder (the default place for backups). */
   documentsDir: string;
+  /**
+   * A folder on this PC that no cloud service syncs (%LOCALAPPDATA%Qasa ERPBackups): where backups go while the
+   * default folder is synced to the internet and there is no backup password. Missing: a Backups folder in userDataDir.
+   */
+  localBackupDir?: string;
   /** Windows' folder picker on this PC's window; null when cancelled. */
   chooseFolder(): Promise<string | null>;
   /** Windows' file picker for a backup to restore; null when cancelled. */

@@ -246,6 +246,15 @@ async function companyFileDamaged(problem: { main?: unknown; reason?: unknown; c
 }
 
 /** Starts the server process and its server; resolves with the address the window loads. */
+/**
+ * Backups while the default folder (Documents, often kept in OneDrive) is synced and there is no backup password: this
+ * PC's own local app data, which no cloud service syncs (Electron's userData is the roaming one).
+ */
+function localBackupDir(): string {
+  const local = process.env.LOCALAPPDATA;
+  return local ? join(local, 'Qasa ERP', 'Backups') : join(app.getPath('userData'), 'Backups');
+}
+
 async function startServer(): Promise<string> {
   childEnding = false;
   companyId = readRegistry(app.getPath('userData')).current;
@@ -300,7 +309,7 @@ async function startServer(): Promise<string> {
     if (!childEnding && win) void serverGone(code);
   });
   return link.call<string>('init', [{
-    userDataDir: app.getPath('userData'), documentsDir: app.getPath('documents'), appVersion: app.getVersion(), sessionKey: SESSION_KEY,
+    userDataDir: app.getPath('userData'), documentsDir: app.getPath('documents'), localBackupDir: localBackupDir(), appVersion: app.getVersion(), sessionKey: SESSION_KEY,
     secretsKey: secretsKey(), resourcesPath: process.resourcesPath, fromStore: FROM_STORE, companyId
   }], { timeoutMs: 0 });
 }

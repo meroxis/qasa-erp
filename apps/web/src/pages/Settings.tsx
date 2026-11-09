@@ -16,7 +16,7 @@ import { GraphicsSetting } from '../industry/GraphicsSetting.tsx';
 import { PrintersCard } from '../industry/Printers.tsx';
 import { CompaniesSetting } from './Companies.tsx';
 import { cloudChoices } from './cloud-providers.ts';
-import { backupNoticeKey } from '../industry/BackupNotice.tsx';
+import { backupFailureKey, backupNoticeKey } from '../industry/BackupNotice.tsx';
 import { batchesApi, type BatchSettingsView } from '../industry/batches-api.ts';
 import { posApi, type PosAccounts } from '../industry/pos-api.ts';
 
@@ -281,7 +281,7 @@ function OfficeNetworkCard() {
             </div>
             <div className="field">
               <span>{t('netCode')}</span>
-              <strong className="ltr num" style={{ fontSize: 22, letterSpacing: '.06em' }}>{status.code}</strong>
+              <PairingCode code={status.code} />
             </div>
           </div>
           <p style={{ margin: 0 }}>{t('netSteps')}</p>
@@ -355,7 +355,7 @@ function RelaySection({ status, onChange }: { status: NetworkStatus & RelayField
           </div>
           <div className="field">
             <span>{t('netCode')}</span>
-            <strong className="ltr num" style={{ fontSize: 22, letterSpacing: '.06em' }}>{status.code}</strong>
+            <PairingCode code={status.code} />
           </div>
         </div>
       )}
@@ -626,6 +626,21 @@ function YearEndCard({ onChanged }: { onChanged(): void }) {
   );
 }
 
+/** The two halves of a pairing code (XXXX-XXXX-XXXX-XXXX-XXXX-XXXX-XXXX-XXXX), one per line, so it reads and types easily. */
+export function pairingCodeLines(code: string | null | undefined): string[] {
+  if (!code) return [];
+  const groups = code.split('-');
+  return groups.length > 4 ? [groups.slice(0, 4).join('-'), groups.slice(4).join('-')] : [code];
+}
+
+function PairingCode({ code }: { code: string | null | undefined }) {
+  return (
+    <strong className="ltr num" style={{ fontSize: 20, letterSpacing: '.06em', display: 'grid', gap: 2 }}>
+      {pairingCodeLines(code).map((line, i) => <span key={i}>{line}</span>)}
+    </strong>
+  );
+}
+
 const KEEP_CHOICES = [7, 14, 30, 60, 90, 365];
 
 /**
@@ -678,6 +693,8 @@ function BackupCard() {
       if (done) toast(done);
     } catch (e) {
       setError(e);
+      // a copy that failed: the card shows why, in the admin's language
+      api.backup().then(setStatus, () => {});
     } finally {
       setBusy(false);
     }
@@ -685,21 +702,29 @@ function BackupCard() {
 
   /** An encrypted copy that needs its password: the copy's name, or the token of a file picked in Windows. */
   const [asking, setAsking] = useState<{ name?: string; pick?: string; wrong: boolean } | null>(null);
+  /** An unencrypted copy while the company has a backup password: restored only when the admin confirms it is theirs. */
+  const [plain, setPlain] = useState<{ name?: string; pick?: string } | null>(null);
+  const [plainKnown, setPlainKnown] = useState(false);
   const [password, setPassword] = useState('');
   const [newPassword, setNewPassword] = useState({ a: '', b: '' });
 
-  async function send(req: { name?: string; pick?: string; password?: string }) {
+  async function send(req: { name?: string; pick?: string; password?: string; allowPlain?: boolean }) {
     setBusy(true);
     setError(null);
     try {
       if ((await api.restoreBackup(req)).restarting) {
         setAsking(null);
+        setPlain(null);
         setRestarting(true);
       }
     } catch (e) {
+      const pick = e instanceof ApiError ? (e.details as { pick?: string | null } | null)?.pick ?? undefined : undefined;
       if (e instanceof ApiError && (e.code === 'backup_password_required' || e.code === 'backup_password_wrong')) {
-        const pick = (e.details as { pick?: string | null } | null)?.pick ?? undefined;
         setAsking({ ...(req.name ? { name: req.name } : {}), ...(pick ? { pick } : {}), wrong: e.code === 'backup_password_wrong' });
+      } else if (e instanceof ApiError && e.code === 'backup_not_encrypted' && !req.allowPlain) {
+        setAsking(null);
+        setPlainKnown(false);
+        setPlain({ ...(req.name ? { name: req.name } : {}), ...(pick ? { pick } : {}) });
       } else {
         setAsking(null);
         setError(e);
@@ -746,6 +771,7 @@ function BackupCard() {
                 <span className="ltr small" style={{ overflowWrap: 'anywhere' }}>{status.folder}</span>
                 <button type="button" className="btn small" disabled={busy || restarting} onClick={() => act(() => api.chooseBackupFolder())}>{t('bkChooseFolder')}</button>
               </div>
+              {status.syncedDefault && <div className="alert info small" role="status">{t('bkLocalInstead', { f: ltr(status.syncedDefault) })}</div>}
             </div>
             <label className="field">
               <span>{t('bkKeep')}</span>
@@ -755,7 +781,7 @@ function BackupCard() {
             </label>
           </div>
           <div className="small">{status.last ? t('bkLast', { when: when(status.last.at), size: size(status.last.size) }) : t('bkNone')}</div>
-          {status.lastError && <div className="alert bad" role="alert">{t('bkFailed', { e: status.lastError })}</div>}
+          {status.lastError && <div className="alert bad" role="alert">{t('bkFailed', { e: backupFailureKey(status) ? t(backupFailureKey(status)!) : status.lastError })}</div>}
           {!status.lastError && backupNoticeKey(status) && <div className="alert warn" role="status">{t(backupNoticeKey(status)!)}</div>}
           {/* encrypting copies is for every plan: a saved copy may go to a USB disk or a synced folder */}
           <div className="stack" style={{ gap: 8, padding: 12, border: '1px solid var(--line)', borderRadius: 10 }}>
@@ -802,6 +828,18 @@ function BackupCard() {
         </>
       )}
       {!status && !absent && <ErrorBox error={error} />}
+      {plain && (
+        <Modal title={t('bkPlainTitle')} onClose={() => setPlain(null)}>
+          <form className="stack" onSubmit={(e) => { e.preventDefault(); if (plainKnown) void send({ ...plain, allowPlain: true }); }}>
+            <div className="alert bad" role="alert">{t('bkPlainWarning')}</div>
+            <label className="row" style={{ gap: 8 }}><input type="checkbox" checked={plainKnown} onChange={(e) => setPlainKnown(e.target.checked)} />{t('bkPlainKnown')}</label>
+            <div className="row" style={{ gap: 8, justifyContent: 'flex-end' }}>
+              <button type="button" className="btn" autoFocus onClick={() => setPlain(null)}>{t('cancel')}</button>
+              <button type="submit" className="btn danger" disabled={busy || !plainKnown}>{t('bkPlainRestore')}</button>
+            </div>
+          </form>
+        </Modal>
+      )}
       {asking && (
         <Modal title={t('bkPasswordTitle')} onClose={() => { setAsking(null); setPassword(''); }}>
           <form className="stack" onSubmit={(e) => { e.preventDefault(); void send({ ...(asking.name ? { name: asking.name } : {}), ...(asking.pick ? { pick: asking.pick } : {}), password }); setPassword(''); }}>

@@ -527,7 +527,7 @@ export function App() {
       break;
     case 'pharmacy':
       title = t('phm_title');
-      content = <Pharmacy />;
+      content = <Pharmacy admin={isAdmin} sales={isAdmin || viewer.permissions.includes('sales')} />;
       break;
     case 'companies':
       title = t('co_title');

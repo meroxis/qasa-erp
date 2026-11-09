@@ -58,7 +58,9 @@ publish:
   provider: github
   owner: meroxis
   repo: qasa-erp
-  # a beta build passes -c.publish.releaseType=prerelease (.github/workflows/release.yml)
+  # electron-builder never uploads (npm run dist builds with --publish never): this block only names the repository
+  # in the app's update settings and the update file. The release workflow's publish job makes the GitHub release
+  # itself and marks a beta as a prerelease (gh release create --prerelease, .github/workflows/release.yml).
   releaseType: release
 # The Microsoft Store package (npm run dist:store): Microsoft signs it when the Store accepts it. The identity is the one
 # Partner Center gave "Qasa ERP" (Store ID 9NRTX5BBK9DW, https://apps.microsoft.com/detail/9NRTX5BBK9DW).

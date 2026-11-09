@@ -509,6 +509,15 @@ export interface BackupStatus {
   encrypted: boolean;
   /** the folder is synced to a cloud service */
   cloudFolder: boolean;
+  /**
+   * The default folder is synced to the internet and there is no backup password, so the copies are kept on this PC in
+   * `folder` instead: this is the synced folder they go to once a password is set (left out by older servers).
+   */
+  syncedDefault?: string | null;
+  /** syncedDefault, and the admin hasn't been told yet: the bar shows it once. */
+  localNotice?: boolean;
+  /** Why the last copy failed (lastError) as a code with words of its own ('other': only lastError says). */
+  lastErrorCode?: 'settings_unreadable' | 'synced_needs_password' | 'password_unreadable' | 'copy_check' | 'reopen_failed' | 'disk_full' | 'no_access' | 'folder_missing' | 'other' | null;
   /** `own: false`: a copy made by another company or on another PC (left out by older servers: treated as this company's). */
   files: { name: string; size: number; at: string; encrypted: boolean; own?: boolean }[];
   /**
@@ -599,8 +608,13 @@ export const api = {
   setBackup: (patch: { on?: boolean; keep?: number }) => request<BackupStatus>('PUT', '/api/backup', patch),
   chooseBackupFolder: () => request<BackupStatus>('POST', '/api/backup/folder', {}),
   runBackup: () => request<BackupStatus>('POST', '/api/backup/run', {}),
-  /** by name from the list, by the token of a picked file, or (with neither) from a file chosen in Windows' file picker */
-  restoreBackup: (req: { name?: string; pick?: string; password?: string } = {}) => request<{ restarting: boolean }>('POST', '/api/backup/restore', req),
+  /**
+   * by name from the list, by the token of a picked file, or (with neither) from a file chosen in Windows' file picker;
+   * allowPlain: the admin confirmed an unencrypted copy while the company has a backup password (backup_not_encrypted)
+   */
+  restoreBackup: (req: { name?: string; pick?: string; password?: string; allowPlain?: boolean } = {}) => request<{ restarting: boolean }>('POST', '/api/backup/restore', req),
+  /** The admin read that the copies are kept on this PC (BackupStatus.localNotice). */
+  backupLocalNoticeSeen: () => request<BackupStatus>('POST', '/api/backup/local-notice', {}),
   setBackupPassword: (password: string | null) => request<BackupStatus>('PUT', '/api/backup/password', { password }),
   installmentsSummary: () => request<InstallmentsSummaryView>('GET', '/api/installments/summary'),
   installments: (f: { status?: string; partyId?: string; q?: string } = {}) => request<ContractSummaryView[]>('GET', '/api/installments' + qs(f)),

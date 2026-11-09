@@ -22,6 +22,8 @@ import { proModule } from '@qasa/pro-module';
 export interface ServerInit {
   userDataDir: string;
   documentsDir: string;
+  /** %LOCALAPPDATA%Qasa ERPBackups: backups while the default folder is synced and there is no backup password. */
+  localBackupDir?: string;
   appVersion: string;
   /** The key the window's cookie holds: only that window may use this server. */
   sessionKey: string;
@@ -424,6 +426,7 @@ async function startServer(bridge: Bridge, given: ServerInit): Promise<string> {
     db, server, userDataDir: companyDir(), dataDir: dataDir(), appVersion: given.appVersion, serveWeb, securityHeaders: SECURITY_HEADERS, log,
     companyId: companyId(),
     documentsDir: given.documentsDir,
+    ...(given.localBackupDir ? { localBackupDir: given.localBackupDir } : {}),
     get workerSource() { return workerSource(); },
     restart,
     // a person picks: no timeout

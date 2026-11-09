@@ -11,26 +11,35 @@ import { unitName } from './Items.tsx';
 
 type Tab = 'medicines' | 'alternatives' | 'near' | 'controlled';
 
+/** The tabs someone sees: the controlled-medicines log (patients and prescriptions) needs the sales permission, as on the server. */
+export const pharmacyTabs = (sales: boolean): Tab[] => (sales ? ['medicines', 'alternatives', 'near', 'controlled'] : ['medicines', 'alternatives', 'near']);
+
+/** What a line of the controlled log offers: Record until it is recorded, then Correct for an admin only (the server's rule). */
+export const controlledAction = (line: Pick<ControlledLine, 'missing' | 'recordedAt'>, admin: boolean): 'record' | 'correct' | null =>
+  line.missing && !line.recordedAt ? 'record' : admin ? 'correct' : null;
+
 /** الصيدلية (Pro): medicines with their pharmacy details, alternatives by generic name, near expiry, and the controlled log. */
-export function Pharmacy() {
+export function Pharmacy({ admin = false, sales = false }: { admin?: boolean; sales?: boolean }) {
   const { t } = useI18n();
   const { plan } = useData();
   const allowed = !!plan?.features.includes('pharmacy');
   const [tab, setTab] = useState<Tab>('medicines');
+  const tabs = pharmacyTabs(sales);
+  const shown = tabs.includes(tab) ? tab : 'medicines';
   return (
     <div className="stack">
       {!allowed && <div className="alert info">{t('phm_needsPro')} <a href={href('plans')}>Pro</a></div>}
       <div className="tabs no-print">
-        {(['medicines', 'alternatives', 'near', 'controlled'] as const).map((x) => (
-          <button key={x} type="button" aria-pressed={tab === x} onClick={() => setTab(x)}>
+        {tabs.map((x) => (
+          <button key={x} type="button" aria-pressed={shown === x} onClick={() => setTab(x)}>
             {t(x === 'medicines' ? 'ph_medicines' : x === 'alternatives' ? 'ph_alternatives' : x === 'near' ? 'ph_nearExpiry' : 'ph_controlledLog')}
           </button>
         ))}
       </div>
-      {allowed && tab === 'medicines' && <Medicines />}
-      {allowed && tab === 'alternatives' && <Alternatives />}
-      {allowed && tab === 'near' && <NearExpiry />}
-      {allowed && tab === 'controlled' && <ControlledLog />}
+      {allowed && shown === 'medicines' && <Medicines />}
+      {allowed && shown === 'alternatives' && <Alternatives />}
+      {allowed && shown === 'near' && <NearExpiry />}
+      {allowed && sales && shown === 'controlled' && <ControlledLog admin={admin} />}
     </div>
   );
 }
@@ -214,7 +223,7 @@ function NearExpiry() {
   );
 }
 
-function ControlledLog() {
+function ControlledLog({ admin }: { admin: boolean }) {
   const i18n = useI18n();
   const { t } = i18n;
   const [missing, setMissing] = useState(false);
@@ -254,14 +263,18 @@ function ControlledLog() {
                   <td style={l.missing ? { color: 'var(--bad)' } : undefined}>{l.patient ?? t('ph_missing')}</td>
                   <td>{l.prescriber ?? ''}</td>
                   <td className="ltr">{l.prescriptionNo ?? ''}</td>
-                  <td className="no-print"><button type="button" className="btn small" onClick={() => setEditing(l)}>{t('ph_record')}</button></td>
+                  <td className="no-print">
+                    {controlledAction(l, admin) && (
+                      <button type="button" className="btn small" onClick={() => setEditing(l)}>{t(controlledAction(l, admin) === 'correct' ? 'ph_correct' : 'ph_record')}</button>
+                    )}
+                  </td>
                 </tr>
               ))}
             </tbody>
           </table>
         )}
       </div>
-      {editing && <ControlledRecord lines={[editing]} onDone={() => { setEditing(null); list.reload(); }} />}
+      {editing && <ControlledRecord lines={[editing]} correcting={controlledAction(editing, admin) === 'correct'} onDone={() => { setEditing(null); list.reload(); }} />}
     </div>
   );
 }
@@ -271,7 +284,9 @@ export const recordableLines = (values: readonly { patient: string }[]): number[
   values.flatMap((v, i) => (v.patient.trim() ? [i] : []));
 
 /** Asks for the patient (required), prescriber and prescription number of each controlled line; the POS opens it after a sale. */
-export function ControlledRecord({ lines, onDone }: { lines: Pick<ControlledLine, 'invoiceId' | 'lineNo' | 'itemName' | 'patient' | 'prescriber' | 'prescriptionNo'>[]; onDone(): void }) {
+export function ControlledRecord({ lines, correcting = false, onDone }: {
+  lines: Pick<ControlledLine, 'invoiceId' | 'lineNo' | 'itemName' | 'patient' | 'prescriber' | 'prescriptionNo'>[]; correcting?: boolean; onDone(): void;
+}) {
   const i18n = useI18n();
   const { t } = i18n;
   const toast = useToast();
@@ -294,9 +309,9 @@ export function ControlledRecord({ lines, onDone }: { lines: Pick<ControlledLine
     }
   }
   return (
-    <Modal title={t('ph_recordTitle')} onClose={onDone}>
+    <Modal title={t(correcting ? 'ph_correctTitle' : 'ph_recordTitle')} onClose={onDone}>
       <div className="stack">
-        <p className="muted small" style={{ margin: 0 }}>{t('ph_recordHelp')}</p>
+        <p className="muted small" style={{ margin: 0 }}>{t(correcting ? 'ph_correctHelp' : 'ph_recordHelp')}</p>
         {lines.map((l, i) => (
           <fieldset key={`${l.invoiceId}|${l.lineNo}`} className="card pad stack" style={{ gap: 6 }}>
             <legend><strong>{i18n.name(l.itemName)}</strong></legend>
@@ -310,7 +325,7 @@ export function ControlledRecord({ lines, onDone }: { lines: Pick<ControlledLine
         <ErrorBox error={error} />
         {ready.length === 0 && <div className="small" style={{ color: 'var(--bad)' }}>{t('err_ph_patient_required')}</div>}
         <div className="row">
-          <button type="button" className="btn primary" disabled={ready.length === 0} onClick={() => void save()}><Icon name="check" size={16} />{t('ph_record')}</button>
+          <button type="button" className="btn primary" disabled={ready.length === 0} onClick={() => void save()}><Icon name="check" size={16} />{t(correcting ? 'ph_correct' : 'ph_record')}</button>
           <button type="button" className="btn" onClick={onDone}>{t('ph_later')}</button>
         </div>
       </div>
