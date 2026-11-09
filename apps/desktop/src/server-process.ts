@@ -22,7 +22,7 @@ import { proModule } from '@qasa/pro-module';
 export interface ServerInit {
   userDataDir: string;
   documentsDir: string;
-  /** %LOCALAPPDATA%Qasa ERPBackups: backups while the default folder is synced and there is no backup password. */
+  /** %LOCALAPPDATA%\Qasa ERP\Backups: backups while the default folder is synced and there is no backup password. */
   localBackupDir?: string;
   appVersion: string;
   /** The key the window's cookie holds: only that window may use this server. */
