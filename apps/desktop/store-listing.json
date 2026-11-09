@@ -42,6 +42,7 @@
         "Encrypted cloud backup to Google Drive (Pro); OneDrive comes in a later update",
         "WooCommerce plugin for online shops: prices, stock and orders over Qasa Relay (Pro)",
         "Save a backup on every plan, a safety copy before each update, and an admin recovery code",
+        "Units with conversions (carton, box, strip), batches and expiry dates with earliest-expiry-first selling, and a pharmacy pack (Pro).",
         "Works without internet; a paid licence is activated online once and checked now and then"
       ],
       "searchTerms": [
@@ -53,7 +54,7 @@
         "installments",
         "barcode labels"
       ],
-      "releaseNotes": "Qasa ERP 1.0.3. Printer settings: Settings → Printers. Choose a printer for each kind of paper (invoices, POS receipts, barcode labels and more), the paper size including 80 mm and 58 mm receipt rolls, and print without the print window. The trial balance now has 6 columns: opening, period and closing, each as debit and credit. Save a backup now and encrypted copies work on every plan, with a reminder after 3 days with no copy. A safety copy of the company file is kept before every update. A forgotten admin password can be reset with the admin recovery code or Windows Hello: File → Reset admin password. Stock counts save as you go and can be continued later, also on another PC. And many small fixes. Licences from 0.1.8: connect this PC to the internet once during your first month on 1.0 so the licence activates; it keeps working meanwhile, and your data always stays."
+      "releaseNotes": "Qasa ERP 1.1.0. Units with conversions: a carton of 24 or a box of strips, each with its own barcode and price, in invoices, the point of sale and labels. Batches and expiry dates: the earliest expiry sells first, expired stock is blocked or sold after a confirmation, and Inventory → Expiry & batches lists what is near its date. Pharmacy pack (Pro): generic names, prescription and controlled medicines, alternatives. Dollar balances for customers and suppliers, and statements in one currency. Point of sale: card, FIB, ZainCash, Qi Card and on account, also split. Item categories in three languages. The company file is upgraded: update every PC that opens it. Licences from 0.1.8: connect this PC to the internet once during your first month on 1.0 so the licence activates; it keeps working meanwhile, and your data always stays."
     },
     "ar": {
       "shortDescription": "برنامج محاسبة للشركات العراقية على النظام المحاسبي الموحد: سندات وفواتير ومخزن وتقسيط وتقارير بالدينار والدولار — بالعربية والإنجليزية والكردية.",
@@ -73,6 +74,7 @@
         "نسخ احتياطي مشفّر إلى Google Drive ‏(Pro)؛ OneDrive يأتي في تحديث لاحق",
         "إضافة WooCommerce للمتاجر الإلكترونية: الأسعار والمخزون والطلبات عبر Qasa Relay ‏(Pro)",
         "حفظ نسخة احتياطية في كل الخطط، ونسخة أمان قبل كل تحديث، ورمز استعادة المدير",
+        "الوحدات وتحويلها (كارتون، علبة، شريط)، والوجبات وتواريخ الانتهاء ببيع الأقرب انتهاءً أولاً، وحزمة الصيدلية (Pro).",
         "يعمل دون إنترنت؛ الترخيص المدفوع يُفعَّل عبر الإنترنت مرة ويُتحقَّق منه بين حين وآخر"
       ],
       "searchTerms": [
@@ -84,7 +86,7 @@
         "باركود",
         "ERP"
       ],
-      "releaseNotes": "قاصة ERP 1.0.3. إعدادات الطابعات: الإعدادات ← الطابعات. اختر طابعة لكل نوع من الأوراق (الفواتير وإيصالات نقطة البيع وملصقات الباركود وغيرها)، وحجم الورق ومنه لفات الإيصال 80 مم و58 مم، واطبع دون نافذة الطباعة. ميزان المراجعة الآن بستة أعمدة: الافتتاحي والحركة خلال المدة والختامي، كل منها مدين ودائن. «احفظ نسخة احتياطية الآن» والنسخ المشفّرة تعمل في كل الخطط، مع تذكير إذا مرت 3 أيام دون نسخة. تُحفظ نسخة أمان من ملف الشركة قبل كل تحديث. كلمة مرور المدير المنسية يُعاد تعيينها برمز استعادة المدير أو Windows Hello: ملف ← إعادة تعيين كلمة مرور المدير. الجرد يُحفظ أثناء العمل ويمكن إكماله لاحقاً، حتى على حاسوب آخر. وإصلاحات صغيرة كثيرة. تراخيص الإصدار 0.1.8: اربط هذا الحاسوب بالإنترنت مرة واحدة خلال شهرك الأول على 1.0 ليُفعَّل الترخيص؛ ويبقى يعمل في هذه الأثناء، وبياناتك تبقى دائماً."
+      "releaseNotes": "قاصة ERP 1.1.0. الوحدات وتحويلها: كارتون فيه 24 أو علبة أشرطة، لكل منها باركود وسعر، في الفواتير ونقطة البيع والملصقات. الوجبات وتواريخ الانتهاء: يُباع الأقرب انتهاءً أولاً، ويُمنع المنتهي أو يُباع بعد تأكيد، ومن المخزن ← الصلاحية والوجبات ترى ما قارب انتهاءه. الصيدلية (Pro): الاسم العلمي والأدوية بوصفة والخاضعة للرقابة والبدائل. أرصدة الدولار للزبائن والمجهزين، وكشف الحساب بعملة واحدة. نقطة البيع: بطاقة وFIB وزين كاش وكي كارد وعلى الحساب، ومقسّمة أيضاً. تصنيفات المواد بثلاث لغات. يُرقّى ملف الشركة: حدّث كل حاسوب يفتحه. تراخيص الإصدار 0.1.8: اربط هذا الحاسوب بالإنترنت مرة واحدة خلال شهرك الأول على 1.0 ليُفعَّل الترخيص؛ ويبقى يعمل في هذه الأثناء، وبياناتك تبقى دائماً."
     },
     "ku-arab": {
       "shortDescription": "ژمێریاری بۆ کۆمپانیا عێراقییەکان بەپێی سیستەمی ژمێریاریی یەکگرتوو: سەنەد، پسوولە، کۆگا، قیست و ڕاپۆرت بە دینار و دۆلار — بە کوردی و عەرەبی و ئینگلیزی.",
@@ -104,6 +106,7 @@
         "باکئەپی شفرەکراو بۆ Google Drive ‏(Pro)؛ OneDrive لە نوێکردنەوەیەکی داهاتوودا دێت",
         "پێوەکراوی WooCommerce بۆ دوکانی ئۆنلاین: نرخ، کۆگا و داواکاری لە ڕێگەی Qasa Relayەوە (Pro)",
         "پاشەکەوتکردنی باکئەپ لە هەموو پلانەکاندا، کۆپیی سەلامەتی پێش هەر نوێکردنەوەیەک، و کۆدی گەڕاندنەوەی بەڕێوەبەر",
+        "یەکەکان و گۆڕینیان (کارتۆن، قوتوو، شریت)، وەجبە و بەرواری بەسەرچوون بە فرۆشتنی نزیکترین بەسەرچوون یەکەم، و دەرمانخانە (Pro).",
         "بەبێ ئینتەرنێت کار دەکات؛ مۆڵەتی پارەدار یەک جار بە ئینتەرنێت چالاک دەکرێت و جار جار دەپشکنرێت"
       ],
       "searchTerms": [
@@ -115,7 +118,7 @@
         "بارکۆد",
         "ERP"
       ],
-      "releaseNotes": "قاسە ERP 1.0.3. ڕێکخستنی چاپکەر: ڕێکخستنەکان ← چاپکەرەکان. بۆ هەر جۆرێکی پەڕە چاپکەرێک هەڵبژێرە (پسوولەکان، پسوولەی خاڵی فرۆشتن، لێبڵی بارکۆد و زیاتر)، قەبارەی پەڕە لەوانە ڕۆڵی پسوولەی 80 ملم و 58 ملم، و بێ پەنجەرەی چاپ چاپ بکە. تەرازووی پێداچوونەوە ئێستا 6 ستوونی هەیە: سەرەتا، جووڵەی ماوەکە و کۆتایی، هەر یەکەیان قەرزار و قەرزدەر. «ئێستا باکئەپێک پاشەکەوت بکە» و کۆپیی شفرەکراو لە هەموو پلانەکاندا کار دەکەن، لەگەڵ بیرخستنەوە ئەگەر 3 ڕۆژ بێ کۆپی تێپەڕی. پێش هەر نوێکردنەوەیەک کۆپییەکی سەلامەتی فایلی کۆمپانیا دەپارێزرێت. وشەی نهێنیی لەبیرچووی بەڕێوەبەر بە کۆدی گەڕاندنەوەی بەڕێوەبەر یان Windows Hello ڕێکدەخرێتەوە: فایل ← ڕێکخستنەوەی وشەی نهێنیی بەڕێوەبەر. ژماردنی کۆگا لە کاتی کاردا پاشەکەوت دەکرێت و دەتوانرێت دواتر تەواو بکرێت، تەنانەت لەسەر کۆمپیوتەرێکی تر. و زۆر چاککردنی بچووک. مۆڵەتەکانی وەشانی 0.1.8: لە مانگی یەکەمت لەسەر 1.0 یەک جار ئەم کۆمپیوتەرە بە ئینتەرنێتەوە ببەستە تا مۆڵەتەکە چالاک بێت؛ لەو ماوەیەدا هەر کار دەکات، و داتاکانت هەمیشە دەمێننەوە."
+      "releaseNotes": "قاسە ERP 1.1.0. یەکەکان و گۆڕینیان: کارتۆنێکی 24 دانەیی یان قوتوویەکی شریت، هەر یەکەیان بارکۆد و نرخی خۆی، لە پسوولە و خاڵی فرۆشتن و لێبڵەکان. وەجبە و بەرواری بەسەرچوون: نزیکترین بەسەرچوون یەکەم دەفرۆشرێت، بەسەرچوو ڕێگری لێدەکرێت یان دوای پشتڕاستکردنەوە دەفرۆشرێت، و لە کۆگا ← بەسەرچوون و وەجبەکان ئەوەی نزیکە دەبینیت. دەرمانخانە (Pro): ناوی زانستی، دەرمانی بە ڕەچەتە و ژێر چاودێری، جێگرەوەکان. باڵانسی دۆلار بۆ کڕیار و دابینکەران، و کەشفی هەژمار بە یەک دراو. خاڵی فرۆشتن: کارت، FIB، زەین کاش، کی کارد و لەسەر هەژمار، دابەشکراویش. پۆلی کاڵا بە سێ زمان. فایلی کۆمپانیا بەرز دەکرێتەوە: هەموو ئەو کۆمپیوتەرانە نوێ بکەرەوە کە دەیکەنەوە. مۆڵەتەکانی وەشانی 0.1.8: لە مانگی یەکەمت لەسەر 1.0 یەک جار ئەم کۆمپیوتەرە بە ئینتەرنێتەوە ببەستە تا مۆڵەتەکە چالاک بێت؛ لەو ماوەیەدا هەر کار دەکات، و داتاکانت هەمیشە دەمێننەوە."
     }
   },
   "certificationNotes": "Qasa ERP is an Electron desktop accounting app (full trust). unvirtualizedResources with desktop6:FileSystemWriteVirtualization disabled keeps the company's accounting database in %APPDATA%\\Qasa ERP instead of the package's private folder: uninstalling or reinstalling the Store app must never delete a company's books, and the same data is shared with the app installed from qasaerp.com. The app runs a local web server on 127.0.0.1 for its own window; the optional office network (Pro) listens on the local network with a self-signed certificate and pairing code. Licenses for paid plans are sold outside the Store at https://my.qasaerp.com. No sign-in is needed to test: the app opens on an empty company; a sample company can be tried in the browser demo at https://qasaerp.com/demo/."

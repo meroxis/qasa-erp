@@ -24,3 +24,22 @@ it('writes the numbers in sample item names with the same digits in every langua
   for (const item of items) expect(`${item.ar} ${item.en} ${item.ku}`, item.en).not.toMatch(/[\u0660-\u0669\u06F0-\u06F9]/);
   db.close();
 });
+
+it('has a pharmacy sample: medicines by the strip and the box, in batches with expiry dates, sold to Mer, Las and Raz', async () => {
+  const { openDatabase } = await import('./db.ts');
+  const { seedDemo, seedPharmacyDemo } = await import('./demo-data.ts');
+  const { batchBalance } = await import('./batches.ts');
+  const db = openDatabase(':memory:');
+  seedDemo(db);
+  seedPharmacyDemo(db);
+  const sold = db.prepare("SELECT p.name, l.unit FROM invoice_lines l JOIN invoices v ON v.id = l.invoice_id JOIN parties p ON p.id = v.party_id JOIN pharma_details d ON d.item_id = l.item_id WHERE v.status = 'posted' ORDER BY p.name, l.unit").all();
+  expect(sold).toEqual([{ name: 'Las', unit: 'box' }, { name: 'Mer', unit: 'strip' }, { name: 'Raz', unit: 'box' }, { name: 'Raz', unit: 'strip' }]);
+  const main = (db.prepare('SELECT id FROM warehouses LIMIT 1').get() as { id: string }).id;
+  for (const item of db.prepare('SELECT item_id FROM pharma_details').all() as { item_id: string }[]) {
+    const b = batchBalance(db, item.item_id, main);
+    expect(b.batches).toBe(b.stock);
+  }
+  // the copper pipe is sold by the roll too
+  expect(db.prepare("SELECT u.unit, u.factor_milli FROM item_units u JOIN items i ON i.id = u.item_id WHERE i.code = 'CU-PIPE'").all()).toEqual([{ unit: 'roll', factor_milli: 25_000 }]);
+  db.close();
+});
