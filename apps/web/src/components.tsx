@@ -102,7 +102,18 @@ export function errorMessages(error: unknown, i18n: I18n): string[] {
     // plan limits have a message per limit ("err_plan_limit_warehouses"), with a general one to fall back on
     const limit = error.code === 'plan_limit' ? (error.details as { limit?: string } | null)?.limit : undefined;
     const key = limit && isKey(`err_plan_limit_${limit}`) ? `err_plan_limit_${limit}` : 'err_' + error.code;
-    return [isKey(key) ? t(key) : t('err_internal')];
+    const message = isKey(key) ? t(key) : t('err_internal');
+    // a refusal that names the open documents holding it back (a unit or a base unit in use) lists them, so they can be found
+    const drafts = (error.details as { drafts?: unknown } | null)?.drafts;
+    if (Array.isArray(drafts) && drafts.length) {
+      const named = (drafts as { type?: unknown; number?: unknown; date?: unknown }[]).map((d) => {
+        const kind = `odoc_${String(d.type)}`;
+        const label = typeof d.number === 'string' && d.number ? d.number : typeof d.date === 'string' ? i18n.date(d.date) : '';
+        return [isKey(kind) ? t(kind) : '', label].filter(Boolean).join(' ');
+      });
+      return [message, t('err_open_docs', { d: named.join(i18n.lang === 'en' ? ', ' : '، ') })];
+    }
+    return [message];
   }
   return [t('err_internal')];
 }

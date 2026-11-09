@@ -189,6 +189,52 @@ describe('units with conversions on the server', () => {
     expect((await put(`/api/items/${medId}`, body)).statusCode).toBe(200);
   });
 
+  it('a draft that uses a unit stops its factor from changing (the draft would say another quantity when next saved)', async () => {
+    const draft = (await post('/api/invoices', invoice('sale', [{ itemId: medId, unit: 'box', unitQtyMilli: 1_000, unitPrice: 20_000 }]))).json();
+    expect(draft.lines[0]).toMatchObject({ qtyMilli: 100_000, unitFactorMilli: 100_000 });
+    const item = (await get(`/api/items/${medId}`)).json();
+    const body = (units: object[]) => ({ code: item.code, barcode: item.barcode, name: item.name, unit: 'tablet', salePrice: 250, saleCurrency: 'IQD', saleUnit: 'strip', purchaseUnit: 'box', units });
+    const refused = await put(`/api/items/${medId}`, body([MED_UNITS[0]!, { ...MED_UNITS[1], factorMilli: 120_000 }]));
+    expect(refused.statusCode, refused.body).toBe(409);
+    expect(refused.json()).toMatchObject({ error: 'unit_factor_in_use', details: { units: ['box'], drafts: [{ type: 'invoice', id: draft.id, number: null, date: '2026-11-01' }] } });
+    expect((await get(`/api/items/${medId}`)).json().units[1].factorMilli).toBe(100_000);
+    // a unit no draft uses may still change
+    expect((await put(`/api/items/${medId}`, body([{ ...MED_UNITS[0], factorMilli: 12_000 }, MED_UNITS[1]!]))).statusCode).toBe(200);
+    // once the draft is gone, the box changes too
+    await app.inject({ method: 'DELETE', url: `/api/invoices/${draft.id}`, headers });
+    expect((await put(`/api/items/${medId}`, body([MED_UNITS[0]!, { ...MED_UNITS[1], factorMilli: 120_000 }]))).statusCode).toBe(200);
+  });
+
+  it('an open document that names an item stops its base unit from changing, though nothing has moved', async () => {
+    const item = (await get(`/api/items/${medId}`)).json();
+    const body = { code: item.code, barcode: item.barcode, name: item.name, unit: 'piece', salePrice: 250, saleCurrency: 'IQD', saleUnit: 'strip', purchaseUnit: 'box', units: MED_UNITS };
+    // a draft in the base unit (5 tablets) and a quote: both would be read as pieces
+    const draft = (await post('/api/invoices', invoice('sale', [{ itemId: medId, qtyMilli: 5_000, unitPrice: 250 }]))).json();
+    const quote = await post('/api/quotes', { date: '2026-11-02', partyId: customerId, currency: 'IQD', discount: 0, lines: [{ itemId: medId, description: '', qtyMilli: 3_000, unitPrice: 250 }] });
+    expect(quote.statusCode, quote.body).toBe(201);
+    const refused = await put(`/api/items/${medId}`, body);
+    expect(refused.statusCode, refused.body).toBe(409);
+    expect(refused.json()).toMatchObject({
+      error: 'base_unit_in_use',
+      details: { drafts: [{ type: 'invoice', id: draft.id, number: null, date: '2026-11-01' }, { type: 'quote', id: quote.json().id, date: '2026-11-02' }] }
+    });
+    expect((await get(`/api/items/${medId}`)).json().unit).toBe('tablet');
+    await app.inject({ method: 'DELETE', url: `/api/invoices/${draft.id}`, headers });
+    expect((await post(`/api/quotes/${quote.json().id}/status`, { action: 'reject' })).statusCode).toBeLessThan(300);
+    // a rejected quote can be reopened: it still holds the item; cancelled, it no longer does
+    expect((await put(`/api/items/${medId}`, body)).json()).toMatchObject({ error: 'base_unit_in_use', details: { drafts: [{ type: 'quote' }] } });
+    expect((await post(`/api/quotes/${quote.json().id}/status`, { action: 'cancel' })).statusCode).toBeLessThan(300);
+    // an open stock count of the item holds it too
+    const count = await post('/api/adjustments/counts', { date: '2026-11-03', warehouseId });
+    expect(count.statusCode, count.body).toBe(201);
+    expect((await put(`/api/adjustments/counts/${count.json().id}`, { counts: [{ itemId: medId, countedMilli: 4_000, unitCost: 200 }] })).statusCode).toBe(200);
+    expect((await put(`/api/items/${medId}`, body)).json()).toMatchObject({ error: 'base_unit_in_use', details: { drafts: [{ type: 'count', id: count.json().id }] } });
+    await app.inject({ method: 'DELETE', url: `/api/adjustments/counts/${count.json().id}`, headers });
+    const changed = await put(`/api/items/${medId}`, body);
+    expect(changed.statusCode, changed.body).toBe(200);
+    expect(changed.json().unit).toBe('piece');
+  });
+
   it('a request with no unit means what it meant in 1.0.3', async () => {
     const plain = await postNew(invoice('purchase', [{ itemId: medId, qtyMilli: 50_000, unitPrice: 180 }]));
     expect(plain.lines[0]).toMatchObject({ qtyMilli: 50_000, lineUnit: null, unitFactorMilli: null, unitQtyMilli: null, unitPrice: 180, amount: 9_000 });

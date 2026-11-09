@@ -9,6 +9,7 @@ import { loadAccounts } from './accounts.ts';
 import { createInvoice, getInvoice, postInvoice, type InvoiceView, type SalePart } from './invoices.ts';
 import { readSetting, writeSetting } from './settings.ts';
 import { signInRequired, type Actor } from './auth.ts';
+import { scopeOf } from './branches.ts';
 import type { ApiExtension, ApiRequest } from './routes.ts';
 
 /**
@@ -61,9 +62,23 @@ export function setPosPaymentAccounts(db: Db, input: PosAccounts, user: string):
   return posPaymentAccounts(db);
 }
 
-/** The methods the counter offers: cash and on account always, the others once they have an account. */
-export function posMethods(db: Db): PosMethod[] {
+/**
+ * The card and wallet accounts a user may take payments into: all of them, or for a user limited to branches, only
+ * those that are their branches' own (the settings name one account per method for the whole company, and a head
+ * office's or another branch's bank is not a limited cashier's to debit).
+ */
+export function posAccountsFor(db: Db, actor?: Actor | null): PosAccounts {
   const accounts = posPaymentAccounts(db);
+  const scope = actor ? scopeOf(db, actor) : null;
+  if (!scope) return accounts;
+  const out: PosAccounts = {};
+  for (const m of POS_ACCOUNT_METHODS) if (accounts[m] && scope.accounts.has(accounts[m])) out[m] = accounts[m];
+  return out;
+}
+
+/** The methods the counter offers: cash and on account always, the others once they have an account the user may use. */
+export function posMethods(db: Db, actor?: Actor | null): PosMethod[] {
+  const accounts = posAccountsFor(db, actor);
   return POS_METHODS.filter((m) => m === 'cash' || m === 'account' || !!accounts[m as keyof PosAccounts]);
 }
 
@@ -342,11 +357,14 @@ export function sell(db: Db, shiftId: string, input: SaleInput, actor: Actor): {
   const payments = input.payments ?? [];
   if (payments.length > 4) throw invalid([{ code: 'payments_too_many' }]);
   const accounts = posPaymentAccounts(db);
+  const mine = posAccountsFor(db, actor);
   const errors: { code: string; method?: string }[] = [];
   for (const p of payments) {
     if (!(POS_METHODS as readonly string[]).includes(p.method) || !Number.isSafeInteger(p.amount) || p.amount <= 0) errors.push({ code: 'pos_payment_invalid', method: String(p.method) });
     // a method the admin gave no account is not offered at the counter, and refused here
     else if (p.method !== 'cash' && p.method !== 'account' && !accounts[p.method as keyof PosAccounts]) errors.push({ code: 'pos_method_unavailable', method: p.method });
+    // its account is outside the user's branches: not offered to them either, and never debited for them
+    else if (p.method !== 'cash' && p.method !== 'account' && !mine[p.method as keyof PosAccounts]) errors.push({ code: 'pos_method_other_branch', method: p.method });
     else if (p.method === 'account' && !input.partyId) errors.push({ code: 'party_required' });
   }
   if (errors.length) throw invalid(errors);
@@ -369,7 +387,7 @@ export function sell(db: Db, shiftId: string, input: SaleInput, actor: Actor): {
       for (const p of payments) merged.set(p.method, (merged.get(p.method) ?? 0) + p.amount);
       split = [...merged].map(([method, amount]) => ({
         method, amount,
-        accountCode: method === 'cash' ? row.cash_account : method === 'account' ? partyAccount! : accounts[method as keyof PosAccounts]!,
+        accountCode: method === 'cash' ? row.cash_account : method === 'account' ? partyAccount! : mine[method as keyof PosAccounts]!,
         ...(method === 'account' ? { partyId: input.partyId } : {})
       }));
     }
@@ -442,13 +460,13 @@ export const posApi: ApiExtension = {
         }
       },
       { method: 'GET', path: '/api/pos/current', handler: async (req) => ({ shift: myShift(db, actor(req)) }) },
-      { method: 'GET', path: '/api/pos/payment-accounts', handler: async () => ({ accounts: posPaymentAccounts(db), methods: posMethods(db) }) },
+      { method: 'GET', path: '/api/pos/payment-accounts', handler: async (req) => ({ accounts: posAccountsFor(db, actor(req)), methods: posMethods(db, actor(req)) }) },
       {
         method: 'PUT', path: '/api/pos/payment-accounts',
         handler: async (req) => {
           const code = z.string().max(12).optional();
           const body = parse(z.object({ card: code, fib: code, zaincash: code, qi: code }), req.body);
-          return { accounts: setPosPaymentAccounts(db, body, actor(req).name), methods: posMethods(db) };
+          return { accounts: setPosPaymentAccounts(db, body, actor(req).name), methods: posMethods(db, actor(req)) };
         }
       },
       { method: 'GET', path: '/api/pos/shifts/:id', handler: async (req) => shiftReport(db, parse(idParam, req.params).id, actor(req)) },

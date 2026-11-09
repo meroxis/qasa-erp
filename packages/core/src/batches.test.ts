@@ -54,7 +54,8 @@ describe('batches: earliest expiry first', () => {
   it('keeps batch numbers and expiry dates in one form', () => {
     expect(normalizeBatchNo('  ٢٣٤  ab\u0007 c ')).toBe('234 ab c');
     expect(normalizeBatchNo('Ａ１')).toBe('A1');
-    expect(normalizeBatchNo('x'.repeat(60))).toHaveLength(40);
+    // never cut short (the server refuses a number longer than 40)
+    expect(normalizeBatchNo('x'.repeat(60))).toHaveLength(60);
     expect(normalizeBatchNo(undefined)).toBe('');
     expect(normalizeExpiry('٢٠٢٧-٠١-٣١')).toBe('2027-01-31');
     expect(normalizeExpiry('2027-02-30')).toBe('invalid');

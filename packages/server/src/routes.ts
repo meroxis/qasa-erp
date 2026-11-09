@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import { BUILT_IN_FEATURES } from './features.ts';
 import { checkBranchRequest, filterBranchResult, isBranchLimited, userBranchLists } from './branches.ts';
-import { APP_VERSION, BUSINESS_TYPES, MAX_ITEM_UNITS, MAX_UNIT_FACTOR_MILLI, UNIT_CODES } from '@qasa/core';
+import { APP_VERSION, BUSINESS_TYPES, MAX_BATCH_NO, MAX_ITEM_UNITS, MAX_UNIT_FACTOR_MILLI, UNIT_CODES } from '@qasa/core';
 import type { Db } from './db.ts';
 import { AppError, conflict, invalid } from './errors.ts';
 import {
@@ -104,8 +104,12 @@ const itemSchema = z.object({
   categoryId: z.string().min(1).max(64).nullable().optional()
 });
 
-/** Batches (1.1): what a line brings in (a number of up to 40 characters and an expiry date), or the batch it is pinned to. */
-const lineBatch = { batchNo: z.string().max(80).optional(), expiry: isoDate.optional(), batchId: z.string().min(1).max(64).optional() };
+/**
+ * Batches (1.1): what a line brings in (a number of up to 40 characters and an expiry date), or the batch it is pinned to.
+ * The typed number may be longer before its spaces are collapsed (twice the limit at most); the kept form is checked
+ * against the 40 on the line, with its own message, and is never cut short.
+ */
+const lineBatch = { batchNo: z.string().max(MAX_BATCH_NO * 2).optional(), expiry: isoDate.optional(), batchId: z.string().min(1).max(64).optional() };
 
 /** A document line's quantity: a base quantity (as before 1.1), or one of the item's units and the quantity typed in it. */
 const lineQty = { qtyMilli: z.number().int().optional(), unit: unitCode.optional(), unitQtyMilli: z.number().int().positive().max(1e12).optional() };

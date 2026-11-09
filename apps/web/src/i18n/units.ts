@@ -36,5 +36,22 @@ export const UNIT_TEXT = {
     'وحدة تحذفها مستعملة في مسودة؛ احذف المسودة أو غيّر وحدتها أولاً.',
     'A unit you are removing is used in a draft; delete the draft or change its unit first.',
     'یەکەیەک کە لای دەبەیت لە ڕەشنووسێکدا بەکارهاتووە؛ سەرەتا ڕەشنووسەکە بسڕەوە یان یەکەکەی بگۆڕە.'
-  ]
+  ],
+  err_unit_factor_in_use: [
+    'وحدة تغيّر عددها مستعملة في مستند مفتوح؛ أكمله أو احذفه أولاً، وإلا تغيّرت كميته.',
+    'A unit whose factor you are changing is used in an open document; finish or delete it first, or its quantity would change.',
+    'یەکەیەک کە ژمارەکەی دەگۆڕیت لە بەڵگەیەکی کراوەدا بەکارهاتووە؛ سەرەتا تەواوی بکە یان بیسڕەوە، دەنا بڕەکەی دەگۆڕێت.'
+  ],
+  err_base_unit_in_use: [
+    'المادة في مستندات مفتوحة؛ أكملها أو احذفها قبل تغيير الوحدة الأساسية، وإلا قُرئت كمياتها بالوحدة الجديدة.',
+    'The item is on open documents; finish or delete them before changing its base unit, or their quantities would be read in the new unit.',
+    'کاڵاکە لە بەڵگەی کراوەدایە؛ پێش گۆڕینی یەکەی بنەڕەتی تەواویان بکە یان بیانسڕەوە، دەنا بڕەکانیان بە یەکە نوێیەکە دەخوێنرێنەوە.'
+  ],
+  err_open_docs: ['المستندات المفتوحة: {d}', 'Open documents: {d}', 'بەڵگە کراوەکان: {d}'],
+  odoc_invoice: ['مسودة فاتورة', 'draft invoice', 'ڕەشنووسی پسوولە'],
+  odoc_stock_doc: ['مسودة حركة مخزن', 'draft stock document', 'ڕەشنووسی بەڵگەی کۆگا'],
+  odoc_adjustment: ['مسودة تسوية مخزون', 'draft stock adjustment', 'ڕەشنووسی ڕێکخستنی کۆگا'],
+  odoc_purchase_order: ['أمر شراء', 'purchase order', 'داواکاری کڕین'],
+  odoc_quote: ['عرض سعر', 'quote', 'نرخنامە'],
+  odoc_count: ['جرد مخزن مفتوح', 'open stock count', 'ژماردنی کۆگای کراوە']
 } as const;

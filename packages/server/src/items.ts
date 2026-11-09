@@ -5,7 +5,7 @@ import { nextSequence, transaction } from './db.ts';
 import { audit } from './audit.ts';
 import { conflict, invalid, notFound } from './errors.ts';
 import { assertWithinLimit } from './license.ts';
-import { assertItemUnits, replaceItemUnits, unitsByItem, type ItemUnitView } from './item-units.ts';
+import { assertItemUnits, openDocumentsWithItem, replaceItemUnits, unitsByItem, type ItemUnitView } from './item-units.ts';
 import { startTracking } from './batches.ts';
 import { assertItemCategory } from './categories.ts';
 
@@ -254,6 +254,11 @@ export function updateItem(db: Db, id: string, input: ItemInput, user: string): 
   assertItem(db, input, id);
   // the base unit is what stock and every posted line count in: it changes only while nothing has moved
   if (input.unit !== current.unit && current.hasMoves) throw conflict('item_has_moves');
+  // nor while an open document names the item: its quantities, typed in the old base unit, would be read in the new one
+  if (input.unit !== current.unit) {
+    const drafts = openDocumentsWithItem(db, id);
+    if (drafts.length) throw conflict('base_unit_in_use', { drafts });
+  }
   const trackStock = input.unit === 'service' || input.trackStock === false ? false : true;
   // Switching stock tracking on or off would leave the stock and the books telling different stories.
   if (trackStock !== current.trackStock && current.hasMoves) throw conflict('item_has_moves');

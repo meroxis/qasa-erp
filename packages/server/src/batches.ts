@@ -66,6 +66,7 @@ export interface BatchRow { id: string; number: string; expiry: string | null; c
  */
 export function ensureBatch(db: Db, itemId: string, numberRaw: string, expiryRaw: string | null, line?: number): string {
   const number = normalizeBatchNo(numberRaw);
+  if (number.length > MAX_BATCH_NO) throw invalid([{ code: 'batch_no_invalid', ...(line ? { line } : { field: 'number' }) }]);
   const expiry = normalizeExpiry(expiryRaw);
   if (expiry === 'invalid') throw invalid([{ code: 'expiry_invalid', ...(line ? { line } : {}) }]);
   if (!number) {
@@ -403,6 +404,7 @@ export function updateBatch(
   }
   if (db.prepare('SELECT 1 FROM stock_batch_moves WHERE batch_id = ? AND qty_milli < 0 LIMIT 1').get(id)) throw conflict('batch_in_use');
   const number = input.number === undefined ? b.number : normalizeBatchNo(input.number);
+  if (number.length > MAX_BATCH_NO) throw invalid([{ code: 'batch_no_invalid', field: 'number' }]);
   const expiry = input.expiry === undefined ? b.expiry : normalizeExpiry(input.expiry);
   if (expiry === 'invalid') throw invalid([{ code: 'expiry_invalid' }]);
   const revived = isExpired(b.expiry, todayIso()) && (expiry === null || expiry > b.expiry!);

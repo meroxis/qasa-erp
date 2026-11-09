@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { z } from 'zod';
-import { costOut, isIsoDate, lineAmount, todayIso, UNIT_CODES, type EntryInput, type Names, type UnitCode } from '@qasa/core';
+import { costOut, isIsoDate, lineAmount, MAX_BATCH_NO, todayIso, UNIT_CODES, type EntryInput, type Names, type UnitCode } from '@qasa/core';
 import type { Db } from './db.ts';
 import { nextSequence, transaction } from './db.ts';
 import { audit } from './audit.ts';
@@ -872,7 +872,8 @@ const adjustmentBody = z.object({
   lines: z.array(z.object({
     itemId: id, qtyMilli: qty.optional(), unitCost: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER).optional(),
     unit: z.enum(UNIT_CODES).optional(), unitQtyMilli: qty.optional(),
-    batchNo: z.string().max(80).optional(), expiry: date.optional(), batchId: id.optional()
+    // the kept number is checked against MAX_BATCH_NO on the line (lineBatchErrors), as on invoices and stock documents
+    batchNo: z.string().max(MAX_BATCH_NO * 2).optional(), expiry: date.optional(), batchId: id.optional()
   })).min(1).max(COUNT_LIMIT)
 });
 

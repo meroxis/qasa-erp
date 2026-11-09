@@ -104,15 +104,18 @@ export function expiryState(expiry: string | null, today: string, nearDays: numb
   return expiry <= addDays(today, nearDays) ? 'near' : 'ok';
 }
 
-/** A batch number as kept: Western digits, NFKC, spaces collapsed, at most MAX_BATCH_NO characters; '' when empty. */
+/**
+ * A batch number as kept: Western digits, NFKC, spaces collapsed; '' when empty. It is never cut short: a number
+ * longer than MAX_BATCH_NO is refused by the caller, so two lots that differ only after the 40th character never
+ * become one batch.
+ */
 export function normalizeBatchNo(text: string | null | undefined): string {
   if (!text) return '';
   return toWesternDigits(text.normalize('NFKC'))
     // control characters never belong in a batch number (printed on labels and reports)
     .replace(/[\u0000-\u001f\u007f-\u009f]/g, ' ')
     .replace(/\s+/g, ' ')
-    .trim()
-    .slice(0, MAX_BATCH_NO);
+    .trim();
 }
 
 /** An expiry date as kept: an ISO calendar date, or null. */

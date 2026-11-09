@@ -68,6 +68,7 @@ export const BATCH_TEXT = {
   err_batch_insufficient: ['السطر {n}: لا تكفي الكمية في الوجبة (المتوفر {a}).', 'Line {n}: not enough in the batch ({a} available).', 'ڕیزی {n}: بڕی وەجبەکە بەس نییە ({a} هەیە).'],
   err_batch_invalid: ['السطر {n}: الوجبة ليست لهذه المادة.', 'Line {n}: that batch isn’t this item’s.', 'ڕیزی {n}: ئەو وەجبەیە هی ئەم کاڵایە نییە.'],
   err_batch_no_invalid: ['السطر {n}: رقم الوجبة أطول من 40 حرفاً.', 'Line {n}: the batch number is longer than 40 characters.', 'ڕیزی {n}: ژمارەی وەجبە لە 40 پیت درێژترە.'],
+  err_batch_no_invalid_number: ['رقم الوجبة أطول من 40 حرفاً.', 'The batch number is longer than 40 characters.', 'ژمارەی وەجبە لە 40 پیت درێژترە.'],
   err_batch_in_use: ['خرجت كمية من هذه الوجبة؛ لا يتغير رقمها ولا تاريخها.', 'Stock has left this batch; its number and date no longer change.', 'بڕێک لەم وەجبەیە دەرچووە؛ ژمارە و بەروارەکەی ناگۆڕێن.'],
   err_batch_number_taken: ['رقم الوجبة موجود لهذه المادة.', 'That batch number is already used for this item.', 'ئەو ژمارەی وەجبەیە بۆ ئەم کاڵایە هەیە.'],
   err_batch_expiry_taken: ['للمخزون بلا رقم وجبة هذا التاريخ من قبل.', 'Stock with no batch number already has that expiry date.', 'کۆگای بێ ژمارەی وەجبە پێشتر ئەم بەروارەی هەیە.'],

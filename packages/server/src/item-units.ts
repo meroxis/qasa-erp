@@ -72,29 +72,68 @@ export function assertItemUnits(db: Db, input: UnitsInput, id: string | null): v
     if (owner) throw conflict('barcode_taken', { barcode: own, item: owner.code });
   }
   if (id && input.units) {
-    const kept = new Set(input.units.map((u) => u.unit));
+    const next = new Map(input.units.map((u) => [u.unit as string, u.factorMilli]));
+    const before = itemUnits(db, id);
     // the base unit changing also drops every line typed in the old base unit's terms: those name the unit itself
-    const removed = itemUnits(db, id).map((u) => u.unit).filter((u) => !kept.has(u));
-    const drafts = removed.length ? draftsUsing(db, id, removed) : [];
-    if (drafts.length) throw conflict('unit_in_use', { units: removed, drafts });
+    const removed = before.map((u) => u.unit).filter((u) => !next.has(u));
+    const removedIn = removed.length ? draftsUsing(db, id, removed) : [];
+    if (removedIn.length) throw conflict('unit_in_use', { units: removed, drafts: removedIn });
+    // an open document keeps a line's typed quantity and works its base quantity out again from the factor when it is
+    // next saved: a new factor would silently change what a draft already says, so it waits until they are done
+    const refactored = before.filter((u) => next.has(u.unit) && next.get(u.unit) !== u.factorMilli).map((u) => u.unit);
+    const refactoredIn = refactored.length ? draftsUsing(db, id, refactored) : [];
+    if (refactoredIn.length) throw conflict('unit_factor_in_use', { units: refactored, drafts: refactoredIn });
   }
 }
 
-/** Open documents (drafts, purchase orders not received) with lines in one of `units` of an item. */
-export function draftsUsing(db: Db, itemId: string, units: readonly string[]): { type: string; id: string }[] {
+/** An open document, as named in a refusal: its kind, its number (none yet on most drafts) and its date. */
+export interface OpenDocument { type: string; id: string; number: string | null; date: string }
+
+const openRows = (rows: OpenDocument[]): OpenDocument[] => rows.slice(0, 20).map((r) => ({ type: r.type, id: r.id, number: r.number ?? null, date: r.date }));
+
+/** Open documents (drafts, purchase orders not received) with lines in one of `units` of an item (the first 20). */
+export function draftsUsing(db: Db, itemId: string, units: readonly string[]): OpenDocument[] {
   if (!units.length) return [];
   const marks = units.map(() => '?').join(', ');
   const rows = db.prepare(`
-    SELECT 'invoice' AS type, l.invoice_id AS id FROM invoice_lines l JOIN invoices v ON v.id = l.invoice_id
-      WHERE v.status = 'draft' AND l.item_id = ? AND l.unit IN (${marks})
-    UNION SELECT 'stock_doc' AS type, l.doc_id AS id FROM stock_doc_lines l JOIN stock_docs d ON d.id = l.doc_id
-      WHERE d.status = 'draft' AND l.item_id = ? AND l.unit IN (${marks})
-    UNION SELECT 'adjustment' AS type, l.adjustment_id AS id FROM stock_adjustment_lines l JOIN stock_adjustments a ON a.id = l.adjustment_id
-      WHERE a.status = 'draft' AND l.item_id = ? AND l.unit IN (${marks})
-    UNION SELECT 'purchase_order' AS type, l.order_id AS id FROM purchase_order_lines l JOIN purchase_orders o ON o.id = l.order_id
-      WHERE o.status IN ('draft', 'sent', 'partial') AND l.item_id = ? AND l.unit IN (${marks})`)
-    .all(itemId, ...units, itemId, ...units, itemId, ...units, itemId, ...units) as { type: string; id: string }[];
-  return rows.slice(0, 20);
+    SELECT 'invoice' AS type, v.id, v.number, v.date FROM invoices v
+      WHERE v.status = 'draft' AND EXISTS (SELECT 1 FROM invoice_lines l WHERE l.invoice_id = v.id AND l.item_id = ? AND l.unit IN (${marks}))
+    UNION SELECT 'stock_doc' AS type, d.id, d.number, d.date FROM stock_docs d
+      WHERE d.status = 'draft' AND EXISTS (SELECT 1 FROM stock_doc_lines l WHERE l.doc_id = d.id AND l.item_id = ? AND l.unit IN (${marks}))
+    UNION SELECT 'adjustment' AS type, a.id, a.number, a.date FROM stock_adjustments a
+      WHERE a.status = 'draft' AND EXISTS (SELECT 1 FROM stock_adjustment_lines l WHERE l.adjustment_id = a.id AND l.item_id = ? AND l.unit IN (${marks}))
+    UNION SELECT 'purchase_order' AS type, o.id, o.number, o.date FROM purchase_orders o
+      WHERE o.status IN ('draft', 'sent', 'partial') AND EXISTS (SELECT 1 FROM purchase_order_lines l WHERE l.order_id = o.id AND l.item_id = ? AND l.unit IN (${marks}))
+    ORDER BY date, type, id`)
+    .all(itemId, ...units, itemId, ...units, itemId, ...units, itemId, ...units) as unknown as OpenDocument[];
+  return openRows(rows);
+}
+
+/**
+ * Every open document that names an item, whatever unit its lines are in (the first 20): draft invoices, stock
+ * documents and adjustments, purchase orders not fully received, quotes that can still be invoiced (a rejected one can
+ * be reopened; an invoiced one whose invoice was cancelled is accepted again), and stock counts still open. Their quantities are in the item's base unit, so the base unit waits until they are done.
+ * (A till's cart stays on the till until the sale is made, so it is never an open document here.)
+ */
+export function openDocumentsWithItem(db: Db, itemId: string): OpenDocument[] {
+  const rows = db.prepare(`
+    SELECT 'invoice' AS type, v.id, v.number, v.date FROM invoices v
+      WHERE v.status = 'draft' AND EXISTS (SELECT 1 FROM invoice_lines l WHERE l.invoice_id = v.id AND l.item_id = ?)
+    UNION SELECT 'stock_doc' AS type, d.id, d.number, d.date FROM stock_docs d
+      WHERE d.status = 'draft' AND EXISTS (SELECT 1 FROM stock_doc_lines l WHERE l.doc_id = d.id AND l.item_id = ?)
+    UNION SELECT 'adjustment' AS type, a.id, a.number, a.date FROM stock_adjustments a
+      WHERE a.status = 'draft' AND EXISTS (SELECT 1 FROM stock_adjustment_lines l WHERE l.adjustment_id = a.id AND l.item_id = ?)
+    UNION SELECT 'purchase_order' AS type, o.id, o.number, o.date FROM purchase_orders o
+      WHERE o.status IN ('draft', 'sent', 'partial') AND EXISTS (SELECT 1 FROM purchase_order_lines l WHERE l.order_id = o.id AND l.item_id = ?)
+    UNION SELECT 'quote' AS type, q.id, q.number, q.date FROM quotes q
+      WHERE (q.status IN ('draft', 'sent', 'accepted', 'rejected')
+             OR (q.status = 'invoiced' AND EXISTS (SELECT 1 FROM invoices qi WHERE qi.id = q.invoice_id AND qi.status = 'cancelled')))
+        AND EXISTS (SELECT 1 FROM quote_lines l WHERE l.quote_id = q.id AND l.item_id = ?)
+    UNION SELECT 'count' AS type, c.id, NULL AS number, c.date FROM stock_counts c
+      WHERE c.status = 'open' AND EXISTS (SELECT 1 FROM stock_count_lines l WHERE l.count_id = c.id AND l.item_id = ?)
+    ORDER BY date, type, id`)
+    .all(itemId, itemId, itemId, itemId, itemId, itemId) as unknown as OpenDocument[];
+  return openRows(rows);
 }
 
 /** Puts an item's units in place of what it had (inside the item's transaction). An empty barcode is kept as NULL. */

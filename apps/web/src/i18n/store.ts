@@ -51,6 +51,11 @@ export const STORE_TEXT = {
   ],
   err_payments_total_mismatch: ['مجموع الدفعات لا يساوي المبلغ الكلي.', 'The payments don’t add up to the total.', 'کۆی پارەدانەکان یەکسان نییە بە کۆی گشتی.'],
   err_pos_method_unavailable: ['طريقة الدفع هذه بلا حساب؛ يحدده المدير في الإعدادات.', 'This payment method has no account; an admin sets it in Settings.', 'ئەم ڕێگای پارەدانە هەژماری نییە؛ بەڕێوەبەر لە ڕێکخستنەکان دیاری دەکات.'],
+  err_pos_method_other_branch: [
+    'حساب طريقة الدفع هذه ليس من فروعك؛ يحدده المدير في الإعدادات.',
+    'This payment method’s account isn’t one of your branches’; an admin sets it in Settings.',
+    'هەژماری ئەم ڕێگای پارەدانە هی لقەکانی تۆ نییە؛ بەڕێوەبەر لە ڕێکخستنەکان دیاری دەکات.'
+  ],
   err_pos_payment_invalid: ['دفعة غير صحيحة.', 'A payment isn’t valid.', 'پارەدانێک دروست نییە.'],
   err_payments_too_many: ['أربع طرق دفع على الأكثر.', 'At most four payment methods.', 'زۆرترین چوار ڕێگای پارەدان.'],
   pay_paidOnline: ['مدفوعة إلكترونياً', 'Paid online', 'بە ئۆنلاین دراوە'],

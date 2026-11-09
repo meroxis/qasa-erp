@@ -312,6 +312,26 @@ describe('batches and expiry dates', () => {
     expect((await call('PUT', `/api/batches/${a.batchId}`, { number: 'Z' })).json().error).toBe('batch_in_use');
   });
 
+  it('refuses a batch number longer than 40 instead of cutting it short (two lots never merge)', async () => {
+    const stem = 'L'.repeat(40);
+    // two lots that differ only after the 40th character: refused on the lines, nothing kept
+    const r = await call('POST', '/api/invoices', invoice('purchase', '2026-10-01', [
+      { itemId: medId, qtyMilli: 1_000, unitPrice: 200, batchNo: stem + '1', expiry: '2027-06-30' },
+      { itemId: medId, qtyMilli: 1_000, unitPrice: 200, batchNo: stem + '2', expiry: '2027-06-30' }
+    ]));
+    expect(r.statusCode, r.body).toBe(400);
+    expect(r.json().details).toEqual([{ code: 'batch_no_invalid', line: 1 }, { code: 'batch_no_invalid', line: 2 }]);
+    // spaces collapse first: 40 kept characters typed with extra spaces are fine
+    const spaced = await postNew(invoice('purchase', '2026-10-01', [{ itemId: medId, qtyMilli: 1_000, unitPrice: 200, batchNo: `  ${'M'.repeat(20)}    ${'N'.repeat(19)}  `, expiry: '2027-06-30' }]));
+    expect(spaced.statusCode, spaced.body).toBe(200);
+    // the same on a stock count adjustment and a batch fixed by hand
+    const adj = await call('POST', '/api/adjustments', { date: '2026-10-02', warehouseId: mainId, reason: 'count', lines: [{ itemId: medId, qtyMilli: 1_000, unitCost: 200, batchNo: stem + 'X', expiry: '2027-06-30' }] });
+    expect(adj.json().details, adj.body).toEqual([{ code: 'batch_no_invalid', line: 1 }]);
+    const b = (await batches())[0]!;
+    expect(() => updateBatch(db, b.batchId, { number: stem + 'Y' }, 'Raz')).toThrow(expect.objectContaining({ code: 'validation', details: [{ code: 'batch_no_invalid', field: 'number' }] }));
+    expect((await batches()).map((x) => x.batch)).toEqual([`${'M'.repeat(20)} ${'N'.repeat(19)}`]);
+  });
+
   it('makes an expired batch sellable again (a later date, or none) only for an approver', async () => {
     await buyTwo();
     const a = (await batches()).find((x) => x.batch === 'A-2701')!;
