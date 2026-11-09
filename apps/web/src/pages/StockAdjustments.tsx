@@ -358,7 +358,7 @@ export function StockAdjustmentEditor({ id }: { id?: string }) {
                       : <div className="amount muted" title={t('adj_avgCost')}>{it ? i18n.money(avg, 'IQD') : ''}</div>}
                   </td>
                   <td className="amount" style={{ color: r.itemId ? (r.dir === 'out' ? 'var(--bad)' : 'var(--ok)') : undefined }}>
-                    {r.itemId ? `${r.dir === 'out' ? '−' : '+'}${i18n.money(valueOf(r), 'IQD')}` : ''}
+                    {r.itemId ? i18n.money(r.dir === 'out' ? -valueOf(r) : valueOf(r), 'IQD', { plus: true }) : ''}
                   </td>
                   <td><button type="button" className="btn icon danger" onClick={() => remove(r.key)} aria-label={t('removeLine')} title={t('removeLine')}><Icon name="x" size={16} /></button></td>
                 </tr>
@@ -848,7 +848,7 @@ export function StockCount() {
                   </td>
                   <td><QtyInput value={counted.get(r.itemId) ?? null} onChange={(v) => { if (ready) setOne(r.itemId, v); }} ariaLabel={`${t('adj_counted')} ${r.code}`} /></td>
                   <td className="amount" style={{ color: diff ? (diff < 0 ? 'var(--bad)' : 'var(--ok)') : undefined, fontWeight: diff ? 700 : undefined }}>
-                    {diff === null ? '' : `${diff > 0 ? '+' : diff < 0 ? '−' : ''}${qtyText(i18n, Math.abs(diff))}`}
+                    {diff === null ? '' : i18n.qty(diff, { plus: true })}
                   </td>
                   <td>{diff !== null && diff > 0 && book <= 0 && (
                     <AmountInput value={costs.get(r.itemId) ?? null} currency="IQD" ariaLabel={`${t('unitCost')} ${r.code}`} onChange={(v) => setCost(r.itemId, v)} />

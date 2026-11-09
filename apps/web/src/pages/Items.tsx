@@ -9,7 +9,7 @@ import { WholesalePriceField } from '../industry/WholesalePriceField.tsx';
 import { printDocument } from '../industry/printing.ts';
 
 export function qtyText(i18n: I18n, milli: number): string {
-  return formatQty(milli, i18n.digits === 'eastern' && i18n.lang !== 'en' ? 'eastern' : 'western');
+  return i18n.qty(milli);
 }
 
 export function unitName(i18n: I18n, unit: UnitCode): string {

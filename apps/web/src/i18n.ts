@@ -31,7 +31,7 @@ import { LABEL_TEXT } from './i18n/labels.ts';
 import { PRINTER_TEXT } from './i18n/printers.ts';
 import { SAFETY_TEXT } from './i18n/safety.ts';
 import { UI_TEXT } from './i18n/ui.ts';
-import { formatAmount, formatDate, formatInteger, LANGS, toEasternDigits, type CurrencyCode, type DigitStyle, type Lang, type Names } from '@qasa/core';
+import { formatAmount, formatDate, formatInteger, formatQty, hasLeadingSign, LANGS, ltrIsolate, toEasternDigits, type CurrencyCode, type DigitStyle, type Lang, type Names } from '@qasa/core';
 
 /** Every UI string in Arabic, English and Kurdish (Sorani) — in that order. */
 const BASE = {
@@ -1008,8 +1008,13 @@ export interface I18n {
   t(key: Key, vars?: Record<string, string | number>): string;
   /** Picks the name in the current language, falling back to the other two. */
   name(names: Names): string;
-  money(amountMinor: number, currency: CurrencyCode): string;
-  int(value: number): string;
+  /** An amount with its currency; `plus` shows "+" on positive amounts. Signed amounts keep their sign on the left in RTL. */
+  money(amountMinor: number, currency: CurrencyCode, opts?: { plus?: boolean }): string;
+  int(value: number, opts?: { plus?: boolean }): string;
+  /** A quantity in thousandths (2500 → 2.5); `plus` shows "+" on positive quantities. */
+  qty(milli: number, opts?: { plus?: boolean }): string;
+  /** Keeps signed or mixed text (e.g. "−12%") reading left to right in Arabic and Kurdish; plain text in English. */
+  ltr(text: string): string;
   date(iso: string): string;
   /** Applies the digit setting to arbitrary text (codes and numbers inside sentences). */
   digitsOf(text: string): string;
@@ -1019,6 +1024,12 @@ export function makeI18n(lang: Lang, digits: DigitStyle, setLang: (l: Lang) => v
   const index = LANGS.indexOf(lang);
   const eastern = digits === 'eastern' && lang !== 'en';
   const digitsOf = (text: string) => (eastern ? toEasternDigits(text) : text);
+  const style: DigitStyle = eastern ? 'eastern' : 'western';
+  const rtl = lang !== 'en';
+  // in Arabic and Kurdish a leading sign would otherwise land on the right of the digits ("2-" for -2)
+  const ltr = (text: string) => (rtl ? ltrIsolate(text) : text);
+  const signed = (text: string, number = text) => (hasLeadingSign(number) ? ltr(text) : text);
+  const plus = (text: string, value: number, opts?: { plus?: boolean }) => (opts?.plus && value > 0 ? '+' + text : text);
   const t = (key: Key, vars?: Record<string, string | number>) => {
     let text: string = D[key][index] ?? D[key][1];
     if (vars) for (const [k, v] of Object.entries(vars)) text = text.replace(`{${k}}`, digitsOf(String(v)));
@@ -1032,11 +1043,14 @@ export function makeI18n(lang: Lang, digits: DigitStyle, setLang: (l: Lang) => v
     setDigits,
     t,
     name: (n) => n[lang] || n.ar || n.en || n.ku,
-    money: (amountMinor, currency) => {
-      const text = formatAmount(amountMinor, currency, eastern ? 'eastern' : 'western');
-      return currency === 'USD' ? '$' + text : text + ' ' + t('iqdShort');
+    money: (amountMinor, currency, opts) => {
+      const text = plus(formatAmount(amountMinor, currency, style), amountMinor, opts);
+      // the sign (and "$") stay with the digits; the dinar abbreviation stays where it always was
+      return currency === 'USD' ? signed('$' + text, text) : signed(text) + ' ' + t('iqdShort');
     },
-    int: (value) => formatInteger(value, eastern ? 'eastern' : 'western'),
+    int: (value, opts) => signed(plus(formatInteger(value, style), value, opts)),
+    qty: (milli, opts) => signed(plus(formatQty(milli, style), milli, opts)),
+    ltr,
     date: (iso) => digitsOf(formatDate(iso)),
     digitsOf
   };

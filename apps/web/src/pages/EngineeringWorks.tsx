@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { amountInWords, formatQty, lineAmount, rateFromX100, todayIso, toBase, toWesternDigits, type CurrencyCode } from '@qasa/core';
+import { amountInWords, lineAmount, rateFromX100, todayIso, toBase, toWesternDigits, type CurrencyCode } from '@qasa/core';
 import { api, ApiError } from '../api.ts';
 import { EmptyState, AccountCombo, AmountInput, ErrorBox, Icon, Modal, QtyInput, SearchCombo, useData, useLoad, usePageNav, useToast, type PickOption } from '../components.tsx';
 import { useI18n, type I18n, type Key } from '../i18n.ts';
@@ -553,7 +553,7 @@ function Quotation({ job: j, company, validDays, terms, onSaved }: { job: JobVie
                   <>
                     <td>{r.description}</td>
                     <td>{t(unitKey(r.unit))}</td>
-                    <td className="amount">{i18n.digitsOf(formatQty(r.qtyMilli))}</td>
+                    <td className="amount">{i18n.qty(r.qtyMilli)}</td>
                     <td className="amount">{i18n.money(r.unitPrice, j.currency)}</td>
                   </>
                 )}

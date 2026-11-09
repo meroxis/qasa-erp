@@ -274,7 +274,7 @@ function Revaluation() {
                     <td className="num">{i18n.money(row.carried, 'IQD')}</td>
                     <td className="num">{i18n.money(row.revalued, 'IQD')}</td>
                     <td className="num" style={row.difference ? { color: row.difference > 0 ? 'var(--ok)' : 'var(--bad)' } : undefined}>
-                      {row.difference > 0 ? '+' : ''}{i18n.money(row.difference, 'IQD')}
+                      {i18n.money(row.difference, 'IQD', { plus: true })}
                     </td>
                   </tr>
                 ))}

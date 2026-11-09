@@ -40,7 +40,7 @@ export function briefText(i18n: I18n, b: BriefView): string {
     `*${t('br_title')}${company ? ` — ${company}` : ''}*`,
     i18n.date(b.date),
     '',
-    `💰 ${t('br_salesToday')}: ${i18n.money(b.sales.today, 'IQD')}${pct !== null ? ` (${pct >= 0 ? '+' : ''}${i18n.int(pct)}% ${t('br_vsLastWeek')})` : ''}`,
+    `💰 ${t('br_salesToday')}: ${i18n.money(b.sales.today, 'IQD')}${pct !== null ? ` (${i18n.ltr(`${pct >= 0 ? '+' : '-'}${i18n.int(Math.abs(pct))}%`)} ${t('br_vsLastWeek')})` : ''}`,
     `🏦 ${t('br_cashNow')}: ${moneyBoth(i18n, b.cash.total)}`,
     `⬇️ ${t('br_moneyIn')}: ${i18n.money(b.flow.in, 'IQD')}   ⬆️ ${t('br_moneyOut')}: ${i18n.money(b.flow.out, 'IQD')}`,
     `📅 ${t('br_salesMonth')}: ${i18n.money(b.sales.month, 'IQD')}`
@@ -226,7 +226,7 @@ export function Brief() {
                   <li key={s.itemId} style={itemStyle}>
                     <span style={{ flex: 1 }}><a href={href(`item/${s.itemId}`)}>{i18n.name(s.name)}</a> <span className="small muted">{i18n.digitsOf(s.code)}</span></span>
                     <span className="small muted">{t('br_soldMonth', { n: i18n.digitsOf(String(s.soldMilli / 1000)) })}</span>
-                    <strong className="num" style={{ color: s.qtyMilli <= 0 ? bad : undefined }}>{i18n.digitsOf(String(s.qtyMilli / 1000))}</strong>
+                    <strong className="num" style={{ color: s.qtyMilli <= 0 ? bad : undefined }}>{i18n.qty(s.qtyMilli)}</strong>
                   </li>
                 ))}
               </ul>

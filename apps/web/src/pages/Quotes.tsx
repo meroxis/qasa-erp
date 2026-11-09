@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { amountInWords, formatQty, lineAmount, rateFromX100, todayIso, toWesternDigits, type CurrencyCode } from '@qasa/core';
+import { amountInWords, lineAmount, rateFromX100, todayIso, toWesternDigits, type CurrencyCode } from '@qasa/core';
 import { api } from '../api.ts';
 import { EmptyState, AmountInput, ErrorBox, Icon, Modal, QtyInput, SearchCombo, useData, useLoad, usePageNav, useToast, type PickOption } from '../components.tsx';
 import { useI18n, type I18n, type Key } from '../i18n.ts';
@@ -374,7 +374,7 @@ function Paper({ quote: x, company }: { quote: QuoteView; company: string }) {
               <tr key={l.seq}>
                 <td className="muted num">{i18n.int(l.seq)}</td>
                 <td>{l.description}{l.itemCode && <span className="muted small ltr" style={{ marginInlineStart: 6 }}>{l.itemCode}</span>}</td>
-                <td className="amount">{i18n.digitsOf(formatQty(l.qtyMilli))}</td>
+                <td className="amount">{i18n.qty(l.qtyMilli)}</td>
                 <td className="amount">{i18n.money(l.unitPrice, x.currency)}</td>
                 <td className="amount">{i18n.money(l.amount, x.currency)}</td>
               </tr>

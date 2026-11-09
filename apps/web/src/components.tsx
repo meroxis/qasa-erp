@@ -1,5 +1,5 @@
 import { createContext, useCallback, useContext, useEffect, useId, useMemo, useRef, useState, type ReactNode } from 'react';
-import { formatQty, htmlLang, normalizeForSearch, parseAmount, parseQty, formatAmount, type CurrencyCode, type EntryStatus, type EntryType, type InvoiceStatus, type Lang } from '@qasa/core';
+import { formatQty, htmlLang, normalizeForSearch, parseAmount, parseQty, formatAmount, stripBidiIsolates, type CurrencyCode, type EntryStatus, type EntryType, type InvoiceStatus, type Lang } from '@qasa/core';
 import { ApiError, onBusyChange, type AccountView, type PlanStatus, type Settings } from './api.ts';
 import { isKey, useI18n, type I18n, type Key } from './i18n.ts';
 
@@ -496,7 +496,8 @@ export function AmountInput({ value, currency, onChange, ariaLabel }: {
  * plain numbers ("-5000", "1,250.50") stay numbers. Quoted when it holds a quote, a comma or a line break.
  */
 export function csvCell(cell: string | number): string {
-  let s = String(cell);
+  // isolate marks only steer on-screen direction; Excel would keep them and read "-5000" as text
+  let s = stripBidiIsolates(String(cell));
   if (typeof cell === 'string' && /^[=+\-@\t\r]/.test(s) && !/^[-+]?\d[\d,]*(\.\d+)?$/.test(s)) s = "'" + s;
   return /[",\r\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
 }

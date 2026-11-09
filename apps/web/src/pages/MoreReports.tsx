@@ -21,7 +21,7 @@ const TAB_LABEL: Record<ReportTab, Key> = {
 
 
 const monthStart = () => todayIso().slice(0, 8) + '01';
-const qty = (i18n: I18n, milli: number) => i18n.digitsOf(String(milli / 1000));
+const qty = (i18n: I18n, milli: number) => i18n.qty(milli);
 
 export function MoreReports({ tab = 'sales-items' }: { tab?: ReportTab }) {
   const i18n = useI18n();
