@@ -85,6 +85,8 @@ export async function pair(address: string, code: string, timeoutMs = 8000, rela
 // ——— Qasa Relay: the office server over the internet, with no public IP (the relay only passes the TLS bytes on) ———
 
 const RELAY_PROTOCOL = 'qasa-relay';
+/** Named on every request to the relay: a proxy in front of it (Cloudflare's firewall) may refuse one with no User-Agent. */
+export const RELAY_USER_AGENT = 'QasaERP-Desktop';
 const OFFICE_ID = /^[23456789ABCDEFGHJKMNPQRSTUVWXYZ]{10}$/;
 
 declare const __QASA_RELAY_URL__: string | undefined;
@@ -131,7 +133,7 @@ function relayUpgrade(base: string, office: string, timeoutMs: number, carrier: 
     ? { Connection: 'Upgrade', Upgrade: 'websocket', 'Sec-WebSocket-Key': key, 'Sec-WebSocket-Version': '13' }
     : { Connection: 'Upgrade', Upgrade: RELAY_PROTOCOL };
   return new Promise((resolve, reject) => {
-    const req = make(url, { method: 'GET', headers, timeout: timeoutMs });
+    const req = make(url, { method: 'GET', headers: { 'User-Agent': RELAY_USER_AGENT, ...headers }, timeout: timeoutMs });
     req.on('upgrade', (res: IncomingMessage, socket: Duplex, head: Buffer) => {
       const answered = String(res.headers.upgrade ?? '').toLowerCase();
       if (carrier === 'websocket') {
