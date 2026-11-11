@@ -41,6 +41,8 @@ const T = {
   workHere: ['العمل على هذا الحاسوب', 'Work on this PC', 'کارکردن لەسەر ئەم کۆمپیوتەرە'],
   serverDown: ['خادم المكتب {host} لا يجيب. هل الحاسوب يعمل وقاصة ERP مفتوح عليه؟', 'The office server {host} doesn’t answer. Is that PC on, with Qasa ERP open?', 'سێرڤەری نووسینگە {host} وەڵام ناداتەوە. ئەو کۆمپیوتەرە هەڵکراوە و قاسە ERP لەسەری کراوەیە؟'],
   serverChanged: ['شهادة خادم المكتب {host} تغيّرت، فلا يمكن التأكد أنه الخادم نفسه. اتصل من جديد برمز الاقتران الذي يظهر عليه.', 'The certificate of the office server {host} has changed, so it can’t be confirmed as the same server. Connect again with the pairing code it shows.', 'بڕوانامەی سێرڤەری نووسینگە {host} گۆڕاوە، بۆیە ناتوانرێت دڵنیا بین هەمان سێرڤەرە. بە کۆدی جووتبوونی سەر ئەو دووبارە پەیوەندی بکەرەوە.'],
+  // 1.2: what waits in this PC's outbox while the office server doesn't answer (outbox.ts)
+  outboxWaiting: ['{n} من المبيعات وسندات القبض محفوظة بأمان على هذا الحاسوب، وتُرسل وحدها عندما يجيب الخادم.', '{n} sales and receipts are kept safe on this PC and are sent by themselves when the server answers.', '{n} فرۆشتن و سەنەدی وەرگرتن بە سەلامەتی لەسەر ئەم کۆمپیوتەرە پارێزراون، و کاتێک سێرڤەرەکە وەڵام بداتەوە خۆیان دەنێردرێن.'],
   tryAgain: ['حاول مجدداً', 'Try again', 'دووبارە هەوڵ بدەرەوە'],
   cancel: ['إلغاء', 'Cancel', 'پاشگەزبوونەوە'],
   // the company database on a MariaDB/MySQL server (Business)
