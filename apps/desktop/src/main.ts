@@ -259,7 +259,8 @@ function localBackupDir(): string {
 
 /**
  * %LOCALAPPDATA%\Qasa ERP: a second place, outside the app's own (roaming) folder, that keeps this PC's trial record
- * (activation.ts), so deleting one copy never gives a new free month. Nothing without LOCALAPPDATA.
+ * (activation.ts), so deleting one copy never gives a new free month (deleting every copy still does: both are the
+ * Windows user's own files). Nothing without LOCALAPPDATA.
  */
 function localDataDir(): string | undefined {
   const local = process.env.LOCALAPPDATA;

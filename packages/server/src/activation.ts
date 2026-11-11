@@ -41,7 +41,10 @@ export interface LicensingConfig {
   dataDir: string | null;
   /**
    * More folders that keep the same marker (the Windows app: %LOCALAPPDATA%\Qasa ERP). Every copy is read and a
-   * missing one is written again from the others, so deleting one copy never frees the trial.
+   * missing one is written again from the others, so deleting one copy never frees the trial. Every copy is a file of
+   * the Windows user's own, so this only slows a reset down: deleting all of them (with the company file's trial
+   * settings, or with a new company file) does start another month. Only a record the portal keeps for the PC would
+   * make the trial once per PC for certain.
    */
   markerDirs?: readonly string[] | undefined;
   portalUrl: string;

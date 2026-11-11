@@ -27,7 +27,7 @@ export interface ServerInit {
   localBackupDir?: string;
   /**
    * 1.2: %LOCALAPPDATA%\Qasa ERP, a second place (outside the app's own folder) that keeps this PC's trial record, so
-   * deleting one copy never gives a new free month.
+   * deleting one copy never gives a new free month (deleting every copy still does: both are the user's own files).
    */
   localDataDir?: string;
   appVersion: string;

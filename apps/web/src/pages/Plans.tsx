@@ -109,10 +109,15 @@ function ActivationNote({ plan, busy, act }: { plan: PlanStatus; busy: boolean; 
 /** What the Pro module's own licence check says (GET /api/pro/licence-check; missing in builds without Pro). */
 export interface ProLicenceCheck { heldBack: boolean; reason: string | null }
 
-/** The note for a Pro module that holds its features back on this PC: the app's files changed, or a licence to check in. */
+/**
+ * The note for a Pro module that holds its features back on this PC: the app's files changed, this PC couldn't be
+ * confirmed (its Windows id unreadable, or the licence addon missing or not the one we published), or a licence to
+ * check in.
+ */
 export function proHeldKey(check: ProLicenceCheck | null): Key | null {
   if (!check?.heldBack) return null;
-  return check.reason === 'integrity' ? 'ac_proHeldFiles' : 'ac_proHeld';
+  if (check.reason === 'integrity') return 'ac_proHeldFiles';
+  return check.reason === 'machine' || check.reason === 'addon' ? 'ac_proHeldPc' : 'ac_proHeld';
 }
 
 /**

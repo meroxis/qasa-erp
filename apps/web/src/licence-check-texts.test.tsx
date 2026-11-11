@@ -31,10 +31,13 @@ it('tells why Pro pages are paused on this PC, with the way back, and only when 
   expect(proHeldKey(null)).toBeNull();
   expect(proHeldKey({ heldBack: false, reason: null })).toBeNull();
   expect(proHeldKey({ heldBack: true, reason: 'integrity' })).toBe('ac_proHeldFiles');
-  for (const reason of ['activation', 'clock', 'licence', 'trial', 'machine', 'addon', 'error', null]) {
+  // this PC couldn't be confirmed (its Windows id unreadable, the licence addon missing): no portal check-in helps
+  expect(proHeldKey({ heldBack: true, reason: 'machine' })).toBe('ac_proHeldPc');
+  expect(proHeldKey({ heldBack: true, reason: 'addon' })).toBe('ac_proHeldPc');
+  for (const reason of ['activation', 'clock', 'licence', 'trial', 'error', null]) {
     expect(proHeldKey({ heldBack: true, reason })).toBe('ac_proHeld');
   }
-  for (const key of ['ac_proHeld', 'ac_proHeldFiles'] as const) {
+  for (const key of ['ac_proHeld', 'ac_proHeldFiles', 'ac_proHeldPc'] as const) {
     const [ar, en, ku] = all(key);
     expect(new Set([ar, en, ku]).size, key).toBe(3);
     expect(ar).toMatch(ARABIC_SCRIPT);
@@ -44,6 +47,14 @@ it('tells why Pro pages are paused on this PC, with the way back, and only when 
   }
   expect(all('ac_proHeld')[1]).toMatch(/check in with the portal.*Check now/);
   expect(all('ac_proHeldFiles')[1]).toMatch(/Microsoft Store or qasaerp\.com/);
+  const [arPc, enPc, kuPc] = all('ac_proHeldPc');
+  expect(enPc).toMatch(/couldn’t confirm which PC this is.*open it again.*Microsoft Store or qasaerp\.com/);
+  expect(enPc).not.toMatch(/Check now/);
+  for (const text of [arPc, kuPc]) {
+    expect(text).toContain('ERP');
+    expect(text).toContain('Microsoft');
+    expect(text).toContain('qasaerp.com');
+  }
   // the Plan page asks the Pro module (a build without it answers 404, and nothing is shown)
   expect(src('./pages/Plans.tsx')).toContain("request<ProLicenceCheck>('GET', '/api/pro/licence-check')");
 });
