@@ -6,6 +6,7 @@ import { go, href } from '../router.ts';
 import { PriceListField } from '../industry/PriceListField.tsx';
 import { CompanyPrintFooter, CompanyPrintHeader } from '../industry/PrintDocument.tsx';
 import { StatementWhatsApp } from '../industry/WhatsAppShare.tsx';
+import { LoyaltyCard } from '../industry/Loyalty.tsx';
 import { isLang, todayIso, type Lang } from '@qasa/core';
 import { printDocument } from '../industry/printing.ts';
 
@@ -147,7 +148,7 @@ export function PartyForm({ type, party, onClose, onSaved }: { type: PartyType; 
 }
 
 /** كشف حساب زبون / مجهز, with their invoices. */
-export function PartyDetail({ id }: { id: string }) {
+export function PartyDetail({ id, admin = false }: { id: string; admin?: boolean }) {
   const i18n = useI18n();
   const { t } = i18n;
   const { settings } = useData();
@@ -205,6 +206,7 @@ export function PartyDetail({ id }: { id: string }) {
       </div>
 
       {isCustomer && <div className="no-print"><PriceListField partyId={p.id} /></div>}
+      {isCustomer && <div className="no-print"><LoyaltyCard partyId={p.id} admin={admin} /></div>}
 
       <div className="card">
         <div className="row" style={{ padding: '12px 16px' }}>

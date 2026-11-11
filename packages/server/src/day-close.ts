@@ -5,6 +5,7 @@ import { AppError } from './errors.ts';
 import { readSetting } from './settings.ts';
 import { entryInBranchSql } from './branches.ts';
 import { getShift, type PosMethod } from './pos.ts';
+import { loyaltyPaidFor } from './loyalty.ts';
 import { branchOf, cashFlowOn, expensesBetween, lowStock, salesByItem, type BranchFilter, type ExpenseRow, type ItemSales, type LowStock } from './brief.ts';
 import type { ApiExtension } from './routes.ts';
 
@@ -59,8 +60,8 @@ const localDay = (iso: string) => todayIso(new Date(iso));
 const cashOrBank = (account: string | null): DayMethod => (account?.startsWith('183') ? 'bank' : 'cash');
 const fromPos = (m: PosMethod): DayMethod => (m === 'account' ? 'credit' : m);
 
-/** What loyalty points paid of each invoice (a sale) or gave back (a return), in IQD; none yet. */
-const loyaltyPaid = (_db: Db, _invoiceIds: readonly string[]): Map<string, number> => new Map();
+/** What loyalty points (Pro) paid of each sale or gave back on each return, in IQD. */
+const loyaltyPaid = loyaltyPaidFor;
 
 function salesByMethod(db: Db, date: string, branch: BranchFilter): Pick<DayCloseView, 'sales' | 'methods' | 'refunds'> {
   const [w, wp] = inList('i.warehouse_id', branch?.warehouses);

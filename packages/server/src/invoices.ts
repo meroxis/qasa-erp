@@ -31,6 +31,7 @@ import { assertValid, insertEntry, nextNumber, reverseEntryInternal } from './jo
 import { getParty } from './parties.ts';
 import { addStockMove, stockOf } from './items.ts';
 import { getPostingAccounts, isPeriodLocked, readSetting } from './settings.ts';
+import { cancelLoyalty, invoiceLoyalty, planRedemption, recordSaleLoyalty, type InvoiceLoyaltyView } from './loyalty.ts';
 import { resolveLines } from './item-units.ts';
 import {
   addTaken, allocateOut, assertReversible, batchColumns, batchTracking, cancelBatchMoves, inboundBatch, lineBatchErrors, writeBatchMoves,
@@ -129,6 +130,8 @@ export interface InvoiceView extends InvoiceSummary {
   /** The installment contract that schedules this sale (Pro), while it is active. */
   installmentContract: { id: string; number: string } | null;
   payments: InvoicePaymentView[];
+  /** 1.2 (Pro): the loyalty points it earned and used, and the customer's balance (null: none and points are off) */
+  loyalty: InvoiceLoyaltyView | null;
 }
 
 interface InvoiceRow {
@@ -187,7 +190,9 @@ const SELECT_INVOICE = `SELECT v.*, p.code AS party_code, p.name AS party_name,
    FROM entry_lines l WHERE l.entry_id = v.entry_id AND
      ((v.payment = 'cash' AND (l.account_code = v.cash_account
          OR l.account_code IN (SELECT ip.account_code FROM invoice_payments ip WHERE ip.invoice_id = v.id AND ip.kind = 'pos' AND ip.entry_id = v.entry_id)))
-      OR (v.payment = 'credit' AND l.party_id = v.party_id))) AS settlement_base,
+      OR (v.payment = 'credit' AND l.party_id = v.party_id)))
+   -- 1.2: what loyalty points paid of a sale, or gave back on a return, is part of its settlement too
+   + COALESCE((SELECT SUM(lm.value) FROM loyalty_moves lm WHERE lm.invoice_id = v.id AND lm.kind IN ('redeem', 'return_redeem')), 0) AS settlement_base,
   (SELECT SUM(ip.amount) FROM invoice_payments ip JOIN entries ie ON ie.id = ip.entry_id
    WHERE ip.invoice_id = v.id AND ip.kind = 'online' AND ie.reversed_by_id IS NULL) AS online_paid
   FROM invoices v LEFT JOIN parties p ON p.id = v.party_id`;
@@ -243,7 +248,8 @@ export function getInvoice(db: Db, id: string): InvoiceView {
     returnOfNumber: r.return_of ? (db.prepare('SELECT number FROM invoices WHERE id = ?').get(r.return_of) as { number: string | null }).number : null,
     returns,
     installmentContract: activeContractOf(db, id),
-    payments: invoicePayments(db, id)
+    payments: invoicePayments(db, id),
+    loyalty: r.status === 'posted' && (r.kind === 'sale' || r.kind === 'sale_return') ? invoiceLoyalty(db, id, r.party_id) : null
   };
 }
 
@@ -435,10 +441,11 @@ export function onlinePaidAmount(db: Db, invoiceId: string): number {
 }
 
 export function postInvoice(
-  db: Db, id: string, user: string, opts: { settledNow?: number; allowExpired?: boolean; split?: readonly SalePart[] } = {}
+  db: Db, id: string, user: string, opts: { settledNow?: number; allowExpired?: boolean; split?: readonly SalePart[]; loyaltyPoints?: number | undefined } = {}
 ): InvoiceView {
   const view = getInvoice(db, id);
   requireAction(db, loadRow(db, id), 'post');
+  if (opts.loyaltyPoints !== undefined && view.kind !== 'sale') throw invalid([{ code: 'loyalty_points_invalid' }]);
   // money already taken online for this order is on the customer's account: posted as cash too, it would be taken twice
   if (view.kind === 'sale' && (view.payment !== 'credit' || opts.split?.length) && onlinePaidAmount(db, id) > 0) throw conflict('invoice_has_online_payments');
   const input = storedInput(view);
@@ -450,6 +457,16 @@ export function postInvoice(
   const baseTotal = toBase(total, view.currency, view.rateX100);
   const counterAccount = view.payment === 'cash' ? view.cashAccountCode! : party!.accountCode;
   const counterParty = view.payment === 'credit' && party ? { partyId: party.id } : {};
+  // 1.2 (Pro): loyalty points pay part of a sale: their value is a part of its own, debited to the loyalty account,
+  // and the rest is paid as the invoice says (or as the till's parts say)
+  const redeemed = view.kind === 'sale' && opts.loyaltyPoints ? planRedemption(db, { partyId: view.partyId, points: opts.loyaltyPoints, total, currency: view.currency, date: view.date }) : null;
+  let split: readonly SalePart[] | undefined = opts.split;
+  if (redeemed) {
+    const rest = total - redeemed.value;
+    const paid = split?.length ? split : rest > 0 ? [{ accountCode: counterAccount, amount: rest, ...counterParty }] : [];
+    if (paid.reduce((s, p) => s + p.amount, 0) !== rest) throw invalid([{ code: 'payments_total_mismatch', total: rest } as { code: string }]);
+    split = [...paid, { accountCode: redeemed.accountCode, amount: redeemed.value }];
+  }
 
   const lineCosts: (number | null)[] = [];
   const moves: { itemId: string; qtyMilli: number; value: number }[] = [];
@@ -461,16 +478,16 @@ export function postInvoice(
 
   if (view.kind === 'sale') {
     const settled = Number.isSafeInteger(opts.settledNow) ? Math.min(Math.max(opts.settledNow!, 0), total) : 0;
-    const onCredit = baseTotal - (settled ? toBase(settled, view.currency, view.rateX100) : 0);
+    const onCredit = baseTotal - (settled ? toBase(settled, view.currency, view.rateX100) : 0) - (redeemed?.value ?? 0);
     if (party && view.payment === 'credit' && party.creditLimit !== null && party.balance + onCredit > party.creditLimit) {
       throw conflict('credit_limit_exceeded', { balance: party.balance, limit: party.creditLimit, total: baseTotal });
     }
     // a split sale (POS): only the part put on the customer's account counts against their credit limit
-    if (opts.split?.length) {
-      if (opts.split.reduce((s, p) => s + p.amount, 0) !== total) throw invalid([{ code: 'payments_total_mismatch' }]);
-      const onAccount = toBase(opts.split.filter((p) => p.partyId).reduce((s, p) => s + p.amount, 0), view.currency, view.rateX100);
+    if (split?.length) {
+      if (split.reduce((s, p) => s + p.amount, 0) !== total) throw invalid([{ code: 'payments_total_mismatch' }]);
+      const onAccount = toBase(split.filter((p) => p.partyId).reduce((s, p) => s + p.amount, 0), view.currency, view.rateX100);
       if (onAccount > 0) {
-        if (!party || opts.split.some((p) => p.partyId && p.partyId !== party.id)) throw invalid([{ code: 'party_required' }]);
+        if (!party || split.some((p) => p.partyId && p.partyId !== party.id)) throw invalid([{ code: 'party_required' }]);
         if (party.creditLimit !== null && party.balance + onAccount > party.creditLimit) {
           throw conflict('credit_limit_exceeded', { balance: party.balance, limit: party.creditLimit, total: onAccount });
         }
@@ -500,9 +517,9 @@ export function postInvoice(
     });
     if (batchErrors.length) throw invalid(batchErrors);
     const totalCost = lineCosts.reduce<number>((s, c) => s + (c ?? 0), 0);
-    if (opts.split?.length) {
+    if (split?.length) {
       // one debit line per part: the safe for cash, a card or wallet account, or the customer for what goes on account
-      for (const p of opts.split) lines.push({ accountCode: p.accountCode, debit: p.amount, credit: 0, ...(p.partyId ? { partyId: p.partyId } : {}) });
+      for (const p of split) lines.push({ accountCode: p.accountCode, debit: p.amount, credit: 0, ...(p.partyId ? { partyId: p.partyId } : {}) });
     } else lines.push({ accountCode: counterAccount, debit: total, credit: 0, ...counterParty });
     lines.push({ accountCode: accounts.sales, debit: 0, credit: total });
     if (totalCost > 0) {
@@ -551,6 +568,13 @@ export function postInvoice(
     db.prepare(`UPDATE invoices SET status = 'posted', number = ?, entry_id = ?, posted_by = ?, posted_at = ?, updated_at = ? WHERE id = ?`)
       .run(number, entryId, user, now, now, id);
     audit(db, user, 'post', 'invoice', id, { number, entryId });
+    if (view.kind === 'sale') {
+      // the points used, and those earned on what was paid now (not on account, not with points)
+      const paidNow = split?.length
+        ? split.filter((p) => !p.partyId && p.accountCode !== redeemed?.accountCode).reduce((s, p) => s + p.amount, 0)
+        : view.payment === 'cash' ? total : 0;
+      recordSaleLoyalty(db, { invoiceId: id, partyId: view.partyId, date: view.date, warehouseId: view.warehouseId, paidIqd: toBase(paidNow, view.currency, view.rateX100), redeemed }, user);
+    }
     // selling stock past its date (the user confirmed it, under the 'warn' policy) is kept on record
     if (usedExpired) audit(db, user, 'sell_expired', 'invoice', id, { number, batches: batchMoves.map((m) => m.batchId) });
   });
@@ -609,6 +633,8 @@ export function cancelInvoice(db: Db, id: string, user: string, date?: string, a
     const now = new Date().toISOString();
     db.prepare(`UPDATE invoices SET status = 'cancelled', cancel_entry_id = ?, cancelled_by = ?, cancelled_at = ?, updated_at = ? WHERE id = ?`)
       .run(reversalId, user, now, now, id);
+    // its loyalty points movements are undone too (the reversal gives the points' value back in the books)
+    cancelLoyalty(db, id, cancelDate, user);
     // phones this sale took are back in stock, with no customer and no warranty. A job's bill (solar) keeps its
     // equipment linked: the job shows it waiting for the next bill, and reads it as unsold meanwhile
     if (view.kind === 'sale' && !db.prepare('SELECT 1 FROM jobs WHERE invoice_id = ?').get(id)) {

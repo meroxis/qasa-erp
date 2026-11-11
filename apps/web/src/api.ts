@@ -332,6 +332,8 @@ export interface InvoiceView extends InvoiceSummary {
   installmentContract: { id: string; number: string } | null;
   /** 1.1 (older servers leave it out) */
   payments?: InvoicePaymentView[];
+  /** 1.2 (Pro): the loyalty points it earned and used, and the customer's balance (null: none and points are off) */
+  loyalty?: { earned: number; redeemed: number; value: number; balance: number } | null;
 }
 
 export type Role = 'admin' | 'preparer' | 'checker' | 'approver' | 'sales' | 'purchasing' | 'storekeeper' | 'viewer';
@@ -714,7 +716,8 @@ export const api = {
   createInvoice: (input: InvoiceInput) => request<InvoiceView>('POST', '/api/invoices', input),
   updateInvoice: (id: string, input: InvoiceInput) => request<InvoiceView>('PUT', `/api/invoices/${id}`, input),
   deleteInvoice: (id: string) => request<void>('DELETE', `/api/invoices/${id}`),
-  postInvoice: (id: string, opts: { allowExpired?: boolean } = {}) => request<InvoiceView>('POST', `/api/invoices/${id}/post`, opts.allowExpired ? { allowExpired: true } : {}),
+  postInvoice: (id: string, opts: { allowExpired?: boolean; loyaltyPoints?: number } = {}) =>
+    request<InvoiceView>('POST', `/api/invoices/${id}/post`, { ...(opts.allowExpired ? { allowExpired: true } : {}), ...(opts.loyaltyPoints ? { loyaltyPoints: opts.loyaltyPoints } : {}) }),
   cancelInvoice: (id: string, date: string) => request<InvoiceView>('POST', `/api/invoices/${id}/cancel`, { date }),
   createReturn: (id: string, input: ReturnInput) => request<InvoiceView>('POST', `/api/invoices/${id}/returns`, input),
 

@@ -102,7 +102,7 @@ const PARTY_USERS: readonly [table: string, column: string][] = [
   ['entry_lines', 'party_id'], ['invoices', 'party_id'], ['quotes', 'party_id'], ['deals', 'party_id'], ['jobs', 'party_id'],
   ['purchase_orders', 'party_id'], ['cheques', 'party_id'], ['installment_contracts', 'party_id'], ['gen_subscribers', 'party_id'],
   ['re_units', 'party_id'], ['re_deposits', 'party_id'], ['repair_orders', 'party_id'], ['serials', 'party_id'],
-  ['serials', 'from_party_id'], ['maint_plans', 'party_id'], ['maint_visits', 'party_id']
+  ['serials', 'from_party_id'], ['maint_plans', 'party_id'], ['maint_visits', 'party_id'], ['loyalty_moves', 'party_id']
 ];
 
 function usedParties(db: Db): Set<string> {

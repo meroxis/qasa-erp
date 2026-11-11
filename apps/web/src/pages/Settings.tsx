@@ -20,6 +20,7 @@ import { cloudChoices } from './cloud-providers.ts';
 import { backupFailureKey, backupNoticeKey } from '../industry/BackupNotice.tsx';
 import { batchesApi, type BatchSettingsView } from '../industry/batches-api.ts';
 import { posApi, type PosAccounts } from '../industry/pos-api.ts';
+import { LoyaltySettingsCard } from '../industry/Loyalty.tsx';
 
 /** Language and display are each person's own; the company's settings are for admins. */
 export function Settings({ admin }: { admin: boolean }) {
@@ -181,6 +182,7 @@ function CompanySettings() {
       <ExpirySettingsCard />
 
       <PosAccountsCard />
+      <LoyaltySettingsCard />
 
       <OfficeNetworkCard />
 

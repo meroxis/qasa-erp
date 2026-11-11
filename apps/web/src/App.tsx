@@ -614,7 +614,7 @@ export function App() {
       break;
     case 'party':
       title = t('statement');
-      content = arg ? <PartyDetail key={arg} id={arg} /> : null;
+      content = arg ? <PartyDetail key={arg} id={arg} admin={isAdmin} /> : null;
       break;
     case 'items':
       title = t('items');

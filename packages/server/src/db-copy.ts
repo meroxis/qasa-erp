@@ -28,7 +28,8 @@ const TOTALS: Record<string, string[]> = {
   invoice_lines: ['amount'],
   stock_doc_lines: ['qty_milli'],
   stock_batch_moves: ['qty_milli'],
-  invoice_payments: ['amount']
+  invoice_payments: ['amount'],
+  loyalty_moves: ['points', 'value']
 };
 
 /** Rows read at a time, and written per INSERT (one round trip to a server each). */

@@ -9,7 +9,7 @@ import { buildApp } from './app.ts';
 import { MYSQL_TABLES, tableColumns, V12_OWNER_TOOLS_MYSQL_STEPS } from './schema-mysql.ts';
 import { AppError } from './errors.ts';
 
-// Version 12, the owner tools' part: a customer's language for WhatsApp messages.
+// Version 12, the owner tools' part: a customer's language for WhatsApp messages and the loyalty points ledger.
 const onServer = !!process.env.QASA_TEST_DB;
 const headers = { 'x-qasa-user': encodeURIComponent('Mer'), 'x-qasa-client': '1' };
 
@@ -37,6 +37,10 @@ describe.skipIf(onServer)('a company file from schema 11 opened by schema 12', (
       expect(schemaVersion(db)).toBe(SCHEMA_VERSION);
       expect(updateCopies(file).map((f) => basename(f))).toEqual(['books-before-update-v11-20261111-090000.sqlite']);
       expect(db.prepare('SELECT name, lang FROM parties').all()).toEqual([{ name: 'Raz', lang: null }]);
+      // the loyalty ledger is there, empty, and append-only
+      expect(db.prepare('SELECT COUNT(*) AS n FROM loyalty_moves').get()).toEqual({ n: 0 });
+      expect((db.prepare("SELECT name FROM sqlite_master WHERE type = 'trigger' AND name LIKE 'loyalty_moves_%' ORDER BY name").all() as { name: string }[]).map((t) => t.name))
+        .toEqual(['loyalty_moves_no_delete', 'loyalty_moves_no_update']);
       const app = buildApp(db);
       expect((await app.inject({ url: '/api/parties/p1', headers })).json()).toMatchObject({ name: 'Raz', lang: null });
       const put = (lang: unknown) => app.inject({ method: 'PUT', url: '/api/parties/p1', headers, payload: { name: 'Raz', phone: '0770 000 0001', lang } as object });
@@ -98,5 +102,7 @@ describe('version 12 (owner tools) on a server database', () => {
     migrate(fake);
     expect(version).toBe(SCHEMA_VERSION);
     for (const step of V12_OWNER_TOOLS_MYSQL_STEPS) expect(ran.filter((s) => s === step.sql)).toHaveLength(1);
+    expect(ran).toContain('CREATE TABLE loyalty_moves (');
+    expect(ran.filter((s) => /^CREATE TRIGGER loyalty_moves_no_(update|delete) /.test(s))).toHaveLength(2);
   });
 });

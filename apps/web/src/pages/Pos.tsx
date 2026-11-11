@@ -19,6 +19,7 @@ import { RxTick, useControlledPrompt, useRxItems } from '../industry/PharmacyPro
 import { printAlone, printDocument } from '../industry/printing.ts';
 import { receiptMessage, withAttachment } from '../industry/WhatsAppShare.tsx';
 import { WhatsAppSendButton } from '../industry/WhatsAppSend.tsx';
+import { LoyaltyUse, loyaltyLines } from '../industry/Loyalty.tsx';
 
 /**
  * Point of sale (every plan). Made for a cashier with no training: the search box always has the focus, so a barcode
@@ -177,6 +178,8 @@ function Register({ initial, onClosed }: { initial: ShiftView; onClosed(): void 
   // how it is paid (1.1): no parts = all cash, as before; else 1–4 parts that add up to the total
   const [parts, setParts] = useState<{ method: PosMethod; amount: number | null }[]>([]);
   const [methods, setMethods] = useState<PosMethod[]>(['cash']);
+  // loyalty points used on this sale (Pro), and what they pay
+  const [points, setPoints] = useState({ points: 0, value: 0 });
   useEffect(() => { posApi.paymentAccounts().then((r) => setMethods(r.methods), () => {}); }, []);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<unknown>(null);
@@ -310,15 +313,19 @@ function Register({ initial, onClosed }: { initial: ShiftView; onClosed(): void 
 
   const subtotal = cart.reduce((s, l) => s + lineTotal(l), 0);
   const total = Math.max(0, subtotal - (discount ?? 0));
-  const change = cashChange(paid, total, parts);
+  // 1.2 (Pro): loyalty points pay part of the sale; the rest is paid as before
+  const due = total - points.value;
+  // another customer, total or currency: the points are chosen again
+  useEffect(() => { setPoints({ points: 0, value: 0 }); }, [partyId, total, currency]);
+  const change = cashChange(paid, due, parts);
   const split = parts.length > 0;
-  const left = total - parts.reduce((s, p) => s + (p.amount ?? 0), 0);
+  const left = due - parts.reduce((s, p) => s + (p.amount ?? 0), 0);
   const splitOk = !split || (left === 0 && parts.every((p) => (p.amount ?? 0) > 0) && (!parts.some((p) => p.method === 'account') || !!partyId));
   const canPay = cart.length > 0 && !busy && (discount ?? 0) <= subtotal && (currency === 'IQD' || rateX100 > 0) && (change === null || change >= 0) && splitOk;
   /** A method button: the first one takes the whole total; later ones what is left. */
   const pickMethod = (method: PosMethod) => {
     setParts((ps) => (ps.length === 0
-      ? (method === 'cash' ? [] : [{ method, amount: total }])
+      ? (method === 'cash' ? [] : [{ method, amount: due }])
       : ps.length >= 4 || ps.some((p) => p.method === method) ? ps : [...ps, { method, amount: Math.max(0, left) }]));
   };
 
@@ -328,6 +335,7 @@ function Register({ initial, onClosed }: { initial: ShiftView; onClosed(): void 
     setPaid(null);
     setPartyId('');
     setParts([]);
+    setPoints({ points: 0, value: 0 });
     setError(null);
     setQ('');
     focusSearch();
@@ -341,7 +349,8 @@ function Register({ initial, onClosed }: { initial: ShiftView; onClosed(): void 
       const sale = {
         currency, ...(currency === 'USD' ? { rateX100 } : {}), ...(partyId ? { partyId } : {}), discount: discount ?? 0,
         lines: cart.map(posSaleLine),
-        ...(split ? { payments: parts.map((p) => ({ method: p.method, amount: p.amount ?? 0 })) } : {})
+        ...(split ? { payments: parts.map((p) => ({ method: p.method, amount: p.amount ?? 0 })) } : {}),
+        ...(points.points ? { loyaltyPoints: points.points } : {})
       };
       let res;
       try {
@@ -491,6 +500,7 @@ function Register({ initial, onClosed }: { initial: ShiftView; onClosed(): void 
             <div className="field"><span>{t('pos_customer')}</span>
               <SearchCombo value={partyId} options={customerOptions} onChange={setPartyId} placeholder={t('pos_walkIn')} emptyLabel={t('pos_walkIn')} />
             </div>
+            <LoyaltyUse partyId={partyId} total={total} currency={currency} value={points.points} onChange={(n, v) => setPoints({ points: n, value: v })} />
             <div className="grid-2">
               <label className="field" id="pos-discount"><span>{t('pos_discount')} <span className="kbd">F8</span></span><AmountInput value={discount} currency={currency} onChange={setDiscount} ariaLabel={t('pos_discount')} /></label>
               <label className="field"><span>{t('pos_paid')}</span><AmountInput value={paid} currency={currency} onChange={setPaid} ariaLabel={t('pos_paid')} /></label>
@@ -569,6 +579,8 @@ function Receipt({ invoice, shift }: { invoice: InvoiceView; shift: ShiftView })
   const { settings, plan } = useData();
   const setup = usePrintSetup();
   const company = settings ? i18n.name(settings.companyName) : '';
+  // 1.2 (Pro): the points the sale used and earned, and the customer's balance
+  const points = loyaltyLines(i18n, invoice.loyalty);
   // a receipt design of the company's own (Settings → Print design) replaces the standard receipt
   if (setup.designs.pos) {
     return createPortal(
@@ -578,6 +590,7 @@ function Receipt({ invoice, shift }: { invoice: InvoiceView; shift: ShiftView })
           company={settings?.companyName ?? { ar: '', en: '', ku: '' }} branding={!plan?.features.includes('noBranding')}
           defaultRateX100={settings?.defaultRateX100}
         />
+        {points.length > 0 && <div className="pos-receipt pos-r-loyalty">{points.map(([label, value]) => <div key={label} className="pos-r-row small"><span>{label}</span><span className="num">{value}</span></div>)}</div>}
       </div>,
       document.body
     );
@@ -607,6 +620,8 @@ function Receipt({ invoice, shift }: { invoice: InvoiceView; shift: ShiftView })
         {(invoice.payments ?? []).filter((p) => p.kind === 'pos').map((p) => (
           <div key={p.id} className="pos-r-row small"><span>{t(`pay_${p.method}` as Key)}</span><span className="num">{i18n.money(p.amount, p.currency)}</span></div>
         ))}
+        {points.length > 0 && <div className="pos-r-sep" />}
+        {points.map(([label, value]) => <div key={label} className="pos-r-row small"><span>{label}</span><span className="num">{value}</span></div>)}
         <div className="pos-r-sep" />
         <div className="pos-r-center small">{t('pos_thanks')}</div>
         {!plan?.features.includes('noBranding') && <div className="pos-r-center small">{t('madeWith')} · <span className="ltr">qasaerp.com</span></div>}
