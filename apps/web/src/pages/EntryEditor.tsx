@@ -1,6 +1,7 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { amountInWords, rateFromX100, todayIso, toWesternDigits, type CurrencyCode } from '@qasa/core';
-import { api, ApiError, type EntryView, type JournalInput, type VoucherInput } from '../api.ts';
+import { api, ApiError, isNetworkError, serverReachable, type EntryView, type JournalInput, type VoucherInput } from '../api.ts';
+import { holdKey, outboxClient, outboxWho, SALE_TIMEOUT_MS, type HeldKey } from '../industry/outbox.ts';
 import { AccountCombo, AmountInput, ErrorBox, Icon, SearchCombo, useData, useLoad, useToast } from '../components.tsx';
 import { useI18n } from '../i18n.ts';
 import { go } from '../router.ts';
@@ -50,6 +51,9 @@ export function EntryEditor({ kind: initialKind, id }: { kind?: Kind; id?: strin
   const [rows, setRows] = useState<Row[]>(() => [emptyRow(), emptyRow()]);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<unknown>(null);
+  // 1.2, a new receipt on a PC with an outbox: its key over every save, and whether a try got no answer (may be saved)
+  const voucherKey = useRef<HeldKey | null>(null);
+  const [unsure, setUnsure] = useState(false);
   const parties = useLoad(() => api.parties({ active: 'true' }), []);
 
   // defaults for a new voucher
@@ -107,7 +111,36 @@ export function EntryEditor({ kind: initialKind, id }: { kind?: Kind; id?: strin
           items: rows.filter((r) => r.accountCode || r.debit).map((r) => ({ accountCode: r.accountCode, amount: r.debit ?? 0, ...(r.description.trim() ? { description: r.description.trim() } : {}), ...(r.partyId && partyTypeFor(r.accountCode) ? { partyId: r.partyId } : {}) }))
         };
         if (party.trim()) input.party = party.trim();
-        saved = id ? await api.updateVoucher(id, input) : await api.createVoucher(input);
+        // 1.2: a new receipt on a PC connected to an office server is kept on the PC when the server can't be reached,
+        // and sent later with the same key (booked once); everything else stays online only
+        const box = !id && kind === 'receipt' ? outboxClient() : null;
+        // the same key on every save of this same receipt until it is saved or kept: a try whose answer was lost is
+        // answered from the first, never saved twice
+        const held = box ? holdKey(voucherKey.current, input) : null;
+        voucherKey.current = held;
+        const key = held?.key ?? null;
+        const keepHere = async () => {
+          const books = await box!.books();
+          if (!books) throw new ApiError(0, 'outbox_unavailable', null);
+          const who = outboxWho();
+          await box!.add({
+            id: key!, kind: 'voucher', path: '/api/vouchers', body: input as unknown as Record<string, unknown>, books,
+            user: { id: who?.id ?? null, name: who?.name ?? '' }, summary: { total: voucherTotal, currency, lines: input.items.length }
+          });
+          toast(t('ob_voucherSavedHere'));
+          go('entries');
+        };
+        if (box && key && (!serverReachable() || box.mineWaiting().length > 0)) return void (await keepHere());
+        try {
+          saved = id ? await api.updateVoucher(id, input) : await api.createVoucher(input, key ? { key, timeoutMs: SALE_TIMEOUT_MS } : {});
+        } catch (e) {
+          if (held && isNetworkError(e)) {
+            // it may be saved already: kept here with the same key it is saved once; if it can't be kept, the person is told
+            voucherKey.current = { ...held, lost: true };
+            return void (await keepHere());
+          }
+          throw e;
+        }
       } else {
         const input: JournalInput = {
           date, description, currency, rateX100: rate,
@@ -122,6 +155,7 @@ export function EntryEditor({ kind: initialKind, id }: { kind?: Kind; id?: strin
     } catch (e) {
       setError(e);
     } finally {
+      setUnsure(!!voucherKey.current?.lost);
       setSaving(false);
     }
   }
@@ -234,6 +268,7 @@ export function EntryEditor({ kind: initialKind, id }: { kind?: Kind; id?: strin
         </div>
       )}
 
+      {unsure && <div className="alert warn" role="alert">{t('ob_voucherUnsure')}</div>}
       <ErrorBox error={error} />
       <div className="row">
         <button type="button" className="btn primary" onClick={save} disabled={saving}><Icon name="check" size={16} />{saving ? t('saving') : t('saveDraft')}</button>

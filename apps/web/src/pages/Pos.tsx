@@ -2,11 +2,14 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { categoriesApi, inCategory, type CategoryView } from '../industry/categories-api.ts';
 import { createPortal } from 'react-dom';
 import { normalizeForSearch, rateFromX100, rateToX100, toWesternDigits, type CurrencyCode } from '@qasa/core';
-import { api, type InvoiceView, type ItemView, type PartyView, type WarehouseView } from '../api.ts';
+import { api, ApiError, isNetworkError, serverReachable, type InvoiceView, type ItemView, type PartyView, type WarehouseView } from '../api.ts';
 import { AccountCombo, AmountInput, ErrorBox, Icon, Modal, SearchCombo, useData, useLoad, usePageNav, useToast, type PickOption } from '../components.tsx';
 import { useI18n, type I18n, type Key } from '../i18n.ts';
 import { href } from '../router.ts';
-import { posApi, type Money2, type PosMethod, type ShiftReport, type ShiftView } from '../industry/pos-api.ts';
+import { posApi, type Money2, type PosMethod, type SaleInput, type ShiftReport, type ShiftView } from '../industry/pos-api.ts';
+import { outboxClient, outboxWho, whoKey, type HeldKey } from '../industry/outbox.ts';
+import { useOutbox } from '../industry/OutboxBanner.tsx';
+import { offlineMethods, offlineReceipt, offlineRefusal, payTillSale, rememberTill, shortStock, takeFromStock, tillCache } from '../industry/offline-till.ts';
 import '../pos.css';
 import { PrintDocument } from '../industry/PrintDocument.tsx';
 import { invoiceModel } from '../industry/print-model.ts';
@@ -52,8 +55,30 @@ function ItemPicture({ item, name }: { item: ItemView; name: string }) {
 
 /* ---------- the page ---------- */
 
+/** Whose the till's memory is: the person signed in now. */
+const tillWho = () => whoKey(outboxWho());
+
+/**
+ * What the till had from the server, or (on a PC with an outbox, while the server can't be reached) what it last had:
+ * the offline till (industry/offline-till.ts). Anything else fails as before.
+ */
+async function fromServerOrTill<T>(load: () => Promise<T>, remember: (v: T) => void, cached: () => T | null | undefined): Promise<T> {
+  try {
+    const value = await load();
+    remember(value);
+    return value;
+  } catch (e) {
+    const kept = outboxClient() && isNetworkError(e) ? cached() : null;
+    if (kept) return kept;
+    throw e;
+  }
+}
+
+const currentShift = () => fromServerOrTill(() => posApi.current(), (r) => rememberTill(tillWho(), { shift: r.shift }),
+  () => { const shift = tillCache(tillWho())?.shift; return shift ? { shift } : null; });
+
 export function Pos() {
-  const { data, error, reload } = useLoad(() => posApi.current(), []);
+  const { data, error, reload } = useLoad(() => currentShift(), []);
   const shift = data?.shift ?? null;
   if (error) return <ErrorBox error={error} />;
   if (!data) return null;
@@ -175,7 +200,32 @@ function Register({ initial, onClosed }: { initial: ShiftView; onClosed(): void 
   // how it is paid (1.1): no parts = all cash, as before; else 1–4 parts that add up to the total
   const [parts, setParts] = useState<{ method: PosMethod; amount: number | null }[]>([]);
   const [methods, setMethods] = useState<PosMethod[]>(['cash']);
-  useEffect(() => { posApi.paymentAccounts().then((r) => setMethods(r.methods), () => {}); }, []);
+  useEffect(() => {
+    fromServerOrTill(() => posApi.paymentAccounts().then((r) => r.methods), (m) => rememberTill(tillWho(), { methods: m }), () => tillCache(tillWho())?.methods)
+      .then(setMethods, () => {});
+  }, []);
+  // 1.2: on a PC connected to an office server, a sale the server can't take now is kept here and sent later
+  const outbox = useOutbox();
+  const offline = !!outbox && !outbox.online;
+  const shiftPath = `/api/pos/shifts/${shift.id}/sales`;
+  const who = outboxWho();
+  const keptHere = outbox ? outbox.entries.filter((e) => e.path === shiftPath) : [];
+  const waitingMine = outbox ? outboxClient()?.mineWaiting(who).length ?? 0 : 0;
+  const [shortNote, setShortNote] = useState('');
+  // the key of the sale being paid, the same on every Pay until it is booked or kept, and whether a try of it got no
+  // answer (it may be booked already)
+  const saleKey = useRef<HeldKey | null>(null);
+  const [unsure, setUnsure] = useState(false);
+  // sales kept here reached the books: the shift's totals and the stock follow
+  const keptCount = keptHere.length;
+  const keptBefore = useRef(keptCount);
+  useEffect(() => {
+    const fewer = keptCount < keptBefore.current;
+    keptBefore.current = keptCount;
+    if (!fewer || !outbox?.online) return;
+    posApi.current().then((r) => { if (r.shift?.id === shift.id) { setShift(r.shift); rememberTill(tillWho(), { shift: r.shift }); } }, () => {});
+    loadItems();
+  }, [keptCount, outbox?.online]); // eslint-disable-line react-hooks/exhaustive-deps
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<unknown>(null);
   const expired = useExpiredConfirm();
@@ -190,10 +240,13 @@ function Register({ initial, onClosed }: { initial: ShiftView; onClosed(): void 
   // converts a price in the other currency into this sale's currency; a dinar sale uses the company's default rate
   const priceRate = priceRateFor(currency, rateX100, settings?.defaultRateX100);
 
-  const loadItems = useCallback(() => { void api.items({ active: 'true' }).then(setItems, setError); }, []);
+  const loadItems = useCallback(() => {
+    void fromServerOrTill(() => api.items({ active: 'true' }), (list) => rememberTill(tillWho(), { items: list }), () => tillCache(tillWho())?.items).then(setItems, setError);
+  }, []);
   useEffect(() => {
     loadItems();
-    void api.parties({ type: 'customer', active: 'true' }).then(setCustomers, () => {});
+    void fromServerOrTill(() => api.parties({ type: 'customer', active: 'true' }), (list) => rememberTill(tillWho(), { customers: list }), () => tillCache(tillWho())?.customers)
+      .then(setCustomers, () => {});
   }, [loadItems]);
 
   // the search box keeps the focus (a scanner types into it), unless a dialog or another field is being used
@@ -223,7 +276,7 @@ function Register({ initial, onClosed }: { initial: ShiftView; onClosed(): void 
   }, [pharmacy, q]);
 
   // the category buttons: a category (its subcategories' items with it) or a subcategory; '' = every item
-  const categories = useLoad(() => categoriesApi.list({ active: 'true' }), []);
+  const categories = useLoad(() => fromServerOrTill(() => categoriesApi.list({ active: 'true' }), (list) => rememberTill(tillWho(), { categories: list }), () => tillCache(tillWho())?.categories), []);
   const [cat, setCat] = useState('');
   const catList = categories.data ?? [];
   const shown = useMemo(() => (cat ? items.filter((it) => inCategory(catList, it.categoryId, cat)) : items), [items, cat, catList]);
@@ -328,28 +381,72 @@ function Register({ initial, onClosed }: { initial: ShiftView; onClosed(): void 
     setParts([]);
     setError(null);
     setQ('');
+    // the next sale is another one, with a key of its own
+    saleKey.current = null;
+    setUnsure(false);
     focusSearch();
+  };
+
+  /**
+   * The server can't be reached: the sale is kept on this PC (encrypted, power-cut safe) with its key and sent later,
+   * once; the receipt carries a temporary reference. On a customer's account it can't be: that needs the server.
+   */
+  const keepHere = async (sale: SaleInput, key: string) => {
+    const box = outboxClient();
+    if (!box) throw new ApiError(0, 'network', null);
+    const refusal = offlineRefusal(sale);
+    if (refusal) throw new ApiError(400, 'validation', [{ code: refusal }]);
+    const books = await box.books();
+    if (!books) throw new ApiError(0, 'outbox_unavailable', null);
+    const short = shortStock(cart);
+    const kept = await box.add({
+      id: key, kind: 'pos_sale', path: shiftPath, body: sale as unknown as Record<string, unknown>, books,
+      user: { id: who?.id ?? null, name: who?.name ?? shift.openedBy }, summary: { total, currency, lines: cart.length, register: shift.register }
+    });
+    const stamp = kept.body.offline as { reference: string; soldAt: string; soldOn: string };
+    setReceipt(offlineReceipt({
+      key, reference: kept.reference ?? stamp.reference, soldAt: stamp.soldAt, soldOn: stamp.soldOn, shift, cashier: who?.name ?? shift.openedBy,
+      lines: cart, currency, rateX100, discount: discount ?? 0, party: customers.find((p) => p.id === partyId) ?? null, payments: sale.payments ?? []
+    }));
+    // the stock last known, less this sale: the next sale is checked against it
+    const left = takeFromStock(items, cart);
+    setItems(left);
+    rememberTill(tillWho(), { items: left });
+    setShortNote(short.map((x) => `${x.code} (${i18n.qty(x.haveMilli)})`).join(i18n.lang === 'en' ? ', ' : '، '));
+    clear();
+    toast(t('ob_savedHere', { n: kept.reference ?? '' }));
   };
 
   const pay = async () => {
     if (!canPay) return;
     setBusy(true);
     setError(null);
+    setShortNote('');
     try {
-      const sale = {
+      const sale: SaleInput = {
         currency, ...(currency === 'USD' ? { rateX100 } : {}), ...(partyId ? { partyId } : {}), discount: discount ?? 0,
         lines: cart.map(posSaleLine),
         ...(split ? { payments: parts.map((p) => ({ method: p.method, amount: p.amount ?? 0 })) } : {})
       };
-      let res;
-      try {
-        res = await posApi.sell(shift.id, sale);
-      } catch (e) {
+      // on a PC with an outbox the sale keeps its key over every Pay until it is booked or kept: a try whose answer
+      // was lost is answered from the first, never booked twice (industry/offline-till.ts)
+      const done = await payTillSale({
+        sale,
+        outbox: outboxClient() ? {
+          held: saleKey.current, hold: (h) => { saleKey.current = h; },
+          // offline, or this person's earlier sales still wait (they go first)
+          keepFirst: !serverReachable() || waitingMine > 0
+        } : null,
+        send: (body, options) => posApi.sell(shift.id, body, options),
+        keep: keepHere,
         // stock past its expiry date: the company may allow it after the cashier confirms (written to the audit log)
-        if (!(await expired.ask(e))) throw e;
-        res = await posApi.sell(shift.id, { ...sale, allowExpired: true });
-      }
+        askExpired: (e) => expired.ask(e)
+      });
+      if (done.kind === 'unsure' && done.error) throw done.error;
+      if (done.kind !== 'sold') return;
+      const res = done.result;
       setShift(res.shift);
+      rememberTill(tillWho(), { shift: res.shift });
       setReceipt(res.invoice);
       clear();
       loadItems(); // stock changed
@@ -359,6 +456,8 @@ function Register({ initial, onClosed }: { initial: ShiftView; onClosed(): void 
     } catch (e) {
       setError(e);
     } finally {
+      // a try of this sale went out and no answer came: it may be booked, and the cashier is told so
+      setUnsure(!!saleKey.current?.lost);
       setBusy(false);
     }
   };
@@ -390,6 +489,8 @@ function Register({ initial, onClosed }: { initial: ShiftView; onClosed(): void 
           <strong>{shift.register}</strong>
           <span className="muted small">{shift.number} · {shift.openedBy}</span>
           <span className="chip info num">{t('pos_salesSoFar')}: {money2(i18n, shift.sales)} · {i18n.int(shift.count)}</span>
+          {offline && <span className="chip pos-offline-chip" role="status">{t('pos_offline')}</span>}
+          {keptHere.length > 0 && <a className="chip warn num" href={href('outbox')}>{t('pos_offlineWaiting', { n: i18n.int(keptHere.length) })}</a>}
         </div>
         <div className="row">
           <a className="btn" href={href(`pos-shift/${shift.id}`)}><Icon name="doc" size={16} />{t('pos_xReport')}</a>
@@ -497,10 +598,10 @@ function Register({ initial, onClosed }: { initial: ShiftView; onClosed(): void 
               <span>{t('pos_total')}</span>
               <strong className="num">{i18n.money(total, currency)}</strong>
             </div>
-            {methods.length > 1 && (
+            {(offline ? offlineMethods(methods) : methods).length > 1 && (
               <div className="stack" style={{ gap: 6 }}>
                 <div className="track" role="group" aria-label={t('paymentMode')} style={{ flexWrap: 'wrap' }}>
-                  {methods.map((m) => (
+                  {(offline ? offlineMethods(methods) : methods).map((m) => (
                     <button key={m} type="button" aria-pressed={split ? parts.some((p) => p.method === m) : m === 'cash'} onClick={() => pickMethod(m)}>{t(`pay_${m}` as Key)}</button>
                   ))}
                 </div>
@@ -513,6 +614,7 @@ function Register({ initial, onClosed }: { initial: ShiftView; onClosed(): void 
                 ))}
                 {split && left !== 0 && <div className="small" style={{ color: 'var(--bad)' }}>{t('pos_left')}: <span className="num">{i18n.money(left, currency)}</span></div>}
                 {parts.some((p) => p.method === 'account') && !partyId && <div className="small" style={{ color: 'var(--bad)' }}>{t('err_party_required')}</div>}
+                {offline && methods.includes('account') && <div className="small muted">{t('pos_offlineNoAccount')}</div>}
               </div>
             )}
             {change !== null && (
@@ -521,7 +623,9 @@ function Register({ initial, onClosed }: { initial: ShiftView; onClosed(): void 
                 <strong className="num">{i18n.money(Math.abs(change), currency)}</strong>
               </div>
             )}
+            {unsure && <div className="alert warn" role="alert">{t('pos_unsure')}</div>}
             <ErrorBox error={error} />
+            {shortNote && <div className="alert info small" role="status">{t('pos_offlineShort', { i: shortNote })}</div>}
             <div className="pos-actions">
               <button type="button" className="btn pos-touch" onClick={clear} disabled={busy}><Icon name="x" size={18} />{t('pos_clear')} <span className="kbd">F4</span></button>
               <button type="button" className="btn primary pos-touch pos-pay-btn" onClick={() => void pay()} disabled={!canPay}>
@@ -538,7 +642,7 @@ function Register({ initial, onClosed }: { initial: ShiftView; onClosed(): void 
       </div>
 
       {receipt && <Receipt invoice={receipt} shift={shift} />}
-      {closing && <CloseShift shift={shift} onCancel={() => { setClosing(false); focusSearch(); }} onClosed={onClosed} />}
+      {closing && <CloseShift shift={shift} keptHere={keptHere.length} onCancel={() => { setClosing(false); focusSearch(); }} onClosed={onClosed} />}
     </div>
   );
 }
@@ -575,6 +679,7 @@ function Receipt({ invoice, shift }: { invoice: InvoiceView; shift: ShiftView })
         <div className="pos-r-center"><strong className="pos-r-company">{company}</strong></div>
         <div className="pos-r-center small">{t('pos_receipt')}</div>
         <div className="pos-r-row small"><span>{t('pos_no')}</span><span className="num ltr">{invoice.number}</span></div>
+        {invoice.offlineRef && invoice.number === invoice.offlineRef && <div className="pos-r-center small pos-r-offline">{t('pos_offlineReceipt')}</div>}
         <div className="pos-r-row small"><span>{t('pos_dateTime')}</span><span className="num">{i18n.date(invoice.date)} {i18n.digitsOf(new Date(invoice.postedAt ?? invoice.createdAt).toTimeString().slice(0, 5))}</span></div>
         <div className="pos-r-row small"><span>{t('pos_cashier')}</span><span>{shift.openedBy === invoice.createdBy ? shift.openedBy : invoice.createdBy}</span></div>
         {invoice.partyName && <div className="pos-r-row small"><span>{t('pos_customer')}</span><span>{invoice.partyName}</span></div>}
@@ -605,7 +710,7 @@ function Receipt({ invoice, shift }: { invoice: InvoiceView; shift: ShiftView })
 
 /* ---------- closing ---------- */
 
-function CloseShift({ shift, onCancel, onClosed }: { shift: ShiftView; onCancel(): void; onClosed(): void }) {
+function CloseShift({ shift, keptHere = 0, onCancel, onClosed }: { shift: ShiftView; keptHere?: number; onCancel(): void; onClosed(): void }) {
   const i18n = useI18n();
   const { t } = i18n;
   const [iqd, setIqd] = useState<number | null>(null);
@@ -658,10 +763,11 @@ function CloseShift({ shift, onCancel, onClosed }: { shift: ShiftView; onCancel(
           <label className="field"><span>{t('pos_countedUsd')}</span><AmountInput value={usd} currency="USD" onChange={setUsd} ariaLabel={t('pos_countedUsd')} /></label>
         </div>
         {iqd !== null && <div className="pos-r-row"><span>{t('pos_difference')}</span><strong className="num"><DiffText d={diff} /></strong></div>}
+        {keptHere > 0 && <div className="alert warn" role="alert">{t('pos_closeWaiting', { n: i18n.int(keptHere) })} <a href={href('outbox')}>{t('ob_open')}</a></div>}
         <label className="field"><span>{t('pos_notes')}</span><textarea className="input" rows={2} maxLength={500} value={notes} onChange={(e) => setNotes(e.target.value)} /></label>
         <ErrorBox error={error} />
         <div className="row">
-          <button type="button" className="btn primary" disabled={busy || iqd === null} onClick={() => void close()}>{t('pos_closeConfirm')}</button>
+          <button type="button" className="btn primary" disabled={busy || iqd === null || keptHere > 0} onClick={() => void close()}>{t('pos_closeConfirm')}</button>
           <button type="button" className="btn" onClick={onCancel}>{t('pos_cancel')}</button>
         </div>
       </div>
@@ -735,7 +841,7 @@ export function PosShiftReport({ id }: { id: string }) {
             <tbody>
               {r.invoices.map((inv) => (
                 <tr key={inv.invoiceId}>
-                  <td><a href={href(`invoice/${inv.invoiceId}`)} className="ltr">{inv.number ?? '—'}</a></td>
+                  <td><a href={href(`invoice/${inv.invoiceId}`)} className="ltr">{inv.number ?? '—'}</a>{inv.offlineRef && <div className="small muted ltr">{inv.offlineRef}</div>}</td>
                   <td className="num">{i18n.digitsOf(new Date(inv.createdAt).toTimeString().slice(0, 5))}</td>
                   <td>{inv.partyName ?? t('pos_walkIn')}</td>
                   <td className="num">{i18n.money(inv.total, inv.currency)}</td>

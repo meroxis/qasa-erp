@@ -327,6 +327,8 @@ export interface InvoiceView extends InvoiceSummary {
   installmentContract: { id: string; number: string } | null;
   /** 1.1 (older servers leave it out) */
   payments?: InvoicePaymentView[];
+  /** 1.2: a till's sale made offline: the temporary reference printed on its receipt */
+  offlineRef?: string;
 }
 
 export type Role = 'admin' | 'preparer' | 'checker' | 'approver' | 'sales' | 'purchasing' | 'storekeeper' | 'viewer';
@@ -454,28 +456,75 @@ function setInFlight(n: number) {
   for (const fn of busyListeners) fn(n);
 }
 
-export async function request<T>(method: string, url: string, body?: unknown): Promise<T> {
+export async function request<T>(method: string, url: string, body?: unknown, options: SendOptions = {}): Promise<T> {
   setInFlight(inFlight + 1);
   try {
-    return await send<T>(method, url, body);
+    return await send<T>(method, url, body, options);
   } finally {
     setInFlight(inFlight - 1);
   }
 }
 
-async function send<T>(method: string, url: string, body?: unknown): Promise<T> {
+/**
+ * 1.2, for what a PC may send again (the outbox): `key` is the request's idempotency key (a UUID v4, the same every
+ * time it is sent), `books` the company books it was made for; `timeoutMs` gives up on a server that doesn't answer
+ * (a network error, so the till can keep the sale on this PC instead of waiting).
+ */
+export interface SendOptions { key?: string; books?: string; timeoutMs?: number }
+
+/** A new idempotency key (UUID v4). */
+export function newIdempotencyKey(): string {
+  if (typeof crypto.randomUUID === 'function') return crypto.randomUUID();
+  const b = crypto.getRandomValues(new Uint8Array(16));
+  b[6] = (b[6]! & 0x0f) | 0x40;
+  b[8] = (b[8]! & 0x3f) | 0x80;
+  const h = [...b].map((x) => x.toString(16).padStart(2, '0')).join('');
+  return `${h.slice(0, 8)}-${h.slice(8, 12)}-${h.slice(12, 16)}-${h.slice(16, 20)}-${h.slice(20)}`;
+}
+
+/**
+ * Whether the server answered the last request (any answer, a refusal too) or could not be reached. The office PCs'
+ * till keeps its sales on the PC while it can't, and the outbox sends them when it answers again.
+ */
+let reachable = true;
+const linkListeners = new Set<(up: boolean) => void>();
+export function serverReachable(): boolean {
+  return reachable;
+}
+export function onLinkChange(fn: (up: boolean) => void): () => void {
+  linkListeners.add(fn);
+  return () => { linkListeners.delete(fn); };
+}
+export function setReachable(up: boolean): void {
+  if (up === reachable) return;
+  reachable = up;
+  for (const fn of linkListeners) fn(up);
+}
+
+/** A network failure: the server was not reached (or did not answer in time), so it may or may not have the request. */
+export const isNetworkError = (error: unknown): boolean => error instanceof ApiError && error.status === 0 && error.code === 'network';
+
+async function send<T>(method: string, url: string, body?: unknown, options: SendOptions = {}): Promise<T> {
   // marks requests as coming from the app itself; the server refuses changes without it once sign-in is on
   // the branch picked in the topbar (for someone working in several), so lists and reports follow it
   const headers: Record<string, string> = { 'x-qasa-client': '1', ...currentBranchHeader() };
   const user = currentUser();
   if (user) headers['x-qasa-user'] = encodeURIComponent(user);
   if (body !== undefined) headers['content-type'] = 'application/json';
+  if (options.key) headers['x-qasa-idempotency'] = options.key;
+  if (options.books) headers['x-qasa-books'] = options.books;
   let res: Response;
+  const abort = options.timeoutMs ? new AbortController() : null;
+  const timer = abort ? setTimeout(() => abort.abort(), options.timeoutMs) : null;
   try {
-    res = await fetch(url, { method, headers, body: body === undefined ? undefined : JSON.stringify(body) });
+    res = await fetch(url, { method, headers, body: body === undefined ? undefined : JSON.stringify(body), ...(abort ? { signal: abort.signal } : {}) });
   } catch {
+    setReachable(false);
     throw new ApiError(0, 'network', null);
+  } finally {
+    if (timer) clearTimeout(timer);
   }
+  setReachable(true);
   if (res.status === 204) return undefined as T;
   const data = await res.json().catch(() => null);
   if (res.status === 401 && data?.error === 'unauthorized') window.dispatchEvent(new Event(SIGNED_OUT_EVENT));
@@ -654,7 +703,8 @@ export const api = {
   entry: (id: string) => request<EntryView>('GET', `/api/entries/${id}`),
   createJournal: (input: JournalInput) => request<EntryView>('POST', '/api/entries', input),
   updateJournal: (id: string, input: JournalInput) => request<EntryView>('PUT', `/api/entries/${id}`, input),
-  createVoucher: (input: VoucherInput) => request<EntryView>('POST', '/api/vouchers', input),
+  /** options: the idempotency key (and books) of a receipt the PC may send again from its outbox (1.2) */
+  createVoucher: (input: VoucherInput, options: SendOptions = {}) => request<EntryView>('POST', '/api/vouchers', input, options),
   updateVoucher: (id: string, input: VoucherInput) => request<EntryView>('PUT', `/api/vouchers/${id}`, input),
   deleteEntry: (id: string) => request<void>('DELETE', `/api/entries/${id}`),
   entryAction: (id: string, action: 'check' | 'return' | 'approve') => request<EntryView>('POST', `/api/entries/${id}/${action}`, {}),

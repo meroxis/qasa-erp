@@ -831,6 +831,33 @@ export const MYSQL_TABLES: readonly MysqlObject[] = [
     )`
   },
   {
+    // 1.2 offline outbox: a till's sale made offline, with the temporary reference on its receipt
+    name: 'pos_offline_sales',
+    since: 12,
+    sql: `CREATE TABLE pos_offline_sales (
+      invoice_id ${ID} NOT NULL PRIMARY KEY,
+      reference ${ID} NOT NULL,
+      sold_at ${WHEN} NOT NULL,
+      synced_at ${WHEN} NOT NULL,
+      INDEX pos_offline_sales_reference (reference),
+      FOREIGN KEY (invoice_id) REFERENCES invoices(id)
+    )`
+  },
+  {
+    // 1.2 offline outbox: the keys clients send with a document they may send again (idempotency.ts)
+    name: 'idempotency_keys',
+    since: 12,
+    sql: `CREATE TABLE idempotency_keys (
+      idem_key ${ID} NOT NULL PRIMARY KEY,
+      user_key ${ID} NOT NULL,
+      route ${ID} NOT NULL,
+      request_hash ${ID} NOT NULL,
+      result_id ${ID},
+      created_at ${WHEN} NOT NULL,
+      INDEX idempotency_keys_created (created_at)
+    )`
+  },
+  {
     name: 'employees',
     since: 7,
     sql: `CREATE TABLE employees (

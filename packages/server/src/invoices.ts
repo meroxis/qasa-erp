@@ -126,6 +126,8 @@ export interface InvoiceView extends InvoiceSummary {
   /** The installment contract that schedules this sale (Pro), while it is active. */
   installmentContract: { id: string; number: string } | null;
   payments: InvoicePaymentView[];
+  /** 1.2: a till's sale made offline: the temporary reference printed on its receipt (only on such a sale) */
+  offlineRef?: string;
 }
 
 interface InvoiceRow {
@@ -240,8 +242,15 @@ export function getInvoice(db: Db, id: string): InvoiceView {
     returnOfNumber: r.return_of ? (db.prepare('SELECT number FROM invoices WHERE id = ?').get(r.return_of) as { number: string | null }).number : null,
     returns,
     installmentContract: activeContractOf(db, id),
-    payments: invoicePayments(db, id)
+    payments: invoicePayments(db, id),
+    ...offlineRefOf(db, id)
   };
+}
+
+/** A till's sale made offline keeps the reference on its receipt (pos.ts): { offlineRef }, or nothing. */
+function offlineRefOf(db: Db, invoiceId: string): { offlineRef?: string } {
+  const row = db.prepare('SELECT reference FROM pos_offline_sales WHERE invoice_id = ?').get(invoiceId) as { reference: string } | undefined;
+  return row ? { offlineRef: row.reference } : {};
 }
 
 export function invoicePayments(db: Db, invoiceId: string): InvoicePaymentView[] {
@@ -276,8 +285,10 @@ export function listInvoices(db: Db, f: InvoiceFilters = {}): InvoiceSummary[] {
   const rows = db.prepare(`${SELECT_INVOICE} ${where.length ? 'WHERE ' + where.join(' AND ') : ''} ORDER BY v.date DESC, v.created_at DESC`)
     .all(...params) as unknown as InvoiceRow[];
   const q = f.q ? normalizeForSearch(f.q) : '';
+  // a till's offline sale is found by the temporary reference on its receipt too (1.2)
+  const offline = q ? new Map((db.prepare('SELECT invoice_id, reference FROM pos_offline_sales').all() as { invoice_id: string; reference: string }[]).map((o) => [o.invoice_id, o.reference])) : null;
   return rows
-    .filter((r) => !q || normalizeForSearch(`${r.number ?? ''} ${r.party_code ?? ''} ${r.party_name ?? ''} ${r.notes ?? ''}`).includes(q))
+    .filter((r) => !q || normalizeForSearch(`${r.number ?? ''} ${r.party_code ?? ''} ${r.party_name ?? ''} ${r.notes ?? ''} ${offline?.get(r.id) ?? ''}`).includes(q))
     .slice(0, f.limit ?? 500)
     .map(toSummary);
 }

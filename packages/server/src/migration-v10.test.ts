@@ -196,7 +196,7 @@ describe('version 10 on a server database', () => {
     migrate(fake);
     expect(version).toBe(SCHEMA_VERSION);
     expect(ran.filter((s) => s.startsWith('CREATE TABLE') && !s.includes('IF NOT EXISTS')).map((s) => /CREATE TABLE (\w+)/.exec(s)![1]))
-      .toEqual([...MYSQL_TABLES.filter((t) => t.since === 10), ...MYSQL_TABLES.filter((t) => t.since === 11)].map((t) => t.name));
+      .toEqual(Array.from({ length: SCHEMA_VERSION - 9 }, (_, i) => MYSQL_TABLES.filter((t) => t.since === 10 + i)).flat().map((t) => t.name));
     expect(ran.filter((s) => s.startsWith('CREATE TRIGGER'))).toHaveLength(2);
     const alters = ran.filter((s) => s.startsWith('ALTER TABLE'));
     expect(alters).not.toContain('ALTER TABLE items ADD COLUMN category_id VARCHAR(191)');
