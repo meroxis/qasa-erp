@@ -212,6 +212,16 @@ function Register({ initial, onClosed }: { initial: ShiftView; onClosed(): void 
   const keptHere = outbox ? outbox.entries.filter((e) => e.path === shiftPath) : [];
   const waitingMine = outbox ? outboxClient()?.mineWaiting(who).length ?? 0 : 0;
   const [shortNote, setShortNote] = useState('');
+  // sales kept here reached the books: the shift's totals and the stock follow
+  const keptCount = keptHere.length;
+  const keptBefore = useRef(keptCount);
+  useEffect(() => {
+    const fewer = keptCount < keptBefore.current;
+    keptBefore.current = keptCount;
+    if (!fewer || !outbox?.online) return;
+    posApi.current().then((r) => { if (r.shift?.id === shift.id) { setShift(r.shift); rememberTill(tillWho(), { shift: r.shift }); } }, () => {});
+    loadItems();
+  }, [keptCount, outbox?.online]); // eslint-disable-line react-hooks/exhaustive-deps
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<unknown>(null);
   const expired = useExpiredConfirm();
