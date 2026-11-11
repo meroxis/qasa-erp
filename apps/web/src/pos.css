@@ -86,3 +86,7 @@
 .pos-cats { display: flex; flex-wrap: wrap; gap: 8px; }
 .pos-cats .btn { min-height: 44px; font-size: 1rem; }
 .pos-cats .btn[aria-pressed="true"] { background: var(--accent); color: #fff; border-color: var(--accent); }
+
+/* 1.2 offline till: the chips on the bar, the stock note, and the temporary number on the receipt */
+.pos-offline-chip { background: var(--warn-bg); color: var(--warn); border-color: var(--warn-stroke); }
+.pos-r-offline { border: 1px dashed currentColor; padding: 2px 4px; text-align: center; }

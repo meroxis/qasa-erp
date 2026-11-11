@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { amountInWords, rateFromX100, todayIso, toWesternDigits, type CurrencyCode } from '@qasa/core';
-import { api, ApiError, type EntryView, type JournalInput, type VoucherInput } from '../api.ts';
+import { api, ApiError, isNetworkError, newIdempotencyKey, serverReachable, type EntryView, type JournalInput, type VoucherInput } from '../api.ts';
+import { outboxClient, outboxWho, SALE_TIMEOUT_MS } from '../industry/outbox.ts';
 import { AccountCombo, AmountInput, ErrorBox, Icon, SearchCombo, useData, useLoad, useToast } from '../components.tsx';
 import { useI18n } from '../i18n.ts';
 import { go } from '../router.ts';
@@ -107,7 +108,28 @@ export function EntryEditor({ kind: initialKind, id }: { kind?: Kind; id?: strin
           items: rows.filter((r) => r.accountCode || r.debit).map((r) => ({ accountCode: r.accountCode, amount: r.debit ?? 0, ...(r.description.trim() ? { description: r.description.trim() } : {}), ...(r.partyId && partyTypeFor(r.accountCode) ? { partyId: r.partyId } : {}) }))
         };
         if (party.trim()) input.party = party.trim();
-        saved = id ? await api.updateVoucher(id, input) : await api.createVoucher(input);
+        // 1.2: a new receipt on a PC connected to an office server is kept on the PC when the server can't be reached,
+        // and sent later with the same key (booked once); everything else stays online only
+        const box = !id && kind === 'receipt' ? outboxClient() : null;
+        const key = box ? newIdempotencyKey() : null;
+        const keepHere = async () => {
+          const books = await box!.books();
+          if (!books) throw new ApiError(0, 'outbox_unavailable', null);
+          const who = outboxWho();
+          await box!.add({
+            id: key!, kind: 'voucher', path: '/api/vouchers', body: input as unknown as Record<string, unknown>, books,
+            user: { id: who?.id ?? null, name: who?.name ?? '' }, summary: { total: voucherTotal, currency, lines: input.items.length }
+          });
+          toast(t('ob_voucherSavedHere'));
+          go('entries');
+        };
+        if (box && key && (!serverReachable() || box.mineWaiting().length > 0)) return void (await keepHere());
+        try {
+          saved = id ? await api.updateVoucher(id, input) : await api.createVoucher(input, key ? { key, timeoutMs: SALE_TIMEOUT_MS } : {});
+        } catch (e) {
+          if (box && key && isNetworkError(e)) return void (await keepHere());
+          throw e;
+        }
       } else {
         const input: JournalInput = {
           date, description, currency, rateX100: rate,

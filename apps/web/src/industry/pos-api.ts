@@ -1,5 +1,5 @@
 import type { CurrencyCode, Names, UnitCode } from '@qasa/core';
-import { qs, request, type InvoiceView } from '../api.ts';
+import { qs, request, type InvoiceView, type SendOptions } from '../api.ts';
 
 /** Point of sale (every plan): shifts on a register, and cash sales posted at once. */
 
@@ -30,7 +30,11 @@ export interface ShiftView {
   actions: ('sell' | 'close')[];
 }
 
-export interface ShiftSaleView { invoiceId: string; number: string | null; createdAt: string; partyName: string | null; currency: CurrencyCode; total: number; status: string }
+export interface ShiftSaleView {
+  invoiceId: string; number: string | null; createdAt: string; partyName: string | null; currency: CurrencyCode; total: number; status: string;
+  /** 1.2: sold while the till was offline: the temporary reference on its receipt */
+  offlineRef?: string;
+}
 
 export interface ShiftReport extends ShiftView {
   invoices: ShiftSaleView[];
@@ -64,6 +68,7 @@ export const posApi = {
   shifts: (f: { status?: 'open' | 'closed'; limit?: string } = {}) => request<ShiftView[]>('GET', '/api/pos/shifts' + qs(f)),
   shift: (id: string) => request<ShiftReport>('GET', `/api/pos/shifts/${id}`),
   open: (input: OpenShiftInput) => request<ShiftView>('POST', '/api/pos/shifts', input),
-  sell: (shiftId: string, input: SaleInput) => request<{ invoice: InvoiceView; shift: ShiftView }>('POST', `/api/pos/shifts/${shiftId}/sales`, input),
+  /** options (1.2): the sale's idempotency key on a PC with an outbox, and how long to wait before keeping it there */
+  sell: (shiftId: string, input: SaleInput, options: SendOptions = {}) => request<{ invoice: InvoiceView; shift: ShiftView }>('POST', `/api/pos/shifts/${shiftId}/sales`, input, options),
   close: (shiftId: string, body: { countedCash: number; countedUsd?: number; notes?: string }) => request<ShiftView>('POST', `/api/pos/shifts/${shiftId}/close`, body)
 };
