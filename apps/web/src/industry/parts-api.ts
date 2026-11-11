@@ -6,14 +6,14 @@ import { qs, request } from '../api.ts';
 export type PartNumberKind = 'oem' | 'alt';
 export type PartMatch = 'number' | 'interchange' | 'barcode' | 'code' | 'brand' | 'name';
 
-export interface PartDetails { shelf: string; brand: string; origin: string; wholesalePrice: number | null; reorderMilli: number | null }
+export interface PartDetails { shelf: string; brand: string; brandId?: string | null; origin: string; wholesalePrice: number | null; reorderMilli: number | null }
 export interface PartNumber { number: string; kind: PartNumberKind; maker: string }
 export interface Fitment { id?: string; make: string; model: string; yearFrom: number | null; yearTo: number | null; engine: string }
 
 export interface PartHit {
   id: string; code: string; barcode: string; name: Names; unit: UnitCode; active: boolean;
   salePrice: number; saleCurrency: CurrencyCode; wholesalePrice: number | null;
-  shelf: string; brand: string; origin: string; qtyMilli: number; numbers: PartNumber[]; match: PartMatch;
+  shelf: string; brand: string; brandId: string | null; origin: string; qtyMilli: number; numbers: PartNumber[]; match: PartMatch;
 }
 
 export interface PartView extends Omit<PartHit, 'match'> {

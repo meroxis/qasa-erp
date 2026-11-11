@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { z } from 'zod';
-import type { Names } from '@qasa/core';
+import { categoryKey, MAX_CATEGORIES, type Names } from '@qasa/core';
 import type { Db } from './db.ts';
 import { nextSequence, transaction } from './db.ts';
 import { audit } from './audit.ts';
@@ -8,38 +8,70 @@ import { AppError, conflict, invalid, notFound } from './errors.ts';
 import type { ApiExtension } from './routes.ts';
 
 /**
- * Item categories (every plan): a code and a name in Arabic, Kurdish and English, an order, and active or not. An
- * online shop shows its catalogue by them (the website API lists the active ones). A category in use is never
- * deleted: it is switched off instead.
+ * Item categories (every plan): a code and a name in Arabic, Kurdish and English, an order, and active or not. 1.1:
+ * two levels — a category may have subcategories (a subcategory's parent is always a top-level category, so there is
+ * no third level and no cycle). An item is in a category or a subcategory; looking for a category's items finds its
+ * subcategories' items too. An online shop shows its catalogue by them (the website API lists the active ones). A
+ * category in use (items or subcategories) is never deleted: it is switched off instead.
  */
 
-export interface CategoryView { id: string; code: string; name: Names; sort: number; active: boolean; items: number; createdAt: string; updatedAt: string }
-export interface CategoryInput { code?: string | undefined; name: Names; sort?: number | undefined; active?: boolean | undefined }
+export interface CategoryView {
+  id: string; code: string; name: Names; sort: number; active: boolean;
+  /** 1.1: the category this one is a subcategory of (null: a top-level category) */
+  parentId: string | null;
+  /** items in this category itself, and its subcategories */
+  items: number; children: number;
+  createdAt: string; updatedAt: string;
+}
+export interface CategoryInput { code?: string | undefined; name: Names; sort?: number | undefined; active?: boolean | undefined; parentId?: string | null | undefined }
 
-interface Row { id: string; code: string; name_ar: string; name_en: string; name_ku: string; sort: number; active: number; created_at: string; updated_at: string; items: number | null }
+interface Row {
+  id: string; code: string; name_ar: string; name_en: string; name_ku: string; sort: number; active: number; parent_id: string | null;
+  created_at: string; updated_at: string; items: number | null; children: number | null;
+}
 
 const view = (r: Row): CategoryView => ({
   id: r.id, code: r.code, name: { ar: r.name_ar, en: r.name_en, ku: r.name_ku }, sort: Number(r.sort), active: Number(r.active) === 1,
-  items: Number(r.items ?? 0), createdAt: r.created_at, updatedAt: r.updated_at
+  parentId: r.parent_id ?? null, items: Number(r.items ?? 0), children: Number(r.children ?? 0), createdAt: r.created_at, updatedAt: r.updated_at
 });
 
 /** Names typed by people: no control characters, spaces collapsed, at most 200 characters. */
-const clean = (text: string | undefined) => (text ?? '').replace(/[\u0000-\u001f\u007f]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 200);
+export const clean = (text: string | undefined) => (text ?? '').replace(/[\u0000-\u001f\u007f]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 200);
 
+const SELECT = `SELECT c.*, (SELECT COUNT(*) FROM items i WHERE i.category_id = c.id) AS items,
+                (SELECT COUNT(*) FROM item_categories s WHERE s.parent_id = c.id) AS children FROM item_categories c`;
+
+/**
+ * The categories in tree order: each top-level category (by its order, then code) followed by its subcategories (by
+ * theirs). A subcategory always follows its parent, also when only active ones are asked for and the parent is off.
+ */
 export function listCategories(db: Db, f: { active?: boolean | undefined } = {}): CategoryView[] {
-  const rows = db.prepare(`SELECT c.*, (SELECT COUNT(*) FROM items i WHERE i.category_id = c.id) AS items FROM item_categories c
-                           ${f.active === undefined ? '' : 'WHERE c.active = ?'} ORDER BY c.sort, c.code`)
-    .all(...(f.active === undefined ? [] : [f.active ? 1 : 0])) as unknown as Row[];
-  return rows.map(view);
+  const rows = (db.prepare(`${SELECT} ${f.active === undefined ? '' : 'WHERE c.active = ?'} ORDER BY c.sort, c.code`)
+    .all(...(f.active === undefined ? [] : [f.active ? 1 : 0])) as unknown as Row[]).map(view);
+  const listed = new Set(rows.map((c) => c.id));
+  const out: CategoryView[] = [];
+  for (const top of rows.filter((c) => !c.parentId || !listed.has(c.parentId))) {
+    out.push(top);
+    if (!top.parentId) out.push(...rows.filter((c) => c.parentId === top.id));
+  }
+  return out;
 }
 
 export function getCategory(db: Db, id: string): CategoryView {
-  const r = db.prepare('SELECT c.*, (SELECT COUNT(*) FROM items i WHERE i.category_id = c.id) AS items FROM item_categories c WHERE c.id = ?').get(id) as unknown as Row | undefined;
+  const r = db.prepare(`${SELECT} WHERE c.id = ?`).get(id) as unknown as Row | undefined;
   if (!r) throw notFound('category');
   return view(r);
 }
 
-function assertInput(db: Db, input: CategoryInput, id: string | null): { code: string | null; name: Names } {
+/** A category's id with its subcategories' ids (what "items in this category" means). */
+export function categoryWithChildren(db: Db, id: string): string[] {
+  return [id, ...(db.prepare('SELECT id FROM item_categories WHERE parent_id = ?').all(id) as { id: string }[]).map((r) => r.id)];
+}
+
+/** SQL for "the item's category is `?` or one of its subcategories" (two parameters: the id twice). */
+export const IN_CATEGORY_SQL = (column: string) => `(${column} = ? OR ${column} IN (SELECT id FROM item_categories WHERE parent_id = ?))`;
+
+function assertInput(db: Db, input: CategoryInput, id: string | null): { code: string | null; name: Names; parentId: string | null | undefined } {
   const name = { ar: clean(input.name?.ar), en: clean(input.name?.en), ku: clean(input.name?.ku) };
   const errors: { code: string }[] = [];
   if (!name.ar && !name.en && !name.ku) errors.push({ code: 'name_required' });
@@ -48,43 +80,63 @@ function assertInput(db: Db, input: CategoryInput, id: string | null): { code: s
   if (input.sort !== undefined && (!Number.isSafeInteger(input.sort) || input.sort < 0 || input.sort > 100_000)) errors.push({ code: 'value_invalid' });
   if (errors.length) throw invalid(errors);
   if (code && db.prepare("SELECT 1 FROM item_categories WHERE code = ? AND id <> COALESCE(?, '')").get(code, id)) throw conflict('code_exists');
-  return { code, name };
+  const parentId = input.parentId === undefined ? undefined : input.parentId || null;
+  if (parentId) {
+    const parent = db.prepare('SELECT parent_id, active FROM item_categories WHERE id = ?').get(parentId) as { parent_id: string | null; active: number } | undefined;
+    const kept = id ? db.prepare('SELECT 1 FROM item_categories WHERE id = ? AND parent_id = ?').get(id, parentId) : undefined;
+    // a parent is a top-level category (two levels only, so no cycle), active unless it is the one kept
+    if (!parent || parentId === id || parent.parent_id || (Number(parent.active) !== 1 && !kept)) throw invalid([{ code: 'category_parent_invalid' }]);
+    // a category with subcategories stays at the top
+    if (id && db.prepare('SELECT 1 FROM item_categories WHERE parent_id = ? LIMIT 1').get(id)) throw conflict('category_has_subcategories');
+  }
+  return { code, name, parentId };
+}
+
+function assertRoom(db: Db, adding: number): void {
+  const n = Number((db.prepare('SELECT COUNT(*) AS n FROM item_categories').get() as { n: number }).n);
+  if (n + adding > MAX_CATEGORIES) throw conflict('too_many', { limit: MAX_CATEGORIES });
+}
+
+/** Inserts a category (codes C001, C002 … when none is given). Call inside a transaction. */
+export function insertCategory(db: Db, values: { code: string | null; name: Names; parentId: string | null; sort?: number | undefined; active?: boolean | undefined }, user: string): string {
+  const id = randomUUID();
+  let code = values.code;
+  // an empty code: the next free C001, C002 …
+  while (!code || db.prepare('SELECT 1 FROM item_categories WHERE code = ?').get(code)) code = `C${String(nextSequence(db, 'item_category')).padStart(3, '0')}`;
+  const now = new Date().toISOString();
+  const sort = values.sort ?? Number((db.prepare('SELECT COALESCE(MAX(sort), 0) AS s FROM item_categories').get() as { s: number }).s) + 10;
+  db.prepare('INSERT INTO item_categories (id, code, name_ar, name_en, name_ku, sort, active, created_at, updated_at, parent_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
+    .run(id, code, values.name.ar, values.name.en, values.name.ku, sort, values.active === false ? 0 : 1, now, now, values.parentId);
+  audit(db, user, 'create', 'item_category', id, { code, parentId: values.parentId });
+  return id;
 }
 
 export function createCategory(db: Db, input: CategoryInput, user: string): CategoryView {
-  const { code: typed, name } = assertInput(db, input, null);
-  const id = randomUUID();
-  transaction(db, () => {
-    let code = typed;
-    // an empty code: the next free C001, C002 …
-    while (!code || db.prepare('SELECT 1 FROM item_categories WHERE code = ?').get(code)) code = `C${String(nextSequence(db, 'item_category')).padStart(3, '0')}`;
-    const now = new Date().toISOString();
-    const sort = input.sort ?? Number((db.prepare('SELECT COALESCE(MAX(sort), 0) AS s FROM item_categories').get() as { s: number }).s) + 10;
-    db.prepare('INSERT INTO item_categories (id, code, name_ar, name_en, name_ku, sort, active, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)')
-      .run(id, code, name.ar, name.en, name.ku, sort, input.active === false ? 0 : 1, now, now);
-    audit(db, user, 'create', 'item_category', id, { code });
-  });
+  const { code, name, parentId } = assertInput(db, input, null);
+  assertRoom(db, 1);
+  const id = transaction(db, () => insertCategory(db, { code, name, parentId: parentId ?? null, sort: input.sort, active: input.active }, user));
   return getCategory(db, id);
 }
 
 export function updateCategory(db: Db, id: string, input: CategoryInput, user: string): CategoryView {
   const current = getCategory(db, id);
-  const { code, name } = assertInput(db, input, id);
+  const { code, name, parentId } = assertInput(db, input, id);
   transaction(db, () => {
-    db.prepare('UPDATE item_categories SET code = ?, name_ar = ?, name_en = ?, name_ku = ?, sort = ?, active = ?, updated_at = ? WHERE id = ?')
+    const now = new Date().toISOString();
+    db.prepare('UPDATE item_categories SET code = ?, name_ar = ?, name_en = ?, name_ku = ?, sort = ?, active = ?, parent_id = ?, updated_at = ? WHERE id = ?')
       .run(code ?? current.code, name.ar, name.en, name.ku, input.sort ?? current.sort, input.active === undefined ? (current.active ? 1 : 0) : input.active ? 1 : 0,
-        new Date().toISOString(), id);
-    // a shop sees its items' category change
-    db.prepare('UPDATE items SET updated_at = ? WHERE category_id = ?').run(new Date().toISOString(), id);
+        parentId === undefined ? current.parentId : parentId, now, id);
+    // a shop sees its items' category change (a subcategory's items too: its path changed)
+    db.prepare(`UPDATE items SET updated_at = ? WHERE ${IN_CATEGORY_SQL('category_id')}`).run(now, id, id);
     audit(db, user, 'update', 'item_category', id, input);
   });
   return getCategory(db, id);
 }
 
-/** Deletes a category nothing uses; one with items is refused (switch it off instead). */
+/** Deletes a category nothing uses; one with items or subcategories is refused (switch it off instead). */
 export function deleteCategory(db: Db, id: string, user: string): void {
   const c = getCategory(db, id);
-  if (c.items > 0) throw conflict('in_use', { items: c.items });
+  if (c.items > 0 || c.children > 0) throw conflict('in_use', { items: c.items, subcategories: c.children });
   transaction(db, () => {
     db.prepare('DELETE FROM item_categories WHERE id = ?').run(id);
     audit(db, user, 'delete', 'item_category', id, { code: c.code });
@@ -116,7 +168,18 @@ export function assertItemCategory(db: Db, categoryId: string | null | undefined
   if (!c || (Number(c.active) !== 1 && !kept)) throw invalid([{ code: 'category_invalid' }]);
 }
 
-function parse<T>(schema: z.ZodType<T>, value: unknown): T {
+/** A top-level category (or, with `parentId`, a subcategory of it) whose name in any language is `name`'s. */
+export function findCategoryByName(db: Db, name: Names, parentId: string | null): string | null {
+  const keys = [name.ar, name.en, name.ku].map((t) => categoryKey(t)).filter(Boolean);
+  if (!keys.length) return null;
+  const rows = (parentId
+    ? db.prepare('SELECT id, name_ar, name_en, name_ku FROM item_categories WHERE parent_id = ? ORDER BY sort, code').all(parentId)
+    : db.prepare('SELECT id, name_ar, name_en, name_ku FROM item_categories WHERE parent_id IS NULL ORDER BY sort, code').all()) as { id: string; name_ar: string; name_en: string; name_ku: string }[];
+  const hit = rows.find((r) => [r.name_ar, r.name_en, r.name_ku].some((t) => t && keys.includes(categoryKey(t))));
+  return hit?.id ?? null;
+}
+
+export function parse<T>(schema: z.ZodType<T>, value: unknown): T {
   const r = schema.safeParse(value);
   if (!r.success) throw new AppError(400, 'validation', r.error.issues.map((i) => ({ code: 'schema', path: i.path.join('.'), message: i.message })));
   return r.data;
@@ -124,7 +187,10 @@ function parse<T>(schema: z.ZodType<T>, value: unknown): T {
 
 const id = z.string().min(1).max(64);
 const names = z.object({ ar: z.string().max(200), en: z.string().max(200), ku: z.string().max(200) });
-const body = z.object({ code: z.string().max(24).optional(), name: names, sort: z.number().int().min(0).max(100_000).optional(), active: z.boolean().optional() });
+const body = z.object({
+  code: z.string().max(24).optional(), name: names, sort: z.number().int().min(0).max(100_000).optional(), active: z.boolean().optional(),
+  parentId: id.nullable().optional()
+});
 
 export const categoriesApi: ApiExtension = {
   rules: {

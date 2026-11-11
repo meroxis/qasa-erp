@@ -7,7 +7,8 @@ import { conflict, invalid, notFound } from './errors.ts';
 import { assertWithinLimit } from './license.ts';
 import { assertItemUnits, openDocumentsWithItem, replaceItemUnits, unitsByItem, type ItemUnitView } from './item-units.ts';
 import { startTracking } from './batches.ts';
-import { assertItemCategory } from './categories.ts';
+import { assertItemCategory, IN_CATEGORY_SQL } from './categories.ts';
+import { assertItemBrand } from './brands.ts';
 
 // ——— Warehouses (المخازن) ———
 
@@ -111,6 +112,10 @@ export interface ItemInput {
   trackExpiry?: boolean | undefined;
   /** the item's category (null: none; absent on an update: kept) */
   categoryId?: string | null | undefined;
+  /** 1.1: the item's brand (null: none; absent on an update: kept) */
+  brandId?: string | null | undefined;
+  /** 1.1: reorder when stock falls to this, thousandths (null: the category's level, or none; absent on an update: kept) */
+  reorderMilli?: number | null | undefined;
 }
 
 export interface ItemView {
@@ -135,12 +140,15 @@ export interface ItemView {
   trackBatches: boolean;
   trackExpiry: boolean;
   categoryId: string | null;
+  brandId: string | null;
+  reorderMilli: number | null;
 }
 
 interface ItemRow {
   id: string; code: string; barcode: string | null; name_ar: string; name_en: string; name_ku: string; unit: UnitCode;
   sale_price: number; sale_currency: CurrencyCode; track_stock: number; active: number;
   sale_unit: UnitCode | null; purchase_unit: UnitCode | null; updated_at: string | null; track_batches: number; track_expiry: number; category_id: string | null;
+  brand_id: string | null; reorder_milli: number | null; brand_name: string | null;
   qty: number | null; value: number | null; moves: number | null;
 }
 
@@ -150,7 +158,8 @@ function toView(r: ItemRow, units: ItemUnitView[] = []): ItemView {
     salePrice: r.sale_price, saleCurrency: r.sale_currency, trackStock: r.track_stock === 1, active: r.active === 1,
     qtyMilli: r.qty ?? 0, value: r.value ?? 0, hasMoves: (r.moves ?? 0) > 0,
     units, saleUnit: r.sale_unit ?? null, purchaseUnit: r.purchase_unit ?? null, updatedAt: r.updated_at ?? null,
-    trackBatches: Number(r.track_batches) === 1, trackExpiry: Number(r.track_expiry) === 1, categoryId: r.category_id ?? null
+    trackBatches: Number(r.track_batches) === 1, trackExpiry: Number(r.track_expiry) === 1, categoryId: r.category_id ?? null,
+    brandId: r.brand_id ?? null, reorderMilli: r.reorder_milli === null || r.reorder_milli === undefined ? null : Number(r.reorder_milli)
   };
 }
 
@@ -165,7 +174,8 @@ const whereWarehouse = (col: string, warehouses: WarehouseFilter): [string, stri
 function itemRows(db: Db, where: string, params: string[], warehouses?: WarehouseFilter): ItemRow[] {
   const [stockFilter, stockParams] = whereWarehouse('m.warehouse_id', warehouses);
   // hasMoves is about the item itself (it decides whether stock tracking may still be switched), so it counts everywhere
-  return db.prepare(`SELECT i.*, s.qty, s.value, a.moves FROM items i
+  return db.prepare(`SELECT i.*, b.name AS brand_name, s.qty, s.value, a.moves FROM items i
+                     LEFT JOIN brands b ON b.id = i.brand_id
                      LEFT JOIN (SELECT item_id, SUM(qty_milli) AS qty, SUM(value) AS value
                                 FROM stock_moves m WHERE 1 = 1${stockFilter} GROUP BY item_id) s ON s.item_id = i.id
                      LEFT JOIN (SELECT item_id, COUNT(*) AS moves FROM stock_moves GROUP BY item_id) a ON a.item_id = i.id
@@ -177,21 +187,24 @@ function itemRows(db: Db, where: string, params: string[], warehouses?: Warehous
  * branches' warehouses only), or else in every warehouse.
  */
 export function listItems(
-  db: Db, filters: { q?: string | undefined; warehouseId?: string | undefined; active?: boolean | undefined; categoryId?: string | undefined } = {}, warehouses: WarehouseFilter = null
+  db: Db, filters: { q?: string | undefined; warehouseId?: string | undefined; active?: boolean | undefined; categoryId?: string | undefined; brandId?: string | undefined } = {},
+  warehouses: WarehouseFilter = null
 ): ItemView[] {
   const conditions: string[] = [];
   const params: string[] = [];
   if (filters.active !== undefined) conditions.push(`i.active = ${filters.active ? 1 : 0}`);
-  // "none": items with no category
+  // "none": items with no category; a category: its own items and its subcategories'
   if (filters.categoryId === 'none') conditions.push('i.category_id IS NULL');
-  else if (filters.categoryId) { conditions.push('i.category_id = ?'); params.push(filters.categoryId); }
+  else if (filters.categoryId) { conditions.push(IN_CATEGORY_SQL('i.category_id')); params.push(filters.categoryId, filters.categoryId); }
+  if (filters.brandId === 'none') conditions.push('i.brand_id IS NULL');
+  else if (filters.brandId) { conditions.push('i.brand_id = ?'); params.push(filters.brandId); }
   const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
   const q = filters.q ? normalizeForSearch(filters.q) : '';
   const units = unitsByItem(db);
   // a unit's barcode finds its item too
   const unitBarcodes = (id: string) => (units.get(id) ?? []).map((u) => u.barcode).join(' ');
   return itemRows(db, where, params, filters.warehouseId ? [filters.warehouseId] : warehouses)
-    .filter((r) => !q || normalizeForSearch(`${r.code} ${r.barcode ?? ''} ${unitBarcodes(r.id)} ${r.name_ar} ${r.name_en} ${r.name_ku}`).includes(q))
+    .filter((r) => !q || normalizeForSearch(`${r.code} ${r.barcode ?? ''} ${unitBarcodes(r.id)} ${r.name_ar} ${r.name_en} ${r.name_ku} ${r.brand_name ?? ''}`).includes(q))
     .map((r) => toView(r, units.get(r.id)));
 }
 
@@ -216,6 +229,8 @@ function assertItem(db: Db, input: ItemInput, id: string | null): void {
   if (barcode && db.prepare("SELECT 1 FROM items WHERE barcode = ? AND id <> COALESCE(?, '')").get(barcode, id ?? null)) throw conflict('barcode_exists');
   if (input.unit === 'service' && input.units?.length) throw invalid([{ code: 'unit_invalid' }]);
   assertItemCategory(db, input.categoryId, id);
+  assertItemBrand(db, input.brandId, id);
+  if (input.reorderMilli !== undefined && input.reorderMilli !== null && !(Number.isSafeInteger(input.reorderMilli) && input.reorderMilli >= 0)) throw invalid([{ code: 'reorder_invalid' }]);
   const current = id ? (db.prepare('SELECT sale_unit, purchase_unit FROM items WHERE id = ?').get(id) as { sale_unit: string | null; purchase_unit: string | null } | undefined) : undefined;
   assertItemUnits(db, {
     unit: input.unit, barcode: input.barcode, units: input.units,
@@ -238,11 +253,12 @@ export function createItem(db: Db, input: ItemInput, user: string): ItemView {
     const expiry = stocked && (input.trackExpiry ?? readTrackExpiryDefault(db));
     const batches = stocked && (expiry || input.trackBatches === true);
     db.prepare(`INSERT INTO items (id, code, barcode, name_ar, name_en, name_ku, unit, sale_price, sale_currency, track_stock, active, created_at,
-                                   sale_unit, purchase_unit, updated_at, track_batches, track_expiry, category_id)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+                                   sale_unit, purchase_unit, updated_at, track_batches, track_expiry, category_id, brand_id, reorder_milli)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
       .run(id, code, input.barcode?.trim() || null, input.name.ar.trim(), input.name.en.trim(), input.name.ku.trim(), input.unit,
         input.salePrice, input.saleCurrency, stocked ? 1 : 0, input.active === false ? 0 : 1,
-        now, input.saleUnit ?? null, input.purchaseUnit ?? null, now, batches ? 1 : 0, expiry ? 1 : 0, input.categoryId ?? null);
+        now, input.saleUnit ?? null, input.purchaseUnit ?? null, now, batches ? 1 : 0, expiry ? 1 : 0, input.categoryId ?? null, input.brandId ?? null,
+        input.reorderMilli ?? null);
     if (input.units?.length) replaceItemUnits(db, id, input.units);
     audit(db, user, 'create', 'item', id, { code });
   });
@@ -272,8 +288,9 @@ export function updateItem(db: Db, id: string, input: ItemInput, user: string): 
         input.saleUnit === undefined ? current.saleUnit : input.saleUnit, input.purchaseUnit === undefined ? current.purchaseUnit : input.purchaseUnit,
         new Date().toISOString(), id);
     if (input.units) replaceItemUnits(db, id, input.units);
-    db.prepare('UPDATE items SET track_batches = ?, track_expiry = ?, category_id = ? WHERE id = ?')
-      .run(trackBatches ? 1 : 0, trackExpiry ? 1 : 0, input.categoryId === undefined ? current.categoryId : input.categoryId, id);
+    db.prepare('UPDATE items SET track_batches = ?, track_expiry = ?, category_id = ?, brand_id = ?, reorder_milli = ? WHERE id = ?')
+      .run(trackBatches ? 1 : 0, trackExpiry ? 1 : 0, input.categoryId === undefined ? current.categoryId : input.categoryId,
+        input.brandId === undefined ? current.brandId : input.brandId, input.reorderMilli === undefined ? current.reorderMilli : input.reorderMilli, id);
     // switched on: what is in stock goes into the batch with no number, so the batches add up to the stock from now on
     if (trackBatches && !current.trackBatches) startTracking(db, id);
     audit(db, user, 'update', 'item', id, input);

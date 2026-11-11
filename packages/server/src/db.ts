@@ -2,10 +2,10 @@ import { createHash, randomUUID } from 'node:crypto';
 import { existsSync, readdirSync, renameSync, rmSync, unlinkSync } from 'node:fs';
 import { basename, dirname, join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
-import { DEFAULT_POSTING_ACCOUNTS, IRAQI_UNIFIED_CHART, STARTER_SUB_ACCOUNTS } from '@qasa/core';
+import { brandKey, DEFAULT_POSTING_ACCOUNTS, IRAQI_UNIFIED_CHART, STARTER_SUB_ACCOUNTS } from '@qasa/core';
 import { AppError } from './errors.ts';
 import {
-  MYSQL_TABLES, MYSQL_TRIGGERS, mysqlCollations, mysqlTableSql, pendingMysqlSteps, V10_MYSQL_STEPS, type MysqlCollations, type MysqlStep
+  MYSQL_TABLES, MYSQL_TRIGGERS, mysqlCollations, mysqlTableSql, pendingMysqlSteps, V10_MYSQL_STEPS, V11_MYSQL_STEPS, type MysqlCollations, type MysqlStep
 } from './schema-mysql.ts';
 
 export type SqlParam = null | number | bigint | string | Uint8Array;
@@ -41,6 +41,11 @@ interface Migration {
    * already there (each step skipped when it is done already); else its own statements, one each.
    */
   mysql?: 'tables' | { tables: true; steps: (collations: MysqlCollations) => readonly MysqlStep[] } | ((collations: MysqlCollations) => readonly string[]);
+  /**
+   * Rows the change moves: after its SQL in the same transaction on SQLite, after its steps on a server. It must be
+   * safe to run again (a server upgrade cut off half way runs it on the next start).
+   */
+  data?: (db: Db) => void;
 }
 
 const V1 =
@@ -1572,10 +1577,93 @@ const V10 =
   );
   `;
 
+const V11 =
+  // 11 — 1.1: subcategories (a category's parent; two levels only, which the app checks) and brands. The car-parts
+  // brand, typed as text on each part card, moves into the brand list (movePartBrands below): from now on an item's
+  // brand is items.brand_id, and part_details.brand stays empty
+  `
+  CREATE TABLE brands (
+    id TEXT PRIMARY KEY,
+    code TEXT UNIQUE,
+    -- as written (a trade name is the same in every language), with an Arabic and a Kurdish spelling when it has one
+    name TEXT NOT NULL,
+    -- the name without case, spaces or letter forms (brandKey in @qasa/core): one brand per name
+    name_key TEXT NOT NULL UNIQUE,
+    name_ar TEXT NOT NULL DEFAULT '',
+    name_ku TEXT NOT NULL DEFAULT '',
+    -- the country of origin, an ISO 3166 two-letter code
+    country TEXT,
+    sort INTEGER NOT NULL DEFAULT 0,
+    active INTEGER NOT NULL DEFAULT 1,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+  );
+  ALTER TABLE item_categories ADD COLUMN parent_id TEXT REFERENCES item_categories(id);
+  -- the low-stock level for the category's items that have none of their own (thousandths of each item's base unit)
+  ALTER TABLE item_categories ADD COLUMN reorder_milli INTEGER CHECK (reorder_milli IS NULL OR reorder_milli >= 0);
+  CREATE INDEX item_categories_parent ON item_categories(parent_id);
+  ALTER TABLE items ADD COLUMN brand_id TEXT REFERENCES brands(id);
+  -- reorder when stock falls to this (thousandths); NULL: the category's level, or none. Car parts kept theirs in
+  -- part_details.reorder_milli, which moves here (movePartBrands below) and stays empty from then on
+  ALTER TABLE items ADD COLUMN reorder_milli INTEGER CHECK (reorder_milli IS NULL OR reorder_milli >= 0);
+  CREATE INDEX items_brand ON items(brand_id);
+  -- a count limited to some categories (their subcategories with them) and brands: JSON {categoryIds, brandIds}; NULL: every item
+  ALTER TABLE stock_counts ADD COLUMN scope TEXT;
+  `;
+
+/**
+ * Version 11's rows: each car part's brand text becomes a brand (one per name whatever its case or spaces, written as
+ * most parts had it) and the item points at it. Safe to run again: only texts still there are moved.
+ */
+export function movePartBrands(db: Db): void {
+  const rows = db.prepare('SELECT item_id, brand FROM part_details WHERE brand IS NOT NULL ORDER BY item_id').all() as { item_id: string; brand: string }[];
+  if (!rows.length) return;
+  const tidy = (s: string) => s.replace(/[\u0000-\u001f\u007f]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 100);
+  const groups = new Map<string, { items: string[]; spellings: Map<string, number> }>();
+  for (const r of rows) {
+    const text = tidy(String(r.brand));
+    const key = brandKey(text);
+    if (!key) continue;
+    const g = groups.get(key) ?? { items: [], spellings: new Map<string, number>() };
+    g.items.push(r.item_id);
+    g.spellings.set(text, (g.spellings.get(text) ?? 0) + 1);
+    groups.set(key, g);
+  }
+  const existing = new Map((db.prepare('SELECT id, name_key FROM brands').all() as { id: string; name_key: string }[]).map((b) => [b.name_key, b.id]));
+  let sort = Number((db.prepare('SELECT COALESCE(MAX(sort), 0) AS s FROM brands').get() as { s: number }).s);
+  const now = new Date().toISOString();
+  const insert = db.prepare(`INSERT INTO brands (id, code, name, name_key, name_ar, name_ku, country, sort, active, created_at, updated_at)
+                             VALUES (?, NULL, ?, ?, '', '', NULL, ?, 1, ?, ?)`);
+  const point = db.prepare('UPDATE items SET brand_id = ? WHERE id = ? AND brand_id IS NULL');
+  // in name order, so the new brands' order follows the alphabet
+  for (const key of [...groups.keys()].sort()) {
+    const g = groups.get(key)!;
+    let id = existing.get(key);
+    if (!id) {
+      // the spelling most parts used; on a tie the first part's (sort keeps the order of equals)
+      const name = [...g.spellings.entries()].sort((a, b) => b[1] - a[1])[0]![0];
+      id = randomUUID();
+      sort += 10;
+      insert.run(id, name, key, sort, now, now);
+      existing.set(key, id);
+    }
+    for (const item of g.items) point.run(id, item);
+  }
+  db.prepare('UPDATE part_details SET brand = NULL WHERE brand IS NOT NULL').run();
+}
+
+/** Version 11's other rows: each car part's reorder level becomes its item's (one kept already wins). Safe to run again. */
+export function movePartReorder(db: Db): void {
+  db.prepare(`UPDATE items SET reorder_milli = (SELECT d.reorder_milli FROM part_details d WHERE d.item_id = items.id)
+               WHERE reorder_milli IS NULL AND id IN (SELECT item_id FROM part_details WHERE reorder_milli IS NOT NULL)`).run();
+  db.prepare('UPDATE part_details SET reorder_milli = NULL WHERE reorder_milli IS NOT NULL').run();
+}
+
 const MIGRATIONS: Migration[] = [
   { sql: V1 }, { sql: V2, rebuild: true }, { sql: V3, rebuild: true }, { sql: V4 }, { sql: V5, rebuild: true },
   { sql: V6, mysql: 'tables' }, { sql: V7, mysql: 'tables' }, { sql: V8, mysql: 'tables' }, { sql: V9, mysql: 'tables' },
-  { sql: V10, mysql: { tables: true, steps: () => V10_MYSQL_STEPS } }
+  { sql: V10, mysql: { tables: true, steps: () => V10_MYSQL_STEPS } },
+  { sql: V11, mysql: { tables: true, steps: () => V11_MYSQL_STEPS }, data: (db) => { movePartBrands(db); movePartReorder(db); } }
 ];
 
 /** Server databases began at this version: its schema is in schema-mysql.ts (tables and triggers without `since`). */
@@ -1724,6 +1812,7 @@ export function migrate(db: Db, target = MIGRATIONS.length): void {
       try {
         transaction(db, () => {
           db.exec(migration.sql);
+          migration.data?.(db);
           const broken = db.prepare('PRAGMA foreign_key_check').all();
           if (broken.length) throw new Error(`Migration ${next} broke foreign keys: ${JSON.stringify(broken.slice(0, 3))}`);
           db.prepare('UPDATE schema_version SET version = ?').run(next);
@@ -1735,6 +1824,7 @@ export function migrate(db: Db, target = MIGRATIONS.length): void {
     } else {
       transaction(db, () => {
         db.exec(migration.sql);
+        migration.data?.(db);
         db.prepare('UPDATE schema_version SET version = ?').run(next);
       });
     }
@@ -1776,6 +1866,8 @@ function migrateMysql(db: Db, options: { triggers?: boolean } = {}): void {
     } else {
       for (const step of mysql(collations)) db.exec(step);
     }
+    const data = MIGRATIONS[version]!.data;
+    if (data) transaction(db, () => data(db));
     version = next;
     db.prepare('UPDATE schema_version SET version = ?').run(version);
   }

@@ -1,9 +1,10 @@
 import { useState } from 'react';
-import { BUSINESS_FEATURE, BUSINESS_TYPES, PLANS, type BusinessType } from '@qasa/core';
+import { BUSINESS_FEATURE, BUSINESS_TYPES, PLANS, starterTradeFor, type BusinessType } from '@qasa/core';
 import { api } from '../api.ts';
 import { ErrorBox, Icon, LanguageSwitch, useData, useToast } from '../components.tsx';
 import { useI18n, type Key } from '../i18n.ts';
 import { AgreeLine } from '../industry/LegalPanel.tsx';
+import { StarterListButton } from '../industry/CatalogPickers.tsx';
 
 const CHOICES: Record<BusinessType, { icon: string; title: Key; text: Key }> = {
   trade: { icon: 'cart', title: 'bt_trade', text: 'bt_tradeText' },
@@ -85,6 +86,11 @@ export function BusinessTypeChooser({ onDone, first }: { onDone?: () => void; fi
         })}
       </div>
       <p className="muted small">{t('bizHelp')}</p>
+      {/* categories and brands for the trade: only when pressed, never by themselves */}
+      <fieldset className="card pad stack" style={{ gap: 6 }}>
+        <legend className="small"><strong>{t('cat_title')} · {t('bnd_title')}</strong></legend>
+        <StarterListButton key={starterTradeFor(picked)} trade={starterTradeFor(picked)} />
+      </fieldset>
       <ErrorBox error={error} />
       {first && <AgreeLine />}
       <div className="actions">

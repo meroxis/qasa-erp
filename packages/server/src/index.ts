@@ -20,7 +20,8 @@ export { createItem, listWarehouses } from './items.ts';
 // for the Pro module (1.1): units, batches, categories and an invoice's payments
 export { itemUnits, unitsByItem, type ItemUnitView } from './item-units.ts';
 export { batchReport, batchSettings, batchStock, expiryAlert, type BatchReportRow } from './batches.ts';
-export { listCategories, type CategoryView } from './categories.ts';
+export { IN_CATEGORY_SQL, listCategories, type CategoryView } from './categories.ts';
+export { assertItemBrand, brandIdForName, listBrands, type BrandView } from './brands.ts';
 export { isPeriodLocked } from './settings.ts';
 export { createParty, getParty, updateParty } from './parties.ts';
 // for the Pro module: a user limited to some branches works only with their warehouses and safes (branches.ts)

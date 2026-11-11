@@ -6,7 +6,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import type { FastifyInstance } from 'fastify';
 import { COMPANY_TABLES, migrate, openDatabase, SCHEMA_VERSION, schemaVersion, updateCopies, type Db, type SqlValue } from './db.ts';
 import { buildApp } from './app.ts';
-import { pendingMysqlSteps, tableColumns, V10_MYSQL_STEPS, MYSQL_TABLES } from './schema-mysql.ts';
+import { pendingMysqlSteps, tableColumns, V10_MYSQL_STEPS, V11_MYSQL_STEPS, MYSQL_TABLES } from './schema-mysql.ts';
 import { AppError } from './errors.ts';
 
 // QASA_TEST_DB runs the suite on a server: these build and open SQLite files themselves
@@ -160,9 +160,9 @@ describe('version 10 on a server database', () => {
     expect(pendingMysqlSteps(V10_MYSQL_STEPS, done)).toEqual([]);
   });
 
-  it('adds the same columns, in the same order, that the fresh server schema has last', () => {
+  it('adds the same columns, in the same order, that the fresh server schema has last (with those version 11 adds after them)', () => {
     for (const table of ['items', 'invoice_lines', 'stock_doc_lines', 'stock_adjustment_lines', 'purchase_order_lines', 'item_images']) {
-      const added = V10_MYSQL_STEPS.filter((s) => s.kind === 'column' && s.table === table).map((s) => (s as { column: string }).column);
+      const added = [...V10_MYSQL_STEPS, ...V11_MYSQL_STEPS].filter((s) => s.kind === 'column' && s.table === table).map((s) => (s as { column: string }).column);
       const { columns } = tableColumns(table);
       expect(columns.slice(-added.length), table).toEqual(added);
     }
@@ -192,13 +192,14 @@ describe('version 10 on a server database', () => {
     };
     migrate(fake);
     expect(version).toBe(SCHEMA_VERSION);
-    expect(ran.filter((s) => s.startsWith('CREATE TABLE') && !s.includes('IF NOT EXISTS')).map((s) => /CREATE TABLE (\w+)/.exec(s)![1])).toEqual(MYSQL_TABLES.filter((t) => t.since === 10).map((t) => t.name));
+    expect(ran.filter((s) => s.startsWith('CREATE TABLE') && !s.includes('IF NOT EXISTS')).map((s) => /CREATE TABLE (\w+)/.exec(s)![1]))
+      .toEqual([...MYSQL_TABLES.filter((t) => t.since === 10), ...MYSQL_TABLES.filter((t) => t.since === 11)].map((t) => t.name));
     expect(ran.filter((s) => s.startsWith('CREATE TRIGGER'))).toHaveLength(2);
     const alters = ran.filter((s) => s.startsWith('ALTER TABLE'));
     expect(alters).not.toContain('ALTER TABLE items ADD COLUMN category_id VARCHAR(191)');
     expect(alters[0]).toBe('ALTER TABLE items ADD COLUMN purchase_unit VARCHAR(32)');
     expect(alters).toContain('ALTER TABLE items ADD CONSTRAINT items_category_id_fk FOREIGN KEY (category_id) REFERENCES item_categories(id)');
-    expect(alters).toHaveLength(V10_MYSQL_STEPS.length - 2);
+    expect(alters).toHaveLength(V10_MYSQL_STEPS.length - 2 + V11_MYSQL_STEPS.length);
   });
 
   it('upgrades a server database from version 6: a table whose key points at a table of a later version is made with key checks off for that one CREATE', () => {
@@ -239,8 +240,7 @@ describe('batches are unique per item, number and expiry date from version 10 on
     full.close();
     const db = openDatabase(file);
     try {
-      expect(SCHEMA_VERSION).toBe(10);
-      expect(schemaVersion(db)).toBe(10);
+      expect(schemaVersion(db)).toBe(SCHEMA_VERSION);
       const unique = (db.prepare('PRAGMA index_list(item_batches)').all() as { name: string; unique: number; origin: string }[]).filter((i) => i.unique && i.origin !== 'pk');
       expect(unique.map((i) => (db.prepare(`PRAGMA index_info(${i.name})`).all() as { name: string }[]).map((c) => c.name))).toEqual([['item_id', 'number', 'expiry']]);
       const itemId = (db.prepare('SELECT id FROM items').get() as { id: string }).id;

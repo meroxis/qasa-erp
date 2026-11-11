@@ -122,6 +122,27 @@ export const MYSQL_TABLES: readonly MysqlObject[] = [
       sort INT NOT NULL DEFAULT 0,
       active INT NOT NULL DEFAULT 1,
       created_at ${WHEN} NOT NULL,
+      updated_at ${WHEN} NOT NULL,
+      parent_id ${ID},
+      reorder_milli BIGINT CHECK (reorder_milli IS NULL OR reorder_milli >= 0),
+      FOREIGN KEY (parent_id) REFERENCES item_categories(id)
+    )`
+  },
+  {
+    // before items, which point at it
+    name: 'brands',
+    since: 11,
+    sql: `CREATE TABLE brands (
+      id ${ID} NOT NULL PRIMARY KEY,
+      code ${ID} UNIQUE,
+      name VARCHAR(200) NOT NULL,
+      name_key ${ID} NOT NULL UNIQUE,
+      name_ar VARCHAR(200) NOT NULL DEFAULT '',
+      name_ku VARCHAR(200) NOT NULL DEFAULT '',
+      country ${WORD},
+      sort INT NOT NULL DEFAULT 0,
+      active INT NOT NULL DEFAULT 1,
+      created_at ${WHEN} NOT NULL,
       updated_at ${WHEN} NOT NULL
     )`
   },
@@ -148,8 +169,11 @@ export const MYSQL_TABLES: readonly MysqlObject[] = [
       track_batches INT NOT NULL DEFAULT 0,
       track_expiry INT NOT NULL DEFAULT 0,
       updated_at ${WHEN},
+      brand_id ${ID},
+      reorder_milli BIGINT CHECK (reorder_milli IS NULL OR reorder_milli >= 0),
       UNIQUE KEY items_barcode (barcode),
-      FOREIGN KEY (category_id) REFERENCES item_categories(id)
+      FOREIGN KEY (category_id) REFERENCES item_categories(id),
+      FOREIGN KEY (brand_id) REFERENCES brands(id)
     )`
   },
   {
@@ -1379,6 +1403,7 @@ export const MYSQL_TABLES: readonly MysqlObject[] = [
       created_at ${WHEN} NOT NULL,
       updated_by TEXT NOT NULL,
       updated_at ${WHEN} NOT NULL,
+      scope TEXT,
       INDEX stock_counts_warehouse (warehouse_id, status),
       FOREIGN KEY (warehouse_id) REFERENCES warehouses(id),
       FOREIGN KEY (adjustment_id) REFERENCES stock_adjustments(id)
@@ -1609,6 +1634,17 @@ export const V10_MYSQL_STEPS: readonly MysqlStep[] = [
   ...lineColumns('stock_adjustment_lines', true),
   ...lineColumns('purchase_order_lines', false),
   mysqlAddColumn('item_images', 'sha256', 'VARCHAR(64)')
+];
+
+/** Version 11 on a server database at version 10: subcategories, brands (its table comes from MYSQL_TABLES), reorder levels and stock count scopes. */
+export const V11_MYSQL_STEPS: readonly MysqlStep[] = [
+  mysqlAddColumn('item_categories', 'parent_id', ID),
+  mysqlAddColumn('item_categories', 'reorder_milli', 'BIGINT CHECK (reorder_milli IS NULL OR reorder_milli >= 0)'),
+  mysqlAddForeignKey('item_categories', 'parent_id', 'item_categories', 'id'),
+  mysqlAddColumn('items', 'brand_id', ID),
+  mysqlAddColumn('items', 'reorder_milli', 'BIGINT CHECK (reorder_milli IS NULL OR reorder_milli >= 0)'),
+  mysqlAddForeignKey('items', 'brand_id', 'brands', 'id'),
+  mysqlAddColumn('stock_counts', 'scope', 'TEXT')
 ];
 
 /** What a server database has already, for pendingMysqlSteps: "table.column" and "table.column>parent". */

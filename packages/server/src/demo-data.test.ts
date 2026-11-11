@@ -43,3 +43,14 @@ it('has a pharmacy sample: medicines by the strip and the box, in batches with e
   expect(db.prepare("SELECT u.unit, u.factor_milli FROM item_units u JOIN items i ON i.id = u.item_id WHERE i.code = 'CU-PIPE'").all()).toEqual([{ unit: 'roll', factor_milli: 25_000 }]);
   db.close();
 });
+
+it('gives the sample company categories with subcategories, brands, and items in them (1.1)', () => {
+  const db = openDatabase(':memory:');
+  seedDemo(db);
+  const subs = db.prepare('SELECT COUNT(*) AS n FROM item_categories WHERE parent_id IS NOT NULL').get() as { n: number };
+  expect(subs.n).toBeGreaterThanOrEqual(3);
+  expect((db.prepare('SELECT name FROM brands ORDER BY sort').all() as { name: string }[]).map((b) => b.name)).toEqual(['Gree', 'Jinko Solar', 'Growatt', 'LG']);
+  const inSub = db.prepare('SELECT COUNT(*) AS n FROM items i JOIN item_categories c ON c.id = i.category_id WHERE c.parent_id IS NOT NULL AND i.brand_id IS NOT NULL').get() as { n: number };
+  expect(inSub.n).toBe(3);
+  db.close();
+});

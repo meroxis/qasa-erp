@@ -232,6 +232,9 @@ export interface ItemView {
   trackBatches: boolean;
   trackExpiry: boolean;
   categoryId: string | null;
+  /** 1.1: the brand, and the stock level to reorder at (thousandths; null: the category's, or none) */
+  brandId: string | null;
+  reorderMilli: number | null;
 }
 
 /** One of an item's other units: base units in one (thousandths), its barcode and its own price (null: base × factor). */
@@ -252,6 +255,8 @@ export interface ItemInput {
   trackBatches?: boolean;
   trackExpiry?: boolean;
   categoryId?: string | null;
+  brandId?: string | null;
+  reorderMilli?: number | null;
 }
 
 export interface ItemDetail extends ItemView {
@@ -686,7 +691,7 @@ export const api = {
   warehouses: () => request<WarehouseView[]>('GET', '/api/warehouses'),
   createWarehouse: (input: { code: string; name: Names }) => request<WarehouseView>('POST', '/api/warehouses', input),
   updateWarehouse: (id: string, input: { name: Names; active?: boolean }) => request<WarehouseView>('PUT', `/api/warehouses/${id}`, input),
-  items: (f: { q?: string; warehouseId?: string; active?: string; categoryId?: string } = {}) => request<ItemView[]>('GET', '/api/items' + qs(f)),
+  items: (f: { q?: string; warehouseId?: string; active?: string; categoryId?: string; brandId?: string } = {}) => request<ItemView[]>('GET', '/api/items' + qs(f)),
   /** A scanned barcode: the item, and the unit when it is one of the item's units' barcodes (null: its own, the base unit). */
   itemByBarcode: (barcode: string, warehouseId?: string) => request<{ item: ItemView | null; unit: UnitCode | null }>('GET', '/api/items' + qs({ barcode, ...(warehouseId ? { warehouseId } : {}) })),
   item: (id: string) => request<ItemDetail>('GET', `/api/items/${id}`),

@@ -101,7 +101,9 @@ const itemSchema = z.object({
   purchaseUnit: unitCode.nullable().optional(),
   trackBatches: z.boolean().optional(),
   trackExpiry: z.boolean().optional(),
-  categoryId: z.string().min(1).max(64).nullable().optional()
+  categoryId: z.string().min(1).max(64).nullable().optional(),
+  brandId: z.string().min(1).max(64).nullable().optional(),
+  reorderMilli: z.number().int().min(0).max(1e15).nullable().optional()
 });
 
 /**
@@ -512,12 +514,13 @@ export function apiRoutes(db: Db, options: { demo?: boolean; extensions?: readon
   app.get('/api/items', async (req) => {
     const q = parse(z.object({
       q: z.string().max(100).optional(), warehouseId: z.string().max(64).optional(), active: z.enum(['true', 'false']).optional(),
-      barcode: z.string().min(1).max(64).optional(), categoryId: z.string().min(1).max(64).optional()
+      barcode: z.string().min(1).max(64).optional(), categoryId: z.string().min(1).max(64).optional(),
+      brandId: z.string().min(1).max(64).optional()
     }), req.query);
     // a scan at the counter: the item and the unit the barcode belongs to (an item's own barcode: its base unit)
     if (q.barcode) return findByBarcode(db, q.barcode, q.warehouseId ? [q.warehouseId] : warehousesOfUser(req));
     // without a warehouse, a user limited to branches gets the stock of their branches' warehouses (null: every one)
-    return listItems(db, { q: q.q, warehouseId: q.warehouseId, active: q.active === undefined ? undefined : q.active === 'true', categoryId: q.categoryId }, warehousesOfUser(req));
+    return listItems(db, { q: q.q, warehouseId: q.warehouseId, active: q.active === undefined ? undefined : q.active === 'true', categoryId: q.categoryId, brandId: q.brandId }, warehousesOfUser(req));
   });
   app.get('/api/items/:id', async (req) => {
     const { id } = parse(idParam, req.params);
