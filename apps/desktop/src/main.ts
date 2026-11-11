@@ -17,6 +17,7 @@ import { guideUrl, isGuideUrl } from '@qasa/core';
 import { isAllowedExternal, refusedForLog } from './external-links.ts';
 import { isLang, text, type Lang, type TextKey } from './texts.ts';
 import { openNotices } from './notices.ts';
+import { booksBefore, markSeen, startVersion, type WhatsNew } from './whats-new.ts';
 import { printingHandlers } from './printing.ts';
 import { pair, parseAddress, parseOfficeId, pemFingerprint, startTunnel, type PairResult, type Remote } from './office.ts';
 
@@ -485,6 +486,16 @@ ipcMain.on('app:relaunch', (event) => {
   if (fromAppPage(event)) void relaunchApp();
 });
 
+// "What's new in <version>" once after an update (whats-new.ts): the versions, and "seen" when the person closes it
+let whatsNew: WhatsNew | null = null;
+ipcMain.handle('app:whatsNew', (event) => (invokedByAppPage(event) ? whatsNew : null));
+ipcMain.handle('app:whatsNewSeen', (event) => {
+  if (!invokedByAppPage(event) || !whatsNew) return false;
+  try { markSeen(app.getPath('userData'), whatsNew.current); } catch (error) { log('could not note the version as seen:', error); }
+  whatsNew = { ...whatsNew, previous: null };
+  return true;
+});
+
 // Settings → About → Legal: the third-party notices installed next to app.asar, never a path the page gives (notices.ts)
 ipcMain.handle('app:notices', async (event) => {
   if (!invokedByAppPage(event)) return false;
@@ -942,6 +953,8 @@ if (!app.requestSingleInstanceLock()) {
 
   app.whenReady().then(async () => {
     app.setAppUserModelId('com.meroxis.qasaerp');
+    // before anything opens or makes a company file: was this an update? (whats-new.ts)
+    try { whatsNew = startVersion(app.getPath('userData'), app.getVersion(), booksBefore(app.getPath('userData'))); } catch { /* nothing to show */ }
     serveAppScheme();
     readSavedLanguage();
     readSavedTheme();

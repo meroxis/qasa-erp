@@ -12,6 +12,9 @@ contextBridge.exposeInMainWorld('qasaDesktop', {
   relaunch: () => ipcRenderer.send('app:relaunch'),
   /** Settings → About → Legal: opens the installed THIRD_PARTY_NOTICES.md (main.ts, notices.ts). False when it could not. */
   openNotices: () => ipcRenderer.invoke('app:notices') as Promise<boolean>,
+  /** "What's new" after an update (1.1): the version now and the one before (null: nothing new), and "seen". */
+  whatsNew: () => ipcRenderer.invoke('app:whatsNew') as Promise<{ current: string; previous: string | null } | null>,
+  whatsNewSeen: () => ipcRenderer.invoke('app:whatsNewSeen') as Promise<boolean>,
   /** This app can keep several companies (Settings → Companies; the routes are on its own server, admins only). */
   companies: true,
   /**

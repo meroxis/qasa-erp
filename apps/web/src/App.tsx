@@ -15,6 +15,7 @@ import { ADMIN_PAGES, canSee, COMPANY_BOOK_PAGES, FAVOURITES_EVENT, seesCompanyB
 import { CommandPalette } from './industry/CommandPalette.tsx';
 import { Tour, TOUR_EVENT, tourDone } from './industry/Tour.tsx';
 import { UpdateBanner } from './industry/UpdateBanner.tsx';
+import { WhatsNewAfterUpdate } from './industry/WhatsNew.tsx';
 import { BackupNoticeBar } from './industry/BackupNotice.tsx';
 import { PrintNotices } from './industry/Printers.tsx';
 import { GuideLink, pageGuide } from './industry/GuideLink.tsx';
@@ -773,6 +774,7 @@ export function App() {
                 <div className="backdrop"><div className="modal biz-modal" role="dialog" aria-modal="true" aria-label={t('bizWelcome')}><Suspense fallback={<PageLoading />}><BusinessTypeChooser first /></Suspense></div></div>
               )}
               <UpdateBanner />
+              <WhatsNewAfterUpdate />
               <PrintNotices />
               <main className="content">
                 {import.meta.env.MODE === 'demo' && narrow && <div className="alert info demo-phone no-print" role="note" style={{ marginBottom: 14 }}>{t('demoPhoneNote')}</div>}
