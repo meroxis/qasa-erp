@@ -2,12 +2,15 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, basename } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { FastifyInstance } from 'fastify';
 import { COMPANY_TABLES, migrate, openDatabase, SCHEMA_VERSION, schemaVersion, updateCopies, type Db, type SqlValue } from './db.ts';
 import { buildApp } from './app.ts';
 import { pendingMysqlSteps, tableColumns, V10_MYSQL_STEPS, V11_MYSQL_STEPS, MYSQL_TABLES } from './schema-mysql.ts';
 import { AppError } from './errors.ts';
+
+// upgrading a whole company file takes about a second here, and several times that on a busy build machine
+vi.setConfig({ testTimeout: 30_000 });
 
 // QASA_TEST_DB runs the suite on a server: these build and open SQLite files themselves
 const onServer = !!process.env.QASA_TEST_DB;
