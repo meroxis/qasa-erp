@@ -31,6 +31,8 @@ export interface NativeLicence {
    * False when it changed, the signature is wrong, or the addon has no build key embedded yet.
    */
   verifyIntegrity(path: string, signature: string): boolean;
+  /** 1.2 builds: the build keys app.asar is checked against (empty: the check is not configured in this build). */
+  integrityKeys?(): string[];
 }
 
 const FILE = 'qasa_licence.node';
@@ -85,4 +87,9 @@ export function loadNative(): NativeLicence | null {
 /** Tests load a specific build, or none. */
 export function resetNativeForTests(): void {
   loaded = undefined;
+}
+
+/** Tests: a stand-in that works like the addon (the Pro module's tests have one), or null for a build without it. */
+export function setNativeForTests(addon: NativeLicence | null): void {
+  loaded = addon;
 }

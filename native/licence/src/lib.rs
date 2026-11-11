@@ -105,6 +105,13 @@ pub fn activation_keys() -> Vec<String> {
     ACTIVATION_KEYS.iter().map(|k| k.to_string()).collect()
 }
 
+/// The embedded build keys app.asar is checked against (empty: the check isn't configured in this build). The Pro
+/// module asks, so a build that embeds one also needs resources/app.asar.sig, and removing the file doesn't pass.
+#[napi]
+pub fn integrity_keys() -> Vec<String> {
+    INTEGRITY_KEYS.iter().map(|k| k.to_string()).collect()
+}
+
 #[cfg(windows)]
 fn machine_secret() -> String {
     use winreg::enums::{HKEY_LOCAL_MACHINE, KEY_READ, KEY_WOW64_64KEY};
