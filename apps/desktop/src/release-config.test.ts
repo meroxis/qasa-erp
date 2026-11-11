@@ -226,8 +226,8 @@ describe('the release notes and the Store "What\'s new" of this version', () => 
 
   const store = listing.listings;
 
-  it('is 1.1.0, the same in the app, the core and the lock file, with notes in Arabic, English and Kurdish', () => {
-    expect(version).toBe('1.1.0');
+  it('is 1.2.0, the same in the app, the core and the lock file, with notes in Arabic, English and Kurdish', () => {
+    expect(version).toBe('1.2.0');
     expect(read('packages/core/src/version.ts')).toContain(`APP_VERSION = '${version}'`);
     const lock = JSON.parse(read('package-lock.json')) as { packages: Record<string, { version?: string }> };
     expect(lock.packages['apps/desktop']?.version).toBe(version);
@@ -243,24 +243,56 @@ describe('the release notes and the Store "What\'s new" of this version', () => 
     }
   });
 
-  it('names units, batches and expiry dates, the pharmacy pack, dollar balances and the POS payment methods, where they are', () => {
-    expect(section('en')).toContain('Inventory → **Expiry & batches**');
-    expect(section('ar')).toContain('المخزن ← **الصلاحية والوجبات**');
-    expect(section('ku')).toContain('کۆگا ← **بەسەرچوون و وەجبەکان**');
-    for (const label of ['**Units with conversions:**', '**Batches and expiry dates:**', '**Pharmacy (Pro):**', '**Dollar balances:**', '**Payment methods at the point of sale:**']) {
+  it('names the offline till and the waiting list, the end-of-day close and where it is, WhatsApp and loyalty points', () => {
+    expect(section('en')).toContain('Overview → **End of day**');
+    expect(section('ar')).toContain('عام ← **إغلاق اليوم**');
+    expect(section('ku')).toContain('گشتی ← **داخستنی ڕۆژ**');
+    expect(section('en')).toContain('Settings → **Loyalty points**');
+    expect(section('ar')).toContain('الإعدادات ← **نقاط الولاء**');
+    expect(section('ku')).toContain('ڕێکخستنەکان ← **خاڵەکانی دڵسۆزی**');
+    for (const label of ['**Working through a dropped link (office network):**', '**The till while offline:**', '**WhatsApp:**', '**Loyalty points (Pro):**']) {
       expect(section('en')).toContain(label);
     }
-    for (const lang of ['ar', 'en', 'ku'] as const) for (const word of ['FIB', '16', 'Pro']) expect(section(lang), lang).toContain(word);
-    for (const words of ['Units with conversions', 'Batches and expiry dates', 'Pharmacy pack (Pro)']) expect(store['en-us'].releaseNotes).toContain(words);
-    expect(store['en-us'].features.some((f) => /Units with conversions/.test(f))).toBe(true);
-    expect(store.ar.features.some((f) => /الوحدات وتحويلها/.test(f))).toBe(true);
-    expect(store['ku-arab'].features.some((f) => /یەکەکان و گۆڕینیان/.test(f))).toBe(true);
+    // the app's own words for the bar, the list and the customer card
+    expect(section('en')).toMatch(/\*\*Offline\*\*[\s\S]*\*\*Waiting to send\*\*/);
+    expect(section('ar')).toMatch(/\*\*غير متصل\*\*[\s\S]*\*\*ما ينتظر الإرسال\*\*/);
+    expect(section('ku')).toMatch(/\*\*بێ پەیوەندی\*\*[\s\S]*\*\*چاوەڕێی ناردن\*\*/);
+    expect(section('en')).toContain('**Language for WhatsApp messages**');
+    expect(section('ar')).toContain('**لغة رسائل واتساب**');
+    expect(section('ku')).toContain('**زمانی نامەکانی واتسئاپ**');
+    for (const lang of ['ar', 'en', 'ku'] as const) for (const word of ['OFF-', '+964', 'PDF', 'Pro', 'Excel']) expect(section(lang), lang).toContain(word);
+    expect(section('en')).toContain('Nothing is sent without your click');
+    for (const words of ['Working through a dropped link', 'End of day (Overview → End of day)', 'WhatsApp', 'Loyalty points (Pro)']) expect(store['en-us'].releaseNotes).toContain(words);
+    expect(store.ar.releaseNotes).toContain('إغلاق اليوم (عام ← إغلاق اليوم)');
+    expect(store['ku-arab'].releaseNotes).toContain('داخستنی ڕۆژ (گشتی ← داخستنی ڕۆژ)');
+    expect(store['en-us'].features.some((f) => /office link drops[\s\S]*end-of-day close/.test(f))).toBe(true);
+    expect(store.ar.features.some((f) => /ينقطع اتصال المكتب[\s\S]*إغلاق اليوم/.test(f))).toBe(true);
+    expect(store['ku-arab'].features.some((f) => /پەیوەندیی نووسینگە دەپچڕێت[\s\S]*داخستنی ڕۆژ/.test(f))).toBe(true);
   });
 
-  it('says plainly that 1.0 cannot open a company file 1.1 has upgraded, so every PC and the Store version are updated', () => {
-    expect(section('en')).toContain('Qasa ERP 1.0 cannot open a file that 1.1 has upgraded');
-    expect(section('ar')).toContain('لا يفتح قاصة ERP 1.0 ملفاً رقّاه الإصدار 1.1');
-    expect(section('ku')).toContain('قاسە ERP 1.0 فایلێک ناکاتەوە کە 1.1 بەرزی کردبێتەوە');
+  it('never says the till sells on account or with points while offline, and says a sale is booked once', () => {
+    expect(section('en')).toContain("Selling on a customer's account and using loyalty points need the server");
+    expect(section('ar')).toContain('البيع على حساب الزبون واستعمال نقاط الولاء يحتاجان الاتصال بالخادم');
+    expect(section('ku')).toContain('فرۆشتن لەسەر حسابی کڕیار و بەکارهێنانی خاڵەکانی دڵسۆزی پێویستیان بە سێرڤەرە');
+    expect(section('en')).toContain('booked once only');
+    expect(section('ar')).toContain('يُسجَّل في الدفاتر مرة واحدة فقط');
+    expect(section('ku')).toContain('تەنها یەک جار لە دەفتەرەکاندا تۆمار دەکرێت');
+    expect(store['en-us'].releaseNotes).toContain('booked once');
+  });
+
+  it('says a paused Pro never locks the data, and names Plan & license', () => {
+    expect(section('en')).toContain('Pro features pause on that PC and **Plan & license** says why and what to do. Your data is never locked.');
+    expect(section('ar')).toContain('**الخطة والترخيص**');
+    expect(section('ar')).toContain('كل بياناتك محفوظة');
+    expect(section('ku')).toContain('**پلان و مۆڵەت**');
+    expect(section('ku')).toContain('هەموو داتاکانت پارێزراون');
+  });
+
+  it('says plainly that 1.1 cannot open a company file 1.2 has upgraded, so every PC and the Store version are updated', () => {
+    expect(section('en')).toContain('Qasa ERP 1.1 cannot open a file that 1.2 has upgraded');
+    expect(section('ar')).toContain('لا يفتح قاصة ERP 1.1 ملفاً رقّاه الإصدار 1.2');
+    expect(section('ku')).toContain('قاسە ERP 1.1 فایلێک ناکاتەوە کە 1.2 بەرزی کردبێتەوە');
+    for (const lang of ['ar', 'en', 'ku'] as const) expect(section(lang)).toContain('Microsoft');
     expect(store['en-us'].releaseNotes).toContain('update every PC that opens it');
   });
 
