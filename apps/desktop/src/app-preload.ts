@@ -15,6 +15,12 @@ contextBridge.exposeInMainWorld('qasaDesktop', {
   /** This app can keep several companies (Settings → Companies; the routes are on its own server, admins only). */
   companies: true,
   /**
+   * Settings → Start over with empty books (1.1): an admin's user name and password and the company's name typed. The
+   * main process refuses it on a PC connected to an office server; the app makes a backup first and restarts.
+   */
+  startOver: (username: string, password: string, confirmation: string) =>
+    ipcRenderer.invoke('app:startOver', String(username), String(password), String(confirmation)) as Promise<{ ok: boolean; error?: string; retryAfterSeconds?: number }>,
+  /**
    * Settings → Printers and the Print buttons (main.ts, printing.ts): four fixed calls. The page names a kind of paper;
    * the main process checks everything it gets and prints only this window, with the choice saved for that kind.
    */

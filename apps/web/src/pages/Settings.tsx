@@ -15,6 +15,7 @@ import { LegalPanel } from '../industry/LegalPanel.tsx';
 import { GraphicsSetting } from '../industry/GraphicsSetting.tsx';
 import { PrintersCard } from '../industry/Printers.tsx';
 import { CompaniesSetting } from './Companies.tsx';
+import { StartOverCard } from '../industry/StartOver.tsx';
 import { cloudChoices } from './cloud-providers.ts';
 import { backupFailureKey, backupNoticeKey } from '../industry/BackupNotice.tsx';
 import { batchesApi, type BatchSettingsView } from '../industry/batches-api.ts';
@@ -32,6 +33,7 @@ export function Settings({ admin }: { admin: boolean }) {
       <UpdateSettings />
       <UsageCard admin={admin} />
       <LegalPanel />
+      {admin && <StartOverCard />}
     </div>
   );
 }

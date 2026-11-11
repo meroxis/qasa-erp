@@ -12,6 +12,7 @@ import { buildApp, configureLicensing, configureVerifyKeyVault, openDatabase, pl
 import { companyDirOf, isCompanyId, MAIN_COMPANY, readRegistry, writeRegistry } from './companies.ts';
 import { companyApi } from './company-api.ts';
 import { handleRecoverRequest, recoverableAdmins } from './recover.ts';
+import { startOver } from './start-over.ts';
 import { Bridge, type Carrier } from './bridge.ts';
 import { makeSecretBox, type SecretBox } from './secrets.ts';
 import type { DatabaseStartContext, ProContext, RestartOptions } from './pro-types.ts';
@@ -162,7 +163,7 @@ export const keptAsideOf = (error: unknown): string | null =>
 
 /** The note a failed restore leaves when the company file could not be put back: the next start puts it back. */
 const PUT_BACK_NOTE = 'restore-put-back.json';
-const ASIDE_NAME = /^qasa-before-restore-[\d-]{1,40}\.sqlite$/;
+const ASIDE_NAME = /^qasa-before-(?:restore|start-over)-[\d-]{1,40}\.sqlite$/;
 
 /**
  * Puts a copy of `file` in place of the data folder's company file. The copy is made and flushed to disk under a
@@ -172,7 +173,7 @@ const ASIDE_NAME = /^qasa-before-restore-[\d-]{1,40}\.sqlite$/;
  * nothing, and when any step fails every file moved is moved back (last first) before the error is thrown. In the
  * rare case that a file can't be moved back either, the error carries `keptAside` (and a note for the next start).
  */
-export function swapInCompanyFile(dir: string, file: string, stamp: string, rename: Rename = renameSync): void {
+export function swapInCompanyFile(dir: string, file: string, stamp: string, rename: Rename = renameSync, why: 'restore' | 'start-over' = 'restore'): void {
   const live = join(dir, 'qasa.sqlite');
   const incoming = live + '.restoring';
   rmSync(incoming, { force: true });
@@ -184,7 +185,7 @@ export function swapInCompanyFile(dir: string, file: string, stamp: string, rena
     rmSync(incoming, { force: true });
     throw error;
   }
-  const name = `qasa-before-restore-${stamp}.sqlite`;
+  const name = `qasa-before-${why}-${stamp}.sqlite`;
   const aside = join(dir, name);
   try {
     moveCompanyFile(live, aside, rename);
@@ -460,6 +461,49 @@ async function startServer(bridge: Bridge, given: ServerInit): Promise<string> {
   return url;
 }
 
+/**
+ * Start over with empty books on this PC's company (start-over.ts). The backup is the Pro module's normal one
+ * (encrypted when a backup password is set); without the Pro module, a checked copy of the company file in the backup
+ * folder on this PC. The old company file is kept aside, never deleted.
+ */
+function startOverHere(bridge: Bridge, request: unknown): Promise<unknown> {
+  const stamp = stampNow();
+  return startOver({
+    db, dataDir: dataDir(), stamp, log,
+    switcherName: readRegistry(cfg().userDataDir).list.find((c) => c.id === companyId())?.name ?? null,
+    backup: async () => {
+      if (proModule?.backupNow) return proModule.backupNow();
+      if (!db) throw new Error('not ready');
+      const folder = init?.localBackupDir ?? join(cfg().userDataDir, 'Backups');
+      mkdirSync(folder, { recursive: true });
+      const name = `Qasa-ERP-before-start-over-${stamp}.sqlite`;
+      const part = join(folder, name + '.part');
+      rmSync(part, { force: true });
+      db.exec(`VACUUM INTO '${part.replace(/'/g, "''")}'`);
+      const fd = openSync(part, 'r+');
+      try { fsyncSync(fd); } finally { closeSync(fd); }
+      renameSync(part, join(folder, name));
+      return name;
+    },
+    swapAndRestart: async (fresh) => {
+      await stopServer();
+      let failed: string | null = null;
+      let keptAside: string | null = null;
+      try {
+        swapInCompanyFile(dataDir(), fresh, stamp, renameSync, 'start-over');
+      } catch (error) {
+        failed = (error as NodeJS.ErrnoException).code ?? (error instanceof Error ? error.message : String(error));
+        keptAside = keptAsideOf(error);
+        log('start over: the empty company could not be put in place; the company file is', keptAside ? `kept as ${keptAside}` : 'unchanged', error);
+      } finally {
+        rmSync(fresh, { force: true });
+        for (const s of ['-wal', '-shm']) rmSync(fresh + s, { force: true });
+      }
+      await bridge.call('relaunch', [failed ? { restoreFailed: failed.slice(0, 200), ...(keptAside ? { keptAside } : {}) } : {}], { timeoutMs: 0 });
+    }
+  }, request);
+}
+
 /** Wires a bridge to this process's own handlers: 'init' starts the server, 'stop' closes everything. */
 export function serve(carrier: Carrier): Bridge {
   const bridge = new Bridge(carrier);
@@ -468,6 +512,8 @@ export function serve(carrier: Carrier): Bridge {
   // File → Reset admin password: only the main process can ask (no HTTP route takes a recovery code), see recover.ts
   bridge.handle('recoverAdmins', (() => recoverableAdmins(db)) as never);
   bridge.handle('recoverAdmin', ((request: unknown) => handleRecoverRequest(db, request)) as never);
+  // Settings → Start over with empty books: only the main process can ask, for the app's own window (start-over.ts)
+  bridge.handle('startOver', ((request: unknown) => startOverHere(bridge, request)) as never);
   return bridge;
 }
 

@@ -568,6 +568,17 @@ ipcMain.handle('recover:windows', async (event, username: unknown, password: unk
   return answer;
 });
 
+// Settings → Start over with empty books (start-over.ts in the server process): only the app's own window on the PC
+// that keeps the books — never a PC connected to an office server (its window shows that server's pages), never HTTP
+ipcMain.handle('app:startOver', async (event, username: unknown, password: unknown, confirmation: unknown) => {
+  if (!invokedByAppPage(event) || remote || !bridge) return { ok: false, error: remote ? 'office_client' : 'error' };
+  const answer = await bridge.call<{ ok: boolean; error?: string }>('startOver', [{
+    username: String(username ?? '').slice(0, 64), password: String(password ?? '').slice(0, 200), confirmation: String(confirmation ?? '').slice(0, 200)
+  }], { timeoutMs: 10 * 60_000 }).catch(() => ({ ok: false, error: 'error' }));
+  log(`start over with empty books asked for "${String(username).slice(0, 64)}": ${answer.ok ? 'done, restarting' : answer.error}`);
+  return answer;
+});
+
 ipcMain.on('recover:close', (event) => {
   if (recoverWin && event.sender === recoverWin.webContents) recoverWin.close();
 });

@@ -17,6 +17,11 @@ export interface ProModule {
   /** Called before the app quits. */
   stop?(): Promise<void> | void;
   /**
+   * 1.1: the normal backup now (encrypted when a backup password is set), for Start over with empty books; resolves
+   * with the file's name once it is made and checked, throws when no copy was made.
+   */
+  backupNow?(): Promise<string>;
+  /**
    * At start, before anything else: the company database on a MariaDB/MySQL server when this PC uses one, or null
    * for the company file. Throws a problem with a code, host, database and localCopy when the server can't be used.
    */

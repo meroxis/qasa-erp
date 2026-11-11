@@ -29,3 +29,5 @@ export { defaultWarehouseId, entryInBranchSql, scopeLists, scopeOf, visibleEntry
 export { startUsagePings, usageApi } from './usage.ts';
 // for the desktop app: keep the invoice QR signing key protected with the PC's own secret store
 export { configureVerifyKeyVault, type SecretVault } from './verify.ts';
+// for the desktop app: Settings → Start over with empty books (only through its own bridge, never over HTTP)
+export { checkStartOver, companyNames, confirmsCompany, parseStartOverRequest, type StartOverRequest } from './start-over.ts';

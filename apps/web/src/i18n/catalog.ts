@@ -74,5 +74,46 @@ export const CATALOG_TEXT = {
     'Row {n}: this item has stock moves already, so no opening quantity is added to it.',
     'ڕیزی {n}: ئەم کاڵایە جووڵەی کۆگای هەیە، بۆیە بڕی سەرەتای بۆ زیاد ناکرێت.'
   ],
+  so_title: ['البدء من جديد بدفاتر فارغة', 'Start over with empty books', 'دەستپێکردنەوە بە دەفتەری بەتاڵ'],
+  so_help: [
+    'يحفظ نسخة احتياطية أولاً، ثم يضع ملف الشركة الحالي جانباً في مجلد البيانات (لا يُحذف) ويفتح شركة فارغة لإعدادها من البداية. يبقى الترخيص وتفعيل هذا الحاسوب.',
+    'Saves a backup first, then keeps the current company file aside in the data folder (it is never deleted) and opens an empty company to set up from the start. The licence and this PC’s activation stay.',
+    'سەرەتا پاڵپشتێک پاشەکەوت دەکات، پاشان فایلی ئێستای کۆمپانیا لە بوخچەی داتادا لادەنێت (هەرگیز ناسڕدرێتەوە) و کۆمپانیایەکی بەتاڵ دەکاتەوە بۆ ڕێکخستن لە سەرەتاوە. مۆڵەت و چالاککردنی ئەم کۆمپیوتەرە دەمێننەوە.'
+  ],
+  so_button: ['البدء من جديد', 'Start over', 'دەستپێکردنەوە'],
+  so_warning: [
+    'ستبدأ الشركة فارغة: لا حسابات ولا مواد ولا فواتير. لإرجاع الدفاتر القديمة استرجع النسخة الاحتياطية من الإعدادات ← النسخ الاحتياطي.',
+    'The company will start empty: no accounts, items or invoices. To get the old books back, restore the backup in Settings → Backups.',
+    'کۆمپانیاکە بەتاڵ دەست پێدەکات: نە هەژمار، نە کاڵا، نە پسوولە. بۆ گەڕاندنەوەی دەفتەرە کۆنەکان، پاڵپشتەکە لە ڕێکخستنەکان ← پاڵپشت بگەڕێنەوە.'
+  ],
+  so_username: ['اسم مستخدم المدير', 'Admin user name', 'ناوی بەکارهێنەری بەڕێوەبەر'],
+  so_password: ['كلمة مرور المدير', 'Admin password', 'وشەی نهێنیی بەڕێوەبەر'],
+  so_confirm: ['اكتب اسم الشركة للتأكيد', 'Type the company’s name to confirm', 'ناوی کۆمپانیاکە بنووسە بۆ دڵنیابوونەوە'],
+  so_working: ['يحفظ النسخة الاحتياطية…', 'Saving the backup…', 'پاڵپشت پاشەکەوت دەکرێت…'],
+  so_done: ['حُفظت النسخة الاحتياطية؛ يُعاد تشغيل البرنامج بشركة فارغة.', 'The backup is saved; the app restarts with an empty company.', 'پاڵپشتەکە پاشەکەوت کرا؛ بەرنامەکە بە کۆمپانیایەکی بەتاڵ دەست پێدەکاتەوە.'],
+  so_err_invalid_login: [
+    'اسم المستخدم أو كلمة المرور غير صحيحة. يلزم مدير له كلمة مرور (الإعدادات ← المستخدمون).',
+    'The user name or password is wrong. An admin with a password is needed (Settings → Users).',
+    'ناوی بەکارهێنەر یان وشەی نهێنی هەڵەیە. بەڕێوەبەرێک بە وشەی نهێنی پێویستە (ڕێکخستنەکان ← بەکارهێنەران).'
+  ],
+  so_err_not_admin: ['هذا المستخدم ليس مديراً.', 'This user isn’t an admin.', 'ئەم بەکارهێنەرە بەڕێوەبەر نییە.'],
+  so_err_confirmation: ['الاسم المكتوب ليس اسم الشركة.', 'What you typed isn’t the company’s name.', 'ئەوەی نووسیت ناوی کۆمپانیاکە نییە.'],
+  so_err_backup_failed: [
+    'تعذّر حفظ النسخة الاحتياطية، فلم يتغير شيء. راجع الإعدادات ← النسخ الاحتياطي.',
+    'The backup could not be saved, so nothing was changed. See Settings → Backups.',
+    'پاڵپشتەکە پاشەکەوت نەکرا، بۆیە هیچ نەگۆڕا. ڕێکخستنەکان ← پاڵپشت ببینە.'
+  ],
+  so_err_too_many_attempts: ['محاولات كثيرة؛ أعد المحاولة بعد {s} ثانية.', 'Too many tries; try again in {s} seconds.', 'هەوڵی زۆر؛ دوای {s} چرکە دووبارە هەوڵ بدەوە.'],
+  so_err_office_client: [
+    'هذا الحاسوب متصل بخادم المكتب؛ يُبدأ من جديد على الحاسوب الذي يحفظ الدفاتر فقط.',
+    'This PC is connected to an office server; starting over is done only on the PC that keeps the books.',
+    'ئەم کۆمپیوتەرە بە ڕاژەکاری ئۆفیسەوە بەستراوە؛ دەستپێکردنەوە تەنها لەسەر ئەو کۆمپیوتەرە دەکرێت کە دەفتەرەکان هەڵدەگرێت.'
+  ],
+  so_err_start_over_on_server: [
+    'الدفاتر على خادم قاعدة بيانات؛ أعدها أولاً إلى ملف شركة (الإعدادات ← قاعدة البيانات).',
+    'The books are on a database server; move them back to a company file first (Settings → Database).',
+    'دەفتەرەکان لەسەر ڕاژەکاری داتابەیسن؛ سەرەتا بیانگەڕێنەوە بۆ فایلی کۆمپانیا (ڕێکخستنەکان ← داتابەیس).'
+  ],
+  so_err_error: ['حدث خطأ، فلم يتغير شيء.', 'Something went wrong, so nothing was changed.', 'هەڵەیەک ڕوویدا، بۆیە هیچ نەگۆڕا.'],
   st_nothing: ['القائمة موجودة كلها؛ لم يُضف شيء.', 'Everything in the list is there already; nothing was added.', 'هەموو لیستەکە هەیە؛ هیچ زیاد نەکرا.']
 } as const;
