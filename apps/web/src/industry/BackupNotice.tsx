@@ -49,14 +49,14 @@ export function BackupNoticeBar({ admin, page }: { admin: boolean; page: string 
   const needs = key && (
     <div className={'alert plan-banner no-print ' + (key === 'bkNoticeFailed' ? 'bad' : 'warn')} role="status" style={{ marginBottom: 14 }}>
       <span>{t(key)}</span>
-      <a href={href('settings')}>{t('bkNoticeOpen')}</a>
+      <a href={href('settings/backups')}>{t('bkNoticeOpen')}</a>
     </div>
   );
   const kept = local && (
     <div className="alert plan-banner no-print info" role="status" style={{ marginBottom: 14 }}>
       <span>{t('bkNoticeLocal')}</span>
       <span className="row" style={{ gap: 8 }}>
-        {page !== 'settings' && <a href={href('settings')}>{t('bkNoticeOpen')}</a>}
+        {page !== 'settings' && <a href={href('settings/backups')}>{t('bkNoticeOpen')}</a>}
         <button type="button" className="btn small" onClick={seen}>{t('bkNoticeLocalOk')}</button>
       </span>
     </div>

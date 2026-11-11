@@ -11,32 +11,134 @@ import { UsageCard } from '../industry/UsageCard.tsx';
 import { HelpPanel } from '../industry/SupportButton.tsx';
 import { GuideLink } from '../industry/GuideLink.tsx';
 import { UpdateSettings } from '../industry/UpdateSettings.tsx';
+import { desktopUpdates } from '../industry/updates.ts';
 import { LegalPanel } from '../industry/LegalPanel.tsx';
 import { GraphicsSetting } from '../industry/GraphicsSetting.tsx';
 import { PrintersCard } from '../industry/Printers.tsx';
 import { CompaniesSetting } from './Companies.tsx';
-import { StartOverCard } from '../industry/StartOver.tsx';
+import { StartOverCard, startOverCall } from '../industry/StartOver.tsx';
+import { canSwitchCompanies } from '../industry/companies-api.ts';
 import { cloudChoices } from './cloud-providers.ts';
 import { backupFailureKey, backupNoticeKey } from '../industry/BackupNotice.tsx';
 import { batchesApi, type BatchSettingsView } from '../industry/batches-api.ts';
 import { posApi, type PosAccounts } from '../industry/pos-api.ts';
 import { LoyaltySettingsCard } from '../industry/Loyalty.tsx';
 
-/** Language and display are each person's own; the company's settings are for admins. */
-export function Settings({ admin }: { admin: boolean }) {
+/** One entry of the Settings list: its address (#/settings/<id>), icon, name and the line under the name. */
+export interface SettingsSection {
+  id: string;
+  icon: string;
+  name: Key;
+  help: Key;
+  /** Admins only (the server asks for an admin too). */
+  admin?: boolean;
+  /** A page of its own elsewhere in the app (Users): the entry opens that page. */
+  page?: string;
+  /** Shown only where its cards can work (Companies, Start over and Updates are in the Windows app only). */
+  when?: () => boolean;
+}
+
+/**
+ * The Settings list, in order. The names are the ones the release notes and the user guide use ("Settings → Backups",
+ * "Settings → Printers", "Settings → Loyalty points", "Settings → Updates", "Settings → About", "Settings → Users").
+ */
+export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
+  { id: 'display', icon: 'globe', name: 'displayTitle', help: 'ss_displayHelp' },
+  { id: 'company', icon: 'building', name: 'company', help: 'ss_companyHelp', admin: true },
+  { id: 'periods', icon: 'cal', name: 'ss_periods', help: 'ss_periodsHelp', admin: true },
+  { id: 'sales', icon: 'cart', name: 'ss_sales', help: 'ss_salesHelp', admin: true },
+  { id: 'loyalty', icon: 'star', name: 'ly_title', help: 'ss_loyaltyHelp', admin: true },
+  { id: 'printers', icon: 'printer', name: 'prn_title', help: 'ss_printersHelp' },
+  { id: 'backups', icon: 'upload', name: 'bkTitle', help: 'ss_backupsHelp', admin: true },
+  { id: 'network', icon: 'branch', name: 'netTitle', help: 'ss_networkHelp', admin: true },
+  { id: 'companies', icon: 'layers', name: 'co_title', help: 'ss_companiesHelp', admin: true, when: () => canSwitchCompanies() || (typeof window !== 'undefined' && startOverCall() !== null) },
+  { id: 'users', icon: 'users', name: 'users', help: 'ss_usersHelp', admin: true, page: 'users' },
+  { id: 'usage', icon: 'chart', name: 'us_title', help: 'ss_usageHelp' },
+  { id: 'updates', icon: 'download', name: 'ss_updates', help: 'ss_updatesHelp', when: () => typeof window !== 'undefined' && desktopUpdates() !== null },
+  { id: 'about', icon: 'circle', name: 'ss_about', help: 'ss_aboutHelp' }
+];
+
+/**
+ * The sections this person sees: everyone has display, printers, usage, updates and About; the rest is for admins,
+ * and a section whose cards can't work here (Companies and Updates in the browser) is left out.
+ */
+export const settingsSectionsFor = (admin: boolean): SettingsSection[] => SETTINGS_SECTIONS.filter((s) => (admin || !s.admin) && (!s.when || s.when()));
+
+/**
+ * The section #/settings/<id> opens. An unknown name, a page elsewhere, or an admin section for someone else opens
+ * none: the list (and, in a wide window, the first section beside it).
+ */
+export function settingsSectionOf(id: string | null | undefined, admin: boolean): SettingsSection | null {
+  return settingsSectionsFor(admin).find((s) => s.id === id && !s.page) ?? null;
+}
+
+/**
+ * Settings, Windows 11 style: the list of sections on the side and the chosen one beside it. In a narrow window the
+ * list shows alone and a section opens full width with a Back link (styles.css, .settings-layout). Each section has
+ * its own address (#/settings/backups), so the browser's Back works and a link can open one section.
+ */
+export function Settings({ admin, section }: { admin: boolean; section?: string | null }) {
+  const { t } = useI18n();
+  const sections = settingsSectionsFor(admin);
+  const chosen = settingsSectionOf(section, admin);
+  const shown = chosen ?? sections[0]!;
+  // another section (or back to the list) starts at its top, like a page of its own
+  const opened = chosen?.id ?? '';
+  useEffect(() => { document.querySelector('main.content')?.scrollTo?.({ top: 0 }); }, [opened]);
   return (
-    <div className="stack" style={{ maxWidth: 1000 }}>
-      <DisplaySettings />
-      <PrintersCard />
-      {admin && <CompanySettings />}
-      {admin && <CompaniesSetting />}
-      <HelpPanel />
-      <UpdateSettings />
-      <UsageCard admin={admin} />
-      <LegalPanel />
-      {admin && <StartOverCard />}
+    <div className="settings-wrap">
+      <div className={'settings-layout' + (chosen ? ' has-section' : '')}>
+        <nav className="settings-nav" aria-label={t('settings')}>
+          {sections.map((s) => (
+            <a
+              key={s.id}
+              href={href(s.page ?? `settings/${s.id}`)}
+              className={'settings-entry' + (s.id === shown.id ? ' active' : '')}
+              aria-current={s.id === shown.id ? 'page' : undefined}
+            >
+              <Icon name={s.icon} size={20} />
+              <span className="settings-entry-text"><strong>{t(s.name)}</strong><span>{t(s.help)}</span></span>
+              <Icon name="chevron" size={16} className="settings-entry-go flip" />
+            </a>
+          ))}
+        </nav>
+        <section className="settings-content stack" aria-label={t(shown.name)}>
+          <a className="settings-back" href={href('settings')}><Icon name="chevron" size={16} className="settings-back-icon" />{t('settings')}</a>
+          <SettingsSectionContent id={shown.id} admin={admin} />
+        </section>
+      </div>
     </div>
   );
+}
+
+/** What each section holds: the same cards as before, only grouped. */
+function SettingsSectionContent({ id, admin }: { id: string; admin: boolean }) {
+  switch (id) {
+    case 'company':
+      return <><CompanyDetailsCard /><PostingAccountsCard /></>;
+    case 'periods':
+      return <PeriodsSettings />;
+    case 'sales':
+      return <><PosAccountsCard /><ExpirySettingsCard /></>;
+    case 'loyalty':
+      return <LoyaltySettingsCard />;
+    case 'printers':
+      return <><PrintersCard />{admin && <PrintDesignCard />}</>;
+    case 'backups':
+      return <BackupCard />;
+    case 'network':
+      return <><OfficeNetworkCard /><PhonesCard /><DatabaseCard /></>;
+    case 'companies':
+      return <><CompaniesSetting /><StartOverCard /></>;
+    case 'usage':
+      return <UsageCard admin={admin} />;
+    case 'updates':
+      return <UpdateSettings />;
+    case 'about':
+      return <><HelpPanel /><LegalPanel /></>;
+    default:
+      return <DisplaySettings />;
+  }
 }
 
 /** Settings → Language and display, Windows-style: what it is on one side, the control on the other. */
@@ -98,9 +200,9 @@ function DisplaySettings() {
   );
 }
 
-function CompanySettings() {
-  const i18n = useI18n();
-  const { t } = i18n;
+/** Settings → Company: the company's names, its usual exchange rate and the start of its fiscal year. */
+function CompanyDetailsCard() {
+  const { t } = useI18n();
   const toast = useToast();
   const { settings, reloadSettings } = useData();
   const [name, setName] = useState<Names>({ ar: '', en: '', ku: '' });
@@ -111,9 +213,6 @@ function CompanySettings() {
   const [signInOn, setSignInOn] = useState(false);
   useEffect(() => { api.me().then((m) => setSignInOn(m.signInRequired), () => undefined); }, []);
   const [error, setError] = useState<unknown>(null);
-  const year = todayIso().slice(0, 4);
-  const periods = useLoad(() => api.periods(), []);
-  const audit = useLoad(() => api.audit(100), []);
 
   useEffect(() => {
     if (!settings) return;
@@ -129,12 +228,53 @@ function CompanySettings() {
       await api.updateSettings({ companyName: name, defaultRateX100: Math.round(r * 100), fiscalYearStart: fiscal });
       setCurrentUser(user.trim());
       await reloadSettings();
-      audit.reload();
       toast(t('saved'));
     } catch (e) {
       setError(e);
     }
   }
+
+  return (
+    <div className="card pad stack">
+      <div className="card-head"><h2>{t('company')}</h2><GuideLink slug="company-setup-and-opening-balances" /></div>
+      <div className="grid-3">
+        <label className="field"><span>{t('nameAr')}</span><input className="input" dir="rtl" lang="ar" value={name.ar} onChange={(e) => setName({ ...name, ar: e.target.value })} /></label>
+        <label className="field"><span>{t('nameEn')}</span><input className="input" dir="ltr" lang="en" value={name.en} onChange={(e) => setName({ ...name, en: e.target.value })} /></label>
+        <label className="field"><span>{t('nameKu')}</span><input className="input" dir="rtl" lang="ckb" value={name.ku} onChange={(e) => setName({ ...name, ku: e.target.value })} /></label>
+        <label className="field"><span>{t('defaultRate')} <span className="muted">({t('perUsd')})</span></span><input className="input amount" inputMode="decimal" value={rate} onChange={(e) => setRate(e.target.value)} /></label>
+        <label className="field"><span>{t('fiscalStart')}</span><input className="input ltr" value={fiscal} onChange={(e) => setFiscal(e.target.value)} /></label>
+        {!signInOn && <label className="field"><span>{t('yourName')}</span><input className="input" value={user} onChange={(e) => setUser(e.target.value)} /></label>}
+      </div>
+      <ErrorBox error={error} />
+      <div><button type="button" className="btn primary" onClick={save}>{t('save')}</button></div>
+    </div>
+  );
+}
+
+/** Settings → Printers, for admins: the way to the print design and the labels. */
+function PrintDesignCard() {
+  const { t } = useI18n();
+  return (
+    <div className="card pad row" style={{ flexWrap: 'wrap' }}>
+      <Icon name="printer" size={18} />
+      <div className="stack" style={{ gap: 2, flex: 1, minWidth: 220 }}>
+        <strong>{t('pd_title')}</strong>
+        <span className="muted small">{t('pp_help')}</span>
+      </div>
+      <a className="btn" href={href('print-design')}>{t('pd_title')}</a>
+      <a className="btn" href={href('labels')}><Icon name="tag" size={16} />{t('lb_title')}</a>
+    </div>
+  );
+}
+
+/** Settings → Periods and year-end: period locking, year-end closing and the audit log that records both. */
+function PeriodsSettings() {
+  const i18n = useI18n();
+  const { t } = i18n;
+  const [error, setError] = useState<unknown>(null);
+  const year = todayIso().slice(0, 4);
+  const periods = useLoad(() => api.periods(), []);
+  const audit = useLoad(() => api.audit(100), []);
 
   async function togglePeriod(period: string, locked: boolean) {
     setError(null);
@@ -154,45 +294,6 @@ function CompanySettings() {
   return (
     <>
       <div className="card pad stack">
-        <div className="card-head"><h2>{t('company')}</h2><GuideLink slug="company-setup-and-opening-balances" /></div>
-        <div className="grid-3">
-          <label className="field"><span>{t('nameAr')}</span><input className="input" dir="rtl" lang="ar" value={name.ar} onChange={(e) => setName({ ...name, ar: e.target.value })} /></label>
-          <label className="field"><span>{t('nameEn')}</span><input className="input" dir="ltr" lang="en" value={name.en} onChange={(e) => setName({ ...name, en: e.target.value })} /></label>
-          <label className="field"><span>{t('nameKu')}</span><input className="input" dir="rtl" lang="ckb" value={name.ku} onChange={(e) => setName({ ...name, ku: e.target.value })} /></label>
-          <label className="field"><span>{t('defaultRate')} <span className="muted">({t('perUsd')})</span></span><input className="input amount" inputMode="decimal" value={rate} onChange={(e) => setRate(e.target.value)} /></label>
-          <label className="field"><span>{t('fiscalStart')}</span><input className="input ltr" value={fiscal} onChange={(e) => setFiscal(e.target.value)} /></label>
-          {!signInOn && <label className="field"><span>{t('yourName')}</span><input className="input" value={user} onChange={(e) => setUser(e.target.value)} /></label>}
-        </div>
-        <ErrorBox error={error} />
-        <div><button type="button" className="btn primary" onClick={save}>{t('save')}</button></div>
-      </div>
-
-      <div className="card pad row" style={{ flexWrap: 'wrap' }}>
-        <Icon name="printer" size={18} />
-        <div className="stack" style={{ gap: 2, flex: 1, minWidth: 220 }}>
-          <strong>{t('pd_title')}</strong>
-          <span className="muted small">{t('pp_help')}</span>
-        </div>
-        <a className="btn" href={href('print-design')}>{t('pd_title')}</a>
-        <a className="btn" href={href('labels')}><Icon name="tag" size={16} />{t('lb_title')}</a>
-      </div>
-
-      <PostingAccountsCard />
-
-      <ExpirySettingsCard />
-
-      <PosAccountsCard />
-      <LoyaltySettingsCard />
-
-      <OfficeNetworkCard />
-
-      <PhonesCard />
-
-      <BackupCard />
-
-      <DatabaseCard />
-
-      <div className="card pad stack">
         <h2>{t('periods')} — <span className="num">{i18n.digitsOf(year)}</span></h2>
         <div className="muted small">{t('periodsHelp')}</div>
         <div className="grid-4">
@@ -207,6 +308,7 @@ function CompanySettings() {
             );
           })}
         </div>
+        <ErrorBox error={error} />
       </div>
 
       <YearEndCard onChanged={() => { periods.reload(); audit.reload(); }} />

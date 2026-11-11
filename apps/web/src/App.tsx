@@ -650,7 +650,7 @@ export function App() {
       break;
     case 'settings':
       title = t('settings');
-      content = <Settings admin={isAdmin} />;
+      content = <Settings admin={isAdmin} section={arg ?? null} />;
       break;
     case 'final-accounts':
       title = t('finalAccounts');
@@ -821,7 +821,7 @@ export function App() {
                     {isAdmin && <a href={href('plans')}>{t('planLicense')}</a>}
                   </div>
                 )}
-                {import.meta.env.MODE !== 'demo' && <BackupNoticeBar admin={isAdmin} page={page} />}
+                {import.meta.env.MODE !== 'demo' && <BackupNoticeBar admin={isAdmin} page={page === 'settings' && arg !== 'backups' ? 'settings-section' : page} />}
                 {outboxOn && <OutboxBanner page={page ?? ''} />}
                 <div key={branchKey} style={{ display: 'contents' }}><Suspense fallback={<PageLoading />}>{content}</Suspense></div>
               </main>
@@ -906,7 +906,7 @@ function UserMenu({ name, role, plan, admin, signInRequired, onChangePassword, o
             </div>
           </div>
           <div className="menu-sep" />
-          <a className="menu-item" href={href('settings')} onClick={close}><Icon name="globe" size={16} />{t('displayTitle')}</a>
+          <a className="menu-item" href={href('settings/display')} onClick={close}><Icon name="globe" size={16} />{t('displayTitle')}</a>
           {admin && <a className="menu-item" href={href('plans')} onClick={close}><Icon name="star" size={16} />{t('planLicense')}</a>}
           {admin && canSwitchCompanies() && <a className="menu-item" href={href('companies')} onClick={close}><Icon name="building" size={16} />{t('co_menu')}</a>}
           {signInRequired && <button type="button" className="menu-item" onClick={() => { close(); button.current?.focus(); onChangePassword(); }}><Icon name="key" size={16} />{t('changePassword')}</button>}

@@ -5,7 +5,7 @@ import { errorMessages } from './components.tsx';
 import { isKey, makeI18n, type Key } from './i18n.ts';
 import { backupFailureKey } from './industry/BackupNotice.tsx';
 import { controlledAction, pharmacyTabs } from './pages/Pharmacy.tsx';
-import { pairingCodeLines } from './pages/Settings.tsx';
+import { pairingCodeLines, settingsSectionOf } from './pages/Settings.tsx';
 
 // The 1.1 security fixes on the screens: their errors have words, a plain copy is restored only on purpose, backups
 // keep running while Documents is in OneDrive, and the pharmacy shows each person only what the server lets them do.
@@ -49,8 +49,10 @@ it('restores an unencrypted copy while a backup password is set only after a war
   expect(settings).toContain('if (plainKnown) void send({ ...plain, allowPlain: true });');
   expect(settings).toContain("disabled={busy || !plainKnown}>{t('bkPlainRestore')}");
   expect(settings.match(/allowPlain: true/g)).toHaveLength(1);
-  // the card is in the company settings, for admins only (and the server asks for an admin too)
-  expect(settings).toMatch(/\{admin && <CompanySettings \/>\}/);
+  // the card is in Settings → Backups, for admins only (and the server asks for an admin too)
+  expect(settings).toMatch(/case 'backups':\s+return <BackupCard \/>;/);
+  expect(settingsSectionOf('backups', true)?.admin).toBe(true);
+  expect(settingsSectionOf('backups', false)).toBeNull();
   for (const k of ['bkPlainTitle', 'bkPlainWarning', 'bkPlainKnown', 'bkPlainRestore'] as Key[]) expect(new Set(all(k)).size, k).toBe(3);
   const [ar, english, ku] = all('bkPlainWarning');
   expect(english).toMatch(/only if you made it yourself/);

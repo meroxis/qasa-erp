@@ -56,7 +56,7 @@ export function Home({ viewer, user, favourites }: { viewer: NavViewer; user: st
   return (
     <div className="stack">
       {noCompany && (
-        <div className="alert info">{t('setupCompany')} <a href={href('settings')}>{t('settings')}</a></div>
+        <div className="alert info">{t('setupCompany')} <a href={href('settings/company')}>{t('settings')}</a></div>
       )}
       {plan?.license?.state === 'expired' && plan.license.expires && (
         <div className="alert bad plan-banner">
@@ -252,7 +252,7 @@ function FirstSteps({ viewer }: { viewer: NavViewer }) {
   if (hidden || !settings || !parties.data || !items.data || !sales.data) return null;
   const named = !!(settings.companyName.ar || settings.companyName.en || settings.companyName.ku);
   const steps: { key: Key; hint: Key; done: boolean; link: string; icon: string }[] = [
-    { key: 'fsCompany', hint: 'fsCompanyHint', done: named, link: 'settings', icon: 'building' },
+    { key: 'fsCompany', hint: 'fsCompanyHint', done: named, link: 'settings/company', icon: 'building' },
     { key: 'fsImport', hint: 'fsImportHint', done: parties.data.length > 0 || items.data.length > 0, link: viewer.admin ? 'import' : 'items', icon: 'upload' },
     { key: 'fsInvoice', hint: 'fsInvoiceHint', done: sales.data.length > 0, link: 'new-invoice/sale', icon: 'invoice' }
   ];
