@@ -44,5 +44,7 @@ export const CATALOG_TEXT = {
   st_trade: ['نوع التجارة', 'Trade', 'جۆری بازرگانی'],
   st_added: ['أُضيف: تصنيفات {c}، تصنيفات فرعية {s}، ماركات {b}.', 'Added {c} categories, {s} subcategories and {b} brands.', '{c} پۆل و {s} پۆلی لاوەکی و {b} براند زیاد کران.'],
   rl_minimum: ['الحد الأدنى للمخزون', 'Minimum stock', 'کەمترین بڕی کۆگا'],
+  cat_filterItems: ['عرض مواد التصنيف', 'Show items of a category', 'پیشاندانی کاڵاکانی پۆلێک'],
+  cat_back: ['رجوع', 'Back', 'گەڕانەوە'],
   st_nothing: ['القائمة موجودة كلها؛ لم يُضف شيء.', 'Everything in the list is there already; nothing was added.', 'هەموو لیستەکە هەیە؛ هیچ زیاد نەکرا.']
 } as const;

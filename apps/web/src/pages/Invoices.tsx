@@ -1,4 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { categoriesApi, inCategory } from '../industry/categories-api.ts';
+import { CategoryOptions } from '../industry/CatalogPickers.tsx';
 import {
   amountInWords, fromBaseQty, invoiceTotals, remainingShare, rateFromX100, roundHalfUp, toBase, toBaseQty, todayIso, toWesternDigits,
   type CurrencyCode, type InvoiceDocKind, type InvoiceInput, type InvoiceKind, type InvoiceStatus, type PaymentMode
@@ -116,6 +118,8 @@ export function InvoiceEditor({ kind: initialKind, id, partyId: initialParty }: 
   const parties = useLoad(() => api.parties({ type: partyType, active: 'true' }), [partyType]);
   const warehouses = useLoad(() => api.warehouses(), []);
   const items = useLoad(() => api.items({ active: 'true', ...(warehouseId ? { warehouseId } : {}) }), [warehouseId]);
+  const categories = useLoad(() => categoriesApi.list({ active: 'true' }), []);
+  const [lineCategory, setLineCategory] = useState('');
 
   useEffect(() => {
     if (id) return;
@@ -159,8 +163,11 @@ export function InvoiceEditor({ kind: initialKind, id, partyId: initialParty }: 
   const totals = invoiceTotals(lines.map((r) => ({ qtyMilli: r.qtyMilli ?? 0, unitPrice: r.unitPrice ?? 0 })), discount ?? 0);
 
   const partyOptions: PickOption[] = (parties.data ?? []).map((p) => ({ id: p.id, code: p.code, label: p.name, search: p.phone, hint: p.balance ? i18n.money(p.balance, 'IQD') : '' }));
+  // a category picked above the lines narrows the item list to it and its subcategories (lines already picked stay)
+  const picked = new Set(rows.map((r) => r.itemId).filter(Boolean));
   const itemOptions: PickOption[] = (items.data ?? [])
     .filter((it) => kind === 'sale' || it.trackStock)
+    .filter((it) => picked.has(it.id) || inCategory(categories.data ?? [], it.categoryId, lineCategory))
     .map((it) => ({
       id: it.id, code: it.code, label: i18n.name(it.name), search: `${it.name.ar} ${it.name.en} ${it.name.ku} ${it.barcode}`,
       hint: it.trackStock ? `${qtyText(i18n, it.qtyMilli)} ${unitName(i18n, it.unit)}` : unitName(i18n, it.unit)
@@ -332,7 +339,17 @@ export function InvoiceEditor({ kind: initialKind, id, partyId: initialParty }: 
       </div>
 
       <div className="card">
-        <div style={{ padding: '14px 16px 8px' }}><h2>{t('invoiceLines')}</h2></div>
+        <div className="row" style={{ padding: '14px 16px 8px' }}>
+          <h2 style={{ margin: 0 }}>{t('invoiceLines')}</h2>
+          <span className="spacer" />
+          {(categories.data?.length ?? 0) > 0 && (
+            <select className="input" style={{ width: 220 }} value={lineCategory} onChange={(e) => setLineCategory(e.target.value)} aria-label={t('cat_filterItems')}>
+              <option value="">{t('cat_all')}</option>
+              <option value="none">{t('cat_none')}</option>
+              <CategoryOptions list={categories.data!} />
+            </select>
+          )}
+        </div>
         <table className="table">
           <thead>
             <tr>

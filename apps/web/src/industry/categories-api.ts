@@ -51,3 +51,15 @@ export function brandLabel(b: Pick<BrandView, 'name' | 'nameAr' | 'nameKu'> | un
   if (!b) return '';
   return (lang === 'ar' && b.nameAr) || (lang === 'ku' && b.nameKu) || b.name;
 }
+
+/**
+ * Is an item in the category picked as a filter? '' (all): yes; 'none': only an item with no category; a category: an
+ * item in it or in one of its subcategories.
+ */
+export function inCategory(list: readonly CategoryView[], itemCategoryId: string | null | undefined, filter: string): boolean {
+  if (!filter) return true;
+  if (filter === 'none') return !itemCategoryId;
+  if (!itemCategoryId) return false;
+  if (itemCategoryId === filter) return true;
+  return list.find((c) => c.id === itemCategoryId)?.parentId === filter;
+}

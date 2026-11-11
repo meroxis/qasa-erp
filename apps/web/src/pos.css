@@ -82,3 +82,7 @@
   html[data-print-paper='receipt58'] .pos-receipt { width: 48mm; }
   html[data-print-paper='receipt58'] .qd-80mm { inline-size: 48mm; }
 }
+/* the till's category buttons (1.1): large enough to tap, wrapping on narrow screens */
+.pos-cats { display: flex; flex-wrap: wrap; gap: 8px; }
+.pos-cats .btn { min-height: 44px; font-size: 1rem; }
+.pos-cats .btn[aria-pressed="true"] { background: var(--accent); color: #fff; border-color: var(--accent); }

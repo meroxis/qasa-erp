@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { categoriesApi, inCategory, type CategoryView } from '../industry/categories-api.ts';
 import { createPortal } from 'react-dom';
 import { normalizeForSearch, rateFromX100, rateToX100, toWesternDigits, type CurrencyCode } from '@qasa/core';
 import { api, type InvoiceView, type ItemView, type PartyView, type WarehouseView } from '../api.ts';
@@ -221,15 +222,20 @@ function Register({ initial, onClosed }: { initial: ShiftView; onClosed(): void 
     return () => { alive = false; window.clearTimeout(timer); };
   }, [pharmacy, q]);
 
+  // the category buttons: a category (its subcategories' items with it) or a subcategory; '' = every item
+  const categories = useLoad(() => categoriesApi.list({ active: 'true' }), []);
+  const [cat, setCat] = useState('');
+  const catList = categories.data ?? [];
+  const shown = useMemo(() => (cat ? items.filter((it) => inCategory(catList, it.categoryId, cat)) : items), [items, cat, catList]);
   const matches = useMemo(() => {
     const n = normalizeForSearch(q);
-    if (!n) return items.slice(0, 40);
+    if (!n) return shown.slice(0, cat ? 120 : 40);
     const words = n.split(/\s+/).filter(Boolean);
-    const direct = searchable.filter((s) => words.every((w) => s.key.includes(w))).map((s) => s.item);
+    const direct = searchable.filter((s) => words.every((w) => s.key.includes(w))).map((s) => s.item).filter((it) => !cat || inCategory(catList, it.categoryId, cat));
     // medicines whose generic name matched
-    const generic = pharmacy ? items.filter((it) => !direct.includes(it) && normalizeForSearch(medicines.get(it.id)?.genericName ?? '').includes(n)) : [];
+    const generic = pharmacy ? shown.filter((it) => !direct.includes(it) && normalizeForSearch(medicines.get(it.id)?.genericName ?? '').includes(n)) : [];
     return [...direct, ...generic].slice(0, 40);
-  }, [q, items, searchable, pharmacy, medicines]);
+  }, [q, shown, cat, catList, searchable, pharmacy, medicines]);
 
   /** One of `unit` of an item, in the sale's currency: the unit's own price, or the base price × its factor. */
   const unitPriceOf = useCallback((item: ItemView, unit: LineUnit) => {
@@ -413,6 +419,7 @@ function Register({ initial, onClosed }: { initial: ShiftView; onClosed(): void 
           </div>
           {notFound && <div className="alert bad" role="alert">{t('pos_notFound', { n: notFound })}</div>}
           {noRate && <div className="alert bad" role="alert">{t('pos_noRate', { n: noRate })}</div>}
+          {catList.length > 0 && <PosCategories list={catList} value={cat} onChange={setCat} />}
           <div className="pos-grid">
             {matches.map((it) => {
               const name = i18n.name(it.name);
@@ -740,6 +747,35 @@ export function PosShiftReport({ id }: { id: string }) {
         </div>
         <p className="small muted">{t('pos_returnsNote')}</p>
       </div>
+    </div>
+  );
+}
+
+/**
+ * The till's category buttons: the top-level categories; a category opens its subcategories (with a button for all of
+ * it and one back). Choosing one shows only its items (a category's subcategories' items with it).
+ */
+export function PosCategories({ list, value, onChange }: { list: readonly CategoryView[]; value: string; onChange(id: string): void }) {
+  const i18n = useI18n();
+  const { t } = i18n;
+  const current = list.find((c) => c.id === value);
+  // the category whose subcategories show: the one picked, or the parent of the subcategory picked
+  const open = current ? (current.parentId ? list.find((c) => c.id === current.parentId) : current) : undefined;
+  const subs = open ? list.filter((c) => c.parentId === open.id) : [];
+  const buttons = open ? subs : list.filter((c) => !c.parentId);
+  return (
+    <div className="pos-cats" role="group" aria-label={t('cat_title')}>
+      {open ? (
+        <>
+          <button type="button" className="btn" onClick={() => onChange(current?.parentId ? open.id : '')}><Icon name="undo" size={16} />{t('cat_back')}</button>
+          <button type="button" className="btn" aria-pressed={value === open.id} onClick={() => onChange(open.id)}>{i18n.name(open.name)}</button>
+        </>
+      ) : (
+        <button type="button" className="btn" aria-pressed={!value} onClick={() => onChange('')}>{t('cat_all')}</button>
+      )}
+      {buttons.map((c) => (
+        <button key={c.id} type="button" className="btn" aria-pressed={value === c.id} onClick={() => onChange(c.id)}>{i18n.name(c.name)}</button>
+      ))}
     </div>
   );
 }
