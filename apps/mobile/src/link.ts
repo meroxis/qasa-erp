@@ -5,17 +5,22 @@ import {
 /**
  * The phone's side of the link to the office PC: tries the office's addresses on the Wi-Fi first, then — when the
  * office is reachable over the internet — Qasa Relay (wss://…/v1/phone?office=ID), does the handshake from
- * protocol.ts, then sends requests ({id, m, p, b}) and matches the answers ({id, s, b}). Everything on the wire is
- * encrypted and authenticated end to end; the WebSocket only carries the bytes (plain ws:// on the Wi-Fi is fine for
- * that reason, and the relay can't read anything).
+ * protocol.ts, then sends requests ({id, m, p, b, k?}) and matches the answers ({id, s, b}). Everything on the wire is
+ * encrypted and authenticated end to end with the office's key from the QR code (pinned: no other key is accepted);
+ * the WebSocket only carries the bytes (plain ws:// on the Wi-Fi is fine for that reason, and the relay can't read
+ * anything).
+ *
+ * A link that drops (the Wi-Fi went, the office PC slept, the relay restarted) connects again by itself, sooner at
+ * first and then less often, and at once when the app comes back to the screen (resume()).
  */
 
 /** Meroxis' relay; a test build can point elsewhere with EXPO_PUBLIC_QASA_RELAY_URL (inlined by Expo at build time). */
 export const DEFAULT_RELAY_URL = 'wss://relay.qasaerp.com';
 
-function relayBase(): string {
-  const fromBuild = typeof process !== 'undefined' ? process.env?.EXPO_PUBLIC_QASA_RELAY_URL : undefined;
-  return (fromBuild || DEFAULT_RELAY_URL).replace(/\/+$/, '');
+/** The relay to use: the build's own when it is a wss:// address (never plain ws:// over the internet). */
+export function relayBase(fromBuild: string | undefined = typeof process !== 'undefined' ? process.env?.EXPO_PUBLIC_QASA_RELAY_URL : undefined): string {
+  const chosen = fromBuild && /^wss:\/\/[a-z0-9.-]+(:\d{1,5})?\/?$/i.test(fromBuild) ? fromBuild : DEFAULT_RELAY_URL;
+  return chosen.replace(/\/+$/, '');
 }
 
 /** Where to reach an office through the relay ("ABCDE-FGH23" as shown, or without the dash). */
@@ -45,6 +50,8 @@ export interface SocketLike {
 }
 
 export type LinkState = 'offline' | 'connecting' | 'online' | 'refused';
+/** How the phone reaches the office now. */
+export type Route = 'lan' | 'relay';
 
 export interface Answer<T = unknown> { s: number; b: T }
 
@@ -64,6 +71,10 @@ const REQUEST_TIMEOUT_MS = 20_000;
  * Cloudflare, which closes a connection that has been quiet for 100 s (the phone would then show itself offline).
  */
 const KEEPALIVE_MS = 45_000;
+/** Waits between tries to connect again, each with a fifth either way at random (phones of one office spread out). */
+export const RECONNECT_MS = [1000, 2000, 5000, 10_000, 30_000, 60_000];
+/** Refusals that pass by themselves (the office is busy, or this phone tried too often): tried again later. */
+const PASSING: readonly string[] = ['too_many', 'busy'];
 
 function bytesOf(data: unknown): Uint8Array | null {
   if (data instanceof ArrayBuffer) return new Uint8Array(data);
@@ -78,7 +89,12 @@ export class OfficeLink {
   private waiting = new Map<number, { resolve(a: Answer): void; reject(e: Error): void; timer: ReturnType<typeof setTimeout> }>();
   private connecting: Promise<void> | null = null;
   private keepAlive: ReturnType<typeof setInterval> | null = null;
+  private retryTimer: ReturnType<typeof setTimeout> | null = null;
+  private tries = 0;
+  private paused = false;
+  private closed = false;
   state: LinkState = 'offline';
+  via: Route | null = null;
 
   constructor(private readonly options: {
     office: OfficeInfo;
@@ -89,21 +105,27 @@ export class OfficeLink {
     socket: (url: string) => SocketLike;
     /** the relay to use when the office is reachable over the internet (default: Meroxis' relay) */
     relayUrl?: string | undefined;
-    onState?: ((state: LinkState, detail?: string) => void) | undefined;
+    onState?: ((state: LinkState, detail?: string, via?: Route | null) => void) | undefined;
     /** the office's answer on first pairing: keep the device id and company name */
     onPaired?: ((deviceId: string, company: string) => void) | undefined;
     /** tests: how often the relay link is kept alive */
     keepAliveMs?: number | undefined;
+    /** connect again by itself after a drop (default true); tests: the waits between tries */
+    reconnect?: boolean | undefined;
+    reconnectMs?: readonly number[] | undefined;
   }) {}
 
   private setState(state: LinkState, detail?: string) {
     this.state = state;
-    this.options.onState?.(state, detail);
+    if (state !== 'online') this.via = null;
+    this.options.onState?.(state, detail, this.via);
   }
 
   /** Connects (once at a time): each LAN address in turn, then the relay. */
   connect(): Promise<void> {
     if (this.state === 'online') return Promise.resolve();
+    if (this.closed) return Promise.reject(new LinkError('closed'));
+    this.clearRetry();
     if (!this.connecting) {
       this.connecting = this.tryAll().finally(() => { this.connecting = null; });
     }
@@ -125,6 +147,8 @@ export class OfficeLink {
       try {
         await this.tryOne(route.url, route.timeoutMs);
         if (route.relay) this.startKeepAlive();
+        this.via = route.relay ? 'relay' : 'lan';
+        this.tries = 0;
         this.setState('online');
         return;
       } catch (error) {
@@ -133,7 +157,9 @@ export class OfficeLink {
         if (last.code !== 'unreachable' && last.code !== 'timeout') break;
       }
     }
-    this.setState(last.code === 'unreachable' || last.code === 'timeout' ? 'offline' : 'refused', last.code);
+    const passing = last.code === 'unreachable' || last.code === 'timeout' || PASSING.includes(last.code);
+    this.setState(passing ? 'offline' : 'refused', last.code);
+    if (passing) this.scheduleReconnect();
     throw last;
   }
 
@@ -216,6 +242,23 @@ export class OfficeLink {
     this.keepAlive = null;
   }
 
+  private clearRetry() {
+    if (this.retryTimer) clearTimeout(this.retryTimer);
+    this.retryTimer = null;
+  }
+
+  /** The next try to connect, later each time (not while the app is in the background, or after close()). */
+  private scheduleReconnect() {
+    if (this.closed || this.paused || this.options.reconnect === false || this.retryTimer) return;
+    const waits = this.options.reconnectMs ?? RECONNECT_MS;
+    const base = waits[Math.min(this.tries, waits.length - 1)] ?? 60_000;
+    this.tries += 1;
+    this.retryTimer = setTimeout(() => {
+      this.retryTimer = null;
+      void this.connect().catch(() => {});
+    }, Math.round(base * (0.8 + Math.random() * 0.4)));
+  }
+
   private dropped(socket: SocketLike) {
     if (this.socket !== socket) return;
     this.stopKeepAlive();
@@ -227,28 +270,63 @@ export class OfficeLink {
     }
     this.waiting.clear();
     this.setState('offline');
+    this.scheduleReconnect();
   }
 
-  private send(body: { m: string; p?: string; b?: unknown }): Promise<Answer> {
+  private send(body: { m: string; p?: string; b?: unknown; k?: string }): Promise<Answer> {
     if (!this.socket || !this.session) return Promise.reject(new LinkError('closed'));
     const id = this.nextId++;
+    const socket = this.socket;
     return new Promise<Answer>((resolve, reject) => {
       const timer = setTimeout(() => {
         this.waiting.delete(id);
         reject(new LinkError('timeout'));
+        // no answer in 20 s: the connection is gone without saying so (another network, a sleeping PC); start again
+        if (this.socket === socket) socket.close();
       }, REQUEST_TIMEOUT_MS);
       this.waiting.set(id, { resolve, reject, timer });
-      this.socket!.send(this.session!.seal({ id, ...body }));
+      socket.send(this.session!.seal({ id, ...body }));
     });
   }
 
-  /** One request to the office's API (connecting first if needed). */
-  async request<T = unknown>(method: 'GET' | 'POST' | 'PUT' | 'count', path?: string, body?: unknown): Promise<Answer<T>> {
+  /**
+   * One request to the office's API (connecting first if needed). `key`: the change's own key (a UUID v4) when it may
+   * be sent again; the office makes it once (x-qasa-idempotency).
+   */
+  async request<T = unknown>(method: 'GET' | 'POST' | 'PUT' | 'count', path?: string, body?: unknown, key?: string): Promise<Answer<T>> {
     await this.connect();
-    return (await this.send({ m: method, ...(path ? { p: path } : {}), ...(body !== undefined ? { b: body } : {}) })) as Answer<T>;
+    return (await this.send({ m: method, ...(path ? { p: path } : {}), ...(body !== undefined ? { b: body } : {}), ...(key ? { k: key } : {}) })) as Answer<T>;
+  }
+
+  /** The app went to the background: no tries to connect until it is back. */
+  pause(): void {
+    this.paused = true;
+    this.clearRetry();
+  }
+
+  /** The app is on the screen again: connect now if the link is down (and start the waits from the shortest). */
+  resume(): void {
+    this.paused = false;
+    this.tries = 0;
+    if (this.state !== 'online' && this.state !== 'refused' && !this.closed) void this.connect().catch(() => {});
+  }
+
+  /** Unpairing: tells the office (when it can be reached within a few seconds) to forget this phone, then closes. */
+  async unpair(timeoutMs = 4000): Promise<boolean> {
+    let told = false;
+    if (this.state === 'online') {
+      told = await Promise.race([
+        this.send({ m: 'bye' }).then((a) => a.s === 200, () => false),
+        new Promise<boolean>((r) => setTimeout(() => r(false), timeoutMs))
+      ]);
+    }
+    this.close();
+    return told;
   }
 
   close(): void {
+    this.closed = true;
+    this.clearRetry();
     this.stopKeepAlive();
     const s = this.socket;
     this.socket = null;

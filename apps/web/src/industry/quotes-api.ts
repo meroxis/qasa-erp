@@ -1,4 +1,4 @@
-import type { CurrencyCode } from '@qasa/core';
+import type { CurrencyCode, Lang } from '@qasa/core';
 import { qs, request } from '../api.ts';
 
 /** Quotations (عروض الأسعار): on every plan, part of the app's own API. */
@@ -23,7 +23,7 @@ export interface QuoteInput {
 export interface QuoteLineView { seq: number; itemId: string | null; itemCode: string | null; description: string; qtyMilli: number; unitPrice: number; amount: number }
 export interface QuoteSummaryView {
   id: string; number: string; date: string; validUntil: string | null;
-  party: { id: string; code: string; name: string; phone: string } | null;
+  party: { id: string; code: string; name: string; phone: string; lang?: Lang | null } | null;
   customerName: string; currency: CurrencyCode; subtotal: number; discount: number; total: number; status: QuoteStatus; expired: boolean;
   invoice: { id: string; number: string | null; status: string } | null;
 }

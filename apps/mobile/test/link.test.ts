@@ -74,6 +74,7 @@ describe('the phone app\'s link to the office', () => {
     });
     await expect(silent.connect()).rejects.toBeInstanceOf(LinkError);
     expect(silent.state).toBe('offline');
+    silent.close();
   });
 
   it('tries the Wi-Fi first, then Qasa Relay when the office is on it', async () => {

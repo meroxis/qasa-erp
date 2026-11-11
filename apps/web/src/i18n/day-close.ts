@@ -1,0 +1,45 @@
+/** The end-of-day close. Arabic, English and Kurdish (Sorani), in that order, like i18n.ts. */
+export const DAY_CLOSE_TEXT = {
+  dc_title: ['إغلاق اليوم', 'End of day', 'داخستنی ڕۆژ'],
+  dc_teaser: [
+    'مبيعات اليوم حسب طريقة الدفع، ونقد كل صندوق المتوقع والمعدود، والمصاريف والديون — للطباعة أو التصدير أو الإرسال إلى واتساب.',
+    'The day’s sales by payment method, each register’s cash expected and counted, expenses and debts — to print, export or send on WhatsApp.',
+    'فرۆشتنی ڕۆژ بەپێی ڕێگای پارەدان، پارەی چاوەڕوانکراو و ژمێردراوی هەر کاشێرێک، خەرجی و قەرزەکان — بۆ چاپ، هەناردە یان ناردن بۆ واتسئاپ.'
+  ],
+  dc_netSales: ['صافي المبيعات', 'Net sales', 'فرۆشتنی پوخت'],
+  dc_sales: ['المبيعات', 'Sales', 'فرۆشتن'],
+  dc_returns: ['المرتجعات', 'Returns', 'گەڕاوەکان'],
+  dc_returnsCount: ['{n} مرتجع', '{n} returns', '{n} گەڕاوە'],
+  dc_byMethod: ['المبيعات حسب طريقة الدفع', 'Sales by payment method', 'فرۆشتن بەپێی ڕێگای پارەدان'],
+  dc_refunds: ['ما رُدّ للزبائن', 'Paid back to customers', 'ئەوەی بۆ کڕیاران گەڕێنرایەوە'],
+  dc_method: ['طريقة الدفع', 'Payment method', 'ڕێگای پارەدان'],
+  dc_amount: ['المبلغ', 'Amount', 'بڕ'],
+  dc_invoices: ['الفواتير', 'Invoices', 'پسوولەکان'],
+  dc_m_bank: ['إلى المصرف', 'Into the bank', 'بۆ بانک'],
+  dc_m_loyalty: ['نقاط الولاء', 'Loyalty points', 'خاڵەکانی دڵسۆزی'],
+  dc_registers: ['الصناديق (الكاشير)', 'Registers', 'کاشێرەکان'],
+  dc_noRegisters: ['لم يُفتح صندوق في هذا اليوم.', 'No register was open on this day.', 'لەم ڕۆژەدا هیچ کاشێرێک نەکراوەتەوە.'],
+  dc_stillOpen: ['لا تزال مفتوحة', 'Still open', 'هێشتا کراوەیە'],
+  dc_drawers: ['الأدراج المغلقة: المتوقع والمعدود', 'Closed drawers: expected and counted', 'چەکمەجە داخراوەکان: چاوەڕوانکراو و ژمێردراو'],
+  dc_short: ['نقص', 'Short', 'کەم'],
+  dc_over: ['زيادة', 'Over', 'زیاد'],
+  dc_balanced: ['مطابق', 'Matches', 'وەک خۆیەتی'],
+  dc_expenses: ['مصاريف اليوم', 'The day’s expenses', 'خەرجییەکانی ڕۆژ'],
+  dc_debts: ['الديون', 'Debts', 'قەرزەکان'],
+  dc_debtsCollected: ['ديون محصّلة', 'Debts collected', 'قەرزی وەرگیراو'],
+  dc_debtsNew: ['ديون جديدة', 'New debts', 'قەرزی نوێ'],
+  dc_lowStockCount: ['{n} مادة عند حد إعادة الطلب أو نفدت', '{n} items at their reorder level or out', '{n} کاڵا گەیشتوونەتە سنووری داواکردنەوە یان نەماون'],
+  dc_topItems: ['الأكثر مبيعاً', 'Best sellers', 'زۆرترین فرۆشراو'],
+  dc_moneyIn: ['المقبوض', 'Money in', 'پارەی هاتوو'],
+  dc_moneyOut: ['المدفوع', 'Money out', 'پارەی دەرچوو'],
+  dc_export: ['تصدير إلى Excel', 'Export to Excel', 'هەناردە بۆ Excel'],
+  dc_notes: [
+    'من الفواتير المرحّلة والسندات المصادق عليها وورديات نقطة البيع، بالدينار؛ فواتير الدولار بسعرها.',
+    'From posted invoices, approved vouchers and the point-of-sale shifts, in dinars; dollar invoices at their own rate.',
+    'لە پسوولە تۆمارکراوەکان، سەنەدە پەسەندکراوەکان و شەفتەکانی خاڵی فرۆشتن، بە دینار؛ پسوولەی دۆلار بە نرخی خۆی.'
+  ],
+  dc_open: ['افتح إغلاق اليوم', 'Open the end-of-day close', 'داخستنی ڕۆژ بکەرەوە'],
+  dc_csvSection: ['القسم', 'Section', 'بەش'],
+  dc_csvItem: ['البند', 'Item', 'بڕگە'],
+  dc_csvCount: ['العدد', 'Count', 'ژمارە']
+} as const;

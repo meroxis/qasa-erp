@@ -7,7 +7,7 @@ import { app, BrowserWindow, dialog, ipcMain, Menu, nativeTheme, protocol, safeS
 import electronUpdater from 'electron-updater';
 import { channelOf, notesText, updaterOptions, type UpdateChannel, type UpdateState } from './updates-logic.ts';
 import { randomBytes } from 'node:crypto';
-import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { appendFileSync, existsSync, mkdirSync, readdirSync, readFileSync, statSync, unlinkSync, writeFileSync } from 'node:fs';
 import { hostname, userInfo } from 'node:os';
 import { join } from 'node:path';
 import { Bridge } from './bridge.ts';
@@ -20,7 +20,10 @@ import { openNotices } from './notices.ts';
 import { booksBefore, markSeen, startVersion, type WhatsNew } from './whats-new.ts';
 import { backupOnClose, noteCloseFailure, takeCloseFailure } from './close-backup.ts';
 import { printingHandlers } from './printing.ts';
+import { sharePdfHandlers } from './share-pdf.ts';
 import { pair, parseAddress, parseOfficeId, pemFingerprint, startTunnel, type PairResult, type Remote } from './office.ts';
+import { openOutbox, OutboxRefusal, type OutboxStore } from './outbox.ts';
+import { makeSecretBox } from './secrets.ts';
 
 const { autoUpdater } = electronUpdater;
 /** Installed from the Microsoft Store: the Store signs and updates it, so the app's own updater stays off. */
@@ -257,6 +260,16 @@ function localBackupDir(): string {
   return local ? join(local, 'Qasa ERP', 'Backups') : join(app.getPath('userData'), 'Backups');
 }
 
+/**
+ * %LOCALAPPDATA%\Qasa ERP: a second place, outside the app's own (roaming) folder, that keeps this PC's trial record
+ * (activation.ts), so deleting one copy never gives a new free month (deleting every copy still does: both are the
+ * Windows user's own files). Nothing without LOCALAPPDATA.
+ */
+function localDataDir(): string | undefined {
+  const local = process.env.LOCALAPPDATA;
+  return local ? join(local, 'Qasa ERP') : undefined;
+}
+
 async function startServer(): Promise<string> {
   childEnding = false;
   companyId = readRegistry(app.getPath('userData')).current;
@@ -311,7 +324,7 @@ async function startServer(): Promise<string> {
     if (!childEnding && win) void serverGone(code);
   });
   return link.call<string>('init', [{
-    userDataDir: app.getPath('userData'), documentsDir: app.getPath('documents'), localBackupDir: localBackupDir(), appVersion: app.getVersion(), sessionKey: SESSION_KEY,
+    userDataDir: app.getPath('userData'), documentsDir: app.getPath('documents'), localBackupDir: localBackupDir(), localDataDir: localDataDir(), appVersion: app.getVersion(), sessionKey: SESSION_KEY,
     secretsKey: secretsKey(), resourcesPath: process.resourcesPath, fromStore: FROM_STORE, companyId
   }], { timeoutMs: 0 });
 }
@@ -522,10 +535,86 @@ ipcMain.handle('printers:list', (event) => printing.list(event));
 ipcMain.handle('printers:get', (event) => printing.get(event));
 ipcMain.handle('printers:set', (event, kind: unknown, choice: unknown) => printing.set(event, kind, choice));
 ipcMain.handle('printers:print', (event, kind: unknown, layout: unknown) => printing.print(event, kind, layout));
+// Send on WhatsApp as a PDF (share-pdf.ts): the app window printed to a PDF in this PC's own local app data (never synced),
+// shown in File Explorer for the person to drag into the chat the page opens. The page names a kind and a number only.
+const sharedPdfDir = () => {
+  const local = process.env.LOCALAPPDATA;
+  return local ? join(local, 'Qasa ERP', 'Shared PDFs') : join(app.getPath('userData'), 'Shared PDFs');
+};
+const sharing = sharePdfHandlers({
+  target: () => (win && !win.isDestroyed() ? win.webContents : null),
+  fromAppPage: (event) => invokedByAppPage(event as Electron.IpcMainInvokeEvent),
+  dir: sharedPdfDir,
+  makeDir: (dir) => { mkdirSync(dir, { recursive: true }); },
+  writeFile: (file, data) => { writeFileSync(file, data); },
+  list: (dir) => readdirSync(dir).map((name) => ({ name, mtimeMs: statSync(join(dir, name)).mtimeMs })),
+  remove: (file) => { unlinkSync(file); },
+  reveal: (file) => { shell.showItemInFolder(file); },
+  log
+});
+ipcMain.handle('share:pdf', (event, kind: unknown, ref: unknown) => sharing.save(event, kind, ref));
 
 ipcMain.on('network:close', (event) => {
   if (connectWin && event.sender === connectWin.webContents) connectWin.close();
 });
+
+// ——— the outbox (1.2): on a PC connected to an office server, what the till and the receipts saved while the server
+// could not be reached waits here, encrypted, until the window sends it again (outbox.ts). The office server PC has none.
+
+let outbox: OutboxStore | null = null;
+let outboxFailed = false;
+function outboxStore(): OutboxStore | null {
+  if (!remote || outboxFailed) return null;
+  if (outbox) return outbox;
+  try {
+    const userData = app.getPath('userData');
+    // nothing is kept in the clear: without a key Windows protects, this PC has no outbox (online only, as before)
+    const key = secretsKey();
+    if (!key) throw new Error('Windows cannot protect the outbox here');
+    outbox = openOutbox({ dir: join(userData, 'outbox'), server: remote.fingerprint, box: makeSecretBox(key, userData), log });
+  } catch (error) {
+    outboxFailed = true;
+    log('the outbox could not be opened:', error instanceof Error ? error.message : String(error));
+  }
+  return outbox;
+}
+const OUTBOX_NONE = { available: false, waiting: 0, refused: 0, damaged: false };
+function outboxChanged(): void {
+  if (win && !win.isDestroyed()) win.webContents.send('outbox:changed', outbox?.status() ?? OUTBOX_NONE);
+}
+/** One outbox call from the app window's own page: { ok, value } or { ok: false, error } (never an exception across). */
+function outboxCall<T>(event: Electron.IpcMainInvokeEvent, fn: (store: OutboxStore) => T, changes = true): { ok: true; value: T } | { ok: false; error: string } {
+  if (!invokedByAppPage(event)) return { ok: false, error: 'outbox_unavailable' };
+  const store = outboxStore();
+  if (!store) return { ok: false, error: 'outbox_unavailable' };
+  try {
+    const value = fn(store);
+    if (changes) outboxChanged();
+    return { ok: true, value };
+  } catch (error) {
+    if (error instanceof OutboxRefusal) return { ok: false, error: error.code };
+    // the disk is full or can't be written: the sale is not kept, and the till says so
+    log('the outbox could not be written:', error instanceof Error ? error.message : String(error));
+    return { ok: false, error: 'outbox_write_failed' };
+  }
+}
+ipcMain.handle('outbox:status', (event) => {
+  if (!invokedByAppPage(event)) return OUTBOX_NONE;
+  return outboxStore()?.status() ?? OUTBOX_NONE;
+});
+ipcMain.handle('outbox:list', (event) => outboxCall(event, (s) => s.list(), false));
+ipcMain.handle('outbox:add', (event, entry: unknown) => outboxCall(event, (s) => s.add(entry as Parameters<OutboxStore['add']>[0])));
+ipcMain.handle('outbox:result', (event, id: unknown, outcome: unknown) => outboxCall(event, (s) => {
+  const o = (outcome ?? {}) as { kind?: unknown; error?: { status?: unknown; code?: unknown; details?: unknown } | null };
+  const error = o.error ? { status: Number(o.error.status) || 0, code: String(o.error.code ?? 'error'), details: o.error.details ?? null } : null;
+  if (o.kind === 'sent') return s.result(String(id), { kind: 'sent' });
+  if (o.kind === 'refused' && error) return s.result(String(id), { kind: 'refused', error });
+  if (o.kind === 'failed') return s.result(String(id), { kind: 'failed', error });
+  throw new OutboxRefusal('outbox_invalid');
+}));
+ipcMain.handle('outbox:retry', (event, id: unknown) => outboxCall(event, (s) => s.retry(String(id))));
+// only after the app wrote the discard to the company's audit log (an admin, after the confirmation)
+ipcMain.handle('outbox:discard', (event, id: unknown) => outboxCall(event, (s) => { s.discard(String(id)); return true; }));
 
 // ——— File → Reset admin password (this PC's own company only) ———
 // The window (recover.html) asks the main process; the main process asks the server process over the bridge. No web
@@ -608,8 +697,11 @@ async function officeServerProblem(certificate: boolean): Promise<void> {
   if (!win || !remote) return;
   win.show();
   const host = `${remote.host}:${remote.port}`;
+  // what this PC's till saved while the server was away is safe: say so (it is sent once the window is back)
+  const waiting = certificate ? 0 : outboxStore()?.status().waiting ?? 0;
   const { response } = await dialog.showMessageBox(win, {
     type: 'warning', title: 'Qasa ERP', message: t(certificate ? 'serverChanged' : 'serverDown', { host }),
+    ...(waiting > 0 ? { detail: rtlLines(t('outboxWaiting', { n: String(waiting) })) } : {}),
     buttons: certificate ? [t('connect'), t('workHere'), t('quit')] : [t('tryAgain'), t('workHere'), t('quit')], defaultId: 0, cancelId: 2
   });
   if (response === 0) {

@@ -24,6 +24,24 @@ contextBridge.exposeInMainWorld('qasaDesktop', {
   startOver: (username: string, password: string, confirmation: string) =>
     ipcRenderer.invoke('app:startOver', String(username), String(password), String(confirmation)) as Promise<{ ok: boolean; error?: string; retryAfterSeconds?: number }>,
   /**
+   * The outbox (1.2, main.ts and outbox.ts): on a PC connected to an office server, the till's sales and the receipts
+   * that could not reach it wait on this PC, encrypted, until the app sends them again. Elsewhere it says it isn't there.
+   * Every call answers { ok, value } or { ok: false, error }; the main process checks what it gets.
+   */
+  outbox: {
+    status: () => ipcRenderer.invoke('outbox:status') as Promise<unknown>,
+    list: () => ipcRenderer.invoke('outbox:list') as Promise<unknown>,
+    add: (entry: unknown) => ipcRenderer.invoke('outbox:add', plain(entry)) as Promise<unknown>,
+    result: (id: string, outcome: unknown) => ipcRenderer.invoke('outbox:result', String(id), plain(outcome)) as Promise<unknown>,
+    retry: (id: string) => ipcRenderer.invoke('outbox:retry', String(id)) as Promise<unknown>,
+    discard: (id: string) => ipcRenderer.invoke('outbox:discard', String(id)) as Promise<unknown>,
+    onChange: (listener: (status: unknown) => void) => {
+      const handler = (_event: unknown, status: unknown) => listener(status);
+      ipcRenderer.on('outbox:changed', handler);
+      return () => { ipcRenderer.removeListener('outbox:changed', handler); };
+    }
+  },
+  /**
    * Settings → Printers and the Print buttons (main.ts, printing.ts): four fixed calls. The page names a kind of paper;
    * the main process checks everything it gets and prints only this window, with the choice saved for that kind.
    */
@@ -34,8 +52,20 @@ contextBridge.exposeInMainWorld('qasaDesktop', {
     // labels may name the layout picked on the labels page (its paper is used); the main process checks it
     print: (kind: string, layout?: string) =>
       (layout === undefined ? ipcRenderer.invoke('printers:print', String(kind)) : ipcRenderer.invoke('printers:print', String(kind), String(layout))) as Promise<unknown>
-  }
+  },
+  /**
+   * Send on WhatsApp as a PDF (main.ts, share-pdf.ts): this window as it prints now, saved as "<kind>-<number>.pdf" in
+   * the app's own folder and shown in File Explorer. Only a kind and a number cross; the main process checks both.
+   */
+  sharePdf: (kind: string, ref: string) => ipcRenderer.invoke('share:pdf', String(kind), String(ref)) as Promise<unknown>
 });
+
+/** Plain data only (JSON), at most 1 MB: no functions or objects of the page's own cross to the main process. */
+function plain(value: unknown): unknown {
+  const text = JSON.stringify(value ?? null);
+  if (text.length > 1024 * 1024) return null; // refused by the main process
+  return JSON.parse(text);
+}
 
 /** Only the fields of a printer choice cross to the main process (which checks each one again); null means "Ask every time". */
 function choiceOf(choice: unknown): unknown {

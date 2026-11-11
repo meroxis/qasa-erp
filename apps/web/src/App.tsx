@@ -22,6 +22,8 @@ import { GuideLink, pageGuide } from './industry/GuideLink.tsx';
 import { activationNoticeFor } from './industry/activation-notice.ts';
 import { isReportTab, isSolarTab } from './pages/tabs.ts';
 import { canSwitchCompanies } from './industry/companies-api.ts';
+import { outboxClient, setOutboxUser, startOutbox } from './industry/outbox.ts';
+import { OutboxBanner } from './industry/OutboxBanner.tsx';
 
 /**
  * Pages load when they are first opened, not with the app: the first screen comes up quickly and the window holds only
@@ -69,6 +71,7 @@ const JobDetail = lazyPage(() => import('./pages/EngineeringWorks.tsx'), 'JobDet
 const BusinessTypeChooser = lazyPage(() => import('./pages/BusinessType.tsx'), 'BusinessTypeChooser');
 const BusinessTypePage = lazyPage(() => import('./pages/BusinessType.tsx'), 'BusinessTypePage');
 const Pos = lazyPage(() => import('./pages/Pos.tsx'), 'Pos');
+const OutboxPage = lazyPage(() => import('./pages/Outbox.tsx'), 'OutboxPage');
 const PosShiftReport = lazyPage(() => import('./pages/Pos.tsx'), 'PosShiftReport');
 const Payroll = lazyPage(() => import('./pages/Payroll.tsx'), 'Payroll');
 const PayrollRun = lazyPage(() => import('./pages/Payroll.tsx'), 'PayrollRun');
@@ -78,6 +81,7 @@ const QuoteEditor = lazyPage(() => import('./pages/Quotes.tsx'), 'QuoteEditor');
 const Quotes = lazyPage(() => import('./pages/Quotes.tsx'), 'Quotes');
 const Pipeline = lazyPage(() => import('./pages/Pipeline.tsx'), 'Pipeline');
 const Brief = lazyPage(() => import('./pages/Brief.tsx'), 'Brief');
+const DayClose = lazyPage(() => import('./pages/DayClose.tsx'), 'DayClose');
 const Expenses = lazyPage(() => import('./pages/Expenses.tsx'), 'Expenses');
 const MoreReports = lazyPage(() => import('./pages/MoreReports.tsx'), 'MoreReports');
 const Rates = lazyPage(() => import('./pages/Rates.tsx'), 'Rates');
@@ -278,8 +282,24 @@ export function App() {
     return () => window.removeEventListener(SIGNED_OUT_EVENT, signedOut);
   }, [reloadMe]);
 
+  // 1.2: on a PC connected to an office server, what the till and the receipts kept while the server could not be
+  // reached is sent again, as the person who made it (industry/outbox.ts); elsewhere there is no outbox
+  const meRef = useRef(me);
+  meRef.current = me;
+  const [outboxOn, setOutboxOn] = useState(false);
+  useEffect(() => {
+    setOutboxUser(() => {
+      const m = meRef.current;
+      return m?.user ? { id: m.user.id, name: m.user.name, admin: m.user.permissions.includes('admin') } : null;
+    });
+    if (import.meta.env.MODE === 'demo') return;
+    void startOutbox().then((box) => setOutboxOn(!!box), () => {});
+  }, []);
+
   // the books load once someone is in (the owner, without sign-in)
   const userId = me?.user?.id ?? (me?.user ? 'owner' : null);
+  // someone signed in: what they kept waiting goes now
+  useEffect(() => { if (userId && outboxOn) outboxClient()?.kick(); }, [userId, outboxOn]);
   useEffect(() => {
     if (!userId) return;
     void reloadAccounts();
@@ -446,6 +466,10 @@ export function App() {
       title = t('pos_title');
       content = <Pos />;
       break;
+    case 'outbox':
+      title = t('ob_title');
+      content = <OutboxPage admin={isAdmin} />;
+      break;
     case 'pos-shift':
       title = t('pos_title');
       content = arg ? <PosShiftReport key={arg} id={arg} /> : null;
@@ -559,6 +583,10 @@ export function App() {
       title = t('br_title');
       content = <Brief />;
       break;
+    case 'day-close':
+      title = t('dc_title');
+      content = <DayClose />;
+      break;
     case 'expenses':
       title = t('br_expenses');
       content = <Expenses />;
@@ -609,7 +637,7 @@ export function App() {
       break;
     case 'party':
       title = t('statement');
-      content = arg ? <PartyDetail key={arg} id={arg} /> : null;
+      content = arg ? <PartyDetail key={arg} id={arg} admin={isAdmin} /> : null;
       break;
     case 'items':
       title = t('items');
@@ -792,6 +820,7 @@ export function App() {
                   </div>
                 )}
                 {import.meta.env.MODE !== 'demo' && <BackupNoticeBar admin={isAdmin} page={page} />}
+                {outboxOn && <OutboxBanner page={page ?? ''} />}
                 <div key={branchKey} style={{ display: 'contents' }}><Suspense fallback={<PageLoading />}>{content}</Suspense></div>
               </main>
               <footer className="statusbar">

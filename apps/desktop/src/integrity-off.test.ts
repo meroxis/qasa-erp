@@ -57,8 +57,9 @@ describe('the app.asar integrity check in 1.0', () => {
       }
     };
     for (const folder of ['apps/desktop/src', 'apps/web/src', 'packages', 'pro/src']) if (existsSync(join(root, folder))) walk(join(root, folder));
-    // the addon's type declaration names the function; nothing calls it
-    expect(found.filter((f) => f !== 'packages/server/src/native-licence.ts')).toEqual([]);
+    // the addon's type declaration names the function; nothing calls it. (1.2: the Pro module's own licence check reads
+    // a signature only once a build key is embedded, which none is while this flag is off: pro/src/entitlement.test.ts)
+    expect(found.filter((f) => f !== 'packages/server/src/native-licence.ts' && f !== 'pro/src/entitlement.ts')).toEqual([]);
     expect(readFileSync(join(root, 'packages/server/src/native-licence.ts'), 'utf8')).not.toMatch(/\.verifyIntegrity\(/);
   });
 });

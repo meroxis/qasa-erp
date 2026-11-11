@@ -26,6 +26,8 @@ import { cancelInvoice, createInvoice, deleteInvoice, getInvoice, listInvoices, 
 import { closeYear, reopenYear, yearStatuses } from './closing.ts';
 import { createReturn } from './returns.ts';
 import { cancelStockDoc, createStockDoc, deleteStockDoc, getStockDoc, listStockDocs, postStockDoc, updateStockDoc } from './stock-docs.ts';
+import { onceOnly } from './idempotency.ts';
+import { BOOKS_HEADER, booksId } from './outbox.ts';
 
 const isoDate = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
 const period = z.string().regex(/^\d{4}-(0[1-9]|1[0-2])$/);
@@ -76,7 +78,9 @@ const partySchema = z.object({
   accountCode: z.string().max(12).optional(),
   creditLimit: amount.nullable().optional(),
   notes: z.string().max(1000).optional(),
-  active: z.boolean().optional()
+  active: z.boolean().optional(),
+  // 1.2: the language their WhatsApp messages are written in (null: the app's)
+  lang: z.enum(['ar', 'en', 'ku']).nullable().optional()
 });
 
 // one list of units (core UNITS), never a second one written here
@@ -265,7 +269,7 @@ export interface Route {
 export function errorResponse(error: unknown): { status: number; body: { error: string; details: unknown } } {
   if (error instanceof AppError) return { status: error.status, body: { error: error.code, details: error.details ?? null } };
   const message = error instanceof Error ? error.message : String(error);
-  for (const code of ['posted_entry_is_permanent', 'posted_invoice_is_permanent', 'posted_document_is_permanent', 'stock_moves_are_permanent', 'installment_contract_is_permanent']) {
+  for (const code of ['posted_entry_is_permanent', 'posted_invoice_is_permanent', 'posted_document_is_permanent', 'stock_moves_are_permanent', 'installment_contract_is_permanent', 'loyalty_moves_are_permanent']) {
     if (message.includes(code)) return { status: 409, body: { error: code, details: null } };
   }
   // a delete the database refused because other records still point at the row: nothing changed, say so plainly
@@ -356,6 +360,9 @@ export function apiRoutes(db: Db, options: { demo?: boolean; extensions?: readon
           if (need && !actor.permissions.includes(need)) throw new AppError(403, 'forbidden', { need });
         }
         (req as ApiRequest & { actor?: Actor | null }).actor = actor;
+        // a change a PC kept for later names the books it was made for: never into other books (outbox.ts)
+        const books = header(req, BOOKS_HEADER);
+        if (books !== undefined && method !== 'GET' && books !== booksId(db)) throw conflict('other_books');
         // a user limited to some branches works only with their warehouses and safes (branches.ts)
         checkBranchRequest(db, actor, method, path, req);
         const result = await handler(req, reply);
@@ -365,6 +372,12 @@ export function apiRoutes(db: Db, options: { demo?: boolean; extensions?: readon
     });
   };
   const app = { get: add('GET'), post: add('POST'), put: add('PUT'), patch: add('PATCH'), delete: add('DELETE') };
+  /**
+   * A document a client may send again with the same key (x-qasa-idempotency): made once, then answered from the key
+   * (idempotency.ts). The route names the pattern, so a key is good for one kind of request only.
+   */
+  const once = <T extends { id: string }>(req: ApiRequest, reply: ApiReply, route: string, make: () => T, again: (id: string) => T): T =>
+    onceOnly(db, req, reply, actorOf(req), route, () => { const result = make(); return { id: result.id, result }; }, again);
   const notInDemo = () => { if (options.demo) throw conflict('demo_unavailable'); };
 
   app.get('/api/health', async () => ({ ok: true, app: 'qasa-erp', version: APP_VERSION }));
@@ -439,7 +452,7 @@ export function apiRoutes(db: Db, options: { demo?: boolean; extensions?: readon
   });
   app.post('/api/vouchers', async (req, reply) => {
     const body = parse(voucherSchema, req.body);
-    return reply.status(201).send(createVoucher(db, withoutUndefined(body), userOf(req), actorOf(req).id));
+    return reply.status(201).send(once(req, reply, 'POST /api/vouchers', () => createVoucher(db, withoutUndefined(body), userOf(req), actorOf(req).id), (id) => getEntry(db, id)));
   });
   app.put('/api/vouchers/:id', async (req) => {
     const { id } = parse(z.object({ id: z.string() }), req.params);
@@ -553,16 +566,23 @@ export function apiRoutes(db: Db, options: { demo?: boolean; extensions?: readon
     return listInvoices(db, q);
   });
   app.get('/api/invoices/:id', async (req) => getInvoice(db, parse(idParam, req.params).id));
-  app.post('/api/invoices', async (req, reply) => reply.status(201).send(createInvoice(db, withoutUndefined(parse(invoiceSchema, req.body)), userOf(req))));
+  app.post('/api/invoices', async (req, reply) => {
+    const body = withoutUndefined(parse(invoiceSchema, req.body));
+    return reply.status(201).send(once(req, reply, 'POST /api/invoices', () => createInvoice(db, body, userOf(req)), (id) => getInvoice(db, id)));
+  });
   app.put('/api/invoices/:id', async (req) => updateInvoice(db, parse(idParam, req.params).id, withoutUndefined(parse(invoiceSchema, req.body)), userOf(req)));
   app.delete('/api/invoices/:id', async (req, reply) => {
     deleteInvoice(db, parse(idParam, req.params).id, userOf(req));
     return reply.status(204).send();
   });
-  app.post('/api/invoices/:id/post', async (req) => {
+  app.post('/api/invoices/:id/post', async (req, reply) => {
     // allowExpired: the user confirmed selling stock past its expiry date (only the 'warn' policy allows it)
-    const body = parse(z.object({ allowExpired: z.boolean().optional() }), req.body ?? {});
-    return postInvoice(db, parse(idParam, req.params).id, userOf(req), { allowExpired: body.allowExpired === true });
+    // loyaltyPoints (1.2, Pro): points the customer uses on a sale
+    const body = parse(z.object({ allowExpired: z.boolean().optional(), loyaltyPoints: z.number().int().positive().max(100_000_000).optional() }), req.body ?? {});
+    const { id } = parse(idParam, req.params);
+    return once(req, reply, 'POST /api/invoices/:id/post',
+      () => postInvoice(db, id, userOf(req), { allowExpired: body.allowExpired === true, ...(body.loyaltyPoints ? { loyaltyPoints: body.loyaltyPoints } : {}) }),
+      (doc) => getInvoice(db, doc));
   });
   app.post('/api/invoices/:id/cancel', async (req) => {
     const body = parse(z.object({ date: isoDate.optional() }), req.body ?? {});
@@ -570,8 +590,11 @@ export function apiRoutes(db: Db, options: { demo?: boolean; extensions?: readon
   });
 
   // returns (مردودات), made from a posted invoice
-  app.post('/api/invoices/:id/returns', async (req, reply) =>
-    reply.status(201).send(createReturn(db, parse(idParam, req.params).id, withoutUndefined(parse(returnSchema, req.body)), userOf(req), actorOf(req))));
+  app.post('/api/invoices/:id/returns', async (req, reply) => {
+    const { id } = parse(idParam, req.params);
+    const body = withoutUndefined(parse(returnSchema, req.body));
+    return reply.status(201).send(once(req, reply, 'POST /api/invoices/:id/returns', () => createReturn(db, id, body, userOf(req), actorOf(req)), (doc) => getInvoice(db, doc)));
+  });
 
   // stock documents: opening stock and transfers between warehouses
   app.get('/api/stock-docs', async (req) => {
@@ -579,13 +602,19 @@ export function apiRoutes(db: Db, options: { demo?: boolean; extensions?: readon
     return listStockDocs(db, q);
   });
   app.get('/api/stock-docs/:id', async (req) => getStockDoc(db, parse(idParam, req.params).id));
-  app.post('/api/stock-docs', async (req, reply) => reply.status(201).send(createStockDoc(db, withoutUndefined(parse(stockDocSchema, req.body)), userOf(req))));
+  app.post('/api/stock-docs', async (req, reply) => {
+    const body = withoutUndefined(parse(stockDocSchema, req.body));
+    return reply.status(201).send(once(req, reply, 'POST /api/stock-docs', () => createStockDoc(db, body, userOf(req)), (id) => getStockDoc(db, id)));
+  });
   app.put('/api/stock-docs/:id', async (req) => updateStockDoc(db, parse(idParam, req.params).id, withoutUndefined(parse(stockDocSchema, req.body)), userOf(req)));
   app.delete('/api/stock-docs/:id', async (req, reply) => {
     deleteStockDoc(db, parse(idParam, req.params).id, userOf(req));
     return reply.status(204).send();
   });
-  app.post('/api/stock-docs/:id/post', async (req) => postStockDoc(db, parse(idParam, req.params).id, userOf(req), actorOf(req)));
+  app.post('/api/stock-docs/:id/post', async (req, reply) => {
+    const { id } = parse(idParam, req.params);
+    return once(req, reply, 'POST /api/stock-docs/:id/post', () => postStockDoc(db, id, userOf(req), actorOf(req)), (doc) => getStockDoc(db, doc));
+  });
   app.post('/api/stock-docs/:id/cancel', async (req) => {
     const body = parse(z.object({ date: isoDate.optional() }), req.body ?? {});
     return cancelStockDoc(db, parse(idParam, req.params).id, userOf(req), body.date);

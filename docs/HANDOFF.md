@@ -31,7 +31,10 @@ In `pro/`: `npx tsc --noEmit -p .` and `npx vitest run`.
   Electron fuses and asar integrity. The app.asar self-check of the addon is off in 1.0 (`INTEGRITY_CHECK` in
   `apps/desktop/after-pack.cjs`); turning it on later needs the `QASA_INTEGRITY_KEY` secret and `INTEGRITY_KEYS`.
 - Free first month once per PC, with every feature except Qasa Relay; it starts by itself on the first-run business
-  type screen.
+  type screen. The PC's record of it (`trial-used.json` in the app's folder and in `%LOCALAPPDATA%\Qasa ERP`) is
+  sealed, but both copies are the Windows user's own files: deleting both (with the company file's trial settings, or
+  with a new company file) starts another month. It only slows a reset down; a record the portal keeps per machine
+  id would be needed to make it certain (not built yet).
 - The server runs in an Electron utilityProcess (the laptop freeze fix). Launcher home, welcome tour, update notices and beta channel.
 
 ## Rules worth knowing

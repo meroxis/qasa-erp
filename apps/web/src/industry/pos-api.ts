@@ -1,5 +1,5 @@
 import type { CurrencyCode, Names, UnitCode } from '@qasa/core';
-import { qs, request, type InvoiceView } from '../api.ts';
+import { qs, request, type InvoiceView, type SendOptions } from '../api.ts';
 
 /** Point of sale (every plan): shifts on a register, and cash sales posted at once. */
 
@@ -22,7 +22,7 @@ export interface ShiftView {
   /** cash sales returns paid from the shift's safe while it was open */
   refunds: Money2;
   /** 1.1: the posted sales by how they were paid (older servers leave it out) */
-  methods?: Partial<Record<PosMethod, Money2>>;
+  methods?: Partial<Record<PosMethod | 'loyalty', Money2>>;
   expected: Money2;
   counted: Money2 | null;
   difference: Money2 | null;
@@ -30,7 +30,11 @@ export interface ShiftView {
   actions: ('sell' | 'close')[];
 }
 
-export interface ShiftSaleView { invoiceId: string; number: string | null; createdAt: string; partyName: string | null; currency: CurrencyCode; total: number; status: string }
+export interface ShiftSaleView {
+  invoiceId: string; number: string | null; createdAt: string; partyName: string | null; currency: CurrencyCode; total: number; status: string;
+  /** 1.2: sold while the till was offline: the temporary reference on its receipt */
+  offlineRef?: string;
+}
 
 export interface ShiftReport extends ShiftView {
   invoices: ShiftSaleView[];
@@ -48,6 +52,8 @@ export interface SaleInput {
   allowExpired?: boolean;
   /** 1.1: how it was paid, 1–4 parts adding up to the total; none = all cash */
   payments?: { method: PosMethod; amount: number }[];
+  /** 1.2 (Pro): loyalty points the customer uses on this sale */
+  loyaltyPoints?: number;
   /** qtyMilli in base units, or unit + unitQtyMilli: the quantity in one of the item's units, priced per that unit */
   lines: (({ itemId: string; qtyMilli: number; unitPrice: number } | { itemId: string; unit: UnitCode; unitQtyMilli: number; unitPrice: number }) & { batchId?: string })[];
 }
@@ -64,6 +70,7 @@ export const posApi = {
   shifts: (f: { status?: 'open' | 'closed'; limit?: string } = {}) => request<ShiftView[]>('GET', '/api/pos/shifts' + qs(f)),
   shift: (id: string) => request<ShiftReport>('GET', `/api/pos/shifts/${id}`),
   open: (input: OpenShiftInput) => request<ShiftView>('POST', '/api/pos/shifts', input),
-  sell: (shiftId: string, input: SaleInput) => request<{ invoice: InvoiceView; shift: ShiftView }>('POST', `/api/pos/shifts/${shiftId}/sales`, input),
+  /** options (1.2): the sale's idempotency key on a PC with an outbox, and how long to wait before keeping it there */
+  sell: (shiftId: string, input: SaleInput, options: SendOptions = {}) => request<{ invoice: InvoiceView; shift: ShiftView }>('POST', `/api/pos/shifts/${shiftId}/sales`, input, options),
   close: (shiftId: string, body: { countedCash: number; countedUsd?: number; notes?: string }) => request<ShiftView>('POST', `/api/pos/shifts/${shiftId}/close`, body)
 };

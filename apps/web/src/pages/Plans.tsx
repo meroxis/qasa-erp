@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { daysBetween, PLAN_IDS, PLANS, TRIAL_DAYS, todayIso } from '@qasa/core';
 import { api, request, type PlanStatus } from '../api.ts';
 import { ErrorBox, Icon, useData, useToast } from '../components.tsx';
@@ -43,6 +43,7 @@ export const ROWS: Row[] = [
   { label: 'f_mobileShop', cells: [false, true, true] },
   { label: 'f_autoParts', cells: [false, true, true] },
   { label: 'f_pharmacy', cells: [false, true, true] },
+  { label: 'f_loyalty', cells: [false, true, true] },
   { label: 'f_engineeringWorks', cells: [false, true, true] },
   { label: 'f_electricalSolar', cells: [false, true, true] },
   { label: 'f_generators', cells: [false, true, true] },
@@ -106,6 +107,48 @@ function ActivationNote({ plan, busy, act }: { plan: PlanStatus; busy: boolean; 
   );
 }
 
+/** What the Pro module's own licence check says (GET /api/pro/licence-check; missing in builds without Pro). */
+export interface ProLicenceCheck { heldBack: boolean; reason: string | null }
+
+/**
+ * The note for a Pro module that holds its features back on this PC: the app's files changed, this PC couldn't be
+ * confirmed (its Windows id unreadable, or the licence addon missing or not the one we published), or a licence to
+ * check in.
+ */
+export function proHeldKey(check: ProLicenceCheck | null): Key | null {
+  if (!check?.heldBack) return null;
+  if (check.reason === 'integrity') return 'ac_proHeldFiles';
+  return check.reason === 'machine' || check.reason === 'addon' ? 'ac_proHeldPc' : 'ac_proHeld';
+}
+
+/**
+ * The official Windows app's Pro module checks the licence for itself; when it can't confirm it on this PC, its pages
+ * pause (the data stays) and this says why, with the way back.
+ */
+function ProHeldNote({ plan, busy, act }: { plan: PlanStatus; busy: boolean; act(fn: () => Promise<PlanStatus>, message: string): Promise<boolean> }) {
+  const { t } = useI18n();
+  const [check, setCheck] = useState<ProLicenceCheck | null>(null);
+  useEffect(() => {
+    if (demo || plan.plan === 'free') {
+      setCheck(null);
+      return;
+    }
+    let live = true;
+    request<ProLicenceCheck>('GET', '/api/pro/licence-check').then((c) => { if (live) setCheck(c); }, () => { if (live) setCheck(null); });
+    return () => { live = false; };
+  }, [plan]);
+  const key = proHeldKey(check);
+  if (!key) return null;
+  return (
+    <div className="alert warn stack" role="status">
+      <span>{t(key)}</span>
+      {key === 'ac_proHeld' && plan.license && (
+        <div><button type="button" className="btn primary" disabled={busy} onClick={() => void act(() => request<PlanStatus>('POST', '/api/plan/check', {}), t('ac_checked'))}>{t('ac_checkNow')}</button></div>
+      )}
+    </div>
+  );
+}
+
 export function Plans() {
   const i18n = useI18n();
   const { t } = i18n;
@@ -154,6 +197,7 @@ export function Plans() {
         {license && plan.activation.required && (
           <ActivationNote plan={plan} busy={busy} act={act} />
         )}
+        <ProHeldNote plan={plan} busy={busy} act={act} />
 
         {license && (
           <>

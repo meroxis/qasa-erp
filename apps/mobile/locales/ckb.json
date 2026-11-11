@@ -1,0 +1,5 @@
+{
+  "NSCameraUsageDescription": "قاسە کامێرا بەکاردەهێنێت بۆ خوێندنەوەی بارکۆد و وێنەگرتنی کاڵا.",
+  "NSLocalNetworkUsageDescription": "قاسە پەیوەندی بە کۆمپیوتەری قاسە ERP ەوە دەکات لەسەر هەمان Wi-Fi.",
+  "NSFaceIDUsageDescription": "دەتوانرێت قاسە بە Face ID بکرێتەوە ئەگەر لە قفڵی ئەپدا چالاکت کردبێت."
+}
