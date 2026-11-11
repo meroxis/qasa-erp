@@ -126,5 +126,15 @@ export const CATALOG_TEXT = {
   cs_limited: ['هذا الجرد محصور في: {s}. المواد الأخرى لا تتغير.', 'This count covers only: {s}. Other items are left as they are.', 'ئەم ژماردنە تەنها ئەمانە دەگرێتەوە: {s}. کاڵاکانی تر وەک خۆیان دەمێننەوە.'],
   err_item_outside_count: ['السطر {n}: هذه المادة ليست ضمن هذا الجرد.', 'Line {n}: that item is not part of this count.', 'ڕیزی {n}: ئەو کاڵایە بەشێک نییە لەم ژماردنە.'],
   err_count_scope_invalid: ['حدود الجرد غير صحيحة.', 'The count’s limits aren’t valid.', 'سنووری ژماردنەکە دروست نییە.'],
+  rn_title: ['تجديد الترخيص', 'Licence renewal', 'نوێکردنەوەی مۆڵەت'],
+  rn_days: ['ينتهي ترخيصك بعد {n} يوم.', 'Your licence ends in {n} days.', 'مۆڵەتەکەت {n} ڕۆژی تر کۆتایی دێت.'],
+  rn_today: ['اليوم آخر يوم في ترخيصك.', 'Today is the last day of your licence.', 'ئەمڕۆ دوا ڕۆژی مۆڵەتەکەتە.'],
+  rn_grace: [
+    'انتهى ترخيصك؛ يبقى يعمل {n} يوم آخر، ثم تعود الشركة إلى الخطة المجانية (تبقى البيانات كما هي).',
+    'Your licence has ended; it keeps working for {n} more days, then the company goes back to Free (the data stays as it is).',
+    'مۆڵەتەکەت کۆتایی هات؛ {n} ڕۆژی تر هەر کار دەکات، پاشان کۆمپانیاکە دەگەڕێتەوە بۆ بەخۆڕایی (داتاکان وەک خۆیان دەمێننەوە).'
+  ],
+  rn_renew: ['تجديد', 'Renew', 'نوێکردنەوە'],
+  rn_later: ['ذكّرني لاحقاً', 'Remind me later', 'دواتر بیرم بخەرەوە'],
   st_nothing: ['القائمة موجودة كلها؛ لم يُضف شيء.', 'Everything in the list is there already; nothing was added.', 'هەموو لیستەکە هەیە؛ هیچ زیاد نەکرا.']
 } as const;
