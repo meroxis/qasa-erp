@@ -10,6 +10,7 @@ import { AppError } from './errors.ts';
 import { entryInBranchSql, scopeLists, scopeOf } from './branches.ts';
 import { chequesAhead, type ChequeAlert } from './banking.ts';
 import { expiryAlert, type BatchReportRow } from './batches.ts';
+import { REORDER_JOINS, REORDER_LEVEL } from './reorder.ts';
 
 /** A branch's warehouses and safes (null: the whole company). See branches.ts. */
 export type BranchFilter = { warehouses: string[]; accounts: string[] } | null;
@@ -352,7 +353,7 @@ export function installmentsOn(db: Db, date: string): { overdue: InstallmentDue[
 export interface LowStock { itemId: string; code: string; name: Names; qtyMilli: number; reorderMilli: number | null; soldMilli: number }
 
 /**
- * Items running out: those at or below their reorder level (car parts), and those with nothing left that sold in the
+ * Items running out: those at or below their minimum quantity (reorder.ts), and those with nothing left that sold in the
  * last 30 days. Services and items without stock tracking are left out.
  */
 export function lowStock(db: Db, date: string, limit = 20, branch: BranchFilter = null): LowStock[] {
@@ -360,16 +361,15 @@ export function lowStock(db: Db, date: string, limit = 20, branch: BranchFilter 
   // for one branch: the stock and the sales of its warehouses only
   const [sw, swp] = inBranch('warehouse_id', branch?.warehouses);
   const [iw, iwp] = inBranch('i.warehouse_id', branch?.warehouses);
-  const hasReorder = !!db.prepare("SELECT 1 FROM part_details WHERE reorder_milli IS NOT NULL LIMIT 1").get();
   const rows = db.prepare(`WITH stock AS (SELECT item_id, SUM(qty_milli) AS qty FROM stock_moves WHERE date <= ?${sw} GROUP BY item_id),
                                 sold AS (SELECT l.item_id, SUM(l.qty_milli) AS qty FROM invoice_lines l JOIN invoices i ON i.id = l.invoice_id
                                          WHERE i.status = 'posted' AND i.kind = 'sale' AND i.date BETWEEN ? AND ?${iw} GROUP BY l.item_id)
                            SELECT it.id, it.code, it.name_ar, it.name_en, it.name_ku, COALESCE(s.qty, 0) AS qty,
-                                  ${hasReorder ? 'pd.reorder_milli' : 'NULL'} AS reorder, COALESCE(so.qty, 0) AS sold
+                                  ${REORDER_LEVEL} AS reorder, COALESCE(so.qty, 0) AS sold
                            FROM items it LEFT JOIN stock s ON s.item_id = it.id LEFT JOIN sold so ON so.item_id = it.id
-                           ${hasReorder ? 'LEFT JOIN part_details pd ON pd.item_id = it.id' : ''}
+                           ${REORDER_JOINS}
                            WHERE it.active = 1 AND it.track_stock = 1 AND (
-                             ${hasReorder ? '(pd.reorder_milli IS NOT NULL AND COALESCE(s.qty, 0) <= pd.reorder_milli) OR' : ''}
+                             (${REORDER_LEVEL} IS NOT NULL AND COALESCE(s.qty, 0) <= ${REORDER_LEVEL}) OR
                              (COALESCE(s.qty, 0) <= 0 AND COALESCE(so.qty, 0) > 0))
                            ORDER BY sold DESC, qty ASC LIMIT ?`).all(date, ...swp, since, date, ...iwp, limit) as
     { id: string; code: string; name_ar: string; name_en: string; name_ku: string; qty: number; reorder: number | null; sold: number }[];

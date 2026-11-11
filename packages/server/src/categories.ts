@@ -19,20 +19,25 @@ export interface CategoryView {
   id: string; code: string; name: Names; sort: number; active: boolean;
   /** 1.1: the category this one is a subcategory of (null: a top-level category) */
   parentId: string | null;
+  /** 1.1: the minimum quantity for its items that have none of their own (thousandths; null: none) */
+  reorderMilli: number | null;
   /** items in this category itself, and its subcategories */
   items: number; children: number;
   createdAt: string; updatedAt: string;
 }
-export interface CategoryInput { code?: string | undefined; name: Names; sort?: number | undefined; active?: boolean | undefined; parentId?: string | null | undefined }
+export interface CategoryInput {
+  code?: string | undefined; name: Names; sort?: number | undefined; active?: boolean | undefined; parentId?: string | null | undefined;
+  reorderMilli?: number | null | undefined;
+}
 
 interface Row {
   id: string; code: string; name_ar: string; name_en: string; name_ku: string; sort: number; active: number; parent_id: string | null;
-  created_at: string; updated_at: string; items: number | null; children: number | null;
+  reorder_milli: number | null; created_at: string; updated_at: string; items: number | null; children: number | null;
 }
 
 const view = (r: Row): CategoryView => ({
   id: r.id, code: r.code, name: { ar: r.name_ar, en: r.name_en, ku: r.name_ku }, sort: Number(r.sort), active: Number(r.active) === 1,
-  parentId: r.parent_id ?? null, items: Number(r.items ?? 0), children: Number(r.children ?? 0), createdAt: r.created_at, updatedAt: r.updated_at
+  parentId: r.parent_id ?? null, reorderMilli: r.reorder_milli === null || r.reorder_milli === undefined ? null : Number(r.reorder_milli), items: Number(r.items ?? 0), children: Number(r.children ?? 0), createdAt: r.created_at, updatedAt: r.updated_at
 });
 
 /** Names typed by people: no control characters, spaces collapsed, at most 200 characters. */
@@ -78,6 +83,7 @@ function assertInput(db: Db, input: CategoryInput, id: string | null): { code: s
   const code = input.code?.trim().toUpperCase() || null;
   if (code && !/^[\p{L}\p{N}._-]{1,24}$/u.test(code)) errors.push({ code: 'code_invalid' });
   if (input.sort !== undefined && (!Number.isSafeInteger(input.sort) || input.sort < 0 || input.sort > 100_000)) errors.push({ code: 'value_invalid' });
+  if (input.reorderMilli !== undefined && input.reorderMilli !== null && !(Number.isSafeInteger(input.reorderMilli) && input.reorderMilli >= 0)) errors.push({ code: 'reorder_invalid' });
   if (errors.length) throw invalid(errors);
   if (code && db.prepare("SELECT 1 FROM item_categories WHERE code = ? AND id <> COALESCE(?, '')").get(code, id)) throw conflict('code_exists');
   const parentId = input.parentId === undefined ? undefined : input.parentId || null;
@@ -98,15 +104,15 @@ function assertRoom(db: Db, adding: number): void {
 }
 
 /** Inserts a category (codes C001, C002 … when none is given). Call inside a transaction. */
-export function insertCategory(db: Db, values: { code: string | null; name: Names; parentId: string | null; sort?: number | undefined; active?: boolean | undefined }, user: string): string {
+export function insertCategory(db: Db, values: { code: string | null; name: Names; parentId: string | null; sort?: number | undefined; active?: boolean | undefined; reorderMilli?: number | null | undefined }, user: string): string {
   const id = randomUUID();
   let code = values.code;
   // an empty code: the next free C001, C002 …
   while (!code || db.prepare('SELECT 1 FROM item_categories WHERE code = ?').get(code)) code = `C${String(nextSequence(db, 'item_category')).padStart(3, '0')}`;
   const now = new Date().toISOString();
   const sort = values.sort ?? Number((db.prepare('SELECT COALESCE(MAX(sort), 0) AS s FROM item_categories').get() as { s: number }).s) + 10;
-  db.prepare('INSERT INTO item_categories (id, code, name_ar, name_en, name_ku, sort, active, created_at, updated_at, parent_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
-    .run(id, code, values.name.ar, values.name.en, values.name.ku, sort, values.active === false ? 0 : 1, now, now, values.parentId);
+  db.prepare('INSERT INTO item_categories (id, code, name_ar, name_en, name_ku, sort, active, created_at, updated_at, parent_id, reorder_milli) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
+    .run(id, code, values.name.ar, values.name.en, values.name.ku, sort, values.active === false ? 0 : 1, now, now, values.parentId, values.reorderMilli ?? null);
   audit(db, user, 'create', 'item_category', id, { code, parentId: values.parentId });
   return id;
 }
@@ -114,7 +120,7 @@ export function insertCategory(db: Db, values: { code: string | null; name: Name
 export function createCategory(db: Db, input: CategoryInput, user: string): CategoryView {
   const { code, name, parentId } = assertInput(db, input, null);
   assertRoom(db, 1);
-  const id = transaction(db, () => insertCategory(db, { code, name, parentId: parentId ?? null, sort: input.sort, active: input.active }, user));
+  const id = transaction(db, () => insertCategory(db, { code, name, parentId: parentId ?? null, sort: input.sort, active: input.active, reorderMilli: input.reorderMilli }, user));
   return getCategory(db, id);
 }
 
@@ -123,9 +129,9 @@ export function updateCategory(db: Db, id: string, input: CategoryInput, user: s
   const { code, name, parentId } = assertInput(db, input, id);
   transaction(db, () => {
     const now = new Date().toISOString();
-    db.prepare('UPDATE item_categories SET code = ?, name_ar = ?, name_en = ?, name_ku = ?, sort = ?, active = ?, parent_id = ?, updated_at = ? WHERE id = ?')
+    db.prepare('UPDATE item_categories SET code = ?, name_ar = ?, name_en = ?, name_ku = ?, sort = ?, active = ?, parent_id = ?, reorder_milli = ?, updated_at = ? WHERE id = ?')
       .run(code ?? current.code, name.ar, name.en, name.ku, input.sort ?? current.sort, input.active === undefined ? (current.active ? 1 : 0) : input.active ? 1 : 0,
-        parentId === undefined ? current.parentId : parentId, now, id);
+        parentId === undefined ? current.parentId : parentId, input.reorderMilli === undefined ? current.reorderMilli : input.reorderMilli, now, id);
     // a shop sees its items' category change (a subcategory's items too: its path changed)
     db.prepare(`UPDATE items SET updated_at = ? WHERE ${IN_CATEGORY_SQL('category_id')}`).run(now, id, id);
     audit(db, user, 'update', 'item_category', id, input);
@@ -189,7 +195,8 @@ const id = z.string().min(1).max(64);
 const names = z.object({ ar: z.string().max(200), en: z.string().max(200), ku: z.string().max(200) });
 const body = z.object({
   code: z.string().max(24).optional(), name: names, sort: z.number().int().min(0).max(100_000).optional(), active: z.boolean().optional(),
-  parentId: id.nullable().optional()
+  parentId: id.nullable().optional(),
+  reorderMilli: z.number().int().min(0).max(1e15).nullable().optional()
 });
 
 export const categoriesApi: ApiExtension = {

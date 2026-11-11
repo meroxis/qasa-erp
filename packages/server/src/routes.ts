@@ -14,6 +14,7 @@ import {
   returnEntry, reverseEntry, updateJournalEntry, updateVoucher
 } from './journal.ts';
 import { finalAccountsReport, statementReport, trialBalanceReport } from './reports.ts';
+import { reorderList } from './reorder.ts';
 import { getSettings, lockPeriod, lockedPeriods, unlockPeriod, updateSettings } from './settings.ts';
 import { listAudit } from './audit.ts';
 import { createParty, deleteParty, getParty, isForeignKeyFailure, listParties, partyStatement, updateParty } from './parties.ts';
@@ -521,6 +522,11 @@ export function apiRoutes(db: Db, options: { demo?: boolean; extensions?: readon
     if (q.barcode) return findByBarcode(db, q.barcode, q.warehouseId ? [q.warehouseId] : warehousesOfUser(req));
     // without a warehouse, a user limited to branches gets the stock of their branches' warehouses (null: every one)
     return listItems(db, { q: q.q, warehouseId: q.warehouseId, active: q.active === undefined ? undefined : q.active === 'true', categoryId: q.categoryId, brandId: q.brandId }, warehousesOfUser(req));
+  });
+  // 1.1: items at or below their minimum quantity (their own, or their category's), in a warehouse or the user's
+  app.get('/api/stock/reorder', async (req) => {
+    const q = parse(z.object({ warehouseId: z.string().min(1).max(64).optional() }), req.query);
+    return reorderList(db, { warehouseId: q.warehouseId }, warehousesOfUser(req));
   });
   app.get('/api/items/:id', async (req) => {
     const { id } = parse(idParam, req.params);

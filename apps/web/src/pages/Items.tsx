@@ -6,6 +6,7 @@ import { inUnits } from '../industry/units.ts';
 import { batchesApi } from '../industry/batches-api.ts';
 import { brandLabel, brandsApi, categoriesApi, categoryLabel, type BrandView, type CategoryView } from '../industry/categories-api.ts';
 import { BrandForm, BrandPicker, CategoryOptions, countryName, StarterListButton } from '../industry/CatalogPickers.tsx';
+import { ReorderList } from '../industry/ReorderList.tsx';
 import { ExpiryChip } from './Expiry.tsx';
 import { useI18n, type I18n, isKey, type Key } from '../i18n.ts';
 import { go, href } from '../router.ts';
@@ -37,13 +38,13 @@ export function averageCost(qtyMilli: number, value: number): number {
 }
 
 /** المواد والمخزون */
-export function Items() {
+export function Items({ tab: initialTab }: { tab?: 'reorder' } = {}) {
   const i18n = useI18n();
   const { t } = i18n;
   // the warehouse account's statement is the company's books: no link for someone limited to branches
   const books = useData().companyBooks !== false;
   const toast = useToast();
-  const [tab, setTab] = useState<'items' | 'warehouses' | 'categories' | 'brands'>('items');
+  const [tab, setTab] = useState<'items' | 'warehouses' | 'categories' | 'brands' | 'reorder'>(initialTab ?? 'items');
   const [q, setQ] = useState('');
   const [warehouseId, setWarehouseId] = useState('');
   const [categoryId, setCategoryId] = useState('');
@@ -88,7 +89,9 @@ export function Items() {
         <button type="button" aria-pressed={tab === 'warehouses'} onClick={() => setTab('warehouses')}>{t('warehouses')}</button>
         <button type="button" aria-pressed={tab === 'categories'} onClick={() => setTab('categories')}>{t('cat_title')}</button>
         <button type="button" aria-pressed={tab === 'brands'} onClick={() => setTab('brands')}>{t('bnd_title')}</button>
+        <button type="button" aria-pressed={tab === 'reorder'} onClick={() => setTab('reorder')}>{t('ro_title')}</button>
       </div>
+      {tab === 'reorder' && <ReorderList />}
 
       {tab === 'categories' && <Categories list={categories.data ?? []} error={categories.error} onChanged={() => { categories.reload(); brands.reload(); items.reload(); }} />}
       {tab === 'brands' && <Brands list={brands.data ?? []} error={brands.error} onChanged={() => { brands.reload(); categories.reload(); items.reload(); }} />}
@@ -341,8 +344,8 @@ export function ItemForm({ item, onClose, onSaved }: { item: ItemView | null; on
           <div className="field"><span>{t('bnd_brand')}</span><BrandPicker value={brandId} onChange={setBrandId} /></div>
           {unit !== 'service' && trackStock && (
             <div className="field">
-              <span>{t('rl_minimum')}</span>
-              <QtyInput value={reorderMilli} onChange={setReorderMilli} ariaLabel={t('rl_minimum')} />
+              <span>{t('ro_minimum')}</span>
+              <QtyInput value={reorderMilli} onChange={setReorderMilli} ariaLabel={t('ro_minimum')} />
             </div>
           )}
         </div>
@@ -492,11 +495,12 @@ function CategoryForm({ category, parentId: newParent, list, onClose, onSaved }:
   const [code, setCode] = useState(category?.code ?? '');
   const [name, setName] = useState<Names>(category?.name ?? { ar: '', en: '', ku: '' });
   const [sort, setSort] = useState(category?.sort ?? 0);
+  const [reorderMilli, setReorderMilli] = useState<number | null>(category?.reorderMilli ?? null);
   const [error, setError] = useState<unknown>(null);
   async function save() {
     setError(null);
     try {
-      const input = { ...(code.trim() ? { code: code.trim() } : {}), name, ...(category ? { sort } : {}), parentId: parentId || null };
+      const input = { ...(code.trim() ? { code: code.trim() } : {}), name, ...(category ? { sort } : {}), parentId: parentId || null, reorderMilli };
       if (category) await categoriesApi.update(category.id, input);
       else await categoriesApi.create(input);
       toast(t('cat_saved'));
@@ -523,6 +527,11 @@ function CategoryForm({ category, parentId: newParent, list, onClose, onSaved }:
         <div className="grid-2">
           <label className="field"><span>{t('code')}</span><input className="input ltr" value={code} placeholder="C001" maxLength={24} onChange={(e) => setCode(e.target.value)} /></label>
           {category && <label className="field"><span>{t('cat_order')}</span><input className="input num" type="number" min={0} max={100000} value={sort} onChange={(e) => setSort(Math.max(0, Math.floor(Number(e.target.value)) || 0))} /></label>}
+          <div className="field">
+            <span>{t('ro_categoryMinimum')}</span>
+            <QtyInput value={reorderMilli} onChange={setReorderMilli} ariaLabel={t('ro_categoryMinimum')} />
+            <span className="muted small">{t('ro_categoryHelp')}</span>
+          </div>
         </div>
         <ErrorBox error={error} />
         <div className="row">

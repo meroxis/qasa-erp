@@ -6,11 +6,13 @@ type I18nNames = (names: Names) => string;
 /** Item categories (every plan): names in three languages, an order, active or not; 1.1: subcategories (two levels). */
 export interface CategoryView {
   id: string; code: string; name: Names; sort: number; active: boolean; parentId: string | null;
+  /** the minimum quantity for its items that have none of their own (thousandths) */
+  reorderMilli: number | null;
   /** items in this category itself, and its subcategories */
   items: number; children: number;
   createdAt: string; updatedAt: string;
 }
-export interface CategoryInput { code?: string; name: Names; sort?: number; active?: boolean; parentId?: string | null }
+export interface CategoryInput { code?: string; name: Names; sort?: number; active?: boolean; parentId?: string | null; reorderMilli?: number | null }
 
 export const categoriesApi = {
   /** In tree order: each category followed by its subcategories. */

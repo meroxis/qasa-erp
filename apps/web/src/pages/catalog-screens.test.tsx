@@ -6,7 +6,7 @@ import { categoryLabel, inCategory, type CategoryView } from '../industry/catego
 import { PosCategories } from './Pos.tsx';
 
 const cat = (id: string, en: string, parentId: string | null = null): CategoryView => ({
-  id, code: id.toUpperCase(), name: { ar: `${en} ع`, en, ku: `${en} ک` }, sort: 0, active: true, parentId, items: 0, children: 0, createdAt: '', updatedAt: ''
+  id, code: id.toUpperCase(), name: { ar: `${en} ع`, en, ku: `${en} ک` }, sort: 0, active: true, parentId, reorderMilli: null, items: 0, children: 0, createdAt: '', updatedAt: ''
 });
 const list = [cat('phones', 'Phones'), cat('smart', 'Smartphones', 'phones'), cat('cases', 'Cases', 'phones'), cat('tools', 'Tools')];
 const wrap = (node: ReactNode, lang: 'ar' | 'en' | 'ku' = 'en') => renderToStaticMarkup(

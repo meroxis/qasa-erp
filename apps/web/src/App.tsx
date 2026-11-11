@@ -612,7 +612,7 @@ export function App() {
       break;
     case 'items':
       title = t('items');
-      content = <Items />;
+      content = <Items key={arg ?? ''} {...(arg === 'reorder' ? { tab: 'reorder' as const } : {})} />;
       break;
     case 'item':
       title = t('items');
