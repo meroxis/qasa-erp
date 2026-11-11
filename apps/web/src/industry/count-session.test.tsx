@@ -235,7 +235,7 @@ describe('the stock count page', () => {
   const page = readFileSync(new URL('../pages/StockAdjustments.tsx', import.meta.url), 'utf8');
 
   it('hears only the current saver, so another warehouse’s quantities never show', () => {
-    expect(page).toContain('saved: (s) => { if (saverRef.current === saver) setFrozen(fromSession(s).frozen); }');
+    expect(page).toContain('saved: (s) => { if (saverRef.current === saver) { setFrozen(fromSession(s).frozen); setSessionScope(s.scope ?? null); } }');
     expect(page).toContain('state: (state) => { if (saverRef.current === saver) setSaveState(state); }');
     // the sheet of the warehouse being counted, never the one before it while the next loads
     expect(page).toContain('sheet.data.warehouseId === warehouseId ? sheet.data.rows : NO_ROWS');

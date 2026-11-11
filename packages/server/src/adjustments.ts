@@ -130,6 +130,8 @@ export interface AdjustmentView extends AdjustmentSummary {
   createdAt: string;
   lines: AdjustmentLineView[];
   actions: AdjustmentAction[];
+  /** 1.1: made by a count limited to some categories and brands: which (null: a count of every item, or no count) */
+  countScope: CountScope | null;
 }
 
 interface Row {
@@ -260,6 +262,7 @@ export function getAdjustment(db: Db, id: string): AdjustmentView {
     entry: entry ? { id: entry.id, number: entry.number } : null,
     reversal: reversal ? { id: reversal.id, number: reversal.number } : null,
     createdAt: r.created_at,
+    countScope: scopeOf((db.prepare('SELECT scope FROM stock_counts WHERE adjustment_id = ? LIMIT 1').get(id) as { scope: string | null } | undefined)?.scope ?? null),
     lines: lines.map((l) => {
       // the posting's own move for this line (an item can be on several lines: taken in order)
       const list = moved.get(l.item_id);
@@ -565,23 +568,74 @@ export function cancelAdjustment(db: Db, id: string, actor: Actor, date?: string
 
 // ——— stock count ———
 
+/**
+ * 1.1: a count limited to some categories (their subcategories with them) and/or brands: only those items are on its
+ * sheet, counted, and adjusted when it is finished; every other item is left alone. Both empty: every item.
+ */
+export interface CountScope { categoryIds: string[]; brandIds: string[] }
+export const MAX_SCOPE_IDS = 50;
+
+/** A count's scope as kept (JSON), or null for every item. */
+function scopeOf(text: string | null): CountScope | null {
+  if (!text) return null;
+  try {
+    const v = JSON.parse(text) as Partial<CountScope>;
+    const list = (x: unknown) => (Array.isArray(x) ? x.filter((i): i is string => typeof i === 'string').slice(0, MAX_SCOPE_IDS) : []);
+    const scope = { categoryIds: list(v.categoryIds), brandIds: list(v.brandIds) };
+    return scope.categoryIds.length || scope.brandIds.length ? scope : null;
+  } catch {
+    return null;
+  }
+}
+
+/** A scope given when a count starts: known categories and brands only, no repeats; null when it limits nothing. */
+function checkScope(db: Db, scope: Partial<CountScope> | undefined): CountScope | null {
+  const categoryIds = [...new Set(scope?.categoryIds ?? [])];
+  const brandIds = [...new Set(scope?.brandIds ?? [])];
+  if (categoryIds.length > MAX_SCOPE_IDS || brandIds.length > MAX_SCOPE_IDS) throw invalid([{ code: 'count_scope_invalid' }]);
+  for (const c of categoryIds) if (!db.prepare('SELECT 1 FROM item_categories WHERE id = ?').get(c)) throw invalid([{ code: 'category_invalid' }]);
+  for (const b of brandIds) if (!db.prepare('SELECT 1 FROM brands WHERE id = ?').get(b)) throw invalid([{ code: 'brand_invalid' }]);
+  return categoryIds.length || brandIds.length ? { categoryIds, brandIds } : null;
+}
+
+/** SQL (with its parameters) for "item `i` is in the scope". */
+function inScopeSql(scope: CountScope | null): [string, string[]] {
+  if (!scope) return ['1 = 1', []];
+  const parts: string[] = [];
+  const params: string[] = [];
+  if (scope.categoryIds.length) {
+    const marks = scope.categoryIds.map(() => '?').join(', ');
+    parts.push(`(i.category_id IN (${marks}) OR i.category_id IN (SELECT id FROM item_categories WHERE parent_id IN (${marks})))`);
+    params.push(...scope.categoryIds, ...scope.categoryIds);
+  }
+  if (scope.brandIds.length) {
+    parts.push(`i.brand_id IN (${scope.brandIds.map(() => '?').join(', ')})`);
+    params.push(...scope.brandIds);
+  }
+  return [parts.join(' AND '), params];
+}
+
 /** units (1.1): the item's other units with their factors, so the sheet can show the stock in boxes and strips too (counts stay in base units). */
-export interface CountSheetRow { itemId: string; code: string; barcode: string; name: Names; unit: UnitCode; stockMilli: number; units: { unit: UnitCode; factorMilli: number }[] }
+export interface CountSheetRow {
+  itemId: string; code: string; barcode: string; name: Names; unit: UnitCode; stockMilli: number; units: { unit: UnitCode; factorMilli: number }[];
+  /** 1.1: for a count limited to some categories and brands */
+  categoryId: string | null; brandId: string | null;
+}
 
 /** The stock items with what the books say is in the warehouse, to count against. */
 export function countSheet(db: Db, warehouseId: string): CountSheetRow[] {
   if (!db.prepare('SELECT 1 FROM warehouses WHERE id = ?').get(warehouseId)) throw notFound('warehouse');
-  const rows = db.prepare(`SELECT i.id, i.code, i.barcode, i.name_ar, i.name_en, i.name_ku, i.unit,
+  const rows = db.prepare(`SELECT i.id, i.code, i.barcode, i.name_ar, i.name_en, i.name_ku, i.unit, i.category_id, i.brand_id,
                                   COALESCE((SELECT SUM(m.qty_milli) FROM stock_moves m WHERE m.item_id = i.id AND m.warehouse_id = ?), 0) AS qty
                            FROM items i WHERE i.track_stock = 1 AND i.active = 1 ORDER BY i.code`).all(warehouseId) as
-    { id: string; code: string; barcode: string | null; name_ar: string; name_en: string; name_ku: string; unit: UnitCode; qty: number }[];
+    { id: string; code: string; barcode: string | null; name_ar: string; name_en: string; name_ku: string; unit: UnitCode; category_id: string | null; brand_id: string | null; qty: number }[];
   const units = new Map<string, { unit: UnitCode; factorMilli: number }[]>();
   for (const u of db.prepare('SELECT item_id, unit, factor_milli FROM item_units ORDER BY item_id, sort, unit').all() as { item_id: string; unit: UnitCode; factor_milli: number }[]) {
     units.set(u.item_id, [...(units.get(u.item_id) ?? []), { unit: u.unit, factorMilli: Number(u.factor_milli) }]);
   }
   return rows.map((r) => ({
     itemId: r.id, code: r.code, barcode: r.barcode ?? '', name: { ar: r.name_ar, en: r.name_en, ku: r.name_ku }, unit: r.unit, stockMilli: Number(r.qty),
-    units: units.get(r.id) ?? []
+    units: units.get(r.id) ?? [], categoryId: r.category_id ?? null, brandId: r.brand_id ?? null
   }));
 }
 
@@ -682,11 +736,13 @@ export interface CountSession {
   updatedBy: string;
   updatedAt: string;
   lines: CountSessionLine[];
+  /** 1.1: the categories and brands the count is limited to (null: every item) */
+  scope: CountScope | null;
 }
 
 interface CountRow {
   id: string; warehouse_id: string; date: string; notes: string | null; count_all: number; status: CountSession['status'];
-  adjustment_id: string | null; created_by: string; updated_by: string; updated_at: string;
+  adjustment_id: string | null; created_by: string; updated_by: string; updated_at: string; scope: string | null;
 }
 
 function loadCount(db: Db, id: string): CountRow {
@@ -702,7 +758,7 @@ export function getCountSession(db: Db, id: string): CountSession {
     .map((l) => ({ itemId: l.item_id, countedMilli: Number(l.counted_milli), bookMilli: Number(l.book_milli), unitCost: l.unit_cost === null ? null : Number(l.unit_cost), countedAt: l.counted_at }));
   return {
     id: r.id, warehouseId: r.warehouse_id, date: r.date, notes: r.notes ?? '', full: Number(r.count_all) === 1, status: r.status,
-    adjustmentId: r.adjustment_id, createdBy: r.created_by, updatedBy: r.updated_by, updatedAt: r.updated_at, lines
+    adjustmentId: r.adjustment_id, createdBy: r.created_by, updatedBy: r.updated_by, updatedAt: r.updated_at, lines, scope: scopeOf(r.scope)
   };
 }
 
@@ -712,9 +768,15 @@ export function openCountSession(db: Db, warehouseId: string): CountSession | nu
   return row ? getCountSession(db, row.id) : null;
 }
 
-/** Starts a count of a warehouse, or gives the one already open there (two people counting share it). */
-export function startCountSession(db: Db, input: { warehouseId: string; date: string; notes?: string | undefined; full?: boolean | undefined }, actor: Actor): CountSession {
+/**
+ * Starts a count of a warehouse, or gives the one already open there (two people counting share it; it keeps its own
+ * scope). 1.1: a scope limits the count to some categories (with their subcategories) and/or brands.
+ */
+export function startCountSession(
+  db: Db, input: { warehouseId: string; date: string; notes?: string | undefined; full?: boolean | undefined; scope?: Partial<CountScope> | undefined }, actor: Actor
+): CountSession {
   if (!isIsoDate(input.date)) throw invalid([{ code: 'date_invalid' }]);
+  const scope = checkScope(db, input.scope);
   const wh = db.prepare('SELECT active FROM warehouses WHERE id = ?').get(input.warehouseId) as { active: number } | undefined;
   if (!wh || Number(wh.active) !== 1) throw invalid([{ code: 'warehouse_invalid' }]);
   const id = transaction(db, () => {
@@ -722,14 +784,16 @@ export function startCountSession(db: Db, input: { warehouseId: string; date: st
     if (open) return open.id;
     const made = randomUUID();
     const now = new Date().toISOString();
-    db.prepare(`INSERT INTO stock_counts (id, warehouse_id, date, notes, count_all, status, adjustment_id, created_by, created_at, updated_by, updated_at)
-                VALUES (?, ?, ?, ?, ?, 'open', NULL, ?, ?, ?, ?)`)
-      .run(made, input.warehouseId, input.date, input.notes?.trim() || null, input.full ? 1 : 0, actor.name, now, actor.name, now);
+    db.prepare(`INSERT INTO stock_counts (id, warehouse_id, date, notes, count_all, status, adjustment_id, created_by, created_at, updated_by, updated_at, scope)
+                VALUES (?, ?, ?, ?, ?, 'open', NULL, ?, ?, ?, ?, ?)`)
+      .run(made, input.warehouseId, input.date, input.notes?.trim() || null, input.full ? 1 : 0, actor.name, now, actor.name, now, scope ? JSON.stringify(scope) : null);
     // the items on the count sheet now: "count all" counts only these as zero when not counted (an item made or
     // switched on again during the count was never on the sheet). Fixed for every count, as "count all" can be
     // ticked later.
-    db.prepare('INSERT INTO stock_count_items (count_id, item_id) SELECT ?, id FROM items WHERE track_stock = 1 AND active = 1').run(made);
-    audit(db, actor.name, 'create', 'stock_count', made, { warehouseId: input.warehouseId });
+    // (a scoped count: only its categories' and brands' items)
+    const [inScope, scopeParams] = inScopeSql(scope);
+    db.prepare(`INSERT INTO stock_count_items (count_id, item_id) SELECT ?, i.id FROM items i WHERE i.track_stock = 1 AND i.active = 1 AND ${inScope}`).run(made, ...scopeParams);
+    audit(db, actor.name, 'create', 'stock_count', made, { warehouseId: input.warehouseId, ...(scope ? { scope } : {}) });
     return made;
   });
   return getCountSession(db, id);
@@ -754,9 +818,12 @@ export function saveCountLines(
   if (input.date !== undefined && !isIsoDate(input.date)) throw invalid([{ code: 'date_invalid' }]);
   const errors: { code: string; row: number }[] = [];
   const item = db.prepare('SELECT track_stock, active FROM items WHERE id = ?');
+  // a scoped count takes its own items only: those on its sheet when it started
+  const covered = row.scope && scopeOf(row.scope) ? countCovers(db, id) : null;
   input.counts.forEach((c, i) => {
     const it = item.get(c.itemId) as { track_stock: number; active: number } | undefined;
     if (!it || Number(it.active) !== 1 || Number(it.track_stock) !== 1) errors.push({ code: 'item_invalid', row: i + 1 });
+    else if (covered && !covered.has(c.itemId) && c.countedMilli !== null) errors.push({ code: 'item_outside_count', row: i + 1 });
     if (c.countedMilli !== null && (!Number.isSafeInteger(c.countedMilli) || c.countedMilli < 0)) errors.push({ code: 'line_qty_invalid', row: i + 1 });
     if (c.unitCost !== undefined && (!Number.isSafeInteger(c.unitCost) || c.unitCost < 0)) errors.push({ code: 'line_price_invalid', row: i + 1 });
   });
@@ -939,7 +1006,10 @@ export const adjustmentsApi: ApiExtension = {
       {
         method: 'POST', path: '/api/adjustments/counts',
         handler: async (req, reply) => {
-          const body = parse(z.object({ date, warehouseId: id, notes: z.string().max(500).optional(), full: z.boolean().optional() }), req.body);
+          const body = parse(z.object({
+            date, warehouseId: id, notes: z.string().max(500).optional(), full: z.boolean().optional(),
+            scope: z.object({ categoryIds: z.array(id).max(MAX_SCOPE_IDS).optional(), brandIds: z.array(id).max(MAX_SCOPE_IDS).optional() }).optional()
+          }), req.body);
           reply.status(201).send(startCountSession(db, body, actor(req)));
           return undefined;
         }

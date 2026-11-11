@@ -115,5 +115,16 @@ export const CATALOG_TEXT = {
     'دەفتەرەکان لەسەر ڕاژەکاری داتابەیسن؛ سەرەتا بیانگەڕێنەوە بۆ فایلی کۆمپانیا (ڕێکخستنەکان ← داتابەیس).'
   ],
   so_err_error: ['حدث خطأ، فلم يتغير شيء.', 'Something went wrong, so nothing was changed.', 'هەڵەیەک ڕوویدا، بۆیە هیچ نەگۆڕا.'],
+  cs_limit: ['حصر جزء من المخزن:', 'Count part of the stock:', 'ژماردنی بەشێکی کۆگا:'],
+  cs_limitHelp: [
+    'اختر تصنيفات (مع فرعياتها) أو ماركات قبل البدء؛ لا تُعدّ ولا تُسوّى إلا موادها.',
+    'pick categories (with their subcategories) or brands before you start; only their items are counted and adjusted.',
+    'پێش دەستپێکردن پۆل (لەگەڵ لاوەکییەکانیان) یان براند هەڵبژێرە؛ تەنها کاڵاکانیان دەژمێردرێن و ڕێک دەخرێن.'
+  ],
+  cs_addCategory: ['+ تصنيف', '+ Category', '+ پۆل'],
+  cs_addBrand: ['+ ماركة', '+ Brand', '+ براند'],
+  cs_limited: ['هذا الجرد محصور في: {s}. المواد الأخرى لا تتغير.', 'This count covers only: {s}. Other items are left as they are.', 'ئەم ژماردنە تەنها ئەمانە دەگرێتەوە: {s}. کاڵاکانی تر وەک خۆیان دەمێننەوە.'],
+  err_item_outside_count: ['السطر {n}: هذه المادة ليست ضمن هذا الجرد.', 'Line {n}: that item is not part of this count.', 'ڕیزی {n}: ئەو کاڵایە بەشێک نییە لەم ژماردنە.'],
+  err_count_scope_invalid: ['حدود الجرد غير صحيحة.', 'The count’s limits aren’t valid.', 'سنووری ژماردنەکە دروست نییە.'],
   st_nothing: ['القائمة موجودة كلها؛ لم يُضف شيء.', 'Everything in the list is there already; nothing was added.', 'هەموو لیستەکە هەیە؛ هیچ زیاد نەکرا.']
 } as const;

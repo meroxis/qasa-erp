@@ -15,6 +15,9 @@ import { worksApi, type JobSummaryView } from '../industry/works-api.ts';
 import { reverseDefaultDate } from '../industry/ReverseModal.tsx';
 import { printDocument } from '../industry/printing.ts';
 import { CountSaver, costFor, fromSession, nothingToCount, useLeaveGuard, type CountSessionView, type SaveState } from '../industry/count-session.ts';
+import { brandLabel, brandsApi, categoriesApi, categoryLabel, inCategory } from '../industry/categories-api.ts';
+import { CategoryOptions } from '../industry/CatalogPickers.tsx';
+import type { CountScope } from '../industry/adjustments-api.ts';
 import { UnitPicker } from '../industry/UnitPicker.tsx';
 import { baseQty, inUnits, type LineUnit } from '../industry/units.ts';
 import { BatchInFields, BatchPick } from '../industry/BatchFields.tsx';
@@ -174,6 +177,19 @@ export function draftInValue(l: { qtyMilli: number; unitCost: number | null; lin
   return lineAmount(l.lineUnit && l.unitQtyMilli !== null ? l.unitQtyMilli : l.qtyMilli, l.unitCost);
 }
 
+/** A draft or posted count adjustment made by a count limited to some categories and brands says which. */
+function CountScopeNote({ scope }: { scope: CountScope | null }) {
+  const i18n = useI18n();
+  const categories = useLoad(() => (scope ? categoriesApi.list() : Promise.resolve([])), [!!scope]);
+  const brands = useLoad(() => (scope ? brandsApi.list() : Promise.resolve([])), [!!scope]);
+  if (!scope) return null;
+  const names = [
+    ...scope.categoryIds.map((id) => categoryLabel(categories.data ?? [], id, i18n.name)),
+    ...scope.brandIds.map((id) => brandLabel((brands.data ?? []).find((b) => b.id === id), i18n.lang))
+  ].filter(Boolean).join(i18n.lang === 'en' ? ', ' : '، ');
+  return <div className="alert info" role="status">{i18n.t('cs_limited', { s: names })}</div>;
+}
+
 export function StockAdjustmentEditor({ id }: { id?: string }) {
   const i18n = useI18n();
   const { t } = i18n;
@@ -188,6 +204,7 @@ export function StockAdjustmentEditor({ id }: { id?: string }) {
   const [accountOverride, setAccountOverride] = useState<string | null>(null);
   const [jobId, setJobId] = useState('');
   const [notes, setNotes] = useState('');
+  const [countScope, setCountScope] = useState<CountScope | null>(null);
   const [rows, setRows] = useState<Row[]>(() => [emptyRow()]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<unknown>(null);
@@ -211,6 +228,7 @@ export function StockAdjustmentEditor({ id }: { id?: string }) {
       setReason(d.reason);
       setJobId(d.job?.id ?? '');
       setNotes(d.notes);
+      setCountScope(d.countScope ?? null);
       setRows(d.lines.map((l) => ({
         key: rowKey++, itemId: l.itemId, dir: l.qtyMilli < 0 ? 'out' : 'in',
         qtyMilli: Math.abs(l.lineUnit && l.unitQtyMilli !== null ? l.unitQtyMilli : l.qtyMilli), unitCost: l.unitCost, unit: l.lineUnit,
@@ -311,6 +329,7 @@ export function StockAdjustmentEditor({ id }: { id?: string }) {
     <div className="stack" style={{ maxWidth: 1100 }}>
       <div className="card pad stack">
         <h2 style={{ fontSize: 18 }}>{savedId ? `${t('editTitle')} — ${t('adj_one')}` : t('adj_new')}</h2>
+        <CountScopeNote scope={countScope} />
         <div className="field">
           <span>{t('adj_reason')}</span>
           <div className="track" style={{ flexWrap: 'wrap' }}>
@@ -557,6 +576,7 @@ export function StockAdjustmentDetail({ id }: { id: string }) {
           )}
         </table>
         {d.notes && <p className="small"><span className="muted">{t('notes')}: </span>{d.notes}</p>}
+        <CountScopeNote scope={d.countScope ?? null} />
         <div className="sigs" style={{ gridTemplateColumns: 'repeat(2, minmax(0, 1fr))' }}>
           <div className="sig done"><div className="muted small">{t('preparedBy')}</div><div className="who">{d.createdBy}</div></div>
           <div className="sig"><div className="muted small">{t('warehouse')}</div><div className="who">&nbsp;</div></div>
@@ -629,6 +649,13 @@ export function StockCount() {
   const [reopen, setReopen] = useState(0);
   const scanRef = useRef<HTMLInputElement>(null);
   const saverRef = useRef<CountSaver | null>(null);
+  // 1.1: a count limited to some categories and brands, chosen before it starts; an open count keeps its own
+  const categories = useLoad(() => categoriesApi.list(), []);
+  const brands = useLoad(() => brandsApi.list(), []);
+  const [scope, setScope] = useState<CountScope>({ categoryIds: [], brandIds: [] });
+  const [sessionScope, setSessionScope] = useState<CountScope | null>(null);
+  const scopeRef = useRef<CountScope>(scope);
+  scopeRef.current = scope;
 
   useEffect(() => {
     if (!warehouseId && active[0]) setWarehouseId(active[0].id);
@@ -644,14 +671,19 @@ export function StockCount() {
     setCosts(f.costs);
     setFrozen(f.frozen);
     setResumed(session && session.lines.length ? session : null);
+    setSessionScope(session?.scope ?? null);
     const meta = session ? { date: session.date, notes: session.notes, full: session.full } : { date, notes, full };
     if (session) { setDate(session.date); setNotes(session.notes); setFull(session.full); }
     setSaveState('saved');
     // an old saver (another warehouse, or a count already finished) may still answer: only the current one is heard
     const saver: CountSaver = new CountSaver(
-      { start: adjustmentsApi.startCount, save: adjustmentsApi.saveCount }, warehouseId, meta,
       {
-        saved: (s) => { if (saverRef.current === saver) setFrozen(fromSession(s).frozen); },
+        // a new count takes the scope chosen when it starts
+        start: (body) => adjustmentsApi.startCount({ ...body, ...(scopeRef.current.categoryIds.length || scopeRef.current.brandIds.length ? { scope: scopeRef.current } : {}) }),
+        save: adjustmentsApi.saveCount
+      }, warehouseId, meta,
+      {
+        saved: (s) => { if (saverRef.current === saver) { setFrozen(fromSession(s).frozen); setSessionScope(s.scope ?? null); } },
         state: (state) => { if (saverRef.current === saver) setSaveState(state); },
         closed: () => {
           if (saverRef.current !== saver) return;
@@ -683,7 +715,19 @@ export function StockCount() {
   useEffect(() => () => saverRef.current?.dispose(), []);
   useLeaveGuard(() => !!saverRef.current?.dirty, t('adj_leaveCount'));
 
-  const rows = sheet.data && sheet.data.warehouseId === warehouseId ? sheet.data.rows : NO_ROWS;
+  const catList = categories.data ?? [];
+  // the count's own scope once it started, else the one chosen for it
+  const limit = sessionScope ?? (scope.categoryIds.length || scope.brandIds.length ? scope : null);
+  const inLimit = (r: CountSheetRow) => !limit
+    || ((!limit.categoryIds.length || limit.categoryIds.some((c) => inCategory(catList, r.categoryId, c))) && (!limit.brandIds.length || limit.brandIds.includes(r.brandId ?? '')));
+  const allRows = sheet.data && sheet.data.warehouseId === warehouseId ? sheet.data.rows : NO_ROWS;
+  const rows = useMemo(() => (limit ? allRows.filter(inLimit) : allRows), [allRows, limit, catList]);
+  // the scope can be chosen only before anything of the count is on the server
+  const scopeOpen = ready && !sessionScope && !saverRef.current?.sessionId && counted.size === 0;
+  const scopeText = (s: CountScope) => [
+    ...s.categoryIds.map((id) => categoryLabel(catList, id, i18n.name)),
+    ...s.brandIds.map((id) => brandLabel((brands.data ?? []).find((b) => b.id === id), i18n.lang))
+  ].filter(Boolean).join(i18n.lang === 'en' ? ', ' : '، ');
   const byCode = useMemo(() => {
     const m = new Map<string, CountSheetRow>();
     for (const r of rows) {
@@ -843,6 +887,34 @@ export function StockCount() {
           <input type="checkbox" checked={full} disabled={!ready} onChange={(e) => setMeta({ full: e.target.checked })} />
           <span>{t('adj_full')}</span>
         </label>
+        {scopeOpen && ((categories.data?.length ?? 0) > 0 || (brands.data?.length ?? 0) > 0) && (
+          <div className="stack" style={{ gap: 6 }}>
+            <span className="small"><strong>{t('cs_limit')}</strong> <span className="muted">{t('cs_limitHelp')}</span></span>
+            <div className="row">
+              {(categories.data?.length ?? 0) > 0 && (
+                <select className="input" style={{ width: 220 }} value="" aria-label={t('cs_addCategory')}
+                  onChange={(e) => { const v = e.target.value; if (v) setScope((s) => ({ ...s, categoryIds: s.categoryIds.includes(v) ? s.categoryIds : [...s.categoryIds, v].slice(0, 50) })); }}>
+                  <option value="">{t('cs_addCategory')}</option>
+                  <CategoryOptions list={catList} />
+                </select>
+              )}
+              {(brands.data?.length ?? 0) > 0 && (
+                <select className="input" style={{ width: 200 }} value="" aria-label={t('cs_addBrand')}
+                  onChange={(e) => { const v = e.target.value; if (v) setScope((s) => ({ ...s, brandIds: s.brandIds.includes(v) ? s.brandIds : [...s.brandIds, v].slice(0, 50) })); }}>
+                  <option value="">{t('cs_addBrand')}</option>
+                  {(brands.data ?? []).filter((b) => b.active).map((b) => <option key={b.id} value={b.id}>{brandLabel(b, i18n.lang)}</option>)}
+                </select>
+              )}
+              {[...scope.categoryIds.map((id) => ({ id, kind: 'c' as const })), ...scope.brandIds.map((id) => ({ id, kind: 'b' as const }))].map((x) => (
+                <button key={x.kind + x.id} type="button" className="chip" aria-label={t('un_remove')}
+                  onClick={() => setScope((s) => (x.kind === 'c' ? { ...s, categoryIds: s.categoryIds.filter((i) => i !== x.id) } : { ...s, brandIds: s.brandIds.filter((i) => i !== x.id) }))}>
+                  <bdi>{x.kind === 'c' ? categoryLabel(catList, x.id, i18n.name) : brandLabel((brands.data ?? []).find((b) => b.id === x.id), i18n.lang)}</bdi> <Icon name="x" size={12} />
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+        {sessionScope && <div className="alert info" role="status">{t('cs_limited', { s: scopeText(sessionScope) })}</div>}
         {resumed && (
           <div className="alert info" role="status">
             {t('adj_countResumed', { who: resumed.updatedBy, when: i18n.date(localDay(resumed.updatedAt)), n: String(resumed.lines.length) })}
