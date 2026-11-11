@@ -87,7 +87,7 @@ export function ConnectCard({ net, onRenewKey, busy = false }: { net: NetworkFor
           </dl>
         </>
       ) : (
-        <div className="alert info">{t('wa_networkOff')} <a href={href('settings')}>{t('settings')}</a></div>
+        <div className="alert info">{t('wa_networkOff')} <a href={href('settings/network')}>{t('settings')}</a></div>
       )}
     </div>
   );

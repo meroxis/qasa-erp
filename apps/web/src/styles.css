@@ -770,6 +770,50 @@ input.input, select.input { block-size: var(--control-h); padding-block: 0; }
 .setting.disabled .setting-text > strong, .setting.disabled .setting-icon { color: var(--ink-3); }
 .setting.actions { min-block-size: 56px; justify-content: flex-end; }
 
+/*
+ * Settings, as in Windows 11: the list of sections on the side and the chosen one beside it. In a narrow window the
+ * list shows alone (#/settings) and a section opens full width with a Back link (#/settings/<section>).
+ */
+.settings-wrap { container-type: inline-size; }
+.settings-layout { display: grid; grid-template-columns: minmax(230px, 280px) minmax(0, 1fr); gap: var(--sp-6); align-items: start; max-inline-size: 1240px; }
+.settings-nav { position: sticky; inset-block-start: 0; display: flex; flex-direction: column; gap: 2px; }
+.settings-entry {
+  position: relative; display: flex; align-items: center; gap: 12px; padding: 8px 10px 8px 12px; border-radius: var(--r-control);
+  color: var(--ink); text-decoration: none; transition: background-color var(--dur-fast) linear;
+}
+.settings-entry > svg { flex-shrink: 0; color: var(--ink-2); stroke-width: 1.6; }
+.settings-entry:hover { background: var(--nav-hover); }
+.settings-entry:focus-visible { outline-offset: -2px; }
+.settings-entry:active { background: var(--nav-press); }
+.settings-entry.active { background: var(--nav-selected); }
+.settings-entry.active:hover { background: var(--nav-selected-hover); }
+.settings-entry.active > svg { color: var(--ink); }
+.settings-entry.active::before {
+  content: ''; position: absolute; inset-inline-start: 0; inset-block-start: 50%;
+  inline-size: 3px; block-size: 16px; margin-block-start: -8px; border-radius: 2px; background: var(--indicator);
+}
+.settings-entry-text { flex: 1; min-inline-size: 0; display: flex; flex-direction: column; gap: 1px; }
+.settings-entry-text > strong { font-weight: 500; line-height: 1.4; }
+.settings-entry.active .settings-entry-text > strong { font-weight: 600; }
+.settings-entry-text > span { font-size: var(--fs-caption); color: var(--ink-2); line-height: 1.4; }
+/* the arrow and the Back link are for the narrow window, where the list and a section take turns */
+.settings-entry-go, .settings-back { display: none; }
+.settings-back { align-items: center; gap: 4px; align-self: flex-start; font-weight: 500; text-decoration: none; }
+.settings-back-icon { transform: scaleX(-1); }
+html[dir='rtl'] .settings-back-icon { transform: none; }
+.settings-content { min-inline-size: 0; }
+@container (max-width: 760px) {
+  .settings-layout { grid-template-columns: minmax(0, 1fr); }
+  .settings-nav { position: static; max-inline-size: 640px; }
+  .settings-entry { padding-block: 12px; background: var(--surface); border: 1px solid var(--line); }
+  .settings-entry.active { background: var(--surface); }
+  .settings-entry.active::before { display: none; }
+  .settings-entry-go { display: block; color: var(--ink-3); }
+  .settings-back { display: inline-flex; }
+  .settings-layout.has-section .settings-nav { display: none; }
+  .settings-layout:not(.has-section) .settings-content { display: none; }
+}
+
 /* ---------- voucher paper & print ---------- */
 .paper { background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-card); padding: 28px 32px; box-shadow: var(--shadow-card); }
 .paper-head { display: flex; align-items: flex-start; gap: var(--sp-4); padding-block-end: 14px; margin-block-end: 14px; border-block-end: 2px solid var(--rule-strong); }
