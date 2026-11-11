@@ -25,6 +25,11 @@ export interface ServerInit {
   documentsDir: string;
   /** %LOCALAPPDATA%\Qasa ERP\Backups: backups while the default folder is synced and there is no backup password. */
   localBackupDir?: string;
+  /**
+   * 1.2: %LOCALAPPDATA%\Qasa ERP, a second place (outside the app's own folder) that keeps this PC's trial record, so
+   * deleting one copy never gives a new free month (deleting every copy still does: both are the user's own files).
+   */
+  localDataDir?: string;
   appVersion: string;
   /** The key the window's cookie holds: only that window may use this server. */
   sessionKey: string;
@@ -326,6 +331,16 @@ function serveWeb(target: FastifyInstance): void {
   });
 }
 
+/**
+ * The folders that keep this PC's trial record (activation.ts): the app's own data folder, then %LOCALAPPDATA%\Qasa ERP
+ * when the main process gave it (and it is another folder).
+ */
+export function trialMarkerDirs(given: Pick<ServerInit, 'userDataDir' | 'localDataDir'>): string[] {
+  const dirs = [given.userDataDir];
+  if (given.localDataDir && normalize(given.localDataDir).toLowerCase() !== normalize(given.userDataDir).toLowerCase()) dirs.push(given.localDataDir);
+  return dirs;
+}
+
 /** Closes everything (the Pro module, the server, the database). Safe to call more than once. */
 export function stopServer(): Promise<void> {
   stopping ??= (async () => {
@@ -359,7 +374,7 @@ async function startServer(bridge: Bridge, given: ServerInit): Promise<string> {
   db = await openCompanyDatabase(bridge);
   // paid plans need an activation for this PC (online once, then a check every few weeks); official builds (with the
   // Pro module) also check every licence in the Rust module shipped beside app.asar
-  configureLicensing({ strict: true, dataDir: given.userDataDir, requireNative: !!proModule });
+  configureLicensing({ strict: true, dataDir: given.userDataDir, markerDirs: trialMarkerDirs(given).slice(1), requireNative: !!proModule });
   // the anonymous daily usage ping (Settings → Anonymous usage statistics; can be switched off)
   pings = startUsagePings(db, {
     dataDir: given.userDataDir, version: given.appVersion, os: process.platform === 'win32' ? 'windows' : process.platform,
@@ -435,7 +450,9 @@ async function startServer(bridge: Bridge, given: ServerInit): Promise<string> {
     chooseBackupFile: () => bridge.call<string | null>('chooseBackupFile', [], { timeoutMs: 0 }),
     restoreDatabase,
     protectSecret,
-    revealSecret
+    revealSecret,
+    resourcesPath: given.resourcesPath,
+    trialMarkerDirs: trialMarkerDirs(given)
   };
   if (proModule) {
     log(`${proModule.name} ${proModule.version}`);
