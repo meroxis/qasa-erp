@@ -8,7 +8,9 @@ import { COMPANY_TABLES, migrate, openDatabase, SCHEMA_VERSION, schemaVersion, u
 import { buildApp } from './app.ts';
 import { pendingMysqlSteps, tableColumns, V10_MYSQL_STEPS, V11_MYSQL_STEPS, MYSQL_TABLES } from './schema-mysql.ts';
 import { AppError } from './errors.ts';
-// upgrading a whole company file takes about a second here, and several times that on a busy build machinevi.setConfig({ testTimeout: 30_000 });
+
+// upgrading a whole company file takes about a second here, and several times that on a busy build machine
+vi.setConfig({ testTimeout: 30_000 });
 
 // QASA_TEST_DB runs the suite on a server: these build and open SQLite files themselves
 const onServer = !!process.env.QASA_TEST_DB;
