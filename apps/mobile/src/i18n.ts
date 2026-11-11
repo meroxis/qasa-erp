@@ -201,6 +201,11 @@ const T = {
   actsAs: ['يعمل باسم', 'Works as', 'کار دەکات بە ناوی'],
   owner: ['المالك', 'The owner', 'خاوەن'],
   privacy: ['سياسة الخصوصية', 'Privacy policy', 'سیاسەتی تایبەتمەندی'],
+  credits: [
+    'الخطوط: Noto Sans Arabic © The Noto Project Authors، وIBM Plex Sans © IBM Corp.، بترخيص SIL Open Font License 1.1.',
+    'Fonts: Noto Sans Arabic © The Noto Project Authors and IBM Plex Sans © IBM Corp., under the SIL Open Font License 1.1.',
+    'فۆنتەکان: Noto Sans Arabic © The Noto Project Authors و IBM Plex Sans © IBM Corp.، بە مۆڵەتی SIL Open Font License 1.1.'
+  ],
   unpair: ['فك الربط بهذا الحاسوب', 'Unpair from this PC', 'هەڵوەشاندنەوەی بەستنەوە'],
   unpairConfirm: [
     'سيتوقف الهاتف عن الاتصال بهذا الحاسوب ويُمسح ما يحفظه منه، ومنه ما لم يُرسل بعد. متأكد؟',

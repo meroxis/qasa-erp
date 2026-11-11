@@ -188,6 +188,7 @@ export function AboutScreen() {
       </Group>
       <Txt v="caption" tone="ink2">{t('pairPrivacy')}</Txt>
       <Button kind="secondary" icon="shield" label={t('privacy')} onPress={() => void Linking.openURL(PRIVACY_URL)} />
+      <Txt v="caption" tone="ink3">{t('credits')}</Txt>
     </Screen>
   );
 }
