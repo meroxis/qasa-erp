@@ -21,6 +21,10 @@ export interface ProModule {
    * with the file's name once it is made and checked, throws when no copy was made.
    */
   backupNow?(): Promise<string>;
+  /** 1.1: should closing the app make a backup (turned on, the plan has automatic backups, and the books changed)? */
+  closingBackupNeeded?(): boolean;
+  /** 1.1: the backup at closing (and its copy to a folder, and the cloud upload); throws when it failed. */
+  closingBackup?(): Promise<string>;
   /**
    * At start, before anything else: the company database on a MariaDB/MySQL server when this PC uses one, or null
    * for the company file. Throws a problem with a code, host, database and localCopy when the server can't be used.

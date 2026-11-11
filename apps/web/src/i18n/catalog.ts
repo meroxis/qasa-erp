@@ -78,19 +78,19 @@ export const CATALOG_TEXT = {
   so_help: [
     'يحفظ نسخة احتياطية أولاً، ثم يضع ملف الشركة الحالي جانباً في مجلد البيانات (لا يُحذف) ويفتح شركة فارغة لإعدادها من البداية. يبقى الترخيص وتفعيل هذا الحاسوب.',
     'Saves a backup first, then keeps the current company file aside in the data folder (it is never deleted) and opens an empty company to set up from the start. The licence and this PC’s activation stay.',
-    'سەرەتا پاڵپشتێک پاشەکەوت دەکات، پاشان فایلی ئێستای کۆمپانیا لە بوخچەی داتادا لادەنێت (هەرگیز ناسڕدرێتەوە) و کۆمپانیایەکی بەتاڵ دەکاتەوە بۆ ڕێکخستن لە سەرەتاوە. مۆڵەت و چالاککردنی ئەم کۆمپیوتەرە دەمێننەوە.'
+    'سەرەتا باکئەپێک پاشەکەوت دەکات، پاشان فایلی ئێستای کۆمپانیا لە بوخچەی داتادا لادەنێت (هەرگیز ناسڕدرێتەوە) و کۆمپانیایەکی بەتاڵ دەکاتەوە بۆ ڕێکخستن لە سەرەتاوە. مۆڵەت و چالاککردنی ئەم کۆمپیوتەرە دەمێننەوە.'
   ],
   so_button: ['البدء من جديد', 'Start over', 'دەستپێکردنەوە'],
   so_warning: [
     'ستبدأ الشركة فارغة: لا حسابات ولا مواد ولا فواتير. لإرجاع الدفاتر القديمة استرجع النسخة الاحتياطية من الإعدادات ← النسخ الاحتياطي.',
     'The company will start empty: no accounts, items or invoices. To get the old books back, restore the backup in Settings → Backups.',
-    'کۆمپانیاکە بەتاڵ دەست پێدەکات: نە هەژمار، نە کاڵا، نە پسوولە. بۆ گەڕاندنەوەی دەفتەرە کۆنەکان، پاڵپشتەکە لە ڕێکخستنەکان ← پاڵپشت بگەڕێنەوە.'
+    'کۆمپانیاکە بەتاڵ دەست پێدەکات: نە هەژمار، نە کاڵا، نە پسوولە. بۆ گەڕاندنەوەی دەفتەرە کۆنەکان، باکئەپەکە لە ڕێکخستنەکان ← باکئەپ بگەڕێنەوە.'
   ],
   so_username: ['اسم مستخدم المدير', 'Admin user name', 'ناوی بەکارهێنەری بەڕێوەبەر'],
   so_password: ['كلمة مرور المدير', 'Admin password', 'وشەی نهێنیی بەڕێوەبەر'],
   so_confirm: ['اكتب اسم الشركة للتأكيد', 'Type the company’s name to confirm', 'ناوی کۆمپانیاکە بنووسە بۆ دڵنیابوونەوە'],
-  so_working: ['يحفظ النسخة الاحتياطية…', 'Saving the backup…', 'پاڵپشت پاشەکەوت دەکرێت…'],
-  so_done: ['حُفظت النسخة الاحتياطية؛ يُعاد تشغيل البرنامج بشركة فارغة.', 'The backup is saved; the app restarts with an empty company.', 'پاڵپشتەکە پاشەکەوت کرا؛ بەرنامەکە بە کۆمپانیایەکی بەتاڵ دەست پێدەکاتەوە.'],
+  so_working: ['يحفظ النسخة الاحتياطية…', 'Saving the backup…', 'باکئەپ پاشەکەوت دەکرێت…'],
+  so_done: ['حُفظت النسخة الاحتياطية؛ يُعاد تشغيل البرنامج بشركة فارغة.', 'The backup is saved; the app restarts with an empty company.', 'باکئەپەکە پاشەکەوت کرا؛ بەرنامەکە بە کۆمپانیایەکی بەتاڵ دەست پێدەکاتەوە.'],
   so_err_invalid_login: [
     'اسم المستخدم أو كلمة المرور غير صحيحة. يلزم مدير له كلمة مرور (الإعدادات ← المستخدمون).',
     'The user name or password is wrong. An admin with a password is needed (Settings → Users).',
@@ -101,7 +101,7 @@ export const CATALOG_TEXT = {
   so_err_backup_failed: [
     'تعذّر حفظ النسخة الاحتياطية، فلم يتغير شيء. راجع الإعدادات ← النسخ الاحتياطي.',
     'The backup could not be saved, so nothing was changed. See Settings → Backups.',
-    'پاڵپشتەکە پاشەکەوت نەکرا، بۆیە هیچ نەگۆڕا. ڕێکخستنەکان ← پاڵپشت ببینە.'
+    'باکئەپەکە پاشەکەوت نەکرا، بۆیە هیچ نەگۆڕا. ڕێکخستنەکان ← باکئەپ ببینە.'
   ],
   so_err_too_many_attempts: ['محاولات كثيرة؛ أعد المحاولة بعد {s} ثانية.', 'Too many tries; try again in {s} seconds.', 'هەوڵی زۆر؛ دوای {s} چرکە دووبارە هەوڵ بدەوە.'],
   so_err_office_client: [
@@ -136,5 +136,20 @@ export const CATALOG_TEXT = {
   ],
   rn_renew: ['تجديد', 'Renew', 'نوێکردنەوە'],
   rn_later: ['ذكّرني لاحقاً', 'Remind me later', 'دواتر بیرم بخەرەوە'],
+  bc_onClose: ['نسخة احتياطية عند إغلاق قاصة ERP', 'Back up when I close Qasa ERP', 'باکئەپ کاتێک قاسە ERP دادەخەم'],
+  bc_help: [
+    'إذا تغيرت الدفاتر منذ آخر مرة، يحفظ الإغلاق نسخة احتياطية (مشفّرة إن وُضعت كلمة مرور)، ويرسلها إلى النسخ السحابي إن كان موصولاً. دقيقة على الأكثر، ويمكن تخطيها؛ لا تُحفظ عند إطفاء Windows.',
+    'When the books changed since the last time, closing saves a backup (encrypted when a password is set) and sends it to the cloud backup when one is connected. A minute at most, and it can be skipped; none is made while Windows shuts down.',
+    'ئەگەر دەفتەرەکان لە دوایین جارەوە گۆڕابن، داخستن باکئەپێک پاشەکەوت دەکات (نهێنیکراو ئەگەر وشەی نهێنی دانرابێت) و دەینێرێت بۆ باکئەپی هەور ئەگەر بەسترابێت. لە خولەکێک زیاتر نا، و دەتوانرێت بازی بدرێت؛ لە کاتی کوژاندنەوەی Windows دا ناکرێت.'
+  ],
+  bc_folder: ['ونسخة منها إلى مجلد', 'And a copy to a folder', 'و کۆپییەک بۆ بوخچەیەک'],
+  bc_noFolder: ['لا شيء', 'None', 'هیچ'],
+  bc_noFolderButton: ['بلا مجلد', 'No folder', 'بێ بوخچە'],
+  bc_folderHelp: [
+    'قرص USB أو مجلد OneDrive أو Dropbox أو iCloud؛ لا تُنسخ نسخة غير مشفّرة إلى مجلد مُزامَن مع الإنترنت.',
+    'A USB disk, or a OneDrive, Dropbox or iCloud folder; a copy that isn’t encrypted is never copied to a folder synced to the internet.',
+    'دیسکی USB، یان بوخچەی OneDrive و Dropbox و iCloud؛ کۆپییەکی نهێنی نەکراو هەرگیز بۆ بوخچەیەکی هاوکات لەگەڵ ئینتەرنێت کۆپی ناکرێت.'
+  ],
+  bc_failed: ['تعذّرت النسخة عند آخر إغلاق: {e}', 'The backup at the last closing failed: {e}', 'باکئەپی دوایین داخستن سەرکەوتوو نەبوو: {e}'],
   st_nothing: ['القائمة موجودة كلها؛ لم يُضف شيء.', 'Everything in the list is there already; nothing was added.', 'هەموو لیستەکە هەیە؛ هیچ زیاد نەکرا.']
 } as const;

@@ -514,6 +514,17 @@ export function serve(carrier: Carrier): Bridge {
   bridge.handle('recoverAdmin', ((request: unknown) => handleRecoverRequest(db, request)) as never);
   // Settings → Start over with empty books: only the main process can ask, for the app's own window (start-over.ts)
   bridge.handle('startOver', ((request: unknown) => startOverHere(bridge, request)) as never);
+  // 1.1: the backup when the app closes (Settings → Backups, Pro): asked by the main process before it stops this one
+  bridge.handle('closingBackupNeeded', (() => { try { return !!db && !!proModule?.closingBackupNeeded?.(); } catch { return false; } }) as never);
+  bridge.handle('closingBackup', (async () => {
+    if (!db || !proModule?.closingBackup) return { ok: false, error: 'unavailable' };
+    try {
+      return { ok: true, file: await proModule.closingBackup() };
+    } catch (error) {
+      log('the backup at closing failed:', error);
+      return { ok: false, error: (error instanceof Error ? error.message : String(error)).slice(0, 200) };
+    }
+  }) as never);
   return bridge;
 }
 

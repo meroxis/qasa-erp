@@ -18,6 +18,7 @@ import { isAllowedExternal, refusedForLog } from './external-links.ts';
 import { isLang, text, type Lang, type TextKey } from './texts.ts';
 import { openNotices } from './notices.ts';
 import { booksBefore, markSeen, startVersion, type WhatsNew } from './whats-new.ts';
+import { backupOnClose, noteCloseFailure, takeCloseFailure } from './close-backup.ts';
 import { printingHandlers } from './printing.ts';
 import { pair, parseAddress, parseOfficeId, pemFingerprint, startTunnel, type PairResult, type Remote } from './office.ts';
 
@@ -488,6 +489,8 @@ ipcMain.on('app:relaunch', (event) => {
 
 // "What's new in <version>" once after an update (whats-new.ts): the versions, and "seen" when the person closes it
 let whatsNew: WhatsNew | null = null;
+/** Windows is shutting down or signing out (the window's session-end): closing makes no backup then. */
+let sessionEnding = false;
 ipcMain.handle('app:whatsNew', (event) => (invokedByAppPage(event) ? whatsNew : null));
 ipcMain.handle('app:whatsNewSeen', (event) => {
   if (!invokedByAppPage(event) || !whatsNew) return false;
@@ -742,6 +745,18 @@ async function createWindow(url: string): Promise<void> {
     icon: join(__dirname, 'icon.png'),
     webPreferences: { preload: join(__dirname, 'app-preload.cjs'), contextIsolation: true, sandbox: true, nodeIntegration: false, spellcheck: false }
   });
+  // Windows shutting down or signing out: no backup at closing then (close-backup.ts)
+  win.on('session-end', () => { sessionEnding = true; });
+  // the backup at the last closing failed: said once, now
+  const closeFailure = remote ? null : takeCloseFailure(app.getPath('userData'));
+  if (closeFailure) {
+    win.once('ready-to-show', () => {
+      void dialog.showMessageBox(win!, {
+        type: 'warning', title: 'Qasa ERP', message: rtlLines(t('closeBackupFailed')), detail: closeFailure.error === 'timeout' ? t('closeBackupTimeout') : closeFailure.error,
+        buttons: [t('ok')], noLink: true
+      }).catch(() => {});
+    });
+  }
 
   // Only the app itself opens inside the window. Links out go to the browser (https, on a short list of hosts) or the
   // mail app (mailto); anything else is refused and logged (external-links.ts).
@@ -1002,13 +1017,31 @@ if (!app.requestSingleInstanceLock()) {
     }
   });
 
-  // let the server process close the company file before the app ends
+  // let the server process close the company file before the app ends (after the backup at closing, when it is on)
   let quitReady = false;
+  let quitting = false;
   app.on('before-quit', (event) => {
     if (quitReady || !child) return;
     event.preventDefault();
+    if (quitting) return;
+    quitting = true;
     log('quitting');
-    void stopServer().finally(() => { quitReady = true; app.quit(); });
+    void (async () => {
+      const link = bridge;
+      const outcome = await backupOnClose({
+        allowed: !remote && !sessionEnding && !!link,
+        needed: () => link!.call<boolean>('closingBackupNeeded', [], { timeoutMs: 5000 }),
+        backup: () => link!.call<{ ok: boolean; file?: string; error?: string }>('closingBackup', [], { timeoutMs: 0 }),
+        showBox: async (signal) => {
+          const options = { type: 'info' as const, title: 'Qasa ERP', message: rtlLines(t('closeBackingUp')), buttons: [t('closeSkip')], noLink: true, signal };
+          await (win && !win.isDestroyed() ? dialog.showMessageBox(win, options) : dialog.showMessageBox(options));
+        }
+      }).catch((error: unknown) => ({ kind: 'failed' as const, error: error instanceof Error ? error.message : String(error) }));
+      if (outcome.kind !== 'none') log('backup at closing:', outcome.kind, 'error' in outcome ? outcome.error : '');
+      if (outcome.kind === 'failed') {
+        try { noteCloseFailure(app.getPath('userData'), outcome.error); } catch { /* logged above */ }
+      }
+    })().finally(() => void stopServer().finally(() => { quitReady = true; app.quit(); }));
   });
   app.on('window-all-closed', () => app.quit());
 }

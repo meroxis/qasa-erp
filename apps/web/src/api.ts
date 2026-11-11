@@ -523,6 +523,10 @@ export interface BackupStatus {
   localNotice?: boolean;
   /** Why the last copy failed (lastError) as a code with words of its own ('other': only lastError says). */
   lastErrorCode?: 'settings_unreadable' | 'synced_needs_password' | 'password_unreadable' | 'copy_check' | 'reopen_failed' | 'disk_full' | 'no_access' | 'folder_missing' | 'other' | null;
+  /** 1.1: a backup when the app closes and the books changed (off unless turned on), the folder it is also copied to, and why the last one failed */
+  onClose?: boolean;
+  closeFolder?: string | null;
+  closeError?: string | null;
   /** `own: false`: a copy made by another company or on another PC (left out by older servers: treated as this company's). */
   files: { name: string; size: number; at: string; encrypted: boolean; own?: boolean }[];
   /**
@@ -610,7 +614,8 @@ export const api = {
   network: () => request<NetworkStatus>('GET', '/api/network'),
   setNetwork: (on: boolean) => request<NetworkStatus>('PUT', '/api/network', { on }),
   backup: () => request<BackupStatus>('GET', '/api/backup'),
-  setBackup: (patch: { on?: boolean; keep?: number }) => request<BackupStatus>('PUT', '/api/backup', patch),
+  setBackup: (patch: { on?: boolean; keep?: number; onClose?: boolean }) => request<BackupStatus>('PUT', '/api/backup', patch),
+  chooseCloseFolder: (clear = false) => request<BackupStatus>('POST', '/api/backup/close-folder', clear ? { clear: true } : {}),
   chooseBackupFolder: () => request<BackupStatus>('POST', '/api/backup/folder', {}),
   runBackup: () => request<BackupStatus>('POST', '/api/backup/run', {}),
   /**

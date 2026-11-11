@@ -804,6 +804,28 @@ function BackupCard() {
             </div>
           </div>
           <CloudBackup encrypted={status.encrypted} disabled={restarting} onRestarting={() => setRestarting(true)} />
+          {/* 1.1: with the plan's automatic backups; the main process makes it when the app closes (close-backup.ts) */}
+          {status.available && status.onClose !== undefined && (
+            <div className="stack" style={{ gap: 8, padding: 12, border: '1px solid var(--line)', borderRadius: 10 }}>
+              <label className="row" style={{ gap: 8 }}>
+                <input type="checkbox" checked={!!status.onClose} disabled={busy || restarting} onChange={(e) => act(() => api.setBackup({ onClose: e.target.checked }), t('saved'))} />
+                <strong>{t('bc_onClose')}</strong>
+              </label>
+              <div className="muted small">{t('bc_help')}</div>
+              {status.onClose && (
+                <div className="field">
+                  <span>{t('bc_folder')}</span>
+                  <div className="row" style={{ gap: 8, flexWrap: 'wrap' }}>
+                    <span className="ltr small" style={{ overflowWrap: 'anywhere' }}>{status.closeFolder ?? t('bc_noFolder')}</span>
+                    <button type="button" className="btn small" disabled={busy || restarting} onClick={() => act(() => api.chooseCloseFolder())}>{t('bkChooseFolder')}</button>
+                    {status.closeFolder && <button type="button" className="btn small" disabled={busy || restarting} onClick={() => act(() => api.chooseCloseFolder(true))}>{t('bc_noFolderButton')}</button>}
+                  </div>
+                  <span className="muted small">{t('bc_folderHelp')}</span>
+                </div>
+              )}
+              {status.closeError && <div className="alert bad" role="alert">{t('bc_failed', { e: status.closeError })}</div>}
+            </div>
+          )}
           <ErrorBox error={error} />
           <div className="row" style={{ gap: 8, flexWrap: 'wrap' }}>
             {/* every plan, Free included: only the automatic daily copies need the plan */}
