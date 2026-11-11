@@ -90,6 +90,52 @@ export function salesByItem(db: Db, from: string, to: string, limit = 500, branc
   });
 }
 
+export interface SalesFigures { qtyMilli: number; sales: number; cost: number; profit: number }
+/** A category (its subcategories under it, each with its own figures; total = its own items' and theirs) or a brand. id null: none. */
+export interface GroupSales extends SalesFigures { id: string | null; code: string; name: Names | null; children: GroupSales[]; total: SalesFigures }
+
+const zero = (): SalesFigures => ({ qtyMilli: 0, sales: 0, cost: 0, profit: 0 });
+const plus = (a: SalesFigures, b: SalesFigures): SalesFigures => ({ qtyMilli: a.qtyMilli + b.qtyMilli, sales: a.sales + b.sales, cost: a.cost + b.cost, profit: a.profit + b.profit });
+
+/**
+ * Sales, cost and profit (IQD, returns taken off, as salesByItem) by category — each subcategory under its category,
+ * with a total per category — or by brand. An item counts under the category and brand it has now, so older invoices
+ * are in too; items with none are one row of their own (id null), last. Biggest sales first.
+ */
+export function salesByGroup(db: Db, from: string, to: string, by: 'category' | 'brand', branch: BranchFilter = null): { rows: GroupSales[]; total: SalesFigures } {
+  const [w, wp] = inBranch('i.warehouse_id', branch?.warehouses);
+  const col = by === 'category' ? 'it.category_id' : 'it.brand_id';
+  const sums = db.prepare(`SELECT ${col} AS gid, SUM(${SIGN} * l.qty_milli) AS qty, SUM(${SIGN} * ${BASE(LINE_NET)}) AS sales, SUM(${SIGN} * COALESCE(l.cost, 0)) AS cost
+                           FROM invoice_lines l JOIN invoices i ON i.id = l.invoice_id JOIN items it ON it.id = l.item_id
+                           WHERE i.status = 'posted' AND i.kind IN ('sale', 'sale_return') AND i.date BETWEEN ? AND ?${w}
+                           GROUP BY ${col}`).all(from, to, ...wp) as { gid: string | null; qty: number; sales: number; cost: number }[];
+  const figures = new Map(sums.map((r) => {
+    const sales = Math.round(num(r.sales));
+    const cost = num(r.cost);
+    return [r.gid ?? '', { qtyMilli: num(r.qty), sales, cost, profit: sales - cost }];
+  }));
+  const of = (id: string | null) => figures.get(id ?? '') ?? zero();
+  const row = (id: string | null, code: string, n: Names | null, children: GroupSales[] = []): GroupSales => {
+    const own = of(id);
+    return { id, code, name: n, ...own, children, total: children.reduce((t, c) => plus(t, c.total), own) };
+  };
+  const bySales = (a: GroupSales, b: GroupSales) => b.total.sales - a.total.sales;
+  let rows: GroupSales[];
+  if (by === 'category') {
+    const cats = db.prepare('SELECT id, code, name_ar, name_en, name_ku, parent_id FROM item_categories ORDER BY sort, code').all() as
+      { id: string; code: string; name_ar: string; name_en: string; name_ku: string; parent_id: string | null }[];
+    rows = cats.filter((c) => !c.parent_id).map((c) => row(c.id, c.code, name(c),
+      cats.filter((s) => s.parent_id === c.id).map((s) => row(s.id, s.code, name(s))).filter((s) => figures.has(s.id ?? '')).sort(bySales)));
+    rows = rows.filter((r) => figures.has(r.id ?? '') || r.children.length);
+  } else {
+    const brands = db.prepare('SELECT id, code, name, name_ar, name_ku FROM brands ORDER BY sort, name').all() as { id: string; code: string | null; name: string; name_ar: string; name_ku: string }[];
+    rows = brands.filter((b) => figures.has(b.id)).map((b) => row(b.id, b.code ?? '', { ar: b.name_ar || b.name, en: b.name, ku: b.name_ku || b.name }));
+  }
+  rows.sort(bySales);
+  if (figures.has('')) rows.push(row(null, '', null));
+  return { rows, total: rows.reduce((t, r) => plus(t, r.total), zero()) };
+}
+
 export interface CustomerSales { partyId: string | null; code: string; name: string; invoices: number; sales: number }
 
 /** Net sales by customer (IQD); cash sales without a customer are one row (partyId null). */
@@ -628,6 +674,14 @@ export const briefApi: ApiExtension = {
         }
       },
       { method: 'GET', path: '/api/brief/reports/sales-by-item', handler: async (req) => { const p = period(req); return { ...p, rows: salesByItem(db, p.from, p.to, 500, branchOf(db, req, actorOf(req))) }; } },
+      {
+        method: 'GET', path: '/api/brief/reports/sales-by-group',
+        handler: async (req) => {
+          const p = period(req);
+          const by = parse(z.object({ by: z.enum(['category', 'brand']) }), req.query ?? {}).by;
+          return { ...p, by, ...salesByGroup(db, p.from, p.to, by, branchOf(db, req, actorOf(req))) };
+        }
+      },
       { method: 'GET', path: '/api/brief/reports/sales-by-customer', handler: async (req) => { const p = period(req); return { ...p, rows: salesByCustomer(db, p.from, p.to, branchOf(db, req, actorOf(req))) }; } },
       {
         method: 'GET', path: '/api/brief/reports/aging',

@@ -46,5 +46,10 @@ export const CATALOG_TEXT = {
   rl_minimum: ['الحد الأدنى للمخزون', 'Minimum stock', 'کەمترین بڕی کۆگا'],
   cat_filterItems: ['عرض مواد التصنيف', 'Show items of a category', 'پیشاندانی کاڵاکانی پۆلێک'],
   cat_back: ['رجوع', 'Back', 'گەڕانەوە'],
+  rp_byCategory: ['المبيعات حسب التصنيف', 'Sales by category', 'فرۆشتن بەپێی پۆل'],
+  rp_byBrand: ['المبيعات حسب الماركة', 'Sales by brand', 'فرۆشتن بەپێی براند'],
+  rp_uncategorised: ['بلا تصنيف', 'Uncategorised', 'بێ پۆل'],
+  rp_noBrand: ['بلا ماركة', 'No brand', 'بێ براند'],
+  rp_direct: ['في التصنيف نفسه', 'In the category itself', 'لە خودی پۆلەکەدا'],
   st_nothing: ['القائمة موجودة كلها؛ لم يُضف شيء.', 'Everything in the list is there already; nothing was added.', 'هەموو لیستەکە هەیە؛ هیچ زیاد نەکرا.']
 } as const;

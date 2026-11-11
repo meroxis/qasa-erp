@@ -294,3 +294,45 @@ describe('quick expenses', () => {
     expect((await app.inject({ url: `/api/brief?date=${DAY}` })).statusCode).toBe(401);
   });
 });
+
+describe('sales by category and by brand (1.1)', () => {
+  it('nest subcategories under their category with a total each, put items with none last, and add up to the invoices less returns', async () => {
+    const cooling = (await post('/api/item-categories', { name: { ar: 'تبريد', en: 'Cooling', ku: 'فێنککەرەوە' } })).json();
+    const split = (await post('/api/item-categories', { name: { ar: 'سبلت', en: 'Split', ku: 'سپلیت' }, parentId: cooling.id })).json();
+    const gree = (await post('/api/brands', { name: 'Gree' })).json();
+    const fanId = (await post('/api/items', { code: 'FAN', name: { ar: 'مروحة', en: 'Fan', ku: 'پانکە' }, unit: 'piece', salePrice: 50_000, saleCurrency: 'IQD', categoryId: cooling.id })).json().id;
+    const cableId = (await post('/api/items', { code: 'CBL', name: { ar: 'كيبل', en: 'Cable', ku: 'کێبڵ' }, unit: 'piece', salePrice: 10_000, saleCurrency: 'IQD' })).json().id;
+    const buy = (itemId: string, n: number, price: number) => ({ itemId, qtyMilli: n * 1000, unitPrice: price });
+    await invoice({ kind: 'purchase', date: '2026-10-01', partyId: supplierId, payment: 'credit', lines: [buy(acId, 5, 500_000), buy(fanId, 10, 30_000), buy(cableId, 10, 6_000)] });
+    // sold before the item got its category and brand: the report uses what the item has now
+    const sale = await invoice({ kind: 'sale', date: DAY, partyId: customerId, payment: 'credit', discount: 100_000, lines: [buy(acId, 2, 800_000), buy(fanId, 3, 50_000), buy(cableId, 4, 10_000)] });
+    await put(`/api/items/${acId}`, { name: { ar: 'مكيف', en: 'AC 18,000 BTU', ku: 'سپلیت' }, unit: 'piece', salePrice: 800_000, saleCurrency: 'IQD', categoryId: split.id, brandId: gree.id });
+    const ret = await post(`/api/invoices/${sale.id}/returns`, { date: DAY, payment: 'credit', lines: [{ lineNo: sale.lines[0].lineNo, qtyMilli: 1000 }] });
+    if (ret.json().status !== 'posted') await post(`/api/invoices/${ret.json().id}/post`);
+
+    const range = 'from=2026-10-01&to=2026-10-31';
+    const byItem = (await get(`/api/brief/reports/sales-by-item?${range}`)).json().rows as { code: string; sales: number; cost: number; qtyMilli: number }[];
+    const item = (code: string) => byItem.find((r) => r.code === code)!;
+    const sum = (key: 'sales' | 'cost' | 'qtyMilli') => byItem.reduce((s, r) => s + r[key], 0);
+
+    const cats = (await get(`/api/brief/reports/sales-by-group?by=category&${range}`)).json();
+    expect(cats.by).toBe('category');
+    expect(cats.rows.map((r: { id: string | null }) => r.id)).toEqual([cooling.id, null]);
+    const top = cats.rows[0];
+    // the fan is in the category itself, the AC in its subcategory
+    expect(top).toMatchObject({ sales: item('FAN').sales, qtyMilli: 3000 });
+    expect(top.children).toEqual([expect.objectContaining({ id: split.id, sales: item('AC-18').sales, cost: item('AC-18').cost, qtyMilli: 1000 })]);
+    expect(top.total).toEqual({ qtyMilli: 4000, sales: item('FAN').sales + item('AC-18').sales, cost: item('FAN').cost + item('AC-18').cost, profit: item('FAN').sales + item('AC-18').sales - item('FAN').cost - item('AC-18').cost });
+    expect(cats.rows[1]).toMatchObject({ id: null, name: null, sales: item('CBL').sales });
+    expect(cats.total).toEqual({ qtyMilli: sum('qtyMilli'), sales: sum('sales'), cost: sum('cost'), profit: sum('sales') - sum('cost') });
+    // the same as the net sales the brief counts (the invoice discount spread over the lines, the return taken off)
+    expect(cats.total.sales).toBe((await get(`/api/brief?date=${DAY}`)).json().sales.today);
+
+    const brands = (await get(`/api/brief/reports/sales-by-group?by=brand&${range}`)).json();
+    expect(brands.rows.map((r: { id: string | null; name: { en: string } | null }) => r.name?.en ?? null)).toEqual(['Gree', null]);
+    expect(brands.total).toEqual(cats.total);
+    expect((await get(`/api/brief/reports/sales-by-group?by=colour&${range}`)).statusCode).toBe(400);
+    // a branch with no warehouse sold nothing
+    expect((await get(`/api/brief/reports/sales-by-group?by=brand&${range}&branchId=nope`)).statusCode).toBe(400);
+  });
+});
