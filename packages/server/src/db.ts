@@ -1612,6 +1612,41 @@ const V11 =
   `;
 
 /**
+ * 12 — 1.2, offline outbox: the keys PCs on the office network and phones send with a document they may send again
+ * (idempotency.ts), and the sales made at a till while the office server could not be reached (pos.ts).
+ */
+const V12_OUTBOX =
+  `
+  -- a key a client sent with a document (a UUID v4): who sent it, for which request, and the document it made
+  CREATE TABLE idempotency_keys (
+    idem_key TEXT PRIMARY KEY,
+    -- user:<id>, or name:<owner's name> without sign-in
+    user_key TEXT NOT NULL,
+    -- the route's pattern, "POST /api/pos/shifts/:id/sales"
+    route TEXT NOT NULL,
+    -- a hash of the route, its parameters and its body: the same key with another request is refused
+    request_hash TEXT NOT NULL,
+    -- the document made (NULL only inside the transaction that makes it)
+    result_id TEXT,
+    created_at TEXT NOT NULL
+  );
+  CREATE INDEX idempotency_keys_created ON idempotency_keys(created_at);
+
+  -- a till's sale made offline: the temporary reference on its receipt (OFF-<register>-0001), when it was sold there,
+  -- and when it reached the books (the invoice has its own number from then)
+  CREATE TABLE pos_offline_sales (
+    invoice_id TEXT PRIMARY KEY REFERENCES invoices(id),
+    reference TEXT NOT NULL,
+    sold_at TEXT NOT NULL,
+    synced_at TEXT NOT NULL
+  );
+  CREATE INDEX pos_offline_sales_reference ON pos_offline_sales(reference);
+  `;
+
+/** Version 12: each 1.2 feature's block of its own (V12_OUTBOX …), run together. */
+const V12 = [V12_OUTBOX].join('\n');
+
+/**
  * Version 11's rows: each car part's brand text becomes a brand (one per name whatever its case or spaces, written as
  * most parts had it) and the item points at it. Safe to run again: only texts still there are moved.
  */
@@ -1663,7 +1698,8 @@ const MIGRATIONS: Migration[] = [
   { sql: V1 }, { sql: V2, rebuild: true }, { sql: V3, rebuild: true }, { sql: V4 }, { sql: V5, rebuild: true },
   { sql: V6, mysql: 'tables' }, { sql: V7, mysql: 'tables' }, { sql: V8, mysql: 'tables' }, { sql: V9, mysql: 'tables' },
   { sql: V10, mysql: { tables: true, steps: () => V10_MYSQL_STEPS } },
-  { sql: V11, mysql: { tables: true, steps: () => V11_MYSQL_STEPS }, data: (db) => { movePartBrands(db); movePartReorder(db); } }
+  { sql: V11, mysql: { tables: true, steps: () => V11_MYSQL_STEPS }, data: (db) => { movePartBrands(db); movePartReorder(db); } },
+  { sql: V12, mysql: 'tables' }
 ];
 
 /** Server databases began at this version: its schema is in schema-mysql.ts (tables and triggers without `since`). */

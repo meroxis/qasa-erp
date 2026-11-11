@@ -11,6 +11,7 @@ import { readSetting, writeSetting } from './settings.ts';
 import { signInRequired, type Actor } from './auth.ts';
 import { scopeOf } from './branches.ts';
 import type { ApiExtension, ApiRequest } from './routes.ts';
+import { onceOnly } from './idempotency.ts';
 
 /**
  * Point of sale (every plan). A cashier opens a shift on a register (the safe the cash goes into, the warehouse the
@@ -90,6 +91,8 @@ export interface ShiftSaleView {
   currency: CurrencyCode;
   total: number;
   status: string;
+  /** 1.2: sold while the till was offline: the temporary reference on its receipt (createdAt is when it was sold) */
+  offlineRef?: string;
 }
 
 export interface ShiftView {
@@ -149,6 +152,28 @@ export interface SaleInput {
   allowExpired?: boolean | undefined;
   /** 1.1: how it was paid, 1–4 parts adding up to the sale's total; none = all cash, as before */
   payments?: { method: PosMethod; amount: number }[] | undefined;
+  /**
+   * 1.2: a sale made at the till while the office server could not be reached, sent when the link came back: the
+   * temporary reference printed on its receipt, the moment it was sold and the till's date then (the invoice's date).
+   */
+  offline?: OfflineSale | undefined;
+}
+
+export interface OfflineSale { reference: string; soldAt: string; soldOn: string }
+
+/** "OFF-<register>-0001": letters and digits of the register's name (any script), then the till's own count. */
+export const OFFLINE_REFERENCE = /^OFF-[\p{L}\p{N}]{1,16}-\d{4,9}$/u;
+const ISO_INSTANT = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d{1,3})?Z$/;
+
+/**
+ * The date an offline sale is booked on: the till's date when it was sold, never before the shift was opened and never
+ * after today here (a till whose clock is wrong can't move a sale out of its shift or into the future).
+ */
+export function offlineSaleDate(soldOn: string, openedAt: string, now: Date = new Date()): string {
+  const opened = todayIso(new Date(openedAt));
+  const today = todayIso(now);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(soldOn) || soldOn > today) return today;
+  return soldOn < opened ? opened : soldOn;
 }
 
 export interface CloseInput {
@@ -281,11 +306,16 @@ export function myShift(db: Db, actor: ShiftActor): ShiftView | null {
 
 export function shiftReport(db: Db, id: string, actor: ShiftActor | null = null): ShiftReport {
   const row = loadShift(db, id);
-  const invoices = (db.prepare(`SELECT i.id, i.number, i.created_at, p.name AS party_name, i.currency, i.total, i.status
+  const invoices = (db.prepare(`SELECT i.id, i.number, i.created_at, p.name AS party_name, i.currency, i.total, i.status, o.reference AS offline_ref, o.sold_at
                                 FROM pos_sales s JOIN invoices i ON i.id = s.invoice_id LEFT JOIN parties p ON p.id = i.party_id
-                                WHERE s.shift_id = ? ORDER BY i.created_at`).all(id) as {
-    id: string; number: string | null; created_at: string; party_name: string | null; currency: CurrencyCode; total: number; status: string
-  }[]).map((r) => ({ invoiceId: r.id, number: r.number, createdAt: r.created_at, partyName: r.party_name, currency: r.currency, total: Number(r.total), status: r.status }));
+                                LEFT JOIN pos_offline_sales o ON o.invoice_id = i.id
+                                WHERE s.shift_id = ? ORDER BY COALESCE(o.sold_at, i.created_at)`).all(id) as {
+    id: string; number: string | null; created_at: string; party_name: string | null; currency: CurrencyCode; total: number; status: string;
+    offline_ref: string | null; sold_at: string | null
+  }[]).map((r) => ({
+    invoiceId: r.id, number: r.number, createdAt: r.sold_at ?? r.created_at, partyName: r.party_name, currency: r.currency, total: Number(r.total), status: r.status,
+    ...(r.offline_ref ? { offlineRef: r.offline_ref } : {})
+  }));
   const lines = db.prepare(`SELECT l.item_id, it.code, it.name_ar, it.name_en, it.name_ku, i.currency, SUM(l.qty_milli) AS qty,
                                    SUM(l.amount - COALESCE(l.discount_share, CASE WHEN i.subtotal > 0 THEN i.discount * l.amount * 1.0 / i.subtotal ELSE 0 END)) AS amount
                             FROM pos_sales s JOIN invoices i ON i.id = s.invoice_id JOIN invoice_lines l ON l.invoice_id = i.id
@@ -366,11 +396,19 @@ export function sell(db: Db, shiftId: string, input: SaleInput, actor: Actor): {
     // its account is outside the user's branches: not offered to them either, and never debited for them
     else if (p.method !== 'cash' && p.method !== 'account' && !mine[p.method as keyof PosAccounts]) errors.push({ code: 'pos_method_other_branch', method: p.method });
     else if (p.method === 'account' && !input.partyId) errors.push({ code: 'party_required' });
+    // on a customer's account needs the live credit-limit check: never from a till that was offline
+    else if (p.method === 'account' && input.offline) errors.push({ code: 'pos_offline_on_account' });
+  }
+  const offline = input.offline;
+  if (offline && (!OFFLINE_REFERENCE.test(offline.reference) || !ISO_INSTANT.test(offline.soldAt) || Number.isNaN(Date.parse(offline.soldAt)))) {
+    errors.push({ code: 'pos_offline_invalid' });
   }
   if (errors.length) throw invalid(errors);
+  const now = new Date();
+  const date = offline ? offlineSaleDate(offline.soldOn, row.opened_at, now) : todayIso(now);
   const invoiceId = transaction(db, () => {
     const draft = createInvoice(db, {
-      kind: 'sale', date: todayIso(), ...(input.partyId ? { partyId: input.partyId } : {}), warehouseId: row.warehouse_id,
+      kind: 'sale', date, ...(input.partyId ? { partyId: input.partyId } : {}), warehouseId: row.warehouse_id,
       currency: input.currency, rateX100: input.currency === 'IQD' ? 100 : input.rateX100!, payment: 'cash', cashAccountCode: row.cash_account,
       discount: input.discount, ...(input.notes?.trim() ? { notes: input.notes.trim() } : {}),
       lines: input.lines.map((l) => ({
@@ -398,6 +436,13 @@ export function sell(db: Db, shiftId: string, input: SaleInput, actor: Actor): {
                                  VALUES (?, ?, 'pos', ?, ?, ?, ?, ?, NULL, NULL, ?, ?)`);
       const now = new Date().toISOString();
       for (const p of split) insert.run(randomUUID(), posted.id, p.method, p.accountCode, p.amount, posted.currency, posted.entryId, actor.name, now);
+    }
+    if (offline) {
+      // the receipt's temporary reference stays with the sale, so both it and the invoice number find it
+      const soldAt = Date.parse(offline.soldAt) > now.getTime() ? now.toISOString() : new Date(offline.soldAt).toISOString();
+      db.prepare('INSERT INTO pos_offline_sales (invoice_id, reference, sold_at, synced_at) VALUES (?, ?, ?, ?)')
+        .run(posted.id, offline.reference, soldAt, now.toISOString());
+      audit(db, actor.name, 'offline_sale', 'invoice', posted.id, { reference: offline.reference, soldAt, number: posted.number });
     }
     return posted.id;
   });
@@ -491,9 +536,19 @@ export const posApi: ApiExtension = {
               unit: z.enum(UNIT_CODES).optional(), unitQtyMilli: z.number().int().positive().max(1e12).optional(), batchId: id.optional()
             })).min(1).max(300),
             allowExpired: z.boolean().optional(),
-            payments: z.array(z.object({ method: z.enum(POS_METHODS), amount: amount.refine((n) => n > 0) })).min(1).max(4).optional()
+            payments: z.array(z.object({ method: z.enum(POS_METHODS), amount: amount.refine((n) => n > 0) })).min(1).max(4).optional(),
+            offline: z.object({
+              reference: z.string().max(40).regex(OFFLINE_REFERENCE), soldAt: z.string().max(30).regex(ISO_INSTANT), soldOn: z.string().regex(/^\d{4}-\d{2}-\d{2}$/)
+            }).optional()
           }), req.body);
-          reply.status(201).send(sell(db, parse(idParam, req.params).id, body, actor(req)));
+          const shiftId = parse(idParam, req.params).id;
+          const who = actor(req);
+          // a till sends a sale again with the same key after a lost link: it is booked once (idempotency.ts)
+          const made = onceOnly(db, req, reply, who, 'POST /api/pos/shifts/:id/sales', () => {
+            const result = sell(db, shiftId, body, who);
+            return { id: result.invoice.id, result };
+          }, (invoiceId) => ({ invoice: getInvoice(db, invoiceId), shift: getShift(db, shiftId, who) }));
+          reply.status(201).send(made);
           return undefined;
         }
       },

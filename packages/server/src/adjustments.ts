@@ -11,6 +11,7 @@ import { addStockMove, stockOf } from './items.ts';
 import { isPeriodLocked, readSetting, writeSetting } from './settings.ts';
 import type { Actor } from './auth.ts';
 import type { ApiExtension, ApiRequest } from './routes.ts';
+import { onceOnly } from './idempotency.ts';
 import { resolveLines } from './item-units.ts';
 import {
   addTaken, allocateOut, assertReversible, batchColumns, batchTracking, cancelBatchMoves, inboundBatch, lineBatchErrors, writeBatchMoves,
@@ -1041,7 +1042,9 @@ export const adjustmentsApi: ApiExtension = {
       {
         method: 'POST', path: '/api/adjustments',
         handler: async (req, reply) => {
-          reply.status(201).send(createAdjustment(db, parse(adjustmentBody, req.body), actor(req)));
+          const body = parse(adjustmentBody, req.body);
+          const who = actor(req);
+          reply.status(201).send(onceOnly(db, req, reply, who, 'POST /api/adjustments', () => { const made = createAdjustment(db, body, who); return { id: made.id, result: made }; }, (id) => getAdjustment(db, id)));
           return undefined;
         }
       },
@@ -1056,7 +1059,12 @@ export const adjustmentsApi: ApiExtension = {
       },
       {
         method: 'POST', path: '/api/adjustments/:id/post',
-        handler: async (req) => postAdjustment(db, parse(idParam, req.params).id, actor(req), parse(z.object({ lang: z.enum(['ar', 'en', 'ku']).optional() }), req.body ?? {}).lang)
+        handler: async (req, reply) => {
+          const { id } = parse(idParam, req.params);
+          const lang = parse(z.object({ lang: z.enum(['ar', 'en', 'ku']).optional() }), req.body ?? {}).lang;
+          const who = actor(req);
+          return onceOnly(db, req, reply, who, 'POST /api/adjustments/:id/post', () => { const posted = postAdjustment(db, id, who, lang); return { id: posted.id, result: posted }; }, (doc) => getAdjustment(db, doc));
+        }
       },
       {
         method: 'POST', path: '/api/adjustments/:id/cancel',
