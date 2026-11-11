@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { ApiError, setReachable } from '../api.ts';
 import {
-  BACKOFF_MS, backoffDelay, discardRecord, madeBy, MAX_SERVER_FAILURES, Outbox, refusalCode, verdictOf,
+  BACKOFF_MS, backoffDelay, discardRecord, documentText, holdKey, madeBy, MAX_SERVER_FAILURES, Outbox, refusalCode, verdictOf,
   type NewOutboxEntry, type OutboxBridge, type OutboxEntry, type Who
 } from './outbox.ts';
 
@@ -182,6 +182,22 @@ describe('sending what waits on a PC', () => {
     expect(madeBy({ user: { id: 'u-mer', name: 'Mer' } }, { id: 'u-las', name: 'Mer' })).toBe(false);
     expect(madeBy({ user: { id: null, name: 'Raz' } }, { id: null, name: 'Raz' })).toBe(true);
     expect(madeBy({ user: { id: null, name: 'Raz' } }, null)).toBe(false);
+  });
+
+  it('holds a document\'s key over every try of that same document, and gives a changed one a key of its own', () => {
+    let n = 0;
+    const make = () => `k${++n}`;
+    const receipt = { kind: 'receipt', currency: 'IQD', items: [{ accountCode: '1611', amount: 5_000, partyId: 'c-mer' }] };
+    const a = holdKey(null, receipt, make);
+    expect(a).toEqual({ key: 'k1', of: documentText(receipt), lost: false });
+    // the same document, its fields written in another order: the same key, and what was learnt about it stays
+    expect(holdKey({ ...a, lost: true }, { items: [{ partyId: 'c-mer', amount: 5_000, accountCode: '1611' }], currency: 'IQD', kind: 'receipt' }, make))
+      .toEqual({ ...a, lost: true });
+    // another amount, or another order of its lines, is another document
+    expect(holdKey(a, { ...receipt, items: [{ ...receipt.items[0]!, amount: 5_001 }] }, make).key).toBe('k2');
+    expect(documentText({ items: [1, 2] })).not.toBe(documentText({ items: [2, 1] }));
+    // a real key is a UUID v4
+    expect(holdKey(null, receipt).key).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/);
   });
 });
 

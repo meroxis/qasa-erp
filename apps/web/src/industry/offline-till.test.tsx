@@ -1,9 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import type { ItemView } from '../api.ts';
+import { ApiError, type ItemView, type SendOptions } from '../api.ts';
 import { posSaleLine } from '../pages/pos-logic.ts';
 import {
-  baseQtyOf, forgetTill, offlineMethods, offlineReceipt, offlineRefusal, rememberTill, shortStock, takeFromStock, tillCache
+  baseQtyOf, forgetTill, offlineMethods, offlineReceipt, offlineRefusal, payTillSale, rememberTill, shortStock, takeFromStock, tillCache
 } from './offline-till.ts';
+import { SALE_TIMEOUT_MS, type HeldKey } from './outbox.ts';
+import type { SaleInput } from './pos-api.ts';
 
 const item = (over: Partial<ItemView> = {}): ItemView => ({
   id: 'tea', code: 'TEA', barcode: '6260000000017', name: { ar: 'شاي', en: 'Tea', ku: 'چا' }, unit: 'piece', salePrice: 2_500, saleCurrency: 'IQD',
@@ -61,5 +63,171 @@ describe('the offline till', () => {
     expect(tillCache('user:u-las')).toMatchObject({ items: null, methods: ['cash'] });
     expect(tillCache('user:u-mer')).toBeNull();
     forgetTill();
+  });
+});
+
+/**
+ * A till on a PC with an outbox, and an office server that books a sale once per key. `answer`: 'ok'; 'lost' (the
+ * server books it, but its answer never comes back: a slow link, the 12-second limit); 'down' (not reached at all);
+ * 'expired' (refused until the cashier confirms selling stock past its expiry date).
+ */
+type Answer = 'ok' | 'lost' | 'down' | 'expired';
+function till() {
+  const booked: { key: string | undefined; body: SaleInput }[] = [];
+  const byKey = new Map<string, number>();
+  const sent: { body: SaleInput; options: SendOptions }[] = [];
+  const kept: { body: SaleInput; key: string }[] = [];
+  const s = {
+    answer: 'ok' as Answer,
+    /** the answers to the next tries, in turn (then `answer`) */
+    next: [] as Answer[],
+    keepFails: null as ApiError | null,
+    keepFirst: false,
+    held: null as HeldKey | null,
+    asked: 0,
+    booked, sent, kept,
+    pay: (sale: SaleInput, outbox = true) => payTillSale({
+      sale,
+      outbox: outbox ? { held: s.held, hold: (h) => { s.held = h; }, keepFirst: s.keepFirst } : null,
+      send: async (body, options) => {
+        sent.push({ body, options });
+        const answer = s.next.shift() ?? s.answer;
+        if (answer === 'down') throw new ApiError(0, 'network', null);
+        if (answer === 'expired' && !body.allowExpired) throw new ApiError(400, 'validation', [{ code: 'batch_expired' }]);
+        let n = options.key ? byKey.get(options.key) : undefined;
+        if (n === undefined) {
+          booked.push({ key: options.key, body });
+          n = booked.length;
+          if (options.key) byKey.set(options.key, n);
+        }
+        if (answer === 'lost') throw new ApiError(0, 'network', null);
+        return { invoice: n };
+      },
+      keep: async (body, key) => {
+        if (s.keepFails) throw s.keepFails;
+        kept.push({ body, key });
+      },
+      askExpired: async (e) => {
+        s.asked += 1;
+        return e instanceof ApiError && JSON.stringify(e.details).includes('batch_expired');
+      }
+    })
+  };
+  return s;
+}
+
+const cashSale = (qtyMilli = 2_000): SaleInput => ({ currency: 'IQD', discount: 0, lines: [{ itemId: 'tea', qtyMilli, unitPrice: 2_500 }] });
+const creditSale = (): SaleInput => ({
+  currency: 'IQD', partyId: 'c-raz', discount: 0, lines: [{ itemId: 'tea', qtyMilli: 4_000, unitPrice: 2_500 }],
+  payments: [{ method: 'cash', amount: 4_000 }, { method: 'account', amount: 6_000 }]
+});
+
+describe('paying at a till on a PC with an outbox', () => {
+  it('a sale on a customer\'s account waits for the answer; if none comes it may be booked, and Pay again books it once', async () => {
+    const t = till();
+    t.answer = 'lost';
+    // the server booked it, the answer was lost: not "not booked", and nothing kept (it can't be, on account)
+    expect(await t.pay(creditSale())).toEqual({ kind: 'unsure', error: null });
+    expect(t.sent[0]!.options.timeoutMs).toBeUndefined();
+    expect(t.held).toMatchObject({ lost: true });
+    expect(t.kept).toEqual([]);
+    // the link is back: Pay (F9) again sends the same key, the server answers from the first try
+    t.answer = 'ok';
+    expect(await t.pay(creditSale())).toEqual({ kind: 'sold', result: { invoice: 1 } });
+    expect(t.sent.map((x) => x.options.key)).toEqual([t.held!.key, t.held!.key]);
+    expect(t.booked).toHaveLength(1);
+  });
+
+  it('a cash sale with no answer in time is kept with the key it was sent with; sent later, it is booked once', async () => {
+    const t = till();
+    t.answer = 'lost';
+    expect(await t.pay(cashSale())).toEqual({ kind: 'kept' });
+    expect(t.sent[0]!.options).toEqual({ key: t.held!.key, timeoutMs: SALE_TIMEOUT_MS });
+    expect(t.kept).toEqual([{ body: cashSale(), key: t.held!.key }]);
+  });
+
+  it('when keeping fails after a lost answer, it may be booked, and Pay again uses the same key', async () => {
+    const t = till();
+    t.answer = 'lost';
+    t.keepFails = new ApiError(0, 'outbox_unavailable', null);
+    const first = await t.pay(cashSale());
+    expect(first).toMatchObject({ kind: 'unsure', error: { code: 'outbox_unavailable' } });
+    const key = t.held!.key;
+    t.keepFails = new ApiError(0, 'outbox_full', null);
+    expect(await t.pay(cashSale())).toMatchObject({ kind: 'unsure', error: { code: 'outbox_full' } });
+    t.answer = 'ok';
+    expect(await t.pay(cashSale())).toEqual({ kind: 'sold', result: { invoice: 1 } });
+    expect(new Set(t.sent.map((x) => x.options.key))).toEqual(new Set([key]));
+    expect(t.booked).toHaveLength(1);
+  });
+
+  it('while the server is known to be away, or earlier sales wait, the sale is kept at once with its held key', async () => {
+    const t = till();
+    t.answer = 'lost';
+    t.keepFails = new ApiError(0, 'outbox_write_failed', null);
+    await t.pay(cashSale());
+    const key = t.held!.key;
+    t.keepFails = null;
+    t.keepFirst = true;
+    expect(await t.pay(cashSale())).toEqual({ kind: 'kept' });
+    expect(t.kept).toEqual([{ body: cashSale(), key }]);
+    expect(t.sent).toHaveLength(1);
+    // on account it can't be kept: refused, and the lost try stays marked (it may be booked)
+    const credit = till();
+    credit.answer = 'lost';
+    await credit.pay(creditSale());
+    credit.keepFirst = true;
+    credit.keepFails = new ApiError(400, 'validation', [{ code: 'pos_offline_on_account' }]);
+    await expect(credit.pay(creditSale())).rejects.toMatchObject({ status: 400 });
+    expect(credit.held).toMatchObject({ lost: true });
+  });
+
+  it('another sale gets a key of its own: a changed cart, or the same cart after the last one was cleared', async () => {
+    const t = till();
+    t.answer = 'down';
+    t.keepFails = new ApiError(0, 'outbox_unavailable', null);
+    await t.pay(cashSale(2_000));
+    const first = t.held!.key;
+    // the same sale with its fields in another order is the same sale
+    await t.pay({ lines: [{ unitPrice: 2_500, qtyMilli: 2_000, itemId: 'tea' }], discount: 0, currency: 'IQD' } as SaleInput);
+    expect(t.held!.key).toBe(first);
+    await t.pay(cashSale(3_000));
+    expect(t.held!.key).not.toBe(first);
+    // booked or kept, the page drops the key with the cart: the next customer's identical cart is a new sale
+    t.answer = 'ok';
+    t.held = null;
+    await t.pay(cashSale(2_000));
+    t.held = null;
+    await t.pay(cashSale(2_000));
+    expect(t.booked).toHaveLength(2);
+    expect(t.booked[0]!.key).not.toBe(t.booked[1]!.key);
+  });
+
+  it('stock past its expiry date, once confirmed, is sent so on every try of that sale, without asking again', async () => {
+    const t = till();
+    // the server refuses, the cashier confirms, it goes again with the same key
+    t.next = ['expired'];
+    expect(await t.pay(cashSale())).toEqual({ kind: 'sold', result: { invoice: 1 } });
+    expect(t.sent.map((x) => [x.body.allowExpired ?? false, x.options.key])).toEqual([[false, t.held!.key], [true, t.held!.key]]);
+
+    // the confirmed try goes out and its answer is lost (and it can't be kept)
+    const lost = till();
+    lost.next = ['expired', 'lost'];
+    lost.keepFails = new ApiError(0, 'outbox_unavailable', null);
+    expect(await lost.pay(cashSale())).toMatchObject({ kind: 'unsure' });
+    expect(lost.held).toMatchObject({ allowExpired: true, lost: true });
+    expect(await lost.pay(cashSale())).toEqual({ kind: 'sold', result: { invoice: 1 } });
+    expect(lost.asked).toBe(1);
+    expect(lost.sent.at(-1)!.body.allowExpired).toBe(true);
+    expect(lost.booked).toHaveLength(1);
+  });
+
+  it('without an outbox (a browser, the server PC) it sends as before 1.2: no key and no time limit', async () => {
+    const t = till();
+    expect(await t.pay(cashSale(), false)).toEqual({ kind: 'sold', result: { invoice: 1 } });
+    expect(t.sent[0]!.options).toEqual({});
+    t.answer = 'down';
+    await expect(t.pay(cashSale(), false)).rejects.toMatchObject({ code: 'network' });
+    expect(t.held).toBeNull();
   });
 });

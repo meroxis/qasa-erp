@@ -223,6 +223,21 @@ describe('a till sale made offline', () => {
     expect(plain.offlineRef).toBeUndefined();
   });
 
+  it('takes the reference a PC\'s outbox prints, with its list\'s code, and refuses one that is malformed', async () => {
+    const shift = await openShift();
+    const soldAt = new Date(Date.now() - 60_000).toISOString();
+    for (const reference of ['OFF-Counter1-K7Q3MX-0001', 'OFF-صندوقالفرعالرئيس-2B9ZQH-123456789']) {
+      const res = await post(`/api/pos/shifts/${shift.id}/sales`, { ...teaSale(1), offline: offline(reference, soldAt, todayIso()) }, withKey(randomUUID()));
+      expect(res.statusCode, res.body).toBe(201);
+      expect(res.json().invoice.offlineRef).toBe(reference);
+    }
+    // a code with a letter that is never made (O), or of another length, is not a reference
+    for (const reference of ['OFF-Counter1-K7Q3MO-0001', 'OFF-Counter1-K7Q3M-0001', 'OFF-Counter1-K7Q3MX-01']) {
+      const res = await post(`/api/pos/shifts/${shift.id}/sales`, { ...teaSale(1), offline: offline(reference, soldAt, todayIso()) }, withKey(randomUUID()));
+      expect(res.statusCode, reference).toBe(400);
+    }
+  });
+
   it('works with a register named in Arabic or Kurdish', async () => {
     const shift = await openShift();
     const res = await post(`/api/pos/shifts/${shift.id}/sales`, { ...teaSale(1), offline: offline('OFF-الكاشير1-0001', new Date().toISOString(), todayIso()) });

@@ -1,3 +1,4 @@
+import { randomBytes } from 'node:crypto';
 import { closeSync, existsSync, fsyncSync, mkdirSync, openSync, readFileSync, renameSync, unlinkSync, writeSync } from 'node:fs';
 import { join } from 'node:path';
 import type { SecretBox } from './secrets.ts';
@@ -67,7 +68,11 @@ export interface NewOutboxEntry {
 
 export interface OutboxStatus { available: boolean; waiting: number; refused: number; damaged: boolean }
 
-interface Saved { v: 1; server: string; rev: number; seq: number; counters: Record<string, number>; entries: OutboxEntry[] }
+/**
+ * `pc`: this list's own code, made at random when the list is made (a list from before it gets one when it is read).
+ * `counters`: the last count of each register tag, in this list.
+ */
+interface Saved { v: 1; server: string; rev: number; seq: number; pc: string; counters: Record<string, number>; entries: OutboxEntry[] }
 
 export class OutboxRefusal extends Error {
   constructor(readonly code: 'outbox_invalid' | 'outbox_full' | 'outbox_duplicate' | 'outbox_missing' | 'outbox_unavailable') {
@@ -75,11 +80,32 @@ export class OutboxRefusal extends Error {
   }
 }
 
-/** The register's letters and digits (any script), at most 16: the middle of OFF-<register>-0001. */
+/** The register's letters and digits (any script), at most 16: the first part of OFF-<register>-<PC>-0001. */
 export function registerTag(register: string | null | undefined): string {
   const tag = [...String(register ?? '').normalize('NFC').matchAll(/[\p{L}\p{N}]/gu)].map((m) => m[0]).join('').slice(0, 16);
   return tag || 'R';
 }
+
+/** Letters and digits that can't be misread on a receipt (no I, L, O or U). */
+const PC_LETTERS = '0123456789ABCDEFGHJKMNPQRSTVWXYZ';
+export const PC_CODE = /^[0-9A-HJKMNP-TV-Z]{6}$/;
+/**
+ * A new list's own code: 6 of PC_LETTERS at random (30 bits). It is the middle of every temporary reference the list
+ * makes, so two PCs selling on the same register, or a list made again (after a damaged one was kept aside, or for
+ * another office server certificate) whose count starts from 1, never print the same reference (two lists share a
+ * code about once in a billion; the office server finds a sale by its reference and doesn't require it to be unique).
+ */
+export function newPcCode(): string {
+  // 32 letters: 5 bits of each random byte, all equally likely
+  return [...randomBytes(6)].map((b) => PC_LETTERS[b & 31]!).join('');
+}
+
+/**
+ * A till sale's temporary reference: OFF-<register>-<PC>-0001. The count is kept per register tag in the list, so
+ * registers whose tags are the same (names alike in their first 16 letters and digits) share one count and still never
+ * get the same reference.
+ */
+export const offlineReference = (tag: string, pc: string, n: number): string => `OFF-${tag}-${pc}-${String(n).padStart(4, '0')}`;
 
 /** The till's date (this PC's own calendar day, as the till showed it). */
 const localDate = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
@@ -135,12 +161,15 @@ export function openOutbox(options: { dir: string; server: string; box: SecretBo
   const read = (path: string): Saved | null => {
     const parsed = JSON.parse(options.box.reveal(readFileSync(path, 'utf8'))) as Saved;
     if (parsed?.v !== 1 || parsed.server !== server || !Array.isArray(parsed.entries) || typeof parsed.counters !== 'object') throw new Error('not an outbox');
+    // a list from before the code: a new one, kept with the next change (its references never had one)
+    if (typeof parsed.pc !== 'string' || !PC_CODE.test(parsed.pc)) parsed.pc = newPcCode();
     return parsed;
   };
 
   /** The last complete list: the file, or a newer complete copy a power cut left before it was renamed. */
   function load(): Saved {
-    const empty: Saved = { v: 1, server, rev: 0, seq: 0, counters: {}, entries: [] };
+    // a new list (also after a damaged one was kept aside) has a code of its own: its count starts again, its references never meet the old ones
+    const empty: Saved = { v: 1, server, rev: 0, seq: 0, pc: newPcCode(), counters: {}, entries: [] };
     let current: Saved | null = null;
     if (existsSync(file)) {
       try {
@@ -203,11 +232,12 @@ export function openOutbox(options: { dir: string; server: string; box: SecretBo
       let reference: string | null = null;
       const sent: Record<string, unknown> = structuredClone(body);
       if (kind === 'pos_sale') {
-        // the receipt's temporary reference, counted per register on this PC (never reused, also after a restart)
+        // the receipt's temporary reference: the register, this list's code and its count for that register tag (never
+        // reused, also after a restart; another PC, or another list, has another code)
         const tag = registerTag(s.register);
         const n = (next.counters[tag] ?? 0) + 1;
         next.counters[tag] = n;
-        reference = `OFF-${tag}-${String(n).padStart(4, '0')}`;
+        reference = offlineReference(tag, next.pc, n);
         sent.offline = { reference, soldAt: now.toISOString(), soldOn: localDate(now) };
       }
       if (Buffer.byteLength(JSON.stringify(sent), 'utf8') > OUTBOX_MAX_BODY) throw new OutboxRefusal('outbox_invalid');

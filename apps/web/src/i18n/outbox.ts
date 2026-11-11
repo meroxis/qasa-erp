@@ -63,6 +63,16 @@ export const OUTBOX_TEXT = {
     'ئەو کۆگایەی دوایین جار زانرا کەمترە لەوەی فرۆشرا: {i}. فرۆشتنەکە پاشەکەوت کرا؛ سێرڤەرەکە کاتێک گەیشت دەیپشکنێت.'
   ],
   pos_offlineNoAccount: ['البيع على حساب الزبون يحتاج الاتصال بالخادم.', 'Selling on a customer’s account needs the server.', 'فرۆشتن لەسەر حسابی کڕیار پێویستی بە سێرڤەرە.'],
+  pos_unsure: [
+    'لم يُجب الخادم، فربما سُجّل هذا البيع من قبل. اضغط «دفع وطباعة» مرة أخرى عند عودة الاتصال: البيع نفسه لا يُسجَّل إلا مرة واحدة. قبل أن تغيّره أو تمسحه راجع مبيعات الوردية، كي لا يُباع مرتين.',
+    'The server didn’t answer, so this sale may already be booked. Press Pay again once the link is back: the same sale is booked only once. Before you change or clear it, check the shift’s sales, so it isn’t sold twice.',
+    'سێرڤەرەکە وەڵامی نەدایەوە، بۆیە لەوانەیە ئەم فرۆشتنە پێشتر تۆمار کرابێت. کاتێک پەیوەندی گەڕایەوە دووبارە «پارەدان» دابگرە: هەمان فرۆشتن تەنها یەک جار تۆمار دەکرێت. پێش ئەوەی بیگۆڕیت یان پاکی بکەیتەوە، فرۆشتنەکانی شەفتەکە ببینە، تا دوو جار نەفرۆشرێت.'
+  ],
+  ob_voucherUnsure: [
+    'لم يُجب الخادم، فربما حُفظ هذا السند من قبل. اضغط «حفظ كمسودة» مرة أخرى عند عودة الاتصال: السند نفسه لا يُحفظ إلا مرة واحدة. قبل أن تغيّره راجع السندات والقيود، كي لا يُحفظ مرتين.',
+    'The server didn’t answer, so this voucher may already be saved. Press Save as draft again once the link is back: the same voucher is saved only once. Before you change it, check Vouchers & entries, so it isn’t saved twice.',
+    'سێرڤەرەکە وەڵامی نەدایەوە، بۆیە لەوانەیە ئەم سەنەدە پێشتر پاشەکەوت کرابێت. کاتێک پەیوەندی گەڕایەوە دووبارە «پاشەکەوت وەک ڕەشنووس» دابگرە: هەمان سەنەد تەنها یەک جار پاشەکەوت دەکرێت. پێش ئەوەی بیگۆڕیت، سەنەد و تۆمارەکان ببینە، تا دوو جار پاشەکەوت نەکرێت.'
+  ],
   pos_closeWaiting: [
     '{n} من مبيعات هذه الوردية ما زالت على هذا الحاسوب. أرسلها أو راجع قائمة الانتظار قبل الإغلاق، ليكون النقد المتوقع صحيحاً.',
     '{n} sales of this shift are still on this PC. Send them or check the waiting list before closing, so the expected cash is right.',

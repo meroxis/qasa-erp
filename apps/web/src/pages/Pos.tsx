@@ -2,14 +2,14 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { categoriesApi, inCategory, type CategoryView } from '../industry/categories-api.ts';
 import { createPortal } from 'react-dom';
 import { normalizeForSearch, rateFromX100, rateToX100, toWesternDigits, type CurrencyCode } from '@qasa/core';
-import { api, ApiError, isNetworkError, newIdempotencyKey, serverReachable, type InvoiceView, type ItemView, type PartyView, type WarehouseView } from '../api.ts';
+import { api, ApiError, isNetworkError, serverReachable, type InvoiceView, type ItemView, type PartyView, type WarehouseView } from '../api.ts';
 import { AccountCombo, AmountInput, ErrorBox, Icon, Modal, SearchCombo, useData, useLoad, usePageNav, useToast, type PickOption } from '../components.tsx';
 import { useI18n, type I18n, type Key } from '../i18n.ts';
 import { href } from '../router.ts';
 import { posApi, type Money2, type PosMethod, type SaleInput, type ShiftReport, type ShiftView } from '../industry/pos-api.ts';
-import { outboxClient, outboxWho, SALE_TIMEOUT_MS, whoKey } from '../industry/outbox.ts';
+import { outboxClient, outboxWho, whoKey, type HeldKey } from '../industry/outbox.ts';
 import { useOutbox } from '../industry/OutboxBanner.tsx';
-import { offlineMethods, offlineReceipt, offlineRefusal, rememberTill, shortStock, takeFromStock, tillCache } from '../industry/offline-till.ts';
+import { offlineMethods, offlineReceipt, offlineRefusal, payTillSale, rememberTill, shortStock, takeFromStock, tillCache } from '../industry/offline-till.ts';
 import '../pos.css';
 import { PrintDocument } from '../industry/PrintDocument.tsx';
 import { invoiceModel } from '../industry/print-model.ts';
@@ -212,6 +212,10 @@ function Register({ initial, onClosed }: { initial: ShiftView; onClosed(): void 
   const keptHere = outbox ? outbox.entries.filter((e) => e.path === shiftPath) : [];
   const waitingMine = outbox ? outboxClient()?.mineWaiting(who).length ?? 0 : 0;
   const [shortNote, setShortNote] = useState('');
+  // the key of the sale being paid, the same on every Pay until it is booked or kept, and whether a try of it got no
+  // answer (it may be booked already)
+  const saleKey = useRef<HeldKey | null>(null);
+  const [unsure, setUnsure] = useState(false);
   // sales kept here reached the books: the shift's totals and the stock follow
   const keptCount = keptHere.length;
   const keptBefore = useRef(keptCount);
@@ -377,6 +381,9 @@ function Register({ initial, onClosed }: { initial: ShiftView; onClosed(): void 
     setParts([]);
     setError(null);
     setQ('');
+    // the next sale is another one, with a key of its own
+    saleKey.current = null;
+    setUnsure(false);
     focusSearch();
   };
 
@@ -415,32 +422,29 @@ function Register({ initial, onClosed }: { initial: ShiftView; onClosed(): void 
     setBusy(true);
     setError(null);
     setShortNote('');
-    // on a PC with an outbox, each sale has its key from the start: a try whose answer is lost is booked once
-    const box = outboxClient();
-    const key = box ? newIdempotencyKey() : null;
-    const options = key ? { key, timeoutMs: SALE_TIMEOUT_MS } : {};
     try {
       const sale: SaleInput = {
         currency, ...(currency === 'USD' ? { rateX100 } : {}), ...(partyId ? { partyId } : {}), discount: discount ?? 0,
         lines: cart.map(posSaleLine),
         ...(split ? { payments: parts.map((p) => ({ method: p.method, amount: p.amount ?? 0 })) } : {})
       };
-      // offline, or this person's earlier sales still wait (they go first): kept here
-      if (key && (!serverReachable() || waitingMine > 0)) return void (await keepHere(sale, key));
-      let res;
-      try {
-        res = await posApi.sell(shift.id, sale, options);
-      } catch (e) {
-        if (key && isNetworkError(e)) return void (await keepHere(sale, key));
+      // on a PC with an outbox the sale keeps its key over every Pay until it is booked or kept: a try whose answer
+      // was lost is answered from the first, never booked twice (industry/offline-till.ts)
+      const done = await payTillSale({
+        sale,
+        outbox: outboxClient() ? {
+          held: saleKey.current, hold: (h) => { saleKey.current = h; },
+          // offline, or this person's earlier sales still wait (they go first)
+          keepFirst: !serverReachable() || waitingMine > 0
+        } : null,
+        send: (body, options) => posApi.sell(shift.id, body, options),
+        keep: keepHere,
         // stock past its expiry date: the company may allow it after the cashier confirms (written to the audit log)
-        if (!(await expired.ask(e))) throw e;
-        try {
-          res = await posApi.sell(shift.id, { ...sale, allowExpired: true }, options);
-        } catch (again) {
-          if (key && isNetworkError(again)) return void (await keepHere({ ...sale, allowExpired: true }, key));
-          throw again;
-        }
-      }
+        askExpired: (e) => expired.ask(e)
+      });
+      if (done.kind === 'unsure' && done.error) throw done.error;
+      if (done.kind !== 'sold') return;
+      const res = done.result;
       setShift(res.shift);
       rememberTill(tillWho(), { shift: res.shift });
       setReceipt(res.invoice);
@@ -452,6 +456,8 @@ function Register({ initial, onClosed }: { initial: ShiftView; onClosed(): void 
     } catch (e) {
       setError(e);
     } finally {
+      // a try of this sale went out and no answer came: it may be booked, and the cashier is told so
+      setUnsure(!!saleKey.current?.lost);
       setBusy(false);
     }
   };
@@ -617,6 +623,7 @@ function Register({ initial, onClosed }: { initial: ShiftView; onClosed(): void 
                 <strong className="num">{i18n.money(Math.abs(change), currency)}</strong>
               </div>
             )}
+            {unsure && <div className="alert warn" role="alert">{t('pos_unsure')}</div>}
             <ErrorBox error={error} />
             {shortNote && <div className="alert info small" role="status">{t('pos_offlineShort', { i: shortNote })}</div>}
             <div className="pos-actions">

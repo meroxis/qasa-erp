@@ -1,6 +1,7 @@
 import type { CurrencyCode, Names, UnitCode } from '@qasa/core';
-import type { InvoiceView, ItemView, PartyView } from '../api.ts';
+import { isNetworkError, type InvoiceView, type ItemView, type PartyView, type SendOptions } from '../api.ts';
 import type { CategoryView } from './categories-api.ts';
+import { holdKey, SALE_TIMEOUT_MS, type HeldKey } from './outbox.ts';
 import type { PosMethod, SaleInput, ShiftView } from './pos-api.ts';
 
 /**
@@ -123,4 +124,77 @@ export function offlineReceipt(input: {
     })),
     offlineRef: input.reference
   };
+}
+
+/** How a Pay ended: booked (the server's answer), kept on this PC, or sent with no answer back (it may be booked). */
+export type TillPay<R> =
+  | { kind: 'sold'; result: R }
+  | { kind: 'kept' }
+  /** `error`: why it could not be kept on this PC either (null: a sale that can't be kept, on a customer's account) */
+  | { kind: 'unsure'; error: unknown };
+
+/**
+ * One Pay of a till sale. Without an outbox (a browser, the office server PC itself) as before 1.2: no key, the till
+ * waits for the answer. On a PC with an outbox the sale is sent with the key held for it (holdKey), the same on every
+ * Pay of the same sale until one is confirmed, so a try whose answer was lost is answered by the server from the first
+ * and booked once. A sale that can be kept on the PC gives up after SALE_TIMEOUT_MS and is kept (sent later with that
+ * key). One that can't (a part on a customer's account) waits for the server's answer, as before 1.2; if the link goes
+ * anyway, or keeping fails, the result is unknown ('unsure'), never reported as not booked: Pay again finds it.
+ * `hold` is told the key every time it changes (the page keeps it with the cart, and drops it when the cart is cleared).
+ */
+export async function payTillSale<R>(input: {
+  sale: SaleInput;
+  /** an outbox on this PC: the key held for the sale being paid (null: none yet), and whether to keep it at once */
+  outbox: { held: HeldKey | null; hold(held: HeldKey): void; keepFirst: boolean } | null;
+  send(body: SaleInput, options: SendOptions): Promise<R>;
+  /** keeps it on this PC with this key (throws when it can't) */
+  keep(body: SaleInput, key: string): Promise<void>;
+  /** stock past its expiry date: true when the cashier confirmed selling it (the company allows it) */
+  askExpired(error: unknown): Promise<boolean>;
+}): Promise<TillPay<R>> {
+  const { allowExpired: _asked, ...sale } = input.sale;
+  const box = input.outbox;
+  if (!box) {
+    try {
+      return { kind: 'sold', result: await input.send(sale, {}) };
+    } catch (e) {
+      if (!(await input.askExpired(e))) throw e;
+      return { kind: 'sold', result: await input.send({ ...sale, allowExpired: true }, {}) };
+    }
+  }
+  let held = holdKey(box.held, sale);
+  const hold = (next: HeldKey) => { held = next; box.hold(next); };
+  hold(held);
+  const body = (): SaleInput => (held.allowExpired ? { ...sale, allowExpired: true } : sale);
+  // offline, or this person's earlier sales still wait (they go first): kept here, nothing sent now
+  if (box.keepFirst) {
+    await input.keep(body(), held.key);
+    return { kind: 'kept' };
+  }
+  const canKeep = !offlineRefusal(sale);
+  const options: SendOptions = { key: held.key, ...(canKeep ? { timeoutMs: SALE_TIMEOUT_MS } : {}) };
+  const lost = async (): Promise<TillPay<R>> => {
+    hold({ ...held, lost: true });
+    if (!canKeep) return { kind: 'unsure', error: null };
+    try {
+      await input.keep(body(), held.key);
+      return { kind: 'kept' };
+    } catch (e) {
+      return { kind: 'unsure', error: e };
+    }
+  };
+  try {
+    return { kind: 'sold', result: await input.send(body(), options) };
+  } catch (e) {
+    if (isNetworkError(e)) return lost();
+    if (held.allowExpired || !(await input.askExpired(e))) throw e;
+  }
+  // confirmed: from now on this sale goes with it, also on the next Pay (the server compares the whole body)
+  hold({ ...held, allowExpired: true });
+  try {
+    return { kind: 'sold', result: await input.send(body(), options) };
+  } catch (e) {
+    if (isNetworkError(e)) return lost();
+    throw e;
+  }
 }

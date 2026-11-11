@@ -161,8 +161,12 @@ export interface SaleInput {
 
 export interface OfflineSale { reference: string; soldAt: string; soldOn: string }
 
-/** "OFF-<register>-0001": letters and digits of the register's name (any script), then the till's own count. */
-export const OFFLINE_REFERENCE = /^OFF-[\p{L}\p{N}]{1,16}-\d{4,9}$/u;
+/**
+ * "OFF-<register>-<PC>-0001": letters and digits of the register's name (any script), the code of the PC's own list
+ * (6 letters and digits, apps/desktop/src/outbox.ts), then that list's count. A reference kept before the code
+ * ("OFF-<register>-0001") is still taken.
+ */
+export const OFFLINE_REFERENCE = /^OFF-[\p{L}\p{N}]{1,16}-(?:[0-9A-HJKMNP-TV-Z]{6}-)?\d{4,9}$/u;
 const ISO_INSTANT = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d{1,3})?Z$/;
 
 /**

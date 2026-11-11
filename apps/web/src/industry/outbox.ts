@@ -1,4 +1,4 @@
-import { ApiError, isNetworkError, onLinkChange, request, serverReachable, setReachable } from '../api.ts';
+import { ApiError, isNetworkError, newIdempotencyKey, onLinkChange, request, serverReachable, setReachable } from '../api.ts';
 
 /**
  * The outbox of a PC connected to an office server (1.2), as the app window sees it. The list itself is kept by the
@@ -60,10 +60,36 @@ export interface OutboxBridge {
 /** Waits between tries while the server can't be reached: 2 s, 5 s, 10 s, 30 s, 1 min, 2 min, then every 5 min. */
 export const BACKOFF_MS = [2_000, 5_000, 10_000, 30_000, 60_000, 120_000, 300_000] as const;
 export const backoffDelay = (failures: number): number => BACKOFF_MS[Math.min(Math.max(failures, 1), BACKOFF_MS.length) - 1]!;
-/** A till sale gives up on a server that doesn't answer within this, and is kept on the PC (sent later, once). */
+/**
+ * A till sale or receipt that can be kept on the PC gives up on a server that doesn't answer within this, and is kept
+ * (sent later with the same key, so booked once). What can't be kept (a sale on a customer's account) waits for the answer.
+ */
 export const SALE_TIMEOUT_MS = 12_000;
 /** An entry the server keeps failing (500s) on is put before a person after this many tries. */
 export const MAX_SERVER_FAILURES = 8;
+
+/**
+ * The key a document is sent with, held for every try of that same document until one is confirmed (booked, or kept
+ * on this PC). A try whose answer was lost (no answer in time, the link went) may have been booked: the next try with
+ * the same key is answered by the server from the first, so it is never booked twice. `of` is what the document asks
+ * for; a changed document (another line, amount, customer or payment) is another document with a key of its own.
+ * `lost`: a try with this key went out and no answer came, so it may be booked already. `allowExpired`: a till sale
+ * the cashier confirmed with stock past its expiry date, sent so every time after (the server compares the body).
+ */
+export interface HeldKey { key: string; of: string; lost: boolean; allowExpired?: true }
+
+/** A document as text with its keys in order, so the same document always reads the same. */
+export function documentText(doc: unknown): string {
+  return JSON.stringify(doc, (_k, v: unknown) => (v && typeof v === 'object' && !Array.isArray(v)
+    ? Object.fromEntries(Object.entries(v as Record<string, unknown>).sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0)))
+    : v)) ?? '';
+}
+
+/** The key for `doc`: the one held while it is the same document, else a new one. */
+export function holdKey(held: HeldKey | null, doc: unknown, make: () => string = newIdempotencyKey): HeldKey {
+  const of = documentText(doc);
+  return held && held.of === of ? held : { key: make(), of, lost: false };
+}
 
 /** What a try's outcome means for the entry. */
 export type Verdict =

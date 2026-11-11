@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { makeSecretBox } from './secrets.ts';
-import { OUTBOX_MAX_BODY, openOutbox, OutboxRefusal, registerTag, writeDurably, type NewOutboxEntry } from './outbox.ts';
+import { newPcCode, offlineReference, OUTBOX_MAX_BODY, openOutbox, OutboxRefusal, PC_CODE, registerTag, writeDurably, type NewOutboxEntry } from './outbox.ts';
 
 const dirs: string[] = [];
 const tmp = () => { const d = mkdtempSync(join(tmpdir(), 'qasa-outbox-')); dirs.push(d); return d; };
@@ -14,6 +14,8 @@ const KEY = randomBytes(32).toString('hex');
 const SERVER = 'ab'.repeat(32);
 const BOOKS = 'cd'.repeat(16);
 const box = (key = KEY) => makeSecretBox(key, tmp());
+/** The list's code in a reference: OFF-<register>-<code>-0001. */
+const codeOf = (reference: string | null) => reference?.split('-')[2] ?? '';
 
 const sale = (over: Partial<NewOutboxEntry> = {}): NewOutboxEntry => ({
   id: randomUUID(), kind: 'pos_sale', path: '/api/pos/shifts/0c6f7d1e-1111-4222-8333-944455556666/sales',
@@ -30,9 +32,12 @@ describe('the outbox of a PC on the office network', () => {
     const a = store.add(sale(), at);
     const b = store.add(sale({ body: { currency: 'IQD', notes: 'Raz', lines: [] } }), at);
     const other = store.add(sale({ summary: { total: 1_000, currency: 'IQD', lines: 1, register: 'الكاشير 2' } }), at);
-    expect([a.reference, b.reference, other.reference]).toEqual(['OFF-Counter1-0001', 'OFF-Counter1-0002', 'OFF-الكاشير2-0001']);
+    // the register, this list's own code, and the count
+    const pc = codeOf(a.reference);
+    expect(pc).toMatch(PC_CODE);
+    expect([a.reference, b.reference, other.reference]).toEqual([`OFF-Counter1-${pc}-0001`, `OFF-Counter1-${pc}-0002`, `OFF-الكاشير2-${pc}-0001`]);
     // the sale carries its reference and the till's time and date when it was sold
-    expect(a.body.offline).toEqual({ reference: 'OFF-Counter1-0001', soldAt: at.toISOString(), soldOn: '2026-11-11' });
+    expect(a.body.offline).toEqual({ reference: `OFF-Counter1-${pc}-0001`, soldAt: at.toISOString(), soldOn: '2026-11-11' });
     const voucher = store.add({ ...sale(), kind: 'voucher', path: '/api/vouchers', body: { kind: 'receipt', items: [] } }, at);
     expect(voucher.reference).toBeNull();
     expect(voucher.body.offline).toBeUndefined();
@@ -49,7 +54,7 @@ describe('the outbox of a PC on the office network', () => {
     // a restart (the same Windows user) finds them all, and the count goes on
     const again = openOutbox({ dir, server: SERVER, box: secrets });
     expect(again.list().map((e) => e.id)).toEqual([a.id, b.id, other.id, voucher.id]);
-    expect(again.add(sale(), at).reference).toBe('OFF-Counter1-0003');
+    expect(again.add(sale(), at).reference).toBe(`OFF-Counter1-${pc}-0003`);
     // another Windows user (another key) can't read it, and it is kept aside, not written over
     const stranger = openOutbox({ dir, server: SERVER, box: box(randomBytes(32).toString('hex')) });
     expect(stranger.list()).toEqual([]);
@@ -146,6 +151,66 @@ describe('the outbox of a PC on the office network', () => {
     const store = openOutbox({ dir: tmp(), server: SERVER, box: makeSecretBox(null, tmp()) });
     expect(() => store.add(sale())).toThrow(/cannot protect/);
     expect(store.list()).toEqual([]);
+  });
+
+  it('never prints the same reference twice: not from two PCs on one register, nor after a list is made again', () => {
+    const at = new Date(2026, 10, 11, 9, 30, 0);
+    const secrets = box();
+    // two PCs (each its own list) selling on the same register, on the same day or another
+    const pc1 = openOutbox({ dir: tmp(), server: SERVER, box: secrets });
+    const pc2 = openOutbox({ dir: tmp(), server: SERVER, box: secrets });
+    const one = [pc1.add(sale(), at), pc1.add(sale(), at)].map((e) => e.reference);
+    const two = [pc2.add(sale(), at), pc2.add(sale(), at)].map((e) => e.reference);
+    expect(codeOf(one[0]!)).not.toBe(codeOf(two[0]!));
+    expect(new Set([...one, ...two]).size).toBe(4);
+    // registers whose names are alike in their first 16 letters and digits, or differ by a space or a dash, share one count
+    const store = openOutbox({ dir: tmp(), server: SERVER, box: secrets });
+    const names = ['صندوق الفرع الرئيسي 1', 'صندوق الفرع الرئيسي 2', 'Till 1', 'Till-1'];
+    expect(registerTag(names[0])).toBe(registerTag(names[1]));
+    const refs = names.map((register) => store.add(sale({ summary: { total: 1_000, currency: 'IQD', lines: 1, register } }), at).reference);
+    expect(new Set(refs).size).toBe(4);
+    expect(refs.map((r) => r!.slice(-4))).toEqual(['0001', '0002', '0001', '0002']);
+    // the list made again (the old one could not be read and was kept aside): its count starts from 1 under a new code
+    const dir = tmp();
+    const first = openOutbox({ dir, server: SERVER, box: secrets }).add(sale(), at).reference;
+    const fresh = openOutbox({ dir, server: SERVER, box: box(randomBytes(32).toString('hex')) });
+    expect(fresh.status().damaged).toBe(true);
+    const after = fresh.add(sale(), at).reference;
+    expect(after!.slice(-4)).toBe('0001');
+    expect(after).not.toBe(first);
+    // and for another office server's certificate (another list)
+    expect(openOutbox({ dir, server: 'ef'.repeat(32), box: secrets }).add(sale(), at).reference).not.toBe(first);
+  });
+
+  it("keeps the list's code across restarts, and gives a list from before the code one of its own", () => {
+    const dir = tmp();
+    const secrets = box();
+    const at = new Date(2026, 10, 11, 9, 30, 0);
+    const code = codeOf(openOutbox({ dir, server: SERVER, box: secrets }).add(sale(), at).reference);
+    expect(codeOf(openOutbox({ dir, server: SERVER, box: secrets }).add(sale(), at).reference)).toBe(code);
+    // a list written before the code: it reads, and goes on with a code from then on
+    const file = join(dir, `outbox-${SERVER.slice(0, 16)}.qob`);
+    const saved = JSON.parse(secrets.reveal(readFileSync(file, 'utf8'))) as Record<string, unknown>;
+    delete saved.pc;
+    writeFileSync(file, secrets.protect(JSON.stringify(saved)));
+    const old = openOutbox({ dir, server: SERVER, box: secrets });
+    expect(old.list()).toHaveLength(2);
+    const next = old.add(sale(), at).reference!;
+    expect(codeOf(next)).toMatch(PC_CODE);
+    expect(next.slice(-4)).toBe('0003');
+    expect(codeOf(openOutbox({ dir, server: SERVER, box: secrets }).add(sale(), at).reference)).toBe(codeOf(next));
+  });
+
+  it("makes list codes from letters and digits that can't be misread, at random", () => {
+    const codes = Array.from({ length: 200 }, () => newPcCode());
+    for (const c of codes) expect(c).toMatch(PC_CODE);
+    expect(codes.join('')).not.toMatch(/[ILOU]/);
+    expect(new Set(codes).size).toBe(200);
+    expect(offlineReference('Counter1', 'K7Q3MX', 12)).toBe('OFF-Counter1-K7Q3MX-0012');
+    // what the office server takes (packages/server/src/pos.ts, OFFLINE_REFERENCE)
+    const server = /^OFF-[\p{L}\p{N}]{1,16}-(?:[0-9A-HJKMNP-TV-Z]{6}-)?\d{4,9}$/u;
+    expect(offlineReference(registerTag('صندوق الفرع الرئيسي 1'), newPcCode(), 1)).toMatch(server);
+    expect(offlineReference(registerTag(null), newPcCode(), 123_456_789)).toMatch(server);
   });
 
   it('names a register by its letters and digits, in any script', () => {
