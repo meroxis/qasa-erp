@@ -1,5 +1,6 @@
 import { APP_VERSION, type Lang } from '@qasa/core';
 import { WhatsNewButton } from './WhatsNew.tsx';
+import { RemoteSupportSection } from './RemoteSupport.tsx';
 import { useI18n, type I18n, type Key } from '../i18n.ts';
 
 /** qasaerp.com in the app's language (Arabic is the site's root). */
@@ -55,7 +56,7 @@ export function AgreeLine({ paid = false }: { paid?: boolean }) {
   );
 }
 
-/** Settings → About & legal: the version, the two licences (AGPL core, proprietary Pro) and the legal texts. */
+/** Settings → About & legal: the version, remote support, the two licences (AGPL core, proprietary Pro) and the legal texts. */
 export function LegalPanel() {
   const i18n: I18n = useI18n();
   const { t, lang } = i18n;
@@ -67,6 +68,7 @@ export function LegalPanel() {
         <div className="field"><span>{t('lg_version')}</span><strong className="ltr num">Qasa ERP {APP_VERSION}</strong><span><WhatsNewButton /></span></div>
         <div className="field"><span>©</span><strong>{t('lg_maker')}</strong></div>
       </div>
+      <RemoteSupportSection />
       <div className="stack" style={{ gap: 6 }}>
         <strong>{t('lg_licences')}</strong>
         <p className="muted" style={{ margin: 0 }}>{t('lg_core')} <Out href={SOURCE}>{t('lg_source')}</Out></p>

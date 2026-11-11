@@ -664,6 +664,8 @@ export interface YearEndStatus {
 
 export const api = {
   health: () => request<{ ok: boolean }>('GET', '/api/health'),
+  /** the company file's schema version and the one this app writes (Remote support → Copy support details) */
+  support: () => request<{ schema: number; app: number }>('GET', '/api/support'),
   yearEnd: () => request<YearEndStatus>('GET', '/api/year-end'),
   closeYear: (year: number) => request<EntryView>('POST', `/api/year-end/${year}/close`, {}),
   reopenYear: (year: number) => request<EntryView>('POST', `/api/year-end/${year}/reopen`, {}),

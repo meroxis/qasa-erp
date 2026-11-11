@@ -18,3 +18,4 @@ export * from './guide.ts';
 export * from './printers.ts';
 export * from './catalog.ts';
 export * from './loyalty.ts';
+export * from './support.ts';
