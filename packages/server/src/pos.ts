@@ -449,6 +449,22 @@ export function sell(db: Db, shiftId: string, input: SaleInput, actor: Actor): {
   return { invoice: getInvoice(db, invoiceId), shift: getShift(db, shiftId, actor) };
 }
 
+/**
+ * A sale booked by a first try whose answer never reached the till: the till printed its receipt with a temporary
+ * reference afterwards, and that reference is kept now, so it finds the sale too. Once only.
+ */
+export function attachOfflineReference(db: Db, invoiceId: string, offline: OfflineSale, user: string): void {
+  if (!OFFLINE_REFERENCE.test(offline.reference)) return;
+  transaction(db, () => {
+    if (db.prepare('SELECT 1 FROM pos_offline_sales WHERE invoice_id = ?').get(invoiceId)) return;
+    if (!db.prepare('SELECT 1 FROM pos_sales WHERE invoice_id = ?').get(invoiceId)) return;
+    const now = new Date();
+    const soldAt = ISO_INSTANT.test(offline.soldAt) && Date.parse(offline.soldAt) <= now.getTime() ? new Date(offline.soldAt).toISOString() : now.toISOString();
+    db.prepare('INSERT INTO pos_offline_sales (invoice_id, reference, sold_at, synced_at) VALUES (?, ?, ?, ?)').run(invoiceId, offline.reference, soldAt, now.toISOString());
+    audit(db, user, 'offline_sale', 'invoice', invoiceId, { reference: offline.reference, soldAt, sentBefore: true });
+  });
+}
+
 export function closeShift(db: Db, id: string, input: CloseInput, actor: Actor): ShiftView {
   requireRunnable(db, id, actor);
   const errors: { code: string }[] = [];
@@ -543,11 +559,17 @@ export const posApi: ApiExtension = {
           }), req.body);
           const shiftId = parse(idParam, req.params).id;
           const who = actor(req);
-          // a till sends a sale again with the same key after a lost link: it is booked once (idempotency.ts)
+          // a till sends a sale again with the same key after a lost link: it is booked once (idempotency.ts). The first
+          // try may have gone out before the till knew it was offline, without the offline stamp the till added after:
+          // the stamp is not part of what must match, and a sale booked by that first try gets its receipt reference then
+          const { offline: _stamp, ...sameEachTime } = (req.body ?? {}) as Record<string, unknown>;
           const made = onceOnly(db, req, reply, who, 'POST /api/pos/shifts/:id/sales', () => {
             const result = sell(db, shiftId, body, who);
             return { id: result.invoice.id, result };
-          }, (invoiceId) => ({ invoice: getInvoice(db, invoiceId), shift: getShift(db, shiftId, who) }));
+          }, (invoiceId) => {
+            if (body.offline) attachOfflineReference(db, invoiceId, body.offline, who.name);
+            return { invoice: getInvoice(db, invoiceId), shift: getShift(db, shiftId, who) };
+          }, { fingerprint: sameEachTime });
           reply.status(201).send(made);
           return undefined;
         }

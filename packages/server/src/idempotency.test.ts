@@ -322,3 +322,46 @@ describe('schema 12 (offline outbox)', () => {
     }
   });
 });
+
+describe('the books a PC kept something for', () => {
+  it('has an id of its own, the same every time, and other books refuse what was kept for these', async () => {
+    const books = (await get('/api/outbox/books')).json().books as string;
+    expect(books).toMatch(/^[0-9a-f]{32}$/);
+    expect((await get('/api/outbox/books')).json().books).toBe(books);
+    const shift = await openShift();
+    const wrong = await post(`/api/pos/shifts/${shift.id}/sales`, teaSale(1), { ...withKey(randomUUID()), 'x-qasa-books': 'ab'.repeat(16) });
+    expect(wrong.statusCode).toBe(409);
+    expect(wrong.json().error).toBe('other_books');
+    expect(count('invoices')).toBe(0);
+    const right = await post(`/api/pos/shifts/${shift.id}/sales`, teaSale(1), { ...withKey(randomUUID()), 'x-qasa-books': books });
+    expect(right.statusCode, right.body).toBe(201);
+    // another company file has its own
+    const other = openDatabase(':memory:');
+    const otherApp = buildApp(other);
+    try {
+      expect((await otherApp.inject({ url: '/api/outbox/books', headers })).json().books).not.toBe(books);
+    } finally {
+      await otherApp.close();
+      other.close();
+    }
+  });
+});
+
+describe('a sale whose first try was booked but whose answer was lost', () => {
+  it('answers the till\'s later offline try from the first one, and keeps the receipt reference the till printed then', async () => {
+    const shift = await openShift();
+    const key = randomUUID();
+    const first = await post(`/api/pos/shifts/${shift.id}/sales`, teaSale(1), withKey(key));
+    expect(first.statusCode).toBe(201);
+    const stamp = { reference: 'OFF-Counter1-0003', soldAt: new Date().toISOString(), soldOn: todayIso() };
+    const later = await post(`/api/pos/shifts/${shift.id}/sales`, { ...teaSale(1), offline: stamp }, withKey(key));
+    expect(later.statusCode, later.body).toBe(201);
+    expect(later.headers['x-qasa-idempotent-replay']).toBe('1');
+    expect(later.json().invoice).toMatchObject({ id: first.json().invoice.id, offlineRef: 'OFF-Counter1-0003' });
+    expect((await post(`/api/pos/shifts/${shift.id}/sales`, { ...teaSale(1), offline: stamp }, withKey(key))).json().invoice.id).toBe(first.json().invoice.id);
+    expect(count('invoices')).toBe(1);
+    expect(count('pos_offline_sales')).toBe(1);
+    // the stamp aside, the sale must be the same
+    expect((await post(`/api/pos/shifts/${shift.id}/sales`, { ...teaSale(2), offline: stamp }, withKey(key))).json().error).toBe('idempotency_key_reused');
+  });
+});

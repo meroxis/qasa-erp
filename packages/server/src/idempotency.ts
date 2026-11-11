@@ -94,15 +94,16 @@ const isDuplicate = (error: unknown) => /UNIQUE constraint failed: idempotency_k
  * `again` gives the answer for that id when the key comes back. Without a key, `make` runs as it always did.
  *
  * The route is the route's pattern ("POST /api/invoices/:id/post"), so a key can't be used for another kind of request.
+ * `fingerprint` is the part of the body that must be the same each time (all of it unless a route says otherwise).
  */
 export function onceOnly<T>(
   db: Db, req: ApiRequest, reply: ApiReply | null, actor: Pick<Actor, 'id' | 'name'>, route: string,
-  make: () => { id: string; result: T }, again: (id: string) => T
+  make: () => { id: string; result: T }, again: (id: string) => T, options: { fingerprint?: unknown } = {}
 ): T {
   const key = idempotencyKeyOf(req.headers);
   if (!key) return make().result;
   const owner = ownerOf(actor);
-  const hash = requestFingerprint(route, req.params, req.body);
+  const hash = requestFingerprint(route, req.params, 'fingerprint' in options ? options.fingerprint : req.body);
   const replay = (row: KeyRow): T => {
     // the same key for someone else, another route or another body: never their document, never a second one
     if (row.user_key !== owner || row.route !== route || row.request_hash !== hash || !row.result_id) throw conflict('idempotency_key_reused');

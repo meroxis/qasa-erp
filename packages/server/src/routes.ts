@@ -27,6 +27,7 @@ import { closeYear, reopenYear, yearStatuses } from './closing.ts';
 import { createReturn } from './returns.ts';
 import { cancelStockDoc, createStockDoc, deleteStockDoc, getStockDoc, listStockDocs, postStockDoc, updateStockDoc } from './stock-docs.ts';
 import { onceOnly } from './idempotency.ts';
+import { BOOKS_HEADER, booksId } from './outbox.ts';
 
 const isoDate = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
 const period = z.string().regex(/^\d{4}-(0[1-9]|1[0-2])$/);
@@ -357,6 +358,9 @@ export function apiRoutes(db: Db, options: { demo?: boolean; extensions?: readon
           if (need && !actor.permissions.includes(need)) throw new AppError(403, 'forbidden', { need });
         }
         (req as ApiRequest & { actor?: Actor | null }).actor = actor;
+        // a change a PC kept for later names the books it was made for: never into other books (outbox.ts)
+        const books = header(req, BOOKS_HEADER);
+        if (books !== undefined && method !== 'GET' && books !== booksId(db)) throw conflict('other_books');
         // a user limited to some branches works only with their warehouses and safes (branches.ts)
         checkBranchRequest(db, actor, method, path, req);
         const result = await handler(req, reply);
