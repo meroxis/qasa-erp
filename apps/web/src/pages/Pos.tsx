@@ -509,6 +509,9 @@ function Register({ initial, onClosed }: { initial: ShiftView; onClosed(): void 
               <span>{t('pos_total')}</span>
               <strong className="num">{i18n.money(total, currency)}</strong>
             </div>
+            {points.value > 0 && (
+              <div className="pos-r-row"><span>{t('pos_left')} ({t('ly_title')}: −{i18n.money(points.value, currency)})</span><strong className="num">{i18n.money(due, currency)}</strong></div>
+            )}
             {methods.length > 1 && (
               <div className="stack" style={{ gap: 6 }}>
                 <div className="track" role="group" aria-label={t('paymentMode')} style={{ flexWrap: 'wrap' }}>

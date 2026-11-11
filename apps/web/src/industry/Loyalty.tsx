@@ -166,7 +166,7 @@ export function LoyaltyCard({ partyId, admin }: { partyId: string; admin: boolea
         </div>
         {l.expiring && (
           <div>
-            <div className="small muted">{t('ly_k_expire')}</div>
+            <div className="small muted">{t('ly_nextLapse')}</div>
             <div style={{ color: 'var(--warn)' }}>{t('ly_expiring', { p: i18n.int(l.expiring.points), d: i18n.date(l.expiring.on) })}</div>
           </div>
         )}

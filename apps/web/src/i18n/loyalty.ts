@@ -31,6 +31,7 @@ export const LOYALTY_TEXT = {
   // the customer page
   ly_balance: ['رصيد النقاط', 'Points balance', 'باڵانسی خاڵەکان'],
   ly_worth: ['تساوي {v}', 'Worth {v}', 'بەهای {v}'],
+  ly_nextLapse: ['أقرب انتهاء', 'Next to lapse', 'نزیکترین بەسەرچوون'],
   ly_expiring: ['{p} نقطة تنتهي في {d}', '{p} points lapse on {d}', '{p} خاڵ لە {d} بەسەردەچن'],
   ly_ledger: ['حركات النقاط', 'Points movements', 'جووڵەکانی خاڵ'],
   ly_noMoves: ['لا حركات بعد.', 'No movements yet.', 'هێشتا هیچ جووڵەیەک نییە.'],

@@ -104,7 +104,7 @@ export function dayCloseRows(i18n: I18n, c: DayCloseView): (string | number)[][]
 }
 
 function MoneyCell({ children, color }: { children: ReactNode; color?: string | undefined }) {
-  return <td className="num" style={color ? { color, fontWeight: 600 } : undefined}>{children}</td>;
+  return <td className="num" style={{ whiteSpace: 'nowrap', ...(color ? { color, fontWeight: 600 } : {}) }}>{children}</td>;
 }
 
 export function DayClose() {

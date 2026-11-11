@@ -38,6 +38,12 @@ export function phoneState(phone: string): { ok: true; shown: string | null } | 
   return shown ? { ok: true, shown } : { ok: false };
 }
 
+/** A sentence with a phone number in it: the number kept left to right inside Arabic and Kurdish text. */
+function NumberIn({ text, number }: { text: string; number: string }) {
+  const [before, after] = text.split('\u0000');
+  return <>{before}<bdi dir="ltr" className="num">{number}</bdi>{after}</>;
+}
+
 /** Opens WhatsApp with the message, to the number when it is one (the app's usual wa.me link). */
 function openChat(phone: string, text: string): void {
   window.open(whatsappUrl(whatsappNumber(phone) ? phone : null, text), '_blank', 'noopener,noreferrer');
@@ -50,7 +56,7 @@ export function WhatsAppSendButton(props: WhatsAppSendProps & { label?: Key; pri
   return (
     <>
       <button type="button" className={'btn' + (props.primary ? ' primary' : '')} disabled={props.disabled} onClick={() => setOpen(true)}
-        title={known ? t('sh_toNumber') : t('sh_pickChat')}>
+        title={known ? (props.kind === 'dayclose' ? t('br_ownerPhone') : t('sh_toNumber')) : t('sh_pickChat')}>
         <Icon name="phone" size={16} />{t(props.label ?? 'wp_send')}
       </button>
       {open && <WhatsAppSendModal {...props} onClose={() => setOpen(false)} />}
@@ -115,7 +121,7 @@ export function WhatsAppSendModal({ kind, docRef, phone: initialPhone, lang: ini
           </label>
         </div>
         {number.ok
-          ? <div className="small muted">{number.shown ? t('wp_phoneOk', { n: app.ltr(number.shown) }) : t('sh_pickChat')}</div>
+          ? <div className="small muted">{number.shown ? <NumberIn text={t('wp_phoneOk', { n: '\u0000' })} number={number.shown} /> : t('sh_pickChat')}</div>
           : <div className="small" role="alert" style={{ color: 'var(--bad)' }}>{t('br_phoneInvalid')}</div>}
         <label className="field">
           <span>{t('wp_message')}</span>
