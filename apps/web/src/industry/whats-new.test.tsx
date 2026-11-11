@@ -17,7 +17,7 @@ describe("What's new in this version", () => {
         <I18nContext.Provider value={makeI18n(lang, 'western', () => {}, () => {})}><WhatsNewDialog version={APP_VERSION} onClose={() => {}} /></I18nContext.Provider>
       );
       expect(html).not.toContain(':::');
-      expect(html).toContain(lang === 'en' ? 'Before you update' : lang === 'ar' ? 'قبل التحديث' : 'پێش نوێکردنەوە');
+      expect(html).toContain(lang === 'en' ? 'Licences from 0.1.8' : lang === 'ar' ? 'تراخيص الإصدار 0.1.8' : 'مۆڵەتەکانی وەشانی 0.1.8');
       expect(html).not.toMatch(/<a /);
     }
   });

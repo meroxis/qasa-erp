@@ -226,8 +226,8 @@ describe('the release notes and the Store "What\'s new" of this version', () => 
 
   const store = listing.listings;
 
-  it('is 1.2.0, the same in the app, the core and the lock file, with notes in Arabic, English and Kurdish', () => {
-    expect(version).toBe('1.2.0');
+  it('is 1.2.1, the same in the app, the core and the lock file, with notes in Arabic, English and Kurdish', () => {
+    expect(version).toBe('1.2.1');
     expect(read('packages/core/src/version.ts')).toContain(`APP_VERSION = '${version}'`);
     const lock = JSON.parse(read('package-lock.json')) as { packages: Record<string, { version?: string }> };
     expect(lock.packages['apps/desktop']?.version).toBe(version);
@@ -243,57 +243,65 @@ describe('the release notes and the Store "What\'s new" of this version', () => 
     }
   });
 
-  it('names the offline till and the waiting list, the end-of-day close and where it is, WhatsApp and loyalty points', () => {
-    expect(section('en')).toContain('Overview → **End of day**');
-    expect(section('ar')).toContain('عام ← **إغلاق اليوم**');
-    expect(section('ku')).toContain('گشتی ← **داخستنی ڕۆژ**');
-    expect(section('en')).toContain('Settings → **Loyalty points**');
-    expect(section('ar')).toContain('الإعدادات ← **نقاط الولاء**');
-    expect(section('ku')).toContain('ڕێکخستنەکان ← **خاڵەکانی دڵسۆزی**');
-    for (const label of ['**Working through a dropped link (office network):**', '**The till while offline:**', '**WhatsApp:**', '**Loyalty points (Pro):**']) {
-      expect(section('en')).toContain(label);
+  it('names remote support with Quick Assist, where it is, and the details it copies without passwords, keys or company data', () => {
+    expect(section('en')).toContain('Help → **Remote support…**, and Settings → **Help and About**');
+    expect(section('ar')).toContain('مساعدة ← **الدعم عن بُعد…**، والإعدادات ← **المساعدة وحول البرنامج**');
+    expect(section('ku')).toContain('یارمەتی ← **پشتگیری لە دوورەوە…**، و ڕێکخستنەکان ← **یارمەتی و دەربارە**');
+    for (const lang of ['ar', 'en', 'ku'] as const) for (const word of ['Quick Assist', 'Windows', '6', 'Meroxis']) expect(section(lang), lang).toContain(word);
+    // Windows' own Arabic name for Quick Assist, and the app's words for Allow
+    expect(section('ar')).toContain('«المساعدة السريعة» (Quick Assist)');
+    expect(section('en')).toContain('type it in Quick Assist, then choose Allow');
+    expect(section('ar')).toContain('ثم اختر «السماح»');
+    expect(section('ku')).toContain('پاشان «ڕێگەدان» هەڵبژێرە');
+    expect(section('en')).toContain('you can stop it at any time by closing Quick Assist');
+    expect(section('ar')).toContain('يمكنك إيقافه في أي وقت بإغلاق «المساعدة السريعة»');
+    expect(section('ku')).toContain('هەر کاتێک بتەوێت دەتوانیت بە داخستنی Quick Assist ڕایبگریت');
+    expect(section('en')).toContain("**Copy support details:** copies the app's version and plan, Windows' version and the last errors, to paste into WhatsApp, without passwords, keys or your company's data.");
+    expect(section('ar')).toMatch(/\*\*نسخ تفاصيل الدعم:\*\*[^\n]*دون كلمات مرور أو مفاتيح أو بيانات شركتك/);
+    expect(section('ku')).toMatch(/\*\*کۆپیکردنی وردەکارییەکانی پشتگیری:\*\*[^\n]*بەبێ وشەی نهێنی، کلیل یان داتای کۆمپانیاکەت/);
+    for (const words of ['Remote support (Help → Remote support…, and Settings → Help and About)', 'Quick Assist', '6-digit code', 'Copy support details', "without passwords, keys or your company's data"]) expect(store['en-us'].releaseNotes).toContain(words);
+    expect(store.ar.releaseNotes).toContain('الدعم عن بُعد (مساعدة ← الدعم عن بُعد…، والإعدادات ← المساعدة وحول البرنامج)');
+    expect(store['ku-arab'].releaseNotes).toContain('پشتگیری لە دوورەوە (یارمەتی ← پشتگیری لە دوورەوە…، و ڕێکخستنەکان ← یارمەتی و دەربارە)');
+    expect(store['en-us'].features.some((f) => /Remote support with Windows' Quick Assist[\s\S]*6-digit code[\s\S]*Allow/.test(f))).toBe(true);
+    expect(store.ar.features.some((f) => /الدعم عن بُعد[\s\S]*Quick Assist[\s\S]*«السماح»/.test(f))).toBe(true);
+    expect(store['ku-arab'].features.some((f) => /پشتگیری لە دوورەوە[\s\S]*Quick Assist[\s\S]*«ڕێگەدان»/.test(f))).toBe(true);
+  });
+
+  it('warns to type only a code Qasa support gave after you asked for help, never one from a stranger who phoned', () => {
+    expect(section('en')).toContain('Only type a code that Qasa support (Meroxis) gave you after you asked for help. Never type a code from a stranger who phoned you, even if they say they are from Qasa, Microsoft or a bank.');
+    expect(section('ar')).toContain('لا تكتب إلا رمزاً أعطاك إياه دعم قاصة (Meroxis) بعد أن طلبت أنت المساعدة. لا تكتب أبداً رمزاً من شخص غريب اتصل بك، حتى لو قال إنه من قاصة أو Microsoft أو مصرف.');
+    expect(section('ku')).toContain('تەنها کۆدێک بنووسە کە پشتگیریی قاسە (Meroxis) دوای ئەوەی خۆت داوای یارمەتیت کرد پێی داویت. هەرگیز کۆدی کەسێکی نەناسراو مەنووسە کە پەیوەندیی پێوە کردوویت، تەنانەت ئەگەر بڵێت لە قاسە یان Microsoft یان بانکێکەوەیە.');
+    expect(section('en')).toContain('Nobody sees your screen before that');
+    expect(section('ar')).toContain('لا يرى أحد شاشتك قبل ذلك');
+    expect(section('ku')).toContain('پێش ئەوە کەس شاشەکەت نابینێت');
+    expect(store['en-us'].releaseNotes).toContain('Only type a code that Qasa support (Meroxis) gave you after you asked for help; never a code from a stranger who phoned you');
+    expect(store.ar.releaseNotes).toContain('لا تكتب إلا رمزاً أعطاك إياه دعم قاصة (Meroxis) بعد أن طلبت أنت المساعدة');
+    expect(store['ku-arab'].releaseNotes).toContain('تەنها کۆدێک بنووسە کە پشتگیریی قاسە (Meroxis) دوای ئەوەی خۆت داوای یارمەتیت کرد پێی داویت');
+  });
+
+  it('names Settings in sections and each section, in the words of the Settings list', () => {
+    expect(section('en')).toContain('**Settings in sections:**');
+    expect(section('ar')).toContain('**الإعدادات في أقسام:**');
+    expect(section('ku')).toContain('**ڕێکخستنەکان بە بەش:**');
+    const names: Record<'en' | 'ar' | 'ku', string[]> = {
+      en: ['Language and display', 'Company', 'Periods and year-end', 'Sales and point of sale', 'Loyalty points', 'Printers', 'Backups', 'Office network', 'Companies', 'Users', 'Anonymous usage statistics', 'Updates', 'Help and About'],
+      ar: ['اللغة والعرض', 'الشركة', 'الفترات وإقفال السنة', 'المبيعات ونقطة البيع', 'نقاط الولاء', 'الطابعات', 'النسخ الاحتياطية', 'شبكة المكتب', 'الشركات', 'المستخدمون', 'إحصاءات الاستخدام المجهولة', 'التحديثات', 'المساعدة وحول البرنامج'],
+      ku: ['زمان و پیشاندان', 'کۆمپانیا', 'ماوەکان و داخستنی ساڵ', 'فرۆشتن و خاڵی فرۆشتن', 'خاڵەکانی دڵسۆزی', 'چاپکەرەکان', 'باکئەپەکان', 'تۆڕی نووسینگە', 'کۆمپانیاکان', 'بەکارهێنەران', 'ئاماری بەکارهێنانی بێناو', 'نوێکردنەوەکان', 'یارمەتی و دەربارە']
+    };
+    const storeOf = { en: 'en-us', ar: 'ar', ku: 'ku-arab' } as const;
+    for (const lang of ['ar', 'en', 'ku'] as const) {
+      for (const name of names[lang]) {
+        expect(section(lang), name).toContain('**' + name + '**');
+        expect(store[storeOf[lang]].releaseNotes, name).toContain(name);
+      }
     }
-    // the app's own words for the bar, the list and the customer card
-    expect(section('en')).toMatch(/\*\*Offline\*\*[\s\S]*\*\*Waiting to send\*\*/);
-    expect(section('ar')).toMatch(/\*\*غير متصل\*\*[\s\S]*\*\*ما ينتظر الإرسال\*\*/);
-    expect(section('ku')).toMatch(/\*\*بێ پەیوەندی\*\*[\s\S]*\*\*چاوەڕێی ناردن\*\*/);
-    expect(section('en')).toContain('**Language for WhatsApp messages**');
-    expect(section('ar')).toContain('**لغة رسائل واتساب**');
-    expect(section('ku')).toContain('**زمانی نامەکانی واتسئاپ**');
-    for (const lang of ['ar', 'en', 'ku'] as const) for (const word of ['OFF-', '+964', 'PDF', 'Pro', 'Excel']) expect(section(lang), lang).toContain(word);
-    expect(section('en')).toContain('Nothing is sent without your click');
-    for (const words of ['Working through a dropped link', 'End of day (Overview → End of day)', 'WhatsApp', 'Loyalty points (Pro)']) expect(store['en-us'].releaseNotes).toContain(words);
-    expect(store.ar.releaseNotes).toContain('إغلاق اليوم (عام ← إغلاق اليوم)');
-    expect(store['ku-arab'].releaseNotes).toContain('داخستنی ڕۆژ (گشتی ← داخستنی ڕۆژ)');
-    expect(store['en-us'].features.some((f) => /office link drops[\s\S]*end-of-day close/.test(f))).toBe(true);
-    expect(store.ar.features.some((f) => /ينقطع اتصال المكتب[\s\S]*إغلاق اليوم/.test(f))).toBe(true);
-    expect(store['ku-arab'].features.some((f) => /پەیوەندیی نووسینگە دەپچڕێت[\s\S]*داخستنی ڕۆژ/.test(f))).toBe(true);
+    expect(store['en-us'].releaseNotes).toContain('Settings in sections: Settings is now a short list of sections, each opening on its own instead of one long page');
   });
 
-  it('never says the till sells on account or with points while offline, and says a sale is booked once', () => {
-    expect(section('en')).toContain("Selling on a customer's account and using loyalty points need the server");
-    expect(section('ar')).toContain('البيع على حساب الزبون واستعمال نقاط الولاء يحتاجان الاتصال بالخادم');
-    expect(section('ku')).toContain('فرۆشتن لەسەر حسابی کڕیار و بەکارهێنانی خاڵەکانی دڵسۆزی پێویستیان بە سێرڤەرە');
-    expect(section('en')).toContain('booked once only');
-    expect(section('ar')).toContain('يُسجَّل في الدفاتر مرة واحدة فقط');
-    expect(section('ku')).toContain('تەنها یەک جار لە دەفتەرەکاندا تۆمار دەکرێت');
-    expect(store['en-us'].releaseNotes).toContain('booked once');
-  });
-
-  it('says a paused Pro never locks the data, and names Plan & license', () => {
-    expect(section('en')).toContain('Pro features pause on that PC and **Plan & license** says why and what to do. Your data is never locked.');
-    expect(section('ar')).toContain('**الخطة والترخيص**');
-    expect(section('ar')).toContain('كل بياناتك محفوظة');
-    expect(section('ku')).toContain('**پلان و مۆڵەت**');
-    expect(section('ku')).toContain('هەموو داتاکانت پارێزراون');
-  });
-
-  it('says plainly that 1.1 cannot open a company file 1.2 has upgraded, so every PC and the Store version are updated', () => {
-    expect(section('en')).toContain('Qasa ERP 1.1 cannot open a file that 1.2 has upgraded');
-    expect(section('ar')).toContain('لا يفتح قاصة ERP 1.1 ملفاً رقّاه الإصدار 1.2');
-    expect(section('ku')).toContain('قاسە ERP 1.1 فایلێک ناکاتەوە کە 1.2 بەرزی کردبێتەوە');
-    for (const lang of ['ar', 'en', 'ku'] as const) expect(section(lang)).toContain('Microsoft');
-    expect(store['en-us'].releaseNotes).toContain('update every PC that opens it');
+  it('upgrades no company file in 1.2.1, so it has no "Before you update" warning', () => {
+    expect(notes).not.toMatch(/Before you update|قبل التحديث|پێش نوێکردنەوە/);
+    const all = [notes, ...Object.values(store).map((l) => l.releaseNotes)].join('\n');
+    expect(all).not.toMatch(/company file is upgraded|يُرقّى ملف الشركة|فایلی کۆمپانیا بەرز دەکرێتەوە/);
   });
 
   it('never says the automatic daily backups came to Free: they stay with Pro and Business', () => {
