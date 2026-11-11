@@ -539,7 +539,10 @@ function outboxStore(): OutboxStore | null {
   if (outbox) return outbox;
   try {
     const userData = app.getPath('userData');
-    outbox = openOutbox({ dir: join(userData, 'outbox'), server: remote.fingerprint, box: makeSecretBox(secretsKey(), userData), log });
+    // nothing is kept in the clear: without a key Windows protects, this PC has no outbox (online only, as before)
+    const key = secretsKey();
+    if (!key) throw new Error('Windows cannot protect the outbox here');
+    outbox = openOutbox({ dir: join(userData, 'outbox'), server: remote.fingerprint, box: makeSecretBox(key, userData), log });
   } catch (error) {
     outboxFailed = true;
     log('the outbox could not be opened:', error instanceof Error ? error.message : String(error));
