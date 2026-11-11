@@ -568,9 +568,15 @@ export interface ExpenseAccountTotal { accountCode: string; name: Names; categor
  * share 33, so such a line has no kind (null) and is shown under its account's name, never as "rent". `byAccount`
  * adds up every line by account; `byCategory` only the lines whose kind is known.
  */
-export function monthExpenses(db: Db, month: string, branch: BranchFilter = null): { rows: ExpenseRow[]; byCategory: Record<string, number>; byAccount: ExpenseAccountTotal[]; total: number } {
+export function monthExpenses(db: Db, month: string, branch: BranchFilter = null): ExpenseSummary {
   const from = `${month}-01`;
-  const to = lastDayOfMonth(from);
+  return expensesBetween(db, from, lastDayOfMonth(from), branch);
+}
+
+export interface ExpenseSummary { rows: ExpenseRow[]; byCategory: Record<string, number>; byAccount: ExpenseAccountTotal[]; total: number }
+
+/** The expenses of a period, by monthExpenses' rules: a month for the expenses page, one day for the end-of-day close. */
+export function expensesBetween(db: Db, from: string, to: string, branch: BranchFilter = null): ExpenseSummary {
   const map = expenseAccounts(db);
   // for one branch: the payments of its own safes (entryInBranch)
   const [b, bp] = entryInBranch('e', branch);
@@ -615,7 +621,7 @@ function parse<T>(schema: z.ZodType<T>, value: unknown): T {
  * switcher. A user limited to some branches always gets theirs (asking for another is refused); others get the whole
  * company unless they pick a branch.
  */
-function branchOf(db: Db, req: ApiRequest, actor: Parameters<typeof scopeOf>[1]): BranchFilter {
+export function branchOf(db: Db, req: ApiRequest, actor: Parameters<typeof scopeOf>[1]): BranchFilter {
   const q = (req.query ?? {}) as { branchId?: unknown };
   const raw = req.headers['x-qasa-branch'];
   const wanted = typeof q.branchId === 'string' && q.branchId ? q.branchId : typeof raw === 'string' && raw ? raw : null;

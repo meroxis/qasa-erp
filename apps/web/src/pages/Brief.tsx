@@ -63,7 +63,7 @@ export function briefText(i18n: I18n, b: BriefView): string {
   return lines.join('\n');
 }
 
-function Stat({ label, value, sub, color, icon }: { label: string; value: string; sub?: ReactNode; color?: string; icon: string }) {
+export function Stat({ label, value, sub, color, icon }: { label: string; value: string; sub?: ReactNode; color?: string; icon: string }) {
   return (
     <div className="card pad tile">
       <div className="label"><span className="ico"><Icon name={icon} size={18} /></span>{label}</div>
@@ -73,7 +73,7 @@ function Stat({ label, value, sub, color, icon }: { label: string; value: string
   );
 }
 
-function Section({ title, icon, children, empty, action }: { title: string; icon: string; children: ReactNode; empty?: boolean; action?: ReactNode }) {
+export function Section({ title, icon, children, empty, action }: { title: string; icon: string; children: ReactNode; empty?: boolean; action?: ReactNode }) {
   const { t } = useI18n();
   return (
     <section className="card" style={{ breakInside: 'avoid' }}>
@@ -87,8 +87,8 @@ function Section({ title, icon, children, empty, action }: { title: string; icon
   );
 }
 
-const listStyle: CSSProperties = { listStyle: 'none', margin: 0, padding: '0 16px 12px' };
-const itemStyle: CSSProperties = { display: 'flex', alignItems: 'center', gap: 12, padding: '10px 0', borderTop: '1px solid var(--line, #E4E1D8)', flexWrap: 'wrap' };
+export const listStyle: CSSProperties = { listStyle: 'none', margin: 0, padding: '0 16px 12px' };
+export const itemStyle: CSSProperties = { display: 'flex', alignItems: 'center', gap: 12, padding: '10px 0', borderTop: '1px solid var(--line, #E4E1D8)', flexWrap: 'wrap' };
 
 export function Brief() {
   const i18n = useI18n();
@@ -123,6 +123,7 @@ export function Brief() {
         <button type="button" className="btn ghost" onClick={() => setDate(addDays(date, -1))} aria-label={t('br_prevDay')}><Icon name="chevron" size={16} className="flip" /></button>
         <button type="button" className="btn ghost" onClick={() => setDate(addDays(date, 1))} disabled={date >= todayIso()} aria-label={t('br_nextDay')}><Icon name="chevron" size={16} /></button>
         <span className="spacer" />
+        <a className="btn" href={href('day-close')} title={t('dc_open')}><Icon name="check" size={16} />{t('dc_title')}</a>
         <button type="button" className="btn primary" onClick={send} disabled={!b}><Icon name="mail" size={16} />{t('br_sendWhatsApp')}</button>
         <button type="button" className="btn" onClick={() => void copy()} disabled={!b}><Icon name="doc" size={16} />{t('br_copy')}</button>
         <button type="button" className="btn" onClick={() => void printDocument('report')} disabled={!b}><Icon name="printer" size={16} />{t('br_print')}</button>

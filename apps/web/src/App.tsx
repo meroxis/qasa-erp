@@ -78,6 +78,7 @@ const QuoteEditor = lazyPage(() => import('./pages/Quotes.tsx'), 'QuoteEditor');
 const Quotes = lazyPage(() => import('./pages/Quotes.tsx'), 'Quotes');
 const Pipeline = lazyPage(() => import('./pages/Pipeline.tsx'), 'Pipeline');
 const Brief = lazyPage(() => import('./pages/Brief.tsx'), 'Brief');
+const DayClose = lazyPage(() => import('./pages/DayClose.tsx'), 'DayClose');
 const Expenses = lazyPage(() => import('./pages/Expenses.tsx'), 'Expenses');
 const MoreReports = lazyPage(() => import('./pages/MoreReports.tsx'), 'MoreReports');
 const Rates = lazyPage(() => import('./pages/Rates.tsx'), 'Rates');
@@ -558,6 +559,10 @@ export function App() {
     case 'brief':
       title = t('br_title');
       content = <Brief />;
+      break;
+    case 'day-close':
+      title = t('dc_title');
+      content = <DayClose />;
       break;
     case 'expenses':
       title = t('br_expenses');
