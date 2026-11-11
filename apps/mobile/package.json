@@ -1,6 +1,6 @@
 {
   "name": "qasa-mobile",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "main": "index.ts",
   "dependencies": {
     "@noble/ciphers": "^2.4.0",
@@ -10,13 +10,17 @@
     "expo-camera": "~58.0.14",
     "expo-crypto": "~58.0.7",
     "expo-file-system": "~58.0.13",
+    "expo-font": "~58.0.11",
     "expo-haptics": "~58.0.7",
     "expo-image-manipulator": "~58.0.16",
+    "expo-local-authentication": "~58.0.2",
     "expo-localization": "~58.0.5",
     "expo-secure-store": "~58.0.2",
     "expo-status-bar": "~58.0.4",
     "react": "19.3.0",
-    "react-native": "0.88.1"
+    "react-native": "0.88.1",
+    "react-native-safe-area-context": "~5.11.1",
+    "react-native-svg": "15.16.0"
   },
   "devDependencies": {
     "@types/react": "~19.3.0",
@@ -31,10 +35,22 @@
     "ios": "expo start --ios",
     "web": "expo start --web",
     "typecheck": "tsc --noEmit",
-    "test": "vitest run --config vitest.config.ts",
+    "test": "vitest run --config vitest.config.mts",
     "sync-protocol": "node scripts/sync-protocol.mjs",
     "lint": "expo lint"
   },
   "private": true,
-  "description": "The Qasa ERP phone app: scan barcodes, check prices and stock, add items with photos, count stock, send draft sales"
+  "description": "The Qasa ERP phone app: scan barcodes, check prices and stock, add items with photos, count stock, send draft sales",
+  "overrides": {
+    "@expo/cli": {
+      "glob": "^14.0.4"
+    },
+    "@expo/fingerprint": {
+      "glob": "^14.0.4",
+      "minimatch": "^11.0.7"
+    },
+    "@typescript-eslint/typescript-estree": {
+      "minimatch": "^11.0.7"
+    }
+  }
 }

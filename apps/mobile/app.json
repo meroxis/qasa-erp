@@ -5,7 +5,7 @@
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
-    "userInterfaceStyle": "light",
+    "userInterfaceStyle": "automatic",
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "iq.qasaerp.mobile",
@@ -13,12 +13,14 @@
         "NSLocalNetworkUsageDescription": "Qasa connects to your Qasa ERP PC on the same Wi-Fi.",
         "NSAppTransportSecurity": {
           "NSAllowsLocalNetworking": true
-        }
+        },
+        "NSFaceIDUsageDescription": "Qasa can unlock with Face ID when you turn it on in the app lock.",
+        "CFBundleAllowMixedLocalizations": true
       }
     },
     "android": {
       "adaptiveIcon": {
-        "backgroundColor": "#E6F4FE",
+        "backgroundColor": "#F2A33A",
         "foregroundImage": "./assets/android-icon-foreground.png",
         "backgroundImage": "./assets/android-icon-background.png",
         "monochromeImage": "./assets/android-icon-monochrome.png"
@@ -27,7 +29,14 @@
       "package": "iq.qasaerp.mobile",
       "permissions": [
         "android.permission.CAMERA",
-        "android.permission.VIBRATE"
+        "android.permission.VIBRATE",
+        "android.permission.USE_BIOMETRIC"
+      ],
+      "allowBackup": false,
+      "blockedPermissions": [
+        "android.permission.RECORD_AUDIO",
+        "android.permission.READ_EXTERNAL_STORAGE",
+        "android.permission.WRITE_EXTERNAL_STORAGE"
       ]
     },
     "web": {
@@ -43,8 +52,21 @@
       ],
       "expo-secure-store",
       "expo-localization",
-      "./plugins/with-lan-cleartext.js"
+      "./plugins/with-lan-cleartext.js",
+      "expo-font",
+      [
+        "expo-local-authentication",
+        {
+          "faceIDPermission": "Qasa can unlock with Face ID when you turn it on in the app lock."
+        }
+      ]
     ],
-    "scheme": "qasa"
+    "scheme": "qasa",
+    "backgroundColor": "#F4F6F9",
+    "locales": {
+      "ar": "./locales/ar.json",
+      "en": "./locales/en.json",
+      "ckb": "./locales/ckb.json"
+    }
   }
 }
