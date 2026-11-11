@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import { basename, join } from 'node:path';
 import { afterAll, describe, expect, it } from 'vitest';
 import { Bridge, type Carrier } from './bridge.ts';
-import { companyFileProblem, keptAsideOf, putBackCompanyFile, serve, stopServer, swapInCompanyFile } from './server-process.ts';
+import { companyFileProblem, keptAsideOf, putBackCompanyFile, serve, stopServer, swapInCompanyFile, trialMarkerDirs } from './server-process.ts';
 import { text } from './texts.ts';
 import { openDatabase } from '@qasa/server';
 import { companyVerifyKey } from '../../../packages/server/src/verify.ts';
@@ -118,6 +118,16 @@ describe('the server process', () => {
     await main.call('stop');
     await expect(fetch(`${url}/api/health`)).rejects.toThrow();
   }, 30_000);
+});
+
+describe('where this PC\'s trial record is kept', () => {
+  it('in the app\'s own folder and in %LOCALAPPDATA%\\Qasa ERP, once each, and in the app\'s folder alone without LOCALAPPDATA', () => {
+    const roaming = join('C:', 'Users', 'Mer', 'AppData', 'Roaming', 'Qasa ERP');
+    const local = join('C:', 'Users', 'Mer', 'AppData', 'Local', 'Qasa ERP');
+    expect(trialMarkerDirs({ userDataDir: roaming, localDataDir: local })).toEqual([roaming, local]);
+    expect(trialMarkerDirs({ userDataDir: roaming })).toEqual([roaming]);
+    expect(trialMarkerDirs({ userDataDir: roaming, localDataDir: roaming.toUpperCase() })).toEqual([roaming]);
+  });
 });
 
 describe('a company file that had no room for its copy before an update', () => {

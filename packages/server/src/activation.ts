@@ -2,7 +2,7 @@ import { createHash, createHmac, randomBytes, timingSafeEqual } from 'node:crypt
 import { execFileSync } from 'node:child_process';
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { hostname } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import { z } from 'zod';
 import { addDays, APP_VERSION, isIsoDate, todayIso, type LicenseInfo } from '@qasa/core';
 import type { Db } from './db.ts';
@@ -39,6 +39,11 @@ export interface LicensingConfig {
   requireNative?: boolean | undefined;
   /** The app's own data folder (outside the company file): keeps a trial marker per PC. */
   dataDir: string | null;
+  /**
+   * More folders that keep the same marker (the Windows app: %LOCALAPPDATA%\Qasa ERP). Every copy is read and a
+   * missing one is written again from the others, so deleting one copy never frees the trial.
+   */
+  markerDirs?: readonly string[] | undefined;
   portalUrl: string;
   /** For tests: the machine's own id instead of Windows' MachineGuid, and the clock. */
   machineGuid?: (() => string | null) | undefined;
@@ -274,24 +279,17 @@ function graceUntil(db: Db, keyText: string): string | null {
  * that counts, null when the record was edited.
  */
 function graceMarker(db: Db, date: string, key: string): string | null {
-  const file = markerFile();
-  if (!file) return date;
+  if (!markerFiles().length) return date;
   const id = `grace|${machineId(db)}`;
-  const list = existsSync(file) ? readMarkerList(file) : {};
-  if (!list) return null;
-  const entry = list[id];
-  if (entry === undefined) {
+  const marked = markerEntry(db, id, 'grace');
+  if (marked === 'none') {
     const value = `${date}|${key}`;
-    list[id] = `${value}.${sealWith(markerKey(db), `grace|${value}`)}`;
-    try {
-      mkdirSync(config.dataDir!, { recursive: true });
-      writeFileSync(file, JSON.stringify(list));
-    } catch { /* the app's folder can't be written: the company's own sealed record still limits the grace */ }
+    // the app's folder can't be written: the company's own sealed record still limits the grace
+    writeMarkerEntry(id, `${value}.${sealWith(markerKey(db), `grace|${value}`)}`, false);
     return date;
   }
-  const parts = typeof entry === 'string' ? splitSealed(entry) : null;
-  if (!parts || !sealWithOk(markerKey(db), `grace|${parts[0]}`, parts[1])) return null;
-  const [markedDate] = parts[0].split('|');
+  if (marked === 'bad') return null;
+  const [markedDate] = marked.split('|');
   if (!markedDate || !isIsoDate(markedDate)) return null;
   // one grace per PC: another key held here later shares its days (else switching keys would start new ones)
   return markedDate < date ? markedDate : date;
@@ -442,8 +440,10 @@ export function activationStatus(db: Db, license: LicenseInfo | null, keyText: s
 
 // ——— the trial, sealed to this PC ———
 
-function markerFile(): string | null {
-  return config.dataDir ? join(config.dataDir, TRIAL_MARKER) : null;
+/** This PC's marker files: in the app's own folder first, then in the other folders that keep a copy (markerDirs). */
+function markerFiles(): string[] {
+  const dirs = [config.dataDir, ...(config.markerDirs ?? [])].filter((dir): dir is string => !!dir);
+  return [...new Set(dirs)].map((dir) => join(dir, TRIAL_MARKER));
 }
 
 /** A trial start that counts as long ended: what a tampered record gives. */
@@ -460,35 +460,73 @@ function readMarkerList(file: string): Record<string, unknown> | null {
 }
 
 /**
- * This PC's trial start from the marker file ("<date>.<seal>"), null when it has none. An entry that was edited, or
+ * One entry of this PC's marker ("<value>.<seal>", the seal over "<purpose>|<value>"), read from every marker file:
+ * 'none' when no file has it, 'bad' when a file that is there no longer reads or holds it edited, else the earliest
+ * value. A file without the entry (deleted, emptied) gets it back from the others, so removing one copy of the
+ * marker never frees what it records.
+ */
+function markerEntry(db: Db, id: string, purpose: 'trial' | 'grace'): string | 'none' | 'bad' {
+  let found: { value: string; stored: string } | null = null;
+  const missing: string[] = [];
+  for (const file of markerFiles()) {
+    if (!existsSync(file)) {
+      missing.push(file);
+      continue;
+    }
+    const list = readMarkerList(file);
+    if (!list) return 'bad';
+    const entry = list[id];
+    if (entry === undefined) {
+      missing.push(file);
+      continue;
+    }
+    const parts = typeof entry === 'string' ? splitSealed(entry) : null;
+    if (!parts || !sealWithOk(markerKey(db), `${purpose}|${parts[0]}`, parts[1])) return 'bad';
+    if (!found || parts[0] < found.value) found = { value: parts[0], stored: entry as string };
+  }
+  if (!found) return 'none';
+  if (missing.length) writeMarkerEntry(id, found.stored, false, missing);
+  return found.value;
+}
+
+/**
+ * Writes an entry into the marker files that don't hold it yet (an entry already there, even an edited one, stays; a
+ * damaged file is replaced only when it held nothing readable). `strict`: a file that can't be written throws.
+ */
+function writeMarkerEntry(id: string, stored: string, strict: boolean, files: string[] = markerFiles()): void {
+  for (const file of files) {
+    try {
+      const list: Record<string, unknown> = (existsSync(file) ? readMarkerList(file) : null) ?? {};
+      if (list[id] !== undefined) continue;
+      list[id] = stored;
+      mkdirSync(dirname(file), { recursive: true });
+      writeFileSync(file, JSON.stringify(list));
+    } catch (error) {
+      // the app's own folder must take the record; another copy that can't be written is only a copy fewer
+      if (strict && file === markerFiles()[0]) throw error;
+    }
+  }
+}
+
+/**
+ * This PC's trial start from its markers ("<date>.<seal>"), null when it has none. An entry that was edited, or
  * a file that no longer reads, counts as a trial long ended: a damaged marker never gives a new trial.
  */
 function markerHas(db: Db): string | null {
-  const file = markerFile();
-  if (!file || !existsSync(file)) return null;
-  const list = readMarkerList(file);
-  if (!list) return ENDED_TRIAL;
-  const entry = list[machineId(db)];
-  if (entry === undefined) return null;
-  const parts = typeof entry === 'string' ? splitSealed(entry) : null;
-  if (!parts || !isIsoDate(parts[0]) || !sealWithOk(markerKey(db), `trial|${parts[0]}`, parts[1])) return ENDED_TRIAL;
-  return parts[0];
+  const marked = markerEntry(db, machineId(db), 'trial');
+  if (marked === 'none') return null;
+  return marked === 'bad' || !isIsoDate(marked) ? ENDED_TRIAL : marked;
 }
 
 /**
  * Records the trial: sealed in the company file, and in a small file of the app's own (outside it) for this PC,
- * sealed too. Starts the watch on the clock with it.
+ * sealed too, with a copy in each other marker folder. Starts the watch on the clock with it.
  */
 export function sealTrial(db: Db, started: string): void {
   writeSetting(db, TRIAL_SEAL_SETTING, seal(db, `trial|${started}`));
   if (!readSetting(db, CLOCK_SETTING)) resetClock(db, nowMs());
-  const file = markerFile();
-  if (!file) return;
-  // a damaged file is replaced only when it held nothing readable; an entry already there (even an edited one) stays
-  const list: Record<string, unknown> = (existsSync(file) ? readMarkerList(file) : null) ?? {};
-  list[machineId(db)] ??= `${started}.${sealWith(markerKey(db), `trial|${started}`)}`;
-  mkdirSync(config.dataDir!, { recursive: true });
-  writeFileSync(file, JSON.stringify(list));
+  if (!markerFiles().length) return;
+  writeMarkerEntry(machineId(db), `${started}.${sealWith(markerKey(db), `trial|${started}`)}`, true);
 }
 
 /** May this PC start the free trial? Not twice, even after the company file's settings were reset (strict mode). */

@@ -257,6 +257,15 @@ function localBackupDir(): string {
   return local ? join(local, 'Qasa ERP', 'Backups') : join(app.getPath('userData'), 'Backups');
 }
 
+/**
+ * %LOCALAPPDATA%\Qasa ERP: a second place, outside the app's own (roaming) folder, that keeps this PC's trial record
+ * (activation.ts), so deleting one copy never gives a new free month. Nothing without LOCALAPPDATA.
+ */
+function localDataDir(): string | undefined {
+  const local = process.env.LOCALAPPDATA;
+  return local ? join(local, 'Qasa ERP') : undefined;
+}
+
 async function startServer(): Promise<string> {
   childEnding = false;
   companyId = readRegistry(app.getPath('userData')).current;
@@ -311,7 +320,7 @@ async function startServer(): Promise<string> {
     if (!childEnding && win) void serverGone(code);
   });
   return link.call<string>('init', [{
-    userDataDir: app.getPath('userData'), documentsDir: app.getPath('documents'), localBackupDir: localBackupDir(), appVersion: app.getVersion(), sessionKey: SESSION_KEY,
+    userDataDir: app.getPath('userData'), documentsDir: app.getPath('documents'), localBackupDir: localBackupDir(), localDataDir: localDataDir(), appVersion: app.getVersion(), sessionKey: SESSION_KEY,
     secretsKey: secretsKey(), resourcesPath: process.resourcesPath, fromStore: FROM_STORE, companyId
   }], { timeoutMs: 0 });
 }

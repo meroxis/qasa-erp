@@ -82,6 +82,13 @@ export interface ProContext {
   chooseBackupFile(): Promise<string | null>;
   /** Replaces the company file with a checked backup and restarts the app; the current file is kept aside. */
   restoreDatabase(file: string): Promise<void>;
+  /**
+   * 1.2: Electron's resources folder (app.asar, app.asar.sig and the licence addon), where the Pro module checks the
+   * licence and the app's files for itself.
+   */
+  resourcesPath?: string;
+  /** 1.2: the folders that keep this PC's trial record, as the app's licensing has them (configureLicensing). */
+  trialMarkerDirs?: readonly string[];
   /** Protects a secret for this Windows user (DPAPI); throws when Windows can't. The result is safe to store in a file. */
   protectSecret(plain: string): string;
   /** Reads back a secret from protectSecret. */

@@ -334,6 +334,55 @@ describe('the free trial in the official app', () => {
     }
   });
 
+  it('is kept in a second place too (%LOCALAPPDATA%): deleting one copy, or the app\'s whole folder, gives no new month', async () => {
+    const local = mkdtempSync(join(tmpdir(), 'qasa-activation-local-'));
+    try {
+      configureLicensing({ markerDirs: [local] });
+      expect((await post('/api/plan/trial')).statusCode).toBe(200);
+      const own = join(dir, 'trial-used.json');
+      const copy = join(local, 'trial-used.json');
+      const entry = (JSON.parse(readFileSync(own, 'utf8')) as Record<string, string>)[machineId(db)];
+      expect(entry).toMatch(/^2026-11-07\./);
+      expect((JSON.parse(readFileSync(copy, 'utf8')) as Record<string, string>)[machineId(db)]).toBe(entry);
+
+      // the app's folder deleted (marker and all), and a new company: no new trial, and the marker is back
+      rmSync(own);
+      const fresh = openDatabase(':memory:');
+      try {
+        expect(planStatus(fresh)).toMatchObject({ plan: 'business', source: 'trial', trialStarted: '2026-11-07', trialAvailable: false });
+        expect((JSON.parse(readFileSync(own, 'utf8')) as Record<string, string>)[machineId(db)]).toBe(entry);
+        // the other copy deleted: written again from the first
+        rmSync(copy);
+        expect(planStatus(fresh).trialAvailable).toBe(false);
+        expect((JSON.parse(readFileSync(copy, 'utf8')) as Record<string, string>)[machineId(db)]).toBe(entry);
+        // an entry emptied in one copy comes back too
+        writeFileSync(copy, '{}');
+        expect(planStatus(fresh).trialAvailable).toBe(false);
+        expect((JSON.parse(readFileSync(copy, 'utf8')) as Record<string, string>)[machineId(db)]).toBe(entry);
+        // a later start in the second copy (with the old seal) or a damaged copy counts as used, never as new
+        writeFileSync(copy, JSON.stringify({ [machineId(db)]: entry!.replace('2026-11-07', '2026-12-20') }));
+        rmSync(own);
+        expect(planStatus(fresh)).toMatchObject({ trialAvailable: false, trialStarted: '2000-01-01', plan: 'free' });
+        writeFileSync(copy, '{not json');
+        expect(planStatus(fresh)).toMatchObject({ trialAvailable: false, plan: 'free' });
+        expect((await app.inject({ method: 'POST', url: '/api/plan/trial', headers, payload: {} })).statusCode).toBe(409);
+      } finally {
+        fresh.close();
+      }
+    } finally {
+      rmSync(local, { recursive: true, force: true });
+    }
+  });
+
+  it('a second copy that can\'t be written never stops the trial: the app\'s own folder still records it', async () => {
+    const blocked = join(dir, 'not-a-folder');
+    writeFileSync(blocked, 'a file where the folder would be');
+    configureLicensing({ markerDirs: [blocked] });
+    expect((await post('/api/plan/trial')).statusCode).toBe(200);
+    expect(planStatus(db)).toMatchObject({ plan: 'business', source: 'trial', trialAvailable: false });
+    expect((JSON.parse(readFileSync(join(dir, 'trial-used.json'), 'utf8')) as Record<string, string>)[machineId(db)]).toMatch(/^2026-11-07\./);
+  });
+
   it('an unsealed trial is taken over only when it is from before sealing (0.1.x), not one written by hand', async () => {
     writeSetting(db, 'trial_started', iso(clock - 5 * DAY));
     expect(planStatus(db)).toMatchObject({ plan: 'business', source: 'trial', trialStarted: iso(clock - 5 * DAY) });
