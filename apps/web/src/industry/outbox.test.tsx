@@ -198,6 +198,8 @@ describe('sending what waits on a PC', () => {
     expect(documentText({ items: [1, 2] })).not.toBe(documentText({ items: [2, 1] }));
     // a real key is a UUID v4
     expect(holdKey(null, receipt).key).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/);
+    // while a try got no answer (it may be saved), a changed document is refused, never given a new key
+    expect(() => holdKey({ ...a, lost: true }, { ...receipt, currency: 'USD' }, make)).toThrow(expect.objectContaining({ code: 'changed_after_unsure' }));
   });
 });
 

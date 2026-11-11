@@ -638,7 +638,13 @@ function Register({ initial, onClosed }: { initial: ShiftView; onClosed(): void 
                 <strong className="num">{i18n.money(Math.abs(change), currency)}</strong>
               </div>
             )}
-            {unsure && <div className="alert warn" role="alert">{t('pos_unsure')}</div>}
+            {unsure && (
+              <div className="alert warn" role="alert">
+                {t('pos_unsure')}
+                {/* checked the shift's sales and it isn't there: this sale may go as a new one, with a key of its own */}
+                <div><button type="button" className="btn" disabled={busy} onClick={() => { saleKey.current = null; setUnsure(false); setError(null); }}>{t('ob_unsureNotThere')}</button></div>
+              </div>
+            )}
             <ErrorBox error={error} />
             {shortNote && <div className="alert info small" role="status">{t('pos_offlineShort', { i: shortNote })}</div>}
             <div className="pos-actions">

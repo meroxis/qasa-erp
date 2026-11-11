@@ -268,7 +268,13 @@ export function EntryEditor({ kind: initialKind, id }: { kind?: Kind; id?: strin
         </div>
       )}
 
-      {unsure && <div className="alert warn" role="alert">{t('ob_voucherUnsure')}</div>}
+      {unsure && (
+        <div className="alert warn" role="alert">
+          {t('ob_voucherUnsure')}
+          {/* checked Vouchers & entries and it isn't there: it may be saved as a new one, with a key of its own */}
+          <div><button type="button" className="btn" disabled={saving} onClick={() => { voucherKey.current = null; setUnsure(false); setError(null); }}>{t('ob_unsureNotThere')}</button></div>
+        </div>
+      )}
       <ErrorBox error={error} />
       <div className="row">
         <button type="button" className="btn primary" onClick={save} disabled={saving}><Icon name="check" size={16} />{saving ? t('saving') : t('saveDraft')}</button>

@@ -68,6 +68,13 @@ export const OUTBOX_TEXT = {
     'The server didn’t answer, so this sale may already be booked. Press Pay again once the link is back: the same sale is booked only once. Before you change or clear it, check the shift’s sales, so it isn’t sold twice.',
     'سێرڤەرەکە وەڵامی نەدایەوە، بۆیە لەوانەیە ئەم فرۆشتنە پێشتر تۆمار کرابێت. کاتێک پەیوەندی گەڕایەوە دووبارە «پارەدان» دابگرە: هەمان فرۆشتن تەنها یەک جار تۆمار دەکرێت. پێش ئەوەی بیگۆڕیت یان پاکی بکەیتەوە، فرۆشتنەکانی شەفتەکە ببینە، تا دوو جار نەفرۆشرێت.'
   ],
+  // the button under either note: the person checked and it isn't there, so it may be sent as a new one
+  ob_unsureNotThere: ['تحققت: ليس موجوداً', 'I checked: it isn’t there', 'پشکنیم: لەوێ نییە'],
+  err_changed_after_unsure: [
+    'ربما سُجّلت المحاولة السابقة، وقد تغيّر هذا منذ ذلك الحين. راجع أولاً مبيعات الوردية أو السندات والقيود: إن وجدتها فامسح هذا، وإلا فاضغط «تحققت: ليس موجوداً».',
+    'The last try may already be booked, and this has changed since. Check the shift’s sales or Vouchers & entries first: if it’s there, clear this one; if not, press “I checked: it isn’t there”.',
+    'لەوانەیە هەوڵی پێشوو پێشتر تۆمار کرابێت، و ئەمە لەو کاتەوە گۆڕاوە. سەرەتا فرۆشتنەکانی شەفتەکە یان سەنەد و تۆمارەکان ببینە: ئەگەر هەبوو ئەمە پاک بکەرەوە، ئەگەر نا «پشکنیم: لەوێ نییە» دابگرە.'
+  ],
   ob_voucherUnsure: [
     'لم يُجب الخادم، فربما حُفظ هذا السند من قبل. اضغط «حفظ كمسودة» مرة أخرى عند عودة الاتصال: السند نفسه لا يُحفظ إلا مرة واحدة. قبل أن تغيّره راجع السندات والقيود، كي لا يُحفظ مرتين.',
     'The server didn’t answer, so this voucher may already be saved. Press Save as draft again once the link is back: the same voucher is saved only once. Before you change it, check Vouchers & entries, so it isn’t saved twice.',

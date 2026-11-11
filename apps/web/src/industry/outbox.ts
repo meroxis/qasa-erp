@@ -85,10 +85,17 @@ export function documentText(doc: unknown): string {
     : v)) ?? '';
 }
 
-/** The key for `doc`: the one held while it is the same document, else a new one. */
+/**
+ * The key for `doc`: the one held while it is the same document, else a new one. While a try of the held document got
+ * no answer (`lost`: it may be booked already), a changed document is refused (changed_after_unsure) rather than given
+ * a key of its own, which could book it a second time: the person checks first, then clears it or, once they found it
+ * isn't there, lets it go (the page drops the held key).
+ */
 export function holdKey(held: HeldKey | null, doc: unknown, make: () => string = newIdempotencyKey): HeldKey {
   const of = documentText(doc);
-  return held && held.of === of ? held : { key: make(), of, lost: false };
+  if (held && held.of === of) return held;
+  if (held?.lost) throw new ApiError(409, 'changed_after_unsure', null);
+  return { key: make(), of, lost: false };
 }
 
 /** What a try's outcome means for the entry. */

@@ -194,6 +194,13 @@ describe('paying at a till on a PC with an outbox', () => {
     // the same sale with its fields in another order is the same sale
     await t.pay({ lines: [{ unitPrice: 2_500, qtyMilli: 2_000, itemId: 'tea' }], discount: 0, currency: 'IQD' } as SaleInput);
     expect(t.held!.key).toBe(first);
+    // a changed cart while that try may be booked: refused, the try stays held (its warning with it), nothing is sent
+    const sentBefore = t.sent.length;
+    await expect(t.pay(cashSale(3_000))).rejects.toMatchObject({ code: 'changed_after_unsure' });
+    expect(t.held).toMatchObject({ key: first, lost: true });
+    expect(t.sent).toHaveLength(sentBefore);
+    // the cashier checked and it isn't there ("I checked: it isn't there" drops the held key): a key of its own
+    t.held = null;
     await t.pay(cashSale(3_000));
     expect(t.held!.key).not.toBe(first);
     // booked or kept, the page drops the key with the cart: the next customer's identical cart is a new sale
