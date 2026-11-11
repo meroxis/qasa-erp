@@ -43,7 +43,8 @@
       ],
       "expo-secure-store",
       "expo-localization",
-      "./plugins/with-lan-cleartext.js"
+      "./plugins/with-lan-cleartext.js",
+      "expo-font"
     ],
     "scheme": "qasa"
   }
