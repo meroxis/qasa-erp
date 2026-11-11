@@ -135,8 +135,10 @@ describe('a server database upgrade cut off half way', () => {
       }
     };
     migrate(fake);
-    // the rest of version 7, then every table of the versions after it
-    expect(made).toEqual([...since7.slice(10), ...MYSQL_TABLES.filter((t) => (t.since ?? 0) > 7).map((t) => t.name)]);
+    // the rest of version 7, then every table of the versions after it, version by version
+    const later = MYSQL_TABLES.filter((t) => (t.since ?? 0) > 7);
+    const versions = [...new Set(later.map((t) => t.since!))].sort((a, b) => a - b);
+    expect(made).toEqual([...since7.slice(10), ...versions.flatMap((v) => later.filter((t) => t.since === v).map((t) => t.name))]);
     expect(version).toBe(SCHEMA_VERSION);
   });
 });

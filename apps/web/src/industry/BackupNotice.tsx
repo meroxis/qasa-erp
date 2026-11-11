@@ -1,9 +1,20 @@
 import { useEffect, useState } from 'react';
 import { api, type BackupStatus } from '../api.ts';
-import { useI18n } from '../i18n.ts';
+import { isKey, useI18n, type Key } from '../i18n.ts';
 import { href } from '../router.ts';
 
 export type BackupNoticeKey = 'bkNoticePlan' | 'bkNoticeOff' | 'bkNoticeOld' | 'bkNoticeFailed';
+
+/**
+ * Why the last copy failed, in the admin's language: the words for its code, or what the server kept (a Windows error
+ * the app has no words for).
+ */
+export function backupFailureKey(status: Pick<BackupStatus, 'lastErrorCode'> | null): Key | null {
+  const code = status?.lastErrorCode;
+  if (!code || code === 'other') return null;
+  const key = `bkErr_${code}`;
+  return isKey(key) ? key : null;
+}
 
 /** The text an admin sees when backups need them (see backupNotice in the Pro module), or null. */
 export function backupNoticeKey(status: Pick<BackupStatus, 'notice'> | null): BackupNoticeKey | null {
@@ -32,11 +43,24 @@ export function BackupNoticeBar({ admin, page }: { admin: boolean; page: string 
     return () => { live = false; };
   }, [admin, page === 'settings']);
   const key = admin && page !== 'settings' ? backupNoticeKey(status) : null;
-  if (!key) return null;
-  return (
+  // told once: copies kept on this PC because Documents is synced and there is no backup password
+  const local = admin && !!status?.localNotice;
+  const seen = () => { api.backupLocalNoticeSeen().then(setStatus, () => setStatus((s) => (s ? { ...s, localNotice: false } : s))); };
+  const needs = key && (
     <div className={'alert plan-banner no-print ' + (key === 'bkNoticeFailed' ? 'bad' : 'warn')} role="status" style={{ marginBottom: 14 }}>
       <span>{t(key)}</span>
       <a href={href('settings')}>{t('bkNoticeOpen')}</a>
     </div>
   );
+  const kept = local && (
+    <div className="alert plan-banner no-print info" role="status" style={{ marginBottom: 14 }}>
+      <span>{t('bkNoticeLocal')}</span>
+      <span className="row" style={{ gap: 8 }}>
+        {page !== 'settings' && <a href={href('settings')}>{t('bkNoticeOpen')}</a>}
+        <button type="button" className="btn small" onClick={seen}>{t('bkNoticeLocalOk')}</button>
+      </span>
+    </div>
+  );
+  if (needs && kept) return <>{needs}{kept}</>;
+  return needs || kept || null;
 }

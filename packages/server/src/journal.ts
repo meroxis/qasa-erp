@@ -17,7 +17,8 @@ import {
   type EntryType,
   type Names,
   type PostedLine,
-  type VoucherInput
+  type VoucherInput,
+  type CurrencyCode
 } from '@qasa/core';
 import type { Db } from './db.ts';
 import { nextSequence, transaction } from './db.ts';
@@ -209,6 +210,14 @@ export function entryOwner(db: Db, id: string): string | null {
   return null;
 }
 
+/**
+ * The voucher of an online payment (website API) keeps the amount the shop was paid: it is checked, approved, rejected
+ * (deleted while a draft) or reversed here, but never edited, so the payment kept with the order always matches it.
+ */
+function editOwner(db: Db, id: string): string | null {
+  return db.prepare("SELECT 1 FROM invoice_payments WHERE entry_id = ? AND kind = 'online'").get(id) ? 'online_payment' : null;
+}
+
 /** Actions that change an entry's lines or take it out of the books: for an owned entry, only its feature does them. */
 const OWNER_ONLY: readonly EntryAction[] = ['edit', 'delete', 'reverse'];
 
@@ -218,13 +227,14 @@ const OWNER_ONLY: readonly EntryAction[] = ['edit', 'delete', 'reverse'];
  */
 function actionsOf(db: Db, row: EntryRow): EntryAction[] {
   const actions = allowedActions(row.status, { reversed: !!row.reversed_by_id, isReversal: row.type === 'reversal', fromInvoice: isInvoiceType(row.type) || row.type === 'closing' });
+  if (actions.includes('edit') && editOwner(db, row.id)) return actions.filter((a) => a !== 'edit');
   if (!actions.some((a) => OWNER_ONLY.includes(a)) || !entryOwner(db, row.id)) return actions;
   return actions.filter((a) => !OWNER_ONLY.includes(a));
 }
 
 function requireAction(db: Db, row: EntryRow, action: EntryAction): void {
   if (OWNER_ONLY.includes(action)) {
-    const owner = entryOwner(db, row.id);
+    const owner = entryOwner(db, row.id) ?? (action === 'edit' ? editOwner(db, row.id) : null);
     if (owner) throw conflict(`entry_belongs_to_${owner}`);
   }
   if (!actionsOf(db, row).includes(action)) throw conflict('action_not_allowed', { status: row.status, action });
@@ -275,8 +285,12 @@ export function deleteEntry(db: Db, id: string, user: string): void {
   // a draft matched to a bank statement line is unmatched on the reconciliation page first
   if (db.prepare('SELECT 1 FROM bank_statement_lines WHERE entry_id = ?').get(id)) throw conflict('entry_matched_to_statement');
   transaction(db, () => {
+    // a rejected online payment stays with its order, without a voucher: it no longer counts as paid, and the same
+    // reference from the shop again gives it back rather than a new one
+    const online = db.prepare("SELECT id FROM invoice_payments WHERE entry_id = ? AND kind = 'online'").all(id) as { id: string }[];
+    if (online.length) db.prepare("UPDATE invoice_payments SET entry_id = NULL WHERE entry_id = ? AND kind = 'online'").run(id);
     db.prepare('DELETE FROM entries WHERE id = ?').run(id);
-    audit(db, user, 'delete', 'entry', id, { type: row.type });
+    audit(db, user, 'delete', 'entry', id, { type: row.type, ...(online.length ? { onlinePayments: online.map((p) => p.id) } : {}) });
   });
 }
 
@@ -447,7 +461,7 @@ export function listEntries(db: Db, f: EntryFilters = {}): EntrySummary[] {
 /** Lines of approved entries in IQD — the input for every report. */
 export function postedLines(
   db: Db, opts: { to?: string; partyId?: string; branch?: { warehouses: string[]; accounts: string[] } | null } = {}
-): (PostedLine & { partyId: string | null })[] {
+): (PostedLine & { partyId: string | null; currency: CurrencyCode; ownDebit: number; ownCredit: number })[] {
   const where = ["e.status = 'approved'"];
   const params: string[] = [];
   if (opts.to) { where.push('e.date <= ?'); params.push(opts.to); }
@@ -458,16 +472,19 @@ export function postedLines(
     where.push(sql.replace(/^ AND /, ''));
     params.push(...p);
   }
-  const rows = db.prepare(`SELECT e.id, e.number, e.date, l.account_code, l.base_debit, l.base_credit, l.party_id,
+  const rows = db.prepare(`SELECT e.id, e.number, e.date, e.currency, l.debit, l.credit, l.account_code, l.base_debit, l.base_credit, l.party_id,
                                   COALESCE(l.description, e.description) AS description,
                                   (e.type = 'closing' OR (e.type = 'reversal' AND EXISTS (SELECT 1 FROM entries c WHERE c.id = e.reverses_id AND c.type = 'closing'))) AS closing
                            FROM entry_lines l JOIN entries e ON e.id = l.entry_id
                            WHERE ${where.join(' AND ')}
                            ORDER BY e.date, e.number, l.line_no`).all(...params) as {
-    id: string; number: string; date: string; account_code: string; base_debit: number; base_credit: number; party_id: string | null; description: string; closing: number;
+    id: string; number: string; date: string; currency: CurrencyCode; debit: number; credit: number; account_code: string; base_debit: number; base_credit: number;
+    party_id: string | null; description: string; closing: number;
   }[];
+  // debit/credit: IQD at the entry's rate (the books); ownDebit/ownCredit: in the entry's own currency (1.1)
   return rows.map((r) => ({
     entryId: r.id, number: r.number, date: r.date, accountCode: r.account_code, debit: r.base_debit, credit: r.base_credit,
-    description: r.description, partyId: r.party_id, ...(r.closing ? { closing: true } : {})
+    description: r.description, partyId: r.party_id, currency: r.currency, ownDebit: Number(r.debit), ownCredit: Number(r.credit),
+    ...(r.closing ? { closing: true } : {})
   }));
 }

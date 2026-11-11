@@ -6,7 +6,7 @@
 import { mkdirSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { openDatabase } from './db.ts';
-import { seedDemo } from './demo-data.ts';
+import { seedDemo, seedPharmacyDemo } from './demo-data.ts';
 
 const dataDir = resolve(process.env.QASA_DATA_DIR ?? resolve(import.meta.dirname, '../../../data'));
 mkdirSync(dataDir, { recursive: true });
@@ -19,5 +19,7 @@ if (count > 0) {
 }
 
 seedDemo(db);
+// QASA_DEMO=pharmacy: the pharmacy sample too (medicines in strips and boxes, in batches with expiry dates)
+if (process.env.QASA_DEMO === 'pharmacy') seedPharmacyDemo(db);
 db.close();
 console.log('Demo data added: Meroxis Company — 3 customers, 2 suppliers, 5 items, 6 posted invoices + 1 draft, 8 vouchers.');

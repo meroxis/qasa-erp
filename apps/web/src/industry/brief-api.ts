@@ -7,6 +7,9 @@ export type Money2 = { IQD: number; USD: number };
 
 export interface CashAccountView { code: string; name: Names; balance: Money2; base: number }
 export interface ItemSalesView { itemId: string; code: string; name: Names; qtyMilli: number; sales: number; cost: number; profit: number }
+export interface SalesFiguresView { qtyMilli: number; sales: number; cost: number; profit: number }
+/** A category (its subcategories in children, total with them) or a brand; id null: items with none. */
+export interface GroupSalesView extends SalesFiguresView { id: string | null; code: string; name: Names | null; children: GroupSalesView[]; total: SalesFiguresView }
 export interface CustomerSalesView { partyId: string | null; code: string; name: string; invoices: number; sales: number }
 export interface AgingRowView {
   partyId: string; code: string; name: string; phone: string; balance: number; oldestDays: number; buckets: [number, number, number, number];
@@ -32,6 +35,8 @@ export interface BriefView {
   /** older servers leave it out */
   cheques?: ChequesAheadView;
   ownerPhone: string;
+  /** 1.1: batches past their expiry date or near it (null: no item tracks expiry; older servers leave it out) */
+  expiry?: { expired: number; near: number; days: number; top: { itemId: string; itemName: Names; batch: string; expiry: string | null; qtyMilli: number; state: string | null }[] } | null;
 }
 
 export interface DashboardView {
@@ -75,6 +80,8 @@ export const briefApi = {
   saveSettings: (patch: { ownerPhone?: string; expenseAccounts?: Partial<Record<ExpenseCategory, string>> }) => request<BriefSettings>('PUT', '/api/brief/settings', patch),
   expenses: (month?: string) => request<{ rows: ExpenseRowView[]; byCategory: Partial<Record<ExpenseCategory, number>>; byAccount: ExpenseAccountTotal[]; total: number }>('GET', '/api/brief/expenses' + qs({ month })),
   salesByItem: (p: Period) => request<{ from: string; to: string; rows: ItemSalesView[] }>('GET', '/api/brief/reports/sales-by-item' + qs(p)),
+  salesByGroup: (by: 'category' | 'brand', p: Period) =>
+    request<{ from: string; to: string; by: string; rows: GroupSalesView[]; total: SalesFiguresView }>('GET', '/api/brief/reports/sales-by-group' + qs({ by, ...p })),
   salesByCustomer: (p: Period) => request<{ from: string; to: string; rows: CustomerSalesView[] }>('GET', '/api/brief/reports/sales-by-customer' + qs(p)),
   aging: (type: 'customer' | 'supplier', date?: string) => request<{ date: string; type: string; rows: AgingRowView[] }>('GET', '/api/brief/reports/aging' + qs({ type, date })),
   stockValue: (date?: string) => request<StockValueView>('GET', '/api/brief/reports/stock-value' + qs({ date }))

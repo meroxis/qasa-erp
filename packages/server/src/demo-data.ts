@@ -4,8 +4,11 @@ import { createAccount } from './accounts.ts';
 import { approveEntry, checkEntry, createJournalEntry, createVoucher } from './journal.ts';
 import { updateSettings } from './settings.ts';
 import { createParty } from './parties.ts';
-import { createItem, listWarehouses } from './items.ts';
+import { createItem, listWarehouses, updateItem } from './items.ts';
+import { createStockDoc, postStockDoc } from './stock-docs.ts';
 import { createInvoice, postInvoice } from './invoices.ts';
+import { createCategory } from './categories.ts';
+import { createBrand } from './brands.ts';
 
 /**
  * A small sample company — Meroxis — with customers, suppliers, items, invoices and vouchers.
@@ -53,12 +56,31 @@ export function seedDemo(db: Db): void {
   const lasSupply = createParty(db, 'supplier', { name: 'Las', phone: '0780 110 4455', address: 'بغداد — الشورجة' }, accountant);
   const razSupply = createParty(db, 'supplier', { name: 'Raz', phone: '0750 660 7788', address: 'أربيل — المنطقة الصناعية' }, accountant);
 
-  const ac = createItem(db, { code: 'AC-18', name: { ar: 'مكيف سبلت 18 ألف وحدة', en: 'Split AC 18,000 BTU', ku: 'سپلیتی 18 هەزار' }, unit: 'piece', salePrice: 823_600, saleCurrency: 'IQD' }, accountant);
-  const pv = createItem(db, { code: 'PV-550', barcode: '6291041500550', name: { ar: 'لوح شمسي 550 واط', en: 'Solar panel 550 W', ku: 'پانێڵی خۆر 550 وات' }, unit: 'piece', salePrice: 134_900, saleCurrency: 'IQD' }, accountant);
-  const inverter = createItem(db, { code: 'INV-5K', name: { ar: 'انفرتر 5 كيلوواط', en: 'Inverter 5 kW', ku: 'ئینڤێرتەری 5 کیلۆوات' }, unit: 'piece', salePrice: 908_800, saleCurrency: 'IQD' }, accountant);
-  const pipe = createItem(db, { code: 'CU-PIPE', name: { ar: 'أنبوب نحاس للتبريد', en: 'Copper pipe', ku: 'بۆری مس' }, unit: 'm', salePrice: 12_500, saleCurrency: 'IQD' }, accountant);
+  // 1.1: categories with subcategories, and the brands the shop sells
+  const cat = (ar: string, en: string, ku: string, parentId?: string) => createCategory(db, { name: { ar, en, ku }, parentId }, accountant).id;
+  const cooling = cat('التكييف والتبريد', 'Air conditioning', 'فێنککەرەوە');
+  const split = cat('سبلت', 'Split units', 'سپلیت', cooling);
+  const solar = cat('الطاقة الشمسية', 'Solar energy', 'وزەی خۆر');
+  const panels = cat('ألواح شمسية', 'Solar panels', 'پانێڵی خۆر', solar);
+  const inverters = cat('انفرترات', 'Inverters', 'ئینڤێرتەر', solar);
+  const materials = cat('مواد النصب', 'Installation materials', 'کەرەستەی دامەزراندن');
+  cat('مكيفات شباك', 'Window units', 'سپلیتی پەنجەرە', cooling);
+  const gree = createBrand(db, { name: 'Gree', country: 'CN' }, accountant).id;
+  const jinko = createBrand(db, { name: 'Jinko Solar', country: 'CN' }, accountant).id;
+  const growatt = createBrand(db, { name: 'Growatt', country: 'CN' }, accountant).id;
+  createBrand(db, { name: 'LG', country: 'KR' }, accountant);
+
+  const ac = createItem(db, { code: 'AC-18', name: { ar: 'مكيف سبلت 18 ألف وحدة', en: 'Split AC 18,000 BTU', ku: 'سپلیتی 18 هەزار' }, unit: 'piece', salePrice: 823_600, saleCurrency: 'IQD', categoryId: split, brandId: gree, reorderMilli: 5_000 }, accountant);
+  const pv = createItem(db, { code: 'PV-550', barcode: '6291041500550', name: { ar: 'لوح شمسي 550 واط', en: 'Solar panel 550 W', ku: 'پانێڵی خۆر 550 وات' }, unit: 'piece', salePrice: 134_900, saleCurrency: 'IQD', categoryId: panels, brandId: jinko, reorderMilli: 20_000 }, accountant);
+  const inverter = createItem(db, { code: 'INV-5K', name: { ar: 'انفرتر 5 كيلوواط', en: 'Inverter 5 kW', ku: 'ئینڤێرتەری 5 کیلۆوات' }, unit: 'piece', salePrice: 908_800, saleCurrency: 'IQD', categoryId: inverters, brandId: growatt, reorderMilli: 10_000 }, accountant);
+  const pipe = createItem(db, { code: 'CU-PIPE', name: { ar: 'أنبوب نحاس للتبريد', en: 'Copper pipe', ku: 'بۆری مس' }, unit: 'm', salePrice: 12_500, saleCurrency: 'IQD', categoryId: materials }, accountant);
   const install = createItem(db, { code: 'SRV-INST', name: { ar: 'نصب وتشغيل', en: 'Installation', ku: 'دامەزراندن' }, unit: 'service', salePrice: 50_000, saleCurrency: 'IQD' }, accountant);
   const main = listWarehouses(db)[0]!.id;
+  // 1.1: copper pipe is also sold by the roll of 25 m, with its own barcode and price
+  updateItem(db, pipe.id, {
+    code: pipe.code, name: pipe.name, unit: 'm', salePrice: 12_500, saleCurrency: 'IQD',
+    units: [{ unit: 'roll', factorMilli: 25_000, barcode: '6291041500901', salePrice: 300_000 }], saleUnit: null
+  }, accountant);
 
   function invoice(input: Omit<InvoiceInput, 'warehouseId' | 'rateX100' | 'currency'> & Partial<Pick<InvoiceInput, 'currency' | 'rateX100'>>, user: string, doPost = true) {
     const created = createInvoice(db, { warehouseId: main, currency: 'IQD', rateX100: 100, ...input }, user);
@@ -147,4 +169,50 @@ export function seedDemo(db: Db): void {
     description: 'القسط 4 من 10 — عقد INS-0091', currency: 'IQD', rateX100: 100,
     items: [{ accountCode: '1612', amount: 120_000 }]
   }, accountant);
+}
+
+/**
+ * The pharmacy sample (1.1, a pharmacy company only): medicines kept in tablets and sold by the strip or the box, in
+ * batches with expiry dates (one of them near its date), sold to Mer, Las and Raz. Expects seedDemo to have run.
+ */
+export function seedPharmacyDemo(db: Db): void {
+  const user = 'Mer';
+  updateSettings(db, { businessTypes: ['trade', 'pharmacy'] }, user);
+  const main = listWarehouses(db)[0]!.id;
+  const units = (box: number, code: string) => [
+    { unit: 'strip' as const, factorMilli: 10_000, barcode: `${code}1`, salePrice: null },
+    { unit: 'box' as const, factorMilli: box * 1000, barcode: `${code}2`, salePrice: null }
+  ];
+  const amox = createItem(db, {
+    code: 'MED-AMOX', name: { ar: 'أموكسيسيلين 500 ملغ', en: 'Amoxicillin 500 mg', ku: 'ئەمۆکسیسیلین 500 ملگ' }, unit: 'capsule', salePrice: 250, saleCurrency: 'IQD',
+    units: units(20, '629104170010'), saleUnit: 'strip', purchaseUnit: 'box', trackExpiry: true
+  }, user);
+  const para = createItem(db, {
+    code: 'MED-PARA', name: { ar: 'باراسيتامول 500 ملغ', en: 'Paracetamol 500 mg', ku: 'پاراسیتامۆڵ 500 ملگ' }, unit: 'tablet', salePrice: 100, saleCurrency: 'IQD',
+    units: units(100, '629104170020'), saleUnit: 'strip', purchaseUnit: 'box', trackExpiry: true
+  }, user);
+  const doc = createStockDoc(db, {
+    kind: 'opening', date: '2026-09-01', warehouseId: main, counterAccountCode: '21', notes: 'الأدوية — أول المدة',
+    lines: [
+      { itemId: amox.id, qtyMilli: 200_000, unitCost: 150, batchNo: 'AMX-2611', expiry: '2026-12-31' },
+      { itemId: amox.id, qtyMilli: 400_000, unitCost: 150, batchNo: 'AMX-2708', expiry: '2027-08-31' },
+      { itemId: para.id, qtyMilli: 1_000_000, unitCost: 60, batchNo: 'PAR-2803', expiry: '2028-03-31' }
+    ]
+  }, user);
+  postStockDoc(db, doc.id, user);
+  // the pharmacy details (the pharmacy page shows them with Pro)
+  const details = db.prepare(`INSERT INTO pharma_details (item_id, generic_name, generic_key, form, strength, manufacturer, rx_only, controlled, shelf, updated_at)
+                              VALUES (?, ?, ?, ?, ?, ?, ?, 0, ?, ?)`);
+  const now = new Date().toISOString();
+  details.run(amox.id, 'Amoxicillin', 'amoxicillin', 'capsule', '500 mg', 'Pioneer', 1, 'A-2', now);
+  details.run(para.id, 'Paracetamol', 'paracetamol', 'tablet', '500 mg', 'Pioneer', 0, 'A-1', now);
+  const customers = (db.prepare("SELECT id, name FROM parties WHERE type = 'customer' AND name IN ('Mer', 'Las', 'Raz')").all() as { id: string; name: string }[]);
+  const byName = new Map(customers.map((c) => [c.name, c.id]));
+  const sell = (name: string, date: string, lines: { itemId: string; unit: 'strip' | 'box'; unitQtyMilli: number; unitPrice: number }[]) => {
+    const inv = createInvoice(db, { kind: 'sale', date, partyId: byName.get(name), warehouseId: main, currency: 'IQD', rateX100: 100, payment: 'credit', discount: 0, lines: lines.map((l) => ({ ...l, qtyMilli: 0 })) }, 'Las');
+    postInvoice(db, inv.id, 'Las');
+  };
+  sell('Mer', '2026-09-15', [{ itemId: amox.id, unit: 'strip', unitQtyMilli: 2_000, unitPrice: 2_500 }]);
+  sell('Las', '2026-09-16', [{ itemId: para.id, unit: 'box', unitQtyMilli: 1_000, unitPrice: 9_000 }]);
+  sell('Raz', '2026-09-17', [{ itemId: amox.id, unit: 'box', unitQtyMilli: 1_000, unitPrice: 4_800 }, { itemId: para.id, unit: 'strip', unitQtyMilli: 3_000, unitPrice: 1_000 }]);
 }

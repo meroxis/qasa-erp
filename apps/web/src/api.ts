@@ -173,6 +173,8 @@ export interface PartyView {
   /** IQD, in the party's own direction (customer owes us / we owe supplier). */
   balance: number;
   hasEntries: boolean;
+  /** 1.1: the same per currency, each in its own (older servers leave it out) */
+  balances?: Record<CurrencyCode, number>;
 }
 
 export interface PartyInput {
@@ -187,11 +189,16 @@ export interface PartyInput {
 
 export interface PartyStatement {
   party: PartyView;
+  /** 1.1: null = all lines in IQD at the book rates; IQD or USD = that currency's lines only, in it */
+  currency?: CurrencyCode | null;
   opening: number;
   closing: number;
   totalDebit: number;
   totalCredit: number;
-  lines: { entryId: string; invoiceId: string | null; number: string; date: string; description: string; debit: number; credit: number; balance: number }[];
+  lines: {
+    entryId: string; invoiceId: string | null; number: string; date: string; description: string; debit: number; credit: number; balance: number;
+    currency?: CurrencyCode; amount?: number;
+  }[];
 }
 
 export interface WarehouseView {
@@ -216,7 +223,22 @@ export interface ItemView {
   qtyMilli: number;
   value: number;
   hasMoves: boolean;
+  /** 1.1: the other units (boxes, strips …), the units sale and purchase lines start in (null: the base unit) */
+  units: ItemUnitView[];
+  saleUnit: UnitCode | null;
+  purchaseUnit: UnitCode | null;
+  updatedAt: string | null;
+  /** stock kept per batch number; an expiry date asked on the way in */
+  trackBatches: boolean;
+  trackExpiry: boolean;
+  categoryId: string | null;
+  /** 1.1: the brand, and the stock level to reorder at (thousandths; null: the category's, or none) */
+  brandId: string | null;
+  reorderMilli: number | null;
 }
+
+/** One of an item's other units: base units in one (thousandths), its barcode and its own price (null: base × factor). */
+export interface ItemUnitView { unit: UnitCode; factorMilli: number; barcode: string; salePrice: number | null }
 
 export interface ItemInput {
   code?: string;
@@ -227,6 +249,14 @@ export interface ItemInput {
   saleCurrency: CurrencyCode;
   trackStock?: boolean;
   active?: boolean;
+  units?: { unit: UnitCode; factorMilli: number; barcode?: string; salePrice?: number | null }[];
+  saleUnit?: UnitCode | null;
+  purchaseUnit?: UnitCode | null;
+  trackBatches?: boolean;
+  trackExpiry?: boolean;
+  categoryId?: string | null;
+  brandId?: string | null;
+  reorderMilli?: number | null;
 }
 
 export interface ItemDetail extends ItemView {
@@ -256,6 +286,14 @@ export interface InvoiceSummary {
   returnOf: string | null;
   createdBy: string;
   createdAt: string;
+  /** 1.1: online payments recorded on it (a website order) */
+  paidOnline?: number;
+}
+
+/** Money taken for an invoice outside its own cash or credit: POS parts and online payments (1.1). */
+export interface InvoicePaymentView {
+  id: string; kind: 'pos' | 'online'; method: string; accountCode: string; amount: number; currency: CurrencyCode;
+  reference: string | null; source: string | null; entryId: string | null; entryNumber: string | null; entryStatus: string | null; createdAt: string;
 }
 
 export type InvoiceAction = 'edit' | 'delete' | 'post' | 'cancel' | 'return';
@@ -278,12 +316,17 @@ export interface InvoiceView extends InvoiceSummary {
     lineNo: number; itemId: string; itemCode: string; itemName: Names; unit: UnitCode; trackStock: boolean;
     description: string; qtyMilli: number; unitPrice: number; amount: number; cost: number | null;
     sourceLine: number | null; returnedQtyMilli: number; returnedAmount: number;
+    /** 1.1: the unit the line was typed in (null: the base unit), its factor then and the quantity typed */
+    lineUnit: UnitCode | null; unitFactorMilli: number | null; unitQtyMilli: number | null;
+    batchNo: string | null; expiry: string | null; batchId: string | null;
   }[];
   actions: InvoiceAction[];
   returnOfNumber: string | null;
   returns: { id: string; kind: InvoiceDocKind; number: string | null; date: string; status: InvoiceStatus; total: number }[];
   /** the installment contract that schedules this sale (Pro), while it is active */
   installmentContract: { id: string; number: string } | null;
+  /** 1.1 (older servers leave it out) */
+  payments?: InvoicePaymentView[];
 }
 
 export type Role = 'admin' | 'preparer' | 'checker' | 'approver' | 'sales' | 'purchasing' | 'storekeeper' | 'viewer';
@@ -346,7 +389,11 @@ export interface StockDocView extends StockDocSummary {
   postedAt: string | null;
   cancelledBy: string | null;
   cancelledAt: string | null;
-  lines: { lineNo: number; itemId: string; itemCode: string; itemName: Names; unit: UnitCode; qtyMilli: number; unitCost: number | null; value: number | null }[];
+  lines: {
+    lineNo: number; itemId: string; itemCode: string; itemName: Names; unit: UnitCode; qtyMilli: number; unitCost: number | null; value: number | null;
+    lineUnit: UnitCode | null; unitFactorMilli: number | null; unitQtyMilli: number | null;
+    batchNo: string | null; expiry: string | null; batchId: string | null;
+  }[];
   actions: StockDocAction[];
 }
 
@@ -357,7 +404,7 @@ export interface StockDocInput {
   toWarehouseId?: string;
   counterAccountCode?: string;
   notes?: string;
-  lines: { itemId: string; qtyMilli: number; unitCost?: number }[];
+  lines: { itemId: string; qtyMilli: number; unitCost?: number; unit?: UnitCode; unitQtyMilli?: number; batchNo?: string; expiry?: string; batchId?: string }[];
 }
 
 export type { InvoiceInput };
@@ -467,6 +514,19 @@ export interface BackupStatus {
   encrypted: boolean;
   /** the folder is synced to a cloud service */
   cloudFolder: boolean;
+  /**
+   * The default folder is synced to the internet and there is no backup password, so the copies are kept on this PC in
+   * `folder` instead: this is the synced folder they go to once a password is set (left out by older servers).
+   */
+  syncedDefault?: string | null;
+  /** syncedDefault, and the admin hasn't been told yet: the bar shows it once. */
+  localNotice?: boolean;
+  /** Why the last copy failed (lastError) as a code with words of its own ('other': only lastError says). */
+  lastErrorCode?: 'settings_unreadable' | 'synced_needs_password' | 'password_unreadable' | 'copy_check' | 'reopen_failed' | 'disk_full' | 'no_access' | 'folder_missing' | 'other' | null;
+  /** 1.1: a backup when the app closes and the books changed (off unless turned on), the folder it is also copied to, and why the last one failed */
+  onClose?: boolean;
+  closeFolder?: string | null;
+  closeError?: string | null;
   /** `own: false`: a copy made by another company or on another PC (left out by older servers: treated as this company's). */
   files: { name: string; size: number; at: string; encrypted: boolean; own?: boolean }[];
   /**
@@ -554,11 +614,17 @@ export const api = {
   network: () => request<NetworkStatus>('GET', '/api/network'),
   setNetwork: (on: boolean) => request<NetworkStatus>('PUT', '/api/network', { on }),
   backup: () => request<BackupStatus>('GET', '/api/backup'),
-  setBackup: (patch: { on?: boolean; keep?: number }) => request<BackupStatus>('PUT', '/api/backup', patch),
+  setBackup: (patch: { on?: boolean; keep?: number; onClose?: boolean }) => request<BackupStatus>('PUT', '/api/backup', patch),
+  chooseCloseFolder: (clear = false) => request<BackupStatus>('POST', '/api/backup/close-folder', clear ? { clear: true } : {}),
   chooseBackupFolder: () => request<BackupStatus>('POST', '/api/backup/folder', {}),
   runBackup: () => request<BackupStatus>('POST', '/api/backup/run', {}),
-  /** by name from the list, by the token of a picked file, or (with neither) from a file chosen in Windows' file picker */
-  restoreBackup: (req: { name?: string; pick?: string; password?: string } = {}) => request<{ restarting: boolean }>('POST', '/api/backup/restore', req),
+  /**
+   * by name from the list, by the token of a picked file, or (with neither) from a file chosen in Windows' file picker;
+   * allowPlain: the admin confirmed an unencrypted copy while the company has a backup password (backup_not_encrypted)
+   */
+  restoreBackup: (req: { name?: string; pick?: string; password?: string; allowPlain?: boolean } = {}) => request<{ restarting: boolean }>('POST', '/api/backup/restore', req),
+  /** The admin read that the copies are kept on this PC (BackupStatus.localNotice). */
+  backupLocalNoticeSeen: () => request<BackupStatus>('POST', '/api/backup/local-notice', {}),
   setBackupPassword: (password: string | null) => request<BackupStatus>('PUT', '/api/backup/password', { password }),
   installmentsSummary: () => request<InstallmentsSummaryView>('GET', '/api/installments/summary'),
   installments: (f: { status?: string; partyId?: string; q?: string } = {}) => request<ContractSummaryView[]>('GET', '/api/installments' + qs(f)),
@@ -595,7 +661,7 @@ export const api = {
   reverse: (id: string, date: string) => request<EntryView>('POST', `/api/entries/${id}/reverse`, { date }),
   trialBalance: (from?: string, to?: string) => request<TrialBalanceReport>('GET', '/api/reports/trial-balance' + qs({ from, to })),
   finalAccounts: (from: string, to: string) => request<FinalAccountsReport>('GET', '/api/reports/final-accounts' + qs({ from, to })),
-  statement: (account: string, from?: string, to?: string) => request<StatementReport>('GET', '/api/reports/statement' + qs({ account, from, to })),
+  statement: (account: string, from?: string, to?: string, currency?: CurrencyCode) => request<StatementReport>('GET', '/api/reports/statement' + qs({ account, from, to, currency })),
   periods: () => request<{ period: string; lockedBy: string; lockedAt: string }[]>('GET', '/api/periods'),
   lockPeriod: (period: string) => request<unknown>('POST', `/api/periods/${period}/lock`, {}),
   unlockPeriod: (period: string) => request<unknown>('DELETE', `/api/periods/${period}/lock`),
@@ -625,12 +691,14 @@ export const api = {
   createParty: (type: PartyType, input: PartyInput) => request<PartyView>('POST', '/api/parties', { type, ...input }),
   updateParty: (id: string, input: PartyInput) => request<PartyView>('PUT', `/api/parties/${id}`, input),
   deleteParty: (id: string) => request<void>('DELETE', `/api/parties/${id}`),
-  partyStatement: (id: string, from?: string, to?: string) => request<PartyStatement>('GET', `/api/parties/${id}/statement` + qs({ from, to })),
+  partyStatement: (id: string, from?: string, to?: string, currency?: CurrencyCode) => request<PartyStatement>('GET', `/api/parties/${id}/statement` + qs({ from, to, currency })),
 
   warehouses: () => request<WarehouseView[]>('GET', '/api/warehouses'),
   createWarehouse: (input: { code: string; name: Names }) => request<WarehouseView>('POST', '/api/warehouses', input),
   updateWarehouse: (id: string, input: { name: Names; active?: boolean }) => request<WarehouseView>('PUT', `/api/warehouses/${id}`, input),
-  items: (f: { q?: string; warehouseId?: string; active?: string } = {}) => request<ItemView[]>('GET', '/api/items' + qs(f)),
+  items: (f: { q?: string; warehouseId?: string; active?: string; categoryId?: string; brandId?: string } = {}) => request<ItemView[]>('GET', '/api/items' + qs(f)),
+  /** A scanned barcode: the item, and the unit when it is one of the item's units' barcodes (null: its own, the base unit). */
+  itemByBarcode: (barcode: string, warehouseId?: string) => request<{ item: ItemView | null; unit: UnitCode | null }>('GET', '/api/items' + qs({ barcode, ...(warehouseId ? { warehouseId } : {}) })),
   item: (id: string) => request<ItemDetail>('GET', `/api/items/${id}`),
   createItem: (input: ItemInput) => request<ItemView>('POST', '/api/items', input),
   updateItem: (id: string, input: ItemInput) => request<ItemView>('PUT', `/api/items/${id}`, input),
@@ -641,7 +709,7 @@ export const api = {
   createInvoice: (input: InvoiceInput) => request<InvoiceView>('POST', '/api/invoices', input),
   updateInvoice: (id: string, input: InvoiceInput) => request<InvoiceView>('PUT', `/api/invoices/${id}`, input),
   deleteInvoice: (id: string) => request<void>('DELETE', `/api/invoices/${id}`),
-  postInvoice: (id: string) => request<InvoiceView>('POST', `/api/invoices/${id}/post`, {}),
+  postInvoice: (id: string, opts: { allowExpired?: boolean } = {}) => request<InvoiceView>('POST', `/api/invoices/${id}/post`, opts.allowExpired ? { allowExpired: true } : {}),
   cancelInvoice: (id: string, date: string) => request<InvoiceView>('POST', `/api/invoices/${id}/cancel`, { date }),
   createReturn: (id: string, input: ReturnInput) => request<InvoiceView>('POST', `/api/invoices/${id}/returns`, input),
 

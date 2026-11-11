@@ -197,3 +197,34 @@ describe('stock count sessions', () => {
     expect((await send('POST', '/api/adjustments/counts', { date: '2026-09-10', warehouseId }, raz)).statusCode).toBe(403);
   });
 });
+
+describe('a count limited to some categories and brands (1.1)', () => {
+  it('lists, counts and adjusts only those items (subcategories with their category); the rest are left alone, and the draft says what was counted', async () => {
+    const pipes = (await send('POST', '/api/item-categories', { name: { ar: 'أنابيب', en: 'Pipes', ku: 'بۆری' } })).json();
+    const steel = (await send('POST', '/api/item-categories', { name: { ar: 'حديد', en: 'Steel', ku: 'ئاسن' }, parentId: pipes.id })).json();
+    await send('PUT', `/api/items/${pipeId}`, { name: { ar: 'أنبوب', en: 'Steel pipe', ku: 'بۆری' }, unit: 'piece', salePrice: 30_000, saleCurrency: 'IQD', categoryId: steel.id });
+    const scope = { categoryIds: [pipes.id] };
+    const res = await send('POST', '/api/adjustments/counts', { date: '2026-09-10', warehouseId, full: true, scope });
+    expect(res.statusCode, res.body).toBe(201);
+    const count = res.json();
+    expect(count.scope).toEqual({ categoryIds: [pipes.id], brandIds: [] });
+    expect(db.prepare('SELECT item_id FROM stock_count_items WHERE count_id = ?').all(count.id)).toEqual([{ item_id: pipeId }]);
+    // the cable is not this count's
+    expect((await save(count.id, [{ itemId: cableId, countedMilli: 3_000 }])).json()).toMatchObject({ error: 'validation', details: [{ code: 'item_outside_count', row: 1 }] });
+    // "count all" with nothing typed: the pipes count as zero, the cables are untouched
+    const done = (await send('POST', `/api/adjustments/counts/${count.id}/finish`)).json();
+    expect(done.adjustment.lines.map((l: { itemId: string; qtyMilli: number }) => [l.itemId, l.qtyMilli])).toEqual([[pipeId, -20_000]]);
+    const draft = (await send('GET', `/api/adjustments/${done.adjustment.id}`)).json();
+    expect(draft.countScope).toEqual({ categoryIds: [pipes.id], brandIds: [] });
+    // unknown categories or brands are refused
+    expect((await send('POST', '/api/adjustments/counts', { date: '2026-09-10', warehouseId, scope: { brandIds: ['nope'] } })).json()).toMatchObject({ details: [{ code: 'brand_invalid' }] });
+  });
+
+  it('by brand, with a category too: only items in both', async () => {
+    const brand = (await send('POST', '/api/brands', { name: 'Grohe' })).json();
+    await send('PUT', `/api/items/${cableId}`, { name: { ar: 'كيبل', en: 'Cable 6mm', ku: 'کێبڵ' }, unit: 'piece', salePrice: 5_000, saleCurrency: 'IQD', brandId: brand.id });
+    const count = (await send('POST', '/api/adjustments/counts', { date: '2026-09-10', warehouseId, scope: { brandIds: [brand.id] } })).json();
+    expect(db.prepare('SELECT item_id FROM stock_count_items WHERE count_id = ?').all(count.id)).toEqual([{ item_id: cableId }]);
+    expect((await save(count.id, [{ itemId: cableId, countedMilli: 9_000 }])).statusCode).toBe(200);
+  });
+});

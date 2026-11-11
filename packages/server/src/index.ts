@@ -15,11 +15,19 @@ export { audit } from './audit.ts';
 export { AppError, conflict, invalid, notFound } from './errors.ts';
 export { createJournalEntry, createVoucher, deleteEntry, getEntry, postVoucherNow, reverseEntryInternal, type EntryView } from './journal.ts';
 export { loadAccounts } from './accounts.ts';
-export { createInvoice, getInvoice, postInvoice, type InvoiceView } from './invoices.ts';
+export { createInvoice, getInvoice, onlinePaidAmount, postInvoice, type InvoiceView } from './invoices.ts';
 export { createItem, listWarehouses } from './items.ts';
+// for the Pro module (1.1): units, batches, categories and an invoice's payments
+export { itemUnits, unitsByItem, type ItemUnitView } from './item-units.ts';
+export { batchReport, batchSettings, batchStock, expiryAlert, type BatchReportRow } from './batches.ts';
+export { IN_CATEGORY_SQL, listCategories, type CategoryView } from './categories.ts';
+export { assertItemBrand, brandIdForName, listBrands, type BrandView } from './brands.ts';
+export { isPeriodLocked } from './settings.ts';
 export { createParty, getParty, updateParty } from './parties.ts';
 // for the Pro module: a user limited to some branches works only with their warehouses and safes (branches.ts)
 export { defaultWarehouseId, entryInBranchSql, scopeLists, scopeOf, visibleEntryIds, type BranchScope } from './branches.ts';
 export { startUsagePings, usageApi } from './usage.ts';
 // for the desktop app: keep the invoice QR signing key protected with the PC's own secret store
 export { configureVerifyKeyVault, type SecretVault } from './verify.ts';
+// for the desktop app: Settings → Start over with empty books (only through its own bridge, never over HTTP)
+export { checkStartOver, companyNames, confirmsCompany, parseStartOverRequest, type StartOverRequest } from './start-over.ts';

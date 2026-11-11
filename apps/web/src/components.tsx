@@ -102,7 +102,18 @@ export function errorMessages(error: unknown, i18n: I18n): string[] {
     // plan limits have a message per limit ("err_plan_limit_warehouses"), with a general one to fall back on
     const limit = error.code === 'plan_limit' ? (error.details as { limit?: string } | null)?.limit : undefined;
     const key = limit && isKey(`err_plan_limit_${limit}`) ? `err_plan_limit_${limit}` : 'err_' + error.code;
-    return [isKey(key) ? t(key) : t('err_internal')];
+    const message = isKey(key) ? t(key) : t('err_internal');
+    // a refusal that names the open documents holding it back (a unit or a base unit in use) lists them, so they can be found
+    const drafts = (error.details as { drafts?: unknown } | null)?.drafts;
+    if (Array.isArray(drafts) && drafts.length) {
+      const named = (drafts as { type?: unknown; number?: unknown; date?: unknown }[]).map((d) => {
+        const kind = `odoc_${String(d.type)}`;
+        const label = typeof d.number === 'string' && d.number ? d.number : typeof d.date === 'string' ? i18n.date(d.date) : '';
+        return [isKey(kind) ? t(kind) : '', label].filter(Boolean).join(' ');
+      });
+      return [message, t('err_open_docs', { d: named.join(i18n.lang === 'en' ? ', ' : '، ') })];
+    }
+    return [message];
   }
   return [t('err_internal')];
 }
@@ -215,6 +226,8 @@ const PATHS: Record<string, string> = {
   layers: 'm12 3 9 5-9 5-9-5ZM3 13l9 5 9-5',
   tag: 'M3 12V4a1 1 0 0 1 1-1h8l9 9-9 9ZM8 8h.01',
   zap: 'M13 2 3 14h9l-1 8 10-12h-9l1-8Z',
+  // a capsule, drawn in-house
+  pill: 'M10.5 20.5a5 5 0 0 1-7-7l6-6a5 5 0 0 1 7 7ZM7.5 10.5l6 6',
   wallet: 'M19 7V4a1 1 0 0 0-1-1H5a2 2 0 0 0 0 4h15a1 1 0 0 1 1 1v4h-3a2 2 0 0 0 0 4h3a1 1 0 0 0 1-1v-2a1 1 0 0 0-1-1M3 5v14a2 2 0 0 0 2 2h15a1 1 0 0 0 1-1v-4',
   key: 'm15.5 7.5 2.3 2.3a1 1 0 0 0 1.4 0l2.1-2.1a1 1 0 0 0 0-1.4L19 4M21 2l-9.6 9.6M13 15.5a5.5 5.5 0 1 1-11 0 5.5 5.5 0 0 1 11 0',
   logout: 'M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9',

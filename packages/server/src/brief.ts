@@ -9,6 +9,8 @@ import { readSetting, writeSetting } from './settings.ts';
 import { AppError } from './errors.ts';
 import { entryInBranchSql, scopeLists, scopeOf } from './branches.ts';
 import { chequesAhead, type ChequeAlert } from './banking.ts';
+import { expiryAlert, type BatchReportRow } from './batches.ts';
+import { REORDER_JOINS, REORDER_LEVEL } from './reorder.ts';
 
 /** A branch's warehouses and safes (null: the whole company). See branches.ts. */
 export type BranchFilter = { warehouses: string[]; accounts: string[] } | null;
@@ -87,6 +89,52 @@ export function salesByItem(db: Db, from: string, to: string, limit = 500, branc
     const cost = num(r.cost);
     return { itemId: r.id, code: r.code, name: name(r), qtyMilli: num(r.qty), sales, cost, profit: sales - cost };
   });
+}
+
+export interface SalesFigures { qtyMilli: number; sales: number; cost: number; profit: number }
+/** A category (its subcategories under it, each with its own figures; total = its own items' and theirs) or a brand. id null: none. */
+export interface GroupSales extends SalesFigures { id: string | null; code: string; name: Names | null; children: GroupSales[]; total: SalesFigures }
+
+const zero = (): SalesFigures => ({ qtyMilli: 0, sales: 0, cost: 0, profit: 0 });
+const plus = (a: SalesFigures, b: SalesFigures): SalesFigures => ({ qtyMilli: a.qtyMilli + b.qtyMilli, sales: a.sales + b.sales, cost: a.cost + b.cost, profit: a.profit + b.profit });
+
+/**
+ * Sales, cost and profit (IQD, returns taken off, as salesByItem) by category — each subcategory under its category,
+ * with a total per category — or by brand. An item counts under the category and brand it has now, so older invoices
+ * are in too; items with none are one row of their own (id null), last. Biggest sales first.
+ */
+export function salesByGroup(db: Db, from: string, to: string, by: 'category' | 'brand', branch: BranchFilter = null): { rows: GroupSales[]; total: SalesFigures } {
+  const [w, wp] = inBranch('i.warehouse_id', branch?.warehouses);
+  const col = by === 'category' ? 'it.category_id' : 'it.brand_id';
+  const sums = db.prepare(`SELECT ${col} AS gid, SUM(${SIGN} * l.qty_milli) AS qty, SUM(${SIGN} * ${BASE(LINE_NET)}) AS sales, SUM(${SIGN} * COALESCE(l.cost, 0)) AS cost
+                           FROM invoice_lines l JOIN invoices i ON i.id = l.invoice_id JOIN items it ON it.id = l.item_id
+                           WHERE i.status = 'posted' AND i.kind IN ('sale', 'sale_return') AND i.date BETWEEN ? AND ?${w}
+                           GROUP BY ${col}`).all(from, to, ...wp) as { gid: string | null; qty: number; sales: number; cost: number }[];
+  const figures = new Map(sums.map((r) => {
+    const sales = Math.round(num(r.sales));
+    const cost = num(r.cost);
+    return [r.gid ?? '', { qtyMilli: num(r.qty), sales, cost, profit: sales - cost }];
+  }));
+  const of = (id: string | null) => figures.get(id ?? '') ?? zero();
+  const row = (id: string | null, code: string, n: Names | null, children: GroupSales[] = []): GroupSales => {
+    const own = of(id);
+    return { id, code, name: n, ...own, children, total: children.reduce((t, c) => plus(t, c.total), own) };
+  };
+  const bySales = (a: GroupSales, b: GroupSales) => b.total.sales - a.total.sales;
+  let rows: GroupSales[];
+  if (by === 'category') {
+    const cats = db.prepare('SELECT id, code, name_ar, name_en, name_ku, parent_id FROM item_categories ORDER BY sort, code').all() as
+      { id: string; code: string; name_ar: string; name_en: string; name_ku: string; parent_id: string | null }[];
+    rows = cats.filter((c) => !c.parent_id).map((c) => row(c.id, c.code, name(c),
+      cats.filter((s) => s.parent_id === c.id).map((s) => row(s.id, s.code, name(s))).filter((s) => figures.has(s.id ?? '')).sort(bySales)));
+    rows = rows.filter((r) => figures.has(r.id ?? '') || r.children.length);
+  } else {
+    const brands = db.prepare('SELECT id, code, name, name_ar, name_ku FROM brands ORDER BY sort, name').all() as { id: string; code: string | null; name: string; name_ar: string; name_ku: string }[];
+    rows = brands.filter((b) => figures.has(b.id)).map((b) => row(b.id, b.code ?? '', { ar: b.name_ar || b.name, en: b.name, ku: b.name_ku || b.name }));
+  }
+  rows.sort(bySales);
+  if (figures.has('')) rows.push(row(null, '', null));
+  return { rows, total: rows.reduce((t, r) => plus(t, r.total), zero()) };
 }
 
 export interface CustomerSales { partyId: string | null; code: string; name: string; invoices: number; sales: number }
@@ -174,6 +222,8 @@ export interface AgingRow {
   /** days since the oldest part of the balance (first in, first out) */
   oldestDays: number;
   buckets: [number, number, number, number];
+  /** 1.1: what is owed in dollars, in dollars (from dollar entries only; not in the buckets) */
+  usd: number;
 }
 
 /**
@@ -214,6 +264,11 @@ export function aging(db: Db, type: 'customer' | 'supplier', asOf: string, branc
     list.push({ date: c.date, amount: num(c.amount) });
     byParty.set(c.party, list);
   }
+  // 1.1: what each owes in dollars, in dollars (no buckets for dollars yet)
+  const usd = new Map((db.prepare(`SELECT l.party_id, SUM(${type === 'customer' ? 'l.debit - l.credit' : 'l.credit - l.debit'}) AS owed
+                                   FROM entry_lines l JOIN entries e ON e.id = l.entry_id JOIN parties p ON p.id = l.party_id
+                                   WHERE p.type = ? AND e.status = 'approved' AND e.date <= ? AND e.currency = 'USD'${b}
+                                   GROUP BY l.party_id`).all(type, asOf, ...bp) as { party_id: string; owed: number }[]).map((r) => [r.party_id, num(r.owed)]));
   const rows = parties.map((p) => {
     let left = num(p.balance);
     const buckets: [number, number, number, number] = [0, 0, 0, 0];
@@ -228,7 +283,7 @@ export function aging(db: Db, type: 'customer' | 'supplier', asOf: string, branc
     }
     // an opening balance with no charge line behind it counts as the oldest
     if (left > 0) buckets[3] += left;
-    return { partyId: p.id, code: p.code, name: p.name, phone: p.phone, balance: num(p.balance), oldestDays, buckets };
+    return { partyId: p.id, code: p.code, name: p.name, phone: p.phone, balance: num(p.balance), oldestDays, buckets, usd: usd.get(p.id) ?? 0 };
   });
   return rows.sort((a, b) => b.balance - a.balance);
 }
@@ -298,7 +353,7 @@ export function installmentsOn(db: Db, date: string): { overdue: InstallmentDue[
 export interface LowStock { itemId: string; code: string; name: Names; qtyMilli: number; reorderMilli: number | null; soldMilli: number }
 
 /**
- * Items running out: those at or below their reorder level (car parts), and those with nothing left that sold in the
+ * Items running out: those at or below their minimum quantity (reorder.ts), and those with nothing left that sold in the
  * last 30 days. Services and items without stock tracking are left out.
  */
 export function lowStock(db: Db, date: string, limit = 20, branch: BranchFilter = null): LowStock[] {
@@ -306,16 +361,15 @@ export function lowStock(db: Db, date: string, limit = 20, branch: BranchFilter 
   // for one branch: the stock and the sales of its warehouses only
   const [sw, swp] = inBranch('warehouse_id', branch?.warehouses);
   const [iw, iwp] = inBranch('i.warehouse_id', branch?.warehouses);
-  const hasReorder = !!db.prepare("SELECT 1 FROM part_details WHERE reorder_milli IS NOT NULL LIMIT 1").get();
   const rows = db.prepare(`WITH stock AS (SELECT item_id, SUM(qty_milli) AS qty FROM stock_moves WHERE date <= ?${sw} GROUP BY item_id),
                                 sold AS (SELECT l.item_id, SUM(l.qty_milli) AS qty FROM invoice_lines l JOIN invoices i ON i.id = l.invoice_id
                                          WHERE i.status = 'posted' AND i.kind = 'sale' AND i.date BETWEEN ? AND ?${iw} GROUP BY l.item_id)
                            SELECT it.id, it.code, it.name_ar, it.name_en, it.name_ku, COALESCE(s.qty, 0) AS qty,
-                                  ${hasReorder ? 'pd.reorder_milli' : 'NULL'} AS reorder, COALESCE(so.qty, 0) AS sold
+                                  ${REORDER_LEVEL} AS reorder, COALESCE(so.qty, 0) AS sold
                            FROM items it LEFT JOIN stock s ON s.item_id = it.id LEFT JOIN sold so ON so.item_id = it.id
-                           ${hasReorder ? 'LEFT JOIN part_details pd ON pd.item_id = it.id' : ''}
+                           ${REORDER_JOINS}
                            WHERE it.active = 1 AND it.track_stock = 1 AND (
-                             ${hasReorder ? '(pd.reorder_milli IS NOT NULL AND COALESCE(s.qty, 0) <= pd.reorder_milli) OR' : ''}
+                             (${REORDER_LEVEL} IS NOT NULL AND COALESCE(s.qty, 0) <= ${REORDER_LEVEL}) OR
                              (COALESCE(s.qty, 0) <= 0 AND COALESCE(so.qty, 0) > 0))
                            ORDER BY sold DESC, qty ASC LIMIT ?`).all(date, ...swp, since, date, ...iwp, limit) as
     { id: string; code: string; name_ar: string; name_en: string; name_ku: string; qty: number; reorder: number | null; sold: number }[];
@@ -376,6 +430,8 @@ export interface BriefView {
   /** cheques due within a week (or past due) and cheques bounced in the last 30 days */
   cheques: { due: ChequeAlert[]; bounced: ChequeAlert[]; dueTotal: Money };
   ownerPhone: string;
+  /** 1.1: batches with stock past their expiry date or near it (null: no item tracks expiry dates) */
+  expiry: { expired: number; near: number; days: number; top: BatchReportRow[] } | null;
 }
 
 export function dailyBrief(db: Db, date: string, branch: BranchFilter = null): BriefView {
@@ -410,7 +466,8 @@ export function dailyBrief(db: Db, date: string, branch: BranchFilter = null): B
     lowStock: lowStock(db, date, 10, branch),
     approvals: { waitingCheck: num(approvals.draft), waitingApproval: num(approvals.checked) },
     cheques: chequesAhead(db, date, 10, branch?.accounts ?? null),
-    ownerPhone: readSetting(db, 'brief_phone') ?? ''
+    ownerPhone: readSetting(db, 'brief_phone') ?? '',
+    expiry: expiryAlert(db, date, branch?.warehouses ?? null)
   };
 }
 
@@ -617,6 +674,14 @@ export const briefApi: ApiExtension = {
         }
       },
       { method: 'GET', path: '/api/brief/reports/sales-by-item', handler: async (req) => { const p = period(req); return { ...p, rows: salesByItem(db, p.from, p.to, 500, branchOf(db, req, actorOf(req))) }; } },
+      {
+        method: 'GET', path: '/api/brief/reports/sales-by-group',
+        handler: async (req) => {
+          const p = period(req);
+          const by = parse(z.object({ by: z.enum(['category', 'brand']) }), req.query ?? {}).by;
+          return { ...p, by, ...salesByGroup(db, p.from, p.to, by, branchOf(db, req, actorOf(req))) };
+        }
+      },
       { method: 'GET', path: '/api/brief/reports/sales-by-customer', handler: async (req) => { const p = period(req); return { ...p, rows: salesByCustomer(db, p.from, p.to, branchOf(db, req, actorOf(req))) }; } },
       {
         method: 'GET', path: '/api/brief/reports/aging',

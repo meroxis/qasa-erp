@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { isMinorAmount, normalizeForSearch } from '@qasa/core';
+import { isMinorAmount, normalizeForSearch, type CurrencyCode } from '@qasa/core';
 import type { Db } from './db.ts';
 import { nextSequence, transaction } from './db.ts';
 import { audit } from './audit.ts';
@@ -39,6 +39,11 @@ export interface PartyView {
   /** In IQD, in the party's own direction: what a customer owes us, or what we owe a supplier. */
   balance: number;
   hasEntries: boolean;
+  /**
+   * 1.1: the same per currency, each in its own: the sum of the party's lines grouped by their entry's currency
+   * (dinars in dinars, dollars in dollars). `balance` (IQD at the book rates) stays the official total.
+   */
+  balances: Record<CurrencyCode, number>;
 }
 
 interface PartyRow {
@@ -57,17 +62,30 @@ function balances(db: Db, branch: PartyBranch = null): Map<string, { debit: numb
                            FROM entry_lines l JOIN entries e ON e.id = l.entry_id
                            WHERE e.status = 'approved' AND l.party_id IS NOT NULL${b} GROUP BY l.party_id`).all(...bp) as
     { party_id: string; debit: number; credit: number }[];
-  return new Map(rows.map((r) => [r.party_id, { debit: r.debit, credit: r.credit }]));
+  const own = db.prepare(`SELECT l.party_id, e.currency, SUM(l.debit) AS debit, SUM(l.credit) AS credit
+                          FROM entry_lines l JOIN entries e ON e.id = l.entry_id
+                          WHERE e.status = 'approved' AND l.party_id IS NOT NULL${b} GROUP BY l.party_id, e.currency`).all(...bp) as
+    { party_id: string; currency: CurrencyCode; debit: number; credit: number }[];
+  const map = new Map(rows.map((r) => [r.party_id, { debit: r.debit, credit: r.credit, own: { IQD: { debit: 0, credit: 0 }, USD: { debit: 0, credit: 0 } } }]));
+  for (const r of own) {
+    const e = map.get(r.party_id);
+    if (e && (r.currency === 'IQD' || r.currency === 'USD')) e.own[r.currency] = { debit: Number(r.debit), credit: Number(r.credit) };
+  }
+  return map;
 }
 
-function toView(row: PartyRow, sums: { debit: number; credit: number } | undefined, used: boolean): PartyView {
+type Sums = { debit: number; credit: number; own?: Record<CurrencyCode, { debit: number; credit: number }> };
+
+function toView(row: PartyRow, sums: Sums | undefined, used: boolean): PartyView {
   const debit = sums?.debit ?? 0;
   const credit = sums?.credit ?? 0;
+  const dir = (d: number, c: number) => (row.type === 'customer' ? d - c : c - d);
   return {
     id: row.id, type: row.type, code: row.code, name: row.name, phone: row.phone ?? '', address: row.address ?? '',
     accountCode: row.account_code, creditLimit: row.credit_limit, notes: row.notes ?? '', active: row.active === 1,
-    balance: row.type === 'customer' ? debit - credit : credit - debit,
-    hasEntries: used
+    balance: dir(debit, credit),
+    hasEntries: used,
+    balances: { IQD: dir(sums?.own?.IQD.debit ?? 0, sums?.own?.IQD.credit ?? 0), USD: dir(sums?.own?.USD.debit ?? 0, sums?.own?.USD.credit ?? 0) }
   };
 }
 
@@ -156,11 +174,14 @@ export function updateParty(db: Db, id: string, input: PartyInput, user: string)
   const row = loadRow(db, id);
   const accountCode = input.accountCode || row.account_code;
   assertInput(db, row.type, input, accountCode);
+  // a customer's credit limit changes only when the request names it (null: no limit); left out, it stays as it is
+  const before = row.credit_limit === null ? null : Number(row.credit_limit);
+  const creditLimit = row.type !== 'customer' ? null : input.creditLimit === undefined ? before : input.creditLimit;
   transaction(db, () => {
     db.prepare('UPDATE parties SET name = ?, phone = ?, address = ?, account_code = ?, credit_limit = ?, notes = ?, active = ? WHERE id = ?')
       .run(input.name.trim(), input.phone?.trim() || null, input.address?.trim() || null, accountCode,
-        row.type === 'customer' ? input.creditLimit ?? null : null, input.notes?.trim() || null, input.active === false ? 0 : 1, id);
-    audit(db, user, 'update', 'party', id, input);
+        creditLimit, input.notes?.trim() || null, input.active === false ? 0 : 1, id);
+    audit(db, user, 'update', 'party', id, { ...input, ...(creditLimit !== before ? { creditLimitBefore: before, creditLimit } : {}) });
   });
   return getParty(db, id);
 }
@@ -192,12 +213,17 @@ export interface PartyStatementLine {
   credit: number;
   /** Running balance in the party's own direction. */
   balance: number;
+  /** 1.1: the entry's currency and the line's amount in it */
+  currency: CurrencyCode;
+  amount: number;
 }
 
 export interface PartyStatement {
   party: PartyView;
   from: string | null;
   to: string | null;
+  /** 1.1: null = every line in IQD at the book rates; IQD or USD = that currency's lines only, in that currency */
+  currency: CurrencyCode | null;
   opening: number;
   lines: PartyStatementLine[];
   totalDebit: number;
@@ -209,7 +235,9 @@ export interface PartyStatement {
  * كشف حساب زبون / مجهز — every posted line tagged with this party, in IQD. For a user limited to branches (`branch`),
  * only the lines of their branches' entries, as in the aging report: another branch's sales and receipts stay out.
  */
-export function partyStatement(db: Db, id: string, range: { from?: string | undefined; to?: string | undefined } = {}, branch: PartyBranch = null): PartyStatement {
+export function partyStatement(
+  db: Db, id: string, range: { from?: string | undefined; to?: string | undefined; currency?: CurrencyCode | undefined } = {}, branch: PartyBranch = null
+): PartyStatement {
   const party = getParty(db, id, branch);
   const sign = party.type === 'customer' ? 1 : -1;
   const invoiceOf = new Map((db.prepare('SELECT id, entry_id, cancel_entry_id FROM invoices WHERE party_id = ?').all(id) as
@@ -220,14 +248,23 @@ export function partyStatement(db: Db, id: string, range: { from?: string | unde
   const lines: PartyStatementLine[] = [];
   let totalDebit = 0;
   let totalCredit = 0;
-  for (const l of postedLines(db, { partyId: id, ...(range.to ? { to: range.to } : {}), branch })) {
+  for (const posted of postedLines(db, { partyId: id, ...(range.to ? { to: range.to } : {}), branch })) {
+    // one currency: that currency's lines only, in that currency (a running balance in dollars)
+    if (range.currency && posted.currency !== range.currency) continue;
+    const l = range.currency ? { ...posted, debit: posted.ownDebit, credit: posted.ownCredit } : posted;
     const change = sign * (l.debit - l.credit);
     if (range.from && l.date < range.from) { opening += change; continue; }
     if (lines.length === 0) running = opening;
     running += change;
     totalDebit += l.debit;
     totalCredit += l.credit;
-    lines.push({ entryId: l.entryId, invoiceId: invoiceOf.get(l.entryId) ?? null, number: l.number, date: l.date, description: l.description, debit: l.debit, credit: l.credit, balance: running });
+    lines.push({
+      entryId: l.entryId, invoiceId: invoiceOf.get(l.entryId) ?? null, number: l.number, date: l.date, description: l.description, debit: l.debit, credit: l.credit,
+      balance: running, currency: posted.currency, amount: posted.ownDebit - posted.ownCredit
+    });
   }
-  return { party, from: range.from ?? null, to: range.to ?? null, opening, lines, totalDebit, totalCredit, closing: lines.length ? running : opening };
+  return {
+    party, from: range.from ?? null, to: range.to ?? null, currency: range.currency ?? null,
+    opening, lines, totalDebit, totalCredit, closing: lines.length ? running : opening
+  };
 }

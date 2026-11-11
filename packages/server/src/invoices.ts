@@ -23,14 +23,23 @@ import {
 import type { Db } from './db.ts';
 import { transaction } from './db.ts';
 import { audit } from './audit.ts';
-import { conflict, invalid, notFound } from './errors.ts';
+import { AppError, conflict, invalid, notFound } from './errors.ts';
+import type { Actor } from './auth.ts';
 import { loadAccounts } from './accounts.ts';
 import { assertValid, insertEntry, nextNumber, reverseEntryInternal } from './journal.ts';
 import { getParty } from './parties.ts';
 import { addStockMove, stockOf } from './items.ts';
-import { getPostingAccounts, isPeriodLocked } from './settings.ts';
+import { getPostingAccounts, isPeriodLocked, readSetting } from './settings.ts';
+import { resolveLines } from './item-units.ts';
+import {
+  addTaken, allocateOut, assertReversible, batchColumns, batchTracking, cancelBatchMoves, inboundBatch, lineBatchErrors, writeBatchMoves,
+  type BatchError, type BatchMove
+} from './batches.ts';
 
 export type InvoiceAction = 'edit' | 'delete' | 'post' | 'cancel' | 'return';
+
+/** A part of a sale paid another way (POS split payments): internal callers only, never from a request. */
+export interface SalePart { accountCode: string; amount: number; partyId?: string | undefined }
 
 export interface InvoiceLineView {
   lineNo: number;
@@ -51,6 +60,14 @@ export interface InvoiceLineView {
   returnedQtyMilli: number;
   /** Rounded gross amount already returned; used when previewing another partial return. */
   returnedAmount: number;
+  /** 1.1: the unit the line was typed in (null: the item's base unit), its factor then, and the quantity as typed */
+  lineUnit: UnitCode | null;
+  unitFactorMilli: number | null;
+  unitQtyMilli: number | null;
+  /** 1.1: the batch a purchase line brought in (number and expiry), or the batch a sale line was pinned to (null: earliest expiry first) */
+  batchNo: string | null;
+  expiry: string | null;
+  batchId: string | null;
 }
 
 export interface InvoiceSummary {
@@ -77,6 +94,14 @@ export interface InvoiceSummary {
   returnOf: string | null;
   createdBy: string;
   createdAt: string;
+  /** 1.1: online payments recorded on it (a website order), in its currency */
+  paidOnline: number;
+}
+
+/** Money taken for an invoice outside its own cash or credit: POS parts and online payments (1.1). */
+export interface InvoicePaymentView {
+  id: string; kind: 'pos' | 'online'; method: string; accountCode: string; amount: number; currency: CurrencyCode;
+  reference: string | null; source: string | null; entryId: string | null; entryNumber: string | null; entryStatus: string | null; createdAt: string;
 }
 
 export interface InvoiceView extends InvoiceSummary {
@@ -100,6 +125,7 @@ export interface InvoiceView extends InvoiceSummary {
   returns: { id: string; kind: InvoiceDocKind; number: string | null; date: string; status: InvoiceStatus; total: number }[];
   /** The installment contract that schedules this sale (Pro), while it is active. */
   installmentContract: { id: string; number: string } | null;
+  payments: InvoicePaymentView[];
 }
 
 interface InvoiceRow {
@@ -109,6 +135,7 @@ interface InvoiceRow {
   created_by: string; created_at: string; posted_by: string | null; posted_at: string | null; cancelled_by: string | null; cancelled_at: string | null;
   party_code: string | null; party_name: string | null;
   settlement_base: number | null;
+  online_paid: number | null;
 }
 
 export const isReturn = (kind: InvoiceDocKind) => kind === 'sale_return' || kind === 'purchase_return';
@@ -148,14 +175,18 @@ function toSummary(r: InvoiceRow): InvoiceSummary {
     id: r.id, kind: r.kind, status: r.status, number: r.number, date: r.date, partyId: r.party_id, partyCode: r.party_code, partyName: r.party_name,
     warehouseId: r.warehouse_id, currency: r.currency, rateX100: r.rate_x100, payment: r.payment, cashAccountCode: r.cash_account,
     discount: r.discount, subtotal: r.subtotal, total: r.total, baseTotal: r.settlement_base ?? toBase(r.total, r.currency, r.rate_x100), notes: r.notes ?? '',
-    returnOf: r.return_of, createdBy: r.created_by, createdAt: r.created_at
+    returnOf: r.return_of, createdBy: r.created_by, createdAt: r.created_at, paidOnline: Number(r.online_paid ?? 0)
   };
 }
 
 const SELECT_INVOICE = `SELECT v.*, p.code AS party_code, p.name AS party_name,
   (SELECT SUM(CASE WHEN v.kind IN ('purchase', 'sale_return') THEN l.base_credit - l.base_debit ELSE l.base_debit - l.base_credit END)
    FROM entry_lines l WHERE l.entry_id = v.entry_id AND
-     ((v.payment = 'cash' AND l.account_code = v.cash_account) OR (v.payment = 'credit' AND l.party_id = v.party_id))) AS settlement_base
+     ((v.payment = 'cash' AND (l.account_code = v.cash_account
+         OR l.account_code IN (SELECT ip.account_code FROM invoice_payments ip WHERE ip.invoice_id = v.id AND ip.kind = 'pos' AND ip.entry_id = v.entry_id)))
+      OR (v.payment = 'credit' AND l.party_id = v.party_id))) AS settlement_base,
+  (SELECT SUM(ip.amount) FROM invoice_payments ip JOIN entries ie ON ie.id = ip.entry_id
+   WHERE ip.invoice_id = v.id AND ip.kind = 'online' AND ie.reversed_by_id IS NULL) AS online_paid
   FROM invoices v LEFT JOIN parties p ON p.id = v.party_id`;
 
 /** Active refunds in both currencies. Read the posted settlement, including its rounding allocation. */
@@ -179,16 +210,22 @@ export function getInvoice(db: Db, id: string): InvoiceView {
   const w = db.prepare('SELECT code, name_ar, name_en, name_ku FROM warehouses WHERE id = ?').get(r.warehouse_id) as { code: string; name_ar: string; name_en: string; name_ku: string };
   const cash = r.cash_account ? db.prepare('SELECT name_ar, name_en, name_ku FROM accounts WHERE code = ?').get(r.cash_account) as { name_ar: string; name_en: string; name_ku: string } : null;
   const numberOf = (entryId: string | null) => entryId ? (db.prepare('SELECT number FROM entries WHERE id = ?').get(entryId) as { number: string | null }).number : null;
-  const lines = (db.prepare(`SELECT l.*, i.code, i.name_ar, i.name_en, i.name_ku, i.unit, i.track_stock FROM invoice_lines l JOIN items i ON i.id = l.item_id
+  const lines = (db.prepare(`SELECT l.line_no, l.item_id, l.description, l.qty_milli, l.unit_price, l.amount, l.cost, l.source_line, l.unit AS line_unit, l.unit_factor_milli, l.unit_qty_milli, l.batch_no, l.expiry, l.batch_id, i.code, i.name_ar, i.name_en, i.name_ku, i.unit, i.track_stock FROM invoice_lines l JOIN items i ON i.id = l.item_id
                              WHERE l.invoice_id = ? ORDER BY l.line_no`).all(id) as {
     line_no: number; item_id: string; description: string | null; qty_milli: number; unit_price: number; amount: number; cost: number | null; source_line: number | null;
     code: string; name_ar: string; name_en: string; name_ku: string; unit: UnitCode; track_stock: number;
+    line_unit: UnitCode | null; unit_factor_milli: number | null; unit_qty_milli: number | null;
+    batch_no: string | null; expiry: string | null; batch_id: string | null;
   }[]);
   const returned = r.status === 'posted' && !isReturn(r.kind) ? returnedByLine(db, id) : new Map<number, { qtyMilli: number; amount: number }>();
   const lineViews: InvoiceLineView[] = lines.map((l) => ({
     lineNo: l.line_no, itemId: l.item_id, itemCode: l.code, itemName: { ar: l.name_ar, en: l.name_en, ku: l.name_ku }, unit: l.unit,
     trackStock: l.track_stock === 1, description: l.description ?? '', qtyMilli: l.qty_milli, unitPrice: l.unit_price, amount: l.amount, cost: l.cost,
-    sourceLine: l.source_line, returnedQtyMilli: returned.get(l.line_no)?.qtyMilli ?? 0, returnedAmount: returned.get(l.line_no)?.amount ?? 0
+    sourceLine: l.source_line, returnedQtyMilli: returned.get(l.line_no)?.qtyMilli ?? 0, returnedAmount: returned.get(l.line_no)?.amount ?? 0,
+    lineUnit: l.line_unit ?? null,
+    unitFactorMilli: l.unit_factor_milli === null ? null : Number(l.unit_factor_milli),
+    unitQtyMilli: l.unit_qty_milli === null ? null : Number(l.unit_qty_milli),
+    batchNo: l.batch_no ?? null, expiry: l.expiry ?? null, batchId: l.batch_id ?? null
   }));
   const returns = db.prepare('SELECT id, kind, number, date, status, total FROM invoices WHERE return_of = ? ORDER BY date, created_at').all(id) as
     { id: string; kind: InvoiceDocKind; number: string | null; date: string; status: InvoiceStatus; total: number }[];
@@ -202,8 +239,20 @@ export function getInvoice(db: Db, id: string): InvoiceView {
     lines: lineViews, actions: actionsFor(db, r, lineViews.some((l) => l.returnedQtyMilli < l.qtyMilli)),
     returnOfNumber: r.return_of ? (db.prepare('SELECT number FROM invoices WHERE id = ?').get(r.return_of) as { number: string | null }).number : null,
     returns,
-    installmentContract: activeContractOf(db, id)
+    installmentContract: activeContractOf(db, id),
+    payments: invoicePayments(db, id)
   };
+}
+
+export function invoicePayments(db: Db, invoiceId: string): InvoicePaymentView[] {
+  return (db.prepare(`SELECT p.*, e.number AS entry_number, e.status AS entry_status FROM invoice_payments p LEFT JOIN entries e ON e.id = p.entry_id
+                      WHERE p.invoice_id = ? ORDER BY p.created_at, p.id`).all(invoiceId) as {
+    id: string; kind: 'pos' | 'online'; method: string; account_code: string; amount: number; currency: CurrencyCode; reference: string | null; source: string | null;
+    entry_id: string | null; entry_number: string | null; entry_status: string | null; created_at: string;
+  }[]).map((p) => ({
+    id: p.id, kind: p.kind, method: p.method, accountCode: p.account_code, amount: Number(p.amount), currency: p.currency, reference: p.reference, source: p.source,
+    entryId: p.entry_id, entryNumber: p.entry_number, entryStatus: p.entry_status, createdAt: p.created_at
+  }));
 }
 
 export interface InvoiceFilters {
@@ -241,6 +290,16 @@ function normalize(input: InvoiceInput): InvoiceInput {
   return { ...input, rateX100: input.currency === 'IQD' ? 100 : input.rateX100, partyId: input.partyId || undefined, cashAccountCode: input.payment === 'cash' ? input.cashAccountCode : undefined } as InvoiceInput;
 }
 
+/** What a request may send for a line: a base quantity, or a unit and the quantity typed in it (1.1). */
+export type InvoiceLineRequest = Omit<InvoiceInput['lines'][number], 'qtyMilli' | 'unitFactorMilli'> & { qtyMilli?: number | undefined };
+export type InvoiceRequest = Omit<InvoiceInput, 'lines'> & { lines: InvoiceLineRequest[] };
+
+/** A request's lines with their base quantities, from each item's units now (a factor is never taken from a request). */
+export function withUnits(db: Db, input: InvoiceRequest): InvoiceInput {
+  if (!Array.isArray(input.lines)) return input as InvoiceInput;
+  return { ...input, lines: resolveLines(db, input.lines) } as InvoiceInput;
+}
+
 function assertInvoice(db: Db, input: InvoiceInput): void {
   const errors: { code: string; line?: number; period?: string }[] = validateInvoice(input);
   if (input.partyId) {
@@ -260,6 +319,7 @@ function assertInvoice(db: Db, input: InvoiceInput): void {
       const item = find.get(l.itemId) as ItemInfo | undefined;
       if (!item || item.active !== 1) errors.push({ code: 'item_invalid', line: i + 1 });
       else if (input.kind === 'purchase' && item.track_stock !== 1) errors.push({ code: 'item_not_stock', line: i + 1 });
+      else errors.push(...lineBatchErrors(db, l.itemId, l, i + 1));
     });
     if (!errors.some((e) => e.code.startsWith('line_') || e.code === 'discount_invalid') && invoiceTotals(input.lines, input.discount).total <= 0) {
       errors.push({ code: 'total_invalid' });
@@ -276,12 +336,17 @@ function writeDraft(db: Db, id: string, input: InvoiceInput): void {
     .run(input.date, input.partyId ?? null, input.warehouseId, input.currency, input.rateX100, input.payment, input.cashAccountCode ?? null,
       input.discount, totals.subtotal, totals.total, input.notes?.trim() || null, new Date().toISOString(), id);
   db.prepare('DELETE FROM invoice_lines WHERE invoice_id = ?').run(id);
-  const insert = db.prepare('INSERT INTO invoice_lines (invoice_id, line_no, item_id, description, qty_milli, unit_price, amount) VALUES (?, ?, ?, ?, ?, ?, ?)');
-  input.lines.forEach((l, i) => insert.run(id, i + 1, l.itemId, l.description?.trim() || null, l.qtyMilli, l.unitPrice, totals.lineAmounts[i] ?? 0));
+  const insert = db.prepare(`INSERT INTO invoice_lines (invoice_id, line_no, item_id, description, qty_milli, unit_price, amount, unit, unit_factor_milli, unit_qty_milli,
+                                                        batch_no, expiry, batch_id)
+                             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`);
+  input.lines.forEach((l, i) => insert.run(id, i + 1, l.itemId, l.description?.trim() || null, l.qtyMilli, l.unitPrice, totals.lineAmounts[i] ?? 0,
+    l.unit ?? null, l.unit ? l.unitFactorMilli ?? null : null, l.unit ? l.unitQtyMilli ?? null : null,
+    // a purchase line brings a batch in (number, expiry); a sale line may be pinned to one
+    ...(input.kind === 'purchase' ? batchColumns({ batchNo: l.batchNo, expiry: l.expiry }) : batchColumns({ batchId: l.batchId }))));
 }
 
-export function createInvoice(db: Db, raw: InvoiceInput, user: string): InvoiceView {
-  const input = normalize(raw);
+export function createInvoice(db: Db, raw: InvoiceInput | InvoiceRequest, user: string): InvoiceView {
+  const input = normalize(withUnits(db, raw as InvoiceRequest));
   assertInvoice(db, input);
   const id = randomUUID();
   transaction(db, () => {
@@ -300,11 +365,11 @@ function requireAction(db: Db, row: InvoiceRow, action: InvoiceAction): void {
   if (!actionsFor(db, row, action === 'return').includes(action)) throw conflict('action_not_allowed', { status: row.status, action });
 }
 
-export function updateInvoice(db: Db, id: string, raw: InvoiceInput, user: string): InvoiceView {
+export function updateInvoice(db: Db, id: string, raw: InvoiceInput | InvoiceRequest, user: string): InvoiceView {
   const row = loadRow(db, id);
   requireAction(db, row, 'edit');
   if (isReturn(row.kind)) throw conflict('action_not_allowed', { status: row.status, action: 'edit' });
-  const input = normalize({ ...raw, kind: row.kind as InvoiceKind });
+  const input = normalize(withUnits(db, { ...(raw as InvoiceRequest), kind: row.kind as InvoiceKind }));
   assertInvoice(db, input);
   transaction(db, () => {
     writeDraft(db, id, input);
@@ -332,7 +397,12 @@ function storedInput(view: InvoiceView): InvoiceInput {
     discount: view.discount, notes: view.notes,
     ...(view.partyId ? { partyId: view.partyId } : {}),
     ...(view.cashAccountCode ? { cashAccountCode: view.cashAccountCode } : {}),
-    lines: view.lines.map((l) => ({ itemId: l.itemId, qtyMilli: l.qtyMilli, unitPrice: l.unitPrice, description: l.description }))
+    // the factor kept with the line, never the item's factor now: a later change of the factor leaves the line as it was
+    lines: view.lines.map((l) => ({
+      itemId: l.itemId, qtyMilli: l.qtyMilli, unitPrice: l.unitPrice, description: l.description,
+      ...(l.lineUnit ? { unit: l.lineUnit, unitFactorMilli: l.unitFactorMilli ?? undefined, unitQtyMilli: l.unitQtyMilli ?? undefined } : {}),
+      ...(l.batchNo ? { batchNo: l.batchNo } : {}), ...(l.expiry ? { expiry: l.expiry } : {}), ...(l.batchId ? { batchId: l.batchId } : {})
+    }))
   };
 }
 
@@ -349,10 +419,25 @@ export function fromBase(amountIqd: number, currency: CurrencyCode, rateX100: nu
  * `settledNow` (internal callers only, never from a request): the part of a credit sale's total, in the invoice's
  * currency, that the caller collects in the same transaction (a cash sale whose deposit put it on credit). Only that
  * part is left out of the customer's credit limit check; nothing else changes.
+ * `allowExpired`: the user confirmed selling stock past its expiry date (only under the 'warn' policy; written to the
+ * audit log). Batch items take their batches earliest expiry first, or the batch a line is pinned to.
  */
-export function postInvoice(db: Db, id: string, user: string, opts: { settledNow?: number } = {}): InvoiceView {
+/**
+ * What a sale's customer has paid online for it (website orders): the payments whose receipt voucher is still in the
+ * books. A rejected one (its draft voucher deleted) or a reversed one no longer counts.
+ */
+export function onlinePaidAmount(db: Db, invoiceId: string): number {
+  return Number((db.prepare(`SELECT COALESCE(SUM(p.amount), 0) AS s FROM invoice_payments p JOIN entries e ON e.id = p.entry_id
+                              WHERE p.invoice_id = ? AND p.kind = 'online' AND e.reversed_by_id IS NULL`).get(invoiceId) as { s: number }).s);
+}
+
+export function postInvoice(
+  db: Db, id: string, user: string, opts: { settledNow?: number; allowExpired?: boolean; split?: readonly SalePart[] } = {}
+): InvoiceView {
   const view = getInvoice(db, id);
   requireAction(db, loadRow(db, id), 'post');
+  // money already taken online for this order is on the customer's account: posted as cash too, it would be taken twice
+  if (view.kind === 'sale' && (view.payment !== 'credit' || opts.split?.length) && onlinePaidAmount(db, id) > 0) throw conflict('invoice_has_online_payments');
   const input = storedInput(view);
   assertInvoice(db, input);
   const accounts = getPostingAccounts(db);
@@ -366,12 +451,27 @@ export function postInvoice(db: Db, id: string, user: string, opts: { settledNow
   const lineCosts: (number | null)[] = [];
   const moves: { itemId: string; qtyMilli: number; value: number }[] = [];
   const lines: LineInput[] = [];
+  // batch items: which batches each line takes (sales) or brings in (purchases, made in the transaction)
+  const batchMoves: BatchMove[] = [];
+  const inbound: { lineNo: number; itemId: string; qtyMilli: number; batchNo: string | null; expiry: string | null }[] = [];
+  let usedExpired = false;
 
   if (view.kind === 'sale') {
     const settled = Number.isSafeInteger(opts.settledNow) ? Math.min(Math.max(opts.settledNow!, 0), total) : 0;
     const onCredit = baseTotal - (settled ? toBase(settled, view.currency, view.rateX100) : 0);
     if (party && view.payment === 'credit' && party.creditLimit !== null && party.balance + onCredit > party.creditLimit) {
       throw conflict('credit_limit_exceeded', { balance: party.balance, limit: party.creditLimit, total: baseTotal });
+    }
+    // a split sale (POS): only the part put on the customer's account counts against their credit limit
+    if (opts.split?.length) {
+      if (opts.split.reduce((s, p) => s + p.amount, 0) !== total) throw invalid([{ code: 'payments_total_mismatch' }]);
+      const onAccount = toBase(opts.split.filter((p) => p.partyId).reduce((s, p) => s + p.amount, 0), view.currency, view.rateX100);
+      if (onAccount > 0) {
+        if (!party || opts.split.some((p) => p.partyId && p.partyId !== party.id)) throw invalid([{ code: 'party_required' }]);
+        if (party.creditLimit !== null && party.balance + onAccount > party.creditLimit) {
+          throw conflict('credit_limit_exceeded', { balance: party.balance, limit: party.creditLimit, total: onAccount });
+        }
+      }
     }
     const stock = new Map<string, { qtyMilli: number; value: number }>();
     const errors: { code: string; line: number; available: number }[] = [];
@@ -385,8 +485,22 @@ export function postInvoice(db: Db, id: string, user: string, opts: { settledNow
       moves.push({ itemId: l.itemId, qtyMilli: -l.qtyMilli, value: -cost });
     });
     if (errors.length) throw invalid(errors);
+    const taken = new Map<string, number>();
+    const batchErrors: BatchError[] = [];
+    view.lines.forEach((l, i) => {
+      if (!l.trackStock || !batchTracking(db, l.itemId).batches) return;
+      const r = allocateOut(db, { itemId: l.itemId, warehouseId: view.warehouseId, qtyMilli: l.qtyMilli, date: view.date, line: i + 1, purpose: 'sale', allowExpired: opts.allowExpired, pinned: l.batchId }, taken);
+      if ('code' in r) { batchErrors.push(r); return; }
+      addTaken(taken, r.picks);
+      if (r.usedExpired) usedExpired = true;
+      for (const p of r.picks) batchMoves.push({ batchId: p.batchId, itemId: l.itemId, warehouseId: view.warehouseId, qtyMilli: -p.qtyMilli, lineNo: i + 1 });
+    });
+    if (batchErrors.length) throw invalid(batchErrors);
     const totalCost = lineCosts.reduce<number>((s, c) => s + (c ?? 0), 0);
-    lines.push({ accountCode: counterAccount, debit: total, credit: 0, ...counterParty });
+    if (opts.split?.length) {
+      // one debit line per part: the safe for cash, a card or wallet account, or the customer for what goes on account
+      for (const p of opts.split) lines.push({ accountCode: p.accountCode, debit: p.amount, credit: 0, ...(p.partyId ? { partyId: p.partyId } : {}) });
+    } else lines.push({ accountCode: counterAccount, debit: total, credit: 0, ...counterParty });
     lines.push({ accountCode: accounts.sales, debit: 0, credit: total });
     if (totalCost > 0) {
       const cost = fromBase(totalCost, view.currency, view.rateX100);
@@ -401,6 +515,11 @@ export function postInvoice(db: Db, id: string, user: string, opts: { settledNow
       const value = values[i] ?? 0;
       lineCosts.push(value);
       moves.push({ itemId: l.itemId, qtyMilli: l.qtyMilli, value });
+      const tracking = batchTracking(db, l.itemId);
+      if (tracking.batches) {
+        if (tracking.expiry && !l.expiry) throw invalid([{ code: 'expiry_required', line: i + 1 }]);
+        inbound.push({ lineNo: i + 1, itemId: l.itemId, qtyMilli: l.qtyMilli, batchNo: l.batchNo, expiry: l.expiry });
+      }
     });
     lines.push({ accountCode: warehouseAccount, debit: total, credit: 0, baseDebit: baseTotal, baseCredit: 0 });
     lines.push({ accountCode: counterAccount, debit: 0, credit: total, baseDebit: 0, baseCredit: baseTotal, ...counterParty });
@@ -421,9 +540,16 @@ export function postInvoice(db: Db, id: string, user: string, opts: { settledNow
     const setCost = db.prepare('UPDATE invoice_lines SET cost = ? WHERE invoice_id = ? AND line_no = ?');
     lineCosts.forEach((c, i) => setCost.run(c, id, i + 1));
     for (const m of moves) addStockMove(db, { ...m, warehouseId: view.warehouseId, date: view.date, sourceType: view.kind, sourceId: id });
+    for (const l of inbound) {
+      const b = inboundBatch(db, l.itemId, l, l.lineNo, view.date);
+      if (b) batchMoves.push({ batchId: b.batchId, itemId: l.itemId, warehouseId: view.warehouseId, qtyMilli: l.qtyMilli, lineNo: l.lineNo });
+    }
+    writeBatchMoves(db, batchMoves, view.date, view.kind, id);
     db.prepare(`UPDATE invoices SET status = 'posted', number = ?, entry_id = ?, posted_by = ?, posted_at = ?, updated_at = ? WHERE id = ?`)
       .run(number, entryId, user, now, now, id);
     audit(db, user, 'post', 'invoice', id, { number, entryId });
+    // selling stock past its date (the user confirmed it, under the 'warn' policy) is kept on record
+    if (usedExpired) audit(db, user, 'sell_expired', 'invoice', id, { number, batches: batchMoves.map((m) => m.batchId) });
   });
   return getInvoice(db, id);
 }
@@ -432,10 +558,23 @@ export function postInvoice(db: Db, id: string, user: string, opts: { settledNow
  * Cancels a posted invoice: its entry is reversed (قيد عكسي) and its stock moves are undone. Both stay on record.
  * A purchase whose goods were already sold cannot be cancelled — the stock it brought in is gone.
  */
-export function cancelInvoice(db: Db, id: string, user: string, date?: string): InvoiceView {
+/**
+ * Separate duties (Settings): voiding a till sale, or paying one back in cash, takes the drawer's money out of what the
+ * shift expects; so, like posting a stock adjustment or reversing an entry, it is done by an approver, and never by
+ * whoever rang the sale up. (Without separate duties the sales permission does it, as with any other sale.)
+ */
+export function assertMayUndoPosSale(db: Db, invoiceId: string, postedBy: string | null, actor?: Pick<Actor, 'name' | 'permissions'>): void {
+  if (!actor || readSetting(db, 'separate_duties') !== '1') return;
+  if (!db.prepare('SELECT 1 FROM pos_sales WHERE invoice_id = ?').get(invoiceId)) return;
+  if (!actor.permissions.includes('entries.approve')) throw new AppError(403, 'forbidden', { need: 'entries.approve' });
+  if (postedBy && postedBy === actor.name) throw conflict('same_person');
+}
+
+export function cancelInvoice(db: Db, id: string, user: string, date?: string, actor?: Pick<Actor, 'name' | 'permissions'>): InvoiceView {
   const view = getInvoice(db, id);
   if (view.installmentContract) throw conflict('invoice_has_contract', { contract: view.installmentContract.number });
   requireAction(db, loadRow(db, id), 'cancel');
+  if (view.kind === 'sale') assertMayUndoPosSale(db, id, view.postedBy, actor);
   // (no date: today, or the document's own date when that is later: a reversal is never dated before what it reverses)
   const cancelDate = date ?? (todayIso() < view.date ? view.date : todayIso());
   if (isPeriodLocked(db, cancelDate)) throw invalid([{ code: 'period_locked', period: cancelDate.slice(0, 7) }]);
@@ -457,10 +596,13 @@ export function cancelInvoice(db: Db, id: string, user: string, date?: string): 
       remaining.set(m.itemId, after);
     }
     if (errors.length) throw invalid(errors);
+    // the batches it brought in must still hold what comes out again
+    assertReversible(db, view.kind, id);
   }
   transaction(db, () => {
     const reversalId = view.entryId ? reverseEntryInternal(db, view.entryId, user, cancelDate) : null;
     for (const m of moves) addStockMove(db, { itemId: m.itemId, warehouseId: view.warehouseId, date: cancelDate, qtyMilli: m.qtyMilli, value: m.value, sourceType: `${view.kind}_cancel`, sourceId: id });
+    cancelBatchMoves(db, view.kind, id, cancelDate, moves.map((m) => ({ itemId: m.itemId, warehouseId: view.warehouseId })));
     const now = new Date().toISOString();
     db.prepare(`UPDATE invoices SET status = 'cancelled', cancel_entry_id = ?, cancelled_by = ?, cancelled_at = ?, updated_at = ? WHERE id = ?`)
       .run(reversalId, user, now, now, id);

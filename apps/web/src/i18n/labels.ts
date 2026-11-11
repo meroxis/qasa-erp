@@ -60,6 +60,7 @@ export const LABEL_TEXT = {
   lb_empty: ['لم تُختر مواد بعد', 'No items chosen yet', 'هێشتا کاڵا هەڵنەبژێردراوە'],
   lb_emptyText: ['أضف مادة أو اختر كل المواد للبدء.', 'Add an item, or choose all items, to start.', 'کاڵایەک زیاد بکە، یان هەموو کاڵاکان هەڵبژێرە، بۆ دەستپێکردن.'],
   lb_noCode: ['لا يمكن طباعة باركود لهذه المادة: أضف باركوداً أو رمزاً بالحروف اللاتينية والأرقام.', 'This item can’t get a barcode: give it a barcode, or a code in Latin letters and digits.', 'ئەم کاڵایە ناتوانێت بارکۆدی هەبێت: بارکۆدێک یان کۆدێک بە پیتی لاتینی و ژمارە پێی بدە.'],
+  lb_noUnitCode: ['ليس لهذه الوحدة باركود خاص بها بعد: أضفه للوحدة في بطاقة المادة، ليضيف المسح هذه الوحدة لا وحدة أساس واحدة.', 'This unit has no barcode of its own yet: add one to the unit on the item, so a scan adds this unit and not one base unit.', 'ئەم یەکەیە هێشتا باڕکۆدی خۆی نییە: لە کارتی کاڵاکەدا بۆ یەکەکە زیادی بکە، تا سکان ئەم یەکەیە زیاد بکات نەک یەک یەکەی بنەڕەت.'],
   lb_tooMany: ['الحد 2000 ملصق في المرة الواحدة.', 'At most 2,000 labels at a time.', 'زۆرترین 2000 لێبڵ لە یەک جاردا.'],
   lb_preview: ['معاينة الملصقات', 'Label preview', 'پێشبینینی لێبڵەکان'],
   lb_printerTip: [

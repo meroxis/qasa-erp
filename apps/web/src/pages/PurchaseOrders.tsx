@@ -1,14 +1,17 @@
 import { useEffect, useMemo, useState } from 'react';
-import { lineAmount, rateFromX100, todayIso, toWesternDigits, type CurrencyCode } from '@qasa/core';
+import { fromBaseQty, isUnit, lineAmount, rateFromX100, todayIso, toWesternDigits, type CurrencyCode } from '@qasa/core';
 import { api } from '../api.ts';
 import { EmptyState, AmountInput, ErrorBox, Icon, Modal, QtyInput, SearchCombo, useData, useLoad, usePageNav, useToast, type PickOption } from '../components.tsx';
-import { useI18n, type Key } from '../i18n.ts';
+import { useI18n, type I18n, type Key } from '../i18n.ts';
 import {
   PO_STATUSES, purchasingApi, type PoInput, type PoMove, type PoStatus, type PoSummaryView, type PoView, type ReorderGroup
 } from '../industry/purchasing-api.ts';
 import { go, href } from '../router.ts';
 import { useRatePrefill } from '../industry/fx-prefill.ts';
 import { convertLines } from './currency-switch.ts';
+import { UnitPicker } from '../industry/UnitPicker.tsx';
+import { baseQty, unitLabel, type LineUnit } from '../industry/units.ts';
+import type { PoLineView } from '../industry/purchasing-api.ts';
 import { printDocument } from '../industry/printing.ts';
 
 /**
@@ -18,6 +21,16 @@ import { printDocument } from '../industry/printing.ts';
 
 const STATUS_CHIP: Record<PoStatus, string> = { draft: '', sent: 'info', partial: 'warn', received: 'ok', cancelled: 'bad' };
 const st = (s: PoStatus) => `po_st_${s}` as Key;
+
+/**
+ * A base quantity of a purchase order line in the unit it was ordered in (2 boxes), as the ordered column shows it;
+ * in the item's base unit, named, when it is not a whole number of thousandths of that unit (25 tablets of a box of 10).
+ */
+export function poQtyText(i18n: I18n, l: Pick<PoLineView, 'unit' | 'lineUnit' | 'unitFactorMilli'>, baseMilli: number): string {
+  const inUnit = l.lineUnit && l.unitFactorMilli ? fromBaseQty(baseMilli, l.unitFactorMilli) : null;
+  if (l.lineUnit && inUnit !== null) return `${i18n.qty(inUnit)} ${unitLabel(i18n, l.lineUnit)}`;
+  return isUnit(l.unit) ? `${i18n.qty(baseMilli)} ${unitLabel(i18n, l.unit)}` : i18n.qty(baseMilli);
+}
 
 export function PoChip({ status, overdue }: { status: PoStatus; overdue?: boolean }) {
   const { t } = useI18n();
@@ -177,7 +190,8 @@ function Suggestions() {
 
 /* ---------- writing an order ---------- */
 
-interface Row { key: number; itemId: string; qtyMilli: number; unitPrice: number }
+/** qtyMilli: as typed in the line's unit (null: the base unit); unitPrice: per that unit. */
+interface Row { key: number; itemId: string; qtyMilli: number; unitPrice: number; unit?: LineUnit }
 let rowKey = 0;
 const emptyRow = (): Row => ({ key: ++rowKey, itemId: '', qtyMilli: 1000, unitPrice: 0 });
 
@@ -213,7 +227,7 @@ export function PurchaseOrderEditor({ id }: { id?: string }) {
     const x = existing.data;
     if (!x) return;
     setForm({ date: x.date, partyId: x.party.id, warehouseId: x.warehouse?.id ?? '', currency: x.currency, expectedDate: x.expectedDate ?? '', notes: x.notes });
-    setRows(x.lines.map((l) => ({ key: ++rowKey, itemId: l.itemId, qtyMilli: l.qtyMilli, unitPrice: l.unitPrice })));
+    setRows(x.lines.map((l) => ({ key: ++rowKey, itemId: l.itemId, qtyMilli: l.lineUnit && l.unitQtyMilli !== null ? l.unitQtyMilli : l.qtyMilli, unitPrice: l.unitPrice, unit: l.lineUnit })));
   }, [existing.data]);
 
   const set = <K extends keyof typeof form>(k: K, v: (typeof form)[K]) => setForm((f) => ({ ...f, [k]: v }));
@@ -237,7 +251,9 @@ export function PurchaseOrderEditor({ id }: { id?: string }) {
     const input: PoInput = {
       date: form.date, partyId: form.partyId, warehouseId: form.warehouseId || null, currency: form.currency,
       expectedDate: form.expectedDate || null, notes: form.notes,
-      lines: rows.filter((r) => r.itemId || r.unitPrice).map(({ key: _k, ...r }) => ({ ...r, qtyMilli: r.qtyMilli || 0, unitPrice: r.unitPrice || 0 }))
+      lines: rows.filter((r) => r.itemId || r.unitPrice).map(({ key: _k, unit, ...r }) => (unit
+        ? { itemId: r.itemId, unit, unitQtyMilli: r.qtyMilli || 0, qtyMilli: baseQty(items.find((it) => it.id === r.itemId), unit, r.qtyMilli || 0) ?? 0, unitPrice: r.unitPrice || 0 }
+        : { itemId: r.itemId, qtyMilli: r.qtyMilli || 0, unitPrice: r.unitPrice || 0 }))
     };
     try {
       const saved = id ? await purchasingApi.update(id, input) : await purchasingApi.create(input);
@@ -287,8 +303,11 @@ export function PurchaseOrderEditor({ id }: { id?: string }) {
               {rows.map((r, i) => (
                 <tr key={r.key}>
                   <td className="muted num">{i18n.int(i + 1)}</td>
-                  <td><SearchCombo value={r.itemId} options={itemOptions} onChange={(v) => update(r.key, { itemId: v })} placeholder={t('po_pickItem')} ariaLabel={t('item')} /></td>
-                  <td><QtyInput value={r.qtyMilli || null} onChange={(v) => update(r.key, { qtyMilli: v ?? 0 })} ariaLabel={t('qty')} /></td>
+                  <td><SearchCombo value={r.itemId} options={itemOptions} onChange={(v) => update(r.key, { itemId: v, unit: items.find((it) => it.id === v)?.purchaseUnit ?? null })} placeholder={t('po_pickItem')} ariaLabel={t('item')} /></td>
+                  <td>
+                    <QtyInput value={r.qtyMilli || null} onChange={(v) => update(r.key, { qtyMilli: v ?? 0 })} ariaLabel={t('qty')} />
+                    <UnitPicker item={items.find((it) => it.id === r.itemId)} value={r.unit ?? null} onChange={(unit) => update(r.key, { unit })} />
+                  </td>
                   <td><AmountInput value={r.unitPrice || null} currency={form.currency} onChange={(v) => update(r.key, { unitPrice: v ?? 0 })} ariaLabel={t('unitPrice')} /></td>
                   <td className="amount">{i18n.money(lineAmount(r.qtyMilli || 0, r.unitPrice || 0), form.currency)}</td>
                   <td><button type="button" className="btn icon danger" onClick={() => setRows((rs) => (rs.length > 1 ? rs.filter((x) => x.key !== r.key) : [emptyRow()]))} aria-label={t('removeLine')} title={t('removeLine')}><Icon name="x" size={16} /></button></td>
@@ -438,10 +457,10 @@ function Paper({ order: x, company }: { order: PoView; company: string }) {
               <tr key={l.seq}>
                 <td className="muted num">{i18n.int(l.seq)}</td>
                 <td>{i18n.name(l.itemName)}<span className="muted small ltr" style={{ marginInlineStart: 6 }}>{l.itemCode}</span></td>
-                <td className="amount">{i18n.qty(l.qtyMilli)}</td>
+                <td className="amount">{l.lineUnit && l.unitQtyMilli !== null ? `${i18n.qty(l.unitQtyMilli)} ${unitLabel(i18n, l.lineUnit)}` : i18n.qty(l.qtyMilli)}</td>
                 {showProgress && <>
-                  <td className="amount no-print">{i18n.qty(l.receivedMilli)}</td>
-                  <td className="amount no-print" style={l.remainingMilli ? { color: 'var(--warn)' } : undefined}>{i18n.qty(l.remainingMilli)}</td>
+                  <td className="amount no-print">{poQtyText(i18n, l, l.receivedMilli)}</td>
+                  <td className="amount no-print" style={l.remainingMilli ? { color: 'var(--warn)' } : undefined}>{poQtyText(i18n, l, l.remainingMilli)}</td>
                 </>}
                 <td className="amount">{i18n.money(l.unitPrice, x.currency)}</td>
                 <td className="amount">{i18n.money(l.amount, x.currency)}</td>

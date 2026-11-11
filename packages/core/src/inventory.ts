@@ -61,7 +61,11 @@ export function allocateDiscount(amounts: number[], discount: number): number[] 
   return shares;
 }
 
-export type UnitCode = 'piece' | 'carton' | 'box' | 'set' | 'kg' | 'm' | 'l' | 'service';
+export type UnitCode =
+  | 'piece' | 'carton' | 'box' | 'set' | 'kg' | 'm' | 'l' | 'service'
+  // 1.1: wholesale, building materials and pharmacies
+  | 'ton' | 'g' | 'bag' | 'm2' | 'dozen' | 'pack' | 'strip' | 'tablet' | 'capsule' | 'bottle' | 'tube' | 'ampoule' | 'vial' | 'sachet'
+  | 'roll' | 'pair';
 
 export const UNITS: Record<UnitCode, Names> = {
   piece: { ar: 'قطعة', en: 'piece', ku: 'دانە' },
@@ -71,9 +75,28 @@ export const UNITS: Record<UnitCode, Names> = {
   kg: { ar: 'كغم', en: 'kg', ku: 'کیلۆ' },
   m: { ar: 'متر', en: 'm', ku: 'مەتر' },
   l: { ar: 'لتر', en: 'L', ku: 'لیتر' },
-  service: { ar: 'خدمة', en: 'service', ku: 'خزمەتگوزاری' }
+  service: { ar: 'خدمة', en: 'service', ku: 'خزمەتگوزاری' },
+  ton: { ar: 'طن', en: 'ton', ku: 'تەن' },
+  g: { ar: 'غم', en: 'g', ku: 'گرام' },
+  bag: { ar: 'كيس', en: 'bag', ku: 'کیسە' },
+  m2: { ar: 'م²', en: 'm²', ku: 'م²' },
+  dozen: { ar: 'درزن', en: 'dozen', ku: 'دەرزەن' },
+  pack: { ar: 'باكيت', en: 'pack', ku: 'پاکەت' },
+  strip: { ar: 'شريط', en: 'strip', ku: 'شریت' },
+  tablet: { ar: 'حبة', en: 'tablet', ku: 'حەب' },
+  capsule: { ar: 'كبسولة', en: 'capsule', ku: 'کەپسوول' },
+  bottle: { ar: 'قنينة', en: 'bottle', ku: 'شووشە' },
+  tube: { ar: 'أنبوب', en: 'tube', ku: 'تیوب' },
+  ampoule: { ar: 'أمبولة', en: 'ampoule', ku: 'ئەمپوول' },
+  vial: { ar: 'فيال', en: 'vial', ku: 'ڤایل' },
+  sachet: { ar: 'ظرف', en: 'sachet', ku: 'زەرف' },
+  roll: { ar: 'لفة', en: 'roll', ku: 'لوول' },
+  pair: { ar: 'زوج', en: 'pair', ku: 'جووت' }
 };
 
+/** Every unit code, in the order the item form lists them (one source for the API's checks too). */
+export const UNIT_CODES = Object.keys(UNITS) as [UnitCode, ...UnitCode[]];
+
 export function isUnit(value: unknown): value is UnitCode {
-  return typeof value === 'string' && value in UNITS;
+  return typeof value === 'string' && Object.prototype.hasOwnProperty.call(UNITS, value);
 }

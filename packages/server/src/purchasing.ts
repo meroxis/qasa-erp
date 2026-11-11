@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { z } from 'zod';
-import { isIsoDate, lineAmount, todayIso, type CurrencyCode, type Names } from '@qasa/core';
+import { fromBaseQty, isIsoDate, lineAmount, todayIso, UNIT_CODES, type CurrencyCode, type Names, type UnitCode } from '@qasa/core';
 import type { Db } from './db.ts';
 import { nextSequence, transaction } from './db.ts';
 import { audit } from './audit.ts';
@@ -10,6 +10,7 @@ import { defaultWarehouseId, userBranchLists } from './branches.ts';
 import { getSettings } from './settings.ts';
 import type { Actor } from './auth.ts';
 import type { ApiExtension } from './routes.ts';
+import { basePriceOf, resolveLines } from './item-units.ts';
 
 /**
  * Purchase orders (أوامر الشراء). An order is written to a supplier (draft → sent), then received into purchase
@@ -24,9 +25,15 @@ export type PoAction = 'edit' | 'send' | 'receive' | 'cancel' | 'reopen';
 
 export interface PoLineInput {
   itemId: string;
-  qtyMilli: number;
+  /** base units; worked out from unitQtyMilli when the line is in one of the item's units (1.1) */
+  qtyMilli?: number | undefined;
+  /** per the line's own unit when it has one */
   unitPrice: number;
+  unit?: UnitCode | undefined;
+  unitQtyMilli?: number | undefined;
 }
+
+type PoLine = { itemId: string; qtyMilli: number; unitPrice: number; unit?: UnitCode; unitFactorMilli?: number; unitQtyMilli?: number };
 
 export interface PoInput {
   date: string;
@@ -49,6 +56,10 @@ export interface PoLineView {
   amount: number;
   receivedMilli: number;
   remainingMilli: number;
+  /** 1.1: the unit the line was typed in (null: the base unit), its factor then and the quantity as typed */
+  lineUnit: UnitCode | null;
+  unitFactorMilli: number | null;
+  unitQtyMilli: number | null;
 }
 
 export interface PoReceiptView {
@@ -105,9 +116,15 @@ function loadRow(db: Db, id: string): PoRow {
   return r;
 }
 
-function loadLines(db: Db, id: string): { seq: number; item_id: string; qty_milli: number; unit_price: number }[] {
-  return db.prepare('SELECT seq, item_id, qty_milli, unit_price FROM purchase_order_lines WHERE order_id = ? ORDER BY seq').all(id) as { seq: number; item_id: string; qty_milli: number; unit_price: number }[];
+interface PoLineRow { seq: number; item_id: string; qty_milli: number; unit_price: number; unit: UnitCode | null; unit_factor_milli: number | null; unit_qty_milli: number | null }
+
+function loadLines(db: Db, id: string): PoLineRow[] {
+  return db.prepare('SELECT seq, item_id, qty_milli, unit_price, unit, unit_factor_milli, unit_qty_milli FROM purchase_order_lines WHERE order_id = ? ORDER BY seq')
+    .all(id) as unknown as PoLineRow[];
 }
+
+/** A line's amount: the price is per the line's unit, so it goes with the quantity typed in that unit. */
+const poLineAmount = (l: PoLineRow) => lineAmount(l.unit && l.unit_qty_milli !== null ? Number(l.unit_qty_milli) : l.qty_milli, l.unit_price);
 
 /** Quantities that arrived, per item: lines of POSTED purchase invoices linked to the order. */
 function receivedByItem(db: Db, orderId: string): Map<string, number> {
@@ -120,7 +137,7 @@ function receivedByItem(db: Db, orderId: string): Map<string, number> {
 }
 
 /** Spreads what arrived over the order's lines (an item may be on more than one line), first line first. */
-function progress(db: Db, orderId: string): { seq: number; item_id: string; qty_milli: number; unit_price: number; received: number; remaining: number }[] {
+function progress(db: Db, orderId: string): (PoLineRow & { received: number; remaining: number })[] {
   const got = receivedByItem(db, orderId);
   return loadLines(db, orderId).map((l) => {
     const left = got.get(l.item_id) ?? 0;
@@ -194,7 +211,11 @@ export function getPurchaseOrder(db: Db, id: string, actor?: Actor): PoView {
   };
   const lines: PoLineView[] = progress(db, id).map((l) => {
     const it = itemOf(l.item_id);
-    return { seq: l.seq, itemId: l.item_id, itemCode: it.code, itemName: it.name, unit: it.unit, qtyMilli: l.qty_milli, unitPrice: l.unit_price, amount: lineAmount(l.qty_milli, l.unit_price), receivedMilli: l.received, remainingMilli: l.remaining };
+    return {
+      seq: l.seq, itemId: l.item_id, itemCode: it.code, itemName: it.name, unit: it.unit, qtyMilli: l.qty_milli, unitPrice: l.unit_price, amount: poLineAmount(l),
+      receivedMilli: l.received, remainingMilli: l.remaining,
+      lineUnit: l.unit ?? null, unitFactorMilli: l.unit_factor_milli === null ? null : Number(l.unit_factor_milli), unitQtyMilli: l.unit_qty_milli === null ? null : Number(l.unit_qty_milli)
+    };
   });
   const receipts = db.prepare(`
     SELECT i.id, i.number, i.date, i.status, i.total FROM purchase_order_receipts r JOIN invoices i ON i.id = r.invoice_id
@@ -236,7 +257,7 @@ export function listPurchaseOrders(db: Db, f: { status?: PoStatus | 'open'; part
   return rows.map((r) => ({
     id: r.id, number: r.number, date: r.date, partyId: r.party_id, partyName: r.party_name, currency: r.currency,
     expectedDate: r.expected_date, status: r.status, overdue: isOverdue(r),
-    total: loadLines(db, r.id).reduce((s, l) => s + lineAmount(l.qty_milli, l.unit_price), 0)
+    total: loadLines(db, r.id).reduce((s, l) => s + poLineAmount(l), 0)
   }));
 }
 
@@ -271,19 +292,26 @@ function check(db: Db, input: PoInput): void {
     const line = i + 1;
     const it = l.itemId ? db.prepare('SELECT active FROM items WHERE id = ?').get(l.itemId) as { active: number } | undefined : undefined;
     if (!it || it.active !== 1) errors.push({ code: 'line_item_invalid', line });
-    if (!Number.isSafeInteger(l.qtyMilli) || l.qtyMilli <= 0 || l.qtyMilli > MAX_QTY) errors.push({ code: 'line_qty_invalid', line });
+    if (!Number.isSafeInteger(l.qtyMilli) || l.qtyMilli! <= 0 || l.qtyMilli! > MAX_QTY) errors.push({ code: 'line_qty_invalid', line });
     if (!Number.isSafeInteger(l.unitPrice) || l.unitPrice < 0 || l.unitPrice > MAX_PRICE) errors.push({ code: 'line_price_invalid', line });
   });
   if (errors.length) throw invalid(errors);
 }
 
-function writeLines(db: Db, id: string, lines: PoLineInput[]): void {
+function writeLines(db: Db, id: string, lines: PoLine[]): void {
   db.prepare('DELETE FROM purchase_order_lines WHERE order_id = ?').run(id);
-  const ins = db.prepare('INSERT INTO purchase_order_lines (order_id, seq, item_id, qty_milli, unit_price) VALUES (?, ?, ?, ?, ?)');
-  lines.forEach((l, i) => ins.run(id, i + 1, l.itemId, l.qtyMilli, l.unitPrice));
+  const ins = db.prepare('INSERT INTO purchase_order_lines (order_id, seq, item_id, qty_milli, unit_price, unit, unit_factor_milli, unit_qty_milli) VALUES (?, ?, ?, ?, ?, ?, ?, ?)');
+  lines.forEach((l, i) => ins.run(id, i + 1, l.itemId, l.qtyMilli, l.unitPrice, l.unit ?? null, l.unit ? l.unitFactorMilli ?? null : null, l.unit ? l.unitQtyMilli ?? null : null));
 }
 
-export function createPurchaseOrder(db: Db, input: PoInput, actor: Actor): PoView {
+/** The order's lines with their base quantities, from each item's units now. */
+function withUnits(db: Db, raw: PoInput): PoInput & { lines: PoLine[] } {
+  const lines = Array.isArray(raw.lines) ? resolveLines(db, raw.lines.map((l) => ({ ...l, itemId: l.itemId ?? '' }))) : [];
+  return { ...raw, lines } as PoInput & { lines: PoLine[] };
+}
+
+export function createPurchaseOrder(db: Db, raw: PoInput, actor: Actor): PoView {
+  const input = withUnits(db, raw);
   check(db, input);
   const id = randomUUID();
   transaction(db, () => {
@@ -298,9 +326,10 @@ export function createPurchaseOrder(db: Db, input: PoInput, actor: Actor): PoVie
   return getPurchaseOrder(db, id, actor);
 }
 
-export function updatePurchaseOrder(db: Db, id: string, input: PoInput, actor: Actor): PoView {
+export function updatePurchaseOrder(db: Db, id: string, raw: PoInput, actor: Actor): PoView {
   const r = loadRow(db, id);
   requireAction(db, r, 'edit');
+  const input = withUnits(db, raw);
   check(db, input);
   transaction(db, () => {
     db.prepare('UPDATE purchase_orders SET date = ?, party_id = ?, warehouse_id = ?, currency = ?, expected_date = ?, notes = ?, updated_at = ? WHERE id = ?')
@@ -342,7 +371,16 @@ export function receivePurchaseOrder(db: Db, id: string, input: ReceiveInput, ac
   // none on the order or the request: the first active one the user may use (a limited user's own branches only)
   const warehouseId = input.warehouseId || r.warehouse_id || defaultWarehouseId(db, actor);
   const rate = r.currency === 'USD' ? input.rateX100 ?? getSettings(db).defaultRateX100 : 100;
-  const lines = progress(db, id).filter((l) => l.remaining > 0).map((l) => ({ itemId: l.item_id, qtyMilli: l.remaining, unitPrice: l.unit_price }));
+  // a line ordered in boxes is received in boxes, when what is left is whole thousandths of a box at the item's factor now
+  const factorNow = db.prepare('SELECT factor_milli FROM item_units WHERE item_id = ? AND unit = ?');
+  const lines = progress(db, id).filter((l) => l.remaining > 0).map((l) => {
+    const factor = l.unit_factor_milli === null ? null : Number(l.unit_factor_milli);
+    const now = l.unit ? (factorNow.get(l.item_id, l.unit) as { factor_milli: number } | undefined) : undefined;
+    const typed = l.unit && factor && now && Number(now.factor_milli) === factor ? fromBaseQty(l.remaining, factor) : null;
+    return l.unit && typed !== null
+      ? { itemId: l.item_id, unit: l.unit, unitQtyMilli: typed, unitPrice: l.unit_price }
+      : { itemId: l.item_id, qtyMilli: l.remaining, unitPrice: basePriceOf(l.unit_price, l.unit ? factor : null) };
+  });
   let invoiceId = '';
   transaction(db, () => {
     const inv = createInvoice(db, {
@@ -394,7 +432,7 @@ export function reorderSuggestions(db: Db, warehouses: readonly string[] | null 
   const open = db.prepare("SELECT id FROM purchase_orders WHERE status IN ('draft', 'sent', 'partial')").all() as { id: string }[];
   for (const o of open) for (const l of progress(db, o.id)) onOrder.set(l.item_id, (onOrder.get(l.item_id) ?? 0) + l.remaining);
   const lastBuy = db.prepare(`
-    SELECT i.party_id, p.name, i.currency, il.unit_price FROM invoice_lines il JOIN invoices i ON i.id = il.invoice_id JOIN parties p ON p.id = i.party_id
+    SELECT i.party_id, p.name, i.currency, il.unit_price, il.unit_factor_milli FROM invoice_lines il JOIN invoices i ON i.id = il.invoice_id JOIN parties p ON p.id = i.party_id
     WHERE il.item_id = ? AND i.kind = 'purchase' AND i.status = 'posted' ORDER BY i.date DESC, i.created_at DESC LIMIT 1`);
   const groups = new Map<string, ReorderGroup>();
   for (const it of items) {
@@ -406,7 +444,9 @@ export function reorderSuggestions(db: Db, warehouses: readonly string[] | null 
     const target = reorder !== null ? Math.max(2 * reorder, reorder + 1000) : 1000;
     const suggest = target - onHand - coming;
     if (suggest <= 0) continue;
-    const last = lastBuy.get(it.id) as { party_id: string; name: string; currency: CurrencyCode; unit_price: number } | undefined;
+    const bought = lastBuy.get(it.id) as { party_id: string; name: string; currency: CurrencyCode; unit_price: number; unit_factor_milli: number | null } | undefined;
+    // the last price per base unit (a purchase in boxes says so per box)
+    const last = bought ? { ...bought, unit_price: basePriceOf(Number(bought.unit_price), bought.unit_factor_milli === null ? null : Number(bought.unit_factor_milli)) } : undefined;
     const currency: CurrencyCode = last?.currency ?? 'IQD';
     const key = `${last?.party_id ?? ''}|${currency}`;
     if (!groups.has(key)) groups.set(key, { party: last ? { id: last.party_id, name: last.name } : null, currency, lines: [] });
@@ -432,7 +472,10 @@ const idParam = z.object({ id });
 const poBody = z.object({
   date, partyId: z.string().max(64), warehouseId: id.nullable().optional(), currency: z.enum(['IQD', 'USD']),
   expectedDate: date.or(z.literal('')).nullable().optional(), notes: z.string().max(2000).optional(),
-  lines: z.array(z.object({ itemId: z.string().max(64), qtyMilli: z.number().int(), unitPrice: z.number().int() })).max(300)
+  lines: z.array(z.object({
+    itemId: z.string().max(64), qtyMilli: z.number().int().optional(), unitPrice: z.number().int(),
+    unit: z.enum(UNIT_CODES).optional(), unitQtyMilli: z.number().int().positive().max(1e12).optional()
+  })).max(300)
 });
 
 export const purchasingApi: ApiExtension = {

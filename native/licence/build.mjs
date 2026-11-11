@@ -6,7 +6,8 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const here = dirname(fileURLToPath(import.meta.url));
-execFileSync('cargo', ['build', '--release'], { cwd: here, stdio: 'inherit' });
+// --locked: exactly the crate versions in Cargo.lock, never newer ones picked up at build time
+execFileSync('cargo', ['build', '--release', '--locked'], { cwd: here, stdio: 'inherit' });
 const built = { win32: 'qasa_licence.dll', darwin: 'libqasa_licence.dylib' }[process.platform] ?? 'libqasa_licence.so';
 const from = join(here, 'target', 'release', built);
 if (!existsSync(from)) throw new Error(`cargo did not make ${from}`);

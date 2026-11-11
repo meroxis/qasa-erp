@@ -57,6 +57,7 @@ export const NAV: NavGroup[] = [
       { key: 'items', icon: 'box', path: 'items', match: ['items', 'item'] },
       { key: 'stockDocs', icon: 'swap', path: 'stock-docs', match: ['stock-docs', 'stock-doc', 'new-stock-doc', 'edit-stock-doc'] },
       { key: 'lb_title', icon: 'tag', path: 'labels', match: ['labels'] },
+      { key: 'ex_title', icon: 'clock', path: 'expiry', match: ['expiry'] },
       { key: 'adj_title', icon: 'tag', path: 'stock-adjustments', match: ['stock-adjustments', 'stock-adjustment', 'new-stock-adjustment', 'edit-stock-adjustment', 'stock-count'] }
     ]
   },
@@ -69,7 +70,8 @@ export const NAV: NavGroup[] = [
       { key: 'pt_title', icon: 'gear', path: 'car-parts', match: ['car-parts'], business: 'autoParts' },
       { key: 'ew_jobs', icon: 'tool', path: 'works', match: ['works', 'job'], business: 'engineeringWorks' },
       { key: 'sl_title', icon: 'sun', path: 'solar', match: ['solar', 'solar-system'], business: 'electricalSolar' },
-      { key: 'gen_title', icon: 'zap', path: 'generators', match: ['generators', 'gen-run'], business: 'generators' }
+      { key: 'gen_title', icon: 'zap', path: 'generators', match: ['generators', 'gen-run'], business: 'generators' },
+      { key: 'phm_title', icon: 'pill', path: 'pharmacy', match: ['pharmacy'], business: 'pharmacy' }
     ]
   },
   {

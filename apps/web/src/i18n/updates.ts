@@ -8,6 +8,7 @@ export const UPD_TEXT = {
   up_laterHelp: ['سيُثبَّت التحديث عند إغلاق البرنامج.', 'It installs when you close the app.', 'کاتێک بەرنامەکە دادەخەیت دادەمەزرێت.'],
   up_whatsNew: ['ما الجديد', 'What’s new', 'چی نوێیە'],
   up_whatsNewTitle: ['ما الجديد في قاصة ERP {v}', 'What’s new in Qasa ERP {v}', 'چی نوێیە لە قاسە ERP {v}'],
+  up_gotIt: ['فهمت', 'Got it', 'تێگەیشتم'],
   up_noNotes: ['لا توجد ملاحظات لهذا الإصدار.', 'There are no notes for this version.', 'ئەم وەشانە تێبینیی نییە.'],
   up_close: ['إغلاق', 'Close', 'داخستن'],
   up_dismiss: ['إخفاء', 'Hide', 'شاردنەوە'],

@@ -14,6 +14,14 @@ describe('the installer build (electron-builder.yml)', () => {
     expect(config).not.toMatch(/^generateUpdatesFilesForAllChannels/m);
   });
 
+  it('says how a beta becomes a prerelease the way the workflow really does it: gh in the publish job, not a -c flag', () => {
+    expect(config).not.toContain('-c.publish.releaseType');
+    expect(read('.github/workflows/release.yml')).not.toContain('releaseType');
+    expect(config).toContain('gh release create --prerelease');
+    expect(read('.github/workflows/release.yml')).toMatch(/extra=\(--prerelease\)/);
+    expect(read('apps/desktop/package.json')).toContain('electron-builder --win --publish never');
+  });
+
   it('installs the third-party notices with the app (promises-15)', () => {
     expect(config).toMatch(/- from: \.\.\/\.\.\/THIRD_PARTY_NOTICES\.md\n\s+to: THIRD_PARTY_NOTICES\.md/);
   });
@@ -57,7 +65,25 @@ describe('the release workflow', () => {
   it('writes the third-party notices again after the Rust module and before the installer', () => {
     const at = (text: string) => workflow.indexOf(text);
     expect(at('node scripts/third-party-notices.mjs')).toBeGreaterThan(at('node native/licence/build.mjs'));
-    expect(at('node scripts/third-party-notices.mjs')).toBeLessThan(at('npm run release -w @qasa/desktop'));
+    expect(at('node scripts/third-party-notices.mjs')).toBeLessThan(at('npm run dist -w @qasa/desktop'));
+  });
+
+  it('builds with no token that writes releases; a second job that runs no project code checks the files and publishes them', () => {
+    const jobs = workflow.split('\n  publish:\n');
+    expect(jobs).toHaveLength(2);
+    const [build, publish] = jobs as [string, string];
+    expect(build).toMatch(/^permissions:\n  contents: read/m);
+    expect(build).not.toContain('contents: write');
+    expect(build).not.toContain('GITHUB_TOKEN');
+    expect(build).not.toContain('--publish always');
+    expect(build).toContain('npm run dist -w @qasa/desktop');
+    expect(build).toContain('sha256sum * > SHA256SUMS');
+    expect(publish).toContain('contents: write');
+    expect(publish).toContain('environment: release');
+    expect(publish).toContain('sha256sum --check --strict SHA256SUMS');
+    // nothing of the repository runs where the token is: no checkout, no npm, no node
+    expect(publish).not.toMatch(/actions\/checkout|npm |node /);
+    expect(read('native/licence/build.mjs')).toContain("'--locked'");
   });
 });
 
@@ -200,8 +226,8 @@ describe('the release notes and the Store "What\'s new" of this version', () => 
 
   const store = listing.listings;
 
-  it('is 1.0.3, the same in the app, the core and the lock file, with notes in Arabic, English and Kurdish', () => {
-    expect(version).toBe('1.0.3');
+  it('is 1.1.0, the same in the app, the core and the lock file, with notes in Arabic, English and Kurdish', () => {
+    expect(version).toBe('1.1.0');
     expect(read('packages/core/src/version.ts')).toContain(`APP_VERSION = '${version}'`);
     const lock = JSON.parse(read('package-lock.json')) as { packages: Record<string, { version?: string }> };
     expect(lock.packages['apps/desktop']?.version).toBe(version);
@@ -217,37 +243,25 @@ describe('the release notes and the Store "What\'s new" of this version', () => 
     }
   });
 
-  it('names the printer settings, where they are, the 80 mm and 58 mm rolls and printing without the print window', () => {
-    expect(section('en')).toContain('Settings → **Printers**');
-    expect(section('ar')).toContain('الإعدادات ← **الطابعات**');
-    expect(section('ku')).toContain('ڕێکخستنەکان ← **چاپکەرەکان**');
-    for (const lang of ['ar', 'en', 'ku'] as const) expect(section(lang)).toMatch(/80[\s\S]*58/);
-    expect(section('en')).toContain('**Print without asking**');
-    expect(section('ar')).toContain('**الطباعة دون سؤال**');
-    expect(section('ku')).toContain('**چاپ بێ پرسیار**');
-    expect(store['en-us'].releaseNotes).toMatch(/Settings → Printers[\s\S]*80 mm and 58 mm[\s\S]*without the print window/);
-    expect(store.ar.releaseNotes).toMatch(/الإعدادات ← الطابعات[\s\S]*80 مم و58 مم[\s\S]*دون نافذة الطباعة/);
-    expect(store['ku-arab'].releaseNotes).toMatch(/ڕێکخستنەکان ← چاپکەرەکان[\s\S]*80 ملم و 58 ملم[\s\S]*بێ پەنجەرەی چاپ/);
-    expect(store['en-us'].features.some((f) => /printer for each kind of paper/.test(f))).toBe(true);
-    expect(store.ar.features.some((f) => /طابعة لكل نوع من الأوراق/.test(f))).toBe(true);
-    expect(store['ku-arab'].features.some((f) => /چاپکەرێک بۆ هەر جۆرە پەڕەیەک/.test(f))).toBe(true);
+  it('names units, batches and expiry dates, the pharmacy pack, dollar balances and the POS payment methods, where they are', () => {
+    expect(section('en')).toContain('Inventory → **Expiry & batches**');
+    expect(section('ar')).toContain('المخزن ← **الصلاحية والوجبات**');
+    expect(section('ku')).toContain('کۆگا ← **بەسەرچوون و وەجبەکان**');
+    for (const label of ['**Units with conversions:**', '**Batches and expiry dates:**', '**Pharmacy (Pro):**', '**Dollar balances:**', '**Payment methods at the point of sale:**']) {
+      expect(section('en')).toContain(label);
+    }
+    for (const lang of ['ar', 'en', 'ku'] as const) for (const word of ['FIB', '16', 'Pro']) expect(section(lang), lang).toContain(word);
+    for (const words of ['Units with conversions', 'Batches and expiry dates', 'Pharmacy pack (Pro)']) expect(store['en-us'].releaseNotes).toContain(words);
+    expect(store['en-us'].features.some((f) => /Units with conversions/.test(f))).toBe(true);
+    expect(store.ar.features.some((f) => /الوحدات وتحويلها/.test(f))).toBe(true);
+    expect(store['ku-arab'].features.some((f) => /یەکەکان و گۆڕینیان/.test(f))).toBe(true);
   });
 
-  it('names the 6-column trial balance, backups on every plan, the copy before updates, the recovery code and saved counts', () => {
-    expect(section('en')).toContain('opening, period and closing, each as debit and credit');
-    expect(section('ar')).toContain('الافتتاحي والحركة خلال المدة والختامي، كل منها مدين ودائن');
-    expect(section('ku')).toContain('سەرەتا، جووڵەی ماوەکە و کۆتایی، هەر یەکەیان قەرزار و قەرزدەر');
-    expect(section('en')).toContain('**Save a backup now**');
-    expect(section('ar')).toContain('**احفظ نسخة احتياطية الآن**');
-    expect(section('ku')).toContain('**ئێستا باکئەپێک پاشەکەوت بکە**');
-    expect(section('en')).toContain('File → **Reset admin password**');
-    expect(section('ar')).toContain('ملف ← **إعادة تعيين كلمة مرور المدير**');
-    expect(section('ku')).toContain('فایل ← **ڕێکخستنەوەی وشەی نهێنیی بەڕێوەبەر**');
-    for (const lang of ['ar', 'en', 'ku'] as const) expect(section(lang)).toContain('Windows Hello');
-    expect(section('en')).toContain('before an update changes the company file, a copy of it is kept');
-    expect(section('en')).toMatch(/saved on the server while you type[\s\S]*another PC/);
-    expect(section('ar')).toMatch(/يُحفظ الجرد على الخادم أثناء الكتابة[\s\S]*حاسوب آخر/);
-    expect(section('ku')).toMatch(/لەسەر سێرڤەر پاشەکەوت دەکرێت[\s\S]*کۆمپیوتەرێکی تر/);
+  it('says plainly that 1.0 cannot open a company file 1.1 has upgraded, so every PC and the Store version are updated', () => {
+    expect(section('en')).toContain('Qasa ERP 1.0 cannot open a file that 1.1 has upgraded');
+    expect(section('ar')).toContain('لا يفتح قاصة ERP 1.0 ملفاً رقّاه الإصدار 1.1');
+    expect(section('ku')).toContain('قاسە ERP 1.0 فایلێک ناکاتەوە کە 1.1 بەرزی کردبێتەوە');
+    expect(store['en-us'].releaseNotes).toContain('update every PC that opens it');
   });
 
   it('never says the automatic daily backups came to Free: they stay with Pro and Business', () => {

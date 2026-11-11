@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import { BUILT_IN_FEATURES } from './features.ts';
 import { checkBranchRequest, filterBranchResult, isBranchLimited, userBranchLists } from './branches.ts';
-import { APP_VERSION, BUSINESS_TYPES } from '@qasa/core';
+import { APP_VERSION, BUSINESS_TYPES, MAX_BATCH_NO, MAX_ITEM_UNITS, MAX_UNIT_FACTOR_MILLI, UNIT_CODES } from '@qasa/core';
 import type { Db } from './db.ts';
 import { AppError, conflict, invalid } from './errors.ts';
 import {
@@ -14,11 +14,12 @@ import {
   returnEntry, reverseEntry, updateJournalEntry, updateVoucher
 } from './journal.ts';
 import { finalAccountsReport, statementReport, trialBalanceReport } from './reports.ts';
+import { reorderList } from './reorder.ts';
 import { getSettings, lockPeriod, lockedPeriods, unlockPeriod, updateSettings } from './settings.ts';
 import { listAudit } from './audit.ts';
 import { createParty, deleteParty, getParty, isForeignKeyFailure, listParties, partyStatement, updateParty } from './parties.ts';
 import {
-  createItem, createWarehouse, deleteItem, getItem, itemMoves, itemStock, listItems, listWarehouses, updateItem, updateWarehouse
+  createItem, createWarehouse, deleteItem, findByBarcode, getItem, itemMoves, itemStock, listItems, listWarehouses, updateItem, updateWarehouse
 } from './items.ts';
 import { activateLicense, planStatus, removeLicense, startTrial } from './license.ts';
 import { cancelInvoice, createInvoice, deleteInvoice, getInvoice, listInvoices, postInvoice, updateInvoice } from './invoices.ts';
@@ -78,16 +79,43 @@ const partySchema = z.object({
   active: z.boolean().optional()
 });
 
+// one list of units (core UNITS), never a second one written here
+const unitCode = z.enum(UNIT_CODES);
+
 const itemSchema = z.object({
   code: z.string().max(24).optional(),
   barcode: z.string().max(64).optional(),
   name: names,
-  unit: z.enum(['piece', 'carton', 'box', 'set', 'kg', 'm', 'l', 'service']),
+  unit: unitCode,
   salePrice: amount,
   saleCurrency: currency,
   trackStock: z.boolean().optional(),
-  active: z.boolean().optional()
+  active: z.boolean().optional(),
+  // 1.1: the other units (boxes, strips …), each with how many base units it holds (thousandths), a barcode and a price
+  units: z.array(z.object({
+    unit: unitCode,
+    factorMilli: z.number().int().positive().max(MAX_UNIT_FACTOR_MILLI),
+    barcode: z.string().max(64).optional(),
+    salePrice: amount.nullable().optional()
+  })).max(MAX_ITEM_UNITS).optional(),
+  saleUnit: unitCode.nullable().optional(),
+  purchaseUnit: unitCode.nullable().optional(),
+  trackBatches: z.boolean().optional(),
+  trackExpiry: z.boolean().optional(),
+  categoryId: z.string().min(1).max(64).nullable().optional(),
+  brandId: z.string().min(1).max(64).nullable().optional(),
+  reorderMilli: z.number().int().min(0).max(1e15).nullable().optional()
 });
+
+/**
+ * Batches (1.1): what a line brings in (a number of up to 40 characters and an expiry date), or the batch it is pinned to.
+ * The typed number may be longer before its spaces are collapsed (twice the limit at most); the kept form is checked
+ * against the 40 on the line, with its own message, and is never cut short.
+ */
+const lineBatch = { batchNo: z.string().max(MAX_BATCH_NO * 2).optional(), expiry: isoDate.optional(), batchId: z.string().min(1).max(64).optional() };
+
+/** A document line's quantity: a base quantity (as before 1.1), or one of the item's units and the quantity typed in it. */
+const lineQty = { qtyMilli: z.number().int().optional(), unit: unitCode.optional(), unitQtyMilli: z.number().int().positive().max(1e12).optional() };
 
 const invoiceSchema = z.object({
   kind: z.enum(['sale', 'purchase']),
@@ -102,7 +130,8 @@ const invoiceSchema = z.object({
   notes: z.string().max(1000).optional(),
   lines: z.array(z.object({
     itemId: z.string().min(1).max(64),
-    qtyMilli: z.number().int(),
+    ...lineQty,
+    ...lineBatch,
     unitPrice: z.number().int(),
     description: z.string().max(500).optional()
   })).max(500)
@@ -123,7 +152,7 @@ const stockDocSchema = z.object({
   toWarehouseId: z.string().max(64).optional(),
   counterAccountCode: z.string().max(12).optional(),
   notes: z.string().max(1000).optional(),
-  lines: z.array(z.object({ itemId: z.string().min(1).max(64), qtyMilli: z.number().int(), unitCost: z.number().int().optional() })).max(1000)
+  lines: z.array(z.object({ itemId: z.string().min(1).max(64), ...lineQty, ...lineBatch, unitCost: z.number().int().optional() })).max(1000)
 });
 
 const idParam = z.object({ id: z.string().min(1).max(64) });
@@ -192,6 +221,12 @@ export interface ApiRequest {
   headers: Record<string, string | string[] | undefined>;
   /** true when the request came over https */
   secure?: boolean;
+  /**
+   * Where the request comes from, set by the server, never by the request: 'local:<address>' on this PC's own server,
+   * 'net:<address>' on the office network (a PC or phone through Qasa Relay by its own address). Sign-in failures
+   * are counted per account and per source (auth.ts).
+   */
+  source?: string;
 }
 
 /** Lets a route choose its status code (201, 204); otherwise the returned value is sent with 200. */
@@ -434,7 +469,7 @@ export function apiRoutes(db: Db, options: { demo?: boolean; extensions?: readon
     return finalAccountsReport(db, q);
   });
   app.get('/api/reports/statement', async (req) => {
-    const q = parse(z.object({ account: z.string().min(1).max(12), from: isoDate.optional(), to: isoDate.optional() }), req.query);
+    const q = parse(z.object({ account: z.string().min(1).max(12), from: isoDate.optional(), to: isoDate.optional(), currency: currency.optional() }), req.query);
     return statementReport(db, q.account, q);
   });
 
@@ -461,7 +496,8 @@ export function apiRoutes(db: Db, options: { demo?: boolean; extensions?: readon
     return reply.status(204).send();
   });
   app.get('/api/parties/:id/statement', async (req) => {
-    const q = parse(z.object({ from: isoDate.optional(), to: isoDate.optional() }), req.query);
+    // currency (1.1): that currency's lines only, with a running balance in it
+    const q = parse(z.object({ from: isoDate.optional(), to: isoDate.optional(), currency: currency.optional() }), req.query);
     return partyStatement(db, parse(idParam, req.params).id, q, branchOfUser(req));
   });
 
@@ -477,9 +513,20 @@ export function apiRoutes(db: Db, options: { demo?: boolean; extensions?: readon
     return updateWarehouse(db, parse(idParam, req.params).id, body, userOf(req));
   });
   app.get('/api/items', async (req) => {
-    const q = parse(z.object({ q: z.string().max(100).optional(), warehouseId: z.string().max(64).optional(), active: z.enum(['true', 'false']).optional() }), req.query);
+    const q = parse(z.object({
+      q: z.string().max(100).optional(), warehouseId: z.string().max(64).optional(), active: z.enum(['true', 'false']).optional(),
+      barcode: z.string().min(1).max(64).optional(), categoryId: z.string().min(1).max(64).optional(),
+      brandId: z.string().min(1).max(64).optional()
+    }), req.query);
+    // a scan at the counter: the item and the unit the barcode belongs to (an item's own barcode: its base unit)
+    if (q.barcode) return findByBarcode(db, q.barcode, q.warehouseId ? [q.warehouseId] : warehousesOfUser(req));
     // without a warehouse, a user limited to branches gets the stock of their branches' warehouses (null: every one)
-    return listItems(db, { q: q.q, warehouseId: q.warehouseId, active: q.active === undefined ? undefined : q.active === 'true' }, warehousesOfUser(req));
+    return listItems(db, { q: q.q, warehouseId: q.warehouseId, active: q.active === undefined ? undefined : q.active === 'true', categoryId: q.categoryId, brandId: q.brandId }, warehousesOfUser(req));
+  });
+  // 1.1: items at or below their minimum quantity (their own, or their category's), in a warehouse or the user's
+  app.get('/api/stock/reorder', async (req) => {
+    const q = parse(z.object({ warehouseId: z.string().min(1).max(64).optional() }), req.query);
+    return reorderList(db, { warehouseId: q.warehouseId }, warehousesOfUser(req));
   });
   app.get('/api/items/:id', async (req) => {
     const { id } = parse(idParam, req.params);
@@ -512,15 +559,19 @@ export function apiRoutes(db: Db, options: { demo?: boolean; extensions?: readon
     deleteInvoice(db, parse(idParam, req.params).id, userOf(req));
     return reply.status(204).send();
   });
-  app.post('/api/invoices/:id/post', async (req) => postInvoice(db, parse(idParam, req.params).id, userOf(req)));
+  app.post('/api/invoices/:id/post', async (req) => {
+    // allowExpired: the user confirmed selling stock past its expiry date (only the 'warn' policy allows it)
+    const body = parse(z.object({ allowExpired: z.boolean().optional() }), req.body ?? {});
+    return postInvoice(db, parse(idParam, req.params).id, userOf(req), { allowExpired: body.allowExpired === true });
+  });
   app.post('/api/invoices/:id/cancel', async (req) => {
     const body = parse(z.object({ date: isoDate.optional() }), req.body ?? {});
-    return cancelInvoice(db, parse(idParam, req.params).id, userOf(req), body.date);
+    return cancelInvoice(db, parse(idParam, req.params).id, userOf(req), body.date, actorOf(req));
   });
 
   // returns (مردودات), made from a posted invoice
   app.post('/api/invoices/:id/returns', async (req, reply) =>
-    reply.status(201).send(createReturn(db, parse(idParam, req.params).id, withoutUndefined(parse(returnSchema, req.body)), userOf(req))));
+    reply.status(201).send(createReturn(db, parse(idParam, req.params).id, withoutUndefined(parse(returnSchema, req.body)), userOf(req), actorOf(req))));
 
   // stock documents: opening stock and transfers between warehouses
   app.get('/api/stock-docs', async (req) => {
@@ -534,7 +585,7 @@ export function apiRoutes(db: Db, options: { demo?: boolean; extensions?: readon
     deleteStockDoc(db, parse(idParam, req.params).id, userOf(req));
     return reply.status(204).send();
   });
-  app.post('/api/stock-docs/:id/post', async (req) => postStockDoc(db, parse(idParam, req.params).id, userOf(req)));
+  app.post('/api/stock-docs/:id/post', async (req) => postStockDoc(db, parse(idParam, req.params).id, userOf(req), actorOf(req)));
   app.post('/api/stock-docs/:id/cancel', async (req) => {
     const body = parse(z.object({ date: isoDate.optional() }), req.body ?? {});
     return cancelStockDoc(db, parse(idParam, req.params).id, userOf(req), body.date);
@@ -555,7 +606,7 @@ export function apiRoutes(db: Db, options: { demo?: boolean; extensions?: readon
   app.post('/api/auth/login', async (req, reply) => {
     notInDemo();
     const body = parse(z.object({ username: z.string().min(1).max(64), password: z.string().min(1).max(200) }), req.body);
-    const { token, actor } = await login(db, body.username, body.password, header(req, 'user-agent'));
+    const { token, actor } = await login(db, body.username, body.password, header(req, 'user-agent'), req.source);
     reply.header('set-cookie', sessionCookie(token, !!req.secure));
     return me(actor);
   });

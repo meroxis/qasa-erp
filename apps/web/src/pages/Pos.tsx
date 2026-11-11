@@ -1,16 +1,21 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { categoriesApi, inCategory, type CategoryView } from '../industry/categories-api.ts';
 import { createPortal } from 'react-dom';
 import { normalizeForSearch, rateFromX100, rateToX100, toWesternDigits, type CurrencyCode } from '@qasa/core';
 import { api, type InvoiceView, type ItemView, type PartyView, type WarehouseView } from '../api.ts';
 import { AccountCombo, AmountInput, ErrorBox, Icon, Modal, SearchCombo, useData, useLoad, usePageNav, useToast, type PickOption } from '../components.tsx';
-import { useI18n, type I18n } from '../i18n.ts';
+import { useI18n, type I18n, type Key } from '../i18n.ts';
 import { href } from '../router.ts';
-import { posApi, type Money2, type ShiftReport, type ShiftView } from '../industry/pos-api.ts';
+import { posApi, type Money2, type PosMethod, type ShiftReport, type ShiftView } from '../industry/pos-api.ts';
 import '../pos.css';
 import { PrintDocument } from '../industry/PrintDocument.tsx';
 import { invoiceModel } from '../industry/print-model.ts';
 import { usePrintSetup } from '../industry/print-api.ts';
-import { addRefusal, parseScan, priceIn, priceRateFor, tilePrice } from './pos-logic.ts';
+import { addRefusal, cashChange, changeLineUnit, parseScan, posSaleLine, priceIn, priceRateFor, tileOffer } from './pos-logic.ts';
+import { inUnits, salePriceFor, unitChoices, unitLabel, type LineUnit } from '../industry/units.ts';
+import { BatchPick, useExpiredConfirm } from '../industry/BatchFields.tsx';
+import { pharmacyApi, type MedicineView } from '../industry/pharmacy-api.ts';
+import { RxTick, useControlledPrompt, useRxItems } from '../industry/PharmacyPrompts.tsx';
 import { printAlone, printDocument } from '../industry/printing.ts';
 
 /**
@@ -23,7 +28,12 @@ const REGISTER_KEY = 'qasa.pos.register';
 const remembered = () => { try { return localStorage.getItem(REGISTER_KEY) ?? ''; } catch { return ''; } };
 const remember = (v: string) => { try { localStorage.setItem(REGISTER_KEY, v); } catch { /* not available */ } };
 
-interface CartLine { item: ItemView; qtyMilli: number; unitPrice: number }
+/**
+ * qtyMilli: in the line's unit (null: the item's base unit); unitPrice: per that unit. batchId: the batch picked by
+ * hand ('' automatic); rxSeen: a pharmacy's "prescription seen" tick (a reminder, not sent).
+ */
+interface CartLine { item: ItemView; qtyMilli: number; unitPrice: number; unit: LineUnit; batchId?: string; rxSeen?: boolean }
+const lineKey = (l: Pick<CartLine, 'item' | 'unit'>) => `${l.item.id}|${l.unit ?? ''}`;
 
 const lineTotal = (l: CartLine) => Math.round((l.qtyMilli * l.unitPrice) / 1000);
 
@@ -162,8 +172,13 @@ function Register({ initial, onClosed }: { initial: ShiftView; onClosed(): void 
   const [discount, setDiscount] = useState<number | null>(0);
   const [paid, setPaid] = useState<number | null>(null);
   const [partyId, setPartyId] = useState('');
+  // how it is paid (1.1): no parts = all cash, as before; else 1–4 parts that add up to the total
+  const [parts, setParts] = useState<{ method: PosMethod; amount: number | null }[]>([]);
+  const [methods, setMethods] = useState<PosMethod[]>(['cash']);
+  useEffect(() => { posApi.paymentAccounts().then((r) => setMethods(r.methods), () => {}); }, []);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<unknown>(null);
+  const expired = useExpiredConfirm();
   const [receipt, setReceipt] = useState<InvoiceView | null>(null);
   const [closing, setClosing] = useState(false);
   const [notFound, setNotFound] = useState('');
@@ -190,29 +205,61 @@ function Register({ initial, onClosed }: { initial: ShiftView; onClosed(): void 
     key: normalizeForSearch([it.code, it.barcode, it.name.ar, it.name.en, it.name.ku].join(' '))
   })), [items]);
 
+  // a pharmacy (Pro): the search also finds medicines by their generic name, and a tile shows it with the shelf
+  const { plan, settings: companySettings } = useData();
+  const pharmacy = !!plan?.features.includes('pharmacy') && !!companySettings?.businessTypes?.includes('pharmacy');
+  const [medicines, setMedicines] = useState<Map<string, MedicineView>>(new Map());
+  const controlled = useControlledPrompt();
+  const rxItems = useRxItems(pharmacy);
+  useEffect(() => {
+    if (!pharmacy || !q.trim()) return;
+    let alive = true;
+    const timer = window.setTimeout(() => {
+      pharmacyApi.search(q.trim()).then((found) => {
+        if (alive) setMedicines((m) => new Map([...m, ...found.map((x) => [x.itemId, x] as const)]));
+      }, () => {});
+    }, 250);
+    return () => { alive = false; window.clearTimeout(timer); };
+  }, [pharmacy, q]);
+
+  // the category buttons: a category (its subcategories' items with it) or a subcategory; '' = every item
+  const categories = useLoad(() => categoriesApi.list({ active: 'true' }), []);
+  const [cat, setCat] = useState('');
+  const catList = categories.data ?? [];
+  const shown = useMemo(() => (cat ? items.filter((it) => inCategory(catList, it.categoryId, cat)) : items), [items, cat, catList]);
   const matches = useMemo(() => {
     const n = normalizeForSearch(q);
-    if (!n) return items.slice(0, 40);
+    if (!n) return shown.slice(0, cat ? 120 : 40);
     const words = n.split(/\s+/).filter(Boolean);
-    return searchable.filter((s) => words.every((w) => s.key.includes(w))).slice(0, 40).map((s) => s.item);
-  }, [q, items, searchable]);
+    const direct = searchable.filter((s) => words.every((w) => s.key.includes(w))).map((s) => s.item).filter((it) => !cat || inCategory(catList, it.categoryId, cat));
+    // medicines whose generic name matched
+    const generic = pharmacy ? shown.filter((it) => !direct.includes(it) && normalizeForSearch(medicines.get(it.id)?.genericName ?? '').includes(n)) : [];
+    return [...direct, ...generic].slice(0, 40);
+  }, [q, shown, cat, catList, searchable, pharmacy, medicines]);
 
-  const add = useCallback((item: ItemView, qtyMilli = 1000) => {
+  /** One of `unit` of an item, in the sale's currency: the unit's own price, or the base price × its factor. */
+  const unitPriceOf = useCallback((item: ItemView, unit: LineUnit) => {
+    const own = unit ? item.units.find((u) => u.unit === unit)?.salePrice ?? null : null;
+    const ownIn = own !== null ? priceIn({ salePrice: own, saleCurrency: item.saleCurrency }, currency, priceRate) : null;
+    return salePriceFor(item, unit, priceIn(item, currency, priceRate), { own: ownIn });
+  }, [currency, priceRate]);
+
+  const add = useCallback((item: ItemView, qtyMilli = 1000, unit: LineUnit = item.saleUnit ?? null) => {
     // a dollar-priced item cannot go into a dinar sale (or the reverse) without a rate to convert it
     if (addRefusal(item, currency, priceRate)) { setNotFound(''); setNoRate(item.code); return; }
     setCart((c) => {
-      const i = c.findIndex((l) => l.item.id === item.id);
+      const i = c.findIndex((l) => l.item.id === item.id && l.unit === unit);
       if (i >= 0) return c.map((l, j) => (j === i ? { ...l, qtyMilli: l.qtyMilli + qtyMilli } : l));
-      return [...c, { item, qtyMilli, unitPrice: priceIn(item, currency, priceRate) }];
+      return [...c, { item, qtyMilli, unit, unitPrice: unitPriceOf(item, unit) }];
     });
     setNotFound('');
     setNoRate('');
     setPaid(null);
-  }, [currency, priceRate]);
+  }, [currency, priceRate, unitPriceOf]);
 
   // a different currency or rate re-prices the cart
   useEffect(() => {
-    setCart((c) => c.map((l) => ({ ...l, unitPrice: priceIn(l.item, currency, priceRate) })));
+    setCart((c) => c.map((l) => ({ ...l, unitPrice: unitPriceOf(l.item, l.unit) })));
     setDiscount(0);
     setPaid(null);
   }, [currency, priceRate]);
@@ -221,10 +268,11 @@ function Register({ initial, onClosed }: { initial: ShiftView; onClosed(): void 
   const onEnter = () => {
     const raw = toWesternDigits(q).trim();
     if (!raw) return;
-    const { code, qtyMilli: qty, exact } = parseScan(raw, items);
+    const { code, qtyMilli: qty, exact, unit } = parseScan(raw, items);
     const pick = exact ?? (matches.length === 1 ? matches[0] : undefined);
     if (pick && qty > 0) {
-      add(pick, qty);
+      // a box's barcode adds a box; the item's own barcode its base unit; a search match its sale unit
+      add(pick, qty, exact ? unit : pick.saleUnit ?? null);
       setQ('');
     } else {
       setNoRate('');
@@ -232,21 +280,52 @@ function Register({ initial, onClosed }: { initial: ShiftView; onClosed(): void 
     }
   };
 
-  const setQty = (id: string, qtyMilli: number) => {
-    setCart((c) => (qtyMilli <= 0 ? c.filter((l) => l.item.id !== id) : c.map((l) => (l.item.id === id ? { ...l, qtyMilli } : l))));
+  const setLine = (key: string, patch: Pick<CartLine, 'batchId'> | Pick<CartLine, 'rxSeen'>) => {
+    setCart((c) => c.map((l) => (lineKey(l) === key ? { ...l, ...patch } : l)));
+  };
+
+  const setQty = (key: string, qtyMilli: number) => {
+    setCart((c) => (qtyMilli <= 0 ? c.filter((l) => lineKey(l) !== key) : c.map((l) => (lineKey(l) === key ? { ...l, qtyMilli } : l))));
+    setPaid(null);
+  };
+
+  /**
+   * The unit chip: a tap takes the line to the item's next unit (base, then each of its units), re-priced; into the
+   * line of that unit when the cart has one already.
+   */
+  const nextUnit = (key: string) => {
+    setCart((c) => {
+      const i = c.findIndex((l) => lineKey(l) === key);
+      const l = c[i];
+      if (!l) return c;
+      const choices = unitChoices(l.item);
+      const at = choices.findIndex((u) => u.unit === l.unit);
+      const unit = choices[(at + 1) % choices.length]?.unit ?? null;
+      return changeLineUnit(c, i, unit, unitPriceOf(l.item, unit));
+    });
     setPaid(null);
   };
 
   const subtotal = cart.reduce((s, l) => s + lineTotal(l), 0);
   const total = Math.max(0, subtotal - (discount ?? 0));
-  const change = paid !== null ? paid - total : null;
-  const canPay = cart.length > 0 && !busy && (discount ?? 0) <= subtotal && (currency === 'IQD' || rateX100 > 0) && (change === null || change >= 0);
+  const change = cashChange(paid, total, parts);
+  const split = parts.length > 0;
+  const left = total - parts.reduce((s, p) => s + (p.amount ?? 0), 0);
+  const splitOk = !split || (left === 0 && parts.every((p) => (p.amount ?? 0) > 0) && (!parts.some((p) => p.method === 'account') || !!partyId));
+  const canPay = cart.length > 0 && !busy && (discount ?? 0) <= subtotal && (currency === 'IQD' || rateX100 > 0) && (change === null || change >= 0) && splitOk;
+  /** A method button: the first one takes the whole total; later ones what is left. */
+  const pickMethod = (method: PosMethod) => {
+    setParts((ps) => (ps.length === 0
+      ? (method === 'cash' ? [] : [{ method, amount: total }])
+      : ps.length >= 4 || ps.some((p) => p.method === method) ? ps : [...ps, { method, amount: Math.max(0, left) }]));
+  };
 
   const clear = () => {
     setCart([]);
     setDiscount(0);
     setPaid(null);
     setPartyId('');
+    setParts([]);
     setError(null);
     setQ('');
     focusSearch();
@@ -257,15 +336,26 @@ function Register({ initial, onClosed }: { initial: ShiftView; onClosed(): void 
     setBusy(true);
     setError(null);
     try {
-      const res = await posApi.sell(shift.id, {
+      const sale = {
         currency, ...(currency === 'USD' ? { rateX100 } : {}), ...(partyId ? { partyId } : {}), discount: discount ?? 0,
-        lines: cart.map((l) => ({ itemId: l.item.id, qtyMilli: l.qtyMilli, unitPrice: l.unitPrice }))
-      });
+        lines: cart.map(posSaleLine),
+        ...(split ? { payments: parts.map((p) => ({ method: p.method, amount: p.amount ?? 0 })) } : {})
+      };
+      let res;
+      try {
+        res = await posApi.sell(shift.id, sale);
+      } catch (e) {
+        // stock past its expiry date: the company may allow it after the cashier confirms (written to the audit log)
+        if (!(await expired.ask(e))) throw e;
+        res = await posApi.sell(shift.id, { ...sale, allowExpired: true });
+      }
       setShift(res.shift);
       setReceipt(res.invoice);
       clear();
       loadItems(); // stock changed
       toast(t('pos_saved', { n: res.invoice.number ?? '' }));
+      // controlled medicines sold: the patient and the prescription, now or later from the pharmacy log
+      controlled.check(res.invoice.id);
     } catch (e) {
       setError(e);
     } finally {
@@ -293,6 +383,8 @@ function Register({ initial, onClosed }: { initial: ShiftView; onClosed(): void 
 
   return (
     <div className="pos">
+      {expired.dialog}
+      {controlled.dialog}
       <div className="pos-bar no-print">
         <div className="pos-shift-info">
           <strong>{shift.register}</strong>
@@ -327,17 +419,25 @@ function Register({ initial, onClosed }: { initial: ShiftView; onClosed(): void 
           </div>
           {notFound && <div className="alert bad" role="alert">{t('pos_notFound', { n: notFound })}</div>}
           {noRate && <div className="alert bad" role="alert">{t('pos_noRate', { n: noRate })}</div>}
+          {catList.length > 0 && <PosCategories list={catList} value={cat} onChange={setCat} />}
           <div className="pos-grid">
             {matches.map((it) => {
               const name = i18n.name(it.name);
               const out = it.trackStock && it.qtyMilli <= 0;
-              const price = tilePrice(it, currency, priceRate);
+              // the price of what a tap adds: the item's sale unit
+              const offer = tileOffer(it, currency, priceRate);
               return (
                 <button key={it.id} type="button" className={'pos-tile' + (out ? ' out' : '')} onClick={() => { add(it); focusSearch(); }}>
                   <ItemPicture item={it} name={name} />
                   <span className="pos-tile-name">{name}</span>
-                  <span className="pos-tile-price num">{price === null ? '—' : i18n.money(price, currency)}</span>
-                  {it.trackStock && <span className={'pos-tile-stock small num' + (out ? ' bad' : '')}>{out ? t('pos_outOfStock') : `${t('pos_stock')}: ${i18n.qty(it.qtyMilli)}`}</span>}
+                  {medicines.get(it.id)?.genericName && (
+                    <span className="small muted">
+                      {medicines.get(it.id)!.genericName}{medicines.get(it.id)!.shelf ? ` · ${medicines.get(it.id)!.shelf}` : ''}
+                      {medicines.get(it.id)!.rxOnly ? ' · Rx' : ''}
+                    </span>
+                  )}
+                  <span className="pos-tile-price num">{offer.price === null ? '—' : i18n.money(offer.price, currency)}{offer.unit && offer.price !== null ? ` / ${unitLabel(i18n, offer.unit)}` : ''}</span>
+                  {it.trackStock && <span className={'pos-tile-stock small num' + (out ? ' bad' : '')}>{out ? t('pos_outOfStock') : `${t('pos_stock')}: ${inUnits(i18n, it, it.qtyMilli)}`}</span>}
                 </button>
               );
             })}
@@ -362,18 +462,25 @@ function Register({ initial, onClosed }: { initial: ShiftView; onClosed(): void 
           <div className="pos-lines">
             {cart.length === 0 && <p className="muted pos-empty">{t('pos_emptyCart')}</p>}
             {cart.map((l) => (
-              <div key={l.item.id} className="pos-line">
+              <div key={lineKey(l)} className="pos-line">
                 <div className="pos-line-name">
                   <span>{i18n.name(l.item.name)}</span>
                   <span className="muted small num">{i18n.money(l.unitPrice, currency)}</span>
+                  {l.item.units.length > 0 && (
+                    <button type="button" className="chip" title={t('unit')} aria-label={`${t('unit')}: ${unitLabel(i18n, l.unit ?? l.item.unit)}`} onClick={() => nextUnit(lineKey(l))}>
+                      {unitLabel(i18n, l.unit ?? l.item.unit)}
+                    </button>
+                  )}
+                  <BatchPick item={l.item} warehouseId={shift.warehouseId} value={l.batchId ?? ''} onChange={(batchId) => setLine(lineKey(l), { batchId })} />
+                  {rxItems.has(l.item.id) && <RxTick seen={!!l.rxSeen} onChange={(rxSeen) => setLine(lineKey(l), { rxSeen })} />}
                 </div>
                 <div className="pos-qty">
-                  <button type="button" className="btn pos-qty-btn" aria-label={t('pos_less')} onClick={() => setQty(l.item.id, l.qtyMilli - 1000)}>−</button>
+                  <button type="button" className="btn pos-qty-btn" aria-label={t('pos_less')} onClick={() => setQty(lineKey(l), l.qtyMilli - 1000)}>−</button>
                   <span className="num pos-qty-n">{i18n.qty(l.qtyMilli)}</span>
-                  <button type="button" className="btn pos-qty-btn" aria-label={t('pos_more')} onClick={() => setQty(l.item.id, l.qtyMilli + 1000)}>+</button>
+                  <button type="button" className="btn pos-qty-btn" aria-label={t('pos_more')} onClick={() => setQty(lineKey(l), l.qtyMilli + 1000)}>+</button>
                 </div>
                 <span className="num pos-line-total">{i18n.money(lineTotal(l), currency)}</span>
-                <button type="button" className="btn pos-remove" aria-label={t('pos_remove')} onClick={() => setQty(l.item.id, 0)}><Icon name="x" size={16} /></button>
+                <button type="button" className="btn pos-remove" aria-label={t('pos_remove')} onClick={() => setQty(lineKey(l), 0)}><Icon name="x" size={16} /></button>
               </div>
             ))}
           </div>
@@ -390,6 +497,24 @@ function Register({ initial, onClosed }: { initial: ShiftView; onClosed(): void 
               <span>{t('pos_total')}</span>
               <strong className="num">{i18n.money(total, currency)}</strong>
             </div>
+            {methods.length > 1 && (
+              <div className="stack" style={{ gap: 6 }}>
+                <div className="track" role="group" aria-label={t('paymentMode')} style={{ flexWrap: 'wrap' }}>
+                  {methods.map((m) => (
+                    <button key={m} type="button" aria-pressed={split ? parts.some((p) => p.method === m) : m === 'cash'} onClick={() => pickMethod(m)}>{t(`pay_${m}` as Key)}</button>
+                  ))}
+                </div>
+                {parts.map((p, i) => (
+                  <div key={p.method} className="row" style={{ flexWrap: 'nowrap', gap: 6 }}>
+                    <span style={{ minWidth: 90 }}>{t(`pay_${p.method}` as Key)}</span>
+                    <AmountInput value={p.amount} currency={currency} onChange={(v) => setParts((ps) => ps.map((x, j) => (j === i ? { ...x, amount: v } : x)))} ariaLabel={t(`pay_${p.method}` as Key)} />
+                    <button type="button" className="btn icon ghost" aria-label={t('pos_remove')} onClick={() => setParts((ps) => ps.filter((_, j) => j !== i))}><Icon name="x" size={14} /></button>
+                  </div>
+                ))}
+                {split && left !== 0 && <div className="small" style={{ color: 'var(--bad)' }}>{t('pos_left')}: <span className="num">{i18n.money(left, currency)}</span></div>}
+                {parts.some((p) => p.method === 'account') && !partyId && <div className="small" style={{ color: 'var(--bad)' }}>{t('err_party_required')}</div>}
+              </div>
+            )}
             {change !== null && (
               <div className={'pos-change' + (change < 0 ? ' bad' : '')}>
                 <span>{change < 0 ? t('pos_short') : t('pos_change')}</span>
@@ -458,7 +583,7 @@ function Receipt({ invoice, shift }: { invoice: InvoiceView; shift: ShiftView })
           <div key={l.lineNo} className="pos-r-line">
             <div>{i18n.name(l.itemName)}</div>
             <div className="pos-r-row small">
-              <span className="num">{i18n.qty(l.qtyMilli)} × {i18n.money(l.unitPrice, invoice.currency)}</span>
+              <span className="num">{i18n.qty(l.lineUnit && l.unitQtyMilli !== null ? l.unitQtyMilli : l.qtyMilli)}{l.lineUnit ? ` ${unitLabel(i18n, l.lineUnit)}` : ''} × {i18n.money(l.unitPrice, invoice.currency)}</span>
               <span className="num">{i18n.money(l.amount, invoice.currency)}</span>
             </div>
           </div>
@@ -466,6 +591,9 @@ function Receipt({ invoice, shift }: { invoice: InvoiceView; shift: ShiftView })
         <div className="pos-r-sep" />
         {invoice.discount > 0 && <div className="pos-r-row"><span>{t('pos_discount')}</span><span className="num">−{i18n.money(invoice.discount, invoice.currency)}</span></div>}
         <div className="pos-r-row pos-r-total"><span>{t('pos_total')}</span><span className="num">{i18n.money(invoice.total, invoice.currency)}</span></div>
+        {(invoice.payments ?? []).filter((p) => p.kind === 'pos').map((p) => (
+          <div key={p.id} className="pos-r-row small"><span>{t(`pay_${p.method}` as Key)}</span><span className="num">{i18n.money(p.amount, p.currency)}</span></div>
+        ))}
         <div className="pos-r-sep" />
         <div className="pos-r-center small">{t('pos_thanks')}</div>
         {!plan?.features.includes('noBranding') && <div className="pos-r-center small">{t('madeWith')} · <span className="ltr">qasaerp.com</span></div>}
@@ -579,6 +707,7 @@ export function PosShiftReport({ id }: { id: string }) {
             <tr><td>{t('pos_openingCash')}</td><td className="num">{i18n.money(r.openingCash, 'IQD')}</td></tr>
             <tr><td>{t('pos_sales')}</td><td className="num">{money2(i18n, r.sales)}</td></tr>
             {(r.refunds.IQD > 0 || r.refunds.USD > 0) && <tr><td>{t('pos_refunds')}</td><td className="num">−{money2(i18n, r.refunds)}</td></tr>}
+            {Object.entries(r.methods ?? {}).filter(([m]) => m !== 'cash' || Object.keys(r.methods ?? {}).length > 1).map(([m, v]) => <tr key={m}><td>{t(`pay_${m}` as Key)}</td><td className="num">{money2(i18n, v as Money2)}</td></tr>)}
             <tr><td><strong>{t('pos_expected')}</strong></td><td className="num"><strong>{money2(i18n, r.expected)}</strong></td></tr>
             {r.counted && <tr><td>{t('pos_counted')}</td><td className="num">{money2(i18n, r.counted)}</td></tr>}
             {r.difference && <tr><td>{t('pos_difference')}</td><td className="num"><DiffText d={r.difference} /></td></tr>}
@@ -618,6 +747,35 @@ export function PosShiftReport({ id }: { id: string }) {
         </div>
         <p className="small muted">{t('pos_returnsNote')}</p>
       </div>
+    </div>
+  );
+}
+
+/**
+ * The till's category buttons: the top-level categories; a category opens its subcategories (with a button for all of
+ * it and one back). Choosing one shows only its items (a category's subcategories' items with it).
+ */
+export function PosCategories({ list, value, onChange }: { list: readonly CategoryView[]; value: string; onChange(id: string): void }) {
+  const i18n = useI18n();
+  const { t } = i18n;
+  const current = list.find((c) => c.id === value);
+  // the category whose subcategories show: the one picked, or the parent of the subcategory picked
+  const open = current ? (current.parentId ? list.find((c) => c.id === current.parentId) : current) : undefined;
+  const subs = open ? list.filter((c) => c.parentId === open.id) : [];
+  const buttons = open ? subs : list.filter((c) => !c.parentId);
+  return (
+    <div className="pos-cats" role="group" aria-label={t('cat_title')}>
+      {open ? (
+        <>
+          <button type="button" className="btn" onClick={() => onChange(current?.parentId ? open.id : '')}><Icon name="undo" size={16} />{t('cat_back')}</button>
+          <button type="button" className="btn" aria-pressed={value === open.id} onClick={() => onChange(open.id)}>{i18n.name(open.name)}</button>
+        </>
+      ) : (
+        <button type="button" className="btn" aria-pressed={!value} onClick={() => onChange('')}>{t('cat_all')}</button>
+      )}
+      {buttons.map((c) => (
+        <button key={c.id} type="button" className="btn" aria-pressed={value === c.id} onClick={() => onChange(c.id)}>{i18n.name(c.name)}</button>
+      ))}
     </div>
   );
 }

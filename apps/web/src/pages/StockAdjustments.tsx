@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { lineAmount, todayIso } from '@qasa/core';
-import { api } from '../api.ts';
+import { lineAmount, todayIso, type UnitCode } from '@qasa/core';
+import { api, type ItemView } from '../api.ts';
 import {
   AccountCombo, AmountInput, ErrorBox, Icon, InvoiceStatusChip, Modal, QtyInput, SearchCombo, downloadCsv, useData, useLoad, useToast, type PickOption
 } from '../components.tsx';
@@ -15,6 +15,12 @@ import { worksApi, type JobSummaryView } from '../industry/works-api.ts';
 import { reverseDefaultDate } from '../industry/ReverseModal.tsx';
 import { printDocument } from '../industry/printing.ts';
 import { CountSaver, costFor, fromSession, nothingToCount, useLeaveGuard, type CountSessionView, type SaveState } from '../industry/count-session.ts';
+import { brandLabel, brandsApi, categoriesApi, categoryLabel, inCategory } from '../industry/categories-api.ts';
+import { CategoryOptions } from '../industry/CatalogPickers.tsx';
+import type { CountScope } from '../industry/adjustments-api.ts';
+import { UnitPicker } from '../industry/UnitPicker.tsx';
+import { baseQty, inUnits, type LineUnit } from '../industry/units.ts';
+import { BatchInFields, BatchPick } from '../industry/BatchFields.tsx';
 
 /**
  * تسوية المخزون — stock adjustments (damaged, lost, expired, used, issued to a job) and the stock count.
@@ -142,9 +148,47 @@ function AccountsSettings({ onClose }: { onClose(): void }) {
 
 // ——— editor ———
 
-interface Row { key: number; itemId: string; dir: 'out' | 'in'; qtyMilli: number | null; unitCost: number | null }
+/**
+ * qtyMilli: as typed in the line's unit (null: the base unit); unitCost: per that unit. Batches: a line going out may be
+ * pinned to one batch (batchId, '' automatic: earliest expiry first); a line coming in names its batch and expiry.
+ */
+interface Row { key: number; itemId: string; dir: 'out' | 'in'; qtyMilli: number | null; unitCost: number | null; unit?: LineUnit; batchId?: string; batchNo?: string; expiry?: string }
 let rowKey = 1;
 const emptyRow = (dir: 'out' | 'in' = 'out'): Row => ({ key: rowKey++, itemId: '', dir, qtyMilli: 1000, unitCost: null });
+
+/**
+ * An editor line against the stock on hand, both in the item's base unit: the quantity typed in a box is that many
+ * boxes (a quantity that is no whole thousandth of the base counts as 0 here; saving refuses it).
+ */
+export function stockAfter(item: Pick<ItemView, 'qtyMilli' | 'units'>, r: Pick<Row, 'dir' | 'qtyMilli' | 'unit'>): { short: boolean; after: number } {
+  const base = baseQty(item, r.unit ?? null, r.qtyMilli ?? 0) ?? 0;
+  return { short: r.dir === 'out' && base > item.qtyMilli, after: item.qtyMilli + (r.dir === 'out' ? -base : base) };
+}
+
+/** The batch part of an adjustment line as sent: out, the batch picked by hand (if any); in, its number and expiry date. */
+export function adjustmentBatch(r: Pick<Row, 'dir' | 'batchId' | 'batchNo' | 'expiry'>): { batchId?: string; batchNo?: string; expiry?: string } {
+  if (r.dir === 'out') return r.batchId ? { batchId: r.batchId } : {};
+  return { ...(r.batchNo?.trim() ? { batchNo: r.batchNo.trim() } : {}), ...(r.expiry ? { expiry: r.expiry } : {}) };
+}
+
+/** A draft line coming in, valued as posting will: its cost is per the unit it was typed in. */
+export function draftInValue(l: { qtyMilli: number; unitCost: number | null; lineUnit: UnitCode | null; unitQtyMilli: number | null }): number | null {
+  if (l.qtyMilli <= 0 || l.unitCost === null) return null;
+  return lineAmount(l.lineUnit && l.unitQtyMilli !== null ? l.unitQtyMilli : l.qtyMilli, l.unitCost);
+}
+
+/** A draft or posted count adjustment made by a count limited to some categories and brands says which. */
+function CountScopeNote({ scope }: { scope: CountScope | null }) {
+  const i18n = useI18n();
+  const categories = useLoad(() => (scope ? categoriesApi.list() : Promise.resolve([])), [!!scope]);
+  const brands = useLoad(() => (scope ? brandsApi.list() : Promise.resolve([])), [!!scope]);
+  if (!scope) return null;
+  const names = [
+    ...scope.categoryIds.map((id) => categoryLabel(categories.data ?? [], id, i18n.name)),
+    ...scope.brandIds.map((id) => brandLabel((brands.data ?? []).find((b) => b.id === id), i18n.lang))
+  ].filter(Boolean).join(i18n.lang === 'en' ? ', ' : '، ');
+  return <div className="alert info" role="status">{i18n.t('cs_limited', { s: names })}</div>;
+}
 
 export function StockAdjustmentEditor({ id }: { id?: string }) {
   const i18n = useI18n();
@@ -160,6 +204,7 @@ export function StockAdjustmentEditor({ id }: { id?: string }) {
   const [accountOverride, setAccountOverride] = useState<string | null>(null);
   const [jobId, setJobId] = useState('');
   const [notes, setNotes] = useState('');
+  const [countScope, setCountScope] = useState<CountScope | null>(null);
   const [rows, setRows] = useState<Row[]>(() => [emptyRow()]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<unknown>(null);
@@ -183,7 +228,13 @@ export function StockAdjustmentEditor({ id }: { id?: string }) {
       setReason(d.reason);
       setJobId(d.job?.id ?? '');
       setNotes(d.notes);
-      setRows(d.lines.map((l) => ({ key: rowKey++, itemId: l.itemId, dir: l.qtyMilli < 0 ? 'out' : 'in', qtyMilli: Math.abs(l.qtyMilli), unitCost: l.unitCost })));
+      setCountScope(d.countScope ?? null);
+      setRows(d.lines.map((l) => ({
+        key: rowKey++, itemId: l.itemId, dir: l.qtyMilli < 0 ? 'out' : 'in',
+        qtyMilli: Math.abs(l.lineUnit && l.unitQtyMilli !== null ? l.unitQtyMilli : l.qtyMilli), unitCost: l.unitCost, unit: l.lineUnit,
+        // a write-off draft's lines are pinned to their expired batches: they stay pinned when it is edited
+        batchId: l.batchId ?? '', batchNo: l.batchNo ?? '', expiry: l.expiry ?? ''
+      })));
       setReady(true);
     }, setLoadError);
   }, [id]);
@@ -212,7 +263,7 @@ export function StockAdjustmentEditor({ id }: { id?: string }) {
     const it = itemById.get(r.itemId);
     if (!it) return 0;
     if (r.dir === 'in' && r.unitCost !== null) return lineAmount(r.qtyMilli ?? 0, r.unitCost);
-    return lineAmount(r.qtyMilli ?? 0, averageCost(it.qtyMilli, it.value));
+    return lineAmount(baseQty(it, r.unit ?? null, r.qtyMilli ?? 0) ?? 0, averageCost(it.qtyMilli, it.value));
   };
   const totalOut = lines.filter((r) => r.dir === 'out').reduce((s, r) => s + valueOf(r), 0);
   const totalIn = lines.filter((r) => r.dir === 'in').reduce((s, r) => s + valueOf(r), 0);
@@ -221,7 +272,7 @@ export function StockAdjustmentEditor({ id }: { id?: string }) {
   const remove = (key: number) => setRows((rs) => (rs.length > 1 ? rs.filter((r) => r.key !== key) : [emptyRow()]));
   function pickItem(key: number, itemId: string) {
     setRows((rs) => {
-      const next = rs.map((r) => (r.key === key ? { ...r, itemId } : r));
+      const next = rs.map((r) => (r.key === key ? { ...r, itemId, batchId: '', batchNo: '', expiry: '' } : r));
       const last = next[next.length - 1];
       return last?.itemId ? [...next, emptyRow(last.dir)] : next;
     });
@@ -240,8 +291,10 @@ export function StockAdjustmentEditor({ id }: { id?: string }) {
       ...(reason === 'job' && jobId ? { jobId } : {}),
       lines: lines.map((r) => ({
         itemId: r.itemId,
-        qtyMilli: (r.dir === 'out' ? -1 : 1) * (r.qtyMilli ?? 0),
-        ...(r.dir === 'in' && r.unitCost !== null ? { unitCost: r.unitCost } : {})
+        qtyMilli: (r.dir === 'out' ? -1 : 1) * ((r.unit ? baseQty(itemById.get(r.itemId), r.unit, r.qtyMilli ?? 0) : r.qtyMilli) ?? 0),
+        ...(r.unit ? { unit: r.unit, unitQtyMilli: (r.dir === 'out' ? -1 : 1) * (r.qtyMilli ?? 0) } : {}),
+        ...(r.dir === 'in' && r.unitCost !== null ? { unitCost: r.unitCost } : {}),
+        ...adjustmentBatch(r)
       }))
     };
   }
@@ -276,6 +329,7 @@ export function StockAdjustmentEditor({ id }: { id?: string }) {
     <div className="stack" style={{ maxWidth: 1100 }}>
       <div className="card pad stack">
         <h2 style={{ fontSize: 18 }}>{savedId ? `${t('editTitle')} — ${t('adj_one')}` : t('adj_new')}</h2>
+        <CountScopeNote scope={countScope} />
         <div className="field">
           <span>{t('adj_reason')}</span>
           <div className="track" style={{ flexWrap: 'wrap' }}>
@@ -288,7 +342,7 @@ export function StockAdjustmentEditor({ id }: { id?: string }) {
           <label className="field"><span>{t('date')}</span><input className="input" type="date" value={date} onChange={(e) => setDate(e.target.value)} /></label>
           <label className="field">
             <span>{t('warehouse')}</span>
-            <select className="input" value={warehouseId} onChange={(e) => setWarehouseId(e.target.value)}>
+            <select className="input" value={warehouseId} onChange={(e) => { setWarehouseId(e.target.value); setRows((rs) => rs.map((r) => ({ ...r, batchId: '' }))); }}>
               {active.map((w) => <option key={w.id} value={w.id}>{i18n.name(w.name)}</option>)}
             </select>
           </label>
@@ -326,7 +380,8 @@ export function StockAdjustmentEditor({ id }: { id?: string }) {
           <tbody>
             {rows.map((r, i) => {
               const it = itemById.get(r.itemId);
-              const short = it && r.dir === 'out' && (r.qtyMilli ?? 0) > it.qtyMilli;
+              const check = it ? stockAfter(it, r) : null;
+              const short = !!check?.short;
               const avg = it ? averageCost(it.qtyMilli, it.value) : 0;
               return (
                 <tr key={r.key}>
@@ -336,9 +391,12 @@ export function StockAdjustmentEditor({ id }: { id?: string }) {
                     {it && (
                       <div className="small" style={{ marginTop: 3, color: short ? 'var(--bad)' : undefined }}>
                         <span className={short ? '' : 'muted'}>{t('adj_onHand')}: {qtyText(i18n, it.qtyMilli)}</span>
-                        <span className="muted"> · {t('adj_after')}: {qtyText(i18n, it.qtyMilli + (r.dir === 'out' ? -1 : 1) * (r.qtyMilli ?? 0))}</span>
+                        <span className="muted"> · {t('adj_after')}: {qtyText(i18n, check!.after)}</span>
                       </div>
                     )}
+                    {r.dir === 'out'
+                      ? <BatchPick item={it} warehouseId={warehouseId} value={r.batchId ?? ''} onChange={(batchId) => update(r.key, { batchId })} />
+                      : <BatchInFields item={it} batchNo={r.batchNo ?? ''} expiry={r.expiry ?? ''} date={date} onChange={(v) => update(r.key, v)} />}
                   </td>
                   {allowIn && (
                     <td>
@@ -350,7 +408,7 @@ export function StockAdjustmentEditor({ id }: { id?: string }) {
                   )}
                   <td>
                     <QtyInput value={r.qtyMilli} onChange={(v) => update(r.key, { qtyMilli: v })} ariaLabel={t('qty')} />
-                    {it && <div className="muted small" style={{ textAlign: 'end', marginTop: 2 }}>{unitName(i18n, it.unit)}</div>}
+                    <UnitPicker item={it} value={r.unit ?? null} onChange={(unit) => update(r.key, { unit })} />
                   </td>
                   <td>
                     {r.dir === 'in'
@@ -499,9 +557,13 @@ export function StockAdjustmentDetail({ id }: { id: string }) {
                 <td><span className="ltr">{l.itemCode}</span></td>
                 <td>{i18n.name(l.itemName)}</td>
                 <td><span className={`chip ${l.qtyMilli < 0 ? 'bad' : 'ok'}`}>{l.qtyMilli < 0 ? t('adj_outShort') : t('adj_inShort')}</span></td>
-                <td className="amount">{qtyText(i18n, Math.abs(l.qtyMilli))} <span className="muted small">{unitName(i18n, l.unit)}</span></td>
                 <td className="amount">
-                  {l.value !== null ? i18n.money(Math.abs(l.value), 'IQD') : l.qtyMilli > 0 && l.unitCost !== null ? i18n.money(lineAmount(l.qtyMilli, l.unitCost), 'IQD') : ''}
+                  {l.lineUnit && l.unitQtyMilli !== null
+                    ? <>{qtyText(i18n, Math.abs(l.unitQtyMilli))} <span className="muted small">{unitName(i18n, l.lineUnit)}</span></>
+                    : <>{qtyText(i18n, Math.abs(l.qtyMilli))} <span className="muted small">{unitName(i18n, l.unit)}</span></>}
+                </td>
+                <td className="amount">
+                  {l.value !== null ? i18n.money(Math.abs(l.value), 'IQD') : (() => { const v = draftInValue(l); return v === null ? '' : i18n.money(v, 'IQD'); })()}
                 </td>
               </tr>
             ))}
@@ -514,6 +576,7 @@ export function StockAdjustmentDetail({ id }: { id: string }) {
           )}
         </table>
         {d.notes && <p className="small"><span className="muted">{t('notes')}: </span>{d.notes}</p>}
+        <CountScopeNote scope={d.countScope ?? null} />
         <div className="sigs" style={{ gridTemplateColumns: 'repeat(2, minmax(0, 1fr))' }}>
           <div className="sig done"><div className="muted small">{t('preparedBy')}</div><div className="who">{d.createdBy}</div></div>
           <div className="sig"><div className="muted small">{t('warehouse')}</div><div className="who">&nbsp;</div></div>
@@ -586,6 +649,13 @@ export function StockCount() {
   const [reopen, setReopen] = useState(0);
   const scanRef = useRef<HTMLInputElement>(null);
   const saverRef = useRef<CountSaver | null>(null);
+  // 1.1: a count limited to some categories and brands, chosen before it starts; an open count keeps its own
+  const categories = useLoad(() => categoriesApi.list(), []);
+  const brands = useLoad(() => brandsApi.list(), []);
+  const [scope, setScope] = useState<CountScope>({ categoryIds: [], brandIds: [] });
+  const [sessionScope, setSessionScope] = useState<CountScope | null>(null);
+  const scopeRef = useRef<CountScope>(scope);
+  scopeRef.current = scope;
 
   useEffect(() => {
     if (!warehouseId && active[0]) setWarehouseId(active[0].id);
@@ -601,14 +671,19 @@ export function StockCount() {
     setCosts(f.costs);
     setFrozen(f.frozen);
     setResumed(session && session.lines.length ? session : null);
+    setSessionScope(session?.scope ?? null);
     const meta = session ? { date: session.date, notes: session.notes, full: session.full } : { date, notes, full };
     if (session) { setDate(session.date); setNotes(session.notes); setFull(session.full); }
     setSaveState('saved');
     // an old saver (another warehouse, or a count already finished) may still answer: only the current one is heard
     const saver: CountSaver = new CountSaver(
-      { start: adjustmentsApi.startCount, save: adjustmentsApi.saveCount }, warehouseId, meta,
       {
-        saved: (s) => { if (saverRef.current === saver) setFrozen(fromSession(s).frozen); },
+        // a new count takes the scope chosen when it starts
+        start: (body) => adjustmentsApi.startCount({ ...body, ...(scopeRef.current.categoryIds.length || scopeRef.current.brandIds.length ? { scope: scopeRef.current } : {}) }),
+        save: adjustmentsApi.saveCount
+      }, warehouseId, meta,
+      {
+        saved: (s) => { if (saverRef.current === saver) { setFrozen(fromSession(s).frozen); setSessionScope(s.scope ?? null); } },
         state: (state) => { if (saverRef.current === saver) setSaveState(state); },
         closed: () => {
           if (saverRef.current !== saver) return;
@@ -640,7 +715,19 @@ export function StockCount() {
   useEffect(() => () => saverRef.current?.dispose(), []);
   useLeaveGuard(() => !!saverRef.current?.dirty, t('adj_leaveCount'));
 
-  const rows = sheet.data && sheet.data.warehouseId === warehouseId ? sheet.data.rows : NO_ROWS;
+  const catList = categories.data ?? [];
+  // the count's own scope once it started, else the one chosen for it
+  const limit = sessionScope ?? (scope.categoryIds.length || scope.brandIds.length ? scope : null);
+  const inLimit = (r: CountSheetRow) => !limit
+    || ((!limit.categoryIds.length || limit.categoryIds.some((c) => inCategory(catList, r.categoryId, c))) && (!limit.brandIds.length || limit.brandIds.includes(r.brandId ?? '')));
+  const allRows = sheet.data && sheet.data.warehouseId === warehouseId ? sheet.data.rows : NO_ROWS;
+  const rows = useMemo(() => (limit ? allRows.filter(inLimit) : allRows), [allRows, limit, catList]);
+  // the scope can be chosen only before anything of the count is on the server
+  const scopeOpen = ready && !sessionScope && !saverRef.current?.sessionId && counted.size === 0;
+  const scopeText = (s: CountScope) => [
+    ...s.categoryIds.map((id) => categoryLabel(catList, id, i18n.name)),
+    ...s.brandIds.map((id) => brandLabel((brands.data ?? []).find((b) => b.id === id), i18n.lang))
+  ].filter(Boolean).join(i18n.lang === 'en' ? ', ' : '، ');
   const byCode = useMemo(() => {
     const m = new Map<string, CountSheetRow>();
     for (const r of rows) {
@@ -800,6 +887,34 @@ export function StockCount() {
           <input type="checkbox" checked={full} disabled={!ready} onChange={(e) => setMeta({ full: e.target.checked })} />
           <span>{t('adj_full')}</span>
         </label>
+        {scopeOpen && ((categories.data?.length ?? 0) > 0 || (brands.data?.length ?? 0) > 0) && (
+          <div className="stack" style={{ gap: 6 }}>
+            <span className="small"><strong>{t('cs_limit')}</strong> <span className="muted">{t('cs_limitHelp')}</span></span>
+            <div className="row">
+              {(categories.data?.length ?? 0) > 0 && (
+                <select className="input" style={{ width: 220 }} value="" aria-label={t('cs_addCategory')}
+                  onChange={(e) => { const v = e.target.value; if (v) setScope((s) => ({ ...s, categoryIds: s.categoryIds.includes(v) ? s.categoryIds : [...s.categoryIds, v].slice(0, 50) })); }}>
+                  <option value="">{t('cs_addCategory')}</option>
+                  <CategoryOptions list={catList} />
+                </select>
+              )}
+              {(brands.data?.length ?? 0) > 0 && (
+                <select className="input" style={{ width: 200 }} value="" aria-label={t('cs_addBrand')}
+                  onChange={(e) => { const v = e.target.value; if (v) setScope((s) => ({ ...s, brandIds: s.brandIds.includes(v) ? s.brandIds : [...s.brandIds, v].slice(0, 50) })); }}>
+                  <option value="">{t('cs_addBrand')}</option>
+                  {(brands.data ?? []).filter((b) => b.active).map((b) => <option key={b.id} value={b.id}>{brandLabel(b, i18n.lang)}</option>)}
+                </select>
+              )}
+              {[...scope.categoryIds.map((id) => ({ id, kind: 'c' as const })), ...scope.brandIds.map((id) => ({ id, kind: 'b' as const }))].map((x) => (
+                <button key={x.kind + x.id} type="button" className="chip" aria-label={t('un_remove')}
+                  onClick={() => setScope((s) => (x.kind === 'c' ? { ...s, categoryIds: s.categoryIds.filter((i) => i !== x.id) } : { ...s, brandIds: s.brandIds.filter((i) => i !== x.id) }))}>
+                  <bdi>{x.kind === 'c' ? categoryLabel(catList, x.id, i18n.name) : brandLabel((brands.data ?? []).find((b) => b.id === x.id), i18n.lang)}</bdi> <Icon name="x" size={12} />
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+        {sessionScope && <div className="alert info" role="status">{t('cs_limited', { s: scopeText(sessionScope) })}</div>}
         {resumed && (
           <div className="alert info" role="status">
             {t('adj_countResumed', { who: resumed.updatedBy, when: i18n.date(localDay(resumed.updatedAt)), n: String(resumed.lines.length) })}
@@ -845,6 +960,7 @@ export function StockCount() {
                   <td>{i18n.name(r.name)} <span className="muted small">{unitName(i18n, r.unit)}</span></td>
                   <td className="amount" title={moved ? t('adj_frozenNow', { n: qtyText(i18n, r.stockMilli) }) : undefined}>
                     {qtyText(i18n, book)}{moved && <span className="muted small"> *</span>}
+                    {(r.units?.length ?? 0) > 0 && book > 0 && <div className="muted small">{inUnits(i18n, { unit: r.unit, units: r.units ?? [] }, book)}</div>}
                   </td>
                   <td><QtyInput value={counted.get(r.itemId) ?? null} onChange={(v) => { if (ready) setOne(r.itemId, v); }} ariaLabel={`${t('adj_counted')} ${r.code}`} /></td>
                   <td className="amount" style={{ color: diff ? (diff < 0 ? 'var(--bad)' : 'var(--ok)') : undefined, fontWeight: diff ? 700 : undefined }}>

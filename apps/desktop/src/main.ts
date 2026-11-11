@@ -17,6 +17,8 @@ import { guideUrl, isGuideUrl } from '@qasa/core';
 import { isAllowedExternal, refusedForLog } from './external-links.ts';
 import { isLang, text, type Lang, type TextKey } from './texts.ts';
 import { openNotices } from './notices.ts';
+import { booksBefore, markSeen, startVersion, type WhatsNew } from './whats-new.ts';
+import { backupOnClose, noteCloseFailure, takeCloseFailure } from './close-backup.ts';
 import { printingHandlers } from './printing.ts';
 import { pair, parseAddress, parseOfficeId, pemFingerprint, startTunnel, type PairResult, type Remote } from './office.ts';
 
@@ -246,6 +248,15 @@ async function companyFileDamaged(problem: { main?: unknown; reason?: unknown; c
 }
 
 /** Starts the server process and its server; resolves with the address the window loads. */
+/**
+ * Backups while the default folder (Documents, often kept in OneDrive) is synced and there is no backup password: this
+ * PC's own local app data, which no cloud service syncs (Electron's userData is the roaming one).
+ */
+function localBackupDir(): string {
+  const local = process.env.LOCALAPPDATA;
+  return local ? join(local, 'Qasa ERP', 'Backups') : join(app.getPath('userData'), 'Backups');
+}
+
 async function startServer(): Promise<string> {
   childEnding = false;
   companyId = readRegistry(app.getPath('userData')).current;
@@ -300,7 +311,7 @@ async function startServer(): Promise<string> {
     if (!childEnding && win) void serverGone(code);
   });
   return link.call<string>('init', [{
-    userDataDir: app.getPath('userData'), documentsDir: app.getPath('documents'), appVersion: app.getVersion(), sessionKey: SESSION_KEY,
+    userDataDir: app.getPath('userData'), documentsDir: app.getPath('documents'), localBackupDir: localBackupDir(), appVersion: app.getVersion(), sessionKey: SESSION_KEY,
     secretsKey: secretsKey(), resourcesPath: process.resourcesPath, fromStore: FROM_STORE, companyId
   }], { timeoutMs: 0 });
 }
@@ -476,6 +487,18 @@ ipcMain.on('app:relaunch', (event) => {
   if (fromAppPage(event)) void relaunchApp();
 });
 
+// "What's new in <version>" once after an update (whats-new.ts): the versions, and "seen" when the person closes it
+let whatsNew: WhatsNew | null = null;
+/** Windows is shutting down or signing out (the window's session-end): closing makes no backup then. */
+let sessionEnding = false;
+ipcMain.handle('app:whatsNew', (event) => (invokedByAppPage(event) ? whatsNew : null));
+ipcMain.handle('app:whatsNewSeen', (event) => {
+  if (!invokedByAppPage(event) || !whatsNew) return false;
+  try { markSeen(app.getPath('userData'), whatsNew.current); } catch (error) { log('could not note the version as seen:', error); }
+  whatsNew = { ...whatsNew, previous: null };
+  return true;
+});
+
 // Settings → About → Legal: the third-party notices installed next to app.asar, never a path the page gives (notices.ts)
 ipcMain.handle('app:notices', async (event) => {
   if (!invokedByAppPage(event)) return false;
@@ -528,7 +551,7 @@ function openRecoverWindow(): void {
 const fromRecoverWindow = (event: Electron.IpcMainInvokeEvent | Electron.IpcMainEvent) =>
   !!recoverWin && !remote && event.sender === recoverWin.webContents && event.senderFrame === recoverWin.webContents.mainFrame;
 
-const thisWindowsUser = () => windowsAccount(process.env, userInfo().username, hostname());
+const thisWindowsUser = () => windowsAccount(userInfo().username, hostname());
 
 ipcMain.handle('recover:admins', async (event) => {
   if (!fromRecoverWindow(event) || !bridge) return [];
@@ -556,6 +579,17 @@ ipcMain.handle('recover:windows', async (event, username: unknown, password: unk
     (request) => link.call<ResetAnswer>('recoverAdmin', [request], { timeoutMs: 60_000 }).catch(() => ({ ok: false, error: 'error' }))
   );
   log(`admin password reset by the Windows user ${windowsUser} (Windows Hello) for "${user}": ${answer.ok ? 'done' : answer.error}`);
+  return answer;
+});
+
+// Settings → Start over with empty books (start-over.ts in the server process): only the app's own window on the PC
+// that keeps the books — never a PC connected to an office server (its window shows that server's pages), never HTTP
+ipcMain.handle('app:startOver', async (event, username: unknown, password: unknown, confirmation: unknown) => {
+  if (!invokedByAppPage(event) || remote || !bridge) return { ok: false, error: remote ? 'office_client' : 'error' };
+  const answer = await bridge.call<{ ok: boolean; error?: string }>('startOver', [{
+    username: String(username ?? '').slice(0, 64), password: String(password ?? '').slice(0, 200), confirmation: String(confirmation ?? '').slice(0, 200)
+  }], { timeoutMs: 10 * 60_000 }).catch(() => ({ ok: false, error: 'error' }));
+  log(`start over with empty books asked for "${String(username).slice(0, 64)}": ${answer.ok ? 'done, restarting' : answer.error}`);
   return answer;
 });
 
@@ -711,6 +745,18 @@ async function createWindow(url: string): Promise<void> {
     icon: join(__dirname, 'icon.png'),
     webPreferences: { preload: join(__dirname, 'app-preload.cjs'), contextIsolation: true, sandbox: true, nodeIntegration: false, spellcheck: false }
   });
+  // Windows shutting down or signing out: no backup at closing then (close-backup.ts)
+  win.on('session-end', () => { sessionEnding = true; });
+  // the backup at the last closing failed: said once, now
+  const closeFailure = remote ? null : takeCloseFailure(app.getPath('userData'));
+  if (closeFailure) {
+    win.once('ready-to-show', () => {
+      void dialog.showMessageBox(win!, {
+        type: 'warning', title: 'Qasa ERP', message: rtlLines(t('closeBackupFailed')), detail: closeFailure.error === 'timeout' ? t('closeBackupTimeout') : closeFailure.error,
+        buttons: [t('ok')], noLink: true
+      }).catch(() => {});
+    });
+  }
 
   // Only the app itself opens inside the window. Links out go to the browser (https, on a short list of hosts) or the
   // mail app (mailto); anything else is refused and logged (external-links.ts).
@@ -922,6 +968,8 @@ if (!app.requestSingleInstanceLock()) {
 
   app.whenReady().then(async () => {
     app.setAppUserModelId('com.meroxis.qasaerp');
+    // before anything opens or makes a company file: was this an update? (whats-new.ts)
+    try { whatsNew = startVersion(app.getPath('userData'), app.getVersion(), booksBefore(app.getPath('userData'))); } catch { /* nothing to show */ }
     serveAppScheme();
     readSavedLanguage();
     readSavedTheme();
@@ -969,13 +1017,31 @@ if (!app.requestSingleInstanceLock()) {
     }
   });
 
-  // let the server process close the company file before the app ends
+  // let the server process close the company file before the app ends (after the backup at closing, when it is on)
   let quitReady = false;
+  let quitting = false;
   app.on('before-quit', (event) => {
     if (quitReady || !child) return;
     event.preventDefault();
+    if (quitting) return;
+    quitting = true;
     log('quitting');
-    void stopServer().finally(() => { quitReady = true; app.quit(); });
+    void (async () => {
+      const link = bridge;
+      const outcome = await backupOnClose({
+        allowed: !remote && !sessionEnding && !!link,
+        needed: () => link!.call<boolean>('closingBackupNeeded', [], { timeoutMs: 5000 }),
+        backup: () => link!.call<{ ok: boolean; file?: string; error?: string }>('closingBackup', [], { timeoutMs: 0 }),
+        showBox: async (signal) => {
+          const options = { type: 'info' as const, title: 'Qasa ERP', message: rtlLines(t('closeBackingUp')), buttons: [t('closeSkip')], noLink: true, signal };
+          await (win && !win.isDestroyed() ? dialog.showMessageBox(win, options) : dialog.showMessageBox(options));
+        }
+      }).catch((error: unknown) => ({ kind: 'failed' as const, error: error instanceof Error ? error.message : String(error) }));
+      if (outcome.kind !== 'none') log('backup at closing:', outcome.kind, 'error' in outcome ? outcome.error : '');
+      if (outcome.kind === 'failed') {
+        try { noteCloseFailure(app.getPath('userData'), outcome.error); } catch { /* logged above */ }
+      }
+    })().finally(() => void stopServer().finally(() => { quitReady = true; app.quit(); }));
   });
   app.on('window-all-closed', () => app.quit());
 }

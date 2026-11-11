@@ -1,6 +1,7 @@
 import { isIsoDate } from './dates.ts';
 import { isCurrency, isMinorAmount, type CurrencyCode } from './money.ts';
-import { lineAmount } from './inventory.ts';
+import { lineAmount, type UnitCode } from './inventory.ts';
+import { toBaseQty } from './units.ts';
 
 /** sale = فاتورة مبيعات · purchase = فاتورة شراء */
 export type InvoiceKind = 'sale' | 'purchase';
@@ -19,9 +20,19 @@ export function returnKindOf(kind: InvoiceKind): ReturnKind {
 export interface InvoiceLineInput {
   itemId: string;
   qtyMilli: number;
-  /** Price per unit in the invoice currency's minor units (sale price or purchase cost). */
+  /** Price per unit in the invoice currency's minor units (sale price or purchase cost): per the line's own unit when it has one. */
   unitPrice: number;
   description?: string;
+  /** 1.1: the unit the line was typed in (absent = the item's base unit, as every line before 1.1) */
+  unit?: UnitCode | undefined;
+  /** the quantity as typed in that unit, in thousandths; qtyMilli stays the base quantity */
+  unitQtyMilli?: number | undefined;
+  /** base units in one of that unit, in thousandths (a copy kept with the line) */
+  unitFactorMilli?: number | undefined;
+  /** 1.1 batches: the batch a purchase line brings in (number, expiry), or the batch a sale line is pinned to */
+  batchNo?: string | null | undefined;
+  expiry?: string | null | undefined;
+  batchId?: string | null | undefined;
 }
 
 export interface InvoiceInput {
@@ -47,8 +58,13 @@ export interface InvoiceTotals {
   total: number;
 }
 
-export function invoiceTotals(lines: Pick<InvoiceLineInput, 'qtyMilli' | 'unitPrice'>[], discount: number): InvoiceTotals {
-  const lineAmounts = lines.map((l) => lineAmount(l.qtyMilli, l.unitPrice));
+/** The quantity a line's price is for: the quantity typed in its unit, or else the base quantity. */
+export function priceQty(line: Pick<InvoiceLineInput, 'qtyMilli' | 'unit' | 'unitQtyMilli'>): number {
+  return line.unit && line.unitQtyMilli !== undefined ? line.unitQtyMilli : line.qtyMilli;
+}
+
+export function invoiceTotals(lines: Pick<InvoiceLineInput, 'qtyMilli' | 'unitPrice' | 'unit' | 'unitQtyMilli'>[], discount: number): InvoiceTotals {
+  const lineAmounts = lines.map((l) => lineAmount(priceQty(l), l.unitPrice));
   const subtotal = lineAmounts.reduce((s, a) => s + a, 0);
   return { lineAmounts, subtotal, discount, total: subtotal - discount };
 }
@@ -62,6 +78,7 @@ export type InvoiceError =
   | { code: 'lines_required' }
   | { code: 'line_qty_invalid'; line: number }
   | { code: 'line_price_invalid'; line: number }
+  | { code: 'unit_qty_fraction'; line: number }
   | { code: 'discount_invalid' };
 
 /** Checks that need no database. Items, stock, parties and period locks are checked by the server. */
@@ -79,6 +96,11 @@ export function validateInvoice(input: InvoiceInput): InvoiceError[] {
   input.lines.forEach((l, i) => {
     if (!isMinorAmount(l.qtyMilli) || l.qtyMilli <= 0) errors.push({ code: 'line_qty_invalid', line: i + 1 });
     if (!isMinorAmount(l.unitPrice) || l.unitPrice < 0) errors.push({ code: 'line_price_invalid', line: i + 1 });
+    if (l.unit !== undefined) {
+      const typed = l.unitQtyMilli;
+      if (!isMinorAmount(typed) || typed <= 0) errors.push({ code: 'line_qty_invalid', line: i + 1 });
+      else if (l.unitFactorMilli === undefined || toBaseQty(typed, l.unitFactorMilli) !== l.qtyMilli) errors.push({ code: 'unit_qty_fraction', line: i + 1 });
+    }
   });
   const totals = invoiceTotals(input.lines, 0);
   if (!isMinorAmount(input.discount) || input.discount < 0 || input.discount > totals.subtotal) errors.push({ code: 'discount_invalid' });

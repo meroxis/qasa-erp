@@ -69,7 +69,7 @@ export function invoiceModel(v: InvoiceView, extra: { barcodes?: Map<string, str
     rateX100: v.rateX100,
     lines: v.lines.map((l) => ({
       itemId: l.itemId, code: l.itemCode, barcode: extra.barcodes?.get(l.itemId) ?? null, name: l.itemName, description: l.description,
-      unit: l.unit, qtyMilli: l.qtyMilli, unitPrice: l.unitPrice, amount: l.amount
+      unit: l.lineUnit ?? l.unit, qtyMilli: l.lineUnit && l.unitQtyMilli !== null ? l.unitQtyMilli : l.qtyMilli, unitPrice: l.unitPrice, amount: l.amount
     })),
     accountLines: [],
     subtotal: v.subtotal,

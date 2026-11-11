@@ -1,6 +1,6 @@
 import { useState, type ReactNode } from 'react';
 import { formatAmount, todayIso } from '@qasa/core';
-import { briefApi, type AgingRowView } from '../industry/brief-api.ts';
+import { briefApi, type AgingRowView, type GroupSalesView } from '../industry/brief-api.ts';
 import { ErrorBox, Icon, downloadCsv, useLoad, usePageNav } from '../components.tsx';
 import { useI18n, type I18n, type Key } from '../i18n.ts';
 import { go } from '../router.ts';
@@ -15,7 +15,7 @@ import { REPORT_TABS, type ReportTab } from './tabs.ts';
 import { printDocument } from '../industry/printing.ts';
 export { isReportTab, REPORT_TABS, type ReportTab } from './tabs.ts';
 const TAB_LABEL: Record<ReportTab, Key> = {
-  'sales-items': 'br_rSalesItems', 'sales-customers': 'br_rSalesCustomers', profit: 'br_rProfit',
+  'sales-items': 'br_rSalesItems', 'sales-categories': 'rp_byCategory', 'sales-brands': 'rp_byBrand', 'sales-customers': 'br_rSalesCustomers', profit: 'br_rProfit',
   aging: 'br_rAging', 'supplier-aging': 'br_rSupplierAging', 'stock-value': 'br_rStockValue'
 };
 
@@ -47,6 +47,8 @@ export function MoreReports({ tab = 'sales-items' }: { tab?: ReportTab }) {
       <div className="print-only"><h2>{t(TAB_LABEL[tab])}</h2><div className="small">{dated ? i18n.date(to) : `${i18n.date(from)} — ${i18n.date(to)}`}</div></div>
       {tab === 'sales-items' && <SalesByItem from={from} to={to} profit={false} />}
       {tab === 'profit' && <SalesByItem from={from} to={to} profit />}
+      {tab === 'sales-categories' && <SalesByGroup by="category" from={from} to={to} />}
+      {tab === 'sales-brands' && <SalesByGroup by="brand" from={from} to={to} />}
       {tab === 'sales-customers' && <SalesByCustomer from={from} to={to} />}
       {tab === 'aging' && <Aging type="customer" date={to} />}
       {tab === 'supplier-aging' && <Aging type="supplier" date={to} />}
@@ -73,6 +75,63 @@ function Card({ children }: { children: ReactNode }) {
 function Empty() {
   const { t } = useI18n();
   return <p className="muted" style={{ padding: 16, margin: 0 }}>{t('noData')}</p>;
+}
+
+/**
+ * Sales, cost and profit by category (each subcategory indented under its category, the category's row its total) or
+ * by brand, with items that have none last. An item counts where it is now, so older invoices are in too.
+ */
+function SalesByGroup({ by, from, to }: { by: 'category' | 'brand'; from: string; to: string }) {
+  const i18n = useI18n();
+  const { t } = i18n;
+  const { data, error } = useLoad(() => briefApi.salesByGroup(by, { from, to }), [by, from, to]);
+  const none = by === 'category' ? t('rp_uncategorised') : t('rp_noBrand');
+  const label = (r: GroupSalesView) => (r.name ? i18n.name(r.name) : none);
+  const margin = (p: number, s: number) => (s ? `${i18n.int(Math.round((p / s) * 100))}%` : '—');
+  // each category's row (its total), then its own items when it also has subcategories, then each subcategory
+  type Line = { key: string; name: string; sub: boolean; strong: boolean; f: { qtyMilli: number; sales: number; cost: number; profit: number } };
+  const lines: Line[] = (data?.rows ?? []).flatMap((r) => [
+    { key: r.id ?? 'none', name: label(r), sub: false, strong: r.children.length > 0, f: r.total },
+    ...(r.children.length && r.sales !== 0 ? [{ key: `${r.id}-own`, name: t('rp_direct'), sub: true, strong: false, f: r }] : []),
+    ...r.children.map((c) => ({ key: c.id ?? '', name: label(c), sub: true, strong: false, f: c.total }))
+  ]);
+  const csv = () => downloadCsv(`sales-by-${by}_${from}_${to}.csv`, [
+    [by === 'category' ? t('cat_category') : t('bnd_brand'), t('br_qty'), t('br_sales'), t('br_cost'), t('br_profit'), t('br_margin')],
+    ...lines.map((l) => [l.sub ? `  ${l.name}` : l.name, l.f.qtyMilli / 1000, formatAmount(l.f.sales, 'IQD'), formatAmount(l.f.cost, 'IQD'), formatAmount(l.f.profit, 'IQD'), margin(l.f.profit, l.f.sales)])
+  ]);
+  const total = data?.total;
+  return (
+    <>
+      <Toolbar onCsv={csv} disabled={!lines.length} />
+      <ErrorBox error={error} />
+      {data && (lines.length === 0 ? <Card><Empty /></Card> : (
+        <Card>
+          <table className="table">
+            <thead><tr>
+              <th>{by === 'category' ? t('cat_category') : t('bnd_brand')}</th><th className="amount">{t('br_qty')}</th><th className="amount">{t('br_sales')}</th>
+              <th className="amount">{t('br_cost')}</th><th className="amount">{t('br_profit')}</th><th className="amount">{t('br_margin')}</th>
+            </tr></thead>
+            <tbody>
+              {lines.map((l) => (
+                <tr key={l.key}>
+                  <td style={l.sub ? { paddingInlineStart: 32 } : undefined}>{l.strong ? <strong>{l.name}</strong> : <bdi>{l.name}</bdi>}</td>
+                  <td className="amount">{qty(i18n, l.f.qtyMilli)}</td>
+                  <td className="amount">{i18n.money(l.f.sales, 'IQD')}</td>
+                  <td className="amount">{i18n.money(l.f.cost, 'IQD')}</td>
+                  <td className="amount" style={{ color: l.f.profit < 0 ? 'var(--bad, #A4271A)' : undefined }}>{i18n.money(l.f.profit, 'IQD')}</td>
+                  <td className="amount">{margin(l.f.profit, l.f.sales)}</td>
+                </tr>
+              ))}
+            </tbody>
+            {total && <tfoot><tr>
+              <th>{t('totals')}</th><th className="amount">{qty(i18n, total.qtyMilli)}</th><th className="amount">{i18n.money(total.sales, 'IQD')}</th>
+              <th className="amount">{i18n.money(total.cost, 'IQD')}</th><th className="amount">{i18n.money(total.profit, 'IQD')}</th><th className="amount">{margin(total.profit, total.sales)}</th>
+            </tr></tfoot>}
+          </table>
+        </Card>
+      ))}
+    </>
+  );
 }
 
 function SalesByItem({ from, to, profit }: { from: string; to: string; profit: boolean }) {

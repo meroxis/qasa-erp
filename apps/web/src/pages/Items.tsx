@@ -1,12 +1,28 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { formatQty, roundHalfUp, UNITS, type CurrencyCode, type Names, type UnitCode } from '@qasa/core';
 import { api, type ItemInput, type ItemView, type WarehouseView } from '../api.ts';
-import { EmptyState, AmountInput, ErrorBox, Icon, Modal, downloadCsv, useData, useLoad, useToast } from '../components.tsx';
+import { EmptyState, AmountInput, ErrorBox, Icon, Modal, QtyInput, downloadCsv, useData, useLoad, useToast } from '../components.tsx';
+import { inUnits } from '../industry/units.ts';
+import { batchesApi } from '../industry/batches-api.ts';
+import { brandLabel, brandsApi, categoriesApi, categoryLabel, type BrandView, type CategoryView } from '../industry/categories-api.ts';
+import { BrandForm, BrandPicker, CategoryOptions, countryName, StarterListButton } from '../industry/CatalogPickers.tsx';
+import { ReorderList } from '../industry/ReorderList.tsx';
+import { ExpiryChip } from './Expiry.tsx';
 import { useI18n, type I18n, isKey, type Key } from '../i18n.ts';
 import { go, href } from '../router.ts';
 import { ImagePicker, ItemImage } from '../industry/ItemImage.tsx';
 import { WholesalePriceField } from '../industry/WholesalePriceField.tsx';
 import { printDocument } from '../industry/printing.ts';
+
+/**
+ * What an item form sends for batches and expiry dates. What the form shows is sent, once it knows the company's
+ * setting (an edited item, or a new one after the setting loaded); before that, a new item left unticked follows the
+ * setting on the server.
+ */
+export function trackingInput(existing: boolean, defaultsKnown: boolean, trackBatches: boolean, trackExpiry: boolean): { trackBatches?: boolean; trackExpiry?: boolean } {
+  if (existing || defaultsKnown || trackBatches || trackExpiry) return { trackBatches: trackBatches || trackExpiry, trackExpiry };
+  return {};
+}
 
 export function qtyText(i18n: I18n, milli: number): string {
   return i18n.qty(milli);
@@ -22,37 +38,70 @@ export function averageCost(qtyMilli: number, value: number): number {
 }
 
 /** المواد والمخزون */
-export function Items() {
+export function Items({ tab: initialTab }: { tab?: 'reorder' } = {}) {
   const i18n = useI18n();
   const { t } = i18n;
   // the warehouse account's statement is the company's books: no link for someone limited to branches
   const books = useData().companyBooks !== false;
-  const [tab, setTab] = useState<'items' | 'warehouses'>('items');
+  const toast = useToast();
+  const [tab, setTab] = useState<'items' | 'warehouses' | 'categories' | 'brands' | 'reorder'>(initialTab ?? 'items');
   const [q, setQ] = useState('');
   const [warehouseId, setWarehouseId] = useState('');
+  const [categoryId, setCategoryId] = useState('');
+  const [brandId, setBrandId] = useState('');
   const [editing, setEditing] = useState<ItemView | 'new' | null>(null);
   const [newWarehouse, setNewWarehouse] = useState(false);
-  const items = useLoad(() => api.items({ q: q.trim(), warehouseId }), [q, warehouseId]);
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [bulkCategory, setBulkCategory] = useState('');
+  const [bulkError, setBulkError] = useState<unknown>(null);
+  const items = useLoad(() => api.items({ q: q.trim(), warehouseId, ...(categoryId ? { categoryId } : {}), ...(brandId ? { brandId } : {}) }), [q, warehouseId, categoryId, brandId]);
   const warehouses = useLoad(() => api.warehouses(), []);
+  const categories = useLoad(() => categoriesApi.list(), []);
+  const brands = useLoad(() => brandsApi.list(), []);
+  const brandById = new Map((brands.data ?? []).map((b) => [b.id, b]));
+  const catText = (id: string | null) => categoryLabel(categories.data ?? [], id, i18n.name);
   const totalValue = (items.data ?? []).reduce((s, it) => s + it.value, 0);
 
   const exportCsv = () => downloadCsv('items.csv', [
-    [t('code'), t('name'), t('unit'), t('available'), t('avgCost'), t('stockValue'), t('salePrice')],
-    ...(items.data ?? []).map((it) => [it.code, i18n.name(it.name), unitName(i18n, it.unit), formatQty(it.qtyMilli), averageCost(it.qtyMilli, it.value), it.value, it.salePrice])
+    [t('code'), t('name'), t('unit'), t('available'), t('avgCost'), t('stockValue'), t('salePrice'), t('cat_category'), t('bnd_brand')],
+    ...(items.data ?? []).map((it) => [it.code, i18n.name(it.name), unitName(i18n, it.unit), formatQty(it.qtyMilli), averageCost(it.qtyMilli, it.value), it.value, it.salePrice,
+      catText(it.categoryId), it.brandId ? brandById.get(it.brandId)?.name ?? '' : ''])
   ]);
+
+  const toggle = (id: string) => setSelected((s) => { const n = new Set(s); if (n.has(id)) n.delete(id); else n.add(id); return n; });
+  async function setCategoryForSelected() {
+    setBulkError(null);
+    try {
+      const r = await categoriesApi.setForItems([...selected], bulkCategory === 'none' ? null : bulkCategory);
+      toast(t('cat_updated', { n: r.updated }));
+      setSelected(new Set());
+      items.reload();
+      categories.reload();
+    } catch (e) {
+      setBulkError(e);
+    }
+  }
 
   return (
     <div className="stack">
       <div className="tabs">
         <button type="button" aria-pressed={tab === 'items'} onClick={() => setTab('items')}>{t('items')}</button>
         <button type="button" aria-pressed={tab === 'warehouses'} onClick={() => setTab('warehouses')}>{t('warehouses')}</button>
+        <button type="button" aria-pressed={tab === 'categories'} onClick={() => setTab('categories')}>{t('cat_title')}</button>
+        <button type="button" aria-pressed={tab === 'brands'} onClick={() => setTab('brands')}>{t('bnd_title')}</button>
+        <button type="button" aria-pressed={tab === 'reorder'} onClick={() => setTab('reorder')}>{t('ro_title')}</button>
       </div>
+      {tab === 'reorder' && <ReorderList />}
+
+      {tab === 'categories' && <Categories list={categories.data ?? []} error={categories.error} onChanged={() => { categories.reload(); brands.reload(); items.reload(); }} />}
+      {tab === 'brands' && <Brands list={brands.data ?? []} error={brands.error} onChanged={() => { brands.reload(); categories.reload(); items.reload(); }} />}
 
       {tab === 'items' && (
         <>
           <div className="row">
             <button type="button" className="btn primary" onClick={() => setEditing('new')}><Icon name="plus" size={16} />{t('newItem')}</button>
             <a className="btn" href={href('new-invoice/purchase')}><Icon name="invoice" size={16} />{t('newPurchase')}</a>
+            <a className="btn" href={href('import')}><Icon name="upload" size={16} />{t('importExcel')}</a>
             <span className="spacer" />
             {(warehouses.data?.length ?? 0) > 1 && (
               <select className="input" style={{ width: 200 }} value={warehouseId} onChange={(e) => setWarehouseId(e.target.value)} aria-label={t('warehouse')}>
@@ -60,18 +109,46 @@ export function Items() {
                 {warehouses.data!.map((w) => <option key={w.id} value={w.id}>{i18n.name(w.name)}</option>)}
               </select>
             )}
+            {(categories.data?.length ?? 0) > 0 && (
+              <select className="input" style={{ width: 180 }} value={categoryId} onChange={(e) => setCategoryId(e.target.value)} aria-label={t('cat_category')}>
+                <option value="">{t('cat_all')}</option>
+                <option value="none">{t('cat_none')}</option>
+                {categories.data!.map((c) => <option key={c.id} value={c.id}>{catText(c.id)}</option>)}
+              </select>
+            )}
+            {(brands.data?.length ?? 0) > 0 && (
+              <select className="input" style={{ width: 160 }} value={brandId} onChange={(e) => setBrandId(e.target.value)} aria-label={t('bnd_brand')}>
+                <option value="">{t('bnd_all')}</option>
+                <option value="none">{t('bnd_none')}</option>
+                {brands.data!.map((b) => <option key={b.id} value={b.id}>{brandLabel(b, i18n.lang)}</option>)}
+              </select>
+            )}
             <input className="input" style={{ width: 240 }} type="search" placeholder={t('search')} aria-label={t('search')} value={q} onChange={(e) => setQ(e.target.value)} />
             <button type="button" className="btn" onClick={exportCsv}><Icon name="download" size={16} />{t('exportExcel')}</button>
           </div>
+          {selected.size > 0 && (
+            <div className="card pad row">
+              <span>{t('cat_setFor', { n: selected.size })}</span>
+              <select className="input" style={{ width: 200 }} value={bulkCategory} onChange={(e) => setBulkCategory(e.target.value)} aria-label={t('cat_category')}>
+                <option value="" />
+                <option value="none">{t('cat_none')}</option>
+                <CategoryOptions list={categories.data ?? []} />
+              </select>
+              <button type="button" className="btn primary" disabled={!bulkCategory} onClick={() => void setCategoryForSelected()}>{t('cat_set')}</button>
+              <button type="button" className="btn" onClick={() => setSelected(new Set())}>{t('cancel')}</button>
+              <ErrorBox error={bulkError} />
+            </div>
+          )}
           <ErrorBox error={items.error} />
           <div className="card">
-            {items.data && items.data.length === 0 && (q.trim() || warehouseId
+            {items.data && items.data.length === 0 && (q.trim() || warehouseId || categoryId || brandId
               ? <EmptyState compact icon="search" title={t('es_search')} text={t('es_searchText')} />
               : <EmptyState icon="box" title={t('es_items')} text={t('es_itemsText')} action={{ label: t('newItem'), icon: 'plus', onClick: () => setEditing('new') }} secondary={{ label: t('importExcel'), icon: 'upload', href: href('import') }} />)}
             {items.data && items.data.length > 0 && (
               <table className="table">
                 <thead>
                   <tr>
+                    <th style={{ width: 32 }} />
                     <th style={{ width: 100 }}>{t('code')}</th>
                     <th>{t('item')}</th>
                     <th className="amount">{t('available')}</th>
@@ -84,6 +161,7 @@ export function Items() {
                 <tbody>
                   {items.data.map((it) => (
                     <tr key={it.id} className="click" onClick={() => go(`item/${it.id}`)}>
+                      <td onClick={(e) => e.stopPropagation()}><input type="checkbox" checked={selected.has(it.id)} onChange={() => toggle(it.id)} aria-label={it.code} /></td>
                       <td><span className="tree-code">{it.code}</span></td>
                       <td>
                         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
@@ -92,6 +170,9 @@ export function Items() {
                             <strong>{i18n.name(it.name)}</strong>
                             {!it.active && <span className="chip" style={{ marginInlineStart: 8 }}>{t('inactive')}</span>}
                             {it.barcode && <div className="muted small ltr">{it.barcode}</div>}
+                            {(it.categoryId || it.brandId) && (
+                              <div className="muted small">{[catText(it.categoryId), brandLabel(it.brandId ? brandById.get(it.brandId) : undefined, i18n.lang)].filter(Boolean).join(' · ')}</div>
+                            )}
                           </div>
                         </div>
                       </td>
@@ -99,6 +180,7 @@ export function Items() {
                         {it.trackStock
                           ? <span style={{ color: it.qtyMilli <= 0 ? 'var(--bad)' : undefined }}>{qtyText(i18n, it.qtyMilli)} <span className="muted small">{unitName(i18n, it.unit)}</span></span>
                           : <span className="muted small">{unitName(i18n, it.unit)}</span>}
+                        {it.trackStock && it.units.length > 0 && it.qtyMilli > 0 && <div className="muted small">{inUnits(i18n, it, it.qtyMilli)}</div>}
                       </td>
                       <td className="amount">{it.trackStock && it.qtyMilli > 0 ? i18n.money(averageCost(it.qtyMilli, it.value), 'IQD') : ''}</td>
                       <td className="amount">{it.trackStock ? i18n.money(it.value, 'IQD') : ''}</td>
@@ -112,7 +194,7 @@ export function Items() {
                   ))}
                 </tbody>
                 <tfoot>
-                  <tr><td /><td>{t('total')}</td><td /><td /><td className="amount">{i18n.money(totalValue, 'IQD')}</td><td /><td /></tr>
+                  <tr><td /><td /><td>{t('total')}</td><td /><td /><td className="amount">{i18n.money(totalValue, 'IQD')}</td><td /><td /></tr>
                 </tfoot>
               </table>
             )}
@@ -152,6 +234,10 @@ export function Items() {
   );
 }
 
+interface UnitRow { key: number; unit: UnitCode | ''; factorMilli: number | null; barcode: string; salePrice: number | null }
+let unitKey = 1;
+const UNIT_CHOICES = Object.keys(UNITS) as UnitCode[];
+
 export function ItemForm({ item, onClose, onSaved }: { item: ItemView | null; onClose(): void; onSaved(item: ItemView): void }) {
   const i18n = useI18n();
   const { t } = i18n;
@@ -164,13 +250,46 @@ export function ItemForm({ item, onClose, onSaved }: { item: ItemView | null; on
   const [saleCurrency, setSaleCurrency] = useState<CurrencyCode>(item?.saleCurrency ?? 'IQD');
   const [trackStock, setTrackStock] = useState(item?.trackStock ?? true);
   const [active, setActive] = useState(item?.active ?? true);
+  const [units, setUnits] = useState<UnitRow[]>(() => (item?.units ?? []).map((u) => ({ key: unitKey++, unit: u.unit, factorMilli: u.factorMilli, barcode: u.barcode, salePrice: u.salePrice })));
+  const [trackBatches, setTrackBatches] = useState(item?.trackBatches ?? false);
+  const [trackExpiry, setTrackExpiry] = useState(item ? item.trackExpiry : false);
+  // a new item starts from the company's setting for expiry dates (a pharmacy has it on), shown as it will be saved
+  const [defaultsKnown, setDefaultsKnown] = useState(!!item);
+  const trackingTouched = useRef(false);
+  useEffect(() => {
+    if (item) return;
+    let alive = true;
+    batchesApi.settings().then((s) => {
+      if (!alive) return;
+      if (!trackingTouched.current && s.defaultTrackExpiry) { setTrackExpiry(true); setTrackBatches(true); }
+      setDefaultsKnown(true);
+    }, () => {});
+    return () => { alive = false; };
+  }, [item]);
+  const [categoryId, setCategoryId] = useState(item?.categoryId ?? '');
+  const [brandId, setBrandId] = useState(item?.brandId ?? '');
+  const [reorderMilli, setReorderMilli] = useState<number | null>(item?.reorderMilli ?? null);
+  const categories = useLoad(() => categoriesApi.list(), []);
+  const [saleUnit, setSaleUnit] = useState<UnitCode | ''>(item?.saleUnit ?? '');
+  const [purchaseUnit, setPurchaseUnit] = useState<UnitCode | ''>(item?.purchaseUnit ?? '');
   const [error, setError] = useState<unknown>(null);
   const [busy, setBusy] = useState(false);
+  const listed = units.filter((u) => u.unit);
 
   async function save() {
     setBusy(true);
     setError(null);
-    const input: ItemInput = { name, unit, salePrice: salePrice ?? 0, saleCurrency, trackStock: unit !== 'service' && trackStock, active };
+    const input: ItemInput = {
+      name, unit, salePrice: salePrice ?? 0, saleCurrency, trackStock: unit !== 'service' && trackStock, active,
+      units: unit === 'service' ? [] : listed.map((u) => ({ unit: u.unit as UnitCode, factorMilli: u.factorMilli ?? 0, barcode: u.barcode.trim(), salePrice: u.salePrice })),
+      // a default unit that is no longer listed falls back to the base unit
+      saleUnit: saleUnit && listed.some((u) => u.unit === saleUnit) ? saleUnit : null,
+      purchaseUnit: purchaseUnit && listed.some((u) => u.unit === purchaseUnit) ? purchaseUnit : null,
+      categoryId: categoryId || null,
+      brandId: brandId || null,
+      reorderMilli: unit !== 'service' && trackStock ? reorderMilli : null,
+      ...trackingInput(!!item, defaultsKnown, trackBatches, trackExpiry)
+    };
     if (code.trim()) input.code = code.trim();
     if (barcode.trim()) input.barcode = barcode.trim();
     try {
@@ -212,6 +331,89 @@ export function ItemForm({ item, onClose, onSaved }: { item: ItemView | null; on
         {unit !== 'service' && (
           <label className="row" style={{ gap: 8 }}><input type="checkbox" checked={trackStock} disabled={item?.hasMoves} onChange={(e) => setTrackStock(e.target.checked)} />{t('trackStock')}</label>
         )}
+        <div className="grid-2">
+          {(categories.data?.length ?? 0) > 0 && (
+            <label className="field">
+              <span>{t('cat_category')}</span>
+              <select className="input" value={categoryId} onChange={(e) => setCategoryId(e.target.value)}>
+                <option value="">{t('cat_none')}</option>
+                <CategoryOptions list={categories.data!} keep={categoryId} />
+              </select>
+            </label>
+          )}
+          <div className="field"><span>{t('bnd_brand')}</span><BrandPicker value={brandId} onChange={setBrandId} /></div>
+          {unit !== 'service' && trackStock && (
+            <div className="field">
+              <span>{t('ro_minimum')}</span>
+              <QtyInput value={reorderMilli} onChange={setReorderMilli} ariaLabel={t('ro_minimum')} />
+            </div>
+          )}
+        </div>
+        {unit !== 'service' && trackStock && (
+          <div className="stack" style={{ gap: 4 }}>
+            <label className="row" style={{ gap: 8 }}><input type="checkbox" checked={trackBatches || trackExpiry} disabled={trackExpiry} onChange={(e) => { trackingTouched.current = true; setTrackBatches(e.target.checked); }} />{t('ex_trackBatches')}</label>
+            <label className="row" style={{ gap: 8 }}><input type="checkbox" checked={trackExpiry} onChange={(e) => { trackingTouched.current = true; setTrackExpiry(e.target.checked); }} />{t('ex_trackExpiry')}</label>
+            <span className="muted small">{t('ex_trackHelp')}</span>
+          </div>
+        )}
+        {unit !== 'service' && (
+          <fieldset className="card pad stack" style={{ gap: 8 }}>
+            <legend className="small"><strong>{t('un_other')}</strong></legend>
+            <p className="muted small" style={{ margin: 0 }}>{t('un_baseHelp')}</p>
+            {units.length > 0 && (
+              <table className="table">
+                <thead>
+                  <tr><th>{t('unit')}</th><th className="amount">{t('un_holds')}</th><th>{t('barcode')}</th><th className="amount">{t('un_ownPrice')}</th><th style={{ width: 40 }} /></tr>
+                </thead>
+                <tbody>
+                  {units.map((u) => (
+                    <tr key={u.key}>
+                      <td>
+                        <select className="input" value={u.unit} aria-label={t('unit')} onChange={(e) => setUnits((us) => us.map((x) => (x.key === u.key ? { ...x, unit: e.target.value as UnitCode } : x)))}>
+                          <option value="" />
+                          {UNIT_CHOICES.filter((c) => c !== unit && c !== 'service').map((c) => <option key={c} value={c}>{unitName(i18n, c)}</option>)}
+                        </select>
+                      </td>
+                      <td>
+                        <div className="row" style={{ flexWrap: 'nowrap', gap: 6 }}>
+                          <QtyInput value={u.factorMilli} onChange={(v) => setUnits((us) => us.map((x) => (x.key === u.key ? { ...x, factorMilli: v } : x)))} ariaLabel={t('un_holds')} />
+                          <span className="muted small">{unitName(i18n, unit)}</span>
+                        </div>
+                      </td>
+                      <td><input className="input ltr" value={u.barcode} aria-label={t('barcode')} onChange={(e) => setUnits((us) => us.map((x) => (x.key === u.key ? { ...x, barcode: e.target.value } : x)))} /></td>
+                      <td>
+                        <AmountInput value={u.salePrice} currency={saleCurrency} ariaLabel={t('un_ownPrice')} onChange={(v) => setUnits((us) => us.map((x) => (x.key === u.key ? { ...x, salePrice: v } : x)))} />
+                        <div className="muted small">{t('un_ownPriceHint')}</div>
+                      </td>
+                      <td><button type="button" className="btn icon danger" title={t('un_remove')} aria-label={t('un_remove')} onClick={() => setUnits((us) => us.filter((x) => x.key !== u.key))}><Icon name="x" size={16} /></button></td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+            <div className="row">
+              {units.length < 10 && <button type="button" className="btn small" onClick={() => setUnits((us) => [...us, { key: unitKey++, unit: '', factorMilli: null, barcode: '', salePrice: null }])}><Icon name="plus" size={15} />{t('un_add')}</button>}
+            </div>
+            {listed.length > 0 && (
+              <div className="grid-2">
+                <label className="field">
+                  <span>{t('un_saleUnit')}</span>
+                  <select className="input" value={saleUnit} onChange={(e) => setSaleUnit(e.target.value as UnitCode | '')}>
+                    <option value="">{unitName(i18n, unit)}</option>
+                    {listed.map((u) => <option key={u.key} value={u.unit}>{unitName(i18n, u.unit as UnitCode)}</option>)}
+                  </select>
+                </label>
+                <label className="field">
+                  <span>{t('un_purchaseUnit')}</span>
+                  <select className="input" value={purchaseUnit} onChange={(e) => setPurchaseUnit(e.target.value as UnitCode | '')}>
+                    <option value="">{unitName(i18n, unit)}</option>
+                    {listed.map((u) => <option key={u.key} value={u.unit}>{unitName(i18n, u.unit as UnitCode)}</option>)}
+                  </select>
+                </label>
+              </div>
+            )}
+          </fieldset>
+        )}
         {item && <label className="row" style={{ gap: 8 }}><input type="checkbox" checked={active} onChange={(e) => setActive(e.target.checked)} />{t('active')}</label>}
         <ErrorBox error={error} />
         <div className="row">
@@ -220,6 +422,205 @@ export function ItemForm({ item, onClose, onSaved }: { item: ItemView | null; on
         </div>
       </div>
     </Modal>
+  );
+}
+
+/** The categories tab: add, rename in three languages, order, switch off; a category nothing uses can be deleted. */
+function Categories({ list, error, onChanged }: { list: CategoryView[]; error: unknown; onChanged(): void }) {
+  const i18n = useI18n();
+  const { t } = i18n;
+  const [editing, setEditing] = useState<CategoryView | { parentId: string } | 'new' | null>(null);
+  const [actionError, setActionError] = useState<unknown>(null);
+  async function act(fn: () => Promise<unknown>) {
+    setActionError(null);
+    try {
+      await fn();
+      onChanged();
+    } catch (e) {
+      setActionError(e);
+    }
+  }
+  return (
+    <div className="stack">
+      <p className="muted" style={{ margin: 0 }}>{t('cat_help')}</p>
+      <div className="row"><button type="button" className="btn primary" onClick={() => setEditing('new')}><Icon name="plus" size={16} />{t('cat_new')}</button></div>
+      <StarterListButton onAdded={onChanged} />
+      <ErrorBox error={error ?? actionError} />
+      <div className="card">
+        {list.length === 0 ? <EmptyState compact icon="tag" title={t('cat_title')} text={t('cat_help')} /> : (
+          <table className="table">
+            <thead><tr><th style={{ width: 90 }}>{t('code')}</th><th>{t('name')}</th><th className="amount">{t('cat_order')}</th><th className="amount">{t('cat_items')}</th><th /></tr></thead>
+            <tbody>
+              {list.map((c) => (
+                <tr key={c.id}>
+                  <td><span className="tree-code">{c.code}</span></td>
+                  {/* a subcategory sits under its category, indented on the reading side (start: right in Arabic and Kurdish) */}
+                  <td style={c.parentId ? { paddingInlineStart: 32 } : undefined}>
+                    {c.parentId ? <span className="muted" aria-hidden="true">{i18n.lang === 'en' ? '└ ' : '┘ '}</span> : null}
+                    {c.parentId ? i18n.name(c.name) : <strong>{i18n.name(c.name)}</strong>}
+                    {!c.active && <span className="chip" style={{ marginInlineStart: 8 }}>{t('inactive')}</span>}
+                    {c.children > 0 && <span className="muted small" style={{ marginInlineStart: 8 }}>{t('cat_subs')}: {i18n.int(c.children)}</span>}
+                  </td>
+                  <td className="amount num">{i18n.int(c.sort)}</td>
+                  <td className="amount num">{i18n.int(c.items)}</td>
+                  <td className="row" style={{ justifyContent: 'flex-end', gap: 4 }}>
+                    {!c.parentId && c.active && <button type="button" className="btn small" onClick={() => setEditing({ parentId: c.id })}><Icon name="plus" size={14} />{t('cat_newSub')}</button>}
+                    <button type="button" className="btn small" onClick={() => setEditing(c)}><Icon name="edit" size={14} />{t('actEdit')}</button>
+                    <button type="button" className="btn small" onClick={() => void act(() => categoriesApi.update(c.id, { code: c.code, name: c.name, sort: c.sort, active: !c.active }))}>{c.active ? t('cat_deactivate') : t('cat_activate')}</button>
+                    {c.items === 0 && c.children === 0 && <button type="button" className="btn small danger" aria-label={t('actDelete')} onClick={() => void act(() => categoriesApi.remove(c.id))}><Icon name="x" size={14} /></button>}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </div>
+      {editing && (
+        <CategoryForm category={editing === 'new' || !('id' in editing) ? null : editing} parentId={editing !== 'new' && !('id' in editing) ? editing.parentId : null} list={list}
+          onClose={() => setEditing(null)} onSaved={() => { setEditing(null); onChanged(); }} />
+      )}
+    </div>
+  );
+}
+
+function CategoryForm({ category, parentId: newParent, list, onClose, onSaved }: {
+  category: CategoryView | null; parentId: string | null; list: CategoryView[]; onClose(): void; onSaved(): void;
+}) {
+  const i18n = useI18n();
+  const { t } = i18n;
+  const [parentId, setParentId] = useState(category?.parentId ?? newParent ?? '');
+  // a parent is an active top-level category other than this one; a category with subcategories stays at the top
+  const parents = list.filter((c) => !c.parentId && c.id !== category?.id && (c.active || c.id === category?.parentId));
+  const toast = useToast();
+  const [code, setCode] = useState(category?.code ?? '');
+  const [name, setName] = useState<Names>(category?.name ?? { ar: '', en: '', ku: '' });
+  const [sort, setSort] = useState(category?.sort ?? 0);
+  const [reorderMilli, setReorderMilli] = useState<number | null>(category?.reorderMilli ?? null);
+  const [error, setError] = useState<unknown>(null);
+  async function save() {
+    setError(null);
+    try {
+      const input = { ...(code.trim() ? { code: code.trim() } : {}), name, ...(category ? { sort } : {}), parentId: parentId || null, reorderMilli };
+      if (category) await categoriesApi.update(category.id, input);
+      else await categoriesApi.create(input);
+      toast(t('cat_saved'));
+      onSaved();
+    } catch (e) {
+      setError(e);
+    }
+  }
+  return (
+    <Modal title={category ? `${category.code}` : newParent ? t('cat_newSub') : t('cat_new')} onClose={onClose}>
+      <div className="stack">
+        {!(category && category.children > 0) && (
+          <label className="field">
+            <span>{t('cat_parent')}</span>
+            <select className="input" value={parentId} onChange={(e) => setParentId(e.target.value)}>
+              <option value="">{t('cat_topLevel')}</option>
+              {parents.map((c) => <option key={c.id} value={c.id}>{i18n.name(c.name)}</option>)}
+            </select>
+          </label>
+        )}
+        <label className="field"><span>{t('nameAr')}</span><input className="input" lang="ar" dir="rtl" value={name.ar} onChange={(e) => setName({ ...name, ar: e.target.value })} autoFocus /></label>
+        <label className="field"><span>{t('nameKu')}</span><input className="input" lang="ckb" dir="rtl" value={name.ku} onChange={(e) => setName({ ...name, ku: e.target.value })} /></label>
+        <label className="field"><span>{t('nameEn')}</span><input className="input" lang="en" dir="ltr" value={name.en} onChange={(e) => setName({ ...name, en: e.target.value })} /></label>
+        <div className="grid-2">
+          <label className="field"><span>{t('code')}</span><input className="input ltr" value={code} placeholder="C001" maxLength={24} onChange={(e) => setCode(e.target.value)} /></label>
+          {category && <label className="field"><span>{t('cat_order')}</span><input className="input num" type="number" min={0} max={100000} value={sort} onChange={(e) => setSort(Math.max(0, Math.floor(Number(e.target.value)) || 0))} /></label>}
+          <div className="field">
+            <span>{t('ro_categoryMinimum')}</span>
+            <QtyInput value={reorderMilli} onChange={setReorderMilli} ariaLabel={t('ro_categoryMinimum')} />
+            <span className="muted small">{t('ro_categoryHelp')}</span>
+          </div>
+        </div>
+        <ErrorBox error={error} />
+        <div className="row">
+          <button type="button" className="btn primary" onClick={() => void save()}><Icon name="check" size={16} />{t('save')}</button>
+          <button type="button" className="btn" onClick={onClose}>{t('cancel')}</button>
+        </div>
+      </div>
+    </Modal>
+  );
+}
+
+/** The brands tab: add, rename, country of origin, order, switch off; a brand no item has can be deleted. */
+function Brands({ list, error, onChanged }: { list: BrandView[]; error: unknown; onChanged(): void }) {
+  const i18n = useI18n();
+  const { t } = i18n;
+  const [editing, setEditing] = useState<BrandView | 'new' | null>(null);
+  const [actionError, setActionError] = useState<unknown>(null);
+  async function act(fn: () => Promise<unknown>) {
+    setActionError(null);
+    try {
+      await fn();
+      onChanged();
+    } catch (e) {
+      setActionError(e);
+    }
+  }
+  return (
+    <div className="stack">
+      <p className="muted" style={{ margin: 0 }}>{t('bnd_help')}</p>
+      <div className="row"><button type="button" className="btn primary" onClick={() => setEditing('new')}><Icon name="plus" size={16} />{t('bnd_new')}</button></div>
+      <StarterListButton onAdded={onChanged} />
+      <ErrorBox error={error ?? actionError} />
+      <div className="card">
+        {list.length === 0 ? <EmptyState compact icon="tag" title={t('bnd_title')} text={t('bnd_help')} /> : (
+          <table className="table">
+            <thead><tr><th>{t('bnd_name')}</th><th>{t('bnd_country')}</th><th className="amount">{t('cat_order')}</th><th className="amount">{t('cat_items')}</th><th /></tr></thead>
+            <tbody>
+              {list.map((b) => (
+                <tr key={b.id}>
+                  <td>
+                    <bdi>{b.name}</bdi>
+                    {(i18n.lang === 'ar' ? b.nameAr : i18n.lang === 'ku' ? b.nameKu : '') && <span className="muted" style={{ marginInlineStart: 8 }}>{brandLabel(b, i18n.lang)}</span>}
+                    {b.code && <span className="tree-code" style={{ marginInlineStart: 8 }}>{b.code}</span>}
+                    {!b.active && <span className="chip" style={{ marginInlineStart: 8 }}>{t('inactive')}</span>}
+                  </td>
+                  <td>{countryName(i18n.lang, b.country)}</td>
+                  <td className="amount num">{i18n.int(b.sort)}</td>
+                  <td className="amount num">{i18n.int(b.items)}</td>
+                  <td className="row" style={{ justifyContent: 'flex-end', gap: 4 }}>
+                    <button type="button" className="btn small" onClick={() => setEditing(b)}><Icon name="edit" size={14} />{t('actEdit')}</button>
+                    <button type="button" className="btn small" onClick={() => void act(() => brandsApi.update(b.id, { name: b.name, active: !b.active }))}>{b.active ? t('cat_deactivate') : t('cat_activate')}</button>
+                    {b.items === 0 && <button type="button" className="btn small danger" aria-label={t('actDelete')} onClick={() => void act(() => brandsApi.remove(b.id))}><Icon name="x" size={14} /></button>}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </div>
+      {editing && <BrandForm brand={editing === 'new' ? null : editing} onClose={() => setEditing(null)} onSaved={() => { setEditing(null); onChanged(); }} />}
+    </div>
+  );
+}
+
+/** The item card's batches: each batch with its expiry (coloured by how near it is) and its quantity per warehouse. */
+function ItemBatches({ itemId }: { itemId: string }) {
+  const i18n = useI18n();
+  const { t } = i18n;
+  const { data } = useLoad(() => batchesApi.ofItem(itemId), [itemId]);
+  const rows = (data ?? []).filter((b) => b.qtyMilli !== 0);
+  return (
+    <div className="card">
+      <div style={{ padding: '12px 16px' }}><h2>{t('ex_title')}</h2></div>
+      {rows.length === 0 ? <p className="muted" style={{ padding: '0 16px 14px', margin: 0 }}>{t('ex_none')}</p> : (
+        <table className="table">
+          <thead><tr><th>{t('ex_batch')}</th><th>{t('ex_expiry')}</th><th>{t('warehouse')}</th><th className="amount">{t('qty')}</th></tr></thead>
+          <tbody>
+            {rows.map((b) => (
+              <tr key={`${b.batchId}|${b.warehouseId}`}>
+                <td className="ltr">{b.batch || t('ex_noNumber')}</td>
+                <td><ExpiryChip state={b.state} expiry={b.expiry} i18n={i18n} /></td>
+                <td>{i18n.name(b.warehouseName)}</td>
+                <td className="amount">{i18n.qty(b.qtyMilli)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+    </div>
   );
 }
 
@@ -296,6 +697,7 @@ export function ItemDetail({ id }: { id: string }) {
         <div className="card pad tile">
           <div className="label">{t('available')}</div>
           <div className="value num">{it.trackStock ? qtyText(i18n, it.qtyMilli) : '—'} <span className="small muted">{unitName(i18n, it.unit)}</span></div>
+          {it.trackStock && it.units.length > 0 && it.qtyMilli > 0 && <div className="muted small">{inUnits(i18n, it, it.qtyMilli)}</div>}
         </div>
         <div className="card pad tile">
           <div className="label">{t('avgCost')}</div>
@@ -305,6 +707,8 @@ export function ItemDetail({ id }: { id: string }) {
       </div>
 
       <div className="no-print"><WholesalePriceField itemId={it.id} /></div>
+
+      {it.trackBatches && <ItemBatches itemId={it.id} />}
 
       {it.stock.length > 1 && (
         <div className="card">

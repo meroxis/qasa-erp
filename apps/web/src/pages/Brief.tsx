@@ -232,6 +232,23 @@ export function Brief() {
               </ul>
             </Section>
 
+            {b.expiry && (b.expiry.expired > 0 || b.expiry.near > 0) && (
+              <Section title={t('ex_title')} icon="clock" empty={false}>
+                <p style={{ margin: '0 0 8px' }}>
+                  <a href={href('expiry')}>{t('ex_alert', { e: b.expiry.expired, n: b.expiry.near, d: b.expiry.days })}</a>
+                </p>
+                <ul style={listStyle}>
+                  {b.expiry.top.map((r) => (
+                    <li key={`${r.itemId}|${r.batch}|${r.expiry}`} style={itemStyle}>
+                      <span style={{ flex: 1 }}><a href={href(`item/${r.itemId}`)}>{i18n.name(r.itemName)}</a> <span className="small muted ltr">{r.batch}</span></span>
+                      <span className="small num" style={{ color: r.state === 'expired' ? bad : undefined }}>{r.expiry ? i18n.date(r.expiry) : ''}</span>
+                      <strong className="num">{i18n.qty(r.qtyMilli)}</strong>
+                    </li>
+                  ))}
+                </ul>
+              </Section>
+            )}
+
             <ChequesBriefSection cheques={b.cheques} />
 
             <Section title={t('br_approvals')} icon="receipt" empty={!waiting}>

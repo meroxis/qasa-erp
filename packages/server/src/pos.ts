@@ -1,13 +1,15 @@
 import { randomUUID } from 'node:crypto';
 import { z } from 'zod';
-import { todayIso, type CurrencyCode } from '@qasa/core';
+import { todayIso, UNIT_CODES, type CurrencyCode, type UnitCode } from '@qasa/core';
 import type { Db } from './db.ts';
 import { nextSequence, transaction } from './db.ts';
 import { audit } from './audit.ts';
 import { AppError, conflict, invalid, notFound } from './errors.ts';
 import { loadAccounts } from './accounts.ts';
-import { createInvoice, getInvoice, postInvoice, type InvoiceView } from './invoices.ts';
+import { createInvoice, getInvoice, postInvoice, type InvoiceView, type SalePart } from './invoices.ts';
+import { readSetting, writeSetting } from './settings.ts';
 import { signInRequired, type Actor } from './auth.ts';
+import { scopeOf } from './branches.ts';
 import type { ApiExtension, ApiRequest } from './routes.ts';
 
 /**
@@ -20,6 +22,65 @@ import type { ApiExtension, ApiRequest } from './routes.ts';
 
 type Money = Record<CurrencyCode, number>;
 const zero = (): Money => ({ IQD: 0, USD: 0 });
+
+/**
+ * How a customer pays at the counter (1.1): cash into the shift's safe, a card or a wallet (FIB, ZainCash, Qi) into
+ * the account the admin set for it, or on the chosen customer's account. A sale can be split over up to 4 of them.
+ */
+export const POS_METHODS = ['cash', 'card', 'fib', 'zaincash', 'qi', 'account'] as const;
+export type PosMethod = (typeof POS_METHODS)[number];
+/** The methods that need an account of their own (cash uses the shift's safe; on account, the customer's). */
+export const POS_ACCOUNT_METHODS = ['card', 'fib', 'zaincash', 'qi'] as const;
+export type PosAccounts = Partial<Record<(typeof POS_ACCOUNT_METHODS)[number], string>>;
+const POS_ACCOUNTS = 'pos_payment_accounts';
+
+export function posPaymentAccounts(db: Db): PosAccounts {
+  try {
+    const stored = JSON.parse(readSetting(db, POS_ACCOUNTS) ?? '{}') as Record<string, unknown>;
+    const out: PosAccounts = {};
+    for (const m of POS_ACCOUNT_METHODS) if (typeof stored[m] === 'string') out[m] = stored[m] as string;
+    return out;
+  } catch {
+    return {};
+  }
+}
+
+export function setPosPaymentAccounts(db: Db, input: PosAccounts, user: string): PosAccounts {
+  const clean: PosAccounts = {};
+  const errors: { code: string; field: string }[] = [];
+  for (const m of POS_ACCOUNT_METHODS) {
+    const code = input[m]?.trim();
+    if (!code) continue;
+    if (!cashAccountOk(db, code)) errors.push({ code: 'cash_account_invalid', field: m });
+    else clean[m] = code;
+  }
+  if (errors.length) throw invalid(errors);
+  transaction(db, () => {
+    writeSetting(db, POS_ACCOUNTS, JSON.stringify(clean));
+    audit(db, user, 'update', 'settings', POS_ACCOUNTS, clean);
+  });
+  return posPaymentAccounts(db);
+}
+
+/**
+ * The card and wallet accounts a user may take payments into: all of them, or for a user limited to branches, only
+ * those that are their branches' own (the settings name one account per method for the whole company, and a head
+ * office's or another branch's bank is not a limited cashier's to debit).
+ */
+export function posAccountsFor(db: Db, actor?: Actor | null): PosAccounts {
+  const accounts = posPaymentAccounts(db);
+  const scope = actor ? scopeOf(db, actor) : null;
+  if (!scope) return accounts;
+  const out: PosAccounts = {};
+  for (const m of POS_ACCOUNT_METHODS) if (accounts[m] && scope.accounts.has(accounts[m])) out[m] = accounts[m];
+  return out;
+}
+
+/** The methods the counter offers: cash and on account always, the others once they have an account the user may use. */
+export function posMethods(db: Db, actor?: Actor | null): PosMethod[] {
+  const accounts = posAccountsFor(db, actor);
+  return POS_METHODS.filter((m) => m === 'cash' || m === 'account' || !!accounts[m as keyof PosAccounts]);
+}
 
 export interface ShiftSaleView {
   invoiceId: string;
@@ -53,6 +114,8 @@ export interface ShiftView {
   expected: Money;
   /** what was counted at closing (null while open) */
   counted: Money | null;
+  /** 1.1: the posted sales by how they were paid (a sale not split: all cash) */
+  methods: Partial<Record<PosMethod, Money>>;
   /** counted − expected, by currency (null while open) */
   difference: Money | null;
   notes: string;
@@ -80,7 +143,12 @@ export interface SaleInput {
   partyId?: string | undefined;
   discount: number;
   notes?: string | undefined;
-  lines: { itemId: string; qtyMilli: number; unitPrice: number }[];
+  /** qtyMilli in base units, or (1.1) unit + unitQtyMilli: the quantity in one of the item's units, priced per that unit */
+  lines: { itemId: string; qtyMilli?: number | undefined; unitPrice: number; unit?: UnitCode | undefined; unitQtyMilli?: number | undefined; batchId?: string | undefined }[];
+  /** the cashier confirmed selling stock past its expiry date (only the 'warn' policy allows it) */
+  allowExpired?: boolean | undefined;
+  /** 1.1: how it was paid, 1–4 parts adding up to the sale's total; none = all cash, as before */
+  payments?: { method: PosMethod; amount: number }[] | undefined;
 }
 
 export interface CloseInput {
@@ -101,17 +169,31 @@ function loadShift(db: Db, id: string): ShiftRow {
   return r;
 }
 
-function salesOf(db: Db, shiftId: string): { sales: Money; count: number } {
-  const rows = db.prepare(`SELECT i.currency AS currency, COALESCE(SUM(i.total), 0) AS total, COUNT(*) AS n
-                           FROM pos_sales s JOIN invoices i ON i.id = s.invoice_id
-                           WHERE s.shift_id = ? AND i.status = 'posted' GROUP BY i.currency`).all(shiftId) as { currency: CurrencyCode; total: number; n: number }[];
-  const sales = zero();
-  let count = 0;
-  for (const r of rows) {
-    sales[r.currency] = Number(r.total);
-    count += Number(r.n);
+/**
+ * The shift's posted sales: all of them, the cash in them (a split sale counts only its cash part; a sale from before
+ * 1.1 or not split is all cash), and the totals per method.
+ */
+function salesOf(db: Db, shiftId: string): { sales: Money; cash: Money; count: number; methods: Partial<Record<PosMethod, Money>> } {
+  const rows = db.prepare(`SELECT i.id, i.currency AS currency, i.total FROM pos_sales s JOIN invoices i ON i.id = s.invoice_id
+                           WHERE s.shift_id = ? AND i.status = 'posted'`).all(shiftId) as { id: string; currency: CurrencyCode; total: number }[];
+  const parts = new Map<string, { method: PosMethod; amount: number }[]>();
+  if (rows.length) {
+    for (const p of db.prepare(`SELECT p.invoice_id, p.method, p.amount FROM invoice_payments p JOIN pos_sales s ON s.invoice_id = p.invoice_id
+                                WHERE s.shift_id = ? AND p.kind = 'pos'`).all(shiftId) as { invoice_id: string; method: PosMethod; amount: number }[]) {
+      parts.set(p.invoice_id, [...(parts.get(p.invoice_id) ?? []), { method: p.method, amount: Number(p.amount) }]);
+    }
   }
-  return { sales, count };
+  const sales = zero();
+  const cash = zero();
+  const methods: Partial<Record<PosMethod, Money>> = {};
+  for (const r of rows) {
+    sales[r.currency] += Number(r.total);
+    for (const p of parts.get(r.id) ?? [{ method: 'cash' as const, amount: Number(r.total) }]) {
+      (methods[p.method] ??= zero())[r.currency] += p.amount;
+      if (p.method === 'cash') cash[r.currency] += p.amount;
+    }
+  }
+  return { sales, cash, count: rows.length, methods };
 }
 
 /**
@@ -157,9 +239,10 @@ const mayRun = (db: Db, row: ShiftRow, actor: ShiftActor | null) =>
   !!actor && actor.permissions.includes('sales') && (actor.permissions.includes('admin') || isOpener(db, row, actor));
 
 function shiftView(db: Db, row: ShiftRow, actor: ShiftActor | null): ShiftView {
-  const { sales, count } = salesOf(db, row.id);
+  const { sales, cash, count, methods } = salesOf(db, row.id);
   const refunds = refundsOf(db, row);
-  const expected: Money = { IQD: Number(row.opening_cash) + sales.IQD - refunds.IQD, USD: sales.USD - refunds.USD };
+  // only the cash that went into the drawer: a card or a wallet part of a sale never was there
+  const expected: Money = { IQD: Number(row.opening_cash) + cash.IQD - refunds.IQD, USD: cash.USD - refunds.USD };
   const notes = row.notes ?? '';
   let counted: Money | null = null;
   let difference: Money | null = null;
@@ -174,7 +257,7 @@ function shiftView(db: Db, row: ShiftRow, actor: ShiftActor | null): ShiftView {
   return {
     id: row.id, number: row.number, register: row.register, cashAccountCode: row.cash_account, warehouseId: row.warehouse_id,
     status: row.status, openedBy: row.opened_by, openedAt: row.opened_at, openingCash: Number(row.opening_cash),
-    closedBy: row.closed_by, closedAt: row.closed_at, sales, count, refunds, expected, counted, difference, notes, actions
+    closedBy: row.closed_by, closedAt: row.closed_at, sales, count, refunds, expected, counted, difference, notes, actions, methods
   };
 }
 
@@ -271,15 +354,51 @@ export function sell(db: Db, shiftId: string, input: SaleInput, actor: Actor): {
   const row = requireRunnable(db, shiftId, actor);
   if (!Array.isArray(input.lines) || input.lines.length === 0) throw invalid([{ code: 'pos_cart_empty' }]);
   if (input.currency === 'USD' && !(Number.isSafeInteger(input.rateX100) && (input.rateX100 ?? 0) > 0)) throw invalid([{ code: 'rate_invalid' }]);
+  const payments = input.payments ?? [];
+  if (payments.length > 4) throw invalid([{ code: 'payments_too_many' }]);
+  const accounts = posPaymentAccounts(db);
+  const mine = posAccountsFor(db, actor);
+  const errors: { code: string; method?: string }[] = [];
+  for (const p of payments) {
+    if (!(POS_METHODS as readonly string[]).includes(p.method) || !Number.isSafeInteger(p.amount) || p.amount <= 0) errors.push({ code: 'pos_payment_invalid', method: String(p.method) });
+    // a method the admin gave no account is not offered at the counter, and refused here
+    else if (p.method !== 'cash' && p.method !== 'account' && !accounts[p.method as keyof PosAccounts]) errors.push({ code: 'pos_method_unavailable', method: p.method });
+    // its account is outside the user's branches: not offered to them either, and never debited for them
+    else if (p.method !== 'cash' && p.method !== 'account' && !mine[p.method as keyof PosAccounts]) errors.push({ code: 'pos_method_other_branch', method: p.method });
+    else if (p.method === 'account' && !input.partyId) errors.push({ code: 'party_required' });
+  }
+  if (errors.length) throw invalid(errors);
   const invoiceId = transaction(db, () => {
     const draft = createInvoice(db, {
       kind: 'sale', date: todayIso(), ...(input.partyId ? { partyId: input.partyId } : {}), warehouseId: row.warehouse_id,
       currency: input.currency, rateX100: input.currency === 'IQD' ? 100 : input.rateX100!, payment: 'cash', cashAccountCode: row.cash_account,
       discount: input.discount, ...(input.notes?.trim() ? { notes: input.notes.trim() } : {}),
-      lines: input.lines.map((l) => ({ itemId: l.itemId, qtyMilli: l.qtyMilli, unitPrice: l.unitPrice }))
+      lines: input.lines.map((l) => ({
+        itemId: l.itemId, qtyMilli: l.qtyMilli, unitPrice: l.unitPrice, ...(l.unit ? { unit: l.unit, unitQtyMilli: l.unitQtyMilli ?? l.qtyMilli } : {}),
+        ...(l.batchId ? { batchId: l.batchId } : {})
+      }))
     }, actor.name);
-    const posted = postInvoice(db, draft.id, actor.name);
+    let split: (SalePart & { method: PosMethod })[] | undefined;
+    if (payments.length) {
+      if (payments.reduce((s, p) => s + p.amount, 0) !== draft.total) throw invalid([{ code: 'payments_total_mismatch', total: draft.total } as { code: string }]);
+      const partyAccount = input.partyId ? (db.prepare('SELECT account_code FROM parties WHERE id = ?').get(input.partyId) as { account_code: string } | undefined)?.account_code : undefined;
+      // the same method twice is one part
+      const merged = new Map<PosMethod, number>();
+      for (const p of payments) merged.set(p.method, (merged.get(p.method) ?? 0) + p.amount);
+      split = [...merged].map(([method, amount]) => ({
+        method, amount,
+        accountCode: method === 'cash' ? row.cash_account : method === 'account' ? partyAccount! : mine[method as keyof PosAccounts]!,
+        ...(method === 'account' ? { partyId: input.partyId } : {})
+      }));
+    }
+    const posted = postInvoice(db, draft.id, actor.name, { allowExpired: input.allowExpired === true, ...(split ? { split } : {}) });
     db.prepare('INSERT INTO pos_sales (invoice_id, shift_id) VALUES (?, ?)').run(posted.id, shiftId);
+    if (split) {
+      const insert = db.prepare(`INSERT INTO invoice_payments (id, invoice_id, kind, method, account_code, amount, currency, entry_id, source, reference, created_by, created_at)
+                                 VALUES (?, ?, 'pos', ?, ?, ?, ?, ?, NULL, NULL, ?, ?)`);
+      const now = new Date().toISOString();
+      for (const p of split) insert.run(randomUUID(), posted.id, p.method, p.accountCode, p.amount, posted.currency, posted.entryId, actor.name, now);
+    }
     return posted.id;
   });
   return { invoice: getInvoice(db, invoiceId), shift: getShift(db, shiftId, actor) };
@@ -328,6 +447,7 @@ export const posApi: ApiExtension = {
     'POST /api/pos/shifts': 'sales',
     'POST /api/pos/shifts/:id/sales': 'sales',
     'POST /api/pos/shifts/:id/close': 'sales'
+    // PUT /api/pos/payment-accounts is not listed: it needs an admin, as every change not listed does
   },
   routes(db, { actorOf }) {
     const actor = (req: ApiRequest) => actorOf(req);
@@ -340,6 +460,15 @@ export const posApi: ApiExtension = {
         }
       },
       { method: 'GET', path: '/api/pos/current', handler: async (req) => ({ shift: myShift(db, actor(req)) }) },
+      { method: 'GET', path: '/api/pos/payment-accounts', handler: async (req) => ({ accounts: posAccountsFor(db, actor(req)), methods: posMethods(db, actor(req)) }) },
+      {
+        method: 'PUT', path: '/api/pos/payment-accounts',
+        handler: async (req) => {
+          const code = z.string().max(12).optional();
+          const body = parse(z.object({ card: code, fib: code, zaincash: code, qi: code }), req.body);
+          return { accounts: setPosPaymentAccounts(db, body, actor(req).name), methods: posMethods(db, actor(req)) };
+        }
+      },
       { method: 'GET', path: '/api/pos/shifts/:id', handler: async (req) => shiftReport(db, parse(idParam, req.params).id, actor(req)) },
       {
         method: 'POST', path: '/api/pos/shifts',
@@ -357,7 +486,12 @@ export const posApi: ApiExtension = {
           const body = parse(z.object({
             currency: z.enum(['IQD', 'USD']), rateX100: z.number().int().positive().optional(), partyId: id.optional(), discount: amount.default(0),
             notes: text(500).optional(),
-            lines: z.array(z.object({ itemId: id, qtyMilli: z.number().int().positive().max(1e12), unitPrice: amount })).min(1).max(300)
+            lines: z.array(z.object({
+              itemId: id, qtyMilli: z.number().int().positive().max(1e12).optional(), unitPrice: amount,
+              unit: z.enum(UNIT_CODES).optional(), unitQtyMilli: z.number().int().positive().max(1e12).optional(), batchId: id.optional()
+            })).min(1).max(300),
+            allowExpired: z.boolean().optional(),
+            payments: z.array(z.object({ method: z.enum(POS_METHODS), amount: amount.refine((n) => n > 0) })).min(1).max(4).optional()
           }), req.body);
           reply.status(201).send(sell(db, parse(idParam, req.params).id, body, actor(req)));
           return undefined;

@@ -15,6 +15,7 @@ import { ADMIN_PAGES, canSee, COMPANY_BOOK_PAGES, FAVOURITES_EVENT, seesCompanyB
 import { CommandPalette } from './industry/CommandPalette.tsx';
 import { Tour, TOUR_EVENT, tourDone } from './industry/Tour.tsx';
 import { UpdateBanner } from './industry/UpdateBanner.tsx';
+import { WhatsNewAfterUpdate } from './industry/WhatsNew.tsx';
 import { BackupNoticeBar } from './industry/BackupNotice.tsx';
 import { PrintNotices } from './industry/Printers.tsx';
 import { GuideLink, pageGuide } from './industry/GuideLink.tsx';
@@ -92,6 +93,8 @@ const StockAdjustmentDetail = lazyPage(() => import('./pages/StockAdjustments.ts
 const StockCount = lazyPage(() => import('./pages/StockAdjustments.tsx'), 'StockCount');
 const PrintDesignPage = lazyPage(() => import('./pages/PrintDesign.tsx'), 'PrintDesignPage');
 const Labels = lazyPage(() => import('./pages/Labels.tsx'), 'Labels');
+const Expiry = lazyPage(() => import('./pages/Expiry.tsx'), 'Expiry');
+const Pharmacy = lazyPage(() => import('./pages/Pharmacy.tsx'), 'Pharmacy');
 const Companies = lazyPage(() => import('./pages/Companies.tsx'), 'Companies');
 const FixedAssets = lazyPage(() => import('./pages/FixedAssets.tsx'), 'FixedAssets');
 const FixedAssetDetail = lazyPage(() => import('./pages/FixedAssets.tsx'), 'FixedAssetDetail');
@@ -519,6 +522,14 @@ export function App() {
       title = t('lb_title');
       content = <Labels />;
       break;
+    case 'expiry':
+      title = t('ex_title');
+      content = <Expiry />;
+      break;
+    case 'pharmacy':
+      title = t('phm_title');
+      content = <Pharmacy admin={isAdmin} sales={isAdmin || viewer.permissions.includes('sales')} />;
+      break;
     case 'companies':
       title = t('co_title');
       content = <Companies />;
@@ -602,7 +613,7 @@ export function App() {
       break;
     case 'items':
       title = t('items');
-      content = <Items />;
+      content = <Items key={arg ?? ''} {...(arg === 'reorder' ? { tab: 'reorder' as const } : {})} />;
       break;
     case 'item':
       title = t('items');
@@ -763,6 +774,7 @@ export function App() {
                 <div className="backdrop"><div className="modal biz-modal" role="dialog" aria-modal="true" aria-label={t('bizWelcome')}><Suspense fallback={<PageLoading />}><BusinessTypeChooser first /></Suspense></div></div>
               )}
               <UpdateBanner />
+              <WhatsNewAfterUpdate />
               <PrintNotices />
               <main className="content">
                 {import.meta.env.MODE === 'demo' && narrow && <div className="alert info demo-phone no-print" role="note" style={{ marginBottom: 14 }}>{t('demoPhoneNote')}</div>}

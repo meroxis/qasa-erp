@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import {
-  allocateDiscount, isIsoDate, remainingShare, returnKindOf, roundHalfUp,
-  type EntryInput, type LineInput, type PaymentMode
+  allocateDiscount, fromBaseQty, isIsoDate, remainingShare, returnKindOf, roundHalfUp,
+  type EntryInput, type LineInput, type PaymentMode, type UnitCode
 } from '@qasa/core';
 import type { Db } from './db.ts';
 import { transaction } from './db.ts';
@@ -12,7 +12,9 @@ import { assertValid, insertEntry, nextNumber } from './journal.ts';
 import { getParty } from './parties.ts';
 import { addStockMove, stockOf } from './items.ts';
 import { getPostingAccounts, isPeriodLocked } from './settings.ts';
-import { fromBase, getInvoice, returnedByLine, returnedTotals, type InvoiceView } from './invoices.ts';
+import { assertMayUndoPosSale, fromBase, getInvoice, returnedByLine, returnedTotals, type InvoiceView } from './invoices.ts';
+import type { Actor } from './auth.ts';
+import { addTaken, batchTracking, ensureBatch, purchaseReturnPicks, saleReturnPicks, writeBatchMoves, type BatchError, type BatchMove } from './batches.ts';
 
 export interface ReturnInput {
   date: string;
@@ -34,6 +36,10 @@ interface ReturnLine {
   discountShare: number;
   /** IQD value of the goods: back into stock (sales return) or out of stock (purchase return). */
   cost: number | null;
+  /** the original line's unit, when the quantity is a whole number of thousandths of it (else the base unit) */
+  unit: UnitCode | null;
+  unitFactorMilli: number | null;
+  unitQtyMilli: number | null;
 }
 
 /**
@@ -42,7 +48,22 @@ interface ReturnLine {
  * Sales return:    Dr sales (42) / Cr customer or safe;   Dr warehouse / Cr cost of sales (35), at the original cost.
  * Purchase return: Dr supplier or safe / Cr warehouse at the purchase cost; any difference goes to cost of sales.
  */
-export function createReturn(db: Db, originalId: string, input: ReturnInput, user: string): InvoiceView {
+/**
+ * A sale that recorded how it was paid (the POS: cash, card, a wallet, on account) is paid back the same way: a cash
+ * refund into a safe or bank gives back at most what came into that account for the sale, less what was already paid
+ * back from it. A card sale is never paid back from the drawer (that would take cash out of it that never came in);
+ * what went on the customer's account comes back as credit.
+ */
+function assertPaidBackAsPaid(db: Db, originalId: string, accountCode: string, total: number): void {
+  const parts = db.prepare("SELECT account_code, amount FROM invoice_payments WHERE invoice_id = ? AND kind = 'pos'").all(originalId) as { account_code: string; amount: number }[];
+  if (!parts.length) return;
+  const paidIn = parts.filter((p) => p.account_code === accountCode).reduce((s, p) => s + Number(p.amount), 0);
+  const paidBack = Number((db.prepare("SELECT COALESCE(SUM(total), 0) AS t FROM invoices WHERE return_of = ? AND status = 'posted' AND payment = 'cash' AND cash_account = ?")
+    .get(originalId, accountCode) as { t: number }).t);
+  if (paidBack + total > paidIn) throw invalid([{ code: 'refund_more_than_paid', available: Math.max(0, paidIn - paidBack) }]);
+}
+
+export function createReturn(db: Db, originalId: string, input: ReturnInput, user: string, actor?: Pick<Actor, 'name' | 'permissions'>): InvoiceView {
   const original = getInvoice(db, originalId);
   if ((original.kind !== 'sale' && original.kind !== 'purchase') || original.status !== 'posted') {
     throw conflict('action_not_allowed', { status: original.status, action: 'return' });
@@ -52,6 +73,8 @@ export function createReturn(db: Db, originalId: string, input: ReturnInput, use
   // leave the unit sold)
   if (original.kind === 'sale' && db.prepare('SELECT 1 FROM re_units WHERE invoice_id = ?').get(originalId)) throw conflict('invoice_has_unit');
   const kind = returnKindOf(original.kind);
+  // money back in cash from a till sale leaves the drawer: with separate duties, an approver pays it (invoices.ts)
+  if (original.kind === 'sale' && input.payment === 'cash') assertMayUndoPosSale(db, originalId, original.postedBy, actor);
   const errors: { code: string; line?: number; period?: string; available?: number }[] = [];
   if (!isIsoDate(input.date)) errors.push({ code: 'date_invalid' });
   else {
@@ -92,10 +115,17 @@ export function createReturn(db: Db, originalId: string, input: ReturnInput, use
     // Keep both this refund and the remaining refund non-negative, even on a one-cent line.
     const discountShare = Math.max(0, discountLeft - (ol.amount - prev.amount - amount),
       Math.min(amount, remainingShare(share, prev.discount, qty, prev.qtyMilli, ol.qtyMilli)));
+    // a line typed in boxes comes back in boxes when the quantity is whole thousandths of a box; else in the base unit,
+    // its price per base unit (the amount is worked out from the original line either way)
+    const inUnit = ol.lineUnit && ol.unitFactorMilli ? fromBaseQty(qty, ol.unitFactorMilli) : null;
+    const unitPriceKept = ol.lineUnit && ol.unitFactorMilli && inUnit === null ? roundHalfUp((ol.unitPrice * 1000) / ol.unitFactorMilli) : ol.unitPrice;
     return {
-      sourceLine: lineNo, itemId: ol.itemId, trackStock: ol.trackStock, qtyMilli: qty, unitPrice: ol.unitPrice,
+      sourceLine: lineNo, itemId: ol.itemId, trackStock: ol.trackStock, qtyMilli: qty, unitPrice: unitPriceKept,
       amount, discountShare,
-      cost: ol.cost === null ? null : remainingShare(ol.cost, prev.cost, qty, prev.qtyMilli, ol.qtyMilli)
+      cost: ol.cost === null ? null : remainingShare(ol.cost, prev.cost, qty, prev.qtyMilli, ol.qtyMilli),
+      unit: inUnit !== null ? ol.lineUnit : null,
+      unitFactorMilli: inUnit !== null ? ol.unitFactorMilli : null,
+      unitQtyMilli: inUnit
     };
   });
 
@@ -103,6 +133,7 @@ export function createReturn(db: Db, originalId: string, input: ReturnInput, use
   const discount = lines.reduce((s, l) => s + l.discountShare, 0);
   const total = subtotal - discount;
   if (total < 0 || lines.some((l) => l.discountShare > l.amount)) throw conflict('return_totals_invalid');
+  if (kind === 'sale_return' && input.payment === 'cash') assertPaidBackAsPaid(db, originalId, input.cashAccountCode!, total);
   const accounts = getPostingAccounts(db);
   const warehouseAccount = (db.prepare('SELECT account_code FROM warehouses WHERE id = ?').get(original.warehouseId) as { account_code: string }).account_code;
   const party = original.partyId ? getParty(db, original.partyId) : null;
@@ -114,6 +145,9 @@ export function createReturn(db: Db, originalId: string, input: ReturnInput, use
   const baseTotal = remainingShare(original.baseTotal, refunded.baseTotal, total, refunded.total, original.total);
   const entryLines: LineInput[] = [];
   const moves: { itemId: string; qtyMilli: number; value: number }[] = [];
+  const batchMoves: BatchMove[] = [];
+  // a sale return goes back into the batches the line took (those sold before tracking: into the batch with no number)
+  const backInto: { lineNo: number; itemId: string; qtyMilli: number; sourceLine: number }[] = [];
 
   if (kind === 'sale_return') {
     if (total > 0) {
@@ -126,7 +160,10 @@ export function createReturn(db: Db, originalId: string, input: ReturnInput, use
       entryLines.push({ accountCode: warehouseAccount, debit: cost, credit: 0, baseDebit: totalCost, baseCredit: 0 });
       entryLines.push({ accountCode: accounts.costOfSales, debit: 0, credit: cost, baseDebit: 0, baseCredit: totalCost });
     }
-    for (const l of lines) if (l.trackStock && l.cost !== null) moves.push({ itemId: l.itemId, qtyMilli: l.qtyMilli, value: l.cost });
+    lines.forEach((l, i) => {
+      if (l.trackStock && l.cost !== null) moves.push({ itemId: l.itemId, qtyMilli: l.qtyMilli, value: l.cost });
+      if (l.trackStock && batchTracking(db, l.itemId).batches) backInto.push({ lineNo: i + 1, itemId: l.itemId, qtyMilli: l.qtyMilli, sourceLine: l.sourceLine });
+    });
   } else {
     // the goods must still be in the warehouse; they leave at their purchase cost, never more than the stock is worth
     const stock = new Map<string, { qtyMilli: number; value: number }>();
@@ -141,6 +178,17 @@ export function createReturn(db: Db, originalId: string, input: ReturnInput, use
       moves.push({ itemId: l.itemId, qtyMilli: -l.qtyMilli, value: -value });
     }
     if (stockErrors.length) throw invalid(stockErrors);
+    // batch items leave from the batch the purchase line brought in
+    const taken = new Map<string, number>();
+    const batchErrors: BatchError[] = [];
+    lines.forEach((l, i) => {
+      if (!l.trackStock || !batchTracking(db, l.itemId).batches) return;
+      const r = purchaseReturnPicks(db, originalId, l.sourceLine, original.warehouseId, l.itemId, l.qtyMilli, l.sourceLine, taken);
+      if ('code' in r) { batchErrors.push(r); return; }
+      addTaken(taken, r);
+      for (const p of r) batchMoves.push({ batchId: p.batchId, itemId: l.itemId, warehouseId: original.warehouseId, qtyMilli: -p.qtyMilli, lineNo: i + 1 });
+    });
+    if (batchErrors.length) throw invalid(batchErrors);
     const totalOut = lines.reduce((s, l) => s + (l.trackStock ? l.cost ?? 0 : 0), 0);
     const diff = baseTotal - totalOut;
     // amounts in the invoice currency split in the same proportion, so the entry balances in both currencies
@@ -162,9 +210,11 @@ export function createReturn(db: Db, originalId: string, input: ReturnInput, use
                 VALUES (?, ?, 'draft', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
       .run(id, kind, input.date, original.partyId, original.warehouseId, currency, rateX100, input.payment, input.payment === 'cash' ? input.cashAccountCode! : null,
         discount, subtotal, total, input.notes?.trim() || null, originalId, user, now, now);
-    const insert = db.prepare(`INSERT INTO invoice_lines (invoice_id, line_no, item_id, description, qty_milli, unit_price, amount, cost, source_line, discount_share)
-                               VALUES (?, ?, ?, NULL, ?, ?, ?, ?, ?, ?)`);
-    lines.forEach((l, i) => insert.run(id, i + 1, l.itemId, l.qtyMilli, l.unitPrice, l.amount, l.cost, l.sourceLine, l.discountShare));
+    const insert = db.prepare(`INSERT INTO invoice_lines (invoice_id, line_no, item_id, description, qty_milli, unit_price, amount, cost, source_line, discount_share,
+                                                          unit, unit_factor_milli, unit_qty_milli)
+                               VALUES (?, ?, ?, NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?)`);
+    lines.forEach((l, i) => insert.run(id, i + 1, l.itemId, l.qtyMilli, l.unitPrice, l.amount, l.cost, l.sourceLine, l.discountShare,
+      l.unit, l.unitFactorMilli, l.unitQtyMilli));
 
     let entryId: string | null = null;
     if (entryLines.length >= 2) {
@@ -179,6 +229,13 @@ export function createReturn(db: Db, originalId: string, input: ReturnInput, use
         .run(number, user, now, user, now, now, entryId);
     }
     for (const m of moves) addStockMove(db, { ...m, warehouseId: original.warehouseId, date: input.date, sourceType: kind, sourceId: id });
+    for (const b of backInto) {
+      const picks = saleReturnPicks(db, originalId, b.sourceLine, b.qtyMilli);
+      const placed = picks.reduce((s, p) => s + p.qtyMilli, 0);
+      for (const p of picks) batchMoves.push({ batchId: p.batchId, itemId: b.itemId, warehouseId: original.warehouseId, qtyMilli: p.qtyMilli, lineNo: b.lineNo });
+      if (placed < b.qtyMilli) batchMoves.push({ batchId: ensureBatch(db, b.itemId, '', null), itemId: b.itemId, warehouseId: original.warehouseId, qtyMilli: b.qtyMilli - placed, lineNo: b.lineNo });
+    }
+    writeBatchMoves(db, batchMoves, input.date, kind, id);
     db.prepare(`UPDATE invoices SET status = 'posted', number = ?, entry_id = ?, posted_by = ?, posted_at = ?, updated_at = ? WHERE id = ?`)
       .run(number, entryId, user, now, now, id);
     audit(db, user, 'post', 'invoice', id, { kind, number, returnOf: original.number });

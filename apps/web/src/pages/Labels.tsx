@@ -5,6 +5,9 @@ import { useI18n, type Key } from '../i18n.ts';
 import { barcodeFor, barsPath, type Barcode } from '../industry/barcode.ts';
 import '../industry/print-design.css';
 import { printDocument } from '../industry/printing.ts';
+import { unitPrice, type UnitCode } from '@qasa/core';
+import { UnitPicker } from '../industry/UnitPicker.tsx';
+import { unitLabel } from '../industry/units.ts';
 
 /**
  * Barcode labels (every plan): choose items and how many of each, a label size, and print — on a label printer
@@ -21,13 +24,31 @@ export const LABEL_SIZES = {
 export type LabelSize = keyof typeof LABEL_SIZES;
 export const MAX_LABELS = 2000;
 
-interface Row { itemId: string; copies: number }
+/** unit (1.1): a label for one of the item's other units (a box), with that unit's barcode and price; null: the item's own. */
+interface Row { itemId: string; copies: number; unit?: UnitCode | null }
+
+const rowKey = (r: Pick<Row, 'itemId' | 'unit'>) => `${r.itemId}|${r.unit ?? ''}`;
 
 /** The labels in print order: each item as many times as asked, after the blank places skipped on a used sheet. */
 export function labelRun(rows: Row[], skip: number): (string | null)[] {
-  const out: (string | null)[] = Array.from({ length: Math.max(0, skip) }, () => null);
-  for (const r of rows) for (let i = 0; i < r.copies; i++) out.push(r.itemId);
+  return labelRows(rows, skip).map((r) => r?.itemId ?? null);
+}
+
+/** labelRun with each label's row (its unit). */
+export function labelRows<R extends Row>(rows: R[], skip: number): (R | null)[] {
+  const out: (R | null)[] = Array.from({ length: Math.max(0, skip) }, () => null);
+  for (const r of rows) for (let i = 0; i < r.copies; i++) out.push(r);
   return out;
+}
+
+/**
+ * The barcode text and price of a label: the unit's own when the row is for one of the item's units. A unit with no
+ * barcode of its own gets none (the label can't be printed): the item's barcode would add one base unit at the counter.
+ */
+export function labelFace(item: ItemView, unit: UnitCode | null | undefined): { barcode: string; price: number } {
+  const u = unit ? item.units.find((x) => x.unit === unit) : undefined;
+  if (!u) return { barcode: item.barcode || item.code, price: item.salePrice };
+  return { barcode: u.barcode ?? '', price: unitPrice({ price: item.salePrice }, { factorMilli: u.factorMilli, salePrice: u.salePrice }) };
 }
 
 /** The @page rule for the chosen size: a label printer gets one label per page; sheets are A4 with no margin. */
@@ -53,7 +74,10 @@ export function Labels() {
   const byId = useMemo(() => new Map((items.data ?? []).map((it) => [it.id, it])), [items.data]);
   const codes = useMemo(() => {
     const m = new Map<string, Barcode | null>();
-    for (const it of items.data ?? []) m.set(it.id, barcodeFor(it.barcode || it.code));
+    for (const it of items.data ?? []) {
+      m.set(rowKey({ itemId: it.id, unit: null }), barcodeFor(it.barcode || it.code));
+      for (const u of it.units ?? []) m.set(rowKey({ itemId: it.id, unit: u.unit }), barcodeFor(labelFace(it, u.unit).barcode));
+    }
     return m;
   }, [items.data]);
 
@@ -63,16 +87,17 @@ export function Labels() {
 
   const add = (itemId: string) => {
     if (!itemId) return;
-    setRows((rs) => (rs.some((r) => r.itemId === itemId) ? rs.map((r) => (r.itemId === itemId ? { ...r, copies: r.copies + 1 } : r)) : [...rs, { itemId, copies: 1 }]));
+    setRows((rs) => (rs.some((r) => r.itemId === itemId && !r.unit) ? rs.map((r) => (r.itemId === itemId && !r.unit ? { ...r, copies: r.copies + 1 } : r)) : [...rs, { itemId, copies: 1, unit: null }]));
     setPick('');
   };
-  const addAll = () => setRows((items.data ?? []).filter((it) => codes.get(it.id)).map((it) => ({ itemId: it.id, copies: 1 })));
-  const setCopies = (itemId: string, copies: number) => setRows((rs) => rs.map((r) => (r.itemId === itemId ? { ...r, copies: Math.max(0, Math.min(500, Math.floor(copies) || 0)) } : r)));
-  const remove = (itemId: string) => setRows((rs) => rs.filter((r) => r.itemId !== itemId));
+  const addAll = () => setRows((items.data ?? []).filter((it) => codes.get(rowKey({ itemId: it.id }))).map((it) => ({ itemId: it.id, copies: 1, unit: null })));
+  const setCopies = (key: string, copies: number) => setRows((rs) => rs.map((r) => (rowKey(r) === key ? { ...r, copies: Math.max(0, Math.min(500, Math.floor(copies) || 0)) } : r)));
+  const setUnit = (key: string, unit: UnitCode | null) => setRows((rs) => rs.map((r) => (rowKey(r) === key ? { ...r, unit } : r)));
+  const remove = (key: string) => setRows((rs) => rs.filter((r) => rowKey(r) !== key));
 
-  const printable = rows.filter((r) => codes.get(r.itemId) && r.copies > 0);
+  const printable = rows.filter((r) => codes.get(rowKey(r)) && r.copies > 0);
   const spec = LABEL_SIZES[size];
-  const run = labelRun(printable, spec.sheet ? skip : 0);
+  const run = labelRows(printable, spec.sheet ? skip : 0);
   const tooMany = run.length > MAX_LABELS;
   const company = settings ? i18n.name(settings.companyName) : '';
 
@@ -98,14 +123,18 @@ export function Labels() {
               <tbody>
                 {rows.map((r) => {
                   const it = byId.get(r.itemId);
-                  const code = codes.get(r.itemId);
+                  const key = rowKey(r);
+                  const code = codes.get(key);
                   return (
-                    <tr key={r.itemId}>
+                    <tr key={key}>
                       <td className="ltr">{it?.code}</td>
-                      <td>{it ? i18n.name(it.name) : ''}{!code && <div className="small" style={{ color: 'var(--bad)' }}>{t('lb_noCode')}</div>}</td>
+                      <td>
+                        {it ? i18n.name(it.name) : ''}{!code && <div className="small" style={{ color: 'var(--bad)' }}>{t(r.unit ? 'lb_noUnitCode' : 'lb_noCode')}</div>}
+                        {it && it.units.length > 0 && <UnitPicker item={it} value={r.unit ?? null} onChange={(unit) => setUnit(key, unit)} />}
+                      </td>
                       <td className="ltr">{code?.text ?? '—'}</td>
-                      <td className="amount"><input className="input num" type="number" min={0} max={500} value={r.copies} style={{ width: 90 }} onChange={(e) => setCopies(r.itemId, Number(e.target.value))} aria-label={t('lb_copies')} /></td>
-                      <td><button type="button" className="btn small" onClick={() => remove(r.itemId)} aria-label="×"><Icon name="x" size={14} /></button></td>
+                      <td className="amount"><input className="input num" type="number" min={0} max={500} value={r.copies} style={{ width: 90 }} onChange={(e) => setCopies(key, Number(e.target.value))} aria-label={t('lb_copies')} /></td>
+                      <td><button type="button" className="btn small" onClick={() => remove(key)} aria-label="×"><Icon name="x" size={14} /></button></td>
                     </tr>
                   );
                 })}
@@ -145,11 +174,13 @@ export function Labels() {
 
       {printable.length > 0 && !tooMany && (
         <div className={`lb-sheet${spec.sheet ? ' lb-a4' : ' lb-roll'}`} style={{ '--lb-w': `${spec.w}mm`, '--lb-h': `${spec.h}mm`, '--lb-cols': spec.cols } as CSSProperties}>
-          {run.map((id, i) => {
-            const it = id ? byId.get(id) : undefined;
-            const code = id ? codes.get(id) : null;
+          {run.map((r, i) => {
+            const it = r ? byId.get(r.itemId) : undefined;
+            const code = r ? codes.get(rowKey(r)) : null;
+            const face = it ? labelFace(it, r?.unit) : null;
+            const priceText = it && face ? i18n.money(face.price, it.saleCurrency) + (r?.unit ? ` / ${unitLabel(i18n, r.unit)}` : '') : null;
             return it && code
-              ? <Label key={i} item={it} code={code} name={showName ? i18n.name(it.name) : null} price={showPrice ? i18n.money(it.salePrice, it.saleCurrency) : null} company={showCompany ? company : null} />
+              ? <Label key={i} item={it} code={code} name={showName ? i18n.name(it.name) : null} price={showPrice ? priceText : null} company={showCompany ? company : null} />
               : <div key={i} className="lb-label lb-blank" />;
           })}
         </div>

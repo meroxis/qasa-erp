@@ -1,4 +1,4 @@
-import type { CurrencyCode, Names } from '@qasa/core';
+import type { CurrencyCode, Names, UnitCode } from '@qasa/core';
 import { qs, request, type InvoiceView } from '../api.ts';
 
 /** Point of sale (every plan): shifts on a register, and cash sales posted at once. */
@@ -21,6 +21,8 @@ export interface ShiftView {
   count: number;
   /** cash sales returns paid from the shift's safe while it was open */
   refunds: Money2;
+  /** 1.1: the posted sales by how they were paid (older servers leave it out) */
+  methods?: Partial<Record<PosMethod, Money2>>;
   expected: Money2;
   counted: Money2 | null;
   difference: Money2 | null;
@@ -42,11 +44,23 @@ export interface SaleInput {
   partyId?: string;
   discount: number;
   notes?: string;
-  lines: { itemId: string; qtyMilli: number; unitPrice: number }[];
+  /** the cashier confirmed selling stock past its expiry date (only when the company allows it) */
+  allowExpired?: boolean;
+  /** 1.1: how it was paid, 1–4 parts adding up to the total; none = all cash */
+  payments?: { method: PosMethod; amount: number }[];
+  /** qtyMilli in base units, or unit + unitQtyMilli: the quantity in one of the item's units, priced per that unit */
+  lines: (({ itemId: string; qtyMilli: number; unitPrice: number } | { itemId: string; unit: UnitCode; unitQtyMilli: number; unitPrice: number }) & { batchId?: string })[];
 }
+
+/** How a customer pays at the counter (1.1). */
+export type PosMethod = 'cash' | 'card' | 'fib' | 'zaincash' | 'qi' | 'account';
+export type PosAccounts = Partial<Record<'card' | 'fib' | 'zaincash' | 'qi', string>>;
 
 export const posApi = {
   current: () => request<{ shift: ShiftView | null }>('GET', '/api/pos/current'),
+  /** the methods the counter offers (cash and on account always; the others once they have an account) */
+  paymentAccounts: () => request<{ accounts: PosAccounts; methods: PosMethod[] }>('GET', '/api/pos/payment-accounts'),
+  setPaymentAccounts: (accounts: PosAccounts) => request<{ accounts: PosAccounts; methods: PosMethod[] }>('PUT', '/api/pos/payment-accounts', accounts),
   shifts: (f: { status?: 'open' | 'closed'; limit?: string } = {}) => request<ShiftView[]>('GET', '/api/pos/shifts' + qs(f)),
   shift: (id: string) => request<ShiftReport>('GET', `/api/pos/shifts/${id}`),
   open: (input: OpenShiftInput) => request<ShiftView>('POST', '/api/pos/shifts', input),

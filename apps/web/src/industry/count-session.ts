@@ -11,6 +11,8 @@ export interface CountSessionLine { itemId: string; countedMilli: number; bookMi
 export interface CountSessionView {
   id: string; warehouseId: string; date: string; notes: string; full: boolean; status: 'open' | 'done' | 'discarded';
   adjustmentId: string | null; createdBy: string; updatedBy: string; updatedAt: string; lines: CountSessionLine[];
+  /** 1.1: the categories and brands it is limited to (null: every item) */
+  scope?: { categoryIds: string[]; brandIds: string[] } | null;
 }
 export interface CountMeta { date: string; notes: string; full: boolean }
 export type CountChange = { itemId: string; countedMilli: number | null; unitCost?: number };

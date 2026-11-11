@@ -1,4 +1,4 @@
-import type { CurrencyCode, Names } from '@qasa/core';
+import type { CurrencyCode, Names, UnitCode } from '@qasa/core';
 import { qs, request } from '../api.ts';
 
 /** Purchase orders (أوامر الشراء): written to a supplier, received into draft purchase invoices. */
@@ -8,7 +8,8 @@ export type PoAction = 'edit' | 'send' | 'receive' | 'cancel' | 'reopen';
 export type PoMove = 'send' | 'cancel' | 'reopen';
 export const PO_STATUSES: readonly PoStatus[] = ['draft', 'sent', 'partial', 'received', 'cancelled'];
 
-export interface PoLineInput { itemId: string; qtyMilli: number; unitPrice: number }
+/** qtyMilli in base units, or (1.1) unit + unitQtyMilli: the quantity in one of the item's units, priced per that unit. */
+export interface PoLineInput { itemId: string; qtyMilli: number; unitPrice: number; unit?: UnitCode; unitQtyMilli?: number }
 export interface PoInput {
   date: string;
   partyId: string;
@@ -21,6 +22,7 @@ export interface PoInput {
 export interface PoLineView {
   seq: number; itemId: string; itemCode: string; itemName: Names; unit: string;
   qtyMilli: number; unitPrice: number; amount: number; receivedMilli: number; remainingMilli: number;
+  lineUnit: UnitCode | null; unitFactorMilli: number | null; unitQtyMilli: number | null;
 }
 export interface PoReceiptView { invoiceId: string; number: string | null; date: string; status: 'draft' | 'posted' | 'cancelled'; total: number }
 export interface PoView {

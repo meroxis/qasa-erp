@@ -6,6 +6,7 @@ import { href } from '../router.ts';
 import {
   PART_ORIGINS, partsApi, type Fitment, type PartHit, type PartImportKind, type PartImportReport, type PartNumber, type PartView
 } from '../industry/parts-api.ts';
+import { BrandPicker } from '../industry/CatalogPickers.tsx';
 import { qtyText, unitName } from './Items.tsx';
 
 /** A value that follows `value` once it stops changing for `ms` (typing in the search box). */
@@ -329,7 +330,8 @@ function PartForm({ part, canEdit, onCancel, onSaved }: { part: PartView; canEdi
   const { t } = i18n;
   const toast = useToast();
   const [shelf, setShelf] = useState(part.shelf);
-  const [brand, setBrand] = useState(part.brand);
+  // 1.1: the brand comes from the one brand list (the item's own)
+  const [brandId, setBrandId] = useState(part.brandId ?? '');
   const known = !part.origin || ORIGIN_CODES.includes(part.origin);
   const [originCode, setOriginCode] = useState(known ? part.origin : 'custom');
   const [originText, setOriginText] = useState(known ? '' : part.origin);
@@ -351,7 +353,7 @@ function PartForm({ part, canEdit, onCancel, onSaved }: { part: PartView; canEdi
     setError(null);
     try {
       await partsApi.save(part.id, {
-        details: { shelf, brand, origin: originCode === 'custom' ? originText : originCode, wholesalePrice: wholesale, reorderMilli: reorder },
+        details: { shelf, brand: '', brandId: brandId || null, origin: originCode === 'custom' ? originText : originCode, wholesalePrice: wholesale, reorderMilli: reorder },
         numbers: numbers.filter((n) => n.number.trim() || n.maker.trim()),
         fitments: fitments.map((f, i) => ({ ...f, yearFrom: yearOf(years[i]?.from ?? ''), yearTo: yearOf(years[i]?.to ?? '') }))
       });
@@ -369,7 +371,7 @@ function PartForm({ part, canEdit, onCancel, onSaved }: { part: PartView; canEdi
     <div className="stack">
       <div className="grid-2">
         <label className="field"><span>{t('pt_shelf')}</span><input className="input ltr" value={shelf} disabled={ro} placeholder="A-12" onChange={(e) => setShelf(e.target.value)} /></label>
-        <label className="field"><span>{t('pt_brand')}</span><input className="input ltr" value={brand} disabled={ro} placeholder="Denso" onChange={(e) => setBrand(e.target.value)} /></label>
+        <div className="field"><span>{t('pt_brand')}</span><BrandPicker value={brandId} disabled={ro} onChange={setBrandId} /></div>
         <label className="field">
           <span>{t('pt_origin')}</span>
           <select className="input" value={originCode} disabled={ro} onChange={(e) => setOriginCode(e.target.value)}>

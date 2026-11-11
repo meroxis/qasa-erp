@@ -133,8 +133,10 @@ export const keyHash = (key: string): string => sha(key.replace(/\s+/g, '')).sli
 // ——— tamper-evident values (a seal over what the company file holds) ———
 
 /**
- * A seal over `text` with `keyMaterial`. Official builds (requireNative) seal in the Rust module, whose key is
- * compiled in and tied to this PC, so the source code alone cannot forge one; elsewhere an HMAC.
+ * A seal over `text` with `keyMaterial`. Official builds (requireNative) seal in the Rust module, elsewhere an HMAC.
+ * Either way the key comes from this PC (its Windows machine id) and the company file, which the PC's own user can
+ * read: a seal shows that a value was edited by hand, it is no secret from that user. What must hold against them
+ * is signed by the portal (licence keys, activation tokens, the portal's time).
  */
 function sealWith(keyMaterial: string, text: string): string {
   if (config.requireNative) {
@@ -192,6 +194,13 @@ function resetClock(db: Db, now: number): void {
 /** Days a licence entered before activation existed (0.1.8, no token) keeps counting while it is being activated. */
 export const ACTIVATION_GRACE_DAYS = 30;
 /**
+ * Only keys issued before activation existed (1.0.0 came out on 2026-11-08: every key since is activated online)
+ * are 0.1.8 keys, and that grace ends for good: no company starts one after LEGACY_GRACE_LAST_START. Otherwise a key
+ * someone removed the record of could start a new grace again and again, without a seat and past a revocation.
+ */
+export const LEGACY_KEYS_ISSUED_BEFORE = '2026-11-08';
+export const LEGACY_GRACE_LAST_START = '2027-01-31';
+/**
  * "<date>|<key hash or ->.<seal>": the day this company first ran in strict mode, and the licence key it held then if
  * that key had never been activated (a 0.1.8 key). Written once; an edited value counts as nothing.
  */
@@ -204,9 +213,13 @@ function firstStart(db: Db): { date: string; key: string } | null {
     const date = licensingToday();
     const keyText = readSetting(db, 'license_key');
     const neverActivated = !readSetting(db, TOKEN_SETTING) && !readSetting(db, CHECKED_SETTING) && !readSetting(db, REVOKED_SETTING);
-    const key = keyText && neverActivated && readLicenseKey(keyText) ? keyHash(keyText) : '-';
+    const license = keyText && neverActivated ? readLicenseKey(keyText) : null;
+    const legacy = !!license && license.issued < LEGACY_KEYS_ISSUED_BEFORE && date <= LEGACY_GRACE_LAST_START;
+    const key = keyText && legacy ? keyHash(keyText) : '-';
     const value = `${date}|${key}`;
     writeSetting(db, FIRST_START_SETTING, `${value}.${seal(db, `grace|${value}`)}`);
+    // the watch on the clock starts with the record: from now on a missing latest time means one removed by hand
+    if (!readSetting(db, CLOCK_SETTING)) resetClock(db, nowMs());
     return { date, key };
   }
   const parts = splitSealed(stored);
@@ -248,13 +261,15 @@ export function noteFirstStartBeforeCarry(from: Db, to: Db): void {
 function graceUntil(db: Db, keyText: string): string | null {
   if (!config.strict || readSetting(db, TOKEN_SETTING)) return null;
   const first = firstStart(db);
-  if (!first || first.key !== keyHash(keyText)) return null;
+  if (!first || first.key !== keyHash(keyText) || first.date > LEGACY_GRACE_LAST_START) return null;
+  const license = readLicenseKey(keyText);
+  if (!license || license.issued >= LEGACY_KEYS_ISSUED_BEFORE) return null;
   const start = graceMarker(db, first.date, first.key);
   return start ? addDays(start, ACTIVATION_GRACE_DAYS - 1) : null;
 }
 
 /**
- * The PC's own record of the grace (in the trial marker file, sealed): one grace per PC and key, so a company made
+ * The PC's own record of the grace (in the trial marker file, sealed): one grace per PC, so a company made
  * later on this PC (it takes the key over) shares the first one's days instead of starting new ones. Returns the start
  * that counts, null when the record was edited.
  */
@@ -276,10 +291,9 @@ function graceMarker(db: Db, date: string, key: string): string | null {
   }
   const parts = typeof entry === 'string' ? splitSealed(entry) : null;
   if (!parts || !sealWithOk(markerKey(db), `grace|${parts[0]}`, parts[1])) return null;
-  const [markedDate, markedKey] = parts[0].split('|');
+  const [markedDate] = parts[0].split('|');
   if (!markedDate || !isIsoDate(markedDate)) return null;
-  // another key's grace on this PC does not shorten this one's
-  if (markedKey !== key) return date;
+  // one grace per PC: another key held here later shares its days (else switching keys would start new ones)
   return markedDate < date ? markedDate : date;
 }
 
@@ -410,7 +424,7 @@ export function activationStatus(db: Db, license: LicenseInfo | null, keyText: s
   if (!token || token.lic !== license.id || token.key !== keyHash(keyText) || token.machine !== machineId(db) || token.plan !== license.plan) {
     const until = graceUntil(db, keyText);
     // the grace runs from a sealed date; a clock turned back does not stretch it
-    const turnedBack = until !== null && clockTurnedBack(db, nowMs());
+    const turnedBack = until !== null && (!readSetting(db, CLOCK_SETTING) || clockTurnedBack(db, nowMs()));
     const inGrace = until !== null && !turnedBack && licensingToday() <= until;
     return { ...base, state: 'needs_activation', graceUntil: until, inGrace };
   }
@@ -418,8 +432,10 @@ export function activationStatus(db: Db, license: LicenseInfo | null, keyText: s
   const info = { ...base, checkBy: token.checkBy, offlineUntil };
   if (required) {
     const now = nowMs();
-    // a clock turned back, or one that is behind the day the portal issued the token
-    if (clockTurnedBack(db, now) || licensingToday() < addDays(token.issued, -1)) return { ...info, state: 'clock' };
+    // a clock turned back, or one that is behind the day the portal issued the token. A stored token always has the
+    // latest time seen next to it (activating, checking in and carrying the licence to another company all write it):
+    // gone means removed to hide a clock turned back
+    if (!readSetting(db, CLOCK_SETTING) || clockTurnedBack(db, now) || licensingToday() < addDays(token.issued, -1)) return { ...info, state: 'clock' };
   }
   return { ...info, state: licensingToday() <= offlineUntil ? 'active' : 'stale' };
 }

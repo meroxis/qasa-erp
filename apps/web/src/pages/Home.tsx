@@ -7,6 +7,8 @@ import { href } from '../router.ts';
 import { EntriesTable } from './Entries.tsx';
 import { briefApi, type DashboardView } from '../industry/brief-api.ts';
 import { ChequesHomeNote } from '../industry/ChequesAhead.tsx';
+import { ReorderHomeNote } from '../industry/ReorderList.tsx';
+import { RenewalBanner } from '../industry/RenewalBanner.tsx';
 import { moneyBoth } from './Brief.tsx';
 import type { I18n, Key } from '../i18n.ts';
 import { NAV, toggleFavourite, visibleItems, type NavItem, type NavViewer } from '../nav.ts';
@@ -62,6 +64,7 @@ export function Home({ viewer, user, favourites }: { viewer: NavViewer; user: st
           <a href={href('plans')}>{t('planLicense')}</a>
         </div>
       )}
+      <RenewalBanner admin={viewer.admin} />
       {plan?.nudge && (
         <div className="alert info plan-banner">
           <strong>{t('nudgeTitle')}</strong>
@@ -80,6 +83,7 @@ export function Home({ viewer, user, favourites }: { viewer: NavViewer; user: st
         {books && <a className="btn" style={{ marginInlineStart: 'auto' }} href={href('trial-balance')}><Icon name="chart" size={16} />{t('trialBalance')}</a>}
       </nav>
       <ChequesHomeNote counts={d?.cheques} />
+      <ReorderHomeNote />
       {d && (
         <a href={href('brief')} className="card pad no-print" style={{ display: 'flex', alignItems: 'center', gap: 14, textDecoration: 'none', color: 'inherit', borderInlineStart: '4px solid var(--accent, #1D5FD1)' }}>
           <span className="ico" style={{ display: 'grid', placeItems: 'center', width: 44, height: 44, borderRadius: 12, background: 'var(--accent-soft, #E8F0FD)', color: 'var(--accent, #1D5FD1)' }}><Icon name="star" size={22} /></span>

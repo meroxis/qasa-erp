@@ -1,4 +1,5 @@
 import { APP_VERSION, type Lang } from '@qasa/core';
+import { WhatsNewButton } from './WhatsNew.tsx';
 import { useI18n, type I18n, type Key } from '../i18n.ts';
 
 /** qasaerp.com in the app's language (Arabic is the site's root). */
@@ -63,7 +64,7 @@ export function LegalPanel() {
     <div className="card pad stack">
       <h2>{t('lg_title')}</h2>
       <div className="grid-2">
-        <div className="field"><span>{t('lg_version')}</span><strong className="ltr num">Qasa ERP {APP_VERSION}</strong></div>
+        <div className="field"><span>{t('lg_version')}</span><strong className="ltr num">Qasa ERP {APP_VERSION}</strong><span><WhatsNewButton /></span></div>
         <div className="field"><span>©</span><strong>{t('lg_maker')}</strong></div>
       </div>
       <div className="stack" style={{ gap: 6 }}>

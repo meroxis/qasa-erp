@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { z } from 'zod';
-import { costOut, isIsoDate, lineAmount, todayIso, type EntryInput, type Names, type UnitCode } from '@qasa/core';
+import { costOut, isIsoDate, lineAmount, MAX_BATCH_NO, todayIso, UNIT_CODES, type EntryInput, type Names, type UnitCode } from '@qasa/core';
 import type { Db } from './db.ts';
 import { nextSequence, transaction } from './db.ts';
 import { audit } from './audit.ts';
@@ -11,6 +11,11 @@ import { addStockMove, stockOf } from './items.ts';
 import { isPeriodLocked, readSetting, writeSetting } from './settings.ts';
 import type { Actor } from './auth.ts';
 import type { ApiExtension, ApiRequest } from './routes.ts';
+import { resolveLines } from './item-units.ts';
+import {
+  addTaken, allocateOut, assertReversible, batchColumns, batchTracking, cancelBatchMoves, inboundBatch, lineBatchErrors, writeBatchMoves,
+  type BatchError, type BatchMove
+} from './batches.ts';
 
 /**
  * Stock adjustments (every plan): goods that leave a warehouse without a sale (damaged, lost, expired, used in the
@@ -47,7 +52,25 @@ export const DEFAULT_ADJUSTMENT_ACCOUNTS: AdjustmentAccounts = {
 
 const SETTING = 'adjustment_accounts';
 
-export interface AdjustmentLineInput { itemId: string; qtyMilli: number; unitCost?: number | undefined }
+/**
+ * qtyMilli: + in, − out, in base units. unit + unitQtyMilli (1.1): the quantity typed in one of the item's units (with
+ * its sign); unitCost is then per that unit.
+ */
+export interface AdjustmentLineInput {
+  itemId: string;
+  qtyMilli: number;
+  unitCost?: number | undefined;
+  unit?: UnitCode | undefined;
+  unitQtyMilli?: number | undefined;
+  unitFactorMilli?: number | undefined;
+  /** 1.1 batches: what comes in names its batch (else the batch with no number); what goes out may be pinned to one */
+  batchNo?: string | null | undefined;
+  expiry?: string | null | undefined;
+  batchId?: string | null | undefined;
+}
+
+/** What a request may send for a line: a base quantity, or a unit and the quantity typed in it. */
+export type AdjustmentLineRequest = Omit<AdjustmentLineInput, 'qtyMilli' | 'unitFactorMilli'> & { qtyMilli?: number | undefined };
 
 export interface AdjustmentInput {
   date: string;
@@ -72,6 +95,13 @@ export interface AdjustmentLineView {
   value: number | null;
   /** On hand in the warehouse now. */
   stockMilli: number;
+  /** 1.1: the unit the line was typed in (null: the base unit), its factor then and the quantity as typed */
+  lineUnit: UnitCode | null;
+  unitFactorMilli: number | null;
+  unitQtyMilli: number | null;
+  batchNo: string | null;
+  expiry: string | null;
+  batchId: string | null;
 }
 
 export interface AdjustmentSummary {
@@ -100,6 +130,8 @@ export interface AdjustmentView extends AdjustmentSummary {
   createdAt: string;
   lines: AdjustmentLineView[];
   actions: AdjustmentAction[];
+  /** 1.1: made by a count limited to some categories and brands: which (null: a count of every item, or no count) */
+  countScope: CountScope | null;
 }
 
 interface Row {
@@ -206,9 +238,14 @@ function summaryOf(db: Db, r: Row, lineCount: number): AdjustmentSummary {
 
 export function getAdjustment(db: Db, id: string): AdjustmentView {
   const r = loadRow(db, id);
-  const lines = db.prepare(`SELECT l.seq, l.item_id, l.qty_milli, l.unit_cost, i.code, i.name_ar, i.name_en, i.name_ku, i.unit
+  const lines = db.prepare(`SELECT l.seq, l.item_id, l.qty_milli, l.unit_cost, l.unit AS line_unit, l.unit_factor_milli, l.unit_qty_milli, l.batch_no, l.expiry, l.batch_id,
+                                   i.code, i.name_ar, i.name_en, i.name_ku, i.unit
                             FROM stock_adjustment_lines l JOIN items i ON i.id = l.item_id WHERE l.adjustment_id = ? ORDER BY l.seq`)
-    .all(id) as { seq: number; item_id: string; qty_milli: number; unit_cost: number | null; code: string; name_ar: string; name_en: string; name_ku: string; unit: UnitCode }[];
+    .all(id) as {
+      seq: number; item_id: string; qty_milli: number; unit_cost: number | null; code: string; name_ar: string; name_en: string; name_ku: string; unit: UnitCode;
+      line_unit: UnitCode | null; unit_factor_milli: number | null; unit_qty_milli: number | null;
+      batch_no: string | null; expiry: string | null; batch_id: string | null;
+    }[];
   const moved = r.status === 'draft' ? new Map<string, { qty: number; value: number }[]>() : movedValues(db, id);
   const account = lossAccountOf(db, r);
   const accounts = loadAccounts(db);
@@ -225,6 +262,7 @@ export function getAdjustment(db: Db, id: string): AdjustmentView {
     entry: entry ? { id: entry.id, number: entry.number } : null,
     reversal: reversal ? { id: reversal.id, number: reversal.number } : null,
     createdAt: r.created_at,
+    countScope: scopeOf((db.prepare('SELECT scope FROM stock_counts WHERE adjustment_id = ? LIMIT 1').get(id) as { scope: string | null } | undefined)?.scope ?? null),
     lines: lines.map((l) => {
       // the posting's own move for this line (an item can be on several lines: taken in order)
       const list = moved.get(l.item_id);
@@ -232,7 +270,10 @@ export function getAdjustment(db: Db, id: string): AdjustmentView {
       return {
         seq: l.seq, itemId: l.item_id, itemCode: l.code, itemName: { ar: l.name_ar, en: l.name_en, ku: l.name_ku }, unit: l.unit,
         qtyMilli: Number(l.qty_milli), unitCost: l.unit_cost === null ? null : Number(l.unit_cost), value: m ? m.value : null,
-        stockMilli: stockOf(db, l.item_id, r.warehouse_id).qtyMilli
+        stockMilli: stockOf(db, l.item_id, r.warehouse_id).qtyMilli,
+        lineUnit: l.line_unit ?? null, unitFactorMilli: l.unit_factor_milli === null ? null : Number(l.unit_factor_milli),
+        unitQtyMilli: l.unit_qty_milli === null ? null : Number(l.unit_qty_milli),
+        batchNo: l.batch_no ?? null, expiry: l.expiry ?? null, batchId: l.batch_id ?? null
       };
     }),
     actions: actionsFor(r)
@@ -296,6 +337,7 @@ function assertInput(db: Db, input: AdjustmentInput): void {
       if (!Number.isSafeInteger(l.qtyMilli) || l.qtyMilli === 0) errors.push({ code: 'line_qty_invalid', line: i + 1 });
       else if (input.reason === 'job' && l.qtyMilli > 0) errors.push({ code: 'adj_job_outs_only', line: i + 1 });
       if (l.unitCost !== undefined && (!Number.isSafeInteger(l.unitCost) || l.unitCost < 0)) errors.push({ code: 'line_price_invalid', line: i + 1 });
+      if (item) errors.push(...lineBatchErrors(db, l.itemId, l, i + 1));
     });
   }
   if (errors.length) throw invalid(errors);
@@ -303,11 +345,18 @@ function assertInput(db: Db, input: AdjustmentInput): void {
 
 function writeLines(db: Db, id: string, lines: AdjustmentLineInput[]): void {
   db.prepare('DELETE FROM stock_adjustment_lines WHERE adjustment_id = ?').run(id);
-  const insert = db.prepare('INSERT INTO stock_adjustment_lines (adjustment_id, seq, item_id, qty_milli, unit_cost) VALUES (?, ?, ?, ?, ?)');
-  lines.forEach((l, i) => insert.run(id, i + 1, l.itemId, l.qtyMilli, l.qtyMilli > 0 && l.unitCost !== undefined ? l.unitCost : null));
+  const insert = db.prepare(`INSERT INTO stock_adjustment_lines (adjustment_id, seq, item_id, qty_milli, unit_cost, unit, unit_factor_milli, unit_qty_milli, batch_no, expiry, batch_id)
+                             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`);
+  lines.forEach((l, i) => insert.run(id, i + 1, l.itemId, l.qtyMilli, l.qtyMilli > 0 && l.unitCost !== undefined ? l.unitCost : null,
+    l.unit ?? null, l.unit ? l.unitFactorMilli ?? null : null, l.unit ? l.unitQtyMilli ?? null : null,
+    ...(l.qtyMilli > 0 ? batchColumns({ batchNo: l.batchNo, expiry: l.expiry }) : batchColumns({ batchId: l.batchId }))));
 }
 
-export function createAdjustment(db: Db, input: AdjustmentInput, actor: Actor): AdjustmentView {
+const withUnits = <T extends { lines: (AdjustmentLineInput | AdjustmentLineRequest)[] }>(db: Db, input: T): T =>
+  (Array.isArray(input.lines) ? { ...input, lines: resolveLines(db, input.lines) } : input);
+
+export function createAdjustment(db: Db, raw: AdjustmentInput | (Omit<AdjustmentInput, 'lines'> & { lines: AdjustmentLineRequest[] }), actor: Actor): AdjustmentView {
+  const input = withUnits(db, raw) as AdjustmentInput;
   assertInput(db, input);
   const id = randomUUID();
   transaction(db, () => {
@@ -321,9 +370,10 @@ export function createAdjustment(db: Db, input: AdjustmentInput, actor: Actor): 
   return getAdjustment(db, id);
 }
 
-export function updateAdjustment(db: Db, id: string, input: AdjustmentInput, actor: Actor): AdjustmentView {
+export function updateAdjustment(db: Db, id: string, raw: AdjustmentInput | (Omit<AdjustmentInput, 'lines'> & { lines: AdjustmentLineRequest[] }), actor: Actor): AdjustmentView {
   const row = loadRow(db, id);
   if (row.status !== 'draft') throw conflict('action_not_allowed', { status: row.status, action: 'edit' });
+  const input = withUnits(db, raw) as AdjustmentInput;
   assertInput(db, input);
   transaction(db, () => {
     // the editor is responsible for the draft now (as for a voucher)
@@ -395,7 +445,7 @@ export function postAdjustment(db: Db, id: string, actor: Actor, lang: Adjustmen
       moves.push({ itemId: l.itemId, qtyMilli: l.qtyMilli, value: -value });
     } else {
       let value: number;
-      if (l.unitCost !== null) value = lineAmount(l.qtyMilli, l.unitCost);
+      if (l.unitCost !== null) value = lineAmount(l.lineUnit && l.unitQtyMilli !== null ? l.unitQtyMilli : l.qtyMilli, l.unitCost);
       else if (s.qtyMilli > 0) value = Math.round((s.value * l.qtyMilli) / s.qtyMilli);
       else {
         errors.push({ code: 'adj_cost_required', line: l.seq });
@@ -406,6 +456,28 @@ export function postAdjustment(db: Db, id: string, actor: Actor, lang: Adjustmen
     }
   }
   if (errors.length) throw invalid(errors);
+
+  // batch items: what leaves comes from the pinned batch or earliest expiry first (expired stock may be written off);
+  // what comes in goes into its named batch, else the batch with no number for its expiry date (a count surplus)
+  const batchMoves: BatchMove[] = [];
+  const inbound: { lineNo: number; itemId: string; qtyMilli: number; batchNo: string | null; expiry: string | null }[] = [];
+  const taken = new Map<string, number>();
+  const batchErrors: (BatchError | { code: string; line: number })[] = [];
+  for (const l of view.lines) {
+    const tracking = batchTracking(db, l.itemId);
+    if (!tracking.batches) continue;
+    if (l.qtyMilli < 0) {
+      const r = allocateOut(db, { itemId: l.itemId, warehouseId: view.warehouseId, qtyMilli: -l.qtyMilli, date: view.date, line: l.seq, purpose: 'other', pinned: l.batchId }, taken);
+      if ('code' in r) { batchErrors.push(r); continue; }
+      addTaken(taken, r.picks);
+      for (const p of r.picks) batchMoves.push({ batchId: p.batchId, itemId: l.itemId, warehouseId: view.warehouseId, qtyMilli: -p.qtyMilli, lineNo: l.seq });
+    } else {
+      // a surplus of an item with expiry dates needs its date too, numbered or not (else it would never show as expired)
+      if (tracking.expiry && !l.expiry) batchErrors.push({ code: 'expiry_required', line: l.seq });
+      inbound.push({ lineNo: l.seq, itemId: l.itemId, qtyMilli: l.qtyMilli, batchNo: l.batchNo, expiry: l.expiry });
+    }
+  }
+  if (batchErrors.length) throw invalid(batchErrors);
 
   const outTotal = moves.filter((m) => m.value < 0).reduce((s, m) => s - m.value, 0);
   const inTotal = moves.filter((m) => m.value > 0).reduce((s, m) => s + m.value, 0);
@@ -436,6 +508,11 @@ export function postAdjustment(db: Db, id: string, actor: Actor, lang: Adjustmen
     for (const m of moves) {
       addStockMove(db, { itemId: m.itemId, warehouseId: view.warehouseId, date: view.date, qtyMilli: m.qtyMilli, value: m.value, sourceType: 'adjustment', sourceId: id });
     }
+    for (const l of inbound) {
+      const b = inboundBatch(db, l.itemId, l, l.lineNo, view.date);
+      if (b) batchMoves.push({ batchId: b.batchId, itemId: l.itemId, warehouseId: view.warehouseId, qtyMilli: l.qtyMilli, lineNo: l.lineNo });
+    }
+    writeBatchMoves(db, batchMoves, view.date, 'adjustment', id);
     if (view.reason === 'job' && row.job_id && entryId && outTotal > 0) {
       db.prepare(`INSERT INTO job_costs (id, job_id, category, invoice_id, entry_id, amount, description, created_by, created_at)
                   VALUES (?, ?, 'materials', NULL, ?, ?, ?, ?, ?)`)
@@ -474,11 +551,13 @@ export function cancelAdjustment(db: Db, id: string, actor: Actor, date?: string
     remaining.set(m.item_id, after);
   }
   if (errors.length) throw invalid(errors);
+  assertReversible(db, 'adjustment', id);
   transaction(db, () => {
     const reversalId = row.entry_id ? reverseEntryInternal(db, row.entry_id, actor.name, cancelDate) : null;
     for (const m of moves) {
       addStockMove(db, { itemId: m.item_id, warehouseId: row.warehouse_id, date: cancelDate, qtyMilli: -Number(m.qty_milli), value: -Number(m.value), sourceType: 'adjustment_cancel', sourceId: id });
     }
+    cancelBatchMoves(db, 'adjustment', id, cancelDate, moves.map((m) => ({ itemId: m.item_id, warehouseId: row.warehouse_id })));
     // the job no longer counts these materials
     if (row.entry_id) db.prepare('DELETE FROM job_costs WHERE entry_id = ?').run(row.entry_id);
     db.prepare("UPDATE stock_adjustments SET status = 'cancelled', updated_at = ? WHERE id = ?").run(new Date().toISOString(), id);
@@ -489,16 +568,75 @@ export function cancelAdjustment(db: Db, id: string, actor: Actor, date?: string
 
 // ——— stock count ———
 
-export interface CountSheetRow { itemId: string; code: string; barcode: string; name: Names; unit: UnitCode; stockMilli: number }
+/**
+ * 1.1: a count limited to some categories (their subcategories with them) and/or brands: only those items are on its
+ * sheet, counted, and adjusted when it is finished; every other item is left alone. Both empty: every item.
+ */
+export interface CountScope { categoryIds: string[]; brandIds: string[] }
+export const MAX_SCOPE_IDS = 50;
+
+/** A count's scope as kept (JSON), or null for every item. */
+function scopeOf(text: string | null): CountScope | null {
+  if (!text) return null;
+  try {
+    const v = JSON.parse(text) as Partial<CountScope>;
+    const list = (x: unknown) => (Array.isArray(x) ? x.filter((i): i is string => typeof i === 'string').slice(0, MAX_SCOPE_IDS) : []);
+    const scope = { categoryIds: list(v.categoryIds), brandIds: list(v.brandIds) };
+    return scope.categoryIds.length || scope.brandIds.length ? scope : null;
+  } catch {
+    return null;
+  }
+}
+
+/** A scope given when a count starts: known categories and brands only, no repeats; null when it limits nothing. */
+function checkScope(db: Db, scope: Partial<CountScope> | undefined): CountScope | null {
+  const categoryIds = [...new Set(scope?.categoryIds ?? [])];
+  const brandIds = [...new Set(scope?.brandIds ?? [])];
+  if (categoryIds.length > MAX_SCOPE_IDS || brandIds.length > MAX_SCOPE_IDS) throw invalid([{ code: 'count_scope_invalid' }]);
+  for (const c of categoryIds) if (!db.prepare('SELECT 1 FROM item_categories WHERE id = ?').get(c)) throw invalid([{ code: 'category_invalid' }]);
+  for (const b of brandIds) if (!db.prepare('SELECT 1 FROM brands WHERE id = ?').get(b)) throw invalid([{ code: 'brand_invalid' }]);
+  return categoryIds.length || brandIds.length ? { categoryIds, brandIds } : null;
+}
+
+/** SQL (with its parameters) for "item `i` is in the scope". */
+function inScopeSql(scope: CountScope | null): [string, string[]] {
+  if (!scope) return ['1 = 1', []];
+  const parts: string[] = [];
+  const params: string[] = [];
+  if (scope.categoryIds.length) {
+    const marks = scope.categoryIds.map(() => '?').join(', ');
+    parts.push(`(i.category_id IN (${marks}) OR i.category_id IN (SELECT id FROM item_categories WHERE parent_id IN (${marks})))`);
+    params.push(...scope.categoryIds, ...scope.categoryIds);
+  }
+  if (scope.brandIds.length) {
+    parts.push(`i.brand_id IN (${scope.brandIds.map(() => '?').join(', ')})`);
+    params.push(...scope.brandIds);
+  }
+  return [parts.join(' AND '), params];
+}
+
+/** units (1.1): the item's other units with their factors, so the sheet can show the stock in boxes and strips too (counts stay in base units). */
+export interface CountSheetRow {
+  itemId: string; code: string; barcode: string; name: Names; unit: UnitCode; stockMilli: number; units: { unit: UnitCode; factorMilli: number }[];
+  /** 1.1: for a count limited to some categories and brands */
+  categoryId: string | null; brandId: string | null;
+}
 
 /** The stock items with what the books say is in the warehouse, to count against. */
 export function countSheet(db: Db, warehouseId: string): CountSheetRow[] {
   if (!db.prepare('SELECT 1 FROM warehouses WHERE id = ?').get(warehouseId)) throw notFound('warehouse');
-  const rows = db.prepare(`SELECT i.id, i.code, i.barcode, i.name_ar, i.name_en, i.name_ku, i.unit,
+  const rows = db.prepare(`SELECT i.id, i.code, i.barcode, i.name_ar, i.name_en, i.name_ku, i.unit, i.category_id, i.brand_id,
                                   COALESCE((SELECT SUM(m.qty_milli) FROM stock_moves m WHERE m.item_id = i.id AND m.warehouse_id = ?), 0) AS qty
                            FROM items i WHERE i.track_stock = 1 AND i.active = 1 ORDER BY i.code`).all(warehouseId) as
-    { id: string; code: string; barcode: string | null; name_ar: string; name_en: string; name_ku: string; unit: UnitCode; qty: number }[];
-  return rows.map((r) => ({ itemId: r.id, code: r.code, barcode: r.barcode ?? '', name: { ar: r.name_ar, en: r.name_en, ku: r.name_ku }, unit: r.unit, stockMilli: Number(r.qty) }));
+    { id: string; code: string; barcode: string | null; name_ar: string; name_en: string; name_ku: string; unit: UnitCode; category_id: string | null; brand_id: string | null; qty: number }[];
+  const units = new Map<string, { unit: UnitCode; factorMilli: number }[]>();
+  for (const u of db.prepare('SELECT item_id, unit, factor_milli FROM item_units ORDER BY item_id, sort, unit').all() as { item_id: string; unit: UnitCode; factor_milli: number }[]) {
+    units.set(u.item_id, [...(units.get(u.item_id) ?? []), { unit: u.unit, factorMilli: Number(u.factor_milli) }]);
+  }
+  return rows.map((r) => ({
+    itemId: r.id, code: r.code, barcode: r.barcode ?? '', name: { ar: r.name_ar, en: r.name_en, ku: r.name_ku }, unit: r.unit, stockMilli: Number(r.qty),
+    units: units.get(r.id) ?? [], categoryId: r.category_id ?? null, brandId: r.brand_id ?? null
+  }));
 }
 
 export interface CountInput {
@@ -598,11 +736,13 @@ export interface CountSession {
   updatedBy: string;
   updatedAt: string;
   lines: CountSessionLine[];
+  /** 1.1: the categories and brands the count is limited to (null: every item) */
+  scope: CountScope | null;
 }
 
 interface CountRow {
   id: string; warehouse_id: string; date: string; notes: string | null; count_all: number; status: CountSession['status'];
-  adjustment_id: string | null; created_by: string; updated_by: string; updated_at: string;
+  adjustment_id: string | null; created_by: string; updated_by: string; updated_at: string; scope: string | null;
 }
 
 function loadCount(db: Db, id: string): CountRow {
@@ -618,7 +758,7 @@ export function getCountSession(db: Db, id: string): CountSession {
     .map((l) => ({ itemId: l.item_id, countedMilli: Number(l.counted_milli), bookMilli: Number(l.book_milli), unitCost: l.unit_cost === null ? null : Number(l.unit_cost), countedAt: l.counted_at }));
   return {
     id: r.id, warehouseId: r.warehouse_id, date: r.date, notes: r.notes ?? '', full: Number(r.count_all) === 1, status: r.status,
-    adjustmentId: r.adjustment_id, createdBy: r.created_by, updatedBy: r.updated_by, updatedAt: r.updated_at, lines
+    adjustmentId: r.adjustment_id, createdBy: r.created_by, updatedBy: r.updated_by, updatedAt: r.updated_at, lines, scope: scopeOf(r.scope)
   };
 }
 
@@ -628,9 +768,15 @@ export function openCountSession(db: Db, warehouseId: string): CountSession | nu
   return row ? getCountSession(db, row.id) : null;
 }
 
-/** Starts a count of a warehouse, or gives the one already open there (two people counting share it). */
-export function startCountSession(db: Db, input: { warehouseId: string; date: string; notes?: string | undefined; full?: boolean | undefined }, actor: Actor): CountSession {
+/**
+ * Starts a count of a warehouse, or gives the one already open there (two people counting share it; it keeps its own
+ * scope). 1.1: a scope limits the count to some categories (with their subcategories) and/or brands.
+ */
+export function startCountSession(
+  db: Db, input: { warehouseId: string; date: string; notes?: string | undefined; full?: boolean | undefined; scope?: Partial<CountScope> | undefined }, actor: Actor
+): CountSession {
   if (!isIsoDate(input.date)) throw invalid([{ code: 'date_invalid' }]);
+  const scope = checkScope(db, input.scope);
   const wh = db.prepare('SELECT active FROM warehouses WHERE id = ?').get(input.warehouseId) as { active: number } | undefined;
   if (!wh || Number(wh.active) !== 1) throw invalid([{ code: 'warehouse_invalid' }]);
   const id = transaction(db, () => {
@@ -638,14 +784,16 @@ export function startCountSession(db: Db, input: { warehouseId: string; date: st
     if (open) return open.id;
     const made = randomUUID();
     const now = new Date().toISOString();
-    db.prepare(`INSERT INTO stock_counts (id, warehouse_id, date, notes, count_all, status, adjustment_id, created_by, created_at, updated_by, updated_at)
-                VALUES (?, ?, ?, ?, ?, 'open', NULL, ?, ?, ?, ?)`)
-      .run(made, input.warehouseId, input.date, input.notes?.trim() || null, input.full ? 1 : 0, actor.name, now, actor.name, now);
+    db.prepare(`INSERT INTO stock_counts (id, warehouse_id, date, notes, count_all, status, adjustment_id, created_by, created_at, updated_by, updated_at, scope)
+                VALUES (?, ?, ?, ?, ?, 'open', NULL, ?, ?, ?, ?, ?)`)
+      .run(made, input.warehouseId, input.date, input.notes?.trim() || null, input.full ? 1 : 0, actor.name, now, actor.name, now, scope ? JSON.stringify(scope) : null);
     // the items on the count sheet now: "count all" counts only these as zero when not counted (an item made or
     // switched on again during the count was never on the sheet). Fixed for every count, as "count all" can be
     // ticked later.
-    db.prepare('INSERT INTO stock_count_items (count_id, item_id) SELECT ?, id FROM items WHERE track_stock = 1 AND active = 1').run(made);
-    audit(db, actor.name, 'create', 'stock_count', made, { warehouseId: input.warehouseId });
+    // (a scoped count: only its categories' and brands' items)
+    const [inScope, scopeParams] = inScopeSql(scope);
+    db.prepare(`INSERT INTO stock_count_items (count_id, item_id) SELECT ?, i.id FROM items i WHERE i.track_stock = 1 AND i.active = 1 AND ${inScope}`).run(made, ...scopeParams);
+    audit(db, actor.name, 'create', 'stock_count', made, { warehouseId: input.warehouseId, ...(scope ? { scope } : {}) });
     return made;
   });
   return getCountSession(db, id);
@@ -670,9 +818,12 @@ export function saveCountLines(
   if (input.date !== undefined && !isIsoDate(input.date)) throw invalid([{ code: 'date_invalid' }]);
   const errors: { code: string; row: number }[] = [];
   const item = db.prepare('SELECT track_stock, active FROM items WHERE id = ?');
+  // a scoped count takes its own items only: those on its sheet when it started
+  const covered = row.scope && scopeOf(row.scope) ? countCovers(db, id) : null;
   input.counts.forEach((c, i) => {
     const it = item.get(c.itemId) as { track_stock: number; active: number } | undefined;
     if (!it || Number(it.active) !== 1 || Number(it.track_stock) !== 1) errors.push({ code: 'item_invalid', row: i + 1 });
+    else if (covered && !covered.has(c.itemId) && c.countedMilli !== null) errors.push({ code: 'item_outside_count', row: i + 1 });
     if (c.countedMilli !== null && (!Number.isSafeInteger(c.countedMilli) || c.countedMilli < 0)) errors.push({ code: 'line_qty_invalid', row: i + 1 });
     if (c.unitCost !== undefined && (!Number.isSafeInteger(c.unitCost) || c.unitCost < 0)) errors.push({ code: 'line_price_invalid', row: i + 1 });
   });
@@ -784,7 +935,13 @@ const adjustmentBody = z.object({
   date, warehouseId: id, reason: z.enum(ADJUSTMENT_REASONS), accountCode: accountCode.optional(), jobId: id.optional(),
   notes: z.string().max(500).optional(),
   // as many lines as a full count can make
-  lines: z.array(z.object({ itemId: id, qtyMilli: qty, unitCost: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER).optional() })).min(1).max(COUNT_LIMIT)
+  // 1.1: a line in one of the item's units (unitQtyMilli, signed as qtyMilli); the base quantity is worked out
+  lines: z.array(z.object({
+    itemId: id, qtyMilli: qty.optional(), unitCost: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER).optional(),
+    unit: z.enum(UNIT_CODES).optional(), unitQtyMilli: qty.optional(),
+    // the kept number is checked against MAX_BATCH_NO on the line (lineBatchErrors), as on invoices and stock documents
+    batchNo: z.string().max(MAX_BATCH_NO * 2).optional(), expiry: date.optional(), batchId: id.optional()
+  })).min(1).max(COUNT_LIMIT)
 });
 
 export const adjustmentsApi: ApiExtension = {
@@ -849,7 +1006,10 @@ export const adjustmentsApi: ApiExtension = {
       {
         method: 'POST', path: '/api/adjustments/counts',
         handler: async (req, reply) => {
-          const body = parse(z.object({ date, warehouseId: id, notes: z.string().max(500).optional(), full: z.boolean().optional() }), req.body);
+          const body = parse(z.object({
+            date, warehouseId: id, notes: z.string().max(500).optional(), full: z.boolean().optional(),
+            scope: z.object({ categoryIds: z.array(id).max(MAX_SCOPE_IDS).optional(), brandIds: z.array(id).max(MAX_SCOPE_IDS).optional() }).optional()
+          }), req.body);
           reply.status(201).send(startCountSession(db, body, actor(req)));
           return undefined;
         }

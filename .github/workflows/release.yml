@@ -14,17 +14,27 @@ on:
   push:
     tags: ['v*']
 
+# Two jobs. "windows" runs every build and test tool (npm packages, Rust crates, electron-builder) and can only read:
+# it never holds a token that writes releases, so a tool gone bad can't replace a published installer or update file.
+# "publish" runs none of this repository's code and no npm package: it checks the files the build made against the
+# checksums the build wrote, and puts them on the GitHub release. It runs in the "release" environment: give that
+# environment a required reviewer (Settings → Environments) so a person approves each release before it goes out.
 permissions:
-  contents: write
+  contents: read
 
 jobs:
   windows:
     runs-on: windows-latest
     name: Windows installer
+    permissions:
+      contents: read
+    outputs:
+      beta: ${{ steps.kind.outputs.beta }}
+      version: ${{ steps.version.outputs.version }}
 
     steps:
-      # The token with write access to releases is never left in .git/config, where any script run later in this job
-      # (a dependency's, a build step's) could read it; the steps that publish get it only through GH_TOKEN.
+      # No token is left in .git/config, where any script run later in this job (a dependency's, a build step's) could
+      # read it.
       - uses: actions/checkout@v5
         with:
           persist-credentials: false
@@ -102,44 +112,48 @@ jobs:
             echo "Tag $GITHUB_REF_NAME must be vX.Y.Z or vX.Y.Z-beta.N"; exit 1
           fi
 
+      - name: Version
+        id: version
+        shell: bash
+        run: echo "version=$(node -p "require('./apps/desktop/package.json').version")" >> "$GITHUB_OUTPUT"
+
       - run: npm run typecheck
       - run: npm test
 
-      # Create the release first (as a draft): electron-builder then uploads into it instead of racing to create it.
-      - name: Create the release draft
+      # The installer, its update file (latest.yml, or beta.yml for a beta) and its block map, built here and published
+      # by the next job: this one has no token that writes releases.
+      - name: Build the installer
         shell: bash
+        run: npm run dist -w @qasa/desktop
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          BETA: ${{ steps.kind.outputs.beta }}
-        run: |
-          version=$(node -p "require('./apps/desktop/package.json').version")
-          notes="apps/desktop/release-notes/$version.md"
-          title="Qasa ERP $version"
-          extra=()
-          if [ "$BETA" = "true" ]; then title="Qasa ERP $version (beta)"; extra=(--prerelease); fi
-          if [ -f "$notes" ]; then
-            gh release create "$GITHUB_REF_NAME" --draft "${extra[@]}" --title "$title" --notes-file "$notes"
-          else
-            gh release create "$GITHUB_REF_NAME" --draft "${extra[@]}" --title "$title" --generate-notes
-          fi
-
-      - name: Build and publish the installer
-        shell: bash
-        run: |
-          if [ "$BETA" = "true" ]; then
-            npm run release -w @qasa/desktop -- -c.publish.releaseType=prerelease
-          else
-            npm run release -w @qasa/desktop
-          fi
-        env:
-          BETA: ${{ steps.kind.outputs.beta }}
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           # No QASA_INTEGRITY_KEY: the app.asar self-check is off in 1.0 (INTEGRITY_CHECK in after-pack.cjs), so the build
           # never gets the signing key. Add the secret back here (and to the Store step) only when that check is turned on.
           # Pro cloud backup (Google Drive, OneDrive): see pro/docs/cloud-backup-setup.md
           QASA_GOOGLE_CLIENT_ID: ${{ secrets.QASA_GOOGLE_CLIENT_ID }}
           QASA_GOOGLE_CLIENT_SECRET: ${{ secrets.QASA_GOOGLE_CLIENT_SECRET }}
           QASA_MS_CLIENT_ID: ${{ secrets.QASA_MS_CLIENT_ID }}
+
+      # What the publish job puts on the release, with its checksums, set aside before anything else is built
+      - name: Release files
+        shell: bash
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+          BETA: ${{ steps.kind.outputs.beta }}
+        run: |
+          mkdir -p release-files
+          cp "apps/desktop/release/Qasa-ERP-Setup-$VERSION.exe" "apps/desktop/release/Qasa-ERP-Setup-$VERSION.exe.blockmap" release-files/
+          if [ "$BETA" = "true" ]; then cp apps/desktop/release/beta.yml release-files/; else cp apps/desktop/release/latest.yml release-files/; fi
+          notes="apps/desktop/release-notes/$VERSION.md"
+          if [ -f "$notes" ]; then cp "$notes" release-files/release-notes.md; fi
+          (cd release-files && sha256sum * > SHA256SUMS)
+          cat release-files/SHA256SUMS
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: release-files
+          path: release-files/
+          if-no-files-found: error
+          retention-days: 7
 
       # The Microsoft Store package from the same build (not signed: the Store signs it when it accepts it). It is kept
       # with the run for upload to Partner Center, not attached to the release (Windows won't install it unsigned).
@@ -156,26 +170,61 @@ jobs:
           if-no-files-found: error
           retention-days: 90
 
-      - name: Stable download link and update block map
+  publish:
+    needs: windows
+    runs-on: ubuntu-latest
+    name: Publish the release
+    environment: release
+    permissions:
+      contents: write
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      GH_REPO: ${{ github.repository }}
+      VERSION: ${{ needs.windows.outputs.version }}
+      BETA: ${{ needs.windows.outputs.beta }}
+
+    # No checkout and no npm: only the files the build job made, checked, and the GitHub command line.
+    steps:
+      - uses: actions/download-artifact@v5
+        with:
+          name: release-files
+          path: release-files
+
+      - name: Check the files
         shell: bash
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          BETA: ${{ steps.kind.outputs.beta }}
+        working-directory: release-files
+        run: sha256sum --check --strict SHA256SUMS
+
+      # A draft first: it is published only once every file is on it
+      - name: Create the release draft
+        shell: bash
+        working-directory: release-files
         run: |
-          version=$(node -p "require('./apps/desktop/package.json').version")
+          title="Qasa ERP $VERSION"
+          extra=()
+          if [ "$BETA" = "true" ]; then title="Qasa ERP $VERSION (beta)"; extra=(--prerelease); fi
+          if [ -f release-notes.md ]; then
+            gh release create "$GITHUB_REF_NAME" --draft --verify-tag "${extra[@]}" --title "$title" --notes-file release-notes.md
+          else
+            gh release create "$GITHUB_REF_NAME" --draft --verify-tag "${extra[@]}" --title "$title" --generate-notes
+          fi
+
+      - name: Installer, update file and block map
+        shell: bash
+        working-directory: release-files
+        run: |
+          update=latest.yml
+          if [ "$BETA" = "true" ]; then update=beta.yml; fi
+          # the block map lets the next update download only the parts that changed
+          gh release upload "$GITHUB_REF_NAME" "Qasa-ERP-Setup-$VERSION.exe" "Qasa-ERP-Setup-$VERSION.exe.blockmap" "$update" --clobber
           if [ "$BETA" != "true" ]; then
-            cp "apps/desktop/release/Qasa-ERP-Setup-$version.exe" Qasa-ERP-Setup.exe
+            cp "Qasa-ERP-Setup-$VERSION.exe" Qasa-ERP-Setup.exe
             # releases/latest/download/Qasa-ERP-Setup.exe always points at the newest stable installer (the website links to it)
             gh release upload "$GITHUB_REF_NAME" Qasa-ERP-Setup.exe --clobber
           fi
-          # the block map lets the next update download only the parts that changed
-          gh release upload "$GITHUB_REF_NAME" "apps/desktop/release/Qasa-ERP-Setup-$version.exe.blockmap" --clobber
 
       - name: Publish the release
         shell: bash
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          BETA: ${{ steps.kind.outputs.beta }}
         run: |
           if [ "$BETA" = "true" ]; then
             # a prerelease never becomes "latest": the website link and stable copies stay on the last stable

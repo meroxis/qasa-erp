@@ -103,6 +103,58 @@ describe('with sign-in', () => {
     expect(locked.json()).toMatchObject({ error: 'too_many_attempts', details: { retryAfterSeconds: 60 } });
   });
 
+  it('locks only the place the wrong passwords come from: the admin still signs in on this PC and from other PCs', async () => {
+    await officeWithSignIn();
+    const from = (remoteAddress: string, password: string) =>
+      app.inject({ method: 'POST', url: '/api/auth/login', payload: { username: 'admin', password }, headers: APP, remoteAddress });
+    for (let i = 0; i < 5; i++) expect((await from('10.0.0.66', 'wrong-password')).statusCode).toBe(401);
+    expect((await from('10.0.0.66', 'owner-pass-1')).statusCode).toBe(429);
+    // the real admin, at the server PC and on another office PC, is not held up
+    expect((await from('127.0.0.1', 'owner-pass-1')).statusCode).toBe(200);
+    expect((await from('10.0.0.7', 'owner-pass-1')).statusCode).toBe(200);
+    // the failures name where they came from
+    const sources = (db.prepare("SELECT details FROM audit_log WHERE action = 'login_failed'").all() as { details: string }[]).map((r) => JSON.parse(r.details).source);
+    expect(new Set(sources)).toEqual(new Set(['net:10.0.0.66']));
+  });
+
+  it('guessing from many places waits everywhere after 30 failures, except on this PC and where the account signed in before', async () => {
+    await officeWithSignIn();
+    await expect(login(db, 'admin', 'owner-pass-1', undefined, 'net:10.0.0.7')).resolves.toBeTruthy();
+    for (let i = 0; i < 30; i++) await expect(login(db, 'admin', 'wrong-password', undefined, `net:10.9.0.${i}`)).rejects.toMatchObject({ code: 'invalid_login' });
+    // a new place waits, even with the right password
+    await expect(login(db, 'admin', 'owner-pass-1', undefined, 'net:10.9.1.1')).rejects.toMatchObject({ code: 'too_many_attempts' });
+    // this PC's own server and a PC the admin already used still sign in
+    await expect(login(db, 'admin', 'owner-pass-1', undefined, 'local:127.0.0.1')).resolves.toBeTruthy();
+    await expect(login(db, 'admin', 'owner-pass-1', undefined, 'net:10.0.0.7')).resolves.toBeTruthy();
+  });
+
+  it('forgets a place\'s failures after a day without one, so a lock never lasts for ever', async () => {
+    await officeWithSignIn();
+    vi.useFakeTimers({ toFake: ['Date'] });
+    try {
+      for (let i = 0; i < 9; i++) {
+        vi.setSystemTime(Date.now() + 16 * 60_000);
+        await expect(login(db, 'admin', 'wrong-password', undefined, 'net:10.0.0.66')).rejects.toMatchObject({ code: 'invalid_login' });
+      }
+      await expect(login(db, 'admin', 'owner-pass-1', undefined, 'net:10.0.0.66')).rejects.toMatchObject({ code: 'too_many_attempts', details: { retryAfterSeconds: 900 } });
+      vi.setSystemTime(Date.now() + 25 * 3_600_000);
+      // starts over: one wrong password is one failure, not a new 15-minute lock
+      await expect(login(db, 'admin', 'wrong-password', undefined, 'net:10.0.0.66')).rejects.toMatchObject({ code: 'invalid_login' });
+      await expect(login(db, 'admin', 'owner-pass-1', undefined, 'net:10.0.0.66')).resolves.toBeTruthy();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('keeps counting an account\'s failures from many places when made-up names fill the memory', async () => {
+    await officeWithSignIn();
+    for (let i = 0; i < 29; i++) await expect(login(db, 'admin', 'wrong-password', undefined, `net:10.9.0.${i}`)).rejects.toMatchObject({ code: 'invalid_login' });
+    // over 5000 made-up names (cheap: no password work) must not wipe the admin's own counter
+    for (let i = 0; i <= 5001; i++) await expect(login(db, `x${i}!`, 'p', undefined, 'net:10.8.0.1')).rejects.toMatchObject({ code: 'invalid_login' });
+    await expect(login(db, 'admin', 'wrong-password', undefined, 'net:10.9.1.0')).rejects.toMatchObject({ code: 'invalid_login' });
+    await expect(login(db, 'admin', 'owner-pass-1', undefined, 'net:10.9.1.1')).rejects.toMatchObject({ code: 'too_many_attempts' });
+  });
+
   it('keeps one lock per user when the database compares names without accents (MySQL)', async () => {
     await officeWithSignIn();
     // a MySQL server's _ai_ci collation finds 'admin' for 'ádmin'; emulate that lookup on SQLite

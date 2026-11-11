@@ -7,6 +7,9 @@ import {
 import { useI18n } from '../i18n.ts';
 import { go, href } from '../router.ts';
 import { averageCost, qtyText, unitName } from './Items.tsx';
+import { UnitPicker } from '../industry/UnitPicker.tsx';
+import { baseQty, factorOf, type LineUnit } from '../industry/units.ts';
+import { BatchInFields, BatchPick } from '../industry/BatchFields.tsx';
 import { reverseDefaultDate } from '../industry/ReverseModal.tsx';
 import { printDocument } from '../industry/printing.ts';
 
@@ -61,7 +64,8 @@ export function StockDocs() {
   );
 }
 
-interface Row { key: number; itemId: string; qtyMilli: number | null; unitCost: number | null }
+/** qtyMilli: as typed in the line's unit (null: the base unit); unitCost: per that unit. */
+interface Row { key: number; itemId: string; qtyMilli: number | null; unitCost: number | null; unit?: LineUnit; batchNo?: string; expiry?: string; batchId?: string }
 let rowKey = 1;
 const emptyRow = (): Row => ({ key: rowKey++, itemId: '', qtyMilli: 1000, unitCost: null });
 
@@ -103,7 +107,10 @@ export function StockDocEditor({ kind: initialKind, id }: { kind?: StockDocKind;
       setToWarehouseId(d.toWarehouseId ?? '');
       setCounterAccount(d.counterAccountCode ?? '21');
       setNotes(d.notes);
-      setRows(d.lines.map((l) => ({ key: rowKey++, itemId: l.itemId, qtyMilli: l.qtyMilli, unitCost: l.unitCost })));
+      setRows(d.lines.map((l) => ({
+        key: rowKey++, itemId: l.itemId, qtyMilli: l.lineUnit && l.unitQtyMilli !== null ? l.unitQtyMilli : l.qtyMilli, unitCost: l.unitCost, unit: l.lineUnit,
+        batchNo: l.batchNo ?? '', expiry: l.expiry ?? '', batchId: l.batchId ?? ''
+      })));
       setReady(true);
     }, setLoadError);
   }, [id]);
@@ -120,7 +127,7 @@ export function StockDocEditor({ kind: initialKind, id }: { kind?: StockDocKind;
   const remove = (key: number) => setRows((rs) => (rs.length > 1 ? rs.filter((r) => r.key !== key) : [emptyRow()]));
   function pickItem(key: number, itemId: string) {
     setRows((rs) => {
-      const next = rs.map((r) => (r.key === key ? { ...r, itemId } : r));
+      const next = rs.map((r) => (r.key === key ? { ...r, itemId, unit: itemById.get(itemId)?.purchaseUnit ?? null } : r));
       return next[next.length - 1]?.itemId ? [...next, emptyRow()] : next;
     });
   }
@@ -129,7 +136,14 @@ export function StockDocEditor({ kind: initialKind, id }: { kind?: StockDocKind;
     return {
       kind, date, warehouseId, notes,
       ...(kind === 'transfer' ? { toWarehouseId } : { counterAccountCode: counterAccount }),
-      lines: lines.map((r) => ({ itemId: r.itemId, qtyMilli: r.qtyMilli ?? 0, ...(kind === 'opening' ? { unitCost: r.unitCost ?? -1 } : {}) }))
+      lines: lines.map((r) => ({
+        itemId: r.itemId, qtyMilli: (r.unit ? baseQty(itemById.get(r.itemId), r.unit, r.qtyMilli ?? 0) : r.qtyMilli) ?? 0,
+        ...(r.unit ? { unit: r.unit, unitQtyMilli: r.qtyMilli ?? 0 } : {}),
+        ...(kind === 'opening' && r.batchNo?.trim() ? { batchNo: r.batchNo.trim() } : {}),
+        ...(kind === 'opening' && r.expiry ? { expiry: r.expiry } : {}),
+        ...(kind === 'transfer' && r.batchId ? { batchId: r.batchId } : {}),
+        ...(kind === 'opening' ? { unitCost: r.unitCost ?? -1 } : {})
+      }))
     };
   }
 
@@ -182,7 +196,7 @@ export function StockDocEditor({ kind: initialKind, id }: { kind?: StockDocKind;
           ) : (
             <div className="field">
               <span>{t('counterAccount')}</span>
-              <AccountCombo value={counterAccount} onChange={setCounterAccount} filter={(a) => !a.code.startsWith('13')} ariaLabel={t('counterAccount')} />
+              <AccountCombo value={counterAccount} onChange={setCounterAccount} filter={(a) => a.code.startsWith('21') || a.code.startsWith('22')} ariaLabel={t('counterAccount')} />
             </div>
           )}
         </div>
@@ -204,18 +218,22 @@ export function StockDocEditor({ kind: initialKind, id }: { kind?: StockDocKind;
           <tbody>
             {rows.map((r, i) => {
               const it = itemById.get(r.itemId);
-              const short = kind === 'transfer' && it && (r.qtyMilli ?? 0) > it.qtyMilli;
-              const avg = it ? averageCost(it.qtyMilli, it.value) : 0;
+              const short = kind === 'transfer' && it && (baseQty(it, r.unit ?? null, r.qtyMilli ?? 0) ?? 0) > it.qtyMilli;
+              // the average cost of one of the line's unit
+              const avg = it ? Math.round((averageCost(it.qtyMilli, it.value) * factorOf(it, r.unit ?? null)) / 1000) : 0;
               return (
                 <tr key={r.key}>
                   <td className="muted num">{i18n.int(i + 1)}</td>
                   <td>
                     <SearchCombo value={r.itemId} options={itemOptions} onChange={(v) => pickItem(r.key, v)} placeholder={t('chooseItem')} ariaLabel={t('item')} />
                     {short && <div className="small" style={{ color: 'var(--bad)', marginTop: 3 }}>{t('available')}: {qtyText(i18n, it.qtyMilli)}</div>}
+                    {kind === 'opening'
+                      ? <BatchInFields item={it} batchNo={r.batchNo ?? ''} expiry={r.expiry ?? ''} date={date} onChange={(v) => update(r.key, v)} />
+                      : <BatchPick item={it} warehouseId={warehouseId} value={r.batchId ?? ''} onChange={(batchId) => update(r.key, { batchId })} />}
                   </td>
                   <td>
                     <QtyInput value={r.qtyMilli} onChange={(v) => update(r.key, { qtyMilli: v })} ariaLabel={t('qty')} />
-                    {it && <div className="muted small" style={{ textAlign: 'end', marginTop: 2 }}>{unitName(i18n, it.unit)}</div>}
+                    <UnitPicker item={it} value={r.unit ?? null} onChange={(unit) => update(r.key, { unit })} />
                   </td>
                   {kind === 'opening'
                     ? <td><AmountInput value={r.unitCost} currency="IQD" onChange={(v) => update(r.key, { unitCost: v })} ariaLabel={t('unitCost')} /></td>
@@ -351,9 +369,13 @@ export function StockDocDetail({ id }: { id: string }) {
                 <td className="num">{i18n.int(l.lineNo)}</td>
                 <td><span className="ltr">{l.itemCode}</span></td>
                 <td>{i18n.name(l.itemName)}</td>
-                <td className="amount">{qtyText(i18n, l.qtyMilli)} <span className="muted small">{unitName(i18n, l.unit)}</span></td>
+                <td className="amount">
+                  {l.lineUnit && l.unitQtyMilli !== null
+                    ? <>{qtyText(i18n, l.unitQtyMilli)} <span className="muted small">{unitName(i18n, l.lineUnit)}</span></>
+                    : <>{qtyText(i18n, l.qtyMilli)} <span className="muted small">{unitName(i18n, l.unit)}</span></>}
+                </td>
                 {d.kind === 'opening' && <td className="amount">{i18n.money(l.unitCost ?? 0, 'IQD')}</td>}
-                <td className="amount">{l.value !== null ? i18n.money(l.value, 'IQD') : d.kind === 'opening' ? i18n.money(lineAmount(l.qtyMilli, l.unitCost ?? 0), 'IQD') : ''}</td>
+                <td className="amount">{l.value !== null ? i18n.money(l.value, 'IQD') : d.kind === 'opening' ? i18n.money(lineAmount(l.lineUnit && l.unitQtyMilli !== null ? l.unitQtyMilli : l.qtyMilli, l.unitCost ?? 0), 'IQD') : ''}</td>
               </tr>
             ))}
           </tbody>

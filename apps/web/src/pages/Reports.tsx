@@ -133,16 +133,19 @@ export function Statement({ code: initialCode }: { code?: string }) {
   const [code, setCode] = useState(initialCode ?? '');
   const [from, setFrom] = useState(() => yearStart(settings?.fiscalYearStart));
   const [to, setTo] = useState(todayIso());
-  const { data, error } = useLoad(() => (code ? api.statement(code, from || undefined, to || undefined) : Promise.resolve(null)), [code, from, to]);
+  // all lines (IQD at the book rates), or one currency's lines in that currency: a dollar safe runs a dollar balance
+  const [currency, setCurrency] = useState<'' | 'IQD' | 'USD'>('');
+  const cur = currency || 'IQD';
+  const { data, error } = useLoad(() => (code ? api.statement(code, from || undefined, to || undefined, currency || undefined) : Promise.resolve(null)), [code, from, to, currency]);
 
   function exportCsv() {
     if (!data) return;
     downloadCsv(`statement_${data.accountCode}_${from}_${to}.csv`, [
       [`${data.accountCode} — ${i18n.name(data.name)}`],
       [t('colDate'), t('number'), t('description'), t('debit'), t('credit'), t('balance')],
-      ['', '', t('opening'), '', '', formatAmount(data.opening, 'IQD')],
-      ...data.rows.map((r) => [r.date, r.number, r.description, formatAmount(r.debit, 'IQD'), formatAmount(r.credit, 'IQD'), formatAmount(r.balance, 'IQD')]),
-      ['', '', t('closing'), formatAmount(data.totalDebit, 'IQD'), formatAmount(data.totalCredit, 'IQD'), formatAmount(data.closing, 'IQD')]
+      ['', '', t('opening'), '', '', formatAmount(data.opening, cur)],
+      ...data.rows.map((r) => [r.date, r.number, r.description, formatAmount(r.debit, cur), formatAmount(r.credit, cur), formatAmount(r.balance, cur)]),
+      ['', '', t('closing'), formatAmount(data.totalDebit, cur), formatAmount(data.totalCredit, cur), formatAmount(data.closing, cur)]
     ]);
   }
 
@@ -154,6 +157,11 @@ export function Statement({ code: initialCode }: { code?: string }) {
           <AccountCombo value={code} onChange={setCode} filter={() => true} includeParents ariaLabel={t('account')} />
         </div>
         <PeriodPicker from={from} to={to} onFrom={setFrom} onTo={setTo} />
+        <div className="track" role="group" aria-label={t('currency')}>
+          <button type="button" aria-pressed={currency === ''} onClick={() => setCurrency('')}>{t('all')}</button>
+          <button type="button" aria-pressed={currency === 'IQD'} onClick={() => setCurrency('IQD')}>{t('iqdName')}</button>
+          <button type="button" aria-pressed={currency === 'USD'} onClick={() => setCurrency('USD')}>{t('usdName')}</button>
+        </div>
         <span className="spacer" />
         <button type="button" className="btn" onClick={exportCsv} disabled={!data}><Icon name="download" size={16} />{t('exportExcel')}</button>
         <button type="button" className="btn" onClick={() => void printDocument('report')} disabled={!data}><Icon name="printer" size={16} />{t('print')}</button>
@@ -171,20 +179,20 @@ export function Statement({ code: initialCode }: { code?: string }) {
               <tr><th style={{ width: 110 }}>{t('colDate')}</th><th style={{ width: 130 }}>{t('number')}</th><th>{t('description')}</th><th className="amount">{t('debit')}</th><th className="amount">{t('credit')}</th><th className="amount">{t('balance')}</th></tr>
             </thead>
             <tbody>
-              <tr><td /><td /><td className="muted">{t('opening')}</td><td /><td /><td className="amount">{i18n.money(data.opening, 'IQD')}</td></tr>
+              <tr><td /><td /><td className="muted">{t('opening')}</td><td /><td /><td className="amount">{i18n.money(data.opening, cur)}</td></tr>
               {data.rows.map((r, i) => (
                 <tr key={r.entryId + i} className="click" onClick={() => go(`entry/${r.entryId}`)}>
                   <td className="num">{i18n.date(r.date)}</td>
                   <td><a className="ltr" href={href(`entry/${r.entryId}`)} onClick={(e) => e.stopPropagation()}>{r.number}</a></td>
                   <td>{r.description}{r.accountCode !== data.accountCode && <div className="muted small"><span className="ltr">{r.accountCode}</span> {i18n.name(r.accountName)}</div>}</td>
-                  <td className="amount">{r.debit ? i18n.money(r.debit, 'IQD') : ''}</td>
-                  <td className="amount">{r.credit ? i18n.money(r.credit, 'IQD') : ''}</td>
-                  <td className="amount">{i18n.money(r.balance, 'IQD')}</td>
+                  <td className="amount">{r.debit ? i18n.money(r.debit, cur) : ''}</td>
+                  <td className="amount">{r.credit ? i18n.money(r.credit, cur) : ''}</td>
+                  <td className="amount">{i18n.money(r.balance, cur)}</td>
                 </tr>
               ))}
             </tbody>
             <tfoot>
-              <tr><td /><td /><td>{t('closing')}</td><td className="amount">{i18n.money(data.totalDebit, 'IQD')}</td><td className="amount">{i18n.money(data.totalCredit, 'IQD')}</td><td className="amount">{i18n.money(data.closing, 'IQD')}</td></tr>
+              <tr><td /><td /><td>{t('closing')}</td><td className="amount">{i18n.money(data.totalDebit, cur)}</td><td className="amount">{i18n.money(data.totalCredit, cur)}</td><td className="amount">{i18n.money(data.closing, cur)}</td></tr>
             </tfoot>
           </table>
         </div>

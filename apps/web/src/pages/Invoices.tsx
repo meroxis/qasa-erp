@@ -1,13 +1,15 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { categoriesApi, inCategory } from '../industry/categories-api.ts';
+import { CategoryOptions } from '../industry/CatalogPickers.tsx';
 import {
-  amountInWords, invoiceTotals, remainingShare, rateFromX100, roundHalfUp, toBase, todayIso, toWesternDigits,
+  amountInWords, fromBaseQty, invoiceTotals, remainingShare, rateFromX100, roundHalfUp, toBase, toBaseQty, todayIso, toWesternDigits,
   type CurrencyCode, type InvoiceDocKind, type InvoiceInput, type InvoiceKind, type InvoiceStatus, type PaymentMode
 } from '@qasa/core';
 import { api, ApiError, type InvoiceView, type ItemView } from '../api.ts';
 import {
   AccountCombo, AmountInput, EmptyState, ErrorBox, Icon, InvoiceStatusChip, Modal, QtyInput, SearchCombo, useData, useLoad, usePageNav, useToast, type PageNav, type PickOption
 } from '../components.tsx';
-import { useI18n } from '../i18n.ts';
+import { isKey, useI18n, type Key } from '../i18n.ts';
 import { go, href } from '../router.ts';
 import { InvoicesTable } from './Parties.tsx';
 import { averageCost, qtyText, unitName } from './Items.tsx';
@@ -19,6 +21,9 @@ import { useRatePrefill } from '../industry/fx-prefill.ts';
 import { InvoiceWhatsApp } from '../industry/WhatsAppShare.tsx';
 import { reverseDefaultDate } from '../industry/ReverseModal.tsx';
 import { printDocument } from '../industry/printing.ts';
+import { baseQty, factorOf, holdsText, salePriceFor, unitChoices, unitLabel, type LineUnit } from '../industry/units.ts';
+import { BatchInFields, BatchPick, useExpiredConfirm } from '../industry/BatchFields.tsx';
+import { askControlledOnOpen, RxTick, useControlledPrompt, usePharmacyOn, useRxItems } from '../industry/PharmacyPrompts.tsx';
 
 const STATUSES: (InvoiceStatus | '')[] = ['', 'draft', 'posted', 'cancelled'];
 
@@ -57,9 +62,17 @@ export function Invoices({ kind }: { kind: InvoiceDocKind }) {
 
 /* ---------- editor ---------- */
 
-interface Row { key: number; itemId: string; qtyMilli: number | null; unitPrice: number | null; description: string }
+/** qtyMilli: as typed in the line's unit (null: the item's base unit); unitPrice: per that unit. */
+interface Row {
+  key: number; itemId: string; qtyMilli: number | null; unitPrice: number | null; description: string; unit: LineUnit;
+  /** batches: what a purchase line brings in; the batch a sale line is pinned to ('' automatic) */
+  batchNo?: string; expiry?: string; batchId?: string;
+  /** a pharmacy's sale line of a prescription-only medicine: the "prescription seen" tick (a reminder, not sent) */
+  rxSeen?: boolean;
+}
+
 let rowKey = 1;
-const emptyRow = (): Row => ({ key: rowKey++, itemId: '', qtyMilli: 1000, unitPrice: null, description: '' });
+const emptyRow = (): Row => ({ key: rowKey++, itemId: '', qtyMilli: 1000, unitPrice: null, description: '', unit: null });
 
 function parseRate(text: string): number | null {
   const s = toWesternDigits(text).replace(/[,٬\s]/g, '').replace('٫', '.');
@@ -98,11 +111,15 @@ export function InvoiceEditor({ kind: initialKind, id, partyId: initialParty }: 
   const [rows, setRows] = useState<Row[]>(() => [emptyRow()]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<unknown>(null);
+  const expired = useExpiredConfirm();
+  const rxItems = useRxItems(usePharmacyOn() && kind === 'sale');
 
   const partyType = kind === 'sale' ? 'customer' : 'supplier';
   const parties = useLoad(() => api.parties({ type: partyType, active: 'true' }), [partyType]);
   const warehouses = useLoad(() => api.warehouses(), []);
   const items = useLoad(() => api.items({ active: 'true', ...(warehouseId ? { warehouseId } : {}) }), [warehouseId]);
+  const categories = useLoad(() => categoriesApi.list({ active: 'true' }), []);
+  const [lineCategory, setLineCategory] = useState('');
 
   useEffect(() => {
     if (id) return;
@@ -128,7 +145,10 @@ export function InvoiceEditor({ kind: initialKind, id, partyId: initialParty }: 
       setCashAccount(v.cashAccountCode ?? settings?.postingAccounts.cash ?? '');
       setDiscount(v.discount || null);
       setNotes(v.notes);
-      setRows(v.lines.map((l) => ({ key: rowKey++, itemId: l.itemId, qtyMilli: l.qtyMilli, unitPrice: l.unitPrice, description: l.description })));
+      setRows(v.lines.map((l) => ({
+        key: rowKey++, itemId: l.itemId, qtyMilli: l.lineUnit && l.unitQtyMilli !== null ? l.unitQtyMilli : l.qtyMilli, unitPrice: l.unitPrice,
+        description: l.description, unit: l.lineUnit, batchNo: l.batchNo ?? '', expiry: l.expiry ?? '', batchId: l.batchId ?? ''
+      })));
       setReady(true);
     }, setLoadError);
     // settings only fills blanks; loading once is enough
@@ -143,8 +163,11 @@ export function InvoiceEditor({ kind: initialKind, id, partyId: initialParty }: 
   const totals = invoiceTotals(lines.map((r) => ({ qtyMilli: r.qtyMilli ?? 0, unitPrice: r.unitPrice ?? 0 })), discount ?? 0);
 
   const partyOptions: PickOption[] = (parties.data ?? []).map((p) => ({ id: p.id, code: p.code, label: p.name, search: p.phone, hint: p.balance ? i18n.money(p.balance, 'IQD') : '' }));
+  // a category picked above the lines narrows the item list to it and its subcategories (lines already picked stay)
+  const picked = new Set(rows.map((r) => r.itemId).filter(Boolean));
   const itemOptions: PickOption[] = (items.data ?? [])
     .filter((it) => kind === 'sale' || it.trackStock)
+    .filter((it) => picked.has(it.id) || inCategory(categories.data ?? [], it.categoryId, lineCategory))
     .map((it) => ({
       id: it.id, code: it.code, label: i18n.name(it.name), search: `${it.name.ar} ${it.name.en} ${it.name.ku} ${it.barcode}`,
       hint: it.trackStock ? `${qtyText(i18n, it.qtyMilli)} ${unitName(i18n, it.unit)}` : unitName(i18n, it.unit)
@@ -156,16 +179,24 @@ export function InvoiceEditor({ kind: initialKind, id, partyId: initialParty }: 
   // Sale prices the program filled in (not typed by the user), by line: the customer's price list
   // (wholesale or retail) replaces them, and they follow a change of customer or currency.
   const autoPrices = useRef(new Map<number, number | null>());
+  /** A unit's own price in this invoice's currency, or null when it has none (base price × factor then). */
+  const ownUnitPrice = (it: ItemView | undefined, unit: LineUnit): number | null => {
+    const own = unit ? it?.units.find((u) => u.unit === unit)?.salePrice ?? null : null;
+    return own !== null && it && priceRateX100 ? convert(own, it.saleCurrency, currency, priceRateX100) : null;
+  };
   function askPrice(key: number, itemId: string, expected: number | null) {
     if (kind !== 'sale') return;
     autoPrices.current.set(key, expected);
     // a price in the other currency is converted at this invoice's own rate, not the company's default rate
-    const own = itemById.get(itemId)?.saleCurrency;
+    const it = itemById.get(itemId);
+    const own = it?.saleCurrency;
     pricesApi.priceFor(itemId, partyId || null, currency, own && own !== currency ? priceRateX100 : null).then((q) => {
       setRows((rs) => rs.map((r) => {
         if (r.key !== key || r.itemId !== itemId || autoPrices.current.get(key) !== r.unitPrice) return r;
-        autoPrices.current.set(key, q.price);
-        return { ...r, unitPrice: q.price };
+        // a customer's price list is per base unit: another unit is the list price × its factor
+        const price = salePriceFor(it, r.unit, q.price, { own: ownUnitPrice(it, r.unit), fromList: q.source !== 'retail' });
+        autoPrices.current.set(key, price);
+        return { ...r, unitPrice: price };
       }));
     }).catch(() => { /* the catalog price stays */ });
   }
@@ -175,20 +206,35 @@ export function InvoiceEditor({ kind: initialKind, id, partyId: initialParty }: 
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [partyId, currency]);
 
+  /** The price to fill in for one of `unit` of an item: its sale price (sales) or its average cost (purchases). */
+  function catalogPrice(it: ItemView | undefined, unit: LineUnit): number | null {
+    if (!it || !priceRateX100) return null;
+    if (kind === 'sale') return salePriceFor(it, unit, convert(it.salePrice, it.saleCurrency, currency, priceRateX100), { own: ownUnitPrice(it, unit) });
+    if (it.qtyMilli <= 0) return null;
+    return roundHalfUp((convert(averageCost(it.qtyMilli, it.value), 'IQD', currency, priceRateX100) * factorOf(it, unit)) / 1000);
+  }
+
   function pickItem(key: number, itemId: string) {
     const it: ItemView | undefined = itemById.get(itemId);
-    let price: number | null = null;
-    if (it && priceRateX100) {
-      price = kind === 'sale'
-        ? convert(it.salePrice, it.saleCurrency, currency, priceRateX100)
-        : it.qtyMilli > 0 ? convert(averageCost(it.qtyMilli, it.value), 'IQD', currency, priceRateX100) : null;
-    }
+    // a new line starts in the item's sale (or purchase) unit
+    const unit: LineUnit = (kind === 'sale' ? it?.saleUnit : it?.purchaseUnit) ?? null;
+    const price = catalogPrice(it, unit);
     const filled = price ?? rows.find((r) => r.key === key)?.unitPrice ?? null;
     setRows((rs) => {
-      const next = rs.map((r) => (r.key === key ? { ...r, itemId, unitPrice: filled } : r));
+      const next = rs.map((r) => (r.key === key ? { ...r, itemId, unitPrice: filled, unit } : r));
       return next[next.length - 1]?.itemId ? [...next, emptyRow()] : next;
     });
     askPrice(key, itemId, filled);
+  }
+
+  /** Another unit for a line: the price follows (the quantity stays as typed). */
+  function pickUnit(key: number, unit: LineUnit) {
+    const row = rows.find((r) => r.key === key);
+    if (!row) return;
+    const it = itemById.get(row.itemId);
+    const price = catalogPrice(it, unit);
+    setRows((rs) => rs.map((r) => (r.key === key ? { ...r, unit, unitPrice: price ?? r.unitPrice } : r)));
+    askPrice(key, row.itemId, price ?? row.unitPrice);
   }
 
   function input(): InvoiceInput | null {
@@ -200,7 +246,15 @@ export function InvoiceEditor({ kind: initialKind, id, partyId: initialParty }: 
       kind, date, warehouseId, currency, rateX100, payment, discount: discount ?? 0, notes,
       ...(partyId ? { partyId } : {}),
       ...(payment === 'cash' ? { cashAccountCode: cashAccount } : {}),
-      lines: lines.map((r) => ({ itemId: r.itemId, qtyMilli: r.qtyMilli ?? 0, unitPrice: r.unitPrice ?? 0, ...(r.description.trim() ? { description: r.description.trim() } : {}) }))
+      // a line in another unit sends the unit and the quantity typed in it: the server works the base quantity out
+      lines: lines.map((r) => ({
+        itemId: r.itemId, qtyMilli: (r.unit ? baseQty(itemById.get(r.itemId), r.unit, r.qtyMilli ?? 0) : r.qtyMilli) ?? 0, unitPrice: r.unitPrice ?? 0,
+        ...(r.unit ? { unit: r.unit, unitQtyMilli: r.qtyMilli ?? 0 } : {}),
+        ...(kind === 'purchase' && r.batchNo?.trim() ? { batchNo: r.batchNo.trim() } : {}),
+        ...(kind === 'purchase' && r.expiry ? { expiry: r.expiry } : {}),
+        ...(kind === 'sale' && r.batchId ? { batchId: r.batchId } : {}),
+        ...(r.description.trim() ? { description: r.description.trim() } : {})
+      }))
     };
   }
 
@@ -214,9 +268,17 @@ export function InvoiceEditor({ kind: initialKind, id, partyId: initialParty }: 
       const saved = savedId ? await api.updateInvoice(savedId, body) : await api.createInvoice(body);
       setSavedId(saved.id);
       if (post) {
-        await api.postInvoice(saved.id);
+        try {
+          await api.postInvoice(saved.id);
+        } catch (e) {
+          // stock past its expiry date: the company may allow it after the user confirms (written to the audit log)
+          if (!(await expired.ask(e))) throw e;
+          await api.postInvoice(saved.id, { allowExpired: true });
+        }
         await reloadAccounts();
         toast(t('a_post'));
+        // controlled medicines sold: their page asks for the patient and the prescription
+        if (kind === 'sale') askControlledOnOpen(saved.id);
       } else {
         toast(t('saved'));
       }
@@ -233,6 +295,7 @@ export function InvoiceEditor({ kind: initialKind, id, partyId: initialParty }: 
 
   return (
     <div className="stack" style={{ maxWidth: 1180 }}>
+      {expired.dialog}
       <div className="card pad stack">
         <h2 style={{ fontSize: 18 }}>{savedId ? `${t('editTitle')} — ${t(kind)}` : t(kind)}</h2>
         <div className="grid-3">
@@ -276,7 +339,17 @@ export function InvoiceEditor({ kind: initialKind, id, partyId: initialParty }: 
       </div>
 
       <div className="card">
-        <div style={{ padding: '14px 16px 8px' }}><h2>{t('invoiceLines')}</h2></div>
+        <div className="row" style={{ padding: '14px 16px 8px' }}>
+          <h2 style={{ margin: 0 }}>{t('invoiceLines')}</h2>
+          <span className="spacer" />
+          {(categories.data?.length ?? 0) > 0 && (
+            <select className="input" style={{ width: 220 }} value={lineCategory} onChange={(e) => setLineCategory(e.target.value)} aria-label={t('cat_filterItems')}>
+              <option value="">{t('cat_all')}</option>
+              <option value="none">{t('cat_none')}</option>
+              <CategoryOptions list={categories.data!} />
+            </select>
+          )}
+        </div>
         <table className="table">
           <thead>
             <tr>
@@ -292,17 +365,26 @@ export function InvoiceEditor({ kind: initialKind, id, partyId: initialParty }: 
           <tbody>
             {rows.map((r, i) => {
               const it = itemById.get(r.itemId);
-              const short = kind === 'sale' && it?.trackStock && (r.qtyMilli ?? 0) > it.qtyMilli;
+              const short = kind === 'sale' && it?.trackStock && (baseQty(it, r.unit, r.qtyMilli ?? 0) ?? 0) > it.qtyMilli;
+              const choices = unitChoices(it);
               return (
                 <tr key={r.key}>
                   <td className="muted num">{i18n.int(i + 1)}</td>
                   <td>
                     <SearchCombo value={r.itemId} options={itemOptions} onChange={(v) => pickItem(r.key, v)} placeholder={t('chooseItem')} ariaLabel={t('item')} />
                     {short && <div className="small" style={{ color: 'var(--bad)', marginTop: 3 }}>{t('available')}: {qtyText(i18n, it.qtyMilli)}</div>}
+                    {kind === 'purchase'
+                      ? <BatchInFields item={it} batchNo={r.batchNo ?? ''} expiry={r.expiry ?? ''} date={date} onChange={(v) => update(r.key, v)} />
+                      : <BatchPick item={it} warehouseId={warehouseId} value={r.batchId ?? ''} onChange={(batchId) => update(r.key, { batchId })} />}
+                    {kind === 'sale' && it && rxItems.has(it.id) && <RxTick seen={!!r.rxSeen} onChange={(rxSeen) => update(r.key, { rxSeen })} />}
                   </td>
                   <td>
                     <QtyInput value={r.qtyMilli} onChange={(v) => update(r.key, { qtyMilli: v })} ariaLabel={t('qty')} />
-                    {it && <div className="muted small" style={{ textAlign: 'end', marginTop: 2 }}>{unitName(i18n, it.unit)}</div>}
+                    {it && choices.length > 1 ? (
+                      <select className="input small" style={{ marginTop: 2 }} value={r.unit ?? ''} aria-label={t('unit')} onChange={(e) => pickUnit(r.key, (e.target.value || null) as LineUnit)}>
+                        {choices.map((c) => <option key={c.code} value={c.unit ?? ''}>{unitLabel(i18n, c.code)}{c.unit ? ` (${holdsText(i18n, it, c.factorMilli)})` : ''}</option>)}
+                      </select>
+                    ) : it && <div className="muted small" style={{ textAlign: 'end', marginTop: 2 }}>{unitName(i18n, it.unit)}</div>}
                   </td>
                   <td><AmountInput value={r.unitPrice} currency={currency} onChange={(v) => update(r.key, { unitPrice: v })} ariaLabel={t('unitPrice')} /></td>
                   <td className="amount">{r.itemId ? i18n.money(invoiceTotals([{ qtyMilli: r.qtyMilli ?? 0, unitPrice: r.unitPrice ?? 0 }], 0).subtotal, currency) : ''}</td>
@@ -365,10 +447,23 @@ export function InvoiceDetail({ id }: { id: string }) {
   const [cancelling, setCancelling] = useState(false);
   const [returning, setReturning] = useState(false);
   const [cancelDate, setCancelDate] = useState(todayIso());
+  const expired = useExpiredConfirm();
+  // a pharmacy's sale with controlled medicines: the patient and the prescription, asked once it is posted
+  const controlled = useControlledPrompt(id);
 
   if (error) return <ErrorBox error={error} />;
   if (!data) return null;
   const v = data;
+  /** Posting a draft: stock past its expiry date asks first, when the company allows it at all. */
+  const postIt = async () => {
+    try {
+      await api.postInvoice(id);
+    } catch (e) {
+      if (!(await expired.ask(e))) throw e;
+      await api.postInvoice(id, { allowExpired: true });
+    }
+    if (data.kind === 'sale') controlled.check(id);
+  };
   const company = settings ? i18n.name(settings.companyName) : '';
   const totalCost = v.lines.reduce((s, l) => s + (l.cost ?? 0), 0);
   const isRet = isReturnKind(v.kind);
@@ -411,7 +506,7 @@ export function InvoiceDetail({ id }: { id: string }) {
         {v.actions.includes('edit') && <a className="btn" href={href(`edit-invoice/${v.id}`)}>{t('actEdit')}</a>}
         {v.actions.includes('delete') && <button type="button" className="btn danger" disabled={busy} onClick={remove}>{t('actDelete')}</button>}
         {v.actions.includes('post') && (
-          <button type="button" className="btn primary" disabled={busy} onClick={() => { if (window.confirm(t('postConfirm'))) void act(() => api.postInvoice(id), t('a_post')); }}>
+          <button type="button" className="btn primary" disabled={busy} onClick={() => { if (window.confirm(t('postConfirm'))) void act(postIt, t('a_post')); }}>
             <Icon name="check" size={16} />{t('actPost')}
           </button>
         )}
@@ -483,7 +578,10 @@ export function InvoiceDetail({ id }: { id: string }) {
                 <td><span className="ltr">{l.itemCode}</span></td>
                 <td>{i18n.name(l.itemName)}{l.description && <div className="muted small">{l.description}</div>}</td>
                 <td className="amount">
-                  {qtyText(i18n, l.qtyMilli)} <span className="muted small">{unitName(i18n, l.unit)}</span>
+                  {(l.batchNo || l.expiry) && <div className="muted small ltr">{l.batchNo}{l.expiry ? ` · ${i18n.date(l.expiry)}` : ''}</div>}
+                  {l.lineUnit && l.unitQtyMilli !== null
+                    ? <>{qtyText(i18n, l.unitQtyMilli)} <span className="muted small">{unitName(i18n, l.lineUnit)}</span><div className="muted small">{qtyText(i18n, l.qtyMilli)} {unitName(i18n, l.unit)}</div></>
+                    : <>{qtyText(i18n, l.qtyMilli)} <span className="muted small">{unitName(i18n, l.unit)}</span></>}
                   {l.returnedQtyMilli > 0 && <div className="small no-print" style={{ color: 'var(--warn)' }}>{t('returnedQty')}: {qtyText(i18n, l.returnedQtyMilli)}</div>}
                 </td>
                 <td className="amount">{i18n.money(l.unitPrice, v.currency)}</td>
@@ -527,6 +625,26 @@ export function InvoiceDetail({ id }: { id: string }) {
         </div>
       )}
 
+      {(v.payments?.length ?? 0) > 0 && (
+        <div className="card">
+          <div style={{ padding: '14px 16px 6px' }}><h2>{t('pay_payments')}</h2></div>
+          <table className="table">
+            <thead><tr><th>{t('paymentMode')}</th><th>{t('pay_reference')}</th><th>{t('cashAccount')}</th><th className="amount">{t('amount')}</th><th>{t('vouchers')}</th></tr></thead>
+            <tbody>
+              {v.payments!.map((p) => (
+                <tr key={p.id}>
+                  <td>{isKey(`pay_${p.method}`) ? t(`pay_${p.method}` as Key) : p.method}{p.kind === 'online' && <span className="chip" style={{ marginInlineStart: 6 }}>{t('pay_online')}</span>}</td>
+                  <td className="ltr">{p.reference ?? ''}</td>
+                  <td className="ltr">{p.accountCode}</td>
+                  <td className="amount">{i18n.money(p.amount, p.currency)}</td>
+                  <td>{p.entryId && p.entryId !== v.entryId ? <a href={href(`entry/${p.entryId}`)} className="ltr num">{p.entryNumber ?? t('draft')}</a> : ''}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
       {v.returns.length > 0 && (
         <div className="card no-print">
           <div style={{ padding: '14px 16px 6px' }}><h2>{t('returnsOfInvoice')}</h2></div>
@@ -545,6 +663,8 @@ export function InvoiceDetail({ id }: { id: string }) {
         </div>
       )}
 
+      {expired.dialog}
+      {controlled.dialog}
       {returning && <ReturnModal invoice={v} onClose={() => setReturning(false)} />}
 
       {cancelling && (
@@ -564,6 +684,14 @@ export function InvoiceDetail({ id }: { id: string }) {
   );
 }
 
+/**
+ * The base quantity of a return line from what was typed: in the line's unit (a box) or, when `inBase`, in the item's
+ * base unit, so a single tablet of a line sold in boxes of 30 can go back (1/30 of a box has no exact thousandths).
+ */
+export function returnQtyBase(l: Pick<InvoiceView['lines'][number], 'lineUnit' | 'unitFactorMilli'>, typed: number, inBase: boolean): number | null {
+  return l.lineUnit && l.unitFactorMilli && !inBase ? toBaseQty(typed, l.unitFactorMilli) : typed;
+}
+
 /** Takes goods back from a posted invoice (مردودات): pick the quantities, how the money goes back, and post. */
 function ReturnModal({ invoice: v, onClose }: { invoice: InvoiceView; onClose(): void }) {
   const i18n = useI18n();
@@ -576,11 +704,22 @@ function ReturnModal({ invoice: v, onClose }: { invoice: InvoiceView; onClose():
   const [cashAccount, setCashAccount] = useState(v.cashAccountCode ?? settings?.postingAccounts.cash ?? '');
   const [notes, setNotes] = useState('');
   const [qty, setQty] = useState<Record<number, number | null>>({});
+  // lines sold in another unit: typed in the base unit instead (single tablets of a box)
+  const [inBase, setInBase] = useState<Record<number, boolean>>({});
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<unknown>(null);
+  // a line sold in boxes is returned in boxes: the quantity typed is in the line's unit, at the factor kept with the line
+  const unitOf = (l: InvoiceView['lines'][number]) => (l.lineUnit && l.unitFactorMilli ? { unit: l.lineUnit, factor: l.unitFactorMilli } : null);
+  const baseFor = (l: InvoiceView['lines'][number], typed: number) => returnQtyBase(l, typed, !!inBase[l.lineNo]);
+  const shown = (l: InvoiceView['lines'][number], base: number) => {
+    const u = unitOf(l);
+    const inUnit = u ? fromBaseQty(base, u.factor) : null;
+    return u && inUnit !== null ? `${qtyText(i18n, inUnit)} ${unitName(i18n, u.unit)}` : `${qtyText(i18n, base)} ${unitName(i18n, l.unit)}`;
+  };
   const lines = v.lines.map((l) => ({ ...l, left: l.qtyMilli - l.returnedQtyMilli })).filter((l) => l.left > 0);
-  const chosen = lines.filter((l) => (qty[l.lineNo] ?? 0) > 0);
-  const gross = chosen.reduce((sum, l) => sum + remainingShare(l.amount, l.returnedAmount, qty[l.lineNo]!, l.returnedQtyMilli, l.qtyMilli), 0);
+  const baseOf = (l: InvoiceView['lines'][number]) => (qty[l.lineNo] ? baseFor(l, qty[l.lineNo]!) : null);
+  const chosen = lines.filter((l) => (baseOf(l) ?? 0) > 0);
+  const gross = chosen.reduce((sum, l) => sum + remainingShare(l.amount, l.returnedAmount, baseOf(l)!, l.returnedQtyMilli, l.qtyMilli), 0);
 
   async function submit() {
     if (chosen.length === 0) { setError(new ApiError(400, 'validation', [{ code: 'lines_required' }])); return; }
@@ -589,7 +728,7 @@ function ReturnModal({ invoice: v, onClose }: { invoice: InvoiceView; onClose():
     setError(null);
     try {
       const ret = await api.createReturn(v.id, {
-        date, payment, lines: chosen.map((l) => ({ lineNo: l.lineNo, qtyMilli: qty[l.lineNo]! })),
+        date, payment, lines: chosen.map((l) => ({ lineNo: l.lineNo, qtyMilli: baseOf(l)! })),
         ...(payment === 'cash' ? { cashAccountCode: cashAccount } : {}),
         ...(notes.trim() ? { notes: notes.trim() } : {})
       });
@@ -613,9 +752,19 @@ function ReturnModal({ invoice: v, onClose }: { invoice: InvoiceView; onClose():
             {lines.map((l) => (
               <tr key={l.lineNo}>
                 <td>{i18n.name(l.itemName)}<div className="muted small">{i18n.money(l.unitPrice, v.currency)}</div></td>
-                <td className="amount">{qtyText(i18n, l.qtyMilli)}</td>
-                <td className="amount">{qtyText(i18n, l.left)}</td>
-                <td><QtyInput value={qty[l.lineNo] ?? null} onChange={(value) => setQty((q) => ({ ...q, [l.lineNo]: value }))} ariaLabel={t('returnQty')} /></td>
+                <td className="amount">{shown(l, l.qtyMilli)}</td>
+                <td className="amount">{shown(l, l.left)}</td>
+                <td>
+                  <QtyInput value={qty[l.lineNo] ?? null} onChange={(value) => setQty((q) => ({ ...q, [l.lineNo]: value }))} ariaLabel={t('returnQty')} />
+                  {unitOf(l) && (
+                    <div style={{ textAlign: 'end' }}>
+                      <button type="button" className="chip" title={t('unit')} aria-label={`${t('unit')}: ${unitName(i18n, inBase[l.lineNo] ? l.unit : unitOf(l)!.unit)}`}
+                        onClick={() => { setInBase((b) => ({ ...b, [l.lineNo]: !b[l.lineNo] })); setQty((q) => ({ ...q, [l.lineNo]: null })); }}>
+                        {unitName(i18n, inBase[l.lineNo] ? l.unit : unitOf(l)!.unit)}
+                      </button>
+                    </div>
+                  )}
+                </td>
               </tr>
             ))}
           </tbody>

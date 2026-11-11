@@ -13,7 +13,9 @@ export interface AdjustmentAccounts {
   damaged: string; lost: string; expired: string; internal_use: string; job: string; other: string; count: string; gain: string;
 }
 
-export interface AdjustmentLineInput { itemId: string; qtyMilli: number; unitCost?: number }
+/** qtyMilli: + in, − out, base units; or (1.1) unit + unitQtyMilli (signed the same way), with unitCost per that unit. */
+/** batches (1.1): a line going out may be pinned to one batch (batchId); a line coming in names its batch and expiry date. */
+export interface AdjustmentLineInput { itemId: string; qtyMilli: number; unitCost?: number; unit?: UnitCode; unitQtyMilli?: number; batchNo?: string; expiry?: string; batchId?: string }
 
 export interface AdjustmentInput {
   date: string;
@@ -31,6 +33,8 @@ export interface AdjustmentLineView {
   /** IQD that moved (out negative), once posted */
   value: number | null;
   stockMilli: number;
+  lineUnit: UnitCode | null; unitFactorMilli: number | null; unitQtyMilli: number | null;
+  batchNo?: string | null; expiry?: string | null; batchId?: string | null;
 }
 
 export interface AdjustmentSummary {
@@ -46,9 +50,18 @@ export interface AdjustmentView extends AdjustmentSummary {
   createdAt: string;
   lines: AdjustmentLineView[];
   actions: AdjustmentAction[];
+  /** 1.1: made by a count limited to some categories and brands */
+  countScope?: CountScope | null;
 }
 
-export interface CountSheetRow { itemId: string; code: string; barcode: string; name: Names; unit: UnitCode; stockMilli: number }
+/** units (1.1): the item's other units and factors, to show the stock in boxes and strips (counts stay in base units). */
+export interface CountSheetRow {
+  itemId: string; code: string; barcode: string; name: Names; unit: UnitCode; stockMilli: number; units?: { unit: UnitCode; factorMilli: number }[];
+  /** 1.1: for a count limited to some categories and brands */
+  categoryId?: string | null; brandId?: string | null;
+}
+/** 1.1: the categories (their subcategories with them) and brands a count is limited to. */
+export interface CountScope { categoryIds: string[]; brandIds: string[] }
 
 export interface CountInput {
   date: string;
@@ -87,7 +100,7 @@ export const adjustmentsApi = {
   count: (body: CountInput) => request<CountResult>('POST', '/api/adjustments/count', body),
   /** A count saved as it is typed (count-session.ts): the warehouse's open count, or null. */
   openCount: (warehouseId: string) => request<CountSessionView | null>('GET', '/api/adjustments/counts/open' + qs({ warehouseId })),
-  startCount: (body: { warehouseId: string; date: string; notes?: string; full?: boolean }) => request<CountSessionView>('POST', '/api/adjustments/counts', body),
+  startCount: (body: { warehouseId: string; date: string; notes?: string; full?: boolean; scope?: CountScope }) => request<CountSessionView>('POST', '/api/adjustments/counts', body),
   saveCount: (id: string, body: { date: string; notes: string; full: boolean; counts: CountChange[] }) =>
     request<CountSessionView>('PUT', `/api/adjustments/counts/${encodeURIComponent(id)}`, { ...body, notes: body.notes.slice(0, 500) }),
   finishCount: (id: string) => request<CountResult & { session: CountSessionView }>('POST', `/api/adjustments/counts/${encodeURIComponent(id)}/finish`, {}),
