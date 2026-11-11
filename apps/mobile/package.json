@@ -35,7 +35,7 @@
     "ios": "expo start --ios",
     "web": "expo start --web",
     "typecheck": "tsc --noEmit",
-    "test": "vitest run --config vitest.config.ts",
+    "test": "vitest run --config vitest.config.mts",
     "sync-protocol": "node scripts/sync-protocol.mjs",
     "lint": "expo lint"
   },
