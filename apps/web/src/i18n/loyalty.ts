@@ -3,7 +3,7 @@ export const LOYALTY_TEXT = {
   ly_title: ['نقاط الولاء', 'Loyalty points', 'خاڵەکانی دڵسۆزی'],
   f_loyalty: ['نقاط الولاء للزبائن', 'Loyalty points for customers', 'خاڵەکانی دڵسۆزی بۆ کڕیاران'],
   pay_loyalty: ['نقاط الولاء', 'Loyalty points', 'خاڵەکانی دڵسۆزی'],
-  ly_needsPro: ['نقاط الولاء جزء من باقتي Pro وBusiness.', 'Loyalty points are part of Pro and Business.', 'خاڵەکانی دڵسۆزی بەشێکن لە Pro و Business.'],
+  ly_needsPro: ['نقاط الولاء جزء من باقتي Starter وPro وBusiness.', 'Loyalty points are part of Starter, Pro and Business.', 'خاڵەکانی دڵسۆزی بەشێکن لە Starter، Pro و Business.'],
   ly_help: [
     'يكسب الزبون نقاطاً على ما يدفعه (لا على ما يُسجَّل على حسابه)، ويستعملها لاحقاً عند الكاشير أو على فاتورة البيع كجزء من الثمن. تُرحَّل قيمة النقاط المستعملة إلى الحساب المختار أدناه.',
     'Customers earn points on what they pay (not on what goes on their account), and use them later at the till or on a sale invoice as part of the price. The value of points used is posted to the account chosen below.',

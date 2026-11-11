@@ -1,9 +1,10 @@
 import { afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { generateKeyPairSync, sign, type KeyObject } from 'node:crypto';
 import type { FastifyInstance } from 'fastify';
-import { addDays, resolvePlan, todayIso, type LicenseInfo } from '@qasa/core';
+import { addDays, PLANS, resolvePlan, todayIso, type LicenseInfo } from '@qasa/core';
 import { openDatabase, type Db } from './db.ts';
 import { buildApp } from './app.ts';
+import { listUsers, login } from './auth.ts';
 import { activateLicense, planStatus, readLicenseKey, setLicensePublicKeyForTests } from './license.ts';
 
 let privateKey: KeyObject;
@@ -124,5 +125,74 @@ describe('plans', () => {
   it('ignores a trial start date in the future (a changed clock or database)', () => {
     const license: LicenseInfo | null = null;
     expect(resolvePlan({ license, trialStarted: '2030-01-01', today: '2026-09-27' })).toMatchObject({ plan: 'free', trialActive: false, trialEnds: null });
+  });
+});
+
+describe('the Starter plan', () => {
+  const starter = (extra: object = {}) => pro({ id: 'QL-2026-0002', plan: 'starter', ...extra });
+  const addUser = (username: string, name: string) => post('/api/users', { username, name, roles: ['checker'] });
+
+  it('runs a Starter key on Starter: 2 users, 1 company, every Pro feature except Qasa Relay and the cloud backup', async () => {
+    const res = await post('/api/plan/license', { key: makeKey(starter()) });
+    expect(res.statusCode).toBe(200);
+    const status = res.json();
+    expect(status).toMatchObject({
+      plan: 'starter', source: 'license', license: { id: 'QL-2026-0002', plan: 'starter', state: 'active' },
+      limits: { users: 2, companies: 1, warehouses: null }
+    });
+    expect([...status.features].sort()).toEqual([...PLANS.starter.features].sort());
+    for (const f of ['relay', 'cloudBackup', 'branches', 'databaseServer', 'realEstate', 'onlineEdition']) expect(status.features).not.toContain(f);
+    for (const f of ['officeNetwork', 'autoBackup', 'roles', 'installments', 'payroll', 'noBranding']) expect(status.features).toContain(f);
+    // more than one warehouse, as on Pro
+    expect((await addWarehouse('W2')).statusCode).toBe(201);
+  });
+
+  it('allows a second user and refuses a third, naming the plan', async () => {
+    await post('/api/plan/license', { key: makeKey(starter()) });
+    expect((await addUser('las', 'Las')).statusCode).toBe(201);
+    const third = await addUser('raz', 'Raz');
+    expect(third.statusCode).toBe(409);
+    expect(third.json()).toMatchObject({ error: 'plan_limit', details: { limit: 'users', max: 2, plan: 'starter' } });
+  });
+
+  it('never becomes Pro by editing the key: the signature covers the plan and the user count', async () => {
+    const genuine = makeKey(starter());
+    const [prefix, , signature] = genuine.split('.');
+    for (const change of [{ plan: 'pro' }, { plan: 'business' }, { users: 50 }, { companies: 9 }]) {
+      const edited = `${prefix}.${Buffer.from(JSON.stringify(starter(change))).toString('base64url')}.${signature}`;
+      expect((await post('/api/plan/license', { key: edited })).json().error).toBe('license_invalid');
+    }
+    // plan names are exact: no other spelling is a plan
+    for (const plan of ['Starter', 'STARTER', 'starter ', 'starter-pro', 'free', '']) {
+      expect(readLicenseKey(makeKey(starter({ plan }))), plan).toBeNull();
+    }
+    expect(planStatus(db).plan).toBe('free');
+  });
+
+  it('after a free month with more users, lets only two sign in on Starter: the admin and the earliest made', async () => {
+    await post('/api/plan/trial');
+    const ownerId = (await app.inject({ url: '/api/users', headers })).json()[0].id as string;
+    await post(`/api/users/${ownerId}/password`, { password: 'owner-pass-1' });
+    for (const [username, name] of [['las', 'Las'], ['raz', 'Raz'], ['mer', 'Mer']] as const) {
+      expect((await post('/api/users', { username, name, roles: ['checker'], password: `${username}-pass-1` })).statusCode).toBe(201);
+    }
+    await app.inject({ method: 'PUT', url: '/api/auth/signin', payload: { on: true }, headers });
+    activateLicense(db, makeKey(starter()), 'Mer');
+    expect(planStatus(db)).toMatchObject({ plan: 'starter', limits: { users: 2 } });
+    expect((await login(db, 'las', 'las-pass-1')).actor.username).toBe('las');
+    for (const name of ['raz', 'mer']) {
+      await expect(login(db, name, `${name}-pass-1`), name).rejects.toMatchObject({ status: 403, code: 'plan_user_limit', details: { limit: 'users', max: 2, plan: 'starter' } });
+    }
+    expect(listUsers(db).filter((u) => u.overLimit).map((u) => u.username).sort()).toEqual(['mer', 'raz']);
+    // Pro's five have room for all four
+    activateLicense(db, makeKey(pro()), 'Mer');
+    expect((await login(db, 'raz', 'raz-pass-1')).actor.username).toBe('raz');
+    expect(listUsers(db).some((u) => u.overLimit)).toBe(false);
+  });
+
+  it('keeps Starter through the grace days, then returns to Free', () => {
+    activateLicense(db, makeKey(starter({ expires: '2026-12-31' })), 'Mer', '2026-10-01');
+    expect(planStatus(db, '2027-01-14')).toMatchObject({ plan: 'starter', licenseState: 'grace' });
+    expect(planStatus(db, '2027-01-15')).toMatchObject({ plan: 'free', licenseState: 'expired', features: [] });
   });
 });

@@ -21,7 +21,7 @@ type PlanLike = { plan: string; source: string } | null | undefined;
 function planLabel(plan: PlanLike, t: I18n['t']): string {
   if (!plan) return '';
   if (plan.source === 'trial') return t('planTrialChip');
-  return plan.plan === 'pro' ? t('plan_pro') : plan.plan === 'business' ? t('plan_business') : t('plan_free');
+  return plan.plan === 'starter' ? t('plan_starter') : plan.plan === 'pro' ? t('plan_pro') : plan.plan === 'business' ? t('plan_business') : t('plan_free');
 }
 
 /**

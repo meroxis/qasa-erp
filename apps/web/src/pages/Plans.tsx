@@ -1,58 +1,66 @@
 import { useEffect, useState } from 'react';
-import { daysBetween, PLAN_IDS, PLANS, TRIAL_DAYS, todayIso } from '@qasa/core';
+import { daysBetween, PLAN_IDS, PLAN_PRICE_IQD, PLANS, TRIAL_DAYS, todayIso, type Feature } from '@qasa/core';
 import { api, request, type PlanStatus } from '../api.ts';
 import { ErrorBox, Icon, useData, useToast } from '../components.tsx';
 import { useI18n, type I18n, type Key } from '../i18n.ts';
 import { AgreeLine } from '../industry/LegalPanel.tsx';
 
 const demo = import.meta.env.MODE === 'demo';
-const CONTACT = 'mailto:info@qasaerp.com?subject=' + encodeURIComponent('Qasa ERP Pro / Business');
+const CONTACT = 'mailto:info@qasaerp.com?subject=' + encodeURIComponent('Qasa ERP Starter / Pro / Business');
 /** The customer portal in the app's language, at its buy page (it asks the customer to sign in first). */
 const PORTAL = (lang: string) => `https://my.qasaerp.com/lang/${lang}?back=/buy`;
 
-/** A cell of the comparison: a text, a tick or a dash, or a limit (null = unlimited). */
-type Cell = Key | boolean | { limit: number | null } | { key: Key; n: number };
-interface Row { label: Key; cells: [Cell, Cell, Cell]; soon?: boolean }
+/** A cell of the comparison: a text, a tick or a dash, a limit (null = unlimited), or a year's price in dinars. */
+type Cell = Key | boolean | { limit: number | null } | { key: Key; n: number } | { price: number };
+/** One cell per plan, in the order of PLAN_IDS: Free, Starter, Pro, Business. */
+type Cells = [Cell, Cell, Cell, Cell];
+interface Row { label: Key; cells: Cells; soon?: boolean }
 
-const { free, pro, business } = PLANS;
+const { free, starter, pro, business } = PLANS;
+/** A tick for each plan that has the feature, read from the plans themselves (so the table can't say otherwise). */
+const has = (feature: Feature): Cells => [free, starter, pro, business].map((p) => p.features.includes(feature)) as Cells;
+const limits = (name: keyof typeof free.limits): Cells => [free, starter, pro, business].map((p) => ({ limit: p.limits[name] })) as Cells;
+const ALL: Cells = [true, true, true, true];
 /** The plan comparison table (exported for its test). */
 export const ROWS: Row[] = [
-  { label: 'f_core', cells: [true, true, true] },
-  { label: 'f_warehouses', cells: [{ limit: free.limits.warehouses }, { limit: pro.limits.warehouses }, { limit: business.limits.warehouses }] },
-  { label: 'f_branding', cells: ['v_shown', 'v_removed', 'v_removed'] },
-  { label: 'f_users', cells: [{ limit: free.limits.users }, { limit: pro.limits.users }, { limit: business.limits.users }] },
-  { label: 'f_network', cells: [false, true, true] },
+  { label: 'f_price', cells: ['plan_free', { price: PLAN_PRICE_IQD.starter }, { price: PLAN_PRICE_IQD.pro }, { price: PLAN_PRICE_IQD.business }] },
+  { label: 'f_core', cells: ALL },
+  { label: 'f_warehouses', cells: limits('warehouses') },
+  { label: 'f_branding', cells: ['v_shown', 'v_removed', 'v_removed', 'v_removed'] },
+  { label: 'f_users', cells: limits('users') },
+  // Starter: on the office's own network only
+  { label: 'f_network', cells: has('officeNetwork') },
   // Qasa Relay needs an activated Pro or Business licence (the free month leaves it out, as its label says)
-  { label: 'f_relay', cells: [false, true, true] },
-  { label: 'f_companies', cells: [{ limit: free.limits.companies }, { limit: pro.limits.companies }, { limit: business.limits.companies }] },
-  { label: 'f_roles', cells: ['v_onePerson', true, true] },
-  { label: 'f_quotes', cells: [true, true, true] },
-  { label: 'f_pos', cells: [true, true, true] },
-  { label: 'f_installments', cells: [false, true, true] },
-  { label: 'f_pipeline', cells: [false, true, true] },
+  { label: 'f_relay', cells: has('relay') },
+  { label: 'f_companies', cells: limits('companies') },
+  { label: 'f_roles', cells: ['v_onePerson', true, true, true] },
+  { label: 'f_quotes', cells: ALL },
+  { label: 'f_pos', cells: ALL },
+  { label: 'f_installments', cells: has('installments') },
+  { label: 'f_pipeline', cells: has('pipeline') },
   // the phone app is not in 1.0: shown as coming, never as included
-  { label: 'f_phoneApp', cells: [false, true, true], soon: true },
-  { label: 'f_websiteApi', cells: [false, true, true] },
-  { label: 'f_cloudBackup', cells: [false, true, true] },
-  { label: 'f_bankReconciliation', cells: [false, true, true] },
-  { label: 'f_payroll', cells: [false, true, true] },
-  { label: 'f_finalAccounts', cells: ['v_viewOnScreen', 'v_printExcel', 'v_printExcel'] },
-  { label: 'f_yearEnd', cells: [false, true, true] },
-  { label: 'f_backup', cells: [false, true, true] },
-  { label: 'f_dbServer', cells: [false, false, true] },
-  { label: 'f_mobileShop', cells: [false, true, true] },
-  { label: 'f_autoParts', cells: [false, true, true] },
-  { label: 'f_pharmacy', cells: [false, true, true] },
-  { label: 'f_loyalty', cells: [false, true, true] },
-  { label: 'f_engineeringWorks', cells: [false, true, true] },
-  { label: 'f_electricalSolar', cells: [false, true, true] },
-  { label: 'f_generators', cells: [false, true, true] },
-  { label: 'f_realEstate', cells: [false, false, true] },
-  { label: 'f_branches', cells: [false, false, true] },
+  { label: 'f_phoneApp', cells: has('phoneApp'), soon: true },
+  { label: 'f_websiteApi', cells: has('websiteApi') },
+  { label: 'f_cloudBackup', cells: has('cloudBackup') },
+  { label: 'f_bankReconciliation', cells: has('bankReconciliation') },
+  { label: 'f_payroll', cells: has('payroll') },
+  { label: 'f_finalAccounts', cells: ['v_viewOnScreen', 'v_printExcel', 'v_printExcel', 'v_printExcel'] },
+  { label: 'f_yearEnd', cells: has('finalAccountsExport') },
+  { label: 'f_backup', cells: has('autoBackup') },
+  { label: 'f_dbServer', cells: has('databaseServer') },
+  { label: 'f_mobileShop', cells: has('mobileShop') },
+  { label: 'f_autoParts', cells: has('autoParts') },
+  { label: 'f_pharmacy', cells: has('pharmacy') },
+  { label: 'f_loyalty', cells: has('loyalty') },
+  { label: 'f_engineeringWorks', cells: has('engineeringWorks') },
+  { label: 'f_electricalSolar', cells: has('electricalSolar') },
+  { label: 'f_generators', cells: has('generators') },
+  { label: 'f_realEstate', cells: has('realEstate') },
+  { label: 'f_branches', cells: has('branches') },
   // the online edition (in the browser) is not in 1.0 yet: the plan table must not promise it as included. Working from
   // anywhere on the office network is Qasa Relay (f_relay), on Pro and Business.
-  { label: 'f_online', cells: [false, false, true], soon: true },
-  { label: 'f_support', cells: ['v_supportFree', 'v_supportPro', 'v_supportBusiness'] }
+  { label: 'f_online', cells: has('onlineEdition'), soon: true },
+  { label: 'f_support', cells: ['v_supportFree', 'v_supportPro', 'v_supportPro', 'v_supportBusiness'] }
 ];
 
 function cellText(cell: Cell, i18n: I18n) {
@@ -61,6 +69,7 @@ function cellText(cell: Cell, i18n: I18n) {
   if (cell === false) return <span className="muted" aria-label="—">—</span>;
   if (typeof cell === 'string') return t(cell);
   if ('limit' in cell) return cell.limit === null ? t('unlimited') : i18n.int(cell.limit);
+  if ('price' in cell) return <span className="num">{t('v_priceYear', { n: i18n.int(cell.price) })}</span>;
   return t(cell.key, { n: cell.n });
 }
 

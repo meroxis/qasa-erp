@@ -72,7 +72,7 @@ export const PARTS_TEXT = {
   pt_importResult: ['{r} سطراً: {a} جديد، و{s} موجود مسبقاً، لـ {p} قطعة.', '{r} rows: {a} new, {s} already there, for {p} parts.', '{r} ڕیز: {a} نوێ، {s} پێشتر هەبوو، بۆ {p} پارچە.'],
   pt_imported: ['تم الاستيراد', 'Imported', 'هاوردە کرا'],
   pt_remove: ['إزالة', 'Remove', 'لابردن'],
-  pt_needsPro: ['تعديل بيانات القطع يحتاج خطة Pro أو Business. البحث متاح دائماً.', 'Changing part data needs the Pro or Business plan. Searching always works.', 'گۆڕینی زانیاری پارچەکان پێویستی بە پلانی Pro یان Business هەیە. گەڕان هەمیشە کار دەکات.'],
+  pt_needsPro: ['تعديل بيانات القطع يحتاج خطة Starter أو Pro أو Business. البحث متاح دائماً.', 'Changing part data needs the Starter, Pro or Business plan. Searching always works.', 'گۆڕینی زانیاری پارچەکان پێویستی بە پلانی Starter، Pro یان Business هەیە. گەڕان هەمیشە کار دەکات.'],
   pt_lineOf: ['السطر {n}', 'Line {n}', 'ڕیزی {n}'],
   a_import: ['استيراد', 'Imported', 'هاوردە کرا'],
   e_part: ['بيانات قطعة', 'Part data', 'زانیاری پارچە'],

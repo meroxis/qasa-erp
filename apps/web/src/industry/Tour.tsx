@@ -130,6 +130,7 @@ export function Tour({ user, businessTypes, onClose }: { user: string; businessT
               {businessTypes.length > 0 && <p><strong>{t('tour_yourBusiness')}</strong> {businessTypes.map((b) => t(`bt_${b}` as Key)).join(i18n.lang === 'en' ? ', ' : '، ')}</p>}
               <p><strong>{t('tour_yourPlan')}</strong> {planText}</p>
               {p === 'free' && !onTrial && <p className="muted">{t('tour_proAdds')}</p>}
+              {p === 'starter' && !onTrial && <p className="muted">{t('tour_starterAdds')}</p>}
               {p === 'pro' && !onTrial && <p className="muted">{t('tour_businessAdds')}</p>}
             </>
           )}

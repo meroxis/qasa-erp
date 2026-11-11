@@ -134,6 +134,8 @@ export function Users({ me, onMeChanged }: { me: Me; onMeChanged(me: Me | null):
   const [recovery, setRecovery] = useState<{ code: string; then?: () => void } | null>(null);
 
   const list = users.data ?? [];
+  // more active users than the plan has (made in the free month, or a smaller plan since): who can't sign in, and why
+  const overLimit = list.filter((u) => u.overLimit).length;
   const self = list.find((u) => u.id === me.user?.id);
   const ownerFirst = list[0]?.id;
   const hasRoles = !!plan?.features.includes('roles');
@@ -245,6 +247,11 @@ export function Users({ me, onMeChanged }: { me: Me; onMeChanged(me: Me | null):
           </button>
         </div>
         {plan?.plan === 'free' && <p className="muted small" style={{ padding: '0 16px', margin: 0 }}>{t('usersPlanNote')}</p>}
+        {overLimit > 0 && plan && plan.limits.users !== null && (
+          <div className="alert warn" role="status" style={{ margin: '8px 16px' }}>
+            {t('usersOverLimit', { n: i18n.int(plan.limits.users), k: i18n.int(plan.limits.users), m: i18n.int(list.filter((u) => u.active).length) })} <a href={href('plans')}>{t('planLicense')}</a>
+          </div>
+        )}
         <div className="table-wrap">
         <table className="table">
           <thead>
@@ -262,7 +269,7 @@ export function Users({ me, onMeChanged }: { me: Me; onMeChanged(me: Me | null):
                 <td>{u.roles.map((r) => <span key={r} className="chip" style={{ marginInlineEnd: 4 }}>{t(`role_${r}` as Key)}</span>)}</td>
                 <td className="num">{u.lastLoginAt ? i18n.date(todayIso(new Date(u.lastLoginAt))) : '—'}</td>
                 <td>
-                  {u.active ? <span className="chip ok">{t('userActive')}</span> : <span className="chip bad">{t('inactive')}</span>}
+                  {u.active ? (u.overLimit ? <span className="chip warn">{t('userOverLimit')}</span> : <span className="chip ok">{t('userActive')}</span>) : <span className="chip bad">{t('inactive')}</span>}
                   {!u.hasPassword && <span className="chip warn" style={{ marginInlineStart: 4 }}>{t('noPassword')}</span>}
                 </td>
                 {/* a flex <td> stops being a table cell and its buttons spilled over the rows: the cell stays a cell and holds the flex row */}

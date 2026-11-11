@@ -443,6 +443,19 @@ function RelaySection({ status, onChange }: { status: NetworkStatus & RelayField
     return () => clearInterval(timer);
   }, [on, onChange]);
 
+  // Starter: the office network on the office's own network; Qasa Relay comes with Pro (the server refuses it too)
+  if (status.relayAvailable === false) {
+    return (
+      <div className="stack" style={{ gap: 10, borderBlockStart: '1px solid var(--line)', paddingBlockStart: 14, marginBlockStart: 4 }}>
+        <div className="row" style={{ justifyContent: 'space-between' }}>
+          <h3 style={{ margin: 0 }}>{t('rl_title')}</h3>
+          <a className="chip plan-pro" href={href('plans')}>Pro</a>
+        </div>
+        <div className="alert">{t('rl_needsPro')} <a href={href('plans')}>{t('planLicense')}</a></div>
+      </div>
+    );
+  }
+
   const state = relay?.state ?? 'waiting';
   const chip = state === 'online' ? 'ok' : state === 'refused' ? 'bad' : 'warn';
   const errorKey = relay?.lastError ? ('rl_e_' + relay.lastError) : null;
@@ -1088,6 +1101,7 @@ function CloudBackup({ encrypted, disabled, onRestarting }: { encrypted: boolean
       </div>
       <div className="muted small">{t('cl_help')}</div>
 
+      {!status.provider && !status.available && <div className="alert">{t('cl_needsPro')} <a href={href('plans')}>{t('planLicense')}</a></div>}
       {!status.provider && status.available && status.needsPassword && <div className="alert warn" role="status">{t('cl_needsPassword')}</div>}
 
       {!status.provider && status.available && !status.needsPassword && !status.connecting && (

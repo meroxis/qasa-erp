@@ -8,7 +8,7 @@ export interface UsagePayload {
   os: string;
   lang: Lang;
   /** The plan only: never the licence number, so a usage report is never linked to a licence. */
-  plan: 'free' | 'trial' | 'pro' | 'business';
+  plan: 'free' | 'trial' | 'starter' | 'pro' | 'business';
   businessTypes: string[];
   companies: number;
   users: number;

@@ -48,6 +48,8 @@ export interface UserView {
   hasPassword: boolean;
   createdAt: string;
   lastLoginAt: string | null;
+  /** Active, but over the plan's number of users: can't sign in until an admin makes room or the plan grows. */
+  overLimit: boolean;
 }
 
 interface UserRow {
@@ -97,10 +99,10 @@ function parseRoles(json: string): Role[] {
   }
 }
 
-function toView(r: UserRow): UserView {
+function toView(r: UserRow, seats: UserSeats | null = null): UserView {
   return {
     id: r.id, username: r.username, name: r.name, roles: parseRoles(r.roles), active: r.active === 1, hasPassword: !!r.password_hash,
-    createdAt: r.created_at, lastLoginAt: r.last_login_at
+    createdAt: r.created_at, lastLoginAt: r.last_login_at, overLimit: r.active === 1 && !!seats && !seats.ids.has(r.id)
   };
 }
 
@@ -120,7 +122,39 @@ function loadUser(db: Db, id: string): UserRow {
 }
 
 export function listUsers(db: Db): UserView[] {
-  return (db.prepare('SELECT * FROM users ORDER BY created_at').all() as unknown as UserRow[]).map(toView);
+  const seats = userSeats(db);
+  return (db.prepare('SELECT * FROM users ORDER BY created_at').all() as unknown as UserRow[]).map((r) => toView(r, seats));
+}
+
+// ——— more active users than the plan has ———
+
+/** The users who may sign in while the company has more active users than its plan allows. */
+export interface UserSeats { max: number; ids: ReadonlySet<string> }
+
+/**
+ * A company can come to hold more active users than its plan allows: users made in the free month and a smaller plan
+ * after it, a licence that ended, a move from Pro to Starter. Nothing is deleted or switched off for that, and adding
+ * users is refused as always; but only as many as the plan allows may sign in. Those are the admins first (the ones
+ * with a password before the ones without, so an admin who can sign in always may: the company is never locked out),
+ * then the other active users, each group from the earliest made. An admin chooses otherwise by making users inactive.
+ * Null while the active users fit the plan (always so for one user, and for a plan without a limit).
+ */
+export function userSeats(db: Db): UserSeats | null {
+  const active = db.prepare('SELECT id, roles, password_hash, created_at FROM users WHERE active = 1 ORDER BY created_at, id').all() as
+    { id: string; roles: string; password_hash: string | null; created_at: string }[];
+  if (active.length <= 1) return null;
+  const max = planStatus(db).limits.users;
+  if (max === null || active.length <= max) return null;
+  const rank = (u: { roles: string; password_hash: string | null }) => (parseRoles(u.roles).includes('admin') ? (u.password_hash ? 0 : 1) : 2);
+  // (sort is stable: within a group the order stays earliest first)
+  const order = [...active].sort((a, b) => rank(a) - rank(b));
+  return { max, ids: new Set(order.slice(0, Math.max(1, max)).map((u) => u.id)) };
+}
+
+/** May this active user sign in under the plan's number of users? */
+function hasSeat(db: Db, userId: string): { ok: true } | { ok: false; max: number } {
+  const seats = userSeats(db);
+  return !seats || seats.ids.has(userId) ? { ok: true } : { ok: false, max: seats.max };
 }
 
 const activeCount = (db: Db) => (db.prepare('SELECT COUNT(*) AS n FROM users WHERE active = 1').get() as { n: number }).n;
@@ -158,7 +192,7 @@ export async function createUser(db: Db, input: { username: string; name: string
       .run(id, input.username, input.name.trim(), hash, JSON.stringify(input.roles), new Date().toISOString());
     audit(db, by, 'create', 'user', id, { username: input.username, roles: input.roles });
   });
-  return toView(loadUser(db, id));
+  return toView(loadUser(db, id), userSeats(db));
 }
 
 export function updateUser(db: Db, id: string, input: { username: string; name: string; roles: Role[]; active: boolean }, actor: Actor): UserView {
@@ -177,7 +211,7 @@ export function updateUser(db: Db, id: string, input: { username: string; name: 
     if (!input.active) db.prepare('DELETE FROM sessions WHERE user_id = ?').run(id);
     audit(db, actor.name, 'update', 'user', id, { username: input.username, roles: input.roles, active: input.active });
   });
-  return toView(loadUser(db, id));
+  return toView(loadUser(db, id), userSeats(db));
 }
 
 /** An admin sets (or resets) someone's password; their other sessions end. */
@@ -191,7 +225,7 @@ export async function setPassword(db: Db, id: string, password: string, by: stri
     db.prepare('DELETE FROM sessions WHERE user_id = ?').run(id);
     audit(db, by, 'password', 'user', id);
   });
-  return toView(loadUser(db, id));
+  return toView(loadUser(db, id), userSeats(db));
 }
 
 /** A user changes their own password; the current one is required when there is one. */
@@ -420,6 +454,12 @@ export function sessionActor(db: Db, token: string): Actor | null {
     db.prepare('DELETE FROM sessions WHERE token_hash = ?').run(row.token_hash);
     return null;
   }
+  // more active users than the plan has (a smaller plan since they signed in): the ones over it are signed out here,
+  // at their next request, and told why when they sign in again
+  if (!hasSeat(db, row.id).ok) {
+    db.prepare('DELETE FROM sessions WHERE user_id = ?').run(row.id);
+    return null;
+  }
   if (now - Date.parse(row.last_seen_at) > 60_000) {
     const expires = Math.min(now + SESSION_IDLE_MS, Date.parse(row.created_at) + SESSION_MAX_MS);
     db.prepare('UPDATE sessions SET last_seen_at = ?, expires_at = ? WHERE token_hash = ?').run(new Date(now).toISOString(), new Date(expires).toISOString(), row.token_hash);
@@ -515,6 +555,13 @@ export async function login(db: Db, username: string, password: string, device?:
     throw new AppError(401, 'invalid_login');
   }
   failures.delete(key);
+  // the right password, but the company has more active users than its plan and this one is over it: said plainly (only
+  // after the password was right, so it tells a stranger nothing), with how many the plan allows
+  const seat = hasSeat(db, row.id);
+  if (!seat.ok) {
+    audit(db, row.name, 'login_over_limit', 'user', row.id, { source: place, max: seat.max });
+    throw new AppError(403, 'plan_user_limit', { limit: 'users', max: seat.max, plan: planStatus(db).plan });
+  }
   const known = knownSources.get(account) ?? new Set<string>();
   if (known.size < 50) known.add(place);
   knownSources.set(account, known);
