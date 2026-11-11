@@ -79,7 +79,7 @@ export function CustomerScreen({ id }: { id: string }) {
       <Card>
         <Txt v="caption" tone="ink2">{(c.balance ?? 0) > 0 ? t('owes') : t('closing')}</Txt>
         <Txt v="numberLarge" tone={b.tone === 'ink3' ? 'ink' : b.tone}>{b.text}</Txt>
-        {c.balances && c.balances.USD !== 0 ? <Txt v="number" tone="ink2">{money(c.balances.USD, 'USD', lang)}</Txt> : null}
+        {c.balances?.USD ? <Txt v="number" tone="ink2">{money(c.balances.USD, 'USD', lang)}</Txt> : null}
         {c.creditLimit ? <Txt v="caption" tone="ink3">{`${t('creditLimit')}: ${money(c.creditLimit, 'IQD', lang)}`}</Txt> : null}
       </Card>
       <View style={{ gap: space.s }}>

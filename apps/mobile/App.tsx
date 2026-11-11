@@ -298,11 +298,15 @@ function Main() {
             const info: OfficeInfo = { serverKey: toB64(code.serverPublicKey), addresses: code.addresses, port: code.port, relay: code.relay, deviceId: null, company: code.company };
             const phoneName = name.trim().slice(0, 80) || 'Phone';
             await saveName(phoneName);
+            const pairing = makeLink(info, key, phoneName, { id: code.pairingId, secret: code.pairingSecret });
             try {
-              await makeLink(info, key, phoneName, { id: code.pairingId, secret: code.pairingSecret }).connect();
+              await pairing.connect();
               setPairNote(null);
               setDetail(undefined);
             } catch (e) {
+              // not paired: this link (and its one-time secret) is dropped, not tried again in the background
+              pairing.close();
+              setLink((l) => (l === pairing ? null : l));
               throw new Error(explain(e));
             }
           }}

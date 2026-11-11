@@ -9,8 +9,8 @@ import { radius, space } from '../theme';
 const BARCODES: BarcodeType[] = ['ean13', 'ean8', 'upc_a', 'upc_e', 'code128', 'code39', 'code93', 'itf14', 'codabar', 'qr', 'datamatrix'];
 
 /**
- * The camera for barcodes and the pairing QR code: a frame to aim with, the torch for dark shelves, and one buzz per
- * code read (the camera reports the same code many times a second: once per 2 seconds).
+ * The camera for barcodes and the pairing QR code: a frame to aim with, the torch for dark shelves, and one buzz for
+ * the code read (the camera reports codes many times a second: the first one counts).
  */
 export function Scanner({ title, hint, onCode, onBack, qrOnly }: { title: string; hint: string; onCode(code: string): void; onBack(): void; qrOnly?: boolean }) {
   const { t, rtl } = useLook();
@@ -18,6 +18,8 @@ export function Scanner({ title, hint, onCode, onBack, qrOnly }: { title: string
   const [permission, requestPermission] = useCameraPermissions();
   const [torch, setTorch] = useState(false);
   const last = useRef<{ code: string; at: number } | null>(null);
+  // one code per opening of the camera: the screen moves on (to the item, or to pairing) after it
+  const fired = useRef(false);
   if (!permission) return <Screen title={title} onBack={onBack} banner={false}><Txt tone="ink2">{t('loading')}</Txt></Screen>;
   if (!permission.granted) {
     return (
@@ -35,9 +37,10 @@ export function Scanner({ title, hint, onCode, onBack, qrOnly }: { title: string
         barcodeScannerSettings={{ barcodeTypes: qrOnly ? ['qr'] : BARCODES }}
         onBarcodeScanned={(r) => {
           const now = Date.now();
-          if (!r.data || r.data.length > 4096) return;
+          if (!r.data || r.data.length > 4096 || fired.current) return;
           if (last.current && last.current.code === r.data && now - last.current.at < 2000) return;
           last.current = { code: r.data, at: now };
+          fired.current = true;
           void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
           onCode(r.data);
         }}
