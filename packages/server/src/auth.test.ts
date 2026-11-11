@@ -280,3 +280,87 @@ describe('with sign-in', () => {
     expect(audit.map((a) => a.action)).toEqual(expect.arrayContaining(['login', 'login_failed', 'password', 'signin_on']));
   });
 });
+
+describe('more active users than the plan allows', () => {
+  const ROLE = ['checker'];
+  /** The free month with sign-in on: the owner (admin) and four more, made in this order. */
+  async function officeOfFive() {
+    await officeWithSignIn([{ username: 'las', roles: ROLE }, { username: 'raz', roles: ROLE }, { username: 'mer', roles: ['admin'] }, { username: 'late', roles: ROLE }]);
+  }
+  /** The free month ends: Free, one user. */
+  const trialEnds = () => db.prepare("UPDATE settings SET value = '2020-01-01' WHERE key = 'trial_started'").run();
+  const tryLogin = (username: string) => req('POST', '/api/auth/login', { username, password: `${username}-pass-1` });
+
+  it('lets only as many sign in as the plan has: admins first, then the earliest made; nothing is deleted or switched off', async () => {
+    await officeOfFive();
+    const owner = await signIn((await req('GET', '/api/users', undefined, await signIn('mer', 'mer-pass-1'))).json()[0].username, 'owner-pass-1');
+    for (const name of ['las', 'raz', 'late']) expect((await tryLogin(name)).statusCode, name).toBe(200);
+    trialEnds();
+    // Free: one user, the first admin (the owner); the second admin and everyone else wait
+    for (const name of ['mer', 'las', 'raz', 'late']) {
+      const res = await tryLogin(name);
+      expect(res.statusCode, name).toBe(403);
+      expect(res.json(), name).toEqual({ error: 'plan_user_limit', details: { limit: 'users', max: 1, plan: 'free' } });
+    }
+    const users = (await req('GET', '/api/users', undefined, owner)).json() as { username: string; active: boolean; overLimit: boolean }[];
+    expect(users).toHaveLength(5);
+    expect(users.every((u) => u.active)).toBe(true);
+    expect(users.filter((u) => u.overLimit).map((u) => u.username).sort()).toEqual(['las', 'late', 'mer', 'raz']);
+    // the refusal is written down, and is no failed password: the user is not locked out for it
+    const audit = (await req('GET', '/api/audit', undefined, owner)).json() as { action: string }[];
+    expect(audit.filter((a) => a.action === 'login_over_limit')).toHaveLength(4);
+    for (let i = 0; i < 8; i++) expect((await tryLogin('las')).statusCode).toBe(403);
+  });
+
+  it('ends the sessions of the users over the limit at their next request, and keeps the others', async () => {
+    await officeOfFive();
+    const las = await signIn('las', 'las-pass-1');
+    const mer = await signIn('mer', 'mer-pass-1');
+    expect((await req('GET', '/api/auth/me', undefined, las)).json().user.username).toBe('las');
+    trialEnds();
+    expect((await req('GET', '/api/accounts', undefined, las)).statusCode).toBe(401);
+    expect((await req('GET', '/api/accounts', undefined, mer)).statusCode).toBe(401);
+    expect(db.prepare('SELECT COUNT(*) AS n FROM sessions').get()).toEqual({ n: 0 });
+    // the owner, an admin, always gets in
+    const owner = await signIn((db.prepare('SELECT username FROM users WHERE id = ?').get(ownerId) as { username: string }).username, 'owner-pass-1');
+    expect((await req('GET', '/api/accounts', undefined, owner)).statusCode).toBe(200);
+  });
+
+  it('lets the admin choose who is active: making users inactive gives the next ones their place', async () => {
+    await officeOfFive();
+    trialEnds();
+    const ownerName = (db.prepare('SELECT username FROM users WHERE id = ?').get(ownerId) as { username: string }).username;
+    const owner = await signIn(ownerName, 'owner-pass-1');
+    const users = (await req('GET', '/api/users', undefined, owner)).json() as { id: string; username: string; name: string; roles: string[] }[];
+    // the owner hands the one place to Mer (the other admin) by stepping aside is refused: an admin can't lock themself out
+    const self = users.find((u) => u.id === ownerId)!;
+    expect((await req('PUT', `/api/users/${ownerId}`, { username: self.username, name: self.name, roles: self.roles, active: false }, owner)).json().error).toBe('cannot_lock_yourself_out');
+    // making someone active again is refused over the limit, as adding is
+    expect((await req('POST', '/api/users', { username: 'more', name: 'Las', roles: ROLE }, owner)).json()).toMatchObject({ error: 'plan_limit', details: { limit: 'users', max: 1 } });
+    // everyone but the owner made inactive: nobody is over the limit any more
+    for (const u of users.filter((x) => x.id !== ownerId)) {
+      expect((await req('PUT', `/api/users/${u.id}`, { username: u.username, name: u.name, roles: u.roles, active: false }, owner)).statusCode).toBe(200);
+    }
+    const after = (await req('GET', '/api/users', undefined, owner)).json() as { overLimit: boolean }[];
+    expect(after.some((u) => u.overLimit)).toBe(false);
+  });
+
+  it('never leaves a company without an admin who can sign in: an admin with a password comes before one without', async () => {
+    await req('POST', '/api/plan/trial');
+    // the owner (the first admin) has no password; Mer, made later, is the admin who can sign in
+    await req('POST', '/api/users', { username: 'las', name: 'Las', roles: ROLE, password: 'las-pass-1' });
+    await req('POST', '/api/users', { username: 'mer', name: 'Mer', roles: ['admin'], password: 'mer-pass-1' });
+    expect((await req('PUT', '/api/auth/signin', { on: true })).statusCode).toBe(200);
+    trialEnds();
+    expect((await tryLogin('las')).json().error).toBe('plan_user_limit');
+    const mer = await signIn('mer', 'mer-pass-1');
+    expect((await req('GET', '/api/users', undefined, mer)).statusCode).toBe(200);
+  });
+
+  it('says nothing about the limit to a wrong password or an unknown name', async () => {
+    await officeOfFive();
+    trialEnds();
+    expect((await req('POST', '/api/auth/login', { username: 'las', password: 'not-the-password' })).json().error).toBe('invalid_login');
+    expect((await req('POST', '/api/auth/login', { username: 'nobody', password: 'las-pass-1' })).json().error).toBe('invalid_login');
+  });
+});

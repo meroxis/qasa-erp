@@ -102,7 +102,9 @@ export function errorMessages(error: unknown, i18n: I18n): string[] {
     // plan limits have a message per limit ("err_plan_limit_warehouses"), with a general one to fall back on
     const limit = error.code === 'plan_limit' ? (error.details as { limit?: string } | null)?.limit : undefined;
     const key = limit && isKey(`err_plan_limit_${limit}`) ? `err_plan_limit_${limit}` : 'err_' + error.code;
-    const message = isKey(key) ? t(key) : t('err_internal');
+    // a sign-in refused for the plan's number of users says how many the plan allows
+    const max = error.code === 'plan_user_limit' ? (error.details as { max?: unknown } | null)?.max : undefined;
+    const message = isKey(key) ? (typeof max === 'number' ? t(key, { n: i18n.int(max) }) : t(key)) : t('err_internal');
     // a refusal that names the open documents holding it back (a unit or a base unit in use) lists them, so they can be found
     const drafts = (error.details as { drafts?: unknown } | null)?.drafts;
     if (Array.isArray(drafts) && drafts.length) {

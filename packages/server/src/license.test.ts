@@ -4,6 +4,7 @@ import type { FastifyInstance } from 'fastify';
 import { addDays, PLANS, resolvePlan, todayIso, type LicenseInfo } from '@qasa/core';
 import { openDatabase, type Db } from './db.ts';
 import { buildApp } from './app.ts';
+import { listUsers, login } from './auth.ts';
 import { activateLicense, planStatus, readLicenseKey, setLicensePublicKeyForTests } from './license.ts';
 
 let privateKey: KeyObject;
@@ -166,6 +167,27 @@ describe('the Starter plan', () => {
       expect(readLicenseKey(makeKey(starter({ plan }))), plan).toBeNull();
     }
     expect(planStatus(db).plan).toBe('free');
+  });
+
+  it('after a free month with more users, lets only two sign in on Starter: the admin and the earliest made', async () => {
+    await post('/api/plan/trial');
+    const ownerId = (await app.inject({ url: '/api/users', headers })).json()[0].id as string;
+    await post(`/api/users/${ownerId}/password`, { password: 'owner-pass-1' });
+    for (const [username, name] of [['las', 'Las'], ['raz', 'Raz'], ['mer', 'Mer']] as const) {
+      expect((await post('/api/users', { username, name, roles: ['checker'], password: `${username}-pass-1` })).statusCode).toBe(201);
+    }
+    await app.inject({ method: 'PUT', url: '/api/auth/signin', payload: { on: true }, headers });
+    activateLicense(db, makeKey(starter()), 'Mer');
+    expect(planStatus(db)).toMatchObject({ plan: 'starter', limits: { users: 2 } });
+    expect((await login(db, 'las', 'las-pass-1')).actor.username).toBe('las');
+    for (const name of ['raz', 'mer']) {
+      await expect(login(db, name, `${name}-pass-1`), name).rejects.toMatchObject({ status: 403, code: 'plan_user_limit', details: { limit: 'users', max: 2, plan: 'starter' } });
+    }
+    expect(listUsers(db).filter((u) => u.overLimit).map((u) => u.username).sort()).toEqual(['mer', 'raz']);
+    // Pro's five have room for all four
+    activateLicense(db, makeKey(pro()), 'Mer');
+    expect((await login(db, 'raz', 'raz-pass-1')).actor.username).toBe('raz');
+    expect(listUsers(db).some((u) => u.overLimit)).toBe(false);
   });
 
   it('keeps Starter through the grace days, then returns to Free', () => {

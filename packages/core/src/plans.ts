@@ -69,7 +69,11 @@ export interface PlanDefinition {
 const PRO_FEATURES: readonly Feature[] = ['officeNetwork', 'relay', 'roles', 'installments', 'payroll', 'finalAccountsExport', 'noBranding', 'autoBackup', 'cloudBackup', 'mobileShop', 'autoParts', 'engineeringWorks', 'pipeline', 'generators', 'websiteApi', 'phoneApp', 'electricalSolar', 'bankReconciliation', 'pharmacy', 'loyalty'];
 /** What Pro has and Starter leaves out: reaching the office over the internet (Qasa Relay) and the cloud backup. */
 export const STARTER_LEAVES_OUT: readonly Feature[] = ['relay', 'cloudBackup'];
-const STARTER_FEATURES: readonly Feature[] = PRO_FEATURES.filter((f) => !STARTER_LEAVES_OUT.includes(f));
+/**
+ * Starter's features, written out in full and not worked out from Pro's: a feature added to Pro later is not given to
+ * Starter by itself (a test keeps this list equal to Pro's without STARTER_LEAVES_OUT, so adding one is a decision).
+ */
+const STARTER_FEATURES: readonly Feature[] = ['officeNetwork', 'roles', 'installments', 'payroll', 'finalAccountsExport', 'noBranding', 'autoBackup', 'mobileShop', 'autoParts', 'engineeringWorks', 'pipeline', 'generators', 'websiteApi', 'phoneApp', 'electricalSolar', 'bankReconciliation', 'pharmacy', 'loyalty'];
 
 export const PLANS: Record<PlanId, PlanDefinition> = {
   free: { id: 'free', limits: { companies: 1, users: 1, warehouses: 1 }, features: [] },

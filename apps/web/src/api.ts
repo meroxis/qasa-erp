@@ -359,6 +359,8 @@ export interface UserView {
   hasPassword: boolean;
   createdAt: string;
   lastLoginAt: string | null;
+  /** Active, but over the plan's number of users: can't sign in until an admin makes room or the plan grows. */
+  overLimit?: boolean;
 }
 
 export interface ReturnInput {

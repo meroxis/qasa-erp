@@ -76,3 +76,21 @@ it('offers no Relay switch and no cloud sign-in on a plan without them', () => {
   expect(relay.indexOf("t('rl_needsPro')")).toBeLessThan(relay.indexOf("t('rl_turnOn')"));
   expect(settings).toContain("{!status.provider && !status.available && <div className=\"alert\">{t('cl_needsPro')}");
 });
+
+it('tells a user over the plan\'s number of users how many it allows, and the admin who can\'t sign in', async () => {
+  const { ApiError } = await import('../api.ts');
+  const { errorMessages } = await import('../components.tsx');
+  for (const key of ['err_plan_user_limit', 'usersOverLimit', 'userOverLimit'] as Key[]) {
+    expect(isKey(key), key).toBe(true);
+    expect(new Set(all(key)).size, key).toBe(3);
+  }
+  const refused = new ApiError(403, 'plan_user_limit', { limit: 'users', max: 2, plan: 'starter' });
+  for (const lang of LANGS) {
+    const [message] = errorMessages(refused, i18n(lang));
+    expect(message, lang).toContain('2');
+    expect(message, lang).not.toContain('{n}');
+  }
+  const note = i18n('en').t('usersOverLimit', { n: 2, k: 2, m: 5 });
+  expect(note).toBe('Your plan allows 2 user(s) and you have 5 active. Only 2 can sign in: admins first, then the earliest made. The others (marked “Over the plan”) can’t sign in until you make other users inactive or upgrade the plan. Nothing is deleted.');
+  for (const lang of LANGS) expect(i18n(lang).t('usersOverLimit', { n: 2, k: 2, m: 5 }), lang).not.toMatch(/\{[nkm]\}/);
+});
