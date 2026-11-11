@@ -246,7 +246,7 @@ server: **Settings → Company database → Move the company to a database serve
 - [x] Office-network (server) mode: other PCs work on one PC's company file over the office network (encrypted, with a pairing code), each person with their own user
 - [x] Windows app and installer with automatic updates
 - [x] In the Microsoft Store, signed by Microsoft
-- [x] Plans (Free, Pro, Business) with signed license keys and a free first month on each PC
+- [x] Plans (Free, Starter, Pro, Business) with signed license keys and a free first month on each PC
 - [x] Backups: a daily checked copy of the company file in a folder of your choice, and restore
 - [x] The company database on the company's own MariaDB or MySQL server (Business), with move there and back
 - [ ] Code signing of the installer (the Microsoft Store version is signed by Microsoft)

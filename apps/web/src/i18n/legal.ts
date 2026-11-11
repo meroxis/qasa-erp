@@ -10,9 +10,9 @@ export const LEGAL_TEXT = {
     'ناوکی قاسە ERP بەرنامەیەکی ئازادە لەژێر مۆڵەتی گشتیی ئەفێرۆی گنو (AGPL) وەشانی ٣ یان نوێتر؛ دەتوانیت کۆدی سەرچاوەکەی بخوێنیتەوە.'
   ],
   lg_pro: [
-    'المزايا المدفوعة (Pro وBusiness) ووحدة الترخيص ملكية خاصة لـ Meroxis، ليست مفتوحة المصدر، وتخضع لاتفاقية الترخيص (EULA).',
-    'The paid features (Pro and Business) and the licence module are proprietary to Meroxis, not open source, and covered by the licence agreement (EULA).',
-    'تایبەتمەندییە پارەدارەکان (Pro و Business) و مۆدیولی مۆڵەت موڵکی Meroxisن، سەرچاوەکراوە نین، و لەژێر ڕێککەوتنی مۆڵەتدان (EULA).'
+    'المزايا المدفوعة (Starter وPro وBusiness) ووحدة الترخيص ملكية خاصة لـ Meroxis، ليست مفتوحة المصدر، وتخضع لاتفاقية الترخيص (EULA).',
+    'The paid features (Starter, Pro and Business) and the licence module are proprietary to Meroxis, not open source, and covered by the licence agreement (EULA).',
+    'تایبەتمەندییە پارەدارەکان (Starter، Pro و Business) و مۆدیولی مۆڵەت موڵکی Meroxisن، سەرچاوەکراوە نین، و لەژێر ڕێککەوتنی مۆڵەتدان (EULA).'
   ],
   lg_privacyNote: [
     'دفاتر شركتك تبقى على حواسيبك ولا تصل إلى Meroxis.',

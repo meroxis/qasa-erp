@@ -6,7 +6,7 @@ export const PHONE_TEXT = {
     'Scan barcodes with the phone camera, check prices and stock, add an item with its photo, count stock and send a sale as a draft — from the Qasa app on the phone. The link is encrypted from the phone to this PC.',
     'بارکۆد بە کامێرای مۆبایل بخوێنەوە، نرخ و کۆگا ببینە، کاڵا بە وێنەکەیەوە زیاد بکە، کۆگا بژمێرە و فرۆشتن وەک ڕەشنووس بنێرە — لە ئەپی قاسە لەسەر مۆبایل. پەیوەندییەکە لە مۆبایلەوە تا ئەم کۆمپیوتەرە شفرەکراوە.'
   ],
-  ph_needsPro: ['تطبيق الهاتف من مزايا Pro وBusiness.', 'The phone app is part of Pro and Business.', 'ئەپی مۆبایل بەشێکە لە Pro و Business.'],
+  ph_needsPro: ['تطبيق الهاتف من مزايا Starter وPro وBusiness.', 'The phone app is part of Starter, Pro and Business.', 'ئەپی مۆبایل بەشێکە لە Starter، Pro و Business.'],
   // 1.0 ships without the phone app: Settings → Phones says it is coming instead of the pairing steps
   ph_soonNote: [
     'تطبيق قاصة للهاتف قادم قريباً. عند صدوره يمكنك ربط الهواتف بهذا الحاسوب من هنا.',
@@ -37,9 +37,9 @@ export const PHONE_TEXT = {
   ph_lines: ['{n} مادة', '{n} items', '{n} کاڵا'],
   ph_download: ['تنزيل (Excel)', 'Download (Excel)', 'داگرتن (Excel)'],
   err_phone_limit: [
-    'وصلت إلى عدد الهواتف المسموح به في خطتك (3 في Pro). احذف هاتفاً، أو انتقل إلى Business لعدد غير محدود.',
-    'You have reached the phones your plan allows (3 on Pro). Remove one, or move to Business for unlimited phones.',
-    'گەیشتیتە ژمارەی ئەو مۆبایلانەی پلانەکەت ڕێگەی پێدەدات (3 لە Pro). یەکێک لاببە، یان بڕۆ بۆ Business بۆ ژمارەی بێسنوور.'
+    'وصلت إلى عدد الهواتف المسموح به في خطتك (3 في Starter وPro). احذف هاتفاً، أو انتقل إلى Business لعدد غير محدود.',
+    'You have reached the phones your plan allows (3 on Starter and Pro). Remove one, or move to Business for unlimited phones.',
+    'گەیشتیتە ژمارەی ئەو مۆبایلانەی پلانەکەت ڕێگەی پێدەدات (3 لە Starter و Pro). یەکێک لاببە، یان بڕۆ بۆ Business بۆ ژمارەی بێسنوور.'
   ],
   err_phone_user_required: ['اختر المستخدم الذي يعمل الهاتف باسمه.', 'Choose the user the phone works as.', 'ئەو بەکارهێنەرە هەڵبژێرە کە مۆبایلەکە بە ناوییەوە کار دەکات.'],
   err_phone_port_busy: [

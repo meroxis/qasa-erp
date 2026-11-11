@@ -1,7 +1,7 @@
 import { createPublicKey, verify, type KeyObject } from 'node:crypto';
 import { z } from 'zod';
 import {
-  GROWTH_NUDGE_INVOICES, isIsoDate, licenseState, resolvePlan, trialEndsOn,
+  GROWTH_NUDGE_INVOICES, isIsoDate, licenseState, PAID_PLAN_IDS, resolvePlan, trialEndsOn,
   type LicenseInfo, type LicenseState, type LimitName, type PlanResolution
 } from '@qasa/core';
 import type { Db } from './db.ts';
@@ -36,7 +36,7 @@ const isoDate = z.string().refine(isIsoDate);
 const payloadSchema = z.object({
   v: z.literal(1),
   id: z.string().min(1).max(40),
-  plan: z.enum(['pro', 'business']),
+  plan: z.enum(PAID_PLAN_IDS),
   to: z.string().min(1).max(120),
   users: z.number().int().positive().optional(),
   companies: z.number().int().positive().optional(),

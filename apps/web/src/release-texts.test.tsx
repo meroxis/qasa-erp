@@ -47,7 +47,7 @@ it('says which adjustment account is wrong, instead of a general message', () =>
 
 it('promises only what 1.0 has: branches on Business, working online marked soon', () => {
   expect(en.t('f_branches')).toBe('Branches');
-  expect(ROWS.find((r) => r.label === 'f_online')).toMatchObject({ cells: [false, false, true], soon: true });
+  expect(ROWS.find((r) => r.label === 'f_online')).toMatchObject({ cells: [false, false, false, true], soon: true });
   expect(ROWS.find((r) => r.label === 'f_branches')?.soon).toBeUndefined();
   // the row that is still to come is the online edition in the browser, not working from anywhere (that is Qasa Relay)
   expect(en.t('f_online')).toBe('Online edition (in the browser)');
@@ -55,7 +55,8 @@ it('promises only what 1.0 has: branches on Business, working online marked soon
 });
 
 it('shows Qasa Relay as included on Pro and Business, as the release notes and the Store text say', () => {
-  expect(ROWS.find((r) => r.label === 'f_relay')).toEqual({ label: 'f_relay', cells: [false, true, true] });
+  // Free, Starter, Pro, Business: Starter's office network stays on the office's own network
+  expect(ROWS.find((r) => r.label === 'f_relay')).toEqual({ label: 'f_relay', cells: [false, false, true, true] });
   for (const text of all('f_relay')) expect(text).toMatch(/^Qasa Relay: /);
   expect(en.t('f_relay')).toContain('not in the free month');
 });

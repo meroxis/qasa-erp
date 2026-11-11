@@ -1,17 +1,33 @@
 import { addDays } from './dates.ts';
 
 /**
- * Qasa ERP plans. Free is a complete product for a small business on one PC; Pro and Business add what a
- * growing company needs (a team, more warehouses, payroll …). A plan never locks anyone out of their data:
+ * Qasa ERP plans. Free is a complete product for a small business on one PC; Starter, Pro and Business add what a
+ * growing company needs (a team, more warehouses, payroll …). Starter is Pro for a small office: two users, one
+ * company, the office network on the office's own network only (no Qasa Relay) and no cloud backup.
+ * A plan never locks anyone out of their data:
  * when a license ends, the company keeps everything it entered and continues on the Free features.
  */
-export type PlanId = 'free' | 'pro' | 'business';
+export type PlanId = 'free' | 'starter' | 'pro' | 'business';
 
-export const PLAN_IDS: readonly PlanId[] = ['free', 'pro', 'business'];
+/** Every plan, from the smallest to the largest: a plan's place here is its rank. */
+export const PLAN_IDS: readonly PlanId[] = ['free', 'starter', 'pro', 'business'];
+
+/** The plans a licence key can carry (Free needs none). */
+export const PAID_PLAN_IDS = ['starter', 'pro', 'business'] as const;
+export type PaidPlanId = (typeof PAID_PLAN_IDS)[number];
+
+/** A plan's place among the plans (Free 0, Starter 1, Pro 2, Business 3); anything that is no plan counts as Free. */
+export function planRank(plan: unknown): number {
+  return Math.max(0, PLAN_IDS.indexOf(plan as PlanId));
+}
+
+/** A year of each paid plan, in Iraqi dinars (shown on the Plan page; the portal sells them). */
+export const PLAN_PRICE_IQD: Readonly<Record<PaidPlanId, number>> = { starter: 165_000, pro: 350_000, business: 1_000_000 };
 
 /** Features that only some plans include. */
 export type Feature =
-  | 'officeNetwork' // several users on the office network
+  | 'officeNetwork' // several users on the office network (the office's own network)
+  | 'relay' // Qasa Relay: the office network, the phone link and the website API reachable over the internet
   | 'roles' // separate sign-ins for the preparer, checker and approver
   | 'installments'
   | 'payroll'
@@ -23,7 +39,8 @@ export type Feature =
   | 'electricalSolar' // electrical and solar installers: system quotes, installed equipment and warranty, maintenance
   | 'finalAccountsExport' // print and Excel of the final accounts, year-end closing
   | 'noBranding' // invoices without "Made with Qasa ERP"
-  | 'cloudBackup'
+  | 'autoBackup' // automatic daily backups to a folder, and the copy made when the app closes
+  | 'cloudBackup' // the automatic copies also uploaded to Google Drive or OneDrive
   | 'onlineEdition'
   | 'branches'
   | 'realEstate' // projects, units, reservations and unit sales
@@ -49,10 +66,14 @@ export interface PlanDefinition {
   features: readonly Feature[];
 }
 
-const PRO_FEATURES: readonly Feature[] = ['officeNetwork', 'roles', 'installments', 'payroll', 'finalAccountsExport', 'noBranding', 'cloudBackup', 'mobileShop', 'autoParts', 'engineeringWorks', 'pipeline', 'generators', 'websiteApi', 'phoneApp', 'electricalSolar', 'bankReconciliation', 'pharmacy', 'loyalty'];
+const PRO_FEATURES: readonly Feature[] = ['officeNetwork', 'relay', 'roles', 'installments', 'payroll', 'finalAccountsExport', 'noBranding', 'autoBackup', 'cloudBackup', 'mobileShop', 'autoParts', 'engineeringWorks', 'pipeline', 'generators', 'websiteApi', 'phoneApp', 'electricalSolar', 'bankReconciliation', 'pharmacy', 'loyalty'];
+/** What Pro has and Starter leaves out: reaching the office over the internet (Qasa Relay) and the cloud backup. */
+export const STARTER_LEAVES_OUT: readonly Feature[] = ['relay', 'cloudBackup'];
+const STARTER_FEATURES: readonly Feature[] = PRO_FEATURES.filter((f) => !STARTER_LEAVES_OUT.includes(f));
 
 export const PLANS: Record<PlanId, PlanDefinition> = {
   free: { id: 'free', limits: { companies: 1, users: 1, warehouses: 1 }, features: [] },
+  starter: { id: 'starter', limits: { companies: 1, users: 2, warehouses: null }, features: STARTER_FEATURES },
   pro: { id: 'pro', limits: { companies: 3, users: 5, warehouses: null }, features: PRO_FEATURES },
   business: { id: 'business', limits: { companies: null, users: null, warehouses: null }, features: [...PRO_FEATURES, 'onlineEdition', 'branches', 'databaseServer', 'realEstate'] }
 };
@@ -68,7 +89,7 @@ export const GROWTH_NUDGE_INVOICES = 300;
 export interface LicenseInfo {
   /** e.g. "QL-2026-0001" */
   id: string;
-  plan: Exclude<PlanId, 'free'>;
+  plan: PaidPlanId;
   /** The company the license was issued to; shown in the app. */
   licensee: string;
   /** Replaces the plan's user limit when present. */

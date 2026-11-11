@@ -28,7 +28,7 @@ it('no text key is defined twice: the Phones card keeps its own title and notice
   for (const f of files) for (const m of readFileSync(f, 'utf8').matchAll(/^ {2}([A-Za-z_]\w*): \[/gm)) seen.set(m[1]!, (seen.get(m[1]!) ?? 0) + 1);
   expect([...seen].filter(([, n]) => n > 1).map(([k]) => k)).toEqual([]);
   expect(en.t('ph_title')).toBe('Phones (Qasa app)');
-  expect(en.t('ph_needsPro')).toBe('The phone app is part of Pro and Business.');
+  expect(en.t('ph_needsPro')).toBe('The phone app is part of Starter, Pro and Business.');
   expect(en.t('phm_title')).toBe('Pharmacy');
   expect(en.t('err_payment_invalid')).toBe('Choose how it is paid.');
   expect(en.t('err_pos_payment_invalid')).toBe('A payment isn’t valid.');

@@ -7,7 +7,7 @@ export const WEBAPI_TEXT = {
     'Your website reads items, prices and stock straight from Qasa, and sends orders to it as draft sale invoices that you check and post yourself. Each site gets its own key with set permissions, which you can cancel at any time.',
     'ماڵپەڕەکەت کاڵا و نرخ و کۆگا ڕاستەوخۆ لە قاسە دەخوێنێتەوە، و داواکارییەکان وەک ڕەشنووسی پسوولەی فرۆشتن دەنێرێت کە خۆت پێیاندا دەچیتەوە و تۆماریان دەکەیت. هەر ماڵپەڕێک کلیلی تایبەتی خۆی هەیە بە دەسەڵاتی دیاریکراو، و هەر کاتێک دەتوانیت هەڵیبوەشێنیتەوە.'
   ],
-  wa_needsPro: ['ربط المواقع من مزايا Pro وBusiness — راجع «الخطة والترخيص».', 'The website API is part of Pro and Business. See Plan & license.', 'بەستنەوەی ماڵپەڕ بەشێکە لە Pro و Business — «پلان و مۆڵەت» ببینە.'],
+  wa_needsPro: ['ربط المواقع من مزايا Starter وPro وBusiness — راجع «الخطة والترخيص».', 'The website API is part of Starter, Pro and Business. See Plan & license.', 'بەستنەوەی ماڵپەڕ بەشێکە لە Starter، Pro و Business — «پلان و مۆڵەت» ببینە.'],
   wa_connectTitle: ['كيف يصل موقعك إلى هذا المكتب', 'How your website reaches this office', 'ماڵپەڕەکەت چۆن دەگاتە ئەم نووسینگەیە'],
   wa_connectHelp: [
     'عبر الإنترنت يستعمل الموقع معرّف المكتب ومفتاح المكتب أدناه: كل طلب يُقفل بحيث لا يفتحه إلا هذا الحاسوب، فلا يقرؤه خادم Relay ولا أي أحد في الطريق. وعلى شبكة المكتب يستعمل العنوان ويثبّت رمز الشهادة. يجب أن تكون شبكة المكتب، ووصولها عبر الإنترنت لاستعمال Relay، مفعّلين في الإعدادات.',
@@ -107,7 +107,7 @@ export const WEBAPI_TEXT = {
   err_api_key_invalid: ['المفتاح غير صحيح أو ملغى.', 'The key is wrong or was cancelled.', 'کلیلەکە هەڵەیە یان هەڵوەشێنراوەتەوە.'],
   err_api_scope_missing: ['هذا المفتاح غير مسموح له بذلك.', 'This key isn’t allowed to do that.', 'ئەم کلیلە ڕێگەی پێنەدراوە ئەوە بکات.'],
   err_rate_limited: ['طلبات كثيرة؛ حاول بعد دقيقة.', 'Too many requests; try again in a minute.', 'داواکاری زۆرە؛ دوای خولەکێک هەوڵ بدەرەوە.'],
-  err_plan_limit_websiteApi: ['ربط المواقع من مزايا Pro وBusiness — راجع «الخطة والترخيص».', 'The website API is part of Pro and Business. See Plan & license.', 'بەستنەوەی ماڵپەڕ بەشێکە لە Pro و Business — «پلان و مۆڵەت» ببینە.'],
+  err_plan_limit_websiteApi: ['ربط المواقع من مزايا Starter وPro وBusiness — راجع «الخطة والترخيص».', 'The website API is part of Starter, Pro and Business. See Plan & license.', 'بەستنەوەی ماڵپەڕ بەشێکە لە Starter، Pro و Business — «پلان و مۆڵەت» ببینە.'],
   err_wa_name_required: ['اكتب لأي موقع هذا المفتاح.', 'Say which site the key is for.', 'بنووسە ئەم کلیلە بۆ کام ماڵپەڕە.'],
   err_wa_scopes_required: ['اختر صلاحية واحدة على الأقل.', 'Pick at least one permission.', 'لانیکەم یەک دەسەڵات هەڵبژێرە.'],
   err_wa_url_https: ['يجب أن يبدأ العنوان بـ https://', 'The address must start with https://', 'ناونیشانەکە دەبێت بە https:// دەست پێبکات.'],

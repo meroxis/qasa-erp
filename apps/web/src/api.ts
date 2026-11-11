@@ -556,6 +556,8 @@ export interface NetworkStatus {
   hostname: string;
   code: string | null;
   signedIn: number;
+  /** The plan includes Qasa Relay (Pro, Business); false on Starter, whose office network stays inside the office. */
+  relayAvailable?: boolean;
 }
 
 /** Backups (Pro module): a daily checked copy of the company file in a chosen folder. Missing (404) without Pro. */

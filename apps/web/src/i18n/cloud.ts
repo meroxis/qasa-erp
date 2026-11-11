@@ -6,6 +6,8 @@ export const CLOUD_TEXT = {
     'Each daily copy, encrypted, goes up to your cloud account by itself. Click Connect and sign in in your browser — that’s all.',
     'هەموو کۆپییەکی ڕۆژانە، بە شفرەکراوی، خۆکارانە بۆ هەژماری هەورەکەت بەرز دەکرێتەوە. کلیک لە «پەیوەستکردن» بکە و لە وێبگەڕەکەت بچۆ ژوورەوە — تەواو.'
   ],
+  // Starter (and Free): the automatic copies stay in their folder
+  cl_needsPro: ['النسخ إلى السحابة يأتي مع Pro وBusiness.', 'Cloud backup comes with Pro and Business.', 'باکئەپ بۆ هەور لەگەڵ Pro و Business دێت.'],
   cl_google: ['Google Drive', 'Google Drive', 'Google Drive'],
   cl_onedrive: ['OneDrive', 'OneDrive', 'OneDrive'],
   cl_connect: ['ربط {p}', 'Connect {p}', 'پەیوەستکردنی {p}'],

@@ -630,8 +630,8 @@ a.step:hover { background: var(--subtle-hover); }
 .chip.warn { background: var(--warn-bg); color: var(--warn); }
 .chip.bad { background: var(--bad-bg); color: var(--bad); }
 .chip.info { background: var(--info-bg); color: var(--info); }
-.chip.plan-pro, .chip.plan-business { background: var(--highlight); color: var(--on-highlight); }
-.chip.plan-pro::before, .chip.plan-business::before { display: none; }
+.chip.plan-starter, .chip.plan-pro, .chip.plan-business { background: var(--highlight); color: var(--on-highlight); }
+.chip.plan-starter::before, .chip.plan-pro::before, .chip.plan-business::before { display: none; }
 
 /* ---------- forms ---------- */
 .field { display: flex; flex-direction: column; gap: 6px; min-inline-size: 0; }
@@ -864,7 +864,7 @@ a.plan-chip:hover { text-decoration: underline; }
 .plan-facts { display: grid; grid-template-columns: max-content 1fr; gap: 6px 16px; font-size: var(--fs-body); align-items: center; }
 .license-key { font-family: var(--font-mono); font-size: var(--fs-small); word-break: break-all; resize: vertical; }
 .table-wrap { overflow-x: auto; }
-.plans-table td:not(:first-child), .plans-table th:not(:first-child) { text-align: center; inline-size: 22%; }
+.plans-table td:not(:first-child), .plans-table th:not(:first-child) { text-align: center; inline-size: 17%; }
 .plans-table .current { background: var(--info-bg); }
 .plans-table thead .current { color: var(--info); }
 .plans-table .yes { color: var(--ok); display: inline-flex; }

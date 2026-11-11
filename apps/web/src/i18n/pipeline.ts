@@ -3,7 +3,7 @@ export const PIPELINE_TEXT = {
   pl_title: ['متابعة المبيعات', 'Sales pipeline', 'بەدواداچوونی فرۆشتن'],
   pl_help: ['كل زبون محتمل في بطاقة: اسحبها من مرحلة إلى أخرى حتى تكسب الصفقة أو تخسرها. الخطوة التالية وتاريخها يذكّرانك بمن تتابع اليوم.', 'Every possible sale is a card: drag it from stage to stage until you win or lose it. The next step and its date remind you whom to follow up today.', 'هەر فرۆشتنێکی ئەگەری کارتێکە: لە قۆناغێکەوە ڕایبکێشە بۆ قۆناغێکی تر تا دەیبەیتەوە یان دەیدۆڕێنیت. هەنگاوی داهاتوو و بەروارەکەی بیرت دەخەنەوە ئەمڕۆ بەدوای کێدا بچیت.'],
   pl_notAvailable: ['متابعة المبيعات متاحة في نسخة Windows الرسمية مع Pro.', 'The sales pipeline comes with Pro in the official Windows app.', 'بەدواداچوونی فرۆشتن لەگەڵ Pro لە ئەپی فەرمیی ویندۆز بەردەستە.'],
-  pl_needsPro: ['إضافة الصفقات ونقلها تحتاج خطة Pro أو Business. ما سجّلته يبقى ظاهراً.', 'Adding and moving deals needs the Pro or Business plan. What you entered stays visible.', 'زیادکردن و جوڵاندنی مامەڵەکان پلانی Pro یان Business پێویستە. ئەوەی تۆمارت کردووە دیار دەمێنێت.'],
+  pl_needsPro: ['إضافة الصفقات ونقلها تحتاج خطة Starter أو Pro أو Business. ما سجّلته يبقى ظاهراً.', 'Adding and moving deals needs the Starter, Pro or Business plan. What you entered stays visible.', 'زیادکردن و جوڵاندنی مامەڵەکان پلانی Starter، Pro یان Business پێویستە. ئەوەی تۆمارت کردووە دیار دەمێنێت.'],
   pl_new: ['صفقة جديدة', 'New deal', 'مامەڵەی نوێ'],
   pl_created: ['تمت إضافة الصفقة', 'Deal added', 'مامەڵە زیادکرا'],
   pl_none: ['لا توجد صفقات هنا بعد.', 'No deals here yet.', 'هێشتا هیچ مامەڵەیەک لێرە نییە.'],

@@ -4,7 +4,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { hostname } from 'node:os';
 import { dirname, join } from 'node:path';
 import { z } from 'zod';
-import { addDays, APP_VERSION, isIsoDate, todayIso, type LicenseInfo } from '@qasa/core';
+import { addDays, APP_VERSION, isIsoDate, PAID_PLAN_IDS, todayIso, type LicenseInfo } from '@qasa/core';
 import type { Db } from './db.ts';
 import { transaction } from './db.ts';
 import { audit } from './audit.ts';
@@ -367,7 +367,7 @@ const tokenSchema = z.object({
   lic: z.string().min(1).max(40),
   key: z.string().regex(/^[0-9a-f]{32}$/),
   machine: z.string().regex(/^[0-9a-f]{32}$/),
-  plan: z.enum(['pro', 'business']),
+  plan: z.enum(PAID_PLAN_IDS),
   users: z.number().int().positive().optional(),
   companies: z.number().int().positive().optional(),
   expires: isoDate.nullable(),

@@ -714,3 +714,29 @@ describe('official builds check every licence in the Rust module too', () => {
     configureLicensing({ requireNative: false });
   });
 });
+
+describe('a Starter licence in the official app', () => {
+  const starterKey = () => signed('QASA1', { v: 1, id: 'QP-2026-0009', plan: 'starter', to: 'Mer', issued: iso(clock), expires: null });
+
+  it('is Free until activated on this PC, then Starter (never Pro)', async () => {
+    const entered = (await post('/api/plan/license', { key: starterKey() })).json();
+    expect(entered).toMatchObject({ plan: 'free', activation: { required: true, state: 'needs_activation' } });
+    const done = await enterAndActivate(starterKey());
+    expect(done).toMatchObject({ plan: 'starter', source: 'license', limits: { users: 2, companies: 1 }, activation: { state: 'active' } });
+    expect(done.features).not.toContain('relay');
+    expect(done.features).not.toContain('cloudBackup');
+  });
+
+  it('does not count with an activation token made for another plan', async () => {
+    const key = starterKey();
+    await enterAndActivate(key);
+    for (const plan of ['pro', 'business']) {
+      writeSetting(db, 'activation_token', signed('QACT1', {
+        v: 1, lic: 'QP-2026-0009', key: keyHash(key), machine: machineId(db), plan, expires: null, issued: iso(clock), checkBy: addDays(iso(clock), 30)
+      }));
+      const status = planStatus(db);
+      expect(status.plan, plan).toBe('free');
+      expect(status.activation.state, plan).not.toBe('active');
+    }
+  });
+});
