@@ -18,6 +18,8 @@ const T = {
   guide: ['دليل الاستخدام', 'User guide', 'ڕێنمایی بەکارهێنان'],
   checkUpdates: ['التحقق من التحديثات', 'Check for updates', 'پشکنینی نوێکردنەوە'],
   website: ['موقع qasaerp.com', 'qasaerp.com website', 'ماڵپەڕی qasaerp.com'],
+  // Help → Remote support… (remote-support.ts): the app window's Remote support screen, with Quick Assist
+  remoteSupport: ['الدعم عن بُعد…', 'Remote support…', 'پشتگیری لە دوورەوە…'],
   about: ['حول قاصة ERP', 'About Qasa ERP', 'دەربارەی قاسە ERP'],
   aboutText: ['قاصة ERP {v}\nمنتج من Meroxis\nhttps://qasaerp.com', 'Qasa ERP {v}\nA product of Meroxis\nhttps://qasaerp.com', 'قاسە ERP {v}\nبەرهەمێکی Meroxis ـە\nhttps://qasaerp.com'],
   ok: ['حسناً', 'OK', 'باشە'],

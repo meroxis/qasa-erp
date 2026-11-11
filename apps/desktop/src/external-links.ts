@@ -33,6 +33,20 @@ export function isAllowedExternal(target: string): boolean {
   return EXTERNAL_HOSTS.includes(url.hostname) && url.port === '' && url.username === '' && url.password === '';
 }
 
+/**
+ * Remote support (remote-support.ts): Windows' Quick Assist, and its Microsoft Store page when it isn't installed.
+ * Only the main process opens these, from Help → Remote support… or the page's no-argument qasaDesktop.remoteSupport();
+ * isAllowedExternal refuses them, so no link, new window or navigation of a page (or of an office server) opens them.
+ */
+export const QUICK_ASSIST_URL = 'ms-quick-assist:';
+export const QUICK_ASSIST_STORE_URL = 'ms-windows-store://pdp/?productid=9P7BP5VNWKX5';
+const REMOTE_SUPPORT_URLS: readonly string[] = [QUICK_ASSIST_URL, QUICK_ASSIST_STORE_URL];
+
+/** Exactly one of the two fixed remote-support addresses. */
+export function isRemoteSupportUrl(target: string): boolean {
+  return REMOTE_SUPPORT_URLS.includes(target);
+}
+
 /** What the log says about a refused address: its scheme and host only (a query can carry personal data). */
 export function refusedForLog(target: string): string {
   try {

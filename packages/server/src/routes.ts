@@ -2,7 +2,7 @@ import { z } from 'zod';
 import { BUILT_IN_FEATURES } from './features.ts';
 import { checkBranchRequest, filterBranchResult, isBranchLimited, userBranchLists } from './branches.ts';
 import { APP_VERSION, BUSINESS_TYPES, MAX_BATCH_NO, MAX_ITEM_UNITS, MAX_UNIT_FACTOR_MILLI, UNIT_CODES } from '@qasa/core';
-import type { Db } from './db.ts';
+import { schemaVersion, SCHEMA_VERSION, type Db } from './db.ts';
 import { AppError, conflict, invalid } from './errors.ts';
 import {
   changeOwnPassword, createUser, hasRecoveryCode, issueRecoveryCode, listUsers, login, logout, ownerActor, ROLES, separateDuties, SESSION_COOKIE, sessionActor, sessionCookie,
@@ -381,6 +381,8 @@ export function apiRoutes(db: Db, options: { demo?: boolean; extensions?: readon
   const notInDemo = () => { if (options.demo) throw conflict('demo_unavailable'); };
 
   app.get('/api/health', async () => ({ ok: true, app: 'qasa-erp', version: APP_VERSION }));
+  // Settings → About → Remote support, "Copy support details": the company file's schema version (signed-in users only)
+  app.get('/api/support', async () => ({ schema: schemaVersion(db), app: SCHEMA_VERSION }));
 
   // settings & periods
   app.get('/api/settings', async () => getSettings(db));

@@ -2,7 +2,7 @@ import { contextBridge, ipcRenderer } from 'electron';
 
 /**
  * The app window's only way to the desktop shell: the language and appearance the user picks, graphics acceleration,
- * the third-party notices installed with the app.
+ * the third-party notices installed with the app, remote support with Quick Assist.
  */
 contextBridge.exposeInMainWorld('qasaDesktop', {
   setLanguage: (lang: string) => ipcRenderer.send('app:language', String(lang)),
@@ -15,6 +15,19 @@ contextBridge.exposeInMainWorld('qasaDesktop', {
   /** "What's new" after an update (1.1): the version now and the one before (null: nothing new), and "seen". */
   whatsNew: () => ipcRenderer.invoke('app:whatsNew') as Promise<{ current: string; previous: string | null } | null>,
   whatsNewSeen: () => ipcRenderer.invoke('app:whatsNewSeen') as Promise<boolean>,
+  /**
+   * Remote support (main.ts, remote-support.ts): opens Windows' Quick Assist (else its Store page). No argument
+   * crosses: the main process opens only its two fixed addresses. Answers 'opened', 'store' or 'failed'.
+   */
+  remoteSupport: () => ipcRenderer.invoke('app:remoteSupport') as Promise<unknown>,
+  /** The edition, Windows' version, office-server client or not, and the log's last error lines, already scrubbed. */
+  supportInfo: () => ipcRenderer.invoke('app:supportInfo') as Promise<unknown>,
+  /** Help → Remote support… asks the page to show its Remote support screen. */
+  onRemoteSupport: (listener: () => void) => {
+    const handler = () => listener();
+    ipcRenderer.on('app:remoteSupport:show', handler);
+    return () => { ipcRenderer.removeListener('app:remoteSupport:show', handler); };
+  },
   /** This app can keep several companies (Settings → Companies; the routes are on its own server, admins only). */
   companies: true,
   /**

@@ -7,8 +7,8 @@ import { app, BrowserWindow, dialog, ipcMain, Menu, nativeTheme, protocol, safeS
 import electronUpdater from 'electron-updater';
 import { channelOf, notesText, updaterOptions, type UpdateChannel, type UpdateState } from './updates-logic.ts';
 import { randomBytes } from 'node:crypto';
-import { appendFileSync, existsSync, mkdirSync, readdirSync, readFileSync, statSync, unlinkSync, writeFileSync } from 'node:fs';
-import { hostname, userInfo } from 'node:os';
+import { appendFileSync, closeSync, existsSync, fstatSync, mkdirSync, openSync, readdirSync, readFileSync, readSync, statSync, unlinkSync, writeFileSync } from 'node:fs';
+import { homedir, hostname, userInfo } from 'node:os';
 import { join } from 'node:path';
 import { Bridge } from './bridge.ts';
 import { confirmWithHello, resetWithWindows, windowsAccount, type ResetAnswer } from './windows-confirm.ts';
@@ -24,6 +24,7 @@ import { sharePdfHandlers } from './share-pdf.ts';
 import { pair, parseAddress, parseOfficeId, pemFingerprint, startTunnel, type PairResult, type Remote } from './office.ts';
 import { openOutbox, OutboxRefusal, type OutboxStore } from './outbox.ts';
 import { makeSecretBox } from './secrets.ts';
+import { remoteSupportHandlers } from './remote-support.ts';
 
 const { autoUpdater } = electronUpdater;
 /** Installed from the Microsoft Store: the Store signs and updates it, so the app's own updater stays off. */
@@ -518,6 +519,46 @@ ipcMain.handle('app:notices', async (event) => {
   return openNotices(process.resourcesPath, (path) => shell.openPath(path), log);
 });
 
+// Help → Remote support… and Settings → About (remote-support.ts): Quick Assist from two fixed addresses only, and the
+// few facts for "Copy support details", scrubbed of the user's folder and names, addresses and secrets
+/** The last 64 KB of the log (enough for its last error lines). */
+function readLogTail(): string | null {
+  const file = logFallback ?? join(app.getPath('userData'), 'logs', 'main.log');
+  let fd: number | null = null;
+  try {
+    fd = openSync(file, 'r');
+    const size = fstatSync(fd).size;
+    const length = Math.min(size, 64 * 1024);
+    const buffer = Buffer.alloc(length);
+    readSync(fd, buffer, 0, length, size - length);
+    return buffer.toString('utf8');
+  } catch {
+    return null;
+  } finally {
+    if (fd !== null) try { closeSync(fd); } catch { /* closed */ }
+  }
+}
+const remoteSupport = remoteSupportHandlers({
+  fromAppPage: (event) => invokedByAppPage(event as Electron.IpcMainInvokeEvent),
+  openExternal: (url) => shell.openExternal(url),
+  readLog: readLogTail,
+  edition: () => (FROM_STORE ? 'store' : 'installer'),
+  windows: () => process.getSystemVersion(),
+  client: () => !!remote,
+  scrub: () => {
+    let user = '';
+    try { user = userInfo().username; } catch { /* no account name */ }
+    return {
+      homeDir: homedir(),
+      names: [user, hostname(), remote?.host],
+      secrets: [SESSION_KEY, remote?.fingerprint, remote?.relay?.office]
+    };
+  },
+  log
+});
+ipcMain.handle('app:remoteSupport', (event) => remoteSupport.start(event));
+ipcMain.handle('app:supportInfo', (event) => remoteSupport.info(event));
+
 // Settings → Printers and every Print button (app-preload.ts → qasaDesktop.printers, printing.ts): this PC's printers,
 // the choice saved for each kind of paper (printers.json), and printing the app window with it. Never another window.
 const printersFile = () => join(app.getPath('userData'), 'printers.json');
@@ -812,6 +853,8 @@ function buildMenu(): void {
         { label: t('guide'), click: () => void openGuide() },
         { label: t('checkUpdates'), click: () => checkForUpdates(true) },
         { label: t('website'), click: () => void shell.openExternal('https://qasaerp.com') },
+        // the app window's Remote support screen (Quick Assist is started from there, after the person reads it)
+        { label: t('remoteSupport'), enabled: !!win, click: () => { if (win && !win.isDestroyed()) win.webContents.send('app:remoteSupport:show'); } },
         { type: 'separator' },
         {
           label: t('about'),

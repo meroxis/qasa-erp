@@ -16,6 +16,7 @@ import { CommandPalette } from './industry/CommandPalette.tsx';
 import { Tour, TOUR_EVENT, tourDone } from './industry/Tour.tsx';
 import { UpdateBanner } from './industry/UpdateBanner.tsx';
 import { WhatsNewAfterUpdate } from './industry/WhatsNew.tsx';
+import { RemoteSupportFromMenu } from './industry/RemoteSupport.tsx';
 import { BackupNoticeBar } from './industry/BackupNotice.tsx';
 import { PrintNotices } from './industry/Printers.tsx';
 import { GuideLink, pageGuide } from './industry/GuideLink.tsx';
@@ -803,6 +804,7 @@ export function App() {
               )}
               <UpdateBanner />
               <WhatsNewAfterUpdate />
+              <RemoteSupportFromMenu />
               <PrintNotices />
               <main className="content">
                 {import.meta.env.MODE === 'demo' && narrow && <div className="alert info demo-phone no-print" role="note" style={{ marginBottom: 14 }}>{t('demoPhoneNote')}</div>}
