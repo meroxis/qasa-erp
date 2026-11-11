@@ -83,7 +83,7 @@ export interface ProContext {
   /** Replaces the company file with a checked backup and restarts the app; the current file is kept aside. */
   restoreDatabase(file: string): Promise<void>;
   /**
-   * 1.2: Electron's resources folder (app.asar, app.asar.sig and the licence addon), where the Pro module checks the
+   * 1.2: Electron's resources folder (app.asar and the licence addon next to it), where the Pro module checks the
    * licence and the app's files for itself.
    */
   resourcesPath?: string;
