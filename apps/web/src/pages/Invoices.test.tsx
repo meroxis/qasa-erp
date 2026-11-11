@@ -27,6 +27,8 @@ vi.mock('react', () => ({
   }
 }));
 // the price list answer never arrives here, so the catalog price is what gets saved
+vi.mock('../industry/categories-api.ts', () => ({ categoriesApi: { list: () => [] }, inCategory: () => true }));
+vi.mock('../industry/CatalogPickers.tsx', () => ({ CategoryOptions: 'CategoryOptions' }));
 vi.mock('../industry/prices-api.ts', () => ({ pricesApi: { priceFor: vi.fn(() => new Promise(() => {})) } }));
 vi.mock('../api.ts', () => ({
   ApiError: Error,
