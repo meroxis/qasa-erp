@@ -52,7 +52,12 @@ contextBridge.exposeInMainWorld('qasaDesktop', {
     // labels may name the layout picked on the labels page (its paper is used); the main process checks it
     print: (kind: string, layout?: string) =>
       (layout === undefined ? ipcRenderer.invoke('printers:print', String(kind)) : ipcRenderer.invoke('printers:print', String(kind), String(layout))) as Promise<unknown>
-  }
+  },
+  /**
+   * Send on WhatsApp as a PDF (main.ts, share-pdf.ts): this window as it prints now, saved as "<kind>-<number>.pdf" in
+   * the app's own folder and shown in File Explorer. Only a kind and a number cross; the main process checks both.
+   */
+  sharePdf: (kind: string, ref: string) => ipcRenderer.invoke('share:pdf', String(kind), String(ref)) as Promise<unknown>
 });
 
 /** Plain data only (JSON), at most 1 MB: no functions or objects of the page's own cross to the main process. */

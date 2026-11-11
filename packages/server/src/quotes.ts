@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { z } from 'zod';
-import { lineAmount, type CurrencyCode } from '@qasa/core';
+import { isLang, lineAmount, type CurrencyCode, type Lang } from '@qasa/core';
 import type { Db } from './db.ts';
 import { nextSequence, transaction } from './db.ts';
 import { audit } from './audit.ts';
@@ -42,7 +42,8 @@ export interface QuoteSummary {
   number: string;
   date: string;
   validUntil: string | null;
-  party: { id: string; code: string; name: string; phone: string } | null;
+  /** lang (1.2): the language the customer gets WhatsApp messages in (null: the app's) */
+  party: { id: string; code: string; name: string; phone: string; lang: Lang | null } | null;
   customerName: string;
   currency: CurrencyCode;
   subtotal: number;
@@ -83,10 +84,10 @@ export function todayIso(): string {
 interface Row {
   id: string; number: string; date: string; valid_until: string | null; party_id: string | null; customer_name: string | null; currency: CurrencyCode;
   discount: number; status: QuoteStatus; invoice_id: string | null; notes: string | null; terms: string | null; created_by: string; created_at: string;
-  p_code: string | null; p_name: string | null; p_phone: string | null; p_address: string | null;
+  p_code: string | null; p_name: string | null; p_phone: string | null; p_address: string | null; p_lang: string | null;
   inv_number: string | null; inv_status: string | null;
 }
-const SELECT = `SELECT q.*, p.code AS p_code, p.name AS p_name, p.phone AS p_phone, p.address AS p_address,
+const SELECT = `SELECT q.*, p.code AS p_code, p.name AS p_name, p.phone AS p_phone, p.address AS p_address, p.lang AS p_lang,
                        i.number AS inv_number, i.status AS inv_status
                 FROM quotes q LEFT JOIN parties p ON p.id = q.party_id LEFT JOIN invoices i ON i.id = q.invoice_id`;
 
@@ -118,7 +119,7 @@ function summarize(r: Row, lines: QuoteLineView[], today: string): QuoteSummary 
   const status = statusOf(r);
   return {
     id: r.id, number: r.number, date: r.date, validUntil: r.valid_until,
-    party: r.party_id ? { id: r.party_id, code: r.p_code ?? '', name: r.p_name ?? '', phone: r.p_phone ?? '' } : null,
+    party: r.party_id ? { id: r.party_id, code: r.p_code ?? '', name: r.p_name ?? '', phone: r.p_phone ?? '', lang: isLang(r.p_lang) ? r.p_lang : null } : null,
     customerName: r.p_name ?? r.customer_name ?? '',
     currency: r.currency, subtotal, discount, total: Math.max(0, subtotal - discount), status,
     expired: (status === 'draft' || status === 'sent') && !!r.valid_until && r.valid_until < today,

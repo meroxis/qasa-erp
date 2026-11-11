@@ -19,6 +19,9 @@ describe('the offline till', () => {
     expect(offlineRefusal({ payments: [{ method: 'cash', amount: 1 }, { method: 'card', amount: 2 }] })).toBeNull();
     expect(offlineRefusal({})).toBeNull();
     expect(offlineRefusal({ payments: [{ method: 'cash', amount: 1 }, { method: 'account', amount: 2 }] })).toBe('pos_offline_on_account');
+    // loyalty points need the customer's live balance: never kept for later either
+    expect(offlineRefusal({ loyaltyPoints: 50 })).toBe('pos_offline_loyalty');
+    expect(offlineRefusal({ loyaltyPoints: 0 })).toBeNull();
   });
 
   it('checks a sale against the stock last known (boxes counted in pieces), says what is short, and does not block it', () => {

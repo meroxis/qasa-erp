@@ -175,6 +175,8 @@ export interface PartyView {
   hasEntries: boolean;
   /** 1.1: the same per currency, each in its own (older servers leave it out) */
   balances?: Record<CurrencyCode, number>;
+  /** 1.2: the language their WhatsApp messages are written in (null: the app's; older servers leave it out) */
+  lang?: Lang | null;
 }
 
 export interface PartyInput {
@@ -185,6 +187,7 @@ export interface PartyInput {
   creditLimit?: number | null;
   notes?: string;
   active?: boolean;
+  lang?: Lang | null;
 }
 
 export interface PartyStatement {
@@ -301,6 +304,8 @@ export type InvoiceAction = 'edit' | 'delete' | 'post' | 'cancel' | 'return';
 export interface InvoiceView extends InvoiceSummary {
   partyPhone: string | null;
   partyAddress: string | null;
+  /** 1.2: the customer's language for WhatsApp messages (null: the app's; older servers leave it out) */
+  partyLang?: Lang | null;
   warehouseCode: string;
   warehouseName: Names;
   cashAccountName: Names | null;
@@ -329,6 +334,8 @@ export interface InvoiceView extends InvoiceSummary {
   payments?: InvoicePaymentView[];
   /** 1.2: a till's sale made offline: the temporary reference printed on its receipt */
   offlineRef?: string;
+  /** 1.2 (Pro): the loyalty points it earned and used, and the customer's balance (null: none and points are off) */
+  loyalty?: { earned: number; redeemed: number; value: number; balance: number } | null;
 }
 
 export type Role = 'admin' | 'preparer' | 'checker' | 'approver' | 'sales' | 'purchasing' | 'storekeeper' | 'viewer';
@@ -759,7 +766,8 @@ export const api = {
   createInvoice: (input: InvoiceInput) => request<InvoiceView>('POST', '/api/invoices', input),
   updateInvoice: (id: string, input: InvoiceInput) => request<InvoiceView>('PUT', `/api/invoices/${id}`, input),
   deleteInvoice: (id: string) => request<void>('DELETE', `/api/invoices/${id}`),
-  postInvoice: (id: string, opts: { allowExpired?: boolean } = {}) => request<InvoiceView>('POST', `/api/invoices/${id}/post`, opts.allowExpired ? { allowExpired: true } : {}),
+  postInvoice: (id: string, opts: { allowExpired?: boolean; loyaltyPoints?: number } = {}) =>
+    request<InvoiceView>('POST', `/api/invoices/${id}/post`, { ...(opts.allowExpired ? { allowExpired: true } : {}), ...(opts.loyaltyPoints ? { loyaltyPoints: opts.loyaltyPoints } : {}) }),
   cancelInvoice: (id: string, date: string) => request<InvoiceView>('POST', `/api/invoices/${id}/cancel`, { date }),
   createReturn: (id: string, input: ReturnInput) => request<InvoiceView>('POST', `/api/invoices/${id}/returns`, input),
 

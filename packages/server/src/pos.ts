@@ -7,6 +7,7 @@ import { audit } from './audit.ts';
 import { AppError, conflict, invalid, notFound } from './errors.ts';
 import { loadAccounts } from './accounts.ts';
 import { createInvoice, getInvoice, postInvoice, type InvoiceView, type SalePart } from './invoices.ts';
+import { loyaltyPaidFor, planRedemption } from './loyalty.ts';
 import { readSetting, writeSetting } from './settings.ts';
 import { signInRequired, type Actor } from './auth.ts';
 import { scopeOf } from './branches.ts';
@@ -117,8 +118,8 @@ export interface ShiftView {
   expected: Money;
   /** what was counted at closing (null while open) */
   counted: Money | null;
-  /** 1.1: the posted sales by how they were paid (a sale not split: all cash) */
-  methods: Partial<Record<PosMethod, Money>>;
+  /** 1.1: the posted sales by how they were paid (a sale not split: all cash); 1.2: loyalty, what points paid */
+  methods: Partial<Record<PosMethod | 'loyalty', Money>>;
   /** counted − expected, by currency (null while open) */
   difference: Money | null;
   notes: string;
@@ -150,13 +151,15 @@ export interface SaleInput {
   lines: { itemId: string; qtyMilli?: number | undefined; unitPrice: number; unit?: UnitCode | undefined; unitQtyMilli?: number | undefined; batchId?: string | undefined }[];
   /** the cashier confirmed selling stock past its expiry date (only the 'warn' policy allows it) */
   allowExpired?: boolean | undefined;
-  /** 1.1: how it was paid, 1–4 parts adding up to the sale's total; none = all cash, as before */
+  /** 1.1: how it was paid, 1–4 parts adding up to the sale's total (less what points pay); none = all cash, as before */
   payments?: { method: PosMethod; amount: number }[] | undefined;
   /**
    * 1.2: a sale made at the till while the office server could not be reached, sent when the link came back: the
    * temporary reference printed on its receipt, the moment it was sold and the till's date then (the invoice's date).
    */
   offline?: OfflineSale | undefined;
+  /** 1.2 (Pro): loyalty points the customer uses on this sale */
+  loyaltyPoints?: number | undefined;
 }
 
 export interface OfflineSale { reference: string; soldAt: string; soldOn: string }
@@ -202,7 +205,7 @@ function loadShift(db: Db, id: string): ShiftRow {
  * The shift's posted sales: all of them, the cash in them (a split sale counts only its cash part; a sale from before
  * 1.1 or not split is all cash), and the totals per method.
  */
-function salesOf(db: Db, shiftId: string): { sales: Money; cash: Money; count: number; methods: Partial<Record<PosMethod, Money>> } {
+function salesOf(db: Db, shiftId: string): { sales: Money; cash: Money; count: number; methods: Partial<Record<PosMethod | 'loyalty', Money>> } {
   const rows = db.prepare(`SELECT i.id, i.currency AS currency, i.total FROM pos_sales s JOIN invoices i ON i.id = s.invoice_id
                            WHERE s.shift_id = ? AND i.status = 'posted'`).all(shiftId) as { id: string; currency: CurrencyCode; total: number }[];
   const parts = new Map<string, { method: PosMethod; amount: number }[]>();
@@ -214,10 +217,15 @@ function salesOf(db: Db, shiftId: string): { sales: Money; cash: Money; count: n
   }
   const sales = zero();
   const cash = zero();
-  const methods: Partial<Record<PosMethod, Money>> = {};
+  const methods: Partial<Record<PosMethod | 'loyalty', Money>> = {};
+  // 1.2: what loyalty points paid (never in the drawer)
+  const points = loyaltyPaidFor(db, rows.map((r) => r.id));
   for (const r of rows) {
     sales[r.currency] += Number(r.total);
-    for (const p of parts.get(r.id) ?? [{ method: 'cash' as const, amount: Number(r.total) }]) {
+    const byPoints = points.get(r.id) ?? 0;
+    if (byPoints) (methods.loyalty ??= zero())[r.currency] += byPoints;
+    const rest = Number(r.total) - byPoints;
+    for (const p of parts.get(r.id) ?? (rest > 0 ? [{ method: 'cash' as const, amount: rest }] : [])) {
       (methods[p.method] ??= zero())[r.currency] += p.amount;
       if (p.method === 'cash') cash[r.currency] += p.amount;
     }
@@ -232,7 +240,10 @@ function salesOf(db: Db, shiftId: string): { sales: Money; cash: Money; count: n
  * it and still open when it was paid, so the same money is never taken off two drawers.
  */
 function refundsOf(db: Db, row: ShiftRow): Money {
-  const rows = db.prepare(`SELECT i.currency AS currency, COALESCE(SUM(i.total), 0) AS total FROM invoices i
+  // points given back on a return never leave the drawer
+  const rows = db.prepare(`SELECT i.currency AS currency,
+                                  COALESCE(SUM(i.total - COALESCE((SELECT SUM(m.value) FROM loyalty_moves m WHERE m.invoice_id = i.id AND m.kind = 'return_redeem'), 0)), 0) AS total
+                           FROM invoices i
                            WHERE i.kind = 'sale_return' AND i.status = 'posted' AND i.payment = 'cash' AND i.cash_account = ?
                              AND i.posted_at >= ? ${row.closed_at ? 'AND i.posted_at <= ?' : ''}
                              AND NOT EXISTS (SELECT 1 FROM pos_shifts o WHERE o.cash_account = i.cash_account AND o.id <> ?
@@ -407,6 +418,8 @@ export function sell(db: Db, shiftId: string, input: SaleInput, actor: Actor): {
   if (offline && (!OFFLINE_REFERENCE.test(offline.reference) || !ISO_INSTANT.test(offline.soldAt) || Number.isNaN(Date.parse(offline.soldAt)))) {
     errors.push({ code: 'pos_offline_invalid' });
   }
+  // loyalty points need the customer's live balance: never from a till that was offline
+  if (offline && input.loyaltyPoints) errors.push({ code: 'pos_offline_loyalty' });
   if (errors.length) throw invalid(errors);
   const now = new Date();
   const date = offline ? offlineSaleDate(offline.soldOn, row.opened_at, now) : todayIso(now);
@@ -421,8 +434,12 @@ export function sell(db: Db, shiftId: string, input: SaleInput, actor: Actor): {
       }))
     }, actor.name);
     let split: (SalePart & { method: PosMethod })[] | undefined;
+    // what loyalty points pay (checked again as the sale is posted); the parts pay the rest
+    const byPoints = input.loyaltyPoints
+      ? planRedemption(db, { partyId: input.partyId, points: input.loyaltyPoints, total: draft.total, currency: draft.currency, date: draft.date }).value
+      : 0;
     if (payments.length) {
-      if (payments.reduce((s, p) => s + p.amount, 0) !== draft.total) throw invalid([{ code: 'payments_total_mismatch', total: draft.total } as { code: string }]);
+      if (payments.reduce((s, p) => s + p.amount, 0) !== draft.total - byPoints) throw invalid([{ code: 'payments_total_mismatch', total: draft.total - byPoints } as { code: string }]);
       const partyAccount = input.partyId ? (db.prepare('SELECT account_code FROM parties WHERE id = ?').get(input.partyId) as { account_code: string } | undefined)?.account_code : undefined;
       // the same method twice is one part
       const merged = new Map<PosMethod, number>();
@@ -433,7 +450,9 @@ export function sell(db: Db, shiftId: string, input: SaleInput, actor: Actor): {
         ...(method === 'account' ? { partyId: input.partyId } : {})
       }));
     }
-    const posted = postInvoice(db, draft.id, actor.name, { allowExpired: input.allowExpired === true, ...(split ? { split } : {}) });
+    const posted = postInvoice(db, draft.id, actor.name, {
+      allowExpired: input.allowExpired === true, ...(split ? { split } : {}), ...(input.loyaltyPoints ? { loyaltyPoints: input.loyaltyPoints } : {})
+    });
     db.prepare('INSERT INTO pos_sales (invoice_id, shift_id) VALUES (?, ?)').run(posted.id, shiftId);
     if (split) {
       const insert = db.prepare(`INSERT INTO invoice_payments (id, invoice_id, kind, method, account_code, amount, currency, entry_id, source, reference, created_by, created_at)
@@ -559,7 +578,8 @@ export const posApi: ApiExtension = {
             payments: z.array(z.object({ method: z.enum(POS_METHODS), amount: amount.refine((n) => n > 0) })).min(1).max(4).optional(),
             offline: z.object({
               reference: z.string().max(40).regex(OFFLINE_REFERENCE), soldAt: z.string().max(30).regex(ISO_INSTANT), soldOn: z.string().regex(/^\d{4}-\d{2}-\d{2}$/)
-            }).optional()
+            }).optional(),
+            loyaltyPoints: z.number().int().positive().max(100_000_000).optional()
           }), req.body);
           const shiftId = parse(idParam, req.params).id;
           const who = actor(req);

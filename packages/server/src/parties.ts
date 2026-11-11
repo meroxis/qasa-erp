@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { isMinorAmount, normalizeForSearch, type CurrencyCode } from '@qasa/core';
+import { isLang, isMinorAmount, normalizeForSearch, type CurrencyCode, type Lang } from '@qasa/core';
 import type { Db } from './db.ts';
 import { nextSequence, transaction } from './db.ts';
 import { audit } from './audit.ts';
@@ -23,6 +23,8 @@ export interface PartyInput {
   creditLimit?: number | null | undefined;
   notes?: string | undefined;
   active?: boolean | undefined;
+  /** 1.2: the language their WhatsApp messages are written in (null: the app's); left out on a change, it stays */
+  lang?: Lang | null | undefined;
 }
 
 export interface PartyView {
@@ -44,11 +46,13 @@ export interface PartyView {
    * (dinars in dinars, dollars in dollars). `balance` (IQD at the book rates) stays the official total.
    */
   balances: Record<CurrencyCode, number>;
+  /** 1.2: the language their WhatsApp messages are written in; null: the app's */
+  lang: Lang | null;
 }
 
 interface PartyRow {
   id: string; type: PartyType; code: string; name: string; phone: string | null; address: string | null;
-  account_code: string; credit_limit: number | null; notes: string | null; active: number;
+  account_code: string; credit_limit: number | null; notes: string | null; active: number; lang?: string | null;
 }
 
 /** Customer accounts sit under 16 (المدينون), supplier accounts under 26 (الدائنون). */
@@ -85,7 +89,8 @@ function toView(row: PartyRow, sums: Sums | undefined, used: boolean): PartyView
     accountCode: row.account_code, creditLimit: row.credit_limit, notes: row.notes ?? '', active: row.active === 1,
     balance: dir(debit, credit),
     hasEntries: used,
-    balances: { IQD: dir(sums?.own?.IQD.debit ?? 0, sums?.own?.IQD.credit ?? 0), USD: dir(sums?.own?.USD.debit ?? 0, sums?.own?.USD.credit ?? 0) }
+    balances: { IQD: dir(sums?.own?.IQD.debit ?? 0, sums?.own?.IQD.credit ?? 0), USD: dir(sums?.own?.USD.debit ?? 0, sums?.own?.USD.credit ?? 0) },
+    lang: isLang(row.lang) ? row.lang : null
   };
 }
 
@@ -97,7 +102,7 @@ const PARTY_USERS: readonly [table: string, column: string][] = [
   ['entry_lines', 'party_id'], ['invoices', 'party_id'], ['quotes', 'party_id'], ['deals', 'party_id'], ['jobs', 'party_id'],
   ['purchase_orders', 'party_id'], ['cheques', 'party_id'], ['installment_contracts', 'party_id'], ['gen_subscribers', 'party_id'],
   ['re_units', 'party_id'], ['re_deposits', 'party_id'], ['repair_orders', 'party_id'], ['serials', 'party_id'],
-  ['serials', 'from_party_id'], ['maint_plans', 'party_id'], ['maint_visits', 'party_id']
+  ['serials', 'from_party_id'], ['maint_plans', 'party_id'], ['maint_visits', 'party_id'], ['loyalty_moves', 'party_id']
 ];
 
 function usedParties(db: Db): Set<string> {
@@ -151,6 +156,7 @@ function assertInput(db: Db, type: PartyType, input: PartyInput, accountCode: st
   if (input.creditLimit !== undefined && input.creditLimit !== null && (!isMinorAmount(input.creditLimit) || input.creditLimit < 0)) {
     errors.push({ code: 'credit_limit_invalid' });
   }
+  if (input.lang !== undefined && input.lang !== null && !isLang(input.lang)) errors.push({ code: 'lang_invalid' });
   if (errors.length) throw invalid(errors);
 }
 
@@ -161,10 +167,11 @@ export function createParty(db: Db, type: PartyType, input: PartyInput, user: st
   const id = randomUUID();
   transaction(db, () => {
     const code = `${CODE_PREFIX[type]}-${String(nextSequence(db, `party:${type}`)).padStart(4, '0')}`;
-    db.prepare(`INSERT INTO parties (id, type, code, name, phone, address, account_code, credit_limit, notes, active, created_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+    db.prepare(`INSERT INTO parties (id, type, code, name, phone, address, account_code, credit_limit, notes, active, created_at, lang)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
       .run(id, type, code, input.name.trim(), input.phone?.trim() || null, input.address?.trim() || null, accountCode,
-        type === 'customer' ? input.creditLimit ?? null : null, input.notes?.trim() || null, input.active === false ? 0 : 1, new Date().toISOString());
+        type === 'customer' ? input.creditLimit ?? null : null, input.notes?.trim() || null, input.active === false ? 0 : 1, new Date().toISOString(),
+        input.lang ?? null);
     audit(db, user, 'create', 'party', id, { type, code, name: input.name.trim() });
   });
   return getParty(db, id);
@@ -177,10 +184,12 @@ export function updateParty(db: Db, id: string, input: PartyInput, user: string)
   // a customer's credit limit changes only when the request names it (null: no limit); left out, it stays as it is
   const before = row.credit_limit === null ? null : Number(row.credit_limit);
   const creditLimit = row.type !== 'customer' ? null : input.creditLimit === undefined ? before : input.creditLimit;
+  // the language changes only when the request names it, as the credit limit does
+  const lang = input.lang === undefined ? (isLang(row.lang) ? row.lang : null) : input.lang;
   transaction(db, () => {
-    db.prepare('UPDATE parties SET name = ?, phone = ?, address = ?, account_code = ?, credit_limit = ?, notes = ?, active = ? WHERE id = ?')
+    db.prepare('UPDATE parties SET name = ?, phone = ?, address = ?, account_code = ?, credit_limit = ?, notes = ?, active = ?, lang = ? WHERE id = ?')
       .run(input.name.trim(), input.phone?.trim() || null, input.address?.trim() || null, accountCode,
-        creditLimit, input.notes?.trim() || null, input.active === false ? 0 : 1, id);
+        creditLimit, input.notes?.trim() || null, input.active === false ? 0 : 1, lang, id);
     audit(db, user, 'update', 'party', id, { ...input, ...(creditLimit !== before ? { creditLimitBefore: before, creditLimit } : {}) });
   });
   return getParty(db, id);

@@ -43,6 +43,7 @@ export const ROWS: Row[] = [
   { label: 'f_mobileShop', cells: [false, true, true] },
   { label: 'f_autoParts', cells: [false, true, true] },
   { label: 'f_pharmacy', cells: [false, true, true] },
+  { label: 'f_loyalty', cells: [false, true, true] },
   { label: 'f_engineeringWorks', cells: [false, true, true] },
   { label: 'f_electricalSolar', cells: [false, true, true] },
   { label: 'f_generators', cells: [false, true, true] },

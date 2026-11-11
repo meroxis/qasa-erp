@@ -5,7 +5,7 @@ import { DatabaseSync } from 'node:sqlite';
 import { brandKey, DEFAULT_POSTING_ACCOUNTS, IRAQI_UNIFIED_CHART, STARTER_SUB_ACCOUNTS } from '@qasa/core';
 import { AppError } from './errors.ts';
 import {
-  MYSQL_TABLES, MYSQL_TRIGGERS, mysqlCollations, mysqlTableSql, pendingMysqlSteps, V10_MYSQL_STEPS, V11_MYSQL_STEPS, type MysqlCollations, type MysqlStep
+  MYSQL_TABLES, MYSQL_TRIGGERS, mysqlCollations, mysqlTableSql, pendingMysqlSteps, V10_MYSQL_STEPS, V11_MYSQL_STEPS, V12_MYSQL_STEPS, type MysqlCollations, type MysqlStep
 } from './schema-mysql.ts';
 
 export type SqlParam = null | number | bigint | string | Uint8Array;
@@ -1643,9 +1643,6 @@ const V12_OUTBOX =
   CREATE INDEX pos_offline_sales_reference ON pos_offline_sales(reference);
   `;
 
-/** Version 12: each 1.2 feature's block of its own (V12_OUTBOX …), run together. */
-const V12 = [V12_OUTBOX].join('\n');
-
 /**
  * Version 11's rows: each car part's brand text becomes a brand (one per name whatever its case or spaces, written as
  * most parts had it) and the item points at it. Safe to run again: only texts still there are moved.
@@ -1694,12 +1691,47 @@ export function movePartReorder(db: Db): void {
   db.prepare('UPDATE part_details SET reorder_milli = NULL WHERE reorder_milli IS NOT NULL').run();
 }
 
+const V12_OWNER_TOOLS =
+  // 12 — owner tools (1.2): the language a customer gets their WhatsApp messages in (NULL: the app's language), and
+  // the loyalty points ledger (Pro): every movement of a customer's points, kept for ever like stock moves. points is
+  // signed (+ in, − out); value is the dinars points paid (a sale) or gave back (a return), posted to account_code
+  `
+  ALTER TABLE parties ADD COLUMN lang TEXT CHECK (lang IS NULL OR lang IN ('ar', 'en', 'ku'));
+
+  CREATE TABLE loyalty_moves (
+    id TEXT PRIMARY KEY,
+    party_id TEXT NOT NULL REFERENCES parties(id),
+    date TEXT NOT NULL,
+    kind TEXT NOT NULL CHECK (kind IN ('earn', 'redeem', 'return_earn', 'return_redeem', 'cancel', 'adjust')),
+    points INTEGER NOT NULL CHECK (points <> 0),
+    value INTEGER NOT NULL DEFAULT 0 CHECK (value >= 0),
+    account_code TEXT REFERENCES accounts(code),
+    invoice_id TEXT REFERENCES invoices(id),
+    -- the movement this one takes back or gives back (a return's, a cancellation's)
+    source_id TEXT REFERENCES loyalty_moves(id),
+    -- points in: the last day they may be used (NULL: never)
+    expires_on TEXT,
+    branch_id TEXT REFERENCES branches(id),
+    note TEXT,
+    created_by TEXT NOT NULL,
+    created_at TEXT NOT NULL
+  );
+  CREATE INDEX loyalty_moves_party ON loyalty_moves(party_id, date);
+  CREATE INDEX loyalty_moves_invoice ON loyalty_moves(invoice_id);
+  CREATE INDEX loyalty_moves_source ON loyalty_moves(source_id);
+  CREATE TRIGGER loyalty_moves_no_update BEFORE UPDATE ON loyalty_moves BEGIN SELECT RAISE(ABORT, 'loyalty_moves_are_permanent'); END;
+  CREATE TRIGGER loyalty_moves_no_delete BEFORE DELETE ON loyalty_moves BEGIN SELECT RAISE(ABORT, 'loyalty_moves_are_permanent'); END;
+  `;
+
+/** Version 12: each 1.2 feature's own block, one after the other. */
+const V12 = [V12_OUTBOX, V12_OWNER_TOOLS].join('\n');
+
 const MIGRATIONS: Migration[] = [
   { sql: V1 }, { sql: V2, rebuild: true }, { sql: V3, rebuild: true }, { sql: V4 }, { sql: V5, rebuild: true },
   { sql: V6, mysql: 'tables' }, { sql: V7, mysql: 'tables' }, { sql: V8, mysql: 'tables' }, { sql: V9, mysql: 'tables' },
   { sql: V10, mysql: { tables: true, steps: () => V10_MYSQL_STEPS } },
   { sql: V11, mysql: { tables: true, steps: () => V11_MYSQL_STEPS }, data: (db) => { movePartBrands(db); movePartReorder(db); } },
-  { sql: V12, mysql: 'tables' }
+  { sql: V12, mysql: { tables: true, steps: () => V12_MYSQL_STEPS } }
 ];
 
 /** Server databases began at this version: its schema is in schema-mysql.ts (tables and triggers without `since`). */

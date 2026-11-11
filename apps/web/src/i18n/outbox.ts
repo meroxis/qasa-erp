@@ -96,6 +96,7 @@ export const OUTBOX_TEXT = {
   ],
   err_idempotency_key_invalid: ['الطلب غير صالح.', 'The request isn’t valid.', 'داواکارییەکە دروست نییە.'],
   err_pos_offline_on_account: ['البيع على حساب الزبون يحتاج الاتصال بالخادم.', 'Selling on a customer’s account needs the server.', 'فرۆشتن لەسەر حسابی کڕیار پێویستی بە سێرڤەرە.'],
+  err_pos_offline_loyalty: ['استعمال نقاط الولاء يحتاج الاتصال بالخادم.', 'Using loyalty points needs the server.', 'بەکارهێنانی خاڵەکانی دڵسۆزی پێویستی بە سێرڤەرە.'],
   err_pos_offline_invalid: ['الرقم المؤقت لهذا البيع غير صالح.', 'This sale’s temporary number isn’t valid.', 'ژمارەی کاتیی ئەم فرۆشتنە دروست نییە.'],
   err_other_books: ['حُفظ هذا لدفاتر شركة أخرى، فلا يُرسل إلى هذه.', 'This was kept for another company’s books, so it isn’t sent to these.', 'ئەمە بۆ دەفتەری کۆمپانیایەکی تر پاشەکەوت کرابوو، بۆیە بۆ ئەمە نانێردرێت.']
 } as const satisfies Record<string, readonly [string, string, string]>;

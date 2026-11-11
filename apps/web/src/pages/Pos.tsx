@@ -20,6 +20,9 @@ import { BatchPick, useExpiredConfirm } from '../industry/BatchFields.tsx';
 import { pharmacyApi, type MedicineView } from '../industry/pharmacy-api.ts';
 import { RxTick, useControlledPrompt, useRxItems } from '../industry/PharmacyPrompts.tsx';
 import { printAlone, printDocument } from '../industry/printing.ts';
+import { receiptMessage, withAttachment } from '../industry/WhatsAppShare.tsx';
+import { WhatsAppSendButton } from '../industry/WhatsAppSend.tsx';
+import { LoyaltyUse, loyaltyLines } from '../industry/Loyalty.tsx';
 
 /**
  * Point of sale (every plan). Made for a cashier with no training: the search box always has the focus, so a barcode
@@ -226,6 +229,8 @@ function Register({ initial, onClosed }: { initial: ShiftView; onClosed(): void 
     posApi.current().then((r) => { if (r.shift?.id === shift.id) { setShift(r.shift); rememberTill(tillWho(), { shift: r.shift }); } }, () => {});
     loadItems();
   }, [keptCount, outbox?.online]); // eslint-disable-line react-hooks/exhaustive-deps
+  // loyalty points used on this sale (Pro), and what they pay
+  const [points, setPoints] = useState({ points: 0, value: 0 });
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<unknown>(null);
   const expired = useExpiredConfirm();
@@ -361,15 +366,19 @@ function Register({ initial, onClosed }: { initial: ShiftView; onClosed(): void 
 
   const subtotal = cart.reduce((s, l) => s + lineTotal(l), 0);
   const total = Math.max(0, subtotal - (discount ?? 0));
-  const change = cashChange(paid, total, parts);
+  // 1.2 (Pro): loyalty points pay part of the sale; the rest is paid as before
+  const due = total - points.value;
+  // another customer, total or currency: the points are chosen again
+  useEffect(() => { setPoints({ points: 0, value: 0 }); }, [partyId, total, currency]);
+  const change = cashChange(paid, due, parts);
   const split = parts.length > 0;
-  const left = total - parts.reduce((s, p) => s + (p.amount ?? 0), 0);
+  const left = due - parts.reduce((s, p) => s + (p.amount ?? 0), 0);
   const splitOk = !split || (left === 0 && parts.every((p) => (p.amount ?? 0) > 0) && (!parts.some((p) => p.method === 'account') || !!partyId));
   const canPay = cart.length > 0 && !busy && (discount ?? 0) <= subtotal && (currency === 'IQD' || rateX100 > 0) && (change === null || change >= 0) && splitOk;
   /** A method button: the first one takes the whole total; later ones what is left. */
   const pickMethod = (method: PosMethod) => {
     setParts((ps) => (ps.length === 0
-      ? (method === 'cash' ? [] : [{ method, amount: total }])
+      ? (method === 'cash' ? [] : [{ method, amount: due }])
       : ps.length >= 4 || ps.some((p) => p.method === method) ? ps : [...ps, { method, amount: Math.max(0, left) }]));
   };
 
@@ -379,6 +388,7 @@ function Register({ initial, onClosed }: { initial: ShiftView; onClosed(): void 
     setPaid(null);
     setPartyId('');
     setParts([]);
+    setPoints({ points: 0, value: 0 });
     setError(null);
     setQ('');
     // the next sale is another one, with a key of its own
@@ -426,7 +436,8 @@ function Register({ initial, onClosed }: { initial: ShiftView; onClosed(): void 
       const sale: SaleInput = {
         currency, ...(currency === 'USD' ? { rateX100 } : {}), ...(partyId ? { partyId } : {}), discount: discount ?? 0,
         lines: cart.map(posSaleLine),
-        ...(split ? { payments: parts.map((p) => ({ method: p.method, amount: p.amount ?? 0 })) } : {})
+        ...(split ? { payments: parts.map((p) => ({ method: p.method, amount: p.amount ?? 0 })) } : {}),
+        ...(points.points ? { loyaltyPoints: points.points } : {})
       };
       // on a PC with an outbox the sale keeps its key over every Pay until it is booked or kept: a try whose answer
       // was lost is answered from the first, never booked twice (industry/offline-till.ts)
@@ -590,6 +601,7 @@ function Register({ initial, onClosed }: { initial: ShiftView; onClosed(): void 
             <div className="field"><span>{t('pos_customer')}</span>
               <SearchCombo value={partyId} options={customerOptions} onChange={setPartyId} placeholder={t('pos_walkIn')} emptyLabel={t('pos_walkIn')} />
             </div>
+            <LoyaltyUse partyId={partyId} total={total} currency={currency} value={points.points} onChange={(n, v) => setPoints({ points: n, value: v })} />
             <div className="grid-2">
               <label className="field" id="pos-discount"><span>{t('pos_discount')} <span className="kbd">F8</span></span><AmountInput value={discount} currency={currency} onChange={setDiscount} ariaLabel={t('pos_discount')} /></label>
               <label className="field"><span>{t('pos_paid')}</span><AmountInput value={paid} currency={currency} onChange={setPaid} ariaLabel={t('pos_paid')} /></label>
@@ -598,6 +610,9 @@ function Register({ initial, onClosed }: { initial: ShiftView; onClosed(): void 
               <span>{t('pos_total')}</span>
               <strong className="num">{i18n.money(total, currency)}</strong>
             </div>
+            {points.value > 0 && (
+              <div className="pos-r-row"><span>{t('pos_left')} ({t('ly_title')}: −{i18n.money(points.value, currency)})</span><strong className="num">{i18n.money(due, currency)}</strong></div>
+            )}
             {(offline ? offlineMethods(methods) : methods).length > 1 && (
               <div className="stack" style={{ gap: 6 }}>
                 <div className="track" role="group" aria-label={t('paymentMode')} style={{ flexWrap: 'wrap' }}>
@@ -633,9 +648,12 @@ function Register({ initial, onClosed }: { initial: ShiftView; onClosed(): void 
               </button>
             </div>
             {receipt && (
-              <button type="button" className="link-btn small" onClick={() => void printReceipt()}>
-                <Icon name="printer" size={14} /> {t('pos_printLast', { n: receipt.number ?? '' })} <span className="kbd">F10</span>
-              </button>
+              <div className="row" style={{ gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+                <button type="button" className="link-btn small" onClick={() => void printReceipt()}>
+                  <Icon name="printer" size={14} /> {t('pos_printLast', { n: receipt.number ?? '' })} <span className="kbd">F10</span>
+                </button>
+                <ReceiptWhatsApp invoice={receipt} />
+              </div>
             )}
           </div>
         </section>
@@ -649,6 +667,14 @@ function Register({ initial, onClosed }: { initial: ShiftView; onClosed(): void 
 
 /* ---------- the receipt (80 mm) ---------- */
 
+/** The last receipt to the customer's WhatsApp, as a PDF of the 80 mm receipt (a walk-in customer: type the number). */
+function ReceiptWhatsApp({ invoice }: { invoice: InvoiceView }) {
+  const { settings } = useData();
+  const names = settings?.companyName;
+  const message = useCallback((m: I18n) => withAttachment(m, receiptMessage(m, names ? m.name(names) : '', invoice)), [names, invoice]);
+  return <WhatsAppSendButton kind="receipt" docRef={invoice.number ?? invoice.id} phone={invoice.partyPhone} lang={invoice.partyLang} message={message} bodyClass="pos-printing" />;
+}
+
 /** The receipt alone, on the printer chosen for receipts (Settings → Printers) or through the print window. */
 function printReceipt() {
   return printAlone('receipt', 'pos-printing');
@@ -660,6 +686,8 @@ function Receipt({ invoice, shift }: { invoice: InvoiceView; shift: ShiftView })
   const { settings, plan } = useData();
   const setup = usePrintSetup();
   const company = settings ? i18n.name(settings.companyName) : '';
+  // 1.2 (Pro): the points the sale used and earned, and the customer's balance
+  const points = loyaltyLines(i18n, invoice.loyalty);
   // a receipt design of the company's own (Settings → Print design) replaces the standard receipt
   if (setup.designs.pos) {
     return createPortal(
@@ -669,6 +697,7 @@ function Receipt({ invoice, shift }: { invoice: InvoiceView; shift: ShiftView })
           company={settings?.companyName ?? { ar: '', en: '', ku: '' }} branding={!plan?.features.includes('noBranding')}
           defaultRateX100={settings?.defaultRateX100}
         />
+        {points.length > 0 && <div className="pos-receipt pos-r-loyalty">{points.map(([label, value]) => <div key={label} className="pos-r-row small"><span>{label}</span><span className="num">{value}</span></div>)}</div>}
       </div>,
       document.body
     );
@@ -699,6 +728,8 @@ function Receipt({ invoice, shift }: { invoice: InvoiceView; shift: ShiftView })
         {(invoice.payments ?? []).filter((p) => p.kind === 'pos').map((p) => (
           <div key={p.id} className="pos-r-row small"><span>{t(`pay_${p.method}` as Key)}</span><span className="num">{i18n.money(p.amount, p.currency)}</span></div>
         ))}
+        {points.length > 0 && <div className="pos-r-sep" />}
+        {points.map(([label, value]) => <div key={label} className="pos-r-row small"><span>{label}</span><span className="num">{value}</span></div>)}
         <div className="pos-r-sep" />
         <div className="pos-r-center small">{t('pos_thanks')}</div>
         {!plan?.features.includes('noBranding') && <div className="pos-r-center small">{t('madeWith')} · <span className="ltr">qasaerp.com</span></div>}

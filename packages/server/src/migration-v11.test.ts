@@ -112,10 +112,11 @@ describe('version 11 on a server database', () => {
     };
     migrate(fake);
     expect(version).toBe(SCHEMA_VERSION);
+    // version 11's part: up to the commit of its rows (later versions follow it)
+    const all = ran.splice(0);
+    ran.push(...all.slice(0, all.indexOf('COMMIT', all.indexOf('UPDATE part_details SET brand = NULL WHERE brand IS NOT NULL')) + 1));
     const created = ran.filter((s) => s.startsWith('CREATE TABLE') && !s.includes('IF NOT EXISTS'));
-    // brands, then the tables of the versions after 11, version by version
-    const later = Array.from({ length: SCHEMA_VERSION - 11 }, (_, i) => MYSQL_TABLES.filter((t) => t.since === 12 + i)).flat();
-    expect(created).toEqual(['CREATE TABLE brands (', ...later.map((t) => `CREATE TABLE ${t.name} (`)]);
+    expect(created).toEqual(['CREATE TABLE brands (']);
     const alters = ran.filter((s) => s.startsWith('ALTER TABLE'));
     expect(alters).toEqual(V11_MYSQL_STEPS.map((s) => s.sql));
     // one brand for both spellings, both items pointed at it, the texts emptied, in a transaction after the steps

@@ -50,9 +50,13 @@ export function forgetTill(): void {
 /** The methods the till offers while offline: all of the shift's but on a customer's account. */
 export const offlineMethods = (methods: readonly PosMethod[]): PosMethod[] => methods.filter((m) => m !== 'account');
 
-/** Why a sale can't be kept for later, or null. */
-export function offlineRefusal(sale: Pick<SaleInput, 'payments'>): 'pos_offline_on_account' | null {
-  return (sale.payments ?? []).some((p) => p.method === 'account') ? 'pos_offline_on_account' : null;
+/**
+ * Why a sale can't be kept for later, or null: a part on a customer's account (the live credit-limit check), or
+ * loyalty points used (the customer's live balance). Both need the server's answer at the till.
+ */
+export function offlineRefusal(sale: Pick<SaleInput, 'payments' | 'loyaltyPoints'>): 'pos_offline_on_account' | 'pos_offline_loyalty' | null {
+  if ((sale.payments ?? []).some((p) => p.method === 'account')) return 'pos_offline_on_account';
+  return sale.loyaltyPoints ? 'pos_offline_loyalty' : null;
 }
 
 export interface TillLine { item: ItemView; qtyMilli: number; unit: UnitCode | null; unitPrice: number }

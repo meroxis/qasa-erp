@@ -92,6 +92,7 @@ export const MYSQL_TABLES: readonly MysqlObject[] = [
       notes TEXT,
       active INT NOT NULL DEFAULT 1,
       created_at ${WHEN} NOT NULL,
+      lang VARCHAR(2) CHECK (lang IS NULL OR lang IN ('ar', 'en', 'ku')),
       FOREIGN KEY (account_code) REFERENCES accounts(code)
     )`
   },
@@ -1557,6 +1558,35 @@ export const MYSQL_TABLES: readonly MysqlObject[] = [
       PRIMARY KEY (invoice_id, line_no),
       FOREIGN KEY (invoice_id) REFERENCES invoices(id)
     )`
+  },
+  {
+    // 12, owner tools: the loyalty points ledger (Pro), kept for ever like stock moves
+    name: 'loyalty_moves',
+    since: 12,
+    sql: `CREATE TABLE loyalty_moves (
+      id ${ID} NOT NULL PRIMARY KEY,
+      party_id ${ID} NOT NULL,
+      date ${WHEN} NOT NULL,
+      kind ${WORD} NOT NULL CHECK (kind IN ('earn', 'redeem', 'return_earn', 'return_redeem', 'cancel', 'adjust')),
+      points BIGINT NOT NULL CHECK (points <> 0),
+      value BIGINT NOT NULL DEFAULT 0 CHECK (value >= 0),
+      account_code ${ID},
+      invoice_id ${ID},
+      source_id ${ID},
+      expires_on ${WHEN},
+      branch_id ${ID},
+      note TEXT,
+      created_by TEXT NOT NULL,
+      created_at ${WHEN} NOT NULL,
+      INDEX loyalty_moves_party (party_id, date),
+      INDEX loyalty_moves_invoice (invoice_id),
+      INDEX loyalty_moves_source (source_id),
+      FOREIGN KEY (party_id) REFERENCES parties(id),
+      FOREIGN KEY (account_code) REFERENCES accounts(code),
+      FOREIGN KEY (invoice_id) REFERENCES invoices(id),
+      FOREIGN KEY (source_id) REFERENCES loyalty_moves(id),
+      FOREIGN KEY (branch_id) REFERENCES branches(id)
+    )`
   }
 ];
 
@@ -1610,7 +1640,10 @@ export const MYSQL_TRIGGERS: readonly MysqlObject[] = [
   trigger('installment_receipts_no_delete', 'BEFORE DELETE', 'installment_receipts', null, 'installment_contract_is_permanent', 6),
   // 10: batch quantity moves are kept forever, as stock moves are
   trigger('stock_batch_moves_no_update', 'BEFORE UPDATE', 'stock_batch_moves', null, 'stock_moves_are_permanent', 10),
-  trigger('stock_batch_moves_no_delete', 'BEFORE DELETE', 'stock_batch_moves', null, 'stock_moves_are_permanent', 10)
+  trigger('stock_batch_moves_no_delete', 'BEFORE DELETE', 'stock_batch_moves', null, 'stock_moves_are_permanent', 10),
+  // 12: a customer's loyalty points movements are kept for ever too
+  trigger('loyalty_moves_no_update', 'BEFORE UPDATE', 'loyalty_moves', null, 'loyalty_moves_are_permanent', 12),
+  trigger('loyalty_moves_no_delete', 'BEFORE DELETE', 'loyalty_moves', null, 'loyalty_moves_are_permanent', 12)
 ];
 
 /**
@@ -1673,6 +1706,14 @@ export const V11_MYSQL_STEPS: readonly MysqlStep[] = [
   mysqlAddForeignKey('items', 'brand_id', 'brands', 'id'),
   mysqlAddColumn('stock_counts', 'scope', 'TEXT')
 ];
+
+/** Version 12, owner tools (1.2): a customer's language for WhatsApp messages (the loyalty ledger is a new table). */
+export const V12_OWNER_TOOLS_MYSQL_STEPS: readonly MysqlStep[] = [
+  mysqlAddColumn('parties', 'lang', "VARCHAR(2) CHECK (lang IS NULL OR lang IN ('ar', 'en', 'ku'))")
+];
+
+/** Version 12 on a server database at version 11: each feature's own steps, one after the other. */
+export const V12_MYSQL_STEPS: readonly MysqlStep[] = [...V12_OWNER_TOOLS_MYSQL_STEPS];
 
 /** What a server database has already, for pendingMysqlSteps: "table.column" and "table.column>parent". */
 export interface MysqlSchemaState { columns: ReadonlySet<string>; foreignKeys: ReadonlySet<string> }

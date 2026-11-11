@@ -27,7 +27,8 @@ export const NAV: NavGroup[] = [
     group: 'gOverview',
     items: [
       { key: 'home', icon: 'home', path: '', match: ['', 'home'], tile: false },
-      { key: 'br_title', icon: 'sun', path: 'brief', match: ['brief'] }
+      { key: 'br_title', icon: 'sun', path: 'brief', match: ['brief'] },
+      { key: 'dc_title', icon: 'check', path: 'day-close', match: ['day-close'] }
     ]
   },
   {

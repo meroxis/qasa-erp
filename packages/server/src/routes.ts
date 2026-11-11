@@ -78,7 +78,9 @@ const partySchema = z.object({
   accountCode: z.string().max(12).optional(),
   creditLimit: amount.nullable().optional(),
   notes: z.string().max(1000).optional(),
-  active: z.boolean().optional()
+  active: z.boolean().optional(),
+  // 1.2: the language their WhatsApp messages are written in (null: the app's)
+  lang: z.enum(['ar', 'en', 'ku']).nullable().optional()
 });
 
 // one list of units (core UNITS), never a second one written here
@@ -267,7 +269,7 @@ export interface Route {
 export function errorResponse(error: unknown): { status: number; body: { error: string; details: unknown } } {
   if (error instanceof AppError) return { status: error.status, body: { error: error.code, details: error.details ?? null } };
   const message = error instanceof Error ? error.message : String(error);
-  for (const code of ['posted_entry_is_permanent', 'posted_invoice_is_permanent', 'posted_document_is_permanent', 'stock_moves_are_permanent', 'installment_contract_is_permanent']) {
+  for (const code of ['posted_entry_is_permanent', 'posted_invoice_is_permanent', 'posted_document_is_permanent', 'stock_moves_are_permanent', 'installment_contract_is_permanent', 'loyalty_moves_are_permanent']) {
     if (message.includes(code)) return { status: 409, body: { error: code, details: null } };
   }
   // a delete the database refused because other records still point at the row: nothing changed, say so plainly
@@ -575,9 +577,12 @@ export function apiRoutes(db: Db, options: { demo?: boolean; extensions?: readon
   });
   app.post('/api/invoices/:id/post', async (req, reply) => {
     // allowExpired: the user confirmed selling stock past its expiry date (only the 'warn' policy allows it)
-    const body = parse(z.object({ allowExpired: z.boolean().optional() }), req.body ?? {});
+    // loyaltyPoints (1.2, Pro): points the customer uses on a sale
+    const body = parse(z.object({ allowExpired: z.boolean().optional(), loyaltyPoints: z.number().int().positive().max(100_000_000).optional() }), req.body ?? {});
     const { id } = parse(idParam, req.params);
-    return once(req, reply, 'POST /api/invoices/:id/post', () => postInvoice(db, id, userOf(req), { allowExpired: body.allowExpired === true }), (doc) => getInvoice(db, doc));
+    return once(req, reply, 'POST /api/invoices/:id/post',
+      () => postInvoice(db, id, userOf(req), { allowExpired: body.allowExpired === true, ...(body.loyaltyPoints ? { loyaltyPoints: body.loyaltyPoints } : {}) }),
+      (doc) => getInvoice(db, doc));
   });
   app.post('/api/invoices/:id/cancel', async (req) => {
     const body = parse(z.object({ date: isoDate.optional() }), req.body ?? {});

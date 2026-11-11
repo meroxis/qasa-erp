@@ -86,3 +86,33 @@ export const briefApi = {
   aging: (type: 'customer' | 'supplier', date?: string) => request<{ date: string; type: string; rows: AgingRowView[] }>('GET', '/api/brief/reports/aging' + qs({ type, date })),
   stockValue: (date?: string) => request<StockValueView>('GET', '/api/brief/reports/stock-value' + qs({ date }))
 };
+
+/** How a sale was paid, on the end-of-day close. */
+export type DayMethod = 'cash' | 'bank' | 'card' | 'fib' | 'zaincash' | 'qi' | 'credit' | 'loyalty';
+
+export interface DayRegisterView {
+  shiftId: string; number: string; register: string; openedBy: string; status: 'open' | 'closed'; openedAt: string; closedAt: string | null;
+  sales: Money2; count: number; expected: Money2; counted: Money2 | null; difference: Money2 | null;
+}
+export interface DayDebtRowView { partyId: string; code: string; name: string; amount: number }
+
+/** The end-of-day close (GET /api/brief/day-close). Amounts in IQD unless they are Money2. */
+export interface DayCloseView {
+  date: string;
+  company: Names;
+  sales: { gross: number; invoices: number; returns: number; returnsCount: number; net: number };
+  methods: { method: DayMethod; amount: number; invoices: number }[];
+  refunds: { method: DayMethod; amount: number }[];
+  registers: DayRegisterView[];
+  drawers: { expected: Money2; counted: Money2; difference: Money2 } | null;
+  expenses: { rows: ExpenseRowView[]; total: number };
+  debts: { collected: number; collectedRows: DayDebtRowView[]; added: number; addedRows: DayDebtRowView[] };
+  flow: { in: number; out: number };
+  lowStock: { count: number; top: LowStockView[] };
+  topItems: ItemSalesView[];
+  ownerPhone: string;
+}
+
+export const dayCloseApi = {
+  get: (date?: string) => request<DayCloseView>('GET', '/api/brief/day-close' + qs({ date }))
+};

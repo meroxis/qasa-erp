@@ -9,7 +9,7 @@ import {
 import { go, href } from '../router.ts';
 import { useRatePrefill } from '../industry/fx-prefill.ts';
 import { convertAmount, convertLines } from './currency-switch.ts';
-import { quoteMessage, WhatsAppButton } from '../industry/WhatsAppShare.tsx';
+import { QuoteWhatsApp } from '../industry/WhatsAppShare.tsx';
 import { DesignedPrint } from '../industry/PrintDocument.tsx';
 import { quoteModel } from '../industry/print-model.ts';
 import { printDocument } from '../industry/printing.ts';
@@ -323,7 +323,7 @@ export function QuoteDetail({ id }: { id: string }) {
         {can('reopen') && <button type="button" className="btn" disabled={busy} onClick={() => void move('reopen')}><Icon name="undo" size={16} />{t('qt_reopen')}</button>}
         {can('edit') && <a className="btn" href={href(`edit-quote/${id}`)}><Icon name="edit" size={16} />{t('qt_edit')}</a>}
         {can('duplicate') && <button type="button" className="btn" disabled={busy} onClick={() => void duplicate()}><Icon name="doc" size={16} />{t('qt_duplicate')}</button>}
-        {x.status !== 'cancelled' && <WhatsAppButton phone={x.party?.phone} text={quoteMessage(i18n, company, { ...x, customerName: x.party?.name ?? x.customerName })} />}
+        {x.status !== 'cancelled' && <QuoteWhatsApp quote={x} />}
         <button type="button" className="btn" onClick={() => void printDocument('quote')}><Icon name="printer" size={16} />{t('print')}</button>
         {can('cancel') && <button type="button" className="btn danger" disabled={busy} onClick={() => setModal('cancel')}><Icon name="x" size={16} />{t('qt_cancel')}</button>}
       </div>

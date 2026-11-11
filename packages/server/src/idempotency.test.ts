@@ -252,6 +252,12 @@ describe('a till sale made offline', () => {
     });
     expect(onAccount.statusCode).toBe(400);
     expect(onAccount.json().details.map((d: { code: string }) => d.code)).toContain('pos_offline_on_account');
+    // nor uses loyalty points (they need the customer's live balance)
+    const withPoints = await post(`/api/pos/shifts/${shift.id}/sales`, {
+      ...teaSale(1), partyId: customerId, loyaltyPoints: 10, offline: offline('OFF-C1-0003', new Date().toISOString(), todayIso())
+    });
+    expect(withPoints.statusCode).toBe(400);
+    expect(withPoints.json().details.map((d: { code: string }) => d.code)).toContain('pos_offline_loyalty');
     // a cash sale to a named customer is fine
     const named = await post(`/api/pos/shifts/${shift.id}/sales`, { ...teaSale(1), partyId: customerId, offline: offline('OFF-C1-0002', new Date().toISOString(), todayIso()) });
     expect(named.statusCode, named.body).toBe(201);

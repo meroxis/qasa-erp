@@ -15,6 +15,7 @@ import { getPostingAccounts, isPeriodLocked } from './settings.ts';
 import { assertMayUndoPosSale, fromBase, getInvoice, returnedByLine, returnedTotals, type InvoiceView } from './invoices.ts';
 import type { Actor } from './auth.ts';
 import { addTaken, batchTracking, ensureBatch, purchaseReturnPicks, saleReturnPicks, writeBatchMoves, type BatchError, type BatchMove } from './batches.ts';
+import { loyaltyAccount, recordReturnLoyalty, returnLoyalty } from './loyalty.ts';
 
 export interface ReturnInput {
   date: string;
@@ -58,7 +59,9 @@ function assertPaidBackAsPaid(db: Db, originalId: string, accountCode: string, t
   const parts = db.prepare("SELECT account_code, amount FROM invoice_payments WHERE invoice_id = ? AND kind = 'pos'").all(originalId) as { account_code: string; amount: number }[];
   if (!parts.length) return;
   const paidIn = parts.filter((p) => p.account_code === accountCode).reduce((s, p) => s + Number(p.amount), 0);
-  const paidBack = Number((db.prepare("SELECT COALESCE(SUM(total), 0) AS t FROM invoices WHERE return_of = ? AND status = 'posted' AND payment = 'cash' AND cash_account = ?")
+  // (points given back on an earlier return were no money paid back)
+  const paidBack = Number((db.prepare(`SELECT COALESCE(SUM(i.total - COALESCE((SELECT SUM(m.value) FROM loyalty_moves m WHERE m.invoice_id = i.id AND m.kind = 'return_redeem'), 0)), 0) AS t
+                                       FROM invoices i WHERE i.return_of = ? AND i.status = 'posted' AND i.payment = 'cash' AND i.cash_account = ?`)
     .get(originalId, accountCode) as { t: number }).t);
   if (paidBack + total > paidIn) throw invalid([{ code: 'refund_more_than_paid', available: Math.max(0, paidIn - paidBack) }]);
 }
@@ -133,7 +136,10 @@ export function createReturn(db: Db, originalId: string, input: ReturnInput, use
   const discount = lines.reduce((s, l) => s + l.discountShare, 0);
   const total = subtotal - discount;
   if (total < 0 || lines.some((l) => l.discountShare > l.amount)) throw conflict('return_totals_invalid');
-  if (kind === 'sale_return' && input.payment === 'cash') assertPaidBackAsPaid(db, originalId, input.cashAccountCode!, total);
+  // 1.2 (Pro): what loyalty points paid of the goods coming back goes back as points, not money; what they earned goes too
+  const points = kind === 'sale_return' ? returnLoyalty(db, original, returnedTotals(db, originalId).total, total) : null;
+  const pointsBack = points?.valueBack ?? 0;
+  if (kind === 'sale_return' && input.payment === 'cash') assertPaidBackAsPaid(db, originalId, input.cashAccountCode!, total - pointsBack);
   const accounts = getPostingAccounts(db);
   const warehouseAccount = (db.prepare('SELECT account_code FROM warehouses WHERE id = ?').get(original.warehouseId) as { account_code: string }).account_code;
   const party = original.partyId ? getParty(db, original.partyId) : null;
@@ -152,7 +158,10 @@ export function createReturn(db: Db, originalId: string, input: ReturnInput, use
   if (kind === 'sale_return') {
     if (total > 0) {
       entryLines.push({ accountCode: accounts.sales, debit: total, credit: 0, baseDebit: baseTotal, baseCredit: 0 });
-      entryLines.push({ accountCode: counterAccount, debit: 0, credit: total, baseDebit: 0, baseCredit: baseTotal, ...counterParty });
+      // points are only ever used on dinar sales, so their value is the same in both columns
+      const money = total - pointsBack;
+      if (money > 0) entryLines.push({ accountCode: counterAccount, debit: 0, credit: money, baseDebit: 0, baseCredit: baseTotal - pointsBack, ...counterParty });
+      if (pointsBack > 0) entryLines.push({ accountCode: points!.accountCode ?? loyaltyAccount(db), debit: 0, credit: pointsBack, baseDebit: 0, baseCredit: pointsBack });
     }
     const totalCost = lines.reduce((s, l) => s + (l.trackStock ? l.cost ?? 0 : 0), 0);
     if (totalCost > 0) {
@@ -238,6 +247,7 @@ export function createReturn(db: Db, originalId: string, input: ReturnInput, use
     writeBatchMoves(db, batchMoves, input.date, kind, id);
     db.prepare(`UPDATE invoices SET status = 'posted', number = ?, entry_id = ?, posted_by = ?, posted_at = ?, updated_at = ? WHERE id = ?`)
       .run(number, entryId, user, now, now, id);
+    recordReturnLoyalty(db, { invoiceId: id, partyId: original.partyId, date: input.date, warehouseId: original.warehouseId }, points, user);
     audit(db, user, 'post', 'invoice', id, { kind, number, returnOf: original.number });
   });
   return getInvoice(db, id);

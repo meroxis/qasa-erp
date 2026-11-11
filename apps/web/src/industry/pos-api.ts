@@ -22,7 +22,7 @@ export interface ShiftView {
   /** cash sales returns paid from the shift's safe while it was open */
   refunds: Money2;
   /** 1.1: the posted sales by how they were paid (older servers leave it out) */
-  methods?: Partial<Record<PosMethod, Money2>>;
+  methods?: Partial<Record<PosMethod | 'loyalty', Money2>>;
   expected: Money2;
   counted: Money2 | null;
   difference: Money2 | null;
@@ -52,6 +52,8 @@ export interface SaleInput {
   allowExpired?: boolean;
   /** 1.1: how it was paid, 1–4 parts adding up to the total; none = all cash */
   payments?: { method: PosMethod; amount: number }[];
+  /** 1.2 (Pro): loyalty points the customer uses on this sale */
+  loyaltyPoints?: number;
   /** qtyMilli in base units, or unit + unitQtyMilli: the quantity in one of the item's units, priced per that unit */
   lines: (({ itemId: string; qtyMilli: number; unitPrice: number } | { itemId: string; unit: UnitCode; unitQtyMilli: number; unitPrice: number }) & { batchId?: string })[];
 }

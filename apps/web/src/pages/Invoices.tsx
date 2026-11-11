@@ -1,4 +1,5 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
+import { LoyaltyUse, loyaltyLines } from '../industry/Loyalty.tsx';
 import { categoriesApi, inCategory } from '../industry/categories-api.ts';
 import { CategoryOptions } from '../industry/CatalogPickers.tsx';
 import {
@@ -447,6 +448,8 @@ export function InvoiceDetail({ id }: { id: string }) {
   const [cancelling, setCancelling] = useState(false);
   const [returning, setReturning] = useState(false);
   const [cancelDate, setCancelDate] = useState(todayIso());
+  // 1.2 (Pro): loyalty points the customer uses when this draft sale is posted
+  const [points, setPoints] = useState({ points: 0, value: 0 });
   const expired = useExpiredConfirm();
   // a pharmacy's sale with controlled medicines: the patient and the prescription, asked once it is posted
   const controlled = useControlledPrompt(id);
@@ -456,12 +459,14 @@ export function InvoiceDetail({ id }: { id: string }) {
   const v = data;
   /** Posting a draft: stock past its expiry date asks first, when the company allows it at all. */
   const postIt = async () => {
+    const loyalty = points.points ? { loyaltyPoints: points.points } : {};
     try {
-      await api.postInvoice(id);
+      await api.postInvoice(id, loyalty);
     } catch (e) {
       if (!(await expired.ask(e))) throw e;
-      await api.postInvoice(id, { allowExpired: true });
+      await api.postInvoice(id, { allowExpired: true, ...loyalty });
     }
+    setPoints({ points: 0, value: 0 });
     if (data.kind === 'sale') controlled.check(id);
   };
   const company = settings ? i18n.name(settings.companyName) : '';
@@ -519,6 +524,11 @@ export function InvoiceDetail({ id }: { id: string }) {
         <button type="button" className="btn" onClick={() => void printDocument('invoice')}><Icon name="printer" size={16} />{t('print')}</button>
       </div>
       <ErrorBox error={cancelling ? null : actionError} />
+      {v.kind === 'sale' && v.actions.includes('post') && v.partyId && (
+        <div className="no-print">
+          <LoyaltyUse partyId={v.partyId} total={v.total} currency={v.currency} value={points.points} onChange={(n, value) => setPoints({ points: n, value })} />
+        </div>
+      )}
       {v.status === 'posted' && <div className="alert info no-print">{t('invoicePostedNote')}</div>}
       {v.installmentContract && (
         <div className="alert warn no-print">
@@ -602,6 +612,7 @@ export function InvoiceDetail({ id }: { id: string }) {
             {v.discount > 0 && <><span className="muted">{t('discount')}</span><span className="num">− {i18n.money(v.discount, v.currency)}</span></>}
             <span style={{ fontWeight: 700 }}>{t('totalDue')}</span><strong className="num" style={{ fontSize: 18 }}>{i18n.money(v.total, v.currency)}</strong>
             {v.currency === 'USD' && <><span className="muted small">{t('iqdEquivalent')}</span><span className="num small">{i18n.money(v.baseTotal, 'IQD')}</span></>}
+            {loyaltyLines(i18n, v.loyalty).map(([label, value]) => <Fragment key={label}><span className="muted small">{label}</span><span className="num small">{value}</span></Fragment>)}
           </div>
         </div>
 
