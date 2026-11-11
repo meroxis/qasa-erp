@@ -14,11 +14,22 @@ export function whatsappNumber(phone: string | null | undefined): string | null 
   const western = phone.replace(/[٠-٩]/g, (c) => String(c.charCodeAt(0) - 0x0660)).replace(/[۰-۹]/g, (c) => String(c.charCodeAt(0) - 0x06f0));
   const d = western.replace(/\D/g, '').replace(/^00/, '');
   if (/^9647\d{9}$/.test(d)) return d;
+  // +964 0750 …: the trunk 0 written after the country code as well
+  if (/^96407\d{9}$/.test(d)) return '964' + d.slice(4);
   if (/^07\d{9}$/.test(d)) return '964' + d.slice(1);
   if (/^7\d{9}$/.test(d)) return '964' + d;
+  // an Iraqi number that is no mobile (a landline): WhatsApp has none
+  if (d.startsWith('964')) return null;
   // another country's number written in full
   if (/^[1-9]\d{9,14}$/.test(d) && phone.trim().startsWith('+')) return d;
   return null;
+}
+
+/** A number WhatsApp takes, written to be read back: "+964 750 123 4567" for an Iraqi mobile; null when it isn't one. */
+export function displayPhone(phone: string | null | undefined): string | null {
+  const n = whatsappNumber(phone);
+  if (!n) return null;
+  return /^9647\d{9}$/.test(n) ? `+964 ${n.slice(3, 6)} ${n.slice(6, 9)} ${n.slice(9)}` : `+${n}`;
 }
 
 /** The wa.me link for a message, to a number or (without one) letting the person pick the chat. */

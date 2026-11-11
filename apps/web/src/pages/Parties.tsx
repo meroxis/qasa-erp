@@ -1,12 +1,12 @@
 import { useState } from 'react';
 import { api, type InvoiceSummary, type PartyInput, type PartyType, type PartyView } from '../api.ts';
-import { EmptyState, AccountCombo, AmountInput, ErrorBox, Icon, InvoiceStatusChip, Modal, downloadCsv, useData, useLoad, usePageNav, useToast } from '../components.tsx';
+import { EmptyState, AccountCombo, AmountInput, ErrorBox, Icon, InvoiceStatusChip, LANGUAGE_NAMES, Modal, downloadCsv, useData, useLoad, usePageNav, useToast } from '../components.tsx';
 import { useI18n } from '../i18n.ts';
 import { go, href } from '../router.ts';
 import { PriceListField } from '../industry/PriceListField.tsx';
 import { CompanyPrintFooter, CompanyPrintHeader } from '../industry/PrintDocument.tsx';
 import { StatementWhatsApp } from '../industry/WhatsAppShare.tsx';
-import { todayIso } from '@qasa/core';
+import { isLang, todayIso, type Lang } from '@qasa/core';
 import { printDocument } from '../industry/printing.ts';
 
 /** الزبائن / المجهزون */
@@ -88,6 +88,8 @@ export function PartyForm({ type, party, onClose, onSaved }: { type: PartyType; 
   const [creditLimit, setCreditLimit] = useState<number | null>(party?.creditLimit ?? null);
   const [notes, setNotes] = useState(party?.notes ?? '');
   const [active, setActive] = useState(party?.active ?? true);
+  // the language their WhatsApp messages are written in ('' = the app's)
+  const [lang, setLang] = useState<Lang | ''>(party?.lang ?? '');
   const [error, setError] = useState<unknown>(null);
   const [busy, setBusy] = useState(false);
   const root = type === 'customer' ? '16' : '26';
@@ -95,7 +97,7 @@ export function PartyForm({ type, party, onClose, onSaved }: { type: PartyType; 
   async function save() {
     setBusy(true);
     setError(null);
-    const input: PartyInput = { name, phone, address, notes, active, creditLimit: type === 'customer' ? creditLimit : null };
+    const input: PartyInput = { name, phone, address, notes, active, creditLimit: type === 'customer' ? creditLimit : null, lang: lang || null };
     if (accountCode) input.accountCode = accountCode;
     try {
       const saved = party ? await api.updateParty(party.id, input) : await api.createParty(type, input);
@@ -119,6 +121,13 @@ export function PartyForm({ type, party, onClose, onSaved }: { type: PartyType; 
           )}
         </div>
         <label className="field"><span>{t('address')}</span><input className="input" value={address} onChange={(e) => setAddress(e.target.value)} /></label>
+        <label className="field">
+          <span>{t('wp_partyLang')}</span>
+          <select className="input" value={lang} onChange={(e) => setLang(isLang(e.target.value) ? e.target.value : '')}>
+            <option value="">{t('wp_langApp')}</option>
+            {LANGUAGE_NAMES.map(([l, label]) => <option key={l} value={l}>{label}</option>)}
+          </select>
+        </label>
         <div className="field">
           <span>{t('linkedAccount')}</span>
           <AccountCombo value={accountCode} onChange={setAccountCode} filter={(a) => a.code.startsWith(root)} ariaLabel={t('linkedAccount')} />
@@ -173,7 +182,7 @@ export function PartyDetail({ id }: { id: string }) {
         <span className="spacer" />
         <button type="button" className="btn" onClick={() => setEditing(true)}><Icon name="edit" size={16} />{t('actEdit')}</button>
         <a className="btn primary" href={href(isCustomer ? `new-invoice/sale/${p.id}` : `new-invoice/purchase/${p.id}`)}><Icon name="plus" size={16} />{isCustomer ? t('newSale') : t('newPurchase')}</a>
-        <StatementWhatsApp company={company} name={p.name} phone={p.phone} balance={data.closing} date={to || todayIso()} currency={cur} />
+        <StatementWhatsApp company={company} name={p.name} code={p.code} phone={p.phone} lang={p.lang} balance={data.closing} date={to || todayIso()} currency={cur} />
         <button type="button" className="btn" onClick={exportCsv}><Icon name="download" size={16} />{t('exportExcel')}</button>
         <button type="button" className="btn" onClick={() => void printDocument('report')}><Icon name="printer" size={16} />{t('print')}</button>
       </div>

@@ -92,6 +92,7 @@ export const MYSQL_TABLES: readonly MysqlObject[] = [
       notes TEXT,
       active INT NOT NULL DEFAULT 1,
       created_at ${WHEN} NOT NULL,
+      lang VARCHAR(2) CHECK (lang IS NULL OR lang IN ('ar', 'en', 'ku')),
       FOREIGN KEY (account_code) REFERENCES accounts(code)
     )`
   },
@@ -1646,6 +1647,14 @@ export const V11_MYSQL_STEPS: readonly MysqlStep[] = [
   mysqlAddForeignKey('items', 'brand_id', 'brands', 'id'),
   mysqlAddColumn('stock_counts', 'scope', 'TEXT')
 ];
+
+/** Version 12, owner tools (1.2): a customer's language for WhatsApp messages. */
+export const V12_OWNER_TOOLS_MYSQL_STEPS: readonly MysqlStep[] = [
+  mysqlAddColumn('parties', 'lang', "VARCHAR(2) CHECK (lang IS NULL OR lang IN ('ar', 'en', 'ku'))")
+];
+
+/** Version 12 on a server database at version 11: each feature's own steps, one after the other. */
+export const V12_MYSQL_STEPS: readonly MysqlStep[] = [...V12_OWNER_TOOLS_MYSQL_STEPS];
 
 /** What a server database has already, for pendingMysqlSteps: "table.column" and "table.column>parent". */
 export interface MysqlSchemaState { columns: ReadonlySet<string>; foreignKeys: ReadonlySet<string> }

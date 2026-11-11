@@ -17,6 +17,8 @@ import { BatchPick, useExpiredConfirm } from '../industry/BatchFields.tsx';
 import { pharmacyApi, type MedicineView } from '../industry/pharmacy-api.ts';
 import { RxTick, useControlledPrompt, useRxItems } from '../industry/PharmacyPrompts.tsx';
 import { printAlone, printDocument } from '../industry/printing.ts';
+import { receiptMessage, withAttachment } from '../industry/WhatsAppShare.tsx';
+import { WhatsAppSendButton } from '../industry/WhatsAppSend.tsx';
 
 /**
  * Point of sale (every plan). Made for a cashier with no training: the search box always has the focus, so a barcode
@@ -529,9 +531,12 @@ function Register({ initial, onClosed }: { initial: ShiftView; onClosed(): void 
               </button>
             </div>
             {receipt && (
-              <button type="button" className="link-btn small" onClick={() => void printReceipt()}>
-                <Icon name="printer" size={14} /> {t('pos_printLast', { n: receipt.number ?? '' })} <span className="kbd">F10</span>
-              </button>
+              <div className="row" style={{ gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+                <button type="button" className="link-btn small" onClick={() => void printReceipt()}>
+                  <Icon name="printer" size={14} /> {t('pos_printLast', { n: receipt.number ?? '' })} <span className="kbd">F10</span>
+                </button>
+                <ReceiptWhatsApp invoice={receipt} />
+              </div>
             )}
           </div>
         </section>
@@ -544,6 +549,14 @@ function Register({ initial, onClosed }: { initial: ShiftView; onClosed(): void 
 }
 
 /* ---------- the receipt (80 mm) ---------- */
+
+/** The last receipt to the customer's WhatsApp, as a PDF of the 80 mm receipt (a walk-in customer: type the number). */
+function ReceiptWhatsApp({ invoice }: { invoice: InvoiceView }) {
+  const { settings } = useData();
+  const names = settings?.companyName;
+  const message = useCallback((m: I18n) => withAttachment(m, receiptMessage(m, names ? m.name(names) : '', invoice)), [names, invoice]);
+  return <WhatsAppSendButton kind="receipt" docRef={invoice.number ?? invoice.id} phone={invoice.partyPhone} lang={invoice.partyLang} message={message} bodyClass="pos-printing" />;
+}
 
 /** The receipt alone, on the printer chosen for receipts (Settings → Printers) or through the print window. */
 function printReceipt() {

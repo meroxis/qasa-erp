@@ -5,7 +5,7 @@ import { DatabaseSync } from 'node:sqlite';
 import { brandKey, DEFAULT_POSTING_ACCOUNTS, IRAQI_UNIFIED_CHART, STARTER_SUB_ACCOUNTS } from '@qasa/core';
 import { AppError } from './errors.ts';
 import {
-  MYSQL_TABLES, MYSQL_TRIGGERS, mysqlCollations, mysqlTableSql, pendingMysqlSteps, V10_MYSQL_STEPS, V11_MYSQL_STEPS, type MysqlCollations, type MysqlStep
+  MYSQL_TABLES, MYSQL_TRIGGERS, mysqlCollations, mysqlTableSql, pendingMysqlSteps, V10_MYSQL_STEPS, V11_MYSQL_STEPS, V12_MYSQL_STEPS, type MysqlCollations, type MysqlStep
 } from './schema-mysql.ts';
 
 export type SqlParam = null | number | bigint | string | Uint8Array;
@@ -1659,11 +1659,21 @@ export function movePartReorder(db: Db): void {
   db.prepare('UPDATE part_details SET reorder_milli = NULL WHERE reorder_milli IS NOT NULL').run();
 }
 
+const V12_OWNER_TOOLS =
+  // 12 — owner tools (1.2): the language a customer gets their WhatsApp messages in (NULL: the app's language)
+  `
+  ALTER TABLE parties ADD COLUMN lang TEXT CHECK (lang IS NULL OR lang IN ('ar', 'en', 'ku'));
+  `;
+
+/** Version 12: each feature's own block, one after the other. */
+const V12 = V12_OWNER_TOOLS;
+
 const MIGRATIONS: Migration[] = [
   { sql: V1 }, { sql: V2, rebuild: true }, { sql: V3, rebuild: true }, { sql: V4 }, { sql: V5, rebuild: true },
   { sql: V6, mysql: 'tables' }, { sql: V7, mysql: 'tables' }, { sql: V8, mysql: 'tables' }, { sql: V9, mysql: 'tables' },
   { sql: V10, mysql: { tables: true, steps: () => V10_MYSQL_STEPS } },
-  { sql: V11, mysql: { tables: true, steps: () => V11_MYSQL_STEPS }, data: (db) => { movePartBrands(db); movePartReorder(db); } }
+  { sql: V11, mysql: { tables: true, steps: () => V11_MYSQL_STEPS }, data: (db) => { movePartBrands(db); movePartReorder(db); } },
+  { sql: V12, mysql: { tables: true, steps: () => V12_MYSQL_STEPS } }
 ];
 
 /** Server databases began at this version: its schema is in schema-mysql.ts (tables and triggers without `since`). */

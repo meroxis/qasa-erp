@@ -15,6 +15,7 @@ import {
   type InvoiceInput,
   type InvoiceKind,
   type InvoiceStatus,
+  type Lang,
   type LineInput,
   type Names,
   type PaymentMode,
@@ -107,6 +108,8 @@ export interface InvoicePaymentView {
 export interface InvoiceView extends InvoiceSummary {
   partyPhone: string | null;
   partyAddress: string | null;
+  /** 1.2: the language the customer gets WhatsApp messages in (null: the app's) */
+  partyLang: Lang | null;
   warehouseCode: string;
   warehouseName: Names;
   cashAccountName: Names | null;
@@ -206,7 +209,7 @@ function loadRow(db: Db, id: string): InvoiceRow {
 
 export function getInvoice(db: Db, id: string): InvoiceView {
   const r = loadRow(db, id);
-  const party = r.party_id ? db.prepare('SELECT phone, address FROM parties WHERE id = ?').get(r.party_id) as { phone: string | null; address: string | null } : null;
+  const party = r.party_id ? db.prepare('SELECT phone, address, lang FROM parties WHERE id = ?').get(r.party_id) as { phone: string | null; address: string | null; lang: Lang | null } : null;
   const w = db.prepare('SELECT code, name_ar, name_en, name_ku FROM warehouses WHERE id = ?').get(r.warehouse_id) as { code: string; name_ar: string; name_en: string; name_ku: string };
   const cash = r.cash_account ? db.prepare('SELECT name_ar, name_en, name_ku FROM accounts WHERE code = ?').get(r.cash_account) as { name_ar: string; name_en: string; name_ku: string } : null;
   const numberOf = (entryId: string | null) => entryId ? (db.prepare('SELECT number FROM entries WHERE id = ?').get(entryId) as { number: string | null }).number : null;
@@ -231,7 +234,7 @@ export function getInvoice(db: Db, id: string): InvoiceView {
     { id: string; kind: InvoiceDocKind; number: string | null; date: string; status: InvoiceStatus; total: number }[];
   return {
     ...toSummary(r),
-    partyPhone: party?.phone ?? null, partyAddress: party?.address ?? null,
+    partyPhone: party?.phone ?? null, partyAddress: party?.address ?? null, partyLang: party?.lang ?? null,
     warehouseCode: w.code, warehouseName: { ar: w.name_ar, en: w.name_en, ku: w.name_ku },
     cashAccountName: cash ? { ar: cash.name_ar, en: cash.name_en, ku: cash.name_ku } : null,
     entryId: r.entry_id, entryNumber: numberOf(r.entry_id), cancelEntryId: r.cancel_entry_id, cancelEntryNumber: numberOf(r.cancel_entry_id),

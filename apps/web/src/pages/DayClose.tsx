@@ -1,10 +1,11 @@
-import { useState, type ReactNode } from 'react';
+import { useCallback, useState, type ReactNode } from 'react';
 import { addDays, todayIso } from '@qasa/core';
 import { dayCloseApi, type DayCloseView, type DayMethod, type Money2 } from '../industry/brief-api.ts';
 import { ErrorBox, Icon, downloadCsv, useLoad, usePageNav, useToast } from '../components.tsx';
 import { useI18n, type I18n, type Key } from '../i18n.ts';
 import { href } from '../router.ts';
-import { copyText, openWhatsApp, whatsappNumber } from '../share.ts';
+import { copyText } from '../share.ts';
+import { WhatsAppSendButton } from '../industry/WhatsAppSend.tsx';
 import { printDocument } from '../industry/printing.ts';
 import { itemStyle, listStyle, moneyBoth, Section, Stat } from './Brief.tsx';
 
@@ -114,11 +115,8 @@ export function DayClose() {
   const [date, setDate] = useState(todayIso());
   const { data: c, error } = useLoad(() => dayCloseApi.get(date), [date]);
 
-  const send = () => {
-    if (!c) return;
-    // to the owner's number when one is set (Daily Brief → owner's number), else WhatsApp lets the person pick the chat
-    openWhatsApp(whatsappNumber(c.ownerPhone) ? c.ownerPhone : null, dayCloseText(i18n, c));
-  };
+  // the message in the language picked in the dialog (the owner's number from the Daily Brief's settings)
+  const message = useCallback((m: I18n) => (c ? dayCloseText(m, c) : ''), [c]);
   const copy = async () => {
     if (c) toast(await copyText(dayCloseText(i18n, c)) ? t('br_copied') : t('br_copyFailed'));
   };
@@ -137,7 +135,7 @@ export function DayClose() {
         <button type="button" className="btn ghost" onClick={() => setDate(addDays(date, -1))} aria-label={t('br_prevDay')}><Icon name="chevron" size={16} className="flip" /></button>
         <button type="button" className="btn ghost" onClick={() => setDate(addDays(date, 1))} disabled={date >= todayIso()} aria-label={t('br_nextDay')}><Icon name="chevron" size={16} /></button>
         <span className="spacer" />
-        <button type="button" className="btn primary" onClick={send} disabled={!c}><Icon name="mail" size={16} />{t('br_sendWhatsApp')}</button>
+        <WhatsAppSendButton kind="dayclose" docRef={date} phone={c?.ownerPhone} message={message} label="br_sendWhatsApp" primary disabled={!c} />
         <button type="button" className="btn" onClick={() => void copy()} disabled={!c}><Icon name="doc" size={16} />{t('br_copy')}</button>
         <button type="button" className="btn" onClick={exportCsv} disabled={!c}><Icon name="download" size={16} />{t('dc_export')}</button>
         <button type="button" className="btn" onClick={() => void printDocument('report')} disabled={!c}><Icon name="printer" size={16} />{t('br_print')}</button>

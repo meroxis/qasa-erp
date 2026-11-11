@@ -175,6 +175,8 @@ export interface PartyView {
   hasEntries: boolean;
   /** 1.1: the same per currency, each in its own (older servers leave it out) */
   balances?: Record<CurrencyCode, number>;
+  /** 1.2: the language their WhatsApp messages are written in (null: the app's; older servers leave it out) */
+  lang?: Lang | null;
 }
 
 export interface PartyInput {
@@ -185,6 +187,7 @@ export interface PartyInput {
   creditLimit?: number | null;
   notes?: string;
   active?: boolean;
+  lang?: Lang | null;
 }
 
 export interface PartyStatement {
@@ -301,6 +304,8 @@ export type InvoiceAction = 'edit' | 'delete' | 'post' | 'cancel' | 'return';
 export interface InvoiceView extends InvoiceSummary {
   partyPhone: string | null;
   partyAddress: string | null;
+  /** 1.2: the customer's language for WhatsApp messages (null: the app's; older servers leave it out) */
+  partyLang?: Lang | null;
   warehouseCode: string;
   warehouseName: Names;
   cashAccountName: Names | null;

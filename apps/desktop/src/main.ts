@@ -7,7 +7,7 @@ import { app, BrowserWindow, dialog, ipcMain, Menu, nativeTheme, protocol, safeS
 import electronUpdater from 'electron-updater';
 import { channelOf, notesText, updaterOptions, type UpdateChannel, type UpdateState } from './updates-logic.ts';
 import { randomBytes } from 'node:crypto';
-import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { appendFileSync, existsSync, mkdirSync, readdirSync, readFileSync, statSync, unlinkSync, writeFileSync } from 'node:fs';
 import { hostname, userInfo } from 'node:os';
 import { join } from 'node:path';
 import { Bridge } from './bridge.ts';
@@ -20,6 +20,7 @@ import { openNotices } from './notices.ts';
 import { booksBefore, markSeen, startVersion, type WhatsNew } from './whats-new.ts';
 import { backupOnClose, noteCloseFailure, takeCloseFailure } from './close-backup.ts';
 import { printingHandlers } from './printing.ts';
+import { sharePdfHandlers } from './share-pdf.ts';
 import { pair, parseAddress, parseOfficeId, pemFingerprint, startTunnel, type PairResult, type Remote } from './office.ts';
 
 const { autoUpdater } = electronUpdater;
@@ -522,6 +523,24 @@ ipcMain.handle('printers:list', (event) => printing.list(event));
 ipcMain.handle('printers:get', (event) => printing.get(event));
 ipcMain.handle('printers:set', (event, kind: unknown, choice: unknown) => printing.set(event, kind, choice));
 ipcMain.handle('printers:print', (event, kind: unknown, layout: unknown) => printing.print(event, kind, layout));
+// Send on WhatsApp as a PDF (share-pdf.ts): the app window printed to a PDF in this PC's own local app data (never synced),
+// shown in File Explorer for the person to drag into the chat the page opens. The page names a kind and a number only.
+const sharedPdfDir = () => {
+  const local = process.env.LOCALAPPDATA;
+  return local ? join(local, 'Qasa ERP', 'Shared PDFs') : join(app.getPath('userData'), 'Shared PDFs');
+};
+const sharing = sharePdfHandlers({
+  target: () => (win && !win.isDestroyed() ? win.webContents : null),
+  fromAppPage: (event) => invokedByAppPage(event as Electron.IpcMainInvokeEvent),
+  dir: sharedPdfDir,
+  makeDir: (dir) => { mkdirSync(dir, { recursive: true }); },
+  writeFile: (file, data) => { writeFileSync(file, data); },
+  list: (dir) => readdirSync(dir).map((name) => ({ name, mtimeMs: statSync(join(dir, name)).mtimeMs })),
+  remove: (file) => { unlinkSync(file); },
+  reveal: (file) => { shell.showItemInFolder(file); },
+  log
+});
+ipcMain.handle('share:pdf', (event, kind: unknown, ref: unknown) => sharing.save(event, kind, ref));
 
 ipcMain.on('network:close', (event) => {
   if (connectWin && event.sender === connectWin.webContents) connectWin.close();

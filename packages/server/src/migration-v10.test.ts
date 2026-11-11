@@ -6,7 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { FastifyInstance } from 'fastify';
 import { COMPANY_TABLES, migrate, openDatabase, SCHEMA_VERSION, schemaVersion, updateCopies, type Db, type SqlValue } from './db.ts';
 import { buildApp } from './app.ts';
-import { pendingMysqlSteps, tableColumns, V10_MYSQL_STEPS, V11_MYSQL_STEPS, MYSQL_TABLES } from './schema-mysql.ts';
+import { pendingMysqlSteps, tableColumns, V10_MYSQL_STEPS, V11_MYSQL_STEPS, V12_MYSQL_STEPS, MYSQL_TABLES, MYSQL_TRIGGERS } from './schema-mysql.ts';
 import { AppError } from './errors.ts';
 
 // upgrading a whole company file takes about a second here, and several times that on a busy build machine
@@ -196,13 +196,13 @@ describe('version 10 on a server database', () => {
     migrate(fake);
     expect(version).toBe(SCHEMA_VERSION);
     expect(ran.filter((s) => s.startsWith('CREATE TABLE') && !s.includes('IF NOT EXISTS')).map((s) => /CREATE TABLE (\w+)/.exec(s)![1]))
-      .toEqual([...MYSQL_TABLES.filter((t) => t.since === 10), ...MYSQL_TABLES.filter((t) => t.since === 11)].map((t) => t.name));
-    expect(ran.filter((s) => s.startsWith('CREATE TRIGGER'))).toHaveLength(2);
+      .toEqual([...MYSQL_TABLES.filter((t) => t.since === 10), ...MYSQL_TABLES.filter((t) => t.since === 11), ...MYSQL_TABLES.filter((t) => t.since === 12)].map((t) => t.name));
+    expect(ran.filter((s) => s.startsWith('CREATE TRIGGER'))).toHaveLength(MYSQL_TRIGGERS.filter((t) => (t.since ?? 0) >= 10).length);
     const alters = ran.filter((s) => s.startsWith('ALTER TABLE'));
     expect(alters).not.toContain('ALTER TABLE items ADD COLUMN category_id VARCHAR(191)');
     expect(alters[0]).toBe('ALTER TABLE items ADD COLUMN purchase_unit VARCHAR(32)');
     expect(alters).toContain('ALTER TABLE items ADD CONSTRAINT items_category_id_fk FOREIGN KEY (category_id) REFERENCES item_categories(id)');
-    expect(alters).toHaveLength(V10_MYSQL_STEPS.length - 2 + V11_MYSQL_STEPS.length);
+    expect(alters).toHaveLength(V10_MYSQL_STEPS.length - 2 + V11_MYSQL_STEPS.length + V12_MYSQL_STEPS.length);
   });
 
   it('upgrades a server database from version 6: a table whose key points at a table of a later version is made with key checks off for that one CREATE', () => {

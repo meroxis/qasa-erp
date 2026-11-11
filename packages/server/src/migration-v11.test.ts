@@ -42,7 +42,7 @@ describe.skipIf(onServer)('a company file from schema 10 opened by schema 11', (
     const db = openDatabase(file, { now: () => new Date(2026, 10, 11, 9, 0, 0) });
     try {
       expect(schemaVersion(db)).toBe(SCHEMA_VERSION);
-      expect(SCHEMA_VERSION).toBe(11);
+      expect(SCHEMA_VERSION).toBeGreaterThanOrEqual(11);
       expect(updateCopies(file).map((f) => basename(f))).toEqual(['books-before-update-v10-20261111-090000.sqlite']);
       expect(db.prepare('SELECT name FROM brands ORDER BY sort').all()).toEqual([{ name: 'Denso' }, { name: 'Mann Filter' }]);
       const brandOf = Object.fromEntries((db.prepare('SELECT i.code, b.name FROM items i LEFT JOIN brands b ON b.id = i.brand_id ORDER BY i.code').all() as { code: string; name: string | null }[])
@@ -74,8 +74,8 @@ describe.skipIf(onServer)('a company file from schema 10 opened by schema 11', (
       let error: unknown;
       try { migrate(db, 10); } catch (e) { error = e; }
       expect(error).toBeInstanceOf(AppError);
-      expect(error).toMatchObject({ code: 'database_newer', details: { version: 11, app: 10 } });
-      expect(schemaVersion(db)).toBe(11);
+      expect(error).toMatchObject({ code: 'database_newer', details: { version: SCHEMA_VERSION, app: 10 } });
+      expect(schemaVersion(db)).toBe(SCHEMA_VERSION);
     } finally {
       db.close();
     }
@@ -112,6 +112,9 @@ describe('version 11 on a server database', () => {
     };
     migrate(fake);
     expect(version).toBe(SCHEMA_VERSION);
+    // version 11's part: up to the commit of its rows (later versions follow it)
+    const all = ran.splice(0);
+    ran.push(...all.slice(0, all.indexOf('COMMIT', all.indexOf('UPDATE part_details SET brand = NULL WHERE brand IS NOT NULL')) + 1));
     const created = ran.filter((s) => s.startsWith('CREATE TABLE') && !s.includes('IF NOT EXISTS'));
     expect(created).toEqual(['CREATE TABLE brands (']);
     const alters = ran.filter((s) => s.startsWith('ALTER TABLE'));

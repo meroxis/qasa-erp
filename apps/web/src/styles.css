@@ -1120,3 +1120,8 @@ html[dir='rtl'] .tour-card.center { transform: translate(50%, -50%); }
   body.print-testing .app, body.print-testing .toast, body.print-testing .backdrop, body.print-testing .busy-bar { display: none !important; }
   body.print-testing .print-test-host { display: block; }
 }
+
+/* sending a document on WhatsApp as a PDF (WhatsAppSend.tsx): the dialog and the notices stay off the paper */
+@media print {
+  body.pdf-making .backdrop, body.pdf-making .toast { display: none !important; }
+}

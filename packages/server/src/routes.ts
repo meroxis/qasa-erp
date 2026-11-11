@@ -76,7 +76,9 @@ const partySchema = z.object({
   accountCode: z.string().max(12).optional(),
   creditLimit: amount.nullable().optional(),
   notes: z.string().max(1000).optional(),
-  active: z.boolean().optional()
+  active: z.boolean().optional(),
+  // 1.2: the language their WhatsApp messages are written in (null: the app's)
+  lang: z.enum(['ar', 'en', 'ku']).nullable().optional()
 });
 
 // one list of units (core UNITS), never a second one written here
