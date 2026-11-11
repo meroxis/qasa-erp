@@ -98,6 +98,7 @@ export function Items() {
           <div className="row">
             <button type="button" className="btn primary" onClick={() => setEditing('new')}><Icon name="plus" size={16} />{t('newItem')}</button>
             <a className="btn" href={href('new-invoice/purchase')}><Icon name="invoice" size={16} />{t('newPurchase')}</a>
+            <a className="btn" href={href('import')}><Icon name="upload" size={16} />{t('importExcel')}</a>
             <span className="spacer" />
             {(warehouses.data?.length ?? 0) > 1 && (
               <select className="input" style={{ width: 200 }} value={warehouseId} onChange={(e) => setWarehouseId(e.target.value)} aria-label={t('warehouse')}>

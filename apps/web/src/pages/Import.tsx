@@ -41,7 +41,13 @@ const FIELDS: Record<ImportKind, Field[]> = {
     F('unit', 'md_fUnit', ['unit', 'uom', 'الوحدة', 'وحدة', 'یەکە', 'یەکەی پێوانە']),
     F('price', 'md_fPrice', ['price', 'sale price', 'selling price', 'السعر', 'سعر البيع', 'نرخ', 'نرخی فرۆشتن']),
     F('currency', 'md_fCurrency', CURRENCY),
-    F('barcode', 'md_fBarcode', ['barcode', 'bar code', 'ean', 'الباركود', 'باركود', 'بارکۆد'])
+    F('barcode', 'md_fBarcode', ['barcode', 'bar code', 'ean', 'الباركود', 'باركود', 'بارکۆد']),
+    // 1.1: where the item belongs, its brand, and stock to start with
+    F('category', 'md_fCategory', ['category', 'group', 'التصنيف', 'تصنيف', 'الصنف', 'المجموعة', 'پۆل', 'گرووپ']),
+    F('subcategory', 'md_fSubcategory', ['subcategory', 'sub category', 'sub-category', 'التصنيف الفرعي', 'فرعي', 'پۆلی لاوەکی', 'لاوەکی']),
+    F('brand', 'md_fBrand', ['brand', 'make', 'manufacturer', 'الماركة', 'ماركة', 'العلامة التجارية', 'براند', 'مارکە']),
+    F('cost', 'md_fPurchasePrice', ['purchase price', 'cost', 'cost price', 'buying price', 'سعر الشراء', 'الكلفة', 'سعر الكلفة', 'نرخی کڕین', 'تێچوو']),
+    F('qty', 'md_fOpeningQty', ['opening quantity', 'opening qty', 'quantity', 'qty', 'stock', 'كمية أول المدة', 'الكمية', 'الرصيد', 'بڕی سەرەتا', 'بڕ'])
   ],
   opening_stock: [
     F('item', 'md_fItem', ['item', 'code', 'item code', 'barcode', 'name', 'المادة', 'الرمز', 'رمز المادة', 'اسم المادة', 'كاڵا', 'کاڵا', 'کۆد', 'ناو'], true),
@@ -283,7 +289,7 @@ export function Import() {
   };
 
   const options = (): ImportOptions | undefined => {
-    if (kind === 'opening_stock') return { date, ...(warehouseId ? { warehouseId } : {}), ...(again ? { again } : {}) };
+    if (kind === 'opening_stock' || kind === 'items') return { date, ...(warehouseId ? { warehouseId } : {}), ...(again ? { again } : {}) };
     if (kind === 'opening_balances') {
       const r = Number(rate.replace(/[,\s]/g, ''));
       return { date, partyType, ...(r > 0 ? { rateX100: rateToX100(r) } : {}), ...(again ? { again } : {}) };
@@ -310,7 +316,7 @@ export function Import() {
     const sample: Record<ImportKind, string[][]> = {
       customers: [['Raz', '0750 445 1290', 'Erbil — 100m road', '5000000', '']],
       suppliers: [['Zagros Trading', '0770 123 4567', 'Sulaymaniyah', '']],
-      items: [['P-0001', 'فلتر زيت', 'Oil filter', 'فلتەری زەیت', 'piece', '15000', 'IQD', '6281000000012']],
+      items: [['P-0001', 'فلتر زيت', 'Oil filter', 'فلتەری زەیت', 'piece', '15000', 'IQD', '6281000000012', 'Engine', 'Filters', 'Mann-Filter', '9000', '24']],
       opening_stock: [['P-0001', '24', '9000']],
       opening_balances: [['C-0001', '1500000', 'IQD']]
     };
@@ -345,13 +351,13 @@ export function Import() {
           ))}
         </div>
 
-        {(kind === 'opening_stock' || kind === 'opening_balances') && (
+        {(kind === 'opening_stock' || kind === 'opening_balances' || kind === 'items') && (
           <div className="row" style={{ flexWrap: 'wrap', gap: 12, alignItems: 'end' }}>
             <label className="field" style={{ width: 180 }}>
               <span>{t('md_date')}</span>
               <input className="input" type="date" value={date} onChange={(e) => setDate(e.target.value)} />
             </label>
-            {kind === 'opening_stock' && (warehouses.data?.length ?? 0) > 1 && (
+            {(kind === 'opening_stock' || kind === 'items') && (warehouses.data?.length ?? 0) > 1 && (
               <label className="field" style={{ width: 220 }}>
                 <span>{t('warehouse')}</span>
                 <select className="input" value={warehouseId} onChange={(e) => setWarehouseId(e.target.value)}>
@@ -451,7 +457,7 @@ export function Import() {
                   {t('md_skippedRows')}: {check.skipped.slice(0, 30).map((s) => i18n.int(s.line)).join('، ')}{check.skipped.length > 30 ? '…' : ''}
                 </p>
               )}
-              {(kind === 'opening_stock' || kind === 'opening_balances') && <p className="muted small" style={{ margin: 0 }}>{t('md_draftNote')}</p>}
+              {(kind === 'opening_stock' || kind === 'opening_balances' || kind === 'items') && <p className="muted small" style={{ margin: 0 }}>{t('md_draftNote')}</p>}
               {(check.importedBefore?.length ?? 0) > 0 && (
                 <div className="alert warn stack" role="alert">
                   <span>{t('md_importedBefore')}</span>

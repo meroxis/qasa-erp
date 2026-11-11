@@ -25,7 +25,11 @@ export const MEDIA_TEXT = {
   md_kSuppliers: ['المجهزون', 'Suppliers', 'دابینکەران'],
   md_hSuppliers: ['الاسم والهاتف والعنوان', 'Name, phone and address', 'ناو، تەلەفۆن و ناونیشان'],
   md_kItems: ['المواد', 'Items', 'کاڵاکان'],
-  md_hItems: ['الرمز والاسم بثلاث لغات والوحدة والسعر والباركود', 'Code, name in three languages, unit, price and barcode', 'کۆد، ناو بە سێ زمان، یەکە، نرخ و بارکۆد'],
+  md_hItems: [
+    'الرمز والاسم بثلاث لغات والوحدة والسعر والباركود، والتصنيف والفرعي والماركة (يُنشأ الجديد منها)، وكمية أول المدة بسعر الشراء',
+    'Code, name in three languages, unit, price and barcode; category, subcategory and brand (new ones are made); and an opening quantity at the purchase price',
+    'کۆد، ناو بە سێ زمان، یەکە، نرخ و بارکۆد؛ پۆل و پۆلی لاوەکی و براند (نوێکان دروست دەکرێن)؛ و بڕی سەرەتای کۆگا بە نرخی کڕین'
+  ],
   md_kOpeningStock: ['بضاعة أول المدة', 'Opening stock', 'کاڵای سەرەتای ماوە'],
   md_hOpeningStock: ['كمية كل مادة وكلفتها عند البدء بقاصة', 'How much of each item you have, and its cost, when you start with Qasa', 'بڕ و تێچووی هەر کاڵایەک کاتێک بە قاسە دەست پێدەکەیت'],
   md_kOpeningBalances: ['الأرصدة الافتتاحية', 'Opening balances', 'باڵانسی سەرەتا'],

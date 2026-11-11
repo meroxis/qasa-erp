@@ -51,5 +51,16 @@ export const CATALOG_TEXT = {
   rp_uncategorised: ['بلا تصنيف', 'Uncategorised', 'بێ پۆل'],
   rp_noBrand: ['بلا ماركة', 'No brand', 'بێ براند'],
   rp_direct: ['في التصنيف نفسه', 'In the category itself', 'لە خودی پۆلەکەدا'],
+  md_fCategory: ['التصنيف', 'Category', 'پۆل'],
+  md_fSubcategory: ['التصنيف الفرعي', 'Subcategory', 'پۆلی لاوەکی'],
+  md_fBrand: ['الماركة', 'Brand', 'براند'],
+  md_fPurchasePrice: ['سعر الشراء', 'Purchase price', 'نرخی کڕین'],
+  md_fOpeningQty: ['كمية أول المدة', 'Opening quantity', 'بڕی سەرەتای کۆگا'],
+  err_md_subcategory_without_category: ['الصف {n}: تصنيف فرعي بلا تصنيف رئيسي.', 'Row {n}: a subcategory without its category.', 'ڕیزی {n}: پۆلی لاوەکی بێ پۆلی سەرەکی.'],
+  err_md_item_has_moves: [
+    'الصف {n}: لهذه المادة حركات مخزنية، فلا تُضاف لها كمية أول المدة.',
+    'Row {n}: this item has stock moves already, so no opening quantity is added to it.',
+    'ڕیزی {n}: ئەم کاڵایە جووڵەی کۆگای هەیە، بۆیە بڕی سەرەتای بۆ زیاد ناکرێت.'
+  ],
   st_nothing: ['القائمة موجودة كلها؛ لم يُضف شيء.', 'Everything in the list is there already; nothing was added.', 'هەموو لیستەکە هەیە؛ هیچ زیاد نەکرا.']
 } as const;

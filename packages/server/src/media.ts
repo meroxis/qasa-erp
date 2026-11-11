@@ -8,6 +8,8 @@ import { imageSha256, transaction } from './db.ts';
 import { audit } from './audit.ts';
 import { AppError, conflict, invalid, notFound } from './errors.ts';
 import { createItem } from './items.ts';
+import { createCategory, findCategoryByName } from './categories.ts';
+import { brandIdForName } from './brands.ts';
 import { createParty } from './parties.ts';
 import { createStockDoc } from './stock-docs.ts';
 import { createJournalEntry } from './journal.ts';
@@ -332,6 +334,8 @@ const importItems: Importer = (db, input, actor, result) => {
   const seenBarcodes = new Map<string, number>();
   const seenNames = new Map<string, number>();
   const categories = new Map((db.prepare('SELECT id, code FROM item_categories WHERE active = 1').all() as { id: string; code: string }[]).map((c) => [c.code.toUpperCase(), c.id]));
+  const byCode = new Map((db.prepare(`SELECT i.id, i.code, i.track_stock, (SELECT COUNT(*) FROM stock_moves m WHERE m.item_id = i.id) AS moves FROM items i`).all() as
+    { id: string; code: string; track_stock: number; moves: number }[]).map((i) => [i.code.toLowerCase(), i]));
   const rows = input.rows.map((r, i) => {
     const line = lineOf(i);
     const code = text(r.code);
@@ -347,10 +351,21 @@ const importItems: Importer = (db, input, actor, result) => {
     if (!currency) errors.push({ code: 'md_currency_invalid', line });
     const price = text(r.price) ? parseAmount(text(r.price), currency ?? 'IQD') : 0;
     if (price === null) errors.push({ code: 'md_price_invalid', line });
-    // 1.1: an optional category, by its code
-    const categoryCode = text(r.category).toUpperCase();
-    const categoryId = categoryCode ? categories.get(categoryCode) : undefined;
-    if (categoryCode && !categoryId) errors.push({ code: 'md_category_unknown', line });
+    // 1.1: an optional category (by its code or its name: a name not there yet makes it), a subcategory of it by name,
+    // and a brand by name (made when new); an opening quantity at the purchase price
+    const category = text(r.category).slice(0, 200);
+    const subcategory = text(r.subcategory).slice(0, 200);
+    if (subcategory && !category) errors.push({ code: 'md_subcategory_without_category', line });
+    const brand = text(r.brand);
+    if (brand.length > 100) errors.push({ code: 'brand_name_too_long', line });
+    const cost = text(r.cost) ? parseAmount(text(r.cost), 'IQD') : 0;
+    if (cost === null || cost < 0) errors.push({ code: 'md_cost_invalid', line });
+    const qtyMilli = text(r.qty) ? parseQty(text(r.qty)) : 0;
+    if (qtyMilli === null || qtyMilli < 0) errors.push({ code: 'md_qty_invalid', line });
+    if (qtyMilli && unit === 'service') errors.push({ code: 'md_item_not_stocked', line });
+    const existing = code ? byCode.get(code.toLowerCase()) : undefined;
+    // an opening quantity only for an item that has never moved (new, or listed before without stock)
+    if (qtyMilli && existing && (Number(existing.moves) > 0 || Number(existing.track_stock) !== 1)) errors.push({ code: 'md_item_has_moves', line });
     if (code) {
       const k = code.toLowerCase();
       if (seenCodes.has(k)) errors.push({ code: 'md_duplicate_in_file', line, other: seenCodes.get(k) });
@@ -367,21 +382,60 @@ const importItems: Importer = (db, input, actor, result) => {
       if (other !== undefined) errors.push({ code: 'md_duplicate_in_file', line, other });
     }
     for (const k of keys) if (!seenNames.has(k)) seenNames.set(k, line);
-    return { line, code, barcode, names, keys, unit, currency, price, categoryId };
+    return { line, code, barcode, names, keys, unit, currency, price, category, subcategory, brand, cost: cost ?? 0, qtyMilli: qtyMilli ?? 0, existing };
   });
   fail(errors);
+  // the category of a row: a code, else a top-level category of that name, made when there is none (and its subcategory)
+  const madeCategories = new Map<string, string>();
+  const categoryOf = (row: (typeof rows)[number]): string | null | undefined => {
+    if (!row.category) return null;
+    const key = `${normalizeForSearch(row.category)}|${normalizeForSearch(row.subcategory)}`;
+    if (madeCategories.has(key)) return madeCategories.get(key);
+    const asName = { ar: row.category, en: row.category, ku: row.category };
+    let parent: string | null | undefined = categories.get(row.category.toUpperCase()) ?? findCategoryByName(db, asName, null);
+    if (!parent) parent = atRow(errors, row.line, () => createCategory(db, { name: asName }, actor.name).id);
+    if (!parent) return undefined;
+    let id: string | undefined = parent;
+    if (row.subcategory) {
+      const subName = { ar: row.subcategory, en: row.subcategory, ku: row.subcategory };
+      id = findCategoryByName(db, subName, parent) ?? atRow(errors, row.line, () => createCategory(db, { name: subName, parentId: parent }, actor.name).id);
+    }
+    if (id) madeCategories.set(key, id);
+    return id;
+  };
+  const opening: { itemId: string; qtyMilli: number; unitCost: number }[] = [];
   for (const row of rows) {
-    if (row.code && codes.has(row.code.toLowerCase())) { result.skipped.push({ line: row.line, reason: 'exists' }); continue; }
+    if (row.code && codes.has(row.code.toLowerCase())) {
+      result.skipped.push({ line: row.line, reason: 'exists' });
+      if (row.qtyMilli && row.existing) opening.push({ itemId: row.existing.id, qtyMilli: row.qtyMilli, unitCost: row.cost });
+      continue;
+    }
     // a row without a code whose name an item already has (in any language) is that item: importing the file again,
     // or after a timeout, must not double the catalogue
     if (!row.code && row.keys.some((k) => names.has(k))) { result.skipped.push({ line: row.line, reason: 'exists' }); continue; }
+    const categoryId = categoryOf(row);
+    const brandId = row.brand ? atRow(errors, row.line, () => brandIdForName(db, row.brand, actor.name)) : null;
+    if (categoryId === undefined || brandId === undefined) continue;
     const made = atRow(errors, row.line, () => createItem(db, {
       code: row.code || undefined, barcode: row.barcode || undefined, name: row.names, unit: row.unit!, salePrice: row.price!, saleCurrency: row.currency!,
-      ...(row.categoryId ? { categoryId: row.categoryId } : {})
+      ...(categoryId ? { categoryId } : {}), ...(brandId ? { brandId } : {})
     }, actor.name));
-    if (made) result.created++;
+    if (made) {
+      result.created++;
+      if (row.qtyMilli) opening.push({ itemId: made.id, qtyMilli: row.qtyMilli, unitCost: row.cost });
+    }
   }
   fail(errors);
+  // the opening quantities: one opening-stock document, a draft posted the usual way (as the opening stock import makes)
+  if (opening.length) {
+    const o = input.options ?? {};
+    const doc = atRow(errors, undefined, () => createStockDoc(db, {
+      kind: 'opening', date: o.date ?? todayIso(), warehouseId: defaultWarehouse(db, o.warehouseId), counterAccountCode: o.counterAccountCode ?? '21',
+      notes: importWords(input).stock, lines: opening
+    }, actor.name));
+    fail(errors);
+    result.documents.push({ type: 'stock_doc', id: doc!.id });
+  }
 };
 
 /** Finds an item by code, barcode or exact name in any language. */
@@ -747,6 +801,7 @@ const idParam = z.object({ id: z.string().min(1).max(64) });
  */
 export const mediaApi: ApiExtension = {
   rules: {
+    'POST /api/import/items': 'stock',
     'PUT /api/items/:id/image': 'stock',
     'DELETE /api/items/:id/image': 'stock'
   },
@@ -776,6 +831,14 @@ export const mediaApi: ApiExtension = {
           const body = parse(INPUT, req.body);
           if (body.kind === 'opening_balances' && !body.options?.partyType) throw invalid([{ code: 'md_party_type_required' }]);
           return runImport(db, { kind: body.kind, rows: body.rows, dryRun: body.dryRun, options: body.options, lang: body.lang }, actor(req));
+        }
+      },
+      {
+        // 1.1: items alone, for whoever can make items (the stock permission), not only an admin
+        method: 'POST', path: '/api/import/items',
+        handler: async (req) => {
+          const body = parse(INPUT.omit({ kind: true }), req.body);
+          return runImport(db, { kind: 'items', rows: body.rows, dryRun: body.dryRun, options: body.options, lang: body.lang }, actor(req));
         }
       },
       {

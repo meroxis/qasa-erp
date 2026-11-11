@@ -34,6 +34,9 @@ export const mediaApi = {
     request<{ itemId: string; mime: ImageMime; bytes: number; updatedAt: string }>('PUT', `/api/items/${encodeURIComponent(itemId)}/image`, { data }),
   deleteImage: (itemId: string) => request<void>('DELETE', `/api/items/${encodeURIComponent(itemId)}/image`),
   /** lang: the language of the words written on the documents the import makes (the person's own; Arabic by default) */
+  // items have their own route: whoever can make items may import them (the other kinds need an admin)
   import: (kind: ImportKind, rows: Record<string, string>[], dryRun: boolean, options: ImportOptions | undefined, lang: Lang) =>
-    request<ImportResult>('POST', '/api/import', { kind, rows, dryRun, ...(options ? { options } : {}), lang })
+    kind === 'items'
+      ? request<ImportResult>('POST', '/api/import/items', { rows, dryRun, ...(options ? { options } : {}), lang })
+      : request<ImportResult>('POST', '/api/import', { kind, rows, dryRun, ...(options ? { options } : {}), lang })
 };
