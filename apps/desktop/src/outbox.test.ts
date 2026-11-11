@@ -49,7 +49,8 @@ describe('the outbox of a PC on the office network', () => {
     expect(files).toEqual([`outbox-${SERVER.slice(0, 16)}.qob`]);
     const raw = readFileSync(join(dir, files[0]!), 'utf8');
     expect(raw).toMatch(/^q1:/);
-    for (const word of ['Mer', 'Raz', 'tea', 'OFF-', '5000', 'Counter']) expect(raw).not.toContain(word);
+    // (words long enough that random ciphertext never spells them by chance)
+    for (const word of ['u-mer', 'itemId', 'qtyMilli', 'pos_sale', '/api/pos', 'Counter', 'register']) expect(raw).not.toContain(word);
 
     // a restart (the same Windows user) finds them all, and the count goes on
     const again = openOutbox({ dir, server: SERVER, box: secrets });
