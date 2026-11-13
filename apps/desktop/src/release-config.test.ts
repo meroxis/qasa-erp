@@ -127,7 +127,8 @@ describe('the Microsoft Store listing', () => {
   it('says only the core is open source', () => {
     for (const text of [en.description, ar.description, ku.description]) expect(text).toContain('AGPL');
     expect(en.description).toContain('The core of Qasa ERP is open source');
-    expect(en.description).toContain('separate proprietary module');
+    expect(en.description).toContain('The Starter, Pro and Business features are a separate proprietary module.');
+    expect(read('apps/desktop/store-listing.json')).toContain('the Starter, Pro and Business features are a separate proprietary module under the Qasa ERP license terms');
   });
 });
 
@@ -226,8 +227,8 @@ describe('the release notes and the Store "What\'s new" of this version', () => 
 
   const store = listing.listings;
 
-  it('is 1.2.1, the same in the app, the core and the lock file, with notes in Arabic, English and Kurdish', () => {
-    expect(version).toBe('1.2.1');
+  it('is 1.3.0, the same in the app, the core and the lock file, with notes in Arabic, English and Kurdish', () => {
+    expect(version).toBe('1.3.0');
     expect(read('packages/core/src/version.ts')).toContain(`APP_VERSION = '${version}'`);
     const lock = JSON.parse(read('package-lock.json')) as { packages: Record<string, { version?: string }> };
     expect(lock.packages['apps/desktop']?.version).toBe(version);
@@ -243,62 +244,117 @@ describe('the release notes and the Store "What\'s new" of this version', () => 
     }
   });
 
-  it('names remote support with Quick Assist, where it is, and the details it copies without passwords, keys or company data', () => {
-    expect(section('en')).toContain('Help → **Remote support…**, and Settings → **Help and About**');
-    expect(section('ar')).toContain('مساعدة ← **الدعم عن بُعد…**، والإعدادات ← **المساعدة وحول البرنامج**');
-    expect(section('ku')).toContain('یارمەتی ← **پشتگیری لە دوورەوە…**، و ڕێکخستنەکان ← **یارمەتی و دەربارە**');
-    for (const lang of ['ar', 'en', 'ku'] as const) for (const word of ['Quick Assist', 'Windows', '6', 'Meroxis']) expect(section(lang), lang).toContain(word);
-    // Windows' own Arabic name for Quick Assist, and the app's words for Allow
-    expect(section('ar')).toContain('«المساعدة السريعة» (Quick Assist)');
-    expect(section('en')).toContain('type it in Quick Assist, then choose Allow');
-    expect(section('ar')).toContain('ثم اختر «السماح»');
-    expect(section('ku')).toContain('پاشان «ڕێگەدان» هەڵبژێرە');
-    expect(section('en')).toContain('you can stop it at any time by closing Quick Assist');
-    expect(section('ar')).toContain('يمكنك إيقافه في أي وقت بإغلاق «المساعدة السريعة»');
-    expect(section('ku')).toContain('هەر کاتێک بتەوێت دەتوانیت بە داخستنی Quick Assist ڕایبگریت');
-    expect(section('en')).toContain("**Copy support details:** copies the app's version and plan, Windows' version and the last errors, to paste into WhatsApp, without passwords, keys or your company's data.");
-    expect(section('ar')).toMatch(/\*\*نسخ تفاصيل الدعم:\*\*[^\n]*دون كلمات مرور أو مفاتيح أو بيانات شركتك/);
-    expect(section('ku')).toMatch(/\*\*کۆپیکردنی وردەکارییەکانی پشتگیری:\*\*[^\n]*بەبێ وشەی نهێنی، کلیل یان داتای کۆمپانیاکەت/);
-    for (const words of ['Remote support (Help → Remote support…, and Settings → Help and About)', 'Quick Assist', '6-digit code', 'Copy support details', "without passwords, keys or your company's data"]) expect(store['en-us'].releaseNotes).toContain(words);
-    expect(store.ar.releaseNotes).toContain('الدعم عن بُعد (مساعدة ← الدعم عن بُعد…، والإعدادات ← المساعدة وحول البرنامج)');
-    expect(store['ku-arab'].releaseNotes).toContain('پشتگیری لە دوورەوە (یارمەتی ← پشتگیری لە دوورەوە…، و ڕێکخستنەکان ← یارمەتی و دەربارە)');
-    expect(store['en-us'].features.some((f) => /Remote support with Windows' Quick Assist[\s\S]*6-digit code[\s\S]*Allow/.test(f))).toBe(true);
-    expect(store.ar.features.some((f) => /الدعم عن بُعد[\s\S]*Quick Assist[\s\S]*«السماح»/.test(f))).toBe(true);
-    expect(store['ku-arab'].features.some((f) => /پشتگیری لە دوورەوە[\s\S]*Quick Assist[\s\S]*«ڕێگەدان»/.test(f))).toBe(true);
-  });
-
-  it('warns to type only a code Qasa support gave after you asked for help, never one from a stranger who phoned', () => {
-    expect(section('en')).toContain('Only type a code that Qasa support (Meroxis) gave you after you asked for help. Never type a code from a stranger who phoned you, even if they say they are from Qasa, Microsoft or a bank.');
-    expect(section('ar')).toContain('لا تكتب إلا رمزاً أعطاك إياه دعم قاصة (Meroxis) بعد أن طلبت أنت المساعدة. لا تكتب أبداً رمزاً من شخص غريب اتصل بك، حتى لو قال إنه من قاصة أو Microsoft أو مصرف.');
-    expect(section('ku')).toContain('تەنها کۆدێک بنووسە کە پشتگیریی قاسە (Meroxis) دوای ئەوەی خۆت داوای یارمەتیت کرد پێی داویت. هەرگیز کۆدی کەسێکی نەناسراو مەنووسە کە پەیوەندیی پێوە کردوویت، تەنانەت ئەگەر بڵێت لە قاسە یان Microsoft یان بانکێکەوەیە.');
-    expect(section('en')).toContain('Nobody sees your screen before that');
-    expect(section('ar')).toContain('لا يرى أحد شاشتك قبل ذلك');
-    expect(section('ku')).toContain('پێش ئەوە کەس شاشەکەت نابینێت');
-    expect(store['en-us'].releaseNotes).toContain('Only type a code that Qasa support (Meroxis) gave you after you asked for help; never a code from a stranger who phoned you');
-    expect(store.ar.releaseNotes).toContain('لا تكتب إلا رمزاً أعطاك إياه دعم قاصة (Meroxis) بعد أن طلبت أنت المساعدة');
-    expect(store['ku-arab'].releaseNotes).toContain('تەنها کۆدێک بنووسە کە پشتگیریی قاسە (Meroxis) دوای ئەوەی خۆت داوای یارمەتیت کرد پێی داویت');
-  });
-
-  it('names Settings in sections and each section, in the words of the Settings list', () => {
-    expect(section('en')).toContain('**Settings in sections:**');
-    expect(section('ar')).toContain('**الإعدادات في أقسام:**');
-    expect(section('ku')).toContain('**ڕێکخستنەکان بە بەش:**');
-    const names: Record<'en' | 'ar' | 'ku', string[]> = {
-      en: ['Language and display', 'Company', 'Periods and year-end', 'Sales and point of sale', 'Loyalty points', 'Printers', 'Backups', 'Office network', 'Companies', 'Users', 'Anonymous usage statistics', 'Updates', 'Help and About'],
-      ar: ['اللغة والعرض', 'الشركة', 'الفترات وإقفال السنة', 'المبيعات ونقطة البيع', 'نقاط الولاء', 'الطابعات', 'النسخ الاحتياطية', 'شبكة المكتب', 'الشركات', 'المستخدمون', 'إحصاءات الاستخدام المجهولة', 'التحديثات', 'المساعدة وحول البرنامج'],
-      ku: ['زمان و پیشاندان', 'کۆمپانیا', 'ماوەکان و داخستنی ساڵ', 'فرۆشتن و خاڵی فرۆشتن', 'خاڵەکانی دڵسۆزی', 'چاپکەرەکان', 'باکئەپەکان', 'تۆڕی نووسینگە', 'کۆمپانیاکان', 'بەکارهێنەران', 'ئاماری بەکارهێنانی بێناو', 'نوێکردنەوەکان', 'یارمەتی و دەربارە']
-    };
-    const storeOf = { en: 'en-us', ar: 'ar', ku: 'ku-arab' } as const;
-    for (const lang of ['ar', 'en', 'ku'] as const) {
-      for (const name of names[lang]) {
-        expect(section(lang), name).toContain('**' + name + '**');
-        expect(store[storeOf[lang]].releaseNotes, name).toContain(name);
-      }
+  it('names the Starter plan as the app has it: 165,000 IQD a year, 2 users, 1 company, every Pro feature except Qasa Relay and the cloud backup', () => {
+    // the app's own plan table (packages/core/src/plans.ts): the texts say what it says
+    const plans = read('packages/core/src/plans.ts');
+    expect(plans).toContain('PLAN_PRICE_IQD: Readonly<Record<PaidPlanId, number>> = { starter: 165_000, pro: 350_000, business: 1_000_000 }');
+    expect(plans).toContain("starter: { id: 'starter', limits: { companies: 1, users: 2, warehouses: null }, features: STARTER_FEATURES }");
+    expect(plans).toContain("STARTER_LEAVES_OUT: readonly Feature[] = ['relay', 'cloudBackup']");
+    expect(section('en')).toContain('**Starter plan:** a new plan between Free and Pro, at 165,000 IQD a year: **2 users** and **1 company**, warehouses without a limit, and every Pro feature except **Qasa Relay** and the **cloud backup**.');
+    expect(section('ar')).toContain('**خطة Starter:** خطة جديدة بين المجانية وPro، بسعر 165,000 دينار عراقي في السنة: **مستخدمان** و**شركة واحدة**، ومخازن بلا حد، وكل ميزات Pro عدا **Qasa Relay** و**النسخ إلى السحابة**.');
+    expect(section('ku')).toContain('**پلانی Starter:** پلانێکی نوێ لە نێوان بەخۆڕایی و Pro، بە 165,000 دیناری عێراقی بۆ ساڵێک: **2 بەکارهێنەر** و **یەک کۆمپانیا**، کۆگای بێ سنوور، و هەموو تایبەتمەندییەکانی Pro جگە لە **Qasa Relay** و **باکئەپ بۆ هەور**.');
+    // the office network on Starter: the office's own network, not the internet
+    expect(section('en')).toContain("The office network works inside the office, on the office's own network, and not over the internet");
+    expect(section('ar')).toContain('تعمل شبكة المكتب داخل المكتب على شبكته نفسها، لا عبر الإنترنت');
+    expect(section('ku')).toContain('تۆڕی نووسینگە لەناو نووسینگە لەسەر تۆڕی خودی نووسینگە کار دەکات، نەک لە ڕێی ئینتەرنێتەوە');
+    for (const lang of ['en-us', 'ar', 'ku-arab'] as const) {
+      for (const words of ['Starter', '165,000', 'Qasa Relay', 'Pro', 'Business']) expect(store[lang].releaseNotes, lang).toContain(words);
     }
-    expect(store['en-us'].releaseNotes).toContain('Settings in sections: Settings is now a short list of sections, each opening on its own instead of one long page');
+    expect(store['en-us'].releaseNotes).toContain('New Starter plan, between Free and Pro: 165,000 IQD a year, 2 users and 1 company, warehouses without a limit, and every Pro feature except Qasa Relay and the cloud backup.');
+    expect(store.ar.releaseNotes).toContain('165,000 دينار عراقي في السنة، مستخدمان وشركة واحدة، ومخازن بلا حد، وكل ميزات Pro عدا Qasa Relay والنسخ إلى السحابة.');
+    expect(store['ku-arab'].releaseNotes).toContain('165,000 دیناری عێراقی بۆ ساڵێک، 2 بەکارهێنەر و یەک کۆمپانیا، کۆگای بێ سنوور، و هەموو تایبەتمەندییەکانی Pro جگە لە Qasa Relay و باکئەپ بۆ هەور.');
   });
 
-  it('upgrades no company file in 1.2.1, so it has no "Before you update" warning', () => {
+  it('says a Starter licence needs 1.3.0 or later, and to update every PC before entering the key', () => {
+    expect(section('en')).toContain("**A Starter licence needs Qasa ERP 1.3.0 or later.** Earlier versions don't accept its key: update every PC first, then enter the key in **Plan & license**.");
+    expect(section('ar')).toContain('**ترخيص Starter يحتاج قاصة ERP 1.3.0 أو أحدث.** الإصدارات الأقدم لا تقبل مفتاحه: حدّث كل الحواسيب أولاً، ثم أدخل المفتاح في **الخطة والترخيص**.');
+    expect(section('ku')).toContain('**مۆڵەتی Starter پێویستی بە قاسە ERP 1.3.0 یان نوێتر هەیە.** وەشانە کۆنترەکان کلیلەکەی وەرناگرن: سەرەتا هەموو کۆمپیوتەرەکان نوێ بکەرەوە، پاشان کلیلەکە لە **پلان و مۆڵەت** داخڵ بکە.');
+    expect(store['en-us'].releaseNotes).toContain('A Starter licence needs Qasa ERP 1.3.0 or later');
+    expect(store.ar.releaseNotes).toContain('ترخيص Starter يحتاج قاصة ERP 1.3.0 أو أحدث');
+    expect(store['ku-arab'].releaseNotes).toContain('مۆڵەتی Starter پێویستی بە قاسە ERP 1.3.0 یان نوێتر هەیە');
+    // why: a licence key and an activation token may name only the plans the app knows (1.2.1 knew pro and business)
+    expect(read('packages/server/src/license.ts')).toContain('plan: z.enum(PAID_PLAN_IDS)');
+    expect(read('packages/server/src/activation.ts')).toContain('plan: z.enum(PAID_PLAN_IDS)');
+    expect(read('packages/core/src/plans.ts')).toContain("PAID_PLAN_IDS = ['starter', 'pro', 'business'] as const");
+  });
+
+  it('says the number of users in a plan now counts at sign-in on every plan: admins first, then the earliest made, and nothing is deleted', () => {
+    expect(section('en')).toContain('**The number of users in your plan now counts at sign-in too, on every plan** (Free 1, Starter 2, Pro 5, Business without a limit, or the number written in your licence).');
+    expect(section('ar')).toContain('**عدد المستخدمين في خطتك صار يُحسب عند تسجيل الدخول أيضاً، في كل الخطط** (المجانية 1، Starter 2، Pro 5، Business بلا حد، أو العدد المكتوب في ترخيصك).');
+    expect(section('ku')).toContain('**ژمارەی بەکارهێنەرانی پلانەکەت ئێستا لە کاتی چوونەژوورەوەشدا دەژمێردرێت، لە هەموو پلانەکاندا** (بەخۆڕایی 1، Starter 2، Pro 5، Business بێ سنوور، یان ئەو ژمارەیەی لە مۆڵەتەکەتدا نووسراوە).');
+    expect(section('en')).toContain('only as many as the plan allows can sign in: admins first, then the users made earliest');
+    expect(section('ar')).toContain('فلا يستطيع الدخول إلا العدد الذي تسمح به الخطة: المدراء أولاً، ثم الأقدم إنشاءً');
+    expect(section('ku')).toContain('تەنها ئەو ژمارەیەی پلانەکە ڕێگەی پێدەدات دەتوانن بچنە ژوورەوە: سەرەتا بەڕێوەبەران، پاشان ئەوانەی زووتر دروستکراون');
+    // the Users page's own words for the mark, and where the page is
+    expect(section('en')).toContain('Settings → **Users** marks them **Over the plan**');
+    expect(section('ar')).toContain('الإعدادات ← **المستخدمون** علامة **فوق حد الخطة**');
+    expect(section('ku')).toContain('ڕێکخستنەکان ← **بەکارهێنەران** نیشانەی **سەروو سنووری پلان**');
+    expect(read('apps/web/src/i18n.ts')).toContain("userOverLimit: ['فوق حد الخطة', 'Over the plan', 'سەروو سنووری پلان']");
+    expect(section('en')).toContain('**Nothing is deleted and no user is switched off**, and an admin always keeps a place');
+    expect(section('ar')).toContain('**لا يُحذف شيء ولا يُوقَف أي مستخدم**، ويبقى للمدير مكان دائماً');
+    expect(section('ku')).toContain('**هیچ شتێک ناسڕدرێتەوە و هیچ بەکارهێنەرێک ناچالاک ناکرێت**، و بەڕێوەبەر هەمیشە شوێنی دەمێنێت');
+    expect(store['en-us'].releaseNotes).toContain('The number of users in your plan now counts at sign-in too, on every plan (Free 1, Starter 2, Pro 5, Business without a limit');
+    expect(store['en-us'].releaseNotes).toContain('admins first, then the users made earliest');
+    expect(store['en-us'].releaseNotes).toContain('Nothing is deleted and no user is switched off');
+    expect(store.ar.releaseNotes).toContain('عدد المستخدمين في خطتك صار يُحسب عند تسجيل الدخول أيضاً، في كل الخطط');
+    expect(store.ar.releaseNotes).toContain('المدراء أولاً، ثم الأقدم إنشاءً');
+    expect(store.ar.releaseNotes).toContain('لا يُحذف شيء ولا يُوقَف أي مستخدم');
+    expect(store['ku-arab'].releaseNotes).toContain('ژمارەی بەکارهێنەرانی پلانەکەت ئێستا لە کاتی چوونەژوورەوەشدا دەژمێردرێت، لە هەموو پلانەکاندا');
+    expect(store['ku-arab'].releaseNotes).toContain('سەرەتا بەڕێوەبەران، پاشان ئەوانەی زووتر دروستکراون');
+    expect(store['ku-arab'].releaseNotes).toContain('هیچ شتێک ناسڕدرێتەوە و هیچ بەکارهێنەرێک ناچالاک ناکرێت');
+  });
+
+  it('lists four plans in the Store description, each paid one with its price for a year, and one feature line for them', () => {
+    const d = { en: store['en-us'].description, ar: store.ar.description, ku: store['ku-arab'].description };
+    expect(d.en).toContain('• Starter (165,000 IQD a year): 2 users and 1 company, warehouses without a limit, and every Pro feature except Qasa Relay and the cloud backup.');
+    expect(d.en).toContain('• Pro (350,000 IQD a year): 5 users and 3 companies, with Qasa Relay');
+    expect(d.en).toContain('• Business (1,000,000 IQD a year): users and companies without a limit');
+    expect(d.ar).toContain('• Starter (165,000 دينار عراقي في السنة): مستخدمان وشركة واحدة، ومخازن بلا حد، وكل ميزات Pro عدا Qasa Relay والنسخ إلى السحابة.');
+    expect(d.ar).toContain('• Pro (350,000 دينار عراقي في السنة): حتى 5 مستخدمين و3 شركات، مع Qasa Relay');
+    expect(d.ar).toContain('• Business (1,000,000 دينار عراقي في السنة): مستخدمون وشركات بلا حد');
+    expect(d.ku).toContain('• Starter (165,000 دیناری عێراقی بۆ ساڵێک): 2 بەکارهێنەر و یەک کۆمپانیا، کۆگای بێ سنوور، و هەموو تایبەتمەندییەکانی Pro جگە لە Qasa Relay و باکئەپ بۆ هەور.');
+    expect(d.ku).toContain('• Pro (350,000 دیناری عێراقی بۆ ساڵێک): تا 5 بەکارهێنەر و 3 کۆمپانیا، لەگەڵ Qasa Relay');
+    expect(d.ku).toContain('• Business (1,000,000 دیناری عێراقی بۆ ساڵێک): بەکارهێنەر و کۆمپانیای بێ سنوور');
+    // the plans in their order (Free, Starter, Pro, Business) before the free first month
+    for (const text of Object.values(d)) {
+      const at = ['\n• Starter (165,000', '\n• Pro (350,000', '\n• Business (1,000,000'].map((w) => text.indexOf(w));
+      expect(at[0]).toBeGreaterThan(0);
+      expect(at[1]).toBeGreaterThan(at[0]!);
+      expect(at[2]).toBeGreaterThan(at[1]!);
+      // Partner Center takes 10,000 characters for a description
+      expect(text.length).toBeLessThanOrEqual(10_000);
+    }
+    expect(d.en).toContain('only that many can sign in (admins first, then the earliest made); no user is deleted');
+    expect(d.en).toContain('buy a Starter, Pro or Business license at my.qasaerp.com (sold outside the Store)');
+    expect(d.ar).toContain('تشتري ترخيص Starter أو Pro أو Business من my.qasaerp.com (يُباع خارج المتجر)');
+    expect(d.ku).toContain('مۆڵەتی Starter، Pro یان Business لە my.qasaerp.com دەکڕیت (لە دەرەوەی Store دەفرۆشرێت)');
+    expect(store['en-us'].features).toContain('Four plans: Free, Starter (2 users, 1 company, every Pro feature except Qasa Relay and the cloud backup), Pro and Business; licences are sold at my.qasaerp.com');
+    expect(store.ar.features.some((f) => f.startsWith('أربع خطط: المجانية، وStarter (مستخدمان وشركة واحدة وكل ميزات Pro عدا Qasa Relay والنسخ إلى السحابة)، وPro وBusiness'))).toBe(true);
+    expect(store['ku-arab'].features.some((f) => f.startsWith('چوار پلان: بەخۆڕایی، Starter (2 بەکارهێنەر، یەک کۆمپانیا و هەموو تایبەتمەندییەکانی Pro جگە لە Qasa Relay و باکئەپ بۆ هەور)، Pro و Business'))).toBe(true);
+  });
+
+  it('never says Starter comes with Qasa Relay or the cloud backup', () => {
+    const all = [notes, ...Object.values(store).flatMap((l) => [l.releaseNotes, l.description, ...l.features])].join('\n');
+    expect(all).not.toMatch(/Starter[^.\n]*\b(with|includes|including) (Qasa Relay|the cloud backup)/i);
+    expect(all).not.toMatch(/Starter[^.\n]*(مع|يشمل|تشمل) (Qasa Relay|النسخ إلى السحابة)/);
+    expect(all).not.toMatch(/Starter[^.\n]*لەگەڵ (Qasa Relay|باکئەپ بۆ هەور)/);
+  });
+
+  it('keeps the README plan table in step: a Starter column between Free and Pro', () => {
+    const readme = read('README.md');
+    expect(readme).toContain('| | Free | Starter | Pro | Business |');
+    expect(readme).toContain('| A year, in Iraqi dinars | free | 165,000 | 350,000 | 1,000,000 |');
+    expect(readme).toContain('| Users, with sign-in | 1 | 2, with roles and separate duties | up to 5, with roles and separate duties | unlimited |');
+    expect(readme).toContain('| Qasa Relay (the office network from anywhere over the internet) | | | ✓ | ✓ |');
+    expect(readme).toContain('| Encrypted cloud backup to Google Drive | | | ✓ | ✓ |');
+    expect(readme).toContain('| Companies | 1 | 1 | 3 | unlimited |');
+    // every row of the table has the five columns
+    const rows = readme.slice(readme.indexOf('| | Free | Starter | Pro | Business |'), readme.indexOf('\n\nSome features are still being built')).split('\n');
+    expect(rows.length).toBeGreaterThan(15);
+    for (const row of rows) expect(row.split('|').length, row).toBe(7);
+  });
+
+  it('upgrades no company file in 1.3.0, so it has no "Before you update" warning', () => {
     expect(notes).not.toMatch(/Before you update|قبل التحديث|پێش نوێکردنەوە/);
     const all = [notes, ...Object.values(store).map((l) => l.releaseNotes)].join('\n');
     expect(all).not.toMatch(/company file is upgraded|يُرقّى ملف الشركة|فایلی کۆمپانیا بەرز دەکرێتەوە/);
@@ -330,11 +386,11 @@ describe('the release notes and the Store "What\'s new" of this version', () => 
     expect(store['ku-arab'].releaseNotes).toMatch(/0\.1\.8: لە مانگی یەکەمت[^؛]*یەک جار ئەم کۆمپیوتەرە بە ئینتەرنێتەوە ببەستە/);
   });
 
-  it('the Store text says a paid licence is activated online, next to "works without internet"', () => {
+  it('the Store text says a paid licence (Starter, Pro or Business) is activated online, next to "works without internet"', () => {
     const l = listing.listings as unknown as Record<string, { description: string; features: string[] }>;
-    expect(l['en-us']!.description).toMatch(/works without internet; a Pro or Business licence is activated online once/);
-    expect(l.ar!.description).toMatch(/يعمل دون إنترنت؛ أما ترخيص Pro أو Business فيُفعَّل عبر الإنترنت/);
-    expect(l['ku-arab']!.description).toMatch(/بەبێ ئینتەرنێت کار دەکات؛ مۆڵەتی Pro یان Business یەک جار بە ئینتەرنێت چالاک دەکرێت/);
+    expect(l['en-us']!.description).toMatch(/works without internet; a Starter, Pro or Business licence is activated online once/);
+    expect(l.ar!.description).toMatch(/يعمل دون إنترنت؛ أما ترخيص Starter أو Pro أو Business فيُفعَّل عبر الإنترنت/);
+    expect(l['ku-arab']!.description).toMatch(/بەبێ ئینتەرنێت کار دەکات؛ مۆڵەتی Starter، Pro یان Business یەک جار بە ئینتەرنێت چالاک دەکرێت/);
     for (const lang of ['en-us', 'ar', 'ku-arab']) {
       const offline = l[lang]!.features.at(-1)!;
       expect(offline.length).toBeLessThanOrEqual(200);

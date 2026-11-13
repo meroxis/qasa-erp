@@ -88,7 +88,7 @@ Qasa ERP keeps the books of an Iraqi company the way its finance department alre
 
 Both keep the company in `%APPDATA%\Qasa ERP`, so you can move from one to the other without losing your books
 (install the same version or a newer one; Help → About shows it), and uninstalling either keeps them. Keep only one on
-a PC: install the new one, then uninstall the other. Pro and Business
+a PC: install the new one, then uninstall the other. Starter, Pro and Business
 licenses from [my.qasaerp.com](https://my.qasaerp.com) work in both; the Store doesn't sell them.
 
 ## Screenshots
@@ -253,28 +253,34 @@ server: **Settings → Company database → Move the company to a database serve
 
 ## Plans
 
-Free is the complete accounting product for one company on one PC, with no time limit. Pro and Business add what a
-growing company needs, and the app shows the full comparison under **Plan & license**.
+Free is the complete accounting product for one company on one PC, with no time limit. Starter, Pro and Business add
+what a growing company needs, and the app shows the full comparison, with the price of a year of each plan, under
+**Plan & license**. Starter is Pro for a small office: 2 users and 1 company, with every Pro feature except Qasa Relay
+and the cloud backup.
 
-| | Free | Pro | Business |
-|---|---|---|---|
-| Accounting, vouchers, invoices, returns, stock, trial balance | ✓ | ✓ | ✓ |
-| Final accounts | on screen | print and Excel | print and Excel |
-| Warehouses | 1 | unlimited | unlimited |
-| "Made with Qasa ERP" on invoices | shown | removed | removed |
-| Users, with sign-in | 1 | up to 5, with roles and separate duties | unlimited |
-| Office network (several PCs on one company file) | | ✓ | ✓ |
-| Companies | 1 | 3 | unlimited |
-| Daily backups to a folder of your choice (OneDrive, Google Drive, USB) | | ✓ | ✓ |
-| Year-end closing (closing entry, locked months, reopen by reversal) | | ✓ | ✓ |
-| Company database on your own MariaDB or MySQL server | | | ✓ |
-| Installment sales with guarantors | | ✓ | ✓ |
-| Payroll | | ✓ | ✓ |
-| Branches | | | ✓ |
-| Online edition | | | coming soon |
+| | Free | Starter | Pro | Business |
+|---|---|---|---|---|
+| A year, in Iraqi dinars | free | 165,000 | 350,000 | 1,000,000 |
+| Accounting, vouchers, invoices, returns, stock, trial balance | ✓ | ✓ | ✓ | ✓ |
+| Final accounts | on screen | print and Excel | print and Excel | print and Excel |
+| Warehouses | 1 | unlimited | unlimited | unlimited |
+| "Made with Qasa ERP" on invoices | shown | removed | removed | removed |
+| Users, with sign-in | 1 | 2, with roles and separate duties | up to 5, with roles and separate duties | unlimited |
+| Office network (several PCs on one company file) | | ✓ (inside the office) | ✓ | ✓ |
+| Qasa Relay (the office network from anywhere over the internet) | | | ✓ | ✓ |
+| Companies | 1 | 1 | 3 | unlimited |
+| Daily backups to a folder of your choice (OneDrive, Google Drive, USB) | | ✓ | ✓ | ✓ |
+| Encrypted cloud backup to Google Drive | | | ✓ | ✓ |
+| Year-end closing (closing entry, locked months, reopen by reversal) | | ✓ | ✓ | ✓ |
+| Company database on your own MariaDB or MySQL server | | | | ✓ |
+| Installment sales with guarantors | | ✓ | ✓ | ✓ |
+| Payroll | | ✓ | ✓ | ✓ |
+| Branches | | | | ✓ |
+| Online edition | | | | coming soon |
 
 Some features are still being built; the app marks them as coming soon. A plan never locks anyone out of their
-data: when a license ends, the company keeps everything and continues on the Free features. The first month on each
+data: when a license ends, the company keeps everything and continues on the Free features. Only as many users as the
+plan allows can sign in (admins first, then the earliest made); no user is deleted. The first month on each
 PC is free, with every feature except Qasa Relay; it starts by itself on the first run and is given once per PC, not
 once per company. Licenses are keys signed by Meroxis (Ed25519), activated online once on each PC. Buy or renew one
 in the customer portal,
