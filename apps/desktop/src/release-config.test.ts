@@ -244,6 +244,40 @@ describe('the release notes and the Store "What\'s new" of this version', () => 
     }
   });
 
+  it('tells of the bigger menu, Settings as rectangles and the Employees group, in the words the app uses', () => {
+    const words = read('apps/web/src/i18n.ts');
+    expect(words).toContain("gPeople: ['الموظفون', 'Employees', 'کارمەندان']");
+    expect(words).toContain("displayTitle: ['اللغة والعرض', 'Language and display', 'زمان و پیشاندان']");
+    expect(words).toContain("densityCompact: ['مضغوط', 'Compact', 'چڕ']");
+    expect(section('en')).toContain('the menu at the side has bigger text and taller rows, and each group heading is a row of its own with an icon');
+    expect(section('en')).toContain('The **Compact** density (Settings → **Language and display**) keeps the menu near its old size.');
+    expect(section('ar')).toContain('كثافة العرض **مضغوط** (الإعدادات ← **اللغة والعرض**) تُبقي القائمة قريبة من حجمها السابق.');
+    expect(section('ku')).toContain('چڕیی پیشاندانی **چڕ** (ڕێکخستنەکان ← **زمان و پیشاندان**) لیستەکە نزیک لە قەبارەی پێشووی دەهێڵێتەوە.');
+    expect(section('en')).toContain('Settings opens as a grid of rectangles, one for each section. Each section opens on its own page, with a **Back** link at the top.');
+    expect(section('ar')).toContain('تفتح الإعدادات كشبكة من المستطيلات، مستطيل لكل قسم.');
+    expect(section('ku')).toContain('ڕێکخستنەکان وەک تۆڕێک لە لاکێشە دەکرێنەوە، بۆ هەر بەشێک لاکێشەیەک.');
+    for (const lang of ['ar', 'en', 'ku'] as const) expect(section(lang), lang).toMatch(/[*]{2}People[*]{2}.*[*]{2}Employees[*]{2}/);
+    expect(store['en-us'].releaseNotes).toContain('The side menu has bigger text and rows, and Settings opens as rectangles to click.');
+    expect(store.ar.releaseNotes).toContain('القائمة الجانبية صار نصها أكبر وصفوفها أعلى، والإعدادات تفتح كمستطيلات تنقر عليها.');
+    expect(store['ku-arab'].releaseNotes).toContain('لیستی لا گەورەتر بووە، و ڕێکخستنەکان وەک لاکێشە دەکرێنەوە.');
+  });
+
+  it('tells of adding a customer or supplier in the box and of the one save button (F9), with the names the buttons carry', () => {
+    const words = read('apps/web/src/i18n/invoice-speed.ts');
+    expect(words).toContain("sv_print_next: ['حفظ وطباعة والتالية', 'Save, print and next', 'پاشەکەوت، چاپ و داهاتوو']");
+    expect(words).toContain("sv_whatsapp: ['حفظ وإرسال على واتساب', 'Save and send on WhatsApp', 'پاشەکەوت و ناردن بە واتسئاپ']");
+    expect(read('apps/web/src/pages/Invoices.tsx')).toContain('shortcut="F9"');
+    expect(section('en')).toContain('a **+** inside the customer or supplier box adds a new one on the spot: name, phone, city or address, and the price list for a customer.');
+    expect(section('en')).toContain('one **Save, print and next** button (**F9**). Its menu holds the other ways: **Save and print**, **Save and next**, **Save and send on WhatsApp**, **Post invoice** and **Save as draft**. The button remembers the way you chose last.');
+    expect(section('ar')).toContain('زر واحد **حفظ وطباعة والتالية** (**F9**). وفي قائمته الطرق الأخرى: **حفظ وطباعة**، **حفظ والتالية**، **حفظ وإرسال على واتساب**، **ترحيل الفاتورة** و**حفظ كمسودة**.');
+    expect(section('ku')).toContain('یەک دوگمەی **پاشەکەوت، چاپ و داهاتوو**یان هەیە (**F9**). لە لیستەکەیدا ڕێگەکانی تر هەن: **پاشەکەوت و چاپ**، **پاشەکەوت و داهاتوو**، **پاشەکەوت و ناردن بە واتسئاپ**، **تۆمارکردنی پسوولە** و **پاشەکەوت وەک ڕەشنووس**.');
+    expect(section('ar')).toContain('وتنبهك قاصة إذا وُجد من له الهاتف نفسه أو الاسم نفسه.');
+    expect(section('ku')).toContain('قاسە ئاگادارت دەکاتەوە ئەگەر کەسێک بە هەمان تەلەفۆن یان هەمان ناو پێشتر هەبێت.');
+    expect(store['en-us'].releaseNotes).toContain('On invoices, a + in the customer or supplier box adds a new one, and one button (F9) saves, prints and opens the next.');
+    expect(store.ar.releaseNotes).toContain('علامة + داخل خانة الزبون أو المجهز تضيف واحداً جديداً في مكانه، وزر واحد (F9) يحفظ ويطبع ويفتح الفاتورة التالية.');
+    expect(store['ku-arab'].releaseNotes).toContain('«+» لە خانەی کڕیار یان دابینکەر یەکێکی نوێ زیاد دەکات، و دوگمەی F9 پاشەکەوت و چاپ دەکات و پسوولەی داهاتوو دەکاتەوە.');
+  });
+
   it('names the Starter plan as the app has it: 165,000 IQD a year, 2 users, 1 company, every Pro feature except Qasa Relay and the cloud backup', () => {
     // the app's own plan table (packages/core/src/plans.ts): the texts say what it says
     const plans = read('packages/core/src/plans.ts');
