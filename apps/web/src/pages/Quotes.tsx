@@ -7,6 +7,7 @@ import {
   QUOTE_STATUSES, quotesApi, type QuoteInput, type QuoteLineInput, type QuoteMove, type QuoteStatus, type QuoteSummaryView, type QuoteView
 } from '../industry/quotes-api.ts';
 import { go, href } from '../router.ts';
+import { PartyPicker } from '../industry/PartyPicker.tsx';
 import { useRatePrefill } from '../industry/fx-prefill.ts';
 import { convertAmount, convertLines } from './currency-switch.ts';
 import { QuoteWhatsApp } from '../industry/WhatsAppShare.tsx';
@@ -205,7 +206,7 @@ export function QuoteEditor({ id }: { id?: string }) {
           {prospect ? (
             <label className="field"><span>{t('qt_personName')}</span><input className="input" maxLength={200} value={form.customerName} onChange={(e) => set('customerName', e.target.value)} /></label>
           ) : (
-            <label className="field"><span>{t('customer')}</span><SearchCombo value={form.partyId} options={customers} onChange={(v) => set('partyId', v)} placeholder={t('qt_pickCustomer')} ariaLabel={t('customer')} /></label>
+            <div className="field"><span>{t('customer')}</span><PartyPicker type="customer" value={form.partyId} options={customers} onChange={(v) => set('partyId', v)} placeholder={t('qt_pickCustomer')} ariaLabel={t('customer')} /></div>
           )}
           <label className="field"><span>{t('currency')}</span>
             <select className="input" value={form.currency} onChange={(e) => changeCurrency(e.target.value as CurrencyCode)}>

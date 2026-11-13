@@ -1,5 +1,5 @@
 import type { CurrencyCode } from '@qasa/core';
-import { qs, request } from '../api.ts';
+import { qs, request, type SendOptions } from '../api.ts';
 
 /** Price lists: a customer buys at retail or wholesale; an item has a wholesale price. */
 
@@ -18,7 +18,7 @@ export const pricesApi = {
       ...(rateX100 && Number.isSafeInteger(rateX100) && rateX100 > 0 ? { rateX100: String(rateX100) } : {})
     })),
   partyList: (partyId: string) => request<{ partyId: string; list: PriceList }>('GET', `/api/prices/party/${partyId}`),
-  setPartyList: (partyId: string, list: PriceList) => request<{ partyId: string; list: PriceList }>('PUT', `/api/prices/party/${partyId}`, { list }),
+  setPartyList: (partyId: string, list: PriceList, options: SendOptions = {}) => request<{ partyId: string; list: PriceList }>('PUT', `/api/prices/party/${partyId}`, { list }, options),
   item: (itemId: string) => request<ItemPricesView>('GET', `/api/prices/item/${itemId}`),
   setItemWholesale: (itemId: string, wholesale: number | null) => request<ItemPricesView>('PUT', `/api/prices/item/${itemId}`, { wholesale })
 };

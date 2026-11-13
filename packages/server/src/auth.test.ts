@@ -221,6 +221,24 @@ describe('with sign-in', () => {
     expect((await req('GET', '/api/reports/trial-balance', undefined, mer)).statusCode).toBe(200);
   });
 
+  it('lets only sales add a customer and only purchasing add a supplier, also from the quick add in a picker (sent with a key)', async () => {
+    await officeWithSignIn([{ username: 'mer', roles: ['sales'] }, { username: 'raz', roles: ['purchasing'] }]);
+    const mer = await signIn('mer', 'mer-pass-1');
+    const raz = await signIn('raz', 'raz-pass-1');
+    const key = () => ({ 'x-qasa-idempotency': crypto.randomUUID() });
+    const count = () => Number((db.prepare('SELECT COUNT(*) AS n FROM parties').get() as { n: number }).n);
+    const before = count();
+    expect((await req('POST', '/api/parties', { type: 'customer', name: 'Las' }, { ...mer, ...key() })).statusCode).toBe(201);
+    expect((await req('POST', '/api/parties', { type: 'supplier', name: 'Las' }, { ...mer, ...key() })).json()).toMatchObject({ error: 'forbidden', details: { need: 'purchases' } });
+    expect((await req('POST', '/api/parties', { type: 'supplier', name: 'Las' }, { ...raz, ...key() })).statusCode).toBe(201);
+    expect((await req('POST', '/api/parties', { type: 'customer', name: 'Las' }, { ...raz, ...key() })).json()).toMatchObject({ error: 'forbidden', details: { need: 'sales' } });
+    // a customer's price list is the sales side's too
+    const customerId = (await req('GET', '/api/parties?type=customer', undefined, raz)).json()[0].id;
+    expect((await req('PUT', `/api/prices/party/${customerId}`, { list: 'wholesale' }, raz)).statusCode).toBe(403);
+    expect((await req('PUT', `/api/prices/party/${customerId}`, { list: 'wholesale' }, mer)).statusCode).toBe(200);
+    expect(count()).toBe(before + 2);
+  });
+
   it('with separate duties, the preparer cannot check or approve their own voucher', async () => {
     await officeWithSignIn([{ username: 'mer', roles: ['preparer', 'checker', 'approver'] }, { username: 'raz', roles: ['checker', 'approver'] }]);
     const owner = await signIn('admin', 'owner-pass-1');

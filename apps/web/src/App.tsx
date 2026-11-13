@@ -304,9 +304,13 @@ export function App() {
 
   // someone limited to branches gets no link to the company's own books (the server refuses them anyway)
   const companyBooks = seesCompanyBooks({ admin: !!me?.user?.permissions.includes('admin'), branchLimited: !!me?.user?.branchLimited });
+  // what the person may change (a "+" to add a customer shows only to someone who may), and who they are for what
+  // the app remembers per person on this PC
+  const permissions = me?.user?.permissions;
+  const userKey = me?.signInRequired && me.user?.id ? `user:${me.user.id}` : `name:${favUser}`;
   const data = useMemo(
-    () => ({ accounts, settings, plan, online, companyBooks, reloadAccounts, reloadSettings, reloadPlan }),
-    [accounts, settings, plan, online, companyBooks, reloadAccounts, reloadSettings, reloadPlan]
+    () => ({ accounts, settings, plan, online, companyBooks, permissions, userKey, reloadAccounts, reloadSettings, reloadPlan }),
+    [accounts, settings, plan, online, companyBooks, permissions, userKey, reloadAccounts, reloadSettings, reloadPlan]
   );
   const { t } = i18n;
   const [page, arg, arg2] = route;

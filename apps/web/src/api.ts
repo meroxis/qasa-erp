@@ -460,6 +460,8 @@ export function onBusyChange(fn: (n: number) => void): () => void {
   busyListeners.add(fn);
   return () => { busyListeners.delete(fn); };
 }
+/** How many requests still wait for the server now (a paper is printed once what it shows has arrived). */
+export const pendingRequests = (): number => inFlight;
 function setInFlight(n: number) {
   inFlight = n;
   for (const fn of busyListeners) fn(n);
@@ -749,9 +751,10 @@ export const api = {
   removeLicense: () => request<PlanStatus>('DELETE', '/api/plan/license'),
   startTrial: () => request<PlanStatus>('POST', '/api/plan/trial', {}),
 
-  parties: (f: { type?: PartyType; q?: string; active?: string } = {}) => request<PartyView[]>('GET', '/api/parties' + qs(f)),
+  parties: (f: { type?: PartyType; q?: string; active?: string } = {}, options: SendOptions = {}) => request<PartyView[]>('GET', '/api/parties' + qs(f), undefined, options),
   party: (id: string) => request<PartyView>('GET', `/api/parties/${id}`),
-  createParty: (type: PartyType, input: PartyInput) => request<PartyView>('POST', '/api/parties', { type, ...input }),
+  /** options: the idempotency key of a quick add that may be sent again after an answer that was lost */
+  createParty: (type: PartyType, input: PartyInput, options: SendOptions = {}) => request<PartyView>('POST', '/api/parties', { type, ...input }, options),
   updateParty: (id: string, input: PartyInput) => request<PartyView>('PUT', `/api/parties/${id}`, input),
   deleteParty: (id: string) => request<void>('DELETE', `/api/parties/${id}`),
   partyStatement: (id: string, from?: string, to?: string, currency?: CurrencyCode) => request<PartyStatement>('GET', `/api/parties/${id}/statement` + qs({ from, to, currency })),
