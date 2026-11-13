@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import type { Lang } from '@qasa/core';
 import { Icon } from '../components.tsx';
+import { ChoiceTiles } from '../ChoiceTiles.tsx';
 import { useI18n } from '../i18n.ts';
 
 /** What the Windows app reports: the saved choice, and whether this window is running with it. */
@@ -69,10 +70,10 @@ export function GraphicsSetting() {
         )}
       </div>
       <div className="setting-ctl">
-        <div className="track" role="group" aria-label={tx.title} aria-busy={saving}>
-          <button type="button" aria-pressed={state.on} disabled={saving} onClick={() => choose(true)}>{tx.on}</button>
-          <button type="button" aria-pressed={!state.on} disabled={saving} onClick={() => choose(false)}>{tx.off}</button>
-        </div>
+        <ChoiceTiles
+          label={tx.title} value={state.on ? 'on' : 'off'} disabled={saving} busy={saving} onChange={(v) => choose(v === 'on')}
+          options={[{ value: 'on', label: tx.on, icon: 'zap' }, { value: 'off', label: tx.off, icon: 'x' }]}
+        />
       </div>
     </div>
   );

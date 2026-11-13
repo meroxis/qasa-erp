@@ -65,7 +65,24 @@ describe('Settings → Printers', () => {
     const html = wrap(view(), 'en');
     const row = html.slice(html.indexOf('data-kind="invoice"'), html.indexOf('data-kind="voucher"'));
     expect(row).toMatch(/<option value="" selected="">Ask every time<\/option>/);
-    expect((row.match(/disabled=""/g) ?? []).length).toBe(4);
+    // paper, copies and silence, and the three margins rectangles
+    expect((row.match(/disabled=""/g) ?? []).length).toBe(6);
+  });
+
+  it('offers the margins of each kind as three rectangles on a row of their own, the saved one chosen', () => {
+    for (const lang of LANGS) {
+      const html = wrap(view(), lang);
+      expect(html).not.toMatch(/<select[^>]*aria-label="[^"]*">\s*<option value="default"/);
+      for (const kind of PRINT_KINDS) expect(html, kind).toContain(`<tr class="printers-margins" data-margins="${kind}">`);
+      expect(html.split('role="radiogroup"').length - 1).toBe(PRINT_KINDS.length);
+      const row = html.slice(html.indexOf('data-kind="receipt"'), html.indexOf('data-kind="label"'));
+      const group = esc(`${textOf(lang, 'prn_margins')} — ${textOf(lang, 'prn_kind_receipt')}`);
+      expect(row).toContain(`role="radiogroup" aria-label="${group}"`);
+      expect(row.split('role="radio"').length - 1).toBe(3);
+      // the receipt printer was saved with no margins: that rectangle is the chosen one, with the check mark
+      expect(row.split('aria-checked="true"').length - 1).toBe(1);
+      expect(row).toMatch(new RegExp(`aria-checked="true"[^>]*><span class="choice-check"[^>]*>.*?</span><span class="choice-label">${esc(textOf(lang, 'prn_margins_none'))}<`));
+    }
   });
 
   it('says when a saved printer is gone and when Windows lists none, in each language', () => {
@@ -82,8 +99,8 @@ describe('Settings → Printers', () => {
     for (const lang of LANGS) {
       const html = wrap(view(), lang);
       const row = html.slice(html.indexOf('data-kind="label"'), html.indexOf('data-kind="report"'));
-      // paper, margins, copies and silence are off; the printer and the test page are not
-      expect((row.match(/disabled=""/g) ?? []).length, lang).toBe(4);
+      // paper, copies, silence and the three margins rectangles are off; the printer and the test page are not
+      expect((row.match(/disabled=""/g) ?? []).length, lang).toBe(6);
       expect(row).toMatch(/<select class="input" aria-label="[^"]*"><option value="">/);
       expect(row).toContain(esc(textOf(lang, 'prn_chooseOther')));
       // a row whose printer is there keeps its settings on

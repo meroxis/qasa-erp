@@ -55,12 +55,21 @@
   --radius: var(--r-card);
 
   /* sizes (density-dependent) */
-  --sidebar-w: 264px;
+  --sidebar-w: 296px;
+  --rail-w: 72px;
   --topbar-h: 56px;
   --statusbar-h: 28px;
   --control-h: 36px;
   --control-h-sm: 32px;
-  --nav-h: 34px;
+  /* the menu: page rows, their text and icons, the group headings, the selection mark */
+  --nav-h: 44px;
+  --nav-fs: 16px;
+  --nav-icon: 20px;
+  --nav-group-h: 42px;
+  --nav-group-fs: 15px;
+  --nav-label-fs: 14px;
+  --nav-mark: 20px;
+  --rail-icon: 22px;
   --row-h: 40px;
   --row-pad-y: 8px;
   --cell-pad-x: 12px;
@@ -78,9 +87,18 @@
 }
 
 :root[data-density='compact'] {
+  --sidebar-w: 264px;
+  --rail-w: 64px;
   --topbar-h: 48px;
   --control-h: 32px;
   --nav-h: 32px;
+  --nav-fs: 14px;
+  --nav-icon: 18px;
+  --nav-group-h: 34px;
+  --nav-group-fs: 13.5px;
+  --nav-label-fs: 12.5px;
+  --nav-mark: 16px;
+  --rail-icon: 20px;
   --row-h: 34px;
   --row-pad-y: 5px;
   --cell-pad-x: 10px;
@@ -402,9 +420,9 @@ html[dir='rtl'] .flip { transform: scaleX(-1); }
   min-block-size: var(--topbar-h); padding-inline: 10px;
 }
 .brand > svg { inline-size: 28px; block-size: 28px; flex-shrink: 0; }
-.brand-name { font-family: var(--font-brand); font-size: 16px; font-weight: 700; color: var(--brand-ink); line-height: 1.3; }
+.brand-name { font-family: var(--font-brand); font-size: 18px; font-weight: 700; color: var(--brand-ink); line-height: 1.3; }
 .brand-name:lang(en) { font-family: var(--font-latin); letter-spacing: -0.01em; }
-.brand-tag { font-size: 11.5px; color: var(--ink-3); line-height: 1.35; }
+.brand-tag { font-size: 13px; color: var(--ink-3); line-height: 1.35; }
 
 .company-card {
   display: flex; flex-direction: column; align-items: flex-start; gap: 2px; flex-shrink: 0;
@@ -412,22 +430,23 @@ html[dir='rtl'] .flip { transform: scaleX(-1); }
   background: var(--card-subtle); border: 1px solid var(--line);
 }
 .company-card:has(> .avatar) { flex-direction: row; align-items: center; gap: 10px; }
-.company-card strong { display: block; color: var(--ink); font-size: 13px; font-weight: 600; line-height: 1.4; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-inline-size: 100%; }
-.company-card .label { display: block; font-size: 11.5px; color: var(--ink-3); line-height: 1.3; }
+.company-card strong { display: block; color: var(--ink); font-size: 15px; font-weight: 600; line-height: 1.4; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-inline-size: 100%; }
+.company-card .label { display: block; font-size: 12.5px; color: var(--ink-3); line-height: 1.3; }
 .company-card > div { min-inline-size: 0; }
 
 .sidebar, .nav-scroll { scrollbar-color: transparent transparent; }
 .sidebar:hover, .nav-scroll:hover { scrollbar-color: var(--scroll-thumb) transparent; }
 .nav-scroll { flex: 1; min-block-size: 0; overflow-y: auto; display: flex; flex-direction: column; gap: 1px; margin-inline: calc(-1 * var(--sp-2)); padding: 0 0 var(--sp-2) var(--sp-2); padding-inline: var(--sp-2) 0; scrollbar-gutter: stable; scroll-padding-block: var(--sp-2); }
 .pane-footer { flex-shrink: 0; display: flex; flex-direction: column; gap: 1px; margin-inline-end: 2px; padding-block-start: var(--sp-1); border-block-start: 1px solid var(--line); }
-.nav-group { padding: 12px 12px 3px; font-size: var(--fs-caption); font-weight: 600; color: var(--ink-3); line-height: 1.4; }
+/* the plain "Favourites" label (the folding groups are rows of their own: .nav-group-btn below) */
+.nav-group { padding: 12px 12px 4px; font-size: var(--nav-label-fs); font-weight: 600; color: var(--ink-2); line-height: 1.4; }
 .nav-item {
   position: relative; display: flex; align-items: center; gap: 12px; inline-size: 100%; min-block-size: var(--nav-h); flex-shrink: 0;
   padding-inline: 12px 10px; border: none; border-radius: var(--r-control); background: transparent; color: var(--ink);
-  font-size: var(--fs-body); text-align: start; cursor: pointer; text-decoration: none;
+  font-size: var(--nav-fs); text-align: start; cursor: pointer; text-decoration: none;
   transition: background-color var(--dur-fast) linear;
 }
-.nav-item svg { flex-shrink: 0; inline-size: 18px; block-size: 18px; color: var(--ink-2); stroke-width: 1.7; }
+.nav-item svg { flex-shrink: 0; inline-size: var(--nav-icon); block-size: var(--nav-icon); color: var(--ink-2); stroke-width: 1.7; }
 .nav-item:hover:not(:disabled) { background: var(--nav-hover); }
 .nav-item:active:not(:disabled) { background: var(--nav-press); color: var(--ink-2); }
 .nav-item.active { background: var(--nav-selected); font-weight: 600; }
@@ -436,14 +455,14 @@ html[dir='rtl'] .flip { transform: scaleX(-1); }
 /* the selection pill — orange, the logo's colour */
 .nav-item.active::before {
   content: ''; position: absolute; inset-inline-start: 0; inset-block-start: 50%;
-  inline-size: 3px; block-size: 16px; margin-block-start: -8px; border-radius: 2px; background: var(--indicator);
+  inline-size: 3px; block-size: var(--nav-mark); margin-block-start: calc(var(--nav-mark) / -2); border-radius: 2px; background: var(--indicator);
 }
 .nav-item:disabled { cursor: default; color: var(--ink-3); }
 .nav-item:disabled svg { color: var(--ink-3); }
 .nav-item > span:not(.soon) { flex: 1; min-inline-size: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .nav-item .soon {
   flex-shrink: 0; padding: 0 5px; border: 1px solid var(--line-2); border-radius: var(--r-pill);
-  font-size: 10.5px; font-weight: 500; line-height: 18px; color: var(--ink-3); white-space: nowrap;
+  font-size: 12px; font-weight: 500; line-height: 20px; color: var(--ink-3); white-space: nowrap;
 }
 
 .main { flex: 1; min-inline-size: 0; display: flex; flex-direction: column; }
@@ -771,48 +790,61 @@ input.input, select.input { block-size: var(--control-h); padding-block: 0; }
 .setting.actions { min-block-size: 56px; justify-content: flex-end; }
 
 /*
- * Settings, as in Windows 11: the list of sections on the side and the chosen one beside it. In a narrow window the
- * list shows alone (#/settings) and a section opens full width with a Back link (#/settings/<section>).
+ * Settings: #/settings is a grid of rectangles, one per section, on the same card as the Home page's tiles; a section
+ * opens alone (#/settings/<section>) under a Back link and its name, no wider than is comfortable to read.
  */
-.settings-wrap { container-type: inline-size; }
-.settings-layout { display: grid; grid-template-columns: minmax(230px, 280px) minmax(0, 1fr); gap: var(--sp-6); align-items: start; max-inline-size: 1240px; }
-.settings-nav { position: sticky; inset-block-start: 0; display: flex; flex-direction: column; gap: 2px; }
-.settings-entry {
-  position: relative; display: flex; align-items: center; gap: 12px; padding: 8px 10px 8px 12px; border-radius: var(--r-control);
-  color: var(--ink); text-decoration: none; transition: background-color var(--dur-fast) linear;
+.settings-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: var(--sp-3); max-inline-size: 1240px; }
+.settings-tile {
+  --sec: var(--accent);
+  display: flex; align-items: flex-start; gap: 14px; min-block-size: 104px; padding: var(--sp-4);
+  border: 1px solid var(--line); border-radius: var(--r-card); background: var(--surface); box-shadow: var(--shadow-card);
+  color: var(--ink); text-decoration: none; transition: border-color var(--dur-fast) linear, box-shadow var(--dur) var(--ease), transform var(--dur) var(--ease);
 }
-.settings-entry > svg { flex-shrink: 0; color: var(--ink-2); stroke-width: 1.6; }
-.settings-entry:hover { background: var(--nav-hover); }
-.settings-entry:focus-visible { outline-offset: -2px; }
-.settings-entry:active { background: var(--nav-press); }
-.settings-entry.active { background: var(--nav-selected); }
-.settings-entry.active:hover { background: var(--nav-selected-hover); }
-.settings-entry.active > svg { color: var(--ink); }
-.settings-entry.active::before {
-  content: ''; position: absolute; inset-inline-start: 0; inset-block-start: 50%;
-  inline-size: 3px; block-size: 16px; margin-block-start: -8px; border-radius: 2px; background: var(--indicator);
-}
-.settings-entry-text { flex: 1; min-inline-size: 0; display: flex; flex-direction: column; gap: 1px; }
-.settings-entry-text > strong { font-weight: 500; line-height: 1.4; }
-.settings-entry.active .settings-entry-text > strong { font-weight: 600; }
-.settings-entry-text > span { font-size: var(--fs-caption); color: var(--ink-2); line-height: 1.4; }
-/* the arrow and the Back link are for the narrow window, where the list and a section take turns */
-.settings-entry-go, .settings-back { display: none; }
-.settings-back { align-items: center; gap: 4px; align-self: flex-start; font-weight: 500; text-decoration: none; }
+.settings-tile:hover { border-color: color-mix(in srgb, var(--sec) 45%, var(--line)); box-shadow: var(--shadow-raised); transform: translateY(-1px); }
+.settings-tile:focus-visible { outline: 2px solid var(--focus-outer); outline-offset: 1px; }
+.settings-tile > .launch-ico { flex-shrink: 0; }
+.settings-tile-text { flex: 1; min-inline-size: 0; display: flex; flex-direction: column; gap: 4px; }
+.settings-tile-text > strong { font-size: 16px; font-weight: 600; line-height: 1.35; overflow-wrap: anywhere; }
+.settings-tile-text > span { font-size: 13px; color: var(--ink-2); line-height: 1.45; }
+.settings-section { max-inline-size: 920px; }
+.settings-back { display: inline-flex; align-items: center; gap: 4px; align-self: flex-start; min-block-size: 32px; font-weight: 500; text-decoration: none; }
 .settings-back-icon { transform: scaleX(-1); }
 html[dir='rtl'] .settings-back-icon { transform: none; }
-.settings-content { min-inline-size: 0; }
-@container (max-width: 760px) {
-  .settings-layout { grid-template-columns: minmax(0, 1fr); }
-  .settings-nav { position: static; max-inline-size: 640px; }
-  .settings-entry { padding-block: 12px; background: var(--surface); border: 1px solid var(--line); }
-  .settings-entry.active { background: var(--surface); }
-  .settings-entry.active::before { display: none; }
-  .settings-entry-go { display: block; color: var(--ink-3); }
-  .settings-back { display: inline-flex; }
-  .settings-layout.has-section .settings-nav { display: none; }
-  .settings-layout:not(.has-section) .settings-content { display: none; }
+.settings-section-title { margin: 0; font-size: var(--fs-subtitle); font-weight: 600; line-height: 1.3; }
+
+/*
+ * A setting that picks one of a few fixed options (ChoiceTiles.tsx): big rectangles with an icon or a sample, a label
+ * and maybe a hint. The chosen one has the accent border and a check mark in its corner.
+ */
+.choice-tiles { display: flex; flex-wrap: wrap; gap: var(--sp-2); }
+.choice-tile {
+  position: relative; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px;
+  min-inline-size: 104px; max-inline-size: 240px; min-block-size: 72px; padding: 10px 14px;
+  border: 1px solid var(--ctl-stroke); border-block-end-color: var(--ctl-stroke-bottom); border-radius: var(--r-card);
+  background: var(--ctl-bg); color: var(--ink); font: inherit; text-align: center; cursor: pointer;
+  transition: background-color var(--dur-fast) linear, border-color var(--dur-fast) linear, box-shadow var(--dur-fast) linear;
 }
+.choice-tile:hover:not(:disabled):not([aria-checked='true']) { background: var(--ctl-bg-hover); border-color: var(--ctl-strong); }
+.choice-tile:active:not(:disabled) { background: var(--ctl-bg-press); }
+.choice-tile[aria-checked='true'] { border-color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); }
+.choice-tile:disabled { cursor: default; opacity: 0.5; }
+.choice-icon, .choice-sample { display: grid; place-items: center; min-block-size: 24px; color: var(--ink-2); }
+.choice-icon svg { stroke-width: 1.7; }
+.choice-sample { font-family: var(--font-num); font-size: 18px; font-weight: 600; line-height: 24px; }
+.choice-sample:lang(ar), .choice-sample:lang(ckb) { font-family: var(--font-arabic); }
+.choice-label { font-size: var(--fs-body); font-weight: 500; line-height: 1.35; }
+.choice-hint { font-size: var(--fs-caption); color: var(--ink-3); line-height: 1.35; }
+.choice-tile[aria-checked='true'] :is(.choice-icon, .choice-sample, .choice-label) { color: var(--accent-text); }
+.choice-tile[aria-checked='true'] .choice-label { font-weight: 600; }
+.choice-check {
+  position: absolute; inset-block-start: 6px; inset-inline-end: 6px; display: grid; place-items: center;
+  inline-size: 18px; block-size: 18px; border-radius: 50%; background: var(--accent); color: var(--on-accent);
+}
+.choice-check svg { stroke-width: 3; }
+/* in a settings row the rectangles sit at the row's end, and go under the text when the window is too narrow for both */
+.setting:has(.choice-tiles) { flex-wrap: wrap; row-gap: var(--sp-3); }
+.setting:has(.choice-tiles) > .setting-text { flex: 1 1 220px; }
+.setting:has(.choice-tiles) > .setting-ctl { flex-shrink: 1; min-inline-size: 0; }
 
 /* ---------- voucher paper & print ---------- */
 .paper { background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-card); padding: 28px 32px; box-shadow: var(--shadow-card); }
@@ -905,6 +937,10 @@ a.plan-chip:hover { text-decoration: underline; }
 @media (forced-colors: active) {
   .track { border: 1px solid CanvasText; }
   .track button[aria-pressed='true'] { forced-color-adjust: none; background: Highlight; color: HighlightText; }
+  .choice-tile { border-color: ButtonText; }
+  .choice-tile[aria-checked='true'] { border-color: Highlight; box-shadow: inset 0 0 0 2px Highlight; }
+  .choice-check { forced-color-adjust: none; background: Highlight; color: HighlightText; }
+  .settings-tile { border-color: ButtonText; }
   .nav-item.active::before { forced-color-adjust: none; background: Highlight; inline-size: 4px; }
   .tabs button[aria-pressed='true']::after { forced-color-adjust: none; background: Highlight; }
 }
@@ -951,21 +987,28 @@ a.plan-chip:hover { text-decoration: underline; }
 .brand-text { flex: 1; min-inline-size: 0; }
 .nav-toggle { flex-shrink: 0; color: var(--ink-3); }
 .nav-section { display: flex; flex-direction: column; gap: 1px; }
+/* a group heading (Sales, Purchases, …): a row of its own, with its icon, that folds its pages */
 .nav-group-btn {
-  display: flex; align-items: center; gap: 6px; inline-size: 100%; border: none; background: transparent; cursor: pointer;
+  display: flex; align-items: center; gap: 12px; inline-size: 100%; min-block-size: var(--nav-group-h); flex-shrink: 0;
+  padding-block: 0; padding-inline: 12px 10px; border: none; background: transparent; cursor: pointer;
   border-radius: var(--r-control); text-align: start; font-family: inherit;
+  font-size: var(--nav-group-fs); font-weight: 600; color: var(--ink); line-height: 1.4;
+  transition: background-color var(--dur-fast) linear;
 }
-.nav-group-btn:hover { color: var(--ink); background: var(--nav-hover); }
-.nav-group-btn > span { flex: 1; }
-.nav-group-btn svg { inline-size: 14px; block-size: 14px; transition: transform var(--dur) var(--ease); }
-.nav-group-btn[aria-expanded='false'] svg { transform: rotate(-90deg); }
-html[dir='rtl'] .nav-group-btn[aria-expanded='false'] svg { transform: rotate(90deg); }
+.nav-group-btn:hover { background: var(--nav-hover); }
+.nav-group-btn:active { background: var(--nav-press); }
+.nav-group-btn > span { flex: 1; min-inline-size: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.nav-group-btn > svg { flex-shrink: 0; inline-size: var(--nav-icon); block-size: var(--nav-icon); color: var(--ink); stroke-width: 1.7; }
+.nav-group-btn > svg.nav-chevron { inline-size: 16px; block-size: 16px; color: var(--ink-3); transition: transform var(--dur) var(--ease); }
+.nav-group-btn[aria-expanded='false'] > svg.nav-chevron { transform: rotate(-90deg); }
+html[dir='rtl'] .nav-group-btn[aria-expanded='false'] > svg.nav-chevron { transform: rotate(90deg); }
 .nav-group-btn:focus-visible { outline: 2px solid var(--focus-outer); outline-offset: -2px; }
 .nav-items { display: flex; flex-direction: column; gap: 1px; }
 
 /* the narrow, icon-only menu */
 .sidebar { transition: inline-size var(--dur) var(--ease); }
-.sidebar.collapsed { inline-size: 64px; padding-inline: 6px; }
+.sidebar.collapsed { inline-size: var(--rail-w); padding-inline: 6px; }
+.sidebar.collapsed .nav-item svg { inline-size: var(--rail-icon); block-size: var(--rail-icon); }
 .sidebar.collapsed .brand { flex-direction: column; justify-content: center; gap: 6px; padding-inline: 0; padding-block: 10px 4px; }
 .sidebar.collapsed .brand-text, .sidebar.collapsed .company-card > div, .sidebar.collapsed .nav-group,
 .sidebar.collapsed .nav-item > span, .sidebar.collapsed .nav-item .soon { display: none; }
@@ -1152,7 +1195,13 @@ html[dir='rtl'] .tour-card.center { transform: translate(50%, -50%); }
 
 /* Settings → Printers: the table of papers, and the test page printed alone (Printers.tsx) */
 .printers-table td { vertical-align: top; }
+/* a kind's margins sit on a row of their own under its printer and paper, as rectangles (ChoiceTiles) */
+.printers-table tr.printers-kind > td { border-block-end: none; padding-block-end: var(--sp-1); }
+.printers-table tr.printers-margins > td { padding-block: var(--sp-1) var(--sp-3); }
+.printers-margins-row { display: flex; align-items: center; gap: var(--sp-3); flex-wrap: wrap; }
+.printers-margins-label { font-size: var(--fs-small); font-weight: 600; color: var(--ink-2); }
 .printers-table select { min-inline-size: 8em; }
+.printers-table tr.printers-kind > td:nth-child(2) select { min-inline-size: 11em; }
 .printers-table td:first-child { min-inline-size: 12em; }
 .print-notice { display: flex; align-items: center; gap: 12px; max-inline-size: min(640px, calc(100vw - 32px)); }
 .print-test-host { display: none; }
