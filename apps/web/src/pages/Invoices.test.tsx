@@ -4,7 +4,7 @@ import type { CurrencyCode } from '@qasa/core';
 import { InvoiceEditor } from './Invoices.tsx';
 import { api } from '../api.ts';
 import { pricesApi } from '../industry/prices-api.ts';
-import { printDocument } from '../industry/printing.ts';
+import { printDocument, whenQuiet } from '../industry/printing.ts';
 import { go } from '../router.ts';
 
 // Exercise the editor's actual selection and save callbacks without a browser or company database.
@@ -16,6 +16,8 @@ const fixture = vi.hoisted(() => ({
   steps: [] as string[],
   toasts: [] as string[],
   reloads: 0,
+  // each wait for the paper to be ready (its design, barcode and balance loaded): how many steps had been taken by then
+  waits: [] as number[],
   // a pharmacy's controlled-medicine question: the sales this page asked about itself, the sales left for the page
   // that opens next, and the sale each page was opened to ask about
   checked: [] as string[],
@@ -58,7 +60,7 @@ vi.mock('../industry/PharmacyPrompts.tsx', () => ({
 vi.mock('../industry/PrintDocument.tsx', () => ({ DesignedPrint: 'DesignedPrint' }));
 vi.mock('../industry/print-model.ts', () => ({ invoiceModel: (v: { id: string }) => ({ doc: 'sale', id: v.id }) }));
 vi.mock('../industry/printing.ts', () => ({
-  afterPaint: async () => {}, whenQuiet: async () => true,
+  afterPaint: async () => {}, whenQuiet: vi.fn(async () => { fixture.waits.push(fixture.steps.length); return true; }),
   printDocument: vi.fn(async () => { fixture.steps.push('print'); return 'printed'; })
 }));
 vi.mock('../api.ts', () => ({
@@ -116,7 +118,7 @@ function leavePage() { fixture.states = []; fixture.first = true; fixture.effect
 beforeEach(() => {
   fixture.states = []; fixture.cursor = 0; fixture.first = true; fixture.effects = [];
   fixture.permissions = undefined; fixture.steps = []; fixture.toasts = []; fixture.reloads = 0;
-  fixture.checked = []; fixture.askOnOpen = []; fixture.promptFor = [];
+  fixture.checked = []; fixture.askOnOpen = []; fixture.promptFor = []; fixture.waits = [];
   vi.clearAllMocks();
 });
 afterEach(() => { vi.unstubAllGlobals(); });
@@ -361,6 +363,38 @@ describe('the one save button', () => {
     await Promise.all([first, second, third]);
     expect(fixture.steps).toEqual(['confirm', 'create', 'post']);
     expect(api.postInvoice).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('Print in the bar of the invoice saved last', () => {
+  const printButton = () => flatten(savedBar(render())).find((n) => n.type === 'button' && n.props.onClick && flatten(n).some((c) => c.type === 'Icon' && c.props.name === 'printer'))!;
+
+  it('waits for the paper to be ready before it prints, as the save\'s own print does', async () => {
+    stubWindow();
+    open();
+    pickSample();
+    // saved without printing: the paper came on the page with the fresh invoice, and nothing has waited for it yet
+    await invoke(saveButton().props.onRun, 'next');
+    expect(fixture.steps).toEqual(['confirm', 'create', 'post']);
+    expect(whenQuiet).not.toHaveBeenCalled();
+    await invoke(printButton().props.onClick);
+    expect(fixture.steps).toEqual(['confirm', 'create', 'post', 'print']);
+    // the wait came first: the print step had not been taken when it was asked
+    expect(fixture.waits).toEqual([3]);
+    expect(savedBar(render())!.props.className).toContain('ok');
+  });
+
+  it('prints once when it is pressed again while the first press still waits', async () => {
+    stubWindow();
+    open();
+    pickSample();
+    await invoke(saveButton().props.onRun, 'next');
+    const button = printButton();
+    await Promise.all([invoke(button.props.onClick), invoke(button.props.onClick)]);
+    expect(printDocument).toHaveBeenCalledTimes(1);
+    // and again once that one is done
+    await invoke(printButton().props.onClick);
+    expect(printDocument).toHaveBeenCalledTimes(2);
   });
 });
 

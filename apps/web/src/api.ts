@@ -751,7 +751,7 @@ export const api = {
   removeLicense: () => request<PlanStatus>('DELETE', '/api/plan/license'),
   startTrial: () => request<PlanStatus>('POST', '/api/plan/trial', {}),
 
-  parties: (f: { type?: PartyType; q?: string; active?: string } = {}) => request<PartyView[]>('GET', '/api/parties' + qs(f)),
+  parties: (f: { type?: PartyType; q?: string; active?: string } = {}, options: SendOptions = {}) => request<PartyView[]>('GET', '/api/parties' + qs(f), undefined, options),
   party: (id: string) => request<PartyView>('GET', `/api/parties/${id}`),
   /** options: the idempotency key of a quick add that may be sent again after an answer that was lost */
   createParty: (type: PartyType, input: PartyInput, options: SendOptions = {}) => request<PartyView>('POST', '/api/parties', { type, ...input }, options),

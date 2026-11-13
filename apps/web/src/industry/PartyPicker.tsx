@@ -15,11 +15,14 @@ import { focusAfter, mayAddParty, QUICK_LIMITS, quickAddParty, quickPartyInput, 
 
 export const partyOption = (p: PartyView): PickOption => ({ id: p.id, code: p.code, label: p.name, search: p.phone });
 
-export function PartyPicker({ type, value, options, onChange, onCreated, placeholder, ariaLabel, emptyLabel, invalid, inputRef }: {
+export function PartyPicker({ type, value, options, onChange, onCreated, placeholder, ariaLabel, emptyLabel, invalid, inputRef, priceList = true }: {
   type: PartyType;
   value: string;
   options: PickOption[];
-  /** `party`: given when the choice was just added (or found) by the quick add, before the page's own list has it */
+  /**
+   * `party`: given whenever the choice is someone added (or found) by the quick add whom the page's own list may not
+   * have: when they are added, and every time they are chosen again from the list afterwards
+   */
   onChange(id: string, party?: PartyView): void;
   /** a party was added here: the page adds it to its own list (or loads the list again) */
   onCreated?(party: PartyView): void;
@@ -28,6 +31,8 @@ export function PartyPicker({ type, value, options, onChange, onCreated, placeho
   emptyLabel?: string;
   invalid?: boolean;
   inputRef?: RefObject<HTMLInputElement | null> | undefined;
+  /** false where the page never prices by the customer's price list (the till): the form does not ask for one */
+  priceList?: boolean;
 }) {
   const { t } = useI18n();
   const { permissions } = useData();
@@ -59,7 +64,7 @@ export function PartyPicker({ type, value, options, onChange, onCreated, placeho
   return (
     <div className="party-picker" ref={box}>
       <SearchCombo
-        value={value} options={all} onChange={(id) => onChange(id)} placeholder={placeholder} inputRef={input}
+        value={value} options={all} onChange={(id) => pickParty(id, made, onChange)} placeholder={placeholder} inputRef={input}
         {...(ariaLabel !== undefined ? { ariaLabel } : {})} {...(emptyLabel !== undefined ? { emptyLabel } : {})} {...(invalid ? { invalid } : {})}
         {...(allowed ? {
           add: {
@@ -70,16 +75,28 @@ export function PartyPicker({ type, value, options, onChange, onCreated, placeho
         } : {})}
       />
       {allowed && adding !== null && (
-        <QuickPartyForm type={type} name={adding} onDone={finish} onLate={late} onClose={() => { setAdding(null); window.setTimeout(() => input.current?.focus(), 0); }} />
+        <QuickPartyForm type={type} name={adding} priceList={priceList} onDone={finish} onLate={late} onClose={() => { setAdding(null); window.setTimeout(() => input.current?.focus(), 0); }} />
       )}
     </div>
   );
 }
 
-export function QuickPartyForm({ type, name: typed, onDone, onLate, onClose }: {
+/**
+ * A choice made in the list. Someone the quick add added or found is only in the picker's own list until the page
+ * loads its list again (and a party found there may never be in it): their record goes with the id, so a page that
+ * reads more than the id from it (a voucher line takes the party's account) never keeps the party chosen before.
+ */
+export function pickParty(id: string, made: readonly PartyView[], onChange: (id: string, party?: PartyView) => void): void {
+  const party = id ? made.find((p) => p.id === id) : undefined;
+  if (party) onChange(id, party); else onChange(id);
+}
+
+export function QuickPartyForm({ type, name: typed, priceList = true, onDone, onLate, onClose }: {
   type: PartyType;
   /** the text typed in the box: the name the form starts with (a number alone starts in the phone field) */
   name: string;
+  /** false: no price list is asked for, and a new customer keeps the one every customer starts with */
+  priceList?: boolean;
   onDone(party: PartyView, created: boolean): void;
   /** the form was closed while the server was still adding the party: it is not chosen; the page's list gets it */
   onLate?(party: PartyView): void;
@@ -123,10 +140,10 @@ export function QuickPartyForm({ type, name: typed, onDone, onLate, onClose }: {
     setError(null);
     setOffline(false);
     try {
-      const done = await quickAddParty(type, checked.input, { force, held: held.current, closed: () => !open.current, wholesale: customer && list === 'wholesale' }, {
-        list: (kind) => api.parties({ type: kind }),
+      const done = await quickAddParty(type, checked.input, { force, held: held.current, closed: () => !open.current, wholesale: customer && priceList && list === 'wholesale' }, {
+        list: (kind, options) => api.parties({ type: kind }, options),
         create: (kind, input, options) => api.createParty(kind, input, options),
-        setWholesale: (partyId) => pricesApi.setPartyList(partyId, 'wholesale')
+        setWholesale: (partyId, options) => pricesApi.setPartyList(partyId, 'wholesale', options)
       });
       held.current = done.key;
       if (done.status === 'closed') {
@@ -182,7 +199,7 @@ export function QuickPartyForm({ type, name: typed, onDone, onLate, onClose }: {
           <input className={'input' + (problem?.field === 'city' ? ' invalid' : '')} maxLength={QUICK_LIMITS.address} value={fields.city} onChange={(e) => set({ city: e.target.value })} />
         </label>
       </div>
-      {customer && (
+      {customer && priceList && (
         <div className="field">
           <span>{t('prl_title')}</span>
           <div className="track" role="group" aria-label={t('prl_title')} style={{ alignSelf: 'flex-start' }}>

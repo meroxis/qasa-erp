@@ -146,6 +146,7 @@ export function InvoiceEditor({ kind: initialKind, id, partyId: initialParty }: 
   const [way, setWay] = useState<SaveChoice | null>(null);
   // one save at a time, also when F9 is pressed twice before the page has drawn "saving"
   const running = useRef(false);
+  const printingLast = useRef(false);
   const partyBox = useRef<HTMLInputElement | null>(null);
   // a fresh invoice opened by "… and next": the cursor starts in the customer box
   const focusParty = useRef(!id && !!paper);
@@ -303,14 +304,22 @@ export function InvoiceEditor({ kind: initialKind, id, partyId: initialParty }: 
     hint: t(c === 'next' && !canPost ? 'sv_hint_next_draft' : SAVE_LABEL[c].hint)
   }));
 
-  /** Puts the posted invoice on paper: first on the page (print-only), then, once its design and QR code are there, to the printer. */
-  async function printPaper(view: InvoiceView): Promise<PrintResult> {
-    setPrinting(true);
-    setPaper({ view, printed: null });
+  /**
+   * Sends the paper on the page to the printer once what it shows has arrived: its print design, its barcode and QR
+   * code and the customer's balance are asked of the server when the paper is put on the page.
+   */
+  async function printWhenReady(): Promise<PrintResult> {
     await afterPaint();
     await whenQuiet(pendingRequests);
     await afterPaint(60);
     return printDocument('invoice');
+  }
+
+  /** Puts the posted invoice on paper: first on the page (print-only), then, once its design and QR code are there, to the printer. */
+  async function printPaper(view: InvoiceView): Promise<PrintResult> {
+    setPrinting(true);
+    setPaper({ view, printed: null });
+    return printWhenReady();
   }
 
   /** A fresh empty invoice on this same page, the cursor in the customer box; the warehouse, currency and date stay. */
@@ -425,9 +434,17 @@ export function InvoiceEditor({ kind: initialKind, id, partyId: initialParty }: 
   if (!ready) return null;
 
   const lastUnprinted = !!paper && paper.printed !== null && !printedOk(paper.printed);
+  // the paper of the invoice saved last came on the page a moment ago ("save and next", or this page just opened with
+  // it): Print waits for it like the save's own print does, and one press prints once
   const printLast = async () => {
-    const printed = await printDocument('invoice');
-    setPaper((p) => (p ? { ...p, printed } : p));
+    if (printingLast.current) return;
+    printingLast.current = true;
+    try {
+      const printed = await printWhenReady();
+      setPaper((p) => (p ? { ...p, printed } : p));
+    } finally {
+      printingLast.current = false;
+    }
   };
 
   return (

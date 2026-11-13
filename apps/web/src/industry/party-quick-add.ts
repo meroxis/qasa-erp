@@ -85,11 +85,16 @@ export function sameParties(parties: readonly PartyView[], type: PartyType, fiel
 /** How long a quick add waits for the server before it says the link is down (the till's own wait). */
 export const QUICK_ADD_TIMEOUT_MS = 12_000;
 
-/** The key a quick add is sent with: the same one every time the same person is sent, a new one once anything changed. */
-export interface QuickKey { key: string; of: string }
+/**
+ * The key a quick add is sent with: the same one every time the same person is sent, a new one once anything changed.
+ * `sent`: the add itself went out with this key and got no answer, so the server may have added them already.
+ */
+export interface QuickKey { key: string; of: string; sent?: boolean }
+
+const keyOf = (type: PartyType, input: PartyInput): string => JSON.stringify([type, input.name, input.phone ?? '', input.address ?? '']);
 
 export function quickKey(held: QuickKey | null, type: PartyType, input: PartyInput, make: () => string = newIdempotencyKey): QuickKey {
-  const of = JSON.stringify([type, input.name, input.phone ?? '', input.address ?? '']);
+  const of = keyOf(type, input);
   return held && held.of === of ? held : { key: make(), of };
 }
 
@@ -108,11 +113,12 @@ export type QuickAddResult =
   | { status: 'closed'; party: PartyView | null; key: null };
 
 export interface QuickAddDeps {
-  list(type: PartyType): Promise<PartyView[]>;
+  /** the parties to look among for someone the same; `options` carries the time limit */
+  list(type: PartyType, options: SendOptions): Promise<PartyView[]>;
   create(type: PartyType, input: PartyInput, options: SendOptions): Promise<PartyView>;
   makeKey?: () => string;
   /** puts a new customer on the wholesale price list */
-  setWholesale?(partyId: string): Promise<unknown>;
+  setWholesale?(partyId: string, options: SendOptions): Promise<unknown>;
 }
 
 /**
@@ -120,15 +126,23 @@ export interface QuickAddDeps {
  * after looking for someone with the same phone or name; `force` skips that look (the person chose "add anyway").
  * A refusal by the server is thrown as it is. `closed` says whether the form was closed meanwhile (Esc, Cancel): an
  * answer that arrives after that must not change the customer of the document the person went back to.
+ *
+ * Every request here has a time limit, the look for someone the same too: a server that never answers ends in
+ * "offline", not in a form that waits for ever. A try whose add went out and got no answer (`held.sent`) is sent again
+ * with its key and without looking first: the server answers with the party it made the first time (or makes them
+ * now), so the look can't find the person's own lost add and offer it as "someone the same", chosen without the price
+ * list picked in the form.
  */
 export async function quickAddParty(
   type: PartyType, input: PartyInput, opts: { force?: boolean; held?: QuickKey | null; closed?: () => boolean; wholesale?: boolean }, deps: QuickAddDeps
 ): Promise<QuickAddResult> {
   const held = opts.held ?? null;
   const closed = () => opts.closed?.() === true;
+  const limit: SendOptions = { timeoutMs: QUICK_ADD_TIMEOUT_MS };
+  const again = held?.sent === true && held.of === keyOf(type, input);
   try {
-    if (!opts.force) {
-      const same = sameParties(await deps.list(type), type, input);
+    if (!opts.force && !again) {
+      const same = sameParties(await deps.list(type, limit), type, input);
       if (closed()) return { status: 'closed', party: null, key: null };
       if (same.length) return { status: 'same', same, key: held };
     }
@@ -136,10 +150,10 @@ export async function quickAddParty(
     if (!isNetworkError(error)) throw error;
     return { status: 'offline', key: quickKey(held, type, input, deps.makeKey) };
   }
-  const key = quickKey(held, type, input, deps.makeKey);
+  const key: QuickKey = { ...quickKey(held, type, input, deps.makeKey), sent: true };
   let party: PartyView;
   try {
-    party = await deps.create(type, input, { key: key.key, timeoutMs: QUICK_ADD_TIMEOUT_MS });
+    party = await deps.create(type, input, { key: key.key, ...limit });
   } catch (error) {
     if (!isNetworkError(error)) throw error;
     return { status: 'offline', key };
@@ -148,7 +162,7 @@ export async function quickAddParty(
   let listSaved = true;
   if (opts.wholesale && type === 'customer' && deps.setWholesale) {
     // the customer is added whatever happens to their price list: it can be chosen again on their page
-    try { await deps.setWholesale(party.id); } catch { listSaved = false; }
+    try { await deps.setWholesale(party.id, limit); } catch { listSaved = false; }
     if (closed()) return { status: 'closed', party, key: null };
   }
   return { status: 'added', party, listSaved, key: null };

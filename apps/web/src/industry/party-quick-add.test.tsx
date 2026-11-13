@@ -1,11 +1,11 @@
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { ReactNode } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import type { Lang } from '@qasa/core';
-import { ApiError, type PartyView, type Permission } from '../api.ts';
+import { api, ApiError, type PartyView, type Permission } from '../api.ts';
 import { COMBO_ADD_ROW, comboRows, DataContext, SearchCombo, type PickOption } from '../components.tsx';
 import { I18nContext, makeI18n, type Key } from '../i18n.ts';
-import { PartyPicker, QuickPartyForm } from './PartyPicker.tsx';
+import { PartyPicker, pickParty, QuickPartyForm } from './PartyPicker.tsx';
 import { mayAddParty, phoneDigits, QUICK_ADD_TIMEOUT_MS, quickAddParty, quickKey, quickPartyInput, quickStart, sameParties } from './party-quick-add.ts';
 
 const LANGS: Lang[] = ['ar', 'en', 'ku'];
@@ -209,7 +209,7 @@ describe('adding through the server', () => {
     const create = vi.fn<(type: string, input: unknown, options: { key?: string }) => Promise<PartyView>>(async () => { throw network(); });
     const deps = { list: async () => [] as PartyView[], create, makeKey };
     const lost = await quickAddParty('customer', { name: 'Raz' }, {}, deps);
-    expect(lost).toEqual({ status: 'offline', key: { key: 'key-1', of: expect.any(String) } });
+    expect(lost).toEqual({ status: 'offline', key: { key: 'key-1', of: expect.any(String), sent: true } });
     create.mockResolvedValueOnce(made);
     const again = await quickAddParty('customer', { name: 'Raz' }, { held: lost.key }, deps);
     expect(again.status).toBe('added');
@@ -226,6 +226,43 @@ describe('adding through the server', () => {
     expect(create).not.toHaveBeenCalled();
   });
 
+  it('gives the look for the same person the add\'s own time limit', async () => {
+    const list = vi.fn(async () => [] as PartyView[]);
+    await quickAddParty('customer', { name: 'Raz' }, {}, { list, create: async () => made, makeKey: () => 'key-1' });
+    expect(list).toHaveBeenCalledWith('customer', { timeoutMs: QUICK_ADD_TIMEOUT_MS });
+  });
+
+  it('sends a try whose add got no answer again with its key and without looking first, so the price list picked is saved', async () => {
+    // the first try reached the server, which added Raz; only the answer was lost
+    const added: PartyView[] = [];
+    const list = vi.fn(async () => added);
+    const create = vi.fn<(type: string, input: unknown, options: { key?: string }) => Promise<PartyView>>(async () => { added.push(made); throw network(); });
+    const setWholesale = vi.fn(async () => {});
+    const deps = { list, create, makeKey: () => 'key-1', setWholesale };
+    const lost = await quickAddParty('customer', { name: 'Raz' }, { wholesale: true }, deps);
+    expect(lost.status).toBe('offline');
+    expect(setWholesale).not.toHaveBeenCalled();
+    // the server answers the same key with the party it made: not "someone the same is there", chosen at retail
+    create.mockResolvedValueOnce(made);
+    const again = await quickAddParty('customer', { name: 'Raz' }, { wholesale: true, held: lost.key }, deps);
+    expect(again).toEqual({ status: 'added', party: made, listSaved: true, key: null });
+    expect(list).toHaveBeenCalledTimes(1);
+    expect(create.mock.calls.map((c) => c[2].key)).toEqual(['key-1', 'key-1']);
+    expect(setWholesale).toHaveBeenCalledWith('new', { timeoutMs: QUICK_ADD_TIMEOUT_MS });
+  });
+
+  it('still looks first when the earlier try never sent the add, or the person changed since', async () => {
+    const create = vi.fn(async () => made);
+    // the look itself got no answer: nothing was sent, so the next try looks again and finds Mer
+    const unseen = await quickAddParty('customer', { name: 'Mer' }, {}, { list: async () => { throw network(); }, create, makeKey: () => 'key-1' });
+    expect(unseen).toEqual({ status: 'offline', key: { key: 'key-1', of: expect.any(String) } });
+    expect((await quickAddParty('customer', { name: 'Mer' }, { held: unseen.key }, { list: async () => [mer], create, makeKey: () => 'key-2' })).status).toBe('same');
+    // an add of Raz got no answer, then the name was changed to Mer: another person, looked for as any other
+    const lost = await quickAddParty('customer', { name: 'Raz' }, {}, { list: async () => [], create: async () => { throw network(); }, makeKey: () => 'key-3' });
+    expect((await quickAddParty('customer', { name: 'Mer' }, { held: lost.key }, { list: async () => [mer], create, makeKey: () => 'key-4' })).status).toBe('same');
+    expect(create).not.toHaveBeenCalled();
+  });
+
   it('passes the server\'s refusal on as it is (no permission, a rule)', async () => {
     const forbidden = new ApiError(403, 'forbidden', { need: 'sales' });
     await expect(quickAddParty('customer', { name: 'Raz' }, {}, { list: async () => [], create: async () => { throw forbidden; } })).rejects.toBe(forbidden);
@@ -236,7 +273,7 @@ describe('adding through the server', () => {
     const setWholesale = vi.fn(async () => {});
     const deps = { list: async () => [] as PartyView[], create: async () => made, makeKey: () => 'key-1', setWholesale };
     expect(await quickAddParty('customer', { name: 'Raz' }, { wholesale: true }, deps)).toEqual({ status: 'added', party: made, listSaved: true, key: null });
-    expect(setWholesale).toHaveBeenCalledWith('new');
+    expect(setWholesale).toHaveBeenCalledWith('new', { timeoutMs: QUICK_ADD_TIMEOUT_MS });
     // retail is what a new customer has: nothing more is sent
     setWholesale.mockClear();
     expect(await quickAddParty('customer', { name: 'Raz' }, {}, deps)).toMatchObject({ status: 'added', listSaved: true });
@@ -244,6 +281,56 @@ describe('adding through the server', () => {
     // the customer is added whatever happens to the price list
     setWholesale.mockRejectedValueOnce(new ApiError(0, 'network', null));
     expect(await quickAddParty('customer', { name: 'Raz' }, { wholesale: true }, deps)).toEqual({ status: 'added', party: made, listSaved: false, key: null });
+  });
+});
+
+describe('a server that never answers the look for the same person', () => {
+  afterEach(() => { vi.useRealTimers(); vi.unstubAllGlobals(); });
+
+  it('ends in "offline" after the time limit, through the Customers page\'s own request, and adds nothing', async () => {
+    vi.useFakeTimers();
+    // a request that is only ever ended by its own time limit
+    const fetch = vi.fn((_url: string, init: { signal?: AbortSignal }) => new Promise<never>((_resolve, reject) => {
+      init.signal?.addEventListener('abort', () => reject(new Error('aborted')));
+    }));
+    vi.stubGlobal('fetch', fetch);
+    const create = vi.fn(async () => party({ id: 'new' }));
+    const done = quickAddParty('customer', { name: 'Raz' }, {}, { list: (kind, options) => api.parties({ type: kind }, options), create, makeKey: () => 'key-1' });
+    let status = 'waiting';
+    void done.then((d) => { status = d.status; });
+    await vi.advanceTimersByTimeAsync(QUICK_ADD_TIMEOUT_MS - 1);
+    expect(status).toBe('waiting');
+    await vi.advanceTimersByTimeAsync(1);
+    expect(status).toBe('offline');
+    expect(String(fetch.mock.calls[0]![0])).toBe('/api/parties?type=customer');
+    expect(create).not.toHaveBeenCalled();
+  });
+});
+
+describe('choosing in the list someone the quick add added or found', () => {
+  const found = party({ id: 'p9', code: 'C-0009', name: 'Raz', accountCode: '1619' });
+
+  it('hands the page their record with the id every time, since the page\'s own list may not have them', () => {
+    const onChange = vi.fn();
+    pickParty('p9', [found], onChange);
+    expect(onChange.mock.calls).toEqual([['p9', found]]);
+  });
+
+  it('hands only the id for someone of the page\'s own list, and for nobody', () => {
+    const onChange = vi.fn();
+    pickParty('p1', [found], onChange);
+    pickParty('', [found], onChange);
+    expect(onChange.mock.calls).toEqual([['p1'], ['']]);
+  });
+});
+
+describe('where the page never prices by the customer\'s price list (the till)', () => {
+  it('the form asks for no price list', () => {
+    for (const lang of LANGS) {
+      const html = wrap(<QuickPartyForm type="customer" name="Las" priceList={false} onDone={() => {}} onClose={() => {}} />, lang);
+      expect(html).toContain(esc(textOf(lang, 'qa_addCustomer')));
+      for (const key of ['prl_title', 'prl_retail', 'prl_wholesale'] as Key[]) expect(html, `${lang} ${key}`).not.toContain(esc(textOf(lang, key)));
+    }
   });
 });
 

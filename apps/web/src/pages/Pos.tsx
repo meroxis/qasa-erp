@@ -490,6 +490,12 @@ function Register({ initial, onClosed }: { initial: ShiftView; onClosed(): void 
     return () => window.removeEventListener('keydown', onKey);
   }); // eslint-disable-line react-hooks/exhaustive-deps
 
+  const keepCustomer = (p: PartyView) => setCustomers((list) => {
+    if (list.some((x) => x.id === p.id)) return list;
+    const next = [...list, p];
+    rememberTill(tillWho(), { customers: next });
+    return next;
+  });
   const customerOptions: PickOption[] = useMemo(() => customers.map((p) => ({ id: p.id, code: p.code, label: p.name, search: p.phone, hint: p.phone })), [customers]);
 
   return (
@@ -600,9 +606,11 @@ function Register({ initial, onClosed }: { initial: ShiftView; onClosed(): void 
 
           <div className="pos-pay stack">
             <div className="field"><span>{t('pos_customer')}</span>
-              {/* a customer added here joins the till's own list (kept for when the server can't be reached) */}
-              <PartyPicker type="customer" value={partyId} options={customerOptions} onChange={(v) => setPartyId(v)} placeholder={t('pos_walkIn')} emptyLabel={t('pos_walkIn')}
-                onCreated={(p) => setCustomers((list) => { const next = list.some((x) => x.id === p.id) ? list : [...list, p]; rememberTill(tillWho(), { customers: next }); return next; })} />
+              {/* a customer added here, or found here by the same phone or name, joins the till's own list (kept for
+                  when the server can't be reached; the receipt reads the customer's name from it). No price list is
+                  asked for: the till sells every item at its own sale price, whoever buys */}
+              <PartyPicker type="customer" value={partyId} options={customerOptions} priceList={false} placeholder={t('pos_walkIn')} emptyLabel={t('pos_walkIn')}
+                onChange={(v, p) => { setPartyId(v); if (p) keepCustomer(p); }} onCreated={keepCustomer} />
             </div>
             <LoyaltyUse partyId={partyId} total={total} currency={currency} value={points.points} onChange={(n, v) => setPoints({ points: n, value: v })} />
             <div className="grid-2">
