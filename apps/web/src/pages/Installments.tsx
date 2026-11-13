@@ -7,6 +7,7 @@ import {
 import { EmptyState, AccountCombo, AmountInput, ErrorBox, Icon, Modal, SearchCombo, useData, useLoad, useToast, type PickOption } from '../components.tsx';
 import { useI18n, type I18n } from '../i18n.ts';
 import { go, href } from '../router.ts';
+import { PartyPicker } from '../industry/PartyPicker.tsx';
 import { printDocument } from '../industry/printing.ts';
 
 /**
@@ -520,7 +521,7 @@ export function InstallmentEditor({ invoiceId: fromInvoice }: { invoiceId?: stri
       {summary && !summary.available && <div className="alert">{t('insNeedsPro')} <a href={href('plans')}>{t('planLicense')}</a></div>}
       <div className="card pad stack">
         <div className="grid-2">
-          <div className="field"><span>{t('customer')}</span><SearchCombo value={partyId} options={customerOptions} onChange={(id) => { setPartyId(id); setInvoiceId(''); }} placeholder={t('customer')} /></div>
+          <div className="field"><span>{t('customer')}</span><PartyPicker type="customer" value={partyId} options={customerOptions} onChange={(id) => { setPartyId(id); setInvoiceId(''); }} onCreated={() => customers.reload()} placeholder={t('customer')} /></div>
           <label className="field"><span>{t('date')}</span><input className="input" type="date" value={date} onChange={(e) => setDate(e.target.value)} /></label>
         </div>
         <div className="field">

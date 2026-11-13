@@ -1,4 +1,4 @@
-import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState, type ComponentType, type ReactNode } from 'react';
+import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ComponentType, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from 'react';
 import { APP_VERSION, htmlLang, isLang, type DigitStyle, type Lang } from '@qasa/core';
 import { api, currentUser, SIGNED_OUT_EVENT, type AccountView, type Me, type PlanStatus, type Settings as SettingsData } from './api.ts';
 import { BusyBar, DataContext, DisplayContext, Icon, isDensity, isTheme, Logo, PageNavContext, ToastProvider, type Density, type PageNav, type Theme } from './components.tsx';
@@ -11,7 +11,7 @@ import { SupportButton } from './industry/SupportButton.tsx';
 import { BranchSwitcher } from './industry/BranchSwitcher.tsx';
 import { BRANCH_EVENT } from './industry/branches-api.ts';
 import { BUSINESS_FEATURE } from '@qasa/core';
-import { ADMIN_PAGES, canSee, COMPANY_BOOK_PAGES, FAVOURITES_EVENT, seesCompanyBooks, favourites, findPage, NAV, navCollapsed, setNavCollapsed, type NavItem, type NavViewer } from './nav.ts';
+import { ADMIN_PAGES, canSee, COMPANY_BOOK_PAGES, FAVOURITES_EVENT, seesCompanyBooks, favourites, findPage, NAV, navCollapsed, openGroups, openGroupsWith, setNavCollapsed, setOpenGroups, toggledGroup, type NavItem, type NavViewer } from './nav.ts';
 import { CommandPalette } from './industry/CommandPalette.tsx';
 import { Tour, TOUR_EVENT, tourDone } from './industry/Tour.tsx';
 import { UpdateBanner } from './industry/UpdateBanner.tsx';
@@ -152,12 +152,12 @@ export function App() {
   const [changingPassword, setChangingPassword] = useState(false);
   const [online, setOnline] = useState(true);
   const route = useRoute();
-  // the menu: shrunk to icons (remembered on this PC), which section is open (undefined: the current page's), pinned pages
+  // the menu: shrunk to icons (remembered on this PC), which groups are open (several at once, remembered per person), pinned pages
   const [collapsed, setCollapsed] = useState(navCollapsed);
   // a narrow window or a phone (the website demo): the menu is the icon rail, whatever was chosen on a wide window
   const narrow = useNarrow();
   const railed = collapsed || narrow;
-  const [openGroup, setOpenGroup] = useState<string | null | undefined>(undefined);
+  const [openNav, setOpenNav] = useState<string[]>([]);
   const [searching, setSearching] = useState(false);
   const [favs, setFavs] = useState<string[]>([]);
   const favUser = me?.signInRequired ? me.user?.name ?? '' : currentUser() || me?.user?.name || '';
@@ -167,9 +167,7 @@ export function App() {
     window.addEventListener(FAVOURITES_EVENT, load);
     return () => window.removeEventListener(FAVOURITES_EVENT, load);
   }, [favUser]);
-  // a new page opens its own section of the menu
   const routePage = route[0] ?? '';
-  useEffect(() => { setOpenGroup(undefined); }, [routePage]);
   // Ctrl+K (⌘K) opens the search from anywhere
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -228,10 +226,6 @@ export function App() {
     query.addEventListener('change', changed);
     return () => query.removeEventListener('change', changed);
   }, []);
-  // the current page stays in view in the pane (at 1366x768 the list scrolls)
-  useEffect(() => {
-    navRef.current?.querySelector<HTMLElement>('.nav-item.active')?.scrollIntoView({ block: 'nearest' });
-  });
   // the Windows app learns the saved choice once (its own copy may predate it)
   useEffect(() => { window.qasaDesktop?.setTheme?.(theme); }, []); // eslint-disable-line react-hooks/exhaustive-deps
   const i18n = useMemo(() => makeI18n(lang, digits, setLang, setDigits), [lang, digits, setLang, setDigits]);
@@ -310,9 +304,13 @@ export function App() {
 
   // someone limited to branches gets no link to the company's own books (the server refuses them anyway)
   const companyBooks = seesCompanyBooks({ admin: !!me?.user?.permissions.includes('admin'), branchLimited: !!me?.user?.branchLimited });
+  // what the person may change (a "+" to add a customer shows only to someone who may), and who they are for what
+  // the app remembers per person on this PC
+  const permissions = me?.user?.permissions;
+  const userKey = me?.signInRequired && me.user?.id ? `user:${me.user.id}` : `name:${favUser}`;
   const data = useMemo(
-    () => ({ accounts, settings, plan, online, companyBooks, reloadAccounts, reloadSettings, reloadPlan }),
-    [accounts, settings, plan, online, companyBooks, reloadAccounts, reloadSettings, reloadPlan]
+    () => ({ accounts, settings, plan, online, companyBooks, permissions, userKey, reloadAccounts, reloadSettings, reloadPlan }),
+    [accounts, settings, plan, online, companyBooks, permissions, userKey, reloadAccounts, reloadSettings, reloadPlan]
   );
   const { t } = i18n;
   const [page, arg, arg2] = route;
@@ -679,6 +677,36 @@ export function App() {
   // "How does this work?": the user guide's topic for this page, beside its title
   const guide = pageGuide(shown, arg);
 
+  const shownItems = (items: NavItem[]) => items.filter((item) => canSee(item, viewer));
+  const activeGroup = NAV.find((g) => shownItems(g.items).some(matches))?.group ?? null;
+  // The menu's groups: several can stay open, and which ones is remembered for this person on this PC. A new page
+  // opens its own group beside them (the first time: its group and Sales). Before paint, so nothing flickers.
+  const signedIn = !!me?.user;
+  useLayoutEffect(() => {
+    if (!signedIn) return;
+    const remembered = openGroups(favUser);
+    const open = openGroupsWith(remembered, activeGroup);
+    setOpenNav(open);
+    // once this person has opened or closed a group by hand, the group a page opened stays open too
+    if (remembered && open.length !== remembered.length) setOpenGroups(favUser, open);
+  }, [signedIn, favUser, activeGroup, routePage]);
+  // the current page comes into view in the pane when a page opens (the list scrolls); not on every change, so
+  // opening or closing another group never moves the list from where the person scrolled it
+  const activeShown = railed || (!!activeGroup && openNav.includes(activeGroup));
+  const navKey = pageNav?.key ?? '';
+  useEffect(() => {
+    navRef.current?.querySelector<HTMLElement>('.nav-item.active')?.scrollIntoView({ block: 'nearest' });
+  }, [routeKey, navKey, activeShown]);
+  // closing a group only folds it: the page stays where it is
+  const openNavNow = useRef(openNav);
+  openNavNow.current = openNav;
+  const toggleGroup = (group: string) => {
+    const next = toggledGroup(openNavNow.current, group);
+    openNavNow.current = next;
+    setOpenNav(next);
+    setOpenGroups(favUser, next);
+  };
+
   if (me?.signInRequired && !me.user) {
     return (
       <I18nContext.Provider value={i18n}>
@@ -692,9 +720,6 @@ export function App() {
   }
   if (!me) return online ? null : <div className="signin-page"><div className="card pad">{t('serverDown')}</div></div>;
 
-  const shownItems = (items: NavItem[]) => items.filter((item) => canSee(item, viewer));
-  const activeGroup = NAV.find((g) => shownItems(g.items).some(matches))?.group ?? null;
-  const groupOpen = (g: string) => (openGroup === undefined ? g === activeGroup : openGroup === g);
   const favItems = favs.map((k) => findPage(k)).filter((i): i is NavItem => !!i && i.path !== undefined && canSee(i, viewer));
   function navLink(item: NavItem, extra = '') {
     if (item.path === undefined) {
@@ -708,10 +733,21 @@ export function App() {
     const feature = item.business ? BUSINESS_FEATURE[item.business] : null;
     const locked = !!feature && !!plan && !plan.features.includes(feature);
     return (
-      <a key={extra + item.key} className={'nav-item' + (active ? ' active' : '')} href={href(item.path)} aria-current={active ? 'page' : undefined} title={railed ? t(item.key) : undefined}>
+      <a key={extra + item.key} className={'nav-item' + (active ? ' active' : '')} href={href(item.path)} aria-current={active ? 'page' : undefined} title={t(item.key)}>
         <Icon name={item.icon} /><span>{t(item.key)}</span>{locked && !railed && <span className="soon">{feature === 'realEstate' ? 'Business' : 'Pro'}</span>}
       </a>
     );
+  }
+  // ↑ ↓ Home End walk the menu's rows (group headings and pages); Tab still goes through them in order
+  function menuKeys(e: ReactKeyboardEvent<HTMLDivElement>) {
+    if (e.altKey || e.ctrlKey || e.metaKey || e.shiftKey || !['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(e.key)) return;
+    const rows = [...e.currentTarget.querySelectorAll<HTMLElement>('a.nav-item, button.nav-group-btn')];
+    const at = rows.indexOf(document.activeElement as HTMLElement);
+    if (at < 0) return;
+    const to = e.key === 'Home' ? 0 : e.key === 'End' ? rows.length - 1 : at + (e.key === 'ArrowDown' ? 1 : -1);
+    if (to < 0 || to >= rows.length) return;
+    e.preventDefault();
+    rows[to]!.focus();
   }
 
   async function signOut() {
@@ -738,11 +774,11 @@ export function App() {
                   <Icon name="panel" size={16} className="flip" />
                 </button>}
               </div>
-              <div className="company-card" title={railed ? company || t('noCompany') : undefined}>
+              <div className="company-card" title={company || t('noCompany')}>
                 <span className="avatar mark"><Icon name="building" size={16} /></span>
                 <div><span className="label">{t('company')}</span><strong className="bidi">{company || t('noCompany')}</strong></div>
               </div>
-              <div className="nav-scroll" ref={navRef}>
+              <div className="nav-scroll" ref={navRef} onKeyDown={menuKeys}>
                 {favItems.length > 0 && (
                   <div className="nav-section">
                     <div className="nav-group">{t('navFavourites')}</div>
@@ -750,14 +786,15 @@ export function App() {
                   </div>
                 )}
                 {NAV.filter((g) => shownItems(g.items).length).map((g) => {
-                  const open = railed || groupOpen(g.group);
+                  const open = railed || openNav.includes(g.group);
                   const id = `nav-${g.group}`;
                   return (
                     <div key={g.group} className={'nav-section' + (open ? ' open' : '')}>
                       {!railed && (
-                        <button type="button" className="nav-group nav-group-btn" aria-expanded={open} aria-controls={id} onClick={() => setOpenGroup(open ? null : g.group)}>
+                        <button type="button" className="nav-group nav-group-btn" aria-expanded={open} aria-controls={id} title={t(g.group)} onClick={() => toggleGroup(g.group)}>
+                          <Icon name={g.icon} />
                           <span>{t(g.group)}</span>
-                          <Icon name="chevronDown" size={14} />
+                          <Icon name="chevronDown" size={16} className="nav-chevron" />
                         </button>
                       )}
                       {open && <div id={id} className="nav-items">{shownItems(g.items).map((item) => navLink(item))}</div>}

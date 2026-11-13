@@ -1,9 +1,10 @@
 import { useEffect, useState } from 'react';
-import { formatAmount, MONTHS, rateFromX100, todayIso, toWesternDigits, type Names, type PostingAccounts } from '@qasa/core';
+import { formatAmount, htmlLang, MONTHS, rateFromX100, todayIso, toWesternDigits, type DigitStyle, type Lang, type Names, type PostingAccounts } from '@qasa/core';
 import {
   api, ApiError, currentUser, request, setCurrentUser, type BackupStatus, type DatabaseCheck, type DatabaseInput, type DatabaseStatus, type NetworkStatus, type YearEndStatus
 } from '../api.ts';
-import { AccountCombo, ErrorBox, Icon, LanguageSwitch, Modal, downloadCsv, useData, useDisplay, useLoad, useToast, type Density, type Theme } from '../components.tsx';
+import { AccountCombo, ErrorBox, Icon, LANGUAGE_NAMES, Modal, downloadCsv, useData, useDisplay, useLoad, useToast, type Density, type Theme } from '../components.tsx';
+import { ChoiceTiles, type Choice } from '../ChoiceTiles.tsx';
 import { isKey, useI18n, type Key } from '../i18n.ts';
 import { href } from '../router.ts';
 import { encodeQr, qrSvgPath } from '../industry/qr.ts';
@@ -24,7 +25,7 @@ import { batchesApi, type BatchSettingsView } from '../industry/batches-api.ts';
 import { posApi, type PosAccounts } from '../industry/pos-api.ts';
 import { LoyaltySettingsCard } from '../industry/Loyalty.tsx';
 
-/** One entry of the Settings list: its address (#/settings/<id>), icon, name and the line under the name. */
+/** One section of Settings: its address (#/settings/<id>), icon, name and the line under the name. */
 export interface SettingsSection {
   id: string;
   icon: string;
@@ -32,14 +33,14 @@ export interface SettingsSection {
   help: Key;
   /** Admins only (the server asks for an admin too). */
   admin?: boolean;
-  /** A page of its own elsewhere in the app (Users): the entry opens that page. */
+  /** A page of its own elsewhere in the app (Users): its rectangle opens that page. */
   page?: string;
   /** Shown only where its cards can work (Companies, Start over and Updates are in the Windows app only). */
   when?: () => boolean;
 }
 
 /**
- * The Settings list, in order. The names are the ones the release notes and the user guide use ("Settings → Backups",
+ * The sections of Settings, in order. The names are the ones the release notes and the user guide use ("Settings → Backups",
  * "Settings → Printers", "Settings → Loyalty points", "Settings → Updates", "Settings → About", "Settings → Users").
  */
 export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
@@ -66,48 +67,52 @@ export const settingsSectionsFor = (admin: boolean): SettingsSection[] => SETTIN
 
 /**
  * The section #/settings/<id> opens. An unknown name, a page elsewhere, or an admin section for someone else opens
- * none: the list (and, in a wide window, the first section beside it).
+ * none: the grid of sections shows.
  */
 export function settingsSectionOf(id: string | null | undefined, admin: boolean): SettingsSection | null {
   return settingsSectionsFor(admin).find((s) => s.id === id && !s.page) ?? null;
 }
 
 /**
- * Settings, Windows 11 style: the list of sections on the side and the chosen one beside it. In a narrow window the
- * list shows alone and a section opens full width with a Back link (styles.css, .settings-layout). Each section has
- * its own address (#/settings/backups), so the browser's Back works and a link can open one section.
+ * Settings. #/settings shows only a grid of rectangles, one per section this person may see (SettingsGrid); a section
+ * opens alone at its own address (#/settings/backups) with a Back link and its name on top, so the browser's Back
+ * works and a link can open one section. There is no list at the side, at any window width.
  */
 export function Settings({ admin, section }: { admin: boolean; section?: string | null }) {
-  const { t } = useI18n();
-  const sections = settingsSectionsFor(admin);
   const chosen = settingsSectionOf(section, admin);
-  const shown = chosen ?? sections[0]!;
-  // another section (or back to the list) starts at its top, like a page of its own
+  // a section (or back to the grid) starts at its top, like a page of its own
   const opened = chosen?.id ?? '';
   useEffect(() => { document.querySelector('main.content')?.scrollTo?.({ top: 0 }); }, [opened]);
+  return chosen ? <SettingsSectionPage section={chosen} admin={admin} /> : <SettingsGrid admin={admin} />;
+}
+
+/**
+ * #/settings: one rectangle per section, with its icon, name and help line, like the tiles of the Home page. Users is a
+ * page of its own, so its rectangle opens that page.
+ */
+export function SettingsGrid({ admin }: { admin: boolean }) {
+  const { t } = useI18n();
   return (
-    <div className="settings-wrap">
-      <div className={'settings-layout' + (chosen ? ' has-section' : '')}>
-        <nav className="settings-nav" aria-label={t('settings')}>
-          {sections.map((s) => (
-            <a
-              key={s.id}
-              href={href(s.page ?? `settings/${s.id}`)}
-              className={'settings-entry' + (s.id === shown.id ? ' active' : '')}
-              aria-current={s.id === shown.id ? 'page' : undefined}
-            >
-              <Icon name={s.icon} size={20} />
-              <span className="settings-entry-text"><strong>{t(s.name)}</strong><span>{t(s.help)}</span></span>
-              <Icon name="chevron" size={16} className="settings-entry-go flip" />
-            </a>
-          ))}
-        </nav>
-        <section className="settings-content stack" aria-label={t(shown.name)}>
-          <a className="settings-back" href={href('settings')}><Icon name="chevron" size={16} className="settings-back-icon" />{t('settings')}</a>
-          <SettingsSectionContent id={shown.id} admin={admin} />
-        </section>
-      </div>
-    </div>
+    <nav className="settings-grid" aria-label={t('settings')}>
+      {settingsSectionsFor(admin).map((s) => (
+        <a key={s.id} className="settings-tile" data-section={s.id} href={href(s.page ?? `settings/${s.id}`)}>
+          <span className="launch-ico"><Icon name={s.icon} size={22} /></span>
+          <span className="settings-tile-text"><strong>{t(s.name)}</strong><span>{t(s.help)}</span></span>
+        </a>
+      ))}
+    </nav>
+  );
+}
+
+/** #/settings/<id>: that one section alone, under the way back to the grid ("‹ Settings") and the section's name. */
+export function SettingsSectionPage({ section, admin }: { section: SettingsSection; admin: boolean }) {
+  const { t } = useI18n();
+  return (
+    <section className="settings-section stack" data-section={section.id} aria-labelledby="settings-section-title">
+      <a className="settings-back" href={href('settings')}><Icon name="chevron" size={16} className="settings-back-icon" />{t('settings')}</a>
+      <h2 id="settings-section-title" className="settings-section-title">{t(section.name)}</h2>
+      <SettingsSectionContent id={section.id} admin={admin} />
+    </section>
   );
 }
 
@@ -141,17 +146,36 @@ function SettingsSectionContent({ id, admin }: { id: string; admin: boolean }) {
   }
 }
 
-/** Settings → Language and display, Windows-style: what it is on one side, the control on the other. */
-function DisplaySettings() {
-  const { t, lang, digits, setDigits } = useI18n();
+/** A letter of each language's own writing, above its name on the language rectangles. */
+const LANGUAGE_SAMPLES: Record<Lang, string> = { ar: 'ع', en: 'A', ku: 'ک' };
+
+/**
+ * Settings → Language and display: what it is at the start of each row, and its options as rectangles at the end.
+ * The languages come from the app's one list (LANGUAGE_NAMES), each by its own name, and change the language the same
+ * way as everywhere else (setLang: the whole app at once, remembered on this PC, the Windows app's menus too).
+ */
+export function DisplaySettings() {
+  const { t, lang, setLang, digits, setDigits } = useI18n();
   const { theme, density, setTheme, setDensity } = useDisplay();
-  const themes: [Theme, string, string][] = [['light', 'sun', t('themeLight')], ['dark', 'moon', t('themeDark')], ['system', 'contrast', t('themeSystem')]];
-  const densities: [Density, string][] = [['comfortable', t('densityComfortable')], ['compact', t('densityCompact')]];
+  const languages: Choice<Lang>[] = LANGUAGE_NAMES.map(([l, label]) => ({ value: l, label, sample: LANGUAGE_SAMPLES[l], lang: htmlLang(l) }));
+  const digitStyles: Choice<DigitStyle>[] = [
+    { value: 'eastern', label: t('lk_digitsEastern'), sample: '١٢٣' },
+    { value: 'western', label: t('lk_digitsWestern'), sample: '123' }
+  ];
+  const themes: Choice<Theme>[] = [
+    { value: 'light', label: t('themeLight'), icon: 'sun' },
+    { value: 'dark', label: t('themeDark'), icon: 'moon' },
+    { value: 'system', label: t('themeSystem'), icon: 'contrast' }
+  ];
+  const densities: Choice<Density>[] = [
+    { value: 'comfortable', label: t('densityComfortable'), icon: 'rows' },
+    { value: 'compact', label: t('densityCompact'), icon: 'rowsDense' }
+  ];
+  // English always uses 123: the two digit styles are for Arabic and Kurdish
   const english = lang === 'en';
   return (
-    <section className="stack" aria-labelledby="display-title">
+    <section className="stack" aria-label={t('displayTitle')}>
       <div className="section-head">
-        <h2 id="display-title">{t('displayTitle')}</h2>
         <p>{t('displayHelp')}</p>
       </div>
       <div className="settings-group">
@@ -159,39 +183,28 @@ function DisplaySettings() {
           <Icon name="globe" size={20} className="setting-icon" />
           <div className="setting-text"><strong>{t('language')}</strong><span>{t('languageHelp')}</span></div>
           <div className="setting-ctl">
-            <LanguageSwitch />
+            <ChoiceTiles label={t('language')} value={lang} options={languages} onChange={setLang} />
           </div>
         </div>
         <div className={'setting' + (english ? ' disabled' : '')}>
           <Icon name="hash" size={20} className="setting-icon" />
           <div className="setting-text"><strong>{t('digits')}</strong><span>{t('digitsHelp')}</span></div>
           <div className="setting-ctl">
-            <div className="track" role="group" aria-label={t('digits')}>
-              <button type="button" lang="ar" aria-pressed={!english && digits === 'eastern'} disabled={english} onClick={() => setDigits('eastern')}>١٢٣</button>
-              <button type="button" aria-pressed={english || digits === 'western'} disabled={english} onClick={() => setDigits('western')}>123</button>
-            </div>
+            <ChoiceTiles label={t('digits')} value={english ? 'western' : digits} options={digitStyles} onChange={setDigits} disabled={english} />
           </div>
         </div>
         <div className="setting">
           <Icon name="contrast" size={20} className="setting-icon" />
           <div className="setting-text"><strong>{t('appearance')}</strong><span>{t('appearanceHelp')}</span></div>
           <div className="setting-ctl">
-            <div className="track" role="group" aria-label={t('appearance')}>
-              {themes.map(([v, icon, label]) => (
-                <button key={v} type="button" aria-pressed={theme === v} onClick={() => setTheme(v)} style={{ gap: 6 }}><Icon name={icon} size={14} />{label}</button>
-              ))}
-            </div>
+            <ChoiceTiles label={t('appearance')} value={theme} options={themes} onChange={setTheme} />
           </div>
         </div>
         <div className="setting">
           <Icon name="rows" size={20} className="setting-icon" />
           <div className="setting-text"><strong>{t('density')}</strong><span>{t('densityHelp')}</span></div>
           <div className="setting-ctl">
-            <div className="track" role="group" aria-label={t('density')}>
-              {densities.map(([v, label]) => (
-                <button key={v} type="button" aria-pressed={density === v} onClick={() => setDensity(v)}>{label}</button>
-              ))}
-            </div>
+            <ChoiceTiles label={t('density')} value={density} options={densities} onChange={setDensity} />
           </div>
         </div>
         <GraphicsSetting />
@@ -1244,16 +1257,16 @@ function ExpirySettingsCard() {
           <span>{t('ex_nearDays')}</span>
           <input className="input num" type="number" min={1} max={730} value={s.nearExpiryDays} onChange={(e) => setS({ ...s, nearExpiryDays: Math.max(1, Math.min(730, Math.floor(Number(e.target.value)) || 1)) })} />
         </label>
-        <label className="field">
-          <span>{t('ex_policy')}</span>
-          <select className="input" value={s.expiredSales} onChange={(e) => setS({ ...s, expiredSales: e.target.value as 'block' | 'warn' })}>
-            <option value="block">{t('ex_policyBlock')}</option>
-            <option value="warn">{t('ex_policyWarn')}</option>
-          </select>
-        </label>
         <label className="row" style={{ gap: 8, alignSelf: 'end' }}>
           <input type="checkbox" checked={s.defaultTrackExpiry} onChange={(e) => setS({ ...s, defaultTrackExpiry: e.target.checked })} />{t('ex_defaultExpiry')}
         </label>
+      </div>
+      <div className="field">
+        <span>{t('ex_policy')}</span>
+        <ChoiceTiles
+          label={t('ex_policy')} value={s.expiredSales} onChange={(expiredSales) => setS({ ...s, expiredSales })}
+          options={[{ value: 'block', label: t('ex_policyBlock'), icon: 'x' }, { value: 'warn', label: t('ex_policyWarn'), icon: 'clipboard' }]}
+        />
       </div>
       <ErrorBox error={error} />
       <div className="row"><button type="button" className="btn primary" onClick={() => void save()}><Icon name="check" size={16} />{t('save')}</button></div>

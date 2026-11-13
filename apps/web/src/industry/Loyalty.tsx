@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { maxRedeemPoints, pointsFor, toWesternDigits, type LoyaltyEarnRule, type LoyaltyLedgerRow, type LoyaltyRules } from '@qasa/core';
 import { AccountCombo, ErrorBox, Icon, Modal, useData, useLoad, useToast } from '../components.tsx';
+import { ChoiceTiles } from '../ChoiceTiles.tsx';
 import { useI18n, type I18n, type Key } from '../i18n.ts';
 import { href } from '../router.ts';
 import { loyaltyApi, type InvoiceLoyaltyView, type PartyLoyaltyView } from './loyalty-api.ts';
@@ -116,12 +117,11 @@ export function LoyaltySettingsCard() {
             return (
               <div key={b.id} className="row" style={{ gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
                 <span style={{ minWidth: 140 }}>{b.name}</span>
-                <select className="input" style={{ width: 'auto' }} value={mode}
-                  onChange={(e) => setBranch(b.id, e.target.value === 'off' ? 'off' : e.target.value === 'own' ? { ...rules.earn } : null)}>
-                  <option value="same">{t('ly_branchSame')}</option>
-                  <option value="off">{t('ly_branchOff')}</option>
-                  <option value="own">{t('ly_branchOwn')}</option>
-                </select>
+                <ChoiceTiles
+                  label={`${t('ly_branches')} — ${b.name}`} value={mode}
+                  onChange={(v) => setBranch(b.id, v === 'off' ? 'off' : v === 'own' ? { ...rules.earn } : null)}
+                  options={[{ value: 'same', label: t('ly_branchSame') }, { value: 'off', label: t('ly_branchOff') }, { value: 'own', label: t('ly_branchOwn') }]}
+                />
                 {own && own !== 'off' && (
                   <>
                     <input className="input num ltr" style={{ width: 90 }} inputMode="numeric" aria-label={t('ly_earnPoints')} value={String(own.points)}

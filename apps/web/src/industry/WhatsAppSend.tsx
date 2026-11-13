@@ -49,9 +49,9 @@ function openChat(phone: string, text: string): void {
   window.open(whatsappUrl(whatsappNumber(phone) ? phone : null, text), '_blank', 'noopener,noreferrer');
 }
 
-export function WhatsAppSendButton(props: WhatsAppSendProps & { label?: Key; primary?: boolean; disabled?: boolean }) {
+export function WhatsAppSendButton(props: WhatsAppSendProps & { label?: Key; primary?: boolean; disabled?: boolean; /** the dialog is open from the start (the invoice editor's "Save and send on WhatsApp") */ startOpen?: boolean }) {
   const { t } = useI18n();
-  const [open, setOpen] = useState(false);
+  const [open, setOpen] = useState(!!props.startOpen);
   const known = !!whatsappNumber(props.phone);
   return (
     <>

@@ -5,6 +5,7 @@ import { holdKey, outboxClient, outboxWho, SALE_TIMEOUT_MS, type HeldKey } from 
 import { AccountCombo, AmountInput, ErrorBox, Icon, SearchCombo, useData, useLoad, useToast } from '../components.tsx';
 import { useI18n } from '../i18n.ts';
 import { go } from '../router.ts';
+import { PartyPicker } from '../industry/PartyPicker.tsx';
 import { useRatePrefill } from '../industry/fx-prefill.ts';
 
 type Kind = 'receipt' | 'payment' | 'journal';
@@ -222,11 +223,14 @@ export function EntryEditor({ kind: initialKind, id }: { kind?: Kind; id?: strin
                   <AccountCombo value={r.accountCode} onChange={(code) => update(r.key, { accountCode: code })} />
                   {partyTypeFor(r.accountCode) && (
                     <div style={{ marginTop: 6 }}>
-                      <SearchCombo
+                      <PartyPicker
+                        type={partyTypeFor(r.accountCode)!}
                         value={r.partyId}
                         options={(parties.data ?? []).filter((p) => p.type === partyTypeFor(r.accountCode)).map((p) => ({ id: p.id, code: p.code, label: p.name, search: p.phone, hint: p.balance ? i18n.money(p.balance, 'IQD') : '' }))}
-                        onChange={(partyId) => {
-                          const p = parties.data?.find((x) => x.id === partyId);
+                        onCreated={() => parties.reload()}
+                        onChange={(partyId, added) => {
+                          // someone just added in the picker isn't in this page's list yet
+                          const p = added ?? parties.data?.find((x) => x.id === partyId);
                           update(r.key, { partyId, ...(p ? { accountCode: p.accountCode } : {}) });
                           if (p && !party.trim()) setParty(p.name);
                         }}

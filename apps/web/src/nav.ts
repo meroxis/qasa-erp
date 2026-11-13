@@ -20,11 +20,13 @@ export interface NavItem {
   business?: BusinessType;
   tile?: boolean;
 }
-export interface NavGroup { group: Key; items: NavItem[] }
+/** A group of the menu: its heading, the line icon beside the heading, and its pages in order. */
+export interface NavGroup { group: Key; icon: string; items: NavItem[] }
 
 export const NAV: NavGroup[] = [
   {
     group: 'gOverview',
+    icon: 'layers',
     items: [
       { key: 'home', icon: 'home', path: '', match: ['', 'home'], tile: false },
       { key: 'br_title', icon: 'sun', path: 'brief', match: ['brief'] },
@@ -33,6 +35,7 @@ export const NAV: NavGroup[] = [
   },
   {
     group: 'gSales',
+    icon: 'trend',
     items: [
       { key: 'pos_title', icon: 'wallet', path: 'pos', match: ['pos', 'pos-shift'], permission: 'sales' },
       { key: 'qt_title', icon: 'doc', path: 'quotes', match: ['quotes', 'quote', 'new-quote', 'edit-quote'] },
@@ -45,6 +48,7 @@ export const NAV: NavGroup[] = [
   },
   {
     group: 'gPurchases',
+    icon: 'cart',
     items: [
       { key: 'po_title', icon: 'clipboard', path: 'purchase-orders', match: ['purchase-orders', 'purchase-order', 'new-purchase-order', 'edit-purchase-order'] },
       { key: 'purchaseInvoices', icon: 'cart', path: 'purchases', match: ['purchases', 'new-invoice:purchase'] },
@@ -54,6 +58,7 @@ export const NAV: NavGroup[] = [
   },
   {
     group: 'gStock',
+    icon: 'box',
     items: [
       { key: 'items', icon: 'box', path: 'items', match: ['items', 'item'] },
       { key: 'stockDocs', icon: 'swap', path: 'stock-docs', match: ['stock-docs', 'stock-doc', 'new-stock-doc', 'edit-stock-doc'] },
@@ -65,6 +70,7 @@ export const NAV: NavGroup[] = [
   {
     // the industry features (Pro and Business), only those the company does
     group: 'gIndustry',
+    icon: 'tool',
     items: [
       { key: 're_title', icon: 'building', path: 'real-estate', match: ['real-estate', 'real-estate-project'], business: 'realEstate' },
       { key: 'mob_nav', icon: 'phone', path: 'mobile', match: ['mobile', 'repair'], business: 'mobileShop' },
@@ -77,6 +83,7 @@ export const NAV: NavGroup[] = [
   },
   {
     group: 'gAccounting',
+    icon: 'book',
     items: [
       { key: 'vouchers', icon: 'receipt', path: 'entries', match: ['entries', 'entry', 'new', 'edit'] },
       { key: 'bk_title', icon: 'bank', path: 'banking', match: ['banking', 'cheque', 'bank-statement'] },
@@ -87,9 +94,10 @@ export const NAV: NavGroup[] = [
       { key: 'statement', icon: 'doc', path: 'statement', match: ['statement'], tile: false, companyBooks: true }
     ]
   },
-  { group: 'gPeople', items: [{ key: 'pay_title', icon: 'users', path: 'payroll', match: ['payroll', 'payroll-run'], adminOnly: true }] },
+  { group: 'gPeople', icon: 'users', items: [{ key: 'pay_title', icon: 'users', path: 'payroll', match: ['payroll', 'payroll-run'], adminOnly: true }] },
   {
     group: 'gReports',
+    icon: 'chart',
     items: [
       { key: 'br_reports', icon: 'chart', path: 'reports-more/sales-items', match: ['reports-more'] },
       { key: 'trialBalance', icon: 'scale', path: 'trial-balance', match: ['trial-balance'], companyBooks: true },
@@ -98,6 +106,7 @@ export const NAV: NavGroup[] = [
   },
   {
     group: 'gSystem',
+    icon: 'gear',
     items: [
       // everyone: Language and display is each person's own; the company sections show to admins only
       { key: 'settings', icon: 'sliders', path: 'settings', match: ['settings'] },
@@ -184,6 +193,40 @@ export function toggleFavourite(user: string, key: string): void {
 
 export const navCollapsed = (): boolean => read('qasa.nav.collapsed') === '1';
 export const setNavCollapsed = (v: boolean) => write('qasa.nav.collapsed', v ? '1' : '0');
+
+/** The group that is open the first time, beside the current page's own: the one most people work in. */
+export const FIRST_OPEN_GROUP: Key = 'gSales';
+
+const openKey = (user: string) => `qasa.nav.open.${user || 'owner'}`;
+const isGroup = (g: unknown): g is string => typeof g === 'string' && NAV.some((n) => n.group === g);
+
+/** The groups a person left open in the menu, by group key; null when nothing was remembered yet on this PC. */
+export function openGroups(user: string): string[] | null {
+  try {
+    const v = JSON.parse(read(openKey(user)) ?? 'null') as unknown;
+    if (Array.isArray(v)) return [...new Set(v.filter(isGroup))];
+  } catch { /* fall through */ }
+  return null;
+}
+
+export function setOpenGroups(user: string, groups: readonly string[]): void {
+  write(openKey(user), JSON.stringify([...new Set(groups.filter(isGroup))]));
+}
+
+/**
+ * The groups to show open: the remembered ones (the first time: Sales), and always the current page's own group, so
+ * opening a page opens its group. Several can be open at once.
+ */
+export function openGroupsWith(remembered: readonly string[] | null, current: string | null): string[] {
+  const open = remembered ? [...remembered] : [FIRST_OPEN_GROUP];
+  if (current && !open.includes(current)) open.push(current);
+  return open;
+}
+
+/** Opens a closed group or closes an open one; the others stay as they are. */
+export function toggledGroup(open: readonly string[], group: string): string[] {
+  return open.includes(group) ? open.filter((g) => g !== group) : [...open, group];
+}
 
 /** Pages and records opened from the search, newest first. */
 export interface Recent { kind: 'page' | 'party' | 'item' | 'invoice' | 'entry'; label: string; sub?: string; path: string; icon: string }

@@ -186,6 +186,25 @@ describe('the idempotency key', () => {
     expect(tea.qtyMilli).toBe(19_000);
   });
 
+  it('makes a customer added from a picker once when the same request is sent again', async () => {
+    const key = randomUUID();
+    const before = count('parties');
+    const first = await post('/api/parties', { type: 'customer', name: 'Las', phone: '0750 123 4567' }, withKey(key));
+    expect(first.statusCode, first.body).toBe(201);
+    const again = await post('/api/parties', { type: 'customer', name: 'Las', phone: '0750 123 4567' }, withKey(key));
+    expect(again.statusCode, again.body).toBe(201);
+    expect(again.headers['x-qasa-idempotent-replay']).toBe('1');
+    expect(again.json()).toMatchObject({ id: first.json().id, code: first.json().code, name: 'Las' });
+    expect(count('parties')).toBe(before + 1);
+    // the same key with another name is another request: refused, nothing made
+    expect((await post('/api/parties', { type: 'customer', name: 'Mer' }, withKey(key))).json().error).toBe('idempotency_key_reused');
+    // a name is still required, and a refused request keeps no key
+    const empty = randomUUID();
+    expect((await post('/api/parties', { type: 'supplier', name: '  ' }, withKey(empty))).statusCode).toBe(400);
+    expect((await post('/api/parties', { type: 'supplier', name: 'Mer' }, withKey(empty))).statusCode).toBe(201);
+    expect(count('parties')).toBe(before + 2);
+  });
+
   it(`keeps keys at least 30 days (${IDEMPOTENCY_KEEP_DAYS}), then clears them`, async () => {
     const shift = await openShift();
     const key = randomUUID();

@@ -26,9 +26,9 @@ ADDITIONAL TERMS (section 7 of the GNU AGPL version 3)
    prints in the footer of invoices, including its reference to
    qasaerp.com, in the same place and with similar visibility.
 
-2. Removing the attribution is allowed only under a valid Qasa ERP Pro or
-   Business license obtained from https://qasaerp.com. That license is a
-   separate commercial agreement with Meroxis and is not part of this
+2. Removing the attribution is allowed only under a valid Qasa ERP Starter,
+   Pro or Business license obtained from https://qasaerp.com. That license
+   is a separate commercial agreement with Meroxis and is not part of this
    license.
 
 3. Trademarks (section 7(e)). This license does not grant any right to use
@@ -40,5 +40,5 @@ ADDITIONAL TERMS (section 7 of the GNU AGPL version 3)
 COMMERCIAL LICENSE
 ------------------
 
-A commercial Pro or Business license that removes the attribution
-requirement is available from Meroxis at https://qasaerp.com.
+A commercial Starter, Pro or Business license that removes the
+attribution requirement is available from Meroxis at https://qasaerp.com.
