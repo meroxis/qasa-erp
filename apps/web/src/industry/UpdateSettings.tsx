@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { Icon, Modal } from '../components.tsx';
+import { ChoiceTiles } from '../ChoiceTiles.tsx';
 import { useI18n } from '../i18n.ts';
 import { ReleaseNotes } from './UpdateBanner.tsx';
 import { desktopUpdates, upd, useUpdates, type UpdateState } from './updates.ts';
@@ -42,9 +43,8 @@ export function UpdateSettings() {
   const beta = state.channel === 'beta';
 
   return (
-    <section className="stack" aria-labelledby="updates-title">
+    <section className="stack" aria-label={upd(lang, 'up_title')}>
       <div className="section-head">
-        <h2 id="updates-title">{upd(lang, 'up_title')}</h2>
         <p>{state.fromStore ? upd(lang, 'up_storeHelp') : upd(lang, 'up_help')}</p>
       </div>
       <div className="settings-group">
@@ -74,10 +74,12 @@ export function UpdateSettings() {
               {left && <span role="status">{upd(lang, 'up_betaLeft')}</span>}
             </div>
             <div className="setting-ctl">
-              <div className="track" role="group" aria-label={upd(lang, 'up_beta')} aria-busy={busy}>
-                <button type="button" aria-pressed={beta} disabled={busy} onClick={() => { if (!beta) setAsking(true); }}>{upd(lang, 'up_betaOn')}</button>
-                <button type="button" aria-pressed={!beta} disabled={busy} onClick={() => { if (beta) channel('stable'); }}>{upd(lang, 'up_betaOff')}</button>
-              </div>
+              {/* joining asks first (the warnings in the dialog below); leaving is at once */}
+              <ChoiceTiles
+                label={upd(lang, 'up_beta')} value={beta ? 'beta' : 'stable'} disabled={busy} busy={busy}
+                onChange={(v) => { if (v === 'beta') setAsking(true); else channel('stable'); }}
+                options={[{ value: 'beta', label: upd(lang, 'up_betaOn'), icon: 'zap' }, { value: 'stable', label: upd(lang, 'up_betaOff'), icon: 'x' }]}
+              />
             </div>
           </div>
         )}

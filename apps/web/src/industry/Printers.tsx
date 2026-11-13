@@ -1,10 +1,11 @@
-import { useCallback, useEffect, useState } from 'react';
+import { Fragment, useCallback, useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
 import {
   DEFAULT_PRINTER_CHOICE, MAX_PRINT_COPIES, PRINT_KINDS, PRINTER_MARGINS, PRINTER_PAPERS, USUAL_PAPER,
   type PrinterChoice, type PrinterChoices, type PrinterEntry, type PrinterPaper, type PrintKind
 } from '@qasa/core';
 import { Icon, useToast } from '../components.tsx';
+import { ChoiceTiles } from '../ChoiceTiles.tsx';
 import { useI18n, type Key } from '../i18n.ts';
 import { desktopPrinters, PRINT_NOTICE_EVENT, printAlone, printersOf, saveChoice, savedChoices, type PrintNotice } from './printing.ts';
 
@@ -61,7 +62,7 @@ export function PrintersCardView({ desktop, printers, choices, busy, error, onCh
         <table className="table printers-table">
           <thead>
             <tr>
-              <th>{t('prn_kind')}</th><th>{t('prn_printer')}</th><th>{t('prn_paper')}</th><th>{t('prn_margins')}</th>
+              <th>{t('prn_kind')}</th><th>{t('prn_printer')}</th><th>{t('prn_paper')}</th>
               <th>{t('prn_copies')}</th><th>{t('prn_silent')}</th><th><span className="visually-hidden">{t('prn_test')}</span></th>
             </tr>
           </thead>
@@ -74,8 +75,10 @@ export function PrintersCardView({ desktop, printers, choices, busy, error, onCh
               const off = printer === null || gone || busy !== null;
               const label = t(`prn_kind_${kind}` as Key);
               const set = (patch: Partial<PrinterChoice>) => c && onChange(kind, { ...c, ...patch });
+              // each kind takes two rows: its printer, paper, copies and test page, then its margins as rectangles
               return (
-                <tr key={kind} data-kind={kind}>
+                <Fragment key={kind}>
+                <tr className="printers-kind" data-kind={kind}>
                   <td>
                     <strong>{label}</strong>
                     <div className="muted small">{t(`prn_also_${kind}` as Key)}</div>
@@ -99,11 +102,6 @@ export function PrintersCardView({ desktop, printers, choices, busy, error, onCh
                     </select>
                   </td>
                   <td>
-                    <select className="input" aria-label={`${t('prn_margins')} — ${label}`} value={c?.margins ?? 'default'} disabled={off} onChange={(e) => set({ margins: e.target.value as PrinterChoice['margins'] })}>
-                      {PRINTER_MARGINS.map((m) => <option key={m} value={m}>{t(`prn_margins_${m}` as Key)}</option>)}
-                    </select>
-                  </td>
-                  <td>
                     <select className="input num" aria-label={`${t('prn_copies')} — ${label}`} value={c?.copies ?? 1} disabled={off} onChange={(e) => set({ copies: Number(e.target.value) })}>
                       {Array.from({ length: MAX_PRINT_COPIES }, (_, i) => i + 1).map((n) => <option key={n} value={n}>{n}</option>)}
                     </select>
@@ -115,6 +113,19 @@ export function PrintersCardView({ desktop, printers, choices, busy, error, onCh
                     <button type="button" className="btn small" disabled={busy !== null} onClick={() => onTest(kind)}><Icon name="printer" size={14} />{t('prn_test')}</button>
                   </td>
                 </tr>
+                <tr className="printers-margins" data-margins={kind}>
+                  <td />
+                  <td colSpan={5}>
+                    <div className="printers-margins-row">
+                      <span className={'printers-margins-label' + (off ? ' muted' : '')}>{t('prn_margins')}</span>
+                      <ChoiceTiles
+                        label={`${t('prn_margins')} — ${label}`} value={c?.margins ?? 'default'} disabled={off} onChange={(margins) => set({ margins })}
+                        options={PRINTER_MARGINS.map((m) => ({ value: m, label: t(`prn_margins_${m}` as Key) }))}
+                      />
+                    </div>
+                  </td>
+                </tr>
+                </Fragment>
               );
             })}
           </tbody>

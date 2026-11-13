@@ -60,9 +60,10 @@ describe('the first-start “What does your company do?” dialog', () => {
     expect(setLang).toHaveBeenLastCalledWith('en');
   });
 
-  it('is the one language switch: Settings uses it too and keeps no list of its own', () => {
+  it('shares the one list of languages with Settings, which shows them as rectangles and keeps no list of its own', () => {
     const settings = readFileSync(new URL('./Settings.tsx', import.meta.url), 'utf8');
-    expect(settings).toContain('<LanguageSwitch />');
+    expect(settings).toContain('LANGUAGE_NAMES.map(');
+    expect(settings).toContain("<ChoiceTiles label={t('language')} value={lang} options={languages} onChange={setLang} />");
     expect(settings).not.toMatch(/LANGUAGES|'English'|'کوردی'/);
   });
 });

@@ -243,7 +243,9 @@ const PATHS: Record<string, string> = {
   inbox: 'M22 12h-6l-2 3h-4l-2-3H2M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11Z',
   upload: 'M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M17 8l-5-5-5 5M12 3v12',
   clock: 'M22 12a10 10 0 1 1-20 0 10 10 0 0 1 20 0M12 6v6l4 2',
-  circle: 'M22 12a10 10 0 1 1-20 0 10 10 0 0 1 20 0'
+  circle: 'M22 12a10 10 0 1 1-20 0 10 10 0 0 1 20 0',
+  // closer rows (the compact density), drawn in-house beside "rows"
+  rowsDense: 'M3 4.5h18M3 9.5h18M3 14.5h18M3 19.5h18'
 };
 
 /**
