@@ -134,10 +134,13 @@ export function InvoiceEditor({ kind: initialKind, id, partyId: initialParty }: 
   const [error, setError] = useState<unknown>(null);
   const expired = useExpiredConfirm();
   const rxItems = useRxItems(usePharmacyOn() && kind === 'sale');
-  // a sale posted with "… and next" stays on this page: its controlled medicines are asked for here
-  const controlled = useControlledPrompt();
   // the invoice saved last (after "… and next"), and the one being printed: its paper is in the print-only area
   const [paper, setPaper] = useState<SavedPaper | null>(() => (id ? null : handover));
+  // a sale posted from a draft opened for editing, handed over to this page by "… and next" (the edit page is gone)
+  const [handedSale] = useState<string | undefined>(() => (paper?.view.kind === 'sale' && paper.view.status === 'posted' ? paper.view.id : undefined));
+  // a sale posted with "… and next" stays on this page: its controlled medicines are asked for here, as are those of
+  // the sale handed over
+  const controlled = useControlledPrompt(handedSale);
   const [printing, setPrinting] = useState(false);
   // the way of saving picked in this visit; before that, the one this person used last
   const [way, setWay] = useState<SaveChoice | null>(null);
@@ -337,7 +340,8 @@ export function InvoiceEditor({ kind: initialKind, id, partyId: initialParty }: 
    * checks, the same refusals), then printed, then the next one opens. A refusal leaves the invoice open with the reason.
    */
   async function run(chosen: SaveChoice) {
-    if (busy || running.current || !offered.includes(chosen)) return;
+    // (F9 works before a draft opened for editing has arrived: nothing is on the page to save yet)
+    if (!ready || busy || running.current || !offered.includes(chosen)) return;
     const body = input();
     if (!body) return;
     running.current = true;
@@ -375,8 +379,12 @@ export function InvoiceEditor({ kind: initialKind, id, partyId: initialParty }: 
       // a paper that did not print never undoes the posting: the person is told, and can print it again
       toast(unprinted ? t('sv_notPrinted', { n: saved.number ?? '' }) : t('a_post'));
       if (done.next) {
-        // controlled medicines sold: the patient and the prescription are asked for here, the page stays
-        if (kind === 'sale') controlled.check(saved.id);
+        // controlled medicines sold: the patient and the prescription are asked for on the page that stays. A new
+        // invoice stays on this page; a draft opened for editing goes on to the new-invoice page, which asks
+        if (kind === 'sale') {
+          if (id) askControlledOnOpen(saved.id);
+          else controlled.check(saved.id);
+        }
         startNext({ view: saved, printed: done.printed });
         return;
       }

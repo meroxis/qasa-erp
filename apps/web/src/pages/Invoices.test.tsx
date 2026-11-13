@@ -15,7 +15,18 @@ const fixture = vi.hoisted(() => ({
   permissions: undefined as string[] | undefined,
   steps: [] as string[],
   toasts: [] as string[],
-  reloads: 0
+  reloads: 0,
+  // a pharmacy's controlled-medicine question: the sales this page asked about itself, the sales left for the page
+  // that opens next, and the sale each page was opened to ask about
+  checked: [] as string[],
+  askOnOpen: [] as string[],
+  promptFor: [] as (string | undefined)[],
+  // a draft saved earlier, as the server gives it to the editor
+  draft: {
+    id: 'd1', kind: 'sale', status: 'draft', actions: ['edit', 'delete', 'post'], date: '2026-11-13', partyId: null, warehouseId: 'w', currency: 'IQD',
+    rateX100: 100, payment: 'cash', cashAccountCode: '1811', discount: 0, notes: '',
+    lines: [{ itemId: 'sample', qtyMilli: 1000, unitPrice: 14200, description: '', lineUnit: null, unitQtyMilli: null, batchNo: null, expiry: null, batchId: null }]
+  }
 }));
 vi.mock('react', () => ({
   useState<T>(initial: T | (() => T)) {
@@ -39,6 +50,11 @@ vi.mock('../industry/categories-api.ts', () => ({ categoriesApi: { list: () => [
 vi.mock('../industry/CatalogPickers.tsx', () => ({ CategoryOptions: 'CategoryOptions' }));
 vi.mock('../industry/prices-api.ts', () => ({ pricesApi: { priceFor: vi.fn(() => new Promise(() => {})) } }));
 vi.mock('../industry/PartyPicker.tsx', () => ({ PartyPicker: 'PartyPicker' }));
+vi.mock('../industry/PharmacyPrompts.tsx', () => ({
+  RxTick: 'RxTick', usePharmacyOn: () => false, useRxItems: () => new Set(),
+  askControlledOnOpen: (id: string) => { fixture.askOnOpen.push(id); },
+  useControlledPrompt: (openedId?: string) => { fixture.promptFor.push(openedId); return { dialog: null, check: (id: string) => { fixture.checked.push(id); } }; }
+}));
 vi.mock('../industry/PrintDocument.tsx', () => ({ DesignedPrint: 'DesignedPrint' }));
 vi.mock('../industry/print-model.ts', () => ({ invoiceModel: (v: { id: string }) => ({ doc: 'sale', id: v.id }) }));
 vi.mock('../industry/printing.ts', () => ({
@@ -50,6 +66,7 @@ vi.mock('../api.ts', () => ({
   pendingRequests: () => 0,
   api: {
     parties: () => [], warehouses: () => [{ id: 'w', active: true, name: fixture.item.name }], items: () => [fixture.item],
+    invoice: vi.fn(async () => fixture.draft),
     createInvoice: vi.fn(async () => { fixture.steps.push('create'); return { id: 'draft', actions: ['edit', 'delete', 'post'] }; }),
     updateInvoice: vi.fn(async (id: string) => { fixture.steps.push('update'); return { id, actions: ['edit', 'delete', 'post'] }; }),
     postInvoice: vi.fn(async (id: string) => {
@@ -91,9 +108,15 @@ function pickSample(kind: 'sale' | 'purchase' = 'sale') {
   invoke(render(kind).find((n) => n.type === 'SearchCombo' && n.props.ariaLabel === 'item')!.props.onChange, fixture.item.id);
 }
 
+/** The editor opened on a draft saved earlier (the edit-invoice page). */
+function renderDraft() { fixture.cursor = 0; return flatten(InvoiceEditor({ id: fixture.draft.id })); }
+/** Forgets the page that was open: the next render is another page, opening. */
+function leavePage() { fixture.states = []; fixture.first = true; fixture.effects = []; fixture.promptFor = []; }
+
 beforeEach(() => {
   fixture.states = []; fixture.cursor = 0; fixture.first = true; fixture.effects = [];
   fixture.permissions = undefined; fixture.steps = []; fixture.toasts = []; fixture.reloads = 0;
+  fixture.checked = []; fixture.askOnOpen = []; fixture.promptFor = [];
   vi.clearAllMocks();
 });
 afterEach(() => { vi.unstubAllGlobals(); });
@@ -323,5 +346,98 @@ describe('the one save button', () => {
     expect(api.postInvoice).not.toHaveBeenCalled();
     expect(printDocument).not.toHaveBeenCalled();
     expect(fixture.toasts).toEqual(['sv_onlyDraft']);
+  });
+
+  it('posts once when the button is pressed twice, or F9 comes while the first press is still at work', async () => {
+    const keys = stubWindow();
+    open();
+    pickSample();
+    const button = saveButton();
+    const first = invoke(button.props.onRun, 'next');
+    // the page has not drawn "saving" yet: the same button again, another way from the list, and F9
+    const second = invoke(button.props.onRun, 'next');
+    const third = invoke(button.props.onRun, 'print_next');
+    keys[0]!({ key: 'F9', preventDefault: () => {} });
+    await Promise.all([first, second, third]);
+    expect(fixture.steps).toEqual(['confirm', 'create', 'post']);
+    expect(api.postInvoice).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('the controlled medicines of a pharmacy\'s sale', () => {
+  it('are asked for on this page when "… and next" keeps it open', async () => {
+    stubWindow();
+    open();
+    expect(fixture.promptFor.at(-1)).toBeUndefined();
+    pickSample();
+    await invoke(saveButton().props.onRun, 'next');
+    expect(fixture.checked).toEqual(['draft']);
+    expect(fixture.askOnOpen).toEqual([]);
+  });
+
+  it('are left for the invoice\'s own page when that page opens next', async () => {
+    stubWindow();
+    open();
+    pickSample();
+    await invoke(saveButton().props.onRun, 'post');
+    expect(fixture.askOnOpen).toEqual(['draft']);
+    expect(fixture.checked).toEqual([]);
+  });
+});
+
+describe('a draft opened for editing', () => {
+  /** Opens the edit-invoice page and waits for the draft to arrive. */
+  async function openDraft() {
+    renderDraft();
+    fixture.effects.forEach((fn) => fn());
+    fixture.first = false;
+    await vi.waitFor(() => expect(renderDraft().some((n) => n.type === 'SplitButton')).toBe(true));
+  }
+  const draftButton = () => renderDraft().find((n) => n.type === 'SplitButton')!;
+
+  it('goes to the new-invoice page on "… and next", which shows the invoice saved last', async () => {
+    stubWindow();
+    await openDraft();
+    await invoke(draftButton().props.onRun, 'next');
+    expect(fixture.steps).toEqual(['confirm', 'update', 'post']);
+    expect(api.updateInvoice).toHaveBeenCalledWith('d1', expect.objectContaining({ lines: [expect.objectContaining({ itemId: 'sample', unitPrice: 14200 })] }));
+    expect(go).toHaveBeenCalledWith('new-invoice/sale');
+    leavePage();
+    open();
+    expect(savedBar(render())).toBeDefined();
+    // read once: the next visit to the new-invoice page starts clean
+    leavePage();
+    open();
+    expect(savedBar(render())).toBeUndefined();
+  });
+
+  it('hands a pharmacy\'s controlled-medicine question on to the new-invoice page, which asks it', async () => {
+    stubWindow();
+    await openDraft();
+    await invoke(draftButton().props.onRun, 'next');
+    // the edit page is leaving: a question asked there would be lost with it
+    expect(fixture.checked).toEqual([]);
+    expect(fixture.askOnOpen).toEqual(['d1']);
+    leavePage();
+    open();
+    expect(fixture.promptFor.at(-1)).toBe('d1');
+    // a new-invoice page opened any other way has nothing to ask
+    leavePage();
+    open();
+    expect(fixture.promptFor.at(-1)).toBeUndefined();
+  });
+
+  it('does nothing on F9 while the draft is still on its way from the server', async () => {
+    const keys = stubWindow();
+    vi.mocked(api.invoice).mockReturnValueOnce(new Promise(() => {}) as never);
+    renderDraft();
+    fixture.effects.forEach((fn) => fn());
+    fixture.first = false;
+    expect(renderDraft()).toEqual([]);
+    keys[0]!({ key: 'F9', preventDefault: () => {} });
+    await Promise.resolve();
+    // no question about posting a page that shows nothing, and no empty invoice sent over the saved draft
+    expect(fixture.steps).toEqual([]);
+    expect(api.updateInvoice).not.toHaveBeenCalled();
   });
 });

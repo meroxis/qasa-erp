@@ -19,6 +19,11 @@ export const INVOICE_SPEED_TEXT = {
     'ئێستا ناو بەسە. زانیارییەکانی تر دواتر لە پەڕەی دابینکەران پڕ دەکرێنەوە.'
   ],
   qa_nameNeeded: ['اكتب الاسم.', 'Enter the name.', 'ناوەکە بنووسە.'],
+  qa_nameLetters: [
+    'اكتب الاسم بالحروف: الرقم وحده ليس اسماً.',
+    'Enter the name in letters: a number alone is not a name.',
+    'ناوەکە بە پیت بنووسە: ژمارە بە تەنها ناو نییە.'
+  ],
   qa_tooLong: ['النص أطول من المسموح.', 'That text is too long.', 'ئەو دەقە لە ڕادە درێژترە.'],
   qa_add: ['إضافة واختيار', 'Add and choose', 'زیادکردن و هەڵبژاردن'],
   qa_sameCustomer: ['يوجد زبون بالاسم نفسه أو الهاتف نفسه:', 'A customer with the same name or phone already exists:', 'کڕیارێک بە هەمان ناو یان هەمان تەلەفۆن پێشتر هەیە:'],

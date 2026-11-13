@@ -1,9 +1,9 @@
-import { useMemo, useRef, useState, type KeyboardEvent, type RefObject } from 'react';
+import { useEffect, useMemo, useRef, useState, type KeyboardEvent, type RefObject } from 'react';
 import { api, type PartyType, type PartyView } from '../api.ts';
 import { ErrorBox, Icon, SearchCombo, useData, useToast, type PickOption } from '../components.tsx';
 import { useI18n } from '../i18n.ts';
 import { pricesApi, type PriceList } from './prices-api.ts';
-import { focusAfter, mayAddParty, QUICK_LIMITS, quickAddParty, quickPartyInput, type QuickKey, type QuickPartyFields, type SameParty } from './party-quick-add.ts';
+import { focusAfter, mayAddParty, QUICK_LIMITS, quickAddParty, quickPartyInput, quickStart, type QuickKey, type QuickPartyFields, type SameParty } from './party-quick-add.ts';
 
 /**
  * The customer (or supplier) box of an invoice, a quotation, the till, an installment contract, a voucher or a
@@ -50,6 +50,11 @@ export function PartyPicker({ type, value, options, onChange, onCreated, placeho
     // once the form is gone and the page shows the choice: on to the next field
     window.setTimeout(() => focusAfter(box.current), 0);
   };
+  // added by a request that was still on its way when the form was closed: in the list from now on, chosen by nobody
+  const late = (party: PartyView) => {
+    setMade((m) => (m.some((p) => p.id === party.id) ? m : [...m, party]));
+    onCreated?.(party);
+  };
 
   return (
     <div className="party-picker" ref={box}>
@@ -65,18 +70,26 @@ export function PartyPicker({ type, value, options, onChange, onCreated, placeho
         } : {})}
       />
       {allowed && adding !== null && (
-        <QuickPartyForm type={type} name={adding} onDone={finish} onClose={() => { setAdding(null); window.setTimeout(() => input.current?.focus(), 0); }} />
+        <QuickPartyForm type={type} name={adding} onDone={finish} onLate={late} onClose={() => { setAdding(null); window.setTimeout(() => input.current?.focus(), 0); }} />
       )}
     </div>
   );
 }
 
-export function QuickPartyForm({ type, name: typed, onDone, onClose }: { type: PartyType; name: string; onDone(party: PartyView, created: boolean): void; onClose(): void }) {
+export function QuickPartyForm({ type, name: typed, onDone, onLate, onClose }: {
+  type: PartyType;
+  /** the text typed in the box: the name the form starts with (a number alone starts in the phone field) */
+  name: string;
+  onDone(party: PartyView, created: boolean): void;
+  /** the form was closed while the server was still adding the party: it is not chosen; the page's list gets it */
+  onLate?(party: PartyView): void;
+  onClose(): void;
+}) {
   const i18n = useI18n();
   const { t } = i18n;
   const toast = useToast();
   const customer = type === 'customer';
-  const [fields, setFields] = useState<QuickPartyFields>({ name: typed, phone: '', city: '' });
+  const [fields, setFields] = useState<QuickPartyFields>(() => quickStart(typed));
   const [list, setList] = useState<PriceList>('retail');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<unknown>(null);
@@ -85,6 +98,12 @@ export function QuickPartyForm({ type, name: typed, onDone, onClose }: { type: P
   const [offline, setOffline] = useState(false);
   // the key of the last try that got no answer: the next try of the same person can't add them twice
   const held = useRef<QuickKey | null>(null);
+  // whether the form is still on the page: an answer that arrives after Esc or Cancel chooses nobody
+  const open = useRef(true);
+  useEffect(() => {
+    open.current = true;
+    return () => { open.current = false; };
+  }, []);
   const title = t(customer ? 'qa_addCustomer' : 'qa_addSupplier');
 
   const set = (patch: Partial<QuickPartyFields>) => {
@@ -97,26 +116,30 @@ export function QuickPartyForm({ type, name: typed, onDone, onClose }: { type: P
     if (busy) return;
     const checked = quickPartyInput(fields);
     if (!checked.ok) {
-      setProblem({ field: checked.field, text: t(checked.code === 'name_required' ? 'qa_nameNeeded' : 'qa_tooLong') });
+      setProblem({ field: checked.field, text: t(checked.code === 'name_required' ? 'qa_nameNeeded' : checked.code === 'name_letters' ? 'qa_nameLetters' : 'qa_tooLong') });
       return;
     }
     setBusy(true);
     setError(null);
     setOffline(false);
     try {
-      const done = await quickAddParty(type, checked.input, { force, held: held.current }, {
+      const done = await quickAddParty(type, checked.input, { force, held: held.current, closed: () => !open.current, wholesale: customer && list === 'wholesale' }, {
         list: (kind) => api.parties({ type: kind }),
-        create: (kind, input, options) => api.createParty(kind, input, options)
+        create: (kind, input, options) => api.createParty(kind, input, options),
+        setWholesale: (partyId) => pricesApi.setPartyList(partyId, 'wholesale')
       });
       held.current = done.key;
+      if (done.status === 'closed') {
+        // closed meanwhile: the document keeps the customer it has; someone added all the same is said, and listed
+        if (done.party) {
+          toast(t('qa_added', { name: done.party.name, code: done.party.code }));
+          onLate?.(done.party);
+        }
+        return;
+      }
       if (done.status === 'same') { setSame(done.same); return; }
       if (done.status === 'offline') { setOffline(true); setSame(null); return; }
-      let listSaved = true;
-      if (customer && list === 'wholesale') {
-        // the customer is added whatever happens to their price list: it can be chosen again on their page
-        try { await pricesApi.setPartyList(done.party.id, 'wholesale'); } catch { listSaved = false; }
-      }
-      toast(listSaved ? t('qa_added', { name: done.party.name, code: done.party.code }) : t('qa_listNotSaved'));
+      toast(done.listSaved ? t('qa_added', { name: done.party.name, code: done.party.code }) : t('qa_listNotSaved'));
       onDone(done.party, true);
     } catch (e) {
       setError(e);

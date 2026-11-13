@@ -6,7 +6,7 @@ import { ApiError, type PartyView, type Permission } from '../api.ts';
 import { COMBO_ADD_ROW, comboRows, DataContext, SearchCombo, type PickOption } from '../components.tsx';
 import { I18nContext, makeI18n, type Key } from '../i18n.ts';
 import { PartyPicker, QuickPartyForm } from './PartyPicker.tsx';
-import { mayAddParty, phoneDigits, QUICK_ADD_TIMEOUT_MS, quickAddParty, quickKey, quickPartyInput, sameParties } from './party-quick-add.ts';
+import { mayAddParty, phoneDigits, QUICK_ADD_TIMEOUT_MS, quickAddParty, quickKey, quickPartyInput, quickStart, sameParties } from './party-quick-add.ts';
 
 const LANGS: Lang[] = ['ar', 'en', 'ku'];
 const i18nOf = (lang: Lang) => makeI18n(lang, 'western', () => {}, () => {});
@@ -123,6 +123,34 @@ describe('what the form sends', () => {
     expect(quickPartyInput({ name: 'Las', phone: '1'.repeat(51), city: '' })).toMatchObject({ ok: false, field: 'phone' });
     expect(quickPartyInput({ name: 'Las', phone: '', city: 'x'.repeat(301) })).toMatchObject({ ok: false, field: 'city' });
   });
+
+  it('never makes a customer of a barcode: a name needs a letter, in any script', () => {
+    // a scanner types the code and Enter into whatever box has the cursor: once opens the form, twice would save it
+    for (const scanned of ['8690123456789', '86901234567898690123456789', '٠٧٥٠١٢٣٤٥٦٧', '12-34 / 5', '+964 750 123 4567']) {
+      expect(quickPartyInput({ name: scanned, phone: '', city: '' }), scanned).toEqual({ ok: false, field: 'name', code: 'name_letters' });
+    }
+    for (const name of ['Mer', 'Las 2', 'لاس', 'مێر', 'Raz-7']) expect(quickPartyInput({ name, phone: '', city: '' }), name).toMatchObject({ ok: true, input: { name } });
+    for (const lang of LANGS) expect(textOf(lang, 'qa_nameLetters'), lang).toBeTruthy();
+  });
+
+  it('starts with the typed name; a number typed in the box (looked for, not found) starts in the phone field', () => {
+    expect(quickStart(' Las ')).toEqual({ name: 'Las', phone: '', city: '' });
+    expect(quickStart('')).toEqual({ name: '', phone: '', city: '' });
+    expect(quickStart(' 0750 123 4567 ')).toEqual({ name: '', phone: '0750 123 4567', city: '' });
+    expect(quickStart('٠٧٥٠١٢٣٤٥٦٧')).toEqual({ name: '', phone: '٠٧٥٠١٢٣٤٥٦٧', city: '' });
+    // the name is still asked for, so Enter alone adds nobody
+    expect(quickPartyInput(quickStart('8690123456789'))).toEqual({ ok: false, field: 'name', code: 'name_required' });
+    // a name with a number in it is a name
+    expect(quickStart('Las 2')).toEqual({ name: 'Las 2', phone: '', city: '' });
+    // never more than the phone field takes
+    expect(quickStart('1'.repeat(80)).phone).toHaveLength(50);
+    for (const lang of LANGS) {
+      const html = wrap(<QuickPartyForm type="customer" name="0771 000 0000" onDone={() => {}} onClose={() => {}} />, lang);
+      expect(html).toMatch(/dir="ltr" inputMode="tel"[^>]*value="0771 000 0000"/i);
+      // the cursor waits in the name field, which is empty
+      expect(html).toMatch(/<input class="input" autofocus=""[^>]*value=""/i);
+    }
+  });
 });
 
 describe('someone who is already there', () => {
@@ -161,7 +189,7 @@ describe('adding through the server', () => {
   it('adds a new person with the Customers page\'s own request, sent with a key and a time limit', async () => {
     const create = vi.fn(async () => made);
     const done = await quickAddParty('customer', { name: 'Raz', phone: '0771 000 0000' }, {}, { list: async () => [mer, las], create, makeKey: () => 'key-1' });
-    expect(done).toEqual({ status: 'added', party: made, key: null });
+    expect(done).toEqual({ status: 'added', party: made, listSaved: true, key: null });
     expect(create).toHaveBeenCalledWith('customer', { name: 'Raz', phone: '0771 000 0000' }, { key: 'key-1', timeoutMs: QUICK_ADD_TIMEOUT_MS });
   });
 
@@ -202,5 +230,57 @@ describe('adding through the server', () => {
     const forbidden = new ApiError(403, 'forbidden', { need: 'sales' });
     await expect(quickAddParty('customer', { name: 'Raz' }, {}, { list: async () => [], create: async () => { throw forbidden; } })).rejects.toBe(forbidden);
     await expect(quickAddParty('customer', { name: 'Raz' }, {}, { list: async () => { throw forbidden; }, create: async () => made })).rejects.toBe(forbidden);
+  });
+
+  it('saves the wholesale price list of a new customer, and says so when only that failed', async () => {
+    const setWholesale = vi.fn(async () => {});
+    const deps = { list: async () => [] as PartyView[], create: async () => made, makeKey: () => 'key-1', setWholesale };
+    expect(await quickAddParty('customer', { name: 'Raz' }, { wholesale: true }, deps)).toEqual({ status: 'added', party: made, listSaved: true, key: null });
+    expect(setWholesale).toHaveBeenCalledWith('new');
+    // retail is what a new customer has: nothing more is sent
+    setWholesale.mockClear();
+    expect(await quickAddParty('customer', { name: 'Raz' }, {}, deps)).toMatchObject({ status: 'added', listSaved: true });
+    expect(setWholesale).not.toHaveBeenCalled();
+    // the customer is added whatever happens to the price list
+    setWholesale.mockRejectedValueOnce(new ApiError(0, 'network', null));
+    expect(await quickAddParty('customer', { name: 'Raz' }, { wholesale: true }, deps)).toEqual({ status: 'added', party: made, listSaved: false, key: null });
+  });
+});
+
+describe('a form closed before the server answered', () => {
+  const made = party({ id: 'new', code: 'C-0003', name: 'Raz' });
+
+  it('sends nothing when it was closed while the look for the same person was still on its way', async () => {
+    let closed = false;
+    const create = vi.fn(async () => made);
+    const done = await quickAddParty('customer', { name: 'Raz' }, { closed: () => closed }, { list: async () => { closed = true; return []; }, create, makeKey: () => 'key-1' });
+    expect(done).toEqual({ status: 'closed', party: null, key: null });
+    expect(create).not.toHaveBeenCalled();
+    // someone the same was found, but nobody is there to be asked
+    closed = false;
+    const same = await quickAddParty('customer', { name: 'Mer' }, { closed: () => closed }, { list: async () => { closed = true; return [mer]; }, create, makeKey: () => 'key-1' });
+    expect(same).toEqual({ status: 'closed', party: null, key: null });
+  });
+
+  it('chooses nobody when it was closed while the add was on its way: the party added all the same is handed back as late', async () => {
+    let closed = false;
+    const setWholesale = vi.fn(async () => {});
+    const deps = { list: async () => [] as PartyView[], create: async () => { closed = true; return made; }, makeKey: () => 'key-1', setWholesale };
+    const done = await quickAddParty('customer', { name: 'Raz' }, { closed: () => closed, wholesale: true }, deps);
+    // not "added": the form answers "added" by choosing the party, and the page has moved on
+    expect(done).toEqual({ status: 'closed', party: made, key: null });
+    // nothing more is asked of the server for a form that is gone
+    expect(setWholesale).not.toHaveBeenCalled();
+  });
+
+  it('chooses nobody when it was closed while the price list was being saved', async () => {
+    let closed = false;
+    const deps = { list: async () => [] as PartyView[], create: async () => made, makeKey: () => 'key-1', setWholesale: async () => { closed = true; } };
+    expect(await quickAddParty('customer', { name: 'Raz' }, { closed: () => closed, wholesale: true }, deps)).toEqual({ status: 'closed', party: made, key: null });
+  });
+
+  it('answers as before while the form stays open', async () => {
+    const deps = { list: async () => [] as PartyView[], create: async () => made, makeKey: () => 'key-1' };
+    expect(await quickAddParty('customer', { name: 'Raz' }, { closed: () => false }, deps)).toEqual({ status: 'added', party: made, listSaved: true, key: null });
   });
 });
