@@ -290,7 +290,7 @@ Microsoft Store; a key from the portal works the same in the Store version and t
 ## Trust and security
 
 - **Open source:** the core app, with the rules that post every voucher and invoice, is here under the AGPL. Anyone
-  can read how each dinar is posted. Two parts are not open source: the Pro and Business features are a
+  can read how each dinar is posted. Two parts are not open source: the Starter, Pro and Business features are a
   separate proprietary module (`pro/`, not in this repository), and the compiled licence addon (`native/licence`) is
   proprietary too, all rights reserved by Meroxis ([its LICENSE](native/licence/LICENSE)).
 - **Tested on every change:** the accounting rules, the API and the database upgrades have automated tests, run by
@@ -315,7 +315,7 @@ How the app protects data, and how to report a vulnerability: [SECURITY.md](SECU
 
 Qasa ERP is a product of Meroxis. Its core app (everything in this repository except `native/licence`) is free software
 under the [GNU Affero General Public License v3.0 or later](LICENSE), with the additional terms in [NOTICE](NOTICE):
-copies must keep the "Made with Qasa ERP" credit printed on invoices, unless you have a Pro or Business license from
+copies must keep the "Made with Qasa ERP" credit printed on invoices, unless you have a Starter, Pro or Business license from
 [qasaerp.com](https://qasaerp.com). The name and logo belong to Meroxis.
 
 Not under the AGPL, and not open source: the Pro module (`pro/`, a separate private repository) and the licence addon

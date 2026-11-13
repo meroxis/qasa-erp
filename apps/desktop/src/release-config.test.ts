@@ -333,6 +333,40 @@ describe('the release notes and the Store "What\'s new" of this version', () => 
     expect(store['ku-arab'].features.some((f) => f.startsWith('چوار پلان: بەخۆڕایی، Starter (2 بەکارهێنەر، یەک کۆمپانیا و هەموو تایبەتمەندییەکانی Pro جگە لە Qasa Relay و باکئەپ بۆ هەور)، Pro و Business'))).toBe(true);
   });
 
+  it('marks as (Pro) only what Starter leaves out (Qasa Relay, the cloud backup); what Starter has too is for the paid plans', () => {
+    // why: Starter has these too, so "(Pro)" beside them would tell a Starter buyer they are missing
+    const starter = /STARTER_FEATURES: readonly Feature\[\] = \[([^\]]*)\]/.exec(read('packages/core/src/plans.ts'))?.[1] ?? '';
+    for (const feature of ['officeNetwork', 'installments', 'finalAccountsExport', 'autoBackup', 'pharmacy', 'loyalty', 'noBranding']) expect(starter, feature).toContain(`'${feature}'`);
+    for (const lang of ['en-us', 'ar', 'ku-arab'] as const) {
+      const lines = [...store[lang].description.split('\n'), ...store[lang].features];
+      const pro = lines.filter((line) => line.includes('(Pro)'));
+      expect(pro.length, lang).toBe(4);
+      for (const line of pro) expect(line, lang).toMatch(/Qasa Relay|Google Drive/);
+      for (const feature of store[lang].features) expect(feature.length, lang).toBeLessThanOrEqual(200);
+      expect(store[lang].description.length, lang).toBeLessThanOrEqual(10000);
+    }
+    expect(store['en-us'].description).toContain("a printed contract with the guarantor's pledge (paid plans).");
+    expect(store['en-us'].description).toContain('• Pharmacy (paid plans):');
+    expect(store['en-us'].description).toContain('the office network for several PCs, daily encrypted backups and year-end closing (paid plans);');
+    expect(store['en-us'].features.some((f) => f.endsWith('and loyalty points (paid plans)'))).toBe(true);
+    expect(store.ar.description).toContain('وإقفال السنة (الخطط المدفوعة)،');
+    expect(store.ar.description).toContain('• الصيدلية (الخطط المدفوعة):');
+    expect(store['ku-arab'].description).toContain('داخستنی ساڵ (پلانە پارەدارەکان)،');
+    expect(store['ku-arab'].description).toContain('• دەرمانخانە (پلانە پارەدارەکان):');
+    expect(read('apps/desktop/store-listing.json')).toContain('the optional office network (paid plans) listens on the local network');
+  });
+
+  it('names Starter with Pro and Business where the README and NOTICE say who may remove the credit on invoices', () => {
+    // why: Starter has noBranding too, so the licence texts name all three paid plans
+    const readme = read('README.md');
+    const notice = read('NOTICE');
+    expect(readme).toContain('unless you have a Starter, Pro or Business license from');
+    expect(readme).toContain('the Starter, Pro and Business features are a');
+    expect(notice).toContain('only under a valid Qasa ERP Starter,\n   Pro or Business license obtained from https://qasaerp.com.');
+    expect(notice).toContain('A commercial Starter, Pro or Business license that removes the');
+    expect(readme + notice).not.toMatch(/(?<!Starter,\s+)Pro (or|and) Business (license|features)/);
+  });
+
   it('never says Starter comes with Qasa Relay or the cloud backup', () => {
     const all = [notes, ...Object.values(store).flatMap((l) => [l.releaseNotes, l.description, ...l.features])].join('\n');
     expect(all).not.toMatch(/Starter[^.\n]*\b(with|includes|including) (Qasa Relay|the cloud backup)/i);
