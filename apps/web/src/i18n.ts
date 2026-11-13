@@ -98,7 +98,7 @@ const BASE = {
   f_electricalSolar: ['الكهرباء والطاقة الشمسية: عروض المنظومات والضمان والصيانة', 'Electrical & solar: system quotes, warranty and maintenance', 'کارەبا و وزەی خۆر: نرخی سیستەم، گەرەنتی و چاککردنەوە'],
   bt_generators: ['مولدات أهلية', 'Generator owners', 'مۆلیدەی ئەهلی'],
   bt_generatorsText: ['المشتركون حسب الأمبير، الفاتورة الشهرية، الجباية والديون.', 'Subscribers by amps, the monthly bill, collectors and debts.', 'بەشداربووان بەپێی ئەمپێر، پسوولەی مانگانە، کۆکردنەوە و قەرز.'],
-  gPeople: ['الموظفون', 'People', 'کارمەندان'],
+  gPeople: ['الموظفون', 'Employees', 'کارمەندان'],
   hr: ['الموارد البشرية', 'HR', 'سەرچاوە مرۆییەکان'],
   salaries: ['الرواتب والسلف', 'Salaries & advances', 'مووچە و سولفە'],
   gSystem: ['النظام', 'System', 'سیستەم'],
