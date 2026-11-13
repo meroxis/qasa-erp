@@ -6,6 +6,7 @@ import { api, ApiError, isNetworkError, serverReachable, type InvoiceView, type 
 import { AccountCombo, AmountInput, ErrorBox, Icon, Modal, SearchCombo, useData, useLoad, usePageNav, useToast, type PickOption } from '../components.tsx';
 import { useI18n, type I18n, type Key } from '../i18n.ts';
 import { href } from '../router.ts';
+import { PartyPicker } from '../industry/PartyPicker.tsx';
 import { posApi, type Money2, type PosMethod, type SaleInput, type ShiftReport, type ShiftView } from '../industry/pos-api.ts';
 import { outboxClient, outboxWho, whoKey, type HeldKey } from '../industry/outbox.ts';
 import { useOutbox } from '../industry/OutboxBanner.tsx';
@@ -599,7 +600,9 @@ function Register({ initial, onClosed }: { initial: ShiftView; onClosed(): void 
 
           <div className="pos-pay stack">
             <div className="field"><span>{t('pos_customer')}</span>
-              <SearchCombo value={partyId} options={customerOptions} onChange={setPartyId} placeholder={t('pos_walkIn')} emptyLabel={t('pos_walkIn')} />
+              {/* a customer added here joins the till's own list (kept for when the server can't be reached) */}
+              <PartyPicker type="customer" value={partyId} options={customerOptions} onChange={(v) => setPartyId(v)} placeholder={t('pos_walkIn')} emptyLabel={t('pos_walkIn')}
+                onCreated={(p) => setCustomers((list) => { const next = list.some((x) => x.id === p.id) ? list : [...list, p]; rememberTill(tillWho(), { customers: next }); return next; })} />
             </div>
             <LoyaltyUse partyId={partyId} total={total} currency={currency} value={points.points} onChange={(n, v) => setPoints({ points: n, value: v })} />
             <div className="grid-2">

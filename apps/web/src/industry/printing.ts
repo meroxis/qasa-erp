@@ -78,6 +78,25 @@ export function afterPaint(pauseMs = 120): Promise<void> {
   });
 }
 
+/**
+ * Resolves once nothing has been waiting on the server for a moment (true), or after `maxMs` at the latest (false). A
+ * paper put on the page a moment ago (the invoice just posted) still asks for its design, its QR code or the customer's
+ * balance: it is printed once those have arrived, and without them rather than never.
+ */
+export async function whenQuiet(pending: () => number, opts: { quietMs?: number; maxMs?: number; stepMs?: number; wait?: (ms: number) => Promise<void> } = {}): Promise<boolean> {
+  const quietMs = opts.quietMs ?? 150;
+  const maxMs = opts.maxMs ?? 6_000;
+  const stepMs = opts.stepMs ?? 50;
+  const wait = opts.wait ?? ((ms: number) => new Promise<void>((resolve) => { setTimeout(resolve, ms); }));
+  let quiet = 0;
+  for (let waited = 0; waited < maxMs; waited += stepMs) {
+    quiet = pending() > 0 ? 0 : quiet + stepMs;
+    if (quiet > quietMs) return true;
+    await wait(stepMs);
+  }
+  return false;
+}
+
 export interface PrintEnv {
   desktop: DesktopPrinters | null;
   /** the print window (window.print) */

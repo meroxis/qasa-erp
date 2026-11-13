@@ -499,7 +499,9 @@ export function apiRoutes(db: Db, options: { demo?: boolean; extensions?: readon
   app.get('/api/parties/:id', async (req) => getParty(db, parse(idParam, req.params).id, branchOfUser(req)));
   app.post('/api/parties', async (req, reply) => {
     const { type, ...input } = parse(partySchema.extend({ type: z.enum(['customer', 'supplier']) }), req.body);
-    return reply.status(201).send(createParty(db, type, withoutUndefined(input), userOf(req)));
+    // the quick add in a picker sends a key: a try whose answer was lost and is sent again makes the party once
+    return reply.status(201).send(once(req, reply, 'POST /api/parties',
+      () => createParty(db, type, withoutUndefined(input), userOf(req)), (id) => getParty(db, id, branchOfUser(req))));
   });
   app.put('/api/parties/:id', async (req) => {
     const { id } = parse(idParam, req.params);

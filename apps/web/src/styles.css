@@ -730,6 +730,64 @@ input.input, select.input { block-size: var(--control-h); padding-block: 0; }
 .combo-list li[aria-selected='true'] { background: var(--accent-soft); }
 .combo-list .code { min-inline-size: 44px; font-family: var(--font-num); font-weight: 600; color: var(--accent-text); direction: ltr; unicode-bidi: isolate; }
 
+/* a picker that can add someone new: the "+" inside the box (at its end, in either direction) and the list's "add" row */
+.combo.can-add > .input { padding-inline-end: 38px; }
+.combo-add {
+  position: absolute; inset-block-start: 3px; inset-inline-end: 3px; display: inline-grid; place-items: center;
+  inline-size: calc(var(--control-h) - 6px); block-size: calc(var(--control-h) - 6px); padding: 0;
+  border: none; border-radius: var(--r-control); background: transparent; color: var(--accent-text); cursor: pointer;
+}
+.combo-add:hover { background: var(--subtle-hover); }
+.combo-add:active { background: var(--subtle-press); }
+.combo-list li.combo-add-row { color: var(--accent-text); font-weight: 600; }
+.combo-list li.combo-add-row:not(:first-child) { margin-block-start: var(--sp-1); border-block-start: 1px solid var(--line); border-start-start-radius: 0; border-start-end-radius: 0; }
+.combo-list li.combo-add-row svg { flex-shrink: 0; }
+
+/* the small form under the box that adds a customer or supplier without leaving the page */
+.party-picker { position: relative; }
+.quick-add {
+  position: absolute; inset-inline-start: 0; inset-block-start: calc(100% + 4px); z-index: 40;
+  display: flex; flex-direction: column; gap: var(--sp-3); inline-size: max(100%, 380px); max-inline-size: min(460px, calc(100vw - 32px));
+  padding: var(--sp-3) var(--sp-4) var(--sp-4); text-align: start; font-weight: 400;
+  background: var(--flyout-bg); border: 1px solid var(--flyout-stroke); border-radius: var(--r-overlay); box-shadow: var(--shadow-flyout);
+  animation: flyout-in var(--dur) var(--ease);
+}
+.quick-add-head { display: flex; align-items: center; justify-content: space-between; gap: var(--sp-2); }
+.quick-add-head strong { font-size: 15px; }
+.quick-add-problem { color: var(--bad); }
+.quick-add-same ul { margin: var(--sp-2) 0; padding: 0; list-style: none; display: grid; gap: var(--sp-2); }
+.quick-add-same li { display: flex; align-items: center; justify-content: space-between; gap: var(--sp-2); flex-wrap: wrap; }
+.quick-add-who { min-inline-size: 0; }
+
+/* ---------- split button: one main way and a menu of the others ---------- */
+.split-btn { display: inline-flex; }
+.split-btn .split-main { border-start-end-radius: 0; border-end-end-radius: 0; }
+.split-btn .split-main:only-child { border-radius: var(--r-control); }
+.split-btn .split-main kbd {
+  margin-inline-start: var(--sp-1); padding: 0 5px; border: 1px solid color-mix(in srgb, currentColor 45%, transparent); border-radius: 4px;
+  font-family: var(--font-num); font-size: 11px; font-weight: 600; line-height: 1.5; opacity: 0.9;
+}
+.split-btn .split-arrow {
+  inline-size: 30px; padding: 0; border-start-start-radius: 0; border-end-start-radius: 0;
+  border-inline-start: 1px solid color-mix(in srgb, var(--on-accent) 35%, transparent);
+}
+.split-btn .menu { inline-size: min(360px, calc(100vw - 32px)); inset-inline: 0 auto; }
+.menu.up { inset-block-start: auto; inset-block-end: calc(100% + 6px); }
+.split-btn .menu-item { align-items: flex-start; block-size: auto; padding-block: 7px; text-align: start; }
+.split-btn .menu-item svg { margin-block-start: 3px; }
+.split-btn .menu-item[aria-checked='true'] { background: var(--accent-soft); font-weight: 600; }
+.split-btn .menu-item[aria-checked='true'] .small { font-weight: 400; }
+.split-item { display: flex; flex-direction: column; gap: 1px; min-inline-size: 0; }
+.split-note { padding: var(--sp-1) var(--sp-3) var(--sp-2); }
+
+/* the invoice editor: its buttons stay in reach under a long invoice, and the bar naming the invoice saved last */
+.editor-actions {
+  position: sticky; inset-block-end: 0; z-index: 20; margin-inline: calc(-1 * var(--sp-2)); padding: var(--sp-3) var(--sp-2);
+  background: color-mix(in srgb, var(--surface) 92%, transparent); backdrop-filter: blur(6px); border-block-start: 1px solid var(--line); border-radius: var(--r-md) var(--r-md) 0 0;
+}
+.saved-strip { display: flex; align-items: center; gap: var(--sp-2); flex-wrap: wrap; }
+.saved-strip .spacer { flex: 1; }
+
 /* ---------- dialog ---------- */
 .backdrop { position: fixed; inset: 0; z-index: 100; display: flex; align-items: center; justify-content: center; padding: var(--sp-4); background: var(--scrim); }
 .modal {

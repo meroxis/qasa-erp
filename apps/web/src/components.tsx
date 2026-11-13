@@ -1,6 +1,6 @@
-import { createContext, useCallback, useContext, useEffect, useId, useMemo, useRef, useState, type ReactNode } from 'react';
+import { createContext, useCallback, useContext, useEffect, useId, useMemo, useRef, useState, type ReactNode, type RefObject } from 'react';
 import { formatQty, htmlLang, normalizeForSearch, parseAmount, parseQty, formatAmount, stripBidiIsolates, type CurrencyCode, type EntryStatus, type EntryType, type InvoiceStatus, type Lang } from '@qasa/core';
-import { ApiError, onBusyChange, type AccountView, type PlanStatus, type Settings } from './api.ts';
+import { ApiError, onBusyChange, type AccountView, type Permission, type PlanStatus, type Settings } from './api.ts';
 import { isKey, useI18n, type I18n, type Key } from './i18n.ts';
 
 /* ---------- shared data ---------- */
@@ -13,6 +13,10 @@ export interface AppData {
   online: boolean;
   /** false for someone limited to branches: no links to the trial balance, final accounts or account statements */
   companyBooks?: boolean;
+  /** what the person signed in may change (the server refuses the rest anyway): buttons they can't use stay hidden */
+  permissions?: readonly Permission[];
+  /** who is signed in, for what the app remembers per person on this PC (their usual way of saving an invoice) */
+  userKey?: string;
   reloadAccounts(): Promise<void>;
   reloadSettings(): Promise<void>;
   reloadPlan(): Promise<void>;
@@ -377,7 +381,33 @@ export interface PickOption {
   search?: string;
 }
 
-export function SearchCombo({ value, options, onChange, placeholder, ariaLabel, invalid, emptyLabel }: {
+/**
+ * Adding someone new from inside a picker (industry/PartyPicker.tsx): a "+" in the box, and a row in the list that
+ * adds what was typed. `label` names that row ("Add “Mer” as a new customer"; with nothing typed, "Add a new customer").
+ */
+export interface ComboAdd { title: string; label(typed: string): string; onAdd(typed: string): void }
+
+/** The id of the list's "add what I typed" row: never an option's own id. */
+export const COMBO_ADD_ROW = '\u0000add';
+
+/**
+ * The rows of a picker's list for what was typed: the options that match (at most 80), the "none" choice first while
+ * nothing is typed, and with `canAdd` the row that adds a new one: first (so Enter picks it) when the typed text
+ * matches nobody, last otherwise, and left out when an option has exactly that name.
+ */
+export function comboRows(options: readonly PickOption[], query: string, opts: { emptyLabel?: string | undefined; canAdd?: boolean | undefined; addLabel?: ((typed: string) => string) | undefined } = {}): PickOption[] {
+  const q = normalizeForSearch(query);
+  const found = q ? options.filter((o) => normalizeForSearch(`${o.code} ${o.label} ${o.search ?? ''}`).includes(q)) : options;
+  const list = found.slice(0, 80);
+  const rows = opts.emptyLabel !== undefined && !q ? [{ id: '', code: '', label: opts.emptyLabel }, ...list] : [...list];
+  if (!opts.canAdd) return rows;
+  const typed = query.trim();
+  if (q && found.some((o) => normalizeForSearch(o.label) === q)) return rows;
+  const add: PickOption = { id: COMBO_ADD_ROW, code: '', label: opts.addLabel ? opts.addLabel(typed) : typed };
+  return q && found.length === 0 ? [add] : [...rows, add];
+}
+
+export function SearchCombo({ value, options, onChange, placeholder, ariaLabel, invalid, emptyLabel, add, inputRef }: {
   value: string;
   options: PickOption[];
   onChange(id: string): void;
@@ -386,6 +416,10 @@ export function SearchCombo({ value, options, onChange, placeholder, ariaLabel, 
   invalid?: boolean;
   /** When set, the list starts with a "none" choice with this label. */
   emptyLabel?: string;
+  /** When set, someone new can be added from the picker itself. */
+  add?: ComboAdd | undefined;
+  /** The box itself, for a page that puts the cursor in it. */
+  inputRef?: RefObject<HTMLInputElement | null> | undefined;
 }) {
   const i18n = useI18n();
   const listId = useId();
@@ -393,22 +427,29 @@ export function SearchCombo({ value, options, onChange, placeholder, ariaLabel, 
   const [query, setQuery] = useState('');
   const [active, setActive] = useState(0);
   const selected = options.find((o) => o.id === value);
-  const matches = useMemo(() => {
-    const q = normalizeForSearch(query);
-    const found = q ? options.filter((o) => normalizeForSearch(`${o.code} ${o.label} ${o.search ?? ''}`).includes(q)) : options;
-    const list = found.slice(0, 80);
-    return emptyLabel !== undefined && !q ? [{ id: '', code: '', label: emptyLabel }, ...list] : list;
-  }, [options, query, emptyLabel]);
+  const matches = useMemo(
+    () => comboRows(options, query, { emptyLabel, canAdd: !!add, addLabel: add?.label }),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [options, query, emptyLabel, !!add]
+  );
 
   const pick = (id: string) => {
+    if (id === COMBO_ADD_ROW) {
+      const typed = query.trim();
+      setOpen(false);
+      setQuery('');
+      add?.onAdd(typed);
+      return;
+    }
     onChange(id);
     setOpen(false);
     setQuery('');
   };
 
   return (
-    <div className="combo">
+    <div className={'combo' + (add ? ' can-add' : '')}>
       <input
+        ref={inputRef}
         className={'input' + (invalid ? ' invalid' : '')}
         role="combobox"
         aria-expanded={open}
@@ -421,22 +462,110 @@ export function SearchCombo({ value, options, onChange, placeholder, ariaLabel, 
         onChange={(e) => { setQuery(e.target.value); setActive(0); setOpen(true); }}
         onKeyDown={(e) => {
           if (e.key === 'ArrowDown') { e.preventDefault(); setActive((i) => Math.min(i + 1, matches.length - 1)); }
-          else if (e.key === 'ArrowUp') { e.preventDefault(); setActive((i) => Math.max(i - 1, 0)); }
+          // with an "add" row at the end, Up from the first row reaches it
+          else if (e.key === 'ArrowUp') { e.preventDefault(); setActive((i) => (i === 0 && add ? matches.length - 1 : Math.max(i - 1, 0))); }
           else if (e.key === 'Enter' && open && matches[active]) { e.preventDefault(); pick(matches[active]!.id); }
           else if (e.key === 'Escape') setOpen(false);
         }}
       />
+      {add && (
+        // not a tab stop of its own (Tab goes on to the next field): from the keyboard, the list's "add" row does the same
+        <button type="button" className="combo-add" tabIndex={-1} title={add.title} aria-label={add.title}
+          onMouseDown={(e) => e.preventDefault()}
+          onClick={() => { const typed = open ? query.trim() : ''; setOpen(false); setQuery(''); add.onAdd(typed); }}>
+          <Icon name="plus" size={16} />
+        </button>
+      )}
       {open && (
         <ul className="combo-list" id={listId} role="listbox">
           {matches.length === 0 && <li className="muted">{i18n.t('noMatch')}</li>}
           {matches.map((o, i) => (
-            <li key={o.id || 'none'} role="option" aria-selected={i === active} onMouseDown={(e) => { e.preventDefault(); pick(o.id); }} onMouseEnter={() => setActive(i)}>
+            <li key={o.id || 'none'} role="option" aria-selected={i === active} className={o.id === COMBO_ADD_ROW ? 'combo-add-row' : undefined}
+              onMouseDown={(e) => { e.preventDefault(); pick(o.id); }} onMouseEnter={() => setActive(i)}>
+              {o.id === COMBO_ADD_ROW && <Icon name="plus" size={15} />}
               {o.code && <span className="code">{o.code}</span>}
               <span style={{ flex: 1 }}>{o.label}</span>
               {o.hint && <span className="muted small num">{o.hint}</span>}
             </li>
           ))}
         </ul>
+      )}
+    </div>
+  );
+}
+
+/* ---------- split button ---------- */
+
+export interface SplitChoice { key: string; label: string; hint?: string; icon?: string }
+
+/**
+ * A primary button with a menu of its other ways: the main part does `current`, the arrow opens the list of all of
+ * them (the current one ticked). Picking one from the list does it at once; the page remembers it as the main one.
+ */
+export function SplitButton({ choices, current, onRun, disabled, busyLabel, menuLabel, shortcut, note }: {
+  choices: readonly SplitChoice[];
+  current: string;
+  onRun(key: string): void;
+  disabled?: boolean;
+  /** shown on the main part while it works */
+  busyLabel?: string | undefined;
+  menuLabel: string;
+  /** the key that presses the main part (shown beside its label, e.g. "F9") */
+  shortcut?: string | undefined;
+  /** a line under the list (e.g. that the main button remembers the last choice) */
+  note?: string | undefined;
+}) {
+  const [open, setOpen] = useState(false);
+  const box = useRef<HTMLDivElement>(null);
+  const arrow = useRef<HTMLButtonElement>(null);
+  const menuId = useId();
+  useEffect(() => {
+    if (!open || typeof document === 'undefined') return;
+    const outside = (e: PointerEvent) => { if (!box.current?.contains(e.target as Node)) setOpen(false); };
+    const key = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') { setOpen(false); arrow.current?.focus(); return; }
+      if (e.key !== 'ArrowDown' && e.key !== 'ArrowUp') return;
+      const items = [...(box.current?.querySelectorAll<HTMLButtonElement>('.menu-item') ?? [])];
+      if (!items.length) return;
+      e.preventDefault();
+      const at = items.indexOf(document.activeElement as HTMLButtonElement);
+      const next = e.key === 'ArrowDown' ? (at + 1) % items.length : (at <= 0 ? items.length - 1 : at - 1);
+      items[next]?.focus();
+    };
+    document.addEventListener('pointerdown', outside);
+    document.addEventListener('keydown', key);
+    box.current?.querySelector<HTMLButtonElement>('.menu-item[aria-checked="true"], .menu-item')?.focus();
+    return () => {
+      document.removeEventListener('pointerdown', outside);
+      document.removeEventListener('keydown', key);
+    };
+  }, [open]);
+  const main = choices.find((c) => c.key === current) ?? choices[0];
+  if (!main) return null;
+  return (
+    <div className="split-btn menu-anchor" ref={box}>
+      <button type="button" className="btn primary split-main" disabled={disabled} title={main.hint} aria-keyshortcuts={shortcut} onClick={() => onRun(main.key)}>
+        <Icon name={main.icon ?? 'check'} size={16} />
+        <span>{disabled && busyLabel ? busyLabel : main.label}</span>
+        {shortcut && <kbd className="ltr">{shortcut}</kbd>}
+      </button>
+      {choices.length > 1 && (
+        <button ref={arrow} type="button" className="btn primary split-arrow" disabled={disabled} aria-haspopup="menu" aria-expanded={open} aria-controls={menuId}
+          aria-label={menuLabel} title={menuLabel} onClick={() => setOpen(!open)}>
+          <Icon name="chevronDown" size={14} />
+        </button>
+      )}
+      {open && (
+        <div className="menu up" id={menuId} role="menu" aria-label={menuLabel}>
+          {choices.map((c) => (
+            <button key={c.key} type="button" className="menu-item" role="menuitemradio" aria-checked={c.key === main.key}
+              onClick={() => { setOpen(false); onRun(c.key); }}>
+              <Icon name={c.key === main.key ? 'check' : c.icon ?? 'circle'} size={16} />
+              <span className="split-item"><span>{c.label}</span>{c.hint && <span className="muted small">{c.hint}</span>}</span>
+            </button>
+          ))}
+          {note && <><div className="menu-sep" /><div className="muted small split-note">{note}</div></>}
+        </div>
       )}
     </div>
   );

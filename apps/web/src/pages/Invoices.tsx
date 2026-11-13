@@ -6,9 +6,10 @@ import {
   amountInWords, fromBaseQty, invoiceTotals, remainingShare, rateFromX100, roundHalfUp, toBase, toBaseQty, todayIso, toWesternDigits,
   type CurrencyCode, type InvoiceDocKind, type InvoiceInput, type InvoiceKind, type InvoiceStatus, type PaymentMode
 } from '@qasa/core';
-import { api, ApiError, type InvoiceView, type ItemView } from '../api.ts';
+import { api, ApiError, pendingRequests, type InvoiceView, type ItemView } from '../api.ts';
 import {
-  AccountCombo, AmountInput, EmptyState, ErrorBox, Icon, InvoiceStatusChip, Modal, QtyInput, SearchCombo, useData, useLoad, usePageNav, useToast, type PageNav, type PickOption
+  AccountCombo, AmountInput, EmptyState, ErrorBox, Icon, InvoiceStatusChip, Modal, QtyInput, SearchCombo, SplitButton, useData, useLoad, usePageNav, useToast,
+  type PageNav, type PickOption, type SplitChoice
 } from '../components.tsx';
 import { isKey, useI18n, type Key } from '../i18n.ts';
 import { go, href } from '../router.ts';
@@ -19,9 +20,11 @@ import { pricesApi } from '../industry/prices-api.ts';
 import { DesignedPrint } from '../industry/PrintDocument.tsx';
 import { invoiceModel } from '../industry/print-model.ts';
 import { useRatePrefill } from '../industry/fx-prefill.ts';
-import { InvoiceWhatsApp } from '../industry/WhatsAppShare.tsx';
+import { InvoiceWhatsApp, sendOnWhatsAppOnOpen } from '../industry/WhatsAppShare.tsx';
 import { reverseDefaultDate } from '../industry/ReverseModal.tsx';
-import { printDocument } from '../industry/printing.ts';
+import { afterPaint, printDocument, whenQuiet, type PrintResult } from '../industry/printing.ts';
+import { PartyPicker } from '../industry/PartyPicker.tsx';
+import { mayPostInvoice, printedOk, rememberChoice, rememberedChoice, runSaveFlow, saveChoices, type SaveChoice } from '../industry/save-flow.ts';
 import { baseQty, factorOf, holdsText, salePriceFor, unitChoices, unitLabel, type LineUnit } from '../industry/units.ts';
 import { BatchInFields, BatchPick, useExpiredConfirm } from '../industry/BatchFields.tsx';
 import { askControlledOnOpen, RxTick, useControlledPrompt, usePharmacyOn, useRxItems } from '../industry/PharmacyPrompts.tsx';
@@ -88,11 +91,28 @@ function convert(amount: number, from: CurrencyCode, to: CurrencyCode, rateX100:
   return from === 'USD' ? toBase(amount, 'USD', rateX100) : roundHalfUp((amount * 10000) / rateX100);
 }
 
+/** The invoice saved last, kept on the page after "… and next": named in a bar, and still printable. */
+interface SavedPaper { view: InvoiceView; printed: PrintResult | null; held?: boolean }
+
+// "… and next" from a draft opened for editing goes to the new-invoice page: that page shows what was saved last
+// (read when it opens, forgotten once it has opened)
+let handover: SavedPaper | null = null;
+
+/** How each way of saving reads on the button, with the line that says what it does. */
+const SAVE_LABEL: Record<SaveChoice, { label: Key; hint: Key; icon: string }> = {
+  print_next: { label: 'sv_print_next', hint: 'sv_hint_print_next', icon: 'printer' },
+  print: { label: 'sv_print', hint: 'sv_hint_print', icon: 'printer' },
+  next: { label: 'sv_next', hint: 'sv_hint_next', icon: 'invoice' },
+  whatsapp: { label: 'sv_whatsapp', hint: 'sv_hint_whatsapp', icon: 'phone' },
+  post: { label: 'actPost', hint: 'sv_hint_post', icon: 'check' },
+  draft: { label: 'saveDraft', hint: 'sv_hint_draft', icon: 'doc' }
+};
+
 export function InvoiceEditor({ kind: initialKind, id, partyId: initialParty }: { kind?: InvoiceKind; id?: string; partyId?: string }) {
   const i18n = useI18n();
   const { t } = i18n;
   const toast = useToast();
-  const { settings, reloadAccounts } = useData();
+  const { settings, reloadAccounts, permissions, userKey } = useData();
   const [kind, setKind] = useState<InvoiceKind>(initialKind ?? 'sale');
   const [savedId, setSavedId] = useState<string | undefined>(id);
   const [ready, setReady] = useState(!id);
@@ -114,6 +134,18 @@ export function InvoiceEditor({ kind: initialKind, id, partyId: initialParty }: 
   const [error, setError] = useState<unknown>(null);
   const expired = useExpiredConfirm();
   const rxItems = useRxItems(usePharmacyOn() && kind === 'sale');
+  // a sale posted with "… and next" stays on this page: its controlled medicines are asked for here
+  const controlled = useControlledPrompt();
+  // the invoice saved last (after "… and next"), and the one being printed: its paper is in the print-only area
+  const [paper, setPaper] = useState<SavedPaper | null>(() => (id ? null : handover));
+  const [printing, setPrinting] = useState(false);
+  // the way of saving picked in this visit; before that, the one this person used last
+  const [way, setWay] = useState<SaveChoice | null>(null);
+  // one save at a time, also when F9 is pressed twice before the page has drawn "saving"
+  const running = useRef(false);
+  const partyBox = useRef<HTMLInputElement | null>(null);
+  // a fresh invoice opened by "… and next": the cursor starts in the customer box
+  const focusParty = useRef(!id && !!paper);
 
   const partyType = kind === 'sale' ? 'customer' : 'supplier';
   const parties = useLoad(() => api.parties({ type: partyType, active: 'true' }), [partyType]);
@@ -259,50 +291,165 @@ export function InvoiceEditor({ kind: initialKind, id, partyId: initialParty }: 
     };
   }
 
-  async function save(post: boolean) {
+  const canPost = mayPostInvoice(permissions, kind);
+  const offered = saveChoices(kind, canPost);
+  const who = userKey ?? '';
+  const current: SaveChoice = way && offered.includes(way) ? way : rememberedChoice(who, kind, offered);
+  const choices: SplitChoice[] = offered.map((c) => ({
+    key: c, label: t(SAVE_LABEL[c].label), icon: SAVE_LABEL[c].icon,
+    hint: t(c === 'next' && !canPost ? 'sv_hint_next_draft' : SAVE_LABEL[c].hint)
+  }));
+
+  /** Puts the posted invoice on paper: first on the page (print-only), then, once its design and QR code are there, to the printer. */
+  async function printPaper(view: InvoiceView): Promise<PrintResult> {
+    setPrinting(true);
+    setPaper({ view, printed: null });
+    await afterPaint();
+    await whenQuiet(pendingRequests);
+    await afterPaint(60);
+    return printDocument('invoice');
+  }
+
+  /** A fresh empty invoice on this same page, the cursor in the customer box; the warehouse, currency and date stay. */
+  function startNext(last: SavedPaper) {
+    if (id) {
+      // a draft opened for editing: the next one is a new invoice, on the new-invoice page
+      handover = last;
+      go(`new-invoice/${kind}`);
+      return;
+    }
+    setPaper(last);
+    setSavedId(undefined);
+    setPartyId('');
+    setPayment(kind === 'purchase' ? 'credit' : 'cash');
+    setDiscount(null);
+    setNotes('');
+    setRows([emptyRow()]);
+    autoPrices.current.clear();
+    // the stock and the balances just changed
+    items.reload();
+    parties.reload();
+    if (typeof window !== 'undefined') window.setTimeout(() => partyBox.current?.focus(), 0);
+  }
+
+  /**
+   * One way of saving (industry/save-flow.ts): the invoice is posted exactly as before (the same question, the same
+   * checks, the same refusals), then printed, then the next one opens. A refusal leaves the invoice open with the reason.
+   */
+  async function run(chosen: SaveChoice) {
+    if (busy || running.current || !offered.includes(chosen)) return;
     const body = input();
     if (!body) return;
-    if (post && !window.confirm(t('postConfirm'))) return;
+    running.current = true;
+    // the way used last is the main button's from now on, for this person on this PC
+    setWay(chosen);
+    rememberChoice(who, kind, chosen);
     setBusy(true);
     setError(null);
     try {
-      const saved = savedId ? await api.updateInvoice(savedId, body) : await api.createInvoice(body);
-      setSavedId(saved.id);
-      if (post) {
-        try {
-          await api.postInvoice(saved.id);
-        } catch (e) {
-          // stock past its expiry date: the company may allow it after the user confirms (written to the audit log)
-          if (!(await expired.ask(e))) throw e;
-          await api.postInvoice(saved.id, { allowExpired: true });
-        }
-        await reloadAccounts();
-        toast(t('a_post'));
-        // controlled medicines sold: their page asks for the patient and the prescription
-        if (kind === 'sale') askControlledOnOpen(saved.id);
-      } else {
-        toast(t('saved'));
+      const done = await runSaveFlow<InvoiceView>(chosen, canPost, {
+        confirmPost: () => window.confirm(t('postConfirm')),
+        saveDraft: () => (savedId ? api.updateInvoice(savedId, body) : api.createInvoice(body)),
+        onDraft: (saved) => setSavedId(saved.id),
+        post: async (saved) => {
+          try {
+            return await api.postInvoice(saved.id);
+          } catch (e) {
+            // stock past its expiry date: the company may allow it after the user confirms (written to the audit log)
+            if (!(await expired.ask(e))) throw e;
+            return api.postInvoice(saved.id, { allowExpired: true });
+          }
+        },
+        afterPost: () => reloadAccounts(),
+        print: printPaper
+      });
+      if (done.status === 'cancelled') return;
+      const saved = done.invoice;
+      if (done.status === 'draft') {
+        toast(done.held ? t('sv_onlyDraft') : t('saved'));
+        if (done.next) startNext({ view: saved, printed: null, held: done.held });
+        else go(`invoice/${saved.id}`);
+        return;
       }
+      const unprinted = done.printed !== null && !printedOk(done.printed);
+      // a paper that did not print never undoes the posting: the person is told, and can print it again
+      toast(unprinted ? t('sv_notPrinted', { n: saved.number ?? '' }) : t('a_post'));
+      if (done.next) {
+        // controlled medicines sold: the patient and the prescription are asked for here, the page stays
+        if (kind === 'sale') controlled.check(saved.id);
+        startNext({ view: saved, printed: done.printed });
+        return;
+      }
+      // controlled medicines sold: their page asks for the patient and the prescription
+      if (kind === 'sale') askControlledOnOpen(saved.id);
+      if (done.whatsapp) sendOnWhatsAppOnOpen(saved.id);
       go(`invoice/${saved.id}`);
     } catch (e) {
       setError(e);
     } finally {
+      running.current = false;
       setBusy(false);
+      setPrinting(false);
     }
   }
+
+  // F9 presses the main button, wherever the cursor is (not while a dialog is open)
+  const runMain = useRef<() => void>(() => {});
+  runMain.current = () => { void run(current); };
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== 'F9' || e.repeat || e.ctrlKey || e.altKey || e.metaKey) return;
+      e.preventDefault();
+      if (!document.querySelector('.backdrop')) runMain.current();
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, []);
+  useEffect(() => {
+    handover = null;
+  }, []);
+  useEffect(() => {
+    if (focusParty.current && ready) { focusParty.current = false; partyBox.current?.focus(); }
+  }, [ready]);
 
   if (loadError) return <ErrorBox error={loadError} />;
   if (!ready) return null;
 
+  const lastUnprinted = !!paper && paper.printed !== null && !printedOk(paper.printed);
+  const printLast = async () => {
+    const printed = await printDocument('invoice');
+    setPaper((p) => (p ? { ...p, printed } : p));
+  };
+
   return (
-    <div className="stack" style={{ maxWidth: 1180 }}>
+    // with a saved invoice's paper on the page, printing prints that paper and nothing of the form
+    <div className={'stack' + (paper ? ' no-print-content' : '')} style={{ maxWidth: 1180 }}>
       {expired.dialog}
+      {controlled.dialog}
+      {/* printed with the company's print design, like the invoice's own page */}
+      {paper && <DesignedPrint model={invoiceModel(paper.view)} balanceOf={paper.view.partyId && paper.view.status === 'posted' ? { partyId: paper.view.partyId, date: paper.view.date } : null} />}
+      {paper && !busy && (
+        <div className={'alert saved-strip ' + (lastUnprinted ? 'warn' : 'ok')} role="status">
+          <span>
+            {paper.view.status === 'posted'
+              ? t(lastUnprinted ? 'sv_notPrinted' : 'sv_lastPosted', { n: paper.view.number ?? '' })
+              : paper.held ? t('sv_onlyDraft') : t('sv_lastDraft')}
+            <span className="muted"> · {paper.view.partyName ?? (paper.view.kind === 'sale' ? t('walkIn') : '')} · {i18n.money(paper.view.total, paper.view.currency)}</span>
+          </span>
+          <span className="spacer" />
+          <a className="btn small" href={href(`invoice/${paper.view.id}`)}>{t('sv_open')}</a>
+          <button type="button" className="btn small" onClick={printLast}><Icon name="printer" size={15} />{t('print')}</button>
+          <button type="button" className="btn icon subtle small" aria-label={t('sv_hide')} title={t('sv_hide')} onClick={() => setPaper(null)}><Icon name="x" size={15} /></button>
+        </div>
+      )}
       <div className="card pad stack">
         <h2 style={{ fontSize: 18 }}>{savedId ? `${t('editTitle')} — ${t(kind)}` : t(kind)}</h2>
         <div className="grid-3">
           <div className="field">
             <span>{kind === 'sale' ? t('customer') : t('supplier')}</span>
-            <SearchCombo value={partyId} options={partyOptions} onChange={(v) => { setPartyId(v); if (!v) setPayment('cash'); }}
+            <PartyPicker type={partyType} value={partyId} options={partyOptions} inputRef={partyBox}
+              onChange={(v) => { setPartyId(v); if (!v) setPayment('cash'); }} onCreated={() => parties.reload()}
               placeholder={kind === 'sale' ? t('chooseCustomer') : t('chooseSupplier')} {...(kind === 'sale' ? { emptyLabel: t('walkIn') } : {})} />
           </div>
           <label className="field"><span>{t('date')}</span><input className="input" type="date" value={date} onChange={(e) => setDate(e.target.value)} /></label>
@@ -418,10 +565,11 @@ export function InvoiceEditor({ kind: initialKind, id, partyId: initialParty }: 
       <label className="field"><span>{t('notes')}</span><input className="input" value={notes} onChange={(e) => setNotes(e.target.value)} /></label>
 
       <ErrorBox error={error} />
-      <div className="row">
-        <button type="button" className="btn primary" onClick={() => save(true)} disabled={busy}><Icon name="check" size={16} />{t('actPost')}</button>
-        <button type="button" className="btn" onClick={() => save(false)} disabled={busy}>{busy ? t('saving') : t('saveDraft')}</button>
+      <div className="row editor-actions">
+        <SplitButton choices={choices} current={current} onRun={(key) => run(key as SaveChoice)} disabled={busy}
+          busyLabel={printing ? t('sv_printing') : t('saving')} menuLabel={t('sv_more')} shortcut="F9" note={t('sv_remembered')} />
         <button type="button" className="btn" onClick={() => history.back()}>{t('cancel')}</button>
+        {!canPost && <span className="muted small">{t('sv_onlyDraft')}</span>}
       </div>
     </div>
   );

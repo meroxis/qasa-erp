@@ -67,6 +67,21 @@ export function receiptMessage(i18n: I18n, company: string, r: {
   ].filter(Boolean).join('\n');
 }
 
+// a sale posted from the invoice editor with "Save and send on WhatsApp": its page opens the dialog (once)
+let sendOnOpen: string | null = null;
+
+/** The invoice editor posted sale `invoiceId` and goes to its page: the page opens the send on WhatsApp dialog. */
+export function sendOnWhatsAppOnOpen(invoiceId: string): void {
+  sendOnOpen = invoiceId;
+}
+
+/** Whether this invoice's page was asked to open the dialog; asked once, then forgotten. */
+export function takeSendOnOpen(invoiceId: string): boolean {
+  if (sendOnOpen !== invoiceId) return false;
+  sendOnOpen = null;
+  return true;
+}
+
 /** For an invoice page: sale invoices only, with the verify link once posted, sent with the invoice as a PDF. */
 export function InvoiceWhatsApp({ invoice: v }: {
   /** the company's name in the app's language (the message uses the customer's) */
@@ -79,6 +94,7 @@ export function InvoiceWhatsApp({ invoice: v }: {
   const i18n = useI18n();
   const names = useCompanyNames();
   const [verify, setVerify] = useState<string | null>(null);
+  const [startOpen] = useState(() => takeSendOnOpen(v.id));
   const posted = v.kind === 'sale' && v.status === 'posted';
   useEffect(() => {
     if (!posted) return;
@@ -89,7 +105,7 @@ export function InvoiceWhatsApp({ invoice: v }: {
   }, [v.id, posted, i18n.lang]);
   const message = useCallback((m: I18n) => withAttachment(m, withVerifyLink(m, invoiceMessage(m, m.name(names), v), verify)), [names, v, verify]);
   if (v.kind !== 'sale' || v.status === 'draft') return null;
-  return <WhatsAppSendButton kind="invoice" docRef={v.number ?? v.id} phone={v.partyPhone} lang={v.partyLang} message={message} />;
+  return <WhatsAppSendButton kind="invoice" docRef={v.number ?? v.id} phone={v.partyPhone} lang={v.partyLang} message={message} startOpen={startOpen} />;
 }
 
 /** For a customer's or supplier's statement: the closing balance, sent with the statement as a PDF. */
