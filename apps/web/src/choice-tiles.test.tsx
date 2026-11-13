@@ -121,12 +121,25 @@ describe('ChoiceTiles', () => {
 
   it('is styled as rectangles at least 104 by 72, the chosen one with the accent border, in contrast themes too', () => {
     const css = readFileSync(new URL('./styles.css', import.meta.url), 'utf8');
-    expect(css).toMatch(/\.choice-tile \{[^}]*min-inline-size: 104px;[^}]*min-block-size: 72px;/);
+    const [, wide, high] = /\.choice-tile \{[^}]*min-inline-size: (\d+)px;[^}]*min-block-size: (\d+)px;/.exec(css) ?? [];
+    expect(Number(wide)).toBeGreaterThanOrEqual(104);
+    expect(Number(high)).toBeGreaterThanOrEqual(72);
     expect(css).toMatch(/\.choice-tile\[aria-checked='true'\] \{ border-color: var\(--accent\);/);
     expect(css).toMatch(/\.choice-check \{[^}]*background: var\(--accent\); color: var\(--on-accent\);/);
     const contrast = /@media \(forced-colors: active\) \{([\s\S]*?)\n\}/.exec(css.replace(/\r\n/g, '\n'))?.[1] ?? '';
     expect(contrast).toContain(".choice-tile[aria-checked='true'] { border-color: Highlight;");
     expect(contrast).toContain('.choice-check { forced-color-adjust: none; background: Highlight; color: HighlightText; }');
+  });
+
+  it('makes the rectangles of one group equally wide so they line up, and lets them wrap in a narrow window', () => {
+    const css = readFileSync(new URL('./styles.css', import.meta.url), 'utf8').replace(/\r\n/g, '\n');
+    // every column as wide as the widest label: "Not allowed" beside "After a confirmation (recorded)" is not a small box beside a big one
+    expect(css).toMatch(/\n\.choice-tiles \{ display: grid; grid-auto-flow: column; grid-auto-columns: 1fr;[^}]*inline-size: fit-content; max-inline-size: 100%; \}/);
+    // language, digits, appearance and density line up under each other: one width fits their labels in the three languages
+    expect(css).toMatch(/\.choice-tile \{[^}]*min-inline-size: 128px; max-inline-size: 240px;/);
+    // a narrow window or a phone: they wrap instead of pushing the page sideways, and two still fit side by side on a phone
+    expect(css).toContain('@media (max-width: 760px) { .choice-tiles { display: flex; flex-wrap: wrap; inline-size: auto; } }');
+    expect(css).toContain('@media (max-width: 480px) { .choice-tiles > .choice-tile { min-inline-size: 104px; } }');
   });
 });
 

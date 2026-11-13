@@ -151,6 +151,22 @@ describe('the menu in the app shell', () => {
     expect(css).toMatch(/\.nav-item \.soon \{[^}]*font-size: 12px;/);
   });
 
+  it('leaves the Home page as many tiles in a row as before the menu grew wider', () => {
+    const root = /\n:root \{\n  \/\* brand \*\/([\s\S]*?)\n\}/.exec(css)?.[1] ?? '';
+    const sidebar = Number(/--sidebar-w: (\d+)px;/.exec(root)?.[1]);
+    const pad = Number(/--content-pad: (\d+)px;/.exec(root)?.[1]);
+    const [, min, gap] = /\.launch-grid \{ display: grid; grid-template-columns: repeat\(auto-fill, minmax\((\d+)px, 1fr\)\); gap: (\d+)px; \}/.exec(css) ?? [];
+    // tiles in a row of the launcher: the window less the menu, the page's border and its padding on both sides
+    const columns = (window: number, menu: number, tile: number) => Math.floor((window - menu - 1 - 2 * pad + Number(gap)) / (tile + Number(gap)));
+    // the menu was 264 px wide and a tile at least 150 px: seven in a row at 1440 px (Sales has seven pages), six at 1366 px
+    expect(columns(1440, 264, 150)).toBe(7);
+    for (const window of [1280, 1366, 1440, 1536, 1600, 1920]) {
+      expect(columns(window, sidebar, Number(min)), String(window)).toBeGreaterThanOrEqual(columns(window, 264, 150));
+    }
+    // seven tiles at 1440 px are a little narrower than they were: 8 px at the sides keeps the longest Kurdish name on one line
+    expect(css).toMatch(/\.launch-tile > a \{[^}]*\n  padding: 16px 8px 12px;/);
+  });
+
   it('keeps the orange mark, the icon rail, both directions, contrast themes and print', () => {
     expect(css).toMatch(/\.nav-item\.active::before \{[^}]*background: var\(--indicator\);/);
     expect(css).toContain('.sidebar.collapsed { inline-size: var(--rail-w); padding-inline: 6px; }');

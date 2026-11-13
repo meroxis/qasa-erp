@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import type { ReactNode } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
@@ -108,6 +109,21 @@ describe('Settings → Printers', () => {
       expect(receipt).not.toContain('disabled=""');
       expect(receipt).not.toContain(esc(textOf(lang, 'prn_chooseOther')));
     }
+  });
+
+  it('keeps the table inside a 1366 px screen: copies take little room, the paper names more', () => {
+    const css = readFileSync(new URL('../styles.css', import.meta.url), 'utf8');
+    expect(css).toContain('.printers-table select { min-inline-size: 4.5em; }');
+    expect(css).toContain('.printers-table tr.printers-kind > td:nth-child(2) select { min-inline-size: 11em; }');
+    expect(css).toContain('.printers-table tr.printers-kind > td:nth-child(3) select { min-inline-size: 11.5em; }');
+    expect(css).toContain('.printers-table td:first-child { min-inline-size: 10.5em; }');
+    // the columns are the printer (2), the paper (3) and the copies (4), as the rules above count them
+    const html = wrap(view(), 'en');
+    const row = html.slice(html.indexOf('data-kind="receipt"'), html.indexOf('data-margins="receipt"'));
+    const cells = row.split('<td').slice(1);
+    expect(cells[1]).toContain('<option value="Receipts"');
+    expect(cells[2]).toContain('<option value="receipt80"');
+    expect(cells[3]).toContain('class="input num"');
   });
 
   it('knows a saved printer that Windows no longer lists', () => {

@@ -816,10 +816,14 @@ html[dir='rtl'] .settings-back-icon { transform: none; }
  * A setting that picks one of a few fixed options (ChoiceTiles.tsx): big rectangles with an icon or a sample, a label
  * and maybe a hint. The chosen one has the accent border and a check mark in its corner.
  */
-.choice-tiles { display: flex; flex-wrap: wrap; gap: var(--sp-2); }
+/* the rectangles of one group are all as wide as the widest of them, so they line up; in a narrow window they wrap */
+.choice-tiles { display: grid; grid-auto-flow: column; grid-auto-columns: 1fr; gap: var(--sp-2); inline-size: fit-content; max-inline-size: 100%; }
+@media (max-width: 760px) { .choice-tiles { display: flex; flex-wrap: wrap; inline-size: auto; } }
+/* on a phone two still fit side by side */
+@media (max-width: 480px) { .choice-tiles > .choice-tile { min-inline-size: 104px; } }
 .choice-tile {
   position: relative; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px;
-  min-inline-size: 104px; max-inline-size: 240px; min-block-size: 72px; padding: 10px 14px;
+  min-inline-size: 128px; max-inline-size: 240px; min-block-size: 72px; padding: 10px 14px;
   border: 1px solid var(--ctl-stroke); border-block-end-color: var(--ctl-stroke-bottom); border-radius: var(--r-card);
   background: var(--ctl-bg); color: var(--ink); font: inherit; text-align: center; cursor: pointer;
   transition: background-color var(--dur-fast) linear, border-color var(--dur-fast) linear, box-shadow var(--dur-fast) linear;
@@ -1104,11 +1108,12 @@ html[dir='rtl'] .nav-group-btn[aria-expanded='false'] > svg.nav-chevron { transf
 .launch-bar { inline-size: 4px; block-size: 18px; border-radius: 2px; background: var(--sec); }
 .launch-head h2 { margin: 0; font-size: 15px; font-weight: 600; color: var(--ink); }
 .launch-note { font-size: 12px; color: var(--ink-3); }
-.launch-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 10px; }
+/* 144 px, not 150: beside the wider menu a row still holds as many tiles as before (seven at 1440 px, so Sales stays one row) */
+.launch-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(144px, 1fr)); gap: 10px; }
 .launch-tile { position: relative; }
 .launch-tile > a {
   display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px; min-block-size: 108px; block-size: 100%;
-  padding: 16px 10px 12px; border: 1px solid var(--line); border-radius: var(--r-card); background: var(--surface); box-shadow: var(--shadow-card);
+  padding: 16px 8px 12px; border: 1px solid var(--line); border-radius: var(--r-card); background: var(--surface); box-shadow: var(--shadow-card);
   color: var(--ink); text-decoration: none; text-align: center; transition: border-color var(--dur-fast) linear, box-shadow var(--dur) var(--ease), transform var(--dur) var(--ease);
 }
 .launch-tile > a:hover { border-color: color-mix(in srgb, var(--sec) 45%, var(--line)); box-shadow: var(--shadow-raised); transform: translateY(-1px); }
@@ -1200,9 +1205,11 @@ html[dir='rtl'] .tour-card.center { transform: translate(50%, -50%); }
 .printers-table tr.printers-margins > td { padding-block: var(--sp-1) var(--sp-3); }
 .printers-margins-row { display: flex; align-items: center; gap: var(--sp-3); flex-wrap: wrap; }
 .printers-margins-label { font-size: var(--fs-small); font-weight: 600; color: var(--ink-2); }
-.printers-table select { min-inline-size: 8em; }
+/* the paper's name gets most of the room the number of copies does not need, and the table fits a 1366 px screen in the three languages */
+.printers-table select { min-inline-size: 4.5em; }
 .printers-table tr.printers-kind > td:nth-child(2) select { min-inline-size: 11em; }
-.printers-table td:first-child { min-inline-size: 12em; }
+.printers-table tr.printers-kind > td:nth-child(3) select { min-inline-size: 11.5em; }
+.printers-table td:first-child { min-inline-size: 10.5em; }
 .print-notice { display: flex; align-items: center; gap: 12px; max-inline-size: min(640px, calc(100vw - 32px)); }
 .print-test-host { display: none; }
 /* the sheet and the box get their size for the chosen paper from Printers.tsx (testSheetLayout); the box's size is its outer edge */
