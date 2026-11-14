@@ -1,6 +1,7 @@
 import type { Names } from './lang.ts';
 import { normalizeForSearch } from './lang.ts';
 import type { BusinessType } from './plans.ts';
+import { UNIT_CODES, type UnitCode } from './inventory.ts';
 
 /**
  * The item catalogue's lists (1.1): categories in two levels (a category and its subcategories), brands, the countries a
@@ -86,7 +87,7 @@ export function isStarterTrade(value: unknown): value is StarterTrade {
 
 /** The starter list a business type suggests first (any trade can still be picked). */
 export const BUSINESS_STARTER_TRADE: Record<BusinessType, StarterTrade> = {
-  trade: 'general', realEstate: 'building', mobileShop: 'electronics', autoParts: 'autoParts', engineeringWorks: 'building',
+  trade: 'general', market: 'grocery', realEstate: 'building', mobileShop: 'electronics', autoParts: 'autoParts', engineeringWorks: 'building',
   electricalSolar: 'electricalSolar', generators: 'generators', pharmacy: 'pharmacy'
 };
 
@@ -363,3 +364,37 @@ export const STARTER_LISTS: Record<StarterTrade, StarterList> = {
     ]
   }
 };
+
+/**
+ * The units a kind of company usually counts in (1.4), in the order the item form lists them. The form offers these
+ * first; every other unit stays one press away ("show all units"), and a unit the company already uses is always
+ * listed. 'trade' is what every company does and has no list of its own: alone it offers every unit, and beside
+ * another type it adds nothing.
+ */
+export const BUSINESS_UNITS: Record<BusinessType, readonly UnitCode[] | null> = {
+  trade: null,
+  market: ['piece', 'kg', 'g', 'carton', 'pack', 'box', 'bottle', 'bag', 'dozen', 'l', 'sachet', 'roll'],
+  realEstate: ['piece', 'm2', 'm', 'ton', 'bag', 'kg', 'l', 'set', 'roll', 'service'],
+  mobileShop: ['piece', 'box', 'set', 'carton', 'pair', 'service'],
+  autoParts: ['piece', 'set', 'pair', 'box', 'carton', 'l', 'bottle', 'kg', 'm', 'service'],
+  engineeringWorks: ['piece', 'm', 'm2', 'kg', 'ton', 'bag', 'set', 'roll', 'l', 'service'],
+  electricalSolar: ['piece', 'm', 'roll', 'set', 'box', 'carton', 'pair', 'service'],
+  generators: ['piece', 'l', 'set', 'm', 'box', 'service'],
+  pharmacy: ['tablet', 'capsule', 'strip', 'box', 'bottle', 'tube', 'ampoule', 'vial', 'sachet', 'piece', 'pack', 'carton']
+};
+
+/**
+ * The units to offer a company: those of its business types (in their order), then any unit in `keep` (what the
+ * company's items use already, and what the form holds now) that is not among them, in the order of UNIT_CODES.
+ * `narrowed` says whether anything was left out (so the form shows "show all units"). A company with no type chosen,
+ * or one that only trades in general, gets every unit.
+ */
+export function unitsForBusiness(types: readonly BusinessType[] | null | undefined, keep: Iterable<string> = []): { units: UnitCode[]; narrowed: boolean } {
+  const lists = (types ?? []).map((t) => BUSINESS_UNITS[t]).filter((l) => l !== null);
+  if (!lists.length) return { units: [...UNIT_CODES], narrowed: false };
+  const wanted = new Set<string>(keep);
+  const units: UnitCode[] = [];
+  for (const list of lists) for (const u of list) if (!units.includes(u)) units.push(u);
+  for (const u of UNIT_CODES) if (wanted.has(u) && !units.includes(u)) units.push(u);
+  return { units, narrowed: units.length < UNIT_CODES.length };
+}

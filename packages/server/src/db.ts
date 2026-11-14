@@ -5,7 +5,7 @@ import { DatabaseSync } from 'node:sqlite';
 import { brandKey, DEFAULT_POSTING_ACCOUNTS, IRAQI_UNIFIED_CHART, STARTER_SUB_ACCOUNTS } from '@qasa/core';
 import { AppError } from './errors.ts';
 import {
-  MYSQL_TABLES, MYSQL_TRIGGERS, mysqlCollations, mysqlTableSql, pendingMysqlSteps, V10_MYSQL_STEPS, V11_MYSQL_STEPS, V12_MYSQL_STEPS, type MysqlCollations, type MysqlStep
+  MYSQL_TABLES, MYSQL_TRIGGERS, mysqlCollations, mysqlTableSql, pendingMysqlSteps, V10_MYSQL_STEPS, V11_MYSQL_STEPS, V12_MYSQL_STEPS, V13_MYSQL_STEPS, type MysqlCollations, type MysqlStep
 } from './schema-mysql.ts';
 
 export type SqlParam = null | number | bigint | string | Uint8Array;
@@ -1726,12 +1726,21 @@ const V12_OWNER_TOOLS =
 /** Version 12: each 1.2 feature's own block, one after the other. */
 const V12 = [V12_OUTBOX, V12_OWNER_TOOLS].join('\n');
 
+const V13 =
+  // 13 — the item form (1.4): what the item is bought for, beside its sale price, in its own currency (NULL: not
+  // written). It is a note for the form and the margin beside it; stock value and cost of sales stay the average cost
+  `
+  ALTER TABLE items ADD COLUMN purchase_price INTEGER CHECK (purchase_price IS NULL OR purchase_price >= 0);
+  ALTER TABLE items ADD COLUMN purchase_currency TEXT CHECK (purchase_currency IS NULL OR purchase_currency IN ('IQD', 'USD'));
+  `;
+
 const MIGRATIONS: Migration[] = [
   { sql: V1 }, { sql: V2, rebuild: true }, { sql: V3, rebuild: true }, { sql: V4 }, { sql: V5, rebuild: true },
   { sql: V6, mysql: 'tables' }, { sql: V7, mysql: 'tables' }, { sql: V8, mysql: 'tables' }, { sql: V9, mysql: 'tables' },
   { sql: V10, mysql: { tables: true, steps: () => V10_MYSQL_STEPS } },
   { sql: V11, mysql: { tables: true, steps: () => V11_MYSQL_STEPS }, data: (db) => { movePartBrands(db); movePartReorder(db); } },
-  { sql: V12, mysql: { tables: true, steps: () => V12_MYSQL_STEPS } }
+  { sql: V12, mysql: { tables: true, steps: () => V12_MYSQL_STEPS } },
+  { sql: V13, mysql: { tables: true, steps: () => V13_MYSQL_STEPS } }
 ];
 
 /** Server databases began at this version: its schema is in schema-mysql.ts (tables and triggers without `since`). */

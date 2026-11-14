@@ -11,6 +11,8 @@ import { mediaApi } from './media-api.ts';
 
 const MAX_SIDE = 800;
 const TARGET_BYTES = 300 * 1024;
+/** The largest file the browser is asked to open as a picture (a phone photo is a few MB). */
+export const MAX_PICTURE_FILE_BYTES = 20 * 1024 * 1024;
 
 /* ---------- which items have a picture ---------- */
 
@@ -141,8 +143,74 @@ async function base64Of(blob: Blob): Promise<string> {
   return btoa(binary);
 }
 
+/** A picture chosen in a form, ready to send: made small, as base64, with its type (what the canvas really wrote). */
+export interface PreparedPicture { data: string; mime: string }
+
+/**
+ * Checks a chosen file and makes it small. Only a file the browser can really decode as a picture gets through (its
+ * name and declared type are not trusted), and it is drawn again on a canvas, so nothing but pixels is sent; the
+ * server checks the bytes again.
+ */
+export async function preparePicture(file: File): Promise<PreparedPicture | { refused: 'too_big' | 'unreadable' }> {
+  if (file.size > MAX_PICTURE_FILE_BYTES) return { refused: 'too_big' };
+  if (file.size === 0 || (file.type && !file.type.startsWith('image/'))) return { refused: 'unreadable' };
+  try {
+    const small = await shrinkPicture(file);
+    return { data: await base64Of(small), mime: small.type };
+  } catch {
+    return { refused: 'unreadable' };
+  }
+}
+
+/** Saves a prepared picture as an item's picture, and lets the lists know. */
+export async function saveItemPicture(itemId: string, data: string): Promise<void> {
+  const saved = await mediaApi.setImage(itemId, data);
+  setIndexEntry(itemId, saved.updatedAt);
+}
+
+/**
+ * The picture of an item that is not saved yet (the new-item form): chosen and shown here, sent by the form once the
+ * item exists.
+ */
+export function NewItemPicture({ value, onChange, size = 104 }: { value: PreparedPicture | null; onChange(picture: PreparedPicture | null): void; size?: number }) {
+  const { t } = useI18n();
+  const input = useRef<HTMLInputElement>(null);
+  const [busy, setBusy] = useState(false);
+  const [problem, setProblem] = useState<string | null>(null);
+  const choose = async (file: File | undefined) => {
+    if (!file) return;
+    setProblem(null);
+    setBusy(true);
+    try {
+      const picture = await preparePicture(file);
+      if ('refused' in picture) setProblem(picture.refused === 'too_big' ? t('it_pictureTooBig', { n: MAX_PICTURE_FILE_BYTES / (1024 * 1024) }) : t('md_imageUnreadable'));
+      else onChange(picture);
+    } finally {
+      setBusy(false);
+      if (input.current) input.current.value = '';
+    }
+  };
+  return (
+    <div className="stack" style={{ gap: 8, alignItems: 'center', inlineSize: size + 24, flexShrink: 0 }}>
+      <span className="avatar mark" style={{ inlineSize: size, blockSize: size, borderRadius: 'var(--r-md)', overflow: 'hidden' }}>
+        {value
+          ? <img src={`data:${value.mime};base64,${value.data}`} alt={t('it_picture')} width={size} height={size} style={{ inlineSize: '100%', blockSize: '100%', objectFit: 'cover', display: 'block', background: 'var(--surface)' }} />
+          : <Icon name="plus" size={22} />}
+      </span>
+      <div className="row" style={{ justifyContent: 'center', gap: 4, flexWrap: 'nowrap' }}>
+        <input ref={input} type="file" accept="image/jpeg,image/png,image/webp,image/*" hidden onChange={(e) => void choose(e.target.files?.[0])} />
+        <button type="button" className="btn small" disabled={busy} onClick={() => input.current?.click()}>{value ? t('md_changePicture') : t('md_addPicture')}</button>
+        {value && (
+          <button type="button" className="btn small ghost" disabled={busy} onClick={() => onChange(null)} aria-label={t('md_removePicture')} title={t('md_removePicture')}><Icon name="x" size={14} /></button>
+        )}
+      </div>
+      {problem && <div className="alert bad small" role="alert">{problem}</div>}
+    </div>
+  );
+}
+
 /** The picture on an item's page: shows it large, and lets someone with the stock permission choose or remove it. */
-export function ImagePicker({ itemId, name, canEdit = true }: { itemId: string; name: string; canEdit?: boolean }) {
+export function ImagePicker({ itemId, name, canEdit = true, size = 140 }: { itemId: string; name: string; canEdit?: boolean; size?: number }) {
   const { t } = useI18n();
   const toast = useToast();
   const version = useImageVersion(itemId);
@@ -157,15 +225,12 @@ export function ImagePicker({ itemId, name, canEdit = true }: { itemId: string; 
     setLocalError(null);
     setBusy(true);
     try {
-      let small: Blob;
-      try {
-        small = await shrinkPicture(file);
-      } catch {
-        setLocalError(t('md_imageUnreadable'));
+      const picture = await preparePicture(file);
+      if ('refused' in picture) {
+        setLocalError(picture.refused === 'too_big' ? t('it_pictureTooBig', { n: MAX_PICTURE_FILE_BYTES / (1024 * 1024) }) : t('md_imageUnreadable'));
         return;
       }
-      const saved = await mediaApi.setImage(itemId, await base64Of(small));
-      setIndexEntry(itemId, saved.updatedAt);
+      await saveItemPicture(itemId, picture.data);
       toast(t('md_imageSaved'));
     } catch (e) {
       setError(e);
@@ -191,7 +256,7 @@ export function ImagePicker({ itemId, name, canEdit = true }: { itemId: string; 
 
   return (
     <div className="stack" style={{ gap: 10, alignItems: 'center' }}>
-      <ItemImage itemId={itemId} name={name} size={140} />
+      <ItemImage itemId={itemId} name={name} size={size} />
       {canEdit && (
         <div className="row no-print" style={{ justifyContent: 'center', flexWrap: 'wrap' }}>
           <input ref={input} type="file" accept="image/jpeg,image/png,image/webp,image/*" hidden onChange={(e) => void choose(e.target.files?.[0])} />

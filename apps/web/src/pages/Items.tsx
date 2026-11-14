@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { formatQty, roundHalfUp, UNITS, type CurrencyCode, type Names, type UnitCode } from '@qasa/core';
+import { formatQty, MAX_ITEM_UNITS, roundHalfUp, UNITS, unitsForBusiness, type CurrencyCode, type Names, type UnitCode } from '@qasa/core';
 import { api, type ItemInput, type ItemView, type WarehouseView } from '../api.ts';
 import { EmptyState, AmountInput, ErrorBox, Icon, Modal, QtyInput, downloadCsv, useData, useLoad, useToast } from '../components.tsx';
 import { inUnits } from '../industry/units.ts';
@@ -10,7 +10,8 @@ import { ReorderList } from '../industry/ReorderList.tsx';
 import { ExpiryChip } from './Expiry.tsx';
 import { useI18n, type I18n, isKey, type Key } from '../i18n.ts';
 import { go, href } from '../router.ts';
-import { ImagePicker, ItemImage } from '../industry/ItemImage.tsx';
+import { ImagePicker, ItemImage, NewItemPicture, saveItemPicture, type PreparedPicture } from '../industry/ItemImage.tsx';
+import { NameField } from '../industry/NameField.tsx';
 import { WholesalePriceField } from '../industry/WholesalePriceField.tsx';
 import { printDocument } from '../industry/printing.ts';
 
@@ -236,18 +237,58 @@ export function Items({ tab: initialTab }: { tab?: 'reorder' } = {}) {
 
 interface UnitRow { key: number; unit: UnitCode | ''; factorMilli: number | null; barcode: string; salePrice: number | null }
 let unitKey = 1;
-const UNIT_CHOICES = Object.keys(UNITS) as UnitCode[];
+
+/** A unit row nothing was written in: it is left out when saving. */
+const emptyRow = (u: UnitRow) => !u.unit && u.factorMilli === null && !u.barcode.trim() && u.salePrice === null;
+/** A unit row that can be saved: its unit chosen and how many base units it holds written. */
+const completeRow = (u: UnitRow) => !!u.unit && u.factorMilli !== null && u.factorMilli > 0;
+
+/**
+ * The profit on one base unit: the sale price less the purchase price, with the purchase price taken to the sale
+ * currency at the company's rate when the two differ. null when either is missing or it cannot be converted.
+ */
+export function itemMargin(
+  purchase: number | null, purchaseCurrency: CurrencyCode, sale: number | null, saleCurrency: CurrencyCode, rateX100: number | undefined
+): { amount: number; percent: number } | null {
+  if (purchase === null || sale === null || purchase <= 0) return null;
+  let cost = purchase;
+  if (purchaseCurrency !== saleCurrency) {
+    if (!rateX100) return null;
+    // IQD is kept in dinars, USD in cents
+    cost = saleCurrency === 'USD' ? roundHalfUp((purchase * 10000) / rateX100) : roundHalfUp((purchase * rateX100) / 10000);
+  }
+  if (cost <= 0) return null;
+  const amount = sale - cost;
+  return { amount, percent: Math.round((amount * 1000) / cost) / 10 };
+}
+
+function CurrencyTrack({ value, onChange }: { value: CurrencyCode; onChange(c: CurrencyCode): void }) {
+  const { t } = useI18n();
+  return (
+    <div className="track">
+      {(['IQD', 'USD'] as const).map((c) => <button key={c} type="button" aria-pressed={value === c} onClick={() => onChange(c)}>{c === 'IQD' ? t('iqdName') : '$'}</button>)}
+    </div>
+  );
+}
 
 export function ItemForm({ item, onClose, onSaved }: { item: ItemView | null; onClose(): void; onSaved(item: ItemView): void }) {
   const i18n = useI18n();
   const { t } = i18n;
   const toast = useToast();
+  const { settings, permissions } = useData();
   const [code, setCode] = useState(item?.code ?? '');
   const [barcode, setBarcode] = useState(item?.barcode ?? '');
   const [name, setName] = useState<Names>(item?.name ?? { ar: '', en: '', ku: '' });
   const [unit, setUnit] = useState<UnitCode>(item?.unit ?? 'piece');
   const [salePrice, setSalePrice] = useState<number | null>(item?.salePrice ?? null);
   const [saleCurrency, setSaleCurrency] = useState<CurrencyCode>(item?.saleCurrency ?? 'IQD');
+  // the purchase price is for those who buy or keep the stock: the server leaves it out for anyone else, and the form
+  // then neither shows nor sends it (what is written stays)
+  const seesCost = item ? item.purchasePrice !== undefined : !permissions || permissions.some((p) => p === 'admin' || p === 'stock' || p === 'purchases');
+  const [purchasePrice, setPurchasePrice] = useState<number | null>(item?.purchasePrice ?? null);
+  const [purchaseCurrency, setPurchaseCurrency] = useState<CurrencyCode>(item?.purchaseCurrency ?? item?.saleCurrency ?? 'IQD');
+  const purchaseCurrencyTouched = useRef(item?.purchasePrice !== null && item?.purchasePrice !== undefined);
+  const [picture, setPicture] = useState<PreparedPicture | null>(null);
   const [trackStock, setTrackStock] = useState(item?.trackStock ?? true);
   const [active, setActive] = useState(item?.active ?? true);
   const [units, setUnits] = useState<UnitRow[]>(() => (item?.units ?? []).map((u) => ({ key: unitKey++, unit: u.unit, factorMilli: u.factorMilli, barcode: u.barcode, salePrice: u.salePrice })));
@@ -273,12 +314,26 @@ export function ItemForm({ item, onClose, onSaved }: { item: ItemView | null; on
   const [saleUnit, setSaleUnit] = useState<UnitCode | ''>(item?.saleUnit ?? '');
   const [purchaseUnit, setPurchaseUnit] = useState<UnitCode | ''>(item?.purchaseUnit ?? '');
   const [error, setError] = useState<unknown>(null);
+  const [unitsProblem, setUnitsProblem] = useState(false);
   const [busy, setBusy] = useState(false);
-  const listed = units.filter((u) => u.unit);
+  const listed = units.filter(completeRow);
+
+  // the units offered: those of the company's trade, with every unit its items use already and what this form holds;
+  // "show all units" lists the rest
+  const used = useLoad(() => api.usedUnits().catch(() => [] as UnitCode[]), []);
+  const [allUnits, setAllUnits] = useState(false);
+  const offer = unitsForBusiness(allUnits ? null : settings?.businessTypes, [...(used.data ?? []), unit, ...units.map((u) => u.unit)]);
+  const narrowed = unitsForBusiness(settings?.businessTypes).narrowed;
+  const market = !!settings?.businessTypes?.includes('market');
+
+  const setRow = (key: number, patch: Partial<UnitRow>) => { setUnitsProblem(false); setUnits((us) => us.map((x) => (x.key === key ? { ...x, ...patch } : x))); };
+  const margin = seesCost ? itemMargin(purchasePrice, purchaseCurrency, salePrice, saleCurrency, settings?.defaultRateX100) : null;
 
   async function save() {
-    setBusy(true);
     setError(null);
+    // a unit half written is said, not dropped in silence
+    if (unit !== 'service' && units.some((u) => !emptyRow(u) && !completeRow(u))) { setUnitsProblem(true); return; }
+    setBusy(true);
     const input: ItemInput = {
       name, unit, salePrice: salePrice ?? 0, saleCurrency, trackStock: unit !== 'service' && trackStock, active,
       units: unit === 'service' ? [] : listed.map((u) => ({ unit: u.unit as UnitCode, factorMilli: u.factorMilli ?? 0, barcode: u.barcode.trim(), salePrice: u.salePrice })),
@@ -288,13 +343,19 @@ export function ItemForm({ item, onClose, onSaved }: { item: ItemView | null; on
       categoryId: categoryId || null,
       brandId: brandId || null,
       reorderMilli: unit !== 'service' && trackStock ? reorderMilli : null,
+      ...(seesCost ? { purchasePrice, purchaseCurrency: purchasePrice === null ? null : purchaseCurrency } : {}),
       ...trackingInput(!!item, defaultsKnown, trackBatches, trackExpiry)
     };
     if (code.trim()) input.code = code.trim();
     if (barcode.trim()) input.barcode = barcode.trim();
     try {
       const saved = item ? await api.updateItem(item.id, input) : await api.createItem(input);
-      toast(t('saved'));
+      let pictureSaved = true;
+      if (!item && picture) {
+        // the item exists now; a picture that fails leaves it saved, and can be added from its page
+        try { await saveItemPicture(saved.id, picture.data); } catch { pictureSaved = false; }
+      }
+      toast(pictureSaved ? t('saved') : t('it_pictureNotSaved'));
       onSaved(saved);
     } catch (e) {
       setError(e);
@@ -303,35 +364,61 @@ export function ItemForm({ item, onClose, onSaved }: { item: ItemView | null; on
     }
   }
 
+  const unitOptions = (keep: UnitCode | '', except: (c: UnitCode) => boolean) =>
+    offer.units.filter((c) => c === keep || !except(c)).map((c) => <option key={c} value={c}>{unitName(i18n, c)}</option>);
+  const showAllLink = narrowed && (
+    <div><button type="button" className="btn small ghost" onClick={() => setAllUnits((v) => !v)}>{allUnits ? t('un_showMine') : t('un_showAll')}</button></div>
+  );
+
   return (
     <Modal title={item ? `${item.code} — ${i18n.name(item.name)}` : t('newItem')} onClose={onClose}>
-      <div className="stack">
-        <label className="field"><span>{t('nameAr')}</span><input className="input" lang="ar" dir="rtl" value={name.ar} onChange={(e) => setName({ ...name, ar: e.target.value })} autoFocus /></label>
-        <label className="field"><span>{t('nameKu')}</span><input className="input" lang="ckb" dir="rtl" value={name.ku} onChange={(e) => setName({ ...name, ku: e.target.value })} /></label>
-        <label className="field"><span>{t('nameEn')}</span><input className="input" lang="en" dir="ltr" value={name.en} onChange={(e) => setName({ ...name, en: e.target.value })} /></label>
+      <div className="stack item-form">
+        <div className="row" style={{ alignItems: 'flex-start', flexWrap: 'wrap', gap: 16 }}>
+          {item
+            ? <div style={{ inlineSize: 128, flexShrink: 0 }}><ImagePicker itemId={item.id} name={i18n.name(item.name)} size={104} /></div>
+            : <NewItemPicture value={picture} onChange={setPicture} />}
+          <div className="stack" style={{ flex: '1 1 260px', minInlineSize: 0 }}>
+            <NameField label={t('it_name')} value={name} onChange={setName} autoFocus />
+            <div className="grid-2">
+              <label className="field"><span>{t('code')}</span><input className="input ltr" value={code} placeholder="I-0001" maxLength={24} onChange={(e) => setCode(e.target.value)} /></label>
+              <label className="field"><span>{t('barcode')}</span><input className="input ltr" value={barcode} maxLength={64} onChange={(e) => setBarcode(e.target.value)} /></label>
+            </div>
+          </div>
+        </div>
         <div className="grid-2">
-          <label className="field"><span>{t('code')}</span><input className="input ltr" value={code} placeholder="I-0001" onChange={(e) => setCode(e.target.value)} /></label>
-          <label className="field"><span>{t('barcode')}</span><input className="input ltr" value={barcode} onChange={(e) => setBarcode(e.target.value)} /></label>
-          <label className="field">
-            <span>{t('unit')}</span>
-            <select className="input" value={unit} onChange={(e) => setUnit(e.target.value as UnitCode)}>
-              {(Object.keys(UNITS) as UnitCode[]).map((u) => <option key={u} value={u}>{unitName(i18n, u)}</option>)}
-            </select>
-          </label>
+          {seesCost && (
+            <div className="field">
+              <span>{t('it_purchasePrice')}</span>
+              <div className="row" style={{ flexWrap: 'nowrap' }}>
+                <AmountInput value={purchasePrice} currency={purchaseCurrency} onChange={setPurchasePrice} ariaLabel={t('it_purchasePrice')} />
+                <CurrencyTrack value={purchaseCurrency} onChange={(c) => { purchaseCurrencyTouched.current = true; setPurchaseCurrency(c); }} />
+              </div>
+            </div>
+          )}
           <div className="field">
             <span>{t('salePrice')}</span>
             <div className="row" style={{ flexWrap: 'nowrap' }}>
               <AmountInput value={salePrice} currency={saleCurrency} onChange={setSalePrice} ariaLabel={t('salePrice')} />
-              <div className="track">
-                {(['IQD', 'USD'] as const).map((c) => <button key={c} type="button" aria-pressed={saleCurrency === c} onClick={() => setSaleCurrency(c)}>{c === 'IQD' ? t('iqdName') : '$'}</button>)}
-              </div>
+              {/* until a purchase currency is chosen it follows the sale currency */}
+              <CurrencyTrack value={saleCurrency} onChange={(c) => { setSaleCurrency(c); if (!purchaseCurrencyTouched.current && purchasePrice === null) setPurchaseCurrency(c); }} />
             </div>
+            {margin && (
+              <span className="small" style={{ color: margin.amount < 0 ? 'var(--bad)' : 'var(--ink-2)' }}>
+                {t(margin.amount < 0 ? 'it_marginLoss' : 'it_margin', { a: i18n.money(Math.abs(margin.amount), saleCurrency), p: i18n.digitsOf(String(Math.abs(margin.percent))) })}
+              </span>
+            )}
           </div>
         </div>
-        {unit !== 'service' && (
-          <label className="row" style={{ gap: 8 }}><input type="checkbox" checked={trackStock} disabled={item?.hasMoves} onChange={(e) => setTrackStock(e.target.checked)} />{t('trackStock')}</label>
-        )}
         <div className="grid-2">
+          <div className="field">
+            <label className="field">
+              <span>{t('unit')}</span>
+              <select className="input" value={unit} onChange={(e) => setUnit(e.target.value as UnitCode)}>
+                {unitOptions(unit, () => false)}
+              </select>
+            </label>
+            {showAllLink}
+          </div>
           {(categories.data?.length ?? 0) > 0 && (
             <label className="field">
               <span>{t('cat_category')}</span>
@@ -349,6 +436,10 @@ export function ItemForm({ item, onClose, onSaved }: { item: ItemView | null; on
             </div>
           )}
         </div>
+        {market && (unit === 'kg' || unit === 'g') && <span className="muted small">{t('it_scaleHint')}</span>}
+        {unit !== 'service' && (
+          <label className="row" style={{ gap: 8 }}><input type="checkbox" checked={trackStock} disabled={item?.hasMoves} onChange={(e) => setTrackStock(e.target.checked)} />{t('trackStock')}</label>
+        )}
         {unit !== 'service' && trackStock && (
           <div className="stack" style={{ gap: 4 }}>
             <label className="row" style={{ gap: 8 }}><input type="checkbox" checked={trackBatches || trackExpiry} disabled={trackExpiry} onChange={(e) => { trackingTouched.current = true; setTrackBatches(e.target.checked); }} />{t('ex_trackBatches')}</label>
@@ -357,55 +448,64 @@ export function ItemForm({ item, onClose, onSaved }: { item: ItemView | null; on
           </div>
         )}
         {unit !== 'service' && (
-          <fieldset className="card pad stack" style={{ gap: 8 }}>
+          <fieldset className="card pad stack" style={{ gap: 12, minInlineSize: 0 }}>
             <legend className="small"><strong>{t('un_other')}</strong></legend>
             <p className="muted small" style={{ margin: 0 }}>{t('un_baseHelp')}</p>
-            {units.length > 0 && (
-              <table className="table">
-                <thead>
-                  <tr><th>{t('unit')}</th><th className="amount">{t('un_holds')}</th><th>{t('barcode')}</th><th className="amount">{t('un_ownPrice')}</th><th style={{ width: 40 }} /></tr>
-                </thead>
-                <tbody>
-                  {units.map((u) => (
-                    <tr key={u.key}>
-                      <td>
-                        <select className="input" value={u.unit} aria-label={t('unit')} onChange={(e) => setUnits((us) => us.map((x) => (x.key === u.key ? { ...x, unit: e.target.value as UnitCode } : x)))}>
-                          <option value="" />
-                          {UNIT_CHOICES.filter((c) => c !== unit && c !== 'service').map((c) => <option key={c} value={c}>{unitName(i18n, c)}</option>)}
-                        </select>
-                      </td>
-                      <td>
-                        <div className="row" style={{ flexWrap: 'nowrap', gap: 6 }}>
-                          <QtyInput value={u.factorMilli} onChange={(v) => setUnits((us) => us.map((x) => (x.key === u.key ? { ...x, factorMilli: v } : x)))} ariaLabel={t('un_holds')} />
-                          <span className="muted small">{unitName(i18n, unit)}</span>
-                        </div>
-                      </td>
-                      <td><input className="input ltr" value={u.barcode} aria-label={t('barcode')} onChange={(e) => setUnits((us) => us.map((x) => (x.key === u.key ? { ...x, barcode: e.target.value } : x)))} /></td>
-                      <td>
-                        <AmountInput value={u.salePrice} currency={saleCurrency} ariaLabel={t('un_ownPrice')} onChange={(v) => setUnits((us) => us.map((x) => (x.key === u.key ? { ...x, salePrice: v } : x)))} />
-                        <div className="muted small">{t('un_ownPriceHint')}</div>
-                      </td>
-                      <td><button type="button" className="btn icon danger" title={t('un_remove')} aria-label={t('un_remove')} onClick={() => setUnits((us) => us.filter((x) => x.key !== u.key))}><Icon name="x" size={16} /></button></td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+            {/* what is added so far, said in words: "1 carton = 12 piece" */}
+            {listed.length > 0 && (
+              <div className="row" style={{ gap: 6, flexWrap: 'wrap' }} aria-label={t('un_added')}>
+                {listed.map((u) => (
+                  <span key={u.key} className="chip">
+                    {t('un_equals', { u: unitName(i18n, u.unit as UnitCode), q: i18n.digitsOf(formatQty(u.factorMilli ?? 0)), b: unitName(i18n, unit) })}
+                  </span>
+                ))}
+              </div>
             )}
+            {units.map((u) => (
+              <div key={u.key} className="stack" style={{ gap: 8, paddingBlockStart: 12, borderBlockStart: '1px solid var(--line)' }}>
+                <div className="row" style={{ flexWrap: 'nowrap', alignItems: 'flex-end', gap: 8 }}>
+                  <label className="field" style={{ flex: '1 1 0' }}>
+                    <span>{t('unit')}</span>
+                    <select className="input" value={u.unit} onChange={(e) => setRow(u.key, { unit: e.target.value as UnitCode | '' })}>
+                      <option value="">{t('un_choose')}</option>
+                      {unitOptions(u.unit, (c) => c === unit || c === 'service' || units.some((x) => x.key !== u.key && x.unit === c))}
+                    </select>
+                  </label>
+                  <div className="field" style={{ flex: '1 1 0' }}>
+                    <span>{t('un_holds')}</span>
+                    <div className="row" style={{ flexWrap: 'nowrap', gap: 6 }}>
+                      <QtyInput value={u.factorMilli} onChange={(v) => setRow(u.key, { factorMilli: v })} ariaLabel={t('un_holds')} />
+                      <span className="muted small" style={{ whiteSpace: 'nowrap' }}>{unitName(i18n, unit)}</span>
+                    </div>
+                  </div>
+                  <button type="button" className="btn icon danger" title={t('un_remove')} aria-label={t('un_remove')} onClick={() => { setUnitsProblem(false); setUnits((us) => us.filter((x) => x.key !== u.key)); }}><Icon name="x" size={16} /></button>
+                </div>
+                <div className="grid-2">
+                  <label className="field"><span>{t('barcode')}</span><input className="input ltr" value={u.barcode} maxLength={64} onChange={(e) => setRow(u.key, { barcode: e.target.value })} /></label>
+                  <div className="field">
+                    <span>{t('un_ownPrice')}</span>
+                    <AmountInput value={u.salePrice} currency={saleCurrency} ariaLabel={t('un_ownPrice')} onChange={(v) => setRow(u.key, { salePrice: v })} />
+                    <span className="muted small">{t('un_ownPriceHint')}</span>
+                  </div>
+                </div>
+              </div>
+            ))}
+            {unitsProblem && <div className="alert bad" role="alert">{t('un_incomplete', { b: unitName(i18n, unit) })}</div>}
             <div className="row">
-              {units.length < 10 && <button type="button" className="btn small" onClick={() => setUnits((us) => [...us, { key: unitKey++, unit: '', factorMilli: null, barcode: '', salePrice: null }])}><Icon name="plus" size={15} />{t('un_add')}</button>}
+              {units.length < MAX_ITEM_UNITS && <button type="button" className="btn small" onClick={() => setUnits((us) => [...us, { key: unitKey++, unit: '', factorMilli: null, barcode: '', salePrice: null }])}><Icon name="plus" size={15} />{t('un_add')}</button>}
             </div>
             {listed.length > 0 && (
               <div className="grid-2">
                 <label className="field">
                   <span>{t('un_saleUnit')}</span>
-                  <select className="input" value={saleUnit} onChange={(e) => setSaleUnit(e.target.value as UnitCode | '')}>
+                  <select className="input" value={saleUnit && listed.some((u) => u.unit === saleUnit) ? saleUnit : ''} onChange={(e) => setSaleUnit(e.target.value as UnitCode | '')}>
                     <option value="">{unitName(i18n, unit)}</option>
                     {listed.map((u) => <option key={u.key} value={u.unit}>{unitName(i18n, u.unit as UnitCode)}</option>)}
                   </select>
                 </label>
                 <label className="field">
                   <span>{t('un_purchaseUnit')}</span>
-                  <select className="input" value={purchaseUnit} onChange={(e) => setPurchaseUnit(e.target.value as UnitCode | '')}>
+                  <select className="input" value={purchaseUnit && listed.some((u) => u.unit === purchaseUnit) ? purchaseUnit : ''} onChange={(e) => setPurchaseUnit(e.target.value as UnitCode | '')}>
                     <option value="">{unitName(i18n, unit)}</option>
                     {listed.map((u) => <option key={u.key} value={u.unit}>{unitName(i18n, u.unit as UnitCode)}</option>)}
                   </select>
@@ -425,7 +525,7 @@ export function ItemForm({ item, onClose, onSaved }: { item: ItemView | null; on
   );
 }
 
-/** The categories tab: add, rename in three languages, order, switch off; a category nothing uses can be deleted. */
+/** The categories tab: add, rename, order, switch off; a category nothing uses can be deleted. */
 function Categories({ list, error, onChanged }: { list: CategoryView[]; error: unknown; onChanged(): void }) {
   const i18n = useI18n();
   const { t } = i18n;
@@ -521,9 +621,7 @@ function CategoryForm({ category, parentId: newParent, list, onClose, onSaved }:
             </select>
           </label>
         )}
-        <label className="field"><span>{t('nameAr')}</span><input className="input" lang="ar" dir="rtl" value={name.ar} onChange={(e) => setName({ ...name, ar: e.target.value })} autoFocus /></label>
-        <label className="field"><span>{t('nameKu')}</span><input className="input" lang="ckb" dir="rtl" value={name.ku} onChange={(e) => setName({ ...name, ku: e.target.value })} /></label>
-        <label className="field"><span>{t('nameEn')}</span><input className="input" lang="en" dir="ltr" value={name.en} onChange={(e) => setName({ ...name, en: e.target.value })} /></label>
+        <NameField label={t('name')} value={name} onChange={setName} autoFocus />
         <div className="grid-2">
           <label className="field"><span>{t('code')}</span><input className="input ltr" value={code} placeholder="C001" maxLength={24} onChange={(e) => setCode(e.target.value)} /></label>
           {category && <label className="field"><span>{t('cat_order')}</span><input className="input num" type="number" min={0} max={100000} value={sort} onChange={(e) => setSort(Math.max(0, Math.floor(Number(e.target.value)) || 0))} /></label>}
@@ -650,9 +748,7 @@ function WarehouseForm({ onClose, onSaved }: { onClose(): void; onSaved(): void 
     <Modal title={t('newWarehouse')} onClose={onClose}>
       <div className="stack">
         <label className="field"><span>{t('code')}</span><input className="input ltr" value={code} placeholder="ERBIL" onChange={(e) => setCode(e.target.value)} autoFocus /></label>
-        <label className="field"><span>{t('nameAr')}</span><input className="input" lang="ar" dir="rtl" value={name.ar} onChange={(e) => setName({ ...name, ar: e.target.value })} /></label>
-        <label className="field"><span>{t('nameKu')}</span><input className="input" lang="ckb" dir="rtl" value={name.ku} onChange={(e) => setName({ ...name, ku: e.target.value })} /></label>
-        <label className="field"><span>{t('nameEn')}</span><input className="input" lang="en" dir="ltr" value={name.en} onChange={(e) => setName({ ...name, en: e.target.value })} /></label>
+        <NameField label={t('name')} value={name} onChange={setName} />
         <ErrorBox error={error} />
         <div className="row">
           <button type="button" className="btn primary" disabled={busy} onClick={save}><Icon name="check" size={16} />{t('save')}</button>

@@ -238,6 +238,9 @@ export interface ItemView {
   /** 1.1: the brand, and the stock level to reorder at (thousandths; null: the category's, or none) */
   brandId: string | null;
   reorderMilli: number | null;
+  /** 1.4: the purchase price written on the item (null: none) and its currency; absent for someone who may not see it */
+  purchasePrice?: number | null;
+  purchaseCurrency?: CurrencyCode;
 }
 
 /** One of an item's other units: base units in one (thousandths), its barcode and its own price (null: base × factor). */
@@ -260,6 +263,8 @@ export interface ItemInput {
   categoryId?: string | null;
   brandId?: string | null;
   reorderMilli?: number | null;
+  purchasePrice?: number | null;
+  purchaseCurrency?: CurrencyCode | null;
 }
 
 export interface ItemDetail extends ItemView {
@@ -766,6 +771,7 @@ export const api = {
   /** A scanned barcode: the item, and the unit when it is one of the item's units' barcodes (null: its own, the base unit). */
   itemByBarcode: (barcode: string, warehouseId?: string) => request<{ item: ItemView | null; unit: UnitCode | null }>('GET', '/api/items' + qs({ barcode, ...(warehouseId ? { warehouseId } : {}) })),
   item: (id: string) => request<ItemDetail>('GET', `/api/items/${id}`),
+  usedUnits: () => request<UnitCode[]>('GET', '/api/item-units/used'),
   createItem: (input: ItemInput) => request<ItemView>('POST', '/api/items', input),
   updateItem: (id: string, input: ItemInput) => request<ItemView>('PUT', `/api/items/${id}`, input),
   deleteItem: (id: string) => request<void>('DELETE', `/api/items/${id}`),

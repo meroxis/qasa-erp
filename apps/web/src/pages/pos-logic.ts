@@ -1,6 +1,7 @@
 import type { CurrencyCode, UnitCode } from '@qasa/core';
 import type { ItemView } from '../api.ts';
 import { salePriceFor } from '../industry/units.ts';
+import { findByScaleBarcode } from '../industry/scale-barcode.ts';
 
 /**
  * The rate used to price items in a sale. A dollar sale uses the rate typed on the register; a dinar sale uses the
@@ -39,7 +40,7 @@ export const addRefusal = (item: Pick<ItemView, 'saleCurrency'>, currency: Curre
  * otherwise "3*code" or "3x code" sells three of that code. A barcode of one of an item's units (a box, a strip) finds
  * the item with that unit (`unit`; null: the item's own barcode or code, its base unit).
  */
-export function parseScan<T extends Pick<ItemView, 'barcode' | 'code'> & { units?: ItemView['units'] }>(raw: string, items: readonly T[]): {
+export function parseScan<T extends Pick<ItemView, 'barcode' | 'code'> & { units?: ItemView['units']; unit?: UnitCode }>(raw: string, items: readonly T[]): {
   code: string; qtyMilli: number; exact: T | undefined; unit: UnitCode | null;
 } {
   const find = (code: string): { item: T; unit: UnitCode | null } | undefined => {
@@ -53,6 +54,9 @@ export function parseScan<T extends Pick<ItemView, 'barcode' | 'code'> & { units
   };
   const whole = find(raw);
   if (whole) return { code: raw, qtyMilli: 1000, exact: whole.item, unit: whole.unit };
+  // 1.4 — a scale's label (markets): the item by the label's first seven digits, the weight on it as the quantity
+  const weighed = findByScaleBarcode(raw, items);
+  if (weighed) return { code: raw, qtyMilli: weighed.qtyMilli, exact: weighed.item, unit: null };
   const star = /^(\d+(?:\.\d+)?)\s*[*x×]\s*(.+)$/i.exec(raw);
   if (!star) return { code: raw, qtyMilli: 1000, exact: undefined, unit: null };
   const code = star[2]!.trim();

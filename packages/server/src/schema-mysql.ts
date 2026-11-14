@@ -172,6 +172,8 @@ export const MYSQL_TABLES: readonly MysqlObject[] = [
       updated_at ${WHEN},
       brand_id ${ID},
       reorder_milli BIGINT CHECK (reorder_milli IS NULL OR reorder_milli >= 0),
+      purchase_price BIGINT CHECK (purchase_price IS NULL OR purchase_price >= 0),
+      purchase_currency ${WORD} CHECK (purchase_currency IS NULL OR purchase_currency IN ('IQD', 'USD')),
       UNIQUE KEY items_barcode (barcode),
       FOREIGN KEY (category_id) REFERENCES item_categories(id),
       FOREIGN KEY (brand_id) REFERENCES brands(id)
@@ -1714,6 +1716,12 @@ export const V12_OWNER_TOOLS_MYSQL_STEPS: readonly MysqlStep[] = [
 
 /** Version 12 on a server database at version 11: each feature's own steps, one after the other. */
 export const V12_MYSQL_STEPS: readonly MysqlStep[] = [...V12_OWNER_TOOLS_MYSQL_STEPS];
+
+/** Version 13 (1.4): an item's purchase price and its currency. */
+export const V13_MYSQL_STEPS: readonly MysqlStep[] = [
+  mysqlAddColumn('items', 'purchase_price', 'BIGINT CHECK (purchase_price IS NULL OR purchase_price >= 0)'),
+  mysqlAddColumn('items', 'purchase_currency', `${WORD} CHECK (purchase_currency IS NULL OR purchase_currency IN ('IQD', 'USD'))`)
+];
 
 /** What a server database has already, for pendingMysqlSteps: "table.column" and "table.column>parent". */
 export interface MysqlSchemaState { columns: ReadonlySet<string>; foreignKeys: ReadonlySet<string> }
