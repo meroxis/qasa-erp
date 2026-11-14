@@ -44,7 +44,7 @@ it('ticks in the table exactly what the plans themselves include', () => {
     f_network: 'officeNetwork', f_relay: 'relay', f_installments: 'installments', f_pipeline: 'pipeline', f_phoneApp: 'phoneApp',
     f_websiteApi: 'websiteApi', f_cloudBackup: 'cloudBackup', f_bankReconciliation: 'bankReconciliation', f_payroll: 'payroll',
     f_yearEnd: 'finalAccountsExport', f_backup: 'autoBackup', f_dbServer: 'databaseServer', f_mobileShop: 'mobileShop',
-    f_autoParts: 'autoParts', f_pharmacy: 'pharmacy', f_loyalty: 'loyalty', f_engineeringWorks: 'engineeringWorks',
+    f_autoParts: 'autoParts', f_pharmacy: 'pharmacy', f_loyalty: 'loyalty', f_companyLogo: 'companyLogo', f_engineeringWorks: 'engineeringWorks',
     f_electricalSolar: 'electricalSolar', f_generators: 'generators', f_realEstate: 'realEstate', f_branches: 'branches', f_online: 'onlineEdition'
   };
   for (const [label, feature] of Object.entries(featureOf)) {

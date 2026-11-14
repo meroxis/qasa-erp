@@ -7,7 +7,12 @@ import { request } from '../api.ts';
 export type ImageMime = 'image/jpeg' | 'image/png' | 'image/webp';
 export interface PrintProfile { address: string; phone: string; taxNumber: string; footer: string; showLogo: boolean }
 export interface CompanyLogo { mime: ImageMime; data: string; updatedAt: string }
-export interface PrintProfileView extends PrintProfile { logo: CompanyLogo | null }
+export interface PrintProfileView extends PrintProfile {
+  /** the logo to print: null when there is none, or when the plan does not print one (the server decides) */
+  logo: CompanyLogo | null;
+  /** a logo is saved but the plan does not print it (older servers leave it out) */
+  logoKept?: boolean;
+}
 
 export const printApi = {
   profile: () => request<PrintProfileView>('GET', '/api/print-profile'),
