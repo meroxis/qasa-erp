@@ -60,13 +60,9 @@ export interface SaleInput {
 
 /** How a customer pays at the counter (1.1). */
 export type PosMethod = 'cash' | 'card' | 'fib' | 'zaincash' | 'qi' | 'account';
-export type PosAccounts = Partial<Record<'card' | 'fib' | 'zaincash' | 'qi', string>>;
 
 export const posApi = {
   current: () => request<{ shift: ShiftView | null }>('GET', '/api/pos/current'),
-  /** the methods the counter offers (cash and on account always; the others once they have an account) */
-  paymentAccounts: () => request<{ accounts: PosAccounts; methods: PosMethod[] }>('GET', '/api/pos/payment-accounts'),
-  setPaymentAccounts: (accounts: PosAccounts) => request<{ accounts: PosAccounts; methods: PosMethod[] }>('PUT', '/api/pos/payment-accounts', accounts),
   shifts: (f: { status?: 'open' | 'closed'; limit?: string } = {}) => request<ShiftView[]>('GET', '/api/pos/shifts' + qs(f)),
   shift: (id: string) => request<ShiftReport>('GET', `/api/pos/shifts/${id}`),
   open: (input: OpenShiftInput) => request<ShiftView>('POST', '/api/pos/shifts', input),

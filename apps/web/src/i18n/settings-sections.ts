@@ -8,7 +8,6 @@ export const SETTINGS_SECTION_TEXT = {
   ss_periods: ['الفترات وإقفال السنة', 'Periods and year-end', 'ماوەکان و داخستنی ساڵ'],
   ss_periodsHelp: ['إقفال الفترات وإقفال السنة وسجل التدقيق', 'Period locking, year-end closing and the audit log', 'داخستنی ماوەکان، داخستنی ساڵ و تۆماری وردبینی'],
   ss_sales: ['المبيعات ونقطة البيع', 'Sales and point of sale', 'فرۆشتن و خاڵی فرۆشتن'],
-  ss_salesHelp: ['حسابات الدفع والصلاحية والوجبات', 'Payment accounts, expiry and batches', 'هەژمارەکانی پارەدان، بەسەرچوون و وەجبەکان'],
   ss_loyaltyHelp: ['نقاط يكسبها الزبائن على مشترياتهم', 'Points customers earn on what they buy', 'ئەو خاڵانەی کڕیاران لەسەر کڕینەکانیان وەریدەگرن'],
   ss_printersHelp: ['طابعة وورق لكل نوع من الأوراق', 'A printer and paper for each kind of paper', 'چاپکەر و پەڕە بۆ هەر جۆرە پەڕەیەک'],
   ss_backupsHelp: ['النسخ التلقائية والاستعادة والنسخ السحابي', 'Automatic copies, restore and cloud backup', 'باکئەپی خۆکار، گەڕاندنەوە و باکئەپی هەوری'],

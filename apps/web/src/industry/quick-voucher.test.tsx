@@ -4,7 +4,7 @@ import { STORE_TEXT } from '../i18n/store.ts';
 import { makeI18n } from '../i18n.ts';
 import { approvalStateOf } from './VoucherApproval.tsx';
 import { amountInIqd, balanceAfter, mayQuickVoucher, parseRateText, quickOutcome } from './quick-voucher.ts';
-import { chosenMethod, creditNeedsCustomer, salePayments } from '../pages/pos-logic.ts';
+import { chosenMethod, creditNeedsCustomer, salePayments, tillMethods } from '../pages/pos-logic.ts';
 
 describe('receive payment: the balance before and what is left after', () => {
   it('takes a dinar amount off the balance as it is typed', () => {
@@ -62,18 +62,21 @@ describe('a voucher sent for approval', () => {
 });
 
 describe('the till: cash or credit, one of them', () => {
-  it('sends nothing for cash, and one part for anything else', () => {
+  it('offers cash and credit, and nothing else, whatever the company set up', () => {
+    expect(tillMethods(false)).toEqual(['cash', 'account']);
+    expect(tillMethods(true)).toEqual(['cash']);
+  });
+
+  it('sends nothing for cash, and one part for credit', () => {
     expect(salePayments('cash', 30_000)).toBeUndefined();
     expect(salePayments('account', 30_000)).toEqual([{ method: 'account', amount: 30_000 }]);
-    expect(salePayments('fib', 30_000)).toEqual([{ method: 'fib', amount: 30_000 }]);
     // points paid it all: nothing is left to put anywhere
     expect(salePayments('account', 0)).toBeUndefined();
   });
 
   it('falls back to cash when what was picked is no longer offered (offline: no credit)', () => {
     expect(chosenMethod('account', ['cash', 'account'])).toBe('account');
-    expect(chosenMethod('account', ['cash'])).toBe('cash');
-    expect(chosenMethod('fib', ['cash', 'account'])).toBe('cash');
+    expect(chosenMethod('account', tillMethods(true))).toBe('cash');
   });
 
   it('asks for a customer on credit only', () => {

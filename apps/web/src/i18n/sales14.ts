@@ -14,7 +14,7 @@ export const SALES14_TEXT = {
     'سەرەتا کڕیار هەڵبژێرە: فرۆشتنی قەرز لەسەر ئەو تۆمار دەکرێت.'
   ],
   s14_safe: ['القاصة', 'Safe', 'قاسە'],
-  s14_paidBy: ['يُدفع الآن بـ', 'Paid now by', 'ئێستا دەدرێت بە'],
+  s14_salesSectionHelp: ['الصلاحية والوجبات', 'Expiry and batches', 'بەسەرچوون و وەجبەکان'],
   err_pos_credit_not_mixed: [
     'البيع إما مدفوع الآن أو آجل كله، ولا يُقسم بينهما.',
     'A sale is either paid now or on credit as a whole, never part one and part the other.',

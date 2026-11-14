@@ -7,7 +7,7 @@ import type { PosMethod, SaleInput, ShiftView } from './pos-api.ts';
 /**
  * The offline till (1.2), on a PC connected to an office server. While the server can't be reached, the till keeps
  * selling from what it last had from it, kept in this window's memory only (never on disk): the items with their prices,
- * units, barcodes, categories and the stock last known, the customers, the payment methods and the open shift.
+ * units, barcodes, categories and the stock last known, the customers and the open shift.
  *
  * The rules (docs/offline-till.md):
  * - cash, card and wallet sales go on; each is kept on this PC (the outbox) and sent when the link is back, once;
@@ -27,7 +27,6 @@ export interface TillCache {
   items: ItemView[] | null;
   customers: PartyView[] | null;
   categories: CategoryView[] | null;
-  methods: PosMethod[] | null;
 }
 
 let cache: TillCache | null = null;
@@ -39,16 +38,13 @@ export function tillCache(who: string | null): TillCache | null {
 /** Keeps what the till just had from the server (memory only), for when it can't be reached. */
 export function rememberTill(who: string | null, patch: Partial<Omit<TillCache, 'who'>>): void {
   if (!who) return;
-  const base: TillCache = cache?.who === who ? cache : { who, shift: null, items: null, customers: null, categories: null, methods: null };
+  const base: TillCache = cache?.who === who ? cache : { who, shift: null, items: null, customers: null, categories: null };
   cache = { ...base, ...patch };
 }
 
 export function forgetTill(): void {
   cache = null;
 }
-
-/** The methods the till offers while offline: all of the shift's but on a customer's account. */
-export const offlineMethods = (methods: readonly PosMethod[]): PosMethod[] => methods.filter((m) => m !== 'account');
 
 /**
  * Why a sale can't be kept for later, or null: a part on a customer's account (the live credit-limit check), or
