@@ -93,7 +93,8 @@ export const NAV: NavGroup[] = [
       { key: 'vouchers', icon: 'receipt', path: 'entries', match: ['entries', 'entry', 'new', 'edit'], books: true, ownWith: 'sales' },
       { key: 'bk_title', icon: 'bank', path: 'banking', match: ['banking', 'cheque', 'bank-statement'] },
       { key: 'fa_title', icon: 'layers', path: 'fixed-assets', match: ['fixed-assets', 'fixed-asset'], adminOnly: true },
-      { key: 'br_expenses', icon: 'wallet', path: 'expenses', match: ['expenses'] },
+      // the expenses are payment vouchers, whoever prepared them: with the books
+      { key: 'br_expenses', icon: 'wallet', path: 'expenses', match: ['expenses'], books: true },
       { key: 'fx_title', icon: 'dollar', path: 'rates', match: ['rates'] },
       { key: 'accounts', icon: 'tree', path: 'accounts', match: ['accounts'] },
       { key: 'statement', icon: 'doc', path: 'statement', match: ['statement'], tile: false, companyBooks: true }
@@ -162,6 +163,13 @@ export const ADMIN_PAGES: ReadonlySet<string> = new Set(
 export const COMPANY_BOOK_PAGES: ReadonlySet<string> = new Set(
   NAV.flatMap((g) => g.items).filter((i) => i.companyBooks).flatMap((i) => i.match ?? (i.path !== undefined ? [i.path] : []))
 );
+
+/**
+ * The routes not opened for someone who may not read the books (a cashier, 1.4), whatever else they may do: the voucher
+ * editor (theirs come from "Receive payment"), the expenses and a bank statement to reconcile. A typed, bookmarked or
+ * favourite link lands on the home page, as the server would refuse the page's data.
+ */
+export const NO_BOOKS_PAGES: ReadonlySet<string> = new Set(['new', 'edit', 'expenses', 'bank-statement']);
 
 /** Every page that has a path, once (for favourites and the search). */
 export function allPages(v: NavViewer): (NavItem & { group: Key })[] {

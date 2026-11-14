@@ -49,6 +49,12 @@ export const SHELL14_TEXT = {
     'This PC is connected to the office PC {h} and works on its company file. To connect to another office PC, or to go back to this PC’s own company file, use the File menu.',
     'ئەم کۆمپیوتەرە بە کۆمپیوتەری نووسینگە {h} بەستراوە و لەسەر فایلی کۆمپانیای ئەو کار دەکات. بۆ پەیوەستبوون بە کۆمپیوتەرێکی تری نووسینگە، یان گەڕانەوە بۆ فایلی کۆمپانیای خودی ئەم کۆمپیوتەرە، لیستی «فایل» بەکاربهێنە.'
   ],
+  // the same card in a browser on the office network: no File menu there, and no company file of its own
+  s14_netBrowser: [
+    'هذا المتصفح يعمل على ملف شركة حاسوب المكتب {h}.',
+    'This browser works on the company file of the office PC {h}.',
+    'ئەم وێبگەڕە لەسەر فایلی کۆمپانیای کۆمپیوتەری نووسینگە {h} کار دەکات.'
+  ],
   s14_netClientSettings: [
     'إعدادات شبكة المكتب وQasa Relay وقاعدة البيانات تُغيَّر على حاسوب المكتب نفسه.',
     'The office network, Qasa Relay and the database are set up on the office PC itself.',

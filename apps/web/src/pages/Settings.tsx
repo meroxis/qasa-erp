@@ -24,7 +24,7 @@ import { backupFailureKey, backupNoticeKey } from '../industry/BackupNotice.tsx'
 import { batchesApi, type BatchSettingsView } from '../industry/batches-api.ts';
 import { LoyaltySettingsCard } from '../industry/Loyalty.tsx';
 import { CloseAskSetting } from '../industry/CloseAsk.tsx';
-import { dataPlaceLine, officeText, useDataPlace, type DataPlace } from '../industry/data-place.ts';
+import { dataPlaceLine, inWindowsApp, officeText, useDataPlace, type DataPlace } from '../industry/data-place.ts';
 
 /** One section of Settings: its address (#/settings/<id>), icon, name and the line under the name. */
 export interface SettingsSection {
@@ -179,13 +179,17 @@ export function ClientBackupCard({ place }: { place: DataPlace }) {
   );
 }
 
-/** 1.4: Settings → Office network on a PC connected to an office PC: it is a client, and says of which PC. */
-export function ClientNetworkCard({ place }: { place: DataPlace }) {
+/**
+ * 1.4: Settings → Office network on a PC connected to an office PC: it is a client, and says of which PC. In a browser
+ * (or a phone's) on the office network there is no File menu and no company file of its own: it says only whose file it
+ * works on.
+ */
+export function ClientNetworkCard({ place, browser = !inWindowsApp() }: { place: DataPlace; browser?: boolean }) {
   const { t } = useI18n();
   return (
     <div className="card pad stack" data-client-network>
       <div className="card-head"><h2>{t('netTitle')}</h2><GuideLink slug="office-network-and-qasa-relay" /></div>
-      <div className="alert info" role="status">{officeText(t, place, 's14_netClient')}</div>
+      <div className="alert info" role="status">{officeText(t, place, browser ? 's14_netBrowser' : 's14_netClient')}</div>
       <p className="muted small" style={{ margin: 0 }}>{t('s14_netClientSettings')}</p>
     </div>
   );

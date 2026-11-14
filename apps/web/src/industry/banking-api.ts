@@ -13,9 +13,9 @@ export interface MoneyAccountView {
   name: Names;
   kind: MoneyKind;
   currency: CurrencyCode | null;
-  /** approved entries only, per currency, debit positive */
-  balance: Money;
-  base: number;
+  /** approved entries only, per currency, debit positive; with base, absent for someone who may not read the books (1.4) */
+  balance?: Money;
+  base?: number;
   /** entries touching it that wait for approval */
   pending: number;
 }

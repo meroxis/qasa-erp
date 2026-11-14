@@ -161,6 +161,27 @@ describe('where the data is', () => {
     expect(dataPlaceLine(eastern.t, place)).toContain('192.168.1.20');
     expect(wrap(<DataPlaceCard place={null} />)).toBe('');
   });
+
+  it('names no File menu and no company file of its own in a browser on the office network: only the Windows app has them', () => {
+    const place: DataPlace = { kind: 'office', host: '192.168.1.20:47420', relay: false };
+    const fileMenu: Record<Lang, string> = { ar: 'قائمة «ملف»', en: 'File menu', ku: 'لیستی «فایل»' };
+    for (const lang of LANGS) {
+      const said = (key: Key) => esc(officeText(i18nOf(lang).t, place, key));
+      // (these pages are rendered outside the Windows app: a browser is what the card takes itself to be in)
+      for (const browser of [wrap(<ClientNetworkCard place={place} />, lang), wrap(<ClientNetworkCard place={place} browser />, lang)]) {
+        expect(browser, lang).toContain(said('s14_netBrowser'));
+        expect(browser, lang).toContain('192.168.1.20:47420');
+        expect(browser, lang).not.toContain(esc(fileMenu[lang]));
+        // what is set up on the office PC itself is still said, and none of its cards is offered
+        expect(browser, lang).toContain(esc(textOf(lang, 's14_netClientSettings')));
+        expect(browser, lang).not.toContain('<button');
+      }
+      const app = wrap(<ClientNetworkCard place={place} browser={false} />, lang);
+      expect(app, lang).toContain(said('s14_netClient'));
+      expect(app, lang).toContain(esc(fileMenu[lang]));
+      expect(textOf(lang, 's14_netClient')).toContain(fileMenu[lang]);
+    }
+  });
 });
 
 describe('the dollar rate at the top of the window', () => {

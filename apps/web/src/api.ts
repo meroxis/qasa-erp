@@ -221,10 +221,11 @@ export interface PartyStatement {
   party: PartyView;
   /** 1.1: null = all lines in IQD at the book rates; IQD or USD = that currency's lines only, in it */
   currency?: CurrencyCode | null;
-  opening: number;
+  /** opening and the totals: absent (and no lines) on a supplier's statement for someone who may not read the books (1.4) */
+  opening?: number;
   closing: number;
-  totalDebit: number;
-  totalCredit: number;
+  totalDebit?: number;
+  totalCredit?: number;
   lines: {
     entryId: string; invoiceId: string | null; number: string; date: string; description: string; debit: number; credit: number; balance: number;
     currency?: CurrencyCode; amount?: number;

@@ -95,7 +95,11 @@ const moneyLine = (i18n: I18n, m: Record<CurrencyCode, number>) =>
 export function Banking({ tab = 'accounts' }: { tab?: BankingTab }) {
   const { t } = useI18n();
   usePageNav(NAV);
-  const tabs: [BankingTab, Key][] = [['accounts', 'bk_tabAccounts'], ['transfer', 'bk_tabTransfer'], ['cheques', 'bk_tabCheques'], ['reconcile', 'bk_tabReconcile']];
+  // 1.4: reconciling a bank account reads its lines in the books: no such tab for someone who may not read them
+  const books = useData().seesBooks !== false;
+  const all: [BankingTab, Key][] = [['accounts', 'bk_tabAccounts'], ['transfer', 'bk_tabTransfer'], ['cheques', 'bk_tabCheques'], ['reconcile', 'bk_tabReconcile']];
+  const tabs = all.filter(([k]) => books || k !== 'reconcile');
+  if (!books && tab === 'reconcile') tab = 'accounts';
   return (
     <div className="stack">
       <div className="tabs" role="group">
@@ -112,23 +116,25 @@ function Accounts() {
   const i18n = useI18n();
   const { t } = i18n;
   const list = useMoneyAccounts();
-  const { reloadAccounts, companyBooks } = useData();
+  const { reloadAccounts, companyBooks, seesBooks } = useData();
   // an account's statement is the company's books: no link for someone limited to branches
   const books = companyBooks !== false;
+  // 1.4: what each safe and bank holds is not sent to someone who may not read the books: the list without its amounts
   const [adding, setAdding] = useState(false);
   const [editing, setEditing] = useState<MoneyAccountView | null>(null);
   const accounts = list.data?.accounts ?? [];
+  const balances = seesBooks !== false && accounts.every((a) => a.balance);
   const totals = useMemo(() => {
     const m = { IQD: 0, USD: 0 } as Record<CurrencyCode, number>;
     let base = 0;
-    for (const a of accounts) { m.IQD += a.balance.IQD; m.USD += a.balance.USD; base += a.base; }
+    for (const a of accounts) { m.IQD += a.balance?.IQD ?? 0; m.USD += a.balance?.USD ?? 0; base += a.base ?? 0; }
     return { m, base };
   }, [accounts]);
 
   return (
     <div className="stack">
       <p className="muted" style={{ margin: 0 }}>{t('bk_accountsHelp')}</p>
-      <div className="grid-4">
+      {balances && <div className="grid-4">
         <div className="card pad tile">
           <div className="label">{t('bk_totalCash')} · IQD</div>
           <div className="value num">{i18n.money(totals.m.IQD, 'IQD')}</div>
@@ -142,7 +148,7 @@ function Accounts() {
           <div className="value num">{i18n.money(totals.base, 'IQD')}</div>
           <div className="small muted">{t('bk_inBase')}</div>
         </div>
-      </div>
+      </div>}
       <div className="row">
         <button type="button" className="btn primary" onClick={() => setAdding(true)}><Icon name="plus" size={16} />{t('bk_addAccount')}</button>
         <a className="btn" href={href('banking/transfer')}><Icon name="swap" size={16} />{t('bk_tabTransfer')}</a>
@@ -152,7 +158,7 @@ function Accounts() {
         <div className="card">
           <div className="table-wrap">
             <table className="table">
-              <thead><tr><th>{t('code')}</th><th>{t('name')}</th><th>{t('bk_kind')}</th><th className="num">IQD</th><th className="num">USD</th><th /></tr></thead>
+              <thead><tr><th>{t('code')}</th><th>{t('name')}</th><th>{t('bk_kind')}</th>{balances && <><th className="num">IQD</th><th className="num">USD</th></>}<th /></tr></thead>
               <tbody>
                 {accounts.map((a) => (
                   <tr key={a.code}>
@@ -162,8 +168,10 @@ function Accounts() {
                       {a.pending > 0 && <div className="small muted">{t('bk_pending', { n: a.pending })}</div>}
                     </td>
                     <td><span className="chip neutral">{t(kindKey(a.kind))}</span>{a.currency && <span className="small muted"> {a.currency}</span>}</td>
-                    <td className="num">{i18n.money(a.balance.IQD, 'IQD')}</td>
-                    <td className="num">{i18n.money(a.balance.USD, 'USD')}</td>
+                    {balances && a.balance && <>
+                      <td className="num">{i18n.money(a.balance.IQD, 'IQD')}</td>
+                      <td className="num">{i18n.money(a.balance.USD, 'USD')}</td>
+                    </>}
                     <td className="num">
                       <span className="row" style={{ gap: 4, justifyContent: 'flex-end' }}>
                         {books && <a className="btn subtle icon" title={t('bk_statement')} aria-label={t('bk_statement') + ' ' + a.code} href={href(`statement/${a.code}`)}><Icon name="doc" size={16} /></a>}
@@ -320,7 +328,7 @@ function Transfer() {
           <label className="field"><span>{t('date')}</span><input className="input" type="date" value={date} onChange={(e) => setDate(e.target.value)} /></label>
           <CurrencyTrack value={currency} onChange={setCurrency} />
           <label className="field">
-            <span>{t('amount')}{source && <span className="muted small"> · {t('bk_available')}: <span className="num">{i18n.money(source.balance[currency], currency)}</span></span>}</span>
+            <span>{t('amount')}{source?.balance && <span className="muted small"> · {t('bk_available')}: <span className="num">{i18n.money(source.balance[currency], currency)}</span></span>}</span>
             <AmountInput value={amount} currency={currency} onChange={setAmount} ariaLabel={t('amount')} />
           </label>
           {currency === 'USD' && <RateField value={rate || (settings ? String(settings.defaultRateX100) : '')} onChange={setRate} />}
