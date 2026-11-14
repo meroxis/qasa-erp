@@ -260,6 +260,8 @@ export function InvoicesTable({ invoices, showParty = true }: { invoices: Invoic
   const i18n = useI18n();
   const { t } = i18n;
   if (invoices.length === 0) return <p className="muted" style={{ padding: '14px 16px', margin: 0 }}>{t('noInvoices')}</p>;
+  // 1.4: purchase invoices reach someone who may not read the books without their money: no total column then
+  const priced = invoices.some((v) => v.total !== undefined);
   return (
     <table className="table">
       <thead>
@@ -268,7 +270,7 @@ export function InvoicesTable({ invoices, showParty = true }: { invoices: Invoic
           <th>{t('colDate')}</th>
           {showParty && <th>{t('customerOrSupplier')}</th>}
           <th>{t('paymentMode')}</th>
-          <th className="amount">{t('totalDue')}</th>
+          {priced && <th className="amount">{t('totalDue')}</th>}
           <th>{t('colStatus')}</th>
         </tr>
       </thead>
@@ -282,7 +284,7 @@ export function InvoicesTable({ invoices, showParty = true }: { invoices: Invoic
             <td className="num">{i18n.date(v.date)}</td>
             {showParty && <td className="bidi">{v.partyName ?? <span className="muted">{t('walkIn')}</span>}</td>}
             <td>{v.payment === 'cash' ? t('payCash') : t('payCredit')}</td>
-            <td className="amount">{i18n.money(v.total, v.currency)}</td>
+            {priced && <td className="amount">{v.total !== undefined ? i18n.money(v.total, v.currency) : ''}</td>}
             <td><InvoiceStatusChip status={v.status} />{(v.paidOnline ?? 0) > 0 && <span className="chip ok" style={{ marginInlineStart: 6 }}>{t('pay_paidOnline')}</span>}</td>
           </tr>
         ))}

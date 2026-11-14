@@ -6,8 +6,9 @@ import { schemaVersion, SCHEMA_VERSION, type Db } from './db.ts';
 import { AppError, conflict, invalid } from './errors.ts';
 import {
   changeOwnPassword, createUser, hasRecoveryCode, issueRecoveryCode, listUsers, login, logout, ownerActor, ROLES, separateDuties, SESSION_COOKIE, sessionActor, sessionCookie,
-  setPassword, setSeparateDuties, setSignInRequired, signInRequired, updateUser, type Actor, type Permission
+  seesBooks, seesCost, setPassword, setSeparateDuties, setSignInRequired, signInRequired, updateUser, type Actor, type Permission
 } from './auth.ts';
+import { checkCostRequest, hideCost } from './cost-view.ts';
 import { createAccount, deleteAccount, listAccounts, renameAccount } from './accounts.ts';
 import {
   approveEntry, checkEntry, createJournalEntry, createVoucher, deleteEntry, getEntry, listEntries,
@@ -19,7 +20,7 @@ import { getSettings, lockPeriod, lockedPeriods, unlockPeriod, updateSettings } 
 import { listAudit } from './audit.ts';
 import { createParty, deleteParty, getParty, isForeignKeyFailure, listParties, partyStatement, updateParty } from './parties.ts';
 import {
-  createItem, createWarehouse, deleteItem, findByBarcode, getItem, itemMoves, itemStock, listItems, listWarehouses, updateItem, updateWarehouse, type ItemView
+  createItem, createWarehouse, deleteItem, findByBarcode, getItem, itemMoves, itemStock, listItems, listWarehouses, updateItem, updateWarehouse
 } from './items.ts';
 import { usedUnits } from './item-units.ts';
 import { activateLicense, planStatus, removeLicense, startTrial } from './license.ts';
@@ -369,9 +370,11 @@ export function apiRoutes(db: Db, options: { demo?: boolean; extensions?: readon
         if (books !== undefined && method !== 'GET' && books !== booksId(db)) throw conflict('other_books');
         // a user limited to some branches works only with their warehouses and safes (branches.ts)
         checkBranchRequest(db, actor, method, path, req);
+        // cost, stock value and profit are for those who may see them (cost-view.ts): the books are refused, the fields left out
+        checkCostRequest(actor, path);
         const result = await handler(req, reply);
-        if (reply.sent) reply.payload = forActor(path, reply.payload, actor);
-        return forActor(path, filterBranchResult(db, actor, method, path, result), actor);
+        if (reply.sent) reply.payload = forActor(path, hideCost(actor, path, reply.payload), actor);
+        return forActor(path, hideCost(actor, path, filterBranchResult(db, actor, method, path, result)), actor);
       }
     });
   };
@@ -519,7 +522,14 @@ export function apiRoutes(db: Db, options: { demo?: boolean; extensions?: readon
   app.get('/api/parties/:id/statement', async (req) => {
     // currency (1.1): that currency's lines only, with a running balance in it
     const q = parse(z.object({ from: isoDate.optional(), to: isoDate.optional(), currency: currency.optional() }), req.query);
-    return partyStatement(db, parse(idParam, req.params).id, q, branchOfUser(req));
+    const statement = partyStatement(db, parse(idParam, req.params).id, q, branchOfUser(req));
+    // 1.4: a supplier's statement lists what each purchase cost. Someone who may not read the books gets the supplier and
+    // the balance owed, as in the list of suppliers, without the lines and their totals (a customer's is for everyone)
+    if (statement.party.type === 'supplier' && !seesBooks(actorOf(req))) {
+      const { opening: _opening, totalDebit: _debit, totalCredit: _credit, ...rest } = statement;
+      return { ...rest, lines: [] };
+    }
+    return statement;
   });
 
   // warehouses, items & stock
@@ -533,13 +543,8 @@ export function apiRoutes(db: Db, options: { demo?: boolean; extensions?: readon
     const body = parse(z.object({ name: names, active: z.boolean().optional() }), req.body);
     return updateWarehouse(db, parse(idParam, req.params).id, body, userOf(req));
   });
-  // 1.4: an item's purchase price is for those who buy or keep the stock; a cashier's copy of the item has none
-  const seesPurchasePrice = (req: ApiRequest) => actorOf(req).permissions.some((p) => p === 'admin' || p === 'stock' || p === 'purchases');
-  const forViewer = <T extends ItemView>(req: ApiRequest, item: T): T => {
-    if (seesPurchasePrice(req)) return item;
-    const { purchasePrice: _price, purchaseCurrency: _currency, ...rest } = item;
-    return rest as T;
-  };
+  // 1.4: an item's purchase price, average cost and stock value are for those who buy or keep the stock; a cashier's
+  // copy of the item has none of them (left out of every answer by the router, see cost-view.ts)
   // the units the company's items use already: the item form lists them whatever the business type offers
   app.get('/api/item-units/used', async () => usedUnits(db));
   app.get('/api/items', async (req) => {
@@ -550,12 +555,10 @@ export function apiRoutes(db: Db, options: { demo?: boolean; extensions?: readon
     }), req.query);
     // a scan at the counter: the item and the unit the barcode belongs to (an item's own barcode: its base unit)
     if (q.barcode) {
-      const found = findByBarcode(db, q.barcode, q.warehouseId ? [q.warehouseId] : warehousesOfUser(req));
-      return { ...found, item: found.item && forViewer(req, found.item) };
+      return findByBarcode(db, q.barcode, q.warehouseId ? [q.warehouseId] : warehousesOfUser(req));
     }
     // without a warehouse, a user limited to branches gets the stock of their branches' warehouses (null: every one)
-    return listItems(db, { q: q.q, warehouseId: q.warehouseId, active: q.active === undefined ? undefined : q.active === 'true', categoryId: q.categoryId, brandId: q.brandId }, warehousesOfUser(req))
-      .map((item) => forViewer(req, item));
+    return listItems(db, { q: q.q, warehouseId: q.warehouseId, active: q.active === undefined ? undefined : q.active === 'true', categoryId: q.categoryId, brandId: q.brandId }, warehousesOfUser(req));
   });
   // 1.1: items at or below their minimum quantity (their own, or their category's), in a warehouse or the user's
   app.get('/api/stock/reorder', async (req) => {
@@ -565,13 +568,13 @@ export function apiRoutes(db: Db, options: { demo?: boolean; extensions?: readon
   app.get('/api/items/:id', async (req) => {
     const { id } = parse(idParam, req.params);
     const warehouses = warehousesOfUser(req);
-    return { ...forViewer(req, getItem(db, id, warehouses)), stock: itemStock(db, id, warehouses), moves: itemMoves(db, id, warehouses) };
+    return { ...getItem(db, id, warehouses), stock: itemStock(db, id, warehouses), moves: itemMoves(db, id, warehouses) };
   });
-  app.post('/api/items', async (req, reply) => reply.status(201).send(forViewer(req, createItem(db, withoutUndefined(parse(itemSchema, req.body)), userOf(req)))));
+  app.post('/api/items', async (req, reply) => reply.status(201).send(createItem(db, withoutUndefined(parse(itemSchema, req.body)), userOf(req))));
   app.put('/api/items/:id', async (req) => {
     const { id } = parse(idParam, req.params);
     updateItem(db, id, withoutUndefined(parse(itemSchema, req.body)), userOf(req));
-    return forViewer(req, getItem(db, id, warehousesOfUser(req)));
+    return getItem(db, id, warehousesOfUser(req));
   });
   app.delete('/api/items/:id', async (req, reply) => {
     deleteItem(db, parse(idParam, req.params).id, userOf(req));
@@ -649,7 +652,9 @@ export function apiRoutes(db: Db, options: { demo?: boolean; extensions?: readon
     user: actor ? {
       id: actor.id, name: actor.name, username: actor.username, roles: actor.roles, permissions: actor.permissions,
       // limited to some branches: the company's own books (trial balance, final accounts, statements…) are not for them
-      branchLimited: isBranchLimited(db, actor)
+      branchLimited: isBranchLimited(db, actor),
+      // 1.4: whether cost (purchase prices, stock value, a sale's cost) and the books and their reports are for them
+      seesCost: seesCost(actor), seesBooks: seesBooks(actor)
     } : null
   });
   app.get('/api/auth/me', async (req) => me((req as ApiRequest & { actor?: Actor | null }).actor ?? null));

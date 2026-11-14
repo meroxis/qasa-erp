@@ -16,12 +16,15 @@ import { NAV, toggleFavourite, visibleItems, type NavItem, type NavViewer } from
 export function Home({ viewer, user, favourites }: { viewer: NavViewer; user: string; favourites: string[] }) {
   const i18n = useI18n();
   const { t } = i18n;
-  const { accounts, settings, plan, reloadPlan, companyBooks } = useData();
+  const { accounts, settings, plan, reloadPlan, companyBooks, seesBooks } = useData();
   // the trial balance and the final accounts are the company's books: no link for someone limited to branches
   const books = companyBooks !== false;
   // this month's invoice count feeds the "growing" note
   useEffect(() => { void reloadPlan(); }, [reloadPlan]);
-  const { data: entries, error } = useLoad(() => api.entries(), []);
+  // 1.4: the journal and the accounts' balances are not sent to someone who may not read the books (a cashier): no
+  // vouchers on their home page, and no cash tile made from a balance
+  const journal = seesBooks !== false;
+  const { data: entries, error } = useLoad(() => (journal ? api.entries() : Promise.resolve([])), [journal]);
   const month = todayIso().slice(0, 7);
   const sales = useLoad(() => api.invoices({ kind: 'sale', status: 'posted', from: `${month}-01` }), [month]);
   const salesTotal = (sales.data ?? []).reduce((s, v) => s + v.baseTotal, 0);
@@ -41,7 +44,7 @@ export function Home({ viewer, user, favourites }: { viewer: NavViewer; user: st
     { label: t('receivables'), value: i18n.money(d.receivables, 'IQD'), link: 'reports-more/aging', icon: 'contact' },
     { label: t('payables'), value: i18n.money(d.payables, 'IQD'), link: 'reports-more/supplier-aging', icon: 'truck' }
   ] : [
-    { label: t('cashAndBanks'), value: i18n.money(cash, 'IQD'), icon: 'wallet' },
+    ...(journal ? [{ label: t('cashAndBanks'), value: i18n.money(cash, 'IQD'), icon: 'wallet' }] : []),
     { label: t('salesThisMonth'), value: i18n.money(salesTotal, 'IQD'), link: 'sales', icon: 'trend' },
     { label: t('receivables'), value: i18n.money(owed('customer'), 'IQD'), link: 'customers', icon: 'contact' },
     { label: t('payables'), value: i18n.money(owed('supplier'), 'IQD'), link: 'suppliers', icon: 'truck' }
@@ -106,7 +109,7 @@ export function Home({ viewer, user, favourites }: { viewer: NavViewer; user: st
       <FirstSteps viewer={viewer} />
       <Launcher viewer={viewer} user={user} favourites={favourites} />
       {d && <SalesChart d={d} />}
-      <div className="card flow">
+      {journal && <div className="card flow">
         <div className="flow-title">
           <h2>{t('voucherFlow')}</h2>
           <span className="small muted">{t('role_preparer')} · {t('role_checker')} · {t('role_approver')}</span>
@@ -120,16 +123,16 @@ export function Home({ viewer, user, favourites }: { viewer: NavViewer; user: st
             </a>
           </div>
         ))}
-      </div>
+      </div>}
       <ErrorBox error={error} />
-      <div className="card">
+      {journal && <div className="card">
         <div className="card-head">
           <h2>{t('recentEntries')}</h2>
           <span className="spacer" />
           <a className="btn ghost small" href={href('entries')}>{t('viewAll')}</a>
         </div>
         {entries && <EntriesTable entries={entries.slice(0, 10)} />}
-      </div>
+      </div>}
     </div>
   );
 }

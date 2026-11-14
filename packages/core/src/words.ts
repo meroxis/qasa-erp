@@ -3,6 +3,8 @@ import type { Lang } from './lang.ts';
 
 /** Amount in words (تفقيط) as printed on Iraqi vouchers, invoices and cheques. */
 export function amountInWords(amountMinor: number, currency: CurrencyCode, lang: Lang): string {
+  // an amount that is not there (a document sent without its money) has no words
+  if (typeof amountMinor !== 'number' || !Number.isFinite(amountMinor)) return '';
   const abs = Math.abs(amountMinor);
   const whole = currency === 'USD' ? Math.floor(abs / 100) : abs;
   const cents = currency === 'USD' ? abs % 100 : 0;

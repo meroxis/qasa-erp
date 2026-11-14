@@ -6,8 +6,9 @@ import type { ChequeCounts, ChequesAheadView } from './ChequesAhead.tsx';
 export type Money2 = { IQD: number; USD: number };
 
 export interface CashAccountView { code: string; name: Names; balance: Money2; base: number }
-export interface ItemSalesView { itemId: string; code: string; name: Names; qtyMilli: number; sales: number; cost: number; profit: number }
-export interface SalesFiguresView { qtyMilli: number; sales: number; cost: number; profit: number }
+/** cost and profit: absent for someone who may not read the books (1.4) */
+export interface ItemSalesView { itemId: string; code: string; name: Names; qtyMilli: number; sales: number; cost?: number; profit?: number }
+export interface SalesFiguresView { qtyMilli: number; sales: number; cost?: number; profit?: number }
 /** A category (its subcategories in children, total with them) or a brand; id null: items with none. */
 export interface GroupSalesView extends SalesFiguresView { id: string | null; code: string; name: Names | null; children: GroupSalesView[]; total: SalesFiguresView }
 export interface CustomerSalesView { partyId: string | null; code: string; name: string; invoices: number; sales: number }
@@ -44,11 +45,11 @@ export interface DashboardView {
   salesMonth: number;
   salesLastMonth: number;
   /** null when one branch is shown: profit is only known for the whole company */
-  profitMonth: { revenue: number; expenses: number; profit: number } | null;
+  profitMonth?: { revenue: number; expenses: number; profit: number } | null;
   cash: { total: Money2; base: number };
   receivables: number;
   payables: number;
-  months: { month: string; sales: number; profit: number | null }[];
+  months: { month: string; sales: number; profit?: number | null }[];
   cheques?: ChequeCounts;
 }
 

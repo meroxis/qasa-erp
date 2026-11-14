@@ -247,7 +247,7 @@ export function InvoiceEditor({ kind: initialKind, id, partyId: initialParty }: 
   function catalogPrice(it: ItemView | undefined, unit: LineUnit): number | null {
     if (!it || !priceRateX100) return null;
     if (kind === 'sale') return salePriceFor(it, unit, convert(it.salePrice, it.saleCurrency, currency, priceRateX100), { own: ownUnitPrice(it, unit) });
-    if (it.qtyMilli <= 0) return null;
+    if (it.qtyMilli <= 0 || it.value === undefined) return null;
     return roundHalfUp((convert(averageCost(it.qtyMilli, it.value), 'IQD', currency, priceRateX100) * factorOf(it, unit)) / 1000);
   }
 
@@ -644,6 +644,8 @@ export function InvoiceDetail({ id }: { id: string }) {
   };
   const company = settings ? i18n.name(settings.companyName) : '';
   const totalCost = v.lines.reduce((s, l) => s + (l.cost ?? 0), 0);
+  // 1.4: a purchase invoice reaches someone who may not read the books without its money: no price columns, no totals
+  const priced = v.total !== undefined;
   const isRet = isReturnKind(v.kind);
   const saleSide = v.kind === 'sale' || v.kind === 'sale_return';
 
@@ -751,7 +753,7 @@ export function InvoiceDetail({ id }: { id: string }) {
           <thead>
             <tr>
               <th style={{ width: 36 }}>#</th><th style={{ width: 90 }}>{t('code')}</th><th>{t('item')}</th>
-              <th className="amount">{t('qty')}</th><th className="amount">{t('unitPrice')}</th><th className="amount">{t('amount')}</th>
+              <th className="amount">{t('qty')}</th>{priced && <><th className="amount">{t('unitPrice')}</th><th className="amount">{t('amount')}</th></>}
             </tr>
           </thead>
           <tbody>
@@ -767,8 +769,8 @@ export function InvoiceDetail({ id }: { id: string }) {
                     : <>{qtyText(i18n, l.qtyMilli)} <span className="muted small">{unitName(i18n, l.unit)}</span></>}
                   {l.returnedQtyMilli > 0 && <div className="small no-print" style={{ color: 'var(--warn)' }}>{t('returnedQty')}: {qtyText(i18n, l.returnedQtyMilli)}</div>}
                 </td>
-                <td className="amount">{i18n.money(l.unitPrice, v.currency)}</td>
-                <td className="amount">{i18n.money(l.amount, v.currency)}</td>
+                {priced && <><td className="amount">{i18n.money(l.unitPrice, v.currency)}</td>
+                <td className="amount">{i18n.money(l.amount, v.currency)}</td></>}
               </tr>
             ))}
           </tbody>
@@ -776,11 +778,11 @@ export function InvoiceDetail({ id }: { id: string }) {
 
         <div className="row" style={{ alignItems: 'flex-start', marginTop: 12 }}>
           <div style={{ flex: 1, minWidth: 240 }}>
-            <div className="muted small">{t('inWords')}</div>
-            <div className="words">{i18n.digitsOf(amountInWords(v.total, v.currency, i18n.lang))}</div>
+            {priced && <><div className="muted small">{t('inWords')}</div>
+            <div className="words">{i18n.digitsOf(amountInWords(v.total, v.currency, i18n.lang))}</div></>}
             {v.notes && <p className="small" style={{ marginBottom: 0 }}><span className="muted">{t('notes')}: </span>{v.notes}</p>}
           </div>
-          <div className="totals">
+          <div className="totals" hidden={!priced}>
             <span className="muted">{t('subtotal')}</span><span className="num">{i18n.money(v.subtotal, v.currency)}</span>
             {v.discount > 0 && <><span className="muted">{t('discount')}</span><span className="num">− {i18n.money(v.discount, v.currency)}</span></>}
             <span style={{ fontWeight: 700 }}>{t('totalDue')}</span><strong className="num" style={{ fontSize: 18 }}>{i18n.money(v.total, v.currency)}</strong>
@@ -838,7 +840,7 @@ export function InvoiceDetail({ id }: { id: string }) {
                 <tr key={r.id} className="click" onClick={() => go(`invoice/${r.id}`)}>
                   <td><a className="ltr num" href={href(`invoice/${r.id}`)} onClick={(e) => e.stopPropagation()}>{r.number}</a></td>
                   <td className="num">{i18n.date(r.date)}</td>
-                  <td className="amount">{i18n.money(r.total, v.currency)}</td>
+                  {priced && <td className="amount">{i18n.money(r.total, v.currency)}</td>}
                   <td><InvoiceStatusChip status={r.status} /></td>
                 </tr>
               ))}

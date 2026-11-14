@@ -191,6 +191,8 @@ function NearExpiry() {
   const { t } = i18n;
   const list = useLoad(() => pharmacyApi.nearExpiry(), []);
   const rows = list.data ?? [];
+  // 1.4: the value of the stock is not sent to someone who may not see cost: no such column
+  const cost = useData().seesCost !== false && rows.every((r) => r.value !== undefined);
   return (
     <div className="stack">
       <div className="row no-print">
@@ -203,7 +205,7 @@ function NearExpiry() {
         {list.data && rows.length === 0 && <EmptyState compact icon="clock" title={t('ex_none')} text="" />}
         {rows.length > 0 && (
           <table className="table">
-            <thead><tr><th>{t('item')}</th><th>{t('ex_batch')}</th><th>{t('ex_expiry')}</th><th>{t('warehouse')}</th><th className="amount">{t('qty')}</th><th className="amount">{t('stockValue')}</th></tr></thead>
+            <thead><tr><th>{t('item')}</th><th>{t('ex_batch')}</th><th>{t('ex_expiry')}</th><th>{t('warehouse')}</th><th className="amount">{t('qty')}</th>{cost && <th className="amount">{t('stockValue')}</th>}</tr></thead>
             <tbody>
               {rows.map((r) => (
                 <tr key={`${r.batchId}|${r.warehouseId}`}>
@@ -212,7 +214,7 @@ function NearExpiry() {
                   <td><ExpiryChip state={r.state} expiry={r.expiry} i18n={i18n} /></td>
                   <td>{i18n.name(r.warehouseName)}</td>
                   <td className="amount">{i18n.qty(r.qtyMilli)}</td>
-                  <td className="amount">{i18n.money(r.value, 'IQD')}</td>
+                  {cost && <td className="amount">{i18n.money(r.value ?? 0, 'IQD')}</td>}
                 </tr>
               ))}
             </tbody>
