@@ -12,6 +12,8 @@ describe('the app\'s build settings', () => {
     expect(app.expo.android.allowBackup).toBe(false);
     expect(app.expo.android.permissions.sort()).toEqual(['android.permission.CAMERA', 'android.permission.USE_BIOMETRIC', 'android.permission.VIBRATE']);
     expect(app.expo.android.blockedPermissions).toContain('android.permission.RECORD_AUDIO');
+    // React Native's dev menu asks to draw over other apps; a release build has no use for it
+    expect(app.expo.android.blockedPermissions).toContain('android.permission.SYSTEM_ALERT_WINDOW');
     expect(app.expo.android.package).toBe('iq.qasaerp.mobile');
     expect(app.expo.android.adaptiveIcon.backgroundColor).toBe('#F2A33A');
     expect(app.expo.plugins).toContainEqual(['expo-local-authentication', { faceIDPermission: app.expo.ios.infoPlist.NSFaceIDUsageDescription }]);
@@ -20,11 +22,19 @@ describe('the app\'s build settings', () => {
   it('says why it asks for the camera, the office network and Face ID in Arabic, English and Kurdish', () => {
     const locales = app.expo.locales as Record<string, string>;
     expect(Object.keys(locales).sort()).toEqual(['ar', 'ckb', 'en']);
-    const texts = Object.fromEntries(Object.entries(locales).map(([l, f]) => [l, JSON.parse(readFileSync(join(root, f), 'utf8')) as Record<string, string>]));
+    const files = Object.fromEntries(Object.entries(locales).map(([l, f]) => [l, JSON.parse(readFileSync(join(root, f), 'utf8')) as Record<string, Record<string, string>>]));
+    // the iOS permission texts under "ios" only: at the top level Expo writes them into Android's strings too, where
+    // they have no default and the release build's lint stops it (ExtraTranslation)
     for (const l of ['ar', 'ckb', 'en']) {
-      expect(Object.keys(texts[l]!).sort()).toEqual(['NSCameraUsageDescription', 'NSFaceIDUsageDescription', 'NSLocalNetworkUsageDescription']);
+      expect(Object.keys(files[l]!).sort()).toEqual(['android', 'ios']);
+      expect(Object.keys(files[l]!.ios!).sort()).toEqual(['NSCameraUsageDescription', 'NSFaceIDUsageDescription', 'NSLocalNetworkUsageDescription']);
+      // Android: only the app's name, which has its default in the app's own strings
+      expect(Object.keys(files[l]!.android!)).toEqual(['app_name']);
     }
+    const texts = Object.fromEntries(Object.entries(files).map(([l, f]) => [l, f.ios!]));
     expect(texts.ckb!.NSCameraUsageDescription).not.toMatch(/[يك]/);
+    expect(files.ckb!.android!.app_name).toBe('قاسە ERP');
+    expect(files.ar!.android!.app_name).toBe('قاصة ERP');
     expect(texts.en!.NSLocalNetworkUsageDescription).toBe(app.expo.ios.infoPlist.NSLocalNetworkUsageDescription);
   });
 });

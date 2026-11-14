@@ -124,13 +124,17 @@ environment at build time).
 ## Build an APK on this PC (no Expo account, no Google Play)
 
 Needs Node 24, JDK 17 and an Android SDK with platform `android-37.0`, build-tools `37.0.0` and NDK `27.1.12297006`
-(what React Native 0.88 asks for). In Git Bash:
+(what React Native 0.88 asks for). Windows stops paths at 260 characters (unless long paths are switched on for the
+PC), and the native part of the build writes long ones: build from a copy of this folder at a short path (for example
+`E:\qm`, made with `robocopy apps\mobile E:\qm /E /XD node_modules android .expo dist`; a `subst` drive does not work,
+Node resolves it back to the long path) and run `node scripts/short-native-paths.mjs` there after `npm ci`. In Git Bash:
 
 ```
-cd apps/mobile
+cd /e/qm                                              # the short copy (on Linux or macOS: apps/mobile itself)
 npm ci
+node scripts/short-native-paths.mjs                   # Windows only: see above
 npx expo prebuild -p android --clean --no-install     # writes android/ (not in git: it is made again each time)
-git checkout package.json                             # prebuild rewrites the android/ios scripts; keep ours
+                                                      # (prebuild rewrites the android/ios scripts of package.json: never commit that)
 export JAVA_HOME=<JDK 17>  ANDROID_HOME=<the SDK>  ANDROID_SDK_ROOT=<the SDK>  NODE_ENV=production
 export QASA_ANDROID_KEYSTORE=$USERPROFILE/.qasa-keys/qasa-mobile-release.jks
 export QASA_ANDROID_KEYSTORE_PASSWORD_FILE=$USERPROFILE/.qasa-keys/qasa-mobile-release.password

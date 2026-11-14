@@ -1,5 +1,10 @@
 {
-  "NSCameraUsageDescription": "يستخدم قاصة الكاميرا لمسح الباركود وتصوير المواد.",
-  "NSLocalNetworkUsageDescription": "يتصل قاصة بحاسوب قاصة ERP على شبكة Wi-Fi نفسها.",
-  "NSFaceIDUsageDescription": "يمكن فتح قاصة بـ Face ID إن فعّلته في قفل التطبيق."
+  "ios": {
+    "NSCameraUsageDescription": "يستخدم قاصة الكاميرا لمسح الباركود وتصوير المواد.",
+    "NSLocalNetworkUsageDescription": "يتصل قاصة بحاسوب قاصة ERP على شبكة Wi-Fi نفسها.",
+    "NSFaceIDUsageDescription": "يمكن فتح قاصة بـ Face ID إن فعّلته في قفل التطبيق."
+  },
+  "android": {
+    "app_name": "قاصة ERP"
+  }
 }
