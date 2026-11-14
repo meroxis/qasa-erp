@@ -6,6 +6,9 @@ describe('reading a bank statement', () => {
     expect(guessStatementColumns(['التاريخ', 'البيان', 'رقم المرجع', 'مدين', 'دائن', 'الرصيد'])).toEqual({ date: 0, description: 1, reference: 2, out: 3, in: 4 });
     expect(guessStatementColumns(['Value Date', 'Narrative', 'Ref No.', 'Amount'])).toEqual({ date: 0, description: 1, reference: 2, amount: 3 });
     expect(guessStatementColumns(['بەروار', 'ڕوونکردنەوە', 'بڕ'])).toEqual({ date: 0, description: 1, amount: 2 });
+    // the two sides in Kurdish: the words of 1.4, and those of before 1.4
+    expect(guessStatementColumns(['بەروار', 'وردەکاری', 'مەدین', 'دائین'])).toEqual({ date: 0, description: 1, out: 2, in: 3 });
+    expect(guessStatementColumns(['بەروار', 'وردەکاری', 'قەرزار', 'قەرزدەر'])).toEqual({ date: 0, description: 1, out: 2, in: 3 });
   });
 
   it('reads dates the way Iraqi banks print them, and Excel day numbers', () => {

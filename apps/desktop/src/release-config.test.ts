@@ -385,8 +385,8 @@ describe('the release notes and the Store "What\'s new" of this version', () => 
     expect(store['en-us'].features.some((f) => f.endsWith('and loyalty points (paid plans)'))).toBe(true);
     expect(store.ar.description).toContain('وإقفال السنة (الخطط المدفوعة)،');
     expect(store.ar.description).toContain('• الصيدلية (الخطط المدفوعة):');
-    expect(store['ku-arab'].description).toContain('داخستنی ساڵ (پلانە پارەدارەکان)،');
-    expect(store['ku-arab'].description).toContain('• دەرمانخانە (پلانە پارەدارەکان):');
+    expect(store['ku-arab'].description).toContain('داخستنی ساڵ (پلانەکانی بە پارە)،');
+    expect(store['ku-arab'].description).toContain('• دەرمانخانە (پلانەکانی بە پارە):');
     expect(read('apps/desktop/store-listing.json')).toContain('the optional office network (paid plans) listens on the local network');
   });
 

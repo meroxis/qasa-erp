@@ -8,8 +8,8 @@ export const ITEMS14_TEXT = {
   ],
   it_namesOne: ['اسم واحد لكل اللغات', 'One name for every language', 'یەک ناو بۆ هەموو زمانەکان'],
   it_purchasePrice: ['سعر الشراء', 'Purchase price', 'نرخی کڕین'],
-  it_margin: ['الربح: {a} ({p}٪)', 'Profit: {a} ({p}%)', 'قازانج: {a} ({p}%)'],
-  it_marginLoss: ['خسارة: {a} ({p}٪)', 'Loss: {a} ({p}%)', 'زیان: {a} ({p}%)'],
+  it_margin: ['الربح: {a} ({p}٪)', 'Profit: {a} ({p}%)', 'قازانج: {a} ({p}٪)'],
+  it_marginLoss: ['خسارة: {a} ({p}٪)', 'Loss: {a} ({p}%)', 'زیان: {a} ({p}٪)'],
   it_picture: ['صورة المادة', 'Item picture', 'وێنەی کاڵا'],
   it_pictureWithSave: ['تُحفظ الصورة مع المادة.', 'The picture is saved with the item.', 'وێنەکە لەگەڵ کاڵاکە پاشەکەوت دەکرێت.'],
   it_pictureTooBig: [

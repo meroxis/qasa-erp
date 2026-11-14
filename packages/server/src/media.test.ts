@@ -189,7 +189,7 @@ describe('import', () => {
 
     const ku = await run('opening_balances', [{ party: 'Mer', amount: '250,000' }], false, { partyType: 'customer', date: '2026-01-01' }, 'ku');
     expect(ku.statusCode, ku.body).toBe(200);
-    expect(entryText(ku.json().documents[0].id)).toBe('باڵانسی سەرەتای کڕیاران (هاوردە کراو)');
+    expect(entryText(ku.json().documents[0].id)).toBe('ڕەسیدی سەرەتای کڕیاران (هاوردە کراو)');
     // Arabic when no language is sent, as the other modules write
     const ar = await run('opening_balances', [{ party: 'Las', amount: '90,000' }], false, { partyType: 'supplier', date: '2026-01-01' });
     expect(entryText(ar.json().documents[0].id)).toBe('الأرصدة الافتتاحية للمجهزين (مستوردة)');
@@ -201,6 +201,27 @@ describe('import', () => {
       .toEqual([{ type: 'entry', id: ku.json().documents[0].id, currency: 'IQD' }]);
     expect((await run('opening_stock', [{ item: 'S-1', qty: '5', cost: '300' }], false, { date: '2026-01-01' }, 'ku')).json().error).toBe('md_imported_before');
     expect((await run('opening_stock', [{ item: 'S-1', qty: '5' }], true, { date: '2026-01-01' }, 'fr')).statusCode).toBe(400);
+  });
+
+  it('still knows an import written with the Kurdish words of before 1.4', async () => {
+    // why: books made with 1.3 hold these words; 1.4 writes «ڕەسید» for a balance and «تاقم» for a set
+    await send('POST', '/api/parties', { type: 'customer', name: 'Mer' });
+    await send('POST', '/api/parties', { type: 'supplier', name: 'Las' });
+    const old = { customer: 'باڵانسی سەرەتای کڕیاران (هاوردە کراو)', supplier: 'باڵانسی سەرەتای دابینکەران (هاوردە کراو)' };
+    for (const [partyType, party] of [['customer', 'Mer'], ['supplier', 'Las']] as const) {
+      const rows = [{ party, amount: '250,000' }];
+      const options = { partyType, date: '2026-01-01' };
+      const made = (await run('opening_balances', rows, false, options, 'ku')).json().documents[0];
+      db.prepare('UPDATE entries SET description = ? WHERE id = ?').run(old[partyType], made.id);
+      for (const lang of ['ku', 'ar', 'en']) {
+        expect((await run('opening_balances', rows, true, options, lang)).json().importedBefore, `${partyType} ${lang}`).toEqual([{ type: 'entry', id: made.id, currency: 'IQD' }]);
+      }
+      expect((await run('opening_balances', rows, false, options, 'ku')).json().error).toBe('md_imported_before');
+    }
+    // a file filled in with the old Kurdish name of the unit
+    const items = await run('items', [{ nameKu: 'تاقمی پیاڵە', unit: 'دەست', price: '5,000' }, { nameKu: 'تاقمی قاپ', unit: 'تاقم', price: '9,000' }], true);
+    expect(items.statusCode, items.body).toBe(200);
+    expect(items.json()).toMatchObject({ created: 2 });
   });
 
   it('refuses empty files and too many rows', async () => {

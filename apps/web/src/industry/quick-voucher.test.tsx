@@ -100,6 +100,8 @@ describe('the texts', () => {
     expect(ku.t('pay_account')).toBe('قەرز');
     expect(STORE_TEXT.pay_account[2]).toBe('قەرز');
     // the accounting side of an entry keeps its own word
-    expect(ku.t('credit')).toBe('قەرزدەر');
+    expect(ku.t('credit')).toBe('دائین');
+    expect(ku.t('debit')).toBe('مەدین');
+    for (const side of [ku.t('debit'), ku.t('credit')]) expect(side).not.toContain('قەرز');
   });
 });

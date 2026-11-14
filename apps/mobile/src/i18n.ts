@@ -111,7 +111,7 @@ const T = {
   box: ['علبة', 'box', 'قوتوو'],
   carton: ['كارتون', 'carton', 'کارتۆن'],
   qty: ['الكمية', 'Quantity', 'بڕ'],
-  iqdShort: ['دینار', 'IQD', 'دینار'],
+  iqdShort: ['د.ع', 'IQD', 'د.ع'],
 
   // ——— sell ———
   cart: ['البيع', 'Sale', 'فرۆشتن'],
