@@ -98,6 +98,14 @@ export function chosenMethod<M extends string>(picked: M, offered: readonly M[])
   return offered.includes(picked) ? picked : 'cash';
 }
 
+/**
+ * The pick once the till's link to the server changes. Credit picked and the link drops: the sale is cash, and it
+ * stays cash when the link returns (the cashier may have taken the money meanwhile). Credit is chosen again on purpose.
+ */
+export function pickAfterLink<M extends string>(picked: M, offered: readonly M[]): M | 'cash' {
+  return chosenMethod(picked, offered);
+}
+
 /** A sale on credit goes on a customer's account: it needs one. */
 export const creditNeedsCustomer = (method: string, partyId: string): boolean => method === 'account' && !partyId;
 

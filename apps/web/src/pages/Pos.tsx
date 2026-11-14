@@ -15,7 +15,7 @@ import '../pos.css';
 import { PrintDocument } from '../industry/PrintDocument.tsx';
 import { invoiceModel } from '../industry/print-model.ts';
 import { usePrintSetup } from '../industry/print-api.ts';
-import { addRefusal, cashChange, changeLineUnit, chosenMethod, creditNeedsCustomer, parseScan, posSaleLine, priceIn, priceRateFor, salePayments, tileOffer, tillMethods, type TillMethod } from './pos-logic.ts';
+import { addRefusal, cashChange, changeLineUnit, chosenMethod, creditNeedsCustomer, parseScan, pickAfterLink, posSaleLine, priceIn, priceRateFor, salePayments, tileOffer, tillMethods, type TillMethod } from './pos-logic.ts';
 import { inUnits, salePriceFor, unitChoices, unitLabel, type LineUnit } from '../industry/units.ts';
 import { BatchPick, useExpiredConfirm } from '../industry/BatchFields.tsx';
 import { pharmacyApi, type MedicineView } from '../industry/pharmacy-api.ts';
@@ -369,6 +369,15 @@ function Register({ initial, onClosed }: { initial: ShiftView; onClosed(): void 
   // what the till offers now (offline: not credit, which needs the server's credit-limit check)
   const offered = tillMethods(offline);
   const method = chosenMethod(picked, offered);
+  // credit was picked and can't be offered any more (the link dropped): the pick itself goes back to cash and the
+  // cashier is told, so the sale does not turn into credit again by itself when the link returns
+  const kept = pickAfterLink(picked, offered);
+  useEffect(() => {
+    if (kept === picked) return;
+    setPicked('cash');
+    toast(t('s14_creditDropped'));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [kept, picked]);
   const onCredit = method === 'account';
   const payments = salePayments(method, due);
   // change is for cash handed over: none on credit

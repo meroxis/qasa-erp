@@ -4,6 +4,8 @@ import { api, type EntryView, type VoucherApproval, type VoucherApprovalState } 
 import { ErrorBox, Icon, Modal, StatusChip, useData, useToast } from '../components.tsx';
 import { useI18n } from '../i18n.ts';
 import { href } from '../router.ts';
+import { QuickVoucherForm } from './QuickVoucher.tsx';
+import { againPreset, mayWithdrawOwn } from './quick-voucher.ts';
 
 /**
  * 1.4, "Vouchers need approval": how a voucher that was sent for approval shows (its state, who asked, why it was
@@ -29,22 +31,74 @@ export function VoucherStateChip({ entry }: { entry: { status: EntryStatus; reve
 }
 
 /** The line under a voucher's buttons that says where its approval stands. */
-export function ApprovalNote({ entry }: { entry: Pick<EntryView, 'status' | 'approval' | 'actions'> }) {
+export function ApprovalNote({ entry }: { entry: Pick<EntryView, 'type' | 'status' | 'approval' | 'actions' | 'preparedById'> }) {
   const { t } = useI18n();
+  const { permissions, userKey } = useData();
   const a = entry.approval;
   if (!a) return null;
   const state = approvalStateOf(entry);
-  if (state === 'waiting') return <div className="alert warn no-print" role="status">{t('s14_waitingNote', { u: a.requestedBy })}</div>;
+  // its preparer, without the vouchers screen: they take it back, or correct it and send it again (OwnVoucherButtons)
+  const own = mayWithdrawOwn(entry, userKey, permissions);
+  if (state === 'waiting') {
+    return (
+      <div className="alert warn no-print" role="status">
+        {t('s14_waitingNote', { u: a.requestedBy })}
+        {own && <div className="small">{t('s14_waitingOwn')}</div>}
+      </div>
+    );
+  }
   if (state === 'rejected') {
     return (
       <div className="alert bad no-print" role="status">
         <span className="bidi">{t('s14_rejectedNote', { u: a.decidedBy ?? '', r: a.reason ?? '' })}</span>
-        {entry.actions.includes('edit') && <div className="small">{t('s14_rejectedFix')}</div>}
+        {entry.actions.includes('edit') ? <div className="small">{t('s14_rejectedFix')}</div> : own ? <div className="small">{t('s14_rejectedOwn')}</div> : null}
       </div>
     );
   }
   if (a.state === 'approved' && a.decidedBy) return <div className="muted small no-print">{t('s14_approvedNote', { u: a.decidedBy, p: a.requestedBy })}</div>;
   return null;
+}
+
+/**
+ * For whoever prepared a voucher with "Receive payment" or "Pay supplier" and has no vouchers screen (a sales person):
+ * while it is not posted they take it back, or open the short form again with what it said, correct it and send it
+ * again (the old one is taken back as the new one is made). The server allows it for their own voucher only, and
+ * never for an approved one.
+ */
+export function OwnVoucherButtons({ entry, onError, onWithdrawn, onSentAgain }: {
+  entry: EntryView; onError(error: unknown): void; onWithdrawn(): void; onSentAgain(made: EntryView): void;
+}) {
+  const { t } = useI18n();
+  const toast = useToast();
+  const { permissions, userKey } = useData();
+  const [busy, setBusy] = useState(false);
+  const [correcting, setCorrecting] = useState(false);
+  if (!mayWithdrawOwn(entry, userKey, permissions) || (entry.type !== 'receipt' && entry.type !== 'payment')) return null;
+  const preset = againPreset(entry);
+
+  async function withdraw() {
+    if (!window.confirm(t('s14_withdrawConfirm'))) return;
+    setBusy(true);
+    onError(null);
+    try {
+      await api.withdrawVoucher(entry.id);
+      toast(t('s14_withdrawn'));
+      onWithdrawn();
+    } catch (e) {
+      onError(e);
+      setBusy(false);
+    }
+  }
+
+  return (
+    <>
+      {preset && <button type="button" className="btn" disabled={busy} onClick={() => setCorrecting(true)}>{t('s14_sendAgain')}</button>}
+      <button type="button" className="btn danger" disabled={busy} onClick={() => void withdraw()}>{t('s14_withdraw')}</button>
+      {correcting && preset && (
+        <QuickVoucherForm kind={entry.type} preset={preset} onClose={() => setCorrecting(false)} onDone={(made) => { setCorrecting(false); onSentAgain(made); }} />
+      )}
+    </>
+  );
 }
 
 /** The setting, how many wait and what this user may do; null until it arrives (and on a server without it). */

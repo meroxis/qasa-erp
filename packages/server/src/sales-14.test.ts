@@ -107,7 +107,7 @@ describe('the till takes cash or credit, never a mix', () => {
     expect((await sell(shift, { payments: [{ method: 'account', amount: 100_000 }] })).json().details).toEqual([{ code: 'party_required' }]);
     const mixed = await sell(shift, { partyId: customer, payments: [{ method: 'account', amount: 60_000 }, { method: 'cash', amount: 40_000 }] });
     expect(mixed.statusCode).toBe(400);
-    expect(mixed.json().details).toEqual([{ code: 'pos_credit_not_mixed' }]);
+    expect(mixed.json().details).toEqual([{ code: 'pos_credit_not_mixed' }, { code: 'pos_payment_invalid', method: 'account' }]);
     expect(await balanceOf(customer)).toBe(0);
     // cash, as always
     const cash = await sell(shift, {});
@@ -184,10 +184,10 @@ describe('vouchers need approval', () => {
   it('is off for a company until an admin switches it on, and only an admin may', async () => {
     expect(SCHEMA_VERSION).toBeGreaterThanOrEqual(13);
     const s = await office(users);
-    expect((await req('GET', '/api/voucher-approval', undefined, s.las)).json()).toEqual({ on: false, waiting: 0, mayApprove: false, ownAtOnce: false });
+    expect((await req('GET', '/api/voucher-approval', undefined, s.las)).json()).toEqual({ on: false, waiting: 0, mayApprove: false, ownAtOnce: false, postsAtOnce: false });
     for (const who of ['las', 'raz', 'mer']) expect((await req('PUT', '/api/voucher-approval', { on: true }, s[who])).statusCode).toBe(403);
     expect((await req('PUT', '/api/voucher-approval', { on: 'yes' }, s.admin)).statusCode).toBe(400);
-    expect((await req('PUT', '/api/voucher-approval', { on: true }, s.admin)).json()).toEqual({ on: true, waiting: 0, mayApprove: true, ownAtOnce: true });
+    expect((await req('PUT', '/api/voucher-approval', { on: true }, s.admin)).json()).toEqual({ on: true, waiting: 0, mayApprove: true, ownAtOnce: true, postsAtOnce: true });
   });
 
   it('off: a sales person\'s receipt is a draft for the usual checking and approval, and changes no balance', async () => {
@@ -209,7 +209,7 @@ describe('vouchers need approval', () => {
     expect(made.json()).toMatchObject({ status: 'draft', number: null, approval: { state: 'waiting', requestedBy: 'Las', decidedBy: null } });
     expect(await balanceOf(customer, s.admin)).toBe(0);
     expect(safe()).toBe(0);
-    expect((await req('GET', '/api/voucher-approval', undefined, s.raz)).json()).toEqual({ on: true, waiting: 1, mayApprove: true, ownAtOnce: true });
+    expect((await req('GET', '/api/voucher-approval', undefined, s.raz)).json()).toEqual({ on: true, waiting: 1, mayApprove: true, ownAtOnce: true, postsAtOnce: true });
     // the list shows it, and the filter finds it
     const waiting = (await req('GET', '/api/entries?approval=waiting', undefined, s.admin)).json();
     expect(waiting.map((e: { id: string }) => e.id)).toEqual([id]);
@@ -306,5 +306,121 @@ describe('vouchers need approval', () => {
     const other = (await req('POST', '/api/vouchers', voucher, s.mer)).json().id as string;
     expect((await req('DELETE', `/api/entries/${other}`, undefined, s.mer)).statusCode).toBe(204);
     expect((db.prepare('SELECT COUNT(*) AS n FROM voucher_approvals').get() as { n: number }).n).toBe(0);
+  });
+
+  it('switched off again, what was rejected is a plain draft too: checked and approved the usual way', async () => {
+    const s = await office(users);
+    await req('PUT', '/api/voucher-approval', { on: true }, s.admin);
+    const id = (await req('POST', '/api/vouchers', voucher, s.mer)).json().id as string;
+    expect((await req('POST', `/api/entries/${id}/reject`, { reason: 'Wrong safe' }, s.raz)).statusCode).toBe(200);
+    expect((await req('GET', `/api/entries/${id}`, undefined, s.admin)).json().actions).toEqual(['edit', 'delete']);
+    await req('PUT', '/api/voucher-approval', { on: false }, s.admin);
+    expect((await req('GET', `/api/entries/${id}`, undefined, s.admin)).json()).toMatchObject({ status: 'draft', approval: null, actions: ['edit', 'delete', 'check'] });
+    expect((await req('POST', `/api/entries/${id}/check`, {}, s.admin)).statusCode).toBe(200);
+    // why it was rejected is still in the audit log
+    const log = (await req('GET', '/api/audit', undefined, s.admin)).json() as { action: string; entityId: string }[];
+    expect(log.some((a) => a.action === 'reject' && a.entityId === id)).toBe(true);
+  });
+
+  it('says whether a quick voucher of this user is posted at once, so the form can say when the balance will not change yet', async () => {
+    const s = await office(users);
+    const state = async (who: string) => (await req('GET', '/api/voucher-approval', undefined, s[who])).json().postsAtOnce as boolean;
+    // off: only someone who may check and approve alone; and the voucher really comes back that way
+    expect(await state('las')).toBe(false);
+    expect(await state('raz')).toBe(false);
+    expect(await state('admin')).toBe(true);
+    expect((await req('POST', '/api/quick-vouchers', receipt(), s.las)).json().status).toBe('draft');
+    expect((await req('POST', '/api/quick-vouchers', receipt(), s.admin)).json().status).toBe('approved');
+    // on: whoever may approve vouchers
+    await req('PUT', '/api/voucher-approval', { on: true }, s.admin);
+    expect(await state('las')).toBe(false);
+    expect(await state('raz')).toBe(true);
+    // separate duties: nobody approves what they prepared, so never at once (though they may approve what others made)
+    await req('PUT', '/api/auth/separate-duties', { on: true }, s.admin);
+    expect((await req('GET', '/api/voucher-approval', undefined, s.admin)).json()).toMatchObject({ mayApprove: true, postsAtOnce: false });
+    expect((await req('POST', '/api/quick-vouchers', receipt(), s.admin)).json().status).toBe('draft');
+  });
+});
+
+describe('whoever prepared a quick voucher takes it back, or corrects it and sends it again', () => {
+  const users = [
+    { username: 'las', name: 'Las', roles: ['sales'] },
+    { username: 'raz', name: 'Raz', roles: ['approver'] },
+    { username: 'mer', name: 'Mer', roles: ['sales'] }
+  ];
+  const ids = async (headers: Headers | undefined) => ((await req('GET', '/api/entries', undefined, headers)).json() as { id: string }[]).map((e) => e.id);
+
+  it('a sales person withdraws their own receipt while it waits; not somebody else, and not through the journal', async () => {
+    const s = await office(users);
+    await req('PUT', '/api/voucher-approval', { on: true }, s.admin);
+    const made = await req('POST', '/api/quick-vouchers', receipt(), s.las);
+    const id = made.json().id as string;
+    // the screens know it is theirs
+    expect(made.json().preparedById).toBe((await req('GET', '/api/auth/me', undefined, s.las)).json().user.id);
+    // the delete of the journal stays with those who prepare vouchers there
+    expect((await req('DELETE', `/api/entries/${id}`, undefined, s.las)).statusCode).toBe(403);
+    // another sales person: not theirs (the same answer as for a voucher that does not exist)
+    expect((await req('DELETE', `/api/quick-vouchers/${id}`, undefined, s.mer)).statusCode).toBe(403);
+    expect((await req('DELETE', '/api/quick-vouchers/nothing', undefined, s.mer)).statusCode).toBe(403);
+    // an approver who did not prepare it rejects it; they do not withdraw it
+    expect((await req('DELETE', `/api/quick-vouchers/${id}`, undefined, s.raz)).statusCode).toBe(403);
+    // from another site (no app header): refused like every change
+    expect((await app.inject({ method: 'DELETE', url: `/api/quick-vouchers/${id}`, headers: s.las! })).statusCode).toBe(403);
+    expect(await ids(s.las)).toEqual([id]);
+
+    expect((await req('DELETE', `/api/quick-vouchers/${id}`, undefined, s.las)).statusCode).toBe(204);
+    expect(await ids(s.las)).toEqual([]);
+    expect((await req('GET', '/api/voucher-approval', undefined, s.admin)).json().waiting).toBe(0);
+    expect((db.prepare('SELECT COUNT(*) AS n FROM voucher_approvals').get() as { n: number }).n).toBe(0);
+    const log = (await req('GET', '/api/audit', undefined, s.admin)).json() as { action: string; entityId: string; user: string }[];
+    expect(log.some((a) => a.action === 'delete' && a.entityId === id && a.user === 'Las')).toBe(true);
+  });
+
+  it('never an approved one, nor one that was checked already', async () => {
+    const s = await office(users);
+    await req('PUT', '/api/voucher-approval', { on: true }, s.admin);
+    const id = (await req('POST', '/api/quick-vouchers', receipt(), s.las)).json().id as string;
+    expect((await req('POST', `/api/entries/${id}/approve-waiting`, {}, s.raz)).statusCode).toBe(200);
+    const refused = await req('DELETE', `/api/quick-vouchers/${id}`, undefined, s.las);
+    expect(refused.statusCode).toBe(409);
+    expect(refused.json().error).toBe('action_not_allowed');
+    // nor by naming it as the one a new voucher replaces: nothing is made either
+    const again = await req('POST', '/api/quick-vouchers', receipt({ amount: 10_000, replaces: id }), s.las);
+    expect(again.statusCode).toBe(409);
+    expect(await ids(s.las)).toEqual([id]);
+    expect(await balanceOf(customer, s.admin)).toBe(-40_000);
+    expect(safe()).toBe(40_000);
+    // a plain draft (the setting off) that someone checked is in the hands of the checker
+    await req('PUT', '/api/voucher-approval', { on: false }, s.admin);
+    const draft = (await req('POST', '/api/quick-vouchers', receipt(), s.las)).json().id as string;
+    expect((await req('POST', `/api/entries/${draft}/check`, {}, s.admin)).statusCode).toBe(200);
+    expect((await req('DELETE', `/api/quick-vouchers/${draft}`, undefined, s.las)).statusCode).toBe(409);
+    // and one nobody checked yet is theirs to take back
+    const fresh = (await req('POST', '/api/quick-vouchers', receipt(), s.las)).json().id as string;
+    expect((await req('DELETE', `/api/quick-vouchers/${fresh}`, undefined, s.las)).statusCode).toBe(204);
+  });
+
+  it('a rejected receipt is corrected and sent again with the short form: the old one goes as the new one is made', async () => {
+    const s = await office(users);
+    await req('PUT', '/api/voucher-approval', { on: true }, s.admin);
+    const id = (await req('POST', '/api/quick-vouchers', receipt(), s.las)).json().id as string;
+    expect((await req('POST', `/api/entries/${id}/reject`, { reason: 'Wrong amount' }, s.raz)).statusCode).toBe(200);
+    expect((await req('GET', `/api/entries/${id}`, undefined, s.las)).json()).toMatchObject({ actions: [], approval: { state: 'rejected', reason: 'Wrong amount' } });
+    // somebody else may not use it as the one their voucher replaces
+    expect((await req('POST', '/api/quick-vouchers', receipt({ replaces: id }), s.mer)).statusCode).toBe(403);
+    // a corrected one that is itself refused leaves the rejected one where it was
+    expect((await req('POST', '/api/quick-vouchers', receipt({ replaces: id, cashAccountCode: '9999' }), s.las)).statusCode).toBe(400);
+    expect(await ids(s.las)).toEqual([id]);
+
+    const sent = await req('POST', '/api/quick-vouchers', receipt({ amount: 35_000, replaces: id }), s.las);
+    expect(sent.statusCode, sent.body).toBe(201);
+    const next = sent.json().id as string;
+    expect(sent.json()).toMatchObject({ status: 'draft', total: 35_000, preparedBy: 'Las', approval: { state: 'waiting', requestedBy: 'Las', reason: null } });
+    expect(await ids(s.las)).toEqual([next]);
+    expect((await req('GET', `/api/entries/${id}`, undefined, s.admin)).statusCode).toBe(404);
+    expect((await req('GET', '/api/voucher-approval', undefined, s.admin)).json().waiting).toBe(1);
+    expect((await req('POST', `/api/entries/${next}/approve-waiting`, {}, s.raz)).json()).toMatchObject({ status: 'approved', total: 35_000 });
+    expect(await balanceOf(customer, s.admin)).toBe(-35_000);
+    expect(safe()).toBe(35_000);
   });
 });

@@ -4,8 +4,12 @@ import { api, ApiError, type EntryView, type PartyView, type QuickVoucherInput, 
 import { AccountCombo, AmountInput, ErrorBox, Icon, Modal, SearchCombo, useData, useLoad, useToast, type PickOption } from '../components.tsx';
 import { useI18n } from '../i18n.ts';
 import { href } from '../router.ts';
+import { useRatePrefill } from './fx-prefill.ts';
 import { holdKey, type HeldKey } from './outbox.ts';
-import { amountInIqd, balanceAfter, mayQuickVoucher, parseRateText, quickOutcome, type QuickKind } from './quick-voucher.ts';
+import {
+  amountAfterCurrency, amountInIqd, balanceAfter, boardRateFills, invoiceNote, mayQuickVoucher, parseRateText, quickNotice, quickOutcome,
+  type QuickKind, type QuickVoucherPreset
+} from './quick-voucher.ts';
 
 /**
  * 1.4: "Receive payment" (a receipt voucher from a customer) and "Pay supplier" (a payment voucher), from a short
@@ -14,12 +18,7 @@ import { amountInIqd, balanceAfter, mayQuickVoucher, parseRateText, quickOutcome
  * was posted, waits for approval, or is a draft for the usual checking.
  */
 
-export interface QuickVoucherPreset {
-  /** the customer or supplier (left out on the vouchers list: chosen in the form) */
-  partyId?: string;
-  /** an invoice the money is for: its number goes in the note, its total and currency in the amount */
-  invoice?: { number: string | null; total: number; currency: CurrencyCode; rateX100: number };
-}
+export type { QuickVoucherPreset };
 
 export function QuickVoucherButton({ kind, preset, className = 'btn', onDone }: {
   kind: QuickKind; preset?: QuickVoucherPreset; className?: string; onDone?(entry: EntryView): void;
@@ -49,12 +48,19 @@ export function QuickVoucherForm({ kind, preset, onClose, onDone }: { kind: Quic
   const { settings, reloadAccounts } = useData();
   const partyType = kind === 'receipt' ? 'customer' : 'supplier';
   const [partyId, setPartyId] = useState(preset.partyId ?? '');
-  const [amount, setAmount] = useState<number | null>(preset.invoice?.total ?? null);
-  const [currency, setCurrency] = useState<CurrencyCode>(preset.invoice?.currency ?? 'IQD');
-  const [rateText, setRateText] = useState(() => String(rateFromX100(preset.invoice?.currency === 'USD' ? preset.invoice.rateX100 : settings?.defaultRateX100 ?? 142000)));
-  const [cashAccount, setCashAccount] = useState(settings?.postingAccounts.cash ?? '');
-  const [date, setDate] = useState(todayIso());
-  const [note, setNote] = useState(preset.invoice?.number ? t('s14_forInvoice', { n: preset.invoice.number }) : '');
+  const again = preset.again;
+  // (an invoice with nothing open on it: the amount is typed)
+  const [amount, setAmount] = useState<number | null>(again ? again.amount : preset.invoice?.total || null);
+  const [currency, setCurrency] = useState<CurrencyCode>(again?.currency ?? preset.invoice?.currency ?? 'IQD');
+  // the company's default rate to begin with, and when the rate board can't be asked
+  const [rateText, setRateText] = useState(() => String(rateFromX100(
+    again?.currency === 'USD' ? again.rateX100 : preset.invoice?.currency === 'USD' ? preset.invoice.rateX100 : settings?.defaultRateX100 ?? 142000
+  )));
+  const [cashAccount, setCashAccount] = useState(again?.cashAccountCode || (settings?.postingAccounts.cash ?? ''));
+  const [date, setDate] = useState(again?.date ?? todayIso());
+  // the rate board's rate for the voucher's date, as in the header and on the voucher screen, until a rate is typed
+  const ratePrefill = useRatePrefill({ active: boardRateFills(preset), currency, date, setRateText });
+  const [note, setNote] = useState(again ? again.note : preset.invoice?.number ? invoiceNote(t, preset.invoice.number) : '');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<unknown>(null);
   // the same key while the form says the same thing: a second click, or a try whose answer was lost, makes one voucher
@@ -70,13 +76,16 @@ export function QuickVoucherForm({ kind, preset, onClose, onDone }: { kind: Quic
   const rateX100 = currency === 'USD' ? parseRateText(rateText) : 100;
   const after = party ? balanceAfter(party.balance, amount, currency, rateX100) : null;
   const ready = !!party && amountInIqd(amount, currency, rateX100) !== null && !!cashAccount && !!date;
+  // not posted as it is saved: "Remaining after" is the balance once it is approved, and the form says so
+  const notice = quickNotice(approval);
 
   async function save() {
     if (!party || !ready || busy) return;
     if (!rateX100) { setError(new ApiError(400, 'validation', [{ code: 'rate_invalid' }])); return; }
     const input: QuickVoucherInput = {
       kind, partyId: party.id, amount: amount ?? 0, currency, ...(currency === 'USD' ? { rateX100 } : {}), cashAccountCode: cashAccount, date,
-      ...(note.trim() ? { note: note.trim() } : {})
+      ...(note.trim() ? { note: note.trim() } : {}),
+      ...(again ? { replaces: again.id } : {})
     };
     setBusy(true);
     setError(null);
@@ -98,6 +107,7 @@ export function QuickVoucherForm({ kind, preset, onClose, onDone }: { kind: Quic
     <Modal title={kind === 'receipt' ? t('s14_receive') : t('s14_paySupplier')} onClose={onClose}>
       <div className="stack">
         <p className="muted small" style={{ margin: 0 }}>{kind === 'receipt' ? t('s14_receiveHelp') : t('s14_payHelp')}</p>
+        {again && <div className="alert info small">{t('s14_againHelp')}</div>}
         <div className="field">
           <span>{kind === 'receipt' ? t('customer') : t('supplier')}</span>
           {preset.partyId
@@ -114,10 +124,10 @@ export function QuickVoucherForm({ kind, preset, onClose, onDone }: { kind: Quic
             <span>{t('currency')}</span>
             <div className="row" style={{ flexWrap: 'nowrap' }}>
               <div className="track">
-                {(['IQD', 'USD'] as const).map((c) => <button key={c} type="button" aria-pressed={currency === c} onClick={() => setCurrency(c)}>{c === 'IQD' ? t('iqdName') : t('usdName')}</button>)}
+                {(['IQD', 'USD'] as const).map((c) => <button key={c} type="button" aria-pressed={currency === c} onClick={() => { setAmount(amountAfterCurrency(amount, currency, c)); setCurrency(c); }}>{c === 'IQD' ? t('iqdName') : t('usdName')}</button>)}
               </div>
               {currency === 'USD' && (
-                <input className={'input amount' + (rateX100 ? '' : ' invalid')} style={{ width: 110 }} inputMode="decimal" aria-label={t('rate')} title={t('perUsd')} value={rateText} onChange={(e) => setRateText(e.target.value)} />
+                <input className={'input amount' + (rateX100 ? '' : ' invalid')} style={{ width: 110 }} inputMode="decimal" aria-label={t('rate')} title={t('perUsd')} value={rateText} onChange={(e) => { ratePrefill.typed(); setRateText(e.target.value); }} />
               )}
             </div>
           </div>
@@ -135,7 +145,7 @@ export function QuickVoucherForm({ kind, preset, onClose, onDone }: { kind: Quic
           </div>
         )}
         {after !== null && after < 0 && <div className="alert warn small">{t('s14_overpaid')}</div>}
-        {approval?.on && !approval.mayApprove && <div className="alert info small">{t('s14_willWait')}</div>}
+        {notice && <div className="alert info small">{t(notice)}</div>}
         <ErrorBox error={error} />
         <div className="row">
           <button type="button" className="btn primary" disabled={busy || !ready} onClick={() => void save()}><Icon name="check" size={16} />{busy ? t('saving') : t('save')}</button>

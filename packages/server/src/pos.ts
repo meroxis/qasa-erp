@@ -410,7 +410,9 @@ export function sell(db: Db, shiftId: string, input: SaleInput, actor: Actor): {
   if (payments.length > 4) throw invalid([{ code: 'payments_too_many' }]);
   // 1.4: a sale is paid now or put on the customer's account, never part one and part the other
   const onCredit = payments.some((p) => p.method === 'account');
-  if (onCredit && payments.some((p) => p.method !== 'account')) throw invalid([{ code: 'pos_credit_not_mixed' }]);
+  // (a till page loaded before 1.4 still offers that split and has no words for the first code: the second is one it
+  // can show, so its cashier reads that the payment is the trouble)
+  if (onCredit && payments.some((p) => p.method !== 'account')) throw invalid([{ code: 'pos_credit_not_mixed' }, { code: 'pos_payment_invalid', method: 'account' }]);
   const accounts = posPaymentAccounts(db);
   const mine = posAccountsFor(db, actor);
   const errors: { code: string; method?: string }[] = [];

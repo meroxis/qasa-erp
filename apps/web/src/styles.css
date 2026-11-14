@@ -808,7 +808,11 @@ input.input, select.input { block-size: var(--control-h); padding-block: 0; }
 .saved-strip .spacer { flex: 1; }
 
 /* ---------- dialog ---------- */
-.backdrop { position: fixed; inset: 0; z-index: 100; display: flex; align-items: center; justify-content: center; padding: var(--sp-4); background: var(--scrim); }
+/* a dialog is drawn where it is opened (a button in a list row): the row's one-line text and hand cursor stop here */
+.backdrop {
+  position: fixed; inset: 0; z-index: 100; display: flex; align-items: center; justify-content: center; padding: var(--sp-4); background: var(--scrim);
+  white-space: normal; cursor: auto;
+}
 .modal {
   inline-size: min(520px, 100%); max-block-size: 90vh; overflow: auto; padding: var(--sp-6);
   background: var(--surface); border: 1px solid var(--flyout-stroke); border-radius: var(--r-overlay); box-shadow: var(--shadow-dialog);
