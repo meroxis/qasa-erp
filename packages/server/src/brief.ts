@@ -10,6 +10,7 @@ import { AppError } from './errors.ts';
 import { seesBooks } from './auth.ts';
 import { entryInBranchSql, scopeLists, scopeOf } from './branches.ts';
 import { chequesAhead, type ChequeAlert } from './banking.ts';
+import { notRejectedDocumentReceiptSql } from './journal.ts';
 import { expiryAlert, type BatchReportRow } from './batches.ts';
 import { REORDER_JOINS, REORDER_LEVEL } from './reorder.ts';
 
@@ -451,8 +452,9 @@ export function dailyBrief(db: Db, date: string, branch: BranchFilter = null): B
   const inst = installmentsOn(db, date);
   const overdueTotal: Money = { IQD: 0, USD: 0 };
   for (const o of inst.overdue) overdueTotal[o.currency] += o.amount;
-  const approvals = db.prepare(`SELECT COALESCE(SUM(status = 'draft'), 0) AS draft, COALESCE(SUM(status = 'checked'), 0) AS checked
-                                FROM entries WHERE status IN ('draft', 'checked')`).get() as { draft: number; checked: number };
+  // (a document's receipt that was rejected waits for nobody: it is kept as its document's record, 1.4.1)
+  const approvals = db.prepare(`SELECT COALESCE(SUM(e.status = 'draft'), 0) AS draft, COALESCE(SUM(e.status = 'checked'), 0) AS checked
+                                FROM entries e WHERE e.status IN ('draft', 'checked') AND ${notRejectedDocumentReceiptSql('e')}`).get() as { draft: number; checked: number };
   return {
     date,
     company,
