@@ -36,14 +36,24 @@ export interface OweLine {
   currency: CurrencyCode;
 }
 
+/** A party owes (a customer owes us, we owe a supplier) when its whole position, in IQD at the book rates, is above zero. */
+export const partyOwes = (party: Pick<PartyView, 'balance'>): boolean => party.balance > 0;
+
 /**
- * A party's balance as lines to show: each currency on its own, as the app keeps them (dinars in dinars, dollars in
- * dollars). A server from before 1.1 gives only the IQD total, which is then the one line.
+ * A party's balance as lines to show. Who owes whom is read from the whole position (`balance`: IQD at the book
+ * rates), so a customer who paid a dollar invoice in dinars owes nothing. Each currency is on its own line, as the app
+ * keeps them (dinars in dinars, dollars in dollars), when they all stand on that side; when one currency was paid in
+ * the other (the two stand on opposite sides) the one line is the position in IQD. A server from before 1.1 gives only
+ * the IQD total, which is then the one line. The server totals by the same rule (partyPosition in parties.ts).
  */
 export function oweLines(party: Pick<PartyView, 'balance' | 'balances'>): OweLine[] {
+  const net = party.balance;
+  if (net === 0) return [];
+  const side = net > 0 ? 'owes' : 'advance';
   const own = party.balances;
-  const amounts: [CurrencyCode, number][] = own ? [['IQD', own.IQD], ['USD', own.USD]] : [['IQD', party.balance]];
-  return amounts.filter(([, n]) => n !== 0).map(([currency, n]) => ({ side: n > 0 ? 'owes' : 'advance', amount: Math.abs(n), currency }));
+  const amounts: [CurrencyCode, number][] = own ? ([['IQD', own.IQD], ['USD', own.USD]] satisfies [CurrencyCode, number][]).filter(([, n]) => n !== 0) : [];
+  if (amounts.length === 0 || amounts.some(([, n]) => n > 0 !== net > 0)) return [{ side, amount: Math.abs(net), currency: 'IQD' }];
+  return amounts.map(([currency, n]) => ({ side, amount: Math.abs(n), currency }));
 }
 
 /**

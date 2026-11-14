@@ -81,6 +81,45 @@ describe('1.4: what customers owe, at a glance', () => {
     await okPost(`/api/entries/${v.id}/approve`);
   }
 
+  it('lists a day of the statement in the order it happened, whatever the kinds of paper', async () => {
+    const mer = await customer('Mer');
+    const later = () => new Promise((done) => setTimeout(done, 5)); // each approval at its own moment
+    await voucher('payment', mer, 'IQD', 500_000); // Mer owes 500,000
+    await later();
+    await voucher('receipt', mer, 'IQD', 200_000); // in the morning he pays 200,000 (RV)
+    await later();
+    await voucher('payment', mer, 'IQD', 250_000); // in the afternoon he owes 250,000 more (PV sorts before RV by number)
+    const st = (await get(`/api/parties/${mer}/statement?to=2026-11-02`)).json() as { closing: number; lines: { number: string; debit: number; credit: number; balance: number }[] };
+    expect(st.lines.map((l) => [l.debit - l.credit, l.balance])).toEqual([[500_000, 500_000], [-200_000, 300_000], [250_000, 550_000]]);
+    expect(st.lines.map((l) => l.number.slice(0, 2))).toEqual(['PV', 'RV', 'PV']);
+    // the last paper prints 300,000 before it and 550,000 after it (the row's balance less its own change, and the row's balance)
+    const last = st.lines[2]!;
+    expect([last.balance - (last.debit - last.credit), last.balance, st.closing]).toEqual([300_000, 550_000, 550_000]);
+  });
+
+  it('counts a customer by the whole position: a dollar debt paid in dinars is settled', async () => {
+    const mer = await customer('Mer');
+    const las = await customer('Las');
+    const supplier = (await okPost('/api/parties', { type: 'supplier', name: 'Raz Supplies' })).id as string;
+    await voucher('payment', mer, 'USD', 10_000); // Mer owes $100.00, booked at 1,500
+    await voucher('receipt', mer, 'IQD', 150_000); // ... and pays it in dinars
+    await voucher('payment', las, 'USD', 10_000); // Las owes $100.00
+    await voucher('receipt', las, 'IQD', 149_000); // ... and still owes 1,000 IQD of it
+    await voucher('receipt', supplier, 'USD', 10_000); // we owe the supplier $100.00
+    await voucher('payment', supplier, 'IQD', 150_000); // ... and paid it in dinars
+
+    // the books keep each currency as it was entered
+    expect((await get(`/api/parties/${mer}`)).json()).toMatchObject({ balance: 0, balances: { IQD: -150_000, USD: 10_000 } });
+    expect((await get(`/api/parties/${las}`)).json()).toMatchObject({ balance: 1_000, balances: { IQD: -149_000, USD: 10_000 } });
+
+    const owing = (await get('/api/parties?type=customer&owing=true')).json() as { id: string }[];
+    expect(owing.map((p) => p.id)).toEqual([las]);
+    // the two currencies of Las stand on opposite sides: what he owes is the position at the book rate, not $100.00
+    expect((await get('/api/parties/totals?type=customer')).json()).toEqual({ type: 'customer', owed: { IQD: 1_000, USD: 0 }, advance: { IQD: 0, USD: 0 }, owing: 1, advanced: 0 });
+    expect((await get('/api/parties?type=supplier&owing=true')).json()).toEqual([]);
+    expect((await get('/api/parties/totals?type=supplier')).json()).toEqual({ type: 'supplier', owed: { IQD: 0, USD: 0 }, advance: { IQD: 0, USD: 0 }, owing: 0, advanced: 0 });
+  });
+
   it('totals each currency on its own, filters to those who owe and sorts by the biggest debt', async () => {
     const mer = await customer('Mer');
     const las = await customer('Las');
@@ -88,16 +127,16 @@ describe('1.4: what customers owe, at a glance', () => {
     const supplier = (await okPost('/api/parties', { type: 'supplier', name: 'Mer Supplies' })).id as string;
     await voucher('payment', mer, 'IQD', 50_000); // Mer owes 50,000 IQD
     await voucher('payment', las, 'USD', 20_000); // Las owes $200.00 (300,000 IQD at the book rate)
-    await voucher('receipt', las, 'IQD', 10_000); // ... and paid 10,000 IQD ahead
+    await voucher('payment', las, 'IQD', 10_000); // ... and 10,000 IQD
     await voucher('receipt', raz, 'IQD', 25_000); // Raz paid ahead: we owe him
     await voucher('receipt', supplier, 'IQD', 70_000); // we owe the supplier 70,000 IQD
 
     const totals = (await get('/api/parties/totals?type=customer')).json();
-    expect(totals).toEqual({ type: 'customer', owed: { IQD: 50_000, USD: 20_000 }, advance: { IQD: 35_000, USD: 0 }, owing: 2, advanced: 2 });
+    expect(totals).toEqual({ type: 'customer', owed: { IQD: 60_000, USD: 20_000 }, advance: { IQD: 25_000, USD: 0 }, owing: 2, advanced: 1 });
     expect((await get('/api/parties/totals?type=supplier')).json()).toMatchObject({ owed: { IQD: 70_000, USD: 0 }, advance: { IQD: 0, USD: 0 }, owing: 1, advanced: 0 });
 
     const owing = (await get('/api/parties?type=customer&owing=true&sort=debt')).json() as { id: string; balance: number }[];
-    expect(owing.map((p) => p.id)).toEqual([las, mer]); // 290,000 then 50,000 at the book rates; Raz owes nothing
+    expect(owing.map((p) => p.id)).toEqual([las, mer]); // 310,000 then 50,000 at the book rates; Raz owes nothing
     const all = (await get('/api/parties?type=customer&sort=debt')).json() as { id: string }[];
     expect(all.map((p) => p.id)).toEqual([las, mer, raz]);
     expect(((await get('/api/parties?type=customer')).json() as { id: string }[]).map((p) => p.id)).toEqual([mer, las, raz]); // by code, as before

@@ -40,19 +40,48 @@ describe('1.4 texts', () => {
 
 describe('Customers: who owes whom, in plain words', () => {
   it('says "Owes us" for a customer who owes and "We owe him" for one who paid ahead, each currency on its own', () => {
-    const mixed = party({ balance: 290_000, balances: { IQD: -10_000, USD: 20_000 } });
-    expect(oweLines(mixed)).toEqual([{ side: 'advance', amount: 10_000, currency: 'IQD' }, { side: 'owes', amount: 20_000, currency: 'USD' }]);
+    const both = party({ balance: 310_000, balances: { IQD: 10_000, USD: 20_000 } });
+    expect(oweLines(both)).toEqual([{ side: 'owes', amount: 10_000, currency: 'IQD' }, { side: 'owes', amount: 20_000, currency: 'USD' }]);
+    const ahead = party({ balance: -85_000, balances: { IQD: -10_000, USD: -5_000 } });
+    expect(oweLines(ahead)).toEqual([{ side: 'advance', amount: 10_000, currency: 'IQD' }, { side: 'advance', amount: 5_000, currency: 'USD' }]);
     for (const lang of LANGS) {
-      const html = wrap(<OweAmount party={mixed} />, lang);
+      const html = wrap(<OweAmount party={both} />, lang);
       expect(html).toContain(esc(textOf(lang, 's14_owesUs')));
-      expect(html).toContain(esc(textOf(lang, 's14_weOwe')));
+      expect(html).not.toContain(esc(textOf(lang, 's14_weOwe')));
       expect(html).toContain(esc(i18nOf(lang).money(20_000, 'USD')));
       expect(html).toContain(esc(i18nOf(lang).money(10_000, 'IQD')));
+      const paid = wrap(<OweAmount party={ahead} />, lang);
+      expect(paid).toContain(esc(textOf(lang, 's14_weOwe')));
+      expect(paid).toContain(esc(i18nOf(lang).money(5_000, 'USD')));
       // never a minus sign, a debit or a credit
-      expect(html).not.toMatch(/[-−]\s?\d/);
+      expect(html + paid).not.toMatch(/[-−]\s?\d/);
     }
     expect(wrap(<OweAmount party={party({})} />)).toContain('—');
     expect(wrap(<OweAmount party={party({})} empty="Nothing owed" />)).toContain('Nothing owed');
+  });
+
+  it('reads who owes whom from the whole position: a dollar debt paid in dinars is settled', () => {
+    // $100.00 booked at 1,420 and paid with 142,000 IQD: each currency still holds its amount, the position is zero
+    const settled = party({ balance: 0, balances: { IQD: -142_000, USD: 10_000 } });
+    expect(oweLines(settled)).toEqual([]);
+    expect(wrap(<OweAmount party={settled} empty="Nothing owed" />)).toContain('Nothing owed');
+    expect(wrap(<OweAmount party={settled} />)).not.toContain('Owes us');
+    // paid all but 2,000 IQD of it: he owes 2,000 IQD, not $100.00
+    const nearly = party({ balance: 2_000, balances: { IQD: -140_000, USD: 10_000 } });
+    expect(oweLines(nearly)).toEqual([{ side: 'owes', amount: 2_000, currency: 'IQD' }]);
+    // paid 8,000 IQD too much: we owe him that
+    const over = party({ balance: -8_000, balances: { IQD: -150_000, USD: 10_000 } });
+    expect(oweLines(over)).toEqual([{ side: 'advance', amount: 8_000, currency: 'IQD' }]);
+    for (const lang of LANGS) {
+      const html = wrap(<OweAmount party={nearly} />, lang);
+      expect(html).toContain(esc(textOf(lang, 's14_owesUs')));
+      expect(html).toContain(esc(i18nOf(lang).money(2_000, 'IQD')));
+      expect(html).not.toContain(esc(textOf(lang, 's14_weOwe')));
+      expect(html).not.toContain(esc(i18nOf(lang).money(10_000, 'USD')));
+    }
+    // "only those who owe" and the list agree with it
+    const list = [{ ...settled, id: 'a' }, { ...nearly, id: 'b' }, { ...over, id: 'c' }, party({ id: 'd', balance: 50_000, balances: { IQD: 50_000, USD: 0 } })];
+    expect(shownParties(list, true, 'debt').map((p) => p.id)).toEqual(['d', 'b']);
   });
 
   it('turns the words round for a supplier: what we owe is "We owe him"', () => {

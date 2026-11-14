@@ -630,7 +630,7 @@ export function listEntries(db: Db, f: EntryFilters = {}): EntrySummary[] {
 /** Lines of approved entries in IQD — the input for every report. */
 export function postedLines(
   db: Db, opts: { to?: string; partyId?: string; branch?: { warehouses: string[]; accounts: string[] } | null } = {}
-): (PostedLine & { partyId: string | null; currency: CurrencyCode; ownDebit: number; ownCredit: number })[] {
+): (PostedLine & { partyId: string | null; currency: CurrencyCode; ownDebit: number; ownCredit: number; approvedAt: string | null })[] {
   const where = ["e.status = 'approved'"];
   const params: string[] = [];
   if (opts.to) { where.push('e.date <= ?'); params.push(opts.to); }
@@ -641,19 +641,21 @@ export function postedLines(
     where.push(sql.replace(/^ AND /, ''));
     params.push(...p);
   }
-  const rows = db.prepare(`SELECT e.id, e.number, e.date, e.currency, l.debit, l.credit, l.account_code, l.base_debit, l.base_credit, l.party_id,
+  const rows = db.prepare(`SELECT e.id, e.number, e.date, e.currency, e.approved_at, l.debit, l.credit, l.account_code, l.base_debit, l.base_credit, l.party_id,
                                   COALESCE(l.description, e.description) AS description,
                                   (e.type = 'closing' OR (e.type = 'reversal' AND EXISTS (SELECT 1 FROM entries c WHERE c.id = e.reverses_id AND c.type = 'closing'))) AS closing
                            FROM entry_lines l JOIN entries e ON e.id = l.entry_id
                            WHERE ${where.join(' AND ')}
                            ORDER BY e.date, e.number, l.line_no`).all(...params) as {
     id: string; number: string; date: string; currency: CurrencyCode; debit: number; credit: number; account_code: string; base_debit: number; base_credit: number;
-    party_id: string | null; description: string; closing: number;
+    party_id: string | null; description: string; closing: number; approved_at: string | null;
   }[];
-  // debit/credit: IQD at the entry's rate (the books); ownDebit/ownCredit: in the entry's own currency (1.1)
+  // debit/credit: IQD at the entry's rate (the books); ownDebit/ownCredit: in the entry's own currency (1.1).
+  // The rows come by date and entry number; approvedAt lets a party's statement put a day in the order it happened.
   return rows.map((r) => ({
     entryId: r.id, number: r.number, date: r.date, accountCode: r.account_code, debit: r.base_debit, credit: r.base_credit,
     description: r.description, partyId: r.party_id, currency: r.currency, ownDebit: Number(r.debit), ownCredit: Number(r.credit),
+    approvedAt: r.approved_at ?? null,
     ...(r.closing ? { closing: true } : {})
   }));
 }
