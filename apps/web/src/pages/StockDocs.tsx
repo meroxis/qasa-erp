@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { lineAmount, todayIso } from '@qasa/core';
 import { api, type StockDocInput, type StockDocKind, type StockDocView } from '../api.ts';
 import {
-  AccountCombo, AmountInput, ErrorBox, Icon, InvoiceStatusChip, Modal, QtyInput, SearchCombo, useData, useLoad, useToast, type PickOption
+  AccountCombo, AmountInput, ErrorBox, Icon, InvoiceStatusChip, Modal, QtyInput, SearchCombo, useData, useLoad, useMay, useToast, type PickOption
 } from '../components.tsx';
 import { useI18n } from '../i18n.ts';
 import { go, href } from '../router.ts';
@@ -22,6 +22,7 @@ export function StockDocs() {
   const [kind, setKind] = useState<StockDocKind | ''>('');
   // 1.4: what the stock that moved is worth is not sent to someone who may not see cost: no such column
   const cost = useData().seesCost !== false;
+  const mayMake = useMay()('stockDoc');
   const { data, error } = useLoad(() => api.stockDocs(kind ? { kind } : {}), [kind]);
   const warehouses = useLoad(() => api.warehouses(), []);
   const canTransfer = (warehouses.data ?? []).filter((w) => w.active).length >= 2;
@@ -29,8 +30,8 @@ export function StockDocs() {
   return (
     <div className="stack">
       <div className="row">
-        <a className="btn primary" href={href('new-stock-doc/opening')}><Icon name="plus" size={16} />{t('newOpeningStock')}</a>
-        {canTransfer
+        {mayMake && <a className="btn primary" href={href('new-stock-doc/opening')}><Icon name="plus" size={16} />{t('newOpeningStock')}</a>}
+        {!mayMake ? null : canTransfer
           ? <a className="btn" href={href('new-stock-doc/transfer')}><Icon name="swap" size={16} />{t('newTransfer')}</a>
           : warehouses.data && <a className="btn" href={href('plans')} title={t('transferNeedsTwo')}><Icon name="swap" size={16} />{t('newTransfer')} <span className="chip plan-pro">Pro</span></a>}
         <span className="spacer" />

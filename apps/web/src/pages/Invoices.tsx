@@ -8,7 +8,7 @@ import {
 } from '@qasa/core';
 import { api, ApiError, pendingRequests, type InvoiceView, type ItemView } from '../api.ts';
 import {
-  AccountCombo, AmountInput, EmptyState, ErrorBox, Icon, InvoiceStatusChip, Modal, QtyInput, SearchCombo, SplitButton, useData, useLoad, usePageNav, useToast,
+  AccountCombo, AmountInput, EmptyState, ErrorBox, Icon, InvoiceStatusChip, Modal, QtyInput, SearchCombo, SplitButton, useData, useLoad, useMay, usePageNav, useToast,
   type PageNav, type PickOption, type SplitChoice
 } from '../components.tsx';
 import { isKey, useI18n, type Key } from '../i18n.ts';
@@ -25,6 +25,7 @@ import { reverseDefaultDate } from '../industry/ReverseModal.tsx';
 import { afterPaint, printDocument, whenQuiet, type PrintResult } from '../industry/printing.ts';
 import { PartyPicker } from '../industry/PartyPicker.tsx';
 import { mayPostInvoice, printedOk, rememberChoice, rememberedChoice, runSaveFlow, saveChoices, type SaveChoice } from '../industry/save-flow.ts';
+import { creditPartyNote } from './pos-logic.ts';
 import { baseQty, factorOf, holdsText, salePriceFor, unitChoices, unitLabel, type LineUnit } from '../industry/units.ts';
 import { BatchInFields, BatchPick, useExpiredConfirm } from '../industry/BatchFields.tsx';
 import { askControlledOnOpen, RxTick, useControlledPrompt, usePharmacyOn, useRxItems } from '../industry/PharmacyPrompts.tsx';
@@ -41,12 +42,14 @@ export function Invoices({ kind }: { kind: InvoiceDocKind }) {
   const [status, setStatus] = useState<InvoiceStatus | ''>('');
   const [q, setQ] = useState('');
   const { data, error } = useLoad(() => api.invoices({ kind, status, q: q.trim() }), [kind, status, q]);
+  // a new invoice only for someone who may make one of this kind (may.ts): sales, or purchases
+  const mayMake = useMay()(kind === 'sale' || kind === 'sale_return' ? 'sale' : 'purchase');
   return (
     <div className="stack">
       <div className="row">
         {isReturnKind(kind) ? <span className="muted">{t('returnsHelp')}</span> : (
           <>
-            <a className="btn primary" href={href(`new-invoice/${kind}`)}><Icon name="plus" size={16} />{kind === 'sale' ? t('newSale') : t('newPurchase')}</a>
+            {mayMake && <a className="btn primary" href={href(`new-invoice/${kind}`)}><Icon name="plus" size={16} />{kind === 'sale' ? t('newSale') : t('newPurchase')}</a>}
             <a className="btn" href={href(kind === 'sale' ? 'customers' : 'suppliers')}>{kind === 'sale' ? t('customers') : t('suppliers')}</a>
           </>
         )}
@@ -61,7 +64,7 @@ export function Invoices({ kind }: { kind: InvoiceDocKind }) {
       <ErrorBox error={error} />
       <div className="card">{data && (data.length > 0 ? <InvoicesTable invoices={data} /> : q.trim() || status
         ? <EmptyState compact icon="search" title={t('es_search')} text={t('es_searchText')} />
-        : <EmptyState icon="invoice" title={t('es_invoices')} text={t('es_invoicesText')} action={isReturnKind(kind) ? undefined : { label: kind === 'sale' ? t('newSale') : t('newPurchase'), icon: 'plus', href: href(`new-invoice/${kind}`) }} />)}</div>
+        : <EmptyState icon="invoice" title={t('es_invoices')} text={t('es_invoicesText')} action={isReturnKind(kind) || !mayMake ? undefined : { label: kind === 'sale' ? t('newSale') : t('newPurchase'), icon: 'plus', href: href(`new-invoice/${kind}`) }} />)}</div>
     </div>
   );
 }
@@ -134,6 +137,8 @@ export function InvoiceEditor({ kind: initialKind, id, partyId: initialParty }: 
   const [rows, setRows] = useState<Row[]>(() => [emptyRow()]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<unknown>(null);
+  // whether the "credit needs a customer / supplier" note may show yet (never on a paper just opened)
+  const [partyAsked, setPartyAsked] = useState(false);
   const expired = useExpiredConfirm();
   const rxItems = useRxItems(usePharmacyOn() && kind === 'sale');
   // the invoice saved last (after "… and next"), and the one being printed: its paper is in the print-only area
@@ -302,6 +307,7 @@ export function InvoiceEditor({ kind: initialKind, id, partyId: initialParty }: 
     };
   }
 
+  const partyNote = creditPartyNote(kind, payment, partyId, partyAsked);
   const canPost = mayPostInvoice(permissions, kind);
   const offered = saveChoices(kind, canPost);
   const who = userKey ?? '';
@@ -340,6 +346,7 @@ export function InvoiceEditor({ kind: initialKind, id, partyId: initialParty }: 
     setPaper(last);
     setSavedId(undefined);
     setPartyId('');
+    setPartyAsked(false);
     setPayment(kind === 'purchase' ? 'credit' : 'cash');
     setDiscount(null);
     setNotes('');
@@ -358,6 +365,7 @@ export function InvoiceEditor({ kind: initialKind, id, partyId: initialParty }: 
   async function run(chosen: SaveChoice) {
     // (F9 works before a draft opened for editing has arrived: nothing is on the page to save yet)
     if (!ready || busy || running.current || !offered.includes(chosen)) return;
+    setPartyAsked(true);
     const body = input();
     if (!body) return;
     running.current = true;
@@ -478,11 +486,11 @@ export function InvoiceEditor({ kind: initialKind, id, partyId: initialParty }: 
       <div className="card pad stack">
         <h2 style={{ fontSize: 18 }}>{savedId ? `${t('editTitle')} — ${t(kind)}` : t(kind)}</h2>
         <div className="grid-3">
-          <div className="field">
+          <div className="field" onBlur={() => setPartyAsked(true)}>
             <span>{kind === 'sale' ? t('customer') : t('supplier')}</span>
             <PartyPicker type={partyType} value={partyId} options={partyOptions} inputRef={partyBox}
               onChange={(v) => { setPartyId(v); if (!v) setPayment('cash'); }} onCreated={() => parties.reload()}
-              placeholder={kind === 'sale' ? t('chooseCustomer') : t('chooseSupplier')} {...(kind === 'sale' ? { emptyLabel: t('walkIn') } : {})} />
+              placeholder={kind === 'sale' ? t('chooseCustomer') : t('chooseSupplier')} {...(kind === 'sale' && payment !== 'credit' ? { emptyLabel: t('walkIn') } : {})} />
           </div>
           <label className="field"><span>{t('date')}</span><input className="input" type="date" value={date} onChange={(e) => setDate(e.target.value)} /></label>
           <label className="field">
@@ -497,10 +505,10 @@ export function InvoiceEditor({ kind: initialKind, id, partyId: initialParty }: 
             <span>{t('paymentMode')}</span>
             <div className="track" role="group" aria-label={t('paymentMode')} style={{ alignSelf: 'flex-start' }}>
               <button type="button" aria-pressed={payment === 'cash'} onClick={() => setPayment('cash')}>{t('payCash')}</button>
-              <button type="button" aria-pressed={payment === 'credit'} onClick={() => setPayment('credit')}>{t('payCredit')}</button>
+              <button type="button" aria-pressed={payment === 'credit'} onClick={() => { setPayment('credit'); setPartyAsked(true); }}>{t('payCredit')}</button>
             </div>
             <div className="muted small">{payment === 'cash' ? t('s14_payCashHint') : kind === 'sale' ? t('s14_payCreditHint') : t('s14_payCreditHintSupplier')}</div>
-            {payment === 'credit' && !partyId && <div className="small" role="alert" style={{ color: 'var(--bad)' }}>{kind === 'sale' ? t('s14_creditNeedsCustomer') : t('err_party_required')}</div>}
+            {partyNote && <div className="small" role="alert" style={{ color: 'var(--bad)' }}>{t(partyNote)}</div>}
           </div>
           {payment === 'cash' ? (
             <div className="field">

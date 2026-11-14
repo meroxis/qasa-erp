@@ -1322,7 +1322,8 @@ html[dir='rtl'] .tour-card.center { transform: translate(50%, -50%); }
 a.fx-chip:hover { background: var(--subtle-hover); color: var(--ink); }
 a.fx-chip:focus-visible { outline: 2px solid var(--focus-outer); outline-offset: 1px; }
 .fx-chip.quiet { color: var(--ink-3); }
-@media screen and (max-width: 900px) { .fx-chip { display: none; } }
+/* (with the line that sets it apart from the person's name) */
+@media screen and (max-width: 900px) { .fx-chip, .fx-chip + .topbar-sep { display: none; } }
 
 /* Settings: a card's heading that only repeats the open section's name is kept for screen readers, not drawn */
 .settings-repeat-title { position: absolute !important; inline-size: 1px; block-size: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }

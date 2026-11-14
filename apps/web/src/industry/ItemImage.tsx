@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
+import { useEffect, useRef, useState, useSyncExternalStore, type RefObject } from 'react';
 import { ErrorBox, Icon, useToast } from '../components.tsx';
 import { useI18n } from '../i18n.ts';
 import { mediaApi } from './media-api.ts';
@@ -70,8 +70,12 @@ function initials(name: string): string {
   return (words.length > 1 ? words[0]!.charAt(0) + words[1]!.charAt(0) : (words[0] ?? '?').slice(0, 2)).toUpperCase();
 }
 
-/** An item's picture, or its initials when it has none. */
-export function ItemImage({ itemId, name, size = 36 }: { itemId: string; name: string; size?: number }) {
+/**
+ * An item's picture as an address for <img>, or null while there is none to show: the item has no picture (nothing is
+ * asked for it), its box is not in view yet, or the picture is still on its way. `box` goes on the element that
+ * stands where the picture will be.
+ */
+export function useItemPicture(itemId: string): { box: RefObject<HTMLSpanElement | null>; url: string | null } {
   const version = useImageVersion(itemId);
   const [url, setUrl] = useState<string | null>(null);
   const [visible, setVisible] = useState(false);
@@ -92,7 +96,12 @@ export function ItemImage({ itemId, name, size = 36 }: { itemId: string; name: s
     void pictureUrl(itemId, version).then((u) => { if (live) setUrl(u); });
     return () => { live = false; };
   }, [itemId, version, visible]);
+  return { box, url };
+}
 
+/** An item's picture, or its initials when it has none. */
+export function ItemImage({ itemId, name, size = 36 }: { itemId: string; name: string; size?: number }) {
+  const { box, url } = useItemPicture(itemId);
   const style = { inlineSize: size, blockSize: size, borderRadius: 'var(--r-md)', flexShrink: 0, overflow: 'hidden' } as const;
   return (
     <span ref={box} className="avatar mark" style={{ ...style, fontSize: Math.max(11, Math.round(size / 3)) }} aria-hidden={url ? undefined : true}>

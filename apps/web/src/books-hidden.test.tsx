@@ -66,8 +66,11 @@ describe('the menu of someone who may not read the books', () => {
     expect(canSee(expenses, accountant)).toBe(true);
     expect(canSee(expenses, { ...cashier, admin: true })).toBe(true);
     for (const page of ['expenses', 'bank-statement', 'new', 'edit']) expect(NO_BOOKS_PAGES.has(page), page).toBe(true);
-    // the pages they keep: the brief, the day close and the safes by name
-    for (const key of ['br_title', 'dc_title', 'bk_title'] as const) expect(canSee(findPage(key)!, cashier), key).toBe(true);
+    // the pages they keep: the brief and the day close. The banks and cheques are not theirs to work on (nav.ts `work`):
+    // the till still lists the safes by name
+    for (const key of ['br_title', 'dc_title'] as const) expect(canSee(findPage(key)!, cashier), key).toBe(true);
+    expect(canSee(findPage('bk_title')!, cashier)).toBe(false);
+    expect(canSee(findPage('bk_title')!, accountant)).toBe(true);
     for (const page of ['brief', 'day-close', 'banking', 'entries', 'entry']) expect(NO_BOOKS_PAGES.has(page), page).toBe(false);
   });
 });

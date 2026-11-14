@@ -46,19 +46,20 @@ export const PRINT14_TEXT = {
   pd_f_subtotal: ['المجموع قبل الخصم والخصم', 'Subtotal and discount', 'کۆی بەر لە داشکاندن و داشکاندن'],
   pd_f_notes: ['الملاحظات', 'Notes', 'تێبینییەکان'],
   pd_f_amountWords: ['المبلغ كتابةً', 'Amount in words', 'بڕی پارە بە نووسین'],
-  pd_f_exchangeRate: ['سعر الصرف', 'Exchange rate', 'نرخی گۆڕینەوە'],
-  pd_f_previousBalance: ['الرصيد السابق', 'Previous balance', 'باڵانسی پێشوو'],
-  pd_f_remainingBalance: ['الرصيد المتبقي', 'Remaining balance', 'باڵانسی ماوە'],
+  pd_f_exchangeRate: ['سعر الصرف', 'Exchange rate', 'نرخی دۆلار'],
+  pd_f_previousBalance: ['الرصيد السابق', 'Previous balance', 'ڕەسیدی پێشوو'],
+  pd_f_remainingBalance: ['الرصيد المتبقي', 'Remaining balance', 'ڕەسیدی ماوە'],
+  pd_followNote: ['اختر «تصميم خاص به» في الأعلى لتغيير هذه الخيارات.', 'Choose “Its own design” above to change these.', 'بۆ گۆڕینی ئەمانە لە سەرەوە «دیزاینی تایبەت» هەڵبژێرە.'],
   pd_balanceHint: [
     'الرصيد يُطبع على الورقة المرحَّلة التي لها زبون أو مجهز من القائمة.',
     'The balance prints on a posted paper that has a customer or supplier from the list.',
-    'باڵانس لەسەر پەڕەی تۆمارکراو چاپ دەکرێت کە کڕیار یان دابینکەرێکی لیستی هەبێت.'
+    'ڕەسید لەسەر پەڕەی تەرحیلکراو چاپ دەکرێت کە کڕیار یان دابینکەرێکی لیستی هەبێت.'
   ],
 
   // headings printed on papers (in the paper's language)
-  pd_h_previousBalance: ['الرصيد السابق', 'Previous balance', 'باڵانسی پێشوو'],
-  pd_h_remainingBalance: ['الرصيد المتبقي', 'Remaining balance', 'باڵانسی ماوە'],
-  pd_h_currentBalance: ['رصيد الحساب', 'Account balance', 'باڵانسی هەژمار'],
+  pd_h_previousBalance: ['الرصيد السابق', 'Previous balance', 'ڕەسیدی پێشوو'],
+  pd_h_remainingBalance: ['الرصيد المتبقي', 'Remaining balance', 'ڕەسیدی ماوە'],
+  pd_h_currentBalance: ['رصيد الحساب', 'Account balance', 'ڕەسیدی هەژمار'],
   pd_h_words: ['المبلغ كتابةً', 'Amount in words', 'بڕی پارە بە نووسین'],
   pd_h_phone: ['الهاتف', 'Phone', 'تەلەفۆن'],
   pd_h_address: ['العنوان', 'Address', 'ناونیشان'],
@@ -80,6 +81,8 @@ export const PRINT14_TEXT = {
     'Your company logo on printed papers is part of Starter, Pro and Business.',
     'لۆگۆی کۆمپانیا لەسەر چاپکراوەکان بەشێکە لە Starter، Pro و Business.'
   ],
+  // in the logo's box, while the plan does not hand the saved logo out
+  pp_logoKeptBox: ['الشعار محفوظ', 'Logo kept', 'لۆگۆکە پارێزراوە'],
   pp_logoKept: [
     'الشعار المحفوظ باقٍ، ويُطبع من جديد عند تفعيل خطة مدفوعة.',
     'Your saved logo is kept and prints again once a paid plan is active.',

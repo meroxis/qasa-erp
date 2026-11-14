@@ -5,14 +5,14 @@
  */
 export const SHELL14_TEXT = {
   // ——— Customers and Suppliers: who owes whom, in plain words ———
-  s14_oweCustomer: ['لك على الزبائن', 'Customers owe you', 'کڕیاران قەرزارتن'],
-  s14_oweCustomerAdv: ['للزبائن عليك (دفعات مقدّمة)', 'You owe customers (paid ahead)', 'تۆ قەرزاری کڕیارانیت (پارەی پێشەکی)'],
-  s14_oweSupplier: ['للمجهزين عليك', 'You owe suppliers', 'تۆ قەرزاری دابینکەرانیت'],
-  s14_oweSupplierAdv: ['لك على المجهزين (دفعات مقدّمة)', 'Suppliers owe you (paid ahead)', 'دابینکەران قەرزارتن (پارەی پێشەکی)'],
+  s14_oweCustomer: ['لنا على الزبائن', 'Customers owe us', 'کڕیاران قەرزارمانن'],
+  s14_oweCustomerAdv: ['للزبائن علينا (دفعات مقدّمة)', 'We owe customers (paid ahead)', 'قەرزاری کڕیارانین (پارەی پێشەکی)'],
+  s14_oweSupplier: ['للمجهزين علينا', 'We owe suppliers', 'قەرزاری دابینکەرانین'],
+  s14_oweSupplierAdv: ['لنا على المجهزين (دفعات مقدّمة)', 'Suppliers owe us (paid ahead)', 'دابینکەران قەرزارمانن (پارەی پێشەکی)'],
   s14_owingCustomers: ['عدد الزبائن المدينين: {n}', 'Customers who owe: {n}', 'ژمارەی کڕیارە قەرزارەکان: {n}'],
-  s14_owingSuppliers: ['عدد المجهزين الذين لهم عليك: {n}', 'Suppliers you owe: {n}', 'ژمارەی ئەو دابینکەرانەی قەرزاریانیت: {n}'],
-  s14_nothingCustomer: ['لا ديون لك على الزبائن.', 'No customer owes you anything.', 'هیچ کڕیارێک قەرزارت نییە.'],
-  s14_nothingSupplier: ['لا ديون عليك للمجهزين.', 'You owe no supplier anything.', 'قەرزاری هیچ دابینکەرێک نیت.'],
+  s14_owingSuppliers: ['عدد المجهزين الذين لهم علينا: {n}', 'Suppliers we owe: {n}', 'ژمارەی ئەو دابینکەرانەی قەرزاریانین: {n}'],
+  s14_nothingCustomer: ['لا ديون لنا على الزبائن.', 'No customer owes us anything.', 'هیچ کڕیارێک قەرزارمان نییە.'],
+  s14_nothingSupplier: ['لا ديون علينا للمجهزين.', 'We owe no supplier anything.', 'قەرزاری هیچ دابینکەرێک نین.'],
   s14_owesUs: ['عليه لنا', 'Owes us', 'قەرزارمانە'],
   s14_weOwe: ['له علينا', 'We owe him', 'قەرزاری ئەوین'],
   s14_settled: ['لا رصيد', 'Nothing owed', 'بێ قەرز'],

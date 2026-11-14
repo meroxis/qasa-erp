@@ -983,7 +983,7 @@ function ThisPcBackupCard() {
         {status?.available && <span className={'chip ' + (status.on ? 'ok' : '')}>{status.on ? t('switchedOn') : t('switchedOff')}</span>}
       </div>
       <p className="muted" style={{ margin: 0 }}>{t('bkHelp')}</p>
-      {absent && <div className="alert">{t('bkOfficial')} {t('bkManual')}</div>}
+      {absent && <div className="alert">{t('bkOfficial')} {t(inWindowsApp() ? 'bkManual' : 'bkManualBrowser')}</div>}
       {absent && <CloseAskSetting />}
       {restarting && <div className="alert ok" role="status">{t('bkRestarting')}</div>}
       {status && (

@@ -19,7 +19,7 @@ vi.mock('react', () => ({
 vi.mock('../components.tsx', () => ({
   AccountCombo: 'AccountCombo', ErrorBox: 'ErrorBox', Icon: 'Icon', Modal: 'Modal',
   useData: () => ({ settings: { defaultRateX100: 1460000 }, reloadSettings: fixture.reloadSettings }),
-  useLoad: (fn: () => unknown) => ({ data: fn(), reload: () => {} }), usePageNav: () => {}, useToast: () => () => {}
+  useLoad: (fn: () => unknown) => ({ data: fn(), reload: () => {} }), useMay: () => () => true, usePageNav: () => {}, useToast: () => () => {}
 }));
 vi.mock('../i18n.ts', () => ({ useI18n: () => ({ t: (s: string) => s, int: String, date: String, digitsOf: String, lang: 'en' }) }));
 vi.mock('../router.ts', () => ({ go: () => {}, href: (s: string) => s }));

@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { fromBaseQty, isUnit, lineAmount, rateFromX100, todayIso, toWesternDigits, type CurrencyCode } from '@qasa/core';
 import { api } from '../api.ts';
-import { EmptyState, AmountInput, ErrorBox, Icon, Modal, QtyInput, SearchCombo, useData, useLoad, usePageNav, useToast, type PickOption } from '../components.tsx';
+import { EmptyState, AmountInput, ErrorBox, Icon, Modal, QtyInput, SearchCombo, useData, useLoad, useMay, usePageNav, useToast, type PickOption } from '../components.tsx';
 import { useI18n, type I18n, type Key } from '../i18n.ts';
 import {
   PO_STATUSES, purchasingApi, type PoInput, type PoMove, type PoStatus, type PoSummaryView, type PoView, type ReorderGroup
@@ -49,6 +49,7 @@ let prefill: { currency: CurrencyCode; lines: { itemId: string; qtyMilli: number
 /* ---------- the list ---------- */
 
 export function PurchaseOrders() {
+  const mayOrder = useMay()('purchaseOrder');
   const i18n = useI18n();
   const { t } = i18n;
   usePageNav({ key: 'po_title', group: 'gPurchases' });
@@ -75,7 +76,7 @@ export function PurchaseOrders() {
           <button type="button" role="tab" aria-selected={tab === 'suggest'} aria-pressed={tab === 'suggest'} onClick={() => setTab('suggest')}>{t('po_tabSuggest')}</button>
         </div>
         <span className="spacer" />
-        <a className="btn primary" href={href('new-purchase-order')}><Icon name="plus" size={16} />{t('po_new')}</a>
+        {mayOrder && <a className="btn primary" href={href('new-purchase-order')}><Icon name="plus" size={16} />{t('po_new')}</a>}
       </div>
       {tab === 'orders' ? (
         <>
@@ -129,6 +130,7 @@ function Suggestions() {
   const { t } = i18n;
   const toast = useToast();
   const { data, error } = useLoad(() => purchasingApi.suggest(), []);
+  const mayOrder = useMay()('purchaseOrder');
   const [busy, setBusy] = useState(false);
   const [actError, setActError] = useState<unknown>(null);
 
@@ -164,7 +166,7 @@ function Suggestions() {
             <h3 style={{ margin: 0 }}>{g.party ? g.party.name : t('po_unknownSupplier')}</h3>
             <span className="chip">{g.currency}</span>
             <span className="spacer" />
-            <button type="button" className="btn small primary" disabled={busy} onClick={() => void make(g)}><Icon name="cart" size={15} />{t('po_makeOrder')}</button>
+            {mayOrder && <button type="button" className="btn small primary" disabled={busy} onClick={() => void make(g)}><Icon name="cart" size={15} />{t('po_makeOrder')}</button>}
           </div>
           <div className="table-wrap">
             <table className="table">
@@ -347,6 +349,7 @@ export function PurchaseOrderDetail({ id }: { id: string }) {
   const { t } = i18n;
   const toast = useToast();
   const { settings } = useData();
+  const mayOrder = useMay()('purchaseOrder');
   usePageNav({ key: 'po_title', group: 'gPurchases' });
   const { data: x, error, reload } = useLoad(() => purchasingApi.get(id), [id]);
   const [modal, setModal] = useState<'receive' | 'cancel' | null>(null);
@@ -356,7 +359,7 @@ export function PurchaseOrderDetail({ id }: { id: string }) {
   if (error) return <ErrorBox error={error} />;
   if (!x) return null;
   const company = settings ? i18n.name(settings.companyName) : '';
-  const can = (a: string) => x.actions.includes(a as never);
+  const can = (a: string) => mayOrder && x.actions.includes(a as never);
   const pending = x.receipts.find((r) => r.status === 'draft');
 
   async function move(action: PoMove) {

@@ -7,7 +7,7 @@ import { href } from '../router.ts';
 import { useRatePrefill } from './fx-prefill.ts';
 import { holdKey, type HeldKey } from './outbox.ts';
 import {
-  amountAfterCurrency, amountInIqd, balanceAfter, boardRateFills, invoiceNote, mayQuickVoucher, parseRateText, quickNotice, quickOutcome,
+  amountAfterCurrency, amountInIqd, balanceAfter, boardRateFills, invoiceNote, invoicePrefill, mayQuickVoucher, parseRateText, quickNotice, quickOutcome,
   type QuickKind, type QuickVoucherPreset
 } from './quick-voucher.ts';
 
@@ -50,7 +50,8 @@ export function QuickVoucherForm({ kind, preset, onClose, onDone }: { kind: Quic
   const [partyId, setPartyId] = useState(preset.partyId ?? '');
   const again = preset.again;
   // (an invoice with nothing open on it: the amount is typed)
-  const [amount, setAmount] = useState<number | null>(again ? again.amount : preset.invoice?.total || null);
+  const [typedAmount, setTypedAmount] = useState<{ value: number | null } | null>(again ? { value: again.amount } : null);
+  const setAmount = (value: number | null) => setTypedAmount({ value });
   const [currency, setCurrency] = useState<CurrencyCode>(again?.currency ?? preset.invoice?.currency ?? 'IQD');
   // the company's default rate to begin with, and when the rate board can't be asked
   const [rateText, setRateText] = useState(() => String(rateFromX100(
@@ -72,6 +73,11 @@ export function QuickVoucherForm({ kind, preset, onClose, onDone }: { kind: Quic
   useEffect(() => { api.voucherApproval().then(setApproval, () => { /* an older server: nothing waits */ }); }, []);
 
   const party = preset.partyId ? one.data ?? null : list.data?.find((p) => p.id === partyId) ?? null;
+  // until an amount is typed: what is still open on the invoice, held to what the party still owes once that is read
+  const invoice = preset.invoice;
+  const amount = typedAmount ? typedAmount.value
+    : !invoice ? null
+      : preset.partyId && one.data ? invoicePrefill(invoice.total, invoice.currency, invoice.rateX100, one.data) : invoice.total || null;
   const options: PickOption[] = (list.data ?? []).map((p) => ({ id: p.id, code: p.code, label: p.name, search: p.phone, hint: p.balance ? i18n.money(p.balance, 'IQD') : '' }));
   const rateX100 = currency === 'USD' ? parseRateText(rateText) : 100;
   const after = party ? balanceAfter(party.balance, amount, currency, rateX100) : null;

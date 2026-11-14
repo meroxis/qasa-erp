@@ -230,7 +230,7 @@ export function PrintDocument({ model: given, design, profile, company, lang, br
           {model.party && (
             <div className="qd-info-col qd-info-party">
               <div className="qd-info-label">{plain(partyKey)}</div>
-              <div className="qd-party-name">{model.party.name}{model.party.code && <span className="qd-muted"> · <span className="ltr">{model.party.code}</span></span>}</div>
+              <div className="qd-party-name">{model.party.name}{model.party.code && <span className="qd-muted"> · <span className="ltr qd-nb">{model.party.code}</span></span>}</div>
               {partyPhone && <div className="qd-muted"><span className="ltr">{partyPhone}</span></div>}
               {partyAddress && <div className="qd-muted">{partyAddress}</div>}
             </div>
@@ -249,7 +249,7 @@ export function PrintDocument({ model: given, design, profile, company, lang, br
           <div className="qd-title qd-title-center">{title}</div>
           <dl className="qd-box">
             {meta.map((m) => <div className="qd-box-row" key={m.key}><dt>{m.label}</dt><dd className={m.cls}>{m.value}</dd></div>)}
-            {model.party && <div className="qd-box-row"><dt>{plain(partyKey)}</dt><dd>{model.party.name}{model.party.code && <span className="qd-muted"> · <span className="ltr">{model.party.code}</span></span>}</dd></div>}
+            {model.party && <div className="qd-box-row"><dt>{plain(partyKey)}</dt><dd>{model.party.name}{model.party.code && <span className="qd-muted"> · <span className="ltr qd-nb">{model.party.code}</span></span>}</dd></div>}
             {partyPhone && <div className="qd-box-row"><dt>{plain('pd_h_phone')}</dt><dd><span className="ltr">{partyPhone}</span></dd></div>}
             {partyAddress && <div className="qd-box-row"><dt>{plain('pd_h_address')}</dt><dd>{partyAddress}</dd></div>}
           </dl>
@@ -267,7 +267,7 @@ export function PrintDocument({ model: given, design, profile, company, lang, br
           {model.party && (
             <div className="qd-party">
               <div className="qd-party-label">{plain(partyKey)}</div>
-              <div className="qd-party-name">{model.party.name}{model.party.code && <span className="qd-muted"> · <span className="ltr">{model.party.code}</span></span>}</div>
+              <div className="qd-party-name">{model.party.name}{model.party.code && <span className="qd-muted"> · <span className="ltr qd-nb">{model.party.code}</span></span>}</div>
               {(partyPhone || partyAddress) && <div className="qd-muted">{partyPhone && <span className="ltr">{partyPhone}</span>}{partyPhone && partyAddress ? ' · ' : ''}{partyAddress}</div>}
             </div>
           )}
@@ -312,7 +312,7 @@ export function PrintDocument({ model: given, design, profile, company, lang, br
         <div className="qd-receipt-lines">
           {model.lines.map((l, i) => (
             <div className="qd-rline" key={i}>
-              <div className="qd-rname">{itemName(l.name)}{show.itemCode && l.code && <span className="qd-muted ltr"> {l.code}</span>}</div>
+              <div className="qd-rname">{itemName(l.name)}{show.itemCode && l.code && <span className="qd-muted"> · <span className="ltr qd-nb">{l.code}</span></span>}</div>
               <div className="qd-rcalc num">
                 <span>{qtyText(L, l.qtyMilli)}{show.unit && l.unit ? ` ${unitName(L, l.unit)}` : ''} × {money(l.unitPrice)}</span>
                 <strong>{money(l.amount)}</strong>

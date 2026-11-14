@@ -13,6 +13,11 @@ export const SALES14_TEXT = {
     'Choose the customer first: a credit sale goes on their account.',
     'سەرەتا کڕیار هەڵبژێرە: فرۆشتنی قەرز لەسەر ئەو تۆمار دەکرێت.'
   ],
+  s14_creditNeedsSupplier: [
+    'اختر المجهز أولاً: الشراء الآجل يبقى ديناً علينا له.',
+    'Choose the supplier first: a credit purchase stays owed to them.',
+    'سەرەتا دابینکەر هەڵبژێرە: کڕینی قەرز وەک قەرز بۆ ئەو دەمێنێتەوە.'
+  ],
   s14_safe: ['القاصة', 'Safe', 'قاسە'],
   s14_salesSectionHelp: ['الصلاحية والوجبات', 'Expiry and batches', 'بەسەرچوون و وەجبەکان'],
   err_pos_credit_not_mixed: [
@@ -44,7 +49,7 @@ export const SALES14_TEXT = {
     'بڕەکە لە ڕەسید زیاترە: زیادەکە بۆ ئەو دەمێنێتەوە.'
   ],
   s14_forInvoice: ['عن الفاتورة {n}', 'For invoice {n}', 'بۆ پسوولەی {n}'],
-  s14_posted: ['رُحّل السند {n}', 'Voucher {n} posted', 'سەنەدی {n} تۆمار کرا'],
+  s14_posted: ['رُحّل السند {n}', 'Voucher {n} posted', 'سەنەدی {n} تەرحیل کرا'],
   s14_savedWaiting: ['حُفظ السند وهو بانتظار الموافقة.', 'Saved. It waits for approval.', 'پاشەکەوت کرا و چاوەڕێی پەسەندکردنە.'],
   s14_savedDraft: [
     'حُفظ مسودة: يحتاج التدقيق والمصادقة.',
@@ -95,12 +100,12 @@ export const SALES14_TEXT = {
   s14_myVouchersHelp: [
     'تظهر هنا السندات التي نظّمتها أنت فقط، مع حالة الموافقة وسبب الرفض إن رُفضت. بقية السندات والقيود في دفاتر الشركة.',
     'Only the vouchers you prepared are listed here, with their approval and the reason if one was rejected. The other vouchers and entries are in the company’s books.',
-    'تەنها ئەو سەنەدانەی خۆت ئامادەت کردوون لێرە دەردەکەون، لەگەڵ دۆخی پەسەندکردن و هۆکاری ڕەتکردنەوە ئەگەر ڕەتکرابێتەوە. سەنەد و تۆمارەکانی تر لە دەفتەرەکانی کۆمپانیادان.'
+    'تەنها ئەو سەنەدانەی خۆت ئامادەت کردوون لێرە دەردەکەون، لەگەڵ دۆخی پەسەندکردن و هۆکاری ڕەتکردنەوە ئەگەر ڕەتکرابێتەوە. سەنەد و قەیدەکانی تر لە دەفتەرەکانی کۆمپانیادان.'
   ],
   s14_notYours: [
     'هذا القيد في دفاتر الشركة. يمكنك فتح السندات التي نظّمتها أنت فقط.',
     'This entry is in the company’s books. You can open only the vouchers you prepared.',
-    'ئەم تۆمارە لە دەفتەرەکانی کۆمپانیادایە. تەنها دەتوانیت ئەو سەنەدانە بکەیتەوە کە خۆت ئامادەت کردوون.'
+    'ئەم قەیدە لە دەفتەرەکانی کۆمپانیادایە. تەنها دەتوانیت ئەو سەنەدانە بکەیتەوە کە خۆت ئامادەت کردوون.'
   ],
   // a supplier's statement for someone who does not keep the books: the balance, and where the rest is
   s14_statementInBooks: [
@@ -113,7 +118,7 @@ export const SALES14_TEXT = {
   // vouchers that wait for approval
   s14_waiting: ['بانتظار الموافقة', 'Waiting for approval', 'چاوەڕێی پەسەندکردن'],
   s14_rejected: ['مرفوض', 'Rejected', 'ڕەتکراوە'],
-  s14_approve: ['موافقة وترحيل', 'Approve & post', 'پەسەندکردن و تۆمارکردن'],
+  s14_approve: ['موافقة وترحيل', 'Approve & post', 'پەسەندکردن و تەرحیلکردن'],
   s14_reject: ['رفض', 'Reject', 'ڕەتکردنەوە'],
   s14_rejectTitle: ['رفض السند', 'Reject the voucher', 'ڕەتکردنەوەی سەنەد'],
   s14_rejectHelp: [

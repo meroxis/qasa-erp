@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import type { EntryStatus, EntryType } from '@qasa/core';
 import { api, type EntrySummary } from '../api.ts';
-import { EmptyState, ErrorBox, Icon, typeName, useData, useLoad } from '../components.tsx';
+import { EmptyState, ErrorBox, Icon, typeName, useData, useLoad, useMay } from '../components.tsx';
 import { QuickVoucherButton } from '../industry/QuickVoucher.tsx';
 import { ApprovalButtons, approvalStateOf, useMayApprove, useVoucherApproval, VoucherStateChip } from '../industry/VoucherApproval.tsx';
 import { useI18n } from '../i18n.ts';
@@ -70,6 +70,8 @@ export function Entries({ status: initialStatus }: { status?: EntryStatus } = {}
   // 1.4: someone who does not keep the books gets their own vouchers from the server and no other, and prepares them
   // with "Receive payment" only: no editor, no count of what waits in the whole company
   const own = useData().seesBooks === false;
+  // the voucher editor is for whoever prepares vouchers (may.ts); others read the journal
+  const mayPrepare = useMay()('voucher');
   const { data, error, reload } = useLoad(() => api.entries({ type, status, approval, q: q.trim() }), [type, status, approval, q]);
   const [approvalState, reloadApproval] = useVoucherApproval();
   const showApproval = !!approvalState && (approvalState.on || (!own && approvalState.waiting > 0) || approval !== '' || (own && !!data?.some((e) => e.approval)));
@@ -79,7 +81,7 @@ export function Entries({ status: initialStatus }: { status?: EntryStatus } = {}
     <div className="stack">
       {own && <div className="alert info small">{t('s14_myVouchersHelp')}</div>}
       <div className="row">
-        {!own && (
+        {!own && mayPrepare && (
           <>
             <a className="btn primary" href={href('new/receipt')}><Icon name="plus" size={16} />{t('newReceipt')}</a>
             <a className="btn primary" href={href('new/payment')}><Icon name="plus" size={16} />{t('newPayment')}</a>

@@ -27,7 +27,9 @@
 .pos-tile:active { transform: scale(.97); }
 .pos-tile:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
 .pos-tile.out { opacity: .55; }
+.pos-picture { display: block; flex: none; }
 .pos-img, .pos-initials { width: 64px; height: 64px; border-radius: 12px; flex: none; }
+.pos-img { display: block; }
 .pos-img { object-fit: cover; background: var(--neutral-bg, #eef1f5); }
 .pos-initials { display: grid; place-items: center; background: var(--accent-soft); color: var(--accent-soft-ink); font-weight: 700; font-size: 1.3rem; }
 .pos-tile-name { font-weight: 600; line-height: 1.3; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
@@ -42,7 +44,8 @@
 .pos-empty { text-align: center; padding: 24px 8px; margin: 0; }
 .pos-line { display: grid; grid-template-columns: minmax(0, 1fr) auto auto auto; gap: 8px; align-items: center; padding: 8px 0; border-bottom: 1px solid var(--border, #e4e7ec); }
 .pos-line-name { display: flex; flex-direction: column; min-width: 0; }
-.pos-line-name > span:first-child { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* the name takes the lines it needs (two at most) instead of being cut on one line while the row has room */
+.pos-line-name > span:first-child { font-weight: 600; line-height: 1.3; overflow-wrap: anywhere; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
 .pos-line-name select { max-width: 100%; }
 .pos-qty { display: flex; align-items: center; gap: 4px; }
 .pos-qty-btn.btn { min-width: 40px; min-height: 40px; padding: 0; justify-content: center; font-size: 1.2rem; font-weight: 700; }

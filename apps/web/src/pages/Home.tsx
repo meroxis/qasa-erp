@@ -13,7 +13,8 @@ import { moneyBoth } from './Brief.tsx';
 import type { I18n, Key } from '../i18n.ts';
 import { QuickVoucherButton } from '../industry/QuickVoucher.tsx';
 import { mayQuickVoucher } from '../industry/quick-voucher.ts';
-import { NAV, toggleFavourite, visibleItems, type NavItem, type NavViewer } from '../nav.ts';
+import { NAV, navLabel, pageOpen, toggleFavourite, visibleItems, type NavItem, type NavViewer } from '../nav.ts';
+import { may } from '../may.ts';
 
 export function Home({ viewer, user, favourites }: { viewer: NavViewer; user: string; favourites: string[] }) {
   const i18n = useI18n();
@@ -34,6 +35,9 @@ export function Home({ viewer, user, favourites }: { viewer: NavViewer; user: st
   const owed = (type: 'customer' | 'supplier') => (parties.data ?? []).filter((p) => p.type === type).reduce((sum, p) => sum + p.balance, 0);
   const cash = accounts.find((a) => a.code === '18')?.balance ?? 0;
   const count = (fn: (e: NonNullable<typeof entries>[number]) => boolean) => (entries ?? []).filter(fn).length;
+  // buttons and tiles only for what this person may do or open (may.ts, nav.ts): the server refuses the rest
+  const can = (action: Parameters<typeof may>[1]) => viewer.admin || may(viewer.permissions, action);
+  const suppliers = pageOpen('suppliers', undefined, viewer);
   const noCompany = settings && !settings.companyName.ar && !settings.companyName.en && !settings.companyName.ku;
 
   // the owner's dashboard (aged balances, cash in each currency, this month's profit); the simpler tiles until it loads
@@ -44,12 +48,12 @@ export function Home({ viewer, user, favourites }: { viewer: NavViewer; user: st
     ...(d.cash ? [{ label: t('cashAndBanks'), value: moneyBoth(i18n, d.cash.total), icon: 'wallet', link: 'brief' }] : []),
     ...(d.profitMonth ? [{ label: t('br_profitMonth'), value: i18n.money(d.profitMonth.profit, 'IQD'), icon: 'chart', ...(books ? { link: 'final-accounts' } : {}), tone: d.profitMonth.profit < 0 ? 'bad' : 'ok' }] : []),
     { label: t('receivables'), value: i18n.money(d.receivables, 'IQD'), link: 'reports-more/aging', icon: 'contact' },
-    { label: t('payables'), value: i18n.money(d.payables, 'IQD'), link: 'reports-more/supplier-aging', icon: 'truck' }
+    ...(suppliers ? [{ label: t('payables'), value: i18n.money(d.payables, 'IQD'), link: 'reports-more/supplier-aging', icon: 'truck' }] : [])
   ] : [
     ...(journal ? [{ label: t('cashAndBanks'), value: i18n.money(cash, 'IQD'), icon: 'wallet' }] : []),
     { label: t('salesThisMonth'), value: i18n.money(salesTotal, 'IQD'), link: 'sales', icon: 'trend' },
     { label: t('receivables'), value: i18n.money(owed('customer'), 'IQD'), link: 'customers', icon: 'contact' },
-    { label: t('payables'), value: i18n.money(owed('supplier'), 'IQD'), link: 'suppliers', icon: 'truck' }
+    ...(suppliers ? [{ label: t('payables'), value: i18n.money(owed('supplier'), 'IQD'), link: 'suppliers', icon: 'truck' }] : [])
   ]) as { label: string; value: string; link?: string; icon: string; sub?: string; tone?: 'ok' | 'bad' }[];
   // the Iraqi approval chain at a glance: prepared → checked → approved
   const flow = [
@@ -78,23 +82,25 @@ export function Home({ viewer, user, favourites }: { viewer: NavViewer; user: st
         </div>
       )}
       <nav className="cmdbar no-print" aria-label={t('quickActions')}>
-        <a className="btn primary" href={href('new-invoice/sale')}><Icon name="invoice" size={16} />{t('newSale')}</a>
-        <a className="btn" href={href('new-invoice/purchase')}><Icon name="cart" size={16} />{t('newPurchase')}</a>
-        <span className="sep" />
+        {can('sale') && <a className="btn primary" href={href('new-invoice/sale')}><Icon name="invoice" size={16} />{t('newSale')}</a>}
+        {can('purchase') && <a className="btn" href={href('new-invoice/purchase')}><Icon name="cart" size={16} />{t('newPurchase')}</a>}
+        {(can('sale') || can('purchase')) && <span className="sep" />}
         {/* 1.4: someone who does not keep the books takes money with "Receive payment" and reads the vouchers they made */}
-        {journal ? (
+        {can('voucher') ? (
           <>
             <a className="btn" href={href('new/receipt')}><Icon name="plus" size={16} />{t('newReceipt')}</a>
             <a className="btn" href={href('new/payment')}><Icon name="plus" size={16} />{t('newPayment')}</a>
             <a className="btn" href={href('new/journal')}><Icon name="plus" size={16} />{t('newJournal')}</a>
           </>
-        ) : mayQuickVoucher('receipt', viewer.permissions) && (
+        ) : (
+          // (each shows only to someone who may: sales people receive, purchasing pays)
           <>
             <QuickVoucherButton kind="receipt" />
-            <a className="btn" href={href('entries')}><Icon name="receipt" size={16} />{t('s14_myVouchers')}</a>
+            <QuickVoucherButton kind="payment" />
+            {!journal && mayQuickVoucher('receipt', viewer.permissions) && <a className="btn" href={href('entries')}><Icon name="receipt" size={16} />{t('s14_myVouchers')}</a>}
           </>
         )}
-        {journal && <a className="btn" href={href('expenses')}><Icon name="wallet" size={16} />{t('br_newExpense')}</a>}
+        {journal && can('voucher') && <a className="btn" href={href('expenses')}><Icon name="wallet" size={16} />{t('br_newExpense')}</a>}
         {books && <a className="btn" style={{ marginInlineStart: 'auto' }} href={href('trial-balance')}><Icon name="chart" size={16} />{t('trialBalance')}</a>}
       </nav>
       <ChequesHomeNote counts={d?.cheques} />
@@ -218,7 +224,7 @@ function Launcher({ viewer, user, favourites }: { viewer: NavViewer; user: strin
             {s.group === 'gIndustry' && <span className="launch-note">{t('bizSectionNote')}</span>}
           </div>
           <div className="launch-grid">
-            {s.items.map((item) => <LaunchTile key={item.key} item={item} pinned={favourites.includes(item.key)} user={user} locked={lockOf(item, plan?.features ?? null)} />)}
+            {s.items.map((item) => <LaunchTile key={item.key} item={item} pinned={favourites.includes(item.key)} user={user} label={t(navLabel(item, viewer))} locked={lockOf(item, plan?.features ?? null)} />)}
           </div>
         </div>
       ))}
@@ -232,18 +238,18 @@ function lockOf(item: NavItem, features: readonly string[] | null): string | nul
   return feature === 'realEstate' ? 'Business' : 'Pro';
 }
 
-function LaunchTile({ item, pinned, user, locked }: { item: NavItem; pinned: boolean; user: string; locked: string | null }) {
+function LaunchTile({ item, pinned, user, label, locked }: { item: NavItem; pinned: boolean; user: string; label: string; locked: string | null }) {
   const { t } = useI18n();
   return (
     <div className="launch-tile" data-tour={item.key === 'br_title' ? 'brief' : undefined}>
       <a href={href(item.path ?? '')}>
         <span className="launch-ico"><Icon name={item.icon} size={22} /></span>
-        <span className="launch-label">{t(item.key)}</span>
+        <span className="launch-label">{label}</span>
         {locked && <span className="launch-lock">{locked}</span>}
       </a>
       <button
         type="button" className={'launch-pin' + (pinned ? ' on' : '')} aria-pressed={pinned}
-        aria-label={`${t(pinned ? 'pinRemove' : 'pinAdd')}: ${t(item.key)}`} title={t(pinned ? 'pinRemove' : 'pinAdd')}
+        aria-label={`${t(pinned ? 'pinRemove' : 'pinAdd')}: ${label}`} title={t(pinned ? 'pinRemove' : 'pinAdd')}
         onClick={() => toggleFavourite(user, item.key)}
       >
         <svg width="15" height="15" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2.5l2.9 6 6.6.9-4.8 4.6 1.2 6.5L12 17.4l-5.9 3.1 1.2-6.5-4.8-4.6 6.6-.9z" fill={pinned ? 'currentColor' : 'none'} stroke="currentColor" strokeWidth="1.8" strokeLinejoin="round" /></svg>

@@ -113,11 +113,11 @@ describe('Customers: who owes whom, in plain words', () => {
       expect(html).not.toContain(esc(textOf(lang, 's14_oweCustomerAdv')));
     }
     const supplier = wrap(<PartyTotalsBar type="supplier" totals={{ type: 'supplier', owed: { IQD: 70_000, USD: 0 }, advance: { IQD: 5_000, USD: 0 }, owing: 1, advanced: 1 }} />);
-    expect(supplier).toContain('You owe suppliers');
-    expect(supplier).toContain('Suppliers owe you (paid ahead)');
+    expect(supplier).toContain('We owe suppliers');
+    expect(supplier).toContain('Suppliers owe us (paid ahead)');
     expect(supplier).not.toContain('$');
     const none = wrap(<PartyTotalsBar type="customer" totals={{ type: 'customer', owed: { IQD: 0, USD: 0 }, advance: { IQD: 0, USD: 0 }, owing: 0, advanced: 0 }} />);
-    expect(none).toContain('No customer owes you anything.');
+    expect(none).toContain('No customer owes us anything.');
     // an office PC not yet on 1.4 has no totals: the list still shows
     expect(wrap(<PartyTotalsBar type="customer" totals={null} />)).toBe('');
   });

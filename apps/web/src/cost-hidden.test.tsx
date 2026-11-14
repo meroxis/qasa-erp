@@ -54,8 +54,12 @@ describe('the menu of someone who may not read the books', () => {
     expect(canSee(vouchers, accountant)).toBe(true);
   });
 
-  it('keeps what a cashier works with, and the pages whose cost is only left out', () => {
-    for (const key of ['pos_title', 'invoices', 'customers', 'items', 'br_reports', 'br_title', 'dc_title', 'purchaseInvoices', 'suppliers'] as const) expect(keys(cashier)).toContain(key);
+  it('keeps what a cashier works with, and not the purchases: those are for whoever buys or reads the books', () => {
+    for (const key of ['pos_title', 'invoices', 'customers', 'items', 'br_reports', 'br_title', 'dc_title'] as const) expect(keys(cashier)).toContain(key);
+    for (const key of ['purchaseInvoices', 'suppliers'] as const) {
+      expect(keys(cashier)).not.toContain(key);
+      expect(keys(accountant)).toContain(key);
+    }
   });
 });
 

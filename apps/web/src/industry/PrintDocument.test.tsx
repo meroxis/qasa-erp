@@ -276,3 +276,18 @@ describe('what the paper shows', () => {
     expect(paper(sale, showing({ logo: true }), 'en', { ...profile, showLogo: false })).not.toContain('<img');
   });
 });
+
+describe('codes beside names', () => {
+  it('keeps the item code apart from the item name on the 80 mm receipt, whatever the direction', () => {
+    const html = paper(sampleModel('pos'), showing({ itemCode: true }, DEFAULT_RECEIPT_DESIGN), 'ku');
+    // the separator is outside the left-to-right code: a space inside it would fall on the code's far side
+    expect(html).toContain('<span class="qd-muted"> · <span class="ltr qd-nb">P-101</span></span>');
+    expect(html).not.toMatch(/class="[^"]*ltr[^"]*"> P-101/);
+  });
+
+  it('never breaks the customer code across lines, on any layout', () => {
+    for (const design of [DEFAULT_PRINT_DESIGN, withGalleryDesign(DEFAULT_PRINT_DESIGN, 'ledger'), { ...DEFAULT_PRINT_DESIGN, layout: 'modern' as const }]) {
+      expect(paper(sampleModel('sale'), design)).toContain('<span class="ltr qd-nb">C-0012</span>');
+    }
+  });
+});

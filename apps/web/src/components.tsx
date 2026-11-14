@@ -2,6 +2,7 @@ import { createContext, useCallback, useContext, useEffect, useId, useMemo, useR
 import { formatQty, htmlLang, normalizeForSearch, parseAmount, parseQty, formatAmount, stripBidiIsolates, type CurrencyCode, type EntryStatus, type EntryType, type InvoiceStatus, type Lang } from '@qasa/core';
 import { ApiError, onBusyChange, type AccountView, type Permission, type PlanStatus, type Settings } from './api.ts';
 import { isKey, useI18n, type I18n, type Key } from './i18n.ts';
+import { may, type Action } from './may.ts';
 
 /* ---------- shared data ---------- */
 
@@ -52,6 +53,15 @@ export function useData(): AppData {
   const ctx = useContext(DataContext);
   if (!ctx) throw new Error('DataContext missing');
   return ctx;
+}
+
+/**
+ * What the person signed in may do (may.ts): `can('item')` before a button is offered, so nobody fills in a form the
+ * server then refuses. The server decides again on every request.
+ */
+export function useMay(): (action: Action) => boolean {
+  const { permissions } = useData();
+  return (action) => may(permissions, action);
 }
 
 /** Loads data for a page and re-runs when `deps` change. */

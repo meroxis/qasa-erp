@@ -12,10 +12,11 @@ import { outboxClient, outboxWho, whoKey, type HeldKey } from '../industry/outbo
 import { useOutbox } from '../industry/OutboxBanner.tsx';
 import { offlineReceipt, offlineRefusal, payTillSale, rememberTill, shortStock, takeFromStock, tillCache } from '../industry/offline-till.ts';
 import '../pos.css';
+import { useItemPicture } from '../industry/ItemImage.tsx';
 import { PrintDocument } from '../industry/PrintDocument.tsx';
 import { invoiceModel } from '../industry/print-model.ts';
 import { usePrintSetup } from '../industry/print-api.ts';
-import { addRefusal, cashChange, changeLineUnit, chosenMethod, creditNeedsCustomer, parseScan, pickAfterLink, posSaleLine, priceIn, priceRateFor, salePayments, tileOffer, tillMethods, type TillMethod } from './pos-logic.ts';
+import { addRefusal, cashChange, cashTender, changeLineUnit, chosenMethod, creditNeedsCustomer, parseScan, pickAfterLink, posSaleLine, priceIn, priceRateFor, salePayments, tileOffer, tillMethods, type CashTender, type TillMethod } from './pos-logic.ts';
 import { inUnits, salePriceFor, unitChoices, unitLabel, type LineUnit } from '../industry/units.ts';
 import { BatchPick, useExpiredConfirm } from '../industry/BatchFields.tsx';
 import { pharmacyApi, type MedicineView } from '../industry/pharmacy-api.ts';
@@ -51,10 +52,17 @@ function money2(i18n: I18n, m: Money2): string {
 /** Two letters for an item without a picture. */
 const initials = (s: string) => s.trim().split(/\s+/).slice(0, 2).map((w) => w[0] ?? '').join('').toUpperCase();
 
+/**
+ * The picture on a tile, as the Items screen shows it: one request says which items have a picture, a picture is
+ * asked for only when its tile comes into view, and it is kept for the visit. No picture: the item's initials.
+ */
 function ItemPicture({ item, name }: { item: ItemView; name: string }) {
-  const [failed, setFailed] = useState(false);
-  if (failed) return <span className="pos-initials" aria-hidden="true">{initials(name) || '•'}</span>;
-  return <img className="pos-img" src={`/api/items/${item.id}/image`} alt="" loading="lazy" onError={() => setFailed(true)} />;
+  const { box, url } = useItemPicture(item.id);
+  return (
+    <span ref={box} className="pos-picture" aria-hidden="true">
+      {url ? <img className="pos-img" src={url} alt="" /> : <span className="pos-initials">{initials(name) || '•'}</span>}
+    </span>
+  );
 }
 
 /* ---------- the page ---------- */
@@ -231,6 +239,8 @@ function Register({ initial, onClosed }: { initial: ShiftView; onClosed(): void 
   const [error, setError] = useState<unknown>(null);
   const expired = useExpiredConfirm();
   const [receipt, setReceipt] = useState<InvoiceView | null>(null);
+  // the cash handed over for that sale and the change given back (the server keeps the sale, not the notes handed over)
+  const [tender, setTender] = useState<CashTender | null>(null);
   const [closing, setClosing] = useState(false);
   const [notFound, setNotFound] = useState('');
   // an item that exists but has no rate to convert its price into this sale's currency
@@ -382,6 +392,7 @@ function Register({ initial, onClosed }: { initial: ShiftView; onClosed(): void 
   const payments = salePayments(method, due);
   // change is for cash handed over: none on credit
   const change = cashChange(paid, due, payments ?? []);
+  const handed = cashTender(paid, change);
   const needsCustomer = creditNeedsCustomer(method, partyId);
   const canPay = cart.length > 0 && !busy && (discount ?? 0) <= subtotal && (currency === 'IQD' || rateX100 > 0) && (change === null || change >= 0) && !needsCustomer;
 
@@ -417,6 +428,7 @@ function Register({ initial, onClosed }: { initial: ShiftView; onClosed(): void 
       user: { id: who?.id ?? null, name: who?.name ?? shift.openedBy }, summary: { total, currency, lines: cart.length, register: shift.register }
     });
     const stamp = kept.body.offline as { reference: string; soldAt: string; soldOn: string };
+    setTender(handed);
     setReceipt(offlineReceipt({
       key, reference: kept.reference ?? stamp.reference, soldAt: stamp.soldAt, soldOn: stamp.soldOn, shift, cashier: who?.name ?? shift.openedBy,
       lines: cart, currency, rateX100, discount: discount ?? 0, party: customers.find((p) => p.id === partyId) ?? null, payments: sale.payments ?? []
@@ -461,6 +473,7 @@ function Register({ initial, onClosed }: { initial: ShiftView; onClosed(): void 
       const res = done.result;
       setShift(res.shift);
       rememberTill(tillWho(), { shift: res.shift });
+      setTender(handed);
       setReceipt(res.invoice);
       clear();
       loadItems(); // stock changed
@@ -585,7 +598,7 @@ function Register({ initial, onClosed }: { initial: ShiftView; onClosed(): void 
             {cart.map((l) => (
               <div key={lineKey(l)} className="pos-line">
                 <div className="pos-line-name">
-                  <span>{i18n.name(l.item.name)}</span>
+                  <span title={i18n.name(l.item.name)}>{i18n.name(l.item.name)}</span>
                   <span className="muted small num">{i18n.money(l.unitPrice, currency)}</span>
                   {l.item.units.length > 0 && (
                     <button type="button" className="chip" title={t('unit')} aria-label={`${t('unit')}: ${unitLabel(i18n, l.unit ?? l.item.unit)}`} onClick={() => nextUnit(lineKey(l))}>
@@ -611,7 +624,7 @@ function Register({ initial, onClosed }: { initial: ShiftView; onClosed(): void 
               {/* a customer added here, or found here by the same phone or name, joins the till's own list (kept for
                   when the server can't be reached; the receipt reads the customer's name from it). No price list is
                   asked for: the till sells every item at its own sale price, whoever buys */}
-              <PartyPicker type="customer" value={partyId} options={customerOptions} priceList={false} placeholder={t('pos_walkIn')} emptyLabel={t('pos_walkIn')}
+              <PartyPicker type="customer" value={partyId} options={customerOptions} priceList={false} placeholder={onCredit ? t('chooseCustomer') : t('pos_walkIn')} {...(onCredit ? {} : { emptyLabel: t('pos_walkIn') })}
                 onChange={(v, p) => { setPartyId(v); if (p) keepCustomer(p); }} onCreated={keepCustomer} />
             </div>
             <LoyaltyUse partyId={partyId} total={total} currency={currency} value={points.points} onChange={(n, v) => setPoints({ points: n, value: v })} />
@@ -669,7 +682,7 @@ function Register({ initial, onClosed }: { initial: ShiftView; onClosed(): void 
         </section>
       </div>
 
-      {receipt && <Receipt invoice={receipt} shift={shift} />}
+      {receipt && <Receipt invoice={receipt} shift={shift} tender={tender} />}
       {closing && <CloseShift shift={shift} keptHere={keptHere.length} onCancel={() => { setClosing(false); focusSearch(); }} onClosed={onClosed} />}
     </div>
   );
@@ -690,7 +703,7 @@ function printReceipt() {
   return printAlone('receipt', 'pos-printing');
 }
 
-function Receipt({ invoice, shift }: { invoice: InvoiceView; shift: ShiftView }) {
+function Receipt({ invoice, shift, tender }: { invoice: InvoiceView; shift: ShiftView; tender: CashTender | null }) {
   const i18n = useI18n();
   const { t } = i18n;
   const { settings, plan } = useData();
@@ -698,6 +711,13 @@ function Receipt({ invoice, shift }: { invoice: InvoiceView; shift: ShiftView })
   const company = settings ? i18n.name(settings.companyName) : '';
   // 1.2 (Pro): the points the sale used and earned, and the customer's balance
   const points = loyaltyLines(i18n, invoice.loyalty);
+  // more cash handed over than the sale: what was paid and the change, under the total
+  const tenderRows = tender && (
+    <>
+      <div className="pos-r-row small"><span>{t('pos_paid')}</span><span className="num">{i18n.money(tender.paid, invoice.currency)}</span></div>
+      <div className="pos-r-row small"><span>{t('pos_change')}</span><span className="num">{i18n.money(tender.change, invoice.currency)}</span></div>
+    </>
+  );
   // a receipt design of the company's own (Settings → Print design) replaces the standard receipt
   if (setup.designs.pos) {
     return createPortal(
@@ -707,6 +727,7 @@ function Receipt({ invoice, shift }: { invoice: InvoiceView; shift: ShiftView })
           company={settings?.companyName ?? { ar: '', en: '', ku: '' }} branding={!plan?.features.includes('noBranding')}
           defaultRateX100={settings?.defaultRateX100}
         />
+        {tenderRows && <div className="pos-receipt pos-r-loyalty">{tenderRows}</div>}
         {points.length > 0 && <div className="pos-receipt pos-r-loyalty">{points.map(([label, value]) => <div key={label} className="pos-r-row small"><span>{label}</span><span className="num">{value}</span></div>)}</div>}
       </div>,
       document.body
@@ -719,7 +740,7 @@ function Receipt({ invoice, shift }: { invoice: InvoiceView; shift: ShiftView })
         <div className="pos-r-center small">{t('pos_receipt')}</div>
         <div className="pos-r-row small"><span>{t('pos_no')}</span><span className="num ltr">{invoice.number}</span></div>
         {invoice.offlineRef && invoice.number === invoice.offlineRef && <div className="pos-r-center small pos-r-offline">{t('pos_offlineReceipt')}</div>}
-        <div className="pos-r-row small"><span>{t('pos_dateTime')}</span><span className="num">{i18n.date(invoice.date)} {i18n.digitsOf(new Date(invoice.postedAt ?? invoice.createdAt).toTimeString().slice(0, 5))}</span></div>
+        <div className="pos-r-row small"><span>{t('pos_dateTime')}</span><span className="num ltr">{i18n.date(invoice.date)} {i18n.digitsOf(new Date(invoice.postedAt ?? invoice.createdAt).toTimeString().slice(0, 5))}</span></div>
         <div className="pos-r-row small"><span>{t('pos_cashier')}</span><span>{shift.openedBy === invoice.createdBy ? shift.openedBy : invoice.createdBy}</span></div>
         {invoice.partyName && <div className="pos-r-row small"><span>{t('pos_customer')}</span><span>{invoice.partyName}</span></div>}
         <div className="pos-r-sep" />
@@ -738,6 +759,7 @@ function Receipt({ invoice, shift }: { invoice: InvoiceView; shift: ShiftView })
         {(invoice.payments ?? []).filter((p) => p.kind === 'pos').map((p) => (
           <div key={p.id} className="pos-r-row small"><span>{t(`pay_${p.method}` as Key)}</span><span className="num">{i18n.money(p.amount, p.currency)}</span></div>
         ))}
+        {tenderRows}
         {points.length > 0 && <div className="pos-r-sep" />}
         {points.map(([label, value]) => <div key={label} className="pos-r-row small"><span>{label}</span><span className="num">{value}</span></div>)}
         <div className="pos-r-sep" />

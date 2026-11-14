@@ -2,6 +2,8 @@
 export const COMPANY_TEXT = {
   co_title: ['الشركات', 'Companies', 'کۆمپانیاکان'],
   co_menu: ['تبديل الشركة', 'Switch company', 'گۆڕینی کۆمپانیا'],
+  // in a browser: the list of companies is the Windows app's
+  co_browser: ['تُضاف الشركات وتُفتح من تطبيق قاصة ERP لويندوز، على الحاسوب الذي فيه البيانات.', 'Companies are added and opened in the Qasa ERP app for Windows, on the PC that holds the data.', 'کۆمپانیاکان لە بەرنامەی قاسە ERP بۆ ویندۆز زیاد دەکرێن و دەکرێنەوە، لەسەر ئەو کۆمپیوتەرەی داتاکەی لەسەرە.'],
   co_help: ['لكل شركة دفاترها ومستخدموها ونسخها الاحتياطية في ملف خاص بها على هذا الحاسوب. الترخيص للحاسوب، فيشمل كل الشركات حسب الخطة.', 'Each company has its own books, users and backups, in its own file on this PC. The licence belongs to the PC, so it covers every company your plan allows.', 'هەر کۆمپانیایەک دەفتەر و بەکارهێنەر و باکئەپی خۆی هەیە، لە فایلێکی تایبەتدا لەسەر ئەم کۆمپیوتەرە. مۆڵەتی بەرنامە هی کۆمپیوتەرەکەیە، بۆیە هەموو ئەو کۆمپانیایانە دەگرێتەوە کە پلانەکەت ڕێگەیان پێدەدات.'],
   co_settingsHelp: ['أنشئ شركة أخرى أو انتقل إليها أو انسخها احتياطياً.', 'Make another company, open it or back it up.', 'کۆمپانیایەکی تر دروست بکە، بیکەرەوە یان باکئەپی بۆ بکە.'],
   co_manage: ['إدارة الشركات', 'Manage companies', 'بەڕێوەبردنی کۆمپانیاکان'],

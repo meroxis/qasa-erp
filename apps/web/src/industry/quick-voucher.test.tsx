@@ -11,7 +11,7 @@ import { I18nContext, makeI18n } from '../i18n.ts';
 import { QuickVoucherForm } from './QuickVoucher.tsx';
 import { ApprovalNote, approvalStateOf, OwnVoucherButtons } from './VoucherApproval.tsx';
 import {
-  againPreset, amountAfterCurrency, amountInIqd, balanceAfter, boardRateFills, invoiceNote, invoiceOpen, mayQuickVoucher, mayWithdrawOwn, parseRateText,
+  againPreset, amountAfterCurrency, amountInIqd, balanceAfter, boardRateFills, invoiceNote, invoiceOpen, invoicePrefill, mayQuickVoucher, mayWithdrawOwn, parseRateText,
   quickNotice, quickOutcome, type QuickVoucherPreset
 } from './quick-voucher.ts';
 import { chosenMethod, creditNeedsCustomer, pickAfterLink, salePayments, tillMethods, type TillMethod } from '../pages/pos-logic.ts';
@@ -193,6 +193,21 @@ describe('receive payment: the dollar rate, the currency buttons, the note and t
     expect(invoiceOpen({ total: undefined as unknown as number, lines })).toBe(0);
     expect(form({ partyId: 'p-raz', invoice: { number: 'INV-2026-0128', total: 60_000, currency: 'IQD', rateX100: 100 } })).toContain('value="60,000"');
     expect(form({ partyId: 'p-raz', invoice: { number: 'INV-2026-0128', total: 0, currency: 'IQD', rateX100: 100 } })).not.toContain('value="0"');
+  });
+
+  it('never starts above what the customer still owes: money already received for the invoice is in the balance', () => {
+    // invoice 404,700; 100,000 was received with this form, so the customer owes 304,700
+    expect(invoicePrefill(404_700, 'IQD', 100, { balance: 304_700 })).toBe(304_700);
+    expect(invoicePrefill(404_700, 'IQD', 100, { balance: 304_700, balances: { IQD: 304_700, USD: 0 } })).toBe(304_700);
+    // the customer owes more than this invoice (other invoices): the invoice's own open amount
+    expect(invoicePrefill(404_700, 'IQD', 100, { balance: 900_000, balances: { IQD: 900_000, USD: 0 } })).toBe(404_700);
+    // all paid, or paid ahead: nothing is filled, the amount is typed
+    expect(invoicePrefill(404_700, 'IQD', 100, { balance: 0 })).toBeNull();
+    expect(invoicePrefill(404_700, 'IQD', 100, { balance: -50_000 })).toBeNull();
+    // a dollar invoice ($500.00 at 1,420): held to the dollar balance, and to the whole position read at the invoice's rate
+    expect(invoicePrefill(50_000, 'USD', 142_000, { balance: 710_000, balances: { IQD: 0, USD: 30_000 } })).toBe(30_000);
+    expect(invoicePrefill(50_000, 'USD', 142_000, { balance: 284_000, balances: { IQD: -426_000, USD: 50_000 } })).toBe(20_000);
+    expect(invoicePrefill(50_000, 'USD', 142_000, { balance: 284_000 })).toBe(20_000);
   });
 
   it('says that the balance will not change yet whenever the voucher is not posted as it is saved', () => {

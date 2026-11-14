@@ -57,6 +57,24 @@ export function invoiceOpen(v: { total: number; paidOnline?: number; lines: read
 }
 
 /**
+ * The amount the form opens with for an invoice: what is still open on it, but never more than the customer still
+ * owes (or we still owe the supplier). Which invoice a receipt settled is not kept, so money received earlier for the
+ * same invoice shows only in the party's balance: the amount is held to the balance in the invoice's currency and to
+ * the whole position (kept in dinars, read at the invoice's rate for dollars). Null when nothing is left: it is typed.
+ */
+export function invoicePrefill(
+  open: number, currency: CurrencyCode, rateX100: number, party: { balance: number; balances?: Partial<Record<CurrencyCode, number>> | undefined }
+): number | null {
+  const caps = [open];
+  const own = party.balances?.[currency];
+  if (typeof own === 'number') caps.push(own);
+  // the whole position in the invoice's currency, rounded down so it is never above what is owed
+  caps.push(currency === 'IQD' ? party.balance : rateX100 > 0 ? Math.floor((party.balance * 10000) / rateX100) : 0);
+  const amount = Math.min(...caps);
+  return Number.isFinite(amount) && amount > 0 ? amount : null;
+}
+
+/**
  * The line under the balances when the voucher will not be posted as it is saved: "Remaining after" is then what the
  * balance becomes once it is approved, not now. With "Vouchers need approval" on it waits; off, it is a draft for the
  * usual checking and approval. Nothing when it is posted at once (or the server has not answered).

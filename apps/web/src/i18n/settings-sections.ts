@@ -4,7 +4,7 @@
  */
 export const SETTINGS_SECTION_TEXT = {
   ss_displayHelp: ['اللغة والأرقام والمظهر', 'Language, digits and appearance', 'زمان، ژمارەکان و ڕووکار'],
-  ss_companyHelp: ['الاسم وسعر الصرف وحسابات الترحيل', 'Name, exchange rate and posting accounts', 'ناو، نرخی دۆلار و هەژمارەکانی تۆمارکردن'],
+  ss_companyHelp: ['الاسم وسعر الصرف وحسابات الترحيل', 'Name, exchange rate and posting accounts', 'ناو، نرخی دۆلار و هەژمارەکانی تەرحیلی پسوولە'],
   ss_periods: ['الفترات وإقفال السنة', 'Periods and year-end', 'ماوەکان و داخستنی ساڵ'],
   ss_periodsHelp: ['إقفال الفترات وإقفال السنة وسجل التدقيق', 'Period locking, year-end closing and the audit log', 'داخستنی ماوەکان، داخستنی ساڵ و تۆماری وردبینی'],
   ss_sales: ['المبيعات ونقطة البيع', 'Sales and point of sale', 'فرۆشتن و خاڵی فرۆشتن'],

@@ -120,3 +120,15 @@ describe('the print designer', () => {
     expect(problemText(t as never, { code: 'something_new', path: '' })).toBe('something_new');
   });
 });
+
+describe('a paper that follows the sale invoice', () => {
+  it('says where to change its switches, naming "Its own design" as the button reads, in the three languages', () => {
+    expect(new Set(PRINT14_TEXT.pd_followNote).size).toBe(3);
+    for (const i of [0, 1, 2]) expect(PRINT14_TEXT.pd_followNote[i]).toContain(LABEL_TEXT.pd_ownDesign[i]);
+  });
+
+  it('says a logo kept from before is kept, instead of "no logo yet" beside "Remove the logo"', () => {
+    expect(new Set(PRINT14_TEXT.pp_logoKeptBox).size).toBe(3);
+    expect(PRINT14_TEXT.pp_logoKeptBox[1]).not.toBe(LABEL_TEXT.pp_noLogo[1]);
+  });
+});

@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { formatQty } from '@qasa/core';
 import { api } from '../api.ts';
-import { EmptyState, ErrorBox, Icon, downloadCsv, useData, useLoad, usePageNav, useToast } from '../components.tsx';
+import { EmptyState, ErrorBox, Icon, downloadCsv, useData, useLoad, useMay, usePageNav, useToast } from '../components.tsx';
 import { useI18n, type I18n, type Key } from '../i18n.ts';
 import { go, href } from '../router.ts';
 import { batchesApi, type BatchReportRow, type ExpiryState } from '../industry/batches-api.ts';
@@ -36,6 +36,7 @@ export function Expiry() {
   const rows = (report.data?.rows ?? []).filter((r) => r.qtyMilli > 0);
   // 1.4: the value of the stock is not sent to someone who may not see cost: no such column
   const cost = useData().seesCost !== false;
+  const mayWriteOff = useMay()('writeOff');
   const total = rows.reduce((s, r) => s + (r.value ?? 0), 0);
 
   const batchText = (r: BatchReportRow) => r.batch || t('ex_noNumber');
@@ -81,7 +82,7 @@ export function Expiry() {
         )}
         <button type="button" className="btn" onClick={exportCsv} disabled={!rows.length}><Icon name="download" size={16} />{t('exportExcel')}</button>
         <button type="button" className="btn" onClick={() => void printDocument('report')}><Icon name="printer" size={16} />{t('print')}</button>
-        {tab === 'expired' && <button type="button" className="btn danger" disabled={busy || !rows.length} onClick={() => void writeOff()}><Icon name="x" size={16} />{t('ex_writeOff')}</button>}
+        {tab === 'expired' && mayWriteOff && <button type="button" className="btn danger" disabled={busy || !rows.length} onClick={() => void writeOff()}><Icon name="x" size={16} />{t('ex_writeOff')}</button>}
       </div>
       <ErrorBox error={report.error ?? error} />
       <div className="card">

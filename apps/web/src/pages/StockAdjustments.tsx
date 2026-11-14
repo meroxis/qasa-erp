@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { lineAmount, todayIso, type UnitCode } from '@qasa/core';
 import { api, type ItemView } from '../api.ts';
 import {
-  AccountCombo, AmountInput, ErrorBox, Icon, InvoiceStatusChip, Modal, QtyInput, SearchCombo, downloadCsv, useData, useLoad, useToast, type PickOption
+  AccountCombo, AmountInput, ErrorBox, Icon, InvoiceStatusChip, Modal, QtyInput, SearchCombo, downloadCsv, useData, useLoad, useMay, useToast, type PickOption
 } from '../components.tsx';
 import { useI18n, type Key } from '../i18n.ts';
 import { go, href } from '../router.ts';
@@ -43,6 +43,8 @@ export function StockAdjustments() {
   const [status, setStatus] = useState<'' | 'draft' | 'posted' | 'cancelled'>('');
   // 1.4: what went out and came in is worth is not sent to someone who may not see cost: no such columns
   const cost = useData().seesCost !== false;
+  // adjustments and counts need the stock permission; the accounts they post to are the company's setup (an admin's)
+  const can = useMay();
   const { data, error } = useLoad(() => adjustmentsApi.list({ ...(reason ? { reason } : {}), ...(status ? { status } : {}) }), [reason, status]);
   const [settingsOpen, setSettingsOpen] = useState(false);
 
@@ -50,9 +52,9 @@ export function StockAdjustments() {
     <div className="stack">
       <p className="muted" style={{ margin: 0 }}>{t('adj_help')}</p>
       <div className="row">
-        <a className="btn primary" href={href('new-stock-adjustment')}><Icon name="plus" size={16} />{t('adj_new')}</a>
-        <a className="btn" href={href('stock-count')}><Icon name="rows" size={16} />{t('adj_count')}</a>
-        <button type="button" className="btn" onClick={() => setSettingsOpen(true)}><Icon name="gear" size={16} />{t('adj_settings')}</button>
+        {can('adjustment') && <a className="btn primary" href={href('new-stock-adjustment')}><Icon name="plus" size={16} />{t('adj_new')}</a>}
+        {can('adjustment') && <a className="btn" href={href('stock-count')}><Icon name="rows" size={16} />{t('adj_count')}</a>}
+        {can('account') && <button type="button" className="btn" onClick={() => setSettingsOpen(true)}><Icon name="gear" size={16} />{t('adj_settings')}</button>}
         <span className="spacer" />
         <select className="input" style={{ width: 'auto' }} value={reason} onChange={(e) => setReason(e.target.value as AdjustmentReason | '')} aria-label={t('adj_reason')}>
           <option value="">{t('adj_reason')}: {t('all')}</option>
@@ -459,6 +461,7 @@ export function StockAdjustmentDetail({ id }: { id: string }) {
   const { settings, reloadAccounts, seesCost } = useData();
   // 1.4: the value of each line is not sent to someone who may not see cost: no such column, no totals
   const cost = seesCost !== false;
+  const mayChange = useMay()('adjustment');
   const { data, error, reload } = useLoad(() => adjustmentsApi.get(id), [id]);
   const [busy, setBusy] = useState(false);
   const [actionError, setActionError] = useState<unknown>(null);
@@ -505,14 +508,14 @@ export function StockAdjustmentDetail({ id }: { id: string }) {
       <div className="row no-print">
         <button type="button" className="btn" onClick={() => history.back()}>{t('back')}</button>
         <span className="spacer" />
-        {d.actions.includes('edit') && <a className="btn" href={href(`edit-stock-adjustment/${d.id}`)}>{t('actEdit')}</a>}
-        {d.actions.includes('delete') && <button type="button" className="btn danger" disabled={busy} onClick={remove}>{t('actDelete')}</button>}
-        {d.actions.includes('post') && (
+        {mayChange && d.actions.includes('edit') && <a className="btn" href={href(`edit-stock-adjustment/${d.id}`)}>{t('actEdit')}</a>}
+        {mayChange && d.actions.includes('delete') && <button type="button" className="btn danger" disabled={busy} onClick={remove}>{t('actDelete')}</button>}
+        {mayChange && d.actions.includes('post') && (
           <button type="button" className="btn primary" disabled={busy} onClick={() => { if (window.confirm(t('adj_postConfirm'))) void act(() => adjustmentsApi.post(id, i18n.lang), t('a_post')); }}>
             <Icon name="check" size={16} />{t('adj_post')}
           </button>
         )}
-        {d.actions.includes('cancel') && <button type="button" className="btn danger" disabled={busy} onClick={() => { setCancelDate(reverseDefaultDate(d.date)); setCancelling(true); }}><Icon name="undo" size={16} />{t('adj_cancel')}</button>}
+        {mayChange && d.actions.includes('cancel') && <button type="button" className="btn danger" disabled={busy} onClick={() => { setCancelDate(reverseDefaultDate(d.date)); setCancelling(true); }}><Icon name="undo" size={16} />{t('adj_cancel')}</button>}
         <button type="button" className="btn" onClick={() => void printDocument('voucher')}><Icon name="printer" size={16} />{t('print')}</button>
       </div>
       <ErrorBox error={cancelling ? null : actionError} />

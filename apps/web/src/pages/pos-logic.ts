@@ -76,6 +76,29 @@ export function cashChange(paid: number | null, total: number, parts: readonly {
 }
 
 /**
+ * The note under "Cash / Credit" on an invoice while credit has nobody to go on: worded for the customer on a sale and
+ * for the supplier on a purchase. A new purchase opens on credit with no supplier yet, so the note waits until it was
+ * asked for: the party box was left, credit was pressed, or a save was tried.
+ */
+export function creditPartyNote(
+  kind: 'sale' | 'purchase', payment: 'cash' | 'credit', partyId: string, asked: boolean
+): 's14_creditNeedsCustomer' | 's14_creditNeedsSupplier' | null {
+  if (payment !== 'credit' || partyId || !asked) return null;
+  return kind === 'sale' ? 's14_creditNeedsCustomer' : 's14_creditNeedsSupplier';
+}
+
+/** The cash a customer handed over and the change given back, for the receipt. */
+export interface CashTender { paid: number; change: number }
+
+/**
+ * What the receipt prints under the total: "Paid" and "Change", when more cash was handed over than was due. Nothing
+ * when the exact money was given, nothing was typed, or the sale is on credit (no change is worked out then).
+ */
+export function cashTender(paid: number | null, change: number | null): CashTender | null {
+  return paid !== null && change !== null && change > 0 ? { paid, change } : null;
+}
+
+/**
  * 1.4: the till offers two ways of paying, in every company: cash, or credit ('account': the whole sale on the
  * customer's account). A card or a wallet is not a choice at the till; sales paid that way before still show under
  * their own names (receipts, shift reports, the day close).

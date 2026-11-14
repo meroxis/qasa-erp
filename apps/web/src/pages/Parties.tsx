@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { api, type InvoiceSummary, type PartyInput, type PartyType, type PartyView } from '../api.ts';
-import { EmptyState, AccountCombo, AmountInput, ErrorBox, Icon, InvoiceStatusChip, LANGUAGE_NAMES, Modal, downloadCsv, useData, useLoad, usePageNav, useToast } from '../components.tsx';
+import { EmptyState, AccountCombo, AmountInput, ErrorBox, Icon, InvoiceStatusChip, LANGUAGE_NAMES, Modal, downloadCsv, useData, useLoad, useMay, usePageNav, useToast } from '../components.tsx';
 import { useI18n } from '../i18n.ts';
 import { go, href } from '../router.ts';
 import { PriceListField } from '../industry/PriceListField.tsx';
@@ -33,7 +33,7 @@ export function OweAmount({ party, empty = '—' }: { party: Pick<PartyView, 'ty
   );
 }
 
-/** 1.4: the line above the list: "Customers owe you: 1,250,000 IQD · $300.00" (and what was paid ahead, when there is any). */
+/** 1.4: the line above the list: "Customers owe us: 1,250,000 IQD · $300.00" (and what was paid ahead, when there is any). */
 export function PartyTotalsBar({ type, totals }: { type: PartyType; totals: PartyTotals | null }) {
   const i18n = useI18n();
   const { t } = i18n;
@@ -78,12 +78,16 @@ export function Parties({ type }: { type: PartyType }) {
   const data = loaded.data && shownParties(loaded.data, owing, sort);
   const total = (data ?? []).reduce((s, p) => s + p.balance, 0);
   const customer = type === 'customer';
+  // buttons only for what this person may do (may.ts): customers and sales, or suppliers and purchases
+  const can = useMay();
+  const mayEdit = can(customer ? 'customer' : 'supplier');
+  const mayInvoice = can(customer ? 'sale' : 'purchase');
 
   return (
     <div className="stack">
       <div className="row">
-        <button type="button" className="btn primary" onClick={() => setEditing('new')}><Icon name="plus" size={16} />{type === 'customer' ? t('newCustomer') : t('newSupplier')}</button>
-        <a className="btn" href={href(type === 'customer' ? 'new-invoice/sale' : 'new-invoice/purchase')}><Icon name="invoice" size={16} />{type === 'customer' ? t('newSale') : t('newPurchase')}</a>
+        {mayEdit && <button type="button" className="btn primary" onClick={() => setEditing('new')}><Icon name="plus" size={16} />{type === 'customer' ? t('newCustomer') : t('newSupplier')}</button>}
+        {mayInvoice && <a className="btn" href={href(type === 'customer' ? 'new-invoice/sale' : 'new-invoice/purchase')}><Icon name="invoice" size={16} />{type === 'customer' ? t('newSale') : t('newPurchase')}</a>}
         <span className="spacer" />
         <input className="input" style={{ width: 240 }} type="search" placeholder={t('search')} aria-label={t('search')} value={q} onChange={(e) => setQ(e.target.value)} />
       </div>
@@ -103,7 +107,7 @@ export function Parties({ type }: { type: PartyType }) {
         {data && data.length === 0 && (q.trim()
           ? <EmptyState compact icon="search" title={t('es_search')} text={t('es_searchText')} />
           : owing ? <EmptyState compact icon="check" title={t('s14_noneOwing')} />
-          : <EmptyState icon="users" title={t('es_parties')} text={t('es_partiesText')} action={{ label: type === 'customer' ? t('newCustomer') : t('newSupplier'), icon: 'plus', onClick: () => setEditing('new') }} secondary={{ label: t('importExcel'), icon: 'upload', href: href('import') }} />)}
+          : <EmptyState icon="users" title={t('es_parties')} text={t('es_partiesText')} {...(mayEdit ? { action: { label: type === 'customer' ? t('newCustomer') : t('newSupplier'), icon: 'plus', onClick: () => setEditing('new') } } : {})} {...(can('importPage') ? { secondary: { label: t('importExcel'), icon: 'upload', href: href('import') } } : {})} />)}
         {data && data.length > 0 && (
           <table className="table">
             <thead>
@@ -129,9 +133,11 @@ export function Parties({ type }: { type: PartyType }) {
                   <td style={{ whiteSpace: 'nowrap' }}>
                     {/* 1.4: receive a payment from the customer, or pay the supplier, from their row */}
                     {p.active && <QuickVoucherButton kind={type === 'customer' ? 'receipt' : 'payment'} preset={{ partyId: p.id }} className="btn small" onDone={reload} />}
-                    <button type="button" className="btn icon ghost" title={t('actEdit')} aria-label={t('actEdit')} onClick={(e) => { e.stopPropagation(); setEditing(p); }}>
-                      <Icon name="edit" size={16} />
-                    </button>
+                    {mayEdit && (
+                      <button type="button" className="btn icon ghost" title={t('actEdit')} aria-label={t('actEdit')} onClick={(e) => { e.stopPropagation(); setEditing(p); }}>
+                        <Icon name="edit" size={16} />
+                      </button>
+                    )}
                   </td>
                 </tr>
               ))}
@@ -229,6 +235,7 @@ export function PartyDetail({ id, admin = false }: { id: string; admin?: boolean
   const i18n = useI18n();
   const { t } = i18n;
   const { settings, seesBooks } = useData();
+  const can = useMay();
   const [from, setFrom] = useState('');
   const [to, setTo] = useState('');
   // all lines (IQD at the book rates), or one currency's lines in that currency
@@ -243,6 +250,8 @@ export function PartyDetail({ id, admin = false }: { id: string; admin?: boolean
   if (!data) return null;
   const p = data.party;
   const isCustomer = p.type === 'customer';
+  const mayEdit = can(isCustomer ? 'customer' : 'supplier');
+  const mayInvoice = can(isCustomer ? 'sale' : 'purchase');
   const company = settings ? i18n.name(settings.companyName) : '';
   // 1.4: a supplier's lines say what each purchase cost: the server sends someone who may not read the books the
   // balance alone (no opening, no lines). The page then says so, rather than show a statement with nothing in it
@@ -263,10 +272,10 @@ export function PartyDetail({ id, admin = false }: { id: string; admin?: boolean
       <div className="row no-print">
         <button type="button" className="btn" onClick={() => history.back()}>{t('back')}</button>
         <span className="spacer" />
-        <button type="button" className="btn" onClick={() => setEditing(true)}><Icon name="edit" size={16} />{t('actEdit')}</button>
+        {mayEdit && <button type="button" className="btn" onClick={() => setEditing(true)}><Icon name="edit" size={16} />{t('actEdit')}</button>}
         {/* 1.4: receive a payment from the customer, or pay the supplier, from their statement */}
         {p.active && <QuickVoucherButton kind={isCustomer ? 'receipt' : 'payment'} preset={{ partyId: p.id }} onDone={reload} />}
-        <a className="btn primary" href={href(isCustomer ? `new-invoice/sale/${p.id}` : `new-invoice/purchase/${p.id}`)}><Icon name="plus" size={16} />{isCustomer ? t('newSale') : t('newPurchase')}</a>
+        {mayInvoice && <a className="btn primary" href={href(isCustomer ? `new-invoice/sale/${p.id}` : `new-invoice/purchase/${p.id}`)}><Icon name="plus" size={16} />{isCustomer ? t('newSale') : t('newPurchase')}</a>}
         <StatementWhatsApp company={company} name={p.name} code={p.code} phone={p.phone} lang={p.lang} balance={data.closing} date={to || todayIso()} currency={cur} />
         {!hidden && <button type="button" className="btn" onClick={exportCsv}><Icon name="download" size={16} />{t('exportExcel')}</button>}
         {!hidden && <button type="button" className="btn" onClick={() => void printDocument('report')}><Icon name="printer" size={16} />{t('print')}</button>}

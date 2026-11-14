@@ -287,14 +287,16 @@ export function PrintDesignPage() {
             </div>
 
             <h3 style={{ margin: '6px 0 0' }}>{t('pd_showSection')}</h3>
+            {/* following the sale invoice (or the standard receipt): the switches show what it prints and are not this paper's to change */}
+            {!own && <span className="muted small" role="note">{t('pd_followNote')}</span>}
             {designerGroups(doc, shown.layout).map((g) => (
               <div key={g.title} className="pd-group">
                 <div className="pd-group-title muted">{t(g.title)}</div>
                 <div className="pd-checks">
                   {g.fields.map((f) => (
                     <label key={f} className="row" style={{ gap: 8 }}>
-                      <input type="checkbox" checked={shown.show[f]} onChange={(e) => edit({ show: { ...shown.show, [f]: e.target.checked } })} />
-                      {t(fieldLabelKey(f, doc))}
+                      <input type="checkbox" checked={shown.show[f]} disabled={!own} onChange={(e) => { if (own) edit({ show: { ...shown.show, [f]: e.target.checked } }); }} />
+                      <span>{t(fieldLabelKey(f, doc))}</span>
                     </label>
                   ))}
                 </div>
@@ -459,7 +461,7 @@ export function PrintHeaderCard() {
       <h2>{t('pp_title')}</h2>
       <p className="muted small" style={{ margin: 0 }}>{t('pp_help')}</p>
       <div className="row" style={{ gap: 14, alignItems: 'center', flexWrap: 'wrap' }}>
-        <div className="pp-logo-box">{logo ? <img src={logo} alt={t('pp_logo')} /> : <span className="muted small">{t('pp_noLogo')}</span>}</div>
+        <div className="pp-logo-box">{logo ? <img src={logo} alt={t('pp_logo')} /> : <span className="muted small">{t(kept ? 'pp_logoKeptBox' : 'pp_noLogo')}</span>}</div>
         <div className="stack" style={{ gap: 6, flex: 1, minWidth: 200 }}>
           <input ref={input} type="file" accept="image/png,image/jpeg,image/webp" hidden disabled={!canLogo} onChange={(e) => chooseLogo(e.target.files?.[0])} />
           <div className="row" style={{ flexWrap: 'wrap' }}>

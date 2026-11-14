@@ -51,6 +51,12 @@ export const SAFETY_TEXT = {
     'If the admin forgets their password: in the Windows app on this PC, open File → Reset admin password and enter this code. Once used, it is replaced by a new one.',
     'ئەگەر بەڕێوەبەر وشەی نهێنیی خۆی لەبیر چوو: لە بەرنامەی ویندۆز لەسەر ئەم کۆمپیوتەرە «فایل» ← «ڕێکخستنەوەی وشەی نهێنیی بەڕێوەبەر» بکەرەوە و ئەم کۆدە بنووسە. دوای بەکارهێنانی، کۆدێکی نوێ دەدرێت.'
   ],
+  // the same in a browser: nothing is reset from here, and "this PC" is not where the Windows app is
+  recoveryWhereBrowser: [
+    'إذا نسي المدير كلمة مروره فلا تُعاد من المتصفح: على الحاسوب الذي فيه بيانات الشركة، في تطبيق قاصة ERP لويندوز، افتح «ملف» ← «إعادة تعيين كلمة مرور المدير» واكتب هذا الرمز. بعد استخدامه يُعطى رمز جديد.',
+    'If the admin forgets their password, it is not reset from a browser: on the PC that holds the company’s data, in the Qasa ERP app for Windows, open File → Reset admin password and enter this code. Once used, it is replaced by a new one.',
+    'ئەگەر بەڕێوەبەر وشەی نهێنیی خۆی لەبیر چوو، لە وێبگەڕەوە ڕێکناخرێتەوە: لەسەر ئەو کۆمپیوتەرەی داتای کۆمپانیای لەسەرە، لە بەرنامەی قاسە ERP بۆ ویندۆز، «فایل» ← «ڕێکخستنەوەی وشەی نهێنیی بەڕێوەبەر» بکەرەوە و ئەم کۆدە بنووسە. دوای بەکارهێنانی، کۆدێکی نوێ دەدرێت.'
+  ],
   recoveryKept: ['كتبت الرمز وحفظته في مكان آمن', 'I have written the code down and put it somewhere safe', 'کۆدەکەم نووسی و لە شوێنێکی سەلامەت داینا'],
   recoveryDone: ['تم', 'Done', 'تەواو'],
   recoveryHelp: [

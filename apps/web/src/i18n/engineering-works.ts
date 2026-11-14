@@ -114,7 +114,7 @@ export const ENGINEERING_TEXT = {
   ew_created: ['أُنشئ أمر العمل {n}', 'Job {n} created', 'کاری {n} دروست کرا'],
   ew_moved: ['أصبح العمل «{s}»', 'Job moved to “{s}”', 'کارەکە بوو بە «{s}»'],
   ew_lateDays: ['متأخر {n} يوم', '{n} days late', '{n} ڕۆژ دواکەوتووە'],
-  e_job: ['أمر عمل', 'Job order', 'کار'],
+  e_job: ['أمر عمل', 'Job order', 'فەرمانی کار'],
   a_job_move: ['نقل مرحلة', 'Stage moved', 'قۆناغ گوازرایەوە'],
   a_job_deposit: ['استلام عربون', 'Deposit taken', 'پێشەکی وەرگیرا'],
   a_job_cost: ['ربط كلفة', 'Cost linked', 'تێچوو بەسترایەوە'],

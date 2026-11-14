@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { formatQty, MAX_ITEM_UNITS, roundHalfUp, UNITS, unitsForBusiness, type CurrencyCode, type Names, type UnitCode } from '@qasa/core';
 import { api, type ItemInput, type ItemView, type WarehouseView } from '../api.ts';
-import { EmptyState, AmountInput, ErrorBox, Icon, Modal, QtyInput, downloadCsv, useData, useLoad, useToast } from '../components.tsx';
+import { EmptyState, AmountInput, ErrorBox, Icon, Modal, QtyInput, downloadCsv, useData, useLoad, useMay, useToast } from '../components.tsx';
 import { inUnits } from '../industry/units.ts';
 import { batchesApi } from '../industry/batches-api.ts';
 import { brandLabel, brandsApi, categoriesApi, categoryLabel, type BrandView, type CategoryView } from '../industry/categories-api.ts';
@@ -46,6 +46,8 @@ export function Items({ tab: initialTab }: { tab?: 'reorder' } = {}) {
   const books = useData().companyBooks !== false;
   // 1.4: the average cost and the stock value are not sent to someone who may not see cost (a cashier): no such columns
   const cost = useData().seesCost !== false;
+  // buttons only for what this person may do (may.ts): items need the stock permission, warehouses an admin
+  const can = useMay();
   const toast = useToast();
   const [tab, setTab] = useState<'items' | 'warehouses' | 'categories' | 'brands' | 'reorder'>(initialTab ?? 'items');
   const [q, setQ] = useState('');
@@ -103,9 +105,9 @@ export function Items({ tab: initialTab }: { tab?: 'reorder' } = {}) {
       {tab === 'items' && (
         <>
           <div className="row">
-            <button type="button" className="btn primary" onClick={() => setEditing('new')}><Icon name="plus" size={16} />{t('newItem')}</button>
-            <a className="btn" href={href('new-invoice/purchase')}><Icon name="invoice" size={16} />{t('newPurchase')}</a>
-            <a className="btn" href={href('import')}><Icon name="upload" size={16} />{t('importExcel')}</a>
+            {can('item') && <button type="button" className="btn primary" onClick={() => setEditing('new')}><Icon name="plus" size={16} />{t('newItem')}</button>}
+            {can('purchase') && <a className="btn" href={href('new-invoice/purchase')}><Icon name="invoice" size={16} />{t('newPurchase')}</a>}
+            {can('importPage') && <a className="btn" href={href('import')}><Icon name="upload" size={16} />{t('importExcel')}</a>}
             <span className="spacer" />
             {(warehouses.data?.length ?? 0) > 1 && (
               <select className="input" style={{ width: 200 }} value={warehouseId} onChange={(e) => setWarehouseId(e.target.value)} aria-label={t('warehouse')}>
@@ -130,7 +132,7 @@ export function Items({ tab: initialTab }: { tab?: 'reorder' } = {}) {
             <input className="input" style={{ width: 240 }} type="search" placeholder={t('search')} aria-label={t('search')} value={q} onChange={(e) => setQ(e.target.value)} />
             <button type="button" className="btn" onClick={exportCsv}><Icon name="download" size={16} />{t('exportExcel')}</button>
           </div>
-          {selected.size > 0 && (
+          {selected.size > 0 && can('item') && (
             <div className="card pad row">
               <span>{t('cat_setFor', { n: selected.size })}</span>
               <select className="input" style={{ width: 200 }} value={bulkCategory} onChange={(e) => setBulkCategory(e.target.value)} aria-label={t('cat_category')}>
@@ -147,7 +149,7 @@ export function Items({ tab: initialTab }: { tab?: 'reorder' } = {}) {
           <div className="card">
             {items.data && items.data.length === 0 && (q.trim() || warehouseId || categoryId || brandId
               ? <EmptyState compact icon="search" title={t('es_search')} text={t('es_searchText')} />
-              : <EmptyState icon="box" title={t('es_items')} text={t('es_itemsText')} action={{ label: t('newItem'), icon: 'plus', onClick: () => setEditing('new') }} secondary={{ label: t('importExcel'), icon: 'upload', href: href('import') }} />)}
+              : <EmptyState icon="box" title={t('es_items')} text={t('es_itemsText')} {...(can('item') ? { action: { label: t('newItem'), icon: 'plus', onClick: () => setEditing('new') } } : {})} {...(can('importPage') ? { secondary: { label: t('importExcel'), icon: 'upload', href: href('import') } } : {})} />)}
             {items.data && items.data.length > 0 && (
               <table className="table">
                 <thead>
@@ -165,7 +167,7 @@ export function Items({ tab: initialTab }: { tab?: 'reorder' } = {}) {
                 <tbody>
                   {items.data.map((it) => (
                     <tr key={it.id} className="click" onClick={() => go(`item/${it.id}`)}>
-                      <td onClick={(e) => e.stopPropagation()}><input type="checkbox" checked={selected.has(it.id)} onChange={() => toggle(it.id)} aria-label={it.code} /></td>
+                      <td onClick={(e) => e.stopPropagation()}>{can('item') && <input type="checkbox" checked={selected.has(it.id)} onChange={() => toggle(it.id)} aria-label={it.code} />}</td>
                       <td><span className="tree-code">{it.code}</span></td>
                       <td>
                         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
@@ -190,9 +192,11 @@ export function Items({ tab: initialTab }: { tab?: 'reorder' } = {}) {
                       {cost && <td className="amount">{it.trackStock ? i18n.money(it.value ?? 0, 'IQD') : ''}</td>}
                       <td className="amount">{i18n.money(it.salePrice, it.saleCurrency)}</td>
                       <td>
-                        <button type="button" className="btn icon ghost" title={t('actEdit')} aria-label={t('actEdit')} onClick={(e) => { e.stopPropagation(); setEditing(it); }}>
-                          <Icon name="edit" size={16} />
-                        </button>
+                        {can('item') && (
+                          <button type="button" className="btn icon ghost" title={t('actEdit')} aria-label={t('actEdit')} onClick={(e) => { e.stopPropagation(); setEditing(it); }}>
+                            <Icon name="edit" size={16} />
+                          </button>
+                        )}
                       </td>
                     </tr>
                   ))}
@@ -210,9 +214,11 @@ export function Items({ tab: initialTab }: { tab?: 'reorder' } = {}) {
 
       {tab === 'warehouses' && (
         <>
-          <div className="row">
-            <button type="button" className="btn primary" onClick={() => setNewWarehouse(true)}><Icon name="plus" size={16} />{t('newWarehouse')}</button>
-          </div>
+          {can('warehouse') && (
+            <div className="row">
+              <button type="button" className="btn primary" onClick={() => setNewWarehouse(true)}><Icon name="plus" size={16} />{t('newWarehouse')}</button>
+            </div>
+          )}
           <ErrorBox error={warehouses.error} />
           <div className="card">
             {warehouses.data && (
@@ -535,6 +541,7 @@ function Categories({ list, error, onChanged }: { list: CategoryView[]; error: u
   const i18n = useI18n();
   const { t } = i18n;
   const [editing, setEditing] = useState<CategoryView | { parentId: string } | 'new' | null>(null);
+  const can = useMay();
   const [actionError, setActionError] = useState<unknown>(null);
   async function act(fn: () => Promise<unknown>) {
     setActionError(null);
@@ -548,7 +555,7 @@ function Categories({ list, error, onChanged }: { list: CategoryView[]; error: u
   return (
     <div className="stack">
       <p className="muted" style={{ margin: 0 }}>{t('cat_help')}</p>
-      <div className="row"><button type="button" className="btn primary" onClick={() => setEditing('new')}><Icon name="plus" size={16} />{t('cat_new')}</button></div>
+      {can('item') && <div className="row"><button type="button" className="btn primary" onClick={() => setEditing('new')}><Icon name="plus" size={16} />{t('cat_new')}</button></div>}
       <StarterListButton onAdded={onChanged} />
       <ErrorBox error={error ?? actionError} />
       <div className="card">
@@ -568,7 +575,7 @@ function Categories({ list, error, onChanged }: { list: CategoryView[]; error: u
                   </td>
                   <td className="amount num">{i18n.int(c.sort)}</td>
                   <td className="amount num">{i18n.int(c.items)}</td>
-                  <td className="row" style={{ justifyContent: 'flex-end', gap: 4 }}>
+                  <td className="row" style={{ justifyContent: 'flex-end', gap: 4, ...(can('item') ? {} : { display: 'none' }) }}>
                     {!c.parentId && c.active && <button type="button" className="btn small" onClick={() => setEditing({ parentId: c.id })}><Icon name="plus" size={14} />{t('cat_newSub')}</button>}
                     <button type="button" className="btn small" onClick={() => setEditing(c)}><Icon name="edit" size={14} />{t('actEdit')}</button>
                     <button type="button" className="btn small" onClick={() => void act(() => categoriesApi.update(c.id, { code: c.code, name: c.name, sort: c.sort, active: !c.active }))}>{c.active ? t('cat_deactivate') : t('cat_activate')}</button>
@@ -651,6 +658,7 @@ function Brands({ list, error, onChanged }: { list: BrandView[]; error: unknown;
   const i18n = useI18n();
   const { t } = i18n;
   const [editing, setEditing] = useState<BrandView | 'new' | null>(null);
+  const can = useMay();
   const [actionError, setActionError] = useState<unknown>(null);
   async function act(fn: () => Promise<unknown>) {
     setActionError(null);
@@ -664,7 +672,7 @@ function Brands({ list, error, onChanged }: { list: BrandView[]; error: unknown;
   return (
     <div className="stack">
       <p className="muted" style={{ margin: 0 }}>{t('bnd_help')}</p>
-      <div className="row"><button type="button" className="btn primary" onClick={() => setEditing('new')}><Icon name="plus" size={16} />{t('bnd_new')}</button></div>
+      {can('item') && <div className="row"><button type="button" className="btn primary" onClick={() => setEditing('new')}><Icon name="plus" size={16} />{t('bnd_new')}</button></div>}
       <StarterListButton onAdded={onChanged} />
       <ErrorBox error={error ?? actionError} />
       <div className="card">
@@ -683,7 +691,7 @@ function Brands({ list, error, onChanged }: { list: BrandView[]; error: unknown;
                   <td>{countryName(i18n.lang, b.country)}</td>
                   <td className="amount num">{i18n.int(b.sort)}</td>
                   <td className="amount num">{i18n.int(b.items)}</td>
-                  <td className="row" style={{ justifyContent: 'flex-end', gap: 4 }}>
+                  <td className="row" style={{ justifyContent: 'flex-end', gap: 4, ...(can('item') ? {} : { display: 'none' }) }}>
                     <button type="button" className="btn small" onClick={() => setEditing(b)}><Icon name="edit" size={14} />{t('actEdit')}</button>
                     <button type="button" className="btn small" onClick={() => void act(() => brandsApi.update(b.id, { name: b.name, active: !b.active }))}>{b.active ? t('cat_deactivate') : t('cat_activate')}</button>
                     {b.items === 0 && <button type="button" className="btn small danger" aria-label={t('actDelete')} onClick={() => void act(() => brandsApi.remove(b.id))}><Icon name="x" size={14} /></button>}
@@ -769,6 +777,7 @@ export function ItemDetail({ id }: { id: string }) {
   const i18n = useI18n();
   const { t } = i18n;
   const [editing, setEditing] = useState(false);
+  const can = useMay();
   const { data, error, reload } = useLoad(() => api.item(id), [id]);
   if (error) return <ErrorBox error={error} />;
   if (!data) return null;
@@ -784,13 +793,13 @@ export function ItemDetail({ id }: { id: string }) {
       <div className="row no-print">
         <button type="button" className="btn" onClick={() => history.back()}>{t('back')}</button>
         <span className="spacer" />
-        <button type="button" className="btn" onClick={() => setEditing(true)}><Icon name="edit" size={16} />{t('actEdit')}</button>
+        {can('item') && <button type="button" className="btn" onClick={() => setEditing(true)}><Icon name="edit" size={16} />{t('actEdit')}</button>}
         <button type="button" className="btn" onClick={() => void printDocument('report')}><Icon name="printer" size={16} />{t('print')}</button>
       </div>
 
       <div className="grid-4">
         <div className="card pad tile" style={{ gridColumn: 'span 2', flexDirection: 'row', alignItems: 'center', gap: 16 }}>
-          <ImagePicker itemId={it.id} name={i18n.name(it.name)} />
+          <ImagePicker itemId={it.id} name={i18n.name(it.name)} canEdit={can('item')} />
           <div className="stack" style={{ gap: 6, minWidth: 0 }}>
             <div className="label"><span className="ltr">{it.code}</span>{it.barcode && <> · <span className="ltr">{it.barcode}</span></>}</div>
             <div className="value" style={{ fontSize: 20, whiteSpace: 'normal' }}>{i18n.name(it.name)}</div>

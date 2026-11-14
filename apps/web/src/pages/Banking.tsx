@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
 import { todayIso, toWesternDigits, type CurrencyCode, type Names } from '@qasa/core';
 import { api } from '../api.ts';
-import { AccountCombo, AmountInput, ErrorBox, Icon, Modal, SearchCombo, StatusChip, useData, useLoad, usePageNav, useToast, type PickOption } from '../components.tsx';
+import { AccountCombo, AmountInput, ErrorBox, Icon, Modal, SearchCombo, StatusChip, useData, useLoad, useMay, usePageNav, useToast, type PickOption } from '../components.tsx';
 import { useI18n, type I18n, type Key } from '../i18n.ts';
 import {
   bankingApi, WALLET_KINDS, type ChequeDirection, type ChequeFilters, type ChequeStatus, type ChequeView, type MoneyAccountView, type MoneyKind,
@@ -98,8 +98,10 @@ export function Banking({ tab = 'accounts' }: { tab?: BankingTab }) {
   // 1.4: reconciling a bank account reads its lines in the books: no such tab for someone who may not read them
   const books = useData().seesBooks !== false;
   const all: [BankingTab, Key][] = [['accounts', 'bk_tabAccounts'], ['transfer', 'bk_tabTransfer'], ['cheques', 'bk_tabCheques'], ['reconcile', 'bk_tabReconcile']];
-  const tabs = all.filter(([k]) => books || k !== 'reconcile');
-  if (!books && tab === 'reconcile') tab = 'accounts';
+  // a transfer is a form and nothing else: for whoever prepares vouchers (may.ts)
+  const mayBank = useMay()('banking');
+  const tabs = all.filter(([k]) => (books || k !== 'reconcile') && (mayBank || k !== 'transfer'));
+  if ((!books && tab === 'reconcile') || (!mayBank && tab === 'transfer')) tab = 'accounts';
   return (
     <div className="stack">
       <div className="tabs" role="group">
@@ -117,6 +119,7 @@ function Accounts() {
   const { t } = i18n;
   const list = useMoneyAccounts();
   const { reloadAccounts, companyBooks, seesBooks } = useData();
+  const can = useMay();
   // an account's statement is the company's books: no link for someone limited to branches
   const books = companyBooks !== false;
   // 1.4: what each safe and bank holds is not sent to someone who may not read the books: the list without its amounts
@@ -150,8 +153,8 @@ function Accounts() {
         </div>
       </div>}
       <div className="row">
-        <button type="button" className="btn primary" onClick={() => setAdding(true)}><Icon name="plus" size={16} />{t('bk_addAccount')}</button>
-        <a className="btn" href={href('banking/transfer')}><Icon name="swap" size={16} />{t('bk_tabTransfer')}</a>
+        {can('moneyAccount') && <button type="button" className="btn primary" onClick={() => setAdding(true)}><Icon name="plus" size={16} />{t('bk_addAccount')}</button>}
+        {can('banking') && <a className="btn" href={href('banking/transfer')}><Icon name="swap" size={16} />{t('bk_tabTransfer')}</a>}
       </div>
       <ErrorBox error={list.error} />
       {list.data && (accounts.length ? (
@@ -175,7 +178,7 @@ function Accounts() {
                     <td className="num">
                       <span className="row" style={{ gap: 4, justifyContent: 'flex-end' }}>
                         {books && <a className="btn subtle icon" title={t('bk_statement')} aria-label={t('bk_statement') + ' ' + a.code} href={href(`statement/${a.code}`)}><Icon name="doc" size={16} /></a>}
-                        <button type="button" className="btn subtle icon" title={t('bk_editAccount')} aria-label={t('bk_editAccount') + ' ' + a.code} onClick={() => setEditing(a)}><Icon name="edit" size={16} /></button>
+                        {can('moneyAccount') && <button type="button" className="btn subtle icon" title={t('bk_editAccount')} aria-label={t('bk_editAccount') + ' ' + a.code} onClick={() => setEditing(a)}><Icon name="edit" size={16} /></button>}
                       </span>
                     </td>
                   </tr>
@@ -360,6 +363,7 @@ function dueText(i18n: I18n, c: ChequeView): string {
 }
 
 function Cheques() {
+  const mayBank = useMay()('banking');
   const i18n = useI18n();
   const { t } = i18n;
   const [filters, setFilters] = useState<ChequeFilters>({ status: 'open' });
@@ -400,8 +404,8 @@ function Cheques() {
         </div>
       )}
       <div className="row" style={{ flexWrap: 'wrap' }}>
-        <button type="button" className="btn primary" onClick={() => setAdding('received')}><Icon name="plus" size={16} />{t('bk_receive')}</button>
-        <button type="button" className="btn" onClick={() => setAdding('issued')}><Icon name="edit" size={16} />{t('bk_issue')}</button>
+        {mayBank && <button type="button" className="btn primary" onClick={() => setAdding('received')}><Icon name="plus" size={16} />{t('bk_receive')}</button>}
+        {mayBank && <button type="button" className="btn" onClick={() => setAdding('issued')}><Icon name="edit" size={16} />{t('bk_issue')}</button>}
         <span className="spacer" />
         <input className="input" style={{ maxInlineSize: 220 }} placeholder={t('search')} value={q} onChange={(e) => setQ(e.target.value)} aria-label={t('search')} />
       </div>
@@ -536,6 +540,7 @@ export function ChequeDetail({ id }: { id: string }) {
   const { t } = i18n;
   usePageNav(NAV);
   const { settings, plan } = useData();
+  const mayBank = useMay()('banking');
   const cheque = useLoad(() => bankingApi.cheque(id), [id]);
   const [step, setStep] = useState<ChequeStep | null>(null);
   const c = cheque.data;
@@ -548,11 +553,11 @@ export function ChequeDetail({ id }: { id: string }) {
       <div className="row no-print" style={{ flexWrap: 'wrap' }}>
         <a className="btn" href={href('banking/cheques')}><Icon name="chevron" size={16} />{t('bk_backToCheques')}</a>
         <span className="spacer" />
-        {c.actions.includes('deposit') && <button type="button" className="btn" onClick={() => setStep('deposit')}><Icon name="building" size={16} />{t('bk_actDeposit')}</button>}
-        {c.actions.includes('clear') && <button type="button" className="btn primary" onClick={() => setStep('clear')}><Icon name="check" size={16} />{t(c.direction === 'received' ? 'bk_actClear' : 'bk_actClearIssued')}</button>}
-        {c.actions.includes('bounce') && <button type="button" className="btn danger" onClick={() => setStep('bounce')}><Icon name="undo" size={16} />{t('bk_actBounce')}</button>}
-        {c.actions.includes('cancel') && <button type="button" className="btn" onClick={() => setStep('cancel')}><Icon name="x" size={16} />{t('bk_actCancel')}</button>}
-        {c.actions.includes('undo') && <button type="button" className="btn" onClick={() => setStep('undo')}><Icon name="undo" size={16} />{t('bk_undo')}</button>}
+        {mayBank && c.actions.includes('deposit') && <button type="button" className="btn" onClick={() => setStep('deposit')}><Icon name="building" size={16} />{t('bk_actDeposit')}</button>}
+        {mayBank && c.actions.includes('clear') && <button type="button" className="btn primary" onClick={() => setStep('clear')}><Icon name="check" size={16} />{t(c.direction === 'received' ? 'bk_actClear' : 'bk_actClearIssued')}</button>}
+        {mayBank && c.actions.includes('bounce') && <button type="button" className="btn danger" onClick={() => setStep('bounce')}><Icon name="undo" size={16} />{t('bk_actBounce')}</button>}
+        {mayBank && c.actions.includes('cancel') && <button type="button" className="btn" onClick={() => setStep('cancel')}><Icon name="x" size={16} />{t('bk_actCancel')}</button>}
+        {mayBank && c.actions.includes('undo') && <button type="button" className="btn" onClick={() => setStep('undo')}><Icon name="undo" size={16} />{t('bk_undo')}</button>}
         <button type="button" className="btn" onClick={() => void printDocument('voucher')}><Icon name="printer" size={16} />{t('print')}</button>
       </div>
       {waiting && <div className="alert info no-print">{t('bk_waitApproval')}</div>}
@@ -671,6 +676,7 @@ function Reconcile() {
   const i18n = useI18n();
   const { t } = i18n;
   const { plan } = useData();
+  const mayBank = useMay()('banking');
   const available = !!plan?.features.includes('bankReconciliation');
   const statements = useLoad(() => (available ? bankingApi.statements() : Promise.resolve([])), [available]);
   const accounts = useMoneyAccounts();
@@ -691,7 +697,7 @@ function Reconcile() {
   return (
     <div className="stack">
       <p className="muted" style={{ margin: 0 }}>{t('bk_reconHelp')}</p>
-      <div className="row"><button type="button" className="btn primary" onClick={() => setAdding(true)}><Icon name="upload" size={16} />{t('bk_newStatement')}</button></div>
+      {mayBank && <div className="row"><button type="button" className="btn primary" onClick={() => setAdding(true)}><Icon name="upload" size={16} />{t('bk_newStatement')}</button></div>}
       <ErrorBox error={statements.error} />
       {statements.data && (statements.data.length ? (
         <div className="card">
@@ -851,6 +857,7 @@ function NewStatement({ accounts, onClose, onDone }: { accounts: MoneyAccountVie
 
 /** One statement: bank lines against book entries, matching, vouchers for what the books lack, and the difference. */
 export function StatementDetail({ id }: { id: string }) {
+  const mayBank = useMay()('banking');
   const i18n = useI18n();
   const { t } = i18n;
   usePageNav(NAV);
@@ -863,7 +870,8 @@ export function StatementDetail({ id }: { id: string }) {
   const [voucher, setVoucher] = useState<StatementLineView | null>(null);
   const s = view ?? loaded.data;
   if (!s) return <ErrorBox error={loaded.error} />;
-  const open = s.status === 'open';
+  // (matching, vouchers from a line, reconciling and deleting are changes: for whoever prepares vouchers)
+  const open = s.status === 'open' && mayBank;
   const freeBook = s.book.filter((b) => !b.matched);
 
   async function act(fn: () => Promise<StatementView | { matched: number; statement: StatementView }>) {

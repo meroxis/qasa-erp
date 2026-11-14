@@ -5,6 +5,7 @@ import { ErrorBox, Icon, Logo, Modal, useData, useLoad, useToast } from '../comp
 import { VoucherApprovalSetting } from '../industry/VoucherApproval.tsx';
 import { useI18n, type Key } from '../i18n.ts';
 import { href } from '../router.ts';
+import { inWindowsApp } from '../industry/data-place.ts';
 
 /** The page shown instead of the app while nobody is signed in. */
 export function SignIn({ company, onSignedIn }: { company: string; onSignedIn(me: Me): void }) {
@@ -108,7 +109,7 @@ export function RecoveryCodeModal({ code, onDone }: { code: string; onDone(): vo
       <div className="stack">
         <p style={{ margin: 0 }}>{t('recoveryShownOnce')}</p>
         <div className="ltr recovery-code" aria-label={t('recoveryTitle')}>{code}</div>
-        <p className="muted small" style={{ margin: 0 }}>{t('recoveryWhere')}</p>
+        <p className="muted small" style={{ margin: 0 }}>{t(inWindowsApp() ? 'recoveryWhere' : 'recoveryWhereBrowser')}</p>
         <label className="row" style={{ gap: 8 }}><input type="checkbox" checked={kept} onChange={(e) => setKept(e.target.checked)} /><span>{t('recoveryKept')}</span></label>
         <div className="row" style={{ justifyContent: 'flex-end' }}>
           <button type="button" className="btn primary" disabled={!kept} onClick={onDone}>{t('recoveryDone')}</button>

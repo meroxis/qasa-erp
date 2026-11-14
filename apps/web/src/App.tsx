@@ -11,7 +11,7 @@ import { SupportButton } from './industry/SupportButton.tsx';
 import { BranchSwitcher } from './industry/BranchSwitcher.tsx';
 import { BRANCH_EVENT } from './industry/branches-api.ts';
 import { BUSINESS_FEATURE } from '@qasa/core';
-import { ADMIN_PAGES, canSee, COMPANY_BOOK_PAGES, NO_BOOKS_PAGES, FAVOURITES_EVENT, seesCompanyBooks, favourites, findPage, NAV, navCollapsed, openGroups, openGroupsWith, setNavCollapsed, setOpenGroups, toggledGroup, type NavItem, type NavViewer } from './nav.ts';
+import { ADMIN_PAGES, canSee, COMPANY_BOOK_PAGES, navLabel, pageOpen, NO_BOOKS_PAGES, FAVOURITES_EVENT, seesCompanyBooks, favourites, findPage, NAV, navCollapsed, openGroups, openGroupsWith, setNavCollapsed, setOpenGroups, toggledGroup, type NavItem, type NavViewer } from './nav.ts';
 import { CommandPalette } from './industry/CommandPalette.tsx';
 import { Tour, TOUR_EVENT, tourDone } from './industry/Tour.tsx';
 import { UpdateBanner } from './industry/UpdateBanner.tsx';
@@ -26,7 +26,7 @@ import { canSwitchCompanies } from './industry/companies-api.ts';
 import { outboxClient, setOutboxUser, startOutbox } from './industry/outbox.ts';
 import { OutboxBanner } from './industry/OutboxBanner.tsx';
 import { HeaderRate } from './industry/HeaderRate.tsx';
-import { dataPlaceLine, officeText, useDataPlace } from './industry/data-place.ts';
+import { dataPlaceLine, inWindowsApp, officeText, useDataPlace } from './industry/data-place.ts';
 
 /**
  * Pages load when they are first opened, not with the app: the first screen comes up quickly and the window holds only
@@ -337,7 +337,10 @@ export function App() {
   // 1.4: someone who does not keep the books reads the vouchers they prepared, and writes none in the editor (theirs
   // come from "Receive payment"): the editor's pages land on the home page too, and so do the expenses and a bank
   // statement to reconcile, which the server refuses them
-  const adminPage = (ADMIN_PAGES.has(page ?? '') && !isAdmin) || (COMPANY_BOOK_PAGES.has(page ?? '') && !books) || (!seesBooks && NO_BOOKS_PAGES.has(page ?? ''));
+  // and so does every page whose action the server would refuse this person (nav.ts pageOpen): a purchase invoice
+  // for someone who only sells, a new voucher for someone who prepares none
+  const adminPage = (ADMIN_PAGES.has(page ?? '') && !isAdmin) || (COMPANY_BOOK_PAGES.has(page ?? '') && !books) || (!seesBooks && NO_BOOKS_PAGES.has(page ?? ''))
+    || (!!me?.user && !pageOpen(page ?? '', arg, viewer));
   switch (adminPage ? '' : page ?? '') {
     case '':
     case 'home':
@@ -734,8 +737,8 @@ export function App() {
   function navLink(item: NavItem, extra = '') {
     if (item.path === undefined) {
       return (
-        <button key={item.key} type="button" className="nav-item" disabled title={t(item.key)}>
-          <Icon name={item.icon} /><span>{t(item.key)}</span><span className="soon">{t('soon')}</span>
+        <button key={item.key} type="button" className="nav-item" disabled title={t(navLabel(item, viewer))}>
+          <Icon name={item.icon} /><span>{t(navLabel(item, viewer))}</span><span className="soon">{t('soon')}</span>
         </button>
       );
     }
@@ -743,8 +746,8 @@ export function App() {
     const feature = item.business ? BUSINESS_FEATURE[item.business] : null;
     const locked = !!feature && !!plan && !plan.features.includes(feature);
     return (
-      <a key={extra + item.key} className={'nav-item' + (active ? ' active' : '')} href={href(item.path)} aria-current={active ? 'page' : undefined} title={t(item.key)}>
-        <Icon name={item.icon} /><span>{t(item.key)}</span>{locked && !railed && <span className="soon">{feature === 'realEstate' ? 'Business' : 'Pro'}</span>}
+      <a key={extra + item.key} className={'nav-item' + (active ? ' active' : '')} href={href(item.path)} aria-current={active ? 'page' : undefined} title={t(navLabel(item, viewer))}>
+        <Icon name={item.icon} /><span>{t(navLabel(item, viewer))}</span>{locked && !railed && <span className="soon">{feature === 'realEstate' ? 'Business' : 'Pro'}</span>}
       </a>
     );
   }
@@ -871,7 +874,7 @@ export function App() {
                   </div>
                 )}
                 {/* not on a PC connected to an office PC: the books and their backups are on that PC */}
-                {import.meta.env.MODE !== 'demo' && dataPlace?.kind === 'local' && <BackupNoticeBar admin={isAdmin} page={page === 'settings' && arg !== 'backups' ? 'settings-section' : page} />}
+                {import.meta.env.MODE !== 'demo' && dataPlace?.kind === 'local' && inWindowsApp() && <BackupNoticeBar admin={isAdmin} page={page === 'settings' && arg !== 'backups' ? 'settings-section' : page} />}
                 {outboxOn && <OutboxBanner page={page ?? ''} />}
                 <div key={branchKey} style={{ display: 'contents' }}><Suspense fallback={<PageLoading />}>{content}</Suspense></div>
               </main>

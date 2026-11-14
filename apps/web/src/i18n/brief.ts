@@ -89,7 +89,7 @@ export const BRIEF_TEXT = {
   br_asOf: ['في تاريخ', 'As of', 'لە بەرواری'],
   br_item: ['المادة', 'Item', 'کاڵا'],
   br_items: ['المواد', 'Items', 'کاڵاکان'],
-  br_qty: ['الكمية', 'Qty', 'بڕی پارە'],
+  br_qty: ['الكمية', 'Qty', 'بڕ'],
   br_sales: ['المبيعات', 'Sales', 'فرۆشتن'],
   br_cost: ['الكلفة', 'Cost', 'تێچوو'],
   br_profit: ['الربح', 'Profit', 'قازانج'],

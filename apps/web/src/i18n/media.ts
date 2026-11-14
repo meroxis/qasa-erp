@@ -101,7 +101,7 @@ export const MEDIA_TEXT = {
   err_md_price_invalid: ['الصف {n}: السعر غير صحيح.', 'Row {n}: the price isn’t valid.', 'ڕیزی {n}: نرخەکە دروست نییە.'],
   err_md_item_not_found: ['الصف {n}: لا توجد مادة بهذا الرمز أو الباركود أو الاسم.', 'Row {n}: no item has that code, barcode or name.', 'ڕیزی {n}: هیچ کاڵایەک ئەو کۆد، بارکۆد یان ناوەی نییە.'],
   err_md_item_not_stocked: ['الصف {n}: هذه المادة خدمة لا مخزون لها.', 'Row {n}: that item is a service, with no stock.', 'ڕیزی {n}: ئەمە خزمەتگوزارییە و بڕی کۆگای نییە.'],
-  err_md_qty_invalid: ['الصف {n}: الكمية غير صحيحة.', 'Row {n}: the quantity isn’t valid.', 'ڕیزی {n}: بڕی پارەکە دروست نییە.'],
+  err_md_qty_invalid: ['الصف {n}: الكمية غير صحيحة.', 'Row {n}: the quantity isn’t valid.', 'ڕیزی {n}: بڕەکە دروست نییە.'],
   err_md_cost_invalid: ['الصف {n}: الكلفة غير صحيحة.', 'Row {n}: the cost isn’t valid.', 'ڕیزی {n}: تێچووەکە دروست نییە.'],
   err_md_party_not_found: ['الصف {n}: لا يوجد زبون أو مجهز بهذا الرمز أو الاسم.', 'Row {n}: no customer or supplier has that code or name.', 'ڕیزی {n}: هیچ کڕیار یان دابینکەرێک ئەو کۆد یان ناوەی نییە.'],
   err_md_rate_required: ['اكتب سعر الدولار للأرصدة بالدولار.', 'Enter the dollar rate for the dollar balances.', 'نرخی دۆلار بۆ ڕەسیدە دۆلارییەکان بنووسە.'],
