@@ -195,7 +195,11 @@ export function dayClose(db: Db, date: string, branch: BranchFilter = null): Day
 
 const isoDate = z.string().regex(/^\d{4}-\d{2}-\d{2}$/).refine((s) => !Number.isNaN(Date.parse(s + 'T00:00:00Z')));
 
-/** Reading is open to every signed-in user, as the Daily Brief is; a user limited to branches sees their own. */
+/**
+ * Reading is open to every signed-in user, as the Daily Brief is; a user limited to branches sees their own. Someone who
+ * may not read the books (a cashier) gets the sales, the registers, the drawers and the debts, without the expenses and
+ * the money in and out of the safes and banks (cost-view.ts).
+ */
 export const dayCloseApi: ApiExtension = {
   routes(db, { actorOf }) {
     return [

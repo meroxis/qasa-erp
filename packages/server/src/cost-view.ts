@@ -16,7 +16,13 @@ import { AppError } from './errors.ts';
  * One thing of the journal stays with someone who does not keep the books: the vouchers they prepared themselves. A
  * sales person takes a customer's money with "Receive payment" (quick-vouchers.ts), and that receipt may wait for
  * approval: they can open it by its id and list their own, with where the approval stands and why it was rejected.
- * Nobody else's entry, by any address: ownVouchersOnly below, asked by the two routes that read the journal.
+ * Nobody else's entry, by any address: ownVouchersOnly below, asked by the two routes that read the journal, and by
+ * "Receive payment" when it answers a form sent twice (quick-vouchers.ts).
+ *
+ * The company's money is the books too: what each safe and bank holds, what came in and went out of them on a day,
+ * the expenses (other people's payment vouchers, and with the sales the profit) and a bank account's lines on a
+ * reconciliation. Someone without the books still picks a safe by its name, and a cashier keeps what the till needs:
+ * the cash of their shift (/api/pos) and the registers and drawers of the end-of-day close.
  *
  * What customers owe and what suppliers are owed are not cost: a balance, and the total of the balances
  * (/api/parties/totals), are sent to everyone for both, as the lists of customers and suppliers are. What each
@@ -40,8 +46,11 @@ const COST_FIELDS: readonly (readonly [string, readonly string[]])[] = [
 const BOOKS_FIELDS: readonly (readonly [string, readonly string[]])[] = [
   // every account's balance is the trial balance by another name
   ['/api/accounts', ['balance']],
-  // the Daily Brief, the dashboard, the end-of-day close and the sales reports: sales stay, cost and profit go
-  ['/api/brief', ['cost', 'profit', 'profitMonth', 'value']],
+  // the Daily Brief, the dashboard, the end-of-day close and the sales reports: sales stay, cost and profit go, and so
+  // do what the safes and banks hold (cash), the money in and out of them (flow) and the day's expenses
+  ['/api/brief', ['cost', 'profit', 'profitMonth', 'value', 'cash', 'flow', 'expenses']],
+  // the safes, banks and wallets are listed by name (to pick one); what each holds is not sent
+  ['/api/banking/accounts', ['balance', 'base']],
   // what was agreed with a supplier, and the last price paid
   ['/api/purchase-orders', ['total', 'unitPrice', 'amount', 'lastPrice']]
 ];
@@ -50,8 +59,11 @@ const BOOKS_FIELDS: readonly (readonly [string, readonly string[]])[] = [
 const PURCHASE_KINDS: ReadonlySet<unknown> = new Set(['purchase', 'purchase_return']);
 const PURCHASE_MONEY: ReadonlySet<string> = new Set(['discount', 'subtotal', 'total', 'baseTotal', 'unitPrice', 'amount', 'cost', 'returnedAmount', 'payments']);
 
-/** Read by nobody without the books: the journal, the company's books (branches.ts) and the stock valuation. */
-const BOOKS_ONLY: readonly string[] = ['/api/entries', '/api/vouchers', '/api/brief/reports/stock-value'];
+/**
+ * Read by nobody without the books: the journal, the company's books (branches.ts), the stock valuation, the expenses
+ * (every payment voucher on an expense account, whoever prepared it) and bank reconciliation (a bank account's lines).
+ */
+const BOOKS_ONLY: readonly string[] = ['/api/entries', '/api/vouchers', '/api/brief/reports/stock-value', '/api/brief/expenses', '/api/banking/statements'];
 
 const under = (path: string, prefix: string): boolean => path === prefix || path.startsWith(`${prefix}/`);
 

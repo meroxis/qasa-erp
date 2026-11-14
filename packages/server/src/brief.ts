@@ -639,7 +639,8 @@ function period(req: ApiRequest): { from: string; to: string } {
 
 /**
  * Reading is open to every signed-in user, as the app's other reports are; changing the brief's settings (the owner's
- * WhatsApp number, where each expense goes) needs an admin — they are not listed in rules.
+ * WhatsApp number, where each expense goes) needs an admin — they are not listed in rules. Someone who may not read the
+ * books gets the sales without the company's money (cash, flow) and is refused the expenses (cost-view.ts).
  */
 export const briefApi: ApiExtension = {
   routes(db, { actorOf }) {
