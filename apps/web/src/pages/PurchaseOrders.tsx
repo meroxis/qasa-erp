@@ -1,13 +1,14 @@
 import { useEffect, useMemo, useState } from 'react';
 import { fromBaseQty, isUnit, lineAmount, rateFromX100, todayIso, toWesternDigits, type CurrencyCode } from '@qasa/core';
-import { api } from '../api.ts';
-import { EmptyState, AmountInput, ErrorBox, Icon, Modal, QtyInput, SearchCombo, useData, useLoad, useMay, usePageNav, useToast, type PickOption } from '../components.tsx';
+import { api, type ItemView } from '../api.ts';
+import { EmptyState, AmountInput, ErrorBox, Icon, Modal, QtyInput, useData, useLoad, useMay, usePageNav, useToast, type PickOption } from '../components.tsx';
 import { useI18n, type I18n, type Key } from '../i18n.ts';
 import {
   PO_STATUSES, purchasingApi, type PoInput, type PoMove, type PoStatus, type PoSummaryView, type PoView, type ReorderGroup
 } from '../industry/purchasing-api.ts';
 import { go, href } from '../router.ts';
 import { PartyPicker } from '../industry/PartyPicker.tsx';
+import { ItemPicker, withAdded } from '../industry/QuickItemForm.tsx';
 import { useRatePrefill } from '../industry/fx-prefill.ts';
 import { convertLines } from './currency-switch.ts';
 import { UnitPicker } from '../industry/UnitPicker.tsx';
@@ -210,7 +211,9 @@ export function PurchaseOrderEditor({ id }: { id?: string }) {
   const suppliers: PickOption[] = useMemo(() => (suppliersLoad.data ?? []).map((p) => ({ id: p.id, code: p.code, label: p.name, search: p.phone ?? '' })), [suppliersLoad.data]);
   const warehouses = (useLoad(() => api.warehouses(), []).data ?? []).filter((w) => w.active);
   const itemsLoad = useLoad(() => api.items({ active: 'true' }), []);
-  const items = itemsLoad.data ?? [];
+  // items added from the item box (1.4.2), until the list is loaded again
+  const [addedItems, setAddedItems] = useState<ItemView[]>([]);
+  const items = useMemo(() => withAdded(itemsLoad.data, addedItems), [itemsLoad.data, addedItems]);
   const itemOptions: PickOption[] = useMemo(() => items.map((it) => ({
     id: it.id, code: it.code, label: i18n.name(it.name), search: `${it.name.ar} ${it.name.en} ${it.name.ku} ${it.barcode ?? ''}`
   })), [items, i18n]);
@@ -308,7 +311,8 @@ export function PurchaseOrderEditor({ id }: { id?: string }) {
               {rows.map((r, i) => (
                 <tr key={r.key}>
                   <td className="muted num">{i18n.int(i + 1)}</td>
-                  <td><SearchCombo value={r.itemId} options={itemOptions} onChange={(v) => update(r.key, { itemId: v, unit: items.find((it) => it.id === v)?.purchaseUnit ?? null })} placeholder={t('po_pickItem')} ariaLabel={t('item')} /></td>
+                  <td><ItemPicker value={r.itemId} options={itemOptions} onChange={(v) => update(r.key, { itemId: v, unit: items.find((it) => it.id === v)?.purchaseUnit ?? null })} placeholder={t('po_pickItem')} ariaLabel={t('item')}
+                    onCreated={(made) => { setAddedItems((a) => [...a, made]); update(r.key, { itemId: made.id, unit: made.purchaseUnit ?? null, ...(made.purchasePrice && (made.purchaseCurrency ?? made.saleCurrency) === form.currency ? { unitPrice: made.purchasePrice } : {}) }); }} /></td>
                   <td>
                     <QtyInput value={r.qtyMilli || null} onChange={(v) => update(r.key, { qtyMilli: v ?? 0 })} ariaLabel={t('qty')} />
                     <UnitPicker item={items.find((it) => it.id === r.itemId)} value={r.unit ?? null} onChange={(unit) => update(r.key, { unit })} />
