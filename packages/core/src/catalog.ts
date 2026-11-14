@@ -112,7 +112,7 @@ export const STARTER_LISTS: Record<StarterTrade, StarterList> = {
     name: n('تجارة عامة', 'General trade', 'بازرگانیی گشتی'),
     categories: [
       { name: n('مواد غذائية', 'Food and groceries', 'خۆراک'), sub: [n('مواد أساسية', 'Staples', 'خۆراکی سەرەکی'), n('مشروبات', 'Beverages', 'خواردنەوە')] },
-      { name: n('أجهزة كهربائية', 'Electrical appliances', 'ئامرازی کارەبایی'), sub: [n('أجهزة منزلية', 'Home appliances', 'ئامێری ماڵ'), n('هواتف وإلكترونيات', 'Phones and electronics', 'مۆبایل و ئەلیکترۆنیات')] },
+      { name: n('أجهزة كهربائية', 'Electrical appliances', 'ئامێری کارەبایی'), sub: [n('أجهزة منزلية', 'Home appliances', 'ئامێری ماڵ'), n('هواتف وإلكترونيات', 'Phones and electronics', 'مۆبایل و ئەلیکترۆنیات')] },
       { name: n('منظفات ومستلزمات منزلية', 'Cleaning and household', 'پاککەرەوە و پێداویستیی ماڵ') },
       { name: n('العناية الشخصية', 'Personal care', 'چاودێریی کەسی') },
       { name: n('عدد ومواد بناء', 'Tools and building materials', 'ئامراز و کەرەستەی بیناسازی') },

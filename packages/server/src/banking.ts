@@ -184,7 +184,7 @@ export function transfer(db: Db, input: TransferInput, actor: Actor): EntryView 
 
 export const NOTES_RECEIVABLE = '162';
 export const NOTES_PAYABLE = '262';
-const NR_NAMES: Names = { ar: 'أوراق القبض', en: 'Notes receivable', ku: 'چەک و کەمبیالەی وەرگیراو' };
+const NR_NAMES: Names = { ar: 'أوراق القبض', en: 'Notes receivable', ku: 'کەمبیالەکانی وەرگرتن' };
 
 /**
  * Notes receivable (أوراق القبض, 162 in the unified chart). New and older companies alike get it the first time a
