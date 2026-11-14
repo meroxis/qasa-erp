@@ -126,7 +126,8 @@ export function deleteRate(db: Db, date: string, user: string): void {
   });
 }
 
-function postedRevaluations(db: Db): string[] {
+/** The revaluation entries posted so far (dinar journal entries on the dollar accounts and parties). */
+export function postedRevaluations(db: Db): string[] {
   try {
     const list = JSON.parse(readSetting(db, POSTED_KEY) ?? '[]') as unknown;
     return Array.isArray(list) ? list.filter((x): x is string => typeof x === 'string') : [];

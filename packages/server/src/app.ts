@@ -46,10 +46,12 @@ export function requestRefusal(
 /**
  * What a module may serve beside the app's own routes (the Pro module adds them to this server once it is built), by
  * the address that answers when it is there. /api/auth/me names the ones this build has, so the app does not ask for
- * the others: a build without the module has no backups card to load, no office network, phones or database server.
+ * the others: a build without the module has no backups card to load, no office network, phones or database server,
+ * no medicines to look up at the till (pharmacy) and no licence check of the module's own (pro).
  */
 export const MODULE_ROUTES: Readonly<Record<string, string>> = {
-  backup: '/api/backup', network: '/api/network', phones: '/api/phones', database: '/api/database'
+  backup: '/api/backup', network: '/api/network', phones: '/api/phones', database: '/api/database',
+  pharmacy: '/api/pharmacy', pro: '/api/pro/licence-check'
 };
 
 /**

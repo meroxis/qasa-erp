@@ -34,8 +34,11 @@ describe('what the build serves beside the app\'s own routes', () => {
     full.get('/api/network', async () => ({ on: false }));
     full.get('/api/phones', async () => ({ phones: [] }));
     full.get('/api/database', async () => ({ kind: 'file' }));
+    // the medicines of a pharmacy and the module's own licence check are asked for only where they are served
+    full.get('/api/pharmacy', async () => ({ available: true }));
+    full.get('/api/pro/licence-check', async () => ({ heldBack: false, reason: null }));
     try {
-      expect((await full.inject({ url: '/api/auth/me', headers })).json().modules).toEqual(['backup', 'network', 'phones', 'database']);
+      expect((await full.inject({ url: '/api/auth/me', headers })).json().modules).toEqual(['backup', 'network', 'phones', 'database', 'pharmacy', 'pro']);
     } finally {
       await full.close();
     }

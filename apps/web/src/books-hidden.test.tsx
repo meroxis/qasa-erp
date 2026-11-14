@@ -114,6 +114,16 @@ describe('the Daily Brief and the home page without the company\'s money', () =>
     expect(home).not.toContain(t('cashAndBanks'));
     expect(home).not.toContain(t('br_newExpense'));
 
+    // the six months' chart: no row of dashes where the profit would be, for someone who is not sent it
+    const sixMonths = [{ month: '2026-10', sales: 700_000 }, { month: '2026-11', sales: 900_000 }];
+    now.answers = { dashboard: dashboard({ months: sixMonths }), entries: [], invoices: [], parties: [] };
+    const chart = render(<Home viewer={cashier} user="Raz" favourites={[]} />, cashierData);
+    expect(chart).toContain(t('br_salesSixMonths'));
+    expect(chart).not.toContain(`title="${t('br_profit')}"`);
+    now.answers = { dashboard: dashboard({ months: [{ ...sixMonths[0]!, profit: 0 }, { ...sixMonths[1]!, profit: 597_000 }] }), entries: [], invoices: [], parties: [] };
+    const withProfit = render(<Home viewer={{ ...accountant, admin: true }} user="Mer" favourites={[]} />, { permissions: ['admin'] });
+    expect(withProfit.split(`title="${t('br_profit')}"`).length - 1).toBe(2);
+
     now.answers = { dashboard: dashboard({ cash: { total: { IQD: 640_000, USD: 0 }, base: 640_000 } }), entries: [], invoices: [], parties: [] };
     const owner = render(<Home viewer={{ ...accountant, admin: true }} user="Mer" favourites={[]} />, { permissions: ['admin'] });
     expect(owner).toContain(t('cashAndBanks'));
@@ -275,6 +285,34 @@ describe('a purchase invoice for someone who may not read the books', () => {
     expect(sale).toContain(`>${t('s14_invReceived')}<`);
     expect(sale).toContain(t('s14_invNothingOpen'));
     expect(sale).not.toContain(`>${t('s14_invWaiting')}<`);
+
+    // money was received without naming an invoice and the customer owes less than the invoices lack: "up to", with
+    // what the customer owes in all, never a bare "still open"
+    const unsure = { currency: 'IQD', total: 100_000, returned: 0, received: 0, waiting: 0, open: 100_000, toCollect: 100_000, owed: 100_000, unsure: true };
+    now.answers = { invoice: { ...priced, kind: 'sale', settlement: unsure } };
+    const maybe = render(<InvoiceDetail id="v1" />, admin);
+    expect(maybe).toContain(`>${t('s14_invOpenUpTo')}<`);
+    expect(maybe).not.toContain(`>${t('s14_invOpen')}<`);
+    expect(maybe).toContain(i18n.t('s14_invUnsure', { owed: i18n.money(100_000, 'IQD') }));
+    expect(maybe).toContain(t('s14_invAging'));
+    expect(maybe).not.toContain(`>${t('s14_invReceived')}<`);
+    // the same on a purchase, in the supplier's words
+    now.answers = { invoice: { ...priced, settlement: unsure } };
+    expect(render(<InvoiceDetail id="v1" />, admin)).toContain(i18n.t('s14_invUnsureSupplier', { owed: i18n.money(100_000, 'IQD') }));
+    // nothing known to be received for it, and the customer owes nothing: that is what the page says
+    now.answers = { invoice: { ...priced, kind: 'sale', settlement: { ...unsure, open: 0, toCollect: 0, owed: 0 } } };
+    const clear = render(<InvoiceDetail id="v1" />, admin);
+    expect(clear).toContain(t('s14_invNoDebt'));
+    expect(clear).not.toContain(t('s14_invNothingOpen'));
+    expect(clear).not.toContain(t('s14_invOpenUpTo'));
+    now.answers = { invoice: { ...priced, settlement: { ...unsure, open: 0, toCollect: 0, owed: 0 } } };
+    expect(render(<InvoiceDetail id="v1" />, admin)).toContain(t('s14_invNoDebtSupplier'));
+    // an invoice of its own debt only, nothing received yet: the plain line, and no note under it
+    now.answers = { invoice: { ...priced, kind: 'sale', settlement: { ...unsure, unsure: false } } };
+    const plain = render(<InvoiceDetail id="v1" />, admin);
+    expect(plain).toContain(`>${t('s14_invOpen')}<`);
+    expect(plain).not.toContain(t('s14_invAging'));
+    expect(purchase).toContain(t('s14_invAging'));
 
     // a cash sale of the till: no such lines, and the cash handed over with the change
     now.answers = { invoice: { ...priced, kind: 'sale', payment: 'cash', settlement: null, tender: { paid: 125_000, change: 25_000 } } };

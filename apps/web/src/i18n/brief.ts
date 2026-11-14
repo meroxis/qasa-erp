@@ -83,6 +83,11 @@ export const BRIEF_TEXT = {
   br_rSalesItems: ['المبيعات حسب المادة', 'Sales by item', 'فرۆشتن بەپێی کاڵا'],
   br_rSalesCustomers: ['المبيعات حسب الزبون', 'Sales by customer', 'فرۆشتن بەپێی کڕیار'],
   br_rProfit: ['الربح حسب المادة', 'Profit by item', 'قازانج بەپێی کاڵا'],
+  br_agingRule: [
+    'تُحتسب المدفوعات على أقدم دين أولاً، فقد تختلف الأعمار هنا عمّا تُظهره الفاتورة الواحدة كمتبقٍ عليها.',
+    'Payments are counted against the oldest debt first, so the ages here can differ from what a single invoice shows as open.',
+    'پارەدانەکان لە کۆنترین قەرزەوە دەژمێردرێن، بۆیە لەوانەیە تەمەنەکانی ئێرە لەوەی تاکە پسوولەیەک وەک ماوە پیشانی دەدات جیاواز بن.'
+  ],
   br_rAging: ['أعمار ديون الزبائن', 'Customer aging', 'تەمەنی قەرزی کڕیاران'],
   br_rSupplierAging: ['أعمار ديون المجهزين', 'Supplier aging', 'تەمەنی قەرزی دابینکەران'],
   br_rStockValue: ['قيمة المخزون', 'Stock value', 'بەهای کۆگا'],

@@ -11,8 +11,8 @@ import { I18nContext, makeI18n } from '../i18n.ts';
 import { QuickVoucherForm } from './QuickVoucher.tsx';
 import { ApprovalNote, approvalStateOf, OwnVoucherButtons } from './VoucherApproval.tsx';
 import {
-  againPreset, amountAfterCurrency, amountInIqd, balanceAfter, boardRateFills, formBalance, formBalanceAfter, invoiceNote, invoiceOpen, invoicePrefill, mayQuickVoucher, mayWithdrawOwn, parseRateText,
-  quickNotice, quickOutcome, type QuickVoucherPreset
+  againPreset, amountAfterCurrency, amountInIqd, balanceAfter, boardRateFills, formBalance, formBalanceAfter, invoiceNote, invoiceOpen, invoicePrefill, mayQuickVoucher, mayWithdrawOwn, overInvoice,
+  parseRateText, quickNotice, quickOutcome, type QuickVoucherPreset
 } from './quick-voucher.ts';
 import { chosenMethod, creditNeedsCustomer, pickAfterLink, salePayments, tillMethods, type TillMethod } from '../pages/pos-logic.ts';
 
@@ -212,6 +212,58 @@ describe('receive payment: the dollar rate, the currency buttons, the note and t
       expect(open).not.toContain(esc(m.t('s14_invoiceSettled')));
       expect(open).not.toContain(esc(m.t('s14_invoiceWaits', { amount: m.money(60_000, 'IQD') })));
     }
+  });
+
+  it('Pay supplier on a paid purchase invoice speaks of paying, Receive payment of receiving', () => {
+    for (const lang of LANGS) {
+      const m = makeI18n(lang, 'western', () => {}, () => {});
+      const preset = { partyId: 'p-raz', invoice: { id: 'inv-1', number: 'PI-2026-0003', open: 0, waiting: 0, currency: 'IQD' as const, rateX100: 100 } };
+      const pay = page(<QuickVoucherForm kind="payment" preset={preset} onClose={() => {}} onDone={() => {}} />, lang, { permissions: ['admin', 'purchases', 'entries.prepare'] });
+      expect(pay).toContain(esc(m.t('s14_invoiceSettledPay')));
+      expect(pay).not.toContain(esc(m.t('s14_invoiceSettled')));
+      expect(form(preset, lang)).not.toContain(esc(m.t('s14_invoiceSettledPay')));
+      expect(m.t('s14_invoiceSettledPay')).not.toBe(m.t('s14_invoiceSettled'));
+    }
+    const ar = makeI18n('ar', 'western', () => {}, () => {});
+    const ku = makeI18n('ku', 'western', () => {}, () => {});
+    expect(ar.t('s14_invoiceSettledPay')).not.toContain('استلمت');
+    expect(ku.t('s14_invoiceSettledPay')).not.toContain('وەردەگیرێت');
+  });
+
+  it('says before saving how much of a typed amount is above what is open on the invoice: that part is an advance', () => {
+    const invoice = { open: 34_900, currency: 'IQD' as const, rateX100: 100 };
+    expect(overInvoice(34_900, 'IQD', 100, invoice)).toBeNull();
+    expect(overInvoice(20_000, 'IQD', 100, invoice)).toBeNull();
+    expect(overInvoice(500_000, 'IQD', 100, invoice)).toBe(465_100);
+    expect(overInvoice(null, 'IQD', 100, invoice)).toBeNull();
+    // nothing was open: the form already says that every amount goes on the account
+    expect(overInvoice(500_000, 'IQD', 100, { ...invoice, open: 0 })).toBeNull();
+    // a dollar invoice ($50.00 open at 1,500) paid in dinars, and a dinar invoice paid in dollars at the form's rate
+    const dollars = { open: 5_000, currency: 'USD' as const, rateX100: 150_000 };
+    expect(overInvoice(75_000, 'IQD', 100, dollars)).toBeNull();
+    expect(overInvoice(100_000, 'IQD', 100, dollars)).toBe(25_000);
+    expect(overInvoice(6_000, 'USD', 148_000, dollars)).toBe(1_000);
+    expect(overInvoice(3_000, 'USD', 150_000, { open: 30_000, currency: 'IQD', rateX100: 100 })).toBe(1_000);
+    expect(overInvoice(2_000, 'USD', 150_000, { open: 30_000, currency: 'IQD', rateX100: 100 })).toBeNull();
+    expect(overInvoice(3_000, 'USD', null, { open: 30_000, currency: 'IQD', rateX100: 100 })).toBeNull();
+    for (const lang of LANGS) {
+      const m = makeI18n(lang, 'western', () => {}, () => {});
+      for (const key of ['s14_overInvoice', 's14_overInvoicePay'] as const) expect(m.t(key, { extra: m.money(465_100, 'IQD') })).toContain(m.money(465_100, 'IQD'));
+    }
+  });
+
+  it('a dollar invoice starts from the customer\'s dollars as dollars, with only the dinars read at its rate', () => {
+    // $1,000.00 at 1,300 with $500.00 received at 1,320: the books carry 640,000 dinars, which is $492.30 at 1,300
+    expect(invoicePrefill(50_000, 'USD', 130_000, { balance: 640_000, balances: { IQD: 0, USD: 50_000 } })).toBe(50_000);
+    // two invoices at 1,300 and 1,500, the first paid at 1,500: the second starts from its $100.00
+    expect(invoicePrefill(10_000, 'USD', 150_000, { balance: 130_000, balances: { IQD: 0, USD: 10_000 } })).toBe(10_000);
+    // $100.01 at 1,310 is booked as 131,013 dinars: all of it, not a cent less
+    expect(invoicePrefill(10_001, 'USD', 131_000, { balance: 131_013, balances: { IQD: 0, USD: 10_001 } })).toBe(10_001);
+    expect(invoicePrefill(10_001, 'USD', 131_000, { balance: 131_013 })).toBe(10_001);
+    // (a server that sends only the total, and less is owed than the invoice lacks: rounded down)
+    expect(invoicePrefill(10_001, 'USD', 131_000, { balance: 100_000 })).toBe(7_633);
+    // dinars paid on a dollar debt still count against it
+    expect(invoicePrefill(10_000, 'USD', 150_000, { balance: 60_000, balances: { IQD: -90_000, USD: 10_000 } })).toBe(4_000);
   });
 
   it('never starts above what the customer still owes in all, by the whole position the customers list uses', () => {

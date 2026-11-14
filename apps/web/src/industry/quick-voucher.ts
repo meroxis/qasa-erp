@@ -67,16 +67,45 @@ export function invoiceOpen(v: {
 /**
  * The amount the form opens with for an invoice: what is still to collect on it, but never more than the customer
  * still owes in all (or we still owe the supplier): money received earlier without naming the invoice shows only in
- * the party's balance. The cap is the whole position, the one the customers list sorts and words by (kept in dinars
- * at the book rates, read at the invoice's rate for dollars): a currency's own balance is no cap, because a dollar
- * debt paid in dinars leaves each currency with an amount of its own that says nothing of what is owed. Null when
- * nothing is left: the form says so, and an amount is typed if money is taken all the same.
+ * the party's balance. The cap is the whole position, as the server reads it for the invoice (invoiceSettlement):
+ * for a dinar invoice the one the customers list sorts and words by (dinars at the book rates); for a dollar invoice
+ * the party's dollars as dollars, whatever rate each was booked at, and its dinars at the invoice's rate, rounded
+ * down. A currency's own balance alone is no cap, because a dollar debt paid in dinars leaves each currency with an
+ * amount of its own that says nothing of what is owed. (A revaluation of dollar balances is among the party's dinars
+ * here, while the server leaves it out: after one the form may start a little lower than the server's figure, never
+ * higher, because the server's `open` is the limit either way.) Null when nothing is left: the form says so, and an
+ * amount is typed if money is taken all the same.
  */
-export function invoicePrefill(open: number, currency: CurrencyCode, rateX100: number, party: { balance: number }): number | null {
-  // the whole position in the invoice's currency, rounded down so it is never above what is owed
-  const position = currency === 'IQD' ? party.balance : rateX100 > 0 ? Math.floor((party.balance * 10000) / rateX100) : 0;
+export function invoicePrefill(
+  open: number, currency: CurrencyCode, rateX100: number, party: { balance: number; balances?: Partial<Record<CurrencyCode, number>> | undefined }
+): number | null {
+  let position: number;
+  if (currency === 'IQD') position = party.balance;
+  else if (!(rateX100 > 0)) position = 0;
+  else if (party.balances) position = (party.balances.USD ?? 0) + Math.floor(((party.balances.IQD ?? 0) * 10000) / rateX100);
+  // only the total is known: all of the open amount when its dinars are owed (reading the dinars back at the rate
+  // would lose a cent to rounding), else the total at the invoice's rate, rounded down
+  else position = toBase(open, 'USD', rateX100) <= party.balance ? open : Math.floor((party.balance * 10000) / rateX100);
   const amount = Math.min(open, position);
   return Number.isFinite(amount) && amount > 0 ? amount : null;
+}
+
+/**
+ * How much of the amount typed is above what is still open on the invoice the form was opened from, in the form's
+ * currency: that part is not for the invoice (it never carries more than its total) and stays on the party's account
+ * as an advance, which the form says before saving. Null when there is none, when it can't be worked out yet, or when
+ * nothing was open (the form says that instead).
+ */
+export function overInvoice(
+  amount: number | null, currency: CurrencyCode, rateX100: number | null, invoice: { open: number; currency: CurrencyCode; rateX100: number }
+): number | null {
+  if (amount === null || amount <= 0 || !(invoice.open > 0)) return null;
+  let open: number;
+  if (currency === invoice.currency) open = invoice.open;
+  else if (currency === 'IQD') open = toBase(invoice.open, invoice.currency, invoice.rateX100);
+  else if (rateX100 && rateX100 > 0) open = Math.ceil((invoice.open * 10000) / rateX100);
+  else return null;
+  return amount > open ? amount - open : null;
 }
 
 /**

@@ -162,13 +162,17 @@ function trendText(i18n: I18n, now: number, before: number): string {
   return i18n.t('br_vsLastMonth', { p: i18n.ltr(`${pct >= 0 ? '+' : '-'}${i18n.int(Math.abs(pct))}%`) });
 }
 
-/** Sales of the last six months as bars, with the month's profit underneath; no chart library. */
+/**
+ * Sales of the last six months as bars, with the month's profit underneath when the answer carries it (it does not for
+ * someone who may not see cost and profit: then only the months' names); no chart library.
+ */
 function SalesChart({ d }: { d: DashboardView }) {
   const i18n = useI18n();
   const { t } = i18n;
   const max = Math.max(1, ...d.months.map((m) => m.sales));
   // Arabic and Kurdish month names come from the app's own list (a browser without Kurdish data would show "Nov")
   const monthName = (ym: string) => (i18n.lang === 'en' ? new Intl.DateTimeFormat('en-GB', { month: 'short' }).format(new Date(ym + '-15T00:00:00')) : i18n.month(ym));
+  const showProfit = d.months.some((m) => m.profit !== undefined && m.profit !== null);
   return (
     <div className="card">
       <div className="card-head"><h2>{t('br_salesSixMonths')}</h2><span className="spacer" /><a className="btn ghost small" href={href('reports-more')}>{t('br_reports')}</a></div>
@@ -187,7 +191,7 @@ function SalesChart({ d }: { d: DashboardView }) {
         {d.months.map((m) => (
           <div key={m.month} className="small">
             <div className="muted">{monthName(m.month)}</div>
-            <div className="num" style={{ color: (m.profit ?? 0) < 0 ? 'var(--bad, #A4271A)' : 'var(--ok, #1F7A52)' }} title={t('br_profit')}>{m.profit ? i18n.ltr(i18n.digitsOf(compact(m.profit))) : '—'}</div>
+            {showProfit && <div className="num" style={{ color: (m.profit ?? 0) < 0 ? 'var(--bad, #A4271A)' : 'var(--ok, #1F7A52)' }} title={t('br_profit')}>{m.profit ? i18n.ltr(i18n.digitsOf(compact(m.profit))) : '—'}</div>}
           </div>
         ))}
       </div>

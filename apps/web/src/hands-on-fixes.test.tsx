@@ -4,7 +4,8 @@ import { describe, expect, it } from 'vitest';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { PRINT_DOCS, type Lang } from '@qasa/core';
 import type { EntryView, InvoiceView } from './api.ts';
-import { buildHas } from './components.tsx';
+import { ApiError } from './api.ts';
+import { buildHas, errorMessages } from './components.tsx';
 import { I18nContext, isKey, makeI18n, type Key } from './i18n.ts';
 import { closedPageAddress } from './router.ts';
 import { entryModel, invoiceModel, POS_TITLE, sampleModel } from './industry/print-model.ts';
@@ -200,10 +201,44 @@ describe('the till', () => {
   });
 });
 
+describe('after the final check of 1.4', () => {
+  it('a voucher whose invoice is refused says that the invoice is the reason, not "internal error"', () => {
+    for (const lang of LANGS) {
+      const m = texts(lang);
+      expect(errorMessages(new ApiError(400, 'validation', [{ code: 'invoice_invalid' }]), m)).toEqual([m.t('err_invoice_invalid')]);
+      expect(m.t('err_invoice_invalid')).not.toBe(m.t('err_internal'));
+    }
+  });
+
+  it('a typed address of a report that is closed to the person is replaced, and the ageing report says its rule', () => {
+    const reports = src('./pages/MoreReports.tsx');
+    expect(reports).toContain("useEffect(() => { if (closed) window.location.replace(href('reports-more/sales-items')); }, [closed]);");
+    expect(reports).toContain("{t('br_agingRule')}");
+    // (the three reports of the books are not among a sales-only user's)
+    for (const tab of ['profit', 'supplier-aging', 'stock-value'] as const) expect(reportTabsFor(false)).not.toContain(tab);
+  });
+
+  it('asks a build without the Pro module neither for medicines nor for the module\'s licence check', () => {
+    expect(buildHas([], 'pharmacy')).toBe(false);
+    expect(buildHas(['backup', 'pharmacy', 'pro'], 'pro')).toBe(true);
+    // a server from before the list: the pages ask as they did
+    expect(buildHas(undefined, 'pharmacy')).toBe(true);
+    expect(src('./industry/PharmacyPrompts.tsx')).toContain("&& buildHas(modules, 'pharmacy')");
+    const till = src('./pages/Pos.tsx');
+    expect(till).toContain('const pharmacy = usePharmacyOn();');
+    expect(till).not.toContain("plan?.features.includes('pharmacy')");
+    const plans = src('./pages/Plans.tsx');
+    expect(plans).toContain("const served = useBuildHas('pro');");
+    expect(plans).toContain("if (demo || plan.plan === 'free' || !served) {");
+  });
+});
+
 describe('the new texts', () => {
   it('are there in Arabic, English and Kurdish', () => {
     const keys = [
       's14_balanceAlso', 's14_invoiceSettled', 's14_invoiceWaits', 's14_invReceived', 's14_invPaid', 's14_invWaiting', 's14_invOpen', 's14_invNothingOpen',
+      's14_invoiceSettledPay', 's14_overInvoice', 's14_overInvoicePay', 's14_invOpenUpTo', 's14_invUnsure', 's14_invUnsureSupplier', 's14_invNoDebt', 's14_invNoDebtSupplier',
+      's14_invAging', 'br_agingRule', 'err_invoice_invalid',
       'transferNeedsSecond', 'transferAddWarehouse', 'fsCustomers', 'fsCustomersHint', 'fsItems', 'fsItemsHint', 'pt_readOnly', 'ew_helpNoCost', 'pos_cartShort'
     ];
     for (const key of keys) {

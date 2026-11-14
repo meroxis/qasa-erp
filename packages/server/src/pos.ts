@@ -10,7 +10,7 @@ import { createInvoice, getInvoice, postInvoice, type InvoiceView, type SalePart
 import { loyaltyPaidFor, planRedemption } from './loyalty.ts';
 import { readSetting, writeSetting } from './settings.ts';
 import { signInRequired, type Actor } from './auth.ts';
-import { scopeOf } from './branches.ts';
+import { scopeOf, userBranchLists } from './branches.ts';
 import type { ApiExtension, ApiRequest } from './routes.ts';
 import { onceOnly } from './idempotency.ts';
 
@@ -492,7 +492,7 @@ export function sell(db: Db, shiftId: string, input: SaleInput, actor: Actor): {
     }
     return posted.id;
   });
-  return { invoice: getInvoice(db, invoiceId), shift: getShift(db, shiftId, actor) };
+  return { invoice: getInvoice(db, invoiceId, userBranchLists(db, actor)), shift: getShift(db, shiftId, actor) };
 }
 
 /**
@@ -616,7 +616,7 @@ export const posApi: ApiExtension = {
             return { id: result.invoice.id, result };
           }, (invoiceId) => {
             if (body.offline) attachOfflineReference(db, invoiceId, body.offline, who.name);
-            return { invoice: getInvoice(db, invoiceId), shift: getShift(db, shiftId, who) };
+            return { invoice: getInvoice(db, invoiceId, userBranchLists(db, who)), shift: getShift(db, shiftId, who) };
           }, { fingerprint: sameEachTime });
           reply.status(201).send(made);
           return undefined;

@@ -77,7 +77,7 @@ describe('what is still open on a credit invoice', () => {
   it('is the invoice\'s own, whatever else the customer owes', async () => {
     const first = await posted({});
     const second = await posted({});
-    expect(first.settlement).toEqual({ currency: 'IQD', total: 100_000, returned: 0, received: 0, waiting: 0, open: 100_000, toCollect: 100_000 });
+    expect(first.settlement).toEqual({ currency: 'IQD', total: 100_000, returned: 0, received: 0, waiting: 0, open: 100_000, toCollect: 100_000, owed: 100_000, unsure: false });
     const made = await req('POST', '/api/quick-vouchers', receipt({ invoiceId: first.id }));
     expect(made.statusCode, made.body).toBe(201);
     expect(made.json()).toMatchObject({ status: 'approved', total: 40_000 });
@@ -90,7 +90,8 @@ describe('what is still open on a credit invoice', () => {
     await req('POST', '/api/quick-vouchers', receipt({ invoiceId: first.id, amount: 60_000 }));
     expect(await settlementOf(first.id)).toMatchObject({ received: 100_000, open: 0, toCollect: 0 });
     await req('POST', '/api/quick-vouchers', receipt({ invoiceId: first.id, amount: 5_000 }));
-    expect(await settlementOf(first.id)).toMatchObject({ received: 105_000, open: 0, toCollect: 0 });
+    // (received for the invoice is never more than the invoice: the 5,000 above it is the customer's advance)
+    expect(await settlementOf(first.id)).toMatchObject({ received: 100_000, waiting: 0, open: 0, toCollect: 0 });
     // (5,000 more than the first invoice carried: the customer owes 95,000 in all, and no invoice is more open than that)
     expect(await settlementOf(second.id)).toMatchObject({ received: 0, open: 95_000, toCollect: 95_000 });
     // a receipt from the customers list is for no invoice: nothing is "received for" one, and what is open on an
@@ -135,6 +136,69 @@ describe('what is still open on a credit invoice', () => {
     expect(await settlementOf(invoice.id)).toMatchObject({ received: 4_000, open: 6_000, toCollect: 6_000 });
     await req('POST', '/api/quick-vouchers', receipt({ invoiceId: invoice.id, amount: 2_500, currency: 'USD', rateX100: 148_000 }));
     expect(await settlementOf(invoice.id)).toMatchObject({ received: 6_500, open: 3_500 });
+  });
+
+  it('a dollar invoice counts the customer\'s dollars as dollars, whatever rate each was booked at', async () => {
+    // $1,000.00 at 1,300; $500.00 received for it at today's 1,320: $500.00 is open, not what the dinars make at 1,300
+    const invoice = await posted({ currency: 'USD', rateX100: 130_000, lines: [{ itemId: item, qtyMilli: 1000, unitPrice: 100_000 }] });
+    await req('POST', '/api/quick-vouchers', receipt({ invoiceId: invoice.id, amount: 50_000, currency: 'USD', rateX100: 132_000 }));
+    expect((await req('GET', `/api/parties/${customer}`)).json()).toMatchObject({ balance: 640_000, balances: { IQD: 0, USD: 50_000 } });
+    expect(await settlementOf(invoice.id)).toMatchObject({ received: 50_000, open: 50_000, toCollect: 50_000, owed: 50_000, unsure: false });
+    await req('POST', '/api/quick-vouchers', receipt({ invoiceId: invoice.id, amount: 50_000, currency: 'USD', rateX100: 130_000 }));
+    expect(await settlementOf(invoice.id)).toMatchObject({ received: 100_000, open: 0, toCollect: 0 });
+  });
+
+  it('two dollar invoices at different rates: one paid at the other\'s rate leaves the other open in full', async () => {
+    const a = await posted({ currency: 'USD', rateX100: 130_000, lines: [{ itemId: item, qtyMilli: 1000, unitPrice: 10_000 }] });
+    const b = await posted({ currency: 'USD', rateX100: 150_000, lines: [{ itemId: item, qtyMilli: 1000, unitPrice: 10_000 }] });
+    await req('POST', '/api/quick-vouchers', receipt({ invoiceId: a.id, amount: 10_000, currency: 'USD', rateX100: 150_000 }));
+    // the books carry 130,000 dinars, which is $86.66 at B's rate: B is open by its $100.00 all the same
+    expect((await req('GET', `/api/parties/${customer}`)).json().balance).toBe(130_000);
+    expect(await settlementOf(a.id)).toMatchObject({ received: 10_000, open: 0 });
+    expect(await settlementOf(b.id)).toMatchObject({ received: 0, open: 10_000, toCollect: 10_000, owed: 10_000, unsure: false });
+  });
+
+  it('a dollar invoice with odd cents is open by all of it, and a cent not received stays open', async () => {
+    // $100.01 at 1,310 = 131,013.1 dinars, booked as 131,013: read back at the rate that is $100.00 and a bit
+    const invoice = await posted({ currency: 'USD', rateX100: 131_000, lines: [{ itemId: item, qtyMilli: 1000, unitPrice: 10_001 }] });
+    expect(invoice.settlement).toMatchObject({ total: 10_001, open: 10_001, toCollect: 10_001 });
+    await req('POST', '/api/quick-vouchers', receipt({ invoiceId: invoice.id, amount: 10_000, currency: 'USD', rateX100: 131_000 }));
+    expect(await settlementOf(invoice.id)).toMatchObject({ received: 10_000, open: 1, toCollect: 1 });
+  });
+
+  it('a revaluation of dollar balances changes no dollar owed on a dollar invoice', async () => {
+    const invoice = await posted({ currency: 'USD', rateX100: 130_000, lines: [{ itemId: item, qtyMilli: 1000, unitPrice: 10_000 }] });
+    // the dollar falls to 1,200: the customer's $100.00 is carried 10,000 dinars lower, by a dinar entry on the account
+    const reval = await req('POST', '/api/fx/revaluation', { date: TODAY, rateX100: 120_000, lang: 'en' });
+    expect(reval.statusCode, reval.body).toBe(201);
+    expect((await req('POST', `/api/entries/${reval.json().id}/check`, {})).statusCode).toBe(200);
+    expect((await req('POST', `/api/entries/${reval.json().id}/approve`, {})).statusCode).toBe(200);
+    expect((await req('GET', `/api/parties/${customer}`)).json()).toMatchObject({ balance: 120_000, balances: { IQD: -10_000, USD: 10_000 } });
+    expect(await settlementOf(invoice.id)).toMatchObject({ open: 10_000, toCollect: 10_000, owed: 10_000, unsure: false });
+  });
+
+  it('money received without naming an invoice: the books do not say which invoice it paid, and the invoice says so', async () => {
+    // as every receipt made before 1.4: the first invoice was paid from the customers list, then a second one is sold
+    const old = await posted({});
+    await req('POST', '/api/quick-vouchers', receipt({ amount: 100_000 }));
+    // the customer owes nothing: nothing can be open, though nothing is known to be received for it
+    expect(await settlementOf(old.id)).toMatchObject({ received: 0, open: 0, toCollect: 0, owed: 0, unsure: true });
+    const next = await posted({});
+    // 100,000 is owed in all and each invoice lacks 100,000: either may be the open one, neither more than the debt
+    for (const id of [old.id, next.id]) {
+      expect(await settlementOf(id)).toMatchObject({ received: 0, open: 100_000, toCollect: 100_000, owed: 100_000, unsure: true });
+    }
+    // received for the newer one from its page: that much is known, and the older one has no debt left to carry
+    await req('POST', '/api/quick-vouchers', receipt({ invoiceId: next.id, amount: 100_000 }));
+    expect(await settlementOf(next.id)).toMatchObject({ received: 100_000, open: 0, unsure: false });
+    expect(await settlementOf(old.id)).toMatchObject({ received: 0, open: 0, owed: 0, unsure: true });
+    // a debt that covers every invoice is each invoice's own
+    const other = (await req('POST', '/api/parties', { type: 'customer', name: 'Mer' })).json().id as string;
+    const one = await posted({ partyId: other });
+    const two = await posted({ partyId: other });
+    await req('POST', '/api/quick-vouchers', receipt({ partyId: other, invoiceId: one.id, amount: 30_000 }));
+    expect(await settlementOf(one.id)).toMatchObject({ received: 30_000, open: 70_000, owed: 170_000, unsure: false });
+    expect(await settlementOf(two.id)).toMatchObject({ received: 0, open: 100_000, owed: 170_000, unsure: false });
   });
 
   it('links a voucher only to a posted credit invoice of the same party and side', async () => {
@@ -231,6 +295,54 @@ describe('a cashier receives for an invoice, and a voucher that waits for approv
     expect((await req('POST', '/api/quick-vouchers', receipt({ invoiceId: theirs.id }), s.raz)).statusCode).toBe(403);
     expect((await req('POST', '/api/quick-vouchers', receipt({ invoiceId: mine.id }), s.raz)).statusCode).toBe(201);
     expect(links()).toBe(1);
+  });
+});
+
+describe('an online payment and a reader limited to a branch', () => {
+  const users = [{ username: 'raz', name: 'Raz', roles: ['sales'] }, { username: 'las', name: 'Las', roles: ['approver'] }];
+
+  it('an online payment whose receipt is still a draft waits; approved, it is received', async () => {
+    const s = await office(users);
+    const invoice = await posted({}, s.admin);
+    // as the web shop's payment is recorded: a draft receipt for a person to approve, kept with the invoice as "online"
+    const draft = (await req('POST', '/api/quick-vouchers', receipt({ amount: 100_000 }), s.raz)).json();
+    expect(draft).toMatchObject({ status: 'draft' });
+    db.prepare(`INSERT INTO invoice_payments (id, invoice_id, kind, method, account_code, amount, currency, entry_id, source, reference, created_by, created_at)
+                VALUES ('p1', ?, 'online', 'card', '1811', 100000, 'IQD', ?, 'shop', 'r1', 'Mer', ?)`).run(invoice.id, draft.id, new Date().toISOString());
+    const seen = (await req('GET', `/api/invoices/${invoice.id}`, undefined, s.admin)).json();
+    expect(seen.paidOnline).toBe(100_000);
+    expect(seen.settlement).toMatchObject({ received: 0, waiting: 100_000, open: 100_000, toCollect: 0 });
+    expect((await req('GET', `/api/parties/${customer}`, undefined, s.admin)).json().balance).toBe(100_000);
+    expect((await req('POST', `/api/entries/${draft.id}/check`, {}, s.admin)).statusCode).toBe(200);
+    expect((await req('POST', `/api/entries/${draft.id}/approve`, {}, s.admin)).statusCode).toBe(200);
+    expect(await settlementOf(invoice.id, s.admin)).toMatchObject({ received: 100_000, waiting: 0, open: 0, toCollect: 0 });
+  });
+
+  it('one limited to a branch reads what is open from their own branch: nothing of what another branch received', async () => {
+    const s = await office(users);
+    const far = (await req('POST', '/api/warehouses', { code: 'W2', name: { ar: 'مخزن', en: 'Store', ku: 'کۆگا' } }, s.admin)).json().id as string;
+    const near = (await req('POST', '/api/branches', { code: 'A', name: 'A' }, s.admin)).json().id as string;
+    const away = (await req('POST', '/api/branches', { code: 'B', name: 'B' }, s.admin)).json().id as string;
+    expect((await req('PUT', `/api/branches/${near}/warehouses`, { warehouseIds: [warehouse] }, s.admin)).statusCode).toBe(200);
+    expect((await req('PUT', `/api/branches/${near}/accounts`, { accounts: ['1811'] }, s.admin)).statusCode).toBe(200);
+    expect((await req('PUT', `/api/branches/${away}/warehouses`, { warehouseIds: [far] }, s.admin)).statusCode).toBe(200);
+    expect((await req('PUT', `/api/branches/${away}/accounts`, { accounts: ['1831'] }, s.admin)).statusCode).toBe(200);
+    const raz = ((await req('GET', '/api/users', undefined, s.admin)).json() as { id: string; username: string }[]).find((u) => u.username === 'raz')!.id;
+    expect((await req('PUT', `/api/users/${raz}/branches`, { branchIds: [near] }, s.admin)).statusCode).toBe(200);
+
+    const mine = await posted({}, s.raz);
+    // the other branch takes 70,000 from the same customer into its own safe, naming no invoice
+    expect((await req('POST', '/api/quick-vouchers', receipt({ amount: 70_000, cashAccountCode: '1831' }), s.admin)).statusCode).toBe(201);
+    expect((await req('GET', `/api/parties/${customer}`, undefined, s.raz)).json().balance).toBe(100_000);
+    expect(await settlementOf(mine.id, s.raz)).toMatchObject({ received: 0, open: 100_000, toCollect: 100_000, owed: 100_000, unsure: false });
+    expect(await settlementOf(mine.id, s.admin)).toMatchObject({ received: 0, open: 30_000, toCollect: 30_000, owed: 30_000 });
+    // and 10,000 more for this very invoice, into the other branch's safe: a voucher that is not this reader's to read
+    expect((await req('POST', '/api/quick-vouchers', receipt({ invoiceId: mine.id, amount: 10_000, cashAccountCode: '1831' }), s.admin)).statusCode).toBe(201);
+    expect(await settlementOf(mine.id, s.raz)).toMatchObject({ received: 0, waiting: 0, open: 100_000, toCollect: 100_000, owed: 100_000 });
+    expect(await settlementOf(mine.id, s.admin)).toMatchObject({ received: 10_000, open: 20_000, toCollect: 20_000, owed: 20_000 });
+    // the answer to posting an invoice is read for the one who posted it, too
+    const another = await posted({}, s.raz);
+    expect(another.settlement).toMatchObject({ open: 100_000, owed: 200_000 });
   });
 });
 

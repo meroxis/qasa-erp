@@ -608,10 +608,10 @@ export function apiRoutes(db: Db, options: { demo?: boolean; extensions?: readon
     }), req.query);
     return listInvoices(db, q);
   });
-  app.get('/api/invoices/:id', async (req) => getInvoice(db, parse(idParam, req.params).id));
+  app.get('/api/invoices/:id', async (req) => getInvoice(db, parse(idParam, req.params).id, branchOfUser(req)));
   app.post('/api/invoices', async (req, reply) => {
     const body = withoutUndefined(parse(invoiceSchema, req.body));
-    return reply.status(201).send(once(req, reply, 'POST /api/invoices', () => createInvoice(db, body, userOf(req)), (id) => getInvoice(db, id)));
+    return reply.status(201).send(once(req, reply, 'POST /api/invoices', () => createInvoice(db, body, userOf(req)), (id) => getInvoice(db, id, branchOfUser(req))));
   });
   app.put('/api/invoices/:id', async (req) => updateInvoice(db, parse(idParam, req.params).id, withoutUndefined(parse(invoiceSchema, req.body)), userOf(req)));
   app.delete('/api/invoices/:id', async (req, reply) => {
@@ -624,8 +624,9 @@ export function apiRoutes(db: Db, options: { demo?: boolean; extensions?: readon
     const body = parse(z.object({ allowExpired: z.boolean().optional(), loyaltyPoints: z.number().int().positive().max(100_000_000).optional() }), req.body ?? {});
     const { id } = parse(idParam, req.params);
     return once(req, reply, 'POST /api/invoices/:id/post',
-      () => postInvoice(db, id, userOf(req), { allowExpired: body.allowExpired === true, ...(body.loyaltyPoints ? { loyaltyPoints: body.loyaltyPoints } : {}) }),
-      (doc) => getInvoice(db, doc));
+      // (read again for the person who asked: what is open on it is theirs to read from their own branches)
+      () => getInvoice(db, postInvoice(db, id, userOf(req), { allowExpired: body.allowExpired === true, ...(body.loyaltyPoints ? { loyaltyPoints: body.loyaltyPoints } : {}) }).id, branchOfUser(req)),
+      (doc) => getInvoice(db, doc, branchOfUser(req)));
   });
   app.post('/api/invoices/:id/cancel', async (req) => {
     const body = parse(z.object({ date: isoDate.optional() }), req.body ?? {});
@@ -636,7 +637,7 @@ export function apiRoutes(db: Db, options: { demo?: boolean; extensions?: readon
   app.post('/api/invoices/:id/returns', async (req, reply) => {
     const { id } = parse(idParam, req.params);
     const body = withoutUndefined(parse(returnSchema, req.body));
-    return reply.status(201).send(once(req, reply, 'POST /api/invoices/:id/returns', () => createReturn(db, id, body, userOf(req), actorOf(req)), (doc) => getInvoice(db, doc)));
+    return reply.status(201).send(once(req, reply, 'POST /api/invoices/:id/returns', () => createReturn(db, id, body, userOf(req), actorOf(req)), (doc) => getInvoice(db, doc, branchOfUser(req))));
   });
 
   // stock documents: opening stock and transfers between warehouses

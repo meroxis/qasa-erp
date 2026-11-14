@@ -20,7 +20,7 @@ import { addRefusal, cartShortNote, cashChange, cashTender, changeLineUnit, chos
 import { inUnits, salePriceFor, unitChoices, unitLabel, type LineUnit } from '../industry/units.ts';
 import { BatchPick, useExpiredConfirm } from '../industry/BatchFields.tsx';
 import { pharmacyApi, type MedicineView } from '../industry/pharmacy-api.ts';
-import { RxTick, useControlledPrompt, useRxItems } from '../industry/PharmacyPrompts.tsx';
+import { RxTick, useControlledPrompt, usePharmacyOn, useRxItems } from '../industry/PharmacyPrompts.tsx';
 import { printAlone, printDocument } from '../industry/printing.ts';
 import { receiptMessage, withAttachment } from '../industry/WhatsAppShare.tsx';
 import { WhatsAppSendButton } from '../industry/WhatsAppSend.tsx';
@@ -270,8 +270,7 @@ function Register({ initial, onClosed }: { initial: ShiftView; onClosed(): void 
   })), [items]);
 
   // a pharmacy (Pro): the search also finds medicines by their generic name, and a tile shows it with the shelf
-  const { plan, settings: companySettings } = useData();
-  const pharmacy = !!plan?.features.includes('pharmacy') && !!companySettings?.businessTypes?.includes('pharmacy');
+  const pharmacy = usePharmacyOn();
   const [medicines, setMedicines] = useState<Map<string, MedicineView>>(new Map());
   const controlled = useControlledPrompt();
   const rxItems = useRxItems(pharmacy);

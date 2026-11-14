@@ -1,9 +1,9 @@
-import { useState, type ReactNode } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 import { formatAmount, todayIso } from '@qasa/core';
 import { briefApi, type AgingRowView, type GroupSalesView } from '../industry/brief-api.ts';
 import { ErrorBox, Icon, downloadCsv, useData, useLoad, usePageNav } from '../components.tsx';
 import { useI18n, type I18n, type Key } from '../i18n.ts';
-import { go } from '../router.ts';
+import { go, href } from '../router.ts';
 import { PeriodPicker } from './Reports.tsx';
 
 /**
@@ -33,6 +33,10 @@ export function MoreReports({ tab: asked = 'sales-items' }: { tab?: ReportTab })
   const books = useData().seesBooks !== false;
   const tabs = reportTabsFor(books);
   const tab: ReportTab = tabs.includes(asked) ? asked : 'sales-items';
+  // a typed address of a report that is not this person's: the address is replaced too, so it never names a closed
+  // report (and Back does not return to it)
+  const closed = !tabs.includes(asked);
+  useEffect(() => { if (closed) window.location.replace(href('reports-more/sales-items')); }, [closed]);
   const [from, setFrom] = useState(monthStart());
   const [to, setTo] = useState(todayIso());
   const dated = tab === 'aging' || tab === 'supplier-aging' || tab === 'stock-value';
@@ -285,6 +289,8 @@ function Aging({ type, date }: { type: 'customer' | 'supplier'; date: string }) 
               <th className="amount">{i18n.money(total, 'IQD')}</th><th />
             </tr></tfoot>
           </table>
+          {/* (an invoice says what was received for it; this report ages the party's whole debt, oldest first) */}
+          <p className="muted small" style={{ margin: '8px 16px 12px' }}>{t('br_agingRule')}</p>
         </Card>
       ))}
     </>

@@ -7,7 +7,8 @@ import { href } from '../router.ts';
 import { useRatePrefill } from './fx-prefill.ts';
 import { holdKey, type HeldKey } from './outbox.ts';
 import {
-  amountAfterCurrency, amountInIqd, balanceAfter, boardRateFills, formBalance, formBalanceAfter, invoiceNote, invoicePrefill, mayQuickVoucher, parseRateText, quickNotice, quickOutcome,
+  amountAfterCurrency, amountInIqd, balanceAfter, boardRateFills, formBalance, formBalanceAfter, invoiceNote, invoicePrefill, mayQuickVoucher, overInvoice, parseRateText, quickNotice,
+  quickOutcome,
   type QuickKind, type QuickVoucherPreset
 } from './quick-voucher.ts';
 
@@ -89,6 +90,8 @@ export function QuickVoucherForm({ kind, preset, onClose, onDone }: { kind: Quic
   // paid more than is owed in all: by the whole position, whatever currency the balance is shown in
   const netAfter = party ? balanceAfter(party.balance, amount, currency, rateX100) : null;
   const ready = !!party && amountInIqd(amount, currency, rateX100) !== null && !!cashAccount && !!date;
+  // more than is open on the invoice: the invoice takes no more than its own, the rest is the party's advance
+  const extra = invoice && !again ? overInvoice(amount, currency, rateX100, invoice) : null;
   // not posted as it is saved: "Remaining after" is the balance once it is approved, and the form says so
   const notice = quickNotice(approval);
 
@@ -125,7 +128,7 @@ export function QuickVoucherForm({ kind, preset, onClose, onDone }: { kind: Quic
         {again && <div className="alert info small">{t('s14_againHelp')}</div>}
         {settled && (
           <div className="alert info small" role="status">
-            {invoice.waiting ? t('s14_invoiceWaits', { amount: i18n.money(invoice.waiting, invoice.currency) }) : t('s14_invoiceSettled')}
+            {invoice.waiting ? t('s14_invoiceWaits', { amount: i18n.money(invoice.waiting, invoice.currency) }) : t(kind === 'receipt' ? 's14_invoiceSettled' : 's14_invoiceSettledPay')}
           </div>
         )}
         <div className="field">
@@ -165,6 +168,7 @@ export function QuickVoucherForm({ kind, preset, onClose, onDone }: { kind: Quic
             <span>{t('s14_balanceAfter')}</span><strong className="num" style={{ fontSize: 18 }}>{after === null ? '—' : i18n.money(after, before.currency)}</strong>
           </div>
         )}
+        {extra !== null && <div className="alert info small" role="status">{t(kind === 'receipt' ? 's14_overInvoice' : 's14_overInvoicePay', { extra: i18n.money(extra, currency) })}</div>}
         {netAfter !== null && netAfter < 0 && <div className="alert warn small">{t('s14_overpaid')}</div>}
         {notice && <div className="alert info small">{t(notice)}</div>}
         <ErrorBox error={error} />

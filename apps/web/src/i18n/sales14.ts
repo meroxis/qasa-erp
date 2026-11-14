@@ -59,6 +59,22 @@ export const SALES14_TEXT = {
     'Nothing is left on this invoice. If money is taken all the same, type the amount: it goes on the account.',
     'هیچ شتێک لەسەر ئەم پسوولەیە نەماوە. ئەگەر لەگەڵ ئەوەشدا پارە وەردەگیرێت، بڕەکەی بنووسە: دەچێتە سەر هەژمارەکەی.'
   ],
+  s14_invoiceSettledPay: [
+    'لم يبقَ شيء على هذه الفاتورة. إن دفعت مبلغاً مع ذلك فاكتبه، ويُقيَّد على الحساب.',
+    'Nothing is left on this invoice. If money is paid all the same, type the amount: it goes on the account.',
+    'هیچ شتێک لەسەر ئەم پسوولەیە نەماوە. ئەگەر لەگەڵ ئەوەشدا پارە دەدرێت، بڕەکەی بنووسە: دەچێتە سەر هەژمارەکەی.'
+  ],
+  // an amount typed above what is open on the invoice: said before saving
+  s14_overInvoice: [
+    'المبلغ أكبر من المتبقي على هذه الفاتورة بـ {extra}: الزيادة تبقى في حساب الزبون دفعةً مقدَّمة.',
+    '{extra} more than is still open on this invoice: the extra stays on the customer’s account as an advance.',
+    'پارەکە {extra} لەوەی لەسەر ئەم پسوولەیە ماوە زیاترە: زیادەکە وەک پێشەکی لەسەر هەژماری کڕیار دەمێنێتەوە.'
+  ],
+  s14_overInvoicePay: [
+    'المبلغ أكبر من المتبقي على هذه الفاتورة بـ {extra}: الزيادة تبقى في حساب المجهز دفعةً مقدَّمة.',
+    '{extra} more than is still open on this invoice: the extra stays on the supplier’s account as an advance.',
+    'پارەکە {extra} لەوەی لەسەر ئەم پسوولەیە ماوە زیاترە: زیادەکە وەک پێشەکی لەسەر هەژماری دابینکەر دەمێنێتەوە.'
+  ],
   s14_invoiceWaits: [
     'لم يبقَ ما يُطلب على هذه الفاتورة: {amount} بانتظار الموافقة.',
     'Nothing is left to ask for on this invoice: {amount} waits for approval.',
@@ -69,6 +85,25 @@ export const SALES14_TEXT = {
   s14_invWaiting: ['بانتظار الموافقة', 'Waiting for approval', 'چاوەڕێی پەسەندکردن'],
   s14_invOpen: ['المتبقي عليها', 'Still open', 'ماوە لەسەری'],
   s14_invNothingOpen: ['لم يبقَ عليها شيء', 'Nothing left on it', 'هیچی لەسەر نەماوە'],
+  // money was received without naming an invoice: the books do not say which invoice it paid, and the page says so
+  s14_invOpenUpTo: ['المتبقي عليها، بحد أقصى', 'Still open on this invoice, up to', 'ماوە لەسەر ئەم پسوولەیە، ئەوپەڕی'],
+  s14_invUnsure: [
+    'على الزبون {owed} إجمالاً. استُلمت مبالغ دون تحديد فاتورة، فقد تكون هذه الفاتورة مدفوعة.',
+    'The customer owes {owed} in all. Some money was received without naming an invoice, so this invoice may already be paid.',
+    'کڕیار بە گشتی {owed} قەرزارە. هەندێک پارە بەبێ دیاریکردنی پسوولە وەرگیراوە، بۆیە لەوانەیە ئەم پسوولەیە درابێت.'
+  ],
+  s14_invUnsureSupplier: [
+    'علينا للمجهز {owed} إجمالاً. دُفعت مبالغ دون تحديد فاتورة، فقد تكون هذه الفاتورة مدفوعة.',
+    'We owe the supplier {owed} in all. Some money was paid without naming an invoice, so this invoice may already be paid.',
+    'بە گشتی {owed} قەرزاری دابینکەرین. هەندێک پارە بەبێ دیاریکردنی پسوولە دراوە، بۆیە لەوانەیە ئەم پسوولەیە درابێت.'
+  ],
+  s14_invNoDebt: ['لا دين على هذا الزبون', 'Nothing owed by this customer', 'ئەم کڕیارە هیچ قەرزی لەسەر نییە'],
+  s14_invNoDebtSupplier: ['لا دين علينا لهذا المجهز', 'Nothing owed to this supplier', 'هیچ قەرزی ئەم دابینکەرەمان لەسەر نییە'],
+  s14_invAging: [
+    'تقارير أعمار الديون تحتسب المدفوعات على أقدم دين أولاً، فقد تختلف الأعمار فيها عمّا تُظهره هذه الفاتورة.',
+    'Aging reports count payments against the oldest debt first, so the ages there can differ from what this invoice shows.',
+    'ڕاپۆرتەکانی تەمەنی قەرز پارەدانەکان لە کۆنترین قەرزەوە دەژمێرن، بۆیە لەوانەیە تەمەنەکانی ئەوێ لەوەی ئەم پسوولەیە پیشانی دەدات جیاواز بن.'
+  ],
   s14_forInvoice: ['عن الفاتورة {n}', 'For invoice {n}', 'بۆ پسوولەی {n}'],
   s14_posted: ['رُحّل السند {n}', 'Voucher {n} posted', 'سەنەدی {n} تەرحیل کرا'],
   s14_savedWaiting: ['حُفظ السند وهو بانتظار الموافقة.', 'Saved. It waits for approval.', 'پاشەکەوت کرا و چاوەڕێی پەسەندکردنە.'],
@@ -170,5 +205,10 @@ export const SALES14_TEXT = {
   s14_needWaiting: ['{n} بانتظار الموافقة', '{n} waiting for approval', '{n} چاوەڕێی پەسەندکردن'],
   s14_saveApprove: ['حفظ واعتماد', 'Save and approve', 'پاشەکەوت و پەسەندکردن'],
   s14_saveSend: ['حفظ وإرسال للموافقة', 'Save and send for approval', 'پاشەکەوت و ناردن بۆ پەسەندکردن'],
+  err_invoice_invalid: [
+    'هذه الفاتورة لم تعد مفتوحة للدفع: أُلغيت أو تغيّرت. أغلق هذا النموذج وابدأ من سطر الزبون أو المجهز.',
+    'This invoice is no longer open for payment: it was cancelled or changed. Close this form and start again from the customer’s or supplier’s row.',
+    'ئەم پسوولەیە چیتر بۆ پارەدان کراوە نییە: هەڵوەشێنراوەتەوە یان گۆڕاوە. ئەم فۆڕمە دابخە و لە ڕیزی کڕیار یان دابینکەرەوە دەست پێ بکەوە.'
+  ],
   err_reject_reason_required: ['اكتب سبب الرفض (حتى 300 حرف).', 'Write the reason (up to 300 characters).', 'هۆکاری ڕەتکردنەوە بنووسە (تا 300 پیت).']
 } as const satisfies Record<string, readonly [string, string, string]>;

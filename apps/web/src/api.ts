@@ -390,7 +390,13 @@ export interface InvoiceView extends InvoiceSummary {
    * books, what waits for approval, what is still open on it, and what is left to ask for (open less what waits).
    * Null for any other invoice; left out by an older server, and for a purchase read without the books.
    */
-  settlement?: { currency: CurrencyCode; total: number; returned: number; received: number; waiting: number; open: number; toCollect: number } | null;
+  settlement?: {
+    currency: CurrencyCode; total: number; returned: number; received: number; waiting: number; open: number; toCollect: number;
+    /** what the party owes in all, in the invoice's currency (left out by a server from before) */
+    owed?: number;
+    /** money was received without naming an invoice, and the party owes less than its invoices lack: `open` is "at most" */
+    unsure?: boolean;
+  } | null;
   /** 1.4: a till's cash sale: the cash handed over and the change given back, when it was typed at the till */
   tender?: { paid: number; change: number };
 }

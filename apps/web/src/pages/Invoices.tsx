@@ -638,6 +638,37 @@ const INVOICE_NAV: Record<InvoiceDocKind, PageNav> = {
   purchase_return: { key: 'purchaseReturns', group: 'gPurchases' }
 };
 
+/**
+ * A credit invoice: what was received for it (paid, on a purchase), what waits for approval and what is still open.
+ * "Received for it" is only money known to be for this invoice. Money received without naming an invoice (every
+ * receipt from before 1.4, one from the customers list, a cheque) is on the account only, and the books do not say
+ * which invoice it paid: then the page says "up to" and what the party owes in all, or that the party owes nothing,
+ * never a bare "still open".
+ */
+function SettlementLines({ settlement: s, saleSide }: { settlement: NonNullable<InvoiceView['settlement']>; saleSide: boolean }) {
+  const i18n = useI18n();
+  const { t } = i18n;
+  // what the invoice itself still lacks, whatever the party owes
+  const lacks = Math.max(0, s.total - s.returned) - s.received;
+  const unsure = s.unsure === true && s.open > 0;
+  return (
+    <>
+      {s.received > 0 && <><span className="muted small">{t(saleSide ? 's14_invReceived' : 's14_invPaid')}</span><span className="num small">{i18n.money(s.received, s.currency)}</span></>}
+      {s.waiting > 0 && <><span className="muted small">{t('s14_invWaiting')}</span><span className="num small">{i18n.money(s.waiting, s.currency)}</span></>}
+      {s.open > 0
+        ? <><span className="small" style={{ fontWeight: 700 }}>{t(unsure ? 's14_invOpenUpTo' : 's14_invOpen')}</span><strong className="num small">{i18n.money(s.open, s.currency)}</strong></>
+        : <><span className="muted small">{t('s14_invOpen')}</span><span className="small muted">{t(lacks > 0 ? (saleSide ? 's14_invNoDebt' : 's14_invNoDebtSupplier') : 's14_invNothingOpen')}</span></>}
+      {(unsure || s.received > 0) && (
+        // (one cell across both columns, the last of the totals: plain text, not a number)
+        <div className="muted small no-print" style={{ gridColumn: '1 / -1', justifySelf: 'stretch', textAlign: 'start', fontFamily: 'inherit', maxInlineSize: 360 }}>
+          {unsure && <div role="note">{t(saleSide ? 's14_invUnsure' : 's14_invUnsureSupplier', { owed: i18n.money(s.owed ?? s.open, s.currency) })}</div>}
+          <div>{t('s14_invAging')}</div>
+        </div>
+      )}
+    </>
+  );
+}
+
 export function InvoiceDetail({ id }: { id: string }) {
   const i18n = useI18n();
   const { t } = i18n;
@@ -828,13 +859,7 @@ export function InvoiceDetail({ id }: { id: string }) {
               <span className="muted small">{t('pos_change')}</span><span className="num small">{i18n.money(v.tender.change, v.currency)}</span>
             </>}
             {/* a credit invoice: what was received for it (paid, on a purchase), what waits for approval, what is still open */}
-            {v.settlement && <>
-              {v.settlement.received > 0 && <><span className="muted small">{t(saleSide ? 's14_invReceived' : 's14_invPaid')}</span><span className="num small">{i18n.money(v.settlement.received, v.currency)}</span></>}
-              {v.settlement.waiting > 0 && <><span className="muted small">{t('s14_invWaiting')}</span><span className="num small">{i18n.money(v.settlement.waiting, v.currency)}</span></>}
-              {v.settlement.open > 0
-                ? <><span className="small" style={{ fontWeight: 700 }}>{t('s14_invOpen')}</span><strong className="num small">{i18n.money(v.settlement.open, v.currency)}</strong></>
-                : <><span className="muted small">{t('s14_invOpen')}</span><span className="small muted">{t('s14_invNothingOpen')}</span></>}
-            </>}
+            {v.settlement && <SettlementLines settlement={v.settlement} saleSide={saleSide} />}
           </div>}
         </div>
 
