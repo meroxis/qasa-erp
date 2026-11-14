@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs';
 import { describe, expect, it, vi } from 'vitest';
 import type { ReactNode } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
@@ -189,6 +190,28 @@ describe('where the data is', () => {
     const eastern = makeI18n('ar', 'eastern', () => {}, () => {});
     expect(dataPlaceLine(eastern.t, place)).toContain('192.168.1.20');
     expect(wrap(<DataPlaceCard place={null} />)).toBe('');
+  });
+
+  it('keeps the guide link of the client\'s backups beside its note, so no head row holds the link alone (1.4.1)', () => {
+    const place: DataPlace = { kind: 'office', host: '192.168.1.20', relay: false };
+    const html = wrap(<ClientBackupCard place={place} />);
+    // the head holds only the heading (not drawn under Settings → Backups, where it repeats the section's name)
+    expect(html).toMatch(/<div class="card-head"><h2>[^<]*<\/h2><\/div>/);
+    expect(html.indexOf('backups-restore-and-companies')).toBeGreaterThan(html.indexOf('role="status"'));
+  });
+
+  it('speaks of the office PC\'s free month in the tour on a connected PC, never of "this PC" (1.4.1)', () => {
+    for (const lang of LANGS) {
+      const office = textOf(lang, 'tour_planTrialOffice', { d: '2026-12-14' });
+      expect(office).toContain('2026-12-14');
+      expect(office).not.toBe(textOf(lang, 'tour_planTrial', { d: '2026-12-14' }));
+    }
+    expect(textOf('en', 'tour_planTrialOffice', { d: 'x' })).not.toMatch(/this PC/);
+    expect(textOf('ar', 'tour_planTrialOffice', { d: 'x' })).not.toContain('هذا الحاسوب');
+    expect(textOf('ku', 'tour_planTrialOffice', { d: 'x' })).not.toContain('ئەم کۆمپیوتەرە');
+    const app = readFileSync(new URL('../App.tsx', import.meta.url), 'utf8');
+    expect(app).toContain("office={dataPlace?.kind === 'office'}");
+    expect(readFileSync(new URL('./Tour.tsx', import.meta.url), 'utf8')).toContain("t(office ? 'tour_planTrialOffice' : 'tour_planTrial'");
   });
 
   it('names no File menu and no company file of its own in a browser on the office network: only the Windows app has them', () => {

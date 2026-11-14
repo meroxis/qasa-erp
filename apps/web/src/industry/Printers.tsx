@@ -120,6 +120,7 @@ export function PrintersCardView({ desktop, printers, choices, busy, error, onCh
               const suggestion = printer === null ? suggestedChoice(kind, printers) : null;
               const suggested = suggestion && (printers ?? []).find((p) => p.name === suggestion.printer);
               const chosen = (printers ?? []).find((p) => p.name === printer);
+              const toFile = chosen?.guess === 'file';
               // what the list says beside a printer's name: Windows' default, and offline when Windows says so
               const optionLabel = (p: PrinterInfo) => [p.displayName, p.isDefault ? t('s14_prnDefault') : '', p.state === 'offline' ? t('s14_prnOffline') : ''].filter(Boolean).join(' — ');
               // each kind takes two rows: its printer, paper, copies and test page, then its margins as rectangles
@@ -164,7 +165,9 @@ export function PrintersCardView({ desktop, printers, choices, busy, error, onCh
                     </select>
                   </td>
                   <td>
-                    <input type="checkbox" aria-label={`${t('prn_silent')} — ${label}`} checked={!!c?.silent} disabled={off} onChange={(e) => set({ silent: e.target.checked })} />
+                    {/* 1.4.1: a printer that saves a file always asks where to save it: "without asking" can't be */}
+                    <input type="checkbox" aria-label={`${t('prn_silent')} — ${label}`} checked={!!c?.silent && !toFile} disabled={off || toFile}
+                      title={toFile ? t('prn_silentFile') : undefined} onChange={(e) => set({ silent: e.target.checked })} />
                   </td>
                   <td>
                     <button type="button" className="btn small" disabled={busy !== null} onClick={() => onTest(kind)}><Icon name="printer" size={14} />{t('prn_test')}</button>

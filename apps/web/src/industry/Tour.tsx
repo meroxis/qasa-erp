@@ -25,7 +25,7 @@ const INDUSTRY: readonly BusinessType[] = ['realEstate', 'mobileShop', 'autoPart
  * The welcome tour: a few short steps with a spotlight on the real screen. Shown once per person after the company says
  * what it does; skip with "Skip" or Esc at any step; opened again from Help & support or Ctrl+K.
  */
-export function Tour({ user, businessTypes, onClose }: { user: string; businessTypes: readonly BusinessType[]; onClose(): void }) {
+export function Tour({ user, businessTypes, office = false, onClose }: { user: string; businessTypes: readonly BusinessType[]; office?: boolean; onClose(): void }) {
   const i18n = useI18n();
   const { t } = i18n;
   const { plan } = useData();
@@ -105,7 +105,8 @@ export function Tour({ user, businessTypes, onClose }: { user: string; businessT
 
   const p = plan?.plan ?? 'free';
   const onTrial = plan?.source === 'trial' && plan.trialActive;
-  const planText = onTrial && plan?.trialEnds ? t('tour_planTrial', { d: i18n.date(plan.trialEnds) }) : t(`tour_plan_${p}` as Key);
+  // (1.4.1: a PC connected to the office PC works on that PC's plan, so the tour never says "this PC" there)
+  const planText = onTrial && plan?.trialEnds ? t(office ? 'tour_planTrialOffice' : 'tour_planTrial', { d: i18n.date(plan.trialEnds) }) : t(`tour_plan_${p}` as Key);
 
   return (
     <div className="tour no-print" onKeyDown={onKey}>

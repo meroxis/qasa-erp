@@ -596,7 +596,18 @@ const printing = printingHandlers({
     mkdirSync(app.getPath('userData'), { recursive: true });
     writeFileSync(printersFile(), text);
   },
-  log
+  log,
+  // 1.4.1: white behind the page while it prints (the window's dark or grey colour came out in the page margins), and a
+  // minimized window back on the screen when the print window or a "Save as" box is to show over it
+  prepare: (shows) => {
+    const w = win && !win.isDestroyed() ? win : null;
+    if (!w) return () => {};
+    if (shows && w.isMinimized()) w.restore();
+    w.setBackgroundColor(PRINT_BACKGROUND);
+    return () => { if (!w.isDestroyed()) w.setBackgroundColor(windowBackground()); };
+  },
+  // (the colour reaches the page's renderer a moment later)
+  prepareWaitMs: 120
 });
 ipcMain.handle('printers:list', (event, fresh: unknown) => printing.list(event, fresh === true));
 ipcMain.handle('printers:get', (event) => printing.get(event));
@@ -822,6 +833,8 @@ function useTheme(next: ThemeSource): void {
 }
 /** The window's colour before the page paints, so it never flashes white in dark mode. */
 const windowBackground = () => (nativeTheme.shouldUseDarkColors ? '#11151C' : '#EDF0F5');
+/** The window's colour while it prints: paper white, whatever the theme. */
+const PRINT_BACKGROUND = '#FFFFFF';
 
 /** The app's language is in the window; a copy here lets the dialogs before the window (at start) use it too. */
 const languageFile = () => join(app.getPath('userData'), 'language.json');

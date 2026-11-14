@@ -174,8 +174,13 @@ export function ClientBackupCard({ place }: { place: DataPlace }) {
   const { t } = useI18n();
   return (
     <div className="card pad stack" data-client-backups>
-      <div className="card-head"><h2>{t('bkTitle')}</h2><GuideLink slug="backups-restore-and-companies" /></div>
-      <div className="alert info" role="status">{officeText(t, place, 's14_bkClient')}</div>
+      {/* 1.4.1: the guide link sits beside the note; under Settings → Backups the heading only repeats the section's
+          name and is not drawn, and a head row holding the link alone looked empty */}
+      <div className="card-head"><h2>{t('bkTitle')}</h2></div>
+      <div className="row" style={{ alignItems: 'flex-start', gap: 8 }}>
+        <div className="alert info" role="status" style={{ flex: 1 }}>{officeText(t, place, 's14_bkClient')}</div>
+        <GuideLink slug="backups-restore-and-companies" />
+      </div>
     </div>
   );
 }

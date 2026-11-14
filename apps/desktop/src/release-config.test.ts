@@ -713,7 +713,12 @@ describe('the release notes and the Store "What\'s new" of this version', () => 
     for (const lang of ['ar', 'en', 'ku'] as const) expect(section(lang), lang).toMatch(/Approver|المصادق|پەسەندکەر/);
     expect(section('en')).toContain('Users who may approve vouchers, and companies with the setting off, work as before.');
     // the app's own rule (journal.ts) and its Kurdish words for the job's deposit and the unit's deposit
-    expect(read('packages/server/src/journal.ts')).toContain("return vouchersNeedApproval(db) && !actor.permissions.includes('entries.approve');");
+    expect(read('packages/server/src/journal.ts')).toContain("return vouchersNeedApproval(db) && !approvesOwn(db, { id: null, name: '', mayApprove: actor.permissions.includes('entries.approve') });");
+    // under "Separate duties" an approver's own receipt waits too, and the notes say so with the setting's own name
+    expect(read('apps/web/src/i18n.ts')).toContain("separateDutiesTitle: ['فصل المهام', 'Separate duties', 'جیاکردنەوەی ئەرکەکان']");
+    expect(section('en')).toContain('Under **Separate duties**, an approver’s own receipt waits too, for someone else to approve.');
+    expect(section('ar')).toContain('ومع **فصل المهام** ينتظر سند القبض الذي ينظّمه المصادق نفسه أيضاً');
+    expect(section('ku')).toContain('لەگەڵ **جیاکردنەوەی ئەرکەکان**، سەنەدی وەرگرتنی خودی پەسەندکەریش چاوەڕێ دەکات');
     expect(section('ku')).toContain('پێشەکیی کار');
     expect(section('ku')).toContain('عەرەبوونی گرتنی یەکە');
     expect(store['en-us'].releaseNotes).toContain('also waits, and counts only once approved; a rejected one leaves it unpaid.');
@@ -730,6 +735,24 @@ describe('the release notes and the Store "What\'s new" of this version', () => 
     expect(read('apps/web/src/i18n/labels.ts')).toContain("pd_title: ['تصميم الطباعة', 'Print design', 'دیزاینی چاپ']");
     for (const [lang, name] of [['en', '**Print design**'], ['ar', '**تصميم الطباعة**'], ['ku', '**دیزاینی چاپ**']] as const) expect(section(lang), lang).toContain(name);
     expect(notes).not.toMatch(/Toyota|تويوتا|تۆیۆتا/);
+  });
+
+  it('names what the hands-on test of 1.4.0 found in printing, in the words of Settings → Printers, and in the Store text', () => {
+    const words = read('apps/web/src/i18n/printers.ts');
+    expect(words).toContain("prn_title: ['الطابعات', 'Printers', 'چاپکەرەکان']");
+    expect(words).toContain("prn_silent: ['الطباعة دون سؤال', 'Print without asking', 'چاپ بێ پرسیار']");
+    expect(words).toContain("prn_testTitle: ['صفحة تجربة الطابعة', 'Printer test page', 'پەڕەی تاقیکردنەوەی چاپکەر']");
+    expect(section('en')).toContain('no longer puts a dark or grey frame in the page margins');
+    expect(section('en')).toContain('no longer start with a blank page');
+    expect(section('en')).toContain('**Print without asking** is not offered for such a printer');
+    expect(section('ar')).toContain('**الطباعة دون سؤال**');
+    expect(section('ar')).toContain('**صفحة تجربة الطابعة**');
+    expect(section('ku')).toContain('**چاپ بێ پرسیار**');
+    expect(section('ku')).toContain('**پەڕەی تاقیکردنەوەی چاپکەر**');
+    for (const lang of ['en-us', 'ar', 'ku-arab'] as const) expect(store[lang].releaseNotes, lang).toContain('Microsoft Print to PDF');
+    // the fixes the notes tell are in the app (printing.ts, main.ts, pos.css, styles.css)
+    expect(read('apps/desktop/src/main.ts')).toContain("const PRINT_BACKGROUND = '#FFFFFF';");
+    expect(read('apps/web/src/pos.css')).toContain('body.pos-printing > #root { display: none !important; }');
   });
 
   it('writes Kurdish with the app\'s words and no tatweel, and English with one apostrophe', () => {

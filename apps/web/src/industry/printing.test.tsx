@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs';
 import { describe, expect, it, vi } from 'vitest';
 import {
   afterPaint, desktopPrinters, outcomeOf, printAlone, printDocument, printersOf, saveChoice, type AlonePage, type DesktopPrinters, type PrintNotice
@@ -228,6 +229,18 @@ describe('printing one part of the page alone', () => {
     expect(await first).toBe('printed');
     p.runTimers();
     expect(p.classes.size).toBe(0);
+  });
+
+  it('leaves the app\'s root, a page high, off the paper, so the receipt and the test page start on the first page (1.4.1)', () => {
+    const styles = readFileSync(new URL('../styles.css', import.meta.url), 'utf8');
+    const pos = readFileSync(new URL('../pos.css', import.meta.url), 'utf8');
+    expect(styles).toContain('html, body, #root { height: 100%; }');
+    expect(styles).toContain('body.print-testing > #root { display: none !important; }');
+    expect(pos).toContain('body.pos-printing > #root { display: none !important; }');
+    // the parts that print alone are put straight into <body>, outside the root
+    for (const file of ['../pages/Pos.tsx', '../pages/Generators.tsx', './Printers.tsx']) {
+      expect(readFileSync(new URL(file, import.meta.url), 'utf8'), file).toContain('document.body');
+    }
   });
 });
 

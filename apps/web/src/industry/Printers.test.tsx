@@ -62,6 +62,22 @@ describe('Settings → Printers', () => {
     expect(row).not.toContain('<option value="6">');
   });
 
+  it('never offers "Print without asking" for a printer that saves a file: it always asks where to save, in each language (1.4.1)', () => {
+    for (const lang of LANGS) {
+      const pdf = [...printers, { name: 'Microsoft Print to PDF', displayName: 'Microsoft Print to PDF', guess: 'file' as const }];
+      const html = wrap(view({ printers: pdf, choices: { ...choices, receipt: { ...choices.receipt!, printer: 'Microsoft Print to PDF' } } }), lang);
+      const row = html.slice(html.indexOf('data-kind="receipt"'), html.indexOf('data-margins="receipt"'));
+      const box = row.match(/<input type="checkbox"[^>]*>/)![0];
+      expect(box).toContain('disabled=""');
+      expect(box).not.toContain('checked=""');
+      expect(box).toContain(`title="${esc(textOf(lang, 'prn_silentFile'))}"`);
+      // a paper printer keeps it
+      const paper = wrap(view(), lang);
+      const receipt = paper.slice(paper.indexOf('data-kind="receipt"'), paper.indexOf('data-margins="receipt"'));
+      expect(receipt.match(/<input type="checkbox"[^>]*>/)![0]).not.toContain('disabled=""');
+    }
+  });
+
   it('keeps paper, margins, copies and silence off while a kind asks every time', () => {
     const html = wrap(view(), 'en');
     const row = html.slice(html.indexOf('data-kind="invoice"'), html.indexOf('data-kind="voucher"'));
@@ -115,7 +131,8 @@ describe('Settings → Printers', () => {
     const css = readFileSync(new URL('../styles.css', import.meta.url), 'utf8');
     expect(css).toContain('.printers-table select { min-inline-size: 4.5em; }');
     expect(css).toContain('.printers-table tr.printers-kind > td:nth-child(2) select { min-inline-size: 11em; }');
-    expect(css).toContain('.printers-table tr.printers-kind > td:nth-child(3) select { min-inline-size: 11.5em; }');
+    // (1.4.1: wide enough for "Printer’s usual paper" whole, as the hands-on test found it cut)
+    expect(css).toContain('.printers-table tr.printers-kind > td:nth-child(3) select { min-inline-size: 13em; }');
     expect(css).toContain('.printers-table td:first-child { min-inline-size: 10.5em; }');
     // the columns are the printer (2), the paper (3) and the copies (4), as the rules above count them
     const html = wrap(view(), 'en');

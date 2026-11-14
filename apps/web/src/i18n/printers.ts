@@ -44,6 +44,11 @@ export const PRINTER_TEXT = {
   prn_margins_minimum: ['أصغر ما يمكن', 'Minimum', 'کەمترین'],
   prn_copies: ['عدد النسخ', 'Copies', 'ژمارەی کۆپی'],
   prn_silent: ['الطباعة دون سؤال', 'Print without asking', 'چاپ بێ پرسیار'],
+  prn_silentFile: [
+    'هذه الطابعة تحفظ ملفاً، فتسأل دائماً أين يُحفظ.',
+    'This printer saves a file, so it always asks where to save it.',
+    'ئەم چاپکەرە فایل پاشەکەوت دەکات، بۆیە هەمیشە دەپرسێت لە کوێ پاشەکەوتی بکات.'
+  ],
   prn_test: ['صفحة تجربة', 'Test page', 'پەڕەی تاقیکردنەوە'],
   prn_testSent: ['أُرسلت صفحة التجربة إلى {p}.', 'The test page went to {p}.', 'پەڕەی تاقیکردنەوە نێردرا بۆ {p}.'],
   prn_saved: ['حُفظ اختيار الطابعة', 'Printer choice saved', 'هەڵبژاردنی چاپکەر پاشەکەوت کرا'],

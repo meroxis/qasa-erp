@@ -73,6 +73,8 @@
 @page receipt { size: auto; margin: 2mm; }
 @media print {
   body.pos-printing .app, body.pos-printing .toast, body.pos-printing .backdrop { display: none !important; }
+  /* 1.4.1: the app's root is a page high (height: 100%), so even empty it filled a blank first page before the receipt */
+  body.pos-printing > #root { display: none !important; }
   body.pos-printing .pos-receipt-host { display: block; }
   .pos-receipt { page: receipt; width: 72mm; margin: 0 auto; color: #000; font-size: 11pt; line-height: 1.35; }
   .pos-receipt .small { font-size: 9pt; }
