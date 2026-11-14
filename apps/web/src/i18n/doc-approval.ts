@@ -25,5 +25,10 @@ export const DOC_APPROVAL_TEXT = {
     'عربون على هذه الوحدة بانتظار الموافقة: وافق عليه أو ارفضه أولاً.',
     'A deposit on this unit waits for approval: approve or reject it first.',
     'عەرەبوونێک لەسەر ئەم یەکەیە چاوەڕێی پەسەندکردنە: سەرەتا پەسەندی بکە یان ڕەتی بکەرەوە.'
+  ],
+  err_job_receipt_waiting: [
+    'سند قبض لهذا العمل بانتظار الموافقة: وافق عليه أو ارفضه قبل البيع.',
+    'A receipt for this job waits for approval: approve or reject it before the sale.',
+    'سەنەدی وەرگرتنێک بۆ ئەم کارە چاوەڕێی پەسەندکردنە: پێش فرۆشتن پەسەندی بکە یان ڕەتی بکەرەوە.'
   ]
 } as const satisfies Record<string, readonly [string, string, string]>;

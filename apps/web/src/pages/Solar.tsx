@@ -527,7 +527,11 @@ export function SolarSystem({ id }: { id: string }) {
         <span className="spacer" />
         <a className="btn" href={href(`job/${j.id}`)}><Icon name="swap" size={16} />{t('sl_openJob')}</a>
         {j.status !== 'cancelled' && can('solarSystem') && <button type="button" className="btn" onClick={() => setModal('equipment')}><Icon name="plus" size={16} />{t('sl_addEquipment')}</button>}
-        {j.actions.includes('invoice') && <button type="button" className="btn primary" onClick={() => setModal('sell')}><Icon name="invoice" size={16} />{t('sl_sell')}</button>}
+        {/* 1.4.1: a receipt of the job that waits for approval is approved or rejected before the sale (the server says so too) */}
+        {j.actions.includes('invoice') && (
+          <button type="button" className="btn primary" disabled={!!j.waiting} title={j.waiting ? t('err_job_receipt_waiting') : undefined}
+            onClick={() => setModal('sell')}><Icon name="invoice" size={16} />{t('sl_sell')}</button>
+        )}
         <button type="button" className="btn" onClick={() => void printDocument('quote')}><Icon name="printer" size={16} />{t('sl_print')}</button>
       </div>
       {!j.actions.includes('invoice') && j.status !== 'invoiced' && j.status !== 'cancelled' && (

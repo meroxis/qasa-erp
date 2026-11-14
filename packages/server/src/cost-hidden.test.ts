@@ -4,6 +4,7 @@ import { addDays, todayIso } from '@qasa/core';
 import { buildApp } from './app.ts';
 import { openDatabase, type Db } from './db.ts';
 import { resetLoginThrottle } from './auth.ts';
+import { audit } from './audit.ts';
 import { apiRoutes } from './routes.ts';
 
 // 1.4: what things cost, what the stock is worth and what a sale earns are for those who keep or read the books (who
@@ -622,5 +623,12 @@ describe('cheques and the end-of-day close of someone who does not keep the book
     expect(all.debts.collected).toBeGreaterThanOrEqual(4_321 + 6_543);
     // the same for those who keep the books, as before: the whole day
     for (const who of [accountant, viewer, keeper]) expect(registers(await close(who)).sort()).toEqual(registers(all).sort());
+
+    // a shift whose "open" record names no user (opened before the id was kept) is neither Raz's by name (1.4.1)
+    // (the log is append-only: a newer "open" record without the id stands in for such an old one)
+    audit(db, 'Raz', 'open', 'pos_shift', theirs.id, { register: 'Till R2' });
+    expect(registers(await close(cashier))).not.toContain(theirs.id);
+    expect(registers(await close(other))).not.toContain(theirs.id);
+    expect(registers(await close(admin))).toContain(theirs.id);
   });
 });

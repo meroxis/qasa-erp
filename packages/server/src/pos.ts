@@ -286,9 +286,13 @@ export function shiftInvoiceIds(db: Db, shiftId: string): string[] {
   return [...sales.map((s) => s.invoice_id), ...returns.map((r) => r.id)];
 }
 
-/** Whether this user opened the shift (isOpener below), for the end-of-day close. */
+/**
+ * Whether this user opened the shift, for the end-of-day close (closed shifts too). Strict with sign-in on: a shift
+ * whose "open" record names no user (one opened before the id was recorded) is nobody's by name there, so a cashier
+ * never sees the register of another user who happens to share their name; the close's debts go by id as well.
+ */
 export function openedShift(db: Db, shiftId: string, actor: ShiftActor): boolean {
-  return isOpener(db, loadShift(db, shiftId), actor);
+  return isOpener(db, loadShift(db, shiftId), actor, true);
 }
 
 type ShiftActor = Pick<Actor, 'id' | 'name' | 'permissions'>;
@@ -296,16 +300,17 @@ type ShiftActor = Pick<Actor, 'id' | 'name' | 'permissions'>;
 /**
  * Whether this user opened the shift. Names are not unique (two users can both be called "Mer S"), so with sign-in on
  * the user id kept in the shift's append-only "open" audit record decides; it also survives renaming the user. Without
- * sign-in every PC is the owner, and the name typed on the PC tells the cashiers apart. Only open shifts are asked,
- * and their record is among the newest, so the backwards scan stops early.
+ * sign-in every PC is the owner, and the name typed on the PC tells the cashiers apart. `byIdOnly` (the day close):
+ * with sign-in on, a record without a user id matches nobody instead of falling back to the name.
  */
-function isOpener(db: Db, row: ShiftRow, actor: ShiftActor): boolean {
+function isOpener(db: Db, row: ShiftRow, actor: ShiftActor, byIdOnly = false): boolean {
   if (actor.id && signInRequired(db)) {
     const opened = db.prepare("SELECT details FROM audit_log WHERE entity = 'pos_shift' AND entity_id = ? AND action = 'open' ORDER BY id DESC LIMIT 1")
       .get(row.id) as { details: string | null } | undefined;
     let openerId: unknown = null;
     try { openerId = opened?.details ? (JSON.parse(opened.details) as { userId?: unknown }).userId ?? null : null; } catch { openerId = null; }
     if (typeof openerId === 'string') return openerId === actor.id;
+    if (byIdOnly) return false;
   }
   return row.opened_by === actor.name;
 }

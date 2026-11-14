@@ -279,7 +279,8 @@ function isDocumentReceipt(db: Db, id: string): boolean {
  * and every company with the setting off, post it at once as before.
  */
 export function documentVoucherWaits(db: Db, actor: { permissions: readonly string[] }): boolean {
-  return vouchersNeedApproval(db) && !actor.permissions.includes('entries.approve');
+  // under "separate duties" whoever prepares a voucher never approves it, so theirs waits too
+  return vouchersNeedApproval(db) && !approvesOwn(db, { id: null, name: '', mayApprove: actor.permissions.includes('entries.approve') });
 }
 
 /**

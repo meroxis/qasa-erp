@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs';
 import { expect, it } from 'vitest';
 import type { ReactNode } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
@@ -36,4 +37,12 @@ it('has every text in Arabic, English and Kurdish, and says why a unit with a wa
   }
   expect(en.t('da_waitingAmount', { a: '300,000 IQD' })).toBe('Waiting for approval: 300,000 IQD');
   expect(errorMessages(new ApiError(409, 'deposit_waiting', null), en)).toEqual([en.t('err_deposit_waiting')]);
+});
+
+it('says why a solar system with a waiting receipt is not sold yet, and the Sell button waits for it (1.4.1)', () => {
+  expect(new Set(all('err_job_receipt_waiting' as Key)).size).toBe(3);
+  expect(errorMessages(new ApiError(409, 'job_receipt_waiting', null), en)).toEqual([en.t('err_job_receipt_waiting' as Key)]);
+  const solar = readFileSync(new URL('../pages/Solar.tsx', import.meta.url), 'utf8');
+  expect(solar).toContain("disabled={!!j.waiting} title={j.waiting ? t('err_job_receipt_waiting') : undefined}");
+  // the server refuses the sale too (pro/src/solar/service.ts), with the same code
 });
