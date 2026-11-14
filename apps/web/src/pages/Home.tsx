@@ -1,5 +1,6 @@
-import { useEffect, useState } from 'react';
-import { BUSINESS_FEATURE, todayIso } from '@qasa/core';
+import { useEffect, useState, type ReactNode } from 'react';
+import { BUSINESS_FEATURE, fromBase, todayIso } from '@qasa/core';
+import { Amount, DualRateHint, dualRateTitle, useAmountText, useDual } from '../Amount.tsx';
 import { api } from '../api.ts';
 import { ErrorBox, Icon, StatusChip, useData, useLoad } from '../components.tsx';
 import { useI18n } from '../i18n.ts';
@@ -9,7 +10,6 @@ import { briefApi, type DashboardView } from '../industry/brief-api.ts';
 import { ChequesHomeNote } from '../industry/ChequesAhead.tsx';
 import { ReorderHomeNote } from '../industry/ReorderList.tsx';
 import { RenewalBanner } from '../industry/RenewalBanner.tsx';
-import { moneyBoth } from './Brief.tsx';
 import type { I18n, Key } from '../i18n.ts';
 import { QuickVoucherButton } from '../industry/QuickVoucher.tsx';
 import { mayQuickVoucher } from '../industry/quick-voucher.ts';
@@ -44,18 +44,19 @@ export function Home({ viewer, user, favourites }: { viewer: NavViewer; user: st
   const dash = useLoad(() => briefApi.dashboard(), []);
   const d = dash.data;
   const tiles = (d ? [
-    { label: t('salesThisMonth'), value: i18n.money(d.salesMonth, 'IQD'), link: 'sales', icon: 'trend', sub: trendText(i18n, d.salesMonth, d.salesLastMonth) },
-    ...(d.cash ? [{ label: t('cashAndBanks'), value: moneyBoth(i18n, d.cash.total), icon: 'wallet', link: 'brief' }] : []),
-    ...(d.profitMonth ? [{ label: t('br_profitMonth'), value: i18n.money(d.profitMonth.profit, 'IQD'), icon: 'chart', ...(books ? { link: 'final-accounts' } : {}), tone: d.profitMonth.profit < 0 ? 'bad' : 'ok' }] : []),
-    { label: t('receivables'), value: i18n.money(d.receivables, 'IQD'), link: 'reports-more/aging', icon: 'contact' },
+    { label: t('salesThisMonth'), value: <Amount value={d.salesMonth} />, link: 'sales', icon: 'trend', sub: trendText(i18n, d.salesMonth, d.salesLastMonth) },
+    // (the safes and banks hold real dollars too: shown as they are, and the whole in the other currency)
+    ...(d.cash ? [{ label: t('cashAndBanks'), value: <Amount value={d.cash.total} />, icon: 'wallet', link: 'brief' }] : []),
+    ...(d.profitMonth ? [{ label: t('br_profitMonth'), value: <Amount value={d.profitMonth.profit} />, icon: 'chart', ...(books ? { link: 'final-accounts' } : {}), tone: d.profitMonth.profit < 0 ? 'bad' : 'ok' }] : []),
+    { label: t('receivables'), value: <Amount value={d.receivables} />, link: 'reports-more/aging', icon: 'contact' },
     // (the ageing of what the company owes is a report of its books: without them the tile opens the suppliers list)
-    ...(suppliers ? [{ label: t('payables'), value: i18n.money(d.payables, 'IQD'), link: journal ? 'reports-more/supplier-aging' : 'suppliers', icon: 'truck' }] : [])
+    ...(suppliers ? [{ label: t('payables'), value: <Amount value={d.payables} />, link: journal ? 'reports-more/supplier-aging' : 'suppliers', icon: 'truck' }] : [])
   ] : [
-    ...(journal ? [{ label: t('cashAndBanks'), value: i18n.money(cash, 'IQD'), icon: 'wallet' }] : []),
-    { label: t('salesThisMonth'), value: i18n.money(salesTotal, 'IQD'), link: 'sales', icon: 'trend' },
-    { label: t('receivables'), value: i18n.money(owed('customer'), 'IQD'), link: 'customers', icon: 'contact' },
-    ...(suppliers ? [{ label: t('payables'), value: i18n.money(owed('supplier'), 'IQD'), link: 'suppliers', icon: 'truck' }] : [])
-  ]) as { label: string; value: string; link?: string; icon: string; sub?: string; tone?: 'ok' | 'bad' }[];
+    ...(journal ? [{ label: t('cashAndBanks'), value: <Amount value={cash} />, icon: 'wallet' }] : []),
+    { label: t('salesThisMonth'), value: <Amount value={salesTotal} />, link: 'sales', icon: 'trend' },
+    { label: t('receivables'), value: <Amount value={owed('customer')} />, link: 'customers', icon: 'contact' },
+    ...(suppliers ? [{ label: t('payables'), value: <Amount value={owed('supplier')} />, link: 'suppliers', icon: 'truck' }] : [])
+  ]) as { label: string; value: ReactNode; link?: string; icon: string; sub?: string; tone?: 'ok' | 'bad' }[];
   // the Iraqi approval chain at a glance: prepared → checked → approved
   const flow = [
     { status: 'draft', label: t('waitingCheck'), value: count((e) => e.status === 'draft') },
@@ -125,6 +126,7 @@ export function Home({ viewer, user, favourites }: { viewer: NavViewer; user: st
           </div>
         ))}
       </div>
+      <DualRateHint />
       <FirstSteps viewer={viewer} />
       <Launcher viewer={viewer} user={user} favourites={favourites} />
       {d && <SalesChart d={d} />}
@@ -173,19 +175,31 @@ function SalesChart({ d }: { d: DashboardView }) {
   // Arabic and Kurdish month names come from the app's own list (a browser without Kurdish data would show "Nov")
   const monthName = (ym: string) => (i18n.lang === 'en' ? new Intl.DateTimeFormat('en-GB', { month: 'short' }).format(new Date(ym + '-15T00:00:00')) : i18n.month(ym));
   const showProfit = d.months.some((m) => m.profit !== undefined && m.profit !== null);
+  // dinar and dollar: each month's sales also in dollars, at the rate of the month's last day (today's for this month)
+  const dual = useDual();
+  const amountText = useAmountText();
+  const monthEnd = (ym: string) => new Date(Date.UTC(Number(ym.slice(0, 4)), Number(ym.slice(5, 7)), 0)).toISOString().slice(0, 10);
+  const eqOf = (m: { month: string; sales: number }) => {
+    const rate = dual.show === 'iqd' || !m.sales ? null : dual.rate(monthEnd(m.month));
+    return rate ? { text: `≈ ${i18n.ltr('$' + i18n.digitsOf(compact(Math.round(fromBase(m.sales, rate.rateX100) / 100))))}`, title: dualRateTitle(i18n, rate) } : null;
+  };
   return (
     <div className="card">
       <div className="card-head"><h2>{t('br_salesSixMonths')}</h2><span className="spacer" /><a className="btn ghost small" href={href('reports-more')}>{t('br_reports')}</a></div>
       <div role="img" aria-label={t('br_salesSixMonths')} style={{ display: 'grid', gridTemplateColumns: `repeat(${d.months.length}, minmax(0, 1fr))`, gap: 12, alignItems: 'end', height: 200, padding: '8px 16px 0' }}>
-        {d.months.map((m, n) => (
-          <div key={m.month} title={i18n.money(m.sales, 'IQD')} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'flex-end', height: '100%', gap: 6 }}>
+        {d.months.map((m, n) => {
+          const eq = eqOf(m);
+          return (
+          <div key={m.month} title={amountText(m.sales, { date: monthEnd(m.month) })} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'flex-end', height: '100%', gap: 6 }}>
             <span className="small num" style={{ fontWeight: 600 }}>{m.sales ? i18n.ltr(i18n.digitsOf(compact(m.sales))) : ''}</span>
+            {eq && <span className="dual-second small num" title={eq.title}>{eq.text}</span>}
             <span style={{
               width: '100%', maxWidth: 56, height: `${Math.max(2, (m.sales / max) * 150)}px`, borderRadius: '6px 6px 2px 2px',
               background: n === d.months.length - 1 ? 'var(--accent, #1D5FD1)' : 'var(--accent-soft, #BCD0F5)'
             }} />
           </div>
-        ))}
+          );
+        })}
       </div>
       <div style={{ display: 'grid', gridTemplateColumns: `repeat(${d.months.length}, minmax(0, 1fr))`, gap: 12, padding: '6px 16px 16px', textAlign: 'center' }}>
         {d.months.map((m) => (
@@ -199,10 +213,10 @@ function SalesChart({ d }: { d: DashboardView }) {
   );
 }
 
-/** 1,250,000 → 1.25M; 85,000 → 85K (dinars). */
+/** 1,250,000 → 1.25M; 85,000 → 85K; 2,500 → 2.5K (a chart's dollars are smaller numbers than its dinars). */
 function compact(v: number): string {
   const a = Math.abs(v);
-  const s = a >= 1e9 ? `${+(a / 1e9).toFixed(2)}B` : a >= 1e6 ? `${+(a / 1e6).toFixed(2)}M` : a >= 1e3 ? `${+(a / 1e3).toFixed(0)}K` : String(a);
+  const s = a >= 1e9 ? `${+(a / 1e9).toFixed(2)}B` : a >= 1e6 ? `${+(a / 1e6).toFixed(2)}M` : a >= 1e3 ? `${+(a / 1e3).toFixed(a < 1e4 ? 1 : 0)}K` : String(a);
   return (v < 0 ? '-' : '') + s;
 }
 

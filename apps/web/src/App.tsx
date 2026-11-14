@@ -1,5 +1,5 @@
 import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ComponentType, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from 'react';
-import { APP_VERSION, htmlLang, isLang, type DigitStyle, type Lang } from '@qasa/core';
+import { APP_VERSION, DEFAULT_AMOUNTS_SHOW, htmlLang, isLang, type DigitStyle, type Lang } from '@qasa/core';
 import { api, currentUser, SIGNED_OUT_EVENT, type AccountView, type Me, type PlanStatus, type Settings as SettingsData } from './api.ts';
 import { buildHas, BusyBar, DataContext, DisplayContext, Icon, isDensity, isTheme, Logo, PageNavContext, ToastProvider, type Density, type PageNav, type Theme } from './components.tsx';
 import { I18nContext, isKey, makeI18n, useI18n, type Key } from './i18n.ts';
@@ -26,6 +26,7 @@ import { canSwitchCompanies } from './industry/companies-api.ts';
 import { outboxClient, setOutboxUser, startOutbox } from './industry/outbox.ts';
 import { OutboxBanner } from './industry/OutboxBanner.tsx';
 import { HeaderRate } from './industry/HeaderRate.tsx';
+import { DualProvider } from './Amount.tsx';
 import { dataPlaceLine, inWindowsApp, officeText, useDataPlace } from './industry/data-place.ts';
 
 /**
@@ -779,6 +780,7 @@ export function App() {
       <DataContext.Provider value={data}>
        <DisplayContext.Provider value={display}>
        <PageNavContext.Provider value={setPageNav}>
+       <DualProvider show={settings?.amountsShow ?? DEFAULT_AMOUNTS_SHOW} canSet={isAdmin || !!me.user?.permissions.includes('entries.prepare')} watch={`${settings?.defaultRateX100 ?? ''}/${page === 'rates'}`}>
         <ToastProvider>
           <BusyBar />
           <div className="app">
@@ -895,6 +897,7 @@ export function App() {
             </div>
           </div>
         </ToastProvider>
+       </DualProvider>
        </PageNavContext.Provider>
        </DisplayContext.Provider>
       </DataContext.Provider>

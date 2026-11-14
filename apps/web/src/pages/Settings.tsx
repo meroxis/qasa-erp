@@ -1,9 +1,9 @@
-import { useEffect, useRef, useState } from 'react';
-import { formatAmount, htmlLang, MONTHS, rateFromX100, todayIso, toWesternDigits, type DigitStyle, type Lang, type Names, type PostingAccounts } from '@qasa/core';
+import { useContext, useEffect, useRef, useState } from 'react';
+import { DEFAULT_AMOUNTS_SHOW, formatAmount, htmlLang, MONTHS, rateFromX100, todayIso, toWesternDigits, type AmountsShow, type DigitStyle, type Lang, type Names, type PostingAccounts } from '@qasa/core';
 import {
   api, ApiError, currentUser, request, setCurrentUser, type BackupStatus, type DatabaseCheck, type DatabaseInput, type DatabaseStatus, type NetworkStatus, type YearEndStatus
 } from '../api.ts';
-import { AccountCombo, ErrorBox, Icon, LANGUAGE_NAMES, Modal, downloadCsv, useBuildHas, useData, useDisplay, useLoad, useToast, type Density, type Theme } from '../components.tsx';
+import { AccountCombo, DataContext, ErrorBox, Icon, LANGUAGE_NAMES, Modal, downloadCsv, useBuildHas, useData, useDisplay, useLoad, useToast, type Density, type Theme } from '../components.tsx';
 import { ChoiceTiles, type Choice } from '../ChoiceTiles.tsx';
 import { isKey, useI18n, type Key } from '../i18n.ts';
 import { auditAction, auditEntity, auditRef } from '../industry/audit-words.ts';
@@ -240,7 +240,7 @@ function SettingsSectionContent({ id, admin }: { id: string; admin: boolean }) {
     case 'about':
       return <><AboutDataPlace /><HelpPanel /><LegalPanel /></>;
     default:
-      return <DisplaySettings />;
+      return <DisplaySettings admin={admin} />;
   }
 }
 
@@ -252,7 +252,7 @@ const LANGUAGE_SAMPLES: Record<Lang, string> = { ar: 'ع', en: 'A', ku: 'ک' };
  * The languages come from the app's one list (LANGUAGE_NAMES), each by its own name, and change the language the same
  * way as everywhere else (setLang: the whole app at once, remembered on this PC, the Windows app's menus too).
  */
-export function DisplaySettings() {
+export function DisplaySettings({ admin = false }: { admin?: boolean }) {
   const { t, lang, setLang, digits, setDigits } = useI18n();
   const { theme, density, setTheme, setDensity } = useDisplay();
   const languages: Choice<Lang>[] = LANGUAGE_NAMES.map(([l, label]) => ({ value: l, label, sample: LANGUAGE_SAMPLES[l], lang: htmlLang(l) }));
@@ -306,8 +306,54 @@ export function DisplaySettings() {
           </div>
         </div>
         <GraphicsSetting />
+        {admin && <AmountsShowSetting />}
       </div>
     </section>
+  );
+}
+
+/**
+ * Settings → Language and display → Show amounts in, for admins: dinar only (as always), dinar and dollar, or dollar and
+ * dinar. One choice for the whole company (kept with its settings on the server), saved as soon as it is picked.
+ */
+export function AmountsShowSetting() {
+  const { t } = useI18n();
+  const toast = useToast();
+  // (the rest of the display section needs no company data: this row waits for it rather than failing without it)
+  const data = useContext(DataContext);
+  const settings = data?.settings ?? null;
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<unknown>(null);
+  if (!data) return null;
+  const { reloadSettings } = data;
+  const iqd = t('iqdShort');
+  const options: Choice<AmountsShow>[] = [
+    { value: 'iqd', label: t('am_iqd'), sample: iqd },
+    { value: 'iqd_usd', label: t('am_iqdUsd'), sample: `${iqd} + $` },
+    { value: 'usd_iqd', label: t('am_usdIqd'), sample: `$ + ${iqd}`, hint: t('am_usdIqdHint') }
+  ];
+  async function choose(amountsShow: AmountsShow) {
+    setBusy(true);
+    setError(null);
+    try {
+      await api.updateSettings({ amountsShow });
+      await reloadSettings();
+      toast(t('saved'));
+    } catch (e) {
+      setError(e);
+    } finally {
+      setBusy(false);
+    }
+  }
+  return (
+    <div className="setting" data-setting="amounts-show">
+      <Icon name="wallet" size={20} className="setting-icon" />
+      <div className="setting-text"><strong>{t('am_show')}</strong><span>{t('am_showHelp')}</span></div>
+      <div className="setting-ctl">
+        <ChoiceTiles label={t('am_show')} value={settings?.amountsShow ?? DEFAULT_AMOUNTS_SHOW} options={options} onChange={(v) => void choose(v)} busy={busy} disabled={!settings} />
+        <ErrorBox error={error} />
+      </div>
+    </div>
   );
 }
 

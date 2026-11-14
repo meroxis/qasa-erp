@@ -5,6 +5,7 @@ import { ErrorBox, Icon, downloadCsv, useData, useLoad, usePageNav } from '../co
 import { useI18n, type I18n, type Key } from '../i18n.ts';
 import { go, href } from '../router.ts';
 import { PeriodPicker } from './Reports.tsx';
+import { Amount, DualRateHint } from '../Amount.tsx';
 
 /**
  * Management reports: sales by item and by customer, profit by item, who owes us and whom we owe (aged), and what
@@ -55,6 +56,7 @@ export function MoreReports({ tab: asked = 'sales-items' }: { tab?: ReportTab })
         <span className="spacer" />
       </div>
       <div className="print-only"><h2>{t(TAB_LABEL[tab])}</h2><div className="small">{dated ? i18n.date(to) : `${i18n.date(from)} — ${i18n.date(to)}`}</div></div>
+      <DualRateHint />
       {tab === 'sales-items' && <SalesByItem from={from} to={to} profit={false} />}
       {tab === 'profit' && <SalesByItem from={from} to={to} profit />}
       {tab === 'sales-categories' && <SalesByGroup by="category" from={from} to={to} />}
@@ -138,8 +140,8 @@ function SalesByGroup({ by, from, to }: { by: 'category' | 'brand'; from: string
               ))}
             </tbody>
             {total && <tfoot><tr>
-              <th>{t('totals')}</th><th className="amount">{qty(i18n, total.qtyMilli)}</th><th className="amount">{i18n.money(total.sales, 'IQD')}</th>
-              {books && <><th className="amount">{i18n.money(total.cost ?? 0, 'IQD')}</th><th className="amount">{i18n.money(total.profit ?? 0, 'IQD')}</th><th className="amount">{margin(total.profit ?? 0, total.sales)}</th></>}
+              <th>{t('totals')}</th><th className="amount">{qty(i18n, total.qtyMilli)}</th><th className="amount"><Amount value={total.sales} date={to} /></th>
+              {books && <><th className="amount"><Amount value={total.cost ?? 0} date={to} /></th><th className="amount"><Amount value={total.profit ?? 0} date={to} /></th><th className="amount">{margin(total.profit ?? 0, total.sales)}</th></>}
             </tr></tfoot>}
           </table>
         </Card>
@@ -189,8 +191,8 @@ function SalesByItem({ from, to, profit: asked }: { from: string; to: string; pr
               ))}
             </tbody>
             <tfoot><tr>
-              <th colSpan={3}>{t('totals')}</th><th className="amount">{i18n.money(total.sales, 'IQD')}</th>
-              {profit && <><th className="amount">{i18n.money(total.cost, 'IQD')}</th><th className="amount">{i18n.money(total.profit, 'IQD')}</th><th className="amount">{margin(total.profit, total.sales)}</th></>}
+              <th colSpan={3}>{t('totals')}</th><th className="amount"><Amount value={total.sales} date={to} /></th>
+              {profit && <><th className="amount"><Amount value={total.cost} date={to} /></th><th className="amount"><Amount value={total.profit} date={to} /></th><th className="amount">{margin(total.profit, total.sales)}</th></>}
             </tr></tfoot>
           </table>
         </Card>
@@ -227,7 +229,7 @@ function SalesByCustomer({ from, to }: { from: string; to: string }) {
                 </tr>
               ))}
             </tbody>
-            <tfoot><tr><th colSpan={2}>{t('totals')}</th><th className="amount">{i18n.money(total, 'IQD')}</th><th /></tr></tfoot>
+            <tfoot><tr><th colSpan={2}>{t('totals')}</th><th className="amount"><Amount value={total} date={to} /></th><th /></tr></tfoot>
           </table>
         </Card>
       ))}
@@ -286,7 +288,7 @@ function Aging({ type, date }: { type: 'customer' | 'supplier'; date: string }) 
             <tfoot><tr>
               <th>{t('totals')}</th>
               {[0, 1, 2, 3].map((n) => <th key={n} className="amount">{i18n.money(sum(n), 'IQD')}</th>)}
-              <th className="amount">{i18n.money(total, 'IQD')}</th><th />
+              <th className="amount"><Amount value={total} date={date} /></th><th />
             </tr></tfoot>
           </table>
           {/* (an invoice says what was received for it; this report ages the party's whole debt, oldest first) */}
@@ -328,7 +330,7 @@ function StockValue({ date }: { date: string }) {
                 </tr>
               ))}
             </tbody>
-            <tfoot><tr><th colSpan={2}>{t('totals')}</th><th className="amount">{i18n.money(total, 'IQD')}</th><th /></tr></tfoot>
+            <tfoot><tr><th colSpan={2}>{t('totals')}</th><th className="amount"><Amount value={total} date={date} /></th><th /></tr></tfoot>
           </table>
           {open && (
             <table className="table">

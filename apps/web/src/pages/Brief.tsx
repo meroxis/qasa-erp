@@ -1,6 +1,7 @@
 import { useState, type CSSProperties, type ReactNode } from 'react';
 import { addDays, todayIso } from '@qasa/core';
 import { briefApi, type BriefView, type Money2 } from '../industry/brief-api.ts';
+import { Amount, DualRateHint } from '../Amount.tsx';
 import { ErrorBox, Icon, Modal, useLoad, useMay, usePageNav, useToast } from '../components.tsx';
 import { useI18n, type I18n } from '../i18n.ts';
 import { href } from '../router.ts';
@@ -64,7 +65,7 @@ export function briefText(i18n: I18n, b: BriefView): string {
   return lines.join('\n');
 }
 
-export function Stat({ label, value, sub, color, icon }: { label: string; value: string; sub?: ReactNode; color?: string; icon: string }) {
+export function Stat({ label, value, sub, color, icon }: { label: string; value: ReactNode; sub?: ReactNode; color?: string; icon: string }) {
   return (
     <div className="card pad tile">
       <div className="label"><span className="ico"><Icon name={icon} size={18} /></span>{label}</div>
@@ -143,16 +144,17 @@ export function Brief() {
           </header>
 
           <div className="grid-4">
-            <Stat icon="trend" label={t('br_salesToday')} value={i18n.money(b.sales.today, 'IQD')}
+            <Stat icon="trend" label={t('br_salesToday')} value={<Amount value={b.sales.today} date={b.date} />}
               color={accent}
               sub={<>
                 {t('br_invoicesCount', { n: i18n.int(b.sales.invoices) })}
                 {pct !== null && <> · <span style={{ color: pct >= 0 ? good : bad, fontWeight: 600 }}>{pct >= 0 ? '▲' : '▼'} {i18n.int(Math.abs(pct))}%</span> {t('br_vsLastWeek')}</>}
               </>} />
-            {b.cash && <Stat icon="wallet" label={t('br_cashNow')} value={moneyBoth(i18n, b.cash.total)} sub={t('br_cashAccounts', { n: i18n.int(b.cash.accounts.length) })} />}
-            {b.flow && <Stat icon="plus" label={t('br_moneyIn')} value={i18n.money(b.flow.in, 'IQD')} color={good} sub={`${t('br_moneyOut')}: ${i18n.money(b.flow.out, 'IQD')}`} />}
-            <Stat icon="chart" label={t('br_salesMonth')} value={i18n.money(b.sales.month, 'IQD')} sub={`${t('br_receivables')}: ${i18n.money(b.receivables, 'IQD')}`} />
+            {b.cash && <Stat icon="wallet" label={t('br_cashNow')} value={<Amount value={b.cash.total} date={b.date} />} sub={t('br_cashAccounts', { n: i18n.int(b.cash.accounts.length) })} />}
+            {b.flow && <Stat icon="plus" label={t('br_moneyIn')} value={<Amount value={b.flow.in} date={b.date} />} color={good} sub={`${t('br_moneyOut')}: ${i18n.money(b.flow.out, 'IQD')}`} />}
+            <Stat icon="chart" label={t('br_salesMonth')} value={<Amount value={b.sales.month} date={b.date} />} sub={`${t('br_receivables')}: ${i18n.money(b.receivables, 'IQD')}`} />
           </div>
+          <DualRateHint />
 
           <div className="grid-2" style={{ alignItems: 'start' }}>
             {b.cash && (
@@ -162,7 +164,7 @@ export function Brief() {
                     <li key={a.code} style={itemStyle}>
                       <span className="tree-code">{i18n.digitsOf(a.code)}</span>
                       <span style={{ flex: 1 }}>{i18n.name(a.name)}</span>
-                      <strong className="num">{moneyBoth(i18n, a.balance)}</strong>
+                      <strong className="num"><Amount value={a.balance} date={b.date} /></strong>
                     </li>
                   ))}
                 </ul>
@@ -175,7 +177,7 @@ export function Brief() {
                   <li key={it.itemId} style={itemStyle}>
                     <span className="count" style={{ minWidth: 24, textAlign: 'center' }}>{i18n.int(n + 1)}</span>
                     <span style={{ flex: 1 }}><a href={href(`item/${it.itemId}`)}>{i18n.name(it.name)}</a> <span className="small muted">×{i18n.digitsOf(String(it.qtyMilli / 1000))}</span></span>
-                    <strong className="num">{i18n.money(it.sales, 'IQD')}</strong>
+                    <strong className="num"><Amount value={it.sales} date={b.date} /></strong>
                   </li>
                 ))}
               </ul>
@@ -191,7 +193,7 @@ export function Brief() {
                         <a href={href(`party/${c.partyId}`)}>{c.name}</a>
                         <span className="small" style={{ display: 'block', color: c.oldestDays > 90 ? bad : 'inherit' }}>{t('br_owesSince', { n: i18n.int(c.oldestDays) })}</span>
                       </span>
-                      <strong className="num">{i18n.money(c.balance, 'IQD')}</strong>
+                      <strong className="num"><Amount value={c.balance} date={b.date} /></strong>
                       {wa && (
                         <a className="btn small no-print" target="_blank" rel="noopener noreferrer"
                           href={whatsappUrl(c.phone, t('br_remindText', { company: i18n.name(b.company), amount: i18n.money(c.balance, 'IQD') }))}>

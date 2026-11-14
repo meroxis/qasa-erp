@@ -1,5 +1,5 @@
 import type {
-  BusinessType, Lang, LicenseInfo, LicenseState, PlanResolution,
+  AmountsShow, BusinessType, Lang, LicenseInfo, LicenseState, PlanResolution,
   CurrencyCode, EntryAction, EntryStatus, EntryType, InvoiceDocKind, InvoiceInput, InvoiceKind, InvoiceStatus, Names, Nature, PaymentMode, PostingAccounts, UnitCode
 } from '@qasa/core';
 import { currentBranchHeader } from './industry/branches-api.ts';
@@ -104,6 +104,8 @@ export interface Settings {
   postingAccounts: PostingAccounts;
   /** What the company does; null until chosen (the app asks at the start). */
   businessTypes: BusinessType[] | null;
+  /** How amounts show: dinar only, dinar and dollar, dollar and dinar (Settings → display); older servers leave it out */
+  amountsShow?: AmountsShow;
 }
 
 export interface PlanStatus extends PlanResolution {

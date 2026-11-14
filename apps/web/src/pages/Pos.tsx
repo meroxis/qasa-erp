@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { categoriesApi, inCategory, type CategoryView } from '../industry/categories-api.ts';
 import { createPortal } from 'react-dom';
-import { normalizeForSearch, rateFromX100, rateToX100, todayIso, toWesternDigits, type CurrencyCode } from '@qasa/core';
+import { fromBase, normalizeForSearch, rateFromX100, rateToX100, toBase, todayIso, toWesternDigits, type CurrencyCode } from '@qasa/core';
 import { api, ApiError, isNetworkError, serverReachable, type InvoiceView, type ItemView, type PartyView, type WarehouseView } from '../api.ts';
 import { AccountCombo, AmountInput, ErrorBox, Icon, Modal, SearchCombo, useData, useLoad, usePageNav, useToast, type PickOption } from '../components.tsx';
 import { useI18n, type I18n, type Key } from '../i18n.ts';
@@ -25,6 +25,7 @@ import { printAlone, printDocument } from '../industry/printing.ts';
 import { receiptMessage, withAttachment } from '../industry/WhatsAppShare.tsx';
 import { WhatsAppSendButton } from '../industry/WhatsAppSend.tsx';
 import { LoyaltyUse, loyaltyLines } from '../industry/Loyalty.tsx';
+import { dualLineText, dualRateTitle, useDual } from '../Amount.tsx';
 
 /**
  * Point of sale (every plan). Made for a cashier with no training: the search box always has the focus, so a barcode
@@ -649,6 +650,8 @@ function Register({ initial, onClosed }: { initial: ShiftView; onClosed(): void 
               <span>{t('pos_total')}</span>
               <strong className="num">{i18n.money(total, currency)}</strong>
             </div>
+            {/* dinar and dollar: what the sale is worth in the other currency, as a hint only (the sale stays in its own) */}
+            <TillEquivalent total={total} currency={currency} />
             {points.value > 0 && (
               <div className="pos-r-row"><span>{t('pos_left')} ({t('ly_title')}: −{i18n.money(points.value, currency)})</span><strong className="num">{i18n.money(due, currency)}</strong></div>
             )}
@@ -977,4 +980,19 @@ export function PosCategories({ list, value, onChange }: { list: readonly Catego
       ))}
     </div>
   );
+}
+
+/**
+ * Under the till's total, when the company sees dinar and dollar: "≈ $954.20" (or "≈ 1,250,000 IQD" for a dollar
+ * sale), at today's rate, with the rate in a tooltip. Only a hint: the sale is made and paid in its own currency.
+ */
+export function TillEquivalent({ total, currency }: { total: number; currency: CurrencyCode }) {
+  const i18n = useI18n();
+  const dual = useDual();
+  const rate = dual.show === 'iqd' || !total ? null : dual.rate();
+  if (!rate) return null;
+  const other = currency === 'IQD'
+    ? { amount: fromBase(total, rate.rateX100), currency: 'USD' as const, approx: true }
+    : { amount: toBase(total, 'USD', rate.rateX100), currency: 'IQD' as const, approx: true };
+  return <div className="pos-eq num" title={dualRateTitle(i18n, rate)}>{dualLineText(i18n, other)}</div>;
 }

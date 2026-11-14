@@ -8,6 +8,7 @@ import { copyText } from '../share.ts';
 import { WhatsAppSendButton } from '../industry/WhatsAppSend.tsx';
 import { printDocument } from '../industry/printing.ts';
 import { itemStyle, listStyle, moneyBoth, Section, Stat } from './Brief.tsx';
+import { Amount, DualRateHint } from '../Amount.tsx';
 
 /**
  * The end-of-day close: what the owner checks when the shop shuts. The day's sales by how they were paid (and what was
@@ -166,14 +167,15 @@ export function DayClose() {
           {ownOnly && <p className="muted small" style={{ margin: 0 }}>{t('dc_ownShifts')}</p>}
 
           <div className="grid-4">
-            <Stat icon="trend" label={t('dc_netSales')} value={i18n.money(c.sales.net, 'IQD')} color="var(--accent, #1D5FD1)"
+            <Stat icon="trend" label={t('dc_netSales')} value={<Amount value={c.sales.net} date={c.date} />} color="var(--accent, #1D5FD1)"
               sub={<>{t('br_invoicesCount', { n: i18n.int(c.sales.invoices) })}{c.sales.returns ? <> · {t('dc_returns')}: <span className="num">{i18n.money(c.sales.returns, 'IQD')}</span></> : null}</>} />
-            <Stat icon="wallet" label={t('pos_expected')} value={c.drawers ? moneyBoth(i18n, c.drawers.expected) : '—'}
+            <Stat icon="wallet" label={t('pos_expected')} value={c.drawers ? <Amount value={c.drawers.expected} date={c.date} /> : '—'}
               sub={c.drawers ? <>{t('pos_counted')}: <span className="num">{moneyBoth(i18n, c.drawers.counted)}</span></> : t(drawersNote(c))} />
-            <Stat icon="scale" label={t('pos_difference')} value={c.drawers ? moneyBoth(i18n, c.drawers.difference) : '—'} color={drawerDiff?.color}
+            <Stat icon="scale" label={t('pos_difference')} value={c.drawers ? <Amount value={c.drawers.difference} date={c.date} /> : '—'} color={drawerDiff?.color}
               sub={drawerDiff ? t(drawerDiff.key) : undefined} />
-            {c.flow && <Stat icon="plus" label={t('dc_moneyIn')} value={i18n.money(c.flow.in, 'IQD')} color={good} sub={`${t('dc_moneyOut')}: ${i18n.money(c.flow.out, 'IQD')}`} />}
+            {c.flow && <Stat icon="plus" label={t('dc_moneyIn')} value={<Amount value={c.flow.in} date={c.date} />} color={good} sub={`${t('dc_moneyOut')}: ${i18n.money(c.flow.out, 'IQD')}`} />}
           </div>
+          <DualRateHint />
 
           <div className="grid-2" style={{ alignItems: 'start' }}>
             <Section title={t('dc_byMethod')} icon="wallet" empty={!c.methods.length && !c.refunds.length}>
@@ -188,7 +190,7 @@ export function DayClose() {
                         <MoneyCell>{i18n.money(m.amount, 'IQD')}</MoneyCell>
                       </tr>
                     ))}
-                    {c.methods.length > 0 && <tr><td><strong>{t('dc_sales')}</strong></td><td /><MoneyCell><strong>{i18n.money(methodTotal, 'IQD')}</strong></MoneyCell></tr>}
+                    {c.methods.length > 0 && <tr><td><strong>{t('dc_sales')}</strong></td><td /><MoneyCell><strong><Amount value={methodTotal} date={c.date} /></strong></MoneyCell></tr>}
                     {c.refunds.map((r) => (
                       <tr key={'r' + r.method}>
                         <td>{t('dc_refunds')} — {methodLabel(i18n, r.method)}</td>
@@ -196,7 +198,7 @@ export function DayClose() {
                         <MoneyCell color={bad}>−{i18n.money(r.amount, 'IQD')}</MoneyCell>
                       </tr>
                     ))}
-                    <tr><td><strong>{t('dc_netSales')}</strong></td><td /><MoneyCell><strong>{i18n.money(c.sales.net, 'IQD')}</strong></MoneyCell></tr>
+                    <tr><td><strong>{t('dc_netSales')}</strong></td><td /><MoneyCell><strong><Amount value={c.sales.net} date={c.date} /></strong></MoneyCell></tr>
                   </tbody>
                 </table>
               </div>
@@ -227,7 +229,7 @@ export function DayClose() {
             </Section>
 
             {c.expenses && <Section title={t('dc_expenses')} icon="wallet" empty={!c.expenses.rows.length}
-              action={<strong className="num">{i18n.money(c.expenses.total, 'IQD')}</strong>}>
+              action={<strong className="num"><Amount value={c.expenses.total} date={c.date} /></strong>}>
               <ul style={listStyle}>
                 {c.expenses.rows.map((e) => (
                   <li key={e.entryId + e.accountCode} style={itemStyle}>
@@ -246,7 +248,7 @@ export function DayClose() {
                 {([['dc_debtsCollected', c.debts.collected, c.debts.collectedRows, good], ['dc_debtsNew', c.debts.added, c.debts.addedRows, undefined]] as const).map(([key, total, rows, color]) => (
                   <div key={key}>
                     <div className="small muted">{t(key)}</div>
-                    <div className="num" style={{ fontSize: 20, fontWeight: 700, color }}>{i18n.money(total, 'IQD')}</div>
+                    <div className="num" style={{ fontSize: 20, fontWeight: 700, color }}><Amount value={total} date={c.date} /></div>
                     <ul style={{ ...listStyle, padding: 0 }}>
                       {rows.slice(0, 8).map((r) => (
                         <li key={r.partyId} style={itemStyle}>

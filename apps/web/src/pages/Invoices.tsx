@@ -31,6 +31,7 @@ import { BatchInFields, BatchPick, useExpiredConfirm } from '../industry/BatchFi
 import { askControlledOnOpen, RxTick, useControlledPrompt, usePharmacyOn, useRxItems } from '../industry/PharmacyPrompts.tsx';
 import { QuickVoucherButton } from '../industry/QuickVoucher.tsx';
 import { invoiceOpen } from '../industry/quick-voucher.ts';
+import { Amount } from '../Amount.tsx';
 
 const STATUSES: (InvoiceStatus | '')[] = ['', 'draft', 'posted', 'cancelled'];
 
@@ -603,7 +604,8 @@ export function InvoiceEditor({ kind: initialKind, id, partyId: initialParty }: 
           <div className="totals">
             <span className="muted">{t('subtotal')}</span><strong className="num">{i18n.money(totals.subtotal, currency)}</strong>
             <span className="muted">{t('discount')}</span><div style={{ width: 170 }}><AmountInput value={discount} currency={currency} onChange={setDiscount} ariaLabel={t('discount')} /></div>
-            <span>{t('totalDue')}</span><strong className="num" style={{ fontSize: 18 }}>{i18n.money(totals.total, currency)}</strong>
+            {/* (a dinar invoice also shows ≈ its dollars when the company sees both; a dollar one has its own rate below) */}
+            <span>{t('totalDue')}</span><strong className="num" style={{ fontSize: 18 }}>{currency === 'IQD' ? <Amount value={totals.total} date={date} /> : i18n.money(totals.total, currency)}</strong>
             {currency === 'USD' && rateX100 && <><span className="muted small">{t('iqdEquivalent')}</span><span className="num small">{i18n.money(toBase(totals.total, 'USD', rateX100), 'IQD')}</span></>}
           </div>
         </div>
@@ -850,7 +852,7 @@ export function InvoiceDetail({ id }: { id: string }) {
           {priced && <div className="totals">
             <span className="muted">{t('subtotal')}</span><span className="num">{i18n.money(v.subtotal, v.currency)}</span>
             {v.discount > 0 && <><span className="muted">{t('discount')}</span><span className="num">− {i18n.money(v.discount, v.currency)}</span></>}
-            <span style={{ fontWeight: 700 }}>{t('totalDue')}</span><strong className="num" style={{ fontSize: 18 }}>{i18n.money(v.total, v.currency)}</strong>
+            <span style={{ fontWeight: 700 }}>{t('totalDue')}</span><strong className="num" style={{ fontSize: 18 }}>{v.currency === 'IQD' ? <Amount value={v.total} date={v.date} /> : i18n.money(v.total, v.currency)}</strong>
             {v.currency === 'USD' && <><span className="muted small">{t('iqdEquivalent')}</span><span className="num small">{i18n.money(v.baseTotal, 'IQD')}</span></>}
             {loyaltyLines(i18n, v.loyalty).map(([label, value]) => <Fragment key={label}><span className="muted small">{label}</span><span className="num small">{value}</span></Fragment>)}
             {/* a till's cash sale: the cash handed over and the change, as its receipt printed them */}

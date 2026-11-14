@@ -60,6 +60,8 @@
 .pos-total, .pos-change { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
 .pos-total { padding: 12px 14px; border-radius: 12px; background: var(--accent-soft); color: var(--accent-soft-ink); }
 .pos-total strong { font-size: 1.9rem; }
+/* dinar and dollar: the total in the other currency, a quiet hint under it (Pos.tsx TillEquivalent) */
+.pos-eq { margin-block-start: -6px; padding-inline: 14px; font-size: var(--fs-small); color: var(--ink-3); text-align: end; cursor: help; unicode-bidi: isolate; }
 .pos-change { padding: 8px 14px; border-radius: 10px; background: var(--ok-bg); color: var(--ok); }
 .pos-change strong { font-size: 1.3rem; }
 .pos-change.bad { background: var(--bad-bg); color: var(--bad); }
