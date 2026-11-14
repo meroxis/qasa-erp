@@ -66,7 +66,7 @@ export function parseScan<T extends Pick<ItemView, 'barcode' | 'code'> & { units
 
 /**
  * Change for the cash the customer handed over. All cash (no split): against the whole total. A split sale: against
- * its cash part only (the card or wallet parts are paid apart); null when the split has no cash part.
+ * its cash part only (the other parts are paid apart); null when the split has no cash part.
  */
 export function cashChange(paid: number | null, total: number, parts: readonly { method: string; amount: number | null }[]): number | null {
   if (paid === null) return null;
@@ -76,9 +76,18 @@ export function cashChange(paid: number | null, total: number, parts: readonly {
 }
 
 /**
- * 1.4: a sale is paid one way. Cash is what the till always did (nothing is sent: the whole sale goes into the shift's
- * safe); a card or a wallet, or credit ('account': on the customer's account), is sent as the one part that pays what
- * is due. Nothing due (points paid it all): nothing is sent.
+ * 1.4: the till offers two ways of paying, in every company: cash, or credit ('account': the whole sale on the
+ * customer's account). A card or a wallet is not a choice at the till; sales paid that way before still show under
+ * their own names (receipts, shift reports, the day close).
+ */
+export type TillMethod = 'cash' | 'account';
+
+/** What the till offers now: both, or cash alone while the server can't be reached (credit needs its credit-limit check). */
+export const tillMethods = (offline: boolean): TillMethod[] => (offline ? ['cash'] : ['cash', 'account']);
+
+/**
+ * A sale is paid one way. Cash is what the till always did (nothing is sent: the whole sale goes into the shift's
+ * safe); credit is sent as the one part that pays what is due. Nothing due (points paid it all): nothing is sent.
  */
 export function salePayments<M extends string>(method: M, due: number): { method: M; amount: number }[] | undefined {
   return method === 'cash' || due <= 0 ? undefined : [{ method, amount: due }];

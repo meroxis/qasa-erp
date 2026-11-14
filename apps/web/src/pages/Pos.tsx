@@ -7,15 +7,15 @@ import { AccountCombo, AmountInput, ErrorBox, Icon, Modal, SearchCombo, useData,
 import { useI18n, type I18n, type Key } from '../i18n.ts';
 import { href } from '../router.ts';
 import { PartyPicker } from '../industry/PartyPicker.tsx';
-import { posApi, type Money2, type PosMethod, type SaleInput, type ShiftReport, type ShiftView } from '../industry/pos-api.ts';
+import { posApi, type Money2, type SaleInput, type ShiftReport, type ShiftView } from '../industry/pos-api.ts';
 import { outboxClient, outboxWho, whoKey, type HeldKey } from '../industry/outbox.ts';
 import { useOutbox } from '../industry/OutboxBanner.tsx';
-import { offlineMethods, offlineReceipt, offlineRefusal, payTillSale, rememberTill, shortStock, takeFromStock, tillCache } from '../industry/offline-till.ts';
+import { offlineReceipt, offlineRefusal, payTillSale, rememberTill, shortStock, takeFromStock, tillCache } from '../industry/offline-till.ts';
 import '../pos.css';
 import { PrintDocument } from '../industry/PrintDocument.tsx';
 import { invoiceModel } from '../industry/print-model.ts';
 import { usePrintSetup } from '../industry/print-api.ts';
-import { addRefusal, cashChange, changeLineUnit, chosenMethod, creditNeedsCustomer, parseScan, posSaleLine, priceIn, priceRateFor, salePayments, tileOffer } from './pos-logic.ts';
+import { addRefusal, cashChange, changeLineUnit, chosenMethod, creditNeedsCustomer, parseScan, posSaleLine, priceIn, priceRateFor, salePayments, tileOffer, tillMethods, type TillMethod } from './pos-logic.ts';
 import { inUnits, salePriceFor, unitChoices, unitLabel, type LineUnit } from '../industry/units.ts';
 import { BatchPick, useExpiredConfirm } from '../industry/BatchFields.tsx';
 import { pharmacyApi, type MedicineView } from '../industry/pharmacy-api.ts';
@@ -201,13 +201,8 @@ function Register({ initial, onClosed }: { initial: ShiftView; onClosed(): void 
   const [discount, setDiscount] = useState<number | null>(0);
   const [paid, setPaid] = useState<number | null>(null);
   const [partyId, setPartyId] = useState('');
-  // how it is paid (1.4): one way for the whole sale: cash (or a card or wallet the admin set up), or credit
-  const [picked, setPicked] = useState<PosMethod>('cash');
-  const [methods, setMethods] = useState<PosMethod[]>(['cash']);
-  useEffect(() => {
-    fromServerOrTill(() => posApi.paymentAccounts().then((r) => r.methods), (m) => rememberTill(tillWho(), { methods: m }), () => tillCache(tillWho())?.methods)
-      .then(setMethods, () => {});
-  }, []);
+  // how it is paid (1.4): one way for the whole sale, cash or credit, in every company
+  const [picked, setPicked] = useState<TillMethod>('cash');
   // 1.2: on a PC connected to an office server, a sale the server can't take now is kept here and sent later
   const outbox = useOutbox();
   const offline = !!outbox && !outbox.online;
@@ -372,13 +367,11 @@ function Register({ initial, onClosed }: { initial: ShiftView; onClosed(): void 
   // another customer, total or currency: the points are chosen again
   useEffect(() => { setPoints({ points: 0, value: 0 }); }, [partyId, total, currency]);
   // what the till offers now (offline: not credit, which needs the server's credit-limit check)
-  const offered = offline ? offlineMethods(methods) : methods;
+  const offered = tillMethods(offline);
   const method = chosenMethod(picked, offered);
   const onCredit = method === 'account';
-  // paid now: cash, and the cards and wallets that have an account
-  const paidNow = offered.filter((m) => m !== 'account');
   const payments = salePayments(method, due);
-  // change is for cash handed over: none on credit, a card or a wallet
+  // change is for cash handed over: none on credit
   const change = cashChange(paid, due, payments ?? []);
   const needsCustomer = creditNeedsCustomer(method, partyId);
   const canPay = cart.length > 0 && !busy && (discount ?? 0) <= subtotal && (currency === 'IQD' || rateX100 > 0) && (change === null || change >= 0) && !needsCustomer;
@@ -630,15 +623,9 @@ function Register({ initial, onClosed }: { initial: ShiftView; onClosed(): void 
                 <button type="button" style={{ flex: 1 }} aria-pressed={!onCredit} onClick={() => setPicked('cash')}>{t('payCash')}</button>
                 <button type="button" style={{ flex: 1 }} aria-pressed={onCredit} disabled={!offered.includes('account')} onClick={() => setPicked('account')}>{t('payCredit')}</button>
               </div>
-              {/* money paid now by card or wallet: only when the admin gave those an account (Settings) */}
-              {!onCredit && paidNow.length > 1 && (
-                <div className="track" role="group" aria-label={t('s14_paidBy')} style={{ flexWrap: 'wrap' }}>
-                  {paidNow.map((m) => <button key={m} type="button" aria-pressed={method === m} onClick={() => setPicked(m)}>{t(`pay_${m}` as Key)}</button>)}
-                </div>
-              )}
               {onCredit && <div className="small muted">{t('s14_payCreditHint')}</div>}
               {needsCustomer && <div className="small" role="alert" style={{ color: 'var(--bad)' }}>{t('s14_creditNeedsCustomer')}</div>}
-              {offline && methods.includes('account') && <div className="small muted">{t('pos_offlineNoAccount')}</div>}
+              {offline && <div className="small muted">{t('pos_offlineNoAccount')}</div>}
             </div>
             {change !== null && (
               <div className={'pos-change' + (change < 0 ? ' bad' : '')}>

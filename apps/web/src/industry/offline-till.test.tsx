@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { ApiError, type ItemView, type SendOptions } from '../api.ts';
 import { posSaleLine } from '../pages/pos-logic.ts';
 import {
-  baseQtyOf, forgetTill, offlineMethods, offlineReceipt, offlineRefusal, payTillSale, rememberTill, shortStock, takeFromStock, tillCache
+  baseQtyOf, forgetTill, offlineReceipt, offlineRefusal, payTillSale, rememberTill, shortStock, takeFromStock, tillCache
 } from './offline-till.ts';
 import { SALE_TIMEOUT_MS, type HeldKey } from './outbox.ts';
 import type { SaleInput } from './pos-api.ts';
@@ -14,8 +14,7 @@ const item = (over: Partial<ItemView> = {}): ItemView => ({
 });
 
 describe('the offline till', () => {
-  it('sells for cash, by card and by wallet, never on a customer\'s account', () => {
-    expect(offlineMethods(['cash', 'card', 'fib', 'account'])).toEqual(['cash', 'card', 'fib']);
+  it('keeps cash sales, and those a till before 1.4 took by card or wallet, never one on a customer\'s account', () => {
     expect(offlineRefusal({ payments: [{ method: 'cash', amount: 1 }, { method: 'card', amount: 2 }] })).toBeNull();
     expect(offlineRefusal({})).toBeNull();
     expect(offlineRefusal({ payments: [{ method: 'cash', amount: 1 }, { method: 'account', amount: 2 }] })).toBe('pos_offline_on_account');
@@ -62,8 +61,8 @@ describe('the offline till', () => {
     expect(tillCache('user:u-las')).toBeNull();
     expect(tillCache(null)).toBeNull();
     // another person starts afresh
-    rememberTill('user:u-las', { methods: ['cash'] });
-    expect(tillCache('user:u-las')).toMatchObject({ items: null, methods: ['cash'] });
+    rememberTill('user:u-las', { categories: [] });
+    expect(tillCache('user:u-las')).toMatchObject({ items: null, categories: [] });
     expect(tillCache('user:u-mer')).toBeNull();
     forgetTill();
   });

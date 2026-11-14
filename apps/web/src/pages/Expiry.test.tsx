@@ -58,7 +58,7 @@ it('has the pharmacy page among the industry pages, for the pharmacy business ty
 });
 
 it('names every POS payment method and the dollar statement hint in three languages', () => {
-  for (const k of ['pay_cash', 'pay_card', 'pay_zaincash', 'pay_qi', 'pay_account', 'pos_left', 'pos_payAccounts', 'usd_statementHint',
+  for (const k of ['pay_cash', 'pay_card', 'pay_zaincash', 'pay_qi', 'pay_account', 'pos_left', 'usd_statementHint',
     'err_payments_total_mismatch', 'err_pos_method_unavailable', 'err_reference_taken', 'err_overpayment', 'wa_scope_payments', 'cat_title'] as Key[]) {
     expect(new Set(all(k)).size, k).toBe(3);
   }

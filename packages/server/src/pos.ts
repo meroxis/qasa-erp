@@ -29,6 +29,12 @@ const zero = (): Money => ({ IQD: 0, USD: 0 });
  * How a customer pays at the counter (1.1): cash into the shift's safe, a card or a wallet (FIB, ZainCash, Qi) into
  * the account the admin set for it, or on the chosen customer's account (credit). Money paid now can be split over up
  * to 4 of them; since 1.4 a sale on credit is on credit as a whole, never mixed with money paid now.
+ *
+ * Since 1.4 the till itself offers cash and credit only, and Settings no longer has the card and wallet accounts. The
+ * server still takes a card or a wallet part, under the same checks as before (the method must have an account set
+ * before 1.4, inside the user's branches): a sale a till kept while offline before the update is sent after it, and a
+ * PC in the office still on an older version sells against this server. A company that never set an account can't be
+ * sent one: the method is refused. Old sales keep their parts for receipts, returns, shift reports and the day close.
  */
 export const POS_METHODS = ['cash', 'card', 'fib', 'zaincash', 'qi', 'account'] as const;
 export type PosMethod = (typeof POS_METHODS)[number];
