@@ -165,7 +165,7 @@ export function Brief() {
             {b.flow && <Stat icon="plus" label={t('br_moneyIn')} value={<Amount value={b.flow.in} date={b.date} />} color={good} sub={<>{t('br_moneyOut')}: <Amount value={b.flow.out} date={b.date} inline /></>} />}
             <Stat icon="chart" label={t('br_salesMonth')} value={<Amount value={b.sales.month} date={b.date} />} sub={<>{t('br_receivables')}: <OwedTotal owed={b.receivablesOwed} book={b.receivables} date={b.date} inline /></>} />
           </div>
-          <DualRateHint />
+          <DualRateHint date={b.date} />
 
           <div className="grid-2" style={{ alignItems: 'start' }}>
             {b.cash && (
@@ -281,7 +281,7 @@ export function Brief() {
             </Section>
           </div>
           <p className="small muted">{t('br_onlyPosted')}</p>
-          <DualNote />
+          <DualNote date={b.date} />
         </>
       )}
       {phoneModal && canSetPhone && (

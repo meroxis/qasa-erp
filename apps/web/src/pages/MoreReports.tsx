@@ -256,6 +256,8 @@ function Aging({ type, date }: { type: 'customer' | 'supplier'; date: string }) 
   const { t } = i18n;
   const { data, error } = useLoad(() => briefApi.aging(type, date), [type, date]);
   const rows: AgingRowView[] = data?.rows ?? [];
+  // the rate of the day the server aged the balances to
+  const asOf = data?.date ?? date;
   const sum = (n: number) => rows.reduce((s, r) => s + r.buckets[n]!, 0);
   const total = rows.reduce((s, r) => s + r.balance, 0);
   // the same in each currency's real money (a server that does not send it: the book total alone, see OwedTotal)
@@ -283,7 +285,8 @@ function Aging({ type, date }: { type: 'customer' | 'supplier'; date: string }) 
                   {r.buckets.map((b, n) => (
                     <td key={n} className="amount" style={n === 3 && b > 0 ? { color: 'var(--bad, #A4271A)', fontWeight: 600 } : undefined}>{b ? i18n.money(b, 'IQD') : '—'}</td>
                   ))}
-                  <td className="amount"><strong>{i18n.money(r.balance, 'IQD')}</strong></td>
+                  {/* (each row from its real dinars and dollars, then the ≈ whole, as the totals row; the book-rate figure with dinar only) */}
+                  <td className="amount"><strong><OwedTotal owed={r.owed} book={r.balance} date={asOf} /></strong></td>
                   <td className="amount">{t('br_days', { n: i18n.int(r.oldestDays) })}</td>
                 </tr>
               ))}
@@ -291,7 +294,7 @@ function Aging({ type, date }: { type: 'customer' | 'supplier'; date: string }) 
             <tfoot><tr>
               <th>{t('totals')}</th>
               {[0, 1, 2, 3].map((n) => <th key={n} className="amount">{i18n.money(sum(n), 'IQD')}</th>)}
-              <th className="amount"><OwedTotal owed={owed} book={total} date={date} /></th><th />
+              <th className="amount"><OwedTotal owed={owed} book={total} date={asOf} /></th><th />
             </tr></tfoot>
           </table>
           {/* (an invoice says what was received for it; this report ages the party's whole debt, oldest first) */}

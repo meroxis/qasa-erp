@@ -326,6 +326,9 @@ export function AmountsShowSetting() {
   const [error, setError] = useState<unknown>(null);
   if (!data) return null;
   const { reloadSettings } = data;
+  // an office server from before this choice sends none and would ignore it (a save would seem to work and do nothing):
+  // the choice is shown, dinar only, and can't be changed until the server is updated
+  const oldServer = !!settings && settings.amountsShow === undefined;
   const iqd = t('iqdShort');
   const options: Choice<AmountsShow>[] = [
     { value: 'iqd', label: t('am_iqd'), sample: iqd },
@@ -350,7 +353,8 @@ export function AmountsShowSetting() {
       <Icon name="wallet" size={20} className="setting-icon" />
       <div className="setting-text"><strong>{t('am_show')}</strong><span>{t('am_showHelp')}</span></div>
       <div className="setting-ctl">
-        <ChoiceTiles label={t('am_show')} value={settings?.amountsShow ?? DEFAULT_AMOUNTS_SHOW} options={options} onChange={(v) => void choose(v)} busy={busy} disabled={!settings} />
+        <ChoiceTiles label={t('am_show')} value={settings?.amountsShow ?? DEFAULT_AMOUNTS_SHOW} options={options} onChange={(v) => void choose(v)} busy={busy} disabled={!settings || oldServer} />
+        {oldServer && <p className="small muted" data-note="amounts-show-old-server">{t('am_oldServer')}</p>}
         <ErrorBox error={error} />
       </div>
     </div>

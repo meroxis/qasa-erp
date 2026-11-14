@@ -181,7 +181,7 @@ export function DayClose() {
               sub={drawerDiff ? t(drawerDiff.key) : undefined} />
             {c.flow && <Stat icon="plus" label={t('dc_moneyIn')} value={<Amount value={c.flow.in} date={c.date} />} color={good} sub={<>{t('dc_moneyOut')}: <Amount value={c.flow.out} date={c.date} inline /></>} />}
           </div>
-          <DualRateHint />
+          <DualRateHint date={c.date} />
 
           <div className="grid-2" style={{ alignItems: 'start' }}>
             <Section title={t('dc_byMethod')} icon="wallet" empty={!c.methods.length && !c.refunds.length}>
@@ -294,7 +294,7 @@ export function DayClose() {
             </Section>
           </div>
           <p className="small muted">{t('dc_notes')}</p>
-          <DualNote />
+          <DualNote date={c.date} />
         </>
       )}
     </div>

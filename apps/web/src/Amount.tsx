@@ -43,31 +43,62 @@ export const useDual = (): DualSource => useContext(DualContext);
 /** Asks for a day's rate (today's date given by the caller); the answer comes through the reader's `write`. */
 export type RateReader = (day: string, today: string) => void;
 
+/** The rate board's answer for a day (fxApi.rateOn): `source` 'board' when a rate was entered on or before it. */
+export type RateOn = (day: string) => Promise<{ source: string; date: string | null; rateX100: number }>;
+
 /**
- * Reads each day's rate once from the rate board: the rate entered on or before the day; for a day older than every
- * rate, today's, marked `today`; null when the board has none. Every day read is written (`write`) when its answer
+ * The one rule for a day's dollar rate, for the screens (rateReader) and the printed paper (paperRateX100) alike: the
+ * rate entered on or before the day; for a day older than every rate, today's (the latest), marked `today`; null when
+ * the board has none. A failed request rejects (it is not an answer). `todayRate`: today's lookup, for a caller that
+ * keeps it.
+ */
+export function boardRate(rateOn: RateOn, day: string, today: string, todayRate: () => Promise<DualRate | null> = () => boardRate(rateOn, today, today)): Promise<DualRate | null> {
+  return rateOn(day).then((r) => (r.source === 'board' && r.date && usableRate(r.rateX100)
+    ? { rateX100: r.rateX100, date: r.date, today: false }
+    : day >= today ? null : todayRate().then((t) => (t ? { ...t, today: true } : null))));
+}
+
+/**
+ * The rate of a printed paper's "other-currency equivalent": the same as the screen's "≈" for that date (boardRate);
+ * the company's usual rate only when the board has no rate at all or cannot be read.
+ */
+export function paperRateX100(rateOn: RateOn, day: string, today: string, usualX100: number | undefined): Promise<number | undefined> {
+  return boardRate(rateOn, day, today).then((r) => r?.rateX100 ?? usualX100, () => usualX100);
+}
+
+/** The first pause before a failed rate request is asked again; it doubles on each failure, up to a minute. */
+export const RATE_RETRY_MS = 2_000;
+
+/**
+ * Reads each day's rate once from the rate board (boardRate). Every day read is written (`write`) when its answer
  * comes, the day a lookup fell back to (today) as well: a day asked for but never written would stay "being read" for
- * the whole session.
+ * the whole session. A failed request (offline, the server restarting) is not an answer and is not kept: the day is
+ * asked again after a short pause, longer after each failure, while the reader is still in use (`alive`).
  */
 export function rateReader(
-  rateOn: (day: string) => Promise<{ source: string; date: string | null; rateX100: number }>,
-  write: (day: string, rate: DualRate | null) => void
+  rateOn: RateOn,
+  write: (day: string, rate: DualRate | null) => void,
+  { retryMs = RATE_RETRY_MS, alive = () => true }: { retryMs?: number; alive?: () => boolean } = {}
 ): RateReader {
   const asked = new Map<string, Promise<DualRate | null>>();
+  const failures = new Map<string, number>();
   const load = (d: string, today: string): Promise<DualRate | null> => {
     const had = asked.get(d);
     if (had) return had;
-    const p = rateOn(d).then(
-      (r): Promise<DualRate | null> | DualRate | null => (r.source === 'board' && r.date && usableRate(r.rateX100)
-        ? { rateX100: r.rateX100, date: r.date, today: false }
-        : d === today ? null : load(today, today).then((t) => (t ? { ...t, today: true } : null))),
-      () => null
-    );
+    const p = boardRate(rateOn, d, today, () => load(today, today));
     asked.set(d, p);
-    void p.then((r) => write(d, r));
+    p.then((r) => { failures.delete(d); write(d, r); }, () => {
+      // (until the pause is over the failed answer stays, so a render does not ask again at once)
+      const n = (failures.get(d) ?? 0) + 1;
+      failures.set(d, n);
+      setTimeout(() => {
+        if (asked.get(d) === p) asked.delete(d);
+        if (alive()) void load(d, today).catch(() => undefined);
+      }, Math.min(retryMs * 2 ** (n - 1), 60_000));
+    });
     return p;
   };
-  return (day, today) => { void load(day, today); };
+  return (day, today) => { void load(day, today).catch(() => undefined); };
 }
 
 /**
@@ -89,12 +120,13 @@ export function DualProvider({ show, canSet, watch, children }: { show: AmountsS
   const rate = useCallback((date?: string): DualRate | null | undefined => {
     if (show === 'iqd') return null;
     const today = todayIso();
-    const day = date && date < today ? date : today;
+    // (a day after the browser's today is kept: the server's day, for figures it dated, may be ahead of this PC's clock)
+    const day = date || today;
     if (known.has(day)) return known.get(day);
     if (!reader.current) {
       const mine: RateReader = rateReader((d) => fxApi.rateOn(d), (d, r) => {
         if (reader.current === mine) setKnown((m) => (m.has(d) ? m : new Map(m).set(d, r)));
-      });
+      }, { alive: () => reader.current === mine });
       reader.current = mine;
     }
     reader.current(day, today);
@@ -207,10 +239,10 @@ export function useAmountText(): AmountText {
  * Under a page whose note says its figures are in dinars: once it also shows ≈ figures (dinar and dollar, with a rate
  * on the board), a short line that says what they are. Nothing with dinar only.
  */
-export function DualNote() {
+export function DualNote({ date }: { date?: string | undefined } = {}) {
   const { t } = useI18n();
   const dual = useDual();
-  if (dual.show === 'iqd' || !dual.rate()) return null;
+  if (dual.show === 'iqd' || !dual.rate(date)) return null;
   return <p className="small muted" style={{ marginBlockStart: 0 }}>{t('am_note')}</p>;
 }
 
@@ -218,9 +250,9 @@ export function DualNote() {
  * The quiet line for someone who may enter a rate, when amounts should show in dollars too but the rate board has no
  * rate: "Enter the dollar rate to see amounts in dollars too". Nothing for anyone else, or once there is a rate.
  */
-export function DualRateHint() {
+export function DualRateHint({ date }: { date?: string | undefined } = {}) {
   const { t } = useI18n();
   const dual = useDual();
-  if (dual.show === 'iqd' || !dual.canSet || dual.rate() !== null) return null;
+  if (dual.show === 'iqd' || !dual.canSet || dual.rate(date) !== null) return null;
   return <div className="dual-hint small muted no-print"><a href={href('rates')}>{t('am_setRate')}</a></div>;
 }

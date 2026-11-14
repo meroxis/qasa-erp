@@ -54,15 +54,16 @@ export function Home({ viewer, user, favourites }: { viewer: NavViewer; user: st
   // the owner's dashboard (aged balances, cash in each currency, this month's profit); the simpler tiles until it loads
   const dash = useLoad(() => briefApi.dashboard(), []);
   const d = dash.data;
+  // (the dashboard's figures are as of the server's day, d.date: their ≈ at that day's rate, not the browser's today)
   const tiles = (d ? [
-    { label: t('salesThisMonth'), value: <Amount value={d.salesMonth} />, link: 'sales', icon: 'trend', sub: trendText(i18n, d.salesMonth, d.salesLastMonth) },
+    { label: t('salesThisMonth'), value: <Amount value={d.salesMonth} date={d.date} />, link: 'sales', icon: 'trend', sub: trendText(i18n, d.salesMonth, d.salesLastMonth) },
     // (the safes and banks hold real dollars too: shown as they are, and the whole in the other currency)
-    ...(d.cash ? [{ label: t('cashAndBanks'), value: <Amount value={d.cash.total} />, icon: 'wallet', link: 'brief' }] : []),
-    ...(d.profitMonth ? [{ label: t('br_profitMonth'), value: <Amount value={d.profitMonth.profit} />, icon: 'chart', ...(books ? { link: 'final-accounts' } : {}), tone: d.profitMonth.profit < 0 ? 'bad' : 'ok' }] : []),
+    ...(d.cash ? [{ label: t('cashAndBanks'), value: <Amount value={d.cash.total} date={d.date} />, icon: 'wallet', link: 'brief' }] : []),
+    ...(d.profitMonth ? [{ label: t('br_profitMonth'), value: <Amount value={d.profitMonth.profit} date={d.date} />, icon: 'chart', ...(books ? { link: 'final-accounts' } : {}), tone: d.profitMonth.profit < 0 ? 'bad' : 'ok' }] : []),
     // (what is owed: the real dinars and dollars, the book-rate total with dinar only, as before)
-    { label: t('receivables'), value: <OwedTotal owed={d.receivablesOwed} book={d.receivables} />, link: 'reports-more/aging', icon: 'contact' },
+    { label: t('receivables'), value: <OwedTotal owed={d.receivablesOwed} book={d.receivables} date={d.date} />, link: 'reports-more/aging', icon: 'contact' },
     // (the ageing of what the company owes is a report of its books: without them the tile opens the suppliers list)
-    ...(suppliers ? [{ label: t('payables'), value: <OwedTotal owed={d.payablesOwed} book={d.payables} />, link: journal ? 'reports-more/supplier-aging' : 'suppliers', icon: 'truck' }] : [])
+    ...(suppliers ? [{ label: t('payables'), value: <OwedTotal owed={d.payablesOwed} book={d.payables} date={d.date} />, link: journal ? 'reports-more/supplier-aging' : 'suppliers', icon: 'truck' }] : [])
   ] : [
     ...(journal ? [{ label: t('cashAndBanks'), value: <Amount value={cash} />, icon: 'wallet' }] : []),
     { label: t('salesThisMonth'), value: <Amount value={salesTotal} />, link: 'sales', icon: 'trend' },
@@ -138,7 +139,7 @@ export function Home({ viewer, user, favourites }: { viewer: NavViewer; user: st
           </div>
         ))}
       </div>
-      <DualRateHint />
+      <DualRateHint date={d?.date} />
       <FirstSteps viewer={viewer} />
       <Launcher viewer={viewer} user={user} favourites={favourites} />
       {d && <SalesChart d={d} />}
@@ -190,7 +191,8 @@ function SalesChart({ d }: { d: DashboardView }) {
   // dinar and dollar: each month's sales also in dollars, at the rate of the month's last day (today's for this month)
   const dual = useDual();
   const amountText = useAmountText();
-  const monthEnd = (ym: string) => new Date(Date.UTC(Number(ym.slice(0, 4)), Number(ym.slice(5, 7)), 0)).toISOString().slice(0, 10);
+  // (this month ends on the server's day: the dashboard is as of d.date)
+  const monthEnd = (ym: string) => { const end = new Date(Date.UTC(Number(ym.slice(0, 4)), Number(ym.slice(5, 7)), 0)).toISOString().slice(0, 10); return end < d.date ? end : d.date; };
   // the bar's label as every amount shows (dualLines): dinars on top, or with "Dollar and dinar" ≈ dollars on top and the
   // dinars small under them; the sign and its place from the same helper as the tiles (dualLineText)
   const labelOf = (m: { month: string; sales: number }) => {

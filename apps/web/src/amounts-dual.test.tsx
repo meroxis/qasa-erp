@@ -5,7 +5,7 @@ import { LTR_ISOLATE_END, LTR_ISOLATE_START, stripBidiIsolates, type AmountsShow
 import { DataContext } from './components.tsx';
 import { I18nContext, makeI18n } from './i18n.ts';
 import { AMOUNTS_TEXT } from './i18n/amounts.ts';
-import { Amount, amountTextOf, DualContext, DualNote, DualRateHint, dualRateTitle, dualText, OwedTotal, rateReader, type DualRate, type DualSource } from './Amount.tsx';
+import { Amount, amountTextOf, boardRate, DualContext, DualNote, DualRateHint, dualRateTitle, dualText, OwedTotal, paperRateX100, rateReader, type DualRate, type DualSource } from './Amount.tsx';
 import type { BriefView, DashboardView, DayCloseView } from './industry/brief-api.ts';
 import type { NavViewer } from './nav.ts';
 import { compact, Home } from './pages/Home.tsx';
@@ -338,5 +338,116 @@ describe('the home page and a report in the three choices', () => {
     expect(both).toContain('Figures marked ≈ are in the other currency');
     expect(both.split('≈').length - 1).toBe(3 + 1);
     expect(report('usd_iqd')).toContain('Totals ≈ $1,000.00 1,310,000 IQD ≈ $800.00 1,048,000 IQD ≈ $200.00 262,000 IQD');
+  });
+});
+
+describe('after the second review', () => {
+  // the board: 1,310 entered on 2026-11-14 and nothing before 2026-11-01; the company's usual rate is 1,420
+  const board = async (d: string) => (d >= '2026-11-01' ? { source: 'board', date: '2026-11-14', rateX100: 131_000 } : { source: 'default', date: null, rateX100: 142_000 });
+  const tick = () => new Promise((resolve) => { setTimeout(resolve, 0); });
+
+  it('a paper dated before the first rate on the board uses the same rate as the screen (today\'s), not the usual rate', async () => {
+    expect(await boardRate(board, '2026-10-01', '2026-11-15')).toEqual({ rateX100: 131_000, date: '2026-11-14', today: true });
+    expect(await paperRateX100(board, '2026-10-01', '2026-11-15', 142_000)).toBe(131_000);
+    const screen = new Map<string, DualRate | null>();
+    rateReader(board, (d, r) => { screen.set(d, r); })('2026-10-01', '2026-11-15');
+    await tick();
+    expect(screen.get('2026-10-01')?.rateX100).toBe(await paperRateX100(board, '2026-10-01', '2026-11-15', 142_000));
+    // no rate on the board at all, or the board cannot be read: the paper keeps the usual rate (the screen shows no ≈)
+    expect(await paperRateX100(async () => ({ source: 'default', date: null, rateX100: 142_000 }), '2026-10-01', '2026-11-15', 142_000)).toBe(142_000);
+    expect(await paperRateX100(() => Promise.reject(new Error('offline')), '2026-10-01', '2026-11-15', 142_000)).toBe(142_000);
+  });
+
+  it('does not keep a failed rate request: it asks again after a short pause; a real "no rate" stays known', async () => {
+    const written = new Map<string, DualRate | null>();
+    let fail = true;
+    const asked: string[] = [];
+    const read = rateReader(async (d) => {
+      asked.push(d);
+      if (fail) throw new Error('offline');
+      return board(d);
+    }, (d, r) => { written.set(d, r); }, { retryMs: 100 });
+    read('2026-11-15', '2026-11-15');
+    await tick();
+    // the failure is no answer: nothing written (the amount stays "being read", not "no rate")
+    expect(written.has('2026-11-15')).toBe(false);
+    // within the pause a render does not ask again
+    read('2026-11-15', '2026-11-15');
+    await tick();
+    expect(asked).toEqual(['2026-11-15']);
+    fail = false;
+    await new Promise((resolve) => { setTimeout(resolve, 250); });
+    expect(written.get('2026-11-15')).toEqual({ rateX100: 131_000, date: '2026-11-14', today: false });
+    // a board with no rate: null, asked once and kept
+    const none = new Map<string, DualRate | null>();
+    const calls: string[] = [];
+    const empty = rateReader(async (d) => { calls.push(d); return { source: 'default', date: null, rateX100: 142_000 }; }, (d, r) => { none.set(d, r); }, { retryMs: 5 });
+    empty('2026-11-15', '2026-11-15');
+    await new Promise((resolve) => { setTimeout(resolve, 30); });
+    empty('2026-11-15', '2026-11-15');
+    await tick();
+    expect(none.get('2026-11-15')).toBe(null);
+    expect(calls).toEqual(['2026-11-15']);
+    // a reader no longer in use stops asking
+    let alive = true;
+    const tries: string[] = [];
+    const gone = rateReader(async (d) => { tries.push(d); throw new Error('offline'); }, () => {}, { retryMs: 5, alive: () => alive });
+    gone('2026-11-15', '2026-11-15');
+    await tick();
+    alive = false;
+    await new Promise((resolve) => { setTimeout(resolve, 40); });
+    expect(tries).toEqual(['2026-11-15']);
+  });
+
+  it('the ageing report: each row from its real dinars and dollars, then the ≈ whole, like its totals row', () => {
+    now.answers = { aging: { date: '2026-11-14', type: 'customer', rows: [
+      { partyId: 'p1', code: 'C1', name: 'Las', phone: '', balance: 3_298_000, oldestDays: 40, buckets: [0, 3_298_000, 0, 0], owed: { IQD: 1_310_000, USD: 140_000 } },
+      { partyId: 'p2', code: 'C2', name: 'Raz', phone: '', balance: 262_000, oldestDays: 10, buckets: [262_000, 0, 0, 0], owed: { IQD: 262_000, USD: 0 } }
+    ] } };
+    const report = (show: AmountsShow | null) => plain(render(<MoreReports tab="aging" />, { data: { seesBooks: true }, ...(show ? { dual: source(show) } : {}) }));
+    const both = report('iqd_usd');
+    expect(both).toContain('1,310,000 IQD + $1,400.00 ≈ $2,400.00');
+    expect(both).toContain('262,000 IQD ≈ $200.00');
+    // the row's book-rate figure is not converted again
+    expect(both).not.toContain('3,298,000 IQD ≈');
+    // the totals row: 1,572,000 IQD + $1,400 ≈ $2,600
+    expect(both).toContain('1,572,000 IQD + $1,400.00 ≈ $2,600.00');
+    // dinar only: the rows' book-rate totals, as before
+    const before = report(null);
+    expect(report('iqd')).toBe(before);
+    expect(before).toContain('3,298,000 IQD');
+    expect(before).not.toContain('≈');
+    expect(before).not.toContain('$1,400.00');
+  });
+
+  it('against an office server that keeps no such choice: the choice can\'t be changed, and a note says why', () => {
+    const company = { companyName: { ar: '', en: '', ku: '' }, defaultRateX100: 131000, fiscalYearStart: '01-01', businessTypes: [] };
+    const old = render(<AmountsShowSetting />, { data: { settings: company } });
+    expect(old).toMatch(/aria-checked="true"[^>]*>(?:(?!aria-checked).)*Dinar only/);
+    expect(old).toContain('aria-disabled="true"');
+    expect(old).toContain('Update Qasa ERP on the office server PC to change this');
+    for (const lang of ['ar', 'ku'] as const) expect(render(<AmountsShowSetting />, { lang, data: { settings: company } })).toContain(AMOUNTS_TEXT.am_oldServer[lang === 'ar' ? 0 : 2]);
+    const current = render(<AmountsShowSetting />, { data: { settings: { ...company, amountsShow: 'iqd' } } });
+    expect(current).not.toContain('aria-disabled="true"');
+    expect(current).not.toContain('Update Qasa ERP');
+  });
+
+  it('the dashboard, the brief and the end of day convert at the rate of the server\'s day, not the browser\'s', () => {
+    const asked: (string | undefined)[] = [];
+    const spy: DualSource = { show: 'iqd_usd', canSet: true, rate: (date) => { asked.push(date); return RATE; } };
+    const admin: NavViewer = { admin: true, permissions: ['admin'], businessTypes: [] };
+    // the server's day is 2026-10-20 (the dashboard is as of it), whatever this PC's clock says
+    now.answers = { dashboard: {
+      date: '2026-10-20', salesMonth: 1_310_000, salesLastMonth: 0, receivables: 262_000, payables: 0, receivablesOwed: { IQD: 262_000, USD: 0 },
+      payablesOwed: { IQD: 0, USD: 0 }, cash: { total: { IQD: 655_000, USD: 0 }, base: 655_000 }, months: [{ month: '2026-10', sales: 1_310_000 }]
+    } as DashboardView, entries: [], invoices: [], parties: [] };
+    render(<Home viewer={admin} user="Mer" favourites={[]} />, { data: { permissions: ['admin'] }, dual: spy });
+    expect(asked.length).toBeGreaterThan(0);
+    expect(new Set(asked)).toEqual(new Set(['2026-10-20']));
+    for (const node of [<DualNote date="2026-10-20" />, <DualRateHint date="2026-10-20" />]) {
+      asked.length = 0;
+      render(node, { dual: spy });
+      expect(asked).toEqual(['2026-10-20']);
+    }
   });
 });

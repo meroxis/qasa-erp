@@ -34,6 +34,12 @@ export const AMOUNTS_TEXT = {
     'At this sale’s rate: $1 = {r} IQD',
     'بە نرخی ئەم فرۆشتنە: 1 دۆلار = {r} دینار'
   ],
+  // Settings, against an office server not yet updated: it keeps no such choice, so the choice is shown but can't be changed
+  am_oldServer: [
+    'حدّث قاصة ERP على حاسوب خادم المكتب لتغيير هذا الخيار؛ حتى ذلك تظهر المبالغ بالدينار فقط.',
+    'Update Qasa ERP on the office server PC to change this; until then amounts show in dinars only.',
+    'قاسە ERP لەسەر کۆمپیوتەری سێرڤەری نووسینگە نوێ بکەرەوە بۆ گۆڕینی ئەمە؛ تا ئەو کاتە بڕی پارەکان تەنها بە دینار دەردەکەون.'
+  ],
   // under a page whose note says "in dinars", once it also shows ≈ figures
   am_note: [
     'الأرقام المسبوقة بـ ≈ بالعملة الأخرى، بسعر الدولار لذلك اليوم (ولفترةٍ: بسعر آخر يوم فيها).',
