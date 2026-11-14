@@ -1,6 +1,7 @@
 import { EventEmitter } from 'node:events';
 import { describe, expect, it, vi } from 'vitest';
 import { printingHandlers, type PrintTarget } from './printing.ts';
+import type { WindowsPrinter } from './printer-info.ts';
 
 /** The app window's webContents, as printing uses it: its printers, and print() answering as asked. */
 function fakeWindow(printers: { name: string; displayName?: string }[] = [{ name: 'Office Laser', displayName: 'Office Laser' }, { name: 'Receipts', displayName: 'Receipt printer' }]) {
@@ -14,7 +15,7 @@ function fakeWindow(printers: { name: string; displayName?: string }[] = [{ name
 }
 
 /** silentGapMs: the gap between silent prints (0 here unless a test checks it); the clock is the test's own. */
-function setup(options: { file?: string | null; appPage?: boolean; target?: PrintTarget | null; silentGapMs?: number } = {}) {
+function setup(options: { file?: string | null; appPage?: boolean; target?: PrintTarget | null; silentGapMs?: number; windows?: (fresh?: boolean) => Promise<WindowsPrinter[]> } = {}) {
   const win = fakeWindow();
   let file: string | null = options.file ?? null;
   const writes: string[] = [];
@@ -27,7 +28,8 @@ function setup(options: { file?: string | null; appPage?: boolean; target?: Prin
     log: () => {},
     timeoutMs: 1000,
     silentGapMs: options.silentGapMs ?? 0,
-    now: () => clock.now
+    now: () => clock.now,
+    ...(options.windows ? { windows: options.windows } : {})
   });
   return { win, handlers, writes, clock, file: () => file, event: { sender: options.target !== undefined ? options.target : win } };
 }
@@ -63,7 +65,32 @@ describe('the printers and the saved choices', () => {
   it('lists the printers Windows has, without duplicates or names that are not names', async () => {
     const { handlers, win, event } = setup();
     win.printers = [{ name: 'Office Laser', displayName: 'Office Laser' }, { name: 'Office Laser' }, { name: '' }, { name: 'Bad\u0000name' }, { name: 'Receipts', displayName: '  ' }];
-    expect(await handlers.list(event)).toEqual([{ name: 'Office Laser', displayName: 'Office Laser' }, { name: 'Receipts', displayName: 'Receipts' }]);
+    expect((await handlers.list(event))!.map((p) => ({ name: p.name, displayName: p.displayName }))).toEqual([{ name: 'Office Laser', displayName: 'Office Laser' }, { name: 'Receipts', displayName: 'Receipts' }]);
+  });
+
+  it('marks the Windows default printer, each one’s state and what it looks like; nothing is known when Windows can’t be asked', async () => {
+    const windows = vi.fn(async (): Promise<WindowsPrinter[]> => [
+      { name: 'Office Laser', isDefault: true, state: 'ready', driver: 'HP Universal Printing PCL 6', papers: ['A4'] },
+      { name: 'Receipts', isDefault: false, state: 'offline', driver: 'XP-80C', papers: ['80(72) x 297 mm'] },
+      { name: 'Not listed by the app', isDefault: false, state: 'ready', driver: '', papers: [] }
+    ]);
+    const { handlers, event } = setup({ windows });
+    expect(await handlers.list(event)).toEqual([
+      { name: 'Office Laser', displayName: 'Office Laser', isDefault: true, state: 'ready', guess: 'page' },
+      { name: 'Receipts', displayName: 'Receipt printer', isDefault: false, state: 'offline', guess: 'receipt80' }
+    ]);
+    expect(windows).toHaveBeenLastCalledWith(false);
+    // only the Refresh button (exactly true) asks Windows again
+    await handlers.list(event, 'yes');
+    expect(windows).toHaveBeenLastCalledWith(false);
+    await handlers.list(event, true);
+    expect(windows).toHaveBeenLastCalledWith(true);
+
+    const none = setup({ windows: async () => { throw new Error('PowerShell is blocked'); } });
+    expect(await none.handlers.list(none.event)).toEqual([
+      { name: 'Office Laser', displayName: 'Office Laser', isDefault: false, state: 'unknown', guess: 'page' },
+      { name: 'Receipts', displayName: 'Receipt printer', isDefault: false, state: 'unknown', guess: 'receipt80' }
+    ]);
   });
 
   it('saves a valid choice for a kind and reads it back', async () => {
@@ -147,6 +174,29 @@ describe('printing', () => {
     expect(await gone.handlers.print(gone.event, 'receipt')).toEqual({ status: 'missing', printer: 'Receipts' });
     expect(none.win.print).not.toHaveBeenCalled();
     expect(gone.win.print).not.toHaveBeenCalled();
+  });
+
+  it('prints on the Windows default printer when the saved one is gone, and says so', async () => {
+    const windows = async (): Promise<WindowsPrinter[]> => [{ name: 'Office Laser', isDefault: true, state: 'ready', driver: '', papers: [] }];
+    const gone = setup({ file: saved({ receipt: choice }), windows });
+    gone.win.printers = [{ name: 'Office Laser' }];
+    expect(await gone.handlers.print(gone.event, 'receipt')).toEqual({ status: 'printed', fallback: { from: 'Receipts', to: 'Office Laser' } });
+    expect(gone.win.print).toHaveBeenCalledTimes(1);
+    expect(gone.win.print.mock.calls[0]![0]).toMatchObject({ deviceName: 'Office Laser', copies: 2, silent: true });
+    // the saved choice stays as it was: the person chooses another printer, or the old one comes back
+    expect(gone.handlers.get(gone.event)).toMatchObject({ receipt: { printer: 'Receipts' } });
+
+    // a default that the app can't print to (Windows names one the app doesn't list) is no way out
+    const other = setup({ file: saved({ receipt: choice }), windows: async () => [{ name: 'Somewhere else', isDefault: true, state: 'ready', driver: '', papers: [] }] });
+    other.win.printers = [{ name: 'Office Laser' }];
+    expect(await other.handlers.print(other.event, 'receipt')).toEqual({ status: 'missing', printer: 'Receipts' });
+    expect(other.win.print).not.toHaveBeenCalled();
+
+    // a print on the default that fails is a failure, not "printed"
+    const fails = setup({ file: saved({ receipt: choice }), windows });
+    fails.win.printers = [{ name: 'Office Laser' }];
+    fails.win.answer = [false, 'Print job failed'];
+    expect(await fails.handlers.print(fails.event, 'receipt')).toEqual({ status: 'failed', reason: 'printer' });
   });
 
   it('reports a printer that fails (offline, no paper) apart from a cancelled print', async () => {

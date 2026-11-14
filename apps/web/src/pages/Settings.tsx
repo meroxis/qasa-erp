@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { formatAmount, htmlLang, MONTHS, rateFromX100, todayIso, toWesternDigits, type DigitStyle, type Lang, type Names, type PostingAccounts } from '@qasa/core';
 import {
   api, ApiError, currentUser, request, setCurrentUser, type BackupStatus, type DatabaseCheck, type DatabaseInput, type DatabaseStatus, type NetworkStatus, type YearEndStatus
@@ -24,6 +24,8 @@ import { backupFailureKey, backupNoticeKey } from '../industry/BackupNotice.tsx'
 import { batchesApi, type BatchSettingsView } from '../industry/batches-api.ts';
 import { posApi, type PosAccounts } from '../industry/pos-api.ts';
 import { LoyaltySettingsCard } from '../industry/Loyalty.tsx';
+import { CloseAskSetting } from '../industry/CloseAsk.tsx';
+import { dataPlaceLine, officeText, useDataPlace, type DataPlace } from '../industry/data-place.ts';
 
 /** One section of Settings: its address (#/settings/<id>), icon, name and the line under the name. */
 export interface SettingsSection {
@@ -107,13 +109,100 @@ export function SettingsGrid({ admin }: { admin: boolean }) {
 /** #/settings/<id>: that one section alone, under the way back to the grid ("‹ Settings") and the section's name. */
 export function SettingsSectionPage({ section, admin }: { section: SettingsSection; admin: boolean }) {
   const { t } = useI18n();
+  const name = t(section.name);
+  // 1.4: the section's name is on top; a card inside that starts with the same name would say it twice. Such a
+  // heading stays for screen readers (cards are labelled by it) and is not drawn. Cards may arrive after the page
+  // (they load their own data), so the section is watched while it is open.
+  const box = useRef<HTMLElement>(null);
+  useEffect(() => {
+    const root = box.current;
+    if (!root) return;
+    const mark = () => markRepeatedHeadings(root, name);
+    mark();
+    if (typeof MutationObserver !== 'function') return;
+    const watch = new MutationObserver(mark);
+    watch.observe(root, { childList: true, subtree: true, characterData: true });
+    return () => watch.disconnect();
+  }, [name, section.id]);
   return (
-    <section className="settings-section stack" data-section={section.id} aria-labelledby="settings-section-title">
+    <section ref={box} className="settings-section stack" data-section={section.id} aria-labelledby="settings-section-title">
       <a className="settings-back" href={href('settings')}><Icon name="chevron" size={16} className="settings-back-icon" />{t('settings')}</a>
       <h2 id="settings-section-title" className="settings-section-title">{t(section.name)}</h2>
       <SettingsSectionContent id={section.id} admin={admin} />
     </section>
   );
+}
+
+/**
+ * Marks the headings inside an open section that only repeat its name (the "Printers" card under "Printers"), and
+ * unmarks any that no longer do (another language). The section's own title is never one of them.
+ */
+export function markRepeatedHeadings(root: ParentNode, name: string): void {
+  const same = (text: string | null) => (text ?? '').replace(/\s+/g, ' ').trim() === name.replace(/\s+/g, ' ').trim();
+  for (const h of root.querySelectorAll('h2:not(.settings-section-title)')) {
+    const repeated = same(h.textContent);
+    if (repeated !== h.classList.contains('settings-repeat-title')) h.classList.toggle('settings-repeat-title', repeated);
+  }
+}
+
+/** Settings → About: where the company's data is (this PC, or the office PC this one is connected to). */
+export function DataPlaceCard({ place }: { place: DataPlace | null }) {
+  const { t } = useI18n();
+  if (!place) return null;
+  return (
+    <div className="card pad row" data-place={place.kind} style={{ flexWrap: 'wrap' }}>
+      <Icon name={place.kind === 'office' ? 'branch' : 'building'} size={18} />
+      <div className="stack" style={{ gap: 2, flex: 1, minWidth: 220 }}>
+        <strong>{t('s14_whereData')}</strong>
+        <span className="muted small">{dataPlaceLine(t, place)}</span>
+      </div>
+    </div>
+  );
+}
+
+function AboutDataPlace() {
+  const place = useDataPlace();
+  // the website demo keeps its data in the browser, and its status line says so
+  return import.meta.env.MODE === 'demo' ? null : <DataPlaceCard place={place} />;
+}
+
+/**
+ * 1.4: Settings → Backups on a PC connected to an office PC. The books are not here, so nothing here may read as if a
+ * copy of this PC protected them: it says where the data and its backups are, and offers no backup buttons.
+ */
+export function ClientBackupCard({ place }: { place: DataPlace }) {
+  const { t } = useI18n();
+  return (
+    <div className="card pad stack" data-client-backups>
+      <div className="card-head"><h2>{t('bkTitle')}</h2><GuideLink slug="backups-restore-and-companies" /></div>
+      <div className="alert info" role="status">{officeText(t, place, 's14_bkClient')}</div>
+    </div>
+  );
+}
+
+/** 1.4: Settings → Office network on a PC connected to an office PC: it is a client, and says of which PC. */
+export function ClientNetworkCard({ place }: { place: DataPlace }) {
+  const { t } = useI18n();
+  return (
+    <div className="card pad stack" data-client-network>
+      <div className="card-head"><h2>{t('netTitle')}</h2><GuideLink slug="office-network-and-qasa-relay" /></div>
+      <div className="alert info" role="status">{officeText(t, place, 's14_netClient')}</div>
+      <p className="muted small" style={{ margin: 0 }}>{t('s14_netClientSettings')}</p>
+    </div>
+  );
+}
+
+/** Backups: this PC's own (the books are here), or the word that they are on the office PC. Nothing until that is known. */
+function BackupCard() {
+  const place = useDataPlace();
+  if (!place) return null;
+  return place.kind === 'office' ? <ClientBackupCard place={place} /> : <ThisPcBackupCard />;
+}
+
+function NetworkSection() {
+  const place = useDataPlace();
+  if (!place) return null;
+  return place.kind === 'office' ? <ClientNetworkCard place={place} /> : <><OfficeNetworkCard /><PhonesCard /><DatabaseCard /></>;
 }
 
 /** What each section holds: the same cards as before, only grouped. */
@@ -132,7 +221,7 @@ function SettingsSectionContent({ id, admin }: { id: string; admin: boolean }) {
     case 'backups':
       return <BackupCard />;
     case 'network':
-      return <><OfficeNetworkCard /><PhonesCard /><DatabaseCard /></>;
+      return <NetworkSection />;
     case 'companies':
       return <><CompaniesSetting /><StartOverCard /></>;
     case 'usage':
@@ -140,7 +229,7 @@ function SettingsSectionContent({ id, admin }: { id: string; admin: boolean }) {
     case 'updates':
       return <UpdateSettings />;
     case 'about':
-      return <><HelpPanel /><LegalPanel /></>;
+      return <><AboutDataPlace /><HelpPanel /><LegalPanel /></>;
     default:
       return <DisplaySettings />;
   }
@@ -801,7 +890,7 @@ export function BackupCopyRow({ copy, when, size, disabled, onRestore }: {
 }
 
 /** A daily copy of the company file in a chosen folder, and restoring one (the Pro module; absent without it). */
-function BackupCard() {
+function ThisPcBackupCard() {
   const { t, digitsOf, dateTime } = useI18n();
   const toast = useToast();
   const [status, setStatus] = useState<BackupStatus | null>(null);
@@ -892,6 +981,7 @@ function BackupCard() {
       </div>
       <p className="muted" style={{ margin: 0 }}>{t('bkHelp')}</p>
       {absent && <div className="alert">{t('bkOfficial')} {t('bkManual')}</div>}
+      {absent && <CloseAskSetting />}
       {restarting && <div className="alert ok" role="status">{t('bkRestarting')}</div>}
       {status && (
         <>
@@ -956,6 +1046,8 @@ function BackupCard() {
               {status.closeError && <div className="alert bad" role="alert">{t('bc_failed', { e: status.closeError })}</div>}
             </div>
           )}
+          {/* 1.4: "Back up before closing?" when the books changed and no backup was made since (the Windows app asks) */}
+          <CloseAskSetting />
           <ErrorBox error={error} />
           <div className="row" style={{ gap: 8, flexWrap: 'wrap' }}>
             {/* every plan, Free included: only the automatic daily copies need the plan */}

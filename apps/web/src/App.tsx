@@ -25,6 +25,8 @@ import { isReportTab, isSolarTab } from './pages/tabs.ts';
 import { canSwitchCompanies } from './industry/companies-api.ts';
 import { outboxClient, setOutboxUser, startOutbox } from './industry/outbox.ts';
 import { OutboxBanner } from './industry/OutboxBanner.tsx';
+import { HeaderRate } from './industry/HeaderRate.tsx';
+import { dataPlaceLine, officeText, useDataPlace } from './industry/data-place.ts';
 
 /**
  * Pages load when they are first opened, not with the app: the first screen comes up quickly and the window holds only
@@ -151,6 +153,8 @@ export function App() {
   const [me, setMe] = useState<Me | null>(null);
   const [changingPassword, setChangingPassword] = useState(false);
   const [online, setOnline] = useState(true);
+  // 1.4: on this PC, or on the office PC this one is connected to: the status line and the backup hints say which
+  const dataPlace = useDataPlace();
   const route = useRoute();
   // the menu: shrunk to icons (remembered on this PC), which groups are open (several at once, remembered per person), pinned pages
   const [collapsed, setCollapsed] = useState(navCollapsed);
@@ -821,6 +825,8 @@ export function App() {
                 <button type="button" className="btn subtle icon" title={dark ? t('lightMode') : t('darkMode')} aria-label={dark ? t('lightMode') : t('darkMode')} onClick={() => setTheme(dark ? 'light' : 'dark')}>
                   <Icon name={dark ? 'sun' : 'moon'} size={16} />
                 </button>
+                {/* 1.4: today's dollar rate beside the person's name, on the side away from the window's edge */}
+                <HeaderRate canSet={isAdmin || !!me.user?.permissions.includes('entries.prepare')} watch={`${settings?.defaultRateX100 ?? ''}/${page === 'rates'}`} />
                 <span className="topbar-sep" />
                 <UserMenu
                   name={user || t('owner')}
@@ -858,13 +864,15 @@ export function App() {
                     {isAdmin && <a href={href('plans')}>{t('planLicense')}</a>}
                   </div>
                 )}
-                {import.meta.env.MODE !== 'demo' && <BackupNoticeBar admin={isAdmin} page={page === 'settings' && arg !== 'backups' ? 'settings-section' : page} />}
+                {/* not on a PC connected to an office PC: the books and their backups are on that PC */}
+                {import.meta.env.MODE !== 'demo' && dataPlace?.kind === 'local' && <BackupNoticeBar admin={isAdmin} page={page === 'settings' && arg !== 'backups' ? 'settings-section' : page} />}
                 {outboxOn && <OutboxBanner page={page ?? ''} />}
                 <div key={branchKey} style={{ display: 'contents' }}><Suspense fallback={<PageLoading />}>{content}</Suspense></div>
               </main>
               <footer className="statusbar">
                 <span className={'dot' + (online ? '' : ' off')} />
-                <span>{import.meta.env.MODE === 'demo' ? t('demoMode') : online ? t('localMode') : t('serverDown')}</span>
+                {/* where the data is: this PC, or the office PC this one is connected to (never "on this PC" there) */}
+                <span>{import.meta.env.MODE === 'demo' ? t('demoMode') : online ? dataPlaceLine(t, dataPlace) : dataPlace?.kind === 'office' ? officeText(t, dataPlace, 's14_officeDown') : t('serverDown')}</span>
                 <span className="spacer" />
                 {import.meta.env.MODE === 'demo' && <a href="../" className="ltr">qasaerp.com</a>}
                 <span className="ltr">Qasa ERP {APP_VERSION}</span>

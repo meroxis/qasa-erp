@@ -199,7 +199,7 @@ describe('Settings → Language and display, as rectangles', () => {
     // joining the beta still asks first; leaving is at once
     expect(src('./industry/UpdateSettings.tsx')).toContain("onChange={(v) => { if (v === 'beta') setAsking(true); else channel('stable'); }}");
     // lists from data stay lists: the printers Windows has, the users a phone acts as, how many copies to keep
-    expect(src('./industry/Printers.tsx')).toContain('{(printers ?? []).map((p) => <option key={p.name} value={p.name}>{p.displayName}</option>)}');
+    expect(src('./industry/Printers.tsx')).toContain('{(printers ?? []).map((p) => <option key={p.name} value={p.name}>{optionLabel(p)}</option>)}');
     expect(settings).toContain('{status.users.map((u) => <option key={u.id} value={u.id}>{u.name}</option>)}');
     expect(settings).toContain('{KEEP_CHOICES.map((n) => <option key={n} value={n}>');
   });

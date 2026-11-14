@@ -17,7 +17,7 @@ import { finalAccountsReport, statementReport, trialBalanceReport } from './repo
 import { reorderList } from './reorder.ts';
 import { getSettings, lockPeriod, lockedPeriods, unlockPeriod, updateSettings } from './settings.ts';
 import { listAudit } from './audit.ts';
-import { createParty, deleteParty, getParty, isForeignKeyFailure, listParties, partyStatement, updateParty } from './parties.ts';
+import { createParty, deleteParty, getParty, isForeignKeyFailure, listParties, partyStatement, partyTotals, updateParty } from './parties.ts';
 import {
   createItem, createWarehouse, deleteItem, findByBarcode, getItem, itemMoves, itemStock, listItems, listWarehouses, updateItem, updateWarehouse, type ItemView
 } from './items.ts';
@@ -497,13 +497,18 @@ export function apiRoutes(db: Db, options: { demo?: boolean; extensions?: readon
   });
 
   // customers & suppliers
-  const partyFilters = z.object({ type: z.enum(['customer', 'supplier']).optional(), q: z.string().max(100).optional(), active: z.enum(['true', 'false']).optional() });
+  const partyFilters = z.object({
+    type: z.enum(['customer', 'supplier']).optional(), q: z.string().max(100).optional(), active: z.enum(['true', 'false']).optional(),
+    owing: z.enum(['true', 'false']).optional(), sort: z.enum(['code', 'debt']).optional()
+  });
   // a user limited to branches sees balances and statements made of their branches' entries only (as in the aging)
   const branchOfUser = (req: ApiRequest) => userBranchLists(db, actorOf(req));
   app.get('/api/parties', async (req) => {
     const q = parse(partyFilters, req.query);
-    return listParties(db, { type: q.type, q: q.q, active: q.active === undefined ? undefined : q.active === 'true' }, branchOfUser(req));
+    return listParties(db, { type: q.type, q: q.q, active: q.active === undefined ? undefined : q.active === 'true', owing: q.owing === 'true', sort: q.sort }, branchOfUser(req));
   });
+  // 1.4: what the customers owe (or the suppliers are owed) in all, per currency; "totals" is never taken for an id
+  app.get('/api/parties/totals', async (req) => partyTotals(db, parse(z.object({ type: z.enum(['customer', 'supplier']) }), req.query).type, branchOfUser(req)));
   app.get('/api/parties/:id', async (req) => getParty(db, parse(idParam, req.params).id, branchOfUser(req)));
   app.post('/api/parties', async (req, reply) => {
     const { type, ...input } = parse(partySchema.extend({ type: z.enum(['customer', 'supplier']) }), req.body);

@@ -71,6 +71,24 @@ const T = {
   closeSkip: ['تخطَّ هذه المرة', 'Skip this time', 'ئەم جارە بازی بدە'],
   closeBackupFailed: ['تعذّر حفظ النسخة الاحتياطية عند إغلاق قاصة ERP آخر مرة. دفاترك كما هي؛ راجع الإعدادات ← النسخ الاحتياطية.', 'The backup could not be made when Qasa ERP last closed. Your books are as they were; see Settings → Backups.', 'لە دوایین داخستنی قاسە ERP باکئەپ نەکرا. دەفتەرەکانت وەک خۆیانن؛ ڕێکخستنەکان ← باکئەپەکان ببینە.'],
   closeBackupTimeout: ['استغرقت النسخة أكثر من دقيقة، فأُغلق البرنامج دونها.', 'It took more than a minute, so the app closed without it.', 'زیاتر لە خولەکێکی خایاند، بۆیە بەرنامەکە بەبێ ئەو داخرا.'],
+  // 1.4: the question at closing, when the books changed and no backup was made since (close-backup.ts)
+  closeAsk: ['هل تحفظ نسخة احتياطية قبل الإغلاق؟', 'Back up before closing?', 'پێش داخستن باکئەپ بکرێت؟'],
+  closeAskDetail: [
+    'تغيّرت الدفاتر ولم تُحفظ نسخة احتياطية بعد ذلك.',
+    'The books changed and no backup has been made since.',
+    'دەفتەرەکان گۆڕاون و لەو کاتەوە هیچ باکئەپێک نەکراوە.'
+  ],
+  closeAskBackup: ['احفظ نسخة وأغلق', 'Back up and close', 'باکئەپ بکە و دایبخە'],
+  closeAskClose: ['أغلق دون نسخة', 'Close without backup', 'بەبێ باکئەپ دایبخە'],
+  closeAskNever: ['لا تسألني مرة أخرى', 'Don’t ask again', 'جارێکی تر مەپرسە'],
+  closeAskFailed: [
+    'تعذّر حفظ النسخة الاحتياطية. دفاترك كما هي.',
+    'The backup could not be made. Your books are as they were.',
+    'باکئەپ نەکرا. دەفتەرەکانت وەک خۆیانن.'
+  ],
+  closeAskTimeout: ['تستغرق النسخة أكثر من دقيقة.', 'The backup is taking more than a minute.', 'باکئەپەکە زیاتر لە خولەکێک دەخایەنێت.'],
+  closeAskCloseAnyway: ['أغلق على أي حال', 'Close anyway', 'هەر دایبخە'],
+  closeAskStay: ['العودة إلى البرنامج', 'Go back to the app', 'گەڕانەوە بۆ بەرنامەکە'],
   backupFolder: ['اختر مجلد النسخ الاحتياطية', 'Choose the folder for backups', 'بوخچەی باکئەپەکان هەڵبژێرە'],
   restoreFile: ['اختر النسخة الاحتياطية المراد استرجاعها', 'Choose the backup to restore', 'ئەو باکئەپە هەڵبژێرە کە دەتەوێت بیگەڕێنیتەوە'],
   // a restore that could not put the copy in place (server-process.ts): the company file was left as it was

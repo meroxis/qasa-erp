@@ -120,9 +120,20 @@ export function isForeignKeyFailure(error: unknown): boolean {
     || e.code === 'ER_ROW_IS_REFERENCED_2' || e.errno === 1451 || e.code === 'ER_NO_REFERENCED_ROW_2' || e.errno === 1452);
 }
 
-export function listParties(
-  db: Db, filters: { type?: PartyType | undefined; q?: string | undefined; active?: boolean | undefined } = {}, branch: PartyBranch = null
-): PartyView[] {
+/** 1.4: a party owes (a customer owes us, or we owe a supplier) when either currency's own balance is above zero. */
+export const partyOwes = (p: Pick<PartyView, 'balances'>): boolean => p.balances.IQD > 0 || p.balances.USD > 0;
+
+export interface PartyListFilters {
+  type?: PartyType | undefined;
+  q?: string | undefined;
+  active?: boolean | undefined;
+  /** 1.4: only those with a balance in their own direction (customers who owe us, suppliers we owe) */
+  owing?: boolean | undefined;
+  /** 1.4: 'debt' puts the biggest balance first (IQD at the book rates, as `balance`); otherwise by code */
+  sort?: 'code' | 'debt' | undefined;
+}
+
+export function listParties(db: Db, filters: PartyListFilters = {}, branch: PartyBranch = null): PartyView[] {
   const where: string[] = [];
   const params: string[] = [];
   if (filters.type) { where.push('type = ?'); params.push(filters.type); }
@@ -131,9 +142,53 @@ export function listParties(
   const sums = balances(db, branch);
   const used = usedParties(db);
   const q = filters.q ? normalizeForSearch(filters.q) : '';
-  return rows
+  const list = rows
     .filter((r) => !q || normalizeForSearch(`${r.code} ${r.name} ${r.phone ?? ''}`).includes(q))
-    .map((r) => toView(r, sums.get(r.id), used.has(r.id)));
+    .map((r) => toView(r, sums.get(r.id), used.has(r.id)))
+    .filter((p) => !filters.owing || partyOwes(p));
+  // the rows come by code; the sort is stable, so equal balances keep that order
+  if (filters.sort === 'debt') list.sort((a, b) => b.balance - a.balance);
+  return list;
+}
+
+/** Each currency's own amounts: dinars in dinars, dollars in cents. */
+export type PartyAmounts = Record<CurrencyCode, number>;
+
+export interface PartyTotals {
+  type: PartyType;
+  /** in the type's own direction: what customers owe us, or what we owe suppliers (each party's positive balances) */
+  owed: PartyAmounts;
+  /** the other way (each party's negative balances, as positive amounts): advances customers paid, or paid to suppliers */
+  advance: PartyAmounts;
+  /** how many parties have a balance each way */
+  owing: number;
+  advanced: number;
+}
+
+/**
+ * 1.4: the line above the customers (or suppliers) list: how much they owe in all, per currency. Worked out from the
+ * same two grouped queries as the list (never one query per party), over every party of the type, active or not; a
+ * user limited to branches gets their branches' entries only, as in the list.
+ */
+export function partyTotals(db: Db, type: PartyType, branch: PartyBranch = null): PartyTotals {
+  const ids = db.prepare('SELECT id FROM parties WHERE type = ?').all(type) as { id: string }[];
+  const sums = balances(db, branch);
+  const totals: PartyTotals = { type, owed: { IQD: 0, USD: 0 }, advance: { IQD: 0, USD: 0 }, owing: 0, advanced: 0 };
+  const sign = type === 'customer' ? 1 : -1;
+  for (const { id } of ids) {
+    const own = (sums.get(id) as Sums | undefined)?.own;
+    if (!own) continue;
+    let owes = false;
+    let advanced = false;
+    for (const currency of ['IQD', 'USD'] as const) {
+      const amount = sign * (Number(own[currency].debit) - Number(own[currency].credit));
+      if (amount > 0) { totals.owed[currency] += amount; owes = true; }
+      if (amount < 0) { totals.advance[currency] -= amount; advanced = true; }
+    }
+    if (owes) totals.owing += 1;
+    if (advanced) totals.advanced += 1;
+  }
+  return totals;
 }
 
 function loadRow(db: Db, id: string): PartyRow {
