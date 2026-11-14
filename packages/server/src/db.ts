@@ -1726,12 +1726,32 @@ const V12_OWNER_TOOLS =
 /** Version 12: each 1.2 feature's own block, one after the other. */
 const V12 = [V12_OUTBOX, V12_OWNER_TOOLS].join('\n');
 
+const V13 =
+  // 13 — vouchers that wait for an admin (1.4, "Vouchers need approval"): one row per voucher that was sent for
+  // approval: who asked and when, and the admin's answer (approved, or rejected with the reason). A voucher that waits
+  // or was rejected is still a draft in entries, so it is in no balance and no report until it is approved
+  `
+  CREATE TABLE voucher_approvals (
+    entry_id TEXT PRIMARY KEY REFERENCES entries(id) ON DELETE CASCADE,
+    state TEXT NOT NULL CHECK (state IN ('waiting', 'rejected', 'approved')),
+    requested_by TEXT NOT NULL,
+    requested_by_id TEXT REFERENCES users(id),
+    requested_at TEXT NOT NULL,
+    decided_by TEXT,
+    decided_by_id TEXT REFERENCES users(id),
+    decided_at TEXT,
+    reason TEXT
+  );
+  CREATE INDEX voucher_approvals_state ON voucher_approvals(state);
+  `;
+
 const MIGRATIONS: Migration[] = [
   { sql: V1 }, { sql: V2, rebuild: true }, { sql: V3, rebuild: true }, { sql: V4 }, { sql: V5, rebuild: true },
   { sql: V6, mysql: 'tables' }, { sql: V7, mysql: 'tables' }, { sql: V8, mysql: 'tables' }, { sql: V9, mysql: 'tables' },
   { sql: V10, mysql: { tables: true, steps: () => V10_MYSQL_STEPS } },
   { sql: V11, mysql: { tables: true, steps: () => V11_MYSQL_STEPS }, data: (db) => { movePartBrands(db); movePartReorder(db); } },
-  { sql: V12, mysql: { tables: true, steps: () => V12_MYSQL_STEPS } }
+  { sql: V12, mysql: { tables: true, steps: () => V12_MYSQL_STEPS } },
+  { sql: V13, mysql: 'tables' }
 ];
 
 /** Server databases began at this version: its schema is in schema-mysql.ts (tables and triggers without `since`). */

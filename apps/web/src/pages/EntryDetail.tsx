@@ -1,7 +1,8 @@
 import { useState } from 'react';
 import { amountInWords, rateFromX100, todayIso } from '@qasa/core';
 import { api, type EntryView } from '../api.ts';
-import { ErrorBox, Icon, Modal, StatusChip, typeName, useData, useLoad, useToast } from '../components.tsx';
+import { ErrorBox, Icon, Modal, typeName, useData, useLoad, useToast } from '../components.tsx';
+import { ApprovalButtons, ApprovalNote, VoucherStateChip } from '../industry/VoucherApproval.tsx';
 import { useI18n } from '../i18n.ts';
 import { go, href } from '../router.ts';
 import { DesignedPrint } from '../industry/PrintDocument.tsx';
@@ -92,10 +93,13 @@ export function EntryDetail({ id }: { id: string }) {
         {e.actions.includes('return') && <button type="button" className="btn" disabled={busy} onClick={() => run(() => api.entryAction(id, 'return'), t('a_return'))}>{t('actReturn')}</button>}
         {e.actions.includes('check') && <button type="button" className="btn primary" disabled={busy} onClick={() => run(() => api.entryAction(id, 'check'), t('a_check'))}><Icon name="check" size={16} />{t('actCheck')}</button>}
         {e.actions.includes('approve') && <button type="button" className="btn primary" disabled={busy} onClick={() => run(() => api.entryAction(id, 'approve'), t('a_approve'))}><Icon name="check" size={16} />{t('actApprove')}</button>}
+        {/* 1.4: a voucher that waits for approval, for whoever may approve vouchers */}
+        {e.actions.includes('approve_waiting') && <ApprovalButtons id={id} onDone={reload} />}
         {e.actions.includes('reverse') && <button type="button" className="btn danger" disabled={busy} onClick={() => { setReverseDate(reverseDefaultDate(e.date)); setReversing(true); }}><Icon name="undo" size={16} />{t('actReverse')}</button>}
         <button type="button" className="btn" onClick={() => void printDocument('voucher')}><Icon name="printer" size={16} />{t('print')}</button>
       </div>
       <ErrorBox error={actionError} />
+      <ApprovalNote entry={e} />
       {e.status === 'approved' && <div className="alert info no-print">{e.invoiceId ? t('fromInvoiceNote') : e.stockDocId ? t('fromStockDocNote') : t('postedNote')}</div>}
 
       <DesignedPrint model={entryModel(e)} />
@@ -104,7 +108,7 @@ export function EntryDetail({ id }: { id: string }) {
           <div style={{ flex: 1 }}>
             <div className="muted">{company}</div>
             <div className="paper-title">{typeName(e.type, i18n)}</div>
-            <div style={{ marginTop: 4 }}><StatusChip status={e.status} reversed={!!e.reversedById} /></div>
+            <div style={{ marginTop: 4 }}><VoucherStateChip entry={e} /></div>
           </div>
           <div className="paper-meta">
             <span className="muted">{t('number')}</span><strong className="ltr">{e.number ?? t('draft')}</strong>

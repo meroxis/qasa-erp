@@ -182,7 +182,11 @@ export function reverseLines(lines: (LineInput | LineWithBase)[]): LineInput[] {
   }));
 }
 
-export type EntryAction = 'check' | 'approve' | 'return' | 'edit' | 'delete' | 'reverse';
+/**
+ * 'approve_waiting' and 'reject' (1.4, "Vouchers need approval"): what someone who may approve vouchers does with a
+ * voucher that waits for approval; such a voucher is neither checked nor approved the usual way.
+ */
+export type EntryAction = 'check' | 'approve' | 'return' | 'edit' | 'delete' | 'reverse' | 'approve_waiting' | 'reject';
 
 /** Which actions are allowed in each status. */
 export function allowedActions(status: EntryStatus, opts: { reversed: boolean; isReversal: boolean; fromInvoice?: boolean }): EntryAction[] {

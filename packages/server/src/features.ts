@@ -20,9 +20,10 @@ import { brandsApi } from './brands.ts';
 import { outboxApi } from './outbox.ts';
 import { dayCloseApi } from './day-close.ts';
 import { loyaltyApi } from './loyalty.ts';
+import { quickVouchersApi } from './quick-vouchers.ts';
 
 /**
  * The app's own features that are built like modules (each in a file of its own, as an ApiExtension): served on every
  * edition, the website demo included, behind the same sign-in, permission and same-site checks as the rest of the API.
  */
-export const BUILT_IN_FEATURES: readonly ApiExtension[] = [posApi, mediaApi, quotesApi, activationApi, briefApi, fxApi, verifyApi, usageApi, branchesApi, bankingApi, assetsApi, adjustmentsApi, purchasingApi, pricesApi, printProfileApi, batchesApi, categoriesApi, brandsApi, outboxApi, dayCloseApi, loyaltyApi];
+export const BUILT_IN_FEATURES: readonly ApiExtension[] = [posApi, mediaApi, quotesApi, activationApi, briefApi, fxApi, verifyApi, usageApi, branchesApi, bankingApi, assetsApi, adjustmentsApi, purchasingApi, pricesApi, printProfileApi, batchesApi, categoriesApi, brandsApi, outboxApi, dayCloseApi, loyaltyApi, quickVouchersApi];

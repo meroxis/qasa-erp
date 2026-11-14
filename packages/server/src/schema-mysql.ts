@@ -246,6 +246,26 @@ export const MYSQL_TABLES: readonly MysqlObject[] = [
     )`
   },
   {
+    // 13 (1.4): vouchers sent for an admin's approval, and the answer (db.ts V13)
+    name: 'voucher_approvals',
+    since: 13,
+    sql: `CREATE TABLE voucher_approvals (
+      entry_id ${ID} NOT NULL PRIMARY KEY,
+      state ${WORD} NOT NULL CHECK (state IN ('waiting', 'rejected', 'approved')),
+      requested_by TEXT NOT NULL,
+      requested_by_id ${ID},
+      requested_at ${WHEN} NOT NULL,
+      decided_by TEXT,
+      decided_by_id ${ID},
+      decided_at ${WHEN},
+      reason TEXT,
+      INDEX voucher_approvals_state (state),
+      FOREIGN KEY (entry_id) REFERENCES entries(id) ON DELETE CASCADE,
+      FOREIGN KEY (requested_by_id) REFERENCES users(id),
+      FOREIGN KEY (decided_by_id) REFERENCES users(id)
+    )`
+  },
+  {
     name: 'sequences',
     sql: `CREATE TABLE sequences (
       "key" ${ID} NOT NULL PRIMARY KEY,

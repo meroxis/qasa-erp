@@ -143,18 +143,22 @@ describe('POS payment methods and split payments', () => {
     expect((await call('GET', `/api/pos/shifts/${shiftId}`)).json().expected).toEqual({ IQD: 10_000, USD: 0 });
   });
 
-  it('on account puts that part on the chosen customer, checked against the credit limit', async () => {
+  it('on account puts the whole sale on the chosen customer, checked against the credit limit', async () => {
     expect((await sell({ payments: [{ method: 'account', amount: 30_000 }] })).json().details).toEqual([{ code: 'party_required' }]);
-    const r = await sell({ partyId: merId, payments: [{ method: 'account', amount: 25_000 }, { method: 'cash', amount: 5_000 }] });
+    // 1.4: never part on account and part paid now
+    const mixed = await sell({ partyId: merId, payments: [{ method: 'account', amount: 25_000 }, { method: 'cash', amount: 5_000 }] });
+    expect(mixed.json().details).toEqual([{ code: 'pos_credit_not_mixed' }]);
+    const r = await sell({ partyId: merId, payments: [{ method: 'account', amount: 30_000 }] });
     expect(r.statusCode, r.body).toBe(201);
-    expect((await call('GET', `/api/parties/${merId}`)).json().balance).toBe(25_000);
-    // the limit is 100,000: 25,000 owed + 90,000 more is over it, though the sale itself is not all on account
+    expect((await call('GET', `/api/parties/${merId}`)).json().balance).toBe(30_000);
+    // the limit is 100,000: 30,000 owed + 100,000 more is over it
     const over = await call('POST', `/api/pos/shifts/${shiftId}/sales`, {
-      currency: 'IQD', discount: 0, partyId: merId, lines: [{ itemId, qtyMilli: 10_000, unitPrice: 10_000 }], payments: [{ method: 'account', amount: 90_000 }, { method: 'cash', amount: 10_000 }]
+      currency: 'IQD', discount: 0, partyId: merId, lines: [{ itemId, qtyMilli: 10_000, unitPrice: 10_000 }], payments: [{ method: 'account', amount: 100_000 }]
     });
     expect(over.statusCode).toBe(409);
     expect(over.json().error).toBe('credit_limit_exceeded');
-    expect((await call('GET', `/api/pos/shifts/${shiftId}`)).json().expected.IQD).toBe(15_000);
+    // nothing of it went into the drawer
+    expect((await call('GET', `/api/pos/shifts/${shiftId}`)).json().expected.IQD).toBe(10_000);
   });
 
   it('pays a split sale back the way it was paid: never more cash from the drawer than came into it', async () => {

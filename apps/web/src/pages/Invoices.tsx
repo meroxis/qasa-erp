@@ -28,6 +28,7 @@ import { mayPostInvoice, printedOk, rememberChoice, rememberedChoice, runSaveFlo
 import { baseQty, factorOf, holdsText, salePriceFor, unitChoices, unitLabel, type LineUnit } from '../industry/units.ts';
 import { BatchInFields, BatchPick, useExpiredConfirm } from '../industry/BatchFields.tsx';
 import { askControlledOnOpen, RxTick, useControlledPrompt, usePharmacyOn, useRxItems } from '../industry/PharmacyPrompts.tsx';
+import { QuickVoucherButton } from '../industry/QuickVoucher.tsx';
 
 const STATUSES: (InvoiceStatus | '')[] = ['', 'draft', 'posted', 'cancelled'];
 
@@ -279,6 +280,11 @@ export function InvoiceEditor({ kind: initialKind, id, partyId: initialParty }: 
       setError(new ApiError(400, 'validation', [{ code: 'rate_invalid' }]));
       return null;
     }
+    // credit goes on someone's account: without a customer (or supplier) there is none (the server refuses it too)
+    if (payment === 'credit' && !partyId) {
+      setError(new ApiError(400, 'validation', [{ code: 'party_required' }]));
+      return null;
+    }
     return {
       kind, date, warehouseId, currency, rateX100, payment, discount: discount ?? 0, notes,
       ...(partyId ? { partyId } : {}),
@@ -484,17 +490,23 @@ export function InvoiceEditor({ kind: initialKind, id, partyId: initialParty }: 
               {(warehouses.data ?? []).filter((w) => w.active || w.id === warehouseId).map((w) => <option key={w.id} value={w.id}>{i18n.name(w.name)}</option>)}
             </select>
           </label>
+          {/* 1.4: one of two: cash (paid now) or credit (on the customer's account). Money by bank transfer or a wallet,
+              and installments, are taken afterwards with a receipt voucher or on the Installments page */}
           <div className="field">
             <span>{t('paymentMode')}</span>
-            <div className="track" style={{ alignSelf: 'flex-start' }}>
+            <div className="track" role="group" aria-label={t('paymentMode')} style={{ alignSelf: 'flex-start' }}>
               <button type="button" aria-pressed={payment === 'cash'} onClick={() => setPayment('cash')}>{t('payCash')}</button>
               <button type="button" aria-pressed={payment === 'credit'} onClick={() => setPayment('credit')}>{t('payCredit')}</button>
             </div>
+            <div className="muted small">{payment === 'cash' ? t('s14_payCashHint') : kind === 'sale' ? t('s14_payCreditHint') : t('s14_payCreditHintSupplier')}</div>
+            {payment === 'credit' && !partyId && <div className="small" role="alert" style={{ color: 'var(--bad)' }}>{kind === 'sale' ? t('s14_creditNeedsCustomer') : t('err_party_required')}</div>}
           </div>
           {payment === 'cash' ? (
             <div className="field">
-              <span>{t('cashAccount')}</span>
-              <AccountCombo value={cashAccount} onChange={setCashAccount} filter={(a) => a.code.startsWith('18')} ariaLabel={t('cashAccount')} />
+              <span>{kind === 'sale' ? t('s14_safe') : t('cashAccount')}</span>
+              {/* a sale's cash goes into a safe (not a bank account, 183): the one in use and the company's own safe always show */}
+              <AccountCombo value={cashAccount} onChange={setCashAccount} ariaLabel={kind === 'sale' ? t('s14_safe') : t('cashAccount')}
+                filter={(a) => a.code.startsWith('18') && (kind !== 'sale' || !a.code.startsWith('183') || a.code === cashAccount || a.code === settings?.postingAccounts.cash)} />
             </div>
           ) : <div />}
           <div className="field">
@@ -690,8 +702,10 @@ export function InvoiceDetail({ id }: { id: string }) {
         )}
         {v.actions.includes('return') && <button type="button" className="btn" disabled={busy} onClick={() => setReturning(true)}><Icon name="undo" size={16} />{t('actReturnItems')}</button>}
         {v.actions.includes('cancel') && <button type="button" className="btn danger" disabled={busy} onClick={() => { setCancelDate(reverseDefaultDate(v.date)); setCancelling(true); }}><Icon name="undo" size={16} />{t('actCancelInvoice')}</button>}
-        {v.kind === 'sale' && v.status === 'posted' && v.payment === 'credit' && !v.installmentContract && plan?.features.includes('installments') && (
-          <a className="btn" href={href(`new-installment/${v.id}`)}><Icon name="cal" size={16} />{t('makeContract')}</a>
+        {/* 1.4: money for a credit invoice is taken (or paid, for a purchase) with a voucher on the party's account */}
+        {v.status === 'posted' && v.payment === 'credit' && v.partyId && (v.kind === 'sale' || v.kind === 'purchase') && !v.installmentContract && (
+          <QuickVoucherButton kind={v.kind === 'sale' ? 'receipt' : 'payment'}
+            preset={{ partyId: v.partyId, invoice: { number: v.number, total: v.total, currency: v.currency, rateX100: v.rateX100 } }} />
         )}
         <InvoiceWhatsApp company={company} invoice={v} />
         <button type="button" className="btn" onClick={() => void printDocument('invoice')}><Icon name="printer" size={16} />{t('print')}</button>

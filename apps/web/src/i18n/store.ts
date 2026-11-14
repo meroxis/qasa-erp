@@ -39,7 +39,7 @@ export const STORE_TEXT = {
   pay_fib: ['FIB', 'FIB', 'FIB'],
   pay_zaincash: ['زين كاش', 'ZainCash', 'زەین کاش'],
   pay_qi: ['كي كارد', 'Qi Card', 'کی کارد'],
-  pay_account: ['على الحساب', 'On account', 'لەسەر هەژمار'],
+  pay_account: ['على الحساب', 'On account', 'قەرز'],
   pay_other: ['أخرى', 'Other', 'هی تر'],
   pay_online: ['دفعات إلكترونية', 'Online payments', 'پارەدانی ئۆنلاین'],
   pos_left: ['المتبقي', 'Left to pay', 'ماوە بۆ دان'],
@@ -47,7 +47,7 @@ export const STORE_TEXT = {
   pos_payAccountsHelp: [
     'الحساب (قاصة أو مصرف تحت 18) الذي تدخله البطاقة وFIB وزين كاش وكي كارد. طريقة بلا حساب لا تظهر عند الكاشير؛ النقد يدخل قاصة الوردية، و«على الحساب» حساب الزبون.',
     'The account (a safe or bank under 18) card, FIB, ZainCash and Qi Card payments go into. A method without one is not offered at the counter; cash goes into the shift’s safe, and on account to the customer.',
-    'ئەو هەژمارەی (قاسە یان بانکی ژێر 18) کە کارت و FIB و زەین کاش و کی کارد دەچێتە ناوی. ڕێگایەک بێ هەژمار لە کاشێر پیشان نادرێت؛ نەختینە دەچێتە قاسەی شیفتەکە، و «لەسەر هەژمار» بۆ هەژماری کڕیار.'
+    'ئەو هەژمارەی (قاسە یان بانکی ژێر 18) کە کارت و FIB و زەین کاش و کی کارد دەچێتە ناوی. ڕێگایەک بێ هەژمار لە کاشێر پیشان نادرێت؛ نەختینە دەچێتە قاسەی شیفتەکە، و «قەرز» بۆ هەژماری کڕیار.'
   ],
   err_payments_total_mismatch: ['مجموع الدفعات لا يساوي المبلغ الكلي.', 'The payments don’t add up to the total.', 'کۆی پارەدانەکان یەکسان نییە بە کۆی گشتی.'],
   err_pos_method_unavailable: ['طريقة الدفع هذه بلا حساب؛ يحدده المدير في الإعدادات.', 'This payment method has no account; an admin sets it in Settings.', 'ئەم ڕێگای پارەدانە هەژماری نییە؛ بەڕێوەبەر لە ڕێکخستنەکان دیاری دەکات.'],

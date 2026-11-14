@@ -15,7 +15,7 @@ import '../pos.css';
 import { PrintDocument } from '../industry/PrintDocument.tsx';
 import { invoiceModel } from '../industry/print-model.ts';
 import { usePrintSetup } from '../industry/print-api.ts';
-import { addRefusal, cashChange, changeLineUnit, parseScan, posSaleLine, priceIn, priceRateFor, tileOffer } from './pos-logic.ts';
+import { addRefusal, cashChange, changeLineUnit, chosenMethod, creditNeedsCustomer, parseScan, posSaleLine, priceIn, priceRateFor, salePayments, tileOffer } from './pos-logic.ts';
 import { inUnits, salePriceFor, unitChoices, unitLabel, type LineUnit } from '../industry/units.ts';
 import { BatchPick, useExpiredConfirm } from '../industry/BatchFields.tsx';
 import { pharmacyApi, type MedicineView } from '../industry/pharmacy-api.ts';
@@ -201,8 +201,8 @@ function Register({ initial, onClosed }: { initial: ShiftView; onClosed(): void 
   const [discount, setDiscount] = useState<number | null>(0);
   const [paid, setPaid] = useState<number | null>(null);
   const [partyId, setPartyId] = useState('');
-  // how it is paid (1.1): no parts = all cash, as before; else 1–4 parts that add up to the total
-  const [parts, setParts] = useState<{ method: PosMethod; amount: number | null }[]>([]);
+  // how it is paid (1.4): one way for the whole sale: cash (or a card or wallet the admin set up), or credit
+  const [picked, setPicked] = useState<PosMethod>('cash');
   const [methods, setMethods] = useState<PosMethod[]>(['cash']);
   useEffect(() => {
     fromServerOrTill(() => posApi.paymentAccounts().then((r) => r.methods), (m) => rememberTill(tillWho(), { methods: m }), () => tillCache(tillWho())?.methods)
@@ -371,24 +371,24 @@ function Register({ initial, onClosed }: { initial: ShiftView; onClosed(): void 
   const due = total - points.value;
   // another customer, total or currency: the points are chosen again
   useEffect(() => { setPoints({ points: 0, value: 0 }); }, [partyId, total, currency]);
-  const change = cashChange(paid, due, parts);
-  const split = parts.length > 0;
-  const left = due - parts.reduce((s, p) => s + (p.amount ?? 0), 0);
-  const splitOk = !split || (left === 0 && parts.every((p) => (p.amount ?? 0) > 0) && (!parts.some((p) => p.method === 'account') || !!partyId));
-  const canPay = cart.length > 0 && !busy && (discount ?? 0) <= subtotal && (currency === 'IQD' || rateX100 > 0) && (change === null || change >= 0) && splitOk;
-  /** A method button: the first one takes the whole total; later ones what is left. */
-  const pickMethod = (method: PosMethod) => {
-    setParts((ps) => (ps.length === 0
-      ? (method === 'cash' ? [] : [{ method, amount: due }])
-      : ps.length >= 4 || ps.some((p) => p.method === method) ? ps : [...ps, { method, amount: Math.max(0, left) }]));
-  };
+  // what the till offers now (offline: not credit, which needs the server's credit-limit check)
+  const offered = offline ? offlineMethods(methods) : methods;
+  const method = chosenMethod(picked, offered);
+  const onCredit = method === 'account';
+  // paid now: cash, and the cards and wallets that have an account
+  const paidNow = offered.filter((m) => m !== 'account');
+  const payments = salePayments(method, due);
+  // change is for cash handed over: none on credit, a card or a wallet
+  const change = cashChange(paid, due, payments ?? []);
+  const needsCustomer = creditNeedsCustomer(method, partyId);
+  const canPay = cart.length > 0 && !busy && (discount ?? 0) <= subtotal && (currency === 'IQD' || rateX100 > 0) && (change === null || change >= 0) && !needsCustomer;
 
   const clear = () => {
     setCart([]);
     setDiscount(0);
     setPaid(null);
     setPartyId('');
-    setParts([]);
+    setPicked('cash');
     setPoints({ points: 0, value: 0 });
     setError(null);
     setQ('');
@@ -437,7 +437,7 @@ function Register({ initial, onClosed }: { initial: ShiftView; onClosed(): void 
       const sale: SaleInput = {
         currency, ...(currency === 'USD' ? { rateX100 } : {}), ...(partyId ? { partyId } : {}), discount: discount ?? 0,
         lines: cart.map(posSaleLine),
-        ...(split ? { payments: parts.map((p) => ({ method: p.method, amount: p.amount ?? 0 })) } : {}),
+        ...(payments ? { payments } : {}),
         ...(points.points ? { loyaltyPoints: points.points } : {})
       };
       // on a PC with an outbox the sale keeps its key over every Pay until it is booked or kept: a try whose answer
@@ -624,25 +624,22 @@ function Register({ initial, onClosed }: { initial: ShiftView; onClosed(): void 
             {points.value > 0 && (
               <div className="pos-r-row"><span>{t('pos_left')} ({t('ly_title')}: −{i18n.money(points.value, currency)})</span><strong className="num">{i18n.money(due, currency)}</strong></div>
             )}
-            {(offline ? offlineMethods(methods) : methods).length > 1 && (
-              <div className="stack" style={{ gap: 6 }}>
-                <div className="track" role="group" aria-label={t('paymentMode')} style={{ flexWrap: 'wrap' }}>
-                  {(offline ? offlineMethods(methods) : methods).map((m) => (
-                    <button key={m} type="button" aria-pressed={split ? parts.some((p) => p.method === m) : m === 'cash'} onClick={() => pickMethod(m)}>{t(`pay_${m}` as Key)}</button>
-                  ))}
-                </div>
-                {parts.map((p, i) => (
-                  <div key={p.method} className="row" style={{ flexWrap: 'nowrap', gap: 6 }}>
-                    <span style={{ minWidth: 90 }}>{t(`pay_${p.method}` as Key)}</span>
-                    <AmountInput value={p.amount} currency={currency} onChange={(v) => setParts((ps) => ps.map((x, j) => (j === i ? { ...x, amount: v } : x)))} ariaLabel={t(`pay_${p.method}` as Key)} />
-                    <button type="button" className="btn icon ghost" aria-label={t('pos_remove')} onClick={() => setParts((ps) => ps.filter((_, j) => j !== i))}><Icon name="x" size={14} /></button>
-                  </div>
-                ))}
-                {split && left !== 0 && <div className="small" style={{ color: 'var(--bad)' }}>{t('pos_left')}: <span className="num">{i18n.money(left, currency)}</span></div>}
-                {parts.some((p) => p.method === 'account') && !partyId && <div className="small" style={{ color: 'var(--bad)' }}>{t('err_party_required')}</div>}
-                {offline && methods.includes('account') && <div className="small muted">{t('pos_offlineNoAccount')}</div>}
+            {/* 1.4: the cashier picks one: cash (paid now) or credit (the whole sale on the customer's account) */}
+            <div className="stack" style={{ gap: 6 }}>
+              <div className="track" role="group" aria-label={t('paymentMode')}>
+                <button type="button" style={{ flex: 1 }} aria-pressed={!onCredit} onClick={() => setPicked('cash')}>{t('payCash')}</button>
+                <button type="button" style={{ flex: 1 }} aria-pressed={onCredit} disabled={!offered.includes('account')} onClick={() => setPicked('account')}>{t('payCredit')}</button>
               </div>
-            )}
+              {/* money paid now by card or wallet: only when the admin gave those an account (Settings) */}
+              {!onCredit && paidNow.length > 1 && (
+                <div className="track" role="group" aria-label={t('s14_paidBy')} style={{ flexWrap: 'wrap' }}>
+                  {paidNow.map((m) => <button key={m} type="button" aria-pressed={method === m} onClick={() => setPicked(m)}>{t(`pay_${m}` as Key)}</button>)}
+                </div>
+              )}
+              {onCredit && <div className="small muted">{t('s14_payCreditHint')}</div>}
+              {needsCustomer && <div className="small" role="alert" style={{ color: 'var(--bad)' }}>{t('s14_creditNeedsCustomer')}</div>}
+              {offline && methods.includes('account') && <div className="small muted">{t('pos_offlineNoAccount')}</div>}
+            </div>
             {change !== null && (
               <div className={'pos-change' + (change < 0 ? ' bad' : '')}>
                 <span>{change < 0 ? t('pos_short') : t('pos_change')}</span>
