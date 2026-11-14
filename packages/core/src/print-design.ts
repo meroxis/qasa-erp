@@ -52,7 +52,8 @@ export function printFieldApplies(field: PrintField, doc: PrintDoc, layout: Prin
   // lines have no discount of their own: the discount is on the whole paper (the "subtotal" part)
   if (field === 'discount') return false;
   const itemField = field === 'itemCode' || field === 'barcode' || field === 'itemImage' || field === 'unit';
-  if (doc === 'voucher') return !itemField && field !== 'subtotal' && field !== 'qr';
+  // a voucher has no item lines, subtotal or verify code, and names its party only (an entry keeps no phone or address)
+  if (doc === 'voucher' && (itemField || field === 'subtotal' || field === 'qr' || field === 'partyPhone' || field === 'partyAddress')) return false;
   // the verify code is a posted sale's
   if (field === 'qr' && doc !== 'sale' && doc !== 'pos') return false;
   // a quotation has no units of its own and moves nobody's balance

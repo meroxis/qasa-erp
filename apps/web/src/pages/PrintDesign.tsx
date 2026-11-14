@@ -43,6 +43,14 @@ export const FIELD_GROUPS: readonly { title: Key; fields: readonly PrintField[] 
 ];
 
 /**
+ * "Remove the logo": at once on a plan that can add one again; on a plan that cannot (Free, with a logo kept from
+ * before) the person is told first, because the logo then cannot be put back.
+ */
+export function mayRemoveLogo(canAddLogo: boolean, ask: (key: 'pp_removeLogoFree') => boolean): boolean {
+  return canAddLogo || ask('pp_removeLogoFree');
+}
+
+/**
  * The groups with only the parts this kind of paper and this layout can print: a switch that would change nothing on
  * the paper is not offered (item columns on a voucher, the verify code on a purchase, page numbers on a receipt roll).
  */
@@ -456,7 +464,7 @@ export function PrintHeaderCard() {
           <input ref={input} type="file" accept="image/png,image/jpeg,image/webp" hidden disabled={!canLogo} onChange={(e) => chooseLogo(e.target.files?.[0])} />
           <div className="row" style={{ flexWrap: 'wrap' }}>
             <button type="button" className="btn" disabled={busy || !canLogo} onClick={() => input.current?.click()}><Icon name="upload" size={16} />{logo ? t('pp_changeLogo') : t('pp_chooseLogo')}</button>
-            {(logo || kept) && <button type="button" className="btn" disabled={busy} onClick={() => void run(async () => { await printApi.deleteLogo(); refreshPrintSetup(); }, 'pp_logoRemoved')}><Icon name="x" size={16} />{t('pp_removeLogo')}</button>}
+            {(logo || kept) && <button type="button" className="btn" disabled={busy} onClick={() => { if (mayRemoveLogo(canLogo, (key) => window.confirm(t(key)))) void run(async () => { await printApi.deleteLogo(); refreshPrintSetup(); }, 'pp_logoRemoved'); }}><Icon name="x" size={16} />{t('pp_removeLogo')}</button>}
           </div>
           {(canLogo || logo) && (
             <>

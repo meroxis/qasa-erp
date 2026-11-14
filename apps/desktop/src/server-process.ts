@@ -13,7 +13,7 @@ import { companyDirOf, isCompanyId, MAIN_COMPANY, readRegistry, writeRegistry } 
 import { companyApi } from './company-api.ts';
 import { handleRecoverRequest, recoverableAdmins } from './recover.ts';
 import { startOver } from './start-over.ts';
-import { closeAskNeeded } from './close-backup.ts';
+import { closeAskNeeded, lastBookChangeAt } from './close-backup.ts';
 import { Bridge, type Carrier } from './bridge.ts';
 import { makeSecretBox, type SecretBox } from './secrets.ts';
 import type { DatabaseStartContext, ProContext, RestartOptions } from './pro-types.ts';
@@ -515,8 +515,8 @@ function lastCloseAskBackup(): string | null {
 /** The books changed, and no backup was made since (nor today): closing asks. Any doubt answers false (closing is never held up). */
 function closeAskIsNeeded(): boolean {
   if (!db) return false;
-  const last = db.prepare('SELECT at FROM audit_log ORDER BY id DESC LIMIT 1').get() as { at?: unknown } | undefined;
-  const lastChangeAt = typeof last?.at === 'string' ? last.at : null;
+  // a sign-in is not a change to the books (close-backup.ts)
+  const lastChangeAt = lastBookChangeAt(db);
   let fromPro: string | null = null;
   try { fromPro = proModule?.lastBackupAt?.() ?? null; } catch { fromPro = null; }
   const times = [lastCloseAskBackup(), typeof fromPro === 'string' ? fromPro : null].filter((v): v is string => !!v && Number.isFinite(Date.parse(v)));

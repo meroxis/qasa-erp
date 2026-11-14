@@ -23,8 +23,6 @@ export const PRINT14_TEXT = {
   pd_g_halfPage_d: ['مضغوط لورق A5', 'Tight, for A5 paper', 'چڕ، بۆ پەڕەی A5'],
   pd_g_receipt80: ['إيصال حراري 80 مم', '80 mm thermal receipt', 'پسوولەی گەرمی 80 ملم'],
   pd_g_receipt80_d: ['لطابعة الإيصالات', 'For a receipt printer', 'بۆ چاپکەری پسوولە'],
-  pd_layout_modernLines: ['حديث بخطوط', 'Modern with lines', 'نوێ بە هێڵ'],
-  pd_layout_ledger: ['دفتري كلاسيكي', 'Classic ledger', 'دەفتەری کلاسیکی'],
 
   // text size by name
   pd_textSize: ['حجم الخط', 'Text size', 'قەبارەی نووسین'],
@@ -62,7 +60,6 @@ export const PRINT14_TEXT = {
   pd_h_remainingBalance: ['الرصيد المتبقي', 'Remaining balance', 'باڵانسی ماوە'],
   pd_h_currentBalance: ['رصيد الحساب', 'Account balance', 'باڵانسی هەژمار'],
   pd_h_words: ['المبلغ كتابةً', 'Amount in words', 'بڕی پارە بە نووسین'],
-  pd_h_notes: ['ملاحظات', 'Notes', 'تێبینی'],
   pd_h_phone: ['الهاتف', 'Phone', 'تەلەفۆن'],
   pd_h_address: ['العنوان', 'Address', 'ناونیشان'],
 
@@ -72,6 +69,11 @@ export const PRINT14_TEXT = {
     'شعارك المحفوظ سابقاً يبقى يُطبع. تغييره يحتاج إلى خطة مدفوعة.',
     'Your logo, saved earlier, keeps printing. Changing it needs a paid plan.',
     'لۆگۆکەت کە پێشتر پاشەکەوت کراوە هەر چاپ دەکرێت. گۆڕینی پێویستی بە پلانێکی پارەدار هەیە.'
+  ],
+  pp_removeLogoFree: [
+    'حذف الشعار؟ خطتك لا تتيح إضافة شعار، فلا يمكن إعادته إلا بعد تفعيل خطة مدفوعة. لإبقائه دون طباعته، ألغِ علامة «طباعة الشعار» بدلاً من حذفه.',
+    'Remove the logo? Your plan cannot add a logo, so it cannot be put back until a paid plan is active. To keep it without printing it, untick "Print the logo" instead.',
+    'لۆگۆکە لاببرێت؟ پلانەکەت ڕێگە بە زیادکردنی لۆگۆ نادات، بۆیە تا پلانێکی پارەدار چالاک نەبێت ناگەڕێتەوە. بۆ هێشتنەوەی بەبێ چاپکردنی، لە جیاتی لابردنی نیشانەی «لۆگۆ چاپ بکە» لاببە.'
   ],
   pp_logoLocked: [
     'شعار الشركة على المطبوعات من مزايا Starter وPro وBusiness.',

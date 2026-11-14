@@ -39,11 +39,6 @@ export const SHELL14_TEXT = {
     'The company’s data is on the office PC {h}, not on this PC. Backups are made and kept on that PC: open Settings → Backups there. Nothing on this PC is a copy of the books, so backing up this PC’s files does not protect them.',
     'داتای کۆمپانیا لەسەر کۆمپیوتەری نووسینگەیە {h}، نەک لەسەر ئەم کۆمپیوتەرە. باکئەپەکان لەسەر ئەو کۆمپیوتەرە دەکرێن و هەڵدەگیرێن: لەوێ ڕێکخستنەکان ← باکئەپەکان بکەرەوە. هیچ کۆپییەکی دەفتەرەکان لەسەر ئەم کۆمپیوتەرە نییە، بۆیە کۆپیکردنی فایلەکانی ئەم کۆمپیوتەرە نایانپارێزێت.'
   ],
-  s14_bkClientNotice: [
-    'النسخ الاحتياطية على حاسوب المكتب {h}، لا على هذا الحاسوب.',
-    'Backups are on the office PC {h}, not on this PC.',
-    'باکئەپەکان لەسەر کۆمپیوتەری نووسینگەن {h}، نەک لەسەر ئەم کۆمپیوتەرە.'
-  ],
   s14_netClient: [
     'هذا الحاسوب متصل بحاسوب المكتب {h} ويعمل على ملف شركته. للاتصال بحاسوب مكتب آخر، أو للعودة إلى ملف الشركة الخاص بهذا الحاسوب، استعمل قائمة «ملف».',
     'This PC is connected to the office PC {h} and works on its company file. To connect to another office PC, or to go back to this PC’s own company file, use the File menu.',

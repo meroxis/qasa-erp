@@ -10,11 +10,12 @@ import { LoyaltyCard } from '../industry/Loyalty.tsx';
 import { isLang, todayIso, type Lang } from '@qasa/core';
 import { printDocument } from '../industry/printing.ts';
 import { QuickVoucherButton } from '../industry/QuickVoucher.tsx';
-import { oweLines, oweTone, oweWords, partiesApi, type PartySort, type PartyTotals } from '../industry/parties-api.ts';
+import { oweLines, oweTone, oweWords, partiesApi, partyOwes, type PartySort, type PartyTotals } from '../industry/parties-api.ts';
 
 /**
  * 1.4: what one customer or supplier owes, in words and colour instead of debit and credit: "Owes us 250,000 IQD",
- * "We owe him $50.00". Each currency on its own line, as the app keeps them.
+ * "We owe him $50.00". Each currency on its own line, as the app keeps them; one who paid dollars in dinars (or the
+ * other way) shows the one position in IQD at the book rates, and nothing when that is zero (oweLines).
  */
 export function OweAmount({ party, empty = '—' }: { party: Pick<PartyView, 'type' | 'balance' | 'balances'>; empty?: string }) {
   const i18n = useI18n();
@@ -150,7 +151,7 @@ export function Parties({ type }: { type: PartyType }) {
 
 /** The rows as the list shows them: only those who owe when asked, and the biggest debt first (else as they came, by code). */
 export function shownParties(list: PartyView[], owing: boolean, sort: PartySort): PartyView[] {
-  const rows = owing ? list.filter((p) => oweLines(p).some((l) => l.side === 'owes')) : list.slice();
+  const rows = owing ? list.filter(partyOwes) : list.slice();
   if (sort === 'debt') rows.sort((a, b) => b.balance - a.balance);
   return rows;
 }
