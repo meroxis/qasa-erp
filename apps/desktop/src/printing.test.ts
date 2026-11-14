@@ -192,6 +192,14 @@ describe('printing', () => {
     expect(await other.handlers.print(other.event, 'receipt')).toEqual({ status: 'missing', printer: 'Receipts' });
     expect(other.win.print).not.toHaveBeenCalled();
 
+    // a default that prints to a file (PDF, XPS, fax) is no stand-in either: the print window opens, as before 1.4
+    for (const [name, driver] of [['Microsoft Print to PDF', 'Microsoft Print To PDF'], ['Microsoft XPS Document Writer', ''], ['Fax', 'Microsoft Shared Fax Driver']] as const) {
+      const file = setup({ file: saved({ receipt: choice }), windows: async () => [{ name, isDefault: true, state: 'ready', driver, papers: ['A4'] }] });
+      file.win.printers = [{ name }, { name: 'Office Laser' }];
+      expect(await file.handlers.print(file.event, 'receipt'), name).toEqual({ status: 'missing', printer: 'Receipts' });
+      expect(file.win.print).not.toHaveBeenCalled();
+    }
+
     // a print on the default that fails is a failure, not "printed"
     const fails = setup({ file: saved({ receipt: choice }), windows });
     fails.win.printers = [{ name: 'Office Laser' }];

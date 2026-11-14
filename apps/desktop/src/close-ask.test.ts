@@ -2,7 +2,8 @@ import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterAll, describe, expect, it, vi } from 'vitest';
-import { closeAskNeeded, closeFlow, readCloseAsk, saveCloseAsk, type CloseFlowDeps } from './close-backup.ts';
+import { DatabaseSync } from 'node:sqlite';
+import { closeAskNeeded, closeFlow, lastBookChangeAt, readCloseAsk, saveCloseAsk, type CloseFlowDeps } from './close-backup.ts';
 import { dataPlaceOf, officeName } from './data-place.ts';
 
 const dir = mkdtempSync(join(tmpdir(), 'qasa-close-ask-'));
@@ -40,6 +41,25 @@ describe('should closing ask "Back up before closing?"', () => {
     expect(closeAskNeeded({ lastChangeAt: 'not a time', lastBackupAt: null, now })).toBe(false);
     // a backup time that can't be read counts as none
     expect(closeAskNeeded({ lastChangeAt: at(14, 17), lastBackupAt: 'yesterday', now })).toBe(true);
+  });
+
+  it('does not take a sign-in, or a refused one, for a change to the books', () => {
+    const db = new DatabaseSync(':memory:');
+    db.exec('CREATE TABLE audit_log (id INTEGER PRIMARY KEY AUTOINCREMENT, at TEXT NOT NULL, user TEXT NOT NULL, action TEXT NOT NULL, entity TEXT NOT NULL)');
+    const row = (when: string, action: string) => db.prepare('INSERT INTO audit_log (at, user, action, entity) VALUES (?, ?, ?, ?)').run(when, 'Mer', action, 'user');
+    expect(lastBookChangeAt(db)).toBeNull();
+    row(at(13, 9), 'login');
+    expect(lastBookChangeAt(db)).toBeNull(); // only sign-ins so far: nothing to back up
+    row(at(13, 10), 'approve');
+    // the next day: a sign-in, a wrong password from another PC, a refused recovery; someone reads a report and closes
+    for (const action of ['login', 'login_failed', 'login_over_limit', 'recovery_failed', 'start_over_refused']) row(at(14, 9), action);
+    expect(lastBookChangeAt(db)).toBe(at(13, 10));
+    expect(closeAskNeeded({ lastChangeAt: lastBookChangeAt(db), lastBackupAt: at(13, 20), now })).toBe(false);
+    // a changed password is a change worth a backup
+    row(at(14, 11), 'password');
+    expect(lastBookChangeAt(db)).toBe(at(14, 11));
+    expect(closeAskNeeded({ lastChangeAt: lastBookChangeAt(db), lastBackupAt: at(13, 20), now })).toBe(true);
+    db.close();
   });
 
   it('is on until the person turns it off, and a damaged file means on', () => {

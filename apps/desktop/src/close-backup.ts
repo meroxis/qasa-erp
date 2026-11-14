@@ -80,6 +80,19 @@ export function closeAskNeeded(input: { lastChangeAt: string | null; lastBackupA
   return new Date(backup).toDateString() !== now.toDateString();
 }
 
+/**
+ * Audit rows that record a try to get in, not a change to the books: a sign-in, a refused one, a refused recovery or
+ * start-over. A changed password, a new recovery code and every other row count as changes worth a backup.
+ */
+export const NOT_BOOK_CHANGES = ['login', 'login_failed', 'login_over_limit', 'recovery_failed', 'start_over_refused'] as const;
+
+/** When the books last changed: the newest audit row that is not one of NOT_BOOK_CHANGES, or null. */
+export function lastBookChangeAt(db: { prepare(sql: string): { get(...params: string[]): unknown } }): string | null {
+  const row = db.prepare(`SELECT at FROM audit_log WHERE action NOT IN (${NOT_BOOK_CHANGES.map(() => '?').join(', ')}) ORDER BY id DESC LIMIT 1`)
+    .get(...NOT_BOOK_CHANGES) as { at?: unknown } | undefined;
+  return typeof row?.at === 'string' ? row.at : null;
+}
+
 const ASK_FILE = 'close-ask.json';
 
 /** Settings → Backups → "Ask to back up when I close": on unless the person turned it off. */

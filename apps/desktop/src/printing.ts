@@ -136,10 +136,13 @@ export function printingHandlers(deps: PrintingDeps) {
     }
   }
 
-  /** Windows' default printer when it is one of `names` (the printers the app can print to), else null. */
+  /** Windows' default printer when it is one of `names` (the printers the app can print to) and prints on paper, else null. */
   async function defaultAmong(names: readonly string[]): Promise<string | null> {
     const found = (await windows()).find((w) => w.isDefault && names.includes(w.name));
-    return found ? found.name : null;
+    if (!found) return null;
+    // a PDF, XPS or fax "printer" is never a stand-in for a real one: the print window opens instead
+    if (guessPrinter({ name: found.name, driver: found.driver, papers: found.papers }) === 'file') return null;
+    return found.name;
   }
 
   return {
