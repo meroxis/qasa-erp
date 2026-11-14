@@ -1,11 +1,13 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
-  checkPrintDesign, DEFAULT_PRINT_DESIGN, DEFAULT_RECEIPT_DESIGN, designFor, LANGS, LOGO_POSITIONS, PRINT_DOCS, PRINT_FIELDS,
-  PRINT_LABELS, PRINT_LAYOUTS, PRINT_LIMITS, PRINT_PAPERS, readPrintDesignFile,
-  type DesignProblem, type Lang, type PrintDesign, type PrintDoc, type PrintDesignFile, type PrintKind, type PrintLayout
+  checkPrintDesign, DEFAULT_PRINT_DESIGN, DEFAULT_RECEIPT_DESIGN, designFor, galleryIdOf, LANGS, LOGO_POSITIONS, PRINT_DOCS, PRINT_FIELDS,
+  PRINT_FONT_SIZES, PRINT_GALLERY, PRINT_LABELS, PRINT_LIMITS, PRINT_PAPERS, printFieldApplies, readPrintDesignFile, withGalleryDesign,
+  type DesignProblem, type Lang, type PrintDesign, type PrintDoc, type PrintDesignFile, type PrintField, type PrintFontSizeName,
+  type PrintGalleryId, type PrintKind, type PrintLayout
 } from '@qasa/core';
 import { printDocument } from '../industry/printing.ts';
 import { ErrorBox, Icon, useData, usePageNav, useToast } from '../components.tsx';
+import { href } from '../router.ts';
 import { isKey, useI18n, type Key } from '../i18n.ts';
 import { PrintDocument } from '../industry/PrintDocument.tsx';
 import { sampleModel } from '../industry/print-model.ts';
@@ -21,7 +23,7 @@ const LABEL_DEFAULT_KEY: Record<(typeof PRINT_LABELS)[number], Key> = {
   title: 'pd_h_title', itemCode: 'pd_h_code', barcode: 'pd_h_barcode', item: 'pd_h_item', unit: 'pd_h_unit', qty: 'pd_h_qty',
   price: 'pd_h_price', discount: 'pd_h_discount', amount: 'pd_h_amount', total: 'pd_h_total', usdEquivalent: 'pd_h_usd',
   partyBalance: 'pd_h_balance', preparedBy: 'pd_h_preparedBy', receivedBy: 'pd_h_receivedBy', stamp: 'pd_h_stamp',
-  bankDetails: 'pd_h_bank', terms: 'pd_h_terms'
+  bankDetails: 'pd_h_bank', terms: 'pd_h_terms', previousBalance: 'pd_h_previousBalance'
 };
 
 /**
@@ -30,6 +32,35 @@ const LABEL_DEFAULT_KEY: Record<(typeof PRINT_LABELS)[number], Key> = {
  * design saved with it keeps the field, which the paper ignores.
  */
 export const DESIGNER_FIELDS = PRINT_FIELDS.filter((f) => f !== 'discount');
+
+/** The same parts in the order and the groups the designer shows them in (every one of DESIGNER_FIELDS, once). */
+export const FIELD_GROUPS: readonly { title: Key; fields: readonly PrintField[] }[] = [
+  { title: 'pd_grp_company', fields: ['logo', 'companyAddress', 'companyPhone', 'companyTax'] },
+  { title: 'pd_grp_party', fields: ['partyPhone', 'partyAddress', 'previousBalance', 'partyBalance'] },
+  { title: 'pd_grp_lines', fields: ['itemCode', 'barcode', 'itemImage', 'unit'] },
+  { title: 'pd_grp_totals', fields: ['subtotal', 'amountWords', 'usdEquivalent', 'exchangeRate'] },
+  { title: 'pd_grp_foot', fields: ['notes', 'terms', 'bankDetails', 'signatures', 'stamp', 'qr', 'pageNumbers'] }
+];
+
+/**
+ * The groups with only the parts this kind of paper and this layout can print: a switch that would change nothing on
+ * the paper is not offered (item columns on a voucher, the verify code on a purchase, page numbers on a receipt roll).
+ */
+export function designerGroups(doc: PrintDoc, layout: PrintLayout): { title: Key; fields: PrintField[] }[] {
+  return FIELD_GROUPS
+    .map((g) => ({ title: g.title, fields: g.fields.filter((f) => printFieldApplies(f, doc, layout)) }))
+    .filter((g) => g.fields.length > 0);
+}
+
+/** A part's name in the designer: on a voucher the balance after the paper is what is left to pay. */
+export function fieldLabelKey(field: PrintField, doc: PrintDoc): Key {
+  return field === 'partyBalance' && doc === 'voucher' ? 'pd_f_remainingBalance' : (`pd_f_${field}` as Key);
+}
+
+/** The named text size a design has (small, normal, large), or null for a size of its own. */
+export function fontSizeName(size: number): PrintFontSizeName | null {
+  return (Object.keys(PRINT_FONT_SIZES) as PrintFontSizeName[]).find((k) => PRINT_FONT_SIZES[k] === size) ?? null;
+}
 
 export function problemText(t: (k: Key) => string, p: DesignProblem): string {
   const key = `err_${p.code}`;
@@ -185,12 +216,31 @@ export function PrintDesignPage() {
           )}
 
           <fieldset className="card pad stack pd-fields" disabled={!own}>
+            <div className="pd-group">
+              <h3 style={{ margin: 0 }}>{t('pd_gallery')}</h3>
+              <p className="muted small" style={{ margin: 0 }}>{t('pd_galleryHint')}</p>
+              <div className="pd-gallery">
+                {PRINT_GALLERY.map((g) => {
+                  const sample = withGalleryDesign(shown, g.id);
+                  return (
+                    <button key={g.id} type="button" className="pd-card" aria-pressed={galleryIdOf(shown) === g.id}
+                      onClick={() => { setDraft(sample); setDirty(true); }}>
+                      <div className="pd-thumb" aria-hidden="true">
+                        <div style={{ zoom: THUMB_ZOOM[g.paper] }}>
+                          <PrintDocument
+                            model={model} design={sample} profile={setup.profile} company={company}
+                            lang={lang} branding={false} defaultRateX100={settings?.defaultRateX100} preview
+                          />
+                        </div>
+                      </div>
+                      <span className="pd-card-name">{t(`pd_g_${g.id}` as Key)}</span>
+                      <span className="pd-card-hint muted">{t(`pd_g_${g.id}_d` as Key)}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
             <div className="grid-2">
-              <label className="field"><span>{t('pd_layout')}</span>
-                <select className="input" value={shown.layout} onChange={(e) => { setDraft(withLayout(shown, e.target.value as PrintLayout)); setDirty(true); }}>
-                  {PRINT_LAYOUTS.map((l) => <option key={l} value={l}>{t(`pd_layout_${l}` as Key)}</option>)}
-                </select>
-              </label>
               <label className="field"><span>{t('pd_paper')}</span>
                 <select className="input" value={shown.paper} onChange={(e) => edit({ paper: e.target.value as PrintDesign['paper'] })}>
                   {PRINT_PAPERS.filter((p) => (shown.layout === 'receipt80') === (p === '80mm')).map((p) => <option key={p} value={p}>{p}</option>)}
@@ -199,9 +249,13 @@ export function PrintDesignPage() {
               <label className="field"><span>{t('pd_accent')}</span>
                 <input className="input" type="color" value={shown.accent} onChange={(e) => edit({ accent: e.target.value.toLowerCase() })} />
               </label>
-              <label className="field"><span>{t('pd_fontSize')}</span>
-                <input className="input num" type="number" min={PRINT_LIMITS.fontSize[0]} max={PRINT_LIMITS.fontSize[1]} step={0.5} value={shown.fontSize}
-                  onChange={(e) => edit({ fontSize: clamp(Number(e.target.value), PRINT_LIMITS.fontSize, 0.5) })} />
+              <label className="field"><span>{t('pd_textSize')}</span>
+                <select className="input" value={fontSizeName(shown.fontSize) ?? 'custom'}
+                  onChange={(e) => { if (e.target.value in PRINT_FONT_SIZES) edit({ fontSize: PRINT_FONT_SIZES[e.target.value as PrintFontSizeName] }); }}>
+                  {(Object.keys(PRINT_FONT_SIZES) as PrintFontSizeName[]).map((k) => <option key={k} value={k}>{t(`pd_size_${k}` as Key)}</option>)}
+                  {/* a design saved or imported with a size of its own keeps it until another is chosen */}
+                  {fontSizeName(shown.fontSize) === null && <option value="custom">{t('pd_size_custom', { n: String(shown.fontSize) })}</option>}
+                </select>
               </label>
               <label className="field"><span>{t('pd_margin')}</span>
                 <input className="input num" type="number" min={PRINT_LIMITS.marginMm[0]} max={PRINT_LIMITS.marginMm[1]} value={shown.marginMm}
@@ -225,14 +279,20 @@ export function PrintDesignPage() {
             </div>
 
             <h3 style={{ margin: '6px 0 0' }}>{t('pd_showSection')}</h3>
-            <div className="pd-checks">
-              {DESIGNER_FIELDS.map((f) => (
-                <label key={f} className="row" style={{ gap: 8 }}>
-                  <input type="checkbox" checked={shown.show[f]} onChange={(e) => edit({ show: { ...shown.show, [f]: e.target.checked } })} />
-                  {t(`pd_f_${f}` as Key)}
-                </label>
-              ))}
-            </div>
+            {designerGroups(doc, shown.layout).map((g) => (
+              <div key={g.title} className="pd-group">
+                <div className="pd-group-title muted">{t(g.title)}</div>
+                <div className="pd-checks">
+                  {g.fields.map((f) => (
+                    <label key={f} className="row" style={{ gap: 8 }}>
+                      <input type="checkbox" checked={shown.show[f]} onChange={(e) => edit({ show: { ...shown.show, [f]: e.target.checked } })} />
+                      {t(fieldLabelKey(f, doc))}
+                    </label>
+                  ))}
+                </div>
+                {g.title === 'pd_grp_party' && (shown.show.partyBalance || shown.show.previousBalance) && <span className="muted small">{t('pd_balanceHint')}</span>}
+              </div>
+            ))}
 
             {shown.show.bankDetails && (
               <label className="field"><span>{t('pd_bankText')}</span>
@@ -303,6 +363,9 @@ export function PrintDesignPage() {
   );
 }
 
+/** How small a sheet is drawn on a gallery card (the card shows the top of the paper). */
+const THUMB_ZOOM: Record<PrintDesign['paper'], number> = { A4: 0.16, A5: 0.225, '80mm': 0.4 };
+
 function clamp(v: number, [lo, hi]: readonly [number, number], step: number): number {
   if (!Number.isFinite(v)) return lo;
   return Math.min(hi, Math.max(lo, Math.round(v / step) * step));
@@ -313,10 +376,12 @@ function clamp(v: number, [lo, hi]: readonly [number, number], step: number): nu
 const MAX_LOGO_SIDE = 600;
 const TARGET_LOGO_BYTES = 180 * 1024;
 
-/** Keeps a small PNG/JPEG/WebP as it is (transparency included); a big one is drawn smaller as PNG, then WebP. */
+/**
+ * The picture drawn again as a new PNG (transparency kept), or as WebP when the PNG is too big, at most 600 pixels a
+ * side. Always redrawn, never sent as the file was: what goes to the server is only the picture, without anything else
+ * the file carried (the camera's place and time, comments, data stuck on after the picture).
+ */
 export async function prepareLogo(file: Blob): Promise<Blob> {
-  const okType = ['image/png', 'image/jpeg', 'image/webp'].includes(file.type);
-  if (okType && file.size <= TARGET_LOGO_BYTES) return file;
   const bitmap = await createImageBitmap(file);
   try {
     let scale = Math.min(1, MAX_LOGO_SIDE / Math.max(bitmap.width, bitmap.height));
@@ -347,6 +412,7 @@ async function base64Of(blob: Blob): Promise<string> {
 export function PrintHeaderCard() {
   const { t } = useI18n();
   const toast = useToast();
+  const { plan } = useData();
   const setup = usePrintSetup();
   const [form, setForm] = useState<PrintProfile>({ address: '', phone: '', taxNumber: '', footer: '', showLogo: true });
   const [error, setError] = useState<unknown>(null);
@@ -377,20 +443,35 @@ export function PrintHeaderCard() {
   };
 
   const logo = logoUrl(setup.profile?.logo);
+  // the company's logo is part of the paid plans (and the free month); the server refuses it otherwise, whatever shows here
+  const canLogo = !!plan?.features.includes('companyLogo');
+  const kept = !!setup.profile?.logoKept;
   return (
     <div className="card pad stack">
       <h2>{t('pp_title')}</h2>
       <p className="muted small" style={{ margin: 0 }}>{t('pp_help')}</p>
       <div className="row" style={{ gap: 14, alignItems: 'center', flexWrap: 'wrap' }}>
         <div className="pp-logo-box">{logo ? <img src={logo} alt={t('pp_logo')} /> : <span className="muted small">{t('pp_noLogo')}</span>}</div>
-        <div className="stack" style={{ gap: 6 }}>
-          <input ref={input} type="file" accept="image/png,image/jpeg,image/webp" hidden onChange={(e) => chooseLogo(e.target.files?.[0])} />
+        <div className="stack" style={{ gap: 6, flex: 1, minWidth: 200 }}>
+          <input ref={input} type="file" accept="image/png,image/jpeg,image/webp" hidden disabled={!canLogo} onChange={(e) => chooseLogo(e.target.files?.[0])} />
           <div className="row" style={{ flexWrap: 'wrap' }}>
-            <button type="button" className="btn" disabled={busy} onClick={() => input.current?.click()}><Icon name="upload" size={16} />{logo ? t('pp_changeLogo') : t('pp_chooseLogo')}</button>
-            {logo && <button type="button" className="btn" disabled={busy} onClick={() => void run(async () => { await printApi.deleteLogo(); refreshPrintSetup(); }, 'pp_logoRemoved')}><Icon name="x" size={16} />{t('pp_removeLogo')}</button>}
+            <button type="button" className="btn" disabled={busy || !canLogo} onClick={() => input.current?.click()}><Icon name="upload" size={16} />{logo ? t('pp_changeLogo') : t('pp_chooseLogo')}</button>
+            {(logo || kept) && <button type="button" className="btn" disabled={busy} onClick={() => void run(async () => { await printApi.deleteLogo(); refreshPrintSetup(); }, 'pp_logoRemoved')}><Icon name="x" size={16} />{t('pp_removeLogo')}</button>}
           </div>
-          <span className="muted small">{t('pp_logoHint')}</span>
-          <label className="row small" style={{ gap: 8 }}><input type="checkbox" checked={form.showLogo} onChange={(e) => setForm({ ...form, showLogo: e.target.checked })} />{t('pp_showLogo')}</label>
+          {canLogo ? (
+            <>
+              <span className="muted small">{t('pp_logoHint')}</span>
+              <label className="row small" style={{ gap: 8 }}><input type="checkbox" checked={form.showLogo} onChange={(e) => setForm({ ...form, showLogo: e.target.checked })} />{t('pp_showLogo')}</label>
+            </>
+          ) : (
+            <div className="alert info pd-locked" role="note">
+              <Icon name="star" size={16} />
+              <span>
+                {t('pp_logoLocked')} {kept && <>{t('pp_logoKept')} </>}
+                <a href={href('plans')}>{t('planLicense')}</a>
+              </span>
+            </div>
+          )}
         </div>
       </div>
       <div className="grid-3">

@@ -44,12 +44,57 @@ export interface PrintModel {
   baseTotal: number;
   /** what the party owes after this paper, in IQD, when known */
   partyBalance: number | null;
+  /** what the party owed before this paper, in IQD, when known */
+  previousBalance: number | null;
+  /** where the two balances come from when the design prints them and the page did not fill them in */
+  balanceOf?: PrintBalanceOf | null;
   notes: string;
   /** a document's own terms (quotations); the design's terms print when this is empty */
   terms: string;
   /** a posted sale invoice: its verify code */
   verifyInvoiceId: string | null;
   preparedBy: string;
+}
+
+/**
+ * The party whose balance a paper prints, and how to find the paper in the party's statement: a posted paper by its
+ * entry or invoice (the balance before it and after it); one not posted yet by what it will change (rawEffect: its
+ * debit less its credit on the party, in IQD); neither (a quotation) prints the balance as it stands.
+ */
+export interface PrintBalanceOf {
+  partyId: string;
+  /** the paper's date: the statement is read up to it */
+  date: string;
+  /** the paper's own entries (an invoice: its entry and those of the money taken with it) */
+  entryIds?: readonly string[];
+  invoiceId?: string | null;
+  rawEffect?: number;
+}
+
+/** What balancesAround reads of a party's statement (api.partyStatement). */
+export interface StatementForBalance {
+  party: { type: string };
+  closing: number;
+  lines: readonly { entryId: string; invoiceId: string | null; debit: number; credit: number; balance: number }[];
+}
+
+/**
+ * The party's balance before a paper and after it, from the statement read up to the paper's date. Balances are in the
+ * party's own direction (what a customer owes, what a supplier is owed), as on the statement. Papers entered later on
+ * the same day are left out: "after" is the balance right after this paper, not the day's last.
+ */
+export function balancesAround(st: StatementForBalance, of: Pick<PrintBalanceOf, 'entryIds' | 'invoiceId' | 'rawEffect'>): { previous: number | null; after: number } {
+  const sign = st.party.type === 'customer' ? 1 : -1;
+  const mine = (l: StatementForBalance['lines'][number]) => !!of.entryIds?.includes(l.entryId) || (!!of.invoiceId && l.invoiceId === of.invoiceId);
+  const first = st.lines.findIndex(mine);
+  if (first >= 0) {
+    let last = first;
+    for (let i = first; i < st.lines.length; i++) if (mine(st.lines[i]!)) last = i;
+    const start = st.lines[first]!;
+    return { previous: start.balance - sign * (start.debit - start.credit), after: st.lines[last]!.balance };
+  }
+  if (typeof of.rawEffect === 'number') return { previous: st.closing, after: st.closing + sign * of.rawEffect };
+  return { previous: null, after: st.closing };
 }
 
 const docOfInvoice = (kind: InvoiceDocKind): PrintDoc => (kind === 'sale' ? 'sale' : kind === 'purchase' ? 'purchase' : 'return');
@@ -77,6 +122,8 @@ export function invoiceModel(v: InvoiceView, extra: { barcodes?: Map<string, str
     total: v.total,
     baseTotal: v.baseTotal,
     partyBalance: extra.partyBalance ?? null,
+    previousBalance: null,
+    balanceOf: v.partyId && v.status === 'posted' ? { partyId: v.partyId, date: v.date, invoiceId: v.id, entryIds: [v.entryId, ...(v.payments ?? []).map((p) => p.entryId)].filter((id): id is string => !!id) } : null,
     notes: v.notes,
     terms: '',
     verifyInvoiceId: v.kind === 'sale' && v.status === 'posted' ? v.id : null,
@@ -107,6 +154,9 @@ export function quoteModel(x: QuoteView): PrintModel {
     total: x.total,
     baseTotal: x.currency === 'IQD' ? x.total : 0,
     partyBalance: null,
+    previousBalance: null,
+    // a quotation changes nobody's balance: the customer's balance as it stands on the quotation's date
+    balanceOf: x.party && x.status !== 'cancelled' ? { partyId: x.party.id, date: x.date } : null,
     notes: x.notes,
     terms: x.terms,
     verifyInvoiceId: null,
@@ -116,7 +166,17 @@ export function quoteModel(x: QuoteView): PrintModel {
 
 const VOUCHER_TYPES: readonly EntryType[] = ['receipt', 'payment'] as EntryType[];
 
+/** The customer or supplier a voucher is about: the first of its lines that names one, with what the voucher changes on them. */
+export function entryParty(e: Pick<EntryView, 'lines'>): { partyId: string; name: string | null; rawEffect: number } | null {
+  const line = e.lines.find((l) => l.partyId);
+  if (!line?.partyId) return null;
+  const rawEffect = e.lines.filter((l) => l.partyId === line.partyId).reduce((sum, l) => sum + l.baseDebit - l.baseCredit, 0);
+  return { partyId: line.partyId, name: line.partyName, rawEffect };
+}
+
 export function entryModel(e: EntryView): PrintModel {
+  const about = entryParty(e);
+  const partyName = e.party || about?.name || null;
   return {
     doc: 'voucher',
     titleKey: e.type === 'closing' ? 'closingEntry' : e.type,
@@ -125,7 +185,7 @@ export function entryModel(e: EntryView): PrintModel {
     validUntil: null,
     status: e.status === 'approved' ? 'final' : 'draft',
     partyRole: 'party',
-    party: e.party ? { name: e.party, code: null, phone: null, address: null } : null,
+    party: partyName ? { name: partyName, code: null, phone: null, address: null } : null,
     currency: e.currency,
     rateX100: e.rateX100,
     lines: [],
@@ -135,6 +195,9 @@ export function entryModel(e: EntryView): PrintModel {
     total: e.total,
     baseTotal: e.baseTotal,
     partyBalance: null,
+    previousBalance: null,
+    // approved: found in the statement by its entry; before that: what it will change once approved
+    balanceOf: about ? { partyId: about.partyId, date: e.date, entryIds: [e.id], rawEffect: about.rawEffect } : null,
     notes: e.description,
     terms: '',
     verifyInvoiceId: null,
@@ -155,7 +218,8 @@ export function sampleModel(doc: PrintDoc): PrintModel {
         { accountCode: '1811', accountName: names('الصندوق الرئيسي', 'Main safe', 'سندوقی سەرەکی'), description: '', debit: 1_250_000, credit: 0 },
         { accountCode: '1611', accountName: names('العملاء', 'Customers', 'کڕیاران'), description: '', debit: 0, credit: 1_250_000 }
       ],
-      subtotal: 1_250_000, discount: 0, total: 1_250_000, baseTotal: 1_250_000, verifyInvoiceId: null
+      subtotal: 1_250_000, discount: 0, total: 1_250_000, baseTotal: 1_250_000, verifyInvoiceId: null,
+      previousBalance: 1_645_000, partyBalance: 395_000
     };
   }
   const lines: PrintItemLine[] = [
@@ -183,6 +247,7 @@ export function sampleModel(doc: PrintDoc): PrintModel {
     total: 145_000,
     baseTotal: 145_000,
     partyBalance: 395_000,
+    previousBalance: 250_000,
     notes: '',
     terms: '',
     verifyInvoiceId: doc === 'sale' || doc === 'pos' ? 'sample' : null,

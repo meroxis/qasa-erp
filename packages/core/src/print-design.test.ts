@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { checkPrintDesign, DEFAULT_PRINT_DESIGN, DEFAULT_RECEIPT_DESIGN, designFor, readPrintDesignFile, type PrintDesign } from './print-design.ts';
+import { checkPrintDesign, DEFAULT_PRINT_DESIGN, DEFAULT_RECEIPT_DESIGN, designFor, LATER_PRINT_FIELDS, PRINT_FIELDS, printFieldApplies, readPrintDesignFile, type PrintDesign } from './print-design.ts';
 
 const design = (over: Record<string, unknown> = {}) => ({ ...structuredClone(DEFAULT_PRINT_DESIGN), ...over });
 const problems = (input: unknown) => {
@@ -65,6 +65,33 @@ describe('which design a paper prints with', () => {
     expect(designFor(saved, 'voucher')).toBe(sale);
     expect(designFor(saved, 'quote')).toBe(quote);
     expect(designFor(saved, 'pos')).toBe(DEFAULT_RECEIPT_DESIGN);
+  });
+});
+
+describe('the parts added in 1.4', () => {
+  const older = (d: PrintDesign, over: Record<string, boolean> = {}) =>
+    ({ ...d, show: { ...Object.fromEntries(PRINT_FIELDS.filter((f) => !LATER_PRINT_FIELDS[f]).map((f) => [f, d.show[f]])), ...over } });
+
+  it('reads a design saved before them as it printed then', () => {
+    expect(checkPrintDesign(older(DEFAULT_PRINT_DESIGN))).toEqual({ design: DEFAULT_PRINT_DESIGN });
+    expect(checkPrintDesign(older(DEFAULT_RECEIPT_DESIGN))).toEqual({ design: DEFAULT_RECEIPT_DESIGN });
+    const withBalance = checkPrintDesign(older(DEFAULT_PRINT_DESIGN, { partyBalance: true }));
+    expect('design' in withBalance && withBalance.design.show).toMatchObject({ partyBalance: true, previousBalance: true });
+  });
+
+  it('still refuses a part that is not a yes or no, and a part of before 1.4 that is missing', () => {
+    expect(problems({ ...DEFAULT_PRINT_DESIGN, show: { ...DEFAULT_PRINT_DESIGN.show, logo: 'yes' } })).toContainEqual({ code: 'pd_invalid', path: 'show.logo' });
+    const { qr: _drop, ...noQr } = DEFAULT_PRINT_DESIGN.show;
+    expect(problems({ ...DEFAULT_PRINT_DESIGN, show: noQr })).toContainEqual({ code: 'pd_invalid', path: 'show.qr' });
+  });
+
+  it('knows which parts a kind of paper and a layout can print', () => {
+    expect(printFieldApplies('itemCode', 'voucher', 'classic')).toBe(false);
+    expect(printFieldApplies('previousBalance', 'voucher', 'ledger')).toBe(true);
+    expect(printFieldApplies('qr', 'sale', 'modernLines')).toBe(true);
+    expect(printFieldApplies('qr', 'quote', 'modernLines')).toBe(false);
+    expect(printFieldApplies('pageNumbers', 'pos', 'receipt80')).toBe(false);
+    expect(printFieldApplies('discount', 'sale', 'classic')).toBe(false);
   });
 });
 

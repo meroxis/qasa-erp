@@ -1,7 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { checkPrintDesign, DEFAULT_PRINT_DESIGN, PRINT_FIELDS } from '@qasa/core';
+import { checkPrintDesign, DEFAULT_PRINT_DESIGN, DEFAULT_RECEIPT_DESIGN, galleryIdOf, PRINT_DOCS, PRINT_FIELDS, PRINT_FONT_SIZES, PRINT_GALLERY, PRINT_LAYOUTS, withGalleryDesign } from '@qasa/core';
 import { LABEL_TEXT } from '../i18n/labels.ts';
-import { DESIGNER_FIELDS, problemText, withLayout } from './PrintDesign.tsx';
+import { PRINT14_TEXT } from '../i18n/print14.ts';
+import { isKey } from '../i18n.ts';
+import { DESIGNER_FIELDS, designerGroups, FIELD_GROUPS, fieldLabelKey, fontSizeName, problemText, withLayout } from './PrintDesign.tsx';
 
 describe('the print designer', () => {
   it('moves the thermal receipt onto 80 mm paper and back to A4, always as a design the server accepts', () => {
@@ -23,8 +25,66 @@ describe('the print designer', () => {
   });
 
   it('has a label for each field it offers, and none for a field it does not', () => {
-    const labels = Object.keys(LABEL_TEXT).filter((k) => k.startsWith('pd_f_')).map((k) => k.slice('pd_f_'.length)).sort();
+    // remainingBalance is the voucher's name for the balance after the paper, not a part of its own
+    const labels = Object.keys({ ...LABEL_TEXT, ...PRINT14_TEXT }).filter((k) => k.startsWith('pd_f_')).map((k) => k.slice('pd_f_'.length)).filter((k) => k !== 'remainingBalance').sort();
     expect(labels).toEqual([...DESIGNER_FIELDS].sort());
+    for (const doc of PRINT_DOCS) for (const f of DESIGNER_FIELDS) expect(isKey(fieldLabelKey(f, doc)), f).toBe(true);
+    expect(fieldLabelKey('partyBalance', 'voucher')).toBe('pd_f_remainingBalance');
+  });
+
+  it('shows every part once, in groups, and only the parts the kind of paper and the layout can print', () => {
+    expect(FIELD_GROUPS.flatMap((g) => g.fields).sort()).toEqual([...DESIGNER_FIELDS].sort());
+    const offered = (doc: (typeof PRINT_DOCS)[number], layout: (typeof PRINT_LAYOUTS)[number]) => designerGroups(doc, layout).flatMap((g) => g.fields);
+    // a voucher has no item lines, no subtotal and no verify code, but it does print the two balances
+    const voucher = offered('voucher', 'classic');
+    for (const f of ['itemCode', 'barcode', 'itemImage', 'unit', 'subtotal', 'qr'] as const) expect(voucher, f).not.toContain(f);
+    expect(voucher).toEqual(expect.arrayContaining(['previousBalance', 'partyBalance', 'signatures', 'stamp', 'amountWords']));
+    // the verify code is a sale's; a receipt roll has no pages, pictures or barcodes
+    expect(offered('purchase', 'classic')).not.toContain('qr');
+    expect(offered('sale', 'modernLines')).toContain('qr');
+    const roll = offered('pos', 'receipt80');
+    for (const f of ['pageNumbers', 'itemImage', 'barcode'] as const) expect(roll, f).not.toContain(f);
+    expect(offered('quote', 'ledger')).not.toContain('unit');
+    for (const doc of PRINT_DOCS) for (const layout of PRINT_LAYOUTS) expect(offered(doc, layout)).not.toContain('discount');
+  });
+
+  it('offers a gallery of designs: each a design the server accepts, on its paper, with a name and a line about it in three languages', () => {
+    expect(PRINT_GALLERY.map((g) => g.id)).toEqual(['classic', 'modernLines', 'ledger', 'modern', 'halfPage', 'receipt80']);
+    // every layout is in the gallery
+    expect(new Set(PRINT_GALLERY.map((g) => g.layout))).toEqual(new Set(PRINT_LAYOUTS));
+    for (const from of [DEFAULT_PRINT_DESIGN, DEFAULT_RECEIPT_DESIGN, { ...DEFAULT_PRINT_DESIGN, paper: 'A5' as const, marginMm: 25 }]) {
+      for (const g of PRINT_GALLERY) {
+        const d = withGalleryDesign(from, g.id);
+        expect(d).toMatchObject({ layout: g.layout, paper: g.paper });
+        expect('design' in checkPrintDesign(d), g.id).toBe(true);
+        expect(galleryIdOf(d)).toBe(g.id);
+        // colour, logo and what shows stay as they were
+        expect(d).toMatchObject({ accent: from.accent, logo: from.logo, show: from.show });
+      }
+    }
+    expect(withGalleryDesign(DEFAULT_PRINT_DESIGN, 'receipt80').marginMm).toBeLessThanOrEqual(5);
+    expect(withGalleryDesign(DEFAULT_PRINT_DESIGN, 'halfPage').marginMm).toBeLessThanOrEqual(10);
+    expect(withGalleryDesign(DEFAULT_RECEIPT_DESIGN, 'ledger').marginMm).toBe(DEFAULT_PRINT_DESIGN.marginMm);
+    for (const g of PRINT_GALLERY) {
+      for (const key of [`pd_g_${g.id}`, `pd_g_${g.id}_d`] as (keyof typeof PRINT14_TEXT)[]) {
+        expect(new Set(PRINT14_TEXT[key]).size, key).toBe(3);
+      }
+    }
+  });
+
+  it('names the text sizes small, normal and large, and keeps a size of its own', () => {
+    expect(fontSizeName(PRINT_FONT_SIZES.small)).toBe('small');
+    expect(fontSizeName(DEFAULT_PRINT_DESIGN.fontSize)).toBe('normal');
+    expect(fontSizeName(PRINT_FONT_SIZES.large)).toBe('large');
+    expect(fontSizeName(13)).toBeNull();
+    for (const size of Object.values(PRINT_FONT_SIZES)) expect('design' in checkPrintDesign({ ...DEFAULT_PRINT_DESIGN, fontSize: size })).toBe(true);
+  });
+
+  it('has every new text in Arabic, English and Kurdish', () => {
+    for (const [key, texts] of Object.entries(PRINT14_TEXT)) {
+      expect(texts.length, key).toBe(3);
+      for (const text of texts) expect(text.trim().length, key).toBeGreaterThan(0);
+    }
   });
 
   it('says what is wrong with a design file in words, with where', () => {

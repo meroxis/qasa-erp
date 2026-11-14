@@ -52,6 +52,7 @@ export const ROWS: Row[] = [
   { label: 'f_autoParts', cells: has('autoParts') },
   { label: 'f_pharmacy', cells: has('pharmacy') },
   { label: 'f_loyalty', cells: has('loyalty') },
+  { label: 'f_companyLogo', cells: has('companyLogo') },
   { label: 'f_engineeringWorks', cells: has('engineeringWorks') },
   { label: 'f_electricalSolar', cells: has('electricalSolar') },
   { label: 'f_generators', cells: has('generators') },
