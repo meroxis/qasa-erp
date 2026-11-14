@@ -12,6 +12,9 @@ export default defineConfig({
     // pro/ is the private Pro module, present only in Meroxis' checkout
     include: ['packages/*/src/**/*.test.ts', 'apps/web/src/**/*.test.tsx', 'apps/desktop/src/**/*.test.ts', 'pro/src/**/*.test.ts'],
     environment: 'node',
+    // GitHub's Windows build machine is several times slower than a desk PC: the heavier database tests (backups,
+    // company copies, migrations) need more than the default 5 s there
+    ...(process.env.CI ? { testTimeout: 30_000, hookTimeout: 30_000 } : {}),
     ...(onServer ? { globalSetup: ['pro/src/mysql/vitest-global.ts'], setupFiles: ['pro/src/mysql/vitest-setup.ts'], testTimeout: 60_000, hookTimeout: 60_000 } : {})
   }
 });
