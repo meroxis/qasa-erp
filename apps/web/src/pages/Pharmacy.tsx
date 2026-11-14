@@ -189,7 +189,7 @@ function Alternatives() {
   );
 }
 
-function NearExpiry() {
+export function NearExpiry() {
   const i18n = useI18n();
   const { t } = i18n;
   const list = useLoad(() => pharmacyApi.nearExpiry(), []);

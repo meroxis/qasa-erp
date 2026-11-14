@@ -39,8 +39,9 @@ export const ACTIONS = {
 } as const satisfies Record<string, { needs: string; route: string; body?: Record<string, string> }>;
 
 /**
- * The industry pages (Pro and Business). Their rules are in the Pro module, which is not part of this repository, so no
- * test here can send these requests: each line states the permission the Pro route asks and names the route it
+ * The industry pages (Pro and Business). Their rules are in the Pro module, which is not part of this repository, so the
+ * Pro module's own test sends these requests (pro/src/offered-actions.test.ts: the request of each line as every role,
+ * the answer compared with `may`). Each line states the permission the Pro route asks and names the route it
  * mirrors (the `rules` of pro/src/<feature>/api.ts; a change those rules do not list needs an admin, as in the core).
  * What a record offers once it is open (sell, collect, deliver, cancel…) comes from the server with the record itself,
  * as its `actions`; these are the buttons shown before any record is open, and the few the records do not cover.

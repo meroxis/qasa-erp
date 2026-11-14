@@ -214,15 +214,17 @@ function VehicleFinder({ onOpen }: { onOpen(id: string): void }) {
   );
 }
 
-function ReorderList({ onOpen }: { onOpen(id: string): void }) {
+export function ReorderList({ onOpen }: { onOpen(id: string): void }) {
   const i18n = useI18n();
   const { t } = i18n;
   const list = useLoad(() => partsApi.reorder(), []);
+  // the last price paid, and to whom: left out by the server for someone who may not see cost
+  const cost = (list.data ?? []).some((r) => r.lastPurchase !== undefined);
   const exportCsv = () => downloadCsv('reorder.csv', [
-    [t('code'), t('name'), t('pt_numbers'), t('pt_brand'), t('pt_shelf'), t('available'), t('pt_reorderAt'), t('supplier'), t('pt_lastPurchase'), t('pt_lastPrice')],
+    [t('code'), t('name'), t('pt_numbers'), t('pt_brand'), t('pt_shelf'), t('available'), t('pt_reorderAt'), ...(cost ? [t('supplier'), t('pt_lastPurchase'), t('pt_lastPrice')] : [])],
     ...(list.data ?? []).map((r) => [
       r.code, i18n.name(r.name), r.numbers.map((n) => n.number).join(' / '), r.brand, r.shelf, formatQty(r.qtyMilli), formatQty(r.reorderMilli),
-      r.lastPurchase?.supplier ?? '', r.lastPurchase?.date ?? '', r.lastPurchase?.unitPrice ?? ''
+      ...(cost ? [r.lastPurchase?.supplier ?? '', r.lastPurchase?.date ?? '', r.lastPurchase?.unitPrice ?? ''] : [])
     ])
   ]);
   return (
@@ -242,7 +244,7 @@ function ReorderList({ onOpen }: { onOpen(id: string): void }) {
                 <th style={{ width: 90 }}>{t('pt_shelf')}</th>
                 <th className="amount">{t('available')}</th>
                 <th className="amount">{t('pt_reorderAt')}</th>
-                <th>{t('pt_lastPurchase')}</th>
+                {cost && <th>{t('pt_lastPurchase')}</th>}
               </tr>
             </thead>
             <tbody>
@@ -255,11 +257,11 @@ function ReorderList({ onOpen }: { onOpen(id: string): void }) {
                   <td><span className="ltr">{r.shelf}</span></td>
                   <td className="amount" style={{ color: 'var(--bad)' }}>{qtyText(i18n, r.qtyMilli)}</td>
                   <td className="amount">{qtyText(i18n, r.reorderMilli)}</td>
-                  <td>
+                  {cost && <td>
                     {r.lastPurchase
                       ? <><span className="bidi">{r.lastPurchase.supplier}</span><div className="muted small">{i18n.date(r.lastPurchase.date)} · {i18n.money(r.lastPurchase.unitPrice, r.lastPurchase.currency)}</div></>
                       : <span className="muted">—</span>}
-                  </td>
+                  </td>}
                 </tr>
               ))}
             </tbody>

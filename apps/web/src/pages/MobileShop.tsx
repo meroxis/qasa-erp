@@ -209,7 +209,7 @@ function SerialsTable({ serials, onPick }: { serials: SerialView[]; onPick(s: Se
 
 const NEXT_STATUS: Record<SerialStatus, SerialStatus[]> = { sold: ['returned'], in_stock: ['defective'], returned: ['in_stock', 'defective'], defective: ['in_stock'] };
 
-function LookupResult({ result, onChanged }: { result: SerialLookup; onChanged(message: string): void }) {
+export function LookupResult({ result, onChanged }: { result: SerialLookup; onChanged(message: string): void }) {
   const can = useMay();
   // (a purchase invoice does not open for someone who may not read the books: its number is shown, not linked)
   const { seesBooks } = useData();
@@ -257,7 +257,7 @@ function LookupResult({ result, onChanged }: { result: SerialLookup; onChanged(m
                 {d.purchaseInvoice ? (seesBooks !== false ? <a className="ltr" href={href(`invoice/${d.purchaseInvoice.id}`)}>{d.purchaseInvoice.number ?? '—'}</a> : <span className="ltr">{d.purchaseInvoice.number ?? '—'}</span>) : t('mob_registeredBy', { u: d.createdBy })}
                 {d.fromParty && <> · {t('mob_tradeInFrom', { n: d.fromParty.name })}</>}
               </div>
-              {d.cost !== null && <div><span className="muted">{t('mob_cost')}: </span><span className="num">{i18n.money(d.cost, 'IQD')}</span></div>}
+              {d.cost !== null && d.cost !== undefined && <div><span className="muted">{t('mob_cost')}: </span><span className="num">{i18n.money(d.cost, 'IQD')}</span></div>}
             </div>
             <div className="small">
               {d.saleInvoice ? (
