@@ -63,6 +63,12 @@ it('does not sell the phone app in the tour, and marks it soon on the plans page
   for (const text of PHONE_TEXT.ph_soonNote) expect(text.trim().length).toBeGreaterThan(20);
 });
 
+it('names the plans the phone app is part of as the plan table has them: Starter, Pro and Business', () => {
+  for (const key of ['ph_needsPro', 'err_plan_limit_phoneApp'] as const) {
+    for (const text of PHONE_TEXT[key]) expect(text, key).toMatch(/Starter.*Pro.*Business/);
+  }
+});
+
 it('says in the tour, as on the plans page, that the online edition is coming soon', () => {
   expect(ROWS.find((r) => r.label === 'f_online')?.soon).toBe(true);
   const [ar, en, ku] = UI_TEXT.tour_plan_business;

@@ -77,7 +77,8 @@ export function Home() {
                 <Stat icon="cart" label={t('todaySales')} value={money(b.sales.today, 'IQD', lang)}
                   note={`${t('invoicesN', { n: b.sales.invoices })} · ${t('vsLastWeek', { v: money(b.sales.sameDayLastWeek, 'IQD', lang) })}`} />
                 <Stat icon="tag" label={t('monthSales')} value={money(b.sales.month, 'IQD', lang)} />
-                <Stat icon="cash" label={t('cashTotal')} value={money(b.cash.total.IQD, 'IQD', lang)} note={b.cash.total.USD ? money(b.cash.total.USD, 'USD', lang) : undefined} />
+                {/* what the safes hold is the books (1.4): an office leaves it out for whoever may not read them */}
+                {b.cash ? <Stat icon="cash" label={t('cashTotal')} value={money(b.cash.total.IQD, 'IQD', lang)} note={b.cash.total.USD ? money(b.cash.total.USD, 'USD', lang) : undefined} /> : null}
                 <Stat icon="users" label={t('receivables')} value={money(b.receivables, 'IQD', lang)} tone={b.receivables > 0 ? 'bad' : 'ink'} />
               </View>
               {(b.approvals.waitingCheck > 0 || b.approvals.waitingApproval > 0) && (

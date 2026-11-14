@@ -5,7 +5,7 @@ import { getLocales } from 'expo-localization';
 import { useFonts } from 'expo-font';
 import { SafeAreaProvider, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { OfficeError, officeApi, type Party, type Warehouse } from './src/api';
-import type { CartLine, CountLine } from './src/documents';
+import { receiptPosted, type CartLine, type CountLine } from './src/documents';
 import { FONT_SOURCES } from './src/fonts';
 import { isRtl, translate, type Key, type Lang } from './src/i18n';
 import type { IconName } from './src/icons';
@@ -134,12 +134,12 @@ function Main() {
   const api = useMemo(() => (link ? officeApi(link) : null), [link]);
 
   /** One change from the outbox to the office, with its own key (`last` keeps the office's answer for the screen). */
-  const sender = useCallback((last?: { e: unknown }) => async (item: OutboxItem) => {
+  const sender = useCallback((last?: { e: unknown; b?: unknown }) => async (item: OutboxItem) => {
     if (!api) throw new LinkError('closed');
     try {
       if (item.kind === 'sale') await api.draftSale(item.body, item.id);
       else if (item.kind === 'order') await api.order(item.body, item.id);
-      else if (item.kind === 'receipt') await api.receipt(item.body, item.id);
+      else if (item.kind === 'receipt') { const answer = await api.receipt(item.body, item.id); if (last) last.b = answer; }
       else if (item.kind === 'count') await api.sendCount(item.body, item.id);
       else await api.countInto(item.target ?? '', item.body, item.id);
     } catch (e) {
@@ -237,9 +237,9 @@ function Main() {
       async queue(kind: OutboxKind, body: unknown, summary: OutboxSummary, target?: string) {
         // kept (encrypted) before the first try: nothing is lost if the answer never comes
         const item = await outbox.add(kind, body, summary, target);
-        const last: { e: unknown } = { e: null };
+        const last: { e: unknown; b?: unknown } = { e: null };
         const outcome = await outbox.sendOne(item.id, sender(last));
-        if (outcome === 'sent') return 'sent';
+        if (outcome === 'sent') return receiptPosted(last.b) ? 'posted' : 'sent';
         if (outcome === 'wait') return 'queued';
         // refused at once, on the screen that made it: shown there, not kept
         await outbox.remove(item.id);

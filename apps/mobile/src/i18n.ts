@@ -91,7 +91,7 @@ const T = {
   addItem: ['إضافة مادة جديدة', 'Add a new item', 'زیادکردنی کاڵای نوێ'],
   price: ['السعر', 'Price', 'نرخ'],
   wholesale: ['سعر الجملة', 'Wholesale', 'نرخی جوملە'],
-  stock: ['المخزون', 'Stock', 'کۆگا'],
+  stock: ['المخزون', 'Stock', 'بڕی کۆگا'],
   inStock: ['المتوفر', 'In stock', 'بەردەست'],
   shelf: ['الرف', 'Shelf', 'ڕەف'],
   addToCart: ['أضف إلى البيع', 'Add to the sale', 'زیادکردن بۆ فرۆشتن'],
@@ -126,7 +126,12 @@ const T = {
   modeOrder: ['طلبية (عرض سعر)', 'Order (quote)', 'داواکاری (عەرزی نرخ)'],
   sendDraft: ['إرسال كمسودة فاتورة', 'Send as a draft invoice', 'ناردن وەک ڕەشنووسی پسوولە'],
   sendOrder: ['إرسال الطلبية', 'Send the order', 'ناردنی داواکاری'],
-  draftSent: ['أُرسلت مسودة الفاتورة. يرحّلها المحاسب من الحاسوب.', 'The draft invoice was sent. The accountant posts it on the PC.', 'ڕەشنووسی پسوولە نێردرا. ژمێریار لەسەر کۆمپیوتەر تۆماری دەکات.'],
+  draftSent: ['أُرسلت مسودة الفاتورة. يرحّلها المحاسب من الحاسوب.', 'The draft invoice was sent. The accountant posts it on the PC.', 'ڕەشنووسی پسوولە نێردرا. ژمێریار لەسەر کۆمپیوتەر تەرحیلی دەکات.'],
+  // one way for the whole sale, as the desktop's till and invoice (1.4): the desktop's own words (payMode, payCash, payCredit)
+  payment: ['طريقة الدفع', 'Payment', 'شێوازی پارەدان'],
+  payCash: ['نقداً', 'Cash', 'نەقد'],
+  payCredit: ['آجل', 'On credit', 'قەرز'],
+  creditNeedsCustomer: ['اختر الزبون — مطلوب للبيع الآجل.', 'Choose the customer — needed for a sale on credit.', 'کڕیار هەڵبژێرە — بۆ فرۆشتنی قەرز پێویستە.'],
   orderSent: ['أُرسلت الطلبية كعرض سعر. يحوّلها المكتب إلى فاتورة عند التسليم.', 'The order was sent as a quote. The office turns it into an invoice on delivery.', 'داواکارییەکە وەک عەرزی نرخ نێردرا. نووسینگە لە کاتی ڕادەستکردن دەیکاتە پسوولە.'],
   orderNeedsCustomer: ['الطلبية تحتاج زبوناً.', 'An order needs a customer.', 'داواکاری پێویستی بە کڕیارە.'],
   oneCurrency: ['البيع الواحد بعملة واحدة: تُرسل مواد {c} وحدها.', 'One sale is in one currency: the {c} items go on their own.', 'هەر فرۆشتنێک بە یەک دراوە: کاڵاکانی {c} بە تەنها دەنێردرێن.'],
@@ -157,7 +162,12 @@ const T = {
   amount: ['المبلغ', 'Amount', 'بڕی پارە'],
   note: ['ملاحظة (اختيارية)', 'Note (optional)', 'تێبینی (ئارەزوومەندانە)'],
   collectSend: ['تسجيل القبض', 'Record the receipt', 'تۆمارکردنی وەرگرتن'],
-  collectSent: ['أُرسل سند القبض كمسودة. يدققه المحاسب ويصادقه على الحاسوب.', 'The receipt was sent as a draft voucher. The accountant checks and approves it on the PC.', 'سەنەدی وەرگرتن وەک ڕەشنووس نێردرا. ژمێریار لەسەر کۆمپیوتەر وردبینی و پەسەندی دەکات.'],
+  collectSent: [
+    'أُرسل سند القبض. يُحتسب في رصيد الزبون بعد المصادقة عليه على الحاسوب.',
+    'The receipt voucher was sent. It counts in the customer\'s balance once it is approved on the PC.',
+    'سەنەدی وەرگرتن نێردرا. دوای پەسەندکردنی لەسەر کۆمپیوتەر لە ڕەسیدی کڕیار دەژمێردرێت.'
+  ],
+  collectPosted: ['رُحّل سند القبض ونزل المبلغ من حساب الزبون.', 'The receipt voucher is posted: the amount came off the customer\'s account.', 'سەنەدی وەرگرتن تەرحیل کرا: بڕی پارەکە لە قەرزی کڕیار کەم بووەوە.'],
   receiptDescription: ['قبض من {c} — تطبيق الهاتف', 'Received from {c} — phone app', 'وەرگیرا لە {c} — ئەپی مۆبایل'],
   amountInvalid: ['أدخل مبلغاً أكبر من صفر.', 'Enter an amount above zero.', 'بڕێکی سەرووی سفر بنووسە.'],
   noAccount: ['لا حساب لهذا الزبون في الدليل.', 'This customer has no account in the chart.', 'ئەم کڕیارە هیچ هەژمارێکی لە ڕێبەری هەژمارەکاندا نییە.'],
@@ -182,7 +192,7 @@ const T = {
   deleteConfirm: ['حذف هذا من الهاتف؟ لم يصل إلى المكتب ولا يمكن استرجاعه.', 'Delete this from the phone? It has not reached the office, and it can\'t be brought back.', 'ئەمە لە مۆبایل بسڕدرێتەوە؟ نەگەیشتووەتە نووسینگە و ناگەڕێندرێتەوە.'],
   kindSale: ['بيع', 'Sale', 'فرۆشتن'],
   kindOrder: ['طلبية', 'Order', 'داواکاری'],
-  kindReceipt: ['قبض', 'Receipt', 'وەرگرتن'],
+  kindReceipt: ['سند قبض', 'Receipt voucher', 'سەنەدی وەرگرتن'],
   kindCount: ['جرد', 'Count', 'جەرد'],
   triesN: ['المحاولات: {n}', 'Tries: {n}', 'هەوڵەکان: {n}'],
 
@@ -247,7 +257,7 @@ const T = {
 
   // ——— refusals ———
   forbidden: ['ليس لديك صلاحية لهذا. اطلبها من مدير قاصة.', 'You don\'t have permission for this. Ask the Qasa admin.', 'دەسەڵاتی ئەمەت نییە. لە بەڕێوەبەری قاسە داوای بکە.'],
-  planLimit: ['تطبيق الهاتف من مزايا Pro وBusiness.', 'The phone app is part of Pro and Business.', 'ئەپی مۆبایل بەشێکە لە Pro و Business.'],
+  planLimit: ['تطبيق الهاتف من مزايا Starter وPro وBusiness.', 'The phone app is part of Starter, Pro and Business.', 'ئەپی مۆبایل بەشێکە لە Starter، Pro و Business.'],
   phoneLimit: ['وصل الحاسوب إلى عدد الهواتف المسموح به. احذف هاتفاً من الإعدادات ← الهواتف.', 'The PC has as many phones as its plan allows. Remove one in Settings → Phones.', 'کۆمپیوتەرەکە گەیشتۆتە ژمارەی مۆبایلی ڕێگەپێدراو. یەکێک لە ڕێکخستنەکان ← مۆبایلەکان لاببە.'],
   pairingInvalid: ['انتهت صلاحية الرمز أو استُخدم. اطلب رمزاً جديداً من الحاسوب.', 'The code expired or was used. Ask the PC for a new one.', 'کۆدەکە بەسەرچوو یان بەکارهات. داوای کۆدێکی نوێ لە کۆمپیوتەر بکە.'],
   unknownDevice: ['حُذف هذا الهاتف من الحاسوب. اربطه من جديد.', 'This phone was removed on the PC. Pair it again.', 'ئەم مۆبایلە لە کۆمپیوتەرەکەوە لابرا. دووبارە بیبەستەوە.'],

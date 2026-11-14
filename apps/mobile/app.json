@@ -53,6 +53,7 @@
       "expo-secure-store",
       "expo-localization",
       "./plugins/with-lan-cleartext.js",
+      "./plugins/with-release-signing.js",
       "expo-font",
       [
         "expo-local-authentication",

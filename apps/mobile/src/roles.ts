@@ -18,7 +18,7 @@ export type Feature =
   | 'sale'
   /** an order for a customer, sent as a quote */
   | 'order'
-  /** money received from a customer: a draft receipt voucher */
+  /** money received from a customer: a receipt voucher, a draft or waiting for approval (posted at once for an approver) */
   | 'collect'
   | 'statement'
   /** a count sent to the office as a list (Settings → Phones) */

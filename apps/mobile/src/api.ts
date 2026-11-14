@@ -50,8 +50,9 @@ export interface Statement {
 export interface Brief {
   date: string;
   sales: { today: number; invoices: number; sameDayLastWeek: number; month: number };
-  cash: { accounts: { code: string; name: Names; balance: Money; base: number }[]; total: Money; base: number };
-  flow: { in: number; out: number };
+  /** left out by the office for whoever may not read the books (cost-view.ts, 1.4), as are flow, cost and profit */
+  cash?: { accounts: { code: string; name: Names; balance: Money; base: number }[]; total: Money; base: number };
+  flow?: { in: number; out: number };
   receivables: number;
   lateCustomers: { partyId: string; code: string; name: string; phone: string; balance: number; oldestDays: number; usd: number }[];
   lowStock: { itemId: string; code: string; name: Names; qtyMilli: number; reorderMilli: number | null }[];
@@ -110,7 +111,8 @@ export function officeApi(link: OfficeLink) {
     // ——— the changes the outbox sends, each with its own key ———
     draftSale: async (input: unknown, key?: string) => ok(await link.request<{ id: string }>('POST', '/api/invoices', input, key)),
     order: async (input: unknown, key?: string) => ok(await link.request<{ id: string }>('POST', '/api/quotes', input, key)),
-    receipt: async (input: unknown, key?: string) => ok(await link.request<{ id: string }>('POST', '/api/vouchers', input, key)),
+    // the office decides whether it is in the books at once or waits for approval: the answer's status says which
+    receipt: async (input: unknown, key?: string) => ok(await link.request<{ id: string; status?: string }>('POST', '/api/vouchers', input, key)),
     sendCount: async (input: unknown, key?: string) => ok(await link.request<{ id: string }>('count', undefined, input, key)),
     countInto: async (countId: string, input: unknown, key?: string) => ok(await link.request<{ id: string }>('PUT', `/api/adjustments/counts/${safeId(countId)}`, input, key))
   };

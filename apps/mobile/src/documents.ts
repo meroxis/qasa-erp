@@ -54,30 +54,47 @@ export interface SaleInput {
   date: string;
   warehouseId: string;
   customer: Pick<Party, 'id'> | null;
+  /** one way for the whole sale, as on the desktop's till and invoice (1.4): paid now in cash, or on credit */
+  payment: Payment;
   cashAccount: string;
   rateX100: number;
   notes: string;
 }
 
-/** A draft sale invoice: on credit to a customer, or cash from a walk-in customer. */
+export type Payment = 'cash' | 'credit';
+
+/** Credit needs a customer: whose account the sale goes on. */
+export const paymentReady = (payment: Payment, customer: Pick<Party, 'id'> | null) => payment === 'cash' || !!customer;
+
+/**
+ * A draft sale invoice, cash or on credit as a whole (never part of each). Cash goes into the safe, with the customer
+ * named when one was chosen; credit goes on the chosen customer's account.
+ */
 export function saleBody(s: SaleInput) {
+  if (!paymentReady(s.payment, s.customer)) throw new Error('credit needs a customer');
   return {
     kind: 'sale' as const, date: s.date, warehouseId: s.warehouseId, currency: s.currency, rateX100: s.currency === 'IQD' ? 100 : s.rateX100,
-    payment: s.customer ? ('credit' as const) : ('cash' as const), ...(s.customer ? { partyId: s.customer.id } : { cashAccountCode: s.cashAccount }),
+    payment: s.payment, ...(s.customer ? { partyId: s.customer.id } : {}), ...(s.payment === 'cash' ? { cashAccountCode: s.cashAccount } : {}),
     discount: 0, notes: s.notes.slice(0, 1000),
     lines: s.lines.map((l) => ({ itemId: l.item.id, qtyMilli: toMilli(l.qty), unitPrice: l.item.salePrice }))
   };
 }
 
 /** An order for a customer: a quote, which the office turns into an invoice when it is delivered. */
-export function orderBody(s: Omit<SaleInput, 'warehouseId' | 'cashAccount' | 'rateX100'> & { customer: Pick<Party, 'id'>; names: (i: Item) => string }) {
+export function orderBody(s: Omit<SaleInput, 'warehouseId' | 'cashAccount' | 'rateX100' | 'payment'> & { customer: Pick<Party, 'id'>; names: (i: Item) => string }) {
   return {
     date: s.date, partyId: s.customer.id, currency: s.currency, discount: 0, notes: s.notes.slice(0, 2000),
     lines: s.lines.map((l) => ({ itemId: l.item.id, description: s.names(l.item).slice(0, 500), qtyMilli: toMilli(l.qty), unitPrice: l.item.salePrice }))
   };
 }
 
-/** Money received from a customer: a draft receipt voucher (cash in, the customer's account credited). */
+/**
+ * Money received from a customer: a receipt voucher (cash in, the customer's account credited), prepared in the name of the
+ * phone's user (POST /api/vouchers, which a Qasa ERP 1.4.1 office already opens to phones). The
+ * office decides whether it is in the books at once, by the 1.4.1 rule: with "Vouchers need approval" on, only for a
+ * user who may approve vouchers (never under "Separate duties"); everyone else's waits for approval. With the setting
+ * off it is a draft, checked and approved on the PC.
+ */
 export function receiptBody(r: {
   customer: Pick<Party, 'id' | 'name'> & { accountCode: string }; amount: number; currency: Currency; rateX100: number; cashAccount: string;
   date: string; description: string; note: string;
@@ -89,6 +106,9 @@ export function receiptBody(r: {
     items: [{ accountCode: r.customer.accountCode, amount: r.amount, partyId: r.customer.id }]
   };
 }
+
+/** The office's answer to a receipt: in the books (approved), or not yet (waiting for approval, or a draft). */
+export const receiptPosted = (answer: unknown) => (answer as { status?: unknown } | null)?.status === 'approved';
 
 /** Counted quantities for the warehouse's open count on the PC. */
 export const countSessionBody = (lines: CountLine[]) => ({ counts: lines.map((l) => ({ itemId: l.item.id, countedMilli: toMilli(l.qty) })) });
