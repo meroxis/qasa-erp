@@ -26,6 +26,11 @@ export interface ProModule {
   /** 1.1: the backup at closing (and its copy to a folder, and the cloud upload); throws when it failed. */
   closingBackup?(): Promise<string>;
   /**
+   * 1.4: when the last backup of this company was made (ISO time), by any way (daily, Save a backup now, at closing),
+   * or null. With it, closing does not ask "Back up before closing?" after a backup the app did not make itself.
+   */
+  lastBackupAt?(): string | null;
+  /**
    * At start, before anything else: the company database on a MariaDB/MySQL server when this PC uses one, or null
    * for the company file. Throws a problem with a code, host, database and localCopy when the server can't be used.
    */

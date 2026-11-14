@@ -1289,3 +1289,57 @@ html[dir='rtl'] .tour-card.center { transform: translate(50%, -50%); }
 @media print {
   body.pdf-making .backdrop, body.pdf-making .toast { display: none !important; }
 }
+
+/* ===== 1.4, the shell: who owes whom, the dollar rate in the title band, this computer's printers ===== */
+/* Customers and Suppliers: the balance in words and colour ("Owes us 250,000 IQD"), each currency on its own line */
+.owe { display: inline-flex; flex-direction: column; align-items: flex-end; gap: 2px; }
+.owe-line { display: inline-flex; align-items: baseline; gap: 8px; white-space: nowrap; font-weight: 600; }
+.owe-word { font-family: var(--font-ui); font-size: var(--fs-small); font-weight: 600; }
+.owe-line.warn, .owe-total.warn .value { color: var(--warn); }
+.owe-line.bad, .owe-total.bad .value { color: var(--bad); }
+.owe-line.info, .owe-total.info .value { color: var(--info); }
+.owe-line.ok, .owe-total.ok .value { color: var(--ok); }
+.owe-tile { font-size: 18px; }
+.owe-tile .owe { align-items: flex-start; }
+.owe-totals { display: flex; flex-wrap: wrap; gap: var(--sp-3) var(--sp-8); align-items: flex-start; }
+.owe-total { display: flex; flex-direction: column; gap: 4px; min-inline-size: 0; }
+.owe-total .label { font-size: 13px; color: var(--ink-2); }
+.owe-total .value { display: flex; flex-wrap: wrap; gap: 4px var(--sp-4); font-size: 22px; font-weight: 600; line-height: 1.25; }
+.owe-sum { white-space: nowrap; }
+.owe-filters { flex-wrap: wrap; gap: var(--sp-2) var(--sp-3); }
+@media print { .owe-filters { display: none; } }
+
+/* the dollar rate beside the person's name: quiet text, a link for those who may enter rates */
+.fx-chip {
+  display: inline-flex; align-items: center; min-block-size: var(--control-h); padding-inline: var(--sp-2); border-radius: var(--r-control);
+  color: var(--ink-2); font-size: var(--fs-small); font-weight: 500; white-space: nowrap; text-decoration: none; unicode-bidi: isolate;
+}
+a.fx-chip:hover { background: var(--subtle-hover); color: var(--ink); }
+a.fx-chip:focus-visible { outline: 2px solid var(--focus-outer); outline-offset: 1px; }
+.fx-chip.quiet { color: var(--ink-3); }
+@media screen and (max-width: 900px) { .fx-chip { display: none; } }
+
+/* Settings: a card's heading that only repeats the open section's name is kept for screen readers, not drawn */
+.settings-repeat-title { position: absolute !important; inline-size: 1px; block-size: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+/* what stood beside that heading (the guide link) keeps to the card's far corner instead of a row of its own */
+.card-head:has(> .settings-repeat-title) { padding: 0; justify-content: flex-end; min-block-size: 0; }
+.card.pad.stack > .card-head:has(> .settings-repeat-title) { margin-block-end: calc(-1 * var(--sp-3)); }
+
+/* Settings → Printers: this computer's printers as rectangles, and the suggestion under a kind with no printer */
+.printer-tiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: var(--sp-2); margin: 0; padding: 0; list-style: none; }
+.printer-tile {
+  --sec: var(--accent);
+  display: flex; align-items: flex-start; gap: 12px; padding: var(--sp-3); min-inline-size: 0;
+  border: 1px solid var(--line); border-radius: 10px; background: var(--surface);
+}
+.printer-tile.default { border-color: color-mix(in srgb, var(--info) 45%, var(--line)); }
+.printer-tile > .launch-ico { flex-shrink: 0; inline-size: 36px; block-size: 36px; border-radius: 10px; }
+.printer-tile-text { flex: 1; min-inline-size: 0; display: flex; flex-direction: column; gap: 4px; }
+.printer-tile-text > strong { font-weight: 600; line-height: 1.35; overflow-wrap: anywhere; }
+.printer-tile-chips { display: flex; flex-wrap: wrap; gap: 4px; }
+.printer-tile-chips:empty { display: none; }
+.printer-suggest { display: flex; align-items: center; justify-content: space-between; gap: var(--sp-3); flex-wrap: wrap; }
+.printer-suggestion { display: flex; align-items: center; gap: var(--sp-2); flex-wrap: wrap; margin-block-start: 4px; }
+/* a long printer name never widens the table: the list keeps its column */
+.printers-table tr.printers-kind > td:nth-child(2) select { max-inline-size: 22em; }
+.card-head:has(> .settings-repeat-title:only-child) { display: contents; }

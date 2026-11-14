@@ -61,3 +61,91 @@ export function takeCloseFailure(dir: string): { at: string; error: string } | n
   try { note = JSON.parse(readFileSync(file, 'utf8')) as { at?: unknown; error?: unknown }; } catch { return null; } finally { rmSync(file, { force: true }); }
   return typeof note?.at === 'string' ? { at: note.at, error: typeof note.error === 'string' ? note.error.slice(0, 200) : '' } : null;
 }
+
+// ——— 1.4: "Back up before closing?" ———
+// When the automatic backup at closing above is not on, closing asks instead: the books changed and no backup was
+// made since (nor today). [Back up and close] [Close without backup] [Cancel], with "Don't ask again" (Settings →
+// Backups turns it back on). A backup that fails never keeps the app open: the error is shown and the person closes.
+// Only on the PC that keeps the books, and never while Windows shuts down.
+
+/** Should closing ask? Not when nothing ever changed, when a backup was made since the last change, or one was made today. */
+export function closeAskNeeded(input: { lastChangeAt: string | null; lastBackupAt: string | null; now?: Date }): boolean {
+  const changed = input.lastChangeAt ? Date.parse(input.lastChangeAt) : NaN;
+  if (!Number.isFinite(changed)) return false;
+  const backup = input.lastBackupAt ? Date.parse(input.lastBackupAt) : NaN;
+  if (!Number.isFinite(backup)) return true;
+  if (backup >= changed) return false;
+  const now = input.now ?? new Date();
+  // "today" is the day on this PC's clock
+  return new Date(backup).toDateString() !== now.toDateString();
+}
+
+const ASK_FILE = 'close-ask.json';
+
+/** Settings → Backups → "Ask to back up when I close": on unless the person turned it off. */
+export function readCloseAsk(dir: string): boolean {
+  try {
+    return (JSON.parse(readFileSync(join(dir, ASK_FILE), 'utf8')) as { ask?: unknown }).ask !== false;
+  } catch {
+    return true;
+  }
+}
+
+export function saveCloseAsk(dir: string, ask: boolean, at = new Date()): void {
+  mkdirSync(dir, { recursive: true });
+  const tmp = join(dir, ASK_FILE + '.tmp');
+  writeFileSync(tmp, JSON.stringify({ ask, at: at.toISOString() }));
+  renameSync(tmp, join(dir, ASK_FILE));
+}
+
+export type AskChoice = 'backup' | 'close' | 'cancel';
+
+export interface CloseFlowDeps {
+  /** this PC keeps the books, and Windows is not shutting down */
+  allowed: boolean;
+  /** the automatic backup at closing (Pro, Settings → Backups): when it is due it is made without a question */
+  autoNeeded(): Promise<boolean>;
+  autoBackup(): Promise<{ ok: boolean; file?: string; error?: string }>;
+  /** "Ask to back up when I close" is on */
+  askOn(): boolean;
+  /** the books changed and no backup was made since, nor today */
+  askNeeded(): Promise<boolean>;
+  /** the question; `never` is its "Don't ask again" box */
+  prompt(): Promise<{ choice: AskChoice; never: boolean }>;
+  askOff(): void;
+  /** a backup now (the normal one) */
+  backupNow(): Promise<{ ok: boolean; file?: string; error?: string }>;
+  showBox(signal: AbortSignal): Promise<void>;
+  /** says the backup failed; the person closes anyway or goes back to the app */
+  failed(error: string): Promise<'close' | 'stay'>;
+  limitMs?: number;
+}
+
+export interface CloseFlowResult {
+  /** false: the person cancelled, and the app stays open */
+  proceed: boolean;
+  outcome: CloseOutcome;
+  /** the person was asked (so a failure was already shown, and needs no note for the next start) */
+  asked: boolean;
+}
+
+export async function closeFlow(deps: CloseFlowDeps): Promise<CloseFlowResult> {
+  const none: CloseFlowResult = { proceed: true, outcome: { kind: 'none' }, asked: false };
+  if (!deps.allowed) return none;
+  const auto = await backupOnClose({ allowed: true, needed: deps.autoNeeded, backup: deps.autoBackup, showBox: deps.showBox, ...(deps.limitMs !== undefined ? { limitMs: deps.limitMs } : {}) });
+  if (auto.kind !== 'none') return { proceed: true, outcome: auto, asked: false };
+  let ask = false;
+  try { ask = deps.askOn() && await deps.askNeeded(); } catch { ask = false; }
+  if (!ask) return none;
+  let answer: { choice: AskChoice; never: boolean };
+  // a question that can't be shown never keeps the app open
+  try { answer = await deps.prompt(); } catch { return none; }
+  if (answer.choice === 'cancel') return { proceed: false, outcome: { kind: 'none' }, asked: true };
+  if (answer.never) { try { deps.askOff(); } catch { /* asked again next time */ } }
+  if (answer.choice !== 'backup') return { proceed: true, outcome: { kind: 'none' }, asked: true };
+  const made = await backupOnClose({ allowed: true, needed: async () => true, backup: deps.backupNow, showBox: deps.showBox, ...(deps.limitMs !== undefined ? { limitMs: deps.limitMs } : {}) });
+  if (made.kind !== 'failed') return { proceed: true, outcome: made, asked: true };
+  let next: 'close' | 'stay' = 'close';
+  try { next = await deps.failed(made.error); } catch { next = 'close'; }
+  return { proceed: next !== 'stay', outcome: made, asked: true };
+}

@@ -9,6 +9,55 @@ import { StatementWhatsApp } from '../industry/WhatsAppShare.tsx';
 import { LoyaltyCard } from '../industry/Loyalty.tsx';
 import { isLang, todayIso, type Lang } from '@qasa/core';
 import { printDocument } from '../industry/printing.ts';
+import { oweLines, oweTone, oweWords, partiesApi, type PartySort, type PartyTotals } from '../industry/parties-api.ts';
+
+/**
+ * 1.4: what one customer or supplier owes, in words and colour instead of debit and credit: "Owes us 250,000 IQD",
+ * "We owe him $50.00". Each currency on its own line, as the app keeps them.
+ */
+export function OweAmount({ party, empty = '—' }: { party: Pick<PartyView, 'type' | 'balance' | 'balances'>; empty?: string }) {
+  const i18n = useI18n();
+  const lines = oweLines(party);
+  if (lines.length === 0) return <span className="muted">{empty}</span>;
+  return (
+    <span className="owe">
+      {lines.map((l) => (
+        <span key={l.currency} className={`owe-line ${oweTone(party.type, l.side)}`}>
+          <span className="owe-word">{i18n.t(oweWords(party.type, l.side))}</span>
+          <span className="num">{i18n.money(l.amount, l.currency)}</span>
+        </span>
+      ))}
+    </span>
+  );
+}
+
+/** 1.4: the line above the list: "Customers owe you: 1,250,000 IQD · $300.00" (and what was paid ahead, when there is any). */
+export function PartyTotalsBar({ type, totals }: { type: PartyType; totals: PartyTotals | null }) {
+  const i18n = useI18n();
+  const { t } = i18n;
+  if (!totals) return null;
+  const customer = type === 'customer';
+  const amounts = (a: PartyTotals['owed']) => [a.IQD ? i18n.money(a.IQD, 'IQD') : null, a.USD ? i18n.money(a.USD, 'USD') : null].filter((v): v is string => !!v);
+  const owed = amounts(totals.owed);
+  const advance = amounts(totals.advance);
+  return (
+    <div className="card pad owe-totals" role="status">
+      <div className={'owe-total ' + (owed.length ? oweTone(type, 'owes') : '')}>
+        <span className="label">{t(customer ? 's14_oweCustomer' : 's14_oweSupplier')}</span>
+        {owed.length
+          ? <strong className="value num">{owed.map((a, i) => <span key={i} className="owe-sum">{a}</span>)}</strong>
+          : <span className="muted">{t(customer ? 's14_nothingCustomer' : 's14_nothingSupplier')}</span>}
+        {owed.length > 0 && <span className="muted small">{t(customer ? 's14_owingCustomers' : 's14_owingSuppliers', { n: i18n.int(totals.owing) })}</span>}
+      </div>
+      {advance.length > 0 && (
+        <div className={'owe-total ' + oweTone(type, 'advance')}>
+          <span className="label">{t(customer ? 's14_oweCustomerAdv' : 's14_oweSupplierAdv')}</span>
+          <strong className="value num">{advance.map((a, i) => <span key={i} className="owe-sum">{a}</span>)}</strong>
+        </div>
+      )}
+    </div>
+  );
+}
 
 /** الزبائن / المجهزون */
 export function Parties({ type }: { type: PartyType }) {
@@ -16,10 +65,17 @@ export function Parties({ type }: { type: PartyType }) {
   const { t } = i18n;
   const [q, setQ] = useState('');
   const [editing, setEditing] = useState<PartyView | 'new' | null>(null);
-  const { data, error, reload } = useLoad(() => api.parties({ type, q: q.trim() }), [type, q]);
+  // 1.4: only those who owe, and the biggest debt first (the server filters and sorts)
+  const [owing, setOwing] = useState(false);
+  const [sort, setSort] = useState<PartySort>('code');
+  const loaded = useLoad(() => partiesApi.list({ type, q: q.trim(), owing, sort }), [type, q, owing, sort]);
+  const totals = useLoad(() => partiesApi.totals(type), [type]);
+  const { error } = loaded;
+  const reload = () => { loaded.reload(); totals.reload(); };
+  // an office PC not yet on 1.4 ignores the filter and the order: the same is done here, so the buttons always work
+  const data = loaded.data && shownParties(loaded.data, owing, sort);
   const total = (data ?? []).reduce((s, p) => s + p.balance, 0);
-  // a dollar column only when someone has dollar movement
-  const anyUsd = (data ?? []).some((p) => (p.balances?.USD ?? 0) !== 0);
+  const customer = type === 'customer';
 
   return (
     <div className="stack">
@@ -29,10 +85,22 @@ export function Parties({ type }: { type: PartyType }) {
         <span className="spacer" />
         <input className="input" style={{ width: 240 }} type="search" placeholder={t('search')} aria-label={t('search')} value={q} onChange={(e) => setQ(e.target.value)} />
       </div>
+      <PartyTotalsBar type={type} totals={totals.data} />
+      <div className="row owe-filters">
+        <div className="track" role="group" aria-label={t('s14_show')}>
+          <button type="button" aria-pressed={!owing} onClick={() => setOwing(false)}>{t('all')}</button>
+          <button type="button" aria-pressed={owing} onClick={() => setOwing(true)}>{t(customer ? 's14_onlyOwingCustomers' : 's14_onlyOwingSuppliers')}</button>
+        </div>
+        <div className="track" role="group" aria-label={t('s14_sort')}>
+          <button type="button" aria-pressed={sort === 'code'} onClick={() => setSort('code')}>{t('s14_sortCode')}</button>
+          <button type="button" aria-pressed={sort === 'debt'} onClick={() => setSort('debt')}>{t('s14_sortDebt')}</button>
+        </div>
+      </div>
       <ErrorBox error={error} />
       <div className="card">
         {data && data.length === 0 && (q.trim()
           ? <EmptyState compact icon="search" title={t('es_search')} text={t('es_searchText')} />
+          : owing ? <EmptyState compact icon="check" title={t('s14_noneOwing')} />
           : <EmptyState icon="users" title={t('es_parties')} text={t('es_partiesText')} action={{ label: type === 'customer' ? t('newCustomer') : t('newSupplier'), icon: 'plus', onClick: () => setEditing('new') }} secondary={{ label: t('importExcel'), icon: 'upload', href: href('import') }} />)}
         {data && data.length > 0 && (
           <table className="table">
@@ -41,8 +109,7 @@ export function Parties({ type }: { type: PartyType }) {
                 <th style={{ width: 90 }}>{t('code')}</th>
                 <th>{t('name')}</th>
                 <th>{t('phone')}</th>
-                <th className="amount">{t('balanceDue')}</th>
-                {anyUsd && <th className="amount">{t('usdName')}</th>}
+                <th className="amount">{t('balance')}</th>
                 <th style={{ width: 44 }} />
               </tr>
             </thead>
@@ -56,8 +123,7 @@ export function Parties({ type }: { type: PartyType }) {
                     {p.address && <div className="muted small">{p.address}</div>}
                   </td>
                   <td className="num ltr">{i18n.digitsOf(p.phone)}</td>
-                  <td className="amount">{p.balance ? i18n.money(p.balance, 'IQD') : <span className="muted">—</span>}</td>
-                  {anyUsd && <td className="amount">{p.balances?.USD ? i18n.money(p.balances.USD, 'USD') : <span className="muted">—</span>}</td>}
+                  <td className="amount"><OweAmount party={p} /></td>
                   <td>
                     <button type="button" className="btn icon ghost" title={t('actEdit')} aria-label={t('actEdit')} onClick={(e) => { e.stopPropagation(); setEditing(p); }}>
                       <Icon name="edit" size={16} />
@@ -67,7 +133,7 @@ export function Parties({ type }: { type: PartyType }) {
               ))}
             </tbody>
             <tfoot>
-              <tr><td /><td>{t('total')}</td><td /><td className="amount">{i18n.money(total, 'IQD')}</td><td /></tr>
+              <tr><td /><td colSpan={2}>{t('s14_totalAtRates')}</td><td className="amount">{i18n.money(total, 'IQD')}</td><td /></tr>
             </tfoot>
           </table>
         )}
@@ -77,6 +143,13 @@ export function Parties({ type }: { type: PartyType }) {
       )}
     </div>
   );
+}
+
+/** The rows as the list shows them: only those who owe when asked, and the biggest debt first (else as they came, by code). */
+export function shownParties(list: PartyView[], owing: boolean, sort: PartySort): PartyView[] {
+  const rows = owing ? list.filter((p) => oweLines(p).some((l) => l.side === 'owes')) : list.slice();
+  if (sort === 'debt') rows.sort((a, b) => b.balance - a.balance);
+  return rows;
 }
 
 export function PartyForm({ type, party, onClose, onSaved }: { type: PartyType; party: PartyView | null; onClose(): void; onSaved(p: PartyView): void }) {
@@ -195,9 +268,9 @@ export function PartyDetail({ id, admin = false }: { id: string; admin?: boolean
           <div className="muted small">{[p.phone && i18n.digitsOf(p.phone), p.address].filter(Boolean).join(' · ')}</div>
         </div>
         <div className="card pad tile">
-          <div className="label">{t('balanceDue')}</div>
-          <div className="value num">{i18n.money(p.balance, 'IQD')}</div>
-          {(p.balances?.USD ?? 0) !== 0 && <div className="muted small num">{i18n.money(p.balances!.IQD, 'IQD')} + {i18n.money(p.balances!.USD, 'USD')}</div>}
+          <div className="label">{t('balance')}</div>
+          <div className="value owe-tile"><OweAmount party={p} empty={t('s14_settled')} /></div>
+          {(p.balances?.USD ?? 0) !== 0 && <div className="muted small num" title={t('s14_totalAtRates')}>{t('total')}: {i18n.money(p.balance, 'IQD')}</div>}
         </div>
         <div className="card pad tile">
           <div className="label">{isCustomer ? t('creditLimit') : t('linkedAccount')}</div>

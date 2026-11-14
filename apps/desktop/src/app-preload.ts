@@ -28,6 +28,19 @@ contextBridge.exposeInMainWorld('qasaDesktop', {
     ipcRenderer.on('app:remoteSupport:show', handler);
     return () => { ipcRenderer.removeListener('app:remoteSupport:show', handler); };
   },
+  /**
+   * 1.4: where the company's data is (main.ts, data-place.ts): on this PC, or on the office PC this one is connected
+   * to, by the name the File menu shows. No argument crosses.
+   */
+  dataPlace: () => ipcRenderer.invoke('app:dataPlace') as Promise<unknown>,
+  /**
+   * 1.4: Settings → Backups → "Ask to back up when I close" (main.ts, close-backup.ts). Only true or false crosses;
+   * null on a PC connected to an office server (its books are not here).
+   */
+  closeAsk: {
+    get: () => ipcRenderer.invoke('app:closeAsk') as Promise<unknown>,
+    set: (on: boolean) => ipcRenderer.invoke('app:closeAsk:set', on === true) as Promise<unknown>
+  },
   /** This app can keep several companies (Settings → Companies; the routes are on its own server, admins only). */
   companies: true,
   /**
@@ -59,7 +72,8 @@ contextBridge.exposeInMainWorld('qasaDesktop', {
    * the main process checks everything it gets and prints only this window, with the choice saved for that kind.
    */
   printers: {
-    list: () => ipcRenderer.invoke('printers:list') as Promise<unknown>,
+    // fresh (the Refresh button): Windows is asked again about the default printer and each one's state
+    list: (fresh?: boolean) => ipcRenderer.invoke('printers:list', fresh === true) as Promise<unknown>,
     get: () => ipcRenderer.invoke('printers:get') as Promise<unknown>,
     set: (kind: string, choice: unknown) => ipcRenderer.invoke('printers:set', String(kind), choiceOf(choice)) as Promise<unknown>,
     // labels may name the layout picked on the labels page (its paper is used); the main process checks it

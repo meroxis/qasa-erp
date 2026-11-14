@@ -18,8 +18,11 @@ import { isAllowedExternal, refusedForLog } from './external-links.ts';
 import { isLang, text, type Lang, type TextKey } from './texts.ts';
 import { openNotices } from './notices.ts';
 import { booksBefore, markSeen, startVersion, type WhatsNew } from './whats-new.ts';
-import { backupOnClose, noteCloseFailure, takeCloseFailure } from './close-backup.ts';
+import { closeFlow, noteCloseFailure, readCloseAsk, saveCloseAsk, takeCloseFailure, type AskChoice } from './close-backup.ts';
 import { printingHandlers } from './printing.ts';
+import { cachedPrinters, readWindowsPrinters } from './printer-info.ts';
+import { dataPlaceOf, officeName } from './data-place.ts';
+import { execFile } from 'node:child_process';
 import { sharePdfHandlers } from './share-pdf.ts';
 import { pair, parseAddress, parseOfficeId, pemFingerprint, startTunnel, type PairResult, type Remote } from './office.ts';
 import { openOutbox, OutboxRefusal, type OutboxStore } from './outbox.ts';
@@ -505,6 +508,8 @@ ipcMain.on('app:relaunch', (event) => {
 let whatsNew: WhatsNew | null = null;
 /** Windows is shutting down or signing out (the window's session-end): closing makes no backup then. */
 let sessionEnding = false;
+/** True once the server process has closed the company file for quitting: the window may then close. */
+let quitReady = false;
 ipcMain.handle('app:whatsNew', (event) => (invokedByAppPage(event) ? whatsNew : null));
 ipcMain.handle('app:whatsNewSeen', (event) => {
   if (!invokedByAppPage(event) || !whatsNew) return false;
@@ -556,13 +561,34 @@ const remoteSupport = remoteSupportHandlers({
   },
   log
 });
+// 1.4: where the data is, so the page never says "on this PC" on a PC connected to an office server (data-place.ts)
+ipcMain.handle('app:dataPlace', (event) => (invokedByAppPage(event) ? dataPlaceOf(remote) : null));
+// 1.4: Settings → Backups → "Ask to back up when I close" (close-backup.ts); not on a PC connected to an office server
+ipcMain.handle('app:closeAsk', (event) => (invokedByAppPage(event) && !remote ? { ask: readCloseAsk(app.getPath('userData')) } : null));
+ipcMain.handle('app:closeAsk:set', (event, on: unknown) => {
+  if (!invokedByAppPage(event) || remote || typeof on !== 'boolean') return null;
+  try { saveCloseAsk(app.getPath('userData'), on); } catch (error) { log('could not save the closing question setting:', error); return null; }
+  log(`asking to back up at closing: ${on ? 'on' : 'off'}`);
+  return { ask: readCloseAsk(app.getPath('userData')) };
+});
 ipcMain.handle('app:remoteSupport', (event) => remoteSupport.start(event));
 ipcMain.handle('app:supportInfo', (event) => remoteSupport.info(event));
 
 // Settings → Printers and every Print button (app-preload.ts → qasaDesktop.printers, printing.ts): this PC's printers,
 // the choice saved for each kind of paper (printers.json), and printing the app window with it. Never another window.
 const printersFile = () => join(app.getPath('userData'), 'printers.json');
+/**
+ * 1.4: Windows' own word on its printers (the default one, ready or offline): one fixed command started by its full
+ * path, with fixed arguments and no shell (printer-info.ts). Nothing from the page or a file is part of it.
+ */
+const runFixed = (file: string, args: readonly string[]) => new Promise<string>((resolve, reject) => {
+  execFile(file, [...args], { windowsHide: true, timeout: 10_000, maxBuffer: 2 * 1024 * 1024, encoding: 'utf8', shell: false }, (error, stdout) => {
+    if (error) reject(error); else resolve(String(stdout));
+  });
+});
+const windowsPrinters = cachedPrinters(() => (process.platform === 'win32' ? readWindowsPrinters(runFixed, log) : Promise.resolve([])));
 const printing = printingHandlers({
+  windows: windowsPrinters,
   target: () => (win && !win.isDestroyed() ? win.webContents : null),
   fromAppPage: (event) => invokedByAppPage(event as Electron.IpcMainInvokeEvent),
   readFile: () => { try { return readFileSync(printersFile(), 'utf8'); } catch { return null; } },
@@ -572,7 +598,7 @@ const printing = printingHandlers({
   },
   log
 });
-ipcMain.handle('printers:list', (event) => printing.list(event));
+ipcMain.handle('printers:list', (event, fresh: unknown) => printing.list(event, fresh === true));
 ipcMain.handle('printers:get', (event) => printing.get(event));
 ipcMain.handle('printers:set', (event, kind: unknown, choice: unknown) => printing.set(event, kind, choice));
 ipcMain.handle('printers:print', (event, kind: unknown, layout: unknown) => printing.print(event, kind, layout));
@@ -820,7 +846,7 @@ function buildMenu(): void {
       label: t('file'),
       submenu: remote
         ? [
-            { label: t('connectedTo', { host: remote.relay ? `Qasa Relay · ${remote.relay.office.slice(0, 5)}-${remote.relay.office.slice(5)}` : `${remote.host}:${remote.port}` }), enabled: false },
+            { label: t('connectedTo', { host: remote.relay ? officeName(remote) : `${remote.host}:${remote.port}` }), enabled: false },
             { label: t('connect'), click: () => openConnectWindow() },
             { label: t('workHere'), click: () => void workHere() },
             { type: 'separator' },
@@ -882,6 +908,14 @@ async function createWindow(url: string): Promise<void> {
   });
   // Windows shutting down or signing out: no backup at closing then (close-backup.ts)
   win.on('session-end', () => { sessionEnding = true; });
+  // 1.4: closing the window is quitting, and quitting may ask "Back up before closing?" first (before-quit below):
+  // the window stays until that is answered, so Cancel has somewhere to go back to. Not on a PC connected to an
+  // office server, not while Windows shuts down, and not once the server process has stopped (a restart, an update).
+  win.on('close', (event) => {
+    if (quitReady || !child || remote || sessionEnding) return;
+    event.preventDefault();
+    app.quit();
+  });
   // the backup at the last closing failed: said once, now
   const closeFailure = remote ? null : takeCloseFailure(app.getPath('userData'));
   if (closeFailure) {
@@ -1152,8 +1186,8 @@ if (!app.requestSingleInstanceLock()) {
     }
   });
 
-  // let the server process close the company file before the app ends (after the backup at closing, when it is on)
-  let quitReady = false;
+  // let the server process close the company file before the app ends: after the backup at closing when it is on, or
+  // (1.4) after "Back up before closing?" when the books changed and no backup was made since (close-backup.ts)
   let quitting = false;
   app.on('before-quit', (event) => {
     if (quitReady || !child) return;
@@ -1163,20 +1197,50 @@ if (!app.requestSingleInstanceLock()) {
     log('quitting');
     void (async () => {
       const link = bridge;
-      const outcome = await backupOnClose({
+      const box = (options: Electron.MessageBoxOptions) => (win && !win.isDestroyed() ? dialog.showMessageBox(win, options) : dialog.showMessageBox(options));
+      const result = await closeFlow({
         allowed: !remote && !sessionEnding && !!link,
-        needed: () => link!.call<boolean>('closingBackupNeeded', [], { timeoutMs: 5000 }),
-        backup: () => link!.call<{ ok: boolean; file?: string; error?: string }>('closingBackup', [], { timeoutMs: 0 }),
+        autoNeeded: () => link!.call<boolean>('closingBackupNeeded', [], { timeoutMs: 5000 }),
+        autoBackup: () => link!.call<{ ok: boolean; file?: string; error?: string }>('closingBackup', [], { timeoutMs: 0 }),
+        askOn: () => readCloseAsk(app.getPath('userData')),
+        askNeeded: () => link!.call<boolean>('closeAskNeeded', [], { timeoutMs: 5000 }),
+        prompt: async () => {
+          const choices: AskChoice[] = ['backup', 'close', 'cancel'];
+          const { response, checkboxChecked } = await box({
+            type: 'question', title: 'Qasa ERP', message: rtlLines(t('closeAsk')), detail: rtlLines(t('closeAskDetail')),
+            buttons: [t('closeAskBackup'), t('closeAskClose'), t('cancel')], defaultId: 0, cancelId: 2, noLink: true, checkboxLabel: t('closeAskNever'), checkboxChecked: false
+          });
+          return { choice: choices[response] ?? 'cancel', never: checkboxChecked === true };
+        },
+        askOff: () => { saveCloseAsk(app.getPath('userData'), false); log('asking to back up at closing: off (from the question)'); },
+        backupNow: () => link!.call<{ ok: boolean; file?: string; error?: string }>('closeAskBackup', [], { timeoutMs: 0 }),
         showBox: async (signal) => {
-          const options = { type: 'info' as const, title: 'Qasa ERP', message: rtlLines(t('closeBackingUp')), buttons: [t('closeSkip')], noLink: true, signal };
-          await (win && !win.isDestroyed() ? dialog.showMessageBox(win, options) : dialog.showMessageBox(options));
+          await box({ type: 'info', title: 'Qasa ERP', message: rtlLines(t('closeBackingUp')), buttons: [t('closeSkip')], noLink: true, signal });
+        },
+        failed: async (error) => {
+          const { response } = await box({
+            type: 'warning', title: 'Qasa ERP', message: rtlLines(t('closeAskFailed')), detail: error === 'timeout' ? t('closeAskTimeout') : error.slice(0, 200),
+            buttons: [t('closeAskCloseAnyway'), t('closeAskStay')], defaultId: 0, cancelId: 0, noLink: true
+          });
+          return response === 1 ? 'stay' : 'close';
         }
-      }).catch((error: unknown) => ({ kind: 'failed' as const, error: error instanceof Error ? error.message : String(error) }));
+      }).catch((error: unknown) => ({ proceed: true, asked: false, outcome: { kind: 'failed' as const, error: error instanceof Error ? error.message : String(error) } }));
+      const { outcome } = result;
       if (outcome.kind !== 'none') log('backup at closing:', outcome.kind, 'error' in outcome ? outcome.error : '');
-      if (outcome.kind === 'failed') {
+      // a failure the person was not shown (the automatic backup) is said at the next start
+      if (outcome.kind === 'failed' && !result.asked) {
         try { noteCloseFailure(app.getPath('userData'), outcome.error); } catch { /* logged above */ }
       }
-    })().finally(() => void stopServer().finally(() => { quitReady = true; app.quit(); }));
+      return result.proceed;
+    })().then((proceed) => {
+      if (!proceed) {
+        // Cancel, or back to the app after a backup that failed: nothing closes
+        quitting = false;
+        log('closing cancelled');
+        return;
+      }
+      void stopServer().finally(() => { quitReady = true; app.quit(); });
+    }, () => void stopServer().finally(() => { quitReady = true; app.quit(); }));
   });
   app.on('window-all-closed', () => app.quit());
 }

@@ -45,6 +45,7 @@ import { SUPPORT_TEXT } from './i18n/support.ts';
 import { SETTINGS_SECTION_TEXT } from './i18n/settings-sections.ts';
 import { LOOK_TEXT } from './i18n/look.ts';
 import { INVOICE_SPEED_TEXT } from './i18n/invoice-speed.ts';
+import { SHELL14_TEXT } from './i18n/shell14.ts';
 import { formatAmount, formatDate, formatDateTime, formatInteger, formatQty, formatTime, hasLeadingSign, LANGS, ltrIsolate, monthName, textDigits, toEasternDigits, type CurrencyCode, type DigitStyle, type Lang, type Names } from '@qasa/core';
 
 /** Every UI string in Arabic, English and Kurdish (Sorani) — in that order. */
@@ -1026,7 +1027,7 @@ const BASE = {
 
 /** The industry features keep their texts in files of their own (i18n/), in the same three languages. */
 const D = { ...BASE, ...REAL_ESTATE_TEXT, ...MOBILE_TEXT, ...PARTS_TEXT, ...ENGINEERING_TEXT,
-  ...PAYROLL_TEXT, ...POS_TEXT, ...QUOTES_TEXT, ...PIPELINE_TEXT, ...MEDIA_TEXT, ...BRIEF_TEXT, ...CLOUD_TEXT, ...RELAY_TEXT, ...ACTIVATION_TEXT, ...FX_TEXT, ...VERIFY_TEXT, ...GEN_TEXT, ...WEBAPI_TEXT, ...PHONE_TEXT, ...USAGE_TEXT, ...SOLAR_TEXT, ...LEGAL_TEXT, ...BRANCH_TEXT, ...BANK_TEXT, ...WAVE2_TEXT, ...ASSET_TEXT, ...ADJ_TEXT, ...PO_TEXT, ...COMPANY_TEXT, ...LABEL_TEXT, ...PRINTER_TEXT, ...SAFETY_TEXT, ...UI_TEXT, ...UNIT_TEXT, ...BATCH_TEXT, ...STORE_TEXT, ...CATALOG_TEXT, ...PHARMACY_TEXT, ...HARDENING_TEXT, ...OUTBOX_TEXT, ...DAY_CLOSE_TEXT, ...WHATSAPP_TEXT, ...LOYALTY_TEXT, ...SUPPORT_TEXT, ...SETTINGS_SECTION_TEXT, ...LOOK_TEXT, ...INVOICE_SPEED_TEXT };
+  ...PAYROLL_TEXT, ...POS_TEXT, ...QUOTES_TEXT, ...PIPELINE_TEXT, ...MEDIA_TEXT, ...BRIEF_TEXT, ...CLOUD_TEXT, ...RELAY_TEXT, ...ACTIVATION_TEXT, ...FX_TEXT, ...VERIFY_TEXT, ...GEN_TEXT, ...WEBAPI_TEXT, ...PHONE_TEXT, ...USAGE_TEXT, ...SOLAR_TEXT, ...LEGAL_TEXT, ...BRANCH_TEXT, ...BANK_TEXT, ...WAVE2_TEXT, ...ASSET_TEXT, ...ADJ_TEXT, ...PO_TEXT, ...COMPANY_TEXT, ...LABEL_TEXT, ...PRINTER_TEXT, ...SAFETY_TEXT, ...UI_TEXT, ...UNIT_TEXT, ...BATCH_TEXT, ...STORE_TEXT, ...CATALOG_TEXT, ...PHARMACY_TEXT, ...HARDENING_TEXT, ...OUTBOX_TEXT, ...DAY_CLOSE_TEXT, ...WHATSAPP_TEXT, ...LOYALTY_TEXT, ...SUPPORT_TEXT, ...SETTINGS_SECTION_TEXT, ...LOOK_TEXT, ...INVOICE_SPEED_TEXT, ...SHELL14_TEXT };
 
 export type Key = keyof typeof D;
 
