@@ -3,7 +3,7 @@ import { hashPin, lockoutMs, parseLockSettings, shouldLock, validPin, verifyPin,
 import { canGoBack, current, initialNav, navigate, type NavState } from '../src/nav';
 import { readPairingCode, validAddress } from '../src/pairing';
 import { encodePairingCode, generateKeyPair, type PairingCode } from '../src/protocol';
-import { actsAs, ALL_FEATURES, featuresOf, type Me } from '../src/roles';
+import { actsAs, ALL_FEATURES, featuresOf, lockRequired, type Me } from '../src/roles';
 import { UUID_V4, uuidV4 } from '../src/uuid';
 
 describe('keys for changes', () => {
@@ -72,6 +72,19 @@ describe('what the phone offers, by the office user it acts as', () => {
 
   it('only looking up and counting before the phone knows who it is', () => {
     expect([...featuresOf(null)].sort()).toEqual(['count', 'lookup']);
+  });
+
+  it('needs the app lock (a PIN) on a phone that sees the figures or acts as an admin or the owner, and only offers it to others', () => {
+    // the owner (no sign-in at the office), an admin, an accountant, a viewer: required
+    expect(lockRequired({ signInRequired: false, user: null })).toBe(true);
+    expect(lockRequired(me(['admin'], ['admin']))).toBe(true);
+    expect(lockRequired(me(['checker'], ['entries.check']))).toBe(true);
+    expect(lockRequired(me(['viewer'], []))).toBe(true);
+    // a sales rep, a storekeeper: offered, not required
+    expect(lockRequired(me(['sales'], ['sales']))).toBe(false);
+    expect(lockRequired(me(['storekeeper'], ['stock']))).toBe(false);
+    // not known yet: asked once the office says who the phone acts as
+    expect(lockRequired(null)).toBe(false);
   });
 });
 

@@ -40,11 +40,18 @@ const SEND_CHUNK = 64 * 1024;
 export function wsStream(raw: Duplex, head: Buffer, options: WsStreamOptions): Duplex {
   const client = options.role === 'client';
   const maxFrame = options.maxFrame ?? 1024 * 1024;
-  let buffer: Buffer = head.length ? Buffer.from(head) : Buffer.alloc(0);
+  // what came in and isn't parsed yet: kept as the chunks that arrived (`parts`, `have` bytes in all), joined only once
+  // there is enough for the next step (`need` bytes: a frame's header, or its whole frame), so a frame that trickles in
+  // a few bytes at a time is copied once, not once per chunk
+  let parts: Buffer[] = head.length ? [Buffer.from(head)] : [];
+  let have = head.length;
+  let need = 2;
   // a close frame went out (nothing else may follow it), the other side's stream ended
   let closing = false;
   let ended = false;
   let heard = Date.now();
+  // the reader is behind (backpressure): this side stopped reading the socket, so silence from it isn't the peer's
+  let held = false;
   let timer: NodeJS.Timeout | null = null;
 
   const frame = (opcode: number, payload: Buffer): Buffer => {
@@ -83,6 +90,11 @@ export function wsStream(raw: Duplex, head: Buffer, options: WsStreamOptions): D
   const stream = new Duplex({
     allowHalfOpen: false,
     read() {
+      // reading again after a hold: the other side gets a fresh dead-time window (its pongs waited in the socket too)
+      if (held) {
+        held = false;
+        heard = Date.now();
+      }
       raw.resume();
     },
     write(chunk: Buffer, _encoding, done) {
@@ -115,30 +127,40 @@ export function wsStream(raw: Duplex, head: Buffer, options: WsStreamOptions): D
     stream.destroy();
   };
 
-  const parse = (): void => {
-    while (!ended && buffer.length >= 2) {
+  /** Parses every whole frame at the start of `input`; gives back what is left, and sets `need` for the next step. */
+  const parse = (input: Buffer): Buffer => {
+    const none = Buffer.alloc(0);
+    let buffer = input;
+    while (!ended) {
+      need = 2;
+      if (buffer.length < 2) return buffer;
       const b0 = buffer[0]!;
       const b1 = buffer[1]!;
       const opcode = b0 & 0x0f;
       const masked = (b1 & 0x80) !== 0;
       // a client's frames are masked, a server's aren't; no extensions were agreed
-      if ((b0 & 0x70) !== 0 || masked === client) return fail(1002);
+      if ((b0 & 0x70) !== 0 || masked === client) { fail(1002); return none; }
+      // a control frame (close, ping, pong) is never split into fragments
+      if (opcode >= 8 && (b0 & 0x80) === 0) { fail(1002); return none; }
       let len = b1 & 0x7f;
       let offset = 2;
       if (len === 126) {
-        if (buffer.length < 4) return;
+        need = 4;
+        if (buffer.length < 4) return buffer;
         len = buffer.readUInt16BE(2);
         offset = 4;
       } else if (len === 127) {
-        if (buffer.length < 10) return;
+        need = 10;
+        if (buffer.length < 10) return buffer;
         const big = buffer.readBigUInt64BE(2);
-        if (big > BigInt(maxFrame)) return fail(1009);
+        if (big > BigInt(maxFrame)) { fail(1009); return none; }
         len = Number(big);
         offset = 10;
       }
-      if (len > maxFrame) return fail(1009);
+      if (len > maxFrame) { fail(1009); return none; }
       const start = offset + (masked ? 4 : 0);
-      if (buffer.length < start + len) return;
+      need = start + len;
+      if (buffer.length < need) return buffer;
       const payload = Buffer.from(buffer.subarray(start, start + len));
       if (masked) {
         const m = buffer.subarray(offset, offset + 4);
@@ -146,9 +168,12 @@ export function wsStream(raw: Duplex, head: Buffer, options: WsStreamOptions): D
       }
       buffer = buffer.subarray(start + len);
       if (opcode === 2 || opcode === 0) {
-        if (len && !stream.push(payload)) raw.pause();
+        if (len && !stream.push(payload)) {
+          held = true;
+          raw.pause();
+        }
       } else if (opcode === 9) {
-        if (len > 125) return fail(1002);
+        if (len > 125) { fail(1002); return none; }
         if (!closing && !raw.destroyed) raw.write(frame(10, payload));
       } else if (opcode === 10) {
         // the answer to a ping: hearing it is enough
@@ -156,19 +181,32 @@ export function wsStream(raw: Duplex, head: Buffer, options: WsStreamOptions): D
         sendClose(1000);
         ended = true;
         stream.push(null);
-        return;
+        return none;
       } else {
         // text or anything else: not this stream
-        return fail(1003);
+        fail(1003);
+        return none;
       }
     }
+    return none;
+  };
+
+  /** Joins what came in once there is enough of it for the next step, and parses it. */
+  const take = (): void => {
+    if (ended || have < need) return;
+    const joined = parts.length === 1 ? parts[0]! : Buffer.concat(parts, have);
+    const rest = parse(joined);
+    // the start of the next frame is copied out, so a small tail doesn't keep the whole joined buffer alive
+    parts = rest.length ? [Buffer.from(rest)] : [];
+    have = rest.length;
   };
 
   raw.on('data', (chunk: Buffer) => {
     heard = Date.now();
     if (ended) return;
-    buffer = buffer.length ? Buffer.concat([buffer, chunk]) : chunk;
-    parse();
+    parts.push(chunk);
+    have += chunk.length;
+    take();
   });
   raw.on('end', () => {
     if (ended) return;
@@ -185,11 +223,13 @@ export function wsStream(raw: Duplex, head: Buffer, options: WsStreamOptions): D
   if (pingMs > 0) {
     const deadMs = options.deadMs ?? pingMs * 3;
     timer = setInterval(() => {
-      if (Date.now() - heard > deadMs) return void stream.destroy();
+      // (while this side holds the socket for a slow reader, the other side's pongs wait in it unread: not silence. A
+      // peer that is really gone is still found: by its own side's timer, the relay's idle time, a failed write)
+      if (!held && Date.now() - heard > deadMs) return void stream.destroy();
       if (!closing && !raw.destroyed) raw.write(frame(9, Buffer.alloc(0)));
     }, pingMs);
     timer.unref();
   }
-  if (buffer.length) parse();
+  if (have) take();
   return stream;
 }

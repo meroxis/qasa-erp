@@ -16,7 +16,7 @@ import { canGoBack, current, initialNav, navigate, type Tab } from './src/nav';
 import { Outbox, type OutboxItem, type OutboxKind, type OutboxSummary } from './src/outbox';
 import { readPairingCode } from './src/pairing';
 import { toB64, type KeyPair } from './src/protocol';
-import { featuresOf, type Feature, type Me } from './src/roles';
+import { featuresOf, lockRequired, type Feature, type Me } from './src/roles';
 import {
   loadLang, loadLock, loadMe, loadName, loadOffice, loadTheme, outboxStorage, phoneKey, saveLang, saveLock, saveMe, saveName, saveOffice, saveTheme, wipePairing
 } from './src/store';
@@ -318,6 +318,8 @@ function Main() {
   if (!ctx) return <LookCtx.Provider value={look}>{bar}{spinner}</LookCtx.Provider>;
 
   const route = current(nav);
+  // a phone acting as an admin or a user who sees the figures keeps a PIN: nothing else opens until it has one
+  const pinNeeded = lockRequired(me) && !lock.pin;
   const tabs: { tab: Tab; icon: IconName; label: string; badge?: number; on: boolean }[] = [
     { tab: 'home', icon: 'home', label: t('tabHome'), on: true },
     { tab: 'items', icon: 'box', label: t('tabItems'), on: can('lookup') },
@@ -333,7 +335,7 @@ function Main() {
           <ListsCtx.Provider value={lists}>
             {bar}
             <View style={{ flex: 1, backgroundColor: look.p.bg }}>
-              <View style={{ flex: 1 }}>
+              {pinNeeded ? <View style={{ flex: 1 }}><SecurityScreen required /></View> : <View style={{ flex: 1 }}>
                 {route.name === 'home' && <Home />}
                 {route.name === 'items' && <ItemsScreen />}
                 {route.name === 'scan' && <ScanScreen purpose={route.purpose} />}
@@ -349,8 +351,8 @@ function Main() {
                 {route.name === 'outbox' && <OutboxScreen />}
                 {route.name === 'security' && <SecurityScreen />}
                 {route.name === 'about' && <AboutScreen />}
-              </View>
-              {route.name !== 'scan' && (
+              </View>}
+              {route.name !== 'scan' && !pinNeeded && (
                 <TabBar tabs={tabs.filter((x) => x.on)} current={nav.tab} onPress={(tab) => dispatch({ type: 'tab', tab })} />
               )}
               {toastText ? <Toast text={toastText.text} kind={toastText.kind} above={route.name !== 'scan'} /> : null}

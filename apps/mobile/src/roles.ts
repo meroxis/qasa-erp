@@ -49,4 +49,16 @@ export function featuresOf(me: Me | null): Set<Feature> {
 }
 
 /** The name the phone shows for who it works as. */
+/**
+ * The app lock (a PIN) is required, not offered, for a phone that acts as a user who sees the company's figures or is an
+ * admin (FIGURES_ROLES), or as the owner when the office has no sign-in: a lost or taken phone then doesn't open on the
+ * books. Unknown yet (never connected since pairing): not asked until the office says who the phone acts as. The office
+ * can't check that a phone really keeps the lock (a changed app wouldn't): this protects an honest phone that is lost.
+ */
+export function lockRequired(me: Me | null): boolean {
+  if (!me) return false;
+  if (!me.signInRequired || !me.user) return true;
+  return me.user.roles.some((r) => FIGURES_ROLES.includes(r)) || me.user.permissions.includes('admin');
+}
+
 export const actsAs = (me: Me | null): string | null => (me?.signInRequired && me.user ? me.user.name : null);

@@ -128,6 +128,43 @@ describe('with sign-in', () => {
     await expect(login(db, 'admin', 'owner-pass-1', undefined, 'net:10.0.0.7')).resolves.toBeTruthy();
   });
 
+  it('guessing through Qasa Relay never makes the account wait on the office network, nor where it signed in through the relay before', async () => {
+    await officeWithSignIn();
+    // the admin signed in from home through the relay once; then the app restarted (what is in memory is gone)
+    await expect(login(db, 'admin', 'owner-pass-1', undefined, 'net:relay:198.51.100.7')).resolves.toBeTruthy();
+    resetLoginThrottle();
+    // a stranger who knows the office ID guesses through the relay from many addresses
+    for (let i = 0; i < 30; i++) await expect(login(db, 'admin', 'wrong-password', undefined, `net:relay:203.0.113.${i}`)).rejects.toMatchObject({ code: 'invalid_login' });
+    // a new address through the relay waits, even with the right password
+    await expect(login(db, 'admin', 'owner-pass-1', undefined, 'net:relay:192.0.2.50')).rejects.toMatchObject({ code: 'too_many_attempts' });
+    // the office's own network, a new PC on it included, is not held up
+    await expect(login(db, 'admin', 'owner-pass-1', undefined, 'net:10.0.0.99')).resolves.toBeTruthy();
+    // nor the home address the admin signed in from before (known from the audit log, across the restart)
+    await expect(login(db, 'admin', 'owner-pass-1', undefined, 'net:relay:198.51.100.7')).resolves.toBeTruthy();
+    // the sign-ins say where from
+    const sources = (db.prepare("SELECT details FROM audit_log WHERE action = 'login'").all() as { details: string | null }[]).map((r) => r.details && JSON.parse(r.details).source);
+    expect(sources).toEqual(expect.arrayContaining(['net:relay:198.51.100.7', 'net:10.0.0.99']));
+  });
+
+  it('a relay naming known places for its guesses gets 30 tries in all, then those places wait too (the office network still doesn\'t)', async () => {
+    await officeWithSignIn();
+    const known = Array.from({ length: 8 }, (_, i) => `net:relay:198.51.100.${i}`);
+    for (const place of known) await expect(login(db, 'admin', 'owner-pass-1', undefined, place)).resolves.toBeTruthy();
+    // a relay that knows where the admin signs in from names those places, 4 guesses each (under a place's own 5)
+    let guesses = 0;
+    for (let round = 0; round < 4; round++) {
+      for (const place of known) {
+        if (guesses === 30) break;
+        await expect(login(db, 'admin', 'wrong-password', undefined, place)).rejects.toMatchObject({ code: 'invalid_login' });
+        guesses += 1;
+      }
+    }
+    expect(guesses).toBe(30);
+    await expect(login(db, 'admin', 'owner-pass-1', undefined, known[7]!)).rejects.toMatchObject({ code: 'too_many_attempts' });
+    await expect(login(db, 'admin', 'owner-pass-1', undefined, 'net:10.0.0.99')).resolves.toBeTruthy();
+    await expect(login(db, 'admin', 'owner-pass-1', undefined, 'local:127.0.0.1')).resolves.toBeTruthy();
+  });
+
   it('forgets a place\'s failures after a day without one, so a lock never lasts for ever', async () => {
     await officeWithSignIn();
     vi.useFakeTimers({ toFake: ['Date'] });

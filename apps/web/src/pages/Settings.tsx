@@ -482,6 +482,21 @@ function OfficeNetworkCard() {
     }
   }
 
+  // a new office certificate: the old key may be in a copy somewhere (a backup of the app's folder, an old PC); every PC
+  // pairs again with the new code
+  async function renewCertificate() {
+    setBusy(true);
+    setError(null);
+    try {
+      setStatus(await request<NetworkStatus>('POST', '/api/network/certificate', {}));
+      toast(t('netNewCertDone'));
+    } catch (e) {
+      setError(e);
+    } finally {
+      setBusy(false);
+    }
+  }
+
   const address = (a: string) => (status && status.port !== 47420 ? `${a}:${status.port}` : a);
   return (
     <div className="card pad stack">
@@ -511,6 +526,14 @@ function OfficeNetworkCard() {
           <p className="muted small" style={{ margin: 0 }}>{t('netFirewall')}</p>
           <p className="muted small" style={{ margin: 0 }}>{t('netSignedIn', { n: digitsOf(String(status.signedIn)) })}</p>
           <RelaySection status={status as NetworkStatus & RelayFields} onChange={setStatus} />
+          <div className="stack" style={{ gap: 6, borderBlockStart: '1px solid var(--line)', paddingBlockStart: 14, marginBlockStart: 4 }}>
+            <p className="muted small" style={{ margin: 0 }}>{t('netNewCertHelp')}</p>
+            <div>
+              <button type="button" className="btn small" disabled={busy} onClick={() => { if (window.confirm(t('netNewCertConfirm'))) void renewCertificate(); }}>
+                {t('netNewCert')}
+              </button>
+            </div>
+          </div>
         </div>
       )}
       <ErrorBox error={error} />
@@ -1412,7 +1435,7 @@ interface PhonesStatus {
  */
 export const PHONE_APP_READY = false;
 
-/** Pairing a phone: a QR code the phone app scans, with this PC's key and a one-time secret (10 minutes). */
+/** Pairing a phone: a QR code the phone app scans, with this PC's key and a one-time secret (2 minutes, one phone). */
 export function PhonesCard({ ready = PHONE_APP_READY }: { ready?: boolean }) {
   const { t, digitsOf, date, dateTime, time } = useI18n();
   const toast = useToast();
@@ -1420,6 +1443,8 @@ export function PhonesCard({ ready = PHONE_APP_READY }: { ready?: boolean }) {
   const [absent, setAbsent] = useState(false);
   const [error, setError] = useState<unknown>(null);
   const [pairing, setPairing] = useState<{ code: string; expiresAt: string } | null>(null);
+  // the phones there were when the QR code was made: one more, and the code is taken off the screen at once
+  const [before, setBefore] = useState<Set<string> | null>(null);
   const [userId, setUserId] = useState('');
   const [busy, setBusy] = useState(false);
 
@@ -1438,11 +1463,18 @@ export function PhonesCard({ ready = PHONE_APP_READY }: { ready?: boolean }) {
     }, 3000);
     return () => window.clearInterval(timer);
   }, [pairing]);
+  useEffect(() => {
+    if (!pairing || !status || !before || !status.devices.some((d) => !before.has(d.id))) return;
+    setPairing(null);
+    setBefore(null);
+    toast(t('ph_paired'));
+  }, [pairing, status, before]); // eslint-disable-line react-hooks/exhaustive-deps
 
   async function pair() {
     setBusy(true);
     setError(null);
     try {
+      setBefore(new Set(status?.devices.map((d) => d.id)));
       setPairing(await request<{ code: string; expiresAt: string }>('POST', '/api/phones/pair', status?.signInRequired ? { userId } : {}));
     } catch (e) {
       setError(e);
@@ -1468,7 +1500,6 @@ export function PhonesCard({ ready = PHONE_APP_READY }: { ready?: boolean }) {
 
   if (absent) return null;
   const qr = pairing ? qrSvgPath(encodeQr(pairing.code, 'L'), 4) : null;
-  const known = new Set(status?.devices.map((d) => d.id));
   return (
     <div className="card pad stack">
       <div className="row" style={{ justifyContent: 'space-between' }}>
@@ -1524,7 +1555,6 @@ export function PhonesCard({ ready = PHONE_APP_READY }: { ready?: boolean }) {
           </button>
         </div>
       ) : null}
-      {status && pairing && status.devices.some((d) => !known.has(d.id)) && <div className="alert">{t('ph_paired')}</div>}
       {status?.counts.length ? (
         <div className="stack" style={{ gap: 6 }}>
           <h3 style={{ margin: 0 }}>{t('ph_counts')}</h3>
