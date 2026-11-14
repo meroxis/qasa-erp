@@ -3,6 +3,7 @@ import type { Brief } from '../api';
 import { money, nameIn, qty } from '../i18n';
 import { Icon, type IconName } from '../icons';
 import type { Route } from '../nav';
+import { isPending } from '../outbox';
 import { actsAs } from '../roles';
 import { radius, space } from '../theme';
 import { Banner, Card, ErrorState, Group, ListItem, Screen, Section, Skeleton, Stat, Txt, useApp, useLook } from '../ui';
@@ -18,7 +19,7 @@ export function Home() {
   const { api, go, nav, can, company, me, via, state, outbox, explain } = useApp();
   const figures = can('figures');
   const brief = useLoad<Brief | null>(async () => (figures ? api.brief() : null), [figures]);
-  const waiting = outbox.filter((o) => !o.error).length;
+  const waiting = outbox.filter(isPending).length;
   const refused = outbox.filter((o) => o.error).length;
   const who = actsAs(me);
 

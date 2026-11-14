@@ -5,7 +5,7 @@ import { getLocales } from 'expo-localization';
 import { useFonts } from 'expo-font';
 import { SafeAreaProvider, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { OfficeError, officeApi, type Party, type Warehouse } from './src/api';
-import { receiptPosted, type CartLine, type CountLine } from './src/documents';
+import type { CartLine, CountLine } from './src/documents';
 import { FONT_SOURCES } from './src/fonts';
 import { isRtl, translate, type Key, type Lang } from './src/i18n';
 import type { IconName } from './src/icons';
@@ -13,7 +13,7 @@ import { LinkError, OfficeLink, type LinkState, type OfficeInfo, type Route as L
 import { ListsCtx, type Lists } from './src/lists';
 import { shouldLock, type LockSettings } from './src/lock';
 import { canGoBack, current, initialNav, navigate, type Tab } from './src/nav';
-import { Outbox, type OutboxItem, type OutboxKind, type OutboxSummary } from './src/outbox';
+import { Outbox, receiptPosted, type OutboxItem, type OutboxKind, type OutboxSummary } from './src/outbox';
 import { readPairingCode } from './src/pairing';
 import { toB64, type KeyPair } from './src/protocol';
 import { featuresOf, type Feature, type Me } from './src/roles';
@@ -134,21 +134,32 @@ function Main() {
   const api = useMemo(() => (link ? officeApi(link) : null), [link]);
 
   /** One change from the outbox to the office, with its own key (`last` keeps the office's answer for the screen). */
-  const sender = useCallback((last?: { e: unknown; b?: unknown }) => async (item: OutboxItem) => {
+  const sender = useCallback((last?: { e: unknown; b?: unknown }) => async (item: OutboxItem): Promise<unknown> => {
     if (!api) throw new LinkError('closed');
     try {
-      if (item.kind === 'sale') await api.draftSale(item.body, item.id);
-      else if (item.kind === 'order') await api.order(item.body, item.id);
-      else if (item.kind === 'receipt') { const answer = await api.receipt(item.body, item.id); if (last) last.b = answer; }
-      else if (item.kind === 'count') await api.sendCount(item.body, item.id);
-      else await api.countInto(item.target ?? '', item.body, item.id);
+      let answer: unknown;
+      if (item.kind === 'sale') answer = await api.draftSale(item.body, item.id);
+      else if (item.kind === 'order') answer = await api.order(item.body, item.id);
+      else if (item.kind === 'receipt') answer = await api.receipt(item.body, item.id);
+      else if (item.kind === 'count') answer = await api.sendCount(item.body, item.id);
+      else answer = await api.countInto(item.target ?? '', item.body, item.id);
+      if (last) last.b = answer;
+      return answer;
     } catch (e) {
       if (last) last.e = e;
       throw e;
     }
   }, [api]);
 
-  const replay = useCallback(() => { if (api) void outbox.replay(sender()).catch(() => {}); }, [api, outbox, sender]);
+  // what waited goes by itself; receipts that went say what the office made of them (and stay under Waiting to send)
+  const replay = useCallback(() => {
+    if (!api) return;
+    void outbox.replay(sender()).then((r) => {
+      if (!r.receipts.length) return;
+      const waits = r.receipts.filter((i) => i.result === 'waiting').length;
+      setToastText({ text: waits ? t('receiptsSentWaiting', { n: waits }) : t('receiptsSentPosted', { n: r.receipts.length }), kind: 'ok' });
+    }).catch(() => {});
+  }, [api, outbox, sender, t]);
 
   // whenever the link comes up: who the phone acts as now (the admin may have changed the role), the warehouses,
   // and what waits in the outbox
@@ -239,7 +250,7 @@ function Main() {
         const item = await outbox.add(kind, body, summary, target);
         const last: { e: unknown; b?: unknown } = { e: null };
         const outcome = await outbox.sendOne(item.id, sender(last));
-        if (outcome === 'sent') return receiptPosted(last.b) ? 'posted' : 'sent';
+        if (outcome === 'sent') return kind === 'receipt' && receiptPosted(last.b) ? 'posted' : 'sent';
         if (outcome === 'wait') return 'queued';
         // refused at once, on the screen that made it: shown there, not kept
         await outbox.remove(item.id);

@@ -107,8 +107,7 @@ export function receiptBody(r: {
   };
 }
 
-/** The office's answer to a receipt: in the books (approved), or not yet (waiting for approval, or a draft). */
-export const receiptPosted = (answer: unknown) => (answer as { status?: unknown } | null)?.status === 'approved';
+export { receiptPosted } from './outbox';
 
 /** Counted quantities for the warehouse's open count on the PC. */
 export const countSessionBody = (lines: CountLine[]) => ({ counts: lines.map((l) => ({ itemId: l.item.id, countedMilli: toMilli(l.qty) })) });

@@ -195,6 +195,19 @@ const T = {
   kindReceipt: ['سند قبض', 'Receipt voucher', 'سەنەدی وەرگرتن'],
   kindCount: ['جرد', 'Count', 'جەرد'],
   triesN: ['المحاولات: {n}', 'Tries: {n}', 'هەوڵەکان: {n}'],
+  // receipts that waited on the phone and went later: what the office made of them
+  receiptsSent: ['سندات قبض أُرسلت لاحقاً', 'Receipts sent later', 'سەنەدی وەرگرتنی دواتر نێردراو'],
+  clearResult: ['إزالة من القائمة', 'Clear from the list', 'لابردن لە لیستەکە'],
+  receiptsSentWaiting: [
+    'أُرسلت سندات قبض كانت بانتظار الإرسال؛ {n} منها تُحتسب بعد المصادقة على الحاسوب. التفاصيل في «بانتظار الإرسال».',
+    'Receipts that were waiting were sent; {n} of them count once approved on the PC. See Waiting to send.',
+    'ئەو سەنەدانەی وەرگرتن کە چاوەڕێ بوون نێردران؛ {n} دانەیان دوای پەسەندکردن لەسەر کۆمپیوتەر دەژمێردرێن. «چاوەڕێی ناردن» ببینە.'
+  ],
+  receiptsSentPosted: [
+    'أُرسلت {n} من سندات القبض التي كانت بانتظار الإرسال ورُحّلت.',
+    '{n} receipts that were waiting were sent and posted.',
+    '{n} سەنەدی وەرگرتن کە چاوەڕێ بوون نێردران و تەرحیل کران.'
+  ],
 
   // ——— more, settings ———
   more: ['المزيد', 'More', 'زیاتر'],

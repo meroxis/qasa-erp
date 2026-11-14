@@ -3,7 +3,7 @@ import { Linking, View } from 'react-native';
 import { OfficeError } from '../api';
 import { LANG_NAMES, LANGS, money, type Lang } from '../i18n';
 import { hashPin, validPin, weakPin, type AutoLock, type LockSettings } from '../lock';
-import type { OutboxItem } from '../outbox';
+import { isPending, type OutboxItem } from '../outbox';
 import { actsAs } from '../roles';
 import { space } from '../theme';
 import type { ThemeChoice } from '../theme';
@@ -33,7 +33,7 @@ export function MoreScreen() {
   const { t, lang } = useLook();
   const { go, outbox, company, me, via, state } = useApp();
   const prefs = usePrefs();
-  const waiting = outbox.length;
+  const waiting = outbox.filter((o) => !o.result).length;
   const who = actsAs(me);
   return (
     <Screen title={t('more')} large>
@@ -78,10 +78,30 @@ export function OutboxScreen() {
   ].filter(Boolean).join(' · ');
   return (
     <Screen title={t('outbox')} onBack={() => nav({ type: 'back' })}
-      footer={outbox.some((o) => !o.error) ? <Button icon="send" label={t('sendNow')} onPress={sendOutbox} disabled={state === 'connecting'} /> : undefined}>
-      {!outbox.length ? <EmptyState icon="check" title={t('outboxEmpty')} /> : (
+      footer={outbox.some(isPending) ? <Button icon="send" label={t('sendNow')} onPress={sendOutbox} disabled={state === 'connecting'} /> : undefined}>
+      {!outbox.some((o) => !o.result) && <EmptyState icon="check" title={t('outboxEmpty')} />}
+      {/* receipts that went later, by themselves: what the office made of each, until cleared */}
+      {outbox.some((o) => o.result) && (
+        <Section title={t('receiptsSent')}>
+          <Group>
+            {outbox.filter((o) => o.result).map((o) => (
+              <View key={o.id} style={{ padding: space.l, gap: space.s }}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: space.s }}>
+                  <View style={{ flex: 1 }}>
+                    <Txt v="bodyStrong">{`${t(KIND_TEXT[o.kind])} · ${o.summary.title}`}</Txt>
+                    <Txt v="caption" tone="ink3">{describe(o)}</Txt>
+                  </View>
+                  <IconButton icon="check" label={t('clearResult')} onPress={() => void deleteOutbox(o.id)} />
+                </View>
+                <Banner kind={o.result === 'posted' ? 'ok' : 'info'} text={o.result === 'posted' ? t('collectPosted') : t('collectSent')} />
+              </View>
+            ))}
+          </Group>
+        </Section>
+      )}
+      {outbox.some((o) => !o.result) && (
         <Group>
-          {outbox.map((o) => (
+          {outbox.filter((o) => !o.result).map((o) => (
             <View key={o.id} style={{ padding: space.l, gap: space.s }}>
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: space.s }}>
                 <View style={{ flex: 1 }}>

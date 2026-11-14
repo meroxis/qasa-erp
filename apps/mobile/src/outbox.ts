@@ -36,7 +36,24 @@ export interface OutboxItem {
   attempts: number;
   /** the office's refusal (its error code): kept and shown, not sent again until the user says so */
   error?: string | undefined;
+  /**
+   * A receipt that went later, from the waiting list: the office has it, and this says what it made of it — 'posted'
+   * (in the books at once) or 'waiting' (it counts once approved on the PC). Kept (without its body) to be shown under
+   * Waiting to send until the user clears it; never sent again.
+   */
+  result?: 'posted' | 'waiting' | undefined;
+  /** when the office took it (with `result`) */
+  sentAt?: string | undefined;
 }
+
+/** Still to go to the office (not refused, not already sent). */
+export const isPending = (i: Pick<OutboxItem, 'error' | 'result'>) => !i.error && !i.result;
+
+/** The office's answer to a receipt: in the books (approved), or not yet (waiting for approval, or a draft to check). */
+export const receiptPosted = (answer: unknown) => (answer as { status?: unknown } | null)?.status === 'approved';
+
+/** How many sent receipts' results are kept to show (the oldest go first). */
+export const RESULTS_MAX = 20;
 
 /** Where the outbox lives: a file, and its key in the phone's secure storage (store.ts; a stand-in in tests). */
 export interface OutboxStorage {
@@ -102,6 +119,11 @@ export function outcomeOf(error: unknown): Exclude<Outcome, 'sent'> {
   return { refused: typeof e.code === 'string' && e.code ? e.code.slice(0, 64) : String(e.status) };
 }
 
+/** Sends one change to the office; resolves with the office's answer, throws its refusal (or the link's failure). */
+export type Sender = (item: OutboxItem) => Promise<unknown>;
+
+export interface ReplayResult { sent: number; refused: number; receipts: OutboxItem[] }
+
 /** The most items kept (a phone offline for weeks must not fill its storage). */
 export const OUTBOX_MAX = 500;
 
@@ -109,7 +131,7 @@ export class Outbox {
   private items: OutboxItem[] = [];
   private key: Uint8Array | null = null;
   private writing: Promise<void> = Promise.resolve();
-  private replaying: Promise<{ sent: number; refused: number }> | null = null;
+  private replaying: Promise<ReplayResult> | null = null;
 
   constructor(private readonly storage: OutboxStorage, private readonly onChange: (items: OutboxItem[]) => void = () => {}) {}
 
@@ -138,9 +160,9 @@ export class Outbox {
     return this.items.map((i) => ({ ...i }));
   }
 
-  /** Waiting to be sent (refused ones aside). */
+  /** Waiting to be sent (refused ones and sent receipts' results aside). */
   waiting(): number {
-    return this.items.filter((i) => !i.error).length;
+    return this.items.filter(isPending).length;
   }
 
   private save(): Promise<void> {
@@ -170,15 +192,28 @@ export class Outbox {
     await this.save();
   }
 
-  private async tryOne(item: OutboxItem, send: (item: OutboxItem) => Promise<void>): Promise<Outcome> {
+  /**
+   * One try. `keepResult`: a receipt that goes (from the waiting list, with nobody on its screen) stays listed with
+   * what the office made of it, posted or waiting for approval; one sent from its own screen is told there.
+   */
+  private async tryOne(item: OutboxItem, send: Sender, keepResult = false): Promise<Outcome> {
     let outcome: Outcome;
+    let answer: unknown;
     try {
-      await send(item);
+      answer = await send(item);
       outcome = 'sent';
     } catch (error) {
       outcome = outcomeOf(error);
     }
-    if (outcome === 'sent') this.items = this.items.filter((i) => i.id !== item.id);
+    if (outcome === 'sent' && keepResult && item.kind === 'receipt') {
+      const done: OutboxItem = { ...item, body: null, result: receiptPosted(answer) ? 'posted' : 'waiting', sentAt: new Date().toISOString() };
+      this.items = this.items.map((i) => (i.id === item.id ? done : i));
+      const results = this.items.filter((i) => i.result);
+      if (results.length > RESULTS_MAX) {
+        const drop = new Set(results.slice(0, results.length - RESULTS_MAX).map((i) => i.id));
+        this.items = this.items.filter((i) => !drop.has(i.id));
+      }
+    } else if (outcome === 'sent') this.items = this.items.filter((i) => i.id !== item.id);
     else {
       this.items = this.items.map((i) => (i.id === item.id ? { ...i, attempts: i.attempts + 1, ...(outcome === 'wait' ? {} : { error: outcome.refused }) } : i));
     }
@@ -187,7 +222,7 @@ export class Outbox {
   }
 
   /** One change now (just made on a screen), with its key: what became of it. */
-  async sendOne(id: string, send: (item: OutboxItem) => Promise<void>): Promise<Outcome> {
+  async sendOne(id: string, send: Sender): Promise<Outcome> {
     const item = this.items.find((i) => i.id === id);
     if (!item) return 'sent';
     return this.tryOne(item, send);
@@ -195,20 +230,25 @@ export class Outbox {
 
   /**
    * Sends what waits, oldest first, each with its own key; stops at the first that can't go now (the office is away
-   * or busy), so the order is kept. One run at a time.
+   * or busy), so the order is kept. One run at a time. `receipts`: the receipts that went in this run, with what the
+   * office made of each (they also stay listed under Waiting to send until cleared).
    */
-  replay(send: (item: OutboxItem) => Promise<void>): Promise<{ sent: number; refused: number }> {
+  replay(send: Sender): Promise<ReplayResult> {
     if (!this.replaying) {
       this.replaying = (async () => {
         let sent = 0;
         let refused = 0;
-        for (const item of this.items.filter((i) => !i.error)) {
-          const outcome = await this.tryOne(item, send);
+        const receipts: OutboxItem[] = [];
+        for (const item of this.items.filter(isPending)) {
+          const outcome = await this.tryOne(item, send, true);
           if (outcome === 'wait') break;
-          if (outcome === 'sent') sent++;
-          else refused++;
+          if (outcome === 'sent') {
+            sent++;
+            const done = this.items.find((i) => i.id === item.id && i.result);
+            if (done) receipts.push({ ...done });
+          } else refused++;
         }
-        return { sent, refused };
+        return { sent, refused, receipts };
       })().finally(() => { this.replaying = null; });
     }
     return this.replaying;
