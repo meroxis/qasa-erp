@@ -116,6 +116,9 @@ export interface ItemInput {
   brandId?: string | null | undefined;
   /** 1.1: reorder when stock falls to this, thousandths (null: the category's level, or none; absent on an update: kept) */
   reorderMilli?: number | null | undefined;
+  /** 1.4: what the item is bought for, in purchaseCurrency (null: not written; absent on an update: kept) */
+  purchasePrice?: number | null | undefined;
+  purchaseCurrency?: CurrencyCode | null | undefined;
 }
 
 export interface ItemView {
@@ -142,6 +145,12 @@ export interface ItemView {
   categoryId: string | null;
   brandId: string | null;
   reorderMilli: number | null;
+  /**
+   * 1.4: the purchase price written on the item (null: none), in purchaseCurrency (the sale currency when none was
+   * chosen). Absent for someone who may not see what things cost (routes.ts).
+   */
+  purchasePrice?: number | null;
+  purchaseCurrency?: CurrencyCode;
 }
 
 interface ItemRow {
@@ -149,6 +158,7 @@ interface ItemRow {
   sale_price: number; sale_currency: CurrencyCode; track_stock: number; active: number;
   sale_unit: UnitCode | null; purchase_unit: UnitCode | null; updated_at: string | null; track_batches: number; track_expiry: number; category_id: string | null;
   brand_id: string | null; reorder_milli: number | null; brand_name: string | null;
+  purchase_price: number | null; purchase_currency: CurrencyCode | null;
   qty: number | null; value: number | null; moves: number | null;
 }
 
@@ -159,7 +169,9 @@ function toView(r: ItemRow, units: ItemUnitView[] = []): ItemView {
     qtyMilli: r.qty ?? 0, value: r.value ?? 0, hasMoves: (r.moves ?? 0) > 0,
     units, saleUnit: r.sale_unit ?? null, purchaseUnit: r.purchase_unit ?? null, updatedAt: r.updated_at ?? null,
     trackBatches: Number(r.track_batches) === 1, trackExpiry: Number(r.track_expiry) === 1, categoryId: r.category_id ?? null,
-    brandId: r.brand_id ?? null, reorderMilli: r.reorder_milli === null || r.reorder_milli === undefined ? null : Number(r.reorder_milli)
+    brandId: r.brand_id ?? null, reorderMilli: r.reorder_milli === null || r.reorder_milli === undefined ? null : Number(r.reorder_milli),
+    purchasePrice: r.purchase_price === null || r.purchase_price === undefined ? null : Number(r.purchase_price),
+    purchaseCurrency: r.purchase_currency ?? r.sale_currency
   };
 }
 
@@ -215,8 +227,22 @@ export function getItem(db: Db, id: string, warehouses: WarehouseFilter = null):
   return toView(row, unitsByItem(db, [id]).get(id));
 }
 
+/**
+ * An item has one name (1.4): the text typed is kept for every language, so a list, an invoice or a print in any of
+ * the three never shows an empty name. A language that has its own text (items from before, an import) keeps it.
+ */
+export function itemNames(name: Names): Names {
+  const ar = name.ar.trim();
+  const en = name.en.trim();
+  const ku = name.ku.trim();
+  const any = ar || en || ku;
+  return { ar: ar || any, en: en || any, ku: ku || any };
+}
+
 function assertItem(db: Db, input: ItemInput, id: string | null): void {
   const errors: { code: string }[] = [];
+  if (input.purchasePrice !== undefined && input.purchasePrice !== null && (!isMinorAmount(input.purchasePrice) || input.purchasePrice < 0)) errors.push({ code: 'purchase_price_invalid' });
+  if (input.purchaseCurrency !== undefined && input.purchaseCurrency !== null && !isCurrency(input.purchaseCurrency)) errors.push({ code: 'currency_invalid' });
   if (!input.name || (!input.name.ar.trim() && !input.name.en.trim() && !input.name.ku.trim())) errors.push({ code: 'name_required' });
   if (!isUnit(input.unit)) errors.push({ code: 'unit_invalid' });
   if (!isMinorAmount(input.salePrice) || input.salePrice < 0) errors.push({ code: 'price_invalid' });
@@ -242,6 +268,7 @@ function assertItem(db: Db, input: ItemInput, id: string | null): void {
 export function createItem(db: Db, input: ItemInput, user: string): ItemView {
   assertItem(db, input, null);
   const id = randomUUID();
+  const name = itemNames(input.name);
   transaction(db, () => {
     let code = input.code?.trim();
     while (!code || db.prepare('SELECT 1 FROM items WHERE code = ?').get(code)) {
@@ -253,12 +280,14 @@ export function createItem(db: Db, input: ItemInput, user: string): ItemView {
     const expiry = stocked && (input.trackExpiry ?? readTrackExpiryDefault(db));
     const batches = stocked && (expiry || input.trackBatches === true);
     db.prepare(`INSERT INTO items (id, code, barcode, name_ar, name_en, name_ku, unit, sale_price, sale_currency, track_stock, active, created_at,
-                                   sale_unit, purchase_unit, updated_at, track_batches, track_expiry, category_id, brand_id, reorder_milli)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
-      .run(id, code, input.barcode?.trim() || null, input.name.ar.trim(), input.name.en.trim(), input.name.ku.trim(), input.unit,
+                                   sale_unit, purchase_unit, updated_at, track_batches, track_expiry, category_id, brand_id, reorder_milli,
+                                   purchase_price, purchase_currency)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+      .run(id, code, input.barcode?.trim() || null, name.ar, name.en, name.ku, input.unit,
         input.salePrice, input.saleCurrency, stocked ? 1 : 0, input.active === false ? 0 : 1,
         now, input.saleUnit ?? null, input.purchaseUnit ?? null, now, batches ? 1 : 0, expiry ? 1 : 0, input.categoryId ?? null, input.brandId ?? null,
-        input.reorderMilli ?? null);
+        input.reorderMilli ?? null, input.purchasePrice ?? null,
+        input.purchasePrice === undefined || input.purchasePrice === null ? null : input.purchaseCurrency ?? input.saleCurrency);
     if (input.units?.length) replaceItemUnits(db, id, input.units);
     audit(db, user, 'create', 'item', id, { code });
   });
@@ -280,17 +309,23 @@ export function updateItem(db: Db, id: string, input: ItemInput, user: string): 
   if (trackStock !== current.trackStock && current.hasMoves) throw conflict('item_has_moves');
   const trackExpiry = trackStock && (input.trackExpiry ?? current.trackExpiry);
   const trackBatches = trackStock && (trackExpiry || (input.trackBatches ?? current.trackBatches));
+  const name = itemNames(input.name);
+  // the purchase price: absent keeps what is written; null clears it; a price takes the currency sent, else the sale currency
+  const purchasePrice = input.purchasePrice === undefined ? current.purchasePrice ?? null : input.purchasePrice;
+  const purchaseCurrency = purchasePrice === null ? null
+    : input.purchasePrice === undefined ? current.purchaseCurrency ?? input.saleCurrency : input.purchaseCurrency ?? input.saleCurrency;
   transaction(db, () => {
     db.prepare(`UPDATE items SET code = ?, barcode = ?, name_ar = ?, name_en = ?, name_ku = ?, unit = ?, sale_price = ?, sale_currency = ?,
                 track_stock = ?, active = ?, sale_unit = ?, purchase_unit = ?, updated_at = ? WHERE id = ?`)
-      .run(input.code?.trim() || current.code, input.barcode?.trim() || null, input.name.ar.trim(), input.name.en.trim(), input.name.ku.trim(),
+      .run(input.code?.trim() || current.code, input.barcode?.trim() || null, name.ar, name.en, name.ku,
         input.unit, input.salePrice, input.saleCurrency, trackStock ? 1 : 0, input.active === false ? 0 : 1,
         input.saleUnit === undefined ? current.saleUnit : input.saleUnit, input.purchaseUnit === undefined ? current.purchaseUnit : input.purchaseUnit,
         new Date().toISOString(), id);
     if (input.units) replaceItemUnits(db, id, input.units);
-    db.prepare('UPDATE items SET track_batches = ?, track_expiry = ?, category_id = ?, brand_id = ?, reorder_milli = ? WHERE id = ?')
+    db.prepare('UPDATE items SET track_batches = ?, track_expiry = ?, category_id = ?, brand_id = ?, reorder_milli = ?, purchase_price = ?, purchase_currency = ? WHERE id = ?')
       .run(trackBatches ? 1 : 0, trackExpiry ? 1 : 0, input.categoryId === undefined ? current.categoryId : input.categoryId,
-        input.brandId === undefined ? current.brandId : input.brandId, input.reorderMilli === undefined ? current.reorderMilli : input.reorderMilli, id);
+        input.brandId === undefined ? current.brandId : input.brandId, input.reorderMilli === undefined ? current.reorderMilli : input.reorderMilli,
+        purchasePrice, purchaseCurrency, id);
     // switched on: what is in stock goes into the batch with no number, so the batches add up to the stock from now on
     if (trackBatches && !current.trackBatches) startTracking(db, id);
     audit(db, user, 'update', 'item', id, input);

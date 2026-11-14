@@ -816,6 +816,7 @@ input.input, select.input { block-size: var(--control-h); padding-block: 0; }
 }
 .modal h3 { margin: 0 0 var(--sp-4); font-size: var(--fs-subtitle); font-weight: 600; line-height: 1.35; }
 .modal:has(.return-modal) { inline-size: min(760px, 100%); }
+.modal:has(.item-form) { inline-size: min(680px, 100%); }
 
 /* ---------- account tree ---------- */
 .tree-row td:first-child { white-space: nowrap; }

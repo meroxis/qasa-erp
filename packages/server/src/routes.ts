@@ -19,8 +19,9 @@ import { getSettings, lockPeriod, lockedPeriods, unlockPeriod, updateSettings } 
 import { listAudit } from './audit.ts';
 import { createParty, deleteParty, getParty, isForeignKeyFailure, listParties, partyStatement, updateParty } from './parties.ts';
 import {
-  createItem, createWarehouse, deleteItem, findByBarcode, getItem, itemMoves, itemStock, listItems, listWarehouses, updateItem, updateWarehouse
+  createItem, createWarehouse, deleteItem, findByBarcode, getItem, itemMoves, itemStock, listItems, listWarehouses, updateItem, updateWarehouse, type ItemView
 } from './items.ts';
+import { usedUnits } from './item-units.ts';
 import { activateLicense, planStatus, removeLicense, startTrial } from './license.ts';
 import { cancelInvoice, createInvoice, deleteInvoice, getInvoice, listInvoices, postInvoice, updateInvoice } from './invoices.ts';
 import { closeYear, reopenYear, yearStatuses } from './closing.ts';
@@ -108,7 +109,10 @@ const itemSchema = z.object({
   trackExpiry: z.boolean().optional(),
   categoryId: z.string().min(1).max(64).nullable().optional(),
   brandId: z.string().min(1).max(64).nullable().optional(),
-  reorderMilli: z.number().int().min(0).max(1e15).nullable().optional()
+  reorderMilli: z.number().int().min(0).max(1e15).nullable().optional(),
+  // 1.4: what the item is bought for, and the currency of that price
+  purchasePrice: amount.nullable().optional(),
+  purchaseCurrency: currency.nullable().optional()
 });
 
 /**
@@ -529,6 +533,15 @@ export function apiRoutes(db: Db, options: { demo?: boolean; extensions?: readon
     const body = parse(z.object({ name: names, active: z.boolean().optional() }), req.body);
     return updateWarehouse(db, parse(idParam, req.params).id, body, userOf(req));
   });
+  // 1.4: an item's purchase price is for those who buy or keep the stock; a cashier's copy of the item has none
+  const seesPurchasePrice = (req: ApiRequest) => actorOf(req).permissions.some((p) => p === 'admin' || p === 'stock' || p === 'purchases');
+  const forViewer = <T extends ItemView>(req: ApiRequest, item: T): T => {
+    if (seesPurchasePrice(req)) return item;
+    const { purchasePrice: _price, purchaseCurrency: _currency, ...rest } = item;
+    return rest as T;
+  };
+  // the units the company's items use already: the item form lists them whatever the business type offers
+  app.get('/api/item-units/used', async () => usedUnits(db));
   app.get('/api/items', async (req) => {
     const q = parse(z.object({
       q: z.string().max(100).optional(), warehouseId: z.string().max(64).optional(), active: z.enum(['true', 'false']).optional(),
@@ -536,9 +549,13 @@ export function apiRoutes(db: Db, options: { demo?: boolean; extensions?: readon
       brandId: z.string().min(1).max(64).optional()
     }), req.query);
     // a scan at the counter: the item and the unit the barcode belongs to (an item's own barcode: its base unit)
-    if (q.barcode) return findByBarcode(db, q.barcode, q.warehouseId ? [q.warehouseId] : warehousesOfUser(req));
+    if (q.barcode) {
+      const found = findByBarcode(db, q.barcode, q.warehouseId ? [q.warehouseId] : warehousesOfUser(req));
+      return { ...found, item: found.item && forViewer(req, found.item) };
+    }
     // without a warehouse, a user limited to branches gets the stock of their branches' warehouses (null: every one)
-    return listItems(db, { q: q.q, warehouseId: q.warehouseId, active: q.active === undefined ? undefined : q.active === 'true', categoryId: q.categoryId, brandId: q.brandId }, warehousesOfUser(req));
+    return listItems(db, { q: q.q, warehouseId: q.warehouseId, active: q.active === undefined ? undefined : q.active === 'true', categoryId: q.categoryId, brandId: q.brandId }, warehousesOfUser(req))
+      .map((item) => forViewer(req, item));
   });
   // 1.1: items at or below their minimum quantity (their own, or their category's), in a warehouse or the user's
   app.get('/api/stock/reorder', async (req) => {
@@ -548,13 +565,13 @@ export function apiRoutes(db: Db, options: { demo?: boolean; extensions?: readon
   app.get('/api/items/:id', async (req) => {
     const { id } = parse(idParam, req.params);
     const warehouses = warehousesOfUser(req);
-    return { ...getItem(db, id, warehouses), stock: itemStock(db, id, warehouses), moves: itemMoves(db, id, warehouses) };
+    return { ...forViewer(req, getItem(db, id, warehouses)), stock: itemStock(db, id, warehouses), moves: itemMoves(db, id, warehouses) };
   });
-  app.post('/api/items', async (req, reply) => reply.status(201).send(createItem(db, withoutUndefined(parse(itemSchema, req.body)), userOf(req))));
+  app.post('/api/items', async (req, reply) => reply.status(201).send(forViewer(req, createItem(db, withoutUndefined(parse(itemSchema, req.body)), userOf(req)))));
   app.put('/api/items/:id', async (req) => {
     const { id } = parse(idParam, req.params);
     updateItem(db, id, withoutUndefined(parse(itemSchema, req.body)), userOf(req));
-    return getItem(db, id, warehousesOfUser(req));
+    return forViewer(req, getItem(db, id, warehousesOfUser(req)));
   });
   app.delete('/api/items/:id', async (req, reply) => {
     deleteItem(db, parse(idParam, req.params).id, userOf(req));

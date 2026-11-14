@@ -85,6 +85,8 @@ export function updateSettings(db: Db, patch: Partial<Settings>, user: string): 
     if (patch.postingAccounts) writeSetting(db, 'posting_accounts', JSON.stringify({ ...getPostingAccounts(db), ...patch.postingAccounts }));
     // a pharmacy starts its new items with expiry dates (1.1); switching it off later is the company's own choice
     if (patch.businessTypes?.includes('pharmacy') && !businessTypes(db)?.includes('pharmacy')) writeSetting(db, 'default_track_expiry', '1');
+    // so does a market or supermarket (1.4): food and drink carry a date
+    if (patch.businessTypes?.includes('market') && !businessTypes(db)?.includes('market')) writeSetting(db, 'default_track_expiry', '1');
     if (patch.businessTypes) writeSetting(db, 'business_types', JSON.stringify([...new Set(patch.businessTypes)]));
     audit(db, user, 'update', 'settings', null, patch);
   });

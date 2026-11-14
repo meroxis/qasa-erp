@@ -162,14 +162,15 @@ export function resolvePlan(input: { license: LicenseInfo | null; trialStarted: 
 
 /**
  * What a company does. It decides which industry pages show in the menu (chosen at the start, changed in Settings);
- * the plan still decides which of them can be used. 'trade' is the general accounting, sales, purchases and stock.
+ * the plan still decides which of them can be used. 'trade' is the general accounting, sales, purchases and stock;
+ * 'market' (1.4) is a supermarket or mini-market: the same pages, started for selling at the till by barcode and weight.
  */
-export const BUSINESS_TYPES = ['trade', 'realEstate', 'mobileShop', 'autoParts', 'engineeringWorks', 'electricalSolar', 'generators', 'pharmacy'] as const;
+export const BUSINESS_TYPES = ['trade', 'market', 'realEstate', 'mobileShop', 'autoParts', 'engineeringWorks', 'electricalSolar', 'generators', 'pharmacy'] as const;
 export type BusinessType = (typeof BUSINESS_TYPES)[number];
 
 /** The plan feature each industry needs (general trade needs none). */
 export const BUSINESS_FEATURE: Record<BusinessType, Feature | null> = {
-  trade: null, realEstate: 'realEstate', mobileShop: 'mobileShop', autoParts: 'autoParts', engineeringWorks: 'engineeringWorks', electricalSolar: 'electricalSolar', generators: 'generators',
+  trade: null, market: null, realEstate: 'realEstate', mobileShop: 'mobileShop', autoParts: 'autoParts', engineeringWorks: 'engineeringWorks', electricalSolar: 'electricalSolar', generators: 'generators',
   pharmacy: 'pharmacy'
 };
 
