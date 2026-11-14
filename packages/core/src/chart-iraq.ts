@@ -22,40 +22,40 @@ export const IRAQI_UNIFIED_CHART: AccountSeed[] = [
   { code: '114', name: { ar: 'وسائل النقل والانتقال', en: 'Vehicles', ku: 'ئامرازەکانی گواستنەوە' } },
   { code: '115', name: { ar: 'العدد والقوالب', en: 'Tools & moulds', ku: 'ئامراز و قاڵبەکان' } },
   { code: '116', name: { ar: 'الأثاث وأجهزة المكاتب', en: 'Furniture & office equipment', ku: 'کەلوپەل و ئامێری نووسینگە' } },
-  { code: '12', name: { ar: 'مشروعات تحت التنفيذ', en: 'Projects in progress', ku: 'پرۆژە لەژێر جێبەجێکردن' } },
+  { code: '12', name: { ar: 'مشروعات تحت التنفيذ', en: 'Projects in progress', ku: 'پرۆژەکانی ژێر جێبەجێکردن' } },
   { code: '13', name: { ar: 'المخزون', en: 'Inventory', ku: 'کۆگا' } },
   { code: '131', name: { ar: 'مخزون المواد الأولية', en: 'Raw materials', ku: 'کۆگای کەرەستەی خاو' } },
   { code: '136', name: { ar: 'مخزون الإنتاج', en: 'Production inventory', ku: 'کۆگای بەرهەم' } },
-  { code: '137', name: { ar: 'مخزون بضائع بغرض البيع', en: 'Goods held for sale', ku: 'کاڵای کۆگا بۆ فرۆشتن' } },
+  { code: '137', name: { ar: 'مخزون بضائع بغرض البيع', en: 'Goods held for sale', ku: 'کۆگای کاڵا بۆ فرۆشتن' } },
   { code: '138', name: { ar: 'اعتمادات مستندية لشراء المواد', en: 'Letters of credit for purchases', ku: 'ئیعتیمادی بەڵگەنامەیی بۆ کڕینی کەرەستە' } },
   { code: '14', name: { ar: 'القروض الممنوحة', en: 'Loans granted', ku: 'قەرزە پێدراوەکان' } },
   { code: '15', name: { ar: 'الاستثمارات', en: 'Investments', ku: 'وەبەرهێنانەکان' } },
   { code: '16', name: { ar: 'المدينون', en: 'Debtors', ku: 'قەرزارەکان' } },
   { code: '161', name: { ar: 'العملاء', en: 'Customers', ku: 'کڕیاران' } },
-  { code: '162', name: { ar: 'أوراق القبض', en: 'Notes receivable', ku: 'بەڵگەنامەکانی وەرگرتن' } },
-  { code: '166', name: { ar: 'حسابات مدينة متنوعة', en: 'Other receivables', ku: 'هەژمارە قەرزارە جۆراوجۆرەکان' } },
+  { code: '162', name: { ar: 'أوراق القبض', en: 'Notes receivable', ku: 'کەمبیالەکانی وەرگرتن' } },
+  { code: '166', name: { ar: 'حسابات مدينة متنوعة', en: 'Other receivables', ku: 'هەژمارە مەدینە جۆراوجۆرەکان' } },
   { code: '18', name: { ar: 'النقود', en: 'Cash', ku: 'پارە' } },
   { code: '181', name: { ar: 'نقدية لدى الصندوق', en: 'Cash on hand', ku: 'پارە لە قاسە' } },
   { code: '183', name: { ar: 'نقدية لدى المصارف', en: 'Cash at banks', ku: 'پارە لە بانکەکان' } },
 
-  { code: '2', name: { ar: 'المطلوبات', en: 'Liabilities & capital', ku: 'پابەندبوونەکان' } },
+  { code: '2', name: { ar: 'المطلوبات', en: 'Liabilities & capital', ku: 'پابەندییەکان' } },
   { code: '21', name: { ar: 'رأس المال', en: 'Capital', ku: 'سەرمایە' } },
   { code: '22', name: { ar: 'الاحتياطيات', en: 'Reserves', ku: 'یەدەگەکان' } },
   { code: '23', name: { ar: 'التخصيصات', en: 'Provisions', ku: 'تەرخانکراوەکان' } },
   { code: '231', name: { ar: 'مخصص الاندثار المتراكم', en: 'Accumulated depreciation', ku: 'تەرخانی داخورانی کەڵەکەبوو' } },
   { code: '24', name: { ar: 'القروض المستلمة', en: 'Loans received', ku: 'قەرزە وەرگیراوەکان' } },
-  { code: '25', name: { ar: 'المصارف الدائنة', en: 'Bank overdrafts', ku: 'بانکە قەرزدەرەکان' } },
+  { code: '25', name: { ar: 'المصارف الدائنة', en: 'Bank overdrafts', ku: 'بانکە دائینەکان' } },
   { code: '26', name: { ar: 'الدائنون', en: 'Creditors', ku: 'قەرزدەرەکان' } },
   { code: '261', name: { ar: 'المجهزون', en: 'Suppliers', ku: 'دابینکەران' } },
-  { code: '262', name: { ar: 'أوراق الدفع', en: 'Notes payable', ku: 'بەڵگەنامەکانی پارەدان' } },
-  { code: '266', name: { ar: 'حسابات دائنة متنوعة', en: 'Other payables', ku: 'هەژمارە قەرزدەرە جۆراوجۆرەکان' } },
-  { code: '267', name: { ar: 'استقطاعات لحساب الغير', en: 'Withholdings for others', ku: 'بڕینەکان بۆ لایەنی تر' } },
+  { code: '262', name: { ar: 'أوراق الدفع', en: 'Notes payable', ku: 'کەمبیالەکانی پارەدان' } },
+  { code: '266', name: { ar: 'حسابات دائنة متنوعة', en: 'Other payables', ku: 'هەژمارە دائینە جۆراوجۆرەکان' } },
+  { code: '267', name: { ar: 'استقطاعات لحساب الغير', en: 'Withholdings for others', ku: 'لێبڕینەکان بۆ لایەنی تر' } },
 
   { code: '3', name: { ar: 'الاستخدامات', en: 'Uses (expenses)', ku: 'بەکارهێنانەکان (خەرجی)' } },
-  { code: '31', name: { ar: 'الرواتب والأجور', en: 'Salaries & wages', ku: 'مووچە و کرێ' } },
+  { code: '31', name: { ar: 'الرواتب والأجور', en: 'Salaries & wages', ku: 'مووچە و کرێی کار' } },
   { code: '32', name: { ar: 'المستلزمات السلعية', en: 'Commodity supplies', ku: 'پێداویستییە کاڵاییەکان' } },
   { code: '33', name: { ar: 'المستلزمات الخدمية', en: 'Service supplies', ku: 'پێداویستییە خزمەتگوزارییەکان' } },
-  { code: '34', name: { ar: 'مقاولات وخدمات', en: 'Contracts & services', ku: 'گرێبەستکاری و خزمەتگوزاری' } },
+  { code: '34', name: { ar: 'مقاولات وخدمات', en: 'Contracts & services', ku: 'بەڵێندەرایەتی و خزمەتگوزاری' } },
   { code: '35', name: { ar: 'مشتريات بضائع بغرض البيع', en: 'Purchases of goods for resale', ku: 'کڕینی کاڵا بۆ فرۆشتن' } },
   { code: '36', name: { ar: 'فوائد وإيجارات الأراضي', en: 'Interest & land rent', ku: 'سوود و کرێی زەوی' } },
   { code: '37', name: { ar: 'الاندثار', en: 'Depreciation', ku: 'داخوران' } },
@@ -90,6 +90,25 @@ export const STARTER_SUB_ACCOUNTS: AccountSeed[] = [
   // where the year-end closing puts each year's profit or loss (to be confirmed by the company's accountant)
   { code: '229', name: { ar: 'الفائض (العجز) المتراكم', en: 'Accumulated surplus (deficit)', ku: 'زیادە (کورتهێنان)ی کەڵەکەبوو' } }
 ];
+
+const BUILT_IN_NAMES: ReadonlyMap<string, Names> = new Map([...IRAQI_UNIFIED_CHART, ...STARTER_SUB_ACCOUNTS].map((a) => [a.code, a.name]));
+
+/**
+ * An account's names to show. A company's chart is its own data: its names are shown as they are kept. Only a
+ * language the company holds no name in (a company file whose Kurdish, English or Arabic column is empty) is filled
+ * from the built-in chart, and only for a standard code the company did not rename: every name it does hold is still
+ * the chart's own. An account the company named itself keeps the names it has, in the languages it has them (the
+ * screens then show another language's name). Nothing stored is changed: the name is filled as it is read.
+ */
+export function accountNames(code: string, stored: Names): Names {
+  const builtIn = BUILT_IN_NAMES.get(code);
+  if (!builtIn) return stored;
+  const langs = ['ar', 'en', 'ku'] as const;
+  const held = langs.filter((l) => (stored[l] ?? '').trim() !== '');
+  if (held.length === langs.length || held.length === 0) return stored;
+  if (held.some((l) => stored[l].trim() !== builtIn[l])) return stored;
+  return { ar: stored.ar || builtIn.ar, en: stored.en || builtIn.en, ku: stored.ku || builtIn.ku };
+}
 
 /**
  * Default posting accounts for invoices. Editable in settings; to be confirmed by the company's accountant.

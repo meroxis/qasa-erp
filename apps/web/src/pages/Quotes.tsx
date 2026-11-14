@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { amountInWords, lineAmount, rateFromX100, todayIso, toWesternDigits, type CurrencyCode } from '@qasa/core';
 import { api } from '../api.ts';
-import { EmptyState, AmountInput, ErrorBox, Icon, Modal, QtyInput, SearchCombo, useData, useLoad, usePageNav, useToast, type PickOption } from '../components.tsx';
+import { EmptyState, AmountInput, ErrorBox, Icon, Modal, QtyInput, SearchCombo, useData, useLoad, useMay, usePageNav, useToast, type PickOption } from '../components.tsx';
 import { useI18n, type I18n, type Key } from '../i18n.ts';
 import {
   QUOTE_STATUSES, quotesApi, type QuoteInput, type QuoteLineInput, type QuoteMove, type QuoteStatus, type QuoteSummaryView, type QuoteView
@@ -42,6 +42,7 @@ const addDays = (iso: string, days: number) => new Date(Date.parse(iso + 'T00:00
 /* ---------- the list ---------- */
 
 export function Quotes() {
+  const mayQuote = useMay()('quote');
   const i18n = useI18n();
   const { t } = i18n;
   const [status, setStatus] = useState<QuoteStatus | 'open' | ''>('open');
@@ -63,7 +64,7 @@ export function Quotes() {
         </div>
       )}
       <div className="row">
-        <a className="btn primary" href={href('new-quote')}><Icon name="plus" size={16} />{t('qt_new')}</a>
+        {mayQuote && <a className="btn primary" href={href('new-quote')}><Icon name="plus" size={16} />{t('qt_new')}</a>}
         <span className="spacer" />
         <input className="input" style={{ width: 240 }} type="search" placeholder={t('qt_searchHint')} aria-label={t('search')} value={q} onChange={(e) => setQ(e.target.value)} />
       </div>
@@ -277,6 +278,7 @@ export function QuoteDetail({ id }: { id: string }) {
   const { t } = i18n;
   const toast = useToast();
   const { settings } = useData();
+  const mayQuote = useMay()('quote');
   usePageNav({ key: 'qt_title', group: 'gSales' });
   const { data: x, error, reload } = useLoad(() => quotesApi.get(id), [id]);
   const [modal, setModal] = useState<'convert' | 'cancel' | null>(null);
@@ -286,7 +288,7 @@ export function QuoteDetail({ id }: { id: string }) {
   if (error) return <ErrorBox error={error} />;
   if (!x) return null;
   const company = settings ? i18n.name(settings.companyName) : '';
-  const can = (a: string) => x.actions.includes(a as never);
+  const can = (a: string) => mayQuote && x.actions.includes(a as never);
 
   async function move(action: QuoteMove) {
     setBusy(true);

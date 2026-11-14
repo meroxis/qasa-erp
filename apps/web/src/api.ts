@@ -11,7 +11,8 @@ export interface AccountView {
   postable: boolean;
   system: boolean;
   nature: Nature;
-  balance: number;
+  /** absent for someone who may not read the books (1.4) */
+  balance?: number;
   hasEntries: boolean;
 }
 
@@ -42,6 +43,8 @@ export interface EntrySummary {
   reversesId: string | null;
   reversedById: string | null;
   preparedBy: string;
+  /** 1.4: who that is, to know a user's own voucher (older servers leave it out) */
+  preparedById?: string | null;
   preparedAt: string;
   checkedBy: string | null;
   checkedAt: string | null;
@@ -49,6 +52,42 @@ export interface EntrySummary {
   approvedAt: string | null;
   total: number;
   baseTotal: number;
+  /** 1.4: sent for approval ("Vouchers need approval"): where that stands (older servers leave it out) */
+  approval?: VoucherApproval | null;
+}
+
+export interface VoucherApproval {
+  state: 'waiting' | 'rejected' | 'approved';
+  requestedBy: string;
+  requestedAt: string;
+  decidedBy: string | null;
+  decidedAt: string | null;
+  reason: string | null;
+}
+
+/** 1.4: the "Vouchers need approval" setting, how many wait, and whether this user may approve them */
+export interface VoucherApprovalState {
+  on: boolean; waiting: number; mayApprove: boolean;
+  /** this user's own vouchers are approved as they are made */
+  ownAtOnce: boolean;
+  /** a voucher this user makes with "Receive payment" / "Pay supplier" is posted at once (left out by a server that does not say) */
+  postsAtOnce?: boolean;
+}
+
+/** 1.4: "Receive payment" (a receipt from a customer) or "Pay supplier" (a payment), from the short form */
+export interface QuickVoucherInput {
+  kind: 'receipt' | 'payment';
+  partyId: string;
+  amount: number;
+  currency: CurrencyCode;
+  rateX100?: number;
+  cashAccountCode: string;
+  date: string;
+  note?: string;
+  /** this user's own voucher, not posted, that this one corrects: the server takes it back as it makes this one */
+  replaces?: string;
+  /** the posted credit invoice the form was opened from: the server keeps the voucher with it */
+  invoiceId?: string;
 }
 
 export interface EntryView extends EntrySummary {
@@ -194,10 +233,11 @@ export interface PartyStatement {
   party: PartyView;
   /** 1.1: null = all lines in IQD at the book rates; IQD or USD = that currency's lines only, in it */
   currency?: CurrencyCode | null;
-  opening: number;
+  /** opening and the totals: absent (and no lines) on a supplier's statement for someone who may not read the books (1.4) */
+  opening?: number;
   closing: number;
-  totalDebit: number;
-  totalCredit: number;
+  totalDebit?: number;
+  totalCredit?: number;
   lines: {
     entryId: string; invoiceId: string | null; number: string; date: string; description: string; debit: number; credit: number; balance: number;
     currency?: CurrencyCode; amount?: number;
@@ -210,7 +250,8 @@ export interface WarehouseView {
   name: Names;
   accountCode: string;
   active: boolean;
-  value: number;
+  /** the value of its stock in IQD; absent for someone who may not see cost (1.4) */
+  value?: number;
 }
 
 export interface ItemView {
@@ -224,7 +265,8 @@ export interface ItemView {
   trackStock: boolean;
   active: boolean;
   qtyMilli: number;
-  value: number;
+  /** the value of its stock in IQD (its average cost comes from it); absent for someone who may not see cost (1.4) */
+  value?: number;
   hasMoves: boolean;
   /** 1.1: the other units (boxes, strips …), the units sale and purchase lines start in (null: the base unit) */
   units: ItemUnitView[];
@@ -238,6 +280,9 @@ export interface ItemView {
   /** 1.1: the brand, and the stock level to reorder at (thousandths; null: the category's, or none) */
   brandId: string | null;
   reorderMilli: number | null;
+  /** 1.4: the purchase price written on the item (null: none) and its currency; absent for someone who may not see it */
+  purchasePrice?: number | null;
+  purchaseCurrency?: CurrencyCode;
 }
 
 /** One of an item's other units: base units in one (thousandths), its barcode and its own price (null: base × factor). */
@@ -260,11 +305,13 @@ export interface ItemInput {
   categoryId?: string | null;
   brandId?: string | null;
   reorderMilli?: number | null;
+  purchasePrice?: number | null;
+  purchaseCurrency?: CurrencyCode | null;
 }
 
 export interface ItemDetail extends ItemView {
-  stock: { warehouseId: string; warehouseCode: string; warehouseName: Names; qtyMilli: number; value: number }[];
-  moves: { id: number; date: string; warehouseCode: string; qtyMilli: number; value: number; sourceType: string; sourceId: string | null; sourceNumber: string | null; balanceQtyMilli: number }[];
+  stock: { warehouseId: string; warehouseCode: string; warehouseName: Names; qtyMilli: number; value?: number }[];
+  moves: { id: number; date: string; warehouseCode: string; qtyMilli: number; value?: number; sourceType: string; sourceId: string | null; sourceNumber: string | null; balanceQtyMilli: number }[];
 }
 
 export interface InvoiceSummary {
@@ -319,7 +366,9 @@ export interface InvoiceView extends InvoiceSummary {
   cancelledAt: string | null;
   lines: {
     lineNo: number; itemId: string; itemCode: string; itemName: Names; unit: UnitCode; trackStock: boolean;
-    description: string; qtyMilli: number; unitPrice: number; amount: number; cost: number | null;
+    description: string; qtyMilli: number; unitPrice: number; amount: number;
+    /** what the goods cost, once posted; absent for someone who may not see cost (1.4) */
+    cost?: number | null;
     sourceLine: number | null; returnedQtyMilli: number; returnedAmount: number;
     /** 1.1: the unit the line was typed in (null: the base unit), its factor then and the quantity typed */
     lineUnit: UnitCode | null; unitFactorMilli: number | null; unitQtyMilli: number | null;
@@ -336,6 +385,20 @@ export interface InvoiceView extends InvoiceSummary {
   offlineRef?: string;
   /** 1.2 (Pro): the loyalty points it earned and used, and the customer's balance (null: none and points are off) */
   loyalty?: { earned: number; redeemed: number; value: number; balance: number } | null;
+  /**
+   * 1.4: a posted credit sale or purchase, in its own currency: what was received (or paid) for it and is in the
+   * books, what waits for approval, what is still open on it, and what is left to ask for (open less what waits).
+   * Null for any other invoice; left out by an older server, and for a purchase read without the books.
+   */
+  settlement?: {
+    currency: CurrencyCode; total: number; returned: number; received: number; waiting: number; open: number; toCollect: number;
+    /** what the party owes in all, in the invoice's currency (left out by a server from before) */
+    owed?: number;
+    /** money was received without naming an invoice, and the party owes less than its invoices lack: `open` is "at most" */
+    unsure?: boolean;
+  } | null;
+  /** 1.4: a till's cash sale: the cash handed over and the change given back, when it was typed at the till */
+  tender?: { paid: number; change: number };
 }
 
 export type Role = 'admin' | 'preparer' | 'checker' | 'approver' | 'sales' | 'purchasing' | 'storekeeper' | 'viewer';
@@ -346,8 +409,17 @@ export interface Me {
   signInRequired: boolean;
   separateDuties: boolean;
   demo: boolean;
-  /** branchLimited: limited to some branches (never an admin), so the company's own books are not for them */
-  user: { id: string | null; name: string; username: string; roles: Role[]; permissions: Permission[]; branchLimited?: boolean } | null;
+  /**
+   * 1.4: what this build serves beside the app's own routes: 'backup', 'network', 'phones', 'database' (the Pro
+   * module's). The app asks only for what is named; a server from before leaves the list out (everything is asked).
+   */
+  modules?: string[];
+  /**
+   * branchLimited: limited to some branches (never an admin), so the company's own books are not for them.
+   * seesCost, seesBooks (1.4): false for someone the server sends no cost (purchase prices, stock value, a sale's cost)
+   * or no books and profit to, a cashier for one; an older server leaves them out (everything is sent).
+   */
+  user: { id: string | null; name: string; username: string; roles: Role[]; permissions: Permission[]; branchLimited?: boolean; seesCost?: boolean; seesBooks?: boolean } | null;
 }
 
 export interface UserView {
@@ -384,7 +456,8 @@ export interface StockDocSummary {
   warehouseName: Names;
   toWarehouseId: string | null;
   toWarehouseName: Names | null;
-  totalValue: number;
+  /** absent, with the lines' unit cost and value, for someone who may not see cost (1.4) */
+  totalValue?: number;
   notes: string;
   createdBy: string;
 }
@@ -401,7 +474,7 @@ export interface StockDocView extends StockDocSummary {
   cancelledBy: string | null;
   cancelledAt: string | null;
   lines: {
-    lineNo: number; itemId: string; itemCode: string; itemName: Names; unit: UnitCode; qtyMilli: number; unitCost: number | null; value: number | null;
+    lineNo: number; itemId: string; itemCode: string; itemName: Names; unit: UnitCode; qtyMilli: number; unitCost?: number | null; value?: number | null;
     lineUnit: UnitCode | null; unitFactorMilli: number | null; unitQtyMilli: number | null;
     batchNo: string | null; expiry: string | null; batchId: string | null;
   }[];
@@ -714,7 +787,7 @@ export const api = {
   createAccount: (input: { parentCode: string; code: string; name: Names }) => request<AccountView>('POST', '/api/accounts', input),
   renameAccount: (code: string, name: Names) => request<AccountView>('PATCH', `/api/accounts/${code}`, { name }),
   deleteAccount: (code: string) => request<void>('DELETE', `/api/accounts/${code}`),
-  entries: (f: { type?: string; status?: string; q?: string; from?: string; to?: string } = {}) => request<EntrySummary[]>('GET', '/api/entries' + qs(f)),
+  entries: (f: { type?: string; status?: string; approval?: string; q?: string; from?: string; to?: string } = {}) => request<EntrySummary[]>('GET', '/api/entries' + qs(f)),
   entry: (id: string) => request<EntryView>('GET', `/api/entries/${id}`),
   createJournal: (input: JournalInput) => request<EntryView>('POST', '/api/entries', input),
   updateJournal: (id: string, input: JournalInput) => request<EntryView>('PUT', `/api/entries/${id}`, input),
@@ -723,6 +796,13 @@ export const api = {
   updateVoucher: (id: string, input: VoucherInput) => request<EntryView>('PUT', `/api/vouchers/${id}`, input),
   deleteEntry: (id: string) => request<void>('DELETE', `/api/entries/${id}`),
   entryAction: (id: string, action: 'check' | 'return' | 'approve') => request<EntryView>('POST', `/api/entries/${id}/${action}`, {}),
+  quickVoucher: (input: QuickVoucherInput, options: SendOptions = {}) => request<EntryView>('POST', '/api/quick-vouchers', input, options),
+  /** takes back a voucher this user prepared and that is not posted (it waits, was rejected, or is a draft) */
+  withdrawVoucher: (id: string) => request<void>('DELETE', `/api/quick-vouchers/${id}`),
+  voucherApproval: () => request<VoucherApprovalState>('GET', '/api/voucher-approval'),
+  setVoucherApproval: (on: boolean) => request<VoucherApprovalState>('PUT', '/api/voucher-approval', { on }),
+  approveWaiting: (id: string) => request<EntryView>('POST', `/api/entries/${id}/approve-waiting`, {}),
+  rejectEntry: (id: string, reason: string) => request<EntryView>('POST', `/api/entries/${id}/reject`, { reason }),
   reverse: (id: string, date: string) => request<EntryView>('POST', `/api/entries/${id}/reverse`, { date }),
   trialBalance: (from?: string, to?: string) => request<TrialBalanceReport>('GET', '/api/reports/trial-balance' + qs({ from, to })),
   finalAccounts: (from: string, to: string) => request<FinalAccountsReport>('GET', '/api/reports/final-accounts' + qs({ from, to })),
@@ -766,6 +846,7 @@ export const api = {
   /** A scanned barcode: the item, and the unit when it is one of the item's units' barcodes (null: its own, the base unit). */
   itemByBarcode: (barcode: string, warehouseId?: string) => request<{ item: ItemView | null; unit: UnitCode | null }>('GET', '/api/items' + qs({ barcode, ...(warehouseId ? { warehouseId } : {}) })),
   item: (id: string) => request<ItemDetail>('GET', `/api/items/${id}`),
+  usedUnits: () => request<UnitCode[]>('GET', '/api/item-units/used'),
   createItem: (input: ItemInput) => request<ItemView>('POST', '/api/items', input),
   updateItem: (id: string, input: ItemInput) => request<ItemView>('PUT', `/api/items/${id}`, input),
   deleteItem: (id: string) => request<void>('DELETE', `/api/items/${id}`),

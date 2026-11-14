@@ -10,7 +10,7 @@ import { createInvoice, getInvoice, postInvoice, type InvoiceView, type SalePart
 import { loyaltyPaidFor, planRedemption } from './loyalty.ts';
 import { readSetting, writeSetting } from './settings.ts';
 import { signInRequired, type Actor } from './auth.ts';
-import { scopeOf } from './branches.ts';
+import { scopeOf, userBranchLists } from './branches.ts';
 import type { ApiExtension, ApiRequest } from './routes.ts';
 import { onceOnly } from './idempotency.ts';
 
@@ -27,7 +27,14 @@ const zero = (): Money => ({ IQD: 0, USD: 0 });
 
 /**
  * How a customer pays at the counter (1.1): cash into the shift's safe, a card or a wallet (FIB, ZainCash, Qi) into
- * the account the admin set for it, or on the chosen customer's account. A sale can be split over up to 4 of them.
+ * the account the admin set for it, or on the chosen customer's account (credit). Money paid now can be split over up
+ * to 4 of them; since 1.4 a sale on credit is on credit as a whole, never mixed with money paid now.
+ *
+ * Since 1.4 the till itself offers cash and credit only, and Settings no longer has the card and wallet accounts. The
+ * server still takes a card or a wallet part, under the same checks as before (the method must have an account set
+ * before 1.4, inside the user's branches): a sale a till kept while offline before the update is sent after it, and a
+ * PC in the office still on an older version sells against this server. A company that never set an account can't be
+ * sent one: the method is refused. Old sales keep their parts for receipts, returns, shift reports and the day close.
  */
 export const POS_METHODS = ['cash', 'card', 'fib', 'zaincash', 'qi', 'account'] as const;
 export type PosMethod = (typeof POS_METHODS)[number];
@@ -160,6 +167,11 @@ export interface SaleInput {
   offline?: OfflineSale | undefined;
   /** 1.2 (Pro): loyalty points the customer uses on this sale */
   loyaltyPoints?: number | undefined;
+  /**
+   * 1.4: the cash the customer handed over, in the sale's currency. Kept with a cash sale when it covers the cash
+   * due, so the receipt prints "Amount paid" and "Change" again later; it changes nothing in the books.
+   */
+  tendered?: number | undefined;
 }
 
 export interface OfflineSale { reference: string; soldAt: string; soldOn: string }
@@ -401,6 +413,11 @@ export function sell(db: Db, shiftId: string, input: SaleInput, actor: Actor): {
   if (input.currency === 'USD' && !(Number.isSafeInteger(input.rateX100) && (input.rateX100 ?? 0) > 0)) throw invalid([{ code: 'rate_invalid' }]);
   const payments = input.payments ?? [];
   if (payments.length > 4) throw invalid([{ code: 'payments_too_many' }]);
+  // 1.4: a sale is paid now or put on the customer's account, never part one and part the other
+  const onCredit = payments.some((p) => p.method === 'account');
+  // (a till page loaded before 1.4 still offers that split and has no words for the first code: the second is one it
+  // can show, so its cashier reads that the payment is the trouble)
+  if (onCredit && payments.some((p) => p.method !== 'account')) throw invalid([{ code: 'pos_credit_not_mixed' }, { code: 'pos_payment_invalid', method: 'account' }]);
   const accounts = posPaymentAccounts(db);
   const mine = posAccountsFor(db, actor);
   const errors: { code: string; method?: string }[] = [];
@@ -426,7 +443,9 @@ export function sell(db: Db, shiftId: string, input: SaleInput, actor: Actor): {
   const invoiceId = transaction(db, () => {
     const draft = createInvoice(db, {
       kind: 'sale', date, ...(input.partyId ? { partyId: input.partyId } : {}), warehouseId: row.warehouse_id,
-      currency: input.currency, rateX100: input.currency === 'IQD' ? 100 : input.rateX100!, payment: 'cash', cashAccountCode: row.cash_account,
+      currency: input.currency, rateX100: input.currency === 'IQD' ? 100 : input.rateX100!,
+      // a sale on the customer's account is a credit invoice (Dr the customer), like one made on the invoice screen
+      ...(onCredit ? { payment: 'credit' as const } : { payment: 'cash' as const, cashAccountCode: row.cash_account }),
       discount: input.discount, ...(input.notes?.trim() ? { notes: input.notes.trim() } : {}),
       lines: input.lines.map((l) => ({
         itemId: l.itemId, qtyMilli: l.qtyMilli, unitPrice: l.unitPrice, ...(l.unit ? { unit: l.unit, unitQtyMilli: l.unitQtyMilli ?? l.qtyMilli } : {}),
@@ -450,10 +469,14 @@ export function sell(db: Db, shiftId: string, input: SaleInput, actor: Actor): {
         ...(method === 'account' ? { partyId: input.partyId } : {})
       }));
     }
+    // (a credit invoice posts to the customer's account by itself, with its credit limit checked: no parts are passed)
     const posted = postInvoice(db, draft.id, actor.name, {
-      allowExpired: input.allowExpired === true, ...(split ? { split } : {}), ...(input.loyaltyPoints ? { loyaltyPoints: input.loyaltyPoints } : {})
+      allowExpired: input.allowExpired === true, ...(split && !onCredit ? { split } : {}), ...(input.loyaltyPoints ? { loyaltyPoints: input.loyaltyPoints } : {})
     });
-    db.prepare('INSERT INTO pos_sales (invoice_id, shift_id) VALUES (?, ?)').run(posted.id, shiftId);
+    // the cash handed over: kept for a cash sale when it covers the cash due (the cash part, or all that points left)
+    const cashDue = onCredit ? 0 : split ? split.filter((p) => p.method === 'cash').reduce((s, p) => s + p.amount, 0) : draft.total - byPoints;
+    const tendered = Number.isSafeInteger(input.tendered) && cashDue > 0 && input.tendered! >= cashDue ? input.tendered! : null;
+    db.prepare('INSERT INTO pos_sales (invoice_id, shift_id, tendered) VALUES (?, ?, ?)').run(posted.id, shiftId, tendered);
     if (split) {
       const insert = db.prepare(`INSERT INTO invoice_payments (id, invoice_id, kind, method, account_code, amount, currency, entry_id, source, reference, created_by, created_at)
                                  VALUES (?, ?, 'pos', ?, ?, ?, ?, ?, NULL, NULL, ?, ?)`);
@@ -469,7 +492,7 @@ export function sell(db: Db, shiftId: string, input: SaleInput, actor: Actor): {
     }
     return posted.id;
   });
-  return { invoice: getInvoice(db, invoiceId), shift: getShift(db, shiftId, actor) };
+  return { invoice: getInvoice(db, invoiceId, userBranchLists(db, actor)), shift: getShift(db, shiftId, actor) };
 }
 
 /**
@@ -579,7 +602,8 @@ export const posApi: ApiExtension = {
             offline: z.object({
               reference: z.string().max(40).regex(OFFLINE_REFERENCE), soldAt: z.string().max(30).regex(ISO_INSTANT), soldOn: z.string().regex(/^\d{4}-\d{2}-\d{2}$/)
             }).optional(),
-            loyaltyPoints: z.number().int().positive().max(100_000_000).optional()
+            loyaltyPoints: z.number().int().positive().max(100_000_000).optional(),
+            tendered: amount.optional()
           }), req.body);
           const shiftId = parse(idParam, req.params).id;
           const who = actor(req);
@@ -592,7 +616,7 @@ export const posApi: ApiExtension = {
             return { id: result.invoice.id, result };
           }, (invoiceId) => {
             if (body.offline) attachOfflineReference(db, invoiceId, body.offline, who.name);
-            return { invoice: getInvoice(db, invoiceId), shift: getShift(db, shiftId, who) };
+            return { invoice: getInvoice(db, invoiceId, userBranchLists(db, who)), shift: getShift(db, shiftId, who) };
           }, { fingerprint: sameEachTime });
           reply.status(201).send(made);
           return undefined;

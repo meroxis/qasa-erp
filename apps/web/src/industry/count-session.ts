@@ -7,7 +7,7 @@ import { holdRoute } from '../router.ts';
  * moment. The server freezes each item's book quantity the first time it is counted.
  */
 
-export interface CountSessionLine { itemId: string; countedMilli: number; bookMilli: number; unitCost: number | null; countedAt: string }
+export interface CountSessionLine { itemId: string; countedMilli: number; bookMilli: number; unitCost?: number | null; countedAt: string }
 export interface CountSessionView {
   id: string; warehouseId: string; date: string; notes: string; full: boolean; status: 'open' | 'done' | 'discarded';
   adjustmentId: string | null; createdBy: string; updatedBy: string; updatedAt: string; lines: CountSessionLine[];
@@ -226,7 +226,7 @@ export function fromSession(session: CountSessionView): { counted: Map<string, n
   for (const l of session.lines) {
     counted.set(l.itemId, l.countedMilli);
     frozen.set(l.itemId, l.bookMilli);
-    if (l.unitCost !== null) costs.set(l.itemId, l.unitCost);
+    if (l.unitCost !== null && l.unitCost !== undefined) costs.set(l.itemId, l.unitCost);
   }
   return { counted, costs, frozen };
 }

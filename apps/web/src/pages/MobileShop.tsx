@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { rateFromX100, todayIso, toWesternDigits, type CurrencyCode } from '@qasa/core';
 import { api, ApiError } from '../api.ts';
-import { EmptyState, AccountCombo, AmountInput, ErrorBox, Icon, Modal, SearchCombo, useData, useLoad, useToast, type PickOption } from '../components.tsx';
+import { EmptyState, AccountCombo, AmountInput, ErrorBox, Icon, Modal, SearchCombo, useData, useLoad, useMay, useToast, type PickOption } from '../components.tsx';
 import { useI18n, type I18n, type Key } from '../i18n.ts';
 import {
   mobileApi, OPEN_REPAIR, type MobileSummary, type RepairFilter, type RepairInput, type RepairStatus, type RepairView, type SerialLookup,
@@ -113,6 +113,7 @@ export function MobileShop({ tab }: { tab: 'devices' | 'repairs' }) {
 /* ---------- devices ---------- */
 
 function Devices({ available, onChange }: { available: boolean; onChange(): void }) {
+  const can = useMay();
   const i18n = useI18n();
   const { t } = i18n;
   const toast = useToast();
@@ -159,9 +160,9 @@ function Devices({ available, onChange }: { available: boolean; onChange(): void
       </div>
 
       <div className="row">
-        {available && <button type="button" className="btn primary" onClick={() => setModal('register')}><Icon name="plus" size={16} />{t('mob_register')}</button>}
-        {available && <button type="button" className="btn" onClick={() => setModal('assign')}><Icon name="invoice" size={16} />{t('mob_assign')}</button>}
-        {available && <button type="button" className="btn" onClick={() => setModal('tradeIn')}><Icon name="swap" size={16} />{t('mob_tradeIn')}</button>}
+        {available && can('mobSerial') && <button type="button" className="btn primary" onClick={() => setModal('register')}><Icon name="plus" size={16} />{t('mob_register')}</button>}
+        {available && can('mobAssign') && <button type="button" className="btn" onClick={() => setModal('assign')}><Icon name="invoice" size={16} />{t('mob_assign')}</button>}
+        {available && can('mobTradeIn') && <button type="button" className="btn" onClick={() => setModal('tradeIn')}><Icon name="swap" size={16} />{t('mob_tradeIn')}</button>}
         <span className="spacer" />
         <input className="input" style={{ width: 240 }} type="search" placeholder={t('search')} aria-label={t('search')} value={q} onChange={(e) => setQ(e.target.value)} />
       </div>
@@ -208,7 +209,10 @@ function SerialsTable({ serials, onPick }: { serials: SerialView[]; onPick(s: Se
 
 const NEXT_STATUS: Record<SerialStatus, SerialStatus[]> = { sold: ['returned'], in_stock: ['defective'], returned: ['in_stock', 'defective'], defective: ['in_stock'] };
 
-function LookupResult({ result, onChanged }: { result: SerialLookup; onChanged(message: string): void }) {
+export function LookupResult({ result, onChanged }: { result: SerialLookup; onChanged(message: string): void }) {
+  const can = useMay();
+  // (a purchase invoice does not open for someone who may not read the books: its number is shown, not linked)
+  const { seesBooks } = useData();
   const i18n = useI18n();
   const { t } = i18n;
   const d = result.device;
@@ -250,10 +254,10 @@ function LookupResult({ result, onChanged }: { result: SerialLookup; onChanged(m
           <div className="grid-2">
             <div className="small">
               <div><span className="muted">{t('mob_cameFrom')}: </span>
-                {d.purchaseInvoice ? <a className="ltr" href={href(`invoice/${d.purchaseInvoice.id}`)}>{d.purchaseInvoice.number ?? '—'}</a> : t('mob_registeredBy', { u: d.createdBy })}
+                {d.purchaseInvoice ? (seesBooks !== false ? <a className="ltr" href={href(`invoice/${d.purchaseInvoice.id}`)}>{d.purchaseInvoice.number ?? '—'}</a> : <span className="ltr">{d.purchaseInvoice.number ?? '—'}</span>) : t('mob_registeredBy', { u: d.createdBy })}
                 {d.fromParty && <> · {t('mob_tradeInFrom', { n: d.fromParty.name })}</>}
               </div>
-              {d.cost !== null && <div><span className="muted">{t('mob_cost')}: </span><span className="num">{i18n.money(d.cost, 'IQD')}</span></div>}
+              {d.cost !== null && d.cost !== undefined && <div><span className="muted">{t('mob_cost')}: </span><span className="num">{i18n.money(d.cost, 'IQD')}</span></div>}
             </div>
             <div className="small">
               {d.saleInvoice ? (
@@ -269,7 +273,7 @@ function LookupResult({ result, onChanged }: { result: SerialLookup; onChanged(m
             </div>
           </div>
           {d.notes && <div className="small"><span className="muted">{t('notes')}: </span>{d.notes}</div>}
-          {NEXT_STATUS[d.status].length > 0 && (
+          {can('mobSerial') && NEXT_STATUS[d.status].length > 0 && (
             <div className="row">
               <span className="muted small">{t('mob_markAs')}:</span>
               {NEXT_STATUS[d.status].map((s) => (
@@ -444,7 +448,7 @@ function TradeInModal({ onClose, onDone }: { onClose(): void; onDone(): void }) 
           <label className="field"><span>{t('mob_imei')}</span><input className="input ltr num" value={serial} onChange={(e) => setSerial(e.target.value)} /></label>
           <label className="field"><span>{t('date')}</span><input className="input" type="date" value={date} onChange={(e) => setDate(e.target.value)} /></label>
           <label className="field"><span>{t('currency')}</span>
-            <select className="input" value={currency} onChange={(e) => setCurrency(e.target.value as CurrencyCode)}><option value="IQD">IQD</option><option value="USD">USD</option></select>
+            <select className="input" value={currency} onChange={(e) => setCurrency(e.target.value as CurrencyCode)}><option value="IQD">{t('iqdName')}</option><option value="USD">{t('usdName')}</option></select>
           </label>
           <label className="field"><span>{t('mob_paid')}</span><AmountInput value={price} currency={currency} onChange={setPrice} ariaLabel={t('mob_paid')} /></label>
           <div className="field"><span>{t('cashAccount')}</span><AccountCombo value={cashAccount} onChange={setCashAccount} filter={(a) => a.code.startsWith('18')} ariaLabel={t('cashAccount')} /></div>
@@ -464,6 +468,7 @@ function TradeInModal({ onClose, onDone }: { onClose(): void; onDone(): void }) 
 /* ---------- repairs ---------- */
 
 function Repairs({ available, onChange }: { available: boolean; onChange(): void }) {
+  const can = useMay();
   const i18n = useI18n();
   const { t } = i18n;
   const toast = useToast();
@@ -486,7 +491,7 @@ function Repairs({ available, onChange }: { available: boolean; onChange(): void
   return (
     <div className="stack">
       <div className="row">
-        {available && <button type="button" className="btn primary" onClick={() => setCreating(true)}><Icon name="plus" size={16} />{t('mob_newRepair')}</button>}
+        {available && can('mobRepair') && <button type="button" className="btn primary" onClick={() => setCreating(true)}><Icon name="plus" size={16} />{t('mob_newRepair')}</button>}
         <span className="spacer" />
         <input className="input" style={{ width: 240 }} type="search" placeholder={t('mob_repairSearch')} aria-label={t('search')} value={q} onChange={(e) => setQ(e.target.value)} />
       </div>
@@ -586,7 +591,7 @@ function RepairModal({ repair, onClose, onDone }: { repair?: RepairView; onClose
           <label className="field"><span>{t('mob_accessories')}</span><input className="input" value={accessories} onChange={(e) => setAccessories(e.target.value)} placeholder={t('mob_accessoriesHint')} /></label>
           <label className="field"><span>{t('mob_technician')}</span><input className="input" value={technician} onChange={(e) => setTechnician(e.target.value)} /></label>
           {!repair && <label className="field"><span>{t('currency')}</span>
-            <select className="input" value={currency} onChange={(e) => setCurrency(e.target.value as CurrencyCode)}><option value="IQD">IQD</option><option value="USD">USD</option></select>
+            <select className="input" value={currency} onChange={(e) => setCurrency(e.target.value as CurrencyCode)}><option value="IQD">{t('iqdName')}</option><option value="USD">{t('usdName')}</option></select>
           </label>}
           <label className="field"><span>{t('mob_estimate')}</span><AmountInput value={estimate} currency={currency} onChange={setEstimate} ariaLabel={t('mob_estimate')} /></label>
           <label className="field"><span>{t('mob_promised')}</span><input className="input" type="date" value={promised} onChange={(e) => setPromised(e.target.value)} /></label>

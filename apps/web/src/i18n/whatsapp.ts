@@ -5,7 +5,7 @@ export const WHATSAPP_TEXT = {
   wp_send: ['أرسل على واتساب', 'Send on WhatsApp', 'ناردن بە واتسئاپ'],
   wp_title_invoice: ['إرسال الفاتورة على واتساب', 'Send the invoice on WhatsApp', 'ناردنی پسوولەکە بە واتسئاپ'],
   wp_title_receipt: ['إرسال الوصل على واتساب', 'Send the receipt on WhatsApp', 'ناردنی وەسڵەکە بە واتسئاپ'],
-  wp_title_quote: ['إرسال عرض السعر على واتساب', 'Send the quotation on WhatsApp', 'ناردنی نرخنامەکە بە واتسئاپ'],
+  wp_title_quote: ['إرسال عرض السعر على واتساب', 'Send the quotation on WhatsApp', 'ناردنی عەرزی نرخەکە بە واتسئاپ'],
   wp_title_statement: ['إرسال كشف الحساب على واتساب', 'Send the account statement on WhatsApp', 'ناردنی کەشفی هەژمارەکە بە واتسئاپ'],
   wp_title_dayclose: ['إرسال إغلاق اليوم على واتساب', 'Send the end-of-day close on WhatsApp', 'ناردنی داخستنی ڕۆژ بە واتسئاپ'],
   wp_phone: ['رقم واتساب', 'WhatsApp number', 'ژمارەی واتسئاپ'],
@@ -44,5 +44,5 @@ export const WHATSAPP_TEXT = {
   wp_hello: ['مرحباً {name}،', 'Hello {name},', 'سڵاو {name}،'],
   wp_attached: ['الملف المرفق بصيغة PDF.', 'The PDF is attached.', 'فایلەکە بە شێوەی PDF هاوپێچ کراوە.'],
   wp_receipt: ['وصل البيع {n} بتاريخ {d}', 'Receipt {n} of {d}', 'وەسڵی فرۆشتنی {n} لە {d}'],
-  wp_paidBy: ['دُفع: {m}', 'Paid: {m}', 'دراوە: {m}']
+  wp_paidBy: ['دُفع: {m}', 'Paid: {m}', 'پارەدان: {m}']
 } as const;

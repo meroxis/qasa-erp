@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
 import { normalizeForSearch, type Names } from '@qasa/core';
 import { api, type AccountView } from '../api.ts';
-import { ErrorBox, Icon, Modal, useData, useToast } from '../components.tsx';
+import { ErrorBox, Icon, Modal, useData, useMay, useToast } from '../components.tsx';
 import { useI18n } from '../i18n.ts';
 import { href } from '../router.ts';
 
@@ -17,7 +17,11 @@ export function Accounts() {
   const i18n = useI18n();
   const { t } = i18n;
   const toast = useToast();
-  const { accounts, reloadAccounts, companyBooks } = useData();
+  const { accounts, reloadAccounts, companyBooks, seesBooks } = useData();
+  // adding, renaming and deleting an account are the company's own setup: an admin's (may.ts)
+  const mayEdit = useMay()('account');
+  // 1.4: the balances are not sent to someone who may not read the books (a cashier): no balance column
+  const balances = seesBooks !== false;
   // an account's statement is the company's books: no link for someone limited to branches
   const books = companyBooks !== false;
   const [open, setOpen] = useState<Set<string>>(() => new Set(['1', '18', '181', '183', '16']));
@@ -93,7 +97,7 @@ export function Accounts() {
       <div className="card">
         <table className="table">
           <thead>
-            <tr><th>{t('account')}</th><th>{t('nature')}</th><th className="amount">{t('balance')}</th><th style={{ width: 150 }} /></tr>
+            <tr><th>{t('account')}</th><th>{t('nature')}</th>{balances && <th className="amount">{t('balance')}</th>}<th style={{ width: 150 }} /></tr>
           </thead>
           <tbody>
             {visible.map((a) => {
@@ -116,13 +120,13 @@ export function Accounts() {
                     </div>
                   </td>
                   <td className="small">{a.nature === 'debit' ? t('debit') : t('credit')}</td>
-                  <td className="amount">{a.balance ? i18n.money(a.balance, 'IQD') : '—'}</td>
+                  {balances && <td className="amount">{a.balance ? i18n.money(a.balance, 'IQD') : '—'}</td>}
                   <td>
                     <div className="row" style={{ gap: 4, justifyContent: 'flex-end', flexWrap: 'nowrap' }}>
-                      {!(a.postable && a.hasEntries) && <button type="button" className="btn icon small" title={t('addSub')} aria-label={t('addSub') + ' ' + a.code} onClick={() => setAdding(a)}><Icon name="plus" size={15} /></button>}
-                      <button type="button" className="btn icon small" title={t('rename')} aria-label={t('rename') + ' ' + a.code} onClick={() => setRenaming(a)}><Icon name="edit" size={15} /></button>
+                      {mayEdit && !(a.postable && a.hasEntries) && <button type="button" className="btn icon small" title={t('addSub')} aria-label={t('addSub') + ' ' + a.code} onClick={() => setAdding(a)}><Icon name="plus" size={15} /></button>}
+                      {mayEdit && <button type="button" className="btn icon small" title={t('rename')} aria-label={t('rename') + ' ' + a.code} onClick={() => setRenaming(a)}><Icon name="edit" size={15} /></button>}
                       {books && <a className="btn icon small" title={t('statement')} aria-label={t('statement') + ' ' + a.code} href={href(`statement/${a.code}`)}><Icon name="doc" size={15} /></a>}
-                      {!a.system && a.postable && !a.hasEntries && <button type="button" className="btn icon small danger" title={t('actDelete')} aria-label={t('actDelete') + ' ' + a.code} onClick={() => remove(a)}><Icon name="x" size={15} /></button>}
+                      {mayEdit && !a.system && a.postable && !a.hasEntries && <button type="button" className="btn icon small danger" title={t('actDelete')} aria-label={t('actDelete') + ' ' + a.code} onClick={() => remove(a)}><Icon name="x" size={15} /></button>}
                     </div>
                   </td>
                 </tr>

@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { formatQty } from '@qasa/core';
 import { api } from '../api.ts';
-import { EmptyState, ErrorBox, Icon, downloadCsv, useLoad, usePageNav, useToast } from '../components.tsx';
+import { EmptyState, ErrorBox, Icon, downloadCsv, useData, useLoad, useMay, usePageNav, useToast } from '../components.tsx';
 import { useI18n, type I18n, type Key } from '../i18n.ts';
 import { go, href } from '../router.ts';
 import { batchesApi, type BatchReportRow, type ExpiryState } from '../industry/batches-api.ts';
@@ -34,12 +34,15 @@ export function Expiry() {
   const warehouses = useLoad(() => api.warehouses(), []);
   const report = useLoad(() => batchesApi.report({ state: tab, ...(warehouseId ? { warehouseId } : {}) }), [tab, warehouseId]);
   const rows = (report.data?.rows ?? []).filter((r) => r.qtyMilli > 0);
-  const total = rows.reduce((s, r) => s + r.value, 0);
+  // 1.4: the value of the stock is not sent to someone who may not see cost: no such column
+  const cost = useData().seesCost !== false;
+  const mayWriteOff = useMay()('writeOff');
+  const total = rows.reduce((s, r) => s + (r.value ?? 0), 0);
 
   const batchText = (r: BatchReportRow) => r.batch || t('ex_noNumber');
   const exportCsv = () => downloadCsv(`expiry-${tab}.csv`, [
-    [t('code'), t('item'), t('ex_batch'), t('ex_expiry'), t('ex_daysLeft'), t('warehouse'), t('qty'), t('stockValue')],
-    ...rows.map((r) => [r.itemCode, i18n.name(r.itemName), batchText(r), r.expiry ?? '', r.daysLeft ?? '', r.warehouseCode, formatQty(r.qtyMilli), r.value])
+    [t('code'), t('item'), t('ex_batch'), t('ex_expiry'), t('ex_daysLeft'), t('warehouse'), t('qty'), ...(cost ? [t('stockValue')] : [])],
+    ...rows.map((r) => [r.itemCode, i18n.name(r.itemName), batchText(r), r.expiry ?? '', r.daysLeft ?? '', r.warehouseCode, formatQty(r.qtyMilli), ...(cost ? [r.value ?? 0] : [])])
   ]);
 
   /** One draft write-off per warehouse, each line pinned to its batch; then the drafts are on the adjustments page. */
@@ -79,7 +82,7 @@ export function Expiry() {
         )}
         <button type="button" className="btn" onClick={exportCsv} disabled={!rows.length}><Icon name="download" size={16} />{t('exportExcel')}</button>
         <button type="button" className="btn" onClick={() => void printDocument('report')}><Icon name="printer" size={16} />{t('print')}</button>
-        {tab === 'expired' && <button type="button" className="btn danger" disabled={busy || !rows.length} onClick={() => void writeOff()}><Icon name="x" size={16} />{t('ex_writeOff')}</button>}
+        {tab === 'expired' && mayWriteOff && <button type="button" className="btn danger" disabled={busy || !rows.length} onClick={() => void writeOff()}><Icon name="x" size={16} />{t('ex_writeOff')}</button>}
       </div>
       <ErrorBox error={report.error ?? error} />
       <div className="card">
@@ -89,7 +92,7 @@ export function Expiry() {
             <thead>
               <tr>
                 <th>{t('item')}</th><th>{t('ex_batch')}</th><th>{t('ex_expiry')}</th><th className="amount">{t('ex_daysLeft')}</th>
-                <th>{t('warehouse')}</th><th className="amount">{t('qty')}</th><th className="amount">{t('stockValue')}</th>
+                <th>{t('warehouse')}</th><th className="amount">{t('qty')}</th>{cost && <th className="amount">{t('stockValue')}</th>}
               </tr>
             </thead>
             <tbody>
@@ -101,11 +104,11 @@ export function Expiry() {
                   <td className="amount num">{r.daysLeft === null ? '—' : r.daysLeft < 0 ? t('ex_daysAgo', { n: -r.daysLeft }) : i18n.int(r.daysLeft)}</td>
                   <td>{i18n.name(r.warehouseName)}</td>
                   <td className="amount">{i18n.qty(r.qtyMilli)} <span className="muted small">{unitName(i18n, r.unit)}</span></td>
-                  <td className="amount">{i18n.money(r.value, 'IQD')}</td>
+                  {cost && <td className="amount">{i18n.money(r.value ?? 0, 'IQD')}</td>}
                 </tr>
               ))}
             </tbody>
-            <tfoot><tr><td colSpan={6}>{t('total')}</td><td className="amount">{i18n.money(total, 'IQD')}</td></tr></tfoot>
+            {cost && <tfoot><tr><td colSpan={6}>{t('total')}</td><td className="amount">{i18n.money(total, 'IQD')}</td></tr></tfoot>}
           </table>
         )}
       </div>

@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { fromBaseQty, isUnit, lineAmount, rateFromX100, todayIso, toWesternDigits, type CurrencyCode } from '@qasa/core';
 import { api } from '../api.ts';
-import { EmptyState, AmountInput, ErrorBox, Icon, Modal, QtyInput, SearchCombo, useData, useLoad, usePageNav, useToast, type PickOption } from '../components.tsx';
+import { EmptyState, AmountInput, ErrorBox, Icon, Modal, QtyInput, SearchCombo, useData, useLoad, useMay, usePageNav, useToast, type PickOption } from '../components.tsx';
 import { useI18n, type I18n, type Key } from '../i18n.ts';
 import {
   PO_STATUSES, purchasingApi, type PoInput, type PoMove, type PoStatus, type PoSummaryView, type PoView, type ReorderGroup
@@ -49,6 +49,7 @@ let prefill: { currency: CurrencyCode; lines: { itemId: string; qtyMilli: number
 /* ---------- the list ---------- */
 
 export function PurchaseOrders() {
+  const mayOrder = useMay()('purchaseOrder');
   const i18n = useI18n();
   const { t } = i18n;
   usePageNav({ key: 'po_title', group: 'gPurchases' });
@@ -75,7 +76,7 @@ export function PurchaseOrders() {
           <button type="button" role="tab" aria-selected={tab === 'suggest'} aria-pressed={tab === 'suggest'} onClick={() => setTab('suggest')}>{t('po_tabSuggest')}</button>
         </div>
         <span className="spacer" />
-        <a className="btn primary" href={href('new-purchase-order')}><Icon name="plus" size={16} />{t('po_new')}</a>
+        {mayOrder && <a className="btn primary" href={href('new-purchase-order')}><Icon name="plus" size={16} />{t('po_new')}</a>}
       </div>
       {tab === 'orders' ? (
         <>
@@ -102,10 +103,12 @@ function OrdersTable({ orders }: { orders: PoSummaryView[] }) {
   const i18n = useI18n();
   const { t } = i18n;
   if (!orders.length) return <EmptyState icon="cart" title={t('po_none')} text={t('po_noneText')} />;
+  // 1.4: orders reach someone who may not read the books without their prices: no total column then
+  const priced = orders.some((x) => x.total !== undefined);
   return (
     <table className="table">
       <thead>
-        <tr><th>{t('number')}</th><th>{t('supplier')}</th><th>{t('po_expected')}</th><th className="amount">{t('total')}</th><th /></tr>
+        <tr><th>{t('number')}</th><th>{t('supplier')}</th><th>{t('po_expected')}</th>{priced && <th className="amount">{t('total')}</th>}<th /></tr>
       </thead>
       <tbody>
         {orders.map((x) => (
@@ -113,7 +116,7 @@ function OrdersTable({ orders }: { orders: PoSummaryView[] }) {
             <td><a className="ltr num" href={href(`purchase-order/${x.id}`)} onClick={(e) => e.stopPropagation()}>{x.number}</a><div className="muted small num">{i18n.date(x.date)}</div></td>
             <td>{x.partyName}</td>
             <td className="num">{x.expectedDate ? i18n.date(x.expectedDate) : '—'}</td>
-            <td className="amount">{i18n.money(x.total, x.currency)}</td>
+            {priced && <td className="amount">{i18n.money(x.total, x.currency)}</td>}
             <td><PoChip status={x.status} overdue={x.overdue} /></td>
           </tr>
         ))}
@@ -127,6 +130,7 @@ function Suggestions() {
   const { t } = i18n;
   const toast = useToast();
   const { data, error } = useLoad(() => purchasingApi.suggest(), []);
+  const mayOrder = useMay()('purchaseOrder');
   const [busy, setBusy] = useState(false);
   const [actError, setActError] = useState<unknown>(null);
 
@@ -162,12 +166,12 @@ function Suggestions() {
             <h3 style={{ margin: 0 }}>{g.party ? g.party.name : t('po_unknownSupplier')}</h3>
             <span className="chip">{g.currency}</span>
             <span className="spacer" />
-            <button type="button" className="btn small primary" disabled={busy} onClick={() => void make(g)}><Icon name="cart" size={15} />{t('po_makeOrder')}</button>
+            {mayOrder && <button type="button" className="btn small primary" disabled={busy} onClick={() => void make(g)}><Icon name="cart" size={15} />{t('po_makeOrder')}</button>}
           </div>
           <div className="table-wrap">
             <table className="table">
               <thead>
-                <tr><th>{t('item')}</th><th className="amount">{t('po_onHand')}</th><th className="amount">{t('po_reorderAt')}</th><th className="amount">{t('po_onOrder')}</th><th className="amount">{t('po_suggestQty')}</th><th className="amount">{t('po_lastPrice')}</th></tr>
+                <tr><th>{t('item')}</th><th className="amount">{t('po_onHand')}</th><th className="amount">{t('po_reorderAt')}</th><th className="amount">{t('po_onOrder')}</th><th className="amount">{t('po_suggestQty')}</th>{g.lines.some((l) => l.lastPrice !== undefined) && <th className="amount">{t('po_lastPrice')}</th>}</tr>
               </thead>
               <tbody>
                 {g.lines.map((l) => (
@@ -177,7 +181,7 @@ function Suggestions() {
                     <td className="amount">{l.reorderMilli === null ? '—' : i18n.qty(l.reorderMilli)}</td>
                     <td className="amount">{l.onOrderMilli ? i18n.qty(l.onOrderMilli) : '—'}</td>
                     <td className="amount"><strong>{i18n.qty(l.suggestMilli)}</strong></td>
-                    <td className="amount">{l.lastPrice === null ? '—' : i18n.money(l.lastPrice, g.currency)}</td>
+                    {l.lastPrice !== undefined && <td className="amount">{l.lastPrice === null ? '—' : i18n.money(l.lastPrice, g.currency)}</td>}
                   </tr>
                 ))}
               </tbody>
@@ -276,7 +280,7 @@ export function PurchaseOrderEditor({ id }: { id?: string }) {
         <div className="field"><span>{t('supplier')}</span><PartyPicker type="supplier" value={form.partyId} options={suppliers} onChange={(v) => set('partyId', v)} onCreated={() => suppliersLoad.reload()} placeholder={t('po_pickSupplier')} ariaLabel={t('supplier')} /></div>
         <label className="field"><span>{t('currency')}</span>
           <select className="input" value={form.currency} onChange={(e) => changeCurrency(e.target.value as CurrencyCode)}>
-            <option value="IQD">IQD</option><option value="USD">USD</option>
+            <option value="IQD">{t('iqdName')}</option><option value="USD">{t('usdName')}</option>
           </select>
         </label>
         <label className="field"><span>{t('date')}</span><input className="input num" type="date" value={form.date} onChange={(e) => set('date', e.target.value)} /></label>
@@ -345,6 +349,7 @@ export function PurchaseOrderDetail({ id }: { id: string }) {
   const { t } = i18n;
   const toast = useToast();
   const { settings } = useData();
+  const mayOrder = useMay()('purchaseOrder');
   usePageNav({ key: 'po_title', group: 'gPurchases' });
   const { data: x, error, reload } = useLoad(() => purchasingApi.get(id), [id]);
   const [modal, setModal] = useState<'receive' | 'cancel' | null>(null);
@@ -354,7 +359,7 @@ export function PurchaseOrderDetail({ id }: { id: string }) {
   if (error) return <ErrorBox error={error} />;
   if (!x) return null;
   const company = settings ? i18n.name(settings.companyName) : '';
-  const can = (a: string) => x.actions.includes(a as never);
+  const can = (a: string) => mayOrder && x.actions.includes(a as never);
   const pending = x.receipts.find((r) => r.status === 'draft');
 
   async function move(action: PoMove) {
@@ -396,7 +401,7 @@ export function PurchaseOrderDetail({ id }: { id: string }) {
                 <tr key={r.invoiceId} className="click" onClick={() => go(`invoice/${r.invoiceId}`)}>
                   <td><a className="ltr num" href={href(`invoice/${r.invoiceId}`)} onClick={(e) => e.stopPropagation()}>{r.number ?? t('po_draftInvoice')}</a></td>
                   <td className="num">{i18n.date(r.date)}</td>
-                  <td className="amount">{i18n.money(r.total, x.currency)}</td>
+                  {x.total !== undefined && <td className="amount">{i18n.money(r.total, x.currency)}</td>}
                   <td><span className={'chip ' + (r.status === 'posted' ? 'ok' : r.status === 'cancelled' ? 'bad' : '')}>{t(r.status === 'posted' ? 'po_st_received' : r.status === 'cancelled' ? 'po_st_cancelled' : 'po_st_draft')}</span></td>
                 </tr>
               ))}
@@ -450,7 +455,7 @@ function Paper({ order: x, company }: { order: PoView; company: string }) {
               <th style={{ width: 36 }}>#</th><th>{t('item')}</th>
               <th className="amount" style={{ width: 100 }}>{t('po_ordered')}</th>
               {showProgress && <><th className="amount no-print" style={{ width: 100 }}>{t('po_received')}</th><th className="amount no-print" style={{ width: 100 }}>{t('po_remaining')}</th></>}
-              <th className="amount" style={{ width: 150 }}>{t('unitPrice')}</th><th className="amount">{t('amount')}</th>
+              {x.total !== undefined && <><th className="amount" style={{ width: 150 }}>{t('unitPrice')}</th><th className="amount">{t('amount')}</th></>}
             </tr>
           </thead>
           <tbody>
@@ -463,8 +468,8 @@ function Paper({ order: x, company }: { order: PoView; company: string }) {
                   <td className="amount no-print">{poQtyText(i18n, l, l.receivedMilli)}</td>
                   <td className="amount no-print" style={l.remainingMilli ? { color: 'var(--warn)' } : undefined}>{poQtyText(i18n, l, l.remainingMilli)}</td>
                 </>}
-                <td className="amount">{i18n.money(l.unitPrice, x.currency)}</td>
-                <td className="amount">{i18n.money(l.amount, x.currency)}</td>
+                {x.total !== undefined && <><td className="amount">{i18n.money(l.unitPrice, x.currency)}</td>
+                <td className="amount">{i18n.money(l.amount, x.currency)}</td></>}
               </tr>
             ))}
           </tbody>
@@ -472,7 +477,7 @@ function Paper({ order: x, company }: { order: PoView; company: string }) {
       </div>
       <div className="row" style={{ padding: '10px 0' }}>
         <span className="spacer" />
-        <div className="totals"><span>{t('total')}</span><strong className="num" style={{ fontSize: 18 }}>{i18n.money(x.total, x.currency)}</strong></div>
+        {x.total !== undefined && <div className="totals"><span>{t('total')}</span><strong className="num" style={{ fontSize: 18 }}>{i18n.money(x.total, x.currency)}</strong></div>}
       </div>
       {x.notes && <p className="small" style={{ whiteSpace: 'pre-line' }}><span className="muted">{t('notes')}: </span>{x.notes}</p>}
       <div className="sigs" style={{ gridTemplateColumns: 'repeat(2, minmax(0, 1fr))' }}>

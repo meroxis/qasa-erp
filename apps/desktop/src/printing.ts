@@ -10,10 +10,21 @@ import {
   checkPrinterChoice, choiceForPrint, devicePrintOptions, isLabelLayout, isPrintKind, isPrinterName, readPrinterChoices,
   type LabelLayout, type PrinterChoice, type PrinterChoices, type PrinterEntry, type PrintOutcome
 } from '@qasa/core';
+import { guessPrinter, type PrinterGuess, type PrinterState, type WindowsPrinter } from './printer-info.ts';
+
+/**
+ * 1.4: a printer as Settings → Printers shows it: Windows' default or not, ready or offline (when Windows says), and
+ * what it looks like, as a suggestion.
+ */
+export interface PrinterDetails extends PrinterEntry {
+  isDefault: boolean;
+  state: PrinterState;
+  guess: PrinterGuess;
+}
 
 /** What printing needs of the app window's webContents (a stand-in in the tests). */
 export interface PrintTarget {
-  getPrintersAsync(): Promise<{ name: string; displayName?: string }[]>;
+  getPrintersAsync(): Promise<{ name: string; displayName?: string; description?: string }[]>;
   print(options: object, callback: (success: boolean, failureReason: string) => void): void;
 }
 
@@ -35,6 +46,11 @@ export interface PrintingDeps {
   silentGapMs?: number;
   /** The time now, in milliseconds (a stand-in in the tests). */
   now?: () => number;
+  /**
+   * 1.4: what Windows says about its printers (printer-info.ts): the default one and each one's state. `fresh` asks
+   * again instead of using the answer of a moment ago. Missing or failing: no default and no state are known.
+   */
+  windows?: (fresh?: boolean) => Promise<WindowsPrinter[]>;
 }
 
 /** The events of the app window's webContents that end a print: its page is gone (closed, crashed) or another loads. */
@@ -108,12 +124,45 @@ export function printingHandlers(deps: PrintingDeps) {
     return out;
   }
 
+  /** What Windows says about its printers; nothing when it can't be asked. */
+  async function windows(fresh = false): Promise<WindowsPrinter[]> {
+    if (!deps.windows) return [];
+    try {
+      const list = await deps.windows(fresh);
+      return Array.isArray(list) ? list : [];
+    } catch (error) {
+      deps.log('could not ask Windows about its printers:', error);
+      return [];
+    }
+  }
+
+  /** Windows' default printer when it is one of `names` (the printers the app can print to) and prints on paper, else null. */
+  async function defaultAmong(names: readonly string[]): Promise<string | null> {
+    const found = (await windows()).find((w) => w.isDefault && names.includes(w.name));
+    if (!found) return null;
+    // a PDF, XPS or fax "printer" is never a stand-in for a real one: the print window opens instead
+    if (guessPrinter({ name: found.name, driver: found.driver, papers: found.papers }) === 'file') return null;
+    return found.name;
+  }
+
   return {
-    /** The printers Windows lists now; null when the call isn't the app's page. */
-    async list(event: { sender: unknown }): Promise<PrinterEntry[] | null> {
+    /**
+     * The printers Windows lists now, each with its default mark, its state and what it looks like; null when the call
+     * isn't the app's page. `fresh` (the Refresh button, exactly true) asks Windows again.
+     */
+    async list(event: { sender: unknown }, fresh?: unknown): Promise<PrinterDetails[] | null> {
       if (!allowed(event)) return null;
       try {
-        return await printers(deps.target()!);
+        const target = deps.target()!;
+        const [list, known, raw] = await Promise.all([printers(target), windows(fresh === true), target.getPrintersAsync().catch(() => [])]);
+        return list.map((p) => {
+          const w = known.find((k) => k.name === p.name);
+          const described = (Array.isArray(raw) ? raw : []).find((r) => r && r.name === p.name)?.description;
+          return {
+            ...p, isDefault: !!w?.isDefault, state: w?.state ?? 'unknown',
+            guess: guessPrinter({ name: p.name, displayName: p.displayName, description: typeof described === 'string' ? described.slice(0, 200) : '', driver: w?.driver ?? '', papers: w?.papers ?? [] })
+          };
+        });
       } catch (error) {
         deps.log('could not list the printers:', error);
         return [];
@@ -181,9 +230,19 @@ export function printingHandlers(deps: PrintingDeps) {
         }
         if (names.length === 0) return { status: 'noPrinters' };
         // the printer must still be one Windows lists, and every value is checked again before it reaches the driver
-        const choice = checkPrinterChoice(saved, names);
-        if (!choice || choice.printer === null) return { status: 'missing', printer: saved.printer };
-        const options = devicePrintOptions({ ...choiceForPrint(kind, choice, layout as LabelLayout | undefined), printer: choice.printer });
+        let choice = checkPrinterChoice(saved, names);
+        let fallback: { from: string; to: string } | null = null;
+        if (!choice || choice.printer === null) {
+          // 1.4: the saved printer is gone: the paper goes to Windows' default printer instead, and the page says so.
+          // Without a known default (or when the default is the one that is gone), the print window opens as before.
+          const usual = await defaultAmong(names);
+          const moved = usual ? checkPrinterChoice({ ...saved, printer: usual }, names) : null;
+          if (!usual || !moved || moved.printer === null) return { status: 'missing', printer: saved.printer };
+          deps.log(`printing (${kind}): the saved printer is gone; using the Windows default printer`);
+          fallback = { from: saved.printer, to: usual };
+          choice = moved;
+        }
+        const options = devicePrintOptions({ ...choiceForPrint(kind, choice, layout as LabelLayout | undefined), printer: choice.printer as string });
         sentSilently = options.silent;
         let unwatch = () => {};
         const outcome = await new Promise<PrintOutcome>((resolve) => {
@@ -211,6 +270,8 @@ export function printingHandlers(deps: PrintingDeps) {
           }
         });
         unwatch();
+        // printed on the default printer instead of the saved one: the answer names both
+        if (fallback && outcome.status === 'printed') return { ...outcome, fallback } as PrintOutcome;
         return outcome;
       } finally {
         if (sentSilently) lastSilent = now();

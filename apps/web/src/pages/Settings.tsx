@@ -1,11 +1,12 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { formatAmount, htmlLang, MONTHS, rateFromX100, todayIso, toWesternDigits, type DigitStyle, type Lang, type Names, type PostingAccounts } from '@qasa/core';
 import {
   api, ApiError, currentUser, request, setCurrentUser, type BackupStatus, type DatabaseCheck, type DatabaseInput, type DatabaseStatus, type NetworkStatus, type YearEndStatus
 } from '../api.ts';
-import { AccountCombo, ErrorBox, Icon, LANGUAGE_NAMES, Modal, downloadCsv, useData, useDisplay, useLoad, useToast, type Density, type Theme } from '../components.tsx';
+import { AccountCombo, ErrorBox, Icon, LANGUAGE_NAMES, Modal, downloadCsv, useBuildHas, useData, useDisplay, useLoad, useToast, type Density, type Theme } from '../components.tsx';
 import { ChoiceTiles, type Choice } from '../ChoiceTiles.tsx';
 import { isKey, useI18n, type Key } from '../i18n.ts';
+import { auditAction, auditEntity, auditRef } from '../industry/audit-words.ts';
 import { href } from '../router.ts';
 import { encodeQr, qrSvgPath } from '../industry/qr.ts';
 import { UsageCard } from '../industry/UsageCard.tsx';
@@ -22,8 +23,9 @@ import { canSwitchCompanies } from '../industry/companies-api.ts';
 import { cloudChoices } from './cloud-providers.ts';
 import { backupFailureKey, backupNoticeKey } from '../industry/BackupNotice.tsx';
 import { batchesApi, type BatchSettingsView } from '../industry/batches-api.ts';
-import { posApi, type PosAccounts } from '../industry/pos-api.ts';
 import { LoyaltySettingsCard } from '../industry/Loyalty.tsx';
+import { CloseAskSetting } from '../industry/CloseAsk.tsx';
+import { dataPlaceLine, inWindowsApp, officeText, useDataPlace, type DataPlace } from '../industry/data-place.ts';
 
 /** One section of Settings: its address (#/settings/<id>), icon, name and the line under the name. */
 export interface SettingsSection {
@@ -47,7 +49,7 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
   { id: 'display', icon: 'globe', name: 'displayTitle', help: 'ss_displayHelp' },
   { id: 'company', icon: 'building', name: 'company', help: 'ss_companyHelp', admin: true },
   { id: 'periods', icon: 'cal', name: 'ss_periods', help: 'ss_periodsHelp', admin: true },
-  { id: 'sales', icon: 'cart', name: 'ss_sales', help: 'ss_salesHelp', admin: true },
+  { id: 'sales', icon: 'cart', name: 'ss_sales', help: 's14_salesSectionHelp', admin: true },
   { id: 'loyalty', icon: 'star', name: 'ly_title', help: 'ss_loyaltyHelp', admin: true },
   { id: 'printers', icon: 'printer', name: 'prn_title', help: 'ss_printersHelp' },
   { id: 'backups', icon: 'upload', name: 'bkTitle', help: 'ss_backupsHelp', admin: true },
@@ -107,13 +109,104 @@ export function SettingsGrid({ admin }: { admin: boolean }) {
 /** #/settings/<id>: that one section alone, under the way back to the grid ("‹ Settings") and the section's name. */
 export function SettingsSectionPage({ section, admin }: { section: SettingsSection; admin: boolean }) {
   const { t } = useI18n();
+  const name = t(section.name);
+  // 1.4: the section's name is on top; a card inside that starts with the same name would say it twice. Such a
+  // heading stays for screen readers (cards are labelled by it) and is not drawn. Cards may arrive after the page
+  // (they load their own data), so the section is watched while it is open.
+  const box = useRef<HTMLElement>(null);
+  useEffect(() => {
+    const root = box.current;
+    if (!root) return;
+    const mark = () => markRepeatedHeadings(root, name);
+    mark();
+    if (typeof MutationObserver !== 'function') return;
+    const watch = new MutationObserver(mark);
+    watch.observe(root, { childList: true, subtree: true, characterData: true });
+    return () => watch.disconnect();
+  }, [name, section.id]);
   return (
-    <section className="settings-section stack" data-section={section.id} aria-labelledby="settings-section-title">
+    <section ref={box} className="settings-section stack" data-section={section.id} aria-labelledby="settings-section-title">
       <a className="settings-back" href={href('settings')}><Icon name="chevron" size={16} className="settings-back-icon" />{t('settings')}</a>
       <h2 id="settings-section-title" className="settings-section-title">{t(section.name)}</h2>
       <SettingsSectionContent id={section.id} admin={admin} />
     </section>
   );
+}
+
+/**
+ * Marks the headings inside an open section that only repeat its name (the "Printers" card under "Printers"), and
+ * unmarks any that no longer do (another language). The section's own title is never one of them.
+ */
+export function markRepeatedHeadings(root: ParentNode, name: string): void {
+  const same = (text: string | null) => (text ?? '').replace(/\s+/g, ' ').trim() === name.replace(/\s+/g, ' ').trim();
+  for (const h of root.querySelectorAll('h2:not(.settings-section-title)')) {
+    const repeated = same(h.textContent);
+    if (repeated !== h.classList.contains('settings-repeat-title')) h.classList.toggle('settings-repeat-title', repeated);
+  }
+}
+
+/** Settings → About: where the company's data is (this PC, or the office PC this one is connected to). */
+export function DataPlaceCard({ place }: { place: DataPlace | null }) {
+  const { t } = useI18n();
+  if (!place) return null;
+  return (
+    <div className="card pad row" data-place={place.kind} style={{ flexWrap: 'wrap' }}>
+      <Icon name={place.kind === 'office' ? 'branch' : 'building'} size={18} />
+      <div className="stack" style={{ gap: 2, flex: 1, minWidth: 220 }}>
+        <strong>{t('s14_whereData')}</strong>
+        <span className="muted small">{dataPlaceLine(t, place)}</span>
+      </div>
+    </div>
+  );
+}
+
+function AboutDataPlace() {
+  const place = useDataPlace();
+  // the website demo keeps its data in the browser, and its status line says so
+  return import.meta.env.MODE === 'demo' ? null : <DataPlaceCard place={place} />;
+}
+
+/**
+ * 1.4: Settings → Backups on a PC connected to an office PC. The books are not here, so nothing here may read as if a
+ * copy of this PC protected them: it says where the data and its backups are, and offers no backup buttons.
+ */
+export function ClientBackupCard({ place }: { place: DataPlace }) {
+  const { t } = useI18n();
+  return (
+    <div className="card pad stack" data-client-backups>
+      <div className="card-head"><h2>{t('bkTitle')}</h2><GuideLink slug="backups-restore-and-companies" /></div>
+      <div className="alert info" role="status">{officeText(t, place, 's14_bkClient')}</div>
+    </div>
+  );
+}
+
+/**
+ * 1.4: Settings → Office network on a PC connected to an office PC: it is a client, and says of which PC. In a browser
+ * (or a phone's) on the office network there is no File menu and no company file of its own: it says only whose file it
+ * works on.
+ */
+export function ClientNetworkCard({ place, browser = !inWindowsApp() }: { place: DataPlace; browser?: boolean }) {
+  const { t } = useI18n();
+  return (
+    <div className="card pad stack" data-client-network>
+      <div className="card-head"><h2>{t('netTitle')}</h2><GuideLink slug="office-network-and-qasa-relay" /></div>
+      <div className="alert info" role="status">{officeText(t, place, browser ? 's14_netBrowser' : 's14_netClient')}</div>
+      <p className="muted small" style={{ margin: 0 }}>{t('s14_netClientSettings')}</p>
+    </div>
+  );
+}
+
+/** Backups: this PC's own (the books are here), or the word that they are on the office PC. Nothing until that is known. */
+function BackupCard() {
+  const place = useDataPlace();
+  if (!place) return null;
+  return place.kind === 'office' ? <ClientBackupCard place={place} /> : <ThisPcBackupCard />;
+}
+
+function NetworkSection() {
+  const place = useDataPlace();
+  if (!place) return null;
+  return place.kind === 'office' ? <ClientNetworkCard place={place} /> : <><OfficeNetworkCard /><PhonesCard /><DatabaseCard /></>;
 }
 
 /** What each section holds: the same cards as before, only grouped. */
@@ -124,7 +217,7 @@ function SettingsSectionContent({ id, admin }: { id: string; admin: boolean }) {
     case 'periods':
       return <PeriodsSettings />;
     case 'sales':
-      return <><PosAccountsCard /><ExpirySettingsCard /></>;
+      return <ExpirySettingsCard />;
     case 'loyalty':
       return <LoyaltySettingsCard />;
     case 'printers':
@@ -132,7 +225,7 @@ function SettingsSectionContent({ id, admin }: { id: string; admin: boolean }) {
     case 'backups':
       return <BackupCard />;
     case 'network':
-      return <><OfficeNetworkCard /><PhonesCard /><DatabaseCard /></>;
+      return <NetworkSection />;
     case 'companies':
       return <><CompaniesSetting /><StartOverCard /></>;
     case 'usage':
@@ -140,7 +233,7 @@ function SettingsSectionContent({ id, admin }: { id: string; admin: boolean }) {
     case 'updates':
       return <UpdateSettings />;
     case 'about':
-      return <><HelpPanel /><LegalPanel /></>;
+      return <><AboutDataPlace /><HelpPanel /><LegalPanel /></>;
     default:
       return <DisplaySettings />;
   }
@@ -301,8 +394,7 @@ function PeriodsSettings() {
   }
 
   const lockedSet = new Set((periods.data ?? []).map((p) => p.period));
-  const actionLabel = (a: string) => (isKey('a_' + a) ? t(('a_' + a) as 'a_create') : a);
-  const entityLabel = (e: string) => (isKey('e_' + e) ? t(('e_' + e) as 'e_entry') : e);
+
 
   return (
     <>
@@ -339,7 +431,11 @@ function PeriodsSettings() {
               <tr key={r.id}>
                 <td className="num small">{i18n.dateTime(r.at)}</td>
                 <td>{r.user}</td>
-                <td>{actionLabel(r.action)} · {entityLabel(r.entity)} {r.entityId && <span className="muted small ltr">{r.entityId.length > 12 ? r.entityId.slice(0, 8) : r.entityId}</span>}</td>
+                {/* in the reader's words: the server's own ("serials", "voucher") are never shown (audit-words.ts) */}
+                <td>{auditAction(i18n, r.action)} · {auditEntity(i18n, r.entity)} {(() => {
+                  const ref = auditRef(i18n, r.entity, r.entityId);
+                  return ref && <span className={ref.plain ? 'muted small' : 'muted small ltr'}>{ref.text}</span>;
+                })()}</td>
               </tr>
             ))}
           </tbody>
@@ -358,12 +454,15 @@ function OfficeNetworkCard() {
   const [error, setError] = useState<unknown>(null);
   const [busy, setBusy] = useState(false);
 
+  // a build without the module has no office network: not asked for, the card says so at once
+  const served = useBuildHas('network');
   useEffect(() => {
+    if (!served) { setAbsent(true); return; }
     api.network().then(setStatus, (e) => {
       if (e instanceof ApiError && e.status === 404) setAbsent(true);
       else setError(e);
     });
-  }, []);
+  }, [served]);
 
   async function toggle(on: boolean) {
     setBusy(true);
@@ -525,11 +624,13 @@ function DatabaseCard() {
   /** the self-signed certificate's fingerprint the admin confirmed; it goes with every later check and the move */
   const [confirmed, setConfirmed] = useState<string | null>(null);
 
+  const served = useBuildHas('database');
   useEffect(() => {
+    if (!served) return;
     api.database().then(setStatus, (e) => {
       if (!(e instanceof ApiError && e.status === 404)) setError(e);
     });
-  }, []);
+  }, [served]);
 
   // any change to the form means the server has to be checked again
   function change(patch: Partial<typeof form>) {
@@ -801,7 +902,7 @@ export function BackupCopyRow({ copy, when, size, disabled, onRestore }: {
 }
 
 /** A daily copy of the company file in a chosen folder, and restoring one (the Pro module; absent without it). */
-function BackupCard() {
+function ThisPcBackupCard() {
   const { t, digitsOf, dateTime } = useI18n();
   const toast = useToast();
   const [status, setStatus] = useState<BackupStatus | null>(null);
@@ -810,12 +911,15 @@ function BackupCard() {
   const [busy, setBusy] = useState(false);
   const [restarting, setRestarting] = useState(false);
 
+  // a build without the module makes no daily copies: not asked for, the card says so at once
+  const served = useBuildHas('backup');
   useEffect(() => {
+    if (!served) { setAbsent(true); return; }
     api.backup().then(setStatus, (e) => {
       if (e instanceof ApiError && e.status === 404) setAbsent(true);
       else setError(e);
     });
-  }, []);
+  }, [served]);
 
   async function act(work: () => Promise<BackupStatus>, done?: string) {
     setBusy(true);
@@ -891,7 +995,8 @@ function BackupCard() {
         {status?.available && <span className={'chip ' + (status.on ? 'ok' : '')}>{status.on ? t('switchedOn') : t('switchedOff')}</span>}
       </div>
       <p className="muted" style={{ margin: 0 }}>{t('bkHelp')}</p>
-      {absent && <div className="alert">{t('bkOfficial')} {t('bkManual')}</div>}
+      {absent && <div className="alert">{t('bkOfficial')} {t(inWindowsApp() ? 'bkManual' : 'bkManualBrowser')}</div>}
+      {absent && <CloseAskSetting />}
       {restarting && <div className="alert ok" role="status">{t('bkRestarting')}</div>}
       {status && (
         <>
@@ -956,6 +1061,8 @@ function BackupCard() {
               {status.closeError && <div className="alert bad" role="alert">{t('bc_failed', { e: status.closeError })}</div>}
             </div>
           )}
+          {/* 1.4: "Back up before closing?" when the books changed and no backup was made since (the Windows app asks) */}
+          <CloseAskSetting />
           <ErrorBox error={error} />
           <div className="row" style={{ gap: 8, flexWrap: 'wrap' }}>
             {/* every plan, Free included: only the automatic daily copies need the plan */}
@@ -1194,42 +1301,6 @@ const POSTING_FIELDS: { key: keyof PostingAccounts; root: string }[] = [
 ];
 
 /** Which accounts invoices post to (sales 42, cost of sales 35, customers 1611 …). */
-/** The accounts card, FIB, ZainCash and Qi payments at the counter go into (an admin's setting). */
-function PosAccountsCard() {
-  const { t } = useI18n();
-  const toast = useToast();
-  const [accounts, setAccounts] = useState<PosAccounts | null>(null);
-  const [error, setError] = useState<unknown>(null);
-  useEffect(() => { posApi.paymentAccounts().then((r) => setAccounts(r.accounts), setError); }, []);
-  if (!accounts) return error ? <ErrorBox error={error} /> : null;
-  async function save() {
-    if (!accounts) return;
-    setError(null);
-    try {
-      setAccounts((await posApi.setPaymentAccounts(accounts)).accounts);
-      toast(t('saved'));
-    } catch (e) {
-      setError(e);
-    }
-  }
-  return (
-    <div className="card pad stack">
-      <h2>{t('pos_payAccounts')}</h2>
-      <div className="muted small">{t('pos_payAccountsHelp')}</div>
-      <div className="grid-3">
-        {(['card', 'fib', 'zaincash', 'qi'] as const).map((m) => (
-          <label key={m} className="field">
-            <span>{t(`pay_${m}`)}</span>
-            <AccountCombo value={accounts[m] ?? ''} onChange={(v) => setAccounts({ ...accounts, [m]: v })} filter={(a) => a.code.startsWith('18')} ariaLabel={t(`pay_${m}`)} />
-          </label>
-        ))}
-      </div>
-      <ErrorBox error={error} />
-      <div className="row"><button type="button" className="btn primary" onClick={() => void save()}><Icon name="check" size={16} />{t('save')}</button></div>
-    </div>
-  );
-}
-
 /** Settings → Stock: how many days before expiry to warn, whether expired stock may be sold, and new items' default. */
 function ExpirySettingsCard() {
   const { t } = useI18n();
@@ -1351,7 +1422,8 @@ export function PhonesCard({ ready = PHONE_APP_READY }: { ready?: boolean }) {
     if (e instanceof ApiError && e.status === 404) setAbsent(true);
     else setError(e);
   });
-  useEffect(() => { void load(); }, []);
+  const served = useBuildHas('phones');
+  useEffect(() => { if (served) void load(); else setAbsent(true); }, [served]); // eslint-disable-line react-hooks/exhaustive-deps
   // while a QR code is shown, watch for the phone to arrive (and drop the code when it runs out)
   useEffect(() => {
     if (!pairing) return;

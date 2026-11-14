@@ -1,7 +1,8 @@
 import { useState } from 'react';
 import { amountInWords, rateFromX100, todayIso } from '@qasa/core';
-import { api, type EntryView } from '../api.ts';
-import { ErrorBox, Icon, Modal, StatusChip, typeName, useData, useLoad, useToast } from '../components.tsx';
+import { api, ApiError, type EntryView } from '../api.ts';
+import { ErrorBox, Icon, Modal, typeName, useData, useLoad, useToast } from '../components.tsx';
+import { ApprovalButtons, ApprovalNote, OwnVoucherButtons, VoucherStateChip } from '../industry/VoucherApproval.tsx';
 import { useI18n } from '../i18n.ts';
 import { go, href } from '../router.ts';
 import { DesignedPrint } from '../industry/PrintDocument.tsx';
@@ -19,13 +20,26 @@ export function EntryDetail({ id }: { id: string }) {
   const i18n = useI18n();
   const { t } = i18n;
   const toast = useToast();
-  const { settings, reloadAccounts } = useData();
+  const { settings, reloadAccounts, seesBooks } = useData();
+  // 1.4: someone who does not keep the books opens the vouchers they prepared; any other entry is not sent to them
+  const own = seesBooks === false;
   const { data, error, reload } = useLoad(() => api.entry(id), [id]);
   const [busy, setBusy] = useState(false);
   const [actionError, setActionError] = useState<unknown>(null);
   const [reversing, setReversing] = useState(false);
   const [reverseDate, setReverseDate] = useState(todayIso());
 
+  if (own && error instanceof ApiError && error.status === 403) {
+    return (
+      <div className="stack" style={{ maxWidth: 980 }}>
+        <div className="alert info">{t('s14_notYours')}</div>
+        <div className="row">
+          <button type="button" className="btn" onClick={() => history.back()}>{t('back')}</button>
+          <a className="btn" href={href('entries')}>{t('s14_myVouchers')}</a>
+        </div>
+      </div>
+    );
+  }
   if (error) return <ErrorBox error={error} />;
   if (!data) return null;
   const e: EntryView = data;
@@ -92,10 +106,15 @@ export function EntryDetail({ id }: { id: string }) {
         {e.actions.includes('return') && <button type="button" className="btn" disabled={busy} onClick={() => run(() => api.entryAction(id, 'return'), t('a_return'))}>{t('actReturn')}</button>}
         {e.actions.includes('check') && <button type="button" className="btn primary" disabled={busy} onClick={() => run(() => api.entryAction(id, 'check'), t('a_check'))}><Icon name="check" size={16} />{t('actCheck')}</button>}
         {e.actions.includes('approve') && <button type="button" className="btn primary" disabled={busy} onClick={() => run(() => api.entryAction(id, 'approve'), t('a_approve'))}><Icon name="check" size={16} />{t('actApprove')}</button>}
+        {/* 1.4: a voucher that waits for approval, for whoever may approve vouchers */}
+        {e.actions.includes('approve_waiting') && <ApprovalButtons id={id} onDone={reload} />}
+        {/* 1.4: its preparer, without the vouchers screen, takes back a voucher that is not posted, or corrects it and sends it again */}
+        <OwnVoucherButtons entry={e} onError={setActionError} onWithdrawn={() => go('entries')} onSentAgain={(made) => go(`entry/${made.id}`)} />
         {e.actions.includes('reverse') && <button type="button" className="btn danger" disabled={busy} onClick={() => { setReverseDate(reverseDefaultDate(e.date)); setReversing(true); }}><Icon name="undo" size={16} />{t('actReverse')}</button>}
         <button type="button" className="btn" onClick={() => void printDocument('voucher')}><Icon name="printer" size={16} />{t('print')}</button>
       </div>
       <ErrorBox error={actionError} />
+      <ApprovalNote entry={e} />
       {e.status === 'approved' && <div className="alert info no-print">{e.invoiceId ? t('fromInvoiceNote') : e.stockDocId ? t('fromStockDocNote') : t('postedNote')}</div>}
 
       <DesignedPrint model={entryModel(e)} />
@@ -104,7 +123,7 @@ export function EntryDetail({ id }: { id: string }) {
           <div style={{ flex: 1 }}>
             <div className="muted">{company}</div>
             <div className="paper-title">{typeName(e.type, i18n)}</div>
-            <div style={{ marginTop: 4 }}><StatusChip status={e.status} reversed={!!e.reversedById} /></div>
+            <div style={{ marginTop: 4 }}><VoucherStateChip entry={e} /></div>
           </div>
           <div className="paper-meta">
             <span className="muted">{t('number')}</span><strong className="ltr">{e.number ?? t('draft')}</strong>
@@ -129,8 +148,9 @@ export function EntryDetail({ id }: { id: string }) {
           <div className="row"><span className="muted" style={{ width: 130 }}>{isVoucher ? t('forLabel') : t('description')}</span><span>{e.description}</span></div>
           {e.invoiceId && <div className="row"><span className="muted" style={{ width: 130 }}>{t('e_invoice')}</span><a href={href(`invoice/${e.invoiceId}`)}>{t('openInvoice')}</a></div>}
           {e.stockDocId && <div className="row"><span className="muted" style={{ width: 130 }}>{t('e_stock_doc')}</span><a href={href(`stock-doc/${e.stockDocId}`)}>{t('openDocument')}</a></div>}
-          {e.reversesId && <div className="row"><span className="muted" style={{ width: 130 }}>{t('reverses')}</span><a href={href(`entry/${e.reversesId}`)}>{t('open')}</a></div>}
-          {e.reversedById && <div className="row"><span className="muted" style={{ width: 130 }}>{t('reversedBy')}</span><a href={href(`entry/${e.reversedById}`)}>{t('open')}</a></div>}
+          {/* (the entry that reverses a voucher is the approver's: named, without a link, for someone who reads only their own) */}
+          {e.reversesId && !own && <div className="row"><span className="muted" style={{ width: 130 }}>{t('reverses')}</span><a href={href(`entry/${e.reversesId}`)}>{t('open')}</a></div>}
+          {e.reversedById && <div className="row"><span className="muted" style={{ width: 130 }}>{t('reversedBy')}</span>{own ? <span>{typeName('reversal', i18n)}</span> : <a href={href(`entry/${e.reversedById}`)}>{t('open')}</a>}</div>}
         </div>
 
         <table className="table" style={{ marginTop: 16 }}>

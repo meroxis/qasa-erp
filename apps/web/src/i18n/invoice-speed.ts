@@ -57,11 +57,11 @@ export const INVOICE_SPEED_TEXT = {
   sv_hint_whatsapp: ['ترحيل الفاتورة ثم فتح نافذة الإرسال على واتساب', 'Posts the invoice, then opens the send on WhatsApp window', 'پسوولەکە تۆمار دەکات، پاشان پەنجەرەی ناردن بە واتسئاپ دەکاتەوە'],
   sv_hint_post: ['ترحيل الفاتورة ثم فتح صفحتها', 'Posts the invoice and opens its own page', 'پسوولەکە تۆمار دەکات و پەڕەکەی خۆی دەکاتەوە'],
   sv_hint_draft: ['حفظ بلا ترحيل: يمكن تعديلها لاحقاً', 'Saves without posting: it can still be changed', 'بێ تۆمارکردن پاشەکەوتی دەکات: دواتر دەگۆڕدرێت'],
-  sv_remembered: ['الزر الرئيسي يتذكر آخر طريقة اخترتها.', 'The main button remembers the way you chose last.', 'دوگمە سەرەکییەکە دوایین ڕێگەی هەڵبژێردراوت لەبیر دەمێنێت.'],
+  sv_remembered: ['الزر الرئيسي يتذكر آخر طريقة اخترتها.', 'The main button remembers the way you chose last.', 'دوگمە سەرەکییەکە ئەو ڕێگەیەی لەبیر دەمێنێت کە دوایین جار هەڵتبژاردووە.'],
   sv_onlyDraft: [
     'صلاحيتك إعداد الفاتورة فقط: تُحفظ مسودةً، ويرحّلها من له صلاحية الترحيل.',
     'You may prepare invoices but not post them: it is saved as a draft, for someone who may post it.',
-    'تۆ تەنها دەتوانیت پسوولە ئامادە بکەیت: وەک ڕەشنووس پاشەکەوت دەکرێت، تا کەسێکی مۆڵەتدار تۆماری بکات.'
+    'تۆ تەنها دەتوانیت پسوولە ئامادە بکەیت: وەک ڕەشنووس پاشەکەوت دەکرێت، تا کەسێکی دەسەڵاتدار تۆماری بکات.'
   ],
   sv_lastPosted: ['حُفظت الفاتورة {n} ورُحّلت', 'Invoice {n} is saved and posted', 'پسوولەی {n} پاشەکەوت و تۆمار کرا'],
   sv_lastDraft: ['حُفظت الفاتورة مسودةً', 'The invoice is saved as a draft', 'پسوولەکە وەک ڕەشنووس پاشەکەوت کرا'],

@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { todayIso, type CurrencyCode } from '@qasa/core';
 import { api } from '../api.ts';
 import { briefApi, EXPENSE_CATEGORIES, type ExpenseCategory } from '../industry/brief-api.ts';
-import { AccountCombo, AmountInput, ErrorBox, Icon, Modal, StatusChip, useData, useLoad, usePageNav, useToast } from '../components.tsx';
+import { AccountCombo, AmountInput, ErrorBox, Icon, Modal, StatusChip, useData, useLoad, useMay, usePageNav, useToast } from '../components.tsx';
 import { useI18n, type Key } from '../i18n.ts';
 import { href } from '../router.ts';
 
@@ -22,6 +22,8 @@ export function Expenses() {
   const { t } = i18n;
   const toast = useToast();
   const { settings, accounts } = useData();
+  // an expense is a payment voucher: written by whoever prepares vouchers; where each kind goes is the company's setup
+  const can = useMay();
   usePageNav({ key: 'br_expenses', group: 'gAccounting' });
   const month = todayIso().slice(0, 7);
   const [viewMonth, setViewMonth] = useState(month);
@@ -72,11 +74,11 @@ export function Expenses() {
 
   return (
     <div className="stack" style={{ maxWidth: 1000, marginInline: 'auto', width: '100%' }}>
-      <section className="card pad stack">
+      {can('voucher') && <section className="card pad stack">
         <div className="row">
           <h2 style={{ margin: 0 }}>{t('br_newExpense')}</h2>
           <span className="spacer" />
-          <button type="button" className="btn ghost small" onClick={() => setMapping(true)}><Icon name="sliders" size={14} />{t('br_expenseAccounts')}</button>
+          {can('account') && <button type="button" className="btn ghost small" onClick={() => setMapping(true)}><Icon name="sliders" size={14} />{t('br_expenseAccounts')}</button>}
         </div>
         <div>
           <div className="small muted" style={{ marginBottom: 8 }}>{t('br_whatFor')}</div>
@@ -125,7 +127,7 @@ export function Expenses() {
           <span className="spacer" />
           <button type="button" className="btn primary" disabled={!ready || busy} onClick={() => void save()}><Icon name="check" size={16} />{t('br_saveExpense')}</button>
         </div>
-      </section>
+      </section>}
 
       <section className="card">
         <div className="card-head">

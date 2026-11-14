@@ -4,9 +4,9 @@ export const ASSET_TEXT = {
   fa_help: [
     'سجل الموجودات واندثارها الشهري بطريقة القسط الثابت. الشراء نفسه يُسجَّل بفاتورة شراء أو سند صرف على حساب الموجود (11…) كالمعتاد؛ هنا تضيف البيانات التي يحتاجها الاندثار فقط.',
     'The asset register and its monthly straight-line depreciation. The purchase itself is recorded as usual with a purchase invoice or payment voucher to the asset account (11…); here you only add what depreciation needs.',
-    'تۆماری سامانەکان و داخورانی مانگانەیان بە شێوازی بەشی جێگیر. کڕینەکە خۆی وەک هەمیشە بە پسوولەی کڕین یان سەنەدی خەرجکردن لەسەر هەژماری سامان (11…) تۆمار دەکرێت؛ لێرە تەنها ئەوەی داخوران پێویستی پێیەتی زیاد دەکەیت.'
+    'تۆماری سامانەکان و داخورانی مانگانەیان بە شێوازی قیستی جێگیر. کڕینەکە خۆی وەک هەمیشە بە پسوولەی کڕین یان سەنەدی پارەدان لەسەر هەژماری سامان (11…) تۆمار دەکرێت؛ لێرە تەنها ئەوەی داخوران پێویستی پێیەتی زیاد دەکەیت.'
   ],
-  fa_tabRegister: ['السجل', 'Register', 'تۆمار'],
+  fa_tabRegister: ['السجل', 'Register', 'قەید'],
   fa_tabRuns: ['الاندثار الشهري', 'Monthly depreciation', 'داخورانی مانگانە'],
   fa_new: ['موجود جديد', 'New asset', 'سامانی نوێ'],
   fa_edit: ['تعديل الموجود', 'Edit asset', 'دەستکاریکردنی سامان'],
@@ -22,8 +22,8 @@ export const ASSET_TEXT = {
   fa_cat_computers: ['الحاسبات', 'Computers', 'کۆمپیوتەر'],
   fa_cat_other: ['أخرى', 'Other', 'هی تر'],
   fa_assetAccount: ['حساب الموجود', 'Asset account', 'هەژماری سامان'],
-  fa_accumAccount: ['حساب مخصص الاندثار', 'Accumulated depreciation account', 'هەژماری کۆکراوەی داخوران'],
-  fa_expenseAccount: ['حساب مصروف الاندثار', 'Depreciation expense account', 'هەژماری خەرجی داخوران'],
+  fa_accumAccount: ['حساب مخصص الاندثار', 'Accumulated depreciation account', 'هەژماری داخورانی کەڵەکەبوو'],
+  fa_expenseAccount: ['حساب مصروف الاندثار', 'Depreciation expense account', 'هەژماری خەرجیی داخوران'],
   fa_acquired: ['تاريخ الاقتناء', 'Acquired on', 'بەرواری بەدەستهێنان'],
   fa_cost: ['الكلفة', 'Cost', 'تێچوو'],
   fa_salvage: ['القيمة المتبقية (الخردة)', 'Salvage value', 'بەهای پاشماوە'],
@@ -35,19 +35,19 @@ export const ASSET_TEXT = {
     'Suggested lives and accounts are common defaults, not the official depreciation rates; change them to the rates your company uses.',
     'تەمەن و هەژمارە پێشنیارکراوەکان بەهای بنەڕەتی باون نەک ڕێژە فەرمییەکانی داخوران؛ بە پێی ڕێژەکانی کۆمپانیاکەت بیانگۆڕە.'
   ],
-  fa_default: ['افتراضي', 'default', 'بنەڕەت'],
-  fa_openingAccum: ['اندثار متراكم سابق', 'Opening accumulated depreciation', 'داخورانی کۆکراوەی پێشوو'],
+  fa_default: ['افتراضي', 'default', 'بنەڕەتی'],
+  fa_openingAccum: ['اندثار متراكم سابق', 'Opening accumulated depreciation', 'داخورانی کەڵەکەبووی پێشوو'],
   fa_openingHelp: [
     'الاندثار المسجل قبل استخدام البرنامج. لا يُنشئ قيداً؛ يجب أن يكون في الرصيد الافتتاحي لحساب مخصص الاندثار.',
     'Depreciation taken before using the app. It makes no entry; it should already be in the opening balance of the accumulated depreciation account.',
-    'داخوران پێش بەکارهێنانی بەرنامەکە. هیچ تۆمارێک دروست ناکات؛ دەبێت لە باڵانسی سەرەتای هەژماری کۆکراوەی داخوراندا بێت.'
+    'ئەو داخورانەی پێش بەکارهێنانی بەرنامەکە تۆمار کراوە. هیچ قەیدێک دروست ناکات؛ دەبێت لە ڕەسیدی سەرەتای هەژماری داخورانی کەڵەکەبوودا بێت.'
   ],
   fa_location: ['الموقع', 'Location', 'شوێن'],
   fa_status: ['الحالة', 'Status', 'دۆخ'],
   fa_active: ['قيد الاستخدام', 'In use', 'لە بەکارهێناندا'],
   fa_disposed: ['مستبعد', 'Disposed', 'دەرکراو'],
   fa_all: ['الكل', 'All', 'هەموو'],
-  fa_accumulated: ['الاندثار المتراكم', 'Accumulated depreciation', 'داخورانی کۆکراوە'],
+  fa_accumulated: ['الاندثار المتراكم', 'Accumulated depreciation', 'داخورانی کەڵەکەبوو'],
   fa_bookValue: ['القيمة الدفترية', 'Book value', 'بەهای دەفتەری'],
   fa_monthly: ['القسط الشهري', 'Monthly amount', 'بڕی مانگانە'],
   fa_notDepreciated: ['لا تُستهلك', 'Not depreciated', 'داناخورێت'],
@@ -56,70 +56,70 @@ export const ASSET_TEXT = {
   fa_emptyText: ['أضف المباني والسيارات والأجهزة لاحتساب اندثارها كل شهر.', 'Add buildings, vehicles and equipment to depreciate them every month.', 'بینا و ئۆتۆمبێل و ئامێرەکان زیاد بکە بۆ ئەوەی هەموو مانگێک داخورانیان حیساب بکرێت.'],
   fa_schedule: ['جدول الاندثار', 'Depreciation schedule', 'خشتەی داخوران'],
   fa_month: ['الشهر', 'Month', 'مانگ'],
-  fa_amount: ['المبلغ', 'Amount', 'بڕ'],
+  fa_amount: ['المبلغ', 'Amount', 'بڕی پارە'],
   fa_stateRun: ['مسجّل', 'Run', 'تۆمارکراو'],
   fa_statePlanned: ['متوقع', 'Planned', 'چاوەڕوانکراو'],
-  fa_stateOpening: ['رصيد سابق', 'Opening', 'باڵانسی پێشوو'],
+  fa_stateOpening: ['رصيد سابق', 'Opening', 'ڕەسیدی پێشوو'],
   fa_lockedNote: ['بعد احتساب أول شهر لا يمكن تغيير الأرقام والحسابات؛ الاسم والموقع والملاحظات فقط.', 'Once a month has been run, figures and accounts are locked; only the name, location and notes can change.', 'دوای حیسابکردنی یەکەم مانگ، ژمارە و هەژمارەکان دادەخرێن؛ تەنها ناو و شوێن و تێبینی دەگۆڕدرێن.'],
   fa_deleteConfirm: ['حذف هذا الموجود من السجل؟', 'Delete this asset from the register?', 'ئەم سامانە لە تۆمار بسڕدرێتەوە؟'],
   fa_dispose: ['استبعاد (بيع أو شطب)', 'Dispose (sell or scrap)', 'دەرکردن (فرۆشتن یان لابردن)'],
   fa_disposeHelp: [
     'يُنشأ قيد مسودة يُزيل الكلفة والاندثار المتراكم، ويسجل المتحصلات والربح أو الخسارة. يتبع القيد التدقيق والمصادقة.',
     'A draft entry removes the cost and accumulated depreciation and books the proceeds and the gain or loss. It follows checking and approval.',
-    'تۆمارێکی ڕەشنووس تێچوو و داخورانی کۆکراوە لادەبات و داهات و قازانج یان زیان تۆمار دەکات. بە وردبینی و پەسەندکردندا دەڕوات.'
+    'قەیدێکی ڕەشنووس تێچوو و داخورانی کەڵەکەبوو لادەبات و پارەی وەرگیراو و قازانج یان زیان تۆمار دەکات. بە وردبینی و پەسەندکردندا تێدەپەڕێت.'
   ],
   fa_disposeDate: ['تاريخ الاستبعاد', 'Disposal date', 'بەرواری دەرکردن'],
-  fa_proceeds: ['المتحصلات (سعر البيع)', 'Proceeds (sale price)', 'داهات (نرخی فرۆشتن)'],
-  fa_proceedsAccount: ['استُلمت في', 'Received into', 'وەرگیرا لە'],
+  fa_proceeds: ['المتحصلات (سعر البيع)', 'Proceeds (sale price)', 'پارەی وەرگیراو (نرخی فرۆشتن)'],
+  fa_proceedsAccount: ['استُلمت في', 'Received into', 'وەرگیرا بۆ'],
   fa_gainAccount: ['حساب الربح', 'Gain account', 'هەژماری قازانج'],
   fa_lossAccount: ['حساب الخسارة', 'Loss account', 'هەژماری زیان'],
   fa_gainNote: [
     'الدليل الموحد لا يحتوي حساباً خاصاً بأرباح وخسائر بيع الموجودات؛ الافتراضي 49 إيرادات أخرى و39 مصروفات أخرى.',
     'The unified chart has no dedicated account for gains or losses on assets; the defaults are 49 Other revenue and 39 Other expenses.',
-    'ڕێبەری یەکگرتوو هەژمارێکی تایبەتی بۆ قازانج و زیانی فرۆشتنی سامان نییە؛ بنەڕەت 49 داهاتی تر و 39 خەرجی ترە.'
+    'لە ڕێبەری یەکگرتوودا هەژمارێکی تایبەت بۆ قازانج و زیانی فرۆشتنی سامان نییە؛ بنەڕەتییەکان 49 داهاتی تر و 39 خەرجیی ترن.'
   ],
   fa_gain: ['ربح', 'Gain', 'قازانج'],
   fa_loss: ['خسارة', 'Loss', 'زیان'],
   fa_disposedOn: ['استُبعد في {d}', 'Disposed on {d}', 'لە {d} دەرکرا'],
-  fa_undispose: ['التراجع عن الاستبعاد', 'Undo disposal', 'گەڕاندنەوەی دەرکردن'],
-  fa_entry: ['القيد', 'Entry', 'تۆمار'],
+  fa_undispose: ['التراجع عن الاستبعاد', 'Undo disposal', 'پاشگەزبوونەوە لە دەرکردن'],
+  fa_entry: ['القيد', 'Entry', 'قەید'],
   fa_draft: ['مسودة', 'Draft', 'ڕەشنووس'],
   fa_runMonth: ['احتساب اندثار شهر', 'Run a month', 'حیسابکردنی مانگێک'],
   fa_runHelp: [
     'يُنشأ قيد مسودة واحد للشهر: مدين مصروف الاندثار، دائن مخصص الاندثار، مجمّعاً حسب الصنف. يبدأ الاندثار من شهر الاقتناء إن كان حتى يوم 15، وإلا من الشهر التالي. لكل شهر احتساب واحد.',
     'One draft entry per month: Dr depreciation expense, Cr accumulated depreciation, grouped by category. Depreciation starts in the month acquired if on or before the 15th, otherwise the next month. Each month is run once.',
-    'یەک تۆماری ڕەشنووس بۆ هەر مانگێک: قەرزاری خەرجی داخوران، خاوەن قەرزی کۆکراوەی داخوران، بە پێی جۆر کۆکراوەتەوە. داخوران لە مانگی بەدەستهێنان دەست پێدەکات ئەگەر تا ڕۆژی 15 بێت، ئەگینا لە مانگی دواتر. هەر مانگێک یەک جار.'
+    'یەک قەیدی ڕەشنووس بۆ هەر مانگێک: مەدین خەرجیی داخوران، دائین داخورانی کەڵەکەبوو، بەپێی جۆر کۆکراوەتەوە. داخوران لە مانگی بەدەستهێنانەوە دەست پێدەکات ئەگەر تا ڕۆژی 15 بێت، ئەگینا لە مانگی دواتر. هەر مانگێک یەک جار حیساب دەکرێت.'
   ],
   fa_preview: ['معاينة', 'Preview', 'پێشبینین'],
-  fa_runNow: ['إنشاء القيد', 'Create the entry', 'دروستکردنی تۆمار'],
+  fa_runNow: ['إنشاء القيد', 'Create the entry', 'دروستکردنی قەید'],
   fa_alreadyRun: ['تم احتساب هذا الشهر.', 'This month has already been run.', 'ئەم مانگە پێشتر حیساب کراوە.'],
   fa_nothing: ['لا يوجد اندثار لهذا الشهر.', 'Nothing to depreciate for this month.', 'بۆ ئەم مانگە هیچ داخورانێک نییە.'],
   fa_runs: ['الأشهر المحتسبة', 'Months run', 'مانگە حیسابکراوەکان'],
   fa_noRuns: ['لم يُحتسب أي شهر بعد.', 'No month has been run yet.', 'هێشتا هیچ مانگێک حیساب نەکراوە.'],
   fa_cancelRun: ['إلغاء الشهر', 'Cancel the month', 'هەڵوەشاندنەوەی مانگ'],
-  fa_cancelRunConfirm: ['إلغاء هذا الشهر وحذف قيده المسودة؟', 'Cancel this month and delete its draft entry?', 'ئەم مانگە هەڵبوەشێتەوە و تۆمارە ڕەشنووسەکەی بسڕدرێتەوە؟'],
-  fa_cancelRunNote: ['يمكن الإلغاء ما دام القيد مسودة.', 'Possible while the entry is still a draft.', 'تا تۆمارەکە ڕەشنووس بێت دەکرێت.'],
-  fa_reverseRun: ['عكس الشهر', 'Reverse the month', 'گەڕاندنەوەی مانگ'],
-  fa_reverseRunConfirm: ['عكس قيد هذا الشهر المعتمد؟', 'Reverse this month’s approved entry?', 'تۆمارە پەسەندکراوەکەی ئەم مانگە بگەڕێنرێتەوە؟'],
+  fa_cancelRunConfirm: ['إلغاء هذا الشهر وحذف قيده المسودة؟', 'Cancel this month and delete its draft entry?', 'ئەم مانگە هەڵبوەشێنرێتەوە و قەیدە ڕەشنووسەکەی بسڕدرێتەوە؟'],
+  fa_cancelRunNote: ['يمكن الإلغاء ما دام القيد مسودة.', 'Possible while the entry is still a draft.', 'تا قەیدەکە ڕەشنووس بێت دەکرێت.'],
+  fa_reverseRun: ['عكس الشهر', 'Reverse the month', 'پێچەوانەکردنەوەی مانگ'],
+  fa_reverseRunConfirm: ['عكس قيد هذا الشهر المعتمد؟', 'Reverse this month’s approved entry?', 'قەیدە پەسەندکراوەکەی ئەم مانگە پێچەوانە بکرێتەوە؟'],
   fa_reverseRunNote: [
     'يُنشأ قيد عكسي في التاريخ أدناه ويبقى القيدان في الدفاتر، ثم يمكن احتساب الشهر من جديد.',
     'A reversing entry is made on the date below and both entries stay in the books. The month can then be run again.',
-    'تۆمارێکی پێچەوانە لە بەرواری خوارەوە دروست دەکرێت و هەردوو تۆمارەکە لە دەفتەرەکاندا دەمێننەوە. پاشان دەکرێت مانگەکە دووبارە حیساب بکرێت.'
+    'قەیدێکی پێچەوانە لە بەرواری خوارەوە دروست دەکرێت و هەردوو قەیدەکە لە دەفتەرەکاندا دەمێننەوە. پاشان دەکرێت مانگەکە دووبارە حیساب بکرێت.'
   ],
   fa_undisposeDraft: [
     'يُحذف قيد الاستبعاد (ما زال مسودة) ويعود الموجود إلى الخدمة.',
     'The disposal entry is still a draft: it is deleted and the asset is back in service.',
-    'تۆماری دەرکردنەکە هێشتا ڕەشنووسە: دەسڕدرێتەوە و سامانەکە دەگەڕێتەوە بۆ کار.'
+    'قەیدی دەرکردنەکە هێشتا ڕەشنووسە: دەسڕدرێتەوە و سامانەکە دەگەڕێتەوە بۆ کار.'
   ],
   fa_undisposeApproved: [
     'قيد الاستبعاد معتمد، فيُعكس بقيد عكسي في التاريخ أدناه ويبقى القيدان في الدفاتر، ويعود الموجود إلى الخدمة.',
     'The disposal entry is approved, so it is reversed by an entry on the date below; both stay in the books and the asset is back in service.',
-    'تۆماری دەرکردنەکە پەسەندکراوە، بۆیە بە تۆمارێکی پێچەوانە لە بەرواری خوارەوە دەگەڕێنرێتەوە؛ هەردووکیان لە دەفتەرەکاندا دەمێننەوە و سامانەکە دەگەڕێتەوە بۆ کار.'
+    'قەیدی دەرکردنەکە پەسەندکراوە، بۆیە بە قەیدێکی پێچەوانە لە بەرواری خوارەوە پێچەوانە دەکرێتەوە؛ هەردووکیان لە دەفتەرەکاندا دەمێننەوە و سامانەکە دەگەڕێتەوە بۆ کار.'
   ],
   fa_lastRun: ['آخر شهر محتسب', 'Last month run', 'دوایین مانگی حیسابکراو'],
   fa_nextRun: ['الشهر التالي', 'Next month', 'مانگی داهاتوو'],
   fa_assets: ['موجودات', 'Assets', 'سامان'],
-  fa_exportCsv: ['تصدير CSV', 'Export CSV', 'هەناردەی CSV'],
+  fa_exportCsv: ['تصدير CSV', 'Export CSV', 'ناردن بۆ CSV'],
   fa_by: ['بواسطة', 'By', 'لەلایەن'],
 
   err_fa_name_required: ['اكتب اسم الموجود', 'Enter the asset’s name', 'ناوی سامانەکە بنووسە'],
@@ -127,7 +127,7 @@ export const ASSET_TEXT = {
   err_fa_cost_invalid: ['الكلفة يجب أن تكون أكبر من صفر', 'The cost must be more than zero', 'تێچوو دەبێت لە سفر زیاتر بێت'],
   err_fa_salvage_invalid: ['القيمة المتبقية يجب أن تكون أقل من الكلفة', 'The salvage value must be less than the cost', 'بەهای پاشماوە دەبێت لە تێچوو کەمتر بێت'],
   err_fa_life_invalid: ['العمر الإنتاجي بين 1 و1200 شهر', 'The useful life must be 1 to 1200 months', 'تەمەنی بەکارهێنان دەبێت 1 تا 1200 مانگ بێت'],
-  err_fa_opening_invalid: ['الاندثار السابق لا يتجاوز الكلفة ناقص القيمة المتبقية', 'Opening depreciation cannot exceed cost less salvage', 'داخورانی پێشوو نابێت لە تێچوو کەم پاشماوە زیاتر بێت'],
+  err_fa_opening_invalid: ['الاندثار السابق لا يتجاوز الكلفة ناقص القيمة المتبقية', 'Opening depreciation cannot exceed cost less salvage', 'داخورانی پێشوو نابێت لە (تێچوو − بەهای پاشماوە) زیاتر بێت'],
   err_fa_account_invalid: ['الحساب {c} غير مناسب هنا', 'Account {c} doesn’t fit here', 'هەژماری {c} لێرە گونجاو نییە'],
   err_fa_account_not_postable: ['الحساب {c} حساب رئيسي؛ اختر حساباً فرعياً', 'Account {c} is a parent account; choose a sub-account', 'هەژماری {c} هەژمارێکی سەرەکییە؛ هەژمارێکی لاوەکی هەڵبژێرە'],
   err_fa_has_depreciation: ['احتُسب اندثار لهذا الموجود؛ لا يمكن تغيير أرقامه أو حذفه', 'This asset has been depreciated; its figures can’t change and it can’t be deleted', 'ئەم سامانە داخورانی بۆ حیساب کراوە؛ ژمارەکانی ناگۆڕدرێن و ناسڕدرێتەوە'],
@@ -143,10 +143,10 @@ export const ASSET_TEXT = {
   err_fa_later_months_run: [
     'احتُسب شهر بعد هذا الشهر؛ ألغِ الأشهر اللاحقة أو اعكسها أولاً، من الأحدث.',
     'A later month has been run; cancel or reverse the later months first, newest first.',
-    'مانگێکی دوای ئەمە حیساب کراوە؛ سەرەتا مانگە دواترەکان هەڵبوەشێنەوە یان بیانگەڕێنەوە، لە نوێترینەوە.'
+    'مانگێکی دوای ئەمە حیساب کراوە؛ سەرەتا مانگە دواترەکان هەڵبوەشێنەوە یان پێچەوانەیان بکەرەوە، لە نوێترینەوە.'
   ],
   err_fa_dispose_before_acquired: ['تاريخ الاستبعاد قبل تاريخ الاقتناء', 'The disposal date is before the acquisition date', 'بەرواری دەرکردن پێش بەرواری بەدەستهێنانە'],
   err_fa_dispose_future: ['تاريخ الاستبعاد في المستقبل', 'The disposal date is in the future', 'بەرواری دەرکردن لە داهاتوودایە'],
-  err_fa_proceeds_invalid: ['المتحصلات غير صحيحة', 'The proceeds are not valid', 'داهاتەکە دروست نییە'],
+  err_fa_proceeds_invalid: ['المتحصلات غير صحيحة', 'The proceeds are not valid', 'پارەی وەرگیراو دروست نییە'],
   err_fa_runs_after_disposal: ['احتُسب اندثار لأشهر بعد تاريخ الاستبعاد؛ ألغِها أولاً', 'Months after the disposal date have been run; cancel them first', 'مانگی دوای بەرواری دەرکردن حیساب کراون؛ سەرەتا هەڵیانبوەشێنەوە']
 } as const satisfies Record<string, readonly [string, string, string]>;

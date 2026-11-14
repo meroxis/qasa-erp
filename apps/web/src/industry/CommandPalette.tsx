@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react'
 import { api } from '../api.ts';
 import { Icon } from '../components.tsx';
 import { useI18n, type Key } from '../i18n.ts';
-import { addRecent, allPages, recents, type NavViewer, type Recent } from '../nav.ts';
+import { addRecent, allPages, navLabel, recents, type NavViewer, type Recent } from '../nav.ts';
 import { go } from '../router.ts';
 import { showTour } from './Tour.tsx';
 
@@ -32,7 +32,7 @@ export function CommandPalette({ viewer, onClose }: { viewer: NavViewer; onClose
   }, []);
 
   const pages = useMemo(() => allPages(viewer).map((p): Hit => ({
-    kind: 'page', label: t(p.key), sub: t(p.group), path: p.path ?? '', icon: p.icon, section: 'searchPages'
+    kind: 'page', label: t(navLabel(p, viewer)), sub: t(p.group), path: p.path ?? '', icon: p.icon, section: 'searchPages'
   })).concat({ kind: 'page', label: t('tour_show'), sub: t('us_helpTitle'), path: '', icon: 'circle', section: 'searchPages', action: showTour }), [viewer, t]);
 
   // records: asked once the person stops typing for a moment, a few of each

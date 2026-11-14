@@ -1,6 +1,7 @@
 import type { CurrencyCode, UnitCode } from '@qasa/core';
 import type { ItemView } from '../api.ts';
 import { salePriceFor } from '../industry/units.ts';
+import { findByScaleBarcode } from '../industry/scale-barcode.ts';
 
 /**
  * The rate used to price items in a sale. A dollar sale uses the rate typed on the register; a dinar sale uses the
@@ -39,7 +40,7 @@ export const addRefusal = (item: Pick<ItemView, 'saleCurrency'>, currency: Curre
  * otherwise "3*code" or "3x code" sells three of that code. A barcode of one of an item's units (a box, a strip) finds
  * the item with that unit (`unit`; null: the item's own barcode or code, its base unit).
  */
-export function parseScan<T extends Pick<ItemView, 'barcode' | 'code'> & { units?: ItemView['units'] }>(raw: string, items: readonly T[]): {
+export function parseScan<T extends Pick<ItemView, 'barcode' | 'code'> & { units?: ItemView['units']; unit?: UnitCode }>(raw: string, items: readonly T[]): {
   code: string; qtyMilli: number; exact: T | undefined; unit: UnitCode | null;
 } {
   const find = (code: string): { item: T; unit: UnitCode | null } | undefined => {
@@ -53,6 +54,9 @@ export function parseScan<T extends Pick<ItemView, 'barcode' | 'code'> & { units
   };
   const whole = find(raw);
   if (whole) return { code: raw, qtyMilli: 1000, exact: whole.item, unit: whole.unit };
+  // 1.4 — a scale's label (markets): the item by the label's first seven digits, the weight on it as the quantity
+  const weighed = findByScaleBarcode(raw, items);
+  if (weighed) return { code: raw, qtyMilli: weighed.qtyMilli, exact: weighed.item, unit: null };
   const star = /^(\d+(?:\.\d+)?)\s*[*x×]\s*(.+)$/i.exec(raw);
   if (!star) return { code: raw, qtyMilli: 1000, exact: undefined, unit: null };
   const code = star[2]!.trim();
@@ -62,7 +66,7 @@ export function parseScan<T extends Pick<ItemView, 'barcode' | 'code'> & { units
 
 /**
  * Change for the cash the customer handed over. All cash (no split): against the whole total. A split sale: against
- * its cash part only (the card or wallet parts are paid apart); null when the split has no cash part.
+ * its cash part only (the other parts are paid apart); null when the split has no cash part.
  */
 export function cashChange(paid: number | null, total: number, parts: readonly { method: string; amount: number | null }[]): number | null {
   if (paid === null) return null;
@@ -70,6 +74,87 @@ export function cashChange(paid: number | null, total: number, parts: readonly {
   const cash = parts.filter((p) => p.method === 'cash').reduce((s, p) => s + (p.amount ?? 0), 0);
   return cash > 0 ? paid - cash : null;
 }
+
+/**
+ * The note under "Cash / Credit" on an invoice while credit has nobody to go on: worded for the customer on a sale and
+ * for the supplier on a purchase. A new purchase opens on credit with no supplier yet, so the note waits until it was
+ * asked for (partyAskedAfter): the party box was used and left empty, or a save was tried.
+ */
+export function creditPartyNote(
+  kind: 'sale' | 'purchase', payment: 'cash' | 'credit', partyId: string, asked: boolean
+): 's14_creditNeedsCustomer' | 's14_creditNeedsSupplier' | null {
+  if (payment !== 'credit' || partyId || !asked) return null;
+  return kind === 'sale' ? 's14_creditNeedsCustomer' : 's14_creditNeedsSupplier';
+}
+
+/**
+ * Whether the note above has been asked for, after something happened on the invoice form:
+ * - 'credit': Credit was chosen, or pressed again. That asks nothing: the person has not been to the party box yet;
+ * - 'leave': the party box lost the focus. It asks only when the box was used (typed in or clicked into: `touched`),
+ *   not when the focus merely passed through it on the way to another field;
+ * - 'save': a save was tried. It asks: the invoice cannot be saved on credit without the party;
+ * - 'new': the form was emptied for the next invoice.
+ */
+export function partyAskedAfter(asked: boolean, event: 'credit' | 'leave' | 'save' | 'new', touched = false): boolean {
+  if (event === 'new') return false;
+  if (event === 'save') return true;
+  if (event === 'leave') return asked || touched;
+  return asked;
+}
+
+/**
+ * The till's note while the cart holds more of an item than the stock last known (an item with none left was added,
+ * or the quantity was raised past it): the items, each with what is left ("TEA (0)"), or '' when the cart is within
+ * the stock. A warning only: the cashier may know better (goods just arrived), and the server decides at Pay.
+ */
+export function cartShortNote(short: readonly { code: string; haveMilli: number }[], one: (code: string, haveMilli: number) => string, separator: string): string {
+  return short.map((s) => one(s.code, s.haveMilli)).join(separator);
+}
+
+/** The cash a customer handed over and the change given back, for the receipt. */
+export interface CashTender { paid: number; change: number }
+
+/**
+ * What the receipt prints under the total: "Paid" and "Change", when more cash was handed over than was due. Nothing
+ * when the exact money was given, nothing was typed, or the sale is on credit (no change is worked out then).
+ */
+export function cashTender(paid: number | null, change: number | null): CashTender | null {
+  return paid !== null && change !== null && change > 0 ? { paid, change } : null;
+}
+
+/**
+ * 1.4: the till offers two ways of paying, in every company: cash, or credit ('account': the whole sale on the
+ * customer's account). A card or a wallet is not a choice at the till; sales paid that way before still show under
+ * their own names (receipts, shift reports, the day close).
+ */
+export type TillMethod = 'cash' | 'account';
+
+/** What the till offers now: both, or cash alone while the server can't be reached (credit needs its credit-limit check). */
+export const tillMethods = (offline: boolean): TillMethod[] => (offline ? ['cash'] : ['cash', 'account']);
+
+/**
+ * A sale is paid one way. Cash is what the till always did (nothing is sent: the whole sale goes into the shift's
+ * safe); credit is sent as the one part that pays what is due. Nothing due (points paid it all): nothing is sent.
+ */
+export function salePayments<M extends string>(method: M, due: number): { method: M; amount: number }[] | undefined {
+  return method === 'cash' || due <= 0 ? undefined : [{ method, amount: due }];
+}
+
+/** The way of paying the till shows as chosen: the one picked while it is still offered, else cash. */
+export function chosenMethod<M extends string>(picked: M, offered: readonly M[]): M | 'cash' {
+  return offered.includes(picked) ? picked : 'cash';
+}
+
+/**
+ * The pick once the till's link to the server changes. Credit picked and the link drops: the sale is cash, and it
+ * stays cash when the link returns (the cashier may have taken the money meanwhile). Credit is chosen again on purpose.
+ */
+export function pickAfterLink<M extends string>(picked: M, offered: readonly M[]): M | 'cash' {
+  return chosenMethod(picked, offered);
+}
+
+/** A sale on credit goes on a customer's account: it needs one. */
+export const creditNeedsCustomer = (method: string, partyId: string): boolean => method === 'account' && !partyId;
 
 /**
  * A cart line as the sale sends it: in its unit (or the base unit), and pinned to the batch the cashier picked ('':

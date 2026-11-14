@@ -5,14 +5,14 @@
 export const SAFETY_TEXT = {
   // trial balance: opening, movement and closing, each as debit and credit
   tbMovement: ['الحركة خلال المدة', 'Movement in the period', 'جووڵە لەم ماوەیەدا'],
-  openingDebit: ['رصيد افتتاحي مدين', 'Opening debit', 'باڵانسی سەرەتای قەرزار'],
-  openingCredit: ['رصيد افتتاحي دائن', 'Opening credit', 'باڵانسی سەرەتای قەرزدەر'],
-  closingDebit: ['رصيد ختامي مدين', 'Closing debit', 'باڵانسی کۆتایی قەرزار'],
-  closingCredit: ['رصيد ختامي دائن', 'Closing credit', 'باڵانسی کۆتایی قەرزدەر'],
+  openingDebit: ['رصيد افتتاحي مدين', 'Opening debit', 'ڕەسیدی سەرەتای مەدین'],
+  openingCredit: ['رصيد افتتاحي دائن', 'Opening credit', 'ڕەسیدی سەرەتای دائین'],
+  closingDebit: ['رصيد ختامي مدين', 'Closing debit', 'ڕەسیدی کۆتایی مەدین'],
+  closingCredit: ['رصيد ختامي دائن', 'Closing credit', 'ڕەسیدی کۆتایی دائین'],
   tbOpeningHelp: [
     'الرصيد الافتتاحي هو مجموع كل ما رُحّل قبل تاريخ «من».',
     'The opening balance is everything posted before the From date.',
-    'باڵانسی سەرەتا کۆی هەموو ئەو شتانەیە کە پێش بەرواری «لە» تۆمار کراون.'
+    'ڕەسیدی سەرەتا کۆی هەموو ئەو قەیدانەیە کە پێش بەرواری «لە» تۆمار کراون.'
   ],
 
   // backups on every plan, and the notice when they need the admin
@@ -49,7 +49,13 @@ export const SAFETY_TEXT = {
   recoveryWhere: [
     'إذا نسي المدير كلمة مروره: في برنامج ويندوز على هذا الحاسوب افتح «ملف» ← «إعادة تعيين كلمة مرور المدير» واكتب هذا الرمز. بعد استخدامه يُعطى رمز جديد.',
     'If the admin forgets their password: in the Windows app on this PC, open File → Reset admin password and enter this code. Once used, it is replaced by a new one.',
-    'ئەگەر بەڕێوەبەر وشەی نهێنیی خۆی بیرچووەوە: لە بەرنامەی ویندۆز لەسەر ئەم کۆمپیوتەرە «فایل» ← «ڕێکخستنەوەی وشەی نهێنیی بەڕێوەبەر» بکەرەوە و ئەم کۆدە بنووسە. دوای بەکارهێنانی، کۆدێکی نوێ دەدرێت.'
+    'ئەگەر بەڕێوەبەر وشەی نهێنیی خۆی لەبیر چوو: لە بەرنامەی ویندۆز لەسەر ئەم کۆمپیوتەرە «فایل» ← «ڕێکخستنەوەی وشەی نهێنیی بەڕێوەبەر» بکەرەوە و ئەم کۆدە بنووسە. دوای بەکارهێنانی، کۆدێکی نوێ دەدرێت.'
+  ],
+  // the same in a browser: nothing is reset from here, and "this PC" is not where the Windows app is
+  recoveryWhereBrowser: [
+    'إذا نسي المدير كلمة مروره فلا تُعاد من المتصفح: على الحاسوب الذي فيه بيانات الشركة، في تطبيق قاصة ERP لويندوز، افتح «ملف» ← «إعادة تعيين كلمة مرور المدير» واكتب هذا الرمز. بعد استخدامه يُعطى رمز جديد.',
+    'If the admin forgets their password, it is not reset from a browser: on the PC that holds the company’s data, in the Qasa ERP app for Windows, open File → Reset admin password and enter this code. Once used, it is replaced by a new one.',
+    'ئەگەر بەڕێوەبەر وشەی نهێنیی خۆی لەبیر چوو، لە وێبگەڕەوە ڕێکناخرێتەوە: لەسەر ئەو کۆمپیوتەرەی داتای کۆمپانیای لەسەرە، لە بەرنامەی قاسە ERP بۆ ویندۆز، «فایل» ← «ڕێکخستنەوەی وشەی نهێنیی بەڕێوەبەر» بکەرەوە و ئەم کۆدە بنووسە. دوای بەکارهێنانی، کۆدێکی نوێ دەدرێت.'
   ],
   recoveryKept: ['كتبت الرمز وحفظته في مكان آمن', 'I have written the code down and put it somewhere safe', 'کۆدەکەم نووسی و لە شوێنێکی سەلامەت داینا'],
   recoveryDone: ['تم', 'Done', 'تەواو'],
@@ -70,12 +76,12 @@ export const SAFETY_TEXT = {
   adj_countKept: [
     'يُحفظ الجرد على الخادم أثناء الكتابة، فيمكنك الخروج والعودة إليه. تُثبَّت كمية الدفاتر لكل مادة لحظة جردها أول مرة، فلا يظهر ما يُباع أثناء الجرد زيادةً.',
     'The count is saved on the server as you type, so you can leave and come back to it. Each item’s book quantity is fixed the moment it is first counted, so what is sold during the count does not show as a surplus.',
-    'ژماردنەکە لە کاتی نووسیندا لەسەر سێرڤەر پاشەکەوت دەکرێت، بۆیە دەتوانیت بڕۆیت و بگەڕێیتەوە سەری. بڕی دەفتەری هەر کاڵایەک لەو ساتەدا جێگیر دەکرێت کە یەکەم جار دەژمێردرێت، بۆیە ئەوەی لە کاتی ژماردندا دەفرۆشرێت وەک زیادە دەرناکەوێت.'
+    'جەردەکە لە کاتی نووسیندا لەسەر سێرڤەر پاشەکەوت دەکرێت، بۆیە دەتوانیت بڕۆیت و بگەڕێیتەوە سەری. بڕی دەفتەری هەر کاڵایەک لەو ساتەدا جێگیر دەکرێت کە یەکەم جار جەرد دەکرێت، بۆیە ئەوەی لە کاتی جەرددا دەفرۆشرێت وەک زیادە دەرناکەوێت.'
   ],
   adj_countResumed: [
     'هذا جرد محفوظ لهذا المخزن ({n} مادة)، آخر تعديل عليه من {who} في {when}. تابع من حيث توقفت.',
     'This warehouse has a saved count ({n} items), last changed by {who} on {when}. Carry on where it stopped.',
-    'ئەم کۆگایە ژماردنێکی پاشەکەوتکراوی هەیە ({n} کاڵا)، دوایین گۆڕانکاری لەلایەن {who} لە {when}. لەو شوێنەوە بەردەوام بە کە وەستا.'
+    'ئەم کۆگایە جەردێکی پاشەکەوتکراوی هەیە ({n} کاڵا)، دوایین گۆڕانکاری لەلایەن {who} لە {when}. لەو شوێنەوە بەردەوام بە کە وەستا.'
   ],
   adj_countSaved: ['محفوظ على الخادم', 'Saved on the server', 'لەسەر سێرڤەر پاشەکەوت کراوە'],
   adj_countSaving: ['جارٍ الحفظ…', 'Saving…', 'پاشەکەوت دەکرێت…'],
@@ -84,33 +90,33 @@ export const SAFETY_TEXT = {
   adj_leaveCount: [
     'بعض ما جردته لم يُحفظ على الخادم بعد. هل تغادر الصفحة على أي حال؟',
     'Some of what you counted is not saved on the server yet. Leave the page anyway?',
-    'هەندێک لەوەی ژماردووتە هێشتا لەسەر سێرڤەر پاشەکەوت نەکراوە. هەر بە هەر حاڵ پەڕەکە بەجێدەهێڵیت؟'
+    'هەندێک لەوەی جەردت کردووە هێشتا لەسەر سێرڤەر پاشەکەوت نەکراوە. لەگەڵ ئەوەشدا پەڕەکە بەجێدەهێڵیت؟'
   ],
-  adj_discardCount: ['تجاهل الجرد', 'Discard the count', 'وازهێنان لە ژماردن'],
+  adj_discardCount: ['تجاهل الجرد', 'Discard the count', 'وازهێنان لە جەرد'],
   adj_discardCountQ: [
     'تجاهل هذا الجرد كله والبدء من جديد؟ لا يتغيّر شيء في المخزون.',
     'Discard this whole count and start again? Nothing in the stock changes.',
-    'واز لە هەموو ئەم ژماردنە بهێنرێت و لە سەرەتاوە دەست پێبکرێتەوە؟ هیچ شتێک لە کۆگادا ناگۆڕێت.'
+    'واز لە هەموو ئەم جەردە بهێنرێت و لە سەرەتاوە دەست پێبکرێتەوە؟ هیچ شتێک لە کۆگادا ناگۆڕێت.'
   ],
   adj_frozenHelp: [
     'للمادة التي جُردت: كمية الدفاتر لحظة جردها أول مرة.',
     'For a counted item: the book quantity at the moment it was first counted.',
-    'بۆ کاڵایەکی ژمێردراو: بڕی دەفتەر لەو ساتەی یەکەم جار ژمێردرا.'
+    'بۆ کاڵایەکی جەردکراو: بڕی دەفتەر لەو ساتەی یەکەم جار جەرد کرا.'
   ],
   adj_frozenNow: ['في الدفاتر الآن: {n}', 'In the books now: {n}', 'ئێستا لە دەفتەردا: {n}'],
   adj_countClosedElsewhere: [
     'أُنهي هذا الجرد أو أُلغي على حاسوب آخر، لذا لم تُحفظ آخر التغييرات التي أُجريت هنا. تعرض الصفحة الآن المخزن من جديد.',
     'This count was finished or discarded on another PC, so the last changes made here were not saved. The page now shows the warehouse afresh.',
-    'ئەم ژماردنە لەسەر کۆمپیوتەرێکی تر تەواو کرا یان وازی لێهێنرا، بۆیە دوایین گۆڕانکارییەکانی ئێرە پاشەکەوت نەکران. پەڕەکە ئێستا کۆگاکە لە سەرەتاوە پیشان دەدات.'
+    'ئەم جەردە لەسەر کۆمپیوتەرێکی تر تەواو کرا یان وازی لێهێنرا، بۆیە دوایین گۆڕانکارییەکانی ئێرە پاشەکەوت نەکران. پەڕەکە ئێستا کۆگاکە لە سەرەتاوە پیشان دەدات.'
   ],
   adj_nothingCounted: [
     'لم يُجرد شيء بعد: أدخل كمية مادة واحدة على الأقل، أو اختر الجرد الكامل.',
     'Nothing is counted yet: enter a count for at least one item, or choose a full count.',
-    'هێشتا هیچ نەژمێردراوە: لانیکەم بڕی یەک کاڵا بنووسە، یان ژماردنی تەواو هەڵبژێرە.'
+    'هێشتا هیچ جەرد نەکراوە: لانیکەم بڕی یەک کاڵا بنووسە، یان جەردی تەواو هەڵبژێرە.'
   ],
   err_count_session_open: [
     'لهذا المخزن جرد مفتوح محفوظ على الخادم. أكمله أو تجاهله من صفحة الجرد، أو أضف هذه الكميات إليه هناك.',
     'This warehouse has an open count saved on the server. Finish or discard it on the count page, or add these quantities to it there.',
-    'ئەم کۆگایە ژماردنێکی کراوەی لەسەر سێرڤەر پاشەکەوتکراو هەیە. لە پەڕەی ژماردن تەواوی بکە یان وازی لێبهێنە، یان ئەم بڕانە لەوێ بخەرە ناوی.'
+    'ئەم کۆگایە جەردێکی کراوەی لەسەر سێرڤەر پاشەکەوتکراو هەیە. لە پەڕەی جەرد تەواوی بکە یان وازی لێبهێنە، یان ئەم بڕانە لەوێ بخەرە ناوی.'
   ]
 } as const satisfies Record<string, readonly [string, string, string]>;

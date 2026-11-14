@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState, type DragEvent } from 'react';
 import { todayIso, type CurrencyCode } from '@qasa/core';
 import { api, ApiError } from '../api.ts';
-import { AmountInput, ErrorBox, Icon, Modal, SearchCombo, useLoad, useToast, type PickOption } from '../components.tsx';
+import { AmountInput, ErrorBox, Icon, Modal, SearchCombo, useLoad, useMay, useToast, type PickOption } from '../components.tsx';
 import { useI18n, type I18n, type Key } from '../i18n.ts';
 import { OPEN_STAGES, pipelineApi, type DealInput, type DealView, type PipelineSummaryView, type Stage } from '../industry/pipeline-api.ts';
 import { quotesApi } from '../industry/quotes-api.ts';
@@ -23,6 +23,7 @@ function money2(i18n: I18n, m: { IQD: number; USD: number }): string {
 const isAbsent = (e: unknown) => e instanceof ApiError && e.status === 404 && !(e.details as { what?: string } | null)?.what;
 
 export function Pipeline() {
+  const can = useMay();
   const i18n = useI18n();
   const { t } = i18n;
   const toast = useToast();
@@ -68,7 +69,7 @@ export function Pipeline() {
         </div>
       )}
       <div className="row" style={{ flexWrap: 'wrap' }}>
-        {s?.available && <button type="button" className="btn primary" onClick={() => setEditing('new')}><Icon name="plus" size={16} />{t('pl_new')}</button>}
+        {s?.available && can('deal') && <button type="button" className="btn primary" onClick={() => setEditing('new')}><Icon name="plus" size={16} />{t('pl_new')}</button>}
         <div className="track" role="group" aria-label={t('pl_title')}>
           <button type="button" aria-pressed={view === 'open'} onClick={() => setView('open')}>{t('pl_board')}</button>
           <button type="button" aria-pressed={view === 'won'} onClick={() => setView('won')}>{t(stageKey('won'))}</button>
@@ -240,7 +241,7 @@ function DealModal({ deal, onClose, onDone, onCloseDeal }: { deal: DealView | nu
             <datalist id="pl-sources">{(['pl_src_walkin', 'pl_src_phone', 'pl_src_facebook', 'pl_src_instagram', 'pl_src_whatsapp', 'pl_src_referral'] as Key[]).map((k) => <option key={k} value={t(k)} />)}</datalist>
           </label>
           <label className="field"><span>{t('currency')}</span>
-            <select className="input" value={form.currency} onChange={(e) => set('currency', e.target.value as CurrencyCode)}><option value="IQD">IQD</option><option value="USD">USD</option></select>
+            <select className="input" value={form.currency} onChange={(e) => set('currency', e.target.value as CurrencyCode)}><option value="IQD">{t('iqdName')}</option><option value="USD">{t('usdName')}</option></select>
           </label>
           <label className="field"><span>{t('pl_value')}</span><AmountInput value={form.value} currency={form.currency} onChange={(v) => set('value', v)} ariaLabel={t('pl_value')} /></label>
           <label className="field"><span>{t('pl_nextStep')}</span><input className="input" maxLength={300} value={form.nextStep} onChange={(e) => set('nextStep', e.target.value)} placeholder={t('pl_nextStepHint')} /></label>

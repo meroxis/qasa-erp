@@ -17,8 +17,8 @@ export interface SerialView {
   status: SerialStatus;
   purchaseInvoice: { id: string; number: string | null } | null;
   fromParty: { id: string; name: string } | null;
-  /** IQD */
-  cost: number | null;
+  /** IQD; absent for someone who may not see cost (1.4) */
+  cost?: number | null;
   saleInvoice: { id: string; number: string | null; date: string } | null;
   party: { id: string; name: string; phone: string } | null;
   soldAt: string | null;

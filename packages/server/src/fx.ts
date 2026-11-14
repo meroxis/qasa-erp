@@ -126,7 +126,8 @@ export function deleteRate(db: Db, date: string, user: string): void {
   });
 }
 
-function postedRevaluations(db: Db): string[] {
+/** The revaluation entries posted so far (dinar journal entries on the dollar accounts and parties). */
+export function postedRevaluations(db: Db): string[] {
   try {
     const list = JSON.parse(readSetting(db, POSTED_KEY) ?? '[]') as unknown;
     return Array.isArray(list) ? list.filter((x): x is string => typeof x === 'string') : [];
@@ -210,7 +211,7 @@ export function revaluation(db: Db, f: { date?: string | undefined; rateX100?: n
 const DESCRIPTION: Record<'ar' | 'en' | 'ku', (rate: string, date: string) => string> = {
   ar: (rate, date) => `إعادة تقييم أرصدة الدولار بسعر ${rate} دينار في ${date}`,
   en: (rate, date) => `Revaluation of dollar balances at ${rate} dinars on ${date}`,
-  ku: (rate, date) => `هەڵسەنگاندنەوەی باڵانسی دۆلار بە نرخی ${rate} دینار لە ${date}`
+  ku: (rate, date) => `هەڵسەنگاندنەوەی ڕەسیدی دۆلار بە نرخی ${rate} دینار لە ${date}`
 };
 
 /**

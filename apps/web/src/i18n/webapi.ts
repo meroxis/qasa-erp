@@ -5,7 +5,7 @@ export const WEBAPI_TEXT = {
   wa_intro: [
     'يقرأ موقعك المواد والأسعار والمخزون مباشرة من قاصة، ويرسل الطلبات إليها كفواتير بيع مسودة تراجعها وترحّلها بنفسك. لكل موقع مفتاح خاص بصلاحيات محددة يمكنك إلغاؤه في أي وقت.',
     'Your website reads items, prices and stock straight from Qasa, and sends orders to it as draft sale invoices that you check and post yourself. Each site gets its own key with set permissions, which you can cancel at any time.',
-    'ماڵپەڕەکەت کاڵا و نرخ و کۆگا ڕاستەوخۆ لە قاسە دەخوێنێتەوە، و داواکارییەکان وەک ڕەشنووسی پسوولەی فرۆشتن دەنێرێت کە خۆت پێیاندا دەچیتەوە و تۆماریان دەکەیت. هەر ماڵپەڕێک کلیلی تایبەتی خۆی هەیە بە دەسەڵاتی دیاریکراو، و هەر کاتێک دەتوانیت هەڵیبوەشێنیتەوە.'
+    'ماڵپەڕەکەت کاڵا و نرخ و بڕی کۆگا ڕاستەوخۆ لە قاسە دەخوێنێتەوە، و داواکارییەکان وەک ڕەشنووسی پسوولەی فرۆشتن دەنێرێت کە خۆت پێیاندا دەچیتەوە و تۆماریان دەکەیت. هەر ماڵپەڕێک کلیلی تایبەتی خۆی هەیە بە دەسەڵاتی دیاریکراو، و هەر کاتێک دەتوانیت هەڵیبوەشێنیتەوە.'
   ],
   wa_needsPro: ['ربط المواقع من مزايا Starter وPro وBusiness — راجع «الخطة والترخيص».', 'The website API is part of Starter, Pro and Business. See Plan & license.', 'بەستنەوەی ماڵپەڕ بەشێکە لە Starter، Pro و Business — «پلان و مۆڵەت» ببینە.'],
   wa_connectTitle: ['كيف يصل موقعك إلى هذا المكتب', 'How your website reaches this office', 'ماڵپەڕەکەت چۆن دەگاتە ئەم نووسینگەیە'],
@@ -51,7 +51,7 @@ export const WEBAPI_TEXT = {
   wa_scopes: ['ما يُسمح به', 'What it may do', 'چی دەتوانێت بکات'],
   wa_scope_items: ['قراءة المواد والأسعار', 'Read items and prices', 'خوێندنەوەی کاڵا و نرخ'],
   wa_scope_itemsHelp: ['الأسماء والرموز والباركود والأسعار والصور', 'names, codes, barcodes, prices and pictures', 'ناو، کۆد، بارکۆد، نرخ و وێنە'],
-  wa_scope_stock: ['قراءة المخزون', 'Read stock', 'خوێندنەوەی کۆگا'],
+  wa_scope_stock: ['قراءة المخزون', 'Read stock', 'خوێندنەوەی بڕی کۆگا'],
   wa_scope_stockHelp: ['الكمية في كل مخزن', 'the quantity in each warehouse', 'بڕ لە هەر کۆگایەک'],
   wa_scope_customers: ['الزبائن', 'Customers', 'کڕیاران'],
   wa_scope_customersHelp: ['البحث برقم الهاتف وإضافة زبون جديد', 'find by phone and add a new customer', 'گەڕان بە ژمارەی تەلەفۆن و زیادکردنی کڕیاری نوێ'],
@@ -79,11 +79,11 @@ export const WEBAPI_TEXT = {
   wa_hooksHelp: [
     'تخبر قاصةُ موقعك عند تغيّر المخزون أو الأسعار أو حالة طلب، برسالة موقّعة. إن لم يردّ الموقع تعيد المحاولة.',
     'Qasa tells your website when stock, prices or an order’s status change, with a signed message. If the site doesn’t answer, it tries again.',
-    'قاسە ماڵپەڕەکەت ئاگادار دەکاتەوە کاتێک کۆگا یان نرخ یان دۆخی داواکارییەک دەگۆڕێت، بە نامەیەکی واژۆکراو. ئەگەر ماڵپەڕەکە وەڵام نەداتەوە، دووبارە هەوڵ دەداتەوە.'
+    'قاسە ماڵپەڕەکەت ئاگادار دەکاتەوە کاتێک بڕی کۆگا یان نرخ یان دۆخی داواکارییەک دەگۆڕێت، بە نامەیەکی واژۆکراو. ئەگەر ماڵپەڕەکە وەڵام نەداتەوە، دووبارە هەوڵ دەداتەوە.'
   ],
   wa_url: ['عنوان الاستقبال (https)', 'Receiving address (https)', 'ناونیشانی وەرگرتن (https)'],
   wa_events: ['متى يُرسل', 'When to send', 'کەی بنێردرێت'],
-  wa_event_stock: ['تغيّر المخزون', 'Stock changed', 'کۆگا گۆڕا'],
+  wa_event_stock: ['تغيّر المخزون', 'Stock changed', 'بڕی کۆگا گۆڕا'],
   wa_event_price: ['تغيّر سعر', 'A price changed', 'نرخێک گۆڕا'],
   wa_event_order: ['تغيّرت حالة طلب', 'An order’s status changed', 'دۆخی داواکارییەک گۆڕا'],
   wa_lastDelivery: ['آخر إرسال', 'Last sent', 'دوایین ناردن'],
@@ -101,7 +101,7 @@ export const WEBAPI_TEXT = {
   wa_shopsHelp: [
     'لمتاجر WordPress توجد إضافة «Qasa ERP» لـ WooCommerce، ولغيرها مكتبة PHP؛ نرسلهما عند الطلب عبر زر الدعم. تُدخل في الإضافة معرّف المكتب ومفتاح المكتب والمفتاح الجديد، فتحدّث الأسعار والمخزون تلقائياً وترسل الطلبات الجديدة. ويستطيع المبرمج أيضاً استعمال أي لغة فيها libsodium.',
     'For WordPress shops there is a “Qasa ERP” plugin for WooCommerce, and for other sites a PHP library; we send them on request through the Support button. In the plugin you enter the office ID, the office key and the new key; it then keeps prices and stock up to date and sends new orders. A developer can also use any language that has libsodium.',
-    'بۆ دوکانەکانی WordPress پێوەکراوی «Qasa ERP» بۆ WooCommerce هەیە، و بۆ ماڵپەڕەکانی تر کتێبخانەیەکی PHP؛ بە داواکاری لە ڕێگەی دوگمەی پشتگیرییەوە دەیاننێرین. لە پێوەکراوەکەدا ناسنامەی نووسینگە و کلیلی نووسینگە و کلیلە نوێیەکە دەنووسیت؛ ئینجا نرخ و کۆگا خۆکارانە نوێ دەکاتەوە و داواکارییە نوێیەکان دەنێرێت. پرۆگرامساز دەشتوانێت هەر زمانێک بەکاربهێنێت کە libsodium ی تێدا بێت.'
+    'بۆ دوکانەکانی WordPress پێوەکراوی «Qasa ERP» بۆ WooCommerce هەیە، و بۆ ماڵپەڕەکانی تر کتێبخانەیەکی PHP؛ بە داواکاری لە ڕێگەی دوگمەی پشتیوانییەوە دەیاننێرین. لە پێوەکراوەکەدا ناسنامەی نووسینگە و کلیلی نووسینگە و کلیلە نوێیەکە دەنووسیت؛ ئینجا نرخ و بڕی کۆگا خۆکارانە نوێ دەکاتەوە و داواکارییە نوێیەکان دەنێرێت. پرۆگرامساز دەشتوانێت هەر زمانێک بەکاربهێنێت کە libsodiumی تێدا بێت.'
   ],
 
   err_api_key_invalid: ['المفتاح غير صحيح أو ملغى.', 'The key is wrong or was cancelled.', 'کلیلەکە هەڵەیە یان هەڵوەشێنراوەتەوە.'],
@@ -115,9 +115,9 @@ export const WEBAPI_TEXT = {
   err_wa_events_required: ['اختر متى يُرسل الإشعار.', 'Pick when to send it.', 'هەڵبژێرە کەی بنێردرێت.'],
   err_wa_external_id_required: ['رقم الطلب في الموقع مطلوب.', 'The website’s order number is needed.', 'ژمارەی داواکاری لە ماڵپەڕ پێویستە.'],
   err_wa_lines_required: ['الطلب بلا مواد.', 'The order has no items.', 'داواکارییەکە هیچ کاڵایەکی تێدا نییە.'],
-  err_wa_item_unknown: ['السطر {n}: المادة غير موجودة في قاصة.', 'Line {n}: the item isn’t in Qasa.', 'دێڕی {n}: کاڵاکە لە قاسە نییە.'],
-  err_wa_qty_invalid: ['السطر {n}: الكمية غير صحيحة.', 'Line {n}: the quantity isn’t valid.', 'دێڕی {n}: بڕەکە دروست نییە.'],
-  err_wa_price_required: ['السطر {n}: أرسل السعر (عملة الطلب غير عملة المادة).', 'Line {n}: send the price (the order’s currency isn’t the item’s).', 'دێڕی {n}: نرخەکە بنێرە (دراوی داواکاری جیاوازە لە هی کاڵاکە).'],
+  err_wa_item_unknown: ['السطر {n}: المادة غير موجودة في قاصة.', 'Line {n}: the item isn’t in Qasa.', 'ڕیزی {n}: کاڵاکە لە قاسە نییە.'],
+  err_wa_qty_invalid: ['السطر {n}: الكمية غير صحيحة.', 'Line {n}: the quantity isn’t valid.', 'ڕیزی {n}: بڕەکە دروست نییە.'],
+  err_wa_price_required: ['السطر {n}: أرسل السعر (عملة الطلب غير عملة المادة).', 'Line {n}: send the price (the order’s currency isn’t the item’s).', 'ڕیزی {n}: نرخەکە بنێرە (دراوی داواکارییەکە جیاوازە لە هی کاڵاکە).'],
   err_wa_shipping_invalid: ['أجور التوصيل غير صحيحة.', 'The delivery charge isn’t valid.', 'کرێی گەیاندن دروست نییە.'],
   err_wa_warehouse_unknown: ['المخزن غير موجود.', 'That warehouse doesn’t exist.', 'ئەو کۆگایە نییە.'],
   err_wa_customer_unknown: ['الزبون غير موجود.', 'That customer doesn’t exist.', 'ئەو کڕیارە نییە.'],
@@ -126,12 +126,12 @@ export const WEBAPI_TEXT = {
   err_relay_secret_unprotected: [
     'لم يتمكن ويندوز من حماية المفتاح السري لهذا الحاسوب، فلم يُحفظ وبقي هذا مطفأً. أعد تشغيل الحاسوب وحاول مجدداً؛ وإن تكرر ذلك فتواصل مع دعم قاصة ERP.',
     'Windows couldn’t protect this PC’s secret key, so it wasn’t saved and this stays off. Restart the PC and try again; if it keeps happening, contact Qasa ERP support.',
-    'ویندۆز نەیتوانی کلیلی نهێنیی ئەم کۆمپیوتەرە بپارێزێت، بۆیە پاشەکەوت نەکرا و ئەمە کوژاوە دەمێنێتەوە. کۆمپیوتەرەکە دووبارە هەڵبکەرەوە و هەوڵ بدەرەوە؛ ئەگەر هەر دووبارە بووەوە پەیوەندی بە پشتگیری قاسە ERP بکە.'
+    'ویندۆز نەیتوانی کلیلی نهێنیی ئەم کۆمپیوتەرە بپارێزێت، بۆیە پاشەکەوت نەکرا و ئەمە کوژاوە دەمێنێتەوە. کۆمپیوتەرەکە دووبارە هەڵبکەرەوە و هەوڵ بدەرەوە؛ ئەگەر هەر دووبارە بووەوە پەیوەندی بە پشتیوانیی قاسە ERP بکە.'
   ],
 
   e_api_key: ['مفتاح ربط موقع', 'Website key', 'کلیلی ماڵپەڕ'],
   e_webhook: ['إشعار لموقع', 'Webhook', 'ئاگادارکردنەوەی ماڵپەڕ'],
-  e_web_order: ['طلب من الموقع', 'Website order', 'داواکاری لە ماڵپەڕەوە'],
+  e_web_order: ['طلب من الموقع', 'Website order', 'داواکاریی ماڵپەڕ'],
   a_revoke: ['إلغاء', 'Cancelled', 'هەڵوەشاندنەوە'],
   a_office_key_renewed: ['مفتاح مكتب جديد للمواقع', 'New office key for websites', 'کلیلی نوێی نووسینگە بۆ ماڵپەڕەکان']
 } as const satisfies Record<string, readonly [string, string, string]>;

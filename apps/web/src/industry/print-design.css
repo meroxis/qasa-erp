@@ -1,13 +1,18 @@
 /* ---------- designed papers (the print designer) ---------- */
 
+/* Long names, long words and big numbers stay inside the paper: text wraps (inside a word when it must), columns of
+   numbers keep to one line and the item's name gives way first. Numbers and codes read left to right in every language. */
 .qd-paper {
-  --qd-accent: #1f4e79; --qd-fs: 10pt; --qd-margin: 14mm; --qd-logo-h: 18mm;
+  --qd-accent: #1f4e79; --qd-fs: 10pt; --qd-margin: 14mm; --qd-logo-h: 18mm; --qd-rule: #7d8796;
   font-size: var(--qd-fs); line-height: 1.45; color: #111; background: #fff;
   display: flex; flex-direction: column; gap: 3mm;
+  overflow-wrap: anywhere; min-inline-size: 0;
 }
 .qd-paper .ltr { direction: ltr; unicode-bidi: isolate; }
 .qd-paper .num { font-variant-numeric: tabular-nums; }
 .qd-muted { color: #555; font-size: 0.9em; }
+/* a code (C-0004, P-101) stays in one piece: a long name beside it wraps, the code never breaks at its hyphen */
+.qd-nb { white-space: nowrap; }
 .qd-second { display: block; font-size: 0.72em; font-weight: 400; color: #555; line-height: 1.2; }
 
 /* the preview in the designer: a sheet of paper at its real proportions */
@@ -18,9 +23,9 @@
 
 /* header: the logo goes left, right or in the middle, whatever the writing direction */
 .qd-head { display: flex; align-items: center; gap: 4mm; direction: ltr; }
-.qd-head .qd-company { flex: 1; direction: inherit; }
+.qd-head .qd-company { flex: 1; min-inline-size: 0; direction: inherit; }
 .qd-paper[dir='rtl'] .qd-head .qd-company { direction: rtl; }
-.qd-logo { block-size: var(--qd-logo-h); max-inline-size: 60mm; object-fit: contain; }
+.qd-logo { flex: none; block-size: var(--qd-logo-h); max-inline-size: min(60mm, 40%); object-fit: contain; }
 .qd-logo-left .qd-logo { order: 0; }
 .qd-logo-left .qd-company { order: 1; text-align: right; }
 .qd-logo-right .qd-logo { order: 1; }
@@ -29,53 +34,65 @@
 .qd-paper[dir='rtl'].qd-logo-right .qd-company { text-align: right; }
 .qd-logo-center .qd-head { flex-direction: column; text-align: center; }
 .qd-logo-center .qd-company { text-align: center; }
-.qd-company-name { font-weight: 700; font-size: 1.35em; color: var(--qd-accent); }
-.qd-company-meta { display: flex; gap: 4mm; flex-wrap: wrap; justify-content: inherit; }
+.qd-company-name { font-weight: 700; font-size: 1.35em; line-height: 1.25; color: var(--qd-accent); }
+.qd-company-meta { display: flex; gap: 0 4mm; flex-wrap: wrap; justify-content: inherit; }
 .qd-logo-center .qd-company-meta { justify-content: center; }
+.qd-logo-left .qd-company-meta { justify-content: flex-end; }
+.qd-logo-right .qd-company-meta { justify-content: flex-start; }
 
 .qd-title-row { display: flex; justify-content: space-between; align-items: flex-start; gap: 6mm; }
-.qd-title { font-size: 1.6em; font-weight: 700; color: var(--qd-accent); }
-.qd-stamp-cancelled { margin-inline-start: 4mm; padding: 0 2mm; border: 2px solid #b00020; color: #b00020; font-size: 0.6em; vertical-align: middle; }
+.qd-title { font-size: 1.6em; font-weight: 700; line-height: 1.25; color: var(--qd-accent); min-inline-size: 0; }
+.qd-stamp-cancelled { display: inline-block; margin-inline-start: 4mm; padding: 0 2mm; border: 2px solid #b00020; color: #b00020; font-size: 0.6em; vertical-align: middle; }
 .qd-draft { margin-inline-start: 4mm; color: #777; font-size: 0.6em; vertical-align: middle; }
-.qd-meta { display: grid; grid-template-columns: auto auto; gap: 1mm 4mm; margin: 0; }
+.qd-meta { flex: none; max-inline-size: 60%; display: grid; grid-template-columns: auto minmax(0, auto); gap: 1mm 4mm; margin: 0; }
 .qd-meta dt { color: #555; }
-.qd-meta dd { margin: 0; font-weight: 600; }
+.qd-meta dd { margin: 0; font-weight: 600; text-align: end; }
 
 .qd-party { padding: 2mm 3mm; border-inline-start: 3px solid var(--qd-accent); background: #f6f7f9; }
 .qd-party-label { color: #555; font-size: 0.9em; }
 .qd-party-name { font-weight: 700; font-size: 1.1em; }
 
-.qd-table { inline-size: 100%; border-collapse: collapse; }
-.qd-table th { text-align: start; font-weight: 700; padding: 1.5mm 2mm; vertical-align: bottom; }
+/* tables: the name column takes what is left and wraps; numbers never break; a long code breaks rather than push */
+.qd-table { inline-size: 100%; max-inline-size: 100%; border-collapse: collapse; }
+.qd-table th { text-align: start; font-weight: 700; padding: 1.5mm 2mm; vertical-align: bottom; overflow-wrap: normal; word-break: normal; }
 .qd-table td { padding: 1.5mm 2mm; border-block-end: 1px solid #e3e5e8; vertical-align: top; }
 .qd-table .qd-num { text-align: end; white-space: nowrap; }
-.qd-table .qd-n { inline-size: 1%; white-space: nowrap; color: #666; }
+.qd-table th.qd-num { white-space: normal; }
+.qd-table .qd-n { inline-size: 1%; white-space: nowrap; color: #666; text-align: center; }
 .qd-table .qd-img { inline-size: 1%; }
-.qd-table .qd-name { inline-size: 40%; }
+.qd-table .qd-name { inline-size: 40%; min-inline-size: 24mm; }
+.qd-table .qd-code { min-inline-size: 13mm; overflow-wrap: break-word; }
+.qd-table .qd-unit { overflow-wrap: break-word; }
 .qd-table tr { break-inside: avoid; }
 .qd-table thead { display: table-header-group; }
 
 .qd-bottom { display: flex; justify-content: space-between; align-items: flex-start; gap: 6mm; break-inside: avoid; }
-.qd-words { flex: 1; color: #333; font-style: italic; }
-.qd-totals { display: grid; grid-template-columns: auto auto; gap: 1mm 6mm; margin: 0; min-inline-size: 60mm; }
+.qd-words { flex: 1; min-inline-size: 0; color: #333; font-style: italic; }
+.qd-words-label { display: none; font-style: normal; font-weight: 700; }
+.qd-totals { flex: none; max-inline-size: 62%; display: grid; grid-template-columns: minmax(0, auto) auto; gap: 1mm 6mm; margin: 0; min-inline-size: 60mm; }
 .qd-totals dt { color: #444; }
-.qd-totals dd { margin: 0; text-align: end; }
+.qd-totals dd { margin: 0; text-align: end; white-space: nowrap; }
 .qd-totals .qd-grand { font-weight: 700; font-size: 1.15em; color: var(--qd-accent); border-block-start: 1.5px solid var(--qd-accent); padding-block-start: 1mm; }
+.qd-totals .qd-strong { font-weight: 700; color: #111; }
 
 .qd-notes, .qd-terms, .qd-bank { white-space: pre-wrap; break-inside: avoid; }
 .qd-block-title { font-weight: 700; color: var(--qd-accent); }
 
 .qd-sign-row { display: flex; align-items: flex-end; gap: 6mm; margin-block-start: 4mm; break-inside: avoid; }
-.qd-sig { flex: 1; border-block-start: 1px solid #999; padding-block-start: 1.5mm; min-block-size: 14mm; }
+.qd-sig { flex: 1; min-inline-size: 0; border-block-start: 1px solid #999; padding-block-start: 1.5mm; min-block-size: 14mm; }
 .qd-sig-name { font-weight: 600; }
-.qd-stamp { inline-size: 30mm; block-size: 30mm; border: 1.5px dashed #999; border-radius: 50%; display: grid; place-items: center; color: #999; text-align: center; font-size: 0.85em; }
+.qd-stamp { flex: none; inline-size: 30mm; block-size: 30mm; border: 1.5px dashed #999; border-radius: 50%; display: grid; place-items: center; color: #999; text-align: center; font-size: 0.85em; }
 .qd-qr { flex: none; background: #fff; }
 
 .qd-foot { margin-block-start: auto; padding-block-start: 2mm; border-block-start: 1px solid #ddd; text-align: center; color: #444; font-size: 0.9em; white-space: pre-wrap; }
 .qd-made { font-size: 0.85em; color: #777; }
 
-.qd-barcode { display: inline-flex; flex-direction: column; align-items: center; font-size: 0.75em; }
-.qd-barcode svg { inline-size: 28mm; block-size: 6mm; }
+.qd-barcode { display: inline-flex; flex-direction: column; align-items: center; font-size: 0.75em; white-space: nowrap; overflow-wrap: normal; }
+.qd-barcode svg { inline-size: 28mm; max-inline-size: 100%; block-size: 6mm; }
+.qd-table .qd-bc { min-inline-size: 30mm; }
+.qd-a5 .qd-table .qd-bc { min-inline-size: 19mm; }
+.qd-a5 .qd-barcode { font-size: 0.68em; }
+.qd-a5 .qd-barcode svg { inline-size: 18mm; }
 
 /* Classic: ruled header row in the accent colour */
 .qd-classic .qd-table thead th { border-block-end: 2px solid var(--qd-accent); }
@@ -89,31 +106,142 @@
 .qd-modern .qd-party { border-inline-start: none; border-radius: 3mm; }
 .qd-modern .qd-title { text-transform: uppercase; letter-spacing: .02em; }
 
+/* Modern with lines: a band of colour across the top (logo, company, title and number), the customer and the dates
+   in a row under it, a table ruled between rows AND columns, and the totals in a rounded box */
+.qd-band { background: var(--qd-accent); color: #fff; padding: 5mm 6mm; border-radius: 2.5mm; gap: 5mm; }
+.qd-band .qd-company-name, .qd-band .qd-title { color: #fff; }
+.qd-band .qd-company { font-size: 0.92em; color: rgba(255, 255, 255, .88); }
+.qd-band .qd-logo { background: #fff; border-radius: 2mm; padding: 1mm; }
+.qd-band-title { flex: none; max-inline-size: 45%; text-align: end; }
+.qd-paper[dir='rtl'] .qd-band-title { direction: rtl; }
+.qd-band .qd-title { font-size: 1.7em; letter-spacing: .02em; }
+.qd-band .qd-second { color: rgba(255, 255, 255, .85); }
+.qd-band-no { font-size: 1em; color: rgba(255, 255, 255, .88); }
+.qd-band .qd-stamp-cancelled { border-color: #fff; color: #fff; }
+.qd-band .qd-draft { color: rgba(255, 255, 255, .8); }
+/* the logo's side decides the order: logo, company, title — or the mirror of it */
+.qd-logo-left .qd-band .qd-band-title { order: 2; text-align: right; }
+.qd-logo-left .qd-band .qd-company { text-align: left; }
+.qd-paper[dir='rtl'].qd-logo-left .qd-band .qd-company { text-align: left; }
+.qd-logo-right .qd-band .qd-band-title { order: -1; text-align: left; }
+.qd-logo-right .qd-band .qd-company { text-align: right; }
+.qd-logo-right .qd-band .qd-logo { order: 2; }
+.qd-paper[dir='rtl'].qd-logo-right .qd-band .qd-company { text-align: right; }
+.qd-logo-left .qd-band .qd-company-meta { justify-content: flex-start; }
+.qd-logo-right .qd-band .qd-company-meta { justify-content: flex-end; }
+.qd-logo-center .qd-band .qd-band-title { max-inline-size: 100%; text-align: center; }
+.qd-info { display: flex; flex-wrap: wrap; gap: 2mm 8mm; padding: 1mm 1mm 0; }
+.qd-info-col { min-inline-size: 0; }
+.qd-info-party { flex: 1 1 45%; }
+.qd-info-label { font-size: 0.8em; font-weight: 700; letter-spacing: .03em; color: #5a6475; }
+.qd-info-value { font-weight: 600; }
+.qd-modernLines .qd-table th, .qd-modernLines .qd-table td { border: 1px solid var(--qd-rule); }
+.qd-modernLines .qd-table thead th { background: #eef1f6; background: color-mix(in srgb, var(--qd-accent) 11%, #fff); color: var(--qd-accent); border-block-end: 1.5px solid var(--qd-accent); vertical-align: middle; }
+.qd-modernLines .qd-totals { gap: 0; border: 1px solid var(--qd-rule); border-radius: 2.5mm; padding: 1.5mm; min-inline-size: 68mm; }
+.qd-modernLines .qd-totals dt, .qd-modernLines .qd-totals dd { padding: 0.8mm 2.5mm; }
+.qd-modernLines .qd-totals dd { padding-inline-start: 6mm; }
+.qd-modernLines .qd-totals .qd-grand { background: var(--qd-accent); color: #fff; border: none; padding-block: 1.6mm; margin-block: 0.8mm; }
+.qd-modernLines .qd-totals dt.qd-grand { border-start-start-radius: 1.8mm; border-end-start-radius: 1.8mm; }
+.qd-modernLines .qd-totals dd.qd-grand { border-start-end-radius: 1.8mm; border-end-end-radius: 1.8mm; }
+.qd-modernLines .qd-totals .qd-grand .qd-second { color: rgba(255, 255, 255, .85); }
+.qd-modernLines .qd-words { font-style: normal; color: #444; }
+.qd-modernLines .qd-words-label { display: block; color: #111; }
+.qd-modernLines .qd-sign-row { border-block-start: 1px solid #dfe3ea; padding-block-start: 4mm; }
+.qd-modernLines .qd-sig { border-block-start: none; border-block-end: 1px solid #5a6475; min-block-size: 16mm; max-inline-size: 48mm; display: flex; flex-direction: column-reverse; justify-content: space-between; padding-block-end: 1mm; }
+.qd-modernLines .qd-qr { order: 9; margin-inline-start: auto; }
+.qd-modernLines .qd-stamp { border-radius: 2.5mm; order: 8; margin-inline-start: auto; }
+.qd-modernLines .qd-stamp + .qd-qr, .qd-modernLines .qd-qr ~ .qd-stamp { margin-inline-start: 0; }
+
+/* Classic ledger: black and white, every cell ruled, the totals joined to the table, a stamp box (saves ink) */
+.qd-ledger { --qd-rule: #111; color: #111; }
+.qd-ledger .qd-company-name, .qd-ledger .qd-title, .qd-ledger .qd-block-title { color: #111; }
+.qd-ledger .qd-head { padding-block-end: 3mm; border-block-end: 3px double #111; align-items: flex-start; }
+.qd-ledger .qd-company-2 { flex: 1; }
+.qd-ledger.qd-logo-left .qd-company-2 { order: 2; }
+.qd-ledger.qd-logo-right .qd-company-2 { order: -1; }
+.qd-ledger.qd-logo-left .qd-company-2, .qd-paper[dir='rtl'].qd-ledger.qd-logo-left .qd-company-2 { text-align: right; }
+.qd-ledger.qd-logo-right .qd-company-2, .qd-paper[dir='rtl'].qd-ledger.qd-logo-right .qd-company-2 { text-align: left; }
+/* the logo in the middle: the company's name in the paper's language on its own side, the second language opposite */
+.qd-ledger.qd-logo-center .qd-head { flex-direction: row; text-align: start; }
+.qd-ledger.qd-logo-center .qd-company { text-align: left; order: 0; }
+.qd-ledger.qd-logo-center .qd-logo { order: 1; }
+.qd-ledger.qd-logo-center .qd-company-2 { order: 2; text-align: right; }
+.qd-paper[dir='rtl'].qd-ledger.qd-logo-center .qd-company { text-align: right; order: 2; }
+.qd-paper[dir='rtl'].qd-ledger.qd-logo-center .qd-company-2 { text-align: left; order: 0; }
+.qd-ledger.qd-logo-center .qd-company-meta { justify-content: flex-start; }
+.qd-title-center { text-align: center; font-size: 1.35em; }
+.qd-ledger .qd-second { display: inline; font-size: 0.85em; color: #111; }
+.qd-ledger .qd-second::before { content: ' · '; }
+.qd-box { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1mm 8mm; margin: 0; padding: 2mm 3mm; border: 1px solid #111; }
+.qd-box-row { display: flex; justify-content: space-between; gap: 3mm; min-inline-size: 0; }
+.qd-box-row dt { flex: none; max-inline-size: 55%; }
+.qd-box-row dd { margin: 0; font-weight: 700; text-align: end; min-inline-size: 0; }
+.qd-80mm .qd-box, .qd-a5 .qd-box { gap: 1mm 5mm; }
+.qd-ledger .qd-table th, .qd-ledger .qd-table td { border: 1px solid #111; }
+.qd-ledger .qd-table thead th { text-align: center; vertical-align: middle; }
+.qd-ledger .qd-table .qd-n { color: #111; }
+.qd-ledger .qd-table .qd-unit { text-align: center; }
+/* joined to the table above it: the paper's gap is taken back and the two borders become one */
+.qd-ledger .qd-tot-table { margin-block-start: calc(-3mm - 1px); break-inside: avoid; }
+.qd-tot-table .qd-words-cell { inline-size: 52%; vertical-align: top; font-size: 0.92em; }
+.qd-tot-table .qd-words-label { display: inline; }
+.qd-tot-table .qd-tot-label { inline-size: 26%; }
+.qd-tot-table .qd-grand td, .qd-tot-table .qd-strong td { font-weight: 700; }
+.qd-tot-table .qd-grand .qd-words-cell, .qd-tot-table .qd-strong .qd-words-cell { font-weight: 400; }
+.qd-ledger .qd-sign-row { align-items: stretch; margin-block-start: 8mm; text-align: center; }
+.qd-ledger .qd-sig { border-block-start: none; border-block-end: 1px solid #111; min-block-size: 16mm; display: flex; flex-direction: column-reverse; justify-content: space-between; padding-block-end: 1mm; }
+.qd-ledger .qd-sig .qd-muted, .qd-ledger .qd-stamp { color: #111; }
+.qd-ledger .qd-sig-1 { order: 1; }
+.qd-ledger .qd-stamp { order: 2; flex: 1; inline-size: auto; block-size: auto; min-block-size: 16mm; border: 1px dashed #111; border-radius: 0; }
+.qd-ledger .qd-sig-2 { order: 3; }
+.qd-ledger .qd-qr { order: 4; align-self: flex-end; }
+.qd-ledger .qd-foot { border-block-start-color: #111; color: #111; }
+
 /* Compact: tighter, smaller headings, everything on fewer pages */
 .qd-compact { gap: 1.5mm; line-height: 1.3; }
 .qd-compact .qd-title { font-size: 1.25em; }
 .qd-compact .qd-table th, .qd-compact .qd-table td { padding: 0.8mm 1.2mm; }
 .qd-compact .qd-table thead th { border-block-end: 1px solid #333; }
 .qd-compact .qd-party { padding: 1mm 2mm; background: none; }
+.qd-compact .qd-sig { min-block-size: 10mm; }
+.qd-compact .qd-stamp { inline-size: 22mm; block-size: 22mm; }
+
+/* half a page: everything a little closer, whatever the design */
+.qd-a5 .qd-table th, .qd-a5 .qd-table td { padding-inline: 1mm; }
+/* a big amount may put its currency on a second line rather than push the table off the page */
+.qd-a5 .qd-table td.qd-num { white-space: normal; overflow-wrap: normal; }
+.qd-a5 .qd-table .qd-name { min-inline-size: 18mm; }
+.qd-a5 .qd-table .qd-code { min-inline-size: 10mm; overflow-wrap: anywhere; }
+.qd-a5 .qd-table .qd-unit { overflow-wrap: anywhere; }
+.qd-a5 .qd-table { font-size: 0.94em; }
+.qd-a5 .qd-band { padding: 3.5mm 4mm; gap: 3mm; }
+.qd-a5 .qd-totals { min-inline-size: 50mm; }
+.qd-a5 .qd-bottom { gap: 4mm; }
 
 /* 80 mm receipt: one column, lines as name then quantity × price = amount */
 .qd-receipt80 { gap: 2mm; }
 .qd-receipt80 .qd-head, .qd-receipt80 .qd-title-row, .qd-receipt80 .qd-bottom, .qd-receipt80 .qd-sign-row { flex-direction: column; align-items: stretch; text-align: center; gap: 1.5mm; }
-.qd-receipt80 .qd-logo { align-self: center; }
+.qd-receipt80 .qd-logo { align-self: center; max-inline-size: 70%; }
 .qd-receipt80 .qd-company { text-align: center !important; }
+.qd-receipt80 .qd-company-meta { justify-content: center; }
 .qd-receipt80 .qd-title { font-size: 1.2em; }
-.qd-receipt80 .qd-meta { justify-content: center; }
+.qd-receipt80 .qd-meta { max-inline-size: 100%; justify-content: center; }
 .qd-receipt80 .qd-party { background: none; border: none; padding: 0; text-align: center; }
-.qd-receipt80 .qd-totals { min-inline-size: 0; }
-.qd-receipt80 .qd-words { display: none; }
+.qd-receipt80 .qd-totals { min-inline-size: 0; max-inline-size: 100%; gap: 1mm 3mm; text-align: start; }
+.qd-receipt80 .qd-totals dd { white-space: normal; }
 .qd-receipt80 .qd-qr { align-self: center; }
+.qd-receipt80 .qd-stamp { align-self: center; }
+.qd-receipt80 .qd-table th, .qd-receipt80 .qd-table td { padding: 1mm 0.8mm; }
+.qd-receipt80 .qd-table .qd-num { white-space: normal; }
 .qd-receipt-lines { border-block: 1px dashed #333; padding-block: 1.5mm; display: flex; flex-direction: column; gap: 1.5mm; }
-.qd-rcalc { display: flex; justify-content: space-between; gap: 2mm; }
+.qd-rcalc { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 0 2mm; }
+.qd-rcalc strong { margin-inline-start: auto; }
 
 @media print {
   .qd-print-host { display: block; }
   .qd-paper { box-shadow: none; border: none; padding: 0; inline-size: auto; min-block-size: 0; }
-  .qd-modern .qd-table thead th, .qd-modern .qd-table tbody tr:nth-child(even) td, .qd-party { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  .qd-modern .qd-table thead th, .qd-modern .qd-table tbody tr:nth-child(even) td, .qd-party,
+  .qd-band, .qd-band .qd-logo, .qd-modernLines .qd-table thead th, .qd-modernLines .qd-totals .qd-grand { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
 }
 
 /* ---------- the designer page ---------- */
@@ -122,6 +250,10 @@
 .pd-fields { border: none; margin: 0; min-inline-size: 0; }
 .pd-fields:disabled { opacity: .55; }
 .pd-checks { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px 12px; }
+/* a long label stays beside its tick box and wraps inside itself, never under the box */
+.pd-checks label.row { flex-wrap: nowrap; align-items: flex-start; }
+.pd-checks label.row > input { flex: none; margin-block-start: 3px; }
+.pd-checks label.row > span { min-inline-size: 0; overflow-wrap: anywhere; }
 .pd-preview-col { position: sticky; inset-block-start: 0; min-inline-size: 0; }
 .pd-preview-scroll { overflow: auto; max-block-size: calc(100vh - 200px); padding: 12px; background: var(--fill, #eef0f3); border-radius: 10px; }
 .pp-logo-box { inline-size: 120px; block-size: 72px; display: grid; place-items: center; border: 1px dashed var(--line-2, #ccc); border-radius: 8px; background: #fff; }
@@ -156,3 +288,17 @@
 .qd-letterhead { margin-block-end: 4mm; }
 .qd-letterfoot { margin-block-start: 6mm; }
 @media print { .qd-80mm { inline-size: 72mm; } }
+
+/* the gallery of ready-made designs: each card is the sample paper itself, drawn small with the design being edited */
+.pd-gallery { display: grid; grid-template-columns: repeat(auto-fill, minmax(118px, 1fr)); gap: 10px; }
+.pd-card { display: flex; flex-direction: column; gap: 6px; padding: 6px; text-align: start; font: inherit; color: inherit; cursor: pointer; background: var(--surface, #fff); border: 1.5px solid var(--line-2, #ccc); border-radius: 10px; min-inline-size: 0; }
+.pd-card:hover { border-color: var(--accent, #1f4e79); }
+.pd-card[aria-pressed='true'] { border-color: var(--accent, #1f4e79); box-shadow: 0 0 0 2px var(--accent, #1f4e79); }
+.pd-card:disabled { cursor: default; }
+.pd-thumb { position: relative; block-size: 150px; overflow: hidden; border-radius: 6px; background: var(--fill, #eef0f3); display: flex; justify-content: center; align-items: flex-start; padding-block-start: 6px; pointer-events: none; }
+.pd-thumb .qd-preview { box-shadow: 0 1px 4px rgba(0, 0, 0, .18); margin: 0; }
+.pd-card-name { font-weight: 600; font-size: 13px; line-height: 1.25; overflow-wrap: anywhere; }
+.pd-card-hint { font-size: 11.5px; line-height: 1.3; overflow-wrap: anywhere; }
+.pd-group { display: flex; flex-direction: column; gap: 6px; }
+.pd-group-title { font-weight: 600; font-size: 12.5px; }
+.pd-locked { display: flex; gap: 8px; align-items: flex-start; }

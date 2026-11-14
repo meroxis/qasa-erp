@@ -27,8 +27,8 @@ describe('the 128-bit pairing code', () => {
     expect(en).toMatch(/32 letters and digits, like 3F9A-1C22-7B0E-44D1-5BE0-C7A9-6D2F-1E83/);
     expect(en).toMatch(/update Qasa ERP on the server PC/);
     expect(ar).toContain('32 حرفاً');
-    expect(ku).toContain('٣٢ پیت');
-    for (const text of [ar, en, ku]) expect(text).not.toMatch(/\b16 letters|16 حرفاً ورقماً، مثل|١٦ پیت و ژمارەیە/);
+    expect(ku).toContain('32 پیت');
+    for (const text of [ar, en, ku]) expect(text).not.toMatch(/\b16 letters|16 حرفاً ورقماً، مثل|١٦ پیت و ژمارەیە|16 پیت و ژمارەیە/);
     expect(new Set(texts('codeHint')).size).toBe(3);
     expect(html).toContain('<small data-t="codeHint"></small>');
   });

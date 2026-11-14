@@ -1,9 +1,9 @@
 import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ComponentType, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from 'react';
 import { APP_VERSION, htmlLang, isLang, type DigitStyle, type Lang } from '@qasa/core';
 import { api, currentUser, SIGNED_OUT_EVENT, type AccountView, type Me, type PlanStatus, type Settings as SettingsData } from './api.ts';
-import { BusyBar, DataContext, DisplayContext, Icon, isDensity, isTheme, Logo, PageNavContext, ToastProvider, type Density, type PageNav, type Theme } from './components.tsx';
+import { buildHas, BusyBar, DataContext, DisplayContext, Icon, isDensity, isTheme, Logo, PageNavContext, ToastProvider, type Density, type PageNav, type Theme } from './components.tsx';
 import { I18nContext, isKey, makeI18n, useI18n, type Key } from './i18n.ts';
-import { href, useRoute } from './router.ts';
+import { closedPageAddress, href, useRoute } from './router.ts';
 import { Home } from './pages/Home.tsx';
 import type { EntryStatus } from '@qasa/core';
 import { PasswordModal, SignIn, Users } from './pages/Users.tsx';
@@ -11,7 +11,7 @@ import { SupportButton } from './industry/SupportButton.tsx';
 import { BranchSwitcher } from './industry/BranchSwitcher.tsx';
 import { BRANCH_EVENT } from './industry/branches-api.ts';
 import { BUSINESS_FEATURE } from '@qasa/core';
-import { ADMIN_PAGES, canSee, COMPANY_BOOK_PAGES, FAVOURITES_EVENT, seesCompanyBooks, favourites, findPage, NAV, navCollapsed, openGroups, openGroupsWith, setNavCollapsed, setOpenGroups, toggledGroup, type NavItem, type NavViewer } from './nav.ts';
+import { ADMIN_PAGES, canSee, COMPANY_BOOK_PAGES, navLabel, pageOpen, NO_BOOKS_PAGES, FAVOURITES_EVENT, seesCompanyBooks, favourites, findPage, NAV, navCollapsed, openGroups, openGroupsWith, setNavCollapsed, setOpenGroups, toggledGroup, type NavItem, type NavViewer } from './nav.ts';
 import { CommandPalette } from './industry/CommandPalette.tsx';
 import { Tour, TOUR_EVENT, tourDone } from './industry/Tour.tsx';
 import { UpdateBanner } from './industry/UpdateBanner.tsx';
@@ -25,6 +25,8 @@ import { isReportTab, isSolarTab } from './pages/tabs.ts';
 import { canSwitchCompanies } from './industry/companies-api.ts';
 import { outboxClient, setOutboxUser, startOutbox } from './industry/outbox.ts';
 import { OutboxBanner } from './industry/OutboxBanner.tsx';
+import { HeaderRate } from './industry/HeaderRate.tsx';
+import { dataPlaceLine, inWindowsApp, officeText, useDataPlace } from './industry/data-place.ts';
 
 /**
  * Pages load when they are first opened, not with the app: the first screen comes up quickly and the window holds only
@@ -151,6 +153,8 @@ export function App() {
   const [me, setMe] = useState<Me | null>(null);
   const [changingPassword, setChangingPassword] = useState(false);
   const [online, setOnline] = useState(true);
+  // 1.4: on this PC, or on the office PC this one is connected to: the status line and the backup hints say which
+  const dataPlace = useDataPlace();
   const route = useRoute();
   // the menu: shrunk to icons (remembered on this PC), which groups are open (several at once, remembered per person), pinned pages
   const [collapsed, setCollapsed] = useState(navCollapsed);
@@ -303,14 +307,19 @@ export function App() {
   }, [userId, reloadAccounts, reloadSettings, reloadPlan]);
 
   // someone limited to branches gets no link to the company's own books (the server refuses them anyway)
-  const companyBooks = seesCompanyBooks({ admin: !!me?.user?.permissions.includes('admin'), branchLimited: !!me?.user?.branchLimited });
+  const companyBooks = seesCompanyBooks({ admin: !!me?.user?.permissions.includes('admin'), branchLimited: !!me?.user?.branchLimited, noBooks: me?.user?.seesBooks === false });
+  // 1.4: a cashier gets no cost and no profit from the server: the screens leave those columns and tiles out
+  const seesCost = me?.user?.seesCost !== false;
+  const seesBooks = me?.user?.seesBooks !== false;
   // what the person may change (a "+" to add a customer shows only to someone who may), and who they are for what
   // the app remembers per person on this PC
   const permissions = me?.user?.permissions;
   const userKey = me?.signInRequired && me.user?.id ? `user:${me.user.id}` : `name:${favUser}`;
+  // what the build serves beside the app's own routes: pages ask only for what is there
+  const modules = me?.modules;
   const data = useMemo(
-    () => ({ accounts, settings, plan, online, companyBooks, permissions, userKey, reloadAccounts, reloadSettings, reloadPlan }),
-    [accounts, settings, plan, online, companyBooks, permissions, userKey, reloadAccounts, reloadSettings, reloadPlan]
+    () => ({ accounts, settings, plan, online, companyBooks, seesCost, seesBooks, permissions, userKey, modules, reloadAccounts, reloadSettings, reloadPlan }),
+    [accounts, settings, plan, online, companyBooks, seesCost, seesBooks, permissions, userKey, modules, reloadAccounts, reloadSettings, reloadPlan]
   );
   const { t } = i18n;
   const [page, arg, arg2] = route;
@@ -323,18 +332,24 @@ export function App() {
   let title: string = t('home');
   let content: ReactNode;
   const isAdmin = !!me?.user?.permissions.includes('admin');
-  const viewer: NavViewer = { admin: isAdmin, permissions: me?.user?.permissions ?? [], businessTypes: settings?.businessTypes ?? [], branchLimited: !!me?.user?.branchLimited };
+  const viewer: NavViewer = { admin: isAdmin, permissions: me?.user?.permissions ?? [], businessTypes: settings?.businessTypes ?? [], branchLimited: !!me?.user?.branchLimited, noBooks: !seesBooks };
   const books = seesCompanyBooks(viewer);
   // admin pages (the menu's admin-only items) open for admins only, and the company's books (trial balance, final
   // accounts, statements) not for someone limited to branches; everyone else lands on the home page
-  const adminPage = (ADMIN_PAGES.has(page ?? '') && !isAdmin) || (COMPANY_BOOK_PAGES.has(page ?? '') && !books);
+  // 1.4: someone who does not keep the books reads the vouchers they prepared, and writes none in the editor (theirs
+  // come from "Receive payment"): the editor's pages land on the home page too, and so do the expenses and a bank
+  // statement to reconcile, which the server refuses them
+  // and so does every page whose action the server would refuse this person (nav.ts pageOpen): a purchase invoice
+  // for someone who only sells, a new voucher for someone who prepares none
+  const adminPage = (ADMIN_PAGES.has(page ?? '') && !isAdmin) || (COMPANY_BOOK_PAGES.has(page ?? '') && !books) || (!seesBooks && NO_BOOKS_PAGES.has(page ?? ''))
+    || (!!me?.user && !pageOpen(page ?? '', arg, viewer));
   switch (adminPage ? '' : page ?? '') {
     case '':
     case 'home':
       content = <Home viewer={viewer} user={favUser} favourites={favs} />;
       break;
     case 'entries':
-      title = t('vouchers');
+      title = seesBooks ? t('vouchers') : t('s14_myVouchers');
       content = <Entries key={arg ?? ''} {...(arg === 'draft' || arg === 'checked' || arg === 'approved' ? { status: arg as EntryStatus } : {})} />;
       break;
     case 'new':
@@ -346,7 +361,7 @@ export function App() {
       content = arg ? <EntryEditor key={'edit-' + arg} id={arg} /> : null;
       break;
     case 'entry':
-      title = t('vouchers');
+      title = seesBooks ? t('vouchers') : t('s14_myVouchers');
       content = arg ? <EntryDetail key={arg} id={arg} /> : null;
       break;
     case 'accounts':
@@ -640,7 +655,7 @@ export function App() {
       break;
     case 'items':
       title = t('items');
-      content = <Items key={arg ?? ''} {...(arg === 'reorder' ? { tab: 'reorder' as const } : {})} />;
+      content = <Items key={arg ?? ''} {...(arg === 'reorder' || arg === 'warehouses' ? { tab: arg } : {})} />;
       break;
     case 'item':
       title = t('items');
@@ -671,6 +686,10 @@ export function App() {
   const user = me?.signInRequired ? me.user?.name ?? '' : currentUser() || me?.user?.name || '';
   // the header shows where a page sits: "Sales › Sales invoices" (a page refused to a non-admin shows Home)
   const shown = adminPage ? '' : page ?? '';
+  // a page closed to this person shows Home: the address bar says Home too, not the address that was typed
+  // (replaced, not added: Back does not return to the closed address)
+  const closedAddress = closedPageAddress({ closed: adminPage, page, signedIn: !!me?.user });
+  useEffect(() => { if (closedAddress) window.location.replace(closedAddress); }, [closedAddress, routeKey]);
   const matches = (item: NavItem) => (pageNav ? item.key === pageNav.key : (item.match ?? []).some((m) => m === shown || m === `${shown}:${arg}`));
   const group = pageNav?.group ?? NAV.find((g) => g.items.some(matches))?.group;
   const crumb = group && group !== 'gOverview' ? group : null;
@@ -724,8 +743,8 @@ export function App() {
   function navLink(item: NavItem, extra = '') {
     if (item.path === undefined) {
       return (
-        <button key={item.key} type="button" className="nav-item" disabled title={t(item.key)}>
-          <Icon name={item.icon} /><span>{t(item.key)}</span><span className="soon">{t('soon')}</span>
+        <button key={item.key} type="button" className="nav-item" disabled title={t(navLabel(item, viewer))}>
+          <Icon name={item.icon} /><span>{t(navLabel(item, viewer))}</span><span className="soon">{t('soon')}</span>
         </button>
       );
     }
@@ -733,8 +752,8 @@ export function App() {
     const feature = item.business ? BUSINESS_FEATURE[item.business] : null;
     const locked = !!feature && !!plan && !plan.features.includes(feature);
     return (
-      <a key={extra + item.key} className={'nav-item' + (active ? ' active' : '')} href={href(item.path)} aria-current={active ? 'page' : undefined} title={t(item.key)}>
-        <Icon name={item.icon} /><span>{t(item.key)}</span>{locked && !railed && <span className="soon">{feature === 'realEstate' ? 'Business' : 'Pro'}</span>}
+      <a key={extra + item.key} className={'nav-item' + (active ? ' active' : '')} href={href(item.path)} aria-current={active ? 'page' : undefined} title={t(navLabel(item, viewer))}>
+        <Icon name={item.icon} /><span>{t(navLabel(item, viewer))}</span>{locked && !railed && <span className="soon">{feature === 'realEstate' ? 'Business' : 'Pro'}</span>}
       </a>
     );
   }
@@ -821,6 +840,8 @@ export function App() {
                 <button type="button" className="btn subtle icon" title={dark ? t('lightMode') : t('darkMode')} aria-label={dark ? t('lightMode') : t('darkMode')} onClick={() => setTheme(dark ? 'light' : 'dark')}>
                   <Icon name={dark ? 'sun' : 'moon'} size={16} />
                 </button>
+                {/* 1.4: today's dollar rate beside the person's name, on the side away from the window's edge */}
+                <HeaderRate canSet={isAdmin || !!me.user?.permissions.includes('entries.prepare')} watch={`${settings?.defaultRateX100 ?? ''}/${page === 'rates'}`} />
                 <span className="topbar-sep" />
                 <UserMenu
                   name={user || t('owner')}
@@ -858,13 +879,15 @@ export function App() {
                     {isAdmin && <a href={href('plans')}>{t('planLicense')}</a>}
                   </div>
                 )}
-                {import.meta.env.MODE !== 'demo' && <BackupNoticeBar admin={isAdmin} page={page === 'settings' && arg !== 'backups' ? 'settings-section' : page} />}
+                {/* not on a PC connected to an office PC: the books and their backups are on that PC */}
+                {import.meta.env.MODE !== 'demo' && dataPlace?.kind === 'local' && inWindowsApp() && <BackupNoticeBar admin={isAdmin} served={buildHas(modules, 'backup')} page={page === 'settings' && arg !== 'backups' ? 'settings-section' : page} />}
                 {outboxOn && <OutboxBanner page={page ?? ''} />}
                 <div key={branchKey} style={{ display: 'contents' }}><Suspense fallback={<PageLoading />}>{content}</Suspense></div>
               </main>
               <footer className="statusbar">
                 <span className={'dot' + (online ? '' : ' off')} />
-                <span>{import.meta.env.MODE === 'demo' ? t('demoMode') : online ? t('localMode') : t('serverDown')}</span>
+                {/* where the data is: this PC, or the office PC this one is connected to (never "on this PC" there) */}
+                <span>{import.meta.env.MODE === 'demo' ? t('demoMode') : online ? dataPlaceLine(t, dataPlace) : dataPlace?.kind === 'office' ? officeText(t, dataPlace, 's14_officeDown') : t('serverDown')}</span>
                 <span className="spacer" />
                 {import.meta.env.MODE === 'demo' && <a href="../" className="ltr">qasaerp.com</a>}
                 <span className="ltr">Qasa ERP {APP_VERSION}</span>

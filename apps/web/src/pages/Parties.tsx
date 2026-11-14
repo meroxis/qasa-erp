@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { api, type InvoiceSummary, type PartyInput, type PartyType, type PartyView } from '../api.ts';
-import { EmptyState, AccountCombo, AmountInput, ErrorBox, Icon, InvoiceStatusChip, LANGUAGE_NAMES, Modal, downloadCsv, useData, useLoad, usePageNav, useToast } from '../components.tsx';
+import { EmptyState, AccountCombo, AmountInput, ErrorBox, Icon, InvoiceStatusChip, LANGUAGE_NAMES, Modal, downloadCsv, useData, useLandHome, useLoad, useMay, usePageNav, useToast } from '../components.tsx';
 import { useI18n } from '../i18n.ts';
 import { go, href } from '../router.ts';
 import { PriceListField } from '../industry/PriceListField.tsx';
@@ -9,6 +9,58 @@ import { StatementWhatsApp } from '../industry/WhatsAppShare.tsx';
 import { LoyaltyCard } from '../industry/Loyalty.tsx';
 import { isLang, todayIso, type Lang } from '@qasa/core';
 import { printDocument } from '../industry/printing.ts';
+import { QuickVoucherButton } from '../industry/QuickVoucher.tsx';
+import { oweLines, oweTone, oweWords, partiesApi, partyOwes, type PartySort, type PartyTotals } from '../industry/parties-api.ts';
+
+/**
+ * 1.4: what one customer or supplier owes, in words and colour instead of debit and credit: "Owes us 250,000 IQD",
+ * "We owe them $50.00". Each currency on its own line, as the app keeps them; one who paid dollars in dinars (or the
+ * other way) shows the one position in IQD at the book rates, and `empty` when that is zero (oweLines): the lists and
+ * the statement pass "Nothing owed", shown muted.
+ */
+export function OweAmount({ party, empty = '—' }: { party: Pick<PartyView, 'type' | 'balance' | 'balances'>; empty?: string }) {
+  const i18n = useI18n();
+  const lines = oweLines(party);
+  if (lines.length === 0) return <span className="muted">{empty}</span>;
+  return (
+    <span className="owe">
+      {lines.map((l) => (
+        <span key={l.currency} className={`owe-line ${oweTone(party.type, l.side)}`}>
+          <span className="owe-word">{i18n.t(oweWords(party.type, l.side))}</span>
+          <span className="num">{i18n.money(l.amount, l.currency)}</span>
+        </span>
+      ))}
+    </span>
+  );
+}
+
+/** 1.4: the line above the list: "Customers owe us: 1,250,000 IQD · $300.00" (and what was paid ahead, when there is any). */
+export function PartyTotalsBar({ type, totals }: { type: PartyType; totals: PartyTotals | null }) {
+  const i18n = useI18n();
+  const { t } = i18n;
+  if (!totals) return null;
+  const customer = type === 'customer';
+  const amounts = (a: PartyTotals['owed']) => [a.IQD ? i18n.money(a.IQD, 'IQD') : null, a.USD ? i18n.money(a.USD, 'USD') : null].filter((v): v is string => !!v);
+  const owed = amounts(totals.owed);
+  const advance = amounts(totals.advance);
+  return (
+    <div className="card pad owe-totals" role="status">
+      <div className={'owe-total ' + (owed.length ? oweTone(type, 'owes') : '')}>
+        <span className="label">{t(customer ? 's14_oweCustomer' : 's14_oweSupplier')}</span>
+        {owed.length
+          ? <strong className="value num">{owed.map((a, i) => <span key={i} className="owe-sum">{a}</span>)}</strong>
+          : <span className="muted">{t(customer ? 's14_nothingCustomer' : 's14_nothingSupplier')}</span>}
+        {owed.length > 0 && <span className="muted small">{t(customer ? 's14_owingCustomers' : 's14_owingSuppliers', { n: i18n.int(totals.owing) })}</span>}
+      </div>
+      {advance.length > 0 && (
+        <div className={'owe-total ' + oweTone(type, 'advance')}>
+          <span className="label">{t(customer ? 's14_oweCustomerAdv' : 's14_oweSupplierAdv')}</span>
+          <strong className="value num">{advance.map((a, i) => <span key={i} className="owe-sum">{a}</span>)}</strong>
+        </div>
+      )}
+    </div>
+  );
+}
 
 /** الزبائن / المجهزون */
 export function Parties({ type }: { type: PartyType }) {
@@ -16,24 +68,47 @@ export function Parties({ type }: { type: PartyType }) {
   const { t } = i18n;
   const [q, setQ] = useState('');
   const [editing, setEditing] = useState<PartyView | 'new' | null>(null);
-  const { data, error, reload } = useLoad(() => api.parties({ type, q: q.trim() }), [type, q]);
+  // 1.4: only those who owe, and the biggest debt first (the server filters and sorts)
+  const [owing, setOwing] = useState(false);
+  const [sort, setSort] = useState<PartySort>('code');
+  const loaded = useLoad(() => partiesApi.list({ type, q: q.trim(), owing, sort }), [type, q, owing, sort]);
+  const totals = useLoad(() => partiesApi.totals(type), [type]);
+  const { error } = loaded;
+  const reload = () => { loaded.reload(); totals.reload(); };
+  // an office PC not yet on 1.4 ignores the filter and the order: the same is done here, so the buttons always work
+  const data = loaded.data && shownParties(loaded.data, owing, sort);
   const total = (data ?? []).reduce((s, p) => s + p.balance, 0);
-  // a dollar column only when someone has dollar movement
-  const anyUsd = (data ?? []).some((p) => (p.balances?.USD ?? 0) !== 0);
+  const customer = type === 'customer';
+  // buttons only for what this person may do (may.ts): customers and sales, or suppliers and purchases
+  const can = useMay();
+  const mayEdit = can(customer ? 'customer' : 'supplier');
+  const mayInvoice = can(customer ? 'sale' : 'purchase');
 
   return (
     <div className="stack">
       <div className="row">
-        <button type="button" className="btn primary" onClick={() => setEditing('new')}><Icon name="plus" size={16} />{type === 'customer' ? t('newCustomer') : t('newSupplier')}</button>
-        <a className="btn" href={href(type === 'customer' ? 'new-invoice/sale' : 'new-invoice/purchase')}><Icon name="invoice" size={16} />{type === 'customer' ? t('newSale') : t('newPurchase')}</a>
+        {mayEdit && <button type="button" className="btn primary" onClick={() => setEditing('new')}><Icon name="plus" size={16} />{type === 'customer' ? t('newCustomer') : t('newSupplier')}</button>}
+        {mayInvoice && <a className="btn" href={href(type === 'customer' ? 'new-invoice/sale' : 'new-invoice/purchase')}><Icon name="invoice" size={16} />{type === 'customer' ? t('newSale') : t('newPurchase')}</a>}
         <span className="spacer" />
         <input className="input" style={{ width: 240 }} type="search" placeholder={t('search')} aria-label={t('search')} value={q} onChange={(e) => setQ(e.target.value)} />
+      </div>
+      <PartyTotalsBar type={type} totals={totals.data} />
+      <div className="row owe-filters">
+        <div className="track" role="group" aria-label={t('s14_show')}>
+          <button type="button" aria-pressed={!owing} onClick={() => setOwing(false)}>{t('all')}</button>
+          <button type="button" aria-pressed={owing} onClick={() => setOwing(true)}>{t(customer ? 's14_onlyOwingCustomers' : 's14_onlyOwingSuppliers')}</button>
+        </div>
+        <div className="track" role="group" aria-label={t('s14_sort')}>
+          <button type="button" aria-pressed={sort === 'code'} onClick={() => setSort('code')}>{t('s14_sortCode')}</button>
+          <button type="button" aria-pressed={sort === 'debt'} onClick={() => setSort('debt')}>{t('s14_sortDebt')}</button>
+        </div>
       </div>
       <ErrorBox error={error} />
       <div className="card">
         {data && data.length === 0 && (q.trim()
           ? <EmptyState compact icon="search" title={t('es_search')} text={t('es_searchText')} />
-          : <EmptyState icon="users" title={t('es_parties')} text={t('es_partiesText')} action={{ label: type === 'customer' ? t('newCustomer') : t('newSupplier'), icon: 'plus', onClick: () => setEditing('new') }} secondary={{ label: t('importExcel'), icon: 'upload', href: href('import') }} />)}
+          : owing ? <EmptyState compact icon="check" title={t('s14_noneOwing')} />
+          : <EmptyState icon="users" title={t('es_parties')} text={t('es_partiesText')} {...(mayEdit ? { action: { label: type === 'customer' ? t('newCustomer') : t('newSupplier'), icon: 'plus', onClick: () => setEditing('new') } } : {})} {...(can('importPage') ? { secondary: { label: t('importExcel'), icon: 'upload', href: href('import') } } : {})} />)}
         {data && data.length > 0 && (
           <table className="table">
             <thead>
@@ -41,8 +116,7 @@ export function Parties({ type }: { type: PartyType }) {
                 <th style={{ width: 90 }}>{t('code')}</th>
                 <th>{t('name')}</th>
                 <th>{t('phone')}</th>
-                <th className="amount">{t('balanceDue')}</th>
-                {anyUsd && <th className="amount">{t('usdName')}</th>}
+                <th className="amount">{t('balance')}</th>
                 <th style={{ width: 44 }} />
               </tr>
             </thead>
@@ -56,18 +130,22 @@ export function Parties({ type }: { type: PartyType }) {
                     {p.address && <div className="muted small">{p.address}</div>}
                   </td>
                   <td className="num ltr">{i18n.digitsOf(p.phone)}</td>
-                  <td className="amount">{p.balance ? i18n.money(p.balance, 'IQD') : <span className="muted">—</span>}</td>
-                  {anyUsd && <td className="amount">{p.balances?.USD ? i18n.money(p.balances.USD, 'USD') : <span className="muted">—</span>}</td>}
-                  <td>
-                    <button type="button" className="btn icon ghost" title={t('actEdit')} aria-label={t('actEdit')} onClick={(e) => { e.stopPropagation(); setEditing(p); }}>
-                      <Icon name="edit" size={16} />
-                    </button>
+                  {/* nothing owed is said in words (muted), as beside every other name */}
+                  <td className="amount"><OweAmount party={p} empty={t('s14_settled')} /></td>
+                  <td style={{ whiteSpace: 'nowrap' }}>
+                    {/* 1.4: receive a payment from the customer, or pay the supplier, from their row */}
+                    {p.active && <QuickVoucherButton kind={type === 'customer' ? 'receipt' : 'payment'} preset={{ partyId: p.id }} className="btn small" onDone={reload} />}
+                    {mayEdit && (
+                      <button type="button" className="btn icon ghost" title={t('actEdit')} aria-label={t('actEdit')} onClick={(e) => { e.stopPropagation(); setEditing(p); }}>
+                        <Icon name="edit" size={16} />
+                      </button>
+                    )}
                   </td>
                 </tr>
               ))}
             </tbody>
             <tfoot>
-              <tr><td /><td>{t('total')}</td><td /><td className="amount">{i18n.money(total, 'IQD')}</td><td /></tr>
+              <tr><td /><td colSpan={2}>{t('s14_totalAtRates')}</td><td className="amount">{i18n.money(total, 'IQD')}</td><td /></tr>
             </tfoot>
           </table>
         )}
@@ -77,6 +155,13 @@ export function Parties({ type }: { type: PartyType }) {
       )}
     </div>
   );
+}
+
+/** The rows as the list shows them: only those who owe when asked, and the biggest debt first (else as they came, by code). */
+export function shownParties(list: PartyView[], owing: boolean, sort: PartySort): PartyView[] {
+  const rows = owing ? list.filter(partyOwes) : list.slice();
+  if (sort === 'debt') rows.sort((a, b) => b.balance - a.balance);
+  return rows;
 }
 
 export function PartyForm({ type, party, onClose, onSaved }: { type: PartyType; party: PartyView | null; onClose(): void; onSaved(p: PartyView): void }) {
@@ -151,7 +236,8 @@ export function PartyForm({ type, party, onClose, onSaved }: { type: PartyType; 
 export function PartyDetail({ id, admin = false }: { id: string; admin?: boolean }) {
   const i18n = useI18n();
   const { t } = i18n;
-  const { settings } = useData();
+  const { settings, seesBooks } = useData();
+  const can = useMay();
   const [from, setFrom] = useState('');
   const [to, setTo] = useState('');
   // all lines (IQD at the book rates), or one currency's lines in that currency
@@ -162,17 +248,25 @@ export function PartyDetail({ id, admin = false }: { id: string; admin?: boolean
   usePageNav(data ? (data.party.type === 'customer' ? { key: 'customers', group: 'gSales' } : { key: 'suppliers', group: 'gPurchases' }) : null);
   const invoices = useLoad(() => api.invoices({ partyId: id }), [id]);
 
+  if (useLandHome(error)) return null;
   if (error) return <ErrorBox error={error} />;
   if (!data) return null;
   const p = data.party;
   const isCustomer = p.type === 'customer';
+  const mayEdit = can(isCustomer ? 'customer' : 'supplier');
+  const mayInvoice = can(isCustomer ? 'sale' : 'purchase');
   const company = settings ? i18n.name(settings.companyName) : '';
+  // 1.4: a supplier's lines say what each purchase cost: the server sends someone who may not read the books the
+  // balance alone (no opening, no lines). The page then says so, rather than show a statement with nothing in it
+  const hidden = data.opening === undefined;
+  // a line opens its invoice; a voucher's line opens the entry only for someone who may read the journal
+  const lineLink = (l: (typeof data.lines)[number]): string | null => (l.invoiceId ? `invoice/${l.invoiceId}` : seesBooks !== false ? `entry/${l.entryId}` : null);
 
   const exportCsv = () => downloadCsv(`${p.code}-statement.csv`, [
     [t('date'), t('number'), t('description'), t('debit'), t('credit'), t('balance'), t('currency')],
-    [from, '', t('opening'), '', '', data.opening, cur],
+    [from, '', t('opening'), '', '', data.opening ?? '', cur],
     ...data.lines.map((l) => [l.date, l.number, l.description, l.debit, l.credit, l.balance, l.currency ?? cur]),
-    ['', '', t('closing'), data.totalDebit, data.totalCredit, data.closing, cur]
+    ['', '', t('closing'), data.totalDebit ?? '', data.totalCredit ?? '', data.closing, cur]
   ]);
 
   return (
@@ -181,11 +275,13 @@ export function PartyDetail({ id, admin = false }: { id: string; admin?: boolean
       <div className="row no-print">
         <button type="button" className="btn" onClick={() => history.back()}>{t('back')}</button>
         <span className="spacer" />
-        <button type="button" className="btn" onClick={() => setEditing(true)}><Icon name="edit" size={16} />{t('actEdit')}</button>
-        <a className="btn primary" href={href(isCustomer ? `new-invoice/sale/${p.id}` : `new-invoice/purchase/${p.id}`)}><Icon name="plus" size={16} />{isCustomer ? t('newSale') : t('newPurchase')}</a>
+        {mayEdit && <button type="button" className="btn" onClick={() => setEditing(true)}><Icon name="edit" size={16} />{t('actEdit')}</button>}
+        {/* 1.4: receive a payment from the customer, or pay the supplier, from their statement */}
+        {p.active && <QuickVoucherButton kind={isCustomer ? 'receipt' : 'payment'} preset={{ partyId: p.id }} onDone={reload} />}
+        {mayInvoice && <a className="btn primary" href={href(isCustomer ? `new-invoice/sale/${p.id}` : `new-invoice/purchase/${p.id}`)}><Icon name="plus" size={16} />{isCustomer ? t('newSale') : t('newPurchase')}</a>}
         <StatementWhatsApp company={company} name={p.name} code={p.code} phone={p.phone} lang={p.lang} balance={data.closing} date={to || todayIso()} currency={cur} />
-        <button type="button" className="btn" onClick={exportCsv}><Icon name="download" size={16} />{t('exportExcel')}</button>
-        <button type="button" className="btn" onClick={() => void printDocument('report')}><Icon name="printer" size={16} />{t('print')}</button>
+        {!hidden && <button type="button" className="btn" onClick={exportCsv}><Icon name="download" size={16} />{t('exportExcel')}</button>}
+        {!hidden && <button type="button" className="btn" onClick={() => void printDocument('report')}><Icon name="printer" size={16} />{t('print')}</button>}
       </div>
 
       <div className="grid-4">
@@ -195,9 +291,9 @@ export function PartyDetail({ id, admin = false }: { id: string; admin?: boolean
           <div className="muted small">{[p.phone && i18n.digitsOf(p.phone), p.address].filter(Boolean).join(' · ')}</div>
         </div>
         <div className="card pad tile">
-          <div className="label">{t('balanceDue')}</div>
-          <div className="value num">{i18n.money(p.balance, 'IQD')}</div>
-          {(p.balances?.USD ?? 0) !== 0 && <div className="muted small num">{i18n.money(p.balances!.IQD, 'IQD')} + {i18n.money(p.balances!.USD, 'USD')}</div>}
+          <div className="label">{t('balance')}</div>
+          <div className="value owe-tile"><OweAmount party={p} empty={t('s14_settled')} /></div>
+          {(p.balances?.USD ?? 0) !== 0 && <div className="muted small num" title={t('s14_totalAtRates')}>{t('total')}: {i18n.money(p.balance, 'IQD')}</div>}
         </div>
         <div className="card pad tile">
           <div className="label">{isCustomer ? t('creditLimit') : t('linkedAccount')}</div>
@@ -208,7 +304,12 @@ export function PartyDetail({ id, admin = false }: { id: string; admin?: boolean
       {isCustomer && <div className="no-print"><PriceListField partyId={p.id} /></div>}
       {isCustomer && <div className="no-print"><LoyaltyCard partyId={p.id} admin={admin} /></div>}
 
-      <div className="card">
+      {hidden ? (
+        <div className="card pad stack" data-statement-hidden>
+          <h2>{t('statement')}</h2>
+          <p className="muted" style={{ margin: 0 }}>{t('s14_statementInBooks')}</p>
+        </div>
+      ) : <div className="card">
         <div className="row" style={{ padding: '12px 16px' }}>
           <h2>{t('statement')}</h2>
           <span className="spacer" />
@@ -226,9 +327,11 @@ export function PartyDetail({ id, admin = false }: { id: string; admin?: boolean
             <tr><th>{t('date')}</th><th>{t('number')}</th><th>{t('description')}</th><th className="amount">{t('debit')}</th><th className="amount">{t('credit')}</th><th className="amount">{t('balance')}</th></tr>
           </thead>
           <tbody>
-            <tr><td /><td /><td className="muted">{t('opening')}</td><td /><td /><td className="amount">{i18n.money(data.opening, cur)}</td></tr>
-            {data.lines.map((l, i) => (
-              <tr key={i} className="click" onClick={() => go(l.invoiceId ? `invoice/${l.invoiceId}` : `entry/${l.entryId}`)}>
+            <tr><td /><td /><td className="muted">{t('opening')}</td><td /><td /><td className="amount">{i18n.money(data.opening ?? 0, cur)}</td></tr>
+            {data.lines.map((l, i) => {
+              const open = lineLink(l);
+              return (
+              <tr key={i} className={open ? 'click' : undefined} onClick={open ? () => go(open) : undefined}>
                 <td className="num">{i18n.date(l.date)}</td>
                 <td><span className="ltr num">{l.number}</span></td>
                 <td>{l.description}{!currency && l.currency === 'USD' && l.amount !== undefined && <span className="muted small"> ({i18n.money(Math.abs(l.amount), 'USD')})</span>}</td>
@@ -236,14 +339,15 @@ export function PartyDetail({ id, admin = false }: { id: string; admin?: boolean
                 <td className="amount">{l.credit ? i18n.money(l.credit, cur) : ''}</td>
                 <td className="amount">{i18n.money(l.balance, cur)}</td>
               </tr>
-            ))}
+              );
+            })}
             {data.lines.length === 0 && <tr><td colSpan={6} className="muted">{t('noData')}</td></tr>}
           </tbody>
           <tfoot>
-            <tr><td /><td /><td>{t('closing')}</td><td className="amount">{i18n.money(data.totalDebit, cur)}</td><td className="amount">{i18n.money(data.totalCredit, cur)}</td><td className="amount">{i18n.money(data.closing, cur)}</td></tr>
+            <tr><td /><td /><td>{t('closing')}</td><td className="amount">{i18n.money(data.totalDebit ?? 0, cur)}</td><td className="amount">{i18n.money(data.totalCredit ?? 0, cur)}</td><td className="amount">{i18n.money(data.closing, cur)}</td></tr>
           </tfoot>
         </table>
-      </div>
+      </div>}
 
       <div className="card no-print">
         <div style={{ padding: '12px 16px' }}><h2>{t('partyInvoices')}</h2></div>
@@ -260,6 +364,8 @@ export function InvoicesTable({ invoices, showParty = true }: { invoices: Invoic
   const i18n = useI18n();
   const { t } = i18n;
   if (invoices.length === 0) return <p className="muted" style={{ padding: '14px 16px', margin: 0 }}>{t('noInvoices')}</p>;
+  // 1.4: purchase invoices reach someone who may not read the books without their money: no total column then
+  const priced = invoices.some((v) => v.total !== undefined);
   return (
     <table className="table">
       <thead>
@@ -268,7 +374,7 @@ export function InvoicesTable({ invoices, showParty = true }: { invoices: Invoic
           <th>{t('colDate')}</th>
           {showParty && <th>{t('customerOrSupplier')}</th>}
           <th>{t('paymentMode')}</th>
-          <th className="amount">{t('totalDue')}</th>
+          {priced && <th className="amount">{t('totalDue')}</th>}
           <th>{t('colStatus')}</th>
         </tr>
       </thead>
@@ -282,7 +388,7 @@ export function InvoicesTable({ invoices, showParty = true }: { invoices: Invoic
             <td className="num">{i18n.date(v.date)}</td>
             {showParty && <td className="bidi">{v.partyName ?? <span className="muted">{t('walkIn')}</span>}</td>}
             <td>{v.payment === 'cash' ? t('payCash') : t('payCredit')}</td>
-            <td className="amount">{i18n.money(v.total, v.currency)}</td>
+            {priced && <td className="amount">{v.total !== undefined ? i18n.money(v.total, v.currency) : ''}</td>}
             <td><InvoiceStatusChip status={v.status} />{(v.paidOnline ?? 0) > 0 && <span className="chip ok" style={{ marginInlineStart: 6 }}>{t('pay_paidOnline')}</span>}</td>
           </tr>
         ))}

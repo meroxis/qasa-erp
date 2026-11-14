@@ -10,7 +10,8 @@ export interface BatchReportRow {
   itemId: string; itemCode: string; itemName: Names; unit: UnitCode;
   batchId: string; batch: string; expiry: string | null;
   warehouseId: string; warehouseCode: string; warehouseName: Names;
-  qtyMilli: number; value: number; daysLeft: number | null; state: ExpiryState;
+  /** value: absent for someone who may not see cost (1.4) */
+  qtyMilli: number; value?: number; daysLeft: number | null; state: ExpiryState;
 }
 
 export interface BatchSettingsView { nearExpiryDays: number; expiredSales: 'block' | 'warn'; defaultTrackExpiry: boolean }

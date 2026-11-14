@@ -166,7 +166,7 @@ function PrepareModal({ onClose, onDone }: { onClose(): void; onDone(id: string)
         <div className="grid-2">
           <label className="field"><span>{t('pay_month')}</span><input className="input" type="month" value={period} onChange={(e) => setPeriod(e.target.value)} /></label>
           <label className="field"><span>{t('currency')}</span>
-            <select className="input" value={currency} onChange={(e) => setCurrency(e.target.value as CurrencyCode)}><option value="IQD">IQD</option><option value="USD">USD</option></select>
+            <select className="input" value={currency} onChange={(e) => setCurrency(e.target.value as CurrencyCode)}><option value="IQD">{t('iqdName')}</option><option value="USD">{t('usdName')}</option></select>
           </label>
         </div>
         <ErrorBox error={error} />
@@ -638,7 +638,7 @@ function EmployeeModal({ employee: e, onClose, onDone }: { employee: EmployeeVie
           <label className="field"><span>{t('pay_department')}</span><input className="input" maxLength={200} value={v.department ?? ''} onChange={text('department')} /></label>
           <label className="field"><span>{t('currency')}</span>
             <select className="input" value={v.currency} disabled={!!e?.hasHistory} onChange={(ev) => setV((x) => ({ ...x, currency: ev.target.value as CurrencyCode }))}>
-              <option value="IQD">IQD</option><option value="USD">USD</option>
+              <option value="IQD">{t('iqdName')}</option><option value="USD">{t('usdName')}</option>
             </select>
           </label>
           <label className="field"><span>{t('pay_baseSalary')}</span><AmountInput value={v.baseSalary} currency={v.currency} onChange={(n) => setV((x) => ({ ...x, baseSalary: n ?? 0 }))} ariaLabel={t('pay_baseSalary')} /></label>

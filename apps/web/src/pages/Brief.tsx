@@ -1,7 +1,7 @@
 import { useState, type CSSProperties, type ReactNode } from 'react';
 import { addDays, todayIso } from '@qasa/core';
 import { briefApi, type BriefView, type Money2 } from '../industry/brief-api.ts';
-import { ErrorBox, Icon, Modal, useLoad, usePageNav, useToast } from '../components.tsx';
+import { ErrorBox, Icon, Modal, useLoad, useMay, usePageNav, useToast } from '../components.tsx';
 import { useI18n, type I18n } from '../i18n.ts';
 import { href } from '../router.ts';
 import { copyText, openWhatsApp, whatsappNumber, whatsappUrl } from '../share.ts';
@@ -41,8 +41,9 @@ export function briefText(i18n: I18n, b: BriefView): string {
     i18n.date(b.date),
     '',
     `💰 ${t('br_salesToday')}: ${i18n.money(b.sales.today, 'IQD')}${pct !== null ? ` (${i18n.ltr(`${pct >= 0 ? '+' : '-'}${i18n.int(Math.abs(pct))}%`)} ${t('br_vsLastWeek')})` : ''}`,
-    `🏦 ${t('br_cashNow')}: ${moneyBoth(i18n, b.cash.total)}`,
-    `⬇️ ${t('br_moneyIn')}: ${i18n.money(b.flow.in, 'IQD')}   ⬆️ ${t('br_moneyOut')}: ${i18n.money(b.flow.out, 'IQD')}`,
+    // the company's money: not sent to someone who may not read the books
+    ...(b.cash ? [`🏦 ${t('br_cashNow')}: ${moneyBoth(i18n, b.cash.total)}`] : []),
+    ...(b.flow ? [`⬇️ ${t('br_moneyIn')}: ${i18n.money(b.flow.in, 'IQD')}   ⬆️ ${t('br_moneyOut')}: ${i18n.money(b.flow.out, 'IQD')}`] : []),
     `📅 ${t('br_salesMonth')}: ${i18n.money(b.sales.month, 'IQD')}`
   ];
   if (b.topItems.length) {
@@ -98,6 +99,10 @@ export function Brief() {
   const [date, setDate] = useState(todayIso());
   const { data: b, error, reload } = useLoad(() => briefApi.brief(date), [date]);
   const [phoneModal, setPhoneModal] = useState(false);
+  // the owner's number is the company's setting: an admin sets it. Anyone else sends to the number already set, and
+  // without one copies or prints the brief (the server refuses them the setting)
+  const canSetPhone = useMay()('briefSettings');
+  const hasPhone = !!b && !!whatsappNumber(b.ownerPhone);
 
   async function copy() {
     if (!b) return;
@@ -106,7 +111,7 @@ export function Brief() {
 
   function send() {
     if (!b) return;
-    if (!whatsappNumber(b.ownerPhone)) { setPhoneModal(true); return; }
+    if (!whatsappNumber(b.ownerPhone)) { if (canSetPhone) setPhoneModal(true); return; }
     openWhatsApp(b.ownerPhone, briefText(i18n, b));
   }
 
@@ -124,10 +129,10 @@ export function Brief() {
         <button type="button" className="btn ghost" onClick={() => setDate(addDays(date, 1))} disabled={date >= todayIso()} aria-label={t('br_nextDay')}><Icon name="chevron" size={16} /></button>
         <span className="spacer" />
         <a className="btn" href={href('day-close')} title={t('dc_open')}><Icon name="check" size={16} />{t('dc_title')}</a>
-        <button type="button" className="btn primary" onClick={send} disabled={!b}><Icon name="mail" size={16} />{t('br_sendWhatsApp')}</button>
+        {(canSetPhone || hasPhone) && <button type="button" className="btn primary" onClick={send} disabled={!b}><Icon name="mail" size={16} />{t('br_sendWhatsApp')}</button>}
         <button type="button" className="btn" onClick={() => void copy()} disabled={!b}><Icon name="doc" size={16} />{t('br_copy')}</button>
         <button type="button" className="btn" onClick={() => void printDocument('report')} disabled={!b}><Icon name="printer" size={16} />{t('br_print')}</button>
-        <button type="button" className="btn ghost" onClick={() => setPhoneModal(true)} aria-label={t('br_ownerPhone')}><Icon name="sliders" size={16} /></button>
+        {canSetPhone && <button type="button" className="btn ghost" onClick={() => setPhoneModal(true)} aria-label={t('br_ownerPhone')}><Icon name="sliders" size={16} /></button>}
       </div>
       <ErrorBox error={error} />
       {b && (
@@ -144,23 +149,25 @@ export function Brief() {
                 {t('br_invoicesCount', { n: i18n.int(b.sales.invoices) })}
                 {pct !== null && <> · <span style={{ color: pct >= 0 ? good : bad, fontWeight: 600 }}>{pct >= 0 ? '▲' : '▼'} {i18n.int(Math.abs(pct))}%</span> {t('br_vsLastWeek')}</>}
               </>} />
-            <Stat icon="wallet" label={t('br_cashNow')} value={moneyBoth(i18n, b.cash.total)} sub={t('br_cashAccounts', { n: i18n.int(b.cash.accounts.length) })} />
-            <Stat icon="plus" label={t('br_moneyIn')} value={i18n.money(b.flow.in, 'IQD')} color={good} sub={`${t('br_moneyOut')}: ${i18n.money(b.flow.out, 'IQD')}`} />
+            {b.cash && <Stat icon="wallet" label={t('br_cashNow')} value={moneyBoth(i18n, b.cash.total)} sub={t('br_cashAccounts', { n: i18n.int(b.cash.accounts.length) })} />}
+            {b.flow && <Stat icon="plus" label={t('br_moneyIn')} value={i18n.money(b.flow.in, 'IQD')} color={good} sub={`${t('br_moneyOut')}: ${i18n.money(b.flow.out, 'IQD')}`} />}
             <Stat icon="chart" label={t('br_salesMonth')} value={i18n.money(b.sales.month, 'IQD')} sub={`${t('br_receivables')}: ${i18n.money(b.receivables, 'IQD')}`} />
           </div>
 
           <div className="grid-2" style={{ alignItems: 'start' }}>
-            <Section title={t('br_cashByAccount')} icon="wallet" empty={!b.cash.accounts.length}>
-              <ul style={listStyle}>
-                {b.cash.accounts.map((a) => (
-                  <li key={a.code} style={itemStyle}>
-                    <span className="tree-code">{i18n.digitsOf(a.code)}</span>
-                    <span style={{ flex: 1 }}>{i18n.name(a.name)}</span>
-                    <strong className="num">{moneyBoth(i18n, a.balance)}</strong>
-                  </li>
-                ))}
-              </ul>
-            </Section>
+            {b.cash && (
+              <Section title={t('br_cashByAccount')} icon="wallet" empty={!b.cash.accounts.length}>
+                <ul style={listStyle}>
+                  {b.cash.accounts.map((a) => (
+                    <li key={a.code} style={itemStyle}>
+                      <span className="tree-code">{i18n.digitsOf(a.code)}</span>
+                      <span style={{ flex: 1 }}>{i18n.name(a.name)}</span>
+                      <strong className="num">{moneyBoth(i18n, a.balance)}</strong>
+                    </li>
+                  ))}
+                </ul>
+              </Section>
+            )}
 
             <Section title={t('br_topItems')} icon="star" empty={!b.topItems.length}>
               <ul style={listStyle}>
@@ -262,7 +269,7 @@ export function Brief() {
           <p className="small muted">{t('br_onlyPosted')}</p>
         </>
       )}
-      {phoneModal && (
+      {phoneModal && canSetPhone && (
         <OwnerPhoneModal current={b?.ownerPhone ?? ''} onClose={() => setPhoneModal(false)}
           onSaved={(phone) => {
             setPhoneModal(false);

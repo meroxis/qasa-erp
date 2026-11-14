@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 import { todayIso, toWesternDigits } from '@qasa/core';
-import { AccountCombo, ErrorBox, Icon, Modal, useData, useLoad, usePageNav, useToast } from '../components.tsx';
+import { AccountCombo, ErrorBox, Icon, Modal, useData, useLoad, useMay, usePageNav, useToast } from '../components.tsx';
 import { useI18n, type I18n } from '../i18n.ts';
 import { fxApi, type FxRateView, type FxRevaluation } from '../industry/fx-api.ts';
 import { go, href } from '../router.ts';
@@ -42,6 +42,8 @@ function Board() {
   const i18n = useI18n();
   const { t } = i18n;
   const { settings, reloadSettings } = useData();
+  // everyone reads the rate; writing it is for whoever prepares vouchers (may.ts)
+  const mayEdit = useMay()('rate');
   const toast = useToast();
   const [days, setDays] = useState(30);
   const history = useLoad(() => fxApi.rates({ days }), [days]);
@@ -101,7 +103,7 @@ function Board() {
         </div>
       </div>
 
-      <div className="card pad stack">
+      {mayEdit && <div className="card pad stack">
         <div className="grid-2">
           <label className="field"><span>{t('date')}</span><input className="input" type="date" max={today} value={date} onChange={(e) => setDate(e.target.value)} /></label>
           <label className="field">
@@ -116,7 +118,7 @@ function Board() {
           <button type="button" className="btn primary" disabled={busy || parsed === null} onClick={() => parsed && void save(parsed)}><Icon name="check" size={16} />{t('fx_saveRate')}</button>
           {newest && <button type="button" className="btn" disabled={busy} onClick={() => void save(newest.rateX100)}>{t('fx_sameAsYesterday')} ({rateText(i18n, newest.rateX100)})</button>}
         </div>
-      </div>
+      </div>}
 
       <div className="card pad stack">
         <div className="row">
@@ -141,7 +143,7 @@ function Board() {
                     <td className="num">{rateText(i18n, r.rateX100)}</td>
                     <td>{r.source ?? ''}</td>
                     <td>{r.createdBy}</td>
-                    <td className="num"><button type="button" className="btn subtle icon" aria-label={t('actDelete')} title={t('actDelete')} onClick={() => setDeleting(r)}><Icon name="x" size={16} /></button></td>
+                    <td className="num">{mayEdit && <button type="button" className="btn subtle icon" aria-label={t('actDelete')} title={t('actDelete')} onClick={() => setDeleting(r)}><Icon name="x" size={16} /></button>}</td>
                   </tr>
                 ))}
               </tbody>
@@ -202,6 +204,7 @@ function RateChart({ rates, i18n }: { rates: FxRateView[]; i18n: I18n }) {
 }
 
 function Revaluation() {
+  const mayPost = useMay()('rate');
   const i18n = useI18n();
   const { t, lang } = i18n;
   const toast = useToast();
@@ -290,7 +293,7 @@ function Revaluation() {
             </div>
             <ErrorBox error={error} />
             <div className="row">
-              <button type="button" className="btn primary" disabled={busy || toPost === 0} onClick={() => void post(r)}><Icon name="check" size={16} />{t('fx_post')}</button>
+              {mayPost && <button type="button" className="btn primary" disabled={busy || toPost === 0} onClick={() => void post(r)}><Icon name="check" size={16} />{t('fx_post')}</button>}
               {entryId && <a className="btn" href={href(`entry/${entryId}`)}>{t('fx_openEntry')}</a>}
             </div>
           </div>

@@ -21,7 +21,8 @@ export function Companies() {
   const [opening, setOpening] = useState<string | null>(null);
   const [error, setError] = useState<unknown>(null);
 
-  if (!available) return <div className="card pad muted">{t('co_help')}</div>;
+  // a browser has no list of companies: it says where they are managed
+  if (!available) return <div className="card pad muted stack"><span>{t('co_help')}</span><span>{t('co_browser')}</span></div>;
   const view = data.data;
 
   async function open(c: CompanyView) {

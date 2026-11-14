@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState, type ReactNode } from 'react';
-import { useData } from '../components.tsx';
+import { buildHas, useData } from '../components.tsx';
 import { useI18n } from '../i18n.ts';
 import { ControlledRecord } from '../pages/Pharmacy.tsx';
 import { pharmacyApi, type ControlledLine } from './pharmacy-api.ts';
@@ -10,10 +10,13 @@ import { pharmacyApi, type ControlledLine } from './pharmacy-api.ts';
  * each controlled medicine once the sale is posted, from the POS or the sale invoice.
  */
 
-/** Whether the pharmacy pack is on: the plan has it and the company is a pharmacy. */
+/**
+ * Whether the pharmacy pack is on: the plan has it, the company is a pharmacy, and this build serves its routes (a
+ * build without the Pro module has none to ask, whatever the plan says).
+ */
 export function usePharmacyOn(): boolean {
-  const { plan, settings } = useData();
-  return !!plan?.features.includes('pharmacy') && !!settings?.businessTypes?.includes('pharmacy');
+  const { plan, settings, modules } = useData();
+  return !!plan?.features.includes('pharmacy') && !!settings?.businessTypes?.includes('pharmacy') && buildHas(modules, 'pharmacy');
 }
 
 /** The item ids of the prescription-only medicines, for the Rx badge on sale lines; none when the pack is off. */

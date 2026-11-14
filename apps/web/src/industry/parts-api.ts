@@ -25,7 +25,8 @@ export interface PartView extends Omit<PartHit, 'match'> {
 
 export interface ReorderRow extends Omit<PartHit, 'match'> {
   reorderMilli: number;
-  lastPurchase: { supplier: string; date: string; unitPrice: number; currency: CurrencyCode } | null;
+  /** absent for someone who may not see cost (1.4) */
+  lastPurchase?: { supplier: string; date: string; unitPrice: number; currency: CurrencyCode } | null;
 }
 
 export interface PartInput { details: PartDetails; numbers: PartNumber[]; fitments: Fitment[] }

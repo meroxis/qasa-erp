@@ -1,6 +1,7 @@
 import type { Names } from './lang.ts';
 import { normalizeForSearch } from './lang.ts';
 import type { BusinessType } from './plans.ts';
+import { UNIT_CODES, type UnitCode } from './inventory.ts';
 
 /**
  * The item catalogue's lists (1.1): categories in two levels (a category and its subcategories), brands, the countries a
@@ -86,7 +87,7 @@ export function isStarterTrade(value: unknown): value is StarterTrade {
 
 /** The starter list a business type suggests first (any trade can still be picked). */
 export const BUSINESS_STARTER_TRADE: Record<BusinessType, StarterTrade> = {
-  trade: 'general', realEstate: 'building', mobileShop: 'electronics', autoParts: 'autoParts', engineeringWorks: 'building',
+  trade: 'general', market: 'grocery', realEstate: 'building', mobileShop: 'electronics', autoParts: 'autoParts', engineeringWorks: 'building',
   electricalSolar: 'electricalSolar', generators: 'generators', pharmacy: 'pharmacy'
 };
 
@@ -97,14 +98,14 @@ export function starterTradeFor(types: readonly BusinessType[] | undefined): Sta
 }
 
 // shared category names
-const ACCESSORIES = n('إكسسوارات', 'Accessories', 'پاشکۆکان');
+const ACCESSORIES = n('إكسسوارات', 'Accessories', 'ئێکسسوارات');
 const BATTERIES = n('بطاريات', 'Batteries', 'پاتری');
 const LIGHTING = n('إنارة', 'Lighting', 'ڕووناکی');
 const FILTERS = n('فلاتر', 'Filters', 'فلتەر');
 const CABLES = n('كيبلات وأسلاك', 'Cables and wires', 'کێبڵ و وایەر');
 const ORAL_CARE = n('العناية بالفم والأسنان', 'Oral care', 'چاودێریی دەم و ددان');
 const SKIN_CARE = n('العناية بالبشرة', 'Skin care', 'چاودێریی پێست');
-const BREAKERS = n('قواطع وفيوزات', 'Breakers and fuses', 'بڕەر و فیوز');
+const BREAKERS = n('قواطع وفيوزات', 'Breakers and fuses', 'برێکەر و فیوز');
 
 export const STARTER_LISTS: Record<StarterTrade, StarterList> = {
   general: {
@@ -114,7 +115,7 @@ export const STARTER_LISTS: Record<StarterTrade, StarterList> = {
       { name: n('أجهزة كهربائية', 'Electrical appliances', 'ئامێری کارەبایی'), sub: [n('أجهزة منزلية', 'Home appliances', 'ئامێری ماڵ'), n('هواتف وإلكترونيات', 'Phones and electronics', 'مۆبایل و ئەلیکترۆنیات')] },
       { name: n('منظفات ومستلزمات منزلية', 'Cleaning and household', 'پاککەرەوە و پێداویستیی ماڵ') },
       { name: n('العناية الشخصية', 'Personal care', 'چاودێریی کەسی') },
-      { name: n('عدد ومواد بناء', 'Tools and building materials', 'ئامێر و کەرەستەی بیناسازی') },
+      { name: n('عدد ومواد بناء', 'Tools and building materials', 'ئامراز و کەرەستەی بیناسازی') },
       { name: n('ملابس وأحذية', 'Clothing and shoes', 'جل و پێڵاو') }
     ],
     brands: [
@@ -131,12 +132,12 @@ export const STARTER_LISTS: Record<StarterTrade, StarterList> = {
     name: n('موبايلات وحاسبات', 'Mobiles and computers', 'مۆبایل و کۆمپیوتەر'),
     categories: [
       { name: n('هواتف محمولة', 'Mobile phones', 'مۆبایل'), sub: [n('هواتف ذكية', 'Smartphones', 'مۆبایلی زیرەک'), n('هواتف عادية', 'Basic phones', 'مۆبایلی ئاسایی'), n('أجهزة لوحية', 'Tablets', 'تابلێت')] },
-      { name: n('حاسبات', 'Computers', 'کۆمپیوتەر'), sub: [n('حاسبات محمولة', 'Laptops', 'لاپتۆپ'), n('حاسبات مكتبية', 'Desktops', 'کۆمپیوتەری مێز'), n('شاشات', 'Monitors', 'شاشە'), n('طابعات', 'Printers', 'پرینتەر')] },
+      { name: n('حاسبات', 'Computers', 'کۆمپیوتەر'), sub: [n('حاسبات محمولة', 'Laptops', 'لاپتۆپ'), n('حاسبات مكتبية', 'Desktops', 'کۆمپیوتەری سەرمێز'), n('شاشات', 'Monitors', 'شاشە'), n('طابعات', 'Printers', 'پرینتەر')] },
       {
         name: ACCESSORIES,
         sub: [
-          n('شواحن وكابلات', 'Chargers and cables', 'بارگەکەر و کێبڵ'), n('أغطية وواقيات شاشة', 'Cases and screen protectors', 'بەرگ و پارێزەری شاشە'),
-          n('سماعات', 'Headphones', 'گوێگر'), n('باور بانك', 'Power banks', 'پاوەر بانک'), n('بطاقات ذاكرة وفلاشات', 'Memory cards and flash drives', 'کارتی بیرگە و فلاش')
+          n('شواحن وكابلات', 'Chargers and cables', 'شارجەر و کێبڵ'), n('أغطية وواقيات شاشة', 'Cases and screen protectors', 'بەرگ و پارێزەری شاشە'),
+          n('سماعات', 'Headphones', 'هێدفۆن'), n('باور بانك', 'Power banks', 'پاوەر بانک'), n('بطاقات ذاكرة وفلاشات', 'Memory cards and flash drives', 'کارتی بیرگە و فلاش')
         ]
       },
       { name: n('ساعات ذكية', 'Smart watches', 'کاتژمێری زیرەک') },
@@ -164,7 +165,7 @@ export const STARTER_LISTS: Record<StarterTrade, StarterList> = {
       { name: n('العوارض والتوجيه', 'Suspension and steering', 'هەڵگر و سووکان'), sub: [n('مساعدات', 'Shock absorbers', 'ئەمۆرتیسەر'), n('قطع التوجيه', 'Steering parts', 'پارچەی سووکان')] },
       { name: n('الكهرباء', 'Electrical', 'کارەبا'), sub: [BATTERIES, LIGHTING, n('دينمو وسلف', 'Alternators and starters', 'داینەمۆ و سەلف')] },
       { name: n('زيوت وسوائل', 'Oils and fluids', 'ڕۆن و شلە'), sub: [n('زيت محرك', 'Engine oil', 'ڕۆنی بزوێنەر'), n('زيت كير', 'Gear oil', 'ڕۆنی گێڕ'), n('ماء رديتر', 'Coolant', 'ئاوی ڕادیاتەر')] },
-      { name: n('التبريد والتكييف', 'Cooling and air conditioning', 'ساردکردنەوە و سپلیت'), sub: [n('رديترات', 'Radiators', 'ڕادیاتەر'), n('كمبرسرات', 'AC compressors', 'کۆمپرێسەر')] },
+      { name: n('التبريد والتكييف', 'Cooling and air conditioning', 'ساردکردنەوە و ئەیرکۆندیشن'), sub: [n('رديترات', 'Radiators', 'ڕادیاتەر'), n('كمبرسرات', 'AC compressors', 'کۆمپرێسەر')] },
       { name: n('إطارات', 'Tyres', 'تایە') },
       { name: n('قطع البدي', 'Body parts', 'پارچەی بۆدی'), sub: [n('مرايات', 'Mirrors', 'ئاوێنە'), n('دعاميات', 'Bumpers', 'دەعامیە')] }
     ],
@@ -229,10 +230,10 @@ export const STARTER_LISTS: Record<StarterTrade, StarterList> = {
   },
 
   building: {
-    name: n('مواد بناء وعدد', 'Building materials and tools', 'کەرەستەی بیناسازی و ئامێر'),
+    name: n('مواد بناء وعدد', 'Building materials and tools', 'کەرەستەی بیناسازی و ئامراز'),
     categories: [
-      { name: n('عدد كهربائية', 'Power tools', 'ئامێری کارەبایی'), sub: [n('دريلات', 'Drills', 'دریل'), n('مكائن قص وتجليخ', 'Grinders and cutters', 'مەکینەی بڕین و ساوین'), n('مناشير', 'Saws', 'مشار')] },
-      { name: n('عدد يدوية', 'Hand tools', 'ئامێری دەستی'), sub: [n('مفاتيح', 'Wrenches', 'سپانە'), n('درنفيسات', 'Screwdrivers', 'درنەفیس'), n('مطارق وكلابتين', 'Hammers and pliers', 'چەکوش و پەنسە')] },
+      { name: n('عدد كهربائية', 'Power tools', 'ئامرازی کارەبایی'), sub: [n('دريلات', 'Drills', 'دریل'), n('مكائن قص وتجليخ', 'Grinders and cutters', 'مەکینەی بڕین و ساوین'), n('مناشير', 'Saws', 'مشار')] },
+      { name: n('عدد يدوية', 'Hand tools', 'ئامرازی دەستی'), sub: [n('مفاتيح', 'Wrenches', 'سپانە'), n('درنفيسات', 'Screwdrivers', 'درنەفیس'), n('مطارق وكلابتين', 'Hammers and pliers', 'چەکوش و پەنسە')] },
       { name: n('مواد بناء', 'Building materials', 'کەرەستەی بیناسازی'), sub: [n('إسمنت', 'Cement', 'چیمەنتۆ'), n('حديد تسليح', 'Rebar', 'شیش'), n('بلوك وطابوق', 'Blocks and bricks', 'بلۆک و خشت'), n('جص', 'Gypsum', 'گەچ')] },
       { name: n('أنابيب وأدوات صحية', 'Plumbing', 'بۆری و کەرەستەی ئاو'), sub: [n('أنابيب وملحقات', 'Pipes and fittings', 'بۆری و پارچەکانی'), n('أدوات صحية', 'Sanitary ware', 'کەرەستەی حەمام')] },
       { name: n('مواد كهربائية', 'Electrical supplies', 'کەرەستەی کارەبا'), sub: [CABLES, n('مفاتيح وبلكات', 'Switches and sockets', 'سویچ و پلاک'), LIGHTING] },
@@ -292,7 +293,7 @@ export const STARTER_LISTS: Record<StarterTrade, StarterList> = {
   homeAppliances: {
     name: n('أجهزة منزلية', 'Home appliances', 'ئامێری ماڵ'),
     categories: [
-      { name: n('أجهزة كبيرة', 'Large appliances', 'ئامێری گەورە'), sub: [n('ثلاجات', 'Refrigerators', 'سەلاجە'), n('غسالات', 'Washing machines', 'جلشۆر'), n('طباخات', 'Cookers', 'چێشتلێنەر'), n('غسالات صحون', 'Dishwashers', 'قاپشۆر')] },
+      { name: n('أجهزة كبيرة', 'Large appliances', 'ئامێری گەورە'), sub: [n('ثلاجات', 'Refrigerators', 'سەلاجە'), n('غسالات', 'Washing machines', 'جلشۆر'), n('طباخات', 'Cookers', 'تەباخ'), n('غسالات صحون', 'Dishwashers', 'قاپشۆر')] },
       { name: n('تبريد وتدفئة', 'Cooling and heating', 'فێنککەرەوە و گەرمکەرەوە'), sub: [n('مكيفات', 'Air conditioners', 'سپلیت'), n('مبردات هواء', 'Air coolers', 'کوولەری ئاوی'), n('مدافئ', 'Heaters', 'سۆبە'), n('مراوح', 'Fans', 'پانکە')] },
       { name: n('أجهزة صغيرة', 'Small appliances', 'ئامێری بچووک'), sub: [n('أجهزة مطبخ', 'Kitchen appliances', 'ئامێری چێشتخانە'), n('مكاوي', 'Irons', 'ئوتوو'), n('مكانس كهربائية', 'Vacuum cleaners', 'گسکی کارەبایی')] },
       { name: n('تلفزيونات وصوتيات', 'TV and audio', 'تەلەفزیۆن و دەنگ'), sub: [n('تلفزيونات', 'Televisions', 'تەلەفزیۆن'), n('رسيفرات وصوتيات', 'Receivers and audio', 'ڕیسیڤەر و دەنگ')] },
@@ -363,3 +364,37 @@ export const STARTER_LISTS: Record<StarterTrade, StarterList> = {
     ]
   }
 };
+
+/**
+ * The units a kind of company usually counts in (1.4), in the order the item form lists them. The form offers these
+ * first; every other unit stays one press away ("show all units"), and a unit the company already uses is always
+ * listed. 'trade' is what every company does and has no list of its own: alone it offers every unit, and beside
+ * another type it adds nothing.
+ */
+export const BUSINESS_UNITS: Record<BusinessType, readonly UnitCode[] | null> = {
+  trade: null,
+  market: ['piece', 'kg', 'g', 'carton', 'pack', 'box', 'bottle', 'bag', 'dozen', 'l', 'sachet', 'roll'],
+  realEstate: ['piece', 'm2', 'm', 'ton', 'bag', 'kg', 'l', 'set', 'roll', 'service'],
+  mobileShop: ['piece', 'box', 'set', 'carton', 'pair', 'service'],
+  autoParts: ['piece', 'set', 'pair', 'box', 'carton', 'l', 'bottle', 'kg', 'm', 'service'],
+  engineeringWorks: ['piece', 'm', 'm2', 'kg', 'ton', 'bag', 'set', 'roll', 'l', 'service'],
+  electricalSolar: ['piece', 'm', 'roll', 'set', 'box', 'carton', 'pair', 'service'],
+  generators: ['piece', 'l', 'set', 'm', 'box', 'service'],
+  pharmacy: ['tablet', 'capsule', 'strip', 'box', 'bottle', 'tube', 'ampoule', 'vial', 'sachet', 'piece', 'pack', 'carton']
+};
+
+/**
+ * The units to offer a company: those of its business types (in their order), then any unit in `keep` (what the
+ * company's items use already, and what the form holds now) that is not among them, in the order of UNIT_CODES.
+ * `narrowed` says whether anything was left out (so the form shows "show all units"). A company with no type chosen,
+ * or one that only trades in general, gets every unit.
+ */
+export function unitsForBusiness(types: readonly BusinessType[] | null | undefined, keep: Iterable<string> = []): { units: UnitCode[]; narrowed: boolean } {
+  const lists = (types ?? []).map((t) => BUSINESS_UNITS[t]).filter((l) => l !== null);
+  if (!lists.length) return { units: [...UNIT_CODES], narrowed: false };
+  const wanted = new Set<string>(keep);
+  const units: UnitCode[] = [];
+  for (const list of lists) for (const u of list) if (!units.includes(u)) units.push(u);
+  for (const u of UNIT_CODES) if (wanted.has(u) && !units.includes(u)) units.push(u);
+  return { units, narrowed: units.length < UNIT_CODES.length };
+}

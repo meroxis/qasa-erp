@@ -430,7 +430,7 @@ describe('the words banking writes into entries', () => {
   it('follow the language of whoever makes the step', async () => {
     const t = (await post('/api/banking/transfers', { date: day(0), from: '1811', to: '1831', currency: 'IQD', amount: 1_000, charge: 100, lang: 'ku' })).json();
     expect(t.description).toBe('گواستنەوە لە نێوان هەژمارەکان');
-    expect(t.lines.map((l: { description: string }) => l.description)).toContain('کرێی بانک');
+    expect(t.lines.map((l: { description: string }) => l.description)).toContain('کۆمیسیۆنی بانک');
     const c = (await post('/api/banking/cheques', { direction: 'received', number: '55', bank: 'Rafidain', partyId: customerId, currency: 'IQD', amount: 1_000, issueDate: day(0), dueDate: day(1), lang: 'ar' })).json();
     expect((await get(`/api/entries/${c.entry.id}`)).json().description).toBe('صك رقم 55 — Rafidain');
     await approve(c.entry.id);

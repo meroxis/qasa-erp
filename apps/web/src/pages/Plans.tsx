@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { daysBetween, PLAN_IDS, PLAN_PRICE_IQD, PLANS, TRIAL_DAYS, todayIso, type Feature } from '@qasa/core';
 import { api, request, type PlanStatus } from '../api.ts';
-import { ErrorBox, Icon, useData, useToast } from '../components.tsx';
+import { ErrorBox, Icon, useBuildHas, useData, useToast } from '../components.tsx';
 import { useI18n, type I18n, type Key } from '../i18n.ts';
 import { AgreeLine } from '../industry/LegalPanel.tsx';
 
@@ -52,6 +52,7 @@ export const ROWS: Row[] = [
   { label: 'f_autoParts', cells: has('autoParts') },
   { label: 'f_pharmacy', cells: has('pharmacy') },
   { label: 'f_loyalty', cells: has('loyalty') },
+  { label: 'f_companyLogo', cells: has('companyLogo') },
   { label: 'f_engineeringWorks', cells: has('engineeringWorks') },
   { label: 'f_electricalSolar', cells: has('electricalSolar') },
   { label: 'f_generators', cells: has('generators') },
@@ -137,15 +138,17 @@ export function proHeldKey(check: ProLicenceCheck | null): Key | null {
 function ProHeldNote({ plan, busy, act }: { plan: PlanStatus; busy: boolean; act(fn: () => Promise<PlanStatus>, message: string): Promise<boolean> }) {
   const { t } = useI18n();
   const [check, setCheck] = useState<ProLicenceCheck | null>(null);
+  // (a build without the Pro module has no such check to ask for)
+  const served = useBuildHas('pro');
   useEffect(() => {
-    if (demo || plan.plan === 'free') {
+    if (demo || plan.plan === 'free' || !served) {
       setCheck(null);
       return;
     }
     let live = true;
     request<ProLicenceCheck>('GET', '/api/pro/licence-check').then((c) => { if (live) setCheck(c); }, () => { if (live) setCheck(null); });
     return () => { live = false; };
-  }, [plan]);
+  }, [plan, served]);
   const key = proHeldKey(check);
   if (!key) return null;
   return (

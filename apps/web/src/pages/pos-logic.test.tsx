@@ -1,5 +1,6 @@
+import { readFileSync } from 'node:fs';
 import { expect, it } from 'vitest';
-import { addRefusal, canPrice, parseScan, priceIn, priceRateFor, tilePrice } from './pos-logic.ts';
+import { addRefusal, canPrice, cashChange, cashTender, creditPartyNote, partyAskedAfter, parseScan, priceIn, priceRateFor, salePayments, tilePrice } from './pos-logic.ts';
 
 const dollarItem = { saleCurrency: 'USD' as const, salePrice: 50000 }; // $500.00
 const dinarItem = { saleCurrency: 'IQD' as const, salePrice: 710000 };
@@ -33,4 +34,58 @@ it('says there is no rate (not "no item with this code") and shows no price, whe
   expect(addRefusal(dinarItem, 'IQD', 0)).toBeNull();
   expect(tilePrice(dinarItem, 'IQD', 0)).toBe(710000);
   expect(tilePrice(dollarItem, 'IQD', 142000)).toBe(710000);
+});
+
+it('prints what was paid and the change on the receipt only when more cash was handed over than the sale', () => {
+  // sale 12,500, the customer hands over 15,000
+  expect(cashTender(15_000, cashChange(15_000, 12_500, []))).toEqual({ paid: 15_000, change: 2_500 });
+  // the exact money, or nothing typed: the total says it all
+  expect(cashTender(12_500, cashChange(12_500, 12_500, []))).toBeNull();
+  expect(cashTender(null, cashChange(null, 12_500, []))).toBeNull();
+  // on credit there is no change
+  expect(cashTender(15_000, cashChange(15_000, 12_500, salePayments('account', 12_500) ?? []))).toBeNull();
+});
+
+it('says credit needs a customer or a supplier only once it was asked for, each in its own words', () => {
+  // a new purchase invoice opens on credit with no supplier yet: nothing is said until the box was left or a save tried
+  expect(creditPartyNote('purchase', 'credit', '', false)).toBeNull();
+  expect(creditPartyNote('purchase', 'credit', '', true)).toBe('s14_creditNeedsSupplier');
+  expect(creditPartyNote('sale', 'credit', '', true)).toBe('s14_creditNeedsCustomer');
+  expect(creditPartyNote('sale', 'credit', 'p-raz', true)).toBeNull();
+  expect(creditPartyNote('sale', 'cash', '', true)).toBeNull();
+});
+
+it('does not ask for the party because Credit was chosen or pressed again, nor because the focus passed through the box', () => {
+  // choosing Credit, and pressing it again: nothing is asked yet
+  expect(partyAskedAfter(false, 'credit')).toBe(false);
+  expect(partyAskedAfter(partyAskedAfter(false, 'credit'), 'credit')).toBe(false);
+  // the focus leaves a box that was not used (a new invoice opens with the focus in it, and Credit is clicked)
+  expect(partyAskedAfter(false, 'leave', false)).toBe(false);
+  // the box was typed in or clicked into, and left: asked; and a save that was tried asks
+  expect(partyAskedAfter(false, 'leave', true)).toBe(true);
+  expect(partyAskedAfter(false, 'save')).toBe(true);
+  // once asked it stays, until the form is emptied for the next invoice
+  expect(partyAskedAfter(true, 'credit')).toBe(true);
+  expect(partyAskedAfter(true, 'leave', false)).toBe(true);
+  expect(partyAskedAfter(true, 'new')).toBe(false);
+  // the invoice form: a save on credit without the party shows the screen's own note and no second, general message
+  const form = readFileSync(new URL('./Invoices.tsx', import.meta.url), 'utf8');
+  expect(form).not.toContain("code: 'party_required'");
+  expect(form).toContain("partyAskedAfter(asked, 'save')");
+  expect(form).not.toMatch(/setPayment\('credit'\); setPartyAsked\(true\)/);
+});
+
+it('shows a tile\'s picture the way the Items screen does: no address that answers JSON, and nothing asked for an item without a picture', () => {
+  const till = readFileSync(new URL('./Pos.tsx', import.meta.url), 'utf8');
+  // GET /api/items/:id/image answers JSON (the picture as base64), so it is never an <img> address
+  expect(till).not.toMatch(/src=\{`\/api\/items\//);
+  expect(till).toContain('useItemPicture(item.id)');
+  const pictures = readFileSync(new URL('../industry/ItemImage.tsx', import.meta.url), 'utf8');
+  // one request says which items have a picture; a picture is asked for only then, once in view, and kept
+  expect(pictures).toContain('if (!version || !visible) { setUrl(null); return; }');
+  expect(pictures).toContain('cache.set(key, p)');
+  // the receipt keeps "date time" in that order inside right-to-left text
+  expect(till).toMatch(/<span className="num ltr">\{i18n\.date\(invoice\.date\)\} /);
+  // on credit the customer box says to choose one, not "walk-in customer"
+  expect(till).toContain("placeholder={onCredit ? t('chooseCustomer') : t('pos_walkIn')}");
 });

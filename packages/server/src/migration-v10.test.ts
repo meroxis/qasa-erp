@@ -6,7 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { FastifyInstance } from 'fastify';
 import { COMPANY_TABLES, migrate, openDatabase, SCHEMA_VERSION, schemaVersion, updateCopies, type Db, type SqlValue } from './db.ts';
 import { buildApp } from './app.ts';
-import { pendingMysqlSteps, tableColumns, V10_MYSQL_STEPS, V11_MYSQL_STEPS, V12_MYSQL_STEPS, MYSQL_TABLES, MYSQL_TRIGGERS } from './schema-mysql.ts';
+import { pendingMysqlSteps, tableColumns, V10_MYSQL_STEPS, V11_MYSQL_STEPS, V12_MYSQL_STEPS, V13_MYSQL_STEPS, MYSQL_TABLES, MYSQL_TRIGGERS } from './schema-mysql.ts';
 import { AppError } from './errors.ts';
 
 // upgrading a whole company file takes about a second here, and several times that on a busy build machine
@@ -163,9 +163,9 @@ describe('version 10 on a server database', () => {
     expect(pendingMysqlSteps(V10_MYSQL_STEPS, done)).toEqual([]);
   });
 
-  it('adds the same columns, in the same order, that the fresh server schema has last (with those version 11 adds after them)', () => {
+  it('adds the same columns, in the same order, that the fresh server schema has last (with those versions 11 and 13 add after them)', () => {
     for (const table of ['items', 'invoice_lines', 'stock_doc_lines', 'stock_adjustment_lines', 'purchase_order_lines', 'item_images']) {
-      const added = [...V10_MYSQL_STEPS, ...V11_MYSQL_STEPS].filter((s) => s.kind === 'column' && s.table === table).map((s) => (s as { column: string }).column);
+      const added = [...V10_MYSQL_STEPS, ...V11_MYSQL_STEPS, ...V13_MYSQL_STEPS].filter((s) => s.kind === 'column' && s.table === table).map((s) => (s as { column: string }).column);
       const { columns } = tableColumns(table);
       expect(columns.slice(-added.length), table).toEqual(added);
     }
@@ -202,7 +202,7 @@ describe('version 10 on a server database', () => {
     expect(alters).not.toContain('ALTER TABLE items ADD COLUMN category_id VARCHAR(191)');
     expect(alters[0]).toBe('ALTER TABLE items ADD COLUMN purchase_unit VARCHAR(32)');
     expect(alters).toContain('ALTER TABLE items ADD CONSTRAINT items_category_id_fk FOREIGN KEY (category_id) REFERENCES item_categories(id)');
-    expect(alters).toHaveLength(V10_MYSQL_STEPS.length - 2 + V11_MYSQL_STEPS.length + V12_MYSQL_STEPS.length);
+    expect(alters).toHaveLength(V10_MYSQL_STEPS.length - 2 + V11_MYSQL_STEPS.length + V12_MYSQL_STEPS.length + V13_MYSQL_STEPS.length);
   });
 
   it('upgrades a server database from version 6: a table whose key points at a table of a later version is made with key checks off for that one CREATE', () => {

@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { lineAmount, todayIso, type UnitCode } from '@qasa/core';
 import { api, type ItemView } from '../api.ts';
 import {
-  AccountCombo, AmountInput, ErrorBox, Icon, InvoiceStatusChip, Modal, QtyInput, SearchCombo, downloadCsv, useData, useLoad, useToast, type PickOption
+  AccountCombo, AmountInput, ErrorBox, Icon, InvoiceStatusChip, Modal, QtyInput, SearchCombo, downloadCsv, useData, useLoad, useMay, useToast, type PickOption
 } from '../components.tsx';
 import { useI18n, type Key } from '../i18n.ts';
 import { go, href } from '../router.ts';
@@ -41,6 +41,10 @@ export function StockAdjustments() {
   const { t } = i18n;
   const [reason, setReason] = useState<AdjustmentReason | ''>('');
   const [status, setStatus] = useState<'' | 'draft' | 'posted' | 'cancelled'>('');
+  // 1.4: what went out and came in is worth is not sent to someone who may not see cost: no such columns
+  const cost = useData().seesCost !== false;
+  // adjustments and counts need the stock permission; the accounts they post to are the company's setup (an admin's)
+  const can = useMay();
   const { data, error } = useLoad(() => adjustmentsApi.list({ ...(reason ? { reason } : {}), ...(status ? { status } : {}) }), [reason, status]);
   const [settingsOpen, setSettingsOpen] = useState(false);
 
@@ -48,9 +52,9 @@ export function StockAdjustments() {
     <div className="stack">
       <p className="muted" style={{ margin: 0 }}>{t('adj_help')}</p>
       <div className="row">
-        <a className="btn primary" href={href('new-stock-adjustment')}><Icon name="plus" size={16} />{t('adj_new')}</a>
-        <a className="btn" href={href('stock-count')}><Icon name="rows" size={16} />{t('adj_count')}</a>
-        <button type="button" className="btn" onClick={() => setSettingsOpen(true)}><Icon name="gear" size={16} />{t('adj_settings')}</button>
+        {can('adjustment') && <a className="btn primary" href={href('new-stock-adjustment')}><Icon name="plus" size={16} />{t('adj_new')}</a>}
+        {can('adjustment') && <a className="btn" href={href('stock-count')}><Icon name="rows" size={16} />{t('adj_count')}</a>}
+        {can('account') && <button type="button" className="btn" onClick={() => setSettingsOpen(true)}><Icon name="gear" size={16} />{t('adj_settings')}</button>}
         <span className="spacer" />
         <select className="input" style={{ width: 'auto' }} value={reason} onChange={(e) => setReason(e.target.value as AdjustmentReason | '')} aria-label={t('adj_reason')}>
           <option value="">{t('adj_reason')}: {t('all')}</option>
@@ -69,7 +73,7 @@ export function StockAdjustments() {
             <thead>
               <tr>
                 <th>{t('colNumber')}</th><th>{t('colDate')}</th><th>{t('adj_reason')}</th><th>{t('warehouse')}</th>
-                <th className="amount">{t('adj_valueOut')}</th><th className="amount">{t('adj_valueIn')}</th><th>{t('colStatus')}</th>
+                {cost && <th className="amount">{t('adj_valueOut')}</th>}{cost && <th className="amount">{t('adj_valueIn')}</th>}<th>{t('colStatus')}</th>
               </tr>
             </thead>
             <tbody>
@@ -79,8 +83,8 @@ export function StockAdjustments() {
                   <td className="num">{i18n.date(d.date)}</td>
                   <td>{t(reasonKey(d.reason))}{d.job && <span className="muted small"> · <span className="ltr">{d.job.number}</span></span>}</td>
                   <td>{i18n.name(d.warehouseName)}</td>
-                  <td className="amount">{d.valueOut ? i18n.money(d.valueOut, 'IQD') : ''}</td>
-                  <td className="amount">{d.valueIn ? i18n.money(d.valueIn, 'IQD') : ''}</td>
+                  {cost && <td className="amount">{d.valueOut ? i18n.money(d.valueOut, 'IQD') : ''}</td>}
+                  {cost && <td className="amount">{d.valueIn ? i18n.money(d.valueIn, 'IQD') : ''}</td>}
                   <td><InvoiceStatusChip status={d.status} /></td>
                 </tr>
               ))}
@@ -172,8 +176,8 @@ export function adjustmentBatch(r: Pick<Row, 'dir' | 'batchId' | 'batchNo' | 'ex
 }
 
 /** A draft line coming in, valued as posting will: its cost is per the unit it was typed in. */
-export function draftInValue(l: { qtyMilli: number; unitCost: number | null; lineUnit: UnitCode | null; unitQtyMilli: number | null }): number | null {
-  if (l.qtyMilli <= 0 || l.unitCost === null) return null;
+export function draftInValue(l: { qtyMilli: number; unitCost?: number | null; lineUnit: UnitCode | null; unitQtyMilli: number | null }): number | null {
+  if (l.qtyMilli <= 0 || l.unitCost === null || l.unitCost === undefined) return null;
   return lineAmount(l.lineUnit && l.unitQtyMilli !== null ? l.unitQtyMilli : l.qtyMilli, l.unitCost);
 }
 
@@ -231,7 +235,7 @@ export function StockAdjustmentEditor({ id }: { id?: string }) {
       setCountScope(d.countScope ?? null);
       setRows(d.lines.map((l) => ({
         key: rowKey++, itemId: l.itemId, dir: l.qtyMilli < 0 ? 'out' : 'in',
-        qtyMilli: Math.abs(l.lineUnit && l.unitQtyMilli !== null ? l.unitQtyMilli : l.qtyMilli), unitCost: l.unitCost, unit: l.lineUnit,
+        qtyMilli: Math.abs(l.lineUnit && l.unitQtyMilli !== null ? l.unitQtyMilli : l.qtyMilli), unitCost: l.unitCost ?? null, unit: l.lineUnit,
         // a write-off draft's lines are pinned to their expired batches: they stay pinned when it is edited
         batchId: l.batchId ?? '', batchNo: l.batchNo ?? '', expiry: l.expiry ?? ''
       })));
@@ -263,7 +267,7 @@ export function StockAdjustmentEditor({ id }: { id?: string }) {
     const it = itemById.get(r.itemId);
     if (!it) return 0;
     if (r.dir === 'in' && r.unitCost !== null) return lineAmount(r.qtyMilli ?? 0, r.unitCost);
-    return lineAmount(baseQty(it, r.unit ?? null, r.qtyMilli ?? 0) ?? 0, averageCost(it.qtyMilli, it.value));
+    return lineAmount(baseQty(it, r.unit ?? null, r.qtyMilli ?? 0) ?? 0, averageCost(it.qtyMilli, it.value ?? 0));
   };
   const totalOut = lines.filter((r) => r.dir === 'out').reduce((s, r) => s + valueOf(r), 0);
   const totalIn = lines.filter((r) => r.dir === 'in').reduce((s, r) => s + valueOf(r), 0);
@@ -382,7 +386,7 @@ export function StockAdjustmentEditor({ id }: { id?: string }) {
               const it = itemById.get(r.itemId);
               const check = it ? stockAfter(it, r) : null;
               const short = !!check?.short;
-              const avg = it ? averageCost(it.qtyMilli, it.value) : 0;
+              const avg = it ? averageCost(it.qtyMilli, it.value ?? 0) : 0;
               return (
                 <tr key={r.key}>
                   <td className="muted num">{i18n.int(i + 1)}</td>
@@ -454,7 +458,10 @@ export function StockAdjustmentDetail({ id }: { id: string }) {
   const i18n = useI18n();
   const { t } = i18n;
   const toast = useToast();
-  const { settings, reloadAccounts } = useData();
+  const { settings, reloadAccounts, seesCost } = useData();
+  // 1.4: the value of each line is not sent to someone who may not see cost: no such column, no totals
+  const cost = seesCost !== false;
+  const mayChange = useMay()('adjustment');
   const { data, error, reload } = useLoad(() => adjustmentsApi.get(id), [id]);
   const [busy, setBusy] = useState(false);
   const [actionError, setActionError] = useState<unknown>(null);
@@ -501,14 +508,14 @@ export function StockAdjustmentDetail({ id }: { id: string }) {
       <div className="row no-print">
         <button type="button" className="btn" onClick={() => history.back()}>{t('back')}</button>
         <span className="spacer" />
-        {d.actions.includes('edit') && <a className="btn" href={href(`edit-stock-adjustment/${d.id}`)}>{t('actEdit')}</a>}
-        {d.actions.includes('delete') && <button type="button" className="btn danger" disabled={busy} onClick={remove}>{t('actDelete')}</button>}
-        {d.actions.includes('post') && (
+        {mayChange && d.actions.includes('edit') && <a className="btn" href={href(`edit-stock-adjustment/${d.id}`)}>{t('actEdit')}</a>}
+        {mayChange && d.actions.includes('delete') && <button type="button" className="btn danger" disabled={busy} onClick={remove}>{t('actDelete')}</button>}
+        {mayChange && d.actions.includes('post') && (
           <button type="button" className="btn primary" disabled={busy} onClick={() => { if (window.confirm(t('adj_postConfirm'))) void act(() => adjustmentsApi.post(id, i18n.lang), t('a_post')); }}>
             <Icon name="check" size={16} />{t('adj_post')}
           </button>
         )}
-        {d.actions.includes('cancel') && <button type="button" className="btn danger" disabled={busy} onClick={() => { setCancelDate(reverseDefaultDate(d.date)); setCancelling(true); }}><Icon name="undo" size={16} />{t('adj_cancel')}</button>}
+        {mayChange && d.actions.includes('cancel') && <button type="button" className="btn danger" disabled={busy} onClick={() => { setCancelDate(reverseDefaultDate(d.date)); setCancelling(true); }}><Icon name="undo" size={16} />{t('adj_cancel')}</button>}
         <button type="button" className="btn" onClick={() => void printDocument('voucher')}><Icon name="printer" size={16} />{t('print')}</button>
       </div>
       <ErrorBox error={cancelling ? null : actionError} />
@@ -547,7 +554,7 @@ export function StockAdjustmentDetail({ id }: { id: string }) {
           <thead>
             <tr>
               <th style={{ width: 36 }}>#</th><th style={{ width: 90 }}>{t('code')}</th><th>{t('item')}</th>
-              <th>{t('adj_direction')}</th><th className="amount">{t('qty')}</th><th className="amount">{t('moveValue')}</th>
+              <th>{t('adj_direction')}</th><th className="amount">{t('qty')}</th>{cost && <th className="amount">{t('moveValue')}</th>}
             </tr>
           </thead>
           <tbody>
@@ -562,16 +569,18 @@ export function StockAdjustmentDetail({ id }: { id: string }) {
                     ? <>{qtyText(i18n, Math.abs(l.unitQtyMilli))} <span className="muted small">{unitName(i18n, l.lineUnit)}</span></>
                     : <>{qtyText(i18n, Math.abs(l.qtyMilli))} <span className="muted small">{unitName(i18n, l.unit)}</span></>}
                 </td>
-                <td className="amount">
-                  {l.value !== null ? i18n.money(Math.abs(l.value), 'IQD') : (() => { const v = draftInValue(l); return v === null ? '' : i18n.money(v, 'IQD'); })()}
-                </td>
+                {cost && (
+                  <td className="amount">
+                    {l.value !== null && l.value !== undefined ? i18n.money(Math.abs(l.value), 'IQD') : (() => { const v = draftInValue(l); return v === null ? '' : i18n.money(v, 'IQD'); })()}
+                  </td>
+                )}
               </tr>
             ))}
           </tbody>
-          {d.status !== 'draft' && (
+          {cost && d.status !== 'draft' && (
             <tfoot>
-              {d.valueOut > 0 && <tr><td colSpan={5}>{t('adj_valueOut')}</td><td className="amount">{i18n.money(d.valueOut, 'IQD')}</td></tr>}
-              {d.valueIn > 0 && <tr><td colSpan={5}>{t('adj_valueIn')}</td><td className="amount">{i18n.money(d.valueIn, 'IQD')}</td></tr>}
+              {(d.valueOut ?? 0) > 0 && <tr><td colSpan={5}>{t('adj_valueOut')}</td><td className="amount">{i18n.money(d.valueOut ?? 0, 'IQD')}</td></tr>}
+              {(d.valueIn ?? 0) > 0 && <tr><td colSpan={5}>{t('adj_valueIn')}</td><td className="amount">{i18n.money(d.valueIn ?? 0, 'IQD')}</td></tr>}
             </tfoot>
           )}
         </table>

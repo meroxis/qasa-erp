@@ -36,6 +36,15 @@ export function unitsByItem(db: Db, itemIds?: readonly string[]): Map<string, It
 }
 
 /**
+ * The units the company's items are kept or sold in already (base units and other units): the item form always lists
+ * them, whatever the company's business type offers.
+ */
+export function usedUnits(db: Db): UnitCode[] {
+  const rows = db.prepare('SELECT unit FROM items UNION SELECT unit FROM item_units').all() as { unit: string }[];
+  return rows.map((r) => r.unit).filter(isUnit).sort();
+}
+
+/**
  * Who has a barcode already: an item's own barcode, or one of an item's units (`except`: the item being saved, whose
  * own barcodes are checked by validateItemUnits).
  */

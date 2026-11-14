@@ -7,19 +7,20 @@ import { AccountCombo, AmountInput, ErrorBox, Icon, Modal, SearchCombo, useData,
 import { useI18n, type I18n, type Key } from '../i18n.ts';
 import { href } from '../router.ts';
 import { PartyPicker } from '../industry/PartyPicker.tsx';
-import { posApi, type Money2, type PosMethod, type SaleInput, type ShiftReport, type ShiftView } from '../industry/pos-api.ts';
+import { posApi, type Money2, type SaleInput, type ShiftReport, type ShiftView } from '../industry/pos-api.ts';
 import { outboxClient, outboxWho, whoKey, type HeldKey } from '../industry/outbox.ts';
 import { useOutbox } from '../industry/OutboxBanner.tsx';
-import { offlineMethods, offlineReceipt, offlineRefusal, payTillSale, rememberTill, shortStock, takeFromStock, tillCache } from '../industry/offline-till.ts';
+import { offlineReceipt, offlineRefusal, payTillSale, rememberTill, shortStock, takeFromStock, tillCache } from '../industry/offline-till.ts';
 import '../pos.css';
+import { useItemPicture } from '../industry/ItemImage.tsx';
 import { PrintDocument } from '../industry/PrintDocument.tsx';
 import { invoiceModel } from '../industry/print-model.ts';
 import { usePrintSetup } from '../industry/print-api.ts';
-import { addRefusal, cashChange, changeLineUnit, parseScan, posSaleLine, priceIn, priceRateFor, tileOffer } from './pos-logic.ts';
+import { addRefusal, cartShortNote, cashChange, cashTender, changeLineUnit, chosenMethod, creditNeedsCustomer, parseScan, pickAfterLink, posSaleLine, priceIn, priceRateFor, salePayments, tileOffer, tillMethods, type CashTender, type TillMethod } from './pos-logic.ts';
 import { inUnits, salePriceFor, unitChoices, unitLabel, type LineUnit } from '../industry/units.ts';
 import { BatchPick, useExpiredConfirm } from '../industry/BatchFields.tsx';
 import { pharmacyApi, type MedicineView } from '../industry/pharmacy-api.ts';
-import { RxTick, useControlledPrompt, useRxItems } from '../industry/PharmacyPrompts.tsx';
+import { RxTick, useControlledPrompt, usePharmacyOn, useRxItems } from '../industry/PharmacyPrompts.tsx';
 import { printAlone, printDocument } from '../industry/printing.ts';
 import { receiptMessage, withAttachment } from '../industry/WhatsAppShare.tsx';
 import { WhatsAppSendButton } from '../industry/WhatsAppSend.tsx';
@@ -51,10 +52,17 @@ function money2(i18n: I18n, m: Money2): string {
 /** Two letters for an item without a picture. */
 const initials = (s: string) => s.trim().split(/\s+/).slice(0, 2).map((w) => w[0] ?? '').join('').toUpperCase();
 
+/**
+ * The picture on a tile, as the Items screen shows it: one request says which items have a picture, a picture is
+ * asked for only when its tile comes into view, and it is kept for the visit. No picture: the item's initials.
+ */
 function ItemPicture({ item, name }: { item: ItemView; name: string }) {
-  const [failed, setFailed] = useState(false);
-  if (failed) return <span className="pos-initials" aria-hidden="true">{initials(name) || '•'}</span>;
-  return <img className="pos-img" src={`/api/items/${item.id}/image`} alt="" loading="lazy" onError={() => setFailed(true)} />;
+  const { box, url } = useItemPicture(item.id);
+  return (
+    <span ref={box} className="pos-picture" aria-hidden="true">
+      {url ? <img className="pos-img" src={url} alt="" /> : <span className="pos-initials">{initials(name) || '•'}</span>}
+    </span>
+  );
 }
 
 /* ---------- the page ---------- */
@@ -201,13 +209,8 @@ function Register({ initial, onClosed }: { initial: ShiftView; onClosed(): void 
   const [discount, setDiscount] = useState<number | null>(0);
   const [paid, setPaid] = useState<number | null>(null);
   const [partyId, setPartyId] = useState('');
-  // how it is paid (1.1): no parts = all cash, as before; else 1–4 parts that add up to the total
-  const [parts, setParts] = useState<{ method: PosMethod; amount: number | null }[]>([]);
-  const [methods, setMethods] = useState<PosMethod[]>(['cash']);
-  useEffect(() => {
-    fromServerOrTill(() => posApi.paymentAccounts().then((r) => r.methods), (m) => rememberTill(tillWho(), { methods: m }), () => tillCache(tillWho())?.methods)
-      .then(setMethods, () => {});
-  }, []);
+  // how it is paid (1.4): one way for the whole sale, cash or credit, in every company
+  const [picked, setPicked] = useState<TillMethod>('cash');
   // 1.2: on a PC connected to an office server, a sale the server can't take now is kept here and sent later
   const outbox = useOutbox();
   const offline = !!outbox && !outbox.online;
@@ -236,6 +239,8 @@ function Register({ initial, onClosed }: { initial: ShiftView; onClosed(): void 
   const [error, setError] = useState<unknown>(null);
   const expired = useExpiredConfirm();
   const [receipt, setReceipt] = useState<InvoiceView | null>(null);
+  // the cash handed over for that sale and the change given back (the server keeps the sale, not the notes handed over)
+  const [tender, setTender] = useState<CashTender | null>(null);
   const [closing, setClosing] = useState(false);
   const [notFound, setNotFound] = useState('');
   // an item that exists but has no rate to convert its price into this sale's currency
@@ -265,8 +270,7 @@ function Register({ initial, onClosed }: { initial: ShiftView; onClosed(): void 
   })), [items]);
 
   // a pharmacy (Pro): the search also finds medicines by their generic name, and a tile shows it with the shelf
-  const { plan, settings: companySettings } = useData();
-  const pharmacy = !!plan?.features.includes('pharmacy') && !!companySettings?.businessTypes?.includes('pharmacy');
+  const pharmacy = usePharmacyOn();
   const [medicines, setMedicines] = useState<Map<string, MedicineView>>(new Map());
   const controlled = useControlledPrompt();
   const rxItems = useRxItems(pharmacy);
@@ -371,24 +375,34 @@ function Register({ initial, onClosed }: { initial: ShiftView; onClosed(): void 
   const due = total - points.value;
   // another customer, total or currency: the points are chosen again
   useEffect(() => { setPoints({ points: 0, value: 0 }); }, [partyId, total, currency]);
-  const change = cashChange(paid, due, parts);
-  const split = parts.length > 0;
-  const left = due - parts.reduce((s, p) => s + (p.amount ?? 0), 0);
-  const splitOk = !split || (left === 0 && parts.every((p) => (p.amount ?? 0) > 0) && (!parts.some((p) => p.method === 'account') || !!partyId));
-  const canPay = cart.length > 0 && !busy && (discount ?? 0) <= subtotal && (currency === 'IQD' || rateX100 > 0) && (change === null || change >= 0) && splitOk;
-  /** A method button: the first one takes the whole total; later ones what is left. */
-  const pickMethod = (method: PosMethod) => {
-    setParts((ps) => (ps.length === 0
-      ? (method === 'cash' ? [] : [{ method, amount: due }])
-      : ps.length >= 4 || ps.some((p) => p.method === method) ? ps : [...ps, { method, amount: Math.max(0, left) }]));
-  };
+  // what the till offers now (offline: not credit, which needs the server's credit-limit check)
+  const offered = tillMethods(offline);
+  const method = chosenMethod(picked, offered);
+  // credit was picked and can't be offered any more (the link dropped): the pick itself goes back to cash and the
+  // cashier is told, so the sale does not turn into credit again by itself when the link returns
+  const kept = pickAfterLink(picked, offered);
+  useEffect(() => {
+    if (kept === picked) return;
+    setPicked('cash');
+    toast(t('s14_creditDropped'));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [kept, picked]);
+  const onCredit = method === 'account';
+  const payments = salePayments(method, due);
+  // the items of this cart beyond the stock last known, with what is left of each
+  const shortNow = cartShortNote(shortStock(cart), (code, have) => `${code} (${i18n.qty(Math.max(0, have))})`, i18n.lang === 'en' ? ', ' : '، ');
+  // change is for cash handed over: none on credit
+  const change = cashChange(paid, due, payments ?? []);
+  const handed = cashTender(paid, change);
+  const needsCustomer = creditNeedsCustomer(method, partyId);
+  const canPay = cart.length > 0 && !busy && (discount ?? 0) <= subtotal && (currency === 'IQD' || rateX100 > 0) && (change === null || change >= 0) && !needsCustomer;
 
   const clear = () => {
     setCart([]);
     setDiscount(0);
     setPaid(null);
     setPartyId('');
-    setParts([]);
+    setPicked('cash');
     setPoints({ points: 0, value: 0 });
     setError(null);
     setQ('');
@@ -415,6 +429,7 @@ function Register({ initial, onClosed }: { initial: ShiftView; onClosed(): void 
       user: { id: who?.id ?? null, name: who?.name ?? shift.openedBy }, summary: { total, currency, lines: cart.length, register: shift.register }
     });
     const stamp = kept.body.offline as { reference: string; soldAt: string; soldOn: string };
+    setTender(handed);
     setReceipt(offlineReceipt({
       key, reference: kept.reference ?? stamp.reference, soldAt: stamp.soldAt, soldOn: stamp.soldOn, shift, cashier: who?.name ?? shift.openedBy,
       lines: cart, currency, rateX100, discount: discount ?? 0, party: customers.find((p) => p.id === partyId) ?? null, payments: sale.payments ?? []
@@ -437,8 +452,10 @@ function Register({ initial, onClosed }: { initial: ShiftView; onClosed(): void 
       const sale: SaleInput = {
         currency, ...(currency === 'USD' ? { rateX100 } : {}), ...(partyId ? { partyId } : {}), discount: discount ?? 0,
         lines: cart.map(posSaleLine),
-        ...(split ? { payments: parts.map((p) => ({ method: p.method, amount: p.amount ?? 0 })) } : {}),
-        ...(points.points ? { loyaltyPoints: points.points } : {})
+        ...(payments ? { payments } : {}),
+        ...(points.points ? { loyaltyPoints: points.points } : {}),
+        // the cash handed over, kept with the sale: a later copy of the receipt prints it and the change again
+        ...(handed ? { tendered: handed.paid } : {})
       };
       // on a PC with an outbox the sale keeps its key over every Pay until it is booked or kept: a try whose answer
       // was lost is answered from the first, never booked twice (industry/offline-till.ts)
@@ -459,6 +476,7 @@ function Register({ initial, onClosed }: { initial: ShiftView; onClosed(): void 
       const res = done.result;
       setShift(res.shift);
       rememberTill(tillWho(), { shift: res.shift });
+      setTender(handed);
       setReceipt(res.invoice);
       clear();
       loadItems(); // stock changed
@@ -583,7 +601,7 @@ function Register({ initial, onClosed }: { initial: ShiftView; onClosed(): void 
             {cart.map((l) => (
               <div key={lineKey(l)} className="pos-line">
                 <div className="pos-line-name">
-                  <span>{i18n.name(l.item.name)}</span>
+                  <CartName name={i18n.name(l.item.name)} />
                   <span className="muted small num">{i18n.money(l.unitPrice, currency)}</span>
                   {l.item.units.length > 0 && (
                     <button type="button" className="chip" title={t('unit')} aria-label={`${t('unit')}: ${unitLabel(i18n, l.unit ?? l.item.unit)}`} onClick={() => nextUnit(lineKey(l))}>
@@ -609,7 +627,7 @@ function Register({ initial, onClosed }: { initial: ShiftView; onClosed(): void 
               {/* a customer added here, or found here by the same phone or name, joins the till's own list (kept for
                   when the server can't be reached; the receipt reads the customer's name from it). No price list is
                   asked for: the till sells every item at its own sale price, whoever buys */}
-              <PartyPicker type="customer" value={partyId} options={customerOptions} priceList={false} placeholder={t('pos_walkIn')} emptyLabel={t('pos_walkIn')}
+              <PartyPicker type="customer" value={partyId} options={customerOptions} priceList={false} placeholder={onCredit ? t('chooseCustomer') : t('pos_walkIn')} {...(onCredit ? {} : { emptyLabel: t('pos_walkIn') })}
                 onChange={(v, p) => { setPartyId(v); if (p) keepCustomer(p); }} onCreated={keepCustomer} />
             </div>
             <LoyaltyUse partyId={partyId} total={total} currency={currency} value={points.points} onChange={(n, v) => setPoints({ points: n, value: v })} />
@@ -624,25 +642,16 @@ function Register({ initial, onClosed }: { initial: ShiftView; onClosed(): void 
             {points.value > 0 && (
               <div className="pos-r-row"><span>{t('pos_left')} ({t('ly_title')}: −{i18n.money(points.value, currency)})</span><strong className="num">{i18n.money(due, currency)}</strong></div>
             )}
-            {(offline ? offlineMethods(methods) : methods).length > 1 && (
-              <div className="stack" style={{ gap: 6 }}>
-                <div className="track" role="group" aria-label={t('paymentMode')} style={{ flexWrap: 'wrap' }}>
-                  {(offline ? offlineMethods(methods) : methods).map((m) => (
-                    <button key={m} type="button" aria-pressed={split ? parts.some((p) => p.method === m) : m === 'cash'} onClick={() => pickMethod(m)}>{t(`pay_${m}` as Key)}</button>
-                  ))}
-                </div>
-                {parts.map((p, i) => (
-                  <div key={p.method} className="row" style={{ flexWrap: 'nowrap', gap: 6 }}>
-                    <span style={{ minWidth: 90 }}>{t(`pay_${p.method}` as Key)}</span>
-                    <AmountInput value={p.amount} currency={currency} onChange={(v) => setParts((ps) => ps.map((x, j) => (j === i ? { ...x, amount: v } : x)))} ariaLabel={t(`pay_${p.method}` as Key)} />
-                    <button type="button" className="btn icon ghost" aria-label={t('pos_remove')} onClick={() => setParts((ps) => ps.filter((_, j) => j !== i))}><Icon name="x" size={14} /></button>
-                  </div>
-                ))}
-                {split && left !== 0 && <div className="small" style={{ color: 'var(--bad)' }}>{t('pos_left')}: <span className="num">{i18n.money(left, currency)}</span></div>}
-                {parts.some((p) => p.method === 'account') && !partyId && <div className="small" style={{ color: 'var(--bad)' }}>{t('err_party_required')}</div>}
-                {offline && methods.includes('account') && <div className="small muted">{t('pos_offlineNoAccount')}</div>}
+            {/* 1.4: the cashier picks one: cash (paid now) or credit (the whole sale on the customer's account) */}
+            <div className="stack" style={{ gap: 6 }}>
+              <div className="track" role="group" aria-label={t('paymentMode')}>
+                <button type="button" style={{ flex: 1 }} aria-pressed={!onCredit} onClick={() => setPicked('cash')}>{t('payCash')}</button>
+                <button type="button" style={{ flex: 1 }} aria-pressed={onCredit} disabled={!offered.includes('account')} onClick={() => setPicked('account')}>{t('payCredit')}</button>
               </div>
-            )}
+              {onCredit && <div className="small muted">{t('s14_payCreditHint')}</div>}
+              {needsCustomer && <div className="small" role="alert" style={{ color: 'var(--bad)' }}>{t('s14_creditNeedsCustomer')}</div>}
+              {offline && <div className="small muted">{t('pos_offlineNoAccount')}</div>}
+            </div>
             {change !== null && (
               <div className={'pos-change' + (change < 0 ? ' bad' : '')}>
                 <span>{change < 0 ? t('pos_short') : t('pos_change')}</span>
@@ -658,6 +667,9 @@ function Register({ initial, onClosed }: { initial: ShiftView; onClosed(): void 
             )}
             <ErrorBox error={error} />
             {shortNote && <div className="alert info small" role="status">{t('pos_offlineShort', { i: shortNote })}</div>}
+            {/* more in the cart than the stock last known (an item with none left was added): said as it is added, not
+                only when Pay is refused. The server decides at Pay, as before */}
+            {shortNow && <div className="alert warn small" role="status">{t('pos_cartShort', { i: shortNow })}</div>}
             <div className="pos-actions">
               <button type="button" className="btn pos-touch" onClick={clear} disabled={busy}><Icon name="x" size={18} />{t('pos_clear')} <span className="kbd">F4</span></button>
               <button type="button" className="btn primary pos-touch pos-pay-btn" onClick={() => void pay()} disabled={!canPay}>
@@ -676,9 +688,22 @@ function Register({ initial, onClosed }: { initial: ShiftView; onClosed(): void 
         </section>
       </div>
 
-      {receipt && <Receipt invoice={receipt} shift={shift} />}
+      {receipt && <Receipt invoice={receipt} shift={shift} tender={tender} />}
       {closing && <CloseShift shift={shift} keptHere={keptHere.length} onCancel={() => { setClosing(false); focusSearch(); }} onClosed={onClosed} />}
     </div>
+  );
+}
+
+/**
+ * A cart line's name. It is held to two lines; a long one is read in full by a tap (or Enter on it), which opens it,
+ * and another tap closes it. On a touch screen there is no pointer to rest on it for the title.
+ */
+export function CartName({ name }: { name: string }) {
+  const [open, setOpen] = useState(false);
+  const toggle = () => setOpen((o) => !o);
+  return (
+    <span role="button" tabIndex={0} title={name} aria-expanded={open} className={open ? 'pos-name-open' : undefined}
+      onClick={toggle} onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggle(); } }}>{name}</span>
   );
 }
 
@@ -697,7 +722,7 @@ function printReceipt() {
   return printAlone('receipt', 'pos-printing');
 }
 
-function Receipt({ invoice, shift }: { invoice: InvoiceView; shift: ShiftView }) {
+function Receipt({ invoice, shift, tender }: { invoice: InvoiceView; shift: ShiftView; tender: CashTender | null }) {
   const i18n = useI18n();
   const { t } = i18n;
   const { settings, plan } = useData();
@@ -705,12 +730,21 @@ function Receipt({ invoice, shift }: { invoice: InvoiceView; shift: ShiftView })
   const company = settings ? i18n.name(settings.companyName) : '';
   // 1.2 (Pro): the points the sale used and earned, and the customer's balance
   const points = loyaltyLines(i18n, invoice.loyalty);
+  // more cash handed over than the sale: what was paid and the change, under the total. The server keeps it with the
+  // sale; a sale kept on this PC while the server can't be reached has only what the till remembers
+  const handed = invoice.tender ?? tender;
+  const tenderRows = handed && (
+    <>
+      <div className="pos-r-row small"><span>{t('pos_paid')}</span><span className="num">{i18n.money(handed.paid, invoice.currency)}</span></div>
+      <div className="pos-r-row small"><span>{t('pos_change')}</span><span className="num">{i18n.money(handed.change, invoice.currency)}</span></div>
+    </>
+  );
   // a receipt design of the company's own (Settings → Print design) replaces the standard receipt
   if (setup.designs.pos) {
     return createPortal(
       <div className="pos-receipt-host" dir={i18n.dir} lang={i18n.lang === 'ku' ? 'ckb' : i18n.lang}>
         <PrintDocument
-          model={invoiceModel(invoice, { pos: true })} design={setup.designs.pos} profile={setup.profile}
+          model={{ ...invoiceModel(invoice, { pos: true }), tender: handed }} design={setup.designs.pos} profile={setup.profile}
           company={settings?.companyName ?? { ar: '', en: '', ku: '' }} branding={!plan?.features.includes('noBranding')}
           defaultRateX100={settings?.defaultRateX100}
         />
@@ -726,7 +760,7 @@ function Receipt({ invoice, shift }: { invoice: InvoiceView; shift: ShiftView })
         <div className="pos-r-center small">{t('pos_receipt')}</div>
         <div className="pos-r-row small"><span>{t('pos_no')}</span><span className="num ltr">{invoice.number}</span></div>
         {invoice.offlineRef && invoice.number === invoice.offlineRef && <div className="pos-r-center small pos-r-offline">{t('pos_offlineReceipt')}</div>}
-        <div className="pos-r-row small"><span>{t('pos_dateTime')}</span><span className="num">{i18n.date(invoice.date)} {i18n.digitsOf(new Date(invoice.postedAt ?? invoice.createdAt).toTimeString().slice(0, 5))}</span></div>
+        <div className="pos-r-row small"><span>{t('pos_dateTime')}</span><span className="num ltr">{i18n.date(invoice.date)} {i18n.digitsOf(new Date(invoice.postedAt ?? invoice.createdAt).toTimeString().slice(0, 5))}</span></div>
         <div className="pos-r-row small"><span>{t('pos_cashier')}</span><span>{shift.openedBy === invoice.createdBy ? shift.openedBy : invoice.createdBy}</span></div>
         {invoice.partyName && <div className="pos-r-row small"><span>{t('pos_customer')}</span><span>{invoice.partyName}</span></div>}
         <div className="pos-r-sep" />
@@ -745,6 +779,7 @@ function Receipt({ invoice, shift }: { invoice: InvoiceView; shift: ShiftView })
         {(invoice.payments ?? []).filter((p) => p.kind === 'pos').map((p) => (
           <div key={p.id} className="pos-r-row small"><span>{t(`pay_${p.method}` as Key)}</span><span className="num">{i18n.money(p.amount, p.currency)}</span></div>
         ))}
+        {tenderRows}
         {points.length > 0 && <div className="pos-r-sep" />}
         {points.map(([label, value]) => <div key={label} className="pos-r-row small"><span>{label}</span><span className="num">{value}</span></div>)}
         <div className="pos-r-sep" />

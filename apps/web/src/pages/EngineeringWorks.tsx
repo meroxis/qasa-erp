@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { amountInWords, lineAmount, rateFromX100, todayIso, toBase, toWesternDigits, type CurrencyCode } from '@qasa/core';
 import { api, ApiError } from '../api.ts';
-import { EmptyState, AccountCombo, AmountInput, ErrorBox, Icon, Modal, QtyInput, SearchCombo, useData, useLoad, usePageNav, useToast, type PickOption } from '../components.tsx';
+import { EmptyState, AccountCombo, AmountInput, ErrorBox, Icon, Modal, QtyInput, SearchCombo, useData, useLoad, useMay, usePageNav, useToast, type PickOption } from '../components.tsx';
 import { useI18n, type I18n, type Key } from '../i18n.ts';
 import {
   COST_CATEGORIES, JOB_CATEGORIES, JOB_FLOW, LINE_UNITS, worksApi, type CostCategory, type JobCategory, type JobFilter, type JobInput, type JobLineInput,
@@ -43,7 +43,34 @@ function NotAvailable() {
 
 /* ---------- the jobs ---------- */
 
+/** The tiles above the jobs. The month's profit is left out by the server for someone who may not read the books: no such tile. */
+export function worksTiles(i18n: I18n, summary: WorksSummaryView): { label: string; value: string; sub: string; bad?: boolean }[] {
+  const { t } = i18n;
+  const profit = summary.month.profit;
+  return [
+    { label: t('ew_tileOpen'), value: i18n.int(summary.open), sub: '' },
+    { label: t('ew_tileProgress'), value: money2(i18n, summary.inProgress), sub: `${t('ew_tileCollect')}: ${money2(i18n, summary.toCollect)}` },
+    { label: t('ew_tileOverdue'), value: i18n.int(summary.overdue), sub: '', bad: summary.overdue > 0 },
+    ...(profit === undefined ? [] : [{ label: t('ew_tileProfit'), value: i18n.money(profit, 'IQD'), sub: t('ew_tileBilled', { n: summary.month.jobs }), bad: profit < 0 }])
+  ];
+}
+
+/** The line under the page's name, by what this person is shown: a job's cost and profit only for who reads the books. */
+export function worksHelpKey(seesBooks: boolean): 'ew_help' | 'ew_helpNoCost' {
+  return seesBooks ? 'ew_help' : 'ew_helpNoCost';
+}
+
+/**
+ * Whether the stage chip shows under a job's title. The paper is headed "Quotation", so at the quote stage the chip
+ * would say the same words again under it: it shows from the next stage on.
+ */
+export function jobStageShown(status: JobStatus): boolean {
+  return status !== 'quote';
+}
+
 export function EngineeringWorks() {
+  const can = useMay();
+  const { seesBooks } = useData();
   const i18n = useI18n();
   const { t } = i18n;
   const toast = useToast();
@@ -64,16 +91,11 @@ export function EngineeringWorks() {
   }, []);
   if (absent) return <NotAvailable />;
 
-  const tiles = summary ? [
-    { label: t('ew_tileOpen'), value: i18n.int(summary.open), sub: '' },
-    { label: t('ew_tileProgress'), value: money2(i18n, summary.inProgress), sub: `${t('ew_tileCollect')}: ${money2(i18n, summary.toCollect)}` },
-    { label: t('ew_tileOverdue'), value: i18n.int(summary.overdue), sub: '', bad: summary.overdue > 0 },
-    { label: t('ew_tileProfit'), value: i18n.money(summary.month.profit, 'IQD'), sub: t('ew_tileBilled', { n: summary.month.jobs }), bad: summary.month.profit < 0 }
-  ] : [];
+  const tiles = summary ? worksTiles(i18n, summary) : [];
 
   return (
     <div className="stack">
-      <p className="muted" style={{ margin: 0 }}>{t('ew_help')}</p>
+      <p className="muted" style={{ margin: 0 }}>{t(worksHelpKey(seesBooks !== false))}</p>
       {summary && !summary.available && <div className="alert">{t('ew_needsPro')} <a href={href('plans')}>{t('planLicense')}</a></div>}
       {summary && (
         <div className="grid-4">
@@ -87,7 +109,7 @@ export function EngineeringWorks() {
         </div>
       )}
       <div className="row">
-        {summary?.available && <button type="button" className="btn primary" onClick={() => setCreating(true)}><Icon name="plus" size={16} />{t('ew_new')}</button>}
+        {summary?.available && can('job') && <button type="button" className="btn primary" onClick={() => setCreating(true)}><Icon name="plus" size={16} />{t('ew_new')}</button>}
         <div className="track">
           <button type="button" aria-pressed={view === 'board'} onClick={() => setView('board')}>{t('ew_board')}</button>
           <button type="button" aria-pressed={view === 'list'} onClick={() => setView('list')}>{t('ew_list')}</button>
@@ -152,16 +174,18 @@ function daysSince(iso: string): number {
   return Math.max(0, Math.round((Date.parse(todayIso() + 'T00:00:00Z') - Date.parse(iso + 'T00:00:00Z')) / 86_400_000));
 }
 
-function JobsTable({ jobs }: { jobs: JobSummaryView[] }) {
+export function JobsTable({ jobs }: { jobs: JobSummaryView[] }) {
   const i18n = useI18n();
   const { t } = i18n;
   if (!jobs.length) return <EmptyState icon="tool" title={t('es_jobs')} text={t('es_jobsText')} />;
+  // what a job earned: left out by the server for someone who may not read the books
+  const profit = jobs.some((j) => j.profit !== undefined);
   return (
     <table className="table">
       <thead>
         <tr>
           <th>{t('ew_job')}</th><th>{t('customer')}</th><th>{t('ew_work')}</th><th>{t('ew_dueDate')}</th>
-          <th className="amount">{t('ew_total')}</th><th className="amount">{t('ew_remaining')}</th><th className="amount">{t('ew_profit')}</th><th />
+          <th className="amount">{t('ew_total')}</th><th className="amount">{t('ew_remaining')}</th>{profit && <th className="amount">{t('ew_profit')}</th>}<th />
         </tr>
       </thead>
       <tbody>
@@ -173,7 +197,7 @@ function JobsTable({ jobs }: { jobs: JobSummaryView[] }) {
             <td className="num">{j.dueDate ? i18n.date(j.dueDate) : '—'}{j.overdue && j.dueDate && <div className="small" style={{ color: 'var(--bad)' }}>{t('ew_lateDays', { n: daysSince(j.dueDate) })}</div>}</td>
             <td className="amount">{i18n.money(j.total, j.currency)}</td>
             <td className="amount">{i18n.money(j.remaining, j.currency)}</td>
-            <td className="amount" style={j.profit !== null && j.profit < 0 ? { color: 'var(--bad)' } : undefined}>{j.profit === null ? '—' : i18n.money(j.profit, 'IQD')}</td>
+            {profit && <td className="amount" style={typeof j.profit === 'number' && j.profit < 0 ? { color: 'var(--bad)' } : undefined}>{typeof j.profit === 'number' ? i18n.money(j.profit, 'IQD') : '—'}</td>}
             <td><JobChip status={j.status} /></td>
           </tr>
         ))}
@@ -240,7 +264,7 @@ function JobModal({ job, onClose, onDone }: { job?: JobView; onClose(): void; on
           {quoteOpen && (
             <label className="field"><span>{t('currency')}</span>
               <select className="input" value={form.currency} onChange={(e) => set('currency', e.target.value as CurrencyCode)}>
-                <option value="IQD">IQD</option><option value="USD">USD</option>
+                <option value="IQD">{t('iqdName')}</option><option value="USD">{t('usdName')}</option>
               </select>
             </label>
           )}
@@ -279,8 +303,10 @@ export function JobDetail({ id }: { id: string }) {
   if (!data) return null;
   const j = data;
   const company = settings ? i18n.name(settings.companyName) : '';
+  const costLines = j.costLines;
   const rate = settings?.defaultRateX100 ?? 142000;
-  const estimate = toBase(j.total, j.currency, rate) - j.costs;
+  // costs, profit and the documents behind them: left out by the server for someone who may not read the books
+  const estimate = j.costs === undefined ? null : toBase(j.total, j.currency, rate) - j.costs;
 
   const done = async (message?: string) => {
     setModal(null);
@@ -350,13 +376,13 @@ export function JobDetail({ id }: { id: string }) {
       <div className="grid-4 no-print">
         <div className="card pad tile"><div className="label">{t('ew_total')}</div><div className="value num">{i18n.money(j.total, j.currency)}</div></div>
         <div className="card pad tile"><div className="label">{t('ew_paid')}</div><div className="value num" style={{ color: 'var(--ok)' }}>{i18n.money(j.paid, j.currency)}</div><div className="small muted num">{t('ew_remaining')}: {i18n.money(j.remaining, j.currency)}</div></div>
-        <div className="card pad tile"><div className="label">{t('ew_costTotal')}</div><div className="value num">{i18n.money(j.costs, 'IQD')}</div></div>
-        <div className="card pad tile">
+        {j.costs !== undefined && <div className="card pad tile"><div className="label">{t('ew_costTotal')}</div><div className="value num">{i18n.money(j.costs, 'IQD')}</div></div>}
+        {j.profit !== undefined && <div className="card pad tile">
           <div className="label">{t('ew_profit')}</div>
           {j.profit === null
-            ? <><div className="value num muted">—</div><div className="small muted num">{t('ew_profitLater')} · {t('ew_estimate', { a: i18n.money(estimate, 'IQD') })}</div></>
+            ? <><div className="value num muted">—</div><div className="small muted num">{t('ew_profitLater')}{estimate !== null && <> · {t('ew_estimate', { a: i18n.money(estimate, 'IQD') })}</>}</div></>
             : <><div className="value num" style={{ color: j.profit < 0 ? 'var(--bad)' : 'var(--ok)' }}>{i18n.money(j.profit, 'IQD')}</div><div className="small muted num">{t('ew_revenue')}: {i18n.money(j.revenue ?? 0, 'IQD')}</div></>}
-        </div>
+        </div>}
       </div>
 
       <Quotation job={j} company={company} validDays={validDays} terms={terms} onSaved={() => void done(t('saved'))} />
@@ -393,15 +419,15 @@ export function JobDetail({ id }: { id: string }) {
           )}
         </div>
 
-        <div className="card">
+        {costLines && <div className="card">
           <div className="row" style={{ padding: '14px 16px 6px' }}>
             <h2 style={{ margin: 0 }}>{t('ew_costs')}</h2><span className="spacer" />
             {j.actions.includes('costs') && <button type="button" className="btn small" onClick={() => setModal('cost')}><Icon name="plus" size={14} />{t('ew_addCost')}</button>}
           </div>
-          {j.costLines.length === 0 ? <div className="pad muted small">{t('ew_noCosts')}</div> : (
+          {costLines.length === 0 ? <div className="pad muted small">{t('ew_noCosts')}</div> : (
             <table className="table">
               <tbody>
-                {j.costLines.map((c) => {
+                {costLines.map((c) => {
                   const path = c.document.kind === 'invoice' ? `invoice/${c.document.id}` : `entry/${c.document.id}`;
                   return (
                     <tr key={c.id}>
@@ -422,7 +448,7 @@ export function JobDetail({ id }: { id: string }) {
               </tbody>
             </table>
           )}
-        </div>
+        </div>}
       </div>
 
       {modal === 'edit' && <JobModal job={j} onClose={() => setModal(null)} onDone={() => void done(t('saved'))} />}
@@ -492,7 +518,8 @@ function Quotation({ job: j, company, validDays, terms, onSaved }: { job: JobVie
         <div style={{ flex: 1 }}>
           <div className="company-line">{company}</div>
           <div className="paper-title">{t('ew_quotation')}</div>
-          <div className="no-print" style={{ marginTop: 4 }}><JobChip status={j.status} /></div>
+          {/* the stage, under the title; at the first stage the title says it already ("Quotation"): not twice in a row */}
+          {jobStageShown(j.status) && <div className="no-print" style={{ marginTop: 4 }}><JobChip status={j.status} /></div>}
         </div>
         <div className="paper-meta">
           <span className="muted">{t('number')}</span><strong className="ltr">{j.number}</strong>
@@ -664,7 +691,7 @@ function CostModal({ job: j, onClose, onDone }: { job: JobView; onClose(): void;
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<unknown>(null);
   const docs = useLoad(() => worksApi.linkable(kind), [kind]);
-  const linked = new Set(j.costLines.map((c) => c.document.id));
+  const linked = new Set((j.costLines ?? []).map((c) => c.document.id));
   const options: PickOption[] = (docs.data ?? []).filter((d) => !linked.has(d.id)).map((d: LinkableDocView) => ({
     id: d.id, code: d.number ?? '', label: [d.party, d.description].filter(Boolean).join(' — ') || i18n.date(d.date),
     hint: i18n.money(d.free, 'IQD'), search: d.date

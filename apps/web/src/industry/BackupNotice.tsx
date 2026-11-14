@@ -32,16 +32,17 @@ export function backupNoticeKey(status: Pick<BackupStatus, 'notice'> | null): Ba
  * nothing was saved for 3 days), when the last copy failed, or when the last copy is old. Absent without the Pro
  * module (404) and anywhere the backup settings can't be read; Settings shows the details and "Save a backup now".
  */
-export function BackupNoticeBar({ admin, page }: { admin: boolean; page: string | null | undefined }) {
+export function BackupNoticeBar({ admin, page, served = true }: { admin: boolean; page: string | null | undefined; served?: boolean }) {
   const { t } = useI18n();
   const [status, setStatus] = useState<BackupStatus | null>(null);
+  // (`served`: false in a build without the module, which has no backup status to ask for)
   useEffect(() => {
-    if (!admin) return;
+    if (!admin || !served) return;
     let live = true;
     // read again when the admin comes back from Settings, where a copy may just have been saved
     api.backup().then((s) => { if (live) setStatus(s); }, () => { if (live) setStatus(null); });
     return () => { live = false; };
-  }, [admin, page === 'settings']);
+  }, [admin, served, page === 'settings']);
   const key = admin && page !== 'settings' ? backupNoticeKey(status) : null;
   // told once: copies kept on this PC because Documents is synced and there is no backup password
   const local = admin && !!status?.localNotice;

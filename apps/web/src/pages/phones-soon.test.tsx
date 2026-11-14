@@ -17,7 +17,7 @@ vi.mock('react', () => ({
 }));
 vi.mock('../components.tsx', () => ({
   AccountCombo: 'AccountCombo', ErrorBox: 'ErrorBox', Icon: 'Icon', Modal: 'Modal', downloadCsv: () => {}, useToast: () => () => {},
-  useData: () => ({ plan: null })
+  useData: () => ({ plan: null }), useBuildHas: () => true
 }));
 vi.mock('../i18n.ts', () => ({ isKey: () => true, useI18n: () => ({ t: (s: string) => s, digitsOf: String, date: String, int: String }) }));
 vi.mock('../router.ts', () => ({ href: (s: string) => s }));

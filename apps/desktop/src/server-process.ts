@@ -4,7 +4,7 @@
  * process) never stops answering. The main process starts it (main.ts), asks it to start the server ('init'), and
  * answers what only it can do: dialogs, pickers, restarting the app (bridge.ts).
  */
-import { appendFileSync, closeSync, copyFileSync, existsSync, fsyncSync, mkdirSync, openSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { appendFileSync, closeSync, copyFileSync, existsSync, fsyncSync, mkdirSync, openSync, readdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { createServer } from 'node:net';
 import { extname, join, normalize, sep } from 'node:path';
 import type { FastifyInstance } from 'fastify';
@@ -13,6 +13,7 @@ import { companyDirOf, isCompanyId, MAIN_COMPANY, readRegistry, writeRegistry } 
 import { companyApi } from './company-api.ts';
 import { handleRecoverRequest, recoverableAdmins } from './recover.ts';
 import { startOver } from './start-over.ts';
+import { closeAskNeeded, lastBookChangeAt } from './close-backup.ts';
 import { Bridge, type Carrier } from './bridge.ts';
 import { makeSecretBox, type SecretBox } from './secrets.ts';
 import type { DatabaseStartContext, ProContext, RestartOptions } from './pro-types.ts';
@@ -479,6 +480,76 @@ async function startServer(bridge: Bridge, given: ServerInit): Promise<string> {
 }
 
 /**
+ * Without the Pro module: a whole copy of the company file in the backup folder on this PC (the one no cloud service
+ * syncs), written under a temporary name and renamed once it is all on the disk. Answers the copy's name.
+ */
+function plainCopy(name: string): string {
+  if (!db) throw new Error('not ready');
+  const folder = init?.localBackupDir ?? join(cfg().userDataDir, 'Backups');
+  mkdirSync(folder, { recursive: true });
+  const part = join(folder, name + '.part');
+  rmSync(part, { force: true });
+  db.exec(`VACUUM INTO '${part.replace(/'/g, "''")}'`);
+  const fd = openSync(part, 'r+');
+  try { fsyncSync(fd); } finally { closeSync(fd); }
+  renameSync(part, join(folder, name));
+  return name;
+}
+
+// ——— 1.4: "Back up before closing?" (close-backup.ts in the main process asks; this process knows the books) ———
+
+/** When the app itself last made a backup at closing for this company (kept beside its data). */
+const closeAskRecord = () => join(companyDir(), 'close-ask-backup.json');
+/** The copies made at closing without the Pro module: only the newest of this company stay. */
+const CLOSE_COPIES_KEPT = 10;
+
+function lastCloseAskBackup(): string | null {
+  try {
+    const at = (JSON.parse(readFileSync(closeAskRecord(), 'utf8')) as { at?: unknown }).at;
+    return typeof at === 'string' && Number.isFinite(Date.parse(at)) ? at : null;
+  } catch {
+    return null;
+  }
+}
+
+/** The books changed, and no backup was made since (nor today): closing asks. Any doubt answers false (closing is never held up). */
+function closeAskIsNeeded(): boolean {
+  if (!db) return false;
+  // a sign-in is not a change to the books (close-backup.ts)
+  const lastChangeAt = lastBookChangeAt(db);
+  let fromPro: string | null = null;
+  try { fromPro = proModule?.lastBackupAt?.() ?? null; } catch { fromPro = null; }
+  const times = [lastCloseAskBackup(), typeof fromPro === 'string' ? fromPro : null].filter((v): v is string => !!v && Number.isFinite(Date.parse(v)));
+  const lastBackupAt = times.length ? times.reduce((a, b) => (Date.parse(a) >= Date.parse(b) ? a : b)) : null;
+  return closeAskNeeded({ lastChangeAt, lastBackupAt });
+}
+
+/** The backup "Back up and close" makes: the Pro module's normal one, else a whole copy on this PC. */
+async function closeAskBackupNow(): Promise<string> {
+  let name: string;
+  if (proModule?.backupNow) {
+    name = await proModule.backupNow();
+  } else {
+    const prefix = `Qasa-ERP-backup-${companyId()}-`;
+    name = plainCopy(`${prefix}${stampNow()}.sqlite`);
+    try {
+      const folder = init?.localBackupDir ?? join(cfg().userDataDir, 'Backups');
+      const old = readdirSync(folder).filter((f) => f.startsWith(prefix) && f.endsWith('.sqlite')).sort().reverse().slice(CLOSE_COPIES_KEPT);
+      for (const f of old) rmSync(join(folder, f), { force: true });
+    } catch (error) {
+      log('older copies made at closing could not be removed:', error);
+    }
+  }
+  try {
+    writeFileSync(closeAskRecord() + '.tmp', JSON.stringify({ at: new Date().toISOString(), file: name }));
+    renameSync(closeAskRecord() + '.tmp', closeAskRecord());
+  } catch (error) {
+    log('the backup made at closing could not be noted:', error);
+  }
+  return name;
+}
+
+/**
  * Start over with empty books on this PC's company (start-over.ts). The backup is the Pro module's normal one
  * (encrypted when a backup password is set); without the Pro module, a checked copy of the company file in the backup
  * folder on this PC. The old company file is kept aside, never deleted.
@@ -490,17 +561,7 @@ function startOverHere(bridge: Bridge, request: unknown): Promise<unknown> {
     switcherName: readRegistry(cfg().userDataDir).list.find((c) => c.id === companyId())?.name ?? null,
     backup: async () => {
       if (proModule?.backupNow) return proModule.backupNow();
-      if (!db) throw new Error('not ready');
-      const folder = init?.localBackupDir ?? join(cfg().userDataDir, 'Backups');
-      mkdirSync(folder, { recursive: true });
-      const name = `Qasa-ERP-before-start-over-${stamp}.sqlite`;
-      const part = join(folder, name + '.part');
-      rmSync(part, { force: true });
-      db.exec(`VACUUM INTO '${part.replace(/'/g, "''")}'`);
-      const fd = openSync(part, 'r+');
-      try { fsyncSync(fd); } finally { closeSync(fd); }
-      renameSync(part, join(folder, name));
-      return name;
+      return plainCopy(`Qasa-ERP-before-start-over-${stamp}.sqlite`);
     },
     swapAndRestart: async (fresh) => {
       await stopServer();
@@ -539,6 +600,17 @@ export function serve(carrier: Carrier): Bridge {
       return { ok: true, file: await proModule.closingBackup() };
     } catch (error) {
       log('the backup at closing failed:', error);
+      return { ok: false, error: (error instanceof Error ? error.message : String(error)).slice(0, 200) };
+    }
+  }) as never);
+  // 1.4: "Back up before closing?": is it due, and the backup itself when the person says yes
+  bridge.handle('closeAskNeeded', (() => { try { return closeAskIsNeeded(); } catch (error) { log('could not tell whether to ask for a backup at closing:', error); return false; } }) as never);
+  bridge.handle('closeAskBackup', (async () => {
+    if (!db) return { ok: false, error: 'unavailable' };
+    try {
+      return { ok: true, file: await closeAskBackupNow() };
+    } catch (error) {
+      log('the backup asked for at closing failed:', error);
       return { ok: false, error: (error instanceof Error ? error.message : String(error)).slice(0, 200) };
     }
   }) as never);

@@ -21,7 +21,7 @@ vi.mock('react', () => ({
 vi.mock('react-dom', () => ({ createPortal: () => null }));
 vi.mock('../components.tsx', () => ({
   EmptyState: 'EmptyState', AccountCombo: 'AccountCombo', AmountInput: 'AmountInput', ErrorBox: 'ErrorBox', Icon: 'Icon', Modal: 'Modal',
-  useData: () => ({ settings: null }), useLoad: () => ({ data: fixture.run, reload: () => {} }), usePageNav: () => {}, useToast: () => fixture.toast
+  useData: () => ({ settings: null }), useLoad: () => ({ data: fixture.run, reload: () => {} }), useMay: () => () => true, usePageNav: () => {}, useToast: () => fixture.toast
 }));
 vi.mock('../i18n.ts', () => ({
   useI18n: () => ({ t: (s: string) => s, int: String, date: String, digitsOf: String, money: (n: number) => String(n), name: () => '', lang: 'en' })

@@ -1,6 +1,6 @@
 import {
-  checkPrinterChoice, choiceForPrint, isPrintKind, isPrinterName, readPrinterChoices, type LabelLayout,
-  type PrinterChoice, type PrinterChoices, type PrinterEntry, type PrintKind, type PrintOutcome
+  checkPrinterChoice, choiceForPrint, DEFAULT_PRINTER_CHOICE, isPrintKind, isPrinterName, readPrinterChoices, USUAL_PAPER, type LabelLayout,
+  type PrinterChoice, type PrinterChoices, type PrinterEntry, type PrinterPaper, type PrintKind, type PrintOutcome
 } from '@qasa/core';
 
 /**
@@ -11,7 +11,8 @@ import {
 
 /** The Windows app's printer calls (apps/desktop/src/app-preload.ts). Answers are checked here before use. */
 export interface DesktopPrinters {
-  list(): Promise<unknown>;
+  /** fresh (the Refresh button): Windows is asked again about its default printer and each one's state */
+  list(fresh?: boolean): Promise<unknown>;
   get(): Promise<unknown>;
   set(kind: string, choice: PrinterChoice | null): Promise<unknown>;
   /** labels may name the layout picked on the labels page: its paper is used instead of the saved one */
@@ -25,28 +26,82 @@ export function desktopPrinters(): DesktopPrinters | null {
   return p as DesktopPrinters;
 }
 
-/** The printers in an answer from the app (anything that isn't one is left out). */
-export function printersOf(value: unknown): PrinterEntry[] {
+export const PRINTER_STATES = ['ready', 'offline', 'unknown'] as const;
+export type PrinterState = (typeof PRINTER_STATES)[number];
+export const PRINTER_GUESSES = ['receipt80', 'receipt58', 'label', 'page', 'file'] as const;
+export type PrinterGuess = (typeof PRINTER_GUESSES)[number];
+
+/**
+ * 1.4: a printer as Settings → Printers shows it. The Windows app adds which one is Windows' default, whether it is
+ * ready or offline (when Windows says), and what it looks like; an older app leaves these out.
+ */
+export interface PrinterInfo extends PrinterEntry {
+  isDefault?: boolean;
+  state?: PrinterState;
+  guess?: PrinterGuess;
+}
+
+/** The printers in an answer from the app (anything that isn't one is left out, and so is any detail that isn't one). */
+export function printersOf(value: unknown): PrinterInfo[] {
   if (!Array.isArray(value)) return [];
   return value
-    .filter((p): p is PrinterEntry => !!p && typeof p === 'object' && isPrinterName((p as PrinterEntry).name))
-    .map((p) => ({ name: p.name, displayName: typeof p.displayName === 'string' && p.displayName ? p.displayName : p.name }));
+    .filter((p): p is PrinterInfo => !!p && typeof p === 'object' && isPrinterName((p as PrinterEntry).name))
+    .map((p) => ({
+      name: p.name, displayName: typeof p.displayName === 'string' && p.displayName ? p.displayName : p.name,
+      ...(p.isDefault === true ? { isDefault: true } : {}),
+      ...((PRINTER_STATES as readonly unknown[]).includes(p.state) && p.state !== 'unknown' ? { state: p.state } : {}),
+      ...((PRINTER_GUESSES as readonly unknown[]).includes(p.guess) ? { guess: p.guess } : {})
+    }));
+}
+
+/** Windows' default printer among those listed, or null when the app didn't say. */
+export const defaultPrinter = (printers: readonly PrinterInfo[] | null | undefined): PrinterInfo | null => (printers ?? []).find((p) => p.isDefault) ?? null;
+
+/** What each kind of paper is printed on: a receipt roll, labels, or a page. */
+const KIND_NEEDS: Record<PrintKind, 'receipt' | 'label' | 'page'> = { invoice: 'page', voucher: 'page', quote: 'page', receipt: 'receipt', label: 'label', report: 'page' };
+
+/**
+ * 1.4: the printer to suggest for a kind of paper, with its paper: a receipt printer for POS receipts, a label
+ * printer for labels, and for the pages Windows' default printer when it prints pages (else the first page printer).
+ * A printer that only saves a file is never suggested, an offline one only when nothing else fits. Null: no
+ * suggestion (the person chooses, or the print window keeps opening).
+ */
+export function suggestPrinter(kind: PrintKind, printers: readonly PrinterInfo[] | null | undefined): { printer: string; paper: PrinterPaper } | null {
+  const need = KIND_NEEDS[kind];
+  const fits = (p: PrinterInfo) => (need === 'receipt' ? p.guess === 'receipt80' || p.guess === 'receipt58' : p.guess === need);
+  const candidates = (printers ?? []).filter(fits);
+  if (candidates.length === 0) return null;
+  const best = [...candidates].sort((a, b) => Number(a.state === 'offline') - Number(b.state === 'offline') || Number(!!b.isDefault) - Number(!!a.isDefault))[0]!;
+  const paper: PrinterPaper = need === 'receipt' ? (best.guess === 'receipt58' ? 'receipt58' : 'receipt80') : USUAL_PAPER[kind];
+  return { printer: best.name, paper };
+}
+
+/** The choice a suggestion becomes: the suggested printer and paper, everything else as usual (the print window still shows). */
+export function suggestedChoice(kind: PrintKind, printers: readonly PrinterInfo[] | null | undefined): PrinterChoice | null {
+  const s = suggestPrinter(kind, printers);
+  return s ? { ...DEFAULT_PRINTER_CHOICE, printer: s.printer, paper: s.paper } : null;
 }
 
 const OUTCOMES = ['printed', 'ask', 'noPrinters', 'missing', 'failed', 'busy', 'refused'] as const;
 
+/** 1.4: the saved printer was gone, so the paper went to Windows' default printer instead. */
+export interface PrintFallback { from: string; to: string }
+
 /** The app's answer to a print, or null when it isn't one. */
-export function outcomeOf(value: unknown): PrintOutcome | null {
+export function outcomeOf(value: unknown): (PrintOutcome & { fallback?: PrintFallback }) | null {
   if (!value || typeof value !== 'object') return null;
-  const o = value as { status?: unknown; printer?: unknown; reason?: unknown };
+  const o = value as { status?: unknown; printer?: unknown; reason?: unknown; fallback?: { from?: unknown; to?: unknown } | null };
   if (!(OUTCOMES as readonly unknown[]).includes(o.status)) return null;
+  if (o.status === 'printed' && o.fallback && isPrinterName(o.fallback.from) && isPrinterName(o.fallback.to)) {
+    return { status: 'printed', fallback: { from: o.fallback.from, to: o.fallback.to } };
+  }
   if (o.status === 'missing') return { status: 'missing', printer: typeof o.printer === 'string' ? o.printer : '' };
   if (o.status === 'failed') return { status: 'failed', reason: o.reason === 'cancelled' ? 'cancelled' : 'printer' };
   return { status: o.status } as PrintOutcome;
 }
 
 /** What a Print button tells the person (PrintNotices shows it). */
-export type PrintNotice = { code: 'missing' | 'failed'; printer: string } | { code: 'noPrinters' | 'busy' };
+export type PrintNotice = { code: 'missing' | 'failed'; printer: string } | { code: 'noPrinters' | 'busy' } | { code: 'fallback'; printer: string; to: string };
 export const PRINT_NOTICE_EVENT = 'qasa:print-notice';
 
 function noticePage(notice: PrintNotice): void {
@@ -139,7 +194,7 @@ export async function printDocument(kind: PrintKind, env: Partial<PrintEnv> & { 
   const layout = kind === 'label' ? env.labelLayout : undefined;
   if (choice?.printer) mark(choiceForPrint(kind, choice, layout).paper);
   try {
-    let outcome: PrintOutcome | null;
+    let outcome: ReturnType<typeof outcomeOf>;
     try {
       outcome = outcomeOf(await (layout ? desktop.print(kind, layout) : desktop.print(kind)));
     } catch {
@@ -147,6 +202,8 @@ export async function printDocument(kind: PrintKind, env: Partial<PrintEnv> & { 
     }
     switch (outcome?.status) {
       case 'printed':
+        // 1.4: the saved printer is gone and the paper went to Windows' default printer: the page says so
+        if (outcome.fallback) notify({ code: 'fallback', printer: outcome.fallback.from, to: outcome.fallback.to });
         return 'printed';
       case 'busy':
         notify({ code: 'busy' });

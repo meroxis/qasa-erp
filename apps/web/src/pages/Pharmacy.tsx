@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { formatQty } from '@qasa/core';
 import { api } from '../api.ts';
-import { EmptyState, ErrorBox, Icon, Modal, SearchCombo, downloadCsv, useData, useLoad, useToast, type PickOption } from '../components.tsx';
+import { EmptyState, ErrorBox, Icon, Modal, SearchCombo, downloadCsv, useData, useLoad, useMay, useToast, type PickOption } from '../components.tsx';
 import { useI18n, type Key } from '../i18n.ts';
 import { go, href } from '../router.ts';
 import { DOSAGE_FORMS, pharmacyApi, type ControlledLine, type DosageForm, type MedicineView, type PharmaDetails } from '../industry/pharmacy-api.ts';
@@ -87,15 +87,18 @@ function Medicines() {
   const [form, setForm] = useState<DosageForm | ''>('');
   const [editing, setEditing] = useState<string | null>(null);
   const [pick, setPick] = useState('');
+  const can = useMay()('medicine');
   const list = useLoad(() => pharmacyApi.medicines({ ...(q.trim() ? { q: q.trim() } : {}), ...(form ? { form } : {}) }), [q, form]);
   const items = useLoad(() => api.items({ active: 'true' }), []);
   const options: PickOption[] = (items.data ?? []).filter((it) => it.trackStock).map((it) => ({ id: it.id, code: it.code, label: i18n.name(it.name), search: `${it.name.ar} ${it.name.en} ${it.name.ku} ${it.barcode}` }));
   return (
     <div className="stack">
       <div className="row">
-        <div style={{ minWidth: 260 }}>
-          <SearchCombo value={pick} options={options} onChange={(v) => { if (v) setEditing(v); setPick(''); }} placeholder={t('ph_addMedicine')} ariaLabel={t('ph_addMedicine')} />
-        </div>
+        {can && (
+          <div style={{ minWidth: 260 }}>
+            <SearchCombo value={pick} options={options} onChange={(v) => { if (v) setEditing(v); setPick(''); }} placeholder={t('ph_addMedicine')} ariaLabel={t('ph_addMedicine')} />
+          </div>
+        )}
         <span className="spacer" />
         <select className="input" style={{ width: 160 }} value={form} onChange={(e) => setForm(e.target.value as DosageForm | '')} aria-label={t('ph_form')}>
           <option value="">{t('all')}</option>
@@ -105,7 +108,7 @@ function Medicines() {
       </div>
       <ErrorBox error={list.error} />
       <div className="card">
-        {list.data && (list.data.items.length ? <MedicineTable rows={list.data.items} onEdit={(m) => setEditing(m.itemId)} /> : <EmptyState compact icon="pill" title={t('ph_noDetails')} text="" />)}
+        {list.data && (list.data.items.length ? <MedicineTable rows={list.data.items} {...(can ? { onEdit: (m: MedicineView) => setEditing(m.itemId) } : {})} /> : <EmptyState compact icon="pill" title={t('ph_noDetails')} text="" />)}
       </div>
       {editing && <MedicineForm itemId={editing} onClose={() => setEditing(null)} onSaved={() => { setEditing(null); list.reload(); }} />}
     </div>
@@ -186,11 +189,13 @@ function Alternatives() {
   );
 }
 
-function NearExpiry() {
+export function NearExpiry() {
   const i18n = useI18n();
   const { t } = i18n;
   const list = useLoad(() => pharmacyApi.nearExpiry(), []);
   const rows = list.data ?? [];
+  // 1.4: the value of the stock is not sent to someone who may not see cost: no such column
+  const cost = useData().seesCost !== false && rows.every((r) => r.value !== undefined);
   return (
     <div className="stack">
       <div className="row no-print">
@@ -203,7 +208,7 @@ function NearExpiry() {
         {list.data && rows.length === 0 && <EmptyState compact icon="clock" title={t('ex_none')} text="" />}
         {rows.length > 0 && (
           <table className="table">
-            <thead><tr><th>{t('item')}</th><th>{t('ex_batch')}</th><th>{t('ex_expiry')}</th><th>{t('warehouse')}</th><th className="amount">{t('qty')}</th><th className="amount">{t('stockValue')}</th></tr></thead>
+            <thead><tr><th>{t('item')}</th><th>{t('ex_batch')}</th><th>{t('ex_expiry')}</th><th>{t('warehouse')}</th><th className="amount">{t('qty')}</th>{cost && <th className="amount">{t('stockValue')}</th>}</tr></thead>
             <tbody>
               {rows.map((r) => (
                 <tr key={`${r.batchId}|${r.warehouseId}`}>
@@ -212,7 +217,7 @@ function NearExpiry() {
                   <td><ExpiryChip state={r.state} expiry={r.expiry} i18n={i18n} /></td>
                   <td>{i18n.name(r.warehouseName)}</td>
                   <td className="amount">{i18n.qty(r.qtyMilli)}</td>
-                  <td className="amount">{i18n.money(r.value, 'IQD')}</td>
+                  {cost && <td className="amount">{i18n.money(r.value ?? 0, 'IQD')}</td>}
                 </tr>
               ))}
             </tbody>

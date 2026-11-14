@@ -7,7 +7,9 @@ import {
 import { Icon, useToast } from '../components.tsx';
 import { ChoiceTiles } from '../ChoiceTiles.tsx';
 import { useI18n, type Key } from '../i18n.ts';
-import { desktopPrinters, PRINT_NOTICE_EVENT, printAlone, printersOf, saveChoice, savedChoices, type PrintNotice } from './printing.ts';
+import {
+  defaultPrinter, desktopPrinters, PRINT_NOTICE_EVENT, printAlone, printersOf, saveChoice, savedChoices, suggestedChoice, type PrinterInfo, type PrintNotice
+} from './printing.ts';
 
 /** A kind's choice with another printer: a first printer starts on the paper that kind usually takes; none is "Ask every time". */
 export function withPrinter(kind: PrintKind, current: PrinterChoice | undefined, printer: string | null): PrinterChoice | null {
@@ -28,8 +30,8 @@ export function goneIn(choice: PrinterChoice | null | undefined, printers: reado
 export interface PrintersCardViewProps {
   /** in the Windows app (false: a browser or the website demo) */
   desktop: boolean;
-  /** the printers Windows lists; null while they are read */
-  printers: PrinterEntry[] | null;
+  /** the printers Windows lists (1.4: with the default one, each one's state and what it looks like); null while they are read */
+  printers: PrinterInfo[] | null;
   choices: PrinterChoices;
   /** the kind whose change or test page is on its way */
   busy: PrintKind | null;
@@ -37,11 +39,44 @@ export interface PrintersCardViewProps {
   onChange(kind: PrintKind, choice: PrinterChoice | null): void;
   onTest(kind: PrintKind): void;
   onRefresh(): void;
+  /** 1.4: saves the suggested printer for every kind that has none chosen */
+  onUseSuggested?(): void;
+}
+
+/** 1.4: the printers of this computer as rectangles: Windows' default, ready or offline, and what each looks like. */
+export function InstalledPrinters({ printers }: { printers: PrinterInfo[] }) {
+  const { t } = useI18n();
+  if (printers.length === 0) return null;
+  return (
+    <div className="stack" style={{ gap: 8 }}>
+      <h3 style={{ margin: 0 }}>{t('s14_prnInstalled')}</h3>
+      <ul className="printer-tiles" aria-label={t('s14_prnInstalled')}>
+        {printers.map((p) => (
+          <li key={p.name} className={'printer-tile' + (p.isDefault ? ' default' : '')} data-printer={p.name}>
+            <span className="launch-ico"><Icon name="printer" size={18} /></span>
+            <span className="printer-tile-text">
+              <strong dir="auto">{p.displayName}</strong>
+              <span className="printer-tile-chips">
+                {p.isDefault && <span className="chip info">{t('s14_prnDefault')}</span>}
+                {p.state === 'ready' && <span className="chip ok">{t('s14_prnReady')}</span>}
+                {p.state === 'offline' && <span className="chip bad">{t('s14_prnOffline')}</span>}
+              </span>
+              {p.guess && <span className="muted small">{t('s14_prnLooksLike', { g: t(`s14_prnGuess_${p.guess}` as Key) })}</span>}
+            </span>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
 }
 
 /** Settings → Printers as it looks; PrintersCard gives it the Windows app's printers and choices. */
-export function PrintersCardView({ desktop, printers, choices, busy, error, onChange, onTest, onRefresh }: PrintersCardViewProps) {
+export function PrintersCardView({ desktop, printers, choices, busy, error, onChange, onTest, onRefresh, onUseSuggested }: PrintersCardViewProps) {
   const { t } = useI18n();
+  const usual = defaultPrinter(printers);
+  // the kinds with no printer chosen that have one to suggest
+  const open = printers ? PRINT_KINDS.filter((kind) => !choices[kind]?.printer && suggestedChoice(kind, printers)) : [];
+  const detailed = !!printers?.some((p) => p.isDefault || p.state || p.guess);
   const head = <div className="card-head"><h2 id="printers-title"><Icon name="printer" size={18} /> {t('prn_title')}</h2></div>;
   if (!desktop) {
     return (
@@ -57,6 +92,13 @@ export function PrintersCardView({ desktop, printers, choices, busy, error, onCh
       <p className="muted small" style={{ margin: 0 }}>{t('prn_help')}</p>
       {printers === null && <div className="muted" role="status">{t('prn_loading')}</div>}
       {printers !== null && printers.length === 0 && <div className="alert warn" role="status">{t('prn_none')}</div>}
+      {printers !== null && detailed && <InstalledPrinters printers={printers} />}
+      {open.length > 0 && onUseSuggested && (
+        <div className="alert info printer-suggest" role="status">
+          <span>{t('s14_prnSuggestHelp')}</span>
+          <button type="button" className="btn small" disabled={busy !== null} onClick={onUseSuggested}>{t('s14_prnUseAll')}</button>
+        </div>
+      )}
       {error && <div className="alert bad" role="alert">{error}</div>}
       <div className="table-wrap">
         <table className="table printers-table">
@@ -75,6 +117,11 @@ export function PrintersCardView({ desktop, printers, choices, busy, error, onCh
               const off = printer === null || gone || busy !== null;
               const label = t(`prn_kind_${kind}` as Key);
               const set = (patch: Partial<PrinterChoice>) => c && onChange(kind, { ...c, ...patch });
+              const suggestion = printer === null ? suggestedChoice(kind, printers) : null;
+              const suggested = suggestion && (printers ?? []).find((p) => p.name === suggestion.printer);
+              const chosen = (printers ?? []).find((p) => p.name === printer);
+              // what the list says beside a printer's name: Windows' default, and offline when Windows says so
+              const optionLabel = (p: PrinterInfo) => [p.displayName, p.isDefault ? t('s14_prnDefault') : '', p.state === 'offline' ? t('s14_prnOffline') : ''].filter(Boolean).join(' — ');
               // each kind takes two rows: its printer, paper, copies and test page, then its margins as rectangles
               return (
                 <Fragment key={kind}>
@@ -88,11 +135,21 @@ export function PrintersCardView({ desktop, printers, choices, busy, error, onCh
                       onChange={(e) => onChange(kind, withPrinter(kind, c, e.target.value || null))}>
                       <option value="">{t('prn_ask')}</option>
                       {gone && <option value={printer!}>{printer} — {t('prn_gone')}</option>}
-                      {(printers ?? []).map((p) => <option key={p.name} value={p.name}>{p.displayName}</option>)}
+                      {(printers ?? []).map((p) => <option key={p.name} value={p.name}>{optionLabel(p)}</option>)}
                     </select>
                     {gone && (
                       <div className="small" style={{ color: 'var(--warn)' }} role="note">
-                        {t('prn_goneHelp', { p: printer! })} <strong>{t('prn_chooseOther')}</strong>
+                        {/* 1.4: with a default printer known, the paper goes there meanwhile (and the page says so each time) */}
+                        {usual ? t('s14_prnGoneDefault', { p: printer!, d: usual.displayName }) : t('prn_goneHelp', { p: printer! })} <strong>{t('prn_chooseOther')}</strong>
+                      </div>
+                    )}
+                    {!gone && chosen?.state === 'offline' && (
+                      <div className="small" style={{ color: 'var(--warn)' }} role="note">{t('s14_prnOfflineNote', { p: chosen.displayName })}</div>
+                    )}
+                    {suggestion && suggested && (
+                      <div className="small printer-suggestion" role="note">
+                        <span className="muted">{t('s14_prnSuggested', { p: suggested.displayName })}</span>
+                        <button type="button" className="btn small" disabled={busy !== null} onClick={() => onChange(kind, suggestion)}>{t('s14_prnUse')}</button>
                       </div>
                     )}
                   </td>
@@ -144,17 +201,17 @@ export function PrintersCard() {
   const { t } = useI18n();
   const toast = useToast();
   const [desktop] = useState(desktopPrinters);
-  const [printers, setPrinters] = useState<PrinterEntry[] | null>(null);
+  const [printers, setPrinters] = useState<PrinterInfo[] | null>(null);
   const [choices, setChoices] = useState<PrinterChoices>({});
   const [busy, setBusy] = useState<PrintKind | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [testing, setTesting] = useState<PrintKind | null>(null);
 
-  const load = useCallback(async () => {
+  const load = useCallback(async (fresh = false) => {
     if (!desktop) return;
     setPrinters(null);
-    let list: PrinterEntry[] = [];
-    try { list = printersOf(await desktop.list()); } catch { list = []; }
+    let list: PrinterInfo[] = [];
+    try { list = printersOf(await desktop.list(fresh)); } catch { list = []; }
     setPrinters(list);
     setChoices(await savedChoices(desktop));
   }, [desktop]);
@@ -172,6 +229,24 @@ export function PrintersCard() {
     if (!saved) { setError(t('prn_saveFailed')); return; }
     setChoices(saved);
     toast(t('prn_saved'));
+  };
+
+  /** 1.4: the suggested printer for every kind that has none, one after the other; stops at the first that can't be saved. */
+  const useSuggested = async () => {
+    if (!desktop || !printers) return;
+    setError(null);
+    let saved: PrinterChoices | null = null;
+    for (const kind of PRINT_KINDS) {
+      if (choices[kind]?.printer) continue;
+      const choice = suggestedChoice(kind, printers);
+      if (!choice) continue;
+      setBusy(kind);
+      const next = await saveChoice(desktop, kind, choice, printers.map((p) => p.name));
+      if (!next) { setBusy(null); setError(t('prn_saveFailed')); if (saved) setChoices(saved); return; }
+      saved = next;
+    }
+    setBusy(null);
+    if (saved) { setChoices(saved); toast(t('prn_saved')); }
   };
 
   // the test page is drawn, then printed alone (body.print-testing hides the app while it prints)
@@ -194,7 +269,8 @@ export function PrintersCard() {
         desktop={!!desktop} printers={printers} choices={choices} busy={busy} error={error}
         onChange={(kind, choice) => void change(kind, choice)}
         onTest={(kind) => { setBusy(kind); setTesting(kind); }}
-        onRefresh={() => void load()}
+        onRefresh={() => void load(true)}
+        onUseSuggested={() => void useSuggested()}
       />
       {testing && createPortal(<PrintTestSheet kind={testing} choice={choices[testing]} />, document.body)}
     </>
@@ -268,7 +344,7 @@ export function PrintTestSheet({ kind, choice }: { kind: PrintKind; choice: Prin
 }
 
 const NOTICE_KEY: Record<PrintNotice['code'], Key> = {
-  missing: 'prn_n_missing', noPrinters: 'prn_n_noPrinters', failed: 'prn_n_failed', busy: 'prn_n_busy'
+  missing: 'prn_n_missing', noPrinters: 'prn_n_noPrinters', failed: 'prn_n_failed', busy: 'prn_n_busy', fallback: 's14_prn_n_fallback'
 };
 
 /** What a Print button has to say about the printer, until it is closed (or after 12 seconds). Never printed. */
@@ -290,7 +366,7 @@ export function PrintNotices() {
   if (!notice) return null;
   return (
     <div className="toast print-notice no-print" role="alert">
-      <span>{t(NOTICE_KEY[notice.code], { p: 'printer' in notice ? notice.printer : '' })}</span>
+      <span>{t(NOTICE_KEY[notice.code], { p: 'printer' in notice ? notice.printer : '', d: 'to' in notice ? notice.to : '' })}</span>
       <button type="button" className="btn small" onClick={() => setNotice(null)}>{t('prn_dismiss')}</button>
     </div>
   );

@@ -16,7 +16,7 @@ export const PHARMACY_TEXT = {
   ph_controlledLog: ['سجل الأدوية الخاضعة للرقابة', 'Controlled medicines log', 'تۆماری دەرمانی ژێر چاودێری'],
   ph_generic: ['الاسم العلمي', 'Generic name', 'ناوی زانستی'],
   ph_form: ['الشكل الدوائي', 'Dosage form', 'شێوەی دەرمان'],
-  ph_strength: ['التركيز', 'Strength', 'هێز'],
+  ph_strength: ['التركيز', 'Strength', 'خەستی'],
   ph_manufacturer: ['الشركة المصنعة', 'Manufacturer', 'کۆمپانیای بەرهەمهێنەر'],
   ph_rxOnly: ['بوصفة طبية', 'Prescription only', 'تەنها بە ڕەچەتە'],
   ph_controlled: ['خاضع للرقابة', 'Controlled', 'ژێر چاودێری'],
@@ -28,14 +28,14 @@ export const PHARMACY_TEXT = {
   ph_patient: ['المريض', 'Patient', 'نەخۆش'],
   ph_prescriber: ['الطبيب', 'Prescriber', 'پزیشک'],
   ph_prescriptionNo: ['رقم الوصفة', 'Prescription no.', 'ژمارەی ڕەچەتە'],
-  ph_missing: ['ناقصة', 'Missing', 'کەمە'],
-  ph_onlyMissing: ['الناقصة فقط', 'Missing only', 'تەنها کەمەکان'],
+  ph_missing: ['ناقصة', 'Missing', 'ناتەواوە'],
+  ph_onlyMissing: ['الناقصة فقط', 'Missing only', 'تەنها ناتەواوەکان'],
   ph_record: ['تسجيل', 'Record', 'تۆمارکردن'],
   ph_recordTitle: ['بيانات الدواء الخاضع للرقابة', 'Controlled medicine details', 'وردەکاریی دەرمانی ژێر چاودێری'],
   ph_recordHelp: [
     'سجّل اسم المريض (مطلوب) والطبيب ورقم الوصفة لكل دواء خاضع للرقابة بيع. يمكن إكمالها لاحقاً من سجل الصيدلية.',
     'Record the patient (required), the prescriber and the prescription number for each controlled medicine sold. They can be completed later from the pharmacy log.',
-    'ناوی نەخۆش (پێویستە)، پزیشک و ژمارەی ڕەچەتە بۆ هەر دەرمانێکی ژێر چاودێری فرۆشراو تۆمار بکە. دواتر لە تۆماری دەرمانخانەوە تەواو دەکرێن.'
+    'بۆ هەر دەرمانێکی ژێر چاودێری کە دەفرۆشرێت، ناوی نەخۆش (پێویستە)، پزیشک و ژمارەی ڕەچەتە تۆمار بکە. دواتریش دەتوانیت لە تۆماری دەرمانخانەوە تەواویان بکەیت.'
   ],
   ph_rxSeen: ['رأيت الوصفة', 'Prescription seen', 'ڕەچەتەکەم بینی'],
   ph_later: ['لاحقاً', 'Later', 'دواتر'],
@@ -55,6 +55,6 @@ export const PHARMACY_TEXT = {
   err_ph_form_invalid: ['الشكل الدوائي غير صحيح.', 'The dosage form isn’t valid.', 'شێوەی دەرمان دروست نییە.'],
   err_ph_generic_required: ['اكتب الاسم العلمي للدواء الخاضع للرقابة.', 'Enter the generic name of a controlled medicine.', 'ناوی زانستیی دەرمانی ژێر چاودێری بنووسە.'],
   err_ph_not_controlled: ['هذا الدواء ليس خاضعاً للرقابة.', 'This medicine isn’t controlled.', 'ئەم دەرمانە ژێر چاودێری نییە.'],
-  err_ph_not_posted_sale: ['السطر ليس من فاتورة بيع مرحّلة.', 'That line isn’t on a posted sale.', 'ئەو ڕیزە لە پسوولەیەکی فرۆشتنی تۆمارکراودا نییە.'],
+  err_ph_not_posted_sale: ['السطر ليس من فاتورة بيع مرحّلة.', 'That line isn’t on a posted sale.', 'ئەو ڕیزە لە پسوولەیەکی فرۆشتنی تەرحیلکراودا نییە.'],
   err_ph_patient_required: ['اكتب اسم المريض.', 'Enter the patient’s name.', 'ناوی نەخۆش بنووسە.']
 } as const;

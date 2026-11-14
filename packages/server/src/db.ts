@@ -5,7 +5,7 @@ import { DatabaseSync } from 'node:sqlite';
 import { brandKey, DEFAULT_POSTING_ACCOUNTS, IRAQI_UNIFIED_CHART, STARTER_SUB_ACCOUNTS } from '@qasa/core';
 import { AppError } from './errors.ts';
 import {
-  MYSQL_TABLES, MYSQL_TRIGGERS, mysqlCollations, mysqlTableSql, pendingMysqlSteps, V10_MYSQL_STEPS, V11_MYSQL_STEPS, V12_MYSQL_STEPS, type MysqlCollations, type MysqlStep
+  MYSQL_TABLES, MYSQL_TRIGGERS, mysqlCollations, mysqlTableSql, pendingMysqlSteps, V10_MYSQL_STEPS, V11_MYSQL_STEPS, V12_MYSQL_STEPS, V13_MYSQL_STEPS, type MysqlCollations, type MysqlStep
 } from './schema-mysql.ts';
 
 export type SqlParam = null | number | bigint | string | Uint8Array;
@@ -1726,12 +1726,46 @@ const V12_OWNER_TOOLS =
 /** Version 12: each 1.2 feature's own block, one after the other. */
 const V12 = [V12_OUTBOX, V12_OWNER_TOOLS].join('\n');
 
+const V13 =
+  // 13 — the item form (1.4): what the item is bought for, beside its sale price, in its own currency (NULL: not
+  // written). It is a note for the form and the margin beside it; stock value and cost of sales stay the average cost
+  `
+  ALTER TABLE items ADD COLUMN purchase_price INTEGER CHECK (purchase_price IS NULL OR purchase_price >= 0);
+  ALTER TABLE items ADD COLUMN purchase_currency TEXT CHECK (purchase_currency IS NULL OR purchase_currency IN ('IQD', 'USD'));
+  -- vouchers that wait for approval ("Vouchers need approval"): one row per voucher sent for approval: who asked and
+  -- when, and the answer (approved, or rejected with the reason). A waiting or rejected voucher is still a draft in
+  -- entries, so it is in no balance and no report until it is approved
+  CREATE TABLE voucher_approvals (
+    entry_id TEXT PRIMARY KEY REFERENCES entries(id) ON DELETE CASCADE,
+    state TEXT NOT NULL CHECK (state IN ('waiting', 'rejected', 'approved')),
+    requested_by TEXT NOT NULL,
+    requested_by_id TEXT REFERENCES users(id),
+    requested_at TEXT NOT NULL,
+    decided_by TEXT,
+    decided_by_id TEXT REFERENCES users(id),
+    decided_at TEXT,
+    reason TEXT
+  );
+  CREATE INDEX voucher_approvals_state ON voucher_approvals(state);
+  -- "Receive payment" and "Pay supplier" opened from an invoice: the voucher and the invoice it was made for, so the
+  -- invoice knows what was received for it and what is still open. Either one deleted takes the link with it
+  CREATE TABLE invoice_vouchers (
+    entry_id TEXT PRIMARY KEY REFERENCES entries(id) ON DELETE CASCADE,
+    invoice_id TEXT NOT NULL REFERENCES invoices(id) ON DELETE CASCADE
+  );
+  CREATE INDEX invoice_vouchers_invoice ON invoice_vouchers(invoice_id);
+  -- a till's cash sale: the cash the customer handed over, in the sale's currency (NULL: not typed, or not a cash
+  -- sale), so "Amount paid" and "Change" print again on a later copy of the receipt
+  ALTER TABLE pos_sales ADD COLUMN tendered INTEGER CHECK (tendered IS NULL OR tendered >= 0);
+  `;
+
 const MIGRATIONS: Migration[] = [
   { sql: V1 }, { sql: V2, rebuild: true }, { sql: V3, rebuild: true }, { sql: V4 }, { sql: V5, rebuild: true },
   { sql: V6, mysql: 'tables' }, { sql: V7, mysql: 'tables' }, { sql: V8, mysql: 'tables' }, { sql: V9, mysql: 'tables' },
   { sql: V10, mysql: { tables: true, steps: () => V10_MYSQL_STEPS } },
   { sql: V11, mysql: { tables: true, steps: () => V11_MYSQL_STEPS }, data: (db) => { movePartBrands(db); movePartReorder(db); } },
-  { sql: V12, mysql: { tables: true, steps: () => V12_MYSQL_STEPS } }
+  { sql: V12, mysql: { tables: true, steps: () => V12_MYSQL_STEPS } },
+  { sql: V13, mysql: { tables: true, steps: () => V13_MYSQL_STEPS } }
 ];
 
 /** Server databases began at this version: its schema is in schema-mysql.ts (tables and triggers without `since`). */

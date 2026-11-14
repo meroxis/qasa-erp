@@ -289,7 +289,7 @@ describe('stock adjustments', () => {
     await stockUp();
     const draft = (await post('/api/adjustments', { date: '2026-09-10', warehouseId, reason: 'damaged', lines: [{ itemId: pipeId, qtyMilli: -1000 }] })).json();
     const posted = (await post(`/api/adjustments/${draft.id}/post`, { lang: 'ku' })).json();
-    expect((await get(`/api/entries/${posted.entry.id}`)).json().description).toContain('کاڵای تێکچوو');
+    expect((await get(`/api/entries/${posted.entry.id}`)).json().description).toContain('کاڵای تەلەف');
   });
 
   it('books what leaves only to an expense and what comes in only to a revenue account', async () => {

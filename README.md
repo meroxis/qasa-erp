@@ -265,6 +265,7 @@ and the cloud backup.
 | Final accounts | on screen | print and Excel | print and Excel | print and Excel |
 | Warehouses | 1 | unlimited | unlimited | unlimited |
 | "Made with Qasa ERP" on invoices | shown | removed | removed | removed |
+| Your company logo on printed papers | | ✓ | ✓ | ✓ |
 | Users, with sign-in | 1 | 2, with roles and separate duties | up to 5, with roles and separate duties | unlimited |
 | Office network (several PCs on one company file) | | ✓ (inside the office) | ✓ | ✓ |
 | Qasa Relay (the office network from anywhere over the internet) | | | ✓ | ✓ |

@@ -6,8 +6,9 @@ import type { ChequeCounts, ChequesAheadView } from './ChequesAhead.tsx';
 export type Money2 = { IQD: number; USD: number };
 
 export interface CashAccountView { code: string; name: Names; balance: Money2; base: number }
-export interface ItemSalesView { itemId: string; code: string; name: Names; qtyMilli: number; sales: number; cost: number; profit: number }
-export interface SalesFiguresView { qtyMilli: number; sales: number; cost: number; profit: number }
+/** cost and profit: absent for someone who may not read the books (1.4) */
+export interface ItemSalesView { itemId: string; code: string; name: Names; qtyMilli: number; sales: number; cost?: number; profit?: number }
+export interface SalesFiguresView { qtyMilli: number; sales: number; cost?: number; profit?: number }
 /** A category (its subcategories in children, total with them) or a brand; id null: items with none. */
 export interface GroupSalesView extends SalesFiguresView { id: string | null; code: string; name: Names | null; children: GroupSalesView[]; total: SalesFiguresView }
 export interface CustomerSalesView { partyId: string | null; code: string; name: string; invoices: number; sales: number }
@@ -24,8 +25,9 @@ export interface BriefView {
   date: string;
   company: Names;
   sales: { today: number; invoices: number; sameDayLastWeek: number; month: number };
-  cash: { accounts: CashAccountView[]; total: Money2; base: number };
-  flow: { in: number; out: number };
+  /** cash and flow: the company's money, absent for someone who may not read the books (1.4) */
+  cash?: { accounts: CashAccountView[]; total: Money2; base: number };
+  flow?: { in: number; out: number };
   topItems: ItemSalesView[];
   lateCustomers: AgingRowView[];
   receivables: number;
@@ -44,11 +46,12 @@ export interface DashboardView {
   salesMonth: number;
   salesLastMonth: number;
   /** null when one branch is shown: profit is only known for the whole company */
-  profitMonth: { revenue: number; expenses: number; profit: number } | null;
-  cash: { total: Money2; base: number };
+  profitMonth?: { revenue: number; expenses: number; profit: number } | null;
+  /** absent for someone who may not read the books (1.4) */
+  cash?: { total: Money2; base: number };
   receivables: number;
   payables: number;
-  months: { month: string; sales: number; profit: number | null }[];
+  months: { month: string; sales: number; profit?: number | null }[];
   cheques?: ChequeCounts;
 }
 
@@ -105,9 +108,10 @@ export interface DayCloseView {
   refunds: { method: DayMethod; amount: number }[];
   registers: DayRegisterView[];
   drawers: { expected: Money2; counted: Money2; difference: Money2 } | null;
-  expenses: { rows: ExpenseRowView[]; total: number };
+  /** expenses and flow: absent for someone who may not read the books (1.4); the registers and drawers stay */
+  expenses?: { rows: ExpenseRowView[]; total: number };
   debts: { collected: number; collectedRows: DayDebtRowView[]; added: number; addedRows: DayDebtRowView[] };
-  flow: { in: number; out: number };
+  flow?: { in: number; out: number };
   lowStock: { count: number; top: LowStockView[] };
   topItems: ItemSalesView[];
   ownerPhone: string;

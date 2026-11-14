@@ -162,14 +162,25 @@ const IMPORT_WORDS: Record<ImportLang, { stock: string; customers: string; suppl
   },
   ku: {
     stock: 'هاوردە کراوە لە Excel',
-    customers: 'باڵانسی سەرەتای کڕیاران (هاوردە کراو)',
-    suppliers: 'باڵانسی سەرەتای دابینکەران (هاوردە کراو)',
-    trialBalance: 'باڵانسی سەرەتا (تەرازووی پێداچوونەوەی هاوردە کراو)'
+    customers: 'ڕەسیدی سەرەتای کڕیاران (هاوردە کراو)',
+    suppliers: 'ڕەسیدی سەرەتای دابینکەران (هاوردە کراو)',
+    trialBalance: 'ڕەسیدی سەرەتا (تەرازووی پێداچوونەوەی هاوردە کراو)'
   }
 };
 const importWords = (input: ImportInput) => IMPORT_WORDS[input.lang ?? 'ar'];
-/** The same words in all three languages: an import made earlier in another language still counts as made before. */
-const everyLang = (pick: (w: (typeof IMPORT_WORDS)['ar']) => string): string[] => Object.values(IMPORT_WORDS).map(pick);
+/**
+ * The pre-1.4 wording: what an import in Kurdish wrote before 1.4 changed the words (باڵانس became ڕەسید). Companies'
+ * books hold documents written with these, so they still tell that an import was made before. Never written again.
+ */
+const LEGACY_IMPORT_WORDS: Partial<(typeof IMPORT_WORDS)['ar']>[] = [
+  { customers: 'باڵانسی سەرەتای کڕیاران (هاوردە کراو)', suppliers: 'باڵانسی سەرەتای دابینکەران (هاوردە کراو)' }
+];
+/** The same words in all three languages, and as earlier versions wrote them: an import made earlier in another language still counts as made before. */
+const everyLang = (pick: (w: (typeof IMPORT_WORDS)['ar']) => string): string[] => [
+  ...Object.values(IMPORT_WORDS).map(pick),
+  ...LEGACY_IMPORT_WORDS.map((w) => pick(w as (typeof IMPORT_WORDS)['ar'])).filter((t): t is string => typeof t === 'string')
+];
+const marks = (list: readonly unknown[]) => list.map(() => '?').join(', ');
 
 export interface ImportResult {
   kind: ImportKind;
@@ -201,6 +212,9 @@ const lineOf = (index: number) => index + 2;
 
 const text = (v: unknown): string => (v === null || v === undefined ? '' : String(v)).trim();
 
+/** The pre-1.4 wording: Kurdish unit names 1.4 changed (a set was «دەست», now «تاقم»); files filled in with them are still read. */
+const LEGACY_UNIT_WORDS: readonly (readonly [string, UnitCode])[] = [['دەست', 'set']];
+
 /** Unit words in the three languages (and a few common spellings) → the unit code. */
 function unitOf(value: string): UnitCode | null {
   const v = normalizeForSearch(value);
@@ -210,7 +224,7 @@ function unitOf(value: string): UnitCode | null {
     if ([names.ar, names.en, names.ku].some((n) => normalizeForSearch(n) === v)) return code;
   }
   const extra: Record<string, UnitCode> = { pcs: 'piece', pc: 'piece', pieces: 'piece', عدد: 'piece', حبة: 'piece', kilo: 'kg', كيلو: 'kg', meter: 'm', متر: 'm', litre: 'l', liter: 'l', لتر: 'l', كارتونة: 'carton' };
-  return extra[v] ?? null;
+  return extra[v] ?? LEGACY_UNIT_WORDS.find(([word]) => normalizeForSearch(word) === v)?.[1] ?? null;
 }
 
 /** Currency words → IQD or USD; empty means IQD. */
@@ -483,7 +497,7 @@ const importOpeningStock: Importer = (db, input, actor, result) => {
   const date = o.date ?? todayIso();
   // the note an imported opening stock document carries also tells that an import was made before
   const stockNotes = everyLang((w) => w.stock);
-  const before = db.prepare(`SELECT id FROM stock_docs WHERE kind = 'opening' AND status <> 'cancelled' AND notes IN (?, ?, ?) AND date = ? AND warehouse_id = ?
+  const before = db.prepare(`SELECT id FROM stock_docs WHERE kind = 'opening' AND status <> 'cancelled' AND notes IN (${marks(stockNotes)}) AND date = ? AND warehouse_id = ?
                              ORDER BY created_at LIMIT 1`).get(...stockNotes, date, warehouseId) as { id: string } | undefined;
   guardRepeat(input, result, before ? { type: 'stock_doc', id: before.id } : undefined);
   const doc = atRow(errors, undefined, () => createStockDoc(db, {
@@ -542,7 +556,7 @@ const importOpeningBalances: Importer = (db, input, actor, result) => {
     const description = type === 'customer' ? importWords(input).customers : importWords(input).suppliers;
     const sameImport = everyLang((w) => (type === 'customer' ? w.customers : w.suppliers));
     // the same import for this date that was not cancelled (a reversed entry, or the reversal itself, does not count)
-    const before = db.prepare(`SELECT id FROM entries WHERE description IN (?, ?, ?) AND date = ? AND currency = ? AND reversed_by_id IS NULL AND reverses_id IS NULL
+    const before = db.prepare(`SELECT id FROM entries WHERE description IN (${marks(sameImport)}) AND date = ? AND currency = ? AND reversed_by_id IS NULL AND reverses_id IS NULL
                                ORDER BY number LIMIT 1`).get(...sameImport, date, currency) as { id: string } | undefined;
     guardRepeat(input, result, before ? { type: 'entry', id: before.id, currency } : undefined);
     const entry = atRow(errors, undefined, () => createJournalEntry(db, {

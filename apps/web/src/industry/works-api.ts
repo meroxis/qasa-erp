@@ -23,8 +23,8 @@ export interface JobSummaryView {
   party: { id: string; code: string; name: string; phone: string };
   title: string; category: JobCategory; site: string; currency: CurrencyCode; status: JobStatus; dueDate: string | null; assignedTo: string;
   subtotal: number; discount: number; total: number; paid: number; remaining: number;
-  /** IQD */
-  costs: number; revenue: number | null; profit: number | null;
+  /** IQD. costs and profit: absent for someone who may not read the books (1.4) */
+  costs?: number; revenue: number | null; profit?: number | null;
   invoice: { id: string; number: string | null } | null;
   overdue: boolean;
 }
@@ -34,7 +34,8 @@ export interface JobView extends JobSummaryView {
   notes: string;
   lines: JobLineView[];
   receipts: { entryId: string; number: string | null; date: string; amount: number; reversed: boolean; by: string }[];
-  costLines: {
+  /** absent for someone who may not read the books (1.4) */
+  costLines?: {
     id: string; category: CostCategory; amount: number; description: string; createdBy: string; createdAt: string;
     document: { kind: 'invoice' | 'entry'; id: string; number: string | null; date: string };
     /** false once its document is cancelled or reversed: not in the job's costs any more */
@@ -61,7 +62,8 @@ export interface WorksSummaryView {
   inProgress: { IQD: number; USD: number };
   toCollect: { IQD: number; USD: number };
   overdue: number;
-  month: { jobs: number; revenue: number; costs: number; profit: number };
+  /** costs and profit: absent for someone who may not read the books (1.4) */
+  month: { jobs: number; revenue: number; costs?: number; profit?: number };
 }
 
 export type JobFilter = JobStatus | 'open' | 'overdue';

@@ -124,8 +124,9 @@ describe('the menu in the app shell', () => {
   });
 
   it('carries the full name of every row in its tooltip, for a label too long to fit', () => {
-    expect(app).toContain("aria-current={active ? 'page' : undefined} title={t(item.key)}>");
-    expect(app).toContain('<button key={item.key} type="button" className="nav-item" disabled title={t(item.key)}>');
+    // (the name this person reads: a cashier's vouchers are "My vouchers")
+    expect(app).toContain("aria-current={active ? 'page' : undefined} title={t(navLabel(item, viewer))}>");
+    expect(app).toContain('<button key={item.key} type="button" className="nav-item" disabled title={t(navLabel(item, viewer))}>');
     expect(app).toContain("<div className=\"company-card\" title={company || t('noCompany')}>");
     expect(css).toMatch(/\.nav-item > span:not\(\.soon\) \{[^}]*overflow: hidden; text-overflow: ellipsis; white-space: nowrap;/);
     expect(css).toMatch(/\.nav-group-btn > span \{[^}]*overflow: hidden; text-overflow: ellipsis; white-space: nowrap;/);

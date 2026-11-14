@@ -28,9 +28,9 @@ export const CLOUD_TEXT = {
   cl_account: ['الحساب: {a}', 'Account: {a}', 'هەژمار: {a}'],
   cl_last: ['آخر رفع: {when} ({size})', 'Last upload: {when} ({size})', 'دوایین بەرزکردنەوە: {when} ({size})'],
   cl_none: ['لم تُرفع أي نسخة بعد.', 'Nothing uploaded yet.', 'هێشتا هیچ شتێک بەرز نەکراوەتەوە.'],
-  cl_uploading: ['جارٍ الرفع…', 'Uploading…', 'بەرزدەکرێتەوە…'],
+  cl_uploading: ['جارٍ الرفع…', 'Uploading…', 'بەرز دەکرێتەوە…'],
   cl_uploadNow: ['ارفع الآن', 'Upload now', 'ئێستا بەرزی بکەرەوە'],
-  cl_uploaded: ['رُفعت النسخة.', 'Copy uploaded.', 'کۆپییەکە بەرزکرایەوە.'],
+  cl_uploaded: ['رُفعت النسخة.', 'Copy uploaded.', 'کۆپییەکە بەرز کرایەوە.'],
   cl_restoreFrom: ['استرجاع من السحابة', 'Restore from the cloud', 'گەڕاندنەوە لە هەورەوە'],
   cl_cloudCopies: ['النسخ في {p}', 'Copies in {p}', 'کۆپییەکان لە {p}'],
   cl_noCopies: ['لا توجد نسخ في السحابة.', 'No copies in the cloud.', 'هیچ کۆپییەک لە هەور نییە.'],
@@ -39,7 +39,7 @@ export const CLOUD_TEXT = {
   bkRestoreForeignQ: [
     'النسخة {when} صُنعت في شركة أخرى أو على حاسوب آخر. استرجاعها يضع بياناتها مكان بيانات هذه الشركة على هذا الحاسوب، ويُحفظ الملف الحالي جانباً في مجلد البيانات (لا يُحذف)، ثم يُعاد تشغيل قاصة ERP. تأكد أنها الشركة التي تريدها. هل تتابع؟',
     'The copy from {when} was made by another company or on another PC. Restoring it puts its data in place of this company’s data on this PC; the current file is kept aside in the data folder (not deleted), and Qasa ERP restarts. Make sure it is the company you want. Go on?',
-    'کۆپییەکەی {when} لە کۆمپانیایەکی تر یان لەسەر کۆمپیوتەرێکی تر دروستکراوە. گەڕاندنەوەی، داتاکانی دەخاتە جێگەی داتای ئەم کۆمپانیایە لەسەر ئەم کۆمپیوتەرە؛ فایلی ئێستا لە بوخچەی داتادا لاوە دادەنرێت (ناسڕدرێتەوە)، و قاسە ERP دەستپێدەکاتەوە. دڵنیابە کە ئەوە ئەو کۆمپانیایەیە کە دەتەوێت. بەردەوام دەبیت؟'
+    'کۆپییەکەی {when} لە کۆمپانیایەکی تر یان لەسەر کۆمپیوتەرێکی تر دروست کراوە. گەڕاندنەوەی، داتاکانی دەخاتە جێگەی داتای ئەم کۆمپانیایە لەسەر ئەم کۆمپیوتەرە؛ فایلی ئێستا لە بوخچەی داتادا لاوە دادەنرێت (ناسڕدرێتەوە)، و قاسە ERP دەست پێدەکاتەوە. دڵنیابە کە ئەوە ئەو کۆمپانیایەیە کە دەتەوێت. بەردەوام دەبیت؟'
   ],
   cl_disconnect: ['إلغاء الربط', 'Disconnect', 'پچڕاندنی پەیوەندی'],
   cl_disconnectQ: [

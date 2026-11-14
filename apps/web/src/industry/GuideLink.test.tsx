@@ -58,7 +58,7 @@ describe('links to the user guide', () => {
     expect(settings).toContain('<GuideLink slug="office-network-and-qasa-relay" />');
     // beside the card's heading, never inside it: the link's label would become part of the heading's name
     expect(settings).not.toMatch(/<h[1-6][^>]*>(?:(?!<\/h[1-6]>)[\s\S])*<GuideLink/);
-    expect(settings.match(/<div className="card-head"><h2>[^<]*<\/h2><GuideLink slug=/g)).toHaveLength(4);
+    expect(settings.match(/<div className="card-head"><h2>[^<]*<\/h2><GuideLink slug=/g)).toHaveLength(6); // 1.4: two more, the cards a PC connected to an office PC shows instead
   });
 
   it('open the topic in the app language, outside the app', () => {

@@ -9,13 +9,14 @@ import type { StatementLineInput } from './banking-api.ts';
 export type StatementColumn = 'date' | 'description' | 'reference' | 'amount' | 'in' | 'out';
 export type ColumnMap = Partial<Record<StatementColumn, number>>;
 
+// Kurdish: the two sides are «مەدین» and «دائین» from 1.4; «قەرزار» and «قەرزدەر» are the pre-1.4 wording, still read
 const WORDS: Record<StatementColumn, string[]> = {
   date: ['التاريخ', 'تاريخ', 'تاريخ الحركة', 'تاريخ العملية', 'تاريخ القيد', 'date', 'transaction date', 'value date', 'posting date', 'بەروار'],
   description: ['البيان', 'الوصف', 'التفاصيل', 'تفاصيل', 'الشرح', 'description', 'details', 'narrative', 'particulars', 'memo', 'ڕوونکردنەوە', 'وردەکاری'],
   reference: ['المرجع', 'رقم المرجع', 'الرقم المرجعي', 'رقم الصك', 'رقم الشيك', 'reference', 'ref', 'ref no', 'cheque no', 'check no', 'cheque number', 'سەرچاوە', 'ژمارەی چەک'],
   amount: ['المبلغ', 'القيمة', 'amount', 'value', 'net', 'بڕ'],
-  in: ['دائن', 'إيداع', 'ايداع', 'الإيداعات', 'وارد', 'credit', 'credits', 'deposit', 'deposits', 'money in', 'paid in', 'قەرزدەر', 'دانان'],
-  out: ['مدين', 'سحب', 'السحوبات', 'صادر', 'debit', 'debits', 'withdrawal', 'withdrawals', 'money out', 'paid out', 'قەرزار', 'ڕاکێشان']
+  in: ['دائن', 'إيداع', 'ايداع', 'الإيداعات', 'وارد', 'credit', 'credits', 'deposit', 'deposits', 'money in', 'paid in', 'دائین', 'قەرزدەر', 'دانان'],
+  out: ['مدين', 'سحب', 'السحوبات', 'صادر', 'debit', 'debits', 'withdrawal', 'withdrawals', 'money out', 'paid out', 'مەدین', 'قەرزار', 'ڕاکێشان']
 };
 
 const norm = (s: string) => toWesternDigits(s).toLowerCase().replace(/[ًٌٍَُِّْـ]/g, '').replace(/[أإآ]/g, 'ا').replace(/ة/g, 'ه').replace(/[()_:.\-*#/]/g, ' ').replace(/\s+/g, ' ').trim();

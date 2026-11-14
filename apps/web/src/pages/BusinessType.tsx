@@ -5,9 +5,11 @@ import { ErrorBox, Icon, LanguageSwitch, useData, useToast } from '../components
 import { useI18n, type Key } from '../i18n.ts';
 import { AgreeLine } from '../industry/LegalPanel.tsx';
 import { StarterListButton } from '../industry/CatalogPickers.tsx';
+import { go } from '../router.ts';
 
 const CHOICES: Record<BusinessType, { icon: string; title: Key; text: Key }> = {
   trade: { icon: 'cart', title: 'bt_trade', text: 'bt_tradeText' },
+  market: { icon: 'receipt', title: 'bt_market', text: 'bt_marketText' },
   realEstate: { icon: 'building', title: 'bt_realEstate', text: 'bt_realEstateText' },
   mobileShop: { icon: 'idcard', title: 'bt_mobileShop', text: 'bt_mobileShopText' },
   autoParts: { icon: 'box', title: 'bt_autoParts', text: 'bt_autoPartsText' },
@@ -51,6 +53,8 @@ export function BusinessTypeChooser({ onDone, first }: { onDone?: () => void; fi
       }
       reloadSettings();
       toast(t('saved'));
+      // a market works at the till: a new one opens there
+      if (first && picked.includes('market')) go('pos');
       onDone?.();
     } catch (e) {
       setError(e);

@@ -1,12 +1,23 @@
 import type { BusinessType } from '@qasa/core';
 import type { Permission } from './api.ts';
 import type { Key } from './i18n.ts';
+import { ACTIONS, PRO_ACTIONS, may, mayAny, routeAction, type Action } from './may.ts';
+
+// every action names a permission the server has
+void ({ ...ACTIONS, ...PRO_ACTIONS } satisfies Record<Action, { needs: Permission }>);
 
 /**
  * Every page the menu, the home screen's tiles and the search (Ctrl+K) know about, in one place.
  * - `business`: shown only when the company does that (Settings → Business type)
  * - `adminOnly` / `permission`: shown only to someone who may use it (the server refuses the rest anyway)
  * - `companyBooks`: a report of the company's own books (every posted line); not for a user limited to branches
+ * - `books`: the journal; with the company's books, not for someone the server refuses them to (a cashier, 1.4)
+ * - `ownWith`: a journal page that still opens for such a person who has this permission, with their own records only
+ *   (the vouchers a sales person prepared with "Receive payment": the server sends them those and no other)
+ * - `ownKey`: what such a page is called for that person ("My vouchers", not "Vouchers & entries")
+ * - `work`: what the page is for, as actions the server checks (may.ts). Someone who may read the books still reads the
+ *   page without them (an accountant, a stock keeper, a viewer); someone who may not (a cashier) gets the page only
+ *   when one of these is theirs to do: its figures are not sent to them and every button on it would be refused
  * - `tile: false`: in the menu but not a tile on the home screen
  */
 export interface NavItem {
@@ -16,6 +27,10 @@ export interface NavItem {
   match?: string[];
   adminOnly?: boolean;
   companyBooks?: boolean;
+  books?: boolean;
+  ownWith?: Permission;
+  ownKey?: Key;
+  work?: readonly Action[];
   permission?: Permission;
   business?: BusinessType;
   tile?: boolean;
@@ -38,10 +53,10 @@ export const NAV: NavGroup[] = [
     icon: 'trend',
     items: [
       { key: 'pos_title', icon: 'wallet', path: 'pos', match: ['pos', 'pos-shift'], permission: 'sales' },
-      { key: 'qt_title', icon: 'doc', path: 'quotes', match: ['quotes', 'quote', 'new-quote', 'edit-quote'] },
-      { key: 'invoices', icon: 'invoice', path: 'sales', match: ['sales', 'new-invoice:sale'] },
-      { key: 'customers', icon: 'contact', path: 'customers', match: ['customers'] },
-      { key: 'salesReturns', icon: 'undo', path: 'sales-returns', match: ['sales-returns'] },
+      { key: 'qt_title', icon: 'doc', path: 'quotes', match: ['quotes', 'quote', 'new-quote', 'edit-quote'], work: ['quote'] },
+      { key: 'invoices', icon: 'invoice', path: 'sales', match: ['sales', 'new-invoice:sale'], work: ['sale'] },
+      { key: 'customers', icon: 'contact', path: 'customers', match: ['customers'], work: ['customer'] },
+      { key: 'salesReturns', icon: 'undo', path: 'sales-returns', match: ['sales-returns'], work: ['sale'] },
       { key: 'installments', icon: 'cal', path: 'installments', match: ['installments', 'installment', 'new-installment', 'guarantors', 'installments-aging'] },
       { key: 'pl_title', icon: 'trend', path: 'pipeline', match: ['pipeline'] }
     ]
@@ -50,10 +65,10 @@ export const NAV: NavGroup[] = [
     group: 'gPurchases',
     icon: 'cart',
     items: [
-      { key: 'po_title', icon: 'clipboard', path: 'purchase-orders', match: ['purchase-orders', 'purchase-order', 'new-purchase-order', 'edit-purchase-order'] },
-      { key: 'purchaseInvoices', icon: 'cart', path: 'purchases', match: ['purchases', 'new-invoice:purchase'] },
-      { key: 'suppliers', icon: 'truck', path: 'suppliers', match: ['suppliers'] },
-      { key: 'purchaseReturns', icon: 'undo', path: 'purchase-returns', match: ['purchase-returns'] }
+      { key: 'po_title', icon: 'clipboard', path: 'purchase-orders', match: ['purchase-orders', 'purchase-order', 'new-purchase-order', 'edit-purchase-order'], work: ['purchaseOrder'] },
+      { key: 'purchaseInvoices', icon: 'cart', path: 'purchases', match: ['purchases', 'new-invoice:purchase'], work: ['purchase'] },
+      { key: 'suppliers', icon: 'truck', path: 'suppliers', match: ['suppliers'], work: ['supplier'] },
+      { key: 'purchaseReturns', icon: 'undo', path: 'purchase-returns', match: ['purchase-returns'], work: ['purchase'] }
     ]
   },
   {
@@ -61,10 +76,10 @@ export const NAV: NavGroup[] = [
     icon: 'box',
     items: [
       { key: 'items', icon: 'box', path: 'items', match: ['items', 'item'] },
-      { key: 'stockDocs', icon: 'swap', path: 'stock-docs', match: ['stock-docs', 'stock-doc', 'new-stock-doc', 'edit-stock-doc'] },
+      { key: 'stockDocs', icon: 'swap', path: 'stock-docs', match: ['stock-docs', 'stock-doc', 'new-stock-doc', 'edit-stock-doc'], work: ['stockDoc'] },
       { key: 'lb_title', icon: 'tag', path: 'labels', match: ['labels'] },
       { key: 'ex_title', icon: 'clock', path: 'expiry', match: ['expiry'] },
-      { key: 'adj_title', icon: 'tag', path: 'stock-adjustments', match: ['stock-adjustments', 'stock-adjustment', 'new-stock-adjustment', 'edit-stock-adjustment', 'stock-count'] }
+      { key: 'adj_title', icon: 'tag', path: 'stock-adjustments', match: ['stock-adjustments', 'stock-adjustment', 'new-stock-adjustment', 'edit-stock-adjustment', 'stock-count'], work: ['adjustment'] }
     ]
   },
   {
@@ -85,12 +100,13 @@ export const NAV: NavGroup[] = [
     group: 'gAccounting',
     icon: 'book',
     items: [
-      { key: 'vouchers', icon: 'receipt', path: 'entries', match: ['entries', 'entry', 'new', 'edit'] },
-      { key: 'bk_title', icon: 'bank', path: 'banking', match: ['banking', 'cheque', 'bank-statement'] },
+      { key: 'vouchers', icon: 'receipt', path: 'entries', match: ['entries', 'entry', 'new', 'edit'], books: true, ownWith: 'sales', ownKey: 's14_myVouchers' },
+      { key: 'bk_title', icon: 'bank', path: 'banking', match: ['banking', 'cheque', 'bank-statement'], work: ['banking', 'moneyAccount'] },
       { key: 'fa_title', icon: 'layers', path: 'fixed-assets', match: ['fixed-assets', 'fixed-asset'], adminOnly: true },
-      { key: 'br_expenses', icon: 'wallet', path: 'expenses', match: ['expenses'] },
+      // the expenses are payment vouchers, whoever prepared them: with the books
+      { key: 'br_expenses', icon: 'wallet', path: 'expenses', match: ['expenses'], books: true },
       { key: 'fx_title', icon: 'dollar', path: 'rates', match: ['rates'] },
-      { key: 'accounts', icon: 'tree', path: 'accounts', match: ['accounts'] },
+      { key: 'accounts', icon: 'tree', path: 'accounts', match: ['accounts'], work: ['account', 'voucher'] },
       { key: 'statement', icon: 'doc', path: 'statement', match: ['statement'], tile: false, companyBooks: true }
     ]
   },
@@ -122,19 +138,27 @@ export const NAV: NavGroup[] = [
   }
 ];
 
-/** Who is looking: decides which pages they see. `branchLimited`: limited to some branches (the server says so). */
-export interface NavViewer { admin: boolean; permissions: readonly Permission[]; businessTypes: readonly BusinessType[]; branchLimited?: boolean }
+/**
+ * Who is looking: decides which pages they see. `branchLimited`: limited to some branches; `noBooks`: someone who may
+ * not read the books at all, a cashier (1.4). The server says both.
+ */
+export interface NavViewer { admin: boolean; permissions: readonly Permission[]; businessTypes: readonly BusinessType[]; branchLimited?: boolean; noBooks?: boolean }
 
 /** Whether this person may read the company's own books (the trial balance, final accounts, account statements). */
-export const seesCompanyBooks = (v: Pick<NavViewer, 'admin' | 'branchLimited'>): boolean => v.admin || !v.branchLimited;
+export const seesCompanyBooks = (v: Pick<NavViewer, 'admin' | 'branchLimited' | 'noBooks'>): boolean => v.admin || (!v.branchLimited && !v.noBooks);
 
 export function canSee(item: NavItem, v: NavViewer): boolean {
   if (item.adminOnly && !v.admin) return false;
   if (item.companyBooks && !seesCompanyBooks(v)) return false;
+  if (item.books && v.noBooks && !v.admin && !(item.ownWith && v.permissions.includes(item.ownWith))) return false;
   if (item.permission && !v.admin && !v.permissions.includes(item.permission)) return false;
+  if (item.work && v.noBooks && !v.admin && !mayAny(v.permissions, item.work)) return false;
   if (item.business && !v.businessTypes.includes(item.business)) return false;
   return true;
 }
+
+/** What the page is called for this person: a cashier's vouchers are "My vouchers", the only ones they are sent. */
+export const navLabel = (item: NavItem, v: Pick<NavViewer, 'admin' | 'noBooks'>): Key => (item.ownKey && item.books && v.noBooks && !v.admin ? item.ownKey : item.key);
 
 export const visibleItems = (items: readonly NavItem[], v: NavViewer): NavItem[] => items.filter((item) => canSee(item, v));
 
@@ -153,6 +177,27 @@ export const ADMIN_PAGES: ReadonlySet<string> = new Set(
 export const COMPANY_BOOK_PAGES: ReadonlySet<string> = new Set(
   NAV.flatMap((g) => g.items).filter((i) => i.companyBooks).flatMap((i) => i.match ?? (i.path !== undefined ? [i.path] : []))
 );
+
+/**
+ * The routes not opened for someone who may not read the books (a cashier, 1.4), whatever else they may do: the voucher
+ * editor (theirs come from "Receive payment"), the expenses and a bank statement to reconcile. A typed, bookmarked or
+ * favourite link lands on the home page, as the server would refuse the page's data.
+ */
+export const NO_BOOKS_PAGES: ReadonlySet<string> = new Set(['new', 'edit', 'expenses', 'bank-statement']);
+
+/**
+ * Whether an address opens for this person; otherwise App.tsx shows the home page, as it does for the admin pages and
+ * the books. Closed: a page of the menu this person is not shown (and every address under it: `match`), and a form
+ * that is only one action (a new purchase invoice, a new voucher) when that action is not theirs.
+ */
+export function pageOpen(page: string, arg: string | undefined, v: NavViewer): boolean {
+  if (v.admin) return true;
+  const action = routeAction(page, arg);
+  if (action && !may(v.permissions, action)) return false;
+  const owners = NAV.flatMap((g) => g.items).filter((i) => (i.match ?? []).some((m) => m === page || m === `${page}:${arg ?? ''}`));
+  // (a business the company does not do is a matter of Settings → Business type, not of who is signed in)
+  return owners.length === 0 || owners.some((i) => canSee(i, i.business ? { ...v, businessTypes: [i.business] } : v));
+}
 
 /** Every page that has a path, once (for favourites and the search). */
 export function allPages(v: NavViewer): (NavItem & { group: Key })[] {

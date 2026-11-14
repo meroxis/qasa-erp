@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { addDays, lineAmount, todayIso, toBase, type CurrencyCode } from '@qasa/core';
 import { api, ApiError, type ItemView } from '../api.ts';
-import { EmptyState, AccountCombo, AmountInput, ErrorBox, Icon, Modal, QtyInput, SearchCombo, useData, useLoad, usePageNav, useToast, type PickOption } from '../components.tsx';
+import { EmptyState, AccountCombo, AmountInput, ErrorBox, Icon, Modal, QtyInput, SearchCombo, useData, useLoad, useMay, usePageNav, useToast, type PickOption } from '../components.tsx';
 import { useI18n, type I18n, type Key } from '../i18n.ts';
 import { ItemImage } from '../industry/ItemImage.tsx';
 import {
@@ -74,6 +74,7 @@ function NotAvailable() {
 /* ---------- the page and its tabs ---------- */
 
 export function Solar({ tab = 'home' }: { tab?: SolarTab }) {
+  const can = useMay();
   const { t } = useI18n();
   usePageNav(NAV);
   const [summary, setSummary] = useState<SolarSummaryView | null>(null);
@@ -83,7 +84,7 @@ export function Solar({ tab = 'home' }: { tab?: SolarTab }) {
   return (
     <div className="stack">
       <div className="track no-print" role="tablist" aria-label={t('sl_title')}>
-        {TABS.map((x) => (
+        {TABS.filter((x) => (x !== 'new' && x !== 'electrical') || can('solarSystem')).map((x) => (
           <a key={x} role="tab" aria-selected={tab === x} aria-pressed={tab === x} href={href(x === 'home' ? 'solar' : `solar/${x}`)}
             className={'btn small' + (tab === x ? ' primary' : '')}>{t(`sl_tab_${x}` as Key)}</a>
         ))}
@@ -99,6 +100,7 @@ export function Solar({ tab = 'home' }: { tab?: SolarTab }) {
 }
 
 function Home({ summary }: { summary: SolarSummaryView | null }) {
+  const can = useMay();
   const i18n = useI18n();
   const { t } = i18n;
   const solar = useLoad(() => worksApi.jobs({ status: 'open', category: 'solar' }), []);
@@ -125,7 +127,7 @@ function Home({ summary }: { summary: SolarSummaryView | null }) {
           ))}
         </div>
       )}
-      {summary?.available && (
+      {summary?.available && can('solarSystem') && (
         <div className="row">
           <a className="btn primary big" href={href('solar/new')}><Icon name="sun" size={18} />{t('sl_newSystem')}</a>
           <a className="btn big" href={href('solar/electrical')}><Icon name="zap" size={18} />{t('sl_newWiring')}</a>
@@ -280,7 +282,7 @@ function SystemBuilder() {
           <label className="field"><span>{t('date')}</span><input className="input" type="date" value={head.date} onChange={(e) => setHead((h) => ({ ...h, date: e.target.value }))} /></label>
           <label className="field"><span>{t('currency')}</span>
             <select className="input" value={head.currency} onChange={(e) => setHead((h) => ({ ...h, currency: e.target.value as CurrencyCode }))}>
-              <option value="IQD">IQD</option><option value="USD">USD</option>
+              <option value="IQD">{t('iqdName')}</option><option value="USD">{t('usdName')}</option>
             </select>
           </label>
         </div>
@@ -470,7 +472,7 @@ function WiringQuote() {
         <label className="field"><span>{t('sl_jobTitle')}</span><input className="input" placeholder={t('sl_wiringTitle')} value={head.title} onChange={(e) => setHead((h) => ({ ...h, title: e.target.value }))} /></label>
         <label className="field"><span>{t('sl_site')}</span><input className="input" value={head.site} onChange={(e) => setHead((h) => ({ ...h, site: e.target.value }))} /></label>
         <label className="field"><span>{t('currency')}</span>
-          <select className="input" value={head.currency} onChange={(e) => setHead((h) => ({ ...h, currency: e.target.value as CurrencyCode }))}><option value="IQD">IQD</option><option value="USD">USD</option></select>
+          <select className="input" value={head.currency} onChange={(e) => setHead((h) => ({ ...h, currency: e.target.value as CurrencyCode }))}><option value="IQD">{t('iqdName')}</option><option value="USD">{t('usdName')}</option></select>
         </label>
       </div>
       <div className="card table-wrap">
@@ -504,6 +506,7 @@ function WiringQuote() {
 /* ---------- one system ---------- */
 
 export function SolarSystem({ id }: { id: string }) {
+  const can = useMay();
   const i18n = useI18n();
   const { t, lang } = i18n;
   const { settings } = useData();
@@ -523,7 +526,7 @@ export function SolarSystem({ id }: { id: string }) {
         <button type="button" className="btn" onClick={() => history.back()}>{t('back')}</button>
         <span className="spacer" />
         <a className="btn" href={href(`job/${j.id}`)}><Icon name="swap" size={16} />{t('sl_openJob')}</a>
-        {j.status !== 'cancelled' && <button type="button" className="btn" onClick={() => setModal('equipment')}><Icon name="plus" size={16} />{t('sl_addEquipment')}</button>}
+        {j.status !== 'cancelled' && can('solarSystem') && <button type="button" className="btn" onClick={() => setModal('equipment')}><Icon name="plus" size={16} />{t('sl_addEquipment')}</button>}
         {j.actions.includes('invoice') && <button type="button" className="btn primary" onClick={() => setModal('sell')}><Icon name="invoice" size={16} />{t('sl_sell')}</button>}
         <button type="button" className="btn" onClick={() => void printDocument('quote')}><Icon name="printer" size={16} />{t('sl_print')}</button>
       </div>
@@ -589,7 +592,7 @@ export function SolarSystem({ id }: { id: string }) {
                         : e.warrantyUntil ? <>{t('sl_warrantyUntil')} <span className="num">{i18n.date(e.warrantyUntil)}</span></> : '—'}
                     </td>
                     <td style={{ width: 44 }}>
-                      {e.pending && (
+                      {e.pending && can('solarSystem') && (
                         <button type="button" className="btn small icon" aria-label={t('sl_remove')}
                           onClick={() => void solarApi.removePending(j.id, e.serial).then(() => { toast(t('saved')); reload(); })}><Icon name="x" size={14} /></button>
                       )}
@@ -738,6 +741,7 @@ function SellModal({ system, onClose, onDone }: { system: SystemView; onClose():
 /* ---------- maintenance ---------- */
 
 function Maintenance() {
+  const can = useMay();
   const { t } = useI18n();
   const [filter, setFilter] = useState<'due' | 'all'>('due');
   const plans = useLoad(() => (filter === 'due' ? solarApi.plans({ due: true, days: 30 }) : solarApi.plans()), [filter]);
@@ -749,8 +753,8 @@ function Maintenance() {
     <div className="stack">
       <p className="muted" style={{ margin: 0 }}>{t('sl_maintHelp')}</p>
       <div className="row">
-        <button type="button" className="btn primary" onClick={() => setModal('plan')}><Icon name="plus" size={16} />{t('sl_newPlan')}</button>
-        <button type="button" className="btn" onClick={() => setModal('visit')}><Icon name="plus" size={16} />{t('sl_newVisit')}</button>
+        {can('solarSystem') && <button type="button" className="btn primary" onClick={() => setModal('plan')}><Icon name="plus" size={16} />{t('sl_newPlan')}</button>}
+        {can('solarSystem') && <button type="button" className="btn" onClick={() => setModal('visit')}><Icon name="plus" size={16} />{t('sl_newVisit')}</button>}
         <span className="spacer" />
         <div className="track">
           <button type="button" aria-pressed={filter === 'due'} onClick={() => setFilter('due')}>{t('sl_dueMonth')}</button>
@@ -774,6 +778,7 @@ function reminderText(i18n: I18n, p: PlanView, company: string): string {
 }
 
 function PlansTable({ plans, onChanged }: { plans: PlanView[]; onChanged(): void }) {
+  const can = useMay();
   const i18n = useI18n();
   const { t } = i18n;
   const { settings } = useData();
@@ -794,9 +799,9 @@ function PlansTable({ plans, onChanged }: { plans: PlanView[]; onChanged(): void
               </td>
               <td className="num">{t('sl_everyN', { n: p.everyMonths })}<div className="small muted">{p.price ? i18n.money(p.price, p.currency) : t('sl_free')}</div></td>
               <td style={{ whiteSpace: 'nowrap' }}>
-                {p.status === 'active' && <button type="button" className="btn small primary" onClick={() => setVisitFor(p)}>{t('sl_recordVisit')}</button>}
+                {p.status === 'active' && can('solarSystem') && <button type="button" className="btn small primary" onClick={() => setVisitFor(p)}>{t('sl_recordVisit')}</button>}
                 {p.party.phone && <a className="btn small" target="_blank" rel="noreferrer" href={waLink(p.party.phone, reminderText(i18n, p, company))}>WhatsApp</a>}
-                {p.status === 'active'
+                {!can('solarSystem') ? null : p.status === 'active'
                   ? <button type="button" className="btn small" onClick={() => void solarApi.updatePlan(p.id, { status: 'paused' }).then(() => { toast(t('saved')); onChanged(); })}>{t('sl_pause')}</button>
                   : p.status === 'paused' && <button type="button" className="btn small" onClick={() => void solarApi.updatePlan(p.id, { status: 'active' }).then(() => { toast(t('saved')); onChanged(); }, () => toast(t('sl_needsPro')))}>{t('sl_resume')}</button>}
               </td>
@@ -813,6 +818,7 @@ function VisitsTable({ visits, onChanged }: { visits: { id: string; number: stri
   const i18n = useI18n();
   const { t } = i18n;
   const toast = useToast();
+  const can = useMay();
   if (!visits.length) return <div className="pad muted small">—</div>;
   return (
     <table className="table">
@@ -825,7 +831,7 @@ function VisitsTable({ visits, onChanged }: { visits: { id: string; number: stri
             <td><span className={'chip ' + (v.status === 'done' ? 'ok' : v.status === 'cancelled' ? 'bad' : 'info')}>{t(`sl_vs_${v.status}` as Key)}</span></td>
             <td className="amount">{v.invoice ? <a href={href(`invoice/${v.invoice.id}`)}>{i18n.money(v.invoice.total, v.invoice.currency)}</a> : ''}</td>
             <td style={{ whiteSpace: 'nowrap' }}>
-              {v.status === 'scheduled' && (
+              {v.status === 'scheduled' && can('solarSystem') && (
                 <>
                   <button type="button" className="btn small primary" onClick={() => void solarApi.completeVisit(v.id, {}).then(() => { toast(t('saved')); onChanged(); }, () => toast(t('sl_needsPro')))}>{t('sl_markDone')}</button>
                   <button type="button" className="btn small" onClick={() => void solarApi.completeVisit(v.id, { cancel: true }).then(() => { toast(t('saved')); onChanged(); })}>{t('cancel')}</button>
@@ -866,7 +872,7 @@ function PlanModal({ onClose, onDone }: { onClose(): void; onDone(): void }) {
           <label className="field"><span>{t('sl_site')}</span><input className="input" value={form.site} onChange={(e) => set('site', e.target.value)} /></label>
           <label className="field"><span>{t('sl_everyMonths')}</span><input className="input num" type="number" min={1} max={24} value={form.everyMonths} onChange={(e) => set('everyMonths', Math.max(1, Number(e.target.value) || 1))} /></label>
           <label className="field"><span>{t('sl_nextVisit')}</span><input className="input" type="date" value={form.nextDate} onChange={(e) => set('nextDate', e.target.value)} /></label>
-          <label className="field"><span>{t('currency')}</span><select className="input" value={form.currency} onChange={(e) => set('currency', e.target.value as CurrencyCode)}><option value="IQD">IQD</option><option value="USD">USD</option></select></label>
+          <label className="field"><span>{t('currency')}</span><select className="input" value={form.currency} onChange={(e) => set('currency', e.target.value as CurrencyCode)}><option value="IQD">{t('iqdName')}</option><option value="USD">{t('usdName')}</option></select></label>
           <label className="field"><span>{t('sl_visitPrice')}</span><AmountInput value={form.price} currency={form.currency} onChange={(v) => set('price', v)} ariaLabel={t('sl_visitPrice')} /></label>
         </div>
         <ErrorBox error={error} />

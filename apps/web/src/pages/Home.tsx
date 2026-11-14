@@ -11,17 +11,23 @@ import { ReorderHomeNote } from '../industry/ReorderList.tsx';
 import { RenewalBanner } from '../industry/RenewalBanner.tsx';
 import { moneyBoth } from './Brief.tsx';
 import type { I18n, Key } from '../i18n.ts';
-import { NAV, toggleFavourite, visibleItems, type NavItem, type NavViewer } from '../nav.ts';
+import { QuickVoucherButton } from '../industry/QuickVoucher.tsx';
+import { mayQuickVoucher } from '../industry/quick-voucher.ts';
+import { NAV, navLabel, pageOpen, toggleFavourite, visibleItems, type NavItem, type NavViewer } from '../nav.ts';
+import { may } from '../may.ts';
 
 export function Home({ viewer, user, favourites }: { viewer: NavViewer; user: string; favourites: string[] }) {
   const i18n = useI18n();
   const { t } = i18n;
-  const { accounts, settings, plan, reloadPlan, companyBooks } = useData();
+  const { accounts, settings, plan, reloadPlan, companyBooks, seesBooks } = useData();
   // the trial balance and the final accounts are the company's books: no link for someone limited to branches
   const books = companyBooks !== false;
   // this month's invoice count feeds the "growing" note
   useEffect(() => { void reloadPlan(); }, [reloadPlan]);
-  const { data: entries, error } = useLoad(() => api.entries(), []);
+  // 1.4: the journal and the accounts' balances are not sent to someone who may not read the books (a cashier): no
+  // vouchers on their home page, and no cash tile made from a balance
+  const journal = seesBooks !== false;
+  const { data: entries, error } = useLoad(() => (journal ? api.entries() : Promise.resolve([])), [journal]);
   const month = todayIso().slice(0, 7);
   const sales = useLoad(() => api.invoices({ kind: 'sale', status: 'posted', from: `${month}-01` }), [month]);
   const salesTotal = (sales.data ?? []).reduce((s, v) => s + v.baseTotal, 0);
@@ -29,6 +35,9 @@ export function Home({ viewer, user, favourites }: { viewer: NavViewer; user: st
   const owed = (type: 'customer' | 'supplier') => (parties.data ?? []).filter((p) => p.type === type).reduce((sum, p) => sum + p.balance, 0);
   const cash = accounts.find((a) => a.code === '18')?.balance ?? 0;
   const count = (fn: (e: NonNullable<typeof entries>[number]) => boolean) => (entries ?? []).filter(fn).length;
+  // buttons and tiles only for what this person may do or open (may.ts, nav.ts): the server refuses the rest
+  const can = (action: Parameters<typeof may>[1]) => viewer.admin || may(viewer.permissions, action);
+  const suppliers = pageOpen('suppliers', undefined, viewer);
   const noCompany = settings && !settings.companyName.ar && !settings.companyName.en && !settings.companyName.ku;
 
   // the owner's dashboard (aged balances, cash in each currency, this month's profit); the simpler tiles until it loads
@@ -36,15 +45,16 @@ export function Home({ viewer, user, favourites }: { viewer: NavViewer; user: st
   const d = dash.data;
   const tiles = (d ? [
     { label: t('salesThisMonth'), value: i18n.money(d.salesMonth, 'IQD'), link: 'sales', icon: 'trend', sub: trendText(i18n, d.salesMonth, d.salesLastMonth) },
-    { label: t('cashAndBanks'), value: moneyBoth(i18n, d.cash.total), icon: 'wallet', link: 'brief' },
+    ...(d.cash ? [{ label: t('cashAndBanks'), value: moneyBoth(i18n, d.cash.total), icon: 'wallet', link: 'brief' }] : []),
     ...(d.profitMonth ? [{ label: t('br_profitMonth'), value: i18n.money(d.profitMonth.profit, 'IQD'), icon: 'chart', ...(books ? { link: 'final-accounts' } : {}), tone: d.profitMonth.profit < 0 ? 'bad' : 'ok' }] : []),
     { label: t('receivables'), value: i18n.money(d.receivables, 'IQD'), link: 'reports-more/aging', icon: 'contact' },
-    { label: t('payables'), value: i18n.money(d.payables, 'IQD'), link: 'reports-more/supplier-aging', icon: 'truck' }
+    // (the ageing of what the company owes is a report of its books: without them the tile opens the suppliers list)
+    ...(suppliers ? [{ label: t('payables'), value: i18n.money(d.payables, 'IQD'), link: journal ? 'reports-more/supplier-aging' : 'suppliers', icon: 'truck' }] : [])
   ] : [
-    { label: t('cashAndBanks'), value: i18n.money(cash, 'IQD'), icon: 'wallet' },
+    ...(journal ? [{ label: t('cashAndBanks'), value: i18n.money(cash, 'IQD'), icon: 'wallet' }] : []),
     { label: t('salesThisMonth'), value: i18n.money(salesTotal, 'IQD'), link: 'sales', icon: 'trend' },
     { label: t('receivables'), value: i18n.money(owed('customer'), 'IQD'), link: 'customers', icon: 'contact' },
-    { label: t('payables'), value: i18n.money(owed('supplier'), 'IQD'), link: 'suppliers', icon: 'truck' }
+    ...(suppliers ? [{ label: t('payables'), value: i18n.money(owed('supplier'), 'IQD'), link: 'suppliers', icon: 'truck' }] : [])
   ]) as { label: string; value: string; link?: string; icon: string; sub?: string; tone?: 'ok' | 'bad' }[];
   // the Iraqi approval chain at a glance: prepared → checked → approved
   const flow = [
@@ -55,7 +65,7 @@ export function Home({ viewer, user, favourites }: { viewer: NavViewer; user: st
 
   return (
     <div className="stack">
-      {noCompany && (
+      {noCompany && can('companyDetails') && (
         <div className="alert info">{t('setupCompany')} <a href={href('settings/company')}>{t('settings')}</a></div>
       )}
       {plan?.license?.state === 'expired' && plan.license.expires && (
@@ -73,13 +83,25 @@ export function Home({ viewer, user, favourites }: { viewer: NavViewer; user: st
         </div>
       )}
       <nav className="cmdbar no-print" aria-label={t('quickActions')}>
-        <a className="btn primary" href={href('new-invoice/sale')}><Icon name="invoice" size={16} />{t('newSale')}</a>
-        <a className="btn" href={href('new-invoice/purchase')}><Icon name="cart" size={16} />{t('newPurchase')}</a>
-        <span className="sep" />
-        <a className="btn" href={href('new/receipt')}><Icon name="plus" size={16} />{t('newReceipt')}</a>
-        <a className="btn" href={href('new/payment')}><Icon name="plus" size={16} />{t('newPayment')}</a>
-        <a className="btn" href={href('new/journal')}><Icon name="plus" size={16} />{t('newJournal')}</a>
-        <a className="btn" href={href('expenses')}><Icon name="wallet" size={16} />{t('br_newExpense')}</a>
+        {can('sale') && <a className="btn primary" href={href('new-invoice/sale')}><Icon name="invoice" size={16} />{t('newSale')}</a>}
+        {can('purchase') && <a className="btn" href={href('new-invoice/purchase')}><Icon name="cart" size={16} />{t('newPurchase')}</a>}
+        {(can('sale') || can('purchase')) && <span className="sep" />}
+        {/* 1.4: someone who does not keep the books takes money with "Receive payment" and reads the vouchers they made */}
+        {can('voucher') ? (
+          <>
+            <a className="btn" href={href('new/receipt')}><Icon name="plus" size={16} />{t('newReceipt')}</a>
+            <a className="btn" href={href('new/payment')}><Icon name="plus" size={16} />{t('newPayment')}</a>
+            <a className="btn" href={href('new/journal')}><Icon name="plus" size={16} />{t('newJournal')}</a>
+          </>
+        ) : (
+          // (each shows only to someone who may: sales people receive, purchasing pays)
+          <>
+            <QuickVoucherButton kind="receipt" />
+            <QuickVoucherButton kind="payment" />
+            {!journal && mayQuickVoucher('receipt', viewer.permissions) && <a className="btn" href={href('entries')}><Icon name="receipt" size={16} />{t('s14_myVouchers')}</a>}
+          </>
+        )}
+        {journal && can('voucher') && <a className="btn" href={href('expenses')}><Icon name="wallet" size={16} />{t('br_newExpense')}</a>}
         {books && <a className="btn" style={{ marginInlineStart: 'auto' }} href={href('trial-balance')}><Icon name="chart" size={16} />{t('trialBalance')}</a>}
       </nav>
       <ChequesHomeNote counts={d?.cheques} />
@@ -106,7 +128,7 @@ export function Home({ viewer, user, favourites }: { viewer: NavViewer; user: st
       <FirstSteps viewer={viewer} />
       <Launcher viewer={viewer} user={user} favourites={favourites} />
       {d && <SalesChart d={d} />}
-      <div className="card flow">
+      {journal && <div className="card flow">
         <div className="flow-title">
           <h2>{t('voucherFlow')}</h2>
           <span className="small muted">{t('role_preparer')} · {t('role_checker')} · {t('role_approver')}</span>
@@ -120,16 +142,16 @@ export function Home({ viewer, user, favourites }: { viewer: NavViewer; user: st
             </a>
           </div>
         ))}
-      </div>
+      </div>}
       <ErrorBox error={error} />
-      <div className="card">
+      {journal && <div className="card">
         <div className="card-head">
           <h2>{t('recentEntries')}</h2>
           <span className="spacer" />
           <a className="btn ghost small" href={href('entries')}>{t('viewAll')}</a>
         </div>
         {entries && <EntriesTable entries={entries.slice(0, 10)} />}
-      </div>
+      </div>}
     </div>
   );
 }
@@ -140,13 +162,17 @@ function trendText(i18n: I18n, now: number, before: number): string {
   return i18n.t('br_vsLastMonth', { p: i18n.ltr(`${pct >= 0 ? '+' : '-'}${i18n.int(Math.abs(pct))}%`) });
 }
 
-/** Sales of the last six months as bars, with the month's profit underneath; no chart library. */
+/**
+ * Sales of the last six months as bars, with the month's profit underneath when the answer carries it (it does not for
+ * someone who may not see cost and profit: then only the months' names); no chart library.
+ */
 function SalesChart({ d }: { d: DashboardView }) {
   const i18n = useI18n();
   const { t } = i18n;
   const max = Math.max(1, ...d.months.map((m) => m.sales));
   // Arabic and Kurdish month names come from the app's own list (a browser without Kurdish data would show "Nov")
   const monthName = (ym: string) => (i18n.lang === 'en' ? new Intl.DateTimeFormat('en-GB', { month: 'short' }).format(new Date(ym + '-15T00:00:00')) : i18n.month(ym));
+  const showProfit = d.months.some((m) => m.profit !== undefined && m.profit !== null);
   return (
     <div className="card">
       <div className="card-head"><h2>{t('br_salesSixMonths')}</h2><span className="spacer" /><a className="btn ghost small" href={href('reports-more')}>{t('br_reports')}</a></div>
@@ -165,7 +191,7 @@ function SalesChart({ d }: { d: DashboardView }) {
         {d.months.map((m) => (
           <div key={m.month} className="small">
             <div className="muted">{monthName(m.month)}</div>
-            <div className="num" style={{ color: (m.profit ?? 0) < 0 ? 'var(--bad, #A4271A)' : 'var(--ok, #1F7A52)' }} title={t('br_profit')}>{m.profit ? i18n.ltr(i18n.digitsOf(compact(m.profit))) : '—'}</div>
+            {showProfit && <div className="num" style={{ color: (m.profit ?? 0) < 0 ? 'var(--bad, #A4271A)' : 'var(--ok, #1F7A52)' }} title={t('br_profit')}>{m.profit ? i18n.ltr(i18n.digitsOf(compact(m.profit))) : '—'}</div>}
           </div>
         ))}
       </div>
@@ -203,7 +229,7 @@ function Launcher({ viewer, user, favourites }: { viewer: NavViewer; user: strin
             {s.group === 'gIndustry' && <span className="launch-note">{t('bizSectionNote')}</span>}
           </div>
           <div className="launch-grid">
-            {s.items.map((item) => <LaunchTile key={item.key} item={item} pinned={favourites.includes(item.key)} user={user} locked={lockOf(item, plan?.features ?? null)} />)}
+            {s.items.map((item) => <LaunchTile key={item.key} item={item} pinned={favourites.includes(item.key)} user={user} label={t(navLabel(item, viewer))} locked={lockOf(item, plan?.features ?? null)} />)}
           </div>
         </div>
       ))}
@@ -217,18 +243,18 @@ function lockOf(item: NavItem, features: readonly string[] | null): string | nul
   return feature === 'realEstate' ? 'Business' : 'Pro';
 }
 
-function LaunchTile({ item, pinned, user, locked }: { item: NavItem; pinned: boolean; user: string; locked: string | null }) {
+function LaunchTile({ item, pinned, user, label, locked }: { item: NavItem; pinned: boolean; user: string; label: string; locked: string | null }) {
   const { t } = useI18n();
   return (
     <div className="launch-tile" data-tour={item.key === 'br_title' ? 'brief' : undefined}>
       <a href={href(item.path ?? '')}>
         <span className="launch-ico"><Icon name={item.icon} size={22} /></span>
-        <span className="launch-label">{t(item.key)}</span>
+        <span className="launch-label">{label}</span>
         {locked && <span className="launch-lock">{locked}</span>}
       </a>
       <button
         type="button" className={'launch-pin' + (pinned ? ' on' : '')} aria-pressed={pinned}
-        aria-label={`${t(pinned ? 'pinRemove' : 'pinAdd')}: ${t(item.key)}`} title={t(pinned ? 'pinRemove' : 'pinAdd')}
+        aria-label={`${t(pinned ? 'pinRemove' : 'pinAdd')}: ${label}`} title={t(pinned ? 'pinRemove' : 'pinAdd')}
         onClick={() => toggleFavourite(user, item.key)}
       >
         <svg width="15" height="15" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2.5l2.9 6 6.6.9-4.8 4.6 1.2 6.5L12 17.4l-5.9 3.1 1.2-6.5-4.8-4.6 6.6-.9z" fill={pinned ? 'currentColor' : 'none'} stroke="currentColor" strokeWidth="1.8" strokeLinejoin="round" /></svg>
@@ -238,6 +264,33 @@ function LaunchTile({ item, pinned, user, locked }: { item: NavItem; pinned: boo
 }
 
 const STEPS_HIDDEN = 'qasa.firstSteps.hidden';
+
+export interface FirstStep { key: Key; hint: Key; done: boolean; link: string; icon: string }
+
+/**
+ * The first steps this person can take themselves: each one opens a page that is theirs and ends in an action the
+ * server accepts from them (may.ts). The company's details, the import and the users are an admin's; someone who sells
+ * adds customers and writes the first invoice; a stock keeper adds items. Nobody is sent to a page that lands back here,
+ * and each step is worded for what that person does: "bring in your data, from Excel" is the admin's import; a sales
+ * person reads "add your customers", a stock keeper "add your items".
+ */
+export function firstStepsFor(
+  permissions: readonly string[],
+  facts: { named: boolean; parties: number; items: number; sales: number; users: number | null; customers?: number }
+): FirstStep[] {
+  const can = (action: Parameters<typeof may>[1]) => may(permissions, action);
+  const steps: FirstStep[] = [];
+  if (can('companyDetails')) steps.push({ key: 'fsCompany', hint: 'fsCompanyHint', done: facts.named, link: 'settings/company', icon: 'building' });
+  const started = facts.parties > 0 || facts.items > 0;
+  if (can('importPage')) steps.push({ key: 'fsImport', hint: 'fsImportHint', done: started, link: 'import', icon: 'upload' });
+  else {
+    if (can('item')) steps.push({ key: 'fsItems', hint: 'fsItemsHint', done: facts.items > 0, link: 'items', icon: 'box' });
+    if (can('customer')) steps.push({ key: 'fsCustomers', hint: 'fsCustomersHint', done: (facts.customers ?? facts.parties) > 0, link: 'customers', icon: 'contact' });
+  }
+  if (can('sale')) steps.push({ key: 'fsInvoice', hint: 'fsInvoiceHint', done: facts.sales > 0, link: 'new-invoice/sale', icon: 'invoice' });
+  if (can('users') && facts.users !== null) steps.push({ key: 'fsUsers', hint: 'fsUsersHint', done: facts.users > 1, link: 'users', icon: 'users' });
+  return steps;
+}
 
 /** A new company's first steps, worked out from its own books; hidden once done (or when the person hides it). */
 function FirstSteps({ viewer }: { viewer: NavViewer }) {
@@ -251,13 +304,12 @@ function FirstSteps({ viewer }: { viewer: NavViewer }) {
   const users = useLoad(() => (viewer.admin ? api.users() : Promise.resolve(null)), [viewer.admin]);
   if (hidden || !settings || !parties.data || !items.data || !sales.data) return null;
   const named = !!(settings.companyName.ar || settings.companyName.en || settings.companyName.ku);
-  const steps: { key: Key; hint: Key; done: boolean; link: string; icon: string }[] = [
-    { key: 'fsCompany', hint: 'fsCompanyHint', done: named, link: 'settings/company', icon: 'building' },
-    { key: 'fsImport', hint: 'fsImportHint', done: parties.data.length > 0 || items.data.length > 0, link: viewer.admin ? 'import' : 'items', icon: 'upload' },
-    { key: 'fsInvoice', hint: 'fsInvoiceHint', done: sales.data.length > 0, link: 'new-invoice/sale', icon: 'invoice' }
-  ];
-  if (viewer.admin && users.data) steps.push({ key: 'fsUsers', hint: 'fsUsersHint', done: users.data.length > 1, link: 'users', icon: 'users' });
+  const steps = firstStepsFor(viewer.admin ? ['admin'] : viewer.permissions, {
+    named, parties: parties.data.length, items: items.data.length, sales: sales.data.length, users: users.data ? users.data.length : null,
+    customers: parties.data.filter((p) => p.type === 'customer').length
+  });
   const done = steps.filter((s) => s.done).length;
+  // nothing this person can do (a viewer, an accountant), or all of it done: no card
   if (done === steps.length) return null;
   const hide = () => { try { localStorage.setItem(STEPS_HIDDEN, '1'); } catch { /* not available */ } setHidden(true); };
   return (

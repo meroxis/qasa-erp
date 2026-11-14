@@ -54,7 +54,9 @@ export function dayCloseText(i18n: I18n, c: DayCloseView): string {
   }
   const open = c.registers.filter((r) => r.status === 'open').length;
   if (open) lines.push(`⏳ ${t('dc_stillOpen')}: ${i18n.int(open)}`);
-  lines.push('', `📉 ${t('dc_expenses')}: ${i18n.money(c.expenses.total, 'IQD')}`);
+  // the expenses (and the money in and out below) are not sent to someone who may not read the books
+  lines.push('');
+  if (c.expenses) lines.push(`📉 ${t('dc_expenses')}: ${i18n.money(c.expenses.total, 'IQD')}`);
   lines.push(`✅ ${t('dc_debtsCollected')}: ${i18n.money(c.debts.collected, 'IQD')}   📝 ${t('dc_debtsNew')}: ${i18n.money(c.debts.added, 'IQD')}`);
   if (c.lowStock.count) lines.push(`📦 ${t('dc_lowStockCount', { n: i18n.int(c.lowStock.count) })}`);
   if (c.topItems.length) {
@@ -92,12 +94,16 @@ export function dayCloseRows(i18n: I18n, c: DayCloseView): (string | number)[][]
       rows.push([t('dc_registers'), `${label} — ${t('dc_stillOpen')}`, '', '']);
     }
   }
-  for (const e of c.expenses.rows) rows.push([t('dc_expenses'), [e.number ?? '', e.description].filter(Boolean).join(' — '), '', iqd(e.base)]);
-  rows.push([t('dc_expenses'), t('pos_total'), c.expenses.rows.length, iqd(c.expenses.total)]);
+  if (c.expenses) {
+    for (const e of c.expenses.rows) rows.push([t('dc_expenses'), [e.number ?? '', e.description].filter(Boolean).join(' — '), '', iqd(e.base)]);
+    rows.push([t('dc_expenses'), t('pos_total'), c.expenses.rows.length, iqd(c.expenses.total)]);
+  }
   for (const d of c.debts.collectedRows) rows.push([t('dc_debtsCollected'), d.name, '', iqd(d.amount)]);
   for (const d of c.debts.addedRows) rows.push([t('dc_debtsNew'), d.name, '', iqd(d.amount)]);
-  rows.push([t('dc_moneyIn'), '', '', iqd(c.flow.in)]);
-  rows.push([t('dc_moneyOut'), '', '', -iqd(c.flow.out)]);
+  if (c.flow) {
+    rows.push([t('dc_moneyIn'), '', '', iqd(c.flow.in)]);
+    rows.push([t('dc_moneyOut'), '', '', -iqd(c.flow.out)]);
+  }
   rows.push([t('br_lowStock'), t('dc_lowStockCount', { n: c.lowStock.count }), c.lowStock.count, '']);
   for (const it of c.topItems) rows.push([t('dc_topItems'), `${it.code} — ${i18n.name(it.name)}`, it.qtyMilli / 1000, iqd(it.sales)]);
   return rows;
@@ -155,7 +161,7 @@ export function DayClose() {
               sub={c.drawers ? <>{t('pos_counted')}: <span className="num">{moneyBoth(i18n, c.drawers.counted)}</span></> : t('dc_noRegisters')} />
             <Stat icon="scale" label={t('pos_difference')} value={c.drawers ? moneyBoth(i18n, c.drawers.difference) : '—'} color={drawerDiff?.color}
               sub={drawerDiff ? t(drawerDiff.key) : undefined} />
-            <Stat icon="plus" label={t('dc_moneyIn')} value={i18n.money(c.flow.in, 'IQD')} color={good} sub={`${t('dc_moneyOut')}: ${i18n.money(c.flow.out, 'IQD')}`} />
+            {c.flow && <Stat icon="plus" label={t('dc_moneyIn')} value={i18n.money(c.flow.in, 'IQD')} color={good} sub={`${t('dc_moneyOut')}: ${i18n.money(c.flow.out, 'IQD')}`} />}
           </div>
 
           <div className="grid-2" style={{ alignItems: 'start' }}>
@@ -209,7 +215,7 @@ export function DayClose() {
               </div>
             </Section>
 
-            <Section title={t('dc_expenses')} icon="wallet" empty={!c.expenses.rows.length}
+            {c.expenses && <Section title={t('dc_expenses')} icon="wallet" empty={!c.expenses.rows.length}
               action={<strong className="num">{i18n.money(c.expenses.total, 'IQD')}</strong>}>
               <ul style={listStyle}>
                 {c.expenses.rows.map((e) => (
@@ -222,7 +228,7 @@ export function DayClose() {
                   </li>
                 ))}
               </ul>
-            </Section>
+            </Section>}
 
             <Section title={t('dc_debts')} icon="contact" empty={!c.debts.collectedRows.length && !c.debts.addedRows.length}>
               <div className="grid-2" style={{ padding: '0 16px 12px', gap: 16 }}>

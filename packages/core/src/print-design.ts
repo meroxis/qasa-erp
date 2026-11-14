@@ -12,7 +12,12 @@ import { LANGS, type Lang } from './lang.ts';
 export const PRINT_DOCS = ['sale', 'purchase', 'return', 'quote', 'voucher', 'pos'] as const;
 export type PrintDoc = (typeof PRINT_DOCS)[number];
 
-export const PRINT_LAYOUTS = ['classic', 'modern', 'compact', 'receipt80'] as const;
+/**
+ * classic: the program's own; modern: a band of colour over the table; modernLines: a band of colour across the top,
+ * a rounded totals box and a table ruled between rows and columns; ledger: black and white, every cell ruled, the
+ * totals joined to the table, a stamp box (saves ink); compact: tight, for half a page; receipt80: the thermal roll.
+ */
+export const PRINT_LAYOUTS = ['classic', 'modern', 'modernLines', 'ledger', 'compact', 'receipt80'] as const;
 export type PrintLayout = (typeof PRINT_LAYOUTS)[number];
 
 export const PRINT_PAPERS = ['A4', 'A5', '80mm'] as const;
@@ -24,14 +29,49 @@ export type LogoPosition = (typeof LOGO_POSITIONS)[number];
 /** Parts of the paper that can be shown or hidden. */
 export const PRINT_FIELDS = [
   'itemCode', 'barcode', 'itemImage', 'unit', 'discount', 'usdEquivalent', 'partyBalance', 'qr',
-  'signatures', 'stamp', 'bankDetails', 'terms', 'pageNumbers'
+  'signatures', 'stamp', 'bankDetails', 'terms', 'pageNumbers',
+  // 1.4
+  'logo', 'companyAddress', 'companyPhone', 'companyTax', 'partyPhone', 'partyAddress', 'subtotal', 'notes',
+  'amountWords', 'exchangeRate', 'previousBalance'
 ] as const;
 export type PrintField = (typeof PRINT_FIELDS)[number];
+
+/**
+ * The parts added in 1.4, with what a design saved before them prints: everything that printed then still prints
+ * (the logo, the company's and the party's details, the subtotal and discount lines, the notes, the amount in words,
+ * the exchange rate; the amount in words everywhere but on the receipt roll), and the balance before the paper goes
+ * with the balance after it.
+ */
+export const LATER_PRINT_FIELDS: Readonly<Partial<Record<PrintField, true | 'partyBalance' | 'notReceipt'>>> = {
+  logo: true, companyAddress: true, companyPhone: true, companyTax: true, partyPhone: true, partyAddress: true,
+  subtotal: true, notes: true, amountWords: 'notReceipt', exchangeRate: true, previousBalance: 'partyBalance'
+};
+
+/** The parts a kind of paper and a layout can print at all: the designer offers only these. */
+export function printFieldApplies(field: PrintField, doc: PrintDoc, layout: PrintLayout): boolean {
+  // lines have no discount of their own: the discount is on the whole paper (the "subtotal" part)
+  if (field === 'discount') return false;
+  const itemField = field === 'itemCode' || field === 'barcode' || field === 'itemImage' || field === 'unit';
+  // a voucher has no item lines, subtotal or verify code, and names its party only (an entry keeps no phone or address)
+  if (doc === 'voucher' && (itemField || field === 'subtotal' || field === 'qr' || field === 'partyPhone' || field === 'partyAddress')) return false;
+  // the verify code is a posted sale's
+  if (field === 'qr' && doc !== 'sale' && doc !== 'pos') return false;
+  // a quotation has no units of its own and moves nobody's balance
+  if (doc === 'quote' && (field === 'unit' || field === 'previousBalance')) return false;
+  if (layout === 'receipt80') return field !== 'barcode' && field !== 'itemImage' && field !== 'pageNumbers';
+  return true;
+}
+
+/** Text sizes offered by name (points); any size within PRINT_LIMITS.fontSize is still accepted. */
+export const PRINT_FONT_SIZES = { small: 9, normal: 10, large: 11.5 } as const;
+export type PrintFontSizeName = keyof typeof PRINT_FONT_SIZES;
 
 /** Headings that can be renamed (an empty or missing name keeps the program's own, in the paper's language). */
 export const PRINT_LABELS = [
   'title', 'itemCode', 'barcode', 'item', 'unit', 'qty', 'price', 'discount', 'amount', 'total',
-  'usdEquivalent', 'partyBalance', 'preparedBy', 'receivedBy', 'stamp', 'bankDetails', 'terms'
+  'usdEquivalent', 'partyBalance', 'preparedBy', 'receivedBy', 'stamp', 'bankDetails', 'terms',
+  // 1.4
+  'previousBalance'
 ] as const;
 export type PrintLabel = (typeof PRINT_LABELS)[number];
 
@@ -63,7 +103,7 @@ export const PRINT_LIMITS = {
 };
 
 const allShown = (on: PrintField[]): Record<PrintField, boolean> =>
-  Object.fromEntries(PRINT_FIELDS.map((f) => [f, on.includes(f)])) as Record<PrintField, boolean>;
+  Object.fromEntries(PRINT_FIELDS.map((f) => [f, on.includes(f) || (LATER_PRINT_FIELDS[f] !== undefined && LATER_PRINT_FIELDS[f] !== 'partyBalance')])) as Record<PrintField, boolean>;
 
 export const DEFAULT_PRINT_DESIGN: PrintDesign = {
   layout: 'classic',
@@ -86,8 +126,36 @@ export const DEFAULT_RECEIPT_DESIGN: PrintDesign = {
   fontSize: 9,
   marginMm: 3,
   logo: { position: 'center', heightMm: 14 },
-  show: allShown(['qr', 'terms'])
+  show: { ...allShown(['qr', 'terms']), amountWords: false }
 };
+
+/**
+ * The designs offered ready-made in the designer's gallery: a layout on its paper. Choosing one changes the layout,
+ * the paper and (leaving or reaching the receipt roll or half a page) the margins; colour, logo and what shows stay.
+ */
+export const PRINT_GALLERY = [
+  { id: 'classic', layout: 'classic', paper: 'A4' },
+  { id: 'modernLines', layout: 'modernLines', paper: 'A4' },
+  { id: 'ledger', layout: 'ledger', paper: 'A4' },
+  { id: 'modern', layout: 'modern', paper: 'A4' },
+  { id: 'halfPage', layout: 'compact', paper: 'A5' },
+  { id: 'receipt80', layout: 'receipt80', paper: '80mm' }
+] as const satisfies readonly { id: string; layout: PrintLayout; paper: PrintPaper }[];
+export type PrintGalleryId = (typeof PRINT_GALLERY)[number]['id'];
+
+/** The design after choosing one from the gallery (always one checkPrintDesign accepts). */
+export function withGalleryDesign(d: PrintDesign, id: PrintGalleryId): PrintDesign {
+  const g = PRINT_GALLERY.find((x) => x.id === id)!;
+  if (g.layout === 'receipt80') return { ...d, layout: g.layout, paper: g.paper, marginMm: Math.min(d.marginMm, 5), fontSize: Math.min(d.fontSize, 10) };
+  const fromRoll = d.paper === '80mm';
+  const marginMm = g.paper === 'A5' ? Math.min(fromRoll ? 8 : d.marginMm, 10) : fromRoll ? DEFAULT_PRINT_DESIGN.marginMm : d.marginMm;
+  return { ...d, layout: g.layout, paper: g.paper, marginMm };
+}
+
+/** The gallery design a design is: its layout (the compact one is the half page, on whichever paper). */
+export function galleryIdOf(d: PrintDesign): PrintGalleryId {
+  return d.layout === 'compact' ? 'halfPage' : d.layout;
+}
 
 /** What is saved: the sale invoice's design, and each other kind's own design when it has one. */
 export type PrintDesigns = Partial<Record<PrintDoc, PrintDesign>>;
@@ -146,7 +214,11 @@ export function checkPrintDesign(input: unknown): { design: PrintDesign } | { pr
     if (!isRecord(d.show)) p.push({ code: 'pd_invalid', path: 'show' });
     else {
       unknownKeys(d.show, PRINT_FIELDS, 'show', p);
-      for (const f of PRINT_FIELDS) if (typeof d.show[f] !== 'boolean') p.push({ code: 'pd_invalid', path: `show.${f}` });
+      // a part added later may be missing from a design saved before it (it then prints as it did); nothing else may
+      for (const f of PRINT_FIELDS) {
+        const missingLater = !(f in d.show) && LATER_PRINT_FIELDS[f] !== undefined;
+        if (typeof d.show[f] !== 'boolean' && !missingLater) p.push({ code: 'pd_invalid', path: `show.${f}` });
+      }
     }
   }
   if ('labels' in d) {
@@ -165,7 +237,12 @@ export function checkPrintDesign(input: unknown): { design: PrintDesign } | { pr
   const labels: Partial<Record<PrintLabel, string>> = {};
   for (const [k, v] of Object.entries(d.labels as Record<string, string>)) if (v.trim()) labels[k as PrintLabel] = v.trim();
   const logo = d.logo as { position: LogoPosition; heightMm: number };
-  const show = d.show as Record<PrintField, boolean>;
+  const given = d.show as Partial<Record<PrintField, boolean>>;
+  // rebuilt part by part, so nothing else rides along; a later part that is missing takes what it printed before
+  const show = Object.fromEntries(PRINT_FIELDS.map((f) => {
+    const later = LATER_PRINT_FIELDS[f];
+    return [f, given[f] ?? (later === 'partyBalance' ? given.partyBalance === true : later === 'notReceipt' ? d.layout !== 'receipt80' : later === true)];
+  })) as Record<PrintField, boolean>;
   return {
     design: {
       layout: d.layout as PrintLayout,
@@ -175,7 +252,7 @@ export function checkPrintDesign(input: unknown): { design: PrintDesign } | { pr
       marginMm: d.marginMm as number,
       // rebuilt field by field, so nothing else rides along
       logo: { position: logo.position, heightMm: logo.heightMm },
-      show: Object.fromEntries(PRINT_FIELDS.map((f) => [f, show[f]])) as Record<PrintField, boolean>,
+      show,
       labels,
       secondLang: d.secondLang as Lang | null,
       bankDetails: d.bankDetails as string,

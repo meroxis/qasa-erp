@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { formatQty } from '@qasa/core';
-import { AmountInput, ErrorBox, Icon, Modal, QtyInput, downloadCsv, useData, useLoad, useToast } from '../components.tsx';
+import { AmountInput, ErrorBox, Icon, Modal, QtyInput, downloadCsv, useData, useLoad, useMay, useToast } from '../components.tsx';
 import { isKey, useI18n, type I18n } from '../i18n.ts';
 import { href } from '../router.ts';
 import {
@@ -25,9 +25,21 @@ export function originName(i18n: I18n, origin: string): string {
   return origin && isKey(key) ? i18n.t(key) : origin;
 }
 
-function useCanEdit(): boolean {
+/**
+ * Why part data cannot be changed here, to say the true reason: 'plan' when the plan lacks the feature (the notice
+ * names the plans that have it), 'role' when the plan has it and this person may not change stock data (a neutral
+ * note: no plan would change that), null when they can.
+ */
+export function partsNotice(planHasParts: boolean, mayChange: boolean): 'plan' | 'role' | null {
+  if (!planHasParts) return 'plan';
+  return mayChange ? null : 'role';
+}
+
+function usePartsNotice(): 'plan' | 'role' | null {
   const { plan } = useData();
-  return !!plan?.features.includes('autoParts');
+  const can = useMay();
+  // part numbers and fitments are the stock's data: the plan has the feature, and the person may change them
+  return partsNotice(!!plan?.features.includes('autoParts'), can('partData'));
 }
 
 /** قطع غيار السيارات: counter search, vehicle finder and reorder list */
@@ -37,7 +49,8 @@ export function CarParts() {
   const [open, setOpen] = useState<string | null>(null);
   const [importing, setImporting] = useState(false);
   const [tick, setTick] = useState(0);
-  const canEdit = useCanEdit();
+  const notice = usePartsNotice();
+  const canEdit = notice === null;
 
   return (
     <div className="stack">
@@ -51,7 +64,8 @@ export function CarParts() {
         {canEdit && <button type="button" className="btn" onClick={() => setImporting(true)}><Icon name="download" size={16} />{t('pt_import')}</button>}
         <a className="btn" href={href('items')}><Icon name="box" size={16} />{t('items')}</a>
       </div>
-      {!canEdit && <div className="alert info">{t('pt_needsPro')}</div>}
+      {notice === 'plan' && <div className="alert info">{t('pt_needsPro')}</div>}
+      {notice === 'role' && <p className="muted small" style={{ margin: 0 }}>{t('pt_readOnly')}</p>}
 
       {tab === 'counter' && <CounterSearch key={tick} onOpen={setOpen} />}
       {tab === 'vehicle' && <VehicleFinder key={tick} onOpen={setOpen} />}
@@ -212,15 +226,17 @@ function VehicleFinder({ onOpen }: { onOpen(id: string): void }) {
   );
 }
 
-function ReorderList({ onOpen }: { onOpen(id: string): void }) {
+export function ReorderList({ onOpen }: { onOpen(id: string): void }) {
   const i18n = useI18n();
   const { t } = i18n;
   const list = useLoad(() => partsApi.reorder(), []);
+  // the last price paid, and to whom: left out by the server for someone who may not see cost
+  const cost = (list.data ?? []).some((r) => r.lastPurchase !== undefined);
   const exportCsv = () => downloadCsv('reorder.csv', [
-    [t('code'), t('name'), t('pt_numbers'), t('pt_brand'), t('pt_shelf'), t('available'), t('pt_reorderAt'), t('supplier'), t('pt_lastPurchase'), t('pt_lastPrice')],
+    [t('code'), t('name'), t('pt_numbers'), t('pt_brand'), t('pt_shelf'), t('available'), t('pt_reorderAt'), ...(cost ? [t('supplier'), t('pt_lastPurchase'), t('pt_lastPrice')] : [])],
     ...(list.data ?? []).map((r) => [
       r.code, i18n.name(r.name), r.numbers.map((n) => n.number).join(' / '), r.brand, r.shelf, formatQty(r.qtyMilli), formatQty(r.reorderMilli),
-      r.lastPurchase?.supplier ?? '', r.lastPurchase?.date ?? '', r.lastPurchase?.unitPrice ?? ''
+      ...(cost ? [r.lastPurchase?.supplier ?? '', r.lastPurchase?.date ?? '', r.lastPurchase?.unitPrice ?? ''] : [])
     ])
   ]);
   return (
@@ -240,7 +256,7 @@ function ReorderList({ onOpen }: { onOpen(id: string): void }) {
                 <th style={{ width: 90 }}>{t('pt_shelf')}</th>
                 <th className="amount">{t('available')}</th>
                 <th className="amount">{t('pt_reorderAt')}</th>
-                <th>{t('pt_lastPurchase')}</th>
+                {cost && <th>{t('pt_lastPurchase')}</th>}
               </tr>
             </thead>
             <tbody>
@@ -253,11 +269,11 @@ function ReorderList({ onOpen }: { onOpen(id: string): void }) {
                   <td><span className="ltr">{r.shelf}</span></td>
                   <td className="amount" style={{ color: 'var(--bad)' }}>{qtyText(i18n, r.qtyMilli)}</td>
                   <td className="amount">{qtyText(i18n, r.reorderMilli)}</td>
-                  <td>
+                  {cost && <td>
                     {r.lastPurchase
                       ? <><span className="bidi">{r.lastPurchase.supplier}</span><div className="muted small">{i18n.date(r.lastPurchase.date)} · {i18n.money(r.lastPurchase.unitPrice, r.lastPurchase.currency)}</div></>
                       : <span className="muted">—</span>}
-                  </td>
+                  </td>}
                 </tr>
               ))}
             </tbody>

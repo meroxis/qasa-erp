@@ -3,7 +3,7 @@ export const MEDIA_TEXT = {
   md_title: ['استيراد من Excel', 'Import from Excel', 'هاوردە لە Excel'],
 
   // pictures
-  md_addPicture: ['إضافة صورة', 'Add a picture', 'وێنە زیاد بکە'],
+  md_addPicture: ['إضافة صورة', 'Add a picture', 'زیادکردنی وێنە'],
   md_changePicture: ['تغيير الصورة', 'Change picture', 'گۆڕینی وێنە'],
   md_removePicture: ['حذف الصورة', 'Remove picture', 'لابردنی وێنە'],
   md_imageSaved: ['حُفظت الصورة', 'Picture saved', 'وێنەکە پاشەکەوت کرا'],
@@ -14,7 +14,7 @@ export const MEDIA_TEXT = {
   md_importHelp: [
     'أدخل بياناتك من ملف Excel أو CSV دفعة واحدة: الزبائن والمجهزين والمواد وبضاعة أول المدة والأرصدة الافتتاحية. لا يُحفظ شيء حتى يمر الفحص دون أخطاء.',
     'Bring your data in from an Excel or CSV file in one go: customers, suppliers, items, opening stock and opening balances. Nothing is saved until the check finds no problems.',
-    'داتاکانت بە یەکجار لە فایلی Excel یان CSV بهێنە ژوورەوە: کڕیاران، دابینکەران، کاڵاکان، کاڵای سەرەتای ماوە و باڵانسی سەرەتا. هیچ شتێک پاشەکەوت ناکرێت تا پشکنینەکە بێ هەڵە تێنەپەڕێت.'
+    'داتاکانت بە یەکجار لە فایلی Excel یان CSV بهێنە ژوورەوە: کڕیاران، دابینکەران، کاڵاکان، کاڵای سەرەتای ماوە و ڕەسیدی سەرەتا. هیچ شتێک پاشەکەوت ناکرێت تا پشکنینەکە بێ هەڵە تێنەپەڕێت.'
   ],
   md_step1: ['اختر الملف', 'Choose the file', 'فایلەکە هەڵبژێرە'],
   md_step2: ['طابق الأعمدة', 'Match the columns', 'ستوونەکان بگونجێنە'],
@@ -32,13 +32,13 @@ export const MEDIA_TEXT = {
   ],
   md_kOpeningStock: ['بضاعة أول المدة', 'Opening stock', 'کاڵای سەرەتای ماوە'],
   md_hOpeningStock: ['كمية كل مادة وكلفتها عند البدء بقاصة', 'How much of each item you have, and its cost, when you start with Qasa', 'بڕ و تێچووی هەر کاڵایەک کاتێک بە قاسە دەست پێدەکەیت'],
-  md_kOpeningBalances: ['الأرصدة الافتتاحية', 'Opening balances', 'باڵانسی سەرەتا'],
-  md_hOpeningBalances: ['ما على كل زبون أو ما لكل مجهز عند البدء', 'What each customer owes, or each supplier is owed, when you start', 'ئەوەی هەر کڕیارێک قەرزارە، یان ئەوەی بۆ هەر دابینکەرێک ماوە، لە سەرەتادا'],
+  md_kOpeningBalances: ['الأرصدة الافتتاحية', 'Opening balances', 'ڕەسیدی سەرەتا'],
+  md_hOpeningBalances: ['ما على كل زبون أو ما لكل مجهز عند البدء', 'What each customer owes, or each supplier is owed, when you start', 'قەرزی سەر هەر کڕیارێک، یان قەرزی هەر دابینکەرێک لەسەرت، لە سەرەتادا'],
   md_date: ['التاريخ', 'Date', 'بەروار'],
-  md_balancesOf: ['أرصدة', 'Balances of', 'باڵانسی'],
-  md_usdRate: ['سعر الدولار (للأرصدة بالدولار)', 'Dollar rate (for dollar balances)', 'نرخی دۆلار (بۆ باڵانسی دۆلار)'],
-  md_signCustomers: ['المبلغ الموجب دين على الزبون لكم، والسالب (أو بين قوسين) مبلغ له عندكم.', 'A positive amount is what the customer owes you; a negative one (or in brackets) is what you owe them.', 'بڕی پۆزەتیڤ ئەوەیە کە کڕیار قەرزارتانە؛ نێگەتیڤ (یان لەناو کەوانە) ئەوەیە کە ئێوە قەرزاری ئەون.'],
-  md_signSuppliers: ['المبلغ الموجب ما تدينون به للمجهز، والسالب (أو بين قوسين) مبلغ لكم عنده.', 'A positive amount is what you owe the supplier; a negative one (or in brackets) is what they owe you.', 'بڕی پۆزەتیڤ ئەوەیە کە ئێوە قەرزاری دابینکەرن؛ نێگەتیڤ (یان لەناو کەوانە) ئەوەیە کە ئەو قەرزارتانە.'],
+  md_balancesOf: ['أرصدة', 'Balances of', 'ڕەسیدی'],
+  md_usdRate: ['سعر الدولار (للأرصدة بالدولار)', 'Dollar rate (for dollar balances)', 'نرخی دۆلار (بۆ ڕەسیدی دۆلار)'],
+  md_signCustomers: ['المبلغ الموجب دين على الزبون لكم، والسالب (أو بين قوسين) مبلغ له عندكم.', 'A positive amount is what the customer owes you; a negative one (or in brackets) is what you owe them.', 'بڕی ئەرێنی (+) ئەو قەرزەیە کە لەسەر کڕیارە؛ بڕی نەرێنی (-)، یان بڕی ناو کەوانە، ئەوەیە کە تۆ قەرزاری کڕیاریت.'],
+  md_signSuppliers: ['المبلغ الموجب ما تدينون به للمجهز، والسالب (أو بين قوسين) مبلغ لكم عنده.', 'A positive amount is what you owe the supplier; a negative one (or in brackets) is what they owe you.', 'بڕی ئەرێنی (+) ئەوەیە کە تۆ قەرزاری دابینکەریت؛ بڕی نەرێنی (-)، یان بڕی ناو کەوانە، ئەوەیە کە دابینکەر قەرزاری تۆیە.'],
   md_chooseFile: ['اختر ملف Excel أو CSV', 'Choose an Excel or CSV file', 'فایلی Excel یان CSV هەڵبژێرە'],
   md_template: ['تنزيل نموذج', 'Download a template', 'داگرتنی نموونە'],
   md_fileHint: ['الصف الأول عناوين الأعمدة. تُقرأ الورقة الأولى من ملف ‎.xlsx‎. تعمل العناوين بالعربية أو الإنجليزية أو الكردية.', 'The first row holds the column headings. The first sheet of an .xlsx file is read. Headings can be in Arabic, English or Kurdish.', 'ڕیزی یەکەم سەردێڕی ستوونەکانە. یەکەم پەڕەی فایلی ‎.xlsx‎ دەخوێنرێتەوە. سەردێڕەکان دەتوانن بە عەرەبی، ئینگلیزی یان کوردی بن.'],
@@ -47,7 +47,7 @@ export const MEDIA_TEXT = {
   md_fileEmpty: ['الملف لا يحتوي على بيانات تحت صف العناوين.', 'The file has no data under the heading row.', 'فایلەکە هیچ داتایەکی لە ژێر ڕیزی سەردێڕەکان نییە.'],
   md_fileFormat: ['اختر ملف ‎.xlsx‎ أو ‎.csv‎. احفظ الملفات القديمة ‎.xls‎ من Excel بصيغة ‎.xlsx‎ أولاً.', 'Choose an .xlsx or .csv file. Save old .xls files as .xlsx from Excel first.', 'فایلێکی ‎.xlsx‎ یان ‎.csv‎ هەڵبژێرە. فایلە کۆنەکانی ‎.xls‎ سەرەتا لە Excel بە ‎.xlsx‎ پاشەکەوت بکە.'],
   md_fileTooLarge: ['الملف كبير جداً (الحد 20 ميغابايت). قسّمه إلى ملفات أصغر.', 'The file is too large (20 MB at most). Split it into smaller files.', 'فایلەکە زۆر گەورەیە (زۆرترین 20 مێگابایت). بیکە بە چەند فایلێکی بچووکتر.'],
-  md_fileUnreadable: ['تعذّرت قراءة الملف. تأكد أنه ملف Excel سليم.', 'The file couldn’t be read. Make sure it’s a working Excel file.', 'فایلەکە نەخوێنرایەوە. دڵنیابە کە فایلێکی Excelـی دروستە.'],
+  md_fileUnreadable: ['تعذّرت قراءة الملف. تأكد أنه ملف Excel سليم.', 'The file couldn’t be read. Make sure it’s a working Excel file.', 'فایلەکە نەخوێنرایەوە. دڵنیابە فایلەکە لە جۆری Excel بێت و تێک نەچووبێت.'],
   md_matchColumns: ['أي عمود فيه ماذا؟', 'Which column holds what?', 'کام ستوون چی تێدایە؟'],
   md_matchHelp: ['اخترنا الأعمدة من عناوينها. راجعها وغيّر ما يلزم، وانظر أول الصفوف أدناه.', 'We picked the columns from their headings. Check them, change any that are wrong, and look at the first rows below.', 'ستوونەکانمان لە سەردێڕەکانیانەوە هەڵبژارد. پێیاندا بچۆرەوە، هەر هەڵەیەک هەیە بیگۆڕە، و سەیری یەکەم ڕیزەکانی خوارەوە بکە.'],
   md_notInFile: ['— غير موجود في الملف —', '— not in the file —', '— لە فایلەکەدا نییە —'],
@@ -56,16 +56,16 @@ export const MEDIA_TEXT = {
   md_check: ['افحص الملف', 'Check the file', 'فایلەکە بپشکنە'],
   md_fixAndRetry: ['صحّح هذه الصفوف في الملف ثم اختره مرة أخرى. لم يُحفظ شيء.', 'Fix these rows in the file, then choose it again. Nothing was saved.', 'ئەم ڕیزانە لە فایلەکەدا ڕاست بکەرەوە، پاشان دووبارە هەڵیبژێرە. هیچ شتێک پاشەکەوت نەکرا.'],
   md_checkOk: ['الملف سليم: سيُضاف {n}، ويُترك {s} موجود مسبقاً.', 'The file is fine: {n} will be added, and {s} already there will be left as they are.', 'فایلەکە باشە: {n} زیاد دەکرێت، و {s} کە پێشتر هەن وەک خۆیان دەمێننەوە.'],
-  md_skippedRows: ['صفوف موجودة مسبقاً أو بلا رصيد', 'Rows already there or with no balance', 'ڕیزی پێشتر هەبوو یان بێ باڵانس'],
+  md_skippedRows: ['صفوف موجودة مسبقاً أو بلا رصيد', 'Rows already there or with no balance', 'ئەو ڕیزانەی پێشتر هەن یان ڕەسیدیان نییە'],
   md_draftNote: ['يُنشأ مستند مسودة تراجعه ثم ترحّله كالمعتاد.', 'It makes a draft document, which you check and post as usual.', 'بەڵگەیەکی ڕەشنووس دروست دەکات، کە وەک هەمیشە پێیدا دەچیتەوە و تۆماری دەکەیت.'],
-  md_importedBefore: ['استُورد هذا من قبل لنفس التاريخ ولم يُلغَ. استيراده مرة أخرى يضاعف الأرصدة عند اعتماد المستندين — راجع المستند الموجود أولاً.', 'This was already imported for the same date and not cancelled. Importing it again doubles the balances once both are approved — check the existing document first.', 'ئەمە پێشتر بۆ هەمان بەروار هاوردە کراوە و هەڵنەوەشێنراوەتەوە. دووبارە هاوردەکردنی باڵانسەکان دوو هێندە دەکات کاتێک هەردوو بەڵگەکە پەسەند دەکرێن — سەرەتا بەڵگە هەبووەکە ببینە.'],
+  md_importedBefore: ['استُورد هذا من قبل لنفس التاريخ ولم يُلغَ. استيراده مرة أخرى يضاعف الأرصدة عند اعتماد المستندين — راجع المستند الموجود أولاً.', 'This was already imported for the same date and not cancelled. Importing it again doubles the balances once both are approved — check the existing document first.', 'ئەمە پێشتر بۆ هەمان بەروار هاوردە کراوە و هەڵنەوەشێنراوەتەوە. ئەگەر دووبارە هاوردەی بکەیت، کاتێک هەردوو بەڵگەکە پەسەند دەکرێن ڕەسیدەکان دوو هێندە دەبن — سەرەتا بەڵگە هەبووەکە ببینە.'],
   md_importAgain: ['نعم، استورده مرة أخرى', 'Yes, import it again', 'بەڵێ، دووبارە هاوردەی بکە'],
   err_md_imported_before: ['استُورد هذا من قبل لنفس التاريخ. افحص الملف مرة أخرى وأكّد إن كنت تريد استيراده ثانية.', 'This was already imported for the same date. Check the file again and confirm if you want to import it a second time.', 'ئەمە پێشتر بۆ هەمان بەروار هاوردە کراوە. فایلەکە دووبارە بپشکنە و پشتڕاستی بکەرەوە ئەگەر دەتەوێت جارێکی تر هاوردەی بکەیت.'],
   md_importNow: ['استورد الآن ({n})', 'Import now ({n})', 'ئێستا هاوردە بکە ({n})'],
   md_imported: ['تم الاستيراد', 'Imported', 'هاوردە کرا'],
   md_doneText: ['تم: أُضيف {n}.', 'Done: {n} added.', 'تەواو: {n} زیاد کرا.'],
-  md_openStockDoc: ['فتح مستند بضاعة أول المدة', 'Open the opening-stock document', 'کردنەوەی بەڵگەی کاڵای سەرەتا'],
-  md_openEntry: ['فتح قيد الأرصدة الافتتاحية', 'Open the opening-balances entry', 'کردنەوەی تۆماری باڵانسی سەرەتا'],
+  md_openStockDoc: ['فتح مستند بضاعة أول المدة', 'Open the opening-stock document', 'کردنەوەی بەڵگەی کاڵای سەرەتای ماوە'],
+  md_openEntry: ['فتح قيد الأرصدة الافتتاحية', 'Open the opening-balances entry', 'کردنەوەی قەیدی ڕەسیدی سەرەتا'],
   md_importAnother: ['استيراد ملف آخر', 'Import another file', 'هاوردەی فایلێکی تر'],
 
   // the columns
@@ -86,7 +86,7 @@ export const MEDIA_TEXT = {
   md_fQty: ['الكمية', 'Quantity', 'بڕ'],
   md_fCost: ['كلفة الوحدة (دينار)', 'Unit cost (IQD)', 'تێچووی یەکە (دینار)'],
   md_fParty: ['الزبون أو المجهز (رمز أو اسم)', 'Customer or supplier (code or name)', 'کڕیار یان دابینکەر (کۆد یان ناو)'],
-  md_fAmount: ['الرصيد', 'Balance', 'باڵانس'],
+  md_fAmount: ['الرصيد', 'Balance', 'ڕەسید'],
 
   // errors from the server
   err_md_image_invalid: ['هذا ليس صورة JPEG أو PNG أو WebP.', 'That isn’t a JPEG, PNG or WebP picture.', 'ئەمە وێنەی JPEG یان PNG یان WebP نییە.'],
@@ -95,15 +95,15 @@ export const MEDIA_TEXT = {
   err_md_too_many_rows: ['الملف فيه أكثر من 5,000 صف. قسّمه إلى ملفات أصغر.', 'The file has more than 5,000 rows. Split it into smaller files.', 'فایلەکە زیاتر لە 5,000 ڕیزی تێدایە. بیکە بە چەند فایلێکی بچووکتر.'],
   err_md_name_required: ['الصف {n}: الاسم مطلوب.', 'Row {n}: the name is missing.', 'ڕیزی {n}: ناو نییە.'],
   err_md_duplicate_in_file: ['الصف {n}: مكرر في الملف.', 'Row {n}: it appears twice in the file.', 'ڕیزی {n}: دووجار لە فایلەکەدا هاتووە.'],
-  err_md_amount_invalid: ['الصف {n}: المبلغ غير صحيح.', 'Row {n}: the amount isn’t valid.', 'ڕیزی {n}: بڕەکە دروست نییە.'],
+  err_md_amount_invalid: ['الصف {n}: المبلغ غير صحيح.', 'Row {n}: the amount isn’t valid.', 'ڕیزی {n}: بڕی پارەکە دروست نییە.'],
   err_md_unit_invalid: ['الصف {n}: وحدة غير معروفة (قطعة، كارتون، علبة، طقم، كغم، متر، لتر، خدمة).', 'Row {n}: unknown unit (piece, carton, box, set, kg, m, L, service).', 'ڕیزی {n}: یەکەی نەناسراو (دانە، کارتۆن، قوتوو، دەست، کیلۆ، مەتر، لیتر، خزمەتگوزاری).'],
   err_md_currency_invalid: ['الصف {n}: العملة يجب أن تكون دينار أو دولار.', 'Row {n}: the currency must be IQD or USD.', 'ڕیزی {n}: دراو دەبێت دینار یان دۆلار بێت.'],
   err_md_price_invalid: ['الصف {n}: السعر غير صحيح.', 'Row {n}: the price isn’t valid.', 'ڕیزی {n}: نرخەکە دروست نییە.'],
   err_md_item_not_found: ['الصف {n}: لا توجد مادة بهذا الرمز أو الباركود أو الاسم.', 'Row {n}: no item has that code, barcode or name.', 'ڕیزی {n}: هیچ کاڵایەک ئەو کۆد، بارکۆد یان ناوەی نییە.'],
-  err_md_item_not_stocked: ['الصف {n}: هذه المادة خدمة لا مخزون لها.', 'Row {n}: that item is a service, with no stock.', 'ڕیزی {n}: ئەو کاڵایە خزمەتگوزارییە و کۆگای نییە.'],
+  err_md_item_not_stocked: ['الصف {n}: هذه المادة خدمة لا مخزون لها.', 'Row {n}: that item is a service, with no stock.', 'ڕیزی {n}: ئەمە خزمەتگوزارییە و بڕی کۆگای نییە.'],
   err_md_qty_invalid: ['الصف {n}: الكمية غير صحيحة.', 'Row {n}: the quantity isn’t valid.', 'ڕیزی {n}: بڕەکە دروست نییە.'],
   err_md_cost_invalid: ['الصف {n}: الكلفة غير صحيحة.', 'Row {n}: the cost isn’t valid.', 'ڕیزی {n}: تێچووەکە دروست نییە.'],
   err_md_party_not_found: ['الصف {n}: لا يوجد زبون أو مجهز بهذا الرمز أو الاسم.', 'Row {n}: no customer or supplier has that code or name.', 'ڕیزی {n}: هیچ کڕیار یان دابینکەرێک ئەو کۆد یان ناوەی نییە.'],
-  err_md_rate_required: ['اكتب سعر الدولار للأرصدة بالدولار.', 'Enter the dollar rate for the dollar balances.', 'نرخی دۆلار بۆ باڵانسە دۆلارییەکان بنووسە.'],
-  err_md_party_type_required: ['اختر: أرصدة الزبائن أم المجهزين.', 'Choose whose balances these are: customers or suppliers.', 'هەڵبژێرە ئەم باڵانسانە هی کێن: کڕیاران یان دابینکەران.']
+  err_md_rate_required: ['اكتب سعر الدولار للأرصدة بالدولار.', 'Enter the dollar rate for the dollar balances.', 'نرخی دۆلار بۆ ڕەسیدە دۆلارییەکان بنووسە.'],
+  err_md_party_type_required: ['اختر: أرصدة الزبائن أم المجهزين.', 'Choose whose balances these are: customers or suppliers.', 'هەڵبژێرە ئەم ڕەسیدانە هی کێن: کڕیاران یان دابینکەران.']
 } as const satisfies Record<string, readonly [string, string, string]>;

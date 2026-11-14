@@ -5,7 +5,7 @@ import { DatabaseSync } from 'node:sqlite';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { migrate, openDatabase, SCHEMA_VERSION, schemaVersion, updateCopies, type Db, type SqlValue } from './db.ts';
 import { buildApp } from './app.ts';
-import { MYSQL_TABLES, pendingMysqlSteps, tableColumns, V11_MYSQL_STEPS } from './schema-mysql.ts';
+import { MYSQL_TABLES, pendingMysqlSteps, tableColumns, V11_MYSQL_STEPS, V13_MYSQL_STEPS } from './schema-mysql.ts';
 import { AppError } from './errors.ts';
 
 // QASA_TEST_DB runs the suite on a server: these build and open SQLite files themselves
@@ -136,7 +136,9 @@ describe('version 11 on a server database', () => {
     expect(pendingMysqlSteps(V11_MYSQL_STEPS, done)).toHaveLength(V11_MYSQL_STEPS.length - 2);
     for (const table of ['item_categories', 'items', 'stock_counts']) {
       const added = V11_MYSQL_STEPS.filter((s) => s.kind === 'column' && s.table === table).map((s) => (s as { column: string }).column);
-      expect(tableColumns(table).columns.slice(-added.length), table).toEqual(added);
+      // version 13 adds its columns after them
+      const later = V13_MYSQL_STEPS.filter((s) => s.kind === 'column' && s.table === table).map((s) => (s as { column: string }).column);
+      expect(tableColumns(table).columns.slice(-(added.length + later.length)), table).toEqual([...added, ...later]);
     }
     const order = MYSQL_TABLES.map((t) => t.name);
     expect(order.indexOf('brands')).toBeLessThan(order.indexOf('items'));

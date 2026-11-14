@@ -120,9 +120,41 @@ export function isForeignKeyFailure(error: unknown): boolean {
     || e.code === 'ER_ROW_IS_REFERENCED_2' || e.errno === 1451 || e.code === 'ER_NO_REFERENCED_ROW_2' || e.errno === 1452);
 }
 
-export function listParties(
-  db: Db, filters: { type?: PartyType | undefined; q?: string | undefined; active?: boolean | undefined } = {}, branch: PartyBranch = null
-): PartyView[] {
+/**
+ * 1.4: a party owes (a customer owes us, or we owe a supplier) when its whole position, in IQD at the book rates, is
+ * above zero: the same figure "biggest debt first" sorts by. A customer who paid a dollar invoice in dinars owes
+ * nothing, though the two currencies each still hold an amount.
+ */
+export const partyOwes = (p: Pick<PartyView, 'balance'>): boolean => p.balance > 0;
+
+/**
+ * 1.4: what a party owes (side 'owes') or is ahead by ('advance'), as amounts to show and to total. Each currency in
+ * its own, as the books keep them, when they all stand on the side of the whole position. When one currency was paid
+ * in the other (the two stand on opposite sides) there is one amount: the position in IQD at the book rates. Nothing
+ * when that position is zero. apps/web/src/industry/parties-api.ts (oweLines) follows the same rule.
+ */
+export function partyPosition(net: number, own: Record<CurrencyCode, number>): { side: 'owes' | 'advance'; amounts: Record<CurrencyCode, number> } | null {
+  if (net === 0) return null;
+  const up = net > 0;
+  const oneSide = (['IQD', 'USD'] as const).every((c) => own[c] === 0 || own[c] > 0 === up);
+  const some = own.IQD !== 0 || own.USD !== 0;
+  return {
+    side: up ? 'owes' : 'advance',
+    amounts: oneSide && some ? { IQD: Math.abs(own.IQD), USD: Math.abs(own.USD) } : { IQD: Math.abs(net), USD: 0 }
+  };
+}
+
+export interface PartyListFilters {
+  type?: PartyType | undefined;
+  q?: string | undefined;
+  active?: boolean | undefined;
+  /** 1.4: only those with a balance in their own direction (customers who owe us, suppliers we owe) */
+  owing?: boolean | undefined;
+  /** 1.4: 'debt' puts the biggest balance first (IQD at the book rates, as `balance`); otherwise by code */
+  sort?: 'code' | 'debt' | undefined;
+}
+
+export function listParties(db: Db, filters: PartyListFilters = {}, branch: PartyBranch = null): PartyView[] {
   const where: string[] = [];
   const params: string[] = [];
   if (filters.type) { where.push('type = ?'); params.push(filters.type); }
@@ -131,9 +163,52 @@ export function listParties(
   const sums = balances(db, branch);
   const used = usedParties(db);
   const q = filters.q ? normalizeForSearch(filters.q) : '';
-  return rows
+  const list = rows
     .filter((r) => !q || normalizeForSearch(`${r.code} ${r.name} ${r.phone ?? ''}`).includes(q))
-    .map((r) => toView(r, sums.get(r.id), used.has(r.id)));
+    .map((r) => toView(r, sums.get(r.id), used.has(r.id)))
+    .filter((p) => !filters.owing || partyOwes(p));
+  // the rows come by code; the sort is stable, so equal balances keep that order
+  if (filters.sort === 'debt') list.sort((a, b) => b.balance - a.balance);
+  return list;
+}
+
+/** Each currency's own amounts: dinars in dinars, dollars in cents. */
+export type PartyAmounts = Record<CurrencyCode, number>;
+
+export interface PartyTotals {
+  type: PartyType;
+  /** in the type's own direction: what customers owe us, or what we owe suppliers (the parties whose position is above zero) */
+  owed: PartyAmounts;
+  /** the other way (those below zero, as positive amounts): advances customers paid, or paid to suppliers */
+  advance: PartyAmounts;
+  /** how many parties stand each way; one whose position is zero is in neither */
+  owing: number;
+  advanced: number;
+}
+
+/**
+ * 1.4: the line above the customers (or suppliers) list: how much they owe in all, per currency. A party counts by its
+ * whole position at the book rates (partyOwes, partyPosition), so one who paid a dollar debt in dinars adds nothing.
+ * Worked out from the same two grouped queries as the list (never one query per party), over every party of the type,
+ * active or not; a user limited to branches gets their branches' entries only, as in the list.
+ */
+export function partyTotals(db: Db, type: PartyType, branch: PartyBranch = null): PartyTotals {
+  const ids = db.prepare('SELECT id FROM parties WHERE type = ?').all(type) as { id: string }[];
+  const sums = balances(db, branch);
+  const totals: PartyTotals = { type, owed: { IQD: 0, USD: 0 }, advance: { IQD: 0, USD: 0 }, owing: 0, advanced: 0 };
+  const sign = type === 'customer' ? 1 : -1;
+  for (const { id } of ids) {
+    const s = sums.get(id) as Sums | undefined;
+    if (!s) continue;
+    const ownOf = (c: CurrencyCode) => sign * (Number(s.own?.[c].debit ?? 0) - Number(s.own?.[c].credit ?? 0));
+    const position = partyPosition(sign * (Number(s.debit) - Number(s.credit)), { IQD: ownOf('IQD'), USD: ownOf('USD') });
+    if (!position) continue;
+    const into = position.side === 'owes' ? totals.owed : totals.advance;
+    into.IQD += position.amounts.IQD;
+    into.USD += position.amounts.USD;
+    if (position.side === 'owes') totals.owing += 1; else totals.advanced += 1;
+  }
+  return totals;
 }
 
 function loadRow(db: Db, id: string): PartyRow {
@@ -257,7 +332,13 @@ export function partyStatement(
   const lines: PartyStatementLine[] = [];
   let totalDebit = 0;
   let totalCredit = 0;
-  for (const posted of postedLines(db, { partyId: id, ...(range.to ? { to: range.to } : {}), branch })) {
+  // Within a day, in the order the papers were approved. The entry number alone orders a day by the kind of paper
+  // (INV before PV before RV), so a receipt taken in the morning would follow the afternoon's invoice, and the balance
+  // a paper prints before it and after it (balancesAround in the web app reads these rows in order) would be wrong.
+  // The sort is stable: the same moment, or none recorded, keeps the order by number.
+  const inOrder = postedLines(db, { partyId: id, ...(range.to ? { to: range.to } : {}), branch })
+    .sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : (a.approvedAt ?? '') < (b.approvedAt ?? '') ? -1 : (a.approvedAt ?? '') > (b.approvedAt ?? '') ? 1 : 0));
+  for (const posted of inOrder) {
     // one currency: that currency's lines only, in that currency (a running balance in dollars)
     if (range.currency && posted.currency !== range.currency) continue;
     const l = range.currency ? { ...posted, debit: posted.ownDebit, credit: posted.ownCredit } : posted;
