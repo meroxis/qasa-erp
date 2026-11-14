@@ -13,6 +13,8 @@ export interface ReDepositView {
   date: string; currency: CurrencyCode; amount: number; status: DepositStatus; reversed: boolean; invoiceId: string | null;
   /** the refund or forfeit entry; its date is the earliest a reversal of it may carry */
   closeEntry: { id: string; number: string | null; status: string; type: string; date: string } | null;
+  /** 1.4.1: waiting for approval, or rejected (with who rejected it and why); null once approved */
+  approval?: 'waiting' | 'rejected' | null; rejectedBy?: string | null; reason?: string | null;
   actions: ('refund' | 'forfeit' | 'reopen')[];
 }
 export interface ReDepositInput { partyId: string; amount: number; date: string; cashAccountCode: string; rateX100?: number; until?: string; lang: Lang }
@@ -34,6 +36,8 @@ export interface ReUnitView {
   contract: { id: string; number: string; status: string } | null;
   /** deposits held on it, in the project's currency */
   depositHeld: number;
+  /** 1.4.1: deposits waiting for approval (not held yet); the unit is neither sold nor released meanwhile */
+  depositWaiting?: number;
   /** only on the single-unit call */
   deposits?: ReDepositView[];
   actions: UnitAction[];

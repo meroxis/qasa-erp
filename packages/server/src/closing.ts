@@ -4,7 +4,7 @@ import { insertOrKeep, transaction } from './db.ts';
 import { audit } from './audit.ts';
 import { loadAccounts } from './accounts.ts';
 import { conflict, invalid } from './errors.ts';
-import { assertValid, getEntry, insertEntry, nextNumber, postedLines, reverseEntryInternal, type EntryView } from './journal.ts';
+import { assertValid, getEntry, insertEntry, nextNumber, notRejectedDocumentReceiptSql, postedLines, reverseEntryInternal, type EntryView } from './journal.ts';
 import { planStatus } from './license.ts';
 import { getSettings } from './settings.ts';
 import type { Actor } from './auth.ts';
@@ -90,7 +90,9 @@ function statusOf(db: Db, year: number, start: string, lines: PostedLine[], toda
         }
       }
     }
-    const entries = (db.prepare("SELECT COUNT(*) AS n FROM entries WHERE status IN ('draft', 'checked') AND date BETWEEN ? AND ?").get(from, to) as { n: number }).n;
+    // (a document's receipt that was rejected is kept as its record, in no balance: it does not hold the year up, 1.4.1)
+    const entries = (db.prepare(`SELECT COUNT(*) AS n FROM entries e WHERE e.status IN ('draft', 'checked') AND e.date BETWEEN ? AND ?
+                                  AND ${notRejectedDocumentReceiptSql('e')}`).get(from, to) as { n: number }).n;
     if (entries) blockers.push({ code: 'unfinished_entries', count: entries });
     // drafts that will post into the year: invoices, stock documents and adjustments (counts), payroll and generator months
     const documents = Number((db.prepare(`SELECT (SELECT COUNT(*) FROM invoices WHERE status = 'draft' AND date BETWEEN ? AND ?)

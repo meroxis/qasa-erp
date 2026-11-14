@@ -4,6 +4,7 @@ import { todayIso, toWesternDigits } from '@qasa/core';
 import { ApiError } from '../api.ts';
 import { EmptyState, AccountCombo, AmountInput, ErrorBox, Icon, Modal, useData, useLoad, useMay, usePageNav, useToast } from '../components.tsx';
 import { useI18n, type Key } from '../i18n.ts';
+import { ReceiptApproval } from '../industry/ReceiptApproval.tsx';
 import { go, href } from '../router.ts';
 import {
   ampsText, generatorsApi, parseAmps, type CollectionView, type GenLine, type GenRunStatus, type GenSummary, type SubscriberInput,
@@ -217,7 +218,9 @@ function Collect({ summary, onChange }: { summary: GenSummary | null; onChange()
         )}
       </div>
 
-      {receipt && (
+      {/* 1.4.1: a collection that waits for approval has no number yet and is not off the debt: no receipt to print */}
+      {receipt?.approval === 'waiting' && <div className="alert warn">{t('da_savedWaiting')}</div>}
+      {receipt && receipt.approval !== 'waiting' && (
         <div className="alert info row" style={{ alignItems: 'center' }}>
           <span>{t('gen_receiptReady', { n: receipt.number ?? '' })}</span>
           <span className="spacer" />
@@ -246,9 +249,9 @@ function Collect({ summary, onChange }: { summary: GenSummary | null; onChange()
               <tbody>
                 {receipts.map((r) => (
                   <tr key={r.entryId} className={r.reversed ? 'muted' : ''}>
-                    <td><a className="num ltr" href={href(`entry/${r.entryId}`)}>{r.number}</a></td>
+                    <td><a className="num ltr" href={href(`entry/${r.entryId}`)}>{r.number ?? '—'}</a></td>
                     <td><span className="num ltr">{r.code}</span> · {r.name}</td><td>{r.collector}</td>
-                    <td className="amount num">{i18n.money(r.amount, 'IQD')}{r.reversed && <span className="chip"> {t('gen_reversed')}</span>}</td>
+                    <td className="amount num">{i18n.money(r.amount, 'IQD')}{r.reversed && <span className="chip"> {t('gen_reversed')}</span>}<ReceiptApproval of={r} /></td>
                   </tr>
                 ))}
               </tbody>

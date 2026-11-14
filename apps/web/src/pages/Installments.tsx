@@ -6,6 +6,7 @@ import {
 } from '../api.ts';
 import { EmptyState, AccountCombo, AmountInput, ErrorBox, Icon, Modal, SearchCombo, useData, useLoad, useMay, useToast, type PickOption } from '../components.tsx';
 import { useI18n, type I18n } from '../i18n.ts';
+import { ReceiptApproval, receiptDoneText, type ApprovalOf } from '../industry/ReceiptApproval.tsx';
 import { go, href } from '../router.ts';
 import { PartyPicker } from '../industry/PartyPicker.tsx';
 import { printDocument } from '../industry/printing.ts';
@@ -175,7 +176,9 @@ export function InstallmentDetail({ id }: { id: string }) {
 
       <div className="grid-4 no-print">
         <div className="card pad tile"><div className="label">{t('contractTotal')}</div><div className="value num">{i18n.money(c.total, c.currency)}</div></div>
-        <div className="card pad tile"><div className="label">{t('paidAmt')}</div><div className="value num" style={{ color: 'var(--ok)' }}>{i18n.money(c.paid, c.currency)}</div></div>
+        <div className="card pad tile"><div className="label">{t('paidAmt')}</div><div className="value num" style={{ color: 'var(--ok)' }}>{i18n.money(c.paid, c.currency)}</div>
+          {/* 1.4.1: collected and waiting for approval: not paid yet */}
+          {!!c.waiting && <div className="small num" style={{ color: 'var(--warn)' }}>{t('da_waitingAmount', { a: i18n.money(c.waiting, c.currency) })}</div>}</div>
         <div className="card pad tile"><div className="label">{t('remainingAmt')}</div><div className="value num">{i18n.money(c.remaining, c.currency)}</div></div>
         <div className="card pad tile"><div className="label">{t('overdueAmt')}</div><div className="value num" style={c.overdue ? { color: 'var(--bad)' } : undefined}>{i18n.money(c.overdue, c.currency)}</div></div>
       </div>
@@ -271,10 +274,10 @@ export function InstallmentDetail({ id }: { id: string }) {
             <tbody>
               {c.receipts.map((r) => (
                 <tr key={r.entryId} className="click" onClick={() => go(`entry/${r.entryId}`)}>
-                  <td><a className="ltr num" href={href(`entry/${r.entryId}`)} onClick={(e) => e.stopPropagation()}>{r.number}</a></td>
+                  <td><a className="ltr num" href={href(`entry/${r.entryId}`)} onClick={(e) => e.stopPropagation()}>{r.number ?? '—'}</a></td>
                   <td className="num">{i18n.date(r.date)}</td>
                   <td className="amount">{i18n.money(r.amount, c.currency)}</td>
-                  <td>{r.reversed && <span className="chip bad">{t('reversedTag')}</span>}</td>
+                  <td>{r.reversed && <span className="chip bad">{t('reversedTag')}</span>}<ReceiptApproval of={r} /></td>
                 </tr>
               ))}
             </tbody>
@@ -282,14 +285,14 @@ export function InstallmentDetail({ id }: { id: string }) {
         </div>
       )}
 
-      {modal === 'collect' && <CollectModal contract={c} onClose={() => setModal(null)} onDone={(n) => void done(t('collected', { n }))} />}
+      {modal === 'collect' && <CollectModal contract={c} onClose={() => setModal(null)} onDone={(r) => void done(receiptDoneText(t, r, t('collected', { n: r?.number ?? '' })))} />}
       {modal === 'edit' && <EditModal contract={c} onClose={() => setModal(null)} onDone={() => void done(t('saved'))} />}
       {modal === 'cancel' && <CancelModal contract={c} onClose={() => setModal(null)} onDone={() => void done(t('cs_cancelled'))} />}
     </div>
   );
 }
 
-function CollectModal({ contract: c, onClose, onDone }: { contract: ContractView; onClose(): void; onDone(number: string): void }) {
+function CollectModal({ contract: c, onClose, onDone }: { contract: ContractView; onClose(): void; onDone(receipt: (ApprovalOf & { number: string | null }) | undefined): void }) {
   const i18n = useI18n();
   const { t } = i18n;
   const { settings } = useData();
@@ -308,7 +311,7 @@ function CollectModal({ contract: c, onClose, onDone }: { contract: ContractView
       const after = await api.collectInstallment(c.id, {
         date, amount: amount ?? 0, cashAccountCode: cashAccount, lang: i18n.lang, ...(c.currency === 'USD' ? { rateX100 } : {})
       });
-      onDone(after.receipts[after.receipts.length - 1]?.number ?? '');
+      onDone(after.receipts[after.receipts.length - 1]);
     } catch (e) {
       setError(e);
       setBusy(false);

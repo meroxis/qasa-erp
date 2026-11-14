@@ -146,8 +146,9 @@ export function setVouchersNeedApproval(db: Db, on: boolean, user: string): void
   transaction(db, () => {
     writeSetting(db, NEED_APPROVAL, on ? '1' : '0');
     // switched off: what was waiting or rejected is a plain draft again, checked and approved the usual way (the
-    // rejection and its reason stay in the audit log)
-    if (!on) db.prepare("DELETE FROM voucher_approvals WHERE state <> 'approved'").run();
+    // rejection and its reason stay in the audit log). A document's receipt (1.4.1) keeps its approval: it is approved
+    // or rejected from where it waits, as it can be neither changed nor deleted apart from its document
+    if (!on) db.prepare(`DELETE FROM voucher_approvals WHERE state <> 'approved' AND entry_id NOT IN (${DOCUMENT_RECEIPT_IDS})`).run();
     audit(db, user, 'update', 'settings', NEED_APPROVAL, { vouchersNeedApproval: on });
   });
 }
@@ -259,6 +260,80 @@ export function postVoucherNow(db: Db, v: VoucherInput, actor: { id: string | nu
   return id;
 }
 
+// ——— receipts that documents make, and "Vouchers need approval" (1.4.1, the owner's decision) ———
+
+/**
+ * The tables that link a receipt to the document it was made from: an installment collected, a job's deposit or a solar
+ * system paid, a generator collection, a unit's reservation deposit. Such a receipt is changed only from its document
+ * (its amount is the document's), and a draft of it that is deleted takes its link with it.
+ */
+const DOCUMENT_RECEIPTS: readonly string[] = ['installment_receipts', 'job_receipts', 'gen_collections', 're_deposits'];
+
+function isDocumentReceipt(db: Db, id: string): boolean {
+  return DOCUMENT_RECEIPTS.some((table) => db.prepare(`SELECT 1 FROM ${table} WHERE entry_id = ?`).get(id));
+}
+
+/**
+ * Whether a receipt a document makes waits for approval when this person makes it: with "Vouchers need approval" on,
+ * one made by someone who may not approve vouchers (entries.approve) waits, as a quick voucher does. Someone who may,
+ * and every company with the setting off, post it at once as before.
+ */
+export function documentVoucherWaits(db: Db, actor: { permissions: readonly string[] }): boolean {
+  return vouchersNeedApproval(db) && !actor.permissions.includes('entries.approve');
+}
+
+/**
+ * A receipt a document makes (pro/src: an installment collected, a job's deposit, a solar system paid in cash, a
+ * unit's reservation deposit, a generator collection). Posted at once (postVoucherNow) unless it waits for approval
+ * (documentVoucherWaits): then it is a draft in the same approval flow as a quick voucher (voucher_approvals, with
+ * "request_approval" in the audit log), approved or rejected with a reason by someone who may approve vouchers, and
+ * counted by its document only once approved. Call inside a transaction; the caller links it to its document.
+ */
+export function postDocumentVoucher(db: Db, v: VoucherInput, actor: { id: string | null; name: string; permissions: readonly string[] }): { id: string; waiting: boolean } {
+  if (!documentVoucherWaits(db, actor)) return { id: postVoucherNow(db, v, actor), waiting: false };
+  const entry = assertValidVoucher(db, v);
+  const id = insertEntry(db, entry, actor.name, v.cashAccountCode);
+  if (actor.id) db.prepare('UPDATE entries SET prepared_by_id = ? WHERE id = ?').run(actor.id, id);
+  audit(db, actor.name, 'create', 'entry', id, { type: entry.type, document: true });
+  markPrepared(db, id, { id: actor.id, name: actor.name, mayApprove: false });
+  return { id, waiting: true };
+}
+
+/**
+ * Where each of these receipts stands, for its document: 'waiting' (a draft not approved yet: waiting for approval, or
+ * a plain draft once the setting was switched off), 'rejected' (sent back, with who rejected it and why), or nothing
+ * for an approved one (it counts unless reversed). A receipt deleted while a draft is gone, with its link.
+ */
+export function documentVoucherStates(db: Db, ids: readonly string[]): Map<string, { state: 'waiting' | 'rejected'; by: string | null; reason: string | null }> {
+  const out = new Map<string, { state: 'waiting' | 'rejected'; by: string | null; reason: string | null }>();
+  if (!ids.length) return out;
+  const rows = db.prepare(`SELECT e.id, va.state, va.decided_by, va.reason FROM entries e LEFT JOIN voucher_approvals va ON va.entry_id = e.id
+                           WHERE e.status <> 'approved' AND e.id IN (${ids.map(() => '?').join(', ')})`).all(...ids) as
+    { id: string; state: string | null; decided_by: string | null; reason: string | null }[];
+  for (const r of rows) {
+    out.set(r.id, r.state === 'rejected' ? { state: 'rejected', by: r.decided_by, reason: r.reason } : { state: 'waiting', by: null, reason: null });
+  }
+  return out;
+}
+
+/**
+ * A condition on an entry `e` of a document's receipt: still to be approved (a draft that was not rejected). What a
+ * document has waiting is held back from what can still be collected on it, so the same money is not taken twice.
+ */
+export const voucherPendingSql = (e: string): string =>
+  `(${e}.status <> 'approved' AND NOT EXISTS (SELECT 1 FROM voucher_approvals vp WHERE vp.entry_id = ${e}.id AND vp.state = 'rejected'))`;
+
+/** Every receipt linked to a document, as a subquery of entry ids. */
+const DOCUMENT_RECEIPT_IDS = DOCUMENT_RECEIPTS.map((table) => `SELECT entry_id FROM ${table}`).join(' UNION ALL ');
+
+/**
+ * A condition on an entry `e`: not a document's receipt that was rejected. Such a receipt is kept as the document's
+ * record of a collection that was refused (with who refused it and why), is never deleted (its document keeps its
+ * links) and is in no balance; it does not hold up the year's close, nor count as a draft waiting on a safe.
+ */
+export const notRejectedDocumentReceiptSql = (e: string): string =>
+  `NOT EXISTS (SELECT 1 FROM voucher_approvals vr WHERE vr.entry_id = ${e}.id AND vr.state = 'rejected' AND vr.entry_id IN (${DOCUMENT_RECEIPT_IDS}))`;
+
 export function createJournalEntry(db: Db, input: Omit<EntryInput, 'type'>, user: string, actorId?: string | null, who?: Preparer): EntryView {
   const entry: EntryInput = { ...input, type: 'journal' };
   assertValid(db, entry);
@@ -343,6 +418,9 @@ function actionsOf(db: Db, row: EntryRow): EntryAction[] {
     const state = approvalOf(db, row.id)?.state;
     if (state === 'waiting') actions = ['edit', 'delete', 'approve_waiting', 'reject'];
     else if (state === 'rejected') actions = ['edit', 'delete'];
+    // 1.4.1: a document's receipt (its amount is the document's) is never changed or deleted here: it is approved or
+    // rejected, and a rejected one stays as the document's record
+    if (isDocumentReceipt(db, row.id)) actions = actions.filter((a) => a !== 'edit' && a !== 'delete');
   }
   if (actions.includes('edit') && editOwner(db, row.id)) return actions.filter((a) => a !== 'edit');
   if (!actions.some((a) => OWNER_ONLY.includes(a)) || !entryOwner(db, row.id)) return actions;

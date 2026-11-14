@@ -702,6 +702,8 @@ export interface ContractSummaryView {
   invoice: { id: string; number: string | null } | null;
   description: string; currency: CurrencyCode; total: number; downPayment: number; months: number;
   paid: number; remaining: number; overdue: number;
+  /** 1.4.1: collected and waiting for approval (not in paid yet) */
+  waiting?: number;
   next: { seq: number; dueDate: string; amount: number; daysLate: number } | null;
 }
 export interface ContractView extends Omit<ContractSummaryView, 'party' | 'guarantor'> {
@@ -709,7 +711,11 @@ export interface ContractView extends Omit<ContractSummaryView, 'party' | 'guara
   guarantor: GuarantorView | null;
   notes: string; createdBy: string; createdAt: string; cancelledBy: string | null; cancelledAt: string | null;
   schedule: ScheduleRowView[];
-  receipts: { entryId: string; number: string | null; date: string; amount: number; reversed: boolean; by: string }[];
+  receipts: {
+    entryId: string; number: string | null; date: string; amount: number; reversed: boolean; by: string;
+    /** 1.4.1: waiting for approval, or rejected (with who rejected it and why); null once approved */
+    approval?: 'waiting' | 'rejected' | null; rejectedBy?: string | null; reason?: string | null;
+  }[];
   actions: ('collect' | 'cancel' | 'edit')[];
 }
 export interface InstallmentTerms { date: string; firstDue: string; total: number; downPayment: number; months: number; currency: CurrencyCode }

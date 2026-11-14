@@ -3,6 +3,7 @@ import { amountInWords, lineAmount, rateFromX100, todayIso, toBase, toWesternDig
 import { api, ApiError } from '../api.ts';
 import { EmptyState, AccountCombo, AmountInput, ErrorBox, Icon, Modal, QtyInput, SearchCombo, useData, useLoad, useMay, usePageNav, useToast, type PickOption } from '../components.tsx';
 import { useI18n, type I18n, type Key } from '../i18n.ts';
+import { ReceiptApproval, receiptDoneText, type ApprovalOf } from '../industry/ReceiptApproval.tsx';
 import {
   COST_CATEGORIES, JOB_CATEGORIES, JOB_FLOW, LINE_UNITS, worksApi, type CostCategory, type JobCategory, type JobFilter, type JobInput, type JobLineInput,
   type JobStatus, type JobSummaryView, type JobView, type LinkableDocView, type LineUnit, type WorksSummaryView
@@ -375,7 +376,8 @@ export function JobDetail({ id }: { id: string }) {
 
       <div className="grid-4 no-print">
         <div className="card pad tile"><div className="label">{t('ew_total')}</div><div className="value num">{i18n.money(j.total, j.currency)}</div></div>
-        <div className="card pad tile"><div className="label">{t('ew_paid')}</div><div className="value num" style={{ color: 'var(--ok)' }}>{i18n.money(j.paid, j.currency)}</div><div className="small muted num">{t('ew_remaining')}: {i18n.money(j.remaining, j.currency)}</div></div>
+        <div className="card pad tile"><div className="label">{t('ew_paid')}</div><div className="value num" style={{ color: 'var(--ok)' }}>{i18n.money(j.paid, j.currency)}</div><div className="small muted num">{t('ew_remaining')}: {i18n.money(j.remaining, j.currency)}</div>
+          {!!j.waiting && <div className="small num" style={{ color: 'var(--warn)' }}>{t('da_waitingAmount', { a: i18n.money(j.waiting, j.currency) })}</div>}</div>
         {j.costs !== undefined && <div className="card pad tile"><div className="label">{t('ew_costTotal')}</div><div className="value num">{i18n.money(j.costs, 'IQD')}</div></div>}
         {j.profit !== undefined && <div className="card pad tile">
           <div className="label">{t('ew_profit')}</div>
@@ -403,10 +405,10 @@ export function JobDetail({ id }: { id: string }) {
               <tbody>
                 {j.receipts.map((r) => (
                   <tr key={r.entryId} className="click" onClick={() => go(`entry/${r.entryId}`)}>
-                    <td><a className="ltr num" href={href(`entry/${r.entryId}`)} onClick={(e) => e.stopPropagation()}>{r.number}</a></td>
+                    <td><a className="ltr num" href={href(`entry/${r.entryId}`)} onClick={(e) => e.stopPropagation()}>{r.number ?? '—'}</a></td>
                     <td className="num">{i18n.date(r.date)}</td>
                     <td className="amount">{i18n.money(r.amount, j.currency)}</td>
-                    <td>{r.reversed && <span className="chip bad">{t('reversedTag')}</span>}</td>
+                    <td>{r.reversed && <span className="chip bad">{t('reversedTag')}</span>}<ReceiptApproval of={r} /></td>
                   </tr>
                 ))}
               </tbody>
@@ -452,7 +454,7 @@ export function JobDetail({ id }: { id: string }) {
       </div>
 
       {modal === 'edit' && <JobModal job={j} onClose={() => setModal(null)} onDone={() => void done(t('saved'))} />}
-      {modal === 'deposit' && <DepositModal job={j} onClose={() => setModal(null)} onDone={(n) => void done(t('ew_depositDone', { n }))} />}
+      {modal === 'deposit' && <DepositModal job={j} onClose={() => setModal(null)} onDone={(r) => void done(receiptDoneText(t, r, t('ew_depositDone', { n: r?.number ?? '' })))} />}
       {modal === 'cost' && <CostModal job={j} onClose={() => setModal(null)} onDone={() => void done(t('saved'))} />}
       {modal === 'bill' && <BillModal job={j} onClose={() => setModal(null)} onDone={() => void done(t('ew_st_invoiced'))} />}
       {modal === 'cancel' && <CancelModal job={j} onClose={() => setModal(null)} onDone={() => void done(t('ew_st_cancelled'))} />}
@@ -637,7 +639,7 @@ function useRate(): [string, (v: string) => void, () => number] {
   return [rate, setRate, () => Math.round(Number(toWesternDigits(rate).replace(/,/g, '')) * 100)];
 }
 
-function DepositModal({ job: j, onClose, onDone }: { job: JobView; onClose(): void; onDone(number: string): void }) {
+function DepositModal({ job: j, onClose, onDone }: { job: JobView; onClose(): void; onDone(receipt: (ApprovalOf & { number: string | null }) | undefined): void }) {
   const i18n = useI18n();
   const { t } = i18n;
   const { settings } = useData();
@@ -653,7 +655,7 @@ function DepositModal({ job: j, onClose, onDone }: { job: JobView; onClose(): vo
     setError(null);
     try {
       const after = await worksApi.deposit(j.id, { date, amount: amount ?? 0, cashAccountCode: cashAccount, lang: i18n.lang, ...(j.currency === 'USD' ? { rateX100: rateX100() } : {}) });
-      onDone(after.receipts[after.receipts.length - 1]?.number ?? '');
+      onDone(after.receipts[after.receipts.length - 1]);
     } catch (e) {
       setError(e);
       setBusy(false);

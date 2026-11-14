@@ -34,6 +34,8 @@ export interface GenRunView extends GenRunSummary { bills: GenBillView[] }
 export interface CollectionView {
   entryId: string; number: string | null; date: string; partyId: string; code: string; name: string; collector: string;
   amount: number; reversed: boolean; balance: number;
+  /** 1.4.1: waiting for approval, or rejected (with who rejected it and why); null once approved */
+  approval?: 'waiting' | 'rejected' | null; rejectedBy?: string | null; reason?: string | null;
 }
 
 export interface GenSummary {

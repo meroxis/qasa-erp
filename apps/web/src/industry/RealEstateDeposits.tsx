@@ -3,6 +3,7 @@ import { rateToX100, todayIso, toWesternDigits, type CurrencyCode } from '@qasa/
 import { api, type PartyView } from '../api.ts';
 import { AccountCombo, AmountInput, ErrorBox, Icon, Modal, SearchCombo, useData, useLoad, useToast, type PickOption } from '../components.tsx';
 import { useI18n } from '../i18n.ts';
+import { ReceiptApproval } from './ReceiptApproval.tsx';
 import { href } from '../router.ts';
 import { realEstateApi, type DepositStatus, type ReDepositView, type ReUnitView } from './real-estate-api.ts';
 import { useFxRate } from './fx-prefill.ts';
@@ -23,7 +24,7 @@ export function UnitDeposits({ unit, currency, onChanged }: { unit: ReUnitView; 
   const i18n = useI18n();
   const { t } = i18n;
   const toast = useToast();
-  const { data, error, reload } = useLoad(() => realEstateApi.unit(unit.id), [unit.id, unit.status, unit.depositHeld]);
+  const { data, error, reload } = useLoad(() => realEstateApi.unit(unit.id), [unit.id, unit.status, unit.depositHeld, unit.depositWaiting]);
   const [dialog, setDialog] = useState<Dialog>(null);
   const [busy, setBusy] = useState(false);
   const [reverseError, setReverseError] = useState<unknown>(null);
@@ -65,12 +66,14 @@ export function UnitDeposits({ unit, currency, onChanged }: { unit: ReUnitView; 
         <span className="spacer" />
         {unit.depositHeld > 0 && <span className="chip warn num">{t('dep_held')}: {i18n.money(unit.depositHeld, currency)}</span>}
       </div>
+      {/* 1.4.1: a deposit waiting for approval is not held yet, and the unit waits with it */}
+      {!!unit.depositWaiting && <p className="small" style={{ margin: 0, color: 'var(--warn)' }}>{t('dep_waitingNote')}</p>}
       {error ? <ErrorBox error={error} /> : null}
       {deposits.map((d) => (
         <div key={d.entryId} className="stack" style={{ gap: 4, padding: 8, border: '1px solid var(--line)', borderRadius: 'var(--r-md)' }}>
           <div className="row" style={{ gap: 6, flexWrap: 'wrap' }}>
             <strong className="num">{i18n.money(d.amount, d.currency)}</strong>
-            <span className={'chip ' + (d.reversed ? 'bad' : CHIP[d.status])}>{d.reversed ? t('dep_reversed') : t(`dep_st_${d.status}`)}</span>
+            {d.approval ? <ReceiptApproval of={d} /> : <span className={'chip ' + (d.reversed ? 'bad' : CHIP[d.status])}>{d.reversed ? t('dep_reversed') : t(`dep_st_${d.status}`)}</span>}
             <span className="spacer" />
             <span className="small num muted">{i18n.date(d.date)}</span>
           </div>
@@ -92,7 +95,7 @@ export function UnitDeposits({ unit, currency, onChanged }: { unit: ReUnitView; 
       {deposits.length === 0 && <p className="small muted" style={{ margin: 0 }}>{t('dep_none')}</p>}
       {canTake && <div className="row"><button type="button" className="btn" onClick={() => setDialog({ kind: 'take' })}><Icon name="wallet" size={16} />{t('dep_take')}</button></div>}
 
-      {dialog?.kind === 'take' && <TakeModal unit={unit} currency={currency} onClose={() => setDialog(null)} onDone={() => done(t('dep_taken'))} />}
+      {dialog?.kind === 'take' && <TakeModal unit={unit} currency={currency} onClose={() => setDialog(null)} onDone={(waits) => done(waits ? t('da_savedWaiting') : t('dep_taken'))} />}
       {dialog?.kind === 'refund' && <RefundModal unit={unit} deposit={dialog.deposit} onClose={() => setDialog(null)} onDone={() => done(t('dep_refundDrafted'))} />}
       {dialog?.kind === 'forfeit' && <ForfeitModal unit={unit} deposit={dialog.deposit} onClose={() => setDialog(null)} onDone={() => done(t('dep_forfeitDrafted'))} />}
       {dialog?.kind === 'reverse' && (
@@ -108,7 +111,7 @@ export function UnitDeposits({ unit, currency, onChanged }: { unit: ReUnitView; 
 
 const rateValue = (s: string) => rateToX100(Number(toWesternDigits(s)));
 
-function TakeModal({ unit: u, currency, onClose, onDone }: { unit: ReUnitView; currency: CurrencyCode; onClose(): void; onDone(): void }) {
+function TakeModal({ unit: u, currency, onClose, onDone }: { unit: ReUnitView; currency: CurrencyCode; onClose(): void; onDone(waits: boolean): void }) {
   const i18n = useI18n();
   const { t } = i18n;
   const { settings } = useData();
@@ -127,11 +130,11 @@ function TakeModal({ unit: u, currency, onClose, onDone }: { unit: ReUnitView; c
     setBusy(true);
     setError(null);
     try {
-      await realEstateApi.takeDeposit(u.id, {
+      const after = await realEstateApi.takeDeposit(u.id, {
         partyId, amount: amount ?? 0, date, cashAccountCode: cash, lang: i18n.lang,
         ...(until ? { until } : {}), ...(currency === 'USD' && rate ? { rateX100: rateValue(rate) } : {})
       });
-      onDone();
+      onDone((after.depositWaiting ?? 0) > (u.depositWaiting ?? 0));
     } catch (e) {
       setError(e);
       setBusy(false);

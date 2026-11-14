@@ -6,7 +6,7 @@ import { transaction } from './db.ts';
 import { audit } from './audit.ts';
 import { AppError, conflict, invalid, notFound } from './errors.ts';
 import { createAccount, loadAccounts } from './accounts.ts';
-import { createJournalEntry, createVoucher, deleteEntry, getEntry, reverseEntryInternal, type EntryView } from './journal.ts';
+import { createJournalEntry, createVoucher, deleteEntry, getEntry, notRejectedDocumentReceiptSql, reverseEntryInternal, type EntryView } from './journal.ts';
 import { planStatus } from './license.ts';
 import { userBranchLists } from './branches.ts';
 import { readSetting, writeSetting } from './settings.ts';
@@ -75,7 +75,7 @@ export function moneyAccounts(db: Db): MoneyAccountView[] {
                            GROUP BY l.account_code, e.currency`).all() as { code: string; currency: CurrencyCode; amount: number; base: number }[];
   const pendingRows = db.prepare(`SELECT l.account_code AS code, COUNT(DISTINCT e.id) AS n
                                   FROM entry_lines l JOIN entries e ON e.id = l.entry_id
-                                  WHERE e.status IN ('draft', 'checked') AND l.account_code LIKE '18%'
+                                  WHERE e.status IN ('draft', 'checked') AND l.account_code LIKE '18%' AND ${notRejectedDocumentReceiptSql('e')}
                                   GROUP BY l.account_code`).all() as { code: string; n: number }[];
   const pending = new Map(pendingRows.map((r) => [r.code, num(r.n)]));
   return accounts.map((a) => {
