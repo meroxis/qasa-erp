@@ -67,6 +67,7 @@ const voucherSchema = z.object({
 const entryFilters = z.object({
   type: z.enum(['journal', 'receipt', 'payment', 'reversal', 'sale', 'purchase', 'sale_return', 'purchase_return', 'opening_stock', 'transfer', 'closing']).optional(),
   status: z.enum(['draft', 'checked', 'approved']).optional(),
+  approval: z.enum(['waiting', 'rejected']).optional(),
   from: isoDate.optional(),
   to: isoDate.optional(),
   q: z.string().max(100).optional()
@@ -338,7 +339,8 @@ export function apiRoutes(db: Db, options: { demo?: boolean; extensions?: readon
 
   /** Hides the buttons a user may not use: the server refuses those actions anyway. */
   const ENTRY_ACTION: Record<string, Permission> = {
-    edit: 'entries.prepare', delete: 'entries.prepare', check: 'entries.check', return: 'entries.check', approve: 'entries.approve', reverse: 'entries.approve'
+    edit: 'entries.prepare', delete: 'entries.prepare', check: 'entries.check', return: 'entries.check', approve: 'entries.approve', reverse: 'entries.approve',
+    approve_waiting: 'entries.approve', reject: 'entries.approve'
   };
   function forActor(path: string, value: unknown, actor: Actor | null): unknown {
     if (!actor || !value || typeof value !== 'object' || !Array.isArray((value as { actions?: unknown }).actions)) return value;
@@ -446,23 +448,25 @@ export function apiRoutes(db: Db, options: { demo?: boolean; extensions?: readon
   });
 
   // entries & vouchers
+  // (who prepares: with "Vouchers need approval" on, a voucher waits unless its preparer may approve vouchers)
+  const preparer = (req: ApiRequest) => { const a = actorOf(req); return { id: a.id, name: a.name, mayApprove: a.permissions.includes('entries.approve') }; };
   app.get('/api/entries', async (req) => listEntries(db, parse(entryFilters, req.query)));
   app.get('/api/entries/:id', async (req) => getEntry(db, parse(z.object({ id: z.string() }), req.params).id));
   app.post('/api/entries', async (req, reply) => {
     const body = parse(journalSchema, req.body);
-    return reply.status(201).send(createJournalEntry(db, withoutUndefined(body), userOf(req), actorOf(req).id));
+    return reply.status(201).send(createJournalEntry(db, withoutUndefined(body), userOf(req), actorOf(req).id, preparer(req)));
   });
   app.put('/api/entries/:id', async (req) => {
     const { id } = parse(z.object({ id: z.string() }), req.params);
-    return updateJournalEntry(db, id, withoutUndefined(parse(journalSchema, req.body)), userOf(req), actorOf(req).id);
+    return updateJournalEntry(db, id, withoutUndefined(parse(journalSchema, req.body)), userOf(req), actorOf(req).id, preparer(req));
   });
   app.post('/api/vouchers', async (req, reply) => {
     const body = parse(voucherSchema, req.body);
-    return reply.status(201).send(once(req, reply, 'POST /api/vouchers', () => createVoucher(db, withoutUndefined(body), userOf(req), actorOf(req).id), (id) => getEntry(db, id)));
+    return reply.status(201).send(once(req, reply, 'POST /api/vouchers', () => createVoucher(db, withoutUndefined(body), userOf(req), actorOf(req).id, preparer(req)), (id) => getEntry(db, id)));
   });
   app.put('/api/vouchers/:id', async (req) => {
     const { id } = parse(z.object({ id: z.string() }), req.params);
-    return updateVoucher(db, id, withoutUndefined(parse(voucherSchema, req.body)), userOf(req), actorOf(req).id);
+    return updateVoucher(db, id, withoutUndefined(parse(voucherSchema, req.body)), userOf(req), actorOf(req).id, preparer(req));
   });
   app.delete('/api/entries/:id', async (req, reply) => {
     deleteEntry(db, parse(z.object({ id: z.string() }), req.params).id, userOf(req));

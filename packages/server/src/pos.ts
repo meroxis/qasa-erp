@@ -27,7 +27,8 @@ const zero = (): Money => ({ IQD: 0, USD: 0 });
 
 /**
  * How a customer pays at the counter (1.1): cash into the shift's safe, a card or a wallet (FIB, ZainCash, Qi) into
- * the account the admin set for it, or on the chosen customer's account. A sale can be split over up to 4 of them.
+ * the account the admin set for it, or on the chosen customer's account (credit). Money paid now can be split over up
+ * to 4 of them; since 1.4 a sale on credit is on credit as a whole, never mixed with money paid now.
  */
 export const POS_METHODS = ['cash', 'card', 'fib', 'zaincash', 'qi', 'account'] as const;
 export type PosMethod = (typeof POS_METHODS)[number];
@@ -401,6 +402,9 @@ export function sell(db: Db, shiftId: string, input: SaleInput, actor: Actor): {
   if (input.currency === 'USD' && !(Number.isSafeInteger(input.rateX100) && (input.rateX100 ?? 0) > 0)) throw invalid([{ code: 'rate_invalid' }]);
   const payments = input.payments ?? [];
   if (payments.length > 4) throw invalid([{ code: 'payments_too_many' }]);
+  // 1.4: a sale is paid now or put on the customer's account, never part one and part the other
+  const onCredit = payments.some((p) => p.method === 'account');
+  if (onCredit && payments.some((p) => p.method !== 'account')) throw invalid([{ code: 'pos_credit_not_mixed' }]);
   const accounts = posPaymentAccounts(db);
   const mine = posAccountsFor(db, actor);
   const errors: { code: string; method?: string }[] = [];
@@ -426,7 +430,9 @@ export function sell(db: Db, shiftId: string, input: SaleInput, actor: Actor): {
   const invoiceId = transaction(db, () => {
     const draft = createInvoice(db, {
       kind: 'sale', date, ...(input.partyId ? { partyId: input.partyId } : {}), warehouseId: row.warehouse_id,
-      currency: input.currency, rateX100: input.currency === 'IQD' ? 100 : input.rateX100!, payment: 'cash', cashAccountCode: row.cash_account,
+      currency: input.currency, rateX100: input.currency === 'IQD' ? 100 : input.rateX100!,
+      // a sale on the customer's account is a credit invoice (Dr the customer), like one made on the invoice screen
+      ...(onCredit ? { payment: 'credit' as const } : { payment: 'cash' as const, cashAccountCode: row.cash_account }),
       discount: input.discount, ...(input.notes?.trim() ? { notes: input.notes.trim() } : {}),
       lines: input.lines.map((l) => ({
         itemId: l.itemId, qtyMilli: l.qtyMilli, unitPrice: l.unitPrice, ...(l.unit ? { unit: l.unit, unitQtyMilli: l.unitQtyMilli ?? l.qtyMilli } : {}),
@@ -450,8 +456,9 @@ export function sell(db: Db, shiftId: string, input: SaleInput, actor: Actor): {
         ...(method === 'account' ? { partyId: input.partyId } : {})
       }));
     }
+    // (a credit invoice posts to the customer's account by itself, with its credit limit checked: no parts are passed)
     const posted = postInvoice(db, draft.id, actor.name, {
-      allowExpired: input.allowExpired === true, ...(split ? { split } : {}), ...(input.loyaltyPoints ? { loyaltyPoints: input.loyaltyPoints } : {})
+      allowExpired: input.allowExpired === true, ...(split && !onCredit ? { split } : {}), ...(input.loyaltyPoints ? { loyaltyPoints: input.loyaltyPoints } : {})
     });
     db.prepare('INSERT INTO pos_sales (invoice_id, shift_id) VALUES (?, ?)').run(posted.id, shiftId);
     if (split) {

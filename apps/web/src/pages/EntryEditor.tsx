@@ -7,6 +7,7 @@ import { useI18n } from '../i18n.ts';
 import { go } from '../router.ts';
 import { PartyPicker } from '../industry/PartyPicker.tsx';
 import { useRatePrefill } from '../industry/fx-prefill.ts';
+import { useVoucherApproval } from '../industry/VoucherApproval.tsx';
 
 type Kind = 'receipt' | 'payment' | 'journal';
 
@@ -56,12 +57,18 @@ export function EntryEditor({ kind: initialKind, id }: { kind?: Kind; id?: strin
   const voucherKey = useRef<HeldKey | null>(null);
   const [unsure, setUnsure] = useState(false);
   const parties = useLoad(() => api.parties({ active: 'true' }), []);
+  // 1.4, "Vouchers need approval": a new voucher is approved as it is saved for someone who may approve vouchers, and
+  // waits for approval for everyone else (the server decides; the button only says so)
+  const [approval] = useVoucherApproval();
+  const saveLabel = !approval?.on ? t('saveDraft') : approval.ownAtOnce ? (id ? t('saveDraft') : t('s14_saveApprove')) : approval.mayApprove ? t('saveDraft') : t('s14_saveSend');
 
   // defaults for a new voucher
   useEffect(() => {
     if (id) return;
     if (!rateText && settings) setRateText(String(rateFromX100(settings.defaultRateX100)));
-    if (!cashAccount && accounts.some((a) => a.code === '1811')) setCashAccount('1811');
+    // the company's own safe (Settings → posting accounts); the standard main safe when that is not there
+    const safe = [settings?.postingAccounts.cash, '1811'].find((code) => code && accounts.some((a) => a.code === code && a.postable));
+    if (!cashAccount && safe) setCashAccount(safe);
   }, [id, settings, accounts, rateText, cashAccount]);
 
   // load an existing draft
@@ -281,7 +288,7 @@ export function EntryEditor({ kind: initialKind, id }: { kind?: Kind; id?: strin
       )}
       <ErrorBox error={error} />
       <div className="row">
-        <button type="button" className="btn primary" onClick={save} disabled={saving}><Icon name="check" size={16} />{saving ? t('saving') : t('saveDraft')}</button>
+        <button type="button" className="btn primary" onClick={save} disabled={saving}><Icon name="check" size={16} />{saving ? t('saving') : saveLabel}</button>
         <button type="button" className="btn" onClick={() => history.back()}>{t('cancel')}</button>
       </div>
     </div>

@@ -2,6 +2,7 @@ import { useState, type FormEvent } from 'react';
 import { htmlLang, todayIso } from '@qasa/core';
 import { api, ROLES, type Me, type Role, type UserView } from '../api.ts';
 import { ErrorBox, Icon, Logo, Modal, useData, useLoad, useToast } from '../components.tsx';
+import { VoucherApprovalSetting } from '../industry/VoucherApproval.tsx';
 import { useI18n, type Key } from '../i18n.ts';
 import { href } from '../router.ts';
 
@@ -237,6 +238,8 @@ export function Users({ me, onMeChanged }: { me: Me; onMeChanged(me: Me | null):
         </div>
         <p className="muted" style={{ margin: 0 }}>{t('separateDutiesHelp')}</p>
       </div>
+
+      <VoucherApprovalSetting />
 
       <div className="card">
         <div className="row" style={{ padding: '14px 16px 8px' }}>

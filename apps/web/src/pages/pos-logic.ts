@@ -76,6 +76,23 @@ export function cashChange(paid: number | null, total: number, parts: readonly {
 }
 
 /**
+ * 1.4: a sale is paid one way. Cash is what the till always did (nothing is sent: the whole sale goes into the shift's
+ * safe); a card or a wallet, or credit ('account': on the customer's account), is sent as the one part that pays what
+ * is due. Nothing due (points paid it all): nothing is sent.
+ */
+export function salePayments<M extends string>(method: M, due: number): { method: M; amount: number }[] | undefined {
+  return method === 'cash' || due <= 0 ? undefined : [{ method, amount: due }];
+}
+
+/** The way of paying the till shows as chosen: the one picked while it is still offered, else cash. */
+export function chosenMethod<M extends string>(picked: M, offered: readonly M[]): M | 'cash' {
+  return offered.includes(picked) ? picked : 'cash';
+}
+
+/** A sale on credit goes on a customer's account: it needs one. */
+export const creditNeedsCustomer = (method: string, partyId: string): boolean => method === 'account' && !partyId;
+
+/**
  * A cart line as the sale sends it: in its unit (or the base unit), and pinned to the batch the cashier picked ('':
  * automatic, the earliest expiry first).
  */

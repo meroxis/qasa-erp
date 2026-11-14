@@ -94,12 +94,14 @@ describe('loyalty points at the till', () => {
     const shift = (await post('/api/pos/shifts', { register: 'Counter 1', cashAccountCode: '1811', warehouseId, openingCash: 0 })).json();
     const sell = (body: object) => post(`/api/pos/shifts/${shift.id}/sales`, { currency: 'IQD', discount: 0, ...body });
     expect((await sell({ partyId: lasId, lines: cuts(2), discount: 500 })).json().invoice.loyalty).toMatchObject({ earned: 19, redeemed: 0, balance: 19 });
-    // 30,000: 10,000 on account earns nothing
-    const split = await sell({ partyId: lasId, lines: cuts(3), payments: [{ method: 'cash', amount: 20_000 }, { method: 'account', amount: 10_000 }] });
-    expect(split.statusCode, split.body).toBe(201);
-    expect(split.json().invoice.loyalty).toMatchObject({ earned: 20, balance: 39 });
+    // a sale is paid now or put on credit as a whole (1.4), and what goes on credit earns nothing
+    const mixed = await sell({ partyId: lasId, lines: cuts(3), payments: [{ method: 'cash', amount: 20_000 }, { method: 'account', amount: 10_000 }] });
+    expect(mixed.json().details).toEqual([{ code: 'pos_credit_not_mixed' }]);
+    const credit = await sell({ partyId: lasId, lines: cuts(3), payments: [{ method: 'account', amount: 30_000 }] });
+    expect(credit.statusCode, credit.body).toBe(201);
+    expect(credit.json().invoice.loyalty).toMatchObject({ earned: 0, balance: 19 });
     expect((await sell({ lines: cuts(5) })).json().invoice.loyalty).toBeNull();
-    expect(balance(lasId)).toBe(39);
+    expect(balance(lasId)).toBe(19);
   });
 
   it('uses points as part of the price within the limits; their value goes to the loyalty account, never into the drawer', async () => {

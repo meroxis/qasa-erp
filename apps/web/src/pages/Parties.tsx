@@ -9,6 +9,7 @@ import { StatementWhatsApp } from '../industry/WhatsAppShare.tsx';
 import { LoyaltyCard } from '../industry/Loyalty.tsx';
 import { isLang, todayIso, type Lang } from '@qasa/core';
 import { printDocument } from '../industry/printing.ts';
+import { QuickVoucherButton } from '../industry/QuickVoucher.tsx';
 
 /** الزبائن / المجهزون */
 export function Parties({ type }: { type: PartyType }) {
@@ -58,7 +59,9 @@ export function Parties({ type }: { type: PartyType }) {
                   <td className="num ltr">{i18n.digitsOf(p.phone)}</td>
                   <td className="amount">{p.balance ? i18n.money(p.balance, 'IQD') : <span className="muted">—</span>}</td>
                   {anyUsd && <td className="amount">{p.balances?.USD ? i18n.money(p.balances.USD, 'USD') : <span className="muted">—</span>}</td>}
-                  <td>
+                  <td style={{ whiteSpace: 'nowrap' }}>
+                    {/* 1.4: receive a payment from the customer, or pay the supplier, from their row */}
+                    {p.active && <QuickVoucherButton kind={type === 'customer' ? 'receipt' : 'payment'} preset={{ partyId: p.id }} className="btn small" onDone={reload} />}
                     <button type="button" className="btn icon ghost" title={t('actEdit')} aria-label={t('actEdit')} onClick={(e) => { e.stopPropagation(); setEditing(p); }}>
                       <Icon name="edit" size={16} />
                     </button>
@@ -182,6 +185,8 @@ export function PartyDetail({ id, admin = false }: { id: string; admin?: boolean
         <button type="button" className="btn" onClick={() => history.back()}>{t('back')}</button>
         <span className="spacer" />
         <button type="button" className="btn" onClick={() => setEditing(true)}><Icon name="edit" size={16} />{t('actEdit')}</button>
+        {/* 1.4: receive a payment from the customer, or pay the supplier, from their statement */}
+        {p.active && <QuickVoucherButton kind={isCustomer ? 'receipt' : 'payment'} preset={{ partyId: p.id }} onDone={reload} />}
         <a className="btn primary" href={href(isCustomer ? `new-invoice/sale/${p.id}` : `new-invoice/purchase/${p.id}`)}><Icon name="plus" size={16} />{isCustomer ? t('newSale') : t('newPurchase')}</a>
         <StatementWhatsApp company={company} name={p.name} code={p.code} phone={p.phone} lang={p.lang} balance={data.closing} date={to || todayIso()} currency={cur} />
         <button type="button" className="btn" onClick={exportCsv}><Icon name="download" size={16} />{t('exportExcel')}</button>

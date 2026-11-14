@@ -1732,6 +1732,21 @@ const V13 =
   `
   ALTER TABLE items ADD COLUMN purchase_price INTEGER CHECK (purchase_price IS NULL OR purchase_price >= 0);
   ALTER TABLE items ADD COLUMN purchase_currency TEXT CHECK (purchase_currency IS NULL OR purchase_currency IN ('IQD', 'USD'));
+  -- vouchers that wait for approval ("Vouchers need approval"): one row per voucher sent for approval: who asked and
+  -- when, and the answer (approved, or rejected with the reason). A waiting or rejected voucher is still a draft in
+  -- entries, so it is in no balance and no report until it is approved
+  CREATE TABLE voucher_approvals (
+    entry_id TEXT PRIMARY KEY REFERENCES entries(id) ON DELETE CASCADE,
+    state TEXT NOT NULL CHECK (state IN ('waiting', 'rejected', 'approved')),
+    requested_by TEXT NOT NULL,
+    requested_by_id TEXT REFERENCES users(id),
+    requested_at TEXT NOT NULL,
+    decided_by TEXT,
+    decided_by_id TEXT REFERENCES users(id),
+    decided_at TEXT,
+    reason TEXT
+  );
+  CREATE INDEX voucher_approvals_state ON voucher_approvals(state);
   `;
 
 const MIGRATIONS: Migration[] = [

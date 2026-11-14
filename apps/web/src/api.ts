@@ -49,6 +49,32 @@ export interface EntrySummary {
   approvedAt: string | null;
   total: number;
   baseTotal: number;
+  /** 1.4: sent for approval ("Vouchers need approval"): where that stands (older servers leave it out) */
+  approval?: VoucherApproval | null;
+}
+
+export interface VoucherApproval {
+  state: 'waiting' | 'rejected' | 'approved';
+  requestedBy: string;
+  requestedAt: string;
+  decidedBy: string | null;
+  decidedAt: string | null;
+  reason: string | null;
+}
+
+/** 1.4: the "Vouchers need approval" setting, how many wait, and whether this user may approve them */
+export interface VoucherApprovalState { on: boolean; waiting: number; mayApprove: boolean; /** this user's own vouchers are approved as they are made */ ownAtOnce: boolean }
+
+/** 1.4: "Receive payment" (a receipt from a customer) or "Pay supplier" (a payment), from the short form */
+export interface QuickVoucherInput {
+  kind: 'receipt' | 'payment';
+  partyId: string;
+  amount: number;
+  currency: CurrencyCode;
+  rateX100?: number;
+  cashAccountCode: string;
+  date: string;
+  note?: string;
 }
 
 export interface EntryView extends EntrySummary {
@@ -719,7 +745,7 @@ export const api = {
   createAccount: (input: { parentCode: string; code: string; name: Names }) => request<AccountView>('POST', '/api/accounts', input),
   renameAccount: (code: string, name: Names) => request<AccountView>('PATCH', `/api/accounts/${code}`, { name }),
   deleteAccount: (code: string) => request<void>('DELETE', `/api/accounts/${code}`),
-  entries: (f: { type?: string; status?: string; q?: string; from?: string; to?: string } = {}) => request<EntrySummary[]>('GET', '/api/entries' + qs(f)),
+  entries: (f: { type?: string; status?: string; approval?: string; q?: string; from?: string; to?: string } = {}) => request<EntrySummary[]>('GET', '/api/entries' + qs(f)),
   entry: (id: string) => request<EntryView>('GET', `/api/entries/${id}`),
   createJournal: (input: JournalInput) => request<EntryView>('POST', '/api/entries', input),
   updateJournal: (id: string, input: JournalInput) => request<EntryView>('PUT', `/api/entries/${id}`, input),
@@ -728,6 +754,11 @@ export const api = {
   updateVoucher: (id: string, input: VoucherInput) => request<EntryView>('PUT', `/api/vouchers/${id}`, input),
   deleteEntry: (id: string) => request<void>('DELETE', `/api/entries/${id}`),
   entryAction: (id: string, action: 'check' | 'return' | 'approve') => request<EntryView>('POST', `/api/entries/${id}/${action}`, {}),
+  quickVoucher: (input: QuickVoucherInput, options: SendOptions = {}) => request<EntryView>('POST', '/api/quick-vouchers', input, options),
+  voucherApproval: () => request<VoucherApprovalState>('GET', '/api/voucher-approval'),
+  setVoucherApproval: (on: boolean) => request<VoucherApprovalState>('PUT', '/api/voucher-approval', { on }),
+  approveWaiting: (id: string) => request<EntryView>('POST', `/api/entries/${id}/approve-waiting`, {}),
+  rejectEntry: (id: string, reason: string) => request<EntryView>('POST', `/api/entries/${id}/reject`, { reason }),
   reverse: (id: string, date: string) => request<EntryView>('POST', `/api/entries/${id}/reverse`, { date }),
   trialBalance: (from?: string, to?: string) => request<TrialBalanceReport>('GET', '/api/reports/trial-balance' + qs({ from, to })),
   finalAccounts: (from: string, to: string) => request<FinalAccountsReport>('GET', '/api/reports/final-accounts' + qs({ from, to })),
