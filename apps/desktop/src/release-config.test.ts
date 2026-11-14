@@ -217,42 +217,12 @@ describe('the release notes of 1.0.2 (kept as shipped)', () => {
   });
 });
 
-// The version is 1.4.0. Its release notes and its Store "What's new" are written in the release-texts step: until then
-// the notes file of 1.4.0 carries only the standing notice for 0.1.8 licences (the app's "What's new" needs the file),
-// and the checks of what the texts say still read the texts of 1.3.0.
-describe('the release notes and the Store "What\'s new" of this version', () => {
-  const version = (JSON.parse(read('apps/desktop/package.json')) as { version: string }).version;
-  const TEXTS_OF = '1.3.0';
-  const notes = read(`apps/desktop/release-notes/${TEXTS_OF}.md`);
+describe('the release notes of 1.3.0 (kept as shipped)', () => {
+  const notes = read('apps/desktop/release-notes/1.3.0.md');
   const section = (lang: 'ar' | 'en' | 'ku') => new RegExp(`^::: ${lang}\\n([\\s\\S]*?)^:::$`, 'm').exec(notes)?.[1] ?? '';
-  const listing = JSON.parse(read('apps/desktop/store-listing.json')) as {
-    listings: Record<'en-us' | 'ar' | 'ku-arab', { releaseNotes: string; features: string[]; description: string }>;
-  };
 
-  const store = listing.listings;
-
-  it('is 1.4.0, the same in the app, the core and the lock file, with a notes file that has Arabic, English and Kurdish', () => {
-    expect(version).toBe('1.4.0');
-    expect(read('packages/core/src/version.ts')).toContain(`APP_VERSION = '${version}'`);
-    const lock = JSON.parse(read('package-lock.json')) as { packages: Record<string, { version?: string }> };
-    expect(lock.packages['apps/desktop']?.version).toBe(version);
-    const own = read(`apps/desktop/release-notes/${version}.md`);
-    for (const lang of ['ar', 'en', 'ku'] as const) expect(own, lang).toMatch(new RegExp(`^::: ${lang}\\n[\\s\\S]+?^:::$`, 'm'));
-  });
-
-  it.todo('has the notes of 1.4.0 in Arabic, English and Kurdish, and Store text that names 1.4.0 (the release-texts step)');
-
-  it('keeps the texts of 1.3.0 as they shipped until then', () => {
+  it('has notes in Arabic, English and Kurdish', () => {
     for (const lang of ['ar', 'en', 'ku'] as const) expect(section(lang).trim().length).toBeGreaterThan(300);
-    for (const lang of ['en-us', 'ar', 'ku-arab'] as const) expect(store[lang].releaseNotes).toContain(TEXTS_OF);
-  });
-
-  it('keeps each Store "What\'s new" within the 1500 characters Partner Center takes, and each feature within 200', () => {
-    for (const lang of ['en-us', 'ar', 'ku-arab'] as const) {
-      expect(store[lang].releaseNotes.length).toBeLessThanOrEqual(1500);
-      expect(store[lang].features.length).toBeLessThanOrEqual(20);
-      for (const feature of store[lang].features) expect(feature.length).toBeLessThanOrEqual(200);
-    }
   });
 
   it('tells of the bigger menu, Settings as rectangles and the Employees group, in the words the app uses', () => {
@@ -268,9 +238,6 @@ describe('the release notes and the Store "What\'s new" of this version', () => 
     expect(section('ar')).toContain('تفتح الإعدادات كشبكة من المستطيلات، مستطيل لكل قسم.');
     expect(section('ku')).toContain('ڕێکخستنەکان وەک تۆڕێک لە لاکێشە دەکرێنەوە، بۆ هەر بەشێک لاکێشەیەک.');
     for (const lang of ['ar', 'en', 'ku'] as const) expect(section(lang), lang).toMatch(/[*]{2}People[*]{2}.*[*]{2}Employees[*]{2}/);
-    expect(store['en-us'].releaseNotes).toContain('The side menu has bigger text and rows, and Settings opens as rectangles to click.');
-    expect(store.ar.releaseNotes).toContain('القائمة الجانبية صار نصها أكبر وصفوفها أعلى، والإعدادات تفتح كمستطيلات تنقر عليها.');
-    expect(store['ku-arab'].releaseNotes).toContain('لیستی لا گەورەتر بووە، و ڕێکخستنەکان وەک لاکێشە دەکرێنەوە.');
   });
 
   it('tells of adding a customer or supplier in the box and of the one save button (F9), with the names the buttons carry', () => {
@@ -284,9 +251,6 @@ describe('the release notes and the Store "What\'s new" of this version', () => 
     expect(section('ku')).toContain('یەک دوگمەی **پاشەکەوت، چاپ و داهاتوو**یان هەیە (**F9**). لە لیستەکەیدا ڕێگەکانی تر هەن: **پاشەکەوت و چاپ**، **پاشەکەوت و داهاتوو**، **پاشەکەوت و ناردن بە واتسئاپ**، **تۆمارکردنی پسوولە** و **پاشەکەوت وەک ڕەشنووس**.');
     expect(section('ar')).toContain('وتنبهك قاصة إذا وُجد من له الهاتف نفسه أو الاسم نفسه.');
     expect(section('ku')).toContain('قاسە ئاگادارت دەکاتەوە ئەگەر کەسێک بە هەمان تەلەفۆن یان هەمان ناو پێشتر هەبێت.');
-    expect(store['en-us'].releaseNotes).toContain('On invoices, a + in the customer or supplier box adds a new one, and one button (F9) saves, prints and opens the next.');
-    expect(store.ar.releaseNotes).toContain('علامة + داخل خانة الزبون أو المجهز تضيف واحداً جديداً في مكانه، وزر واحد (F9) يحفظ ويطبع ويفتح الفاتورة التالية.');
-    expect(store['ku-arab'].releaseNotes).toContain('«+» لە خانەی کڕیار یان دابینکەر یەکێکی نوێ زیاد دەکات، و دوگمەی F9 پاشەکەوت و چاپ دەکات و پسوولەی داهاتوو دەکاتەوە.');
   });
 
   it('names the Starter plan as the app has it: 165,000 IQD a year, 2 users, 1 company, every Pro feature except Qasa Relay and the cloud backup', () => {
@@ -302,21 +266,12 @@ describe('the release notes and the Store "What\'s new" of this version', () => 
     expect(section('en')).toContain("The office network works inside the office, on the office's own network, and not over the internet");
     expect(section('ar')).toContain('تعمل شبكة المكتب داخل المكتب على شبكته نفسها، لا عبر الإنترنت');
     expect(section('ku')).toContain('تۆڕی نووسینگە لەناو نووسینگە لەسەر تۆڕی خودی نووسینگە کار دەکات، نەک لە ڕێی ئینتەرنێتەوە');
-    for (const lang of ['en-us', 'ar', 'ku-arab'] as const) {
-      for (const words of ['Starter', '165,000', 'Qasa Relay', 'Pro', 'Business']) expect(store[lang].releaseNotes, lang).toContain(words);
-    }
-    expect(store['en-us'].releaseNotes).toContain('New Starter plan, between Free and Pro: 165,000 IQD a year, 2 users and 1 company, warehouses without a limit, and every Pro feature except Qasa Relay and the cloud backup.');
-    expect(store.ar.releaseNotes).toContain('165,000 دينار عراقي في السنة، مستخدمان وشركة واحدة، ومخازن بلا حد، وكل ميزات Pro عدا Qasa Relay والنسخ إلى السحابة.');
-    expect(store['ku-arab'].releaseNotes).toContain('165,000 دیناری عێراقی بۆ ساڵێک، 2 بەکارهێنەر و یەک کۆمپانیا، کۆگای بێ سنوور، و هەموو تایبەتمەندییەکانی Pro جگە لە Qasa Relay و باکئەپ بۆ هەور.');
   });
 
   it('says a Starter licence needs 1.3.0 or later, and to update every PC before entering the key', () => {
     expect(section('en')).toContain("**A Starter licence needs Qasa ERP 1.3.0 or later.** Earlier versions don't accept its key: update every PC first, then enter the key in **Plan & license**.");
     expect(section('ar')).toContain('**ترخيص Starter يحتاج قاصة ERP 1.3.0 أو أحدث.** الإصدارات الأقدم لا تقبل مفتاحه: حدّث كل الحواسيب أولاً، ثم أدخل المفتاح في **الخطة والترخيص**.');
     expect(section('ku')).toContain('**مۆڵەتی Starter پێویستی بە قاسە ERP 1.3.0 یان نوێتر هەیە.** وەشانە کۆنترەکان کلیلەکەی وەرناگرن: سەرەتا هەموو کۆمپیوتەرەکان نوێ بکەرەوە، پاشان کلیلەکە لە **پلان و مۆڵەت** داخڵ بکە.');
-    expect(store['en-us'].releaseNotes).toContain('A Starter licence needs Qasa ERP 1.3.0 or later');
-    expect(store.ar.releaseNotes).toContain('ترخيص Starter يحتاج قاصة ERP 1.3.0 أو أحدث');
-    expect(store['ku-arab'].releaseNotes).toContain('مۆڵەتی Starter پێویستی بە قاسە ERP 1.3.0 یان نوێتر هەیە');
     // why: a licence key and an activation token may name only the plans the app knows (1.2.1 knew pro and business)
     expect(read('packages/server/src/license.ts')).toContain('plan: z.enum(PAID_PLAN_IDS)');
     expect(read('packages/server/src/activation.ts')).toContain('plan: z.enum(PAID_PLAN_IDS)');
@@ -338,15 +293,249 @@ describe('the release notes and the Store "What\'s new" of this version', () => 
     expect(section('en')).toContain('**Nothing is deleted and no user is switched off**, and an admin always keeps a place');
     expect(section('ar')).toContain('**لا يُحذف شيء ولا يُوقَف أي مستخدم**، ويبقى للمدير مكان دائماً');
     expect(section('ku')).toContain('**هیچ شتێک ناسڕدرێتەوە و هیچ بەکارهێنەرێک ناچالاک ناکرێت**، و بەڕێوەبەر هەمیشە شوێنی دەمێنێت');
-    expect(store['en-us'].releaseNotes).toContain('The number of users in your plan now counts at sign-in too, on every plan (Free 1, Starter 2, Pro 5, Business without a limit');
-    expect(store['en-us'].releaseNotes).toContain('admins first, then the users made earliest');
-    expect(store['en-us'].releaseNotes).toContain('Nothing is deleted and no user is switched off');
-    expect(store.ar.releaseNotes).toContain('عدد المستخدمين في خطتك صار يُحسب عند تسجيل الدخول أيضاً، في كل الخطط');
-    expect(store.ar.releaseNotes).toContain('المدراء أولاً، ثم الأقدم إنشاءً');
-    expect(store.ar.releaseNotes).toContain('لا يُحذف شيء ولا يُوقَف أي مستخدم');
-    expect(store['ku-arab'].releaseNotes).toContain('ژمارەی بەکارهێنەرانی پلانەکەت ئێستا لە کاتی چوونەژوورەوەشدا دەژمێردرێت، لە هەموو پلانەکاندا');
-    expect(store['ku-arab'].releaseNotes).toContain('سەرەتا بەڕێوەبەران، پاشان ئەوانەی زووتر دروستکراون');
-    expect(store['ku-arab'].releaseNotes).toContain('هیچ شتێک ناسڕدرێتەوە و هیچ بەکارهێنەرێک ناچالاک ناکرێت');
+  });
+
+  it('upgrades no company file in 1.3.0, so it has no "Before you update" warning', () => {
+    expect(notes).not.toMatch(/Before you update|قبل التحديث|پێش نوێکردنەوە/);
+    expect(notes).not.toMatch(/company file is upgraded|يُرقّى ملف الشركة|فایلی کۆمپانیا بەرز دەکرێتەوە/);
+  });
+});
+
+describe('the release notes and the Store "What\'s new" of this version', () => {
+  const version = (JSON.parse(read('apps/desktop/package.json')) as { version: string }).version;
+  const notes = read(`apps/desktop/release-notes/${version}.md`);
+  const section = (lang: 'ar' | 'en' | 'ku') => new RegExp(`^::: ${lang}\\n([\\s\\S]*?)^:::$`, 'm').exec(notes)?.[1] ?? '';
+  const listing = JSON.parse(read('apps/desktop/store-listing.json')) as {
+    listings: Record<'en-us' | 'ar' | 'ku-arab', { releaseNotes: string; features: string[]; description: string }>;
+  };
+
+  const store = listing.listings;
+
+  it('is 1.4.0, the same in the app, the core and the lock file, with a notes file that has Arabic, English and Kurdish', () => {
+    expect(version).toBe('1.4.0');
+    expect(read('packages/core/src/version.ts')).toContain(`APP_VERSION = '${version}'`);
+    const lock = JSON.parse(read('package-lock.json')) as { packages: Record<string, { version?: string }> };
+    expect(lock.packages['apps/desktop']?.version).toBe(version);
+    for (const lang of ['ar', 'en', 'ku'] as const) expect(notes, lang).toMatch(new RegExp(`^::: ${lang}\\n[\\s\\S]+?^:::$`, 'm'));
+  });
+
+  it('has the notes of 1.4.0 in Arabic, English and Kurdish, and Store text that names 1.4.0', () => {
+    expect(notes).toMatch(/^\*\*Qasa ERP 1\.4\.0 for Windows\*\*: /);
+    for (const lang of ['ar', 'en', 'ku'] as const) expect(section(lang).trim().length, lang).toBeGreaterThan(3000);
+    expect(store['en-us'].releaseNotes).toMatch(/^Qasa ERP 1\.4\.0\. /);
+    expect(store.ar.releaseNotes).toMatch(/^قاصة ERP 1\.4\.0\. /);
+    expect(store['ku-arab'].releaseNotes).toMatch(/^قاسە ERP 1\.4\.0\. /);
+    for (const lang of ['en-us', 'ar', 'ku-arab'] as const) expect(store[lang].releaseNotes, lang).not.toContain('1.3.0');
+    // the three languages tell of the same things: the same headings and the same number of points under them
+    const shape = (lang: 'ar' | 'en' | 'ku') => section(lang).split('\n').filter((l) => /^(### |- )/.test(l)).map((l) => l.slice(0, 2)).join('');
+    expect(shape('ar')).toBe(shape('en'));
+    expect(shape('ku')).toBe(shape('en'));
+  });
+
+  it('keeps each Store "What\'s new" within the 1500 characters Partner Center takes, and each feature within 200', () => {
+    for (const lang of ['en-us', 'ar', 'ku-arab'] as const) {
+      expect(store[lang].releaseNotes.length).toBeLessThanOrEqual(1500);
+      expect(store[lang].features.length).toBeLessThanOrEqual(20);
+      for (const feature of store[lang].features) expect(feature.length).toBeLessThanOrEqual(200);
+    }
+  });
+
+  it('says plainly that 1.3 cannot open a company file 1.4 has upgraded, so every PC and the Store version are updated', () => {
+    // why: 1.4 adds migration 13 (the item's purchase price, the vouchers that wait for approval), and an app refuses a newer file
+    const db = read('packages/server/src/db.ts');
+    expect(db).toContain('{ sql: V13, mysql: { tables: true, steps: () => V13_MYSQL_STEPS } }\n];');
+    expect(db).toContain("if (version > app) throw new AppError(409, 'database_newer', { version, app });");
+    expect(section('en')).toContain('### Before you update\n- **The company file is upgraded to a new version.** A copy of it is kept beside it before the update. Qasa ERP 1.3 cannot open a file that 1.4 has upgraded, so update every PC that opens the same company, and the Microsoft Store version too.');
+    expect(section('ar')).toContain('### قبل التحديث\n- **يُرقّى ملف الشركة إلى إصدار جديد.** تُحفظ نسخة منه بجانبه قبل التحديث. لا يفتح قاصة ERP 1.3 ملفاً رقّاه الإصدار 1.4، فحدّث كل حاسوب يفتح الشركة نفسها، ونسخة متجر Microsoft أيضاً.');
+    expect(section('ku')).toContain('### پێش نوێکردنەوە\n- **فایلی کۆمپانیا بەرز دەکرێتەوە بۆ وەشانێکی نوێ.** پێش نوێکردنەوە کۆپییەکی لە تەنیشتی دەپارێزرێت. قاسە ERP 1.3 فایلێک ناکاتەوە کە 1.4 بەرزی کردبێتەوە');
+    // before the list of what is new, in each language
+    for (const lang of ['ar', 'en', 'ku'] as const) expect(section(lang).indexOf('1.3'), lang).toBeLessThan(section(lang).indexOf('0.1.8'));
+    expect(store['en-us'].releaseNotes).toContain('The company file is upgraded: update every PC that opens it.');
+    expect(store.ar.releaseNotes).toContain('يُرقّى ملف الشركة: حدّث كل حاسوب يفتحه.');
+    expect(store['ku-arab'].releaseNotes).toContain('فایلی کۆمپانیا بەرز دەکرێتەوە: هەموو کۆمپیوتەرەکان نوێ بکەرەوە.');
+  });
+
+  it('tells of Cash or Credit on the sales invoice and at the till, one way for a sale, with the words the buttons carry', () => {
+    const words = read('apps/web/src/i18n.ts');
+    expect(words).toContain("payCash: ['نقداً', 'Cash', 'نەقد']");
+    expect(words).toContain("payCredit: ['آجل', 'On credit', 'قەرز']");
+    expect(read('apps/web/src/i18n/sales14.ts')).toContain("'A sale is either paid now or on credit as a whole, never part one and part the other.'");
+    expect(read('apps/web/src/pages/Pos.tsx')).toContain("t('s14_creditNeedsCustomer')");
+    expect(section('en')).toContain('a sales invoice and a sale at the till are paid one of two ways: **Cash** (paid now) or **On credit** (the whole sale goes on the customer\'s account as a debt). A credit sale needs a customer, and a sale is never part cash and part credit.');
+    expect(section('ar')).toContain('**نقداً** (يُدفع الآن) أو **آجل** (يُسجَّل البيع كله ديناً على حساب الزبون). البيع الآجل يحتاج زبوناً، ولا يُقسم البيع بين النقد والآجل.');
+    expect(section('ku')).toContain('**نەقد** (ئێستا دەدرێت) یان **قەرز** (هەموو فرۆشتنەکە وەک قەرز لەسەر کڕیار تۆمار دەکرێت). فرۆشتن بە قەرز پێویستی بە کڕیار هەیە');
+    // the card and wallet row is gone from the till: said as a change, and no longer offered in the Store listing
+    expect(section('en')).toContain('**The till offers Cash and Credit only.** The card and wallet row is gone from the point of sale. Sales paid by card or wallet before 1.4 still show, print, return and count in shift reports and the end-of-day close.');
+    expect(section('ar')).toContain('**نقطة البيع تعرض نقداً وآجل فقط.** أُزيل صف البطاقة والمحافظ من نقطة البيع.');
+    expect(section('ku')).toContain('**خاڵی فرۆشتن تەنها نەقد و قەرز پیشان دەدات.** ڕیزی کارت و جزدان لە خاڵی فرۆشتن لابرا.');
+    expect(store['en-us'].releaseNotes).toContain('Sales invoices and the till: Cash or Credit only, one per sale; credit needs a customer. Card and wallets are gone from the till.');
+    expect(store.ar.releaseNotes).toContain('فاتورة المبيعات ونقطة البيع: الدفع نقداً أو آجل فقط، بطريقة واحدة لكل بيع؛ البيع الآجل يحتاج زبوناً، وأُزيل صف البطاقة والمحافظ من نقطة البيع.');
+    expect(store['ku-arab'].releaseNotes).toContain('پسوولەی فرۆشتن و خاڵی فرۆشتن: تەنها نەقد یان قەرز، یەکێک بۆ هەر فرۆشتنێک؛ قەرز پێویستی بە کڕیار هەیە. کارت و جزدان لە خاڵی فرۆشتن لابران.');
+    for (const lang of ['en-us', 'ar', 'ku-arab'] as const) {
+      const lines = [store[lang].description, ...store[lang].features].join('\n');
+      expect(lines, lang).not.toMatch(/FIB|ZainCash|Qi Card|زين كاش|كي كارد|زەین کاش|کی کارد/);
+    }
+    expect(store['en-us'].description).toContain('• At the point of sale each sale is paid in cash or goes on credit, on the customer’s account; a credit sale needs a customer.');
+    expect(store['en-us'].features).toContain('Sales and purchase invoices paid by Cash or Credit, returns, and the amount in words');
+  });
+
+  it('tells of Receive payment and Pay supplier with the balance before and after, and of the balance printed on the receipt voucher', () => {
+    const words = read('apps/web/src/i18n/sales14.ts');
+    expect(words).toContain("s14_receive: ['قبض دفعة', 'Receive payment', 'وەرگرتنی پارە']");
+    expect(words).toContain("s14_paySupplier: ['دفع للمجهز', 'Pay supplier', 'پارەدان بە دابینکەر']");
+    expect(words).toContain("s14_balanceBefore: ['الرصيد قبل', 'Balance before', 'ڕەسیدی پێشوو']");
+    expect(words).toContain("s14_balanceAfter: ['المتبقي بعد', 'Remaining after', 'ڕەسیدی ماوە']");
+    // where the form opens from: the customer or supplier, a credit invoice, the vouchers list
+    for (const page of ['Parties', 'Invoices', 'Entries']) expect(read(`apps/web/src/pages/${page}.tsx`), page).toContain('<QuickVoucherButton ');
+    const print = read('apps/web/src/i18n/print14.ts');
+    expect(print).toContain("pd_h_previousBalance: ['الرصيد السابق', 'Previous balance', 'ڕەسیدی پێشوو']");
+    expect(print).toContain("pd_h_remainingBalance: ['الرصيد المتبقي', 'Remaining balance', 'ڕەسیدی ماوە']");
+    expect(section('en')).toContain('**Receive payment and Pay supplier:** a short form takes money from a customer or pays a supplier, and shows the balance before and what remains after. Open it from the customer or supplier, from a credit invoice, or from the vouchers list.');
+    expect(section('ar')).toContain('**قبض دفعة ودفع للمجهز:** نموذج قصير تقبض به من الزبون أو تدفع به للمجهز، ويعرض الرصيد قبل الدفعة والمتبقي بعدها.');
+    expect(section('ku')).toContain('**وەرگرتنی پارە و پارەدان بە دابینکەر:** فۆرمێکی کورت کە پارە لە کڕیار وەردەگریت یان بە دابینکەر دەدەیت، و ڕەسیدی پێشوو و ڕەسیدی ماوە پیشان دەدات.');
+    expect(section('en')).toContain('it prints the customer\'s **Previous balance**, the amount received and the **Remaining balance**.');
+    expect(section('ar')).toContain('يُطبع عليه **الرصيد السابق** للزبون والمبلغ المقبوض و**الرصيد المتبقي**.');
+    expect(section('ku')).toContain('**ڕەسیدی پێشوو**ی کڕیار، بڕی پارەی وەرگیراو و **ڕەسیدی ماوە**ی لەسەر چاپ دەکرێت.');
+    expect(store['en-us'].releaseNotes).toContain('Receive payment and Pay supplier: a short form from the customer or supplier, the invoice or the vouchers list, with the balance before and after. The receipt voucher prints the previous balance, amount received and remaining balance.');
+    expect(store.ar.releaseNotes).toContain('«قبض دفعة» و«دفع للمجهز»: نموذج قصير من الزبون أو المجهز أو الفاتورة الآجلة أو قائمة السندات، يعرض الرصيد قبل الدفعة وبعدها. سند القبض المطبوع يحمل الرصيد السابق والمبلغ المقبوض والرصيد المتبقي.');
+    expect(store['ku-arab'].releaseNotes).toContain('«وەرگرتنی پارە» و «پارەدان بە دابینکەر»: فۆرمێکی کورت لە کڕیار، دابینکەر، پسوولە یان لیستی سەنەدەکانەوە، بە ڕەسیدی پێشوو و ڕەسیدی ماوە. سەنەدی وەرگرتن ڕەسیدی پێشوو، بڕی پارەی وەرگیراو و ڕەسیدی ماوە چاپ دەکات.');
+  });
+
+  it('tells of the customers and suppliers lists that say who owes what, in the words the lists carry', () => {
+    const words = read('apps/web/src/i18n/shell14.ts');
+    expect(words).toContain("s14_owesUs: ['عليه لنا', 'Owes us', 'قەرزارمانە']");
+    expect(words).toContain("s14_weOwe: ['له علينا', 'We owe him', 'قەرزاری ئەوین']");
+    expect(words).toContain("s14_settled: ['لا رصيد', 'Nothing owed', 'بێ قەرز']");
+    expect(words).toContain("s14_oweCustomer: ['لنا على الزبائن', 'Customers owe us', 'کڕیاران قەرزارمانن']");
+    expect(words).toContain("s14_oweSupplier: ['للمجهزين علينا', 'We owe suppliers', 'قەرزاری دابینکەرانین']");
+    expect(words).toContain("s14_onlyOwingCustomers: ['المدينون فقط', 'Only those who owe', 'تەنها قەرزارەکان']");
+    expect(words).toContain("s14_sortDebt: ['الأكبر ديناً أولاً', 'Biggest debt first', 'زۆرترین قەرز لە پێشەوە']");
+    expect(section('en')).toContain('the Customers and Suppliers lists say **Owes us**, **We owe him** or **Nothing owed** beside each name, with the totals above the list (**Customers owe us**, **We owe suppliers**). Show **Only those who owe**, and sort by **Biggest debt first**.');
+    expect(section('ar')).toContain('**عليه لنا** أو **له علينا** أو **لا رصيد**، والمجاميع أعلى القائمة (**لنا على الزبائن**، **للمجهزين علينا**). اعرض **المدينون فقط**، ورتّب **الأكبر ديناً أولاً**.');
+    expect(section('ku')).toContain('**قەرزارمانە**، **قەرزاری ئەوین** یان **بێ قەرز**، و کۆکان لە سەرەوەی لیستەکەن (**کڕیاران قەرزارمانن**، **قەرزاری دابینکەرانین**). **تەنها قەرزارەکان** پیشان بدە، و بە **زۆرترین قەرز لە پێشەوە** ڕیزیان بکە.');
+    expect(store['en-us'].releaseNotes).toContain('Customers and Suppliers lists say who owes what in words, with totals and filters.');
+    expect(store.ar.releaseNotes).toContain('قائمتا الزبائن والمجهزين تكتبان من عليه ومن له بالكلمات، مع المجاميع والتصفية.');
+    expect(store['ku-arab'].releaseNotes).toContain('لیستی کڕیاران و دابینکەران بە وشە دەڵێن کێ قەرزارە، لەگەڵ کۆ و «تەنها قەرزارەکان».');
+  });
+
+  it('names the print designs as the gallery does, and the company logo as part of the paid plans, a saved one still printing', () => {
+    const words = read('apps/web/src/i18n/print14.ts');
+    expect(words).toContain("pd_g_classic: ['الافتراضي', 'Standard', 'بنەڕەتی']");
+    expect(words).toContain("pd_g_modernLines: ['حديث بخطوط', 'Modern with lines', 'مۆدێرن بە هێڵ']");
+    expect(words).toContain("pd_g_ledger: ['دفتري كلاسيكي', 'Classic ledger', 'دەفتەری کلاسیکی']");
+    expect(words).toContain("pd_g_halfPage: ['نصف صفحة (A5)', 'Half page (A5)', 'نیو پەڕە (A5)']");
+    expect(words).toContain("pd_g_receipt80: ['إيصال حراري 80 مم', '80 mm thermal receipt', 'وەسڵی گەرمی 80 ملم']");
+    expect(section('en')).toContain('**Print design** opens with a gallery of ready-made designs beside a live preview: **Standard**, **Modern with lines**, **Classic ledger** (black and white, a fully ruled table, saves ink), **Modern**, **Half page (A5)** and **80 mm thermal receipt**.');
+    expect(section('ar')).toContain('**الافتراضي**، **حديث بخطوط**، **دفتري كلاسيكي** (أبيض وأسود، جدول مسطّر كاملاً، يوفّر الحبر)، **حديث**، **نصف صفحة (A5)** و**إيصال حراري 80 مم**.');
+    expect(section('ku')).toContain('**بنەڕەتی**، **مۆدێرن بە هێڵ**، **دەفتەری کلاسیکی** (ڕەش و سپی، خشتەی تەواو هێڵکراو، مەرەکەب کەم بەکاردەهێنێت)، **مۆدێرن**، **نیو پەڕە (A5)** و **وەسڵی گەرمی 80 ملم**.');
+    // the logo: Starter has it too, so it is for the paid plans, never "(Pro)"; a logo saved before stays
+    const plans = read('packages/core/src/plans.ts');
+    expect(/STARTER_FEATURES: readonly Feature\[\] = \[([^\]]*)\]/.exec(plans)?.[1]).toContain("'companyLogo'");
+    expect(plans).toContain("free: { id: 'free', limits: { companies: 1, users: 1, warehouses: 1 }, features: [] }");
+    expect(words).toContain("'Your logo, saved earlier, keeps printing. Changing it needs a paid plan.'");
+    expect(section('en')).toContain('**Company logo on printed papers (paid plans):** adding or changing the logo is part of Starter, Pro and Business. A logo saved before 1.4 keeps printing on every plan.');
+    expect(section('ar')).toContain('**شعار الشركة على المطبوعات (الخطط المدفوعة):** إضافة الشعار أو تغييره من مزايا Starter وPro وBusiness. والشعار المحفوظ قبل 1.4 يبقى يُطبع في كل الخطط.');
+    expect(section('ku')).toContain('**لۆگۆی کۆمپانیا لەسەر چاپکراوەکان (پلانەکانی بە پارە):** زیادکردن یان گۆڕینی لۆگۆ بەشێکە لە Starter، Pro و Business. ئەو لۆگۆیەی پێش 1.4 پاشەکەوت کراوە لە هەموو پلانەکاندا هەر چاپ دەکرێت.');
+    expect(store['en-us'].releaseNotes).toContain('New print designs (Modern with lines, Classic ledger, Half page A5, 80 mm) in a gallery with a live preview, and more switches. Company logo on printed papers (paid plans); a logo saved earlier keeps printing.');
+    expect(store.ar.releaseNotes).toContain('شعار الشركة على المطبوعات (الخطط المدفوعة)؛ والشعار المحفوظ سابقاً يبقى يُطبع.');
+    expect(store['ku-arab'].releaseNotes).toContain('لۆگۆی کۆمپانیا لەسەر چاپکراوەکان (پلانەکانی بە پارە)؛ لۆگۆی پێشوو هەر چاپ دەکرێت.');
+    expect(store['en-us'].description).toContain('and your logo (paid plans). Choose a design for each document from a gallery with a live preview (standard, modern with lines, classic ledger, modern, half page A5 or an 80 mm thermal receipt)');
+    expect(store.ar.description).toContain('وشعارك (الخطط المدفوعة). اختر تصميماً لكل مستند من معرض بمعاينة مباشرة');
+    expect(store['ku-arab'].description).toContain('و لۆگۆکەت (پلانەکانی بە پارە). بۆ هەر بەڵگەیەک دیزاینێک لە پێشانگایەک بە پێشبینینی ڕاستەوخۆ هەڵبژێرە');
+    for (const lang of ['en-us', 'ar', 'ku-arab'] as const) {
+      expect(store[lang].features.filter((f) => /logo|شعار|لۆگۆ/.test(f)).every((f) => /\((paid plans|الخطط المدفوعة|پلانەکانی بە پارە)\)$/.test(f)), lang).toBe(true);
+    }
+    expect(read('README.md')).toContain('| Your company logo on printed papers | | ✓ | ✓ | ✓ |');
+  });
+
+  it('tells of the item form, the Market / Supermarket business type and the scale labels read at the till', () => {
+    const words = read('apps/web/src/i18n/items14.ts');
+    expect(words).toContain("it_name: ['اسم المادة', 'Item name', 'ناوی کاڵا']");
+    expect(words).toContain("it_purchasePrice: ['سعر الشراء', 'Purchase price', 'نرخی کڕین']");
+    expect(words).toContain("un_showAll: ['عرض كل الوحدات', 'Show all units', 'هەموو یەکەکان پیشان بدە']");
+    expect(words).toContain("bt_market: ['ماركت / سوبرماركت', 'Market / Supermarket', 'مارکێت / سوپەرمارکێت']");
+    expect(words).toContain('give the item a 7-digit barcode starting with 2');
+    expect(section('en')).toContain('one **Item name** for all three languages (an item can still have a different name in each), a picture when you add the item, the **Purchase price** beside the sale price with the profit');
+    expect(section('en')).toContain('with **Show all units** for the rest.');
+    expect(section('ar')).toContain('**اسم المادة** واحد للغات الثلاث (ويمكن أن يبقى للمادة اسم مختلف في كل لغة)، وصورة عند إضافة المادة، و**سعر الشراء** بجانب سعر البيع مع الربح');
+    expect(section('ku')).toContain('یەک **ناوی کاڵا** بۆ هەر سێ زمانەکە (کاڵا هێشتا دەتوانێت لە هەر زمانێکدا ناوێکی جیاوازی هەبێت)، وێنە لە کاتی زیادکردنی کاڵادا، **نرخی کڕین** لە تەنیشت نرخی فرۆشتن لەگەڵ قازانج');
+    expect(section('en')).toContain('**Market / Supermarket:** a new business type, with expiry dates switched on and the grocery starter list. For items sold by weight, give the item a 7-digit barcode starting with 2: the till then reads the weight from the label the scale prints.');
+    expect(section('ar')).toContain('**ماركت / سوبرماركت:** نوع نشاط جديد');
+    expect(section('ar')).toContain('اجعل باركود المادة 7 أرقام تبدأ بـ 2، فتقرأ نقطة البيع الوزن من الملصق الذي يطبعه الميزان.');
+    expect(section('ku')).toContain('**مارکێت / سوپەرمارکێت:** جۆرێکی نوێی کار');
+    expect(section('ku')).toContain('بارکۆدی کاڵاکە بکە بە 7 ژمارە کە بە 2 دەست پێدەکات، ئینجا خاڵی فرۆشتن کێشەکە لەو لێبڵە دەخوێنێتەوە کە تەرازووەکە چاپی دەکات.');
+    expect(store['en-us'].releaseNotes).toContain('Item form: one name, a picture when adding, purchase price beside sale price with the profit, clearer units. Market / Supermarket business type, with scale labels that carry the weight to the till.');
+    expect(store.ar.releaseNotes).toContain('نوع النشاط الجديد «ماركت / سوبرماركت»، مع ملصقات الميزان التي تحمل الوزن إلى نقطة البيع.');
+    expect(store['ku-arab'].releaseNotes).toContain('جۆری کاری «مارکێت / سوپەرمارکێت»، بە لێبڵی تەرازوو کە کێش دەگەیەنێتە خاڵی فرۆشتن.');
+  });
+
+  it('says vouchers wait for approval only when the company switches it on, and who approves them', () => {
+    // off unless switched on: the setting is on only when it was written as '1'
+    expect(read('packages/server/src/journal.ts')).toContain("return readSetting(db, NEED_APPROVAL) === '1';");
+    expect(read('apps/web/src/pages/Users.tsx')).toContain('<VoucherApprovalSetting />');
+    expect(read('apps/web/src/i18n/sales14.ts')).toContain("s14_needTitle: ['السندات تحتاج موافقة', 'Vouchers need approval', 'سەنەدەکان پێویستیان بە پەسەندکردنە']");
+    expect(read('apps/web/src/i18n.ts')).toContain("role_approver: ['المصادق', 'Approver', 'پەسەندکەر']");
+    expect(section('en')).toContain('**Vouchers need approval** (Settings → **Users**; off unless you switch it on): vouchers made by users who may not approve wait, outside every balance, until a user with the **Approver** role or an admin approves them, or rejects them with a reason.');
+    expect(section('ar')).toContain('**السندات تحتاج موافقة** (الإعدادات ← **المستخدمون**؛ متوقفة إلى أن تفعّلها): سندات من ليست له صلاحية المصادقة تنتظر، خارج كل الأرصدة، حتى يوافق عليها مستخدم له دور **المصادق** أو مدير، أو يرفضها مع السبب.');
+    expect(section('ku')).toContain('**سەنەدەکان پێویستیان بە پەسەندکردنە** (ڕێکخستنەکان ← **بەکارهێنەران**؛ ناچالاکە تا خۆت چالاکی نەکەیت)');
+    expect(section('ku')).toContain('تا بەکارهێنەرێک بە ڕۆڵی **پەسەندکەر** یان بەڕێوەبەرێک پەسەندی بکات، یان بە هۆکارەوە ڕەتی بکاتەوە.');
+    expect(store['en-us'].releaseNotes).toContain('Vouchers can wait for approval by an Approver (off unless switched on).');
+    expect(store.ar.releaseNotes).toContain('السندات يمكن أن تنتظر موافقة مستخدم له دور المصادق (متوقفة إلى أن تفعّلها).');
+    expect(store['ku-arab'].releaseNotes).toContain('سەنەد دەتوانێت چاوەڕێی پەسەندکردنی «پەسەندکەر» بێت (بە بنەڕەت ناچالاکە).');
+  });
+
+  it('says cashiers do not see cost or profit, each person sees only the buttons they may use, and the dollar rate is at the top', () => {
+    expect(read('apps/web/src/nav.ts')).toContain("ownWith: 'sales', ownKey: 's14_myVouchers'");
+    expect(read('apps/web/src/i18n/sales14.ts')).toContain("s14_myVouchers: ['سنداتي', 'My vouchers', 'سەنەدەکانم']");
+    expect(read('apps/web/src/may.ts')).toContain('is offered only when its action is one the server would accept from this person');
+    expect(read('apps/web/src/industry/HeaderRate.tsx')).toContain("today's dollar rate at the top of the window, beside the person's name");
+    expect(section('en')).toContain("**Cashiers don't see cost or profit:** a user without the stock, purchases or admin permission sees no purchase price, average cost, stock value or profit.");
+    expect(section('en')).toContain('their vouchers page is **My vouchers**, with only the vouchers they prepared.');
+    expect(section('ar')).toContain('**الكاشير لا يرى الكلفة ولا الربح:** المستخدم الذي ليست له صلاحية المخزن أو المشتريات أو المدير لا يرى سعر الشراء ولا متوسط الكلفة ولا قيمة المخزون ولا الربح.');
+    expect(section('ar')).toContain('وصفحة السندات عنده **سنداتي**');
+    expect(section('ku')).toContain('**کاشێر تێچوو و قازانج نابینێت:** ئەو بەکارهێنەرەی دەسەڵاتی کۆگا، کڕین یان بەڕێوەبەری نییە نرخی کڕین، تێکڕای تێچوو، بەهای کۆگا و قازانج نابینێت.');
+    expect(section('ku')).toContain('پەڕەی سەنەدەکانی **سەنەدەکانم**ە');
+    expect(section('en')).toContain('**Only the buttons you may use:** a menu row, tile or button shows only when the person signed in may do what it does.');
+    expect(section('en')).toContain('**The dollar rate at the top of the window,** beside your name.');
+    expect(section('ar')).toContain('**سعر الدولار أعلى النافذة،** بجانب اسمك.');
+    expect(section('ku')).toContain('**نرخی دۆلار لە سەرەوەی پەنجەرەکە،** لە تەنیشت ناوەکەت.');
+    expect(store['en-us'].releaseNotes).toContain('Cashiers do not see cost or profit; users see only the buttons they may use. Dollar rate in the top bar; item pictures at the till.');
+    expect(store.ar.releaseNotes).toContain('الكاشير لا يرى الكلفة ولا الربح، وكل مستخدم يرى الأزرار التي يحق له استعمالها فقط. سعر الدولار في الشريط العلوي، ونقطة البيع تعرض صور المواد.');
+    expect(store['ku-arab'].releaseNotes).toContain('کاشێر تێچوو و قازانج نابینێت؛ هەر کەس تەنها ئەو دوگمانە دەبینێت کە مافی هەیە. نرخی دۆلار لە شریتی سەرەوە؛ وێنەی کاڵا لە خاڵی فرۆشتن.');
+  });
+
+  it('tells of the Windows app: the question at closing, the printers page and where the data is, in the words the app shows', () => {
+    const desktop = read('apps/desktop/src/texts.ts');
+    expect(desktop).toContain("closeAsk: ['هل تحفظ نسخة احتياطية قبل الإغلاق؟', 'Back up before closing?', 'پێش داخستن باکئەپ بکرێت؟']");
+    expect(desktop).toContain("closeAskBackup: ['احفظ نسخة وأغلق', 'Back up and close', 'باکئەپ بکە و دایبخە']");
+    expect(desktop).toContain("closeAskClose: ['أغلق دون نسخة', 'Close without backup', 'بەبێ باکئەپ دایبخە']");
+    expect(desktop).toContain("closeAskNever: ['لا تسألني مرة أخرى', 'Don’t ask again', 'جارێکی تر مەپرسە']");
+    const words = read('apps/web/src/i18n/shell14.ts');
+    expect(words).toContain("s14_prnDefault: ['الافتراضية في ويندوز', 'Windows default', 'بنەڕەتیی ویندۆز']");
+    expect(words).toContain("s14_dataOfficeNoName: ['البيانات على حاسوب المكتب', 'Data is on the office PC', 'داتا لەسەر کۆمپیوتەری نووسینگەیە']");
+    expect(section('en')).toContain('closing asks **Back up before closing?** with **Back up and close**, **Close without backup** or Cancel, and **Don’t ask again**. Switch it in Settings → **Backups**.');
+    expect(section('ar')).toContain('**هل تحفظ نسخة احتياطية قبل الإغلاق؟** مع **احفظ نسخة وأغلق** أو **أغلق دون نسخة** أو إلغاء، ومع **لا تسألني مرة أخرى**. تغيّره من الإعدادات ← **النسخ الاحتياطية**.');
+    expect(section('ku')).toContain('**پێش داخستن باکئەپ بکرێت؟** لەگەڵ **باکئەپ بکە و دایبخە**، **بەبێ باکئەپ دایبخە** یان پاشگەزبوونەوە، و لەگەڵ **جارێکی تر مەپرسە**. لە ڕێکخستنەکان ← **باکئەپەکان** دەیگۆڕیت.');
+    expect(section('en')).toContain('Settings → **Printers** lists the printers on this computer, marks the **Windows default** and which are ready or offline, and suggests a printer for each kind of paper. They are suggestions: check them and print a test page.');
+    expect(section('ar')).toContain('الإعدادات ← **الطابعات** تعرض طابعات هذا الحاسوب، وتعلّم **الافتراضية في ويندوز**');
+    expect(section('ku')).toContain('ڕێکخستنەکان ← **چاپکەرەکان** چاپکەرەکانی ئەم کۆمپیوتەرە پیشان دەدات، **بنەڕەتیی ویندۆز**');
+    expect(section('en')).toContain('a PC connected to the office PC now says **Data is on the office PC** with its name');
+    expect(section('ar')).toContain('الحاسوب المتصل بحاسوب المكتب يقول الآن **البيانات على حاسوب المكتب** مع اسمه');
+    expect(section('ku')).toContain('ئێستا دەڵێت **داتا لەسەر کۆمپیوتەری نووسینگەیە** لەگەڵ ناوەکەی');
+    expect(store['en-us'].releaseNotes).toContain('On Windows: closing asks to back up, Printers finds the Windows default and suggests a printer per paper, and a PC connected to the office PC says where the data is.');
+    expect(store.ar.releaseNotes).toContain('في ويندوز: يسألك البرنامج عن نسخة احتياطية عند الإغلاق، والإعدادات ← الطابعات تعرف الطابعة الافتراضية في ويندوز وتقترح طابعة لكل نوع ورق، والحاسوب المتصل بحاسوب المكتب يقول أين البيانات.');
+    expect(store['ku-arab'].releaseNotes).toContain('لە ویندۆز: لە داخستندا دەربارەی باکئەپ دەپرسێت، «چاپکەرەکان» بنەڕەتیی ویندۆز دەدۆزێتەوە و بۆ هەر پەڕەیەک چاپکەرێک پێشنیار دەکات، و کۆمپیوتەری بەستراو بە کۆمپیوتەری نووسینگە دەڵێت داتا لە کوێیە.');
+  });
+
+  it('writes the Kurdish texts with the app\'s accounting words, and says the wording was revised', () => {
+    const ku = section('ku') + store['ku-arab'].releaseNotes;
+    for (const word of ['ڕەسید', 'قەرز', 'نەقد', 'قاسە', 'سەنەد', 'پسوولە', 'وەسڵ', 'باکئەپ', 'کۆگا']) expect(ku, word).toContain(word);
+    for (const word of ['قەید', 'ڕەسید', 'تەرحیل', 'جەرد', 'نەقد', 'قەرز', 'قاسە', 'وەسڵ']) {
+      for (const lang of ['ar', 'en', 'ku'] as const) expect(section(lang), `${lang} ${word}`).toContain(word);
+    }
+    expect(store['en-us'].releaseNotes).toContain('Kurdish wording revised to accountants’ terms.');
+    expect(store.ar.releaseNotes).toContain('روجعت الصياغة الكردية إلى مصطلحات المحاسبين.');
+    expect(store['ku-arab'].releaseNotes).toContain('وشەکانی کوردی کراون بە زاراوەی ژمێریاران.');
   });
 
   it('lists four plans in the Store description, each paid one with its price for a year, and one feature line for them', () => {
@@ -433,12 +622,6 @@ describe('the release notes and the Store "What\'s new" of this version', () => 
     for (const row of rows) expect(row.split('|').length, row).toBe(7);
   });
 
-  it('upgrades no company file in 1.3.0, so it has no "Before you update" warning', () => {
-    expect(notes).not.toMatch(/Before you update|قبل التحديث|پێش نوێکردنەوە/);
-    const all = [notes, ...Object.values(store).map((l) => l.releaseNotes)].join('\n');
-    expect(all).not.toMatch(/company file is upgraded|يُرقّى ملف الشركة|فایلی کۆمپانیا بەرز دەکرێتەوە/);
-  });
-
   it('never says the automatic daily backups came to Free: they stay with Pro and Business', () => {
     const all = [notes, ...Object.values(store).flatMap((l) => [l.releaseNotes, ...l.features])].join('\n');
     expect(all).not.toMatch(/automatic (daily )?backups? on every plan|daily backups? on (every plan|Free)/i);
@@ -483,7 +666,6 @@ describe('the release notes and the Store "What\'s new" of this version', () => 
     expect(all).not.toMatch(/تطبيق (الموبايل|الهاتف)|النسخة (السحابية|على الإنترنت)|ئەپی مۆبایل|وەشانی ئۆنلاین/);
   });
 });
-
 describe('the licence addon (native/licence) is proprietary, not open source', () => {
   it('says so in its Cargo.toml and its own LICENSE', () => {
     const cargo = read('native/licence/Cargo.toml');
