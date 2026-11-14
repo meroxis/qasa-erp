@@ -27,6 +27,8 @@ export function QuickVoucherButton({ kind, preset, className = 'btn', onDone }: 
   const { t } = useI18n();
   const { permissions } = useData();
   const [open, setOpen] = useState(false);
+  // the voucher just made: a link to it beside the button, to print the receipt or see whether it waits
+  const [made, setMade] = useState<EntryView | null>(null);
   if (!mayQuickVoucher(kind, permissions)) return null;
   return (
     // (in a list the row itself opens the customer: a click on the button or in its form stays here)
@@ -34,7 +36,8 @@ export function QuickVoucherButton({ kind, preset, className = 'btn', onDone }: 
       <button type="button" className={className} onClick={() => setOpen(true)}>
         <Icon name="wallet" size={16} />{kind === 'receipt' ? t('s14_receive') : t('s14_paySupplier')}
       </button>
-      {open && <QuickVoucherForm kind={kind} preset={preset ?? {}} onClose={() => setOpen(false)} onDone={(entry) => { setOpen(false); onDone?.(entry); }} />}
+      {open && <QuickVoucherForm kind={kind} preset={preset ?? {}} onClose={() => setOpen(false)} onDone={(entry) => { setOpen(false); setMade(entry); onDone?.(entry); }} />}
+      {made && <a className={className.includes('small') ? 'btn subtle small' : 'btn subtle'} href={href(`entry/${made.id}`)}>{t('s14_openVoucher')}{made.number ? <span className="ltr num">{made.number}</span> : null}</a>}
     </span>
   );
 }

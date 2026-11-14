@@ -1,7 +1,7 @@
 import { useState, type ReactNode } from 'react';
 import { formatAmount, todayIso } from '@qasa/core';
 import { briefApi, type AgingRowView, type GroupSalesView } from '../industry/brief-api.ts';
-import { ErrorBox, Icon, downloadCsv, useLoad, usePageNav } from '../components.tsx';
+import { ErrorBox, Icon, downloadCsv, useData, useLoad, usePageNav } from '../components.tsx';
 import { useI18n, type I18n, type Key } from '../i18n.ts';
 import { go } from '../router.ts';
 import { PeriodPicker } from './Reports.tsx';
@@ -23,10 +23,15 @@ const TAB_LABEL: Record<ReportTab, Key> = {
 const monthStart = () => todayIso().slice(0, 8) + '01';
 const qty = (i18n: I18n, milli: number) => i18n.qty(milli);
 
-export function MoreReports({ tab = 'sales-items' }: { tab?: ReportTab }) {
+export function MoreReports({ tab: asked = 'sales-items' }: { tab?: ReportTab }) {
   const i18n = useI18n();
   const { t } = i18n;
   usePageNav({ key: 'br_reports', group: 'gAccounting' });
+  // 1.4: cost and profit are not sent to someone who may not read the books (a cashier): no profit report, no stock
+  // valuation, and the sales reports without their cost, profit and margin columns
+  const books = useData().seesBooks !== false;
+  const tabs = REPORT_TABS.filter((k) => books || (k !== 'profit' && k !== 'stock-value'));
+  const tab: ReportTab = tabs.includes(asked) ? asked : 'sales-items';
   const [from, setFrom] = useState(monthStart());
   const [to, setTo] = useState(todayIso());
   const dated = tab === 'aging' || tab === 'supplier-aging' || tab === 'stock-value';
@@ -34,7 +39,7 @@ export function MoreReports({ tab = 'sales-items' }: { tab?: ReportTab }) {
   return (
     <div className="stack">
       <div className="tabs no-print" style={{ flexWrap: 'wrap' }}>
-        {REPORT_TABS.map((k) => (
+        {tabs.map((k) => (
           <button key={k} type="button" aria-pressed={k === tab} onClick={() => go(`reports-more/${k}`)}>{t(TAB_LABEL[k])}</button>
         ))}
       </div>
@@ -84,20 +89,22 @@ function Empty() {
 function SalesByGroup({ by, from, to }: { by: 'category' | 'brand'; from: string; to: string }) {
   const i18n = useI18n();
   const { t } = i18n;
+  const books = useData().seesBooks !== false;
   const { data, error } = useLoad(() => briefApi.salesByGroup(by, { from, to }), [by, from, to]);
   const none = by === 'category' ? t('rp_uncategorised') : t('rp_noBrand');
   const label = (r: GroupSalesView) => (r.name ? i18n.name(r.name) : none);
   const margin = (p: number, s: number) => (s ? `${i18n.int(Math.round((p / s) * 100))}%` : '—');
   // each category's row (its total), then its own items when it also has subcategories, then each subcategory
-  type Line = { key: string; name: string; sub: boolean; strong: boolean; f: { qtyMilli: number; sales: number; cost: number; profit: number } };
+  type Line = { key: string; name: string; sub: boolean; strong: boolean; f: { qtyMilli: number; sales: number; cost?: number; profit?: number } };
   const lines: Line[] = (data?.rows ?? []).flatMap((r) => [
     { key: r.id ?? 'none', name: label(r), sub: false, strong: r.children.length > 0, f: r.total },
     ...(r.children.length && r.sales !== 0 ? [{ key: `${r.id}-own`, name: t('rp_direct'), sub: true, strong: false, f: r }] : []),
     ...r.children.map((c) => ({ key: c.id ?? '', name: label(c), sub: true, strong: false, f: c.total }))
   ]);
   const csv = () => downloadCsv(`sales-by-${by}_${from}_${to}.csv`, [
-    [by === 'category' ? t('cat_category') : t('bnd_brand'), t('br_qty'), t('br_sales'), t('br_cost'), t('br_profit'), t('br_margin')],
-    ...lines.map((l) => [l.sub ? `  ${l.name}` : l.name, l.f.qtyMilli / 1000, formatAmount(l.f.sales, 'IQD'), formatAmount(l.f.cost, 'IQD'), formatAmount(l.f.profit, 'IQD'), margin(l.f.profit, l.f.sales)])
+    [by === 'category' ? t('cat_category') : t('bnd_brand'), t('br_qty'), t('br_sales'), ...(books ? [t('br_cost'), t('br_profit'), t('br_margin')] : [])],
+    ...lines.map((l) => [l.sub ? `  ${l.name}` : l.name, l.f.qtyMilli / 1000, formatAmount(l.f.sales, 'IQD'),
+      ...(books ? [formatAmount(l.f.cost ?? 0, 'IQD'), formatAmount(l.f.profit ?? 0, 'IQD'), margin(l.f.profit ?? 0, l.f.sales)] : [])])
   ]);
   const total = data?.total;
   return (
@@ -109,7 +116,7 @@ function SalesByGroup({ by, from, to }: { by: 'category' | 'brand'; from: string
           <table className="table">
             <thead><tr>
               <th>{by === 'category' ? t('cat_category') : t('bnd_brand')}</th><th className="amount">{t('br_qty')}</th><th className="amount">{t('br_sales')}</th>
-              <th className="amount">{t('br_cost')}</th><th className="amount">{t('br_profit')}</th><th className="amount">{t('br_margin')}</th>
+              {books && <><th className="amount">{t('br_cost')}</th><th className="amount">{t('br_profit')}</th><th className="amount">{t('br_margin')}</th></>}
             </tr></thead>
             <tbody>
               {lines.map((l) => (
@@ -117,15 +124,17 @@ function SalesByGroup({ by, from, to }: { by: 'category' | 'brand'; from: string
                   <td style={l.sub ? { paddingInlineStart: 32 } : undefined}>{l.strong ? <strong>{l.name}</strong> : <bdi>{l.name}</bdi>}</td>
                   <td className="amount">{qty(i18n, l.f.qtyMilli)}</td>
                   <td className="amount">{i18n.money(l.f.sales, 'IQD')}</td>
-                  <td className="amount">{i18n.money(l.f.cost, 'IQD')}</td>
-                  <td className="amount" style={{ color: l.f.profit < 0 ? 'var(--bad, #A4271A)' : undefined }}>{i18n.money(l.f.profit, 'IQD')}</td>
-                  <td className="amount">{margin(l.f.profit, l.f.sales)}</td>
+                  {books && <>
+                    <td className="amount">{i18n.money(l.f.cost ?? 0, 'IQD')}</td>
+                    <td className="amount" style={{ color: (l.f.profit ?? 0) < 0 ? 'var(--bad, #A4271A)' : undefined }}>{i18n.money(l.f.profit ?? 0, 'IQD')}</td>
+                    <td className="amount">{margin(l.f.profit ?? 0, l.f.sales)}</td>
+                  </>}
                 </tr>
               ))}
             </tbody>
             {total && <tfoot><tr>
               <th>{t('totals')}</th><th className="amount">{qty(i18n, total.qtyMilli)}</th><th className="amount">{i18n.money(total.sales, 'IQD')}</th>
-              <th className="amount">{i18n.money(total.cost, 'IQD')}</th><th className="amount">{i18n.money(total.profit, 'IQD')}</th><th className="amount">{margin(total.profit, total.sales)}</th>
+              {books && <><th className="amount">{i18n.money(total.cost ?? 0, 'IQD')}</th><th className="amount">{i18n.money(total.profit ?? 0, 'IQD')}</th><th className="amount">{margin(total.profit ?? 0, total.sales)}</th></>}
             </tr></tfoot>}
           </table>
         </Card>
@@ -134,16 +143,19 @@ function SalesByGroup({ by, from, to }: { by: 'category' | 'brand'; from: string
   );
 }
 
-function SalesByItem({ from, to, profit }: { from: string; to: string; profit: boolean }) {
+function SalesByItem({ from, to, profit: asked }: { from: string; to: string; profit: boolean }) {
   const i18n = useI18n();
   const { t } = i18n;
+  // the profit columns only for someone the server sends cost and profit to
+  const books = useData().seesBooks !== false;
+  const profit = asked && books;
   const { data, error } = useLoad(() => briefApi.salesByItem({ from, to }), [from, to]);
-  const rows = profit ? [...(data?.rows ?? [])].sort((a, b) => b.profit - a.profit) : data?.rows ?? [];
-  const total = rows.reduce((s, r) => ({ sales: s.sales + r.sales, cost: s.cost + r.cost, profit: s.profit + r.profit }), { sales: 0, cost: 0, profit: 0 });
+  const rows = profit ? [...(data?.rows ?? [])].sort((a, b) => (b.profit ?? 0) - (a.profit ?? 0)) : data?.rows ?? [];
+  const total = rows.reduce((s, r) => ({ sales: s.sales + r.sales, cost: s.cost + (r.cost ?? 0), profit: s.profit + (r.profit ?? 0) }), { sales: 0, cost: 0, profit: 0 });
   const margin = (p: number, s: number) => (s ? `${i18n.int(Math.round((p / s) * 100))}%` : '—');
   const csv = () => downloadCsv(`${profit ? 'profit' : 'sales'}-by-item_${from}_${to}.csv`, [
     [t('code'), t('br_item'), t('br_qty'), t('br_sales'), ...(profit ? [t('br_cost'), t('br_profit'), t('br_margin')] : [])],
-    ...rows.map((r) => [r.code, i18n.name(r.name), r.qtyMilli / 1000, formatAmount(r.sales, 'IQD'), ...(profit ? [formatAmount(r.cost, 'IQD'), formatAmount(r.profit, 'IQD'), margin(r.profit, r.sales)] : [])])
+    ...rows.map((r) => [r.code, i18n.name(r.name), r.qtyMilli / 1000, formatAmount(r.sales, 'IQD'), ...(profit ? [formatAmount(r.cost ?? 0, 'IQD'), formatAmount(r.profit ?? 0, 'IQD'), margin(r.profit ?? 0, r.sales)] : [])])
   ]);
   return (
     <>
@@ -164,9 +176,9 @@ function SalesByItem({ from, to, profit }: { from: string; to: string; profit: b
                   <td className="amount">{qty(i18n, r.qtyMilli)}</td>
                   <td className="amount">{i18n.money(r.sales, 'IQD')}</td>
                   {profit && <>
-                    <td className="amount">{i18n.money(r.cost, 'IQD')}</td>
-                    <td className="amount" style={{ color: r.profit < 0 ? 'var(--bad, #A4271A)' : undefined }}>{i18n.money(r.profit, 'IQD')}</td>
-                    <td className="amount">{margin(r.profit, r.sales)}</td>
+                    <td className="amount">{i18n.money(r.cost ?? 0, 'IQD')}</td>
+                    <td className="amount" style={{ color: (r.profit ?? 0) < 0 ? 'var(--bad, #A4271A)' : undefined }}>{i18n.money(r.profit ?? 0, 'IQD')}</td>
+                    <td className="amount">{margin(r.profit ?? 0, r.sales)}</td>
                   </>}
                 </tr>
               ))}

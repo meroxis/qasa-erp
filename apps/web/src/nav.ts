@@ -7,6 +7,9 @@ import type { Key } from './i18n.ts';
  * - `business`: shown only when the company does that (Settings → Business type)
  * - `adminOnly` / `permission`: shown only to someone who may use it (the server refuses the rest anyway)
  * - `companyBooks`: a report of the company's own books (every posted line); not for a user limited to branches
+ * - `books`: the journal; with the company's books, not for someone the server refuses them to (a cashier, 1.4)
+ * - `ownWith`: a journal page that still opens for such a person who has this permission, with their own records only
+ *   (the vouchers a sales person prepared with "Receive payment": the server sends them those and no other)
  * - `tile: false`: in the menu but not a tile on the home screen
  */
 export interface NavItem {
@@ -16,6 +19,8 @@ export interface NavItem {
   match?: string[];
   adminOnly?: boolean;
   companyBooks?: boolean;
+  books?: boolean;
+  ownWith?: Permission;
   permission?: Permission;
   business?: BusinessType;
   tile?: boolean;
@@ -85,7 +90,7 @@ export const NAV: NavGroup[] = [
     group: 'gAccounting',
     icon: 'book',
     items: [
-      { key: 'vouchers', icon: 'receipt', path: 'entries', match: ['entries', 'entry', 'new', 'edit'] },
+      { key: 'vouchers', icon: 'receipt', path: 'entries', match: ['entries', 'entry', 'new', 'edit'], books: true, ownWith: 'sales' },
       { key: 'bk_title', icon: 'bank', path: 'banking', match: ['banking', 'cheque', 'bank-statement'] },
       { key: 'fa_title', icon: 'layers', path: 'fixed-assets', match: ['fixed-assets', 'fixed-asset'], adminOnly: true },
       { key: 'br_expenses', icon: 'wallet', path: 'expenses', match: ['expenses'] },
@@ -122,15 +127,19 @@ export const NAV: NavGroup[] = [
   }
 ];
 
-/** Who is looking: decides which pages they see. `branchLimited`: limited to some branches (the server says so). */
-export interface NavViewer { admin: boolean; permissions: readonly Permission[]; businessTypes: readonly BusinessType[]; branchLimited?: boolean }
+/**
+ * Who is looking: decides which pages they see. `branchLimited`: limited to some branches; `noBooks`: someone who may
+ * not read the books at all, a cashier (1.4). The server says both.
+ */
+export interface NavViewer { admin: boolean; permissions: readonly Permission[]; businessTypes: readonly BusinessType[]; branchLimited?: boolean; noBooks?: boolean }
 
 /** Whether this person may read the company's own books (the trial balance, final accounts, account statements). */
-export const seesCompanyBooks = (v: Pick<NavViewer, 'admin' | 'branchLimited'>): boolean => v.admin || !v.branchLimited;
+export const seesCompanyBooks = (v: Pick<NavViewer, 'admin' | 'branchLimited' | 'noBooks'>): boolean => v.admin || (!v.branchLimited && !v.noBooks);
 
 export function canSee(item: NavItem, v: NavViewer): boolean {
   if (item.adminOnly && !v.admin) return false;
   if (item.companyBooks && !seesCompanyBooks(v)) return false;
+  if (item.books && v.noBooks && !v.admin && !(item.ownWith && v.permissions.includes(item.ownWith))) return false;
   if (item.permission && !v.admin && !v.permissions.includes(item.permission)) return false;
   if (item.business && !v.businessTypes.includes(item.business)) return false;
   return true;

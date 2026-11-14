@@ -30,6 +30,22 @@ const ROLE_PERMISSIONS: Record<Role, Permission[]> = {
   viewer: []
 };
 
+/**
+ * Who may see what things cost (1.4): the purchase price and average cost of an item, the value of the stock, the cost
+ * and profit of a sale. Those who buy, keep the stock or manage the company; a cashier (the sales role alone) may not,
+ * and neither may anyone else without one of these permissions.
+ */
+export const seesCost = (actor: Pick<Actor, 'permissions'>): boolean =>
+  actor.permissions.some((p) => p === 'admin' || p === 'stock' || p === 'purchases');
+
+/**
+ * Who may read the company's books and the reports made from them (the journal, the trial balance, final accounts,
+ * profit in the reports and on the dashboard, what purchases cost): those who see cost, the accounting roles (they
+ * prepare, check and approve the entries) and the viewer, whose role is to read them. Not a cashier.
+ */
+export const seesBooks = (actor: Pick<Actor, 'permissions' | 'roles'>): boolean =>
+  seesCost(actor) || actor.permissions.some((p) => p.startsWith('entries.')) || actor.roles.includes('viewer');
+
 export interface Actor {
   /** null only for requests made before any user existed (never in practice) */
   id: string | null;

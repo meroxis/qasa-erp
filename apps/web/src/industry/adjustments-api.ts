@@ -29,9 +29,10 @@ export interface AdjustmentInput {
 
 export interface AdjustmentLineView {
   seq: number; itemId: string; itemCode: string; itemName: Names; unit: UnitCode;
-  qtyMilli: number; unitCost: number | null;
+  /** unitCost and value: absent for someone who may not see cost (1.4) */
+  qtyMilli: number; unitCost?: number | null;
   /** IQD that moved (out negative), once posted */
-  value: number | null;
+  value?: number | null;
   stockMilli: number;
   lineUnit: UnitCode | null; unitFactorMilli: number | null; unitQtyMilli: number | null;
   batchNo?: string | null; expiry?: string | null; batchId?: string | null;
@@ -39,7 +40,7 @@ export interface AdjustmentLineView {
 
 export interface AdjustmentSummary {
   id: string; number: string | null; date: string; status: AdjustmentStatus; reason: AdjustmentReason;
-  warehouseId: string; warehouseName: Names; lineCount: number; valueOut: number; valueIn: number;
+  warehouseId: string; warehouseName: Names; lineCount: number; valueOut?: number; valueIn?: number;
   job: { id: string; number: string; title: string } | null; notes: string; createdBy: string;
 }
 

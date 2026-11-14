@@ -11,17 +11,22 @@ import { ReorderHomeNote } from '../industry/ReorderList.tsx';
 import { RenewalBanner } from '../industry/RenewalBanner.tsx';
 import { moneyBoth } from './Brief.tsx';
 import type { I18n, Key } from '../i18n.ts';
+import { QuickVoucherButton } from '../industry/QuickVoucher.tsx';
+import { mayQuickVoucher } from '../industry/quick-voucher.ts';
 import { NAV, toggleFavourite, visibleItems, type NavItem, type NavViewer } from '../nav.ts';
 
 export function Home({ viewer, user, favourites }: { viewer: NavViewer; user: string; favourites: string[] }) {
   const i18n = useI18n();
   const { t } = i18n;
-  const { accounts, settings, plan, reloadPlan, companyBooks } = useData();
+  const { accounts, settings, plan, reloadPlan, companyBooks, seesBooks } = useData();
   // the trial balance and the final accounts are the company's books: no link for someone limited to branches
   const books = companyBooks !== false;
   // this month's invoice count feeds the "growing" note
   useEffect(() => { void reloadPlan(); }, [reloadPlan]);
-  const { data: entries, error } = useLoad(() => api.entries(), []);
+  // 1.4: the journal and the accounts' balances are not sent to someone who may not read the books (a cashier): no
+  // vouchers on their home page, and no cash tile made from a balance
+  const journal = seesBooks !== false;
+  const { data: entries, error } = useLoad(() => (journal ? api.entries() : Promise.resolve([])), [journal]);
   const month = todayIso().slice(0, 7);
   const sales = useLoad(() => api.invoices({ kind: 'sale', status: 'posted', from: `${month}-01` }), [month]);
   const salesTotal = (sales.data ?? []).reduce((s, v) => s + v.baseTotal, 0);
@@ -41,7 +46,7 @@ export function Home({ viewer, user, favourites }: { viewer: NavViewer; user: st
     { label: t('receivables'), value: i18n.money(d.receivables, 'IQD'), link: 'reports-more/aging', icon: 'contact' },
     { label: t('payables'), value: i18n.money(d.payables, 'IQD'), link: 'reports-more/supplier-aging', icon: 'truck' }
   ] : [
-    { label: t('cashAndBanks'), value: i18n.money(cash, 'IQD'), icon: 'wallet' },
+    ...(journal ? [{ label: t('cashAndBanks'), value: i18n.money(cash, 'IQD'), icon: 'wallet' }] : []),
     { label: t('salesThisMonth'), value: i18n.money(salesTotal, 'IQD'), link: 'sales', icon: 'trend' },
     { label: t('receivables'), value: i18n.money(owed('customer'), 'IQD'), link: 'customers', icon: 'contact' },
     { label: t('payables'), value: i18n.money(owed('supplier'), 'IQD'), link: 'suppliers', icon: 'truck' }
@@ -76,9 +81,19 @@ export function Home({ viewer, user, favourites }: { viewer: NavViewer; user: st
         <a className="btn primary" href={href('new-invoice/sale')}><Icon name="invoice" size={16} />{t('newSale')}</a>
         <a className="btn" href={href('new-invoice/purchase')}><Icon name="cart" size={16} />{t('newPurchase')}</a>
         <span className="sep" />
-        <a className="btn" href={href('new/receipt')}><Icon name="plus" size={16} />{t('newReceipt')}</a>
-        <a className="btn" href={href('new/payment')}><Icon name="plus" size={16} />{t('newPayment')}</a>
-        <a className="btn" href={href('new/journal')}><Icon name="plus" size={16} />{t('newJournal')}</a>
+        {/* 1.4: someone who does not keep the books takes money with "Receive payment" and reads the vouchers they made */}
+        {journal ? (
+          <>
+            <a className="btn" href={href('new/receipt')}><Icon name="plus" size={16} />{t('newReceipt')}</a>
+            <a className="btn" href={href('new/payment')}><Icon name="plus" size={16} />{t('newPayment')}</a>
+            <a className="btn" href={href('new/journal')}><Icon name="plus" size={16} />{t('newJournal')}</a>
+          </>
+        ) : mayQuickVoucher('receipt', viewer.permissions) && (
+          <>
+            <QuickVoucherButton kind="receipt" />
+            <a className="btn" href={href('entries')}><Icon name="receipt" size={16} />{t('s14_myVouchers')}</a>
+          </>
+        )}
         <a className="btn" href={href('expenses')}><Icon name="wallet" size={16} />{t('br_newExpense')}</a>
         {books && <a className="btn" style={{ marginInlineStart: 'auto' }} href={href('trial-balance')}><Icon name="chart" size={16} />{t('trialBalance')}</a>}
       </nav>
@@ -106,7 +121,7 @@ export function Home({ viewer, user, favourites }: { viewer: NavViewer; user: st
       <FirstSteps viewer={viewer} />
       <Launcher viewer={viewer} user={user} favourites={favourites} />
       {d && <SalesChart d={d} />}
-      <div className="card flow">
+      {journal && <div className="card flow">
         <div className="flow-title">
           <h2>{t('voucherFlow')}</h2>
           <span className="small muted">{t('role_preparer')} · {t('role_checker')} · {t('role_approver')}</span>
@@ -120,16 +135,16 @@ export function Home({ viewer, user, favourites }: { viewer: NavViewer; user: st
             </a>
           </div>
         ))}
-      </div>
+      </div>}
       <ErrorBox error={error} />
-      <div className="card">
+      {journal && <div className="card">
         <div className="card-head">
           <h2>{t('recentEntries')}</h2>
           <span className="spacer" />
           <a className="btn ghost small" href={href('entries')}>{t('viewAll')}</a>
         </div>
         {entries && <EntriesTable entries={entries.slice(0, 10)} />}
-      </div>
+      </div>}
     </div>
   );
 }

@@ -102,10 +102,12 @@ function OrdersTable({ orders }: { orders: PoSummaryView[] }) {
   const i18n = useI18n();
   const { t } = i18n;
   if (!orders.length) return <EmptyState icon="cart" title={t('po_none')} text={t('po_noneText')} />;
+  // 1.4: orders reach someone who may not read the books without their prices: no total column then
+  const priced = orders.some((x) => x.total !== undefined);
   return (
     <table className="table">
       <thead>
-        <tr><th>{t('number')}</th><th>{t('supplier')}</th><th>{t('po_expected')}</th><th className="amount">{t('total')}</th><th /></tr>
+        <tr><th>{t('number')}</th><th>{t('supplier')}</th><th>{t('po_expected')}</th>{priced && <th className="amount">{t('total')}</th>}<th /></tr>
       </thead>
       <tbody>
         {orders.map((x) => (
@@ -113,7 +115,7 @@ function OrdersTable({ orders }: { orders: PoSummaryView[] }) {
             <td><a className="ltr num" href={href(`purchase-order/${x.id}`)} onClick={(e) => e.stopPropagation()}>{x.number}</a><div className="muted small num">{i18n.date(x.date)}</div></td>
             <td>{x.partyName}</td>
             <td className="num">{x.expectedDate ? i18n.date(x.expectedDate) : '—'}</td>
-            <td className="amount">{i18n.money(x.total, x.currency)}</td>
+            {priced && <td className="amount">{i18n.money(x.total, x.currency)}</td>}
             <td><PoChip status={x.status} overdue={x.overdue} /></td>
           </tr>
         ))}
@@ -167,7 +169,7 @@ function Suggestions() {
           <div className="table-wrap">
             <table className="table">
               <thead>
-                <tr><th>{t('item')}</th><th className="amount">{t('po_onHand')}</th><th className="amount">{t('po_reorderAt')}</th><th className="amount">{t('po_onOrder')}</th><th className="amount">{t('po_suggestQty')}</th><th className="amount">{t('po_lastPrice')}</th></tr>
+                <tr><th>{t('item')}</th><th className="amount">{t('po_onHand')}</th><th className="amount">{t('po_reorderAt')}</th><th className="amount">{t('po_onOrder')}</th><th className="amount">{t('po_suggestQty')}</th>{g.lines.some((l) => l.lastPrice !== undefined) && <th className="amount">{t('po_lastPrice')}</th>}</tr>
               </thead>
               <tbody>
                 {g.lines.map((l) => (
@@ -177,7 +179,7 @@ function Suggestions() {
                     <td className="amount">{l.reorderMilli === null ? '—' : i18n.qty(l.reorderMilli)}</td>
                     <td className="amount">{l.onOrderMilli ? i18n.qty(l.onOrderMilli) : '—'}</td>
                     <td className="amount"><strong>{i18n.qty(l.suggestMilli)}</strong></td>
-                    <td className="amount">{l.lastPrice === null ? '—' : i18n.money(l.lastPrice, g.currency)}</td>
+                    {l.lastPrice !== undefined && <td className="amount">{l.lastPrice === null ? '—' : i18n.money(l.lastPrice, g.currency)}</td>}
                   </tr>
                 ))}
               </tbody>
@@ -396,7 +398,7 @@ export function PurchaseOrderDetail({ id }: { id: string }) {
                 <tr key={r.invoiceId} className="click" onClick={() => go(`invoice/${r.invoiceId}`)}>
                   <td><a className="ltr num" href={href(`invoice/${r.invoiceId}`)} onClick={(e) => e.stopPropagation()}>{r.number ?? t('po_draftInvoice')}</a></td>
                   <td className="num">{i18n.date(r.date)}</td>
-                  <td className="amount">{i18n.money(r.total, x.currency)}</td>
+                  {x.total !== undefined && <td className="amount">{i18n.money(r.total, x.currency)}</td>}
                   <td><span className={'chip ' + (r.status === 'posted' ? 'ok' : r.status === 'cancelled' ? 'bad' : '')}>{t(r.status === 'posted' ? 'po_st_received' : r.status === 'cancelled' ? 'po_st_cancelled' : 'po_st_draft')}</span></td>
                 </tr>
               ))}
@@ -450,7 +452,7 @@ function Paper({ order: x, company }: { order: PoView; company: string }) {
               <th style={{ width: 36 }}>#</th><th>{t('item')}</th>
               <th className="amount" style={{ width: 100 }}>{t('po_ordered')}</th>
               {showProgress && <><th className="amount no-print" style={{ width: 100 }}>{t('po_received')}</th><th className="amount no-print" style={{ width: 100 }}>{t('po_remaining')}</th></>}
-              <th className="amount" style={{ width: 150 }}>{t('unitPrice')}</th><th className="amount">{t('amount')}</th>
+              {x.total !== undefined && <><th className="amount" style={{ width: 150 }}>{t('unitPrice')}</th><th className="amount">{t('amount')}</th></>}
             </tr>
           </thead>
           <tbody>
@@ -463,8 +465,8 @@ function Paper({ order: x, company }: { order: PoView; company: string }) {
                   <td className="amount no-print">{poQtyText(i18n, l, l.receivedMilli)}</td>
                   <td className="amount no-print" style={l.remainingMilli ? { color: 'var(--warn)' } : undefined}>{poQtyText(i18n, l, l.remainingMilli)}</td>
                 </>}
-                <td className="amount">{i18n.money(l.unitPrice, x.currency)}</td>
-                <td className="amount">{i18n.money(l.amount, x.currency)}</td>
+                {x.total !== undefined && <><td className="amount">{i18n.money(l.unitPrice, x.currency)}</td>
+                <td className="amount">{i18n.money(l.amount, x.currency)}</td></>}
               </tr>
             ))}
           </tbody>
@@ -472,7 +474,7 @@ function Paper({ order: x, company }: { order: PoView; company: string }) {
       </div>
       <div className="row" style={{ padding: '10px 0' }}>
         <span className="spacer" />
-        <div className="totals"><span>{t('total')}</span><strong className="num" style={{ fontSize: 18 }}>{i18n.money(x.total, x.currency)}</strong></div>
+        {x.total !== undefined && <div className="totals"><span>{t('total')}</span><strong className="num" style={{ fontSize: 18 }}>{i18n.money(x.total, x.currency)}</strong></div>}
       </div>
       {x.notes && <p className="small" style={{ whiteSpace: 'pre-line' }}><span className="muted">{t('notes')}: </span>{x.notes}</p>}
       <div className="sigs" style={{ gridTemplateColumns: 'repeat(2, minmax(0, 1fr))' }}>

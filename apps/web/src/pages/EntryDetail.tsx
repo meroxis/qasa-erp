@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { amountInWords, rateFromX100, todayIso } from '@qasa/core';
-import { api, type EntryView } from '../api.ts';
+import { api, ApiError, type EntryView } from '../api.ts';
 import { ErrorBox, Icon, Modal, typeName, useData, useLoad, useToast } from '../components.tsx';
 import { ApprovalButtons, ApprovalNote, VoucherStateChip } from '../industry/VoucherApproval.tsx';
 import { useI18n } from '../i18n.ts';
@@ -20,13 +20,26 @@ export function EntryDetail({ id }: { id: string }) {
   const i18n = useI18n();
   const { t } = i18n;
   const toast = useToast();
-  const { settings, reloadAccounts } = useData();
+  const { settings, reloadAccounts, seesBooks } = useData();
+  // 1.4: someone who does not keep the books opens the vouchers they prepared; any other entry is not sent to them
+  const own = seesBooks === false;
   const { data, error, reload } = useLoad(() => api.entry(id), [id]);
   const [busy, setBusy] = useState(false);
   const [actionError, setActionError] = useState<unknown>(null);
   const [reversing, setReversing] = useState(false);
   const [reverseDate, setReverseDate] = useState(todayIso());
 
+  if (own && error instanceof ApiError && error.status === 403) {
+    return (
+      <div className="stack" style={{ maxWidth: 980 }}>
+        <div className="alert info">{t('s14_notYours')}</div>
+        <div className="row">
+          <button type="button" className="btn" onClick={() => history.back()}>{t('back')}</button>
+          <a className="btn" href={href('entries')}>{t('s14_myVouchers')}</a>
+        </div>
+      </div>
+    );
+  }
   if (error) return <ErrorBox error={error} />;
   if (!data) return null;
   const e: EntryView = data;
@@ -133,8 +146,9 @@ export function EntryDetail({ id }: { id: string }) {
           <div className="row"><span className="muted" style={{ width: 130 }}>{isVoucher ? t('forLabel') : t('description')}</span><span>{e.description}</span></div>
           {e.invoiceId && <div className="row"><span className="muted" style={{ width: 130 }}>{t('e_invoice')}</span><a href={href(`invoice/${e.invoiceId}`)}>{t('openInvoice')}</a></div>}
           {e.stockDocId && <div className="row"><span className="muted" style={{ width: 130 }}>{t('e_stock_doc')}</span><a href={href(`stock-doc/${e.stockDocId}`)}>{t('openDocument')}</a></div>}
-          {e.reversesId && <div className="row"><span className="muted" style={{ width: 130 }}>{t('reverses')}</span><a href={href(`entry/${e.reversesId}`)}>{t('open')}</a></div>}
-          {e.reversedById && <div className="row"><span className="muted" style={{ width: 130 }}>{t('reversedBy')}</span><a href={href(`entry/${e.reversedById}`)}>{t('open')}</a></div>}
+          {/* (the entry that reverses a voucher is the approver's: named, without a link, for someone who reads only their own) */}
+          {e.reversesId && !own && <div className="row"><span className="muted" style={{ width: 130 }}>{t('reverses')}</span><a href={href(`entry/${e.reversesId}`)}>{t('open')}</a></div>}
+          {e.reversedById && <div className="row"><span className="muted" style={{ width: 130 }}>{t('reversedBy')}</span>{own ? <span>{typeName('reversal', i18n)}</span> : <a href={href(`entry/${e.reversedById}`)}>{t('open')}</a>}</div>}
         </div>
 
         <table className="table" style={{ marginTop: 16 }}>

@@ -217,7 +217,15 @@ describe('vouchers need approval', () => {
     expect((await req('GET', "/api/entries?approval=waiting' OR 1=1", undefined, s.admin)).statusCode).toBe(400);
     // only its approval is offered, and only to those who may approve
     expect((await req('GET', `/api/entries/${id}`, undefined, s.raz)).json().actions).toEqual(['approve_waiting', 'reject']);
-    expect((await req('GET', `/api/entries/${id}`, undefined, s.las)).json().actions).toEqual([]);
+    // (the person who made it keeps no books: they read this voucher of theirs, and no other entry)
+    const own = await req('GET', `/api/entries/${id}`, undefined, s.las);
+    expect(own.statusCode, own.body).toBe(200);
+    expect(own.json()).toMatchObject({ actions: [], preparedBy: 'Las', approval: { state: 'waiting' } });
+    const other = (await req('POST', '/api/vouchers', voucher, s.mer)).json().id as string;
+    expect((await req('GET', `/api/entries/${other}`, undefined, s.las)).statusCode).toBe(403);
+    expect((await req('GET', '/api/entries', undefined, s.las)).json().map((e: { id: string }) => e.id)).toEqual([id]);
+    expect((await req('GET', '/api/entries?approval=waiting', undefined, s.las)).json().map((e: { id: string }) => e.id)).toEqual([id]);
+    expect((await req('DELETE', `/api/entries/${other}`, undefined, s.mer)).statusCode).toBe(204);
     expect((await req('GET', `/api/entries/${id}`, undefined, s.mer)).json().actions).toEqual(['edit', 'delete']);
     // not the person who made it, nor a preparer, by any route
     for (const who of ['las', 'mer']) {

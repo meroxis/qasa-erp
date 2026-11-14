@@ -56,6 +56,18 @@ export const SALES14_TEXT = {
     'It will wait for someone who may approve vouchers; the balance changes only then.',
     'چاوەڕێی کەسێک دەبێت کە مۆڵەتی پەسەندکردنی هەیە؛ باڵانس تەنها دوای ئەوە دەگۆڕێت.'
   ],
+  // someone who does not keep the books sees the vouchers they prepared, and no other
+  s14_myVouchers: ['سنداتي', 'My vouchers', 'سەنەدەکانم'],
+  s14_myVouchersHelp: [
+    'تظهر هنا السندات التي نظّمتها أنت فقط، مع حالة الموافقة وسبب الرفض إن رُفضت. بقية السندات والقيود في دفاتر الشركة.',
+    'Only the vouchers you prepared are listed here, with their approval and the reason if one was rejected. The other vouchers and entries are in the company’s books.',
+    'تەنها ئەو سەنەدانەی خۆت ئامادەت کردوون لێرە دەردەکەون، لەگەڵ دۆخی پەسەندکردن و هۆکاری ڕەتکردنەوە ئەگەر ڕەتکرابێتەوە. سەنەد و تۆمارەکانی تر لە دەفتەرەکانی کۆمپانیادان.'
+  ],
+  s14_notYours: [
+    'هذا القيد في دفاتر الشركة. يمكنك فتح السندات التي نظّمتها أنت فقط.',
+    'This entry is in the company’s books. You can open only the vouchers you prepared.',
+    'ئەم تۆمارە لە دەفتەرەکانی کۆمپانیادایە. تەنها دەتوانیت ئەو سەنەدانە بکەیتەوە کە خۆت ئامادەت کردوون.'
+  ],
   s14_openVoucher: ['فتح السند', 'Open the voucher', 'کردنەوەی سەنەد'],
 
   // vouchers that wait for approval

@@ -44,6 +44,8 @@ export function Items({ tab: initialTab }: { tab?: 'reorder' } = {}) {
   const { t } = i18n;
   // the warehouse account's statement is the company's books: no link for someone limited to branches
   const books = useData().companyBooks !== false;
+  // 1.4: the average cost and the stock value are not sent to someone who may not see cost (a cashier): no such columns
+  const cost = useData().seesCost !== false;
   const toast = useToast();
   const [tab, setTab] = useState<'items' | 'warehouses' | 'categories' | 'brands' | 'reorder'>(initialTab ?? 'items');
   const [q, setQ] = useState('');
@@ -61,11 +63,12 @@ export function Items({ tab: initialTab }: { tab?: 'reorder' } = {}) {
   const brands = useLoad(() => brandsApi.list(), []);
   const brandById = new Map((brands.data ?? []).map((b) => [b.id, b]));
   const catText = (id: string | null) => categoryLabel(categories.data ?? [], id, i18n.name);
-  const totalValue = (items.data ?? []).reduce((s, it) => s + it.value, 0);
+  const totalValue = (items.data ?? []).reduce((s, it) => s + (it.value ?? 0), 0);
 
   const exportCsv = () => downloadCsv('items.csv', [
-    [t('code'), t('name'), t('unit'), t('available'), t('avgCost'), t('stockValue'), t('salePrice'), t('cat_category'), t('bnd_brand')],
-    ...(items.data ?? []).map((it) => [it.code, i18n.name(it.name), unitName(i18n, it.unit), formatQty(it.qtyMilli), averageCost(it.qtyMilli, it.value), it.value, it.salePrice,
+    [t('code'), t('name'), t('unit'), t('available'), ...(cost ? [t('avgCost'), t('stockValue')] : []), t('salePrice'), t('cat_category'), t('bnd_brand')],
+    ...(items.data ?? []).map((it) => [it.code, i18n.name(it.name), unitName(i18n, it.unit), formatQty(it.qtyMilli),
+      ...(cost ? [averageCost(it.qtyMilli, it.value ?? 0), it.value ?? 0] : []), it.salePrice,
       catText(it.categoryId), it.brandId ? brandById.get(it.brandId)?.name ?? '' : ''])
   ]);
 
@@ -153,8 +156,8 @@ export function Items({ tab: initialTab }: { tab?: 'reorder' } = {}) {
                     <th style={{ width: 100 }}>{t('code')}</th>
                     <th>{t('item')}</th>
                     <th className="amount">{t('available')}</th>
-                    <th className="amount">{t('avgCost')}</th>
-                    <th className="amount">{t('stockValue')}</th>
+                    {cost && <th className="amount">{t('avgCost')}</th>}
+                    {cost && <th className="amount">{t('stockValue')}</th>}
                     <th className="amount">{t('salePrice')}</th>
                     <th style={{ width: 44 }} />
                   </tr>
@@ -183,8 +186,8 @@ export function Items({ tab: initialTab }: { tab?: 'reorder' } = {}) {
                           : <span className="muted small">{unitName(i18n, it.unit)}</span>}
                         {it.trackStock && it.units.length > 0 && it.qtyMilli > 0 && <div className="muted small">{inUnits(i18n, it, it.qtyMilli)}</div>}
                       </td>
-                      <td className="amount">{it.trackStock && it.qtyMilli > 0 ? i18n.money(averageCost(it.qtyMilli, it.value), 'IQD') : ''}</td>
-                      <td className="amount">{it.trackStock ? i18n.money(it.value, 'IQD') : ''}</td>
+                      {cost && <td className="amount">{it.trackStock && it.qtyMilli > 0 ? i18n.money(averageCost(it.qtyMilli, it.value ?? 0), 'IQD') : ''}</td>}
+                      {cost && <td className="amount">{it.trackStock ? i18n.money(it.value ?? 0, 'IQD') : ''}</td>}
                       <td className="amount">{i18n.money(it.salePrice, it.saleCurrency)}</td>
                       <td>
                         <button type="button" className="btn icon ghost" title={t('actEdit')} aria-label={t('actEdit')} onClick={(e) => { e.stopPropagation(); setEditing(it); }}>
@@ -194,9 +197,11 @@ export function Items({ tab: initialTab }: { tab?: 'reorder' } = {}) {
                     </tr>
                   ))}
                 </tbody>
-                <tfoot>
-                  <tr><td /><td /><td>{t('total')}</td><td /><td /><td className="amount">{i18n.money(totalValue, 'IQD')}</td><td /><td /></tr>
-                </tfoot>
+                {cost && (
+                  <tfoot>
+                    <tr><td /><td /><td>{t('total')}</td><td /><td /><td className="amount">{i18n.money(totalValue, 'IQD')}</td><td /><td /></tr>
+                  </tfoot>
+                )}
               </table>
             )}
           </div>
@@ -212,14 +217,14 @@ export function Items({ tab: initialTab }: { tab?: 'reorder' } = {}) {
           <div className="card">
             {warehouses.data && (
               <table className="table">
-                <thead><tr><th style={{ width: 100 }}>{t('code')}</th><th>{t('warehouse')}</th><th>{t('linkedAccount')}</th><th className="amount">{t('stockValue')}</th></tr></thead>
+                <thead><tr><th style={{ width: 100 }}>{t('code')}</th><th>{t('warehouse')}</th><th>{t('linkedAccount')}</th>{cost && <th className="amount">{t('stockValue')}</th>}</tr></thead>
                 <tbody>
                   {warehouses.data.map((w: WarehouseView) => (
                     <tr key={w.id}>
                       <td><span className="tree-code">{w.code}</span></td>
                       <td>{i18n.name(w.name)}</td>
                       <td>{books ? <a href={href(`statement/${w.accountCode}`)} className="ltr">{w.accountCode}</a> : <span className="ltr">{w.accountCode}</span>}</td>
-                      <td className="amount">{i18n.money(w.value, 'IQD')}</td>
+                      {cost && <td className="amount">{i18n.money(w.value ?? 0, 'IQD')}</td>}
                     </tr>
                   ))}
                 </tbody>
@@ -768,6 +773,8 @@ export function ItemDetail({ id }: { id: string }) {
   if (error) return <ErrorBox error={error} />;
   if (!data) return null;
   const it = data;
+  // 1.4: no value on the item: it was not sent (a cashier), so no average cost tile and no value columns
+  const cost = it.value !== undefined;
   const sourceKey = (s: string) => (isKey(`src_${s}`) ? (`src_${s}` as Key) : null);
   // opening stock and transfers open their stock document; everything else came from an invoice or a return
   const sourcePath = (s: string, id: string) => (s.startsWith('opening') || s.startsWith('transfer') ? `stock-doc/${id}` : `invoice/${id}`);
@@ -795,11 +802,13 @@ export function ItemDetail({ id }: { id: string }) {
           <div className="value num">{it.trackStock ? qtyText(i18n, it.qtyMilli) : '—'} <span className="small muted">{unitName(i18n, it.unit)}</span></div>
           {it.trackStock && it.units.length > 0 && it.qtyMilli > 0 && <div className="muted small">{inUnits(i18n, it, it.qtyMilli)}</div>}
         </div>
-        <div className="card pad tile">
-          <div className="label">{t('avgCost')}</div>
-          <div className="value num" style={{ fontSize: 18 }}>{it.trackStock ? i18n.money(averageCost(it.qtyMilli, it.value), 'IQD') : '—'}</div>
-          {it.trackStock && <div className="muted small">{t('stockValue')}: {i18n.money(it.value, 'IQD')}</div>}
-        </div>
+        {cost && it.value !== undefined && (
+          <div className="card pad tile">
+            <div className="label">{t('avgCost')}</div>
+            <div className="value num" style={{ fontSize: 18 }}>{it.trackStock ? i18n.money(averageCost(it.qtyMilli, it.value), 'IQD') : '—'}</div>
+            {it.trackStock && <div className="muted small">{t('stockValue')}: {i18n.money(it.value, 'IQD')}</div>}
+          </div>
+        )}
       </div>
 
       <div className="no-print"><WholesalePriceField itemId={it.id} /></div>
@@ -810,10 +819,10 @@ export function ItemDetail({ id }: { id: string }) {
         <div className="card">
           <div style={{ padding: '12px 16px' }}><h2>{t('warehouses')}</h2></div>
           <table className="table">
-            <thead><tr><th>{t('warehouse')}</th><th className="amount">{t('available')}</th><th className="amount">{t('stockValue')}</th></tr></thead>
+            <thead><tr><th>{t('warehouse')}</th><th className="amount">{t('available')}</th>{cost && <th className="amount">{t('stockValue')}</th>}</tr></thead>
             <tbody>
               {it.stock.map((s) => (
-                <tr key={s.warehouseId}><td>{i18n.name(s.warehouseName)}</td><td className="amount">{qtyText(i18n, s.qtyMilli)}</td><td className="amount">{i18n.money(s.value, 'IQD')}</td></tr>
+                <tr key={s.warehouseId}><td>{i18n.name(s.warehouseName)}</td><td className="amount">{qtyText(i18n, s.qtyMilli)}</td>{cost && <td className="amount">{i18n.money(s.value ?? 0, 'IQD')}</td>}</tr>
               ))}
             </tbody>
           </table>
@@ -828,7 +837,7 @@ export function ItemDetail({ id }: { id: string }) {
               <tr>
                 <th>{t('date')}</th><th>{t('colType')}</th><th>{t('number')}</th>
                 {it.stock.length > 1 && <th>{t('warehouse')}</th>}
-                <th className="amount">{t('movesIn')}</th><th className="amount">{t('movesOut')}</th><th className="amount">{t('balance')}</th><th className="amount">{t('moveValue')}</th>
+                <th className="amount">{t('movesIn')}</th><th className="amount">{t('movesOut')}</th><th className="amount">{t('balance')}</th>{cost && <th className="amount">{t('moveValue')}</th>}
               </tr>
             </thead>
             <tbody>
@@ -843,7 +852,7 @@ export function ItemDetail({ id }: { id: string }) {
                     <td className="amount">{m.qtyMilli > 0 ? qtyText(i18n, m.qtyMilli) : ''}</td>
                     <td className="amount">{m.qtyMilli < 0 ? qtyText(i18n, -m.qtyMilli) : ''}</td>
                     <td className="amount">{qtyText(i18n, m.balanceQtyMilli)}</td>
-                    <td className="amount">{i18n.money(Math.abs(m.value), 'IQD')}</td>
+                    {cost && <td className="amount">{i18n.money(Math.abs(m.value ?? 0), 'IQD')}</td>}
                   </tr>
                 );
               })}

@@ -307,14 +307,17 @@ export function App() {
   }, [userId, reloadAccounts, reloadSettings, reloadPlan]);
 
   // someone limited to branches gets no link to the company's own books (the server refuses them anyway)
-  const companyBooks = seesCompanyBooks({ admin: !!me?.user?.permissions.includes('admin'), branchLimited: !!me?.user?.branchLimited });
+  const companyBooks = seesCompanyBooks({ admin: !!me?.user?.permissions.includes('admin'), branchLimited: !!me?.user?.branchLimited, noBooks: me?.user?.seesBooks === false });
+  // 1.4: a cashier gets no cost and no profit from the server: the screens leave those columns and tiles out
+  const seesCost = me?.user?.seesCost !== false;
+  const seesBooks = me?.user?.seesBooks !== false;
   // what the person may change (a "+" to add a customer shows only to someone who may), and who they are for what
   // the app remembers per person on this PC
   const permissions = me?.user?.permissions;
   const userKey = me?.signInRequired && me.user?.id ? `user:${me.user.id}` : `name:${favUser}`;
   const data = useMemo(
-    () => ({ accounts, settings, plan, online, companyBooks, permissions, userKey, reloadAccounts, reloadSettings, reloadPlan }),
-    [accounts, settings, plan, online, companyBooks, permissions, userKey, reloadAccounts, reloadSettings, reloadPlan]
+    () => ({ accounts, settings, plan, online, companyBooks, seesCost, seesBooks, permissions, userKey, reloadAccounts, reloadSettings, reloadPlan }),
+    [accounts, settings, plan, online, companyBooks, seesCost, seesBooks, permissions, userKey, reloadAccounts, reloadSettings, reloadPlan]
   );
   const { t } = i18n;
   const [page, arg, arg2] = route;
@@ -327,18 +330,20 @@ export function App() {
   let title: string = t('home');
   let content: ReactNode;
   const isAdmin = !!me?.user?.permissions.includes('admin');
-  const viewer: NavViewer = { admin: isAdmin, permissions: me?.user?.permissions ?? [], businessTypes: settings?.businessTypes ?? [], branchLimited: !!me?.user?.branchLimited };
+  const viewer: NavViewer = { admin: isAdmin, permissions: me?.user?.permissions ?? [], businessTypes: settings?.businessTypes ?? [], branchLimited: !!me?.user?.branchLimited, noBooks: !seesBooks };
   const books = seesCompanyBooks(viewer);
   // admin pages (the menu's admin-only items) open for admins only, and the company's books (trial balance, final
   // accounts, statements) not for someone limited to branches; everyone else lands on the home page
-  const adminPage = (ADMIN_PAGES.has(page ?? '') && !isAdmin) || (COMPANY_BOOK_PAGES.has(page ?? '') && !books);
+  // 1.4: someone who does not keep the books reads the vouchers they prepared, and writes none in the editor (theirs
+  // come from "Receive payment"): the editor's pages land on the home page too
+  const adminPage = (ADMIN_PAGES.has(page ?? '') && !isAdmin) || (COMPANY_BOOK_PAGES.has(page ?? '') && !books) || (!seesBooks && (page === 'new' || page === 'edit'));
   switch (adminPage ? '' : page ?? '') {
     case '':
     case 'home':
       content = <Home viewer={viewer} user={favUser} favourites={favs} />;
       break;
     case 'entries':
-      title = t('vouchers');
+      title = seesBooks ? t('vouchers') : t('s14_myVouchers');
       content = <Entries key={arg ?? ''} {...(arg === 'draft' || arg === 'checked' || arg === 'approved' ? { status: arg as EntryStatus } : {})} />;
       break;
     case 'new':
@@ -350,7 +355,7 @@ export function App() {
       content = arg ? <EntryEditor key={'edit-' + arg} id={arg} /> : null;
       break;
     case 'entry':
-      title = t('vouchers');
+      title = seesBooks ? t('vouchers') : t('s14_myVouchers');
       content = arg ? <EntryDetail key={arg} id={arg} /> : null;
       break;
     case 'accounts':

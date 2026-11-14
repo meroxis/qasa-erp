@@ -592,6 +592,13 @@ export interface EntryFilters {
   to?: string | undefined;
   q?: string | undefined;
   limit?: number | undefined;
+  /** 1.4: only the receipt and payment vouchers this user prepared (someone who does not keep the books: cost-view.ts) */
+  ownVouchersOf?: string | undefined;
+}
+
+/** Whether this is a receipt or payment voucher this user prepared (and nobody else has prepared again since). */
+export function isOwnVoucher(db: Db, id: string, userId: string): boolean {
+  return !!db.prepare("SELECT 1 FROM entries WHERE id = ? AND prepared_by_id = ? AND type IN ('receipt', 'payment')").get(id, userId);
 }
 
 export function listEntries(db: Db, f: EntryFilters = {}): EntrySummary[] {
@@ -600,6 +607,7 @@ export function listEntries(db: Db, f: EntryFilters = {}): EntrySummary[] {
   if (f.type) { where.push('e.type = ?'); params.push(f.type); }
   if (f.status) { where.push('e.status = ?'); params.push(f.status); }
   if (f.approval) { where.push("va.state = ? AND e.status <> 'approved'"); params.push(f.approval); }
+  if (f.ownVouchersOf) { where.push("e.prepared_by_id = ? AND e.type IN ('receipt', 'payment')"); params.push(f.ownVouchersOf); }
   if (f.from) { where.push('e.date >= ?'); params.push(f.from); }
   if (f.to) { where.push('e.date <= ?'); params.push(f.to); }
   if (f.q) {

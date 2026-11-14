@@ -17,7 +17,9 @@ export function Accounts() {
   const i18n = useI18n();
   const { t } = i18n;
   const toast = useToast();
-  const { accounts, reloadAccounts, companyBooks } = useData();
+  const { accounts, reloadAccounts, companyBooks, seesBooks } = useData();
+  // 1.4: the balances are not sent to someone who may not read the books (a cashier): no balance column
+  const balances = seesBooks !== false;
   // an account's statement is the company's books: no link for someone limited to branches
   const books = companyBooks !== false;
   const [open, setOpen] = useState<Set<string>>(() => new Set(['1', '18', '181', '183', '16']));
@@ -93,7 +95,7 @@ export function Accounts() {
       <div className="card">
         <table className="table">
           <thead>
-            <tr><th>{t('account')}</th><th>{t('nature')}</th><th className="amount">{t('balance')}</th><th style={{ width: 150 }} /></tr>
+            <tr><th>{t('account')}</th><th>{t('nature')}</th>{balances && <th className="amount">{t('balance')}</th>}<th style={{ width: 150 }} /></tr>
           </thead>
           <tbody>
             {visible.map((a) => {
@@ -116,7 +118,7 @@ export function Accounts() {
                     </div>
                   </td>
                   <td className="small">{a.nature === 'debit' ? t('debit') : t('credit')}</td>
-                  <td className="amount">{a.balance ? i18n.money(a.balance, 'IQD') : '—'}</td>
+                  {balances && <td className="amount">{a.balance ? i18n.money(a.balance, 'IQD') : '—'}</td>}
                   <td>
                     <div className="row" style={{ gap: 4, justifyContent: 'flex-end', flexWrap: 'nowrap' }}>
                       {!(a.postable && a.hasEntries) && <button type="button" className="btn icon small" title={t('addSub')} aria-label={t('addSub') + ' ' + a.code} onClick={() => setAdding(a)}><Icon name="plus" size={15} /></button>}

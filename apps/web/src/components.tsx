@@ -13,6 +13,12 @@ export interface AppData {
   online: boolean;
   /** false for someone limited to branches: no links to the trial balance, final accounts or account statements */
   companyBooks?: boolean;
+  /**
+   * 1.4: false for someone the server sends no cost to (purchase prices, average cost, stock value, a sale's cost), and
+   * for someone it sends neither the books nor profit to (a cashier): those columns and tiles are not shown
+   */
+  seesCost?: boolean;
+  seesBooks?: boolean;
   /** what the person signed in may change (the server refuses the rest anyway): buttons they can't use stay hidden */
   permissions?: readonly Permission[];
   /** who is signed in, for what the app remembers per person on this PC (their usual way of saving an invoice) */
@@ -649,7 +655,8 @@ export function csvCell(cell: string | number): string {
 }
 
 export function downloadCsv(filename: string, rows: (string | number)[][]): void {
-  const csv = rows.map((r) => r.map(csvCell).join(',')).join('\r\n');
+  // (an amount the server did not send, 1.4, is an empty cell)
+  const csv = rows.map((r) => r.map((cell) => (cell === undefined || cell === null ? '' : csvCell(cell))).join(',')).join('\r\n');
   const blob = new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8' });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');

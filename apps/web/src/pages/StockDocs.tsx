@@ -20,6 +20,8 @@ export function StockDocs() {
   const i18n = useI18n();
   const { t } = i18n;
   const [kind, setKind] = useState<StockDocKind | ''>('');
+  // 1.4: what the stock that moved is worth is not sent to someone who may not see cost: no such column
+  const cost = useData().seesCost !== false;
   const { data, error } = useLoad(() => api.stockDocs(kind ? { kind } : {}), [kind]);
   const warehouses = useLoad(() => api.warehouses(), []);
   const canTransfer = (warehouses.data ?? []).filter((w) => w.active).length >= 2;
@@ -43,7 +45,7 @@ export function StockDocs() {
         {data && (data.length === 0 ? <p className="muted" style={{ padding: '14px 16px', margin: 0 }}>{t('noStockDocs')}</p> : (
           <table className="table">
             <thead>
-              <tr><th>{t('colNumber')}</th><th>{t('colType')}</th><th>{t('colDate')}</th><th>{t('warehouse')}</th><th className="amount">{t('moveValue')}</th><th>{t('colStatus')}</th></tr>
+              <tr><th>{t('colNumber')}</th><th>{t('colType')}</th><th>{t('colDate')}</th><th>{t('warehouse')}</th>{cost && <th className="amount">{t('moveValue')}</th>}<th>{t('colStatus')}</th></tr>
             </thead>
             <tbody>
               {data.map((d) => (
@@ -52,7 +54,7 @@ export function StockDocs() {
                   <td>{t(kindKey(d.kind))}</td>
                   <td className="num">{i18n.date(d.date)}</td>
                   <td>{i18n.name(d.warehouseName)}{d.toWarehouseName && <> ← {i18n.name(d.toWarehouseName)}</>}</td>
-                  <td className="amount">{i18n.money(d.totalValue, 'IQD')}</td>
+                  {cost && <td className="amount">{i18n.money(d.totalValue ?? 0, 'IQD')}</td>}
                   <td><InvoiceStatusChip status={d.status} /></td>
                 </tr>
               ))}
@@ -108,7 +110,7 @@ export function StockDocEditor({ kind: initialKind, id }: { kind?: StockDocKind;
       setCounterAccount(d.counterAccountCode ?? '21');
       setNotes(d.notes);
       setRows(d.lines.map((l) => ({
-        key: rowKey++, itemId: l.itemId, qtyMilli: l.lineUnit && l.unitQtyMilli !== null ? l.unitQtyMilli : l.qtyMilli, unitCost: l.unitCost, unit: l.lineUnit,
+        key: rowKey++, itemId: l.itemId, qtyMilli: l.lineUnit && l.unitQtyMilli !== null ? l.unitQtyMilli : l.qtyMilli, unitCost: l.unitCost ?? null, unit: l.lineUnit,
         batchNo: l.batchNo ?? '', expiry: l.expiry ?? '', batchId: l.batchId ?? ''
       })));
       setReady(true);
@@ -220,7 +222,7 @@ export function StockDocEditor({ kind: initialKind, id }: { kind?: StockDocKind;
               const it = itemById.get(r.itemId);
               const short = kind === 'transfer' && it && (baseQty(it, r.unit ?? null, r.qtyMilli ?? 0) ?? 0) > it.qtyMilli;
               // the average cost of one of the line's unit
-              const avg = it ? Math.round((averageCost(it.qtyMilli, it.value) * factorOf(it, r.unit ?? null)) / 1000) : 0;
+              const avg = it ? Math.round((averageCost(it.qtyMilli, it.value ?? 0) * factorOf(it, r.unit ?? null)) / 1000) : 0;
               return (
                 <tr key={r.key}>
                   <td className="muted num">{i18n.int(i + 1)}</td>
@@ -270,7 +272,9 @@ export function StockDocDetail({ id }: { id: string }) {
   const i18n = useI18n();
   const { t } = i18n;
   const toast = useToast();
-  const { settings, reloadAccounts } = useData();
+  const { settings, reloadAccounts, seesCost } = useData();
+  // 1.4: the unit cost and the value are not sent to someone who may not see cost: no such columns, no total
+  const cost = seesCost !== false;
   const { data, error, reload } = useLoad(() => api.stockDoc(id), [id]);
   const [busy, setBusy] = useState(false);
   const [actionError, setActionError] = useState<unknown>(null);
@@ -360,7 +364,7 @@ export function StockDocDetail({ id }: { id: string }) {
           <thead>
             <tr>
               <th style={{ width: 36 }}>#</th><th style={{ width: 90 }}>{t('code')}</th><th>{t('item')}</th>
-              <th className="amount">{t('qty')}</th>{d.kind === 'opening' && <th className="amount">{t('unitCost')}</th>}<th className="amount">{t('moveValue')}</th>
+              <th className="amount">{t('qty')}</th>{cost && d.kind === 'opening' && <th className="amount">{t('unitCost')}</th>}{cost && <th className="amount">{t('moveValue')}</th>}
             </tr>
           </thead>
           <tbody>
@@ -374,13 +378,13 @@ export function StockDocDetail({ id }: { id: string }) {
                     ? <>{qtyText(i18n, l.unitQtyMilli)} <span className="muted small">{unitName(i18n, l.lineUnit)}</span></>
                     : <>{qtyText(i18n, l.qtyMilli)} <span className="muted small">{unitName(i18n, l.unit)}</span></>}
                 </td>
-                {d.kind === 'opening' && <td className="amount">{i18n.money(l.unitCost ?? 0, 'IQD')}</td>}
-                <td className="amount">{l.value !== null ? i18n.money(l.value, 'IQD') : d.kind === 'opening' ? i18n.money(lineAmount(l.lineUnit && l.unitQtyMilli !== null ? l.unitQtyMilli : l.qtyMilli, l.unitCost ?? 0), 'IQD') : ''}</td>
+                {cost && d.kind === 'opening' && <td className="amount">{i18n.money(l.unitCost ?? 0, 'IQD')}</td>}
+                {cost && <td className="amount">{l.value !== null && l.value !== undefined ? i18n.money(l.value, 'IQD') : d.kind === 'opening' ? i18n.money(lineAmount(l.lineUnit && l.unitQtyMilli !== null ? l.unitQtyMilli : l.qtyMilli, l.unitCost ?? 0), 'IQD') : ''}</td>}
               </tr>
             ))}
           </tbody>
-          {(d.status !== 'draft' || d.kind === 'opening') && (
-            <tfoot><tr><td colSpan={d.kind === 'opening' ? 5 : 4}>{t('totals')}</td><td className="amount">{i18n.money(d.totalValue, 'IQD')}</td></tr></tfoot>
+          {cost && (d.status !== 'draft' || d.kind === 'opening') && (
+            <tfoot><tr><td colSpan={d.kind === 'opening' ? 5 : 4}>{t('totals')}</td><td className="amount">{i18n.money(d.totalValue ?? 0, 'IQD')}</td></tr></tfoot>
           )}
         </table>
         {d.notes && <p className="small"><span className="muted">{t('notes')}: </span>{d.notes}</p>}

@@ -11,7 +11,8 @@ export interface AccountView {
   postable: boolean;
   system: boolean;
   nature: Nature;
-  balance: number;
+  /** absent for someone who may not read the books (1.4) */
+  balance?: number;
   hasEntries: boolean;
 }
 
@@ -236,7 +237,8 @@ export interface WarehouseView {
   name: Names;
   accountCode: string;
   active: boolean;
-  value: number;
+  /** the value of its stock in IQD; absent for someone who may not see cost (1.4) */
+  value?: number;
 }
 
 export interface ItemView {
@@ -250,7 +252,8 @@ export interface ItemView {
   trackStock: boolean;
   active: boolean;
   qtyMilli: number;
-  value: number;
+  /** the value of its stock in IQD (its average cost comes from it); absent for someone who may not see cost (1.4) */
+  value?: number;
   hasMoves: boolean;
   /** 1.1: the other units (boxes, strips …), the units sale and purchase lines start in (null: the base unit) */
   units: ItemUnitView[];
@@ -294,8 +297,8 @@ export interface ItemInput {
 }
 
 export interface ItemDetail extends ItemView {
-  stock: { warehouseId: string; warehouseCode: string; warehouseName: Names; qtyMilli: number; value: number }[];
-  moves: { id: number; date: string; warehouseCode: string; qtyMilli: number; value: number; sourceType: string; sourceId: string | null; sourceNumber: string | null; balanceQtyMilli: number }[];
+  stock: { warehouseId: string; warehouseCode: string; warehouseName: Names; qtyMilli: number; value?: number }[];
+  moves: { id: number; date: string; warehouseCode: string; qtyMilli: number; value?: number; sourceType: string; sourceId: string | null; sourceNumber: string | null; balanceQtyMilli: number }[];
 }
 
 export interface InvoiceSummary {
@@ -350,7 +353,9 @@ export interface InvoiceView extends InvoiceSummary {
   cancelledAt: string | null;
   lines: {
     lineNo: number; itemId: string; itemCode: string; itemName: Names; unit: UnitCode; trackStock: boolean;
-    description: string; qtyMilli: number; unitPrice: number; amount: number; cost: number | null;
+    description: string; qtyMilli: number; unitPrice: number; amount: number;
+    /** what the goods cost, once posted; absent for someone who may not see cost (1.4) */
+    cost?: number | null;
     sourceLine: number | null; returnedQtyMilli: number; returnedAmount: number;
     /** 1.1: the unit the line was typed in (null: the base unit), its factor then and the quantity typed */
     lineUnit: UnitCode | null; unitFactorMilli: number | null; unitQtyMilli: number | null;
@@ -377,8 +382,12 @@ export interface Me {
   signInRequired: boolean;
   separateDuties: boolean;
   demo: boolean;
-  /** branchLimited: limited to some branches (never an admin), so the company's own books are not for them */
-  user: { id: string | null; name: string; username: string; roles: Role[]; permissions: Permission[]; branchLimited?: boolean } | null;
+  /**
+   * branchLimited: limited to some branches (never an admin), so the company's own books are not for them.
+   * seesCost, seesBooks (1.4): false for someone the server sends no cost (purchase prices, stock value, a sale's cost)
+   * or no books and profit to, a cashier for one; an older server leaves them out (everything is sent).
+   */
+  user: { id: string | null; name: string; username: string; roles: Role[]; permissions: Permission[]; branchLimited?: boolean; seesCost?: boolean; seesBooks?: boolean } | null;
 }
 
 export interface UserView {
@@ -415,7 +424,8 @@ export interface StockDocSummary {
   warehouseName: Names;
   toWarehouseId: string | null;
   toWarehouseName: Names | null;
-  totalValue: number;
+  /** absent, with the lines' unit cost and value, for someone who may not see cost (1.4) */
+  totalValue?: number;
   notes: string;
   createdBy: string;
 }
@@ -432,7 +442,7 @@ export interface StockDocView extends StockDocSummary {
   cancelledBy: string | null;
   cancelledAt: string | null;
   lines: {
-    lineNo: number; itemId: string; itemCode: string; itemName: Names; unit: UnitCode; qtyMilli: number; unitCost: number | null; value: number | null;
+    lineNo: number; itemId: string; itemCode: string; itemName: Names; unit: UnitCode; qtyMilli: number; unitCost?: number | null; value?: number | null;
     lineUnit: UnitCode | null; unitFactorMilli: number | null; unitQtyMilli: number | null;
     batchNo: string | null; expiry: string | null; batchId: string | null;
   }[];

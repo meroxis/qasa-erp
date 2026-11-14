@@ -423,7 +423,7 @@ const BASE = {
   roleHelp_preparer: ['ينظم السندات والقيود', 'Prepares vouchers and entries', 'سەنەد و تۆمار ئامادە دەکات'],
   roleHelp_checker: ['يدقق السندات أو يعيدها', 'Checks vouchers or sends them back', 'سەنەدەکان وردبینی دەکات یان دەیانگەڕێنێتەوە'],
   roleHelp_approver: ['يصادق السندات فتُرحّل', 'Approves vouchers, which posts them', 'سەنەدەکان پەسەند دەکات و تۆمار دەبن'],
-  roleHelp_sales: ['فواتير المبيعات والمردودات والزبائن', 'Sales invoices, returns and customers', 'پسوولەی فرۆشتن، گەڕاندنەوە و کڕیاران'],
+  roleHelp_sales: ['فواتير المبيعات والمردودات والزبائن، دون الكلفة والربح', 'Sales invoices, returns and customers, without cost or profit', 'پسوولەی فرۆشتن، گەڕاندنەوە و کڕیاران، بێ تێچوو و قازانج'],
   roleHelp_purchasing: ['فواتير الشراء والمردودات والمجهزون', 'Purchase invoices, returns and suppliers', 'پسوولەی کڕین، گەڕاندنەوە و دابینکەران'],
   roleHelp_storekeeper: ['المواد وحركات المخزن', 'Items and stock documents', 'کاڵا و بەڵگەکانی کۆگا'],
   roleHelp_viewer: ['يطّلع على الدفاتر والتقارير دون تعديل', 'Sees the books and reports without changing them', 'دەفتەر و ڕاپۆرتەکان دەبینێت بێ گۆڕین'],
@@ -1090,6 +1090,8 @@ export function makeI18n(lang: Lang, digits: DigitStyle, setLang: (l: Lang) => v
     t,
     name: (n) => n[lang] || n.ar || n.en || n.ku,
     money: (amountMinor, currency, opts) => {
+      // an amount the server did not send (1.4: cost and profit, to someone who may not see them) prints as nothing, never as "NaN"
+      if (typeof amountMinor !== 'number' || Number.isNaN(amountMinor)) return '';
       const text = plus(formatAmount(amountMinor, currency, style), amountMinor, opts);
       // the sign and "$" stay with the digits: "$1,500.00" keeps its "$" on the left in Arabic and Kurdish too (without
       // the isolate, Arabic text before it moves the "$" to the right: "1,500.00$"); the dinar abbreviation stays where it was
