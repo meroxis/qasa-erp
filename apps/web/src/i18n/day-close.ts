@@ -4,16 +4,16 @@ export const DAY_CLOSE_TEXT = {
   dc_teaser: [
     'مبيعات اليوم حسب طريقة الدفع، ونقد كل صندوق المتوقع والمعدود، والمصاريف والديون — للطباعة أو التصدير أو الإرسال إلى واتساب.',
     'The day’s sales by payment method, each register’s cash expected and counted, expenses and debts — to print, export or send on WhatsApp.',
-    'فرۆشتنی ڕۆژ بەپێی ڕێگای پارەدان، پارەی چاوەڕوانکراو و ژمێردراوی هەر کاشێرێک، خەرجی و قەرزەکان — بۆ چاپ، هەناردە یان ناردن بۆ واتسئاپ.'
+    'فرۆشتنی ڕۆژ بەپێی ڕێگای پارەدان، پارەی چاوەڕوانکراو و ژمێردراوی هەر کاشێرێک، خەرجی و قەرزەکان — بۆ چاپکردن، ناردن بۆ Excel یان ناردن بۆ واتسئاپ.'
   ],
-  dc_netSales: ['صافي المبيعات', 'Net sales', 'فرۆشتنی پوخت'],
+  dc_netSales: ['صافي المبيعات', 'Net sales', 'فرۆشتنی سافی'],
   dc_sales: ['المبيعات', 'Sales', 'فرۆشتن'],
   dc_returns: ['المرتجعات', 'Returns', 'گەڕاوەکان'],
   dc_returnsCount: ['{n} مرتجع', '{n} returns', '{n} گەڕاوە'],
   dc_byMethod: ['المبيعات حسب طريقة الدفع', 'Sales by payment method', 'فرۆشتن بەپێی ڕێگای پارەدان'],
   dc_refunds: ['ما رُدّ للزبائن', 'Paid back to customers', 'ئەوەی بۆ کڕیاران گەڕێنرایەوە'],
   dc_method: ['طريقة الدفع', 'Payment method', 'ڕێگای پارەدان'],
-  dc_amount: ['المبلغ', 'Amount', 'بڕ'],
+  dc_amount: ['المبلغ', 'Amount', 'بڕی پارە'],
   dc_invoices: ['الفواتير', 'Invoices', 'پسوولەکان'],
   dc_m_bank: ['إلى المصرف', 'Into the bank', 'بۆ بانک'],
   dc_m_loyalty: ['نقاط الولاء', 'Loyalty points', 'خاڵەکانی دڵسۆزی'],
@@ -23,7 +23,7 @@ export const DAY_CLOSE_TEXT = {
   dc_drawers: ['الأدراج المغلقة: المتوقع والمعدود', 'Closed drawers: expected and counted', 'چەکمەجە داخراوەکان: چاوەڕوانکراو و ژمێردراو'],
   dc_short: ['نقص', 'Short', 'کەم'],
   dc_over: ['زيادة', 'Over', 'زیاد'],
-  dc_balanced: ['مطابق', 'Matches', 'وەک خۆیەتی'],
+  dc_balanced: ['مطابق', 'Matches', 'هاوتایە'],
   dc_expenses: ['مصاريف اليوم', 'The day’s expenses', 'خەرجییەکانی ڕۆژ'],
   dc_debts: ['الديون', 'Debts', 'قەرزەکان'],
   dc_debtsCollected: ['ديون محصّلة', 'Debts collected', 'قەرزی وەرگیراو'],
@@ -32,7 +32,7 @@ export const DAY_CLOSE_TEXT = {
   dc_topItems: ['الأكثر مبيعاً', 'Best sellers', 'زۆرترین فرۆشراو'],
   dc_moneyIn: ['المقبوض', 'Money in', 'پارەی هاتوو'],
   dc_moneyOut: ['المدفوع', 'Money out', 'پارەی دەرچوو'],
-  dc_export: ['تصدير إلى Excel', 'Export to Excel', 'هەناردە بۆ Excel'],
+  dc_export: ['تصدير إلى Excel', 'Export to Excel', 'ناردن بۆ Excel'],
   dc_notes: [
     'من الفواتير المرحّلة والسندات المصادق عليها وورديات نقطة البيع، بالدينار؛ فواتير الدولار بسعرها.',
     'From posted invoices, approved vouchers and the point-of-sale shifts, in dinars; dollar invoices at their own rate.',

@@ -5,16 +5,16 @@
 export const OUTBOX_TEXT = {
   ob_title: ['ما ينتظر الإرسال', 'Waiting to send', 'چاوەڕێی ناردن'],
   ob_bannerOffline: ['غير متصل — {n} بانتظار الإرسال', 'Offline — {n} waiting to send', 'بێ پەیوەندی — {n} چاوەڕێی ناردنن'],
-  ob_bannerOfflineNone: ['غير متصل بخادم المكتب — يستمر البيع نقداً وبالبطاقة، ويُحفظ على هذا الحاسوب حتى يعود الاتصال', 'Offline from the office server — cash and card sales go on and are kept on this PC until the link is back', 'پەیوەندی بە سێرڤەری نووسینگەوە نییە — فرۆشتن بە نەقد و کارت بەردەوامە و تا پەیوەندی دەگەڕێتەوە لەسەر ئەم کۆمپیوتەرە دەپارێزرێت'],
+  ob_bannerOfflineNone: ['غير متصل بخادم المكتب — يستمر البيع نقداً وبالبطاقة، ويُحفظ على هذا الحاسوب حتى يعود الاتصال', 'Offline from the office server — cash and card sales go on and are kept on this PC until the link is back', 'پەیوەندی بە سێرڤەری نووسینگەوە نییە — فرۆشتن بە نەقد و کارت بەردەوامە و تا پەیوەندی دەگەڕێتەوە لەسەر ئەم کۆمپیوتەرە پاشەکەوت دەکرێت'],
   ob_bannerSending: ['يجري إرسال {n} كانت بانتظار الاتصال…', 'Sending {n} that waited for the link…', 'ناردنی {n} کە چاوەڕێی پەیوەندی بوون…'],
   ob_bannerWaiting: ['{n} بانتظار الإرسال على هذا الحاسوب', '{n} waiting to send on this PC', '{n} لەسەر ئەم کۆمپیوتەرە چاوەڕێی ناردنن'],
-  ob_bannerRefused: ['{n} لم يقبلها الخادم وتحتاج إلى من يراجعها', '{n} not accepted by the server and need a person', '{n} لەلایەن سێرڤەرەوە وەرنەگیران و پێویستیان بە کەسێکە سەیریان بکات'],
-  ob_bannerDamaged: ['تعذّرت قراءة قائمة الانتظار على هذا الحاسوب فحُفظت جانباً كما هي. اتصل بالدعم.', 'The waiting list on this PC could not be read and was kept aside as it was. Contact support.', 'لیستی چاوەڕوانی لەسەر ئەم کۆمپیوتەرە نەخوێندرایەوە و وەک خۆی لایەک دانرا. پەیوەندی بە پشتگیرییەوە بکە.'],
+  ob_bannerRefused: ['{n} لم يقبلها الخادم وتحتاج إلى من يراجعها', '{n} not accepted by the server and need a person', 'سێرڤەر {n} دانەی وەرنەگرتووە و پێویستە کەسێک سەیریان بکات'],
+  ob_bannerDamaged: ['تعذّرت قراءة قائمة الانتظار على هذا الحاسوب فحُفظت جانباً كما هي. اتصل بالدعم.', 'The waiting list on this PC could not be read and was kept aside as it was. Contact support.', 'لیستی چاوەڕوانی لەسەر ئەم کۆمپیوتەرە نەخوێنرایەوە و وەک خۆی خرایە لاوە. پەیوەندی بە پشتیوانییەوە بکە.'],
   ob_open: ['عرض القائمة', 'Open the list', 'کردنەوەی لیستەکە'],
   ob_intro: [
     'ما حفظه هذا الحاسوب حين تعذّر الوصول إلى خادم المكتب: مبيعات الكاشير وسندات القبض. يُرسل كلٌّ منها وحده وبالترتيب عند عودة الاتصال، ويُسجَّل في الدفاتر مرة واحدة فقط.',
     'What this PC kept while the office server could not be reached: till sales and receipt vouchers. Each is sent by itself, in order, when the link is back, and is booked once only.',
-    'ئەوەی ئەم کۆمپیوتەرە پاشەکەوتی کرد کاتێک سێرڤەری نووسینگە نەدەگەیشترا: فرۆشتنەکانی کاشێر و سەنەدەکانی وەرگرتن. هەر یەکەیان خۆی و بە ڕیز کاتێک پەیوەندی گەڕایەوە دەنێردرێت، و تەنها یەک جار لە دەفتەرەکاندا تۆمار دەکرێت.'
+    'ئەوەی ئەم کۆمپیوتەرە پاشەکەوتی کرد کاتێک پەیوەندی بە سێرڤەری نووسینگەوە نەبوو: فرۆشتنەکانی کاشێر و سەنەدەکانی وەرگرتن. کاتێک پەیوەندی گەڕایەوە هەر یەکەیان بە جیا و بە ڕیز دەنێردرێت، و تەنها یەک جار لە دەفتەرەکاندا تۆمار دەکرێت.'
   ],
   ob_none: ['لا شيء بانتظار الإرسال.', 'Nothing is waiting to send.', 'هیچ شتێک چاوەڕێی ناردن نییە.'],
   ob_notOffice: ['قائمة الانتظار موجودة فقط على حاسوب متصل بخادم المكتب.', 'The waiting list is only on a PC connected to an office server.', 'لیستی چاوەڕوانی تەنها لەسەر کۆمپیوتەرێکە کە بە سێرڤەری نووسینگەوە بەستراوە.'],
@@ -23,7 +23,7 @@ export const OUTBOX_TEXT = {
   ob_what: ['ما هو', 'What', 'چییە'],
   ob_madeBy: ['بواسطة', 'By', 'لەلایەن'],
   ob_madeAt: ['الوقت', 'Time', 'کات'],
-  ob_amount: ['المبلغ', 'Amount', 'بڕ'],
+  ob_amount: ['المبلغ', 'Amount', 'بڕی پارە'],
   ob_state: ['الحالة', 'Status', 'دۆخ'],
   ob_waiting: ['بانتظار الإرسال', 'Waiting', 'چاوەڕێی ناردن'],
   ob_sending: ['يُرسل الآن', 'Sending', 'دەنێردرێت'],
@@ -60,7 +60,7 @@ export const OUTBOX_TEXT = {
   pos_offlineShort: [
     'المخزون المعروف آخر مرة أقل مما بيع: {i}. حُفظ البيع، ويتحقق منه الخادم عند وصوله.',
     'The stock last known is less than was sold: {i}. The sale is kept; the server checks it when it arrives.',
-    'ئەو کۆگایەی دوایین جار زانرا کەمترە لەوەی فرۆشرا: {i}. فرۆشتنەکە پاشەکەوت کرا؛ سێرڤەرەکە کاتێک گەیشت دەیپشکنێت.'
+    'دوایین بڕی زانراوی کۆگا کەمترە لەوەی فرۆشرا: {i}. فرۆشتنەکە پاشەکەوت کرا؛ کاتێک گەیشتە سێرڤەر، سێرڤەر دەیپشکنێت.'
   ],
   pos_offlineNoAccount: ['البيع على حساب الزبون يحتاج الاتصال بالخادم.', 'Selling on a customer’s account needs the server.', 'فرۆشتن بە قەرز پێویستی بە سێرڤەرە.'],
   pos_unsure: [
@@ -89,11 +89,11 @@ export const OUTBOX_TEXT = {
   err_outbox_unavailable: [
     'لا يمكن حفظه على هذا الحاسوب الآن (لم يصل إلى خادم المكتب منذ فُتح البرنامج).',
     'It can’t be kept on this PC now (the PC hasn’t reached the office server since the app opened).',
-    'ئێستا ناتوانرێت لەسەر ئەم کۆمپیوتەرە پاشەکەوت بکرێت (لە کاتی کردنەوەی بەرنامەکەوە نەگەیشتۆتە سێرڤەری نووسینگە).'
+    'ئێستا لەسەر ئەم کۆمپیوتەرە پاشەکەوت ناکرێت (لەوەتەی بەرنامەکە کراوەتەوە پەیوەندی بە سێرڤەری نووسینگەوە نەبووە).'
   ],
-  err_outbox_write_failed: ['تعذّرت الكتابة على قرص هذا الحاسوب (ربما امتلأ). لم يُحفظ.', 'Couldn’t write to this PC’s disk (it may be full). It was not kept.', 'نەتوانرا لەسەر دیسکی ئەم کۆمپیوتەرە بنووسرێت (لەوانەیە پڕ بووبێت). پاشەکەوت نەکرا.'],
-  err_outbox_full: ['قائمة الانتظار على هذا الحاسوب ممتلئة. أعد الاتصال بخادم المكتب أولاً.', 'The waiting list on this PC is full. Reconnect to the office server first.', 'لیستی چاوەڕوانی لەسەر ئەم کۆمپیوتەرە پڕە. سەرەتا دووبارە بە سێرڤەری نووسینگەوە ببەستەوە.'],
-  err_outbox_invalid: ['لا يمكن حفظ هذا في قائمة الانتظار.', 'This can’t be kept in the waiting list.', 'ئەمە ناتوانرێت لە لیستی چاوەڕوانیدا پاشەکەوت بکرێت.'],
+  err_outbox_write_failed: ['تعذّرت الكتابة على قرص هذا الحاسوب (ربما امتلأ). لم يُحفظ.', 'Couldn’t write to this PC’s disk (it may be full). It was not kept.', 'لەسەر دیسکی ئەم کۆمپیوتەرە نەنووسرا (لەوانەیە پڕ بووبێت). پاشەکەوت نەکرا.'],
+  err_outbox_full: ['قائمة الانتظار على هذا الحاسوب ممتلئة. أعد الاتصال بخادم المكتب أولاً.', 'The waiting list on this PC is full. Reconnect to the office server first.', 'لیستی چاوەڕوانی لەسەر ئەم کۆمپیوتەرە پڕە. سەرەتا پەیوەندی بە سێرڤەری نووسینگەوە بکەرەوە.'],
+  err_outbox_invalid: ['لا يمكن حفظ هذا في قائمة الانتظار.', 'This can’t be kept in the waiting list.', 'ئەمە لە لیستی چاوەڕوانیدا پاشەکەوت ناکرێت.'],
   err_outbox_duplicate: ['هذا محفوظ في قائمة الانتظار من قبل.', 'This is in the waiting list already.', 'ئەمە پێشتر لە لیستی چاوەڕوانیدایە.'],
   err_outbox_missing: ['لم يعد هذا في قائمة الانتظار.', 'This is no longer in the waiting list.', 'ئەمە چیتر لە لیستی چاوەڕوانیدا نییە.'],
   err_idempotency_key_reused: [
@@ -105,5 +105,5 @@ export const OUTBOX_TEXT = {
   err_pos_offline_on_account: ['البيع على حساب الزبون يحتاج الاتصال بالخادم.', 'Selling on a customer’s account needs the server.', 'فرۆشتن بە قەرز پێویستی بە سێرڤەرە.'],
   err_pos_offline_loyalty: ['استعمال نقاط الولاء يحتاج الاتصال بالخادم.', 'Using loyalty points needs the server.', 'بەکارهێنانی خاڵەکانی دڵسۆزی پێویستی بە سێرڤەرە.'],
   err_pos_offline_invalid: ['الرقم المؤقت لهذا البيع غير صالح.', 'This sale’s temporary number isn’t valid.', 'ژمارەی کاتیی ئەم فرۆشتنە دروست نییە.'],
-  err_other_books: ['حُفظ هذا لدفاتر شركة أخرى، فلا يُرسل إلى هذه.', 'This was kept for another company’s books, so it isn’t sent to these.', 'ئەمە بۆ دەفتەری کۆمپانیایەکی تر پاشەکەوت کرابوو، بۆیە بۆ ئەمە نانێردرێت.']
+  err_other_books: ['حُفظ هذا لدفاتر شركة أخرى، فلا يُرسل إلى هذه.', 'This was kept for another company’s books, so it isn’t sent to these.', 'ئەمە بۆ دەفتەری کۆمپانیایەکی تر پاشەکەوت کرابوو، بۆیە بۆ دەفتەری ئەم کۆمپانیایە نانێردرێت.']
 } as const satisfies Record<string, readonly [string, string, string]>;

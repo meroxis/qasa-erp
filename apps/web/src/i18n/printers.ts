@@ -4,38 +4,38 @@ export const PRINTER_TEXT = {
   prn_help: [
     'اختر لكل نوع من الأوراق طابعته وحجم ورقه. يُحفظ الاختيار على هذا الحاسوب فقط، فلكل حاسوب طابعاته.',
     'Choose the printer and paper for each kind of paper. The choice stays on this computer only, since each computer has its own printers.',
-    'بۆ هەر جۆرێکی پەڕە چاپکەر و قەبارەی پەڕەکەی هەڵبژێرە. هەڵبژاردنەکە تەنها لەسەر ئەم کۆمپیوتەرە دەمێنێتەوە، چونکە هەر کۆمپیوتەرێک چاپکەری خۆی هەیە.'
+    'بۆ هەر جۆرە پەڕەیەک چاپکەر و قەبارەی کاغەزەکەی هەڵبژێرە. هەڵبژاردنەکە تەنها لەسەر ئەم کۆمپیوتەرە دەمێنێتەوە، چونکە هەر کۆمپیوتەرێک چاپکەری خۆی هەیە.'
   ],
   prn_browser: [
     'في المتصفح يفتح زر «طباعة» نافذة الطباعة في المتصفح، ومنها تختار الطابعة والورق في كل مرة. اختيار طابعة ثابتة لكل نوع من الأوراق متاح في برنامج ويندوز.',
     'In the browser, Print opens the browser’s print window, where you choose the printer and paper each time. Setting a printer for each kind of paper is in the Windows app.',
-    'لە وێبگەڕدا دوگمەی «چاپ» پەنجەرەی چاپی وێبگەڕ دەکاتەوە، و هەموو جارێک لەوێ چاپکەر و پەڕە هەڵدەبژێریت. دانانی چاپکەرێکی جێگیر بۆ هەر جۆرە پەڕەیەک لە بەرنامەی ویندۆزدایە.'
+    'لە وێبگەڕدا دوگمەی «چاپکردن» پەنجەرەی چاپی وێبگەڕ دەکاتەوە، و هەموو جارێک لەوێ چاپکەر و کاغەز هەڵدەبژێریت. دانانی چاپکەرێکی جێگیر بۆ هەر جۆرە پەڕەیەک لە بەرنامەی ویندۆزدایە.'
   ],
   prn_kind: ['الورقة', 'Paper', 'پەڕە'],
   prn_kind_invoice: ['فواتير البيع والشراء والمرتجعات', 'Sales and purchase invoices, returns', 'پسوولەکانی فرۆشتن و کڕین و گەڕاوەکان'],
-  prn_kind_voucher: ['السندات والقيود', 'Vouchers and entries', 'سەنەد و تۆمارەکان'],
-  prn_kind_quote: ['عروض الأسعار وأوامر الشراء', 'Quotations and purchase orders', 'نرخدانان و داواکاریی کڕین'],
-  prn_kind_receipt: ['إيصال نقطة البيع', 'POS receipt', 'پسوولەی خاڵی فرۆشتن'],
+  prn_kind_voucher: ['السندات والقيود', 'Vouchers and entries', 'سەنەد و قەیدەکان'],
+  prn_kind_quote: ['عروض الأسعار وأوامر الشراء', 'Quotations and purchase orders', 'عەرزی نرخ و داواکاریی کڕین'],
+  prn_kind_receipt: ['إيصال نقطة البيع', 'POS receipt', 'وەسڵی خاڵی فرۆشتن'],
   prn_kind_label: ['ملصقات الباركود', 'Barcode labels', 'لێبڵی بارکۆد'],
   prn_kind_report: ['التقارير وكشوف الحساب', 'Reports and statements', 'ڕاپۆرت و کەشفی هەژمار'],
   prn_also_invoice: ['ومعها عقود التقسيط.', 'Installment contracts too.', 'گرێبەستی قیستیش.'],
   prn_also_voucher: [
     'ومعها الصكوك ومستندات المخزن والتسويات ووصل استلام الصيانة.',
     'Also cheques, stock papers, adjustments and repair tickets.',
-    'هەروەها چەک، بەڵگەکانی کۆگا، ڕێکخستنەکان و پسوولەی وەرگرتنی چاککردنەوە.'
+    'هەروەها چەک، سەنەدەکانی کۆگا، ڕاستکردنەوەکان و وەسڵی وەرگرتنی چاککردنەوە.'
   ],
-  prn_also_quote: ['ومعها عروض الأعمال الهندسية والطاقة الشمسية.', 'Also engineering and solar quotes.', 'هەروەها نرخدانانی کاری ئەندازیاری و وزەی خۆر.'],
+  prn_also_quote: ['ومعها عروض الأعمال الهندسية والطاقة الشمسية.', 'Also engineering and solar quotes.', 'هەروەها عەرزی نرخی کاری ئەندازیاری و وزەی خۆر.'],
   prn_also_receipt: ['ومعه وصل جباية المولدة.', 'Also generator collection receipts.', 'هەروەها وەسڵی کۆکردنەوەی مۆلیدە.'],
   prn_also_label: ['على طابعة الملصقات أو على أوراق A4.', 'On a label printer or on A4 sheets.', 'لەسەر چاپکەری لێبڵ یان لەسەر پەڕەی A4.'],
-  prn_also_report: ['ومعها الرواتب وأوراق الجرد.', 'Also payroll and count sheets.', 'هەروەها مووچە و پەڕەی ژماردن.'],
+  prn_also_report: ['ومعها الرواتب وأوراق الجرد.', 'Also payroll and count sheets.', 'هەروەها لیستی مووچە و پەڕەی جەرد.'],
   prn_printer: ['الطابعة', 'Printer', 'چاپکەر'],
   prn_ask: ['السؤال في كل مرة', 'Ask every time', 'هەموو جارێک بپرسە'],
-  prn_paper: ['حجم الورق', 'Paper size', 'قەبارەی پەڕە'],
-  prn_paper_auto: ['ورق الطابعة المعتاد', 'Printer’s usual paper', 'پەڕەی ئاسایی چاپکەر'],
+  prn_paper: ['حجم الورق', 'Paper size', 'قەبارەی کاغەز'],
+  prn_paper_auto: ['ورق الطابعة المعتاد', 'Printer’s usual paper', 'کاغەزی ئاسایی چاپکەر'],
   prn_paper_A4: ['A4', 'A4', 'A4'],
   prn_paper_A5: ['A5', 'A5', 'A5'],
-  prn_paper_receipt80: ['إيصال 80 مم', '80 mm receipt', 'پسوولەی 80 ملم'],
-  prn_paper_receipt58: ['إيصال 58 مم', '58 mm receipt', 'پسوولەی 58 ملم'],
+  prn_paper_receipt80: ['إيصال 80 مم', '80 mm receipt', 'وەسڵی 80 ملم'],
+  prn_paper_receipt58: ['إيصال 58 مم', '58 mm receipt', 'وەسڵی 58 ملم'],
   prn_paper_label38x25: ['ملصق 38 × 25 مم', '38 × 25 mm label', 'لێبڵی 38 × 25 ملم'],
   prn_paper_label50x30: ['ملصق 50 × 30 مم', '50 × 30 mm label', 'لێبڵی 50 × 30 ملم'],
   prn_margins: ['الهوامش', 'Margins', 'پەراوێز'],
@@ -57,7 +57,7 @@ export const PRINTER_TEXT = {
   prn_none: [
     'لا يعرض ويندوز أي طابعة على هذا الحاسوب، لذا يفتح زر «طباعة» نافذة الطباعة. أضف الطابعة في ويندوز ثم اضغط «تحديث القائمة».',
     'Windows lists no printer on this computer, so Print opens the print window. Add the printer in Windows, then click Refresh the list.',
-    'ویندۆز هیچ چاپکەرێک لەسەر ئەم کۆمپیوتەرە نیشان نادات، بۆیە دوگمەی «چاپ» پەنجەرەی چاپ دەکاتەوە. چاپکەرەکە لە ویندۆز زیاد بکە، پاشان کرتە لە «نوێکردنەوەی لیست» بکە.'
+    'ویندۆز هیچ چاپکەرێک لەسەر ئەم کۆمپیوتەرە نیشان نادات، بۆیە دوگمەی «چاپکردن» پەنجەرەی چاپ دەکاتەوە. چاپکەرەکە لە ویندۆز زیاد بکە، پاشان کلیک لە «نوێکردنەوەی لیست» بکە.'
   ],
   prn_gone: ['غير موجودة الآن', 'Not found now', 'ئێستا نییە'],
   prn_goneHelp: [
@@ -86,7 +86,7 @@ export const PRINTER_TEXT = {
   prn_n_failed: [
     'لم تستلم الطابعة {p} الورقة. تأكد أنها مشغّلة وموصولة وفيها ورق، ثم اطبع مجدداً، أو اختر طابعة أخرى من نافذة الطباعة.',
     'The printer {p} didn’t take the paper. Check it is on, connected and has paper, then print again, or pick another printer in the print window.',
-    'چاپکەری {p} پەڕەکەی وەرنەگرت. دڵنیابە کە هەڵکراوە و پەیوەستە و پەڕەی تێدایە، پاشان دووبارە چاپ بکە، یان لە پەنجەرەی چاپ چاپکەرێکی تر هەڵبژێرە.'
+    'چاپکەری {p} پەڕەکەی وەرنەگرت. دڵنیابە کە هەڵکراوە و پەیوەستە و کاغەزی تێدایە، پاشان دووبارە چاپ بکە، یان لە پەنجەرەی چاپ چاپکەرێکی تر هەڵبژێرە.'
   ],
   prn_n_busy: [
     'ما زالت ورقة سابقة تُرسل إلى الطابعة. انتظر لحظة، ثم اطبع مجدداً.',

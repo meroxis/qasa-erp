@@ -210,7 +210,7 @@ export function revaluation(db: Db, f: { date?: string | undefined; rateX100?: n
 const DESCRIPTION: Record<'ar' | 'en' | 'ku', (rate: string, date: string) => string> = {
   ar: (rate, date) => `إعادة تقييم أرصدة الدولار بسعر ${rate} دينار في ${date}`,
   en: (rate, date) => `Revaluation of dollar balances at ${rate} dinars on ${date}`,
-  ku: (rate, date) => `هەڵسەنگاندنەوەی باڵانسی دۆلار بە نرخی ${rate} دینار لە ${date}`
+  ku: (rate, date) => `هەڵسەنگاندنەوەی ڕەسیدی دۆلار بە نرخی ${rate} دینار لە ${date}`
 };
 
 /**

@@ -162,9 +162,9 @@ const IMPORT_WORDS: Record<ImportLang, { stock: string; customers: string; suppl
   },
   ku: {
     stock: 'هاوردە کراوە لە Excel',
-    customers: 'باڵانسی سەرەتای کڕیاران (هاوردە کراو)',
-    suppliers: 'باڵانسی سەرەتای دابینکەران (هاوردە کراو)',
-    trialBalance: 'باڵانسی سەرەتا (تەرازووی پێداچوونەوەی هاوردە کراو)'
+    customers: 'ڕەسیدی سەرەتای کڕیاران (هاوردە کراو)',
+    suppliers: 'ڕەسیدی سەرەتای دابینکەران (هاوردە کراو)',
+    trialBalance: 'ڕەسیدی سەرەتا (تەرازووی پێداچوونەوەی هاوردە کراو)'
   }
 };
 const importWords = (input: ImportInput) => IMPORT_WORDS[input.lang ?? 'ar'];

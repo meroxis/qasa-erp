@@ -4,7 +4,7 @@ export const USAGE_TEXT = {
   us_help: [
     'مرة في اليوم يخبر البرنامج Meroxis بأن هذا التثبيت مستخدم، مع نسخته وخطته وعدد المستخدمين. لا يُرسل أي اسم أو مبلغ أو شيء من دفاترك. هذا يساعدنا على تحسين قاصة ERP.',
     'Once a day the app tells Meroxis that this installation is in use, with its version, plan and number of users. No name, amount or anything from your books is ever sent. It helps us improve Qasa ERP.',
-    'ڕۆژانە جارێک ئەپەکە بە Meroxis دەڵێت ئەم دامەزراندنە بەکاردێت، لەگەڵ وەشان و پلان و ژمارەی بەکارهێنەران. هیچ ناو و بڕ و شتێک لە دەفتەرەکانت نانێردرێت. یارمەتیمان دەدات قاسە ERP باشتر بکەین.'
+    'ڕۆژانە جارێک بەرنامەکە بە Meroxis دەڵێت ئەم دامەزراندنە بەکاردێت، لەگەڵ وەشان و پلان و ژمارەی بەکارهێنەران. هیچ ناو و بڕی پارە و شتێک لە دەفتەرەکانت نانێردرێت. ئەمە یارمەتیمان دەدات قاسە ERP باشتر بکەین.'
   ],
   us_switch: ['إرسال الإحصاءات المجهولة', 'Send anonymous statistics', 'ناردنی ئاماری بێناو'],
   us_whatSent: ['ما الذي يُرسل بالضبط؟', 'What exactly is sent?', 'بە وردی چی دەنێردرێت؟'],
@@ -19,12 +19,12 @@ export const USAGE_TEXT = {
   us_field_rest: [
     'نسخة البرنامج وقناة التحديث (المستقرة أو التجريبية)، نظام التشغيل، اللغة، الخطة (دون رقم الترخيص)، نشاط الشركة، عدد الشركات والمستخدمين، وهل هذا أول تقرير يرسله هذا التثبيت، ورقم عشوائي لمرة واحدة (nonce) يُستخدم للتحقق من الوقت ولا يُحفظ في أي مكان',
     'App version and update channel (stable or beta), operating system, language, plan (without the licence number), business type, number of companies and users, whether this is the first report from this installation, and a one-time random number (a nonce) used to check the time, which is kept nowhere',
-    'وەشانی ئەپ و کەناڵی نوێکردنەوە (جێگیر یان تاقیکاری)، سیستەمی کارپێکردن، زمان، پلان (بەبێ ژمارەی مۆڵەت)، جۆری چالاکی، ژمارەی کۆمپانیا و بەکارهێنەران، ئایا ئەمە یەکەم ڕاپۆرتی ئەم دامەزراندنەیە، و ژمارەیەکی هەڕەمەکیی یەکجاری (nonce) بۆ پشکنینی کات، کە لە هیچ شوێنێک هەڵناگیرێت'
+    'وەشانی بەرنامە و کەناڵی نوێکردنەوە (جێگیر یان تاقیکاری)، سیستەمی کارپێکردن، زمان، پلان (بەبێ ژمارەی مۆڵەت)، جۆری کار، ژمارەی کۆمپانیا و بەکارهێنەران، ئایا ئەمە یەکەم ڕاپۆرتی ئەم دامەزراندنەیە، و ژمارەیەکی هەڕەمەکیی یەکجاری (nonce) بۆ پشکنینی کات، کە لە هیچ شوێنێک هەڵناگیرێت'
   ],
-  us_support: ['الدعم عبر واتساب', 'WhatsApp support', 'پشتگیری لە واتساپ'],
-  us_supportShort: ['الدعم', 'Support', 'پشتگیری'],
-  us_helpTitle: ['المساعدة والدعم', 'Help & support', 'یارمەتی و پشتگیری'],
-  us_helpText: ['راسلنا على واتساب لأي سؤال أو مشكلة — بالعربية أو الكوردية أو الإنكليزية.', 'Message us on WhatsApp for any question or problem — in Arabic, Kurdish or English.', 'بۆ هەر پرسیار یان کێشەیەک لە واتساپ نامەمان بۆ بنێرە — بە کوردی، عەرەبی یان ئینگلیزی.'],
+  us_support: ['الدعم عبر واتساب', 'WhatsApp support', 'پشتیوانی لە واتسئاپ'],
+  us_supportShort: ['الدعم', 'Support', 'پشتیوانی'],
+  us_helpTitle: ['المساعدة والدعم', 'Help & support', 'یارمەتی و پشتیوانی'],
+  us_helpText: ['راسلنا على واتساب لأي سؤال أو مشكلة — بالعربية أو الكوردية أو الإنكليزية.', 'Message us on WhatsApp for any question or problem — in Arabic, Kurdish or English.', 'بۆ هەر پرسیار یان کێشەیەک لە واتسئاپ نامەمان بۆ بنێرە — بە کوردی، عەرەبی یان ئینگلیزی.'],
   us_website: ['الموقع', 'Website', 'ماڵپەڕ'],
   us_guide: ['دليل الاستخدام', 'User guide', 'ڕێنمایی بەکارهێنان'],
   // the small "?" beside a page title or a settings card: opens that topic of the user guide on qasaerp.com

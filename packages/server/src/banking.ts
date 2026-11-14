@@ -184,7 +184,7 @@ export function transfer(db: Db, input: TransferInput, actor: Actor): EntryView 
 
 export const NOTES_RECEIVABLE = '162';
 export const NOTES_PAYABLE = '262';
-const NR_NAMES: Names = { ar: 'أوراق القبض', en: 'Notes receivable', ku: 'بەڵگەنامەکانی وەرگرتن' };
+const NR_NAMES: Names = { ar: 'أوراق القبض', en: 'Notes receivable', ku: 'چەک و کەمبیالەی وەرگیراو' };
 
 /**
  * Notes receivable (أوراق القبض, 162 in the unified chart). New and older companies alike get it the first time a
@@ -445,7 +445,7 @@ const WORDS: Record<BankLang, {
 }> = {
   ar: { transfer: 'تحويل بين الحسابات', charge: 'عمولة مصرفية', cheque: (n, b) => `صك رقم ${n} — ${b}`, cleared: 'صُرف', bounced: 'مرتجع', fee: 'عمولة صك مرتجع', cancelled: 'ملغى' },
   en: { transfer: 'Transfer', charge: 'Bank charge', cheque: (n, b) => `Cheque ${n} — ${b}`, cleared: 'cleared', bounced: 'bounced', fee: 'Bounced cheque fee', cancelled: 'cancelled' },
-  ku: { transfer: 'گواستنەوە لە نێوان هەژمارەکان', charge: 'کرێی بانک', cheque: (n, b) => `چەکی ژمارە ${n} — ${b}`, cleared: 'سەرف کرا', bounced: 'گەڕایەوە', fee: 'کرێی چەکی گەڕاوە', cancelled: 'هەڵوەشێنرایەوە' }
+  ku: { transfer: 'گواستنەوە لە نێوان هەژمارەکان', charge: 'کۆمیسیۆنی بانک', cheque: (n, b) => `چەکی ژمارە ${n} — ${b}`, cleared: 'سەرف کرا', bounced: 'گەڕایەوە', fee: 'کۆمیسیۆنی چەکی گەڕاوە', cancelled: 'هەڵوەشێنرایەوە' }
 };
 const words = (lang: BankLang | undefined) => WORDS[lang ?? 'ar'];
 

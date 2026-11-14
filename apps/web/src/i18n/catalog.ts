@@ -23,7 +23,7 @@ export const CATALOG_TEXT = {
   bnd_help: [
     'ماركات المواد: قائمة واحدة لكل المواد، ومنها قطع السيارات. يُكتب اسم الماركة كما هو، ويمكن إضافة كتابته بالعربية والكردية.',
     'The brands of your items: one list for every item, car parts included. A brand is written as it is; an Arabic and a Kurdish spelling can be added.',
-    'براندی کاڵاکان: یەک لیست بۆ هەموو کاڵاکان، پارچەی ئۆتۆمبێلیشەوە. ناوی براند وەک خۆی دەنووسرێت؛ دەتوانرێت نووسینی عەرەبی و کوردیشی بۆ زیاد بکرێت.'
+    'براندی کاڵاکان: یەک لیست بۆ هەموو کاڵاکان، بە پارچەی ئۆتۆمبێلیشەوە. ناوی براند وەک خۆی دەنووسرێت؛ دەتوانیت نووسینی عەرەبی و کوردیشی بۆ زیاد بکەیت.'
   ],
   bnd_name: ['اسم الماركة', 'Brand name', 'ناوی براند'],
   bnd_nameAr: ['الكتابة بالعربية (اختياري)', 'Arabic spelling (optional)', 'نووسینی عەرەبی (ئارەزوومەندانە)'],
@@ -44,11 +44,11 @@ export const CATALOG_TEXT = {
   st_trade: ['نوع التجارة', 'Trade', 'جۆری بازرگانی'],
   st_added: ['أُضيف: تصنيفات {c}، تصنيفات فرعية {s}، ماركات {b}.', 'Added {c} categories, {s} subcategories and {b} brands.', '{c} پۆل و {s} پۆلی لاوەکی و {b} براند زیاد کران.'],
   ro_title: ['مواد للطلب', 'Reorder', 'کاڵا بۆ داواکردنەوە'],
-  ro_count: ['{n} مادة عند حدها الأدنى أو تحته', '{n} items at or below their minimum', '{n} کاڵا لە کەمترین بڕی خۆیان یان کەمتر'],
+  ro_count: ['{n} مادة عند حدها الأدنى أو تحته', '{n} items at or below their minimum', '{n} کاڵا گەیشتوونەتە کەمترین بڕی خۆیان یان لەوە کەمترن'],
   ro_help: [
     'المواد التي بلغ مخزونها حدها الأدنى أو نزل عنه: حد المادة نفسها، أو حد تصنيفها إن لم يكن لها حد.',
     'Items whose stock is at or below their minimum: the item’s own, or its category’s when it has none.',
-    'ئەو کاڵایانەی کۆگاکەیان گەیشتووەتە کەمترین بڕ یان کەمتر: هی خودی کاڵاکە، یان هی پۆلەکەی ئەگەر خۆی نەیبێت.'
+    'ئەو کاڵایانەی بڕی کۆگایان گەیشتووەتە کەمترین بڕ یان لەوە کەمترە: هی خودی کاڵاکە، یان هی پۆلەکەی ئەگەر خۆی نەیبێت.'
   ],
   ro_none: ['لا توجد مادة عند حدها الأدنى.', 'No item is at its minimum.', 'هیچ کاڵایەک لە کەمترین بڕی خۆیدا نییە.'],
   ro_short: ['الناقص', 'Short by', 'کەمی'],
@@ -78,7 +78,7 @@ export const CATALOG_TEXT = {
   so_help: [
     'يحفظ نسخة احتياطية أولاً، ثم يضع ملف الشركة الحالي جانباً في مجلد البيانات (لا يُحذف) ويفتح شركة فارغة لإعدادها من البداية. يبقى الترخيص وتفعيل هذا الحاسوب.',
     'Saves a backup first, then keeps the current company file aside in the data folder (it is never deleted) and opens an empty company to set up from the start. The licence and this PC’s activation stay.',
-    'سەرەتا باکئەپێک پاشەکەوت دەکات، پاشان فایلی ئێستای کۆمپانیا لە بوخچەی داتادا لادەنێت (هەرگیز ناسڕدرێتەوە) و کۆمپانیایەکی بەتاڵ دەکاتەوە بۆ ڕێکخستن لە سەرەتاوە. مۆڵەت و چالاککردنی ئەم کۆمپیوتەرە دەمێننەوە.'
+    'سەرەتا باکئەپێک پاشەکەوت دەکات، پاشان فایلی ئێستای کۆمپانیا لە بوخچەی داتادا هەڵدەگرێت (هەرگیز ناسڕدرێتەوە) و کۆمپانیایەکی بەتاڵ دەکاتەوە بۆ ڕێکخستن لە سەرەتاوە. مۆڵەتی بەرنامە و چالاککردنی ئەم کۆمپیوتەرە دەمێننەوە.'
   ],
   so_button: ['البدء من جديد', 'Start over', 'دەستپێکردنەوە'],
   so_warning: [
@@ -115,24 +115,24 @@ export const CATALOG_TEXT = {
     'دەفتەرەکان لەسەر ڕاژەکاری داتابەیسن؛ سەرەتا بیانگەڕێنەوە بۆ فایلی کۆمپانیا (ڕێکخستنەکان ← داتابەیس).'
   ],
   so_err_error: ['حدث خطأ، فلم يتغير شيء.', 'Something went wrong, so nothing was changed.', 'هەڵەیەک ڕوویدا، بۆیە هیچ نەگۆڕا.'],
-  cs_limit: ['حصر جزء من المخزن:', 'Count part of the stock:', 'ژماردنی بەشێکی کۆگا:'],
+  cs_limit: ['حصر جزء من المخزن:', 'Count part of the stock:', 'جەردی بەشێکی کۆگا:'],
   cs_limitHelp: [
     'اختر تصنيفات (مع فرعياتها) أو ماركات قبل البدء؛ لا تُعدّ ولا تُسوّى إلا موادها.',
     'pick categories (with their subcategories) or brands before you start; only their items are counted and adjusted.',
-    'پێش دەستپێکردن پۆل (لەگەڵ لاوەکییەکانیان) یان براند هەڵبژێرە؛ تەنها کاڵاکانیان دەژمێردرێن و ڕێک دەخرێن.'
+    'پێش دەستپێکردن پۆل (لەگەڵ لاوەکییەکانیان) یان براند هەڵبژێرە؛ تەنها کاڵاکانیان دەژمێردرێن و ڕاست دەکرێنەوە.'
   ],
   cs_addCategory: ['+ تصنيف', '+ Category', '+ پۆل'],
   cs_addBrand: ['+ ماركة', '+ Brand', '+ براند'],
-  cs_limited: ['هذا الجرد محصور في: {s}. المواد الأخرى لا تتغير.', 'This count covers only: {s}. Other items are left as they are.', 'ئەم ژماردنە تەنها ئەمانە دەگرێتەوە: {s}. کاڵاکانی تر وەک خۆیان دەمێننەوە.'],
-  err_item_outside_count: ['السطر {n}: هذه المادة ليست ضمن هذا الجرد.', 'Line {n}: that item is not part of this count.', 'ڕیزی {n}: ئەو کاڵایە بەشێک نییە لەم ژماردنە.'],
-  err_count_scope_invalid: ['حدود الجرد غير صحيحة.', 'The count’s limits aren’t valid.', 'سنووری ژماردنەکە دروست نییە.'],
-  rn_title: ['تجديد الترخيص', 'Licence renewal', 'نوێکردنەوەی مۆڵەت'],
-  rn_days: ['ينتهي ترخيصك بعد {n} يوم.', 'Your licence ends in {n} days.', 'مۆڵەتەکەت {n} ڕۆژی تر کۆتایی دێت.'],
-  rn_today: ['اليوم آخر يوم في ترخيصك.', 'Today is the last day of your licence.', 'ئەمڕۆ دوا ڕۆژی مۆڵەتەکەتە.'],
+  cs_limited: ['هذا الجرد محصور في: {s}. المواد الأخرى لا تتغير.', 'This count covers only: {s}. Other items are left as they are.', 'ئەم جەردە تەنها ئەمانە دەگرێتەوە: {s}. کاڵاکانی تر وەک خۆیان دەمێننەوە.'],
+  err_item_outside_count: ['السطر {n}: هذه المادة ليست ضمن هذا الجرد.', 'Line {n}: that item is not part of this count.', 'ڕیزی {n}: ئەو کاڵایە بەشێک نییە لەم جەردە.'],
+  err_count_scope_invalid: ['حدود الجرد غير صحيحة.', 'The count’s limits aren’t valid.', 'سنووری جەردەکە دروست نییە.'],
+  rn_title: ['تجديد الترخيص', 'Licence renewal', 'نوێکردنەوەی مۆڵەتی بەرنامە'],
+  rn_days: ['ينتهي ترخيصك بعد {n} يوم.', 'Your licence ends in {n} days.', 'مۆڵەتی بەرنامەکەت {n} ڕۆژی تر کۆتایی دێت.'],
+  rn_today: ['اليوم آخر يوم في ترخيصك.', 'Today is the last day of your licence.', 'ئەمڕۆ دوا ڕۆژی مۆڵەتی بەرنامەکەتە.'],
   rn_grace: [
     'انتهى ترخيصك؛ يبقى يعمل {n} يوم آخر، ثم تعود الشركة إلى الخطة المجانية (تبقى البيانات كما هي).',
     'Your licence has ended; it keeps working for {n} more days, then the company goes back to Free (the data stays as it is).',
-    'مۆڵەتەکەت کۆتایی هات؛ {n} ڕۆژی تر هەر کار دەکات، پاشان کۆمپانیاکە دەگەڕێتەوە بۆ بەخۆڕایی (داتاکان وەک خۆیان دەمێننەوە).'
+    'مۆڵەتی بەرنامەکەت کۆتایی هات؛ {n} ڕۆژی تر هەر کار دەکات، پاشان کۆمپانیاکە دەگەڕێتەوە بۆ پلانی بەخۆڕایی (داتاکان وەک خۆیان دەمێننەوە).'
   ],
   rn_renew: ['تجديد', 'Renew', 'نوێکردنەوە'],
   rn_later: ['ذكّرني لاحقاً', 'Remind me later', 'دواتر بیرم بخەرەوە'],
@@ -140,7 +140,7 @@ export const CATALOG_TEXT = {
   bc_help: [
     'إذا تغيرت الدفاتر منذ آخر مرة، يحفظ الإغلاق نسخة احتياطية (مشفّرة إن وُضعت كلمة مرور)، ويرسلها إلى النسخ السحابي إن كان موصولاً. دقيقة على الأكثر، ويمكن تخطيها؛ لا تُحفظ عند إطفاء Windows.',
     'When the books changed since the last time, closing saves a backup (encrypted when a password is set) and sends it to the cloud backup when one is connected. A minute at most, and it can be skipped; none is made while Windows shuts down.',
-    'ئەگەر دەفتەرەکان لە دوایین جارەوە گۆڕابن، داخستن باکئەپێک پاشەکەوت دەکات (نهێنیکراو ئەگەر وشەی نهێنی دانرابێت) و دەینێرێت بۆ باکئەپی هەور ئەگەر بەسترابێت. لە خولەکێک زیاتر نا، و دەتوانرێت بازی بدرێت؛ لە کاتی کوژاندنەوەی Windows دا ناکرێت.'
+    'ئەگەر دەفتەرەکان لە دوایین جارەوە گۆڕابن، داخستن باکئەپێک پاشەکەوت دەکات (شفرەکراو ئەگەر وشەی نهێنی دانرابێت) و دەینێرێت بۆ باکئەپی هەور ئەگەر پەیوەست کرابێت. ئەوپەڕی خولەکێک دەخایەنێت و دەتوانیت بازی بدەیت؛ لە کاتی کوژاندنەوەی Windows باکئەپ ناکرێت.'
   ],
   bc_folder: ['ونسخة منها إلى مجلد', 'And a copy to a folder', 'و کۆپییەک بۆ بوخچەیەک'],
   bc_noFolder: ['لا شيء', 'None', 'هیچ'],
@@ -148,7 +148,7 @@ export const CATALOG_TEXT = {
   bc_folderHelp: [
     'قرص USB أو مجلد OneDrive أو Dropbox أو iCloud؛ لا تُنسخ نسخة غير مشفّرة إلى مجلد مُزامَن مع الإنترنت.',
     'A USB disk, or a OneDrive, Dropbox or iCloud folder; a copy that isn’t encrypted is never copied to a folder synced to the internet.',
-    'دیسکی USB، یان بوخچەی OneDrive و Dropbox و iCloud؛ کۆپییەکی نهێنی نەکراو هەرگیز بۆ بوخچەیەکی هاوکات لەگەڵ ئینتەرنێت کۆپی ناکرێت.'
+    'دیسکی USB، یان بوخچەی OneDrive یان Dropbox یان iCloud؛ کۆپیی شفرەنەکراو هەرگیز ناخرێتە بوخچەیەکەوە کە لەگەڵ ئینتەرنێت هاوکات دەکرێت.'
   ],
   bc_failed: ['تعذّرت النسخة عند آخر إغلاق: {e}', 'The backup at the last closing failed: {e}', 'باکئەپی دوایین داخستن سەرکەوتوو نەبوو: {e}'],
   st_nothing: ['القائمة موجودة كلها؛ لم يُضف شيء.', 'Everything in the list is there already; nothing was added.', 'هەموو لیستەکە هەیە؛ هیچ زیاد نەکرا.']

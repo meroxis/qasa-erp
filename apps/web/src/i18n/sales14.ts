@@ -36,12 +36,12 @@ export const SALES14_TEXT = {
   ],
   s14_into: ['يدخل إلى', 'Paid into', 'دەچێتە ناو'],
   s14_outOf: ['يُدفع من', 'Paid from', 'دەدرێت لە'],
-  s14_balanceBefore: ['الرصيد قبل', 'Balance before', 'باڵانس پێش'],
+  s14_balanceBefore: ['الرصيد قبل', 'Balance before', 'ڕەسید پێش'],
   s14_balanceAfter: ['المتبقي بعد', 'Remaining after', 'ماوە دوای'],
   s14_overpaid: [
     'المبلغ أكبر من الرصيد: الزيادة تبقى له.',
     'More than the balance: the extra stays in their favour.',
-    'بڕەکە لە باڵانس زیاترە: زیادەکە بۆ ئەو دەمێنێتەوە.'
+    'بڕەکە لە ڕەسید زیاترە: زیادەکە بۆ ئەو دەمێنێتەوە.'
   ],
   s14_forInvoice: ['عن الفاتورة {n}', 'For invoice {n}', 'بۆ پسوولەی {n}'],
   s14_posted: ['رُحّل السند {n}', 'Voucher {n} posted', 'سەنەدی {n} تۆمار کرا'],
@@ -54,7 +54,7 @@ export const SALES14_TEXT = {
   s14_willWait: [
     'سيُحفظ بانتظار موافقة من له صلاحية المصادقة، ولا يتغير الرصيد قبلها.',
     'It will wait for someone who may approve vouchers; the balance changes only then.',
-    'چاوەڕێی کەسێک دەبێت کە مۆڵەتی پەسەندکردنی هەیە؛ باڵانس تەنها دوای ئەوە دەگۆڕێت.'
+    'چاوەڕێی کەسێک دەبێت کە دەسەڵاتی پەسەندکردنی هەیە؛ ڕەسید تەنها دوای ئەوە دەگۆڕێت.'
   ],
   // someone who does not keep the books sees the vouchers they prepared, and no other
   s14_myVouchers: ['سنداتي', 'My vouchers', 'سەنەدەکانم'],
@@ -79,14 +79,14 @@ export const SALES14_TEXT = {
   s14_rejectHelp: [
     'يبقى السند مسودة خارج الأرصدة، ويرى منظّمه السبب ليصحّحه أو يحذفه.',
     'The voucher stays a draft, out of every balance; whoever prepared it sees the reason and corrects or deletes it.',
-    'سەنەدەکە وەک ڕەشنووس دەمێنێتەوە و ناچێتە هیچ باڵانسێک؛ ئامادەکارەکەی هۆکارەکە دەبینێت و ڕاستی دەکاتەوە یان دەیسڕێتەوە.'
+    'سەنەدەکە وەک ڕەشنووس دەمێنێتەوە و ناچێتە هیچ ڕەسیدێک؛ ئامادەکارەکەی هۆکارەکە دەبینێت و ڕاستی دەکاتەوە یان دەیسڕێتەوە.'
   ],
   s14_rejectReason: ['سبب الرفض', 'Reason', 'هۆکاری ڕەتکردنەوە'],
   s14_rejectedToast: ['رُفض السند', 'Voucher rejected', 'سەنەدەکە ڕەت کرایەوە'],
   s14_waitingNote: [
     'هذا السند بانتظار الموافقة (طلبها {u})، ولا يؤثر في الأرصدة قبلها.',
     'This voucher waits for approval (asked by {u}). It changes no balance until it is approved.',
-    'ئەم سەنەدە چاوەڕێی پەسەندکردنە (داواکار: {u}). تا پەسەند نەکرێت هیچ باڵانسێک ناگۆڕێت.'
+    'ئەم سەنەدە چاوەڕێی پەسەندکردنە (داواکار: {u}). تا پەسەند نەکرێت هیچ ڕەسیدێک ناگۆڕێت.'
   ],
   s14_rejectedNote: ['رفضه {u}: {r}', 'Rejected by {u}: {r}', '{u} ڕەتی کردەوە: {r}'],
   s14_rejectedFix: [
@@ -99,10 +99,10 @@ export const SALES14_TEXT = {
   s14_needHelp: [
     'عند التفعيل، سندات من ليست له صلاحية المصادقة تُحفظ «بانتظار الموافقة» ولا تؤثر في الأرصدة حتى يوافق عليها من له الصلاحية، أو يرفضها مع السبب. الصلاحية تُمنح بدور «المصادق» لأي مستخدم، وهي للمدير دائماً؛ وسندات صاحبها تُعتمد فوراً.',
     'When on, vouchers made by users who may not approve vouchers are saved as “waiting for approval” and change no balance until someone who may approves them, or rejects them with a reason. Give the permission to any user with the Approver role (admins always have it); vouchers made by someone who has it are approved at once.',
-    'کاتێک چالاک بێت، سەنەدی ئەو بەکارهێنەرانەی مۆڵەتی پەسەندکردنیان نییە وەک «چاوەڕێی پەسەندکردن» پاشەکەوت دەکرێت و هیچ باڵانسێک ناگۆڕێت تا کەسێک کە مۆڵەتی هەیە پەسەندی بکات، یان بە هۆکارەوە ڕەتی بکاتەوە. مۆڵەتەکە بە ڕۆڵی «پەسەندکەر» بە هەر بەکارهێنەرێک دەدرێت (بەڕێوەبەر هەمیشە هەیەتی)؛ سەنەدی خاوەن مۆڵەت یەکسەر پەسەند دەکرێت.'
+    'کاتێک چالاک بێت، سەنەدی ئەو بەکارهێنەرانەی دەسەڵاتی پەسەندکردنیان نییە وەک «چاوەڕێی پەسەندکردن» پاشەکەوت دەکرێت و هیچ ڕەسیدێک ناگۆڕێت تا کەسێک کە دەسەڵاتی هەیە پەسەندی بکات، یان بە هۆکارەوە ڕەتی بکاتەوە. دەسەڵاتەکە بە ڕۆڵی «پەسەندکەر» بە هەر بەکارهێنەرێک دەدرێت (بەڕێوەبەر هەمیشە هەیەتی)؛ سەنەدی خاوەن دەسەڵات یەکسەر پەسەند دەکرێت.'
   ],
   s14_needWaiting: ['{n} بانتظار الموافقة', '{n} waiting for approval', '{n} چاوەڕێی پەسەندکردن'],
   s14_saveApprove: ['حفظ واعتماد', 'Save and approve', 'پاشەکەوت و پەسەندکردن'],
   s14_saveSend: ['حفظ وإرسال للموافقة', 'Save and send for approval', 'پاشەکەوت و ناردن بۆ پەسەندکردن'],
-  err_reject_reason_required: ['اكتب سبب الرفض (حتى 300 حرف).', 'Write the reason (up to 300 characters).', 'هۆکاری ڕەتکردنەوە بنووسە (تا ٣٠٠ پیت).']
+  err_reject_reason_required: ['اكتب سبب الرفض (حتى 300 حرف).', 'Write the reason (up to 300 characters).', 'هۆکاری ڕەتکردنەوە بنووسە (تا 300 پیت).']
 } as const satisfies Record<string, readonly [string, string, string]>;

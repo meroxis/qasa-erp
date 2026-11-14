@@ -215,7 +215,7 @@ export function sampleModel(doc: PrintDoc): PrintModel {
     return {
       ...sampleModel('sale'), doc, titleKey: 'receipt', number: 'RV-2026-0042', lines: [], partyRole: 'party',
       accountLines: [
-        { accountCode: '1811', accountName: names('الصندوق الرئيسي', 'Main safe', 'سندوقی سەرەکی'), description: '', debit: 1_250_000, credit: 0 },
+        { accountCode: '1811', accountName: names('الصندوق الرئيسي', 'Main safe', 'قاسەی سەرەکی'), description: '', debit: 1_250_000, credit: 0 },
         { accountCode: '1611', accountName: names('العملاء', 'Customers', 'کڕیاران'), description: '', debit: 0, credit: 1_250_000 }
       ],
       subtotal: 1_250_000, discount: 0, total: 1_250_000, baseTotal: 1_250_000, verifyInvoiceId: null,
