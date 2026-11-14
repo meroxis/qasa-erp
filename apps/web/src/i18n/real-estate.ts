@@ -1,8 +1,8 @@
 /** Real estate (Business): projects, units, reservations and unit sales. Arabic, English and Kurdish (Sorani), in that order, like i18n.ts. */
 export const REAL_ESTATE_TEXT = {
   re_title: ['العقارات', 'Real estate', 'خانووبەرە'],
-  re_help: ['مشاريع سكنية وتجارية ووحداتها: خريطة تُظهر المتاح والمحجوز والمباع، وحجز الوحدة لزبون، وبيعها نقداً أو بالتقسيط بفاتورة تُرحَّل فوراً.', 'Residential and commercial projects and their units: a map of what is available, reserved and sold, reserving a unit for a customer, and selling it for cash or by installments with an invoice posted at once.', 'پرۆژە نیشتەجێبوون و بازرگانییەکان و یەکەکانیان: نەخشەیەک بۆ بەردەست و گیراو و فرۆشراو، گرتنی یەکە بۆ کڕیارێک، و فرۆشتنی بە نەختینە یان بە قیست بە پسوولەیەک کە یەکسەر تۆمار دەکرێت.'],
-  re_needsBusiness: ['العقارات من مزايا خطة Business. المشاريع الموجودة تبقى ظاهرة، ويمكن دائماً إلغاء الحجز.', 'Real estate is part of the Business plan. Existing projects stay visible, and reservations can always be released.', 'خانووبەرە بەشێکە لە پلانی Business. پرۆژە هەبووەکان دەمێننەوە، و هەمیشە دەتوانیت گرتن هەڵبوەشێنیتەوە.'],
+  re_help: ['مشاريع سكنية وتجارية ووحداتها: خريطة تُظهر المتاح والمحجوز والمباع، وحجز الوحدة لزبون، وبيعها نقداً أو بالتقسيط بفاتورة تُرحَّل فوراً.', 'Residential and commercial projects and their units: a map of what is available, reserved and sold, reserving a unit for a customer, and selling it for cash or by installments with an invoice posted at once.', 'پرۆژەی نیشتەجێبوون و بازرگانی و یەکەکانیان: نەخشەیەک بۆ بەردەست و گیراو و فرۆشراو، گرتنی یەکە بۆ کڕیارێک، و فرۆشتنی بە نەقد یان بە قیست بە پسوولەیەک کە یەکسەر تۆمار دەکرێت.'],
+  re_needsBusiness: ['العقارات من مزايا خطة Business. المشاريع الموجودة تبقى ظاهرة، ويمكن دائماً إلغاء الحجز.', 'Real estate is part of the Business plan. Existing projects stay visible, and reservations can always be released.', 'خانووبەرە بەشێکە لە پلانی Business. پرۆژەکانی ئێستا هەر دیار دەبن، و هەمیشە دەتوانیت گرتن هەڵبوەشێنیتەوە.'],
   re_official: ['العقارات جزء من خطة Business في تطبيق قاصة ERP لويندوز.', 'Real estate comes with the Business plan in the Qasa ERP app for Windows.', 'خانووبەرە لەگەڵ پلانی Business لە بەرنامەی قاسە ERP بۆ ویندۆز دێت.'],
   re_projects: ['المشاريع', 'Projects', 'پرۆژەکان'],
   re_project: ['المشروع', 'Project', 'پرۆژە'],
@@ -37,7 +37,7 @@ export const REAL_ESTATE_TEXT = {
   re_willMake: ['ستُنشأ {n} وحدة.', '{n} units will be made.', '{n} یەکە دروست دەکرێت.'],
   re_floor: ['الطابق', 'Floor', 'نهۆم'],
   re_floorN: ['الطابق {n}', 'Floor {n}', 'نهۆمی {n}'],
-  re_ground: ['الأرضي', 'Ground', 'ژێرزەوی'],
+  re_ground: ['الأرضي', 'Ground', 'زەمینی'],
   re_kind: ['النوع', 'Type', 'جۆر'],
   re_kind_apartment: ['شقة', 'Apartment', 'شوقە'],
   re_kind_villa: ['فيلا', 'Villa', 'ڤێلا'],
@@ -74,12 +74,12 @@ export const REAL_ESTATE_TEXT = {
   re_soldUndoHelp: ['لإرجاع وحدة مباعة: ألغِ عقد التقسيط إن وُجد، ثم ألغِ فاتورة البيع، ثم أرجعها للبيع.', 'To put a sold unit back on sale: cancel its installment contract if any, then its sale invoice, then put it back.', 'بۆ گەڕاندنەوەی یەکەیەکی فرۆشراو: گرێبەستی قیستەکەی هەڵبوەشێنەوە ئەگەر هەبێت، پاشان پسوولەی فرۆشتنەکەی، پاشان بیگەڕێنەوە.'],
   re_sell: ['بيع', 'Sell', 'فرۆشتن'],
   re_sellTitle: ['بيع الوحدة {n}', 'Sell unit {n}', 'فرۆشتنی یەکەی {n}'],
-  re_payCash: ['نقداً', 'Cash', 'نەختینە'],
+  re_payCash: ['نقداً', 'Cash', 'نەقد'],
   re_payInstallments: ['بالتقسيط', 'By installments', 'بە قیست'],
-  re_cashHelp: ['تُرحَّل فاتورة بيع نقدية فوراً ويدخل المبلغ في الصندوق المختار.', 'A cash sale invoice is posted at once and the amount goes into the safe chosen.', 'پسوولەیەکی فرۆشتنی نەختینە یەکسەر تۆمار دەکرێت و بڕەکە دەچێتە ئەو سندوقەی هەڵبژێردراوە.'],
+  re_cashHelp: ['تُرحَّل فاتورة بيع نقدية فوراً ويدخل المبلغ في الصندوق المختار.', 'A cash sale invoice is posted at once and the amount goes into the safe chosen.', 'پسوولەیەکی فرۆشتنی نەقد یەکسەر تۆمار دەکرێت و پارەکە دەچێتە ئەو قاسەیەی هەڵبژێردراوە.'],
   re_installmentsHelp: ['تُرحَّل فاتورة بيع آجلة ويُنشأ عقد تقسيط عليها، وتُستلم الدفعة المقدمة فوراً.', 'A credit sale invoice is posted, an installment contract is made on it, and the down payment is collected at once.', 'پسوولەیەکی فرۆشتنی قەرز تۆمار دەکرێت، گرێبەستی قیستی لەسەر دروست دەکرێت، و پێشەکی یەکسەر وەردەگیرێت.'],
   re_downInto: ['تُستلم الدفعة المقدمة في', 'Down payment into', 'پێشەکی دەچێتە'],
-  re_confirmSale: ['تأكيد البيع', 'Confirm sale', 'دڵنیاکردنەوەی فرۆشتن'],
+  re_confirmSale: ['تأكيد البيع', 'Confirm sale', 'پشتڕاستکردنەوەی فرۆشتن'],
   re_saleDone: ['بيعت الوحدة {n}', 'Unit {n} sold', 'یەکەی {n} فرۆشرا'],
   re_reservedDone: ['حُجزت الوحدة {n}', 'Unit {n} reserved', 'یەکەی {n} گیرا'],
   re_releasedDone: ['الوحدة {n} متاحة الآن', 'Unit {n} is available now', 'یەکەی {n} ئێستا بەردەستە'],
@@ -107,27 +107,27 @@ export const REAL_ESTATE_TEXT = {
   err_too_many_units: ['يمكن إضافة 2000 وحدة كحد أقصى في المرة الواحدة.', 'At most 2,000 units can be added at once.', 'لە یەک جاردا زۆرترین 2000 یەکە زیاد دەکرێت.'],
   err_unit_not_available: ['الوحدة ليست متاحة.', 'The unit isn’t available.', 'یەکەکە بەردەست نییە.'],
   err_unit_sold: ['الوحدة مباعة: لا يتغير سعرها ونوعها ومساحتها.', 'The unit is sold: its price, type and area don’t change.', 'یەکەکە فرۆشراوە: نرخ و جۆر و ڕووبەری ناگۆڕێن.'],
-  err_unit_not_reserved: ['الوحدة متاحة أصلاً.', 'The unit is already available.', 'یەکەکە پێشتر بەردەستە.'],
-  err_unit_has_deposits: ['لهذه الوحدة عربون مسجّل، فلا تُحذف؛ يبقى العربون في سجلها.', 'This unit has deposits on record, so it can’t be deleted; the deposits stay in its history.', 'ئەم یەکەیە بەیعانەی تۆمارکراوی هەیە، بۆیە ناسڕدرێتەوە؛ بەیعانەکان لە مێژووەکەیدا دەمێننەوە.'],
+  err_unit_not_reserved: ['الوحدة متاحة أصلاً.', 'The unit is already available.', 'یەکەکە هەر خۆی بەردەستە.'],
+  err_unit_has_deposits: ['لهذه الوحدة عربون مسجّل، فلا تُحذف؛ يبقى العربون في سجلها.', 'This unit has deposits on record, so it can’t be deleted; the deposits stay in its history.', 'ئەم یەکەیە عەرەبوونی تۆمارکراوی هەیە، بۆیە ناسڕدرێتەوە؛ عەرەبوونەکان لە مێژووەکەیدا دەمێننەوە.'],
   err_sale_still_active: ['ألغِ عقد التقسيط وفاتورة البيع أولاً.', 'Cancel the installment contract and the sale invoice first.', 'سەرەتا گرێبەستی قیست و پسوولەی فرۆشتن هەڵبوەشێنەوە.'],
   err_invoice_has_unit: ['هذه فاتورة بيع وحدة عقارية: لا تُرجَع، بل تُلغى الفاتورة لتعود الوحدة إلى البيع.', 'This invoice sells a property unit: it isn’t returned. Cancel the invoice to put the unit back on sale.', 'ئەم پسوولەیە یەکەیەکی خانووبەرە دەفرۆشێت: ناگەڕێندرێتەوە. پسوولەکە هەڵبوەشێنەوە بۆ ئەوەی یەکەکە بگەڕێتەوە بۆ فرۆشتن.'],
   err_reserved_for_other: ['الوحدة محجوزة لزبون آخر.', 'The unit is reserved for another customer.', 'یەکەکە بۆ کڕیارێکی تر گیراوە.'],
   err_reserve_until_past: ['تاريخ انتهاء الحجز قد مضى.', 'The reservation’s end date has passed.', 'کاتی کۆتایی گرتنەکە تێپەڕیوە.'],
   err_payment_invalid: ['اختر طريقة الدفع.', 'Choose how it is paid.', 'شێوازی پارەدان هەڵبژێرە.'],
-  err_cash_account_required: ['اختر الصندوق أو المصرف.', 'Choose the safe or bank.', 'سندوق یان بانک هەڵبژێرە.'],
+  err_cash_account_required: ['اختر الصندوق أو المصرف.', 'Choose the safe or bank.', 'قاسە یان بانک هەڵبژێرە.'],
   // taking back a deposit's refund or forfeit that is already approved: reversed by an approved entry on a chosen date
-  dep_reverseRefundTitle: ['عكس إعادة العربون — الوحدة {n}', 'Reverse the refund — unit {n}', 'پێچەوانەکردنەوەی گەڕاندنەوەی بەیعانە — یەکەی {n}'],
-  dep_reverseForfeitTitle: ['عكس الاحتفاظ بالعربون — الوحدة {n}', 'Reverse keeping the deposit — unit {n}', 'پێچەوانەکردنەوەی هێشتنەوەی بەیعانە — یەکەی {n}'],
+  dep_reverseRefundTitle: ['عكس إعادة العربون — الوحدة {n}', 'Reverse the refund — unit {n}', 'پێچەوانەکردنەوەی گەڕاندنەوەی عەرەبوون — یەکەی {n}'],
+  dep_reverseForfeitTitle: ['عكس الاحتفاظ بالعربون — الوحدة {n}', 'Reverse keeping the deposit — unit {n}', 'پێچەوانەکردنەوەی هێشتنەوەی عەرەبوون — یەکەی {n}'],
   dep_reverseRefundNote: [
     'إعادة {a} إلى {p} معتمدة. ستُعكس بقيد معتمد في التاريخ أدناه، فيعود المبلغ في الدفاتر إلى الصندوق ويعود العربون محتفظاً به. يبقى القيدان في الدفاتر.',
     'The refund of {a} to {p} is already approved. It will be reversed by an approved entry on the date below, so in the books the money is back in the safe and the deposit is held again. Both entries stay in the books.',
-    'گەڕاندنەوەی {a} بۆ {p} پەسەندکراوە. بە تۆمارێکی پەسەندکراو لە بەرواری خوارەوە پێچەوانە دەکرێتەوە، بۆیە لە دەفتەرەکاندا پارەکە دەگەڕێتەوە بۆ سندوق و بەیعانەکە دووبارە لای کۆمپانیا دەبێت. هەردوو تۆمارەکە لە دەفتەرەکاندا دەمێننەوە.'
+    'گەڕاندنەوەی {a} بۆ {p} پەسەندکراوە. بە قەیدێکی پەسەندکراو لە بەرواری خوارەوە پێچەوانە دەکرێتەوە، بۆیە لە دەفتەرەکاندا پارەکە دەگەڕێتەوە بۆ قاسە و عەرەبوونەکە دووبارە لای کۆمپانیا دەبێت. هەردوو قەیدەکە لە دەفتەرەکاندا دەمێننەوە.'
   ],
   dep_reverseForfeitNote: [
     'الاحتفاظ بعربون {p} البالغ {a} معتمد. سيُعكس بقيد معتمد في التاريخ أدناه، ويعود العربون محتفظاً به للزبون. يبقى القيدان في الدفاتر.',
     'Keeping the deposit of {a} from {p} is already approved. It will be reversed by an approved entry on the date below, and the deposit is held for the customer again. Both entries stay in the books.',
-    'هێشتنەوەی بەیعانەی {p} بە بڕی {a} پەسەندکراوە. بە تۆمارێکی پەسەندکراو لە بەرواری خوارەوە پێچەوانە دەکرێتەوە، و بەیعانەکە دووبارە بۆ کڕیارەکە لای کۆمپانیا دەبێت. هەردوو تۆمارەکە لە دەفتەرەکاندا دەمێننەوە.'
+    'هێشتنەوەی عەرەبوونی {p} بە بڕی {a} پەسەندکراوە. بە قەیدێکی پەسەندکراو لە بەرواری خوارەوە پێچەوانە دەکرێتەوە، و عەرەبوونەکە دووبارە بۆ کڕیارەکە لای کۆمپانیا دەبێت. هەردوو قەیدەکە لە دەفتەرەکاندا دەمێننەوە.'
   ],
   dep_reverse: ['اعكس القيد', 'Reverse it', 'پێچەوانەی بکەرەوە'],
-  dep_reversedBack: ['عُكس القيد وعاد العربون محتفظاً به.', 'Reversed: the deposit is held again.', 'تۆمارەکە پێچەوانە کرایەوە و بەیعانەکە دووبارە لای کۆمپانیایە.']
+  dep_reversedBack: ['عُكس القيد وعاد العربون محتفظاً به.', 'Reversed: the deposit is held again.', 'قەیدەکە پێچەوانە کرایەوە و عەرەبوونەکە دووبارە لای کۆمپانیایە.']
 } as const satisfies Record<string, readonly [string, string, string]>;

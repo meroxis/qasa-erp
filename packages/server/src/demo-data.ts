@@ -64,7 +64,7 @@ export function seedDemo(db: Db): void {
   const panels = cat('ألواح شمسية', 'Solar panels', 'پانێڵی خۆر', solar);
   const inverters = cat('انفرترات', 'Inverters', 'ئینڤێرتەر', solar);
   const materials = cat('مواد النصب', 'Installation materials', 'کەرەستەی دامەزراندن');
-  cat('مكيفات شباك', 'Window units', 'سپلیتی پەنجەرە', cooling);
+  cat('مكيفات شباك', 'Window units', 'ئێرکۆندیشنی پەنجەرە', cooling);
   const gree = createBrand(db, { name: 'Gree', country: 'CN' }, accountant).id;
   const jinko = createBrand(db, { name: 'Jinko Solar', country: 'CN' }, accountant).id;
   const growatt = createBrand(db, { name: 'Growatt', country: 'CN' }, accountant).id;
@@ -184,11 +184,11 @@ export function seedPharmacyDemo(db: Db): void {
     { unit: 'box' as const, factorMilli: box * 1000, barcode: `${code}2`, salePrice: null }
   ];
   const amox = createItem(db, {
-    code: 'MED-AMOX', name: { ar: 'أموكسيسيلين 500 ملغ', en: 'Amoxicillin 500 mg', ku: 'ئەمۆکسیسیلین 500 ملگ' }, unit: 'capsule', salePrice: 250, saleCurrency: 'IQD',
+    code: 'MED-AMOX', name: { ar: 'أموكسيسيلين 500 ملغ', en: 'Amoxicillin 500 mg', ku: 'ئەمۆکسیسیلین 500 ملگم' }, unit: 'capsule', salePrice: 250, saleCurrency: 'IQD',
     units: units(20, '629104170010'), saleUnit: 'strip', purchaseUnit: 'box', trackExpiry: true
   }, user);
   const para = createItem(db, {
-    code: 'MED-PARA', name: { ar: 'باراسيتامول 500 ملغ', en: 'Paracetamol 500 mg', ku: 'پاراسیتامۆڵ 500 ملگ' }, unit: 'tablet', salePrice: 100, saleCurrency: 'IQD',
+    code: 'MED-PARA', name: { ar: 'باراسيتامول 500 ملغ', en: 'Paracetamol 500 mg', ku: 'پاراسیتامۆڵ 500 ملگم' }, unit: 'tablet', salePrice: 100, saleCurrency: 'IQD',
     units: units(100, '629104170020'), saleUnit: 'strip', purchaseUnit: 'box', trackExpiry: true
   }, user);
   const doc = createStockDoc(db, {

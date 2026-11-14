@@ -71,7 +71,7 @@ export const UNITS: Record<UnitCode, Names> = {
   piece: { ar: 'قطعة', en: 'piece', ku: 'دانە' },
   carton: { ar: 'كارتون', en: 'carton', ku: 'کارتۆن' },
   box: { ar: 'علبة', en: 'box', ku: 'قوتوو' },
-  set: { ar: 'طقم', en: 'set', ku: 'دەست' },
+  set: { ar: 'طقم', en: 'set', ku: 'تاقم' },
   kg: { ar: 'كغم', en: 'kg', ku: 'کیلۆ' },
   m: { ar: 'متر', en: 'm', ku: 'مەتر' },
   l: { ar: 'لتر', en: 'L', ku: 'لیتر' },

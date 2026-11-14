@@ -7,12 +7,12 @@ export const LEGAL_TEXT = {
   lg_core: [
     'نواة قاصة ERP برنامج حر بموجب رخصة جنو العمومية أفيرو (AGPL) الإصدار 3 أو أحدث، ويمكنك قراءة شيفرتها المصدرية.',
     'The core of Qasa ERP is free software under the GNU Affero General Public License (AGPL), version 3 or later; you can read its source code.',
-    'ناوکی قاسە ERP بەرنامەیەکی ئازادە لەژێر مۆڵەتی گشتیی ئەفێرۆی گنو (AGPL) وەشانی ٣ یان نوێتر؛ دەتوانیت کۆدی سەرچاوەکەی بخوێنیتەوە.'
+    'ناوکی قاسە ERP بەرنامەیەکی ئازادە لەژێر مۆڵەتی گشتیی ئەفێرۆی گنو (AGPL) وەشانی 3 یان نوێتر؛ دەتوانیت کۆدی سەرچاوەکەی بخوێنیتەوە.'
   ],
   lg_pro: [
     'المزايا المدفوعة (Starter وPro وBusiness) ووحدة الترخيص ملكية خاصة لـ Meroxis، ليست مفتوحة المصدر، وتخضع لاتفاقية الترخيص (EULA).',
     'The paid features (Starter, Pro and Business) and the licence module are proprietary to Meroxis, not open source, and covered by the licence agreement (EULA).',
-    'تایبەتمەندییە پارەدارەکان (Starter، Pro و Business) و مۆدیولی مۆڵەت موڵکی Meroxisن، سەرچاوەکراوە نین، و لەژێر ڕێککەوتنی مۆڵەتدان (EULA).'
+    'تایبەتمەندییە پارەدارەکان (Starter، Pro و Business) و مۆدیولی مۆڵەت موڵکی Meroxisن، کۆدی سەرچاوەیان کراوە نییە، و ڕێککەوتنی مۆڵەت (EULA) دەیانگرێتەوە.'
   ],
   lg_privacyNote: [
     'دفاتر شركتك تبقى على حواسيبك ولا تصل إلى Meroxis.',

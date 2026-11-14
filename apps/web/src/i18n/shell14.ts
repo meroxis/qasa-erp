@@ -21,12 +21,12 @@ export const SHELL14_TEXT = {
   s14_show: ['العرض', 'Show', 'پیشاندان'],
   s14_sort: ['الترتيب', 'Sort', 'ڕیزکردن'],
   s14_sortCode: ['حسب الرمز', 'By code', 'بەپێی کۆد'],
-  s14_sortDebt: ['الأكبر ديناً أولاً', 'Biggest debt first', 'گەورەترین قەرز یەکەم'],
+  s14_sortDebt: ['الأكبر ديناً أولاً', 'Biggest debt first', 'زۆرترین قەرز لە پێشەوە'],
   s14_noneOwing: ['لا أحد عليه دين الآن.', 'Nobody here owes anything right now.', 'ئێستا کەس قەرزار نییە.'],
   s14_totalAtRates: [
     'المجموع بالدينار بأسعار الدفاتر (الدولار محوَّلاً)',
     'Total in IQD at the book rates (dollars converted)',
-    'کۆ بە دینار بە نرخەکانی دەفتەر (دۆلار گۆڕدراو)'
+    'کۆ بە دینار بە نرخەکانی دەفتەر (دۆلار کراوە بە دینار)'
   ],
 
   // ——— where the data is ———
@@ -69,8 +69,8 @@ export const SHELL14_TEXT = {
   s14_prnDefault: ['الافتراضية في ويندوز', 'Windows default', 'بنەڕەتیی ویندۆز'],
   s14_prnReady: ['جاهزة', 'Ready', 'ئامادەیە'],
   s14_prnOffline: ['غير متصلة', 'Offline', 'پەیوەست نییە'],
-  s14_prnGuess_receipt80: ['طابعة إيصالات 80 مم', '80 mm receipt printer', 'چاپکەری پسوولەی 80 ملم'],
-  s14_prnGuess_receipt58: ['طابعة إيصالات 58 مم', '58 mm receipt printer', 'چاپکەری پسوولەی 58 ملم'],
+  s14_prnGuess_receipt80: ['طابعة إيصالات 80 مم', '80 mm receipt printer', 'چاپکەری وەسڵی 80 ملم'],
+  s14_prnGuess_receipt58: ['طابعة إيصالات 58 مم', '58 mm receipt printer', 'چاپکەری وەسڵی 58 ملم'],
   s14_prnGuess_label: ['طابعة ملصقات', 'Label printer', 'چاپکەری لێبڵ'],
   s14_prnGuess_page: ['طابعة A4', 'A4 printer', 'چاپکەری A4'],
   s14_prnGuess_file: ['تحفظ ملفاً (لا تطبع ورقاً)', 'Saves a file (no paper)', 'فایل پاشەکەوت دەکات (نەک کاغەز)'],
@@ -78,7 +78,7 @@ export const SHELL14_TEXT = {
   s14_prnSuggestHelp: [
     'عرف قاصة ERP الطابعة الافتراضية في ويندوز، وخمّن نوع كل طابعة من اسمها وورقها. هذه اقتراحات فقط: راجعها ثم اطبع صفحة تجربة.',
     'Qasa ERP found the Windows default printer and guessed each printer’s kind from its name and paper. These are suggestions only: check them, then print a test page.',
-    'قاسە ERP چاپکەری بنەڕەتیی ویندۆزی دۆزییەوە و جۆری هەر چاپکەرێکی لە ناو و پەڕەکەیەوە مەزەندە کرد. ئەمانە تەنها پێشنیارن: سەیریان بکە، پاشان پەڕەیەکی تاقیکردنەوە چاپ بکە.'
+    'قاسە ERP چاپکەری بنەڕەتیی ویندۆزی دۆزییەوە و جۆری هەر چاپکەرێکی لە ناو و کاغەزەکەیەوە مەزەندە کرد. ئەمانە تەنها پێشنیارن: سەیریان بکە، پاشان پەڕەیەکی تاقیکردنەوە چاپ بکە.'
   ],
   s14_prnSuggested: ['المقترحة: {p}', 'Suggested: {p}', 'پێشنیارکراو: {p}'],
   s14_prnUse: ['استعملها', 'Use it', 'بەکاری بهێنە'],

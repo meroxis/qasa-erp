@@ -413,8 +413,8 @@ const REASON_WORDS: Record<AdjustmentLang, Record<AdjustmentReason, string>> = {
     internal_use: 'Used in the company', job: 'Issued to a job', other: 'Stock adjustment'
   },
   ku: {
-    damaged: 'کاڵای تێکچوو', lost: 'کاڵای ونبوو', expired: 'کاڵای بەسەرچوو', count: 'جیاوازیی ژماردنی کۆگا',
-    internal_use: 'بەکارهاتوو لە ناو کۆمپانیا', job: 'دراو بە فەرمانی کار', other: 'ڕێکخستنی کۆگا'
+    damaged: 'کاڵای تەلەف', lost: 'کاڵای ونبوو', expired: 'کاڵای بەسەرچوو', count: 'جیاوازیی جەردی کۆگا',
+    internal_use: 'بەکارهاتوو لە ناو کۆمپانیا', job: 'دەرکراو بۆ کار', other: 'ڕاستکردنەوەی کۆگا'
   }
 };
 

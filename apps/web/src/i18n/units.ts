@@ -49,9 +49,9 @@ export const UNIT_TEXT = {
   ],
   err_open_docs: ['المستندات المفتوحة: {d}', 'Open documents: {d}', 'بەڵگە کراوەکان: {d}'],
   odoc_invoice: ['مسودة فاتورة', 'draft invoice', 'ڕەشنووسی پسوولە'],
-  odoc_stock_doc: ['مسودة حركة مخزن', 'draft stock document', 'ڕەشنووسی بەڵگەی کۆگا'],
-  odoc_adjustment: ['مسودة تسوية مخزون', 'draft stock adjustment', 'ڕەشنووسی ڕێکخستنی کۆگا'],
-  odoc_purchase_order: ['أمر شراء', 'purchase order', 'داواکاری کڕین'],
-  odoc_quote: ['عرض سعر', 'quote', 'نرخنامە'],
-  odoc_count: ['جرد مخزن مفتوح', 'open stock count', 'ژماردنی کۆگای کراوە']
+  odoc_stock_doc: ['مسودة حركة مخزن', 'draft stock document', 'ڕەشنووسی جووڵەی کۆگا'],
+  odoc_adjustment: ['مسودة تسوية مخزون', 'draft stock adjustment', 'ڕەشنووسی ڕاستکردنەوەی کۆگا'],
+  odoc_purchase_order: ['أمر شراء', 'purchase order', 'داواکاریی کڕین'],
+  odoc_quote: ['عرض سعر', 'quote', 'عەرزی نرخ'],
+  odoc_count: ['جرد مخزن مفتوح', 'open stock count', 'جەردی کراوەی کۆگا']
 } as const;

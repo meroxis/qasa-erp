@@ -4,7 +4,7 @@ export const PHONE_TEXT = {
   ph_help: [
     'امسح الباركود بكاميرا الهاتف، واعرف السعر والمخزون، وأضف مادة بصورتها، واجرد المخزن، وأرسل بيعاً كمسودة — من تطبيق قاصة على الهاتف. الاتصال مشفّر من الهاتف إلى هذا الحاسوب.',
     'Scan barcodes with the phone camera, check prices and stock, add an item with its photo, count stock and send a sale as a draft — from the Qasa app on the phone. The link is encrypted from the phone to this PC.',
-    'بارکۆد بە کامێرای مۆبایل بخوێنەوە، نرخ و کۆگا ببینە، کاڵا بە وێنەکەیەوە زیاد بکە، کۆگا بژمێرە و فرۆشتن وەک ڕەشنووس بنێرە — لە ئەپی قاسە لەسەر مۆبایل. پەیوەندییەکە لە مۆبایلەوە تا ئەم کۆمپیوتەرە شفرەکراوە.'
+    'بارکۆد بە کامێرای مۆبایل بخوێنەوە، نرخ و بڕی کۆگا ببینە، کاڵا بە وێنەکەیەوە زیاد بکە، جەردی کۆگا بکە و فرۆشتن وەک ڕەشنووس بنێرە — لە ئەپی قاسە لەسەر مۆبایل. پەیوەندییەکە لە مۆبایلەوە تا ئەم کۆمپیوتەرە شفرەکراوە.'
   ],
   ph_needsPro: ['تطبيق الهاتف من مزايا Starter وPro وBusiness.', 'The phone app is part of Starter, Pro and Business.', 'ئەپی مۆبایل بەشێکە لە Starter، Pro و Business.'],
   // 1.0 ships without the phone app: Settings → Phones says it is coming instead of the pairing steps
@@ -33,7 +33,7 @@ export const PHONE_TEXT = {
     'مۆبایلەکە دەبێت لەسەر هەمان Wi-Fi بێت کە ئەم کۆمپیوتەرەی لەسەرە. لەوانەیە ویندۆز بپرسێت ڕێگە بە قاسە بدات لەسەر تۆڕ: «ڕێگەدان» هەڵبژێرە.'
   ],
   ph_paired: ['رُبط الهاتف.', 'The phone is paired.', 'مۆبایلەکە بەسترایەوە.'],
-  ph_counts: ['جرد من الهواتف', 'Stock counts from phones', 'ژماردنی کۆگا لە مۆبایلەکانەوە'],
+  ph_counts: ['جرد من الهواتف', 'Stock counts from phones', 'جەردی کۆگا لە مۆبایلەکانەوە'],
   ph_lines: ['{n} مادة', '{n} items', '{n} کاڵا'],
   ph_download: ['تنزيل (Excel)', 'Download (Excel)', 'داگرتن (Excel)'],
   err_phone_limit: [
@@ -45,11 +45,11 @@ export const PHONE_TEXT = {
   err_phone_port_busy: [
     'منفذ ربط الهواتف مستخدم من برنامج آخر على هذا الحاسوب.',
     'The phone link port is used by another program on this PC.',
-    'دەرگای بەستنەوەی مۆبایل لەلایەن بەرنامەیەکی ترەوە لەسەر ئەم کۆمپیوتەرە بەکاردێت.'
+    'بەرنامەیەکی تر لەسەر ئەم کۆمپیوتەرە پۆرتی بەستنەوەی مۆبایل بەکاردەهێنێت.'
   ],
   err_plan_limit_phoneApp: ['تطبيق الهاتف من مزايا Pro — راجع «الخطة والترخيص».', 'The phone app is part of Pro. See Plan & license.', 'ئەپی مۆبایل بەشێکە لە Pro — «پلان و مۆڵەت» ببینە.'],
   a_phone_pair_start: ['بدء ربط هاتف', 'Phone pairing started', 'دەستپێکردنی بەستنەوەی مۆبایل'],
   a_phone_paired: ['ربط هاتف', 'Phone paired', 'مۆبایل بەسترایەوە'],
   a_phone_remove: ['حذف هاتف', 'Phone removed', 'مۆبایل لابرا'],
-  a_phone_count: ['جرد من هاتف', 'Count from a phone', 'ژماردن لە مۆبایلەوە']
+  a_phone_count: ['جرد من هاتف', 'Count from a phone', 'جەرد لە مۆبایلەوە']
 } as const satisfies Record<string, readonly [string, string, string]>;

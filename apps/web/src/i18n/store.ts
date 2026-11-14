@@ -32,9 +32,9 @@ export const STORE_TEXT = {
   wa_payAccountsHelp: [
     'القاصة أو المصرف (تحت 18) الذي تدخله كل طريقة دفع؛ طريقة بلا حساب تُرفض.',
     'The safe or bank (under 18) each payment method goes into; a method without one is refused.',
-    'ئەو قاسە یان بانکەی (لە ژێر 18) هەر ڕێگایەکی پارەدان دەچێتە ناوی؛ ڕێگایەک بێ هەژمار ڕەت دەکرێتەوە.'
+    'ئەو قاسە یان بانکەی (لە ژێر 18) هەر شێوازێکی پارەدان دەچێتە ناوی؛ شێوازێک بێ هەژمار ڕەت دەکرێتەوە.'
   ],
-  pay_cash: ['نقداً', 'Cash', 'نەختینە'],
+  pay_cash: ['نقداً', 'Cash', 'نەقد'],
   pay_card: ['بطاقة', 'Card', 'کارت'],
   pay_fib: ['FIB', 'FIB', 'FIB'],
   pay_zaincash: ['زين كاش', 'ZainCash', 'زەین کاش'],
@@ -42,27 +42,27 @@ export const STORE_TEXT = {
   pay_account: ['على الحساب', 'On account', 'قەرز'],
   pay_other: ['أخرى', 'Other', 'هی تر'],
   pay_online: ['دفعات إلكترونية', 'Online payments', 'پارەدانی ئۆنلاین'],
-  pos_left: ['المتبقي', 'Left to pay', 'ماوە بۆ دان'],
+  pos_left: ['المتبقي', 'Left to pay', 'پارەی ماوە'],
   err_payments_total_mismatch: ['مجموع الدفعات لا يساوي المبلغ الكلي.', 'The payments don’t add up to the total.', 'کۆی پارەدانەکان یەکسان نییە بە کۆی گشتی.'],
-  err_pos_method_unavailable: ['طريقة الدفع هذه بلا حساب؛ يحدده المدير في الإعدادات.', 'This payment method has no account; an admin sets it in Settings.', 'ئەم ڕێگای پارەدانە هەژماری نییە؛ بەڕێوەبەر لە ڕێکخستنەکان دیاری دەکات.'],
+  err_pos_method_unavailable: ['طريقة الدفع هذه بلا حساب؛ يحدده المدير في الإعدادات.', 'This payment method has no account; an admin sets it in Settings.', 'ئەم شێوازی پارەدانە هەژماری نییە؛ بەڕێوەبەر لە ڕێکخستنەکان دیاری دەکات.'],
   err_pos_method_other_branch: [
     'حساب طريقة الدفع هذه ليس من فروعك؛ يحدده المدير في الإعدادات.',
     'This payment method’s account isn’t one of your branches’; an admin sets it in Settings.',
-    'هەژماری ئەم ڕێگای پارەدانە هی لقەکانی تۆ نییە؛ بەڕێوەبەر لە ڕێکخستنەکان دیاری دەکات.'
+    'هەژماری ئەم شێوازی پارەدانە هی لقەکانی تۆ نییە؛ بەڕێوەبەر لە ڕێکخستنەکان دیاری دەکات.'
   ],
   err_pos_payment_invalid: ['دفعة غير صحيحة.', 'A payment isn’t valid.', 'پارەدانێک دروست نییە.'],
-  err_payments_too_many: ['أربع طرق دفع على الأكثر.', 'At most four payment methods.', 'زۆرترین چوار ڕێگای پارەدان.'],
+  err_payments_too_many: ['أربع طرق دفع على الأكثر.', 'At most four payment methods.', 'ئەوپەڕی چوار شێوازی پارەدان.'],
   pay_paidOnline: ['مدفوعة إلكترونياً', 'Paid online', 'بە ئۆنلاین دراوە'],
   pay_payments: ['الدفعات', 'Payments', 'پارەدانەکان'],
-  pay_reference: ['المرجع', 'Reference', 'سەرچاوە'],
-  err_reference_taken: ['هذا المرجع مستعمل لدفعة أخرى.', 'That reference is already used by another payment.', 'ئەو سەرچاوەیە بۆ پارەدانێکی تر بەکارهاتووە.'],
+  pay_reference: ['المرجع', 'Reference', 'ژمارەی مامەڵە'],
+  err_reference_taken: ['هذا المرجع مستعمل لدفعة أخرى.', 'That reference is already used by another payment.', 'ئەو ژمارەی مامەڵەیە بۆ پارەدانێکی تر بەکارهاتووە.'],
   err_currency_mismatch: ['عملة الدفعة غير عملة الطلب.', 'The payment is not in the order’s currency.', 'دراوی پارەدانەکە دراوی داواکارییەکە نییە.'],
   err_overpayment: ['المبلغ أكبر مما تبقى على الطلب.', 'The amount is more than the order still owes.', 'بڕەکە زیاترە لەوەی لەسەر داواکارییەکە ماوە.'],
   err_order_cancelled: ['الطلب ملغى.', 'The order is cancelled.', 'داواکارییەکە هەڵوەشاوەتەوە.'],
   usd_statementHint: [
     'هذه أسطر هذه العملة فقط وبمبالغها. الوصل بالدينار عن دين بالدولار يُنقص عمود الدينار ولا يغيّر عمود الدولار؛ المجموع بأسعار القيود هو المرجع.',
     'These are this currency’s lines only, in their own amounts. A receipt in dinars against a dollar debt lowers the dinar figure and leaves the dollar one; the total at the book rates is the reference.',
-    'ئەمانە تەنها هێڵەکانی ئەم دراوەن، بە بڕی خۆیان. وەرگرتنێک بە دینار بۆ قەرزێکی دۆلار ستوونی دینار کەم دەکاتەوە و ستوونی دۆلار وەک خۆی دەهێڵێت؛ کۆی گشتی بە نرخی تۆمارەکان سەرچاوەیە.'
+    'ئەمانە تەنها دێڕەکانی ئەم دراوەن، بە بڕی خۆیان. وەرگرتنێک بە دینار بۆ قەرزێکی دۆلار ستوونی دینار کەم دەکاتەوە و ستوونی دۆلار وەک خۆی دەهێڵێت؛ کۆی گشتی بە نرخی قەیدەکان پشتی پێ دەبەسترێت.'
   ],
   err_entry_belongs_to_online_payment: [
     'هذا السند لدفعة إلكترونية لطلب من الموقع؛ لا يُعدَّل. ارفضه بحذفه وهو مسودة، أو اعكسه بعد اعتماده.',
@@ -72,8 +72,8 @@ export const STORE_TEXT = {
   err_invoice_has_online_payments: [
     'دُفع هذا الطلب إلكترونياً؛ يُرحَّل بالآجل على حساب الزبون، لا نقداً.',
     'This order was paid online; post it on credit to the customer’s account, not as cash.',
-    'ئەم داواکارییە بە ئۆنلاین دراوە؛ بە قەرز لەسەر هەژماری کڕیار تۆماری بکە، نەک بە نەختینە.'
+    'ئەم داواکارییە بە ئۆنلاین دراوە؛ بە قەرز لەسەر هەژماری کڕیار تۆماری بکە، نەک بە نەقد.'
   ],
-  err_order_not_on_credit: ['الطلب مرحَّل بيعاً نقدياً؛ لا تُسجَّل عليه دفعة إلكترونية.', 'The order was posted as a cash sale; no online payment is recorded on it.', 'داواکارییەکە وەک فرۆشتنی نەختینە تۆمار کراوە؛ هیچ پارەدانێکی ئۆنلاینی لەسەر تۆمار ناکرێت.'],
-  err_payment_account_missing: ['لا يوجد حساب لطريقة الدفع هذه.', 'There is no account for this payment method.', 'هیچ هەژمارێک بۆ ئەم ڕێگای پارەدانە نییە.']
+  err_order_not_on_credit: ['الطلب مرحَّل بيعاً نقدياً؛ لا تُسجَّل عليه دفعة إلكترونية.', 'The order was posted as a cash sale; no online payment is recorded on it.', 'داواکارییەکە وەک فرۆشتنی نەقد تۆمار کراوە؛ هیچ پارەدانێکی ئۆنلاینی لەسەر تۆمار ناکرێت.'],
+  err_payment_account_missing: ['لا يوجد حساب لطريقة الدفع هذه.', 'There is no account for this payment method.', 'هیچ هەژمارێک بۆ ئەم شێوازی پارەدانە نییە.']
 } as const;
