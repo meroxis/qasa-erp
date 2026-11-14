@@ -87,7 +87,7 @@ export const SOLAR_TEXT = {
   sl_sysKwp: ['قدرة الألواح', 'Panel power', 'هێزی پانێڵەکان'],
   sl_sysPanels: ['{n} لوح', '{n} panels', '{n} پانێڵ'],
   sl_sysInverter: ['الانفرتر', 'Inverter', 'ئینڤێرتەر'],
-  sl_sysUnits: ['{n} جهاز', '{n} unit(s)', '{n} دانە'],
+  sl_sysUnits: ['{n} جهاز', '{n} units', '{n} دانە'],
   sl_sysBattery: ['البطاريات', 'Batteries', 'باتری'],
   sl_sysUsable: ['{kwh} kWh قابلة للاستخدام · {n} بطارية', '{kwh} kWh usable · {n} batteries', '{kwh} kWh بۆ بەکارهێنان · {n} باتری'],
   sl_sysNoBattery: ['بدون بطاريات (لا حمل ليلي)', 'No batteries (no night load)', 'بێ باتری (باری شەو نییە)'],

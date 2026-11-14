@@ -69,7 +69,7 @@ export const PARTS_TEXT = {
   pt_chooseFile: ['اختر ملف CSV', 'Choose a CSV file', 'فایلی CSV هەڵبژێرە'],
   pt_importCheck: ['فحص', 'Check', 'پشکنین'],
   pt_importApply: ['استيراد', 'Import', 'هاوردەکردن'],
-  pt_importResult: ['{r} سطراً: {a} جديد، و{s} موجود مسبقاً، لـ {p} قطعة.', '{r} rows: {a} new, {s} already there, for {p} parts.', '{r} ڕیز: {a} نوێ، {s} پێشتر هەبوو، بۆ {p} پارچە.'],
+  pt_importResult: ['الأسطر: {r} ({a} جديد، و{s} موجود مسبقاً)، القطع: {p}.', 'Rows: {r} ({a} new, {s} already there); parts: {p}.', '{r} ڕیز: {a} نوێ، {s} پێشتر هەبوو، بۆ {p} پارچە.'],
   pt_imported: ['تم الاستيراد', 'Imported', 'هاوردە کرا'],
   pt_remove: ['إزالة', 'Remove', 'لابردن'],
   pt_readOnly: ['للقراءة والبحث: تعديل بيانات القطع لمن يدير المخزن.', 'To search and read: changing part data is for those who keep the stock.', 'بۆ گەڕان و خوێندنەوە: گۆڕینی زانیاریی پارچەکان بۆ ئەوانەیە کە کۆگا بەڕێوە دەبەن.'],

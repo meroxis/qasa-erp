@@ -1,7 +1,7 @@
 import { useCallback, useState, type ReactNode } from 'react';
 import { addDays, todayIso } from '@qasa/core';
 import { dayCloseApi, type DayCloseView, type DayMethod, type Money2 } from '../industry/brief-api.ts';
-import { ErrorBox, Icon, downloadCsv, useLoad, usePageNav, useToast } from '../components.tsx';
+import { ErrorBox, Icon, downloadCsv, useData, useLoad, usePageNav, useToast } from '../components.tsx';
 import { useI18n, type I18n, type Key } from '../i18n.ts';
 import { href } from '../router.ts';
 import { copyText } from '../share.ts';
@@ -109,6 +109,14 @@ export function dayCloseRows(i18n: I18n, c: DayCloseView): (string | number)[][]
   return rows;
 }
 
+/**
+ * What the "Expected cash" card says while no drawer of the day is counted: the registers are still open, or none was
+ * opened (1.4.1: it said none was open while the registers below were open).
+ */
+export function drawersNote(c: Pick<DayCloseView, 'registers'>): Key {
+  return c.registers.length ? 'dc_stillOpen' : 'dc_noRegisters';
+}
+
 function MoneyCell({ children, color }: { children: ReactNode; color?: string | undefined }) {
   return <td className="num" style={{ whiteSpace: 'nowrap', ...(color ? { color, fontWeight: 600 } : {}) }}>{children}</td>;
 }
@@ -118,6 +126,8 @@ export function DayClose() {
   const { t } = i18n;
   const toast = useToast();
   usePageNav({ key: 'dc_title', group: 'gOverview' });
+  // 1.4.1: someone who does not keep the books gets their own registers only (the server decides; the page says so)
+  const ownOnly = useData().seesBooks === false;
   const [date, setDate] = useState(todayIso());
   const { data: c, error } = useLoad(() => dayCloseApi.get(date), [date]);
 
@@ -153,12 +163,13 @@ export function DayClose() {
             <h1 style={{ margin: 0, fontSize: 26 }}>{t('dc_title')}</h1>
             <span className="muted">{i18n.name(c.company)}{i18n.name(c.company) ? ' · ' : ''}{i18n.date(c.date)}</span>
           </header>
+          {ownOnly && <p className="muted small" style={{ margin: 0 }}>{t('dc_ownShifts')}</p>}
 
           <div className="grid-4">
             <Stat icon="trend" label={t('dc_netSales')} value={i18n.money(c.sales.net, 'IQD')} color="var(--accent, #1D5FD1)"
               sub={<>{t('br_invoicesCount', { n: i18n.int(c.sales.invoices) })}{c.sales.returns ? <> · {t('dc_returns')}: <span className="num">{i18n.money(c.sales.returns, 'IQD')}</span></> : null}</>} />
             <Stat icon="wallet" label={t('pos_expected')} value={c.drawers ? moneyBoth(i18n, c.drawers.expected) : '—'}
-              sub={c.drawers ? <>{t('pos_counted')}: <span className="num">{moneyBoth(i18n, c.drawers.counted)}</span></> : t('dc_noRegisters')} />
+              sub={c.drawers ? <>{t('pos_counted')}: <span className="num">{moneyBoth(i18n, c.drawers.counted)}</span></> : t(drawersNote(c))} />
             <Stat icon="scale" label={t('pos_difference')} value={c.drawers ? moneyBoth(i18n, c.drawers.difference) : '—'} color={drawerDiff?.color}
               sub={drawerDiff ? t(drawerDiff.key) : undefined} />
             {c.flow && <Stat icon="plus" label={t('dc_moneyIn')} value={i18n.money(c.flow.in, 'IQD')} color={good} sub={`${t('dc_moneyOut')}: ${i18n.money(c.flow.out, 'IQD')}`} />}

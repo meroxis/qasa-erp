@@ -9,7 +9,7 @@ import { loadAccounts } from './accounts.ts';
 import { createInvoice, getInvoice, postInvoice, type InvoiceView, type SalePart } from './invoices.ts';
 import { loyaltyPaidFor, planRedemption } from './loyalty.ts';
 import { readSetting, writeSetting } from './settings.ts';
-import { signInRequired, type Actor } from './auth.ts';
+import { seesBooks, signInRequired, type Actor } from './auth.ts';
 import { scopeOf, userBranchLists } from './branches.ts';
 import type { ApiExtension, ApiRequest } from './routes.ts';
 import { onceOnly } from './idempotency.ts';
@@ -252,20 +252,47 @@ function salesOf(db: Db, shiftId: string): { sales: Money; cash: Money; count: n
  * it and still open when it was paid, so the same money is never taken off two drawers.
  */
 function refundsOf(db: Db, row: ShiftRow): Money {
+  const [where, params] = shiftReturnsWhere(row);
   // points given back on a return never leave the drawer
   const rows = db.prepare(`SELECT i.currency AS currency,
                                   COALESCE(SUM(i.total - COALESCE((SELECT SUM(m.value) FROM loyalty_moves m WHERE m.invoice_id = i.id AND m.kind = 'return_redeem'), 0)), 0) AS total
-                           FROM invoices i
-                           WHERE i.kind = 'sale_return' AND i.status = 'posted' AND i.payment = 'cash' AND i.cash_account = ?
-                             AND i.posted_at >= ? ${row.closed_at ? 'AND i.posted_at <= ?' : ''}
-                             AND NOT EXISTS (SELECT 1 FROM pos_shifts o WHERE o.cash_account = i.cash_account AND o.id <> ?
-                                               AND o.opened_at > ? AND o.opened_at <= i.posted_at
-                                               AND (o.closed_at IS NULL OR o.closed_at >= i.posted_at))
+                           FROM invoices i WHERE ${where}
                            GROUP BY i.currency`)
-    .all(row.cash_account, row.opened_at, ...(row.closed_at ? [row.closed_at] : []), row.id, row.opened_at) as { currency: CurrencyCode; total: number }[];
+    .all(...params) as { currency: CurrencyCode; total: number }[];
   const refunds = zero();
   for (const r of rows) refunds[r.currency] = Number(r.total);
   return refunds;
+}
+
+/** The returns paid out of a shift's drawer (the rule above), as a condition on invoices `i` with its parameters. */
+function shiftReturnsWhere(row: ShiftRow): [string, string[]] {
+  return [`i.kind = 'sale_return' AND i.status = 'posted' AND i.payment = 'cash' AND i.cash_account = ?
+             AND i.posted_at >= ? ${row.closed_at ? 'AND i.posted_at <= ?' : ''}
+             AND NOT EXISTS (SELECT 1 FROM pos_shifts o WHERE o.cash_account = i.cash_account AND o.id <> ?
+                               AND o.opened_at > ? AND o.opened_at <= i.posted_at
+                               AND (o.closed_at IS NULL OR o.closed_at >= i.posted_at))`,
+  [row.cash_account, row.opened_at, ...(row.closed_at ? [row.closed_at] : []), row.id, row.opened_at]];
+}
+
+/**
+ * The invoices of a shift (1.4.1, the end-of-day close of someone who does not keep the books): the sales made on it
+ * and the returns paid out of its drawer.
+ */
+export function shiftInvoiceIds(db: Db, shiftId: string): string[] {
+  const row = loadShift(db, shiftId);
+  const sales = db.prepare('SELECT invoice_id FROM pos_sales WHERE shift_id = ?').all(shiftId) as { invoice_id: string }[];
+  const [where, params] = shiftReturnsWhere(row);
+  const returns = db.prepare(`SELECT i.id FROM invoices i WHERE ${where}`).all(...params) as { id: string }[];
+  return [...sales.map((s) => s.invoice_id), ...returns.map((r) => r.id)];
+}
+
+/**
+ * Whether this user opened the shift, for the end-of-day close (closed shifts too). Strict with sign-in on: a shift
+ * whose "open" record names no user (one opened before the id was recorded) is nobody's by name there, so a cashier
+ * never sees the register of another user who happens to share their name; the close's debts go by id as well.
+ */
+export function openedShift(db: Db, shiftId: string, actor: ShiftActor): boolean {
+  return isOpener(db, loadShift(db, shiftId), actor, true);
 }
 
 type ShiftActor = Pick<Actor, 'id' | 'name' | 'permissions'>;
@@ -273,16 +300,17 @@ type ShiftActor = Pick<Actor, 'id' | 'name' | 'permissions'>;
 /**
  * Whether this user opened the shift. Names are not unique (two users can both be called "Mer S"), so with sign-in on
  * the user id kept in the shift's append-only "open" audit record decides; it also survives renaming the user. Without
- * sign-in every PC is the owner, and the name typed on the PC tells the cashiers apart. Only open shifts are asked,
- * and their record is among the newest, so the backwards scan stops early.
+ * sign-in every PC is the owner, and the name typed on the PC tells the cashiers apart. `byIdOnly` (the day close):
+ * with sign-in on, a record without a user id matches nobody instead of falling back to the name.
  */
-function isOpener(db: Db, row: ShiftRow, actor: ShiftActor): boolean {
+function isOpener(db: Db, row: ShiftRow, actor: ShiftActor, byIdOnly = false): boolean {
   if (actor.id && signInRequired(db)) {
     const opened = db.prepare("SELECT details FROM audit_log WHERE entity = 'pos_shift' AND entity_id = ? AND action = 'open' ORDER BY id DESC LIMIT 1")
       .get(row.id) as { details: string | null } | undefined;
     let openerId: unknown = null;
     try { openerId = opened?.details ? (JSON.parse(opened.details) as { userId?: unknown }).userId ?? null : null; } catch { openerId = null; }
     if (typeof openerId === 'string') return openerId === actor.id;
+    if (byIdOnly) return false;
   }
   return row.opened_by === actor.name;
 }
@@ -317,11 +345,23 @@ export function getShift(db: Db, id: string, actor: ShiftActor | null = null): S
   return shiftView(db, loadShift(db, id), actor);
 }
 
+/**
+ * Whether this user may read the shift (1.4.1, the rule of the end-of-day close): whoever keeps the books reads every
+ * shift; anyone else (a cashier) only the shifts they opened, matched by the user id of the shift's "open" record.
+ */
+function readsShift(db: Db, row: ShiftRow, actor: Actor | null): boolean {
+  return !actor || seesBooks(actor) || isOpener(db, row, actor, true);
+}
+
 export function listShifts(db: Db, f: { status?: 'open' | 'closed' | undefined; limit?: number | undefined } = {},
-  actor: ShiftActor | null = null): ShiftView[] {
-  const rows = db.prepare(`SELECT * FROM pos_shifts ${f.status ? 'WHERE status = ?' : ''} ORDER BY opened_at DESC LIMIT ?`)
-    .all(...(f.status ? [f.status] : []), f.limit ?? 100) as unknown as ShiftRow[];
-  return rows.map((r) => shiftView(db, r, actor));
+  actor: Actor | null = null): ShiftView[] {
+  const limit = f.limit ?? 100;
+  const ownOnly = !!actor && !seesBooks(actor);
+  // someone who reads only their own shifts gets up to `limit` of theirs, not of everyone's
+  const rows = (db.prepare(`SELECT * FROM pos_shifts ${f.status ? 'WHERE status = ?' : ''} ORDER BY opened_at DESC${ownOnly ? '' : ' LIMIT ?'}`)
+    .all(...(f.status ? [f.status] : []), ...(ownOnly ? [] : [limit])) as unknown as ShiftRow[])
+    .filter((r) => !ownOnly || readsShift(db, r, actor));
+  return rows.slice(0, limit).map((r) => shiftView(db, r, actor));
 }
 
 /** The open shift this user can sell on (their own; the newest if several registers). */
@@ -331,8 +371,10 @@ export function myShift(db: Db, actor: ShiftActor): ShiftView | null {
   return row ? shiftView(db, row, actor) : null;
 }
 
-export function shiftReport(db: Db, id: string, actor: ShiftActor | null = null): ShiftReport {
+export function shiftReport(db: Db, id: string, actor: Actor | null = null): ShiftReport {
   const row = loadShift(db, id);
+  // another cashier's shift is not theirs to read: answered as if it were not there
+  if (!readsShift(db, row, actor)) throw notFound('shift');
   const invoices = (db.prepare(`SELECT i.id, i.number, i.created_at, p.name AS party_name, i.currency, i.total, i.status, o.reference AS offline_ref, o.sold_at
                                 FROM pos_sales s JOIN invoices i ON i.id = s.invoice_id LEFT JOIN parties p ON p.id = i.party_id
                                 LEFT JOIN pos_offline_sales o ON o.invoice_id = i.id

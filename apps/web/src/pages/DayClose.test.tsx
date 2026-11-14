@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { makeI18n } from '../i18n.ts';
 import type { DayCloseView } from '../industry/brief-api.ts';
-import { dayCloseRows, dayCloseText, differenceOf, methodLabel } from './DayClose.tsx';
+import { dayCloseRows, dayCloseText, differenceOf, drawersNote, methodLabel } from './DayClose.tsx';
 
 const noop = () => {};
 const en = makeI18n('en', 'western', noop, noop);
@@ -51,6 +51,12 @@ describe('the end-of-day close on the screen', () => {
     expect(differenceOf({ IQD: 0, USD: 0 }).key).toBe('dc_balanced');
     // dollars decide only when the dinars match
     expect(differenceOf({ IQD: 0, USD: -100 }).key).toBe('dc_short');
+  });
+
+  it('says the registers are still open, not that none was open, while no drawer of the day is counted yet (1.4.1)', () => {
+    const open = day.registers.filter((r) => r.status === 'open');
+    expect(drawersNote({ registers: open })).toBe('dc_stillOpen');
+    expect(drawersNote({ registers: [] })).toBe('dc_noRegisters');
   });
 
   it('writes the WhatsApp message in the reader\'s language with the day\'s figures', () => {

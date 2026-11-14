@@ -1,6 +1,6 @@
 import { useEffect, useState, type FormEvent } from 'react';
 import { todayIso } from '@qasa/core';
-import { ErrorBox, Icon, Modal, useLoad, useToast } from '../components.tsx';
+import { ErrorBox, Icon, Modal, useBuildHas, useLoad, useToast } from '../components.tsx';
 import { useI18n, type Key } from '../i18n.ts';
 import { href } from '../router.ts';
 import { STORE_SCOPES, webApiClient, type NetworkForWeb, type OnlineMethod, type WebEvent, type WebScope } from '../industry/webapi-api.ts';
@@ -102,7 +102,10 @@ export function WebsiteApi() {
   const { t } = i18n;
   const toast = useToast();
   const { data, error, reload } = useLoad(() => webApiClient.overview(), []);
-  const net = useLoad(() => webApiClient.network().catch(() => null), []);
+  // the office network's link (Qasa Relay) only where the build serves the office network: a browser on the office
+  // network, and a build without the module, have no /api/network to ask (1.4.1)
+  const servesNetwork = useBuildHas('network');
+  const net = useLoad(() => (servesNetwork ? webApiClient.network().catch(() => null) : Promise.resolve(null)), [servesNetwork]);
   const [busy, setBusy] = useState(false);
   const [actionError, setActionError] = useState<unknown>(null);
   const [newKey, setNewKey] = useState<{ name: string; scopes: WebScope[] } | null>(null);

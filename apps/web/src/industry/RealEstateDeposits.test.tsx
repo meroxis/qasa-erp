@@ -102,3 +102,17 @@ it('takes back a draft at once, with the draft text', async () => {
   await vi.waitFor(() => expect(fixture.toast).toHaveBeenCalledWith('dep_reopened'));
   expect(render().some((n) => n.type === 'Modal')).toBe(false);
 });
+
+it('marks a deposit waiting for approval (1.4.1) without refund or keep buttons, and says the unit waits with it', () => {
+  const waiting: ReDepositView = {
+    entryId: 'd2', entryNumber: null, unitId: 'u1', party: { id: 'p1', name: 'Las', phone: '' }, date: '2026-11-14', currency: 'IQD',
+    amount: 5_000_000, status: 'held', reversed: false, invoiceId: null, closeEntry: null, approval: 'waiting', rejectedBy: null, reason: null, actions: []
+  };
+  fixture.unit = { ...unit(waiting), status: 'reserved', depositWaiting: 5_000_000, actions: ['deposit'] };
+  const nodes = render();
+  // the chip of a document's receipt waiting for approval (ReceiptApproval), not "held"
+  expect(nodes.some((n) => n.type === 'span' && text(n).includes('da_waiting'))).toBe(true);
+  expect(nodes.some((n) => n.type === 'span' && text(n).includes('dep_st_held'))).toBe(false);
+  expect(nodes.some((n) => n.type === 'p' && text(n).includes('dep_waitingNote'))).toBe(true);
+  expect(nodes.some((n) => n.type === 'button' && (text(n).includes('dep_refund') || text(n).includes('dep_forfeit')))).toBe(false);
+});

@@ -188,7 +188,9 @@ describe('point of sale', () => {
     // Raz can't sell on Mer's shift; the admin can
     const sale = { currency: 'IQD', lines: [{ itemId: cupId, qtyMilli: 1000, unitPrice: 1_000 }] };
     expect((await post(`/api/pos/shifts/${shift.id}/sales`, sale, raz)).statusCode).toBe(403);
-    expect((await get(`/api/pos/shifts/${shift.id}`, raz)).json().actions).toEqual([]);
+    // (1.4.1: nor read it: a cashier reads only the shifts they opened)
+    expect((await get(`/api/pos/shifts/${shift.id}`, raz)).statusCode).toBe(404);
+    expect((await get(`/api/pos/shifts/${shift.id}`, boss)).json().actions).toEqual(['sell', 'close']);
     expect((await post(`/api/pos/shifts/${shift.id}/sales`, sale, boss)).statusCode).toBe(201);
     // Raz's own shift
     const hers = await post('/api/pos/shifts', { register: 'Counter 2', cashAccountCode: '1811', warehouseId, openingCash: 0 }, raz);

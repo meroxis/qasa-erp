@@ -51,6 +51,15 @@ export interface PrintingDeps {
    * again instead of using the answer of a moment ago. Missing or failing: no default and no state are known.
    */
   windows?: (fresh?: boolean) => Promise<WindowsPrinter[]>;
+  /**
+   * 1.4.1: called just before the paper is sent, with whether the Windows print window (or a file printer's "Save
+   * as" box) will show; answers how to put things back once the print ends. The Windows app paints the window white
+   * meanwhile (Chromium prints the window's own colour in the page margins when backgrounds are printed) and brings a
+   * minimized window back, so the print window has somewhere to show.
+   */
+  prepare?: (shows: boolean) => () => void;
+  /** How long to let the window take what `prepare` changed before the paper is sent (default none). */
+  prepareWaitMs?: number;
 }
 
 /** The events of the app window's webContents that end a print: its page is gone (closed, crashed) or another loads. */
@@ -143,6 +152,12 @@ export function printingHandlers(deps: PrintingDeps) {
     // a PDF, XPS or fax "printer" is never a stand-in for a real one: the print window opens instead
     if (guessPrinter({ name: found.name, driver: found.driver, papers: found.papers }) === 'file') return null;
     return found.name;
+  }
+
+  /** A PDF, XPS, OneNote or fax "printer", by its name and what Windows says of its driver. */
+  async function isFilePrinter(name: string): Promise<boolean> {
+    const w = (await windows()).find((p) => p.name === name);
+    return guessPrinter({ name, driver: w?.driver ?? '', papers: w?.papers ?? [] }) === 'file';
   }
 
   return {
@@ -244,11 +259,28 @@ export function printingHandlers(deps: PrintingDeps) {
         }
         const options = devicePrintOptions({ ...choiceForPrint(kind, choice, layout as LabelLayout | undefined), printer: choice.printer as string });
         sentSilently = options.silent;
+        // 1.4.1: a PDF, XPS or OneNote "printer" always asks where to save the file, even without the print window: the
+        // person decides when that ends, so no time limit (the limit would count a saved file as failed and print twice)
+        const toFile = await isFilePrinter(choice.printer as string);
+        const limited = options.silent && !toFile;
+        let restore = () => {};
+        try {
+          restore = deps.prepare?.(!options.silent || toFile) ?? restore;
+        } catch (error) {
+          deps.log(`printing (${kind}): could not get the window ready:`, error);
+        }
+        if (deps.prepare && (deps.prepareWaitMs ?? 0) > 0) await new Promise((r) => setTimeout(r, deps.prepareWaitMs));
         let unwatch = () => {};
         const outcome = await new Promise<PrintOutcome>((resolve) => {
           // only a print without the print window can hang unseen; with the window open, the person decides when it ends
           // (and the next print waits for that: the lock is held until the window closes)
-          const timer = options.silent ? setTimeout(() => resolve({ status: 'failed', reason: 'printer' }), deps.timeoutMs ?? 120_000) : undefined;
+          const timeoutMs = deps.timeoutMs ?? 120_000;
+          const timer = limited
+            ? setTimeout(() => {
+              deps.log(`printing (${kind}): no answer from the printer after ${Math.round(timeoutMs / 1000)} s; counted as failed`);
+              resolve({ status: 'failed', reason: 'printer' });
+            }, timeoutMs)
+            : undefined;
           (timer as { unref?: () => void } | undefined)?.unref?.();
           // ... or until the page that asked is gone (closed, crashed, reloaded): its print window may never answer
           unwatch = watchPrintTarget(target, (why) => {
@@ -270,6 +302,7 @@ export function printingHandlers(deps: PrintingDeps) {
           }
         });
         unwatch();
+        try { restore(); } catch (error) { deps.log(`printing (${kind}): could not put the window back:`, error); }
         // printed on the default printer instead of the saved one: the answer names both
         if (fallback && outcome.status === 'printed') return { ...outcome, fallback } as PrintOutcome;
         return outcome;

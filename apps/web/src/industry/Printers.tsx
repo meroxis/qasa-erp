@@ -1,7 +1,7 @@
 import { Fragment, useCallback, useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
 import {
-  DEFAULT_PRINTER_CHOICE, MAX_PRINT_COPIES, PRINT_KINDS, PRINTER_MARGINS, PRINTER_PAPERS, USUAL_PAPER,
+  DEFAULT_PRINTER_CHOICE, MAX_PRINT_COPIES, PRINT_KINDS, PRINTER_MARGINS, PRINTER_PAPERS, todayIso, USUAL_PAPER,
   type PrinterChoice, type PrinterChoices, type PrinterEntry, type PrinterPaper, type PrintKind
 } from '@qasa/core';
 import { Icon, useToast } from '../components.tsx';
@@ -120,6 +120,7 @@ export function PrintersCardView({ desktop, printers, choices, busy, error, onCh
               const suggestion = printer === null ? suggestedChoice(kind, printers) : null;
               const suggested = suggestion && (printers ?? []).find((p) => p.name === suggestion.printer);
               const chosen = (printers ?? []).find((p) => p.name === printer);
+              const toFile = chosen?.guess === 'file';
               // what the list says beside a printer's name: Windows' default, and offline when Windows says so
               const optionLabel = (p: PrinterInfo) => [p.displayName, p.isDefault ? t('s14_prnDefault') : '', p.state === 'offline' ? t('s14_prnOffline') : ''].filter(Boolean).join(' — ');
               // each kind takes two rows: its printer, paper, copies and test page, then its margins as rectangles
@@ -131,7 +132,9 @@ export function PrintersCardView({ desktop, printers, choices, busy, error, onCh
                     <div className="muted small">{t(`prn_also_${kind}` as Key)}</div>
                   </td>
                   <td>
+                    {/* 1.4.1: a long name can be cut in the list's box, so the box's title gives it whole */}
                     <select className="input" aria-label={`${t('prn_printer')} — ${label}`} value={printer ?? ''} disabled={busy !== null || printers === null}
+                      title={chosen ? optionLabel(chosen) : gone ? `${printer} — ${t('prn_gone')}` : t('prn_ask')}
                       onChange={(e) => onChange(kind, withPrinter(kind, c, e.target.value || null))}>
                       <option value="">{t('prn_ask')}</option>
                       {gone && <option value={printer!}>{printer} — {t('prn_gone')}</option>}
@@ -164,7 +167,9 @@ export function PrintersCardView({ desktop, printers, choices, busy, error, onCh
                     </select>
                   </td>
                   <td>
-                    <input type="checkbox" aria-label={`${t('prn_silent')} — ${label}`} checked={!!c?.silent} disabled={off} onChange={(e) => set({ silent: e.target.checked })} />
+                    {/* 1.4.1: a printer that saves a file always asks where to save it: "without asking" can't be */}
+                    <input type="checkbox" aria-label={`${t('prn_silent')} — ${label}`} checked={!!c?.silent && !toFile} disabled={off || toFile}
+                      title={toFile ? t('prn_silentFile') : undefined} onChange={(e) => set({ silent: e.target.checked })} />
                   </td>
                   <td>
                     <button type="button" className="btn small" disabled={busy !== null} onClick={() => onTest(kind)}><Icon name="printer" size={14} />{t('prn_test')}</button>
@@ -306,6 +311,7 @@ export function testSheetLayout(paper: PrinterPaper): TestSheetLayout {
 export function PrintTestSheet({ kind, choice }: { kind: PrintKind; choice: PrinterChoice | undefined }) {
   const i18n = useI18n();
   const { t } = i18n;
+  // the date and the time both from this PC's clock (the UTC date was a day behind from midnight to 3 am in Iraq)
   const now = new Date();
   const paper = choice?.paper ?? 'auto';
   const layout = testSheetLayout(paper);
@@ -326,7 +332,7 @@ export function PrintTestSheet({ kind, choice }: { kind: PrintKind; choice: Prin
             <div>{t('prn_kind')}: {t(`prn_kind_${kind}` as Key)}</div>
             <div>{t('prn_printer')}: <span dir="auto">{choice?.printer ?? t('prn_ask')}</span></div>
             <div>{t('prn_paper')}: {t(`prn_paper_${paper}` as Key)} · {t('prn_margins')}: {t(`prn_margins_${choice?.margins ?? 'default'}` as Key)} · {t('prn_copies')}: {i18n.int(choice?.copies ?? 1)}</div>
-            <div>{t('prn_testWhen')}: {i18n.date(now.toISOString().slice(0, 10))} {i18n.digitsOf(now.toTimeString().slice(0, 5))}</div>
+            <div>{t('prn_testWhen')}: {i18n.date(todayIso(now))} {i18n.digitsOf(now.toTimeString().slice(0, 5))}</div>
           </>
         )}
         <div className="print-test-box" style={{ inlineSize: mm(layout.box.width), blockSize: mm(layout.box.height) }}>

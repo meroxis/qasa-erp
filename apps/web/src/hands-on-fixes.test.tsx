@@ -11,7 +11,7 @@ import { closedPageAddress } from './router.ts';
 import { entryModel, invoiceModel, POS_TITLE, sampleModel } from './industry/print-model.ts';
 import { partsNotice } from './pages/CarParts.tsx';
 import { jobStageShown, worksHelpKey } from './pages/EngineeringWorks.tsx';
-import { CartName } from './pages/Pos.tsx';
+import { CartName, shiftTime } from './pages/Pos.tsx';
 import { cartShortNote } from './pages/pos-logic.ts';
 import { logoTickShown } from './pages/PrintDesign.tsx';
 import { reportTabsFor } from './pages/tabs.ts';
@@ -230,6 +230,23 @@ describe('after the final check of 1.4', () => {
     const plans = src('./pages/Plans.tsx');
     expect(plans).toContain("const served = useBuildHas('pro');");
     expect(plans).toContain("if (demo || plan.plan === 'free' || !served) {");
+  });
+});
+
+describe('the hands-on test of 1.4.1', () => {
+  it('a shift opened just after midnight in Iraq shows that day\'s date with its time, in the list and the shift report', () => {
+    const tz = process.env.TZ;
+    process.env.TZ = 'Asia/Baghdad';
+    try {
+      // 00:12 on 15 November in Baghdad is still 14 November in UTC
+      expect(shiftTime(texts('en'), '2026-11-14T21:12:00.000Z')).toBe('15/11/2026 00:12');
+      expect(shiftTime(texts('en'), null)).toBe('—');
+    } finally {
+      if (tz === undefined) delete process.env.TZ; else process.env.TZ = tz;
+    }
+    const pos = src('./pages/Pos.tsx');
+    expect(pos).toContain('<td className="num">{shiftTime(i18n, s.openedAt)}</td>');
+    expect(pos).toContain('const time = (iso: string | null) => shiftTime(i18n, iso);');
   });
 });
 

@@ -19,6 +19,12 @@ export const DAY_CLOSE_TEXT = {
   dc_m_loyalty: ['نقاط الولاء', 'Loyalty points', 'خاڵەکانی دڵسۆزی'],
   dc_registers: ['الصناديق (الكاشير)', 'Registers', 'کاشێرەکان'],
   dc_noRegisters: ['لم يُفتح صندوق في هذا اليوم.', 'No register was open on this day.', 'لەم ڕۆژەدا هیچ کاشێرێک نەکراوەتەوە.'],
+  // 1.4.1: someone who does not keep the books sees the registers they opened, and the sales and debts of those shifts
+  dc_ownShifts: [
+    'تظهر هنا الصناديق التي فتحتها أنت فقط، مع مبيعات وردياتها والديون الجديدة فيها، وسندات القبض التي نظّمتها أنت.',
+    'Only the registers you opened yourself are shown here, with the sales and new debts of their shifts and the receipts you made.',
+    'لێرە تەنها ئەو کاشێرانە دەردەکەون کە خۆت کردووتەتەوە، لەگەڵ فرۆشتن و قەرزە نوێیەکانی شەفتەکانیان و ئەو سەنەدانەی وەرگرتن کە خۆت دروستت کردوون.'
+  ],
   dc_stillOpen: ['لا تزال مفتوحة', 'Still open', 'هێشتا کراوەیە'],
   dc_drawers: ['الأدراج المغلقة: المتوقع والمعدود', 'Closed drawers: expected and counted', 'چەکمەجە داخراوەکان: چاوەڕوانکراو و ژمێردراو'],
   dc_short: ['نقص', 'Short', 'کەم'],

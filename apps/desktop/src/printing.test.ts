@@ -15,7 +15,10 @@ function fakeWindow(printers: { name: string; displayName?: string }[] = [{ name
 }
 
 /** silentGapMs: the gap between silent prints (0 here unless a test checks it); the clock is the test's own. */
-function setup(options: { file?: string | null; appPage?: boolean; target?: PrintTarget | null; silentGapMs?: number; windows?: (fresh?: boolean) => Promise<WindowsPrinter[]> } = {}) {
+function setup(options: {
+  file?: string | null; appPage?: boolean; target?: PrintTarget | null; silentGapMs?: number; windows?: (fresh?: boolean) => Promise<WindowsPrinter[]>;
+  prepare?: (shows: boolean) => () => void; log?: (...parts: unknown[]) => void;
+} = {}) {
   const win = fakeWindow();
   let file: string | null = options.file ?? null;
   const writes: string[] = [];
@@ -25,11 +28,12 @@ function setup(options: { file?: string | null; appPage?: boolean; target?: Prin
     fromAppPage: () => options.appPage ?? true,
     readFile: () => file,
     writeFile: (text) => { file = text; writes.push(text); },
-    log: () => {},
+    log: options.log ?? (() => {}),
     timeoutMs: 1000,
     silentGapMs: options.silentGapMs ?? 0,
     now: () => clock.now,
-    ...(options.windows ? { windows: options.windows } : {})
+    ...(options.windows ? { windows: options.windows } : {}),
+    ...(options.prepare ? { prepare: options.prepare } : {})
   });
   return { win, handlers, writes, clock, file: () => file, event: { sender: options.target !== undefined ? options.target : win } };
 }
@@ -228,6 +232,66 @@ describe('printing', () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+
+  it('says in the log when it gives up on a printer', async () => {
+    vi.useFakeTimers();
+    try {
+      const lines: string[] = [];
+      const { handlers, event, win } = setup({ file: saved({ receipt: choice }), log: (...parts) => lines.push(parts.map(String).join(' ')) });
+      win.print.mockImplementationOnce(() => {});
+      const pending = handlers.print(event, 'receipt');
+      await vi.advanceTimersByTimeAsync(1000);
+      await pending;
+      expect(lines.some((l) => /receipt.*no answer from the printer/.test(l))).toBe(true);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('waits as long as the person needs in a file printer\'s "Save as" box, even with "Print without asking" (1.4.1)', async () => {
+    vi.useFakeTimers();
+    try {
+      for (const [name, driver] of [['Microsoft Print to PDF', 'Microsoft Print To PDF'], ['Microsoft XPS Document Writer', '']] as const) {
+        const { handlers, event, win } = setup({
+          file: saved({ receipt: { ...choice, printer: name } }),
+          windows: async () => [{ name, isDefault: false, state: 'ready', driver, papers: ['A4'] }]
+        });
+        win.printers = [{ name, displayName: name }];
+        let finish: (success: boolean, reason: string) => void = () => {};
+        win.print.mockImplementationOnce((_o, callback) => { finish = callback; });
+        const pending = handlers.print(event, 'receipt');
+        await vi.waitFor(() => expect(win.print).toHaveBeenCalledTimes(1));
+        // more than two minutes choosing where to save: not a failure, so the page never opens the print window again
+        await vi.advanceTimersByTimeAsync(5 * 60_000);
+        let settled = false;
+        void pending.then(() => { settled = true; });
+        await vi.advanceTimersByTimeAsync(0);
+        expect(settled).toBe(false);
+        finish(true, '');
+        expect(await pending).toEqual({ status: 'printed' });
+      }
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('gets the window ready before the paper is sent and puts it back after, whatever the outcome (1.4.1)', async () => {
+    const steps: string[] = [];
+    const prepare = vi.fn((shows: boolean) => { steps.push(`ready ${shows}`); return () => { steps.push('back'); }; });
+    const { handlers, event, win } = setup({ file: saved({ receipt: choice, invoice: { ...choice, printer: 'Office Laser', paper: 'A4', silent: false } }), prepare });
+    win.print.mockImplementation((_o, callback) => { steps.push('print'); callback(...win.answer); });
+    expect(await handlers.print(event, 'receipt')).toEqual({ status: 'printed' });
+    expect(steps).toEqual(['ready false', 'print', 'back']);
+    steps.length = 0;
+    win.answer = [false, 'Print job failed'];
+    expect(await handlers.print(event, 'invoice')).toEqual({ status: 'failed', reason: 'printer' });
+    // with the print window: a minimized window is brought back for it to show over
+    expect(steps).toEqual(['ready true', 'print', 'back']);
+    // asked to choose (nothing saved), the page opens the print window itself: nothing to get ready here
+    steps.length = 0;
+    expect(await handlers.print(event, 'label')).toEqual({ status: 'ask' });
+    expect(steps).toEqual([]);
   });
 
   it('waits as long as the person needs in the Windows print window, and holds the next print until it closes', async () => {

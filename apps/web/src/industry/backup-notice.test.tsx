@@ -4,8 +4,8 @@ import { backupNoticeKey, BackupNoticeBar } from './BackupNotice.tsx';
 import { SAFETY_TEXT } from '../i18n/safety.ts';
 
 // Render the bar without a browser: the status the server sent is handed straight to useState.
-const fixture = vi.hoisted(() => ({ status: null as unknown }));
-vi.mock('react', () => ({ useState: () => [fixture.status, () => {}], useEffect() {} }));
+const fixture = vi.hoisted(() => ({ status: null as unknown, deps: [] as unknown[] }));
+vi.mock('react', () => ({ useState: () => [fixture.status, () => {}], useEffect(_run: unknown, deps: unknown[]) { fixture.deps = deps; } }));
 vi.mock('../i18n.ts', () => ({ useI18n: () => ({ t: (s: string) => s }) }));
 vi.mock('../router.ts', () => ({ href: (s: string) => `#/${s}` }));
 const seen = vi.hoisted(() => ({ calls: 0 }));
@@ -38,6 +38,15 @@ it('shows the bar to admins only, outside Settings, with a link to the backups',
   expect(render({ notice: 'plan' }, false)).toBeNull();
   expect(render({ notice: 'plan' }, true, 'settings')).toBeNull();
   expect(render({ notice: null })).toBeNull();
+});
+
+it('asks the server again when the plan changes, so the free month started from the welcome clears the bar (1.4.1)', () => {
+  fixture.status = null;
+  BackupNoticeBar({ admin: true, page: 'home', plan: 'free/none' });
+  const before = [...fixture.deps];
+  BackupNoticeBar({ admin: true, page: 'home', plan: 'business/trial' });
+  expect(fixture.deps).not.toEqual(before);
+  expect(fixture.deps).toContain('business/trial');
 });
 
 it('tells an admin once, on any page, that copies stay on this PC while Documents is synced and there is no password', () => {

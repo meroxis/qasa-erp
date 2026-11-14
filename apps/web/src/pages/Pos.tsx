@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { categoriesApi, inCategory, type CategoryView } from '../industry/categories-api.ts';
 import { createPortal } from 'react-dom';
-import { normalizeForSearch, rateFromX100, rateToX100, toWesternDigits, type CurrencyCode } from '@qasa/core';
+import { normalizeForSearch, rateFromX100, rateToX100, todayIso, toWesternDigits, type CurrencyCode } from '@qasa/core';
 import { api, ApiError, isNetworkError, serverReachable, type InvoiceView, type ItemView, type PartyView, type WarehouseView } from '../api.ts';
 import { AccountCombo, AmountInput, ErrorBox, Icon, Modal, SearchCombo, useData, useLoad, usePageNav, useToast, type PickOption } from '../components.tsx';
 import { useI18n, type I18n, type Key } from '../i18n.ts';
@@ -47,6 +47,16 @@ const lineTotal = (l: CartLine) => Math.round((l.qtyMilli * l.unitPrice) / 1000)
 
 function money2(i18n: I18n, m: Money2): string {
   return m.USD ? `${i18n.money(m.IQD, 'IQD')} · ${i18n.money(m.USD, 'USD')}` : i18n.money(m.IQD, 'IQD');
+}
+
+/**
+ * When a shift opened or closed, as this PC's clock reads it: the date and the time both local (1.4.1; the date was
+ * the UTC one, a day behind for a shift opened between midnight and 3 am in Iraq).
+ */
+export function shiftTime(i18n: Pick<I18n, 'date' | 'digitsOf'>, iso: string | null): string {
+  if (!iso) return '—';
+  const at = new Date(iso);
+  return `${i18n.date(todayIso(at))} ${i18n.digitsOf(at.toTimeString().slice(0, 5))}`;
 }
 
 /** Two letters for an item without a picture. */
@@ -171,7 +181,7 @@ function ShiftList({ shifts }: { shifts: ShiftView[] }) {
                 <td><a href={href(`pos-shift/${s.id}`)}>{s.number}</a> {s.status === 'open' && <span className="chip info">{t('pos_statusOpen')}</span>}</td>
                 <td>{s.register}</td>
                 <td>{s.openedBy}</td>
-                <td className="num">{i18n.date(s.openedAt.slice(0, 10))} {i18n.digitsOf(new Date(s.openedAt).toTimeString().slice(0, 5))}</td>
+                <td className="num">{shiftTime(i18n, s.openedAt)}</td>
                 <td className="num">{i18n.int(s.count)}</td>
                 <td className="num">{money2(i18n, s.sales)}</td>
                 <td className="num">{s.difference ? <DiffText d={s.difference} /> : '—'}</td>
@@ -868,7 +878,7 @@ export function PosShiftReport({ id }: { id: string }) {
   const { data: r, error } = useLoad<ShiftReport>(() => posApi.shift(id), [id]);
   if (error) return <ErrorBox error={error} />;
   if (!r) return null;
-  const time = (iso: string | null) => (iso ? `${i18n.date(iso.slice(0, 10))} ${i18n.digitsOf(new Date(iso).toTimeString().slice(0, 5))}` : '—');
+  const time = (iso: string | null) => shiftTime(i18n, iso);
   return (
     <div className="stack">
       <div className="row no-print">

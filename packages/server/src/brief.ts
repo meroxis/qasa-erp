@@ -10,6 +10,7 @@ import { AppError } from './errors.ts';
 import { seesBooks } from './auth.ts';
 import { entryInBranchSql, scopeLists, scopeOf } from './branches.ts';
 import { chequesAhead, type ChequeAlert } from './banking.ts';
+import { notRejectedDocumentReceiptSql } from './journal.ts';
 import { expiryAlert, type BatchReportRow } from './batches.ts';
 import { REORDER_JOINS, REORDER_LEVEL } from './reorder.ts';
 
@@ -74,16 +75,20 @@ export function salesBetween(db: Db, from: string, to: string, branch: BranchFil
 
 export interface ItemSales { itemId: string; code: string; name: Names; qtyMilli: number; sales: number; cost: number; profit: number }
 
-/** Sales, cost and profit by item (IQD), returns taken off, best sellers first. */
-export function salesByItem(db: Db, from: string, to: string, limit = 500, branch: BranchFilter = null): ItemSales[] {
+/**
+ * Sales, cost and profit by item (IQD), returns taken off, best sellers first. `only` (1.4.1): just these invoices (the
+ * shifts of a cashier's end-of-day close).
+ */
+export function salesByItem(db: Db, from: string, to: string, limit = 500, branch: BranchFilter = null, only: string[] | null = null): ItemSales[] {
   const [w, wp] = inBranch('i.warehouse_id', branch?.warehouses);
+  const [o, op] = inBranch('i.id', only ?? undefined);
   const rows = db.prepare(`SELECT it.id, it.code, it.name_ar, it.name_en, it.name_ku,
                                   SUM(${SIGN} * l.qty_milli) AS qty,
                                   SUM(${SIGN} * ${BASE(LINE_NET)}) AS sales,
                                   SUM(${SIGN} * COALESCE(l.cost, 0)) AS cost
                            FROM invoice_lines l JOIN invoices i ON i.id = l.invoice_id JOIN items it ON it.id = l.item_id
-                           WHERE i.status = 'posted' AND i.kind IN ('sale', 'sale_return') AND i.date BETWEEN ? AND ?${w}
-                           GROUP BY it.id ORDER BY sales DESC LIMIT ?`).all(from, to, ...wp, limit) as
+                           WHERE i.status = 'posted' AND i.kind IN ('sale', 'sale_return') AND i.date BETWEEN ? AND ?${w}${o}
+                           GROUP BY it.id ORDER BY sales DESC LIMIT ?`).all(from, to, ...wp, ...op, limit) as
     { id: string; code: string; name_ar: string; name_en: string; name_ku: string; qty: number; sales: number; cost: number }[];
   return rows.map((r) => {
     const sales = Math.round(num(r.sales));
@@ -447,8 +452,9 @@ export function dailyBrief(db: Db, date: string, branch: BranchFilter = null): B
   const inst = installmentsOn(db, date);
   const overdueTotal: Money = { IQD: 0, USD: 0 };
   for (const o of inst.overdue) overdueTotal[o.currency] += o.amount;
-  const approvals = db.prepare(`SELECT COALESCE(SUM(status = 'draft'), 0) AS draft, COALESCE(SUM(status = 'checked'), 0) AS checked
-                                FROM entries WHERE status IN ('draft', 'checked')`).get() as { draft: number; checked: number };
+  // (a document's receipt that was rejected waits for nobody: it is kept as its document's record, 1.4.1)
+  const approvals = db.prepare(`SELECT COALESCE(SUM(e.status = 'draft'), 0) AS draft, COALESCE(SUM(e.status = 'checked'), 0) AS checked
+                                FROM entries e WHERE e.status IN ('draft', 'checked') AND ${notRejectedDocumentReceiptSql('e')}`).get() as { draft: number; checked: number };
   return {
     date,
     company,

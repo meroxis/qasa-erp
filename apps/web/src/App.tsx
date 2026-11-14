@@ -855,7 +855,7 @@ export function App() {
               </header>
               {changingPassword && <PasswordModal needsCurrent onClose={() => setChangingPassword(false)} />}
               {searching && <CommandPalette viewer={viewer} onClose={() => setSearching(false)} />}
-              {touring && settings && settings.businessTypes !== null && <Tour user={favUser} businessTypes={settings.businessTypes} onClose={() => setTouring(false)} />}
+              {touring && settings && settings.businessTypes !== null && <Tour user={favUser} businessTypes={settings.businessTypes} office={dataPlace?.kind === 'office'} onClose={() => setTouring(false)} />}
               {/* the first time an admin opens the company: what does it do? (decides the menu; changed later under System) */}
               {isAdmin && settings && settings.businessTypes === null && import.meta.env.MODE !== 'demo' && (
                 <div className="backdrop"><div className="modal biz-modal" role="dialog" aria-modal="true" aria-label={t('bizWelcome')}><Suspense fallback={<PageLoading />}><BusinessTypeChooser first /></Suspense></div></div>
@@ -880,7 +880,7 @@ export function App() {
                   </div>
                 )}
                 {/* not on a PC connected to an office PC: the books and their backups are on that PC */}
-                {import.meta.env.MODE !== 'demo' && dataPlace?.kind === 'local' && inWindowsApp() && <BackupNoticeBar admin={isAdmin} served={buildHas(modules, 'backup')} page={page === 'settings' && arg !== 'backups' ? 'settings-section' : page} />}
+                {import.meta.env.MODE !== 'demo' && dataPlace?.kind === 'local' && inWindowsApp() && <BackupNoticeBar admin={isAdmin} served={buildHas(modules, 'backup')} page={page === 'settings' && arg !== 'backups' ? 'settings-section' : page} plan={plan ? `${plan.plan}/${plan.source}` : ''} />}
                 {outboxOn && <OutboxBanner page={page ?? ''} />}
                 <div key={branchKey} style={{ display: 'contents' }}><Suspense fallback={<PageLoading />}>{content}</Suspense></div>
               </main>

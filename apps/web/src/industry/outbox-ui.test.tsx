@@ -71,7 +71,8 @@ describe('the outbox bar and list', () => {
     expect(entries.map((e) => e.id)).toEqual(['c']);
     const html = render(<OutboxBanner page="home" />);
     expect(html).not.toContain('Offline');
-    expect(html).toContain('1 not accepted by the server and need a person');
+    // (one: "needs", 1.4.1)
+    expect(html).toContain('1 not accepted by the server and needs a person');
     expect(html).toContain('role="alert"');
     entries.splice(0);
     await outboxClient()!.refresh();

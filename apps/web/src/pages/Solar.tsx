@@ -527,7 +527,11 @@ export function SolarSystem({ id }: { id: string }) {
         <span className="spacer" />
         <a className="btn" href={href(`job/${j.id}`)}><Icon name="swap" size={16} />{t('sl_openJob')}</a>
         {j.status !== 'cancelled' && can('solarSystem') && <button type="button" className="btn" onClick={() => setModal('equipment')}><Icon name="plus" size={16} />{t('sl_addEquipment')}</button>}
-        {j.actions.includes('invoice') && <button type="button" className="btn primary" onClick={() => setModal('sell')}><Icon name="invoice" size={16} />{t('sl_sell')}</button>}
+        {/* 1.4.1: a receipt of the job that waits for approval is approved or rejected before the sale (the server says so too) */}
+        {j.actions.includes('invoice') && (
+          <button type="button" className="btn primary" disabled={!!j.waiting} title={j.waiting ? t('err_job_receipt_waiting') : undefined}
+            onClick={() => setModal('sell')}><Icon name="invoice" size={16} />{t('sl_sell')}</button>
+        )}
         <button type="button" className="btn" onClick={() => void printDocument('quote')}><Icon name="printer" size={16} />{t('sl_print')}</button>
       </div>
       {!j.actions.includes('invoice') && j.status !== 'invoiced' && j.status !== 'cancelled' && (
@@ -608,11 +612,13 @@ export function SolarSystem({ id }: { id: string }) {
           <div className="row"><span className="muted">{t('total')}</span><span className="spacer" /><strong className="num">{i18n.money(j.total, j.currency)}</strong></div>
           <div className="row"><span className="muted">{t('sl_paid')}</span><span className="spacer" /><strong className="num" style={{ color: 'var(--ok)' }}>{i18n.money(j.paid, j.currency)}</strong></div>
           <div className="row"><span className="muted">{t('sl_remaining')}</span><span className="spacer" /><strong className="num">{i18n.money(j.remaining, j.currency)}</strong></div>
+          {/* 1.4.1: paid in cash and waiting for approval: not paid yet */}
+          {!!j.waiting && <div className="small num" style={{ color: 'var(--warn)' }}>{t('da_waitingAmount', { a: i18n.money(j.waiting, j.currency) })}</div>}
           {j.invoice && <div className="small">{t('sl_billed')}: <a className="ltr num" href={href(`invoice/${j.invoice.id}`)}>{j.invoice.number}</a></div>}
         </div>
       </div>
       {modal === 'equipment' && <EquipmentModal system={data} onClose={() => setModal(null)} onDone={() => done(t('saved'))} />}
-      {modal === 'sell' && <SellModal system={data} onClose={() => setModal(null)} onDone={() => done(t('sl_sold'))} />}
+      {modal === 'sell' && <SellModal system={data} onClose={() => setModal(null)} onDone={(waits) => done(waits ? `${t('sl_sold')} ${t('da_savedWaiting')}` : t('sl_sold'))} />}
     </div>
   );
 }
@@ -662,7 +668,7 @@ function EquipmentModal({ system, onClose, onDone }: { system: SystemView; onClo
   );
 }
 
-function SellModal({ system, onClose, onDone }: { system: SystemView; onClose(): void; onDone(): void }) {
+function SellModal({ system, onClose, onDone }: { system: SystemView; onClose(): void; onDone(waits: boolean): void }) {
   const i18n = useI18n();
   const { t, lang } = i18n;
   const { settings } = useData();
@@ -682,13 +688,14 @@ function SellModal({ system, onClose, onDone }: { system: SystemView; onClose():
     setBusy(true);
     setError(null);
     try {
-      await solarApi.sell(j.id, {
+      const sold = await solarApi.sell(j.id, {
         date, payment, lang, ...(j.currency === 'USD' ? { rateX100: rate } : {}),
         ...(payment !== 'credit' ? { cashAccountCode: cash } : {}),
         ...(payment === 'installments' ? { downPayment: down ?? 0, months, firstDue, ...(guarantor.name.trim() ? { guarantor: { name: guarantor.name.trim(), phone: guarantor.phone.trim() } } : {}) } : {}),
         ...(maint.on ? { maintenance: { everyMonths: maint.every, price: maint.price } } : {})
       });
-      onDone();
+      // 1.4.1: the cash receipt waits for approval (Vouchers need approval, and this user may not approve)
+      onDone(!!sold.job.waiting && sold.job.receipts.some((r) => r.approval === 'waiting'));
     } catch (e) {
       setError(e);
       setBusy(false);

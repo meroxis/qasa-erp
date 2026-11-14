@@ -13,7 +13,10 @@ export { configureLicensing, machineId, noteFirstStartBeforeCarry } from './acti
 export { getSettings, readSetting, writeSetting } from './settings.ts';
 export { audit } from './audit.ts';
 export { AppError, conflict, invalid, notFound } from './errors.ts';
-export { createJournalEntry, createVoucher, deleteEntry, getEntry, postVoucherNow, reverseEntryInternal, type EntryView } from './journal.ts';
+export {
+  createJournalEntry, createVoucher, deleteEntry, documentVoucherStates, documentVoucherWaits, getEntry, postDocumentVoucher, postVoucherNow, reverseEntryInternal,
+  voucherPendingSql, type EntryView
+} from './journal.ts';
 export { loadAccounts } from './accounts.ts';
 export { createInvoice, getInvoice, onlinePaidAmount, postInvoice, type InvoiceView } from './invoices.ts';
 export { createItem, listWarehouses } from './items.ts';

@@ -1,4 +1,4 @@
-import type { CurrencyCode, EntryType, InvoiceDocKind, Lang, Names, PrintDoc, UnitCode } from '@qasa/core';
+import type { BusinessType, CurrencyCode, EntryType, InvoiceDocKind, Lang, Names, PrintDoc, UnitCode } from '@qasa/core';
 import type { EntryView, InvoiceView } from '../api.ts';
 import type { QuoteView } from './quotes-api.ts';
 
@@ -234,11 +234,101 @@ export const isVoucherType = (t: EntryType) => VOUCHER_TYPES.includes(t);
 /** The note on the sample voucher (a voucher's note is what its preparer typed: in the language being previewed). */
 const SAMPLE_NOTE: Names = { ar: 'دفعة عن الفاتورة INV-2026-0128', en: 'Payment for invoice INV-2026-0128', ku: 'پارەدان بۆ پسوولەی INV-2026-0128' };
 
-/** The designer's sample paper, in the language being previewed. */
-export function sampleModel(doc: PrintDoc, lang: Lang = 'ar'): PrintModel {
+/** An item the sample paper can show (an ItemView of the company's own list fits). */
+export interface SampleItem { id: string; code: string; barcode: string; name: Names; unit: UnitCode; salePrice: number; saleCurrency: CurrencyCode; active: boolean }
+
+/** What fills the designer's sample paper (1.4.1): the company's own items, else a sample of its kind of business. */
+export interface SampleSource { items?: readonly SampleItem[] | null; businessTypes?: readonly BusinessType[] | null }
+
+type SampleLine = [code: string, barcode: string | null, ar: string, en: string, ku: string, unit: UnitCode, qtyMilli: number, unitPrice: number];
+
+/**
+ * A neutral sample of each kind of business, used when the company has no items yet: what such a company sells, with
+ * no brand and no person in it. General trade is the sample of a company that chose none (and of the tests' papers).
+ */
+const SAMPLE_LINES: Record<BusinessType, SampleLine[]> = {
+  trade: [
+    ['P-101', '6260000000017', 'وصلة كهربائية 5 م', 'Extension cord, 5 m', 'درێژکەرەوەی کارەبا، 5 م', 'piece', 4000, 15_000],
+    ['P-205', '6260000000024', 'غلاية كهربائية 1.7 لتر', 'Electric kettle, 1.7 L', 'کەتڵی کارەبایی، 1.7 لیتر', 'piece', 2000, 40_000],
+    ['S-001', null, 'أجور توصيل', 'Delivery', 'کرێی گەیاندن', 'service', 1000, 10_000]
+  ],
+  market: [
+    ['M-101', '6260000000031', 'رز 5 كغم', 'Rice, 5 kg', 'برنج، 5 کیلۆ', 'bag', 2000, 12_000],
+    ['M-102', '6260000000048', 'زيت زهرة الشمس 1.8 لتر', 'Sunflower oil, 1.8 L', 'زەیتی گوڵەبەڕۆژە، 1.8 لیتر', 'bottle', 3000, 4_500],
+    ['M-201', null, 'طماطة', 'Tomatoes', 'تەماتە', 'kg', 1500, 1_500]
+  ],
+  realEstate: [
+    ['B-12', null, 'شقة B-12، الطابق 3، 140 م²', 'Flat B-12, floor 3, 140 m²', 'شوقەی B-12، نهۆمی 3، 140 م²', 'piece', 1000, 120_000_000],
+    ['S-010', null, 'رسوم نقل الملكية', 'Ownership transfer fees', 'کرێی گواستنەوەی خاوەندارێتی', 'service', 1000, 500_000]
+  ],
+  mobileShop: [
+    ['PH-128', '6260000000055', 'هاتف ذكي 128 GB', 'Smartphone, 128 GB', 'مۆبایلی زیرەک، 128 GB', 'piece', 1000, 350_000],
+    ['AC-014', '6260000000062', 'غطاء هاتف', 'Phone case', 'بەرگی مۆبایل', 'piece', 2000, 7_500],
+    ['S-002', null, 'تركيب واقي شاشة', 'Screen protector fitting', 'دانانی پارێزەری شاشە', 'service', 1000, 5_000]
+  ],
+  autoParts: [
+    ['P-101', '6260000000017', 'فلتر زيت', 'Oil filter', 'فلتەری زەیت', 'piece', 4000, 15_000],
+    ['P-205', '6260000000024', 'زيت محرك 5W-30 ‏4 لتر', 'Engine oil 5W-30, 4 L', 'زەیتی بزوێنەر 5W-30 ‏4 لیتر', 'piece', 2000, 40_000],
+    ['S-001', null, 'أجور تبديل', 'Fitting labour', 'کرێی گۆڕین', 'service', 1000, 10_000]
+  ],
+  engineeringWorks: [
+    ['C-050', null, 'سمنت 50 كغم', 'Cement, 50 kg', 'چیمەنتۆ، 50 کیلۆ', 'bag', 20_000, 9_000],
+    ['R-012', null, 'حديد تسليح 12 ملم', 'Reinforcing steel, 12 mm', 'ئاسنی تەسلیح، 12 ملم', 'ton', 500, 900_000],
+    ['S-003', null, 'أجور عمل يوم واحد', 'Site labour, one day', 'کرێی کار بۆ یەک ڕۆژ', 'service', 1000, 50_000]
+  ],
+  electricalSolar: [
+    ['SP-550', null, 'لوح شمسي 550 واط', 'Solar panel, 550 W', 'پانێڵی خۆر، 550 وات', 'piece', 6000, 120_000],
+    ['IN-5K', null, 'انفرتر 5 كيلوواط', 'Inverter, 5 kW', 'ئینڤێرتەر، 5 کیلۆوات', 'piece', 1000, 650_000],
+    ['S-004', null, 'أجور النصب', 'Installation', 'کرێی دامەزراندن', 'service', 1000, 150_000]
+  ],
+  generators: [
+    ['G-5A', null, 'اشتراك مولدة 5 أمبير لشهر', 'Generator subscription, 5 A, one month', 'بەشداری مۆلیدە، 5 ئەمپێر، یەک مانگ', 'service', 1000, 50_000],
+    ['CB-10', null, 'قاطع دورة 10 أمبير', 'Circuit breaker, 10 A', 'بڕەری کارەبا، 10 ئەمپێر', 'piece', 1000, 7_000],
+    ['S-005', null, 'أجور الربط', 'Connection fee', 'کرێی پەیوەستکردن', 'service', 1000, 15_000]
+  ],
+  pharmacy: [
+    ['D-500', '6260000000079', 'باراسيتامول 500 ملغم، 20 حبة', 'Paracetamol 500 mg, 20 tablets', 'پاراسیتامۆڵ 500 ملگم، 20 حەب', 'box', 2000, 1_500],
+    ['D-1000', '6260000000086', 'فيتامين C ‏1000 ملغم، 30 حبة', 'Vitamin C 1000 mg, 30 tablets', 'ڤیتامین C ‏1000 ملگم، 30 حەب', 'box', 1000, 8_000],
+    ['S-006', null, 'قياس ضغط الدم', 'Blood pressure check', 'پشکنینی پەستانی خوێن', 'service', 1000, 2_000]
+  ]
+};
+
+/** The sample's customer and supplier, named after what they are and where, never after a person; in each language. */
+const SAMPLE_PARTIES: { customer: Names; supplier: Names; garage: Names; partsSupplier: Names; address: Names } = {
+  customer: { ar: 'متجر الجسر', en: 'Al-Jisr Store', ku: 'فرۆشگای پرد' },
+  supplier: { ar: 'شركة التجهيزات الحديثة', en: 'Modern Supplies Co.', ku: 'کۆمپانیای پێداویستیی نوێ' },
+  garage: { ar: 'كراج الجسر', en: 'Al-Jisr Garage', ku: 'گەراجی پرد' },
+  partsSupplier: { ar: 'شركة قطع الغيار الحديثة', en: 'Modern Spare Parts Co.', ku: 'کۆمپانیای پارچەی یەدەگی نوێ' },
+  address: { ar: 'أربيل، شارع 60', en: 'Erbil, 60 Street', ku: 'هەولێر، شەقامی 60' }
+};
+
+/**
+ * The sample's lines: up to three of the company's own active items priced in dinars (2, 1 and 3 of them), else the
+ * sample of its first business type other than general trade, else general trade's.
+ */
+export function sampleLines(source: SampleSource = {}): PrintItemLine[] {
+  const own = (source.items ?? []).filter((i) => i.active && i.saleCurrency === 'IQD' && i.salePrice > 0).slice(0, 3);
+  if (own.length) {
+    return own.map((item, k) => {
+      const qtyMilli = [2000, 1000, 3000][k]!;
+      return {
+        itemId: item.id, code: item.code || null, barcode: item.barcode || null, name: item.name, description: '', unit: item.unit,
+        qtyMilli, unitPrice: item.salePrice, amount: Math.round((item.salePrice * qtyMilli) / 1000)
+      };
+    });
+  }
+  const type = (source.businessTypes ?? []).find((t) => t !== 'trade') ?? 'trade';
+  return SAMPLE_LINES[type].map(([code, barcode, ar, en, ku, unit, qtyMilli, unitPrice], k) => ({
+    itemId: String.fromCharCode(97 + k), code, barcode, name: { ar, en, ku }, description: '', unit, qtyMilli, unitPrice,
+    amount: Math.round((unitPrice * qtyMilli) / 1000)
+  }));
+}
+
+/** The designer's sample paper, in the language being previewed, with the company's own items or its kind of business. */
+export function sampleModel(doc: PrintDoc, lang: Lang = 'ar', source: SampleSource = {}): PrintModel {
   const names = (ar: string, en: string, ku: string): Names => ({ ar, en, ku });
   if (doc === 'voucher') {
-    const sale = sampleModel('sale', lang);
+    const sale = sampleModel('sale', lang, source);
     // A receipt in dollars with a note, so every switch of the designer changes the preview: "Notes" shows the note,
     // "Exchange rate" the rate the dollars were taken at, "Equivalent" the same money in dinars. $850.00 at 1,420
     // is 1,207,000 dinars, taken off what the customer owed.
@@ -255,12 +345,14 @@ export function sampleModel(doc: PrintDoc, lang: Lang = 'ar'): PrintModel {
       previousBalance: 1_645_000, partyBalance: 438_000
     };
   }
-  const lines: PrintItemLine[] = [
-    { itemId: 'a', code: 'P-101', barcode: '6260000000017', name: names('فلتر زيت تويوتا', 'Toyota oil filter', 'فلتەری زەیتی تۆیۆتا'), description: '', unit: 'piece', qtyMilli: 4000, unitPrice: 15_000, amount: 60_000 },
-    { itemId: 'b', code: 'P-205', barcode: '6260000000024', name: names('زيت محرك 5W-30 ‏4 لتر', 'Engine oil 5W-30, 4 L', 'زەیتی بزوێنەر 5W-30 ‏4 لیتر'), description: '', unit: 'piece', qtyMilli: 2000, unitPrice: 40_000, amount: 80_000 },
-    { itemId: 'c', code: 'S-001', barcode: null, name: names('أجور تبديل', 'Fitting labour', 'کرێی گۆڕین'), description: '', unit: 'service', qtyMilli: 1000, unitPrice: 10_000, amount: 10_000 }
-  ];
+  const lines = sampleLines(source);
+  const subtotal = lines.reduce((sum, l) => sum + l.amount, 0);
+  // a discount of about 3% in whole quarters of a thousand, so the designer's "Discount" switch shows on the paper
+  const discount = subtotal >= 10_000 ? Math.max(250, Math.floor(subtotal / 30 / 250) * 250) : 0;
+  const total = subtotal - discount;
   const purchase = doc === 'purchase';
+  const garage = !source.items?.length && (source.businessTypes ?? []).find((t) => t !== 'trade') === 'autoParts';
+  const partyName = purchase ? (garage ? SAMPLE_PARTIES.partsSupplier : SAMPLE_PARTIES.supplier) : garage ? SAMPLE_PARTIES.garage : SAMPLE_PARTIES.customer;
   return {
     doc,
     titleKey: doc === 'quote' ? 'qt_quotation' : doc === 'return' ? 'sale_return' : purchase ? 'purchase' : doc === 'pos' ? POS_TITLE : 'sale',
@@ -270,16 +362,16 @@ export function sampleModel(doc: PrintDoc, lang: Lang = 'ar'): PrintModel {
     status: 'final',
     partyRole: purchase ? 'supplier' : 'customer',
     // sample parties are named after what they are and where, never after a person
-    party: { name: purchase ? 'شركة قطع الغيار الحديثة' : 'كراج الجسر', code: 'C-0012', phone: '0770 123 4567', address: 'أربيل، شارع 60' },
+    party: { name: partyName[lang], code: 'C-0012', phone: '0770 123 4567', address: SAMPLE_PARTIES.address[lang] },
     currency: 'IQD',
     rateX100: 100,
     lines,
     accountLines: [],
-    subtotal: 150_000,
-    discount: 5_000,
-    total: 145_000,
-    baseTotal: 145_000,
-    partyBalance: 395_000,
+    subtotal,
+    discount,
+    total,
+    baseTotal: total,
+    partyBalance: 250_000 + total,
     previousBalance: 250_000,
     notes: '',
     terms: '',

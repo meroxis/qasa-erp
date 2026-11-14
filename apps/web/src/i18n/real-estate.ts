@@ -23,6 +23,7 @@ export const REAL_ESTATE_TEXT = {
   re_availableValue: ['قيمة المتاح', 'Value available', 'بەهای بەردەست'],
   re_progress: ['المباع', 'Sold', 'فرۆشراو'],
   re_units: ['الوحدات', 'Units', 'یەکەکان'],
+  re_unitsN: ['{n} وحدة', '{n} units', '{n} یەکە'],
   re_unit: ['الوحدة', 'Unit', 'یەکە'],
   re_unitMap: ['خريطة الوحدات', 'Unit map', 'نەخشەی یەکەکان'],
   re_mapHelp: ['اختر وحدة لعرض تفاصيلها وحجزها أو بيعها.', 'Choose a unit to see its details, reserve it or sell it.', 'یەکەیەک هەڵبژێرە بۆ بینینی وردەکارییەکانی، گرتنی یان فرۆشتنی.'],
