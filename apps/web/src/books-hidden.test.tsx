@@ -329,3 +329,49 @@ describe('a purchase invoice for someone who may not read the books', () => {
     expect(old).not.toMatch(/undefined|NaN/);
   });
 });
+
+describe('cheques and the day close of someone who does not keep the books (1.4.1)', () => {
+  const brief = (extra: Partial<BriefView> = {}): BriefView => ({
+    date: '2026-11-14', company: names('Mer Store'), sales: { today: 120_000, invoices: 4, sameDayLastWeek: 100_000, month: 900_000 },
+    topItems: [], lateCustomers: [], receivables: 310_000, installments: { overdue: [], dueTomorrow: [], overdueTotal: { IQD: 0, USD: 0 } },
+    lowStock: [], approvals: { waitingCheck: 0, waitingApproval: 0 }, ownerPhone: '', ...extra
+  });
+  const due = { id: 'q1', direction: 'received' as const, number: '700123', bank: 'Rafidain', partyId: 'p1', party: 'Las', phone: '', currency: 'IQD' as const, amount: 41_041, dueDate: '2026-11-17', daysLate: 0 };
+
+  it('has no cheques tab, and a typed link to the cheques or to a cheque does not open', () => {
+    now.answers = { accounts: { accounts: [{ code: '1811', name: names('Main safe'), kind: 'safe', currency: null, pending: 0 }], reconciliation: true } };
+    const page = render(<Banking />, cashierData);
+    expect(page).not.toContain(t('bk_tabCheques'));
+    // banking/cheques shows the list of safes, never the cheques the server refuses
+    const typed = render(<Banking tab="cheques" />, cashierData);
+    expect(typed).toContain('Main safe');
+    expect(typed).not.toContain(t('bk_chequeHelp'));
+    expect(NO_BOOKS_PAGES.has('cheque')).toBe(true);
+    // those who keep the books keep the tab
+    expect(render(<Banking />)).toContain(t('bk_tabCheques'));
+  });
+
+  it('shows no cheques in the Daily Brief or on the home page when the server sent none', () => {
+    now.answers = { brief: brief() };
+    expect(render(<Brief />, cashierData)).not.toContain(t('chq_title'));
+    now.answers = { brief: brief({ cheques: { due: [due], bounced: [], dueTotal: { IQD: 41_041, USD: 0 } } }) };
+    const full = render(<Brief />);
+    expect(full).toContain(t('chq_title'));
+    expect(full).toContain('41,041');
+    const dashboard: DashboardView = { date: '2026-11-14', salesMonth: 900_000, salesLastMonth: 800_000, receivables: 310_000, payables: 55_000, months: [] };
+    now.answers = { dashboard, entries: [], invoices: [], parties: [] };
+    expect(render(<Home viewer={cashier} user="Raz" favourites={[]} />, cashierData)).not.toContain(t('chq_title'));
+  });
+
+  it('says in the day close that a cashier sees the registers they opened, and says nothing of it to those who keep the books', () => {
+    const day: DayCloseView = {
+      date: '2026-11-14', company: names('Mer Store'), sales: { gross: 7_500, invoices: 1, returns: 0, returnsCount: 0, net: 7_500 },
+      methods: [{ method: 'credit', amount: 7_500, invoices: 1 }], refunds: [], registers: [], drawers: null,
+      debts: { collected: 0, collectedRows: [], added: 7_500, addedRows: [{ partyId: 'p1', code: 'C-0001', name: 'Las', amount: 7_500 }] },
+      lowStock: { count: 0, top: [] }, topItems: [], ownerPhone: ''
+    };
+    now.answers = { get: day };
+    expect(render(<DayClose />, cashierData)).toContain(t('dc_ownShifts'));
+    expect(render(<DayClose />)).not.toContain(t('dc_ownShifts'));
+  });
+});

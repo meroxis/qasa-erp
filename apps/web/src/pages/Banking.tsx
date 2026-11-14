@@ -95,13 +95,15 @@ const moneyLine = (i18n: I18n, m: Record<CurrencyCode, number>) =>
 export function Banking({ tab = 'accounts' }: { tab?: BankingTab }) {
   const { t } = useI18n();
   usePageNav(NAV);
-  // 1.4: reconciling a bank account reads its lines in the books: no such tab for someone who may not read them
+  // 1.4: reconciling a bank account reads its lines in the books, and (1.4.1) the cheques are the books too: no such
+  // tabs for someone who may not read them (the server refuses both)
   const books = useData().seesBooks !== false;
   const all: [BankingTab, Key][] = [['accounts', 'bk_tabAccounts'], ['transfer', 'bk_tabTransfer'], ['cheques', 'bk_tabCheques'], ['reconcile', 'bk_tabReconcile']];
+  const booksOnly = (k: BankingTab) => k === 'reconcile' || k === 'cheques';
   // a transfer is a form and nothing else: for whoever prepares vouchers (may.ts)
   const mayBank = useMay()('banking');
-  const tabs = all.filter(([k]) => (books || k !== 'reconcile') && (mayBank || k !== 'transfer'));
-  if ((!books && tab === 'reconcile') || (!mayBank && tab === 'transfer')) tab = 'accounts';
+  const tabs = all.filter(([k]) => (books || !booksOnly(k)) && (mayBank || k !== 'transfer'));
+  if ((!books && booksOnly(tab)) || (!mayBank && tab === 'transfer')) tab = 'accounts';
   return (
     <div className="stack">
       <div className="tabs" role="group">

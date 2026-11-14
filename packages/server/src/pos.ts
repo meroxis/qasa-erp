@@ -252,20 +252,43 @@ function salesOf(db: Db, shiftId: string): { sales: Money; cash: Money; count: n
  * it and still open when it was paid, so the same money is never taken off two drawers.
  */
 function refundsOf(db: Db, row: ShiftRow): Money {
+  const [where, params] = shiftReturnsWhere(row);
   // points given back on a return never leave the drawer
   const rows = db.prepare(`SELECT i.currency AS currency,
                                   COALESCE(SUM(i.total - COALESCE((SELECT SUM(m.value) FROM loyalty_moves m WHERE m.invoice_id = i.id AND m.kind = 'return_redeem'), 0)), 0) AS total
-                           FROM invoices i
-                           WHERE i.kind = 'sale_return' AND i.status = 'posted' AND i.payment = 'cash' AND i.cash_account = ?
-                             AND i.posted_at >= ? ${row.closed_at ? 'AND i.posted_at <= ?' : ''}
-                             AND NOT EXISTS (SELECT 1 FROM pos_shifts o WHERE o.cash_account = i.cash_account AND o.id <> ?
-                                               AND o.opened_at > ? AND o.opened_at <= i.posted_at
-                                               AND (o.closed_at IS NULL OR o.closed_at >= i.posted_at))
+                           FROM invoices i WHERE ${where}
                            GROUP BY i.currency`)
-    .all(row.cash_account, row.opened_at, ...(row.closed_at ? [row.closed_at] : []), row.id, row.opened_at) as { currency: CurrencyCode; total: number }[];
+    .all(...params) as { currency: CurrencyCode; total: number }[];
   const refunds = zero();
   for (const r of rows) refunds[r.currency] = Number(r.total);
   return refunds;
+}
+
+/** The returns paid out of a shift's drawer (the rule above), as a condition on invoices `i` with its parameters. */
+function shiftReturnsWhere(row: ShiftRow): [string, string[]] {
+  return [`i.kind = 'sale_return' AND i.status = 'posted' AND i.payment = 'cash' AND i.cash_account = ?
+             AND i.posted_at >= ? ${row.closed_at ? 'AND i.posted_at <= ?' : ''}
+             AND NOT EXISTS (SELECT 1 FROM pos_shifts o WHERE o.cash_account = i.cash_account AND o.id <> ?
+                               AND o.opened_at > ? AND o.opened_at <= i.posted_at
+                               AND (o.closed_at IS NULL OR o.closed_at >= i.posted_at))`,
+  [row.cash_account, row.opened_at, ...(row.closed_at ? [row.closed_at] : []), row.id, row.opened_at]];
+}
+
+/**
+ * The invoices of a shift (1.4.1, the end-of-day close of someone who does not keep the books): the sales made on it
+ * and the returns paid out of its drawer.
+ */
+export function shiftInvoiceIds(db: Db, shiftId: string): string[] {
+  const row = loadShift(db, shiftId);
+  const sales = db.prepare('SELECT invoice_id FROM pos_sales WHERE shift_id = ?').all(shiftId) as { invoice_id: string }[];
+  const [where, params] = shiftReturnsWhere(row);
+  const returns = db.prepare(`SELECT i.id FROM invoices i WHERE ${where}`).all(...params) as { id: string }[];
+  return [...sales.map((s) => s.invoice_id), ...returns.map((r) => r.id)];
+}
+
+/** Whether this user opened the shift (isOpener below), for the end-of-day close. */
+export function openedShift(db: Db, shiftId: string, actor: ShiftActor): boolean {
+  return isOpener(db, loadShift(db, shiftId), actor);
 }
 
 type ShiftActor = Pick<Actor, 'id' | 'name' | 'permissions'>;

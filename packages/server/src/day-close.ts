@@ -4,9 +4,10 @@ import type { Db } from './db.ts';
 import { AppError } from './errors.ts';
 import { readSetting } from './settings.ts';
 import { entryInBranchSql } from './branches.ts';
-import { getShift, type PosMethod } from './pos.ts';
+import { getShift, openedShift, shiftInvoiceIds, type PosMethod } from './pos.ts';
 import { loyaltyPaidFor } from './loyalty.ts';
 import { branchOf, cashFlowOn, expensesBetween, lowStock, salesByItem, type BranchFilter, type ExpenseRow, type ItemSales, type LowStock } from './brief.ts';
+import { seesBooks, type Actor } from './auth.ts';
 import type { ApiExtension } from './routes.ts';
 
 /**
@@ -63,8 +64,18 @@ const fromPos = (m: PosMethod): DayMethod => (m === 'account' ? 'credit' : m);
 /** What loyalty points (Pro) paid of each sale or gave back on each return, in IQD. */
 const loyaltyPaid = loyaltyPaidFor;
 
-function salesByMethod(db: Db, date: string, branch: BranchFilter): Pick<DayCloseView, 'sales' | 'methods' | 'refunds'> {
-  const [w, wp] = inList('i.warehouse_id', branch?.warehouses);
+/**
+ * The part of the day someone who does not keep the books gets (1.4.1, the owner's decision): the shifts they opened
+ * themselves, the invoices of those shifts (their sales and the returns paid out of their drawers), and the receipt
+ * vouchers they prepared themselves. null: the whole day, for those who keep the books.
+ */
+interface OwnPart { userId: string | null; shiftIds: string[]; invoiceIds: string[] }
+
+function salesByMethod(db: Db, date: string, branch: BranchFilter, own: OwnPart | null): Pick<DayCloseView, 'sales' | 'methods' | 'refunds'> {
+  const [b, bp] = inList('i.warehouse_id', branch?.warehouses);
+  const [o, op] = inList('i.id', own?.invoiceIds);
+  const w = b + o;
+  const wp = [...bp, ...op];
   const rows = db.prepare(`SELECT i.id, i.kind, i.currency, i.rate_x100, i.total, i.payment, i.cash_account FROM invoices i
                            WHERE i.status = 'posted' AND i.kind IN ('sale', 'sale_return') AND i.date = ?${w}`).all(date, ...wp) as
     { id: string; kind: 'sale' | 'sale_return'; currency: CurrencyCode; rate_x100: number; total: number; payment: 'cash' | 'credit'; cash_account: string | null }[];
@@ -143,13 +154,18 @@ function registersOn(db: Db, date: string, branch: BranchFilter): DayRegister[] 
  * (receipt vouchers crediting them) and what they newly owe (sales put on their account, a till sale's on-account part
  * included). For one branch, only its own entries (branches.ts).
  */
-function debtsOn(db: Db, date: string, branch: BranchFilter): DayCloseView['debts'] {
+function debtsOn(db: Db, date: string, branch: BranchFilter, own: OwnPart | null): DayCloseView['debts'] {
   const [b, bp] = entryInBranchSql('e', branch);
+  // someone who does not keep the books: the sales of their own shifts, and the receipts they prepared themselves
+  const [o, op]: [string, (string | null)[]] = own
+    ? [` AND ((e.type = 'sale' AND e.id IN (SELECT i.entry_id FROM invoices i WHERE i.id IN (${marks(own.invoiceIds)})))
+              OR (e.type = 'receipt' AND e.prepared_by_id = ?))`, [...own.invoiceIds, own.userId]]
+    : ['', []];
   const rows = db.prepare(`SELECT p.id, p.code, p.name, e.type, SUM(l.base_debit) AS debit, SUM(l.base_credit) AS credit
                            FROM entry_lines l JOIN entries e ON e.id = l.entry_id JOIN parties p ON p.id = l.party_id
                            WHERE p.type = 'customer' AND e.status = 'approved' AND e.date = ? AND e.type IN ('receipt', 'sale')
-                             AND e.reversed_by_id IS NULL${b}
-                           GROUP BY p.id, p.code, p.name, e.type`).all(date, ...bp) as
+                             AND e.reversed_by_id IS NULL${b}${o}
+                           GROUP BY p.id, p.code, p.name, e.type`).all(date, ...bp, ...op) as
     { id: string; code: string; name: string; type: 'receipt' | 'sale'; debit: number; credit: number }[];
   const pick = (type: 'receipt' | 'sale', amount: (r: { debit: number; credit: number }) => number) => rows
     .filter((r) => r.type === type)
@@ -162,11 +178,22 @@ function debtsOn(db: Db, date: string, branch: BranchFilter): DayCloseView['debt
   return { collected: sum(collectedRows), collectedRows, added: sum(addedRows), addedRows };
 }
 
-export function dayClose(db: Db, date: string, branch: BranchFilter = null): DayCloseView {
+/**
+ * The day's close. `viewer` (1.4.1): who asks; someone who does not keep the books gets the registers they opened
+ * themselves and the sales, returns, best sellers and debts of those shifts only (OwnPart). Without a viewer, or for
+ * someone who keeps the books, the whole day.
+ */
+export function dayClose(db: Db, date: string, branch: BranchFilter = null, viewer: Actor | null = null): DayCloseView {
   const company = (() => {
     try { return JSON.parse(readSetting(db, 'company_name') ?? '') as Names; } catch { return { ar: '', en: '', ku: '' }; }
   })();
-  const registers = registersOn(db, date, branch);
+  let registers = registersOn(db, date, branch);
+  let own: OwnPart | null = null;
+  if (viewer && !seesBooks(viewer)) {
+    registers = registers.filter((r) => openedShift(db, r.shiftId, viewer));
+    const shiftIds = registers.map((r) => r.shiftId);
+    own = { userId: viewer.id, shiftIds, invoiceIds: [...new Set(shiftIds.flatMap((id) => shiftInvoiceIds(db, id)))] };
+  }
   const closed = registers.filter((r) => r.status === 'closed' && r.counted && r.difference);
   const drawers = closed.length
     ? closed.reduce((t, r) => ({
@@ -181,14 +208,14 @@ export function dayClose(db: Db, date: string, branch: BranchFilter = null): Day
   return {
     date,
     company,
-    ...salesByMethod(db, date, branch),
+    ...salesByMethod(db, date, branch, own),
     registers,
     drawers,
     expenses: { rows: expenses.rows, total: expenses.total },
-    debts: debtsOn(db, date, branch),
+    debts: debtsOn(db, date, branch, own),
     flow: cashFlowOn(db, date, branch),
     lowStock: { count: short.length, top: short.slice(0, 5) },
-    topItems: salesByItem(db, date, date, 5, branch),
+    topItems: salesByItem(db, date, date, 5, branch, own ? own.invoiceIds : null),
     ownerPhone: readSetting(db, 'brief_phone') ?? ''
   };
 }
@@ -197,8 +224,9 @@ const isoDate = z.string().regex(/^\d{4}-\d{2}-\d{2}$/).refine((s) => !Number.is
 
 /**
  * Reading is open to every signed-in user, as the Daily Brief is; a user limited to branches sees their own. Someone who
- * may not read the books (a cashier) gets the sales, the registers, the drawers and the debts, without the expenses and
- * the money in and out of the safes and banks (cost-view.ts).
+ * may not read the books (a cashier) gets the registers they opened themselves with their drawers, and the sales, best
+ * sellers and debts of those shifts (1.4.1), without the expenses and the money in and out of the safes and banks
+ * (cost-view.ts).
  */
 export const dayCloseApi: ApiExtension = {
   routes(db, { actorOf }) {
@@ -208,7 +236,8 @@ export const dayCloseApi: ApiExtension = {
         handler: async (req) => {
           const q = z.object({ date: isoDate.optional() }).safeParse(req.query ?? {});
           if (!q.success) throw new AppError(400, 'validation', q.error.issues.map((i) => ({ code: 'schema', path: i.path.join('.'), message: i.message })));
-          return dayClose(db, q.data.date ?? todayIso(), branchOf(db, req, actorOf(req)));
+          const actor = actorOf(req);
+          return dayClose(db, q.data.date ?? todayIso(), branchOf(db, req, actor), actor);
         }
       }
     ];

@@ -23,7 +23,12 @@ import { AppError } from './errors.ts';
  * The company's money is the books too: what each safe and bank holds, what came in and went out of them on a day,
  * the expenses (other people's payment vouchers, and with the sales the profit) and a bank account's lines on a
  * reconciliation. Someone without the books still picks a safe by its name, and a cashier keeps what the till needs:
- * the cash of their shift (/api/pos) and the registers and drawers of the end-of-day close.
+ * the cash of their shift (/api/pos) and, in the end-of-day close, the registers they opened themselves with their
+ * drawers and the sales and new debts of those shifts (day-close.ts, 1.4.1).
+ *
+ * Cheques are the books too (1.4.1, the owner's decision): other people's cheques, received or written, what they are
+ * worth and when they fall due. Someone without the books gets none of them: the cheque routes (list, one cheque, the
+ * summary and every step) are refused, and the Daily Brief and the dashboard are sent without their cheques.
  *
  * What customers owe and what suppliers are owed are not cost: a balance, and the total of the balances
  * (/api/parties/totals), are sent to everyone for both, as the lists of customers and suppliers are. What each
@@ -48,8 +53,9 @@ const BOOKS_FIELDS: readonly (readonly [string, readonly string[]])[] = [
   // every account's balance is the trial balance by another name
   ['/api/accounts', ['balance']],
   // the Daily Brief, the dashboard, the end-of-day close and the sales reports: sales stay, cost and profit go, and so
-  // do what the safes and banks hold (cash), the money in and out of them (flow) and the day's expenses
-  ['/api/brief', ['cost', 'profit', 'profitMonth', 'value', 'cash', 'flow', 'expenses']],
+  // do what the safes and banks hold (cash), the money in and out of them (flow), the day's expenses and (1.4.1) the
+  // cheques due and bounced
+  ['/api/brief', ['cost', 'profit', 'profitMonth', 'value', 'cash', 'flow', 'expenses', 'cheques']],
   // the safes, banks and wallets are listed by name (to pick one); what each holds is not sent
   ['/api/banking/accounts', ['balance', 'base']],
   // what was agreed with a supplier, and the last price paid
@@ -62,9 +68,10 @@ const PURCHASE_MONEY: ReadonlySet<string> = new Set(['discount', 'subtotal', 'to
 
 /**
  * Read by nobody without the books: the journal, the company's books (branches.ts), the stock valuation, the expenses
- * (every payment voucher on an expense account, whoever prepared it) and bank reconciliation (a bank account's lines).
+ * (every payment voucher on an expense account, whoever prepared it), bank reconciliation (a bank account's lines)
+ * and (1.4.1) the cheques: their list, each cheque, their summary and every step of one.
  */
-const BOOKS_ONLY: readonly string[] = ['/api/entries', '/api/vouchers', '/api/brief/reports/stock-value', '/api/brief/expenses', '/api/banking/statements'];
+const BOOKS_ONLY: readonly string[] = ['/api/entries', '/api/vouchers', '/api/brief/reports/stock-value', '/api/brief/expenses', '/api/banking/statements', '/api/banking/cheques'];
 
 const under = (path: string, prefix: string): boolean => path === prefix || path.startsWith(`${prefix}/`);
 

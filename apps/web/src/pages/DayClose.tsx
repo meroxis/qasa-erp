@@ -1,7 +1,7 @@
 import { useCallback, useState, type ReactNode } from 'react';
 import { addDays, todayIso } from '@qasa/core';
 import { dayCloseApi, type DayCloseView, type DayMethod, type Money2 } from '../industry/brief-api.ts';
-import { ErrorBox, Icon, downloadCsv, useLoad, usePageNav, useToast } from '../components.tsx';
+import { ErrorBox, Icon, downloadCsv, useData, useLoad, usePageNav, useToast } from '../components.tsx';
 import { useI18n, type I18n, type Key } from '../i18n.ts';
 import { href } from '../router.ts';
 import { copyText } from '../share.ts';
@@ -118,6 +118,8 @@ export function DayClose() {
   const { t } = i18n;
   const toast = useToast();
   usePageNav({ key: 'dc_title', group: 'gOverview' });
+  // 1.4.1: someone who does not keep the books gets their own registers only (the server decides; the page says so)
+  const ownOnly = useData().seesBooks === false;
   const [date, setDate] = useState(todayIso());
   const { data: c, error } = useLoad(() => dayCloseApi.get(date), [date]);
 
@@ -153,6 +155,7 @@ export function DayClose() {
             <h1 style={{ margin: 0, fontSize: 26 }}>{t('dc_title')}</h1>
             <span className="muted">{i18n.name(c.company)}{i18n.name(c.company) ? ' · ' : ''}{i18n.date(c.date)}</span>
           </header>
+          {ownOnly && <p className="muted small" style={{ margin: 0 }}>{t('dc_ownShifts')}</p>}
 
           <div className="grid-4">
             <Stat icon="trend" label={t('dc_netSales')} value={i18n.money(c.sales.net, 'IQD')} color="var(--accent, #1D5FD1)"

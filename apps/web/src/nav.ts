@@ -180,10 +180,10 @@ export const COMPANY_BOOK_PAGES: ReadonlySet<string> = new Set(
 
 /**
  * The routes not opened for someone who may not read the books (a cashier, 1.4), whatever else they may do: the voucher
- * editor (theirs come from "Receive payment"), the expenses and a bank statement to reconcile. A typed, bookmarked or
- * favourite link lands on the home page, as the server would refuse the page's data.
+ * editor (theirs come from "Receive payment"), the expenses, a bank statement to reconcile and (1.4.1) a cheque. A
+ * typed, bookmarked or favourite link lands on the home page, as the server would refuse the page's data.
  */
-export const NO_BOOKS_PAGES: ReadonlySet<string> = new Set(['new', 'edit', 'expenses', 'bank-statement']);
+export const NO_BOOKS_PAGES: ReadonlySet<string> = new Set(['new', 'edit', 'expenses', 'bank-statement', 'cheque']);
 
 /**
  * Whether an address opens for this person; otherwise App.tsx shows the home page, as it does for the admin pages and
