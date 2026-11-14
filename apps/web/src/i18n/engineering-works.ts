@@ -53,7 +53,7 @@ export const ENGINEERING_TEXT = {
   ew_u_m: ['م.ط', 'm', 'م'],
   ew_u_piece: ['قطعة', 'piece', 'دانە'],
   ew_u_kg: ['كغم', 'kg', 'کگم'],
-  ew_u_set: ['طقم', 'set', 'دەست'],
+  ew_u_set: ['طقم', 'set', 'تاقم'],
   ew_u_lump: ['مقطوعية', 'lump sum', 'مەقتوع'],
   ew_total: ['المجموع', 'Total', 'کۆ'],
   ew_paid: ['المدفوع', 'Paid', 'پارەی دراو'],

@@ -93,7 +93,7 @@ export const SOLAR_TEXT = {
   sl_sysNoBattery: ['بدون بطاريات (لا حمل ليلي)', 'No batteries (no night load)', 'بێ باتری (باری شەو نییە)'],
   sl_sysProduction: ['الإنتاج اليومي المتوقع', 'Expected daily output', 'بەرهەمی ڕۆژانەی چاوەڕوانکراو'],
   sl_sysNeed: ['الحاجة: {d} kWh يومياً، منها {night} ليلاً', 'Need: {d} kWh a day, {night} at night', 'پێویستی: {d} kWh ڕۆژانە، {night} شەو'],
-  sl_estimateNote: ['أرقام تقديرية: {h} ساعات شمس فعالة يومياً وكفاءة {e}٪. القيم الفعلية تختلف حسب الموقع والطقس والتركيب.', 'Estimates: {h} peak sun hours a day and {e}% system efficiency. Actual figures vary with the site, the weather and the installation.', 'ژمارەی خەمڵێنراو: {h} کاتژمێری کارای خۆر لە ڕۆژێکدا و کارایی {e}%. ژمارە ڕاستەقینەکان بەپێی شوێن و کەشوهەوا و دامەزراندن جیاوازن.'],
+  sl_estimateNote: ['أرقام تقديرية: {h} ساعات شمس فعالة يومياً وكفاءة {e}٪. القيم الفعلية تختلف حسب الموقع والطقس والتركيب.', 'Estimates: {h} peak sun hours a day and {e}% system efficiency. Actual figures vary with the site, the weather and the installation.', 'ژمارەی خەمڵێنراو: {h} کاتژمێری کارای خۆر لە ڕۆژێکدا و کارایی {e}٪. ژمارە ڕاستەقینەکان بەپێی شوێن و کەشوهەوا و دامەزراندن جیاوازن.'],
 
   sl_wiringHelp: ['احسب أعمال التأسيس الكهربائي بالنقاط: المآخذ، الإنارة، المفاتيح، اللوحة والكابلات.', 'Price electrical wiring by points: sockets, lights, switches, the panel and cables.', 'کاری دامەزراندنی کارەبا بە خاڵ نرخ بدە: پریز، ڕووناکی، سویچ، تابلۆ و کێبڵ.'],
   sl_wiringTitle: ['تأسيس كهربائي', 'Electrical wiring', 'دامەزراندنی کارەبا'],
@@ -176,7 +176,7 @@ export const SOLAR_TEXT = {
   sl_vs_cancelled: ['ملغاة', 'Cancelled', 'هەڵوەشێنراوە'],
   sl_technician: ['الفني', 'Technician', 'تەکنیککار'],
   sl_findings: ['الملاحظات والقراءات', 'Findings and readings', 'تێبینی و خوێندنەوەکان'],
-  sl_findingsPh: ['مثال: إنتاج الألواح 4.1 kW، البطارية 96٪', 'e.g. panels producing 4.1 kW, battery 96%', 'نموونە: بەرهەمی پانێڵ 4.1 kW، باتری 96%'],
+  sl_findingsPh: ['مثال: إنتاج الألواح 4.1 kW، البطارية 96٪', 'e.g. panels producing 4.1 kW, battery 96%', 'نموونە: بەرهەمی پانێڵ 4.1 kW، باتری 96٪'],
   sl_workDone: ['العمل المنجز', 'Work done', 'کاری ئەنجامدراو'],
   sl_chargeVisit: ['احسب أجرة الزيارة (فاتورة)', 'Charge for the visit (invoice)', 'کرێی سەردان وەربگرە (پسوولە)'],
   sl_markDone: ['تمت', 'Done', 'ئەنجامدرا'],

@@ -199,7 +199,7 @@ const BASE = {
   editTitle: ['تعديل', 'Edit', 'دەستکاری'],
   iqdName: ['دينار', 'IQD', 'دینار'],
   usdName: ['دولار', 'USD', 'دۆلار'],
-  iqdShort: ['دینار', 'IQD', 'دینار'],
+  iqdShort: ['د.ع', 'IQD', 'د.ع'],
 
   preparedBy: ['المنظم', 'Prepared by', 'ئامادەکار'],
   checkedBy: ['المدقق', 'Checked by', 'وردبین'],
@@ -623,7 +623,7 @@ const BASE = {
   f_users: ['المستخدمون', 'Users', 'بەکارهێنەران'],
   f_network: ['شبكة المكتب: عدة حواسيب على ملف الشركة نفسه', 'Office network: several PCs on one company file', 'تۆڕی نووسینگە: چەند کۆمپیوتەرێک لەسەر هەمان فایلی کۆمپانیا'],
   f_price: ['السعر في السنة', 'Price per year', 'نرخی ساڵێک'],
-  v_priceYear: ['{n} دینار', '{n} IQD', '{n} دینار'],
+  v_priceYear: ['{n} د.ع', '{n} IQD', '{n} د.ع'],
   f_core: ['الحسابات والسندات والفواتير والمخزن وميزان المراجعة', 'Accounting, vouchers, invoices, stock and trial balance', 'ژمێریاری، سەنەد، پسوولە، کۆگا و تەرازووی پێداچوونەوە'],
   f_warehouses: ['المخازن', 'Warehouses', 'کۆگاکان'],
   f_roles: ['دخول منفصل للمنظم والمدقق والمصادق', 'Separate sign-ins for preparer, checker and approver', 'چوونەژوورەوەی جیا بۆ ئامادەکار و وردبین و پەسەندکەر'],
