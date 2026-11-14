@@ -9,7 +9,7 @@ import { loadAccounts } from './accounts.ts';
 import { createInvoice, getInvoice, postInvoice, type InvoiceView, type SalePart } from './invoices.ts';
 import { loyaltyPaidFor, planRedemption } from './loyalty.ts';
 import { readSetting, writeSetting } from './settings.ts';
-import { signInRequired, type Actor } from './auth.ts';
+import { seesBooks, signInRequired, type Actor } from './auth.ts';
 import { scopeOf, userBranchLists } from './branches.ts';
 import type { ApiExtension, ApiRequest } from './routes.ts';
 import { onceOnly } from './idempotency.ts';
@@ -345,11 +345,23 @@ export function getShift(db: Db, id: string, actor: ShiftActor | null = null): S
   return shiftView(db, loadShift(db, id), actor);
 }
 
+/**
+ * Whether this user may read the shift (1.4.1, the rule of the end-of-day close): whoever keeps the books reads every
+ * shift; anyone else (a cashier) only the shifts they opened, matched by the user id of the shift's "open" record.
+ */
+function readsShift(db: Db, row: ShiftRow, actor: Actor | null): boolean {
+  return !actor || seesBooks(actor) || isOpener(db, row, actor, true);
+}
+
 export function listShifts(db: Db, f: { status?: 'open' | 'closed' | undefined; limit?: number | undefined } = {},
-  actor: ShiftActor | null = null): ShiftView[] {
-  const rows = db.prepare(`SELECT * FROM pos_shifts ${f.status ? 'WHERE status = ?' : ''} ORDER BY opened_at DESC LIMIT ?`)
-    .all(...(f.status ? [f.status] : []), f.limit ?? 100) as unknown as ShiftRow[];
-  return rows.map((r) => shiftView(db, r, actor));
+  actor: Actor | null = null): ShiftView[] {
+  const limit = f.limit ?? 100;
+  const ownOnly = !!actor && !seesBooks(actor);
+  // someone who reads only their own shifts gets up to `limit` of theirs, not of everyone's
+  const rows = (db.prepare(`SELECT * FROM pos_shifts ${f.status ? 'WHERE status = ?' : ''} ORDER BY opened_at DESC${ownOnly ? '' : ' LIMIT ?'}`)
+    .all(...(f.status ? [f.status] : []), ...(ownOnly ? [] : [limit])) as unknown as ShiftRow[])
+    .filter((r) => !ownOnly || readsShift(db, r, actor));
+  return rows.slice(0, limit).map((r) => shiftView(db, r, actor));
 }
 
 /** The open shift this user can sell on (their own; the newest if several registers). */
@@ -359,8 +371,10 @@ export function myShift(db: Db, actor: ShiftActor): ShiftView | null {
   return row ? shiftView(db, row, actor) : null;
 }
 
-export function shiftReport(db: Db, id: string, actor: ShiftActor | null = null): ShiftReport {
+export function shiftReport(db: Db, id: string, actor: Actor | null = null): ShiftReport {
   const row = loadShift(db, id);
+  // another cashier's shift is not theirs to read: answered as if it were not there
+  if (!readsShift(db, row, actor)) throw notFound('shift');
   const invoices = (db.prepare(`SELECT i.id, i.number, i.created_at, p.name AS party_name, i.currency, i.total, i.status, o.reference AS offline_ref, o.sold_at
                                 FROM pos_sales s JOIN invoices i ON i.id = s.invoice_id LEFT JOIN parties p ON p.id = i.party_id
                                 LEFT JOIN pos_offline_sales o ON o.invoice_id = i.id

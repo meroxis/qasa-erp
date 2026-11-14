@@ -1270,7 +1270,9 @@ html[dir='rtl'] .tour-card.center { transform: translate(50%, -50%); }
 .printers-margins-label { font-size: var(--fs-small); font-weight: 600; color: var(--ink-2); }
 /* the paper's name gets most of the room the number of copies does not need, and the table fits a 1366 px screen in the three languages */
 .printers-table select { min-inline-size: 4.5em; }
-.printers-table tr.printers-kind > td:nth-child(2) select { min-inline-size: 11em; }
+/* 1.4.1: the printer gets room for a long name ("Microsoft Print to PDF" whole); the head over the tick box may take two lines to give it */
+.printers-table tr.printers-kind > td:nth-child(2) select { min-inline-size: 14em; }
+.printers-table th:nth-child(5) { white-space: normal; text-wrap: balance; }
 .printers-table tr.printers-kind > td:nth-child(3) select { min-inline-size: 13em; }
 .printers-table td:first-child { min-inline-size: 10.5em; }
 .print-notice { display: flex; align-items: center; gap: 12px; max-inline-size: min(640px, calc(100vw - 32px)); }

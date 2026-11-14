@@ -132,7 +132,9 @@ export function PrintersCardView({ desktop, printers, choices, busy, error, onCh
                     <div className="muted small">{t(`prn_also_${kind}` as Key)}</div>
                   </td>
                   <td>
+                    {/* 1.4.1: a long name can be cut in the list's box, so the box's title gives it whole */}
                     <select className="input" aria-label={`${t('prn_printer')} — ${label}`} value={printer ?? ''} disabled={busy !== null || printers === null}
+                      title={chosen ? optionLabel(chosen) : gone ? `${printer} — ${t('prn_gone')}` : t('prn_ask')}
                       onChange={(e) => onChange(kind, withPrinter(kind, c, e.target.value || null))}>
                       <option value="">{t('prn_ask')}</option>
                       {gone && <option value={printer!}>{printer} — {t('prn_gone')}</option>}

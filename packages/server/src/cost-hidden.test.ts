@@ -334,7 +334,8 @@ describe('cost, stock value and profit, by who asks', () => {
 
   it('a cashier gets no cost, value or profit key from any route, and none of the numbers under another name', async () => {
     const answers = await walk(cashier);
-    expect(failed(answers)).toEqual([]);
+    // the till's shift the admin opened is not a cashier's to read (1.4.1): answered as not there
+    expect(failed(answers)).toEqual([`404 ${at.shift}`]);
     // refused: the books and what only an admin reads; everything else answers
     // (and of the ageing report the suppliers' side: whom the company owes; the customers' side answers)
     const expected = [...new Set([...answers.map((a) => a.route).filter((r) => isOneOf(r, BOOKS_ROUTES) || ADMIN_ROUTES.includes(r)), '/api/brief/reports/aging'])].sort();
@@ -378,11 +379,12 @@ describe('cost, stock value and profit, by who asks', () => {
     const notMoney = /^\/api\/(parties|brief\/reports\/aging|items|loyalty)[/ ]|^\/api\/brief \.lateCustomers\[\]\.balance$/;
     const money = answers.flatMap((a) => [...a.paths].filter((p) => /balance|flow|expenses/i.test(p.split('.').pop()!)).map((p) => `${a.route} ${p}`));
     expect(money.filter((p) => !notMoney.test(p))).toEqual([]);
-    // what the till needs stays: the safes by name (to pick one), the cash of a shift, and the day close's sales and
-    // debts (1.4.1: of the shifts this cashier opened, none yet here: their registers and drawers are checked below)
+    // what the till needs stays: the safes by name (to pick one), and the day close's sales and debts (1.4.1: of the
+    // shifts this cashier opened, none yet here: their registers and drawers, and the cash of their own shifts, are
+    // checked below; the admin's shift answers nothing)
+    expect(find(answers, at.shift!).paths.size).toBe(0);
     expect(missing(answers, [
       ['/api/banking/accounts', '.accounts[].code'], ['/api/banking/accounts', '.accounts[].name.en'], ['/api/banking/accounts', '.accounts[].kind'],
-      [at.shift!, '.expected.IQD'], [at.shift!, '.counted.IQD'],
       ['/api/brief/day-close', '.sales.net'], ['/api/brief/day-close', '.debts.collected'], ['/api/brief/day-close', '.registers'],
       ['/api/brief', '.sales.today'], ['/api/brief', '.receivables'], ['/api/brief/dashboard', '.salesMonth'], ['/api/brief/dashboard', '.receivables']
     ])).toEqual([]);
@@ -466,6 +468,9 @@ describe('a cashier sells without seeing cost', () => {
     // (half of what was sold comes back at half of what it cost)
     expect(lineCosts(back.json().id)).toEqual([Math.round(Math.round(avg * 2) / 2)]);
     const report = await get(`/api/pos/shifts/${shift.json().id}`, cashier);
+    expect(report.statusCode, report.body).toBe(200);
+    // the cash of their own shift is theirs to read
+    expect(report.json().expected).toEqual({ IQD: 2_500, USD: 0 });
     expect([...scan(report.json()).paths].filter((p) => COST_KEY.test(p.split('.').pop()!))).toEqual([]);
 
     // the same documents, read by the admin, have their cost
@@ -630,5 +635,40 @@ describe('cheques and the end-of-day close of someone who does not keep the book
     expect(registers(await close(cashier))).not.toContain(theirs.id);
     expect(registers(await close(other))).not.toContain(theirs.id);
     expect(registers(await close(admin))).toContain(theirs.id);
+  });
+
+  it('shows a cashier at the till only the shifts they opened: the list, each shift and its report (1.4.1)', async () => {
+    // the shifts of the test above: Till R1 is this cashier's; Till R2 the other Raz's (its newest "open" record names
+    // no user now, so it is nobody's by id); the admin's register from the start
+    const shifts = (h: Headers, q = '') => get(`/api/pos/shifts${q}`, h).then((r) => { expect(r.statusCode, r.body).toBe(200); return r.json() as { id: string; register: string; openedBy: string }[]; });
+    const all = await shifts(admin);
+    const mine = all.find((s) => s.register === 'Till R1')!;
+    const theirs = all.find((s) => s.register === 'Till R2')!;
+    const adminShift = at.shift!.split('/').pop()!;
+    expect(all.map((s) => s.id)).toEqual(expect.arrayContaining([mine.id, theirs.id, adminShift]));
+
+    const own = await shifts(cashier);
+    expect(own.map((s) => s.id)).toContain(mine.id);
+    expect(own.map((s) => s.id)).not.toContain(theirs.id);
+    expect(own.map((s) => s.id)).not.toContain(adminShift);
+    // their cash sales are not in the answer either, under any filter or limit
+    expect((await shifts(cashier, '?status=closed&limit=1')).map((s) => s.id)).toEqual([mine.id]);
+    const raz2 = await signIn('raz2', 'raz2-pass-123');
+    expect((await shifts(raz2)).map((s) => s.id)).not.toContain(mine.id);
+
+    // a shift and its report: their own answers; another's is not there for them
+    expect((await get(`/api/pos/shifts/${mine.id}`, cashier)).statusCode).toBe(200);
+    for (const id of [theirs.id, adminShift]) {
+      const res = await get(`/api/pos/shifts/${id}`, cashier);
+      expect(res.statusCode, id).toBe(404);
+      expect(res.body).not.toContain('invoices');
+    }
+    expect((await get(`/api/pos/shifts/${mine.id}`, raz2)).statusCode).toBe(404);
+
+    // those who keep the books read every shift, as before
+    for (const who of [admin, accountant, viewer, keeper, buyer]) {
+      expect((await shifts(who)).map((s) => s.id)).toEqual(expect.arrayContaining([mine.id, theirs.id, adminShift]));
+      for (const id of [mine.id, theirs.id, adminShift]) expect((await get(`/api/pos/shifts/${id}`, who)).statusCode).toBe(200);
+    }
   });
 });

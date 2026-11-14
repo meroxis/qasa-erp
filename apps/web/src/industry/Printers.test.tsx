@@ -118,7 +118,7 @@ describe('Settings → Printers', () => {
       const row = html.slice(html.indexOf('data-kind="label"'), html.indexOf('data-kind="report"'));
       // paper, copies, silence and the three margins rectangles are off; the printer and the test page are not
       expect((row.match(/disabled=""/g) ?? []).length, lang).toBe(6);
-      expect(row).toMatch(/<select class="input" aria-label="[^"]*"><option value="">/);
+      expect(row).toMatch(/<select class="input" aria-label="[^"]*" title="[^"]*"><option value="">/);
       expect(row).toContain(esc(textOf(lang, 'prn_chooseOther')));
       // a row whose printer is there keeps its settings on
       const receipt = html.slice(html.indexOf('data-kind="receipt"'), html.indexOf('data-kind="label"'));
@@ -127,10 +127,25 @@ describe('Settings → Printers', () => {
     }
   });
 
+  it('gives the chosen printer whole in the title of its list, as a long name can be cut in the box, in each language (1.4.1)', () => {
+    for (const lang of LANGS) {
+      const pdf = [{ name: 'Microsoft Print to PDF', displayName: 'Microsoft Print to PDF', isDefault: true }, ...printers];
+      const html = wrap(view({ printers: pdf, choices: { ...choices, invoice: { ...choices.receipt!, printer: 'Microsoft Print to PDF' } } }), lang);
+      const select = (kind: string) => html.slice(html.indexOf(`data-kind="${kind}"`)).match(/<select class="input" [^>]*>/)![0];
+      expect(select('invoice')).toContain(`title="${esc(`Microsoft Print to PDF — ${textOf(lang, 's14_prnDefault')}`)}"`);
+      expect(select('receipt')).toContain('title="Receipt printer"');
+      expect(select('voucher')).toContain(`title="${esc(textOf(lang, 'prn_ask'))}"`);
+      expect(select('label')).toContain(`title="${esc(`Old label printer — ${textOf(lang, 'prn_gone')}`)}"`);
+    }
+  });
+
   it('keeps the table inside a 1366 px screen: copies take little room, the paper names more', () => {
     const css = readFileSync(new URL('../styles.css', import.meta.url), 'utf8');
     expect(css).toContain('.printers-table select { min-inline-size: 4.5em; }');
-    expect(css).toContain('.printers-table tr.printers-kind > td:nth-child(2) select { min-inline-size: 11em; }');
+    // (1.4.1: room for a long printer name, "Microsoft Print to PDF" whole, as the hands-on test found it cut; the head
+    // over the tick box may take more than one line to give it)
+    expect(css).toContain('.printers-table tr.printers-kind > td:nth-child(2) select { min-inline-size: 14em; }');
+    expect(css).toContain('.printers-table th:nth-child(5) { white-space: normal; text-wrap: balance; }');
     // (1.4.1: wide enough for "Printer’s usual paper" whole, as the hands-on test found it cut)
     expect(css).toContain('.printers-table tr.printers-kind > td:nth-child(3) select { min-inline-size: 13em; }');
     expect(css).toContain('.printers-table td:first-child { min-inline-size: 10.5em; }');
