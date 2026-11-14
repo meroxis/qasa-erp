@@ -87,10 +87,12 @@ it('tells a user over the plan\'s number of users how many it allows, and the ad
   const refused = new ApiError(403, 'plan_user_limit', { limit: 'users', max: 2, plan: 'starter' });
   for (const lang of LANGS) {
     const [message] = errorMessages(refused, i18n(lang));
-    expect(message, lang).toContain('2');
+    // Arabic says two users in its dual (1.4.1), with no digit
+    expect(message, lang).toContain(lang === 'ar' ? 'بمستخدمَين' : '2');
     expect(message, lang).not.toContain('{n}');
   }
+  expect(errorMessages(new ApiError(403, 'plan_user_limit', { limit: 'users', max: 1, plan: 'free' }), i18n('en'))[0]).toContain('allows 1 user,');
   const note = i18n('en').t('usersOverLimit', { n: 2, k: 2, m: 5 });
-  expect(note).toBe('Your plan allows 2 user(s) and you have 5 active. Only 2 can sign in: admins first, then the earliest made. The others (marked “Over the plan”) can’t sign in until you make other users inactive or upgrade the plan. Nothing is deleted.');
+  expect(note).toBe('Your plan allows 2 users and you have 5 active. Only 2 can sign in: admins first, then the earliest made. The others (marked “Over the plan”) can’t sign in until you make other users inactive or upgrade the plan. Nothing is deleted.');
   for (const lang of LANGS) expect(i18n(lang).t('usersOverLimit', { n: 2, k: 2, m: 5 }), lang).not.toMatch(/\{[nkm]\}/);
 });

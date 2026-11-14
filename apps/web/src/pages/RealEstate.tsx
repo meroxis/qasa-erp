@@ -131,7 +131,7 @@ function ProjectCard({ project: p }: { project: ReProjectView }) {
         <span><span className="chip warn">{i18n.int(p.counts.reserved)}</span></span>
         <span><span className="chip">{i18n.int(p.counts.sold)}</span></span>
         <span className="spacer" />
-        <span className="muted num">{i18n.int(p.counts.total)} {t('re_units')}</span>
+        <span className="muted num">{t('re_unitsN', { n: i18n.int(p.counts.total) })}</span>
       </div>
       <div className="small"><span className="muted">{t('re_soldValue')}:</span> <span className="num">{i18n.money(p.soldValue, p.currency)}</span></div>
       {p.expiredReservations > 0 && <div className="small" style={{ color: 'var(--bad)' }}>{t('re_expiredCount', { n: i18n.int(p.expiredReservations) })}</div>}

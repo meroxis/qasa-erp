@@ -6,6 +6,7 @@ import {
   type PrintGalleryId, type PrintKind, type PrintLayout
 } from '@qasa/core';
 import { printDocument } from '../industry/printing.ts';
+import { api, type ItemView } from '../api.ts';
 import { ErrorBox, Icon, useData, usePageNav, useToast } from '../components.tsx';
 import { href } from '../router.ts';
 import { isKey, useI18n, type Key } from '../i18n.ts';
@@ -115,6 +116,14 @@ export function PrintDesignPage() {
   const [fileProblems, setFileProblems] = useState<DesignProblem[] | null>(null);
   const [busy, setBusy] = useState(false);
   const fileInput = useRef<HTMLInputElement>(null);
+  const [ownItems, setOwnItems] = useState<ItemView[] | null>(null);
+
+  // the company's items, for the sample paper; without them (none yet, or not allowed) the sample of its business shows
+  useEffect(() => {
+    let live = true;
+    api.items({ active: 'true' }).then((list) => { if (live) setOwnItems(list); }, () => {});
+    return () => { live = false; };
+  }, []);
 
   // load what is saved for this kind whenever the kind (or what is saved) changes, unless edits are pending
   useEffect(() => {
@@ -200,7 +209,8 @@ export function PrintDesignPage() {
     }
   }
 
-  const model = useMemo(() => sampleModel(doc, lang), [doc, lang]);
+  // 1.4.1: the sample paper shows a few of the company's own items, else a sample of its kind of business
+  const model = useMemo(() => sampleModel(doc, lang, { items: ownItems, businessTypes: settings?.businessTypes }), [doc, lang, ownItems, settings?.businessTypes]);
   const zoom = shown.paper === '80mm' ? 1 : shown.paper === 'A5' ? 0.8 : 0.62;
 
   const company = settings?.companyName ?? { ar: 'شركتي', en: 'My company', ku: 'کۆمپانیاکەم' };

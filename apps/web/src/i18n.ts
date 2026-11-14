@@ -50,6 +50,7 @@ import { SALES14_TEXT } from './i18n/sales14.ts';
 import { AUDIT_TEXT } from './i18n/audit.ts';
 import { SHELL14_TEXT } from './i18n/shell14.ts';
 import { PRINT14_TEXT } from './i18n/print14.ts';
+import { AR_DUAL, COUNT_TEXT, COUNT_VAR, countOf } from './i18n/counts.ts';
 import { formatAmount, formatDate, formatDateTime, formatInteger, formatQty, formatTime, hasLeadingSign, LANGS, ltrIsolate, monthName, textDigits, toEasternDigits, type CurrencyCode, type DigitStyle, type Lang, type Names } from '@qasa/core';
 
 /** Every UI string in Arabic, English and Kurdish (Sorani) — in that order. */
@@ -449,8 +450,8 @@ const BASE = {
   a_signin_off: ['إيقاف تسجيل الدخول', 'Sign-in switched off', 'چوونەژوورەوە ناچالاک کرا'],
   err_unauthorized: ['انتهت الجلسة — سجّل الدخول من جديد', 'Your session ended — please sign in again', 'کاتی چوونەژوورەوەکەت تەواو بوو — دووبارە بچۆ ژوورەوە'],
   err_forbidden: ['ليست لديك صلاحية لهذا العمل', 'You don’t have permission to do this', 'دەسەڵاتی ئەم کارەت نییە'],
-  err_plan_user_limit: ['خطة هذه الشركة تسمح بـ {n} مستخدم/مستخدمين، وعدد المستخدمين الفعّالين أكثر. اطلب من المدير إيقاف مستخدمين آخرين ليبقى مكان لك، أو ترقية الخطة.', 'This company’s plan allows {n} user(s), and it has more active users than that. Ask an admin to make other users inactive so there is room for you, or to upgrade the plan.', 'پلانی ئەم کۆمپانیایە ڕێگە بە {n} بەکارهێنەر دەدات، و ژمارەی بەکارهێنەرە چالاکەکان زیاترە. داوا لە بەڕێوەبەر بکە بەکارهێنەرانی تر ناچالاک بکات تا شوێنت بۆ بمێنێتەوە، یان پلانەکە بەرز بکاتەوە.'],
-  usersOverLimit: ['خطتك تسمح بـ {n} مستخدم/مستخدمين، وعندك {m} فعّالين. لا يستطيع الدخول إلا المدراء أولاً ثم الأقدم إنشاءً، حتى {k}. الباقون (عليهم علامة «فوق حد الخطة») لا يدخلون إلى أن توقف مستخدمين آخرين أو ترقّي الخطة. لا يُحذف شيء.', 'Your plan allows {n} user(s) and you have {m} active. Only {k} can sign in: admins first, then the earliest made. The others (marked “Over the plan”) can’t sign in until you make other users inactive or upgrade the plan. Nothing is deleted.', 'پلانەکەت ڕێگە بە {n} بەکارهێنەر دەدات و {m} چالاکت هەیە. تەنها {k} دەتوانن بچنە ژوورەوە: سەرەتا بەڕێوەبەران، پاشان ئەوانەی زووتر دروست کراون. ئەوانی تر (نیشانەی «سەروو سنووری پلان»یان لەسەرە) ناتوانن بچنە ژوورەوە تا بەکارهێنەرانی تر ناچالاک نەکەیت یان پلانەکە بەرز نەکەیتەوە. هیچ شتێک ناسڕدرێتەوە.'],
+  err_plan_user_limit: ['خطة هذه الشركة تسمح بـ {n} مستخدمين، وعدد المستخدمين الفعّالين أكثر. اطلب من المدير إيقاف مستخدمين آخرين ليبقى مكان لك، أو ترقية الخطة.', 'This company’s plan allows {n} users, and it has more active users than that. Ask an admin to make other users inactive so there is room for you, or to upgrade the plan.', 'پلانی ئەم کۆمپانیایە ڕێگە بە {n} بەکارهێنەر دەدات، و ژمارەی بەکارهێنەرە چالاکەکان زیاترە. داوا لە بەڕێوەبەر بکە بەکارهێنەرانی تر ناچالاک بکات تا شوێنت بۆ بمێنێتەوە، یان پلانەکە بەرز بکاتەوە.'],
+  usersOverLimit: ['خطتك تسمح بـ {n} مستخدمين، وعندك {m} فعّالين. لا يستطيع الدخول إلا المدراء أولاً ثم الأقدم إنشاءً، حتى {k}. الباقون (عليهم علامة «فوق حد الخطة») لا يدخلون إلى أن توقف مستخدمين آخرين أو ترقّي الخطة. لا يُحذف شيء.', 'Your plan allows {n} users and you have {m} active. Only {k} can sign in: admins first, then the earliest made. The others (marked “Over the plan”) can’t sign in until you make other users inactive or upgrade the plan. Nothing is deleted.', 'پلانەکەت ڕێگە بە {n} بەکارهێنەر دەدات و {m} چالاکت هەیە. تەنها {k} دەتوانن بچنە ژوورەوە: سەرەتا بەڕێوەبەران، پاشان ئەوانەی زووتر دروست کراون. ئەوانی تر (نیشانەی «سەروو سنووری پلان»یان لەسەرە) ناتوانن بچنە ژوورەوە تا بەکارهێنەرانی تر ناچالاک نەکەیت یان پلانەکە بەرز نەکەیتەوە. هیچ شتێک ناسڕدرێتەوە.'],
   userOverLimit: ['فوق حد الخطة', 'Over the plan', 'سەروو سنووری پلان'],
   err_invalid_login: ['اسم المستخدم أو كلمة المرور غير صحيحة', 'Wrong username or password', 'ناوی بەکارهێنەر یان وشەی نهێنی هەڵەیە'],
   err_too_many_attempts: ['محاولات كثيرة — انتظر قليلاً ثم حاول', 'Too many attempts — wait a little and try again', 'هەوڵی زۆر — کەمێک چاوەڕێ بکە و دووبارە هەوڵ بدەرەوە'],
@@ -1033,7 +1034,7 @@ const BASE = {
 
 /** The industry features keep their texts in files of their own (i18n/), in the same three languages. */
 const D = { ...BASE, ...AUDIT_TEXT, ...REAL_ESTATE_TEXT, ...MOBILE_TEXT, ...PARTS_TEXT, ...ENGINEERING_TEXT,
-  ...PAYROLL_TEXT, ...POS_TEXT, ...QUOTES_TEXT, ...PIPELINE_TEXT, ...MEDIA_TEXT, ...BRIEF_TEXT, ...CLOUD_TEXT, ...RELAY_TEXT, ...ACTIVATION_TEXT, ...FX_TEXT, ...VERIFY_TEXT, ...GEN_TEXT, ...WEBAPI_TEXT, ...PHONE_TEXT, ...USAGE_TEXT, ...SOLAR_TEXT, ...LEGAL_TEXT, ...BRANCH_TEXT, ...BANK_TEXT, ...WAVE2_TEXT, ...ASSET_TEXT, ...ADJ_TEXT, ...PO_TEXT, ...COMPANY_TEXT, ...LABEL_TEXT, ...PRINTER_TEXT, ...SAFETY_TEXT, ...UI_TEXT, ...UNIT_TEXT, ...BATCH_TEXT, ...STORE_TEXT, ...CATALOG_TEXT, ...PHARMACY_TEXT, ...HARDENING_TEXT, ...OUTBOX_TEXT, ...DAY_CLOSE_TEXT, ...WHATSAPP_TEXT, ...LOYALTY_TEXT, ...SUPPORT_TEXT, ...SETTINGS_SECTION_TEXT, ...LOOK_TEXT, ...INVOICE_SPEED_TEXT, ...ITEMS14_TEXT, ...SALES14_TEXT, ...SHELL14_TEXT, ...PRINT14_TEXT };
+  ...PAYROLL_TEXT, ...POS_TEXT, ...QUOTES_TEXT, ...PIPELINE_TEXT, ...MEDIA_TEXT, ...BRIEF_TEXT, ...CLOUD_TEXT, ...RELAY_TEXT, ...ACTIVATION_TEXT, ...FX_TEXT, ...VERIFY_TEXT, ...GEN_TEXT, ...WEBAPI_TEXT, ...PHONE_TEXT, ...USAGE_TEXT, ...SOLAR_TEXT, ...LEGAL_TEXT, ...BRANCH_TEXT, ...BANK_TEXT, ...WAVE2_TEXT, ...ASSET_TEXT, ...ADJ_TEXT, ...PO_TEXT, ...COMPANY_TEXT, ...LABEL_TEXT, ...PRINTER_TEXT, ...SAFETY_TEXT, ...UI_TEXT, ...UNIT_TEXT, ...BATCH_TEXT, ...STORE_TEXT, ...CATALOG_TEXT, ...PHARMACY_TEXT, ...HARDENING_TEXT, ...OUTBOX_TEXT, ...DAY_CLOSE_TEXT, ...WHATSAPP_TEXT, ...LOYALTY_TEXT, ...SUPPORT_TEXT, ...SETTINGS_SECTION_TEXT, ...LOOK_TEXT, ...INVOICE_SPEED_TEXT, ...ITEMS14_TEXT, ...SALES14_TEXT, ...SHELL14_TEXT, ...PRINT14_TEXT, ...COUNT_TEXT };
 
 export type Key = keyof typeof D;
 
@@ -1078,9 +1079,17 @@ export function makeI18n(lang: Lang, digits: DigitStyle, setLang: (l: Lang) => v
   const ltr = (text: string) => (rtl ? ltrIsolate(text) : text);
   const signed = (text: string, number = text) => (hasLeadingSign(number) ? ltr(text) : text);
   const plus = (text: string, value: number, opts?: { plus?: boolean }) => (opts?.plus && value > 0 ? '+' + text : text);
+  // a text of a count reads right for one ("1 item", not "1 items") and, in Arabic, for two (the dual): see i18n/counts.ts
+  const form = (key: Key, vars?: Record<string, string | number>): string => {
+    const n = vars ? countOf(vars[COUNT_VAR[key] ?? 'n']) : undefined;
+    if (n === 2 && lang === 'ar' && AR_DUAL[key]) return AR_DUAL[key];
+    const one = `${key}__one`;
+    if (n === 1 && isKey(one)) return D[one][index] ?? D[one][1];
+    return D[key][index] ?? D[key][1];
+  };
   const t = (key: Key, vars?: Record<string, string | number>) => {
     // the text's own numbers follow the digit setting too ("٣٠ ڕۆژ" beside Western amounts reads as a mix)
-    let text: string = rtl ? textDigits(D[key][index] ?? D[key][1], style) : D[key][index] ?? D[key][1];
+    let text: string = rtl ? textDigits(form(key, vars), style) : form(key, vars);
     if (vars) for (const [k, v] of Object.entries(vars)) text = text.replace(`{${k}}`, digitsOf(String(v)));
     return text;
   };

@@ -42,7 +42,8 @@ export const BATCH_TEXT = {
     'لەم پسوولەیەدا کاڵای بەسەرچوو هەیە. هەر دەیفرۆشیت؟ ئەمە لە تۆماری وردبینیدا دەنووسرێت.'
   ],
   ex_sellAnyway: ['بِع رغم ذلك', 'Sell anyway', 'هەر بیفرۆشە'],
-  ex_alert: ['{e} وجبات منتهية، و{n} تنتهي خلال {d} يوماً', '{e} batches expired, {n} expire within {d} days', '{e} وەجبە بەسەرچووە، {n} لە ماوەی {d} ڕۆژدا بەسەردەچن'],
+  // two counts in one line: said as "label: count", which reads right for one, two and many (1.4.1)
+  ex_alert: ['وجبات منتهية: {e}، وتنتهي خلال {d} يوماً: {n}', 'Batches expired: {e}; expiring within {d} days: {n}', 'وەجبەی بەسەرچوو: {e}، ئەوانەی لە ماوەی {d} ڕۆژدا بەسەردەچن: {n}'],
   ex_settings: ['الصلاحية والوجبات', 'Expiry & batches', 'بەسەرچوون و وەجبەکان'],
   ex_nearDays: ['أيام التنبيه قبل الانتهاء', 'Days of warning before expiry', 'ڕۆژانی ئاگادارکردنەوە پێش بەسەرچوون'],
   ex_policy: ['بيع المنتهي الصلاحية', 'Selling expired stock', 'فرۆشتنی کاڵای بەسەرچوو'],

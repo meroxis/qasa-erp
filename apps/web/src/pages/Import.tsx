@@ -392,7 +392,7 @@ export function Import() {
               onChange={(e) => { void onFile(e.target.files?.[0]); e.target.value = ''; }} />
           </label>
           <button type="button" className="btn" onClick={template}><Icon name="download" size={16} />{t('md_template')}</button>
-          {fileName && <span className="muted small ltr">{fileName} · {i18n.int(body.length)} {t('md_rows')}</span>}
+          {fileName && <span className="muted small ltr">{fileName} · {t('md_rowsN', { n: i18n.int(body.length) })}</span>}
         </div>
         <p className="muted small" style={{ margin: 0 }}>{t('md_fileHint')}</p>
         {readError && <div className="alert bad" role="alert">{readError}</div>}
