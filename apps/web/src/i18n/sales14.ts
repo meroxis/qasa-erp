@@ -56,6 +56,40 @@ export const SALES14_TEXT = {
     'It will wait for someone who may approve vouchers; the balance changes only then.',
     'چاوەڕێی کەسێک دەبێت کە دەسەڵاتی پەسەندکردنی هەیە؛ ڕەسید تەنها دوای ئەوە دەگۆڕێت.'
   ],
+  s14_willDraft: [
+    'سيُحفظ مسودة للتدقيق والمصادقة، ولا يتغير الرصيد قبلها.',
+    'It will be saved as a draft for checking and approval; the balance changes only then.',
+    'وەک ڕەشنووس بۆ وردبینی و پەسەندکردن پاشەکەوت دەکرێت؛ ڕەسید تەنها دوای ئەوە دەگۆڕێت.'
+  ],
+  // whoever prepared a voucher that is not posted takes it back, or corrects it and sends it again
+  s14_withdraw: ['سحب السند', 'Withdraw', 'کێشانەوەی سەنەد'],
+  s14_withdrawConfirm: [
+    'سحب هذا السند؟ يُحذف ولا يدخل أي رصيد.',
+    'Withdraw this voucher? It is deleted and enters no balance.',
+    'ئەم سەنەدە بکێشیتەوە؟ دەسڕدرێتەوە و ناچێتە هیچ ڕەسیدێک.'
+  ],
+  s14_withdrawn: ['سُحب السند', 'Voucher withdrawn', 'سەنەدەکە کێشرایەوە'],
+  s14_sendAgain: ['تصحيح وإرسال من جديد', 'Correct and send again', 'ڕاستکردنەوە و دووبارە ناردن'],
+  s14_againHelp: [
+    'يُحفظ سنداً جديداً بما تكتبه هنا، ويُسحب السند السابق.',
+    'Saved as a new voucher with what you enter here; the earlier one is withdrawn.',
+    'بەوەی لێرە دەینووسیت وەک سەنەدێکی نوێ پاشەکەوت دەکرێت و سەنەدەکەی پێشوو دەکێشرێتەوە.'
+  ],
+  s14_waitingOwn: [
+    'يمكنك سحبه ما دام بانتظار الموافقة.',
+    'You can withdraw it while it waits.',
+    'تا چاوەڕێی پەسەندکردنە دەتوانیت بیکێشیتەوە.'
+  ],
+  s14_rejectedOwn: [
+    'صحّحه وأرسله من جديد، أو اسحبه.',
+    'Correct it and send it again, or withdraw it.',
+    'ڕاستی بکەرەوە و دووبارە بینێرە، یان بیکێشەوە.'
+  ],
+  s14_creditDropped: [
+    'انقطع الاتصال بالخادم: صار هذا البيع نقداً. اختر «آجل» من جديد بعد عودة الاتصال إن أردت.',
+    'The server can’t be reached: this sale is now cash. Choose “On credit” again once it is back, if you still want it.',
+    'پەیوەندی بە سێرڤەرەوە پچڕا: ئەم فرۆشتنە بوو بە نەقد. ئەگەر ویستت، دوای گەڕانەوەی پەیوەندی دووبارە «قەرز» هەڵبژێرە.'
+  ],
   // someone who does not keep the books sees the vouchers they prepared, and no other
   s14_myVouchers: ['سنداتي', 'My vouchers', 'سەنەدەکانم'],
   s14_myVouchersHelp: [
@@ -77,9 +111,9 @@ export const SALES14_TEXT = {
   s14_reject: ['رفض', 'Reject', 'ڕەتکردنەوە'],
   s14_rejectTitle: ['رفض السند', 'Reject the voucher', 'ڕەتکردنەوەی سەنەد'],
   s14_rejectHelp: [
-    'يبقى السند مسودة خارج الأرصدة، ويرى منظّمه السبب ليصحّحه أو يحذفه.',
-    'The voucher stays a draft, out of every balance; whoever prepared it sees the reason and corrects or deletes it.',
-    'سەنەدەکە وەک ڕەشنووس دەمێنێتەوە و ناچێتە هیچ ڕەسیدێک؛ ئامادەکارەکەی هۆکارەکە دەبینێت و ڕاستی دەکاتەوە یان دەیسڕێتەوە.'
+    'يبقى السند مسودة خارج الأرصدة، ويرى منظّمه السبب فيصحّحه ويرسله من جديد، أو يسحبه.',
+    'The voucher stays a draft, out of every balance; whoever prepared it sees the reason, and corrects it and sends it again, or withdraws it.',
+    'سەنەدەکە وەک ڕەشنووس دەمێنێتەوە و ناچێتە هیچ ڕەسیدێک؛ ئامادەکارەکەی هۆکارەکە دەبینێت، ڕاستی دەکاتەوە و دووبارە دەینێرێت، یان دەیکێشێتەوە.'
   ],
   s14_rejectReason: ['سبب الرفض', 'Reason', 'هۆکاری ڕەتکردنەوە'],
   s14_rejectedToast: ['رُفض السند', 'Voucher rejected', 'سەنەدەکە ڕەت کرایەوە'],

@@ -69,6 +69,8 @@ export interface EntryView {
   reversesId: string | null;
   reversedById: string | null;
   preparedBy: string;
+  /** who that is, so the screens know a user's own voucher (null: prepared without sign-in) */
+  preparedById: string | null;
   preparedAt: string;
   checkedBy: string | null;
   checkedAt: string | null;
@@ -142,8 +144,9 @@ export function approvesOwn(db: Db, who: Preparer): boolean {
 export function setVouchersNeedApproval(db: Db, on: boolean, user: string): void {
   transaction(db, () => {
     writeSetting(db, NEED_APPROVAL, on ? '1' : '0');
-    // switched off: what was waiting is a plain draft again, checked and approved the usual way
-    if (!on) db.prepare("DELETE FROM voucher_approvals WHERE state = 'waiting'").run();
+    // switched off: what was waiting or rejected is a plain draft again, checked and approved the usual way (the
+    // rejection and its reason stay in the audit log)
+    if (!on) db.prepare("DELETE FROM voucher_approvals WHERE state <> 'approved'").run();
     audit(db, user, 'update', 'settings', NEED_APPROVAL, { vouchersNeedApproval: on });
   });
 }
@@ -554,7 +557,7 @@ function toView(db: Db, row: EntryRow, lines: LineRow[], invoiceId: string | nul
     id: row.id, type: row.type, number: row.number, date: row.date, description: row.description, party: row.party,
     currency: row.currency, rateX100: row.rate_x100, status: row.status, cashAccountCode: row.cash_account,
     reversesId: row.reverses_id, reversedById: row.reversed_by_id,
-    preparedBy: row.prepared_by, preparedAt: row.prepared_at, checkedBy: row.checked_by, checkedAt: row.checked_at,
+    preparedBy: row.prepared_by, preparedById: row.prepared_by_id, preparedAt: row.prepared_at, checkedBy: row.checked_by, checkedAt: row.checked_at,
     approvedBy: row.approved_by, approvedAt: row.approved_at,
     total: lines.reduce((s, l) => s + l.debit, 0),
     baseTotal: lines.reduce((s, l) => s + l.base_debit, 0),

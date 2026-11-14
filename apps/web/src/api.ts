@@ -43,6 +43,8 @@ export interface EntrySummary {
   reversesId: string | null;
   reversedById: string | null;
   preparedBy: string;
+  /** 1.4: who that is, to know a user's own voucher (older servers leave it out) */
+  preparedById?: string | null;
   preparedAt: string;
   checkedBy: string | null;
   checkedAt: string | null;
@@ -64,7 +66,13 @@ export interface VoucherApproval {
 }
 
 /** 1.4: the "Vouchers need approval" setting, how many wait, and whether this user may approve them */
-export interface VoucherApprovalState { on: boolean; waiting: number; mayApprove: boolean; /** this user's own vouchers are approved as they are made */ ownAtOnce: boolean }
+export interface VoucherApprovalState {
+  on: boolean; waiting: number; mayApprove: boolean;
+  /** this user's own vouchers are approved as they are made */
+  ownAtOnce: boolean;
+  /** a voucher this user makes with "Receive payment" / "Pay supplier" is posted at once (left out by a server that does not say) */
+  postsAtOnce?: boolean;
+}
 
 /** 1.4: "Receive payment" (a receipt from a customer) or "Pay supplier" (a payment), from the short form */
 export interface QuickVoucherInput {
@@ -76,6 +84,8 @@ export interface QuickVoucherInput {
   cashAccountCode: string;
   date: string;
   note?: string;
+  /** this user's own voucher, not posted, that this one corrects: the server takes it back as it makes this one */
+  replaces?: string;
 }
 
 export interface EntryView extends EntrySummary {
@@ -765,6 +775,8 @@ export const api = {
   deleteEntry: (id: string) => request<void>('DELETE', `/api/entries/${id}`),
   entryAction: (id: string, action: 'check' | 'return' | 'approve') => request<EntryView>('POST', `/api/entries/${id}/${action}`, {}),
   quickVoucher: (input: QuickVoucherInput, options: SendOptions = {}) => request<EntryView>('POST', '/api/quick-vouchers', input, options),
+  /** takes back a voucher this user prepared and that is not posted (it waits, was rejected, or is a draft) */
+  withdrawVoucher: (id: string) => request<void>('DELETE', `/api/quick-vouchers/${id}`),
   voucherApproval: () => request<VoucherApprovalState>('GET', '/api/voucher-approval'),
   setVoucherApproval: (on: boolean) => request<VoucherApprovalState>('PUT', '/api/voucher-approval', { on }),
   approveWaiting: (id: string) => request<EntryView>('POST', `/api/entries/${id}/approve-waiting`, {}),

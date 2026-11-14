@@ -96,7 +96,7 @@ describe('loyalty points at the till', () => {
     expect((await sell({ partyId: lasId, lines: cuts(2), discount: 500 })).json().invoice.loyalty).toMatchObject({ earned: 19, redeemed: 0, balance: 19 });
     // a sale is paid now or put on credit as a whole (1.4), and what goes on credit earns nothing
     const mixed = await sell({ partyId: lasId, lines: cuts(3), payments: [{ method: 'cash', amount: 20_000 }, { method: 'account', amount: 10_000 }] });
-    expect(mixed.json().details).toEqual([{ code: 'pos_credit_not_mixed' }]);
+    expect(mixed.json().details).toEqual([{ code: 'pos_credit_not_mixed' }, { code: 'pos_payment_invalid', method: 'account' }]);
     const credit = await sell({ partyId: lasId, lines: cuts(3), payments: [{ method: 'account', amount: 30_000 }] });
     expect(credit.statusCode, credit.body).toBe(201);
     expect(credit.json().invoice.loyalty).toMatchObject({ earned: 0, balance: 19 });

@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { amountInWords, rateFromX100, todayIso } from '@qasa/core';
 import { api, ApiError, type EntryView } from '../api.ts';
 import { ErrorBox, Icon, Modal, typeName, useData, useLoad, useToast } from '../components.tsx';
-import { ApprovalButtons, ApprovalNote, VoucherStateChip } from '../industry/VoucherApproval.tsx';
+import { ApprovalButtons, ApprovalNote, OwnVoucherButtons, VoucherStateChip } from '../industry/VoucherApproval.tsx';
 import { useI18n } from '../i18n.ts';
 import { go, href } from '../router.ts';
 import { DesignedPrint } from '../industry/PrintDocument.tsx';
@@ -108,6 +108,8 @@ export function EntryDetail({ id }: { id: string }) {
         {e.actions.includes('approve') && <button type="button" className="btn primary" disabled={busy} onClick={() => run(() => api.entryAction(id, 'approve'), t('a_approve'))}><Icon name="check" size={16} />{t('actApprove')}</button>}
         {/* 1.4: a voucher that waits for approval, for whoever may approve vouchers */}
         {e.actions.includes('approve_waiting') && <ApprovalButtons id={id} onDone={reload} />}
+        {/* 1.4: its preparer, without the vouchers screen, takes back a voucher that is not posted, or corrects it and sends it again */}
+        <OwnVoucherButtons entry={e} onError={setActionError} onWithdrawn={() => go('entries')} onSentAgain={(made) => go(`entry/${made.id}`)} />
         {e.actions.includes('reverse') && <button type="button" className="btn danger" disabled={busy} onClick={() => { setReverseDate(reverseDefaultDate(e.date)); setReversing(true); }}><Icon name="undo" size={16} />{t('actReverse')}</button>}
         <button type="button" className="btn" onClick={() => void printDocument('voucher')}><Icon name="printer" size={16} />{t('print')}</button>
       </div>

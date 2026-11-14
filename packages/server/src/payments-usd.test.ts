@@ -147,7 +147,7 @@ describe('POS payment methods and split payments', () => {
     expect((await sell({ payments: [{ method: 'account', amount: 30_000 }] })).json().details).toEqual([{ code: 'party_required' }]);
     // 1.4: never part on account and part paid now
     const mixed = await sell({ partyId: merId, payments: [{ method: 'account', amount: 25_000 }, { method: 'cash', amount: 5_000 }] });
-    expect(mixed.json().details).toEqual([{ code: 'pos_credit_not_mixed' }]);
+    expect(mixed.json().details).toEqual([{ code: 'pos_credit_not_mixed' }, { code: 'pos_payment_invalid', method: 'account' }]);
     const r = await sell({ partyId: merId, payments: [{ method: 'account', amount: 30_000 }] });
     expect(r.statusCode, r.body).toBe(201);
     expect((await call('GET', `/api/parties/${merId}`)).json().balance).toBe(30_000);

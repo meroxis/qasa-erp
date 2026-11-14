@@ -29,6 +29,7 @@ import { baseQty, factorOf, holdsText, salePriceFor, unitChoices, unitLabel, typ
 import { BatchInFields, BatchPick, useExpiredConfirm } from '../industry/BatchFields.tsx';
 import { askControlledOnOpen, RxTick, useControlledPrompt, usePharmacyOn, useRxItems } from '../industry/PharmacyPrompts.tsx';
 import { QuickVoucherButton } from '../industry/QuickVoucher.tsx';
+import { invoiceOpen } from '../industry/quick-voucher.ts';
 
 const STATUSES: (InvoiceStatus | '')[] = ['', 'draft', 'posted', 'cancelled'];
 
@@ -707,7 +708,7 @@ export function InvoiceDetail({ id }: { id: string }) {
         {/* 1.4: money for a credit invoice is taken (or paid, for a purchase) with a voucher on the party's account */}
         {v.status === 'posted' && v.payment === 'credit' && v.partyId && (v.kind === 'sale' || v.kind === 'purchase') && !v.installmentContract && (
           <QuickVoucherButton kind={v.kind === 'sale' ? 'receipt' : 'payment'}
-            preset={{ partyId: v.partyId, invoice: { number: v.number, total: v.total, currency: v.currency, rateX100: v.rateX100 } }} />
+            preset={{ partyId: v.partyId, invoice: { number: v.number, total: invoiceOpen(v), currency: v.currency, rateX100: v.rateX100 } }} />
         )}
         <InvoiceWhatsApp company={company} invoice={v} />
         <button type="button" className="btn" onClick={() => void printDocument('invoice')}><Icon name="printer" size={16} />{t('print')}</button>
