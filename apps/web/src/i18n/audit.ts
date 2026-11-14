@@ -1,0 +1,68 @@
+/**
+ * The audit log in words (Settings → Periods and year-end): the names of what was changed and of what was done, for
+ * every entity and action the server writes there. Arabic, English and Kurdish (Sorani), in that order, like i18n.ts.
+ * The other names are with their features (e_entry, a_post… in i18n.ts; e_quote in quotes.ts): this file adds those
+ * that were shown as the server's own words ("serials", "trade_in").
+ */
+export const AUDIT_TEXT = {
+  // ——— what was changed ———
+  e_bank_account: ['قاصة أو مصرف', 'Safe or bank', 'قاسە یان بانک'],
+  e_bank_statement: ['كشف بنك', 'Bank statement', 'کەشفی بانک'],
+  e_batch: ['وجبة', 'Batch', 'وەجبە'],
+  e_brand: ['ماركة', 'Brand', 'براند'],
+  e_cheque: ['صك', 'Cheque', 'چەک'],
+  e_depreciation: ['اندثار شهر', 'Depreciation month', 'داخورانی مانگ'],
+  e_fixed_asset: ['موجود ثابت', 'Fixed asset', 'سامانی جێگیر'],
+  e_import: ['استيراد من Excel', 'Import from Excel', 'هاوردە لە Excel'],
+  e_item_category: ['تصنيف', 'Category', 'پۆل'],
+  e_item_image: ['صورة مادة', 'Item picture', 'وێنەی کاڵا'],
+  e_loyalty: ['نقاط الولاء', 'Loyalty points', 'خاڵەکانی دڵسۆزی'],
+  e_online_payment: ['دفعة إلكترونية', 'Online payment', 'پارەدانی ئۆنلاین'],
+  e_outbox: ['ما ينتظر الإرسال', 'Waiting to send', 'چاوەڕێی ناردن'],
+  e_pharma_details: ['بيانات دواء', 'Medicine details', 'زانیاریی دەرمان'],
+  e_purchase_order: ['أمر شراء', 'Purchase order', 'داواکاریی کڕین'],
+  e_repair: ['صيانة جهاز', 'Repair', 'چاککردنەوە'],
+  e_serial: ['رقم تسلسلي', 'Serial number', 'ژمارەی زنجیرەیی'],
+  e_serials: ['أرقام تسلسلية', 'Serial numbers', 'ژمارە زنجیرەییەکان'],
+  e_stock_count: ['جرد المخزن', 'Stock count', 'جەردی کۆگا'],
+
+  // ——— what was done ———
+  a_adjust: ['تعديل النقاط', 'Points adjusted', 'خاڵەکان ڕاستکرانەوە'],
+  a_bounce: ['ارتجاع صك', 'Cheque bounced', 'چەک گەڕایەوە'],
+  a_clear: ['تحصيل صك', 'Cheque cleared', 'چەک پارەکەی وەرگیرا'],
+  a_deactivate: ['إلغاء التفعيل', 'Deactivated', 'ناچالاک کرا'],
+  a_deliver: ['تسليم', 'Delivered', 'ڕادەست کرا'],
+  a_discard: ['حذف دون ترحيل', 'Discarded', 'لابرا'],
+  a_dispose: ['استبعاد', 'Disposed of', 'دەرکرا'],
+  a_finish: ['إنهاء', 'Finished', 'تەواو کرا'],
+  a_issue: ['تحرير صك', 'Cheque written', 'چەک نووسرا'],
+  a_login_over_limit: ['دخول مرفوض (فوق عدد المستخدمين)', 'Sign-in refused (over the plan’s users)', 'چوونەژوورەوە ڕەتکرایەوە (زیاتر لە ژمارەی بەکارهێنەران)'],
+  a_match: ['مطابقة سطر', 'Line matched', 'ڕیز هاوتا کرا'],
+  a_offline_sale: ['بيع بلا اتصال', 'Sale made offline', 'فرۆشتن بەبێ پەیوەندی'],
+  a_password_recovered: ['استرجاع كلمة المرور', 'Password recovered', 'وشەی نهێنی گەڕێندرایەوە'],
+  a_po_create: ['إنشاء أمر شراء', 'Purchase order created', 'داواکاریی کڕین دروست کرا'],
+  a_po_update: ['تعديل أمر شراء', 'Purchase order updated', 'داواکاریی کڕین گۆڕدرا'],
+  a_po_send: ['إرسال أمر شراء', 'Purchase order sent', 'داواکاریی کڕین نێردرا'],
+  a_po_cancel: ['إلغاء أمر شراء', 'Purchase order cancelled', 'داواکاریی کڕین هەڵوەشێنرایەوە'],
+  a_po_reopen: ['إعادة أمر شراء إلى مسودة', 'Purchase order back to draft', 'داواکاریی کڕین گەڕێندرایەوە بۆ ڕەشنووس'],
+  a_po_receive: ['استلام أمر شراء', 'Purchase order received', 'داواکاریی کڕین وەرگیرا'],
+  a_price_wholesale: ['سعر الجملة', 'Wholesale price set', 'نرخی کۆ دانرا'],
+  a_price_list_set: ['قائمة أسعار الزبون', 'Customer’s price list set', 'لیستی نرخی کڕیار دانرا'],
+  a_receive: ['استلام صك', 'Cheque received', 'چەک وەرگیرا'],
+  a_reconcile: ['تأكيد المطابقة', 'Reconciled', 'هاوتاکردن پشتڕاست کرایەوە'],
+  a_recovery_code: ['رمز الاسترجاع', 'Recovery code', 'کۆدی گەڕاندنەوە'],
+  a_recovery_failed: ['محاولة استرجاع فاشلة', 'Failed recovery', 'هەوڵی گەڕاندنەوەی سەرنەکەوتوو'],
+  a_reject: ['رفض', 'Rejected', 'ڕەتکرایەوە'],
+  a_renew: ['تجديد', 'Renewed', 'نوێ کرایەوە'],
+  a_request_approval: ['طلب موافقة', 'Sent for approval', 'نێردرا بۆ پەسەندکردن'],
+  a_revoked: ['إلغاء الترخيص', 'Licence revoked', 'مۆڵەت هەڵوەشێنرایەوە'],
+  a_run: ['احتساب', 'Run', 'ئەژمار کرا'],
+  a_sell_expired: ['بيع مادة منتهية الصلاحية', 'Expired stock sold', 'کاڵای بەسەرچوو فرۆشرا'],
+  a_set_category: ['تغيير التصنيف', 'Category set', 'پۆل دانرا'],
+  a_starter_list: ['إضافة القائمة الجاهزة', 'Starter list added', 'لیستی ئامادە زیاد کرا'],
+  a_status: ['تغيير الحالة', 'Status changed', 'دۆخ گۆڕدرا'],
+  a_trade_in: ['شراء جهاز مستعمل', 'Used phone bought', 'مۆبایلی بەکارهاتوو کڕدرا'],
+  a_transfer: ['تحويل', 'Transferred', 'گواسترایەوە'],
+  a_undispose: ['التراجع عن الاستبعاد', 'Disposal undone', 'پاشگەزبوونەوە لە دەرکردن'],
+  a_undo: ['تراجع عن الخطوة', 'Step undone', 'پاشگەزبوونەوە لە هەنگاو']
+} as const;

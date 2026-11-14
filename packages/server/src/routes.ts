@@ -299,7 +299,7 @@ export interface ApiExtension {
 }
 
 /** Every API route. Fastify serves them on the PC and network editions; the demo website runs them in the browser. */
-export function apiRoutes(db: Db, options: { demo?: boolean; extensions?: readonly ApiExtension[] } = {}): Route[] {
+export function apiRoutes(db: Db, options: { demo?: boolean; extensions?: readonly ApiExtension[]; modules?: () => readonly string[] } = {}): Route[] {
   const routes: Route[] = [];
 
   function authenticate(req: ApiRequest): Actor | null {
@@ -668,6 +668,8 @@ export function apiRoutes(db: Db, options: { demo?: boolean; extensions?: readon
   const userSchema = z.object({ username: z.string().max(32), name: z.string().max(100), roles: z.array(roleSchema).max(ROLES.length) });
   const me = (actor: Actor | null) => ({
     signInRequired: signInRequired(db), separateDuties: separateDuties(db), demo: !!options.demo,
+    // what this build serves beside the app's own routes (app.ts MODULE_ROUTES): the app asks only for what is there
+    modules: [...(options.modules?.() ?? [])],
     user: actor ? {
       id: actor.id, name: actor.name, username: actor.username, roles: actor.roles, permissions: actor.permissions,
       // limited to some branches: the company's own books (trial balance, final accounts, statements…) are not for them

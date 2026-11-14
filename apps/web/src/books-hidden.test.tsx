@@ -256,4 +256,38 @@ describe('a purchase invoice for someone who may not read the books', () => {
     expect(page).toContain(t('print'));
     expect(page).not.toMatch(/undefined|NaN/);
   });
+
+  it('a credit invoice says what was received for it, what waits and what is still open; a till sale what was paid and the change', () => {
+    const priced = { ...head, currency: 'IQD', rateX100: 100, discount: 0, subtotal: 100_000, total: 100_000, baseTotal: 100_000, lines: [{ ...line, unitPrice: 100_000, amount: 100_000, returnedAmount: 0 }] };
+    const admin = { settings: { companyName: names('Company'), defaultRateX100: 142_000, postingAccounts: {} }, permissions: ['admin'] };
+    now.answers = { invoice: { ...priced, settlement: { currency: 'IQD', total: 100_000, returned: 0, received: 40_000, waiting: 25_000, open: 60_000, toCollect: 35_000 } } };
+    const purchase = render(<InvoiceDetail id="v1" />, admin);
+    // a purchase: "Paid for it"
+    expect(purchase).toContain(`>${t('s14_invPaid')}<`);
+    expect(purchase).toContain(`>${t('s14_invWaiting')}<`);
+    expect(purchase).toContain(`>${t('s14_invOpen')}<`);
+    for (const amount of ['40,000', '25,000', '60,000']) expect(purchase).toContain(amount);
+    expect(purchase).not.toContain(t('s14_invNothingOpen'));
+
+    // a sale, all received: "Received for it", and nothing left on it
+    now.answers = { invoice: { ...priced, kind: 'sale', number: 'INV-2026-0007', settlement: { currency: 'IQD', total: 100_000, returned: 0, received: 100_000, waiting: 0, open: 0, toCollect: 0 } } };
+    const sale = render(<InvoiceDetail id="v1" />, admin);
+    expect(sale).toContain(`>${t('s14_invReceived')}<`);
+    expect(sale).toContain(t('s14_invNothingOpen'));
+    expect(sale).not.toContain(`>${t('s14_invWaiting')}<`);
+
+    // a cash sale of the till: no such lines, and the cash handed over with the change
+    now.answers = { invoice: { ...priced, kind: 'sale', payment: 'cash', settlement: null, tender: { paid: 125_000, change: 25_000 } } };
+    const till = render(<InvoiceDetail id="v1" />, admin);
+    expect(till).not.toContain(`>${t('s14_invOpen')}<`);
+    expect(till).toContain(`>${t('pos_paid')}<`);
+    expect(till).toContain(`>${t('pos_change')}<`);
+    expect(till).toContain('125,000');
+    // an invoice of a server from before (neither field): the page as it was
+    now.answers = { invoice: { ...priced, kind: 'sale' } };
+    const old = render(<InvoiceDetail id="v1" />, admin);
+    expect(old).not.toContain(`>${t('s14_invOpen')}<`);
+    expect(old).not.toContain(`>${t('pos_paid')}<`);
+    expect(old).not.toMatch(/undefined|NaN/);
+  });
 });

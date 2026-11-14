@@ -12,6 +12,7 @@ import { isKey, useI18n, type Key } from '../i18n.ts';
 import { PrintDocument } from '../industry/PrintDocument.tsx';
 import { sampleModel } from '../industry/print-model.ts';
 import { logoUrl, printApi, refreshPrintSetup, setPrintSetup, usePrintSetup, type PrintProfile } from '../industry/print-api.ts';
+import { balanceLabelKey } from '../industry/print-model.ts';
 
 /**
  * Print design (admin, every plan): how each kind of paper looks, beside a live preview of a sample in the chosen
@@ -46,6 +47,14 @@ export const FIELD_GROUPS: readonly { title: Key; fields: readonly PrintField[] 
  * "Remove the logo": at once on a plan that can add one again; on a plan that cannot (Free, with a logo kept from
  * before) the person is told first, because the logo then cannot be put back.
  */
+/**
+ * Whether "Print the logo" shows: on a plan that can add a logo, and whenever a logo is saved (one kept from before
+ * that prints on every plan, and one the plan does not print now), so the advice of the remove question is true.
+ */
+export function logoTickShown(o: { canLogo: boolean; logo: boolean; kept: boolean }): boolean {
+  return o.canLogo || o.logo || o.kept;
+}
+
 export function mayRemoveLogo(canAddLogo: boolean, ask: (key: 'pp_removeLogoFree') => boolean): boolean {
   return canAddLogo || ask('pp_removeLogoFree');
 }
@@ -60,9 +69,13 @@ export function designerGroups(doc: PrintDoc, layout: PrintLayout): { title: Key
     .filter((g) => g.fields.length > 0);
 }
 
-/** A part's name in the designer: on a voucher the balance after the paper is what is left to pay. */
+/**
+ * A part's name in the designer. The balance after the paper is named by the words the paper prints for it
+ * (balanceLabelKey, which PrintDocument prints from): "Remaining balance" on a voucher, "Balance after this invoice"
+ * on an invoice, "Account balance" on a quotation. One wording, in the option and on the paper.
+ */
 export function fieldLabelKey(field: PrintField, doc: PrintDoc): Key {
-  return field === 'partyBalance' && doc === 'voucher' ? 'pd_f_remainingBalance' : (`pd_f_${field}` as Key);
+  return field === 'partyBalance' ? balanceLabelKey(doc) : (`pd_f_${field}` as Key);
 }
 
 /** The named text size a design has (small, normal, large), or null for a size of its own. */
@@ -468,7 +481,8 @@ export function PrintHeaderCard() {
             <button type="button" className="btn" disabled={busy || !canLogo} onClick={() => input.current?.click()}><Icon name="upload" size={16} />{logo ? t('pp_changeLogo') : t('pp_chooseLogo')}</button>
             {(logo || kept) && <button type="button" className="btn" disabled={busy} onClick={() => { if (mayRemoveLogo(canLogo, (key) => window.confirm(t(key)))) void run(async () => { await printApi.deleteLogo(); refreshPrintSetup(); }, 'pp_logoRemoved'); }}><Icon name="x" size={16} />{t('pp_removeLogo')}</button>}
           </div>
-          {(canLogo || logo) && (
+          {/* whenever a logo is saved, one the plan does not print too: removing it on Free says to untick this box instead */}
+          {logoTickShown({ canLogo, logo: !!logo, kept }) && (
             <>
               {canLogo && <span className="muted small">{t('pp_logoHint')}</span>}
               <label className="row small" style={{ gap: 8 }}><input type="checkbox" checked={form.showLogo} onChange={(e) => setForm({ ...form, showLogo: e.target.checked })} />{t('pp_showLogo')}</label>

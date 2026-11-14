@@ -161,11 +161,11 @@ describe.skipIf(onServer)('a company file from schema 12 opened by schema 13', (
     }
   });
 
-  it('adds the same two columns to a server database, once', () => {
+  it('adds the same two columns to a server database, once (with the cash handed over at the till: invoice-settlement.test.ts)', () => {
     const items = MYSQL_TABLES.find((t) => t.name === 'items')!.sql;
     expect(items).toContain('purchase_price BIGINT');
     expect(items).toContain('purchase_currency');
-    expect(pendingMysqlSteps(V13_MYSQL_STEPS, { columns: new Set(), foreignKeys: new Set() })).toHaveLength(2);
-    expect(pendingMysqlSteps(V13_MYSQL_STEPS, { columns: new Set(['items.purchase_price', 'items.purchase_currency']), foreignKeys: new Set() })).toEqual([]);
+    expect(pendingMysqlSteps(V13_MYSQL_STEPS, { columns: new Set(), foreignKeys: new Set() }).filter((sql) => sql.startsWith('ALTER TABLE items '))).toHaveLength(2);
+    expect(pendingMysqlSteps(V13_MYSQL_STEPS, { columns: new Set(['items.purchase_price', 'items.purchase_currency']), foreignKeys: new Set() }).filter((sql) => sql.startsWith('ALTER TABLE items '))).toEqual([]);
   });
 });

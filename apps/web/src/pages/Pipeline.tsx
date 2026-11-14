@@ -241,7 +241,7 @@ function DealModal({ deal, onClose, onDone, onCloseDeal }: { deal: DealView | nu
             <datalist id="pl-sources">{(['pl_src_walkin', 'pl_src_phone', 'pl_src_facebook', 'pl_src_instagram', 'pl_src_whatsapp', 'pl_src_referral'] as Key[]).map((k) => <option key={k} value={t(k)} />)}</datalist>
           </label>
           <label className="field"><span>{t('currency')}</span>
-            <select className="input" value={form.currency} onChange={(e) => set('currency', e.target.value as CurrencyCode)}><option value="IQD">IQD</option><option value="USD">USD</option></select>
+            <select className="input" value={form.currency} onChange={(e) => set('currency', e.target.value as CurrencyCode)}><option value="IQD">{t('iqdName')}</option><option value="USD">{t('usdName')}</option></select>
           </label>
           <label className="field"><span>{t('pl_value')}</span><AmountInput value={form.value} currency={form.currency} onChange={(v) => set('value', v)} ariaLabel={t('pl_value')} /></label>
           <label className="field"><span>{t('pl_nextStep')}</span><input className="input" maxLength={300} value={form.nextStep} onChange={(e) => set('nextStep', e.target.value)} placeholder={t('pl_nextStepHint')} /></label>

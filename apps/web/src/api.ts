@@ -86,6 +86,8 @@ export interface QuickVoucherInput {
   note?: string;
   /** this user's own voucher, not posted, that this one corrects: the server takes it back as it makes this one */
   replaces?: string;
+  /** the posted credit invoice the form was opened from: the server keeps the voucher with it */
+  invoiceId?: string;
 }
 
 export interface EntryView extends EntrySummary {
@@ -383,6 +385,14 @@ export interface InvoiceView extends InvoiceSummary {
   offlineRef?: string;
   /** 1.2 (Pro): the loyalty points it earned and used, and the customer's balance (null: none and points are off) */
   loyalty?: { earned: number; redeemed: number; value: number; balance: number } | null;
+  /**
+   * 1.4: a posted credit sale or purchase, in its own currency: what was received (or paid) for it and is in the
+   * books, what waits for approval, what is still open on it, and what is left to ask for (open less what waits).
+   * Null for any other invoice; left out by an older server, and for a purchase read without the books.
+   */
+  settlement?: { currency: CurrencyCode; total: number; returned: number; received: number; waiting: number; open: number; toCollect: number } | null;
+  /** 1.4: a till's cash sale: the cash handed over and the change given back, when it was typed at the till */
+  tender?: { paid: number; change: number };
 }
 
 export type Role = 'admin' | 'preparer' | 'checker' | 'approver' | 'sales' | 'purchasing' | 'storekeeper' | 'viewer';
@@ -393,6 +403,11 @@ export interface Me {
   signInRequired: boolean;
   separateDuties: boolean;
   demo: boolean;
+  /**
+   * 1.4: what this build serves beside the app's own routes: 'backup', 'network', 'phones', 'database' (the Pro
+   * module's). The app asks only for what is named; a server from before leaves the list out (everything is asked).
+   */
+  modules?: string[];
   /**
    * branchLimited: limited to some branches (never an admin), so the company's own books are not for them.
    * seesCost, seesBooks (1.4): false for someone the server sends no cost (purchase prices, stock value, a sale's cost)

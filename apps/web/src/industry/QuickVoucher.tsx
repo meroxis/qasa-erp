@@ -7,7 +7,7 @@ import { href } from '../router.ts';
 import { useRatePrefill } from './fx-prefill.ts';
 import { holdKey, type HeldKey } from './outbox.ts';
 import {
-  amountAfterCurrency, amountInIqd, balanceAfter, boardRateFills, invoiceNote, invoicePrefill, mayQuickVoucher, parseRateText, quickNotice, quickOutcome,
+  amountAfterCurrency, amountInIqd, balanceAfter, boardRateFills, formBalance, formBalanceAfter, invoiceNote, invoicePrefill, mayQuickVoucher, parseRateText, quickNotice, quickOutcome,
   type QuickKind, type QuickVoucherPreset
 } from './quick-voucher.ts';
 
@@ -73,14 +73,21 @@ export function QuickVoucherForm({ kind, preset, onClose, onDone }: { kind: Quic
   useEffect(() => { api.voucherApproval().then(setApproval, () => { /* an older server: nothing waits */ }); }, []);
 
   const party = preset.partyId ? one.data ?? null : list.data?.find((p) => p.id === partyId) ?? null;
-  // until an amount is typed: what is still open on the invoice, held to what the party still owes once that is read
+  // until an amount is typed: what is still to collect on the invoice, held to what the party still owes once that is
+  // read; never more than the invoice's open amount, and nothing when nothing is left on it
   const invoice = preset.invoice;
   const amount = typedAmount ? typedAmount.value
     : !invoice ? null
-      : preset.partyId && one.data ? invoicePrefill(invoice.total, invoice.currency, invoice.rateX100, one.data) : invoice.total || null;
+      : preset.partyId && one.data ? invoicePrefill(invoice.open, invoice.currency, invoice.rateX100, one.data) : invoice.open || null;
+  // nothing left to collect on the invoice: the form says so (and why, when a voucher for it waits for approval)
+  const settled = !!invoice && !again && invoice.open <= 0;
   const options: PickOption[] = (list.data ?? []).map((p) => ({ id: p.id, code: p.code, label: p.name, search: p.phone, hint: p.balance ? i18n.money(p.balance, 'IQD') : '' }));
   const rateX100 = currency === 'USD' ? parseRateText(rateText) : 100;
-  const after = party ? balanceAfter(party.balance, amount, currency, rateX100) : null;
+  // the balance in the currency chosen in the form when the party's row shows its dollars; else the whole position
+  const before = party ? formBalance(party, currency) : null;
+  const after = before ? formBalanceAfter(before, amount, currency, rateX100) : null;
+  // paid more than is owed in all: by the whole position, whatever currency the balance is shown in
+  const netAfter = party ? balanceAfter(party.balance, amount, currency, rateX100) : null;
   const ready = !!party && amountInIqd(amount, currency, rateX100) !== null && !!cashAccount && !!date;
   // not posted as it is saved: "Remaining after" is the balance once it is approved, and the form says so
   const notice = quickNotice(approval);
@@ -91,7 +98,9 @@ export function QuickVoucherForm({ kind, preset, onClose, onDone }: { kind: Quic
     const input: QuickVoucherInput = {
       kind, partyId: party.id, amount: amount ?? 0, currency, ...(currency === 'USD' ? { rateX100 } : {}), cashAccountCode: cashAccount, date,
       ...(note.trim() ? { note: note.trim() } : {}),
-      ...(again ? { replaces: again.id } : {})
+      ...(again ? { replaces: again.id } : {}),
+      // kept with the invoice it was opened from, so the invoice knows what was received for it
+      ...(invoice?.id ? { invoiceId: invoice.id } : {})
     };
     setBusy(true);
     setError(null);
@@ -114,6 +123,11 @@ export function QuickVoucherForm({ kind, preset, onClose, onDone }: { kind: Quic
       <div className="stack">
         <p className="muted small" style={{ margin: 0 }}>{kind === 'receipt' ? t('s14_receiveHelp') : t('s14_payHelp')}</p>
         {again && <div className="alert info small">{t('s14_againHelp')}</div>}
+        {settled && (
+          <div className="alert info small" role="status">
+            {invoice.waiting ? t('s14_invoiceWaits', { amount: i18n.money(invoice.waiting, invoice.currency) }) : t('s14_invoiceSettled')}
+          </div>
+        )}
         <div className="field">
           <span>{kind === 'receipt' ? t('customer') : t('supplier')}</span>
           {preset.partyId
@@ -144,13 +158,14 @@ export function QuickVoucherForm({ kind, preset, onClose, onDone }: { kind: Quic
           <label className="field"><span>{t('date')}</span><input className="input" type="date" value={date} onChange={(e) => setDate(e.target.value)} /></label>
         </div>
         <label className="field"><span>{t('notes')}</span><input className="input" maxLength={500} value={note} onChange={(e) => setNote(e.target.value)} /></label>
-        {party && (
+        {party && before && (
           <div className="totals" role="status" style={{ alignSelf: 'stretch' }}>
-            <span className="muted">{t('s14_balanceBefore')}</span><span className="num">{i18n.money(party.balance, 'IQD')}</span>
-            <span>{t('s14_balanceAfter')}</span><strong className="num" style={{ fontSize: 18 }}>{after === null ? '—' : i18n.money(after, 'IQD')}</strong>
+            <span className="muted">{t('s14_balanceBefore')}</span><span className="num">{i18n.money(before.amount, before.currency)}</span>
+            {before.other && <><span className="muted small">{t('s14_balanceAlso')}</span><span className="num small muted">{i18n.money(before.other.amount, before.other.currency)}</span></>}
+            <span>{t('s14_balanceAfter')}</span><strong className="num" style={{ fontSize: 18 }}>{after === null ? '—' : i18n.money(after, before.currency)}</strong>
           </div>
         )}
-        {after !== null && after < 0 && <div className="alert warn small">{t('s14_overpaid')}</div>}
+        {netAfter !== null && netAfter < 0 && <div className="alert warn small">{t('s14_overpaid')}</div>}
         {notice && <div className="alert info small">{t(notice)}</div>}
         <ErrorBox error={error} />
         <div className="row">

@@ -128,7 +128,7 @@ describe('1.4: what customers owe, at a glance', () => {
     await voucher('payment', mer, 'IQD', 50_000); // Mer owes 50,000 IQD
     await voucher('payment', las, 'USD', 20_000); // Las owes $200.00 (300,000 IQD at the book rate)
     await voucher('payment', las, 'IQD', 10_000); // ... and 10,000 IQD
-    await voucher('receipt', raz, 'IQD', 25_000); // Raz paid ahead: we owe him
+    await voucher('receipt', raz, 'IQD', 25_000); // Raz paid ahead: we owe them
     await voucher('receipt', supplier, 'IQD', 70_000); // we owe the supplier 70,000 IQD
 
     const totals = (await get('/api/parties/totals?type=customer')).json();

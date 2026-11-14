@@ -54,6 +54,8 @@ export interface SaleInput {
   payments?: { method: PosMethod; amount: number }[];
   /** 1.2 (Pro): loyalty points the customer uses on this sale */
   loyaltyPoints?: number;
+  /** 1.4: the cash the customer handed over for a cash sale (kept so a later copy of the receipt prints it and the change) */
+  tendered?: number;
   /** qtyMilli in base units, or unit + unitQtyMilli: the quantity in one of the item's units, priced per that unit */
   lines: (({ itemId: string; qtyMilli: number; unitPrice: number } | { itemId: string; unit: UnitCode; unitQtyMilli: number; unitPrice: number }) & { batchId?: string })[];
 }

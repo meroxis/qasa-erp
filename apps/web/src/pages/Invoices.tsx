@@ -25,7 +25,7 @@ import { reverseDefaultDate } from '../industry/ReverseModal.tsx';
 import { afterPaint, printDocument, whenQuiet, type PrintResult } from '../industry/printing.ts';
 import { PartyPicker } from '../industry/PartyPicker.tsx';
 import { mayPostInvoice, printedOk, rememberChoice, rememberedChoice, runSaveFlow, saveChoices, type SaveChoice } from '../industry/save-flow.ts';
-import { creditPartyNote } from './pos-logic.ts';
+import { creditPartyNote, partyAskedAfter } from './pos-logic.ts';
 import { baseQty, factorOf, holdsText, salePriceFor, unitChoices, unitLabel, type LineUnit } from '../industry/units.ts';
 import { BatchInFields, BatchPick, useExpiredConfirm } from '../industry/BatchFields.tsx';
 import { askControlledOnOpen, RxTick, useControlledPrompt, usePharmacyOn, useRxItems } from '../industry/PharmacyPrompts.tsx';
@@ -139,6 +139,8 @@ export function InvoiceEditor({ kind: initialKind, id, partyId: initialParty }: 
   const [error, setError] = useState<unknown>(null);
   // whether the "credit needs a customer / supplier" note may show yet (never on a paper just opened)
   const [partyAsked, setPartyAsked] = useState(false);
+  // whether the party box was used (typed in or clicked into), as against the focus merely passing through it
+  const partyTouched = useRef(false);
   const expired = useExpiredConfirm();
   const rxItems = useRxItems(usePharmacyOn() && kind === 'sale');
   // the invoice saved last (after "… and next"), and the one being printed: its paper is in the print-only area
@@ -286,9 +288,12 @@ export function InvoiceEditor({ kind: initialKind, id, partyId: initialParty }: 
       setError(new ApiError(400, 'validation', [{ code: 'rate_invalid' }]));
       return null;
     }
-    // credit goes on someone's account: without a customer (or supplier) there is none (the server refuses it too)
+    // credit goes on someone's account: without a customer (or supplier) there is none (the server refuses it too).
+    // One message says so, worded for this screen: the note under Cash / Credit (run() has asked for it), with the
+    // party box in view and ready to type in; no second, general one beside the Save button
     if (payment === 'credit' && !partyId) {
-      setError(new ApiError(400, 'validation', [{ code: 'party_required' }]));
+      setError(null);
+      partyBox.current?.focus();
       return null;
     }
     return {
@@ -346,7 +351,8 @@ export function InvoiceEditor({ kind: initialKind, id, partyId: initialParty }: 
     setPaper(last);
     setSavedId(undefined);
     setPartyId('');
-    setPartyAsked(false);
+    setPartyAsked((asked) => partyAskedAfter(asked, 'new'));
+    partyTouched.current = false;
     setPayment(kind === 'purchase' ? 'credit' : 'cash');
     setDiscount(null);
     setNotes('');
@@ -365,7 +371,7 @@ export function InvoiceEditor({ kind: initialKind, id, partyId: initialParty }: 
   async function run(chosen: SaveChoice) {
     // (F9 works before a draft opened for editing has arrived: nothing is on the page to save yet)
     if (!ready || busy || running.current || !offered.includes(chosen)) return;
-    setPartyAsked(true);
+    setPartyAsked((asked) => partyAskedAfter(asked, 'save'));
     const body = input();
     if (!body) return;
     running.current = true;
@@ -486,7 +492,9 @@ export function InvoiceEditor({ kind: initialKind, id, partyId: initialParty }: 
       <div className="card pad stack">
         <h2 style={{ fontSize: 18 }}>{savedId ? `${t('editTitle')} — ${t(kind)}` : t(kind)}</h2>
         <div className="grid-3">
-          <div className="field" onBlur={() => setPartyAsked(true)}>
+          {/* the credit note waits until the box was used and left (typed in or clicked into), not for the focus passing through */}
+          <div className="field" onInput={() => { partyTouched.current = true; }} onMouseDown={() => { partyTouched.current = true; }}
+            onBlur={() => setPartyAsked((asked) => partyAskedAfter(asked, 'leave', partyTouched.current))}>
             <span>{kind === 'sale' ? t('customer') : t('supplier')}</span>
             <PartyPicker type={partyType} value={partyId} options={partyOptions} inputRef={partyBox}
               onChange={(v) => { setPartyId(v); if (!v) setPayment('cash'); }} onCreated={() => parties.reload()}
@@ -505,7 +513,7 @@ export function InvoiceEditor({ kind: initialKind, id, partyId: initialParty }: 
             <span>{t('paymentMode')}</span>
             <div className="track" role="group" aria-label={t('paymentMode')} style={{ alignSelf: 'flex-start' }}>
               <button type="button" aria-pressed={payment === 'cash'} onClick={() => setPayment('cash')}>{t('payCash')}</button>
-              <button type="button" aria-pressed={payment === 'credit'} onClick={() => { setPayment('credit'); setPartyAsked(true); }}>{t('payCredit')}</button>
+              <button type="button" aria-pressed={payment === 'credit'} onClick={() => { setPayment('credit'); setPartyAsked((asked) => partyAskedAfter(asked, 'credit')); }}>{t('payCredit')}</button>
             </div>
             <div className="muted small">{payment === 'cash' ? t('s14_payCashHint') : kind === 'sale' ? t('s14_payCreditHint') : t('s14_payCreditHintSupplier')}</div>
             {partyNote && <div className="small" role="alert" style={{ color: 'var(--bad)' }}>{t(partyNote)}</div>}
@@ -717,8 +725,8 @@ export function InvoiceDetail({ id }: { id: string }) {
         {v.actions.includes('cancel') && <button type="button" className="btn danger" disabled={busy} onClick={() => { setCancelDate(reverseDefaultDate(v.date)); setCancelling(true); }}><Icon name="undo" size={16} />{t('actCancelInvoice')}</button>}
         {/* 1.4: money for a credit invoice is taken (or paid, for a purchase) with a voucher on the party's account */}
         {priced && v.status === 'posted' && v.payment === 'credit' && v.partyId && (v.kind === 'sale' || v.kind === 'purchase') && !v.installmentContract && (
-          <QuickVoucherButton kind={v.kind === 'sale' ? 'receipt' : 'payment'}
-            preset={{ partyId: v.partyId, invoice: { number: v.number, total: invoiceOpen(v), currency: v.currency, rateX100: v.rateX100 } }} />
+          <QuickVoucherButton kind={v.kind === 'sale' ? 'receipt' : 'payment'} onDone={reload}
+            preset={{ partyId: v.partyId, invoice: { id: v.id, number: v.number, ...invoiceOpen(v), currency: v.currency, rateX100: v.rateX100 } }} />
         )}
         {/* without its money (a purchase, for someone who may not read the books) there is no paper to send or print */}
         {priced && <InvoiceWhatsApp company={company} invoice={v} />}
@@ -814,6 +822,19 @@ export function InvoiceDetail({ id }: { id: string }) {
             <span style={{ fontWeight: 700 }}>{t('totalDue')}</span><strong className="num" style={{ fontSize: 18 }}>{i18n.money(v.total, v.currency)}</strong>
             {v.currency === 'USD' && <><span className="muted small">{t('iqdEquivalent')}</span><span className="num small">{i18n.money(v.baseTotal, 'IQD')}</span></>}
             {loyaltyLines(i18n, v.loyalty).map(([label, value]) => <Fragment key={label}><span className="muted small">{label}</span><span className="num small">{value}</span></Fragment>)}
+            {/* a till's cash sale: the cash handed over and the change, as its receipt printed them */}
+            {v.tender && <>
+              <span className="muted small">{t('pos_paid')}</span><span className="num small">{i18n.money(v.tender.paid, v.currency)}</span>
+              <span className="muted small">{t('pos_change')}</span><span className="num small">{i18n.money(v.tender.change, v.currency)}</span>
+            </>}
+            {/* a credit invoice: what was received for it (paid, on a purchase), what waits for approval, what is still open */}
+            {v.settlement && <>
+              {v.settlement.received > 0 && <><span className="muted small">{t(saleSide ? 's14_invReceived' : 's14_invPaid')}</span><span className="num small">{i18n.money(v.settlement.received, v.currency)}</span></>}
+              {v.settlement.waiting > 0 && <><span className="muted small">{t('s14_invWaiting')}</span><span className="num small">{i18n.money(v.settlement.waiting, v.currency)}</span></>}
+              {v.settlement.open > 0
+                ? <><span className="small" style={{ fontWeight: 700 }}>{t('s14_invOpen')}</span><strong className="num small">{i18n.money(v.settlement.open, v.currency)}</strong></>
+                : <><span className="muted small">{t('s14_invOpen')}</span><span className="small muted">{t('s14_invNothingOpen')}</span></>}
+            </>}
           </div>}
         </div>
 

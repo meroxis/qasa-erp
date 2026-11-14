@@ -54,6 +54,8 @@ export interface PrintModel {
   /** a posted sale invoice: its verify code */
   verifyInvoiceId: string | null;
   preparedBy: string;
+  /** a till's cash sale: the cash handed over and the change given back, printed under the total */
+  tender?: { paid: number; change: number } | null;
 }
 
 /**
@@ -97,13 +99,26 @@ export function balancesAround(st: StatementForBalance, of: Pick<PrintBalanceOf,
   return { previous: null, after: st.closing };
 }
 
+/**
+ * The words for the party's balance after a paper, by the kind of paper: what is left on a voucher ("Remaining
+ * balance"), the account as it stands on a quotation (which changes nothing), and the balance after the invoice on
+ * every other paper. The paper prints them and the designer names its option by them.
+ */
+export function balanceLabelKey(doc: PrintDoc): 'pd_h_remainingBalance' | 'pd_h_currentBalance' | 'pd_h_balance' {
+  return doc === 'voucher' ? 'pd_h_remainingBalance' : doc === 'quote' ? 'pd_h_currentBalance' : 'pd_h_balance';
+}
+
+/** The title of a till's receipt: the same on the standard receipt, on a designed one and in the designer's preview. */
+export const POS_TITLE = 'pos_receipt';
+
 const docOfInvoice = (kind: InvoiceDocKind): PrintDoc => (kind === 'sale' ? 'sale' : kind === 'purchase' ? 'purchase' : 'return');
 
 export function invoiceModel(v: InvoiceView, extra: { barcodes?: Map<string, string>; partyBalance?: number | null; pos?: boolean } = {}): PrintModel {
   const saleSide = v.kind === 'sale' || v.kind === 'sale_return';
   return {
     doc: extra.pos ? 'pos' : docOfInvoice(v.kind),
-    titleKey: v.kind,
+    // a till's receipt is headed "Sales receipt" (وەسڵی فرۆشتن), as the standard receipt and the designer's preview are
+    titleKey: extra.pos ? POS_TITLE : v.kind,
     number: v.number,
     date: v.date,
     validUntil: null,
@@ -127,7 +142,8 @@ export function invoiceModel(v: InvoiceView, extra: { barcodes?: Map<string, str
     notes: v.notes,
     terms: '',
     verifyInvoiceId: v.kind === 'sale' && v.status === 'posted' ? v.id : null,
-    preparedBy: v.createdBy
+    preparedBy: v.createdBy,
+    tender: v.tender ?? null
   };
 }
 
@@ -174,6 +190,9 @@ export function entryParty(e: Pick<EntryView, 'lines'>): { partyId: string; name
   return { partyId: line.partyId, name: line.partyName, rawEffect };
 }
 
+/** Whether a line's note only repeats the paper's own (the same words, whatever the spaces around them). */
+const sameNote = (line: string | null | undefined, paper: string | null | undefined): boolean => !!line && line.trim() === (paper ?? '').trim();
+
 export function entryModel(e: EntryView): PrintModel {
   const about = entryParty(e);
   const partyName = e.party || about?.name || null;
@@ -189,7 +208,11 @@ export function entryModel(e: EntryView): PrintModel {
     currency: e.currency,
     rateX100: e.rateX100,
     lines: [],
-    accountLines: e.lines.map((l) => ({ accountCode: l.accountCode, accountName: l.accountName, description: l.description, debit: l.debit, credit: l.credit })),
+    // a voucher's lines carry the voucher's own note unless a line was given one of its own: the note prints once, at
+    // the foot (PrintModel.notes), and a line keeps only a note that says something else
+    accountLines: e.lines.map((l) => ({
+      accountCode: l.accountCode, accountName: l.accountName, description: sameNote(l.description, e.description) ? '' : l.description, debit: l.debit, credit: l.credit
+    })),
     subtotal: e.total,
     discount: 0,
     total: e.total,
@@ -240,7 +263,7 @@ export function sampleModel(doc: PrintDoc, lang: Lang = 'ar'): PrintModel {
   const purchase = doc === 'purchase';
   return {
     doc,
-    titleKey: doc === 'quote' ? 'qt_quotation' : doc === 'return' ? 'sale_return' : purchase ? 'purchase' : 'sale',
+    titleKey: doc === 'quote' ? 'qt_quotation' : doc === 'return' ? 'sale_return' : purchase ? 'purchase' : doc === 'pos' ? POS_TITLE : 'sale',
     number: doc === 'quote' ? 'QT-2026-0007' : 'INV-2026-0128',
     date: '2026-11-07',
     validUntil: doc === 'quote' ? '2026-11-21' : null,

@@ -542,7 +542,7 @@ export function InstallmentEditor({ invoiceId: fromInvoice }: { invoiceId?: stri
           <label className="field">
             <span>{t('currency')}</span>
             <select className="input" value={currency} disabled={source === 'invoice' && !!invoiceId} onChange={(e) => setCurrency(e.target.value as CurrencyCode)}>
-              <option value="IQD">IQD</option><option value="USD">USD</option>
+              <option value="IQD">{t('iqdName')}</option><option value="USD">{t('usdName')}</option>
             </select>
           </label>
           <label className="field"><span>{t('contractTotal')}</span><AmountInput value={total} currency={currency} onChange={setTotal} ariaLabel={t('contractTotal')} /></label>

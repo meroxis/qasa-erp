@@ -6,7 +6,8 @@ import { AppError } from './errors.ts';
  * Cost stays with those who may see it (1.4). The router calls this for every request, so the rule holds for every
  * answer of a route, whichever way it is asked: a list, one record, a barcode scan at the till, the answer to a save.
  *
- * Two rules (auth.ts):
+ * One rule in two names (auth.ts): whoever keeps or reads the books also sees cost, and whoever has neither sees none
+ * of it.
  * - seesCost: an item's purchase price and average cost, the value of the stock, the cost of a sale's lines. Without
  *   it those fields are left out of the answer (never sent as zero).
  * - seesBooks: the journal, the company's own books and the reports made from them, profit on the dashboard and in the
@@ -57,7 +58,7 @@ const BOOKS_FIELDS: readonly (readonly [string, readonly string[]])[] = [
 
 /** The money on a purchase invoice (or a purchase return) is what the goods cost. */
 const PURCHASE_KINDS: ReadonlySet<unknown> = new Set(['purchase', 'purchase_return']);
-const PURCHASE_MONEY: ReadonlySet<string> = new Set(['discount', 'subtotal', 'total', 'baseTotal', 'unitPrice', 'amount', 'cost', 'returnedAmount', 'payments']);
+const PURCHASE_MONEY: ReadonlySet<string> = new Set(['discount', 'subtotal', 'total', 'baseTotal', 'unitPrice', 'amount', 'cost', 'returnedAmount', 'payments', 'settlement']);
 
 /**
  * Read by nobody without the books: the journal, the company's books (branches.ts), the stock valuation, the expenses

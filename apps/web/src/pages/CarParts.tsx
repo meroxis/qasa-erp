@@ -25,11 +25,21 @@ export function originName(i18n: I18n, origin: string): string {
   return origin && isKey(key) ? i18n.t(key) : origin;
 }
 
-function useCanEdit(): boolean {
+/**
+ * Why part data cannot be changed here, to say the true reason: 'plan' when the plan lacks the feature (the notice
+ * names the plans that have it), 'role' when the plan has it and this person may not change stock data (a neutral
+ * note: no plan would change that), null when they can.
+ */
+export function partsNotice(planHasParts: boolean, mayChange: boolean): 'plan' | 'role' | null {
+  if (!planHasParts) return 'plan';
+  return mayChange ? null : 'role';
+}
+
+function usePartsNotice(): 'plan' | 'role' | null {
   const { plan } = useData();
   const can = useMay();
   // part numbers and fitments are the stock's data: the plan has the feature, and the person may change them
-  return !!plan?.features.includes('autoParts') && can('partData');
+  return partsNotice(!!plan?.features.includes('autoParts'), can('partData'));
 }
 
 /** قطع غيار السيارات: counter search, vehicle finder and reorder list */
@@ -39,7 +49,8 @@ export function CarParts() {
   const [open, setOpen] = useState<string | null>(null);
   const [importing, setImporting] = useState(false);
   const [tick, setTick] = useState(0);
-  const canEdit = useCanEdit();
+  const notice = usePartsNotice();
+  const canEdit = notice === null;
 
   return (
     <div className="stack">
@@ -53,7 +64,8 @@ export function CarParts() {
         {canEdit && <button type="button" className="btn" onClick={() => setImporting(true)}><Icon name="download" size={16} />{t('pt_import')}</button>}
         <a className="btn" href={href('items')}><Icon name="box" size={16} />{t('items')}</a>
       </div>
-      {!canEdit && <div className="alert info">{t('pt_needsPro')}</div>}
+      {notice === 'plan' && <div className="alert info">{t('pt_needsPro')}</div>}
+      {notice === 'role' && <p className="muted small" style={{ margin: 0 }}>{t('pt_readOnly')}</p>}
 
       {tab === 'counter' && <CounterSearch key={tick} onOpen={setOpen} />}
       {tab === 'vehicle' && <VehicleFinder key={tick} onOpen={setOpen} />}

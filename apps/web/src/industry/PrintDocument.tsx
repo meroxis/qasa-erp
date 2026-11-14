@@ -9,7 +9,7 @@ import { ItemImage } from './ItemImage.tsx';
 import { encodeQr, qrSvgPath } from './qr.ts';
 import { barcodeFor, barsPath } from './barcode.ts';
 import { logoUrl, usePrintSetup, type PrintProfileView } from './print-api.ts';
-import { balancesAround, type PrintBalanceOf, type PrintModel } from './print-model.ts';
+import { balanceLabelKey, balancesAround, type PrintBalanceOf, type PrintModel } from './print-model.ts';
 import './print-design.css';
 
 /**
@@ -179,7 +179,7 @@ export function PrintDocument({ model: given, design, profile, company, lang, br
     ...(rate ? [{ key: 'rate', label: plain('pd_h_rate'), value: rate, cls: 'num' }] : [])
   ];
 
-  const balanceKey: Key = model.doc === 'voucher' ? 'pd_h_remainingBalance' : model.doc === 'quote' ? 'pd_h_currentBalance' : 'pd_h_balance';
+  const balanceKey: Key = balanceLabelKey(model.doc);
   const previousRow: TotalRow | null = show.previousBalance && model.previousBalance !== null
     ? { key: 'previous', label: head('previousBalance'), value: money(model.previousBalance, 'IQD') } : null;
   const afterRow: TotalRow | null = show.partyBalance && model.partyBalance !== null
@@ -193,6 +193,11 @@ export function PrintDocument({ model: given, design, profile, company, lang, br
     ...(previousRow && model.doc === 'voucher' ? [previousRow] : []),
     { key: 'total', label: head('total'), value: money(model.total), grand: true },
     ...(usdLine ? [{ key: 'usd', label: head('usdEquivalent'), value: money(usdLine.amount, usdLine.currency) }] : []),
+    // a till's cash sale: what the customer handed over and the change, on the first print and on every later one
+    ...(model.tender ? [
+      { key: 'tender-paid', label: plain('pos_paid'), value: money(model.tender.paid) },
+      { key: 'tender-change', label: plain('pos_change'), value: money(model.tender.change) }
+    ] : []),
     ...(previousRow && model.doc !== 'voucher' ? [previousRow] : []),
     ...(afterRow ? [afterRow] : [])
   ];

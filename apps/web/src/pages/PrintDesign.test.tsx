@@ -2,8 +2,8 @@ import { describe, expect, it } from 'vitest';
 import { checkPrintDesign, DEFAULT_PRINT_DESIGN, DEFAULT_RECEIPT_DESIGN, galleryIdOf, PRINT_DOCS, PRINT_FIELDS, PRINT_FONT_SIZES, PRINT_GALLERY, PRINT_LAYOUTS, withGalleryDesign } from '@qasa/core';
 import { LABEL_TEXT } from '../i18n/labels.ts';
 import { PRINT14_TEXT } from '../i18n/print14.ts';
-import { isKey } from '../i18n.ts';
-import { sampleModel } from '../industry/print-model.ts';
+import { isKey, makeI18n } from '../i18n.ts';
+import { balanceLabelKey, sampleModel } from '../industry/print-model.ts';
 import { DESIGNER_FIELDS, designerGroups, FIELD_GROUPS, fieldLabelKey, fontSizeName, mayRemoveLogo, problemText, withLayout } from './PrintDesign.tsx';
 
 describe('removing the company logo', () => {
@@ -49,7 +49,16 @@ describe('the print designer', () => {
     const labels = Object.keys({ ...LABEL_TEXT, ...PRINT14_TEXT }).filter((k) => k.startsWith('pd_f_')).map((k) => k.slice('pd_f_'.length)).filter((k) => k !== 'remainingBalance').sort();
     expect(labels).toEqual([...DESIGNER_FIELDS].sort());
     for (const doc of PRINT_DOCS) for (const f of DESIGNER_FIELDS) expect(isKey(fieldLabelKey(f, doc)), f).toBe(true);
-    expect(fieldLabelKey('partyBalance', 'voucher')).toBe('pd_f_remainingBalance');
+    // the balance after the paper: the option is named by the very words the paper prints, one wording for both
+    expect(fieldLabelKey('partyBalance', 'voucher')).toBe('pd_h_remainingBalance');
+    expect(fieldLabelKey('partyBalance', 'quote')).toBe('pd_h_currentBalance');
+    for (const doc of ['sale', 'purchase', 'return', 'pos'] as const) expect(fieldLabelKey('partyBalance', doc)).toBe('pd_h_balance');
+    for (const doc of PRINT_DOCS) expect(fieldLabelKey('partyBalance', doc)).toBe(balanceLabelKey(doc));
+    const ku = makeI18n('ku', 'western', () => {}, () => {});
+    expect(ku.t(fieldLabelKey('partyBalance', 'voucher'))).toBe('ڕەسیدی ماوە');
+    expect(ku.t(fieldLabelKey('partyBalance', 'sale'))).toBe('ڕەسید دوای ئەم پسوولەیە');
+    // the same words as the short form of "Receive payment" for what is left
+    expect(ku.t('s14_balanceAfter')).toBe(ku.t('pd_h_remainingBalance'));
   });
 
   it('shows every part once, in groups, and only the parts the kind of paper and the layout can print', () => {

@@ -31,20 +31,20 @@ const ROLE_PERMISSIONS: Record<Role, Permission[]> = {
 };
 
 /**
- * Who may see what things cost (1.4): the purchase price and average cost of an item, the value of the stock, the cost
- * and profit of a sale. Those who buy, keep the stock or manage the company; a cashier (the sales role alone) may not,
- * and neither may anyone else without one of these permissions.
- */
-export const seesCost = (actor: Pick<Actor, 'permissions'>): boolean =>
-  actor.permissions.some((p) => p === 'admin' || p === 'stock' || p === 'purchases');
-
-/**
- * Who may read the company's books and the reports made from them (the journal, the trial balance, final accounts,
- * profit in the reports and on the dashboard, what purchases cost): those who see cost, the accounting roles (they
- * prepare, check and approve the entries) and the viewer, whose role is to read them. Not a cashier.
+ * Who may read the company's books and the reports made from them (1.4: the journal, the trial balance, final
+ * accounts, profit in the reports and on the dashboard, what purchases cost): those who manage the company, buy or
+ * keep the stock, the accounting roles (they prepare, check and approve the entries) and the viewer, whose role is to
+ * read them. Not a cashier (the sales role alone), nor anyone else with none of these.
  */
 export const seesBooks = (actor: Pick<Actor, 'permissions' | 'roles'>): boolean =>
-  seesCost(actor) || actor.permissions.some((p) => p.startsWith('entries.')) || actor.roles.includes('viewer');
+  actor.permissions.some((p) => p === 'admin' || p === 'stock' || p === 'purchases' || p.startsWith('entries.')) || actor.roles.includes('viewer');
+
+/**
+ * Who may see what things cost (1.4): the purchase price and average cost of an item, the value of the stock, the cost
+ * and profit of a sale. One rule with the books: whoever keeps or reads the books also sees cost (the profit reports
+ * and the stock value they read are made of it), and whoever has neither sees no cost, profit, stock value or books.
+ */
+export const seesCost = (actor: Pick<Actor, 'permissions' | 'roles'>): boolean => seesBooks(actor);
 
 export interface Actor {
   /** null only for requests made before any user existed (never in practice) */

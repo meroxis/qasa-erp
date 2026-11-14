@@ -13,6 +13,8 @@ import { BatchInFields, BatchPick } from '../industry/BatchFields.tsx';
 import { reverseDefaultDate } from '../industry/ReverseModal.tsx';
 import { printDocument } from '../industry/printing.ts';
 
+import { transferOffer } from './transfer-offer.ts';
+
 const kindKey = (kind: StockDocKind) => (kind === 'opening' ? 'opening_stock' : 'transfer');
 
 /** حركات المخزن — opening stock and transfers between warehouses */
@@ -22,18 +24,27 @@ export function StockDocs() {
   const [kind, setKind] = useState<StockDocKind | ''>('');
   // 1.4: what the stock that moved is worth is not sent to someone who may not see cost: no such column
   const cost = useData().seesCost !== false;
-  const mayMake = useMay()('stockDoc');
+  const may = useMay();
+  const mayMake = may('stockDoc');
+  const { plan, permissions } = useData();
   const { data, error } = useLoad(() => api.stockDocs(kind ? { kind } : {}), [kind]);
   const warehouses = useLoad(() => api.warehouses(), []);
-  const canTransfer = (warehouses.data ?? []).filter((w) => w.active).length >= 2;
+  // a transfer needs two warehouses: what is missing is the plan (it allows one) or a second warehouse, and the
+  // button leads only where this person can go (transfer-offer.ts)
+  const offer = transferOffer({
+    warehouses: (warehouses.data ?? []).filter((w) => w.active).length, planWarehouses: plan?.limits.warehouses,
+    mayOpenPlans: !permissions || permissions.includes('admin'), mayAddWarehouse: may('warehouse')
+  });
 
   return (
     <div className="stack">
       <div className="row">
         {mayMake && <a className="btn primary" href={href('new-stock-doc/opening')}><Icon name="plus" size={16} />{t('newOpeningStock')}</a>}
-        {!mayMake ? null : canTransfer
-          ? <a className="btn" href={href('new-stock-doc/transfer')}><Icon name="swap" size={16} />{t('newTransfer')}</a>
-          : warehouses.data && <a className="btn" href={href('plans')} title={t('transferNeedsTwo')}><Icon name="swap" size={16} />{t('newTransfer')} <span className="chip plan-pro">Pro</span></a>}
+        {!mayMake || !warehouses.data ? null
+          : offer === 'form' ? <a className="btn" href={href('new-stock-doc/transfer')}><Icon name="swap" size={16} />{t('newTransfer')}</a>
+          : offer === 'plan-link' ? <a className="btn" href={href('plans')} title={t('transferNeedsTwo')}><Icon name="swap" size={16} />{t('newTransfer')} <span className="chip plan-pro">Pro</span></a>
+          : offer === 'add-link' ? <a className="btn" href={href('items/warehouses')} title={t('transferNeedsSecond')}><Icon name="swap" size={16} />{t('transferAddWarehouse')}</a>
+          : <span className="muted small">{offer === 'plan-note' ? t('transferNeedsTwo') : t('transferNeedsSecond')}</span>}
         <span className="spacer" />
         <div className="track">
           {(['', 'opening', 'transfer'] as const).map((k) => (

@@ -44,6 +44,15 @@ export function requestRefusal(
 }
 
 /**
+ * What a module may serve beside the app's own routes (the Pro module adds them to this server once it is built), by
+ * the address that answers when it is there. /api/auth/me names the ones this build has, so the app does not ask for
+ * the others: a build without the module has no backups card to load, no office network, phones or database server.
+ */
+export const MODULE_ROUTES: Readonly<Record<string, string>> = {
+  backup: '/api/backup', network: '/api/network', phones: '/api/phones', database: '/api/database'
+};
+
+/**
  * https: the office network serves the same app over TLS with its own certificate (the Pro module).
  * extensions: routes a module adds (the Pro module's), served with the app's own.
  * allowedHosts: more names a plain-http server answers to (a server run from the source code for the office network).
@@ -82,7 +91,9 @@ export function buildApp(db: Db, options: {
     return reply.status(response.status).send(response.body);
   });
 
-  for (const route of apiRoutes(db, { extensions: options.extensions ?? [] })) {
+  // asked at each request: a module adds its routes after the app is built
+  const modules = () => Object.entries(MODULE_ROUTES).filter(([, url]) => app.hasRoute({ method: 'GET', url })).map(([name]) => name);
+  for (const route of apiRoutes(db, { extensions: options.extensions ?? [], modules })) {
     app.route({
       method: route.method,
       url: route.path,

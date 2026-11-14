@@ -11,7 +11,7 @@ import { PeriodPicker } from './Reports.tsx';
  * the stock is worth in each warehouse. From posted invoices and approved entries only, in dinars.
  */
 
-import { REPORT_TABS, type ReportTab } from './tabs.ts';
+import { reportTabsFor, type ReportTab } from './tabs.ts';
 import { printDocument } from '../industry/printing.ts';
 export { isReportTab, REPORT_TABS, type ReportTab } from './tabs.ts';
 const TAB_LABEL: Record<ReportTab, Key> = {
@@ -28,9 +28,10 @@ export function MoreReports({ tab: asked = 'sales-items' }: { tab?: ReportTab })
   const { t } = i18n;
   usePageNav({ key: 'br_reports', group: 'gAccounting' });
   // 1.4: cost and profit are not sent to someone who may not read the books (a cashier): no profit report, no stock
-  // valuation, and the sales reports without their cost, profit and margin columns
+  // valuation, no ageing of what the company owes its suppliers (the server refuses it), and the sales reports
+  // without their cost, profit and margin columns
   const books = useData().seesBooks !== false;
-  const tabs = REPORT_TABS.filter((k) => books || (k !== 'profit' && k !== 'stock-value'));
+  const tabs = reportTabsFor(books);
   const tab: ReportTab = tabs.includes(asked) ? asked : 'sales-items';
   const [from, setFrom] = useState(monthStart());
   const [to, setTo] = useState(todayIso());

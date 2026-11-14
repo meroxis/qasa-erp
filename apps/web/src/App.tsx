@@ -1,9 +1,9 @@
 import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ComponentType, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from 'react';
 import { APP_VERSION, htmlLang, isLang, type DigitStyle, type Lang } from '@qasa/core';
 import { api, currentUser, SIGNED_OUT_EVENT, type AccountView, type Me, type PlanStatus, type Settings as SettingsData } from './api.ts';
-import { BusyBar, DataContext, DisplayContext, Icon, isDensity, isTheme, Logo, PageNavContext, ToastProvider, type Density, type PageNav, type Theme } from './components.tsx';
+import { buildHas, BusyBar, DataContext, DisplayContext, Icon, isDensity, isTheme, Logo, PageNavContext, ToastProvider, type Density, type PageNav, type Theme } from './components.tsx';
 import { I18nContext, isKey, makeI18n, useI18n, type Key } from './i18n.ts';
-import { href, useRoute } from './router.ts';
+import { closedPageAddress, href, useRoute } from './router.ts';
 import { Home } from './pages/Home.tsx';
 import type { EntryStatus } from '@qasa/core';
 import { PasswordModal, SignIn, Users } from './pages/Users.tsx';
@@ -315,9 +315,11 @@ export function App() {
   // the app remembers per person on this PC
   const permissions = me?.user?.permissions;
   const userKey = me?.signInRequired && me.user?.id ? `user:${me.user.id}` : `name:${favUser}`;
+  // what the build serves beside the app's own routes: pages ask only for what is there
+  const modules = me?.modules;
   const data = useMemo(
-    () => ({ accounts, settings, plan, online, companyBooks, seesCost, seesBooks, permissions, userKey, reloadAccounts, reloadSettings, reloadPlan }),
-    [accounts, settings, plan, online, companyBooks, seesCost, seesBooks, permissions, userKey, reloadAccounts, reloadSettings, reloadPlan]
+    () => ({ accounts, settings, plan, online, companyBooks, seesCost, seesBooks, permissions, userKey, modules, reloadAccounts, reloadSettings, reloadPlan }),
+    [accounts, settings, plan, online, companyBooks, seesCost, seesBooks, permissions, userKey, modules, reloadAccounts, reloadSettings, reloadPlan]
   );
   const { t } = i18n;
   const [page, arg, arg2] = route;
@@ -653,7 +655,7 @@ export function App() {
       break;
     case 'items':
       title = t('items');
-      content = <Items key={arg ?? ''} {...(arg === 'reorder' ? { tab: 'reorder' as const } : {})} />;
+      content = <Items key={arg ?? ''} {...(arg === 'reorder' || arg === 'warehouses' ? { tab: arg } : {})} />;
       break;
     case 'item':
       title = t('items');
@@ -684,6 +686,10 @@ export function App() {
   const user = me?.signInRequired ? me.user?.name ?? '' : currentUser() || me?.user?.name || '';
   // the header shows where a page sits: "Sales › Sales invoices" (a page refused to a non-admin shows Home)
   const shown = adminPage ? '' : page ?? '';
+  // a page closed to this person shows Home: the address bar says Home too, not the address that was typed
+  // (replaced, not added: Back does not return to the closed address)
+  const closedAddress = closedPageAddress({ closed: adminPage, page, signedIn: !!me?.user });
+  useEffect(() => { if (closedAddress) window.location.replace(closedAddress); }, [closedAddress, routeKey]);
   const matches = (item: NavItem) => (pageNav ? item.key === pageNav.key : (item.match ?? []).some((m) => m === shown || m === `${shown}:${arg}`));
   const group = pageNav?.group ?? NAV.find((g) => g.items.some(matches))?.group;
   const crumb = group && group !== 'gOverview' ? group : null;
@@ -874,7 +880,7 @@ export function App() {
                   </div>
                 )}
                 {/* not on a PC connected to an office PC: the books and their backups are on that PC */}
-                {import.meta.env.MODE !== 'demo' && dataPlace?.kind === 'local' && inWindowsApp() && <BackupNoticeBar admin={isAdmin} page={page === 'settings' && arg !== 'backups' ? 'settings-section' : page} />}
+                {import.meta.env.MODE !== 'demo' && dataPlace?.kind === 'local' && inWindowsApp() && <BackupNoticeBar admin={isAdmin} served={buildHas(modules, 'backup')} page={page === 'settings' && arg !== 'backups' ? 'settings-section' : page} />}
                 {outboxOn && <OutboxBanner page={page ?? ''} />}
                 <div key={branchKey} style={{ display: 'contents' }}><Suspense fallback={<PageLoading />}>{content}</Suspense></div>
               </main>

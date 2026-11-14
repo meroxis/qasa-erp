@@ -19,7 +19,12 @@ export const SALES14_TEXT = {
     'سەرەتا دابینکەر هەڵبژێرە: کڕین بە قەرز وەک قەرز بۆ ئەو دەمێنێتەوە.'
   ],
   s14_safe: ['القاصة', 'Safe', 'قاسە'],
-  s14_salesSectionHelp: ['الصلاحية والوجبات', 'Expiry and batches', 'بەسەرچوون و وەجبەکان'],
+  // what the section holds now: the rule for selling stock past its date, the days of warning, dates on new items
+  s14_salesSectionHelp: [
+    'بيع المنتهي الصلاحية، وأيام التنبيه قبل الانتهاء، وتاريخ الانتهاء للمواد الجديدة',
+    'Selling expired stock, the days of warning before expiry, and expiry dates on new items',
+    'فرۆشتنی کاڵای بەسەرچوو، ڕۆژەکانی ئاگاداری پێش بەسەرچوون، و بەرواری بەسەرچوون بۆ کاڵا نوێیەکان'
+  ],
   err_pos_credit_not_mixed: [
     'البيع إما مدفوع الآن أو آجل كله، ولا يُقسم بينهما.',
     'A sale is either paid now or on credit as a whole, never part one and part the other.',
@@ -48,6 +53,22 @@ export const SALES14_TEXT = {
     'More than the balance: the extra stays in their favour.',
     'پارەکە لە ڕەسید زیاترە: زیادەکە بۆ ئەو دەمێنێتەوە.'
   ],
+  s14_balanceAlso: ['وبالعملة الأخرى', 'And in the other currency', 'و بە دراوەکەی تر'],
+  s14_invoiceSettled: [
+    'لم يبقَ شيء على هذه الفاتورة. إن استلمت مبلغاً مع ذلك فاكتبه، ويُقيَّد على الحساب.',
+    'Nothing is left on this invoice. If money is taken all the same, type the amount: it goes on the account.',
+    'هیچ شتێک لەسەر ئەم پسوولەیە نەماوە. ئەگەر لەگەڵ ئەوەشدا پارە وەردەگیرێت، بڕەکەی بنووسە: دەچێتە سەر هەژمارەکەی.'
+  ],
+  s14_invoiceWaits: [
+    'لم يبقَ ما يُطلب على هذه الفاتورة: {amount} بانتظار الموافقة.',
+    'Nothing is left to ask for on this invoice: {amount} waits for approval.',
+    'هیچ شتێک نەماوە داوا بکرێت لەسەر ئەم پسوولەیە: {amount} چاوەڕێی پەسەندکردنە.'
+  ],
+  s14_invReceived: ['المستلم عنها', 'Received for it', 'وەرگیراو بۆی'],
+  s14_invPaid: ['المدفوع عنها', 'Paid for it', 'دراو بۆی'],
+  s14_invWaiting: ['بانتظار الموافقة', 'Waiting for approval', 'چاوەڕێی پەسەندکردن'],
+  s14_invOpen: ['المتبقي عليها', 'Still open', 'ماوە لەسەری'],
+  s14_invNothingOpen: ['لم يبقَ عليها شيء', 'Nothing left on it', 'هیچی لەسەر نەماوە'],
   s14_forInvoice: ['عن الفاتورة {n}', 'For invoice {n}', 'بۆ پسوولەی {n}'],
   s14_posted: ['رُحّل السند {n}', 'Voucher {n} posted', 'سەنەدی {n} تەرحیل کرا'],
   s14_savedWaiting: ['حُفظ السند وهو بانتظار الموافقة.', 'Saved. It waits for approval.', 'پاشەکەوت کرا و چاوەڕێی پەسەندکردنە.'],

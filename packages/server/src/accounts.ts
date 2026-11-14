@@ -1,4 +1,4 @@
-import { buildAccounts, natureOf, rollupBalances, validateNewAccountCode, type Account, type Names, type Nature } from '@qasa/core';
+import { accountNames, buildAccounts, natureOf, rollupBalances, validateNewAccountCode, type Account, type Names, type Nature } from '@qasa/core';
 import type { Db } from './db.ts';
 import { transaction } from './db.ts';
 import { audit } from './audit.ts';
@@ -19,7 +19,8 @@ function rows(db: Db): AccountRow[] {
 }
 
 export function loadAccounts(db: Db): Account[] {
-  return buildAccounts(rows(db).map((r) => ({ code: r.code, name: { ar: r.name_ar, en: r.name_en, ku: r.name_ku }, system: r.system === 1 })));
+  // (a standard account the company did not rename, with no name in one language, reads the built-in name there)
+  return buildAccounts(rows(db).map((r) => ({ code: r.code, name: accountNames(r.code, { ar: r.name_ar, en: r.name_en, ku: r.name_ku }), system: r.system === 1 })));
 }
 
 export function accountsWithEntries(db: Db): Set<string> {

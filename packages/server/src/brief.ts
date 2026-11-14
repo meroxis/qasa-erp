@@ -7,6 +7,7 @@ import { invalid } from './errors.ts';
 import type { ApiExtension, ApiRequest } from './routes.ts';
 import { readSetting, writeSetting } from './settings.ts';
 import { AppError } from './errors.ts';
+import { seesBooks } from './auth.ts';
 import { entryInBranchSql, scopeLists, scopeOf } from './branches.ts';
 import { chequesAhead, type ChequeAlert } from './banking.ts';
 import { expiryAlert, type BatchReportRow } from './batches.ts';
@@ -640,7 +641,8 @@ function period(req: ApiRequest): { from: string; to: string } {
 /**
  * Reading is open to every signed-in user, as the app's other reports are; changing the brief's settings (the owner's
  * WhatsApp number, where each expense goes) needs an admin — they are not listed in rules. Someone who may not read the
- * books gets the sales without the company's money (cash, flow) and is refused the expenses (cost-view.ts).
+ * books gets the sales without the company's money (cash, flow) and is refused the expenses (cost-view.ts) and the
+ * ageing of what the company owes its suppliers (below).
  */
 export const briefApi: ApiExtension = {
   routes(db, { actorOf }) {
@@ -694,6 +696,8 @@ export const briefApi: ApiExtension = {
         method: 'GET', path: '/api/brief/reports/aging',
         handler: async (req) => {
           const q = parse(z.object({ type: z.enum(['customer', 'supplier']), date: date.optional() }), req.query ?? {});
+          // whom the company owes, by age, is a report of its books: customers' debts stay for the people who sell
+          if (q.type === 'supplier' && !seesBooks(actorOf(req))) throw new AppError(403, 'forbidden');
           const asOf = q.date ?? todayIso();
           return { date: asOf, type: q.type, rows: aging(db, q.type, asOf, branchOf(db, req, actorOf(req))) };
         }

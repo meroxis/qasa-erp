@@ -282,7 +282,7 @@ function SystemBuilder() {
           <label className="field"><span>{t('date')}</span><input className="input" type="date" value={head.date} onChange={(e) => setHead((h) => ({ ...h, date: e.target.value }))} /></label>
           <label className="field"><span>{t('currency')}</span>
             <select className="input" value={head.currency} onChange={(e) => setHead((h) => ({ ...h, currency: e.target.value as CurrencyCode }))}>
-              <option value="IQD">IQD</option><option value="USD">USD</option>
+              <option value="IQD">{t('iqdName')}</option><option value="USD">{t('usdName')}</option>
             </select>
           </label>
         </div>
@@ -472,7 +472,7 @@ function WiringQuote() {
         <label className="field"><span>{t('sl_jobTitle')}</span><input className="input" placeholder={t('sl_wiringTitle')} value={head.title} onChange={(e) => setHead((h) => ({ ...h, title: e.target.value }))} /></label>
         <label className="field"><span>{t('sl_site')}</span><input className="input" value={head.site} onChange={(e) => setHead((h) => ({ ...h, site: e.target.value }))} /></label>
         <label className="field"><span>{t('currency')}</span>
-          <select className="input" value={head.currency} onChange={(e) => setHead((h) => ({ ...h, currency: e.target.value as CurrencyCode }))}><option value="IQD">IQD</option><option value="USD">USD</option></select>
+          <select className="input" value={head.currency} onChange={(e) => setHead((h) => ({ ...h, currency: e.target.value as CurrencyCode }))}><option value="IQD">{t('iqdName')}</option><option value="USD">{t('usdName')}</option></select>
         </label>
       </div>
       <div className="card table-wrap">
@@ -872,7 +872,7 @@ function PlanModal({ onClose, onDone }: { onClose(): void; onDone(): void }) {
           <label className="field"><span>{t('sl_site')}</span><input className="input" value={form.site} onChange={(e) => set('site', e.target.value)} /></label>
           <label className="field"><span>{t('sl_everyMonths')}</span><input className="input num" type="number" min={1} max={24} value={form.everyMonths} onChange={(e) => set('everyMonths', Math.max(1, Number(e.target.value) || 1))} /></label>
           <label className="field"><span>{t('sl_nextVisit')}</span><input className="input" type="date" value={form.nextDate} onChange={(e) => set('nextDate', e.target.value)} /></label>
-          <label className="field"><span>{t('currency')}</span><select className="input" value={form.currency} onChange={(e) => set('currency', e.target.value as CurrencyCode)}><option value="IQD">IQD</option><option value="USD">USD</option></select></label>
+          <label className="field"><span>{t('currency')}</span><select className="input" value={form.currency} onChange={(e) => set('currency', e.target.value as CurrencyCode)}><option value="IQD">{t('iqdName')}</option><option value="USD">{t('usdName')}</option></select></label>
           <label className="field"><span>{t('sl_visitPrice')}</span><AmountInput value={form.price} currency={form.currency} onChange={(v) => set('price', v)} ariaLabel={t('sl_visitPrice')} /></label>
         </div>
         <ErrorBox error={error} />

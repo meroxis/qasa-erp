@@ -57,7 +57,7 @@ export function oweLines(party: Pick<PartyView, 'balance' | 'balances'>): OweLin
 }
 
 /**
- * The words for a line: who owes whom. For a customer, 'owes' is "Owes us" and 'advance' is "We owe him"; for a
+ * The words for a line: who owes whom. For a customer, 'owes' is "Owes us" and 'advance' is "We owe them"; for a
  * supplier it is the other way round.
  */
 export function oweWords(type: PartyType, side: OweLine['side']): 's14_owesUs' | 's14_weOwe' {

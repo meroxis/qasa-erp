@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import {
+  accountNames,
   allowedActions,
   DOCUMENT_ENTRY_TYPES,
   entryNumber,
@@ -562,7 +563,7 @@ function toView(db: Db, row: EntryRow, lines: LineRow[], invoiceId: string | nul
     total: lines.reduce((s, l) => s + l.debit, 0),
     baseTotal: lines.reduce((s, l) => s + l.base_debit, 0),
     lines: lines.map((l) => ({
-      lineNo: l.line_no, accountCode: l.account_code, accountName: { ar: l.name_ar, en: l.name_en, ku: l.name_ku },
+      lineNo: l.line_no, accountCode: l.account_code, accountName: accountNames(l.account_code, { ar: l.name_ar, en: l.name_en, ku: l.name_ku }),
       debit: l.debit, credit: l.credit, baseDebit: l.base_debit, baseCredit: l.base_credit, description: l.description ?? '',
       partyId: l.party_id, partyName: l.party_name
     })),

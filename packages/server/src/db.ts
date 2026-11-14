@@ -1747,6 +1747,16 @@ const V13 =
     reason TEXT
   );
   CREATE INDEX voucher_approvals_state ON voucher_approvals(state);
+  -- "Receive payment" and "Pay supplier" opened from an invoice: the voucher and the invoice it was made for, so the
+  -- invoice knows what was received for it and what is still open. Either one deleted takes the link with it
+  CREATE TABLE invoice_vouchers (
+    entry_id TEXT PRIMARY KEY REFERENCES entries(id) ON DELETE CASCADE,
+    invoice_id TEXT NOT NULL REFERENCES invoices(id) ON DELETE CASCADE
+  );
+  CREATE INDEX invoice_vouchers_invoice ON invoice_vouchers(invoice_id);
+  -- a till's cash sale: the cash the customer handed over, in the sale's currency (NULL: not typed, or not a cash
+  -- sale), so "Amount paid" and "Change" print again on a later copy of the receipt
+  ALTER TABLE pos_sales ADD COLUMN tendered INTEGER CHECK (tendered IS NULL OR tendered >= 0);
   `;
 
 const MIGRATIONS: Migration[] = [

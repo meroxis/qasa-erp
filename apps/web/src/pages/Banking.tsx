@@ -232,7 +232,7 @@ function AddAccount({ onClose, onDone }: { onClose(): void; onDone(): void }) {
         <label className="field"><span>{t('name')} · کوردی</span><input className="input" dir="rtl" value={name.ku} onChange={(e) => setName({ ...name, ku: e.target.value })} /></label>
         <label className="field"><span>{t('currency')}</span>
           <select className="input" value={currency} onChange={(e) => setCurrency(e.target.value as CurrencyCode | '')}>
-            <option value="IQD">IQD</option><option value="USD">USD</option><option value="">{t('bk_anyCurrency')}</option>
+            <option value="IQD">{t('iqdName')}</option><option value="USD">{t('usdName')}</option><option value="">{t('bk_anyCurrency')}</option>
           </select>
         </label>
         <ErrorBox error={error} />
@@ -261,7 +261,7 @@ function EditAccount({ account, onClose, onDone }: { account: MoneyAccountView; 
         </label>
         <label className="field"><span>{t('currency')}</span>
           <select className="input" value={currency} onChange={(e) => setCurrency(e.target.value as CurrencyCode | '')}>
-            <option value="IQD">IQD</option><option value="USD">USD</option><option value="">{t('bk_anyCurrency')}</option>
+            <option value="IQD">{t('iqdName')}</option><option value="USD">{t('usdName')}</option><option value="">{t('bk_anyCurrency')}</option>
           </select>
         </label>
         <ErrorBox error={error} />

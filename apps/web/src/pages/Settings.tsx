@@ -3,9 +3,10 @@ import { formatAmount, htmlLang, MONTHS, rateFromX100, todayIso, toWesternDigits
 import {
   api, ApiError, currentUser, request, setCurrentUser, type BackupStatus, type DatabaseCheck, type DatabaseInput, type DatabaseStatus, type NetworkStatus, type YearEndStatus
 } from '../api.ts';
-import { AccountCombo, ErrorBox, Icon, LANGUAGE_NAMES, Modal, downloadCsv, useData, useDisplay, useLoad, useToast, type Density, type Theme } from '../components.tsx';
+import { AccountCombo, ErrorBox, Icon, LANGUAGE_NAMES, Modal, downloadCsv, useBuildHas, useData, useDisplay, useLoad, useToast, type Density, type Theme } from '../components.tsx';
 import { ChoiceTiles, type Choice } from '../ChoiceTiles.tsx';
 import { isKey, useI18n, type Key } from '../i18n.ts';
+import { auditAction, auditEntity, auditRef } from '../industry/audit-words.ts';
 import { href } from '../router.ts';
 import { encodeQr, qrSvgPath } from '../industry/qr.ts';
 import { UsageCard } from '../industry/UsageCard.tsx';
@@ -393,8 +394,7 @@ function PeriodsSettings() {
   }
 
   const lockedSet = new Set((periods.data ?? []).map((p) => p.period));
-  const actionLabel = (a: string) => (isKey('a_' + a) ? t(('a_' + a) as 'a_create') : a);
-  const entityLabel = (e: string) => (isKey('e_' + e) ? t(('e_' + e) as 'e_entry') : e);
+
 
   return (
     <>
@@ -431,7 +431,11 @@ function PeriodsSettings() {
               <tr key={r.id}>
                 <td className="num small">{i18n.dateTime(r.at)}</td>
                 <td>{r.user}</td>
-                <td>{actionLabel(r.action)} · {entityLabel(r.entity)} {r.entityId && <span className="muted small ltr">{r.entityId.length > 12 ? r.entityId.slice(0, 8) : r.entityId}</span>}</td>
+                {/* in the reader's words: the server's own ("serials", "voucher") are never shown (audit-words.ts) */}
+                <td>{auditAction(i18n, r.action)} · {auditEntity(i18n, r.entity)} {(() => {
+                  const ref = auditRef(i18n, r.entity, r.entityId);
+                  return ref && <span className={ref.plain ? 'muted small' : 'muted small ltr'}>{ref.text}</span>;
+                })()}</td>
               </tr>
             ))}
           </tbody>
@@ -450,12 +454,15 @@ function OfficeNetworkCard() {
   const [error, setError] = useState<unknown>(null);
   const [busy, setBusy] = useState(false);
 
+  // a build without the module has no office network: not asked for, the card says so at once
+  const served = useBuildHas('network');
   useEffect(() => {
+    if (!served) { setAbsent(true); return; }
     api.network().then(setStatus, (e) => {
       if (e instanceof ApiError && e.status === 404) setAbsent(true);
       else setError(e);
     });
-  }, []);
+  }, [served]);
 
   async function toggle(on: boolean) {
     setBusy(true);
@@ -617,11 +624,13 @@ function DatabaseCard() {
   /** the self-signed certificate's fingerprint the admin confirmed; it goes with every later check and the move */
   const [confirmed, setConfirmed] = useState<string | null>(null);
 
+  const served = useBuildHas('database');
   useEffect(() => {
+    if (!served) return;
     api.database().then(setStatus, (e) => {
       if (!(e instanceof ApiError && e.status === 404)) setError(e);
     });
-  }, []);
+  }, [served]);
 
   // any change to the form means the server has to be checked again
   function change(patch: Partial<typeof form>) {
@@ -902,12 +911,15 @@ function ThisPcBackupCard() {
   const [busy, setBusy] = useState(false);
   const [restarting, setRestarting] = useState(false);
 
+  // a build without the module makes no daily copies: not asked for, the card says so at once
+  const served = useBuildHas('backup');
   useEffect(() => {
+    if (!served) { setAbsent(true); return; }
     api.backup().then(setStatus, (e) => {
       if (e instanceof ApiError && e.status === 404) setAbsent(true);
       else setError(e);
     });
-  }, []);
+  }, [served]);
 
   async function act(work: () => Promise<BackupStatus>, done?: string) {
     setBusy(true);
@@ -1410,7 +1422,8 @@ export function PhonesCard({ ready = PHONE_APP_READY }: { ready?: boolean }) {
     if (e instanceof ApiError && e.status === 404) setAbsent(true);
     else setError(e);
   });
-  useEffect(() => { void load(); }, []);
+  const served = useBuildHas('phones');
+  useEffect(() => { if (served) void load(); else setAbsent(true); }, [served]); // eslint-disable-line react-hooks/exhaustive-deps
   // while a QR code is shown, watch for the phone to arrive (and drop the code when it runs out)
   useEffect(() => {
     if (!pairing) return;

@@ -39,7 +39,7 @@ describe('1.4 texts', () => {
 });
 
 describe('Customers: who owes whom, in plain words', () => {
-  it('says "Owes us" for a customer who owes and "We owe him" for one who paid ahead, each currency on its own', () => {
+  it('says "Owes us" for a customer who owes and "We owe them" for one who paid ahead, each currency on its own', () => {
     const both = party({ balance: 310_000, balances: { IQD: 10_000, USD: 20_000 } });
     expect(oweLines(both)).toEqual([{ side: 'owes', amount: 10_000, currency: 'IQD' }, { side: 'owes', amount: 20_000, currency: 'USD' }]);
     const ahead = party({ balance: -85_000, balances: { IQD: -10_000, USD: -5_000 } });
@@ -69,7 +69,7 @@ describe('Customers: who owes whom, in plain words', () => {
     // paid all but 2,000 IQD of it: he owes 2,000 IQD, not $100.00
     const nearly = party({ balance: 2_000, balances: { IQD: -140_000, USD: 10_000 } });
     expect(oweLines(nearly)).toEqual([{ side: 'owes', amount: 2_000, currency: 'IQD' }]);
-    // paid 8,000 IQD too much: we owe him that
+    // paid 8,000 IQD too much: we owe them that
     const over = party({ balance: -8_000, balances: { IQD: -150_000, USD: 10_000 } });
     expect(oweLines(over)).toEqual([{ side: 'advance', amount: 8_000, currency: 'IQD' }]);
     for (const lang of LANGS) {
@@ -84,7 +84,7 @@ describe('Customers: who owes whom, in plain words', () => {
     expect(shownParties(list, true, 'debt').map((p) => p.id)).toEqual(['d', 'b']);
   });
 
-  it('turns the words round for a supplier: what we owe is "We owe him"', () => {
+  it('turns the words round for a supplier: what we owe is "We owe them"', () => {
     expect(oweWords('customer', 'owes')).toBe('s14_owesUs');
     expect(oweWords('customer', 'advance')).toBe('s14_weOwe');
     expect(oweWords('supplier', 'owes')).toBe('s14_weOwe');
@@ -92,7 +92,7 @@ describe('Customers: who owes whom, in plain words', () => {
     expect(oweTone('customer', 'owes')).toBe('warn');
     expect(oweTone('supplier', 'owes')).toBe('bad');
     const html = wrap(<OweAmount party={party({ type: 'supplier', balance: 70_000, balances: { IQD: 70_000, USD: 0 } })} />);
-    expect(html).toContain('We owe him');
+    expect(html).toContain('We owe them');
     expect(html).toContain('owe-line bad');
   });
 

@@ -48,7 +48,8 @@ export function Home({ viewer, user, favourites }: { viewer: NavViewer; user: st
     ...(d.cash ? [{ label: t('cashAndBanks'), value: moneyBoth(i18n, d.cash.total), icon: 'wallet', link: 'brief' }] : []),
     ...(d.profitMonth ? [{ label: t('br_profitMonth'), value: i18n.money(d.profitMonth.profit, 'IQD'), icon: 'chart', ...(books ? { link: 'final-accounts' } : {}), tone: d.profitMonth.profit < 0 ? 'bad' : 'ok' }] : []),
     { label: t('receivables'), value: i18n.money(d.receivables, 'IQD'), link: 'reports-more/aging', icon: 'contact' },
-    ...(suppliers ? [{ label: t('payables'), value: i18n.money(d.payables, 'IQD'), link: 'reports-more/supplier-aging', icon: 'truck' }] : [])
+    // (the ageing of what the company owes is a report of its books: without them the tile opens the suppliers list)
+    ...(suppliers ? [{ label: t('payables'), value: i18n.money(d.payables, 'IQD'), link: journal ? 'reports-more/supplier-aging' : 'suppliers', icon: 'truck' }] : [])
   ] : [
     ...(journal ? [{ label: t('cashAndBanks'), value: i18n.money(cash, 'IQD'), icon: 'wallet' }] : []),
     { label: t('salesThisMonth'), value: i18n.money(salesTotal, 'IQD'), link: 'sales', icon: 'trend' },
@@ -265,19 +266,23 @@ export interface FirstStep { key: Key; hint: Key; done: boolean; link: string; i
 /**
  * The first steps this person can take themselves: each one opens a page that is theirs and ends in an action the
  * server accepts from them (may.ts). The company's details, the import and the users are an admin's; someone who sells
- * adds customers and writes the first invoice; a stock keeper adds items. Nobody is sent to a page that lands back here.
+ * adds customers and writes the first invoice; a stock keeper adds items. Nobody is sent to a page that lands back here,
+ * and each step is worded for what that person does: "bring in your data, from Excel" is the admin's import; a sales
+ * person reads "add your customers", a stock keeper "add your items".
  */
 export function firstStepsFor(
   permissions: readonly string[],
-  facts: { named: boolean; parties: number; items: number; sales: number; users: number | null }
+  facts: { named: boolean; parties: number; items: number; sales: number; users: number | null; customers?: number }
 ): FirstStep[] {
   const can = (action: Parameters<typeof may>[1]) => may(permissions, action);
   const steps: FirstStep[] = [];
   if (can('companyDetails')) steps.push({ key: 'fsCompany', hint: 'fsCompanyHint', done: facts.named, link: 'settings/company', icon: 'building' });
   const started = facts.parties > 0 || facts.items > 0;
   if (can('importPage')) steps.push({ key: 'fsImport', hint: 'fsImportHint', done: started, link: 'import', icon: 'upload' });
-  else if (can('item')) steps.push({ key: 'fsImport', hint: 'fsImportHint', done: started, link: 'items', icon: 'upload' });
-  else if (can('customer')) steps.push({ key: 'fsImport', hint: 'fsImportHint', done: started, link: 'customers', icon: 'upload' });
+  else {
+    if (can('item')) steps.push({ key: 'fsItems', hint: 'fsItemsHint', done: facts.items > 0, link: 'items', icon: 'box' });
+    if (can('customer')) steps.push({ key: 'fsCustomers', hint: 'fsCustomersHint', done: (facts.customers ?? facts.parties) > 0, link: 'customers', icon: 'contact' });
+  }
   if (can('sale')) steps.push({ key: 'fsInvoice', hint: 'fsInvoiceHint', done: facts.sales > 0, link: 'new-invoice/sale', icon: 'invoice' });
   if (can('users') && facts.users !== null) steps.push({ key: 'fsUsers', hint: 'fsUsersHint', done: facts.users > 1, link: 'users', icon: 'users' });
   return steps;
@@ -296,7 +301,8 @@ function FirstSteps({ viewer }: { viewer: NavViewer }) {
   if (hidden || !settings || !parties.data || !items.data || !sales.data) return null;
   const named = !!(settings.companyName.ar || settings.companyName.en || settings.companyName.ku);
   const steps = firstStepsFor(viewer.admin ? ['admin'] : viewer.permissions, {
-    named, parties: parties.data.length, items: items.data.length, sales: sales.data.length, users: users.data ? users.data.length : null
+    named, parties: parties.data.length, items: items.data.length, sales: sales.data.length, users: users.data ? users.data.length : null,
+    customers: parties.data.filter((p) => p.type === 'customer').length
   });
   const done = steps.filter((s) => s.done).length;
   // nothing this person can do (a viewer, an accountant), or all of it done: no card

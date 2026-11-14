@@ -16,7 +16,7 @@ import { useItemPicture } from '../industry/ItemImage.tsx';
 import { PrintDocument } from '../industry/PrintDocument.tsx';
 import { invoiceModel } from '../industry/print-model.ts';
 import { usePrintSetup } from '../industry/print-api.ts';
-import { addRefusal, cashChange, cashTender, changeLineUnit, chosenMethod, creditNeedsCustomer, parseScan, pickAfterLink, posSaleLine, priceIn, priceRateFor, salePayments, tileOffer, tillMethods, type CashTender, type TillMethod } from './pos-logic.ts';
+import { addRefusal, cartShortNote, cashChange, cashTender, changeLineUnit, chosenMethod, creditNeedsCustomer, parseScan, pickAfterLink, posSaleLine, priceIn, priceRateFor, salePayments, tileOffer, tillMethods, type CashTender, type TillMethod } from './pos-logic.ts';
 import { inUnits, salePriceFor, unitChoices, unitLabel, type LineUnit } from '../industry/units.ts';
 import { BatchPick, useExpiredConfirm } from '../industry/BatchFields.tsx';
 import { pharmacyApi, type MedicineView } from '../industry/pharmacy-api.ts';
@@ -390,6 +390,8 @@ function Register({ initial, onClosed }: { initial: ShiftView; onClosed(): void 
   }, [kept, picked]);
   const onCredit = method === 'account';
   const payments = salePayments(method, due);
+  // the items of this cart beyond the stock last known, with what is left of each
+  const shortNow = cartShortNote(shortStock(cart), (code, have) => `${code} (${i18n.qty(Math.max(0, have))})`, i18n.lang === 'en' ? ', ' : '، ');
   // change is for cash handed over: none on credit
   const change = cashChange(paid, due, payments ?? []);
   const handed = cashTender(paid, change);
@@ -452,7 +454,9 @@ function Register({ initial, onClosed }: { initial: ShiftView; onClosed(): void 
         currency, ...(currency === 'USD' ? { rateX100 } : {}), ...(partyId ? { partyId } : {}), discount: discount ?? 0,
         lines: cart.map(posSaleLine),
         ...(payments ? { payments } : {}),
-        ...(points.points ? { loyaltyPoints: points.points } : {})
+        ...(points.points ? { loyaltyPoints: points.points } : {}),
+        // the cash handed over, kept with the sale: a later copy of the receipt prints it and the change again
+        ...(handed ? { tendered: handed.paid } : {})
       };
       // on a PC with an outbox the sale keeps its key over every Pay until it is booked or kept: a try whose answer
       // was lost is answered from the first, never booked twice (industry/offline-till.ts)
@@ -598,7 +602,7 @@ function Register({ initial, onClosed }: { initial: ShiftView; onClosed(): void 
             {cart.map((l) => (
               <div key={lineKey(l)} className="pos-line">
                 <div className="pos-line-name">
-                  <span title={i18n.name(l.item.name)}>{i18n.name(l.item.name)}</span>
+                  <CartName name={i18n.name(l.item.name)} />
                   <span className="muted small num">{i18n.money(l.unitPrice, currency)}</span>
                   {l.item.units.length > 0 && (
                     <button type="button" className="chip" title={t('unit')} aria-label={`${t('unit')}: ${unitLabel(i18n, l.unit ?? l.item.unit)}`} onClick={() => nextUnit(lineKey(l))}>
@@ -664,6 +668,9 @@ function Register({ initial, onClosed }: { initial: ShiftView; onClosed(): void 
             )}
             <ErrorBox error={error} />
             {shortNote && <div className="alert info small" role="status">{t('pos_offlineShort', { i: shortNote })}</div>}
+            {/* more in the cart than the stock last known (an item with none left was added): said as it is added, not
+                only when Pay is refused. The server decides at Pay, as before */}
+            {shortNow && <div className="alert warn small" role="status">{t('pos_cartShort', { i: shortNow })}</div>}
             <div className="pos-actions">
               <button type="button" className="btn pos-touch" onClick={clear} disabled={busy}><Icon name="x" size={18} />{t('pos_clear')} <span className="kbd">F4</span></button>
               <button type="button" className="btn primary pos-touch pos-pay-btn" onClick={() => void pay()} disabled={!canPay}>
@@ -685,6 +692,19 @@ function Register({ initial, onClosed }: { initial: ShiftView; onClosed(): void 
       {receipt && <Receipt invoice={receipt} shift={shift} tender={tender} />}
       {closing && <CloseShift shift={shift} keptHere={keptHere.length} onCancel={() => { setClosing(false); focusSearch(); }} onClosed={onClosed} />}
     </div>
+  );
+}
+
+/**
+ * A cart line's name. It is held to two lines; a long one is read in full by a tap (or Enter on it), which opens it,
+ * and another tap closes it. On a touch screen there is no pointer to rest on it for the title.
+ */
+export function CartName({ name }: { name: string }) {
+  const [open, setOpen] = useState(false);
+  const toggle = () => setOpen((o) => !o);
+  return (
+    <span role="button" tabIndex={0} title={name} aria-expanded={open} className={open ? 'pos-name-open' : undefined}
+      onClick={toggle} onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggle(); } }}>{name}</span>
   );
 }
 
@@ -711,11 +731,13 @@ function Receipt({ invoice, shift, tender }: { invoice: InvoiceView; shift: Shif
   const company = settings ? i18n.name(settings.companyName) : '';
   // 1.2 (Pro): the points the sale used and earned, and the customer's balance
   const points = loyaltyLines(i18n, invoice.loyalty);
-  // more cash handed over than the sale: what was paid and the change, under the total
-  const tenderRows = tender && (
+  // more cash handed over than the sale: what was paid and the change, under the total. The server keeps it with the
+  // sale; a sale kept on this PC while the server can't be reached has only what the till remembers
+  const handed = invoice.tender ?? tender;
+  const tenderRows = handed && (
     <>
-      <div className="pos-r-row small"><span>{t('pos_paid')}</span><span className="num">{i18n.money(tender.paid, invoice.currency)}</span></div>
-      <div className="pos-r-row small"><span>{t('pos_change')}</span><span className="num">{i18n.money(tender.change, invoice.currency)}</span></div>
+      <div className="pos-r-row small"><span>{t('pos_paid')}</span><span className="num">{i18n.money(handed.paid, invoice.currency)}</span></div>
+      <div className="pos-r-row small"><span>{t('pos_change')}</span><span className="num">{i18n.money(handed.change, invoice.currency)}</span></div>
     </>
   );
   // a receipt design of the company's own (Settings → Print design) replaces the standard receipt
@@ -723,11 +745,10 @@ function Receipt({ invoice, shift, tender }: { invoice: InvoiceView; shift: Shif
     return createPortal(
       <div className="pos-receipt-host" dir={i18n.dir} lang={i18n.lang === 'ku' ? 'ckb' : i18n.lang}>
         <PrintDocument
-          model={invoiceModel(invoice, { pos: true })} design={setup.designs.pos} profile={setup.profile}
+          model={{ ...invoiceModel(invoice, { pos: true }), tender: handed }} design={setup.designs.pos} profile={setup.profile}
           company={settings?.companyName ?? { ar: '', en: '', ku: '' }} branding={!plan?.features.includes('noBranding')}
           defaultRateX100={settings?.defaultRateX100}
         />
-        {tenderRows && <div className="pos-receipt pos-r-loyalty">{tenderRows}</div>}
         {points.length > 0 && <div className="pos-receipt pos-r-loyalty">{points.map(([label, value]) => <div key={label} className="pos-r-row small"><span>{label}</span><span className="num">{value}</span></div>)}</div>}
       </div>,
       document.body

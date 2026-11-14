@@ -78,13 +78,37 @@ export function cashChange(paid: number | null, total: number, parts: readonly {
 /**
  * The note under "Cash / Credit" on an invoice while credit has nobody to go on: worded for the customer on a sale and
  * for the supplier on a purchase. A new purchase opens on credit with no supplier yet, so the note waits until it was
- * asked for: the party box was left, credit was pressed, or a save was tried.
+ * asked for (partyAskedAfter): the party box was used and left empty, or a save was tried.
  */
 export function creditPartyNote(
   kind: 'sale' | 'purchase', payment: 'cash' | 'credit', partyId: string, asked: boolean
 ): 's14_creditNeedsCustomer' | 's14_creditNeedsSupplier' | null {
   if (payment !== 'credit' || partyId || !asked) return null;
   return kind === 'sale' ? 's14_creditNeedsCustomer' : 's14_creditNeedsSupplier';
+}
+
+/**
+ * Whether the note above has been asked for, after something happened on the invoice form:
+ * - 'credit': Credit was chosen, or pressed again. That asks nothing: the person has not been to the party box yet;
+ * - 'leave': the party box lost the focus. It asks only when the box was used (typed in or clicked into: `touched`),
+ *   not when the focus merely passed through it on the way to another field;
+ * - 'save': a save was tried. It asks: the invoice cannot be saved on credit without the party;
+ * - 'new': the form was emptied for the next invoice.
+ */
+export function partyAskedAfter(asked: boolean, event: 'credit' | 'leave' | 'save' | 'new', touched = false): boolean {
+  if (event === 'new') return false;
+  if (event === 'save') return true;
+  if (event === 'leave') return asked || touched;
+  return asked;
+}
+
+/**
+ * The till's note while the cart holds more of an item than the stock last known (an item with none left was added,
+ * or the quantity was raised past it): the items, each with what is left ("TEA (0)"), or '' when the cart is within
+ * the stock. A warning only: the cashier may know better (goods just arrived), and the server decides at Pay.
+ */
+export function cartShortNote(short: readonly { code: string; haveMilli: number }[], one: (code: string, haveMilli: number) => string, separator: string): string {
+  return short.map((s) => one(s.code, s.haveMilli)).join(separator);
 }
 
 /** The cash a customer handed over and the change given back, for the receipt. */

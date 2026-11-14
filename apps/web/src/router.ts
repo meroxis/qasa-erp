@@ -20,6 +20,15 @@ export function href(path: string): string {
 }
 
 /**
+ * The address to put in place of a page that is closed to the person signed in (an admin's page, the books, a page
+ * whose action is not theirs): Home's, since Home is what shows. Null when nothing is to change: the page is open,
+ * the address is Home's already, or nobody is signed in yet (who they are, and so what is closed, is not known).
+ */
+export function closedPageAddress(o: { closed: boolean; page: string | undefined; signedIn: boolean }): string | null {
+  return o.closed && o.signedIn && !!o.page && o.page !== 'home' ? '#/' : null;
+}
+
+/**
  * A page with work not saved yet (a stock count) may hold the address: before the app goes to another page, the hold
  * says whether it may (it asks the person). When it may not, the address is put back and the page stays.
  */

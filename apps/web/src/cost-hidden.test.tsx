@@ -97,15 +97,22 @@ describe('screens without the fields the server left out', () => {
     expect(priced).toContain('5,000');
   });
 
-  it('offers no profit report and no stock valuation, and falls back to sales by item when one is asked for', () => {
-    const cashier = render(<MoreReports tab="profit" />, { seesBooks: false });
-    expect(cashier).not.toContain(i18n.t('br_rProfit'));
-    expect(cashier).not.toContain(i18n.t('br_rStockValue'));
-    expect(cashier).toContain(i18n.t('br_rSalesItems'));
-    expect(cashier).toContain(`aria-pressed="true">${i18n.t('br_rSalesItems')}<`);
-    const owner = render(<MoreReports tab="profit" />);
+  it('offers no profit report, no stock valuation and no ageing of what suppliers are owed, and falls back to sales by item when one is asked for', () => {
+    for (const tab of ['profit', 'supplier-aging', 'stock-value'] as const) {
+      const cashier = render(<MoreReports tab={tab} />, { seesBooks: false });
+      expect(cashier).not.toContain(i18n.t('br_rProfit'));
+      expect(cashier).not.toContain(i18n.t('br_rStockValue'));
+      expect(cashier).not.toContain(i18n.t('br_rSupplierAging'));
+      expect(cashier).toContain(i18n.t('br_rSalesItems'));
+      expect(cashier).toContain(`aria-pressed="true">${i18n.t('br_rSalesItems')}<`);
+      // what customers owe, by age, stays for the people who sell
+      expect(cashier).toContain(`>${i18n.t('br_rAging')}<`);
+    }
+    expect(render(<MoreReports tab="aging" />, { seesBooks: false })).toContain(`aria-pressed="true">${i18n.t('br_rAging')}<`);
+    const owner = render(<MoreReports tab="supplier-aging" />);
     expect(owner).toContain(i18n.t('br_rProfit'));
     expect(owner).toContain(i18n.t('br_rStockValue'));
+    expect(owner).toContain(`aria-pressed="true">${i18n.t('br_rSupplierAging')}<`);
   });
 
   it('shows the chart of accounts without a balance column', () => {

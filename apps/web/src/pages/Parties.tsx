@@ -14,8 +14,9 @@ import { oweLines, oweTone, oweWords, partiesApi, partyOwes, type PartySort, typ
 
 /**
  * 1.4: what one customer or supplier owes, in words and colour instead of debit and credit: "Owes us 250,000 IQD",
- * "We owe him $50.00". Each currency on its own line, as the app keeps them; one who paid dollars in dinars (or the
- * other way) shows the one position in IQD at the book rates, and nothing when that is zero (oweLines).
+ * "We owe them $50.00". Each currency on its own line, as the app keeps them; one who paid dollars in dinars (or the
+ * other way) shows the one position in IQD at the book rates, and `empty` when that is zero (oweLines): the lists and
+ * the statement pass "Nothing owed", shown muted.
  */
 export function OweAmount({ party, empty = '—' }: { party: Pick<PartyView, 'type' | 'balance' | 'balances'>; empty?: string }) {
   const i18n = useI18n();
@@ -129,7 +130,8 @@ export function Parties({ type }: { type: PartyType }) {
                     {p.address && <div className="muted small">{p.address}</div>}
                   </td>
                   <td className="num ltr">{i18n.digitsOf(p.phone)}</td>
-                  <td className="amount"><OweAmount party={p} /></td>
+                  {/* nothing owed is said in words (muted), as beside every other name */}
+                  <td className="amount"><OweAmount party={p} empty={t('s14_settled')} /></td>
                   <td style={{ whiteSpace: 'nowrap' }}>
                     {/* 1.4: receive a payment from the customer, or pay the supplier, from their row */}
                     {p.active && <QuickVoucherButton kind={type === 'customer' ? 'receipt' : 'payment'} preset={{ partyId: p.id }} className="btn small" onDone={reload} />}

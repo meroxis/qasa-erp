@@ -7,6 +7,12 @@ export const ENGINEERING_TEXT = {
     'Job orders for welding, steelwork, aluminium, MDF, doors and windows: a measured quote, then measuring, approval, the workshop and installing, deposits, what each job cost and earned, and an invoice on delivery.',
     'کار بۆ لەحیم، ئاسنگەری، ئەلەمنیۆم، MDF، دەرگا و پەنجەرە: عەرزی نرخ بە پێوانەکان، پاشان پێوانە، پەسەندکردن، دروستکردن و دانان، پێشەکی، تێچوو و قازانجی هەر کارێک، و پسوولە لە کاتی ڕادەستکردن.'
   ],
+  // the same for someone the server sends no cost or profit of a job to (who does not read the books): not promised
+  ew_helpNoCost: [
+    'أوامر عمل للحام والحدادة والألمنيوم والـMDF والأبواب والشبابيك: عرض السعر بالقياسات، ثم القياس والموافقة والتصنيع والتركيب، والعربون، وفاتورة عند التسليم.',
+    'Job orders for welding, steelwork, aluminium, MDF, doors and windows: a measured quote, then measuring, approval, the workshop and installing, deposits, and an invoice on delivery.',
+    'کار بۆ لەحیم، ئاسنگەری، ئەلەمنیۆم، MDF، دەرگا و پەنجەرە: عەرزی نرخ بە پێوانەکان، پاشان پێوانە، پەسەندکردن، دروستکردن و دانان، پێشەکی، و پسوولە لە کاتی ڕادەستکردن.'
+  ],
   ew_needsPro: ['أوامر العمل الجديدة تحتاج خطة Starter أو Pro أو Business. الأعمال الموجودة تبقى تعمل، واستلام دفعاتها متاح دائماً.', 'New job orders need the Starter, Pro or Business plan. Existing jobs keep working, and their payments can always be taken.', 'کاری نوێ پێویستی بە پلانی Starter، Pro یان Business هەیە. کارەکانی پێشوو وەک خۆیان بەردەوام دەبن، و وەرگرتنی پارەکانیان هەمیشە بەردەستە.'],
   ew_notAvailable: ['الأعمال الهندسية جزء من نسخة قاصة ERP الرسمية (Pro).', 'Engineering works come with the official Qasa ERP build (Pro).', 'کارە ئەندازیارییەکان لەگەڵ وەشانی فەرمیی قاسە ERP (Pro) دێن.'],
   ew_new: ['أمر عمل جديد', 'New job', 'کاری نوێ'],

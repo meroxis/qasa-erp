@@ -14,7 +14,7 @@ export const SHELL14_TEXT = {
   s14_nothingCustomer: ['لا ديون لنا على الزبائن.', 'No customer owes us anything.', 'هیچ کڕیارێک قەرزارمان نییە.'],
   s14_nothingSupplier: ['لا ديون علينا للمجهزين.', 'We owe no supplier anything.', 'قەرزاری هیچ دابینکەرێک نین.'],
   s14_owesUs: ['عليه لنا', 'Owes us', 'قەرزارمانە'],
-  s14_weOwe: ['له علينا', 'We owe him', 'قەرزاری ئەوین'],
+  s14_weOwe: ['له علينا', 'We owe them', 'قەرزاری ئەوین'],
   s14_settled: ['لا رصيد', 'Nothing owed', 'بێ قەرز'],
   s14_onlyOwingCustomers: ['المدينون فقط', 'Only those who owe', 'تەنها قەرزارەکان'],
   s14_onlyOwingSuppliers: ['من لهم علينا فقط', 'Only those we owe', 'تەنها ئەوانەی قەرزاریانین'],

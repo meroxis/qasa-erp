@@ -55,8 +55,22 @@ export function worksTiles(i18n: I18n, summary: WorksSummaryView): { label: stri
   ];
 }
 
+/** The line under the page's name, by what this person is shown: a job's cost and profit only for who reads the books. */
+export function worksHelpKey(seesBooks: boolean): 'ew_help' | 'ew_helpNoCost' {
+  return seesBooks ? 'ew_help' : 'ew_helpNoCost';
+}
+
+/**
+ * Whether the stage chip shows under a job's title. The paper is headed "Quotation", so at the quote stage the chip
+ * would say the same words again under it: it shows from the next stage on.
+ */
+export function jobStageShown(status: JobStatus): boolean {
+  return status !== 'quote';
+}
+
 export function EngineeringWorks() {
   const can = useMay();
+  const { seesBooks } = useData();
   const i18n = useI18n();
   const { t } = i18n;
   const toast = useToast();
@@ -81,7 +95,7 @@ export function EngineeringWorks() {
 
   return (
     <div className="stack">
-      <p className="muted" style={{ margin: 0 }}>{t('ew_help')}</p>
+      <p className="muted" style={{ margin: 0 }}>{t(worksHelpKey(seesBooks !== false))}</p>
       {summary && !summary.available && <div className="alert">{t('ew_needsPro')} <a href={href('plans')}>{t('planLicense')}</a></div>}
       {summary && (
         <div className="grid-4">
@@ -250,7 +264,7 @@ function JobModal({ job, onClose, onDone }: { job?: JobView; onClose(): void; on
           {quoteOpen && (
             <label className="field"><span>{t('currency')}</span>
               <select className="input" value={form.currency} onChange={(e) => set('currency', e.target.value as CurrencyCode)}>
-                <option value="IQD">IQD</option><option value="USD">USD</option>
+                <option value="IQD">{t('iqdName')}</option><option value="USD">{t('usdName')}</option>
               </select>
             </label>
           )}
@@ -504,7 +518,8 @@ function Quotation({ job: j, company, validDays, terms, onSaved }: { job: JobVie
         <div style={{ flex: 1 }}>
           <div className="company-line">{company}</div>
           <div className="paper-title">{t('ew_quotation')}</div>
-          <div className="no-print" style={{ marginTop: 4 }}><JobChip status={j.status} /></div>
+          {/* the stage, under the title; at the first stage the title says it already ("Quotation"): not twice in a row */}
+          {jobStageShown(j.status) && <div className="no-print" style={{ marginTop: 4 }}><JobChip status={j.status} /></div>}
         </div>
         <div className="paper-meta">
           <span className="muted">{t('number')}</span><strong className="ltr">{j.number}</strong>

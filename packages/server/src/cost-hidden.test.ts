@@ -6,9 +6,10 @@ import { openDatabase, type Db } from './db.ts';
 import { resetLoginThrottle } from './auth.ts';
 import { apiRoutes } from './routes.ts';
 
-// 1.4: what things cost, what the stock is worth and what a sale earns are for those who buy, keep the stock or keep
-// the books. A cashier (a user with the sales role only) gets none of it from any route they can read: this walks
-// every GET route of the API as each kind of user.
+// 1.4: what things cost, what the stock is worth and what a sale earns are for those who keep or read the books (who
+// manage the company, buy, keep the stock, prepare, check or approve the entries, or read them as a viewer): whoever
+// reads the books also sees cost. A cashier (a user with the sales role only) has neither, and gets none of it from
+// any route they can read: this walks every GET route of the API as each kind of user.
 
 let db: Db;
 let app: FastifyInstance;
@@ -324,8 +325,10 @@ describe('cost, stock value and profit, by who asks', () => {
     const answers = await walk(cashier);
     expect(failed(answers)).toEqual([]);
     // refused: the books and what only an admin reads; everything else answers
-    const expected = [...new Set(answers.map((a) => a.route).filter((r) => isOneOf(r, BOOKS_ROUTES) || ADMIN_ROUTES.includes(r)))].sort();
+    // (and of the ageing report the suppliers' side: whom the company owes; the customers' side answers)
+    const expected = [...new Set([...answers.map((a) => a.route).filter((r) => isOneOf(r, BOOKS_ROUTES) || ADMIN_ROUTES.includes(r)), '/api/brief/reports/aging'])].sort();
     expect(refused(answers)).toEqual(expected);
+    expect(answers.filter((a) => a.route === '/api/brief/reports/aging').map((a) => `${a.url.split('?')[1]} ${a.status}`).sort()).toEqual(['type=customer 200', 'type=supplier 403']);
     expect(answers.filter((a) => a.status === 200).length).toBeGreaterThan(70);
 
     const keys = answers.flatMap((a) => [...a.paths].filter((p) => COST_KEY.test(p.split('.').pop()!) && !NOT_COST.has(`${a.route} ${p}`)).map((p) => `${a.url} ${p}`));
@@ -382,13 +385,14 @@ describe('cost, stock value and profit, by who asks', () => {
     }
   });
 
-  it('an accountant and a viewer keep the books and the reports, without the cost fields of items and stock', async () => {
+  it('an accountant and a viewer read the books, so they see cost too: the same fields as the reports they read are made of', async () => {
     for (const who of [accountant, viewer]) {
       const answers = await walk(who);
       expect(failed(answers)).toEqual([]);
       expect(refused(answers)).toEqual(ADMIN_ROUTES);
-      expect(missing(answers, BOOKS_FIELDS())).toEqual([]);
-      expect(present(answers, COST_FIELDS())).toEqual([]);
+      expect(missing(answers, [...COST_FIELDS(), ...BOOKS_FIELDS()])).toEqual([]);
+      // the suppliers' ageing with the rest of the books
+      expect(find(answers, '/api/brief/reports/aging?type=supplier').status).toBe(200);
     }
   });
 
@@ -397,8 +401,9 @@ describe('cost, stock value and profit, by who asks', () => {
     expect(await flags(admin)).toEqual([true, true]);
     expect(await flags(keeper)).toEqual([true, true]);
     expect(await flags(buyer)).toEqual([true, true]);
-    expect(await flags(accountant)).toEqual([false, true]);
-    expect(await flags(viewer)).toEqual([false, true]);
+    // one rule: whoever keeps or reads the books also sees cost; whoever has neither sees none of it
+    expect(await flags(accountant)).toEqual([true, true]);
+    expect(await flags(viewer)).toEqual([true, true]);
     expect(await flags(cashier)).toEqual([false, false]);
   });
 });

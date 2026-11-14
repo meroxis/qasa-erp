@@ -20,6 +20,11 @@ export interface AppData {
    */
   seesCost?: boolean;
   seesBooks?: boolean;
+  /**
+   * 1.4: what the build serves beside the app's own routes (backups, the office network, phones, a database server),
+   * as the server says; left out by a server from before, and then everything is asked as it used to be
+   */
+  modules?: readonly string[];
   /** what the person signed in may change (the server refuses the rest anyway): buttons they can't use stay hidden */
   permissions?: readonly Permission[];
   /** who is signed in, for what the app remembers per person on this PC (their usual way of saving an invoice) */
@@ -59,6 +64,17 @@ export function useData(): AppData {
  * What the person signed in may do (may.ts): `can('item')` before a button is offered, so nobody fills in a form the
  * server then refuses. The server decides again on every request.
  */
+/**
+ * Whether the build serves a module's routes, so a page asks only for what is there (a request for the rest would only
+ * be answered "not found"). True when the server did not say (one from before 1.4): the page asks and reads the answer.
+ */
+export function buildHas(modules: readonly string[] | undefined, name: string): boolean {
+  return !modules || modules.includes(name);
+}
+export function useBuildHas(name: string): boolean {
+  return buildHas(useData().modules, name);
+}
+
 export function useMay(): (action: Action) => boolean {
   const { permissions } = useData();
   return (action) => may(permissions, action);

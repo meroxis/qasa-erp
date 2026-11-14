@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { costOut, isIsoDate, lineAmount, priceQty, todayIso, type EntryInput, type Names, type UnitCode } from '@qasa/core';
+import { accountNames, costOut, isIsoDate, lineAmount, priceQty, todayIso, type EntryInput, type Names, type UnitCode } from '@qasa/core';
 import type { Db } from './db.ts';
 import { transaction } from './db.ts';
 import { audit } from './audit.ts';
@@ -151,7 +151,7 @@ export function getStockDoc(db: Db, id: string): StockDocView {
   const numberOf = (entryId: string | null) => entryId ? (db.prepare('SELECT number FROM entries WHERE id = ?').get(entryId) as { number: string | null }).number : null;
   return {
     ...toSummary(r),
-    counterAccountCode: r.counter_account, counterAccountName: counter ? { ar: counter.name_ar, en: counter.name_en, ku: counter.name_ku } : null,
+    counterAccountCode: r.counter_account, counterAccountName: counter && r.counter_account ? accountNames(r.counter_account, { ar: counter.name_ar, en: counter.name_en, ku: counter.name_ku }) : null,
     entryId: r.entry_id, entryNumber: numberOf(r.entry_id), cancelEntryId: r.cancel_entry_id, cancelEntryNumber: numberOf(r.cancel_entry_id),
     postedBy: r.posted_by, postedAt: r.posted_at, cancelledBy: r.cancelled_by, cancelledAt: r.cancelled_at,
     lines, actions: actionsFor(r.status)

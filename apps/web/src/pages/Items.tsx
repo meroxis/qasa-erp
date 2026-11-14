@@ -39,7 +39,7 @@ export function averageCost(qtyMilli: number, value: number): number {
 }
 
 /** المواد والمخزون */
-export function Items({ tab: initialTab }: { tab?: 'reorder' } = {}) {
+export function Items({ tab: initialTab }: { tab?: 'reorder' | 'warehouses' } = {}) {
   const i18n = useI18n();
   const { t } = i18n;
   // the warehouse account's statement is the company's books: no link for someone limited to branches
@@ -286,16 +286,16 @@ export function ItemForm({ item, onClose, onSaved }: { item: ItemView | null; on
   const i18n = useI18n();
   const { t } = i18n;
   const toast = useToast();
-  const { settings, permissions } = useData();
+  const { settings, seesCost: costForUser } = useData();
   const [code, setCode] = useState(item?.code ?? '');
   const [barcode, setBarcode] = useState(item?.barcode ?? '');
   const [name, setName] = useState<Names>(item?.name ?? { ar: '', en: '', ku: '' });
   const [unit, setUnit] = useState<UnitCode>(item?.unit ?? 'piece');
   const [salePrice, setSalePrice] = useState<number | null>(item?.salePrice ?? null);
   const [saleCurrency, setSaleCurrency] = useState<CurrencyCode>(item?.saleCurrency ?? 'IQD');
-  // the purchase price is for those who buy or keep the stock: the server leaves it out for anyone else, and the form
-  // then neither shows nor sends it (what is written stays)
-  const seesCost = item ? item.purchasePrice !== undefined : !permissions || permissions.some((p) => p === 'admin' || p === 'stock' || p === 'purchases');
+  // the purchase price is for those who see cost (whoever keeps or reads the books: the server says who): it leaves
+  // it out for anyone else, and the form then neither shows nor sends it (what is written stays)
+  const seesCost = item ? item.purchasePrice !== undefined : costForUser !== false;
   const [purchasePrice, setPurchasePrice] = useState<number | null>(item?.purchasePrice ?? null);
   const [purchaseCurrency, setPurchaseCurrency] = useState<CurrencyCode>(item?.purchaseCurrency ?? item?.saleCurrency ?? 'IQD');
   const purchaseCurrencyTouched = useRef(item?.purchasePrice !== null && item?.purchasePrice !== undefined);

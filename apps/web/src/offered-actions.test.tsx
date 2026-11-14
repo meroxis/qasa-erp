@@ -236,6 +236,26 @@ describe('the first steps on the home page', () => {
     }
   });
 
+  it('words each step for what that person does: only an admin is told to bring data in from Excel', () => {
+    const keys = (role: Role) => firstStepsFor(of(role).viewer.permissions, fresh).map((s) => `${s.key} ${s.hint}`);
+    expect(keys('admin')).toContain('fsImport fsImportHint');
+    // a sales-only user adds customers (no items, no suppliers, no Excel), a stock keeper adds items
+    expect(keys('sales')).toEqual(['fsCustomers fsCustomersHint', 'fsInvoice fsInvoiceHint']);
+    expect(keys('storekeeper')).toEqual(['fsItems fsItemsHint']);
+    for (const lang of ['ar', 'en', 'ku'] as const) {
+      const m = makeI18n(lang, 'western', () => {}, () => {});
+      for (const word of ['Excel', 'المجهز', 'المورد', 'supplier', 'دابینکەر']) {
+        expect(`${m.t('fsCustomers')} ${m.t('fsCustomersHint')} ${m.t('fsItems')} ${m.t('fsItemsHint')}`).not.toContain(word);
+      }
+    }
+    // done from the books: a customer for the one, an item for the other (a supplier or an item is not a sales person's step done)
+    const facts = { named: false, parties: 1, items: 1, sales: 0, users: null, customers: 0 };
+    expect(firstStepsFor(['sales'], facts).map((s) => s.done)).toEqual([false, false]);
+    expect(firstStepsFor(['sales'], { ...facts, customers: 1 }).map((s) => s.done)).toEqual([true, false]);
+    expect(firstStepsFor(['stock'], { ...facts, items: 0 }).map((s) => s.done)).toEqual([false]);
+    expect(firstStepsFor(['stock'], facts).map((s) => s.done)).toEqual([true]);
+  });
+
   it('has no step, and so no card, for someone who can do none of them', () => {
     for (const role of ['viewer', 'preparer', 'checker', 'approver', 'purchasing'] as const) expect(links(role), role).toEqual([]);
   });

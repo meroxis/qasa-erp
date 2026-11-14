@@ -11,7 +11,7 @@ import { I18nContext, makeI18n } from '../i18n.ts';
 import { QuickVoucherForm } from './QuickVoucher.tsx';
 import { ApprovalNote, approvalStateOf, OwnVoucherButtons } from './VoucherApproval.tsx';
 import {
-  againPreset, amountAfterCurrency, amountInIqd, balanceAfter, boardRateFills, invoiceNote, invoiceOpen, invoicePrefill, mayQuickVoucher, mayWithdrawOwn, parseRateText,
+  againPreset, amountAfterCurrency, amountInIqd, balanceAfter, boardRateFills, formBalance, formBalanceAfter, invoiceNote, invoiceOpen, invoicePrefill, mayQuickVoucher, mayWithdrawOwn, parseRateText,
   quickNotice, quickOutcome, type QuickVoucherPreset
 } from './quick-voucher.ts';
 import { chosenMethod, creditNeedsCustomer, pickAfterLink, salePayments, tillMethods, type TillMethod } from '../pages/pos-logic.ts';
@@ -151,11 +151,11 @@ describe('receive payment: the dollar rate, the currency buttons, the note and t
     form({ partyId: 'p-raz' });
     expect(board.asked).toEqual([{ active: true, currency: 'IQD', date: todayIso() }]);
     expect(boardRateFills({})).toBe(true);
-    expect(boardRateFills({ invoice: { number: 'INV-2026-0128', total: 100_000, currency: 'IQD', rateX100: 100 } })).toBe(true);
+    expect(boardRateFills({ invoice: { number: 'INV-2026-0128', open: 100_000, currency: 'IQD', rateX100: 100 } })).toBe(true);
   });
 
   it('keeps a dollar invoice\'s own rate, and the rate of a voucher that is sent again', () => {
-    const html = form({ partyId: 'p-raz', invoice: { number: 'INV-2026-0128', total: 10_000, currency: 'USD', rateX100: 131_000 } });
+    const html = form({ partyId: 'p-raz', invoice: { number: 'INV-2026-0128', open: 10_000, currency: 'USD', rateX100: 131_000 } });
     expect(board.asked).toEqual([{ active: false, currency: 'USD', date: todayIso() }]);
     expect(html).toContain('value="1310"');
     expect(boardRateFills(againPreset(receiptOf({ currency: 'USD', rateX100: 131_000 }))!)).toBe(false);
@@ -181,33 +181,80 @@ describe('receive payment: the dollar rate, the currency buttons, the note and t
     expect(invoiceNote(makeI18n('en', 'western', () => {}, () => {}).t, 'INV-2026-0128')).toBe('For invoice INV-2026-0128');
   });
 
-  it('starts the amount from what is still open on the invoice, not from its whole total', () => {
+  it('starts the amount from what the server says is still to collect on the invoice, whatever else the customer owes', () => {
     const lines = [{ returnedAmount: 0 }, { returnedAmount: 0 }];
-    expect(invoiceOpen({ total: 100_000, lines })).toBe(100_000);
-    // 40,000 paid online
-    expect(invoiceOpen({ total: 100_000, paidOnline: 40_000, lines })).toBe(60_000);
-    // goods worth 25,000 came back as well
-    expect(invoiceOpen({ total: 100_000, paidOnline: 40_000, lines: [{ returnedAmount: 25_000 }, { returnedAmount: 0 }] })).toBe(35_000);
-    // nothing open (or figures this user is not sent): no amount, it is typed
-    expect(invoiceOpen({ total: 100_000, paidOnline: 100_000, lines })).toBe(0);
-    expect(invoiceOpen({ total: undefined as unknown as number, lines })).toBe(0);
-    expect(form({ partyId: 'p-raz', invoice: { number: 'INV-2026-0128', total: 60_000, currency: 'IQD', rateX100: 100 } })).toContain('value="60,000"');
-    expect(form({ partyId: 'p-raz', invoice: { number: 'INV-2026-0128', total: 0, currency: 'IQD', rateX100: 100 } })).not.toContain('value="0"');
+    // the invoice's own: 100,000, of which 40,000 was received for it and 25,000 waits for approval
+    const settlement = { currency: 'IQD' as const, total: 100_000, returned: 0, received: 40_000, waiting: 25_000, open: 60_000, toCollect: 35_000 };
+    expect(invoiceOpen({ total: 100_000, lines, settlement })).toEqual({ open: 35_000, waiting: 25_000 });
+    // all received, or all of the rest waiting: nothing to ask for
+    expect(invoiceOpen({ total: 100_000, lines, settlement: { ...settlement, received: 100_000, waiting: 0, open: 0, toCollect: 0 } })).toEqual({ open: 0, waiting: 0 });
+    expect(invoiceOpen({ total: 100_000, lines, settlement: { ...settlement, waiting: 60_000, toCollect: 0 } })).toEqual({ open: 0, waiting: 60_000 });
+    // a server from before: the total less what was paid online and the goods returned, as it was
+    expect(invoiceOpen({ total: 100_000, lines })).toEqual({ open: 100_000, waiting: 0 });
+    expect(invoiceOpen({ total: 100_000, paidOnline: 40_000, lines: [{ returnedAmount: 25_000 }, { returnedAmount: 0 }] })).toEqual({ open: 35_000, waiting: 0 });
+    expect(invoiceOpen({ total: 100_000, paidOnline: 100_000, lines })).toEqual({ open: 0, waiting: 0 });
+    expect(invoiceOpen({ total: undefined as unknown as number, lines })).toEqual({ open: 0, waiting: 0 });
+
+    expect(form({ partyId: 'p-raz', invoice: { id: 'inv-1', number: 'INV-2026-0128', open: 60_000, currency: 'IQD', rateX100: 100 } })).toContain('value="60,000"');
   });
 
-  it('never starts above what the customer still owes: money already received for the invoice is in the balance', () => {
-    // invoice 404,700; 100,000 was received with this form, so the customer owes 304,700
+  it('says so when nothing is left on the invoice, and why when a voucher for it waits; the amount is then typed', () => {
+    for (const lang of LANGS) {
+      const m = makeI18n(lang, 'western', () => {}, () => {});
+      const settled = form({ partyId: 'p-raz', invoice: { id: 'inv-1', number: 'INV-2026-0128', open: 0, waiting: 0, currency: 'IQD', rateX100: 100 } }, lang);
+      expect(settled).toContain(esc(m.t('s14_invoiceSettled')));
+      expect(settled).not.toContain('value="0"');
+      const waits = form({ partyId: 'p-raz', invoice: { id: 'inv-1', number: 'INV-2026-0128', open: 0, waiting: 60_000, currency: 'IQD', rateX100: 100 } }, lang);
+      expect(waits).toContain(esc(m.t('s14_invoiceWaits', { amount: m.money(60_000, 'IQD') })));
+      expect(waits).not.toContain(esc(m.t('s14_invoiceSettled')));
+      // something is open: neither note
+      const open = form({ partyId: 'p-raz', invoice: { id: 'inv-1', number: 'INV-2026-0128', open: 5_000, waiting: 60_000, currency: 'IQD', rateX100: 100 } }, lang);
+      expect(open).not.toContain(esc(m.t('s14_invoiceSettled')));
+      expect(open).not.toContain(esc(m.t('s14_invoiceWaits', { amount: m.money(60_000, 'IQD') })));
+    }
+  });
+
+  it('never starts above what the customer still owes in all, by the whole position the customers list uses', () => {
+    // 404,700 is open on the invoice; 100,000 was received without naming it, so the customer owes 304,700
     expect(invoicePrefill(404_700, 'IQD', 100, { balance: 304_700 })).toBe(304_700);
-    expect(invoicePrefill(404_700, 'IQD', 100, { balance: 304_700, balances: { IQD: 304_700, USD: 0 } })).toBe(304_700);
-    // the customer owes more than this invoice (other invoices): the invoice's own open amount
-    expect(invoicePrefill(404_700, 'IQD', 100, { balance: 900_000, balances: { IQD: 900_000, USD: 0 } })).toBe(404_700);
+    // the customer owes more than this invoice (other invoices): the invoice's own open amount, never more
+    expect(invoicePrefill(404_700, 'IQD', 100, { balance: 900_000 })).toBe(404_700);
     // all paid, or paid ahead: nothing is filled, the amount is typed
     expect(invoicePrefill(404_700, 'IQD', 100, { balance: 0 })).toBeNull();
     expect(invoicePrefill(404_700, 'IQD', 100, { balance: -50_000 })).toBeNull();
-    // a dollar invoice ($500.00 at 1,420): held to the dollar balance, and to the whole position read at the invoice's rate
-    expect(invoicePrefill(50_000, 'USD', 142_000, { balance: 710_000, balances: { IQD: 0, USD: 30_000 } })).toBe(30_000);
-    expect(invoicePrefill(50_000, 'USD', 142_000, { balance: 284_000, balances: { IQD: -426_000, USD: 50_000 } })).toBe(20_000);
+    expect(invoicePrefill(0, 'IQD', 100, { balance: 900_000 })).toBeNull();
+    // a dollar invoice ($500.00 at 1,420): the whole position read at the invoice's rate
+    expect(invoicePrefill(50_000, 'USD', 142_000, { balance: 710_000 })).toBe(50_000);
     expect(invoicePrefill(50_000, 'USD', 142_000, { balance: 284_000 })).toBe(20_000);
+    // a dollar debt ($500.00) of which 426,000 dinars were paid: the dinar balance alone is below zero and the dollar
+    // balance alone is the whole $500.00, and neither is what is owed. The position is 284,000 dinars: a dinar invoice
+    // opens with that (it used to open empty), a dollar invoice with $200.00
+    const paidInDinars = { balance: 284_000, balances: { IQD: -426_000, USD: 50_000 } };
+    expect(invoicePrefill(400_000, 'IQD', 100, paidInDinars)).toBe(284_000);
+    expect(invoicePrefill(50_000, 'USD', 142_000, paidInDinars)).toBe(20_000);
+  });
+
+  it('shows the balance in the currency chosen in the form when the customer\'s row shows dollars', () => {
+    // owes $300.00 and nothing in dinars: the row says $300.00
+    const dollars = { balance: 426_000, balances: { IQD: 0, USD: 30_000 } };
+    expect(formBalance(dollars, 'USD')).toEqual({ amount: 30_000, currency: 'USD', other: null });
+    expect(formBalanceAfter(formBalance(dollars, 'USD'), 10_000, 'USD', 142_000)).toBe(20_000);
+    // dinars chosen: the same debt in dinars at the book rates, less the dinars received
+    expect(formBalance(dollars, 'IQD')).toEqual({ amount: 426_000, currency: 'IQD', other: null });
+    expect(formBalanceAfter(formBalance(dollars, 'IQD'), 100_000, 'IQD', 100)).toBe(326_000);
+    // owes in both: the chosen currency's balance, with the other one beside it
+    const both = { balance: 926_000, balances: { IQD: 500_000, USD: 30_000 } };
+    expect(formBalance(both, 'IQD')).toEqual({ amount: 500_000, currency: 'IQD', other: { amount: 30_000, currency: 'USD' } });
+    expect(formBalance(both, 'USD')).toEqual({ amount: 30_000, currency: 'USD', other: { amount: 500_000, currency: 'IQD' } });
+    // dinars only, one currency paid in the other, or a server that sends only the total: the whole position in dinars
+    expect(formBalance({ balance: 250_000, balances: { IQD: 250_000, USD: 0 } }, 'USD')).toEqual({ amount: 250_000, currency: 'IQD', other: null });
+    expect(formBalanceAfter({ amount: 250_000, currency: 'IQD' }, 10_000, 'USD', 142_000)).toBe(108_000);
+    expect(formBalance({ balance: 284_000, balances: { IQD: -426_000, USD: 50_000 } }, 'USD')).toEqual({ amount: 284_000, currency: 'IQD', other: null });
+    expect(formBalance({ balance: 250_000 }, 'IQD')).toEqual({ amount: 250_000, currency: 'IQD', other: null });
+    expect(formBalance({ balance: 0, balances: { IQD: 0, USD: 0 } }, 'USD')).toEqual({ amount: 0, currency: 'IQD', other: null });
+    // nothing typed yet, or dollars without a rate against a dinar balance: no figure
+    expect(formBalanceAfter({ amount: 30_000, currency: 'USD' }, null, 'USD', 142_000)).toBeNull();
+    expect(formBalanceAfter({ amount: 250_000, currency: 'IQD' }, 10_000, 'USD', null)).toBeNull();
   });
 
   it('says that the balance will not change yet whenever the voucher is not posted as it is saved', () => {

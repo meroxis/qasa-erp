@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import {
+  accountNames,
   allocateDiscount,
   costOut,
   invoiceTotals,
@@ -106,6 +107,26 @@ export interface InvoicePaymentView {
   reference: string | null; source: string | null; entryId: string | null; entryNumber: string | null; entryStatus: string | null; createdAt: string;
 }
 
+/**
+ * 1.4: where a posted credit invoice stands, in its own currency: what was received for it (or paid, on a purchase)
+ * and what is still open on it. Money counts for the invoice when it was taken with it (an online payment) or by a
+ * "Receive payment" / "Pay supplier" voucher made from it (invoice_vouchers).
+ */
+export interface InvoiceSettlement {
+  currency: CurrencyCode;
+  total: number;
+  /** goods given back on credit: they lowered what is owed for it */
+  returned: number;
+  /** received for it and in the books: payments taken with it, and its vouchers that are approved */
+  received: number;
+  /** its vouchers not in the books yet (waiting for approval, or a draft for the usual checking): not received yet */
+  waiting: number;
+  /** total − returned − received, never below zero and never more than its party owes in all: what is still open on it */
+  open: number;
+  /** open − waiting, never below zero: what is left to ask for, so money that waits is not collected twice */
+  toCollect: number;
+}
+
 export interface InvoiceView extends InvoiceSummary {
   partyPhone: string | null;
   partyAddress: string | null;
@@ -134,6 +155,10 @@ export interface InvoiceView extends InvoiceSummary {
   offlineRef?: string;
   /** 1.2 (Pro): the loyalty points it earned and used, and the customer's balance (null: none and points are off) */
   loyalty: InvoiceLoyaltyView | null;
+  /** 1.4: a posted credit sale or purchase: what was received for it and what is still open (null: any other invoice) */
+  settlement: InvoiceSettlement | null;
+  /** 1.4: a till's cash sale: the cash handed over and the change given back (only when it was typed at the till) */
+  tender?: { paid: number; change: number };
 }
 
 interface InvoiceRow {
@@ -243,7 +268,7 @@ export function getInvoice(db: Db, id: string): InvoiceView {
     ...toSummary(r),
     partyPhone: party?.phone ?? null, partyAddress: party?.address ?? null, partyLang: party?.lang ?? null,
     warehouseCode: w.code, warehouseName: { ar: w.name_ar, en: w.name_en, ku: w.name_ku },
-    cashAccountName: cash ? { ar: cash.name_ar, en: cash.name_en, ku: cash.name_ku } : null,
+    cashAccountName: cash && r.cash_account ? accountNames(r.cash_account, { ar: cash.name_ar, en: cash.name_en, ku: cash.name_ku }) : null,
     entryId: r.entry_id, entryNumber: numberOf(r.entry_id), cancelEntryId: r.cancel_entry_id, cancelEntryNumber: numberOf(r.cancel_entry_id),
     postedBy: r.posted_by, postedAt: r.posted_at, cancelledBy: r.cancelled_by, cancelledAt: r.cancelled_at,
     lines: lineViews, actions: actionsFor(db, r, lineViews.some((l) => l.returnedQtyMilli < l.qtyMilli)),
@@ -252,8 +277,75 @@ export function getInvoice(db: Db, id: string): InvoiceView {
     installmentContract: activeContractOf(db, id),
     payments: invoicePayments(db, id),
     loyalty: r.status === 'posted' && (r.kind === 'sale' || r.kind === 'sale_return') ? invoiceLoyalty(db, id, r.party_id) : null,
+    settlement: invoiceSettlement(db, r),
+    ...tenderOf(db, r),
     ...offlineRefOf(db, id)
   };
+}
+
+/** An amount of an entry (its own currency, and the same in IQD) read in an invoice's currency. */
+function inInvoiceCurrency(own: number, base: number, entryCurrency: CurrencyCode, currency: CurrencyCode, rateX100: number): number {
+  if (entryCurrency === currency) return own;
+  if (currency === 'IQD') return base;
+  return rateX100 > 0 ? roundHalfUp((base * 10000) / rateX100) : 0;
+}
+
+/**
+ * What was received for a posted credit invoice and what is still open on it (InvoiceSettlement); null for an invoice
+ * that is not one. Its vouchers are the quick vouchers made from it: an approved one (not reversed since) is received;
+ * one not approved yet waits, unless it was rejected; a deleted (taken back) one is gone with its link. A voucher
+ * counts by what it puts on this party's account, so one corrected on the vouchers screen follows.
+ *
+ * An invoice is never more open than its party owes in all: money received without naming the invoice (a receipt from
+ * the customers list, a deposit taken on a job, an instalment) is on the party's account only, so what is open is held
+ * to the party's whole position, the one the customers list shows (IQD at the book rates, read at the invoice's rate
+ * for a dollar invoice). A sale that an instalment contract schedules is followed on its contract, and has none.
+ */
+export function invoiceSettlement(
+  db: Db, r: Pick<InvoiceRow, 'id' | 'kind' | 'status' | 'payment' | 'party_id' | 'currency' | 'rate_x100' | 'total'> & { online_paid?: number | null }
+): InvoiceSettlement | null {
+  if (r.status !== 'posted' || r.payment !== 'credit' || !r.party_id || (r.kind !== 'sale' && r.kind !== 'purchase')) return null;
+  if (db.prepare("SELECT 1 FROM installment_contracts WHERE invoice_id = ? AND status = 'active'").get(r.id)) return null;
+  const sign = r.kind === 'sale' ? 1 : -1;
+  const returned = Number((db.prepare("SELECT COALESCE(SUM(total), 0) AS s FROM invoices WHERE return_of = ? AND status = 'posted' AND payment = 'credit'").get(r.id) as { s: number }).s);
+  const vouchers = db.prepare(`SELECT e.status, e.currency, e.reversed_by_id, va.state,
+                                 (SELECT COALESCE(SUM(l.credit - l.debit), 0) FROM entry_lines l WHERE l.entry_id = e.id AND l.party_id = ?) AS own,
+                                 (SELECT COALESCE(SUM(l.base_credit - l.base_debit), 0) FROM entry_lines l WHERE l.entry_id = e.id AND l.party_id = ?) AS base
+                               FROM invoice_vouchers iv JOIN entries e ON e.id = iv.entry_id LEFT JOIN voucher_approvals va ON va.entry_id = e.id
+                               WHERE iv.invoice_id = ?`).all(r.party_id, r.party_id, r.id) as
+    { status: string; currency: CurrencyCode; reversed_by_id: string | null; state: string | null; own: number; base: number }[];
+  let received = r.kind === 'sale' ? Number(r.online_paid ?? onlinePaidAmount(db, r.id)) : 0;
+  let waiting = 0;
+  for (const v of vouchers) {
+    const amount = inInvoiceCurrency(sign * Number(v.own), sign * Number(v.base), v.currency, r.currency, r.rate_x100);
+    if (amount <= 0) continue;
+    if (v.status === 'approved') { if (!v.reversed_by_id) received += amount; }
+    else if (v.state !== 'rejected') waiting += amount;
+  }
+  const total = Number(r.total);
+  // what the party owes in all (the company's whole books), in the invoice's currency, rounded down
+  const net = sign * Number((db.prepare(`SELECT COALESCE(SUM(l.base_debit - l.base_credit), 0) AS s FROM entry_lines l JOIN entries e ON e.id = l.entry_id
+                                         WHERE e.status = 'approved' AND l.party_id = ?`).get(r.party_id) as { s: number }).s);
+  const position = r.currency === 'IQD' ? net : r.rate_x100 > 0 ? Math.floor((net * 10000) / r.rate_x100) : 0;
+  const open = Math.max(0, Math.min(total - returned - received, position));
+  return { currency: r.currency, total, returned, received, waiting, open, toCollect: Math.max(0, open - waiting) };
+}
+
+/**
+ * A till's cash sale whose cash was typed: what the customer handed over and the change, as the receipt printed them
+ * (nothing when the exact money was given: the receipt printed neither). The cash due is the sale's cash part (a sale
+ * paid in parts), else its total less what loyalty points paid.
+ */
+function tenderOf(db: Db, r: Pick<InvoiceRow, 'id' | 'kind' | 'payment' | 'total'>): { tender?: { paid: number; change: number } } {
+  if (r.kind !== 'sale' || r.payment !== 'cash') return {};
+  const row = db.prepare('SELECT tendered FROM pos_sales WHERE invoice_id = ?').get(r.id) as { tendered: number | null } | undefined;
+  if (!row || row.tendered === null || row.tendered === undefined) return {};
+  const parts = db.prepare("SELECT method, amount FROM invoice_payments WHERE invoice_id = ? AND kind = 'pos'").all(r.id) as { method: string; amount: number }[];
+  // (points pay dinar sales only, and their value is in dinars)
+  const byPoints = Number((db.prepare("SELECT COALESCE(SUM(value), 0) AS s FROM loyalty_moves WHERE invoice_id = ? AND kind = 'redeem'").get(r.id) as { s: number }).s);
+  const due = parts.length ? parts.filter((p) => p.method === 'cash').reduce((s, p) => s + Number(p.amount), 0) : Number(r.total) - byPoints;
+  const paid = Number(row.tendered);
+  return due > 0 && paid > due ? { tender: { paid, change: paid - due } } : {};
 }
 
 /** A till's sale made offline keeps the reference on its receipt (pos.ts): { offlineRef }, or nothing. */

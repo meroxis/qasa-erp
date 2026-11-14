@@ -11,6 +11,7 @@ import {
 import { getParty } from './parties.ts';
 import { onceOnly } from './idempotency.ts';
 import { ownVouchersOnly } from './cost-view.ts';
+import { userBranchLists } from './branches.ts';
 import type { ApiExtension, ApiRequest } from './routes.ts';
 
 /**
@@ -43,6 +44,31 @@ export interface QuickVoucherInput {
   note?: string | undefined;
   /** this user's own voucher, not posted, that this one corrects: taken back as this one is made */
   replaces?: string | undefined;
+  /**
+   * the invoice the form was opened from: a posted credit invoice of this party and of the voucher's side (a sale for
+   * a receipt, a purchase for a payment). The link is kept (invoice_vouchers), so the invoice knows what was received
+   * for it. A corrected voucher keeps the invoice of the one it replaces.
+   */
+  invoiceId?: string | undefined;
+}
+
+/** What quickVoucher asks about the person beyond their permissions. */
+export interface QuickVoucherScope {
+  /** the warehouses of the branches the user is limited to (null or left out: the whole company) */
+  warehouses?: readonly string[] | null | undefined;
+}
+
+/**
+ * The invoice a quick voucher is made for, checked: it exists, is posted and on credit, is of the voucher's side and of
+ * its party, and the person may read it (a user limited to branches reads the invoices of their warehouses only).
+ */
+function assertInvoiceFor(db: Db, input: Pick<QuickVoucherInput, 'kind' | 'partyId'>, invoiceId: string, scope: QuickVoucherScope): void {
+  const row = db.prepare('SELECT kind, status, payment, party_id, warehouse_id FROM invoices WHERE id = ?').get(invoiceId) as
+    { kind: string; status: string; payment: string; party_id: string | null; warehouse_id: string } | undefined;
+  if (!row) throw invalid([{ code: 'invoice_invalid' }]);
+  if (scope.warehouses && !scope.warehouses.includes(row.warehouse_id)) throw new AppError(403, 'forbidden');
+  const kind = input.kind === 'receipt' ? 'sale' : 'purchase';
+  if (row.kind !== kind || row.status !== 'posted' || row.payment !== 'credit' || row.party_id !== input.partyId) throw invalid([{ code: 'invoice_invalid' }]);
 }
 
 export const preparerOf = (actor: Pick<Actor, 'id' | 'name' | 'permissions'>): Preparer =>
@@ -68,7 +94,7 @@ export function withdrawOwnVoucher(db: Db, id: string, actor: Pick<Actor, 'id' |
   deleteEntry(db, id, actor.name);
 }
 
-export function quickVoucher(db: Db, input: QuickVoucherInput, actor: Pick<Actor, 'id' | 'name' | 'permissions'>): EntryView {
+export function quickVoucher(db: Db, input: QuickVoucherInput, actor: Pick<Actor, 'id' | 'name' | 'permissions'>, scope: QuickVoucherScope = {}): EntryView {
   assertMayPrepare(input.kind, actor);
   const errors: { code: string }[] = [];
   const row = db.prepare('SELECT type, active FROM parties WHERE id = ?').get(input.partyId) as { type: string; active: number } | undefined;
@@ -76,6 +102,7 @@ export function quickVoucher(db: Db, input: QuickVoucherInput, actor: Pick<Actor
   if (!Number.isSafeInteger(input.amount) || input.amount <= 0) errors.push({ code: 'amount_invalid' });
   if (input.currency === 'USD' && !(Number.isSafeInteger(input.rateX100) && (input.rateX100 ?? 0) > 0)) errors.push({ code: 'rate_invalid' });
   if (errors.length) throw invalid(errors);
+  if (input.invoiceId) assertInvoiceFor(db, input, input.invoiceId, scope);
   const party = getParty(db, input.partyId);
   const note = input.note?.replace(/[\u0000-\u001f\u007f]/g, ' ').trim();
   const voucher: VoucherInput = {
@@ -87,12 +114,34 @@ export function quickVoucher(db: Db, input: QuickVoucherInput, actor: Pick<Actor
   // off: at once only for someone who may both check and approve; on: createVoucher decides (approved, or waiting)
   const now = !vouchersNeedApproval(db) && approvesOwn(db, who) && actor.permissions.includes('entries.check');
   const replaces = input.replaces;
-  if (!replaces) return createVoucher(db, voucher, actor.name, actor.id, who, now);
+  const link = (entryId: string, invoiceId: string | undefined) => {
+    if (invoiceId) db.prepare('INSERT INTO invoice_vouchers (entry_id, invoice_id) VALUES (?, ?)').run(entryId, invoiceId);
+  };
+  // the voucher and its link to the invoice are made together, or neither
+  if (!replaces) {
+    return transaction(db, () => {
+      const made = createVoucher(db, voucher, actor.name, actor.id, who, now);
+      link(made.id, input.invoiceId);
+      return made;
+    });
+  }
   // a corrected voucher: the one it replaces is taken back and this one made together, or neither
   return transaction(db, () => {
+    // it stays for the invoice the first one was for, while it is still the same party's and side's
+    const before = input.invoiceId ?? linkedInvoiceFor(db, replaces, input);
     withdrawOwnVoucher(db, replaces, actor);
-    return createVoucher(db, voucher, actor.name, actor.id, who, now);
+    const made = createVoucher(db, voucher, actor.name, actor.id, who, now);
+    link(made.id, before);
+    return made;
   });
+}
+
+/** The invoice a voucher was made for, when a voucher of this kind and party could be made for it now; else none. */
+function linkedInvoiceFor(db: Db, entryId: string, input: Pick<QuickVoucherInput, 'kind' | 'partyId'>): string | undefined {
+  const row = db.prepare(`SELECT v.id FROM invoice_vouchers iv JOIN invoices v ON v.id = iv.invoice_id
+                          WHERE iv.entry_id = ? AND v.kind = ? AND v.status = 'posted' AND v.payment = 'credit' AND v.party_id = ?`)
+    .get(entryId, input.kind === 'receipt' ? 'sale' : 'purchase', input.partyId) as { id: string } | undefined;
+  return row?.id;
 }
 
 /**
@@ -147,12 +196,13 @@ export const quickVouchersApi: ApiExtension = {
             kind: z.enum(['receipt', 'payment']), partyId: z.string().min(1).max(64),
             amount: z.number().int().positive().max(Number.MAX_SAFE_INTEGER), currency: z.enum(['IQD', 'USD']),
             rateX100: z.number().int().positive().max(100_000_000).optional(), cashAccountCode: z.string().min(1).max(12),
-            date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/), note: z.string().max(500).optional(), replaces: z.string().min(1).max(64).optional()
+            date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/), note: z.string().max(500).optional(), replaces: z.string().min(1).max(64).optional(),
+            invoiceId: z.string().min(1).max(64).optional()
           }), req.body);
           const who = actor(req);
           // a form sent twice (a lost answer, a second click) makes the voucher once
           const made = onceOnly(db, req, reply, who, 'POST /api/quick-vouchers', () => {
-            const result = quickVoucher(db, body, who);
+            const result = quickVoucher(db, body, who, { warehouses: userBranchLists(db, who)?.warehouses ?? null });
             return { id: result.id, result };
           }, (id) => {
             // sent again later: the voucher as it is now, by the rule of GET /api/entries/:id. Corrected since by

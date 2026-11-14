@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { expect, it } from 'vitest';
-import { addRefusal, canPrice, cashChange, cashTender, creditPartyNote, parseScan, priceIn, priceRateFor, salePayments, tilePrice } from './pos-logic.ts';
+import { addRefusal, canPrice, cashChange, cashTender, creditPartyNote, partyAskedAfter, parseScan, priceIn, priceRateFor, salePayments, tilePrice } from './pos-logic.ts';
 
 const dollarItem = { saleCurrency: 'USD' as const, salePrice: 50000 }; // $500.00
 const dinarItem = { saleCurrency: 'IQD' as const, salePrice: 710000 };
@@ -53,6 +53,26 @@ it('says credit needs a customer or a supplier only once it was asked for, each 
   expect(creditPartyNote('sale', 'credit', '', true)).toBe('s14_creditNeedsCustomer');
   expect(creditPartyNote('sale', 'credit', 'p-raz', true)).toBeNull();
   expect(creditPartyNote('sale', 'cash', '', true)).toBeNull();
+});
+
+it('does not ask for the party because Credit was chosen or pressed again, nor because the focus passed through the box', () => {
+  // choosing Credit, and pressing it again: nothing is asked yet
+  expect(partyAskedAfter(false, 'credit')).toBe(false);
+  expect(partyAskedAfter(partyAskedAfter(false, 'credit'), 'credit')).toBe(false);
+  // the focus leaves a box that was not used (a new invoice opens with the focus in it, and Credit is clicked)
+  expect(partyAskedAfter(false, 'leave', false)).toBe(false);
+  // the box was typed in or clicked into, and left: asked; and a save that was tried asks
+  expect(partyAskedAfter(false, 'leave', true)).toBe(true);
+  expect(partyAskedAfter(false, 'save')).toBe(true);
+  // once asked it stays, until the form is emptied for the next invoice
+  expect(partyAskedAfter(true, 'credit')).toBe(true);
+  expect(partyAskedAfter(true, 'leave', false)).toBe(true);
+  expect(partyAskedAfter(true, 'new')).toBe(false);
+  // the invoice form: a save on credit without the party shows the screen's own note and no second, general message
+  const form = readFileSync(new URL('./Invoices.tsx', import.meta.url), 'utf8');
+  expect(form).not.toContain("code: 'party_required'");
+  expect(form).toContain("partyAskedAfter(asked, 'save')");
+  expect(form).not.toMatch(/setPayment\('credit'\); setPartyAsked\(true\)/);
 });
 
 it('shows a tile\'s picture the way the Items screen does: no address that answers JSON, and nothing asked for an item without a picture', () => {

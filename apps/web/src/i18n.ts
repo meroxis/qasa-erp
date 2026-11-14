@@ -47,6 +47,7 @@ import { LOOK_TEXT } from './i18n/look.ts';
 import { INVOICE_SPEED_TEXT } from './i18n/invoice-speed.ts';
 import { ITEMS14_TEXT } from './i18n/items14.ts';
 import { SALES14_TEXT } from './i18n/sales14.ts';
+import { AUDIT_TEXT } from './i18n/audit.ts';
 import { SHELL14_TEXT } from './i18n/shell14.ts';
 import { PRINT14_TEXT } from './i18n/print14.ts';
 import { formatAmount, formatDate, formatDateTime, formatInteger, formatQty, formatTime, hasLeadingSign, LANGS, ltrIsolate, monthName, textDigits, toEasternDigits, type CurrencyCode, type DigitStyle, type Lang, type Names } from '@qasa/core';
@@ -271,7 +272,7 @@ const BASE = {
   locked: ['مقفل', 'Locked', 'داخراوە'],
   lock: ['إقفال', 'Lock', 'داخستن'],
   unlock: ['فتح', 'Unlock', 'کردنەوە'],
-  auditLog: ['سجل التدقيق', 'Audit log', 'تۆماری چالاکییەکان'],
+  auditLog: ['سجل التدقيق', 'Audit log', 'تۆماری وردبینی'],
   auditHelp: ['كل تغيير يُسجل: من، ماذا، ومتى. لا يمكن حذف السجل.', 'Every change is recorded: who, what and when. The log can’t be deleted.', 'هەموو گۆڕانکارییەک تۆمار دەکرێت: کێ، چی و کەی. تۆمارەکە ناسڕدرێتەوە.'],
   a_create: ['إنشاء', 'Created', 'دروست کرا'],
   a_update: ['تعديل', 'Updated', 'گۆڕدرا'],
@@ -495,6 +496,8 @@ const BASE = {
   openingHelp: ['أدخل البضاعة الموجودة عند بدء العمل بالبرنامج، بكلفتها. يُقيَّد مقابلها عادةً على رأس المال.', 'Enter the goods on hand when you start with Qasa ERP, at their cost. Their value usually goes to capital.', 'ئەو کاڵایانەی لە کاتی دەستپێکردن بە قاسە ERP هەتە، بە تێچووەکەیان بنووسە. بەهاکەیان بەزۆری دەچێتە سەر سەرمایە.'],
   transferHelp: ['تنتقل المواد بمتوسط كلفتها من مخزن إلى آخر، ويُقيَّد ذلك بين حسابي المخزنين.', 'Goods move at their average cost from one warehouse to another, with an entry between the two warehouse accounts.', 'کاڵاکان بە تێکڕای تێچووەکەیان لە کۆگایەکەوە بۆ کۆگایەکی تر دەگوازرێنەوە، لەگەڵ قەیدێک لە نێوان هەژماری هەردوو کۆگاکە.'],
   transferNeedsTwo: ['المناقلة تحتاج مخزنين، والخطة المجانية تشمل مخزناً واحداً.', 'A transfer needs two warehouses; the Free plan has one.', 'گواستنەوە پێویستی بە دوو کۆگایە؛ پلانی بەخۆڕایی یەک کۆگای هەیە.'],
+  transferNeedsSecond: ['المناقلة تحتاج مخزنين: أضف مخزناً ثانياً من المواد والمخزون ← المخازن.', 'A transfer needs two warehouses: add a second warehouse in Items & stock → Warehouses.', 'گواستنەوە پێویستی بە دوو کۆگایە: کۆگایەکی دووەم لە کاڵا و کۆگا ← کۆگاکان زیاد بکە.'],
+  transferAddWarehouse: ['أضف مخزناً ثانياً للمناقلة', 'Add a second warehouse to transfer', 'کۆگایەکی دووەم زیاد بکە بۆ گواستنەوە'],
   fromWarehouse: ['من المخزن', 'From warehouse', 'لە کۆگای'],
   toWarehouse: ['إلى المخزن', 'To warehouse', 'بۆ کۆگای'],
   counterAccount: ['الحساب المقابل', 'Credit account', 'هەژماری بەرامبەر'],
@@ -1029,7 +1032,7 @@ const BASE = {
 } as const satisfies Record<string, readonly [string, string, string]>;
 
 /** The industry features keep their texts in files of their own (i18n/), in the same three languages. */
-const D = { ...BASE, ...REAL_ESTATE_TEXT, ...MOBILE_TEXT, ...PARTS_TEXT, ...ENGINEERING_TEXT,
+const D = { ...BASE, ...AUDIT_TEXT, ...REAL_ESTATE_TEXT, ...MOBILE_TEXT, ...PARTS_TEXT, ...ENGINEERING_TEXT,
   ...PAYROLL_TEXT, ...POS_TEXT, ...QUOTES_TEXT, ...PIPELINE_TEXT, ...MEDIA_TEXT, ...BRIEF_TEXT, ...CLOUD_TEXT, ...RELAY_TEXT, ...ACTIVATION_TEXT, ...FX_TEXT, ...VERIFY_TEXT, ...GEN_TEXT, ...WEBAPI_TEXT, ...PHONE_TEXT, ...USAGE_TEXT, ...SOLAR_TEXT, ...LEGAL_TEXT, ...BRANCH_TEXT, ...BANK_TEXT, ...WAVE2_TEXT, ...ASSET_TEXT, ...ADJ_TEXT, ...PO_TEXT, ...COMPANY_TEXT, ...LABEL_TEXT, ...PRINTER_TEXT, ...SAFETY_TEXT, ...UI_TEXT, ...UNIT_TEXT, ...BATCH_TEXT, ...STORE_TEXT, ...CATALOG_TEXT, ...PHARMACY_TEXT, ...HARDENING_TEXT, ...OUTBOX_TEXT, ...DAY_CLOSE_TEXT, ...WHATSAPP_TEXT, ...LOYALTY_TEXT, ...SUPPORT_TEXT, ...SETTINGS_SECTION_TEXT, ...LOOK_TEXT, ...INVOICE_SPEED_TEXT, ...ITEMS14_TEXT, ...SALES14_TEXT, ...SHELL14_TEXT, ...PRINT14_TEXT };
 
 export type Key = keyof typeof D;

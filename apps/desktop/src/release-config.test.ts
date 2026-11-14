@@ -361,7 +361,7 @@ describe('the release notes and the Store "What\'s new" of this version', () => 
     expect(words).toContain("payCredit: ['آجل', 'On credit', 'قەرز']");
     expect(read('apps/web/src/i18n/sales14.ts')).toContain("'A sale is either paid now or on credit as a whole, never part one and part the other.'");
     expect(read('apps/web/src/pages/Pos.tsx')).toContain("t('s14_creditNeedsCustomer')");
-    expect(section('en')).toContain('a sales invoice and a sale at the till are paid one of two ways: **Cash** (paid now) or **On credit** (the whole sale goes on the customer\'s account as a debt). A credit sale needs a customer, and a sale is never part cash and part credit.');
+    expect(section('en')).toContain('a sales invoice and a sale at the till are paid one of two ways: **Cash** (paid now) or **On credit** (the whole sale goes on the customer’s account as a debt). A credit sale needs a customer, and a sale is never part cash and part credit.');
     expect(section('ar')).toContain('**نقداً** (يُدفع الآن) أو **آجل** (يُسجَّل البيع كله ديناً على حساب الزبون). البيع الآجل يحتاج زبوناً، ولا يُقسم البيع بين النقد والآجل.');
     expect(section('ku')).toContain('**نەقد** (ئێستا دەدرێت) یان **قەرز** (هەموو فرۆشتنەکە وەک قەرز لەسەر کڕیار تۆمار دەکرێت). فرۆشتن بە قەرز پێویستی بە کڕیار هەیە');
     // the card and wallet row is gone from the till: said as a change, and no longer offered in the Store listing
@@ -393,25 +393,25 @@ describe('the release notes and the Store "What\'s new" of this version', () => 
     expect(section('en')).toContain('**Receive payment and Pay supplier:** a short form takes money from a customer or pays a supplier, and shows the balance before and what remains after. Open it from the customer or supplier, from a credit invoice, or from the vouchers list.');
     expect(section('ar')).toContain('**قبض دفعة ودفع للمجهز:** نموذج قصير تقبض به من الزبون أو تدفع به للمجهز، ويعرض الرصيد قبل الدفعة والمتبقي بعدها.');
     expect(section('ku')).toContain('**وەرگرتنی پارە و پارەدان بە دابینکەر:** فۆرمێکی کورت کە پارە لە کڕیار وەردەگریت یان بە دابینکەر دەدەیت، و ڕەسیدی پێشوو و ڕەسیدی ماوە پیشان دەدات.');
-    expect(section('en')).toContain('it prints the customer\'s **Previous balance**, the amount received and the **Remaining balance**.');
+    expect(section('en')).toContain('it prints the customer’s **Previous balance**, the amount received and the **Remaining balance**.');
     expect(section('ar')).toContain('يُطبع عليه **الرصيد السابق** للزبون والمبلغ المقبوض و**الرصيد المتبقي**.');
     expect(section('ku')).toContain('**ڕەسیدی پێشوو**ی کڕیار، بڕی پارەی وەرگیراو و **ڕەسیدی ماوە**ی لەسەر چاپ دەکرێت.');
-    expect(store['en-us'].releaseNotes).toContain('Receive payment and Pay supplier: a short form from the customer or supplier, the invoice or the vouchers list, with the balance before and after. The receipt voucher prints the previous balance, amount received and remaining balance.');
-    expect(store.ar.releaseNotes).toContain('«قبض دفعة» و«دفع للمجهز»: نموذج قصير من الزبون أو المجهز أو الفاتورة الآجلة أو قائمة السندات، يعرض الرصيد قبل الدفعة وبعدها. سند القبض المطبوع يحمل الرصيد السابق والمبلغ المقبوض والرصيد المتبقي.');
-    expect(store['ku-arab'].releaseNotes).toContain('«وەرگرتنی پارە» و «پارەدان بە دابینکەر»: فۆرمێکی کورت لە کڕیار، دابینکەر، پسوولە یان لیستی سەنەدەکانەوە، بە ڕەسیدی پێشوو و ڕەسیدی ماوە. سەنەدی وەرگرتن ڕەسیدی پێشوو، بڕی پارەی وەرگیراو و ڕەسیدی ماوە چاپ دەکات.');
+    expect(store['en-us'].releaseNotes).toContain('Receive payment and Pay supplier: a short form from the customer or supplier, the invoice or the vouchers list, with the balance before and after. The receipt voucher prints the previous and the remaining balance.');
+    expect(store.ar.releaseNotes).toContain('«قبض دفعة» و«دفع للمجهز»: نموذج قصير من الزبون أو المجهز أو الفاتورة الآجلة أو قائمة السندات، يعرض الرصيد قبل الدفعة وبعدها. سند القبض المطبوع يحمل الرصيد السابق والرصيد المتبقي.');
+    expect(store['ku-arab'].releaseNotes).toContain('«وەرگرتنی پارە» و «پارەدان بە دابینکەر»: فۆرمێکی کورت لە کڕیار، دابینکەر، پسوولە یان لیستی سەنەدەکانەوە، بە ڕەسیدی پێشوو و ڕەسیدی ماوە، کە لەسەر سەنەدی وەرگرتنیش چاپ دەکرێن.');
   });
 
   it('tells of the customers and suppliers lists that say who owes what, in the words the lists carry', () => {
     const words = read('apps/web/src/i18n/shell14.ts');
     expect(words).toContain("s14_owesUs: ['عليه لنا', 'Owes us', 'قەرزارمانە']");
-    expect(words).toContain("s14_weOwe: ['له علينا', 'We owe him', 'قەرزاری ئەوین']");
+    expect(words).toContain("s14_weOwe: ['له علينا', 'We owe them', 'قەرزاری ئەوین']");
     expect(words).toContain("s14_settled: ['لا رصيد', 'Nothing owed', 'بێ قەرز']");
     expect(words).toContain("s14_oweCustomer: ['لنا على الزبائن', 'Customers owe us', 'کڕیاران قەرزارمانن']");
     expect(words).toContain("s14_oweSupplier: ['للمجهزين علينا', 'We owe suppliers', 'قەرزاری دابینکەرانین']");
     expect(words).toContain("s14_onlyOwingCustomers: ['المدينون فقط', 'Only those who owe', 'تەنها قەرزارەکان']");
     expect(words).toContain("s14_sortDebt: ['الأكبر ديناً أولاً', 'Biggest debt first', 'زۆرترین قەرز لە پێشەوە']");
-    expect(section('en')).toContain('the Customers and Suppliers lists say **Owes us**, **We owe him** or **Nothing owed** beside each name, with the totals above the list (**Customers owe us**, **We owe suppliers**). Show **Only those who owe**, and sort by **Biggest debt first**.');
-    expect(section('ar')).toContain('**عليه لنا** أو **له علينا** أو **لا رصيد**، والمجاميع أعلى القائمة (**لنا على الزبائن**، **للمجهزين علينا**). اعرض **المدينون فقط**، ورتّب **الأكبر ديناً أولاً**.');
+    expect(section('en')).toContain('the Customers and Suppliers lists say **Owes us**, **We owe them** or **Nothing owed** beside each name, with the totals above the list (**Customers owe us**, **We owe suppliers**). Show **Only those who owe**, and sort by **Biggest debt first**.');
+    expect(section('ar')).toContain('**عليه لنا** أو **له علينا** أو **لا رصيد**، والمجاميع أعلى القائمة (**لنا على الزبائن**، **للمجهزين علينا**). فعّل خيار **المدينون فقط**، ورتّب بحسب **الأكبر ديناً أولاً**.');
     expect(section('ku')).toContain('**قەرزارمانە**، **قەرزاری ئەوین** یان **بێ قەرز**، و کۆکان لە سەرەوەی لیستەکەن (**کڕیاران قەرزارمانن**، **قەرزاری دابینکەرانین**). **تەنها قەرزارەکان** پیشان بدە، و بە **زۆرترین قەرز لە پێشەوە** ڕیزیان بکە.');
     expect(store['en-us'].releaseNotes).toContain('Customers and Suppliers lists say who owes what in words, with totals and filters.');
     expect(store.ar.releaseNotes).toContain('قائمتا الزبائن والمجهزين تكتبان من عليه ومن له بالكلمات، مع المجاميع والتصفية.');
@@ -436,7 +436,7 @@ describe('the release notes and the Store "What\'s new" of this version', () => 
     expect(section('en')).toContain('**Company logo on printed papers (paid plans):** adding or changing the logo is part of Starter, Pro and Business. A logo saved before 1.4 keeps printing on every plan.');
     expect(section('ar')).toContain('**شعار الشركة على المطبوعات (الخطط المدفوعة):** إضافة الشعار أو تغييره من مزايا Starter وPro وBusiness. والشعار المحفوظ قبل 1.4 يبقى يُطبع في كل الخطط.');
     expect(section('ku')).toContain('**لۆگۆی کۆمپانیا لەسەر چاپکراوەکان (پلانەکانی بە پارە):** زیادکردن یان گۆڕینی لۆگۆ بەشێکە لە Starter، Pro و Business. ئەو لۆگۆیەی پێش 1.4 پاشەکەوت کراوە لە هەموو پلانەکاندا هەر چاپ دەکرێت.');
-    expect(store['en-us'].releaseNotes).toContain('New print designs (Modern with lines, Classic ledger, Half page A5, 80 mm) in a gallery with a live preview, and more switches. Company logo on printed papers (paid plans); a logo saved earlier keeps printing.');
+    expect(store['en-us'].releaseNotes).toContain('New print designs (Modern with lines, Classic ledger, Half page A5, 80 mm) in a gallery with a live preview. Company logo on printed papers (paid plans); a logo saved earlier keeps printing.');
     expect(store.ar.releaseNotes).toContain('شعار الشركة على المطبوعات (الخطط المدفوعة)؛ والشعار المحفوظ سابقاً يبقى يُطبع.');
     expect(store['ku-arab'].releaseNotes).toContain('لۆگۆی کۆمپانیا لەسەر چاپکراوەکان (پلانەکانی بە پارە)؛ لۆگۆی پێشوو هەر چاپ دەکرێت.');
     expect(store['en-us'].description).toContain('and your logo (paid plans). Choose a design for each document from a gallery with a live preview (standard, modern with lines, classic ledger, modern, half page A5 or an 80 mm thermal receipt)');
@@ -484,24 +484,38 @@ describe('the release notes and the Store "What\'s new" of this version', () => 
     expect(store['ku-arab'].releaseNotes).toContain('سەنەد دەتوانێت چاوەڕێی پەسەندکردنی «پەسەندکەر» بێت (بە بنەڕەت ناچالاکە).');
   });
 
-  it('says cashiers do not see cost or profit, each person sees only the buttons they may use, and the dollar rate is at the top', () => {
+  it('says who sees cost in one rule (whoever keeps or reads the books; a sales-only user none of it), that each person sees only the buttons they may use, and that the dollar rate is at the top', () => {
+    // the rule as the server has it: seesCost follows seesBooks (auth.ts), and the suppliers' ageing is refused without the books (brief.ts)
+    expect(read('packages/server/src/auth.ts')).toContain("export const seesCost = (actor: Pick<Actor, 'permissions' | 'roles'>): boolean => seesBooks(actor);");
+    expect(read('packages/server/src/brief.ts')).toContain("if (q.type === 'supplier' && !seesBooks(actorOf(req))) throw new AppError(403, 'forbidden');");
     expect(read('apps/web/src/nav.ts')).toContain("ownWith: 'sales', ownKey: 's14_myVouchers'");
     expect(read('apps/web/src/i18n/sales14.ts')).toContain("s14_myVouchers: ['سنداتي', 'My vouchers', 'سەنەدەکانم']");
     expect(read('apps/web/src/may.ts')).toContain('is offered only when its action is one the server would accept from this person');
     expect(read('apps/web/src/industry/HeaderRate.tsx')).toContain("today's dollar rate at the top of the window, beside the person's name");
-    expect(section('en')).toContain("**Cashiers don't see cost or profit:** a user without the stock, purchases or admin permission sees no purchase price, average cost, stock value or profit.");
+    expect(section('en')).toContain('**Who sees cost and the books, one rule:** whoever keeps or reads the books also sees cost. Admins, Purchasing, Storekeepers, the accounting roles (Preparer, Checker, Approver) and Viewers see purchase prices, average cost, stock value, profit and the books.');
+    expect(section('en')).toContain('A user with none of these roles (the Sales role alone, a cashier) sees no cost, profit, stock value or books: no journal, no company books, no expenses, nothing of what the safes and banks hold, and no ageing of what suppliers are owed;');
+    // the notes of 1.4.0 no longer say that an accountant or a viewer sees no cost
+    expect(notes).not.toMatch(/without the stock, purchases or admin permission|ليست له صلاحية المخزن أو المشتريات أو المدير|دەسەڵاتی کۆگا، کڕین یان بەڕێوەبەری نییە/);
     expect(section('en')).toContain('their vouchers page is **My vouchers**, with only the vouchers they prepared.');
-    expect(section('ar')).toContain('**الكاشير لا يرى الكلفة ولا الربح:** المستخدم الذي ليست له صلاحية المخزن أو المشتريات أو المدير لا يرى سعر الشراء ولا متوسط الكلفة ولا قيمة المخزون ولا الربح.');
+    expect(section('ar')).toContain('**من يرى الكلفة والدفاتر، قاعدة واحدة:** من يمسك الدفاتر أو يطّلع عليها يرى الكلفة أيضاً. مدير النظام والمشتريات وأمين المخزن والأدوار المحاسبية (المنظم والمدقق والمصادق) ودور «اطلاع فقط» يرون سعر الشراء ومتوسط الكلفة وقيمة المخزون والربح والدفاتر.');
+    expect(section('ar')).toContain('ومن ليس له أي من هذه الأدوار (دور المبيعات وحده، أي الكاشير) لا يرى الكلفة ولا الربح ولا قيمة المخزون ولا الدفاتر: لا القيود ولا دفاتر الشركة ولا المصاريف ولا ما في القاصات والمصارف ولا أعمار ديون المجهزين؛');
     expect(section('ar')).toContain('وصفحة السندات عنده **سنداتي**');
-    expect(section('ku')).toContain('**کاشێر تێچوو و قازانج نابینێت:** ئەو بەکارهێنەرەی دەسەڵاتی کۆگا، کڕین یان بەڕێوەبەری نییە نرخی کڕین، تێکڕای تێچوو، بەهای کۆگا و قازانج نابینێت.');
-    expect(section('ku')).toContain('پەڕەی سەنەدەکانی **سەنەدەکانم**ە');
+    expect(section('ku')).toContain('**کێ تێچوو و دەفتەرەکان دەبینێت، یەک ڕێسا:** ئەوەی دەفتەرەکان ڕادەگرێت یان دەیانخوێنێتەوە تێچوویش دەبینێت. بەڕێوەبەری سیستەم، کڕین، کۆگادار، ڕۆڵەکانی ژمێریاری (ئامادەکار، وردبین، پەسەندکەر) و «تەنها بینین» نرخی کڕین، تێکڕای تێچوو، بەهای کۆگا، قازانج و دەفتەرەکان دەبینن.');
+    expect(section('ku')).toContain('ئەوەی هیچ کام لەم ڕۆڵانەی نییە (تەنها ڕۆڵی فرۆشتن، واتە کاشێر) نە تێچوو دەبینێت، نە قازانج، نە بەهای کۆگا و نە دەفتەرەکان: نە قەیدەکان، نە دەفتەرەکانی کۆمپانیا، نە خەرجییەکان، نە ئەوەی لە قاسە و بانکەکاندایە و نە تەمەنی قەرزی دابینکەران؛');
+    expect(section('ku')).toContain('لای ئەو پەڕەی سەنەدەکان ناوی **سەنەدەکانم**ە، و تەنها ئەو سەنەدانەی تێدایە کە خۆی ئامادەی کردوون.');
+    // (the earlier wording stacked the same word twice)
+    expect(section('ku')).not.toContain('پەڕەی سەنەدەکانی **سەنەدەکانم**ە');
+    // the role names are the app's own, in the three languages
+    const roles = read('apps/web/src/i18n.ts');
+    for (const line of ["role_admin: ['مدير النظام', 'Admin', 'بەڕێوەبەری سیستەم']", "role_preparer: ['المنظم', 'Preparer', 'ئامادەکار']", "role_checker: ['المدقق', 'Checker', 'وردبین']",
+      "role_approver: ['المصادق', 'Approver', 'پەسەندکەر']", "role_storekeeper: ['أمين المخزن', 'Storekeeper', 'کۆگادار']", "role_viewer: ['اطلاع فقط', 'Viewer', 'تەنها بینین']"]) expect(roles).toContain(line);
     expect(section('en')).toContain('**Only the buttons you may use:** a menu row, tile or button shows only when the person signed in may do what it does.');
     expect(section('en')).toContain('**The dollar rate at the top of the window,** beside your name.');
     expect(section('ar')).toContain('**سعر الدولار أعلى النافذة،** بجانب اسمك.');
     expect(section('ku')).toContain('**نرخی دۆلار لە سەرەوەی پەنجەرەکە،** لە تەنیشت ناوەکەت.');
-    expect(store['en-us'].releaseNotes).toContain('Cashiers do not see cost or profit; users see only the buttons they may use. Dollar rate in the top bar; item pictures at the till.');
-    expect(store.ar.releaseNotes).toContain('الكاشير لا يرى الكلفة ولا الربح، وكل مستخدم يرى الأزرار التي يحق له استعمالها فقط. سعر الدولار في الشريط العلوي، ونقطة البيع تعرض صور المواد.');
-    expect(store['ku-arab'].releaseNotes).toContain('کاشێر تێچوو و قازانج نابینێت؛ هەر کەس تەنها ئەو دوگمانە دەبینێت کە مافی هەیە. نرخی دۆلار لە شریتی سەرەوە؛ وێنەی کاڵا لە خاڵی فرۆشتن.');
+    expect(store['en-us'].releaseNotes).toContain('Whoever keeps or reads the books also sees cost; a sales-only user sees no cost, profit, stock value or books. Users see only the buttons they may use. Dollar rate in the top bar; item pictures at the till.');
+    expect(store.ar.releaseNotes).toContain('من يمسك الدفاتر أو يطّلع عليها يرى الكلفة أيضاً؛ ومن له دور المبيعات وحده لا يرى الكلفة ولا الربح ولا قيمة المخزون ولا الدفاتر. وكل مستخدم يرى الأزرار التي يحق له استعمالها فقط. سعر الدولار في الشريط العلوي، ونقطة البيع تعرض صور المواد.');
+    expect(store['ku-arab'].releaseNotes).toContain('ئەوەی دەفتەرەکان ڕادەگرێت یان دەیانخوێنێتەوە تێچوویش دەبینێت؛ ئەوەی تەنها فرۆشتنی هەیە تێچوو، قازانج، بەهای کۆگا و دەفتەرەکان نابینێت. هەر کەس تەنها دوگمەکانی خۆی دەبینێت. نرخی دۆلار لە شریتی سەرەوە؛ وێنەی کاڵا لە خاڵی فرۆشتن.');
   });
 
   it('tells of the Windows app: the question at closing, the printers page and where the data is, in the words the app shows', () => {
@@ -522,9 +536,9 @@ describe('the release notes and the Store "What\'s new" of this version', () => 
     expect(section('en')).toContain('a PC connected to the office PC now says **Data is on the office PC** with its name');
     expect(section('ar')).toContain('الحاسوب المتصل بحاسوب المكتب يقول الآن **البيانات على حاسوب المكتب** مع اسمه');
     expect(section('ku')).toContain('ئێستا دەڵێت **داتا لەسەر کۆمپیوتەری نووسینگەیە** لەگەڵ ناوەکەی');
-    expect(store['en-us'].releaseNotes).toContain('On Windows: closing asks to back up, Printers finds the Windows default and suggests a printer per paper, and a PC connected to the office PC says where the data is.');
-    expect(store.ar.releaseNotes).toContain('في ويندوز: يسألك البرنامج عن نسخة احتياطية عند الإغلاق، والإعدادات ← الطابعات تعرف الطابعة الافتراضية في ويندوز وتقترح طابعة لكل نوع ورق، والحاسوب المتصل بحاسوب المكتب يقول أين البيانات.');
-    expect(store['ku-arab'].releaseNotes).toContain('لە ویندۆز: لە داخستندا دەربارەی باکئەپ دەپرسێت، «چاپکەرەکان» بنەڕەتیی ویندۆز دەدۆزێتەوە و بۆ هەر پەڕەیەک چاپکەرێک پێشنیار دەکات، و کۆمپیوتەری بەستراو بە کۆمپیوتەری نووسینگە دەڵێت داتا لە کوێیە.');
+    expect(store['en-us'].releaseNotes).toContain('On Windows: closing asks to back up, Printers suggests a printer per paper, and a PC connected to the office PC says where the data is.');
+    expect(store.ar.releaseNotes).toContain('في ويندوز: يسألك البرنامج عن نسخة احتياطية عند الإغلاق، والإعدادات ← الطابعات تقترح طابعة لكل نوع ورق، والحاسوب المتصل بحاسوب المكتب يقول أين البيانات.');
+    expect(store['ku-arab'].releaseNotes).toContain('لە ویندۆز: لە داخستندا دەربارەی باکئەپ دەپرسێت، «چاپکەرەکان» بۆ هەر پەڕەیەک چاپکەرێک پێشنیار دەکات، و کۆمپیوتەری بەستراو بە نووسینگە دەڵێت داتا لە کوێیە.');
   });
 
   it('writes the Kurdish texts with the app\'s accounting words, and says the wording was revised', () => {
@@ -626,6 +640,20 @@ describe('the release notes and the Store "What\'s new" of this version', () => 
     const all = [notes, ...Object.values(store).flatMap((l) => [l.releaseNotes, ...l.features])].join('\n');
     expect(all).not.toMatch(/automatic (daily )?backups? on every plan|daily backups? on (every plan|Free)/i);
     expect(all).not.toMatch(/النسخ (الاحتياطي )?(اليومي|التلقائي) في كل الخطط|باکئەپی (ڕۆژانە|خۆکار)[^.]*هەموو پلانەکان/);
+  });
+
+  it('writes the English notes with one apostrophe, names the Arabic filter as the button it is, and the lists say "Nothing owed" as the notes promise', () => {
+    // the typographic apostrophe of the app's own texts and buttons ("Don’t ask again"), never a straight one beside it
+    expect(section('en')).not.toMatch(/\w'[\w\s]/);
+    expect(section('en')).toContain('**Don’t ask again**');
+    // «اعرض المدينون فقط» read as a sentence is wrong grammar: the words are a label, and are named as one
+    expect(section('ar')).toContain('فعّل خيار **المدينون فقط**، ورتّب بحسب **الأكبر ديناً أولاً**.');
+    expect(section('ar')).not.toContain('اعرض **المدينون فقط**');
+    // "We owe them", not "him", in the notes and in the app
+    expect(notes).not.toMatch(/We owe him/);
+    expect(read('apps/web/src/i18n/shell14.ts')).not.toMatch(/\b(him|his)\b/);
+    // the lists write the words beside a name that owes nothing (a dash said nothing)
+    expect(read('apps/web/src/pages/Parties.tsx')).toContain("<OweAmount party={p} empty={t('s14_settled')} />");
   });
 
   it('writes Kurdish with no tatweel', () => {

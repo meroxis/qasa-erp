@@ -173,7 +173,7 @@ function ProjectModal({ project, onClose, onDone }: { project?: ReProjectDetail;
           <label className="field">
             <span>{t('currency')}</span>
             <select className="input" value={currency} disabled={!!project} onChange={(e) => setCurrency(e.target.value as CurrencyCode)}>
-              <option value="USD">USD</option><option value="IQD">IQD</option>
+              <option value="USD">{t('usdName')}</option><option value="IQD">{t('iqdName')}</option>
             </select>
           </label>
         </div>

@@ -28,8 +28,13 @@ export const UI_TEXT = {
   fsCompanyHint: ['الاسم والشعار والعنوان على الفواتير.', 'Name, logo and address on your invoices.', 'ناو، لۆگۆ و ناونیشان لەسەر پسوولەکان.'],
   fsImport: ['أدخل بياناتك', 'Bring in your data', 'زانیارییەکانت بهێنە'],
   fsImportHint: ['المواد والزبائن والموردون، من Excel أو يدوياً.', 'Items, customers and suppliers, from Excel or by hand.', 'کاڵا، کڕیار و دابینکەران، لە Excel یان بە دەست.'],
+  // the same step for someone who does not import: what they add themselves
+  fsCustomers: ['أضف زبائنك', 'Add your customers', 'کڕیارەکانت زیاد بکە'],
+  fsCustomersHint: ['من تبيع لهم، مع أرقام هواتفهم.', 'The people you sell to, with their phone numbers.', 'ئەوانەی پێیان دەفرۆشیت، لەگەڵ ژمارەی تەلەفۆنیان.'],
+  fsItems: ['أضف موادك', 'Add your items', 'کاڵاکانت زیاد بکە'],
+  fsItemsHint: ['ما تبيعه، مع الأسعار والوحدات.', 'What you sell, with prices and units.', 'ئەوەی دەیفرۆشیت، لەگەڵ نرخ و یەکەکان.'],
   fsInvoice: ['أول فاتورة بيع', 'Your first sale invoice', 'یەکەم پسوولەی فرۆشتن'],
-  fsInvoiceHint: ['اكتب فاتورة واعتمدها.', 'Write an invoice and post it.', 'پسوولەیەک بنووسە و تۆماری بکە.'],
+  fsInvoiceHint: ['اكتب فاتورة ورحّلها.', 'Write an invoice and post it.', 'پسوولەیەک بنووسە و تەرحیلی بکە.'],
   fsUsers: ['أضف فريقك', 'Add your team', 'تیمەکەت زیاد بکە'],
   fsUsersHint: ['مستخدمون بصلاحيات مناسبة لكل منهم.', 'Users, each with the right permissions.', 'بەکارهێنەران، هەریەکە بە دەسەڵاتی گونجاو.'],
 

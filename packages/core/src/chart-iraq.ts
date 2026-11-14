@@ -91,6 +91,25 @@ export const STARTER_SUB_ACCOUNTS: AccountSeed[] = [
   { code: '229', name: { ar: 'الفائض (العجز) المتراكم', en: 'Accumulated surplus (deficit)', ku: 'زیادە (کورتهێنان)ی کەڵەکەبوو' } }
 ];
 
+const BUILT_IN_NAMES: ReadonlyMap<string, Names> = new Map([...IRAQI_UNIFIED_CHART, ...STARTER_SUB_ACCOUNTS].map((a) => [a.code, a.name]));
+
+/**
+ * An account's names to show. A company's chart is its own data: its names are shown as they are kept. Only a
+ * language the company holds no name in (a company file whose Kurdish, English or Arabic column is empty) is filled
+ * from the built-in chart, and only for a standard code the company did not rename: every name it does hold is still
+ * the chart's own. An account the company named itself keeps the names it has, in the languages it has them (the
+ * screens then show another language's name). Nothing stored is changed: the name is filled as it is read.
+ */
+export function accountNames(code: string, stored: Names): Names {
+  const builtIn = BUILT_IN_NAMES.get(code);
+  if (!builtIn) return stored;
+  const langs = ['ar', 'en', 'ku'] as const;
+  const held = langs.filter((l) => (stored[l] ?? '').trim() !== '');
+  if (held.length === langs.length || held.length === 0) return stored;
+  if (held.some((l) => stored[l].trim() !== builtIn[l])) return stored;
+  return { ar: stored.ar || builtIn.ar, en: stored.en || builtIn.en, ku: stored.ku || builtIn.ku };
+}
+
 /**
  * Default posting accounts for invoices. Editable in settings; to be confirmed by the company's accountant.
  * sales → 42 إيراد النشاط التجاري · cost of goods sold → 35 مشتريات بضائع بغرض البيع

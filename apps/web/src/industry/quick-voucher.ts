@@ -1,5 +1,5 @@
 import { toBase, toWesternDigits, type CurrencyCode } from '@qasa/core';
-import type { EntryView, Permission, VoucherApprovalState } from '../api.ts';
+import type { EntryView, InvoiceView, Permission, VoucherApprovalState } from '../api.ts';
 
 /**
  * 1.4, "Receive payment" and "Pay supplier": what the short form works out before it asks the server (which decides
@@ -12,8 +12,13 @@ export type QuickKind = 'receipt' | 'payment';
 export interface QuickVoucherPreset {
   /** the customer or supplier (left out on the vouchers list: chosen in the form) */
   partyId?: string;
-  /** an invoice the money is for: its number goes in the note, what is still open on it and its currency in the amount */
-  invoice?: { number: string | null; total: number; currency: CurrencyCode; rateX100: number };
+  /**
+   * an invoice the money is for: its number goes in the note and its currency in the form, the voucher is kept with
+   * it (`id`), and the amount starts from what is still to collect on it: `open`, in its currency, as the server says
+   * (the invoice's total less what was received for it and less what waits for approval). `waiting`: the part that
+   * waits, to say so when nothing is left to ask for.
+   */
+  invoice?: { id?: string; number: string | null; open: number; waiting?: number; currency: CurrencyCode; rateX100: number };
   /**
    * a voucher of this user's that was not posted (it was rejected, or still waits), to correct and send again: the
    * form opens with what it said, and saving takes the old one back as the new one is made
@@ -46,32 +51,61 @@ export function invoiceNote(t: (key: 's14_forInvoice', vars: Record<string, stri
 }
 
 /**
- * What is still open on a credit invoice, to start the amount from: its total less what was paid online and less the
- * goods already returned on it (never below zero). Money given back in cash for a return is not told apart here, so
- * the figure can only be too low, never above what the invoice still carries; it is a start, typed over freely.
+ * What is still to collect on a credit invoice, to start the amount from, and what waits for approval on it. The
+ * server says both (InvoiceView.settlement: the invoice's own receipts are kept with it). A server from before that
+ * says neither: then the invoice's total less what was paid online and less the goods returned on it, as before.
  */
-export function invoiceOpen(v: { total: number; paidOnline?: number; lines: readonly { returnedAmount: number }[] }): number {
+export function invoiceOpen(v: {
+  total: number; paidOnline?: number; lines: readonly { returnedAmount: number }[]; settlement?: InvoiceView['settlement'];
+}): { open: number; waiting: number } {
+  if (v.settlement) return { open: Math.max(0, v.settlement.toCollect), waiting: Math.max(0, v.settlement.waiting) };
   const returned = v.lines.reduce((sum, l) => sum + (l.returnedAmount || 0), 0);
   const open = v.total - (v.paidOnline ?? 0) - returned;
-  return Number.isFinite(open) && open > 0 ? open : 0;
+  return { open: Number.isFinite(open) && open > 0 ? open : 0, waiting: 0 };
 }
 
 /**
- * The amount the form opens with for an invoice: what is still open on it, but never more than the customer still
- * owes (or we still owe the supplier). Which invoice a receipt settled is not kept, so money received earlier for the
- * same invoice shows only in the party's balance: the amount is held to the balance in the invoice's currency and to
- * the whole position (kept in dinars, read at the invoice's rate for dollars). Null when nothing is left: it is typed.
+ * The amount the form opens with for an invoice: what is still to collect on it, but never more than the customer
+ * still owes in all (or we still owe the supplier): money received earlier without naming the invoice shows only in
+ * the party's balance. The cap is the whole position, the one the customers list sorts and words by (kept in dinars
+ * at the book rates, read at the invoice's rate for dollars): a currency's own balance is no cap, because a dollar
+ * debt paid in dinars leaves each currency with an amount of its own that says nothing of what is owed. Null when
+ * nothing is left: the form says so, and an amount is typed if money is taken all the same.
  */
-export function invoicePrefill(
-  open: number, currency: CurrencyCode, rateX100: number, party: { balance: number; balances?: Partial<Record<CurrencyCode, number>> | undefined }
-): number | null {
-  const caps = [open];
-  const own = party.balances?.[currency];
-  if (typeof own === 'number') caps.push(own);
+export function invoicePrefill(open: number, currency: CurrencyCode, rateX100: number, party: { balance: number }): number | null {
   // the whole position in the invoice's currency, rounded down so it is never above what is owed
-  caps.push(currency === 'IQD' ? party.balance : rateX100 > 0 ? Math.floor((party.balance * 10000) / rateX100) : 0);
-  const amount = Math.min(...caps);
+  const position = currency === 'IQD' ? party.balance : rateX100 > 0 ? Math.floor((party.balance * 10000) / rateX100) : 0;
+  const amount = Math.min(open, position);
   return Number.isFinite(amount) && amount > 0 ? amount : null;
+}
+
+/**
+ * The balance the form shows before the voucher, and the currency it is in. The customers list shows a party's
+ * dollars in dollars and dinars in dinars while both stand on the side of the whole position (oweLines), so the form
+ * shows the balance of the currency chosen in it, and the other currency's beside it (`other`). Otherwise (one
+ * currency was paid in the other, the chosen currency holds nothing, or the server sent only the total) it is the
+ * whole position in dinars at the book rates, as in the list.
+ */
+export function formBalance(
+  party: { balance: number; balances?: Partial<Record<CurrencyCode, number>> | undefined }, currency: CurrencyCode
+): { amount: number; currency: CurrencyCode; other: { amount: number; currency: CurrencyCode } | null } {
+  const net = party.balance;
+  const own = { IQD: party.balances?.IQD ?? 0, USD: party.balances?.USD ?? 0 };
+  const byCurrency = net !== 0 && own.USD !== 0 && (['IQD', 'USD'] as const).every((c) => own[c] === 0 || own[c] > 0 === net > 0);
+  if (!byCurrency || own[currency] === 0) return { amount: net, currency: 'IQD', other: null };
+  const second: CurrencyCode = currency === 'IQD' ? 'USD' : 'IQD';
+  return { amount: own[currency], currency, other: own[second] !== 0 ? { amount: own[second], currency: second } : null };
+}
+
+/**
+ * What is left of the balance the form shows once the voucher is posted, in that balance's currency: a dollar balance
+ * less the dollars of the voucher, a dinar balance less the voucher in dinars (dollars at the voucher's rate). Null
+ * while it can't be worked out (no amount yet, or dollars without a rate).
+ */
+export function formBalanceAfter(shown: { amount: number; currency: CurrencyCode }, amount: number | null, currency: CurrencyCode, rateX100: number | null): number | null {
+  if (amount === null || amount <= 0) return null;
+  if (shown.currency === 'USD') return currency === 'USD' ? shown.amount - amount : null;
+  return balanceAfter(shown.amount, amount, currency, rateX100);
 }
 
 /**

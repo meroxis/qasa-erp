@@ -167,6 +167,11 @@ export interface SaleInput {
   offline?: OfflineSale | undefined;
   /** 1.2 (Pro): loyalty points the customer uses on this sale */
   loyaltyPoints?: number | undefined;
+  /**
+   * 1.4: the cash the customer handed over, in the sale's currency. Kept with a cash sale when it covers the cash
+   * due, so the receipt prints "Amount paid" and "Change" again later; it changes nothing in the books.
+   */
+  tendered?: number | undefined;
 }
 
 export interface OfflineSale { reference: string; soldAt: string; soldOn: string }
@@ -468,7 +473,10 @@ export function sell(db: Db, shiftId: string, input: SaleInput, actor: Actor): {
     const posted = postInvoice(db, draft.id, actor.name, {
       allowExpired: input.allowExpired === true, ...(split && !onCredit ? { split } : {}), ...(input.loyaltyPoints ? { loyaltyPoints: input.loyaltyPoints } : {})
     });
-    db.prepare('INSERT INTO pos_sales (invoice_id, shift_id) VALUES (?, ?)').run(posted.id, shiftId);
+    // the cash handed over: kept for a cash sale when it covers the cash due (the cash part, or all that points left)
+    const cashDue = onCredit ? 0 : split ? split.filter((p) => p.method === 'cash').reduce((s, p) => s + p.amount, 0) : draft.total - byPoints;
+    const tendered = Number.isSafeInteger(input.tendered) && cashDue > 0 && input.tendered! >= cashDue ? input.tendered! : null;
+    db.prepare('INSERT INTO pos_sales (invoice_id, shift_id, tendered) VALUES (?, ?, ?)').run(posted.id, shiftId, tendered);
     if (split) {
       const insert = db.prepare(`INSERT INTO invoice_payments (id, invoice_id, kind, method, account_code, amount, currency, entry_id, source, reference, created_by, created_at)
                                  VALUES (?, ?, 'pos', ?, ?, ?, ?, ?, NULL, NULL, ?, ?)`);
@@ -594,7 +602,8 @@ export const posApi: ApiExtension = {
             offline: z.object({
               reference: z.string().max(40).regex(OFFLINE_REFERENCE), soldAt: z.string().max(30).regex(ISO_INSTANT), soldOn: z.string().regex(/^\d{4}-\d{2}-\d{2}$/)
             }).optional(),
-            loyaltyPoints: z.number().int().positive().max(100_000_000).optional()
+            loyaltyPoints: z.number().int().positive().max(100_000_000).optional(),
+            tendered: amount.optional()
           }), req.body);
           const shiftId = parse(idParam, req.params).id;
           const who = actor(req);

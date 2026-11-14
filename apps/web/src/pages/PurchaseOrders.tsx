@@ -280,7 +280,7 @@ export function PurchaseOrderEditor({ id }: { id?: string }) {
         <div className="field"><span>{t('supplier')}</span><PartyPicker type="supplier" value={form.partyId} options={suppliers} onChange={(v) => set('partyId', v)} onCreated={() => suppliersLoad.reload()} placeholder={t('po_pickSupplier')} ariaLabel={t('supplier')} /></div>
         <label className="field"><span>{t('currency')}</span>
           <select className="input" value={form.currency} onChange={(e) => changeCurrency(e.target.value as CurrencyCode)}>
-            <option value="IQD">IQD</option><option value="USD">USD</option>
+            <option value="IQD">{t('iqdName')}</option><option value="USD">{t('usdName')}</option>
           </select>
         </label>
         <label className="field"><span>{t('date')}</span><input className="input num" type="date" value={form.date} onChange={(e) => set('date', e.target.value)} /></label>

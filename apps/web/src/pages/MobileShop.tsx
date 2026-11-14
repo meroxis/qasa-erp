@@ -448,7 +448,7 @@ function TradeInModal({ onClose, onDone }: { onClose(): void; onDone(): void }) 
           <label className="field"><span>{t('mob_imei')}</span><input className="input ltr num" value={serial} onChange={(e) => setSerial(e.target.value)} /></label>
           <label className="field"><span>{t('date')}</span><input className="input" type="date" value={date} onChange={(e) => setDate(e.target.value)} /></label>
           <label className="field"><span>{t('currency')}</span>
-            <select className="input" value={currency} onChange={(e) => setCurrency(e.target.value as CurrencyCode)}><option value="IQD">IQD</option><option value="USD">USD</option></select>
+            <select className="input" value={currency} onChange={(e) => setCurrency(e.target.value as CurrencyCode)}><option value="IQD">{t('iqdName')}</option><option value="USD">{t('usdName')}</option></select>
           </label>
           <label className="field"><span>{t('mob_paid')}</span><AmountInput value={price} currency={currency} onChange={setPrice} ariaLabel={t('mob_paid')} /></label>
           <div className="field"><span>{t('cashAccount')}</span><AccountCombo value={cashAccount} onChange={setCashAccount} filter={(a) => a.code.startsWith('18')} ariaLabel={t('cashAccount')} /></div>
@@ -591,7 +591,7 @@ function RepairModal({ repair, onClose, onDone }: { repair?: RepairView; onClose
           <label className="field"><span>{t('mob_accessories')}</span><input className="input" value={accessories} onChange={(e) => setAccessories(e.target.value)} placeholder={t('mob_accessoriesHint')} /></label>
           <label className="field"><span>{t('mob_technician')}</span><input className="input" value={technician} onChange={(e) => setTechnician(e.target.value)} /></label>
           {!repair && <label className="field"><span>{t('currency')}</span>
-            <select className="input" value={currency} onChange={(e) => setCurrency(e.target.value as CurrencyCode)}><option value="IQD">IQD</option><option value="USD">USD</option></select>
+            <select className="input" value={currency} onChange={(e) => setCurrency(e.target.value as CurrencyCode)}><option value="IQD">{t('iqdName')}</option><option value="USD">{t('usdName')}</option></select>
           </label>}
           <label className="field"><span>{t('mob_estimate')}</span><AmountInput value={estimate} currency={currency} onChange={setEstimate} ariaLabel={t('mob_estimate')} /></label>
           <label className="field"><span>{t('mob_promised')}</span><input className="input" type="date" value={promised} onChange={(e) => setPromised(e.target.value)} /></label>

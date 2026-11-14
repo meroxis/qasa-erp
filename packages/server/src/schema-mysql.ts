@@ -848,6 +848,7 @@ export const MYSQL_TABLES: readonly MysqlObject[] = [
     sql: `CREATE TABLE pos_sales (
       invoice_id ${ID} NOT NULL PRIMARY KEY,
       shift_id ${ID} NOT NULL,
+      tendered BIGINT CHECK (tendered IS NULL OR tendered >= 0),
       INDEX pos_sales_shift (shift_id),
       FOREIGN KEY (invoice_id) REFERENCES invoices(id),
       FOREIGN KEY (shift_id) REFERENCES pos_shifts(id)
@@ -1547,6 +1548,18 @@ export const MYSQL_TABLES: readonly MysqlObject[] = [
     )`
   },
   {
+    // 13 (1.4): a quick receipt or payment voucher and the invoice it was made for (db.ts V13)
+    name: 'invoice_vouchers',
+    since: 13,
+    sql: `CREATE TABLE invoice_vouchers (
+      entry_id ${ID} NOT NULL PRIMARY KEY,
+      invoice_id ${ID} NOT NULL,
+      INDEX invoice_vouchers_invoice (invoice_id),
+      FOREIGN KEY (entry_id) REFERENCES entries(id) ON DELETE CASCADE,
+      FOREIGN KEY (invoice_id) REFERENCES invoices(id) ON DELETE CASCADE
+    )`
+  },
+  {
     name: 'pharma_details',
     since: 10,
     sql: `CREATE TABLE pharma_details (
@@ -1737,10 +1750,11 @@ export const V12_OWNER_TOOLS_MYSQL_STEPS: readonly MysqlStep[] = [
 /** Version 12 on a server database at version 11: each feature's own steps, one after the other. */
 export const V12_MYSQL_STEPS: readonly MysqlStep[] = [...V12_OWNER_TOOLS_MYSQL_STEPS];
 
-/** Version 13 (1.4): an item's purchase price and its currency. */
+/** Version 13 (1.4): an item's purchase price and its currency, and the cash handed over for a till's sale. */
 export const V13_MYSQL_STEPS: readonly MysqlStep[] = [
   mysqlAddColumn('items', 'purchase_price', 'BIGINT CHECK (purchase_price IS NULL OR purchase_price >= 0)'),
-  mysqlAddColumn('items', 'purchase_currency', `${WORD} CHECK (purchase_currency IS NULL OR purchase_currency IN ('IQD', 'USD'))`)
+  mysqlAddColumn('items', 'purchase_currency', `${WORD} CHECK (purchase_currency IS NULL OR purchase_currency IN ('IQD', 'USD'))`),
+  mysqlAddColumn('pos_sales', 'tendered', 'BIGINT CHECK (tendered IS NULL OR tendered >= 0)')
 ];
 
 /** What a server database has already, for pendingMysqlSteps: "table.column" and "table.column>parent". */
