@@ -146,6 +146,22 @@ describe('with sign-in', () => {
     expect(sources).toEqual(expect.arrayContaining(['net:relay:198.51.100.7', 'net:10.0.0.99']));
   });
 
+  it('keeps an older place known after a restart when another place has hundreds of sign-ins since', async () => {
+    await officeWithSignIn();
+    // the admin signed in from a branch through the relay, then 600 times from home
+    await expect(login(db, 'admin', 'owner-pass-1', undefined, 'net:relay:198.51.100.20')).resolves.toBeTruthy();
+    const adminId = (db.prepare("SELECT id FROM users WHERE username = 'admin'").get() as { id: string }).id;
+    const add = db.prepare("INSERT INTO audit_log (at, user, action, entity, entity_id, details) VALUES (?, 'admin', 'login', 'user', ?, ?)");
+    const home = JSON.stringify({ source: 'net:relay:198.51.100.7' });
+    for (let i = 0; i < 600; i++) add.run(new Date().toISOString(), adminId, home);
+    resetLoginThrottle();
+    for (let i = 0; i < 30; i++) await expect(login(db, 'admin', 'wrong-password', undefined, `net:relay:203.0.113.${i}`)).rejects.toMatchObject({ code: 'invalid_login' });
+    await expect(login(db, 'admin', 'owner-pass-1', undefined, 'net:relay:192.0.2.50')).rejects.toMatchObject({ code: 'too_many_attempts' });
+    // both are still known: the branch's sign-in is found past the first 500 rows
+    await expect(login(db, 'admin', 'owner-pass-1', undefined, 'net:relay:198.51.100.20')).resolves.toBeTruthy();
+    await expect(login(db, 'admin', 'owner-pass-1', undefined, 'net:relay:198.51.100.7')).resolves.toBeTruthy();
+  });
+
   it('a relay naming known places for its guesses gets 30 tries in all, then those places wait too (the office network still doesn\'t)', async () => {
     await officeWithSignIn();
     const known = Array.from({ length: 8 }, (_, i) => `net:relay:198.51.100.${i}`);

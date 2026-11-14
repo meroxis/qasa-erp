@@ -516,6 +516,9 @@ const knownLoaded = new Set<string>();
 /** How far back a sign-in makes its place known, and how many places an account keeps. */
 const KNOWN_DAYS = 90;
 const KNOWN_MAX = 50;
+/** knownPlaces reads the audit log KNOWN_BATCH sign-ins at a time, and at most KNOWN_ROWS of them per account. */
+const KNOWN_BATCH = 500;
+const KNOWN_ROWS = 20_000;
 const RELAY_SOURCE = 'net:relay:';
 
 /**
@@ -529,16 +532,25 @@ function knownPlaces(db: Db, account: string, userId: string | null): Set<string
     known ??= new Set<string>();
     knownSources.set(account, known);
     const since = new Date(Date.now() - KNOWN_DAYS * 86_400_000).toISOString();
-    const rows = db.prepare("SELECT details FROM audit_log WHERE action = 'login' AND entity = 'user' AND entity_id = ? AND at >= ? ORDER BY id DESC LIMIT 500")
-      .all(String(userId), since) as { details: string | null }[];
-    for (const r of rows) {
-      if (known.size >= KNOWN_MAX) break;
-      try {
-        const source = r.details ? (JSON.parse(r.details) as { source?: unknown }).source : undefined;
-        if (typeof source === 'string' && source.startsWith('net:') && source.length <= 100) known.add(source);
-      } catch {
-        // a row written by something else: not a place
+    // newest first, a batch at a time (through the index audit_log_user_login), until KNOWN_MAX places, the end of the
+    // KNOWN_DAYS window or KNOWN_ROWS rows: hundreds of sign-ins from one place don't hide an older place still in use
+    const batch = db.prepare(`SELECT id, details FROM audit_log WHERE entity = 'user' AND entity_id = ? AND action = 'login' AND id < ? AND at >= ?
+                              ORDER BY id DESC LIMIT ${KNOWN_BATCH}`);
+    let before = Number.MAX_SAFE_INTEGER;
+    for (let read = 0; read < KNOWN_ROWS && known.size < KNOWN_MAX;) {
+      const rows = batch.all(String(userId), before, since) as { id: number | bigint; details: string | null }[];
+      for (const r of rows) {
+        if (known.size >= KNOWN_MAX) break;
+        try {
+          const source = r.details ? (JSON.parse(r.details) as { source?: unknown }).source : undefined;
+          if (typeof source === 'string' && source.startsWith('net:') && source.length <= 100) known.add(source);
+        } catch {
+          // a row written by something else: not a place
+        }
       }
+      read += rows.length;
+      if (rows.length < KNOWN_BATCH) break;
+      before = Number(rows[rows.length - 1]!.id);
     }
   }
   return known ?? new Set<string>();
