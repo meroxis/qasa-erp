@@ -47,8 +47,11 @@ const SYRUP_PURCHASE_PRICE = 3_011;
 const SYRUP_BOUGHT_AT = 3_037;
 const ORDERED_AT = 1_651;
 const CUP_BOUGHT_AT = 733;
+// the company's money: an expense someone else paid, and what the bank's statement says the bank holds
+const RENT_PAID = 77_077;
+const IN_THE_BANK = 913_913;
 /** Those, and what the server worked out from them (the cost of each line sold, the value of the stock). */
-const secrets = new Set<number>([OPENING_COST, TEA_PURCHASE_PRICE, TEA_BOUGHT_AT, SYRUP_PURCHASE_PRICE, SYRUP_BOUGHT_AT, ORDERED_AT, CUP_BOUGHT_AT]);
+const secrets = new Set<number>([OPENING_COST, TEA_PURCHASE_PRICE, TEA_BOUGHT_AT, SYRUP_PURCHASE_PRICE, SYRUP_BOUGHT_AT, ORDERED_AT, CUP_BOUGHT_AT, RENT_PAID, IN_THE_BANK]);
 
 /** What stands in for the ":id" of each route, the query a route needs, and more addresses than one per route. */
 const ids: Record<string, string> = {};
@@ -56,8 +59,8 @@ const QUERY: Record<string, string> = {};
 const EXTRA: string[] = [];
 /** Addresses the checks below name. */
 const at: Record<string, string> = {};
-/** Routes whose record this company has none of (cheques, bank statements, fixed assets, item pictures): 404 for everyone. */
-const NO_RECORD = new Set(['/api/banking/cheques/:id', '/api/banking/statements/:id', '/api/assets/depreciation/:id', '/api/assets/:id', '/api/items/:id/image']);
+/** Routes whose record this company has none of (cheques, fixed assets, item pictures): 404 for everyone. */
+const NO_RECORD = new Set(['/api/banking/cheques/:id', '/api/assets/depreciation/:id', '/api/assets/:id', '/api/items/:id/image']);
 
 beforeAll(async () => {
   resetLoginThrottle();
@@ -121,6 +124,16 @@ beforeAll(async () => {
   await made(put(`/api/prices/item/${teaId}`, { wholesale: 2_200 }), 200);
   await made(put(`/api/prices/party/${customerId}`, { list: 'wholesale' }), 200);
   const entryId = (db.prepare('SELECT entry_id FROM invoices WHERE id = ?').get(sale.id) as { entry_id: string }).entry_id;
+  // the company's money: rent paid from the safe (a payment voucher on an expense account), and a bank's statement to reconcile
+  const postable = ((await get('/api/accounts')).json() as { code: string; postable: boolean }[]).filter((a) => a.postable).map((a) => a.code);
+  const rentAccount = postable.find((c) => c.startsWith('3'))!;
+  const bankAccount = postable.find((c) => c.startsWith('183'))!;
+  await made(post('/api/vouchers', {
+    kind: 'payment', date: today, cashAccountCode: '1811', description: 'Rent', currency: 'IQD', rateX100: 100, items: [{ accountCode: rentAccount, amount: RENT_PAID }]
+  }));
+  const statement = await made(post('/api/banking/statements', {
+    accountCode: bankAccount, currency: 'IQD', from: `${month}-01`, to: today, opening: 0, closing: IN_THE_BANK, lines: [{ date: today, description: 'Deposit', amount: IN_THE_BANK }]
+  }));
 
   // what the server worked out: the cost of every line sold or returned, the value of every stock movement and of the stock
   for (const r of db.prepare('SELECT cost AS n FROM invoice_lines WHERE cost IS NOT NULL').all() as { n: number }[]) secrets.add(Math.abs(Number(r.n)));
@@ -140,7 +153,8 @@ beforeAll(async () => {
     '/api/adjustments/:id': adjustment.id, '/api/adjustments/counts/:id': count.id,
     '/api/purchase-orders/:id': order.id,
     '/api/prices/party/:id': customerId, '/api/prices/item/:id': teaId,
-    '/api/loyalty/parties/:id': customerId
+    '/api/loyalty/parties/:id': customerId,
+    '/api/banking/statements/:id': statement.id
   });
   Object.assign(QUERY, {
     '/api/reports/final-accounts': `from=${today.slice(0, 4)}-01-01&to=${today}`,
@@ -166,6 +180,7 @@ beforeAll(async () => {
     adjustment: `/api/adjustments/${adjustment.id}`, count: `/api/adjustments/counts/${count.id}`,
     batches: `/api/batches?itemId=${medId}`, order: `/api/purchase-orders/${order.id}`, entry: `/api/entries/${entryId}`,
     supplierStatement: `/api/parties/${supplierId}/statement`, customerStatement: `/api/parties/${customerId}/statement`,
+    bankStatement: `/api/banking/statements/${statement.id}`, shift: `/api/pos/shifts/${closedShift.id}`,
     warehouseId, customerId, teaId, medId
   });
   // more than one answer of a route: the other documents, the item lists as the till and the screens ask for them
@@ -265,14 +280,21 @@ const BOOKS_FIELDS = (): [string, string][] => [
   [at.purchases!, '[].total'], [at.purchases!, '[].subtotal'], [at.purchase!, '.total'], [at.purchase!, '.lines[].unitPrice'], [at.purchase!, '.lines[].amount'],
   [at.purchaseReturn!, '.total'], [at.purchaseReturn!, '.lines[].unitPrice'],
   ['/api/purchase-orders/suggest', '[].lines[].lastPrice'], ['/api/purchase-orders', '[].total'], [at.order!, '.total'], [at.order!, '.lines[].unitPrice'], [at.order!, '.lines[].amount'],
-  [at.supplierStatement!, '.lines[].credit'], [at.supplierStatement!, '.totalCredit'], [at.entry!, '.lines[].debit'], ['/api/reports/trial-balance', '.rows[].balance'], ['/api/reports/final-accounts', '.netResult'], ['/api/year-end', '.years[].result']
+  [at.supplierStatement!, '.lines[].credit'], [at.supplierStatement!, '.totalCredit'], [at.entry!, '.lines[].debit'], ['/api/reports/trial-balance', '.rows[].balance'], ['/api/reports/final-accounts', '.netResult'], ['/api/year-end', '.years[].result'],
+  // the company's money: what each safe and bank holds, the money in and out of them, the expenses, a bank account's lines
+  ['/api/brief', '.cash.total.IQD'], ['/api/brief', '.cash.base'], ['/api/brief', '.cash.accounts[].balance.IQD'], ['/api/brief', '.flow.in'], ['/api/brief', '.flow.out'],
+  ['/api/brief/dashboard', '.cash.total.IQD'], ['/api/brief/dashboard', '.cash.base'],
+  ['/api/brief/day-close', '.expenses.total'], ['/api/brief/day-close', '.expenses.rows[].amount'], ['/api/brief/day-close', '.expenses.rows[].description'], ['/api/brief/day-close', '.flow.in'],
+  ['/api/brief/expenses', '.total'], ['/api/brief/expenses', '.rows[].amount'], ['/api/brief/expenses', '.byAccount[].amount'],
+  ['/api/banking/accounts', '.accounts[].balance.IQD'], ['/api/banking/accounts', '.accounts[].base'],
+  ['/api/banking/statements', '[].closing'], [at.bankStatement!, '.bookBalance'], [at.bankStatement!, '.book'], [at.bankStatement!, '.lines[].amount']
 ];
 
 /**
  * Refused to a user without the books: an entry of the journal (the list answers, with the vouchers that user prepared
- * and no other: below), the company's books, the stock valuation.
+ * and no other: below), the company's books, the stock valuation, the expenses and bank reconciliation.
  */
-const BOOKS_ROUTES = ['/api/entries/', '/api/reports/', '/api/year-end', '/api/fx/revaluation', '/api/assets', '/api/brief/reports/stock-value'];
+const BOOKS_ROUTES = ['/api/entries/', '/api/reports/', '/api/year-end', '/api/fx/revaluation', '/api/assets', '/api/brief/reports/stock-value', '/api/brief/expenses', '/api/banking/statements'];
 const ADMIN_ROUTES = ['/api/audit', '/api/auth/recovery-code', '/api/branches', '/api/users'];
 const isOneOf = (route: string, list: string[]) => list.some((p) => route === p || route.startsWith(p.endsWith('/') ? p : `${p}/`));
 
@@ -335,6 +357,20 @@ describe('cost, stock value and profit, by who asks', () => {
     // a purchase invoice opens (who may open it is unchanged), without its money
     expect(find(answers, at.purchase!).status).toBe(200);
     expect(has(answers, [at.purchase!, '.lines[].qtyMilli']) && has(answers, [at.purchase!, '.number'])).toBe(true);
+    // the company's money is not theirs to read: no balance of a safe or a bank, no money in and out, no expenses,
+    // under any address they can ask. Other things have a balance, and stay: what a customer or a supplier owes (the
+    // parties, their statements, the aging report, the brief's late customers), an item's stock, loyalty points
+    const notMoney = /^\/api\/(parties|brief\/reports\/aging|items|loyalty)[/ ]|^\/api\/brief \.lateCustomers\[\]\.balance$/;
+    const money = answers.flatMap((a) => [...a.paths].filter((p) => /balance|flow|expenses/i.test(p.split('.').pop()!)).map((p) => `${a.route} ${p}`));
+    expect(money.filter((p) => !notMoney.test(p))).toEqual([]);
+    // what the till needs stays: the safes by name (to pick one), the cash of a shift, and the day close's sales, registers, drawers and debts
+    expect(missing(answers, [
+      ['/api/banking/accounts', '.accounts[].code'], ['/api/banking/accounts', '.accounts[].name.en'], ['/api/banking/accounts', '.accounts[].kind'],
+      [at.shift!, '.expected.IQD'], [at.shift!, '.counted.IQD'],
+      ['/api/brief/day-close', '.sales.net'], ['/api/brief/day-close', '.methods[].amount'], ['/api/brief/day-close', '.registers[].expected.IQD'], ['/api/brief/day-close', '.registers[].counted.IQD'],
+      ['/api/brief/day-close', '.drawers.difference.IQD'], ['/api/brief/day-close', '.debts.collected'],
+      ['/api/brief', '.sales.today'], ['/api/brief', '.receivables'], ['/api/brief/dashboard', '.salesMonth'], ['/api/brief/dashboard', '.receivables']
+    ])).toEqual([]);
   });
 
   it('a storekeeper and a buyer see cost and the reports, as before', async () => {
@@ -443,8 +479,11 @@ describe('a cashier sells without seeing cost', () => {
 
     // with "Vouchers need approval": theirs waits; rejected, they read who rejected it and why
     await made(put('/api/voucher-approval', { on: true }), 200);
-    const waits = await made(post('/api/quick-vouchers', { ...receipt, amount: 7_000 }, cashier));
+    // (sent with a key, as the app sends it: the same form sent again answers with the same voucher, and makes no second one)
+    const keyed = { ...cashier, 'x-qasa-idempotency': '7c9e6679-7425-40de-944b-e07fc1f90ae7' };
+    const waits = await made(post('/api/quick-vouchers', { ...receipt, amount: 7_000 }, keyed));
     expect(waits.approval).toMatchObject({ state: 'waiting', requestedBy: 'Raz' });
+    expect(await made(post('/api/quick-vouchers', { ...receipt, amount: 7_000 }, keyed))).toMatchObject({ id: waits.id, total: 7_000 });
     expect(await listed('?approval=waiting')).toEqual([waits.id]);
     await made(post(`/api/entries/${waits.id}/reject`, { reason: 'Wrong amount' }), 200);
     expect((await get(`/api/entries/${waits.id}`, cashier)).json()).toMatchObject({ status: 'draft', actions: [], approval: { state: 'rejected', reason: 'Wrong amount' } });
@@ -457,6 +496,11 @@ describe('a cashier sells without seeing cost', () => {
     expect(fixed.statusCode, fixed.body).toBe(200);
     expect((await get(`/api/entries/${waits.id}`, cashier)).statusCode).toBe(403);
     expect(await listed()).toEqual([mine.id]);
+    // nor by sending the form again with its key: the answer would be the voucher as the accountant left it
+    const again = await post('/api/quick-vouchers', { ...receipt, amount: 7_000 }, keyed);
+    expect(again.statusCode, again.body).toBe(403);
+    expect(again.body).not.toContain('7500');
+    expect(((await get('/api/entries?type=receipt')).json() as { id: string }[]).filter((e) => e.id === waits.id)).toHaveLength(1);
     await made(put('/api/voucher-approval', { on: false }), 200);
 
     // the books stay closed, and the receipt printed with the customer's balance reads the statement, which is open

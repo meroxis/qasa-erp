@@ -227,7 +227,7 @@ export function PartyForm({ type, party, onClose, onSaved }: { type: PartyType; 
 export function PartyDetail({ id, admin = false }: { id: string; admin?: boolean }) {
   const i18n = useI18n();
   const { t } = i18n;
-  const { settings } = useData();
+  const { settings, seesBooks } = useData();
   const [from, setFrom] = useState('');
   const [to, setTo] = useState('');
   // all lines (IQD at the book rates), or one currency's lines in that currency
@@ -243,12 +243,17 @@ export function PartyDetail({ id, admin = false }: { id: string; admin?: boolean
   const p = data.party;
   const isCustomer = p.type === 'customer';
   const company = settings ? i18n.name(settings.companyName) : '';
+  // 1.4: a supplier's lines say what each purchase cost: the server sends someone who may not read the books the
+  // balance alone (no opening, no lines). The page then says so, rather than show a statement with nothing in it
+  const hidden = data.opening === undefined;
+  // a line opens its invoice; a voucher's line opens the entry only for someone who may read the journal
+  const lineLink = (l: (typeof data.lines)[number]): string | null => (l.invoiceId ? `invoice/${l.invoiceId}` : seesBooks !== false ? `entry/${l.entryId}` : null);
 
   const exportCsv = () => downloadCsv(`${p.code}-statement.csv`, [
     [t('date'), t('number'), t('description'), t('debit'), t('credit'), t('balance'), t('currency')],
-    [from, '', t('opening'), '', '', data.opening, cur],
+    [from, '', t('opening'), '', '', data.opening ?? '', cur],
     ...data.lines.map((l) => [l.date, l.number, l.description, l.debit, l.credit, l.balance, l.currency ?? cur]),
-    ['', '', t('closing'), data.totalDebit, data.totalCredit, data.closing, cur]
+    ['', '', t('closing'), data.totalDebit ?? '', data.totalCredit ?? '', data.closing, cur]
   ]);
 
   return (
@@ -262,8 +267,8 @@ export function PartyDetail({ id, admin = false }: { id: string; admin?: boolean
         {p.active && <QuickVoucherButton kind={isCustomer ? 'receipt' : 'payment'} preset={{ partyId: p.id }} onDone={reload} />}
         <a className="btn primary" href={href(isCustomer ? `new-invoice/sale/${p.id}` : `new-invoice/purchase/${p.id}`)}><Icon name="plus" size={16} />{isCustomer ? t('newSale') : t('newPurchase')}</a>
         <StatementWhatsApp company={company} name={p.name} code={p.code} phone={p.phone} lang={p.lang} balance={data.closing} date={to || todayIso()} currency={cur} />
-        <button type="button" className="btn" onClick={exportCsv}><Icon name="download" size={16} />{t('exportExcel')}</button>
-        <button type="button" className="btn" onClick={() => void printDocument('report')}><Icon name="printer" size={16} />{t('print')}</button>
+        {!hidden && <button type="button" className="btn" onClick={exportCsv}><Icon name="download" size={16} />{t('exportExcel')}</button>}
+        {!hidden && <button type="button" className="btn" onClick={() => void printDocument('report')}><Icon name="printer" size={16} />{t('print')}</button>}
       </div>
 
       <div className="grid-4">
@@ -286,7 +291,12 @@ export function PartyDetail({ id, admin = false }: { id: string; admin?: boolean
       {isCustomer && <div className="no-print"><PriceListField partyId={p.id} /></div>}
       {isCustomer && <div className="no-print"><LoyaltyCard partyId={p.id} admin={admin} /></div>}
 
-      <div className="card">
+      {hidden ? (
+        <div className="card pad stack" data-statement-hidden>
+          <h2>{t('statement')}</h2>
+          <p className="muted" style={{ margin: 0 }}>{t('s14_statementInBooks')}</p>
+        </div>
+      ) : <div className="card">
         <div className="row" style={{ padding: '12px 16px' }}>
           <h2>{t('statement')}</h2>
           <span className="spacer" />
@@ -304,9 +314,11 @@ export function PartyDetail({ id, admin = false }: { id: string; admin?: boolean
             <tr><th>{t('date')}</th><th>{t('number')}</th><th>{t('description')}</th><th className="amount">{t('debit')}</th><th className="amount">{t('credit')}</th><th className="amount">{t('balance')}</th></tr>
           </thead>
           <tbody>
-            <tr><td /><td /><td className="muted">{t('opening')}</td><td /><td /><td className="amount">{i18n.money(data.opening, cur)}</td></tr>
-            {data.lines.map((l, i) => (
-              <tr key={i} className="click" onClick={() => go(l.invoiceId ? `invoice/${l.invoiceId}` : `entry/${l.entryId}`)}>
+            <tr><td /><td /><td className="muted">{t('opening')}</td><td /><td /><td className="amount">{i18n.money(data.opening ?? 0, cur)}</td></tr>
+            {data.lines.map((l, i) => {
+              const open = lineLink(l);
+              return (
+              <tr key={i} className={open ? 'click' : undefined} onClick={open ? () => go(open) : undefined}>
                 <td className="num">{i18n.date(l.date)}</td>
                 <td><span className="ltr num">{l.number}</span></td>
                 <td>{l.description}{!currency && l.currency === 'USD' && l.amount !== undefined && <span className="muted small"> ({i18n.money(Math.abs(l.amount), 'USD')})</span>}</td>
@@ -314,14 +326,15 @@ export function PartyDetail({ id, admin = false }: { id: string; admin?: boolean
                 <td className="amount">{l.credit ? i18n.money(l.credit, cur) : ''}</td>
                 <td className="amount">{i18n.money(l.balance, cur)}</td>
               </tr>
-            ))}
+              );
+            })}
             {data.lines.length === 0 && <tr><td colSpan={6} className="muted">{t('noData')}</td></tr>}
           </tbody>
           <tfoot>
-            <tr><td /><td /><td>{t('closing')}</td><td className="amount">{i18n.money(data.totalDebit, cur)}</td><td className="amount">{i18n.money(data.totalCredit, cur)}</td><td className="amount">{i18n.money(data.closing, cur)}</td></tr>
+            <tr><td /><td /><td>{t('closing')}</td><td className="amount">{i18n.money(data.totalDebit ?? 0, cur)}</td><td className="amount">{i18n.money(data.totalCredit ?? 0, cur)}</td><td className="amount">{i18n.money(data.closing, cur)}</td></tr>
           </tfoot>
         </table>
-      </div>
+      </div>}
 
       <div className="card no-print">
         <div style={{ padding: '12px 16px' }}><h2>{t('partyInvoices')}</h2></div>

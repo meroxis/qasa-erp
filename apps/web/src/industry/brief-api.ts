@@ -25,8 +25,9 @@ export interface BriefView {
   date: string;
   company: Names;
   sales: { today: number; invoices: number; sameDayLastWeek: number; month: number };
-  cash: { accounts: CashAccountView[]; total: Money2; base: number };
-  flow: { in: number; out: number };
+  /** cash and flow: the company's money, absent for someone who may not read the books (1.4) */
+  cash?: { accounts: CashAccountView[]; total: Money2; base: number };
+  flow?: { in: number; out: number };
   topItems: ItemSalesView[];
   lateCustomers: AgingRowView[];
   receivables: number;
@@ -46,7 +47,8 @@ export interface DashboardView {
   salesLastMonth: number;
   /** null when one branch is shown: profit is only known for the whole company */
   profitMonth?: { revenue: number; expenses: number; profit: number } | null;
-  cash: { total: Money2; base: number };
+  /** absent for someone who may not read the books (1.4) */
+  cash?: { total: Money2; base: number };
   receivables: number;
   payables: number;
   months: { month: string; sales: number; profit?: number | null }[];
@@ -106,9 +108,10 @@ export interface DayCloseView {
   refunds: { method: DayMethod; amount: number }[];
   registers: DayRegisterView[];
   drawers: { expected: Money2; counted: Money2; difference: Money2 } | null;
-  expenses: { rows: ExpenseRowView[]; total: number };
+  /** expenses and flow: absent for someone who may not read the books (1.4); the registers and drawers stay */
+  expenses?: { rows: ExpenseRowView[]; total: number };
   debts: { collected: number; collectedRows: DayDebtRowView[]; added: number; addedRows: DayDebtRowView[] };
-  flow: { in: number; out: number };
+  flow?: { in: number; out: number };
   lowStock: { count: number; top: LowStockView[] };
   topItems: ItemSalesView[];
   ownerPhone: string;

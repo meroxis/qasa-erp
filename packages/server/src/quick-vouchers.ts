@@ -10,6 +10,7 @@ import {
 } from './journal.ts';
 import { getParty } from './parties.ts';
 import { onceOnly } from './idempotency.ts';
+import { ownVouchersOnly } from './cost-view.ts';
 import type { ApiExtension, ApiRequest } from './routes.ts';
 
 /**
@@ -153,7 +154,13 @@ export const quickVouchersApi: ApiExtension = {
           const made = onceOnly(db, req, reply, who, 'POST /api/quick-vouchers', () => {
             const result = quickVoucher(db, body, who);
             return { id: result.id, result };
-          }, (id) => getEntry(db, id));
+          }, (id) => {
+            // sent again later: the voucher as it is now, by the rule of GET /api/entries/:id. Corrected since by
+            // someone who prepares vouchers it is that person's, and no longer read by someone without the books
+            const mine = ownVouchersOnly(who);
+            if (mine && !isOwnVoucher(db, id, mine)) throw new AppError(403, 'forbidden');
+            return getEntry(db, id);
+          });
           reply.status(201).send(made);
           return undefined;
         }

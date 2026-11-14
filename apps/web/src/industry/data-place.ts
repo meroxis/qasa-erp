@@ -41,6 +41,9 @@ function desktop(): DesktopPlace | null {
   return (window as unknown as { qasaDesktop?: DesktopPlace }).qasaDesktop ?? null;
 }
 
+/** Whether these pages run inside the Windows app (it has the File menu); otherwise a browser, or a phone's. */
+export const inWindowsApp = (): boolean => desktop() !== null;
+
 let asked: Promise<DataPlace> | null = null;
 
 /** Asked once per window: the place never changes while the app runs (connecting elsewhere restarts it). */

@@ -102,6 +102,12 @@ export const SALES14_TEXT = {
     'This entry is in the company’s books. You can open only the vouchers you prepared.',
     'ئەم تۆمارە لە دەفتەرەکانی کۆمپانیادایە. تەنها دەتوانیت ئەو سەنەدانە بکەیتەوە کە خۆت ئامادەت کردوون.'
   ],
+  // a supplier's statement for someone who does not keep the books: the balance, and where the rest is
+  s14_statementInBooks: [
+    'حركات هذا الحساب في دفاتر الشركة. يظهر لك هنا الرصيد فقط.',
+    'The movements of this account are in the company’s books. Only the balance is shown to you here.',
+    'جووڵەکانی ئەم هەژمارە لە دەفتەرەکانی کۆمپانیادان. لێرە تەنها ڕەسیدت پیشان دەدرێت.'
+  ],
   s14_openVoucher: ['فتح السند', 'Open the voucher', 'کردنەوەی سەنەد'],
 
   // vouchers that wait for approval

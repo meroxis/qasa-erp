@@ -11,7 +11,7 @@ import { SupportButton } from './industry/SupportButton.tsx';
 import { BranchSwitcher } from './industry/BranchSwitcher.tsx';
 import { BRANCH_EVENT } from './industry/branches-api.ts';
 import { BUSINESS_FEATURE } from '@qasa/core';
-import { ADMIN_PAGES, canSee, COMPANY_BOOK_PAGES, FAVOURITES_EVENT, seesCompanyBooks, favourites, findPage, NAV, navCollapsed, openGroups, openGroupsWith, setNavCollapsed, setOpenGroups, toggledGroup, type NavItem, type NavViewer } from './nav.ts';
+import { ADMIN_PAGES, canSee, COMPANY_BOOK_PAGES, NO_BOOKS_PAGES, FAVOURITES_EVENT, seesCompanyBooks, favourites, findPage, NAV, navCollapsed, openGroups, openGroupsWith, setNavCollapsed, setOpenGroups, toggledGroup, type NavItem, type NavViewer } from './nav.ts';
 import { CommandPalette } from './industry/CommandPalette.tsx';
 import { Tour, TOUR_EVENT, tourDone } from './industry/Tour.tsx';
 import { UpdateBanner } from './industry/UpdateBanner.tsx';
@@ -335,8 +335,9 @@ export function App() {
   // admin pages (the menu's admin-only items) open for admins only, and the company's books (trial balance, final
   // accounts, statements) not for someone limited to branches; everyone else lands on the home page
   // 1.4: someone who does not keep the books reads the vouchers they prepared, and writes none in the editor (theirs
-  // come from "Receive payment"): the editor's pages land on the home page too
-  const adminPage = (ADMIN_PAGES.has(page ?? '') && !isAdmin) || (COMPANY_BOOK_PAGES.has(page ?? '') && !books) || (!seesBooks && (page === 'new' || page === 'edit'));
+  // come from "Receive payment"): the editor's pages land on the home page too, and so do the expenses and a bank
+  // statement to reconcile, which the server refuses them
+  const adminPage = (ADMIN_PAGES.has(page ?? '') && !isAdmin) || (COMPANY_BOOK_PAGES.has(page ?? '') && !books) || (!seesBooks && NO_BOOKS_PAGES.has(page ?? ''));
   switch (adminPage ? '' : page ?? '') {
     case '':
     case 'home':

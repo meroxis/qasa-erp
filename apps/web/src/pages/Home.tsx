@@ -41,7 +41,7 @@ export function Home({ viewer, user, favourites }: { viewer: NavViewer; user: st
   const d = dash.data;
   const tiles = (d ? [
     { label: t('salesThisMonth'), value: i18n.money(d.salesMonth, 'IQD'), link: 'sales', icon: 'trend', sub: trendText(i18n, d.salesMonth, d.salesLastMonth) },
-    { label: t('cashAndBanks'), value: moneyBoth(i18n, d.cash.total), icon: 'wallet', link: 'brief' },
+    ...(d.cash ? [{ label: t('cashAndBanks'), value: moneyBoth(i18n, d.cash.total), icon: 'wallet', link: 'brief' }] : []),
     ...(d.profitMonth ? [{ label: t('br_profitMonth'), value: i18n.money(d.profitMonth.profit, 'IQD'), icon: 'chart', ...(books ? { link: 'final-accounts' } : {}), tone: d.profitMonth.profit < 0 ? 'bad' : 'ok' }] : []),
     { label: t('receivables'), value: i18n.money(d.receivables, 'IQD'), link: 'reports-more/aging', icon: 'contact' },
     { label: t('payables'), value: i18n.money(d.payables, 'IQD'), link: 'reports-more/supplier-aging', icon: 'truck' }
@@ -94,7 +94,7 @@ export function Home({ viewer, user, favourites }: { viewer: NavViewer; user: st
             <a className="btn" href={href('entries')}><Icon name="receipt" size={16} />{t('s14_myVouchers')}</a>
           </>
         )}
-        <a className="btn" href={href('expenses')}><Icon name="wallet" size={16} />{t('br_newExpense')}</a>
+        {journal && <a className="btn" href={href('expenses')}><Icon name="wallet" size={16} />{t('br_newExpense')}</a>}
         {books && <a className="btn" style={{ marginInlineStart: 'auto' }} href={href('trial-balance')}><Icon name="chart" size={16} />{t('trialBalance')}</a>}
       </nav>
       <ChequesHomeNote counts={d?.cheques} />

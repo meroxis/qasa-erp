@@ -988,7 +988,8 @@ const chequeBody = z.object({
 });
 
 /**
- * Reading is open to every signed-in user. Making entries (transfers, cheques, reconciliation vouchers) needs the
+ * Reading is open to every signed-in user, except what is the books (cost-view.ts): someone who may not read them gets
+ * the safes and banks by name, without what they hold, and no bank statement to reconcile. Making entries (transfers, cheques, reconciliation vouchers) needs the
  * preparer's permission, as typing a voucher does; adding a bank account or marking accounts is for an admin.
  */
 export const bankingApi: ApiExtension = {
