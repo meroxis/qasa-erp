@@ -212,8 +212,11 @@ export const isVoucherType = (t: EntryType) => VOUCHER_TYPES.includes(t);
 export function sampleModel(doc: PrintDoc): PrintModel {
   const names = (ar: string, en: string, ku: string): Names => ({ ar, en, ku });
   if (doc === 'voucher') {
+    const sale = sampleModel('sale');
     return {
-      ...sampleModel('sale'), doc, titleKey: 'receipt', number: 'RV-2026-0042', lines: [], partyRole: 'party',
+      ...sale, doc, titleKey: 'receipt', number: 'RV-2026-0042', lines: [], partyRole: 'party',
+      // as entryModel builds a real voucher: the party by name only
+      party: sale.party && { name: sale.party.name, code: null, phone: null, address: null },
       accountLines: [
         { accountCode: '1811', accountName: names('الصندوق الرئيسي', 'Main safe', 'قاسەی سەرەکی'), description: '', debit: 1_250_000, credit: 0 },
         { accountCode: '1611', accountName: names('العملاء', 'Customers', 'کڕیاران'), description: '', debit: 0, credit: 1_250_000 }

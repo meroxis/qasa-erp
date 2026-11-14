@@ -11,7 +11,6 @@ export const ITEMS14_TEXT = {
   it_margin: ['الربح: {a} ({p}٪)', 'Profit: {a} ({p}%)', 'قازانج: {a} ({p}%)'],
   it_marginLoss: ['خسارة: {a} ({p}٪)', 'Loss: {a} ({p}%)', 'زیان: {a} ({p}%)'],
   it_picture: ['صورة المادة', 'Item picture', 'وێنەی کاڵا'],
-  it_pictureWithSave: ['تُحفظ الصورة مع المادة.', 'The picture is saved with the item.', 'وێنەکە لەگەڵ کاڵاکە پاشەکەوت دەکرێت.'],
   it_pictureTooBig: [
     'ملف الصورة كبير جداً (الحد {n} ميغابايت).',
     'The picture file is too large ({n} MB at most).',

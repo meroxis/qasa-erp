@@ -3,7 +3,27 @@ import { checkPrintDesign, DEFAULT_PRINT_DESIGN, DEFAULT_RECEIPT_DESIGN, gallery
 import { LABEL_TEXT } from '../i18n/labels.ts';
 import { PRINT14_TEXT } from '../i18n/print14.ts';
 import { isKey } from '../i18n.ts';
-import { DESIGNER_FIELDS, designerGroups, FIELD_GROUPS, fieldLabelKey, fontSizeName, problemText, withLayout } from './PrintDesign.tsx';
+import { sampleModel } from '../industry/print-model.ts';
+import { DESIGNER_FIELDS, designerGroups, FIELD_GROUPS, fieldLabelKey, fontSizeName, mayRemoveLogo, problemText, withLayout } from './PrintDesign.tsx';
+
+describe('removing the company logo', () => {
+  it('asks first on a plan that cannot add a logo again, and removes nothing when the answer is no', () => {
+    const asked: string[] = [];
+    const answer = (yes: boolean) => (key: string) => { asked.push(key); return yes; };
+    // a paid plan (or the free month): the logo can be chosen again, so nothing is asked
+    expect(mayRemoveLogo(true, answer(false))).toBe(true);
+    expect(asked).toEqual([]);
+    // Free, with a logo kept from before: one question, and "no" keeps the logo
+    expect(mayRemoveLogo(false, answer(false))).toBe(false);
+    expect(mayRemoveLogo(false, answer(true))).toBe(true);
+    expect(asked).toEqual(['pp_removeLogoFree', 'pp_removeLogoFree']);
+    // the question says what is lost and the other way, in the three languages
+    expect(new Set(PRINT14_TEXT.pp_removeLogoFree).size).toBe(3);
+    expect(PRINT14_TEXT.pp_removeLogoFree[1]).toContain(LABEL_TEXT.pp_showLogo[1]);
+    expect(PRINT14_TEXT.pp_removeLogoFree[0]).toContain(LABEL_TEXT.pp_showLogo[0]);
+    expect(PRINT14_TEXT.pp_removeLogoFree[2]).toContain(LABEL_TEXT.pp_showLogo[2]);
+  });
+});
 
 describe('the print designer', () => {
   it('moves the thermal receipt onto 80 mm paper and back to A4, always as a design the server accepts', () => {
@@ -39,6 +59,13 @@ describe('the print designer', () => {
     const voucher = offered('voucher', 'classic');
     for (const f of ['itemCode', 'barcode', 'itemImage', 'unit', 'subtotal', 'qr'] as const) expect(voucher, f).not.toContain(f);
     expect(voucher).toEqual(expect.arrayContaining(['previousBalance', 'partyBalance', 'signatures', 'stamp', 'amountWords']));
+    // nor its party's phone and address: a switch that changes nothing on the real paper is not offered, and the
+    // sample voucher is built as a real one is
+    for (const f of ['partyPhone', 'partyAddress'] as const) expect(voucher, f).not.toContain(f);
+    expect(offered('sale', 'classic')).toEqual(expect.arrayContaining(['partyPhone', 'partyAddress']));
+    expect(sampleModel('voucher').party).toEqual({ name: sampleModel('sale').party!.name, code: null, phone: null, address: null });
+    expect(offered('voucher', 'receipt80')).not.toContain('pageNumbers');
+    expect(offered('voucher', 'classic')).toContain('pageNumbers');
     // the verify code is a sale's; a receipt roll has no pages, pictures or barcodes
     expect(offered('purchase', 'classic')).not.toContain('qr');
     expect(offered('sale', 'modernLines')).toContain('qr');

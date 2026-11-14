@@ -88,6 +88,14 @@ describe('the parts added in 1.4', () => {
   it('knows which parts a kind of paper and a layout can print', () => {
     expect(printFieldApplies('itemCode', 'voucher', 'classic')).toBe(false);
     expect(printFieldApplies('previousBalance', 'voucher', 'ledger')).toBe(true);
+    // a real voucher never prints its party's phone or address, so there is no switch for them
+    expect(printFieldApplies('partyPhone', 'voucher', 'classic')).toBe(false);
+    expect(printFieldApplies('partyAddress', 'voucher', 'modern')).toBe(false);
+    expect(printFieldApplies('partyPhone', 'sale', 'classic')).toBe(true);
+    // a voucher on the roll follows the roll's rules
+    expect(printFieldApplies('pageNumbers', 'voucher', 'receipt80')).toBe(false);
+    expect(printFieldApplies('pageNumbers', 'voucher', 'classic')).toBe(true);
+    expect(printFieldApplies('amountWords', 'voucher', 'receipt80')).toBe(true);
     expect(printFieldApplies('qr', 'sale', 'modernLines')).toBe(true);
     expect(printFieldApplies('qr', 'quote', 'modernLines')).toBe(false);
     expect(printFieldApplies('pageNumbers', 'pos', 'receipt80')).toBe(false);
