@@ -1,7 +1,7 @@
 import { Fragment, useCallback, useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
 import {
-  DEFAULT_PRINTER_CHOICE, MAX_PRINT_COPIES, PRINT_KINDS, PRINTER_MARGINS, PRINTER_PAPERS, USUAL_PAPER,
+  DEFAULT_PRINTER_CHOICE, MAX_PRINT_COPIES, PRINT_KINDS, PRINTER_MARGINS, PRINTER_PAPERS, todayIso, USUAL_PAPER,
   type PrinterChoice, type PrinterChoices, type PrinterEntry, type PrinterPaper, type PrintKind
 } from '@qasa/core';
 import { Icon, useToast } from '../components.tsx';
@@ -309,6 +309,7 @@ export function testSheetLayout(paper: PrinterPaper): TestSheetLayout {
 export function PrintTestSheet({ kind, choice }: { kind: PrintKind; choice: PrinterChoice | undefined }) {
   const i18n = useI18n();
   const { t } = i18n;
+  // the date and the time both from this PC's clock (the UTC date was a day behind from midnight to 3 am in Iraq)
   const now = new Date();
   const paper = choice?.paper ?? 'auto';
   const layout = testSheetLayout(paper);
@@ -329,7 +330,7 @@ export function PrintTestSheet({ kind, choice }: { kind: PrintKind; choice: Prin
             <div>{t('prn_kind')}: {t(`prn_kind_${kind}` as Key)}</div>
             <div>{t('prn_printer')}: <span dir="auto">{choice?.printer ?? t('prn_ask')}</span></div>
             <div>{t('prn_paper')}: {t(`prn_paper_${paper}` as Key)} · {t('prn_margins')}: {t(`prn_margins_${choice?.margins ?? 'default'}` as Key)} · {t('prn_copies')}: {i18n.int(choice?.copies ?? 1)}</div>
-            <div>{t('prn_testWhen')}: {i18n.date(now.toISOString().slice(0, 10))} {i18n.digitsOf(now.toTimeString().slice(0, 5))}</div>
+            <div>{t('prn_testWhen')}: {i18n.date(todayIso(now))} {i18n.digitsOf(now.toTimeString().slice(0, 5))}</div>
           </>
         )}
         <div className="print-test-box" style={{ inlineSize: mm(layout.box.width), blockSize: mm(layout.box.height) }}>

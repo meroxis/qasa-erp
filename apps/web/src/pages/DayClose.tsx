@@ -109,6 +109,14 @@ export function dayCloseRows(i18n: I18n, c: DayCloseView): (string | number)[][]
   return rows;
 }
 
+/**
+ * What the "Expected cash" card says while no drawer of the day is counted: the registers are still open, or none was
+ * opened (1.4.1: it said none was open while the registers below were open).
+ */
+export function drawersNote(c: Pick<DayCloseView, 'registers'>): Key {
+  return c.registers.length ? 'dc_stillOpen' : 'dc_noRegisters';
+}
+
 function MoneyCell({ children, color }: { children: ReactNode; color?: string | undefined }) {
   return <td className="num" style={{ whiteSpace: 'nowrap', ...(color ? { color, fontWeight: 600 } : {}) }}>{children}</td>;
 }
@@ -161,7 +169,7 @@ export function DayClose() {
             <Stat icon="trend" label={t('dc_netSales')} value={i18n.money(c.sales.net, 'IQD')} color="var(--accent, #1D5FD1)"
               sub={<>{t('br_invoicesCount', { n: i18n.int(c.sales.invoices) })}{c.sales.returns ? <> · {t('dc_returns')}: <span className="num">{i18n.money(c.sales.returns, 'IQD')}</span></> : null}</>} />
             <Stat icon="wallet" label={t('pos_expected')} value={c.drawers ? moneyBoth(i18n, c.drawers.expected) : '—'}
-              sub={c.drawers ? <>{t('pos_counted')}: <span className="num">{moneyBoth(i18n, c.drawers.counted)}</span></> : t('dc_noRegisters')} />
+              sub={c.drawers ? <>{t('pos_counted')}: <span className="num">{moneyBoth(i18n, c.drawers.counted)}</span></> : t(drawersNote(c))} />
             <Stat icon="scale" label={t('pos_difference')} value={c.drawers ? moneyBoth(i18n, c.drawers.difference) : '—'} color={drawerDiff?.color}
               sub={drawerDiff ? t(drawerDiff.key) : undefined} />
             {c.flow && <Stat icon="plus" label={t('dc_moneyIn')} value={i18n.money(c.flow.in, 'IQD')} color={good} sub={`${t('dc_moneyOut')}: ${i18n.money(c.flow.out, 'IQD')}`} />}

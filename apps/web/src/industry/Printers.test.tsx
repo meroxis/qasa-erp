@@ -1,5 +1,5 @@
 import { readFileSync } from 'node:fs';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import type { ReactNode } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { PAPER_MICRONS, PRINT_KINDS, PRINTER_PAPERS, type Lang, type PrinterChoices } from '@qasa/core';
@@ -172,6 +172,23 @@ describe('Settings → Printers', () => {
       expect(html).toContain('Receipts');
       expect(html).toContain(esc(textOf(lang, 'prn_testBody', { w: '50', h: '20' })));
       expect(html).toContain(lang === 'en' ? 'dir="ltr"' : 'dir="rtl"');
+    }
+  });
+
+  it('the test page gives the date and time of this PC’s clock, also just after midnight in Iraq', () => {
+    const tz = process.env.TZ;
+    process.env.TZ = 'Asia/Baghdad';
+    vi.useFakeTimers();
+    try {
+      // 00:10 on 15 November in Baghdad is still 14 November in UTC
+      vi.setSystemTime(new Date('2026-11-14T21:10:00Z'));
+      const html = wrap(<PrintTestSheet kind="invoice" choice={{ printer: 'Office Laser', paper: 'A4', margins: 'default', copies: 1, silent: false }} />, 'en');
+      expect(html).toContain('15/11/2026');
+      expect(html).toContain('00:10');
+      expect(html).not.toContain('14/11/2026');
+    } finally {
+      vi.useRealTimers();
+      if (tz === undefined) delete process.env.TZ; else process.env.TZ = tz;
     }
   });
 
