@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { formatQty, MAX_ITEM_UNITS, roundHalfUp, UNITS, unitsForBusiness, type CurrencyCode, type Names, type UnitCode } from '@qasa/core';
 import { api, type ItemInput, type ItemView, type WarehouseView } from '../api.ts';
-import { EmptyState, AmountInput, ErrorBox, Icon, Modal, QtyInput, downloadCsv, useData, useLoad, useMay, useToast } from '../components.tsx';
+import { EmptyState, AmountInput, ErrorBox, Icon, Modal, QtyInput, downloadCsv, useData, useLandHome, useLoad, useMay, useToast } from '../components.tsx';
 import { inUnits } from '../industry/units.ts';
 import { batchesApi } from '../industry/batches-api.ts';
 import { brandLabel, brandsApi, categoriesApi, categoryLabel, type BrandView, type CategoryView } from '../industry/categories-api.ts';
@@ -778,7 +778,9 @@ export function ItemDetail({ id }: { id: string }) {
   const { t } = i18n;
   const [editing, setEditing] = useState(false);
   const can = useMay();
+  const { seesBooks } = useData();
   const { data, error, reload } = useLoad(() => api.item(id), [id]);
+  if (useLandHome(error)) return null;
   if (error) return <ErrorBox error={error} />;
   if (!data) return null;
   const it = data;
@@ -787,6 +789,9 @@ export function ItemDetail({ id }: { id: string }) {
   const sourceKey = (s: string) => (isKey(`src_${s}`) ? (`src_${s}` as Key) : null);
   // opening stock and transfers open their stock document; everything else came from an invoice or a return
   const sourcePath = (s: string, id: string) => (s.startsWith('opening') || s.startsWith('transfer') ? `stock-doc/${id}` : `invoice/${id}`);
+  // a move opens its document for someone who may open it: the purchases and the stock documents are not a cashier's
+  // (those addresses land on the home page), their own sales and sales returns are
+  const opens = (s: string) => seesBooks !== false || s.startsWith('sale');
 
   return (
     <div className="stack" style={{ maxWidth: 1100 }}>
@@ -853,7 +858,7 @@ export function ItemDetail({ id }: { id: string }) {
               {it.moves.map((m) => {
                 const key = sourceKey(m.sourceType);
                 return (
-                  <tr key={m.id} className={m.sourceId ? 'click' : ''} onClick={() => m.sourceId && go(sourcePath(m.sourceType, m.sourceId))}>
+                  <tr key={m.id} className={m.sourceId && opens(m.sourceType) ? 'click' : ''} onClick={() => m.sourceId && opens(m.sourceType) && go(sourcePath(m.sourceType, m.sourceId))}>
                     <td className="num">{i18n.date(m.date)}</td>
                     <td>{key ? t(key) : m.sourceType}</td>
                     <td><span className="ltr num">{m.sourceNumber ?? ''}</span></td>

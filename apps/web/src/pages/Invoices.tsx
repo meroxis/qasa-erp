@@ -8,7 +8,7 @@ import {
 } from '@qasa/core';
 import { api, ApiError, pendingRequests, type InvoiceView, type ItemView } from '../api.ts';
 import {
-  AccountCombo, AmountInput, EmptyState, ErrorBox, Icon, InvoiceStatusChip, Modal, QtyInput, SearchCombo, SplitButton, useData, useLoad, useMay, usePageNav, useToast,
+  AccountCombo, AmountInput, EmptyState, ErrorBox, Icon, InvoiceStatusChip, Modal, QtyInput, SearchCombo, SplitButton, useData, useLandHome, useLoad, useMay, usePageNav, useToast,
   type PageNav, type PickOption, type SplitChoice
 } from '../components.tsx';
 import { isKey, useI18n, type Key } from '../i18n.ts';
@@ -636,6 +636,7 @@ export function InvoiceDetail({ id }: { id: string }) {
   const toast = useToast();
   const { settings, plan, reloadAccounts, seesBooks } = useData();
   const { data, error, reload } = useLoad(() => api.invoice(id), [id]);
+  const refused = useLandHome(error);
   usePageNav(data ? { ...INVOICE_NAV[data.kind], title: INVOICE_NAV[data.kind].key } : null);
   const [busy, setBusy] = useState(false);
   const [actionError, setActionError] = useState<unknown>(null);
@@ -648,6 +649,7 @@ export function InvoiceDetail({ id }: { id: string }) {
   // a pharmacy's sale with controlled medicines: the patient and the prescription, asked once it is posted
   const controlled = useControlledPrompt(id);
 
+  if (refused) return null;
   if (error) return <ErrorBox error={error} />;
   if (!data) return null;
   const v = data;
@@ -714,12 +716,13 @@ export function InvoiceDetail({ id }: { id: string }) {
         {v.actions.includes('return') && <button type="button" className="btn" disabled={busy} onClick={() => setReturning(true)}><Icon name="undo" size={16} />{t('actReturnItems')}</button>}
         {v.actions.includes('cancel') && <button type="button" className="btn danger" disabled={busy} onClick={() => { setCancelDate(reverseDefaultDate(v.date)); setCancelling(true); }}><Icon name="undo" size={16} />{t('actCancelInvoice')}</button>}
         {/* 1.4: money for a credit invoice is taken (or paid, for a purchase) with a voucher on the party's account */}
-        {v.status === 'posted' && v.payment === 'credit' && v.partyId && (v.kind === 'sale' || v.kind === 'purchase') && !v.installmentContract && (
+        {priced && v.status === 'posted' && v.payment === 'credit' && v.partyId && (v.kind === 'sale' || v.kind === 'purchase') && !v.installmentContract && (
           <QuickVoucherButton kind={v.kind === 'sale' ? 'receipt' : 'payment'}
             preset={{ partyId: v.partyId, invoice: { number: v.number, total: invoiceOpen(v), currency: v.currency, rateX100: v.rateX100 } }} />
         )}
-        <InvoiceWhatsApp company={company} invoice={v} />
-        <button type="button" className="btn" onClick={() => void printDocument('invoice')}><Icon name="printer" size={16} />{t('print')}</button>
+        {/* without its money (a purchase, for someone who may not read the books) there is no paper to send or print */}
+        {priced && <InvoiceWhatsApp company={company} invoice={v} />}
+        {priced && <button type="button" className="btn" onClick={() => void printDocument('invoice')}><Icon name="printer" size={16} />{t('print')}</button>}
       </div>
       <ErrorBox error={cancelling ? null : actionError} />
       {v.kind === 'sale' && v.actions.includes('post') && v.partyId && (
@@ -740,7 +743,7 @@ export function InvoiceDetail({ id }: { id: string }) {
       {v.status === 'posted' && !isRet && v.returns.some((r) => r.status === 'posted') && <div className="alert warn no-print">{t('hasReturnsNote')}</div>}
 
       {/* printed with the company's print design (Settings → Print design); the screen keeps this view */}
-      <DesignedPrint model={invoiceModel(v)} balanceOf={v.partyId && v.status === 'posted' ? { partyId: v.partyId, date: v.date } : null} />
+      {priced && <DesignedPrint model={invoiceModel(v)} balanceOf={v.partyId && v.status === 'posted' ? { partyId: v.partyId, date: v.date } : null} />}
       <div className="paper invoice no-print">
         <div className="paper-head">
           <div style={{ flex: 1 }}>
@@ -805,13 +808,13 @@ export function InvoiceDetail({ id }: { id: string }) {
             <div className="words">{i18n.digitsOf(amountInWords(v.total, v.currency, i18n.lang))}</div></>}
             {v.notes && <p className="small" style={{ marginBottom: 0 }}><span className="muted">{t('notes')}: </span>{v.notes}</p>}
           </div>
-          <div className="totals" hidden={!priced}>
+          {priced && <div className="totals">
             <span className="muted">{t('subtotal')}</span><span className="num">{i18n.money(v.subtotal, v.currency)}</span>
             {v.discount > 0 && <><span className="muted">{t('discount')}</span><span className="num">− {i18n.money(v.discount, v.currency)}</span></>}
             <span style={{ fontWeight: 700 }}>{t('totalDue')}</span><strong className="num" style={{ fontSize: 18 }}>{i18n.money(v.total, v.currency)}</strong>
             {v.currency === 'USD' && <><span className="muted small">{t('iqdEquivalent')}</span><span className="num small">{i18n.money(v.baseTotal, 'IQD')}</span></>}
             {loyaltyLines(i18n, v.loyalty).map(([label, value]) => <Fragment key={label}><span className="muted small">{label}</span><span className="num small">{value}</span></Fragment>)}
-          </div>
+          </div>}
         </div>
 
         <div className="sigs" style={{ gridTemplateColumns: 'repeat(2, minmax(0, 1fr))' }}>

@@ -1,7 +1,7 @@
 import { useState, type CSSProperties, type ReactNode } from 'react';
 import { addDays, todayIso } from '@qasa/core';
 import { briefApi, type BriefView, type Money2 } from '../industry/brief-api.ts';
-import { ErrorBox, Icon, Modal, useLoad, usePageNav, useToast } from '../components.tsx';
+import { ErrorBox, Icon, Modal, useLoad, useMay, usePageNav, useToast } from '../components.tsx';
 import { useI18n, type I18n } from '../i18n.ts';
 import { href } from '../router.ts';
 import { copyText, openWhatsApp, whatsappNumber, whatsappUrl } from '../share.ts';
@@ -99,6 +99,10 @@ export function Brief() {
   const [date, setDate] = useState(todayIso());
   const { data: b, error, reload } = useLoad(() => briefApi.brief(date), [date]);
   const [phoneModal, setPhoneModal] = useState(false);
+  // the owner's number is the company's setting: an admin sets it. Anyone else sends to the number already set, and
+  // without one copies or prints the brief (the server refuses them the setting)
+  const canSetPhone = useMay()('briefSettings');
+  const hasPhone = !!b && !!whatsappNumber(b.ownerPhone);
 
   async function copy() {
     if (!b) return;
@@ -107,7 +111,7 @@ export function Brief() {
 
   function send() {
     if (!b) return;
-    if (!whatsappNumber(b.ownerPhone)) { setPhoneModal(true); return; }
+    if (!whatsappNumber(b.ownerPhone)) { if (canSetPhone) setPhoneModal(true); return; }
     openWhatsApp(b.ownerPhone, briefText(i18n, b));
   }
 
@@ -125,10 +129,10 @@ export function Brief() {
         <button type="button" className="btn ghost" onClick={() => setDate(addDays(date, 1))} disabled={date >= todayIso()} aria-label={t('br_nextDay')}><Icon name="chevron" size={16} /></button>
         <span className="spacer" />
         <a className="btn" href={href('day-close')} title={t('dc_open')}><Icon name="check" size={16} />{t('dc_title')}</a>
-        <button type="button" className="btn primary" onClick={send} disabled={!b}><Icon name="mail" size={16} />{t('br_sendWhatsApp')}</button>
+        {(canSetPhone || hasPhone) && <button type="button" className="btn primary" onClick={send} disabled={!b}><Icon name="mail" size={16} />{t('br_sendWhatsApp')}</button>}
         <button type="button" className="btn" onClick={() => void copy()} disabled={!b}><Icon name="doc" size={16} />{t('br_copy')}</button>
         <button type="button" className="btn" onClick={() => void printDocument('report')} disabled={!b}><Icon name="printer" size={16} />{t('br_print')}</button>
-        <button type="button" className="btn ghost" onClick={() => setPhoneModal(true)} aria-label={t('br_ownerPhone')}><Icon name="sliders" size={16} /></button>
+        {canSetPhone && <button type="button" className="btn ghost" onClick={() => setPhoneModal(true)} aria-label={t('br_ownerPhone')}><Icon name="sliders" size={16} /></button>}
       </div>
       <ErrorBox error={error} />
       {b && (
@@ -265,7 +269,7 @@ export function Brief() {
           <p className="small muted">{t('br_onlyPosted')}</p>
         </>
       )}
-      {phoneModal && (
+      {phoneModal && canSetPhone && (
         <OwnerPhoneModal current={b?.ownerPhone ?? ''} onClose={() => setPhoneModal(false)}
           onSaved={(phone) => {
             setPhoneModal(false);

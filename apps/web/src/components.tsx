@@ -81,6 +81,19 @@ export function useLoad<T>(load: () => Promise<T>, deps: unknown[]): { data: T |
   return { ...state, reload: () => setTick((n) => n + 1) };
 }
 
+/**
+ * A record's page whose record the server refuses this person (403): the home page instead, as for a typed address of
+ * a page that is not theirs (nav.ts pageOpen). True while it leaves, so the page shows nothing in between.
+ */
+export function useLandHome(error: unknown): boolean {
+  const refused = error instanceof ApiError && error.status === 403;
+  useEffect(() => {
+    // (replaced, not added: Back does not return to the refused address)
+    if (refused) window.location.replace('#/');
+  }, [refused]);
+  return refused;
+}
+
 /* ---------- toast ---------- */
 
 const ToastContext = createContext<(message: string) => void>(() => {});

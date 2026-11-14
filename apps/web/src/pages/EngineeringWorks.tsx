@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { amountInWords, lineAmount, rateFromX100, todayIso, toBase, toWesternDigits, type CurrencyCode } from '@qasa/core';
 import { api, ApiError } from '../api.ts';
-import { EmptyState, AccountCombo, AmountInput, ErrorBox, Icon, Modal, QtyInput, SearchCombo, useData, useLoad, usePageNav, useToast, type PickOption } from '../components.tsx';
+import { EmptyState, AccountCombo, AmountInput, ErrorBox, Icon, Modal, QtyInput, SearchCombo, useData, useLoad, useMay, usePageNav, useToast, type PickOption } from '../components.tsx';
 import { useI18n, type I18n, type Key } from '../i18n.ts';
 import {
   COST_CATEGORIES, JOB_CATEGORIES, JOB_FLOW, LINE_UNITS, worksApi, type CostCategory, type JobCategory, type JobFilter, type JobInput, type JobLineInput,
@@ -44,6 +44,7 @@ function NotAvailable() {
 /* ---------- the jobs ---------- */
 
 export function EngineeringWorks() {
+  const can = useMay();
   const i18n = useI18n();
   const { t } = i18n;
   const toast = useToast();
@@ -87,7 +88,7 @@ export function EngineeringWorks() {
         </div>
       )}
       <div className="row">
-        {summary?.available && <button type="button" className="btn primary" onClick={() => setCreating(true)}><Icon name="plus" size={16} />{t('ew_new')}</button>}
+        {summary?.available && can('job') && <button type="button" className="btn primary" onClick={() => setCreating(true)}><Icon name="plus" size={16} />{t('ew_new')}</button>}
         <div className="track">
           <button type="button" aria-pressed={view === 'board'} onClick={() => setView('board')}>{t('ew_board')}</button>
           <button type="button" aria-pressed={view === 'list'} onClick={() => setView('list')}>{t('ew_list')}</button>

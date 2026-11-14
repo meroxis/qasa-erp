@@ -155,6 +155,23 @@ describe('the balance before and after a paper', () => {
     expect(invoiceModel(inv, { pos: true }).balanceOf).not.toBeNull();
   });
 
+  it('prints a real voucher\'s note and, for dollars, its rate when the design shows them, and neither when it does not', () => {
+    // the same voucher taken in dollars at 1,450, with what its preparer wrote
+    const model = entryModel({ ...voucher, currency: 'USD', rateX100: 145_000, description: 'First part of the November invoice' } as EntryView);
+    for (const g of PRINT_GALLERY) {
+      const base = withGalleryDesign(DEFAULT_PRINT_DESIGN, g.id);
+      const on = paper(model, showing({ notes: true, exchangeRate: true }, base));
+      expect(on, g.id).toContain('First part of the November invoice');
+      expect(on, g.id).toContain('Exchange rate');
+      expect(on, g.id).toContain('1450');
+      const off = paper(model, showing({ notes: false, exchangeRate: false }, base));
+      expect(off, g.id).not.toContain('First part of the November invoice');
+      expect(off, g.id).not.toContain('Exchange rate');
+    }
+    // a dinar voucher has no rate to print
+    expect(paper(entryModel(voucher), showing({ exchangeRate: true }))).not.toContain('Exchange rate');
+  });
+
   it('prints the previous balance, the amount received and the remaining balance on a receipt voucher when the design shows them', () => {
     const model: PrintModel = { ...entryModel(voucher), previousBalance: 700_000, partyBalance: 550_000 };
     const on = paper(model, showing({ partyBalance: true, previousBalance: true }));
@@ -238,6 +255,29 @@ describe('the designs', () => {
           expect(html, what).toContain(doc === 'voucher' ? 'RV-2026-0042' : doc === 'quote' ? 'QT-2026-0007' : 'INV-2026-0128');
         }
       }
+    }
+  });
+});
+
+describe('the sample voucher of the designer', () => {
+  const voucher = sampleModel('voucher', 'en');
+
+  it('carries a note and dollars with their rate, so the Notes and Exchange rate switches change the preview', () => {
+    expect(voucher.notes).toBe('Payment for invoice INV-2026-0128');
+    expect(voucher.currency).toBe('USD');
+    expect(voucher.rateX100).toBe(142_000);
+    // the dinars are the dollars at that rate, and the balance left is the balance before less those dinars
+    expect(voucher.baseTotal).toBe(Math.round((voucher.total * voucher.rateX100) / 10000));
+    expect(voucher.partyBalance).toBe(voucher.previousBalance! - voucher.baseTotal);
+    expect(voucher.accountLines.reduce((s, l) => s + l.debit - l.credit, 0)).toBe(0);
+    for (const lang of ['ar', 'en', 'ku'] as const) expect(sampleModel('voucher', lang).notes, lang).not.toBe('');
+    for (const g of PRINT_GALLERY) {
+      const base = withGalleryDesign(DEFAULT_PRINT_DESIGN, g.id);
+      for (const [field, text] of [['notes', 'Payment for invoice INV-2026-0128'], ['exchangeRate', 'Exchange rate'], ['usdEquivalent', '1,207,000']] as [PrintField, string][]) {
+        expect(paper(voucher, showing({ [field]: true, previousBalance: false, partyBalance: false }, base), 'en'), `${g.id}: ${field} on`).toContain(text);
+        expect(paper(voucher, showing({ [field]: false, previousBalance: false, partyBalance: false }, base), 'en'), `${g.id}: ${field} off`).not.toContain(text);
+      }
+      expect(paper(voucher, showing({ exchangeRate: true }, base), 'en'), g.id).toContain('1420');
     }
   });
 });

@@ -10,6 +10,7 @@ import { Brief, briefText } from './pages/Brief.tsx';
 import { DayClose, dayCloseRows, dayCloseText } from './pages/DayClose.tsx';
 import { Banking } from './pages/Banking.tsx';
 import { Home } from './pages/Home.tsx';
+import { InvoiceDetail } from './pages/Invoices.tsx';
 import { PartyDetail } from './pages/Parties.tsx';
 
 // 1.4: the company's money is the books. The server sends someone who may not read them (a cashier) no balance of a
@@ -222,5 +223,37 @@ describe('a statement for someone who may not read the books', () => {
     expect(mine).not.toContain(t('s14_statementInBooks'));
     expect(clickable(mine)).toBe(1);
     expect(clickable(render(<PartyDetail id="p1" />))).toBe(2);
+  });
+});
+
+describe('a purchase invoice for someone who may not read the books', () => {
+  const line = { lineNo: 1, itemId: 'i1', itemCode: 'A-1', itemName: names('Cable'), unit: 'piece', trackStock: true, description: '', qtyMilli: 3000,
+    sourceLine: null, returnedQtyMilli: 0, lineUnit: null, unitFactorMilli: null, unitQtyMilli: null, batchNo: null, expiry: null, batchId: null };
+  const head = {
+    id: 'v1', kind: 'purchase', status: 'posted', number: 'PI-2026-0007', date: '2026-11-10', partyId: 'p1', partyCode: 'S-0001', partyName: 'Raz', partyPhone: null, partyAddress: null,
+    warehouseId: 'w1', warehouseCode: 'M', warehouseName: names('Main'), currency: 'USD', rateX100: 142_000, payment: 'credit', cashAccountCode: null, cashAccountName: null, notes: '',
+    returnOf: null, returnOfNumber: null, returns: [], createdBy: 'Mer', createdAt: '2026-11-10T09:00:00Z', entryId: 'e1', entryNumber: 'JV-1', cancelEntryId: null, cancelEntryNumber: null,
+    postedBy: 'Mer', postedAt: '2026-11-10T09:01:00Z', cancelledBy: null, cancelledAt: null, actions: [], installmentContract: null
+  };
+
+  it('shows what was bought and from whom, with no amount, no empty total, and nothing to print, send or pay', () => {
+    // as the server sends it: the lines without their prices, the invoice without its totals
+    now.answers = { invoice: { ...head, lines: [line] } };
+    const page = render(<InvoiceDetail id="v1" />, { ...cashierData, settings: { companyName: names('Company'), defaultRateX100: 142_000, postingAccounts: {} } });
+    expect(page).toContain('PI-2026-0007');
+    expect(page).toContain('Raz');
+    expect(page).toContain('Cable');
+    expect(page).not.toMatch(/undefined|NaN/);
+    for (const key of ['unitPrice', 'subtotal', 'totalDue', 'inWords', 'print', 's14_paySupplier'] as const) expect(page, key).not.toContain(`>${t(key)}<`);
+    expect(page).not.toContain('class="totals"');
+  });
+
+  it('keeps the amounts, the totals and Print for someone who reads the books', () => {
+    now.answers = { invoice: { ...head, discount: 0, subtotal: 30_000, total: 30_000, baseTotal: 426_000, lines: [{ ...line, unitPrice: 10_000, amount: 30_000, cost: 142_000, returnedAmount: 0 }] } };
+    const page = render(<InvoiceDetail id="v1" />, { settings: { companyName: names('Company'), defaultRateX100: 142_000, postingAccounts: {} }, permissions: ['admin'] });
+    expect(page).toContain('class="totals"');
+    expect(page).toContain(`>${t('totalDue')}<`);
+    expect(page).toContain(t('print'));
+    expect(page).not.toMatch(/undefined|NaN/);
   });
 });

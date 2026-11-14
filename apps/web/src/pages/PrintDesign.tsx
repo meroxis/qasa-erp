@@ -187,7 +187,7 @@ export function PrintDesignPage() {
     }
   }
 
-  const model = useMemo(() => sampleModel(doc), [doc]);
+  const model = useMemo(() => sampleModel(doc, lang), [doc, lang]);
   const zoom = shown.paper === '80mm' ? 1 : shown.paper === 'A5' ? 0.8 : 0.62;
 
   const company = settings?.companyName ?? { ar: 'شركتي', en: 'My company', ku: 'کۆمپانیاکەم' };

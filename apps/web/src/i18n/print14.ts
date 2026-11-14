@@ -13,16 +13,16 @@ export const PRINT14_TEXT = {
   ],
   pd_g_classic: ['الافتراضي', 'Standard', 'بنەڕەتی'],
   pd_g_classic_d: ['تصميم البرنامج المعتاد', 'The program’s usual design', 'دیزاینی ئاسایی بەرنامەکە'],
-  pd_g_modernLines: ['حديث بخطوط', 'Modern with lines', 'نوێ بە هێڵ'],
-  pd_g_modernLines_d: ['شريط ملوّن وجدول بخطوط بين الصفوف والأعمدة', 'A colour band and a table ruled between rows and columns', 'هێڵێکی ڕەنگاوڕەنگ و خشتەیەک بە هێڵ لە نێوان ڕیز و ستوونەکان'],
+  pd_g_modernLines: ['حديث بخطوط', 'Modern with lines', 'مۆدێرن بە هێڵ'],
+  pd_g_modernLines_d: ['شريط ملوّن وجدول بخطوط بين الصفوف والأعمدة', 'A colour band and a table ruled between rows and columns', 'شریتێکی ڕەنگین و خشتەیەک بە هێڵ لە نێوان ڕیز و ستوونەکان'],
   pd_g_ledger: ['دفتري كلاسيكي', 'Classic ledger', 'دەفتەری کلاسیکی'],
-  pd_g_ledger_d: ['أبيض وأسود، جدول مسطّر كاملاً، يوفّر الحبر', 'Black and white, a fully ruled table, saves ink', 'ڕەش و سپی، خشتەی تەواو هێڵکراو، مەرەکەب پاشەکەوت دەکات'],
-  pd_g_modern: ['حديث', 'Modern', 'نوێ'],
-  pd_g_modern_d: ['رأس جدول ملوّن وصفوف متناوبة', 'A coloured table heading and striped rows', 'سەری خشتەی ڕەنگاوڕەنگ و ڕیزی یەک لە دوای یەک'],
+  pd_g_ledger_d: ['أبيض وأسود، جدول مسطّر كاملاً، يوفّر الحبر', 'Black and white, a fully ruled table, saves ink', 'ڕەش و سپی، خشتەی تەواو هێڵکراو، مەرەکەب کەم بەکاردەهێنێت'],
+  pd_g_modern: ['حديث', 'Modern', 'مۆدێرن'],
+  pd_g_modern_d: ['رأس جدول ملوّن وصفوف متناوبة', 'A coloured table heading and striped rows', 'سەری خشتەی ڕەنگین و ڕیزەکان یەک نا یەک ڕەنگدار'],
   pd_g_halfPage: ['نصف صفحة (A5)', 'Half page (A5)', 'نیو پەڕە (A5)'],
   pd_g_halfPage_d: ['مضغوط لورق A5', 'Tight, for A5 paper', 'چڕ، بۆ پەڕەی A5'],
-  pd_g_receipt80: ['إيصال حراري 80 مم', '80 mm thermal receipt', 'پسوولەی گەرمی 80 ملم'],
-  pd_g_receipt80_d: ['لطابعة الإيصالات', 'For a receipt printer', 'بۆ چاپکەری پسوولە'],
+  pd_g_receipt80: ['إيصال حراري 80 مم', '80 mm thermal receipt', 'وەسڵی گەرمی 80 ملم'],
+  pd_g_receipt80_d: ['لطابعة الإيصالات', 'For a receipt printer', 'بۆ چاپکەری وەسڵ'],
 
   // text size by name
   pd_textSize: ['حجم الخط', 'Text size', 'قەبارەی نووسین'],
@@ -53,7 +53,7 @@ export const PRINT14_TEXT = {
   pd_balanceHint: [
     'الرصيد يُطبع على الورقة المرحَّلة التي لها زبون أو مجهز من القائمة.',
     'The balance prints on a posted paper that has a customer or supplier from the list.',
-    'ڕەسید لەسەر پەڕەی تەرحیلکراو چاپ دەکرێت کە کڕیار یان دابینکەرێکی لیستی هەبێت.'
+    'ڕەسید لەسەر ئەو پەڕە تەرحیلکراوانە چاپ دەکرێت کە کڕیار یان دابینکەرێکی ناو لیستەکەیان لەسەرە.'
   ],
 
   // headings printed on papers (in the paper's language)
@@ -74,7 +74,7 @@ export const PRINT14_TEXT = {
   pp_removeLogoFree: [
     'حذف الشعار؟ خطتك لا تتيح إضافة شعار، فلا يمكن إعادته إلا بعد تفعيل خطة مدفوعة. لإبقائه دون طباعته، ألغِ علامة «طباعة الشعار» بدلاً من حذفه.',
     'Remove the logo? Your plan cannot add a logo, so it cannot be put back until a paid plan is active. To keep it without printing it, untick "Print the logo" instead.',
-    'لۆگۆکە لاببرێت؟ پلانەکەت ڕێگە بە زیادکردنی لۆگۆ نادات، بۆیە تا پلانێکی پارەدار چالاک نەبێت ناگەڕێتەوە. بۆ هێشتنەوەی بەبێ چاپکردنی، لە جیاتی لابردنی نیشانەی «لۆگۆ چاپ بکە» لاببە.'
+    'لۆگۆکە لاببرێت؟ پلانەکەت ڕێگە بە زیادکردنی لۆگۆ نادات، بۆیە تا پلانێکی پارەدار چالاک نەبێت ناگەڕێتەوە. بۆ هێشتنەوەی بەبێ چاپکردنی، لای مەبە؛ تەنها نیشانەی «لۆگۆ چاپ بکە» لاببە.'
   ],
   pp_logoLocked: [
     'شعار الشركة على المطبوعات من مزايا Starter وPro وBusiness.',
@@ -82,7 +82,7 @@ export const PRINT14_TEXT = {
     'لۆگۆی کۆمپانیا لەسەر چاپکراوەکان بەشێکە لە Starter، Pro و Business.'
   ],
   // in the logo's box, while the plan does not hand the saved logo out
-  pp_logoKeptBox: ['الشعار محفوظ', 'Logo kept', 'لۆگۆکە پارێزراوە'],
+  pp_logoKeptBox: ['الشعار محفوظ', 'Logo kept', 'لۆگۆکە هەڵگیراوە'],
   pp_logoKept: [
     'الشعار المحفوظ باقٍ، ويُطبع من جديد عند تفعيل خطة مدفوعة.',
     'Your saved logo is kept and prints again once a paid plan is active.',

@@ -1,10 +1,10 @@
 import type { BusinessType } from '@qasa/core';
 import type { Permission } from './api.ts';
 import type { Key } from './i18n.ts';
-import { ACTIONS, may, mayAny, routeAction, type Action } from './may.ts';
+import { ACTIONS, PRO_ACTIONS, may, mayAny, routeAction, type Action } from './may.ts';
 
 // every action names a permission the server has
-void (ACTIONS satisfies Record<Action, { needs: Permission }>);
+void ({ ...ACTIONS, ...PRO_ACTIONS } satisfies Record<Action, { needs: Permission }>);
 
 /**
  * Every page the menu, the home screen's tiles and the search (Ctrl+K) know about, in one place.

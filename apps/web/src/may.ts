@@ -31,15 +31,65 @@ export const ACTIONS = {
   account: { needs: 'admin', route: 'POST /api/accounts' },
   warehouse: { needs: 'admin', route: 'POST /api/warehouses' },
   moneyAccount: { needs: 'admin', route: 'PUT /api/banking/accounts/:code' },
-  importPage: { needs: 'admin', route: 'POST /api/import' }
+  importPage: { needs: 'admin', route: 'POST /api/import' },
+  companyDetails: { needs: 'admin', route: 'PUT /api/settings' },
+  users: { needs: 'admin', route: 'POST /api/users' },
+  // the daily brief's own settings: the owner's WhatsApp number (and where each quick expense goes)
+  briefSettings: { needs: 'admin', route: 'PUT /api/brief/settings' }
 } as const satisfies Record<string, { needs: string; route: string; body?: Record<string, string> }>;
 
-export type Action = keyof typeof ACTIONS;
+/**
+ * The industry pages (Pro and Business). Their rules are in the Pro module, which is not part of this repository, so no
+ * test here can send these requests: each line states the permission the Pro route asks and names the route it
+ * mirrors (the `rules` of pro/src/<feature>/api.ts; a change those rules do not list needs an admin, as in the core).
+ * What a record offers once it is open (sell, collect, deliver, cancel…) comes from the server with the record itself,
+ * as its `actions`; these are the buttons shown before any record is open, and the few the records do not cover.
+ */
+export const PRO_ACTIONS = {
+  // pro/src/realestate/api.ts: POST /api/real-estate/projects is not in its rules (reserving and selling are 'sales')
+  reProject: { needs: 'admin', route: 'POST /api/real-estate/projects' },
+  // pro/src/installments/api.ts: POST /api/installments (and PUT, collect and cancel of a contract)
+  installment: { needs: 'sales', route: 'POST /api/installments' },
+  // pro/src/installments/api.ts: POST /api/guarantors (and PUT and DELETE /api/guarantors/:id)
+  guarantor: { needs: 'sales', route: 'POST /api/guarantors' },
+  // pro/src/pipeline/api.ts: POST /api/pipeline/deals (and every other change of a deal)
+  deal: { needs: 'sales', route: 'POST /api/pipeline/deals' },
+  // pro/src/mobile/api.ts: POST /api/mobile/serials (and POST /api/mobile/serials/:id/status)
+  mobSerial: { needs: 'stock', route: 'POST /api/mobile/serials' },
+  // pro/src/mobile/api.ts: POST /api/mobile/sales/:id/serials
+  mobAssign: { needs: 'sales', route: 'POST /api/mobile/sales/:id/serials' },
+  // pro/src/mobile/api.ts: POST /api/mobile/trade-in
+  mobTradeIn: { needs: 'purchases', route: 'POST /api/mobile/trade-in' },
+  // pro/src/mobile/api.ts: POST /api/mobile/repairs (and every other change of a repair)
+  mobRepair: { needs: 'sales', route: 'POST /api/mobile/repairs' },
+  // pro/src/parts/api.ts: PUT /api/parts/:id (and POST /api/parts/import)
+  partData: { needs: 'stock', route: 'PUT /api/parts/:id' },
+  // pro/src/works/api.ts: POST /api/works/jobs (linking a job's costs is 'purchases': the job says so in its `actions`)
+  job: { needs: 'sales', route: 'POST /api/works/jobs' },
+  // pro/src/solar/api.ts: POST /api/solar/systems (and its equipment, its sale, the plans and the visits)
+  solarSystem: { needs: 'sales', route: 'POST /api/solar/systems' },
+  // pro/src/generators/api.ts: POST /api/generators/subscribers (and bulk, PUT, status, POST /api/generators/collections)
+  genSubscriber: { needs: 'sales', route: 'POST /api/generators/subscribers' },
+  // pro/src/generators/api.ts: POST /api/generators/runs (and PUT, post, unpost, reverse, DELETE; PUT /api/generators/settings)
+  genRun: { needs: 'admin', route: 'POST /api/generators/runs' },
+  // pro/src/pharmacy/api.ts: PUT /api/pharmacy/items/:id
+  medicine: { needs: 'stock', route: 'PUT /api/pharmacy/items/:id' },
+  // pro/src/pharmacy/api.ts: GET /api/pharmacy/controlled and PUT /api/pharmacy/controlled/:invoiceId/:lineNo
+  // (correcting a line already recorded needs an admin: pro/src/pharmacy/service.ts)
+  controlled: { needs: 'sales', route: 'PUT /api/pharmacy/controlled/:invoiceId/:lineNo' }
+} as const satisfies Record<string, { needs: string; route: string }>;
+
+export type Action = keyof typeof ACTIONS | keyof typeof PRO_ACTIONS;
+
+const NEEDS: Record<Action, { needs: string }> = { ...ACTIONS, ...PRO_ACTIONS };
+
+/** The permission the server asks for an action. */
+export const needs = (action: Action): string => NEEDS[action].needs;
 
 /** Whether someone with these permissions may do this (the server decides again on every request). */
 export function may(permissions: readonly string[] | undefined, action: Action): boolean {
   // (an admin has every permission on the server: auth.ts ROLE_PERMISSIONS)
-  return !!permissions && (permissions.includes('admin') || permissions.includes(ACTIONS[action].needs));
+  return !!permissions && (permissions.includes('admin') || permissions.includes(NEEDS[action].needs));
 }
 
 /** Whether they may do at least one of these. */
@@ -60,6 +110,9 @@ export function routeAction(page: string, arg?: string): Action | null {
     case 'new-stock-doc': case 'edit-stock-doc': return 'stockDoc';
     case 'new-stock-adjustment': case 'edit-stock-adjustment': case 'stock-count': return 'adjustment';
     case 'new': case 'edit': return 'voucher';
+    case 'new-installment': return 'installment';
+    // the two builders of the solar page (a new system, a wiring quotation); its other tabs are read
+    case 'solar': return arg === 'new' || arg === 'electrical' ? 'solarSystem' : null;
     default: return null;
   }
 }

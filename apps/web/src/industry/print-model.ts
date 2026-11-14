@@ -1,4 +1,4 @@
-import type { CurrencyCode, EntryType, InvoiceDocKind, Names, PrintDoc, UnitCode } from '@qasa/core';
+import type { CurrencyCode, EntryType, InvoiceDocKind, Lang, Names, PrintDoc, UnitCode } from '@qasa/core';
 import type { EntryView, InvoiceView } from '../api.ts';
 import type { QuoteView } from './quotes-api.ts';
 
@@ -208,21 +208,28 @@ export function entryModel(e: EntryView): PrintModel {
 /** Receipt and payment vouchers print with the voucher design; other journal entries too (one design for vouchers). */
 export const isVoucherType = (t: EntryType) => VOUCHER_TYPES.includes(t);
 
+/** The note on the sample voucher (a voucher's note is what its preparer typed: in the language being previewed). */
+const SAMPLE_NOTE: Names = { ar: 'دفعة عن الفاتورة INV-2026-0128', en: 'Payment for invoice INV-2026-0128', ku: 'پارەدان بۆ پسوولەی INV-2026-0128' };
+
 /** The designer's sample paper, in the language being previewed. */
-export function sampleModel(doc: PrintDoc): PrintModel {
+export function sampleModel(doc: PrintDoc, lang: Lang = 'ar'): PrintModel {
   const names = (ar: string, en: string, ku: string): Names => ({ ar, en, ku });
   if (doc === 'voucher') {
-    const sale = sampleModel('sale');
+    const sale = sampleModel('sale', lang);
+    // A receipt in dollars with a note, so every switch of the designer changes the preview: "Notes" shows the note,
+    // "Exchange rate" the rate the dollars were taken at, "Equivalent" the same money in dinars. $850.00 at 1,420
+    // is 1,207,000 dinars, taken off what the customer owed.
     return {
       ...sale, doc, titleKey: 'receipt', number: 'RV-2026-0042', lines: [], partyRole: 'party',
+      currency: 'USD', rateX100: 142_000, notes: SAMPLE_NOTE[lang],
       // as entryModel builds a real voucher: the party by name only
       party: sale.party && { name: sale.party.name, code: null, phone: null, address: null },
       accountLines: [
-        { accountCode: '1811', accountName: names('الصندوق الرئيسي', 'Main safe', 'قاسەی سەرەکی'), description: '', debit: 1_250_000, credit: 0 },
-        { accountCode: '1611', accountName: names('العملاء', 'Customers', 'کڕیاران'), description: '', debit: 0, credit: 1_250_000 }
+        { accountCode: '1811', accountName: names('الصندوق الرئيسي', 'Main safe', 'قاسەی سەرەکی'), description: '', debit: 85_000, credit: 0 },
+        { accountCode: '1611', accountName: names('العملاء', 'Customers', 'کڕیاران'), description: '', debit: 0, credit: 85_000 }
       ],
-      subtotal: 1_250_000, discount: 0, total: 1_250_000, baseTotal: 1_250_000, verifyInvoiceId: null,
-      previousBalance: 1_645_000, partyBalance: 395_000
+      subtotal: 85_000, discount: 0, total: 85_000, baseTotal: 1_207_000, verifyInvoiceId: null,
+      previousBalance: 1_645_000, partyBalance: 438_000
     };
   }
   const lines: PrintItemLine[] = [

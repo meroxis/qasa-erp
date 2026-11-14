@@ -4,7 +4,7 @@ import {
   api, ApiError, type AgingBucket, type ContractState, type ContractSummaryView, type ContractView, type GuarantorInput, type GuarantorView,
   type InstallmentState, type InstallmentsSummaryView, type InvoiceSummary, type Money2, type PartyView
 } from '../api.ts';
-import { EmptyState, AccountCombo, AmountInput, ErrorBox, Icon, Modal, SearchCombo, useData, useLoad, useToast, type PickOption } from '../components.tsx';
+import { EmptyState, AccountCombo, AmountInput, ErrorBox, Icon, Modal, SearchCombo, useData, useLoad, useMay, useToast, type PickOption } from '../components.tsx';
 import { useI18n, type I18n } from '../i18n.ts';
 import { go, href } from '../router.ts';
 import { PartyPicker } from '../industry/PartyPicker.tsx';
@@ -46,6 +46,7 @@ function NotAvailable() {
 /* ---------- list ---------- */
 
 export function Installments() {
+  const can = useMay();
   const i18n = useI18n();
   const { t } = i18n;
   const [status, setStatus] = useState<ContractState | ''>('');
@@ -82,7 +83,7 @@ export function Installments() {
         </div>
       )}
       <div className="row">
-        {summary?.available && <a className="btn primary" href={href('new-installment')}><Icon name="plus" size={16} />{t('insNew')}</a>}
+        {summary?.available && can('installment') && <a className="btn primary" href={href('new-installment')}><Icon name="plus" size={16} />{t('insNew')}</a>}
         <a className="btn" href={href('guarantors')}><Icon name="idcard" size={16} />{t('guarantors')}</a>
         <a className="btn" href={href('installments-aging')}><Icon name="chart" size={16} />{t('aging')}</a>
         <span className="spacer" />
@@ -620,6 +621,8 @@ export function Guarantors() {
   const [form, setForm] = useState<GuarantorInput>({ name: '' });
   const [busy, setBusy] = useState(false);
   const [formError, setFormError] = useState<unknown>(null);
+  // someone who may not change a guarantor still reads one: the form opens with nothing to type in and no Save
+  const can = useMay()('guarantor');
 
   if (error instanceof ApiError && error.status === 404) return <NotAvailable />;
 
@@ -662,7 +665,7 @@ export function Guarantors() {
   return (
     <div className="stack">
       <div className="row">
-        <button type="button" className="btn primary" onClick={() => open('new')}><Icon name="plus" size={16} />{t('newGuarantor')}</button>
+        {can && <button type="button" className="btn primary" onClick={() => open('new')}><Icon name="plus" size={16} />{t('newGuarantor')}</button>}
         <a className="btn" href={href('installments')}>{t('installments')}</a>
       </div>
       <ErrorBox error={error} />
@@ -689,13 +692,15 @@ export function Guarantors() {
       {editing && (
         <Modal title={editing === 'new' ? t('newGuarantor') : editing.name} onClose={() => setEditing(null)}>
           <div className="stack">
+            <fieldset disabled={!can} style={{ display: 'contents' }}>
             <GuarantorFields value={form} onChange={setForm} />
             <label className="field"><span>{t('notes')}</span><textarea className="input" rows={2} maxLength={1000} value={form.notes ?? ''} onChange={(e) => setForm({ ...form, notes: e.target.value })} /></label>
+            </fieldset>
             <ErrorBox error={formError} />
             <div className="row">
-              <button type="button" className="btn primary" disabled={busy} onClick={() => void save()}>{t('save')}</button>
-              {editing !== 'new' && editing.contracts === 0 && <button type="button" className="btn danger" disabled={busy} onClick={() => void remove(editing)}>{t('actDelete')}</button>}
-              <button type="button" className="btn" onClick={() => setEditing(null)}>{t('cancel')}</button>
+              {can && <button type="button" className="btn primary" disabled={busy} onClick={() => void save()}>{t('save')}</button>}
+              {can && editing !== 'new' && editing.contracts === 0 && <button type="button" className="btn danger" disabled={busy} onClick={() => void remove(editing)}>{t('actDelete')}</button>}
+              <button type="button" className="btn" onClick={() => setEditing(null)}>{t(can ? 'cancel' : 'back')}</button>
             </div>
           </div>
         </Modal>

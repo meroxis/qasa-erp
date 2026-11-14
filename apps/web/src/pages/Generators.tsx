@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { todayIso, toWesternDigits } from '@qasa/core';
 import { ApiError } from '../api.ts';
-import { EmptyState, AccountCombo, AmountInput, ErrorBox, Icon, Modal, useData, useLoad, usePageNav, useToast } from '../components.tsx';
+import { EmptyState, AccountCombo, AmountInput, ErrorBox, Icon, Modal, useData, useLoad, useMay, usePageNav, useToast } from '../components.tsx';
 import { useI18n, type Key } from '../i18n.ts';
 import { go, href } from '../router.ts';
 import {
@@ -117,6 +117,7 @@ function Tiles({ s }: { s: GenSummary }) {
 /* ---------- the collector's screen ---------- */
 
 function Collect({ summary, onChange }: { summary: GenSummary | null; onChange(): void }) {
+  const mayDo = useMay();
   const i18n = useI18n();
   const { t } = i18n;
   const toast = useToast();
@@ -205,9 +206,11 @@ function Collect({ summary, onChange }: { summary: GenSummary | null; onChange()
             </div>
             <ErrorBox error={error} />
             <div className="row">
-              <button type="button" className="btn primary" style={{ fontSize: 18, padding: '12px 28px' }} disabled={busy || !amount} onClick={() => void receive()}>
-                <Icon name="check" size={20} />{t('gen_receive')}
-              </button>
+              {mayDo('genSubscriber') && (
+                <button type="button" className="btn primary" style={{ fontSize: 18, padding: '12px 28px' }} disabled={busy || !amount} onClick={() => void receive()}>
+                  <Icon name="check" size={20} />{t('gen_receive')}
+                </button>
+              )}
               <button type="button" className="btn" onClick={() => { setPicked(null); search.current?.focus(); }}>{t('cancel')}</button>
             </div>
           </div>
@@ -305,7 +308,8 @@ function Subscribers({ summary, onChange }: { summary: GenSummary | null; onChan
   const [editing, setEditing] = useState<SubscriberView | 'new' | null>(null);
   const [bulk, setBulk] = useState(false);
   const [actionError, setActionError] = useState<unknown>(null);
-  const can = !!summary?.available;
+  const mayDo = useMay();
+  const can = !!summary?.available && mayDo('genSubscriber');
 
   async function setTo(s: SubscriberView, next: SubscriberStatus) {
     setActionError(null);
@@ -367,7 +371,7 @@ function Subscribers({ summary, onChange }: { summary: GenSummary | null; onChan
                     <td><StatusChip status={s.status} /></td>
                     <td className="row" style={{ gap: 6, justifyContent: 'end' }}>
                       {can && <button type="button" className="btn subtle" onClick={() => setEditing(s)}>{t('gen_edit')}</button>}
-                      {s.status === 'active' && <button type="button" className="btn subtle" onClick={() => void setTo(s, 'suspended')}>{t('gen_cutOff')}</button>}
+                      {s.status === 'active' && mayDo('genSubscriber') && <button type="button" className="btn subtle" onClick={() => void setTo(s, 'suspended')}>{t('gen_cutOff')}</button>}
                       {s.status === 'suspended' && can && <button type="button" className="btn subtle" onClick={() => void setTo(s, 'active')}>{t('gen_reconnect')}</button>}
                     </td>
                   </tr>
@@ -522,17 +526,18 @@ function Months({ summary }: { summary: GenSummary | null }) {
   const { t } = i18n;
   const { data, error } = useLoad(() => generatorsApi.runs(), []);
   const [preparing, setPreparing] = useState(false);
+  const mayDo = useMay();
   const [settings, setSettings] = useState(false);
   return (
     <div className="stack">
       <div className="row">
-        {summary?.available && (
+        {summary?.available && mayDo('genRun') && (
           <button type="button" className="btn primary" style={{ fontSize: 16, padding: '10px 22px' }} onClick={() => setPreparing(true)}>
             <Icon name="plus" size={18} />{t('gen_billMonth')}
           </button>
         )}
         <span className="spacer" />
-        {summary?.available && <button type="button" className="btn" onClick={() => setSettings(true)}><Icon name="sliders" size={16} />{t('gen_settings')}</button>}
+        {summary?.available && mayDo('genRun') && <button type="button" className="btn" onClick={() => setSettings(true)}><Icon name="sliders" size={16} />{t('gen_settings')}</button>}
       </div>
       <p className="muted small" style={{ margin: 0 }}>{t('gen_monthsHelp')}</p>
       <ErrorBox error={error} />
@@ -644,7 +649,10 @@ export function GenRun({ id }: { id: string }) {
   const toast = useToast();
   usePageNav(NAV);
   const { settings } = useData();
-  const { data: run, error, reload } = useLoad(() => generatorsApi.run(id), [id]);
+  const { data: loaded, error, reload } = useLoad(() => generatorsApi.run(id), [id]);
+  // a month is prepared, posted and taken back by an admin (the server's rule): anyone else reads it
+  const admin = useMay()('genRun');
+  const run = loaded && !admin ? { ...loaded, actions: [] } : loaded;
   const [normal, setNormal] = useState<number | null>(null);
   const [golden, setGolden] = useState<number | null>(null);
   const [busy, setBusy] = useState(false);

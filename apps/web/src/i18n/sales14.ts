@@ -11,12 +11,12 @@ export const SALES14_TEXT = {
   s14_creditNeedsCustomer: [
     'اختر الزبون أولاً: البيع الآجل يُسجَّل على حسابه.',
     'Choose the customer first: a credit sale goes on their account.',
-    'سەرەتا کڕیار هەڵبژێرە: فرۆشتنی قەرز لەسەر ئەو تۆمار دەکرێت.'
+    'سەرەتا کڕیار هەڵبژێرە: فرۆشتن بە قەرز لەسەر ئەو تۆمار دەکرێت.'
   ],
   s14_creditNeedsSupplier: [
     'اختر المجهز أولاً: الشراء الآجل يبقى ديناً علينا له.',
     'Choose the supplier first: a credit purchase stays owed to them.',
-    'سەرەتا دابینکەر هەڵبژێرە: کڕینی قەرز وەک قەرز بۆ ئەو دەمێنێتەوە.'
+    'سەرەتا دابینکەر هەڵبژێرە: کڕین بە قەرز وەک قەرز بۆ ئەو دەمێنێتەوە.'
   ],
   s14_safe: ['القاصة', 'Safe', 'قاسە'],
   s14_salesSectionHelp: ['الصلاحية والوجبات', 'Expiry and batches', 'بەسەرچوون و وەجبەکان'],
@@ -41,12 +41,12 @@ export const SALES14_TEXT = {
   ],
   s14_into: ['يدخل إلى', 'Paid into', 'دەچێتە ناو'],
   s14_outOf: ['يُدفع من', 'Paid from', 'دەدرێت لە'],
-  s14_balanceBefore: ['الرصيد قبل', 'Balance before', 'ڕەسید پێش'],
-  s14_balanceAfter: ['المتبقي بعد', 'Remaining after', 'ماوە دوای'],
+  s14_balanceBefore: ['الرصيد قبل', 'Balance before', 'ڕەسیدی پێشوو'],
+  s14_balanceAfter: ['المتبقي بعد', 'Remaining after', 'ڕەسیدی ماوە'],
   s14_overpaid: [
     'المبلغ أكبر من الرصيد: الزيادة تبقى له.',
     'More than the balance: the extra stays in their favour.',
-    'بڕەکە لە ڕەسید زیاترە: زیادەکە بۆ ئەو دەمێنێتەوە.'
+    'پارەکە لە ڕەسید زیاترە: زیادەکە بۆ ئەو دەمێنێتەوە.'
   ],
   s14_forInvoice: ['عن الفاتورة {n}', 'For invoice {n}', 'بۆ پسوولەی {n}'],
   s14_posted: ['رُحّل السند {n}', 'Voucher {n} posted', 'سەنەدی {n} تەرحیل کرا'],

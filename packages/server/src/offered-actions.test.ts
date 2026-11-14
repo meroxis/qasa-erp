@@ -1,6 +1,9 @@
 import { afterAll, beforeAll, expect, it } from 'vitest';
 import type { FastifyInstance } from 'fastify';
-import { ACTIONS, may, type Action } from '../../../apps/web/src/may.ts';
+import { ACTIONS, may } from '../../../apps/web/src/may.ts';
+
+// (the industry pages' actions, PRO_ACTIONS, are rules of the Pro module: not served by this app, not sent here)
+type Action = keyof typeof ACTIONS;
 import { buildApp } from './app.ts';
 import { permissionsOf, resetLoginThrottle, ROLES, type Role } from './auth.ts';
 import { openDatabase, type Db } from './db.ts';

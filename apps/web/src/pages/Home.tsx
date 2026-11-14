@@ -64,7 +64,7 @@ export function Home({ viewer, user, favourites }: { viewer: NavViewer; user: st
 
   return (
     <div className="stack">
-      {noCompany && (
+      {noCompany && can('companyDetails') && (
         <div className="alert info">{t('setupCompany')} <a href={href('settings/company')}>{t('settings')}</a></div>
       )}
       {plan?.license?.state === 'expired' && plan.license.expires && (
@@ -260,6 +260,29 @@ function LaunchTile({ item, pinned, user, label, locked }: { item: NavItem; pinn
 
 const STEPS_HIDDEN = 'qasa.firstSteps.hidden';
 
+export interface FirstStep { key: Key; hint: Key; done: boolean; link: string; icon: string }
+
+/**
+ * The first steps this person can take themselves: each one opens a page that is theirs and ends in an action the
+ * server accepts from them (may.ts). The company's details, the import and the users are an admin's; someone who sells
+ * adds customers and writes the first invoice; a stock keeper adds items. Nobody is sent to a page that lands back here.
+ */
+export function firstStepsFor(
+  permissions: readonly string[],
+  facts: { named: boolean; parties: number; items: number; sales: number; users: number | null }
+): FirstStep[] {
+  const can = (action: Parameters<typeof may>[1]) => may(permissions, action);
+  const steps: FirstStep[] = [];
+  if (can('companyDetails')) steps.push({ key: 'fsCompany', hint: 'fsCompanyHint', done: facts.named, link: 'settings/company', icon: 'building' });
+  const started = facts.parties > 0 || facts.items > 0;
+  if (can('importPage')) steps.push({ key: 'fsImport', hint: 'fsImportHint', done: started, link: 'import', icon: 'upload' });
+  else if (can('item')) steps.push({ key: 'fsImport', hint: 'fsImportHint', done: started, link: 'items', icon: 'upload' });
+  else if (can('customer')) steps.push({ key: 'fsImport', hint: 'fsImportHint', done: started, link: 'customers', icon: 'upload' });
+  if (can('sale')) steps.push({ key: 'fsInvoice', hint: 'fsInvoiceHint', done: facts.sales > 0, link: 'new-invoice/sale', icon: 'invoice' });
+  if (can('users') && facts.users !== null) steps.push({ key: 'fsUsers', hint: 'fsUsersHint', done: facts.users > 1, link: 'users', icon: 'users' });
+  return steps;
+}
+
 /** A new company's first steps, worked out from its own books; hidden once done (or when the person hides it). */
 function FirstSteps({ viewer }: { viewer: NavViewer }) {
   const i18n = useI18n();
@@ -272,13 +295,11 @@ function FirstSteps({ viewer }: { viewer: NavViewer }) {
   const users = useLoad(() => (viewer.admin ? api.users() : Promise.resolve(null)), [viewer.admin]);
   if (hidden || !settings || !parties.data || !items.data || !sales.data) return null;
   const named = !!(settings.companyName.ar || settings.companyName.en || settings.companyName.ku);
-  const steps: { key: Key; hint: Key; done: boolean; link: string; icon: string }[] = [
-    { key: 'fsCompany', hint: 'fsCompanyHint', done: named, link: 'settings/company', icon: 'building' },
-    { key: 'fsImport', hint: 'fsImportHint', done: parties.data.length > 0 || items.data.length > 0, link: viewer.admin ? 'import' : 'items', icon: 'upload' },
-    { key: 'fsInvoice', hint: 'fsInvoiceHint', done: sales.data.length > 0, link: 'new-invoice/sale', icon: 'invoice' }
-  ];
-  if (viewer.admin && users.data) steps.push({ key: 'fsUsers', hint: 'fsUsersHint', done: users.data.length > 1, link: 'users', icon: 'users' });
+  const steps = firstStepsFor(viewer.admin ? ['admin'] : viewer.permissions, {
+    named, parties: parties.data.length, items: items.data.length, sales: sales.data.length, users: users.data ? users.data.length : null
+  });
   const done = steps.filter((s) => s.done).length;
+  // nothing this person can do (a viewer, an accountant), or all of it done: no card
   if (done === steps.length) return null;
   const hide = () => { try { localStorage.setItem(STEPS_HIDDEN, '1'); } catch { /* not available */ } setHidden(true); };
   return (

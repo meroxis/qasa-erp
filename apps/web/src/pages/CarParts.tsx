@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { formatQty } from '@qasa/core';
-import { AmountInput, ErrorBox, Icon, Modal, QtyInput, downloadCsv, useData, useLoad, useToast } from '../components.tsx';
+import { AmountInput, ErrorBox, Icon, Modal, QtyInput, downloadCsv, useData, useLoad, useMay, useToast } from '../components.tsx';
 import { isKey, useI18n, type I18n } from '../i18n.ts';
 import { href } from '../router.ts';
 import {
@@ -27,7 +27,9 @@ export function originName(i18n: I18n, origin: string): string {
 
 function useCanEdit(): boolean {
   const { plan } = useData();
-  return !!plan?.features.includes('autoParts');
+  const can = useMay();
+  // part numbers and fitments are the stock's data: the plan has the feature, and the person may change them
+  return !!plan?.features.includes('autoParts') && can('partData');
 }
 
 /** قطع غيار السيارات: counter search, vehicle finder and reorder list */
