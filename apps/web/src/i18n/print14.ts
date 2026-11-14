@@ -68,6 +68,11 @@ export const PRINT14_TEXT = {
 
   // the company logo: a paid feature
   f_companyLogo: ['شعار الشركة على المطبوعات', 'Your company logo on printed papers', 'لۆگۆی کۆمپانیاکەت لەسەر چاپکراوەکان'],
+  pp_logoEarlier: [
+    'شعارك المحفوظ سابقاً يبقى يُطبع. تغييره يحتاج إلى خطة مدفوعة.',
+    'Your logo, saved earlier, keeps printing. Changing it needs a paid plan.',
+    'لۆگۆکەت کە پێشتر پاشەکەوت کراوە هەر چاپ دەکرێت. گۆڕینی پێویستی بە پلانێکی پارەدار هەیە.'
+  ],
   pp_logoLocked: [
     'شعار الشركة على المطبوعات من مزايا Starter وPro وBusiness.',
     'Your company logo on printed papers is part of Starter, Pro and Business.',

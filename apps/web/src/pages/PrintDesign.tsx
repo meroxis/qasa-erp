@@ -458,16 +458,17 @@ export function PrintHeaderCard() {
             <button type="button" className="btn" disabled={busy || !canLogo} onClick={() => input.current?.click()}><Icon name="upload" size={16} />{logo ? t('pp_changeLogo') : t('pp_chooseLogo')}</button>
             {(logo || kept) && <button type="button" className="btn" disabled={busy} onClick={() => void run(async () => { await printApi.deleteLogo(); refreshPrintSetup(); }, 'pp_logoRemoved')}><Icon name="x" size={16} />{t('pp_removeLogo')}</button>}
           </div>
-          {canLogo ? (
+          {(canLogo || logo) && (
             <>
-              <span className="muted small">{t('pp_logoHint')}</span>
+              {canLogo && <span className="muted small">{t('pp_logoHint')}</span>}
               <label className="row small" style={{ gap: 8 }}><input type="checkbox" checked={form.showLogo} onChange={(e) => setForm({ ...form, showLogo: e.target.checked })} />{t('pp_showLogo')}</label>
             </>
-          ) : (
+          )}
+          {!canLogo && (
             <div className="alert info pd-locked" role="note">
               <Icon name="star" size={16} />
               <span>
-                {t('pp_logoLocked')} {kept && <>{t('pp_logoKept')} </>}
+                {logo ? t('pp_logoEarlier') : t('pp_logoLocked')} {kept && <>{t('pp_logoKept')} </>}
                 <a href={href('plans')}>{t('planLicense')}</a>
               </span>
             </div>

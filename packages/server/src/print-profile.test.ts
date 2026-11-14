@@ -91,6 +91,13 @@ describe('company logo', () => {
     expect((await send('GET', '/api/print-profile')).json()).toMatchObject({ logo: null, logoKept: false });
   });
 
+  it('keeps printing a logo saved before the logo became a paid feature, on the free plan; replacing it needs a paid plan', async () => {
+    writeSetting(db, 'company_logo', JSON.stringify({ mime: 'image/png', data: toBase64(PNG), updatedAt: '2026-01-01T00:00:00.000Z' }));
+    expect((await send('GET', '/api/print-profile')).json()).toMatchObject({ logo: { mime: 'image/png' }, logoKept: false });
+    expect((await send('PUT', '/api/company-logo', { data: toBase64(png(10, 10)) })).statusCode).toBe(409);
+    expect((await send('GET', '/api/print-profile')).json()).toMatchObject({ logo: { mime: 'image/png' } });
+  });
+
   it('includes the logo in Starter, Pro and Business and not in Free', () => {
     expect(PLAN_IDS.map((id) => PLANS[id].features.includes('companyLogo'))).toEqual([false, true, true, true]);
   });

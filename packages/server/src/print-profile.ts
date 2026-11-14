@@ -96,7 +96,12 @@ export interface PrintProfile {
   showLogo: boolean;
 }
 
-export interface CompanyLogo { mime: ImageMime; data: string; updatedAt: string }
+/**
+ * `paid` marks a logo saved from 1.4 on, when the logo became a paid feature: it prints only while the plan has it.
+ * A logo without the mark was saved before that, when the logo was free: it keeps printing on every plan (it can be
+ * removed, and replaced only on a paid plan).
+ */
+export interface CompanyLogo { mime: ImageMime; data: string; updatedAt: string; paid?: boolean }
 export interface PrintProfileView extends PrintProfile {
   /** the logo to print: null when there is none, or when the plan does not print one */
   logo: CompanyLogo | null;
@@ -139,7 +144,7 @@ export function getPrintProfile(db: Db): PrintProfileView {
     showLogo: typeof stored.showLogo === 'boolean' ? stored.showLogo : EMPTY.showLogo
   };
   const logo = getCompanyLogo(db);
-  const allowed = logo !== null && logoAvailable(db);
+  const allowed = logo !== null && (logo.paid !== true || logoAvailable(db));
   return { ...profile, logo: allowed ? logo : null, logoKept: logo !== null && !allowed };
 }
 
@@ -164,7 +169,7 @@ export function setCompanyLogo(db: Db, base64: string, user: string): CompanyLog
   if (!size || size.width < 1 || size.height < 1) throw invalid([{ code: 'pp_logo_invalid' }]);
   if (size.width > MAX_LOGO_SIDE || size.height > MAX_LOGO_SIDE) throw invalid([{ code: 'pp_logo_too_wide' }]);
   // stored re-encoded from the checked bytes, never the text the client sent
-  const logo: CompanyLogo = { mime, data: toBase64(bytes), updatedAt: new Date().toISOString() };
+  const logo: CompanyLogo = { mime, data: toBase64(bytes), updatedAt: new Date().toISOString(), paid: true };
   transaction(db, () => {
     writeSetting(db, LOGO_KEY, JSON.stringify(logo));
     audit(db, user, 'update', 'company_logo', 'company', { mime, bytes: bytes.length });
