@@ -5,10 +5,13 @@ import { LTR_ISOLATE_END, LTR_ISOLATE_START, stripBidiIsolates, type AmountsShow
 import { DataContext } from './components.tsx';
 import { I18nContext, makeI18n } from './i18n.ts';
 import { AMOUNTS_TEXT } from './i18n/amounts.ts';
-import { Amount, DualContext, DualRateHint, dualRateTitle, dualText, type DualRate, type DualSource } from './Amount.tsx';
-import type { DashboardView } from './industry/brief-api.ts';
+import { Amount, amountTextOf, DualContext, DualNote, DualRateHint, dualRateTitle, dualText, OwedTotal, rateReader, type DualRate, type DualSource } from './Amount.tsx';
+import type { BriefView, DashboardView, DayCloseView } from './industry/brief-api.ts';
 import type { NavViewer } from './nav.ts';
-import { Home } from './pages/Home.tsx';
+import { compact, Home } from './pages/Home.tsx';
+import { briefText } from './pages/Brief.tsx';
+import { dayCloseText } from './pages/DayClose.tsx';
+import { Parties } from './pages/Parties.tsx';
 import { MoreReports } from './pages/MoreReports.tsx';
 import { AmountsShowSetting } from './pages/Settings.tsx';
 import { TillEquivalent } from './pages/Pos.tsx';
@@ -26,6 +29,7 @@ const { now, answering } = vi.hoisted(() => {
 });
 vi.mock('./api.ts', async (importOriginal) => ({ ...(await importOriginal<typeof import('./api.ts')>()), api: answering() }));
 vi.mock('./industry/brief-api.ts', async (importOriginal) => ({ ...(await importOriginal<typeof import('./industry/brief-api.ts')>()), briefApi: answering(), dayCloseApi: answering() }));
+vi.mock('./industry/parties-api.ts', async (importOriginal) => ({ ...(await importOriginal<typeof import('./industry/parties-api.ts')>()), partiesApi: answering() }));
 vi.mock('./components.tsx', async (importOriginal) => ({
   ...(await importOriginal<typeof import('./components.tsx')>()),
   useLoad: (load: () => Promise<unknown>) => {
@@ -125,6 +129,93 @@ describe('the helper', () => {
     expect(render(<TillEquivalent total={50_000} currency="USD" />, { dual: source('usd_iqd') })).toContain('≈ 655,000 IQD');
     expect(render(<TillEquivalent total={1_310_000} currency="IQD" />, { dual: source('iqd_usd', 'none') })).toBe('');
   });
+
+  it('converts a dollar sale at the rate the cashier typed for it (the rate it is booked at), and says so', () => {
+    const html = render(<TillEquivalent total={50_000} currency="USD" rateX100={142_000} />, { dual: source('iqd_usd') });
+    expect(html).toContain('≈ 710,000 IQD');
+    expect(html).toContain('title="At this sale’s rate: $1 = 1,420 IQD"');
+    // with the field empty, the board's rate, as before; even without a board rate the sale's own rate is enough
+    expect(render(<TillEquivalent total={50_000} currency="USD" rateX100={0} />, { dual: source('iqd_usd') })).toContain('≈ 655,000 IQD');
+    expect(render(<TillEquivalent total={50_000} currency="USD" rateX100={142_000} />, { dual: source('iqd_usd', 'none') })).toContain('≈ 710,000 IQD');
+    expect(render(<TillEquivalent total={50_000} currency="USD" rateX100={142_000} />, { dual: source('iqd') })).toBe('');
+  });
+
+  it('a total owed: the real dinars and dollars converted once; the book-rate total as before with dinar only or no rate', () => {
+    // a customer owes 1,310,000 IQD and $1,400 booked at 1,420 (1,988,000): 3,298,000 IQD at the book rates
+    const owed = { IQD: 1_310_000, USD: 140_000 };
+    expect(render(<OwedTotal owed={owed} book={3_298_000} />)).toBe('3,298,000 IQD');
+    expect(render(<OwedTotal owed={owed} book={3_298_000} />, { dual: source('iqd') })).toBe('3,298,000 IQD');
+    expect(render(<OwedTotal owed={owed} book={3_298_000} />, { dual: source('iqd_usd', 'none') })).toBe('3,298,000 IQD');
+    // 1,310,000 IQD is $1,000 at 1,310: the whole is $2,400, never 3,298,000 / 1,310 = $2,517.56
+    expect(plain(render(<OwedTotal owed={owed} book={3_298_000} />, { dual: source('iqd_usd') }))).toBe(' 1,310,000 IQD + $1,400.00 ≈ $2,400.00 ');
+    expect(plain(render(<OwedTotal owed={owed} book={3_298_000} />, { dual: source('usd_iqd') }))).toBe(' $1,400.00 + 1,310,000 IQD ≈ 3,144,000 IQD ');
+    // a server that does not send the real split: the book total alone, never converted
+    expect(render(<OwedTotal owed={undefined} book={3_298_000} />, { dual: source('iqd_usd') })).toBe('3,298,000 IQD');
+  });
+
+  it('reads each day\'s rate once and writes every day it read, the day a lookup fell back to as well', async () => {
+    const written = new Map<string, DualRate | null>();
+    const asked: string[] = [];
+    const read = rateReader(async (d) => {
+      asked.push(d);
+      return d >= '2026-11-01' ? { source: 'board', date: '2026-11-14', rateX100: 131_000 } : { source: 'default', date: null, rateX100: 142_000 };
+    }, (d, r) => { written.set(d, r); });
+    // an invoice dated before every rate on the board: today's rate stands in, and today is known too
+    read('2026-10-01', '2026-11-15');
+    await new Promise((resolve) => { setTimeout(resolve, 0); });
+    expect(written.get('2026-10-01')).toEqual({ rateX100: 131_000, date: '2026-11-14', today: true });
+    expect(written.get('2026-11-15')).toEqual({ rateX100: 131_000, date: '2026-11-14', today: false });
+    read('2026-11-15', '2026-11-15');
+    read('2026-10-01', '2026-11-15');
+    await new Promise((resolve) => { setTimeout(resolve, 0); });
+    expect(asked).toEqual(['2026-10-01', '2026-11-15']);
+    // no rate on the board at all: null, written for both days
+    const none = new Map<string, DualRate | null>();
+    const empty = rateReader(async () => ({ source: 'default', date: null, rateX100: 142_000 }), (d, r) => { none.set(d, r); });
+    empty('2026-10-01', '2026-11-15');
+    await new Promise((resolve) => { setTimeout(resolve, 0); });
+    expect([...none]).toEqual([['2026-11-15', null], ['2026-10-01', null]]);
+  });
+
+  it('carries the ≈ figures into the copied and sent brief and end of day, and nothing new with dinar only', () => {
+    const en = i18nOf('en');
+    const b = {
+      date: '2026-11-14', company: { ar: '', en: 'Mer Shop', ku: '' }, sales: { today: 1_310_000, invoices: 2, sameDayLastWeek: 0, month: 2_620_000 },
+      cash: { accounts: [], total: { IQD: 655_000, USD: 50_000 }, base: 1_365_000 }, flow: { in: 655_000, out: 131_000 },
+      topItems: [], receivables: 3_298_000, receivablesOwed: { IQD: 1_310_000, USD: 140_000 },
+      lateCustomers: [{ partyId: 'p', code: 'C1', name: 'Las', phone: '', balance: 3_298_000, oldestDays: 40, buckets: [0, 3_298_000, 0, 0], owed: { IQD: 1_310_000, USD: 140_000 } }],
+      installments: { overdue: [], dueTomorrow: [], overdueTotal: { IQD: 0, USD: 0 } }, lowStock: [], approvals: { waitingCheck: 0, waitingApproval: 0 }, ownerPhone: ''
+    } as BriefView;
+    const plainText = briefText(en, b);
+    expect(plainText).toContain('Sales today: 1,310,000 IQD');
+    expect(plainText).toContain('Las — 3,298,000 IQD');
+    expect(plainText).not.toContain('≈');
+    expect(briefText(en, b, amountTextOf(en, source('iqd')))).toBe(plainText);
+    const both = briefText(en, b, amountTextOf(en, source('iqd_usd')));
+    expect(both).toContain('Sales today: 1,310,000 IQD (≈ $1,000.00)');
+    expect(both).toContain('655,000 IQD + $500.00 (≈ $1,000.00)');
+    expect(both).toContain('Money out today: 131,000 IQD (≈ $100.00)');
+    expect(both).toContain('Las — 1,310,000 IQD + $1,400.00 (≈ $2,400.00)');
+    const c = {
+      date: '2026-11-14', company: { ar: '', en: '', ku: '' }, sales: { gross: 1_441_000, invoices: 3, returns: 131_000, returnsCount: 1, net: 1_310_000 },
+      methods: [], refunds: [], registers: [], drawers: null, debts: { collected: 262_000, collectedRows: [], added: 0, addedRows: [] },
+      lowStock: { count: 0, top: [] }, topItems: [], ownerPhone: ''
+    } as DayCloseView;
+    expect(dayCloseText(en, c)).not.toContain('≈');
+    expect(dayCloseText(en, c, amountTextOf(en, source('iqd')))).toBe(dayCloseText(en, c));
+    const day = dayCloseText(en, c, amountTextOf(en, source('iqd_usd')));
+    expect(day).toContain('1,310,000 IQD (≈ $1,000.00)');
+    expect(day).toContain('Returns: 131,000 IQD (≈ $100.00)');
+    expect(day).toContain('262,000 IQD (≈ $200.00)');
+  });
+
+  it('says under the brief what the ≈ figures are, only when they show', () => {
+    expect(render(<DualNote />)).toBe('');
+    expect(render(<DualNote />, { dual: source('iqd') })).toBe('');
+    expect(render(<DualNote />, { dual: source('iqd_usd', 'none') })).toBe('');
+    expect(render(<DualNote />, { dual: source('iqd_usd') })).toContain('Figures marked ≈ are in the other currency');
+    for (const s of AMOUNTS_TEXT.am_rateSale) expect(s).toContain('{r}');
+  });
 });
 
 describe('the setting', () => {
@@ -141,7 +232,9 @@ describe('the setting', () => {
 describe('the home page and a report in the three choices', () => {
   const admin: NavViewer = { admin: true, permissions: ['admin'], businessTypes: [] };
   const dashboard: DashboardView = {
+    // customers owe 371,000 IQD and $200 booked at 1,420 (284,000): 655,000 IQD at the book rates
     date: '2026-11-14', salesMonth: 1_310_000, salesLastMonth: 1_000_000, receivables: 655_000, payables: 262_000,
+    receivablesOwed: { IQD: 371_000, USD: 20_000 }, payablesOwed: { IQD: 262_000, USD: 0 },
     cash: { total: { IQD: 655_000, USD: 50_000 }, base: 1_310_000 },
     months: [{ month: '2026-10', sales: 1_000_000 }, { month: '2026-11', sales: 1_310_000 }]
   };
@@ -156,12 +249,34 @@ describe('the home page and a report in the three choices', () => {
     expect(before).toContain('1,310,000 IQD');
     expect(before).toContain('655,000 IQD + $500.00');
     expect(before).not.toContain('≈');
+    // the receivables tile: the book-rate total, as before (not its dinars and dollars)
+    expect(plain(before)).toContain('Owed by customers 655,000 IQD');
+    // the chart's dinar labels keep their rounding: 2,500 → 3K (the one decimal is for the ≈ dollars only)
+    expect(compact(2_500)).toBe('3K');
+    expect(compact(2_500, true)).toBe('2.5K');
+    expect(compact(1_310_000)).toBe('1.31M');
+  });
+
+  it('a server that does not send the real split: the receivables tile keeps the book total and gets no ≈', () => {
+    now.answers = { dashboard: { ...dashboard, receivablesOwed: undefined, payablesOwed: undefined }, entries: [], invoices: [], parties: [] };
+    const html = plain(render(<Home viewer={admin} user="Mer" favourites={[]} />, { data: { permissions: ['admin'] }, dual: source('iqd_usd') }));
+    expect(html).toContain('Owed by customers 655,000 IQD');
+    expect(html).not.toContain('655,000 IQD ≈');
+  });
+
+  it('dollar and dinar: the chart puts the ≈ dollars on top and the dinars under them, as the tiles do', () => {
+    const html = home('usd_iqd');
+    expect(plain(html)).toContain('≈ $1K 1.31M');
+    expect(html).toContain('<span class="small num" style="font-weight:600">≈ $1K</span>');
   });
 
   it('dinar and dollar: each tile also in dollars; the cash keeps its real dollars and adds the whole', () => {
     const html = plain(home('iqd_usd'));
     expect(html).toContain('1,310,000 IQD ≈ $1,000.00'); // sales this month
-    expect(html).toContain('655,000 IQD ≈ $500.00'); // receivables
+    // receivables: the real dinars and dollars, each dollar converted once ($200 + 371,000 / 1,310), never the
+    // book-rate 655,000 converted again (≈ $500.00)
+    expect(html).toContain('371,000 IQD + $200.00 ≈ $483.21');
+    expect(html).not.toContain('≈ $500.00');
     expect(html).toContain('262,000 IQD ≈ $200.00'); // payables
     expect(html).toContain('655,000 IQD + $500.00 ≈ $1,000.00'); // cash: real dinars and dollars, then the whole
     // the chart's bars: October's sales at the rate the board had then (none: the latest, said in the tooltip)
@@ -179,7 +294,25 @@ describe('the home page and a report in the three choices', () => {
     const ku = home('iqd_usd', 'ku');
     expect(ku).toContain(`≈ ${LTR_ISOLATE_START}$1,000.00${LTR_ISOLATE_END}`);
     expect(ku).toContain('1,310,000 د.ع');
-    expect(home('iqd_usd', 'ar')).toContain(`≈ ${LTR_ISOLATE_START}$500.00${LTR_ISOLATE_END}`);
+    expect(home('iqd_usd', 'ar')).toContain(`≈ ${LTR_ISOLATE_START}$483.21${LTR_ISOLATE_END}`);
+    // the chart's ≈ label is built by the same helper: the sign, a space, then the isolated amount
+    expect(ku).toContain(`≈ ${LTR_ISOLATE_START}$1K${LTR_ISOLATE_END}`);
+  });
+
+  it('customers: the footer\'s book-rate total stays one dinar figure; the line above carries the real dinars, dollars and ≈', () => {
+    now.answers = {
+      list: [{ id: 'p1', type: 'customer', code: 'C1', name: 'Las', phone: '', address: '', accountCode: '1611', creditLimit: null, notes: '', active: true, balance: 3_298_000, hasEntries: true, balances: { IQD: 1_310_000, USD: 140_000 }, lang: null }],
+      totals: { type: 'customer', owed: { IQD: 1_310_000, USD: 140_000 }, advance: { IQD: 0, USD: 0 }, owing: 1, advanced: 0 }
+    };
+    const page = (dual: DualSource) => plain(render(<Parties type="customer" />, { data: { permissions: ['admin'] }, dual }));
+    const both = page(source('iqd_usd'));
+    expect(both).toContain('Total in IQD at the book rates (dollars converted) 3,298,000 IQD');
+    expect(both).not.toContain('3,298,000 IQD ≈');
+    expect(both).not.toContain('$2,517.56');
+    expect(both).toContain('1,310,000 IQD + $1,400.00 ≈ $2,400.00');
+    expect(page(source('usd_iqd'))).toContain('Total in IQD at the book rates (dollars converted) 3,298,000 IQD');
+    // without a rate, those who may enter one are told why only dinars show
+    expect(page(source('iqd_usd', 'none'))).toContain('Enter today’s dollar rate to see amounts in dollars too');
   });
 
   it('shows only dinars and a hint to set the rate when the board has no rate', () => {
@@ -201,8 +334,9 @@ describe('the home page and a report in the three choices', () => {
     expect(before).not.toContain('≈');
     const both = report('iqd_usd');
     expect(both).toContain('Totals 1,310,000 IQD ≈ $1,000.00 1,048,000 IQD ≈ $800.00 262,000 IQD ≈ $200.00');
-    // the rows keep one figure each; the totals carry the second
-    expect(both.split('≈').length - 1).toBe(3);
+    // the rows keep one figure each; the totals carry the second (and the note under the report says what ≈ is)
+    expect(both).toContain('Figures marked ≈ are in the other currency');
+    expect(both.split('≈').length - 1).toBe(3 + 1);
     expect(report('usd_iqd')).toContain('Totals ≈ $1,000.00 1,310,000 IQD ≈ $800.00 1,048,000 IQD ≈ $200.00 262,000 IQD');
   });
 });

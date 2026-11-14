@@ -28,5 +28,16 @@ export const AMOUNTS_TEXT = {
     'Enter today’s dollar rate to see amounts in dollars too',
     'نرخی دۆلاری ئەمڕۆ دابنێ بۆ ئەوەی بڕی پارەکان بە دۆلاریش دەربکەون'
   ],
-  am_tillEq: ['يعادل', 'About', 'نزیکەی']
+  // the till's hint for a dollar sale: at the rate the cashier typed for this sale, which the sale is booked at
+  am_rateSale: [
+    'بسعر هذا البيع: 1 دولار = {r} دينار',
+    'At this sale’s rate: $1 = {r} IQD',
+    'بە نرخی ئەم فرۆشتنە: 1 دۆلار = {r} دینار'
+  ],
+  // under a page whose note says "in dinars", once it also shows ≈ figures
+  am_note: [
+    'الأرقام المسبوقة بـ ≈ بالعملة الأخرى، بسعر الدولار لذلك اليوم (ولفترةٍ: بسعر آخر يوم فيها).',
+    'Figures marked ≈ are in the other currency, at the dollar rate of that day (for a period: of its last day).',
+    'ژمارەکانی نیشانەکراو بە ≈ بە دراوەکەی ترن، بە نرخی دۆلاری ئەو ڕۆژە (بۆ ماوەیەک: هی دوا ڕۆژەکەی).'
+  ]
 } as const satisfies Record<string, readonly [string, string, string]>;

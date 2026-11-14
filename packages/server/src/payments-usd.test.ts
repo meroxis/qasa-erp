@@ -80,12 +80,36 @@ describe('dollar balances for customers and suppliers', () => {
     expect(iqdOpening).toMatchObject({ opening: 50_000, closing: 40_000 });
 
     // the aging adds what each owes in dollars
-    expect(aging(db, 'customer', '2026-10-10').find((r) => r.partyId === lasId)).toMatchObject({ balance: 265_000, usd: 15_000 });
+    expect(aging(db, 'customer', '2026-10-10').find((r) => r.partyId === lasId)).toMatchObject({ balance: 265_000, usd: 15_000, owed: { IQD: 40_000, USD: 15_000 } });
 
     // a dollar bank's statement runs in dollars
     const bank = (await call('GET', '/api/reports/statement?account=1832&currency=USD')).json();
     expect(bank.currency).toBe('USD');
     expect(bank.rows.map((r: { debit: number; credit: number }) => [r.debit, r.credit])).toEqual([[5_000, 0]]);
+  });
+
+  it('sends what customers and suppliers owe in each currency\'s real money, beside the book-rate total, so dollars are converted once', async () => {
+    await sale(lasId, 'IQD', 50_000);
+    await sale(lasId, 'USD', 20_000, 'credit', '2026-10-03'); // $200.00 booked at 1,500
+    await sale(merId, 'USD', 5_000, 'credit', '2026-10-03'); // $50.00
+    await receipt(merId, 'IQD', 75_000); // paid the dollar debt in dinars: owes nothing
+    const supplierId = (await ok('POST', '/api/parties', { type: 'supplier', name: 'Raz' })).id;
+    const goods = (await ok('POST', '/api/items', { code: 'G1', name: { ar: 'بضاعة', en: 'Goods', ku: 'کاڵا' }, unit: 'piece', salePrice: 1_000, saleCurrency: 'IQD' })).id;
+    const d = await ok('POST', '/api/invoices', {
+      kind: 'purchase', date: '2026-10-02', partyId: supplierId, warehouseId, currency: 'USD', rateX100: 150_000, payment: 'credit', discount: 0,
+      lines: [{ itemId: goods, qtyMilli: 1000, unitPrice: 30_000 }]
+    });
+    await ok('POST', `/api/invoices/${d.id}/post`);
+
+    const dash = (await call('GET', '/api/brief/dashboard?date=2026-10-10')).json();
+    expect(dash.receivables).toBe(50_000 + 300_000);
+    expect(dash.receivablesOwed).toEqual({ IQD: 50_000, USD: 20_000 });
+    expect(dash.payables).toBe(450_000);
+    expect(dash.payablesOwed).toEqual({ IQD: 0, USD: 30_000 });
+    const brief = (await call('GET', '/api/brief?date=2026-10-10')).json();
+    expect(brief.receivablesOwed).toEqual({ IQD: 50_000, USD: 20_000 });
+    const rows = (await call('GET', '/api/brief/reports/aging?type=customer&date=2026-10-10')).json().rows;
+    expect(rows.map((r: { name: string; balance: number; owed: unknown }) => [r.name, r.balance, r.owed])).toEqual([['Las', 350_000, { IQD: 50_000, USD: 20_000 }]]);
   });
 
   it('gives a user limited to a branch only their branches\' lines (the same filter as the IQD balance)', async () => {

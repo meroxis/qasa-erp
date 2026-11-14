@@ -1,6 +1,7 @@
 import { useEffect, useState, type ReactNode } from 'react';
-import { BUSINESS_FEATURE, fromBase, todayIso } from '@qasa/core';
-import { Amount, DualRateHint, dualRateTitle, useAmountText, useDual } from '../Amount.tsx';
+import { BUSINESS_FEATURE, dualLines, todayIso, type DualLine } from '@qasa/core';
+import { Amount, DualRateHint, dualLineText, dualRateTitle, OwedTotal, useAmountText, useDual } from '../Amount.tsx';
+import { oweLines } from '../industry/parties-api.ts';
 import { api } from '../api.ts';
 import { ErrorBox, Icon, StatusChip, useData, useLoad } from '../components.tsx';
 import { useI18n } from '../i18n.ts';
@@ -33,6 +34,16 @@ export function Home({ viewer, user, favourites }: { viewer: NavViewer; user: st
   const salesTotal = (sales.data ?? []).reduce((s, v) => s + v.baseTotal, 0);
   const parties = useLoad(() => api.parties(), []);
   const owed = (type: 'customer' | 'supplier') => (parties.data ?? []).filter((p) => p.type === type).reduce((sum, p) => sum + p.balance, 0);
+  // the same in each currency's real money (each party's lines as on the customers' list, an advance taken off), so a
+  // dollar debt is converted once, at the day's rate, and not first at its book rate
+  const owedMoney = (type: 'customer' | 'supplier') => {
+    const m = { IQD: 0, USD: 0 };
+    for (const p of parties.data ?? []) {
+      if (p.type !== type) continue;
+      for (const l of oweLines(p)) m[l.currency] += l.side === 'owes' ? l.amount : -l.amount;
+    }
+    return m;
+  };
   const cash = accounts.find((a) => a.code === '18')?.balance ?? 0;
   const count = (fn: (e: NonNullable<typeof entries>[number]) => boolean) => (entries ?? []).filter(fn).length;
   // buttons and tiles only for what this person may do or open (may.ts, nav.ts): the server refuses the rest
@@ -48,14 +59,15 @@ export function Home({ viewer, user, favourites }: { viewer: NavViewer; user: st
     // (the safes and banks hold real dollars too: shown as they are, and the whole in the other currency)
     ...(d.cash ? [{ label: t('cashAndBanks'), value: <Amount value={d.cash.total} />, icon: 'wallet', link: 'brief' }] : []),
     ...(d.profitMonth ? [{ label: t('br_profitMonth'), value: <Amount value={d.profitMonth.profit} />, icon: 'chart', ...(books ? { link: 'final-accounts' } : {}), tone: d.profitMonth.profit < 0 ? 'bad' : 'ok' }] : []),
-    { label: t('receivables'), value: <Amount value={d.receivables} />, link: 'reports-more/aging', icon: 'contact' },
+    // (what is owed: the real dinars and dollars, the book-rate total with dinar only, as before)
+    { label: t('receivables'), value: <OwedTotal owed={d.receivablesOwed} book={d.receivables} />, link: 'reports-more/aging', icon: 'contact' },
     // (the ageing of what the company owes is a report of its books: without them the tile opens the suppliers list)
-    ...(suppliers ? [{ label: t('payables'), value: <Amount value={d.payables} />, link: journal ? 'reports-more/supplier-aging' : 'suppliers', icon: 'truck' }] : [])
+    ...(suppliers ? [{ label: t('payables'), value: <OwedTotal owed={d.payablesOwed} book={d.payables} />, link: journal ? 'reports-more/supplier-aging' : 'suppliers', icon: 'truck' }] : [])
   ] : [
     ...(journal ? [{ label: t('cashAndBanks'), value: <Amount value={cash} />, icon: 'wallet' }] : []),
     { label: t('salesThisMonth'), value: <Amount value={salesTotal} />, link: 'sales', icon: 'trend' },
-    { label: t('receivables'), value: <Amount value={owed('customer')} />, link: 'customers', icon: 'contact' },
-    ...(suppliers ? [{ label: t('payables'), value: <Amount value={owed('supplier')} />, link: 'suppliers', icon: 'truck' }] : [])
+    { label: t('receivables'), value: <OwedTotal owed={owedMoney('customer')} book={owed('customer')} />, link: 'customers', icon: 'contact' },
+    ...(suppliers ? [{ label: t('payables'), value: <OwedTotal owed={owedMoney('supplier')} book={owed('supplier')} />, link: 'suppliers', icon: 'truck' }] : [])
   ]) as { label: string; value: ReactNode; link?: string; icon: string; sub?: string; tone?: 'ok' | 'bad' }[];
   // the Iraqi approval chain at a glance: prepared → checked → approved
   const flow = [
@@ -179,20 +191,25 @@ function SalesChart({ d }: { d: DashboardView }) {
   const dual = useDual();
   const amountText = useAmountText();
   const monthEnd = (ym: string) => new Date(Date.UTC(Number(ym.slice(0, 4)), Number(ym.slice(5, 7)), 0)).toISOString().slice(0, 10);
-  const eqOf = (m: { month: string; sales: number }) => {
-    const rate = dual.show === 'iqd' || !m.sales ? null : dual.rate(monthEnd(m.month));
-    return rate ? { text: `≈ ${i18n.ltr('$' + i18n.digitsOf(compact(Math.round(fromBase(m.sales, rate.rateX100) / 100))))}`, title: dualRateTitle(i18n, rate) } : null;
+  // the bar's label as every amount shows (dualLines): dinars on top, or with "Dollar and dinar" ≈ dollars on top and the
+  // dinars small under them; the sign and its place from the same helper as the tiles (dualLineText)
+  const labelOf = (m: { month: string; sales: number }) => {
+    if (!m.sales) return null;
+    const rate = dual.show === 'iqd' ? null : dual.rate(monthEnd(m.month));
+    const { first, second } = dualLines({ IQD: m.sales, USD: 0 }, dual.show, rate?.rateX100);
+    const short = (l: DualLine) => compactLine(i18n, l);
+    return { first: first.map((l) => dualLineText(i18n, l, short)).join(' + '), second: second && rate ? { text: dualLineText(i18n, second, short), title: dualRateTitle(i18n, rate) } : null };
   };
   return (
     <div className="card">
       <div className="card-head"><h2>{t('br_salesSixMonths')}</h2><span className="spacer" /><a className="btn ghost small" href={href('reports-more')}>{t('br_reports')}</a></div>
       <div role="img" aria-label={t('br_salesSixMonths')} style={{ display: 'grid', gridTemplateColumns: `repeat(${d.months.length}, minmax(0, 1fr))`, gap: 12, alignItems: 'end', height: 200, padding: '8px 16px 0' }}>
         {d.months.map((m, n) => {
-          const eq = eqOf(m);
+          const label = labelOf(m);
           return (
           <div key={m.month} title={amountText(m.sales, { date: monthEnd(m.month) })} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'flex-end', height: '100%', gap: 6 }}>
-            <span className="small num" style={{ fontWeight: 600 }}>{m.sales ? i18n.ltr(i18n.digitsOf(compact(m.sales))) : ''}</span>
-            {eq && <span className="dual-second small num" title={eq.title}>{eq.text}</span>}
+            <span className="small num" style={{ fontWeight: 600 }}>{label ? label.first : ''}</span>
+            {label?.second && <span className="dual-second small num" title={label.second.title}>{label.second.text}</span>}
             <span style={{
               width: '100%', maxWidth: 56, height: `${Math.max(2, (m.sales / max) * 150)}px`, borderRadius: '6px 6px 2px 2px',
               background: n === d.months.length - 1 ? 'var(--accent, #1D5FD1)' : 'var(--accent-soft, #BCD0F5)'
@@ -202,6 +219,8 @@ function SalesChart({ d }: { d: DashboardView }) {
         })}
       </div>
       <div style={{ display: 'grid', gridTemplateColumns: `repeat(${d.months.length}, minmax(0, 1fr))`, gap: 12, padding: '6px 16px 16px', textAlign: 'center' }}>
+        {/* (the profit under each month stays in dinars on purpose: a small figure under the axis, read against the
+            dinar books; a second converted figure there would crowd the month's name) */}
         {d.months.map((m) => (
           <div key={m.month} className="small">
             <div className="muted">{monthName(m.month)}</div>
@@ -213,11 +232,21 @@ function SalesChart({ d }: { d: DashboardView }) {
   );
 }
 
-/** 1,250,000 → 1.25M; 85,000 → 85K; 2,500 → 2.5K (a chart's dollars are smaller numbers than its dinars). */
-function compact(v: number): string {
+/**
+ * 1,250,000 → 1.25M; 85,000 → 85K; 2,500 → 3K. `oneDecimalUnder10K`: 2,500 → 2.5K, for the chart's dollars, which are
+ * smaller numbers than its dinars (the dinar labels keep their rounding).
+ */
+export function compact(v: number, oneDecimalUnder10K = false): string {
   const a = Math.abs(v);
-  const s = a >= 1e9 ? `${+(a / 1e9).toFixed(2)}B` : a >= 1e6 ? `${+(a / 1e6).toFixed(2)}M` : a >= 1e3 ? `${+(a / 1e3).toFixed(a < 1e4 ? 1 : 0)}K` : String(a);
+  const s = a >= 1e9 ? `${+(a / 1e9).toFixed(2)}B` : a >= 1e6 ? `${+(a / 1e6).toFixed(2)}M` : a >= 1e3 ? `${+(a / 1e3).toFixed(oneDecimalUnder10K && a < 1e4 ? 1 : 0)}K` : String(a);
   return (v < 0 ? '-' : '') + s;
+}
+
+/** A chart label's figure, short: dinars "1.25M", dollars (whole) "$954" or "$2.5K". */
+export function compactLine(i18n: Pick<I18n, 'ltr' | 'digitsOf'>, line: DualLine): string {
+  return line.currency === 'USD'
+    ? i18n.ltr('$' + i18n.digitsOf(compact(Math.round(line.amount / 100), true)))
+    : i18n.ltr(i18n.digitsOf(compact(line.amount)));
 }
 
 /** The home screen's big tiles, in sections, from the same list as the menu: only what this person may open and what the

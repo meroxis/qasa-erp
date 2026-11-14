@@ -13,6 +13,7 @@ import { chequesAhead, type ChequeAlert } from './banking.ts';
 import { notRejectedDocumentReceiptSql } from './journal.ts';
 import { expiryAlert, type BatchReportRow } from './batches.ts';
 import { REORDER_JOINS, REORDER_LEVEL } from './reorder.ts';
+import { partyPosition } from './parties.ts';
 
 /** A branch's warehouses and safes (null: the whole company). See branches.ts. */
 export type BranchFilter = { warehouses: string[]; accounts: string[] } | null;
@@ -230,6 +231,20 @@ export interface AgingRow {
   buckets: [number, number, number, number];
   /** 1.1: what is owed in dollars, in dollars (from dollar entries only; not in the buckets) */
   usd: number;
+  /**
+   * The real money owed in each currency (dinars in dinars, dollars in cents), by the rule of the customers' list
+   * (partyPosition): each currency on its own when both stand on the side of the debt, else the one IQD position.
+   * `balance` (IQD at the book rates) stays the official figure; this one is for showing dinar and dollar, so a dollar
+   * debt is converted at the day's rate once, never at its book rate and then again.
+   */
+  owed: Money;
+}
+
+/** The real money owed in each currency, added up over rows (AgingRow.owed). */
+export function owedTotal(rows: readonly Pick<AgingRow, 'owed'>[]): Money {
+  const total: Money = { IQD: 0, USD: 0 };
+  for (const r of rows) { total.IQD += r.owed.IQD; total.USD += r.owed.USD; }
+  return total;
 }
 
 /**
@@ -270,11 +285,17 @@ export function aging(db: Db, type: 'customer' | 'supplier', asOf: string, branc
     list.push({ date: c.date, amount: num(c.amount) });
     byParty.set(c.party, list);
   }
-  // 1.1: what each owes in dollars, in dollars (no buckets for dollars yet)
-  const usd = new Map((db.prepare(`SELECT l.party_id, SUM(${type === 'customer' ? 'l.debit - l.credit' : 'l.credit - l.debit'}) AS owed
-                                   FROM entry_lines l JOIN entries e ON e.id = l.entry_id JOIN parties p ON p.id = l.party_id
-                                   WHERE p.type = ? AND e.status = 'approved' AND e.date <= ? AND e.currency = 'USD'${b}
-                                   GROUP BY l.party_id`).all(type, asOf, ...bp) as { party_id: string; owed: number }[]).map((r) => [r.party_id, num(r.owed)]));
+  // 1.1: what each owes in each currency, in its own (dollars in dollars; no buckets for dollars yet)
+  const own = new Map<string, Money>();
+  for (const r of db.prepare(`SELECT l.party_id, e.currency, SUM(${type === 'customer' ? 'l.debit - l.credit' : 'l.credit - l.debit'}) AS owed
+                              FROM entry_lines l JOIN entries e ON e.id = l.entry_id JOIN parties p ON p.id = l.party_id
+                              WHERE p.type = ? AND e.status = 'approved' AND e.date <= ?${b}
+                              GROUP BY l.party_id, e.currency`).all(type, asOf, ...bp) as { party_id: string; currency: string; owed: number }[]) {
+    if (r.currency !== 'IQD' && r.currency !== 'USD') continue;
+    const m = own.get(r.party_id) ?? { IQD: 0, USD: 0 };
+    m[r.currency] = num(r.owed);
+    own.set(r.party_id, m);
+  }
   const rows = parties.map((p) => {
     let left = num(p.balance);
     const buckets: [number, number, number, number] = [0, 0, 0, 0];
@@ -289,7 +310,9 @@ export function aging(db: Db, type: 'customer' | 'supplier', asOf: string, branc
     }
     // an opening balance with no charge line behind it counts as the oldest
     if (left > 0) buckets[3] += left;
-    return { partyId: p.id, code: p.code, name: p.name, phone: p.phone, balance: num(p.balance), oldestDays, buckets, usd: usd.get(p.id) ?? 0 };
+    const mine = own.get(p.id) ?? { IQD: 0, USD: 0 };
+    const owed = partyPosition(num(p.balance), mine)?.amounts ?? { IQD: num(p.balance), USD: 0 };
+    return { partyId: p.id, code: p.code, name: p.name, phone: p.phone, balance: num(p.balance), oldestDays, buckets, usd: mine.USD, owed: { IQD: owed.IQD, USD: owed.USD } };
   });
   return rows.sort((a, b) => b.balance - a.balance);
 }
@@ -430,6 +453,8 @@ export interface BriefView {
   topItems: ItemSales[];
   lateCustomers: AgingRow[];
   receivables: number;
+  /** the same in each currency's real money (AgingRow.owed), for showing dinar and dollar */
+  receivablesOwed: Money;
   installments: { overdue: InstallmentDue[]; dueTomorrow: InstallmentDue[]; overdueTotal: Money };
   lowStock: LowStock[];
   approvals: { waitingCheck: number; waitingApproval: number };
@@ -469,6 +494,7 @@ export function dailyBrief(db: Db, date: string, branch: BranchFilter = null): B
     // late: something owed for over 30 days
     lateCustomers: customers.filter((c) => c.oldestDays > 30).sort((a, b) => b.oldestDays - a.oldestDays || b.balance - a.balance).slice(0, 8),
     receivables: customers.reduce((s, c) => s + c.balance, 0),
+    receivablesOwed: owedTotal(customers),
     installments: { overdue: inst.overdue.slice(0, 10), dueTomorrow: inst.dueTomorrow, overdueTotal },
     lowStock: lowStock(db, date, 10, branch),
     approvals: { waitingCheck: num(approvals.draft), waitingApproval: num(approvals.checked) },
@@ -489,6 +515,9 @@ export interface DashboardView {
   cash: { total: Money; base: number };
   receivables: number;
   payables: number;
+  /** the same two in each currency's real money (AgingRow.owed), for showing dinar and dollar */
+  receivablesOwed: Money;
+  payablesOwed: Money;
   /** the last six months, oldest first: month (YYYY-MM), net sales and profit (null for one branch) */
   months: { month: string; sales: number; profit: number | null }[];
   /** open cheques due within a week (late ones included), how many of those are late, and bounces in the last 30 days */
@@ -507,14 +536,18 @@ export function dashboard(db: Db, date: string, branch: BranchFilter = null): Da
     months.push({ month: from.slice(0, 7), sales: salesBetween(db, from, to, branch).amount, profit: branch ? null : profitBetween(db, from, to).profit });
   }
   const lastFrom = shiftMonth(date, -1);
+  const customers = aging(db, 'customer', date, branch);
+  const suppliers = aging(db, 'supplier', date, branch);
   return {
     date,
     salesMonth: salesBetween(db, start, date, branch).amount,
     salesLastMonth: salesBetween(db, lastFrom, lastDayOfMonth(lastFrom), branch).amount,
     profitMonth: branch ? null : profitBetween(db, start, date),
     cash: { total, base: accounts.reduce((s, a) => s + a.base, 0) },
-    receivables: aging(db, 'customer', date, branch).reduce((s, r) => s + r.balance, 0),
-    payables: aging(db, 'supplier', date, branch).reduce((s, r) => s + r.balance, 0),
+    receivables: customers.reduce((s, r) => s + r.balance, 0),
+    payables: suppliers.reduce((s, r) => s + r.balance, 0),
+    receivablesOwed: owedTotal(customers),
+    payablesOwed: owedTotal(suppliers),
     months,
     cheques: (() => {
       const c = chequesAhead(db, date, Number.MAX_SAFE_INTEGER, branch?.accounts ?? null);

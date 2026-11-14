@@ -14,6 +14,8 @@ export interface GroupSalesView extends SalesFiguresView { id: string | null; co
 export interface CustomerSalesView { partyId: string | null; code: string; name: string; invoices: number; sales: number }
 export interface AgingRowView {
   partyId: string; code: string; name: string; phone: string; balance: number; oldestDays: number; buckets: [number, number, number, number];
+  /** the real money owed in each currency (balance is IQD at the book rates); older servers leave it out */
+  owed?: Money2;
 }
 export interface InstallmentDueView {
   contractId: string; number: string; partyId: string; party: string; phone: string; currency: 'IQD' | 'USD';
@@ -31,6 +33,8 @@ export interface BriefView {
   topItems: ItemSalesView[];
   lateCustomers: AgingRowView[];
   receivables: number;
+  /** the same in each currency's real money; older servers leave it out */
+  receivablesOwed?: Money2;
   installments: { overdue: InstallmentDueView[]; dueTomorrow: InstallmentDueView[]; overdueTotal: Money2 };
   lowStock: LowStockView[];
   approvals: { waitingCheck: number; waitingApproval: number };
@@ -50,7 +54,10 @@ export interface DashboardView {
   /** absent for someone who may not read the books (1.4) */
   cash?: { total: Money2; base: number };
   receivables: number;
+  /** the same in each currency's real money; older servers leave it out */
+  receivablesOwed?: Money2;
   payables: number;
+  payablesOwed?: Money2;
   months: { month: string; sales: number; profit?: number | null }[];
   cheques?: ChequeCounts;
 }

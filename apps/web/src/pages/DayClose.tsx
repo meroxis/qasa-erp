@@ -8,7 +8,7 @@ import { copyText } from '../share.ts';
 import { WhatsAppSendButton } from '../industry/WhatsAppSend.tsx';
 import { printDocument } from '../industry/printing.ts';
 import { itemStyle, listStyle, moneyBoth, Section, Stat } from './Brief.tsx';
-import { Amount, DualRateHint } from '../Amount.tsx';
+import { Amount, amountTextOf, DINAR_ONLY, DualNote, DualRateHint, useDual, type AmountText } from '../Amount.tsx';
 
 /**
  * The end-of-day close: what the owner checks when the shop shuts. The day's sales by how they were paid (and what was
@@ -33,32 +33,36 @@ export function differenceOf(d: Money2): { key: Key; color: string } {
   return { key: 'dc_balanced', color: good };
 }
 
-/** The short WhatsApp version of the close, in the language of `i18n`. */
-export function dayCloseText(i18n: I18n, c: DayCloseView): string {
+/**
+ * The short WhatsApp version of the close, in the language of `i18n`. `text`: the amounts as the company chose to see
+ * them (amountTextOf), so the message carries the ≈ figures the page shows; dinar only (as before) when left out.
+ */
+export function dayCloseText(i18n: I18n, c: DayCloseView, text: AmountText = amountTextOf(i18n, DINAR_ONLY)): string {
+  const on = { date: c.date };
   const { t } = i18n;
   const company = i18n.name(c.company);
   const lines = [
     `*${t('dc_title')}${company ? ` — ${company}` : ''}*`,
     i18n.date(c.date),
     '',
-    `💰 ${t('dc_netSales')}: ${i18n.money(c.sales.net, 'IQD')} (${t('br_invoicesCount', { n: i18n.int(c.sales.invoices) })})`
+    `💰 ${t('dc_netSales')}: ${text(c.sales.net, on)} (${t('br_invoicesCount', { n: i18n.int(c.sales.invoices) })})`
   ];
-  if (c.sales.returns) lines.push(`↩️ ${t('dc_returns')}: ${i18n.money(c.sales.returns, 'IQD')}`);
+  if (c.sales.returns) lines.push(`↩️ ${t('dc_returns')}: ${text(c.sales.returns, on)}`);
   if (c.methods.length) {
     lines.push('', `💳 ${t('dc_byMethod')}:`);
     for (const m of c.methods) lines.push(`• ${methodLabel(i18n, m.method)}: ${i18n.money(m.amount, 'IQD')}`);
   }
   if (c.drawers) {
     const d = differenceOf(c.drawers.difference);
-    lines.push('', `🧾 ${t('pos_expected')}: ${moneyBoth(i18n, c.drawers.expected)} · ${t('pos_counted')}: ${moneyBoth(i18n, c.drawers.counted)}`);
-    lines.push(`${t('pos_difference')}: ${moneyBoth(i18n, c.drawers.difference)} (${t(d.key)})`);
+    lines.push('', `🧾 ${t('pos_expected')}: ${text(c.drawers.expected, on)} · ${t('pos_counted')}: ${text(c.drawers.counted, on)}`);
+    lines.push(`${t('pos_difference')}: ${text(c.drawers.difference, on)} (${t(d.key)})`);
   }
   const open = c.registers.filter((r) => r.status === 'open').length;
   if (open) lines.push(`⏳ ${t('dc_stillOpen')}: ${i18n.int(open)}`);
   // the expenses (and the money in and out below) are not sent to someone who may not read the books
   lines.push('');
-  if (c.expenses) lines.push(`📉 ${t('dc_expenses')}: ${i18n.money(c.expenses.total, 'IQD')}`);
-  lines.push(`✅ ${t('dc_debtsCollected')}: ${i18n.money(c.debts.collected, 'IQD')}   📝 ${t('dc_debtsNew')}: ${i18n.money(c.debts.added, 'IQD')}`);
+  if (c.expenses) lines.push(`📉 ${t('dc_expenses')}: ${text(c.expenses.total, on)}`);
+  lines.push(`✅ ${t('dc_debtsCollected')}: ${text(c.debts.collected, on)}   📝 ${t('dc_debtsNew')}: ${text(c.debts.added, on)}`);
   if (c.lowStock.count) lines.push(`📦 ${t('dc_lowStockCount', { n: i18n.int(c.lowStock.count) })}`);
   if (c.topItems.length) {
     lines.push('', `⭐ ${t('dc_topItems')}:`);
@@ -133,9 +137,11 @@ export function DayClose() {
   const { data: c, error } = useLoad(() => dayCloseApi.get(date), [date]);
 
   // the message in the language picked in the dialog (the owner's number from the Daily Brief's settings)
-  const message = useCallback((m: I18n) => (c ? dayCloseText(m, c) : ''), [c]);
+  // (with the amounts as the page shows them: dinar and dollar when the company chose it)
+  const dual = useDual();
+  const message = useCallback((m: I18n) => (c ? dayCloseText(m, c, amountTextOf(m, dual)) : ''), [c, dual]);
   const copy = async () => {
-    if (c) toast(await copyText(dayCloseText(i18n, c)) ? t('br_copied') : t('br_copyFailed'));
+    if (c) toast(await copyText(dayCloseText(i18n, c, amountTextOf(i18n, dual))) ? t('br_copied') : t('br_copyFailed'));
   };
   const exportCsv = () => { if (c) downloadCsv(`end-of-day-${c.date}.csv`, dayCloseRows(i18n, c)); };
 
@@ -168,12 +174,12 @@ export function DayClose() {
 
           <div className="grid-4">
             <Stat icon="trend" label={t('dc_netSales')} value={<Amount value={c.sales.net} date={c.date} />} color="var(--accent, #1D5FD1)"
-              sub={<>{t('br_invoicesCount', { n: i18n.int(c.sales.invoices) })}{c.sales.returns ? <> · {t('dc_returns')}: <span className="num">{i18n.money(c.sales.returns, 'IQD')}</span></> : null}</>} />
+              sub={<>{t('br_invoicesCount', { n: i18n.int(c.sales.invoices) })}{c.sales.returns ? <> · {t('dc_returns')}: <span className="num"><Amount value={c.sales.returns} date={c.date} inline /></span></> : null}</>} />
             <Stat icon="wallet" label={t('pos_expected')} value={c.drawers ? <Amount value={c.drawers.expected} date={c.date} /> : '—'}
-              sub={c.drawers ? <>{t('pos_counted')}: <span className="num">{moneyBoth(i18n, c.drawers.counted)}</span></> : t(drawersNote(c))} />
+              sub={c.drawers ? <>{t('pos_counted')}: <span className="num"><Amount value={c.drawers.counted} date={c.date} inline /></span></> : t(drawersNote(c))} />
             <Stat icon="scale" label={t('pos_difference')} value={c.drawers ? <Amount value={c.drawers.difference} date={c.date} /> : '—'} color={drawerDiff?.color}
               sub={drawerDiff ? t(drawerDiff.key) : undefined} />
-            {c.flow && <Stat icon="plus" label={t('dc_moneyIn')} value={<Amount value={c.flow.in} date={c.date} />} color={good} sub={`${t('dc_moneyOut')}: ${i18n.money(c.flow.out, 'IQD')}`} />}
+            {c.flow && <Stat icon="plus" label={t('dc_moneyIn')} value={<Amount value={c.flow.in} date={c.date} />} color={good} sub={<>{t('dc_moneyOut')}: <Amount value={c.flow.out} date={c.date} inline /></>} />}
           </div>
           <DualRateHint />
 
@@ -288,6 +294,7 @@ export function DayClose() {
             </Section>
           </div>
           <p className="small muted">{t('dc_notes')}</p>
+          <DualNote />
         </>
       )}
     </div>

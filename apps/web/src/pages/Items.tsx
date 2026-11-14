@@ -7,7 +7,7 @@ import { batchesApi } from '../industry/batches-api.ts';
 import { brandLabel, brandsApi, categoriesApi, categoryLabel, type BrandView, type CategoryView } from '../industry/categories-api.ts';
 import { BrandForm, BrandPicker, CategoryOptions, countryName, StarterListButton } from '../industry/CatalogPickers.tsx';
 import { ReorderList } from '../industry/ReorderList.tsx';
-import { Amount } from '../Amount.tsx';
+import { Amount, DualRateHint } from '../Amount.tsx';
 import { ExpiryChip } from './Expiry.tsx';
 import { useI18n, type I18n, isKey, type Key } from '../i18n.ts';
 import { go, href } from '../router.ts';
@@ -146,6 +146,7 @@ export function Items({ tab: initialTab }: { tab?: 'reorder' | 'warehouses' } = 
               <ErrorBox error={bulkError} />
             </div>
           )}
+          <DualRateHint />
           <ErrorBox error={items.error} />
           <div className="card">
             {items.data && items.data.length === 0 && (q.trim() || warehouseId || categoryId || brandId

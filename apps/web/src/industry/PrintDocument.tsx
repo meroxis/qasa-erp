@@ -10,6 +10,7 @@ import { encodeQr, qrSvgPath } from './qr.ts';
 import { barcodeFor, barsPath } from './barcode.ts';
 import { logoUrl, usePrintSetup, type PrintProfileView } from './print-api.ts';
 import { fxApi } from './fx-api.ts';
+import { holdPrint } from './printing.ts';
 import { balanceLabelKey, balancesAround, type PrintBalanceOf, type PrintModel } from './print-model.ts';
 import './print-design.css';
 
@@ -452,7 +453,8 @@ export function DesignedPrint({ model, designs, balanceOf }: {
   useEffect(() => {
     if (!rateDay) return;
     let on = true;
-    fxApi.rateOn(rateDay).then((r) => { if (on && usableRate(r.rateX100)) setPaperRate({ day: rateDay, rateX100: r.rateX100 }); }, () => undefined);
+    // (Print waits for this answer: printDocument → printHolds)
+    holdPrint(fxApi.rateOn(rateDay).then((r) => { if (on && usableRate(r.rateX100)) setPaperRate({ day: rateDay, rateX100: r.rateX100 }); }, () => undefined));
     return () => { on = false; };
   }, [rateDay]);
   const rateX100 = paperRate && paperRate.day === rateDay ? paperRate.rateX100 : settings?.defaultRateX100;

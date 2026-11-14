@@ -5,7 +5,7 @@ import { ErrorBox, Icon, downloadCsv, useData, useLoad, usePageNav } from '../co
 import { useI18n, type I18n, type Key } from '../i18n.ts';
 import { go, href } from '../router.ts';
 import { PeriodPicker } from './Reports.tsx';
-import { Amount, DualRateHint } from '../Amount.tsx';
+import { Amount, DualNote, DualRateHint, OwedTotal } from '../Amount.tsx';
 
 /**
  * Management reports: sales by item and by customer, profit by item, who owes us and whom we owe (aged), and what
@@ -66,6 +66,7 @@ export function MoreReports({ tab: asked = 'sales-items' }: { tab?: ReportTab })
       {tab === 'supplier-aging' && <Aging type="supplier" date={to} />}
       {tab === 'stock-value' && <StockValue date={to} />}
       <p className="small muted">{t('br_onlyPosted')}</p>
+      <DualNote />
     </div>
   );
 }
@@ -257,6 +258,8 @@ function Aging({ type, date }: { type: 'customer' | 'supplier'; date: string }) 
   const rows: AgingRowView[] = data?.rows ?? [];
   const sum = (n: number) => rows.reduce((s, r) => s + r.buckets[n]!, 0);
   const total = rows.reduce((s, r) => s + r.balance, 0);
+  // the same in each currency's real money (a server that does not send it: the book total alone, see OwedTotal)
+  const owed = rows.every((r) => r.owed) ? rows.reduce((m, r) => ({ IQD: m.IQD + r.owed!.IQD, USD: m.USD + r.owed!.USD }), { IQD: 0, USD: 0 }) : undefined;
   const csv = () => downloadCsv(`${type}-aging_${date}.csv`, [
     [t('code'), t(type === 'customer' ? 'br_customer' : 'br_supplier'), t('br_phone'), ...BUCKETS.map((b) => t(b)), t('br_balance'), t('br_oldest')],
     ...rows.map((r) => [r.code, r.name, r.phone, ...r.buckets.map((b) => formatAmount(b, 'IQD')), formatAmount(r.balance, 'IQD'), r.oldestDays])
@@ -288,7 +291,7 @@ function Aging({ type, date }: { type: 'customer' | 'supplier'; date: string }) 
             <tfoot><tr>
               <th>{t('totals')}</th>
               {[0, 1, 2, 3].map((n) => <th key={n} className="amount">{i18n.money(sum(n), 'IQD')}</th>)}
-              <th className="amount"><Amount value={total} date={date} /></th><th />
+              <th className="amount"><OwedTotal owed={owed} book={total} date={date} /></th><th />
             </tr></tfoot>
           </table>
           {/* (an invoice says what was received for it; this report ages the party's whole debt, oldest first) */}
