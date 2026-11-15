@@ -27,8 +27,8 @@ import type { ApiExtension } from './routes.ts';
  *
  * The photo: one JPEG, whole (its frame header and its end), at most 400 KB and 2048 pixels a side (a small file must
  * not make every phone and PC that shows it decode a huge picture), kept without its metadata (EXIF, GPS, maker notes,
- * comments): stripJpegMetadata below, on the office, whatever the sender did. It is stored with the voucher in the same
- * transaction, and the audit log keeps its size and hash.
+ * comments) and without anything after the picture's end: stripJpegMetadata below, on the office, whatever the sender
+ * did. It is stored with the voucher in the same transaction, and the audit log keeps its size and hash.
  */
 
 /** The longest side of a receipt's photo (the phone makes at most 1600 pixels). */
@@ -68,39 +68,56 @@ const COM = 0xfe;
 const isApp1To15 = (marker: number) => marker >= 0xe1 && marker <= 0xef;
 
 /**
- * A JPEG without its metadata: the segments from the start of the image to the start of the scan are walked one by
- * one; APP1–APP15 (EXIF with GPS and maker notes, XMP, ICC profiles, Photoshop's) and comments are left out, APP0
- * (JFIF), the tables, the frame and everything from the scan on are kept as they are. Null when the file can't be
- * walked (no start of image, a segment longer than the file, no scan): such a file is not kept at all.
+ * A JPEG without its metadata: the picture is walked segment by segment from its start to its end, the coded data of
+ * each scan included; APP1–APP15 (EXIF with GPS and maker notes, XMP, ICC profiles, Photoshop's) and comments are left
+ * out wherever they stand (between the scans of a progressive JPEG too), and so is anything after the picture's end (a
+ * second picture or a camera maker's trailer, which can carry metadata of their own); APP0 (JFIF), the tables, the
+ * frame and the scans are kept as they are. Null when the file can't be walked (no start of image, a segment longer than
+ * the file, no scan, no end): such a file is not kept at all.
  */
 export function stripJpegMetadata(bytes: Uint8Array): Uint8Array | null {
   const b = bytes;
   if (b.length < 4 || b[0] !== 0xff || b[1] !== SOI) return null;
   const kept: Uint8Array[] = [b.subarray(0, 2)];
+  let scans = 0;
   let i = 2;
-  while (i < b.length) {
-    if (b[i] !== 0xff) return null;
+  for (;;) {
+    if (i >= b.length || b[i] !== 0xff) return null;
     // fill bytes before a marker
     let m = i + 1;
     while (m < b.length && b[m] === 0xff) m++;
     if (m >= b.length) return null;
     const marker = b[m]!;
-    // a marker without a length here (the end, or a restart marker before any scan) means a broken file
-    if (marker === EOI || marker === 0x00 || marker === 0x01 || (marker >= 0xd0 && marker <= 0xd7)) return null;
+    // the picture's end: what follows it is not kept (an end before any scan is no picture)
+    if (marker === EOI) {
+      if (!scans) return null;
+      kept.push(new Uint8Array([0xff, EOI]));
+      break;
+    }
+    // a marker without a length here (a restart marker outside a scan) means a broken file
+    if (marker === 0x00 || marker === 0x01 || (marker >= 0xd0 && marker <= 0xd7)) return null;
     if (m + 2 >= b.length) return null;
     const length = (b[m + 1]! << 8) | b[m + 2]!;
     if (length < 2) return null;
     const end = m + 1 + length;
     if (end > b.length) return null;
-    if (marker === SOS) {
-      // the scan header, the scan data and whatever follows it (more tables and scans of a progressive JPEG, the end)
-      kept.push(new Uint8Array([0xff]), b.subarray(m, b.length));
-      break;
-    }
     if (!isApp1To15(marker) && marker !== COM) kept.push(new Uint8Array([0xff]), b.subarray(m, end));
     i = end;
+    if (marker === SOS) {
+      scans++;
+      // the scan's coded data, up to the next marker: in it a 0xFF is followed by 0x00 (a stuffed byte) or is a restart marker
+      let j = i;
+      for (;;) {
+        if (j + 1 >= b.length) return null;
+        if (b[j] !== 0xff) { j++; continue; }
+        const next = b[j + 1]!;
+        if (next === 0x00 || (next >= 0xd0 && next <= 0xd7)) { j += 2; continue; }
+        break;
+      }
+      kept.push(b.subarray(i, j));
+      i = j;
+    }
   }
-  if (i >= b.length) return null;
   const out = new Uint8Array(kept.reduce((n, part) => n + part.length, 0));
   let at = 0;
   for (const part of kept) {

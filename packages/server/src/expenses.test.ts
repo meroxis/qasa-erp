@@ -108,6 +108,32 @@ describe('a receipt\'s photo, as the office keeps it', () => {
     expect(stripJpegMetadata(raw.subarray(0, 30))).toBeNull();
     // no scan at all
     expect(stripJpegMetadata(new Uint8Array([0xff, 0xd8, 0xff, 0xe0, 0, 4, 1, 2, 0xff, 0xd9]))).toBeNull();
+    // a picture without its end
+    expect(stripJpegMetadata(jpeg({ end: false }))).toBeNull();
+  });
+
+  it('keeps the picture only: metadata between the scans and whatever comes after the picture\'s end are left out', () => {
+    const seg = (marker: number, body: number[]) => [0xff, marker, ((body.length + 2) >> 8) & 0xff, (body.length + 2) & 0xff, ...body];
+    const text = (s: string) => [...Buffer.from(s, 'latin1')];
+    const first = jpeg({ exif: false, comment: false, end: false });
+    // a progressive JPEG's second scan: a table before it (kept), with an EXIF location and a comment (not kept), and coded
+    // data holding a stuffed 0xFF and a restart marker, which are the scan's own bytes
+    const table = seg(0xc4, [0x10, ...new Array<number>(16).fill(0)]);
+    const between = [...seg(0xe1, [...text('Exif\0\0'), ...text('GPS 36.1911N')]), ...seg(0xfe, text('taken by Las'))];
+    const scan2 = [...seg(0xda, [1, 1, 0, 1, 2, 0]), 1, 2, 0xff, 0x00, 3, 0xff, 0xd3, 4, 5];
+    // after the end: what some cameras add (a second picture with its own EXIF, a maker's trailer)
+    const after = [0xff, 0xd8, ...seg(0xe1, [...text('Exif\0\0'), ...text('GPS 36.2000N')]), 0xff, 0xd9];
+    const raw = new Uint8Array([...first, ...table, ...between, ...scan2, 0xff, 0xd9, ...after]);
+    const clean = stripJpegMetadata(raw)!;
+    expect(clean).not.toBeNull();
+    expect(contains(clean, 'GPS')).toBe(false);
+    expect(contains(clean, 'taken by Las')).toBe(false);
+    // exactly the picture: the first scan, the table and the second scan with all their bytes, then its end
+    expect(Buffer.from(clean).equals(Buffer.from([...first, ...table, ...scan2, 0xff, 0xd9]))).toBe(true);
+    // the same through the expense: the stored photo ends at the picture's end
+    expect(stripJpegMetadata(clean)).toEqual(clean);
+    // a fill byte before the end is a fill byte, not data
+    expect(Buffer.from(stripJpegMetadata(new Uint8Array([...first, 0xff, 0xff, 0xd9]))!).equals(Buffer.from([...first, 0xff, 0xd9]))).toBe(true);
   });
 
   it('writes the kind\'s words on the voucher in the desktop\'s own words (br_exp_*)', () => {
