@@ -2,7 +2,9 @@ import { useState } from 'react';
 import { View } from 'react-native';
 import { dateText, money, nameIn } from '../../i18n';
 import type { EntrySummary } from '../../owner/api';
-import { ActionKeys, approvalTabs, buttonsFor, kindKey, MAX_REASON, reasonOk, sendAction, toCheck, type ApprovalButton, type ApprovalTab } from '../../owner/approvals';
+import {
+  ActionKeys, approvalTabs, buttonsFor, kindKey, MAX_REASON, reasonOk, sendAction, toCheck, waitingSections, type ApprovalButton, type ApprovalTab
+} from '../../owner/approvals';
 import { space } from '../../theme';
 import { Banner, Button, Card, EmptyState, ErrorState, Field, Group, ListItem, Screen, Section, Segmented, Skeleton, Txt, useApp, useLook } from '../../ui';
 import { useLoad } from '../../use-load';
@@ -21,12 +23,12 @@ export function ApprovalsScreen() {
   const load = useLoad(async () => {
     if (tab === 'waiting') {
       const [sent, checked] = await Promise.all([api.entries('waiting'), api.entries('checked')]);
-      return { sent, checked, drafts: [] as EntrySummary[] };
+      return { tab, sent, checked, drafts: [] as EntrySummary[] };
     }
-    return { sent: [] as EntrySummary[], checked: [] as EntrySummary[], drafts: toCheck(await api.entries('draft')) };
+    return { tab, sent: [] as EntrySummary[], checked: [] as EntrySummary[], drafts: toCheck(await api.entries('draft')) };
   }, [tab]);
   const back = () => nav({ type: 'back' });
-  const rows = (list: EntrySummary[]) => (
+  const rows = (list: readonly EntrySummary[]) => (
     <Group>
       {list.map((e) => (
         <ListItem key={e.id} icon="doc" title={`${t(kindKey(e.type))} · ${e.party || e.description || e.number || t('aprDraft')}`}
@@ -35,7 +37,8 @@ export function ApprovalsScreen() {
       ))}
     </Group>
   );
-  const d = load.data;
+  // (the other tab's list is not shown while this one's loads)
+  const d = load.data?.tab === tab ? load.data : undefined;
   const empty = d && !d.sent.length && !d.checked.length && !d.drafts.length;
   return (
     <Screen title={t('aprTitle')} onBack={back} onRefresh={load.reload} refreshing={load.refreshing}>
@@ -43,15 +46,11 @@ export function ApprovalsScreen() {
         <Segmented<ApprovalTab> label={t('aprTitle')} value={tab} onChange={setTab}
           options={tabs.map((x) => ({ value: x, label: x === 'waiting' ? t('aprWaitingTab') : t('aprCheckTab') }))} />
       )}
-      {load.loading ? <Skeleton rows={5} />
+      {load.loading || (!d && !load.error) ? <Skeleton rows={5} />
         : load.error || !d ? <ErrorState text={explain(load.error)} onRetry={load.reload} />
         : empty ? <EmptyState icon="check" title={t('aprNone')} />
-        : tab === 'waiting' ? (
-          <>
-            {d.sent.length > 0 && <Section title={t('aprSentGroup')}>{rows(d.sent)}</Section>}
-            {d.checked.length > 0 && <Section title={t('aprCheckedGroup')}>{rows(d.checked)}</Section>}
-          </>
-        ) : rows(d.drafts)}
+        : tab === 'waiting' ? waitingSections(d.sent, d.checked).map((s) => <Section key={s.title} title={t(s.title)}>{rows(s.entries)}</Section>)
+        : rows(d.drafts)}
     </Screen>
   );
 }

@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { OfficeError } from '../src/api';
 import { LinkError, OfficeLink } from '../src/link';
 import { ownerApi, type EntrySummary } from '../src/owner/api';
-import { ActionKeys, approvalsCard, approvalTabs, buttonsFor, kindKey, reasonOk, sendAction, toCheck } from '../src/owner/approvals';
+import { ActionKeys, approvalsCard, approvalTabs, buttonsFor, kindKey, reasonOk, sendAction, toCheck, waitingSections } from '../src/owner/approvals';
 import { generateKeyPair } from '../src/protocol';
 import type { Me } from '../src/roles';
 import { UUID_V4 } from '../src/uuid';
@@ -36,6 +36,12 @@ describe('what the approvals screen shows', () => {
     const drafts = [entry({ id: 'a' }), entry({ id: 'b', approval: { state: 'waiting', requestedBy: 'Las', requestedAt: '', decidedBy: null, decidedAt: null, reason: null } }),
       entry({ id: 'c', approval: { state: 'rejected', requestedBy: 'Las', requestedAt: '', decidedBy: 'Raz', decidedAt: '', reason: 'No' } }), entry({ id: 'd' })];
     expect(toCheck(drafts).map((e) => e.id)).toEqual(['a', 'd']);
+    // waiting for approval, in the desktop's two parts: sent for approval, then checked; a part with nothing is left out
+    const sent = [entry({ id: 's' })];
+    const checked = [entry({ id: 'c', status: 'checked' })];
+    expect(waitingSections(sent, checked).map((s) => [s.title, s.entries.map((e) => e.id)])).toEqual([['aprSentGroup', ['s']], ['aprCheckedGroup', ['c']]]);
+    expect(waitingSections([], checked).map((s) => s.title)).toEqual(['aprCheckedGroup']);
+    expect(waitingSections([], [])).toEqual([]);
     expect(kindKey('receipt')).toBe('kindReceipt');
     expect(kindKey('payment')).toBe('aprPayment');
     expect(kindKey('journal')).toBe('aprJournal');

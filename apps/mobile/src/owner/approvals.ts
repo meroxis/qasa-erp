@@ -26,6 +26,11 @@ export function approvalTabs(me: Me | null): ApprovalTab[] {
 /** To check: the drafts, without those that wait for approval or were rejected (an approver's, or back with their preparer). */
 export const toCheck = (drafts: readonly EntrySummary[]): EntrySummary[] => drafts.filter((e) => e.approval?.state !== 'waiting' && e.approval?.state !== 'rejected');
 
+/** "Waiting for approval" in its two parts, as the desktop has them: sent for approval, and checked waiting to be approved (empty parts left out). */
+export function waitingSections(sent: readonly EntrySummary[], checked: readonly EntrySummary[]): { title: Key; entries: readonly EntrySummary[] }[] {
+  return ([{ title: 'aprSentGroup', entries: sent }, { title: 'aprCheckedGroup', entries: checked }] as const).filter((s) => s.entries.length > 0);
+}
+
 /** The word for an entry's kind in a list. */
 export function kindKey(type: string): Key {
   return type === 'receipt' ? 'kindReceipt' : type === 'payment' ? 'aprPayment' : type === 'journal' ? 'aprJournal' : 'aprEntry';
