@@ -239,6 +239,9 @@ describe('the Microsoft Store listing', () => {
       // left for a version number it did not take (1.5.0 instead of 1.4.3). The one exception is a release that goes to
       // GitHub and the website only (1.5.1): the Store keeps the version it has, and docs/releasing.md says so in that
       // version's release-day steps, naming the version the Store stays on
+      // A stable release never goes out with a Store text naming a newer version than its own (a draft for a coming
+      // version is written while that version is in beta, when the app's number is the same without the -beta part)
+      if (!version.includes('-')) expect(older(version, named), `${lang}: the Store "What's new" names ${named}, newer than the app's ${version}`).toBe(false);
       if (!version.includes('-') && older(named, version)) {
         const days = read('docs/releasing.md').split(/^(?=## )/m);
         const day = days.find((d) => d.startsWith(`## Release day for ${version} `) || d.startsWith(`## Release day for ${version}\n`)) ?? '';
