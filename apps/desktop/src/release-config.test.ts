@@ -85,6 +85,56 @@ describe('the release workflow', () => {
     expect(publish).not.toMatch(/actions\/checkout|npm |node /);
     expect(read('native/licence/build.mjs')).toContain("'--locked'");
   });
+
+  it('type-checks the Pro module and audits the packages the app ships, as it audits Pro\'s', () => {
+    const at = (text: string) => workflow.indexOf(text);
+    expect(workflow).toMatch(/^ {10}npm audit --omit=dev --audit-level=high$/m);
+    expect(workflow).toContain('npm audit --prefix pro --omit=dev --audit-level=high');
+    expect(at('npx tsc -p pro --noEmit')).toBeGreaterThan(at('npm ci --prefix pro --ignore-scripts'));
+    // the Pro type check follows a Pro test into the phone app's code, which needs the phone app's packages
+    expect(at('npx tsc -p pro --noEmit')).toBeGreaterThan(at('npm ci --prefix apps/mobile --ignore-scripts'));
+    expect(at('npx tsc -p pro --noEmit')).toBeLessThan(at('npm run dist -w @qasa/desktop'));
+  });
+
+  it('runs the tests that need PHP or the phone app\'s packages instead of skipping them', () => {
+    const at = (text: string) => workflow.indexOf(text);
+    const test = at('- run: npm test');
+    // the phone through the relay to the office (pro/src/phone/phone-relay.test.ts) needs the phone app's packages
+    expect(at('npm ci --prefix apps/mobile --ignore-scripts')).toBeLessThan(test);
+    // the PHP client and WooCommerce plugin (pro/src/webapi/php-relay.test.ts): PHP with openssl and sodium, checked
+    const php = steps.find((s) => s.includes('uses: shivammathur/setup-php@'))!;
+    expect(php).toMatch(/extensions: openssl, sodium/);
+    expect(php).toMatch(/fail-fast: true/);
+    expect(at('uses: shivammathur/setup-php@')).toBeLessThan(test);
+    expect(workflow).toContain('extension_loaded("openssl") && extension_loaded("sodium")');
+  });
+
+  it('pins every action from outside GitHub to a commit, in both workflows', () => {
+    for (const file of ['.github/workflows/release.yml', '.github/workflows/tests.yml']) {
+      const uses = [...read(file).matchAll(/uses: ([^@\s]+)@(\S+)/g)];
+      expect(uses.length, file).toBeGreaterThan(0);
+      for (const [, action, ref] of uses) if (!action!.startsWith('actions/')) expect(ref, `${file}: ${action}`).toMatch(/^[0-9a-f]{40}$/);
+    }
+  });
+});
+
+describe('the test workflow (tests.yml)', () => {
+  const workflow = read('.github/workflows/tests.yml');
+
+  it('only reads the repository', () => {
+    expect(workflow).toMatch(/^permissions:\n  contents: read$/m);
+    expect(workflow).not.toMatch(/:\s*write\b/);
+  });
+
+  it('type-checks and tests the phone app, which is not in the workspace, with its packages installed as locked and no scripts', () => {
+    const phone = workflow.split('\n  phone:\n')[1] ?? '';
+    expect(phone).toMatch(/working-directory: apps\/mobile/);
+    expect(phone).toMatch(/cache-dependency-path: apps\/mobile\/package-lock\.json/);
+    expect(phone).toContain('- run: npm ci --ignore-scripts');
+    expect(phone).toContain('- run: npm run typecheck');
+    expect(phone).toContain('- run: npm test');
+    expect(read('apps/mobile/package.json')).toMatch(/"typecheck": "tsc --noEmit"/);
+  });
 });
 
 describe('the third-party notices', () => {
