@@ -225,6 +225,8 @@ const T = {
   pinMismatch: ['الرمزان غير متطابقين.', 'The two PINs are not the same.', 'هەردوو PIN وەک یەک نین.'],
   pinWeak: ['سهل التخمين. اختر رمزاً آخر.', 'Too easy to guess. Choose another.', 'زۆر ئاسانە بۆ تەخمین. یەکێکی تر هەڵبژێرە.'],
   pinSet: ['تم تعيين رمز PIN', 'The PIN is set', 'PIN دانرا'],
+  // a phone that acts as an admin or sees the company's figures keeps a PIN: asked for before anything else, never turned off
+  pinRequired: ['هذا الهاتف يعرض أرقام الشركة، فيحتاج رمز PIN يحميه إن ضاع أو أخذه أحد.', 'This phone shows the company\'s figures, so it needs a PIN that protects it if it is lost or taken.', 'ئەم مۆبایلە ژمارەکانی کۆمپانیا پیشان دەدات، بۆیە پێویستی بە PIN ێکە کە بیپارێزێت ئەگەر ون بوو یان کەسێک بردی.'],
   biometric: ['البصمة أو الوجه', 'Fingerprint or face', 'پەنجەمۆر یان ڕوخسار'],
   biometricNone: ['لا بصمة ولا وجه مسجّلان على هذا الهاتف.', 'This phone has no fingerprint or face set up.', 'هیچ پەنجەمۆر یان ڕوخسارێک لەسەر ئەم مۆبایلە تۆمار نەکراوە.'],
   autoLock: ['القفل بعد', 'Lock after', 'قفڵکردن دوای'],

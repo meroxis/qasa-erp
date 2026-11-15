@@ -322,7 +322,7 @@ describe('the release notes of 1.4.0 (kept as shipped)', () => {
   it('says plainly that 1.3 cannot open a company file 1.4 has upgraded, so every PC and the Store version are updated', () => {
     // why: 1.4 adds migration 13 (the item's purchase price, the vouchers that wait for approval), and an app refuses a newer file
     const db = read('packages/server/src/db.ts');
-    expect(db).toContain('{ sql: V13, mysql: { tables: true, steps: () => V13_MYSQL_STEPS } }\n];');
+    expect(db).toContain('{ sql: V13, mysql: { tables: true, steps: () => V13_MYSQL_STEPS } }');
     expect(db).toContain("if (version > app) throw new AppError(409, 'database_newer', { version, app });");
     expect(section('en')).toContain('### Before you update\n- **The company file is upgraded to a new version.** A copy of it is kept beside it before the update. Qasa ERP 1.3 cannot open a file that 1.4 has upgraded, so update every PC that opens the same company, and the Microsoft Store version too.');
     expect(section('ar')).toContain('### قبل التحديث\n- **يُرقّى ملف الشركة إلى إصدار جديد.** تُحفظ نسخة منه بجانبه قبل التحديث. لا يفتح قاصة ERP 1.3 ملفاً رقّاه الإصدار 1.4، فحدّث كل حاسوب يفتح الشركة نفسها، ونسخة متجر Microsoft أيضاً.');
@@ -675,8 +675,9 @@ describe('the release notes and the Store "What\'s new" of this version', () => 
   });
 
   it('upgrades no company file in 1.4.1, so it has no "Before you update" warning', () => {
-    // why: 1.4.1 adds no migration; 1.4.0 and 1.4.1 open the same company file
-    expect(read('packages/server/src/db.ts')).toContain('{ sql: V13, mysql: { tables: true, steps: () => V13_MYSQL_STEPS } }\n];');
+    // why: 1.4.1 adds no migration; 1.4.0 and 1.4.1 open the same company file (schema 13). Migration 14 (the audit
+    // log's sign-in index) came after 1.4.1 shipped: the next release's notes need the "Before you update" warning
+    expect(read('packages/server/src/db.ts')).toContain('{ sql: V13, mysql: { tables: true, steps: () => V13_MYSQL_STEPS } },\n  { sql: V14, ');
     expect(notes).not.toMatch(/Before you update|قبل التحديث|پێش نوێکردنەوە/);
     for (const lang of ['en-us', 'ar', 'ku-arab'] as const) expect(store[lang].releaseNotes, lang).not.toMatch(/upgraded|يُرقّى|بەرز دەکرێتەوە/);
   });

@@ -291,7 +291,8 @@ export const MYSQL_TABLES: readonly MysqlObject[] = [
       action TEXT NOT NULL,
       entity TEXT NOT NULL,
       entity_id TEXT,
-      details MEDIUMTEXT
+      details MEDIUMTEXT,
+      INDEX audit_log_user_login (entity(32), entity_id(64), action(32), id)
     )`
   },
   {
@@ -1687,7 +1688,8 @@ export const MYSQL_TRIGGERS: readonly MysqlObject[] = [
  */
 export type MysqlStep =
   | { kind: 'column'; table: string; column: string; sql: string }
-  | { kind: 'foreignKey'; table: string; column: string; parent: string; sql: string };
+  | { kind: 'foreignKey'; table: string; column: string; parent: string; sql: string }
+  | { kind: 'index'; table: string; name: string; sql: string };
 
 const NAME = /^\w+$/;
 
@@ -1704,6 +1706,15 @@ export function mysqlAddForeignKey(table: string, column: string, parent: string
     kind: 'foreignKey', table, column, parent,
     sql: `ALTER TABLE ${table} ADD CONSTRAINT ${table}_${column}_fk FOREIGN KEY (${column}) REFERENCES ${parent}(${parentColumn})`
   };
+}
+
+/**
+ * ALTER TABLE … ADD INDEX; skipped when the table has an index of that name. A TEXT column is indexed by a prefix, which
+ * its entry in `columns` carries ("entity(32)").
+ */
+export function mysqlAddIndex(table: string, name: string, columns: readonly string[]): MysqlStep {
+  if (!NAME.test(table) || !NAME.test(name) || !columns.length || !columns.every((c) => /^\w+(\(\d+\))?$/.test(c))) throw new Error(`bad index ${table}.${name}`);
+  return { kind: 'index', table, name, sql: `ALTER TABLE ${table} ADD INDEX ${name} (${columns.join(', ')})` };
 }
 
 const lineColumns = (table: string, batches: boolean): MysqlStep[] => [
@@ -1757,13 +1768,26 @@ export const V13_MYSQL_STEPS: readonly MysqlStep[] = [
   mysqlAddColumn('pos_sales', 'tendered', 'BIGINT CHECK (tendered IS NULL OR tendered >= 0)')
 ];
 
-/** What a server database has already, for pendingMysqlSteps: "table.column" and "table.column>parent". */
-export interface MysqlSchemaState { columns: ReadonlySet<string>; foreignKeys: ReadonlySet<string> }
+/**
+ * Version 14: the index the sign-in check reads an account's known places through (auth.ts, knownPlaces), so the first
+ * sign-in after a restart doesn't scan the whole append-only audit log. Its columns are TEXT: each is indexed by a prefix.
+ */
+export const V14_MYSQL_STEPS: readonly MysqlStep[] = [
+  mysqlAddIndex('audit_log', 'audit_log_user_login', ['entity(32)', 'entity_id(64)', 'action(32)', 'id'])
+];
+
+/**
+ * What a server database has already, for pendingMysqlSteps: "table.column", "table.column>parent" and "table.index"
+ * (no `indexes`: none yet).
+ */
+export interface MysqlSchemaState { columns: ReadonlySet<string>; foreignKeys: ReadonlySet<string>; indexes?: ReadonlySet<string> }
 
 /** The statements of `steps` not done yet, in order. */
 export function pendingMysqlSteps(steps: readonly MysqlStep[], state: MysqlSchemaState): string[] {
   const done = (s: MysqlStep) =>
-    s.kind === 'column' ? state.columns.has(`${s.table}.${s.column}`) : state.foreignKeys.has(`${s.table}.${s.column}>${s.parent}`);
+    s.kind === 'column' ? state.columns.has(`${s.table}.${s.column}`)
+      : s.kind === 'foreignKey' ? state.foreignKeys.has(`${s.table}.${s.column}>${s.parent}`)
+        : !!state.indexes?.has(`${s.table}.${s.name}`);
   return steps.filter((s) => !done(s)).map((s) => s.sql);
 }
 
