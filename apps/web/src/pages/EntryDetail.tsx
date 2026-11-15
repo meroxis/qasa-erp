@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { amountInWords, rateFromX100, todayIso } from '@qasa/core';
-import { api, ApiError, type EntryView } from '../api.ts';
+import { api, ApiError, type EntryImageMeta, type EntryView } from '../api.ts';
 import { ErrorBox, Icon, Modal, typeName, useData, useLoad, useToast } from '../components.tsx';
 import { ApprovalButtons, ApprovalNote, OwnVoucherButtons, VoucherStateChip } from '../industry/VoucherApproval.tsx';
 import { useI18n } from '../i18n.ts';
@@ -10,6 +10,35 @@ import { DocAmount } from '../Amount.tsx';
 import { reverseDefaultDate } from '../industry/ReverseModal.tsx';
 import { entryModel } from '../industry/print-model.ts';
 import { printDocument } from '../industry/printing.ts';
+
+/**
+ * The photo of a voucher's paper receipt (1.5): a small picture beside the voucher's words, the whole photo on a click,
+ * and who added it. The photo is a JPEG the server kept without its metadata, shown as a data: URL (the app's content
+ * security policy allows data: images).
+ */
+export function ReceiptPhoto({ id, image }: { id: string; image: EntryImageMeta }) {
+  const { t } = useI18n();
+  const photo = useLoad(() => api.entryImage(id), [id]);
+  const [open, setOpen] = useState(false);
+  return (
+    <div className="row" style={{ alignItems: 'flex-start' }}>
+      <span className="muted" style={{ width: 130, paddingTop: 4 }}>{t('rp_title')}</span>
+      <div className="stack" style={{ gap: 6 }}>
+        {photo.data ? (
+          <button type="button" className="btn ghost" style={{ padding: 0, height: 'auto', alignSelf: 'flex-start' }} onClick={() => setOpen(true)} title={t('rp_open')} aria-label={t('rp_open')}>
+            <img src={photo.data} alt={t('rp_title')} style={{ display: 'block', maxHeight: 220, maxWidth: '100%', borderRadius: 6, border: '1px solid var(--line, #E4E1D8)' }} />
+          </button>
+        ) : photo.error || (!photo.loading && !photo.data) ? <span className="small muted">{t('rp_failed')}</span> : null}
+        <span className="small muted">{t('rp_by', { u: image.createdBy })}</span>
+      </div>
+      {open && photo.data && (
+        <Modal title={t('rp_title')} onClose={() => setOpen(false)}>
+          <img src={photo.data} alt={t('rp_title')} style={{ display: 'block', maxWidth: '100%', maxHeight: '75vh', margin: '0 auto' }} />
+        </Modal>
+      )}
+    </div>
+  );
+}
 
 function time(iso: string | null): string {
   if (!iso) return '';
@@ -147,6 +176,8 @@ export function EntryDetail({ id }: { id: string }) {
             </>
           )}
           <div className="row"><span className="muted" style={{ width: 130 }}>{isVoucher ? t('forLabel') : t('description')}</span><span>{e.description}</span></div>
+          {/* 1.5: the photo of the paper receipt, when one was kept with the voucher (an expense from the phone app) */}
+          {e.image && <ReceiptPhoto id={e.id} image={e.image} />}
           {e.invoiceId && <div className="row"><span className="muted" style={{ width: 130 }}>{t('e_invoice')}</span><a href={href(`invoice/${e.invoiceId}`)}>{t('openInvoice')}</a></div>}
           {e.stockDocId && <div className="row"><span className="muted" style={{ width: 130 }}>{t('e_stock_doc')}</span><a href={href(`stock-doc/${e.stockDocId}`)}>{t('openDocument')}</a></div>}
           {/* (the entry that reverses a voucher is the approver's: named, without a link, for someone who reads only their own) */}
