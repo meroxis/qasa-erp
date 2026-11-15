@@ -11,6 +11,7 @@ import {
 import { getParty } from './parties.ts';
 import { onceOnly } from './idempotency.ts';
 import { ownVouchersOnly } from './cost-view.ts';
+import { seenBody, whenSeen } from './entry-seen.ts';
 import { userBranchLists } from './branches.ts';
 import type { ApiExtension, ApiRequest } from './routes.ts';
 
@@ -222,15 +223,20 @@ export const quickVouchersApi: ApiExtension = {
           return reply.status(204).send();
         }
       },
+      // `seen` (phone app 1.1): the voucher as the approver saw it; changed since, nothing is done (entry-seen.ts)
       {
         method: 'POST', path: '/api/entries/:id/approve-waiting',
-        handler: async (req) => approveWaiting(db, parse(idParam, req.params).id, preparerOf(actor(req)))
+        handler: async (req) => {
+          const { id } = parse(idParam, req.params);
+          return whenSeen(db, id, parse(seenBody, req.body ?? {}).seen, () => approveWaiting(db, id, preparerOf(actor(req))));
+        }
       },
       {
         method: 'POST', path: '/api/entries/:id/reject',
         handler: async (req) => {
-          const body = parse(z.object({ reason: z.string().min(1).max(MAX_REJECT_REASON) }), req.body);
-          return rejectWaiting(db, parse(idParam, req.params).id, body.reason, preparerOf(actor(req)));
+          const { id } = parse(idParam, req.params);
+          const body = parse(seenBody.extend({ reason: z.string().min(1).max(MAX_REJECT_REASON) }), req.body);
+          return whenSeen(db, id, body.seen, () => rejectWaiting(db, id, body.reason, preparerOf(actor(req))));
         }
       }
     ];
