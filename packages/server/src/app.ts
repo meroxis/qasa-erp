@@ -51,7 +51,9 @@ export function requestRefusal(
  */
 export const MODULE_ROUTES: Readonly<Record<string, string>> = {
   backup: '/api/backup', network: '/api/network', phones: '/api/phones', database: '/api/database',
-  pharmacy: '/api/pharmacy', pro: '/api/pro/licence-check'
+  pharmacy: '/api/pharmacy', pro: '/api/pro/licence-check',
+  // 1.5: work from phones, told at every office PC (pro/src/phone/activity.ts: on the office network and Qasa Relay too)
+  phoneActivity: '/api/phone-activity'
 };
 
 /**

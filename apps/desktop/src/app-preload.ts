@@ -84,7 +84,19 @@ contextBridge.exposeInMainWorld('qasaDesktop', {
    * Send on WhatsApp as a PDF (main.ts, share-pdf.ts): this window as it prints now, saved as "<kind>-<number>.pdf" in
    * the app's own folder and shown in File Explorer. Only a kind and a number cross; the main process checks both.
    */
-  sharePdf: (kind: string, ref: string) => ipcRenderer.invoke('share:pdf', String(kind), String(ref)) as Promise<unknown>
+  sharePdf: (kind: string, ref: string) => ipcRenderer.invoke('share:pdf', String(kind), String(ref)) as Promise<unknown>,
+  /**
+   * 1.5: work from phones as a Windows notification (main.ts, phone-notices.ts): a title, a line and the app's own page
+   * to open when it is clicked; only those three strings cross, and the main process checks each. True when shown.
+   */
+  phoneNotice: (title: string, body: string, route: string) =>
+    ipcRenderer.invoke('app:phoneNotice', { title: String(title), body: String(body), route: String(route) }) as Promise<boolean>,
+  /** A notice was clicked: the page opens `route` (a document, or '' for the "From phones" list). */
+  onPhoneNoticeOpen: (listener: (route: string) => void) => {
+    const handler = (_event: unknown, route: unknown) => listener(typeof route === 'string' ? route : '');
+    ipcRenderer.on('app:phoneNotice:open', handler);
+    return () => { ipcRenderer.removeListener('app:phoneNotice:open', handler); };
+  }
 });
 
 /** Plain data only (JSON), at most 1 MB: no functions or objects of the page's own cross to the main process. */

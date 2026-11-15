@@ -587,6 +587,11 @@ export async function request<T>(method: string, url: string, body?: unknown, op
   }
 }
 
+/** A request made in the background (1.5: asking for work from phones every little while): no busy bar for it. */
+export function requestQuietly<T>(method: string, url: string, body?: unknown): Promise<T> {
+  return send<T>(method, url, body);
+}
+
 /**
  * 1.2, for what a PC may send again (the outbox): `key` is the request's idempotency key (a UUID v4, the same every
  * time it is sent), `books` the company books it was made for; `timeoutMs` gives up on a server that doesn't answer

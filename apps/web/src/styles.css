@@ -538,6 +538,23 @@ html[dir='rtl'] .flip { transform: scaleX(-1); }
 .menu-item svg { inline-size: 16px; block-size: 16px; flex-shrink: 0; color: var(--ink-2); }
 .menu-sep { block-size: 1px; margin: var(--sp-1) calc(-1 * var(--sp-1)); background: var(--line); }
 
+/* 1.5: the header's "From phones" (industry/PhoneActivity.tsx): the phone button with its count, and the list */
+.phone-bell > .btn { position: relative; }
+.phone-bell-count {
+  position: absolute; inset-block-start: 2px; inset-inline-end: 0; min-inline-size: 16px; block-size: 16px; padding-inline: 4px;
+  border-radius: 8px; background: var(--accent); color: var(--on-accent); font-family: var(--font-num); font-size: 10px; font-weight: 600; line-height: 16px; text-align: center;
+}
+.phone-menu { inline-size: 340px; }
+.phone-menu-head { padding: var(--sp-2) var(--sp-3); }
+.phone-menu-empty { margin: 0; padding: var(--sp-2) var(--sp-3); }
+.phone-menu-list { max-block-size: 360px; overflow-y: auto; }
+.phone-row { align-items: flex-start; padding-block: var(--sp-2); }
+.phone-row > svg { margin-block-start: 2px; }
+.phone-row.new { font-weight: 600; }
+.phone-row:disabled { cursor: default; }
+.phone-row-text { display: flex; flex-direction: column; gap: 2px; min-inline-size: 0; }
+.phone-row-text .small { font-weight: 400; }
+
 /* ---------- building blocks ---------- */
 .card { background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-card); box-shadow: var(--shadow-card); }
 .card.pad { padding: var(--card-pad-y) var(--card-pad-x); }

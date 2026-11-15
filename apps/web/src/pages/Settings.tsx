@@ -16,6 +16,7 @@ import { UpdateSettings } from '../industry/UpdateSettings.tsx';
 import { desktopUpdates } from '../industry/updates.ts';
 import { LegalPanel } from '../industry/LegalPanel.tsx';
 import { GraphicsSetting } from '../industry/GraphicsSetting.tsx';
+import { PhoneNotifySetting } from '../industry/PhoneActivity.tsx';
 import { PrintersCard } from '../industry/Printers.tsx';
 import { CompaniesSetting } from './Companies.tsx';
 import { StartOverCard, startOverCall } from '../industry/StartOver.tsx';
@@ -255,6 +256,7 @@ const LANGUAGE_SAMPLES: Record<Lang, string> = { ar: 'ع', en: 'A', ku: 'ک' };
 export function DisplaySettings({ admin = false }: { admin?: boolean }) {
   const { t, lang, setLang, digits, setDigits } = useI18n();
   const { theme, density, setTheme, setDensity } = useDisplay();
+  const phoneWork = !!useContext(DataContext)?.modules?.includes('phoneActivity');
   const languages: Choice<Lang>[] = LANGUAGE_NAMES.map(([l, label]) => ({ value: l, label, sample: LANGUAGE_SAMPLES[l], lang: htmlLang(l) }));
   const digitStyles: Choice<DigitStyle>[] = [
     { value: 'eastern', label: t('lk_digitsEastern'), sample: '١٢٣' },
@@ -306,6 +308,8 @@ export function DisplaySettings({ admin = false }: { admin?: boolean }) {
           </div>
         </div>
         <GraphicsSetting />
+        {/* 1.5: Windows notifications of work from phones, on this PC (where the build brings that work) */}
+        {phoneWork && <PhoneNotifySetting />}
         {admin && <AmountsShowSetting />}
       </div>
     </section>

@@ -1299,6 +1299,25 @@ describe('the release notes and the Store "What\'s new" of this version (1.5.0)'
     expect(section('ku')).toContain('**تۆماری وردبینی**');
   });
 
+  it('tells of work from phones at the office in the words of the header and Settings, and in each Store "What\'s new"', () => {
+    const phone = read('apps/web/src/i18n/phone.ts');
+    expect(phone).toContain("pn_title: ['من الهواتف', 'From phones', 'لە مۆبایلەکانەوە']");
+    expect(phone).toContain("pn_setting: ['أعلمني بعمل الهواتف', 'Notify me of work from phones', 'ئاگادارم بکەرەوە لە کاری مۆبایلەکان']");
+    expect(read('apps/web/src/i18n.ts')).toContain("displayTitle: ['اللغة والعرض', 'Language and display', 'زمان و پیشاندان']");
+    expect(read('apps/web/src/pages/Settings.tsx')).toContain('{phoneWork && <PhoneNotifySetting />}');
+    expect(section('en')).toContain('the **From phones** button in the header shows how many');
+    expect(section('en')).toContain('**Settings → Language and display → Notify me of work from phones**');
+    expect(section('en')).toContain('Everyone sees only what they may open, and the amounts only if they see the figures (or for their own work).');
+    expect(section('ar')).toContain('**الإعدادات ← اللغة والعرض ← أعلمني بعمل الهواتف**');
+    expect(section('ar')).toContain('بانتظار مصادقتك');
+    expect(section('ku')).toContain('**ڕێکخستنەکان ← زمان و پیشاندان ← ئاگادارم بکەرەوە لە کاری مۆبایلەکان**');
+    expect(section('ku')).toContain('چاوەڕێی پەسەندکردنی تۆن');
+    for (const lang of ['en', 'ar', 'ku'] as const) expect(section(lang), lang).toContain('Qasa Relay');
+    expect(lines('en-us')[1]).toContain('The header’s From phones button and a Windows notification tell the office of new work from phones.');
+    expect(lines('ar')[1]).toContain('«من الهواتف»');
+    expect(lines('ku-arab')[1]).toContain('«لە مۆبایلەکانەوە»');
+  });
+
   it('tells of the fix on a database server, in the words of Settings', () => {
     expect(read('apps/web/src/i18n.ts')).toContain("dbOnServer: ['على خادم قاعدة بيانات', 'On a database server', 'لەسەر سێرڤەری بنکەدراوە']");
     expect(section('en')).toContain('**On a database server** (Business): a connection to the server lost while saving no longer leaves the company unavailable until Qasa ERP is restarted');
