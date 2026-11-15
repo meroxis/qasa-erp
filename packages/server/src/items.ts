@@ -5,7 +5,7 @@ import { nextSequence, transaction } from './db.ts';
 import { audit } from './audit.ts';
 import { conflict, invalid, notFound } from './errors.ts';
 import { assertWithinLimit } from './license.ts';
-import { assertItemUnits, openDocumentsWithItem, replaceItemUnits, unitsByItem, type ItemUnitView } from './item-units.ts';
+import { assertItemUnits, itemUnits, openDocumentsWithItem, replaceItemUnits, unitsByItem, type ItemUnitView } from './item-units.ts';
 import { startTracking } from './batches.ts';
 import { assertItemCategory, IN_CATEGORY_SQL } from './categories.ts';
 import { assertItemBrand } from './brands.ts';
@@ -244,18 +244,34 @@ export function itemNames(name: Names): Names {
  * digits, starting with 2, the weight inside) whose first seven digits are a weighed item's barcode is that item's
  * label: as another item's barcode it would ring up the wrong item at the till, and only for that one weight. And a
  * weighed item's seven digits may not be the start of a label that is already another item's own barcode.
+ * The barcodes of an item's other units count the same (the till finds a unit's barcode first): a unit's barcode may
+ * not be a weighed item's label, and a weighed item's seven digits may not start a label that is a unit's barcode.
  */
-function assertNoScaleClash(db: Db, barcode: string, unit: UnitCode, id: string | null): void {
-  // an item saved again with the barcode and unit it already has is not held up by what was there before
+function assertNoScaleClash(db: Db, input: { barcode: string | undefined; unit: UnitCode; units: readonly ItemUnit[] | undefined }, id: string | null): void {
+  const barcode = input.barcode?.trim() || null;
+  const weighed = isWeighedUnit(input.unit);
+  // an item saved again with the barcodes and unit it already has is not held up by what was there before
   const current = id ? (db.prepare('SELECT barcode, unit FROM items WHERE id = ?').get(id) as { barcode: string | null; unit: string } | undefined) : undefined;
-  if (current && current.barcode === barcode && current.unit === unit) return;
-  const label = parseScaleBarcode(barcode);
-  if (label) {
+  const sameBase = !!current && current.barcode === barcode && current.unit === input.unit;
+  const before = new Set(id && sameBase
+    ? (db.prepare('SELECT barcode FROM item_units WHERE item_id = ? AND barcode IS NOT NULL').all(id) as { barcode: string }[]).map((r) => r.barcode)
+    : []);
+  const checked = [
+    ...(barcode && !sameBase ? [barcode] : []),
+    ...(input.units ?? (id ? itemUnits(db, id) : [])).map((u) => u.barcode?.trim() ?? '').filter((b) => b && !before.has(b))
+  ];
+  for (const code of checked) {
+    const label = parseScaleBarcode(code);
+    if (!label) continue;
+    // this item's own label, as one of its units' barcodes, would ring up one unit instead of the weight
+    if (code !== barcode && weighed && label.prefix === barcode) throw conflict('barcode_scale_label');
     const owner = db.prepare("SELECT unit FROM items WHERE barcode = ? AND id <> COALESCE(?, '')").all(label.prefix, id ?? null) as { unit: string }[];
     if (owner.some((o) => isWeighedUnit(o.unit))) throw conflict('barcode_scale_label');
   }
-  if (isWeighedUnit(unit) && /^2\d{6}$/.test(barcode)) {
-    const labels = db.prepare("SELECT barcode FROM items WHERE barcode LIKE ? AND length(barcode) = 13 AND id <> COALESCE(?, '')").all(`${barcode}%`, id ?? null) as { barcode: string }[];
+  if (barcode && !sameBase && weighed && /^2\d{6}$/.test(barcode)) {
+    const labels = db.prepare(`SELECT barcode FROM items WHERE barcode LIKE ? AND length(barcode) = 13 AND id <> COALESCE(?, '')
+                               UNION ALL SELECT barcode FROM item_units WHERE barcode LIKE ? AND length(barcode) = 13 AND item_id <> COALESCE(?, '')`)
+      .all(`${barcode}%`, id ?? null, `${barcode}%`, id ?? null) as { barcode: string }[];
     if (labels.some((l) => parseScaleBarcode(l.barcode) !== null)) throw conflict('barcode_scale_label');
   }
 }
@@ -274,7 +290,7 @@ function assertItem(db: Db, input: ItemInput, id: string | null): void {
   if (code && db.prepare("SELECT 1 FROM items WHERE code = ? AND id <> COALESCE(?, '')").get(code, id ?? null)) throw conflict('code_exists');
   const barcode = input.barcode?.trim();
   if (barcode && db.prepare("SELECT 1 FROM items WHERE barcode = ? AND id <> COALESCE(?, '')").get(barcode, id ?? null)) throw conflict('barcode_exists');
-  if (barcode) assertNoScaleClash(db, barcode, input.unit, id);
+  assertNoScaleClash(db, { barcode, unit: input.unit, units: input.units }, id);
   if (input.unit === 'service' && input.units?.length) throw invalid([{ code: 'unit_invalid' }]);
   assertItemCategory(db, input.categoryId, id);
   assertItemBrand(db, input.brandId, id);

@@ -7,7 +7,7 @@ import { DataContext } from '../components.tsx';
 import { I18nContext, makeI18n, type Key } from '../i18n.ts';
 import { ItemPicker, QuickItemForm, withAdded } from './QuickItemForm.tsx';
 import {
-  addRowKind, anyItemMatches, itemKey, mayAddItem, QUICK_ITEM_TIMEOUT_MS, quickAddItem, quickItemInput, quickItemStart, sameItems, sameSearch, typedForForm
+  addRowKind, anyItemMatches, existingStockStep, itemKey, mayAddItem, showsBatchFields, QUICK_ITEM_TIMEOUT_MS, quickAddItem, quickItemInput, quickItemStart, sameItems, sameSearch, typedForForm
 } from './item-quick-add.ts';
 import { correctionDiff, correctionProblem, purchaseCost, REASON_WAY, startingCost, StockCorrection, StockCorrectionFor, warehouseAverage } from './StockCorrection.tsx';
 import { stockCost } from './QuickItemForm.tsx';
@@ -194,6 +194,29 @@ describe('adding an item from an item picker', () => {
     expect(stockCost({ purchasePrice: 150, currency: 'USD' }, 142_000)).toBe(2_130);
     expect(stockCost({ purchasePrice: null, currency: 'IQD' }, 142_000)).toBeNull();
     expect(stockCost({ purchasePrice: 150, currency: 'USD' }, undefined)).toBeNull();
+  });
+
+  it("shows the batch and expiry fields by the item's own settings once it is made, so a failed settings read never blocks its stock", () => {
+    // before the item is made: the company's choice (false when it could not be read)
+    expect(showsBatchFields(null, true)).toBe(true);
+    expect(showsBatchFields(null, false)).toBe(false);
+    // made (or chosen): its own settings, whatever the company's choice said
+    expect(showsBatchFields({ trackBatches: true, trackExpiry: true }, false)).toBe(true);
+    expect(showsBatchFields({ trackBatches: true, trackExpiry: false }, false)).toBe(true);
+    expect(showsBatchFields({ trackBatches: false, trackExpiry: false }, true)).toBe(false);
+  });
+
+  it('enters the stock typed for an item already there that was chosen instead: opening stock where it has none, else a count', () => {
+    // nothing typed, 0, or what the warehouse holds already: nothing changes
+    expect(existingStockStep(5_000, null)).toEqual({ kind: 'none' });
+    expect(existingStockStep(5_000, 0)).toEqual({ kind: 'none' });
+    expect(existingStockStep(5_000, 5_000)).toEqual({ kind: 'none' });
+    // none in the sale's warehouse: opening stock at the purchase price
+    expect(existingStockStep(0, 12_000)).toEqual({ kind: 'enter', reason: 'opening', adds: true });
+    // some there: a count correction either way
+    expect(existingStockStep(5_000, 12_000)).toEqual({ kind: 'enter', reason: 'found', adds: true });
+    expect(existingStockStep(5_000, 3_000)).toEqual({ kind: 'enter', reason: 'found', adds: false });
+    for (const lang of LANGS) expect(textOf(lang, 'iq_sameStock'), lang).not.toBe('iq_sameStock');
   });
 });
 
