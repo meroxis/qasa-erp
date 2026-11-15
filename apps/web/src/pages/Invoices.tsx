@@ -265,15 +265,18 @@ export function InvoiceEditor({ kind: initialKind, id, partyId: initialParty }: 
     return roundHalfUp((convert(averageCost(it.qtyMilli, it.value), 'IQD', currency, priceRateX100) * factorOf(it, unit)) / 1000);
   }
 
-  /** `given`: an item just added from the item box, which the page's list may not have yet */
-  function pickItem(key: number, itemId: string, given?: ItemView) {
+  /**
+   * `given`: an item just added from the item box, which the page's list may not have yet; `weighed`: the weight a
+   * scale's label scanned for it puts on the line (thousandths of its base unit)
+   */
+  function pickItem(key: number, itemId: string, given?: ItemView, weighed?: number | null) {
     const it: ItemView | undefined = given ?? itemById.get(itemId);
-    // a new line starts in the item's sale (or purchase) unit
-    const unit: LineUnit = (kind === 'sale' ? it?.saleUnit : it?.purchaseUnit) ?? null;
+    // a new line starts in the item's sale (or purchase) unit; a scale's weight is in its base unit
+    const unit: LineUnit = typeof weighed === 'number' ? null : (kind === 'sale' ? it?.saleUnit : it?.purchaseUnit) ?? null;
     const price = catalogPrice(it, unit);
     const filled = price ?? rows.find((r) => r.key === key)?.unitPrice ?? null;
     setRows((rs) => {
-      const next = rs.map((r) => (r.key === key ? { ...r, itemId, unitPrice: filled, unit } : r));
+      const next = rs.map((r) => (r.key === key ? { ...r, itemId, unitPrice: filled, unit, ...(typeof weighed === 'number' ? { qtyMilli: weighed } : {}) } : r));
       return next[next.length - 1]?.itemId ? [...next, emptyRow()] : next;
     });
     askPrice(key, itemId, filled, it);
@@ -581,7 +584,7 @@ export function InvoiceEditor({ kind: initialKind, id, partyId: initialParty }: 
                   <td>
                     <ItemPicker value={r.itemId} options={itemOptions} onChange={(v) => pickItem(r.key, v)} placeholder={t('chooseItem')} ariaLabel={t('item')} sale={kind === 'sale'}
                       stockOnly={kind !== 'sale'} warehouseId={kind === 'sale' ? warehouseId || undefined : undefined}
-                      onCreated={(made) => { setAddedItems((a) => [...a.filter((x) => x.id !== made.id), made]); pickItem(r.key, made.id, made); focusLineQty(r.key, t('qty')); }} />
+                      onCreated={(made, weighed) => { setAddedItems((a) => [...a.filter((x) => x.id !== made.id), made]); pickItem(r.key, made.id, made, weighed); focusLineQty(r.key, t('qty')); }} />
                     {short && <div className="small" style={{ color: 'var(--bad)', marginTop: 3 }}>{t('available')}: {qtyText(i18n, it.qtyMilli)}</div>}
                     {kind === 'purchase'
                       ? <BatchInFields item={it} batchNo={r.batchNo ?? ''} expiry={r.expiry ?? ''} date={date} onChange={(v) => update(r.key, v)} />

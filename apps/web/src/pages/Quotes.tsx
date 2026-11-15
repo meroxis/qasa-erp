@@ -169,9 +169,13 @@ export function QuoteEditor({ id }: { id?: string }) {
     set('currency', next);
   };
   const update = (key: number, patch: Partial<Row>) => setRows((rs) => rs.map((r) => (r.key === key ? { ...r, ...patch } : r)));
-  const pickItem = (key: number, itemId: string, given?: ItemView) => {
+  /** `weighed`: the weight a scale's label scanned for an item added from the item box puts on the line (its base unit) */
+  const pickItem = (key: number, itemId: string, given?: ItemView, weighed?: number | null) => {
     const it = given ?? items.find((x) => x.id === itemId);
-    update(key, { itemId: itemId || null, ...(it ? { description: i18n.name(it.name), ...(it.saleCurrency === form.currency && it.salePrice ? { unitPrice: it.salePrice } : {}) } : {}) });
+    update(key, {
+      itemId: itemId || null, ...(it ? { description: i18n.name(it.name), ...(it.saleCurrency === form.currency && it.salePrice ? { unitPrice: it.salePrice } : {}) } : {}),
+      ...(typeof weighed === 'number' ? { qtyMilli: weighed } : {})
+    });
   };
   const subtotal = rows.reduce((s, r) => s + lineAmount(r.qtyMilli || 0, r.unitPrice || 0), 0);
 
@@ -238,7 +242,7 @@ export function QuoteEditor({ id }: { id?: string }) {
                 <tr key={r.key} data-line={r.key}>
                   <td className="muted num">{i18n.int(i + 1)}</td>
                   <td><ItemPicker value={r.itemId ?? ''} options={itemOptions} onChange={(v) => pickItem(r.key, v)} placeholder={t('qt_freeText')} ariaLabel={t('item')} emptyLabel={t('qt_freeText')} sale
-                    onCreated={(made) => { setAddedItems((a) => [...a.filter((x) => x.id !== made.id), made]); pickItem(r.key, made.id, made); focusLineQty(r.key, t('qty')); }} /></td>
+                    onCreated={(made, weighed) => { setAddedItems((a) => [...a.filter((x) => x.id !== made.id), made]); pickItem(r.key, made.id, made, weighed); focusLineQty(r.key, t('qty')); }} /></td>
                   <td><input className="input" maxLength={500} value={r.description} onChange={(e) => update(r.key, { description: e.target.value })} aria-label={t('description')} /></td>
                   <td><QtyInput value={r.qtyMilli || null} onChange={(v) => update(r.key, { qtyMilli: v ?? 0 })} ariaLabel={t('qty')} /></td>
                   <td><AmountInput value={r.unitPrice || null} currency={form.currency} onChange={(v) => update(r.key, { unitPrice: v ?? 0 })} ariaLabel={t('unitPrice')} /></td>

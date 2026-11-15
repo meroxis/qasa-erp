@@ -54,6 +54,12 @@ export const ITEM_QUICK_TEXT = {
     'کاڵاکە زیادکرا. بڕی کۆگاکەی ڕەشنووسێکە و چاوەڕێی پەسەندکردنە (پەسەندکەرێکی تر لە پەڕەی بەڵگەنامەکانی کۆگاوە تەرحیلی دەکات)؛ پێش ئەوە نافرۆشرێت.'
   ],
   iq_stockFailed: ['أُضيفت المادة، لكن رصيدها لم يُحفظ. حاول مرة أخرى.', 'The item was added, but its stock was not saved. Try again.', 'کاڵاکە زیادکرا، بەڵام بڕی کۆگاکەی پاشەکەوت نەکرا. دووبارە هەوڵ بدەرەوە.'],
+  // the stock entry's try got no answer: the same entry is sent again with its key (the button is sc_tryAgain)
+  iq_stockUnsure: [
+    'لم يؤكّد الخادم إدخال الرصيد، فربما أُدخل من قبل. اضغط «أعد المحاولة» عند عودة الاتصال: الإدخال نفسه لا يُعمل إلا مرة واحدة. ولا يمكن تغيير شيء في هذا النموذج قبل ذلك؛ وإن أغلقته فراجع حركات المادة والمسودات التي تنتظر المصادقة قبل أن تُدخل رصيدها مرة أخرى.',
+    'The server didn’t confirm the stock entry, so it may already be made. Press Try again once the link is back: the same entry is made only once. Until then nothing in this form can be changed; if you close it, check the item’s stock moves and the drafts waiting for approval before you enter its stock again.',
+    'سێرڤەرەکە نووسینی بڕی کۆگای پشتڕاست نەکردەوە، بۆیە لەوانەیە پێشتر نووسرابێت. کاتێک پەیوەندی گەڕایەوە «دووبارە هەوڵ بدەرەوە» دابگرە: هەمان نووسین تەنها یەک جار دەکرێت. تا ئەو کاتە هیچ شتێک لەم فۆڕمەدا ناگۆڕدرێت؛ ئەگەر دایبخەیت، پێش ئەوەی دووبارە بڕی کۆگاکەی بنووسیت جووڵەکانی کاڵاکە و ئەو ڕەشنووسانەی چاوەڕێی پەسەندکردنن ببینە.'
+  ],
   iq_continue: ['متابعة', 'Continue', 'بەردەوامبوون'],
   iq_expiryNeeded: ['اكتب تاريخ الانتهاء لما على الرف.', 'Enter the expiry date of what is on the shelf.', 'بەرواری بەسەرچوونی ئەوەی لەسەر ڕەفەکەیە بنووسە.'],
   pos_noItemNamed: ['لا توجد مادة تطابق «{n}»', 'No item matches “{n}”', 'هیچ کاڵایەک لەگەڵ «{n}» ناگونجێت'],
@@ -145,6 +151,13 @@ export const ITEM_QUICK_TEXT = {
   sc_note: ['ملاحظة', 'Note', 'تێبینی'],
   sc_noteOther: ['ملاحظة (السبب)', 'Note (why)', 'تێبینی (بۆچی)'],
   sc_save: ['تصحيح', 'Correct', 'ڕاستکردنەوە'],
+  // a try whose answer never came: the same correction is sent again with its key, never a changed one
+  sc_tryAgain: ['أعد المحاولة', 'Try again', 'دووبارە هەوڵ بدەرەوە'],
+  sc_unsure: [
+    'لم يؤكّد الخادم هذا التصحيح، فربما عُمل من قبل. اضغط «أعد المحاولة» عند عودة الاتصال: التصحيح نفسه لا يُعمل إلا مرة واحدة. ولا يمكن تغييره قبل ذلك؛ وإن أغلقته فراجع حركات المادة والمسودات التي تنتظر المصادقة قبل أن تصحّحه مرة أخرى.',
+    'The server didn’t confirm this correction, so it may already be made. Press Try again once the link is back: the same correction is made only once. Until then it can’t be changed; if you close it, check the item’s stock moves and the drafts waiting for approval before you correct it again.',
+    'سێرڤەرەکە ئەم ڕاستکردنەوەیەی پشتڕاست نەکردەوە، بۆیە لەوانەیە پێشتر کرابێت. کاتێک پەیوەندی گەڕایەوە «دووبارە هەوڵ بدەرەوە» دابگرە: هەمان ڕاستکردنەوە تەنها یەک جار دەکرێت. تا ئەو کاتە ناگۆڕدرێت؛ ئەگەر دایبخەیت، پێش ئەوەی دووبارە ڕاستی بکەیتەوە جووڵەکانی کاڵاکە و ئەو ڕەشنووسانەی چاوەڕێی پەسەندکردنن ببینە.'
+  ],
   sc_done: ['صُحِّح المخزون: {doc}', 'Stock corrected: {doc}', 'کۆگا ڕاستکرایەوە: {doc}'],
   sc_waiting: [
     'حُفظت مسودة تنتظر المصادقة: يرحّلها مصادق آخر من صفحة تسوية المخزون. لم يتغير المخزون بعد.',

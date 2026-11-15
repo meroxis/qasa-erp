@@ -7,9 +7,13 @@ import { DataContext } from '../components.tsx';
 import { I18nContext, makeI18n, type Key } from '../i18n.ts';
 import { ItemPicker, QuickItemForm, withAdded } from './QuickItemForm.tsx';
 import {
-  addRowKind, anyItemMatches, existingStockStep, itemKey, mayAddItem, oldServerRefusal, showsBatchFields, QUICK_ITEM_TIMEOUT_MS, quickAddItem, quickItemInput, quickItemStart, sameItems, sameSearch, typedForForm
+  addRowKind, anyItemMatches, existingStockStep, itemKey, labelQtyFor, mayAddItem, oldServerRefusal, showsBatchFields, QUICK_ITEM_TIMEOUT_MS, quickAddItem, quickItemInput,
+  quickItemStart, sameItems, sameSearch, typedForForm
 } from './item-quick-add.ts';
-import { correctionDiff, correctionProblem, correctionReasons, noAverageRefusal, purchaseCost, REASON_WAY, startingCost, StockCorrection, StockCorrectionFor, warehouseAverage } from './StockCorrection.tsx';
+import {
+  correctionDiff, correctionProblem, correctionReasons, noAverageRefusal, outcomeUnknown, purchaseCost, REASON_WAY, sendCorrection, startingCost, StockCorrection,
+  StockCorrectionFor, warehouseAverage
+} from './StockCorrection.tsx';
 import { stockCost } from './QuickItemForm.tsx';
 
 // 1.4.2: an item added from inside an item picker (invoices, quotations, orders, the till), and an item's stock
@@ -66,6 +70,19 @@ describe('adding an item from an item picker', () => {
     expect(addRowKind('2100017012503')).toBe('barcode');
   });
 
+  it("gives the weight of a scale's label for the line, for the label's own weighed item only (1.4.2 review)", () => {
+    // 2100017 01250 3: item 2100017, 1.250 kg
+    const label = quickItemStart('2100017012503', 'piece', true);
+    const tomato = { barcode: label.barcode, unit: label.unit };
+    expect(labelQtyFor(label.scaleLabel, tomato)).toBe(1_250);
+    expect(labelQtyFor(label.scaleLabel, { ...tomato, unit: 'g' })).toBe(1_250_000);
+    // another item (its barcode changed in the form, or another one chosen), one not weighed, or no label: none
+    expect(labelQtyFor(label.scaleLabel, { ...tomato, barcode: '2100018' })).toBeNull();
+    expect(labelQtyFor(label.scaleLabel, { ...tomato, unit: 'piece' })).toBeNull();
+    expect(labelQtyFor(null, tomato)).toBeNull();
+    expect(labelQtyFor(quickItemStart('2100017012503').scaleLabel, tomato)).toBeNull();
+  });
+
   it('opens the form with a name as it was typed (its own digits), and a scan in western digits', () => {
     expect(typedForForm(' چای لیپتۆن ١٠٠ ')).toBe('چای لیپتۆن ١٠٠');
     expect(typedForForm('٦٢٦٠١٢٣٤')).toBe('62601234');
@@ -96,14 +113,40 @@ describe('adding an item from an item picker', () => {
     expect(list).toHaveBeenCalledWith('lipton', { timeoutMs: QUICK_ITEM_TIMEOUT_MS });
     expect(create).not.toHaveBeenCalled();
     expect(await quickAddItem(input.input, null, create, () => 'k1', { force: true, list })).toEqual({ status: 'added', item: { id: 'new' } });
-    // a try sent again with its held key is answered by the server (it may be made already), not stopped by the list
+    // an add sent again with its held key is answered by the server (it may be made already), not stopped by the list
     list.mockClear();
-    const heldKey = itemKey(null, input.input, () => 'k2');
+    const heldKey = { ...itemKey(null, input.input, () => 'k2'), sent: true };
     expect(await quickAddItem(input.input, heldKey, create, () => 'k3', { force: false, list })).toMatchObject({ status: 'added' });
     expect(list).not.toHaveBeenCalled();
     // the list can't be read: the link is down, as for the add itself
     const down = vi.fn().mockRejectedValue(new ApiError(0, 'network', null));
     expect(await quickAddItem(input.input, null, create, () => 'k4', { force: false, list: down })).toMatchObject({ status: 'offline' });
+  });
+
+  it('looks for the items already there again when only that look failed: the add never went out (1.4.2 review)', async () => {
+    const input = quickItemInput({ ...quickItemStart('Lipton tea 100'), salePrice: 2_500 }, true);
+    if (!input.ok) throw new Error('input');
+    const tea = { id: 't', code: 'I-0007', barcode: '', name: { ar: 'Lipton tea 100', en: 'Lipton tea 100', ku: 'Lipton tea 100' }, active: true } as ItemView;
+    const list = vi.fn().mockRejectedValueOnce(new ApiError(0, 'network', null)).mockResolvedValueOnce([tea]).mockResolvedValue([]);
+    const create = vi.fn().mockRejectedValueOnce(new ApiError(0, 'network', null)).mockResolvedValue({ id: 'new' } as ItemView);
+    const check = { force: false, list };
+    // the look fails before anything is added: held, but marked as never sent
+    const first = await quickAddItem(input.input, null, create, () => 'k1', check);
+    expect(first).toEqual({ status: 'offline', key: { key: 'k1', of: JSON.stringify(input.input), sent: false } });
+    expect(create).not.toHaveBeenCalled();
+    // the next try looks again, and finds the item someone else added meanwhile instead of adding a second one
+    const held = first.status === 'offline' ? first.key : null;
+    expect(await quickAddItem(input.input, held, create, () => 'k2', check)).toEqual({ status: 'same', same: [{ item: tea, by: 'name' }] });
+    expect(list).toHaveBeenCalledTimes(2);
+    expect(create).not.toHaveBeenCalled();
+    // nothing there: the add goes out with the key held all along; its answer is lost, so it may be made already
+    const lost = await quickAddItem(input.input, held, create, () => 'k3', check);
+    expect(lost).toEqual({ status: 'offline', key: { key: 'k1', of: JSON.stringify(input.input), sent: true } });
+    expect(list).toHaveBeenCalledTimes(3);
+    // so the next try sends that key again without looking first: the server answers it, never adding the item twice
+    expect(await quickAddItem(input.input, lost.status === 'offline' ? lost.key : null, create, () => 'k4', check)).toEqual({ status: 'added', item: { id: 'new' } });
+    expect(list).toHaveBeenCalledTimes(3);
+    expect(create.mock.calls.map((c) => c[1].key)).toEqual(['k1', 'k1']);
   });
 
   it("offers the till's add only when nothing in the whole list matches, whatever category is chosen", () => {
@@ -132,12 +175,12 @@ describe('adding an item from an item picker', () => {
     if (!input.ok) throw new Error('input');
     const create = vi.fn().mockRejectedValueOnce(new ApiError(0, 'network', null)).mockResolvedValueOnce({ id: 'i9' } as ItemView);
     const first = await quickAddItem(input.input, null, create, () => 'k1');
-    expect(first).toEqual({ status: 'offline', key: { key: 'k1', of: JSON.stringify(input.input) } });
+    expect(first).toEqual({ status: 'offline', key: { key: 'k1', of: JSON.stringify(input.input), sent: true } });
     const again = await quickAddItem(input.input, first.status === 'offline' ? first.key : null, create, () => 'k2');
     expect(again).toEqual({ status: 'added', item: { id: 'i9' } });
     expect(create.mock.calls.map((c) => c[1])).toEqual([{ key: 'k1', timeoutMs: QUICK_ITEM_TIMEOUT_MS }, { key: 'k1', timeoutMs: QUICK_ITEM_TIMEOUT_MS }]);
-    // anything changed: a new key
-    expect(itemKey({ key: 'k1', of: 'x' }, input.input, () => 'k3').key).toBe('k3');
+    // anything changed: a new key, not sent yet
+    expect(itemKey({ key: 'k1', of: 'x', sent: true }, input.input, () => 'k3')).toEqual({ key: 'k3', of: JSON.stringify(input.input), sent: false });
     // a refusal by the server is thrown as it is
     await expect(quickAddItem(input.input, null, () => Promise.reject(new ApiError(409, 'barcode_exists', null)))).rejects.toMatchObject({ code: 'barcode_exists' });
     expect(withAdded([{ id: 'a' }], [{ id: 'a' }, { id: 'b' }]).map((x) => x.id)).toEqual(['a', 'b']);
@@ -244,6 +287,32 @@ describe("correcting an item's stock", () => {
     // a purchase not entered names its supplier or its safe
     expect(correctionProblem('purchase_missing', 1_000, '', 1_400, { paidBy: false })).toBe('err_purchase_how_required');
     expect(correctionProblem('purchase_missing', 1_000, '', 1_400, { paidBy: true })).toBeNull();
+  });
+
+  it('sends a correction whose answer was lost again only as it was, with its key, whatever the form says now (1.4.2 review)', async () => {
+    const counted = { warehouseId: 'w1', mode: 'set' as const, qtyMilli: 25_000, reason: 'found' as const, lang: 'en' as const };
+    const result = { document: { type: 'adjustment' as const, id: 'a1', number: 'ADJ-2026-0001', status: 'posted' }, posted: true, diffMilli: 5_000, item: item() };
+    const send = vi.fn().mockRejectedValueOnce(new ApiError(0, 'network', null)).mockResolvedValueOnce(result);
+    const first = await sendCorrection(null, 'i1', counted, send, () => 'k1');
+    expect(first).toMatchObject({ status: 'unsure', held: { key: 'k1', itemId: 'i1', input: counted } });
+    // the form was changed since (another count, another reason): the request held goes again, not the changed one
+    const changed = { ...counted, qtyMilli: 30_000, reason: 'other' as const, note: 'x' };
+    expect(await sendCorrection(first.status === 'unsure' ? first.held : null, 'i1', changed, send, () => 'k2')).toEqual({ status: 'done', result });
+    expect(send.mock.calls).toEqual([['i1', counted, { key: 'k1' }], ['i1', counted, { key: 'k1' }]]);
+    // no answer, or the server failed on its way: unknown, held. A refusal: nothing was made, let go
+    expect(outcomeUnknown(new ApiError(0, 'network', null))).toBe(true);
+    expect(outcomeUnknown(new ApiError(503, 'database_unavailable', null))).toBe(true);
+    expect(outcomeUnknown(new Error('?'))).toBe(true);
+    expect(outcomeUnknown(new ApiError(400, 'validation', null))).toBe(false);
+    expect(outcomeUnknown(new ApiError(409, 'idempotency_key_reused', null))).toBe(false);
+    const refusal = new ApiError(400, 'validation', [{ code: 'correction_no_change' }]);
+    expect(await sendCorrection(null, 'i1', counted, vi.fn().mockRejectedValue(refusal), () => 'k3')).toEqual({ status: 'refused', error: refusal });
+    // the notes of the correction dialog and of the new-item form's stock name the button that sends it again
+    for (const lang of LANGS) {
+      for (const key of ['sc_unsure', 'sc_tryAgain', 'iq_stockUnsure'] as Key[]) expect(textOf(lang, key), `${lang} ${key}`).not.toBe(key);
+      expect(textOf(lang, 'sc_unsure'), lang).toContain(textOf(lang, 'sc_tryAgain'));
+      expect(textOf(lang, 'iq_stockUnsure'), lang).toContain(textOf(lang, 'sc_tryAgain'));
+    }
   });
 
   it("values a surplus at the chosen warehouse's own average (left to the server), and a purchase at the purchase price", () => {
