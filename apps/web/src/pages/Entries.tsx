@@ -6,6 +6,7 @@ import { QuickVoucherButton } from '../industry/QuickVoucher.tsx';
 import { ApprovalButtons, approvalStateOf, useMayApprove, useVoucherApproval, VoucherStateChip } from '../industry/VoucherApproval.tsx';
 import { useI18n } from '../i18n.ts';
 import { go, href } from '../router.ts';
+import { DocAmount } from '../Amount.tsx';
 
 export function EntriesTable({ entries, onChanged }: { entries: EntrySummary[]; onChanged?: () => void }) {
   const i18n = useI18n();
@@ -37,7 +38,7 @@ export function EntriesTable({ entries, onChanged }: { entries: EntrySummary[]; 
               <div className="bidi" style={{ fontWeight: 600 }}>{e.party || e.description}</div>
               {e.party && <div className="muted small bidi">{e.description}</div>}
             </td>
-            <td className="amount">{i18n.money(e.total, e.currency)}</td>
+            <td className="amount"><DocAmount value={e.total} currency={e.currency} date={e.date} /></td>
             <td>
               <VoucherStateChip entry={e} />
               {approvalStateOf(e) === 'rejected' && e.approval?.reason && <div className="muted small bidi">{e.approval.reason}</div>}

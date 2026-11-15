@@ -127,6 +127,18 @@ export function formBalance(
 }
 
 /**
+ * Whether the dinar balance the form shows (before, and what is left after) may also show what it is worth in the
+ * other currency (Settings → "Show amounts in", Amount.tsx), as the customers list does: yes for dinars, and for the
+ * whole position of one who paid one currency in the other (the list converts that line too); no for a balance in
+ * dollars only, which the form shows in dinars at the book rates when dinars are chosen: converting it again would
+ * turn a debt of $1,400 into "≈ $1,517.56".
+ */
+export function formBalanceDual(party: { balances?: Partial<Record<CurrencyCode, number>> | undefined }, shown: { currency: CurrencyCode }): boolean {
+  if (shown.currency !== 'IQD') return false;
+  return !((party.balances?.USD ?? 0) !== 0 && (party.balances?.IQD ?? 0) === 0);
+}
+
+/**
  * What is left of the balance the form shows once the voucher is posted, in that balance's currency: a dollar balance
  * less the dollars of the voucher, a dinar balance less the voucher in dinars (dollars at the voucher's rate). Null
  * while it can't be worked out (no amount yet, or dollars without a rate).

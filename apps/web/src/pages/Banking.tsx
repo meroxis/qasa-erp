@@ -12,6 +12,7 @@ import { MAX_FILE_BYTES, parseCsv, readXlsx } from './Import.tsx';
 import { go, href } from '../router.ts';
 import { reverseDefaultDate } from '../industry/ReverseModal.tsx';
 import { printDocument } from '../industry/printing.ts';
+import { Amount, dualText, useDual } from '../Amount.tsx';
 
 /**
  * البنوك والصكوك: safes, banks and e-wallets with their balances, moving money between them, cheques received and
@@ -135,6 +136,10 @@ function Accounts() {
     for (const a of accounts) { m.IQD += a.balance?.IQD ?? 0; m.USD += a.balance?.USD ?? 0; base += a.base ?? 0; }
     return { m, base };
   }, [accounts]);
+  // dinar and dollar with a rate (Amount.tsx): the total is the real dinars and dollars and their whole in the other
+  // currency, as on the home page, each dollar converted once; otherwise the total in dinars at the booked rates
+  const dual = useDual();
+  const converted = balances && !!dualText(i18n, totals.m, dual.show, dual.show === 'iqd' ? null : dual.rate(), totals.base).second;
 
   return (
     <div className="stack">
@@ -150,8 +155,8 @@ function Accounts() {
         </div>
         <div className="card pad tile">
           <div className="label">{t('total')}</div>
-          <div className="value num">{i18n.money(totals.base, 'IQD')}</div>
-          <div className="small muted">{t('bk_inBase')}</div>
+          <div className="value num"><Amount value={totals.m} book={totals.base} /></div>
+          {!converted && <div className="small muted">{t('bk_inBase')}</div>}
         </div>
       </div>}
       <div className="row">

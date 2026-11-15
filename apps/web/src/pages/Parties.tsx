@@ -11,7 +11,7 @@ import { isLang, todayIso, type Lang } from '@qasa/core';
 import { printDocument } from '../industry/printing.ts';
 import { QuickVoucherButton } from '../industry/QuickVoucher.tsx';
 import { oweLines, oweTone, oweWords, partiesApi, partyOwes, type PartySort, type PartyTotals } from '../industry/parties-api.ts';
-import { Amount, DualRateHint, useDual } from '../Amount.tsx';
+import { Amount, DocAmount, DualRateHint, useDual } from '../Amount.tsx';
 
 /**
  * 1.4: what one customer or supplier owes, in words and colour instead of debit and credit: "Owes us 250,000 IQD",
@@ -397,7 +397,7 @@ export function InvoicesTable({ invoices, showParty = true }: { invoices: Invoic
             <td className="num">{i18n.date(v.date)}</td>
             {showParty && <td className="bidi">{v.partyName ?? <span className="muted">{t('walkIn')}</span>}</td>}
             <td>{v.payment === 'cash' ? t('payCash') : t('payCredit')}</td>
-            {priced && <td className="amount">{v.total !== undefined ? i18n.money(v.total, v.currency) : ''}</td>}
+            {priced && <td className="amount"><DocAmount value={v.total} currency={v.currency} date={v.date} /></td>}
             <td><InvoiceStatusChip status={v.status} />{(v.paidOnline ?? 0) > 0 && <span className="chip ok" style={{ marginInlineStart: 6 }}>{t('pay_paidOnline')}</span>}</td>
           </tr>
         ))}

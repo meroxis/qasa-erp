@@ -15,6 +15,7 @@ import { QuoteWhatsApp } from '../industry/WhatsAppShare.tsx';
 import { DesignedPrint } from '../industry/PrintDocument.tsx';
 import { quoteModel } from '../industry/print-model.ts';
 import { printDocument } from '../industry/printing.ts';
+import { DocAmount } from '../Amount.tsx';
 
 /**
  * عروض الأسعار — quotations, on every plan. Routes: `quotes` (the list), `new-quote`, `edit-quote/:id`, and `quote/:id`
@@ -99,7 +100,7 @@ function QuotesTable({ quotes }: { quotes: QuoteSummaryView[] }) {
             <td><a className="ltr num" href={href(`quote/${x.id}`)} onClick={(e) => e.stopPropagation()}>{x.number}</a><div className="muted small num">{i18n.date(x.date)}</div></td>
             <td>{x.customerName}{!x.party && <div className="muted small">{t('qt_prospect')}</div>}</td>
             <td className="num">{x.validUntil ? i18n.date(x.validUntil) : '—'}</td>
-            <td className="amount">{i18n.money(x.total, x.currency)}</td>
+            <td className="amount"><DocAmount value={x.total} currency={x.currency} date={x.date} /></td>
             <td><QuoteChip status={x.status} expired={x.expired} /></td>
           </tr>
         ))}
@@ -259,7 +260,7 @@ export function QuoteEditor({ id }: { id?: string }) {
           <div className="totals">
             <span className="muted">{t('subtotal')}</span><strong className="num">{i18n.money(subtotal, form.currency)}</strong>
             <span className="muted">{t('discount')}</span><div style={{ width: 160 }}><AmountInput value={discount} currency={form.currency} onChange={setDiscount} ariaLabel={t('discount')} /></div>
-            <span>{t('totalDue')}</span><strong className="num" style={{ fontSize: 18 }}>{i18n.money(Math.max(0, subtotal - (discount ?? 0)), form.currency)}</strong>
+            <span>{t('totalDue')}</span><strong className="num" style={{ fontSize: 18 }}><DocAmount value={Math.max(0, subtotal - (discount ?? 0))} currency={form.currency} date={form.date} /></strong>
           </div>
         </div>
       </div>
@@ -398,7 +399,7 @@ function Paper({ quote: x, company }: { quote: QuoteView; company: string }) {
         <div className="totals">
           <span className="muted">{t('subtotal')}</span><strong className="num">{i18n.money(x.subtotal, x.currency)}</strong>
           {x.discount > 0 && <><span className="muted">{t('discount')}</span><span className="num">{i18n.money(x.discount, x.currency)}</span></>}
-          <span>{t('totalDue')}</span><strong className="num" style={{ fontSize: 18 }}>{i18n.money(x.total, x.currency)}</strong>
+          <span>{t('totalDue')}</span><strong className="num" style={{ fontSize: 18 }}><DocAmount value={x.total} currency={x.currency} date={x.date} /></strong>
         </div>
       </div>
       {x.total > 0 && <div className="small"><span className="muted">{t('inWords')}: </span>{i18n.digitsOf(amountInWords(x.total, x.currency, i18n.lang))}</div>}
