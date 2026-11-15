@@ -170,10 +170,19 @@ describe('the Microsoft Store listing', () => {
 
   it('ships no {{…}} placeholder: once the app is on the version its "What\'s new" names, that version\'s items are written', () => {
     const version = (JSON.parse(read('apps/desktop/package.json')) as { version: string }).version;
+    const numbers = (v: string) => v.split('-')[0]!.split('.').map(Number);
+    const older = (a: string, b: string) => {
+      const [x, y] = [numbers(a), numbers(b)];
+      const at = x.findIndex((n, i) => n !== y[i]);
+      return at >= 0 && x[at]! < y[at]!;
+    };
     for (const [lang, l] of Object.entries(listing.listings)) {
-      const named = /^\S+ ERP (\d+\.\d+\.\d+(?:-[\w.]+)?)\./.exec(l.releaseNotes)?.[1];
-      expect(named, lang).toBeTruthy();
+      const named = /^\S+ ERP (\d+\.\d+\.\d+(?:-[\w.]+)?)\./.exec(l.releaseNotes)?.[1] ?? '';
+      expect(named, lang).toMatch(/^\d+\.\d+\.\d+/);
       if (named === version) expect(l.releaseNotes, lang).not.toMatch(/\{\{|\}\}/);
+      // a stable release (a beta never goes to the Store) is never sent with the text of an older one, nor with a draft
+      // left for a version number it did not take (1.5.0 instead of 1.4.3)
+      if (!version.includes('-')) expect(older(named, version), `${lang}: the Store "What's new" names ${named}, the app is ${version}`).toBe(false);
     }
   });
 });
@@ -892,9 +901,12 @@ describe('the release notes and the Store "What\'s new" of this version', () => 
   });
 
   it('offers the phone app for Android in the words given for it, on Starter, Pro and Business, and Starter on the office Wi-Fi only', () => {
-    expect(section('en')).toContain('- **The Qasa phone app for Android:** Settings → Phones now offers the app (download it from qasaerp.com/phone, with its SHA-256 and signing fingerprint to check) and pairs phones. Starter, Pro and Business; Starter on the office Wi-Fi only.');
-    expect(section('ar')).toContain('- **تطبيق قاصة للهاتف على أندرويد:** صار في الإعدادات ← الهواتف رابط تنزيل التطبيق من qasaerp.com/phone مع بصمتيه للتحقق، وربط الهواتف. في Starter وPro وBusiness، وStarter على Wi-Fi المكتب فقط.');
-    expect(section('ku')).toContain('- **ئەپی قاسە بۆ مۆبایلی ئەندرۆید:** لە ڕێکخستنەکان ← مۆبایلەکان ئێستا ئەپەکە لە qasaerp.com/phone دادەگیرێت، لەگەڵ پەنجەمۆرەکانی بۆ پشکنین، و مۆبایل دەبەسترێتەوە. Starter، Pro و Business؛ Starter تەنها لەسەر Wi-Fi ی نووسینگە.');
+    expect(section('en')).toContain('- **The Qasa phone app for Android:** Settings → Office network → Phones (Qasa app) now offers the app (download it from qasaerp.com/phone, with its SHA-256 and signing fingerprint to check) and pairs phones. Starter, Pro and Business; Starter on the office Wi-Fi only.');
+    expect(section('ar')).toContain('- **تطبيق قاصة للهاتف على أندرويد:** صار في الإعدادات ← شبكة المكتب ← الهواتف (تطبيق قاصة) رابط تنزيل التطبيق من qasaerp.com/phone مع بصمتيه للتحقق، وربط الهواتف. في Starter وPro وBusiness، وStarter على Wi-Fi المكتب فقط.');
+    expect(section('ku')).toContain('- **ئەپی قاسە بۆ مۆبایلی ئەندرۆید:** لە ڕێکخستنەکان ← تۆڕی نووسینگە ← مۆبایلەکان (ئەپی قاسە) ئێستا ئەپەکە لە qasaerp.com/phone دادەگیرێت، لەگەڵ پەنجەمۆرەکانی بۆ پشکنین، و مۆبایل دەبەسترێتەوە. Starter، Pro و Business؛ Starter تەنها لەسەر Wi-Fi ی نووسینگە.');
+    // the phones card is in the Office network section (there is no Phones section), named as the app names them; the
+    // What's new of a PC that skips 1.4.2 shows these notes too
+    expect(notes).not.toMatch(/Settings → Phones|الإعدادات ← الهواتف|ڕێکخستنەکان ← مۆبایلەکان/);
     // the app offers it: the download page, its checks, and the plans (Starter has the phone app but not Qasa Relay)
     const settings = read('apps/web/src/pages/Settings.tsx');
     expect(settings).toContain('export const PHONE_APP_READY = true;');

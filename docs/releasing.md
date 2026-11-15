@@ -36,7 +36,7 @@ There are two channels:
 
 1. Set `"version"` in `apps/desktop/package.json`, for example `0.2.0`.
 2. Write `apps/desktop/release-notes/0.2.0.md` in the format below.
-3. Update the Store "What's new" text in `apps/desktop/store-listing.json`. It may already hold a draft for this version: write the version's items in place of its `{{0.2.0}}` line and keep the rest (such as a line for a version the Store skipped). `release-config.test.ts` fails while a placeholder is left in the text of the version the app is on.
+3. Update the Store "What's new" text in `apps/desktop/store-listing.json`. It may already hold a draft for this version: write the version's items in place of its `{{0.2.0}}` line and keep the rest (such as a line for a version the Store skipped). If the release takes another number than the draft names, change the draft's number too. `release-config.test.ts` fails while a placeholder is left in the text of the version the app is on, and while the text names a version older than the app's.
 4. **Tag the Pro module first.** Merge the Pro feature branch into Pro `main`, then push the tag `v0.2.0` on `meroxis/qasa-erp-pro` at that merge commit. `release.yml` checks out Pro at the tag of the same name as the app tag (never Pro's default branch), so a missing Pro tag stops the release run at the Pro checkout, and an unmerged Pro branch is never shipped by accident:
 
    ```
