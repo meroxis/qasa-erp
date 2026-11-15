@@ -11,7 +11,7 @@ import { SupportButton } from './industry/SupportButton.tsx';
 import { BranchSwitcher } from './industry/BranchSwitcher.tsx';
 import { BRANCH_EVENT } from './industry/branches-api.ts';
 import { BUSINESS_FEATURE } from '@qasa/core';
-import { ADMIN_PAGES, canSee, COMPANY_BOOK_PAGES, navLabel, pageOpen, NO_BOOKS_PAGES, FAVOURITES_EVENT, GROUP_GLOW_MS, seesCompanyBooks, favourites, findPage, NAV, navCollapsed, openGroups, openGroupsWith, revealTop, setNavCollapsed, setOpenGroups, toggledGroup, type NavItem, type NavViewer } from './nav.ts';
+import { ADMIN_PAGES, canSee, COMPANY_BOOK_PAGES, navLabel, pageOpen, NO_BOOKS_PAGES, FAVOURITES_EVENT, firstClickOnly, GROUP_GLOW_MS, seesCompanyBooks, favourites, findPage, NAV, navCollapsed, openGroups, openGroupsWith, revealTop, setNavCollapsed, setOpenGroups, toggledGroup, type NavItem, type NavViewer } from './nav.ts';
 import { CommandPalette } from './industry/CommandPalette.tsx';
 import { Tour, TOUR_EVENT, tourDone } from './industry/Tour.tsx';
 import { UpdateBanner } from './industry/UpdateBanner.tsx';
@@ -823,7 +823,8 @@ export function App() {
                 <span className="avatar mark"><Icon name="building" size={16} /></span>
                 <div><span className="label">{t('company')}</span><strong className="bidi">{company || t('noCompany')}</strong></div>
               </div>
-              <div className="nav-scroll" ref={navRef} onKeyDown={menuKeys}>
+              {/* a double click counts once: its second click would land on the row the list moved under the pointer */}
+              <div className="nav-scroll" ref={navRef} onKeyDown={menuKeys} onClickCapture={firstClickOnly}>
                 {favItems.length > 0 && (
                   <div className="nav-section">
                     <div className="nav-group">{t('navFavourites')}</div>

@@ -292,6 +292,18 @@ export function revealTop(view: { top: number; height: number; length: number },
   return Math.abs(to - view.top) < 1 ? null : to;
 }
 
+/**
+ * In the menu only the first click of a double click counts (App.tsx: the list's clicks). A group the first click opens
+ * closes the one above it and slides into view, so the second click would land on whatever row moved under the pointer
+ * and open that page (or another group). Enter and Space click with no count, so the keyboard is never held back.
+ */
+export function firstClickOnly(e: { detail: number; preventDefault(): void; stopPropagation(): void }): void {
+  if (e.detail > 1) {
+    e.preventDefault();
+    e.stopPropagation();
+  }
+}
+
 /** Pages and records opened from the search, newest first. */
 export interface Recent { kind: 'page' | 'party' | 'item' | 'invoice' | 'entry'; label: string; sub?: string; path: string; icon: string }
 export function recents(): Recent[] {

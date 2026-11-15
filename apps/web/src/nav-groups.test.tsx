@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { Icon } from './components.tsx';
 import { makeI18n } from './i18n.ts';
-import { FIRST_OPEN_GROUP, GROUP_GLOW_MS, NAV, openGroups, openGroupsWith, revealTop, setOpenGroups, toggledGroup } from './nav.ts';
+import { firstClickOnly, FIRST_OPEN_GROUP, GROUP_GLOW_MS, NAV, openGroups, openGroupsWith, revealTop, setOpenGroups, toggledGroup } from './nav.ts';
 
 // The menu at the side: bigger rows, a line icon on each group heading, one group open at a time (remembered for each
 // person on this PC), the current page's group opened and the others closed; a group opened by a click comes into view
@@ -173,6 +173,21 @@ describe('bringing a group just opened into view', () => {
   });
 });
 
+describe('a double click in the menu', () => {
+  it('counts once: its second click, on the row that moved under the pointer, neither opens a page nor folds a group', () => {
+    const done: string[] = [];
+    const click = (detail: number) => ({ detail, preventDefault: () => { done.push(`no page ${detail}`); }, stopPropagation: () => { done.push(`no row ${detail}`); } });
+    // a single click, and Enter or Space (a click with no count): as before
+    firstClickOnly(click(1));
+    firstClickOnly(click(0));
+    expect(done).toEqual([]);
+    // the second click of a double click (and a third) does nothing
+    firstClickOnly(click(2));
+    firstClickOnly(click(3));
+    expect(done).toEqual(['no page 2', 'no row 2', 'no page 3', 'no row 3']);
+  });
+});
+
 describe('the menu in the app shell', () => {
   it('opens and closes a group without going anywhere, and remembers it for the person', () => {
     expect(app).toContain('const open = railed || openNav.includes(g.group);');
@@ -204,6 +219,8 @@ describe('the menu in the app shell', () => {
     // the page's own row does not pull the list back when a click shows or hides it
     expect(toggle).toContain('headingClicked.current = pageRowShown(next) !== activeShown;');
     expect(app).toContain('if (headingClicked.current) { headingClicked.current = false; return; }');
+    // a double click on a heading opens its group once, and never the page that slid under the pointer
+    expect(app).toContain('<div className="nav-scroll" ref={navRef} onKeyDown={menuKeys} onClickCapture={firstClickOnly}>');
   });
 
   it('makes a group opened by a click glow for a moment, not a group a page opens', () => {
