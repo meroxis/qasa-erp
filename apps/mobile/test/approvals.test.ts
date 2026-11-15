@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { OfficeError } from '../src/api';
 import { LinkError, OfficeLink } from '../src/link';
 import { ownerApi, type EntrySummary } from '../src/owner/api';
-import { ActionKeys, approvalsCard, approvalTabs, buttonsFor, kindKey, photoToShow, reasonOk, sendAction, toCheck, waitingSections } from '../src/owner/approvals';
+import { ActionKeys, approvalsCard, approvalTabs, buttonsFor, kindKey, photoToShow, reasonOk, seenOf, sendAction, toCheck, waitingSections } from '../src/owner/approvals';
 import { generateKeyPair } from '../src/protocol';
 import type { Me } from '../src/roles';
 import { staffApi } from '../src/staff/api';
@@ -72,6 +72,15 @@ describe('what the approvals screen shows', () => {
     expect(waitingSections(sent, checked).map((s) => [s.title, s.entries.map((e) => e.id)])).toEqual([['aprSentGroup', ['s']], ['aprCheckedGroup', ['c']]]);
     expect(waitingSections([], checked).map((s) => s.title)).toEqual(['aprCheckedGroup']);
     expect(waitingSections([], [])).toEqual([]);
+    // a checked voucher that also waits for approval is in both of the office's lists: shown once, with the checked
+    const waits = { state: 'waiting' as const, requestedBy: 'Las', requestedAt: '', decidedBy: null, decidedAt: null, reason: null };
+    const both = entry({ id: 'w', status: 'checked', approval: waits });
+    const parts = waitingSections([entry({ id: 's', approval: waits }), both], [both, entry({ id: 'c', status: 'checked' })]);
+    expect(parts.map((s) => [s.title, s.entries.map((e) => e.id)])).toEqual([['aprSentGroup', ['s']], ['aprCheckedGroup', ['w', 'c']]]);
+    // one checked between the two lists' answers (in the first as checked, not yet in the second): once, with the checked
+    expect(waitingSections([both], []).map((s) => [s.title, s.entries.map((e) => e.id)])).toEqual([['aprCheckedGroup', ['w']]]);
+    const ids = parts.flatMap((s) => s.entries.map((e) => e.id));
+    expect(new Set(ids).size).toBe(ids.length);
     expect(kindKey('receipt')).toBe('kindReceipt');
     expect(kindKey('payment')).toBe('aprPayment');
     expect(kindKey('journal')).toBe('aprJournal');
@@ -115,11 +124,25 @@ describe('what the approvals screen shows', () => {
 
 describe('the home screen\'s approvals card', () => {
   const brief = (waitingCheck: number, waitingApproval: number) => ({ approvals: { waitingCheck, waitingApproval } });
-  const state = (waiting: number) => ({ on: true, waiting, mayApprove: true });
+  // the office's own count of everything an approver has to approve, each entry once (toApprove)
+  const state = (waiting: number, toApprove = waiting) => ({ on: true, waiting, mayApprove: true, toApprove });
+  // an office before 1.5: no toApprove
+  const older = (waiting: number) => ({ on: true, waiting, mayApprove: true });
 
-  it('numbers what waits for an approver of the whole company: sent for approval and checked', () => {
-    expect(approvalsCard(user(['entries.approve']), state(2), brief(7, 3))).toEqual({ show: true, count: 5 });
+  it('numbers what waits for an approver of the whole company: sent for approval and checked, each once', () => {
+    expect(approvalsCard(user(['entries.approve']), state(2, 5), brief(7, 3))).toEqual({ show: true, count: 5 });
     expect(approvalsCard(OWNER, state(1), brief(0, 0))).toEqual({ show: true, count: 1 });
+  });
+
+  it('counts a checked voucher that also waits for approval once: the office\'s number, not the two counts added', () => {
+    // one voucher, checked and waiting: in the vouchers that wait (1) and in the checked entries (1), one to approve
+    expect(approvalsCard(user(['entries.approve']), state(1, 1), brief(0, 1))).toEqual({ show: true, count: 1 });
+    expect(approvalsCard(OWNER, state(2, 3), brief(0, 2))).toEqual({ show: true, count: 3 });
+    // an office before 1.5 counts no toApprove: the card without a number while anything waits
+    expect(approvalsCard(user(['entries.approve']), older(1), brief(0, 1))).toEqual({ show: true, count: null });
+    expect(approvalsCard(user(['entries.approve']), older(0), brief(0, 0))).toEqual({ show: false, count: null });
+    // a number that is not one is not shown
+    expect(approvalsCard(OWNER, { on: true, waiting: 1, mayApprove: true, toApprove: -1 }, brief(0, 0))).toEqual({ show: true, count: null });
   });
 
   it('shows no number where the counts and the list could disagree: a user limited to branches, or one who checks', () => {
@@ -131,6 +154,7 @@ describe('the home screen\'s approvals card', () => {
 
   it('is not shown when nothing waits for this user', () => {
     expect(approvalsCard(user(['entries.approve']), state(0), brief(4, 0))).toEqual({ show: false, count: null });
+    expect(approvalsCard(user(['entries.approve']), state(0, 0), brief(0, 0))).toEqual({ show: false, count: null });
     expect(approvalsCard(user(['entries.check']), state(3), brief(0, 2))).toEqual({ show: false, count: null });
     expect(approvalsCard(user(['entries.approve']), null, null)).toEqual({ show: false, count: null });
     expect(approvalsCard(null, state(3), brief(3, 3))).toEqual({ show: false, count: null });
@@ -200,6 +224,24 @@ describe('an action sent from the phone', () => {
     expect(keys.keyFor('e-7', 'approve', 'v1')).toBe(a);
     expect(keys.keyFor('e-7', 'approve', 'v2')).not.toBe(a);
     expect(keys.keyFor('e-7', 'return', 'v1')).not.toBe(a);
+  });
+
+  it('sends the revision as `seen` from an office that keeps it, so two changes in one millisecond still differ', async () => {
+    const at = '2026-11-15T09:30:00.000Z';
+    expect(seenOf({ preparedAt: at, revision: 0 })).toBe('r0');
+    expect(seenOf({ preparedAt: at, revision: 7 })).toBe('r7');
+    // an office before 1.5 (no revision), or one that is not a number: its preparedAt, as before
+    expect(seenOf({ preparedAt: at })).toBe(at);
+    for (const revision of [-1, 1.5, Number.NaN]) expect(seenOf({ preparedAt: at, revision }), String(revision)).toBe(at);
+    const bodies: unknown[] = [];
+    const keys: string[] = [];
+    const api = { entryAction: async (_id: string, _a: string, body: unknown, key: string) => { bodies.push(body); keys.push(key); return { id: 'e-7', status: 'approved' as const }; } };
+    const ak = new ActionKeys();
+    // the same preparedAt, two revisions: two different actions with two keys
+    await sendAction(api, ak, entry({ id: 'e-7', preparedAt: at, revision: 1 }), 'approve-waiting');
+    await sendAction(api, ak, entry({ id: 'e-7', preparedAt: at, revision: 2 }), 'reject', 'Wrong amount');
+    expect(bodies).toEqual([{ seen: 'r1' }, { seen: 'r2', reason: 'Wrong amount' }]);
+    expect(new Set(keys).size).toBe(2);
   });
 
   it('reaches the office with its key and `seen` through the phone\'s own link', async () => {

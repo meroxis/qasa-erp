@@ -5,7 +5,7 @@ import type { OutboxItem } from '../outbox';
 /** How each of the staff's 1.1 changes goes from the outbox to the office, with its own key (the item's id). */
 export type KindSender = (api: OfficeApi, item: OutboxItem, blob: () => Promise<string | null>) => Promise<unknown>;
 
-export const staffSenders: Record<'expense' | 'transfer' | 'arrival', KindSender> = {
+export const staffSenders: Record<'expense' | 'transfer' | 'arrival' | 'transferPost', KindSender> = {
   // the photo was kept beside the item, sealed: it goes with the expense (one that can't be read is not sent without it)
   expense: async (api, item, blob) => {
     const photo = item.blob ? await blob() : null;
@@ -13,5 +13,7 @@ export const staffSenders: Record<'expense' | 'transfer' | 'arrival', KindSender
     return api.expense({ ...(item.body as Record<string, unknown>), ...(photo ? { photo } : {}) }, item.id);
   },
   transfer: (api, item) => api.transfer(item.body, item.id),
-  arrival: (api, item) => api.arrival(item.target ?? '', item.body, item.id)
+  arrival: (api, item) => api.arrival(item.target ?? '', item.body, item.id),
+  // posting a transfer the office has as a draft: the draft's id, and the item's id as the post's key
+  transferPost: (api, item) => api.postTransfer(item.target ?? '', item.id)
 };

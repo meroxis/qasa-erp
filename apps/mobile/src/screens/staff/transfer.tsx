@@ -8,28 +8,24 @@ import type { Purpose } from '../../nav';
 import { space } from '../../theme';
 import { Banner, Button, Card, Chip, EmptyState, ErrorState, Field, Group, IconButton, ListItem, Screen, Section, Skeleton, Stepper, Txt, useApp, useLook } from '../../ui';
 import { useLoad } from '../../use-load';
-import { uuidV4 } from '../../uuid';
 import type { BarcodeHit, OrderDetail } from '../../staff/api';
 import { addStockLine, arrivalProblem, moreThanThere, scannedQtyMilli, setStockLine, transferBody, transferProblem, type StockLine } from '../../staff/stock';
 import { confirm } from '../items';
 
 /**
  * Moving stock between warehouses by scanning: from and to (two active warehouses), the items with their quantities,
- * then a draft transfer for the office, posted at once while the office can be reached (with one key for that post,
- * sent again with every try of it, so a post whose answer was lost is not taken for a refused one). Kept in the outbox
- * when the office can't be reached: it reaches the PC as a draft, posted there.
+ * then a draft transfer for the office, posted at once while the office can be reached. The post is an outbox item of
+ * its own from the moment the draft is there (its key kept with it, encrypted on the phone): a post whose answer was
+ * lost goes again with the same key once connected, after a restart too, and is never taken for a refused one. Kept in
+ * the outbox when the office can't be reached: it reaches the PC as a draft, posted there.
  */
-
-/** A post whose answer did not come (the link dropped): tried again with the same key. */
-let pendingPost: { draftId: string; key: string } | null = null;
 
 export function TransferScreen() {
   const { t, lang } = useLook();
-  const { api, nav, go, queueFor, explain, state } = useApp();
+  const { nav, go, queueFor, explain } = useApp();
   const lists = useLists();
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<{ kind: 'ok' | 'bad' | 'warn' | 'info'; text: string } | null>(null);
-  const [retry, setRetry] = useState(pendingPost);
   const warehouses = lists.warehouses;
   const from = lists.transferWarehouses.from ?? warehouses[0]?.id ?? null;
   const to = lists.transferWarehouses.to ?? warehouses.find((w) => w.id !== from)?.id ?? null;
@@ -37,19 +33,18 @@ export function TransferScreen() {
   const setWarehouses = (f: string | null, tt: string | null) => lists.setTransferWarehouses({ from: f, to: tt });
   const problem = transferProblem({ from: from ?? '', to: to ?? '', lines: lists.transfer });
 
-  /** Posts the draft with its own key; a lost answer keeps the key for the next try. */
-  async function post(draftId: string, key: string) {
+  /**
+   * Posts the draft: kept in the outbox first (with its own key), then sent. No answer: it waits there and goes by itself
+   * once connected; a refusal keeps the draft at the office and says why.
+   */
+  async function post(draftId: string, title: string) {
     try {
-      const posted = await api.postTransfer(draftId, key);
-      pendingPost = null;
-      setRetry(null);
-      setMessage({ kind: 'ok', text: t('mvPosted', { n: posted.number ?? '' }) });
+      const { result, answer } = await queueFor('transferPost', {}, { title }, draftId);
+      if (result === 'queued') { setMessage({ kind: 'warn', text: t('mvPostQueued') }); return; }
+      const number = (answer as { number?: unknown } | null)?.number;
+      setMessage({ kind: 'ok', text: t('mvPosted', { n: typeof number === 'string' ? number : '' }) });
     } catch (e) {
-      // a refusal keeps the draft and says why; no answer (the link, busy, the same post still running): tried again
-      const refused = e instanceof OfficeError && e.status !== 429 && !(e.status === 409 && e.code === 'in_progress') && e.status < 500;
-      pendingPost = refused ? null : { draftId, key };
-      setRetry(pendingPost);
-      setMessage({ kind: refused ? 'bad' : 'warn', text: `${t('mvDraft')} ${refused ? explain(e) : t('needsOnline')}` });
+      setMessage({ kind: 'bad', text: `${t('mvDraft')} ${e instanceof OfficeError ? explain(e) : t('needsOnline')}` });
     }
   }
 
@@ -61,15 +56,16 @@ export function TransferScreen() {
     setMessage(null);
     try {
       const body = transferBody({ date: today(), from, to, notes: t('phoneNote'), lines: lists.transfer });
-      const { result, answer } = await queueFor('transfer', body, { title: `${name(from)} → ${name(to)}`, lines: lists.transfer.length });
+      const title = `${name(from)} → ${name(to)}`;
+      const { result, answer } = await queueFor('transfer', body, { title, lines: lists.transfer.length });
       lists.setTransfer([]);
       const draftId = (answer as { id?: unknown } | null)?.id;
       if (result === 'queued' || typeof draftId !== 'string') {
         setMessage({ kind: 'info', text: `${t('queuedOne')} ${t('mvQueuedNote')}` });
         return;
       }
-      // the draft is there: posted now, with a key of its own for this post
-      await post(draftId, uuidV4());
+      // the draft is there: posted now, with a key of its own for this post (kept on the phone until it is done)
+      await post(draftId, title);
     } catch (e) {
       setMessage({ kind: 'bad', text: explain(e) });
     } finally {
@@ -95,7 +91,6 @@ export function TransferScreen() {
       {problem === 'same_warehouse' && lists.transfer.length > 0 && <Banner kind="warn" text={t('errSameWarehouse')} />}
       {problem === 'service' && <Banner kind="warn" text={t('mvService')} />}
       {message && <Banner kind={message.kind} text={message.text} />}
-      {retry && <Button kind="secondary" icon="refresh" label={t('retry')} disabled={state !== 'online'} onPress={() => void post(retry.draftId, retry.key)} />}
       <Button icon="scan" label={t('scan')} onPress={() => go({ name: 'scan', purpose: 'transfer' })} />
       {!lists.transfer.length ? <EmptyState icon="truck" title={t('mvTitle')} text={t('mvEmpty')} /> : (
         <Section title={t('linesN', { n: lists.transfer.length })}>

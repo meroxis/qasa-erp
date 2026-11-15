@@ -1514,8 +1514,8 @@ export const PHONE_APP = {
   url: 'https://qasaerp.com/phone/',
   urls: { ar: 'https://qasaerp.com/phone/', en: 'https://qasaerp.com/en/phone/', ku: 'https://qasaerp.com/ku/phone/' } as Record<Lang, string>,
   version: '1.1.0',
-  // qasa-erp-mobile-1.1.0.apk (versionCode 4), 97,499,776 bytes
-  apkSha256: '578295cdb4c3c11e1b9edd8cb47421b05c02f707acabe8bf2e44fe78bb8a164e',
+  // qasa-erp-mobile-1.1.0.apk (versionCode 5), 97,501,572 bytes
+  apkSha256: '624eddd35fd30ac3e5f816ef3ed232f84aebd71d3a37aef8a29c0ba9f69c9067',
   // what `apksigner verify --print-certs` shows as "certificate SHA-256 digest" (CN=Meroxis, O=Meroxis, C=IQ)
   certSha256: '6d8fb6a65d85d9f82b026b5ef6aa00acfd956cef63d555cf6fffd3596a4b3129'
 } as const;

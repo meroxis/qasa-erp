@@ -5,6 +5,7 @@ import { ImageManipulator, SaveFormat } from 'expo-image-manipulator';
 import { today, type Currency, type Settings } from '../../api';
 import { readAmount } from '../../documents';
 import { dateText, money, nameIn, qty } from '../../i18n';
+import { recall, remember } from '../../office-cache';
 import { PHOTOS_MAX } from '../../outbox';
 import { radius, space } from '../../theme';
 import { Banner, Button, Chip, ErrorState, Field, IconButton, Screen, Section, Segmented, Skeleton, Txt, useApp, useLook } from '../../ui';
@@ -16,8 +17,12 @@ import {
 } from '../../staff/expense';
 import { deleteTemporary } from '../../staff/files';
 
-/** The safes and banks read last (by name only), so an expense can still be recorded when the link drops. */
-let lastAccounts: { accounts: MoneyAccount[]; cash: string | null } | null = null;
+/**
+ * The safes and banks read last (by name only), so an expense can still be recorded when the link drops: kept for the
+ * office paired now only, and forgotten on unpairing (office-cache.ts).
+ */
+const ACCOUNTS = 'expense.accounts';
+type Accounts = { accounts: MoneyAccount[]; cash: string | null };
 
 /**
  * An expense with the photo of its paper receipt: what for (the desktop's kinds), how much, from which safe or bank,
@@ -32,11 +37,14 @@ export function ExpenseScreen() {
   const load = useLoad(async () => {
     try {
       const [accounts, settings] = await Promise.all([api.moneyAccounts(), api.settings().catch((): Settings | null => null)]);
-      lastAccounts = { accounts: accounts.filter((a) => a.code.startsWith('18')), cash: settings?.postingAccounts.cash ?? null };
+      const read: Accounts = { accounts: accounts.filter((a) => a.code.startsWith('18')), cash: settings?.postingAccounts.cash ?? null };
+      remember(ACCOUNTS, read);
+      return read;
     } catch (e) {
-      if (!lastAccounts) throw e;
+      const last = recall<Accounts>(ACCOUNTS);
+      if (!last) throw e;
+      return last;
     }
-    return lastAccounts!;
   }, []);
   const [category, setCategory] = useState<ExpenseCategory | null>(null);
   const [currency, setCurrency] = useState<Currency>('IQD');

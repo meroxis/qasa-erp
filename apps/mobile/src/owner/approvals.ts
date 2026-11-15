@@ -26,9 +26,16 @@ export function approvalTabs(me: Me | null): ApprovalTab[] {
 /** To check: the drafts, without those that wait for approval or were rejected (an approver's, or back with their preparer). */
 export const toCheck = (drafts: readonly EntrySummary[]): EntrySummary[] => drafts.filter((e) => e.approval?.state !== 'waiting' && e.approval?.state !== 'rejected');
 
-/** "Waiting for approval" in its two parts, as the desktop has them: sent for approval, and checked waiting to be approved (empty parts left out). */
+/**
+ * "Waiting for approval" in its two parts, as the desktop has them: sent for approval, and checked waiting to be approved
+ * (empty parts left out). Each entry shows once: a checked voucher that also waits for approval is in both of the
+ * office's lists, and shows with the checked ones (as one checked between the two lists' answers does).
+ */
 export function waitingSections(sent: readonly EntrySummary[], checked: readonly EntrySummary[]): { title: Key; entries: readonly EntrySummary[] }[] {
-  return ([{ title: 'aprSentGroup', entries: sent }, { title: 'aprCheckedGroup', entries: checked }] as const).filter((s) => s.entries.length > 0);
+  const inChecked = new Set(checked.map((e) => e.id));
+  const drafts = sent.filter((e) => e.status !== 'checked' && !inChecked.has(e.id));
+  const moved = sent.filter((e) => e.status === 'checked' && !inChecked.has(e.id));
+  return ([{ title: 'aprSentGroup', entries: drafts }, { title: 'aprCheckedGroup', entries: [...checked, ...moved] }] as const).filter((s) => s.entries.length > 0);
 }
 
 /** The word for an entry's kind in a list. */
@@ -70,19 +77,23 @@ export function buttonsFor(entry: Pick<EntryView, 'actions' | 'preparedById'>, m
 }
 
 /**
- * Home's approvals card. Both counts are the whole company's (GET /api/voucher-approval and the brief), while the lists
- * are the user's branches', and the brief's drafts include the vouchers that wait or were rejected: the number shows
- * only for an approver who is not limited to branches (waiting for approval, and checked waiting to be approved: the
- * two parts of the list), so the list never says less than the card. Anyone else of the approvals gets the card without
- * a number while something may wait for them; nothing waits for anyone: no card.
+ * Home's approvals card. The number is the office's own count of everything an approver has to approve, each entry once
+ * (GET /api/voucher-approval, toApprove: the vouchers that wait and the entries checked, so a checked voucher that also
+ * waits is not counted twice). It is the whole company's, while the lists are the user's branches', and the brief's
+ * drafts include the vouchers that wait or were rejected: the number shows only for an approver who is not limited to
+ * branches, and only from an office that counts it (one before 1.5 shows the card without a number), so the list never
+ * says less than the card. Anyone else of the approvals gets the card without a number while something may wait for
+ * them; nothing waits for anyone: no card.
  */
 export function approvalsCard(me: Me | null, state: ApprovalState | null | undefined, brief: Pick<Brief, 'approvals'> | null | undefined): { show: boolean; count: number | null } {
   if (!me) return { show: false, count: null };
   const approves = may(me, 'entries.approve');
   const checks = may(me, 'entries.check');
-  const waiting = (state?.waiting ?? 0) + (brief?.approvals.waitingApproval ?? 0);
+  // one source for the number: the office's toApprove; without it (an older office) only whether anything waits
+  const counted = typeof state?.toApprove === 'number' && Number.isSafeInteger(state.toApprove) && state.toApprove >= 0 ? state.toApprove : null;
+  const waiting = counted ?? Math.max(state?.waiting ?? 0, brief?.approvals.waitingApproval ?? 0);
   const drafts = brief?.approvals.waitingCheck ?? 0;
-  if (approves && !me.user?.branchLimited && state && brief && waiting > 0) return { show: true, count: waiting };
+  if (approves && !me.user?.branchLimited && counted !== null && counted > 0) return { show: true, count: counted };
   const something = (approves ? waiting : 0) + (checks ? drafts : 0);
   return { show: something > 0, count: null };
 }
@@ -125,24 +136,35 @@ export type ActionOutcome =
   | { kind: 'lost'; error: unknown };
 
 /**
- * Sends an action on an entry with `seen` (its preparedAt as shown) and its own key; the office's answer that it is still
+ * The entry as the phone shows it, sent back as `seen` with every action on it: "r<revision>" from an office that keeps
+ * the revision (1.5 on: one up with every change, so two changes in the same millisecond still differ), else its
+ * preparedAt, the field's first form.
+ */
+export function seenOf(entry: Pick<EntrySummary, 'preparedAt' | 'revision'>): string {
+  const r = entry.revision;
+  return typeof r === 'number' && Number.isSafeInteger(r) && r >= 0 ? `r${r}` : entry.preparedAt;
+}
+
+/**
+ * Sends an action on an entry with `seen` (seenOf: the entry as shown) and its own key; the office's answer that it is still
  * making the first try (in_progress) is waited out a few times with the same key.
  */
 export async function sendAction(
   api: { entryAction(id: string, action: EntryAction, body: { seen: string; reason?: string }, key: string): Promise<Partial<EntryView>> },
   keys: ActionKeys,
-  entry: Pick<EntrySummary, 'id' | 'preparedAt'>,
+  entry: Pick<EntrySummary, 'id' | 'preparedAt' | 'revision'>,
   action: EntryAction,
   reason?: string,
   options: { tries?: number; waitMs?: number } = {}
 ): Promise<ActionOutcome> {
-  const key = keys.keyFor(entry.id, action, entry.preparedAt);
-  const body = action === 'reject' ? { seen: entry.preparedAt, reason: reason ?? '' } : { seen: entry.preparedAt };
+  const seen = seenOf(entry);
+  const key = keys.keyFor(entry.id, action, seen);
+  const body = action === 'reject' ? { seen, reason: reason ?? '' } : { seen };
   const tries = options.tries ?? 3;
   for (let attempt = 1; ; attempt++) {
     try {
       const answer = await api.entryAction(entry.id, action, body, key);
-      keys.forget(entry.id, action, entry.preparedAt);
+      keys.forget(entry.id, action, seen);
       return { kind: 'done', entry: answer };
     } catch (error) {
       if (!(error instanceof OfficeError)) return { kind: 'lost', error };
@@ -151,7 +173,7 @@ export async function sendAction(
         await new Promise((r) => setTimeout(r, options.waitMs ?? 1500));
         continue;
       }
-      keys.forget(entry.id, action, entry.preparedAt);
+      keys.forget(entry.id, action, seen);
       if (error.code === 'entry_changed') return { kind: 'changed' };
       if (error.code === 'action_not_allowed' || error.code === 'not_found') return { kind: 'taken' };
       return { kind: 'refused', error };

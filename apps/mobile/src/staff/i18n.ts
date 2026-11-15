@@ -90,6 +90,7 @@ export const STAFF_T = {
   mvPosted: ['نُقلت المواد: {n}', 'Moved: {n}', 'گوازرانەوە: {n}'],
   mvDraft: ['حُفظت المناقلة مسودةً؛ ترحَّل على الحاسوب.', 'The transfer was saved as a draft; post it on the PC.', 'گواستنەوەکە وەک ڕەشنووس پاشەکەوت کرا؛ لەسەر کۆمپیوتەر تەرحیلی بکە.'],
   mvQueuedNote: ['تصل المناقلة إلى الحاسوب مسودةً وتُرحَّل هناك.', 'The transfer reaches the PC as a draft, to be posted there.', 'گواستنەوەکە وەک ڕەشنووس دەگاتە کۆمپیوتەر و لەوێ تەرحیل دەکرێت.'],
+  mvPostQueued: ['المناقلة على الحاسوب مسودةً؛ تُرحَّل وحدها عند الاتصال.', 'The transfer is on the PC as a draft; it is posted by itself once connected.', 'گواستنەوەکە وەک ڕەشنووس لەسەر کۆمپیوتەرە؛ کاتی پەیوەندی خۆی تەرحیل دەکرێت.'],
 
   // ——— receiving goods against a purchase order ———
   rcvAction: ['استلام بضاعة', 'Receive goods', 'وەرگرتنی کاڵا'],

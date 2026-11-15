@@ -146,7 +146,7 @@ shows them after 1.4.2. No new Qasa Relay this time (no relay code changed since
 file to schema 15** (the receipt photos): 1.4.3 and earlier, and a Store copy still on 1.4.2, can't open it afterwards,
 as the notes say first.
 
-1. **The phone app 1.1.0** is already built and signed (versionCode 4, 97,499,776 bytes;
+1. **The phone app 1.1.0** is already built and signed (versionCode 5, 97,501,572 bytes;
    `scripts/check-release-apk.mjs` says OK). Its SHA-256 and size are in `PHONE_APP` (`apps/web/src/pages/Settings.tsx`),
    and the website's `PHONE_APK` must carry the same file. Try it once on a real phone before the release: a receipt
    photo with the camera, a PDF sent with WhatsApp through the share sheet, and the "Open the customer's chat" link.

@@ -14,6 +14,7 @@ import { LinkError, OfficeLink, type LinkState, type OfficeInfo, type Route as L
 import { ListsCtx, type Lists } from './src/lists';
 import { shouldLock, type LockSettings } from './src/lock';
 import { canGoBack, current, initialNav, navigate, type Tab } from './src/nav';
+import { forgetOffice, officeScope, setOfficeScope } from './src/office-cache';
 import { Outbox, receiptPosted, type OutboxItem, type OutboxKind, type OutboxSummary } from './src/outbox';
 import { sendItem } from './src/send';
 import { cleanTemporaryFiles, sweepShared } from './src/staff/files';
@@ -135,6 +136,10 @@ function Main() {
 
   const api = useMemo(() => (link ? officeApi(link) : null), [link]);
 
+  // what screens keep in memory of the office belongs to the office paired now (office-cache.ts): another office, or
+  // none, forgets it
+  useEffect(() => { setOfficeScope(officeScope(office)); }, [office]);
+
   /** One change from the outbox to the office, with its own key (`last` keeps the office's answer for the screen). */
   const sender = useCallback((last?: { e: unknown; b?: unknown }) => async (item: OutboxItem, blob: () => Promise<string | null>): Promise<unknown> => {
     if (!api) throw new LinkError('closed');
@@ -216,6 +221,7 @@ function Main() {
     await link?.unpair().catch(() => false);
     setLink(null);
     await outbox.wipe();
+    forgetOffice();
     await wipePairing();
     setOffice(null);
     setMe(null);

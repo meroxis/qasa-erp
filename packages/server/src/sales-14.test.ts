@@ -184,10 +184,10 @@ describe('vouchers need approval', () => {
   it('is off for a company until an admin switches it on, and only an admin may', async () => {
     expect(SCHEMA_VERSION).toBeGreaterThanOrEqual(13);
     const s = await office(users);
-    expect((await req('GET', '/api/voucher-approval', undefined, s.las)).json()).toEqual({ on: false, waiting: 0, mayApprove: false, ownAtOnce: false, postsAtOnce: false });
+    expect((await req('GET', '/api/voucher-approval', undefined, s.las)).json()).toEqual({ on: false, waiting: 0, toApprove: 0, mayApprove: false, ownAtOnce: false, postsAtOnce: false });
     for (const who of ['las', 'raz', 'mer']) expect((await req('PUT', '/api/voucher-approval', { on: true }, s[who])).statusCode).toBe(403);
     expect((await req('PUT', '/api/voucher-approval', { on: 'yes' }, s.admin)).statusCode).toBe(400);
-    expect((await req('PUT', '/api/voucher-approval', { on: true }, s.admin)).json()).toEqual({ on: true, waiting: 0, mayApprove: true, ownAtOnce: true, postsAtOnce: true });
+    expect((await req('PUT', '/api/voucher-approval', { on: true }, s.admin)).json()).toEqual({ on: true, waiting: 0, toApprove: 0, mayApprove: true, ownAtOnce: true, postsAtOnce: true });
   });
 
   it('off: a sales person\'s receipt is a draft for the usual checking and approval, and changes no balance', async () => {
@@ -209,7 +209,7 @@ describe('vouchers need approval', () => {
     expect(made.json()).toMatchObject({ status: 'draft', number: null, approval: { state: 'waiting', requestedBy: 'Las', decidedBy: null } });
     expect(await balanceOf(customer, s.admin)).toBe(0);
     expect(safe()).toBe(0);
-    expect((await req('GET', '/api/voucher-approval', undefined, s.raz)).json()).toEqual({ on: true, waiting: 1, mayApprove: true, ownAtOnce: true, postsAtOnce: true });
+    expect((await req('GET', '/api/voucher-approval', undefined, s.raz)).json()).toEqual({ on: true, waiting: 1, toApprove: 1, mayApprove: true, ownAtOnce: true, postsAtOnce: true });
     // the list shows it, and the filter finds it
     const waiting = (await req('GET', '/api/entries?approval=waiting', undefined, s.admin)).json();
     expect(waiting.map((e: { id: string }) => e.id)).toEqual([id]);

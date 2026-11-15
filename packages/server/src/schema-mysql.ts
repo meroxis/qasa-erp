@@ -218,6 +218,7 @@ export const MYSQL_TABLES: readonly MysqlObject[] = [
       updated_at ${WHEN} NOT NULL,
       prepared_by_id ${ID},
       checked_by_id ${ID},
+      revision INT NOT NULL DEFAULT 0,
       INDEX entries_date (date),
       INDEX entries_status (status),
       FOREIGN KEY (cash_account) REFERENCES accounts(code),
@@ -1793,6 +1794,14 @@ export const V13_MYSQL_STEPS: readonly MysqlStep[] = [
  */
 export const V14_MYSQL_STEPS: readonly MysqlStep[] = [
   mysqlAddIndex('audit_log', 'audit_log_user_login', ['entity(32)', 'entity_id(64)', 'action(32)', 'id'])
+];
+
+/**
+ * Version 15 (1.5): each entry's revision, one up with every change to a draft (journal.ts, replaceDraft), which an
+ * approval sent from the phone is checked against (entry-seen.ts). The table of receipt photos comes from MYSQL_TABLES.
+ */
+export const V15_MYSQL_STEPS: readonly MysqlStep[] = [
+  mysqlAddColumn('entries', 'revision', 'INT NOT NULL DEFAULT 0')
 ];
 
 /**

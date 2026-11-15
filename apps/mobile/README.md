@@ -16,7 +16,7 @@ apps/web/src/pages/Settings.tsx). 1.0.2 no longer sends ML Kit's own usage repor
 go to Google; see "Scanning and Google") and tells the office its version; 1.0.1 keeps working (the PC lists it as
 "1.0.1 or older", with a note that a newer one is out); 1.0.0 was built before the required PIN and is not offered.
 
-Version 1.1.0 (versionCode 4) adds seven features for the owner, the managers and the staff (the last eight rows
+Version 1.1.0 (versionCode 5) adds seven features for the owner, the managers and the staff (the last eight rows
 below). Each shows only when the office PC offers it: the office release that comes with it says in the phone's "who
 am I" what its phone link offers (`phoneLink`: its version, the features, the largest photo it takes). An office on
 1.4.x says nothing of the kind: the phone then offers what 1.0.2 does, and tells the owner and admins on Home that

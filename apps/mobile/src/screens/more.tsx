@@ -72,7 +72,7 @@ export function MoreScreen() {
 
 const KIND_TEXT = {
   sale: 'kindSale', order: 'kindOrder', receipt: 'kindReceipt', count: 'kindCount', countSession: 'kindCount',
-  expense: 'kindExpense', transfer: 'kindTransfer', arrival: 'kindArrival'
+  expense: 'kindExpense', transfer: 'kindTransfer', arrival: 'kindArrival', transferPost: 'kindTransfer'
 } as const;
 
 /** The office's refusal of a change that waited, in words: its code, with what it said (its numbers) when it kept them. */

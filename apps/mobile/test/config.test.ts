@@ -20,7 +20,7 @@ describe('the app\'s build settings', () => {
     // no usage reports and tells the office its version; 1.1.0 (code 4) has the owner's and the staff's features that an
     // office of the same release offers
     expect(app.expo.version).toBe('1.1.0');
-    expect(app.expo.android.versionCode).toBe(4);
+    expect(app.expo.android.versionCode).toBe(5);
     expect(JSON.parse(readFileSync(join(root, 'package.json'), 'utf8')).version).toBe(app.expo.version);
     const lock = JSON.parse(readFileSync(join(root, 'package-lock.json'), 'utf8')) as { version: string; packages: Record<string, { version: string }> };
     expect([lock.version, lock.packages['']!.version]).toEqual([app.expo.version, app.expo.version]);

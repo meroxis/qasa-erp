@@ -309,4 +309,36 @@ describe('a photo kept with a change in the outbox', () => {
     expect(box.list().map((i) => i.kind)).toEqual(['expense']);
     link.close();
   });
+
+  it('keeps the post of a transfer when its answer was lost, and sends it again with the same key after the app starts again', async () => {
+    const disk = memory();
+    const box = new Outbox(disk);
+    await box.load();
+    // the draft is there (d-7); its post is kept before it is first sent, then the link drops before the answer
+    const post = await box.add('transferPost', {}, { title: 'Main → Shop' }, 'd-7');
+    expect(await box.sendOne(post.id, async () => { throw new LinkError('timeout'); })).toBe('wait');
+    expect(disk.file).toMatch(/^qasa-outbox:1:/);
+    expect(disk.file).not.toContain('d-7');
+    // the app is closed and opened again: the post is still there, with its draft and its key
+    const asked: { m: string; p?: string; k?: string; b?: unknown }[] = [];
+    const o = fakeOffice({ reply: (m) => { asked.push(m as never); return { s: 200, b: { id: 'd-7', number: 'TR-2026-0003', status: 'posted' } }; } });
+    const link = new OfficeLink({ office: o.office, phone: generateKeyPair(), name: 'Las', socket: o.socket });
+    const again = new Outbox(disk);
+    expect((await again.load()).map((i) => [i.kind, i.target, i.id])).toEqual([['transferPost', 'd-7', post.id]]);
+    // online: it goes by itself, to the draft's post, with the key it had the first time
+    expect(await again.replay((item, blob) => sendItem(officeApi(link), item, blob))).toMatchObject({ sent: 1, refused: 0 });
+    expect(asked.filter((m) => m.m === 'POST').map((m) => [m.p, m.k, m.b])).toEqual([['/api/stock-docs/d-7/post', post.id, {}]]);
+    expect(again.list()).toEqual([]);
+    link.close();
+  });
+
+  it('wipes the waiting post of a transfer on unpairing, with everything else', async () => {
+    const disk = memory();
+    const box = new Outbox(disk);
+    await box.load();
+    await box.add('transferPost', {}, { title: 'Main → Shop' }, 'd-7');
+    await box.wipe();
+    expect(disk.file).toBeNull();
+    expect(await new Outbox(disk).load()).toEqual([]);
+  });
 });

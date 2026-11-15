@@ -36,6 +36,8 @@ interface EntryRow {
   prepared_by: string; prepared_at: string; checked_by: string | null; checked_at: string | null;
   approved_by: string | null; approved_at: string | null;
   prepared_by_id: string | null; checked_by_id: string | null;
+  /** schema 15: one up with every change to the draft (replaceDraft) */
+  revision: number;
 }
 
 interface LineRow {
@@ -73,6 +75,11 @@ export interface EntryView {
   /** who that is, so the screens know a user's own voucher (null: prepared without sign-in) */
   preparedById: string | null;
   preparedAt: string;
+  /**
+   * 1.5: the entry's revision, one up with every change to it while a draft (0 as made). What the phone sends back as
+   * `seen` ("r<revision>") with an approval action, so a change since it was shown is refused (entry-seen.ts).
+   */
+  revision: number;
   checkedBy: string | null;
   checkedAt: string | null;
   approvedBy: string | null;
@@ -160,6 +167,16 @@ export function setVouchersNeedApproval(db: Db, on: boolean, user: string): void
 
 export function waitingVouchers(db: Db): number {
   return Number((db.prepare("SELECT COUNT(*) AS n FROM voucher_approvals va JOIN entries e ON e.id = va.entry_id WHERE va.state = 'waiting' AND e.status <> 'approved'").get() as { n: number }).n);
+}
+
+/**
+ * Everything an approver has to approve, each entry once (phone app 1.1, the home screen's number): the vouchers that
+ * wait for approval and the entries checked and waiting to be approved. A checked voucher that also waits for approval
+ * is in both lists, and counted once here.
+ */
+export function waitingForApprover(db: Db): number {
+  return Number((db.prepare(`SELECT COUNT(*) AS n FROM entries e LEFT JOIN voucher_approvals va ON va.entry_id = e.id
+                             WHERE e.status = 'checked' OR (e.status = 'draft' AND va.state = 'waiting')`).get() as { n: number }).n);
 }
 
 /**
@@ -473,8 +490,10 @@ export function updateVoucher(db: Db, id: string, v: VoucherInput, user: string,
 
 function replaceDraft(db: Db, id: string, entry: EntryInput, cashAccountCode: string | null, user: string, actorId?: string | null): void {
   const now = new Date().toISOString();
-  // The editor is responsible for the current draft; earlier preparation stays in the audit trail.
-  db.prepare('UPDATE entries SET date = ?, description = ?, party = ?, currency = ?, rate_x100 = ?, cash_account = ?, prepared_by = ?, prepared_by_id = ?, prepared_at = ?, updated_at = ? WHERE id = ?')
+  // The editor is responsible for the current draft; earlier preparation stays in the audit trail. The revision goes up
+  // by one with every change (two in the same millisecond too): what an approval from the phone is checked against
+  // (entry-seen.ts)
+  db.prepare('UPDATE entries SET date = ?, description = ?, party = ?, currency = ?, rate_x100 = ?, cash_account = ?, prepared_by = ?, prepared_by_id = ?, prepared_at = ?, updated_at = ?, revision = revision + 1 WHERE id = ?')
     .run(entry.date, entry.description.trim(), entry.party?.trim() || null, entry.currency, entry.currency === 'IQD' ? 100 : entry.rateX100,
       cashAccountCode, user, actorId ?? null, now, now, id);
   db.prepare('DELETE FROM entry_lines WHERE entry_id = ?').run(id);
@@ -644,7 +663,7 @@ function toView(db: Db, row: EntryRow, lines: LineRow[], invoiceId: string | nul
     id: row.id, type: row.type, number: row.number, date: row.date, description: row.description, party: row.party,
     currency: row.currency, rateX100: row.rate_x100, status: row.status, cashAccountCode: row.cash_account,
     reversesId: row.reverses_id, reversedById: row.reversed_by_id,
-    preparedBy: row.prepared_by, preparedById: row.prepared_by_id, preparedAt: row.prepared_at, checkedBy: row.checked_by, checkedAt: row.checked_at,
+    preparedBy: row.prepared_by, preparedById: row.prepared_by_id, preparedAt: row.prepared_at, revision: Number(row.revision ?? 0), checkedBy: row.checked_by, checkedAt: row.checked_at,
     approvedBy: row.approved_by, approvedAt: row.approved_at,
     total: lines.reduce((s, l) => s + l.debit, 0),
     baseTotal: lines.reduce((s, l) => s + l.base_debit, 0),

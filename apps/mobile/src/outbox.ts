@@ -14,9 +14,13 @@ import { UUID_V4, uuidV4 } from './uuid';
  * office makes it once.
  */
 
-/** 1.1: an expense (with the photo of its receipt), a stock transfer and goods that arrived against a purchase order. */
-export type OutboxKind = 'sale' | 'order' | 'receipt' | 'count' | 'countSession' | 'expense' | 'transfer' | 'arrival';
-export const OUTBOX_KINDS: readonly OutboxKind[] = ['sale', 'order', 'receipt', 'count', 'countSession', 'expense', 'transfer', 'arrival'];
+/**
+ * 1.1: an expense (with the photo of its receipt), a stock transfer and goods that arrived against a purchase order; and
+ * the posting of a transfer the office has as a draft (`target`: the draft's id), kept from the moment the draft is
+ * there, so a post whose answer was lost is sent again with the same key after a restart too.
+ */
+export type OutboxKind = 'sale' | 'order' | 'receipt' | 'count' | 'countSession' | 'expense' | 'transfer' | 'arrival' | 'transferPost';
+export const OUTBOX_KINDS: readonly OutboxKind[] = ['sale', 'order', 'receipt', 'count', 'countSession', 'expense', 'transfer', 'arrival', 'transferPost'];
 
 export interface OutboxSummary {
   /** what it is about: the customer's name, the warehouse… (shown in the outbox list) */
@@ -30,7 +34,7 @@ export interface OutboxItem {
   /** the change's key, sent with it every time (a UUID v4) */
   id: string;
   kind: OutboxKind;
-  /** for counts into an open count: which one */
+  /** for counts into an open count: which one; for an arrival, its order; for a transfer's posting, the draft */
   target?: string | undefined;
   body: unknown;
   summary: OutboxSummary;

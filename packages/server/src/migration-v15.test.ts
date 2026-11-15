@@ -4,10 +4,11 @@ import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { migrate, openDatabase, SCHEMA_VERSION, schemaVersion, type Db, type SqlValue } from './db.ts';
-import { MYSQL_TABLES, MYSQL_TRIGGERS } from './schema-mysql.ts';
+import { MYSQL_TABLES, MYSQL_TRIGGERS, pendingMysqlSteps, tableColumns, V15_MYSQL_STEPS } from './schema-mysql.ts';
 import { AppError } from './errors.ts';
 
-// Version 15 (1.5): the photo of a paper receipt kept with its voucher (entry_images), a company-file upgrade.
+// Version 15 (1.5): the photo of a paper receipt kept with its voucher (entry_images), and each entry's revision (what an
+// approval from the phone is checked against: entry-seen.ts), a company-file upgrade.
 const onServer = !!process.env.QASA_TEST_DB;
 
 let dir: string;
@@ -20,6 +21,8 @@ describe.skipIf(onServer)('a company file from schema 14 opened by schema 15', (
     const old = new DatabaseSync(file);
     migrate(old as unknown as Db, 14);
     old.prepare("INSERT INTO audit_log (at, user, action, entity, entity_id, details) VALUES ('2026-11-01T08:00:00Z', 'Mer', 'login', 'user', 'u1', NULL)").run();
+    old.prepare(`INSERT INTO entries (id, type, date, description, currency, rate_x100, status, prepared_by, prepared_at, updated_at)
+                 VALUES ('e-old', 'journal', '2026-11-01', 'Before 1.5', 'IQD', 100, 'draft', 'Las', '2026-11-01T08:00:00Z', '2026-11-01T08:00:00Z')`).run();
     expect(old.prepare("SELECT name FROM sqlite_master WHERE name = 'entry_images'").get()).toBeUndefined();
     old.close();
     const db = openDatabase(file);
@@ -31,6 +34,9 @@ describe.skipIf(onServer)('a company file from schema 14 opened by schema 15', (
       expect((db.prepare("SELECT name FROM sqlite_master WHERE type = 'trigger' AND tbl_name = 'entry_images' ORDER BY name").all() as { name: string }[]).map((t) => t.name))
         .toEqual(['entry_images_no_delete', 'entry_images_no_update']);
       expect(Number((db.prepare('SELECT COUNT(*) AS n FROM audit_log').get() as { n: number }).n)).toBeGreaterThan(0);
+      // each entry's revision, last in the table; an entry made before it starts at 0
+      expect((db.prepare('PRAGMA table_info(entries)').all() as { name: string }[]).map((c) => c.name).at(-1)).toBe('revision');
+      expect(db.prepare("SELECT revision FROM entries WHERE id = 'e-old'").get()).toEqual({ revision: 0 });
     } finally {
       db.close();
     }
@@ -95,8 +101,16 @@ describe('version 15 on a server database', () => {
     migrate(fake);
     expect(version).toBe(SCHEMA_VERSION);
     expect(ran.filter((s) => s.startsWith('CREATE TABLE entry_images'))).toHaveLength(1);
+    expect(ran.filter((s) => s.startsWith('ALTER TABLE'))).toEqual(['ALTER TABLE entries ADD COLUMN revision INT NOT NULL DEFAULT 0']);
     expect(ran.filter((s) => s.startsWith('CREATE TRIGGER entry_images_'))).toHaveLength(2);
     // nothing else is made again
     expect(ran.filter((s) => s.startsWith('CREATE TABLE ') && !s.startsWith('CREATE TABLE entry_images') && !s.includes('schema_version'))).toEqual([]);
+  });
+
+  it('adds the revision once, last in entries as on a company file, and skips it when an upgrade cut off half way made it', () => {
+    expect(V15_MYSQL_STEPS.map((x) => x.sql)).toEqual(['ALTER TABLE entries ADD COLUMN revision INT NOT NULL DEFAULT 0']);
+    expect(tableColumns('entries').columns.at(-1)).toBe('revision');
+    expect(pendingMysqlSteps(V15_MYSQL_STEPS, { columns: new Set(), foreignKeys: new Set() })).toHaveLength(1);
+    expect(pendingMysqlSteps(V15_MYSQL_STEPS, { columns: new Set(['entries.revision']), foreignKeys: new Set() })).toEqual([]);
   });
 });

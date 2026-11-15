@@ -31,8 +31,13 @@ export interface EntrySummary {
   cashAccountCode: string | null;
   preparedBy: string;
   preparedById: string | null;
-  /** when it was last prepared (written): what the phone saw, sent back with every action on it */
+  /** when it was last prepared (written): what the phone saw, sent back with every action on it by an office without a revision */
   preparedAt: string;
+  /**
+   * an office of 1.5 on: the entry's revision, one up with every change to it; sent back as `seen` ("r<revision>") with
+   * every action, so a change since it was shown is refused even when two came in the same millisecond (approvals.ts seenOf)
+   */
+  revision?: number | undefined;
   checkedBy: string | null;
   approvedBy: string | null;
   /** in the entry's currency (minor units) */
@@ -60,8 +65,12 @@ export interface EntryView extends EntrySummary {
   image?: EntryImage | null | undefined;
 }
 
-/** "Vouchers need approval" (GET /api/voucher-approval): on, how many wait (in the whole company), may this user approve. */
-export interface ApprovalState { on: boolean; waiting: number; mayApprove: boolean }
+/**
+ * "Vouchers need approval" (GET /api/voucher-approval): on, how many vouchers wait (in the whole company), may this user
+ * approve; `toApprove` (an office of 1.5 on): everything an approver has to approve, each entry once (the vouchers that
+ * wait and the entries checked, a checked one that also waits counted once).
+ */
+export interface ApprovalState { on: boolean; waiting: number; toApprove?: number | undefined; mayApprove: boolean }
 
 /** What an action on an entry is called in the office's API. */
 export type EntryAction = 'approve-waiting' | 'reject' | 'check' | 'approve' | 'return';
@@ -100,8 +109,8 @@ export function ownerApi(link: OfficeLink) {
       ok(await link.request<EntrySummary[]>('GET', '/api/entries' + (which === 'waiting' ? q({ approval: 'waiting' }) : q({ status: which })))),
     entry: async (id: string) => ok(await link.request<EntryView>('GET', `/api/entries/${safeId(id)}`)),
     /**
-     * An action on an entry, with `seen` (its preparedAt as shown: the office refuses it, 409 entry_changed, when it was
-     * changed since) and the action's own key, the same on every try (owner/approvals.ts ActionKeys).
+     * An action on an entry, with `seen` (the entry as shown, approvals.ts seenOf: the office refuses it, 409
+     * entry_changed, when it was changed since) and the action's own key, the same on every try (owner/approvals.ts ActionKeys).
      */
     entryAction: async (id: string, action: EntryAction, body: { seen: string; reason?: string }, key: string) =>
       ok(await link.request<Partial<EntryView>>('POST', `/api/entries/${safeId(id)}/${action}`, body, key)),

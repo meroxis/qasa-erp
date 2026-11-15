@@ -43,9 +43,11 @@ export interface DayCloseView {
   registers: DayRegister[];
   /** the registers closed: expected, counted and the difference; null when none was closed */
   drawers: { expected: Money; counted: Money; difference: Money } | null;
-  expenses: { rows: ExpenseRow[]; total: number };
+  /** the day's expenses: left out of someone's own part (OwnPart), as they are the branch's, not theirs */
+  expenses?: { rows: ExpenseRow[]; total: number };
   debts: { collected: number; collectedRows: DayDebtRow[]; added: number; addedRows: DayDebtRow[] };
-  flow: { in: number; out: number };
+  /** the money in and out of the safes and banks: left out of someone's own part (OwnPart), as expenses are */
+  flow?: { in: number; out: number };
   lowStock: { count: number; top: LowStock[] };
   topItems: ItemSales[];
   ownerPhone: string;
@@ -183,7 +185,7 @@ function debtsOn(db: Db, date: string, branch: BranchFilter, own: OwnPart | null
  * themselves and the sales, returns, best sellers and debts of those shifts only (OwnPart). Without a viewer, or for
  * someone who keeps the books, the whole day. `mine` (phone app 1.1): the viewer's own part whatever else they may
  * read: a phone that keeps no PIN asks so (pro/src/phone), also for a cashier who keeps the stock or buys and so reads
- * the books on a PC.
+ * the books on a PC. An own part has none of the branch's expenses and money in and out of its safes and banks.
  */
 export function dayClose(db: Db, date: string, branch: BranchFilter = null, viewer: Actor | null = null, mine = false): DayCloseView {
   const company = (() => {
@@ -204,7 +206,10 @@ export function dayClose(db: Db, date: string, branch: BranchFilter = null, view
       difference: { IQD: t.difference.IQD + r.difference!.IQD, USD: t.difference.USD + r.difference!.USD }
     }), { expected: zero(), counted: zero(), difference: zero() })
     : null;
-  const expenses = expensesBetween(db, date, date, branch);
+  // the branch's expenses and the money in and out of its safes and banks are nobody's own part: left out of it, so a
+  // phone asking mine=1 for someone who may read the books gets no more than a cashier does (cost-view.ts leaves them
+  // out for a cashier anyway)
+  const money = own ? null : { expenses: expensesBetween(db, date, date, branch), flow: cashFlowOn(db, date, branch) };
   // every item running out: the count, and the five that sell best
   const short = lowStock(db, date, 10_000, branch);
   return {
@@ -213,9 +218,9 @@ export function dayClose(db: Db, date: string, branch: BranchFilter = null, view
     ...salesByMethod(db, date, branch, own),
     registers,
     drawers,
-    expenses: { rows: expenses.rows, total: expenses.total },
+    ...(money ? { expenses: { rows: money.expenses.rows, total: money.expenses.total } } : {}),
     debts: debtsOn(db, date, branch, own),
-    flow: cashFlowOn(db, date, branch),
+    ...(money ? { flow: money.flow } : {}),
     lowStock: { count: short.length, top: short.slice(0, 5) },
     topItems: salesByItem(db, date, date, 5, branch, own ? own.invoiceIds : null),
     ownerPhone: readSetting(db, 'brief_phone') ?? ''

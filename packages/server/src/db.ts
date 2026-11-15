@@ -5,7 +5,7 @@ import { DatabaseSync } from 'node:sqlite';
 import { brandKey, DEFAULT_POSTING_ACCOUNTS, IRAQI_UNIFIED_CHART, STARTER_SUB_ACCOUNTS } from '@qasa/core';
 import { AppError } from './errors.ts';
 import {
-  MYSQL_TABLES, MYSQL_TRIGGERS, mysqlCollations, mysqlTableSql, pendingMysqlSteps, V10_MYSQL_STEPS, V11_MYSQL_STEPS, V12_MYSQL_STEPS, V13_MYSQL_STEPS, V14_MYSQL_STEPS, type MysqlCollations, type MysqlStep
+  MYSQL_TABLES, MYSQL_TRIGGERS, mysqlCollations, mysqlTableSql, pendingMysqlSteps, V10_MYSQL_STEPS, V11_MYSQL_STEPS, V12_MYSQL_STEPS, V13_MYSQL_STEPS, V14_MYSQL_STEPS, V15_MYSQL_STEPS, type MysqlCollations, type MysqlStep
 } from './schema-mysql.ts';
 
 export type SqlParam = null | number | bigint | string | Uint8Array;
@@ -1769,8 +1769,12 @@ const V14 =
 const V15 =
   // 15 — the photo of a paper receipt kept with its voucher (expenses.ts: an expense recorded on the phone). One JPEG per
   // voucher, its location and other metadata taken out before it is kept. A draft that is deleted takes its photo with
-  // it; a posted voucher keeps its photo for good, as it keeps its lines (the triggers below; schema-mysql.ts on a server)
+  // it; a posted voucher keeps its photo for good, as it keeps its lines (the triggers below; schema-mysql.ts on a server).
+  // And each entry's revision: one up with every change to a draft's heading or lines (journal.ts, replaceDraft), so an
+  // approval sent from the phone is refused when the entry changed after it was shown, even twice in one millisecond
+  // (entry-seen.ts)
   `
+  ALTER TABLE entries ADD COLUMN revision INTEGER NOT NULL DEFAULT 0;
   CREATE TABLE entry_images (
     entry_id TEXT PRIMARY KEY REFERENCES entries(id) ON DELETE CASCADE,
     mime TEXT NOT NULL CHECK (mime = 'image/jpeg'),
@@ -1794,7 +1798,7 @@ const MIGRATIONS: Migration[] = [
   { sql: V12, mysql: { tables: true, steps: () => V12_MYSQL_STEPS } },
   { sql: V13, mysql: { tables: true, steps: () => V13_MYSQL_STEPS } },
   { sql: V14, mysql: { tables: true, steps: () => V14_MYSQL_STEPS } },
-  { sql: V15, mysql: 'tables' }
+  { sql: V15, mysql: { tables: true, steps: () => V15_MYSQL_STEPS } }
 ];
 
 /** Server databases began at this version: its schema is in schema-mysql.ts (tables and triggers without `since`). */

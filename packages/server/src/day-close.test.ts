@@ -4,6 +4,7 @@ import { addDays, todayIso } from '@qasa/core';
 import { buildApp } from './app.ts';
 import { openDatabase, type Db } from './db.ts';
 import { dayClose } from './day-close.ts';
+import { resetLoginThrottle } from './auth.ts';
 
 // The end-of-day close: the day's sales by how they were paid, the registers' drawers, expenses, debts and stock.
 let db: Db;
@@ -106,13 +107,13 @@ describe('the end-of-day close', () => {
     expect(c.debts.collected).toBe(12_000);
     expect(c.debts.collectedRows).toEqual([{ partyId: customerId, code: expect.any(String), name: 'Las', amount: 12_000 }]);
     expect(c.debts.added).toBe(30_000);
-    expect(c.expenses.total).toBe(7_500);
-    expect(c.expenses.rows).toHaveLength(1);
+    expect(c.expenses?.total).toBe(7_500);
+    expect(c.expenses?.rows).toHaveLength(1);
     // 97 teas left, at or below the reorder level of 90? no: 97 > 90; sell 8 more and it is
     expect(c.lowStock.count).toBe(0);
     await invoice({ payment: 'cash', cashAccountCode: '1811', lines: tea(8) });
     expect(dayClose(db, DAY).lowStock).toMatchObject({ count: 1, top: [{ code: 'TEA', qtyMilli: 89_000 }] });
-    expect(c.flow.in).toBe(12_000 + 1_000);
+    expect(c.flow?.in).toBe(12_000 + 1_000);
   });
 
   it('is empty on a quiet day, and refuses a date that is not one', async () => {
@@ -156,4 +157,58 @@ describe('the end-of-day close', () => {
     expect((await get(`/api/brief/day-close?date=${DAY}&mine=0`)).statusCode).toBe(400);
     expect((await get(`/api/brief/day-close?date=${DAY}&mine=yes`)).statusCode).toBe(400);
   });
+});
+
+describe('mine=1 for someone who also keeps the stock or buys (phone app 1.1, no PIN)', () => {
+  it.each([['sales and stock', ['sales', 'storekeeper']], ['sales and purchases', ['sales', 'purchasing']]])(
+    'with %s: their own registers and sales, and none of the branch\'s expenses or money in and out', async (_name, roles) => {
+      // sign-in on: Mer (the owner) and Raz, who sells and keeps the stock or buys, so reads the books on a PC
+      resetLoginThrottle();
+      expect((await post('/api/plan/trial')).statusCode).toBe(200);
+      const first = (await get('/api/users')).json()[0] as { id: string; username: string };
+      expect((await post(`/api/users/${first.id}/password`, { password: 'mer-pass-12345' })).statusCode).toBe(200);
+      expect((await post('/api/users', { username: 'raz', name: 'Raz', password: 'raz-pass-12345', roles })).statusCode).toBe(201);
+      expect((await put('/api/auth/signin', { on: true })).statusCode).toBe(200);
+      const signIn = async (username: string, password: string) => {
+        const res = await app.inject({ method: 'POST', url: '/api/auth/login', payload: { username, password }, headers: { 'x-qasa-client': '1' } });
+        expect(res.statusCode, res.body).toBe(200);
+        return { cookie: String(res.headers['set-cookie']).split(';')[0]!, 'x-qasa-client': '1' };
+      };
+      const mer = await signIn(first.username, 'mer-pass-12345');
+      const raz = await signIn('raz', 'raz-pass-12345');
+      const as = (who: Record<string, string>, method: 'GET' | 'POST', url: string, payload?: object) => app.inject({ method, url, headers: who, ...(payload ? { payload } : {}) });
+      const till = async (who: Record<string, string>, register: string, qty: number) => {
+        const shift = await as(who, 'POST', '/api/pos/shifts', { register, cashAccountCode: '1811', warehouseId, openingCash: 0 });
+        expect(shift.statusCode, shift.body).toBe(201);
+        const sale = await as(who, 'POST', `/api/pos/shifts/${shift.json().id}/sales`, { currency: 'IQD', discount: 0, lines: tea(qty) });
+        expect(sale.statusCode, sale.body).toBe(201);
+        return shift.json().id as string;
+      };
+      const razShift = await till(raz, 'Counter 1', 2);
+      await till(mer, 'Counter 2', 5);
+      // the branch's expense and a receipt into its safe, both Mer's
+      for (const v of [
+        { kind: 'payment', description: 'Generator fuel', items: [{ accountCode: '32', amount: 7_500 }] },
+        { kind: 'receipt', description: 'Paid on account', items: [{ accountCode: '1611', amount: 12_000, partyId: customerId }] }
+      ]) {
+        const made = await as(mer, 'POST', '/api/vouchers', { currency: 'IQD', rateX100: 100, date: DAY, cashAccountCode: '1811', ...v });
+        expect(made.statusCode, made.body).toBe(201);
+        expect((await as(mer, 'POST', `/api/entries/${made.json().id}/check`, {})).statusCode).toBe(200);
+        expect((await as(mer, 'POST', `/api/entries/${made.json().id}/approve`, {})).statusCode).toBe(200);
+      }
+      // on a PC Raz reads the whole day, expenses and money in and out included
+      const whole = await as(raz, 'GET', `/api/brief/day-close?date=${DAY}`);
+      expect(whole.statusCode, whole.body).toBe(200);
+      expect(whole.json()).toMatchObject({ expenses: { total: 7_500 }, flow: { in: 70_000 + 12_000 }, sales: { gross: 70_000 } });
+      // the phone asks mine=1: Raz's own register and its sales only, nothing of the branch's money
+      const own = await as(raz, 'GET', `/api/brief/day-close?date=${DAY}&mine=1`);
+      expect(own.statusCode, own.body).toBe(200);
+      const c = own.json();
+      expect(c.registers.map((r: { shiftId: string }) => r.shiftId)).toEqual([razShift]);
+      expect(c.sales).toMatchObject({ gross: 20_000, invoices: 1 });
+      expect(c.debts).toMatchObject({ collected: 0, added: 0 });
+      expect(c).not.toHaveProperty('expenses');
+      expect(c).not.toHaveProperty('flow');
+      expect(JSON.stringify(c)).not.toContain('Generator fuel');
+    });
 });

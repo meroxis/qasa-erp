@@ -1075,7 +1075,7 @@ describe('the release notes of 1.4.3 (never released on its own: What\'s new sho
   it('upgrades no company file in 1.4.3, so it has no "Before you update" warning', () => {
     // why: 1.4.3 adds no migration; 1.4.2 and 1.4.3 open the same company file (schema 14; 15, the receipt photos,
     // comes with the next release, whose notes say so)
-    expect(read('packages/server/src/db.ts')).toMatch(/\{ sql: V14, mysql: \{ tables: true, steps: \(\) => V14_MYSQL_STEPS \} \},?\n( {2}\{ sql: V15, mysql: 'tables' \}\n)?\];/);
+    expect(read('packages/server/src/db.ts')).toMatch(/\{ sql: V14, mysql: \{ tables: true, steps: \(\) => V14_MYSQL_STEPS \} \},?\n( {2}\{ sql: V15, mysql: \{ tables: true, steps: \(\) => V15_MYSQL_STEPS \} \}\n)?\];/);
     expect(notes).not.toMatch(/Before you update|قبل التحديث|پێش نوێکردنەوە/);
   });
 
@@ -1236,9 +1236,10 @@ describe('the release notes and the Store "What\'s new" of this version (1.5.0)'
   });
 
   it('says first that the company file is upgraded to 15, which 1.4.3 and earlier (a Store copy on 1.4.2 too) cannot open', () => {
-    // why: 1.5.0 adds migration 15 (entry_images, the receipt photos), and an app refuses a newer file
+    // why: 1.5.0 adds migration 15 (entry_images, the receipt photos, and entries' revision), and an app refuses a newer file
     const db = read('packages/server/src/db.ts');
-    expect(db).toMatch(/\{ sql: V15, mysql: 'tables' \},?\n\];/);
+    expect(db).toMatch(/\{ sql: V15, mysql: \{ tables: true, steps: \(\) => V15_MYSQL_STEPS \} \},?\n\];/);
+    expect(db).toContain('ALTER TABLE entries ADD COLUMN revision INTEGER NOT NULL DEFAULT 0;');
     expect(db).toContain('export const SCHEMA_VERSION = MIGRATIONS.length;');
     expect(db).toContain('CREATE TABLE entry_images (');
     expect(section('en')).toMatch(/^### Before you update\n- \*\*The company file is upgraded to a new version \(15\) the first time 1\.5\.0 opens it\.\*\* A copy of it is kept beside it before the update\. Qasa ERP 1\.4\.3 and earlier cannot open a file that 1\.5\.0 has upgraded, so update every PC that opens the same company/);
@@ -1252,7 +1253,7 @@ describe('the release notes and the Store "What\'s new" of this version (1.5.0)'
   it('offers phone app 1.1.0 as Settings does and app.json has it, and says truly that a phone on 1.0.x keeps working without the new features', () => {
     const mobile = JSON.parse(read('apps/mobile/app.json')) as { expo: { version: string; android: { versionCode: number } } };
     expect(mobile.expo.version).toBe('1.1.0');
-    expect(mobile.expo.android.versionCode).toBe(4);
+    expect(mobile.expo.android.versionCode).toBe(5);
     expect(read('apps/web/src/pages/Settings.tsx')).toContain("version: '1.1.0',");
     for (const lang of ['ar', 'en', 'ku'] as const) expect(section(lang), lang).toMatch(/1\.1\.0[\s\S]*SHA-256/);
     expect(section('en')).toContain('A phone still on 1.0.x keeps working with 1.5.0 as before, without the new features.');

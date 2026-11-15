@@ -98,8 +98,10 @@ it("opens the download page in the app's language: Arabic at /phone/, English at
 
 it('offers the phone app 1.1.0 (the features of the 1.5.0 phone link), signed with the Qasa release key', () => {
   expect(PHONE_APP.version).toBe('1.1.0');
-  // qasa-erp-mobile-1.1.0.apk (versionCode 4), 97,499,776 bytes
-  expect(PHONE_APP.apkSha256).toBe('578295cdb4c3c11e1b9edd8cb47421b05c02f707acabe8bf2e44fe78bb8a164e');
+  // qasa-erp-mobile-1.1.0.apk (versionCode 5), 97,501,572 bytes
+  expect(PHONE_APP.apkSha256).toBe('624eddd35fd30ac3e5f816ef3ed232f84aebd71d3a37aef8a29c0ba9f69c9067');
+  // not the first 1.1.0 build (versionCode 4), made before the 1.5.0 review's fixes
+  expect(PHONE_APP.apkSha256).not.toBe('578295cdb4c3c11e1b9edd8cb47421b05c02f707acabe8bf2e44fe78bb8a164e');
   // not 1.0.0 (built before the required PIN), 1.0.1 (it still had ML Kit's usage reports to Google) or 1.0.2
   expect(PHONE_APP.apkSha256).not.toBe('6c8dc54af7a4845fe449fcec575f6364e6b6d75136cbd892ca1cd9f6c6239fc9');
   expect(PHONE_APP.apkSha256).not.toBe('636e0025a5d0e909d14c3305b225bd7ea8a61fa69d3c2cefc759502f5438194b');
