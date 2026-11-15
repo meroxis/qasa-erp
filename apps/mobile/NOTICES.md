@@ -23,13 +23,16 @@ only the letters used).
 All under the MIT licence: @noble/ciphers, @noble/curves and @noble/hashes 2.4.0; expo 58.0.23 with expo-asset,
 expo-camera, expo-crypto, expo-file-system, expo-font, expo-haptics, expo-image-manipulator, expo-local-authentication,
 expo-localization, expo-print, expo-secure-store, expo-sharing and expo-status-bar (SDK 58); react 19.3.0;
-react-native 0.88.1; react-native-safe-area-context 5.11.1; react-native-svg 15.16.0. (1.1: expo-print makes the PDF of
-an invoice or a statement on the phone, expo-sharing hands it to Android's share sheet; expo-asset, which Expo already
-ships with expo-font, reads the bundled fonts for those PDFs.)
+react-native 0.88.1; react-native-safe-area-context 5.11.1; react-native-svg 15.16.0. (1.1: expo-print 58.0.9 makes the
+PDF of an invoice or a statement on the phone, expo-sharing 58.0.23 hands it to Android's share sheet; expo-asset
+58.0.20, which Expo already ships with expo-font, reads the bundled fonts for those PDFs. All three: MIT, copyright
+650 Industries, Inc. (Expo), as their LICENSE files say. For the website's list of the phone app's components.)
 
 ## Components (runtime, native: in the Android APK)
 
-What the APK holds besides the app's own code, as of 1.0.2. Taken from the release build's dependency tree
+What the APK holds besides the app's own code, as of 1.1.0 (the same libraries as 1.0.2: 1.1 adds only Expo's print
+and sharing modules, compiled into the app's code, and sharing's file provider in the manifest, not exported; no new
+permission). Taken from the release build's dependency tree
 (`./gradlew :app:dependencies --configuration releaseRuntimeClasspath` after `npx expo prebuild`) and checked against
 the APK itself (its `META-INF/*.version` files, the `*.properties` files the Google libraries leave at its root, its
 `assets/` and `lib/`). Licences are as each library's own POM, licence file or project says; "POM" or a file name
