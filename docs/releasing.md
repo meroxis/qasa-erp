@@ -139,6 +139,19 @@ Do these in this order. The 1.4.2 notes and the Store "What's new" promise thing
 5. **WooCommerce plugin 1.1.2** goes to shops on request from then on (it takes only the 32-character certificate code
    or the full fingerprint).
 
+## Release day for 1.4.3 (the phone app 1.0.2)
+
+No new Qasa Relay this time (1.4.3 changes no relay code), and no company-file upgrade.
+
+1. **The phone app 1.0.2** is already built and signed (versionCode 3; `scripts/check-release-apk.mjs` says OK). Its
+   SHA-256 and size are in `PHONE_APP` (`apps/web/src/pages/Settings.tsx`), and the website's `PHONE_APK` must carry
+   the same file. Scan a real barcode with it on a real phone once before the release.
+2. **Tag Pro, then the app** (the stable steps above), and submit the Store package with the new screenshots and the
+   1.4.3 "What's new".
+3. **The website** (the phone pages with 1.0.2 and its SHA-256, and the wording on what scanning sends to Google) goes
+   live as soon as the 1.4.3 GitHub release is out: a 1.4.3 PC tells the user to check the 1.0.2 SHA-256 against the
+   download, while a 1.4.2 PC still shows 1.0.1's (the phone page says why they differ).
+
 ## Release notes format
 
 The notes are the GitHub release body (taken from `apps/desktop/release-notes/<version>.md`). The app shows them under **What's new**, as plain text with a little formatting and never as HTML.

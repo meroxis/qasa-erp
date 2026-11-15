@@ -123,10 +123,10 @@ jobs:
 
       - run: npm run typecheck
 
-      # The phone app's own packages, exactly as locked, with no install scripts. Two checks below use the phone app's
-      # code (apps/mobile/src: its link, its API calls and its outbox): the Pro type check follows
-      # pro/src/phone/phone-relay.test.ts into it, and that test runs the phone through Qasa Relay to the office with it
-      # (skipped, not failed, without these packages). Nothing of the phone app is built or shipped here.
+      # The phone app's own packages, exactly as locked, with no install scripts, for pro/src/phone/phone-relay.test.ts:
+      # it runs the phone app's own code (apps/mobile/src: its link, its API calls and its outbox) through Qasa Relay to
+      # the office, and is skipped, not failed, without these packages. The Pro type check below leaves that one test out
+      # (pro/tsconfig.json), so it needs none of them. Nothing of the phone app is built or shipped here.
       - name: Phone app dependencies
         shell: bash
         run: npm ci --prefix apps/mobile --ignore-scripts
