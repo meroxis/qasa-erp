@@ -1,4 +1,4 @@
-import { DEFAULT_POSTING_ACCOUNTS, fiscalYear, fiscalYearOf, isBusinessType, type BusinessType, type Names, type PostingAccounts } from '@qasa/core';
+import { DEFAULT_AMOUNTS_SHOW, DEFAULT_POSTING_ACCOUNTS, fiscalYear, fiscalYearOf, isAmountsShow, isBusinessType, type AmountsShow, type BusinessType, type Names, type PostingAccounts } from '@qasa/core';
 import type { Db } from './db.ts';
 import { audit } from './audit.ts';
 import { insertOrKeep, isMysql, transaction } from './db.ts';
@@ -14,6 +14,8 @@ export interface Settings {
   postingAccounts: PostingAccounts;
   /** What the company does (which industry pages the menu shows); null until it is chosen. */
   businessTypes: BusinessType[] | null;
+  /** How the screens show amounts: dinar only (the default), dinar and dollar, or dollar and dinar (core dual.ts). */
+  amountsShow: AmountsShow;
 }
 
 /** Where each posting account must sit in the unified chart. */
@@ -60,8 +62,15 @@ export function getSettings(db: Db): Settings {
     defaultRateX100: Number(readSetting(db, 'default_rate_x100') ?? '142000'),
     fiscalYearStart: readSetting(db, 'fiscal_year_start') ?? '01-01',
     postingAccounts: getPostingAccounts(db),
-    businessTypes: businessTypes(db)
+    businessTypes: businessTypes(db),
+    amountsShow: amountsShow(db)
   };
+}
+
+/** The company's choice of how amounts show; anything unknown (a value from a newer version) reads as dinar only. */
+function amountsShow(db: Db): AmountsShow {
+  const stored = readSetting(db, 'amounts_show');
+  return isAmountsShow(stored) ? stored : DEFAULT_AMOUNTS_SHOW;
 }
 
 function assertPostingAccounts(db: Db, accounts: PostingAccounts): void {
@@ -78,6 +87,7 @@ function assertPostingAccounts(db: Db, accounts: PostingAccounts): void {
 
 export function updateSettings(db: Db, patch: Partial<Settings>, user: string): Settings {
   if (patch.postingAccounts) assertPostingAccounts(db, { ...getPostingAccounts(db), ...patch.postingAccounts });
+  if (patch.amountsShow !== undefined && !isAmountsShow(patch.amountsShow)) throw invalid([{ code: 'amounts_show_invalid', field: 'amountsShow' }]);
   transaction(db, () => {
     if (patch.companyName) writeSetting(db, 'company_name', JSON.stringify(patch.companyName));
     if (patch.defaultRateX100 !== undefined) writeSetting(db, 'default_rate_x100', String(patch.defaultRateX100));
@@ -88,6 +98,7 @@ export function updateSettings(db: Db, patch: Partial<Settings>, user: string): 
     // so does a market or supermarket (1.4): food and drink carry a date
     if (patch.businessTypes?.includes('market') && !businessTypes(db)?.includes('market')) writeSetting(db, 'default_track_expiry', '1');
     if (patch.businessTypes) writeSetting(db, 'business_types', JSON.stringify([...new Set(patch.businessTypes)]));
+    if (patch.amountsShow !== undefined) writeSetting(db, 'amounts_show', patch.amountsShow);
     audit(db, user, 'update', 'settings', null, patch);
   });
   return getSettings(db);

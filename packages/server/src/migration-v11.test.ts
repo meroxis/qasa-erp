@@ -132,7 +132,7 @@ describe('version 11 on a server database', () => {
 
   it('skips what an upgrade cut off half way made already, and adds the columns the fresh server schema has last', () => {
     const done = { columns: new Set(['item_categories.parent_id']), foreignKeys: new Set(['item_categories.parent_id>item_categories']) };
-    expect(pendingMysqlSteps(V11_MYSQL_STEPS, done)).toEqual(V11_MYSQL_STEPS.filter((s) => s.column !== 'parent_id').map((s) => s.sql));
+    expect(pendingMysqlSteps(V11_MYSQL_STEPS, done)).toEqual(V11_MYSQL_STEPS.filter((s) => s.kind === 'index' || s.column !== 'parent_id').map((s) => s.sql));
     expect(pendingMysqlSteps(V11_MYSQL_STEPS, done)).toHaveLength(V11_MYSQL_STEPS.length - 2);
     for (const table of ['item_categories', 'items', 'stock_counts']) {
       const added = V11_MYSQL_STEPS.filter((s) => s.kind === 'column' && s.table === table).map((s) => (s as { column: string }).column);

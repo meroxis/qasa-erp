@@ -47,6 +47,39 @@ describe('texts', () => {
     }
   });
 
+  // the desktop's Kurdish words (1.4, apps/web/src/i18n): قەید an entry, ڕەسید a balance, تەرحیل posting, جەرد a count,
+  // مەدین/دائین, نەقد cash, قەرز credit as a way of paying, قاسە a safe, سەنەد a voucher, پسوولە an invoice, بڕ a
+  // quantity and بڕی پارە an amount, کۆگا a warehouse and بڕی کۆگا what is in it
+  it('Kurdish uses the desktop\'s accounting words', () => {
+    const ku = (key: Parameters<typeof translate>[1]) => translate('ku', key);
+    expect(ku('qty')).toBe('بڕ');
+    expect(ku('amount')).toBe('بڕی پارە');
+    expect(ku('warehouse')).toBe('کۆگا');
+    expect(ku('stock')).toBe('بڕی کۆگا');
+    expect(ku('debit')).toBe('مەدین');
+    expect(ku('credit')).toBe('دائین');
+    expect(ku('closing')).toBe('ڕەسید');
+    expect(ku('payCash')).toBe('نەقد');
+    expect(ku('payCredit')).toBe('قەرز');
+    expect(ku('count')).toContain('جەرد');
+    expect(ku('noLines')).toContain('قەید');
+    expect(ku('cashTotal')).toContain('قاسە');
+    expect(ku('kindReceipt')).toBe('سەنەدی وەرگرتن');
+    expect(ku('modeSale')).toContain('پسوولە');
+    // posting is تەرحیل; the words an older pass used are gone
+    expect(ku('draftSent')).toContain('تەرحیل');
+    expect(ku('collectPosted')).toContain('تەرحیل');
+    for (const key of KEYS) {
+      expect(ku(key), key).not.toMatch(/باڵانس|نەختینە|سندوق|قەرزدار|قەرزدەر|تایبەتمەندی/);
+      const en = translate('en', key);
+      if (/\bposts?\b|\bposted\b|\bentr(y|ies)\b/i.test(en)) expect(ku(key), key).not.toMatch(/تۆمار/);
+    }
+  });
+
+  it('the plans the phone app is part of: Starter, Pro and Business', () => {
+    for (const lang of LANGS) expect(translate(lang, 'planLimit'), lang).toMatch(/Starter.*Pro.*Business/);
+  });
+
   it('money and quantities read as on the desktop, digits kept left to right inside Arabic and Kurdish', () => {
     expect(money(1_250_000, 'IQD', 'ar')).toBe(`${ltr('1,250,000')} د.ع`);
     expect(money(1_250_000, 'IQD', 'en')).toBe(`${ltr('1,250,000')} IQD`);

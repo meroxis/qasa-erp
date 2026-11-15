@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it, vi } from 'vitest';
 import {
-  afterPaint, desktopPrinters, outcomeOf, printAlone, printDocument, printersOf, saveChoice, type AlonePage, type DesktopPrinters, type PrintNotice
+  afterPaint, desktopPrinters, holdPrint, outcomeOf, printAlone, printDocument, printersOf, printHolds, saveChoice, type AlonePage, type DesktopPrinters, type PrintNotice
 } from './printing.ts';
 
 const receipt = { printer: 'Receipts', paper: 'receipt58', margins: 'none', copies: 1, silent: true } as const;
@@ -29,6 +29,33 @@ describe('printDocument', () => {
     const dialog = vi.fn();
     expect(await printDocument('invoice', { desktop: null, dialog })).toBe('dialog');
     expect(dialog).toHaveBeenCalledTimes(1);
+  });
+
+  it('waits for what the paper still reads (the dollar rate of its date) and for it to be drawn, before printing', async () => {
+    const steps: string[] = [];
+    let answer: () => void = () => {};
+    holdPrint(new Promise<void>((resolve) => { answer = () => { steps.push('rate'); resolve(); }; }));
+    const printed = printDocument('invoice', { desktop: null, dialog: () => { steps.push('dialog'); }, paint: async () => { steps.push('paint'); } });
+    await new Promise((resolve) => { setTimeout(resolve, 10); });
+    expect(steps).toEqual([]);
+    answer();
+    expect(await printed).toBe('dialog');
+    expect(steps).toEqual(['rate', 'paint', 'dialog']);
+    // a failed read does not stop the print, and nothing waits once the holds are answered
+    holdPrint(Promise.reject(new Error('offline')));
+    expect(await printHolds()).toBe(true);
+    expect(await printHolds()).toBe(false);
+  });
+
+  it('prints anyway when what the paper reads takes too long', async () => {
+    let end: () => void = () => {};
+    holdPrint(new Promise<void>((resolve) => { end = resolve; }));
+    const t0 = Date.now();
+    expect(await printHolds(30)).toBe(true);
+    expect(Date.now() - t0).toBeLessThan(1_000);
+    end();
+    await printHolds();
+    expect(await printHolds()).toBe(false);
   });
 
   it('prints to the chosen printer in the Windows app, without the print window', async () => {

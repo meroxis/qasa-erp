@@ -18,7 +18,7 @@ export type Feature =
   | 'sale'
   /** an order for a customer, sent as a quote */
   | 'order'
-  /** money received from a customer: a draft receipt voucher */
+  /** money received from a customer: a receipt voucher, a draft or waiting for approval (posted at once for an approver) */
   | 'collect'
   | 'statement'
   /** a count sent to the office as a list (Settings → Phones) */
@@ -46,6 +46,18 @@ export function featuresOf(me: Me | null): Set<Feature> {
   if (can('stock')) { out.add('newItem'); out.add('countSession'); }
   if (can('sales') || can('entries.prepare') || figures) out.add('statement');
   return out;
+}
+
+/**
+ * The app lock (a PIN) is required, not offered, for a phone that acts as a user who sees the company's figures or is an
+ * admin (FIGURES_ROLES), or as the owner when the office has no sign-in: a lost or taken phone then doesn't open on the
+ * books. Unknown yet (never connected since pairing): not asked until the office says who the phone acts as. The office
+ * can't check that a phone really keeps the lock (a changed app wouldn't): this protects an honest phone that is lost.
+ */
+export function lockRequired(me: Me | null): boolean {
+  if (!me) return false;
+  if (!me.signInRequired || !me.user) return true;
+  return me.user.roles.some((r) => FIGURES_ROLES.includes(r)) || me.user.permissions.includes('admin');
 }
 
 /** The name the phone shows for who it works as. */

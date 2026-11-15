@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { categoriesApi, inCategory, type CategoryView } from '../industry/categories-api.ts';
 import { createPortal } from 'react-dom';
-import { normalizeForSearch, rateFromX100, rateToX100, todayIso, toWesternDigits, type CurrencyCode } from '@qasa/core';
+import { fromBase, normalizeForSearch, rateFromX100, rateToX100, toBase, todayIso, toWesternDigits, usableRate, type CurrencyCode } from '@qasa/core';
 import { api, ApiError, isNetworkError, serverReachable, type InvoiceView, type ItemView, type PartyView, type WarehouseView } from '../api.ts';
 import { AccountCombo, AmountInput, ErrorBox, Icon, Modal, SearchCombo, useData, useLoad, usePageNav, useToast, type PickOption } from '../components.tsx';
 import { useI18n, type I18n, type Key } from '../i18n.ts';
@@ -25,6 +25,11 @@ import { printAlone, printDocument } from '../industry/printing.ts';
 import { receiptMessage, withAttachment } from '../industry/WhatsAppShare.tsx';
 import { WhatsAppSendButton } from '../industry/WhatsAppSend.tsx';
 import { LoyaltyUse, loyaltyLines } from '../industry/Loyalty.tsx';
+import { dualLineText, dualRateTitle, useDual } from '../Amount.tsx';
+import { perDollar } from '../industry/HeaderRate.tsx';
+import { QuickItemForm } from '../industry/QuickItemForm.tsx';
+import { addRowKind, anyItemMatches, mayAddItem, typedForForm, western } from '../industry/item-quick-add.ts';
+import { findByScaleBarcode } from '../industry/scale-barcode.ts';
 
 /**
  * Point of sale (every plan). Made for a cashier with no training: the search box always has the focus, so a barcode
@@ -206,8 +211,12 @@ function Register({ initial, onClosed }: { initial: ShiftView; onClosed(): void 
   const i18n = useI18n();
   const { t } = i18n;
   const toast = useToast();
-  const { settings } = useData();
+  const { settings, permissions } = useData();
+  const market = !!settings?.businessTypes?.includes('market');
   usePageNav({ key: 'pos_title', group: 'gSales' });
+  // 1.4.2: a search or a scan that finds nothing offers to add the item, to someone who keeps the stock
+  const mayAdd = mayAddItem(permissions);
+  const [addingItem, setAddingItem] = useState<string | null>(null);
 
   const [shift, setShift] = useState(initial);
   const [items, setItems] = useState<ItemView[]>([]);
@@ -309,6 +318,8 @@ function Register({ initial, onClosed }: { initial: ShiftView; onClosed(): void 
     const generic = pharmacy ? shown.filter((it) => !direct.includes(it) && normalizeForSearch(medicines.get(it.id)?.genericName ?? '').includes(n)) : [];
     return [...direct, ...generic].slice(0, 40);
   }, [q, shown, cat, catList, searchable, pharmacy, medicines]);
+  // whether anything in the whole list matches the text, whatever category is chosen: only then is nothing "missing"
+  const anyMatch = useMemo(() => anyItemMatches(q, searchable.map((s) => s.key)), [q, searchable]);
 
   /** One of `unit` of an item, in the sale's currency: the unit's own price, or the base price × its factor. */
   const unitPriceOf = useCallback((item: ItemView, unit: LineUnit) => {
@@ -347,9 +358,14 @@ function Register({ initial, onClosed }: { initial: ShiftView; onClosed(): void 
       // a box's barcode adds a box; the item's own barcode its base unit; a search match its sale unit
       add(pick, qty, exact ? unit : pick.saleUnit ?? null);
       setQ('');
+    } else if (!exact && (matches.length > 1 || anyMatch)) {
+      // several items match (the grid shows them), or the chosen category hides those that do: nothing is missing
+      setNoRate('');
+      if (matches.length === 0) setCat('');
     } else {
       setNoRate('');
-      setNotFound(code);
+      // a name is kept as it was typed (its own digits); a scan in western digits
+      setNotFound(addRowKind(code) === 'name' ? q.trim() : code);
     }
   };
 
@@ -507,7 +523,8 @@ function Register({ initial, onClosed }: { initial: ShiftView; onClosed(): void 
   payRef.current = pay;
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (closing) return;
+      // a dialog over the sale (closing the shift, a new item, any other) keeps the keys to itself
+      if (closing || addingItem !== null || document.querySelector('.backdrop')) return;
       if (e.key === 'F2') { e.preventDefault(); search.current?.focus(); }
       else if (e.key === 'F4') { e.preventDefault(); clear(); }
       else if (e.key === 'F8') { e.preventDefault(); document.getElementById('pos-discount')?.querySelector('input')?.focus(); }
@@ -524,11 +541,33 @@ function Register({ initial, onClosed }: { initial: ShiftView; onClosed(): void 
     rememberTill(tillWho(), { customers: next });
     return next;
   });
+  const addLabel = (typed: string) => {
+    const kind = addRowKind(typed, market);
+    return kind === 'barcode' ? t('iq_addBarcode', { code: typed }) : kind === 'scale' ? t('iq_addScale', { code: typed }) : t('iq_addNamed', { name: typed });
+  };
+  /**
+   * An item added from the till (or one already there, chosen in the form): in the till's list (kept for offline too)
+   * and on the sale at once; a scale's label puts the weight on it.
+   */
+  const addedItem = (item: ItemView) => {
+    const label = addingItem !== null ? findByScaleBarcode(western(addingItem.trim()), [item]) : null;
+    setAddingItem(null);
+    setItems((list) => {
+      const next = list.some((x) => x.id === item.id) ? list.map((x) => (x.id === item.id ? item : x)) : [...list, item];
+      rememberTill(tillWho(), { items: next });
+      return next;
+    });
+    if (label) add(item, label.qtyMilli, null);
+    else add(item);
+    setQ('');
+    focusSearch();
+  };
   const customerOptions: PickOption[] = useMemo(() => customers.map((p) => ({ id: p.id, code: p.code, label: p.name, search: p.phone, hint: p.phone })), [customers]);
 
   return (
     <div className="pos">
       {expired.dialog}
+      {addingItem !== null && <QuickItemForm typed={addingItem} sale warehouseId={shift.warehouseId} onDone={addedItem} onClose={() => { setAddingItem(null); focusSearch(); }} />}
       {controlled.dialog}
       <div className="pos-bar no-print">
         <div className="pos-shift-info">
@@ -564,7 +603,12 @@ function Register({ initial, onClosed }: { initial: ShiftView; onClosed(): void 
             />
             <span className="kbd">F2</span>
           </div>
-          {notFound && <div className="alert bad" role="alert">{t('pos_notFound', { n: notFound })}</div>}
+          {notFound && (
+            <div className="alert bad row" role="alert" style={{ gap: 8 }}>
+              <span>{t(addRowKind(notFound) === 'name' ? 'pos_noItemNamed' : 'pos_notFound', { n: notFound })}</span>
+              {mayAdd && <><span className="spacer" /><button type="button" className="btn small" onClick={() => setAddingItem(notFound)}><Icon name="plus" size={15} />{addLabel(notFound)}</button></>}
+            </div>
+          )}
           {noRate && <div className="alert bad" role="alert">{t('pos_noRate', { n: noRate })}</div>}
           {catList.length > 0 && <PosCategories list={catList} value={cat} onChange={setCat} />}
           <div className="pos-grid">
@@ -588,7 +632,12 @@ function Register({ initial, onClosed }: { initial: ShiftView; onClosed(): void 
                 </button>
               );
             })}
-            {matches.length === 0 && <p className="muted">{t('pos_noItems')}</p>}
+            {matches.length === 0 && (
+              <div className="stack" style={{ gap: 8 }}>
+                <p className="muted" style={{ margin: 0 }}>{t('pos_noItems')}</p>
+                {mayAdd && q.trim() && !notFound && !anyMatch && <div><button type="button" className="btn" onClick={() => setAddingItem(typedForForm(q))}><Icon name="plus" size={16} />{addLabel(typedForForm(q))}</button></div>}
+              </div>
+            )}
           </div>
         </section>
 
@@ -649,6 +698,8 @@ function Register({ initial, onClosed }: { initial: ShiftView; onClosed(): void 
               <span>{t('pos_total')}</span>
               <strong className="num">{i18n.money(total, currency)}</strong>
             </div>
+            {/* dinar and dollar: what the sale is worth in the other currency, as a hint only (the sale stays in its own) */}
+            <TillEquivalent total={total} currency={currency} rateX100={currency === 'USD' ? rateX100 : undefined} />
             {points.value > 0 && (
               <div className="pos-r-row"><span>{t('pos_left')} ({t('ly_title')}: −{i18n.money(points.value, currency)})</span><strong className="num">{i18n.money(due, currency)}</strong></div>
             )}
@@ -977,4 +1028,28 @@ export function PosCategories({ list, value, onChange }: { list: readonly Catego
       ))}
     </div>
   );
+}
+
+/**
+ * Under the till's total, when the company sees dinar and dollar: "≈ $954.20" (or "≈ 1,250,000 IQD" for a dollar
+ * sale), with the rate in a tooltip. Only a hint: the sale is made and paid in its own currency. A dollar sale is
+ * booked at the rate the cashier typed for it (`rateX100`), so its hint uses that rate and says so; a dinar sale uses
+ * the rate board's rate for today.
+ */
+export function TillEquivalent({ total, currency, rateX100 }: { total: number; currency: CurrencyCode; rateX100?: number | undefined }) {
+  const i18n = useI18n();
+  const dual = useDual();
+  if (dual.show === 'iqd' || !total) return null;
+  if (currency === 'USD') {
+    // the sale's own rate; the board's only while the cashier's field is empty or not a number
+    const own = usableRate(rateX100) ? rateX100 : null;
+    const board = own ? null : dual.rate();
+    const r = own ?? board?.rateX100;
+    if (!r) return null;
+    const title = own ? i18n.t('am_rateSale', { r: perDollar(i18n, own) }) : dualRateTitle(i18n, board!);
+    return <div className="pos-eq num" title={title}>{dualLineText(i18n, { amount: toBase(total, 'USD', r), currency: 'IQD', approx: true })}</div>;
+  }
+  const rate = dual.rate();
+  if (!rate) return null;
+  return <div className="pos-eq num" title={dualRateTitle(i18n, rate)}>{dualLineText(i18n, { amount: fromBase(total, rate.rateX100), currency: 'USD', approx: true })}</div>;
 }

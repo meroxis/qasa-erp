@@ -490,9 +490,16 @@ export function sessionActor(db: Db, token: string): Actor | null {
  * or phone on the office network, each by its own address). After 5 in a row from one place, that place waits for that
  * account, 1 minute doubling up to 15, while the account's owner signs in from anywhere else as usual: someone who
  * keeps typing wrong passwords for the admin locks out only themselves. Guessing from many places at once is limited
- * by the account's own counter: after 30 failures in all, every place waits, except this PC's own server and the
+ * by the account's own counters: after 30 failures in all, every place waits, except this PC's own server and the
  * places this account already signed in from. A counter with no failure for a day starts over, and an admin's
  * password reset (recovery code, Windows Hello) clears the account's counters.
+ *
+ * Sign-ins through Qasa Relay (sources "net:relay:<address>") come from the internet, where anyone who knows the office
+ * ID can try: they have account counters of their own, so guessing through the relay never makes the account wait on
+ * the office's own network. And within the relay, places the account signed in from before (kept in the audit log, so
+ * a restart doesn't forget them) count apart from new ones: a stranger's guessing can make only new places wait, never
+ * the staff who signed in from their home or branch before; those places still wait after 30 failures of their own,
+ * so a relay that names such a place for every guess gains nothing.
  *
  * The account is keyed by the user's id when the name finds a user, so every spelling that reaches the same user (a
  * MySQL server compares names without case or accents) shares one counter; an unknown name is keyed by its lower-case
@@ -502,8 +509,52 @@ const SOURCE_LIMIT = 5;
 const ACCOUNT_LIMIT = 30;
 const FORGET_AFTER_MS = 24 * 3_600_000;
 const failures = new Map<string, { count: number; lockedUntil: number; last: number }>();
-/** Places each account signed in from (in this run of the app): never held up by the account's own counter. */
+/** Places each account signed in from: never held up by the account's own counter for new places. */
 const knownSources = new Map<string, Set<string>>();
+/** Accounts whose places were read from the audit log in this run (once each). */
+const knownLoaded = new Set<string>();
+/** How far back a sign-in makes its place known, and how many places an account keeps. */
+const KNOWN_DAYS = 90;
+const KNOWN_MAX = 50;
+/** knownPlaces reads the audit log KNOWN_BATCH sign-ins at a time, and at most KNOWN_ROWS of them per account. */
+const KNOWN_BATCH = 500;
+const KNOWN_ROWS = 20_000;
+const RELAY_SOURCE = 'net:relay:';
+
+/**
+ * The places an account signed in from: this run's, and the ones in the audit log's sign-ins of the last KNOWN_DAYS
+ * (read once per account per run, newest first).
+ */
+function knownPlaces(db: Db, account: string, userId: string | null): Set<string> {
+  let known = knownSources.get(account);
+  if (userId !== null && !knownLoaded.has(account)) {
+    knownLoaded.add(account);
+    known ??= new Set<string>();
+    knownSources.set(account, known);
+    const since = new Date(Date.now() - KNOWN_DAYS * 86_400_000).toISOString();
+    // newest first, a batch at a time (through the index audit_log_user_login), until KNOWN_MAX places, the end of the
+    // KNOWN_DAYS window or KNOWN_ROWS rows: hundreds of sign-ins from one place don't hide an older place still in use
+    const batch = db.prepare(`SELECT id, details FROM audit_log WHERE entity = 'user' AND entity_id = ? AND action = 'login' AND id < ? AND at >= ?
+                              ORDER BY id DESC LIMIT ${KNOWN_BATCH}`);
+    let before = Number.MAX_SAFE_INTEGER;
+    for (let read = 0; read < KNOWN_ROWS && known.size < KNOWN_MAX;) {
+      const rows = batch.all(String(userId), before, since) as { id: number | bigint; details: string | null }[];
+      for (const r of rows) {
+        if (known.size >= KNOWN_MAX) break;
+        try {
+          const source = r.details ? (JSON.parse(r.details) as { source?: unknown }).source : undefined;
+          if (typeof source === 'string' && source.startsWith('net:') && source.length <= 100) known.add(source);
+        } catch {
+          // a row written by something else: not a place
+        }
+      }
+      read += rows.length;
+      if (rows.length < KNOWN_BATCH) break;
+      before = Number(rows[rows.length - 1]!.id);
+    }
+  }
+  return known ?? new Set<string>();
+}
 
 /** Where a sign-in on this PC's own server (the app on this PC) comes from: see app.ts. */
 export const isThisPcSource = (source: string): boolean => source.startsWith('local:');
@@ -536,7 +587,7 @@ function countFailure(key: string, limit = SOURCE_LIMIT): number {
 
 /** Forgets an account's failed sign-ins everywhere (its password was just reset by an admin's recovery). */
 function clearLoginFailures(account: string): void {
-  for (const key of [...failures.keys()]) if (key === account || key.startsWith(`${account}@`)) failures.delete(key);
+  for (const key of [...failures.keys()]) if (key === account || key.startsWith(`${account}@`) || key.startsWith(`${account}|`)) failures.delete(key);
 }
 
 /**
@@ -559,14 +610,18 @@ export async function login(db: Db, username: string, password: string, device?:
   const account = row ? `id:${row.id}` : `name:${typed.toLowerCase()}`;
   const key = `${account}@${place}`;
   assertNotLocked(key);
-  // guessing from many places: held up everywhere but on this PC and where the account already signed in
-  if (!isThisPcSource(place) && !knownSources.get(account)?.has(place)) assertNotLocked(account);
+  // guessing from many places: held up everywhere but on this PC and where the account already signed in; through the
+  // relay on counters of its own (one for places it signed in from before, one for new ones), never the office's own
+  const known = isThisPcSource(place) ? false : knownPlaces(db, account, row ? String(row.id) : null).has(place);
+  const relay = place.startsWith(RELAY_SOURCE);
+  const accountKey = relay ? `${account}|relay-${known ? 'known' : 'new'}` : account;
+  if (!isThisPcSource(place) && (relay || !known)) assertNotLocked(accountKey);
   // the same answer, after the same work, for an unknown user, a wrong password, a user without a password and an inactive user
   const passwordOk = await verifyPassword(password, row?.password_hash ?? DUMMY_HASH);
   const ok = !!row && row.active === 1 && !!row.password_hash && passwordOk;
   if (!ok || !row) {
     countFailure(key);
-    countFailure(account, ACCOUNT_LIMIT);
+    countFailure(accountKey, ACCOUNT_LIMIT);
     audit(db, typed.slice(0, 100) || '?', 'login_failed', 'user', row?.id ?? null, { source: place });
     throw new AppError(401, 'invalid_login');
   }
@@ -578,9 +633,9 @@ export async function login(db: Db, username: string, password: string, device?:
     audit(db, row.name, 'login_over_limit', 'user', row.id, { source: place, max: seat.max });
     throw new AppError(403, 'plan_user_limit', { limit: 'users', max: seat.max, plan: planStatus(db).plan });
   }
-  const known = knownSources.get(account) ?? new Set<string>();
-  if (known.size < 50) known.add(place);
-  knownSources.set(account, known);
+  const places = knownSources.get(account) ?? new Set<string>();
+  if (places.size < KNOWN_MAX) places.add(place);
+  knownSources.set(account, places);
   const token = randomBytes(32).toString('base64url');
   const now = new Date();
   transaction(db, () => {
@@ -588,7 +643,8 @@ export async function login(db: Db, username: string, password: string, device?:
       .run(tokenHash(token), row.id, now.toISOString(), now.toISOString(), new Date(now.getTime() + SESSION_IDLE_MS).toISOString(), device?.slice(0, 200) ?? null);
     db.prepare('UPDATE users SET last_login_at = ? WHERE id = ?').run(now.toISOString(), row.id);
     db.prepare('DELETE FROM sessions WHERE expires_at < ?').run(now.toISOString());
-    audit(db, row.name, 'login', 'user', row.id);
+    // where from: a later sign-in from the same place is known (see knownPlaces), and the admin sees it in the log
+    audit(db, row.name, 'login', 'user', row.id, { source: place });
   });
   return { token, actor: toActor(row) };
 }
@@ -601,6 +657,7 @@ export function logout(db: Db, token: string): void {
 export function resetLoginThrottle(): void {
   failures.clear();
   knownSources.clear();
+  knownLoaded.clear();
 }
 
 const DUMMY_HASH = 'scrypt$16384$8$1$AAAAAAAAAAAAAAAAAAAAAA$' + 'A'.repeat(86);

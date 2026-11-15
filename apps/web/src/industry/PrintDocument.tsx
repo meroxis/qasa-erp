@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState, type CSSProperties, type ReactNode } from 'react';
-import { amountInWords, designFor, rateFromX100, roundHalfUp, toBase, type CurrencyCode, type Lang, type Names, type PrintDesign, type PrintDesigns, type PrintLabel } from '@qasa/core';
+import { amountInWords, designFor, rateFromX100, roundHalfUp, toBase, todayIso, usableRate, type CurrencyCode, type Lang, type Names, type PrintDesign, type PrintDesigns, type PrintLabel } from '@qasa/core';
 import { api } from '../api.ts';
 import { useData } from '../components.tsx';
 import { isKey, makeI18n, useI18n, type I18n, type Key } from '../i18n.ts';
@@ -9,6 +9,9 @@ import { ItemImage } from './ItemImage.tsx';
 import { encodeQr, qrSvgPath } from './qr.ts';
 import { barcodeFor, barsPath } from './barcode.ts';
 import { logoUrl, usePrintSetup, type PrintProfileView } from './print-api.ts';
+import { fxApi } from './fx-api.ts';
+import { paperRateX100 } from '../Amount.tsx';
+import { holdPrint } from './printing.ts';
 import { balanceLabelKey, balancesAround, type PrintBalanceOf, type PrintModel } from './print-model.ts';
 import './print-design.css';
 
@@ -444,11 +447,25 @@ export function DesignedPrint({ model, designs, balanceOf }: {
   const { settings, plan } = useData();
   const design = designFor(designs ?? setup.designs, model.doc);
   const filled: PrintModel = model.balanceOf === undefined && balanceOf ? { ...model, balanceOf } : model;
+  // the design's "other-currency equivalent" of a dinar paper: at the dollar rate of the paper's date by the screen's
+  // own rule (paperRateX100: a date older than every rate takes today's), so the paper and the screen's "≈ $" agree;
+  // the company's usual rate only when the board has no rate at all
+  const rateDay = design.show.usdEquivalent && model.currency !== 'USD' ? model.date : null;
+  const [paperRate, setPaperRate] = useState<{ day: string; rateX100: number } | null>(null);
+  useEffect(() => {
+    if (!rateDay) return;
+    let on = true;
+    // (Print waits for this answer: printDocument → printHolds)
+    holdPrint(paperRateX100((d) => fxApi.rateOn(d), rateDay, todayIso(), undefined)
+      .then((r) => { if (on && r !== undefined && usableRate(r)) setPaperRate({ day: rateDay, rateX100: r }); }));
+    return () => { on = false; };
+  }, [rateDay]);
+  const rateX100 = paperRate && paperRate.day === rateDay ? paperRate.rateX100 : settings?.defaultRateX100;
   return (
     <div className="print-only qd-print-host">
       <PrintDocument
         model={filled} design={design} profile={setup.profile} company={settings?.companyName ?? { ar: '', en: '', ku: '' }}
-        branding={!plan?.features.includes('noBranding')} defaultRateX100={settings?.defaultRateX100}
+        branding={!plan?.features.includes('noBranding')} defaultRateX100={rateX100}
       />
     </div>
   );

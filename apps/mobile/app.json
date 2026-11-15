@@ -2,7 +2,7 @@
   "expo": {
     "name": "Qasa ERP",
     "slug": "qasa-erp",
-    "version": "1.0.0",
+    "version": "1.0.1",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "automatic",
@@ -19,6 +19,7 @@
       }
     },
     "android": {
+      "versionCode": 2,
       "adaptiveIcon": {
         "backgroundColor": "#F2A33A",
         "foregroundImage": "./assets/android-icon-foreground.png",
@@ -35,6 +36,7 @@
       "allowBackup": false,
       "blockedPermissions": [
         "android.permission.RECORD_AUDIO",
+        "android.permission.SYSTEM_ALERT_WINDOW",
         "android.permission.READ_EXTERNAL_STORAGE",
         "android.permission.WRITE_EXTERNAL_STORAGE"
       ]
@@ -53,6 +55,7 @@
       "expo-secure-store",
       "expo-localization",
       "./plugins/with-lan-cleartext.js",
+      "./plugins/with-release-signing.js",
       "expo-font",
       [
         "expo-local-authentication",

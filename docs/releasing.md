@@ -116,6 +116,25 @@ Do these in this order, before and after the stable steps above.
 4. **The phone app is not in 1.0** (owner decision). Don't name it in the release notes, the Store text or the website as available; the app shows it as coming soon, and the Google Play listing waits for a later release.
 5. **Dates.** There is no release-date constant to set: trials from 0.1.x carry over when they started on or before the company's first start in 1.0, whatever the calendar date of the release.
 
+## Release day for 1.4.2 (the hardened Qasa Relay and the phone app)
+
+Do these in this order. The 1.4.2 notes and the Store "What's new" promise things that only hold once each step is done.
+
+1. **Deploy the 1.4.2 Qasa Relay first** (`pro/relay/relay.ts`, steps in `pro/relay/README.md`), before the GitHub
+   release and before the Store submission. It takes offices from 1.0 to 1.4.1 as before. Only this relay gives the
+   staff's proven connections their place when strangers crowd an office's connection, and carries its half of the
+   small-frames fix. If the relay can't be deployed first, take the "keep their place" sentence out of the 1.4.2 notes
+   and the Store "What's new" (all three languages) before tagging.
+   **Check:** `curl https://relay.qasaerp.com/health` answers `{"ok":true,"app":"qasa-relay"}` from the new build.
+2. **The phone app 1.0.1** (`apps/mobile`, built from the release branch as the phone app's README says). It is the
+   first build with the PIN that can't be turned off; 1.0.0 is never offered. Its SHA-256 is in `PHONE_APP`
+   (`apps/web/src/pages/Settings.tsx`) and on the website's /phone/ pages, and they must match the file uploaded.
+3. **Tag Pro, then the app** (the stable steps above), and submit the Store package.
+4. **The website** (the phone app pages, `softwareVersion` 1.4.2) goes live only once the 1.4.2 GitHub release is out
+   and the Store submission is live: a 1.4.1 office can't pair a phone, so the download page must not come first.
+5. **WooCommerce plugin 1.1.2** goes to shops on request from then on (it takes only the 32-character certificate code
+   or the full fingerprint).
+
 ## Release notes format
 
 The notes are the GitHub release body (taken from `apps/desktop/release-notes/<version>.md`). The app shows them under **What's new**, as plain text with a little formatting and never as HTML.

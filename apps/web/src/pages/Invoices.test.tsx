@@ -23,6 +23,8 @@ const fixture = vi.hoisted(() => ({
   checked: [] as string[],
   askOnOpen: [] as string[],
   promptFor: [] as (string | undefined)[],
+  // the lines whose quantity got the cursor after an item was added from the item box
+  focused: [] as number[],
   // a draft saved earlier, as the server gives it to the editor
   draft: {
     id: 'd1', kind: 'sale', status: 'draft', actions: ['edit', 'delete', 'post'], date: '2026-11-13', partyId: null, warehouseId: 'w', currency: 'IQD',
@@ -52,6 +54,8 @@ vi.mock('../industry/categories-api.ts', () => ({ categoriesApi: { list: () => [
 vi.mock('../industry/CatalogPickers.tsx', () => ({ CategoryOptions: 'CategoryOptions' }));
 vi.mock('../industry/prices-api.ts', () => ({ pricesApi: { priceFor: vi.fn(() => new Promise(() => {})) } }));
 vi.mock('../industry/PartyPicker.tsx', () => ({ PartyPicker: 'PartyPicker' }));
+// the item box (1.4.2: it can add an item); a page's list with the items added there
+vi.mock('../industry/QuickItemForm.tsx', () => ({ ItemPicker: 'ItemPicker', withAdded: (list: unknown[] | null, added: unknown[]) => [...(list ?? []), ...added], focusLineQty: (key: number) => { fixture.focused.push(key); } }));
 vi.mock('../industry/PharmacyPrompts.tsx', () => ({
   RxTick: 'RxTick', usePharmacyOn: () => false, useRxItems: () => new Set(),
   askControlledOnOpen: (id: string) => { fixture.askOnOpen.push(id); },
@@ -88,6 +92,8 @@ vi.mock('../i18n.ts', () => ({ useI18n: () => ({
   t: (s: string) => s, name: (n: { en: string }) => n.en, int: String, money: String, digitsOf: String, lang: 'en'
 }) }));
 vi.mock('../router.ts', () => ({ go: vi.fn(), href: (s: string) => s }));
+// (the dinar-and-dollar amounts need React's context: here the totals are plain elements like the rest)
+vi.mock('../Amount.tsx', () => ({ Amount: 'Amount', DualRateHint: 'DualRateHint' }));
 vi.mock('./Parties.tsx', () => ({ InvoicesTable: 'InvoicesTable' }));
 vi.mock('./Items.tsx', () => ({ averageCost: () => 0, qtyText: String, unitName: (_: unknown, unit: string) => unit }));
 
@@ -105,9 +111,9 @@ function open(kind: 'sale' | 'purchase' = 'sale') { render(kind); fixture.effect
 const saveButton = (kind: 'sale' | 'purchase' = 'sale') => render(kind).find((n) => n.type === 'SplitButton')!;
 const choiceKeys = (button: Node) => (button.props.choices as { key: string }[]).map((c) => c.key);
 const savedBar = (nodes: Node[]) => nodes.find((n) => n.type === 'div' && String(n.props.className).includes('saved-strip'));
-const lineItems = (nodes: Node[]) => nodes.filter((n) => n.type === 'SearchCombo' && n.props.ariaLabel === 'item').map((n) => n.props.value);
+const lineItems = (nodes: Node[]) => nodes.filter((n) => n.type === 'ItemPicker' && n.props.ariaLabel === 'item').map((n) => n.props.value);
 function pickSample(kind: 'sale' | 'purchase' = 'sale') {
-  invoke(render(kind).find((n) => n.type === 'SearchCombo' && n.props.ariaLabel === 'item')!.props.onChange, fixture.item.id);
+  invoke(render(kind).find((n) => n.type === 'ItemPicker' && n.props.ariaLabel === 'item')!.props.onChange, fixture.item.id);
 }
 
 /** The editor opened on a draft saved earlier (the edit-invoice page). */
@@ -118,7 +124,7 @@ function leavePage() { fixture.states = []; fixture.first = true; fixture.effect
 beforeEach(() => {
   fixture.states = []; fixture.cursor = 0; fixture.first = true; fixture.effects = [];
   fixture.permissions = undefined; fixture.steps = []; fixture.toasts = []; fixture.reloads = 0;
-  fixture.checked = []; fixture.askOnOpen = []; fixture.promptFor = []; fixture.waits = [];
+  fixture.checked = []; fixture.askOnOpen = []; fixture.promptFor = []; fixture.waits = []; fixture.focused = [];
   vi.clearAllMocks();
 });
 afterEach(() => { vi.unstubAllGlobals(); });
@@ -135,6 +141,41 @@ function stubWindow(confirm = true) {
   vi.stubGlobal('document', { querySelector: () => null });
   return keys;
 }
+
+it('puts an item added from the item box straight on the line, priced, with a new empty line after it (1.4.2)', async () => {
+  open();
+  const made = { ...fixture.item, id: 'made', code: 'I-0099', salePrice: 1750, saleCurrency: 'IQD' };
+  invoke(render().find((n) => n.type === 'ItemPicker' && n.props.ariaLabel === 'item')!.props.onCreated, made);
+  const nodes = render();
+  expect(lineItems(nodes)).toEqual(['made', '']);
+  expect(nodes.find((n) => n.type === 'AmountInput' && n.props.ariaLabel === 'unitPrice')!.props.value).toBe(1750);
+  // the box offers it from now on, and a sale says a new item has no stock yet
+  const box = nodes.find((n) => n.type === 'ItemPicker')!;
+  expect((box.props.options as { id: string }[]).some((o) => o.id === 'made')).toBe(true);
+  expect(box.props.sale).toBe(true);
+  // it sells from the invoice's warehouse (the form can enter what is on the shelf there), and the cursor goes on to its quantity
+  expect(box.props.warehouseId).toBe('w');
+  expect(box.props.stockOnly).toBe(false);
+  expect(fixture.focused).toEqual([expect.any(Number)]);
+  await invoke(nodes.find((n) => n.type === 'SplitButton')!.props.onRun, 'draft');
+  expect(api.createInvoice).toHaveBeenCalledWith(expect.objectContaining({ lines: [{ itemId: 'made', qtyMilli: 1000, unitPrice: 1750 }] }));
+});
+
+it("puts a weighed item added from a scale's label on the line with the label's weight, in its base unit (1.4.2 review)", async () => {
+  open();
+  // made from label 2100017 01250 3 (or one already there chosen for it), even one that sells by a box of 5 kg
+  const tomato = {
+    ...fixture.item, id: 'tomato', code: 'I-0100', barcode: '2100017', unit: 'kg', salePrice: 1500, saleCurrency: 'IQD',
+    saleUnit: 'box', units: [{ unit: 'box', factorMilli: 5_000, barcode: '', salePrice: null }]
+  };
+  invoke(render().find((n) => n.type === 'ItemPicker' && n.props.ariaLabel === 'item')!.props.onCreated, tomato, 1250);
+  const nodes = render();
+  expect(lineItems(nodes)).toEqual(['tomato', '']);
+  expect(nodes.find((n) => n.type === 'QtyInput' && n.props.ariaLabel === 'qty')!.props.value).toBe(1250);
+  expect(nodes.find((n) => n.type === 'AmountInput' && n.props.ariaLabel === 'unitPrice')!.props.value).toBe(1500);
+  await invoke(nodes.find((n) => n.type === 'SplitButton')!.props.onRun, 'draft');
+  expect(api.createInvoice).toHaveBeenCalledWith(expect.objectContaining({ lines: [{ itemId: 'tomato', qtyMilli: 1250, unitPrice: 1500 }] }));
+});
 
 it.each([
   ['USD', 'IQD', 1000, 14200],
@@ -165,11 +206,11 @@ it('asks for the customer price at the invoice\'s own rate when the item is pric
   open();
   invoke(render().find((n) => n.type === 'button' && n.props.children === 'usdName')!.props.onClick);
   invoke(render().find((n) => n.type === 'input' && n.props['aria-label'] === 'rate')!.props.onChange, { target: { value: '1500' } });
-  invoke(render().find((n) => n.type === 'SearchCombo' && n.props.ariaLabel === 'item')!.props.onChange, fixture.item.id);
+  invoke(render().find((n) => n.type === 'ItemPicker' && n.props.ariaLabel === 'item')!.props.onChange, fixture.item.id);
   expect(pricesApi.priceFor).toHaveBeenLastCalledWith('sample', null, 'USD', 150000);
   // the same currency needs no conversion, so no rate is sent
   invoke(render().find((n) => n.type === 'button' && n.props.children === 'iqdName')!.props.onClick);
-  invoke(render().find((n) => n.type === 'SearchCombo' && n.props.ariaLabel === 'item')!.props.onChange, fixture.item.id);
+  invoke(render().find((n) => n.type === 'ItemPicker' && n.props.ariaLabel === 'item')!.props.onChange, fixture.item.id);
   expect(pricesApi.priceFor).toHaveBeenLastCalledWith('sample', null, 'IQD', null);
 });
 

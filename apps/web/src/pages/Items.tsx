@@ -1,12 +1,13 @@
 import { useEffect, useRef, useState } from 'react';
 import { formatQty, MAX_ITEM_UNITS, roundHalfUp, UNITS, unitsForBusiness, type CurrencyCode, type Names, type UnitCode } from '@qasa/core';
-import { api, type ItemInput, type ItemView, type WarehouseView } from '../api.ts';
+import { api, type ItemInput, type ItemView, type StockCorrectionResult, type WarehouseView } from '../api.ts';
 import { EmptyState, AmountInput, ErrorBox, Icon, Modal, QtyInput, downloadCsv, useData, useLandHome, useLoad, useMay, useToast } from '../components.tsx';
 import { inUnits } from '../industry/units.ts';
 import { batchesApi } from '../industry/batches-api.ts';
 import { brandLabel, brandsApi, categoriesApi, categoryLabel, type BrandView, type CategoryView } from '../industry/categories-api.ts';
 import { BrandForm, BrandPicker, CategoryOptions, countryName, StarterListButton } from '../industry/CatalogPickers.tsx';
 import { ReorderList } from '../industry/ReorderList.tsx';
+import { Amount, DualRateHint } from '../Amount.tsx';
 import { ExpiryChip } from './Expiry.tsx';
 import { useI18n, type I18n, isKey, type Key } from '../i18n.ts';
 import { go, href } from '../router.ts';
@@ -14,6 +15,7 @@ import { ImagePicker, ItemImage, NewItemPicture, saveItemPicture, type PreparedP
 import { NameField } from '../industry/NameField.tsx';
 import { WholesalePriceField } from '../industry/WholesalePriceField.tsx';
 import { printDocument } from '../industry/printing.ts';
+import { StockCorrection, StockCorrectionFor } from '../industry/StockCorrection.tsx';
 
 /**
  * What an item form sends for batches and expiry dates. What the form shows is sent, once it knows the company's
@@ -55,6 +57,8 @@ export function Items({ tab: initialTab }: { tab?: 'reorder' | 'warehouses' } = 
   const [categoryId, setCategoryId] = useState('');
   const [brandId, setBrandId] = useState('');
   const [editing, setEditing] = useState<ItemView | 'new' | null>(null);
+  // 1.4.2: "Correct stock" from a row: the item it is for
+  const [correcting, setCorrecting] = useState<string | null>(null);
   const [newWarehouse, setNewWarehouse] = useState(false);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [bulkCategory, setBulkCategory] = useState('');
@@ -145,6 +149,7 @@ export function Items({ tab: initialTab }: { tab?: 'reorder' | 'warehouses' } = 
               <ErrorBox error={bulkError} />
             </div>
           )}
+          <DualRateHint />
           <ErrorBox error={items.error} />
           <div className="card">
             {items.data && items.data.length === 0 && (q.trim() || warehouseId || categoryId || brandId
@@ -161,7 +166,7 @@ export function Items({ tab: initialTab }: { tab?: 'reorder' | 'warehouses' } = 
                     {cost && <th className="amount">{t('avgCost')}</th>}
                     {cost && <th className="amount">{t('stockValue')}</th>}
                     <th className="amount">{t('salePrice')}</th>
-                    <th style={{ width: 44 }} />
+                    <th style={{ width: 84 }} />
                   </tr>
                 </thead>
                 <tbody>
@@ -189,9 +194,14 @@ export function Items({ tab: initialTab }: { tab?: 'reorder' | 'warehouses' } = 
                         {it.trackStock && it.units.length > 0 && it.qtyMilli > 0 && <div className="muted small">{inUnits(i18n, it, it.qtyMilli)}</div>}
                       </td>
                       {cost && <td className="amount">{it.trackStock && it.qtyMilli > 0 ? i18n.money(averageCost(it.qtyMilli, it.value ?? 0), 'IQD') : ''}</td>}
-                      {cost && <td className="amount">{it.trackStock ? i18n.money(it.value ?? 0, 'IQD') : ''}</td>}
-                      <td className="amount">{i18n.money(it.salePrice, it.saleCurrency)}</td>
-                      <td>
+                      {cost && <td className="amount">{it.trackStock ? <Amount value={it.value ?? 0} /> : ''}</td>}
+                      <td className="amount"><Amount value={it.salePrice} currency={it.saleCurrency} /></td>
+                      <td style={{ whiteSpace: 'nowrap' }}>
+                        {can('adjustment') && it.trackStock && it.active && (
+                          <button type="button" className="btn icon ghost" title={t('sc_title')} aria-label={t('sc_title')} onClick={(e) => { e.stopPropagation(); setCorrecting(it.id); }}>
+                            <Icon name="clipboard" size={16} />
+                          </button>
+                        )}
                         {can('item') && (
                           <button type="button" className="btn icon ghost" title={t('actEdit')} aria-label={t('actEdit')} onClick={(e) => { e.stopPropagation(); setEditing(it); }}>
                             <Icon name="edit" size={16} />
@@ -203,7 +213,7 @@ export function Items({ tab: initialTab }: { tab?: 'reorder' | 'warehouses' } = 
                 </tbody>
                 {cost && (
                   <tfoot>
-                    <tr><td /><td /><td>{t('total')}</td><td /><td /><td className="amount">{i18n.money(totalValue, 'IQD')}</td><td /><td /></tr>
+                    <tr><td /><td /><td>{t('total')}</td><td /><td /><td className="amount"><Amount value={totalValue} /></td><td /><td /></tr>
                   </tfoot>
                 )}
               </table>
@@ -230,7 +240,7 @@ export function Items({ tab: initialTab }: { tab?: 'reorder' | 'warehouses' } = 
                       <td><span className="tree-code">{w.code}</span></td>
                       <td>{i18n.name(w.name)}</td>
                       <td>{books ? <a href={href(`statement/${w.accountCode}`)} className="ltr">{w.accountCode}</a> : <span className="ltr">{w.accountCode}</span>}</td>
-                      {cost && <td className="amount">{i18n.money(w.value ?? 0, 'IQD')}</td>}
+                      {cost && <td className="amount"><Amount value={w.value ?? 0} /></td>}
                     </tr>
                   ))}
                 </tbody>
@@ -241,6 +251,7 @@ export function Items({ tab: initialTab }: { tab?: 'reorder' | 'warehouses' } = 
       )}
 
       {editing && <ItemForm item={editing === 'new' ? null : editing} onClose={() => setEditing(null)} onSaved={() => { setEditing(null); items.reload(); }} />}
+      {correcting && <StockCorrectionFor itemId={correcting} onClose={() => setCorrecting(null)} onDone={() => { setCorrecting(null); items.reload(); }} />}
       {newWarehouse && <WarehouseForm onClose={() => setNewWarehouse(false)} onSaved={() => { setNewWarehouse(false); warehouses.reload(); }} />}
     </div>
   );
@@ -777,6 +788,9 @@ export function ItemDetail({ id }: { id: string }) {
   const i18n = useI18n();
   const { t } = i18n;
   const [editing, setEditing] = useState(false);
+  // 1.4.2: correcting its stock, and the document the last correction made (said until the page is left)
+  const [correcting, setCorrecting] = useState(false);
+  const [corrected, setCorrected] = useState<StockCorrectionResult | null>(null);
   const can = useMay();
   const { seesBooks } = useData();
   const { data, error, reload } = useLoad(() => api.item(id), [id]);
@@ -788,7 +802,10 @@ export function ItemDetail({ id }: { id: string }) {
   const cost = it.value !== undefined;
   const sourceKey = (s: string) => (isKey(`src_${s}`) ? (`src_${s}` as Key) : null);
   // opening stock and transfers open their stock document; everything else came from an invoice or a return
-  const sourcePath = (s: string, id: string) => (s.startsWith('opening') || s.startsWith('transfer') ? `stock-doc/${id}` : `invoice/${id}`);
+  const sourcePath = (s: string, id: string) => (s.startsWith('opening') || s.startsWith('transfer') ? `stock-doc/${id}`
+    : s.startsWith('adjustment') ? `stock-adjustment/${id}` : `invoice/${id}`);
+  const docPath = (r: StockCorrectionResult) => (r.document.type === 'adjustment' ? `stock-adjustment/${r.document.id}`
+    : r.document.type === 'stock_doc' ? `stock-doc/${r.document.id}` : `invoice/${r.document.id}`);
   // a move opens its document for someone who may open it: the purchases and the stock documents are not a cashier's
   // (those addresses land on the home page), their own sales and sales returns are
   const opens = (s: string) => seesBooks !== false || s.startsWith('sale');
@@ -798,6 +815,7 @@ export function ItemDetail({ id }: { id: string }) {
       <div className="row no-print">
         <button type="button" className="btn" onClick={() => history.back()}>{t('back')}</button>
         <span className="spacer" />
+        {can('adjustment') && it.trackStock && it.active && <button type="button" className="btn" onClick={() => setCorrecting(true)}><Icon name="clipboard" size={16} />{t('sc_title')}</button>}
         {can('item') && <button type="button" className="btn" onClick={() => setEditing(true)}><Icon name="edit" size={16} />{t('actEdit')}</button>}
         <button type="button" className="btn" onClick={() => void printDocument('report')}><Icon name="printer" size={16} />{t('print')}</button>
       </div>
@@ -808,7 +826,7 @@ export function ItemDetail({ id }: { id: string }) {
           <div className="stack" style={{ gap: 6, minWidth: 0 }}>
             <div className="label"><span className="ltr">{it.code}</span>{it.barcode && <> · <span className="ltr">{it.barcode}</span></>}</div>
             <div className="value" style={{ fontSize: 20, whiteSpace: 'normal' }}>{i18n.name(it.name)}</div>
-            <div className="muted small">{t('salePrice')}: {i18n.money(it.salePrice, it.saleCurrency)} / {unitName(i18n, it.unit)}</div>
+            <div className="muted small">{t('salePrice')}: <Amount value={it.salePrice} currency={it.saleCurrency} inline /> / {unitName(i18n, it.unit)}</div>
           </div>
         </div>
         <div className="card pad tile">
@@ -820,14 +838,28 @@ export function ItemDetail({ id }: { id: string }) {
           <div className="card pad tile">
             <div className="label">{t('avgCost')}</div>
             <div className="value num" style={{ fontSize: 18 }}>{it.trackStock ? i18n.money(averageCost(it.qtyMilli, it.value), 'IQD') : '—'}</div>
-            {it.trackStock && <div className="muted small">{t('stockValue')}: {i18n.money(it.value, 'IQD')}</div>}
+            {it.trackStock && <div className="muted small">{t('stockValue')}: <Amount value={it.value} inline /></div>}
           </div>
         )}
       </div>
 
+      {corrected && (
+        <div className={'alert no-print ' + (corrected.posted ? 'ok' : 'warn')} role="status">
+          <div className="row" style={{ gap: 8 }}>
+            <span>
+              {corrected.posted ? t('sc_done', { doc: corrected.document.number ?? '' }) : t(corrected.document.type === 'stock_doc' ? 'sc_waitingOpening' : 'sc_waiting')}
+              {' '}<span className="num">({corrected.diffMilli > 0 ? '+' : '−'}{qtyText(i18n, Math.abs(corrected.diffMilli))} {unitName(i18n, it.unit)})</span>
+            </span>
+            <span className="spacer" />
+            <a className="btn small" href={href(docPath(corrected))}>{t('sc_openDoc')}</a>
+          </div>
+        </div>
+      )}
+
       <div className="no-print"><WholesalePriceField itemId={it.id} /></div>
 
-      {it.trackBatches && <ItemBatches itemId={it.id} />}
+      {/* (read again after a stock correction: it may have brought a batch in) */}
+      {it.trackBatches && <ItemBatches key={corrected?.document.id ?? ''} itemId={it.id} />}
 
       {it.stock.length > 1 && (
         <div className="card">
@@ -876,6 +908,7 @@ export function ItemDetail({ id }: { id: string }) {
       </div>
 
       {editing && <ItemForm item={it} onClose={() => setEditing(false)} onSaved={() => { setEditing(false); reload(); }} />}
+      {correcting && <StockCorrection item={it} onClose={() => setCorrecting(false)} onDone={(r) => { setCorrecting(false); setCorrected(r); reload(); }} />}
     </div>
   );
 }

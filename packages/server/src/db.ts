@@ -5,7 +5,7 @@ import { DatabaseSync } from 'node:sqlite';
 import { brandKey, DEFAULT_POSTING_ACCOUNTS, IRAQI_UNIFIED_CHART, STARTER_SUB_ACCOUNTS } from '@qasa/core';
 import { AppError } from './errors.ts';
 import {
-  MYSQL_TABLES, MYSQL_TRIGGERS, mysqlCollations, mysqlTableSql, pendingMysqlSteps, V10_MYSQL_STEPS, V11_MYSQL_STEPS, V12_MYSQL_STEPS, V13_MYSQL_STEPS, type MysqlCollations, type MysqlStep
+  MYSQL_TABLES, MYSQL_TRIGGERS, mysqlCollations, mysqlTableSql, pendingMysqlSteps, V10_MYSQL_STEPS, V11_MYSQL_STEPS, V12_MYSQL_STEPS, V13_MYSQL_STEPS, V14_MYSQL_STEPS, type MysqlCollations, type MysqlStep
 } from './schema-mysql.ts';
 
 export type SqlParam = null | number | bigint | string | Uint8Array;
@@ -1759,13 +1759,21 @@ const V13 =
   ALTER TABLE pos_sales ADD COLUMN tendered INTEGER CHECK (tendered IS NULL OR tendered >= 0);
   `;
 
+const V14 =
+  // 14 — the sign-in check's known places (auth.ts, knownPlaces) read an account's sign-ins from the audit log, newest
+  // first: this index finds them without scanning the whole append-only log
+  `
+  CREATE INDEX IF NOT EXISTS audit_log_user_login ON audit_log(entity, entity_id, action, id);
+  `;
+
 const MIGRATIONS: Migration[] = [
   { sql: V1 }, { sql: V2, rebuild: true }, { sql: V3, rebuild: true }, { sql: V4 }, { sql: V5, rebuild: true },
   { sql: V6, mysql: 'tables' }, { sql: V7, mysql: 'tables' }, { sql: V8, mysql: 'tables' }, { sql: V9, mysql: 'tables' },
   { sql: V10, mysql: { tables: true, steps: () => V10_MYSQL_STEPS } },
   { sql: V11, mysql: { tables: true, steps: () => V11_MYSQL_STEPS }, data: (db) => { movePartBrands(db); movePartReorder(db); } },
   { sql: V12, mysql: { tables: true, steps: () => V12_MYSQL_STEPS } },
-  { sql: V13, mysql: { tables: true, steps: () => V13_MYSQL_STEPS } }
+  { sql: V13, mysql: { tables: true, steps: () => V13_MYSQL_STEPS } },
+  { sql: V14, mysql: { tables: true, steps: () => V14_MYSQL_STEPS } }
 ];
 
 /** Server databases began at this version: its schema is in schema-mysql.ts (tables and triggers without `since`). */
@@ -2002,14 +2010,16 @@ function createSinceObjects(db: Db, version: number, collations: MysqlCollations
   for (const trigger of MYSQL_TRIGGERS.filter((t) => t.since === version && !triggers.has(t.name))) db.exec(trigger.sql);
 }
 
-/** The columns and foreign keys a server database has, for the migration steps to skip what is done. */
-function mysqlSchemaState(db: Db): { columns: Set<string>; foreignKeys: Set<string> } {
+/** The columns, foreign keys and indexes a server database has, for the migration steps to skip what is done. */
+function mysqlSchemaState(db: Db): { columns: Set<string>; foreignKeys: Set<string>; indexes: Set<string> } {
   const columns = new Set((db.prepare('SELECT table_name AS t, column_name AS c FROM information_schema.columns WHERE table_schema = DATABASE()').all() as { t: string; c: string }[])
     .map((r) => `${r.t}.${r.c}`));
   const foreignKeys = new Set((db.prepare(`SELECT table_name AS t, column_name AS c, referenced_table_name AS p FROM information_schema.key_column_usage
                                            WHERE table_schema = DATABASE() AND referenced_table_name IS NOT NULL`).all() as { t: string; c: string; p: string }[])
     .map((r) => `${r.t}.${r.c}>${r.p}`));
-  return { columns, foreignKeys };
+  const indexes = new Set((db.prepare('SELECT DISTINCT table_name AS t, index_name AS i FROM information_schema.statistics WHERE table_schema = DATABASE()').all() as { t: string; i: string }[])
+    .map((r) => `${r.t}.${r.i}`));
+  return { columns, foreignKeys, indexes };
 }
 
 /** The company tables already in a server database (a Qasa company, or something else that must not be touched). */

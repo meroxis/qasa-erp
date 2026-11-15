@@ -13,10 +13,10 @@ import { LinkError, OfficeLink, type LinkState, type OfficeInfo, type Route as L
 import { ListsCtx, type Lists } from './src/lists';
 import { shouldLock, type LockSettings } from './src/lock';
 import { canGoBack, current, initialNav, navigate, type Tab } from './src/nav';
-import { Outbox, type OutboxItem, type OutboxKind, type OutboxSummary } from './src/outbox';
+import { Outbox, receiptPosted, type OutboxItem, type OutboxKind, type OutboxSummary } from './src/outbox';
 import { readPairingCode } from './src/pairing';
 import { toB64, type KeyPair } from './src/protocol';
-import { featuresOf, type Feature, type Me } from './src/roles';
+import { featuresOf, lockRequired, type Feature, type Me } from './src/roles';
 import {
   loadLang, loadLock, loadMe, loadName, loadOffice, loadTheme, outboxStorage, phoneKey, saveLang, saveLock, saveMe, saveName, saveOffice, saveTheme, wipePairing
 } from './src/store';
@@ -134,21 +134,32 @@ function Main() {
   const api = useMemo(() => (link ? officeApi(link) : null), [link]);
 
   /** One change from the outbox to the office, with its own key (`last` keeps the office's answer for the screen). */
-  const sender = useCallback((last?: { e: unknown }) => async (item: OutboxItem) => {
+  const sender = useCallback((last?: { e: unknown; b?: unknown }) => async (item: OutboxItem): Promise<unknown> => {
     if (!api) throw new LinkError('closed');
     try {
-      if (item.kind === 'sale') await api.draftSale(item.body, item.id);
-      else if (item.kind === 'order') await api.order(item.body, item.id);
-      else if (item.kind === 'receipt') await api.receipt(item.body, item.id);
-      else if (item.kind === 'count') await api.sendCount(item.body, item.id);
-      else await api.countInto(item.target ?? '', item.body, item.id);
+      let answer: unknown;
+      if (item.kind === 'sale') answer = await api.draftSale(item.body, item.id);
+      else if (item.kind === 'order') answer = await api.order(item.body, item.id);
+      else if (item.kind === 'receipt') answer = await api.receipt(item.body, item.id);
+      else if (item.kind === 'count') answer = await api.sendCount(item.body, item.id);
+      else answer = await api.countInto(item.target ?? '', item.body, item.id);
+      if (last) last.b = answer;
+      return answer;
     } catch (e) {
       if (last) last.e = e;
       throw e;
     }
   }, [api]);
 
-  const replay = useCallback(() => { if (api) void outbox.replay(sender()).catch(() => {}); }, [api, outbox, sender]);
+  // what waited goes by itself; receipts that went say what the office made of them (and stay under Waiting to send)
+  const replay = useCallback(() => {
+    if (!api) return;
+    void outbox.replay(sender()).then((r) => {
+      if (!r.receipts.length) return;
+      const waits = r.receipts.filter((i) => i.result === 'waiting').length;
+      setToastText({ text: waits ? t('receiptsSentWaiting', { n: waits }) : t('receiptsSentPosted', { n: r.receipts.length }), kind: 'ok' });
+    }).catch(() => {});
+  }, [api, outbox, sender, t]);
 
   // whenever the link comes up: who the phone acts as now (the admin may have changed the role), the warehouses,
   // and what waits in the outbox
@@ -237,9 +248,9 @@ function Main() {
       async queue(kind: OutboxKind, body: unknown, summary: OutboxSummary, target?: string) {
         // kept (encrypted) before the first try: nothing is lost if the answer never comes
         const item = await outbox.add(kind, body, summary, target);
-        const last: { e: unknown } = { e: null };
+        const last: { e: unknown; b?: unknown } = { e: null };
         const outcome = await outbox.sendOne(item.id, sender(last));
-        if (outcome === 'sent') return 'sent';
+        if (outcome === 'sent') return kind === 'receipt' && receiptPosted(last.b) ? 'posted' : 'sent';
         if (outcome === 'wait') return 'queued';
         // refused at once, on the screen that made it: shown there, not kept
         await outbox.remove(item.id);
@@ -318,6 +329,8 @@ function Main() {
   if (!ctx) return <LookCtx.Provider value={look}>{bar}{spinner}</LookCtx.Provider>;
 
   const route = current(nav);
+  // a phone acting as an admin or a user who sees the figures keeps a PIN: nothing else opens until it has one
+  const pinNeeded = lockRequired(me) && !lock.pin;
   const tabs: { tab: Tab; icon: IconName; label: string; badge?: number; on: boolean }[] = [
     { tab: 'home', icon: 'home', label: t('tabHome'), on: true },
     { tab: 'items', icon: 'box', label: t('tabItems'), on: can('lookup') },
@@ -333,7 +346,7 @@ function Main() {
           <ListsCtx.Provider value={lists}>
             {bar}
             <View style={{ flex: 1, backgroundColor: look.p.bg }}>
-              <View style={{ flex: 1 }}>
+              {pinNeeded ? <View style={{ flex: 1 }}><SecurityScreen required /></View> : <View style={{ flex: 1 }}>
                 {route.name === 'home' && <Home />}
                 {route.name === 'items' && <ItemsScreen />}
                 {route.name === 'scan' && <ScanScreen purpose={route.purpose} />}
@@ -349,8 +362,8 @@ function Main() {
                 {route.name === 'outbox' && <OutboxScreen />}
                 {route.name === 'security' && <SecurityScreen />}
                 {route.name === 'about' && <AboutScreen />}
-              </View>
-              {route.name !== 'scan' && (
+              </View>}
+              {route.name !== 'scan' && !pinNeeded && (
                 <TabBar tabs={tabs.filter((x) => x.on)} current={nav.tab} onPress={(tab) => dispatch({ type: 'tab', tab })} />
               )}
               {toastText ? <Toast text={toastText.text} kind={toastText.kind} above={route.name !== 'scan'} /> : null}

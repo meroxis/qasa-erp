@@ -6,6 +6,7 @@ import { ApprovalButtons, ApprovalNote, OwnVoucherButtons, VoucherStateChip } fr
 import { useI18n } from '../i18n.ts';
 import { go, href } from '../router.ts';
 import { DesignedPrint } from '../industry/PrintDocument.tsx';
+import { Amount } from '../Amount.tsx';
 import { reverseDefaultDate } from '../industry/ReverseModal.tsx';
 import { entryModel } from '../industry/print-model.ts';
 import { printDocument } from '../industry/printing.ts';
@@ -139,7 +140,7 @@ export function EntryDetail({ id }: { id: string }) {
           {/* An invoice posting mixes the sale with its cost, so its total is not an amount anyone pays — the invoice shows that. */}
           {!e.invoiceId && !e.stockDocId && (
             <>
-              <div className="row"><span className="muted" style={{ width: 130 }}>{t('amount')}</span><strong style={{ fontSize: 18 }} className="num">{i18n.money(e.total, e.currency)}</strong>
+              <div className="row"><span className="muted" style={{ width: 130 }}>{t('amount')}</span><strong style={{ fontSize: 18 }} className="num">{e.currency === 'IQD' ? <Amount value={e.total} date={e.date} inline /> : i18n.money(e.total, e.currency)}</strong>
                 {e.currency === 'USD' && <span className="muted">({t('iqdEquivalent')}: {i18n.money(e.baseTotal, 'IQD')})</span>}
               </div>
               <div className="row" style={{ alignItems: 'flex-start' }}><span className="muted" style={{ width: 130, paddingTop: 10 }}>{t('inWords')}</span><div className="words" style={{ flex: 1 }}>{i18n.digitsOf(amountInWords(e.total, e.currency, i18n.lang))}</div></div>

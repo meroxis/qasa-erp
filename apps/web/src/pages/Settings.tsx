@@ -1,9 +1,9 @@
-import { useEffect, useRef, useState } from 'react';
-import { formatAmount, htmlLang, MONTHS, rateFromX100, todayIso, toWesternDigits, type DigitStyle, type Lang, type Names, type PostingAccounts } from '@qasa/core';
+import { useContext, useEffect, useRef, useState } from 'react';
+import { DEFAULT_AMOUNTS_SHOW, formatAmount, htmlLang, MONTHS, rateFromX100, todayIso, toWesternDigits, type AmountsShow, type DigitStyle, type Lang, type Names, type PostingAccounts } from '@qasa/core';
 import {
   api, ApiError, currentUser, request, setCurrentUser, type BackupStatus, type DatabaseCheck, type DatabaseInput, type DatabaseStatus, type NetworkStatus, type YearEndStatus
 } from '../api.ts';
-import { AccountCombo, ErrorBox, Icon, LANGUAGE_NAMES, Modal, downloadCsv, useBuildHas, useData, useDisplay, useLoad, useToast, type Density, type Theme } from '../components.tsx';
+import { AccountCombo, DataContext, ErrorBox, Icon, LANGUAGE_NAMES, Modal, downloadCsv, useBuildHas, useData, useDisplay, useLoad, useToast, type Density, type Theme } from '../components.tsx';
 import { ChoiceTiles, type Choice } from '../ChoiceTiles.tsx';
 import { isKey, useI18n, type Key } from '../i18n.ts';
 import { auditAction, auditEntity, auditRef } from '../industry/audit-words.ts';
@@ -240,7 +240,7 @@ function SettingsSectionContent({ id, admin }: { id: string; admin: boolean }) {
     case 'about':
       return <><AboutDataPlace /><HelpPanel /><LegalPanel /></>;
     default:
-      return <DisplaySettings />;
+      return <DisplaySettings admin={admin} />;
   }
 }
 
@@ -252,7 +252,7 @@ const LANGUAGE_SAMPLES: Record<Lang, string> = { ar: 'ع', en: 'A', ku: 'ک' };
  * The languages come from the app's one list (LANGUAGE_NAMES), each by its own name, and change the language the same
  * way as everywhere else (setLang: the whole app at once, remembered on this PC, the Windows app's menus too).
  */
-export function DisplaySettings() {
+export function DisplaySettings({ admin = false }: { admin?: boolean }) {
   const { t, lang, setLang, digits, setDigits } = useI18n();
   const { theme, density, setTheme, setDensity } = useDisplay();
   const languages: Choice<Lang>[] = LANGUAGE_NAMES.map(([l, label]) => ({ value: l, label, sample: LANGUAGE_SAMPLES[l], lang: htmlLang(l) }));
@@ -306,8 +306,58 @@ export function DisplaySettings() {
           </div>
         </div>
         <GraphicsSetting />
+        {admin && <AmountsShowSetting />}
       </div>
     </section>
+  );
+}
+
+/**
+ * Settings → Language and display → Show amounts in, for admins: dinar only (as always), dinar and dollar, or dollar and
+ * dinar. One choice for the whole company (kept with its settings on the server), saved as soon as it is picked.
+ */
+export function AmountsShowSetting() {
+  const { t } = useI18n();
+  const toast = useToast();
+  // (the rest of the display section needs no company data: this row waits for it rather than failing without it)
+  const data = useContext(DataContext);
+  const settings = data?.settings ?? null;
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<unknown>(null);
+  if (!data) return null;
+  const { reloadSettings } = data;
+  // an office server from before this choice sends none and would ignore it (a save would seem to work and do nothing):
+  // the choice is shown, dinar only, and can't be changed until the server is updated
+  const oldServer = !!settings && settings.amountsShow === undefined;
+  const iqd = t('iqdShort');
+  const options: Choice<AmountsShow>[] = [
+    { value: 'iqd', label: t('am_iqd'), sample: iqd },
+    { value: 'iqd_usd', label: t('am_iqdUsd'), sample: `${iqd} + $` },
+    { value: 'usd_iqd', label: t('am_usdIqd'), sample: `$ + ${iqd}`, hint: t('am_usdIqdHint') }
+  ];
+  async function choose(amountsShow: AmountsShow) {
+    setBusy(true);
+    setError(null);
+    try {
+      await api.updateSettings({ amountsShow });
+      await reloadSettings();
+      toast(t('saved'));
+    } catch (e) {
+      setError(e);
+    } finally {
+      setBusy(false);
+    }
+  }
+  return (
+    <div className="setting" data-setting="amounts-show">
+      <Icon name="wallet" size={20} className="setting-icon" />
+      <div className="setting-text"><strong>{t('am_show')}</strong><span>{t('am_showHelp')}</span></div>
+      <div className="setting-ctl">
+        <ChoiceTiles label={t('am_show')} value={settings?.amountsShow ?? DEFAULT_AMOUNTS_SHOW} options={options} onChange={(v) => void choose(v)} busy={busy} disabled={!settings || oldServer} />
+        {oldServer && <p className="small muted" data-note="amounts-show-old-server">{t('am_oldServer')}</p>}
+        <ErrorBox error={error} />
+      </div>
+    </div>
   );
 }
 
@@ -482,6 +532,21 @@ function OfficeNetworkCard() {
     }
   }
 
+  // a new office certificate: the old key may be in a copy somewhere (a backup of the app's folder, an old PC); every PC
+  // pairs again with the new code
+  async function renewCertificate() {
+    setBusy(true);
+    setError(null);
+    try {
+      setStatus(await request<NetworkStatus>('POST', '/api/network/certificate', {}));
+      toast(t('netNewCertDone'));
+    } catch (e) {
+      setError(e);
+    } finally {
+      setBusy(false);
+    }
+  }
+
   const address = (a: string) => (status && status.port !== 47420 ? `${a}:${status.port}` : a);
   return (
     <div className="card pad stack">
@@ -511,6 +576,14 @@ function OfficeNetworkCard() {
           <p className="muted small" style={{ margin: 0 }}>{t('netFirewall')}</p>
           <p className="muted small" style={{ margin: 0 }}>{t('netSignedIn', { n: digitsOf(String(status.signedIn)) })}</p>
           <RelaySection status={status as NetworkStatus & RelayFields} onChange={setStatus} />
+          <div className="stack" style={{ gap: 6, borderBlockStart: '1px solid var(--line)', paddingBlockStart: 14, marginBlockStart: 4 }}>
+            <p className="muted small" style={{ margin: 0 }}>{t('netNewCertHelp')}</p>
+            <div>
+              <button type="button" className="btn small" disabled={busy} onClick={() => { if (window.confirm(t('netNewCertConfirm'))) void renewCertificate(); }}>
+                {t('netNewCert')}
+              </button>
+            </div>
+          </div>
         </div>
       )}
       <ErrorBox error={error} />
@@ -1407,12 +1480,60 @@ interface PhonesStatus {
 }
 
 /**
- * The phone app is not in 1.0 (owner's decision): Settings → Phones says it is coming and offers no pairing. The
- * pairing below stays in the code for the release that ships the app; phones paired before can still be removed.
+ * The phone app ships with 1.4.2 (owner's decision): an Android APK downloaded from qasaerp.com/phone/ (Google Play
+ * later), so Settings → Phones offers it and the pairing. With `ready` false the card only says it is coming.
  */
-export const PHONE_APP_READY = false;
+export const PHONE_APP_READY = true;
 
-/** Pairing a phone: a QR code the phone app scans, with this PC's key and a one-time secret (10 minutes). */
+/**
+ * Where the phone app is downloaded (the page in the app's language: Arabic at /phone/, English and Kurdish under
+ * /en/ and /ku/), and what a careful user can check the downloaded APK against. 1.0.1 is the first build offered: it
+ * asks for the PIN that can't be turned off (an admin, the owner, a user who sees the figures).
+ */
+export const PHONE_APP = {
+  url: 'https://qasaerp.com/phone/',
+  urls: { ar: 'https://qasaerp.com/phone/', en: 'https://qasaerp.com/en/phone/', ku: 'https://qasaerp.com/ku/phone/' } as Record<Lang, string>,
+  version: '1.0.1',
+  apkSha256: '636e0025a5d0e909d14c3305b225bd7ea8a61fa69d3c2cefc759502f5438194b',
+  // what `apksigner verify --print-certs` shows as "certificate SHA-256 digest" (CN=Meroxis, O=Meroxis, C=IQ)
+  certSha256: '6d8fb6a65d85d9f82b026b5ef6aa00acfd956cef63d555cf6fffd3596a4b3129'
+} as const;
+
+/** Getting the phone app: the download page as a link and a QR code, the steps, and the fingerprints to check. */
+export function GetPhoneApp() {
+  const { t, lang } = useI18n();
+  const url = PHONE_APP.urls[lang] ?? PHONE_APP.url;
+  const qr = qrSvgPath(encodeQr(url, 'M'), 4);
+  return (
+    <div className="row" style={{ gap: 20, alignItems: 'flex-start', flexWrap: 'wrap' }}>
+      <svg viewBox={`0 0 ${qr.size} ${qr.size}`} width={150} height={150} role="img" aria-label={t('ph_getQrLabel')} shapeRendering="crispEdges" style={{ background: '#fff', borderRadius: 8 }}>
+        <path d={qr.path} fill="#000" />
+      </svg>
+      <div className="stack" style={{ gap: 6, flex: 1, minWidth: 240 }}>
+        <strong>{t('ph_getApp')}</strong>
+        <a href={url} target="_blank" rel="noopener noreferrer" dir="ltr">{url}</a>
+        <ol style={{ margin: 0, paddingInlineStart: 20 }}>
+          <li>{t('ph_get1')}</li>
+          <li>{t('ph_get2')}</li>
+          <li>{t('ph_get3')}</li>
+          <li>{t('ph_get4')}</li>
+        </ol>
+        <details>
+          <summary className="small">{t('ph_check')}</summary>
+          <div className="stack small" style={{ gap: 4, marginTop: 6 }}>
+            <span className="muted">{t('ph_checkHelp')}</span>
+            <span>{t('ph_apkSha')}</span>
+            <code dir="ltr" style={{ wordBreak: 'break-all', userSelect: 'all' }}>{PHONE_APP.apkSha256}</code>
+            <span>{t('ph_certSha')}</span>
+            <code dir="ltr" style={{ wordBreak: 'break-all', userSelect: 'all' }}>{PHONE_APP.certSha256}</code>
+          </div>
+        </details>
+      </div>
+    </div>
+  );
+}
+
+/** Pairing a phone: a QR code the phone app scans, with this PC's key and a one-time secret (2 minutes, one phone). */
 export function PhonesCard({ ready = PHONE_APP_READY }: { ready?: boolean }) {
   const { t, digitsOf, date, dateTime, time } = useI18n();
   const toast = useToast();
@@ -1420,6 +1541,8 @@ export function PhonesCard({ ready = PHONE_APP_READY }: { ready?: boolean }) {
   const [absent, setAbsent] = useState(false);
   const [error, setError] = useState<unknown>(null);
   const [pairing, setPairing] = useState<{ code: string; expiresAt: string } | null>(null);
+  // the phones there were when the QR code was made: one more, and the code is taken off the screen at once
+  const [before, setBefore] = useState<Set<string> | null>(null);
   const [userId, setUserId] = useState('');
   const [busy, setBusy] = useState(false);
 
@@ -1438,11 +1561,18 @@ export function PhonesCard({ ready = PHONE_APP_READY }: { ready?: boolean }) {
     }, 3000);
     return () => window.clearInterval(timer);
   }, [pairing]);
+  useEffect(() => {
+    if (!pairing || !status || !before || !status.devices.some((d) => !before.has(d.id))) return;
+    setPairing(null);
+    setBefore(null);
+    toast(t('ph_paired'));
+  }, [pairing, status, before]); // eslint-disable-line react-hooks/exhaustive-deps
 
   async function pair() {
     setBusy(true);
     setError(null);
     try {
+      setBefore(new Set(status?.devices.map((d) => d.id)));
       setPairing(await request<{ code: string; expiresAt: string }>('POST', '/api/phones/pair', status?.signInRequired ? { userId } : {}));
     } catch (e) {
       setError(e);
@@ -1468,7 +1598,6 @@ export function PhonesCard({ ready = PHONE_APP_READY }: { ready?: boolean }) {
 
   if (absent) return null;
   const qr = pairing ? qrSvgPath(encodeQr(pairing.code, 'L'), 4) : null;
-  const known = new Set(status?.devices.map((d) => d.id));
   return (
     <div className="card pad stack">
       <div className="row" style={{ justifyContent: 'space-between' }}>
@@ -1477,6 +1606,7 @@ export function PhonesCard({ ready = PHONE_APP_READY }: { ready?: boolean }) {
       </div>
       <p className="muted" style={{ margin: 0 }}>{ready ? t('ph_help') : t('ph_soonNote')}</p>
       {ready && status && !status.available && <div className="alert">{t('ph_needsPro')} <a href={href('plans')}>{t('planLicense')}</a></div>}
+      {ready && status?.available && !pairing && <GetPhoneApp />}
       {status?.devices.length ? (
         <table className="table">
           <thead><tr><th>{t('ph_phone')}</th><th>{t('ph_actsAs')}</th><th>{t('ph_lastSeen')}</th><th /></tr></thead>
@@ -1524,7 +1654,6 @@ export function PhonesCard({ ready = PHONE_APP_READY }: { ready?: boolean }) {
           </button>
         </div>
       ) : null}
-      {status && pairing && status.devices.some((d) => !known.has(d.id)) && <div className="alert">{t('ph_paired')}</div>}
       {status?.counts.length ? (
         <div className="stack" style={{ gap: 6 }}>
           <h3 style={{ margin: 0 }}>{t('ph_counts')}</h3>

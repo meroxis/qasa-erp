@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { Item } from '../src/api';
 import {
-  addLine, cartCurrency, countListBody, countSessionBody, lineAmount, linesIn, orderBody, readAmount, readQty, receiptBody, saleBody, setCount, total
+  addLine, cartCurrency, countListBody, countSessionBody, lineAmount, linesIn, orderBody, paymentReady, readAmount, readQty, receiptBody, receiptPosted, saleBody, setCount, total
 } from '../src/documents';
 
 const item = (id: string, salePrice: number, saleCurrency: 'IQD' | 'USD' = 'IQD'): Item => ({
@@ -36,14 +36,30 @@ describe('what the phone sends the office', () => {
     expect(setCount(setCount([], item('a', 1), 4), item('a', 1), 6).map((l) => l.qty)).toEqual([6]);
   });
 
-  it('a sale is a draft invoice: on credit to a customer, cash from a walk-in', () => {
+  it('a sale is a draft invoice paid one way as a whole: cash (a walk-in or a named customer), or on credit to a customer', () => {
     const lines = [{ item: item('a', 5000), qty: 1.5 }];
     const base = { lines, currency: 'IQD' as const, date: '2026-11-11', warehouseId: 'w1', cashAccount: '1811', rateX100: 142_000, notes: 'phone' };
-    expect(saleBody({ ...base, customer: { id: 'c1' } })).toEqual({
+    expect(saleBody({ ...base, customer: { id: 'c1' }, payment: 'credit' })).toEqual({
       kind: 'sale', date: '2026-11-11', warehouseId: 'w1', currency: 'IQD', rateX100: 100, payment: 'credit', partyId: 'c1', discount: 0, notes: 'phone',
       lines: [{ itemId: 'a', qtyMilli: 1500, unitPrice: 5000 }]
     });
-    expect(saleBody({ ...base, customer: null, currency: 'USD' })).toMatchObject({ payment: 'cash', cashAccountCode: '1811', rateX100: 142_000 });
+    const walkIn = saleBody({ ...base, customer: null, currency: 'USD', payment: 'cash' });
+    expect(walkIn).toMatchObject({ payment: 'cash', cashAccountCode: '1811', rateX100: 142_000 });
+    expect(walkIn).not.toHaveProperty('partyId');
+    // a customer who pays now: cash into the safe, the customer named on the invoice
+    const named = saleBody({ ...base, customer: { id: 'c1' }, payment: 'cash' });
+    expect(named).toMatchObject({ payment: 'cash', partyId: 'c1', cashAccountCode: '1811' });
+    // credit needs a customer: never sent without one
+    expect(paymentReady('credit', null)).toBe(false);
+    expect(paymentReady('cash', null)).toBe(true);
+    expect(() => saleBody({ ...base, customer: null, payment: 'credit' })).toThrow();
+  });
+
+  it('a receipt the office posted at once, or one that waits (for approval, or a draft to check)', () => {
+    expect(receiptPosted({ id: 'e1', status: 'approved' })).toBe(true);
+    expect(receiptPosted({ id: 'e1', status: 'draft' })).toBe(false);
+    expect(receiptPosted(null)).toBe(false);
+    expect(receiptPosted(undefined)).toBe(false);
   });
 
   it('an order is a quote for the customer; a receipt is a draft voucher crediting the customer\'s account', () => {

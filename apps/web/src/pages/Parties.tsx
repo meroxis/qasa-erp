@@ -11,6 +11,7 @@ import { isLang, todayIso, type Lang } from '@qasa/core';
 import { printDocument } from '../industry/printing.ts';
 import { QuickVoucherButton } from '../industry/QuickVoucher.tsx';
 import { oweLines, oweTone, oweWords, partiesApi, partyOwes, type PartySort, type PartyTotals } from '../industry/parties-api.ts';
+import { Amount, DualRateHint, useDual } from '../Amount.tsx';
 
 /**
  * 1.4: what one customer or supplier owes, in words and colour instead of debit and credit: "Owes us 250,000 IQD",
@@ -27,7 +28,7 @@ export function OweAmount({ party, empty = '—' }: { party: Pick<PartyView, 'ty
       {lines.map((l) => (
         <span key={l.currency} className={`owe-line ${oweTone(party.type, l.side)}`}>
           <span className="owe-word">{i18n.t(oweWords(party.type, l.side))}</span>
-          <span className="num">{i18n.money(l.amount, l.currency)}</span>
+          <span className="num"><Amount value={l.amount} currency={l.currency} /></span>
         </span>
       ))}
     </span>
@@ -38,24 +39,29 @@ export function OweAmount({ party, empty = '—' }: { party: Pick<PartyView, 'ty
 export function PartyTotalsBar({ type, totals }: { type: PartyType; totals: PartyTotals | null }) {
   const i18n = useI18n();
   const { t } = i18n;
+  // dinar and dollar: the real amounts, and the whole in the other currency under them (Amount.tsx)
+  const dual = useDual().show !== 'iqd';
   if (!totals) return null;
   const customer = type === 'customer';
   const amounts = (a: PartyTotals['owed']) => [a.IQD ? i18n.money(a.IQD, 'IQD') : null, a.USD ? i18n.money(a.USD, 'USD') : null].filter((v): v is string => !!v);
   const owed = amounts(totals.owed);
   const advance = amounts(totals.advance);
+  const sums = (a: PartyTotals['owed'], texts: string[]) => (dual
+    ? <span className="owe-sum"><Amount value={a} /></span>
+    : texts.map((text, i) => <span key={i} className="owe-sum">{text}</span>));
   return (
     <div className="card pad owe-totals" role="status">
       <div className={'owe-total ' + (owed.length ? oweTone(type, 'owes') : '')}>
         <span className="label">{t(customer ? 's14_oweCustomer' : 's14_oweSupplier')}</span>
         {owed.length
-          ? <strong className="value num">{owed.map((a, i) => <span key={i} className="owe-sum">{a}</span>)}</strong>
+          ? <strong className="value num">{sums(totals.owed, owed)}</strong>
           : <span className="muted">{t(customer ? 's14_nothingCustomer' : 's14_nothingSupplier')}</span>}
         {owed.length > 0 && <span className="muted small">{t(customer ? 's14_owingCustomers' : 's14_owingSuppliers', { n: i18n.int(totals.owing) })}</span>}
       </div>
       {advance.length > 0 && (
         <div className={'owe-total ' + oweTone(type, 'advance')}>
           <span className="label">{t(customer ? 's14_oweCustomerAdv' : 's14_oweSupplierAdv')}</span>
-          <strong className="value num">{advance.map((a, i) => <span key={i} className="owe-sum">{a}</span>)}</strong>
+          <strong className="value num">{sums(totals.advance, advance)}</strong>
         </div>
       )}
     </div>
@@ -93,6 +99,7 @@ export function Parties({ type }: { type: PartyType }) {
         <input className="input" style={{ width: 240 }} type="search" placeholder={t('search')} aria-label={t('search')} value={q} onChange={(e) => setQ(e.target.value)} />
       </div>
       <PartyTotalsBar type={type} totals={totals.data} />
+      <DualRateHint />
       <div className="row owe-filters">
         <div className="track" role="group" aria-label={t('s14_show')}>
           <button type="button" aria-pressed={!owing} onClick={() => setOwing(false)}>{t('all')}</button>
@@ -145,6 +152,8 @@ export function Parties({ type }: { type: PartyType }) {
               ))}
             </tbody>
             <tfoot>
+              {/* (dinar only on purpose: the total in IQD at the book rates, its dollars already in dinars; the line above
+                  the list gives the real dinars and dollars and their whole in the other currency) */}
               <tr><td /><td colSpan={2}>{t('s14_totalAtRates')}</td><td className="amount">{i18n.money(total, 'IQD')}</td><td /></tr>
             </tfoot>
           </table>

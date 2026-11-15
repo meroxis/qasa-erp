@@ -187,8 +187,8 @@ describe('Settings → Language and display, as rectangles', () => {
   it('uses the rectangles for every fixed choice in Settings, and leaves lists that come from data as they were', () => {
     const src = (path: string) => readFileSync(new URL(path, import.meta.url), 'utf8');
     const settings = src('./pages/Settings.tsx');
-    // language, digits, appearance, density, and what happens to expired stock at the till
-    expect(settings.split('<ChoiceTiles').length - 1).toBe(5);
+    // language, digits, appearance, density, how the company sees amounts, and what happens to expired stock at the till
+    expect(settings.split('<ChoiceTiles').length - 1).toBe(6);
     expect(settings).toContain("label={t('ex_policy')} value={s.expiredSales}");
     expect(settings).not.toContain('className="track"');
     // graphics acceleration, the beta channel, each paper's margins, each branch's loyalty rule

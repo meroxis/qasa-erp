@@ -3,6 +3,7 @@ import type { Brief } from '../api';
 import { money, nameIn, qty } from '../i18n';
 import { Icon, type IconName } from '../icons';
 import type { Route } from '../nav';
+import { isPending } from '../outbox';
 import { actsAs } from '../roles';
 import { radius, space } from '../theme';
 import { Banner, Card, ErrorState, Group, ListItem, Screen, Section, Skeleton, Stat, Txt, useApp, useLook } from '../ui';
@@ -18,7 +19,7 @@ export function Home() {
   const { api, go, nav, can, company, me, via, state, outbox, explain } = useApp();
   const figures = can('figures');
   const brief = useLoad<Brief | null>(async () => (figures ? api.brief() : null), [figures]);
-  const waiting = outbox.filter((o) => !o.error).length;
+  const waiting = outbox.filter(isPending).length;
   const refused = outbox.filter((o) => o.error).length;
   const who = actsAs(me);
 
@@ -77,7 +78,8 @@ export function Home() {
                 <Stat icon="cart" label={t('todaySales')} value={money(b.sales.today, 'IQD', lang)}
                   note={`${t('invoicesN', { n: b.sales.invoices })} · ${t('vsLastWeek', { v: money(b.sales.sameDayLastWeek, 'IQD', lang) })}`} />
                 <Stat icon="tag" label={t('monthSales')} value={money(b.sales.month, 'IQD', lang)} />
-                <Stat icon="cash" label={t('cashTotal')} value={money(b.cash.total.IQD, 'IQD', lang)} note={b.cash.total.USD ? money(b.cash.total.USD, 'USD', lang) : undefined} />
+                {/* what the safes hold is the books (1.4): an office leaves it out for whoever may not read them */}
+                {b.cash ? <Stat icon="cash" label={t('cashTotal')} value={money(b.cash.total.IQD, 'IQD', lang)} note={b.cash.total.USD ? money(b.cash.total.USD, 'USD', lang) : undefined} /> : null}
                 <Stat icon="users" label={t('receivables')} value={money(b.receivables, 'IQD', lang)} tone={b.receivables > 0 ? 'bad' : 'ink'} />
               </View>
               {(b.approvals.waitingCheck > 0 || b.approvals.waitingApproval > 0) && (

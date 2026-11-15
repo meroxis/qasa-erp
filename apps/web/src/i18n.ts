@@ -52,6 +52,8 @@ import { SHELL14_TEXT } from './i18n/shell14.ts';
 import { PRINT14_TEXT } from './i18n/print14.ts';
 import { AR_DUAL, COUNT_TEXT, COUNT_VAR, countOf } from './i18n/counts.ts';
 import { DOC_APPROVAL_TEXT } from './i18n/doc-approval.ts';
+import { AMOUNTS_TEXT } from './i18n/amounts.ts';
+import { ITEM_QUICK_TEXT } from './i18n/item-quick.ts';
 import { formatAmount, formatDate, formatDateTime, formatInteger, formatQty, formatTime, hasLeadingSign, LANGS, ltrIsolate, monthName, textDigits, toEasternDigits, type CurrencyCode, type DigitStyle, type Lang, type Names } from '@qasa/core';
 
 /** Every UI string in Arabic, English and Kurdish (Sorani) — in that order. */
@@ -83,7 +85,7 @@ const BASE = {
   err_fa_months_not_run: ['لم يُحتسب الاندثار لكل الأشهر قبل تاريخ الاستبعاد؛ احتسبها أولاً.', 'Depreciation has not been run for every month before the disposal date; run those months first.', 'داخوران بۆ هەموو مانگەکانی پێش بەرواری دەرکردن ئەژمار نەکراوە؛ سەرەتا ئەو مانگانە ئەژمار بکە.'],
   err_fa_run_has_disposed_asset: ['هذا الشهر احتُسب لموجود استُبعد بعده؛ تراجع عن الاستبعاد أولاً.', 'This month included an asset disposed of since; take the disposal back first.', 'ئەم مانگە سامانێکی تێدایە کە دواتر دەرکراوە؛ سەرەتا دەرکردنەکە بگەڕێنەوە.'],
   err_fx_revaluation_pending: ['إعادة تقييم سابقة بانتظار المصادقة؛ صادق عليها أو احذفها أولاً.', 'An earlier revaluation is waiting for approval; approve or delete it first.', 'هەڵسەنگاندنەوەیەکی پێشوو چاوەڕێی پەسەندکردنە؛ سەرەتا پەسەندی بکە یان بیسڕەوە.'],
-  f_phoneApp: ['تطبيق قاصة للموبايل: المسح بالكاميرا، الأسعار والمخزون وإضافة المواد بالصور', 'Qasa phone app: scan with the camera, prices, stock and new items with photos', 'ئەپی قاسە بۆ مۆبایل: سکان بە کامێرا، نرخ و کۆگا و زیادکردنی کاڵا بە وێنە'],
+  f_phoneApp: ['تطبيق قاصة للموبايل (Android): المسح بالكاميرا، الأسعار والمخزون وإضافة المواد بالصور', 'Qasa phone app (Android): scan with the camera, prices, stock and new items with photos', 'ئەپی قاسە بۆ مۆبایل (Android): سکان بە کامێرا، نرخ و کۆگا و زیادکردنی کاڵا بە وێنە'],
   f_websiteApi: ['ربط المواقع والمتاجر الإلكترونية (API وWooCommerce)', 'Connect websites and online shops (API and WooCommerce)', 'بەستنەوەی ماڵپەڕ و دوکانی ئۆنلاین (API و WooCommerce)'],
   f_generators: ['المولدات الأهلية: المشتركون بالأمبير والجباية والديون', 'Generator owners: subscribers by amps, collections and debts', 'مۆلیدەی ئەهلی: بەشداربووان بە ئەمپێر، کۆکردنەوەی پارە و قەرز'],
   bizType: ['نشاط الشركة', 'Business type', 'جۆری چالاکی'],
@@ -1035,7 +1037,7 @@ const BASE = {
 
 /** The industry features keep their texts in files of their own (i18n/), in the same three languages. */
 const D = { ...BASE, ...AUDIT_TEXT, ...REAL_ESTATE_TEXT, ...MOBILE_TEXT, ...PARTS_TEXT, ...ENGINEERING_TEXT,
-  ...PAYROLL_TEXT, ...POS_TEXT, ...QUOTES_TEXT, ...PIPELINE_TEXT, ...MEDIA_TEXT, ...BRIEF_TEXT, ...CLOUD_TEXT, ...RELAY_TEXT, ...ACTIVATION_TEXT, ...FX_TEXT, ...VERIFY_TEXT, ...GEN_TEXT, ...WEBAPI_TEXT, ...PHONE_TEXT, ...USAGE_TEXT, ...SOLAR_TEXT, ...LEGAL_TEXT, ...BRANCH_TEXT, ...BANK_TEXT, ...WAVE2_TEXT, ...ASSET_TEXT, ...ADJ_TEXT, ...PO_TEXT, ...COMPANY_TEXT, ...LABEL_TEXT, ...PRINTER_TEXT, ...SAFETY_TEXT, ...UI_TEXT, ...UNIT_TEXT, ...BATCH_TEXT, ...STORE_TEXT, ...CATALOG_TEXT, ...PHARMACY_TEXT, ...HARDENING_TEXT, ...OUTBOX_TEXT, ...DAY_CLOSE_TEXT, ...WHATSAPP_TEXT, ...LOYALTY_TEXT, ...SUPPORT_TEXT, ...SETTINGS_SECTION_TEXT, ...LOOK_TEXT, ...INVOICE_SPEED_TEXT, ...ITEMS14_TEXT, ...SALES14_TEXT, ...SHELL14_TEXT, ...PRINT14_TEXT, ...DOC_APPROVAL_TEXT, ...COUNT_TEXT };
+  ...PAYROLL_TEXT, ...POS_TEXT, ...QUOTES_TEXT, ...PIPELINE_TEXT, ...MEDIA_TEXT, ...BRIEF_TEXT, ...CLOUD_TEXT, ...RELAY_TEXT, ...ACTIVATION_TEXT, ...FX_TEXT, ...VERIFY_TEXT, ...GEN_TEXT, ...WEBAPI_TEXT, ...PHONE_TEXT, ...USAGE_TEXT, ...SOLAR_TEXT, ...LEGAL_TEXT, ...BRANCH_TEXT, ...BANK_TEXT, ...WAVE2_TEXT, ...ASSET_TEXT, ...ADJ_TEXT, ...PO_TEXT, ...COMPANY_TEXT, ...LABEL_TEXT, ...PRINTER_TEXT, ...SAFETY_TEXT, ...UI_TEXT, ...UNIT_TEXT, ...BATCH_TEXT, ...STORE_TEXT, ...CATALOG_TEXT, ...PHARMACY_TEXT, ...HARDENING_TEXT, ...OUTBOX_TEXT, ...DAY_CLOSE_TEXT, ...WHATSAPP_TEXT, ...LOYALTY_TEXT, ...SUPPORT_TEXT, ...SETTINGS_SECTION_TEXT, ...LOOK_TEXT, ...INVOICE_SPEED_TEXT, ...ITEMS14_TEXT, ...SALES14_TEXT, ...SHELL14_TEXT, ...PRINT14_TEXT, ...DOC_APPROVAL_TEXT, ...ITEM_QUICK_TEXT, ...COUNT_TEXT, ...AMOUNTS_TEXT };
 
 export type Key = keyof typeof D;
 

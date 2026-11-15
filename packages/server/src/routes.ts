@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import { BUILT_IN_FEATURES } from './features.ts';
 import { checkBranchRequest, filterBranchResult, isBranchLimited, userBranchLists } from './branches.ts';
-import { APP_VERSION, BUSINESS_TYPES, MAX_BATCH_NO, MAX_ITEM_UNITS, MAX_UNIT_FACTOR_MILLI, UNIT_CODES } from '@qasa/core';
+import { AMOUNTS_SHOW, APP_VERSION, BUSINESS_TYPES, MAX_BATCH_NO, MAX_ITEM_UNITS, MAX_UNIT_FACTOR_MILLI, UNIT_CODES } from '@qasa/core';
 import { schemaVersion, SCHEMA_VERSION, type Db } from './db.ts';
 import { AppError, conflict, invalid } from './errors.ts';
 import {
@@ -404,7 +404,8 @@ export function apiRoutes(db: Db, options: { demo?: boolean; extensions?: readon
         customers: z.string().max(12), suppliers: z.string().max(12), sales: z.string().max(12), costOfSales: z.string().max(12), cash: z.string().max(12),
         yearResult: z.string().max(12).optional()
       }).optional(),
-      businessTypes: z.array(z.enum(BUSINESS_TYPES)).min(1).max(BUSINESS_TYPES.length).optional()
+      businessTypes: z.array(z.enum(BUSINESS_TYPES)).min(1).max(BUSINESS_TYPES.length).optional(),
+      amountsShow: z.enum(AMOUNTS_SHOW).optional()
     }), req.body);
     const { postingAccounts, ...rest } = withoutUndefined(body);
     return updateSettings(db, { ...rest, ...(postingAccounts ? { postingAccounts: { ...getSettings(db).postingAccounts, ...withoutUndefined(postingAccounts) } } : {}) }, userOf(req));
@@ -589,7 +590,12 @@ export function apiRoutes(db: Db, options: { demo?: boolean; extensions?: readon
     const warehouses = warehousesOfUser(req);
     return { ...getItem(db, id, warehouses), stock: itemStock(db, id, warehouses), moves: itemMoves(db, id, warehouses) };
   });
-  app.post('/api/items', async (req, reply) => reply.status(201).send(createItem(db, withoutUndefined(parse(itemSchema, req.body)), userOf(req))));
+  // the quick add in an item picker (an invoice, a quotation, an order, the till) sends a key: a try whose answer was
+  // lost and is sent again makes the item once (as a customer added from the customer box)
+  app.post('/api/items', async (req, reply) => {
+    const body = withoutUndefined(parse(itemSchema, req.body));
+    return reply.status(201).send(once(req, reply, 'POST /api/items', () => createItem(db, body, userOf(req)), (id) => getItem(db, id, warehousesOfUser(req))));
+  });
   app.put('/api/items/:id', async (req) => {
     const { id } = parse(idParam, req.params);
     updateItem(db, id, withoutUndefined(parse(itemSchema, req.body)), userOf(req));

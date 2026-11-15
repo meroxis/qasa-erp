@@ -3,8 +3,8 @@ import { Linking, View } from 'react-native';
 import { OfficeError } from '../api';
 import { LANG_NAMES, LANGS, money, type Lang } from '../i18n';
 import { hashPin, validPin, weakPin, type AutoLock, type LockSettings } from '../lock';
-import type { OutboxItem } from '../outbox';
-import { actsAs } from '../roles';
+import { isPending, type OutboxItem } from '../outbox';
+import { actsAs, lockRequired } from '../roles';
 import { space } from '../theme';
 import type { ThemeChoice } from '../theme';
 import {
@@ -33,7 +33,7 @@ export function MoreScreen() {
   const { t, lang } = useLook();
   const { go, outbox, company, me, via, state } = useApp();
   const prefs = usePrefs();
-  const waiting = outbox.length;
+  const waiting = outbox.filter((o) => !o.result).length;
   const who = actsAs(me);
   return (
     <Screen title={t('more')} large>
@@ -78,10 +78,30 @@ export function OutboxScreen() {
   ].filter(Boolean).join(' · ');
   return (
     <Screen title={t('outbox')} onBack={() => nav({ type: 'back' })}
-      footer={outbox.some((o) => !o.error) ? <Button icon="send" label={t('sendNow')} onPress={sendOutbox} disabled={state === 'connecting'} /> : undefined}>
-      {!outbox.length ? <EmptyState icon="check" title={t('outboxEmpty')} /> : (
+      footer={outbox.some(isPending) ? <Button icon="send" label={t('sendNow')} onPress={sendOutbox} disabled={state === 'connecting'} /> : undefined}>
+      {!outbox.some((o) => !o.result) && <EmptyState icon="check" title={t('outboxEmpty')} />}
+      {/* receipts that went later, by themselves: what the office made of each, until cleared */}
+      {outbox.some((o) => o.result) && (
+        <Section title={t('receiptsSent')}>
+          <Group>
+            {outbox.filter((o) => o.result).map((o) => (
+              <View key={o.id} style={{ padding: space.l, gap: space.s }}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: space.s }}>
+                  <View style={{ flex: 1 }}>
+                    <Txt v="bodyStrong">{`${t(KIND_TEXT[o.kind])} · ${o.summary.title}`}</Txt>
+                    <Txt v="caption" tone="ink3">{describe(o)}</Txt>
+                  </View>
+                  <IconButton icon="check" label={t('clearResult')} onPress={() => void deleteOutbox(o.id)} />
+                </View>
+                <Banner kind={o.result === 'posted' ? 'ok' : 'info'} text={o.result === 'posted' ? t('collectPosted') : t('collectSent')} />
+              </View>
+            ))}
+          </Group>
+        </Section>
+      )}
+      {outbox.some((o) => !o.result) && (
         <Group>
-          {outbox.map((o) => (
+          {outbox.filter((o) => !o.result).map((o) => (
             <View key={o.id} style={{ padding: space.l, gap: space.s }}>
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: space.s }}>
                 <View style={{ flex: 1 }}>
@@ -105,11 +125,17 @@ export function OutboxScreen() {
 
 // ——— the app lock ———
 
-export function SecurityScreen() {
+/**
+ * The app lock. `required`: shown by App instead of everything else while a phone that must keep a PIN (lockRequired)
+ * has none: it can't be left until one is set.
+ */
+export function SecurityScreen({ required = false }: { required?: boolean } = {}) {
   const { t } = useLook();
-  const { nav, toast } = useApp();
+  const { nav, toast, me } = useApp();
   const prefs = usePrefs();
-  const [step, setStep] = useState<'view' | 'new' | 'again'>('view');
+  const [step, setStep] = useState<'view' | 'new' | 'again'>(required ? 'new' : 'view');
+  // for this phone's user the PIN can be changed, never turned off
+  const mustKeep = lockRequired(me);
   const [first, setFirst] = useState('');
   const [pin, setPin] = useState('');
   const [error, setError] = useState<string | null>(null);
@@ -137,8 +163,9 @@ export function SecurityScreen() {
 
   if (step !== 'view') {
     return (
-      <Screen title={step === 'new' ? t('newPin') : t('confirmPin')} onBack={() => { setStep('view'); setPin(''); setError(null); }} banner={false}
+      <Screen title={step === 'new' ? t('newPin') : t('confirmPin')} onBack={required ? undefined : () => { setStep('view'); setPin(''); setError(null); }} banner={false}
         footer={<Button icon="check" label={t('save')} onPress={() => void next()} disabled={!validPin(pin)} busy={busy} />}>
+        {required && <Txt tone="ink2" style={{ textAlign: 'center' }}>{t('pinRequired')}</Txt>}
         <Txt v="headline" style={{ textAlign: 'center' }}>{step === 'new' ? t('newPin') : t('confirmPin')}</Txt>
         <PinDots length={Math.max(4, pin.length)} filled={pin.length} />
         {error && <Banner kind="bad" text={error} />}
@@ -149,6 +176,7 @@ export function SecurityScreen() {
   return (
     <Screen title={t('security')} onBack={() => nav({ type: 'back' })}>
       <Txt tone="ink2">{t('securityHelp')}</Txt>
+      {mustKeep && <Txt v="caption" tone="ink3">{t('pinRequired')}</Txt>}
       <Button icon="lock" label={prefs.lock.pin ? t('changePin') : t('setPin')} onPress={() => setStep('new')} />
       {prefs.lock.pin && (
         <>
@@ -162,7 +190,7 @@ export function SecurityScreen() {
             <Segmented<string> label={t('autoLock')} value={String(prefs.lock.after)} onChange={(v) => void prefs.setLock({ ...prefs.lock, after: Number(v) as AutoLock })}
               options={[{ value: '0', label: t('lockNow') }, { value: '60000', label: t('lock1m') }, { value: '300000', label: t('lock5m') }]} />
           </Section>
-          <Button kind="danger" label={t('removePin')} onPress={() => void prefs.setLock({ pin: null, length: 0, biometric: false, after: prefs.lock.after })} />
+          {!mustKeep && <Button kind="danger" label={t('removePin')} onPress={() => void prefs.setLock({ pin: null, length: 0, biometric: false, after: prefs.lock.after })} />}
         </>
       )}
     </Screen>
