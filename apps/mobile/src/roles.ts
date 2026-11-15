@@ -21,7 +21,7 @@ export type Feature =
   /** money received from a customer: a receipt voucher, a draft or waiting for approval (posted at once for an approver) */
   | 'collect'
   | 'statement'
-  /** a count sent to the office as a list (Settings → Phones) */
+  /** a count sent to the office as a list (Settings → Office network → Phones) */
   | 'count'
   /** counted quantities entered straight into the warehouse's open count */
   | 'countSession';

@@ -44,3 +44,5 @@ yarn-error.*
 *.keystore
 *.apk
 *.aab
+# the keystore's password file (QASA_ANDROID_KEYSTORE_PASSWORD_FILE), never in git even when copied in by mistake
+*.password

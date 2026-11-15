@@ -9,9 +9,12 @@ Starter, Pro and the trial, no limit on a Business licence. Starter has no Qasa 
 on the office Wi-Fi only; on Pro and Business they also reach it from anywhere through the relay.
 
 Expo (SDK 58) and React Native, TypeScript. Android first; iOS builds from the same code. It works with the office
-PC on Qasa ERP 1.4.2 or later with the Pro module (the first release whose Settings → Phones pairs a phone; the routes
-it calls and the rules below are those of 1.4.1). Version 1.0.1 is offered as a signed APK on
-https://qasaerp.com/phone/ (Google Play later); 1.0.0 was built before the required PIN and is not offered.
+PC on Qasa ERP 1.4.2 or later with the Pro module (the first release whose Settings → Office network → Phones (Qasa
+app) pairs a phone; the routes it calls and the rules below are those of 1.4.1). Version 1.0.2 is offered as a signed
+APK on https://qasaerp.com/phone/ (Google Play later), and the desktop from 1.4.3 offers it too (`PHONE_APP` in
+apps/web/src/pages/Settings.tsx). 1.0.2 sends Google nothing (see "No usage reports to Google") and tells the office
+its version; 1.0.1 keeps working (the PC lists it as "1.0.1 or older", with a note that a newer one is out); 1.0.0 was
+built before the required PIN and is not offered.
 
 ## What it does
 
@@ -26,7 +29,7 @@ request again with the user's own permissions):
 | Sell: a quick sale sent as a draft invoice, or an order sent as a quote. A sale is Cash or Credit as a whole, one way per sale, as on the desktop's till and invoice (1.4): cash from a walk-in or a named customer, credit only to a chosen customer | sales permission |
 | Customers: balance, statement (this month, 3 months, this year) | sales, the accountants, admin, viewer |
 | Collect: money received from a customer, as a receipt voucher (see below) | the preparer's permission (give a rep both roles: sales and preparer) |
-| Count stock: straight into the warehouse's open count on the PC (stock permission), else a list for the admin in Settings → Phones | everyone |
+| Count stock: straight into the warehouse's open count on the PC (stock permission), else a list for the admin in Settings → Office network → Phones | everyone |
 
 Sales, orders and counts reach the office as drafts and are checked on the PC as the office already works. A receipt
 follows the office's 1.4.1 rule for vouchers: with **Vouchers need approval** on, it waits for approval unless the
@@ -36,13 +39,16 @@ setting off it is a draft, checked and approved on the PC. The phone says which:
 Cost stays with those who may see it, by the office's own rule (`packages/server/src/cost-view.ts`, 1.4): every
 request from a phone runs through the office's API as the phone's user, so a user who neither keeps nor reads the
 books gets no purchase price, cost, stock value, profit or safe balances, and the day's figures (which hold the safes)
-are not opened to such a user's phone at all (`FIGURES_ROLES` in `pro/src/phone/phone.ts`). The app shows no cost or
-profit anywhere, and leaves out the safes when an office does not send them.
+are not opened to such a user's phone at all (`FIGURES_ROLES` in `pro/src/phone/phone.ts`). From office 1.4.3 a phone
+gets cost only when it keeps a PIN (the owner's, and those of `FIGURES_ROLES`: the same rule as the figures and
+`lockRequired`): a storekeeper's or a buyer's phone gets each answer as a user without the books does on a PC, though
+that user sees cost on a PC (`phoneView` in `pro/src/phone/phone.ts`, tested for every route a phone may call). The app
+shows no cost or profit anywhere, and leaves out the safes when an office does not send them.
 
 ## How it reaches the office
 
-The phone is paired once: on the Qasa PC, **Settings → Phones → Add a phone** shows a QR code. It holds the office's
-addresses on the Wi-Fi, the port of the phone link (47421), the office's Qasa Relay ID (when the office is on the
+The phone is paired once: on the Qasa PC, **Settings → Office network → Phones (Qasa app) → Add a phone** shows a QR
+code. It holds the office's addresses on the Wi-Fi, the port of the phone link (47421), the office's Qasa Relay ID (when the office is on the
 relay), the office's public key and a one-time pairing secret (valid 2 minutes, for one phone). The app checks the code before using
 anything in it (`src/pairing.ts`). The phone makes its own key (kept in the Android Keystore / iOS Keychain through
 expo-secure-store) and connects over a WebSocket: each Wi-Fi address first, then `wss://relay.qasaerp.com/v1/phone`.
@@ -51,7 +57,10 @@ Everything on the wire is encrypted and authenticated by `src/protocol.ts`: X255
 ChaCha20-Poly1305 from @noble (audited, pure JavaScript), with forward secrecy and a counter on every message (a replayed
 or altered message ends the session). The office's key from the QR code is pinned, as the desktop pins the office
 server's certificate: a PC or a relay that can't prove that key gets nothing, on the Wi-Fi and through the relay alike.
-The relay only carries bytes it can't read. Plain `ws://` on the office network is fine for that reason.
+The relay only carries bytes it can't read. Plain `ws://` on the office network is fine for that reason. From 1.0.2
+the first message also says the app's version and build (`app.json`'s `version` and `android.versionCode`); both are
+optional both ways (an office before 1.4.3 does not read them, an app before 1.0.2 does not send them), and the office
+only shows them in its list of phones: it never refuses a phone for its version.
 
 A link that drops (the Wi-Fi went, the PC slept, the relay restarted) connects again by itself, after 1, 2, 5, 10, 30
 and then every 60 seconds, and at once when the app comes back to the screen. Through the relay the app sends a small
@@ -81,8 +90,20 @@ there, then run `npm run sync-protocol`; `test/link.test.ts` fails when the two 
   make the next try wait longer (30 s, doubling, up to 15 minutes); "Forgot the PIN?" unpairs and wipes the phone.
 - The app writes nothing to the log (a test checks), stores nothing in plain storage, and talks only to the office and
   the relay.
-- Unpairing tells the office (it removes the phone from Settings → Phones) and wipes the office, the outbox, the lock
-  and the phone's key; pairing again makes a new key.
+- Unpairing tells the office (it removes the phone from Settings → Office network → Phones) and wipes the office, the
+  outbox, the lock and the phone's key; pairing again makes a new key.
+
+### No usage reports to Google (1.0.2)
+
+Scanning uses Google ML Kit's barcode scanner, bundled in the app (its models and native library are in the APK and
+run on the phone; nothing is needed from Google to read a code). ML Kit also reports how it is used to Google
+(firebaselogging.googleapis.com) through Google's data transport library; 1.0.1 shipped that sender.
+`plugins/with-no-usage-metrics.js` keeps it out of every build since 1.0.2: Google's sender
+(`transport-backend-cct`) is left out and the app's own `plugins/no-usage-metrics/CCTDestination.java` takes its place
+(no backend, no address: the reports are dropped on the phone before they are stored), the transport's scheduler
+service, alarm receiver and backend list are taken out of the manifest, and Google's ready-made code scanner and
+document scanner (which the app never opens) are left out with the "barcode_ui" module Play services would download
+for them. `scripts/check-release-apk.mjs` checks each APK for all of it (see "Build an APK on this PC").
 
 ## Design
 
@@ -142,10 +163,23 @@ npx expo prebuild -p android --clean --no-install     # writes android/ (not in 
 export JAVA_HOME=<JDK 17>  ANDROID_HOME=<the SDK>  ANDROID_SDK_ROOT=<the SDK>  NODE_ENV=production
 export QASA_ANDROID_KEYSTORE=$USERPROFILE/.qasa-keys/qasa-mobile-release.jks
 export QASA_ANDROID_KEYSTORE_PASSWORD_FILE=$USERPROFILE/.qasa-keys/qasa-mobile-release.password
-cd android && ./gradlew assembleRelease
+(cd android && ./gradlew assembleRelease)
 # → android/app/build/outputs/apk/release/app-release.apk
-<build-tools 37.0.0>/apksigner verify --print-certs app/build/outputs/apk/release/app-release.apk
+node scripts/check-release-apk.mjs android/app/build/outputs/apk/release/app-release.apk
 ```
+
+Without `QASA_ANDROID_KEYSTORE` a release build stops at its first step with a message (from 1.0.2: before, it was
+signed with React Native's public debug key without a word, and phones could never update from such an APK). Only an
+EAS build (`EAS_BUILD=true`, set by EAS, which signs with the credentials it keeps) or a local test build asked for by
+name (`QASA_ANDROID_DEBUG_SIGNED=1`, signed with the debug key; never hand it out) goes on without it.
+
+`scripts/check-release-apk.mjs` must say OK before an APK goes anywhere. It runs apksigner and aapt2 from the SDK's
+newest build-tools (it needs `JAVA_HOME` and `ANDROID_HOME`) and refuses the APK when the signature does not verify,
+when it is not signed by exactly one certificate, the Qasa release key's (`RELEASE_CERT_SHA256` in the script, the same
+as `PHONE_APP.certSha256` in apps/web/src/pages/Settings.tsx: a test keeps them equal), when its version is not
+app.json's, or when anything of Google's usage reporting or the two unused scanners is in its manifest, its code or its
+files. It prints the APK's SHA-256 and size (for `PHONE_APP` and the download page), its SDK levels and permissions.
+It reads only the APK: never the key or its password.
 
 Raise `version` in app.json (and `versionCode` with it: Android refuses an update with the same or a lower
 versionCode; prebuild writes it from `android.versionCode` in app.json, 1 when it is not set) for each build that goes
@@ -170,9 +204,10 @@ Or with a USB cable and USB debugging on: `adb install -r qasa-erp-mobile-<versi
    way the Console shows (its encryption tool), so phones that took a side-loaded APK update from Google Play; if
    Google's own key is chosen instead, those phones must uninstall the side-loaded app first. Then upload the .aab to
    Internal testing first (see the checklist below), then Production.
-7. Done in 1.4.2 for the direct download: the desktop's Settings → Phones offers the app (`PHONE_APP` and
-   `PHONE_APP_READY` in apps/web/src/pages/Settings.tsx, tested by apps/web/src/pages/phones-app.test.tsx). When the
-   app is in the store, add the Google Play link there and on qasaerp.com/phone/.
+7. Done in 1.4.2 for the direct download: the desktop's Settings → Office network → Phones (Qasa app) offers the app
+   (`PHONE_APP` and `PHONE_APP_READY` in apps/web/src/pages/Settings.tsx, tested by
+   apps/web/src/pages/phones-app.test.tsx); 1.4.3 offers 1.0.2. When the app is in the store, add the Google Play link
+   there and on qasaerp.com/phone/.
 
 ### Checklist: the first internal-testing build
 
@@ -183,20 +218,21 @@ Or with a USB cable and USB debugging on: `adb install -r qasa-erp-mobile-<versi
 - [ ] Play Console: developer account verified; app **Qasa ERP** created (default language Arabic, free, Business).
 - [ ] App content filled in: privacy policy URL, Data safety (notes below), ads: none, target audience: adults
       (18+), content rating questionnaire, app access: "pairing with a Qasa PC is needed" with how a reviewer
-      can test (a Qasa ERP trial on a PC and its Settings → Phones).
+      can test (a Qasa ERP trial on a PC and its Settings → Office network → Phones (Qasa app)).
 - [ ] Testing → Internal testing → a tester list (the owner's and the office's Google accounts) → new release →
-      upload the .aab → release name 1.0.0 → roll out.
-- [ ] On a phone: open the opt-in link from the tester list, install from Google Play, pair it with a Qasa ERP PC
-      with the Pro module. The released 1.4.1 shows "coming soon" in Settings → Phones and has no pairing button, so
-      pair from a test build of the Windows app made with `PHONE_APP_READY = true` (not released), then try: scan, a cash sale, a credit sale (with and without a customer), a receipt with
-      "Vouchers need approval" on and off, a count, the app lock, unpairing — in Arabic, English and Kurdish.
+      upload the .aab → release name 1.0.2 (versionCode 3 or higher: EAS counts it up) → roll out.
+- [ ] On a phone: open the opt-in link from the tester list, install from Google Play, and pair it with the released
+      Qasa ERP (1.4.2 or later, no test build needed) with the Pro module, then try: scan, a cash sale, a credit sale
+      (with and without a customer), a receipt with "Vouchers need approval" on and off, a count, the app lock,
+      unpairing — in Arabic, English and Kurdish. On a 1.4.3 PC the phone's line in the list of phones shows 1.0.2.
 - [ ] Then Production (or a closed test first), and step 7.
 
 Play Store listing notes:
 - Category: Business. Languages: Arabic (default for Iraq), English, Kurdish.
 - Data safety: the app sends data only to the customer's own Qasa PC, on their network or through Qasa Relay,
-  encrypted end to end (the relay can't read it); nothing to Meroxis or third parties; no ads, no analytics. The camera
-  is used for scanning and item photos only; fingerprint or face only to unlock, handled by the phone.
+  encrypted end to end (the relay can't read it); nothing to Meroxis or third parties; no ads, no analytics (true from
+  1.0.2: 1.0.1 still had ML Kit's usage reports to Google, see "No usage reports to Google"). The camera is used for
+  scanning and item photos only; fingerprint or face only to unlock, handled by the phone.
 - Privacy policy URL: https://qasaerp.com/privacy/
 - Screenshots: pairing, home with the day's figures, scanning, an item card, the sale, a statement (phone, 1080×1920).
 

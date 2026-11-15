@@ -102,6 +102,8 @@ export class OfficeLink {
     name: string;
     /** first pairing only (from the QR code) */
     pairing?: { id: string; secret: Uint8Array } | undefined;
+    /** this app's version and build, told to the office in the handshake (it shows them in its list of phones) */
+    app?: { version: string; build: number } | undefined;
     socket: (url: string) => SocketLike;
     /** the relay to use when the office is reachable over the internet (default: Meroxis' relay) */
     relayUrl?: string | undefined;
@@ -169,7 +171,8 @@ export class OfficeLink {
       const socket = this.options.socket(url);
       socket.binaryType = 'arraybuffer';
       const hs = phoneHandshake({
-        serverPublicKey: fromB64(this.options.office.serverKey), phone: this.options.phone, name: this.options.name, pairing: this.options.pairing
+        serverPublicKey: fromB64(this.options.office.serverKey), phone: this.options.phone, name: this.options.name, pairing: this.options.pairing,
+        app: this.options.app
       });
       const fail = (e: LinkError) => {
         if (settled) return;
