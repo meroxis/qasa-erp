@@ -1,5 +1,5 @@
 import { normalizeForSearch, parseScaleBarcode, type CurrencyCode, type UnitCode } from '@qasa/core';
-import { isNetworkError, newIdempotencyKey, type ItemInput, type ItemView, type Permission, type SendOptions } from '../api.ts';
+import { ApiError, isNetworkError, newIdempotencyKey, type ItemInput, type ItemView, type Permission, type SendOptions } from '../api.ts';
 import { may } from '../may.ts';
 
 /**
@@ -7,6 +7,15 @@ import { may } from '../may.ts';
  * or scanned, what is sent, and sending it so that a try whose answer was lost never adds the item twice. The same
  * request as the Items page's "New item" (POST /api/items), checked by the server the same way.
  */
+
+/**
+ * An office server before 1.4.2 has no POST /api/items/:id/stock-correction: it answers with the web server's own 404
+ * ("Not Found", "Route … not found"), unlike a record that is missing (404 'not_found'). This PC then says the office
+ * server needs 1.4.2, in place of an error that names nothing.
+ */
+export function oldServerRefusal(e: unknown): boolean {
+  return e instanceof ApiError && e.status === 404 && e.code !== 'not_found';
+}
 
 /**
  * Whether the "+" shows: the stock permission, as for "New item" on the Items page (routes.ts: 'POST /api/items').

@@ -41,6 +41,12 @@ export const ITEM_QUICK_TEXT = {
     'What is on the shelf now: it is entered as opening stock (capital) at the purchase price, so the item can be sold at once.',
     'ئەوەی ئێستا لەسەر ڕەفەکەیە: وەک کاڵای سەرەتا (سەرمایە) بە نرخی کڕین دەنووسرێت، بۆیە کاڵاکە یەکسەر دەفرۆشرێت.'
   ],
+  // an office server before 1.4.2 (no stock correction there): the item goes on the line without the stock typed
+  iq_stockOldServer: [
+    'وُضعت المادة في السطر، لكن الكمية المكتوبة لم تُدخَل في المخزون: حاسوب خادم المكتب على إصدار أقدم من 1.4.2. حدّثه ثم صحّح مخزون المادة من صفحتها.',
+    'The item goes on the line, but the stock typed wasn’t entered: the office server PC is on a version before 1.4.2. Update it, then correct the item’s stock from its page.',
+    'کاڵاکە خرایە سەر ڕیزەکە، بەڵام بڕە نووسراوەکە لە کۆگادا نەنووسرا: کۆمپیوتەری سێرڤەری نووسینگە لەسەر وەشانێکی پێش 1.4.2 یە. نوێی بکەرەوە، ئینجا کۆگای کاڵاکە لە پەڕەکەیەوە ڕاست بکەرەوە.'
+  ],
   iq_stockNeedsPrice: ['اكتب سعر الشراء: به يُدخَل الرصيد.', 'Enter the purchase price: the stock is entered at it.', 'نرخی کڕین بنووسە: بڕی کۆگا بەو نرخە دەنووسرێت.'],
   iq_stockWaiting: [
     'أُضيفت المادة. رصيدها مسودة تنتظر المصادقة (يرحّلها مصادق آخر من صفحة مستندات المخزن)، ولا تُباع قبل ذلك.',
@@ -115,6 +121,17 @@ export const ITEM_QUICK_TEXT = {
   sc_costAverage: ['فارغة: بمتوسط كلفة هذا المخزن', 'Empty: at this warehouse’s average cost', 'بەتاڵ: بە تێکڕای تێچووی ئەم کۆگایە'],
   sc_costPrice: ['سعر شراء المادة: غيّره إن اشتُريت بغيره.', 'The item’s purchase price: change it if it was bought for another.', 'نرخی کڕینی کاڵاکە: بیگۆڕە ئەگەر بە نرخێکی تر کڕدراوە.'],
   sc_costNone: ['هذا المخزن لا يحوي منها شيئاً: اكتب الكلفة.', 'This warehouse holds none of it: write the cost.', 'ئەم کۆگایە هیچی لێ نییە: تێچووەکە بنووسە.'],
+  sc_oldServer: [
+    'حاسوب خادم المكتب على إصدار أقدم من 1.4.2، فلا يُصحَّح المخزون من هنا. حدّث قاصة ERP عليه أولاً.',
+    'The office server PC is on a version before 1.4.2, so stock can’t be corrected from here. Update Qasa ERP on it first.',
+    'کۆمپیوتەری سێرڤەری نووسینگە لەسەر وەشانێکی پێش 1.4.2 یە، بۆیە لێرەوە کۆگا ڕاست ناکرێتەوە. سەرەتا قاسە ERP لەسەری نوێ بکەرەوە.'
+  ],
+  // someone who sees no cost, when the warehouse has no average to value a surplus at
+  sc_noAverageNoCost: [
+    'هذا المخزن لا يحوي منها شيئاً، فلا متوسط كلفة لها فيه: يُدخلها من يرى الكلف.',
+    'This warehouse holds none of it, so it has no average cost there: someone who sees costs enters it.',
+    'ئەم کۆگایە هیچی لێ نییە، بۆیە تێکڕای تێچووی تێیدا نییە: ئەو کەسەی تێچوو دەبینێت دەینووسێت.'
+  ],
   sc_howPaid: ['كيف دُفع ثمنها', 'How it was paid for', 'چۆن پارەکەی دراوە'],
   sc_howCredit: ['آجل (مجهز)', 'On credit (supplier)', 'قەرز (دابینکەر)'],
   sc_howCash: ['نقداً', 'Paid in cash', 'نەقد دراوە'],

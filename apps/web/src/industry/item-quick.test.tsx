@@ -7,9 +7,9 @@ import { DataContext } from '../components.tsx';
 import { I18nContext, makeI18n, type Key } from '../i18n.ts';
 import { ItemPicker, QuickItemForm, withAdded } from './QuickItemForm.tsx';
 import {
-  addRowKind, anyItemMatches, existingStockStep, itemKey, mayAddItem, showsBatchFields, QUICK_ITEM_TIMEOUT_MS, quickAddItem, quickItemInput, quickItemStart, sameItems, sameSearch, typedForForm
+  addRowKind, anyItemMatches, existingStockStep, itemKey, mayAddItem, oldServerRefusal, showsBatchFields, QUICK_ITEM_TIMEOUT_MS, quickAddItem, quickItemInput, quickItemStart, sameItems, sameSearch, typedForForm
 } from './item-quick-add.ts';
-import { correctionDiff, correctionProblem, purchaseCost, REASON_WAY, startingCost, StockCorrection, StockCorrectionFor, warehouseAverage } from './StockCorrection.tsx';
+import { correctionDiff, correctionProblem, correctionReasons, noAverageRefusal, purchaseCost, REASON_WAY, startingCost, StockCorrection, StockCorrectionFor, warehouseAverage } from './StockCorrection.tsx';
 import { stockCost } from './QuickItemForm.tsx';
 
 // 1.4.2: an item added from inside an item picker (invoices, quotations, orders, the till), and an item's stock
@@ -304,6 +304,49 @@ describe("correcting an item's stock", () => {
     }
     expect(textOf('en', 'sc_x_supplier')).toBe('A credit purchase invoice is made: you owe the supplier this amount.');
     expect(textOf('en', 'sc_x_opening')).toContain('goods you had when you started (capital)');
+  });
+
+  it('lets someone who corrects stock but sees no cost (a storekeeper) save a count at the average, with no cost to type', () => {
+    // the server sends them no stock value, so there is no average on this PC: it is left to the server
+    const hidden = item({ value: undefined, purchasePrice: null, stock: [{ warehouseId: 'w1', warehouseCode: 'MAIN', warehouseName: { ar: 'الرئيسي', en: 'Main', ku: 'سەرەکی' }, qtyMilli: 20_000 }] as ItemDetail['stock'] });
+    expect(warehouseAverage(hidden, 'w1')).toBeNull();
+    expect(correctionProblem('found', 1_000, '', null, {})).toBeNull();
+    expect(correctionProblem('other', 1_000, 'shelf', null, {})).toBeNull();
+    // a purchase or opening stock is entered at its price, by someone who sees cost
+    expect(correctionReasons(true)).toEqual(['purchase_missing', 'found', 'damaged', 'lost', 'opening', 'other']);
+    expect(correctionReasons(false)).toEqual(['found', 'damaged', 'lost', 'other']);
+    // the server's refusal when the warehouse has no average is told as who can enter it
+    expect(noAverageRefusal(new ApiError(400, 'validation', [{ code: 'adj_cost_required', line: 1 }]))).toBe(true);
+    expect(noAverageRefusal(new ApiError(400, 'validation', [{ code: 'note_required', field: 'note' }]))).toBe(false);
+    expect(noAverageRefusal(new Error('x'))).toBe(false);
+    for (const lang of LANGS) {
+      for (const reason of ['found', 'other', 'opening', 'purchase_missing'] as const) {
+        const html = wrap(<StockCorrection item={hidden} initialReason={reason} onClose={() => {}} onDone={() => {}} />, lang, { permissions: ['stock', 'purchases'], seesCost: false });
+        expect(html, `${lang} ${reason}`).not.toContain(esc(textOf(lang, 'sc_unitCost')));
+        expect(html).not.toContain('<option value="opening"');
+        expect(html).not.toContain('<option value="purchase_missing"');
+        // a reason they are not offered opens as a count
+        expect(html).toContain(`<option value="${reason === 'other' ? 'other' : 'found'}" selected="">`);
+        expect(html).not.toMatch(/<button type="button" class="btn primary" disabled="">/);
+      }
+      expect(textOf(lang, 'sc_noAverageNoCost')).not.toBe('sc_noAverageNoCost');
+    }
+    expect(textOf('en', 'sc_noAverageNoCost')).toBe('This warehouse holds none of it, so it has no average cost there: someone who sees costs enters it.');
+  });
+
+  it('tells an office server before 1.4.2 (no stock correction there) from a record that is missing', () => {
+    // Fastify's own answer for an address it doesn't know, as a 1.4.1 office server gives it
+    expect(oldServerRefusal(new ApiError(404, 'Not Found', null))).toBe(true);
+    // an item that is gone, a refusal, a lost answer: not the old server
+    expect(oldServerRefusal(new ApiError(404, 'not_found', { what: 'item' }))).toBe(false);
+    expect(oldServerRefusal(new ApiError(400, 'validation', []))).toBe(false);
+    expect(oldServerRefusal(new TypeError('Failed to fetch'))).toBe(false);
+    for (const lang of LANGS) {
+      for (const key of ['sc_oldServer', 'iq_stockOldServer'] as Key[]) {
+        expect(textOf(lang, key), `${lang} ${key}`).not.toBe(key);
+        expect(textOf(lang, key)).toContain('1.4.2');
+      }
+    }
   });
 
   it('names the documents a correction makes, in the item moves too', () => {

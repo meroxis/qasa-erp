@@ -8,7 +8,7 @@ import { batchesApi } from './batches-api.ts';
 import { BatchInFields } from './BatchFields.tsx';
 import { CategoryOptions } from './CatalogPickers.tsx';
 import {
-  addRowKind, existingStockStep, mayAddItem, QUICK_ITEM_LIMITS, quickAddItem, quickItemInput, quickItemStart, showsBatchFields,
+  addRowKind, existingStockStep, mayAddItem, oldServerRefusal, QUICK_ITEM_LIMITS, quickAddItem, quickItemInput, quickItemStart, showsBatchFields,
   type HeldItemKey, type QuickItemFields, type SameItem
 } from './item-quick-add.ts';
 
@@ -178,6 +178,8 @@ export function QuickItemForm({ typed, sale = false, stockOnly = false, warehous
     } catch (e) {
       // a refusal: tried again with a new key; a lost answer keeps the key (entered at most once)
       if (!isNetworkError(e) && e instanceof ApiError) heldStock.current = null;
+      // an office server before 1.4.2 can't enter stock: the item (made or chosen) goes on the line, and the person is told
+      if (oldServerRefusal(e)) { toast(t('iq_stockOldServer')); return item; }
       setError(e);
       return null;
     }

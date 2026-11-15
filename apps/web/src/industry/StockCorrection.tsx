@@ -6,6 +6,7 @@ import {
 import { AccountCombo, AmountInput, ErrorBox, Icon, Modal, QtyInput, SearchCombo, useData, useLoad, useMay, useToast, type PickOption } from '../components.tsx';
 import { useI18n, type Key } from '../i18n.ts';
 import { BatchInFields } from './BatchFields.tsx';
+import { oldServerRefusal } from './item-quick-add.ts';
 
 /**
  * "Correct stock" on an item's page (and a row of the Items list): what is there now, or what to add or take out, in
@@ -54,7 +55,24 @@ export function startingCost(reason: CorrectionReason, average: number | null, p
   return null;
 }
 
-/** What the person is refused before anything is sent (the server says the same). */
+/**
+ * The reasons offered. A purchase never entered and opening stock come in at the price they were bought for, so they
+ * are for someone who sees cost (as adding an item asks the price only of them); a count or "other" surplus is valued
+ * by the server at the warehouse's average, so someone who sees no cost (a storekeeper) uses those.
+ */
+export function correctionReasons(seesCost: boolean): readonly CorrectionReason[] {
+  return seesCost ? CORRECTION_REASONS : CORRECTION_REASONS.filter((r) => r !== 'purchase_missing' && r !== 'opening');
+}
+
+/** Whether the server refused a surplus because the warehouse holds none of the item, so it has no average cost. */
+export function noAverageRefusal(e: unknown): boolean {
+  return e instanceof ApiError && Array.isArray(e.details) && e.details.some((d) => (d as { code?: unknown } | null)?.code === 'adj_cost_required');
+}
+
+/**
+ * What the person is refused before anything is sent (the server says the same). `average` is left out for someone
+ * who sees no cost: the server sends them none, so the server alone says when a warehouse has no average.
+ */
 export function correctionProblem(
   reason: CorrectionReason, diff: number | null, note: string, unitCost: number | null,
   more: { average?: number | null; paidBy?: boolean } = {}
@@ -90,7 +108,10 @@ export function StockCorrection({ item, initialReason = 'found', onClose, onDone
   const { t } = i18n;
   const toast = useToast();
   const can = useMay();
-  const { settings } = useData();
+  const { settings, seesCost } = useData();
+  // someone the server sends no cost to: no cost field, and a surplus is left to the server's average
+  const cost = seesCost !== false;
+  const reasons = correctionReasons(cost);
   const warehouses = useLoad(() => api.warehouses(), []);
   const active = (warehouses.data ?? []).filter((w) => w.active);
   // the first warehouse that holds the item and can be chosen (an inactive one can't take a document)
@@ -102,14 +123,14 @@ export function StockCorrection({ item, initialReason = 'found', onClose, onDone
   const shownWarehouse = warehouseId;
   const onBooks = item.stock.find((s) => s.warehouseId === shownWarehouse)?.qtyMilli ?? 0;
   const [mode, setMode] = useState<'set' | 'change'>('set');
-  const [reason, setReason] = useState<CorrectionReason>(initialReason);
-  const [way, setWay] = useState<'in' | 'out'>(REASON_WAY[initialReason] === 'out' ? 'out' : 'in');
+  const [reason, setReason] = useState<CorrectionReason>(() => (reasons.includes(initialReason) ? initialReason : 'found'));
+  const [way, setWay] = useState<'in' | 'out'>(REASON_WAY[reason] === 'out' ? 'out' : 'in');
   const [qtyMilli, setQtyMilli] = useState<number | null>(null);
   const average = warehouseAverage(item, shownWarehouse);
   const price = purchaseCost(item, settings?.defaultRateX100);
   // the cost follows the reason and the warehouse until the person types one
   const [typedCost, setTypedCost] = useState<{ value: number | null } | null>(null);
-  const unitCost = typedCost ? typedCost.value : startingCost(reason, average, price);
+  const unitCost = !cost ? null : typedCost ? typedCost.value : startingCost(reason, average, price);
   // a purchase never entered: on credit from its supplier, or paid in cash from a safe
   const [paid, setPaid] = useState<'credit' | 'cash'>('credit');
   const [supplierId, setSupplierId] = useState('');
@@ -138,7 +159,7 @@ export function StockCorrection({ item, initialReason = 'found', onClose, onDone
   async function save() {
     if (busy || blocked) return;
     const paidBy = paid === 'cash' ? !!cashAccount : !!supplierId;
-    const wrong = correctionProblem(reason, diff, note, unitCost, { average, paidBy });
+    const wrong = correctionProblem(reason, diff, note, unitCost, { ...(cost ? { average } : {}), paidBy });
     if (wrong) { setProblem(wrong); return; }
     const input: StockCorrectionInput = {
       warehouseId: shownWarehouse, mode, qtyMilli: mode === 'set' ? qtyMilli! : diff!, reason, lang: i18n.lang,
@@ -161,7 +182,11 @@ export function StockCorrection({ item, initialReason = 'found', onClose, onDone
     } catch (e) {
       // a refusal: the same fields may be sent again with a new key; a lost answer keeps the key (made at most once)
       if (!isNetworkError(e) && e instanceof ApiError) held.current = null;
-      setError(e);
+      // no average to value a surplus at, for someone who can't type a cost: who can enter it, in place of "write the cost"
+      if (!cost && noAverageRefusal(e)) setProblem('sc_noAverageNoCost');
+      // an office server before 1.4.2 has no stock correction
+      else if (oldServerRefusal(e)) setProblem('sc_oldServer');
+      else setError(e);
     } finally {
       setBusy(false);
     }
@@ -222,7 +247,7 @@ export function StockCorrection({ item, initialReason = 'found', onClose, onDone
         <label className="field">
           <span>{t('adj_reason')}</span>
           <select className="input" value={reason} onChange={(e) => pickReason(e.target.value as CorrectionReason)}>
-            {CORRECTION_REASONS.map((r) => <option key={r} value={r}>{t(`sc_r_${r}`)}</option>)}
+            {reasons.map((r) => <option key={r} value={r}>{t(`sc_r_${r}`)}</option>)}
           </select>
         </label>
         <div className="alert info small">{t(explain)}</div>
@@ -251,14 +276,14 @@ export function StockCorrection({ item, initialReason = 'found', onClose, onDone
         ) : <div className="alert warn small" role="note">{t('sc_purchaseNeedsPurchases')}</div>)}
         {!blocked && (comesIn || (diff === null && (mode === 'set' || way === 'in'))) && reason !== 'damaged' && reason !== 'lost' && (
           <>
-            <div className="grid-2">
+            {cost && <div className="grid-2">
               <div className="field">
                 <span>{t('sc_unitCost')} <span className="muted small">/ {unit}</span></span>
                 <AmountInput value={unitCost} currency="IQD" onChange={(v) => change(() => setTypedCost({ value: v }))} ariaLabel={t('sc_unitCost')}
                   placeholder={surplus && average !== null ? formatAmount(average, 'IQD') : undefined} />
                 {costHint && <span className="muted small">{t(costHint)}</span>}
               </div>
-            </div>
+            </div>}
             {item.trackBatches && (
               <div className="field">
                 <span>{t('ex_batch')}</span>
