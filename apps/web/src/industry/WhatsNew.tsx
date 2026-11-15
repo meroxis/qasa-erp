@@ -1,8 +1,9 @@
 import { Fragment, useEffect, useState } from 'react';
-import { APP_VERSION } from '@qasa/core';
+import { APP_VERSION, type Lang } from '@qasa/core';
 import { Modal } from '../components.tsx';
 import { useI18n } from '../i18n.ts';
-import { NOTES_BOX, NotesBlocks, ReleaseNotes } from './UpdateBanner.tsx';
+import { pickNotes } from './release-notes.ts';
+import { NOTES_BOX, NotesBlocks } from './UpdateBanner.tsx';
 import { upd } from './updates.ts';
 
 /**
@@ -10,7 +11,8 @@ import { upd } from './updates.ts';
  * install: the main process knows which, whats-new.ts), and again from Settings → About. The notes are the release
  * notes bundled with this build (apps/desktop/release-notes), so they show offline, in the reader's language, as text
  * only (release-notes.ts), never as HTML. After an update that skipped versions (1.4.0 → 1.4.2, as a Microsoft Store
- * copy often does), the notes of every version since the one before show too, newest first.
+ * copy often does), the notes of every version since the one before show too, newest first, without repeating a
+ * section a newer version already showed.
  */
 
 const BUNDLED = import.meta.glob('../../../desktop/release-notes/*.md', { query: '?raw', import: 'default', eager: true }) as Record<string, string>;
@@ -76,29 +78,60 @@ export function versionsSince(previous: string, current: string, files: Record<s
   return [...found].sort((a, b) => compareVersions(b, a));
 }
 
+/** Notes in one language cut into sections: what comes before the first heading, then each heading with what follows. */
+function sections(notes: string): string[] {
+  const out: string[][] = [[]];
+  for (const line of notes.split('\n')) {
+    if (/^#{1,6}\s/.test(line.trim())) out.push([]);
+    out[out.length - 1]!.push(line);
+  }
+  return out.map((lines) => lines.join('\n').trim()).filter(Boolean);
+}
+
+/** A section's words as two versions are compared: its lines trimmed, blank lines left out. */
+const wording = (section: string) => section.split('\n').map((l) => l.trim()).filter(Boolean).join('\n');
+
+/**
+ * The notes of `versions` (newest first) as a reader of `lang` sees them: each version's notes in that language, less
+ * any section a newer version in the list already showed word for word (every release since 1.0 repeats the one for
+ * 0.1.8 licences), and no version that has nothing of its own left. A version alone keeps all its notes.
+ */
+export function notesToShow(versions: readonly string[], lang: Lang, files: Record<string, string> = BUNDLED): { v: string; notes: string }[] {
+  const seen = new Set<string>();
+  const out: { v: string; notes: string }[] = [];
+  for (const v of versions) {
+    const text = bundledNotes(v, files);
+    if (text === null) continue;
+    const own = sections(pickNotes(text, lang));
+    const kept = own.filter((s) => !seen.has(wording(s)));
+    for (const s of own) seen.add(wording(s));
+    if (kept.length) out.push({ v, notes: kept.join('\n\n') });
+  }
+  return out;
+}
+
 interface DesktopWhatsNew { whatsNew?: () => Promise<{ current: string; previous: string | null } | null>; whatsNewSeen?: () => Promise<boolean> }
 const desktop = (): DesktopWhatsNew | undefined => (window as unknown as { qasaDesktop?: DesktopWhatsNew }).qasaDesktop;
 
 /** The notes of `versions` (newest first; this version alone when not given), under the title of this version. */
 export function WhatsNewDialog({ version, versions, onClose }: { version: string; versions?: readonly string[]; onClose(): void }) {
   const { lang } = useI18n();
-  const shown = (versions ?? [version]).flatMap((v) => {
-    const text = bundledNotes(v);
-    return text ? [{ v, text }] : [];
-  });
+  const shown = notesToShow(versions ?? [version], lang);
   // one version's notes as before; after an update that skipped versions, each under its own heading, in one box
-  const only = shown.length === 1 && shown[0]!.v === version ? shown[0]! : null;
+  const only = shown.length === 1 && shown[0]!.v === version;
   return (
     <Modal title={upd(lang, 'up_whatsNewTitle', { v: version })} onClose={onClose}>
       <div className="stack">
-        {!shown.length ? <p>{upd(lang, 'up_noNotes')}</p> : only ? <ReleaseNotes text={only.text} /> : (
+        {!shown.length ? <p>{upd(lang, 'up_noNotes')}</p> : (
           <div className="stack" style={NOTES_BOX}>
-            {shown.map(({ v, text }, i) => (
+            {shown.map(({ v, notes }, i) => (
               <Fragment key={v}>
-                <h4 style={{ margin: i ? '12px 0 0' : 0, paddingBlockStart: i ? 12 : 0, borderBlockStart: i ? '1px solid var(--line)' : 'none', fontSize: 'var(--fs-h2)' }}>
-                  {upd(lang, 'up_notesOf', { v })}
-                </h4>
-                <NotesBlocks text={text} />
+                {!only && (
+                  <h4 style={{ margin: i ? '12px 0 0' : 0, paddingBlockStart: i ? 12 : 0, borderBlockStart: i ? '1px solid var(--line)' : 'none', fontSize: 'var(--fs-h2)' }}>
+                    {upd(lang, 'up_notesOf', { v })}
+                  </h4>
+                )}
+                <NotesBlocks notes={notes} />
               </Fragment>
             ))}
           </div>

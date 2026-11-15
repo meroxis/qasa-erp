@@ -17,10 +17,9 @@ function Parts({ parts }: { parts: Inline[] }) {
 /** The box release notes scroll in, so the dialog's buttons stay in view. */
 export const NOTES_BOX = { gap: 6, maxHeight: '60vh', overflow: 'auto', lineHeight: 1.6 } as const;
 
-/** A version's notes in the reader's language, as text (never HTML), without a box of their own. */
-export function NotesBlocks({ text }: { text: string }) {
-  const { lang } = useI18n();
-  const list = blocks(pickNotes(text, lang));
+/** A version's notes already in the reader's language (pickNotes), as text (never HTML), without a box of their own. */
+export function NotesBlocks({ notes }: { notes: string }) {
+  const list = blocks(notes);
   return (
     <>
       {list.map((b, i) =>
@@ -34,7 +33,8 @@ export function NotesBlocks({ text }: { text: string }) {
 
 /** The release notes of a version, in the reader's language, as text (never HTML). */
 export function ReleaseNotes({ text }: { text: string }) {
-  return <div className="stack" style={NOTES_BOX}><NotesBlocks text={text} /></div>;
+  const { lang } = useI18n();
+  return <div className="stack" style={NOTES_BOX}><NotesBlocks notes={pickNotes(text, lang)} /></div>;
 }
 
 /**
