@@ -904,12 +904,12 @@ describe('the release notes and the Store "What\'s new" of this version', () => 
     expect(section('ar')).toContain('**الإعدادات ← شبكة المكتب ← شهادة مكتب جديدة**');
     expect(section('ku')).toContain('**ڕێکخستنەکان ← تۆڕی نووسینگە ← بڕوانامەی نوێی نووسینگە**');
     for (const lang of ['ar', 'en', 'ku'] as const) expect(section(lang), lang).toContain('PIN');
-    // the phone's PIN that can't be turned off is the phone app's own rule (roles.ts), in the build Settings offers (1.0.1)
+    // the phone's PIN that can't be turned off is the phone app's own rule (roles.ts), in every build Settings offers
+    // since 1.4.2 (the notes name 1.0.1, the first; after 1.4.2 Settings offers the newer build app.json says, 1.0.2 on)
     expect(read('apps/mobile/src/roles.ts')).toContain('export function lockRequired(me: Me | null): boolean {');
     const mobile = JSON.parse(read('apps/mobile/app.json')) as { expo: { version: string; android: { versionCode: number } } };
-    expect(mobile.expo.version).toBe('1.0.1');
-    expect(mobile.expo.android.versionCode).toBe(2);
-    expect(read('apps/web/src/pages/Settings.tsx')).toContain("version: '1.0.1',");
+    expect(mobile.expo.android.versionCode).toBeGreaterThanOrEqual(2);
+    expect(read('apps/web/src/pages/Settings.tsx')).toContain(`version: '${mobile.expo.version}',`);
     for (const lang of ['ar', 'en', 'ku'] as const) expect(section(lang), lang).toContain('1.0.1');
     // plain words: no frames, sockets, tokens or rate limits in the notes
     expect(notes).not.toMatch(/WebSocket|socket|token|frame|rate limit|IPv6|\/48/i);

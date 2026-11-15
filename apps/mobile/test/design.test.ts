@@ -1,4 +1,4 @@
-import { readdirSync, readFileSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { dateText, KEYS, LANGS, ltr, money, parseNumber, qty, translate, type Lang } from '../src/i18n';
@@ -78,6 +78,29 @@ describe('texts', () => {
 
   it('the plans the phone app is part of: Starter, Pro and Business', () => {
     for (const lang of LANGS) expect(translate(lang, 'planLimit'), lang).toMatch(/Starter.*Pro.*Business/);
+  });
+
+  // 1.0.2: where phones are paired on the PC, in the PC's own words (1.0.1 said "Settings → Phones", which the PC's
+  // settings do not have: the phones are under Office network)
+  it('names the PC\'s own way to pairing: Settings → Office network → Phones (Qasa app) → "Add a phone"', () => {
+    expect(translate('en', 'pairStep1')).toBe('On the Qasa PC: Settings → Office network → Phones (Qasa app) → "Add a phone".');
+    for (const key of KEYS) {
+      for (const lang of LANGS) expect(translate(lang, key), `${key} ${lang}`).not.toMatch(/(Settings|الإعدادات|ڕێکخستنەکان) (→|←) (Phones|الهواتف|مۆبایلەکان)/);
+    }
+    // the desktop's own texts, when the monorepo is here (apps/web: settings, netTitle, ph_title, ph_add)
+    const web = join(root, '..', 'web', 'src');
+    if (!existsSync(web)) return;
+    const words = (file: string, key: string) => {
+      const m = new RegExp(`^\\s*${key}: \\['([^']*)', '([^']*)', '([^']*)'\\]`, 'm').exec(readFileSync(join(web, file), 'utf8'));
+      if (!m) throw new Error(`${key} is not in ${file}`);
+      return { ar: m[1]!, en: m[2]!, ku: m[3]! } as Record<Lang, string>;
+    };
+    const [settings, network, phones, add] = [words('i18n.ts', 'settings'), words('i18n.ts', 'netTitle'), words('i18n/phone.ts', 'ph_title'), words('i18n/phone.ts', 'ph_add')];
+    const path = (lang: Lang) => (lang === 'en' ? [settings.en, network.en, phones.en].join(' → ') : [settings[lang], network[lang], phones[lang]].join(' ← '));
+    for (const lang of LANGS) {
+      expect(translate(lang, 'pairStep1'), lang).toContain(lang === 'en' ? `${path(lang)} → "${add.en}"` : `${path(lang)} ← «${add[lang]}»`);
+      for (const key of ['countSent', 'phoneLimit'] as const) expect(translate(lang, key), `${key} ${lang}`).toContain(path(lang));
+    }
   });
 
   it('money and quantities read as on the desktop, digits kept left to right inside Arabic and Kurdish', () => {

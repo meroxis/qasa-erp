@@ -1473,7 +1473,12 @@ interface PhonesStatus {
   listening: boolean;
   port: number;
   addresses: string[];
-  devices: { id: string; name: string; userId: string | null; userName: string | null; pairedAt: string; lastSeen: string | null; online: boolean }[];
+  devices: {
+    id: string; name: string; userId: string | null; userName: string | null; pairedAt: string; lastSeen: string | null; online: boolean;
+    /** the phone app's version as it said it (1.4.3: null, an app before 1.0.2; absent: an office PC that doesn't keep it) */
+    appVersion?: string | null;
+    appBuild?: number | null;
+  }[];
   users: { id: string; name: string }[];
   counts: { id: string; device: string; at: string; warehouseId: string | null; lines: { itemId: string; code: string; name: string; qty: number }[] }[];
   signInRequired: boolean;
@@ -1487,17 +1492,48 @@ export const PHONE_APP_READY = true;
 
 /**
  * Where the phone app is downloaded (the page in the app's language: Arabic at /phone/, English and Kurdish under
- * /en/ and /ku/), and what a careful user can check the downloaded APK against. 1.0.1 is the first build offered: it
- * asks for the PIN that can't be turned off (an admin, the owner, a user who sees the figures).
+ * /en/ and /ku/), and what a careful user can check the downloaded APK against. 1.0.1 was the first build offered (it
+ * asks for the PIN that can't be turned off: an admin, the owner, a user who sees the figures); 1.0.2 (with 1.4.3)
+ * sends Google no usage reports from its barcode scanner and tells this PC its version. Phones with an older app see
+ * a note in the list of phones (phoneAppOutdated), nothing more.
  */
 export const PHONE_APP = {
   url: 'https://qasaerp.com/phone/',
   urls: { ar: 'https://qasaerp.com/phone/', en: 'https://qasaerp.com/en/phone/', ku: 'https://qasaerp.com/ku/phone/' } as Record<Lang, string>,
-  version: '1.0.1',
-  apkSha256: '636e0025a5d0e909d14c3305b225bd7ea8a61fa69d3c2cefc759502f5438194b',
+  version: '1.0.2',
+  // qasa-erp-mobile-1.0.2.apk (versionCode 3), 97,290,728 bytes
+  apkSha256: '51386e6e007acbdcd668190ad676e1fbf7036e434f5fce4a7ea1f233fb0a6578',
   // what `apksigner verify --print-certs` shows as "certificate SHA-256 digest" (CN=Meroxis, O=Meroxis, C=IQ)
   certSha256: '6d8fb6a65d85d9f82b026b5ef6aa00acfd956cef63d555cf6fffd3596a4b3129'
 } as const;
+
+/**
+ * Whether a phone's app is older than the one offered (PHONE_APP.version). An app that says no version (null) is 1.0.1
+ * or older: 1.0.2 is the first that says it. Only a note on the card: an older app still works.
+ */
+export function phoneAppOutdated(version: string | null, offered: string = PHONE_APP.version): boolean {
+  const parts = (v: string) => v.split('.').map((n) => Number(n) || 0);
+  const have = parts(version ?? '1.0.1');
+  const want = parts(offered);
+  for (let i = 0; i < Math.max(have.length, want.length); i++) {
+    const d = (have[i] ?? 0) - (want[i] ?? 0);
+    if (d) return d < 0;
+  }
+  return false;
+}
+
+/** A phone's app version on the card: the version, or "1.0.1 or older", with a note when a newer one is out. */
+export function PhoneAppVersion({ device }: { device: PhonesStatus['devices'][number] }) {
+  const { t } = useI18n();
+  // (an office PC whose Pro module does not keep versions sends none: nothing to say)
+  if (device.appVersion === undefined) return <>—</>;
+  return (
+    <>
+      {device.appVersion ? <span className="ltr">{device.appVersion}</span> : t('ph_versionOld')}
+      {phoneAppOutdated(device.appVersion) && <div className="muted">{t('ph_newer')}</div>}
+    </>
+  );
+}
 
 /** Getting the phone app: the download page as a link and a QR code, the steps, and the fingerprints to check. */
 export function GetPhoneApp() {
@@ -1609,12 +1645,13 @@ export function PhonesCard({ ready = PHONE_APP_READY }: { ready?: boolean }) {
       {ready && status?.available && !pairing && <GetPhoneApp />}
       {status?.devices.length ? (
         <table className="table">
-          <thead><tr><th>{t('ph_phone')}</th><th>{t('ph_actsAs')}</th><th>{t('ph_lastSeen')}</th><th /></tr></thead>
+          <thead><tr><th>{t('ph_phone')}</th><th>{t('ph_actsAs')}</th><th>{t('ph_appVersion')}</th><th>{t('ph_lastSeen')}</th><th /></tr></thead>
           <tbody>
             {status.devices.map((d) => (
               <tr key={d.id}>
                 <td>{d.name} {d.online && <span className="chip ok">{t('ph_online')}</span>}</td>
                 <td>{d.userName ?? t('ph_owner')}</td>
+                <td className="small"><PhoneAppVersion device={d} /></td>
                 <td className="num small">{d.lastSeen ? dateTime(d.lastSeen) : '—'}</td>
                 <td><button type="button" className="btn small" onClick={() => void remove(d.id)}>{t('ph_remove')}</button></td>
               </tr>

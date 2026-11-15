@@ -112,7 +112,7 @@ export { receiptPosted } from './outbox';
 /** Counted quantities for the warehouse's open count on the PC. */
 export const countSessionBody = (lines: CountLine[]) => ({ counts: lines.map((l) => ({ itemId: l.item.id, countedMilli: toMilli(l.qty) })) });
 
-/** A count kept for the admin in Settings → Phones (when no count is open on the PC). */
+/** A count kept for the admin in Settings → Office network → Phones (when no count is open on the PC). */
 export const countListBody = (warehouseId: string | null, lines: CountLine[], names: (i: Item) => string) => ({
   warehouseId, lines: lines.map((l) => ({ itemId: l.item.id, code: l.item.code, name: names(l.item), qty: l.qty }))
 });

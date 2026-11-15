@@ -16,10 +16,13 @@ describe('the app\'s build settings', () => {
     expect(app.expo.android.blockedPermissions).toContain('android.permission.SYSTEM_ALERT_WINDOW');
     expect(app.expo.android.package).toBe('iq.qasaerp.mobile');
     // each build that goes to phones raises the version and versionCode together (Android refuses an equal or lower code);
-    // 1.0.1 (code 2) is the first build offered, with the PIN that can't be turned off
-    expect(app.expo.version).toBe('1.0.1');
-    expect(app.expo.android.versionCode).toBe(2);
+    // 1.0.1 (code 2) was the first build offered, with the PIN that can't be turned off; 1.0.2 (code 3) sends Google
+    // no usage reports and tells the office its version
+    expect(app.expo.version).toBe('1.0.2');
+    expect(app.expo.android.versionCode).toBe(3);
     expect(JSON.parse(readFileSync(join(root, 'package.json'), 'utf8')).version).toBe(app.expo.version);
+    const lock = JSON.parse(readFileSync(join(root, 'package-lock.json'), 'utf8')) as { version: string; packages: Record<string, { version: string }> };
+    expect([lock.version, lock.packages['']!.version]).toEqual([app.expo.version, app.expo.version]);
     expect(app.expo.android.adaptiveIcon.backgroundColor).toBe('#F2A33A');
     expect(app.expo.plugins).toContainEqual(['expo-local-authentication', { faceIDPermission: app.expo.ios.infoPlist.NSFaceIDUsageDescription }]);
   });

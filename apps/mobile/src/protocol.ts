@@ -10,8 +10,11 @@
  *
  * Handshake (phone → office, office → phone):
  *   1. phone: 0x01 | E (its new ephemeral public key) | AEAD(k1, n=0, {p: P, t: now, n: name, i?: pairing id,
- *      x?: proof}, aad = E), where k1 = HKDF(DH(E, S), salt = H(name of the protocol | S)) — only the real office
- *      (holding S's secret) can read it. On first pairing, proof = HMAC(pairing secret from the QR, E | P | S).
+ *      x?: proof, v?: app version, b?: app build}, aad = E), where k1 = HKDF(DH(E, S), salt = H(name of the protocol
+ *      | S)) — only the real office (holding S's secret) can read it. On first pairing, proof = HMAC(pairing secret
+ *      from the QR, E | P | S). The app's version ("1.0.2") and build (Android's versionCode) are sent from app 1.0.2
+ *      on and are optional both ways: an older app sends neither, an older office reads neither, and a malformed one is
+ *      taken as not sent (the office only shows them).
  *   2. office: 0x02 | F (its ephemeral public key) | AEAD(k_down, n=0, {ok, d: device id, c: company}, aad = F).
  *      The session keys come from DH(E,S) | DH(P,S) | DH(E,F) | DH(P,F): the office is proven by S, the phone by P
  *      (nobody without P's secret can read message 2 or send a valid message after it), and F/E give forward secrecy.
@@ -32,6 +35,17 @@ export const PROTOCOL = 'QasaPhone1';
 export const MAX_SKEW_MS = 5 * 60_000;
 /** The largest message either side accepts (a picture is about 400 KB as base64). */
 export const MAX_MESSAGE = 1024 * 1024;
+/** An app version as the phone sends it: numbers and dots ("1.0.2"). */
+export const APP_VERSION = /^\d{1,4}(\.\d{1,4}){0,3}$/;
+/** The highest build number (versionCode) Android allows. */
+export const MAX_APP_BUILD = 2_100_000_000;
+
+/** The app's version and build from the first message, when they are there and well formed (null: not said). */
+export function appOf(body: Record<string, unknown>): { version: string | null; build: number | null } {
+  const version = typeof body.v === 'string' && APP_VERSION.test(body.v) ? body.v : null;
+  const build = typeof body.b === 'number' && Number.isInteger(body.b) && body.b >= 1 && body.b <= MAX_APP_BUILD ? body.b : null;
+  return { version, build };
+}
 
 export type RefusalCode =
   | 'bad_message' | 'stale' | 'unknown_device' | 'pairing_invalid' | 'plan_limit' | 'phone_limit' | 'too_many' | 'busy';
@@ -183,6 +197,8 @@ export interface PhoneHello {
   /** first pairing: from the QR code */
   pairing?: { id: string; secret: Uint8Array } | undefined;
   now?: number | undefined;
+  /** the app's own version and build (Android's versionCode), shown on the office PC; from app 1.0.2 on */
+  app?: { version: string; build: number } | undefined;
 }
 
 export interface PhoneHandshake {
@@ -199,6 +215,12 @@ export function phoneHandshake(hello: PhoneHello): PhoneHandshake {
   if (hello.pairing) {
     body.i = hello.pairing.id;
     body.x = toB64(pairingProof(hello.pairing.secret, e.publicKey, hello.phone.publicKey, S));
+  }
+  // only what the office would take (appOf): a version it would not read is not sent at all
+  if (hello.app) {
+    const app = appOf({ v: hello.app.version, b: hello.app.build });
+    if (app.version) body.v = app.version;
+    if (app.build) body.b = app.build;
   }
   const message1 = concatBytes(new Uint8Array([1]), e.publicKey, chacha20poly1305(k1, nonce(0), e.publicKey).encrypt(json(body)));
   return {
@@ -239,6 +261,9 @@ export interface PhoneClaim {
   name: string;
   /** set on first pairing (already checked against the pairing secret) */
   pairingId: string | null;
+  /** the app's version and build as the phone says them (null: an app before 1.0.2, which says neither) */
+  appVersion: string | null;
+  appBuild: number | null;
 }
 
 export interface OfficeAnswer {
@@ -272,8 +297,9 @@ export function officeHandshake(message1: Uint8Array, server: KeyPair, pairingSe
     if (!secret || !sameBytes(fromB64(body.x), pairingProof(secret, e, P, S))) throw new ProtocolError('pairing_invalid');
     pairingId = body.i;
   }
+  const app = appOf(body);
   return {
-    claim: { phonePublicKey: P, name: body.n.slice(0, 80), pairingId },
+    claim: { phonePublicKey: P, name: body.n.slice(0, 80), pairingId, appVersion: app.version, appBuild: app.build },
     accept(deviceId, company) {
       const f = generateKeyPair();
       const keys = sessionKeys([

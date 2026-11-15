@@ -30,7 +30,10 @@ import { AboutScreen, MoreScreen, OutboxScreen, PrefsCtx, SecurityScreen, type P
 import { PairScreen } from './src/screens/pair';
 import { CartScreen } from './src/screens/sell';
 
-const VERSION: string = (require('./app.json') as { expo: { version: string } }).expo.version;
+const APP_JSON = require('./app.json') as { expo: { version: string; android: { versionCode: number } } };
+const VERSION: string = APP_JSON.expo.version;
+/** this app's version and build, as the office PC shows them for each phone (prebuild writes both from app.json) */
+const APP = { version: VERSION, build: APP_JSON.expo.android.versionCode };
 const socket = (url: string) => new WebSocket(url) as unknown as SocketLike;
 const NO_LOCK: LockSettings = { pin: null, length: 0, biometric: false, after: 60_000 };
 
@@ -114,7 +117,7 @@ function Main() {
 
   const makeLink = useCallback((info: OfficeInfo, phone: KeyPair, phoneName: string, pairing?: { id: string; secret: Uint8Array }) => {
     const l = new OfficeLink({
-      office: info, phone, name: phoneName, pairing, socket,
+      office: info, phone, name: phoneName, pairing, socket, app: APP,
       onState: (st, d, v) => { setState(st); setDetail(d); setVia(v ?? null); },
       onPaired: (deviceId, company) => {
         const saved = { ...info, deviceId, company: company || info.company };

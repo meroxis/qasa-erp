@@ -11,7 +11,12 @@ const T = {
 
   // ——— pairing ———
   pairTitle: ['اربط الهاتف بمكتبك', 'Pair the phone with your office', 'مۆبایلەکە بە نووسینگەکەتەوە ببەستەوە'],
-  pairStep1: ['على حاسوب قاصة: الإعدادات ← الهواتف ← «إضافة هاتف».', 'On the Qasa PC: Settings → Phones → "Add a phone".', 'لەسەر کۆمپیوتەری قاسە: ڕێکخستنەکان ← مۆبایلەکان ← «زیادکردنی مۆبایل».'],
+  // the PC's own words for where phones are paired (apps/web: settings, netTitle, ph_title, ph_add; a test checks them)
+  pairStep1: [
+    'على حاسوب قاصة: الإعدادات ← شبكة المكتب ← الهواتف (تطبيق قاصة) ← «إضافة هاتف».',
+    'On the Qasa PC: Settings → Office network → Phones (Qasa app) → "Add a phone".',
+    'لەسەر کۆمپیوتەری قاسە: ڕێکخستنەکان ← تۆڕی نووسینگە ← مۆبایلەکان (ئەپی قاسە) ← «زیادکردنی مۆبایل».'
+  ],
   pairStep2: ['امسح الرمز الظاهر على الحاسوب بهذا الهاتف.', 'Scan the code shown on the PC with this phone.', 'ئەو کۆدەی لەسەر کۆمپیوتەرەکە دەردەکەوێت بەم مۆبایلە بخوێنەوە.'],
   pairStep3: [
     'بعدها يتصل الهاتف وحده: على شبكة Wi-Fi المكتب، أو من أي مكان عبر Qasa Relay إن كان مفعّلاً على الحاسوب.',
@@ -176,7 +181,11 @@ const T = {
   count: ['جرد المخزن', 'Count stock', 'جەردی کۆگا'],
   countEmpty: ['لم يُجرد شيء بعد. امسح مادة وأدخل الكمية.', 'Nothing counted yet. Scan an item and enter the quantity.', 'هێشتا هیچ جەرد نەکراوە. بارکۆدی کاڵایەک بخوێنەوە و بڕەکەی بنووسە.'],
   sendCount: ['إرسال الجرد إلى الحاسوب', 'Send the count to the PC', 'ناردنی جەرد بۆ کۆمپیوتەر'],
-  countSent: ['أُرسل الجرد؛ يجده المسؤول في الإعدادات ← الهواتف.', 'The count was sent; the admin finds it in Settings → Phones.', 'جەردەکە نێردرا؛ بەڕێوەبەر لە ڕێکخستنەکان ← مۆبایلەکان دەیبینێت.'],
+  countSent: [
+    'أُرسل الجرد؛ يجده المسؤول في الإعدادات ← شبكة المكتب ← الهواتف (تطبيق قاصة).',
+    'The count was sent; the admin finds it in Settings → Office network → Phones (Qasa app).',
+    'جەردەکە نێردرا؛ بەڕێوەبەر لە ڕێکخستنەکان ← تۆڕی نووسینگە ← مۆبایلەکان (ئەپی قاسە) دەیبینێت.'
+  ],
   openCountNote: ['هناك جرد مفتوح لهذا المخزن على الحاسوب: تدخل الكميات فيه مباشرة.', 'A count is open for this warehouse on the PC: the quantities go straight into it.', 'جەردێکی کراوە بۆ ئەم کۆگایە لەسەر کۆمپیوتەر هەیە: بڕەکان ڕاستەوخۆ دەچنە ناوی.'],
   countSessionSent: ['أُدخلت الكميات في الجرد المفتوح على الحاسوب.', 'The quantities were entered into the open count on the PC.', 'بڕەکان خرانە ناو جەردە کراوەکەی سەر کۆمپیوتەر.'],
 
@@ -273,7 +282,11 @@ const T = {
   // ——— refusals ———
   forbidden: ['ليس لديك صلاحية لهذا. اطلبها من مدير قاصة.', 'You don\'t have permission for this. Ask the Qasa admin.', 'دەسەڵاتی ئەمەت نییە. لە بەڕێوەبەری قاسە داوای بکە.'],
   planLimit: ['تطبيق الهاتف من مزايا Starter وPro وBusiness.', 'The phone app is part of Starter, Pro and Business.', 'ئەپی مۆبایل بەشێکە لە Starter، Pro و Business.'],
-  phoneLimit: ['وصل الحاسوب إلى عدد الهواتف المسموح به. احذف هاتفاً من الإعدادات ← الهواتف.', 'The PC has as many phones as its plan allows. Remove one in Settings → Phones.', 'کۆمپیوتەرەکە گەیشتۆتە ژمارەی مۆبایلی ڕێگەپێدراو. یەکێک لە ڕێکخستنەکان ← مۆبایلەکان لاببە.'],
+  phoneLimit: [
+    'وصل الحاسوب إلى عدد الهواتف المسموح به. احذف هاتفاً من الإعدادات ← شبكة المكتب ← الهواتف (تطبيق قاصة).',
+    'The PC has as many phones as its plan allows. Remove one in Settings → Office network → Phones (Qasa app).',
+    'کۆمپیوتەرەکە گەیشتۆتە ژمارەی مۆبایلی ڕێگەپێدراو. یەکێک لە ڕێکخستنەکان ← تۆڕی نووسینگە ← مۆبایلەکان (ئەپی قاسە) لاببە.'
+  ],
   pairingInvalid: ['انتهت صلاحية الرمز أو استُخدم. اطلب رمزاً جديداً من الحاسوب.', 'The code expired or was used. Ask the PC for a new one.', 'کۆدەکە بەسەرچوو یان بەکارهات. داوای کۆدێکی نوێ لە کۆمپیوتەر بکە.'],
   unknownDevice: ['حُذف هذا الهاتف من الحاسوب. اربطه من جديد.', 'This phone was removed on the PC. Pair it again.', 'ئەم مۆبایلە لە کۆمپیوتەرەکەوە لابرا. دووبارە بیبەستەوە.'],
   stale: ['ساعة الهاتف غير مضبوطة. صحّح الوقت والتاريخ.', 'The phone\'s clock is off. Fix the time and date.', 'کاتژمێری مۆبایل ڕێک نییە. کات و بەروار ڕاست بکەرەوە.'],

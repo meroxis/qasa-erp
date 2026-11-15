@@ -1,4 +1,4 @@
-/** The Qasa phone app (Pro): pairing phones with this PC, in Settings → Phones. Arabic, English and Kurdish (Sorani), in that order, like i18n.ts. */
+/** The Qasa phone app (Pro): pairing phones with this PC, in Settings → Office network → Phones. Arabic, English and Kurdish (Sorani), in that order, like i18n.ts. */
 export const PHONE_TEXT = {
   ph_title: ['الهواتف (تطبيق قاصة)', 'Phones (Qasa app)', 'مۆبایلەکان (ئەپی قاسە)'],
   ph_help: [
@@ -18,6 +18,10 @@ export const PHONE_TEXT = {
   ph_actsAs: ['يعمل باسم', 'Works as', 'کار دەکات بە ناوی'],
   ph_owner: ['المالك', 'The owner', 'خاوەن'],
   ph_lastSeen: ['آخر اتصال', 'Last seen', 'دوایین پەیوەندی'],
+  // 1.4.3: the phone app says its version when it connects (app 1.0.2 on); an older app says none
+  ph_appVersion: ['إصدار التطبيق', 'App version', 'وەشانی ئەپ'],
+  ph_versionOld: ['1.0.1 أو أقدم', '1.0.1 or older', '1.0.1 یان کۆنتر'],
+  ph_newer: ['يوجد إصدار أحدث على qasaerp.com/phone.', 'A newer version is on qasaerp.com/phone.', 'وەشانێکی نوێتر لە qasaerp.com/phone هەیە.'],
   ph_online: ['متصل', 'Online', 'پەیوەستە'],
   ph_remove: ['حذف', 'Remove', 'لابردن'],
   ph_removed: ['حُذف الهاتف؛ لم يعد يستطيع الاتصال.', 'The phone was removed; it can no longer connect.', 'مۆبایلەکە لابرا؛ چیتر ناتوانێت پەیوەندی بکات.'],
