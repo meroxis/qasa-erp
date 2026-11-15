@@ -5,7 +5,7 @@ import { LTR_ISOLATE_END, LTR_ISOLATE_START, stripBidiIsolates, type AmountsShow
 import { DataContext } from './components.tsx';
 import { I18nContext, makeI18n } from './i18n.ts';
 import { AMOUNTS_TEXT } from './i18n/amounts.ts';
-import { Amount, amountTextOf, boardRate, DocAmount, DualContext, DualNote, DualRateHint, dualRateTitle, dualText, OwedTotal, paperRateX100, rateReader, type DualRate, type DualSource } from './Amount.tsx';
+import { Amount, amountTextOf, boardOf, boardRate, boardReader, DocAmount, DualContext, DualNote, DualRateHint, dualRateTitle, dualText, OwedTotal, paperRateX100, rateFromBoard, type Board, type DualRate, type DualSource } from './Amount.tsx';
 import type { EntrySummary, InvoiceSummary, PartyView } from './api.ts';
 import type { MoneyAccountView } from './industry/banking-api.ts';
 import type { BriefView, DashboardView, DayCloseView } from './industry/brief-api.ts';
@@ -166,28 +166,21 @@ describe('the helper', () => {
     expect(render(<OwedTotal owed={undefined} book={3_298_000} />, { dual: source('iqd_usd') })).toBe('3,298,000 IQD');
   });
 
-  it('reads each day\'s rate once and writes every day it read, the day a lookup fell back to as well', async () => {
-    const written = new Map<string, DualRate | null>();
-    const asked: string[] = [];
-    const read = rateReader(async (d) => {
-      asked.push(d);
-      return d >= '2026-11-01' ? { source: 'board', date: '2026-11-14', rateX100: 131_000 } : { source: 'default', date: null, rateX100: 142_000 };
-    }, (d, r) => { written.set(d, r); });
+  it('reads the rate board once, and works out each day from it, the day a lookup falls back to (today) as well', async () => {
+    const boards: Board[] = [];
+    let reads = 0;
+    const read = boardReader(async () => { reads += 1; return [{ date: '2026-11-14', rateX100: 131_000, source: null }]; }, (b) => { boards.push(b); });
+    read();
+    read();
+    await new Promise((resolve) => { setTimeout(resolve, 0); });
+    read();
+    expect(reads).toBe(1);
+    expect(boards).toEqual([[{ date: '2026-11-14', rateX100: 131_000 }]]);
     // an invoice dated before every rate on the board: today's rate stands in, and today is known too
-    read('2026-10-01', '2026-11-15');
-    await new Promise((resolve) => { setTimeout(resolve, 0); });
-    expect(written.get('2026-10-01')).toEqual({ rateX100: 131_000, date: '2026-11-14', today: true });
-    expect(written.get('2026-11-15')).toEqual({ rateX100: 131_000, date: '2026-11-14', today: false });
-    read('2026-11-15', '2026-11-15');
-    read('2026-10-01', '2026-11-15');
-    await new Promise((resolve) => { setTimeout(resolve, 0); });
-    expect(asked).toEqual(['2026-10-01', '2026-11-15']);
-    // no rate on the board at all: null, written for both days
-    const none = new Map<string, DualRate | null>();
-    const empty = rateReader(async () => ({ source: 'default', date: null, rateX100: 142_000 }), (d, r) => { none.set(d, r); });
-    empty('2026-10-01', '2026-11-15');
-    await new Promise((resolve) => { setTimeout(resolve, 0); });
-    expect([...none]).toEqual([['2026-11-15', null], ['2026-10-01', null]]);
+    expect(rateFromBoard(boards[0]!, '2026-10-01', '2026-11-15')).toEqual({ rateX100: 131_000, date: '2026-11-14', today: true });
+    expect(rateFromBoard(boards[0]!, '2026-11-15', '2026-11-15')).toEqual({ rateX100: 131_000, date: '2026-11-14', today: false });
+    // no rate on the board at all: null for every day
+    for (const day of ['2026-10-01', '2026-11-15']) expect(rateFromBoard(boardOf([]), day, '2026-11-15')).toBe(null);
   });
 
   it('carries the ≈ figures into the copied and sent brief and end of day, and nothing new with dinar only', () => {
@@ -362,54 +355,54 @@ describe('after the second review', () => {
   it('a paper dated before the first rate on the board uses the same rate as the screen (today\'s), not the usual rate', async () => {
     expect(await boardRate(board, '2026-10-01', '2026-11-15')).toEqual({ rateX100: 131_000, date: '2026-11-14', today: true });
     expect(await paperRateX100(board, '2026-10-01', '2026-11-15', 142_000)).toBe(131_000);
-    const screen = new Map<string, DualRate | null>();
-    rateReader(board, (d, r) => { screen.set(d, r); })('2026-10-01', '2026-11-15');
-    await tick();
-    expect(screen.get('2026-10-01')?.rateX100).toBe(await paperRateX100(board, '2026-10-01', '2026-11-15', 142_000));
+    // the screen: the same board read whole (1,310 entered on 2026-11-14)
+    const screen = rateFromBoard(boardOf([{ date: '2026-11-14', rateX100: 131_000 }]), '2026-10-01', '2026-11-15');
+    expect(screen?.rateX100).toBe(await paperRateX100(board, '2026-10-01', '2026-11-15', 142_000));
     // no rate on the board at all, or the board cannot be read: the paper keeps the usual rate (the screen shows no ≈)
     expect(await paperRateX100(async () => ({ source: 'default', date: null, rateX100: 142_000 }), '2026-10-01', '2026-11-15', 142_000)).toBe(142_000);
     expect(await paperRateX100(() => Promise.reject(new Error('offline')), '2026-10-01', '2026-11-15', 142_000)).toBe(142_000);
   });
 
-  it('does not keep a failed rate request: it asks again after a short pause; a real "no rate" stays known', async () => {
-    const written = new Map<string, DualRate | null>();
+  it('does not keep a failed read of the rate board: it reads again after a short pause; a board with no rate stays known', async () => {
+    const written: Board[] = [];
     let fail = true;
-    const asked: string[] = [];
-    const read = rateReader(async (d) => {
-      asked.push(d);
+    let reads = 0;
+    const read = boardReader(async () => {
+      reads += 1;
       if (fail) throw new Error('offline');
-      return board(d);
-    }, (d, r) => { written.set(d, r); }, { retryMs: 100 });
-    read('2026-11-15', '2026-11-15');
+      return [{ date: '2026-11-14', rateX100: 131_000 }];
+    }, (b) => { written.push(b); }, { retryMs: 100 });
+    read();
     await tick();
-    // the failure is no answer: nothing written (the amount stays "being read", not "no rate")
-    expect(written.has('2026-11-15')).toBe(false);
+    // the failure is no answer: nothing written (the amounts stay "being read", not "no rate")
+    expect(written).toEqual([]);
     // within the pause a render does not ask again
-    read('2026-11-15', '2026-11-15');
+    read();
     await tick();
-    expect(asked).toEqual(['2026-11-15']);
+    expect(reads).toBe(1);
     fail = false;
     await new Promise((resolve) => { setTimeout(resolve, 250); });
-    expect(written.get('2026-11-15')).toEqual({ rateX100: 131_000, date: '2026-11-14', today: false });
-    // a board with no rate: null, asked once and kept
-    const none = new Map<string, DualRate | null>();
-    const calls: string[] = [];
-    const empty = rateReader(async (d) => { calls.push(d); return { source: 'default', date: null, rateX100: 142_000 }; }, (d, r) => { none.set(d, r); }, { retryMs: 5 });
-    empty('2026-11-15', '2026-11-15');
+    expect(written).toEqual([[{ date: '2026-11-14', rateX100: 131_000 }]]);
+    expect(rateFromBoard(written[0]!, '2026-11-15', '2026-11-15')).toEqual({ rateX100: 131_000, date: '2026-11-14', today: false });
+    // a board with no rate: read once and kept (every day has no rate)
+    const none: Board[] = [];
+    let calls = 0;
+    const empty = boardReader(async () => { calls += 1; return []; }, (b) => { none.push(b); }, { retryMs: 5 });
+    empty();
     await new Promise((resolve) => { setTimeout(resolve, 30); });
-    empty('2026-11-15', '2026-11-15');
+    empty();
     await tick();
-    expect(none.get('2026-11-15')).toBe(null);
-    expect(calls).toEqual(['2026-11-15']);
+    expect(none).toEqual([[]]);
+    expect(calls).toBe(1);
     // a reader no longer in use stops asking
     let alive = true;
-    const tries: string[] = [];
-    const gone = rateReader(async (d) => { tries.push(d); throw new Error('offline'); }, () => {}, { retryMs: 5, alive: () => alive });
-    gone('2026-11-15', '2026-11-15');
+    let tries = 0;
+    const gone = boardReader(async () => { tries += 1; throw new Error('offline'); }, () => {}, { retryMs: 5, alive: () => alive });
+    gone();
     await tick();
     alive = false;
     await new Promise((resolve) => { setTimeout(resolve, 40); });
-    expect(tries).toEqual(['2026-11-15']);
+    expect(tries).toBe(1);
   });
 
   it('the ageing report: each row from its real dinars and dollars, then the ≈ whole, like its totals row', () => {

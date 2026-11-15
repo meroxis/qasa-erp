@@ -40,17 +40,14 @@ export const DINAR_ONLY: DualSource ={ show: DEFAULT_AMOUNTS_SHOW, rate: () => n
 export const DualContext = createContext<DualSource>(DINAR_ONLY);
 export const useDual = (): DualSource => useContext(DualContext);
 
-/** Asks for a day's rate (today's date given by the caller); the answer comes through the reader's `write`. */
-export type RateReader = (day: string, today: string) => void;
-
 /** The rate board's answer for a day (fxApi.rateOn): `source` 'board' when a rate was entered on or before it. */
 export type RateOn = (day: string) => Promise<{ source: string; date: string | null; rateX100: number }>;
 
 /**
- * The one rule for a day's dollar rate, for the screens (rateReader) and the printed paper (paperRateX100) alike: the
- * rate entered on or before the day; for a day older than every rate, today's (the latest), marked `today`; null when
- * the board has none. A failed request rejects (it is not an answer). `todayRate`: today's lookup, for a caller that
- * keeps it.
+ * The one rule for a day's dollar rate, for the printed paper (paperRateX100) and, worked out on the whole board read
+ * once, for the screens (rateFromBoard): the rate entered on or before the day; for a day older than every rate,
+ * today's (the latest), marked `today`; null when the board has none. A failed request rejects (it is not an answer).
+ * `todayRate`: today's lookup, for a caller that keeps it.
  */
 export function boardRate(rateOn: RateOn, day: string, today: string, todayRate: () => Promise<DualRate | null> = () => boardRate(rateOn, today, today)): Promise<DualRate | null> {
   return rateOn(day).then((r) => (r.source === 'board' && r.date && usableRate(r.rateX100)
@@ -66,74 +63,132 @@ export function paperRateX100(rateOn: RateOn, day: string, today: string, usualX
   return boardRate(rateOn, day, today).then((r) => r?.rateX100 ?? usualX100, () => usualX100);
 }
 
-/** The first pause before a failed rate request is asked again; it doubles on each failure, up to a minute. */
-export const RATE_RETRY_MS = 2_000;
+/** A rate entered on the rate board (fxApi.rates gives every one, newest first). */
+export interface BoardEntry { date: string; rateX100: number }
 
-/**
- * Reads each day's rate once from the rate board (boardRate). Every day read is written (`write`) when its answer
- * comes, the day a lookup fell back to (today) as well: a day asked for but never written would stay "being read" for
- * the whole session. A failed request (offline, the server restarting) is not an answer and is not kept: the day is
- * asked again after a short pause, longer after each failure, while the reader is still in use (`alive`).
- */
-export function rateReader(
-  rateOn: RateOn,
-  write: (day: string, rate: DualRate | null) => void,
-  { retryMs = RATE_RETRY_MS, alive = () => true }: { retryMs?: number; alive?: () => boolean } = {}
-): RateReader {
-  const asked = new Map<string, Promise<DualRate | null>>();
-  const failures = new Map<string, number>();
-  const load = (d: string, today: string): Promise<DualRate | null> => {
-    const had = asked.get(d);
-    if (had) return had;
-    const p = boardRate(rateOn, d, today, () => load(today, today));
-    asked.set(d, p);
-    p.then((r) => { failures.delete(d); write(d, r); }, () => {
-      // (until the pause is over the failed answer stays, so a render does not ask again at once)
-      const n = (failures.get(d) ?? 0) + 1;
-      failures.set(d, n);
-      setTimeout(() => {
-        if (asked.get(d) === p) asked.delete(d);
-        if (alive()) void load(d, today).catch(() => undefined);
-      }, Math.min(retryMs * 2 ** (n - 1), 60_000));
-    });
-    return p;
-  };
-  return (day, today) => { void load(day, today).catch(() => undefined); };
+/** The rate board as the screens keep it, read once: every rate entered, oldest first. */
+export type Board = readonly BoardEntry[];
+
+/** Every rate entered, oldest first, as rateFromBoard looks them up (the server lists them newest first). */
+export function boardOf(rates: readonly BoardEntry[]): Board {
+  return rates.map(({ date, rateX100 }) => ({ date, rateX100 })).sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
 }
 
 /**
- * The live source for the app: the company's choice, and each day's rate read once from the rate board.
+ * boardRate's rule worked out on the whole board, read once: the rate entered on the day or the latest before it (as
+ * the server's rateOn finds it); for a day older than every rate, or when that rate is not one the app converts with,
+ * today's, marked `today`; null when there is none. For every day the same answer as asking the server for that day,
+ * with no request for each date a list shows.
+ */
+export function rateFromBoard(board: Board, day: string, today: string): DualRate | null {
+  const at = (d: string, fallback: boolean): DualRate | null => {
+    // the last rate entered on or before d (the date is the board's key: one rate a day)
+    let lo = 0;
+    let hi = board.length;
+    while (lo < hi) {
+      const mid = (lo + hi) >> 1;
+      if (board[mid]!.date <= d) lo = mid + 1;
+      else hi = mid;
+    }
+    const r = board[lo - 1];
+    return r && usableRate(r.rateX100) ? { rateX100: r.rateX100, date: r.date, today: fallback } : null;
+  };
+  return at(day, false) ?? (day >= today ? null : at(today, true));
+}
+
+/** The first pause before a failed read of the rate board is tried again; it doubles on each failure, up to a minute. */
+export const RATE_RETRY_MS = 2_000;
+
+/**
+ * Reads the whole rate board once for every amount on the screens (rateFromBoard works out each day's rate from it):
+ * one request however many dates a list shows. Asked again while the board is being read, or once it is read, it asks
+ * nothing. A failed read (offline, the server restarting) is not an answer and is not kept: it is tried again after a
+ * short pause, longer after each failure, while the reader is still in use (`alive`).
+ */
+export function boardReader(
+  read: () => Promise<readonly BoardEntry[]>,
+  write: (board: Board) => void,
+  { retryMs = RATE_RETRY_MS, alive = () => true }: { retryMs?: number; alive?: () => boolean } = {}
+): () => void {
+  let asked = false;
+  let failures = 0;
+  const load = (): void => {
+    if (asked) return;
+    asked = true;
+    read().then(boardOf).then((board) => { failures = 0; write(board); }, () => {
+      // (until the pause is over the read stays asked, so a render does not ask again at once)
+      failures += 1;
+      setTimeout(() => {
+        asked = false;
+        if (alive()) load();
+      }, Math.min(retryMs * 2 ** (failures - 1), 60_000));
+    });
+  };
+  return load;
+}
+
+/** Every rate entered, also one dated after the server's today (its clock put back), as its rateOn finds them. */
+const BOARD_TO = '9999-12-31';
+/** A day as the server takes one; it refuses any other (no rate then, as when each day was asked for). */
+const DAY = /^\d{4}-\d{2}-\d{2}$/;
+
+/**
+ * What the screens read (DualProvider's value): once the board is read, each day's rate worked out from it
+ * (rateFromBoard), the same answer for a day on every call; until then undefined ("being read"), and `ask` reads it.
+ */
+export function boardSource(show: AmountsShow, canSet: boolean, board: Board | null, ask: () => void, today: () => string = todayIso): DualSource {
+  const answers = new Map<string, DualRate | null>();
+  return {
+    show, canSet,
+    rate(date) {
+      if (show === 'iqd') return null;
+      const now = today();
+      // (a day after the browser's today is kept: the server's day, for figures it dated, may be ahead of this PC's clock)
+      const day = date || now;
+      if (!DAY.test(day)) return undefined;
+      if (!board) {
+        ask();
+        return undefined;
+      }
+      const key = `${day} ${now}`;
+      let r = answers.get(key);
+      if (r === undefined) {
+        r = rateFromBoard(board, day, now);
+        answers.set(key, r);
+      }
+      return r;
+    }
+  };
+}
+
+/**
+ * The live source for the app: the company's choice, and the rate board, read once, for every day's rate.
  * `watch`: anything that changes when a rate may have changed (the usual rate, leaving the rate board).
  */
 export function DualProvider({ show, canSet, watch, children }: { show: AmountsShow; canSet: boolean; watch: unknown; children: ReactNode }) {
-  const [known, setKnown] = useState<ReadonlyMap<string, DualRate | null>>(() => new Map());
-  const reader = useRef<RateReader | null>(null);
-  // a rate may have changed: read every day again (the answers of the reader before are dropped)
+  // (a new object each time, also for "not read yet" again: the amounts then render and ask for the board anew)
+  const [read, setRead] = useState<{ board: Board | null }>(() => ({ board: null }));
+  const reader = useRef<(() => void) | null>(null);
+  // a rate may have changed: read the board again (the answer of the reader before is dropped)
   const seen = useRef(watch);
   useEffect(() => {
     if (Object.is(seen.current, watch)) return;
     seen.current = watch;
     reader.current = null;
-    setKnown(new Map());
+    setRead({ board: null });
   }, [watch]);
 
-  const rate = useCallback((date?: string): DualRate | null | undefined => {
-    if (show === 'iqd') return null;
-    const today = todayIso();
-    // (a day after the browser's today is kept: the server's day, for figures it dated, may be ahead of this PC's clock)
-    const day = date || today;
-    if (known.has(day)) return known.get(day);
+  const ask = useCallback(() => {
     if (!reader.current) {
-      const mine: RateReader = rateReader((d) => fxApi.rateOn(d), (d, r) => {
-        if (reader.current === mine) setKnown((m) => (m.has(d) ? m : new Map(m).set(d, r)));
+      const mine = boardReader(() => fxApi.rates({ to: BOARD_TO }), (board) => {
+        if (reader.current === mine) setRead({ board });
       }, { alive: () => reader.current === mine });
       reader.current = mine;
     }
-    reader.current(day, today);
-    return undefined;
-  }, [show, known]);
+    reader.current();
+  }, []);
 
-  const value = useMemo<DualSource>(() => ({ show, rate, canSet }), [show, rate, canSet]);
+  const value = useMemo<DualSource>(() => boardSource(show, canSet, read.board, ask), [show, canSet, read, ask]);
   return <DualContext.Provider value={value}>{children}</DualContext.Provider>;
 }
 
