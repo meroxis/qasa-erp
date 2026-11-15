@@ -98,7 +98,9 @@ export function noticeFor(fresh: readonly PhoneActivityItem[], t: T, money: Mone
  */
 export function whatToTell(answer: PhoneActivityAnswer, told: number | null, on: boolean, t: T, money: Money, int: (n: number) => string): { toldUpTo: number; notice: Notice | null } | null {
   if (!answer.items) return null;
-  if (told === null) return { toldUpTo: answer.last, notice: null };
+  // the first time on this PC, or what was told is past the office's newest line (another office, or the company
+  // restored from an older backup): start from now, telling nothing
+  if (told === null || told > answer.last) return { toldUpTo: answer.last, notice: null };
   const fresh = freshItems(answer.items, told, answer.seen);
   return { toldUpTo: Math.max(told, answer.last), notice: on ? noticeFor(fresh, t, money, int) : null };
 }

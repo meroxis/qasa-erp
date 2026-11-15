@@ -61,7 +61,8 @@ describe('what a notice says and opens', () => {
     expect(whatToTell(answer, 20, true, ...words())).toMatchObject({ toldUpTo: 31, notice: { route: 'invoice/doc-30' } });
     expect(whatToTell(answer, 5, true, ...words())!.notice!.title).toBe('3 new from phones');
     expect(whatToTell(answer, 20, false, ...words())).toEqual({ toldUpTo: 31, notice: null });
-    expect(whatToTell(answer, 40, true, ...words())).toEqual({ toldUpTo: 40, notice: null });
+    // told past the office's newest line (another office, a company restored from an older backup): from now on
+    expect(whatToTell(answer, 40, true, ...words())).toEqual({ toldUpTo: 31, notice: null });
     // "nothing new" (no list): nothing changes
     expect(whatToTell({ on: true, last: 31, seen: 0, waiting: null }, 20, true, ...words())).toBeNull();
   });

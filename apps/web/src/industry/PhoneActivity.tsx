@@ -55,7 +55,11 @@ export function PhoneBell({ userKey }: { userKey: string }) {
     let timer: number | undefined;
     let failures = 0;
     let since: number | undefined;
+    let asking = false;
     const tick = async () => {
+      // one question at a time (coming back into view while one is on its way does not start a second round)
+      if (asking) return;
+      asking = true;
       window.clearTimeout(timer);
       let on = shownRef.current?.on ?? true;
       try {
@@ -68,6 +72,8 @@ export function PhoneBell({ userKey }: { userKey: string }) {
         tell(answer);
       } catch {
         failures++;
+      } finally {
+        asking = false;
       }
       if (!stopped) timer = window.setTimeout(() => void tick(), pollDelay({ hidden: document.hidden, on, failures }));
     };
