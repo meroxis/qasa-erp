@@ -780,7 +780,8 @@ describe('the release notes of 1.4.1 (kept as shipped)', () => {
     expect(section('ku')).toContain('لە **داخستنی ڕۆژ**، بەکارهێنەرێک کە دەفتەرەکان ڕاناگرێت تەنها ئەو کاشێرانە دەبینێت کە خۆی کردوونیەتەوە');
     // the rule the notes tell is the server's (cost-view.ts, day-close.ts)
     expect(read('packages/server/src/cost-view.ts')).toContain("'/api/banking/statements', '/api/banking/cheques'];");
-    expect(read('packages/server/src/day-close.ts')).toContain('if (viewer && !seesBooks(viewer)) {');
+    // (phone app 1.1: mine=1 asks for the same own part, whoever asks)
+    expect(read('packages/server/src/day-close.ts')).toContain('if (viewer && (mine || !seesBooks(viewer))) {');
   });
 
   it('says receipts from the five documents wait for approval like a quick voucher, with the setting\'s and the chip\'s own words', () => {
@@ -1153,8 +1154,11 @@ describe('the release notes and the Store "What\'s new" of this version (1.4.3)'
     // cost goes only to a phone that must keep a PIN (pro/ is the private Pro module, in Meroxis' checkout only)
     const phone = 'pro/src/phone/phone.ts';
     if (existsSync(join(root, phone))) {
-      expect(read(phone)).toContain("export const FIGURES_ROLES: readonly string[] = ['admin', 'preparer', 'checker', 'approver', 'viewer'];");
-      expect(read(phone)).toContain('if (roles === null || roles.some((r) => FIGURES_ROLES.includes(r))) return body;');
+      // (phone app 1.1: the list is kept in rules.ts with the phone link's other shared rules)
+      const rules = read('pro/src/phone/rules.ts');
+      expect(rules).toContain("export const FIGURES_ROLES: readonly string[] = ['admin', 'preparer', 'checker', 'approver', 'viewer'];");
+      expect(rules).toContain('export const isFigures = (roles: readonly string[]): boolean => roles.some((r) => FIGURES_ROLES.includes(r));');
+      expect(read(phone)).toContain('if (roles === null || isFigures(roles)) return trimmed;');
     }
     const roles = read('apps/web/src/i18n.ts');
     expect(roles).toContain("role_storekeeper: ['أمين المخزن', 'Storekeeper', 'کۆگادار']");
