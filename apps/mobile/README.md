@@ -10,8 +10,8 @@ on the office Wi-Fi only; on Pro and Business they also reach it from anywhere t
 
 Expo (SDK 58) and React Native, TypeScript. Android first; iOS builds from the same code. It works with the office
 PC on Qasa ERP 1.4.2 or later with the Pro module (the first release whose Settings → Phones pairs a phone; the routes
-it calls and the rules below are those of 1.4.1). Version 1.0.0 is offered as a signed APK on
-https://qasaerp.com/phone/ (Google Play later).
+it calls and the rules below are those of 1.4.1). Version 1.0.1 is offered as a signed APK on
+https://qasaerp.com/phone/ (Google Play later); 1.0.0 was built before the required PIN and is not offered.
 
 ## What it does
 
@@ -74,8 +74,10 @@ there, then run `npm run sync-protocol`; `test/link.test.ts` fails when the two 
 
 - The phone's key, the office (and its pinned key), who the phone acts as, the app lock and the outbox's key are in
   secure storage, readable only on this phone while it is unlocked; Android backups are off.
-- Optional app lock: a PIN of 4 to 8 digits (easy ones refused), kept only as a scrypt hash; fingerprint or face on
-  top when the phone has one. It locks after the time chosen in the background (at once, 1 or 5 minutes). Wrong PINs
+- App lock: a PIN of 4 to 8 digits (easy ones refused), kept only as a scrypt hash; fingerprint or face on top when
+  the phone has one. It is required (asked for before anything shows, and it can't be turned off) when the phone
+  works as an admin, as the owner (an office without sign-in) or as a user who sees the figures (`lockRequired` in
+  `src/roles.ts`, from 1.0.1); for other users it is optional. It locks after the time chosen in the background (at once, 1 or 5 minutes). Wrong PINs
   make the next try wait longer (30 s, doubling, up to 15 minutes); "Forgot the PIN?" unpairs and wipes the phone.
 - The app writes nothing to the log (a test checks), stores nothing in plain storage, and talks only to the office and
   the relay.

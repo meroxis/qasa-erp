@@ -2,7 +2,7 @@
   "expo": {
     "name": "Qasa ERP",
     "slug": "qasa-erp",
-    "version": "1.0.0",
+    "version": "1.0.1",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "automatic",
@@ -19,6 +19,7 @@
       }
     },
     "android": {
+      "versionCode": 2,
       "adaptiveIcon": {
         "backgroundColor": "#F2A33A",
         "foregroundImage": "./assets/android-icon-foreground.png",

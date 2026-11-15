@@ -8,7 +8,7 @@ import { encodeQr, qrSvgPath } from '../industry/qr.ts';
 
 // 1.4.2 ships the phone app (an Android APK from qasaerp.com/phone/): Settings → Phones offers the download and the
 // pairing, behind the plan rules (Starter, Pro, Business); the plans page no longer marks it "soon".
-const fixture = vi.hoisted(() => ({ states: [] as unknown[], cursor: 0 }));
+const fixture = vi.hoisted(() => ({ states: [] as unknown[], cursor: 0, lang: 'ar' as 'ar' | 'en' | 'ku' }));
 vi.mock('react', () => ({
   useState<T>(initial: T) {
     const i = fixture.cursor++;
@@ -21,7 +21,7 @@ vi.mock('../components.tsx', () => ({
   AccountCombo: 'AccountCombo', ErrorBox: 'ErrorBox', Icon: 'Icon', Modal: 'Modal', downloadCsv: () => {}, useToast: () => () => {},
   useData: () => ({ plan: null }), useBuildHas: () => true
 }));
-vi.mock('../i18n.ts', () => ({ isKey: () => true, useI18n: () => ({ t: (s: string) => s, digitsOf: String, date: String, int: String }) }));
+vi.mock('../i18n.ts', () => ({ isKey: () => true, useI18n: () => ({ t: (s: string) => s, lang: fixture.lang, digitsOf: String, date: String, int: String }) }));
 vi.mock('../router.ts', () => ({ href: (s: string) => s }));
 
 type Node = ReactElement<Record<string, unknown>>;
@@ -37,7 +37,7 @@ const render = (ready?: boolean) => {
   return JSON.stringify(flatten(PhonesCard(ready === undefined ? {} : { ready })).map((n) => [n.type, n.props.children ?? '']));
 };
 
-beforeEach(() => { fixture.states = [status]; });
+beforeEach(() => { fixture.states = [status]; fixture.lang = 'ar'; });
 
 const cardNodes = (ready?: boolean) => {
   fixture.cursor = 0;
@@ -81,6 +81,27 @@ it('links the download page, as text and as a QR code, with the steps and both f
   expect(link?.props.rel).toMatch(/noopener/);
   // the QR code is the download page's address, drawn by the app's own encoder
   expect(nodes.find((n) => n.type === 'path')?.props.d).toBe(qrSvgPath(encodeQr(PHONE_APP.url, 'M'), 4).path);
+});
+
+it("opens the download page in the app's language: Arabic at /phone/, English at /en/phone/, Kurdish at /ku/phone/", () => {
+  expect(PHONE_APP.urls).toEqual({ ar: 'https://qasaerp.com/phone/', en: 'https://qasaerp.com/en/phone/', ku: 'https://qasaerp.com/ku/phone/' });
+  for (const lang of ['ar', 'en', 'ku'] as const) {
+    fixture.lang = lang;
+    const nodes = flatten(GetPhoneApp());
+    const url = PHONE_APP.urls[lang];
+    const link = nodes.find((n) => n.type === 'a');
+    expect(link?.props.href, lang).toBe(url);
+    expect(link?.props.children, lang).toBe(url);
+    expect(nodes.find((n) => n.type === 'path')?.props.d, lang).toBe(qrSvgPath(encodeQr(url, 'M'), 4).path);
+  }
+});
+
+it("offers the phone app 1.0.1, the first build with the PIN that can't be turned off, signed with the Qasa release key", () => {
+  expect(PHONE_APP.version).toBe('1.0.1');
+  expect(PHONE_APP.apkSha256).toBe('636e0025a5d0e909d14c3305b225bd7ea8a61fa69d3c2cefc759502f5438194b');
+  // 1.0.0 was built before the required PIN and is never offered
+  expect(PHONE_APP.apkSha256).not.toBe('6c8dc54af7a4845fe449fcec575f6364e6b6d75136cbd892ca1cd9f6c6239fc9');
+  expect(PHONE_APP.certSha256).toBe('6d8fb6a65d85d9f82b026b5ef6aa00acfd956cef63d555cf6fffd3596a4b3129');
 });
 
 it('says how to install the APK in each language, and no longer sends people to Google Play', () => {

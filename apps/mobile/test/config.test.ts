@@ -15,6 +15,11 @@ describe('the app\'s build settings', () => {
     // React Native's dev menu asks to draw over other apps; a release build has no use for it
     expect(app.expo.android.blockedPermissions).toContain('android.permission.SYSTEM_ALERT_WINDOW');
     expect(app.expo.android.package).toBe('iq.qasaerp.mobile');
+    // each build that goes to phones raises the version and versionCode together (Android refuses an equal or lower code);
+    // 1.0.1 (code 2) is the first build offered, with the PIN that can't be turned off
+    expect(app.expo.version).toBe('1.0.1');
+    expect(app.expo.android.versionCode).toBe(2);
+    expect(JSON.parse(readFileSync(join(root, 'package.json'), 'utf8')).version).toBe(app.expo.version);
     expect(app.expo.android.adaptiveIcon.backgroundColor).toBe('#F2A33A');
     expect(app.expo.plugins).toContainEqual(['expo-local-authentication', { faceIDPermission: app.expo.ios.infoPlist.NSFaceIDUsageDescription }]);
   });

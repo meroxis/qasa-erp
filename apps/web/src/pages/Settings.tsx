@@ -1485,19 +1485,25 @@ interface PhonesStatus {
  */
 export const PHONE_APP_READY = true;
 
-/** Where the phone app is downloaded, and what a careful user can check the downloaded APK against. */
+/**
+ * Where the phone app is downloaded (the page in the app's language: Arabic at /phone/, English and Kurdish under
+ * /en/ and /ku/), and what a careful user can check the downloaded APK against. 1.0.1 is the first build offered: it
+ * asks for the PIN that can't be turned off (an admin, the owner, a user who sees the figures).
+ */
 export const PHONE_APP = {
   url: 'https://qasaerp.com/phone/',
-  version: '1.0.0',
-  apkSha256: '6c8dc54af7a4845fe449fcec575f6364e6b6d75136cbd892ca1cd9f6c6239fc9',
+  urls: { ar: 'https://qasaerp.com/phone/', en: 'https://qasaerp.com/en/phone/', ku: 'https://qasaerp.com/ku/phone/' } as Record<Lang, string>,
+  version: '1.0.1',
+  apkSha256: '636e0025a5d0e909d14c3305b225bd7ea8a61fa69d3c2cefc759502f5438194b',
   // what `apksigner verify --print-certs` shows as "certificate SHA-256 digest" (CN=Meroxis, O=Meroxis, C=IQ)
   certSha256: '6d8fb6a65d85d9f82b026b5ef6aa00acfd956cef63d555cf6fffd3596a4b3129'
 } as const;
 
 /** Getting the phone app: the download page as a link and a QR code, the steps, and the fingerprints to check. */
 export function GetPhoneApp() {
-  const { t } = useI18n();
-  const qr = qrSvgPath(encodeQr(PHONE_APP.url, 'M'), 4);
+  const { t, lang } = useI18n();
+  const url = PHONE_APP.urls[lang] ?? PHONE_APP.url;
+  const qr = qrSvgPath(encodeQr(url, 'M'), 4);
   return (
     <div className="row" style={{ gap: 20, alignItems: 'flex-start', flexWrap: 'wrap' }}>
       <svg viewBox={`0 0 ${qr.size} ${qr.size}`} width={150} height={150} role="img" aria-label={t('ph_getQrLabel')} shapeRendering="crispEdges" style={{ background: '#fff', borderRadius: 8 }}>
@@ -1505,7 +1511,7 @@ export function GetPhoneApp() {
       </svg>
       <div className="stack" style={{ gap: 6, flex: 1, minWidth: 240 }}>
         <strong>{t('ph_getApp')}</strong>
-        <a href={PHONE_APP.url} target="_blank" rel="noopener noreferrer" dir="ltr">{PHONE_APP.url}</a>
+        <a href={url} target="_blank" rel="noopener noreferrer" dir="ltr">{url}</a>
         <ol style={{ margin: 0, paddingInlineStart: 20 }}>
           <li>{t('ph_get1')}</li>
           <li>{t('ph_get2')}</li>
