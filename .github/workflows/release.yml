@@ -17,8 +17,9 @@ on:
 # Two jobs. "windows" runs every build and test tool (npm packages, Rust crates, electron-builder) and can only read:
 # it never holds a token that writes releases, so a tool gone bad can't replace a published installer or update file.
 # "publish" runs none of this repository's code and no npm package: it checks the files the build made against the
-# checksums the build wrote, and puts them on the GitHub release. It runs in the "release" environment: give that
-# environment a required reviewer (Settings → Environments) so a person approves each release before it goes out.
+# checksums the build wrote, and puts them on the GitHub release. It runs in the "release" environment, which has no
+# required reviewer (the owner's choice): nothing waits for an approval, so pushing the tag is the decision to release,
+# and the release goes out to every copy that updates itself as soon as the build and its tests pass.
 permissions:
   contents: read
 

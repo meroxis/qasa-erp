@@ -53,8 +53,9 @@ There are two channels:
 
 6. The workflow then:
    - builds and tests in a job that can only read the repository (no token that writes releases);
-   - waits for approval in the `release` environment (give it a required reviewer in Settings → Environments), then a
-     second job that runs no project code checks the files against the build's checksums and uploads them;
+   - goes on at once, with no approval step: the `release` environment has no required reviewer (the owner's choice),
+     so pushing the app tag is the decision to release. A second job that runs no project code checks the files
+     against the build's checksums and uploads them;
    - publishes the release as **Latest**;
    - moves the website link;
    - keeps the `microsoft-store-package` artifact.

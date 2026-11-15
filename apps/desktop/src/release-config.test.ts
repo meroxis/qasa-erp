@@ -1012,6 +1012,21 @@ describe('the release checklist (docs/releasing.md) and the handoff notes (docs/
   });
 
   it('opens with where the work stands, naming no tool to continue it with', () => {
-    expect(handoff.split('\n')[2]).toBe('This branch and its sister branches carry the 1.0 work. Pick up from here.');
+    expect(handoff.split('\n')[2]).toBe('The 1.0 work below is merged: it is on `main` in each repository, and the branches it was built on are gone. Start new work on a branch from `main`.');
+  });
+
+  it('sends nobody to the 1.0 branches, which are deleted (their work is on main)', () => {
+    for (const branch of ['feature/real-estate', 'feature/industries', 'feature/activation', 'feature/v1-site', 'feature/verify', 'feature/legal']) {
+      expect(handoff, branch).not.toContain(branch);
+    }
+    expect(handoff).not.toContain('Pick up from here');
+  });
+
+  it('claims no approval before a release goes out: the release environment has no required reviewer (the owner\'s choice)', () => {
+    const workflow = read('.github/workflows/release.yml');
+    for (const doc of [releasing, workflow]) {
+      expect(doc).not.toMatch(/waits for approval|give (that environment|it) a required reviewer|a person approves each release/);
+      expect(doc).toMatch(/no\s+(#\s+)?required reviewer/);
+    }
   });
 });
