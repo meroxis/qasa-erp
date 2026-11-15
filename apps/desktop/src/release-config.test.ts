@@ -1015,11 +1015,16 @@ describe('the release notes of 1.4.2 (kept as shipped, with the stock-correction
     expect(section('ku')).toContain('**ڕێکخستنەکان ← تۆڕی نووسینگە ← بڕوانامەی نوێی نووسینگە**');
     for (const lang of ['ar', 'en', 'ku'] as const) expect(section(lang), lang).toContain('PIN');
     // the phone's PIN that can't be turned off is the phone app's own rule (roles.ts), in every build Settings offers
-    // since 1.4.2 (the notes name 1.0.1, the first; after 1.4.2 Settings offers the newer build app.json says, 1.0.2 on)
+    // since 1.4.2 (the notes name 1.0.1, the first; after 1.4.2 Settings offers a build app.json has reached, 1.0.2 on:
+    // a newer phone app, such as 1.1.0, is offered only from the office release that comes with it)
     expect(read('apps/mobile/src/roles.ts')).toContain('export function lockRequired(me: Me | null): boolean {');
     const mobile = JSON.parse(read('apps/mobile/app.json')) as { expo: { version: string; android: { versionCode: number } } };
     expect(mobile.expo.android.versionCode).toBeGreaterThanOrEqual(2);
-    expect(read('apps/web/src/pages/Settings.tsx')).toContain(`version: '${mobile.expo.version}',`);
+    const offered = /export const PHONE_APP = \{[\s\S]*?\n {2}version: '(\d+\.\d+\.\d+)',/.exec(read('apps/web/src/pages/Settings.tsx'))?.[1];
+    expect(offered).toMatch(/^1\.0\.[2-9]$|^1\.[1-9]\d*\.\d+$/);
+    const parts = (v: string) => v.split('.').map(Number);
+    const notAhead = (a: number[], b: number[]) => a[0]! < b[0]! || (a[0] === b[0] && (a[1]! < b[1]! || (a[1] === b[1] && a[2]! <= b[2]!)));
+    expect(notAhead(parts(offered!), parts(mobile.expo.version)), `${offered} offered, ${mobile.expo.version} in app.json`).toBe(true);
     for (const lang of ['ar', 'en', 'ku'] as const) expect(section(lang), lang).toContain('1.0.1');
     // plain words: no frames, sockets, tokens or rate limits in the notes
     expect(notes).not.toMatch(/WebSocket|socket|token|frame|rate limit|IPv6|\/48/i);
@@ -1128,8 +1133,9 @@ describe('the release notes and the Store "What\'s new" of this version (1.4.3)'
   });
 
   it('offers phone app 1.0.2 as Settings does, and says plainly what goes to Google: never the codes scanned, maybe the scanner\'s statistics', () => {
+    // (the phone app's own version may be ahead: phone app 1.1.0 is offered only from the office release that comes with it)
     const mobile = JSON.parse(read('apps/mobile/app.json')) as { expo: { version: string } };
-    expect(mobile.expo.version).toBe('1.0.2');
+    expect(['1.0.2', '1.1.0']).toContain(mobile.expo.version);
     expect(read('apps/web/src/pages/Settings.tsx')).toContain("version: '1.0.2',");
     for (const lang of ['ar', 'en', 'ku'] as const) expect(section(lang), lang).toMatch(/1\.0\.2[\s\S]*SHA-256/);
     expect(section('en')).toContain('The barcodes you scan never go to Google, and Google ML Kit’s own usage reports are taken out; Google Play services may still receive brief usage statistics about the scanning.');
