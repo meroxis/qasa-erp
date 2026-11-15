@@ -31,7 +31,7 @@ export const PRIVACY_URL = 'https://qasaerp.com/privacy/';
 
 export function MoreScreen() {
   const { t, lang } = useLook();
-  const { go, outbox, company, me, via, state } = useApp();
+  const { go, outbox, company, me, via, state, can } = useApp();
   const prefs = usePrefs();
   const waiting = outbox.filter((o) => !o.result).length;
   const who = actsAs(me);
@@ -44,6 +44,10 @@ export function MoreScreen() {
       </Card>
       <Group>
         <ListItem icon="outbox" title={t('outbox')} value={waiting ? String(waiting) : undefined} onPress={() => go({ name: 'outbox' })} />
+        {/* phone app 1.1, each when the office offers it to this user */}
+        {can('approvals') && <ListItem icon="stamp" title={t('aprTitle')} onPress={() => go({ name: 'approvals' })} />}
+        {can('rate') && <ListItem icon="dollar" title={t('rateTitle')} onPress={() => go({ name: 'rate' })} />}
+        {can('dayClose') && <ListItem icon="register" title={t('dayTitle')} onPress={() => go({ name: 'dayClose' })} />}
         <ListItem icon="lock" title={t('security')} subtitle={prefs.lock.pin ? t('changePin') : t('setPin')} onPress={() => go({ name: 'security' })} />
         <ListItem icon="info" title={t('about')} onPress={() => go({ name: 'about' })} />
       </Group>

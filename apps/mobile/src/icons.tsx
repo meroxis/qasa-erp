@@ -46,7 +46,11 @@ const ICONS = {
   qr: (c: string) => <><Rect {...S} stroke={c} x={4} y={4} width={6} height={6} rx={1} /><Rect {...S} stroke={c} x={14} y={4} width={6} height={6} rx={1} /><Rect {...S} stroke={c} x={4} y={14} width={6} height={6} rx={1} /><Path {...S} stroke={c} d="M14 14h2v2h-2zM18 18h2v2h-2zM18 14h2M14 18v2" /></>,
   backspace: (c: string) => <><Path {...S} stroke={c} d="M9 5h11a1 1 0 0 1 1 1v12a1 1 0 0 1-1 1H9l-6-7 6-7Z" /><Path {...S} stroke={c} d="m12.5 9.5 5 5M17.5 9.5l-5 5" /></>,
   flash: (c: string) => <Path {...S} stroke={c} d="M13 3 5 13.5h6L10 21l8-10.5h-6L13 3Z" />,
-  tag: (c: string) => <><Path {...S} stroke={c} d="M3.5 12.5V4.5a1 1 0 0 1 1-1h8l8 8-9 9-8-8Z" /><Circle cx={8.5} cy={8.5} r={1.4} fill={c} /></>
+  tag: (c: string) => <><Path {...S} stroke={c} d="M3.5 12.5V4.5a1 1 0 0 1 1-1h8l8 8-9 9-8-8Z" /><Circle cx={8.5} cy={8.5} r={1.4} fill={c} /></>,
+  // phone app 1.1: approvals (a stamp), the dollar rate, the end of the day (a register's drawer)
+  stamp: (c: string) => <><Path {...S} stroke={c} d="M9.5 13.5V9.8a2.5 2.5 0 1 1 5 0v3.7" /><Rect {...S} stroke={c} x={4} y={13.5} width={16} height={4} rx={1} /><Path {...S} stroke={c} d="M6 20.5h12" /></>,
+  dollar: (c: string) => <><Circle {...S} stroke={c} cx={12} cy={12} r={9} /><Path {...S} stroke={c} d="M14.8 9.2c-.4-1-1.5-1.7-2.8-1.7-1.6 0-2.8.9-2.8 2.1 0 2.9 5.6 1.6 5.6 4.6 0 1.2-1.2 2.2-2.8 2.2-1.4 0-2.5-.7-2.9-1.8M12 6v1.5M12 16.4V18" /></>,
+  register: (c: string) => <><Rect {...S} stroke={c} x={3.5} y={12} width={17} height={8} rx={1.5} /><Path {...S} stroke={c} d="M6 12V5.5a1 1 0 0 1 1-1h6a1 1 0 0 1 1 1V12M8.5 7.5h3M16 9.5h2.5V12M7.5 16h9" /></>
 } as const;
 
 export type IconName = keyof typeof ICONS;

@@ -6,6 +6,7 @@ import { useFonts } from 'expo-font';
 import { SafeAreaProvider, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { OfficeError, officeApi, type Party, type Warehouse } from './src/api';
 import type { CartLine, CountLine } from './src/documents';
+import { explainWith } from './src/explain';
 import { FONT_SOURCES } from './src/fonts';
 import { isRtl, translate, type Key, type Lang } from './src/i18n';
 import type { IconName } from './src/icons';
@@ -27,6 +28,9 @@ import { Home } from './src/screens/home';
 import { CountScreen, ItemScreen, ItemsScreen, NewItemScreen, ScanScreen } from './src/screens/items';
 import { biometricReady, LockScreen } from './src/screens/lock';
 import { AboutScreen, MoreScreen, OutboxScreen, PrefsCtx, SecurityScreen, type Prefs } from './src/screens/more';
+import { ApprovalScreen, ApprovalsScreen } from './src/screens/owner/approvals';
+import { DayCloseScreen } from './src/screens/owner/dayclose';
+import { RateScreen } from './src/screens/owner/rate';
 import { PairScreen } from './src/screens/pair';
 import { CartScreen } from './src/screens/sell';
 
@@ -40,25 +44,6 @@ const NO_LOCK: LockSettings = { pin: null, length: 0, biometric: false, after: 6
 function deviceLanguage(): Lang {
   const code = getLocales()[0]?.languageCode ?? 'en';
   return code === 'ar' ? 'ar' : code === 'ckb' || code === 'ku' ? 'ku' : 'en';
-}
-
-/** The office's and the link's refusals, in the user's language (never a raw message with someone's data in it). */
-function explainWith(t: (k: Key, v?: Record<string, string | number>) => string, error: unknown): string {
-  if (error instanceof OfficeError) {
-    if (error.status === 403) return t('forbidden');
-    if (error.code === 'plan_limit') return t('planLimit');
-    if (error.code === 'validation') return t('validation');
-    return `${t('error')} ${error.code}`;
-  }
-  if (error instanceof LinkError) {
-    const map: Partial<Record<LinkError['code'], Key>> = {
-      unreachable: 'offline', timeout: 'offline', closed: 'offline', plan_limit: 'planLimit', phone_limit: 'phoneLimit',
-      pairing_invalid: 'pairingInvalid', unknown_device: 'unknownDevice', stale: 'stale', tampered: 'tampered', bad_message: 'tampered'
-    };
-    const k = map[error.code];
-    return k ? t(k) : `${t('error')} ${error.code}`;
-  }
-  return t('loadFailed');
 }
 
 export default function App() {
@@ -96,7 +81,8 @@ function Main() {
   const scheme = themeChoice === 'system' ? (system === 'dark' ? 'dark' : 'light') : themeChoice;
   const t = useCallback((k: Key, vars?: Record<string, string | number>) => translate(lang, k, vars), [lang]);
   const look: Look = useMemo(() => ({ lang, rtl: isRtl(lang), scheme, p: PALETTES[scheme], fonts: fontsLoaded && !fontError, t }), [lang, scheme, fontsLoaded, fontError, t]);
-  const explain = useCallback((e: unknown) => explainWith(t, e), [t]);
+  // (a refusal of the phone reads by what the office says it offers: me.phoneLink, explain.ts)
+  const explain = useCallback((e: unknown) => explainWith(t, e, me), [t, me]);
 
   // first start: language, look, the lock, the outbox, this phone's key, the office and who the phone acts as there
   useEffect(() => {
@@ -365,6 +351,11 @@ function Main() {
                 {route.name === 'outbox' && <OutboxScreen />}
                 {route.name === 'security' && <SecurityScreen />}
                 {route.name === 'about' && <AboutScreen />}
+                {/* phone app 1.1, the owner and the managers */}
+                {route.name === 'approvals' && <ApprovalsScreen />}
+                {route.name === 'approval' && <ApprovalScreen key={route.id} id={route.id} />}
+                {route.name === 'rate' && <RateScreen />}
+                {route.name === 'dayClose' && <DayCloseScreen />}
               </View>}
               {route.name !== 'scan' && !pinNeeded && (
                 <TabBar tabs={tabs.filter((x) => x.on)} current={nav.tab} onPress={(tab) => dispatch({ type: 'tab', tab })} />
