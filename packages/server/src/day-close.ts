@@ -181,15 +181,17 @@ function debtsOn(db: Db, date: string, branch: BranchFilter, own: OwnPart | null
 /**
  * The day's close. `viewer` (1.4.1): who asks; someone who does not keep the books gets the registers they opened
  * themselves and the sales, returns, best sellers and debts of those shifts only (OwnPart). Without a viewer, or for
- * someone who keeps the books, the whole day.
+ * someone who keeps the books, the whole day. `mine` (phone app 1.1): the viewer's own part whatever else they may
+ * read: a phone that keeps no PIN asks so (pro/src/phone), also for a cashier who keeps the stock or buys and so reads
+ * the books on a PC.
  */
-export function dayClose(db: Db, date: string, branch: BranchFilter = null, viewer: Actor | null = null): DayCloseView {
+export function dayClose(db: Db, date: string, branch: BranchFilter = null, viewer: Actor | null = null, mine = false): DayCloseView {
   const company = (() => {
     try { return JSON.parse(readSetting(db, 'company_name') ?? '') as Names; } catch { return { ar: '', en: '', ku: '' }; }
   })();
   let registers = registersOn(db, date, branch);
   let own: OwnPart | null = null;
-  if (viewer && !seesBooks(viewer)) {
+  if (viewer && (mine || !seesBooks(viewer))) {
     registers = registers.filter((r) => openedShift(db, r.shiftId, viewer));
     const shiftIds = registers.map((r) => r.shiftId);
     own = { userId: viewer.id, shiftIds, invoiceIds: [...new Set(shiftIds.flatMap((id) => shiftInvoiceIds(db, id)))] };
@@ -226,7 +228,7 @@ const isoDate = z.string().regex(/^\d{4}-\d{2}-\d{2}$/).refine((s) => !Number.is
  * Reading is open to every signed-in user, as the Daily Brief is; a user limited to branches sees their own. Someone who
  * may not read the books (a cashier) gets the registers they opened themselves with their drawers, and the sales, best
  * sellers and debts of those shifts (1.4.1), without the expenses and the money in and out of the safes and banks
- * (cost-view.ts).
+ * (cost-view.ts). `mine=1` asks for that own part whoever asks (the desktop never sends it).
  */
 export const dayCloseApi: ApiExtension = {
   routes(db, { actorOf }) {
@@ -234,10 +236,10 @@ export const dayCloseApi: ApiExtension = {
       {
         method: 'GET', path: '/api/brief/day-close',
         handler: async (req) => {
-          const q = z.object({ date: isoDate.optional() }).safeParse(req.query ?? {});
+          const q = z.object({ date: isoDate.optional(), mine: z.enum(['1']).optional() }).safeParse(req.query ?? {});
           if (!q.success) throw new AppError(400, 'validation', q.error.issues.map((i) => ({ code: 'schema', path: i.path.join('.'), message: i.message })));
           const actor = actorOf(req);
-          return dayClose(db, q.data.date ?? todayIso(), branchOf(db, req, actor), actor);
+          return dayClose(db, q.data.date ?? todayIso(), branchOf(db, req, actor), actor, q.data.mine === '1');
         }
       }
     ];

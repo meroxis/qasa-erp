@@ -122,4 +122,38 @@ describe('the end-of-day close', () => {
     expect((await get('/api/brief/day-close?date=2026-13-45')).statusCode).toBe(400);
     expect((await get("/api/brief/day-close?date=2026-11-01' OR 1=1")).statusCode).toBe(400);
   });
+
+  it('gives only the asker\'s own registers and their shifts\' sales with mine=1, even to someone who keeps the books (phone app 1.1)', async () => {
+    // Mer and Las each run a till today (no sign-in here: the name typed on each PC tells them apart, as pos.ts does)
+    const as = (name: string) => ({ 'x-qasa-user': encodeURIComponent(name), 'x-qasa-client': '1' });
+    const till = async (name: string, register: string, qty: number) => {
+      const shift = await app.inject({ method: 'POST', url: '/api/pos/shifts', headers: as(name), payload: { register, cashAccountCode: '1811', warehouseId, openingCash: 0 } });
+      expect(shift.statusCode, shift.body).toBe(201);
+      const sale = await app.inject({ method: 'POST', url: `/api/pos/shifts/${shift.json().id}/sales`, headers: as(name), payload: { currency: 'IQD', discount: 0, lines: tea(qty) } });
+      expect(sale.statusCode, sale.body).toBe(201);
+      return shift.json().id as string;
+    };
+    const mine = await till('Mer', 'Counter 1', 2);
+    const theirs = await till('Las', 'Counter 2', 5);
+    await invoice({ payment: 'credit', partyId: customerId, lines: tea(1) });
+    const close = async (query: string) => {
+      const res = await get(`/api/brief/day-close?date=${DAY}${query}`);
+      expect(res.statusCode, res.body).toBe(200);
+      return res.json() as { registers: { shiftId: string }[]; sales: { gross: number; invoices: number }; debts: { added: number } };
+    };
+    // Mer keeps the books (the owner): the whole day, as before
+    const whole = await close('');
+    expect(whole.registers.map((r) => r.shiftId).sort()).toEqual([mine, theirs].sort());
+    expect(whole.sales).toMatchObject({ gross: 80_000, invoices: 3 });
+    expect(whole.debts.added).toBe(10_000);
+    // with mine=1: the register Mer opened and its sales only (no other till's, no invoice made outside a shift)
+    const own = await close('&mine=1');
+    expect(own.registers.map((r) => r.shiftId)).toEqual([mine]);
+    expect(own.sales).toMatchObject({ gross: 20_000, invoices: 1 });
+    expect(own.debts.added).toBe(0);
+    expect(dayClose(db, DAY, null, { id: null, name: 'Las', username: 'las', roles: ['admin'], permissions: ['admin'] }, true).registers.map((r) => r.shiftId)).toEqual([theirs]);
+    // and only `1` means it
+    expect((await get(`/api/brief/day-close?date=${DAY}&mine=0`)).statusCode).toBe(400);
+    expect((await get(`/api/brief/day-close?date=${DAY}&mine=yes`)).statusCode).toBe(400);
+  });
 });
