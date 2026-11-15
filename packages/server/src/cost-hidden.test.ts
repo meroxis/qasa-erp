@@ -52,8 +52,10 @@ const CUP_BOUGHT_AT = 733;
 // the company's money: an expense someone else paid, and what the bank's statement says the bank holds
 const RENT_PAID = 77_077;
 const IN_THE_BANK = 913_913;
+// (1.5) an expense recorded with the photo of its receipt
+const PHOTO_EXPENSE = 66_067;
 /** Those, and what the server worked out from them (the cost of each line sold, the value of the stock). */
-const secrets = new Set<number>([OPENING_COST, TEA_PURCHASE_PRICE, TEA_BOUGHT_AT, SYRUP_PURCHASE_PRICE, SYRUP_BOUGHT_AT, ORDERED_AT, CUP_BOUGHT_AT, RENT_PAID, IN_THE_BANK]);
+const secrets = new Set<number>([OPENING_COST, TEA_PURCHASE_PRICE, TEA_BOUGHT_AT, SYRUP_PURCHASE_PRICE, SYRUP_BOUGHT_AT, ORDERED_AT, CUP_BOUGHT_AT, RENT_PAID, IN_THE_BANK, PHOTO_EXPENSE]);
 
 /** What stands in for the ":id" of each route, the query a route needs, and more addresses than one per route. */
 const ids: Record<string, string> = {};
@@ -133,6 +135,11 @@ beforeAll(async () => {
   await made(post('/api/vouchers', {
     kind: 'payment', date: today, cashAccountCode: '1811', description: 'Rent', currency: 'IQD', rateX100: 100, items: [{ accountCode: rentAccount, amount: RENT_PAID }]
   }));
+  // 1.5: an expense with the photo of its receipt (the phone app's), whose photo is the books too
+  const seg = (marker: number, body: number[]) => [0xff, marker, 0, body.length + 2, ...body];
+  const photo = Buffer.from([0xff, 0xd8, ...seg(0xe0, [0x4a, 0x46, 0x49, 0x46, 0, 1, 1, 0, 0, 1, 0, 1, 0, 0]), ...seg(0xc0, [8, 0, 16, 0, 16, 1, 1, 0x11, 0]),
+    ...seg(0xda, [1, 1, 0, 0, 0x3f, 0]), 1, 2, 3, 4, 0xff, 0xd9]).toString('base64');
+  const photoEntryId = (await made(post('/api/expenses', { category: 'power', amount: PHOTO_EXPENSE, currency: 'IQD', cashAccountCode: '1811', date: today, lang: 'en', photo }))).id as string;
   const statement = await made(post('/api/banking/statements', {
     accountCode: bankAccount, currency: 'IQD', from: `${month}-01`, to: today, opening: 0, closing: IN_THE_BANK, lines: [{ date: today, description: 'Deposit', amount: IN_THE_BANK }]
   }));
@@ -149,7 +156,7 @@ beforeAll(async () => {
   secrets.delete(0);
 
   Object.assign(ids, {
-    '/api/entries/:id': entryId,
+    '/api/entries/:id': entryId, '/api/entries/:id/image': photoEntryId,
     '/api/parties/:id': customerId, '/api/parties/:id/statement': customerId,
     '/api/items/:id': teaId, '/api/items/:id/image': teaId,
     '/api/invoices/:id': sale.id, '/api/verify/invoices/:id': sale.id,
@@ -376,7 +383,8 @@ describe('cost, stock value and profit, by who asks', () => {
     // the company's money is not theirs to read: no balance of a safe or a bank, no money in and out, no expenses,
     // under any address they can ask. Other things have a balance, and stay: what a customer or a supplier owes (the
     // parties, their statements, the aging report, the brief's late customers), an item's stock, loyalty points
-    const notMoney = /^\/api\/(parties|brief\/reports\/aging|items|loyalty)[/ ]|^\/api\/brief \.lateCustomers\[\]\.balance$/;
+    // (the brief's customers who owe the most, phone app 1.1: what customers owe, as its late customers)
+    const notMoney = /^\/api\/(parties|brief\/reports\/aging|items|loyalty)[/ ]|^\/api\/brief \.(lateCustomers|topDebtors)\[\]\.balance$/;
     const money = answers.flatMap((a) => [...a.paths].filter((p) => /balance|flow|expenses/i.test(p.split('.').pop()!)).map((p) => `${a.route} ${p}`));
     expect(money.filter((p) => !notMoney.test(p))).toEqual([]);
     // what the till needs stays: the safes by name (to pick one), and the day close's sales and debts (1.4.1: of the

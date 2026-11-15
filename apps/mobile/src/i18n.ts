@@ -1,3 +1,6 @@
+import { OWNER_T } from './owner/i18n';
+import { STAFF_T } from './staff/i18n';
+
 /** Every text of the phone app in Arabic, English and Kurdish (Sorani), in that order, like the desktop app. */
 export type Lang = 'ar' | 'en' | 'ku';
 export const LANGS: Lang[] = ['ar', 'en', 'ku'];
@@ -5,13 +8,18 @@ export const isRtl = (lang: Lang) => lang !== 'en';
 /** Each language's own name, for the language switch. */
 export const LANG_NAMES: Record<Lang, string> = { ar: 'العربية', en: 'English', ku: 'کوردی' };
 
-const T = {
+const BASE = {
   appName: ['قاصة ERP', 'Qasa ERP', 'قاسە ERP'],
   welcome: ['امسح، اعرف السعر والمخزون، وبِع واستلم — من هاتفك.', 'Scan, check prices and stock, sell and collect — from your phone.', 'بارکۆد بخوێنەوە، نرخ و ماوەی کۆگا ببینە، بفرۆشە و پارە وەربگرە — لە مۆبایلەکەتەوە.'],
 
   // ——— pairing ———
   pairTitle: ['اربط الهاتف بمكتبك', 'Pair the phone with your office', 'مۆبایلەکە بە نووسینگەکەتەوە ببەستەوە'],
-  pairStep1: ['على حاسوب قاصة: الإعدادات ← الهواتف ← «إضافة هاتف».', 'On the Qasa PC: Settings → Phones → "Add a phone".', 'لەسەر کۆمپیوتەری قاسە: ڕێکخستنەکان ← مۆبایلەکان ← «زیادکردنی مۆبایل».'],
+  // the PC's own words for where phones are paired (apps/web: settings, netTitle, ph_title, ph_add; a test checks them)
+  pairStep1: [
+    'على حاسوب قاصة: الإعدادات ← شبكة المكتب ← الهواتف (تطبيق قاصة) ← «إضافة هاتف».',
+    'On the Qasa PC: Settings → Office network → Phones (Qasa app) → "Add a phone".',
+    'لەسەر کۆمپیوتەری قاسە: ڕێکخستنەکان ← تۆڕی نووسینگە ← مۆبایلەکان (ئەپی قاسە) ← «زیادکردنی مۆبایل».'
+  ],
   pairStep2: ['امسح الرمز الظاهر على الحاسوب بهذا الهاتف.', 'Scan the code shown on the PC with this phone.', 'ئەو کۆدەی لەسەر کۆمپیوتەرەکە دەردەکەوێت بەم مۆبایلە بخوێنەوە.'],
   pairStep3: [
     'بعدها يتصل الهاتف وحده: على شبكة Wi-Fi المكتب، أو من أي مكان عبر Qasa Relay إن كان مفعّلاً على الحاسوب.',
@@ -176,7 +184,11 @@ const T = {
   count: ['جرد المخزن', 'Count stock', 'جەردی کۆگا'],
   countEmpty: ['لم يُجرد شيء بعد. امسح مادة وأدخل الكمية.', 'Nothing counted yet. Scan an item and enter the quantity.', 'هێشتا هیچ جەرد نەکراوە. بارکۆدی کاڵایەک بخوێنەوە و بڕەکەی بنووسە.'],
   sendCount: ['إرسال الجرد إلى الحاسوب', 'Send the count to the PC', 'ناردنی جەرد بۆ کۆمپیوتەر'],
-  countSent: ['أُرسل الجرد؛ يجده المسؤول في الإعدادات ← الهواتف.', 'The count was sent; the admin finds it in Settings → Phones.', 'جەردەکە نێردرا؛ بەڕێوەبەر لە ڕێکخستنەکان ← مۆبایلەکان دەیبینێت.'],
+  countSent: [
+    'أُرسل الجرد؛ يجده المسؤول في الإعدادات ← شبكة المكتب ← الهواتف (تطبيق قاصة).',
+    'The count was sent; the admin finds it in Settings → Office network → Phones (Qasa app).',
+    'جەردەکە نێردرا؛ بەڕێوەبەر لە ڕێکخستنەکان ← تۆڕی نووسینگە ← مۆبایلەکان (ئەپی قاسە) دەیبینێت.'
+  ],
   openCountNote: ['هناك جرد مفتوح لهذا المخزن على الحاسوب: تدخل الكميات فيه مباشرة.', 'A count is open for this warehouse on the PC: the quantities go straight into it.', 'جەردێکی کراوە بۆ ئەم کۆگایە لەسەر کۆمپیوتەر هەیە: بڕەکان ڕاستەوخۆ دەچنە ناوی.'],
   countSessionSent: ['أُدخلت الكميات في الجرد المفتوح على الحاسوب.', 'The quantities were entered into the open count on the PC.', 'بڕەکان خرانە ناو جەردە کراوەکەی سەر کۆمپیوتەر.'],
 
@@ -273,14 +285,43 @@ const T = {
   // ——— refusals ———
   forbidden: ['ليس لديك صلاحية لهذا. اطلبها من مدير قاصة.', 'You don\'t have permission for this. Ask the Qasa admin.', 'دەسەڵاتی ئەمەت نییە. لە بەڕێوەبەری قاسە داوای بکە.'],
   planLimit: ['تطبيق الهاتف من مزايا Starter وPro وBusiness.', 'The phone app is part of Starter, Pro and Business.', 'ئەپی مۆبایل بەشێکە لە Starter، Pro و Business.'],
-  phoneLimit: ['وصل الحاسوب إلى عدد الهواتف المسموح به. احذف هاتفاً من الإعدادات ← الهواتف.', 'The PC has as many phones as its plan allows. Remove one in Settings → Phones.', 'کۆمپیوتەرەکە گەیشتۆتە ژمارەی مۆبایلی ڕێگەپێدراو. یەکێک لە ڕێکخستنەکان ← مۆبایلەکان لاببە.'],
+  phoneLimit: [
+    'وصل الحاسوب إلى عدد الهواتف المسموح به. احذف هاتفاً من الإعدادات ← شبكة المكتب ← الهواتف (تطبيق قاصة).',
+    'The PC has as many phones as its plan allows. Remove one in Settings → Office network → Phones (Qasa app).',
+    'کۆمپیوتەرەکە گەیشتۆتە ژمارەی مۆبایلی ڕێگەپێدراو. یەکێک لە ڕێکخستنەکان ← تۆڕی نووسینگە ← مۆبایلەکان (ئەپی قاسە) لاببە.'
+  ],
   pairingInvalid: ['انتهت صلاحية الرمز أو استُخدم. اطلب رمزاً جديداً من الحاسوب.', 'The code expired or was used. Ask the PC for a new one.', 'کۆدەکە بەسەرچوو یان بەکارهات. داوای کۆدێکی نوێ لە کۆمپیوتەر بکە.'],
   unknownDevice: ['حُذف هذا الهاتف من الحاسوب. اربطه من جديد.', 'This phone was removed on the PC. Pair it again.', 'ئەم مۆبایلە لە کۆمپیوتەرەکەوە لابرا. دووبارە بیبەستەوە.'],
   stale: ['ساعة الهاتف غير مضبوطة. صحّح الوقت والتاريخ.', 'The phone\'s clock is off. Fix the time and date.', 'کاتژمێری مۆبایل ڕێک نییە. کات و بەروار ڕاست بکەرەوە.'],
   tampered: ['لم يثبت الحاسوب هويته بمفتاحه المسجّل. تأكد أنك على شبكة المكتب الصحيحة.', 'The PC did not prove itself with its paired key. Make sure this is the right office network.', 'کۆمپیوتەرەکە بە کلیلە تۆمارکراوەکەی خۆی نەسەلماند. دڵنیابە کە ئەمە تۆڕی ڕاستی نووسینگەیە.'],
   error: ['حدث خطأ:', 'Something went wrong:', 'هەڵەیەک ڕوویدا:'],
-  validation: ['رفض الحاسوب البيانات. تحقق منها وحاول مجدداً.', 'The PC refused the details. Check them and try again.', 'کۆمپیوتەرەکە زانیارییەکانی ڕەتکردەوە. بیانپشکنە و دووبارە هەوڵ بدەرەوە.']
+  validation: ['رفض الحاسوب البيانات. تحقق منها وحاول مجدداً.', 'The PC refused the details. Check them and try again.', 'کۆمپیوتەرەکە زانیارییەکانی ڕەتکردەوە. بیانپشکنە و دووبارە هەوڵ بدەرەوە.'],
+
+  // ——— phone app 1.1: what the office offers, its refusals (explain.ts), and what every 1.1 screen shares ———
+  officeOld: ['لا يقبل حاسوب المكتب هذا من الهاتف. قد يحتاج تحديث قاصة على ذلك الحاسوب.', 'The office PC doesn\'t take this from a phone. Qasa ERP on that PC may need an update.', 'کۆمپیوتەری نووسینگە ئەمە لە مۆبایلەوە وەرناگرێت. لەوانەیە قاسە لەسەر ئەو کۆمپیوتەرە پێویستی بە نوێکردنەوە هەبێت.'],
+  phoneRefused: ['لا يقبل حاسوب المكتب هذا من هذا الهاتف.', 'The office PC doesn\'t take this from this phone.', 'کۆمپیوتەری نووسینگە ئەمە لەم مۆبایلەوە وەرناگرێت.'],
+  tooLarge: ['هذا أكبر من أن يُعرض على الهاتف. افتحه على الحاسوب.', 'This is too much to show on a phone. Open it on the PC.', 'ئەمە زۆرە بۆ پیشاندان لەسەر مۆبایل. لەسەر کۆمپیوتەر بیکەرەوە.'],
+  officeUpdate: ['حدّث قاصة على حاسوب المكتب إلى آخر إصدار لتستخدم من الهاتف: {f}', 'Update Qasa ERP on the office PC to the latest version to use from the phone: {f}', 'قاسە لەسەر کۆمپیوتەری نووسینگە بۆ دوایین وەشان نوێ بکەرەوە بۆ ئەوەی لە مۆبایلەوە ئەمانە بەکاربهێنیت: {f}'],
+  needsOnline: ['يحتاج هذا اتصالاً بحاسوب المكتب.', 'This needs a connection to the office PC.', 'ئەمە پێویستی بە پەیوەندی لەگەڵ کۆمپیوتەری نووسینگە هەیە.'],
+  today: ['اليوم', 'Today', 'ئەمڕۆ'],
+  yesterday: ['أمس', 'Yesterday', 'دوێنێ'],
+  date: ['التاريخ', 'Date', 'بەروار'],
+  featApprovals: ['الموافقة على السندات', 'approving vouchers', 'پەسەندکردنی سەنەدەکان'],
+  featRate: ['سعر الدولار', 'the dollar rate', 'نرخی دۆلار'],
+  featDayClose: ['إغلاق اليوم', 'the end of day', 'داخستنی ڕۆژ'],
+  featExpense: ['المصاريف مع صورة الوصل', 'expenses with a photo of the receipt', 'خەرجی لەگەڵ وێنەی وەسڵ'],
+  featShare: ['إرسال الفواتير وكشوف الحساب', 'sending invoices and statements', 'ناردنی پسوولە و کەشفی هەژمار'],
+  featTransfer: ['المناقلة بين المخازن', 'moving stock between warehouses', 'گواستنەوەی کاڵا لە نێوان کۆگاکان'],
+  featReceive: ['استلام البضاعة', 'receiving goods', 'وەرگرتنی کاڵا']
 } as const satisfies Record<string, readonly [string, string, string]>;
+
+/**
+ * Every text: the app's own, then phone app 1.1's in a file of its own for the owner and the managers (owner/i18n.ts)
+ * and for the staff (staff/i18n.ts). A key is in one of them only (a test).
+ */
+const T = { ...BASE, ...OWNER_T, ...STAFF_T } as const;
+/** The parts the texts are made of, for the test that no key is in two. */
+export const TEXT_PARTS: Record<string, Record<string, readonly [string, string, string]>> = { base: BASE, owner: OWNER_T, staff: STAFF_T };
 
 export type Key = keyof typeof T;
 export const KEYS = Object.keys(T) as Key[];

@@ -54,6 +54,7 @@ import { AR_DUAL, COUNT_TEXT, COUNT_VAR, countOf } from './i18n/counts.ts';
 import { DOC_APPROVAL_TEXT } from './i18n/doc-approval.ts';
 import { AMOUNTS_TEXT } from './i18n/amounts.ts';
 import { ITEM_QUICK_TEXT } from './i18n/item-quick.ts';
+import { RECEIPT_PHOTO_TEXT } from './i18n/receipt-photo.ts';
 import { formatAmount, formatDate, formatDateTime, formatInteger, formatQty, formatTime, hasLeadingSign, LANGS, ltrIsolate, monthName, textDigits, toEasternDigits, type CurrencyCode, type DigitStyle, type Lang, type Names } from '@qasa/core';
 
 /** Every UI string in Arabic, English and Kurdish (Sorani) — in that order. */
@@ -747,6 +748,12 @@ const BASE = {
   netNeedsSignIn: ['شغّل «تسجيل الدخول» أولاً في صفحة المستخدمين: على الشبكة يدخل كل شخص باسمه وكلمة مروره.', 'First switch on sign-in on the Users page: on the network, everyone signs in with their own user and password.', 'سەرەتا «چوونەژوورەوە» لە پەڕەی بەکارهێنەران هەڵبکە: لەسەر تۆڕ، هەر کەسێک بە بەکارهێنەر و وشەی نهێنیی خۆی دەچێتە ژوورەوە.'],
   netTurnOn: ['تشغيل شبكة المكتب', 'Switch on the office network', 'هەڵکردنی تۆڕی نووسینگە'],
   netTurnOff: ['إيقاف شبكة المكتب', 'Switch off the office network', 'کوژاندنەوەی تۆڕی نووسینگە'],
+  // 1.4.3: asked before switching it off (Qasa Relay stops with it; phones on the office Wi-Fi have their own link)
+  netTurnOffConfirm: [
+    'إيقاف شبكة المكتب؟ حتى تشغّلها من جديد، ينقطع اتصال الحواسيب الأخرى بهذا الحاسوب، وكذلك اتصال Qasa Relay والهواتف والحواسيب التي تتصل عبره.',
+    'Switch off the office network? Until you switch it on again, the other PCs lose their connection to this PC, and so do Qasa Relay and the phones and PCs that connect through it.',
+    'تۆڕی نووسینگە بکوژێنرێتەوە؟ تا دووبارە هەڵیبکەیتەوە، پەیوەندیی کۆمپیوتەرەکانی تر بەم کۆمپیوتەرەوە دەپچڕێت، هەروەها پەیوەندیی Qasa Relay و ئەو مۆبایل و کۆمپیوتەرانەی لە ڕێیەوە پەیوەندی دەکەن.'
+  ],
   netAddress: ['عنوان هذا الحاسوب', 'This PC’s address', 'ناونیشانی ئەم کۆمپیوتەرە'],
   netCode: ['رمز الاقتران', 'Pairing code', 'کۆدی پەیوەندی'],
   netNoAddress: ['هذا الحاسوب غير متصل بشبكة المكتب الآن.', 'This PC isn’t connected to the office network right now.', 'ئەم کۆمپیوتەرە ئێستا بە تۆڕی نووسینگەوە نەبەستراوە.'],
@@ -1037,7 +1044,8 @@ const BASE = {
 
 /** The industry features keep their texts in files of their own (i18n/), in the same three languages. */
 const D = { ...BASE, ...AUDIT_TEXT, ...REAL_ESTATE_TEXT, ...MOBILE_TEXT, ...PARTS_TEXT, ...ENGINEERING_TEXT,
-  ...PAYROLL_TEXT, ...POS_TEXT, ...QUOTES_TEXT, ...PIPELINE_TEXT, ...MEDIA_TEXT, ...BRIEF_TEXT, ...CLOUD_TEXT, ...RELAY_TEXT, ...ACTIVATION_TEXT, ...FX_TEXT, ...VERIFY_TEXT, ...GEN_TEXT, ...WEBAPI_TEXT, ...PHONE_TEXT, ...USAGE_TEXT, ...SOLAR_TEXT, ...LEGAL_TEXT, ...BRANCH_TEXT, ...BANK_TEXT, ...WAVE2_TEXT, ...ASSET_TEXT, ...ADJ_TEXT, ...PO_TEXT, ...COMPANY_TEXT, ...LABEL_TEXT, ...PRINTER_TEXT, ...SAFETY_TEXT, ...UI_TEXT, ...UNIT_TEXT, ...BATCH_TEXT, ...STORE_TEXT, ...CATALOG_TEXT, ...PHARMACY_TEXT, ...HARDENING_TEXT, ...OUTBOX_TEXT, ...DAY_CLOSE_TEXT, ...WHATSAPP_TEXT, ...LOYALTY_TEXT, ...SUPPORT_TEXT, ...SETTINGS_SECTION_TEXT, ...LOOK_TEXT, ...INVOICE_SPEED_TEXT, ...ITEMS14_TEXT, ...SALES14_TEXT, ...SHELL14_TEXT, ...PRINT14_TEXT, ...DOC_APPROVAL_TEXT, ...ITEM_QUICK_TEXT, ...COUNT_TEXT, ...AMOUNTS_TEXT };
+  ...PAYROLL_TEXT, ...POS_TEXT, ...QUOTES_TEXT, ...PIPELINE_TEXT, ...MEDIA_TEXT, ...BRIEF_TEXT, ...CLOUD_TEXT, ...RELAY_TEXT, ...ACTIVATION_TEXT, ...FX_TEXT, ...VERIFY_TEXT, ...GEN_TEXT, ...WEBAPI_TEXT, ...PHONE_TEXT, ...USAGE_TEXT, ...SOLAR_TEXT, ...LEGAL_TEXT, ...BRANCH_TEXT, ...BANK_TEXT, ...WAVE2_TEXT, ...ASSET_TEXT, ...ADJ_TEXT, ...PO_TEXT, ...COMPANY_TEXT, ...LABEL_TEXT, ...PRINTER_TEXT, ...SAFETY_TEXT, ...UI_TEXT, ...UNIT_TEXT, ...BATCH_TEXT, ...STORE_TEXT, ...CATALOG_TEXT, ...PHARMACY_TEXT, ...HARDENING_TEXT, ...OUTBOX_TEXT, ...DAY_CLOSE_TEXT, ...WHATSAPP_TEXT, ...LOYALTY_TEXT, ...SUPPORT_TEXT, ...SETTINGS_SECTION_TEXT, ...LOOK_TEXT, ...INVOICE_SPEED_TEXT, ...ITEMS14_TEXT, ...SALES14_TEXT, ...SHELL14_TEXT, ...PRINT14_TEXT, ...DOC_APPROVAL_TEXT, ...ITEM_QUICK_TEXT, ...COUNT_TEXT, ...AMOUNTS_TEXT,
+  ...RECEIPT_PHOTO_TEXT };
 
 export type Key = keyof typeof D;
 

@@ -1,5 +1,8 @@
-import type { Answer, OfficeLink } from './link';
+import { OfficeError, ok, q, safeId } from './answers';
+import type { OfficeLink } from './link';
+import { ownerApi } from './owner/api';
 import type { Me } from './roles';
+import { staffApi } from './staff/api';
 
 /** The office's answers the app reads (the same shapes as the desktop app's API). */
 export type Names = { ar: string; en: string; ku: string };
@@ -55,6 +58,10 @@ export interface Brief {
   flow?: { in: number; out: number };
   receivables: number;
   lateCustomers: { partyId: string; code: string; name: string; phone: string; balance: number; oldestDays: number; usd: number }[];
+  /** an office of phone app 1.1 on: the five customers who owe the most, with what they owe in each currency */
+  topDebtors?: { partyId: string; code: string; name: string; phone: string; balance: number; oldestDays: number; usd: number; owed?: Money }[];
+  /** what customers owe in each currency's own money (an office of 1.4 on) */
+  receivablesOwed?: Money;
   lowStock: { itemId: string; code: string; name: Names; qtyMilli: number; reorderMilli: number | null }[];
   approvals: { waitingCheck: number; waitingApproval: number };
 }
@@ -64,27 +71,18 @@ export interface CountSession {
   lines: { itemId: string; countedMilli: number; bookMilli: number }[];
 }
 
-/** A refusal from the office (status and its error code), for the screens to explain. */
-export class OfficeError extends Error {
-  constructor(readonly status: number, readonly code: string, readonly details: unknown) {
-    super(code);
-  }
-}
+// (a refusal, reading an answer, ids in paths: answers.ts, shared with the calls of phone app 1.1)
+export { OfficeError, ok, q, safeId };
 
-function ok<T>(answer: Answer<T>): T {
-  if (answer.s >= 200 && answer.s < 300) return answer.b;
-  const body = answer.b as { error?: string; details?: unknown } | null;
-  throw new OfficeError(answer.s, body?.error ?? 'error', body?.details ?? null);
-}
-
-const q = (params: Record<string, string>) => '?' + Object.entries(params).map(([k, v]) => `${k}=${encodeURIComponent(v)}`).join('&');
-/** Ids from the office go into paths only as they are: letters, digits, dashes, underscores. */
-const safeId = (id: string) => {
-  if (!/^[\w-]{1,64}$/.test(id)) throw new OfficeError(400, 'validation', null);
-  return id;
-};
-
+/**
+ * The office's API as the phone calls it: phone app 1.0's calls, then 1.1's for the owner and the managers
+ * (owner/api.ts) and for the staff (staff/api.ts). No call is in two of them (logic.test.ts).
+ */
 export function officeApi(link: OfficeLink) {
+  return { ...coreApi(link), ...ownerApi(link), ...staffApi(link) };
+}
+
+export function coreApi(link: OfficeLink) {
   return {
     me: async () => ok(await link.request<Me>('GET', '/api/auth/me')),
     settings: async () => ok(await link.request<Settings>('GET', '/api/settings')),

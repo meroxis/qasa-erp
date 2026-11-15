@@ -1,7 +1,7 @@
 import { decodePairingCode, type PairingCode } from './protocol';
 
 /**
- * The QR code from Settings → Phones on the office PC, checked before the phone uses anything in it: the office's
+ * The QR code from Settings → Office network → Phones on the office PC, checked before the phone uses anything in it: the office's
  * addresses on the Wi-Fi (plain IPv4 addresses or names, at most 8), the phone link's port, the office's Qasa Relay ID,
  * the one-time pairing id and secret. The office's public key in it is what the phone trusts from then on (it is
  * pinned: a later connection that can't prove that key is refused, on the Wi-Fi and through the relay alike).

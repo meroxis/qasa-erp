@@ -2,9 +2,9 @@
 //   npm run seed:demo      (fresh data/qasa.sqlite)
 //   npm run dev            (API :4417 and app :5173)
 //   node scripts/screenshots.mjs           (add --art to re-render only the branded images)
-// Uses a local Edge or Chrome in headless mode. It only runs against the Meroxis demo company, because for the
-// users page it starts the Pro trial, adds a user and switches sign-in on for a moment, with throwaway
-// passwords made up for this run (sign-in is switched off again at the end).
+// Uses a local Edge or Chrome in headless mode. It only runs against the Meroxis demo company, because it starts the
+// free month, adds a few sales this month, and for the users page adds a user and switches sign-in on for a moment,
+// with throwaway passwords made up for this run (sign-in is switched off again at the end).
 import { spawn } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
@@ -38,6 +38,38 @@ const api = async (method, url, body) => {
 };
 const settings = await api('GET', '/api/settings');
 if (settings.companyName.en !== 'Meroxis Company') throw new Error('This script only runs against the demo company (npm run seed:demo).');
+// a company that hasn't said what it does opens on that question (1.1): the demo company trades
+if (settings.businessTypes === null) await api('PUT', '/api/settings', { businessTypes: ['trade'] });
+// the welcome tour opens once for each person on the home page: these pictures are taken as if they had seen it
+const people = ['owner', ...(await api('GET', '/api/users')).map((u) => u.name)];
+// the free month, as a new install starts it on its first run: every page, and invoices without the "Made with Qasa
+// ERP" line (the users page needs it too)
+if ((await api('GET', '/api/plan')).trialAvailable) await api('POST', '/api/plan/trial', {});
+
+/** A few sales this month (once), so Home has this month's sales and profit: the sample company's own trade is older. */
+async function thisMonthsSales() {
+  const now = new Date();
+  const month = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+  if ((await api('GET', '/api/invoices?kind=sale&status=posted')).some((v) => v.date.startsWith(month))) return;
+  const day = (d) => `${month}-${String(Math.min(d, now.getDate())).padStart(2, '0')}`;
+  const [main] = await api('GET', '/api/warehouses');
+  const items = Object.fromEntries((await api('GET', '/api/items')).map((i) => [i.code, i]));
+  const customers = Object.fromEntries((await api('GET', '/api/parties?type=customer')).map((p) => [p.name, p]));
+  // a credit sale to one of the sample customers, or a cash sale into the main safe
+  const sell = async (date, customer, lines) => {
+    const sale = await api('POST', '/api/invoices', {
+      kind: 'sale', date, warehouseId: main.id, currency: 'IQD', rateX100: 100, discount: 0,
+      ...(customer ? { partyId: customers[customer].id, payment: 'credit' } : { payment: 'cash', cashAccountCode: '1811' }),
+      lines: lines.map(([code, n]) => ({ itemId: items[code].id, qtyMilli: n * 1000, unitPrice: items[code].salePrice }))
+    });
+    await api('POST', `/api/invoices/${sale.id}/post`, {});
+  };
+  await sell(day(3), 'Raz', [['PV-550', 6], ['INV-5K', 1]]);
+  await sell(day(8), null, [['CU-PIPE', 15], ['SRV-INST', 1]]);
+  await sell(day(12), 'Mer', [['AC-18', 1], ['SRV-INST', 1]]);
+  await sell(day(now.getDate()), null, [['PV-550', 2]]);
+}
+await thisMonthsSales();
 
 const invoice = (await api('GET', '/api/invoices?kind=sale&status=posted')).find((v) => v.number === 'INV-2026-0002');
 const receipt = (await api('GET', '/api/entries?type=receipt&status=approved')).find((e) => e.currency === 'IQD');
@@ -47,8 +79,6 @@ if (!invoice || !receipt || !ac) throw new Error('Demo data is missing; run npm 
 /** The users page as an office sees it: two people signed in, with separate duties. */
 async function proSetup() {
   const password = { owner: randomUUID(), raz: randomUUID() };
-  const plan = await api('GET', '/api/plan');
-  if (plan.trialAvailable) await api('POST', '/api/plan/trial', {});
   let users = await api('GET', '/api/users');
   if (!users.some((u) => u.username === 'raz')) await api('POST', '/api/users', { username: 'raz', name: 'Raz', roles: ['checker', 'approver'] });
   users = await api('GET', '/api/users');
@@ -60,11 +90,13 @@ async function proSetup() {
   await api('PUT', '/api/auth/signin', { on: true });
   await api('POST', '/api/auth/login', { username: 'raz', password: password.raz });
   await api('POST', '/api/auth/login', { username: owner.username, password: password.owner });
-  // the browser signs in on the app's own address, so its cookie belongs there
+  // the browser takes the owner's session on the app's own address, where the page asks the API (through the dev
+  // server's proxy, which may not pass a sign-in sent from the page)
+  const at = cookie.indexOf('=');
+  await send('Network.setCookie', { name: cookie.slice(0, at), value: cookie.slice(at + 1), url: APP, httpOnly: true, sameSite: 'Strict' });
   await send('Page.navigate', { url: APP });
   await sleep(800);
-  const ok = await evaluate(`fetch('/api/auth/login', { method: 'POST', headers: { 'content-type': 'application/json', 'x-qasa-client': '1' },
-    body: JSON.stringify({ username: ${JSON.stringify(owner.username)}, password: ${JSON.stringify(password.owner)} }) }).then((r) => r.ok)`);
+  const ok = await evaluate(`fetch('/api/auth/me', { headers: { 'x-qasa-client': '1' } }).then((r) => r.json()).then((m) => !!m.user)`);
   if (!ok) throw new Error('The browser could not sign in');
 }
 
@@ -83,6 +115,9 @@ const SHOTS = [
 ];
 
 // ——— a headless browser over the DevTools protocol ———
+// a browser left from an earlier run on the same port would take these pictures with its own settings
+const stale = await fetch(`http://127.0.0.1:${PORT}/json/version`).then(() => true, () => false);
+if (stale) throw new Error(`A browser already listens on port ${PORT}: close it first`);
 const profile = mkdtempSync(join(tmpdir(), 'qasa-shots-'));
 const proc = spawn(browser, [
   '--headless=new', `--remote-debugging-port=${PORT}`, `--user-data-dir=${profile}`, '--hide-scrollbars', '--no-first-run',
@@ -129,6 +164,7 @@ async function capture(file) {
 
 await send('Page.enable');
 await send('Runtime.enable');
+await send('Network.enable');
 mkdirSync(out, { recursive: true });
 
 const artOnly = process.argv.includes('--art');
@@ -140,7 +176,10 @@ for (const shot of artOnly ? [] : SHOTS) {
     // the app keeps its language and digits on the computer (localStorage)
     await send('Page.navigate', { url: APP });
     await sleep(800);
-    await evaluate(`localStorage.setItem('qasa.lang', '${shot.lang}'); localStorage.setItem('qasa.digits', 'western'); localStorage.removeItem('qasa.user'); true`);
+    // (the light theme whatever Windows uses, and no first-steps card: these are a working company's screens)
+    await evaluate(`localStorage.setItem('qasa.lang', '${shot.lang}'); localStorage.setItem('qasa.digits', 'western'); localStorage.removeItem('qasa.user');
+      localStorage.setItem('qasa.theme', 'light'); localStorage.setItem('qasa.firstSteps.hidden', '1');
+      ${JSON.stringify(people)}.forEach((p) => localStorage.setItem('qasa.tour.done.' + p, '1')); true`);
     lang = shot.lang;
   }
   await send('Page.navigate', { url: `${APP}#/${shot.path}` });
@@ -196,6 +235,14 @@ if (cookie) await api('PUT', '/api/auth/signin', { on: false });
 
 ws.close();
 const exited = new Promise((r) => proc.once('exit', r));
+// the browser is closed through its own DevTools address: Edge may start itself again as another process, which
+// proc.kill() would leave running (and listening on the port)
+try {
+  const { webSocketDebuggerUrl } = await (await fetch(`http://127.0.0.1:${PORT}/json/version`)).json();
+  const whole = new WebSocket(webSocketDebuggerUrl);
+  await new Promise((r) => whole.addEventListener('open', r, { once: true }));
+  whole.send(JSON.stringify({ id: 1, method: 'Browser.close' }));
+} catch { /* already gone */ }
 proc.kill();
 await Promise.race([exited, sleep(5000)]);
 // the browser may hold its profile a moment longer; a leftover temp folder does no harm

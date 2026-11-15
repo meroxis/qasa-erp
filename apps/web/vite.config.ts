@@ -19,7 +19,11 @@ export default defineConfig(({ mode }) => {
       port: 5173,
       strictPort: true,
       proxy: {
-        '/api': 'http://127.0.0.1:4417'
+        // Written out, not as the 'http://…' shorthand: Vite turns the shorthand into changeOrigin: true, which replaces
+        // the request's Host header with the target's (127.0.0.1:4417). The server takes a change only when its Origin
+        // names the Host it was sent to (requestRefusal in packages/server/src/app.ts), so every save from this page
+        // was refused (403, reason "origin"). With the browser's Host kept, the server sees localhost:5173 in both.
+        '/api': { target: 'http://127.0.0.1:4417', changeOrigin: false }
       }
     }
   };

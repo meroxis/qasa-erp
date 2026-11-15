@@ -452,6 +452,8 @@ export interface BriefView {
   flow: { in: number; out: number };
   topItems: ItemSales[];
   lateCustomers: AgingRow[];
+  /** phone app 1.1: the five customers who owe the most (the ageing's largest balances), whatever their age */
+  topDebtors: AgingRow[];
   receivables: number;
   /** the same in each currency's real money (AgingRow.owed), for showing dinar and dollar */
   receivablesOwed: Money;
@@ -493,6 +495,8 @@ export function dailyBrief(db: Db, date: string, branch: BranchFilter = null): B
     topItems: salesByItem(db, date, date, 5, branch),
     // late: something owed for over 30 days
     lateCustomers: customers.filter((c) => c.oldestDays > 30).sort((a, b) => b.oldestDays - a.oldestDays || b.balance - a.balance).slice(0, 8),
+    // (a stable sort: equal balances keep the ageing's order)
+    topDebtors: [...customers].sort((a, b) => b.balance - a.balance).slice(0, 5),
     receivables: customers.reduce((s, c) => s + c.balance, 0),
     receivablesOwed: owedTotal(customers),
     installments: { overdue: inst.overdue.slice(0, 10), dueTomorrow: inst.dueTomorrow, overdueTotal },

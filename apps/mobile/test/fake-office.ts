@@ -1,5 +1,5 @@
 import type { OfficeInfo, SocketLike } from '../src/link';
-import { generateKeyPair, officeHandshake, refusalMessage, toB64, type RefusalCode, type Session } from '../src/protocol';
+import { generateKeyPair, officeHandshake, refusalMessage, toB64, type PhoneClaim, type RefusalCode, type Session } from '../src/protocol';
 
 /**
  * An office PC for the app's tests: answers the handshake like pro/src/phone/phone.ts, then the app's requests
@@ -14,6 +14,8 @@ export function fakeOffice(options: {
   const sockets: FakeSocket[] = [];
   /** every message the office read, in order */
   const seen: Record<string, unknown>[] = [];
+  /** what each handshake said of the phone (its key, name, app version) */
+  const claims: PhoneClaim[] = [];
   const state = { up: true };
   class FakeSocket implements SocketLike {
     binaryType = 'blob';
@@ -33,6 +35,7 @@ export function fakeOffice(options: {
       if (!this.session) {
         if (options.refuse) return deliver(refusalMessage(options.refuse));
         const answer = officeHandshake(data, key, (id) => (id === 'pair-1' ? secret : null));
+        claims.push(answer.claim);
         const accepted = answer.accept('device-7', 'Meroxis');
         this.session = accepted.session;
         return deliver(accepted.message2);
@@ -51,7 +54,7 @@ export function fakeOffice(options: {
   }
   const office: OfficeInfo = { serverKey: toB64(key.publicKey), addresses: ['10.0.0.9'], port: 47421, relay: null, deviceId: 'device-7', company: 'Meroxis' };
   return {
-    office, secret, sockets, seen, state,
+    office, secret, sockets, seen, claims, state,
     socket: (url: string): SocketLike => new FakeSocket(url),
     /** the office PC goes away: every open connection drops */
     drop() {

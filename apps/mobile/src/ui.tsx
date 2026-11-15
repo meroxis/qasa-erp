@@ -48,6 +48,11 @@ export interface AppCtx {
    * 'queued': it goes by itself once connected. A refusal from the office is thrown (and nothing is kept).
    */
   queue(kind: OutboxKind, body: unknown, summary: OutboxSummary, target?: string): Promise<'sent' | 'posted' | 'queued'>;
+  /**
+   * 1.1: as queue, with the office's answer (when it was sent) for the screen to read, and `blob`: a photo kept beside
+   * the change in the outbox (an expense's receipt), sent with it.
+   */
+  queueFor(kind: OutboxKind, body: unknown, summary: OutboxSummary, target?: string, blob?: string): Promise<{ result: 'sent' | 'posted' | 'queued'; answer: unknown }>;
   sendOutbox(): void;
   retryOutbox(id: string): Promise<void>;
   deleteOutbox(id: string): Promise<void>;

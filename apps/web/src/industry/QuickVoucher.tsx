@@ -7,10 +7,11 @@ import { href } from '../router.ts';
 import { useRatePrefill } from './fx-prefill.ts';
 import { holdKey, type HeldKey } from './outbox.ts';
 import {
-  amountAfterCurrency, amountInIqd, balanceAfter, boardRateFills, formBalance, formBalanceAfter, invoiceNote, invoicePrefill, mayQuickVoucher, overInvoice, parseRateText, quickNotice,
-  quickOutcome,
+  amountAfterCurrency, amountInIqd, balanceAfter, boardRateFills, formBalance, formBalanceAfter, formBalanceDual, invoiceNote, invoicePrefill, mayQuickVoucher, overInvoice, parseRateText,
+  quickNotice, quickOutcome,
   type QuickKind, type QuickVoucherPreset
 } from './quick-voucher.ts';
+import { Amount } from '../Amount.tsx';
 
 /**
  * 1.4: "Receive payment" (a receipt voucher from a customer) and "Pay supplier" (a payment voucher), from a short
@@ -87,6 +88,8 @@ export function QuickVoucherForm({ kind, preset, onClose, onDone }: { kind: Quic
   // the balance in the currency chosen in the form when the party's row shows its dollars; else the whole position
   const before = party ? formBalance(party, currency) : null;
   const after = before ? formBalanceAfter(before, amount, currency, rateX100) : null;
+  // a dinar balance also in dollars, as the company chose to see amounts (not one that is dollars at the book rates)
+  const withDollars = !!party && !!before && formBalanceDual(party, before);
   // paid more than is owed in all: by the whole position, whatever currency the balance is shown in
   const netAfter = party ? balanceAfter(party.balance, amount, currency, rateX100) : null;
   const ready = !!party && amountInIqd(amount, currency, rateX100) !== null && !!cashAccount && !!date;
@@ -163,9 +166,9 @@ export function QuickVoucherForm({ kind, preset, onClose, onDone }: { kind: Quic
         <label className="field"><span>{t('notes')}</span><input className="input" maxLength={500} value={note} onChange={(e) => setNote(e.target.value)} /></label>
         {party && before && (
           <div className="totals" role="status" style={{ alignSelf: 'stretch' }}>
-            <span className="muted">{t('s14_balanceBefore')}</span><span className="num">{i18n.money(before.amount, before.currency)}</span>
+            <span className="muted">{t('s14_balanceBefore')}</span><span className="num">{withDollars ? <Amount value={before.amount} /> : i18n.money(before.amount, before.currency)}</span>
             {before.other && <><span className="muted small">{t('s14_balanceAlso')}</span><span className="num small muted">{i18n.money(before.other.amount, before.other.currency)}</span></>}
-            <span>{t('s14_balanceAfter')}</span><strong className="num" style={{ fontSize: 18 }}>{after === null ? '—' : i18n.money(after, before.currency)}</strong>
+            <span>{t('s14_balanceAfter')}</span><strong className="num" style={{ fontSize: 18 }}>{after === null ? '—' : withDollars ? <Amount value={after} /> : i18n.money(after, before.currency)}</strong>
           </div>
         )}
         {extra !== null && <div className="alert info small" role="status">{t(kind === 'receipt' ? 's14_overInvoice' : 's14_overInvoicePay', { extra: i18n.money(extra, currency) })}</div>}

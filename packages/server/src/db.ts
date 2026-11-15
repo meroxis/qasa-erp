@@ -5,7 +5,7 @@ import { DatabaseSync } from 'node:sqlite';
 import { brandKey, DEFAULT_POSTING_ACCOUNTS, IRAQI_UNIFIED_CHART, STARTER_SUB_ACCOUNTS } from '@qasa/core';
 import { AppError } from './errors.ts';
 import {
-  MYSQL_TABLES, MYSQL_TRIGGERS, mysqlCollations, mysqlTableSql, pendingMysqlSteps, V10_MYSQL_STEPS, V11_MYSQL_STEPS, V12_MYSQL_STEPS, V13_MYSQL_STEPS, V14_MYSQL_STEPS, type MysqlCollations, type MysqlStep
+  MYSQL_TABLES, MYSQL_TRIGGERS, mysqlCollations, mysqlTableSql, pendingMysqlSteps, V10_MYSQL_STEPS, V11_MYSQL_STEPS, V12_MYSQL_STEPS, V13_MYSQL_STEPS, V14_MYSQL_STEPS, V15_MYSQL_STEPS, type MysqlCollations, type MysqlStep
 } from './schema-mysql.ts';
 
 export type SqlParam = null | number | bigint | string | Uint8Array;
@@ -1766,6 +1766,30 @@ const V14 =
   CREATE INDEX IF NOT EXISTS audit_log_user_login ON audit_log(entity, entity_id, action, id);
   `;
 
+const V15 =
+  // 15 — the photo of a paper receipt kept with its voucher (expenses.ts: an expense recorded on the phone). One JPEG per
+  // voucher, its location and other metadata taken out before it is kept. A draft that is deleted takes its photo with
+  // it; a posted voucher keeps its photo for good, as it keeps its lines (the triggers below; schema-mysql.ts on a server).
+  // And each entry's revision: one up with every change to a draft's heading or lines (journal.ts, replaceDraft), so an
+  // approval sent from the phone is refused when the entry changed after it was shown, even twice in one millisecond
+  // (entry-seen.ts)
+  `
+  ALTER TABLE entries ADD COLUMN revision INTEGER NOT NULL DEFAULT 0;
+  CREATE TABLE entry_images (
+    entry_id TEXT PRIMARY KEY REFERENCES entries(id) ON DELETE CASCADE,
+    mime TEXT NOT NULL CHECK (mime = 'image/jpeg'),
+    data BLOB NOT NULL,
+    bytes INTEGER NOT NULL CHECK (bytes > 0 AND bytes <= 409600),
+    sha256 TEXT NOT NULL,
+    created_by TEXT NOT NULL,
+    created_at TEXT NOT NULL
+  );
+  CREATE TRIGGER entry_images_no_update BEFORE UPDATE ON entry_images BEGIN SELECT RAISE(ABORT, 'entry_image_is_permanent'); END;
+  -- (while a draft is deleted its row in entries is gone already, so its photo goes with it)
+  CREATE TRIGGER entry_images_no_delete BEFORE DELETE ON entry_images
+    WHEN (SELECT status FROM entries WHERE id = OLD.entry_id) = 'approved' BEGIN SELECT RAISE(ABORT, 'entry_image_is_permanent'); END;
+  `;
+
 const MIGRATIONS: Migration[] = [
   { sql: V1 }, { sql: V2, rebuild: true }, { sql: V3, rebuild: true }, { sql: V4 }, { sql: V5, rebuild: true },
   { sql: V6, mysql: 'tables' }, { sql: V7, mysql: 'tables' }, { sql: V8, mysql: 'tables' }, { sql: V9, mysql: 'tables' },
@@ -1773,7 +1797,8 @@ const MIGRATIONS: Migration[] = [
   { sql: V11, mysql: { tables: true, steps: () => V11_MYSQL_STEPS }, data: (db) => { movePartBrands(db); movePartReorder(db); } },
   { sql: V12, mysql: { tables: true, steps: () => V12_MYSQL_STEPS } },
   { sql: V13, mysql: { tables: true, steps: () => V13_MYSQL_STEPS } },
-  { sql: V14, mysql: { tables: true, steps: () => V14_MYSQL_STEPS } }
+  { sql: V14, mysql: { tables: true, steps: () => V14_MYSQL_STEPS } },
+  { sql: V15, mysql: { tables: true, steps: () => V15_MYSQL_STEPS } }
 ];
 
 /** Server databases began at this version: its schema is in schema-mysql.ts (tables and triggers without `since`). */

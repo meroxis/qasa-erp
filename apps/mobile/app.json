@@ -2,7 +2,7 @@
   "expo": {
     "name": "Qasa ERP",
     "slug": "qasa-erp",
-    "version": "1.0.1",
+    "version": "1.1.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "automatic",
@@ -19,7 +19,7 @@
       }
     },
     "android": {
-      "versionCode": 2,
+      "versionCode": 5,
       "adaptiveIcon": {
         "backgroundColor": "#F2A33A",
         "foregroundImage": "./assets/android-icon-foreground.png",
@@ -48,10 +48,11 @@
       [
         "expo-camera",
         {
-          "cameraPermission": "Qasa uses the camera to scan barcodes and take item photos.",
+          "cameraPermission": "Qasa uses the camera to scan barcodes and take photos of items and receipts.",
           "recordAudioAndroid": false
         }
       ],
+      "./plugins/with-no-usage-metrics.js",
       "expo-secure-store",
       "expo-localization",
       "./plugins/with-lan-cleartext.js",

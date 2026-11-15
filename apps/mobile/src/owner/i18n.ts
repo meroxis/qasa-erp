@@ -1,0 +1,109 @@
+/**
+ * The texts of phone app 1.1 for the owner and the managers (approvals, the dollar rate, the dashboard, the end of the
+ * day), in Arabic, English and Kurdish (Sorani), as src/i18n.ts. The desktop's own words where it has them (fx_*, dc_*,
+ * the vouchers' actions); the Kurdish accounting words of the desktop (قەید، سەنەد، ڕەسید، تەرحیل، نەقد، قەرز).
+ */
+export const OWNER_T = {
+  // ——— approvals ———
+  aprTitle: ['الموافقات', 'Approvals', 'پەسەندکردنەکان'],
+  aprWaitingTab: ['بانتظار الموافقة', 'Waiting for approval', 'چاوەڕێی پەسەندکردن'],
+  aprCheckTab: ['بانتظار التدقيق', 'To check', 'چاوەڕێی وردبینی'],
+  aprSentGroup: ['أُرسلت للموافقة', 'Sent for approval', 'نێردراو بۆ پەسەندکردن'],
+  aprCheckedGroup: ['مدقّقة، بانتظار المصادقة', 'Checked, waiting to be approved', 'وردبینیکراو، چاوەڕێی پەسەندکردن'],
+  aprNone: ['لا شيء بانتظارك الآن.', 'Nothing is waiting for you now.', 'ئێستا هیچ شتێک چاوەڕێی تۆ نییە.'],
+  aprCard: ['بانتظار الموافقة: {n}', 'Waiting for approval: {n}', 'چاوەڕێی پەسەندکردن: {n}'],
+  aprPreparedBy: ['نظّمه {u}', 'Prepared by {u}', 'ئامادەکار: {u}'],
+  aprCheckedBy: ['دقّقه {u}', 'Checked by {u}', 'وردبین: {u}'],
+  aprAskedBy: ['طلب الموافقة {u}', 'Sent for approval by {u}', 'داواکاری پەسەندکردن: {u}'],
+  aprPayment: ['سند صرف', 'Payment voucher', 'سەنەدی پارەدان'],
+  aprJournal: ['قيد يومية', 'Journal entry', 'قەیدی ڕۆژانە'],
+  aprEntry: ['قيد', 'Entry', 'قەید'],
+  aprDraft: ['مسودة', 'Draft', 'ڕەشنووس'],
+  aprAccount: ['الحساب', 'Account', 'هەژمار'],
+  aprApprove: ['موافقة وترحيل', 'Approve & post', 'پەسەندکردن و تەرحیلکردن'],
+  aprApproveChecked: ['مصادقة وترحيل', 'Approve & post', 'پەسەندکردن و تەرحیلکردن'],
+  aprChanged: ['تغيّر هذا السند بعد أن فتحته؛ راجعه من جديد.', 'This voucher was changed after you opened it; look at it again.', 'ئەم سەنەدە دوای ئەوەی کردووتەتەوە گۆڕدراوە؛ دووبارە سەیری بکە.'],
+  aprApproveConfirm: ['الموافقة عليه وترحيله؟ بعد الترحيل لا يُصحَّح إلا بقيد عكسي.', 'Approve and post it? Once posted, only a reversal entry corrects it.', 'پەسەند و تەرحیل بکرێت؟ دوای تەرحیل تەنها بە قەیدی پێچەوانە ڕاست دەکرێتەوە.'],
+  aprApproved: ['رُحّل وصار في الدفاتر.', 'Posted: it is in the books now.', 'تەرحیل کرا و ئێستا لە دەفتەرەکاندایە.'],
+  aprReject: ['رفض', 'Reject', 'ڕەتکردنەوە'],
+  aprRejectHelp: ['يبقى السند مسودة خارج الأرصدة، ويرى منظّمه السبب.', 'The voucher stays a draft, out of every balance, and whoever prepared it sees the reason.', 'سەنەدەکە وەک ڕەشنووس دەمێنێتەوە و ناچێتە هیچ ڕەسیدێک، و ئامادەکارەکەی هۆکارەکە دەبینێت.'],
+  aprRejectReason: ['سبب الرفض', 'Reason', 'هۆکاری ڕەتکردنەوە'],
+  aprRejected: ['رُفض، ويرى منظّمه السبب.', 'Rejected: whoever prepared it sees the reason.', 'ڕەتکرایەوە؛ ئامادەکارەکەی هۆکارەکە دەبینێت.'],
+  aprCheck: ['تدقيق', 'Mark as checked', 'وردبینیکراو'],
+  aprChecked: ['دُقّق.', 'Checked.', 'وردبینی کرا.'],
+  aprReturn: ['إعادة للمنظم', 'Return to preparer', 'گەڕاندنەوە بۆ ئامادەکار'],
+  aprReturnConfirm: ['إعادته إلى منظّمه مسودةً؟', 'Send it back to whoever prepared it, as a draft?', 'وەک ڕەشنووس بگەڕێندرێتەوە بۆ ئامادەکارەکەی؟'],
+  aprReturned: ['أُعيد إلى منظّمه.', 'It went back to whoever prepared it.', 'گەڕێندرایەوە بۆ ئامادەکارەکەی.'],
+  aprTaken: ['سبق التصرف فيه، والقائمة محدّثة الآن.', 'It was already dealt with. The list is up to date now.', 'پێشتر چارەسەر کراوە. لیستەکە ئێستا نوێیە.'],
+  // the photo of an expense's paper receipt (the desktop's words: rp_by, rp_failed)
+  aprPhotoBy: ['أضافها {u}', 'Added by {u}', 'زیادکراوە لەلایەن {u}'],
+  aprPhotoFailed: ['تعذّر عرض الصورة.', 'Couldn\'t show the photo.', 'نەتوانرا وێنەکە پیشان بدرێت.'],
+
+  // ——— the dollar rate ———
+  rateTitle: ['سعر الدولار', 'Dollar rate', 'نرخی دۆلار'],
+  rateToday: ['سعر اليوم', 'Today\'s rate', 'نرخی ئەمڕۆ'],
+  ratePer100: ['دينار لكل 100 دولار', 'dinars per $100', 'دینار بۆ هەر 100 دۆلار'],
+  rateLast: ['آخر سعر: {d}', 'Last rate: {d}', 'دوایین نرخ: {d}'],
+  rateNoneToday: ['لم يُدخل سعر اليوم بعد', 'No rate entered for today yet', 'هێشتا نرخی ئەمڕۆ نەنووسراوە'],
+  rateDefault: ['السعر الافتراضي (لا يوجد سعر في اللوحة)', 'The default rate (none on the board)', 'نرخی بنەڕەت (هیچ نرخێک لە تەختەکەدا نییە)'],
+  rateCard: ['سعر الدولار: {r}', 'Dollar rate: {r}', 'نرخی دۆلار: {r}'],
+  rateChange: ['التغيّر عن السعر السابق: {c}', 'Change since the previous rate: {c}', 'گۆڕان لە نرخی پێشوو: {c}'],
+  rateInput: ['سعر 100 دولار بالدينار', 'Price of $100 in dinars', 'نرخی 100 دۆلار بە دینار'],
+  rateSource: ['المصدر (اختياري)', 'Source (optional)', 'سەرچاوە (ئارەزوومەندانە)'],
+  rateSourceHint: ['مثلاً: بورصة أربيل', 'e.g. Erbil exchange', 'بۆ نموونە: بۆرسەی هەولێر'],
+  rateSave: ['حفظ سعر اليوم', 'Save today\'s rate', 'پاشەکەوتکردنی نرخی ئەمڕۆ'],
+  rateSame: ['نفس سعر آخر يوم ({r})', 'Same as the last day ({r})', 'هەمان نرخی دوایین ڕۆژ ({r})'],
+  rateSaved: ['حُفظ سعر اليوم، وأصبح السعر الافتراضي للفواتير والسندات الجديدة.', 'Today\'s rate is saved and is now the default for new invoices and vouchers.', 'نرخی ئەمڕۆ پاشەکەوت کرا و ئێستا نرخی بنەڕەتە بۆ پسوولە و سەنەدە نوێیەکان.'],
+  rateBigChange: ['يختلف هذا السعر عن آخر سعر ({r}) بنسبة {p}٪. هل تحفظه؟', 'This differs from the last rate ({r}) by {p}%. Save it?', 'ئەم نرخە {p}٪ جیاوازە لە دوایین نرخ ({r}). پاشەکەوتی بکەیت؟'],
+  rateInvalid: ['أدخل سعراً بين 10,000 و10,000,000 لكل 100 دولار.', 'Enter a rate between 10,000 and 10,000,000 per $100.', 'نرخێک لە نێوان 10,000 و 10,000,000 بۆ هەر 100 دۆلار بنووسە.'],
+  rateHistory: ['آخر الأسعار', 'Recent rates', 'دوایین نرخەکان'],
+
+  // ——— the dashboard ———
+  dashCashBanks: ['النقد والمصارف', 'Cash and banks', 'قاسە و بانکەکان'],
+  dashTopDebtors: ['أكبر ديون الزبائن', 'Who owes the most', 'گەورەترین قەرزی کڕیاران'],
+  dashShowAll: ['عرض الكل', 'Show all', 'پیشاندانی هەموو'],
+
+  // ——— the end of the day ———
+  dayTitle: ['إغلاق اليوم', 'End of day', 'داخستنی ڕۆژ'],
+  dayPrev: ['اليوم السابق', 'Previous day', 'ڕۆژی پێشوو'],
+  dayNext: ['اليوم التالي', 'Next day', 'ڕۆژی دواتر'],
+  dayNet: ['صافي المبيعات', 'Net sales', 'فرۆشتنی سافی'],
+  dayReturns: ['المرتجعات: {a}', 'Returns: {a}', 'گەڕاوەکان: {a}'],
+  dayByMethod: ['المبيعات حسب طريقة الدفع', 'Sales by payment method', 'فرۆشتن بەپێی ڕێگای پارەدان'],
+  dayMBank: ['إلى المصرف', 'Into the bank', 'بۆ بانک'],
+  dayMCard: ['بطاقة', 'Card', 'کارت'],
+  dayMFib: ['FIB', 'FIB', 'FIB'],
+  dayMZainCash: ['زين كاش', 'ZainCash', 'زەین کاش'],
+  dayMQi: ['كي كارد', 'Qi Card', 'کی کارد'],
+  dayMLoyalty: ['نقاط الولاء', 'Loyalty points', 'خاڵەکانی دڵسۆزی'],
+  dayRegisters: ['الصناديق (الكاشير)', 'Registers', 'کاشێرەکان'],
+  dayNoRegisters: ['لم يُفتح صندوق في هذا اليوم.', 'No register was open on this day.', 'لەم ڕۆژەدا هیچ کاشێرێک نەکراوەتەوە.'],
+  dayOwnShifts: [
+    'تظهر هنا الصناديق التي فتحتها أنت فقط، مع مبيعات وردياتها والديون الجديدة فيها، وسندات القبض التي نظّمتها أنت.',
+    'Only the registers you opened yourself are shown here, with the sales and new debts of their shifts and the receipts you made.',
+    'لێرە تەنها ئەو کاشێرانە دەردەکەون کە خۆت کردووتەتەوە، لەگەڵ فرۆشتن و قەرزە نوێیەکانی شەفتەکانیان و ئەو سەنەدانەی وەرگرتن کە خۆت دروستت کردوون.'
+  ],
+  dayOpenedBy: ['فتحه {u}', 'Opened by {u}', 'کراوەتەوە لەلایەن {u}'],
+  dayStillOpen: ['لا يزال مفتوحاً', 'Still open', 'هێشتا کراوەیە'],
+  dayExpected: ['المتوقع', 'Expected', 'چاوەڕوانکراو'],
+  dayCounted: ['المعدود', 'Counted', 'ژمێردراو'],
+  dayShort: ['نقص', 'Short', 'کەم'],
+  dayOver: ['زيادة', 'Over', 'زیاد'],
+  dayMatches: ['مطابق', 'Matches', 'هاوتایە'],
+  dayExpenses: ['مصاريف اليوم', 'The day\'s expenses', 'خەرجییەکانی ڕۆژ'],
+  dayDebtsCollected: ['ديون محصّلة', 'Debts collected', 'قەرزی وەرگیراو'],
+  dayDebtsNew: ['ديون جديدة', 'New debts', 'قەرزی نوێ'],
+  dayMoneyIn: ['المقبوض', 'Money in', 'پارەی هاتوو'],
+  dayMoneyOut: ['المدفوع', 'Money out', 'پارەی دەرچوو'],
+  dayLowStock: ['{n} مادة عند حد إعادة الطلب أو نفدت', '{n} items at their reorder level or out', '{n} کاڵا گەیشتوونەتە سنووری داواکردنەوە یان نەماون'],
+
+  // ——— refusals (errors.ts) ———
+  errSamePerson: [
+    'من نظّم السند لا يدققه ولا يصادقه؛ يقوم بذلك شخص آخر (فصل المهام).',
+    'Whoever prepared a voucher can\'t check or approve it; someone else does that (separate duties).',
+    'ئەوەی سەنەدێکی ئامادە کردووە ناتوانێت وردبینی یان پەسەندی بکات؛ کەسێکی تر ئەوە دەکات (جیاکردنەوەی ئەرکەکان).'
+  ],
+  errPeriodLocked: ['الفترة {p} مقفلة', 'Period {p} is locked', 'ماوەی {p} داخراوە'],
+  errRejectReason: ['اكتب سبب الرفض (حتى 300 حرف).', 'Write the reason (up to 300 characters).', 'هۆکاری ڕەتکردنەوە بنووسە (تا 300 پیت).'],
+  errFxDateFuture: ['لا يمكن إدخال سعر ليوم لم يأتِ بعد.', 'You can\'t enter a rate for a day that hasn\'t come yet.', 'ناتوانیت نرخ بۆ ڕۆژێک بنووسیت کە هێشتا نەهاتووە.']
+} as const satisfies Record<string, readonly [string, string, string]>;

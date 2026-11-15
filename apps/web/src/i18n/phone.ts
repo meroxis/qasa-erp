@@ -1,10 +1,10 @@
-/** The Qasa phone app (Pro): pairing phones with this PC, in Settings → Phones. Arabic, English and Kurdish (Sorani), in that order, like i18n.ts. */
+/** The Qasa phone app (Pro): pairing phones with this PC, in Settings → Office network → Phones. Arabic, English and Kurdish (Sorani), in that order, like i18n.ts. */
 export const PHONE_TEXT = {
   ph_title: ['الهواتف (تطبيق قاصة)', 'Phones (Qasa app)', 'مۆبایلەکان (ئەپی قاسە)'],
   ph_help: [
-    'امسح الباركود بكاميرا الهاتف، واعرف السعر والمخزون، وأضف مادة بصورتها، واجرد المخزن، وأرسل بيعاً نقداً أو آجلاً كمسودة أو طلبية، واقبض من الزبائن — من تطبيق قاصة على الهاتف، كلٌّ بصلاحيات المستخدم الذي يعمل الهاتف باسمه. الاتصال مشفّر من الهاتف إلى هذا الحاسوب.',
-    'Scan barcodes with the phone camera, check prices and stock, add an item with its photo, count stock, send a sale (cash or on credit) as a draft or an order, and take money from customers — from the Qasa app on the phone, each with the permissions of the user the phone works as. The link is encrypted from the phone to this PC.',
-    'بارکۆد بە کامێرای مۆبایل بخوێنەوە، نرخ و بڕی کۆگا ببینە، کاڵا بە وێنەکەیەوە زیاد بکە، جەردی کۆگا بکە، فرۆشتن (نەقد یان قەرز) وەک ڕەشنووس یان داواکاری بنێرە، و پارە لە کڕیاران وەربگرە — لە ئەپی قاسە لەسەر مۆبایل، هەر یەکەیان بە دەسەڵاتی ئەو بەکارهێنەرەی مۆبایلەکە بە ناوییەوە کار دەکات. پەیوەندییەکە لە مۆبایلەوە تا ئەم کۆمپیوتەرە شفرەکراوە.'
+    'امسح الباركود بكاميرا الهاتف، واعرف السعر والمخزون، وأضف مادة بصورتها، واجرد المخزن، وأرسل بيعاً نقداً أو آجلاً كمسودة أو طلبية، واقبض من الزبائن — من تطبيق قاصة على الهاتف، كلٌّ بصلاحيات المستخدم الذي يعمل الهاتف باسمه. ومع تطبيق الهاتف 1.1: الموافقة على السندات، وسعر الدولار، وإغلاق اليوم، والمصاريف مع صورة الوصل، والفواتير وكشوف الحساب بصيغة PDF، ونقل البضاعة واستلامها. الاتصال مشفّر من الهاتف إلى هذا الحاسوب.',
+    'Scan barcodes with the phone camera, check prices and stock, add an item with its photo, count stock, send a sale (cash or on credit) as a draft or an order, and take money from customers — from the Qasa app on the phone, each with the permissions of the user the phone works as. With the phone app 1.1: approving vouchers, the dollar rate, the end of day, expenses with a photo of the receipt, invoices and statements as PDF, and moving and receiving stock. The link is encrypted from the phone to this PC.',
+    'بارکۆد بە کامێرای مۆبایل بخوێنەوە، نرخ و بڕی کۆگا ببینە، کاڵا بە وێنەکەیەوە زیاد بکە، جەردی کۆگا بکە، فرۆشتن (نەقد یان قەرز) وەک ڕەشنووس یان داواکاری بنێرە، و پارە لە کڕیاران وەربگرە — لە ئەپی قاسە لەسەر مۆبایل، هەر یەکەیان بە دەسەڵاتی ئەو بەکارهێنەرەی مۆبایلەکە بە ناوییەوە کار دەکات. لەگەڵ ئەپی مۆبایل 1.1: پەسەندکردنی سەنەدەکان، نرخی دۆلار، داخستنی ڕۆژ، خەرجی لەگەڵ وێنەی وەسڵ، پسوولە و کەشفی هەژمار وەک PDF، و گواستنەوە و وەرگرتنی کاڵا. پەیوەندییەکە لە مۆبایلەوە تا ئەم کۆمپیوتەرە شفرەکراوە.'
   ],
   ph_needsPro: ['تطبيق الهاتف من مزايا Starter وPro وBusiness.', 'The phone app is part of Starter, Pro and Business.', 'ئەپی مۆبایل بەشێکە لە Starter، Pro و Business.'],
   // shown only when PHONE_APP_READY is false (1.0 to 1.4.1 shipped without the phone app)
@@ -18,6 +18,10 @@ export const PHONE_TEXT = {
   ph_actsAs: ['يعمل باسم', 'Works as', 'کار دەکات بە ناوی'],
   ph_owner: ['المالك', 'The owner', 'خاوەن'],
   ph_lastSeen: ['آخر اتصال', 'Last seen', 'دوایین پەیوەندی'],
+  // 1.4.3: the phone app says its version when it connects (app 1.0.2 on); an older app says none
+  ph_appVersion: ['إصدار التطبيق', 'App version', 'وەشانی ئەپ'],
+  ph_versionOld: ['1.0.1 أو أقدم', '1.0.1 or older', '1.0.1 یان کۆنتر'],
+  ph_newer: ['يوجد إصدار أحدث على qasaerp.com/phone.', 'A newer version is on qasaerp.com/phone.', 'وەشانێکی نوێتر لە qasaerp.com/phone هەیە.'],
   ph_online: ['متصل', 'Online', 'پەیوەستە'],
   ph_remove: ['حذف', 'Remove', 'لابردن'],
   ph_removed: ['حُذف الهاتف؛ لم يعد يستطيع الاتصال.', 'The phone was removed; it can no longer connect.', 'مۆبایلەکە لابرا؛ چیتر ناتوانێت پەیوەندی بکات.'],
@@ -78,5 +82,31 @@ export const PHONE_TEXT = {
   a_phone_pair_start: ['بدء ربط هاتف', 'Phone pairing started', 'دەستپێکردنی بەستنەوەی مۆبایل'],
   a_phone_paired: ['ربط هاتف', 'Phone paired', 'مۆبایل بەسترایەوە'],
   a_phone_remove: ['حذف هاتف', 'Phone removed', 'مۆبایل لابرا'],
-  a_phone_count: ['جرد من هاتف', 'Count from a phone', 'جەرد لە مۆبایلەوە']
+  a_phone_count: ['جرد من هاتف', 'Count from a phone', 'جەرد لە مۆبایلەوە'],
+  // phone app 1.1: every change a phone makes has a line of its own in the audit log (which phone, as whom, what)
+  a_phone_change: ['تغيير من هاتف', 'Change from a phone', 'گۆڕانکاری لە مۆبایلەوە'],
+  e_phone: ['هاتف', 'Phone', 'مۆبایل'],
+  // 1.5: work from phones, told at the office PCs (the header's "From phones" and Windows notifications)
+  pn_title: ['من الهواتف', 'From phones', 'لە مۆبایلەکانەوە'],
+  pn_none: ['لا جديد من الهواتف.', 'Nothing new from phones.', 'هیچی نوێ لە مۆبایلەکانەوە نییە.'],
+  pn_kind_sale: ['مسودة بيع', 'Draft sale', 'فرۆشتنی ڕەشنووس'],
+  pn_kind_order: ['طلبية', 'Order', 'داواکاری'],
+  pn_kind_receipt: ['سند قبض', 'Receipt voucher', 'سەنەدی وەرگرتن'],
+  pn_kind_expense: ['مصروف', 'Expense', 'خەرجی'],
+  pn_kind_count: ['جرد المخزن', 'Stock count', 'جەردی کۆگا'],
+  pn_kind_transfer: ['مناقلة', 'Transfer', 'گواستنەوە'],
+  pn_kind_received: ['استلام بضاعة', 'Goods received', 'وەرگرتنی کاڵا'],
+  pn_notice: ['{who} · {what} من الهاتف', '{who} · {what} from a phone', '{who} · {what} لە مۆبایلەوە'],
+  pn_many: ['{n} جديدة من الهواتف', '{n} new from phones', '{n} نوێ لە مۆبایلەکانەوە'],
+  pn_viaPhone: ['من {phone}', 'on {phone}', 'لە {phone}'],
+  pn_unseen: ['{n} جديدة', '{n} new', '{n} نوێ'],
+  pn_waiting: ['{n} سند بانتظار مصادقتك', '{n} vouchers waiting for your approval', '{n} سەنەد چاوەڕێی پەسەندکردنی تۆن'],
+  pn_setting: ['أعلمني بعمل الهواتف', 'Notify me of work from phones', 'ئاگادارم بکەرەوە لە کاری مۆبایلەکان'],
+  pn_settingHelp: [
+    'إشعار من ويندوز على هذا الحاسوب عندما يرسل هاتف بيعاً أو طلبية أو سند قبض أو جرداً أو مصروفاً أو مناقلة أو استلام بضاعة مما يحق لك رؤيته.',
+    'A Windows notification on this PC when a phone sends a sale, an order, a receipt voucher, a count, an expense, a transfer or goods received that you may see.',
+    'ئاگادارکردنەوەی ویندۆز لەسەر ئەم کۆمپیوتەرە کاتێک مۆبایلێک فرۆشتن، داواکاری، سەنەدی وەرگرتن، جەرد، خەرجی، گواستنەوە یان وەرگرتنی کاڵا دەنێرێت کە دەسەڵاتی بینینیت هەیە.'
+  ],
+  pn_on: ['مفعّل', 'On', 'چالاک'],
+  pn_off: ['متوقف', 'Off', 'ناچالاک']
 } as const satisfies Record<string, readonly [string, string, string]>;

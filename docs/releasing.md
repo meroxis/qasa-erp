@@ -36,7 +36,7 @@ There are two channels:
 
 1. Set `"version"` in `apps/desktop/package.json`, for example `0.2.0`.
 2. Write `apps/desktop/release-notes/0.2.0.md` in the format below.
-3. Update the Store "What's new" text in `apps/desktop/store-listing.json`.
+3. Update the Store "What's new" text in `apps/desktop/store-listing.json`. It may already hold a draft for this version: write the version's items in place of its `{{0.2.0}}` line and keep the rest (such as a line for a version the Store skipped). If the release takes another number than the draft names, change the draft's number too. `release-config.test.ts` fails while a placeholder is left in the text of the version the app is on, and while the text names a version older than the app's.
 4. **Tag the Pro module first.** Merge the Pro feature branch into Pro `main`, then push the tag `v0.2.0` on `meroxis/qasa-erp-pro` at that merge commit. `release.yml` checks out Pro at the tag of the same name as the app tag (never Pro's default branch), so a missing Pro tag stops the release run at the Pro checkout, and an unmerged Pro branch is never shipped by accident:
 
    ```
@@ -52,9 +52,13 @@ There are two channels:
    ```
 
 6. The workflow then:
-   - builds and tests in a job that can only read the repository (no token that writes releases);
-   - waits for approval in the `release` environment (give it a required reviewer in Settings → Environments), then a
-     second job that runs no project code checks the files against the build's checksums and uploads them;
+   - builds and tests in a job that can only read the repository (no token that writes releases): the app's and the
+     Pro module's type checks and tests (with the phone app's packages, for the phone-through-the-relay test, and PHP
+     with openssl and sodium, for the PHP client and WooCommerce plugin tests), and the audit of the packages the app
+     and Pro ship;
+   - goes on at once, with no approval step: the `release` environment has no required reviewer (the owner's choice),
+     so pushing the app tag is the decision to release. A second job that runs no project code checks the files
+     against the build's checksums and uploads them;
    - publishes the release as **Latest**;
    - moves the website link;
    - keeps the `microsoft-store-package` artifact.
@@ -134,6 +138,26 @@ Do these in this order. The 1.4.2 notes and the Store "What's new" promise thing
    and the Store submission is live: a 1.4.1 office can't pair a phone, so the download page must not come first.
 5. **WooCommerce plugin 1.1.2** goes to shops on request from then on (it takes only the 32-character certificate code
    or the full fingerprint).
+
+## Release day for 1.5.0 (1.4.3 and the phone app 1.1)
+
+1.4.3 was never released on its own: 1.5.0 carries it, and its notes (`release-notes/1.4.3.md`) stay, so What's new
+shows them after 1.4.2. No new Qasa Relay this time (no relay code changed since 1.4.2). 1.5.0 **upgrades the company
+file to schema 15** (the receipt photos): 1.4.3 and earlier, and a Store copy still on 1.4.2, can't open it afterwards,
+as the notes say first.
+
+1. **The phone app 1.1.0** is already built and signed (versionCode 5, 97,501,572 bytes;
+   `scripts/check-release-apk.mjs` says OK). Its SHA-256 and size are in `PHONE_APP` (`apps/web/src/pages/Settings.tsx`),
+   and the website's `PHONE_APK` must carry the same file. Try it once on a real phone before the release: a receipt
+   photo with the camera, a PDF sent with WhatsApp through the share sheet, and the "Open the customer's chat" link.
+2. **Tag Pro, then the app** (the stable steps above): Pro's `v1.5.0` goes on Pro `main` after its `release/1.5.0` is
+   merged, since Pro's phone link is what offers 1.1's features. Submit the Store package with the 1.5.0 "What's new" (it names 1.4.3 and 1.4.1
+   too).
+3. **The website** (the phone pages with 1.1.0, its SHA-256 and its features; the privacy page on receipt photos, sent
+   only to the customer's own office, and PDFs, shared only by the user) goes live only once the 1.5.0 GitHub release
+   is out: phone app 1.1 with an office on 1.4.x shows only 1.0.2's features and asks for an office update, so that
+   update must exist first. Set its `APP_VERSION` (`build.mjs`, the `softwareVersion` the pages give search engines)
+   to 1.5.0 in the same deploy.
 
 ## Release notes format
 

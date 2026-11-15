@@ -1,19 +1,19 @@
 # Handoff: Qasa ERP 1.0 work (November 2026)
 
-This branch and its sister branches carry the 1.0 work. Pick up from here.
+The 1.0 work below is merged: it is on `main` in each repository, and the branches it was built on are gone. Start new work on a branch from `main`.
 
-## Branches
+## Repositories
 
-| Repo | Branch | Holds |
-|---|---|---|
-| meroxis/qasa-erp | `feature/real-estate` | the app (all 1.0 features below) |
-| meroxis/qasa-erp-pro | `feature/industries` | the private Pro module; check it out at `qasa-erp/pro` (git-ignored) |
-| meroxis/qasa-erp-portal | `feature/activation` | online activation, licence manager, usage stats |
-| meroxis/qasa-erp-website | `feature/v1-site` | 1.0 site, "first month free" wording |
-| meroxis/qasa-erp-website | `feature/verify`, `feature/legal` | invoice QR verify page; legal pages |
+| Repo | Holds |
+|---|---|
+| meroxis/qasa-erp | the app (all 1.0 features below) |
+| meroxis/qasa-erp-pro | the private Pro module; check it out at `qasa-erp/pro` (git-ignored) |
+| meroxis/qasa-erp-portal | online activation, licence manager, usage stats |
+| meroxis/qasa-erp-website | the site: "first month free" wording, the invoice QR verify page, the legal pages |
 
 Setup: `git clone qasa-erp`, then `git clone qasa-erp-pro pro` inside it, `npm install`, `npm test`, `npm run typecheck`.
-In `pro/`: `npx tsc --noEmit -p .` and `npx vitest run`.
+In `pro/`: `npx tsc --noEmit -p .` (after `npm ci --prefix apps/mobile` in the app: a Pro test runs the phone app's own
+code) and `npx vitest run`.
 
 ## What 1.0 has
 
@@ -48,7 +48,9 @@ In `pro/`: `npx tsc --noEmit -p .` and `npx vitest run`.
 - Every text in Arabic, English and Kurdish; module texts in `apps/web/src/i18n/*.ts`, spread into `D` in `i18n.ts`.
 - Commits by meroxis <333022010+meroxis@users.noreply.github.com>. Work on branches, never main.
 
-## Left to do
+## Left to do at the handoff (November 2026)
+
+Kept as it was written then; the steps of a release today are in `docs/releasing.md`.
 
 1. Full bug and security review, then PRs to main for the GitHub review bot.
 2. Relay deploy on the VPS, before the app (`pro/relay/README.md`; Node 24, systemd, Caddy). The DNS plan:

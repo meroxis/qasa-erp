@@ -5,16 +5,26 @@ import { LTR_ISOLATE_END, LTR_ISOLATE_START, stripBidiIsolates, type AmountsShow
 import { DataContext } from './components.tsx';
 import { I18nContext, makeI18n } from './i18n.ts';
 import { AMOUNTS_TEXT } from './i18n/amounts.ts';
-import { Amount, amountTextOf, boardRate, DualContext, DualNote, DualRateHint, dualRateTitle, dualText, OwedTotal, paperRateX100, rateReader, type DualRate, type DualSource } from './Amount.tsx';
+import { Amount, amountTextOf, boardOf, boardRate, boardReader, DocAmount, DualContext, DualNote, DualRateHint, dualRateTitle, dualText, OwedTotal, paperRateX100, rateFromBoard, type Board, type DualRate, type DualSource } from './Amount.tsx';
+import type { EntrySummary, InvoiceSummary, PartyView } from './api.ts';
+import type { MoneyAccountView } from './industry/banking-api.ts';
 import type { BriefView, DashboardView, DayCloseView } from './industry/brief-api.ts';
+import type { PoSummaryView, PoView } from './industry/purchasing-api.ts';
+import type { QuoteView } from './industry/quotes-api.ts';
+import { QuickVoucherForm } from './industry/QuickVoucher.tsx';
+import { formBalance, formBalanceDual } from './industry/quick-voucher.ts';
 import type { NavViewer } from './nav.ts';
 import { compact, Home } from './pages/Home.tsx';
 import { briefText } from './pages/Brief.tsx';
 import { dayCloseText } from './pages/DayClose.tsx';
-import { Parties } from './pages/Parties.tsx';
+import { InvoicesTable, Parties } from './pages/Parties.tsx';
 import { MoreReports } from './pages/MoreReports.tsx';
 import { AmountsShowSetting } from './pages/Settings.tsx';
 import { TillEquivalent } from './pages/Pos.tsx';
+import { EntriesTable } from './pages/Entries.tsx';
+import { QuoteDetail, Quotes } from './pages/Quotes.tsx';
+import { PurchaseOrderDetail, PurchaseOrders } from './pages/PurchaseOrders.tsx';
+import { Banking } from './pages/Banking.tsx';
 
 // Settings → Language and display → "Show amounts in": dinar only (as always), dinar and dollar, dollar and dinar.
 // One helper (Amount.tsx) shows every total the same way: the real money, and ≈ its value in the other currency at
@@ -30,6 +40,9 @@ const { now, answering } = vi.hoisted(() => {
 vi.mock('./api.ts', async (importOriginal) => ({ ...(await importOriginal<typeof import('./api.ts')>()), api: answering() }));
 vi.mock('./industry/brief-api.ts', async (importOriginal) => ({ ...(await importOriginal<typeof import('./industry/brief-api.ts')>()), briefApi: answering(), dayCloseApi: answering() }));
 vi.mock('./industry/parties-api.ts', async (importOriginal) => ({ ...(await importOriginal<typeof import('./industry/parties-api.ts')>()), partiesApi: answering() }));
+vi.mock('./industry/quotes-api.ts', async (importOriginal) => ({ ...(await importOriginal<typeof import('./industry/quotes-api.ts')>()), quotesApi: answering() }));
+vi.mock('./industry/purchasing-api.ts', async (importOriginal) => ({ ...(await importOriginal<typeof import('./industry/purchasing-api.ts')>()), purchasingApi: answering() }));
+vi.mock('./industry/banking-api.ts', async (importOriginal) => ({ ...(await importOriginal<typeof import('./industry/banking-api.ts')>()), bankingApi: answering() }));
 vi.mock('./components.tsx', async (importOriginal) => ({
   ...(await importOriginal<typeof import('./components.tsx')>()),
   useLoad: (load: () => Promise<unknown>) => {
@@ -153,28 +166,21 @@ describe('the helper', () => {
     expect(render(<OwedTotal owed={undefined} book={3_298_000} />, { dual: source('iqd_usd') })).toBe('3,298,000 IQD');
   });
 
-  it('reads each day\'s rate once and writes every day it read, the day a lookup fell back to as well', async () => {
-    const written = new Map<string, DualRate | null>();
-    const asked: string[] = [];
-    const read = rateReader(async (d) => {
-      asked.push(d);
-      return d >= '2026-11-01' ? { source: 'board', date: '2026-11-14', rateX100: 131_000 } : { source: 'default', date: null, rateX100: 142_000 };
-    }, (d, r) => { written.set(d, r); });
+  it('reads the rate board once, and works out each day from it, the day a lookup falls back to (today) as well', async () => {
+    const boards: Board[] = [];
+    let reads = 0;
+    const read = boardReader(async () => { reads += 1; return [{ date: '2026-11-14', rateX100: 131_000, source: null }]; }, (b) => { boards.push(b); });
+    read();
+    read();
+    await new Promise((resolve) => { setTimeout(resolve, 0); });
+    read();
+    expect(reads).toBe(1);
+    expect(boards).toEqual([[{ date: '2026-11-14', rateX100: 131_000 }]]);
     // an invoice dated before every rate on the board: today's rate stands in, and today is known too
-    read('2026-10-01', '2026-11-15');
-    await new Promise((resolve) => { setTimeout(resolve, 0); });
-    expect(written.get('2026-10-01')).toEqual({ rateX100: 131_000, date: '2026-11-14', today: true });
-    expect(written.get('2026-11-15')).toEqual({ rateX100: 131_000, date: '2026-11-14', today: false });
-    read('2026-11-15', '2026-11-15');
-    read('2026-10-01', '2026-11-15');
-    await new Promise((resolve) => { setTimeout(resolve, 0); });
-    expect(asked).toEqual(['2026-10-01', '2026-11-15']);
-    // no rate on the board at all: null, written for both days
-    const none = new Map<string, DualRate | null>();
-    const empty = rateReader(async () => ({ source: 'default', date: null, rateX100: 142_000 }), (d, r) => { none.set(d, r); });
-    empty('2026-10-01', '2026-11-15');
-    await new Promise((resolve) => { setTimeout(resolve, 0); });
-    expect([...none]).toEqual([['2026-11-15', null], ['2026-10-01', null]]);
+    expect(rateFromBoard(boards[0]!, '2026-10-01', '2026-11-15')).toEqual({ rateX100: 131_000, date: '2026-11-14', today: true });
+    expect(rateFromBoard(boards[0]!, '2026-11-15', '2026-11-15')).toEqual({ rateX100: 131_000, date: '2026-11-14', today: false });
+    // no rate on the board at all: null for every day
+    for (const day of ['2026-10-01', '2026-11-15']) expect(rateFromBoard(boardOf([]), day, '2026-11-15')).toBe(null);
   });
 
   it('carries the ≈ figures into the copied and sent brief and end of day, and nothing new with dinar only', () => {
@@ -349,54 +355,54 @@ describe('after the second review', () => {
   it('a paper dated before the first rate on the board uses the same rate as the screen (today\'s), not the usual rate', async () => {
     expect(await boardRate(board, '2026-10-01', '2026-11-15')).toEqual({ rateX100: 131_000, date: '2026-11-14', today: true });
     expect(await paperRateX100(board, '2026-10-01', '2026-11-15', 142_000)).toBe(131_000);
-    const screen = new Map<string, DualRate | null>();
-    rateReader(board, (d, r) => { screen.set(d, r); })('2026-10-01', '2026-11-15');
-    await tick();
-    expect(screen.get('2026-10-01')?.rateX100).toBe(await paperRateX100(board, '2026-10-01', '2026-11-15', 142_000));
+    // the screen: the same board read whole (1,310 entered on 2026-11-14)
+    const screen = rateFromBoard(boardOf([{ date: '2026-11-14', rateX100: 131_000 }]), '2026-10-01', '2026-11-15');
+    expect(screen?.rateX100).toBe(await paperRateX100(board, '2026-10-01', '2026-11-15', 142_000));
     // no rate on the board at all, or the board cannot be read: the paper keeps the usual rate (the screen shows no ≈)
     expect(await paperRateX100(async () => ({ source: 'default', date: null, rateX100: 142_000 }), '2026-10-01', '2026-11-15', 142_000)).toBe(142_000);
     expect(await paperRateX100(() => Promise.reject(new Error('offline')), '2026-10-01', '2026-11-15', 142_000)).toBe(142_000);
   });
 
-  it('does not keep a failed rate request: it asks again after a short pause; a real "no rate" stays known', async () => {
-    const written = new Map<string, DualRate | null>();
+  it('does not keep a failed read of the rate board: it reads again after a short pause; a board with no rate stays known', async () => {
+    const written: Board[] = [];
     let fail = true;
-    const asked: string[] = [];
-    const read = rateReader(async (d) => {
-      asked.push(d);
+    let reads = 0;
+    const read = boardReader(async () => {
+      reads += 1;
       if (fail) throw new Error('offline');
-      return board(d);
-    }, (d, r) => { written.set(d, r); }, { retryMs: 100 });
-    read('2026-11-15', '2026-11-15');
+      return [{ date: '2026-11-14', rateX100: 131_000 }];
+    }, (b) => { written.push(b); }, { retryMs: 100 });
+    read();
     await tick();
-    // the failure is no answer: nothing written (the amount stays "being read", not "no rate")
-    expect(written.has('2026-11-15')).toBe(false);
+    // the failure is no answer: nothing written (the amounts stay "being read", not "no rate")
+    expect(written).toEqual([]);
     // within the pause a render does not ask again
-    read('2026-11-15', '2026-11-15');
+    read();
     await tick();
-    expect(asked).toEqual(['2026-11-15']);
+    expect(reads).toBe(1);
     fail = false;
     await new Promise((resolve) => { setTimeout(resolve, 250); });
-    expect(written.get('2026-11-15')).toEqual({ rateX100: 131_000, date: '2026-11-14', today: false });
-    // a board with no rate: null, asked once and kept
-    const none = new Map<string, DualRate | null>();
-    const calls: string[] = [];
-    const empty = rateReader(async (d) => { calls.push(d); return { source: 'default', date: null, rateX100: 142_000 }; }, (d, r) => { none.set(d, r); }, { retryMs: 5 });
-    empty('2026-11-15', '2026-11-15');
+    expect(written).toEqual([[{ date: '2026-11-14', rateX100: 131_000 }]]);
+    expect(rateFromBoard(written[0]!, '2026-11-15', '2026-11-15')).toEqual({ rateX100: 131_000, date: '2026-11-14', today: false });
+    // a board with no rate: read once and kept (every day has no rate)
+    const none: Board[] = [];
+    let calls = 0;
+    const empty = boardReader(async () => { calls += 1; return []; }, (b) => { none.push(b); }, { retryMs: 5 });
+    empty();
     await new Promise((resolve) => { setTimeout(resolve, 30); });
-    empty('2026-11-15', '2026-11-15');
+    empty();
     await tick();
-    expect(none.get('2026-11-15')).toBe(null);
-    expect(calls).toEqual(['2026-11-15']);
+    expect(none).toEqual([[]]);
+    expect(calls).toBe(1);
     // a reader no longer in use stops asking
     let alive = true;
-    const tries: string[] = [];
-    const gone = rateReader(async (d) => { tries.push(d); throw new Error('offline'); }, () => {}, { retryMs: 5, alive: () => alive });
-    gone('2026-11-15', '2026-11-15');
+    let tries = 0;
+    const gone = boardReader(async () => { tries += 1; throw new Error('offline'); }, () => {}, { retryMs: 5, alive: () => alive });
+    gone();
     await tick();
     alive = false;
     await new Promise((resolve) => { setTimeout(resolve, 40); });
-    expect(tries).toEqual(['2026-11-15']);
+    expect(tries).toBe(1);
   });
 
   it('the ageing report: each row from its real dinars and dollars, then the ≈ whole, like its totals row', () => {
@@ -449,5 +455,178 @@ describe('after the second review', () => {
       render(node, { dual: spy });
       expect(asked).toEqual(['2026-10-20']);
     }
+  });
+});
+
+describe('the lists and the money screens that showed dinars only', () => {
+  const en = i18nOf('en');
+  const admin = { permissions: ['admin'] };
+  /** The page as text, with dinar only (no source: the app's default), or in one of the three choices. */
+  const shown = (node: ReactNode, show: AmountsShow | null, data: object = admin) => plain(render(node, { data, ...(show ? { dual: source(show) } : {}) }));
+  /** The days whose rate a page asked for. */
+  const daysAsked = (node: ReactNode, data: object = admin) => {
+    const asked = new Set<string | undefined>();
+    render(node, { data, dual: { show: 'iqd_usd', canSet: true, rate: (date) => { asked.add(date); return RATE; } } });
+    return asked;
+  };
+
+  it('a document\'s amount: a dinar amount as the company chose, a dollar one as it is (its dinars are on the document), nothing when not sent', () => {
+    expect(render(<DocAmount value={1_310_000} currency="IQD" date="2026-11-14" />)).toBe('1,310,000 IQD');
+    expect(render(<DocAmount value={1_310_000} currency="IQD" date="2026-11-14" />, { dual: source('iqd') })).toBe('1,310,000 IQD');
+    expect(plain(render(<DocAmount value={1_310_000} currency="IQD" date="2026-11-14" />, { dual: source('iqd_usd') }))).toBe(' 1,310,000 IQD ≈ $1,000.00 ');
+    expect(plain(render(<DocAmount value={1_310_000} currency="IQD" date="2026-11-14" />, { dual: source('usd_iqd') }))).toBe(' ≈ $1,000.00 1,310,000 IQD ');
+    expect(render(<DocAmount value={50_000} currency="USD" date="2026-11-14" />, { dual: source('usd_iqd') })).toBe('$500.00');
+    expect(render(<DocAmount value={undefined} currency="IQD" />, { dual: source('iqd_usd') })).toBe('');
+    // a document dated before the first rate on the board: the latest rate, and the tooltip says so
+    expect(render(<DocAmount value={1_310_000} currency="IQD" date="2026-10-20" />, { dual: source('iqd_usd') })).toContain('No rate was entered for that date');
+  });
+
+  const invoice = (over: Partial<InvoiceSummary> = {}): InvoiceSummary => ({
+    id: 'v1', kind: 'sale', status: 'posted', number: 'INV-2026-0001', date: '2026-11-14', partyId: 'p1', partyCode: 'C1', partyName: 'Las',
+    warehouseId: 'w1', currency: 'IQD', rateX100: 100, payment: 'credit', cashAccountCode: null, discount: 0, subtotal: 1_310_000,
+    total: 1_310_000, baseTotal: 1_310_000, notes: '', returnOf: null, createdBy: 'Mer', createdAt: '', ...over
+  });
+
+  it('the sales and purchase lists: a dinar invoice\'s total due with ≈ at the rate of its date, a dollar one as it is', () => {
+    const list = [invoice(), invoice({ id: 'v2', number: 'INV-2026-0002', currency: 'USD', rateX100: 142_000, subtotal: 50_000, total: 50_000, baseTotal: 710_000 })];
+    const before = shown(<InvoicesTable invoices={list} />, null);
+    expect(shown(<InvoicesTable invoices={list} />, 'iqd')).toBe(before);
+    expect(before).toContain('1,310,000 IQD');
+    expect(before).toContain('$500.00');
+    expect(before).not.toContain('≈');
+    const both = shown(<InvoicesTable invoices={list} />, 'iqd_usd');
+    expect(both).toContain('1,310,000 IQD ≈ $1,000.00');
+    expect(both).toContain('$500.00');
+    expect(both).not.toContain('$500.00 ≈');
+    expect(shown(<InvoicesTable invoices={list} />, 'usd_iqd')).toContain('≈ $1,000.00 1,310,000 IQD');
+    // each at the rate of its own date, as on the invoice's page
+    expect(daysAsked(<InvoicesTable invoices={[invoice({ date: '2026-10-20' }), invoice({ id: 'v3', date: '2026-11-03' })]} />)).toEqual(new Set(['2026-10-20', '2026-11-03']));
+    // purchases sent without their money (to someone who may not read the books): no total column, as before
+    const unpriced = render(<InvoicesTable invoices={[{ ...invoice({ kind: 'purchase' }), total: undefined } as unknown as InvoiceSummary]} />, { dual: source('iqd_usd') });
+    expect(unpriced).not.toContain(en.t('totalDue'));
+    expect(unpriced).not.toContain('≈');
+  });
+
+  const entry = (over: Partial<EntrySummary> = {}): EntrySummary => ({
+    id: 'e1', type: 'receipt', number: 'RV-2026-0001', date: '2026-11-14', description: 'Payment for INV-2026-0001', party: 'Raz', currency: 'IQD',
+    rateX100: 100, status: 'approved', cashAccountCode: '1811', reversesId: null, reversedById: null, preparedBy: 'Mer', preparedAt: '',
+    checkedBy: null, checkedAt: null, approvedBy: 'Mer', approvedAt: '', total: 262_000, baseTotal: 262_000, ...over
+  });
+
+  it('the vouchers list: a dinar voucher\'s amount with ≈ at the rate of its date, a dollar one as it is', () => {
+    const list = [entry(), entry({ id: 'e2', type: 'payment', number: 'PV-2026-0001', currency: 'USD', rateX100: 131_000, total: 10_000, baseTotal: 13_100 })];
+    const before = shown(<EntriesTable entries={list} />, null);
+    expect(shown(<EntriesTable entries={list} />, 'iqd')).toBe(before);
+    expect(before).toContain('262,000 IQD');
+    expect(before).not.toContain('≈');
+    const both = shown(<EntriesTable entries={list} />, 'iqd_usd');
+    expect(both).toContain('262,000 IQD ≈ $200.00');
+    expect(both).toContain('$100.00');
+    expect(both).not.toContain('$100.00 ≈');
+    expect(daysAsked(<EntriesTable entries={[entry({ date: '2026-10-20' })]} />)).toEqual(new Set(['2026-10-20']));
+  });
+
+  const quote = {
+    id: 'q1', number: 'QT-2026-0001', date: '2026-11-14', validUntil: '2026-11-29', party: { id: 'p1', code: 'C1', name: 'Las', phone: '', address: '' },
+    customerName: 'Las', currency: 'IQD', subtotal: 1_310_000, discount: 0, total: 1_310_000, status: 'sent', expired: false, invoice: null,
+    lines: [{ seq: 1, itemId: null, itemCode: null, description: 'Cement', qtyMilli: 1000, unitPrice: 1_310_000, amount: 1_310_000 }],
+    notes: '', terms: '', createdBy: 'Mer', createdAt: '', actions: []
+  } as QuoteView;
+
+  it('quotations: the list\'s total and the quotation\'s total due, like an invoice\'s', () => {
+    now.answers = { list: [quote, { ...quote, id: 'q2', number: 'QT-2026-0002', currency: 'USD', subtotal: 50_000, total: 50_000 }] };
+    const before = shown(<Quotes />, null);
+    expect(before).toContain('1,310,000 IQD');
+    expect(before).not.toContain('≈');
+    const list = shown(<Quotes />, 'iqd_usd');
+    expect(list).toContain('1,310,000 IQD ≈ $1,000.00');
+    expect(list).not.toContain('$500.00 ≈');
+    now.answers = { get: quote };
+    expect(shown(<QuoteDetail id="q1" />, null)).not.toContain('≈');
+    expect(shown(<QuoteDetail id="q1" />, 'iqd_usd')).toContain(`${en.t('totalDue')} 1,310,000 IQD ≈ $1,000.00`);
+    expect(daysAsked(<QuoteDetail id="q1" />)).toEqual(new Set(['2026-11-14']));
+  });
+
+  const order = {
+    id: 'o1', number: 'PO-2026-0001', date: '2026-11-14', party: { id: 's1', code: 'S1', name: 'Raz', phone: null, address: null }, warehouse: null,
+    currency: 'IQD', expectedDate: null, status: 'sent', overdue: false, notes: '', total: 1_310_000,
+    lines: [{ seq: 1, itemId: 'i1', itemCode: 'IT-1', itemName: { ar: 'سمنت', en: 'Cement', ku: 'چیمەنتۆ' }, unit: 'piece', qtyMilli: 1000, unitPrice: 1_310_000, amount: 1_310_000, receivedMilli: 0, remainingMilli: 1000, lineUnit: null, unitFactorMilli: null, unitQtyMilli: null }],
+    receipts: [], createdBy: 'Mer', createdAt: '', actions: []
+  } as PoView;
+
+  it('purchase orders: the list\'s total, and the order\'s total on the screen; the printed order keeps its own currency only', () => {
+    const summary = (o: PoView): PoSummaryView => ({ id: o.id, number: o.number, date: o.date, partyId: o.party.id, partyName: o.party.name, currency: o.currency, expectedDate: null, status: o.status, overdue: false, total: o.total });
+    now.answers = { list: [summary(order), summary({ ...order, id: 'o2', number: 'PO-2026-0002', currency: 'USD', total: 50_000 })] };
+    const before = shown(<PurchaseOrders />, null);
+    expect(before).toContain('1,310,000 IQD');
+    expect(before).not.toContain('≈');
+    const list = shown(<PurchaseOrders />, 'iqd_usd');
+    expect(list).toContain('1,310,000 IQD ≈ $1,000.00');
+    expect(list).not.toContain('$500.00 ≈');
+    now.answers = { get: order };
+    expect(shown(<PurchaseOrderDetail id="o1" />, null)).not.toContain('≈');
+    const html = render(<PurchaseOrderDetail id="o1" />, { data: admin, dual: source('iqd_usd') });
+    // on the screen with ≈; on paper (print-only) the dinars alone, as an order always printed
+    expect(html).toMatch(/<span class="no-print"><span class="dual">(?:(?!<\/strong>).)*≈ \$1,000\.00(?:(?!<\/strong>).)*<\/span><span class="print-only">1,310,000 IQD<\/span><\/strong>/);
+    expect(daysAsked(<PurchaseOrderDetail id="o1" />)).toEqual(new Set(['2026-11-14']));
+  });
+
+  it('safes and banks: the total in dinars at the booked rates as before; with a rate, the real dinars and dollars and their whole, as on the home page', () => {
+    const accounts: MoneyAccountView[] = [
+      { code: '1811', name: { ar: 'القاصة', en: 'Main safe', ku: 'قاسە' }, kind: 'safe', currency: null, balance: { IQD: 655_000, USD: 0 }, base: 655_000, pending: 0 },
+      // $500 booked at 1,420
+      { code: '1821', name: { ar: 'المصرف', en: 'Bank', ku: 'بانک' }, kind: 'bank', currency: 'USD', balance: { IQD: 0, USD: 50_000 }, base: 710_000, pending: 0 }
+    ];
+    now.answers = { accounts: { accounts, reconciliation: false } };
+    const total = en.t('total');
+    const inBase = en.t('bk_inBase');
+    const before = shown(<Banking />, null);
+    expect(shown(<Banking />, 'iqd')).toBe(before);
+    expect(before).toContain(`${total} 1,365,000 IQD ${inBase}`);
+    expect(before).not.toContain('≈');
+    const both = shown(<Banking />, 'iqd_usd');
+    // each dollar converted once ($500 + 655,000 / 1,310), never the book-rate 1,365,000 converted again ($1,041.98)
+    expect(both).toContain(`${total} 655,000 IQD + $500.00 ≈ $1,000.00`);
+    expect(both).not.toContain('$1,041.98');
+    expect(both).not.toContain(inBase);
+    expect(shown(<Banking />, 'usd_iqd')).toContain(`${total} $500.00 + 655,000 IQD ≈ 1,310,000 IQD`);
+    // no rate on the board: the book total and what it is, as before
+    expect(plain(render(<Banking />, { data: admin, dual: source('iqd_usd', 'none') }))).toContain(`${total} 1,365,000 IQD ${inBase}`);
+  });
+
+  it('receive payment: the balance before and what is left after with ≈, as in the customers list; never dollars shown at the book rates', () => {
+    const party = (balances: { IQD: number; USD: number }, balance: number): PartyView => ({
+      id: 'p1', type: 'customer', code: 'C1', name: 'Las', phone: '', address: '', accountCode: '1611', creditLimit: null, notes: '', active: true,
+      hasEntries: true, balance, balances
+    });
+    // for an invoice with 262,000 IQD open on it
+    const form = (show: AmountsShow | null) => shown(
+      <QuickVoucherForm kind="receipt" preset={{ partyId: 'p1', invoice: { id: 'v1', number: 'INV-2026-0001', open: 262_000, currency: 'IQD', rateX100: 100 } }} onClose={() => {}} onDone={() => {}} />,
+      show
+    );
+    const [beforeLabel, afterLabel] = [en.t('s14_balanceBefore'), en.t('s14_balanceAfter')];
+    now.answers = { party: party({ IQD: 1_310_000, USD: 0 }, 1_310_000) };
+    const plainForm = form(null);
+    expect(form('iqd')).toBe(plainForm);
+    expect(plainForm).toContain(`${beforeLabel} 1,310,000 IQD ${afterLabel} 1,048,000 IQD`);
+    expect(form('iqd_usd')).toContain(`${beforeLabel} 1,310,000 IQD ≈ $1,000.00 ${afterLabel} 1,048,000 IQD ≈ $800.00`);
+    expect(form('usd_iqd')).toContain(`${beforeLabel} ≈ $1,000.00 1,310,000 IQD`);
+    // owes $1,400 only, booked at 1,420: the form in dinars shows 1,988,000 IQD at the book rates, never "≈ $1,517.56"
+    now.answers = { party: party({ IQD: 0, USD: 140_000 }, 1_988_000) };
+    const dollars = form('iqd_usd');
+    expect(dollars).toContain(`${beforeLabel} 1,988,000 IQD`);
+    expect(dollars).not.toContain('≈');
+
+    const rule = (p: PartyView, currency: 'IQD' | 'USD') => formBalanceDual(p, formBalance(p, currency));
+    expect(rule(party({ IQD: 1_310_000, USD: 0 }, 1_310_000), 'IQD')).toBe(true);
+    // dinars and dollars on the same side: the dinars alone (the dollars beside them, as they are)
+    expect(rule(party({ IQD: 1_310_000, USD: 140_000 }, 3_298_000), 'IQD')).toBe(true);
+    expect(rule(party({ IQD: 1_310_000, USD: 140_000 }, 3_298_000), 'USD')).toBe(false);
+    // a dollar invoice paid partly in dinars: the one position in IQD, converted as the customers list does
+    expect(rule(party({ IQD: -1_000_000, USD: 140_000 }, 988_000), 'IQD')).toBe(true);
+    expect(rule(party({ IQD: 0, USD: 140_000 }, 1_988_000), 'IQD')).toBe(false);
+    expect(rule(party({ IQD: 0, USD: 140_000 }, 1_988_000), 'USD')).toBe(false);
+    // a server that sends only the total
+    expect(formBalanceDual({}, { currency: 'IQD' })).toBe(true);
   });
 });

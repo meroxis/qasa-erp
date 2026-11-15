@@ -218,6 +218,7 @@ export const MYSQL_TABLES: readonly MysqlObject[] = [
       updated_at ${WHEN} NOT NULL,
       prepared_by_id ${ID},
       checked_by_id ${ID},
+      revision INT NOT NULL DEFAULT 0,
       INDEX entries_date (date),
       INDEX entries_status (status),
       FOREIGN KEY (cash_account) REFERENCES accounts(code),
@@ -265,6 +266,21 @@ export const MYSQL_TABLES: readonly MysqlObject[] = [
       FOREIGN KEY (entry_id) REFERENCES entries(id) ON DELETE CASCADE,
       FOREIGN KEY (requested_by_id) REFERENCES users(id),
       FOREIGN KEY (decided_by_id) REFERENCES users(id)
+    )`
+  },
+  {
+    // 15: the photo of a paper receipt kept with its voucher (db.ts V15)
+    name: 'entry_images',
+    since: 15,
+    sql: `CREATE TABLE entry_images (
+      entry_id ${ID} NOT NULL PRIMARY KEY,
+      mime ${WORD} NOT NULL CHECK (mime = 'image/jpeg'),
+      data MEDIUMBLOB NOT NULL,
+      bytes INT NOT NULL CHECK (bytes > 0 AND bytes <= 409600),
+      sha256 VARCHAR(64) NOT NULL,
+      created_by TEXT NOT NULL,
+      created_at ${WHEN} NOT NULL,
+      FOREIGN KEY (entry_id) REFERENCES entries(id) ON DELETE CASCADE
     )`
   },
   {
@@ -1679,7 +1695,11 @@ export const MYSQL_TRIGGERS: readonly MysqlObject[] = [
   trigger('stock_batch_moves_no_delete', 'BEFORE DELETE', 'stock_batch_moves', null, 'stock_moves_are_permanent', 10),
   // 12: a customer's loyalty points movements are kept for ever too
   trigger('loyalty_moves_no_update', 'BEFORE UPDATE', 'loyalty_moves', null, 'loyalty_moves_are_permanent', 12),
-  trigger('loyalty_moves_no_delete', 'BEFORE DELETE', 'loyalty_moves', null, 'loyalty_moves_are_permanent', 12)
+  trigger('loyalty_moves_no_delete', 'BEFORE DELETE', 'loyalty_moves', null, 'loyalty_moves_are_permanent', 12),
+  // 15: a receipt's photo is never changed, and a posted voucher keeps it (on the server a cascaded delete fires no
+  // trigger, so a deleted draft's photo goes with it, as in SQLite)
+  trigger('entry_images_no_update', 'BEFORE UPDATE', 'entry_images', null, 'entry_image_is_permanent', 15),
+  trigger('entry_images_no_delete', 'BEFORE DELETE', 'entry_images', `(SELECT status FROM entries WHERE id = OLD.entry_id) = 'approved'`, 'entry_image_is_permanent', 15)
 ];
 
 /**
@@ -1774,6 +1794,14 @@ export const V13_MYSQL_STEPS: readonly MysqlStep[] = [
  */
 export const V14_MYSQL_STEPS: readonly MysqlStep[] = [
   mysqlAddIndex('audit_log', 'audit_log_user_login', ['entity(32)', 'entity_id(64)', 'action(32)', 'id'])
+];
+
+/**
+ * Version 15 (1.5): each entry's revision, one up with every change to a draft (journal.ts, replaceDraft), which an
+ * approval sent from the phone is checked against (entry-seen.ts). The table of receipt photos comes from MYSQL_TABLES.
+ */
+export const V15_MYSQL_STEPS: readonly MysqlStep[] = [
+  mysqlAddColumn('entries', 'revision', 'INT NOT NULL DEFAULT 0')
 ];
 
 /**

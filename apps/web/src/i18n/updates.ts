@@ -8,6 +8,8 @@ export const UPD_TEXT = {
   up_laterHelp: ['سيُثبَّت التحديث عند إغلاق البرنامج.', 'It installs when you close the app.', 'کاتێک بەرنامەکە دادەخەیت دادەمەزرێت.'],
   up_whatsNew: ['ما الجديد', 'What’s new', 'چی نوێیە'],
   up_whatsNewTitle: ['ما الجديد في قاصة ERP {v}', 'What’s new in Qasa ERP {v}', 'چی نوێیە لە قاسە ERP {v}'],
+  // the heading over each version's notes when an update skipped versions (1.4.0 → 1.4.2 shows 1.4.2, then 1.4.1)
+  up_notesOf: ['قاصة ERP {v}', 'Qasa ERP {v}', 'قاسە ERP {v}'],
   up_gotIt: ['فهمت', 'Got it', 'تێگەیشتم'],
   up_noNotes: ['لا توجد ملاحظات لهذا الإصدار.', 'There are no notes for this version.', 'ئەم وەشانە تێبینیی نییە.'],
   up_close: ['إغلاق', 'Close', 'داخستن'],

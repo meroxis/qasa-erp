@@ -11,6 +11,7 @@ import { getSettings } from './settings.ts';
 import type { Actor } from './auth.ts';
 import type { ApiExtension } from './routes.ts';
 import { basePriceOf, resolveLines } from './item-units.ts';
+import { onceOnly } from './idempotency.ts';
 
 /**
  * Purchase orders (أوامر الشراء). An order is written to a supplier (draft → sent), then received into purchase
@@ -362,25 +363,37 @@ export interface ReceiveInput {
   rateX100?: number;
 }
 
-/** Makes a DRAFT purchase invoice for everything still to come and links it to the order. */
-export function receivePurchaseOrder(db: Db, id: string, input: ReceiveInput, actor: Actor): { order: PoView; invoiceId: string } {
-  syncStatus(db, id);
-  const r = loadRow(db, id);
-  requireAction(db, r, 'receive');
-  if (!isIsoDate(input.date)) throw invalid([{ code: 'date_invalid' }]);
+type ReceiveLine = { itemId: string; unit: UnitCode; unitQtyMilli: number; unitPrice: number } | { itemId: string; qtyMilli: number; unitPrice: number };
+
+/**
+ * An invoice line for `qty` base units of an order's line, at the order's price. A line ordered in boxes is received in
+ * boxes while the item's factor is still the one ordered at and the quantity comes out exact in boxes (to the thousandth
+ * of a box; `whole`: in whole boxes only); otherwise in base units at the base price.
+ */
+function receiveLine(l: PoLineRow, qty: number, factorNow: number | null, whole = false): ReceiveLine {
+  const factor = l.unit_factor_milli === null ? null : Number(l.unit_factor_milli);
+  const typed = l.unit && factor && factorNow === factor ? fromBaseQty(qty, factor) : null;
+  return l.unit && typed !== null && (!whole || typed % 1000 === 0)
+    ? { itemId: l.item_id, unit: l.unit, unitQtyMilli: typed, unitPrice: l.unit_price }
+    : { itemId: l.item_id, qtyMilli: qty, unitPrice: basePriceOf(l.unit_price, l.unit ? factor : null) };
+}
+
+/** The factor an item's unit has now (null: the unit is gone from the item). */
+function factorNowOf(db: Db): (itemId: string, unit: UnitCode | null) => number | null {
+  const q = db.prepare('SELECT factor_milli FROM item_units WHERE item_id = ? AND unit = ?');
+  return (itemId, unit) => {
+    if (!unit) return null;
+    const row = q.get(itemId, unit) as { factor_milli: number } | undefined;
+    return row ? Number(row.factor_milli) : null;
+  };
+}
+
+/** The draft purchase invoice for `lines` of an order, linked to it (the order's supplier, currency and price). */
+function draftReceipt(db: Db, r: PoRow, input: { date: string; warehouseId?: string | null | undefined; rateX100?: number | undefined }, lines: ReceiveLine[], actor: Actor,
+  details: Record<string, unknown> = {}): string {
   // none on the order or the request: the first active one the user may use (a limited user's own branches only)
   const warehouseId = input.warehouseId || r.warehouse_id || defaultWarehouseId(db, actor);
   const rate = r.currency === 'USD' ? input.rateX100 ?? getSettings(db).defaultRateX100 : 100;
-  // a line ordered in boxes is received in boxes, when what is left is whole thousandths of a box at the item's factor now
-  const factorNow = db.prepare('SELECT factor_milli FROM item_units WHERE item_id = ? AND unit = ?');
-  const lines = progress(db, id).filter((l) => l.remaining > 0).map((l) => {
-    const factor = l.unit_factor_milli === null ? null : Number(l.unit_factor_milli);
-    const now = l.unit ? (factorNow.get(l.item_id, l.unit) as { factor_milli: number } | undefined) : undefined;
-    const typed = l.unit && factor && now && Number(now.factor_milli) === factor ? fromBaseQty(l.remaining, factor) : null;
-    return l.unit && typed !== null
-      ? { itemId: l.item_id, unit: l.unit, unitQtyMilli: typed, unitPrice: l.unit_price }
-      : { itemId: l.item_id, qtyMilli: l.remaining, unitPrice: basePriceOf(l.unit_price, l.unit ? factor : null) };
-  });
   let invoiceId = '';
   transaction(db, () => {
     const inv = createInvoice(db, {
@@ -388,10 +401,73 @@ export function receivePurchaseOrder(db: Db, id: string, input: ReceiveInput, ac
       payment: 'credit', discount: 0, notes: r.number, lines
     }, actor.name);
     invoiceId = inv.id;
-    db.prepare('INSERT INTO purchase_order_receipts (order_id, invoice_id) VALUES (?, ?)').run(id, inv.id);
-    audit(db, actor.name, 'po.receive', 'purchase_order', id, { number: r.number, invoiceId: inv.id });
+    db.prepare('INSERT INTO purchase_order_receipts (order_id, invoice_id) VALUES (?, ?)').run(r.id, inv.id);
+    audit(db, actor.name, 'po.receive', 'purchase_order', r.id, { number: r.number, invoiceId: inv.id, ...details });
   });
+  return invoiceId;
+}
+
+/** Makes a DRAFT purchase invoice for everything still to come and links it to the order. */
+export function receivePurchaseOrder(db: Db, id: string, input: ReceiveInput, actor: Actor): { order: PoView; invoiceId: string } {
+  syncStatus(db, id);
+  const r = loadRow(db, id);
+  requireAction(db, r, 'receive');
+  if (!isIsoDate(input.date)) throw invalid([{ code: 'date_invalid' }]);
+  const factorNow = factorNowOf(db);
+  const lines = progress(db, id).filter((l) => l.remaining > 0).map((l) => receiveLine(l, l.remaining, factorNow(l.item_id, l.unit)));
+  const invoiceId = draftReceipt(db, r, input, lines, actor);
   return { order: getPurchaseOrder(db, id, actor), invoiceId };
+}
+
+/** What arrived of an order, counted or scanned when it came (a storekeeper's phone): base quantities by item. */
+export interface ArrivalInput {
+  /** the day the goods came (today when not said; never a day still to come) */
+  date?: string | undefined;
+  /** where they went, when the order names no warehouse */
+  warehouseId?: string | null | undefined;
+  lines: { itemId: string; qtyMilli: number }[];
+}
+
+/** The answer to an arrival: the draft invoice's id and status at the top (what a resent request is answered with). */
+export interface ArrivalView { id: string; status: 'draft' | 'posted' | 'cancelled'; invoiceId: string; order: PoView }
+
+/**
+ * Records what arrived of an order (1.5): a DRAFT purchase invoice for those quantities, as "receive" makes one for
+ * everything still to come, with the order's prices (never a price from whoever counted), which whoever buys checks,
+ * adds batches to and posts. Each item must be on the order and no more than is still to come of it; the same item
+ * twice is added up, then spread over the order's lines first line first. While a draft receipt of the order waits,
+ * nothing more is recorded (po_receipt_pending), as for "receive".
+ */
+export function recordArrival(db: Db, id: string, input: ArrivalInput, actor: Actor): ArrivalView {
+  syncStatus(db, id);
+  const r = loadRow(db, id);
+  requireAction(db, r, 'receive');
+  const date = input.date ?? todayIso();
+  if (!isIsoDate(date)) throw invalid([{ code: 'date_invalid' }]);
+  if (date > todayIso()) throw invalid([{ code: 'date_future' }]);
+  const wanted = new Map<string, number>();
+  for (const l of input.lines) wanted.set(l.itemId, (wanted.get(l.itemId) ?? 0) + l.qtyMilli);
+  const lines = progress(db, id);
+  const errors: { code: string; itemId: string; remaining?: number }[] = [];
+  for (const [itemId, qty] of wanted) {
+    const onOrder = lines.filter((l) => l.item_id === itemId);
+    if (!onOrder.length) { errors.push({ code: 'po_line_unknown', itemId }); continue; }
+    const remaining = onOrder.reduce((s, l) => s + l.remaining, 0);
+    if (!Number.isSafeInteger(qty) || qty <= 0 || qty > remaining) errors.push({ code: 'po_over_remaining', itemId, remaining });
+  }
+  if (errors.length) throw invalid(errors);
+  const factorNow = factorNowOf(db);
+  const left = new Map(wanted);
+  const receive: ReceiveLine[] = [];
+  for (const l of lines) {
+    const want = left.get(l.item_id) ?? 0;
+    if (want <= 0 || l.remaining <= 0) continue;
+    const take = Math.min(want, l.remaining);
+    left.set(l.item_id, want - take);
+    receive.push(receiveLine(l, take, factorNow(l.item_id, l.unit), true));
+  }
+  const invoiceId = draftReceipt(db, r, { date, warehouseId: input.warehouseId }, receive, actor, { lines: receive.length, arrivals: true });
+  return { id: invoiceId, status: 'draft', invoiceId, order: getPurchaseOrder(db, id, actor) };
 }
 
 /* ---------- what to order: items at or below their reorder level ---------- */
@@ -478,12 +554,25 @@ const poBody = z.object({
   })).max(300)
 });
 
+const arrivalBody = z.object({
+  date: date.optional(),
+  warehouseId: id.nullable().optional(),
+  lines: z.array(z.object({ itemId: id, qtyMilli: z.number().int().positive().max(1e12) }).strict()).min(1).max(300)
+}).strict();
+
+/** Recording what arrived is for whoever buys or keeps the stock (an admin has both); posting it stays with purchases. */
+function assertMayRecordArrival(actor: Actor): void {
+  if (!actor.permissions.includes('purchases') && !actor.permissions.includes('stock')) throw new AppError(403, 'forbidden', { need: 'stock' });
+}
+
 export const purchasingApi: ApiExtension = {
   rules: {
     'POST /api/purchase-orders': 'purchases',
     'PUT /api/purchase-orders/:id': 'purchases',
     'POST /api/purchase-orders/:id/status': 'purchases',
-    'POST /api/purchase-orders/:id/receive': 'purchases'
+    'POST /api/purchase-orders/:id/receive': 'purchases',
+    // purchases or stock: checked in the handler (assertMayRecordArrival)
+    'POST /api/purchase-orders/:id/arrivals': null
   },
   routes(db, { actorOf }) {
     return [
@@ -518,6 +607,26 @@ export const purchasingApi: ApiExtension = {
         handler: async (req, reply) => {
           const b = parse(z.object({ date, warehouseId: id.nullable().optional(), rateX100: z.number().int().positive().max(100_000_000).optional() }), req.body);
           reply.status(201).send(receivePurchaseOrder(db, parse(idParam, req.params).id, b, actorOf(req)));
+          return undefined;
+        }
+      },
+      {
+        // 1.5: what arrived, counted or scanned when it came: a draft purchase invoice for those quantities
+        method: 'POST', path: '/api/purchase-orders/:id/arrivals',
+        handler: async (req, reply) => {
+          const who = actorOf(req);
+          assertMayRecordArrival(who);
+          const orderId = parse(idParam, req.params).id;
+          const b = parse(arrivalBody, req.body);
+          // sent again with the same key (a lost answer, a phone's outbox): one draft, and its id again
+          const made = onceOnly(db, req, reply, who, 'POST /api/purchase-orders/:id/arrivals', () => {
+            const result = recordArrival(db, orderId, b, who);
+            return { id: result.invoiceId, result };
+          }, (invoiceId) => {
+            const row = db.prepare('SELECT status FROM invoices WHERE id = ?').get(invoiceId) as { status: ArrivalView['status'] } | undefined;
+            return { id: invoiceId, status: row?.status ?? 'draft', invoiceId, order: getPurchaseOrder(db, orderId, who) };
+          });
+          reply.status(201).send(made);
           return undefined;
         }
       }

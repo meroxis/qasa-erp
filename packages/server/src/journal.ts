@@ -36,6 +36,8 @@ interface EntryRow {
   prepared_by: string; prepared_at: string; checked_by: string | null; checked_at: string | null;
   approved_by: string | null; approved_at: string | null;
   prepared_by_id: string | null; checked_by_id: string | null;
+  /** schema 15: one up with every change to the draft (replaceDraft) */
+  revision: number;
 }
 
 interface LineRow {
@@ -73,6 +75,11 @@ export interface EntryView {
   /** who that is, so the screens know a user's own voucher (null: prepared without sign-in) */
   preparedById: string | null;
   preparedAt: string;
+  /**
+   * 1.5: the entry's revision, one up with every change to it while a draft (0 as made). What the phone sends back as
+   * `seen` ("r<revision>") with an approval action, so a change since it was shown is refused (entry-seen.ts).
+   */
+  revision: number;
   checkedBy: string | null;
   checkedAt: string | null;
   approvedBy: string | null;
@@ -89,7 +96,12 @@ export interface EntryView {
   stockDocId: string | null;
   /** 1.4: sent for approval ("Vouchers need approval"): where that stands, who asked and who answered (null: never sent) */
   approval: VoucherApproval | null;
+  /** 1.5: the photo of the paper receipt kept with the voucher (GET /api/entries/:id/image has it; null: none) */
+  image: EntryImageMeta | null;
 }
+
+/** What is said of a voucher's photo beside the voucher (the photo itself: GET /api/entries/:id/image). */
+export interface EntryImageMeta { bytes: number; createdBy: string; createdAt: string }
 
 export type ApprovalState = 'waiting' | 'rejected' | 'approved';
 
@@ -158,6 +170,16 @@ export function waitingVouchers(db: Db): number {
 }
 
 /**
+ * Everything an approver has to approve, each entry once (phone app 1.1, the home screen's number): the vouchers that
+ * wait for approval and the entries checked and waiting to be approved. A checked voucher that also waits for approval
+ * is in both lists, and counted once here.
+ */
+export function waitingForApprover(db: Db): number {
+  return Number((db.prepare(`SELECT COUNT(*) AS n FROM entries e LEFT JOIN voucher_approvals va ON va.entry_id = e.id
+                             WHERE e.status = 'checked' OR (e.status = 'draft' AND va.state = 'waiting')`).get() as { n: number }).n);
+}
+
+/**
  * A draft just made or changed through the vouchers screen: with the setting on it waits for approval (again, when it
  * had been rejected) unless whoever wrote it may approve vouchers; otherwise it is a plain draft. Callers that say
  * nothing about who prepares (the features' own drafts) leave it as it is. Call inside the transaction that wrote it.
@@ -188,7 +210,8 @@ function approveOwn(db: Db, id: string, type: EntryType, date: string, who: Prep
 /** With the setting on, a new voucher of someone who may approve vouchers is approved as it is made. */
 const approvedAtOnce = (db: Db, who: Preparer | undefined): who is Preparer => !!who && vouchersNeedApproval(db) && approvesOwn(db, who);
 
-export type EntrySummary = Omit<EntryView, 'lines' | 'actions' | 'invoiceId' | 'stockDocId'>;
+/** An entry in a list: no lines, and of its photo only whether it has one. */
+export type EntrySummary = Omit<EntryView, 'lines' | 'actions' | 'invoiceId' | 'stockDocId' | 'image'> & { hasImage: boolean };
 
 const isInvoiceType = (type: EntryType) => DOCUMENT_ENTRY_TYPES.includes(type);
 
@@ -467,8 +490,10 @@ export function updateVoucher(db: Db, id: string, v: VoucherInput, user: string,
 
 function replaceDraft(db: Db, id: string, entry: EntryInput, cashAccountCode: string | null, user: string, actorId?: string | null): void {
   const now = new Date().toISOString();
-  // The editor is responsible for the current draft; earlier preparation stays in the audit trail.
-  db.prepare('UPDATE entries SET date = ?, description = ?, party = ?, currency = ?, rate_x100 = ?, cash_account = ?, prepared_by = ?, prepared_by_id = ?, prepared_at = ?, updated_at = ? WHERE id = ?')
+  // The editor is responsible for the current draft; earlier preparation stays in the audit trail. The revision goes up
+  // by one with every change (two in the same millisecond too): what an approval from the phone is checked against
+  // (entry-seen.ts)
+  db.prepare('UPDATE entries SET date = ?, description = ?, party = ?, currency = ?, rate_x100 = ?, cash_account = ?, prepared_by = ?, prepared_by_id = ?, prepared_at = ?, updated_at = ?, revision = revision + 1 WHERE id = ?')
     .run(entry.date, entry.description.trim(), entry.party?.trim() || null, entry.currency, entry.currency === 'IQD' ? 100 : entry.rateX100,
       cashAccountCode, user, actorId ?? null, now, now, id);
   db.prepare('DELETE FROM entry_lines WHERE entry_id = ?').run(id);
@@ -632,12 +657,13 @@ export function reverseEntryInternal(db: Db, id: string, user: string, date?: st
   return newId;
 }
 
-function toView(db: Db, row: EntryRow, lines: LineRow[], invoiceId: string | null = null, stockDocId: string | null = null, withActions = true, approval: VoucherApproval | null = null): EntryView {
+function toView(db: Db, row: EntryRow, lines: LineRow[], invoiceId: string | null = null, stockDocId: string | null = null, withActions = true, approval: VoucherApproval | null = null,
+  image: EntryImageMeta | null = null): EntryView {
   const view: EntryView = {
     id: row.id, type: row.type, number: row.number, date: row.date, description: row.description, party: row.party,
     currency: row.currency, rateX100: row.rate_x100, status: row.status, cashAccountCode: row.cash_account,
     reversesId: row.reverses_id, reversedById: row.reversed_by_id,
-    preparedBy: row.prepared_by, preparedById: row.prepared_by_id, preparedAt: row.prepared_at, checkedBy: row.checked_by, checkedAt: row.checked_at,
+    preparedBy: row.prepared_by, preparedById: row.prepared_by_id, preparedAt: row.prepared_at, revision: Number(row.revision ?? 0), checkedBy: row.checked_by, checkedAt: row.checked_at,
     approvedBy: row.approved_by, approvedAt: row.approved_at,
     total: lines.reduce((s, l) => s + l.debit, 0),
     baseTotal: lines.reduce((s, l) => s + l.base_debit, 0),
@@ -649,9 +675,17 @@ function toView(db: Db, row: EntryRow, lines: LineRow[], invoiceId: string | nul
     actions: withActions ? actionsOf(db, row) : [],
     invoiceId,
     stockDocId,
-    approval
+    approval,
+    image
   };
   return view;
+}
+
+/** What the voucher's photo is (no bytes of it): null when it has none. */
+function imageOf(db: Db, id: string): EntryImageMeta | null {
+  const row = db.prepare('SELECT bytes, created_by, created_at FROM entry_images WHERE entry_id = ?').get(id) as
+    { bytes: number; created_by: string; created_at: string } | undefined;
+  return row ? { bytes: Number(row.bytes), createdBy: row.created_by, createdAt: row.created_at } : null;
 }
 
 const LINES_SQL = `SELECT l.line_no, l.account_code, l.debit, l.credit, l.base_debit, l.base_credit, l.description, a.name_ar, a.name_en, a.name_ku,
@@ -663,7 +697,7 @@ export function getEntry(db: Db, id: string): EntryView {
   const row = loadRow(db, id);
   const invoice = db.prepare('SELECT id FROM invoices WHERE entry_id = ? OR cancel_entry_id = ?').get(id, id) as { id: string } | undefined;
   const doc = invoice ? undefined : db.prepare('SELECT id FROM stock_docs WHERE entry_id = ? OR cancel_entry_id = ?').get(id, id) as { id: string } | undefined;
-  return toView(db, row, db.prepare(LINES_SQL).all(id) as unknown as LineRow[], invoice?.id ?? null, doc?.id ?? null, true, approvalOf(db, id));
+  return toView(db, row, db.prepare(LINES_SQL).all(id) as unknown as LineRow[], invoice?.id ?? null, doc?.id ?? null, true, approvalOf(db, id), imageOf(db, id));
 }
 
 export interface EntryFilters {
@@ -699,14 +733,15 @@ export function listEntries(db: Db, f: EntryFilters = {}): EntrySummary[] {
     params.push(like, like, like);
   }
   const sql = `SELECT e.*, (SELECT SUM(debit) FROM entry_lines WHERE entry_id = e.id) AS total,
-                      (SELECT SUM(base_debit) FROM entry_lines WHERE entry_id = e.id) AS base_total, ${APPROVAL_COLUMNS}
+                      (SELECT SUM(base_debit) FROM entry_lines WHERE entry_id = e.id) AS base_total, ${APPROVAL_COLUMNS},
+                      (CASE WHEN EXISTS (SELECT 1 FROM entry_images ei WHERE ei.entry_id = e.id) THEN 1 ELSE 0 END) AS has_image
                FROM entries e LEFT JOIN voucher_approvals va ON va.entry_id = e.id ${where.length ? 'WHERE ' + where.join(' AND ') : ''}
                ORDER BY e.date DESC, e.prepared_at DESC LIMIT ?`;
   params.push(f.limit ?? 500);
-  const found = db.prepare(sql).all(...params) as unknown as (EntryRow & ApprovalRow & { total: number; base_total: number })[];
+  const found = db.prepare(sql).all(...params) as unknown as (EntryRow & ApprovalRow & { total: number; base_total: number; has_image: number })[];
   return found.map((row) => {
-    const { lines: _lines, actions: _actions, invoiceId: _invoiceId, stockDocId: _stockDocId, ...summary } = toView(db, row, [], null, null, false, toApproval(row));
-    return { ...summary, total: row.total ?? 0, baseTotal: row.base_total ?? 0 };
+    const { lines: _lines, actions: _actions, invoiceId: _invoiceId, stockDocId: _stockDocId, image: _image, ...summary } = toView(db, row, [], null, null, false, toApproval(row));
+    return { ...summary, total: row.total ?? 0, baseTotal: row.base_total ?? 0, hasImage: Number(row.has_image) === 1 };
   });
 }
 

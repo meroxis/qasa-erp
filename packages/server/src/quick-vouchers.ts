@@ -5,12 +5,13 @@ import { AppError, conflict, invalid } from './errors.ts';
 import type { Actor } from './auth.ts';
 import {
   approvesOwn, approveWaiting, createVoucher, deleteEntry, getEntry, isOwnVoucher, MAX_REJECT_REASON, rejectWaiting, setVouchersNeedApproval, vouchersNeedApproval,
-  waitingVouchers,
+  waitingForApprover, waitingVouchers,
   type EntryView, type Preparer
 } from './journal.ts';
 import { getParty } from './parties.ts';
 import { onceOnly } from './idempotency.ts';
 import { ownVouchersOnly } from './cost-view.ts';
+import { seenBody, whenSeen } from './entry-seen.ts';
 import { userBranchLists } from './branches.ts';
 import type { ApiExtension, ApiRequest } from './routes.ts';
 
@@ -147,14 +148,18 @@ function linkedInvoiceFor(db: Db, entryId: string, input: Pick<QuickVoucherInput
 /**
  * What the screens ask: is the setting on, how many wait, may this user approve, are their own approved at once, and
  * is a voucher they make with the short form posted at once (the rule of quickVoucher above); when it is not, the
- * form says that the balance does not change yet.
+ * form says that the balance does not change yet. `toApprove` (phone app 1.1): everything an approver has to approve,
+ * each entry once (waitingForApprover), for the phone's home screen.
  */
 export function approvalState(db: Db, actor: Pick<Actor, 'id' | 'name' | 'permissions'>):
-  { on: boolean; waiting: number; mayApprove: boolean; ownAtOnce: boolean; postsAtOnce: boolean } {
+  { on: boolean; waiting: number; toApprove: number; mayApprove: boolean; ownAtOnce: boolean; postsAtOnce: boolean } {
   const who = preparerOf(actor);
   const on = vouchersNeedApproval(db);
   const own = approvesOwn(db, who);
-  return { on, waiting: waitingVouchers(db), mayApprove: who.mayApprove, ownAtOnce: on && own, postsAtOnce: own && (on || actor.permissions.includes('entries.check')) };
+  return {
+    on, waiting: waitingVouchers(db), toApprove: waitingForApprover(db), mayApprove: who.mayApprove, ownAtOnce: on && own,
+    postsAtOnce: own && (on || actor.permissions.includes('entries.check'))
+  };
 }
 
 function parse<T>(schema: z.ZodType<T>, value: unknown): T {
@@ -222,15 +227,20 @@ export const quickVouchersApi: ApiExtension = {
           return reply.status(204).send();
         }
       },
+      // `seen` (phone app 1.1): the voucher as the approver saw it; changed since, nothing is done (entry-seen.ts)
       {
         method: 'POST', path: '/api/entries/:id/approve-waiting',
-        handler: async (req) => approveWaiting(db, parse(idParam, req.params).id, preparerOf(actor(req)))
+        handler: async (req) => {
+          const { id } = parse(idParam, req.params);
+          return whenSeen(db, id, parse(seenBody, req.body ?? {}).seen, () => approveWaiting(db, id, preparerOf(actor(req))));
+        }
       },
       {
         method: 'POST', path: '/api/entries/:id/reject',
         handler: async (req) => {
-          const body = parse(z.object({ reason: z.string().min(1).max(MAX_REJECT_REASON) }), req.body);
-          return rejectWaiting(db, parse(idParam, req.params).id, body.reason, preparerOf(actor(req)));
+          const { id } = parse(idParam, req.params);
+          const body = parse(seenBody.extend({ reason: z.string().min(1).max(MAX_REJECT_REASON) }), req.body);
+          return whenSeen(db, id, body.seen, () => rejectWaiting(db, id, body.reason, preparerOf(actor(req))));
         }
       }
     ];

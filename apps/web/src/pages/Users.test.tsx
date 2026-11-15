@@ -12,7 +12,9 @@ const fixture = vi.hoisted(() => ({
     { id: 'u2', username: 'las', name: 'Las', roles: ['sales'], active: true, hasPassword: false, createdAt: '2026-11-02', lastLoginAt: null }
   ]
 }));
-vi.mock('react', () => ({
+vi.mock('react', async (importOriginal) => ({
+  // the rest is React's own: modules the page imports make their contexts as they load (Amount.tsx's)
+  ...(await importOriginal<typeof import('react')>()),
   useState<T>(initial: T | (() => T)) {
     const i = fixture.cursor++;
     if (!(i in fixture.states)) fixture.states[i] = typeof initial === 'function' ? (initial as () => T)() : initial;

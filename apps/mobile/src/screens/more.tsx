@@ -31,7 +31,7 @@ export const PRIVACY_URL = 'https://qasaerp.com/privacy/';
 
 export function MoreScreen() {
   const { t, lang } = useLook();
-  const { go, outbox, company, me, via, state } = useApp();
+  const { go, outbox, company, me, via, state, can } = useApp();
   const prefs = usePrefs();
   const waiting = outbox.filter((o) => !o.result).length;
   const who = actsAs(me);
@@ -44,6 +44,10 @@ export function MoreScreen() {
       </Card>
       <Group>
         <ListItem icon="outbox" title={t('outbox')} value={waiting ? String(waiting) : undefined} onPress={() => go({ name: 'outbox' })} />
+        {/* phone app 1.1, each when the office offers it to this user */}
+        {can('approvals') && <ListItem icon="stamp" title={t('aprTitle')} onPress={() => go({ name: 'approvals' })} />}
+        {can('rate') && <ListItem icon="dollar" title={t('rateTitle')} onPress={() => go({ name: 'rate' })} />}
+        {can('dayClose') && <ListItem icon="register" title={t('dayTitle')} onPress={() => go({ name: 'dayClose' })} />}
         <ListItem icon="lock" title={t('security')} subtitle={prefs.lock.pin ? t('changePin') : t('setPin')} onPress={() => go({ name: 'security' })} />
         <ListItem icon="info" title={t('about')} onPress={() => go({ name: 'about' })} />
       </Group>
@@ -66,7 +70,13 @@ export function MoreScreen() {
 
 // ——— what waits for the office ———
 
-const KIND_TEXT = { sale: 'kindSale', order: 'kindOrder', receipt: 'kindReceipt', count: 'kindCount', countSession: 'kindCount' } as const;
+const KIND_TEXT = {
+  sale: 'kindSale', order: 'kindOrder', receipt: 'kindReceipt', count: 'kindCount', countSession: 'kindCount',
+  expense: 'kindExpense', transfer: 'kindTransfer', arrival: 'kindArrival', transferPost: 'kindTransfer'
+} as const;
+
+/** The office's refusal of a change that waited, in words: its code, with what it said (its numbers) when it kept them. */
+const refusalOf = (o: OutboxItem) => (o.errorDetail ? new OfficeError(400, 'validation', [{ ...o.errorDetail, code: o.error }]) : new OfficeError(400, o.error ?? 'error', null));
 
 export function OutboxScreen() {
   const { t, lang } = useLook();
@@ -80,11 +90,11 @@ export function OutboxScreen() {
     <Screen title={t('outbox')} onBack={() => nav({ type: 'back' })}
       footer={outbox.some(isPending) ? <Button icon="send" label={t('sendNow')} onPress={sendOutbox} disabled={state === 'connecting'} /> : undefined}>
       {!outbox.some((o) => !o.result) && <EmptyState icon="check" title={t('outboxEmpty')} />}
-      {/* receipts that went later, by themselves: what the office made of each, until cleared */}
-      {outbox.some((o) => o.result) && (
-        <Section title={t('receiptsSent')}>
+      {/* receipts (1.1: and expenses) that went later, by themselves: what the office made of each, until cleared */}
+      {(['receipt', 'expense'] as const).filter((kind) => outbox.some((o) => o.result && o.kind === kind)).map((kind) => (
+        <Section key={kind} title={t(kind === 'expense' ? 'expSentTitle' : 'receiptsSent')}>
           <Group>
-            {outbox.filter((o) => o.result).map((o) => (
+            {outbox.filter((o) => o.result && o.kind === kind).map((o) => (
               <View key={o.id} style={{ padding: space.l, gap: space.s }}>
                 <View style={{ flexDirection: 'row', alignItems: 'center', gap: space.s }}>
                   <View style={{ flex: 1 }}>
@@ -93,12 +103,13 @@ export function OutboxScreen() {
                   </View>
                   <IconButton icon="check" label={t('clearResult')} onPress={() => void deleteOutbox(o.id)} />
                 </View>
-                <Banner kind={o.result === 'posted' ? 'ok' : 'info'} text={o.result === 'posted' ? t('collectPosted') : t('collectSent')} />
+                <Banner kind={o.result === 'posted' ? 'ok' : 'info'}
+                  text={o.kind === 'expense' ? t(o.result === 'posted' ? 'expPosted' : 'expNotYet') : o.result === 'posted' ? t('collectPosted') : t('collectSent')} />
               </View>
             ))}
           </Group>
         </Section>
-      )}
+      ))}
       {outbox.some((o) => !o.result) && (
         <Group>
           {outbox.filter((o) => !o.result).map((o) => (
@@ -113,7 +124,7 @@ export function OutboxScreen() {
                 }} />
               </View>
               {o.error && (
-                <Banner kind="bad" text={t('refusedBy', { r: explain(new OfficeError(400, o.error, null)) })} action={{ label: t('retry'), onPress: () => void retryOutbox(o.id) }} />
+                <Banner kind="bad" text={t('refusedBy', { r: explain(refusalOf(o)) })} action={{ label: t('retry'), onPress: () => void retryOutbox(o.id) }} />
               )}
             </View>
           ))}

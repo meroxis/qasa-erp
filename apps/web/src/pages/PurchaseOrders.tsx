@@ -15,6 +15,7 @@ import { UnitPicker } from '../industry/UnitPicker.tsx';
 import { baseQty, unitLabel, type LineUnit } from '../industry/units.ts';
 import type { PoLineView } from '../industry/purchasing-api.ts';
 import { printDocument } from '../industry/printing.ts';
+import { DocAmount } from '../Amount.tsx';
 
 /**
  * أوامر الشراء — purchase orders. Routes: `purchase-orders` (list + reorder suggestions), `new-purchase-order`,
@@ -117,7 +118,7 @@ function OrdersTable({ orders }: { orders: PoSummaryView[] }) {
             <td><a className="ltr num" href={href(`purchase-order/${x.id}`)} onClick={(e) => e.stopPropagation()}>{x.number}</a><div className="muted small num">{i18n.date(x.date)}</div></td>
             <td>{x.partyName}</td>
             <td className="num">{x.expectedDate ? i18n.date(x.expectedDate) : '—'}</td>
-            {priced && <td className="amount">{i18n.money(x.total, x.currency)}</td>}
+            {priced && <td className="amount"><DocAmount value={x.total} currency={x.currency} date={x.date} /></td>}
             <td><PoChip status={x.status} overdue={x.overdue} /></td>
           </tr>
         ))}
@@ -337,7 +338,7 @@ export function PurchaseOrderEditor({ id }: { id?: string }) {
         <div className="row" style={{ paddingTop: 10 }}>
           <button type="button" className="btn small" onClick={() => setRows((rs) => [...rs, emptyRow()])}><Icon name="plus" size={15} />{t('addLine')}</button>
           <span className="spacer" />
-          <span className="muted">{t('total')}</span><strong className="num" style={{ fontSize: 18 }}>{i18n.money(total, form.currency)}</strong>
+          <span className="muted">{t('total')}</span><strong className="num" style={{ fontSize: 18 }}><DocAmount value={total} currency={form.currency} date={form.date} inline /></strong>
         </div>
       </div>
 
@@ -490,7 +491,11 @@ function Paper({ order: x, company }: { order: PoView; company: string }) {
       </div>
       <div className="row" style={{ padding: '10px 0' }}>
         <span className="spacer" />
-        {x.total !== undefined && <div className="totals"><span>{t('total')}</span><strong className="num" style={{ fontSize: 18 }}>{i18n.money(x.total, x.currency)}</strong></div>}
+        {/* the ≈ in the other currency is for the screen: the order prints in its own currency only, as it always did */}
+        {x.total !== undefined && <div className="totals"><span>{t('total')}</span><strong className="num" style={{ fontSize: 18 }}>
+          <span className="no-print"><DocAmount value={x.total} currency={x.currency} date={x.date} /></span>
+          <span className="print-only">{i18n.money(x.total, x.currency)}</span>
+        </strong></div>}
       </div>
       {x.notes && <p className="small" style={{ whiteSpace: 'pre-line' }}><span className="muted">{t('notes')}: </span>{x.notes}</p>}
       <div className="sigs" style={{ gridTemplateColumns: 'repeat(2, minmax(0, 1fr))' }}>

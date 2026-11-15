@@ -30,6 +30,7 @@ import { createReturn } from './returns.ts';
 import { cancelStockDoc, createStockDoc, deleteStockDoc, getStockDoc, listStockDocs, postStockDoc, updateStockDoc } from './stock-docs.ts';
 import { onceOnly } from './idempotency.ts';
 import { BOOKS_HEADER, booksId } from './outbox.ts';
+import { seenBody, whenSeen } from './entry-seen.ts';
 
 const isoDate = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
 const period = z.string().regex(/^\d{4}-(0[1-9]|1[0-2])$/);
@@ -275,7 +276,8 @@ export interface Route {
 export function errorResponse(error: unknown): { status: number; body: { error: string; details: unknown } } {
   if (error instanceof AppError) return { status: error.status, body: { error: error.code, details: error.details ?? null } };
   const message = error instanceof Error ? error.message : String(error);
-  for (const code of ['posted_entry_is_permanent', 'posted_invoice_is_permanent', 'posted_document_is_permanent', 'stock_moves_are_permanent', 'installment_contract_is_permanent', 'loyalty_moves_are_permanent']) {
+  for (const code of ['posted_entry_is_permanent', 'posted_invoice_is_permanent', 'posted_document_is_permanent', 'stock_moves_are_permanent', 'installment_contract_is_permanent', 'loyalty_moves_are_permanent',
+    'entry_image_is_permanent']) {
     if (message.includes(code)) return { status: 409, body: { error: code, details: null } };
   }
   // a delete the database refused because other records still point at the row: nothing changed, say so plainly
@@ -486,9 +488,19 @@ export function apiRoutes(db: Db, options: { demo?: boolean; extensions?: readon
     deleteEntry(db, parse(z.object({ id: z.string() }), req.params).id, userOf(req));
     return reply.status(204).send();
   });
-  app.post('/api/entries/:id/check', async (req) => checkEntry(db, parse(z.object({ id: z.string() }), req.params).id, userOf(req), actorOf(req).id));
-  app.post('/api/entries/:id/return', async (req) => returnEntry(db, parse(z.object({ id: z.string() }), req.params).id, userOf(req)));
-  app.post('/api/entries/:id/approve', async (req) => approveEntry(db, parse(z.object({ id: z.string() }), req.params).id, userOf(req), actorOf(req).id));
+  // `seen` (phone app 1.1): the entry as the asker saw it; changed since, nothing is done (entry-seen.ts)
+  app.post('/api/entries/:id/check', async (req) => {
+    const { id } = parse(z.object({ id: z.string() }), req.params);
+    return whenSeen(db, id, parse(seenBody, req.body ?? {}).seen, () => checkEntry(db, id, userOf(req), actorOf(req).id));
+  });
+  app.post('/api/entries/:id/return', async (req) => {
+    const { id } = parse(z.object({ id: z.string() }), req.params);
+    return whenSeen(db, id, parse(seenBody, req.body ?? {}).seen, () => returnEntry(db, id, userOf(req)));
+  });
+  app.post('/api/entries/:id/approve', async (req) => {
+    const { id } = parse(z.object({ id: z.string() }), req.params);
+    return whenSeen(db, id, parse(seenBody, req.body ?? {}).seen, () => approveEntry(db, id, userOf(req), actorOf(req).id));
+  });
   app.post('/api/entries/:id/reverse', async (req) => {
     const { id } = parse(z.object({ id: z.string() }), req.params);
     const body = parse(z.object({ date: isoDate.optional() }), req.body ?? {});

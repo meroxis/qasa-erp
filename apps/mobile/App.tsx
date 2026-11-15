@@ -6,6 +6,7 @@ import { useFonts } from 'expo-font';
 import { SafeAreaProvider, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { OfficeError, officeApi, type Party, type Warehouse } from './src/api';
 import type { CartLine, CountLine } from './src/documents';
+import { explainWith } from './src/explain';
 import { FONT_SOURCES } from './src/fonts';
 import { isRtl, translate, type Key, type Lang } from './src/i18n';
 import type { IconName } from './src/icons';
@@ -13,7 +14,16 @@ import { LinkError, OfficeLink, type LinkState, type OfficeInfo, type Route as L
 import { ListsCtx, type Lists } from './src/lists';
 import { shouldLock, type LockSettings } from './src/lock';
 import { canGoBack, current, initialNav, navigate, type Tab } from './src/nav';
+import { forgetOffice, officeScope, setOfficeScope } from './src/office-cache';
 import { Outbox, receiptPosted, type OutboxItem, type OutboxKind, type OutboxSummary } from './src/outbox';
+import { sendItem } from './src/send';
+import { cleanTemporaryFiles, sweepShared } from './src/staff/files';
+import type { StockLine } from './src/staff/stock';
+import { ExpenseScreen } from './src/screens/staff/expense';
+import { InvoiceScreen, InvoicesScreen } from './src/screens/staff/invoices';
+import { ShareScreen } from './src/screens/staff/share';
+import { TransferScreen } from './src/screens/staff/transfer';
+import { ReceiveOrderScreen, ReceiveScreen } from './src/screens/staff/receive';
 import { readPairingCode } from './src/pairing';
 import { toB64, type KeyPair } from './src/protocol';
 import { featuresOf, lockRequired, type Feature, type Me } from './src/roles';
@@ -27,35 +37,22 @@ import { Home } from './src/screens/home';
 import { CountScreen, ItemScreen, ItemsScreen, NewItemScreen, ScanScreen } from './src/screens/items';
 import { biometricReady, LockScreen } from './src/screens/lock';
 import { AboutScreen, MoreScreen, OutboxScreen, PrefsCtx, SecurityScreen, type Prefs } from './src/screens/more';
+import { ApprovalScreen, ApprovalsScreen } from './src/screens/owner/approvals';
+import { DayCloseScreen } from './src/screens/owner/dayclose';
+import { RateScreen } from './src/screens/owner/rate';
 import { PairScreen } from './src/screens/pair';
 import { CartScreen } from './src/screens/sell';
 
-const VERSION: string = (require('./app.json') as { expo: { version: string } }).expo.version;
+const APP_JSON = require('./app.json') as { expo: { version: string; android: { versionCode: number } } };
+const VERSION: string = APP_JSON.expo.version;
+/** this app's version and build, as the office PC shows them for each phone (prebuild writes both from app.json) */
+const APP = { version: VERSION, build: APP_JSON.expo.android.versionCode };
 const socket = (url: string) => new WebSocket(url) as unknown as SocketLike;
 const NO_LOCK: LockSettings = { pin: null, length: 0, biometric: false, after: 60_000 };
 
 function deviceLanguage(): Lang {
   const code = getLocales()[0]?.languageCode ?? 'en';
   return code === 'ar' ? 'ar' : code === 'ckb' || code === 'ku' ? 'ku' : 'en';
-}
-
-/** The office's and the link's refusals, in the user's language (never a raw message with someone's data in it). */
-function explainWith(t: (k: Key, v?: Record<string, string | number>) => string, error: unknown): string {
-  if (error instanceof OfficeError) {
-    if (error.status === 403) return t('forbidden');
-    if (error.code === 'plan_limit') return t('planLimit');
-    if (error.code === 'validation') return t('validation');
-    return `${t('error')} ${error.code}`;
-  }
-  if (error instanceof LinkError) {
-    const map: Partial<Record<LinkError['code'], Key>> = {
-      unreachable: 'offline', timeout: 'offline', closed: 'offline', plan_limit: 'planLimit', phone_limit: 'phoneLimit',
-      pairing_invalid: 'pairingInvalid', unknown_device: 'unknownDevice', stale: 'stale', tampered: 'tampered', bad_message: 'tampered'
-    };
-    const k = map[error.code];
-    return k ? t(k) : `${t('error')} ${error.code}`;
-  }
-  return t('loadFailed');
 }
 
 export default function App() {
@@ -85,6 +82,9 @@ function Main() {
   const [cart, setCart] = useState<CartLine[]>([]);
   const [customer, setCustomer] = useState<Party | null>(null);
   const [count, setCount] = useState<CountLine[]>([]);
+  const [transfer, setTransfer] = useState<StockLine[]>([]);
+  const [transferWarehouses, setTransferWarehouses] = useState<{ from: string | null; to: string | null }>({ from: null, to: null });
+  const [arrival, setArrival] = useState<{ orderId: string; lines: StockLine[] } | null>(null);
   const [warehouses, setWarehouses] = useState<Warehouse[]>([]);
   const [warehouseId, setWarehouseId] = useState<string | null>(null);
   const [toastText, setToastText] = useState<{ text: string; kind: 'ok' | 'bad' | 'plain' } | null>(null);
@@ -93,10 +93,13 @@ function Main() {
   const scheme = themeChoice === 'system' ? (system === 'dark' ? 'dark' : 'light') : themeChoice;
   const t = useCallback((k: Key, vars?: Record<string, string | number>) => translate(lang, k, vars), [lang]);
   const look: Look = useMemo(() => ({ lang, rtl: isRtl(lang), scheme, p: PALETTES[scheme], fonts: fontsLoaded && !fontError, t }), [lang, scheme, fontsLoaded, fontError, t]);
-  const explain = useCallback((e: unknown) => explainWith(t, e), [t]);
+  // (a refusal of the phone reads by what the office says it offers: me.phoneLink, explain.ts)
+  const explain = useCallback((e: unknown) => explainWith(t, e, me), [t, me]);
 
   // first start: language, look, the lock, the outbox, this phone's key, the office and who the phone acts as there
   useEffect(() => {
+    // a photo or a shared PDF left from the last run (the app was closed before it cleaned up)
+    cleanTemporaryFiles();
     void (async () => {
       setLangState((await loadLang()) ?? deviceLanguage());
       setThemeChoice(await loadTheme());
@@ -114,7 +117,7 @@ function Main() {
 
   const makeLink = useCallback((info: OfficeInfo, phone: KeyPair, phoneName: string, pairing?: { id: string; secret: Uint8Array }) => {
     const l = new OfficeLink({
-      office: info, phone, name: phoneName, pairing, socket,
+      office: info, phone, name: phoneName, pairing, socket, app: APP,
       onState: (st, d, v) => { setState(st); setDetail(d); setVia(v ?? null); },
       onPaired: (deviceId, company) => {
         const saved = { ...info, deviceId, company: company || info.company };
@@ -133,16 +136,15 @@ function Main() {
 
   const api = useMemo(() => (link ? officeApi(link) : null), [link]);
 
+  // what screens keep in memory of the office belongs to the office paired now (office-cache.ts): another office, or
+  // none, forgets it
+  useEffect(() => { setOfficeScope(officeScope(office)); }, [office]);
+
   /** One change from the outbox to the office, with its own key (`last` keeps the office's answer for the screen). */
-  const sender = useCallback((last?: { e: unknown; b?: unknown }) => async (item: OutboxItem): Promise<unknown> => {
+  const sender = useCallback((last?: { e: unknown; b?: unknown }) => async (item: OutboxItem, blob: () => Promise<string | null>): Promise<unknown> => {
     if (!api) throw new LinkError('closed');
     try {
-      let answer: unknown;
-      if (item.kind === 'sale') answer = await api.draftSale(item.body, item.id);
-      else if (item.kind === 'order') answer = await api.order(item.body, item.id);
-      else if (item.kind === 'receipt') answer = await api.receipt(item.body, item.id);
-      else if (item.kind === 'count') answer = await api.sendCount(item.body, item.id);
-      else answer = await api.countInto(item.target ?? '', item.body, item.id);
+      const answer = await sendItem(api, item, blob);
       if (last) last.b = answer;
       return answer;
     } catch (e) {
@@ -151,13 +153,15 @@ function Main() {
     }
   }, [api]);
 
-  // what waited goes by itself; receipts that went say what the office made of them (and stay under Waiting to send)
+  // what waited goes by itself; receipts (and expenses) that went say what the office made of them (and stay under
+  // Waiting to send)
   const replay = useCallback(() => {
     if (!api) return;
     void outbox.replay(sender()).then((r) => {
-      if (!r.receipts.length) return;
-      const waits = r.receipts.filter((i) => i.result === 'waiting').length;
-      setToastText({ text: waits ? t('receiptsSentWaiting', { n: waits }) : t('receiptsSentPosted', { n: r.receipts.length }), kind: 'ok' });
+      if (r.receipts.length) {
+        const waits = r.receipts.filter((i) => i.result === 'waiting').length;
+        setToastText({ text: waits ? t('receiptsSentWaiting', { n: waits }) : t('receiptsSentPosted', { n: r.receipts.length }), kind: 'ok' });
+      } else if (r.expenses.length) setToastText({ text: t('expSentN', { n: r.expenses.length }), kind: 'ok' });
     }).catch(() => {});
   }, [api, outbox, sender, t]);
 
@@ -184,6 +188,8 @@ function Main() {
       if (s === 'active') {
         if (lock?.pin && shouldLock(backgroundSince.current, Date.now(), lock.after)) setLocked(true);
         backgroundSince.current = null;
+        // the last PDF shared goes once the app it was handed to has had time to read it
+        sweepShared();
         link?.resume();
       } else if (s === 'background') {
         backgroundSince.current = Date.now();
@@ -215,11 +221,14 @@ function Main() {
     await link?.unpair().catch(() => false);
     setLink(null);
     await outbox.wipe();
+    forgetOffice();
     await wipePairing();
     setOffice(null);
     setMe(null);
     setCart([]);
     setCount([]);
+    setTransfer([]);
+    setArrival(null);
     setCustomer(null);
     setLockState(NO_LOCK);
     setLocked(false);
@@ -243,19 +252,24 @@ function Main() {
 
   const ctx: AppCtx | null = useMemo(() => {
     if (!api) return null;
+    /** A change for the office: kept (encrypted) before the first try, then sent with its own key; see AppCtx.queueFor. */
+    const queueFor = async (kind: OutboxKind, body: unknown, summary: OutboxSummary, target?: string, blob?: string) => {
+      // kept before the first try: nothing is lost if the answer never comes
+      const item = await outbox.add(kind, body, summary, target, blob);
+      const last: { e: unknown; b?: unknown } = { e: null };
+      const outcome = await outbox.sendOne(item.id, sender(last));
+      if (outcome === 'sent') return { result: (kind === 'receipt' || kind === 'expense') && receiptPosted(last.b) ? 'posted' as const : 'sent' as const, answer: last.b };
+      if (outcome === 'wait') return { result: 'queued' as const, answer: null };
+      // refused at once, on the screen that made it: shown there, not kept
+      await outbox.remove(item.id);
+      throw last.e instanceof OfficeError ? last.e : new OfficeError(400, outcome.refused, null);
+    };
     return {
       api, state, via, detail, company: office?.company ?? '', me, can, outbox: items,
       async queue(kind: OutboxKind, body: unknown, summary: OutboxSummary, target?: string) {
-        // kept (encrypted) before the first try: nothing is lost if the answer never comes
-        const item = await outbox.add(kind, body, summary, target);
-        const last: { e: unknown; b?: unknown } = { e: null };
-        const outcome = await outbox.sendOne(item.id, sender(last));
-        if (outcome === 'sent') return kind === 'receipt' && receiptPosted(last.b) ? 'posted' : 'sent';
-        if (outcome === 'wait') return 'queued';
-        // refused at once, on the screen that made it: shown there, not kept
-        await outbox.remove(item.id);
-        throw last.e instanceof OfficeError ? last.e : new OfficeError(400, outcome.refused, null);
+        return (await queueFor(kind, body, summary, target)).result;
       },
+      queueFor,
       sendOutbox: () => { link?.resume(); replay(); },
       retryOutbox: async (id) => { await outbox.retry(id); replay(); },
       deleteOutbox: (id) => outbox.remove(id),
@@ -278,7 +292,10 @@ function Main() {
     version: VERSION
   };
 
-  const lists: Lists = { cart, setCart, customer, setCustomer, count, setCount, warehouseId, setWarehouseId, warehouses };
+  const lists: Lists = {
+    cart, setCart, customer, setCustomer, count, setCount, warehouseId, setWarehouseId, warehouses,
+    transfer, setTransfer, transferWarehouses, setTransferWarehouses, arrival, setArrival
+  };
   const bar = <StatusBar style={scheme === 'dark' ? 'light' : 'dark'} />;
   const spinner = <View style={{ flex: 1, justifyContent: 'center', backgroundColor: look.p.bg }}><ActivityIndicator color={look.p.accent} /></View>;
 
@@ -362,6 +379,19 @@ function Main() {
                 {route.name === 'outbox' && <OutboxScreen />}
                 {route.name === 'security' && <SecurityScreen />}
                 {route.name === 'about' && <AboutScreen />}
+                {/* phone app 1.1, the owner and the managers */}
+                {route.name === 'approvals' && <ApprovalsScreen />}
+                {route.name === 'approval' && <ApprovalScreen key={route.id} id={route.id} />}
+                {route.name === 'rate' && <RateScreen />}
+                {route.name === 'dayClose' && <DayCloseScreen />}
+                {/* and the staff */}
+                {route.name === 'expense' && <ExpenseScreen />}
+                {route.name === 'invoices' && <InvoicesScreen partyId={route.partyId} />}
+                {route.name === 'invoice' && <InvoiceScreen id={route.id} />}
+                {route.name === 'share' && <ShareScreen key={`${route.doc}-${route.id}`} doc={route.doc} id={route.id} from={route.from} />}
+                {route.name === 'transfer' && <TransferScreen />}
+                {route.name === 'receive' && <ReceiveScreen />}
+                {route.name === 'receiveOrder' && <ReceiveOrderScreen key={route.id} id={route.id} />}
               </View>}
               {route.name !== 'scan' && !pinNeeded && (
                 <TabBar tabs={tabs.filter((x) => x.on)} current={nav.tab} onPress={(tab) => dispatch({ type: 'tab', tab })} />

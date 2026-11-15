@@ -6,7 +6,7 @@ import { dateText, money } from '../i18n';
 import { useLists } from '../lists';
 import { space } from '../theme';
 import {
-  Banner, Button, Card, Chip, EmptyState, ErrorState, Field, Group, ListItem, Screen, Section, Segmented, Skeleton, Txt, useApp, useLook
+  Banner, Button, Card, Chip, EmptyState, ErrorState, Field, Group, IconButton, ListItem, Screen, Section, Segmented, Skeleton, Txt, useApp, useLook
 } from '../ui';
 import { useLoad } from '../use-load';
 
@@ -84,6 +84,8 @@ export function CustomerScreen({ id }: { id: string }) {
       </Card>
       <View style={{ gap: space.s }}>
         {can('statement') && <Button icon="doc" kind="secondary" label={t('statement')} onPress={() => go({ name: 'statement', id: c.id })} />}
+        {/* 1.1: the customer's invoices, to send one as a PDF */}
+        {can('share') && <Button icon="share" kind="secondary" label={t('shrInvoices')} onPress={() => go({ name: 'invoices', partyId: c.id })} />}
         {can('collect') && <Button icon="cash" label={t('collect')} onPress={() => go({ name: 'collect', id: c.id })} />}
         {(can('sale') || can('order')) && (
           <Button icon="cart" kind="secondary" label={t('newSale')} onPress={() => { lists.setCustomer(c); nav({ type: 'open', tab: 'sell' }); }} />
@@ -107,13 +109,15 @@ function fromOf(period: Period, now = new Date()): string {
 
 export function StatementScreen({ id }: { id: string }) {
   const { t, lang } = useLook();
-  const { api, nav, explain } = useApp();
+  const { api, nav, go, explain, can } = useApp();
   const [period, setPeriod] = useState<Period>('three');
   const load = useLoad<Statement>(() => api.statement(id, fromOf(period)), [id, period]);
   const s = load.data;
   const back = () => nav({ type: 'back' });
+  // 1.1: the statement of this period, sent as a PDF
+  const share = can('share') && s ? <IconButton icon="share" label={t('shrSendPdf')} tone="accentText" onPress={() => go({ name: 'share', doc: 'statement', id, from: fromOf(period) })} /> : undefined;
   return (
-    <Screen title={s?.party.name ?? t('statement')} subtitle={t('statement')} onBack={back} onRefresh={load.reload} refreshing={load.refreshing}>
+    <Screen title={s?.party.name ?? t('statement')} subtitle={t('statement')} onBack={back} onRefresh={load.reload} refreshing={load.refreshing} right={share}>
       <Segmented<Period> label={t('statement')} value={period} onChange={setPeriod}
         options={[{ value: 'month', label: t('thisMonth') }, { value: 'three', label: t('threeMonths') }, { value: 'year', label: t('thisYear') }]} />
       {load.loading ? <Skeleton rows={6} height={64} />
