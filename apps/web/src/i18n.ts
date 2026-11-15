@@ -747,6 +747,12 @@ const BASE = {
   netNeedsSignIn: ['شغّل «تسجيل الدخول» أولاً في صفحة المستخدمين: على الشبكة يدخل كل شخص باسمه وكلمة مروره.', 'First switch on sign-in on the Users page: on the network, everyone signs in with their own user and password.', 'سەرەتا «چوونەژوورەوە» لە پەڕەی بەکارهێنەران هەڵبکە: لەسەر تۆڕ، هەر کەسێک بە بەکارهێنەر و وشەی نهێنیی خۆی دەچێتە ژوورەوە.'],
   netTurnOn: ['تشغيل شبكة المكتب', 'Switch on the office network', 'هەڵکردنی تۆڕی نووسینگە'],
   netTurnOff: ['إيقاف شبكة المكتب', 'Switch off the office network', 'کوژاندنەوەی تۆڕی نووسینگە'],
+  // 1.4.3: asked before switching it off (Qasa Relay stops with it; phones on the office Wi-Fi have their own link)
+  netTurnOffConfirm: [
+    'إيقاف شبكة المكتب؟ حتى تشغّلها من جديد، ينقطع اتصال الحواسيب الأخرى بهذا الحاسوب، وكذلك اتصال Qasa Relay والهواتف والحواسيب التي تتصل عبره.',
+    'Switch off the office network? Until you switch it on again, the other PCs lose their connection to this PC, and so do Qasa Relay and the phones and PCs that connect through it.',
+    'تۆڕی نووسینگە بکوژێنرێتەوە؟ تا دووبارە هەڵیبکەیتەوە، پەیوەندیی کۆمپیوتەرەکانی تر بەم کۆمپیوتەرەوە دەپچڕێت، هەروەها پەیوەندیی Qasa Relay و ئەو مۆبایل و کۆمپیوتەرانەی لە ڕێیەوە پەیوەندی دەکەن.'
+  ],
   netAddress: ['عنوان هذا الحاسوب', 'This PC’s address', 'ناونیشانی ئەم کۆمپیوتەرە'],
   netCode: ['رمز الاقتران', 'Pairing code', 'کۆدی پەیوەندی'],
   netNoAddress: ['هذا الحاسوب غير متصل بشبكة المكتب الآن.', 'This PC isn’t connected to the office network right now.', 'ئەم کۆمپیوتەرە ئێستا بە تۆڕی نووسینگەوە نەبەستراوە.'],

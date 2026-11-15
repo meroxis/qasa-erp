@@ -587,13 +587,23 @@ function OfficeNetworkCard() {
         </div>
       )}
       <ErrorBox error={error} />
-      {status && status.available && (status.on || status.signInRequired) && (
-        <div>
-          <button type="button" className={'btn ' + (status.on ? '' : 'primary')} disabled={busy} onClick={() => toggle(!status.on)}>
-            {status.on ? t('netTurnOff') : t('netTurnOn')}
-          </button>
-        </div>
-      )}
+      {status && status.available && (status.on || status.signInRequired) && <NetworkSwitch on={status.on} busy={busy} onSwitch={(on) => void toggle(on)} />}
+    </div>
+  );
+}
+
+/**
+ * The office network's switch. Switching it off asks first: the other PCs lose their connection to this PC, and so do
+ * Qasa Relay and the phones and PCs that come through it, until it is switched on again (phones on the office Wi-Fi
+ * have their own link and stay). Switching it on asks nothing.
+ */
+export function NetworkSwitch({ on, busy, onSwitch }: { on: boolean; busy: boolean; onSwitch(on: boolean): void }) {
+  const { t } = useI18n();
+  return (
+    <div>
+      <button type="button" className={'btn ' + (on ? '' : 'primary')} disabled={busy} onClick={() => { if (!on || window.confirm(t('netTurnOffConfirm'))) onSwitch(!on); }}>
+        {on ? t('netTurnOff') : t('netTurnOn')}
+      </button>
     </div>
   );
 }
