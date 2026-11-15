@@ -1,6 +1,7 @@
 import { useState, type CSSProperties, type ReactNode } from 'react';
 import { addDays, todayIso } from '@qasa/core';
-import { briefApi, type BriefView, type Money2 } from '../industry/brief-api.ts';
+import { briefApi, type AgingRowView, type BriefView, type Money2 } from '../industry/brief-api.ts';
+import { Amount, amountTextOf, DINAR_ONLY, DualNote, DualRateHint, OwedTotal, useAmountText, type AmountText } from '../Amount.tsx';
 import { ErrorBox, Icon, Modal, useLoad, useMay, usePageNav, useToast } from '../components.tsx';
 import { useI18n, type I18n } from '../i18n.ts';
 import { href } from '../router.ts';
@@ -31,20 +32,29 @@ function change(today: number, before: number): number | null {
   return Math.round(((today - before) / Math.abs(before)) * 100);
 }
 
-/** The short WhatsApp version of the brief. */
-export function briefText(i18n: I18n, b: BriefView): string {
+/** What a late customer owes, as text: the real dinars and dollars when shown converted, else the book total as before. */
+export function owedText(i18n: I18n, text: AmountText, c: Pick<AgingRowView, 'balance' | 'owed'>, date: string): string {
+  return c.owed ? text(c.owed, { date, book: c.balance }) : i18n.money(c.balance, 'IQD');
+}
+
+/**
+ * The short WhatsApp version of the brief. `text`: the amounts as the company chose to see them (useAmountText), so the
+ * message carries the ≈ figure the page shows; dinar only (as before) when left out.
+ */
+export function briefText(i18n: I18n, b: BriefView, text: AmountText = amountTextOf(i18n, DINAR_ONLY)): string {
   const { t } = i18n;
   const company = i18n.name(b.company);
   const pct = change(b.sales.today, b.sales.sameDayLastWeek);
+  const on = { date: b.date };
   const lines = [
     `*${t('br_title')}${company ? ` — ${company}` : ''}*`,
     i18n.date(b.date),
     '',
-    `💰 ${t('br_salesToday')}: ${i18n.money(b.sales.today, 'IQD')}${pct !== null ? ` (${i18n.ltr(`${pct >= 0 ? '+' : '-'}${i18n.int(Math.abs(pct))}%`)} ${t('br_vsLastWeek')})` : ''}`,
+    `💰 ${t('br_salesToday')}: ${text(b.sales.today, on)}${pct !== null ? ` (${i18n.ltr(`${pct >= 0 ? '+' : '-'}${i18n.int(Math.abs(pct))}%`)} ${t('br_vsLastWeek')})` : ''}`,
     // the company's money: not sent to someone who may not read the books
-    ...(b.cash ? [`🏦 ${t('br_cashNow')}: ${moneyBoth(i18n, b.cash.total)}`] : []),
-    ...(b.flow ? [`⬇️ ${t('br_moneyIn')}: ${i18n.money(b.flow.in, 'IQD')}   ⬆️ ${t('br_moneyOut')}: ${i18n.money(b.flow.out, 'IQD')}`] : []),
-    `📅 ${t('br_salesMonth')}: ${i18n.money(b.sales.month, 'IQD')}`
+    ...(b.cash ? [`🏦 ${t('br_cashNow')}: ${text(b.cash.total, on)}`] : []),
+    ...(b.flow ? [`⬇️ ${t('br_moneyIn')}: ${text(b.flow.in, on)}   ⬆️ ${t('br_moneyOut')}: ${text(b.flow.out, on)}`] : []),
+    `📅 ${t('br_salesMonth')}: ${text(b.sales.month, on)}`
   ];
   if (b.topItems.length) {
     lines.push('', `⭐ ${t('br_topItems')}:`);
@@ -52,9 +62,9 @@ export function briefText(i18n: I18n, b: BriefView): string {
   }
   if (b.lateCustomers.length) {
     lines.push('', `⏰ ${t('br_lateCustomers')}:`);
-    for (const c of b.lateCustomers.slice(0, 5)) lines.push(`• ${c.name} — ${i18n.money(c.balance, 'IQD')} (${t('br_days', { n: i18n.int(c.oldestDays) })})`);
+    for (const c of b.lateCustomers.slice(0, 5)) lines.push(`• ${c.name} — ${owedText(i18n, text, c, b.date)} (${t('br_days', { n: i18n.int(c.oldestDays) })})`);
   }
-  if (b.installments.overdue.length) lines.push('', `📌 ${t('br_installmentsLate')}: ${i18n.int(b.installments.overdue.length)} · ${moneyBoth(i18n, b.installments.overdueTotal)}`);
+  if (b.installments.overdue.length) lines.push('', `📌 ${t('br_installmentsLate')}: ${i18n.int(b.installments.overdue.length)} · ${text(b.installments.overdueTotal, on)}`);
   if (b.installments.dueTomorrow.length) lines.push(`🗓️ ${t('br_dueTomorrow')}: ${i18n.int(b.installments.dueTomorrow.length)}`);
   lines.push(...chequeBriefLines(i18n, b.cheques));
   if (b.lowStock.length) lines.push('', `📦 ${t('br_lowStock')}: ${b.lowStock.slice(0, 5).map((s) => i18n.name(s.name)).join('، ')}`);
@@ -64,7 +74,7 @@ export function briefText(i18n: I18n, b: BriefView): string {
   return lines.join('\n');
 }
 
-export function Stat({ label, value, sub, color, icon }: { label: string; value: string; sub?: ReactNode; color?: string; icon: string }) {
+export function Stat({ label, value, sub, color, icon }: { label: string; value: ReactNode; sub?: ReactNode; color?: string; icon: string }) {
   return (
     <div className="card pad tile">
       <div className="label"><span className="ico"><Icon name={icon} size={18} /></span>{label}</div>
@@ -103,16 +113,18 @@ export function Brief() {
   // without one copies or prints the brief (the server refuses them the setting)
   const canSetPhone = useMay()('briefSettings');
   const hasPhone = !!b && !!whatsappNumber(b.ownerPhone);
+  // the copy and the message carry the amounts as the page shows them (dinar and dollar when chosen)
+  const amountText = useAmountText();
 
   async function copy() {
     if (!b) return;
-    toast(await copyText(briefText(i18n, b)) ? t('br_copied') : t('br_copyFailed'));
+    toast(await copyText(briefText(i18n, b, amountText)) ? t('br_copied') : t('br_copyFailed'));
   }
 
   function send() {
     if (!b) return;
     if (!whatsappNumber(b.ownerPhone)) { if (canSetPhone) setPhoneModal(true); return; }
-    openWhatsApp(b.ownerPhone, briefText(i18n, b));
+    openWhatsApp(b.ownerPhone, briefText(i18n, b, amountText));
   }
 
   const pct = b ? change(b.sales.today, b.sales.sameDayLastWeek) : null;
@@ -143,16 +155,17 @@ export function Brief() {
           </header>
 
           <div className="grid-4">
-            <Stat icon="trend" label={t('br_salesToday')} value={i18n.money(b.sales.today, 'IQD')}
+            <Stat icon="trend" label={t('br_salesToday')} value={<Amount value={b.sales.today} date={b.date} />}
               color={accent}
               sub={<>
                 {t('br_invoicesCount', { n: i18n.int(b.sales.invoices) })}
                 {pct !== null && <> · <span style={{ color: pct >= 0 ? good : bad, fontWeight: 600 }}>{pct >= 0 ? '▲' : '▼'} {i18n.int(Math.abs(pct))}%</span> {t('br_vsLastWeek')}</>}
               </>} />
-            {b.cash && <Stat icon="wallet" label={t('br_cashNow')} value={moneyBoth(i18n, b.cash.total)} sub={t('br_cashAccounts', { n: i18n.int(b.cash.accounts.length) })} />}
-            {b.flow && <Stat icon="plus" label={t('br_moneyIn')} value={i18n.money(b.flow.in, 'IQD')} color={good} sub={`${t('br_moneyOut')}: ${i18n.money(b.flow.out, 'IQD')}`} />}
-            <Stat icon="chart" label={t('br_salesMonth')} value={i18n.money(b.sales.month, 'IQD')} sub={`${t('br_receivables')}: ${i18n.money(b.receivables, 'IQD')}`} />
+            {b.cash && <Stat icon="wallet" label={t('br_cashNow')} value={<Amount value={b.cash.total} date={b.date} />} sub={t('br_cashAccounts', { n: i18n.int(b.cash.accounts.length) })} />}
+            {b.flow && <Stat icon="plus" label={t('br_moneyIn')} value={<Amount value={b.flow.in} date={b.date} />} color={good} sub={<>{t('br_moneyOut')}: <Amount value={b.flow.out} date={b.date} inline /></>} />}
+            <Stat icon="chart" label={t('br_salesMonth')} value={<Amount value={b.sales.month} date={b.date} />} sub={<>{t('br_receivables')}: <OwedTotal owed={b.receivablesOwed} book={b.receivables} date={b.date} inline /></>} />
           </div>
+          <DualRateHint date={b.date} />
 
           <div className="grid-2" style={{ alignItems: 'start' }}>
             {b.cash && (
@@ -162,7 +175,7 @@ export function Brief() {
                     <li key={a.code} style={itemStyle}>
                       <span className="tree-code">{i18n.digitsOf(a.code)}</span>
                       <span style={{ flex: 1 }}>{i18n.name(a.name)}</span>
-                      <strong className="num">{moneyBoth(i18n, a.balance)}</strong>
+                      <strong className="num"><Amount value={a.balance} date={b.date} /></strong>
                     </li>
                   ))}
                 </ul>
@@ -175,7 +188,7 @@ export function Brief() {
                   <li key={it.itemId} style={itemStyle}>
                     <span className="count" style={{ minWidth: 24, textAlign: 'center' }}>{i18n.int(n + 1)}</span>
                     <span style={{ flex: 1 }}><a href={href(`item/${it.itemId}`)}>{i18n.name(it.name)}</a> <span className="small muted">×{i18n.digitsOf(String(it.qtyMilli / 1000))}</span></span>
-                    <strong className="num">{i18n.money(it.sales, 'IQD')}</strong>
+                    <strong className="num"><Amount value={it.sales} date={b.date} /></strong>
                   </li>
                 ))}
               </ul>
@@ -191,10 +204,11 @@ export function Brief() {
                         <a href={href(`party/${c.partyId}`)}>{c.name}</a>
                         <span className="small" style={{ display: 'block', color: c.oldestDays > 90 ? bad : 'inherit' }}>{t('br_owesSince', { n: i18n.int(c.oldestDays) })}</span>
                       </span>
-                      <strong className="num">{i18n.money(c.balance, 'IQD')}</strong>
+                      <strong className="num"><OwedTotal owed={c.owed} book={c.balance} date={b.date} /></strong>
                       {wa && (
+                        // (the reminder names the amount as the row shows it: the real dinars and dollars when converted)
                         <a className="btn small no-print" target="_blank" rel="noopener noreferrer"
-                          href={whatsappUrl(c.phone, t('br_remindText', { company: i18n.name(b.company), amount: i18n.money(c.balance, 'IQD') }))}>
+                          href={whatsappUrl(c.phone, t('br_remindText', { company: i18n.name(b.company), amount: owedText(i18n, amountText, c, b.date) }))}>
                           {t('br_remind')}
                         </a>
                       )}
@@ -267,6 +281,7 @@ export function Brief() {
             </Section>
           </div>
           <p className="small muted">{t('br_onlyPosted')}</p>
+          <DualNote date={b.date} />
         </>
       )}
       {phoneModal && canSetPhone && (
@@ -274,7 +289,7 @@ export function Brief() {
           onSaved={(phone) => {
             setPhoneModal(false);
             reload();
-            if (b && whatsappNumber(phone)) openWhatsApp(phone, briefText(i18n, b));
+            if (b && whatsappNumber(phone)) openWhatsApp(phone, briefText(i18n, b, amountText));
           }} />
       )}
     </div>

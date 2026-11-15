@@ -18,6 +18,8 @@ vi.mock('../components.tsx', () => ({
 }));
 vi.mock('../i18n.ts', () => ({ useI18n: () => ({ t: (s: string) => s, money: String, date: String, name: () => '' }) }));
 vi.mock('../router.ts', () => ({ go: () => {}, href: (s: string) => s }));
+// (the dinar-and-dollar amounts need React's context: here the totals are plain elements like the rest)
+vi.mock('../Amount.tsx', () => ({ Amount: 'Amount', DualRateHint: 'DualRateHint' }));
 vi.mock('../industry/printing.ts', () => ({ printDocument: () => {} }));
 vi.mock('../api.ts', () => ({
   api: { trialBalance: (from?: string, to?: string) => { fixture.asked.push([from, to]); return Promise.resolve(null); } }

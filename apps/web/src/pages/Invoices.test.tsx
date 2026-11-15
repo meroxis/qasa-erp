@@ -88,6 +88,8 @@ vi.mock('../i18n.ts', () => ({ useI18n: () => ({
   t: (s: string) => s, name: (n: { en: string }) => n.en, int: String, money: String, digitsOf: String, lang: 'en'
 }) }));
 vi.mock('../router.ts', () => ({ go: vi.fn(), href: (s: string) => s }));
+// (the dinar-and-dollar amounts need React's context: here the totals are plain elements like the rest)
+vi.mock('../Amount.tsx', () => ({ Amount: 'Amount', DualRateHint: 'DualRateHint' }));
 vi.mock('./Parties.tsx', () => ({ InvoicesTable: 'InvoicesTable' }));
 vi.mock('./Items.tsx', () => ({ averageCost: () => 0, qtyText: String, unitName: (_: unknown, unit: string) => unit }));
 

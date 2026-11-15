@@ -7,6 +7,7 @@ import { batchesApi } from '../industry/batches-api.ts';
 import { brandLabel, brandsApi, categoriesApi, categoryLabel, type BrandView, type CategoryView } from '../industry/categories-api.ts';
 import { BrandForm, BrandPicker, CategoryOptions, countryName, StarterListButton } from '../industry/CatalogPickers.tsx';
 import { ReorderList } from '../industry/ReorderList.tsx';
+import { Amount, DualRateHint } from '../Amount.tsx';
 import { ExpiryChip } from './Expiry.tsx';
 import { useI18n, type I18n, isKey, type Key } from '../i18n.ts';
 import { go, href } from '../router.ts';
@@ -145,6 +146,7 @@ export function Items({ tab: initialTab }: { tab?: 'reorder' | 'warehouses' } = 
               <ErrorBox error={bulkError} />
             </div>
           )}
+          <DualRateHint />
           <ErrorBox error={items.error} />
           <div className="card">
             {items.data && items.data.length === 0 && (q.trim() || warehouseId || categoryId || brandId
@@ -189,8 +191,8 @@ export function Items({ tab: initialTab }: { tab?: 'reorder' | 'warehouses' } = 
                         {it.trackStock && it.units.length > 0 && it.qtyMilli > 0 && <div className="muted small">{inUnits(i18n, it, it.qtyMilli)}</div>}
                       </td>
                       {cost && <td className="amount">{it.trackStock && it.qtyMilli > 0 ? i18n.money(averageCost(it.qtyMilli, it.value ?? 0), 'IQD') : ''}</td>}
-                      {cost && <td className="amount">{it.trackStock ? i18n.money(it.value ?? 0, 'IQD') : ''}</td>}
-                      <td className="amount">{i18n.money(it.salePrice, it.saleCurrency)}</td>
+                      {cost && <td className="amount">{it.trackStock ? <Amount value={it.value ?? 0} /> : ''}</td>}
+                      <td className="amount"><Amount value={it.salePrice} currency={it.saleCurrency} /></td>
                       <td>
                         {can('item') && (
                           <button type="button" className="btn icon ghost" title={t('actEdit')} aria-label={t('actEdit')} onClick={(e) => { e.stopPropagation(); setEditing(it); }}>
@@ -203,7 +205,7 @@ export function Items({ tab: initialTab }: { tab?: 'reorder' | 'warehouses' } = 
                 </tbody>
                 {cost && (
                   <tfoot>
-                    <tr><td /><td /><td>{t('total')}</td><td /><td /><td className="amount">{i18n.money(totalValue, 'IQD')}</td><td /><td /></tr>
+                    <tr><td /><td /><td>{t('total')}</td><td /><td /><td className="amount"><Amount value={totalValue} /></td><td /><td /></tr>
                   </tfoot>
                 )}
               </table>
@@ -230,7 +232,7 @@ export function Items({ tab: initialTab }: { tab?: 'reorder' | 'warehouses' } = 
                       <td><span className="tree-code">{w.code}</span></td>
                       <td>{i18n.name(w.name)}</td>
                       <td>{books ? <a href={href(`statement/${w.accountCode}`)} className="ltr">{w.accountCode}</a> : <span className="ltr">{w.accountCode}</span>}</td>
-                      {cost && <td className="amount">{i18n.money(w.value ?? 0, 'IQD')}</td>}
+                      {cost && <td className="amount"><Amount value={w.value ?? 0} /></td>}
                     </tr>
                   ))}
                 </tbody>
@@ -808,7 +810,7 @@ export function ItemDetail({ id }: { id: string }) {
           <div className="stack" style={{ gap: 6, minWidth: 0 }}>
             <div className="label"><span className="ltr">{it.code}</span>{it.barcode && <> · <span className="ltr">{it.barcode}</span></>}</div>
             <div className="value" style={{ fontSize: 20, whiteSpace: 'normal' }}>{i18n.name(it.name)}</div>
-            <div className="muted small">{t('salePrice')}: {i18n.money(it.salePrice, it.saleCurrency)} / {unitName(i18n, it.unit)}</div>
+            <div className="muted small">{t('salePrice')}: <Amount value={it.salePrice} currency={it.saleCurrency} inline /> / {unitName(i18n, it.unit)}</div>
           </div>
         </div>
         <div className="card pad tile">
@@ -820,7 +822,7 @@ export function ItemDetail({ id }: { id: string }) {
           <div className="card pad tile">
             <div className="label">{t('avgCost')}</div>
             <div className="value num" style={{ fontSize: 18 }}>{it.trackStock ? i18n.money(averageCost(it.qtyMilli, it.value), 'IQD') : '—'}</div>
-            {it.trackStock && <div className="muted small">{t('stockValue')}: {i18n.money(it.value, 'IQD')}</div>}
+            {it.trackStock && <div className="muted small">{t('stockValue')}: <Amount value={it.value} inline /></div>}
           </div>
         )}
       </div>

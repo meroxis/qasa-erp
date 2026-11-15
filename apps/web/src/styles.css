@@ -1329,6 +1329,22 @@ a.fx-chip:focus-visible { outline: 2px solid var(--focus-outer); outline-offset:
 /* (with the line that sets it apart from the person's name) */
 @media screen and (max-width: 900px) { .fx-chip, .fx-chip + .topbar-sep { display: none; } }
 
+/* dinar and dollar (Amount.tsx): the second figure, marked "≈", smaller and quieter under the first (or after it in a
+   line of text). The amount itself is isolated left to right, so its digits and "$" never mix with the text around it;
+   the "≈" before it follows the page, so in Arabic and Kurdish it stands on the right ("$954.20 ≈", read from the
+   right as "≈ $954.20"). Every ≈ figure (tiles, chart, till) is built by dualLineText, so it sits the same everywhere */
+.dual { display: inline-flex; flex-direction: column; align-items: flex-start; gap: 1px; vertical-align: top; max-inline-size: 100%; }
+.amount .dual, .totals .dual { align-items: flex-end; }
+.dual-first, .dual-second { unicode-bidi: isolate; }
+.dual-first { white-space: normal; }
+.dual-part, .dual-second { white-space: nowrap; }
+.dual-second { font-size: 0.78em; font-weight: 500; color: var(--ink-3); cursor: help; }
+.dual.inline { display: inline; }
+.dual.inline .dual-second { margin-inline-start: 0.5em; }
+.dual-hint { margin-block: calc(var(--sp-2) * -1) 0; }
+.dual-hint a { color: var(--ink-3); }
+@media print { .dual-second { color: #555; } }
+
 /* Settings: a card's heading that only repeats the open section's name is kept for screen readers, not drawn */
 .settings-repeat-title { position: absolute !important; inline-size: 1px; block-size: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
 /* what stood beside that heading (the guide link) keeps to the card's far corner instead of a row of its own */

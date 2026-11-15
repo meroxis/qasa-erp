@@ -1,4 +1,5 @@
 export * from './money.ts';
+export * from './dual.ts';
 export * from './words.ts';
 export * from './lang.ts';
 export * from './dates.ts';

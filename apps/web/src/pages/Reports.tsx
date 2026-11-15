@@ -5,6 +5,7 @@ import { AccountCombo, ErrorBox, Icon, downloadCsv, useData, useLoad } from '../
 import { useI18n } from '../i18n.ts';
 import { go, href } from '../router.ts';
 import { printDocument } from '../industry/printing.ts';
+import { Amount, DualRateHint } from '../Amount.tsx';
 
 export function yearStart(fiscalYearStart: string | undefined): string {
   const today = todayIso();
@@ -67,6 +68,7 @@ export function TrialBalance() {
         <button type="button" className="btn" onClick={() => void printDocument('report')}><Icon name="printer" size={16} />{t('print')}</button>
       </div>
       <div className="muted small">{t('onlyPosted')} {t('tbOpeningHelp')}</div>
+      <DualRateHint />
       {reversed && <div className="alert bad" role="alert">{t('err_date_range_reversed')}</div>}
       <ErrorBox error={error} />
       {data && !reversed && (
@@ -109,12 +111,13 @@ export function TrialBalance() {
                 <tfoot>
                   <tr>
                     <td /><td>{t('totals')}</td>
-                    <td className="amount">{i18n.money(data.openingDebitTotal, 'IQD')}</td>
-                    <td className="amount">{i18n.money(data.openingCreditTotal, 'IQD')}</td>
-                    <td className="amount">{i18n.money(data.totalDebit, 'IQD')}</td>
-                    <td className="amount">{i18n.money(data.totalCredit, 'IQD')}</td>
-                    <td className="amount">{i18n.money(data.balanceDebitTotal, 'IQD')}</td>
-                    <td className="amount">{i18n.money(data.balanceCreditTotal, 'IQD')}</td>
+                    {/* dinar and dollar: the opening at the rate of the first day, the movement and the closing at the last day's */}
+                    <td className="amount"><Amount value={data.openingDebitTotal} date={from} /></td>
+                    <td className="amount"><Amount value={data.openingCreditTotal} date={from} /></td>
+                    <td className="amount"><Amount value={data.totalDebit} date={to} /></td>
+                    <td className="amount"><Amount value={data.totalCredit} date={to} /></td>
+                    <td className="amount"><Amount value={data.balanceDebitTotal} date={to} /></td>
+                    <td className="amount"><Amount value={data.balanceCreditTotal} date={to} /></td>
                   </tr>
                 </tfoot>
               </table>

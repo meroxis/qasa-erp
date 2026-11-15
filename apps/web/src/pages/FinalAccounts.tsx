@@ -6,6 +6,7 @@ import { isKey, useI18n, type I18n, type Key } from '../i18n.ts';
 import { href } from '../router.ts';
 import { PeriodPicker, yearStart } from './Reports.tsx';
 import { printDocument } from '../industry/printing.ts';
+import { Amount, DualRateHint } from '../Amount.tsx';
 
 /** Financial-statement style: losses and deductions in parentheses. */
 function amountText(i18n: I18n, value: number): string {
@@ -72,6 +73,7 @@ export function FinalAccounts() {
         )}
       </div>
       <div className="muted small no-print">{t('finalAccountsNote')}{!canExport && <> {t('exportNeedsPro')}</>}</div>
+      <DualRateHint />
       <ErrorBox error={error} />
 
       {data && (
@@ -97,7 +99,8 @@ export function FinalAccounts() {
                       return (
                         <tr key={r.id} className={'fa-subtotal' + (r.id === 'netResult' ? ' fa-result' : '')}>
                           <td>{rowLabel(t, r.id)}{r.id === 'netResult' && r.amount < 0 && <span className="chip bad" style={{ marginInlineStart: 8 }}>{t('loss')}</span>}</td>
-                          <td className="amount">{amountText(i18n, r.amount)}</td>
+                          {/* (dinar and dollar: the totals at the rate of the period's last day) */}
+                          <td className="amount"><Amount value={r.amount} date={data.to} parens /></td>
                         </tr>
                       );
                     }
@@ -127,11 +130,11 @@ export function FinalAccounts() {
             </div>
             <div className="grid-2 fa-balance">
               <BalanceSide
-                title={t('bs_assets')} groups={data.balanceSheet.assets} details={details} i18n={i18n}
+                title={t('bs_assets')} groups={data.balanceSheet.assets} details={details} i18n={i18n} date={data.to}
                 total={data.balanceSheet.totalAssets} totalLabel={t('bs_totalAssets')}
               />
               <BalanceSide
-                title={t('bs_liabilities')} groups={data.balanceSheet.liabilities} details={details} i18n={i18n}
+                title={t('bs_liabilities')} groups={data.balanceSheet.liabilities} details={details} i18n={i18n} date={data.to}
                 total={data.balanceSheet.totalLiabilities} totalLabel={t('bs_totalLiabilities')}
                 extra={[
                   ...(data.balanceSheet.priorResult ? [{ label: t('bs_priorResult'), amount: data.balanceSheet.priorResult }] : []),
@@ -156,8 +159,8 @@ function DetailRow({ d, value, i18n }: { d: NamedAmount; value: number; i18n: I1
   );
 }
 
-function BalanceSide({ title, groups, details, i18n, total, totalLabel, extra = [] }: {
-  title: string; groups: (NamedAmount & { details: NamedAmount[] })[]; details: boolean; i18n: I18n;
+function BalanceSide({ title, groups, details, i18n, date, total, totalLabel, extra = [] }: {
+  title: string; groups: (NamedAmount & { details: NamedAmount[] })[]; details: boolean; i18n: I18n; date: string;
   total: number; totalLabel: string; extra?: { label: string; amount: number }[];
 }) {
   const { t } = i18n;
@@ -174,7 +177,7 @@ function BalanceSide({ title, groups, details, i18n, total, totalLabel, extra = 
         {extra.map((x) => <tr key={x.label}><td>{x.label}</td><td className="amount">{amountText(i18n, x.amount)}</td></tr>)}
         {groups.length === 0 && extra.length === 0 && <tr><td colSpan={2} className="muted">{t('noData')}</td></tr>}
       </tbody>
-      <tfoot><tr><td>{totalLabel}</td><td className="amount">{amountText(i18n, total)}</td></tr></tfoot>
+      <tfoot><tr><td>{totalLabel}</td><td className="amount"><Amount value={total} date={date} parens /></td></tr></tfoot>
     </table>
   );
 }

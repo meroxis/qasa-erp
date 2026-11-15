@@ -168,12 +168,35 @@ export interface PrintEnv {
  */
 export type PrintResult = 'printed' | 'dialog' | 'failed' | 'busy';
 
+/** What a paper on the page still waits for before it may print (holdPrint). */
+const holds = new Set<Promise<void>>();
+
+/**
+ * A paper on the page waits for this before it prints (the dollar rate of its date, for the design's "other-currency
+ * equivalent"): printDocument waits for every hold, a few seconds at most, and then for the page to draw the answer.
+ * Print pressed right after opening the paper so prints what the screen is about to show, not a placeholder.
+ */
+export function holdPrint(work: Promise<unknown>): void {
+  const done: Promise<void> = work.then(() => undefined, () => undefined);
+  holds.add(done);
+  void done.then(() => { holds.delete(done); });
+}
+
+/** Waits for the holds (true when there were any), `maxMs` at the latest. */
+export async function printHolds(maxMs = 3_000): Promise<boolean> {
+  if (!holds.size) return false;
+  await Promise.race([Promise.all([...holds]), new Promise<void>((resolve) => { setTimeout(resolve, maxMs); })]);
+  return true;
+}
+
 export async function printDocument(kind: PrintKind, env: Partial<PrintEnv> & { labelLayout?: LabelLayout } = {}): Promise<PrintResult> {
   const desktop = env.desktop !== undefined ? env.desktop : desktopPrinters();
   const dialog = env.dialog ?? (() => window.print());
   const notify = env.notify ?? noticePage;
   const mark = env.markPaper ?? markPaper;
   const paint = env.paint ?? afterPaint;
+  // a paper still reading something it shows (holdPrint): its answer first, then a frame for it to be drawn
+  if (await printHolds()) { try { await paint(); } catch { /* print anyway */ } }
   /** says why the print window opens, and lets that show before the window stops the page */
   const tellThenDialog = async (notice: PrintNotice) => {
     notify(notice);
