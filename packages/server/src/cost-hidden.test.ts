@@ -376,7 +376,8 @@ describe('cost, stock value and profit, by who asks', () => {
     // the company's money is not theirs to read: no balance of a safe or a bank, no money in and out, no expenses,
     // under any address they can ask. Other things have a balance, and stay: what a customer or a supplier owes (the
     // parties, their statements, the aging report, the brief's late customers), an item's stock, loyalty points
-    const notMoney = /^\/api\/(parties|brief\/reports\/aging|items|loyalty)[/ ]|^\/api\/brief \.lateCustomers\[\]\.balance$/;
+    // (the brief's customers who owe the most, phone app 1.1: what customers owe, as its late customers)
+    const notMoney = /^\/api\/(parties|brief\/reports\/aging|items|loyalty)[/ ]|^\/api\/brief \.(lateCustomers|topDebtors)\[\]\.balance$/;
     const money = answers.flatMap((a) => [...a.paths].filter((p) => /balance|flow|expenses/i.test(p.split('.').pop()!)).map((p) => `${a.route} ${p}`));
     expect(money.filter((p) => !notMoney.test(p))).toEqual([]);
     // what the till needs stays: the safes by name (to pick one), and the day close's sales and debts (1.4.1: of the

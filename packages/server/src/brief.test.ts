@@ -3,7 +3,7 @@ import type { FastifyInstance } from 'fastify';
 import { addDays, todayIso } from '@qasa/core';
 import { openDatabase, type Db } from './db.ts';
 import { buildApp } from './app.ts';
-import { briefApi, dashboard } from './brief.ts';
+import { briefApi, dailyBrief, dashboard } from './brief.ts';
 
 let db: Db;
 let app: FastifyInstance;
@@ -127,6 +127,35 @@ describe('the Daily Brief', () => {
     expect(b.installments.dueTomorrow).toEqual([expect.objectContaining({ amount: 100_000, dueDate: '2026-10-16' })]);
     // after the reversal only the second collection counts
     expect((await get('/api/brief?date=2026-10-25')).json().installments.overdue).toEqual([expect.objectContaining({ amount: 200_000, dueDate: '2026-09-15' })]);
+  });
+
+  it('names the five customers who owe the most, largest first, as the ageing ranks them (phone app 1.1)', async () => {
+    await invoice({ kind: 'purchase', date: '2026-07-01', partyId: supplierId, payment: 'credit', lines: ac(20, 100_000) });
+    // seven customers owe; two of them the same
+    const owed = [['North Market', 100_000], ['Grand Store', 700_000], ['City Pharmacy', 300_000], ['Blue Kitchen', 300_000], ['Green Garden', 500_000], ['Star Electronics', 200_000], ['River Bakery', 600_000]] as const;
+    for (const [name, price] of owed) {
+      const partyId = (await post('/api/parties', { type: 'customer', name })).json().id;
+      await invoice({ kind: 'sale', date: '2026-10-01', partyId, payment: 'credit', lines: ac(1, price) });
+    }
+    const b = (await get(`/api/brief?date=${DAY}`)).json();
+    expect(b.topDebtors.map((r: { balance: number }) => r.balance)).toEqual([700_000, 600_000, 500_000, 300_000, 300_000]);
+    // a tie keeps the ageing's own order; each row is the ageing's row (what is owed in each currency, and how old)
+    const aging = (await get(`/api/brief/reports/aging?type=customer&date=${DAY}`)).json().rows as { name: string }[];
+    expect(b.topDebtors).toEqual(aging.slice(0, 5));
+    expect(b.topDebtors[0]).toMatchObject({ name: 'Grand Store', balance: 700_000, oldestDays: 14, owed: { IQD: 700_000, USD: 0 } });
+    // before any of it: nobody
+    expect((await get('/api/brief?date=2026-09-30')).json().topDebtors).toEqual([]);
+  });
+
+  it('counts the branch\'s own debts in the customers who owe the most', async () => {
+    await seed();
+    const company = dailyBrief(db, DAY);
+    expect(company.topDebtors.map((r) => [r.name, r.balance])).toEqual([['Late Ltd', 900_000], ['Bazaar Trading Company', 500_000]]);
+    // a branch with this warehouse's sales and none of the safes: the debts its sales made, not the receipt into 1811
+    expect(dailyBrief(db, DAY, { warehouses: [warehouseId], accounts: [] }).topDebtors.map((r) => [r.name, r.balance]))
+      .toEqual([['Late Ltd', 900_000], ['Bazaar Trading Company', 850_000]]);
+    // a branch with nothing of its own owes nothing
+    expect(dailyBrief(db, DAY, { warehouses: [], accounts: [] }).topDebtors).toEqual([]);
   });
 
   it('refuses a bad date and keeps the owner’s number', async () => {

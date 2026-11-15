@@ -30,6 +30,7 @@ import { createReturn } from './returns.ts';
 import { cancelStockDoc, createStockDoc, deleteStockDoc, getStockDoc, listStockDocs, postStockDoc, updateStockDoc } from './stock-docs.ts';
 import { onceOnly } from './idempotency.ts';
 import { BOOKS_HEADER, booksId } from './outbox.ts';
+import { seenBody, whenSeen } from './entry-seen.ts';
 
 const isoDate = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
 const period = z.string().regex(/^\d{4}-(0[1-9]|1[0-2])$/);
@@ -486,9 +487,19 @@ export function apiRoutes(db: Db, options: { demo?: boolean; extensions?: readon
     deleteEntry(db, parse(z.object({ id: z.string() }), req.params).id, userOf(req));
     return reply.status(204).send();
   });
-  app.post('/api/entries/:id/check', async (req) => checkEntry(db, parse(z.object({ id: z.string() }), req.params).id, userOf(req), actorOf(req).id));
-  app.post('/api/entries/:id/return', async (req) => returnEntry(db, parse(z.object({ id: z.string() }), req.params).id, userOf(req)));
-  app.post('/api/entries/:id/approve', async (req) => approveEntry(db, parse(z.object({ id: z.string() }), req.params).id, userOf(req), actorOf(req).id));
+  // `seen` (phone app 1.1): the entry as the asker saw it; changed since, nothing is done (entry-seen.ts)
+  app.post('/api/entries/:id/check', async (req) => {
+    const { id } = parse(z.object({ id: z.string() }), req.params);
+    return whenSeen(db, id, parse(seenBody, req.body ?? {}).seen, () => checkEntry(db, id, userOf(req), actorOf(req).id));
+  });
+  app.post('/api/entries/:id/return', async (req) => {
+    const { id } = parse(z.object({ id: z.string() }), req.params);
+    return whenSeen(db, id, parse(seenBody, req.body ?? {}).seen, () => returnEntry(db, id, userOf(req)));
+  });
+  app.post('/api/entries/:id/approve', async (req) => {
+    const { id } = parse(z.object({ id: z.string() }), req.params);
+    return whenSeen(db, id, parse(seenBody, req.body ?? {}).seen, () => approveEntry(db, id, userOf(req), actorOf(req).id));
+  });
   app.post('/api/entries/:id/reverse', async (req) => {
     const { id } = parse(z.object({ id: z.string() }), req.params);
     const body = parse(z.object({ date: isoDate.optional() }), req.body ?? {});

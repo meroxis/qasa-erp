@@ -1,3 +1,5 @@
+import { OWNER_T } from './owner/i18n';
+
 /** Every text of the phone app in Arabic, English and Kurdish (Sorani), in that order, like the desktop app. */
 export type Lang = 'ar' | 'en' | 'ku';
 export const LANGS: Lang[] = ['ar', 'en', 'ku'];
@@ -5,7 +7,7 @@ export const isRtl = (lang: Lang) => lang !== 'en';
 /** Each language's own name, for the language switch. */
 export const LANG_NAMES: Record<Lang, string> = { ar: 'العربية', en: 'English', ku: 'کوردی' };
 
-const T = {
+const BASE = {
   appName: ['قاصة ERP', 'Qasa ERP', 'قاسە ERP'],
   welcome: ['امسح، اعرف السعر والمخزون، وبِع واستلم — من هاتفك.', 'Scan, check prices and stock, sell and collect — from your phone.', 'بارکۆد بخوێنەوە، نرخ و ماوەی کۆگا ببینە، بفرۆشە و پارە وەربگرە — لە مۆبایلەکەتەوە.'],
 
@@ -292,8 +294,30 @@ const T = {
   stale: ['ساعة الهاتف غير مضبوطة. صحّح الوقت والتاريخ.', 'The phone\'s clock is off. Fix the time and date.', 'کاتژمێری مۆبایل ڕێک نییە. کات و بەروار ڕاست بکەرەوە.'],
   tampered: ['لم يثبت الحاسوب هويته بمفتاحه المسجّل. تأكد أنك على شبكة المكتب الصحيحة.', 'The PC did not prove itself with its paired key. Make sure this is the right office network.', 'کۆمپیوتەرەکە بە کلیلە تۆمارکراوەکەی خۆی نەسەلماند. دڵنیابە کە ئەمە تۆڕی ڕاستی نووسینگەیە.'],
   error: ['حدث خطأ:', 'Something went wrong:', 'هەڵەیەک ڕوویدا:'],
-  validation: ['رفض الحاسوب البيانات. تحقق منها وحاول مجدداً.', 'The PC refused the details. Check them and try again.', 'کۆمپیوتەرەکە زانیارییەکانی ڕەتکردەوە. بیانپشکنە و دووبارە هەوڵ بدەرەوە.']
+  validation: ['رفض الحاسوب البيانات. تحقق منها وحاول مجدداً.', 'The PC refused the details. Check them and try again.', 'کۆمپیوتەرەکە زانیارییەکانی ڕەتکردەوە. بیانپشکنە و دووبارە هەوڵ بدەرەوە.'],
+
+  // ——— phone app 1.1: what the office offers, and its refusals (explain.ts) ———
+  officeOld: ['لا يقبل حاسوب المكتب هذا من الهاتف. قد يحتاج تحديث قاصة على ذلك الحاسوب.', 'The office PC doesn\'t take this from a phone. Qasa ERP on that PC may need an update.', 'کۆمپیوتەری نووسینگە ئەمە لە مۆبایلەوە وەرناگرێت. لەوانەیە قاسە لەسەر ئەو کۆمپیوتەرە پێویستی بە نوێکردنەوە هەبێت.'],
+  phoneRefused: ['لا يقبل حاسوب المكتب هذا من هذا الهاتف.', 'The office PC doesn\'t take this from this phone.', 'کۆمپیوتەری نووسینگە ئەمە لەم مۆبایلەوە وەرناگرێت.'],
+  tooLarge: ['هذا أكبر من أن يُعرض على الهاتف. افتحه على الحاسوب.', 'This is too much to show on a phone. Open it on the PC.', 'ئەمە زۆرە بۆ پیشاندان لەسەر مۆبایل. لەسەر کۆمپیوتەر بیکەرەوە.'],
+  officeUpdate: ['حدّث قاصة على حاسوب المكتب إلى آخر إصدار لتستخدم من الهاتف: {f}', 'Update Qasa ERP on the office PC to the latest version to use from the phone: {f}', 'قاسە لەسەر کۆمپیوتەری نووسینگە بۆ دوایین وەشان نوێ بکەرەوە بۆ ئەوەی لە مۆبایلەوە ئەمانە بەکاربهێنیت: {f}'],
+  needsOnline: ['يحتاج هذا اتصالاً بحاسوب المكتب.', 'This needs a connection to the office PC.', 'ئەمە پێویستی بە پەیوەندی لەگەڵ کۆمپیوتەری نووسینگە هەیە.'],
+  today: ['اليوم', 'Today', 'ئەمڕۆ'],
+  yesterday: ['أمس', 'Yesterday', 'دوێنێ'],
+  date: ['التاريخ', 'Date', 'بەروار'],
+  featApprovals: ['الموافقة على السندات', 'approving vouchers', 'پەسەندکردنی سەنەدەکان'],
+  featRate: ['سعر الدولار', 'the dollar rate', 'نرخی دۆلار'],
+  featDayClose: ['إغلاق اليوم', 'the end of day', 'داخستنی ڕۆژ'],
+  featExpense: ['المصاريف مع صورة الوصل', 'expenses with a photo of the receipt', 'خەرجی لەگەڵ وێنەی وەسڵ'],
+  featShare: ['إرسال الفواتير وكشوف الحساب', 'sending invoices and statements', 'ناردنی پسوولە و کەشفی هەژمار'],
+  featTransfer: ['المناقلة بين المخازن', 'moving stock between warehouses', 'گواستنەوەی کاڵا لە نێوان کۆگاکان'],
+  featReceive: ['استلام البضاعة', 'receiving goods', 'وەرگرتنی کاڵا']
 } as const satisfies Record<string, readonly [string, string, string]>;
+
+/** Every text: the app's own, and phone app 1.1's for the owner and the managers (owner/i18n.ts). A key is in one only (a test). */
+const T = { ...BASE, ...OWNER_T };
+/** The keys of each part of T, for that test. */
+export const TEXT_PARTS: Record<'base' | 'owner', readonly string[]> = { base: Object.keys(BASE), owner: Object.keys(OWNER_T) };
 
 export type Key = keyof typeof T;
 export const KEYS = Object.keys(T) as Key[];

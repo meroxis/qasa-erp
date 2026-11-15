@@ -24,7 +24,12 @@ export type Route =
   | { name: 'more' }
   | { name: 'outbox' }
   | { name: 'security' }
-  | { name: 'about' };
+  | { name: 'about' }
+  // phone app 1.1, the owner and the managers (screens/owner): pushed on the tab they are opened from
+  | { name: 'approvals' }
+  | { name: 'approval'; id: string }
+  | { name: 'rate' }
+  | { name: 'dayClose' };
 
 export interface NavState {
   tab: Tab;
