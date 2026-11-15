@@ -22,6 +22,14 @@ it('has words in three languages for each new relay refusal, the unprotected ser
     expect(new Set(texts).size, k).toBe(3);
     expect(texts.every((t) => t.trim() !== ''), k).toBe(true);
   }
+  // a website that connects on the office network pins the certificate: it needs the new code (through the relay, nothing)
+  for (const k of ['netNewCertHelp', 'netNewCertConfirm'] as Key[]) {
+    const [ar, english, ku] = all(k);
+    expect(english).toContain('A website that connects on the office network needs the new certificate code from Settings → Website API (through Qasa Relay nothing changes).');
+    expect(ar).toContain('ربط المواقع الإلكترونية');
+    expect(ku).toContain('بەستنەوەی ماڵپەڕ');
+  }
+  expect(all('netNewCertDone' as Key).every((t) => /website|الموقع|ماڵپەڕ/.test(t))).toBe(true);
   // the office network's switch says why it stays off when Windows can't protect the server key
   expect(errorMessages(new ApiError(409, 'network_secret_unprotected', null), en)).toEqual([en.t('err_network_secret_unprotected')]);
 });

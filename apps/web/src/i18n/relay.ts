@@ -42,16 +42,16 @@ export const RELAY_TEXT = {
   // 1.4.2: a new office certificate (the old key may be in a copy somewhere): every PC pairs again
   netNewCert: ['شهادة مكتب جديدة', 'New office certificate', 'بڕوانامەی نوێی نووسینگە'],
   netNewCertHelp: [
-    'إن كان مفتاح هذا الحاسوب قد نُسخ (نسخة قديمة من مجلد البرنامج، حاسوب قديم)، فاصنع شهادة جديدة: يتوقف المفتاح القديم عن العمل، وتتصل الحواسيب الأخرى من جديد برمز الاقتران الجديد. الهواتف لا تتأثر.',
-    'If this PC’s key may have been copied (an old copy of the app’s folder, an old PC), make a new certificate: the old key stops working, and the other PCs connect again with the new pairing code. Phones are not affected.',
-    'ئەگەر لەوانەیە کلیلی ئەم کۆمپیوتەرە کۆپی کرابێت (کۆپییەکی کۆنی بوخچەی بەرنامەکە، کۆمپیوتەرێکی کۆن)، بڕوانامەیەکی نوێ دروست بکە: کلیلە کۆنەکە لە کار دەکەوێت، و کۆمپیوتەرەکانی تر بە کۆدی پەیوەندیی نوێ دووبارە پەیوەندی دەکەنەوە. مۆبایلەکان کاریگەر نابن.'
+    'إن كان مفتاح هذا الحاسوب قد نُسخ (نسخة قديمة من مجلد البرنامج، حاسوب قديم)، فاصنع شهادة جديدة: يتوقف المفتاح القديم عن العمل، وتتصل الحواسيب الأخرى من جديد برمز الاقتران الجديد. الهواتف لا تتأثر. والموقع الإلكتروني الذي يتصل على شبكة المكتب يحتاج رمز الشهادة الجديد من الإعدادات ← ربط المواقع الإلكترونية (وعبر Qasa Relay لا يتغير شيء).',
+    'If this PC’s key may have been copied (an old copy of the app’s folder, an old PC), make a new certificate: the old key stops working, and the other PCs connect again with the new pairing code. Phones are not affected. A website that connects on the office network needs the new certificate code from Settings → Website API (through Qasa Relay nothing changes).',
+    'ئەگەر لەوانەیە کلیلی ئەم کۆمپیوتەرە کۆپی کرابێت (کۆپییەکی کۆنی بوخچەی بەرنامەکە، کۆمپیوتەرێکی کۆن)، بڕوانامەیەکی نوێ دروست بکە: کلیلە کۆنەکە لە کار دەکەوێت، و کۆمپیوتەرەکانی تر بە کۆدی پەیوەندیی نوێ دووبارە پەیوەندی دەکەنەوە. مۆبایلەکان کاریگەر نابن. ماڵپەڕێک کە لەسەر تۆڕی نووسینگە پەیوەندی دەکات پێویستی بە کۆدە نوێیەکەی بڕوانامە هەیە لە ڕێکخستنەکان ← بەستنەوەی ماڵپەڕ (لە ڕێی Qasa Relay ەوە هیچ ناگۆڕێت).'
   ],
   netNewCertConfirm: [
-    'ستصنع شهادة جديدة لهذا الحاسوب. كل حاسوب متصل به الآن يتوقف، وعلى كل واحد أن يتصل من جديد («ملف» ← «الاتصال بخادم المكتب…») برمز الاقتران الجديد. هل تتابع؟',
-    'This makes a new certificate for this PC. Every PC connected to it stops, and each must connect again (File → Connect to an office server…) with the new pairing code. Go on?',
-    'بڕوانامەیەکی نوێ بۆ ئەم کۆمپیوتەرە دروست دەکرێت. هەموو کۆمپیوتەرێکی پەیوەستکراو پێیەوە دەوەستێت، و هەریەکەیان دەبێت دووبارە پەیوەندی بکاتەوە («فایل» ← «پەیوەندی بە سێرڤەری نووسینگەوە…») بە کۆدی پەیوەندیی نوێ. بەردەوام دەبیت؟'
+    'ستصنع شهادة جديدة لهذا الحاسوب. كل حاسوب متصل به الآن يتوقف، وعلى كل واحد أن يتصل من جديد («ملف» ← «الاتصال بخادم المكتب…») برمز الاقتران الجديد. والموقع الإلكتروني الذي يتصل على شبكة المكتب يحتاج رمز الشهادة الجديد من الإعدادات ← ربط المواقع الإلكترونية (وعبر Qasa Relay لا يتغير شيء). هل تتابع؟',
+    'This makes a new certificate for this PC. Every PC connected to it stops, and each must connect again (File → Connect to an office server…) with the new pairing code. A website that connects on the office network needs the new certificate code from Settings → Website API (through Qasa Relay nothing changes). Go on?',
+    'بڕوانامەیەکی نوێ بۆ ئەم کۆمپیوتەرە دروست دەکرێت. هەموو کۆمپیوتەرێکی پەیوەستکراو پێیەوە دەوەستێت، و هەریەکەیان دەبێت دووبارە پەیوەندی بکاتەوە («فایل» ← «پەیوەندی بە سێرڤەری نووسینگەوە…») بە کۆدی پەیوەندیی نوێ. ماڵپەڕێک کە لەسەر تۆڕی نووسینگە پەیوەندی دەکات پێویستی بە کۆدە نوێیەکەی بڕوانامە هەیە لە ڕێکخستنەکان ← بەستنەوەی ماڵپەڕ (لە ڕێی Qasa Relay ەوە هیچ ناگۆڕێت). بەردەوام دەبیت؟'
   ],
-  netNewCertDone: ['صُنعت شهادة جديدة: اتصل من الحواسيب الأخرى برمز الاقتران الجديد.', 'A new certificate is made: connect the other PCs with the new pairing code.', 'بڕوانامەیەکی نوێ دروست کرا: کۆمپیوتەرەکانی تر بە کۆدی پەیوەندیی نوێ پەیوەست بکە.'],
+  netNewCertDone: ['صُنعت شهادة جديدة: اتصل من الحواسيب الأخرى برمز الاقتران الجديد، وضع رمز الشهادة الجديد في الموقع الذي يتصل على شبكة المكتب.', 'A new certificate is made: connect the other PCs with the new pairing code, and put the new certificate code in a website that connects on the office network.', 'بڕوانامەیەکی نوێ دروست کرا: کۆمپیوتەرەکانی تر بە کۆدی پەیوەندیی نوێ پەیوەست بکە، و کۆدە نوێیەکەی بڕوانامە لەو ماڵپەڕە دابنێ کە لەسەر تۆڕی نووسینگە پەیوەندی دەکات.'],
   a_network_certificate_renewed: ['شهادة مكتب جديدة', 'New office certificate', 'بڕوانامەی نوێی نووسینگە'],
   // the office server's own key, when Windows can't keep it protected (it is never saved in the clear)
   err_network_secret_unprotected: [

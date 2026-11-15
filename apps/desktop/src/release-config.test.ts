@@ -878,13 +878,37 @@ describe('the release notes and the Store "What\'s new" of this version', () => 
     expect(auth).toContain("audit(db, row.name, 'login', 'user', row.id, { source: place });");
     expect(read('apps/web/src/i18n/relay.ts')).toContain("netNewCert: ['شهادة مكتب جديدة', 'New office certificate', 'بڕوانامەی نوێی نووسینگە']");
     expect(read('apps/web/src/i18n.ts')).toContain("netTitle: ['شبكة المكتب', 'Office network', 'تۆڕی نووسینگە']");
-    expect(section('en')).toContain('no longer makes that user wait on the office’s own PCs, nor at the places where they signed in through the relay before (a home or a branch): only new places wait.');
+    // the places known come from sign-ins audited with their source, which only 1.4.2 writes: "since this update"
+    expect(section('en')).toContain('no longer makes that user wait on the office’s own PCs, nor at the places where they have signed in through the relay since this update (a home or a branch): only new places wait.');
+    expect(section('ar')).toContain('ولا في الأماكن التي دخل منها عبر Qasa Relay منذ هذا التحديث (البيت أو الفرع)');
+    expect(section('ku')).toContain('نە لەو شوێنانەی لەم نوێکردنەوەیەوە لە ڕێی Relay ەوە لێیانەوە چووەتە ژوورەوە');
+    expect(store['en-us'].releaseNotes).toContain('or where they have signed in through it since this update');
+    expect(store.ar.releaseNotes).toContain('ولا حيث دخل عبره منذ هذا التحديث');
+    expect(store['ku-arab'].releaseNotes).toContain('لەم نوێکردنەوەیەوە لە ڕێیەوە');
+    for (const text of [notes, ...Object.values(store).map((l) => l.releaseNotes)]) expect(text).not.toMatch(/signed in (through the relay )?before|دخل منها عبر Qasa Relay من قبل|حيث دخل من قبل/);
+    // staff keep their place only with the 1.4.2 relay: it is deployed before the release
+    const releasing = read('docs/releasing.md');
+    expect(releasing).toContain('## Release day for 1.4.2');
+    expect(releasing).toContain('1. **Deploy the 1.4.2 Qasa Relay first**');
+    // a website on the office network pins the certificate: a new one needs its new code there
+    expect(section('en')).toContain('A website that connects on the office network needs the new certificate code from **Settings → Website API** (through Qasa Relay nothing changes).');
+    expect(section('ar')).toContain('يحتاج رمز الشهادة الجديد من **الإعدادات ← ربط المواقع الإلكترونية**');
+    expect(section('ku')).toContain('پێویستی بە کۆدە نوێیەکەی بڕوانامە هەیە لە **ڕێکخستنەکان ← بەستنەوەی ماڵپەڕ**');
+    expect(read('apps/web/src/i18n/webapi.ts')).toContain("wa_nav: ['ربط المواقع الإلكترونية', 'Website API', 'بەستنەوەی ماڵپەڕ']");
+    // the WooCommerce plugin that takes only the 32-character code or the full fingerprint is 1.1.2, as the notes say
+    expect(read('pro/integrations/woocommerce/qasa-erp/qasa-erp.php')).toContain("define('QASA_ERP_VERSION', '1.1.2');");
+    for (const lang of ['ar', 'en', 'ku'] as const) expect(section(lang), lang).toMatch(/WooCommerce[^\n]{0,10}1\.1\.2:\*\*/);
     expect(section('en')).toContain('**Settings → Office network → New office certificate**');
     expect(section('ar')).toContain('**الإعدادات ← شبكة المكتب ← شهادة مكتب جديدة**');
     expect(section('ku')).toContain('**ڕێکخستنەکان ← تۆڕی نووسینگە ← بڕوانامەی نوێی نووسینگە**');
     for (const lang of ['ar', 'en', 'ku'] as const) expect(section(lang), lang).toContain('PIN');
-    // the phone's PIN that can't be turned off is the phone app's own rule (roles.ts)
+    // the phone's PIN that can't be turned off is the phone app's own rule (roles.ts), in the build Settings offers (1.0.1)
     expect(read('apps/mobile/src/roles.ts')).toContain('export function lockRequired(me: Me | null): boolean {');
+    const mobile = JSON.parse(read('apps/mobile/app.json')) as { expo: { version: string; android: { versionCode: number } } };
+    expect(mobile.expo.version).toBe('1.0.1');
+    expect(mobile.expo.android.versionCode).toBe(2);
+    expect(read('apps/web/src/pages/Settings.tsx')).toContain("version: '1.0.1',");
+    for (const lang of ['ar', 'en', 'ku'] as const) expect(section(lang), lang).toContain('1.0.1');
     // plain words: no frames, sockets, tokens or rate limits in the notes
     expect(notes).not.toMatch(/WebSocket|socket|token|frame|rate limit|IPv6|\/48/i);
   });
