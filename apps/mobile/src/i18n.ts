@@ -1,3 +1,5 @@
+import { STAFF_T } from './staff/i18n';
+
 /** Every text of the phone app in Arabic, English and Kurdish (Sorani), in that order, like the desktop app. */
 export type Lang = 'ar' | 'en' | 'ku';
 export const LANGS: Lang[] = ['ar', 'en', 'ku'];
@@ -5,7 +7,7 @@ export const isRtl = (lang: Lang) => lang !== 'en';
 /** Each language's own name, for the language switch. */
 export const LANG_NAMES: Record<Lang, string> = { ar: 'العربية', en: 'English', ku: 'کوردی' };
 
-const T = {
+const BASE = {
   appName: ['قاصة ERP', 'Qasa ERP', 'قاسە ERP'],
   welcome: ['امسح، اعرف السعر والمخزون، وبِع واستلم — من هاتفك.', 'Scan, check prices and stock, sell and collect — from your phone.', 'بارکۆد بخوێنەوە، نرخ و ماوەی کۆگا ببینە، بفرۆشە و پارە وەربگرە — لە مۆبایلەکەتەوە.'],
 
@@ -292,8 +294,30 @@ const T = {
   stale: ['ساعة الهاتف غير مضبوطة. صحّح الوقت والتاريخ.', 'The phone\'s clock is off. Fix the time and date.', 'کاتژمێری مۆبایل ڕێک نییە. کات و بەروار ڕاست بکەرەوە.'],
   tampered: ['لم يثبت الحاسوب هويته بمفتاحه المسجّل. تأكد أنك على شبكة المكتب الصحيحة.', 'The PC did not prove itself with its paired key. Make sure this is the right office network.', 'کۆمپیوتەرەکە بە کلیلە تۆمارکراوەکەی خۆی نەسەلماند. دڵنیابە کە ئەمە تۆڕی ڕاستی نووسینگەیە.'],
   error: ['حدث خطأ:', 'Something went wrong:', 'هەڵەیەک ڕوویدا:'],
-  validation: ['رفض الحاسوب البيانات. تحقق منها وحاول مجدداً.', 'The PC refused the details. Check them and try again.', 'کۆمپیوتەرەکە زانیارییەکانی ڕەتکردەوە. بیانپشکنە و دووبارە هەوڵ بدەرەوە.']
+  validation: ['رفض الحاسوب البيانات. تحقق منها وحاول مجدداً.', 'The PC refused the details. Check them and try again.', 'کۆمپیوتەرەکە زانیارییەکانی ڕەتکردەوە. بیانپشکنە و دووبارە هەوڵ بدەرەوە.'],
+
+  // ——— 1.1: an office that does not offer something yet, and what every 1.1 screen shares ———
+  officeOld: ['لا يقبل حاسوب المكتب هذا من الهاتف. قد يحتاج تحديث قاصة على ذلك الحاسوب.', 'The office PC doesn\'t take this from a phone. Qasa ERP on that PC may need an update.', 'کۆمپیوتەری نووسینگە ئەمە لە مۆبایلەوە وەرناگرێت. لەوانەیە قاسە لەسەر ئەو کۆمپیوتەرە پێویستی بە نوێکردنەوە هەبێت.'],
+  phoneRefused: ['لا يقبل حاسوب المكتب هذا من هذا الهاتف.', 'The office PC doesn\'t take this from this phone.', 'کۆمپیوتەری نووسینگە ئەمە لەم مۆبایلەوە وەرناگرێت.'],
+  tooLarge: ['هذا أكبر من أن يُعرض على الهاتف. افتحه على الحاسوب.', 'This is too much to show on a phone. Open it on the PC.', 'ئەمە زۆرە بۆ پیشاندان لەسەر مۆبایل. لەسەر کۆمپیوتەر بیکەرەوە.'],
+  officeUpdate: ['حدّث قاصة على حاسوب المكتب إلى آخر إصدار لتستخدم من الهاتف: {f}', 'Update Qasa ERP on the office PC to the latest version to use from the phone: {f}', 'قاسە لەسەر کۆمپیوتەری نووسینگە بۆ دوایین وەشان نوێ بکەرەوە بۆ ئەوەی لە مۆبایلەوە ئەمانە بەکاربهێنیت: {f}'],
+  needsOnline: ['يحتاج هذا اتصالاً بحاسوب المكتب.', 'This needs a connection to the office PC.', 'ئەمە پێویستی بە پەیوەندی لەگەڵ کۆمپیوتەری نووسینگە هەیە.'],
+  today: ['اليوم', 'Today', 'ئەمڕۆ'],
+  yesterday: ['أمس', 'Yesterday', 'دوێنێ'],
+  date: ['التاريخ', 'Date', 'بەروار'],
+  featApprovals: ['الموافقة على السندات', 'approving vouchers', 'پەسەندکردنی سەنەدەکان'],
+  featRate: ['سعر الدولار', 'the dollar rate', 'نرخی دۆلار'],
+  featDayClose: ['إغلاق اليوم', 'the end of day', 'داخستنی ڕۆژ'],
+  featExpense: ['المصاريف مع صورة الوصل', 'expenses with a photo of the receipt', 'خەرجی لەگەڵ وێنەی وەسڵ'],
+  featShare: ['إرسال الفواتير وكشوف الحساب', 'sending invoices and statements', 'ناردنی پسوولە و کەشفی هەژمار'],
+  featTransfer: ['المناقلة بين المخازن', 'moving stock between warehouses', 'گواستنەوەی کاڵا لە نێوان کۆگاکان'],
+  featReceive: ['استلام البضاعة', 'receiving goods', 'وەرگرتنی کاڵا']
 } as const satisfies Record<string, readonly [string, string, string]>;
+
+/** Every text: the app's own, then each 1.1 group's in a file of its own (a key is in one of them only: a test). */
+const T = { ...BASE, ...STAFF_T } as const;
+/** The parts the texts are made of, for the test that no key is in two. */
+export const TEXT_PARTS: Record<string, Record<string, readonly [string, string, string]>> = { base: BASE, staff: STAFF_T };
 
 export type Key = keyof typeof T;
 export const KEYS = Object.keys(T) as Key[];

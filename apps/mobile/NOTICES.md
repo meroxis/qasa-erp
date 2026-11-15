@@ -14,14 +14,18 @@ credits the fonts ask for are shown in the app (More → About).
 | Barcode models | `assets/mlkit_barcode_models/*.tflite` in the APK (3 models: barcode_ssd_mobilenet_v1_dmp25_quant, oned_auto_regressor_mobile, oned_feature_extractor_mobile) | Google, inside com.google.mlkit:barcode-scanning 17.3.0 | ML Kit Terms (developers.google.com/ml-kit/terms) | none asked; listed here |
 
 The fonts are not changed: the WOFF files are only unpacked back into the TrueType files they were made from, which
-the OFL allows; they keep their names and licence.
+the OFL allows; they keep their names and licence. From 1.1 the regular and bold weights of both are also embedded in
+the PDFs the app makes of an invoice or a statement (src/staff/pdf.ts), which the OFL allows too (the PDF engine keeps
+only the letters used).
 
 ## Components (runtime, JavaScript)
 
-All under the MIT licence: @noble/ciphers, @noble/curves and @noble/hashes 2.4.0; expo 58.0.23 with expo-camera,
-expo-crypto, expo-file-system, expo-font, expo-haptics, expo-image-manipulator, expo-local-authentication,
-expo-localization, expo-secure-store and expo-status-bar (SDK 58); react 19.3.0; react-native 0.88.1;
-react-native-safe-area-context 5.11.1; react-native-svg 15.16.0.
+All under the MIT licence: @noble/ciphers, @noble/curves and @noble/hashes 2.4.0; expo 58.0.23 with expo-asset,
+expo-camera, expo-crypto, expo-file-system, expo-font, expo-haptics, expo-image-manipulator, expo-local-authentication,
+expo-localization, expo-print, expo-secure-store, expo-sharing and expo-status-bar (SDK 58); react 19.3.0;
+react-native 0.88.1; react-native-safe-area-context 5.11.1; react-native-svg 15.16.0. (1.1: expo-print makes the PDF of
+an invoice or a statement on the phone, expo-sharing hands it to Android's share sheet; expo-asset, which Expo already
+ships with expo-font, reads the bundled fonts for those PDFs.)
 
 ## Components (runtime, native: in the Android APK)
 
@@ -45,7 +49,7 @@ below says where.
 | Apache Commons Codec, Apache Commons IO | 1.10; 1.4 | Apache-2.0 | their jars' `META-INF/LICENSE.txt` and `NOTICE.txt` |
 | SoLoader, fbjni (Meta) | 0.12.1; 0.7.0 | Apache-2.0 | fbjni POM: Apache-2 |
 | React Native (react-android), Hermes, Yoga annotations, Fresco (image pipeline, Vito, animated GIF and WebP), Infer annotations (Meta) | 0.88.1; as React Native 0.88.1; 1.19.0; 3.7.0; 0.18.0 | MIT | react-android, hermes-android and fresco POMs: MIT |
-| Expo modules: modules core, asset, camera, crypto, file-system, font, haptics, image-loader, image-manipulator, keep-awake, local-authentication, localization, secure-store, status-bar; expo-modules-v2-react, kolibri, pika | SDK 58 | MIT | kolibri, pika and expo-modules-v2-react POMs: MIT |
+| Expo modules: modules core, asset, camera, crypto, file-system, font, haptics, image-loader, image-manipulator, keep-awake, local-authentication, localization, print (1.1), secure-store, sharing (1.1, with its FileProvider for the PDF shared from the app's cache), status-bar; expo-modules-v2-react, kolibri, pika | SDK 58 | MIT | kolibri, pika and expo-modules-v2-react POMs: MIT |
 | Glide (with gifdecoder, disklrucache; used by Expo's image loader) | 5.0.5 | BSD-2-Clause, with parts under Apache-2.0 (disklrucache) and MIT (gifdecoder) | the dependency tree; the project's licence file |
 | Bolts Tasks | 1.4.0 | BSD | the dependency tree; the project's licence file |
 | Brotli decoder | 0.1.2 | MIT | the dependency tree; the project's licence file |

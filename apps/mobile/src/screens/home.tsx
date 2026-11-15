@@ -4,10 +4,28 @@ import { money, nameIn, qty } from '../i18n';
 import { Icon, type IconName } from '../icons';
 import type { Route } from '../nav';
 import { isPending } from '../outbox';
-import { actsAs } from '../roles';
+import { actsAs, needsNewerOffice, type Feature, type Me } from '../roles';
+import type { Key } from '../i18n';
 import { radius, space } from '../theme';
 import { Banner, Card, ErrorState, Group, ListItem, Screen, Section, Skeleton, Stat, Txt, useApp, useLook } from '../ui';
 import { useLoad } from '../use-load';
+
+/** Each 1.1 feature's name in the banner that asks for an update of the office PC (both rate features: one name). */
+const FEATURE_NAME: Partial<Record<Feature, Key>> = {
+  approvals: 'featApprovals', rate: 'featRate', rateSet: 'featRate', dayClose: 'featDayClose', expense: 'featExpense', share: 'featShare', transfer: 'featTransfer', receive: 'featReceive'
+};
+
+/**
+ * For the owner or an admin of an office whose Qasa ERP does not offer some of phone app 1.1's features yet: the
+ * features they would have, by name, and that the office PC needs the latest version. Null for anyone else, and when
+ * the office offers them all.
+ */
+export function officeUpdateText(me: Me | null, t: (k: Key, v?: Record<string, string | number>) => string, lang: string): string | null {
+  const ownerOrAdmin = !!me && (!me.signInRequired || !me.user || me.user.permissions.includes('admin'));
+  if (!ownerOrAdmin) return null;
+  const names = [...new Set(needsNewerOffice(me).map((f) => FEATURE_NAME[f]).filter((k): k is Key => !!k))].map((k) => t(k));
+  return names.length ? t('officeUpdate', { f: names.join(lang === 'en' ? ', ' : '، ') }) : null;
+}
 
 /**
  * Home: who the phone works as and how it reaches the office, the quick actions the user's role allows, and — for the
@@ -28,14 +46,19 @@ export function Home() {
     { icon: 'cart', label: t('newSale'), route: 'sell', on: can('sale') || can('order') },
     { icon: 'cash', label: t('collect'), route: { name: 'customers' }, on: can('collect') },
     { icon: 'doc', label: t('statement'), route: { name: 'customers' }, on: can('statement') && !can('collect') },
-    { icon: 'clipboard', label: t('count'), route: { name: 'count' }, on: can('count') }
+    { icon: 'clipboard', label: t('count'), route: { name: 'count' }, on: can('count') },
+    // 1.1, for the staff (each only when the office offers it)
+    { icon: 'receipt', label: t('expAction'), route: { name: 'expense' }, on: can('expense') },
+    { icon: 'truck', label: t('mvAction'), route: { name: 'transfer' }, on: can('transfer') },
+    { icon: 'inbox', label: t('rcvAction'), route: { name: 'receive' }, on: can('receive') }
   ];
   const open = (route: Route | 'sell') => {
     if (route === 'sell') return nav({ type: 'open', tab: 'sell' });
     if (route.name === 'customers') return nav({ type: 'open', tab: 'customers' });
-    if (route.name === 'count') return nav({ type: 'open', tab: 'items', route });
+    if (route.name === 'count' || route.name === 'transfer' || route.name === 'receive') return nav({ type: 'open', tab: 'items', route });
     go(route);
   };
+  const update = officeUpdateText(me, t, lang);
 
   const b = brief.data;
   return (
@@ -53,6 +76,8 @@ export function Home() {
       </View>
       {waiting > 0 && <Banner kind="info" icon="outbox" text={t('queued', { n: waiting })} action={{ label: t('outbox'), onPress: () => nav({ type: 'open', tab: 'more', route: { name: 'outbox' } }) }} />}
       {refused > 0 && <Banner kind="bad" text={t('refusedN', { n: refused })} action={{ label: t('outbox'), onPress: () => nav({ type: 'open', tab: 'more', route: { name: 'outbox' } }) }} />}
+      {/* 1.1: what the owner or an admin could do from the phone once the office PC runs the release that offers it */}
+      {update && <Banner kind="info" icon="info" text={update} />}
 
       <Section title={t('quickActions')}>
         <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: space.s }}>

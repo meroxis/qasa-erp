@@ -3,8 +3,16 @@ import { hashPin, lockoutMs, parseLockSettings, shouldLock, validPin, verifyPin,
 import { canGoBack, current, initialNav, navigate, type NavState } from '../src/nav';
 import { readPairingCode, validAddress } from '../src/pairing';
 import { encodePairingCode, generateKeyPair, type PairingCode } from '../src/protocol';
-import { actsAs, ALL_FEATURES, featuresOf, lockRequired, type Me } from '../src/roles';
+import { actsAs, ALL_FEATURES, BASE_FEATURES, featuresOf, FIGURES_ROLES, lockRequired, needsNewerOffice, OFFER_OF, offered, type Me } from '../src/roles';
 import { UUID_V4, uuidV4 } from '../src/uuid';
+import { coreApi, OfficeError } from '../src/api';
+import { explainWith } from '../src/explain';
+import { KEYS, qty, TEXT_PARTS, translate, type Key } from '../src/i18n';
+import { LinkError } from '../src/link';
+import { staffApi } from '../src/staff/api';
+
+/** Every offer a 1.1 office's phone link makes. */
+const ALL_OFFERS = [...new Set(Object.values(OFFER_OF))];
 
 describe('keys for changes', () => {
   it('are UUID v4, lower case, different every time', () => {
@@ -49,8 +57,11 @@ describe('the pairing code from the QR', () => {
 describe('what the phone offers, by the office user it acts as', () => {
   const me = (roles: string[], permissions: string[]): Me => ({ signInRequired: true, user: { id: 'u1', name: 'Raz', roles, permissions } });
 
-  it('everything to the owner (no sign-in at the office)', () => {
-    expect([...featuresOf({ signInRequired: false, user: { id: null, name: 'Mer', roles: ['admin'], permissions: ['admin'] } })]).toEqual(ALL_FEATURES);
+  it('everything to the owner (no sign-in at the office): what phone app 1.0 did, and 1.1\'s features as the office offers them', () => {
+    const owner: Me = { signInRequired: false, user: { id: null, name: 'Mer', roles: ['admin'], permissions: ['admin'] } };
+    // an office before 1.1's release says nothing of its phone link: what 1.0 did
+    expect([...featuresOf(owner)]).toEqual(BASE_FEATURES);
+    expect([...featuresOf({ ...owner, phoneLink: { v: 2, offers: ALL_OFFERS } })]).toEqual(ALL_FEATURES);
     expect(actsAs({ signInRequired: false, user: null })).toBeNull();
   });
 
@@ -67,7 +78,8 @@ describe('what the phone offers, by the office user it acts as', () => {
     expect(accountant.has('sale')).toBe(false);
     const keeper = featuresOf(me(['storekeeper'], ['stock']));
     expect([...keeper].sort()).toEqual(['count', 'countSession', 'lookup', 'newItem']);
-    expect(featuresOf(me(['admin'], ['admin'])).size).toBe(ALL_FEATURES.length);
+    expect(featuresOf(me(['admin'], ['admin'])).size).toBe(BASE_FEATURES.length);
+    expect(featuresOf({ ...me(['admin'], ['admin']), phoneLink: { v: 2, offers: ALL_OFFERS } }).size).toBe(ALL_FEATURES.length);
   });
 
   it('only looking up and counting before the phone knows who it is', () => {
@@ -168,5 +180,129 @@ describe('navigation', () => {
     for (let i = 0; i < 40; i++) s = navigate(s, { type: 'push', route: { name: 'scan', purpose: 'cart' } });
     expect(s.stacks.sell.length).toBeLessThanOrEqual(12);
     expect(s.stacks.sell[0]).toEqual({ name: 'cart' });
+  });
+
+  it('keeps the staff\'s 1.1 screens on the tab they are opened from', () => {
+    let s = navigate(initialNav(), { type: 'open', tab: 'items', route: { name: 'transfer' } });
+    s = navigate(s, { type: 'push', route: { name: 'scan', purpose: 'transfer' } });
+    s = navigate(s, { type: 'replace', route: { name: 'item', code: '6260000000101', purpose: 'transfer' } });
+    expect(s.stacks.items).toEqual([{ name: 'items' }, { name: 'transfer' }, { name: 'item', code: '6260000000101', purpose: 'transfer' }]);
+    s = navigate(s, { type: 'back' });
+    expect(current(s)).toEqual({ name: 'transfer' });
+    s = navigate(s, { type: 'tab', tab: 'customers' });
+    s = navigate(s, { type: 'push', route: { name: 'invoices', partyId: 'c1' } });
+    s = navigate(s, { type: 'push', route: { name: 'share', doc: 'statement', id: 'c1', from: '2026-09-01' } });
+    expect(current(s)).toEqual({ name: 'share', doc: 'statement', id: 'c1', from: '2026-09-01' });
+  });
+});
+
+// ——— 1.1: what the office offers, and who gets it ———
+
+/** The office's permissions of each role (packages/server/src/auth.ts), for the tests below. */
+function permissionsOf(roles: string[]): string[] {
+  const of: Record<string, string[]> = {
+    admin: ['admin', 'entries.prepare', 'entries.check', 'entries.approve', 'sales', 'purchases', 'stock'], preparer: ['entries.prepare'], checker: ['entries.check'],
+    approver: ['entries.approve'], sales: ['sales'], purchasing: ['purchases'], storekeeper: ['stock'], viewer: []
+  };
+  return [...new Set(roles.flatMap((r) => of[r] ?? []))];
+}
+
+describe('the features of phone app 1.1, by what the office offers and who the phone acts as', () => {
+  const user = (roles: string[], offers?: string[]): Me => ({
+    signInRequired: true, user: { id: 'u1', name: 'Las', roles, permissions: permissionsOf(roles) },
+    ...(offers ? { phoneLink: { v: 2, offers } } : {})
+  });
+
+  it('reads only the offers it knows, and none from an office that says nothing of its phone link', () => {
+    expect([...offered(null)]).toEqual([]);
+    expect([...offered(user(['admin']))]).toEqual([]);
+    expect([...offered(user(['admin'], ['expense', 'teleport', 'share']))].sort()).toEqual(['expense', 'share']);
+    expect([...offered({ signInRequired: true, user: null, phoneLink: { v: 2, offers: 'expense' as unknown as string[] } })]).toEqual([]);
+  });
+
+  it('gives each user the staff\'s features of their role, as the office allows them, once offered', () => {
+    const staff = ['expense', 'share', 'transfer', 'receive'];
+    const extra = (roles: string[], offers: string[] | undefined = staff) => [...featuresOf(user(roles, offers))].filter((f) => !BASE_FEATURES.includes(f)).sort();
+    expect(extra(['sales'])).toEqual(['share']);
+    expect(extra(['preparer'])).toEqual(['expense', 'share']);
+    expect(extra(['storekeeper'])).toEqual(['receive', 'transfer']);
+    expect(extra(['purchasing'])).toEqual(['receive']);
+    expect(extra(['viewer'])).toEqual(['share']);
+    expect(extra(['admin'])).toEqual(['expense', 'receive', 'share', 'transfer']);
+    // what the office does not offer stays hidden (the other group's, an older office's)
+    expect(featuresOf(user(['admin'], staff)).has('approvals')).toBe(false);
+    expect(extra(['storekeeper'], undefined)).toEqual(['receive', 'transfer']);
+    expect([...featuresOf(user(['storekeeper']))].filter((f) => !BASE_FEATURES.includes(f))).toEqual([]);
+  });
+
+  it('says what a user would get from an office that does not offer it yet (the owner\'s and admins\' update banner)', () => {
+    expect(needsNewerOffice(null)).toEqual([]);
+    expect(needsNewerOffice(user(['storekeeper']))).toEqual(['rate', 'transfer', 'receive']);
+    expect(needsNewerOffice(user(['storekeeper'], ['rate', 'transfer', 'receive']))).toEqual([]);
+    expect(needsNewerOffice({ signInRequired: false, user: null })).toEqual(Object.keys(OFFER_OF));
+    expect(needsNewerOffice({ signInRequired: false, user: null, phoneLink: { v: 2, offers: ALL_OFFERS } })).toEqual([]);
+  });
+
+  it('asks a PIN of every phone that may see the figures, approve, set the rate or record an expense, whatever the mix of roles', () => {
+    const ROLES = ['admin', 'preparer', 'checker', 'approver', 'sales', 'purchasing', 'storekeeper', 'viewer'];
+    let checked = 0;
+    for (let mask = 0; mask < 1 << ROLES.length; mask++) {
+      const roles = ROLES.filter((_, i) => (mask >> i) & 1);
+      const me = user(roles, ALL_OFFERS);
+      const f = featuresOf(me);
+      if (f.has('figures') || f.has('approvals') || f.has('rateSet') || f.has('expense')) {
+        checked++;
+        expect(lockRequired(me), roles.join('+') || 'no role').toBe(true);
+      }
+    }
+    expect(checked).toBeGreaterThan(100);
+    expect(FIGURES_ROLES).toEqual(['admin', 'preparer', 'checker', 'approver', 'viewer']);
+  });
+});
+
+describe('the office\'s refusals in words (1.1)', () => {
+  const t = (k: Key, v?: Record<string, string | number>) => translate('en', k, v);
+  const older: Me = { signInRequired: true, user: { id: 'u1', name: 'Las', roles: ['storekeeper'], permissions: ['stock'] } };
+  const newer: Me = { ...older, phoneLink: { v: 2, offers: ['transfer'] } };
+
+  it('a phone link\'s refusal may mean an old office only when the office says nothing of its phone link', () => {
+    const refusal = new OfficeError(403, 'forbidden', { phone: true });
+    expect(explainWith(t, refusal, older)).toBe(t('officeOld'));
+    expect(explainWith(t, refusal, null)).toBe(t('officeOld'));
+    expect(explainWith(t, refusal, newer)).toBe(t('phoneRefused'));
+    // the office's own refusal (a permission) stays what it was
+    expect(explainWith(t, new OfficeError(403, 'forbidden', { need: 'stock' }), newer)).toBe(t('forbidden'));
+  });
+
+  it('an answer too long for a phone, and the staff\'s refusals with their numbers', () => {
+    expect(explainWith(t, new OfficeError(413, 'answer_too_large', null), newer)).toBe(t('tooLarge'));
+    expect(explainWith(t, new OfficeError(400, 'validation', [{ code: 'expense_date_too_old', days: 62 }]), newer)).toBe(t('errExpenseTooOld', { d: 62 }));
+    expect(explainWith(t, new OfficeError(400, 'validation', [{ code: 'schema' }, { code: 'stock_insufficient', line: 2, available: 1500 }]), newer))
+      .toBe(t('errStockInsufficient', { n: 2, a: qty(1500) }));
+    expect(explainWith(t, new OfficeError(409, 'po_receipt_pending', { invoiceId: 'i1' }), newer)).toBe(t('errPoPending'));
+    expect(explainWith(t, new OfficeError(400, 'validation', [{ code: 'date_future' }]), newer)).toBe(t('errDateFuture'));
+    // a text whose numbers did not come is not used: the general words then
+    expect(explainWith(t, new OfficeError(400, 'validation', [{ code: 'stock_insufficient' }]), newer)).toBe(t('validation'));
+    expect(explainWith(t, new OfficeError(409, 'something_new', null), newer)).toBe(`${t('error')} something_new`);
+    expect(explainWith(t, new LinkError('timeout'), newer)).toBe(t('offline'));
+  });
+});
+
+describe('the parts of the app made of groups (1.1)', () => {
+  it('has each text in one part only', () => {
+    const seen = new Map<string, string>();
+    for (const [part, texts] of Object.entries(TEXT_PARTS)) {
+      for (const key of Object.keys(texts)) {
+        expect(seen.get(key), `${key} in ${part}`).toBeUndefined();
+        seen.set(key, part);
+      }
+    }
+    expect(seen.size).toBe(KEYS.length);
+  });
+
+  it('has each call of the office in one group only (a group never takes the place of another\'s call)', () => {
+    const link = {} as Parameters<typeof coreApi>[0];
+    const core = Object.keys(coreApi(link));
+    expect(Object.keys(staffApi(link)).filter((k) => core.includes(k))).toEqual([]);
   });
 });

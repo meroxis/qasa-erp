@@ -48,7 +48,7 @@
       [
         "expo-camera",
         {
-          "cameraPermission": "Qasa uses the camera to scan barcodes and take item photos.",
+          "cameraPermission": "Qasa uses the camera to scan barcodes and take photos of items and receipts.",
           "recordAudioAndroid": false
         }
       ],

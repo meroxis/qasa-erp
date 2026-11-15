@@ -1,5 +1,5 @@
 import * as SecureStore from 'expo-secure-store';
-import { File, Paths } from 'expo-file-system';
+import { Directory, File, Paths } from 'expo-file-system';
 import { fromB64, generateKeyPair, publicKeyOf, toB64, type KeyPair } from './protocol';
 import type { OfficeInfo } from './link';
 import type { Lang } from './i18n';
@@ -7,6 +7,7 @@ import type { OutboxStorage } from './outbox';
 import type { Me } from './roles';
 import { parseLockSettings, type LockSettings } from './lock';
 import type { ThemeChoice } from './theme';
+import { UUID_V4 } from './uuid';
 
 /**
  * What the phone keeps. In the phone's secure storage (the Android Keystore / iOS Keychain, readable by this app only,
@@ -115,8 +116,41 @@ export const outboxStorage: OutboxStorage = {
   },
   readKey: () => get(OUTBOX_KEY),
   writeKey: (key) => set(OUTBOX_KEY, key),
-  removeKey: () => del(OUTBOX_KEY)
+  removeKey: () => del(OUTBOX_KEY),
+  // 1.1: an item's photo (an expense's receipt), sealed by outbox.ts for that item, in a file of its own
+  async readBlob(id) {
+    const file = blobFile(id);
+    return file.exists ? file.text() : null;
+  },
+  async writeBlob(id, text) {
+    const dir = blobDir();
+    if (!dir.exists) dir.create({ intermediates: true });
+    const file = blobFile(id);
+    if (file.exists) file.delete();
+    file.create();
+    await file.write(text);
+  },
+  async removeBlob(id) {
+    const file = blobFile(id);
+    if (file.exists) file.delete();
+  },
+  async listBlobs() {
+    const dir = blobDir();
+    if (!dir.exists) return [];
+    return dir.list().filter((f): f is File => f instanceof File).map((f) => f.name.replace(/\.enc$/, '')).filter((id) => UUID_V4.test(id));
+  },
+  async removeBlobs() {
+    const dir = blobDir();
+    if (dir.exists) dir.delete();
+  }
 };
+
+/** The outbox's photos: one sealed file per item, named by the item's id (a UUID v4: nothing else is ever read). */
+const blobDir = () => new Directory(Paths.document, 'qasa-outbox-blobs');
+function blobFile(id: string): File {
+  if (!UUID_V4.test(id)) throw new Error('blob_id_invalid');
+  return new File(blobDir(), `${id}.enc`);
+}
 
 /**
  * Unpairing (or "Forgot the PIN?"): the office, who the phone acted as, the app lock and the phone's own key are gone

@@ -13,6 +13,7 @@ import {
 } from '../ui';
 import { useLoad } from '../use-load';
 import { Scanner } from './scanner';
+import { StockItemScreen } from './staff/transfer';
 
 // ——— items: search by name or code, or scan ———
 
@@ -42,6 +43,13 @@ export function ItemsScreen() {
         <Button kind="secondary" icon="scan" label={t('scan')} onPress={() => go({ name: 'scan', purpose: 'look' })} style={{ flex: 1 }} />
         {can('count') && <Button kind="secondary" icon="clipboard" label={t('count')} onPress={() => go({ name: 'count' })} style={{ flex: 1 }} />}
       </View>
+      {/* 1.1: moving stock between warehouses and receiving goods, when the office offers them */}
+      {(can('transfer') || can('receive')) && (
+        <View style={{ flexDirection: 'row', gap: space.s }}>
+          {can('transfer') && <Button kind="secondary" icon="truck" label={t('mvAction')} onPress={() => go({ name: 'transfer' })} style={{ flex: 1 }} />}
+          {can('receive') && <Button kind="secondary" icon="inbox" label={t('rcvAction')} onPress={() => go({ name: 'receive' })} style={{ flex: 1 }} />}
+        </View>
+      )}
       {error && <Banner kind="bad" text={error} />}
       {text.trim().length < 2 ? <EmptyState icon="search" title={t('searchItems')} text={t('typeTwo')} />
         : busy && !results ? <Skeleton rows={4} />
@@ -66,7 +74,13 @@ export function ScanScreen({ purpose }: { purpose: Purpose }) {
 
 // ——— an item: price, stock per warehouse, shelf, picture ———
 
-export function ItemScreen({ code, itemId, purpose }: { code: string; itemId?: string | undefined; purpose: Purpose }) {
+/** A scanned or found item: for stock being moved or received (1.1), the screen of that; else the item itself. */
+export function ItemScreen(props: { code: string; itemId?: string | undefined; purpose: Purpose }) {
+  if (props.purpose === 'transfer' || props.purpose === 'receive') return <StockItemScreen code={props.code} itemId={props.itemId} purpose={props.purpose} />;
+  return <LookItemScreen {...props} />;
+}
+
+function LookItemScreen({ code, itemId, purpose }: { code: string; itemId?: string | undefined; purpose: Purpose }) {
   const { t, lang } = useLook();
   const { api, go, nav, explain, can, toast } = useApp();
   const lists = useLists();

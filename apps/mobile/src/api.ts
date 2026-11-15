@@ -1,5 +1,6 @@
 import type { Answer, OfficeLink } from './link';
 import type { Me } from './roles';
+import { staffApi } from './staff/api';
 
 /** The office's answers the app reads (the same shapes as the desktop app's API). */
 export type Names = { ar: string; en: string; ku: string };
@@ -71,20 +72,25 @@ export class OfficeError extends Error {
   }
 }
 
-function ok<T>(answer: Answer<T>): T {
+export function ok<T>(answer: Answer<T>): T {
   if (answer.s >= 200 && answer.s < 300) return answer.b;
   const body = answer.b as { error?: string; details?: unknown } | null;
   throw new OfficeError(answer.s, body?.error ?? 'error', body?.details ?? null);
 }
 
-const q = (params: Record<string, string>) => '?' + Object.entries(params).map(([k, v]) => `${k}=${encodeURIComponent(v)}`).join('&');
+export const q = (params: Record<string, string>) => '?' + Object.entries(params).map(([k, v]) => `${k}=${encodeURIComponent(v)}`).join('&');
 /** Ids from the office go into paths only as they are: letters, digits, dashes, underscores. */
-const safeId = (id: string) => {
+export const safeId = (id: string) => {
   if (!/^[\w-]{1,64}$/.test(id)) throw new OfficeError(400, 'validation', null);
   return id;
 };
 
+/** The office's API for the phone: phone app 1.0's calls, then each 1.1 group's (src/staff/api.ts). */
 export function officeApi(link: OfficeLink) {
+  return { ...coreApi(link), ...staffApi(link) };
+}
+
+export function coreApi(link: OfficeLink) {
   return {
     me: async () => ok(await link.request<Me>('GET', '/api/auth/me')),
     settings: async () => ok(await link.request<Settings>('GET', '/api/settings')),

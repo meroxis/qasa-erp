@@ -46,7 +46,12 @@ const ICONS = {
   qr: (c: string) => <><Rect {...S} stroke={c} x={4} y={4} width={6} height={6} rx={1} /><Rect {...S} stroke={c} x={14} y={4} width={6} height={6} rx={1} /><Rect {...S} stroke={c} x={4} y={14} width={6} height={6} rx={1} /><Path {...S} stroke={c} d="M14 14h2v2h-2zM18 18h2v2h-2zM18 14h2M14 18v2" /></>,
   backspace: (c: string) => <><Path {...S} stroke={c} d="M9 5h11a1 1 0 0 1 1 1v12a1 1 0 0 1-1 1H9l-6-7 6-7Z" /><Path {...S} stroke={c} d="m12.5 9.5 5 5M17.5 9.5l-5 5" /></>,
   flash: (c: string) => <Path {...S} stroke={c} d="M13 3 5 13.5h6L10 21l8-10.5h-6L13 3Z" />,
-  tag: (c: string) => <><Path {...S} stroke={c} d="M3.5 12.5V4.5a1 1 0 0 1 1-1h8l8 8-9 9-8-8Z" /><Circle cx={8.5} cy={8.5} r={1.4} fill={c} /></>
+  tag: (c: string) => <><Path {...S} stroke={c} d="M3.5 12.5V4.5a1 1 0 0 1 1-1h8l8 8-9 9-8-8Z" /><Circle cx={8.5} cy={8.5} r={1.4} fill={c} /></>,
+  // 1.1, for the staff: an expense's paper receipt, sharing a file, moving stock, receiving goods
+  receipt: (c: string) => <><Path {...S} stroke={c} d="M6 3h12v18l-2-1.4-2 1.4-2-1.4-2 1.4-2-1.4L6 21V3Z" /><Path {...S} stroke={c} d="M9 8h6M9 12h6M9 16h3" /></>,
+  share: (c: string) => <><Circle {...S} stroke={c} cx={18} cy={5.5} r={2.5} /><Circle {...S} stroke={c} cx={6} cy={12} r={2.5} /><Circle {...S} stroke={c} cx={18} cy={18.5} r={2.5} /><Path {...S} stroke={c} d="m8.2 10.8 7.6-4M8.2 13.2l7.6 4" /></>,
+  truck: (c: string) => <><Path {...S} stroke={c} d="M2.5 6h11v10h-11V6ZM13.5 9.5h4l3 3.5V16h-7" /><Circle {...S} stroke={c} cx={6.5} cy={17.5} r={1.8} /><Circle {...S} stroke={c} cx={17} cy={17.5} r={1.8} /></>,
+  inbox: (c: string) => <><Path {...S} stroke={c} d="M3.5 13.5 6 5h12l2.5 8.5V19a1 1 0 0 1-1 1h-15a1 1 0 0 1-1-1v-5.5Z" /><Path {...S} stroke={c} d="M3.5 13.5h5l1.5 2.5h4l1.5-2.5h5" /><Path {...S} stroke={c} d="M12 3v7M9.5 7.5 12 10l2.5-2.5" /></>
 } as const;
 
 export type IconName = keyof typeof ICONS;
