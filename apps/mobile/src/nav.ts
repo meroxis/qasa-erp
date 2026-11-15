@@ -7,7 +7,8 @@
 export type Tab = 'home' | 'items' | 'sell' | 'customers' | 'more';
 export const TABS: readonly Tab[] = ['home', 'items', 'sell', 'customers', 'more'];
 
-export type Purpose = 'look' | 'cart' | 'count';
+/** What a scan is for: looking an item up, the sale, the count, and (1.1) the stock being moved or received. */
+export type Purpose = 'look' | 'cart' | 'count' | 'transfer' | 'receive';
 
 export type Route =
   | { name: 'home' }
@@ -25,11 +26,19 @@ export type Route =
   | { name: 'outbox' }
   | { name: 'security' }
   | { name: 'about' }
-  // phone app 1.1, the owner and the managers (screens/owner): pushed on the tab they are opened from
+  // ——— phone app 1.1, the owner and the managers (screens/owner): pushed on the tab they are opened from ———
   | { name: 'approvals' }
   | { name: 'approval'; id: string }
   | { name: 'rate' }
-  | { name: 'dayClose' };
+  | { name: 'dayClose' }
+  // ——— and the staff (screens/staff): an expense, a customer's invoices and sharing one, moving and receiving stock ———
+  | { name: 'expense' }
+  | { name: 'invoices'; partyId: string }
+  | { name: 'invoice'; id: string }
+  | { name: 'share'; doc: 'invoice' | 'statement'; id: string; from?: string | undefined }
+  | { name: 'transfer' }
+  | { name: 'receive' }
+  | { name: 'receiveOrder'; id: string };
 
 export interface NavState {
   tab: Tab;

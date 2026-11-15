@@ -1,8 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import { OfficeError, officeApi } from '../src/api';
 import { LinkError, OfficeLink } from '../src/link';
-import { Outbox, OUTBOX_MAX, RESULTS_MAX, openOutbox, outcomeOf, sealOutbox, type OutboxItem, type OutboxStorage } from '../src/outbox';
-import { generateKeyPair } from '../src/protocol';
+import { Outbox, OUTBOX_MAX, PHOTOS_MAX, RESULTS_MAX, openBlob, openOutbox, outcomeOf, sealOutbox, type OutboxItem, type OutboxStorage } from '../src/outbox';
+import { fromB64, generateKeyPair } from '../src/protocol';
+import { sendItem } from '../src/send';
 import { UUID_V4 } from '../src/uuid';
 import { fakeOffice, waitFor } from './fake-office';
 
@@ -83,7 +84,7 @@ describe('the outbox on the phone', () => {
       if (item.id === a.id) throw new OfficeError(403, 'forbidden', null);
       if (item.id === b.id) throw new LinkError('closed');
     });
-    expect(result).toEqual({ sent: 0, refused: 1, receipts: [] });
+    expect(result).toEqual({ sent: 0, refused: 1, receipts: [], expenses: [] });
     expect(tried).toEqual([a.id, b.id]);
     expect(box.list().map((i) => [i.kind, i.error ?? null, i.attempts])).toEqual([['sale', 'forbidden', 1], ['receipt', null, 1], ['count', null, 0]]);
     expect(box.waiting()).toBe(2);
@@ -94,7 +95,7 @@ describe('the outbox on the phone', () => {
     expect(box.list().map((i) => i.id)).toEqual([a.id, b.id]);
     expect(box.waiting()).toBe(0);
     await box.retry(a.id);
-    expect(await box.replay(async () => ({}))).toEqual({ sent: 1, refused: 0, receipts: [] });
+    expect(await box.replay(async () => ({}))).toEqual({ sent: 1, refused: 0, receipts: [], expenses: [] });
     expect(box.list().map((i) => i.id)).toEqual([b.id]);
     await box.remove(b.id);
     expect(box.list()).toEqual([]);
@@ -192,11 +193,120 @@ describe('the outbox on the phone', () => {
     expect(box.waiting()).toBe(1);
 
     await waitFor(() => link.state === 'online');
-    expect(await box.replay(send)).toEqual({ sent: 1, refused: 0, receipts: [] });
+    expect(await box.replay(send)).toEqual({ sent: 1, refused: 0, receipts: [], expenses: [] });
     const tries = o.seen.filter((m) => m.m === 'POST');
     expect(tries).toHaveLength(2);
     expect(tries.every((m) => m.k === item.id)).toBe(true);
     expect(made.size).toBe(1);
+    link.close();
+  });
+});
+
+// ——— 1.1: an expense's photo kept beside it, and what the office said with a refusal ———
+
+/** The phone's storage with room for photos (store.ts keeps each in a file of its own). */
+function withBlobs(): ReturnType<typeof memory> & { blobs: Map<string, string> } {
+  const blobs = new Map<string, string>();
+  return Object.assign(memory(), {
+    blobs,
+    readBlob: async (id: string) => blobs.get(id) ?? null,
+    writeBlob: async (id: string, text: string) => { blobs.set(id, text); },
+    removeBlob: async (id: string) => { blobs.delete(id); },
+    listBlobs: async () => [...blobs.keys()],
+    removeBlobs: async () => { blobs.clear(); }
+  });
+}
+
+const PHOTO = Buffer.alloc(15_000, 7).toString('base64');
+
+describe('a photo kept with a change in the outbox', () => {
+  it('is sealed beside its item, bound to it, sent with it, and gone once the office has it', async () => {
+    const disk = withBlobs();
+    const box = new Outbox(disk);
+    await box.load();
+    const item = await box.add('expense', { category: 'fuel', amount: 75_000 }, { title: 'Fuel', amount: 75_000, currency: 'IQD' }, undefined, PHOTO);
+    expect(item.blob).toBe(true);
+    const sealed = disk.blobs.get(item.id)!;
+    expect(sealed).toMatch(/^qasa-outbox-blob:1:/);
+    expect(sealed).not.toContain(PHOTO);
+    // nothing of the photo in the outbox's own file
+    expect(disk.file!.length).toBeLessThan(sealed.length);
+    expect(openBlob(item.id, sealed, fromB64(disk.key!))).toBe(PHOTO);
+    // another item's photo can't be passed off as this one's (a file swapped on the phone)
+    expect(openBlob('6f1c2b8e-3d4a-4b5c-9d6e-7f8091a2b3c4', sealed, fromB64(disk.key!))).toBeNull();
+    expect(openBlob(item.id, sealed, new Uint8Array(32).fill(9))).toBeNull();
+    // the sender reads it; the office has it: the photo goes, the result stays (as for receipts)
+    let sentPhoto: string | null = null;
+    const run = await box.replay(async (_i, blob) => { sentPhoto = await blob(); return { id: 'e1', status: 'approved' }; });
+    expect(sentPhoto).toBe(PHOTO);
+    expect(run.expenses.map((e) => [e.id, e.result])).toEqual([[item.id, 'posted']]);
+    expect(disk.blobs.size).toBe(0);
+    expect(box.list()).toEqual([expect.objectContaining({ id: item.id, result: 'posted', body: null })]);
+    expect(box.list()[0]!.blob).toBeUndefined();
+  });
+
+  it('is removed with its item, wiped with the outbox, and swept when its item is gone', async () => {
+    const disk = withBlobs();
+    const box = new Outbox(disk);
+    await box.load();
+    const a = await box.add('expense', {}, summary, undefined, PHOTO);
+    const b = await box.add('expense', {}, summary, undefined, PHOTO);
+    await box.remove(a.id);
+    expect([...disk.blobs.keys()]).toEqual([b.id]);
+    // a photo whose item never made it into the file (the app stopped between the two writes)
+    disk.blobs.set('11111111-2222-4333-8444-555555555555', 'qasa-outbox-blob:1:AAAA');
+    const again = new Outbox(disk);
+    await again.load();
+    expect([...disk.blobs.keys()]).toEqual([b.id]);
+    expect(await again.blobOf(again.list()[0]!)).toBe(PHOTO);
+    await again.wipe();
+    expect(disk.blobs.size).toBe(0);
+  });
+
+  it('keeps at most PHOTOS_MAX photos waiting, and storage without room for photos takes none', async () => {
+    const box = new Outbox(withBlobs());
+    await box.load();
+    for (let i = 0; i < PHOTOS_MAX; i++) await box.add('expense', {}, summary, undefined, PHOTO);
+    await expect(box.add('expense', {}, summary, undefined, PHOTO)).rejects.toThrow(/outbox_photos_full/);
+    // without a photo it still goes in
+    expect((await box.add('expense', {}, summary)).blob).toBeUndefined();
+    const plain = new Outbox(memory());
+    await plain.load();
+    await expect(plain.add('expense', {}, summary, undefined, PHOTO)).rejects.toThrow(/outbox_blobs_unsupported/);
+    expect(plain.list()).toEqual([]);
+  });
+
+  it('keeps what the office said with a refusal (the days an expense may be back, a line), for the words that explain it', async () => {
+    expect(outcomeOf(new OfficeError(400, 'validation', [{ code: 'expense_date_too_old', days: 62 }]))).toEqual({ refused: 'expense_date_too_old', detail: { days: 62 } });
+    expect(outcomeOf(new OfficeError(400, 'validation', [{ code: 'stock_insufficient', line: 1, available: 2000, path: { x: 1 } }])))
+      .toEqual({ refused: 'stock_insufficient', detail: { line: 1, available: 2000 } });
+    expect(outcomeOf(new OfficeError(400, 'validation', [{ code: 'bad code!' }]))).toEqual({ refused: 'validation' });
+    const box = new Outbox(withBlobs());
+    await box.load();
+    const item = await box.add('expense', {}, summary, undefined, PHOTO);
+    await box.replay(async () => { throw new OfficeError(400, 'validation', [{ code: 'expense_date_too_old', days: 62 }]); });
+    expect(box.list()[0]).toMatchObject({ id: item.id, error: 'expense_date_too_old', errorDetail: { days: 62 } });
+    // asked to try again: the refusal and its words go; the photo stays with it until it is sent
+    await box.retry(item.id);
+    expect(box.list()[0]!.errorDetail).toBeUndefined();
+    expect(await box.blobOf(box.list()[0]!)).toBe(PHOTO);
+  });
+
+  it('sends the staff\'s changes with their keys, the expense with its photo (src/send.ts)', async () => {
+    const asked: { m: string; p?: string; k?: string; b?: unknown }[] = [];
+    const o = fakeOffice({ reply: (m) => { asked.push(m as never); return { s: 201, b: { id: 'x1', status: 'draft' } }; } });
+    const link = new OfficeLink({ office: o.office, phone: generateKeyPair(), name: 'Las', socket: o.socket });
+    const api = officeApi(link);
+    const box = new Outbox(withBlobs());
+    await box.load();
+    const expense = await box.add('expense', { category: 'fuel', amount: 1000, currency: 'IQD', cashAccountCode: '1811', date: '2026-11-15', lang: 'en' }, summary, undefined, PHOTO);
+    const transfer = await box.add('transfer', { kind: 'transfer', lines: [] }, summary);
+    const arrival = await box.add('arrival', { lines: [] }, summary, 'po-1');
+    await box.replay((item, blob) => sendItem(api, item, blob));
+    const posts = asked.filter((m) => m.m === 'POST');
+    expect(posts.map((m) => [m.p, m.k])).toEqual([['/api/expenses', expense.id], ['/api/stock-docs', transfer.id], ['/api/purchase-orders/po-1/arrivals', arrival.id]]);
+    expect(posts[0]!.b).toMatchObject({ category: 'fuel', photo: PHOTO });
+    expect(box.list().map((i) => i.kind)).toEqual(['expense']);
     link.close();
   });
 });

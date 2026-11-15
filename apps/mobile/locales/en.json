@@ -1,6 +1,6 @@
 {
   "ios": {
-    "NSCameraUsageDescription": "Qasa uses the camera to scan barcodes and take item photos.",
+    "NSCameraUsageDescription": "Qasa uses the camera to scan barcodes and take photos of items and receipts.",
     "NSLocalNetworkUsageDescription": "Qasa connects to your Qasa ERP PC on the same Wi-Fi.",
     "NSFaceIDUsageDescription": "Qasa can unlock with Face ID when you turn it on in the app lock."
   },

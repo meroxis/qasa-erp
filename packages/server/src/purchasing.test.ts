@@ -1,7 +1,11 @@
+import { generateKeyPairSync, sign } from 'node:crypto';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import type { FastifyInstance } from 'fastify';
+import { addDays, todayIso } from '@qasa/core';
 import { openDatabase, type Db } from './db.ts';
 import { buildApp } from './app.ts';
+import { resetLoginThrottle } from './auth.ts';
+import { setLicensePublicKeyForTests } from './license.ts';
 import { writeSetting } from './settings.ts';
 import { purchasingApi } from './purchasing.ts';
 
@@ -181,5 +185,153 @@ describe('purchase orders', () => {
     expect((await post(`/api/purchase-orders/${po.id}/status`, { action: 'send' }, las)).statusCode).toBe(200);
     expect((await post(`/api/purchase-orders/${po.id}/receive`, { date: '2026-11-05' }, las)).statusCode).toBe(201);
     expect((await get('/api/purchase-orders')).statusCode).toBe(401);
+  });
+});
+
+// 1.5: what arrived of an order, counted or scanned when it came (the phone app's "Receive goods")
+describe('goods that arrived against an order', () => {
+  const today = todayIso();
+  const arrive = (id: string, body: unknown, h: Record<string, string> = headers) => post(`/api/purchase-orders/${id}/arrivals`, body, h);
+  const lines = (inv: { lines: { itemId: string; qtyMilli: number; unit?: string | null; unitQtyMilli?: number | null; unitPrice: number }[] }) =>
+    inv.lines.map((l) => [l.itemId === acId ? 'ac' : l.itemId === pipeId ? 'pipe' : l.itemId, l.qtyMilli, l.unitPrice]);
+
+  it('makes a draft purchase invoice for what came, at the order\'s prices, with the draft\'s id and status at the top', async () => {
+    const po = await sent();
+    // the same item twice is added up
+    const res = await arrive(po.id, { date: today, lines: [{ itemId: acId, qtyMilli: 2_000 }, { itemId: pipeId, qtyMilli: 5_000 }, { itemId: acId, qtyMilli: 1_000 }] });
+    expect(res.statusCode, res.body).toBe(201);
+    const made = res.json();
+    expect(made).toMatchObject({ status: 'draft', order: { id: po.id, status: 'sent' } });
+    expect(made.id).toBe(made.invoiceId);
+    const inv = (await get(`/api/invoices/${made.invoiceId}`)).json();
+    expect(inv).toMatchObject({ kind: 'purchase', status: 'draft', payment: 'credit', date: today, notes: po.number, partyId: supplierId });
+    expect(lines(inv)).toEqual([['ac', 3_000, 600_000], ['pipe', 5_000, 15_000]]);
+    // linked to the order: it waits for this draft, as after "receive"
+    const again = await arrive(po.id, { lines: [{ itemId: acId, qtyMilli: 1_000 }] });
+    expect(again.statusCode).toBe(409);
+    expect(again.json().error).toBe('po_receipt_pending');
+    // posted, it counts: partial, then received with what is left
+    expect((await post(`/api/invoices/${made.invoiceId}/post`)).statusCode).toBe(200);
+    expect((await get(`/api/purchase-orders/${po.id}`)).json()).toMatchObject({ status: 'partial', lines: [{ receivedMilli: 3_000, remainingMilli: 7_000 }, { receivedMilli: 5_000, remainingMilli: 15_000 }] });
+    const rest = (await arrive(po.id, { lines: [{ itemId: acId, qtyMilli: 7_000 }, { itemId: pipeId, qtyMilli: 15_000 }] })).json();
+    expect((await post(`/api/invoices/${rest.invoiceId}/post`)).statusCode).toBe(200);
+    expect((await get(`/api/purchase-orders/${po.id}`)).json().status).toBe('received');
+    // nothing more can arrive on a received order
+    expect((await arrive(po.id, { lines: [{ itemId: acId, qtyMilli: 1_000 }] })).json().error).toBe('action_not_allowed');
+    // the audit log says what arrived, with the action word of receiving
+    const audit = db.prepare("SELECT details FROM audit_log WHERE action = 'po.receive' ORDER BY id").all() as { details: string }[];
+    expect(audit.map((a) => JSON.parse(a.details))).toEqual([
+      expect.objectContaining({ number: po.number, invoiceId: made.invoiceId, lines: 2, arrivals: true }),
+      expect.objectContaining({ invoiceId: rest.invoiceId, arrivals: true })
+    ]);
+  });
+
+  it('takes only what is on the order and still to come, today or before, and nothing but the lines', async () => {
+    const po = await sent();
+    const refused = async (body: unknown) => {
+      const res = await arrive(po.id, body);
+      expect(res.statusCode, res.body).toBe(400);
+      return res.json().details;
+    };
+    expect(await refused({ lines: [{ itemId: customerId, qtyMilli: 1_000 }] })).toEqual([{ code: 'po_line_unknown', itemId: customerId }]);
+    expect(await refused({ lines: [{ itemId: acId, qtyMilli: 6_000 }, { itemId: acId, qtyMilli: 5_000 }] })).toEqual([{ code: 'po_over_remaining', itemId: acId, remaining: 10_000 }]);
+    expect(await refused({ date: addDays(today, 1), lines: [{ itemId: acId, qtyMilli: 1_000 }] })).toEqual([{ code: 'date_future' }]);
+    // a price, a cost or anything else is not taken from whoever counted
+    for (const body of [{ lines: [{ itemId: acId, qtyMilli: 1_000, unitPrice: 1 }] }, { lines: [{ itemId: acId, qtyMilli: 1_000 }], rateX100: 100 }, { lines: [] }, { lines: [{ itemId: acId, qtyMilli: 0 }] }]) {
+      expect((await arrive(po.id, body)).statusCode, JSON.stringify(body)).toBe(400);
+    }
+    // a draft order hasn't been sent: nothing arrives for it
+    const draft = await created();
+    expect((await arrive(draft.id, { lines: [{ itemId: acId, qtyMilli: 1_000 }] })).json().error).toBe('action_not_allowed');
+    expect(db.prepare("SELECT COUNT(*) AS n FROM invoices WHERE kind = 'purchase'").get()).toMatchObject({ n: 0 });
+  });
+
+  it('spreads an item over the order\'s lines, first line first, and keeps a line ordered in boxes in whole boxes', async () => {
+    const boxed = (await post('/api/items', { code: 'FLT', name: { ar: 'فلتر', en: 'Filter', ku: 'فلتەر' }, unit: 'piece', salePrice: 5_000, saleCurrency: 'IQD', units: [{ unit: 'box', factorMilli: 12_000 }] })).json().id;
+    const po = (await post('/api/purchase-orders', order({ lines: [
+      { itemId: boxed, unit: 'box', unitQtyMilli: 2_000, unitPrice: 48_000 },
+      { itemId: boxed, qtyMilli: 5_000, unitPrice: 4_100 }
+    ] }))).json();
+    expect((await post(`/api/purchase-orders/${po.id}/status`, { action: 'send' })).statusCode).toBe(200);
+    // 12 pieces: one whole box on the boxed line
+    const first = (await arrive(po.id, { lines: [{ itemId: boxed, qtyMilli: 12_000 }] })).json();
+    const inv = (await get(`/api/invoices/${first.invoiceId}`)).json();
+    expect(inv.lines.map((l: { lineUnit: string | null; unitQtyMilli: number | null; qtyMilli: number; unitPrice: number }) => [l.lineUnit, l.unitQtyMilli, l.qtyMilli, l.unitPrice]))
+      .toEqual([['box', 1_000, 12_000, 48_000]]);
+    expect((await post(`/api/invoices/${first.invoiceId}/post`)).statusCode).toBe(200);
+    // 18 pieces: the 12 left on the boxed line (a whole box), then 6 on the next line in pieces
+    const second = (await arrive(po.id, { lines: [{ itemId: boxed, qtyMilli: 17_000 }] })).json();
+    const inv2 = (await get(`/api/invoices/${second.invoiceId}`)).json();
+    expect(inv2.lines.map((l: { lineUnit: string | null; unitQtyMilli: number | null; qtyMilli: number; unitPrice: number }) => [l.lineUnit, l.unitQtyMilli, l.qtyMilli, l.unitPrice]))
+      .toEqual([['box', 1_000, 12_000, 48_000], [null, null, 5_000, 4_100]]);
+    // 6 pieces of a boxed line are half a box: received in pieces, at the box's price per piece
+    expect((await app.inject({ method: 'DELETE', url: `/api/invoices/${second.invoiceId}`, headers })).statusCode).toBe(204);
+    const third = (await arrive(po.id, { lines: [{ itemId: boxed, qtyMilli: 6_000 }] })).json();
+    expect((await get(`/api/invoices/${third.invoiceId}`)).json().lines.map((l: { lineUnit: string | null; qtyMilli: number; unitPrice: number }) => [l.lineUnit, l.qtyMilli, l.unitPrice]))
+      .toEqual([[null, 6_000, 4_000]]);
+  });
+
+  it('makes one draft when the same request comes again with its key, and answers it with the draft\'s id', async () => {
+    const po = await sent();
+    const key = { ...headers, 'x-qasa-idempotency': '0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d' };
+    const body = { date: today, lines: [{ itemId: acId, qtyMilli: 2_000 }] };
+    const first = await arrive(po.id, body, key);
+    const second = await arrive(po.id, body, key);
+    expect(first.statusCode).toBe(201);
+    expect(second.statusCode).toBe(201);
+    expect(second.json()).toMatchObject({ id: first.json().id, status: 'draft', invoiceId: first.json().invoiceId });
+    expect(db.prepare("SELECT COUNT(*) AS n FROM invoices WHERE kind = 'purchase'").get()).toMatchObject({ n: 1 });
+  });
+
+  it('is for whoever keeps the stock or buys; a sales person may not; posting the draft stays with purchases', async () => {
+    writeSetting(db, 'trial_started', today);
+    const owner = (await get('/api/users')).json()[0];
+    await post(`/api/users/${owner.id}/password`, { password: 'owner-pass-1' });
+    for (const [username, roles] of [['las', ['storekeeper']], ['mer', ['purchasing']], ['raz', ['sales']]] as const) {
+      expect((await post('/api/users', { username, name: username, roles, password: `${username}-pass-1` })).statusCode).toBe(201);
+    }
+    const po = await sent();
+    expect((await app.inject({ method: 'PUT', url: '/api/auth/signin', payload: { on: true }, headers })).statusCode).toBe(200);
+    const signIn = async (username: string) => {
+      const res = await app.inject({ method: 'POST', url: '/api/auth/login', payload: { username, password: `${username}-pass-1` }, headers: { 'x-qasa-client': '1' } });
+      expect(res.statusCode, res.body).toBe(200);
+      return { cookie: String(res.headers['set-cookie']).split(';')[0]!, 'x-qasa-client': '1' };
+    };
+    const [las, mer, raz] = [await signIn('las'), await signIn('mer'), await signIn('raz')];
+    const refused = await arrive(po.id, { lines: [{ itemId: acId, qtyMilli: 1_000 }] }, raz);
+    expect(refused.statusCode).toBe(403);
+    expect(refused.json().details).toEqual({ need: 'stock' });
+    const kept = await arrive(po.id, { lines: [{ itemId: acId, qtyMilli: 1_000 }] }, las);
+    expect(kept.statusCode, kept.body).toBe(201);
+    // the storekeeper may not post it (purchases), the buyer may
+    expect((await post(`/api/invoices/${kept.json().invoiceId}/post`, {}, las)).statusCode).toBe(403);
+    expect((await post(`/api/invoices/${kept.json().invoiceId}/post`, {}, mer)).statusCode).toBe(200);
+    expect((await arrive(po.id, { lines: [{ itemId: pipeId, qtyMilli: 1_000 }] }, mer)).statusCode).toBe(201);
+  });
+
+  it('is refused for an order of another branch\'s warehouse', async () => {
+    resetLoginThrottle();
+    const pair = generateKeyPairSync('ed25519');
+    setLicensePublicKeyForTests(pair.publicKey.export({ format: 'jwk' }).x!);
+    const body = `QASA1.${Buffer.from(JSON.stringify({ v: 1, id: 'QL-TEST-business', plan: 'business', to: 'Test Company', issued: '2026-01-01', expires: null })).toString('base64url')}`;
+    expect((await post('/api/plan/license', { key: `${body}.${sign(null, Buffer.from(body), pair.privateKey).toString('base64url')}` })).statusCode).toBe(200);
+    const hq = (await get('/api/warehouses')).json()[0].id;
+    const erbil = (await post('/api/warehouses', { code: 'ERB', name: { ar: 'أربيل', en: 'Erbil', ku: 'هەولێر' } })).json().id;
+    const branch = (await post('/api/branches', { code: 'ERB', name: 'Erbil', city: 'Erbil' })).json().id;
+    expect((await put(`/api/branches/${branch}/warehouses`, { warehouseIds: [erbil] })).statusCode).toBe(200);
+    const owner = (await get('/api/users')).json()[0];
+    await post(`/api/users/${owner.id}/password`, { password: 'owner-pass-1' });
+    const lasId = (await post('/api/users', { username: 'las', name: 'Las', roles: ['storekeeper'], password: 'las-pass-1' })).json().id;
+    expect((await put(`/api/users/${lasId}/branches`, { branchIds: [branch] })).statusCode).toBe(200);
+    const hqOrder = (await post('/api/purchase-orders', order({ warehouseId: hq }))).json();
+    const erbilOrder = (await post('/api/purchase-orders', order({ warehouseId: erbil }))).json();
+    for (const o of [hqOrder, erbilOrder]) expect((await post(`/api/purchase-orders/${o.id}/status`, { action: 'send' })).statusCode).toBe(200);
+    expect((await app.inject({ method: 'PUT', url: '/api/auth/signin', payload: { on: true }, headers })).statusCode).toBe(200);
+    const login = await app.inject({ method: 'POST', url: '/api/auth/login', payload: { username: 'las', password: 'las-pass-1' }, headers: { 'x-qasa-client': '1' } });
+    const las = { cookie: String(login.headers['set-cookie']).split(';')[0]!, 'x-qasa-client': '1' };
+    expect((await arrive(hqOrder.id, { lines: [{ itemId: acId, qtyMilli: 1_000 }] }, las)).statusCode).toBe(403);
+    // and its own branch's order, but not into another branch's warehouse
+    expect((await arrive(erbilOrder.id, { warehouseId: hq, lines: [{ itemId: acId, qtyMilli: 1_000 }] }, las)).statusCode).toBe(403);
+    expect((await arrive(erbilOrder.id, { lines: [{ itemId: acId, qtyMilli: 1_000 }] }, las)).statusCode).toBe(201);
   });
 });

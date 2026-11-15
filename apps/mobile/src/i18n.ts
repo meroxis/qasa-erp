@@ -1,4 +1,5 @@
 import { OWNER_T } from './owner/i18n';
+import { STAFF_T } from './staff/i18n';
 
 /** Every text of the phone app in Arabic, English and Kurdish (Sorani), in that order, like the desktop app. */
 export type Lang = 'ar' | 'en' | 'ku';
@@ -296,7 +297,7 @@ const BASE = {
   error: ['حدث خطأ:', 'Something went wrong:', 'هەڵەیەک ڕوویدا:'],
   validation: ['رفض الحاسوب البيانات. تحقق منها وحاول مجدداً.', 'The PC refused the details. Check them and try again.', 'کۆمپیوتەرەکە زانیارییەکانی ڕەتکردەوە. بیانپشکنە و دووبارە هەوڵ بدەرەوە.'],
 
-  // ——— phone app 1.1: what the office offers, and its refusals (explain.ts) ———
+  // ——— phone app 1.1: what the office offers, its refusals (explain.ts), and what every 1.1 screen shares ———
   officeOld: ['لا يقبل حاسوب المكتب هذا من الهاتف. قد يحتاج تحديث قاصة على ذلك الحاسوب.', 'The office PC doesn\'t take this from a phone. Qasa ERP on that PC may need an update.', 'کۆمپیوتەری نووسینگە ئەمە لە مۆبایلەوە وەرناگرێت. لەوانەیە قاسە لەسەر ئەو کۆمپیوتەرە پێویستی بە نوێکردنەوە هەبێت.'],
   phoneRefused: ['لا يقبل حاسوب المكتب هذا من هذا الهاتف.', 'The office PC doesn\'t take this from this phone.', 'کۆمپیوتەری نووسینگە ئەمە لەم مۆبایلەوە وەرناگرێت.'],
   tooLarge: ['هذا أكبر من أن يُعرض على الهاتف. افتحه على الحاسوب.', 'This is too much to show on a phone. Open it on the PC.', 'ئەمە زۆرە بۆ پیشاندان لەسەر مۆبایل. لەسەر کۆمپیوتەر بیکەرەوە.'],
@@ -314,10 +315,13 @@ const BASE = {
   featReceive: ['استلام البضاعة', 'receiving goods', 'وەرگرتنی کاڵا']
 } as const satisfies Record<string, readonly [string, string, string]>;
 
-/** Every text: the app's own, and phone app 1.1's for the owner and the managers (owner/i18n.ts). A key is in one only (a test). */
-const T = { ...BASE, ...OWNER_T };
-/** The keys of each part of T, for that test. */
-export const TEXT_PARTS: Record<'base' | 'owner', readonly string[]> = { base: Object.keys(BASE), owner: Object.keys(OWNER_T) };
+/**
+ * Every text: the app's own, then phone app 1.1's in a file of its own for the owner and the managers (owner/i18n.ts)
+ * and for the staff (staff/i18n.ts). A key is in one of them only (a test).
+ */
+const T = { ...BASE, ...OWNER_T, ...STAFF_T } as const;
+/** The parts the texts are made of, for the test that no key is in two. */
+export const TEXT_PARTS: Record<string, Record<string, readonly [string, string, string]>> = { base: BASE, owner: OWNER_T, staff: STAFF_T };
 
 export type Key = keyof typeof T;
 export const KEYS = Object.keys(T) as Key[];

@@ -9,7 +9,7 @@ import type { ErrorText } from '../explain';
  */
 export const OWNER_ERRORS: Record<string, ErrorText> = {
   same_person: { key: 'errSamePerson' },
-  period_locked: { key: 'errPeriodLocked', vars: (d) => ({ p: typeof d.period === 'string' ? d.period : '' }) },
+  period_locked: { key: 'errPeriodLocked', vars: (d) => (typeof d.period === 'string' && /^\d{4}-\d{2}$/.test(d.period) ? { p: d.period } : null) },
   // the voucher was changed after the phone showed it (the office compares `seen`)
   entry_changed: { key: 'aprChanged' },
   reject_reason_required: { key: 'errRejectReason' },

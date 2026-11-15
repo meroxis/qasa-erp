@@ -900,9 +900,10 @@ describe('the release notes of 1.4.2 (kept as shipped, with the stock-correction
   });
 
   it('says first that 1.4.1 cannot open a company file 1.4.2 has upgraded: every PC is updated, and an older Store copy waits for 1.4.2', () => {
-    // why: 1.4.2 adds migration 14 (the audit log's index for the sign-in check), the last one, and an app refuses a newer file
+    // why: 1.4.2 adds migration 14 (the audit log's index for the sign-in check), and an app refuses a newer file
+    // (the next release adds 15 after it: the receipt photos, entry_images; its own notes say so)
     const db = read('packages/server/src/db.ts');
-    expect(db).toContain('{ sql: V14, mysql: { tables: true, steps: () => V14_MYSQL_STEPS } }\n];');
+    expect(db).toContain('{ sql: V14, mysql: { tables: true, steps: () => V14_MYSQL_STEPS } }');
     expect(db).toContain("if (version > app) throw new AppError(409, 'database_newer', { version, app });");
     expect(section('en')).toContain('### Before you update\n- **The company file is upgraded to a new version.** A copy of it is kept beside it before the update. Qasa ERP 1.4.1 and earlier cannot open a file that 1.4.2 has upgraded, so update every PC that opens the same company. A Microsoft Store copy that is still on an older version cannot open it until the Store has 1.4.2.');
     expect(section('ar')).toContain('### قبل التحديث\n- **يُرقّى ملف الشركة إلى إصدار جديد.** تُحفظ نسخة منه بجانبه قبل التحديث. لا يفتح قاصة ERP 1.4.1 وما قبله ملفاً رقّاه الإصدار 1.4.2، فحدّث كل حاسوب يفتح الشركة نفسها. ونسخة متجر Microsoft التي ما زالت على إصدار أقدم لا تفتحه حتى يصل الإصدار 1.4.2 إلى المتجر.');
@@ -1078,8 +1079,9 @@ describe('the release notes and the Store "What\'s new" of this version (1.4.3)'
   });
 
   it('upgrades no company file in 1.4.3, so it has no "Before you update" warning', () => {
-    // why: 1.4.3 adds no migration; 1.4.2 and 1.4.3 open the same company file (schema 14)
-    expect(read('packages/server/src/db.ts')).toContain('{ sql: V14, mysql: { tables: true, steps: () => V14_MYSQL_STEPS } }\n];');
+    // why: 1.4.3 adds no migration; 1.4.2 and 1.4.3 open the same company file (schema 14; 15, the receipt photos,
+    // comes with the next release, whose notes say so)
+    expect(read('packages/server/src/db.ts')).toMatch(/\{ sql: V14, mysql: \{ tables: true, steps: \(\) => V14_MYSQL_STEPS \} \},?\n( {2}\{ sql: V15, mysql: 'tables' \}\n)?\];/);
     expect(notes).not.toMatch(/Before you update|قبل التحديث|پێش نوێکردنەوە/);
   });
 
@@ -1154,11 +1156,12 @@ describe('the release notes and the Store "What\'s new" of this version (1.4.3)'
     // cost goes only to a phone that must keep a PIN (pro/ is the private Pro module, in Meroxis' checkout only)
     const phone = 'pro/src/phone/phone.ts';
     if (existsSync(join(root, phone))) {
-      // (phone app 1.1: the list is kept in rules.ts with the phone link's other shared rules)
-      const rules = read('pro/src/phone/rules.ts');
-      expect(rules).toContain("export const FIGURES_ROLES: readonly string[] = ['admin', 'preparer', 'checker', 'approver', 'viewer'];");
-      expect(rules).toContain('export const isFigures = (roles: readonly string[]): boolean => roles.some((r) => FIGURES_ROLES.includes(r));');
-      expect(read(phone)).toContain('if (roles === null || isFigures(roles)) return trimmed;');
+      // (from phone app 1.1 the list is in rules.ts, which phone.ts shares with its parts of routes)
+      const rules = 'pro/src/phone/rules.ts';
+      const list = existsSync(join(root, rules)) ? read(rules) : read(phone);
+      expect(list).toContain("export const FIGURES_ROLES: readonly string[] = ['admin', 'preparer', 'checker', 'approver', 'viewer'];");
+      if (list !== read(phone)) expect(list).toContain('export const isFigures = (roles: readonly string[] | null): boolean => roles === null || roles.some((r) => FIGURES_ROLES.includes(r));');
+      expect(read(phone)).toMatch(/if \(roles === null \|\| roles\.some\(\(r\) => FIGURES_ROLES\.includes\(r\)\)\) return body;|if \(isFigures\(roles\)\) return trimmed;/);
     }
     const roles = read('apps/web/src/i18n.ts');
     expect(roles).toContain("role_storekeeper: ['أمين المخزن', 'Storekeeper', 'کۆگادار']");

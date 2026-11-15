@@ -276,7 +276,8 @@ export interface Route {
 export function errorResponse(error: unknown): { status: number; body: { error: string; details: unknown } } {
   if (error instanceof AppError) return { status: error.status, body: { error: error.code, details: error.details ?? null } };
   const message = error instanceof Error ? error.message : String(error);
-  for (const code of ['posted_entry_is_permanent', 'posted_invoice_is_permanent', 'posted_document_is_permanent', 'stock_moves_are_permanent', 'installment_contract_is_permanent', 'loyalty_moves_are_permanent']) {
+  for (const code of ['posted_entry_is_permanent', 'posted_invoice_is_permanent', 'posted_document_is_permanent', 'stock_moves_are_permanent', 'installment_contract_is_permanent', 'loyalty_moves_are_permanent',
+    'entry_image_is_permanent']) {
     if (message.includes(code)) return { status: 409, body: { error: code, details: null } };
   }
   // a delete the database refused because other records still point at the row: nothing changed, say so plainly

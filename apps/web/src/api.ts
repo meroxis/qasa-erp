@@ -54,6 +54,8 @@ export interface EntrySummary {
   baseTotal: number;
   /** 1.4: sent for approval ("Vouchers need approval"): where that stands (older servers leave it out) */
   approval?: VoucherApproval | null;
+  /** 1.5: in a list, whether the voucher has the photo of its paper receipt (older servers leave it out) */
+  hasImage?: boolean;
 }
 
 export interface VoucherApproval {
@@ -95,7 +97,12 @@ export interface EntryView extends EntrySummary {
   actions: EntryAction[];
   invoiceId: string | null;
   stockDocId: string | null;
+  /** 1.5: the photo of the paper receipt kept with the voucher (an expense from the phone app); older servers leave it out */
+  image?: EntryImageMeta | null;
 }
+
+/** What a voucher's photo is; the photo itself comes from api.entryImage. */
+export interface EntryImageMeta { bytes: number; createdBy: string; createdAt: string }
 
 export interface Settings {
   companyName: Names;
@@ -826,6 +833,11 @@ export const api = {
   deleteAccount: (code: string) => request<void>('DELETE', `/api/accounts/${code}`),
   entries: (f: { type?: string; status?: string; approval?: string; q?: string; from?: string; to?: string } = {}) => request<EntrySummary[]>('GET', '/api/entries' + qs(f)),
   entry: (id: string) => request<EntryView>('GET', `/api/entries/${id}`),
+  /** 1.5: a voucher's receipt photo as a data: URL (JPEG only, as the server keeps it; null for anything else) */
+  entryImage: async (id: string): Promise<string | null> => {
+    const photo = await request<{ mime: string; data: string }>('GET', `/api/entries/${encodeURIComponent(id)}/image`);
+    return photo.mime === 'image/jpeg' && /^[A-Za-z0-9+/]+={0,2}$/.test(photo.data) ? `data:image/jpeg;base64,${photo.data}` : null;
+  },
   createJournal: (input: JournalInput) => request<EntryView>('POST', '/api/entries', input),
   updateJournal: (id: string, input: JournalInput) => request<EntryView>('PUT', `/api/entries/${id}`, input),
   /** options: the idempotency key (and books) of a receipt the PC may send again from its outbox (1.2) */

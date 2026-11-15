@@ -268,6 +268,21 @@ export const MYSQL_TABLES: readonly MysqlObject[] = [
     )`
   },
   {
+    // 15: the photo of a paper receipt kept with its voucher (db.ts V15)
+    name: 'entry_images',
+    since: 15,
+    sql: `CREATE TABLE entry_images (
+      entry_id ${ID} NOT NULL PRIMARY KEY,
+      mime ${WORD} NOT NULL CHECK (mime = 'image/jpeg'),
+      data MEDIUMBLOB NOT NULL,
+      bytes INT NOT NULL CHECK (bytes > 0 AND bytes <= 409600),
+      sha256 VARCHAR(64) NOT NULL,
+      created_by TEXT NOT NULL,
+      created_at ${WHEN} NOT NULL,
+      FOREIGN KEY (entry_id) REFERENCES entries(id) ON DELETE CASCADE
+    )`
+  },
+  {
     name: 'sequences',
     sql: `CREATE TABLE sequences (
       "key" ${ID} NOT NULL PRIMARY KEY,
@@ -1679,7 +1694,11 @@ export const MYSQL_TRIGGERS: readonly MysqlObject[] = [
   trigger('stock_batch_moves_no_delete', 'BEFORE DELETE', 'stock_batch_moves', null, 'stock_moves_are_permanent', 10),
   // 12: a customer's loyalty points movements are kept for ever too
   trigger('loyalty_moves_no_update', 'BEFORE UPDATE', 'loyalty_moves', null, 'loyalty_moves_are_permanent', 12),
-  trigger('loyalty_moves_no_delete', 'BEFORE DELETE', 'loyalty_moves', null, 'loyalty_moves_are_permanent', 12)
+  trigger('loyalty_moves_no_delete', 'BEFORE DELETE', 'loyalty_moves', null, 'loyalty_moves_are_permanent', 12),
+  // 15: a receipt's photo is never changed, and a posted voucher keeps it (on the server a cascaded delete fires no
+  // trigger, so a deleted draft's photo goes with it, as in SQLite)
+  trigger('entry_images_no_update', 'BEFORE UPDATE', 'entry_images', null, 'entry_image_is_permanent', 15),
+  trigger('entry_images_no_delete', 'BEFORE DELETE', 'entry_images', `(SELECT status FROM entries WHERE id = OLD.entry_id) = 'approved'`, 'entry_image_is_permanent', 15)
 ];
 
 /**

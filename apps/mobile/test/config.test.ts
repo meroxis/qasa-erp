@@ -44,6 +44,12 @@ describe('the app\'s build settings', () => {
     expect(files.ckb!.android!.app_name).toBe('قاسە ERP');
     expect(files.ar!.android!.app_name).toBe('قاصة ERP');
     expect(texts.en!.NSLocalNetworkUsageDescription).toBe(app.expo.ios.infoPlist.NSLocalNetworkUsageDescription);
+    // 1.1: the camera also takes the photo of an expense's paper receipt, and says so in each language
+    const camera = app.expo.plugins.find((p: unknown) => Array.isArray(p) && p[0] === 'expo-camera')[1].cameraPermission as string;
+    expect(camera).toBe(texts.en!.NSCameraUsageDescription);
+    expect(camera).toMatch(/receipts/);
+    expect(texts.ar!.NSCameraUsageDescription).toContain('الوصولات');
+    expect(texts.ckb!.NSCameraUsageDescription).toContain('وەسڵ');
   });
 });
 

@@ -2,6 +2,7 @@ import { OfficeError, ok, q, safeId } from './answers';
 import type { OfficeLink } from './link';
 import { ownerApi } from './owner/api';
 import type { Me } from './roles';
+import { staffApi } from './staff/api';
 
 /** The office's answers the app reads (the same shapes as the desktop app's API). */
 export type Names = { ar: string; en: string; ku: string };
@@ -73,12 +74,15 @@ export interface CountSession {
 // (a refusal, reading an answer, ids in paths: answers.ts, shared with the calls of phone app 1.1)
 export { OfficeError, ok, q, safeId };
 
-/** The office's API as the phone calls it: phone app 1.0's calls, and 1.1's for the owner and the managers (owner/api.ts). */
+/**
+ * The office's API as the phone calls it: phone app 1.0's calls, then 1.1's for the owner and the managers
+ * (owner/api.ts) and for the staff (staff/api.ts). No call is in two of them (logic.test.ts).
+ */
 export function officeApi(link: OfficeLink) {
-  return { ...coreApi(link), ...ownerApi(link) };
+  return { ...coreApi(link), ...ownerApi(link), ...staffApi(link) };
 }
 
-function coreApi(link: OfficeLink) {
+export function coreApi(link: OfficeLink) {
   return {
     me: async () => ok(await link.request<Me>('GET', '/api/auth/me')),
     settings: async () => ok(await link.request<Settings>('GET', '/api/settings')),
