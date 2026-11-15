@@ -1155,8 +1155,12 @@ describe('the release notes and the Store "What\'s new" of this version (1.4.3)'
     // cost goes only to a phone that must keep a PIN (pro/ is the private Pro module, in Meroxis' checkout only)
     const phone = 'pro/src/phone/phone.ts';
     if (existsSync(join(root, phone))) {
-      expect(read(phone)).toContain("export const FIGURES_ROLES: readonly string[] = ['admin', 'preparer', 'checker', 'approver', 'viewer'];");
-      expect(read(phone)).toContain('if (roles === null || roles.some((r) => FIGURES_ROLES.includes(r))) return body;');
+      // (from phone app 1.1 the list is in rules.ts, which phone.ts shares with its groups of routes)
+      const rules = 'pro/src/phone/rules.ts';
+      const list = existsSync(join(root, rules)) ? read(rules) : read(phone);
+      expect(list).toContain("export const FIGURES_ROLES: readonly string[] = ['admin', 'preparer', 'checker', 'approver', 'viewer'];");
+      if (list !== read(phone)) expect(list).toContain('export const isFigures = (roles: readonly string[] | null): boolean => roles === null || roles.some((r) => FIGURES_ROLES.includes(r));');
+      expect(read(phone)).toMatch(/if \(roles === null \|\| roles\.some\(\(r\) => FIGURES_ROLES\.includes\(r\)\)\) return body;|if \(isFigures\(roles\)\) return trimmed;/);
     }
     const roles = read('apps/web/src/i18n.ts');
     expect(roles).toContain("role_storekeeper: ['أمين المخزن', 'Storekeeper', 'کۆگادار']");

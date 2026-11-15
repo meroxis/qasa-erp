@@ -82,5 +82,8 @@ export const PHONE_TEXT = {
   a_phone_pair_start: ['بدء ربط هاتف', 'Phone pairing started', 'دەستپێکردنی بەستنەوەی مۆبایل'],
   a_phone_paired: ['ربط هاتف', 'Phone paired', 'مۆبایل بەسترایەوە'],
   a_phone_remove: ['حذف هاتف', 'Phone removed', 'مۆبایل لابرا'],
-  a_phone_count: ['جرد من هاتف', 'Count from a phone', 'جەرد لە مۆبایلەوە']
+  a_phone_count: ['جرد من هاتف', 'Count from a phone', 'جەرد لە مۆبایلەوە'],
+  // 1.1: every change a phone makes has a line of its own in the audit log (which phone, as whom, what)
+  a_phone_change: ['تغيير من هاتف', 'Change from a phone', 'گۆڕانکاری لە مۆبایلەوە'],
+  e_phone: ['هاتف', 'Phone', 'مۆبایل']
 } as const satisfies Record<string, readonly [string, string, string]>;
