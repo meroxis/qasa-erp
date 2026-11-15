@@ -4,7 +4,7 @@ import { ApiError } from './api.ts';
 import { errorMessages } from './components.tsx';
 import { isKey, makeI18n, type Key } from './i18n.ts';
 
-// Qasa Relay hardening (1.5): the new refusals the office's link can show, the office server's key that is never kept
+// Qasa Relay hardening (1.4.2): the new refusals the office's link can show, the office server's key that is never kept
 // in the clear, and a new office certificate, each in Arabic, English and Kurdish.
 const LANGS = ['ar', 'en', 'ku'] as const;
 const all = (key: Key) => LANGS.map((l) => makeI18n(l, 'western', () => {}, () => {}).t(key));

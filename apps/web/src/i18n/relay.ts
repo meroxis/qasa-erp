@@ -21,13 +21,13 @@ export const RELAY_TEXT = {
   rl_e_activation_stale: ['ترخيص هذا المكتب يحتاج إلى التحقق مع بوابة العملاء: صِل هذا الحاسوب بالإنترنت واضغط «تحقق الآن» في «الخطة والترخيص». يعود Qasa Relay بعدها تلقائياً.', 'This office’s licence needs to check in with the portal: connect this PC to the internet and press “Check now” on Plan & license. Qasa Relay is back by itself right after.', 'مۆڵەتی ئەم نووسینگەیە پێویستە لەگەڵ پۆرتاڵەکە بپشکنرێت: ئەم کۆمپیوتەرە بە ئینتەرنێتەوە ببەستە و لە «پلان و مۆڵەت» «ئێستا بپشکنە» دابگرە. Qasa Relay دوای ئەوە خۆی دەگەڕێتەوە.'],
   rl_e_office_taken: ['رقم هذا المكتب مستخدم بمفتاح آخر. تواصل مع دعم قاصة ERP.', 'This office ID is held by another key. Contact Qasa ERP support.', 'ئەم ژمارەی نووسینگەیە بە کلیلێکی تر گیراوە. پەیوەندی بە پشتیوانیی قاسە ERP بکە.'],
   rl_e_too_many_offices: ['هذا الترخيص مستخدم على عدد كبير من المكاتب.', 'This licence is already used for too many offices.', 'ئەم مۆڵەتە بۆ ژمارەیەکی زۆر نووسینگە بەکارهاتووە.'],
-  // 1.5: the licence's activation on this PC is used by another office ID registered first on the same PC
+  // 1.4.2: the licence's activation on this PC is used by another office ID registered first on the same PC
   rl_e_office_replaced: [
     'هذا الحاسوب مسجّل في Qasa Relay برقم مكتب آخر سُجّل قبله بالترخيص نفسه، فأُوقف هذا. إن لم تكن تعرف السبب فتواصل مع دعم قاصة ERP.',
     'This PC’s licence is used on Qasa Relay by another office ID, registered first on the same PC, so this one was stopped. If you don’t know why, contact Qasa ERP support.',
     'مۆڵەتی ئەم کۆمپیوتەرە لە Qasa Relay بە ژمارەیەکی تری نووسینگە بەکاردێت کە پێشتر لەسەر هەمان کۆمپیوتەر تۆمار کراوە، بۆیە ئەمە ڕاگیرا. ئەگەر هۆکارەکەی نازانیت پەیوەندی بە پشتیوانیی قاسە ERP بکە.'
   ],
-  // 1.5: more clients waited at the relay at once than this PC opens connections for; some were left to try again
+  // 1.4.2: more clients waited at the relay at once than this PC opens connections for; some were left to try again
   rl_e_too_many_dials: [
     'وصلت طلبات اتصال كثيرة في وقت واحد عبر Qasa Relay، فتُرك بعضها ليعيد المحاولة. إن تكرر ذلك كثيراً فقد يكون أحدٌ يطرق رقم المكتب: أخبر دعم قاصة ERP.',
     'Many connections arrived through Qasa Relay at once, so some were left to try again. If this keeps happening, someone may be knocking on the office ID: tell Qasa ERP support.',
@@ -39,7 +39,7 @@ export const RELAY_TEXT = {
   rl_needsPro: ['خطتك Starter تشغّل شبكة المكتب داخل المكتب فقط. الوصول عبر الإنترنت بـ Qasa Relay يأتي مع Pro وBusiness.', 'Your Starter plan runs the office network inside the office only. Reaching it over the internet with Qasa Relay comes with Pro and Business.', 'پلانەکەت (Starter) تۆڕی نووسینگە تەنها لەناو نووسینگەدا کار پێدەکات. گەیشتن لە ڕێی ئینتەرنێتەوە بە Qasa Relay لەگەڵ Pro و Business دێت.'],
   rl_e_plan_no_relay: ['Qasa Relay يأتي مع Pro وBusiness. خطة Starter تعمل على شبكة المكتب نفسها فقط.', 'Qasa Relay comes with Pro and Business. The Starter plan works on the office’s own network only.', 'Qasa Relay لەگەڵ Pro و Business دێت. پلانی Starter تەنها لەسەر تۆڕی خودی نووسینگە کار دەکات.'],
   err_plan_no_relay: ['Qasa Relay يأتي مع Pro وBusiness. خطة Starter تعمل على شبكة المكتب نفسها فقط — راجع «الخطة والترخيص».', 'Qasa Relay comes with Pro and Business. The Starter plan works on the office’s own network only. See Plan & license.', 'Qasa Relay لەگەڵ Pro و Business دێت. پلانی Starter تەنها لەسەر تۆڕی خودی نووسینگە کار دەکات — «پلان و مۆڵەت» ببینە.'],
-  // 1.5: a new office certificate (the old key may be in a copy somewhere): every PC pairs again
+  // 1.4.2: a new office certificate (the old key may be in a copy somewhere): every PC pairs again
   netNewCert: ['شهادة مكتب جديدة', 'New office certificate', 'بڕوانامەی نوێی نووسینگە'],
   netNewCertHelp: [
     'إن كان مفتاح هذا الحاسوب قد نُسخ (نسخة قديمة من مجلد البرنامج، حاسوب قديم)، فاصنع شهادة جديدة: يتوقف المفتاح القديم عن العمل، وتتصل الحواسيب الأخرى من جديد برمز الاقتران الجديد. الهواتف لا تتأثر.',

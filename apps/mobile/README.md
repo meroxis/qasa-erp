@@ -43,7 +43,7 @@ profit anywhere, and leaves out the safes when an office does not send them.
 
 The phone is paired once: on the Qasa PC, **Settings → Phones → Add a phone** shows a QR code. It holds the office's
 addresses on the Wi-Fi, the port of the phone link (47421), the office's Qasa Relay ID (when the office is on the
-relay), the office's public key and a one-time pairing secret (valid 10 minutes). The app checks the code before using
+relay), the office's public key and a one-time pairing secret (valid 2 minutes, for one phone). The app checks the code before using
 anything in it (`src/pairing.ts`). The phone makes its own key (kept in the Android Keystore / iOS Keychain through
 expo-secure-store) and connects over a WebSocket: each Wi-Fi address first, then `wss://relay.qasaerp.com/v1/phone`.
 

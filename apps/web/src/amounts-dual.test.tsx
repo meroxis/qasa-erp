@@ -223,7 +223,7 @@ describe('the setting', () => {
     const html = render(<AmountsShowSetting />, { data: { settings: { companyName: { ar: '', en: '', ku: '' }, defaultRateX100: 131000, fiscalYearStart: '01-01', businessTypes: [], amountsShow: 'usd_iqd' } } });
     for (const label of ['Dinar only', 'Dinar and dollar', 'Dollar and dinar', 'Show amounts in']) expect(html).toContain(label);
     expect(html).toMatch(/aria-checked="true"[^>]*>(?:(?!aria-checked).)*Dollar and dinar/);
-    // a server from before 1.5 sends no choice: dinar only
+    // a server from before 1.4.2 sends no choice: dinar only
     const old = render(<AmountsShowSetting />, { data: { settings: { companyName: { ar: '', en: '', ku: '' }, defaultRateX100: 131000, fiscalYearStart: '01-01', businessTypes: [] } } });
     expect(old).toMatch(/aria-checked="true"[^>]*>(?:(?!aria-checked).)*Dinar only/);
   });
