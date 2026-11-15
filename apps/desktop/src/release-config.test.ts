@@ -1,5 +1,5 @@
 // What the release ships and says: the build and workflow settings, the Store listing and the notices.
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
@@ -896,7 +896,9 @@ describe('the release notes and the Store "What\'s new" of this version', () => 
     expect(section('ku')).toContain('پێویستی بە کۆدە نوێیەکەی بڕوانامە هەیە لە **ڕێکخستنەکان ← بەستنەوەی ماڵپەڕ**');
     expect(read('apps/web/src/i18n/webapi.ts')).toContain("wa_nav: ['ربط المواقع الإلكترونية', 'Website API', 'بەستنەوەی ماڵپەڕ']");
     // the WooCommerce plugin that takes only the 32-character code or the full fingerprint is 1.1.2, as the notes say
-    expect(read('pro/integrations/woocommerce/qasa-erp/qasa-erp.php')).toContain("define('QASA_ERP_VERSION', '1.1.2');");
+    // (pro/ is the private Pro module, present only in Meroxis' checkout and the release build; the public CI has no plugin)
+    const plugin = 'pro/integrations/woocommerce/qasa-erp/qasa-erp.php';
+    if (existsSync(join(root, plugin))) expect(read(plugin)).toContain("define('QASA_ERP_VERSION', '1.1.2');");
     for (const lang of ['ar', 'en', 'ku'] as const) expect(section(lang), lang).toMatch(/WooCommerce[^\n]{0,10}1\.1\.2:\*\*/);
     expect(section('en')).toContain('**Settings → Office network → New office certificate**');
     expect(section('ar')).toContain('**الإعدادات ← شبكة المكتب ← شهادة مكتب جديدة**');
