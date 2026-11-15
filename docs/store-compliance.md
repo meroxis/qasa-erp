@@ -53,7 +53,7 @@ later release.
 
 | Question | Answer |
 |---|---|
-| Does your app collect or share any of the required user data types? | **No data collected by the developer.** The app sends the user's data only to the user's own office PC (their own Qasa ERP), end-to-end encrypted, directly or through the Qasa Relay which can't read it. Google's definition of "collection" covers data sent off the device to the developer or third parties; data sent to the user's own server under their control is not collected by Meroxis. If Google's reviewer disagrees, declare: Photos (item photos), App activity (scans) — "collected, not shared, processed ephemerally: No, required: No, purpose: App functionality". **Google ML Kit** (the barcode scanner, run on the phone) is the one exception the form must cover: the codes scanned never go to Google, and ML Kit's own direct usage reports to Google are removed from 1.0.2, but Google Play services may still receive brief scanner usage statistics from it (see the next rows). Declare those as Google's guidance for ML Kit says at the time the form is filled in. |
+| Does your app collect or share any of the required user data types? | **No data collected by the developer.** The app sends the user's data only to the user's own office PC (their own Qasa ERP), end-to-end encrypted, directly or through the Qasa Relay which can't read it. Google's definition of "collection" covers data sent off the device to the developer or third parties; data sent to the user's own server under their control is not collected by Meroxis. If Google's reviewer disagrees, declare: Photos (item photos; from 1.1 also the photos of expense receipts, sent with the expense to the user's own office), App activity (scans) — "collected, not shared, processed ephemerally: No, required: No, purpose: App functionality". Files and docs (1.1: an invoice or a statement made as a PDF on the phone) are shared only by the user's own action, to the app the user picks in Android's share sheet; nothing is uploaded by the app. **Google ML Kit** (the barcode scanner, run on the phone) is the one exception the form must cover: the codes scanned never go to Google, and ML Kit's own direct usage reports to Google are removed from 1.0.2, but Google Play services may still receive brief scanner usage statistics from it (see the next rows). Declare those as Google's guidance for ML Kit says at the time the form is filled in. |
 | Is all data encrypted in transit? | Yes (own end-to-end encryption: X25519 + ChaCha20-Poly1305) |
 | Can users request that data be deleted? | Yes — data lives in the user's own Qasa ERP; unpairing deletes the keys on the phone, and queued items are deleted with the app |
 | Ads | None |
@@ -64,7 +64,7 @@ later release.
 
 | Permission | Why | When requested |
 |---|---|---|
-| `CAMERA` | Scan barcodes and the pairing QR code; take item photos when the user chooses "Add photo" | When the user opens the scanner or the photo step |
+| `CAMERA` | Scan barcodes and the pairing QR code; take item photos when the user chooses "Add photo", and (1.1) the photo of an expense's paper receipt | When the user opens the scanner or the photo step |
 | `INTERNET` | Connect to the office PC (Wi-Fi or the relay) | Install time (normal permission) |
 | `VIBRATE` | Short vibration when a code is scanned | Install time (normal permission) |
 | `USE_BIOMETRIC` | Unlock the app lock with a fingerprint or the face, when the user turns it on; the phone checks it, the app gets only yes or no | Install time (normal permission) |

@@ -16,6 +16,14 @@ apps/web/src/pages/Settings.tsx). 1.0.2 no longer sends ML Kit's own usage repor
 go to Google; see "Scanning and Google") and tells the office its version; 1.0.1 keeps working (the PC lists it as
 "1.0.1 or older", with a note that a newer one is out); 1.0.0 was built before the required PIN and is not offered.
 
+Version 1.1.0 (versionCode 4) adds seven features for the owner, the managers and the staff (the last eight rows
+below). Each shows only when the office PC offers it: the office release that comes with it says in the phone's "who
+am I" what its phone link offers (`phoneLink`: its version, the features, the largest photo it takes). An office on
+1.4.x says nothing of the kind: the phone then offers what 1.0.2 does, and tells the owner and admins on Home that
+Qasa ERP on the office PC needs the latest version for the rest. Phone 1.0.x keeps working with the newer office (its
+routes and answers are unchanged; the new fields are read past). 1.1.0 goes on qasaerp.com/phone/ only with or after
+that office release, so the update the phone asks for exists.
+
 ## What it does
 
 Each phone works as the Qasa user it was paired for, and offers what that user's role allows (the office checks every
@@ -30,6 +38,14 @@ request again with the user's own permissions):
 | Customers: balance, statement (this month, 3 months, this year) | sales, the accountants, admin, viewer |
 | Collect: money received from a customer, as a receipt voucher (see below) | the preparer's permission (give a rep both roles: sales and preparer) |
 | Count stock: straight into the warehouse's open count on the PC (stock permission), else a list for the admin in Settings → Office network → Phones | everyone |
+| 1.1 — Approvals: what waits for approval or to be checked; approve, reject with a reason, check, approve a checked entry or return it, with the office's own actions and rules (separate duties, the period lock); online only; a voucher changed after the phone showed it is refused and shown again; an expense's receipt photo | the owner, and users who approve or check vouchers (`entries.approve`, `entries.check`) |
+| 1.1 — Home's figures: also the customers who owe the most (from an office of 1.4.x: the late customers, as before) | as Home above |
+| 1.1 — Dollar rate: today's rate and the last 7 days; setting today's rate, with the office's range and log as on the desktop's rates, asked first when it is over 5 % from the last | read: everyone; set: the owner and admin only (stricter than on the PC) |
+| 1.1 — End of day: sales by payment method, each register's expected and counted cash, debts collected and added, by day; read only | the owner and the roles that see the figures: the whole day; a user with the sales permission: only the registers they opened, with their shifts' sales and debts (the phone asks with `mine=1` and the office enforces it) |
+| 1.1 — Expense with the photo of its paper receipt: a payment voucher on the company's expense account for its kind, by the office's approval rules (posted, waiting for approval, or a draft); a dollar expense at the office's rate of its day; works without the office (the photo waits sealed in the outbox) | the preparer's permission |
+| 1.1 — An invoice or a statement as a PDF: a customer's posted sale invoices (3 months) and the statement, made on the phone from the office's data in the company's print look as far as practical, handed to Android's share sheet (WhatsApp or any app the user picks); "Open the customer's chat" with the desktop's message | sales, the preparer, the accountants, admin, viewer |
+| 1.1 — Move stock between warehouses by scanning: a transfer draft, posted at once from the phone when the office is there (a draft that waited in the outbox is posted on the PC) | stock permission |
+| 1.1 — Receive goods by scanning against an open purchase order: a draft purchase invoice at the order's prices (the phone never sees them), checked and posted on the PC | stock or purchases permission |
 
 Sales, orders and counts reach the office as drafts and are checked on the PC as the office already works. A receipt
 follows the office's 1.4.1 rule for vouchers: with **Vouchers need approval** on, it waits for approval unless the
@@ -75,6 +91,12 @@ own UUID v4 key from the moment it is made, sent with it every time; the office 
 is made once. Without the office (no Wi-Fi, PC off) it waits and goes by itself; a refusal (no permission, a closed
 period) is kept with its reason under More → Waiting to send, to be sent again or deleted.
 
+From 1.1 expenses, stock transfers and goods that arrived wait there too. An expense's receipt photo waits beside it
+as a file of its own, sealed the same way and bound to its item (a photo moved to another item does not open), and
+goes with it; at most 10 photos wait at once. One arrival per purchase order may wait, dated the day it was scanned.
+Approvals and the dollar rate never wait: they need the office, and each action keeps one key for every try of it,
+so an answer lost on the way never turns into a second action.
+
 `src/protocol.ts` is a copy of `pro/src/phone/protocol.ts` (the office side, in the private Pro module). Change it
 there, then run `npm run sync-protocol`; `test/link.test.ts` fails when the two differ. The Pro module's
 `src/phone/phone-relay.test.ts` runs this app's own link and outbox against the office through a real relay.
@@ -88,9 +110,24 @@ there, then run `npm run sync-protocol`; `test/link.test.ts` fails when the two 
   works as an admin, as the owner (an office without sign-in) or as a user who sees the figures (`lockRequired` in
   `src/roles.ts`, from 1.0.1); for other users it is optional. It locks after the time chosen in the background (at once, 1 or 5 minutes). Wrong PINs
   make the next try wait longer (30 s, doubling, up to 15 minutes); "Forgot the PIN?" unpairs and wipes the phone.
+  From 1.1, approving, setting the rate, recording an expense and seeing the whole day's close are for those users
+  only (the office's phone link allows them only to a phone of the same roles), so every phone that can do them keeps a
+  PIN; tests on both sides hold it for every mix of roles.
 - The app writes nothing to the log (a test checks), stores nothing in plain storage, and connects only to the office
   and the relay (the scanner's brief usage statistics go to Google Play services on the phone: see "Scanning and
   Google").
+- Receipt photos (1.1) are taken with the app's own camera view (no gallery or storage permission), made again on the
+  phone at most 1600 px a side without the photo's EXIF data (so without the location), and sent only to the office.
+  The office takes a JPEG of at most 400 KB and 2048 px a side only, removes any metadata again, and keeps the photo
+  with its voucher in the company's books (and so in the company's backups); a posted voucher's photo can't be changed
+  or deleted.
+- PDFs (1.1) are made on the phone from what the office sends and handed only to the app the user picks in Android's
+  share sheet. The last one stays in the app's own cache until the next share, the next start, or 10 minutes after
+  (deleting it at once could leave WhatsApp without the file, which it reads when the user sends). The app itself
+  still connects only to the office and the relay: "Open the customer's chat" hands a wa.me link to WhatsApp or the
+  browser when the user taps it.
+- From 1.1 every change a phone makes is in the office's audit log (which phone, as whom, which route; never what it
+  sent).
 - Unpairing tells the office (it removes the phone from Settings → Office network → Phones) and wipes the office, the
   outbox, the lock and the phone's key; pairing again makes a new key.
 
@@ -244,8 +281,10 @@ Play Store listing notes:
   codes scanned never go to Google. ML Kit's own usage reports to Google are removed from 1.0.2 (1.0.1 had them), but
   Google Play services may still receive brief scanner usage statistics from ML Kit (which API ran, its result and
   timings, never the code; see "Scanning and Google"): declare those as Google's guidance for ML Kit says when the
-  form is filled in (docs/store-compliance.md). The camera is used for scanning and item photos only; fingerprint or
-  face only to unlock, handled by the phone.
+  form is filled in (docs/store-compliance.md). The camera is used for scanning, item photos and (1.1) receipt photos
+  only; fingerprint or face only to unlock, handled by the phone. 1.1: receipt photos go only to the customer's own
+  office, with the expense (collected for the app's function, not shared); invoices and statements are shared as PDFs
+  only by the user's own action, to the app the user picks.
 - Privacy policy URL: https://qasaerp.com/privacy/
 - Screenshots: pairing, home with the day's figures, scanning, an item card, the sale, a statement (phone, 1080×1920).
 
