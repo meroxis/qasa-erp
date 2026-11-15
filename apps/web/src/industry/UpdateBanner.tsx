@@ -14,19 +14,27 @@ function Parts({ parts }: { parts: Inline[] }) {
   return <>{parts.map((p, i) => (p.bold ? <strong key={i}>{p.text}</strong> : <span key={i}>{p.text}</span>))}</>;
 }
 
-/** The release notes of a version, in the reader's language, as text (never HTML). */
-export function ReleaseNotes({ text }: { text: string }) {
+/** The box release notes scroll in, so the dialog's buttons stay in view. */
+export const NOTES_BOX = { gap: 6, maxHeight: '60vh', overflow: 'auto', lineHeight: 1.6 } as const;
+
+/** A version's notes in the reader's language, as text (never HTML), without a box of their own. */
+export function NotesBlocks({ text }: { text: string }) {
   const { lang } = useI18n();
   const list = blocks(pickNotes(text, lang));
   return (
-    <div className="stack" style={{ gap: 6, maxHeight: '60vh', overflow: 'auto', lineHeight: 1.6 }}>
+    <>
       {list.map((b, i) =>
         b.kind === 'heading' ? <h4 key={i} style={{ margin: '10px 0 2px', fontSize: 14 }}><Parts parts={b.parts} /></h4>
           : b.kind === 'item' ? <div key={i} style={{ display: 'flex', gap: 8 }}><span aria-hidden="true">•</span><span><Parts parts={b.parts} /></span></div>
             : <p key={i} style={{ margin: '4px 0' }}><Parts parts={b.parts} /></p>
       )}
-    </div>
+    </>
   );
+}
+
+/** The release notes of a version, in the reader's language, as text (never HTML). */
+export function ReleaseNotes({ text }: { text: string }) {
+  return <div className="stack" style={NOTES_BOX}><NotesBlocks text={text} /></div>;
 }
 
 /**
