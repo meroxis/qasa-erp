@@ -162,3 +162,13 @@ export async function sendAction(
 /** A reason for a rejection: 1 to 300 characters, as the office takes it. */
 export const MAX_REASON = 300;
 export const reasonOk = (text: string) => text.trim().length > 0 && text.length <= MAX_REASON;
+
+/**
+ * The receipt photo an entry's screen asks the office for: only when the office says the voucher has one (an office
+ * before phone app 1.1 never does), and only a photo of a sane size (the office takes at most 400 KB).
+ */
+export function photoToShow(entry: Pick<EntryView, 'id' | 'image'>): { id: string; by: string; key: string } | null {
+  const image = entry.image;
+  if (!image || typeof image !== 'object' || !Number.isSafeInteger(image.bytes) || image.bytes <= 0 || image.bytes > 512 * 1024) return null;
+  return { id: entry.id, by: typeof image.createdBy === 'string' ? image.createdBy : '', key: `${entry.id}|${image.createdAt}` };
+}

@@ -40,7 +40,12 @@ export interface EntrySummary {
   /** in dinars */
   baseTotal: number;
   approval: EntryApproval | null;
+  /** an office of phone app 1.1 on: the voucher has the photo of its paper receipt (an expense from a phone) */
+  hasImage?: boolean | undefined;
 }
+
+/** What the office says of a voucher's receipt photo (the photo itself: staffApi.entryImage, a JPEG only). */
+export interface EntryImage { bytes: number; createdBy: string; createdAt: string }
 
 export interface EntryLine {
   lineNo: number; accountCode: string; accountName: Names; debit: number; credit: number; baseDebit: number; baseCredit: number;
@@ -51,6 +56,8 @@ export interface EntryLine {
 export interface EntryView extends EntrySummary {
   lines: EntryLine[];
   actions: string[];
+  /** the photo of its paper receipt, when it has one (an office of phone app 1.1 on; none: null or left out) */
+  image?: EntryImage | null | undefined;
 }
 
 /** "Vouchers need approval" (GET /api/voucher-approval): on, how many wait (in the whole company), may this user approve. */

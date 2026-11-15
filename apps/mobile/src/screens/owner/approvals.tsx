@@ -1,11 +1,11 @@
 import { useState } from 'react';
-import { View } from 'react-native';
+import { Image, View } from 'react-native';
 import { dateText, money, nameIn } from '../../i18n';
 import type { EntrySummary } from '../../owner/api';
 import {
-  ActionKeys, approvalTabs, buttonsFor, kindKey, MAX_REASON, reasonOk, sendAction, toCheck, waitingSections, type ApprovalButton, type ApprovalTab
+  ActionKeys, approvalTabs, buttonsFor, kindKey, MAX_REASON, photoToShow, reasonOk, sendAction, toCheck, waitingSections, type ApprovalButton, type ApprovalTab
 } from '../../owner/approvals';
-import { space } from '../../theme';
+import { radius, space } from '../../theme';
 import { Banner, Button, Card, EmptyState, ErrorState, Field, Group, ListItem, Screen, Section, Segmented, Skeleton, Txt, useApp, useLook } from '../../ui';
 import { useLoad } from '../../use-load';
 import { confirm } from '../items';
@@ -30,11 +30,17 @@ export function ApprovalsScreen() {
   const back = () => nav({ type: 'back' });
   const rows = (list: readonly EntrySummary[]) => (
     <Group>
-      {list.map((e) => (
-        <ListItem key={e.id} icon="doc" title={`${t(kindKey(e.type))} · ${e.party || e.description || e.number || t('aprDraft')}`}
-          subtitle={`${dateText(e.date)} · ${t('aprPreparedBy', { u: e.preparedBy })}`} value={money(e.total, e.currency, lang)}
-          onPress={() => go({ name: 'approval', id: e.id })} />
-      ))}
+      {list.map((e) => {
+        const title = `${t(kindKey(e.type))} · ${e.party || e.description || e.number || t('aprDraft')}`;
+        const subtitle = `${dateText(e.date)} · ${t('aprPreparedBy', { u: e.preparedBy })}`;
+        const value = money(e.total, e.currency, lang);
+        // a camera: the voucher has the photo of its paper receipt (said to the screen reader too)
+        return (
+          <ListItem key={e.id} icon={e.hasImage ? 'camera' : 'doc'} title={title} subtitle={subtitle} value={value}
+            label={[title, subtitle, value, e.hasImage ? t('expPhoto') : null].filter(Boolean).join(', ')}
+            onPress={() => go({ name: 'approval', id: e.id })} />
+        );
+      })}
     </Group>
   );
   // (the other tab's list is not shown while this one's loads)
@@ -106,6 +112,7 @@ export function ApprovalScreen({ id }: { id: string }) {
   if (load.error || !e) return <Screen title={t('aprTitle')} onBack={back}><ErrorState text={explain(load.error)} onRetry={load.reload} /></Screen>;
 
   const { buttons, samePerson } = buttonsFor(e, me);
+  const photo = photoToShow(e);
   const reject = buttons.find((b) => b.action === 'reject');
   const cash = e.cashAccountCode ? e.lines.find((l) => l.accountCode === e.cashAccountCode) : undefined;
   const footer = rejecting && reject ? (
@@ -138,6 +145,7 @@ export function ApprovalScreen({ id }: { id: string }) {
       {e.approval?.state === 'waiting' && <Txt v="caption" tone="ink2">{t('aprAskedBy', { u: e.approval.requestedBy })}</Txt>}
       {e.approval?.state === 'rejected' && e.approval.reason ? <Banner kind="warn" text={`${t('aprRejectReason')}: ${e.approval.reason}`} /> : null}
       <Txt v="caption" tone="ink2">{[t('aprPreparedBy', { u: e.preparedBy }), e.checkedBy ? t('aprCheckedBy', { u: e.checkedBy }) : null].filter(Boolean).join(' · ')}</Txt>
+      {photo && <ReceiptPhoto key={photo.key} id={photo.id} by={photo.by} />}
       <Section title={t('aprAccount')}>
         <Group>
           {e.lines.map((l) => (
@@ -154,5 +162,27 @@ export function ApprovalScreen({ id }: { id: string }) {
         </View>
       )}
     </Screen>
+  );
+}
+
+/**
+ * The photo of the voucher's paper receipt, as the office keeps it (a JPEG only: anything else is not shown), decoded at
+ * the size it is shown, and who added it.
+ */
+function ReceiptPhoto({ id, by }: { id: string; by: string }) {
+  const { t, p } = useLook();
+  const { api } = useApp();
+  const photo = useLoad(() => api.entryImage(id), [id]);
+  return (
+    <Section title={t('expPhoto')}>
+      <Card>
+        {photo.loading ? <Skeleton rows={1} height={220} />
+          : photo.data ? (
+            <Image source={{ uri: photo.data }} resizeMethod="resize" resizeMode="contain" accessibilityIgnoresInvertColors accessibilityLabel={t('expPhoto')}
+              style={{ width: '100%', height: 420, borderRadius: radius.m, backgroundColor: p.surface2 }} />
+          ) : <Txt tone="ink3">{t('aprPhotoFailed')}</Txt>}
+        {by ? <Txt v="caption" tone="ink2">{t('aprPhotoBy', { u: by })}</Txt> : null}
+      </Card>
+    </Section>
   );
 }

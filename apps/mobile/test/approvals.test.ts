@@ -2,9 +2,10 @@ import { describe, expect, it } from 'vitest';
 import { OfficeError } from '../src/api';
 import { LinkError, OfficeLink } from '../src/link';
 import { ownerApi, type EntrySummary } from '../src/owner/api';
-import { ActionKeys, approvalsCard, approvalTabs, buttonsFor, kindKey, reasonOk, sendAction, toCheck, waitingSections } from '../src/owner/approvals';
+import { ActionKeys, approvalsCard, approvalTabs, buttonsFor, kindKey, photoToShow, reasonOk, sendAction, toCheck, waitingSections } from '../src/owner/approvals';
 import { generateKeyPair } from '../src/protocol';
 import type { Me } from '../src/roles';
+import { staffApi } from '../src/staff/api';
 import { UUID_V4 } from '../src/uuid';
 import { fakeOffice } from './fake-office';
 
@@ -19,6 +20,35 @@ const entry = (over: Partial<EntrySummary> = {}): EntrySummary => ({
   id: 'e-1', type: 'receipt', number: null, date: '2026-11-15', description: 'Received', party: 'North Market', currency: 'IQD', rateX100: 100,
   status: 'draft', cashAccountCode: '1811', preparedBy: 'Las', preparedById: 'u-las', preparedAt: '2026-11-15T08:00:00.000Z', checkedBy: null,
   approvedBy: null, total: 10_000, baseTotal: 10_000, approval: null, ...over
+});
+
+describe('the receipt photo of an expense on the approval screen', () => {
+  it('asks the office for it only when the office says the voucher has one, of a size the office takes', () => {
+    const meta = { bytes: 182_331, createdBy: 'Las', createdAt: '2026-11-15T08:00:01Z' };
+    expect(photoToShow({ id: 'e-1', image: meta })).toEqual({ id: 'e-1', by: 'Las', key: 'e-1|2026-11-15T08:00:01Z' });
+    // none, an office before phone app 1.1 (no field), or something that is not a photo's size
+    expect(photoToShow({ id: 'e-1', image: null })).toBeNull();
+    expect(photoToShow({ id: 'e-1' })).toBeNull();
+    for (const bytes of [0, -1, 1.5, 600 * 1024, Number.NaN]) expect(photoToShow({ id: 'e-1', image: { ...meta, bytes } }), String(bytes)).toBeNull();
+  });
+
+  it('shows the office\'s photo only when it is a JPEG in base64 (anything else is not shown)', async () => {
+    const answers: { s: number; b: unknown }[] = [
+      { s: 200, b: { mime: 'image/jpeg', data: '/9j/4AAQSkZJRg==' } },
+      { s: 200, b: { mime: 'image/svg+xml', data: 'PHN2Zz4=' } },
+      { s: 200, b: { mime: 'image/jpeg', data: 'not base64 <script>' } },
+      { s: 404, b: { error: 'not_found', details: null } }
+    ];
+    const paths: string[] = [];
+    const link = { request: async (_m: string, p: string) => { paths.push(p); return answers.shift()!; } } as unknown as OfficeLink;
+    const api = staffApi(link);
+    expect(await api.entryImage('e-1')).toBe('data:image/jpeg;base64,/9j/4AAQSkZJRg==');
+    expect(await api.entryImage('e-1')).toBeNull();
+    expect(await api.entryImage('e-1')).toBeNull();
+    expect(await api.entryImage('e-1')).toBeNull();
+    expect(paths).toEqual(Array(4).fill('/api/entries/e-1/image'));
+    await expect(api.entryImage('../users')).rejects.toThrow(OfficeError);
+  });
 });
 
 describe('what the approvals screen shows', () => {

@@ -35,6 +35,9 @@ export const OWNER_T = {
   aprReturnConfirm: ['إعادته إلى منظّمه مسودةً؟', 'Send it back to whoever prepared it, as a draft?', 'وەک ڕەشنووس بگەڕێندرێتەوە بۆ ئامادەکارەکەی؟'],
   aprReturned: ['أُعيد إلى منظّمه.', 'It went back to whoever prepared it.', 'گەڕێندرایەوە بۆ ئامادەکارەکەی.'],
   aprTaken: ['سبق التصرف فيه، والقائمة محدّثة الآن.', 'It was already dealt with. The list is up to date now.', 'پێشتر چارەسەر کراوە. لیستەکە ئێستا نوێیە.'],
+  // the photo of an expense's paper receipt (the desktop's words: rp_by, rp_failed)
+  aprPhotoBy: ['أضافها {u}', 'Added by {u}', 'زیادکراوە لەلایەن {u}'],
+  aprPhotoFailed: ['تعذّر عرض الصورة.', 'Couldn\'t show the photo.', 'نەتوانرا وێنەکە پیشان بدرێت.'],
 
   // ——— the dollar rate ———
   rateTitle: ['سعر الدولار', 'Dollar rate', 'نرخی دۆلار'],
