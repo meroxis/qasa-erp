@@ -123,7 +123,8 @@ export const COUNT_TEXT = {
   sl_serialsCount__one: ['رقم واحد', '{n} number', '{n} ژمارە'],
   sl_everyN__one: ['كل شهر', 'Every month', 'هەموو مانگێک'],
   cat_updated__one: ['تغيّر تصنيف مادة واحدة', '{n} item moved', 'پۆلی {n} کاڵا گۆڕا'],
-  chq_lateDays__one: ['متأخر يوماً واحداً', '{n} day late', '{n} ڕۆژ دواکەوتوو']
+  chq_lateDays__one: ['متأخر يوماً واحداً', '{n} day late', '{n} ڕۆژ دواکەوتوو'],
+  pn_waiting__one: ['سند واحد بانتظار مصادقتك', '{n} voucher waiting for your approval', '{n} سەنەد چاوەڕێی پەسەندکردنی تۆیە']
 } as const satisfies Record<`${string}__one`, readonly [string, string, string]>;
 
 /** Arabic's dual: the form for exactly two, by the key of the text's many form. */
@@ -131,6 +132,7 @@ export const AR_DUAL: Readonly<Record<string, string>> = {
   err_plan_user_limit: 'خطة هذه الشركة تسمح بمستخدمَين، وعدد المستخدمين الفعّالين أكثر. اطلب من المدير إيقاف مستخدمين آخرين ليبقى مكان لك، أو ترقية الخطة.',
   usersOverLimit: 'خطتك تسمح بمستخدمَين، وعندك {m} فعّالين. لا يستطيع الدخول إلا المدراء أولاً ثم الأقدم إنشاءً، حتى {k}. الباقون (عليهم علامة «فوق حد الخطة») لا يدخلون إلى أن توقف مستخدمين آخرين أو ترقّي الخطة. لا يُحذف شيء.',
   trialEnds: 'تنتهي التجربة في {d} — بقي يومان.',
+  pn_waiting: 'سندان بانتظار مصادقتك',
   nudgeText: 'رحّلت فاتورتَي مبيعات هذا الشهر. Pro يضيف فريق عمل على شبكة المكتب والتقسيط والرواتب والنسخ الاحتياطي.',
   bkCopies: 'نسختان',
   bl_unfinished_entries: 'سندان أو قيدان لم يُصادقا بعد: صادِقهما أو احذفهما.',

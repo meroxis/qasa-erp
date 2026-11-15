@@ -85,5 +85,28 @@ export const PHONE_TEXT = {
   a_phone_count: ['جرد من هاتف', 'Count from a phone', 'جەرد لە مۆبایلەوە'],
   // phone app 1.1: every change a phone makes has a line of its own in the audit log (which phone, as whom, what)
   a_phone_change: ['تغيير من هاتف', 'Change from a phone', 'گۆڕانکاری لە مۆبایلەوە'],
-  e_phone: ['هاتف', 'Phone', 'مۆبایل']
+  e_phone: ['هاتف', 'Phone', 'مۆبایل'],
+  // 1.5: work from phones, told at the office PCs (the header's "From phones" and Windows notifications)
+  pn_title: ['من الهواتف', 'From phones', 'لە مۆبایلەکانەوە'],
+  pn_none: ['لا جديد من الهواتف.', 'Nothing new from phones.', 'هیچی نوێ لە مۆبایلەکانەوە نییە.'],
+  pn_kind_sale: ['مسودة بيع', 'Draft sale', 'فرۆشتنی ڕەشنووس'],
+  pn_kind_order: ['طلبية', 'Order', 'داواکاری'],
+  pn_kind_receipt: ['سند قبض', 'Receipt voucher', 'سەنەدی وەرگرتن'],
+  pn_kind_expense: ['مصروف', 'Expense', 'خەرجی'],
+  pn_kind_count: ['جرد المخزن', 'Stock count', 'جەردی کۆگا'],
+  pn_kind_transfer: ['مناقلة', 'Transfer', 'گواستنەوە'],
+  pn_kind_received: ['استلام بضاعة', 'Goods received', 'وەرگرتنی کاڵا'],
+  pn_notice: ['{who} · {what} من الهاتف', '{who} · {what} from a phone', '{who} · {what} لە مۆبایلەوە'],
+  pn_many: ['{n} جديدة من الهواتف', '{n} new from phones', '{n} نوێ لە مۆبایلەکانەوە'],
+  pn_viaPhone: ['من {phone}', 'on {phone}', 'لە {phone}'],
+  pn_unseen: ['{n} جديدة', '{n} new', '{n} نوێ'],
+  pn_waiting: ['{n} سند بانتظار مصادقتك', '{n} vouchers waiting for your approval', '{n} سەنەد چاوەڕێی پەسەندکردنی تۆن'],
+  pn_setting: ['أعلمني بعمل الهواتف', 'Notify me of work from phones', 'ئاگادارم بکەرەوە لە کاری مۆبایلەکان'],
+  pn_settingHelp: [
+    'إشعار من ويندوز على هذا الحاسوب عندما يرسل هاتف بيعاً أو طلبية أو سند قبض أو جرداً أو مصروفاً أو مناقلة أو استلام بضاعة مما يحق لك رؤيته.',
+    'A Windows notification on this PC when a phone sends a sale, an order, a receipt voucher, a count, an expense, a transfer or goods received that you may see.',
+    'ئاگادارکردنەوەی ویندۆز لەسەر ئەم کۆمپیوتەرە کاتێک مۆبایلێک فرۆشتن، داواکاری، سەنەدی وەرگرتن، جەرد، خەرجی، گواستنەوە یان وەرگرتنی کاڵا دەنێرێت کە دەسەڵاتی بینینیت هەیە.'
+  ],
+  pn_on: ['مفعّل', 'On', 'چالاک'],
+  pn_off: ['متوقف', 'Off', 'ناچالاک']
 } as const satisfies Record<string, readonly [string, string, string]>;

@@ -3,7 +3,7 @@
  * 127.0.0.1, the window shows the app from it, and the company file lives in the user's profile:
  *   %APPDATA%\Qasa ERP\data\qasa.sqlite
  */
-import { app, BrowserWindow, dialog, ipcMain, Menu, nativeTheme, protocol, safeStorage, session, shell, utilityProcess, type MenuItemConstructorOptions, type UtilityProcess } from 'electron';
+import { app, BrowserWindow, dialog, ipcMain, Menu, nativeTheme, Notification, protocol, safeStorage, session, shell, utilityProcess, type MenuItemConstructorOptions, type UtilityProcess } from 'electron';
 import electronUpdater from 'electron-updater';
 import { channelOf, notesText, updaterOptions, type UpdateChannel, type UpdateState } from './updates-logic.ts';
 import { randomBytes } from 'node:crypto';
@@ -28,6 +28,7 @@ import { pair, parseAddress, parseOfficeId, pemFingerprint, startTunnel, type Pa
 import { openOutbox, OutboxRefusal, type OutboxStore } from './outbox.ts';
 import { makeSecretBox } from './secrets.ts';
 import { remoteSupportHandlers } from './remote-support.ts';
+import { phoneNoticeHandler } from './phone-notices.ts';
 
 const { autoUpdater } = electronUpdater;
 /** Installed from the Microsoft Store: the Store signs and updates it, so the app's own updater stays off. */
@@ -573,6 +574,32 @@ ipcMain.handle('app:closeAsk:set', (event, on: unknown) => {
 });
 ipcMain.handle('app:remoteSupport', (event) => remoteSupport.start(event));
 ipcMain.handle('app:supportInfo', (event) => remoteSupport.info(event));
+
+// 1.5: work from phones as Windows notifications (phone-notices.ts): plain text and one of the app's own pages only;
+// a click brings the window forward and its page opens the document
+/** Kept until clicked or closed: a notice whose object is collected may lose its click on Windows. */
+const shownNotices = new Set<Notification>();
+ipcMain.handle('app:phoneNotice', phoneNoticeHandler({
+  fromAppPage: (event) => invokedByAppPage(event as Electron.IpcMainInvokeEvent),
+  supported: () => Notification.isSupported(),
+  show: (notice, onClick) => {
+    const shown = new Notification({ title: notice.title, body: notice.body, icon: join(__dirname, 'icon.png'), silent: false });
+    const done = () => { shownNotices.delete(shown); };
+    shown.on('click', () => { done(); onClick(); });
+    shown.on('close', done);
+    shownNotices.add(shown);
+    if (shownNotices.size > 10) shownNotices.delete(shownNotices.values().next().value!);
+    shown.show();
+  },
+  open: (route) => {
+    if (!win || win.isDestroyed()) return;
+    if (win.isMinimized()) win.restore();
+    win.show();
+    win.focus();
+    win.webContents.send('app:phoneNotice:open', route);
+  },
+  log
+}));
 
 // Settings → Printers and every Print button (app-preload.ts → qasaDesktop.printers, printing.ts): this PC's printers,
 // the choice saved for each kind of paper (printers.json), and printing the app window with it. Never another window.

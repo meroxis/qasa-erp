@@ -26,6 +26,7 @@ import { canSwitchCompanies } from './industry/companies-api.ts';
 import { outboxClient, setOutboxUser, startOutbox } from './industry/outbox.ts';
 import { OutboxBanner } from './industry/OutboxBanner.tsx';
 import { HeaderRate } from './industry/HeaderRate.tsx';
+import { PhoneBell } from './industry/PhoneActivity.tsx';
 import { DualProvider } from './Amount.tsx';
 import { dataPlaceLine, inWindowsApp, officeText, useDataPlace } from './industry/data-place.ts';
 
@@ -838,6 +839,8 @@ export function App() {
                   <kbd className="ltr">Ctrl K</kbd>
                 </button>
                 <BranchSwitcher user={user} />
+                {/* 1.5: what phones made, for whoever may see it (only where the build brings it, and not in the demo) */}
+                {me.user && modules?.includes('phoneActivity') && import.meta.env.MODE !== 'demo' && <PhoneBell key={userKey} userKey={userKey} />}
                 <SupportButton compact />
                 <button type="button" className="btn subtle icon" title={dark ? t('lightMode') : t('darkMode')} aria-label={dark ? t('lightMode') : t('darkMode')} onClick={() => setTheme(dark ? 'light' : 'dark')}>
                   <Icon name={dark ? 'sun' : 'moon'} size={16} />
