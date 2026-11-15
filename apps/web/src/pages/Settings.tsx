@@ -1505,15 +1505,17 @@ export const PHONE_APP_READY = true;
  * Where the phone app is downloaded (the page in the app's language: Arabic at /phone/, English and Kurdish under
  * /en/ and /ku/), and what a careful user can check the downloaded APK against. 1.0.1 was the first build offered (it
  * asks for the PIN that can't be turned off: an admin, the owner, a user who sees the figures); 1.0.2 (with 1.4.3)
- * sends Google no usage reports from its barcode scanner and tells this PC its version. Phones with an older app see
- * a note in the list of phones (phoneAppOutdated), nothing more.
+ * sends Google no usage reports from its barcode scanner and tells this PC its version; 1.1.0 (with 1.5.0) has the
+ * features this office's phone link offers from 1.5.0 (approvals, the rate, the end of day, expenses with a receipt
+ * photo, PDFs, moving and receiving stock). Phones with an older app see a note in the list of phones
+ * (phoneAppOutdated), nothing more.
  */
 export const PHONE_APP = {
   url: 'https://qasaerp.com/phone/',
   urls: { ar: 'https://qasaerp.com/phone/', en: 'https://qasaerp.com/en/phone/', ku: 'https://qasaerp.com/ku/phone/' } as Record<Lang, string>,
-  version: '1.0.2',
-  // qasa-erp-mobile-1.0.2.apk (versionCode 3), 97,290,728 bytes
-  apkSha256: '51386e6e007acbdcd668190ad676e1fbf7036e434f5fce4a7ea1f233fb0a6578',
+  version: '1.1.0',
+  // qasa-erp-mobile-1.1.0.apk (versionCode 4), 97,499,776 bytes
+  apkSha256: '578295cdb4c3c11e1b9edd8cb47421b05c02f707acabe8bf2e44fe78bb8a164e',
   // what `apksigner verify --print-certs` shows as "certificate SHA-256 digest" (CN=Meroxis, O=Meroxis, C=IQ)
   certSha256: '6d8fb6a65d85d9f82b026b5ef6aa00acfd956cef63d555cf6fffd3596a4b3129'
 } as const;

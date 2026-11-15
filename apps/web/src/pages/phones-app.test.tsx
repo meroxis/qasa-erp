@@ -96,13 +96,15 @@ it("opens the download page in the app's language: Arabic at /phone/, English at
   }
 });
 
-it('offers the phone app 1.0.2 (without ML Kit\'s own usage reports to Google, says its version), signed with the Qasa release key', () => {
-  expect(PHONE_APP.version).toBe('1.0.2');
-  expect(PHONE_APP.apkSha256).toBe('51386e6e007acbdcd668190ad676e1fbf7036e434f5fce4a7ea1f233fb0a6578');
-  // neither 1.0.0 (built before the required PIN) nor 1.0.1 (it still had ML Kit's usage reports to Google)
+it('offers the phone app 1.1.0 (the features of the 1.5.0 phone link), signed with the Qasa release key', () => {
+  expect(PHONE_APP.version).toBe('1.1.0');
+  // qasa-erp-mobile-1.1.0.apk (versionCode 4), 97,499,776 bytes
+  expect(PHONE_APP.apkSha256).toBe('578295cdb4c3c11e1b9edd8cb47421b05c02f707acabe8bf2e44fe78bb8a164e');
+  // not 1.0.0 (built before the required PIN), 1.0.1 (it still had ML Kit's usage reports to Google) or 1.0.2
   expect(PHONE_APP.apkSha256).not.toBe('6c8dc54af7a4845fe449fcec575f6364e6b6d75136cbd892ca1cd9f6c6239fc9');
   expect(PHONE_APP.apkSha256).not.toBe('636e0025a5d0e909d14c3305b225bd7ea8a61fa69d3c2cefc759502f5438194b');
-  // the same key as every build before: phones update from 1.0.0 and 1.0.1 without uninstalling
+  expect(PHONE_APP.apkSha256).not.toBe('51386e6e007acbdcd668190ad676e1fbf7036e434f5fce4a7ea1f233fb0a6578');
+  // the same key as every build before: phones update from 1.0.x without uninstalling and stay paired
   expect(PHONE_APP.certSha256).toBe('6d8fb6a65d85d9f82b026b5ef6aa00acfd956cef63d555cf6fffd3596a4b3129');
 });
 
@@ -111,8 +113,12 @@ it('shows the app version each phone said, "1.0.1 or older" for one that says no
   expect(phoneAppOutdated('1.0.1')).toBe(true);
   expect(phoneAppOutdated(null)).toBe(true);
   expect(phoneAppOutdated(PHONE_APP.version)).toBe(false);
-  expect(phoneAppOutdated('1.0.10')).toBe(false);
+  // 1.1.0 offered (1.5.0): a phone on 1.0.2 gets the note, one on 1.1 or later none
+  expect(phoneAppOutdated('1.0.2')).toBe(true);
+  expect(phoneAppOutdated('1.0.10')).toBe(true);
+  expect(phoneAppOutdated('1.0.10', '1.0.2')).toBe(false);
   expect(phoneAppOutdated('1.1')).toBe(false);
+  expect(phoneAppOutdated('1.1.1')).toBe(false);
   expect(phoneAppOutdated('1.0.9', '1.0.10')).toBe(true);
   expect(phoneAppOutdated('2.0.0', '1.9.9')).toBe(false);
 

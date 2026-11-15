@@ -1053,22 +1053,11 @@ describe('the release notes of 1.4.2 (kept as shipped, with the stock-correction
   });
 });
 
-describe('the release notes and the Store "What\'s new" of this version (1.4.3)', () => {
-  const version = (JSON.parse(read('apps/desktop/package.json')) as { version: string }).version;
-  const notes = read(`apps/desktop/release-notes/${version}.md`);
+describe('the release notes of 1.4.3 (never released on its own: What\'s new shows them after 1.4.2, with 1.5.0\'s)', () => {
+  const notes = read('apps/desktop/release-notes/1.4.3.md');
   const section = (lang: 'ar' | 'en' | 'ku') => new RegExp(`^::: ${lang}\\n([\\s\\S]*?)^:::$`, 'm').exec(notes)?.[1] ?? '';
-  const listing = JSON.parse(read('apps/desktop/store-listing.json')) as {
-    listings: Record<'en-us' | 'ar' | 'ku-arab', { releaseNotes: string; features: string[]; description: string }>;
-  };
-  const store = listing.listings;
-  const LANGS = ['en-us', 'ar', 'ku-arab'] as const;
-  const lines = (lang: (typeof LANGS)[number]) => store[lang].releaseNotes.split('\n');
 
-  it('is 1.4.3, the same in the app, the core and the lock file, with a notes file that has Arabic, English and Kurdish', () => {
-    expect(version).toBe('1.4.3');
-    expect(read('packages/core/src/version.ts')).toContain(`APP_VERSION = '${version}'`);
-    const lock = JSON.parse(read('package-lock.json')) as { packages: Record<string, { version?: string }> };
-    expect(lock.packages['apps/desktop']?.version).toBe(version);
+  it('has a notes file with Arabic, English and Kurdish', () => {
     for (const lang of ['ar', 'en', 'ku'] as const) expect(notes, lang).toMatch(new RegExp(`^::: ${lang}\\n[\\s\\S]+?^:::$`, 'm'));
   });
 
@@ -1132,11 +1121,10 @@ describe('the release notes and the Store "What\'s new" of this version (1.4.3)'
     expect(section('ku')).toContain('**چی نوێیە** تێبینییەکانی هەموو ئەو وەشانانە پیشان دەدات');
   });
 
-  it('offers phone app 1.0.2 as Settings does, and says plainly what goes to Google: never the codes scanned, maybe the scanner\'s statistics', () => {
-    // (the phone app's own version may be ahead: phone app 1.1.0 is offered only from the office release that comes with it)
+  it('offers phone app 1.0.2, and says plainly what goes to Google: never the codes scanned, maybe the scanner\'s statistics', () => {
+    // (Settings offers 1.1.0 from 1.5.0, with the office's phone link that has its features; 1.0.2 was 1.4.3's)
     const mobile = JSON.parse(read('apps/mobile/app.json')) as { expo: { version: string } };
     expect(['1.0.2', '1.1.0']).toContain(mobile.expo.version);
-    expect(read('apps/web/src/pages/Settings.tsx')).toContain("version: '1.0.2',");
     for (const lang of ['ar', 'en', 'ku'] as const) expect(section(lang), lang).toMatch(/1\.0\.2[\s\S]*SHA-256/);
     expect(section('en')).toContain('The barcodes you scan never go to Google, and Google ML Kit’s own usage reports are taken out; Google Play services may still receive brief usage statistics about the scanning.');
     expect(section('ar')).toContain('ما تمسحه من باركود لا يذهب إلى Google أبداً');
@@ -1150,6 +1138,7 @@ describe('the release notes and the Store "What\'s new" of this version (1.4.3)'
     expect(section('en')).toContain('**Settings → Office network → Phones (Qasa app) → Add a phone**');
     // nothing anywhere says that nothing at all goes to Google, or that there are no analytics at all (ML Kit's scanner
     // statistics through Google Play services stay: apps/mobile/README.md, "Scanning and Google")
+    const store = (JSON.parse(read('apps/desktop/store-listing.json')) as { listings: Record<string, { releaseNotes: string }> }).listings;
     const said = [notes, ...Object.values(store).map((l) => l.releaseNotes), read('apps/mobile/README.md'), read('docs/store-compliance.md')].join('\n');
     expect(said).not.toMatch(/sends Google nothing|nothing (goes )?to Google|no analytics(?! of (our|its) own)|Analytics \/ crash SDKs \| None|Nothing leaves the phone/i);
     expect(read('docs/store-compliance.md')).toMatch(/\| `USE_BIOMETRIC` \|[^\n]*\n\| `USE_FINGERPRINT` \|[^\n]*\n\| `ACCESS_NETWORK_STATE` \|/);
@@ -1185,15 +1174,147 @@ describe('the release notes and the Store "What\'s new" of this version (1.4.3)'
   });
 
   it('writes Kurdish with the app\'s words and no tatweel, and English with one apostrophe', () => {
-    const ku = section('ku') + store['ku-arab'].releaseNotes;
+    const ku = section('ku');
     expect(ku).not.toContain('ـ');
     expect(ku).not.toMatch(/[ىيك]/);
     for (const word of ['دینار', 'دۆلار', 'پسوولە', 'سەنەد', 'قاسە', 'دابینکەر', 'ڕەسید']) expect(ku, word).toContain(word);
-    expect(section('en') + store['en-us'].releaseNotes).not.toMatch(/\w'[\w\s]/);
+    expect(section('en')).not.toMatch(/\w'[\w\s]/);
   });
 
   it('still tells the holders of 0.1.8 licences to connect once in the first month, in the same words (What\'s new shows it once)', () => {
     const before = read('apps/desktop/release-notes/1.4.2.md');
+    const part = (text: string, lang: string, heading: string) => new RegExp(`^::: ${lang}\\n[\\s\\S]*?(### ${heading}\\n[^\\n]+\\n)`, 'm').exec(text)?.[1];
+    for (const [lang, heading] of [['en', 'Licences from 0.1.8'], ['ar', 'تراخيص الإصدار 0.1.8'], ['ku', 'مۆڵەتەکانی وەشانی 0.1.8']] as const) {
+      expect(part(notes, lang, heading), lang).toBeTruthy();
+      expect(part(notes, lang, heading), lang).toBe(part(before, lang, heading));
+    }
+    expect(notes).not.toMatch(/فصِل|فصل هذا الحاسوب/);
+  });
+
+  it('never says Starter comes with Qasa Relay or the cloud backup, nor offers the online edition, Google Play or the iPhone', () => {
+    expect(notes).not.toMatch(/Starter[^.\n]*(Relay|cloud backup)/);
+    expect(notes).not.toMatch(/Starter[^.\n]*(Qasa Relay|النسخ إلى السحابة|باکئەپ بۆ هەور)/);
+    expect(notes).not.toMatch(/online edition|النسخة (السحابية|على الإنترنت)|وەشانی ئۆنلاین/i);
+    expect(notes).not.toMatch(/Google Play Store|App Store|iPhone|iOS|OneDrive/);
+  });
+});
+
+describe('the release notes and the Store "What\'s new" of this version (1.5.0)', () => {
+  const version = (JSON.parse(read('apps/desktop/package.json')) as { version: string }).version;
+  const notes = read(`apps/desktop/release-notes/${version}.md`);
+  const section = (lang: 'ar' | 'en' | 'ku') => new RegExp(`^::: ${lang}\\n([\\s\\S]*?)^:::$`, 'm').exec(notes)?.[1] ?? '';
+  const listing = JSON.parse(read('apps/desktop/store-listing.json')) as {
+    listings: Record<'en-us' | 'ar' | 'ku-arab', { releaseNotes: string; features: string[]; description: string }>;
+  };
+  const store = listing.listings;
+  const LANGS = ['en-us', 'ar', 'ku-arab'] as const;
+  const lines = (lang: (typeof LANGS)[number]) => store[lang].releaseNotes.split('\n');
+  const mobileText = read('apps/mobile/src/owner/i18n.ts') + read('apps/mobile/src/staff/i18n.ts');
+
+  it('is 1.5.0, the same in the app, the core and the lock file, with a notes file that has Arabic, English and Kurdish', () => {
+    expect(version).toBe('1.5.0');
+    expect(read('packages/core/src/version.ts')).toContain(`APP_VERSION = '${version}'`);
+    const lock = JSON.parse(read('package-lock.json')) as { packages: Record<string, { version?: string }> };
+    expect(lock.packages['apps/desktop']?.version).toBe(version);
+    for (const lang of ['ar', 'en', 'ku'] as const) expect(notes, lang).toMatch(new RegExp(`^::: ${lang}\\n[\\s\\S]+?^:::$`, 'm'));
+  });
+
+  it('keeps the notes of 1.4.3, which was never released on its own, so What\'s new shows them after 1.4.2', () => {
+    expect(existsSync(join(root, 'apps/desktop/release-notes/1.4.3.md'))).toBe(true);
+    expect(notes).toMatch(/^\*\*Qasa ERP 1\.5\.0 for Windows\*\*: [^\n]*It also brings everything in 1\.4\.3, which was not released on its own\./);
+    expect(read('apps/web/src/industry/WhatsNew.tsx')).toContain('export function versionsSince(previous: string, current: string');
+  });
+
+  it('has notes of 1.5.0 that tell of the same things in Arabic, English and Kurdish', () => {
+    for (const lang of ['ar', 'en', 'ku'] as const) {
+      expect(section(lang).trim().length, lang).toBeGreaterThan(2000);
+      expect(section(lang).trim().length, lang).toBeLessThan(6000);
+    }
+    const shape = (lang: 'ar' | 'en' | 'ku') => section(lang).split('\n').filter((l) => /^(### |- )/.test(l)).map((l) => l.slice(0, 2)).join('');
+    expect(shape('ar')).toBe(shape('en'));
+    expect(shape('ku')).toBe(shape('en'));
+  });
+
+  it('says first that the company file is upgraded to 15, which 1.4.3 and earlier (a Store copy on 1.4.2 too) cannot open', () => {
+    // why: 1.5.0 adds migration 15 (entry_images, the receipt photos), and an app refuses a newer file
+    const db = read('packages/server/src/db.ts');
+    expect(db).toMatch(/\{ sql: V15, mysql: 'tables' \},?\n\];/);
+    expect(db).toContain('export const SCHEMA_VERSION = MIGRATIONS.length;');
+    expect(db).toContain('CREATE TABLE entry_images (');
+    expect(section('en')).toMatch(/^### Before you update\n- \*\*The company file is upgraded to a new version \(15\) the first time 1\.5\.0 opens it\.\*\* A copy of it is kept beside it before the update\. Qasa ERP 1\.4\.3 and earlier cannot open a file that 1\.5\.0 has upgraded, so update every PC that opens the same company/);
+    expect(section('en')).toContain('A Microsoft Store copy that is still on an older version, such as 1.4.2, cannot open it until the Store has 1.5.0.');
+    expect(section('ar')).toMatch(/^### قبل التحديث\n- \*\*يُرقّى ملف الشركة إلى إصدار جديد \(15\)/);
+    expect(section('ar')).toContain('لا يفتح قاصة ERP 1.4.3 وما قبله ملفاً رقّاه الإصدار 1.5.0');
+    expect(section('ku')).toMatch(/^### پێش نوێکردنەوە\n- \*\*فایلی کۆمپانیا بەرز دەکرێتەوە بۆ وەشانێکی نوێ \(15\)/);
+    expect(section('ku')).toContain('قاسە ERP 1.4.3 و وەشانەکانی پێشتر فایلێک ناکەنەوە کە 1.5.0 بەرزی کردبێتەوە');
+  });
+
+  it('offers phone app 1.1.0 as Settings does and app.json has it, and says truly that a phone on 1.0.x keeps working without the new features', () => {
+    const mobile = JSON.parse(read('apps/mobile/app.json')) as { expo: { version: string; android: { versionCode: number } } };
+    expect(mobile.expo.version).toBe('1.1.0');
+    expect(mobile.expo.android.versionCode).toBe(4);
+    expect(read('apps/web/src/pages/Settings.tsx')).toContain("version: '1.1.0',");
+    for (const lang of ['ar', 'en', 'ku'] as const) expect(section(lang), lang).toMatch(/1\.1\.0[\s\S]*SHA-256/);
+    expect(section('en')).toContain('A phone still on 1.0.x keeps working with 1.5.0 as before, without the new features.');
+    expect(section('en')).toContain('1.1 installs over 1.0.x and the phone stays paired');
+    // the same signing key as every build before (PHONE_APP.certSha256, held by apps/mobile/test/signing.test.ts)
+    expect(read('apps/web/src/pages/Settings.tsx')).toContain("certSha256: '6d8fb6a65d85d9f82b026b5ef6aa00acfd956cef63d555cf6fffd3596a4b3129'");
+    // phone 1.0.x keeps its routes and answers (apps/mobile/README.md says so)
+    expect(read('apps/mobile/README.md')).toContain('Phone 1.0.x keeps working with the newer office');
+  });
+
+  it('names the phone features in the words of the phone app and the desktop', () => {
+    for (const line of ["aprTitle: ['الموافقات', 'Approvals', 'پەسەندکردنەکان']", "aprWaitingTab: ['بانتظار الموافقة', 'Waiting for approval', 'چاوەڕێی پەسەندکردن']",
+      "aprCheckTab: ['بانتظار التدقيق', 'To check', 'چاوەڕێی وردبینی']", "rateTitle: ['سعر الدولار', 'Dollar rate', 'نرخی دۆلار']",
+      "dayTitle: ['إغلاق اليوم', 'End of day', 'داخستنی ڕۆژ']", "mvTitle: ['مناقلة مخزنية', 'Stock transfer', 'گواستنەوەی نێوان کۆگاکان']"]) expect(mobileText, line).toContain(line);
+    expect(section('en')).toContain('**Waiting for approval** or **To check**');
+    expect(section('ar')).toContain('**بانتظار الموافقة** أو **بانتظار التدقيق**');
+    expect(section('ku')).toContain('**چاوەڕێی پەسەندکردن** یان **چاوەڕێی وردبینی**');
+    for (const [lang, words] of [['en', ['**Dollar rate**', '**End of day**', '**Stock transfer**']], ['ar', ['**سعر الدولار**', '**إغلاق اليوم**', '**المناقلة المخزنية**']],
+      ['ku', ['**نرخی دۆلار**', '**داخستنی ڕۆژ**', '**گواستنەوەی نێوان کۆگاکان**']]] as const) {
+      for (const word of words) expect(section(lang), `${lang} ${word}`).toContain(word);
+    }
+    // the rate is set by the owner or an admin only, asked first over 5 %
+    expect(section('en')).toContain('the owner or an admin sets today’s rate, and the phone asks first when it is more than 5% from the last');
+    expect(read('apps/mobile/README.md')).toContain('set: the owner and admin only');
+  });
+
+  it('tells of the receipt photo and of goods received against a purchase order, as the office does them', () => {
+    expect(read('apps/web/src/i18n/receipt-photo.ts')).toContain("rp_title: ['صورة الوصل', 'Photo of the receipt', 'وێنەی وەسڵەکە']");
+    expect(read('apps/web/src/pages/EntryDetail.tsx')).toContain('{e.image && <ReceiptPhoto id={e.id} image={e.image} />}');
+    expect(section('en')).toContain('shows the **Photo of the receipt** on its page, full size on a click, with who added it. Once the voucher is posted, its photo can’t be changed or deleted.');
+    expect(section('ar')).toContain('يعرض **صورة الوصل** في صفحته');
+    expect(section('ku')).toContain('**وێنەی وەسڵەکە** لە لاپەڕەکەیدا پیشان دەدات');
+    expect(read('packages/server/src/purchasing.ts')).toContain('arrivals');
+    expect(section('en')).toContain('becomes a draft purchase invoice at the order’s prices, for the items on the order and no more than is still to come. It is checked and posted on the PC.');
+    expect(section('en')).toContain('The photo goes only to the office PC, without the location or other details of the phone.');
+  });
+
+  it('tells of changes from a phone in the Audit log, in the words of the log', () => {
+    expect(read('apps/web/src/i18n.ts')).toContain("auditLog: ['سجل التدقيق', 'Audit log', 'تۆماری وردبینی']");
+    expect(read('apps/web/src/i18n/phone.ts')).toContain("a_phone_change: ['تغيير من هاتف', 'Change from a phone', 'گۆڕانکاری لە مۆبایلەوە']");
+    expect(section('en')).toContain('each change a phone makes has its own line in the **Audit log**');
+    expect(section('ar')).toContain('**سجل التدقيق**');
+    expect(section('ku')).toContain('**تۆماری وردبینی**');
+  });
+
+  it('tells of the fix on a database server, in the words of Settings', () => {
+    expect(read('apps/web/src/i18n.ts')).toContain("dbOnServer: ['على خادم قاعدة بيانات', 'On a database server', 'لەسەر سێرڤەری بنکەدراوە']");
+    expect(section('en')).toContain('**On a database server** (Business): a connection to the server lost while saving no longer leaves the company unavailable until Qasa ERP is restarted');
+    expect(section('ar')).toContain('**على خادم قاعدة بيانات** (Business)');
+    expect(section('ku')).toContain('**لەسەر سێرڤەری بنکەدراوە** (Business)');
+  });
+
+  it('writes Kurdish with the app\'s words and no tatweel, and English with one apostrophe', () => {
+    const ku = section('ku') + store['ku-arab'].releaseNotes;
+    expect(ku).not.toContain('ـ');
+    expect(ku).not.toMatch(/[ىيك]/);
+    for (const word of ['دۆلار', 'پسوولە', 'سەنەد', 'کاڵا', 'کۆگا', 'تەرحیل', 'ڕەشنووس', 'وەسڵ', 'پەسەندکردن']) expect(ku, word).toContain(word);
+    expect(section('en') + store['en-us'].releaseNotes).not.toMatch(/\w'[\w\s]/);
+  });
+
+  it('still tells the holders of 0.1.8 licences to connect once in the first month, in the same words (What\'s new shows it once)', () => {
+    const before = read('apps/desktop/release-notes/1.4.3.md');
     const part = (text: string, lang: string, heading: string) => new RegExp(`^::: ${lang}\\n[\\s\\S]*?(### ${heading}\\n[^\\n]+\\n)`, 'm').exec(text)?.[1];
     for (const [lang, heading] of [['en', 'Licences from 0.1.8'], ['ar', 'تراخيص الإصدار 0.1.8'], ['ku', 'مۆڵەتەکانی وەشانی 0.1.8']] as const) {
       expect(part(notes, lang, heading), lang).toBeTruthy();
@@ -1219,20 +1340,20 @@ describe('the release notes and the Store "What\'s new" of this version (1.4.3)'
     }
   });
 
-  it('names 1.4.3 first in the Store "What\'s new", then its own items, with no placeholder left', () => {
-    expect(lines('en-us')[0]).toBe('Qasa ERP 1.4.3.');
-    expect(lines('ar')[0]).toBe('قاصة ERP 1.4.3.');
-    expect(lines('ku-arab')[0]).toBe('قاسە ERP 1.4.3.');
+  it('names 1.5.0 first in the Store "What\'s new", then its own items, then 1.4.3\'s, with no placeholder left', () => {
+    expect(lines('en-us')[0]).toBe('Qasa ERP 1.5.0.');
+    expect(lines('ar')[0]).toBe('قاصة ERP 1.5.0.');
+    expect(lines('ku-arab')[0]).toBe('قاسە ERP 1.5.0.');
     for (const lang of LANGS) {
-      expect(lines(lang), lang).toHaveLength(3);
+      expect(lines(lang), lang).toHaveLength(4);
       expect(store[lang].releaseNotes, lang).not.toMatch(/\{\{|\}\}/);
       expect(lines(lang)[1]!.length, lang).toBeGreaterThan(300);
     }
-    expect(lines('en-us')[1]).toMatch(/^Dinar and dollar on more screens: /);
-    expect(lines('en-us')[1]).toContain('Switching the office network off now asks first.');
-    expect(lines('en-us')[1]).toContain('Settings → Office network → Phones (Qasa app) offers phone app 1.0.2');
-    expect(lines('ar')[1]).toContain('وصار إيقاف شبكة المكتب يسأل أولاً.');
-    expect(lines('ku-arab')[1]).toContain('کوژاندنەوەی تۆڕی نووسینگە ئێستا سەرەتا دەپرسێت.');
+    expect(lines('en-us')[1]).toContain('Settings → Office network → Phones (Qasa app)');
+    expect(lines('en-us')[1]).toContain('The company file is upgraded the first time 1.5.0 opens it, and older versions cannot open it afterwards: update every PC that opens the same company.');
+    expect(lines('en-us')[2]).toBe('Also from 1.4.3, which was not released on its own: dinar and dollar on more screens, What’s new after skipped versions, and switching the office network off asks first.');
+    expect(lines('ar')[2]).toMatch(/^ومن الإصدار 1\.4\.3، الذي لم يصدر وحده: /);
+    expect(lines('ku-arab')[2]).toMatch(/^هەروەها لە وەشانی 1\.4\.3 ەوە، کە بە تەنها بڵاو نەکرایەوە: /);
   });
 
   it('tells Store copies, in the same words in each language, what 1.4.1 brought: the Store went from 1.4.0 straight to 1.4.2', () => {
@@ -1250,9 +1371,10 @@ describe('the release notes and the Store "What\'s new" of this version (1.4.3)'
     for (const lang of LANGS) expect(store[lang].releaseNotes, lang).not.toContain('0.1.8');
   });
 
-  it('writes Kurdish with Kurdish letters and no tatweel, and English with one apostrophe', () => {
-    expect(store['ku-arab'].releaseNotes).not.toMatch(/[ىيكـ]/);
-    expect(store['en-us'].releaseNotes).not.toMatch(/\w'[\w\s]/);
+  it('has the 1.5.0 release-day steps in docs/releasing.md in place of 1.4.3\'s', () => {
+    const releasing = read('docs/releasing.md');
+    expect(releasing).toContain('## Release day for 1.5.0');
+    expect(releasing).not.toContain('## Release day for 1.4.3');
   });
 });
 

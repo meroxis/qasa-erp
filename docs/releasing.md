@@ -139,19 +139,25 @@ Do these in this order. The 1.4.2 notes and the Store "What's new" promise thing
 5. **WooCommerce plugin 1.1.2** goes to shops on request from then on (it takes only the 32-character certificate code
    or the full fingerprint).
 
-## Release day for 1.4.3 (the phone app 1.0.2)
+## Release day for 1.5.0 (1.4.3 and the phone app 1.1)
 
-No new Qasa Relay this time (1.4.3 changes no relay code), and no company-file upgrade.
+1.4.3 was never released on its own: 1.5.0 carries it, and its notes (`release-notes/1.4.3.md`) stay, so What's new
+shows them after 1.4.2. No new Qasa Relay this time (no relay code changed since 1.4.2). 1.5.0 **upgrades the company
+file to schema 15** (the receipt photos): 1.4.3 and earlier, and a Store copy still on 1.4.2, can't open it afterwards,
+as the notes say first.
 
-1. **The phone app 1.0.2** is already built and signed (versionCode 3; `scripts/check-release-apk.mjs` says OK). Its
-   SHA-256 and size are in `PHONE_APP` (`apps/web/src/pages/Settings.tsx`), and the website's `PHONE_APK` must carry
-   the same file. Scan a real barcode with it on a real phone once before the release.
-2. **Tag Pro, then the app** (the stable steps above), and submit the Store package with the new screenshots and the
-   1.4.3 "What's new".
-3. **The website** (the phone pages with 1.0.2 and its SHA-256, and the wording on what scanning sends to Google) goes
-   live as soon as the 1.4.3 GitHub release is out: a 1.4.3 PC tells the user to check the 1.0.2 SHA-256 against the
-   download, while a 1.4.2 PC still shows 1.0.1's (the phone page says why they differ). Set its `APP_VERSION`
-   (`build.mjs`, the `softwareVersion` the pages give search engines) to 1.4.3 in the same deploy.
+1. **The phone app 1.1.0** is already built and signed (versionCode 4, 97,499,776 bytes;
+   `scripts/check-release-apk.mjs` says OK). Its SHA-256 and size are in `PHONE_APP` (`apps/web/src/pages/Settings.tsx`),
+   and the website's `PHONE_APK` must carry the same file. Try it once on a real phone before the release: a receipt
+   photo with the camera, a PDF sent with WhatsApp through the share sheet, and the "Open the customer's chat" link.
+2. **Tag Pro, then the app** (the stable steps above): Pro's `v1.5.0` goes on Pro `main` after its `release/1.5.0` is
+   merged, since Pro's phone link is what offers 1.1's features. Submit the Store package with the 1.5.0 "What's new" (it names 1.4.3 and 1.4.1
+   too).
+3. **The website** (the phone pages with 1.1.0, its SHA-256 and its features; the privacy page on receipt photos, sent
+   only to the customer's own office, and PDFs, shared only by the user) goes live only once the 1.5.0 GitHub release
+   is out: phone app 1.1 with an office on 1.4.x shows only 1.0.2's features and asks for an office update, so that
+   update must exist first. Set its `APP_VERSION` (`build.mjs`, the `softwareVersion` the pages give search engines)
+   to 1.5.0 in the same deploy.
 
 ## Release notes format
 
