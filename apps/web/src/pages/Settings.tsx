@@ -1407,10 +1407,52 @@ interface PhonesStatus {
 }
 
 /**
- * The phone app is not in 1.0 (owner's decision): Settings → Phones says it is coming and offers no pairing. The
- * pairing below stays in the code for the release that ships the app; phones paired before can still be removed.
+ * The phone app ships with 1.4.2 (owner's decision): an Android APK downloaded from qasaerp.com/phone/ (Google Play
+ * later), so Settings → Phones offers it and the pairing. With `ready` false the card only says it is coming.
  */
-export const PHONE_APP_READY = false;
+export const PHONE_APP_READY = true;
+
+/** Where the phone app is downloaded, and what a careful user can check the downloaded APK against. */
+export const PHONE_APP = {
+  url: 'https://qasaerp.com/phone/',
+  version: '1.0.0',
+  apkSha256: '6c8dc54af7a4845fe449fcec575f6364e6b6d75136cbd892ca1cd9f6c6239fc9',
+  // what `apksigner verify --print-certs` shows as "certificate SHA-256 digest" (CN=Meroxis, O=Meroxis, C=IQ)
+  certSha256: '6d8fb6a65d85d9f82b026b5ef6aa00acfd956cef63d555cf6fffd3596a4b3129'
+} as const;
+
+/** Getting the phone app: the download page as a link and a QR code, the steps, and the fingerprints to check. */
+export function GetPhoneApp() {
+  const { t } = useI18n();
+  const qr = qrSvgPath(encodeQr(PHONE_APP.url, 'M'), 4);
+  return (
+    <div className="row" style={{ gap: 20, alignItems: 'flex-start', flexWrap: 'wrap' }}>
+      <svg viewBox={`0 0 ${qr.size} ${qr.size}`} width={150} height={150} role="img" aria-label={t('ph_getQrLabel')} shapeRendering="crispEdges" style={{ background: '#fff', borderRadius: 8 }}>
+        <path d={qr.path} fill="#000" />
+      </svg>
+      <div className="stack" style={{ gap: 6, flex: 1, minWidth: 240 }}>
+        <strong>{t('ph_getApp')}</strong>
+        <a href={PHONE_APP.url} target="_blank" rel="noopener noreferrer" dir="ltr">{PHONE_APP.url}</a>
+        <ol style={{ margin: 0, paddingInlineStart: 20 }}>
+          <li>{t('ph_get1')}</li>
+          <li>{t('ph_get2')}</li>
+          <li>{t('ph_get3')}</li>
+          <li>{t('ph_get4')}</li>
+        </ol>
+        <details>
+          <summary className="small">{t('ph_check')}</summary>
+          <div className="stack small" style={{ gap: 4, marginTop: 6 }}>
+            <span className="muted">{t('ph_checkHelp')}</span>
+            <span>{t('ph_apkSha')}</span>
+            <code dir="ltr" style={{ wordBreak: 'break-all', userSelect: 'all' }}>{PHONE_APP.apkSha256}</code>
+            <span>{t('ph_certSha')}</span>
+            <code dir="ltr" style={{ wordBreak: 'break-all', userSelect: 'all' }}>{PHONE_APP.certSha256}</code>
+          </div>
+        </details>
+      </div>
+    </div>
+  );
+}
 
 /** Pairing a phone: a QR code the phone app scans, with this PC's key and a one-time secret (10 minutes). */
 export function PhonesCard({ ready = PHONE_APP_READY }: { ready?: boolean }) {
@@ -1477,6 +1519,7 @@ export function PhonesCard({ ready = PHONE_APP_READY }: { ready?: boolean }) {
       </div>
       <p className="muted" style={{ margin: 0 }}>{ready ? t('ph_help') : t('ph_soonNote')}</p>
       {ready && status && !status.available && <div className="alert">{t('ph_needsPro')} <a href={href('plans')}>{t('planLicense')}</a></div>}
+      {ready && status?.available && !pairing && <GetPhoneApp />}
       {status?.devices.length ? (
         <table className="table">
           <thead><tr><th>{t('ph_phone')}</th><th>{t('ph_actsAs')}</th><th>{t('ph_lastSeen')}</th><th /></tr></thead>

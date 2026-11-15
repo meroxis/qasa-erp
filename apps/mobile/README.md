@@ -9,7 +9,9 @@ Starter, Pro and the trial, no limit on a Business licence. Starter has no Qasa 
 on the office Wi-Fi only; on Pro and Business they also reach it from anywhere through the relay.
 
 Expo (SDK 58) and React Native, TypeScript. Android first; iOS builds from the same code. It works with the office
-PC on Qasa ERP 1.4.1 or later with the Pro module (the routes it calls and the rules below are those of 1.4.1).
+PC on Qasa ERP 1.4.2 or later with the Pro module (the first release whose Settings → Phones pairs a phone; the routes
+it calls and the rules below are those of 1.4.1). Version 1.0.0 is offered as a signed APK on
+https://qasaerp.com/phone/ (Google Play later).
 
 ## What it does
 
@@ -166,10 +168,9 @@ Or with a USB cable and USB debugging on: `adb install -r qasa-erp-mobile-<versi
    way the Console shows (its encryption tool), so phones that took a side-loaded APK update from Google Play; if
    Google's own key is chosen instead, those phones must uninstall the side-loaded app first. Then upload the .aab to
    Internal testing first (see the checklist below), then Production.
-7. When the app is in the store, switch the desktop's Settings → Phones from "coming soon" to pairing
-   (`PHONE_APP_READY` in apps/web/src/pages/Settings.tsx) in a release of the Windows app, with the Plans page's
-   "soon" mark on the phone app removed (apps/web/src/pages/Plans.tsx) and apps/web/src/pages/phones-soon.test.tsx
-   changed to match.
+7. Done in 1.4.2 for the direct download: the desktop's Settings → Phones offers the app (`PHONE_APP` and
+   `PHONE_APP_READY` in apps/web/src/pages/Settings.tsx, tested by apps/web/src/pages/phones-app.test.tsx). When the
+   app is in the store, add the Google Play link there and on qasaerp.com/phone/.
 
 ### Checklist: the first internal-testing build
 
