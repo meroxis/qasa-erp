@@ -1,6 +1,7 @@
 import { normalizeForSearch, parseScaleBarcode, type CurrencyCode, type UnitCode } from '@qasa/core';
 import { isNetworkError, newIdempotencyKey, type ItemInput, type ItemView, type Permission, type SendOptions } from '../api.ts';
 import { may } from '../may.ts';
+import { findByScaleBarcode } from './scale-barcode.ts';
 
 /**
  * Adding an item from inside an item picker (QuickItemForm.tsx): who may, what the form starts with for what was typed
@@ -59,6 +60,16 @@ export function quickItemStart(typed: string, unit: UnitCode = 'piece', market =
     name: scan ? '' : text.slice(0, QUICK_ITEM_LIMITS.name), barcode: label ? label.prefix : scan ? western(text) : '', unit: label ? 'kg' : unit,
     salePrice: null, purchasePrice: null, currency: 'IQD', categoryId: '', stockMilli: null, scaleLabel: label ? western(text) : null
   };
+}
+
+/**
+ * The weight a scale's label scanned for the form puts on the line, once its item is made (or one already there was
+ * chosen instead): in thousandths of the item's base unit, and only for the label's own weighed item (its barcode the
+ * label's first seven digits, kept in kg or g), as the till reads a label. Null otherwise: the line keeps its usual
+ * quantity.
+ */
+export function labelQtyFor(label: string | null, item: Pick<ItemView, 'barcode' | 'unit'>): number | null {
+  return label ? findByScaleBarcode(label, [item])?.qtyMilli ?? null : null;
 }
 
 /** How the text in the box is offered in the picker's "add" row: by name, as a barcode, or (a market) as a scale's label. */
@@ -159,19 +170,26 @@ export function existingStockStep(haveMilli: number, typedMilli: number | null):
 /** How long a quick add waits for the server before it says the link is down (as the customer box does). */
 export const QUICK_ITEM_TIMEOUT_MS = 12_000;
 
-/** The key an add is sent with: the same while the same item is sent again, a new one once anything changed. */
-export interface HeldItemKey { key: string; of: string }
+/**
+ * The key an add is sent with: the same while the same item is sent again, a new one once anything changed. `sent`:
+ * an add with this key went out (its answer was lost), so the item may be made already; false while only the look for
+ * items already there was tried.
+ */
+export interface HeldItemKey { key: string; of: string; sent: boolean }
 
 export function itemKey(held: HeldItemKey | null, input: ItemInput, make: () => string = newIdempotencyKey): HeldItemKey {
   const of = JSON.stringify(input);
-  return held && held.of === of ? held : { key: make(), of };
+  return held && held.of === of ? held : { key: make(), of, sent: false };
 }
 
 export type QuickItemResult =
   | { status: 'added'; item: ItemView }
   /** items already there by that name, code or barcode: nothing was added; "Add anyway" sends it again with force */
   | { status: 'same'; same: SameItem[] }
-  /** the server was not reached: maybe added, maybe not; the next try with the same fields sends the same key */
+  /**
+   * the server was not reached: before the add went out (nothing added; the next try looks again first), or after
+   * (maybe added, maybe not); the next try with the same fields sends the same key
+   */
   | { status: 'offline'; key: HeldItemKey };
 
 /**
@@ -185,16 +203,20 @@ export async function quickAddItem(
   check?: { force: boolean; list(q: string, options: SendOptions): Promise<ItemView[]> }
 ): Promise<QuickItemResult> {
   const key = itemKey(held, input, makeKey);
+  // whether an add with this key has gone out: only then may the item be made already
+  let sent = key.sent;
   try {
-    // a try sent again with its held key may have made the item already: the server answers it, never twice
-    if (check && !check.force && !(held && held.key === key.key)) {
+    // an add sent again with its key may have made the item already: the server answers it, never twice. One whose
+    // look for items already there failed never went out: it looks again first
+    if (check && !check.force && !sent) {
       const fields = { name: input.name.ar || input.name.en || input.name.ku, barcode: input.barcode ?? '' };
       const same = sameItems(await check.list(sameSearch(fields), { timeoutMs: QUICK_ITEM_TIMEOUT_MS }), fields);
       if (same.length) return { status: 'same', same };
     }
+    sent = true;
     return { status: 'added', item: await create(input, { key: key.key, timeoutMs: QUICK_ITEM_TIMEOUT_MS }) };
   } catch (error) {
     if (!isNetworkError(error)) throw error;
-    return { status: 'offline', key };
+    return { status: 'offline', key: { ...key, sent } };
   }
 }

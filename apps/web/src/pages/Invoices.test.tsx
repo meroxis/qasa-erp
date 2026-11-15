@@ -159,6 +159,22 @@ it('puts an item added from the item box straight on the line, priced, with a ne
   expect(api.createInvoice).toHaveBeenCalledWith(expect.objectContaining({ lines: [{ itemId: 'made', qtyMilli: 1000, unitPrice: 1750 }] }));
 });
 
+it("puts a weighed item added from a scale's label on the line with the label's weight, in its base unit (1.4.2 review)", async () => {
+  open();
+  // made from label 2100017 01250 3 (or one already there chosen for it), even one that sells by a box of 5 kg
+  const tomato = {
+    ...fixture.item, id: 'tomato', code: 'I-0100', barcode: '2100017', unit: 'kg', salePrice: 1500, saleCurrency: 'IQD',
+    saleUnit: 'box', units: [{ unit: 'box', factorMilli: 5_000, barcode: '', salePrice: null }]
+  };
+  invoke(render().find((n) => n.type === 'ItemPicker' && n.props.ariaLabel === 'item')!.props.onCreated, tomato, 1250);
+  const nodes = render();
+  expect(lineItems(nodes)).toEqual(['tomato', '']);
+  expect(nodes.find((n) => n.type === 'QtyInput' && n.props.ariaLabel === 'qty')!.props.value).toBe(1250);
+  expect(nodes.find((n) => n.type === 'AmountInput' && n.props.ariaLabel === 'unitPrice')!.props.value).toBe(1500);
+  await invoke(nodes.find((n) => n.type === 'SplitButton')!.props.onRun, 'draft');
+  expect(api.createInvoice).toHaveBeenCalledWith(expect.objectContaining({ lines: [{ itemId: 'tomato', qtyMilli: 1250, unitPrice: 1500 }] }));
+});
+
 it.each([
   ['USD', 'IQD', 1000, 14200],
   ['IQD', 'USD', 14200, 1000],

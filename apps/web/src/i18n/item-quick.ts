@@ -128,6 +128,13 @@ export const ITEM_QUICK_TEXT = {
   sc_note: ['ملاحظة', 'Note', 'تێبینی'],
   sc_noteOther: ['ملاحظة (السبب)', 'Note (why)', 'تێبینی (بۆچی)'],
   sc_save: ['تصحيح', 'Correct', 'ڕاستکردنەوە'],
+  // a try whose answer never came: the same correction is sent again with its key, never a changed one
+  sc_tryAgain: ['أعد المحاولة', 'Try again', 'دووبارە هەوڵ بدەرەوە'],
+  sc_unsure: [
+    'لم يؤكّد الخادم هذا التصحيح، فربما عُمل من قبل. اضغط «أعد المحاولة» عند عودة الاتصال: التصحيح نفسه لا يُعمل إلا مرة واحدة. ولا يمكن تغييره قبل ذلك؛ وإن أغلقته فراجع حركات المادة والمسودات التي تنتظر المصادقة قبل أن تصحّحه مرة أخرى.',
+    'The server didn’t confirm this correction, so it may already be made. Press Try again once the link is back: the same correction is made only once. Until then it can’t be changed; if you close it, check the item’s stock moves and the drafts waiting for approval before you correct it again.',
+    'سێرڤەرەکە ئەم ڕاستکردنەوەیەی پشتڕاست نەکردەوە، بۆیە لەوانەیە پێشتر کرابێت. کاتێک پەیوەندی گەڕایەوە «دووبارە هەوڵ بدەرەوە» دابگرە: هەمان ڕاستکردنەوە تەنها یەک جار دەکرێت. تا ئەو کاتە ناگۆڕدرێت؛ ئەگەر دایبخەیت، پێش ئەوەی دووبارە ڕاستی بکەیتەوە جووڵەکانی کاڵاکە و ئەو ڕەشنووسانەی چاوەڕێی پەسەندکردنن ببینە.'
+  ],
   sc_done: ['صُحِّح المخزون: {doc}', 'Stock corrected: {doc}', 'کۆگا ڕاستکرایەوە: {doc}'],
   sc_waiting: [
     'حُفظت مسودة تنتظر المصادقة: يرحّلها مصادق آخر من صفحة تسوية المخزون. لم يتغير المخزون بعد.',

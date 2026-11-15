@@ -8,7 +8,7 @@ import { batchesApi } from './batches-api.ts';
 import { BatchInFields } from './BatchFields.tsx';
 import { CategoryOptions } from './CatalogPickers.tsx';
 import {
-  addRowKind, existingStockStep, mayAddItem, QUICK_ITEM_LIMITS, quickAddItem, quickItemInput, quickItemStart, showsBatchFields,
+  addRowKind, existingStockStep, labelQtyFor, mayAddItem, QUICK_ITEM_LIMITS, quickAddItem, quickItemInput, quickItemStart, showsBatchFields,
   type HeldItemKey, type QuickItemFields, type SameItem
 } from './item-quick-add.ts';
 
@@ -24,8 +24,12 @@ export function ItemPicker({ value, options, onChange, onCreated, placeholder, a
   value: string;
   options: PickOption[];
   onChange(id: string): void;
-  /** an item was added here (or one already there was chosen in the form): the page keeps it in its list and puts it on the line */
-  onCreated(item: ItemView): void;
+  /**
+   * an item was added here (or one already there was chosen in the form): the page keeps it in its list and puts it on
+   * the line, with `qtyMilli` as its quantity when a scale's label was scanned for it (its weight, in the item's base
+   * unit; null: the line's usual quantity)
+   */
+  onCreated(item: ItemView, qtyMilli: number | null): void;
   placeholder: string;
   ariaLabel?: string;
   emptyLabel?: string;
@@ -56,7 +60,7 @@ export function ItemPicker({ value, options, onChange, onCreated, placeholder, a
       />
       {allowed && adding !== null && (
         <QuickItemForm typed={adding} sale={sale} stockOnly={stockOnly} warehouseId={warehouseId}
-          onClose={() => setAdding(null)} onDone={(item) => { setAdding(null); onCreated(item); }} />
+          onClose={() => setAdding(null)} onDone={(item, qtyMilli) => { setAdding(null); onCreated(item, qtyMilli); }} />
       )}
     </>
   );
@@ -80,7 +84,8 @@ export function QuickItemForm({ typed, sale = false, stockOnly = false, warehous
   sale?: boolean;
   stockOnly?: boolean;
   warehouseId?: string | undefined;
-  onDone(item: ItemView): void;
+  /** the item made (or one already there that was chosen), and the weight a scale's label scanned for it puts on the line (null: none) */
+  onDone(item: ItemView, qtyMilli: number | null): void;
   onClose(): void;
 }) {
   const i18n = useI18n();
@@ -124,6 +129,8 @@ export function QuickItemForm({ typed, sale = false, stockOnly = false, warehous
   /** the item the stock is entered for: the one made here, or one already there that was chosen */
   const target = made ?? chosen;
   const typedStock = () => (asksStock && fields.stockMilli !== null && fields.stockMilli > 0 ? fields.stockMilli : null);
+  /** the item goes on the line, with the weight of the scale's label scanned for it (its own weighed item only) */
+  const done = (item: ItemView) => onDone(item, labelQtyFor(fields.scaleLabel, item));
 
   /**
    * "Use this one": an item already there goes on the line, with what was typed as on the shelf now entered for it in
@@ -133,7 +140,7 @@ export function QuickItemForm({ typed, sale = false, stockOnly = false, warehous
   async function useExisting(item: ItemView) {
     if (busy) return;
     const typedMilli = typedStock();
-    if (typedMilli === null) { onDone(item); return; }
+    if (typedMilli === null) { done(item); return; }
     setChosen(item);
     setProblem(null);
     setError(null);
@@ -141,7 +148,7 @@ export function QuickItemForm({ typed, sale = false, stockOnly = false, warehous
     try {
       const detail = await api.item(item.id);
       const step = existingStockStep(detail.stock.find((s) => s.warehouseId === warehouseId)?.qtyMilli ?? 0, typedMilli);
-      if (step.kind === 'none') { if (open.current) onDone(item); return; }
+      if (step.kind === 'none') { if (open.current) done(item); return; }
       const rate = settings?.defaultRateX100;
       const unitCost = step.reason === 'opening'
         ? stockCost(fields, rate) ?? stockCost({ purchasePrice: item.purchasePrice ?? null, currency: item.purchaseCurrency ?? 'IQD' }, rate)
@@ -149,7 +156,7 @@ export function QuickItemForm({ typed, sale = false, stockOnly = false, warehous
       if (step.reason === 'opening' && unitCost === null) { setProblem({ field: 'purchasePrice', text: t('iq_stockNeedsPrice') }); return; }
       if (step.adds && item.trackExpiry && !batch.expiry) { setProblem({ field: 'expiry', text: t('iq_expiryNeeded') }); return; }
       const stocked = await enterStock(item, typedMilli, unitCost, step.reason);
-      if (stocked && open.current) onDone(stocked);
+      if (stocked && open.current) done(stocked);
     } catch (e) {
       setError(e);
     } finally {
@@ -217,7 +224,7 @@ export function QuickItemForm({ typed, sale = false, stockOnly = false, warehous
         if (!stocked) return;
         item = stocked;
       }
-      if (open.current) onDone(item);
+      if (open.current) done(item);
     } catch (e) {
       setError(e);
     } finally {
@@ -333,7 +340,7 @@ export function QuickItemForm({ typed, sale = false, stockOnly = false, warehous
           <>
             <div className="alert warn" role="status">{t('iq_stockWaiting')}</div>
             <div className="row">
-              <button type="button" className="btn primary" autoFocus onClick={() => onDone(target)}><Icon name="check" size={16} />{t('iq_continue')}</button>
+              <button type="button" className="btn primary" autoFocus onClick={() => done(target)}><Icon name="check" size={16} />{t('iq_continue')}</button>
             </div>
           </>
         ) : (

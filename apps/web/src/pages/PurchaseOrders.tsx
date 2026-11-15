@@ -312,7 +312,16 @@ export function PurchaseOrderEditor({ id }: { id?: string }) {
                 <tr key={r.key} data-line={r.key}>
                   <td className="muted num">{i18n.int(i + 1)}</td>
                   <td><ItemPicker value={r.itemId} options={itemOptions} onChange={(v) => update(r.key, { itemId: v, unit: items.find((it) => it.id === v)?.purchaseUnit ?? null })} placeholder={t('po_pickItem')} ariaLabel={t('item')}
-                    stockOnly onCreated={(made) => { setAddedItems((a) => [...a.filter((x) => x.id !== made.id), made]); focusLineQty(r.key, t('qty')); update(r.key, { itemId: made.id, unit: made.purchaseUnit ?? null, ...(made.purchasePrice && (made.purchaseCurrency ?? made.saleCurrency) === form.currency ? { unitPrice: made.purchasePrice } : {}) }); }} /></td>
+                    stockOnly onCreated={(made, weighed) => {
+                      setAddedItems((a) => [...a.filter((x) => x.id !== made.id), made]);
+                      focusLineQty(r.key, t('qty'));
+                      // a scale's label scanned for it: its weight, in the item's base unit
+                      const scaled = typeof weighed === 'number';
+                      update(r.key, {
+                        itemId: made.id, unit: scaled ? null : made.purchaseUnit ?? null, ...(scaled ? { qtyMilli: weighed } : {}),
+                        ...(made.purchasePrice && (made.purchaseCurrency ?? made.saleCurrency) === form.currency ? { unitPrice: made.purchasePrice } : {})
+                      });
+                    }} /></td>
                   <td>
                     <QtyInput value={r.qtyMilli || null} onChange={(v) => update(r.key, { qtyMilli: v ?? 0 })} ariaLabel={t('qty')} />
                     <UnitPicker item={items.find((it) => it.id === r.itemId)} value={r.unit ?? null} onChange={(unit) => update(r.key, { unit })} />
