@@ -306,10 +306,12 @@ describe("correcting an item's stock", () => {
     expect(outcomeUnknown(new ApiError(409, 'idempotency_key_reused', null))).toBe(false);
     const refusal = new ApiError(400, 'validation', [{ code: 'correction_no_change' }]);
     expect(await sendCorrection(null, 'i1', counted, vi.fn().mockRejectedValue(refusal), () => 'k3')).toEqual({ status: 'refused', error: refusal });
-    for (const lang of LANGS) for (const key of ['sc_unsure', 'sc_tryAgain'] as Key[]) expect(textOf(lang, key), `${lang} ${key}`).not.toBe(key);
-    expect(textOf('en', 'sc_unsure')).toContain(textOf('en', 'sc_tryAgain'));
-    expect(textOf('ar', 'sc_unsure')).toContain(textOf('ar', 'sc_tryAgain'));
-    expect(textOf('ku', 'sc_unsure')).toContain(textOf('ku', 'sc_tryAgain'));
+    // the notes of the correction dialog and of the new-item form's stock name the button that sends it again
+    for (const lang of LANGS) {
+      for (const key of ['sc_unsure', 'sc_tryAgain', 'iq_stockUnsure'] as Key[]) expect(textOf(lang, key), `${lang} ${key}`).not.toBe(key);
+      expect(textOf(lang, 'sc_unsure'), lang).toContain(textOf(lang, 'sc_tryAgain'));
+      expect(textOf(lang, 'iq_stockUnsure'), lang).toContain(textOf(lang, 'sc_tryAgain'));
+    }
   });
 
   it("values a surplus at the chosen warehouse's own average (left to the server), and a purchase at the purchase price", () => {

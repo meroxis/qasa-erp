@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react';
 import { roundHalfUp, unitsForBusiness, UNITS, type CurrencyCode } from '@qasa/core';
-import { api, ApiError, isNetworkError, newIdempotencyKey, type ItemView } from '../api.ts';
+import { api, type ItemView, type StockCorrectionInput } from '../api.ts';
 import { AmountInput, ErrorBox, Icon, Modal, QtyInput, SearchCombo, useData, useLoad, useToast, type PickOption } from '../components.tsx';
 import { useI18n } from '../i18n.ts';
 import { categoriesApi } from './categories-api.ts';
@@ -11,6 +11,7 @@ import {
   addRowKind, existingStockStep, labelQtyFor, mayAddItem, QUICK_ITEM_LIMITS, quickAddItem, quickItemInput, quickItemStart, showsBatchFields,
   type HeldItemKey, type QuickItemFields, type SameItem
 } from './item-quick-add.ts';
+import { sendCorrection, type HeldCorrection } from './StockCorrection.tsx';
 
 /**
  * The item box of a sales or purchase invoice, a quotation and a purchase order: the usual search, and for someone who
@@ -66,6 +67,9 @@ export function ItemPicker({ value, options, onChange, onCreated, placeholder, a
   );
 }
 
+/** A stock entry whose try got no answer (StockCorrection's HeldCorrection), and the item it is for: made here, or chosen. */
+interface HeldStock { request: HeldCorrection; item: ItemView }
+
 /** The item's purchase price typed in the form, in IQD per base unit (a dollar price at the company rate); null: none. */
 export function stockCost(fields: Pick<QuickItemFields, 'purchasePrice' | 'currency'>, rateX100: number | undefined): number | null {
   if (fields.purchasePrice === null) return null;
@@ -108,7 +112,11 @@ export function QuickItemForm({ typed, sale = false, stockOnly = false, warehous
   const [waiting, setWaiting] = useState(false);
   // the key of the last try that got no answer: the next try of the same item can't add it twice
   const held = useRef<HeldItemKey | null>(null);
-  const heldStock = useRef<{ key: string; of: string } | null>(null);
+  // a stock entry whose try got no answer may be entered already: until the server answers it, the form is that very
+  // request, locked, and "Try again" sends it once more with its key (entered once, or answered from the first try)
+  const [heldStock, setHeldStock] = useState<HeldStock | null>(null);
+  // one try at a time, also when a button is pressed twice before the form has drawn "saving"
+  const running = useRef(false);
   // an answer that arrives after Esc or Cancel puts nothing on the line
   const open = useRef(true);
   useEffect(() => {
@@ -138,9 +146,10 @@ export function QuickItemForm({ typed, sale = false, stockOnly = false, warehous
    * approves). Nothing typed, or what is there already: it goes on the line as it is.
    */
   async function useExisting(item: ItemView) {
-    if (busy) return;
+    if (busy || running.current || heldStock) return;
     const typedMilli = typedStock();
     if (typedMilli === null) { done(item); return; }
+    running.current = true;
     setChosen(item);
     setProblem(null);
     setError(null);
@@ -155,43 +164,64 @@ export function QuickItemForm({ typed, sale = false, stockOnly = false, warehous
         : null;
       if (step.reason === 'opening' && unitCost === null) { setProblem({ field: 'purchasePrice', text: t('iq_stockNeedsPrice') }); return; }
       if (step.adds && item.trackExpiry && !batch.expiry) { setProblem({ field: 'expiry', text: t('iq_expiryNeeded') }); return; }
-      const stocked = await enterStock(item, typedMilli, unitCost, step.reason);
+      const stocked = await enterStock(item, stockRequest(item, typedMilli, unitCost, step.reason), null);
       if (stocked && open.current) done(stocked);
     } catch (e) {
       setError(e);
     } finally {
+      running.current = false;
       setBusy(false);
     }
   }
 
   /**
-   * The item's stock in the sale's warehouse: a new item's as opening stock at the purchase price; one already there
-   * that was chosen, as opening stock too where it has none, else as a count correction at the average cost. The item
-   * with it, or null (waiting for approval, or refused).
+   * What is sent for the item's stock in the sale's warehouse: a new item's as opening stock at the purchase price; one
+   * already there that was chosen, as opening stock too where it has none, else as a count correction at the average
+   * cost.
    */
-  async function enterStock(item: ItemView, qtyMilli: number, unitCost: number | null, reason: 'opening' | 'found' = 'opening'): Promise<ItemView | null> {
-    const input = {
-      warehouseId: warehouseId!, mode: 'set' as const, qtyMilli, reason, ...(reason === 'opening' && unitCost !== null ? { unitCost } : {}), lang: i18n.lang,
+  function stockRequest(item: ItemView, qtyMilli: number, unitCost: number | null, reason: 'opening' | 'found' = 'opening'): StockCorrectionInput {
+    return {
+      warehouseId: warehouseId!, mode: 'set', qtyMilli, reason, ...(reason === 'opening' && unitCost !== null ? { unitCost } : {}), lang: i18n.lang,
       ...(item.trackBatches && batch.batchNo.trim() ? { batchNo: batch.batchNo.trim() } : {}),
       ...(item.trackExpiry && batch.expiry ? { expiry: batch.expiry } : {})
     };
-    const of = JSON.stringify([item.id, input]);
-    if (!heldStock.current || heldStock.current.of !== of) heldStock.current = { key: newIdempotencyKey(), of };
-    try {
-      const result = await api.correctStock(item.id, input, { key: heldStock.current.key });
-      heldStock.current = null;
-      if (!result.posted) { setWaiting(true); return null; }
-      return { ...item, qtyMilli: result.item.qtyMilli, value: result.item.value };
-    } catch (e) {
-      // a refusal: tried again with a new key; a lost answer keeps the key (entered at most once)
-      if (!isNetworkError(e) && e instanceof ApiError) heldStock.current = null;
-      setError(e);
+  }
+
+  /**
+   * Enters the item's stock so that it is entered once (sendCorrection): `held`, an entry whose answer was lost, goes
+   * again as it was sent, with its key. The item with its stock, or null: waiting for approval, refused (nothing was
+   * entered: the form is free again), or no answer (held: the form is locked until the server answers it).
+   */
+  async function enterStock(item: ItemView, input: StockCorrectionInput, held: HeldCorrection | null): Promise<ItemView | null> {
+    const sent = await sendCorrection(held, item.id, input, (id, body, options) => api.correctStock(id, body, options));
+    if (sent.status !== 'done') {
+      setHeldStock(sent.status === 'unsure' ? { request: sent.held, item } : null);
+      setError(sent.error);
       return null;
+    }
+    setHeldStock(null);
+    if (!sent.result.posted) { setWaiting(true); return null; }
+    return { ...item, qtyMilli: sent.result.item.qtyMilli, value: sent.result.item.value };
+  }
+
+  /** "Try again" on a stock entry whose answer was lost: that very request, with its key, for the item it was for. */
+  async function retryStock(held: HeldStock) {
+    running.current = true;
+    setBusy(true);
+    setError(null);
+    try {
+      const stocked = await enterStock(held.item, held.request.input, held.request);
+      if (stocked && open.current) done(stocked);
+    } finally {
+      running.current = false;
+      setBusy(false);
     }
   }
 
   async function save(force: boolean) {
-    if (busy) return;
+    if (busy || running.current) return;
+    // a stock entry held (its answer was lost) goes again as it was sent, whatever the form says now
+    if (heldStock) { await retryStock(heldStock); return; }
     const checked = quickItemInput(fields, cost);
     if (!checked.ok) {
       setProblem({ field: checked.field, text: t(checked.code === 'name_required' ? 'qa_nameNeeded' : checked.code === 'price_required' ? 'err_price_invalid' : 'qa_tooLong') });
@@ -201,6 +231,7 @@ export function QuickItemForm({ typed, sale = false, stockOnly = false, warehous
     const unitCost = stockCost(fields, settings?.defaultRateX100);
     if (stock !== null && unitCost === null) { setProblem({ field: 'purchasePrice', text: t('iq_stockNeedsPrice') }); return; }
     if (stock !== null && (made ? made.trackExpiry : dated) && !batch.expiry) { setProblem({ field: 'expiry', text: t('iq_expiryNeeded') }); return; }
+    running.current = true;
     setChosen(null);
     setBusy(true);
     setError(null);
@@ -208,19 +239,19 @@ export function QuickItemForm({ typed, sale = false, stockOnly = false, warehous
     try {
       let item = made;
       if (!item) {
-        const done = await quickAddItem(checked.input, held.current, (input, options) => api.createItem(input, options), undefined,
+        const added = await quickAddItem(checked.input, held.current, (input, options) => api.createItem(input, options), undefined,
           { force, list: (q, options) => api.items({ q }, options) });
-        if (done.status === 'offline') { held.current = done.key; setOffline(true); return; }
-        if (done.status === 'same') { setSame(done.same); return; }
+        if (added.status === 'offline') { held.current = added.key; setOffline(true); return; }
+        if (added.status === 'same') { setSame(added.same); return; }
         held.current = null;
-        item = done.item;
+        item = added.item;
         setMade(item);
         toast(t('iq_added', { name: i18n.name(item.name), code: item.code }));
       }
       // the item keeps expiry dates of its own (the company's choice could not be read before): its fields show now
       if (stock !== null && item.trackExpiry && !batch.expiry) { setProblem({ field: 'expiry', text: t('iq_expiryNeeded') }); return; }
       if (stock !== null) {
-        const stocked = await enterStock(item, stock, unitCost!);
+        const stocked = await enterStock(item, stockRequest(item, stock, unitCost), null);
         if (!stocked) return;
         item = stocked;
       }
@@ -228,6 +259,7 @@ export function QuickItemForm({ typed, sale = false, stockOnly = false, warehous
     } catch (e) {
       setError(e);
     } finally {
+      running.current = false;
       setBusy(false);
     }
   }
@@ -245,95 +277,100 @@ export function QuickItemForm({ typed, sale = false, stockOnly = false, warehous
   return (
     <Modal title={t('iq_title')} onClose={onClose}>
       <div className="stack quick-item" onKeyDown={onKey}>
-        <label className="field">
-          <span>{t('it_name')}</span>
-          <input className={'input' + invalid('name')} autoFocus maxLength={QUICK_ITEM_LIMITS.name} value={fields.name} aria-invalid={problem?.field === 'name'}
-            readOnly={!!made} onChange={(e) => set({ name: e.target.value })} />
-        </label>
-        <div className="grid-2">
+        {/* a stock entry held (its answer was lost): nothing here can change until the server answers that very entry */}
+        <fieldset disabled={!!heldStock} style={{ display: 'contents' }}>
           <label className="field">
-            <span>{t('barcode')}</span>
-            <input className={'input ltr' + invalid('barcode')} dir="ltr" maxLength={QUICK_ITEM_LIMITS.barcode} value={fields.barcode} readOnly={!!made}
-              onChange={(e) => set({ barcode: e.target.value, scaleLabel: null })} />
+            <span>{t('it_name')}</span>
+            <input className={'input' + invalid('name')} autoFocus maxLength={QUICK_ITEM_LIMITS.name} value={fields.name} aria-invalid={problem?.field === 'name'}
+              readOnly={!!made} onChange={(e) => set({ name: e.target.value })} />
           </label>
-          <label className="field">
-            <span>{t('unit')}</span>
-            <select className="input" value={fields.unit} disabled={!!made} onChange={(e) => set({ unit: e.target.value as QuickItemFields['unit'] })}>
-              {units.map((u) => <option key={u} value={u}>{i18n.name(UNITS[u])}</option>)}
-            </select>
-          </label>
-        </div>
-        {fields.scaleLabel && <span className="muted small">{t('iq_scaleHint', { p: fields.barcode })}</span>}
-        <div className="row" style={{ gap: 8 }}>
-          <span className="muted small">{t('iq_pricesCurrency')}</span>
-          <div className="track" role="group" aria-label={t('iq_pricesCurrency')}>
-            {(['IQD', 'USD'] as const).map((c: CurrencyCode) => <button key={c} type="button" aria-pressed={fields.currency === c} onClick={() => set({ currency: c })}>{c === 'IQD' ? t('iqdName') : '$'}</button>)}
+          <div className="grid-2">
+            <label className="field">
+              <span>{t('barcode')}</span>
+              <input className={'input ltr' + invalid('barcode')} dir="ltr" maxLength={QUICK_ITEM_LIMITS.barcode} value={fields.barcode} readOnly={!!made}
+                onChange={(e) => set({ barcode: e.target.value, scaleLabel: null })} />
+            </label>
+            <label className="field">
+              <span>{t('unit')}</span>
+              <select className="input" value={fields.unit} disabled={!!made} onChange={(e) => set({ unit: e.target.value as QuickItemFields['unit'] })}>
+                {units.map((u) => <option key={u} value={u}>{i18n.name(UNITS[u])}</option>)}
+              </select>
+            </label>
           </div>
-        </div>
-        <div className="grid-2">
-          <div className="field">
-            <span>{t('salePrice')} <span className="muted small">({fields.currency === 'IQD' ? t('iqdName') : '$'})</span></span>
-            <div className={'row' + invalid('salePrice')} style={{ flexWrap: 'nowrap' }}>
-              <AmountInput value={fields.salePrice} currency={fields.currency} onChange={(v) => set({ salePrice: v })} ariaLabel={t('salePrice')} />
+          {fields.scaleLabel && <span className="muted small">{t('iq_scaleHint', { p: fields.barcode })}</span>}
+          <div className="row" style={{ gap: 8 }}>
+            <span className="muted small">{t('iq_pricesCurrency')}</span>
+            <div className="track" role="group" aria-label={t('iq_pricesCurrency')}>
+              {(['IQD', 'USD'] as const).map((c: CurrencyCode) => <button key={c} type="button" aria-pressed={fields.currency === c} onClick={() => set({ currency: c })}>{c === 'IQD' ? t('iqdName') : '$'}</button>)}
             </div>
           </div>
-          {cost && (
+          <div className="grid-2">
             <div className="field">
-              <span>{t('it_purchasePrice')} <span className="muted small">({fields.currency === 'IQD' ? t('iqdName') : '$'})</span></span>
-              <div className={'row' + invalid('purchasePrice')} style={{ flexWrap: 'nowrap' }}>
-                <AmountInput value={fields.purchasePrice} currency={fields.currency} onChange={(v) => set({ purchasePrice: v })} ariaLabel={t('it_purchasePrice')} />
+              <span>{t('salePrice')} <span className="muted small">({fields.currency === 'IQD' ? t('iqdName') : '$'})</span></span>
+              <div className={'row' + invalid('salePrice')} style={{ flexWrap: 'nowrap' }}>
+                <AmountInput value={fields.salePrice} currency={fields.currency} onChange={(v) => set({ salePrice: v })} ariaLabel={t('salePrice')} />
               </div>
             </div>
-          )}
-        </div>
-        <span className="muted small">{t('iq_pricesHint', { u: i18n.name(UNITS[fields.unit]) })}</span>
-        {(categories.data?.length ?? 0) > 0 && (
-          <label className="field">
-            <span>{t('iq_category')}</span>
-            <select className="input" value={fields.categoryId} disabled={!!made} onChange={(e) => set({ categoryId: e.target.value })}>
-              <option value="">{t('cat_none')}</option>
-              <CategoryOptions list={categories.data!} />
-            </select>
-          </label>
-        )}
-        {asksStock && (
-          <div className="field">
-            <span>{t('iq_stockNow')}</span>
-            <div className="row" style={{ flexWrap: 'nowrap', gap: 8 }}>
-              <QtyInput value={fields.stockMilli} onChange={(v) => set({ stockMilli: v })} ariaLabel={t('iq_stockNow')} />
-              <span className="muted small" style={{ whiteSpace: 'nowrap' }}>{i18n.name(UNITS[fields.unit])}</span>
-            </div>
-            {showsBatchFields(target, dated) && fields.stockMilli !== null && fields.stockMilli > 0 && (
-              <BatchInFields item={target ?? { trackBatches: true, trackExpiry: true }}batchNo={batch.batchNo} expiry={batch.expiry} onChange={(v) => { setBatch(v); setProblem(null); }} />
+            {cost && (
+              <div className="field">
+                <span>{t('it_purchasePrice')} <span className="muted small">({fields.currency === 'IQD' ? t('iqdName') : '$'})</span></span>
+                <div className={'row' + invalid('purchasePrice')} style={{ flexWrap: 'nowrap' }}>
+                  <AmountInput value={fields.purchasePrice} currency={fields.currency} onChange={(v) => set({ purchasePrice: v })} ariaLabel={t('it_purchasePrice')} />
+                </div>
+              </div>
             )}
-            <span className="muted small">{t('iq_stockNowHint')}</span>
           </div>
-        )}
-        {market && (fields.unit === 'kg' || fields.unit === 'g') && !fields.scaleLabel && <span className="muted small">{t('it_scaleHint')}</span>}
-        {problem && <div className="small quick-add-problem" role="alert">{problem.text}</div>}
-        {same && (
-          <div className="alert warn quick-add-same" role="alert">
-            <div>{t('iq_sameItem')}</div>
-            {typedStock() !== null && <div className="muted small">{t('iq_sameStock')}</div>}
-            <ul>
-              {same.map((s) => (
-                <li key={s.item.id}>
-                  <span className="quick-add-who">
-                    <span className="ltr tree-code">{s.item.code}</span> <strong className="bidi">{i18n.name(s.item.name)}</strong>
-                    {s.item.barcode && <> · <span className="ltr num">{s.item.barcode}</span></>}
-                    {categoryName(s.item.categoryId) && <span className="muted small"> · {t('iq_inCategory', { c: categoryName(s.item.categoryId) })}</span>}
-                    {!s.item.active && <span className="muted small"> ({t('qa_inactiveNote')})</span>}
-                  </span>
-                  {usable(s.item) && <button type="button" className="btn small" disabled={busy} onClick={() => void useExisting(s.item)}>{t('qa_useThis')}</button>}
-                </li>
-              ))}
-            </ul>
-            {/* the server refuses a barcode used twice: only a name or a code may be added again */}
-            {!same.some((s) => s.by === 'barcode') && <div><button type="button" className="btn small" disabled={busy} onClick={() => void save(true)}>{t('qa_addAnyway')}</button></div>}
-          </div>
-        )}
+          <span className="muted small">{t('iq_pricesHint', { u: i18n.name(UNITS[fields.unit]) })}</span>
+          {(categories.data?.length ?? 0) > 0 && (
+            <label className="field">
+              <span>{t('iq_category')}</span>
+              <select className="input" value={fields.categoryId} disabled={!!made} onChange={(e) => set({ categoryId: e.target.value })}>
+                <option value="">{t('cat_none')}</option>
+                <CategoryOptions list={categories.data!} />
+              </select>
+            </label>
+          )}
+          {asksStock && (
+            <div className="field">
+              <span>{t('iq_stockNow')}</span>
+              <div className="row" style={{ flexWrap: 'nowrap', gap: 8 }}>
+                <QtyInput value={fields.stockMilli} onChange={(v) => set({ stockMilli: v })} ariaLabel={t('iq_stockNow')} />
+                <span className="muted small" style={{ whiteSpace: 'nowrap' }}>{i18n.name(UNITS[fields.unit])}</span>
+              </div>
+              {showsBatchFields(target, dated) && fields.stockMilli !== null && fields.stockMilli > 0 && (
+                <BatchInFields item={target ?? { trackBatches: true, trackExpiry: true }}batchNo={batch.batchNo} expiry={batch.expiry} onChange={(v) => { setBatch(v); setProblem(null); }} />
+              )}
+              <span className="muted small">{t('iq_stockNowHint')}</span>
+            </div>
+          )}
+          {market && (fields.unit === 'kg' || fields.unit === 'g') && !fields.scaleLabel && <span className="muted small">{t('it_scaleHint')}</span>}
+          {problem && <div className="small quick-add-problem" role="alert">{problem.text}</div>}
+          {same && (
+            <div className="alert warn quick-add-same" role="alert">
+              <div>{t('iq_sameItem')}</div>
+              {typedStock() !== null && <div className="muted small">{t('iq_sameStock')}</div>}
+              <ul>
+                {same.map((s) => (
+                  <li key={s.item.id}>
+                    <span className="quick-add-who">
+                      <span className="ltr tree-code">{s.item.code}</span> <strong className="bidi">{i18n.name(s.item.name)}</strong>
+                      {s.item.barcode && <> · <span className="ltr num">{s.item.barcode}</span></>}
+                      {categoryName(s.item.categoryId) && <span className="muted small"> · {t('iq_inCategory', { c: categoryName(s.item.categoryId) })}</span>}
+                      {!s.item.active && <span className="muted small"> ({t('qa_inactiveNote')})</span>}
+                    </span>
+                    {usable(s.item) && <button type="button" className="btn small" disabled={busy} onClick={() => void useExisting(s.item)}>{t('qa_useThis')}</button>}
+                  </li>
+                ))}
+              </ul>
+              {/* the server refuses a barcode used twice: only a name or a code may be added again */}
+              {!same.some((s) => s.by === 'barcode') && <div><button type="button" className="btn small" disabled={busy} onClick={() => void save(true)}>{t('qa_addAnyway')}</button></div>}
+            </div>
+          )}
+        </fieldset>
         {offline && <div className="alert warn" role="alert">{t('qa_offline')}</div>}
-        {target && !!error && <div className="alert warn" role="alert">{t('iq_stockFailed')}</div>}
+        {/* maybe entered, maybe not; or refused for an item made here (one chosen instead was not added: the reason says it) */}
+        {heldStock ? <div className="alert warn" role="alert">{t('iq_stockUnsure')}</div>
+          : made && !!error && <div className="alert warn" role="alert">{t('iq_stockFailed')}</div>}
         <ErrorBox error={error} />
         {sale && !asksStock && <div className="alert info small">{t('iq_noStockYet')}</div>}
         {waiting && target ? (
@@ -345,7 +382,9 @@ export function QuickItemForm({ typed, sale = false, stockOnly = false, warehous
           </>
         ) : (
           <div className="row">
-            <button type="button" className="btn primary" disabled={busy} onClick={() => void save(false)}><Icon name="check" size={16} />{busy ? t('saving') : t('qa_add')}</button>
+            <button type="button" className="btn primary" disabled={busy} onClick={() => void save(false)}>
+              <Icon name="check" size={16} />{busy ? t('saving') : heldStock ? t('sc_tryAgain') : t('qa_add')}
+            </button>
             <button type="button" className="btn" onClick={onClose}>{t('cancel')}</button>
           </div>
         )}

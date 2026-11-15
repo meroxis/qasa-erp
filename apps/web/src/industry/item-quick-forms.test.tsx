@@ -66,12 +66,15 @@ const invoke = (handler: unknown, ...args: unknown[]) => (handler as (...values:
 const settle = () => new Promise((resolve) => setTimeout(resolve, 0));
 const primary = (nodes: Node[]) => nodes.find((n) => n.type === 'button' && n.props.className === 'btn primary')!;
 const words = (node: Node) => [node.props.children].flat().filter((c) => typeof c === 'string');
+/** Whether the form's fields are locked (a fieldset around them, disabled). */
+const locked = (nodes: Node[]) => nodes.find((n) => n.type === 'fieldset')?.props.disabled === true;
 
 beforeEach(() => {
   fixture.states = []; fixture.cursor = 0; fixture.keys = 0; fixture.toasts = []; fixture.done = []; fixture.data = {};
   vi.mocked(api.correctStock).mockReset();
   vi.mocked(api.items).mockReset();
   vi.mocked(api.createItem).mockReset();
+  vi.mocked(api.item).mockReset();
 });
 
 describe('a stock correction whose answer was lost', () => {
@@ -88,7 +91,6 @@ describe('a stock correction whose answer was lost', () => {
     return flatten(StockCorrection({ item: tea, onClose: () => {}, onDone: (r) => { fixture.done.push(r); } }));
   };
   const counted = (nodes: Node[]) => nodes.find((n) => n.type === 'QtyInput')!;
-  const locked = (nodes: Node[]) => nodes.find((n) => n.type === 'fieldset')!.props.disabled === true;
   beforeEach(() => { fixture.data = { settings: { defaultRateX100: 142_000, postingAccounts: { cash: '1811' } } }; });
 
   it('is sent again unchanged with its key, while the fields stay locked, however the form was changed', async () => {
@@ -188,5 +190,103 @@ describe("a scale label's weight from the new-item form (a market)", () => {
     await settle();
     expect(api.createItem).not.toHaveBeenCalled();
     expect(fixture.done).toEqual([['t1', 1_250], ['o1', null]]);
+  });
+});
+
+describe('the stock typed in the new-item form ("In stock now"), whose answer was lost', () => {
+  const mango = {
+    id: 'm1', code: 'I-0200', barcode: '', name: { ar: 'Mango juice', en: 'Mango juice', ku: 'Mango juice' }, unit: 'piece', salePrice: 2_000, saleCurrency: 'IQD',
+    purchasePrice: 1_400, purchaseCurrency: 'IQD', trackStock: true, active: true, qtyMilli: 0, value: 0, units: [], trackBatches: false, trackExpiry: false, categoryId: null
+  } as unknown as ItemView;
+  const tea = { ...mango, id: 't1', code: 'I-0007', name: { ar: 'Tea', en: 'Tea', ku: 'Tea' } } as ItemView;
+  const entered = (item: ItemView, qtyMilli: number): StockCorrectionResult => ({
+    document: { type: 'stock_doc', id: 'd1', number: 'OPN-2026-0001', status: 'posted' }, posted: true, diffMilli: qtyMilli,
+    item: { ...item, qtyMilli, value: qtyMilli * 2, stock: [], moves: [] } as unknown as ItemDetail
+  });
+  // a sale from warehouse w1: the form asks what is on the shelf now
+  const render = (typed: string) => {
+    fixture.cursor = 0;
+    return flatten(QuickItemForm({ typed, sale: true, warehouseId: 'w1', onDone: (item, qtyMilli) => { fixture.done.push([item.id, item.qtyMilli, qtyMilli]); }, onClose: () => {} }));
+  };
+  /** Types a number into one of the form's boxes (a price, the stock on the shelf). */
+  const enter = (typed: string, label: string, value: number) =>
+    invoke(render(typed).find((n) => (n.type === 'AmountInput' || n.type === 'QtyInput') && n.props.ariaLabel === label)!.props.onChange, value);
+  beforeEach(() => { fixture.data = { settings: { defaultRateX100: 142_000 }, seesCost: true }; });
+
+  it('of a new item goes again unchanged with its key, while the stock, the prices and the rest stay locked', async () => {
+    vi.mocked(api.items).mockResolvedValue([]);
+    vi.mocked(api.createItem).mockResolvedValue(mango);
+    vi.mocked(api.correctStock).mockRejectedValueOnce(new ApiError(0, 'network', null)).mockResolvedValueOnce(entered(mango, 12_000));
+    enter('Mango juice', 'salePrice', 2_000);
+    enter('Mango juice', 'it_purchasePrice', 1_400);
+    enter('Mango juice', 'iq_stockNow', 12_000);
+    expect(locked(render('Mango juice'))).toBe(false);
+    invoke(primary(render('Mango juice')).props.onClick);
+    await settle();
+    expect(api.createItem).toHaveBeenCalledTimes(1);
+    const first = vi.mocked(api.correctStock).mock.calls[0]!;
+    expect(first).toEqual(['m1', { warehouseId: 'w1', mode: 'set', qtyMilli: 12_000, reason: 'opening', unitCost: 1_400, lang: 'en' }, { key: 'key-2' }]);
+    // maybe entered, maybe not: nothing in the form can change, the note says why, and the button sends it again
+    let nodes = render('Mango juice');
+    expect(locked(nodes)).toBe(true);
+    expect(nodes.some((n) => n.props.role === 'alert' && n.props.children === 'iq_stockUnsure')).toBe(true);
+    expect(nodes.some((n) => n.props.children === 'iq_stockFailed')).toBe(false);
+    expect(words(primary(nodes))).toEqual(['sc_tryAgain']);
+    // a stock or a price that got in anyway is not sent: the entry held goes again with its key, once however often pressed
+    enter('Mango juice', 'iq_stockNow', 15_000);
+    enter('Mango juice', 'it_purchasePrice', 1_500);
+    const again = primary(render('Mango juice'));
+    invoke(again.props.onClick);
+    invoke(again.props.onClick);
+    await settle();
+    expect(vi.mocked(api.correctStock).mock.calls).toEqual([first, first]);
+    // entered once: the item goes on the line with its stock, made once
+    expect(fixture.done).toEqual([['m1', 12_000, null]]);
+    expect(api.createItem).toHaveBeenCalledTimes(1);
+    nodes = render('Mango juice');
+    expect(locked(nodes)).toBe(false);
+    expect(nodes.some((n) => n.props.children === 'iq_stockUnsure')).toBe(false);
+  });
+
+  it('of an item already there stays held while the server fails on its way, and lets go once it refuses', async () => {
+    vi.mocked(api.items).mockResolvedValue([tea]);
+    vi.mocked(api.item).mockResolvedValue({ ...tea, stock: [{ warehouseId: 'w1', warehouseCode: 'MAIN', warehouseName: tea.name, qtyMilli: 5_000, value: 10_000 }], moves: [] } as unknown as ItemDetail);
+    vi.mocked(api.correctStock)
+      .mockRejectedValueOnce(new ApiError(503, 'database_unavailable', null))
+      .mockRejectedValueOnce(new ApiError(400, 'validation', [{ code: 'period_locked' }]))
+      .mockResolvedValueOnce(entered(tea, 13_000));
+    enter('Tea', 'salePrice', 2_000);
+    enter('Tea', 'it_purchasePrice', 1_400);
+    enter('Tea', 'iq_stockNow', 12_000);
+    invoke(primary(render('Tea')).props.onClick);
+    await settle();
+    // the same name is there: "Use this one" counts what was typed as on the shelf for it (5 there: a count to 12)
+    const use = () => render('Tea').find((n) => n.type === 'button' && n.props.children === 'qa_useThis')!;
+    invoke(use().props.onClick);
+    await settle();
+    const first = vi.mocked(api.correctStock).mock.calls[0]!;
+    expect(first).toEqual(['t1', { warehouseId: 'w1', mode: 'set', qtyMilli: 12_000, reason: 'found', lang: 'en' }, { key: 'key-2' }]);
+    // the server failed on its way: maybe entered, so the form (and "Use this one" in it) is locked
+    expect(locked(render('Tea'))).toBe(true);
+    invoke(primary(render('Tea')).props.onClick);
+    await settle();
+    expect(vi.mocked(api.correctStock).mock.calls).toEqual([first, first]);
+    // refused: nothing was entered, and the form is free again, the server's reason shown
+    const nodes = render('Tea');
+    expect(locked(nodes)).toBe(false);
+    expect(words(primary(nodes))).toEqual(['qa_add']);
+    expect(nodes.find((n) => n.type === 'ErrorBox')!.props.error).toMatchObject({ status: 400 });
+    // another stock now is another entry, with a key of its own
+    enter('Tea', 'iq_stockNow', 13_000);
+    invoke(primary(render('Tea')).props.onClick);
+    await settle();
+    invoke(use().props.onClick);
+    await settle();
+    const calls = vi.mocked(api.correctStock).mock.calls;
+    expect(calls).toHaveLength(3);
+    expect(calls[2]![1]).toEqual({ warehouseId: 'w1', mode: 'set', qtyMilli: 13_000, reason: 'found', lang: 'en' });
+    expect(calls[2]![2]!.key).not.toBe(first[2]!.key);
+    expect(fixture.done).toEqual([['t1', 13_000, null]]);
+    expect(api.createItem).not.toHaveBeenCalled();
   });
 });

@@ -48,6 +48,12 @@ export const ITEM_QUICK_TEXT = {
     'کاڵاکە زیادکرا. بڕی کۆگاکەی ڕەشنووسێکە و چاوەڕێی پەسەندکردنە (پەسەندکەرێکی تر لە پەڕەی بەڵگەنامەکانی کۆگاوە تەرحیلی دەکات)؛ پێش ئەوە نافرۆشرێت.'
   ],
   iq_stockFailed: ['أُضيفت المادة، لكن رصيدها لم يُحفظ. حاول مرة أخرى.', 'The item was added, but its stock was not saved. Try again.', 'کاڵاکە زیادکرا، بەڵام بڕی کۆگاکەی پاشەکەوت نەکرا. دووبارە هەوڵ بدەرەوە.'],
+  // the stock entry's try got no answer: the same entry is sent again with its key (the button is sc_tryAgain)
+  iq_stockUnsure: [
+    'لم يؤكّد الخادم إدخال الرصيد، فربما أُدخل من قبل. اضغط «أعد المحاولة» عند عودة الاتصال: الإدخال نفسه لا يُعمل إلا مرة واحدة. ولا يمكن تغيير شيء في هذا النموذج قبل ذلك؛ وإن أغلقته فراجع حركات المادة والمسودات التي تنتظر المصادقة قبل أن تُدخل رصيدها مرة أخرى.',
+    'The server didn’t confirm the stock entry, so it may already be made. Press Try again once the link is back: the same entry is made only once. Until then nothing in this form can be changed; if you close it, check the item’s stock moves and the drafts waiting for approval before you enter its stock again.',
+    'سێرڤەرەکە نووسینی بڕی کۆگای پشتڕاست نەکردەوە، بۆیە لەوانەیە پێشتر نووسرابێت. کاتێک پەیوەندی گەڕایەوە «دووبارە هەوڵ بدەرەوە» دابگرە: هەمان نووسین تەنها یەک جار دەکرێت. تا ئەو کاتە هیچ شتێک لەم فۆڕمەدا ناگۆڕدرێت؛ ئەگەر دایبخەیت، پێش ئەوەی دووبارە بڕی کۆگاکەی بنووسیت جووڵەکانی کاڵاکە و ئەو ڕەشنووسانەی چاوەڕێی پەسەندکردنن ببینە.'
+  ],
   iq_continue: ['متابعة', 'Continue', 'بەردەوامبوون'],
   iq_expiryNeeded: ['اكتب تاريخ الانتهاء لما على الرف.', 'Enter the expiry date of what is on the shelf.', 'بەرواری بەسەرچوونی ئەوەی لەسەر ڕەفەکەیە بنووسە.'],
   pos_noItemNamed: ['لا توجد مادة تطابق «{n}»', 'No item matches “{n}”', 'هیچ کاڵایەک لەگەڵ «{n}» ناگونجێت'],
