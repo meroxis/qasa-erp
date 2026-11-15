@@ -6,8 +6,11 @@ import { ApiError, type ItemDetail, type ItemView, type Permission } from '../ap
 import { DataContext } from '../components.tsx';
 import { I18nContext, makeI18n, type Key } from '../i18n.ts';
 import { ItemPicker, QuickItemForm, withAdded } from './QuickItemForm.tsx';
-import { addRowKind, itemKey, mayAddItem, QUICK_ITEM_TIMEOUT_MS, quickAddItem, quickItemInput, quickItemStart } from './item-quick-add.ts';
-import { correctionDiff, correctionProblem, REASON_WAY, StockCorrection, suggestedCost } from './StockCorrection.tsx';
+import {
+  addRowKind, anyItemMatches, itemKey, mayAddItem, QUICK_ITEM_TIMEOUT_MS, quickAddItem, quickItemInput, quickItemStart, sameItems, sameSearch, typedForForm
+} from './item-quick-add.ts';
+import { correctionDiff, correctionProblem, purchaseCost, REASON_WAY, startingCost, StockCorrection, StockCorrectionFor, warehouseAverage } from './StockCorrection.tsx';
+import { stockCost } from './QuickItemForm.tsx';
 
 // 1.4.2: an item added from inside an item picker (invoices, quotations, orders, the till), and an item's stock
 // corrected from its page, in Arabic, English and Kurdish.
@@ -50,6 +53,65 @@ describe('adding an item from an item picker', () => {
     expect(addRowKind('6260000000123')).toBe('barcode');
     expect(addRowKind('Mango')).toBe('name');
     expect(addRowKind('  ')).toBe('empty');
+  });
+
+  it("starts a market's scale label as the weighed item it is for: the label's first seven digits, in kilograms", () => {
+    // 2100017 01250 3: item 2100017, 1.250 kg
+    expect(quickItemStart('2100017012503', 'piece', true)).toMatchObject({ name: '', barcode: '2100017', unit: 'kg', scaleLabel: '2100017012503' });
+    expect(quickItemStart('٢١٠٠٠١٧٠١٢٥٠٣', 'piece', true)).toMatchObject({ barcode: '2100017', unit: 'kg' });
+    expect(addRowKind('2100017012503', true)).toBe('scale');
+    // not a market, or not a label (a wrong check digit): the whole code, as any barcode
+    expect(quickItemStart('2100017012503')).toMatchObject({ barcode: '2100017012503', unit: 'piece', scaleLabel: null });
+    expect(quickItemStart('2100017012504', 'piece', true)).toMatchObject({ barcode: '2100017012504', unit: 'piece', scaleLabel: null });
+    expect(addRowKind('2100017012503')).toBe('barcode');
+  });
+
+  it('opens the form with a name as it was typed (its own digits), and a scan in western digits', () => {
+    expect(typedForForm(' چای لیپتۆن ١٠٠ ')).toBe('چای لیپتۆن ١٠٠');
+    expect(typedForForm('٦٢٦٠١٢٣٤')).toBe('62601234');
+  });
+
+  it('finds an item already there by its name (any language, letter forms and digits aside), code or barcode, whatever the page shows', () => {
+    const tea = { id: 't', code: 'I-0007', barcode: '6260000000123', name: { ar: 'شاي ليبتون ١٠٠', en: 'Lipton tea 100', ku: 'چای لیپتۆن ١٠٠' }, active: true } as ItemView;
+    const old = { id: 'o', code: 'I-0002', barcode: '', name: { ar: 'Lipton tea 100', en: 'Lipton tea 100', ku: 'Lipton tea 100' }, active: false } as ItemView;
+    const other = { id: 'x', code: 'I-0009', barcode: '', name: { ar: 'Mango', en: 'Mango', ku: 'Mango' }, active: true } as ItemView;
+    expect(sameItems([old, other, tea], { name: '  lipton   TEA 100 ', barcode: '' }).map((s) => [s.item.id, s.by])).toEqual([['t', 'name'], ['o', 'name']]);
+    expect(sameItems([old, other, tea], { name: 'چای لیپتون 100', barcode: '' }).map((s) => s.item.id)).toEqual(['t']);
+    expect(sameItems([old, other, tea], { name: 'شاي ليبتون 100', barcode: '' }).map((s) => s.item.id)).toEqual(['t']);
+    expect(sameItems([other, tea], { name: 'Something', barcode: '٦٢٦٠٠٠٠٠٠٠١٢٣' })).toEqual([{ item: tea, by: 'barcode' }]);
+    expect(sameItems([other, tea], { name: 'i-0009', barcode: '' })).toEqual([{ item: other, by: 'code' }]);
+    expect(sameItems([other, tea], { name: 'Lipton', barcode: '' })).toEqual([]);
+    // the server is asked by the longest word without digits
+    expect(sameSearch({ name: 'Lipton tea 100', barcode: '' })).toBe('lipton');
+    expect(sameSearch({ name: '555', barcode: '' })).toBe('');
+  });
+
+  it('asks for the items already there before adding, offers them instead, and adds anyway when told to', async () => {
+    const input = quickItemInput({ ...quickItemStart('Lipton tea 100'), salePrice: 2_500 }, true);
+    if (!input.ok) throw new Error('input');
+    const tea = { id: 't', code: 'I-0007', barcode: '', name: { ar: 'Lipton tea 100', en: 'Lipton tea 100', ku: 'Lipton tea 100' }, active: true } as ItemView;
+    const list = vi.fn().mockResolvedValue([tea]);
+    const create = vi.fn().mockResolvedValue({ id: 'new' } as ItemView);
+    expect(await quickAddItem(input.input, null, create, () => 'k1', { force: false, list })).toEqual({ status: 'same', same: [{ item: tea, by: 'name' }] });
+    expect(list).toHaveBeenCalledWith('lipton', { timeoutMs: QUICK_ITEM_TIMEOUT_MS });
+    expect(create).not.toHaveBeenCalled();
+    expect(await quickAddItem(input.input, null, create, () => 'k1', { force: true, list })).toEqual({ status: 'added', item: { id: 'new' } });
+    // a try sent again with its held key is answered by the server (it may be made already), not stopped by the list
+    list.mockClear();
+    const heldKey = itemKey(null, input.input, () => 'k2');
+    expect(await quickAddItem(input.input, heldKey, create, () => 'k3', { force: false, list })).toMatchObject({ status: 'added' });
+    expect(list).not.toHaveBeenCalled();
+    // the list can't be read: the link is down, as for the add itself
+    const down = vi.fn().mockRejectedValue(new ApiError(0, 'network', null));
+    expect(await quickAddItem(input.input, null, create, () => 'k4', { force: false, list: down })).toMatchObject({ status: 'offline' });
+  });
+
+  it("offers the till's add only when nothing in the whole list matches, whatever category is chosen", () => {
+    const keys = ['i-0001 6260000000123 شاي tea چا', 'i-0002 lipton tea 100'];
+    expect(anyItemMatches('tea', keys)).toBe(true);
+    expect(anyItemMatches('Lipton  TEA', keys)).toBe(true);
+    expect(anyItemMatches('coffee', keys)).toBe(false);
+    expect(anyItemMatches('  ', keys)).toBe(false);
   });
 
   it('sends one name for every language, the prices in the currency picked, and the purchase price only from whoever sees cost', () => {
@@ -112,7 +174,26 @@ describe('adding an item from an item picker', () => {
       // no purchase price for someone who sees no cost, and no stock note outside a sale
       expect(scanned).not.toContain(esc(textOf(lang, 'it_purchasePrice')));
       expect(scanned).not.toContain(esc(textOf(lang, 'iq_noStockYet')));
+      // the currency switch is for both prices, and each price says its currency
+      expect(byName).toContain(esc(textOf(lang, 'iq_pricesCurrency')));
+      // a sale with a warehouse (an invoice, the till) asks what is on the shelf now, instead of the note
+      const till = wrap(<QuickItemForm typed="Mango juice" sale warehouseId="w1" onDone={() => {}} onClose={() => {}} />, lang, { permissions: ['stock'], seesCost: true });
+      expect(till).toContain(esc(textOf(lang, 'iq_stockNow')));
+      expect(till).toContain(esc(textOf(lang, 'iq_stockNowHint')));
+      expect(till).not.toContain(esc(textOf(lang, 'iq_noStockYet')));
+      expect(byName).not.toContain(esc(textOf(lang, 'iq_stockNow')));
+      for (const key of ['iq_stockWaiting', 'iq_stockFailed', 'iq_stockNeedsPrice', 'iq_sameItem', 'iq_addScale', 'iq_scaleHint', 'pos_noItemNamed', 'err_barcode_scale_label'] as Key[]) {
+        expect(textOf(lang, key, { code: '2100017012503', p: '2100017', n: 'x' }), lang + ' ' + key).not.toBe(key);
+      }
     }
+    expect(textOf('en', 'pos_noItemNamed', { n: 'Lipton tea' })).toBe('No item matches “Lipton tea”');
+  });
+
+  it('enters the stock typed at the purchase price, a dollar price at the company rate', () => {
+    expect(stockCost({ purchasePrice: 1_800, currency: 'IQD' }, 142_000)).toBe(1_800);
+    expect(stockCost({ purchasePrice: 150, currency: 'USD' }, 142_000)).toBe(2_130);
+    expect(stockCost({ purchasePrice: null, currency: 'IQD' }, 142_000)).toBeNull();
+    expect(stockCost({ purchasePrice: 150, currency: 'USD' }, undefined)).toBeNull();
   });
 });
 
@@ -134,13 +215,35 @@ describe("correcting an item's stock", () => {
     expect(correctionProblem('purchase_missing', 1_000, '', null)).toBe('err_line_price_invalid_unitCost');
     expect(correctionProblem('found', 1_000, '', null)).toBeNull();
     expect(correctionProblem('lost', -1_000, '', null)).toBeNull();
+    // a surplus with no cost is valued at the warehouse's average: none there, a cost is asked
+    expect(correctionProblem('found', 1_000, '', null, { average: null })).toBe('err_line_price_invalid_unitCost');
+    expect(correctionProblem('found', 1_000, '', null, { average: 1_500 })).toBeNull();
+    // a purchase not entered names its supplier or its safe
+    expect(correctionProblem('purchase_missing', 1_000, '', 1_400, { paidBy: false })).toBe('err_purchase_how_required');
+    expect(correctionProblem('purchase_missing', 1_000, '', 1_400, { paidBy: true })).toBeNull();
   });
 
-  it('suggests the average cost while there is stock, else the purchase price (a dollar price at the company rate)', () => {
-    expect(suggestedCost(item(), 142_000)).toBe(1_500);
-    expect(suggestedCost(item({ qtyMilli: 0, value: 0 }), 142_000)).toBe(1_400);
-    expect(suggestedCost(item({ qtyMilli: 0, value: 0, purchasePrice: 250, purchaseCurrency: 'USD' }), 142_000)).toBe(3_550);
-    expect(suggestedCost(item({ qtyMilli: 0, value: 0, purchasePrice: null }), 142_000)).toBeNull();
+  it("values a surplus at the chosen warehouse's own average (left to the server), and a purchase at the purchase price", () => {
+    const two = item({
+      qtyMilli: 30_000, value: 60_000,
+      stock: [
+        { warehouseId: 'w1', warehouseCode: 'MAIN', warehouseName: { ar: 'الرئيسي', en: 'Main', ku: 'سەرەکی' }, qtyMilli: 20_000, value: 30_000 },
+        { warehouseId: 'w2', warehouseCode: 'B', warehouseName: { ar: 'ب', en: 'B', ku: 'ب' }, qtyMilli: 10_000, value: 30_000 }
+      ]
+    });
+    expect(warehouseAverage(two, 'w1')).toBe(1_500);
+    expect(warehouseAverage(two, 'w2')).toBe(3_000);
+    expect(warehouseAverage(two, 'w3')).toBeNull();
+    expect(purchaseCost(item(), 142_000)).toBe(1_400);
+    expect(purchaseCost(item({ purchasePrice: 250, purchaseCurrency: 'USD' }), 142_000)).toBe(3_550);
+    expect(purchaseCost(item({ purchasePrice: null }), 142_000)).toBeNull();
+    // a count or other: empty while the warehouse holds some (the server uses its average); else the purchase price
+    expect(startingCost('found', 3_000, 1_400)).toBeNull();
+    expect(startingCost('other', null, 1_400)).toBe(1_400);
+    // a purchase or opening stock: the purchase price, else the warehouse's average
+    expect(startingCost('purchase_missing', 3_000, 1_400)).toBe(1_400);
+    expect(startingCost('opening', 3_000, null)).toBe(3_000);
+    expect(startingCost('damaged', 3_000, 1_400)).toBeNull();
   });
 
   it('draws the dialog in each language with every reason and what each does in the books', () => {
@@ -154,13 +257,30 @@ describe("correcting an item's stock", () => {
         expect(html, reason).toContain(esc(textOf(lang, `sc_x_${reason}`)));
         expect(html).toContain(`<option value="${reason}" selected="">`);
       }
-      // the supplier of a purchase not entered is for someone who enters purchases; the others are told why not
+      // a purchase not entered is a purchase invoice, on credit or in cash, for someone who enters purchases
       const buyer = wrap(<StockCorrection item={item()} initialReason="purchase_missing" onClose={() => {}} onDone={() => {}} />, lang, { permissions: ['stock', 'purchases'] });
-      expect(buyer).toContain(esc(textOf(lang, 'sc_supplier')));
+      for (const key of ['sc_howPaid', 'sc_howCredit', 'sc_howCash', 'sc_supplier', 'sc_x_purchase_missing', 'sc_unitCost', 'sc_costPrice'] as Key[]) expect(buyer, key).toContain(esc(textOf(lang, key)));
+      // its cost starts at the purchase price
+      expect(buyer).toContain('value="1,400"');
+      // the others are told who enters it, and can't save it
       const keeper = wrap(<StockCorrection item={item()} initialReason="purchase_missing" onClose={() => {}} onDone={() => {}} />, lang, { permissions: ['stock'] });
-      expect(keeper).toContain(esc(textOf(lang, 'sc_supplierNeedsPurchases')));
-      expect(keeper).toContain(esc(textOf(lang, 'sc_unitCost')));
+      expect(keeper).toContain(esc(textOf(lang, 'sc_purchaseNeedsPurchases')));
+      expect(keeper).not.toContain(esc(textOf(lang, 'sc_unitCost')));
+      expect(keeper).toMatch(/<button type="button" class="btn primary" disabled="">/);
+      // a count: the cost is left empty, with this warehouse's average shown in the box and said under it
+      const found = wrap(<StockCorrection item={item()} initialReason="found" onClose={() => {}} onDone={() => {}} />, lang, { permissions: ['stock'] });
+      expect(found).toContain('placeholder="1,500"');
+      expect(found).toContain(esc(textOf(lang, 'sc_costAverage')));
+      // damaged goes one way: no direction to pick
+      const damaged = wrap(<StockCorrection item={item()} initialReason="damaged" onClose={() => {}} onDone={() => {}} />, lang, { permissions: ['stock'] });
+      expect(damaged).not.toContain(esc(textOf(lang, 'adj_direction')));
+      // opened from the Items list: a titled dialog while the item loads
+      const loading = wrap(<StockCorrectionFor itemId="i1" onClose={() => {}} onDone={() => {}} />, lang, { permissions: ['stock'] });
+      expect(loading).toContain(esc(textOf(lang, 'sc_title')));
+      expect(loading).toContain(esc(textOf(lang, 'sc_loading')));
     }
+    expect(textOf('en', 'sc_x_supplier')).toBe('A credit purchase invoice is made: you owe the supplier this amount.');
+    expect(textOf('en', 'sc_x_opening')).toContain('goods you had when you started (capital)');
   });
 
   it('names the documents a correction makes, in the item moves too', () => {

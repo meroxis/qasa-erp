@@ -122,6 +122,24 @@ describe('an item added from an item picker', () => {
     expect(kg).toMatchObject({ unit: 'kg', trackStock: true, qtyMilli: 0 });
   });
 
+  it("keeps a barcode from clashing with a scale's labels: a weighed item's label is not another item's barcode, either way round", async () => {
+    // cheese, weighed: barcode 2100017 (its scale prints 2100017 01250 3 for 1.250 kg)
+    const cheese = await made(post('/api/items', { name: one('White cheese'), unit: 'kg', barcode: '2100017', salePrice: 9_000, saleCurrency: 'IQD' }));
+    const label = await post('/api/items', { ...quick, barcode: '2100017012503' });
+    expect(label.statusCode).toBe(409);
+    expect(label.json().error).toBe('barcode_scale_label');
+    // a 13-digit code that is not a label (a wrong check digit) is an ordinary barcode
+    await made(post('/api/items', { ...quick, barcode: '2100017012504' }));
+    // the other way: a full label is already an item's barcode, so a weighed item may not take its first seven digits
+    await made(post('/api/items', { ...quick, name: one('Olives'), barcode: '2200031005007' }));
+    const weighed = await post('/api/items', { name: one('Olives, weighed'), unit: 'kg', barcode: '2200031', salePrice: 7_000, saleCurrency: 'IQD' });
+    expect(weighed.statusCode).toBe(409);
+    expect(weighed.json().error).toBe('barcode_scale_label');
+    // a piece item may still have those seven digits (it is never read from a label), and the cheese saves again as it is
+    await made(post('/api/items', { name: one('Olive jar'), unit: 'piece', barcode: '2200031', salePrice: 3_000, saleCurrency: 'IQD' }));
+    expect((await put(`/api/items/${cheese.id}`, { name: one('White cheese'), unit: 'kg', barcode: '2100017', salePrice: 9_500, saleCurrency: 'IQD' })).statusCode).toBe(200);
+  });
+
   it('needs the stock permission, as on the Items page: a cashier or a buyer alone may not add one', async () => {
     const u = await signedIn();
     expect((await post('/api/items', quick, u.cashier)).statusCode).toBe(403);
@@ -163,16 +181,35 @@ describe("an item's stock corrected from its page", () => {
     expect(up.json().details).toEqual([{ code: 'correction_out_only', field: 'reason' }]);
   });
 
-  it('a purchase not entered, without a supplier: comes in at the cost given, and the average cost follows', async () => {
-    const r = await made(correct({ mode: 'change', qtyMilli: 10_000, reason: 'purchase_missing', unitCost: 30_000, lang: 'en' }), 200);
-    expect(r.document.type).toBe('adjustment');
+  it('a purchase not entered is never income: it is on credit from a supplier or paid from a safe, one of the two', async () => {
+    const cash = (await get('/api/settings')).json().postingAccounts.cash as string;
+    for (const how of [{}, { supplierId, cashAccountCode: cash }]) {
+      const r = await correct({ mode: 'change', qtyMilli: 10_000, reason: 'purchase_missing', unitCost: 30_000, ...how });
+      expect(r.statusCode).toBe(400);
+      expect(r.json().details).toEqual([{ code: 'purchase_how_required', field: 'supplierId' }]);
+    }
+    // a safe is only for a purchase
+    expect((await correct({ mode: 'change', qtyMilli: 1_000, reason: 'found', cashAccountCode: cash })).json().details)
+      .toEqual([{ code: 'cash_account_invalid', field: 'cashAccountCode' }]);
+    // its cost is asked: no average to fall back on for a purchase
+    expect((await correct({ mode: 'change', qtyMilli: 1_000, reason: 'purchase_missing', supplierId })).json().details).toEqual([{ code: 'line_price_invalid', field: 'unitCost' }]);
+    expect((await get('/api/adjustments')).json()).toEqual([]);
+    expect((await get('/api/invoices?kind=purchase')).json()).toHaveLength(2);
+    expect(await stock()).toEqual({ qty: 20, value: 460_000 });
+  });
+
+  it('a purchase not entered, paid in cash: a posted cash purchase invoice, Dr the warehouse / Cr the safe, and the average cost follows', async () => {
+    const cash = (await get('/api/settings')).json().postingAccounts.cash as string;
+    const r = await made(correct({ mode: 'change', qtyMilli: 10_000, reason: 'purchase_missing', unitCost: 30_000, cashAccountCode: cash, note: 'From the wholesale market' }), 200);
+    expect(r.document).toMatchObject({ type: 'invoice', status: 'posted' });
     // 20 worth 460,000 and 10 at 30,000: 30 worth 760,000, an average of 25,333
     expect(await stock()).toEqual({ qty: 30, value: 760_000 });
-    const adj = (await get(`/api/adjustments/${r.document.id}`)).json();
-    expect(adj).toMatchObject({ reason: 'other', valueIn: 300_000, notes: 'Purchase not entered' });
-    expect(accountsOf((await entryOf(adj.entry.id)).lines)).toEqual([[stockAccount, 300_000, 0], ['49', 0, 300_000]]);
-    // its cost is asked: no average to fall back on for a purchase
-    expect((await correct({ mode: 'change', qtyMilli: 1_000, reason: 'purchase_missing' })).json().details).toEqual([{ code: 'line_price_invalid', field: 'unitCost' }]);
+    const inv = (await get(`/api/invoices/${r.document.id}`)).json();
+    expect(inv).toMatchObject({ kind: 'purchase', payment: 'cash', cashAccountCode: cash, total: 300_000, notes: 'From the wholesale market' });
+    const lines = accountsOf((await entryOf(inv.entryId)).lines);
+    expect(lines).toEqual(expect.arrayContaining([[stockAccount, 300_000, 0], [cash, 0, 300_000]]));
+    // nothing is booked as income
+    expect(lines.some(([code]) => String(code).startsWith('4'))).toBe(false);
   });
 
   it('a purchase not entered, with its supplier: a posted purchase invoice on the supplier account instead', async () => {
@@ -222,9 +259,13 @@ describe("an item's stock corrected from its page", () => {
     const u = await signedIn();
     expect((await correct({ mode: 'change', qtyMilli: 1_000, reason: 'found' }, u.cashier)).statusCode).toBe(403);
     expect((await correct({ mode: 'change', qtyMilli: 1_000, reason: 'found' }, u.buyer)).statusCode).toBe(403);
-    const noPurchases = await correct({ mode: 'change', qtyMilli: 1_000, reason: 'purchase_missing', unitCost: 20_000, supplierId }, u.keeper);
-    expect(noPurchases.statusCode).toBe(403);
-    expect(noPurchases.json().details).toEqual({ need: 'purchases' });
+    const cash = (await get('/api/settings', u.admin)).json().postingAccounts.cash as string;
+    // a purchase not entered is a purchase, on credit or in cash: someone who keeps the stock alone asks the buyer
+    for (const how of [{ supplierId }, { cashAccountCode: cash }]) {
+      const noPurchases = await correct({ mode: 'change', qtyMilli: 1_000, reason: 'purchase_missing', unitCost: 20_000, ...how }, u.keeper);
+      expect(noPurchases.statusCode).toBe(403);
+      expect(noPurchases.json().details).toEqual({ need: 'purchases' });
+    }
     await made(correct({ mode: 'change', qtyMilli: 1_000, reason: 'found' }, u.keeper), 200);
     expect(await stock(u.admin)).toMatchObject({ qty: 21 });
   });

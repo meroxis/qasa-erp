@@ -24,7 +24,7 @@ import { InvoiceWhatsApp, sendOnWhatsAppOnOpen } from '../industry/WhatsAppShare
 import { reverseDefaultDate } from '../industry/ReverseModal.tsx';
 import { afterPaint, printDocument, whenQuiet, type PrintResult } from '../industry/printing.ts';
 import { PartyPicker } from '../industry/PartyPicker.tsx';
-import { ItemPicker, withAdded } from '../industry/QuickItemForm.tsx';
+import { focusLineQty, ItemPicker, withAdded } from '../industry/QuickItemForm.tsx';
 import { mayPostInvoice, printedOk, rememberChoice, rememberedChoice, runSaveFlow, saveChoices, type SaveChoice } from '../industry/save-flow.ts';
 import { creditPartyNote, partyAskedAfter } from './pos-logic.ts';
 import { baseQty, factorOf, holdsText, salePriceFor, unitChoices, unitLabel, type LineUnit } from '../industry/units.ts';
@@ -575,11 +575,12 @@ export function InvoiceEditor({ kind: initialKind, id, partyId: initialParty }: 
               const short = kind === 'sale' && it?.trackStock && (baseQty(it, r.unit, r.qtyMilli ?? 0) ?? 0) > it.qtyMilli;
               const choices = unitChoices(it);
               return (
-                <tr key={r.key}>
+                <tr key={r.key} data-line={r.key}>
                   <td className="muted num">{i18n.int(i + 1)}</td>
                   <td>
                     <ItemPicker value={r.itemId} options={itemOptions} onChange={(v) => pickItem(r.key, v)} placeholder={t('chooseItem')} ariaLabel={t('item')} sale={kind === 'sale'}
-                      onCreated={(made) => { setAddedItems((a) => [...a, made]); pickItem(r.key, made.id, made); }} />
+                      stockOnly={kind !== 'sale'} warehouseId={kind === 'sale' ? warehouseId || undefined : undefined}
+                      onCreated={(made) => { setAddedItems((a) => [...a.filter((x) => x.id !== made.id), made]); pickItem(r.key, made.id, made); focusLineQty(r.key, t('qty')); }} />
                     {short && <div className="small" style={{ color: 'var(--bad)', marginTop: 3 }}>{t('available')}: {qtyText(i18n, it.qtyMilli)}</div>}
                     {kind === 'purchase'
                       ? <BatchInFields item={it} batchNo={r.batchNo ?? ''} expiry={r.expiry ?? ''} date={date} onChange={(v) => update(r.key, v)} />

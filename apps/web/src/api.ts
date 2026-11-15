@@ -319,9 +319,11 @@ export interface StockCorrectionInput {
   mode: 'set' | 'change';
   qtyMilli: number;
   reason: CorrectionReason;
-  /** IQD per base unit for what comes in */
+  /** IQD per base unit for what comes in; absent: the warehouse's average cost (a count, other) */
   unitCost?: number;
+  /** a purchase not entered: on credit from this supplier, or paid in cash from this safe (one of the two) */
   supplierId?: string;
+  cashAccountCode?: string;
   note?: string;
   batchNo?: string;
   expiry?: string;
@@ -875,7 +877,7 @@ export const api = {
   warehouses: () => request<WarehouseView[]>('GET', '/api/warehouses'),
   createWarehouse: (input: { code: string; name: Names }) => request<WarehouseView>('POST', '/api/warehouses', input),
   updateWarehouse: (id: string, input: { name: Names; active?: boolean }) => request<WarehouseView>('PUT', `/api/warehouses/${id}`, input),
-  items: (f: { q?: string; warehouseId?: string; active?: string; categoryId?: string; brandId?: string } = {}) => request<ItemView[]>('GET', '/api/items' + qs(f)),
+  items: (f: { q?: string; warehouseId?: string; active?: string; categoryId?: string; brandId?: string } = {}, options: SendOptions = {}) => request<ItemView[]>('GET', '/api/items' + qs(f), undefined, options),
   /** A scanned barcode: the item, and the unit when it is one of the item's units' barcodes (null: its own, the base unit). */
   itemByBarcode: (barcode: string, warehouseId?: string) => request<{ item: ItemView | null; unit: UnitCode | null }>('GET', '/api/items' + qs({ barcode, ...(warehouseId ? { warehouseId } : {}) })),
   item: (id: string) => request<ItemDetail>('GET', `/api/items/${id}`),

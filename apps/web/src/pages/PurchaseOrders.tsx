@@ -8,7 +8,7 @@ import {
 } from '../industry/purchasing-api.ts';
 import { go, href } from '../router.ts';
 import { PartyPicker } from '../industry/PartyPicker.tsx';
-import { ItemPicker, withAdded } from '../industry/QuickItemForm.tsx';
+import { focusLineQty, ItemPicker, withAdded } from '../industry/QuickItemForm.tsx';
 import { useRatePrefill } from '../industry/fx-prefill.ts';
 import { convertLines } from './currency-switch.ts';
 import { UnitPicker } from '../industry/UnitPicker.tsx';
@@ -309,10 +309,10 @@ export function PurchaseOrderEditor({ id }: { id?: string }) {
             </thead>
             <tbody>
               {rows.map((r, i) => (
-                <tr key={r.key}>
+                <tr key={r.key} data-line={r.key}>
                   <td className="muted num">{i18n.int(i + 1)}</td>
                   <td><ItemPicker value={r.itemId} options={itemOptions} onChange={(v) => update(r.key, { itemId: v, unit: items.find((it) => it.id === v)?.purchaseUnit ?? null })} placeholder={t('po_pickItem')} ariaLabel={t('item')}
-                    onCreated={(made) => { setAddedItems((a) => [...a, made]); update(r.key, { itemId: made.id, unit: made.purchaseUnit ?? null, ...(made.purchasePrice && (made.purchaseCurrency ?? made.saleCurrency) === form.currency ? { unitPrice: made.purchasePrice } : {}) }); }} /></td>
+                    stockOnly onCreated={(made) => { setAddedItems((a) => [...a.filter((x) => x.id !== made.id), made]); focusLineQty(r.key, t('qty')); update(r.key, { itemId: made.id, unit: made.purchaseUnit ?? null, ...(made.purchasePrice && (made.purchaseCurrency ?? made.saleCurrency) === form.currency ? { unitPrice: made.purchasePrice } : {}) }); }} /></td>
                   <td>
                     <QtyInput value={r.qtyMilli || null} onChange={(v) => update(r.key, { qtyMilli: v ?? 0 })} ariaLabel={t('qty')} />
                     <UnitPicker item={items.find((it) => it.id === r.itemId)} value={r.unit ?? null} onChange={(unit) => update(r.key, { unit })} />

@@ -24,10 +24,11 @@ import type { ApiExtension, ApiRequest } from './routes.ts';
  * - damaged, lost: an adjustment "damaged" or "lost", out only (Dr losses, 39 / Cr the warehouse, at the average cost);
  * - other: an adjustment "other" either way, with a note that says why (out: Dr 39; in: Cr the gain account);
  * - opening stock: an opening stock document (in only, at the cost given: Dr the warehouse / Cr capital, 21);
- * - a purchase that was never entered, with its supplier: a purchase invoice on the supplier's account (Dr the
- *   warehouse / Cr the supplier), posted at once, as the Purchases page would; it needs the purchases permission too.
- *   Without a supplier: an adjustment "other" in, at the cost given (Cr the gain account, as a count surplus), whose
- *   note says it was a purchase not entered.
+ * - a purchase that was never entered: the purchase invoice itself, posted at once as the Purchases page would, on
+ *   credit from its supplier (Dr the warehouse / Cr the supplier) or paid in cash from a safe (Dr the warehouse / Cr
+ *   the safe). Goods that were bought were paid for or are owed, so they are never booked as income; this needs the
+ *   purchases permission too, as the Purchases page does. Someone who keeps the stock and does not enter purchases
+ *   asks the person who does (goods found on the shelf in a count are "found in a count").
  *
  * Approval: with "Separate duties" on, an adjustment or opening stock is posted by an approver who did not prepare it
  * (adjustments.ts, stock-docs.ts). The person correcting prepared it, so it is saved as a draft that waits on the Stock
@@ -50,8 +51,10 @@ export interface StockCorrectionInput {
   reason: CorrectionReason;
   /** IQD per base unit for what comes in; absent: the average cost (an adjustment) */
   unitCost?: number | undefined;
-  /** a purchase not entered: the supplier it was bought from (a purchase invoice instead of an adjustment) */
+  /** a purchase not entered, bought on credit: the supplier it was bought from (a credit purchase invoice) */
   supplierId?: string | undefined;
+  /** a purchase not entered, paid in cash: the safe (or bank) it was paid from (a cash purchase invoice) */
+  cashAccountCode?: string | undefined;
   note?: string | undefined;
   /** absent: today */
   date?: string | undefined;
@@ -74,11 +77,8 @@ export interface StockCorrectionResult {
   item: ItemView & { stock: StockByWarehouse[]; moves: StockMoveView[] };
 }
 
-/** Words the note starts with where the document has no reason of its own for it, in the poster's language. */
-const PURCHASE_WORDS: Record<AdjustmentLang, string> = { ar: 'شراء لم يُدخَل', en: 'Purchase not entered', ku: 'کڕینێک کە نەنووسراوە' };
-
-const ADJUSTMENT_REASON: Record<Exclude<CorrectionReason, 'opening'>, AdjustmentReason> = {
-  purchase_missing: 'other', found: 'count', damaged: 'damaged', lost: 'lost', other: 'other'
+const ADJUSTMENT_REASON: Record<Exclude<CorrectionReason, 'opening' | 'purchase_missing'>, AdjustmentReason> = {
+  found: 'count', damaged: 'damaged', lost: 'lost', other: 'other'
 };
 
 /** Opening stock credits capital (the Stock documents page's own default). */
@@ -132,9 +132,12 @@ function checkCorrection(db: Db, itemId: string, input: StockCorrectionInput, ac
   // what comes in as a purchase or opening stock is at the price it was bought for (no average to fall back on)
   if (diff > 0 && (input.reason === 'purchase_missing' || input.reason === 'opening') && input.unitCost === undefined) errors.push({ code: 'line_price_invalid', field: 'unitCost' });
   if (input.supplierId !== undefined && input.reason !== 'purchase_missing') errors.push({ code: 'party_invalid', field: 'supplierId' });
+  if (input.cashAccountCode !== undefined && input.reason !== 'purchase_missing') errors.push({ code: 'cash_account_invalid', field: 'cashAccountCode' });
+  // a purchase is on credit from its supplier or paid in cash from a safe, one of the two: never income
+  if (input.reason === 'purchase_missing' && (input.supplierId === undefined) === (input.cashAccountCode === undefined)) errors.push({ code: 'purchase_how_required', field: 'supplierId' });
   if (errors.length) throw invalid(errors);
-  // a purchase invoice is a purchase: whoever corrects the stock may make it only if they may enter purchases
-  if (input.supplierId !== undefined && !actor.permissions.includes('purchases')) throw new AppError(403, 'forbidden', { need: 'purchases' });
+  // a purchase not entered is a purchase invoice: whoever corrects the stock may make it only if they may enter purchases
+  if (input.reason === 'purchase_missing' && !actor.permissions.includes('purchases')) throw new AppError(403, 'forbidden', { need: 'purchases' });
   return { diff, date };
 }
 
@@ -150,10 +153,13 @@ export function correctStock(db: Db, itemId: string, input: StockCorrectionInput
   return transaction(db, () => {
     let type: CorrectionDocType;
     let id: string;
-    if (input.reason === 'purchase_missing' && input.supplierId !== undefined) {
+    if (input.reason === 'purchase_missing') {
       type = 'invoice';
+      const how = input.supplierId !== undefined
+        ? { partyId: input.supplierId, payment: 'credit' as const }
+        : { payment: 'cash' as const, cashAccountCode: input.cashAccountCode! };
       const draft = createInvoice(db, {
-        kind: 'purchase', date, partyId: input.supplierId, warehouseId: input.warehouseId, currency: 'IQD', rateX100: 100, payment: 'credit', discount: 0,
+        kind: 'purchase', date, warehouseId: input.warehouseId, currency: 'IQD', rateX100: 100, discount: 0, ...how,
         ...(note ? { notes: note } : {}),
         lines: [{ itemId, qtyMilli: diff, unitPrice: input.unitCost ?? 0, ...batch }]
       }, actor.name);
@@ -167,9 +173,8 @@ export function correctStock(db: Db, itemId: string, input: StockCorrectionInput
       id = postsAtOnce(db) ? postStockDoc(db, draft.id, actor.name, actor).id : draft.id;
     } else {
       type = 'adjustment';
-      const notes = input.reason === 'purchase_missing' ? [PURCHASE_WORDS[lang], note].filter(Boolean).join(' · ') : note;
       const draft = createAdjustment(db, {
-        date, warehouseId: input.warehouseId, reason: ADJUSTMENT_REASON[input.reason], ...(notes ? { notes } : {}),
+        date, warehouseId: input.warehouseId, reason: ADJUSTMENT_REASON[input.reason], ...(note ? { notes: note } : {}),
         lines: [{ itemId, qtyMilli: diff, ...(diff > 0 && input.unitCost !== undefined ? { unitCost: input.unitCost } : {}), ...batch }]
       }, actor);
       id = postsAtOnce(db) ? postAdjustment(db, draft.id, actor, lang).id : draft.id;
@@ -193,6 +198,7 @@ const correctionBody = z.object({
   reason: z.enum(CORRECTION_REASONS),
   unitCost: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER).optional(),
   supplierId: id.optional(),
+  cashAccountCode: z.string().min(1).max(12).optional(),
   note: z.string().max(MAX_CORRECTION_NOTE).optional(),
   date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
   batchNo: z.string().max(MAX_BATCH_NO * 2).optional(),
@@ -202,7 +208,8 @@ const correctionBody = z.object({
 
 export const stockCorrectionApi: ApiExtension = {
   rules: {
-    // the stock permission, as for a stock adjustment; a purchase invoice made instead needs purchases too (checkCorrection)
+    // the stock permission, as for a stock adjustment; a purchase not entered needs purchases too (checkCorrection), and
+    // a user limited to a branch names only its own warehouse and safe (branches.ts reads both from the body)
     'POST /api/items/:id/stock-correction': 'stock'
   },
   routes(db, { actorOf }) {

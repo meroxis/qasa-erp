@@ -8,7 +8,7 @@ import {
 } from '../industry/quotes-api.ts';
 import { go, href } from '../router.ts';
 import { PartyPicker } from '../industry/PartyPicker.tsx';
-import { ItemPicker, withAdded } from '../industry/QuickItemForm.tsx';
+import { focusLineQty, ItemPicker, withAdded } from '../industry/QuickItemForm.tsx';
 import { useRatePrefill } from '../industry/fx-prefill.ts';
 import { convertAmount, convertLines } from './currency-switch.ts';
 import { QuoteWhatsApp } from '../industry/WhatsAppShare.tsx';
@@ -235,10 +235,10 @@ export function QuoteEditor({ id }: { id?: string }) {
             </thead>
             <tbody>
               {rows.map((r, i) => (
-                <tr key={r.key}>
+                <tr key={r.key} data-line={r.key}>
                   <td className="muted num">{i18n.int(i + 1)}</td>
                   <td><ItemPicker value={r.itemId ?? ''} options={itemOptions} onChange={(v) => pickItem(r.key, v)} placeholder={t('qt_freeText')} ariaLabel={t('item')} emptyLabel={t('qt_freeText')} sale
-                    onCreated={(made) => { setAddedItems((a) => [...a, made]); pickItem(r.key, made.id, made); }} /></td>
+                    onCreated={(made) => { setAddedItems((a) => [...a.filter((x) => x.id !== made.id), made]); pickItem(r.key, made.id, made); focusLineQty(r.key, t('qty')); }} /></td>
                   <td><input className="input" maxLength={500} value={r.description} onChange={(e) => update(r.key, { description: e.target.value })} aria-label={t('description')} /></td>
                   <td><QtyInput value={r.qtyMilli || null} onChange={(v) => update(r.key, { qtyMilli: v ?? 0 })} ariaLabel={t('qty')} /></td>
                   <td><AmountInput value={r.unitPrice || null} currency={form.currency} onChange={(v) => update(r.key, { unitPrice: v ?? 0 })} ariaLabel={t('unitPrice')} /></td>

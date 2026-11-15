@@ -19,3 +19,4 @@ export * from './printers.ts';
 export * from './catalog.ts';
 export * from './loyalty.ts';
 export * from './support.ts';
+export * from './scale-label.ts';

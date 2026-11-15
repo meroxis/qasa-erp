@@ -26,7 +26,8 @@ import { receiptMessage, withAttachment } from '../industry/WhatsAppShare.tsx';
 import { WhatsAppSendButton } from '../industry/WhatsAppSend.tsx';
 import { LoyaltyUse, loyaltyLines } from '../industry/Loyalty.tsx';
 import { QuickItemForm } from '../industry/QuickItemForm.tsx';
-import { addRowKind, mayAddItem } from '../industry/item-quick-add.ts';
+import { addRowKind, anyItemMatches, mayAddItem, typedForForm, western } from '../industry/item-quick-add.ts';
+import { findByScaleBarcode } from '../industry/scale-barcode.ts';
 
 /**
  * Point of sale (every plan). Made for a cashier with no training: the search box always has the focus, so a barcode
@@ -209,6 +210,7 @@ function Register({ initial, onClosed }: { initial: ShiftView; onClosed(): void 
   const { t } = i18n;
   const toast = useToast();
   const { settings, permissions } = useData();
+  const market = !!settings?.businessTypes?.includes('market');
   usePageNav({ key: 'pos_title', group: 'gSales' });
   // 1.4.2: a search or a scan that finds nothing offers to add the item, to someone who keeps the stock
   const mayAdd = mayAddItem(permissions);
@@ -314,6 +316,8 @@ function Register({ initial, onClosed }: { initial: ShiftView; onClosed(): void 
     const generic = pharmacy ? shown.filter((it) => !direct.includes(it) && normalizeForSearch(medicines.get(it.id)?.genericName ?? '').includes(n)) : [];
     return [...direct, ...generic].slice(0, 40);
   }, [q, shown, cat, catList, searchable, pharmacy, medicines]);
+  // whether anything in the whole list matches the text, whatever category is chosen: only then is nothing "missing"
+  const anyMatch = useMemo(() => anyItemMatches(q, searchable.map((s) => s.key)), [q, searchable]);
 
   /** One of `unit` of an item, in the sale's currency: the unit's own price, or the base price × its factor. */
   const unitPriceOf = useCallback((item: ItemView, unit: LineUnit) => {
@@ -352,9 +356,14 @@ function Register({ initial, onClosed }: { initial: ShiftView; onClosed(): void 
       // a box's barcode adds a box; the item's own barcode its base unit; a search match its sale unit
       add(pick, qty, exact ? unit : pick.saleUnit ?? null);
       setQ('');
+    } else if (!exact && (matches.length > 1 || anyMatch)) {
+      // several items match (the grid shows them), or the chosen category hides those that do: nothing is missing
+      setNoRate('');
+      if (matches.length === 0) setCat('');
     } else {
       setNoRate('');
-      setNotFound(code);
+      // a name is kept as it was typed (its own digits); a scan in western digits
+      setNotFound(addRowKind(code) === 'name' ? q.trim() : code);
     }
   };
 
@@ -512,7 +521,8 @@ function Register({ initial, onClosed }: { initial: ShiftView; onClosed(): void 
   payRef.current = pay;
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (closing) return;
+      // a dialog over the sale (closing the shift, a new item, any other) keeps the keys to itself
+      if (closing || addingItem !== null || document.querySelector('.backdrop')) return;
       if (e.key === 'F2') { e.preventDefault(); search.current?.focus(); }
       else if (e.key === 'F4') { e.preventDefault(); clear(); }
       else if (e.key === 'F8') { e.preventDefault(); document.getElementById('pos-discount')?.querySelector('input')?.focus(); }
@@ -529,16 +539,24 @@ function Register({ initial, onClosed }: { initial: ShiftView; onClosed(): void 
     rememberTill(tillWho(), { customers: next });
     return next;
   });
-  const addLabel = (typed: string) => (addRowKind(typed) === 'barcode' ? t('iq_addBarcode', { code: typed }) : t('iq_addNamed', { name: typed }));
-  /** An item added from the till: in the till's list (kept for offline too) and on the sale at once. */
+  const addLabel = (typed: string) => {
+    const kind = addRowKind(typed, market);
+    return kind === 'barcode' ? t('iq_addBarcode', { code: typed }) : kind === 'scale' ? t('iq_addScale', { code: typed }) : t('iq_addNamed', { name: typed });
+  };
+  /**
+   * An item added from the till (or one already there, chosen in the form): in the till's list (kept for offline too)
+   * and on the sale at once; a scale's label puts the weight on it.
+   */
   const addedItem = (item: ItemView) => {
+    const label = addingItem !== null ? findByScaleBarcode(western(addingItem.trim()), [item]) : null;
     setAddingItem(null);
     setItems((list) => {
-      const next = list.some((x) => x.id === item.id) ? list : [...list, item];
+      const next = list.some((x) => x.id === item.id) ? list.map((x) => (x.id === item.id ? item : x)) : [...list, item];
       rememberTill(tillWho(), { items: next });
       return next;
     });
-    add(item);
+    if (label) add(item, label.qtyMilli, null);
+    else add(item);
     setQ('');
     focusSearch();
   };
@@ -547,7 +565,7 @@ function Register({ initial, onClosed }: { initial: ShiftView; onClosed(): void 
   return (
     <div className="pos">
       {expired.dialog}
-      {addingItem !== null && <QuickItemForm typed={addingItem} sale onDone={addedItem} onClose={() => { setAddingItem(null); focusSearch(); }} />}
+      {addingItem !== null && <QuickItemForm typed={addingItem} sale warehouseId={shift.warehouseId} onDone={addedItem} onClose={() => { setAddingItem(null); focusSearch(); }} />}
       {controlled.dialog}
       <div className="pos-bar no-print">
         <div className="pos-shift-info">
@@ -585,7 +603,7 @@ function Register({ initial, onClosed }: { initial: ShiftView; onClosed(): void 
           </div>
           {notFound && (
             <div className="alert bad row" role="alert" style={{ gap: 8 }}>
-              <span>{t('pos_notFound', { n: notFound })}</span>
+              <span>{t(addRowKind(notFound) === 'name' ? 'pos_noItemNamed' : 'pos_notFound', { n: notFound })}</span>
               {mayAdd && <><span className="spacer" /><button type="button" className="btn small" onClick={() => setAddingItem(notFound)}><Icon name="plus" size={15} />{addLabel(notFound)}</button></>}
             </div>
           )}
@@ -615,7 +633,7 @@ function Register({ initial, onClosed }: { initial: ShiftView; onClosed(): void 
             {matches.length === 0 && (
               <div className="stack" style={{ gap: 8 }}>
                 <p className="muted" style={{ margin: 0 }}>{t('pos_noItems')}</p>
-                {mayAdd && q.trim() && !notFound && <div><button type="button" className="btn" onClick={() => setAddingItem(q.trim())}><Icon name="plus" size={16} />{addLabel(q.trim())}</button></div>}
+                {mayAdd && q.trim() && !notFound && !anyMatch && <div><button type="button" className="btn" onClick={() => setAddingItem(typedForForm(q))}><Icon name="plus" size={16} />{addLabel(typedForForm(q))}</button></div>}
               </div>
             )}
           </div>

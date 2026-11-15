@@ -23,6 +23,8 @@ const fixture = vi.hoisted(() => ({
   checked: [] as string[],
   askOnOpen: [] as string[],
   promptFor: [] as (string | undefined)[],
+  // the lines whose quantity got the cursor after an item was added from the item box
+  focused: [] as number[],
   // a draft saved earlier, as the server gives it to the editor
   draft: {
     id: 'd1', kind: 'sale', status: 'draft', actions: ['edit', 'delete', 'post'], date: '2026-11-13', partyId: null, warehouseId: 'w', currency: 'IQD',
@@ -53,7 +55,7 @@ vi.mock('../industry/CatalogPickers.tsx', () => ({ CategoryOptions: 'CategoryOpt
 vi.mock('../industry/prices-api.ts', () => ({ pricesApi: { priceFor: vi.fn(() => new Promise(() => {})) } }));
 vi.mock('../industry/PartyPicker.tsx', () => ({ PartyPicker: 'PartyPicker' }));
 // the item box (1.4.2: it can add an item); a page's list with the items added there
-vi.mock('../industry/QuickItemForm.tsx', () => ({ ItemPicker: 'ItemPicker', withAdded: (list: unknown[] | null, added: unknown[]) => [...(list ?? []), ...added] }));
+vi.mock('../industry/QuickItemForm.tsx', () => ({ ItemPicker: 'ItemPicker', withAdded: (list: unknown[] | null, added: unknown[]) => [...(list ?? []), ...added], focusLineQty: (key: number) => { fixture.focused.push(key); } }));
 vi.mock('../industry/PharmacyPrompts.tsx', () => ({
   RxTick: 'RxTick', usePharmacyOn: () => false, useRxItems: () => new Set(),
   askControlledOnOpen: (id: string) => { fixture.askOnOpen.push(id); },
@@ -120,7 +122,7 @@ function leavePage() { fixture.states = []; fixture.first = true; fixture.effect
 beforeEach(() => {
   fixture.states = []; fixture.cursor = 0; fixture.first = true; fixture.effects = [];
   fixture.permissions = undefined; fixture.steps = []; fixture.toasts = []; fixture.reloads = 0;
-  fixture.checked = []; fixture.askOnOpen = []; fixture.promptFor = []; fixture.waits = [];
+  fixture.checked = []; fixture.askOnOpen = []; fixture.promptFor = []; fixture.waits = []; fixture.focused = [];
   vi.clearAllMocks();
 });
 afterEach(() => { vi.unstubAllGlobals(); });
@@ -149,6 +151,10 @@ it('puts an item added from the item box straight on the line, priced, with a ne
   const box = nodes.find((n) => n.type === 'ItemPicker')!;
   expect((box.props.options as { id: string }[]).some((o) => o.id === 'made')).toBe(true);
   expect(box.props.sale).toBe(true);
+  // it sells from the invoice's warehouse (the form can enter what is on the shelf there), and the cursor goes on to its quantity
+  expect(box.props.warehouseId).toBe('w');
+  expect(box.props.stockOnly).toBe(false);
+  expect(fixture.focused).toEqual([expect.any(Number)]);
   await invoke(nodes.find((n) => n.type === 'SplitButton')!.props.onRun, 'draft');
   expect(api.createInvoice).toHaveBeenCalledWith(expect.objectContaining({ lines: [{ itemId: 'made', qtyMilli: 1000, unitPrice: 1750 }] }));
 });
