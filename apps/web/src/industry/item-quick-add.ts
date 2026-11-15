@@ -133,6 +133,29 @@ export function quickItemInput(fields: QuickItemFields, seesCost: boolean): Quic
   return { ok: true, input };
 }
 
+/**
+ * Whether the form shows the batch and expiry fields for what is on the shelf: once the item is there (made, or one
+ * already there that was chosen), by its own settings; before, by the company's choice for new items (unknown when it
+ * could not be read: the item's own settings decide once it is made, so a stock entry is never stuck without them).
+ */
+export function showsBatchFields(item: Pick<ItemView, 'trackBatches' | 'trackExpiry'> | null, companyExpiry: boolean): boolean {
+  return item ? item.trackBatches || item.trackExpiry : companyExpiry;
+}
+
+/**
+ * The stock typed in the form for an item that is already there and was chosen instead ("Use this one"), against what
+ * the sale's warehouse holds of it: nothing typed (or 0), or the same as there is: nothing changes. Nothing there yet:
+ * opening stock at the purchase price, as for a new item. Some there: a count correction to what was typed (a surplus
+ * at the warehouse's average cost, a shortage written off), each with the company's approval rules.
+ */
+export type ExistingStockStep = { kind: 'none' } | { kind: 'enter'; reason: 'opening' | 'found'; adds: boolean };
+
+export function existingStockStep(haveMilli: number, typedMilli: number | null): ExistingStockStep {
+  if (typedMilli === null || typedMilli <= 0 || typedMilli === haveMilli) return { kind: 'none' };
+  if (haveMilli <= 0) return { kind: 'enter', reason: 'opening', adds: true };
+  return { kind: 'enter', reason: 'found', adds: typedMilli > haveMilli };
+}
+
 /** How long a quick add waits for the server before it says the link is down (as the customer box does). */
 export const QUICK_ITEM_TIMEOUT_MS = 12_000;
 

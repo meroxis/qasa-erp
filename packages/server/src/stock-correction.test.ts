@@ -140,6 +140,30 @@ describe('an item added from an item picker', () => {
     expect((await put(`/api/items/${cheese.id}`, { name: one('White cheese'), unit: 'kg', barcode: '2100017', salePrice: 9_500, saleCurrency: 'IQD' })).statusCode).toBe(200);
   });
 
+  it("counts the barcodes of an item's other units too, both ways (the till finds a unit's barcode first)", async () => {
+    const cheese = await made(post('/api/items', { name: one('White cheese'), unit: 'kg', barcode: '2100017', salePrice: 9_000, saleCurrency: 'IQD' }));
+    // a carton whose barcode is the cheese's 1.250 kg label: refused on a new item and on an item saved again
+    const carton = (barcode: string) => [{ unit: 'carton', factorMilli: 24_000, barcode }];
+    const added = await post('/api/items', { ...quick, units: carton('2100017012503') });
+    expect(added.statusCode).toBe(409);
+    expect(added.json().error).toBe('barcode_scale_label');
+    expect((await made(post('/api/items', { ...quick, units: carton('6260000000777') }))).id).toBeTruthy();
+    const juice = (db.prepare("SELECT id FROM items WHERE barcode = '6260000000123'").get() as { id: string }).id;
+    const changed = await put(`/api/items/${juice}`, { ...quick, units: carton('2100017012503') });
+    expect(changed.statusCode).toBe(409);
+    expect(changed.json().error).toBe('barcode_scale_label');
+    // a weighed item's own label is not one of its units' barcodes either
+    const own = await put(`/api/items/${cheese.id}`, { name: one('White cheese'), unit: 'kg', barcode: '2100017', salePrice: 9_000, saleCurrency: 'IQD', units: [{ unit: 'carton', factorMilli: 5_000, barcode: '2100017012503' }] });
+    expect(own.statusCode).toBe(409);
+    // the other way: a carton's barcode is a full label, so a weighed item may not take its first seven digits
+    await made(post('/api/items', { ...quick, name: one('Dates'), barcode: '6260000000555', units: carton('2300045002006') }));
+    const weighed = await post('/api/items', { name: one('Dates, weighed'), unit: 'kg', barcode: '2300045', salePrice: 6_000, saleCurrency: 'IQD' });
+    expect(weighed.statusCode).toBe(409);
+    expect(weighed.json().error).toBe('barcode_scale_label');
+    // the juice saves again with the carton it has
+    expect((await put(`/api/items/${juice}`, { ...quick, salePrice: 1_800, units: carton('6260000000777') })).statusCode).toBe(200);
+  });
+
   it('needs the stock permission, as on the Items page: a cashier or a buyer alone may not add one', async () => {
     const u = await signedIn();
     expect((await post('/api/items', quick, u.cashier)).statusCode).toBe(403);
