@@ -66,10 +66,12 @@ export const ITEM_QUICK_TEXT = {
 
   // correcting an item's stock from its page
   sc_title: ['تصحيح المخزون', 'Correct stock', 'ڕاستکردنەوەی کۆگا'],
+  // (what waits is the server's rule, stock-correction.ts: with "Separate duties" an adjustment or opening stock waits
+  // for an approver; a purchase not entered is posted as the Purchase invoices page posts it, as the 1.4.2 notes say)
   sc_help: [
-    'قل كم يوجد الآن، أو كم تضيف أو تُخرج، ولماذا. يُعمل المستند المناسب ويُرحَّل (وحيث يصادق شخص آخر، ينتظر مصادقته)، فتبقى الحسابات ومتوسط الكلفة والتقارير صحيحة.',
-    'Say how much is there now, or how much to add or take out, and why. The matching document is made and posted (where another person approves, it waits for their approval), so the books, the average cost and the reports stay right.',
-    'بڵێ ئێستا چەندی لێیە، یان چەند زیاد یان دەر دەکەیت، و بۆچی. بەڵگەنامەی گونجاو دروست و تەرحیل دەکرێت (لە شوێنێک کە کەسێکی تر پەسەندی دەکات، چاوەڕێی پەسەندکردنی ئەو دەکات)، بۆیە هەژمارەکان و تێکڕای تێچوو و ڕاپۆرتەکان ڕاست دەمێننەوە.'
+    'قل كم يوجد الآن، أو كم تضيف أو تُخرج، ولماذا. يُعمل المستند المناسب ويُرحَّل (ومع «فصل المهام» تنتظر التسوية أو بضاعة أول المدة من يصادق عليها)، فتبقى الحسابات ومتوسط الكلفة والتقارير صحيحة.',
+    'Say how much is there now, or how much to add or take out, and why. The matching document is made and posted (with Separate duties on, an adjustment or opening stock waits for an approver), so the books, the average cost and the reports stay right.',
+    'بڵێ ئێستا چەندی لێیە، یان چەند زیاد یان دەر دەکەیت، و بۆچی. بەڵگەنامەی گونجاو دروست و تەرحیل دەکرێت (لەگەڵ «جیاکردنەوەی ئەرکەکان»، ڕاستکردنەوەی کۆگا یان کاڵای سەرەتا چاوەڕێی پەسەندکەرێک دەکات)، بۆیە هەژمارەکان و تێکڕای تێچوو و ڕاپۆرتەکان ڕاست دەمێننەوە.'
   ],
   sc_onBooks: ['في الدفاتر الآن', 'On the books now', 'ئێستا لە هەژمارەکاندا'],
   sc_modeSet: ['العدد الموجود', 'Counted quantity', 'بڕی ژمێردراو'],

@@ -150,7 +150,8 @@ No new Qasa Relay this time (1.4.3 changes no relay code), and no company-file u
    1.4.3 "What's new".
 3. **The website** (the phone pages with 1.0.2 and its SHA-256, and the wording on what scanning sends to Google) goes
    live as soon as the 1.4.3 GitHub release is out: a 1.4.3 PC tells the user to check the 1.0.2 SHA-256 against the
-   download, while a 1.4.2 PC still shows 1.0.1's (the phone page says why they differ).
+   download, while a 1.4.2 PC still shows 1.0.1's (the phone page says why they differ). Set its `APP_VERSION`
+   (`build.mjs`, the `softwareVersion` the pages give search engines) to 1.4.3 in the same deploy.
 
 ## Release notes format
 

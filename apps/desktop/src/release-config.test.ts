@@ -890,6 +890,12 @@ describe('the release notes of 1.4.2 (kept as shipped, with the stock-correction
     expect(section('ku')).toContain('لەگەڵ **جیاکردنەوەی ئەرکەکان**، ڕاستکردنەوەی کۆگا یان کاڵای سەرەتا چاوەڕێی پەسەندکەرێک دەکات؛ کڕینێک کە نەنووسراوە وەک لە پەڕەی **پسوولەکانی کڕین** تەرحیل دەکرێت.');
     // a purchase never waits: the old sentence said everything did "where another person approves"
     expect(notes).not.toMatch(/Where another person approves|وحيث يصادق شخص آخر|لە شوێنێک کە کەسێکی تر پەسەندی دەکات/);
+    // the Correct stock form's help says it the same way (1.4.3), in the words of the notes
+    const help = read('apps/web/src/i18n/item-quick.ts');
+    expect(help).toContain('(with Separate duties on, an adjustment or opening stock waits for an approver)');
+    expect(help).toContain('(ومع «فصل المهام» تنتظر التسوية أو بضاعة أول المدة من يصادق عليها)');
+    expect(help).toContain('(لەگەڵ «جیاکردنەوەی ئەرکەکان»، ڕاستکردنەوەی کۆگا یان کاڵای سەرەتا چاوەڕێی پەسەندکەرێک دەکات)');
+    expect(help).not.toMatch(/where another person approves|وحيث يصادق شخص آخر|لە شوێنێک کە کەسێکی تر پەسەندی دەکات/);
   });
 
   it('says first that 1.4.1 cannot open a company file 1.4.2 has upgraded: every PC is updated, and an older Store copy waits for 1.4.2', () => {
@@ -1096,14 +1102,18 @@ describe('the release notes and the Store "What\'s new" of this version (1.4.3)'
     expect(read('apps/web/src/pages/PurchaseOrders.tsx')).toContain('<span className="no-print"><DocAmount value={x.total}');
   });
 
-  it('tells that long lists read the dollar rates once, with the same figures (the rate board read whole, never a day at a time)', () => {
+  it('tells that the screens read the dollar rates once, with the same figures (the rate board read whole, never a day at a time)', () => {
     const amount = read('apps/web/src/Amount.tsx');
     expect(amount).toContain('boardReader(() => fxApi.rates({ to: BOARD_TO })');
     expect(amount).not.toContain('fxApi.rateOn(d), (d, r)');
     expect(amount).not.toContain('export function rateReader(');
-    expect(section('en')).toContain('a long list no longer asks for the dollar rate of each of its dates one by one: all the dollar rates are read once, so the ≈ figures show sooner, also through Qasa Relay. The figures are the same as before.');
-    expect(section('ar')).toContain('تُقرأ أسعار الدولار كلها مرة واحدة');
-    expect(section('ku')).toContain('هەموو نرخەکانی دۆلار یەک جار دەخوێنرێنەوە');
+    // what 1.4.2 did: the screens (Home's chart of twelve months-ends, for one) asked for each date they showed; the
+    // lists only show ≈ figures from 1.4.3 on, so the notes don't say a list "no longer" asks
+    expect(read('apps/web/src/pages/Home.tsx')).toContain('amountText(m.sales, { date: monthEnd(m.month) })');
+    expect(section('en')).toContain('the screens no longer ask for the dollar rate of each date they show one by one: all the dollar rates are read once, so the ≈ figures show sooner, also on long lists and through Qasa Relay. The figures are the same as before.');
+    expect(section('ar')).toContain('لم تعد الشاشات تطلب سعر الدولار لكل تاريخ تعرضه على حدة: تُقرأ أسعار الدولار كلها مرة واحدة');
+    expect(section('ku')).toContain('شاشەکان ئیتر نرخی دۆلاری هەر بەروارێک کە پیشانی دەدەن جیا جیا داوا ناکەن: هەموو نرخەکانی دۆلار یەک جار دەخوێنرێنەوە');
+    expect(notes).not.toMatch(/a long list no longer|لم تعد القائمة الطويلة|لیستێکی درێژ ئیتر/);
   });
 
   it('tells of What\'s new after skipped versions, as the dialog does it', () => {
