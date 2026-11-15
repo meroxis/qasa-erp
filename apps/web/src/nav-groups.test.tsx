@@ -3,12 +3,15 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { Icon } from './components.tsx';
 import { makeI18n } from './i18n.ts';
-import { FIRST_OPEN_GROUP, NAV, openGroups, openGroupsWith, setOpenGroups, toggledGroup } from './nav.ts';
+import { firstClickOnly, FIRST_OPEN_GROUP, GROUP_GLOW_MS, NAV, openGroups, openGroupsWith, revealTop, setOpenGroups, toggledGroup } from './nav.ts';
 
-// The menu at the side: bigger rows, a line icon on each group heading, several groups open at once and remembered for
-// each person on this PC, the current page's group always opened.
+// The menu at the side: bigger rows, a line icon on each group heading, one group open at a time (remembered for each
+// person on this PC), the current page's group opened and the others closed; a group opened by a click comes into view
+// and glows for a moment.
 const css = readFileSync(new URL('./styles.css', import.meta.url), 'utf8').replace(/\r\n/g, '\n');
 const app = readFileSync(new URL('./App.tsx', import.meta.url), 'utf8').replace(/\r\n/g, '\n');
+const toggle = /const toggleGroup = \(group: string\) => \{([\s\S]*?)\n  \};/.exec(app)?.[1] ?? '';
+const glow = css.slice(css.indexOf('/* a group opened by a click glows'), css.indexOf('/* the narrow, icon-only menu */'));
 
 describe('the menu’s groups', () => {
   const g = globalThis as unknown as { localStorage?: unknown };
@@ -19,11 +22,11 @@ describe('the menu’s groups', () => {
   });
   afterEach(() => { delete g.localStorage; });
 
-  it('the first time, opens the current page’s group and Sales', () => {
+  it('the first time, opens the current page’s group alone, and Sales on a page in no group', () => {
     expect(FIRST_OPEN_GROUP).toBe('gSales');
     expect(openGroups('Mer')).toBeNull();
-    expect(openGroupsWith(openGroups('Mer'), 'gOverview')).toEqual(['gSales', 'gOverview']);
-    expect(openGroupsWith(null, 'gSystem')).toEqual(['gSales', 'gSystem']);
+    expect(openGroupsWith(openGroups('Mer'), 'gOverview')).toEqual(['gOverview']);
+    expect(openGroupsWith(null, 'gSystem')).toEqual(['gSystem']);
     expect(openGroupsWith(null, 'gSales')).toEqual(['gSales']);
     // a page that is in no group (a typed address) opens none of its own
     expect(openGroupsWith(null, null)).toEqual(['gSales']);
@@ -31,14 +34,15 @@ describe('the menu’s groups', () => {
     expect(kept.size).toBe(0);
   });
 
-  it('keeps several groups open at once and remembers them for each person on this PC', () => {
+  it('opening a group closes the others, and the one open is remembered for each person on this PC', () => {
     let open = openGroupsWith(openGroups('Mer'), 'gOverview');
     open = toggledGroup(open, 'gStock');
+    expect(open).toEqual(['gStock']);
     open = toggledGroup(open, 'gReports');
-    expect(open).toEqual(['gSales', 'gOverview', 'gStock', 'gReports']);
+    expect(open).toEqual(['gReports']);
     setOpenGroups('Mer', open);
-    expect(openGroups('Mer')).toEqual(['gSales', 'gOverview', 'gStock', 'gReports']);
-    expect(kept.get('qasa.nav.open.Mer')).toBe('["gSales","gOverview","gStock","gReports"]');
+    expect(openGroups('Mer')).toEqual(['gReports']);
+    expect(kept.get('qasa.nav.open.Mer')).toBe('["gReports"]');
     // someone else on the same PC has their own, and so does the owner without sign-in
     expect(openGroups('Las')).toBeNull();
     setOpenGroups('Las', ['gAccounting']);
@@ -46,28 +50,61 @@ describe('the menu’s groups', () => {
     expect(openGroups('Las')).toEqual(['gAccounting']);
     expect(openGroups('')).toEqual(['gPurchases']);
     expect(kept.get('qasa.nav.open.owner')).toBe('["gPurchases"]');
-    expect(openGroups('Mer')).toEqual(['gSales', 'gOverview', 'gStock', 'gReports']);
+    expect(openGroups('Mer')).toEqual(['gReports']);
   });
 
-  it('closing a group closes that one only, and everything can be closed', () => {
-    expect(toggledGroup(['gSales', 'gOverview', 'gStock'], 'gOverview')).toEqual(['gSales', 'gStock']);
+  it('clicking the open group’s heading closes it: then none is open, and that is remembered', () => {
     expect(toggledGroup(['gSales'], 'gSales')).toEqual([]);
+    expect(toggledGroup([], 'gSystem')).toEqual(['gSystem']);
     setOpenGroups('Mer', []);
-    // remembered as "all closed": Sales does not come back by itself
+    // remembered as "all closed": Sales does not come back by itself on a page in no group
     expect(openGroups('Mer')).toEqual([]);
     expect(openGroupsWith(openGroups('Mer'), null)).toEqual([]);
+    // a page in a group still opens it
+    expect(openGroupsWith(openGroups('Mer'), 'gSystem')).toEqual(['gSystem']);
   });
 
-  it('opening a page always opens its own group beside the remembered ones', () => {
-    setOpenGroups('Mer', ['gStock', 'gReports']);
-    expect(openGroupsWith(openGroups('Mer'), 'gAccounting')).toEqual(['gStock', 'gReports', 'gAccounting']);
-    expect(openGroupsWith(openGroups('Mer'), 'gReports')).toEqual(['gStock', 'gReports']);
-    setOpenGroups('Mer', []);
+  it('a page opens its own group and the others close', () => {
+    setOpenGroups('Mer', ['gStock']);
+    expect(openGroupsWith(openGroups('Mer'), 'gAccounting')).toEqual(['gAccounting']);
+    expect(openGroupsWith(openGroups('Mer'), 'gStock')).toEqual(['gStock']);
+    // on a page in no group, the one the person left open
+    expect(openGroupsWith(openGroups('Mer'), null)).toEqual(['gStock']);
+  });
+
+  it('turns a menu remembered by 1.5.0 with several groups open into one open group', () => {
+    kept.set('qasa.nav.open.Mer', '["gSales","gOverview","gStock","gReports"]');
+    expect(openGroups('Mer')).toEqual(['gSales', 'gOverview', 'gStock', 'gReports']);
+    // on a page in no group: the last one remembered
+    expect(openGroupsWith(openGroups('Mer'), null)).toEqual(['gReports']);
+    // on a page in a group: that group only
+    expect(openGroupsWith(openGroups('Mer'), 'gOverview')).toEqual(['gOverview']);
     expect(openGroupsWith(openGroups('Mer'), 'gSystem')).toEqual(['gSystem']);
-    // what is passed in is never changed
-    const remembered = ['gStock'];
-    openGroupsWith(remembered, 'gSales');
-    expect(remembered).toEqual(['gStock']);
+    // a click that opens a group closes every other one
+    expect(toggledGroup(['gSales', 'gOverview', 'gStock'], 'gPurchases')).toEqual(['gPurchases']);
+    expect(toggledGroup(['gSales', 'gOverview', 'gStock'], 'gOverview')).toEqual(['gSales', 'gStock']);
+    // the storage keeps its form and its names: what is written reads back the same
+    setOpenGroups('Mer', openGroupsWith(openGroups('Mer'), null));
+    expect(kept.get('qasa.nav.open.Mer')).toBe('["gReports"]');
+  });
+
+  it('never changes what it is given', () => {
+    const remembered = Object.freeze(['gStock', 'gReports']);
+    const open = Object.freeze(['gSales']);
+    expect(() => {
+      openGroupsWith(remembered, null);
+      openGroupsWith(remembered, 'gSales');
+      toggledGroup(open, 'gSystem');
+      toggledGroup(open, 'gSales');
+    }).not.toThrow();
+    expect(remembered).toEqual(['gStock', 'gReports']);
+    expect(open).toEqual(['gSales']);
+    // and hands back a list of its own, so changing it changes nothing kept elsewhere
+    const one = Object.freeze(['gSales']);
+    const shown = openGroupsWith(one, null);
+    expect(shown).toEqual(['gSales']);
+    expect(shown).not.toBe(one);
+    expect(toggledGroup(one, 'gSystem')).not.toBe(one);
   });
 
   it('reads only what it wrote: anything else kept under the name is ignored', () => {
@@ -102,24 +139,128 @@ describe('the menu’s groups', () => {
   });
 });
 
+describe('bringing a group just opened into view', () => {
+  // a list 500 px high, scrolled to the top, 1200 px long; 8 px kept at its ends (its scroll-padding)
+  const list = { top: 0, height: 500, length: 1200 };
+
+  it('moves the list just enough to show the group’s heading and every page of it', () => {
+    // System opened below the edge: its end comes up to the list's end
+    expect(revealTop(list, { top: 600, height: 300 }, 8)).toBe(408);
+    expect(revealTop(list, { top: 450, height: 200 }, 8)).toBe(158);
+    // a group shown already: the list stays where the person left it
+    expect(revealTop(list, { top: 100, height: 200 }, 8)).toBeNull();
+    expect(revealTop({ ...list, top: 300 }, { top: 400, height: 300 }, 8)).toBeNull();
+  });
+
+  it('puts the heading at the top when the group is taller than the list, or when the heading went above it', () => {
+    expect(revealTop(list, { top: 300, height: 600 }, 8)).toBe(292);
+    expect(revealTop({ ...list, top: 700 }, { top: 300, height: 600 }, 8)).toBe(292);
+    // the groups above it closed, and its heading moved up out of sight
+    expect(revealTop({ ...list, top: 400 }, { top: 350, height: 200 }, 8)).toBe(342);
+    // the heading at the top already
+    expect(revealTop({ ...list, top: 292 }, { top: 300, height: 600 }, 8)).toBeNull();
+  });
+
+  it('stays within the list: never above its start nor past its end', () => {
+    expect(revealTop({ ...list, top: 50 }, { top: 4, height: 100 }, 8)).toBe(0);
+    expect(revealTop({ top: 0, height: 500, length: 700 }, { top: 450, height: 250 }, 8)).toBe(200);
+    // at its end already: nothing to move
+    expect(revealTop({ top: 200, height: 500, length: 700 }, { top: 450, height: 250 }, 8)).toBeNull();
+    // a list too short to scroll
+    expect(revealTop({ top: 0, height: 500, length: 500 }, { top: 0, height: 480 }, 8)).toBeNull();
+    // whole pixels
+    expect(revealTop({ top: 0.5, height: 500.4, length: 1200 }, { top: 600.3, height: 300 }, 8)).toBe(408);
+  });
+});
+
+describe('a double click in the menu', () => {
+  it('counts once: its second click, on the row that moved under the pointer, neither opens a page nor folds a group', () => {
+    const done: string[] = [];
+    const click = (detail: number) => ({ detail, preventDefault: () => { done.push(`no page ${detail}`); }, stopPropagation: () => { done.push(`no row ${detail}`); } });
+    // a single click, and Enter or Space (a click with no count): as before
+    firstClickOnly(click(1));
+    firstClickOnly(click(0));
+    expect(done).toEqual([]);
+    // the second click of a double click (and a third) does nothing
+    firstClickOnly(click(2));
+    firstClickOnly(click(3));
+    expect(done).toEqual(['no page 2', 'no row 2', 'no page 3', 'no row 3']);
+  });
+});
+
 describe('the menu in the app shell', () => {
   it('opens and closes a group without going anywhere, and remembers it for the person', () => {
     expect(app).toContain('const open = railed || openNav.includes(g.group);');
     expect(app).toContain('aria-expanded={open} aria-controls={id} title={t(g.group)} onClick={() => toggleGroup(g.group)}>');
-    const toggle = /const toggleGroup = \(group: string\) => \{([\s\S]*?)\n  \};/.exec(app)?.[1] ?? '';
     expect(toggle).toContain('toggledGroup(openNavNow.current, group)');
     expect(toggle).toContain('setOpenGroups(favUser, next);');
     expect(toggle).not.toMatch(/location|href|go\(/);
-    // a page opens its own group, whatever was remembered
+    // a page opens its own group (and the others close), whatever was remembered
     expect(app).toContain('const open = openGroupsWith(remembered, activeGroup);');
     expect(app).toMatch(/\}, \[signedIn, favUser, activeGroup, routePage\]\);/);
+    // what shows is remembered once the person has chosen by hand (so several kept by 1.5.0 become one)
+    expect(app).toContain('if (remembered && open.join() !== remembered.join()) setOpenGroups(favUser, open);');
+    expect(app).not.toMatch(/several can stay open|several at once/);
+  });
+
+  it('brings a group opened by a click into view, after the other groups have closed', () => {
+    expect(toggle).toContain('const opening = !openNavNow.current.includes(group);');
+    expect(toggle).toContain('requestAnimationFrame(() => requestAnimationFrame(() => revealGroup(navRef.current, group)));');
+    // only when it opens: closing a group leaves the list where it is
+    expect(toggle.indexOf('if (!opening) return;')).toBeGreaterThan(-1);
+    expect(toggle.indexOf('if (!opening) return;')).toBeLessThan(toggle.indexOf('requestAnimationFrame('));
+    // only the menu's list moves (not the window), found by its group's name, smoothly unless less motion is asked for
+    const reveal = /\nfunction revealGroup\(list: HTMLElement \| null, group: string\) \{([\s\S]*?)\n\}/.exec(app)?.[1] ?? '';
+    expect(reveal).toContain(".find((s) => s.dataset.group === group);");
+    expect(reveal).toContain('revealTop(');
+    expect(reveal).toContain("const still = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false;");
+    expect(reveal).toContain("list.scrollTo({ top, behavior: still ? 'auto' : 'smooth' });");
+    expect(reveal).not.toContain('scrollIntoView');
+    // the page's own row does not pull the list back when a click shows or hides it
+    expect(toggle).toContain('headingClicked.current = pageRowShown(next) !== activeShown;');
+    expect(app).toContain('if (headingClicked.current) { headingClicked.current = false; return; }');
+    // a double click on a heading opens its group once, and never the page that slid under the pointer
+    expect(app).toContain('<div className="nav-scroll" ref={navRef} onKeyDown={menuKeys} onClickCapture={firstClickOnly}>');
+  });
+
+  it('makes a group opened by a click glow for a moment, not a group a page opens', () => {
+    expect(app).toContain("<div key={g.group} data-group={g.group} className={'nav-section' + (open ? ' open' : '') + (!railed && justOpened === g.group ? ' just-opened' : '')}>");
+    expect(toggle).toContain('setJustOpened(opening ? group : null);');
+    // a newer glow is never cleared by an older one's timer, and no timer outlives the app
+    expect(toggle.indexOf('window.clearTimeout(glowTimer.current);')).toBeGreaterThan(-1);
+    expect(toggle.indexOf('window.clearTimeout(glowTimer.current);')).toBeLessThan(toggle.indexOf('glowTimer.current = window.setTimeout('));
+    expect(toggle).toContain('glowTimer.current = window.setTimeout(() => setJustOpened((g) => (g === group ? null : g)), GROUP_GLOW_MS);');
+    expect(app).toContain('useEffect(() => () => window.clearTimeout(glowTimer.current), []);');
+    // the glow lasts as long as its animation
+    expect(GROUP_GLOW_MS).toBe(1800);
+    expect(glow).toContain('animation: nav-just-opened 1.8s var(--ease) both;');
+    expect(glow).toContain('animation: nav-just-opened-mark 1.8s var(--ease) both;');
+    // a page opening its group neither glows nor moves the list by itself; a group it closes stops glowing
+    const pageOpens = /useLayoutEffect\(\(\) => \{\n    if \(!signedIn\) return;([\s\S]*?)\n  \}, \[signedIn/.exec(app)?.[1] ?? '';
+    expect(pageOpens).toContain('openGroupsWith(remembered, activeGroup)');
+    expect(pageOpens).not.toMatch(/revealGroup|scroll/);
+    expect(pageOpens.match(/setJustOpened\(/g)).toHaveLength(1);
+    expect(pageOpens).toContain('setJustOpened((g) => (g && !open.includes(g) ? null : g));');
+  });
+
+  it('glows light blue with the orange mark beside the heading, in both directions, dark mode, contrast themes and with less motion', () => {
+    expect(glow).toContain('--nav-glow: color-mix(in srgb, var(--accent) 13%, transparent);');
+    expect(glow).toContain('@keyframes nav-just-opened { 0%, 55% { background-color: var(--nav-glow); } 100% { background-color: transparent; } }');
+    expect(glow).toMatch(/\.nav-section\.just-opened > \.nav-group-btn::before \{[^}]*inset-inline-start: 0;[^}]*background: var\(--indicator\);/);
+    // the theme's own colours (light and dark), no fixed ones; no physical left or right: Arabic and Kurdish mirror
+    expect(glow).not.toMatch(/#[0-9a-f]{3,8}\b|rgb\(|hsl\(/i);
+    expect(glow).not.toMatch(/(?:margin|padding|border)-(?:left|right)|(?:^|[\s;{])(?:left|right):/);
+    // less motion: no fading, a still tint for the moment the group glows
+    expect(glow).toContain('@media (prefers-reduced-motion: reduce) {\n  .nav-section.just-opened { animation: none; background-color: var(--nav-glow); }\n  .nav-section.just-opened > .nav-group-btn::before { animation: none; }\n}');
+    // contrast themes: the mark in the theme's highlight colour, as the current page's
+    expect(glow).toContain('@media (forced-colors: active) { .nav-section.just-opened > .nav-group-btn::before { forced-color-adjust: none; background: Highlight; } }');
   });
 
   it('shows the heading’s icon, its name and a chevron; a group with no page this person may see is not shown', () => {
     expect(app).toContain('<Icon name={g.icon} />\n                          <span>{t(g.group)}</span>\n                          <Icon name="chevronDown" size={16} className="nav-chevron" />');
     expect(app).toContain('{NAV.filter((g) => shownItems(g.items).length).map((g) => {');
     expect(app).toContain('const shownItems = (items: NavItem[]) => items.filter((item) => canSee(item, viewer));');
-    // the icon rail has no headings: every group's pages show, as before
+    // the icon rail has no headings: every group's pages show, as before, and nothing glows there
     expect(app).toContain('{!railed && (\n                        <button type="button" className="nav-group nav-group-btn"');
   });
 

@@ -236,8 +236,17 @@ describe('the Microsoft Store listing', () => {
       expect(named, lang).toMatch(/^\d+\.\d+\.\d+/);
       if (named === version) expect(l.releaseNotes, lang).not.toMatch(/\{\{|\}\}/);
       // a stable release (a beta never goes to the Store) is never sent with the text of an older one, nor with a draft
-      // left for a version number it did not take (1.5.0 instead of 1.4.3)
-      if (!version.includes('-')) expect(older(named, version), `${lang}: the Store "What's new" names ${named}, the app is ${version}`).toBe(false);
+      // left for a version number it did not take (1.5.0 instead of 1.4.3). The one exception is a release that goes to
+      // GitHub and the website only (1.5.1): the Store keeps the version it has, and docs/releasing.md says so in that
+      // version's release-day steps, naming the version the Store stays on
+      // A stable release never goes out with a Store text naming a newer version than its own (a draft for a coming
+      // version is written while that version is in beta, when the app's number is the same without the -beta part)
+      if (!version.includes('-')) expect(older(version, named), `${lang}: the Store "What's new" names ${named}, newer than the app's ${version}`).toBe(false);
+      if (!version.includes('-') && older(named, version)) {
+        const days = read('docs/releasing.md').split(/^(?=## )/m);
+        const day = days.find((d) => d.startsWith(`## Release day for ${version} `) || d.startsWith(`## Release day for ${version}\n`)) ?? '';
+        expect(day, `${lang}: the Store "What's new" names ${named}, the app is ${version}, and docs/releasing.md has no GitHub-only release day for ${version}`).toContain(`the Store stays on ${named}`);
+      }
     }
   });
 });
@@ -1199,8 +1208,8 @@ describe('the release notes of 1.4.3 (never released on its own: What\'s new sho
   });
 });
 
-describe('the release notes and the Store "What\'s new" of this version (1.5.0)', () => {
-  const version = (JSON.parse(read('apps/desktop/package.json')) as { version: string }).version;
+describe('the release notes of 1.5.0 and the Store "What\'s new", which stays on 1.5.0 (1.5.1 is GitHub and the website only)', () => {
+  const version = '1.5.0';
   const notes = read(`apps/desktop/release-notes/${version}.md`);
   const section = (lang: 'ar' | 'en' | 'ku') => new RegExp(`^::: ${lang}\\n([\\s\\S]*?)^:::$`, 'm').exec(notes)?.[1] ?? '';
   const listing = JSON.parse(read('apps/desktop/store-listing.json')) as {
@@ -1211,11 +1220,7 @@ describe('the release notes and the Store "What\'s new" of this version (1.5.0)'
   const lines = (lang: (typeof LANGS)[number]) => store[lang].releaseNotes.split('\n');
   const mobileText = read('apps/mobile/src/owner/i18n.ts') + read('apps/mobile/src/staff/i18n.ts');
 
-  it('is 1.5.0, the same in the app, the core and the lock file, with a notes file that has Arabic, English and Kurdish', () => {
-    expect(version).toBe('1.5.0');
-    expect(read('packages/core/src/version.ts')).toContain(`APP_VERSION = '${version}'`);
-    const lock = JSON.parse(read('package-lock.json')) as { packages: Record<string, { version?: string }> };
-    expect(lock.packages['apps/desktop']?.version).toBe(version);
+  it('keeps the notes file of 1.5.0, with Arabic, English and Kurdish', () => {
     for (const lang of ['ar', 'en', 'ku'] as const) expect(notes, lang).toMatch(new RegExp(`^::: ${lang}\\n[\\s\\S]+?^:::$`, 'm'));
   });
 
@@ -1391,10 +1396,66 @@ describe('the release notes and the Store "What\'s new" of this version (1.5.0)'
     for (const lang of LANGS) expect(store[lang].releaseNotes, lang).not.toContain('0.1.8');
   });
 
-  it('has the 1.5.0 release-day steps in docs/releasing.md in place of 1.4.3\'s', () => {
+  it('keeps the 1.5.0 release-day steps in docs/releasing.md (the Store submission of 1.5.0 is still to come), in place of 1.4.3\'s', () => {
     const releasing = read('docs/releasing.md');
     expect(releasing).toContain('## Release day for 1.5.0');
     expect(releasing).not.toContain('## Release day for 1.4.3');
+  });
+});
+
+describe('the release notes of this version (1.5.1: the menu, on GitHub and the website only)', () => {
+  const version = (JSON.parse(read('apps/desktop/package.json')) as { version: string }).version;
+  const notes = read(`apps/desktop/release-notes/${version}.md`);
+  const section = (lang: 'ar' | 'en' | 'ku') => new RegExp(`^::: ${lang}\\n([\\s\\S]*?)^:::$`, 'm').exec(notes)?.[1] ?? '';
+  const store = (JSON.parse(read('apps/desktop/store-listing.json')) as { listings: Record<'en-us' | 'ar' | 'ku-arab', { releaseNotes: string }> }).listings;
+
+  it('is 1.5.1, the same in the app, the core and the lock file, with a notes file that has Arabic, English and Kurdish', () => {
+    expect(version).toBe('1.5.1');
+    expect(read('packages/core/src/version.ts')).toContain(`APP_VERSION = '${version}'`);
+    const lock = JSON.parse(read('package-lock.json')) as { packages: Record<string, { version?: string }> };
+    expect(lock.packages['apps/desktop']?.version).toBe(version);
+    for (const lang of ['ar', 'en', 'ku'] as const) expect(notes, lang).toMatch(new RegExp(`^::: ${lang}\\n[\\s\\S]+?^:::$`, 'm'));
+  });
+
+  it('has the same short Changed section in each language, and no Before you update: the company file stays on schema 15', () => {
+    expect(read('packages/server/src/db.ts')).toMatch(/\{ sql: V15, mysql: \{ tables: true, steps: \(\) => V15_MYSQL_STEPS \} \},?\n\];/);
+    expect(section('en')).toMatch(/\n### Changed\n- \*\*One menu group open at a time:\*\*[^\n]+\n$/);
+    expect(section('ar')).toMatch(/\n### ما تغيّر\n- \*\*مجموعة واحدة مفتوحة في القائمة:\*\*[^\n]+\n$/);
+    expect(section('ku')).toMatch(/\n### گۆڕاوەکان\n- \*\*یەک گرووپی کراوە لە لیستدا:\*\*[^\n]+\n$/);
+    const shape = (lang: 'ar' | 'en' | 'ku') => section(lang).split('\n').filter((l) => /^(### |- )/.test(l)).map((l) => l.slice(0, 2)).join('');
+    expect(shape('ar')).toBe(shape('en'));
+    expect(shape('ku')).toBe(shape('en'));
+    expect(notes).not.toMatch(/Before you update|قبل التحديث|پێش نوێکردنەوە/);
+  });
+
+  it('still tells the holders of 0.1.8 licences to connect once in the first month, in the words of 1.5.0 (What\'s new shows it once)', () => {
+    const before = read('apps/desktop/release-notes/1.5.0.md');
+    const part = (text: string, lang: string, heading: string) => new RegExp(`^::: ${lang}\\n[\\s\\S]*?(### ${heading}\\n[^\\n]+\\n)`, 'm').exec(text)?.[1];
+    for (const [lang, heading] of [['en', 'Licences from 0.1.8'], ['ar', 'تراخيص الإصدار 0.1.8'], ['ku', 'مۆڵەتەکانی وەشانی 0.1.8']] as const) {
+      expect(part(notes, lang, heading), lang).toBeTruthy();
+      expect(part(notes, lang, heading), lang).toBe(part(before, lang, heading));
+    }
+  });
+
+  it('tells of the menu in the words the app and the 1.3.0 notes use for its groups, Home and search', () => {
+    expect(read('apps/web/src/i18n.ts')).toContain("home: ['الرئيسية', 'Home', 'سەرەکی']");
+    expect(read('apps/desktop/release-notes/1.3.0.md')).toContain('عنوان كل مجموعة');
+    expect(read('apps/desktop/release-notes/1.3.0.md')).toContain('ناونیشانی هەر گرووپێک');
+    expect(section('en')).toContain('The group you open slides into view with all its pages and is highlighted for a moment. A page you open from search or from **Home** opens its own group in the menu.');
+    expect(section('ar')).toContain('**الرئيسية**');
+    expect(section('ku')).toContain('**سەرەکی**');
+    expect(section('ku')).not.toContain('ـ');
+    expect(section('ku')).not.toMatch(/[ىيك]/);
+    expect(section('en')).not.toMatch(/\w'[\w\s]/);
+  });
+
+  it('says the Microsoft Store copy gets it later, and leaves the Store "What\'s new" on 1.5.0', () => {
+    expect(notes).toMatch(/^\*\*Qasa ERP 1\.5\.1 for Windows\*\*: [^\n]*the Microsoft Store version gets this change later, with the next Store update\./);
+    expect(notes).toContain('copy stays on 1.5.0 for now.');
+    expect(store['en-us'].releaseNotes.split('\n')[0]).toBe('Qasa ERP 1.5.0.');
+    const releasing = read('docs/releasing.md');
+    expect(releasing).toContain('## Release day for 1.5.1');
+    expect(releasing).toContain('the Store stays on 1.5.0');
   });
 });
 
