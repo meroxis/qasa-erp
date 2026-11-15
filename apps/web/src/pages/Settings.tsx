@@ -1466,7 +1466,7 @@ function PostingAccountsCard() {
   );
 }
 
-// ——— Settings → Phones: the Qasa phone app (Pro module, pro/src/phone) ———
+// ——— Settings → Office network → Phones: the Qasa phone app (Pro module, pro/src/phone) ———
 
 interface PhonesStatus {
   available: boolean;
@@ -1486,7 +1486,8 @@ interface PhonesStatus {
 
 /**
  * The phone app ships with 1.4.2 (owner's decision): an Android APK downloaded from qasaerp.com/phone/ (Google Play
- * later), so Settings → Phones offers it and the pairing. With `ready` false the card only says it is coming.
+ * later), so Settings → Office network → Phones offers it and the pairing. With `ready` false the card only says it
+ * is coming.
  */
 export const PHONE_APP_READY = true;
 

@@ -6,8 +6,8 @@ import { UI_TEXT } from '../i18n/ui.ts';
 import { PHONE_TEXT } from '../i18n/phone.ts';
 import { encodeQr, qrSvgPath } from '../industry/qr.ts';
 
-// 1.4.2 ships the phone app (an Android APK from qasaerp.com/phone/): Settings → Phones offers the download and the
-// pairing, behind the plan rules (Starter, Pro, Business); the plans page no longer marks it "soon".
+// 1.4.2 ships the phone app (an Android APK from qasaerp.com/phone/): Settings → Office network → Phones offers the
+// download and the pairing, behind the plan rules (Starter, Pro, Business); the plans page no longer marks it "soon".
 const fixture = vi.hoisted(() => ({ states: [] as unknown[], cursor: 0, lang: 'ar' as 'ar' | 'en' | 'ku' }));
 vi.mock('react', () => ({
   useState<T>(initial: T) {
