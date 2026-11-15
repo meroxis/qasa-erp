@@ -648,11 +648,13 @@ export function QtyInput({ value, onChange, ariaLabel }: { value: number | null;
 /* ---------- amount input ---------- */
 
 /** Text input for money that accepts 1,250,000 or ١٬٢٥٠٬٠٠٠; reports the value in minor units (or null). */
-export function AmountInput({ value, currency, onChange, ariaLabel }: {
+export function AmountInput({ value, currency, onChange, ariaLabel, placeholder }: {
   value: number | null;
   currency: CurrencyCode;
   onChange(value: number | null): void;
   ariaLabel?: string;
+  /** shown while the box is empty (the amount used when none is typed) */
+  placeholder?: string | undefined;
 }) {
   const [text, setText] = useState(value === null ? '' : formatAmount(value, currency));
   const [focused, setFocused] = useState(false);
@@ -667,6 +669,7 @@ export function AmountInput({ value, currency, onChange, ariaLabel }: {
       inputMode="decimal"
       aria-label={ariaLabel}
       aria-invalid={invalid}
+      placeholder={placeholder}
       value={text}
       onFocus={() => setFocused(true)}
       onBlur={() => { setFocused(false); if (parsed !== null) setText(formatAmount(parsed, currency)); }}

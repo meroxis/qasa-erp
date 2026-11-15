@@ -8,7 +8,7 @@ import {
 } from '@qasa/core';
 import { api, ApiError, pendingRequests, type InvoiceView, type ItemView } from '../api.ts';
 import {
-  AccountCombo, AmountInput, EmptyState, ErrorBox, Icon, InvoiceStatusChip, Modal, QtyInput, SearchCombo, SplitButton, useData, useLandHome, useLoad, useMay, usePageNav, useToast,
+  AccountCombo, AmountInput, EmptyState, ErrorBox, Icon, InvoiceStatusChip, Modal, QtyInput, SplitButton, useData, useLandHome, useLoad, useMay, usePageNav, useToast,
   type PageNav, type PickOption, type SplitChoice
 } from '../components.tsx';
 import { isKey, useI18n, type Key } from '../i18n.ts';
@@ -24,6 +24,7 @@ import { InvoiceWhatsApp, sendOnWhatsAppOnOpen } from '../industry/WhatsAppShare
 import { reverseDefaultDate } from '../industry/ReverseModal.tsx';
 import { afterPaint, printDocument, whenQuiet, type PrintResult } from '../industry/printing.ts';
 import { PartyPicker } from '../industry/PartyPicker.tsx';
+import { focusLineQty, ItemPicker, withAdded } from '../industry/QuickItemForm.tsx';
 import { mayPostInvoice, printedOk, rememberChoice, rememberedChoice, runSaveFlow, saveChoices, type SaveChoice } from '../industry/save-flow.ts';
 import { creditPartyNote, partyAskedAfter } from './pos-logic.ts';
 import { baseQty, factorOf, holdsText, salePriceFor, unitChoices, unitLabel, type LineUnit } from '../industry/units.ts';
@@ -205,14 +206,17 @@ export function InvoiceEditor({ kind: initialKind, id, partyId: initialParty }: 
   const rateX100 = currency === 'USD' ? parseRate(rateText) : 100;
   // The IQD document rate is 100; USD catalog prices still need the company's exchange rate.
   const priceRateX100 = currency === 'USD' ? rateX100 : settings?.defaultRateX100;
-  const itemById = useMemo(() => new Map((items.data ?? []).map((it) => [it.id, it])), [items.data]);
+  // items added from the item box (1.4.2), until the list is loaded again
+  const [addedItems, setAddedItems] = useState<ItemView[]>([]);
+  const allItems = useMemo(() => withAdded(items.data, addedItems), [items.data, addedItems]);
+  const itemById = useMemo(() => new Map(allItems.map((it) => [it.id, it])), [allItems]);
   const lines = rows.filter((r) => r.itemId || r.unitPrice);
   const totals = invoiceTotals(lines.map((r) => ({ qtyMilli: r.qtyMilli ?? 0, unitPrice: r.unitPrice ?? 0 })), discount ?? 0);
 
   const partyOptions: PickOption[] = (parties.data ?? []).map((p) => ({ id: p.id, code: p.code, label: p.name, search: p.phone, hint: p.balance ? i18n.money(p.balance, 'IQD') : '' }));
   // a category picked above the lines narrows the item list to it and its subcategories (lines already picked stay)
   const picked = new Set(rows.map((r) => r.itemId).filter(Boolean));
-  const itemOptions: PickOption[] = (items.data ?? [])
+  const itemOptions: PickOption[] = allItems
     .filter((it) => kind === 'sale' || it.trackStock)
     .filter((it) => picked.has(it.id) || inCategory(categories.data ?? [], it.categoryId, lineCategory))
     .map((it) => ({
@@ -231,11 +235,11 @@ export function InvoiceEditor({ kind: initialKind, id, partyId: initialParty }: 
     const own = unit ? it?.units.find((u) => u.unit === unit)?.salePrice ?? null : null;
     return own !== null && it && priceRateX100 ? convert(own, it.saleCurrency, currency, priceRateX100) : null;
   };
-  function askPrice(key: number, itemId: string, expected: number | null) {
+  function askPrice(key: number, itemId: string, expected: number | null, given?: ItemView) {
     if (kind !== 'sale') return;
     autoPrices.current.set(key, expected);
     // a price in the other currency is converted at this invoice's own rate, not the company's default rate
-    const it = itemById.get(itemId);
+    const it = given ?? itemById.get(itemId);
     const own = it?.saleCurrency;
     pricesApi.priceFor(itemId, partyId || null, currency, own && own !== currency ? priceRateX100 : null).then((q) => {
       setRows((rs) => rs.map((r) => {
@@ -261,8 +265,9 @@ export function InvoiceEditor({ kind: initialKind, id, partyId: initialParty }: 
     return roundHalfUp((convert(averageCost(it.qtyMilli, it.value), 'IQD', currency, priceRateX100) * factorOf(it, unit)) / 1000);
   }
 
-  function pickItem(key: number, itemId: string) {
-    const it: ItemView | undefined = itemById.get(itemId);
+  /** `given`: an item just added from the item box, which the page's list may not have yet */
+  function pickItem(key: number, itemId: string, given?: ItemView) {
+    const it: ItemView | undefined = given ?? itemById.get(itemId);
     // a new line starts in the item's sale (or purchase) unit
     const unit: LineUnit = (kind === 'sale' ? it?.saleUnit : it?.purchaseUnit) ?? null;
     const price = catalogPrice(it, unit);
@@ -271,7 +276,7 @@ export function InvoiceEditor({ kind: initialKind, id, partyId: initialParty }: 
       const next = rs.map((r) => (r.key === key ? { ...r, itemId, unitPrice: filled, unit } : r));
       return next[next.length - 1]?.itemId ? [...next, emptyRow()] : next;
     });
-    askPrice(key, itemId, filled);
+    askPrice(key, itemId, filled, it);
   }
 
   /** Another unit for a line: the price follows (the quantity stays as typed). */
@@ -571,10 +576,12 @@ export function InvoiceEditor({ kind: initialKind, id, partyId: initialParty }: 
               const short = kind === 'sale' && it?.trackStock && (baseQty(it, r.unit, r.qtyMilli ?? 0) ?? 0) > it.qtyMilli;
               const choices = unitChoices(it);
               return (
-                <tr key={r.key}>
+                <tr key={r.key} data-line={r.key}>
                   <td className="muted num">{i18n.int(i + 1)}</td>
                   <td>
-                    <SearchCombo value={r.itemId} options={itemOptions} onChange={(v) => pickItem(r.key, v)} placeholder={t('chooseItem')} ariaLabel={t('item')} />
+                    <ItemPicker value={r.itemId} options={itemOptions} onChange={(v) => pickItem(r.key, v)} placeholder={t('chooseItem')} ariaLabel={t('item')} sale={kind === 'sale'}
+                      stockOnly={kind !== 'sale'} warehouseId={kind === 'sale' ? warehouseId || undefined : undefined}
+                      onCreated={(made) => { setAddedItems((a) => [...a.filter((x) => x.id !== made.id), made]); pickItem(r.key, made.id, made); focusLineQty(r.key, t('qty')); }} />
                     {short && <div className="small" style={{ color: 'var(--bad)', marginTop: 3 }}>{t('available')}: {qtyText(i18n, it.qtyMilli)}</div>}
                     {kind === 'purchase'
                       ? <BatchInFields item={it} batchNo={r.batchNo ?? ''} expiry={r.expiry ?? ''} date={date} onChange={(v) => update(r.key, v)} />

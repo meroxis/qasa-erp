@@ -311,6 +311,35 @@ export interface ItemInput {
   purchaseCurrency?: CurrencyCode | null;
 }
 
+/** 1.4.2: why an item's stock is corrected (each makes its own document: packages/server/src/stock-correction.ts) */
+export const CORRECTION_REASONS = ['purchase_missing', 'found', 'damaged', 'lost', 'opening', 'other'] as const;
+export type CorrectionReason = (typeof CORRECTION_REASONS)[number];
+
+export interface StockCorrectionInput {
+  warehouseId: string;
+  /** set: what is there now; change: what to add (+) or take out (−) */
+  mode: 'set' | 'change';
+  qtyMilli: number;
+  reason: CorrectionReason;
+  /** IQD per base unit for what comes in; absent: the warehouse's average cost (a count, other) */
+  unitCost?: number;
+  /** a purchase not entered: on credit from this supplier, or paid in cash from this safe (one of the two) */
+  supplierId?: string;
+  cashAccountCode?: string;
+  note?: string;
+  batchNo?: string;
+  expiry?: string;
+  lang?: 'ar' | 'en' | 'ku';
+}
+
+export interface StockCorrectionResult {
+  document: { type: 'adjustment' | 'stock_doc' | 'invoice'; id: string; number: string | null; status: string };
+  /** false: a draft that waits for an approver (separate duties) */
+  posted: boolean;
+  diffMilli: number;
+  item: ItemDetail;
+}
+
 export interface ItemDetail extends ItemView {
   stock: { warehouseId: string; warehouseCode: string; warehouseName: Names; qtyMilli: number; value?: number }[];
   moves: { id: number; date: string; warehouseCode: string; qtyMilli: number; value?: number; sourceType: string; sourceId: string | null; sourceNumber: string | null; balanceQtyMilli: number }[];
@@ -850,12 +879,16 @@ export const api = {
   warehouses: () => request<WarehouseView[]>('GET', '/api/warehouses'),
   createWarehouse: (input: { code: string; name: Names }) => request<WarehouseView>('POST', '/api/warehouses', input),
   updateWarehouse: (id: string, input: { name: Names; active?: boolean }) => request<WarehouseView>('PUT', `/api/warehouses/${id}`, input),
-  items: (f: { q?: string; warehouseId?: string; active?: string; categoryId?: string; brandId?: string } = {}) => request<ItemView[]>('GET', '/api/items' + qs(f)),
+  items: (f: { q?: string; warehouseId?: string; active?: string; categoryId?: string; brandId?: string } = {}, options: SendOptions = {}) => request<ItemView[]>('GET', '/api/items' + qs(f), undefined, options),
   /** A scanned barcode: the item, and the unit when it is one of the item's units' barcodes (null: its own, the base unit). */
   itemByBarcode: (barcode: string, warehouseId?: string) => request<{ item: ItemView | null; unit: UnitCode | null }>('GET', '/api/items' + qs({ barcode, ...(warehouseId ? { warehouseId } : {}) })),
   item: (id: string) => request<ItemDetail>('GET', `/api/items/${id}`),
   usedUnits: () => request<UnitCode[]>('GET', '/api/item-units/used'),
-  createItem: (input: ItemInput) => request<ItemView>('POST', '/api/items', input),
+  // (the quick add in an item picker sends a key: an add sent again after a lost answer makes the item once)
+  createItem: (input: ItemInput, options: SendOptions = {}) => request<ItemView>('POST', '/api/items', input, options),
+  /** 1.4.2: corrects an item's stock in one warehouse through the matching document (stock-correction.ts on the server) */
+  correctStock: (itemId: string, input: StockCorrectionInput, options: SendOptions = {}) =>
+    request<StockCorrectionResult>('POST', `/api/items/${itemId}/stock-correction`, input, options),
   updateItem: (id: string, input: ItemInput) => request<ItemView>('PUT', `/api/items/${id}`, input),
   deleteItem: (id: string) => request<void>('DELETE', `/api/items/${id}`),
 

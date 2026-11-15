@@ -1,13 +1,14 @@
 import { useEffect, useMemo, useState } from 'react';
 import { amountInWords, lineAmount, rateFromX100, todayIso, toWesternDigits, type CurrencyCode } from '@qasa/core';
-import { api } from '../api.ts';
-import { EmptyState, AmountInput, ErrorBox, Icon, Modal, QtyInput, SearchCombo, useData, useLoad, useMay, usePageNav, useToast, type PickOption } from '../components.tsx';
+import { api, type ItemView } from '../api.ts';
+import { EmptyState, AmountInput, ErrorBox, Icon, Modal, QtyInput, useData, useLoad, useMay, usePageNav, useToast, type PickOption } from '../components.tsx';
 import { useI18n, type I18n, type Key } from '../i18n.ts';
 import {
   QUOTE_STATUSES, quotesApi, type QuoteInput, type QuoteLineInput, type QuoteMove, type QuoteStatus, type QuoteSummaryView, type QuoteView
 } from '../industry/quotes-api.ts';
 import { go, href } from '../router.ts';
 import { PartyPicker } from '../industry/PartyPicker.tsx';
+import { focusLineQty, ItemPicker, withAdded } from '../industry/QuickItemForm.tsx';
 import { useRatePrefill } from '../industry/fx-prefill.ts';
 import { convertAmount, convertLines } from './currency-switch.ts';
 import { QuoteWhatsApp } from '../industry/WhatsAppShare.tsx';
@@ -126,7 +127,9 @@ export function QuoteEditor({ id }: { id?: string }) {
   const existing = useLoad(() => (id ? quotesApi.get(id) : Promise.resolve(null)), [id]);
   const customers = useCustomers();
   const itemsLoad = useLoad(() => api.items({ active: 'true' }), []);
-  const items = itemsLoad.data ?? [];
+  // items added from the item box (1.4.2), until the list is loaded again
+  const [addedItems, setAddedItems] = useState<ItemView[]>([]);
+  const items = useMemo(() => withAdded(itemsLoad.data, addedItems), [itemsLoad.data, addedItems]);
   const itemOptions: PickOption[] = useMemo(() => items.map((it) => ({
     id: it.id, code: it.code, label: i18n.name(it.name), search: `${it.name.ar} ${it.name.en} ${it.name.ku} ${it.barcode ?? ''}`
   })), [items, i18n]);
@@ -166,8 +169,8 @@ export function QuoteEditor({ id }: { id?: string }) {
     set('currency', next);
   };
   const update = (key: number, patch: Partial<Row>) => setRows((rs) => rs.map((r) => (r.key === key ? { ...r, ...patch } : r)));
-  const pickItem = (key: number, itemId: string) => {
-    const it = items.find((x) => x.id === itemId);
+  const pickItem = (key: number, itemId: string, given?: ItemView) => {
+    const it = given ?? items.find((x) => x.id === itemId);
     update(key, { itemId: itemId || null, ...(it ? { description: i18n.name(it.name), ...(it.saleCurrency === form.currency && it.salePrice ? { unitPrice: it.salePrice } : {}) } : {}) });
   };
   const subtotal = rows.reduce((s, r) => s + lineAmount(r.qtyMilli || 0, r.unitPrice || 0), 0);
@@ -232,9 +235,10 @@ export function QuoteEditor({ id }: { id?: string }) {
             </thead>
             <tbody>
               {rows.map((r, i) => (
-                <tr key={r.key}>
+                <tr key={r.key} data-line={r.key}>
                   <td className="muted num">{i18n.int(i + 1)}</td>
-                  <td><SearchCombo value={r.itemId ?? ''} options={itemOptions} onChange={(v) => pickItem(r.key, v)} placeholder={t('qt_freeText')} ariaLabel={t('item')} emptyLabel={t('qt_freeText')} /></td>
+                  <td><ItemPicker value={r.itemId ?? ''} options={itemOptions} onChange={(v) => pickItem(r.key, v)} placeholder={t('qt_freeText')} ariaLabel={t('item')} emptyLabel={t('qt_freeText')} sale
+                    onCreated={(made) => { setAddedItems((a) => [...a.filter((x) => x.id !== made.id), made]); pickItem(r.key, made.id, made); focusLineQty(r.key, t('qty')); }} /></td>
                   <td><input className="input" maxLength={500} value={r.description} onChange={(e) => update(r.key, { description: e.target.value })} aria-label={t('description')} /></td>
                   <td><QtyInput value={r.qtyMilli || null} onChange={(v) => update(r.key, { qtyMilli: v ?? 0 })} ariaLabel={t('qty')} /></td>
                   <td><AmountInput value={r.unitPrice || null} currency={form.currency} onChange={(v) => update(r.key, { unitPrice: v ?? 0 })} ariaLabel={t('unitPrice')} /></td>

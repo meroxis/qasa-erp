@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { addDays, isCurrency, isMinorAmount, isUnit, normalizeForSearch, todayIso, type CurrencyCode, type ItemUnit, type Names, type UnitCode } from '@qasa/core';
+import { addDays, isCurrency, isMinorAmount, isUnit, isWeighedUnit, normalizeForSearch, parseScaleBarcode, todayIso, type CurrencyCode, type ItemUnit, type Names, type UnitCode } from '@qasa/core';
 import type { Db } from './db.ts';
 import { nextSequence, transaction } from './db.ts';
 import { audit } from './audit.ts';
@@ -239,6 +239,27 @@ export function itemNames(name: Names): Names {
   return { ar: ar || any, en: en || any, ku: ku || any };
 }
 
+/**
+ * A barcode may not clash with a scale's labels (1.4.2, markets: scale-label.ts in @qasa/core). A full label (13
+ * digits, starting with 2, the weight inside) whose first seven digits are a weighed item's barcode is that item's
+ * label: as another item's barcode it would ring up the wrong item at the till, and only for that one weight. And a
+ * weighed item's seven digits may not be the start of a label that is already another item's own barcode.
+ */
+function assertNoScaleClash(db: Db, barcode: string, unit: UnitCode, id: string | null): void {
+  // an item saved again with the barcode and unit it already has is not held up by what was there before
+  const current = id ? (db.prepare('SELECT barcode, unit FROM items WHERE id = ?').get(id) as { barcode: string | null; unit: string } | undefined) : undefined;
+  if (current && current.barcode === barcode && current.unit === unit) return;
+  const label = parseScaleBarcode(barcode);
+  if (label) {
+    const owner = db.prepare("SELECT unit FROM items WHERE barcode = ? AND id <> COALESCE(?, '')").all(label.prefix, id ?? null) as { unit: string }[];
+    if (owner.some((o) => isWeighedUnit(o.unit))) throw conflict('barcode_scale_label');
+  }
+  if (isWeighedUnit(unit) && /^2\d{6}$/.test(barcode)) {
+    const labels = db.prepare("SELECT barcode FROM items WHERE barcode LIKE ? AND length(barcode) = 13 AND id <> COALESCE(?, '')").all(`${barcode}%`, id ?? null) as { barcode: string }[];
+    if (labels.some((l) => parseScaleBarcode(l.barcode) !== null)) throw conflict('barcode_scale_label');
+  }
+}
+
 function assertItem(db: Db, input: ItemInput, id: string | null): void {
   const errors: { code: string }[] = [];
   if (input.purchasePrice !== undefined && input.purchasePrice !== null && (!isMinorAmount(input.purchasePrice) || input.purchasePrice < 0)) errors.push({ code: 'purchase_price_invalid' });
@@ -253,6 +274,7 @@ function assertItem(db: Db, input: ItemInput, id: string | null): void {
   if (code && db.prepare("SELECT 1 FROM items WHERE code = ? AND id <> COALESCE(?, '')").get(code, id ?? null)) throw conflict('code_exists');
   const barcode = input.barcode?.trim();
   if (barcode && db.prepare("SELECT 1 FROM items WHERE barcode = ? AND id <> COALESCE(?, '')").get(barcode, id ?? null)) throw conflict('barcode_exists');
+  if (barcode) assertNoScaleClash(db, barcode, input.unit, id);
   if (input.unit === 'service' && input.units?.length) throw invalid([{ code: 'unit_invalid' }]);
   assertItemCategory(db, input.categoryId, id);
   assertItemBrand(db, input.brandId, id);
@@ -397,10 +419,11 @@ export function itemMoves(db: Db, itemId: string, warehouses: WarehouseFilter = 
   getItem(db, itemId);
   const [w, wp] = whereWarehouse('m.warehouse_id', warehouses);
   const rows = db.prepare(`SELECT m.id, m.date, m.qty_milli, m.value, m.source_type, m.source_id, m.warehouse_id, w.code AS warehouse_code,
-                                  COALESCE(i.number, d.number) AS number
+                                  COALESCE(i.number, d.number, a.number) AS number
                            FROM stock_moves m JOIN warehouses w ON w.id = m.warehouse_id
                            LEFT JOIN invoices i ON i.id = m.source_id
                            LEFT JOIN stock_docs d ON d.id = m.source_id
+                           LEFT JOIN stock_adjustments a ON a.id = m.source_id
                            WHERE m.item_id = ?${w} ORDER BY m.date, m.id`).all(itemId, ...wp) as
     { id: number; date: string; qty_milli: number; value: number; source_type: string; source_id: string | null; warehouse_id: string; warehouse_code: string; number: string | null }[];
   const running = new Map<string, number>();

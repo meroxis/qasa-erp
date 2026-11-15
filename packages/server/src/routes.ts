@@ -590,7 +590,12 @@ export function apiRoutes(db: Db, options: { demo?: boolean; extensions?: readon
     const warehouses = warehousesOfUser(req);
     return { ...getItem(db, id, warehouses), stock: itemStock(db, id, warehouses), moves: itemMoves(db, id, warehouses) };
   });
-  app.post('/api/items', async (req, reply) => reply.status(201).send(createItem(db, withoutUndefined(parse(itemSchema, req.body)), userOf(req))));
+  // the quick add in an item picker (an invoice, a quotation, an order, the till) sends a key: a try whose answer was
+  // lost and is sent again makes the item once (as a customer added from the customer box)
+  app.post('/api/items', async (req, reply) => {
+    const body = withoutUndefined(parse(itemSchema, req.body));
+    return reply.status(201).send(once(req, reply, 'POST /api/items', () => createItem(db, body, userOf(req)), (id) => getItem(db, id, warehousesOfUser(req))));
+  });
   app.put('/api/items/:id', async (req) => {
     const { id } = parse(idParam, req.params);
     updateItem(db, id, withoutUndefined(parse(itemSchema, req.body)), userOf(req));
