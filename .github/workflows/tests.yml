@@ -5,6 +5,10 @@ on:
     branches: [main]
   pull_request:
 
+# the tests only read the repository
+permissions:
+  contents: read
+
 jobs:
   tests:
     runs-on: ubuntu-latest
@@ -24,3 +28,28 @@ jobs:
       - run: npm run typecheck
       - run: npm test
       - run: npm run build:demo -w @qasa/web
+
+  # The phone app (apps/mobile) is not in the workspace above: its own packages, its type check and its tests (the
+  # protocol client, the outbox, the PIN rule). Nothing is built for a phone here.
+  phone:
+    runs-on: ubuntu-latest
+    name: Phone app
+    defaults:
+      run:
+        working-directory: apps/mobile
+
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: apps/mobile/package-lock.json
+
+      # exactly as locked, with no install scripts: none is needed to type-check and test the app's code
+      - run: npm ci --ignore-scripts
+      - run: npm run typecheck
+      - run: npm test

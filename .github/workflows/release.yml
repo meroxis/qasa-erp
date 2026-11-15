@@ -17,8 +17,9 @@ on:
 # Two jobs. "windows" runs every build and test tool (npm packages, Rust crates, electron-builder) and can only read:
 # it never holds a token that writes releases, so a tool gone bad can't replace a published installer or update file.
 # "publish" runs none of this repository's code and no npm package: it checks the files the build made against the
-# checksums the build wrote, and puts them on the GitHub release. It runs in the "release" environment: give that
-# environment a required reviewer (Settings → Environments) so a person approves each release before it goes out.
+# checksums the build wrote, and puts them on the GitHub release. It runs in the "release" environment, which has no
+# required reviewer (the owner's choice): nothing waits for an approval, so pushing the tag is the decision to release,
+# and the release goes out to every copy that updates itself as soon as the build and its tests pass.
 permissions:
   contents: read
 
@@ -53,6 +54,9 @@ jobs:
           node node_modules/esbuild/install.js
           # (its script copies vendor/7z-<arch>.exe relative to the working folder, so it runs inside the package)
           (cd node_modules/electron-winstaller && node script/select-7z-arch.js)
+          # a known high or critical hole in a package the app ships stops the release, as for Pro below (the build
+          # tools are left out: none of them is in the installer)
+          npm audit --omit=dev --audit-level=high
 
       # Official builds include the Pro module from the private repository (read-only deploy key), at the tag of the same
       # name as this app tag (push tag vX.Y.Z on qasa-erp-pro first). Never its default branch: that would build
@@ -118,6 +122,38 @@ jobs:
         run: echo "version=$(node -p "require('./apps/desktop/package.json').version")" >> "$GITHUB_OUTPUT"
 
       - run: npm run typecheck
+
+      # The phone app's own packages, exactly as locked, with no install scripts. Two checks below use the phone app's
+      # code (apps/mobile/src: its link, its API calls and its outbox): the Pro type check follows
+      # pro/src/phone/phone-relay.test.ts into it, and that test runs the phone through Qasa Relay to the office with it
+      # (skipped, not failed, without these packages). Nothing of the phone app is built or shipped here.
+      - name: Phone app dependencies
+        shell: bash
+        run: npm ci --prefix apps/mobile --ignore-scripts
+
+      # The Pro module is not in the workspace type check above (the public build uses its stand-in, pro-none.ts).
+      - name: Pro type check
+        run: npx tsc -p pro --noEmit
+
+      # PHP with openssl and sodium, for the tests of the PHP client and the WooCommerce plugin through the relay
+      # (pro/src/webapi/php-relay.test.ts). Without them those tests are skipped, not failed, so the next step stops the
+      # run instead. A third-party action in the job that builds the installer: pinned to the commit of its release.
+      - name: PHP
+        uses: shivammathur/setup-php@eb7c497e18156a6bbabfef1d3a82760b9eda3962 # 2.40.0
+        with:
+          php-version: '8.4'
+          extensions: openssl, sodium
+          coverage: none
+          tools: none
+        env:
+          fail-fast: true
+
+      - name: PHP has openssl and sodium
+        shell: bash
+        run: |
+          php -r 'exit(extension_loaded("openssl") && extension_loaded("sodium") ? 0 : 1);' \
+            || { echo "PHP has no openssl or no sodium: the PHP client tests would be skipped"; exit 1; }
+
       - run: npm test
 
       # The installer, its update file (latest.yml, or beta.yml for a beta) and its block map, built here and published

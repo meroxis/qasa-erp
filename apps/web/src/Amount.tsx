@@ -228,6 +228,17 @@ export function OwedTotal({ owed, book, date, inline = false }: { owed: Money2 |
   return owed ? <Amount value={owed} book={book} date={date} inline={inline} /> : <>{i18n.money(book, 'IQD')}</>;
 }
 
+/**
+ * A document's own amount (an invoice's, a voucher's, a quotation's or a purchase order's total), on its page or in a
+ * list: a dinar amount as the company chose to see amounts (Amount, at the rate of the document's `date`); a dollar
+ * amount as it is (the document gives its dinars at its own rate). Nothing for an amount the server did not send.
+ */
+export function DocAmount({ value, currency, date, inline = false }: { value: number | undefined; currency: CurrencyCode; date?: string | undefined; inline?: boolean }) {
+  const i18n = useI18n();
+  if (typeof value !== 'number') return null;
+  return currency === 'IQD' ? <Amount value={value} date={date} inline={inline} /> : <>{i18n.money(value, currency)}</>;
+}
+
 /** The text of an amount as the company chose to see it, for messages and copies: "1,250,000 IQD (≈ $954.20)". */
 export function useAmountText(): AmountText {
   const i18n = useI18n();
