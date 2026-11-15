@@ -239,7 +239,7 @@ export function toggleFavourite(user: string, key: string): void {
 export const navCollapsed = (): boolean => read('qasa.nav.collapsed') === '1';
 export const setNavCollapsed = (v: boolean) => write('qasa.nav.collapsed', v ? '1' : '0');
 
-/** The group that is open the first time, beside the current page's own: the one most people work in. */
+/** The group that is open the first time on a page in no group: the one most people work in. */
 export const FIRST_OPEN_GROUP: Key = 'gSales';
 
 const openKey = (user: string) => `qasa.nav.open.${user || 'owner'}`;
@@ -259,18 +259,37 @@ export function setOpenGroups(user: string, groups: readonly string[]): void {
 }
 
 /**
- * The groups to show open: the remembered ones (the first time: Sales), and always the current page's own group, so
- * opening a page opens its group. Several can be open at once.
+ * The group to show open: one at a time, so the menu stays short. A page opens its own group and the others close.
+ * On a page in no group: the one the person left open (of the several 1.5.0 could keep open, the last), none when they
+ * closed it, and Sales the first time.
  */
 export function openGroupsWith(remembered: readonly string[] | null, current: string | null): string[] {
-  const open = remembered ? [...remembered] : [FIRST_OPEN_GROUP];
-  if (current && !open.includes(current)) open.push(current);
-  return open;
+  if (current) return [current];
+  return remembered ? remembered.slice(-1) : [FIRST_OPEN_GROUP];
 }
 
-/** Opens a closed group or closes an open one; the others stay as they are. */
+/** Opening a group closes the others; closing the open one leaves none open. */
 export function toggledGroup(open: readonly string[], group: string): string[] {
-  return open.includes(group) ? open.filter((g) => g !== group) : [...open, group];
+  return open.includes(group) ? open.filter((g) => g !== group) : [group];
+}
+
+/** How long a group opened by a click glows (App.tsx; styles.css: .just-opened, as long). */
+export const GROUP_GLOW_MS = 1800;
+
+/**
+ * Where the menu's list scrolls to so a group just opened shows: just enough to show its heading and its pages, and
+ * its heading at the top when the group is taller than the list. In px down the list: `view` is the part shown (from
+ * `top`, `height` high, of `length` in all), `group` where the group lies, `pad` the room kept at both ends (the
+ * list's scroll-padding). Null when the group shows already or the list cannot move.
+ */
+export function revealTop(view: { top: number; height: number; length: number }, group: { top: number; height: number }, pad = 0): number | null {
+  const end = group.top + group.height;
+  let to: number;
+  if (group.height + 2 * pad > view.height || group.top - pad < view.top) to = group.top - pad;
+  else if (end + pad > view.top + view.height) to = end + pad - view.height;
+  else return null;
+  to = Math.round(Math.min(Math.max(to, 0), Math.max(view.length - view.height, 0)));
+  return Math.abs(to - view.top) < 1 ? null : to;
 }
 
 /** Pages and records opened from the search, newest first. */

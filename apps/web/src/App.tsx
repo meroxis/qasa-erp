@@ -11,7 +11,7 @@ import { SupportButton } from './industry/SupportButton.tsx';
 import { BranchSwitcher } from './industry/BranchSwitcher.tsx';
 import { BRANCH_EVENT } from './industry/branches-api.ts';
 import { BUSINESS_FEATURE } from '@qasa/core';
-import { ADMIN_PAGES, canSee, COMPANY_BOOK_PAGES, navLabel, pageOpen, NO_BOOKS_PAGES, FAVOURITES_EVENT, seesCompanyBooks, favourites, findPage, NAV, navCollapsed, openGroups, openGroupsWith, setNavCollapsed, setOpenGroups, toggledGroup, type NavItem, type NavViewer } from './nav.ts';
+import { ADMIN_PAGES, canSee, COMPANY_BOOK_PAGES, navLabel, pageOpen, NO_BOOKS_PAGES, FAVOURITES_EVENT, GROUP_GLOW_MS, seesCompanyBooks, favourites, findPage, NAV, navCollapsed, openGroups, openGroupsWith, revealTop, setNavCollapsed, setOpenGroups, toggledGroup, type NavItem, type NavViewer } from './nav.ts';
 import { CommandPalette } from './industry/CommandPalette.tsx';
 import { Tour, TOUR_EVENT, tourDone } from './industry/Tour.tsx';
 import { UpdateBanner } from './industry/UpdateBanner.tsx';
@@ -158,7 +158,7 @@ export function App() {
   // 1.4: on this PC, or on the office PC this one is connected to: the status line and the backup hints say which
   const dataPlace = useDataPlace();
   const route = useRoute();
-  // the menu: shrunk to icons (remembered on this PC), which groups are open (several at once, remembered per person), pinned pages
+  // the menu: shrunk to icons (remembered on this PC), which group is open (one at a time, remembered per person), pinned pages
   const [collapsed, setCollapsed] = useState(navCollapsed);
   // a narrow window or a phone (the website demo): the menu is the icon rail, whatever was chosen on a wide window
   const narrow = useNarrow();
@@ -700,32 +700,55 @@ export function App() {
 
   const shownItems = (items: NavItem[]) => items.filter((item) => canSee(item, viewer));
   const activeGroup = NAV.find((g) => shownItems(g.items).some(matches))?.group ?? null;
-  // The menu's groups: several can stay open, and which ones is remembered for this person on this PC. A new page
-  // opens its own group beside them (the first time: its group and Sales). Before paint, so nothing flickers.
+  // A group opened by a click comes into view and glows for a moment (light blue, with the orange mark beside its
+  // heading: styles.css, .just-opened), so a group near the end of a long list never opens out of sight. Not when a
+  // page opens its group. Each glow stops the timer of the one before, so an older timer never clears a newer glow.
+  const [justOpened, setJustOpened] = useState<string | null>(null);
+  const glowTimer = useRef<number | undefined>(undefined);
+  useEffect(() => () => window.clearTimeout(glowTimer.current), []);
+  // The menu's groups: one open at a time, so the list stays short, and which one is remembered for this person on
+  // this PC. A new page opens its own group and closes the others (the first time on a page in no group: Sales).
+  // Before paint, so nothing flickers.
   const signedIn = !!me?.user;
   useLayoutEffect(() => {
     if (!signedIn) return;
     const remembered = openGroups(favUser);
     const open = openGroupsWith(remembered, activeGroup);
     setOpenNav(open);
-    // once this person has opened or closed a group by hand, the group a page opened stays open too
-    if (remembered && open.length !== remembered.length) setOpenGroups(favUser, open);
+    // a group the page closed stops glowing (it never glows closed, nor again when a page opens it later)
+    setJustOpened((g) => (g && !open.includes(g) ? null : g));
+    // once this person has opened or closed a group by hand, the one that shows is remembered: the group a page
+    // opened, or the last of the several that 1.5.0 kept open
+    if (remembered && open.join() !== remembered.join()) setOpenGroups(favUser, open);
   }, [signedIn, favUser, activeGroup, routePage]);
   // the current page comes into view in the pane when a page opens (the list scrolls); not on every change, so
-  // opening or closing another group never moves the list from where the person scrolled it
-  const activeShown = railed || (!!activeGroup && openNav.includes(activeGroup));
+  // opening or closing another group never moves the list from where the person scrolled it, and a click on a
+  // heading moves it only to bring that group into view (toggleGroup), never back to the page's row
+  const pageRowShown = (open: readonly string[]) => railed || (!!activeGroup && open.includes(activeGroup));
+  const activeShown = pageRowShown(openNav);
   const navKey = pageNav?.key ?? '';
+  const headingClicked = useRef(false);
   useEffect(() => {
+    if (headingClicked.current) { headingClicked.current = false; return; }
     navRef.current?.querySelector<HTMLElement>('.nav-item.active')?.scrollIntoView({ block: 'nearest' });
   }, [routeKey, navKey, activeShown]);
   // closing a group only folds it: the page stays where it is
   const openNavNow = useRef(openNav);
   openNavNow.current = openNav;
   const toggleGroup = (group: string) => {
+    const opening = !openNavNow.current.includes(group);
     const next = toggledGroup(openNavNow.current, group);
     openNavNow.current = next;
     setOpenNav(next);
     setOpenGroups(favUser, next);
+    // when this click shows or hides the page's own row, the effect above runs and leaves the list where this puts it
+    headingClicked.current = pageRowShown(next) !== activeShown;
+    window.clearTimeout(glowTimer.current);
+    setJustOpened(opening ? group : null);
+    if (!opening) return;
+    glowTimer.current = window.setTimeout(() => setJustOpened((g) => (g === group ? null : g)), GROUP_GLOW_MS);
+    // two frames: the other groups have closed and the list has its new length
+    requestAnimationFrame(() => requestAnimationFrame(() => revealGroup(navRef.current, group)));
   };
 
   if (me?.signInRequired && !me.user) {
@@ -811,7 +834,7 @@ export function App() {
                   const open = railed || openNav.includes(g.group);
                   const id = `nav-${g.group}`;
                   return (
-                    <div key={g.group} className={'nav-section' + (open ? ' open' : '')}>
+                    <div key={g.group} data-group={g.group} className={'nav-section' + (open ? ' open' : '') + (!railed && justOpened === g.group ? ' just-opened' : '')}>
                       {!railed && (
                         <button type="button" className="nav-group nav-group-btn" aria-expanded={open} aria-controls={id} title={t(g.group)} onClick={() => toggleGroup(g.group)}>
                           <Icon name={g.icon} />
@@ -906,6 +929,22 @@ export function App() {
       </DataContext.Provider>
     </I18nContext.Provider>
   );
+}
+
+/**
+ * Moves the menu's list (only the list, never the window) so the group just opened shows: its heading and its pages
+ * (nav.ts: revealTop). Smoothly, unless the person asked for less motion (Windows: animation effects off): then at once.
+ */
+function revealGroup(list: HTMLElement | null, group: string) {
+  const section = [...(list?.querySelectorAll<HTMLElement>('.nav-section[data-group]') ?? [])].find((s) => s.dataset.group === group);
+  if (!list || !section) return;
+  const shown = list.getBoundingClientRect();
+  const at = section.getBoundingClientRect();
+  const pad = Number.parseFloat(getComputedStyle(list).scrollPaddingTop) || 0;
+  const top = revealTop({ top: list.scrollTop, height: list.clientHeight, length: list.scrollHeight }, { top: at.top - shown.top - list.clientTop + list.scrollTop, height: at.height }, pad);
+  if (top === null) return;
+  const still = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false;
+  list.scrollTo({ top, behavior: still ? 'auto' : 'smooth' });
 }
 
 /** True in a window no wider than a phone or a small tablet (760 px): the website demo on a phone. */
