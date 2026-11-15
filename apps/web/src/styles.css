@@ -1088,6 +1088,24 @@ a.plan-chip:hover { text-decoration: underline; }
 html[dir='rtl'] .nav-group-btn[aria-expanded='false'] > svg.nav-chevron { transform: rotate(90deg); }
 .nav-group-btn:focus-visible { outline: 2px solid var(--focus-outer); outline-offset: -2px; }
 .nav-items { display: flex; flex-direction: column; gap: 1px; }
+/* a group opened by a click glows light blue for a moment, with the orange mark beside its heading, then fades back
+   (App.tsx: just-opened, for nav.ts GROUP_GLOW_MS); with less motion asked for, a still tint for that moment */
+.nav-section.just-opened {
+  --nav-glow: color-mix(in srgb, var(--accent) 13%, transparent);
+  border-radius: var(--r-control); animation: nav-just-opened 1.8s var(--ease) both;
+}
+.nav-section.just-opened > .nav-group-btn { position: relative; }
+.nav-section.just-opened > .nav-group-btn::before {
+  content: ''; position: absolute; inset-inline-start: 0; inset-block: 8px; inline-size: 3px; border-radius: 2px; background: var(--indicator);
+  animation: nav-just-opened-mark 1.8s var(--ease) both;
+}
+@keyframes nav-just-opened { 0%, 55% { background-color: var(--nav-glow); } 100% { background-color: transparent; } }
+@keyframes nav-just-opened-mark { 0%, 70% { opacity: 1; } 100% { opacity: 0; } }
+@media (prefers-reduced-motion: reduce) {
+  .nav-section.just-opened { animation: none; background-color: var(--nav-glow); }
+  .nav-section.just-opened > .nav-group-btn::before { animation: none; }
+}
+@media (forced-colors: active) { .nav-section.just-opened > .nav-group-btn::before { forced-color-adjust: none; background: Highlight; } }
 
 /* the narrow, icon-only menu */
 .sidebar { transition: inline-size var(--dur) var(--ease); }
