@@ -96,7 +96,7 @@ it("opens the download page in the app's language: Arabic at /phone/, English at
   }
 });
 
-it('offers the phone app 1.0.2 (no usage reports to Google, says its version), signed with the Qasa release key', () => {
+it('offers the phone app 1.0.2 (without ML Kit\'s own usage reports to Google, says its version), signed with the Qasa release key', () => {
   expect(PHONE_APP.version).toBe('1.0.2');
   expect(PHONE_APP.apkSha256).toBe('51386e6e007acbdcd668190ad676e1fbf7036e434f5fce4a7ea1f233fb0a6578');
   // neither 1.0.0 (built before the required PIN) nor 1.0.1 (it still had ML Kit's usage reports to Google)

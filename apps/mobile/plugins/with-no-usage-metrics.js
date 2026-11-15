@@ -1,9 +1,10 @@
-// Keeps Google's usage reports out of the app (1.0.2).
+// Keeps ML Kit's own usage reports to Google out of the app (1.0.2).
 //
 // Barcode scanning (expo-camera's onBarcodeScanned) runs Google ML Kit on the phone itself: the barcode model is bundled
-// in the app and nothing is needed from Google to read a code. ML Kit also reports how its APIs are used to Google
-// (firebaselogging.googleapis.com, through Google's data transport library), and the app promises that nothing goes to
-// anyone but the customer's own office. Applied when the native project is made (npx expo prebuild, eas build), this:
+// in the app and nothing is needed from Google to read a code, and the codes never go to Google. ML Kit also reports how
+// its APIs are used straight to Google (firebaselogging.googleapis.com, through Google's data transport library), which
+// the app has no need of. (Its brief scanner statistics through Google Play services' own telemetry stay: README.md,
+// "Scanning and Google".) Applied when the native project is made (npx expo prebuild, eas build), this:
 //   - leaves out the transport's Google backend (com.google.android.datatransport:transport-backend-cct, the code that
 //     holds the address and sends) and puts in its place a destination of the app's own
 //     (plugins/no-usage-metrics/CCTDestination.java) that names no backend there is and holds no address: the transport

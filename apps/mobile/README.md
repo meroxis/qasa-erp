@@ -12,9 +12,9 @@ Expo (SDK 58) and React Native, TypeScript. Android first; iOS builds from the s
 PC on Qasa ERP 1.4.2 or later with the Pro module (the first release whose Settings → Office network → Phones (Qasa
 app) pairs a phone; the routes it calls and the rules below are those of 1.4.1). Version 1.0.2 is offered as a signed
 APK on https://qasaerp.com/phone/ (Google Play later), and the desktop from 1.4.3 offers it too (`PHONE_APP` in
-apps/web/src/pages/Settings.tsx). 1.0.2 sends Google nothing (see "No usage reports to Google") and tells the office
-its version; 1.0.1 keeps working (the PC lists it as "1.0.1 or older", with a note that a newer one is out); 1.0.0 was
-built before the required PIN and is not offered.
+apps/web/src/pages/Settings.tsx). 1.0.2 no longer sends ML Kit's own usage reports to Google (the codes scanned never
+go to Google; see "Scanning and Google") and tells the office its version; 1.0.1 keeps working (the PC lists it as
+"1.0.1 or older", with a note that a newer one is out); 1.0.0 was built before the required PIN and is not offered.
 
 ## What it does
 
@@ -88,22 +88,31 @@ there, then run `npm run sync-protocol`; `test/link.test.ts` fails when the two 
   works as an admin, as the owner (an office without sign-in) or as a user who sees the figures (`lockRequired` in
   `src/roles.ts`, from 1.0.1); for other users it is optional. It locks after the time chosen in the background (at once, 1 or 5 minutes). Wrong PINs
   make the next try wait longer (30 s, doubling, up to 15 minutes); "Forgot the PIN?" unpairs and wipes the phone.
-- The app writes nothing to the log (a test checks), stores nothing in plain storage, and talks only to the office and
-  the relay.
+- The app writes nothing to the log (a test checks), stores nothing in plain storage, and connects only to the office
+  and the relay (the scanner's brief usage statistics go to Google Play services on the phone: see "Scanning and
+  Google").
 - Unpairing tells the office (it removes the phone from Settings → Office network → Phones) and wipes the office, the
   outbox, the lock and the phone's key; pairing again makes a new key.
 
-### No usage reports to Google (1.0.2)
+### Scanning and Google (1.0.2)
 
 Scanning uses Google ML Kit's barcode scanner, bundled in the app (its models and native library are in the APK and
-run on the phone; nothing is needed from Google to read a code). ML Kit also reports how it is used to Google
-(firebaselogging.googleapis.com) through Google's data transport library; 1.0.1 shipped that sender.
-`plugins/with-no-usage-metrics.js` keeps it out of every build since 1.0.2: Google's sender
-(`transport-backend-cct`) is left out and the app's own `plugins/no-usage-metrics/CCTDestination.java` takes its place
-(no backend, no address: the reports are dropped on the phone before they are stored), the transport's scheduler
-service, alarm receiver and backend list are taken out of the manifest, and Google's ready-made code scanner and
-document scanner (which the app never opens) are left out with the "barcode_ui" module Play services would download
-for them. `scripts/check-release-apk.mjs` checks each APK for all of it (see "Build an APK on this PC").
+run on the phone; nothing is needed from Google to read a code). **The codes scanned never go to Google:** ML Kit reads
+them on the phone, and the app sends them only to the office.
+
+- **ML Kit's own usage reports are removed from 1.0.2.** ML Kit also reports how it is used straight to Google
+  (firebaselogging.googleapis.com) through Google's data transport library; 1.0.1 shipped that sender.
+  `plugins/with-no-usage-metrics.js` keeps it out of every build since 1.0.2: Google's sender (`transport-backend-cct`)
+  is left out and the app's own `plugins/no-usage-metrics/CCTDestination.java` takes its place (no backend, no
+  address: the reports are dropped on the phone before they are stored), the transport's scheduler service, alarm
+  receiver and backend list are taken out of the manifest, and Google's ready-made code scanner and document scanner
+  (which the app never opens) are left out with the "barcode_ui" module Play services would download for them.
+  `scripts/check-release-apk.mjs` checks each APK for all of it (see "Build an APK on this PC").
+- **Google Play services may still receive brief scanner usage statistics.** After each detection, ML Kit's barcode
+  client also logs brief usage statistics through Google Play services' own client telemetry (the API "mlkit:vision"):
+  which API ran, its result, and when it started and ended; never the scanned code. Google Play services, outside the
+  app, may send them on to Google. 1.0.2 does not remove them: the app has no analytics of its own, but these brief
+  statistics about scanning may still reach Google.
 
 ## Design
 
@@ -177,9 +186,10 @@ name (`QASA_ANDROID_DEBUG_SIGNED=1`, signed with the debug key; never hand it ou
 newest build-tools (it needs `JAVA_HOME` and `ANDROID_HOME`) and refuses the APK when the signature does not verify,
 when it is not signed by exactly one certificate, the Qasa release key's (`RELEASE_CERT_SHA256` in the script, the same
 as `PHONE_APP.certSha256` in apps/web/src/pages/Settings.tsx: a test keeps them equal), when its version is not
-app.json's, or when anything of Google's usage reporting or the two unused scanners is in its manifest, its code or its
-files. It prints the APK's SHA-256 and size (for `PHONE_APP` and the download page), its SDK levels and permissions.
-It reads only the APK: never the key or its password.
+app.json's, or when anything of ML Kit's own usage reports (the sender 1.0.1 had) or the two unused scanners is in its
+manifest, its code or its files (the scanner statistics ML Kit gives Google Play services stay, and are not checked:
+see "Scanning and Google"). It prints the APK's SHA-256 and size (for `PHONE_APP` and the download page), its SDK
+levels and permissions. It reads only the APK: never the key or its password.
 
 Raise `version` in app.json (and `versionCode` with it: Android refuses an update with the same or a lower
 versionCode; prebuild writes it from `android.versionCode` in app.json, 1 when it is not set) for each build that goes
@@ -229,10 +239,13 @@ Or with a USB cable and USB debugging on: `adb install -r qasa-erp-mobile-<versi
 
 Play Store listing notes:
 - Category: Business. Languages: Arabic (default for Iraq), English, Kurdish.
-- Data safety: the app sends data only to the customer's own Qasa PC, on their network or through Qasa Relay,
-  encrypted end to end (the relay can't read it); nothing to Meroxis or third parties; no ads, no analytics (true from
-  1.0.2: 1.0.1 still had ML Kit's usage reports to Google, see "No usage reports to Google"). The camera is used for
-  scanning and item photos only; fingerprint or face only to unlock, handled by the phone.
+- Data safety: the app sends the user's data only to the customer's own Qasa PC, on their network or through Qasa
+  Relay, encrypted end to end (the relay can't read it); nothing to Meroxis; no ads and no analytics of our own. The
+  codes scanned never go to Google. ML Kit's own usage reports to Google are removed from 1.0.2 (1.0.1 had them), but
+  Google Play services may still receive brief scanner usage statistics from ML Kit (which API ran, its result and
+  timings, never the code; see "Scanning and Google"): declare those as Google's guidance for ML Kit says when the
+  form is filled in (docs/store-compliance.md). The camera is used for scanning and item photos only; fingerprint or
+  face only to unlock, handled by the phone.
 - Privacy policy URL: https://qasaerp.com/privacy/
 - Screenshots: pairing, home with the day's figures, scanning, an item card, the sale, a statement (phone, 1080×1920).
 

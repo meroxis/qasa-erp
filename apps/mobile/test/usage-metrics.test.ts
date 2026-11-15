@@ -9,9 +9,10 @@ import { FORBIDDEN_FILES, FORBIDDEN_IN_CODE, FORBIDDEN_IN_MANIFEST, forbiddenCod
 import { fakeOffice } from './fake-office';
 
 /**
- * 1.0.2: the app sends Google nothing. Barcode scanning runs Google ML Kit on the phone, which also reports how it is
- * used (firebaselogging.googleapis.com) through Google's data transport; plugins/with-no-usage-metrics.js leaves that
- * sender out of the build and scripts/check-release-apk.mjs checks a built APK for it.
+ * 1.0.2: ML Kit's own usage reports to Google are gone (the codes scanned never go to Google). Barcode scanning runs
+ * Google ML Kit on the phone, which also reports how it is used (firebaselogging.googleapis.com) through Google's data
+ * transport; plugins/with-no-usage-metrics.js leaves that sender out of the build and scripts/check-release-apk.mjs
+ * checks a built APK for it. (ML Kit's brief scanner statistics through Google Play services stay: README.md.)
  */
 type Manifest = { manifest: { $?: Record<string, string>; application: Record<string, { $: Record<string, string> }[] | undefined>[] } };
 const plugin = createRequire(__filename)('../plugins/with-no-usage-metrics.js') as {
@@ -32,7 +33,7 @@ dependencies {
 }
 `;
 
-describe('no usage reports to Google', () => {
+describe('no usage reports of ML Kit\'s own to Google', () => {
   it('is applied by the app\'s config, after expo-camera (whose ML Kit it concerns)', () => {
     const names = app.expo.plugins.map((p) => (Array.isArray(p) ? p[0] : p));
     expect(names).toContain('./plugins/with-no-usage-metrics.js');

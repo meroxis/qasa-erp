@@ -4,7 +4,9 @@
 //     apps/web/src/pages/Settings.tsx, RELEASE_CERT_SHA256 here; a test keeps the two the same). An APK signed with any
 //     other key (React Native's public debug key, a new key) is refused here: Android would not update the app with it;
 //   - it is the version app.json says;
-//   - none of Google's usage reporting is in it (plugins/with-no-usage-metrics.js): not in the manifest, not in the code;
+//   - none of ML Kit's own usage reporting to Google is in it (plugins/with-no-usage-metrics.js): not in the manifest,
+//     not in the code (the brief scanner statistics ML Kit gives Google Play services are not checked: README.md,
+//     "Scanning and Google");
 // then prints what the download page and PHONE_APP need: the APK's SHA-256 and size, its SDK levels and permissions.
 //   node scripts/check-release-apk.mjs <file.apk>
 // Needs Java (JAVA_HOME, or java on the PATH) and an Android SDK (ANDROID_HOME or ANDROID_SDK_ROOT) with build-tools
@@ -193,5 +195,5 @@ if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1]
     for (const p of result.problems) console.error(`NOT OK: ${p}`);
     process.exit(1);
   }
-  console.log('OK: signed with the Qasa release key, and no usage reporting to Google in it');
+  console.log('OK: signed with the Qasa release key, and none of ML Kit\'s own usage reporting to Google in it');
 }
