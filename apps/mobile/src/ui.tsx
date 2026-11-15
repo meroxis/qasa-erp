@@ -44,9 +44,10 @@ export interface AppCtx {
   outbox: OutboxItem[];
   /**
    * A change for the office: kept in the outbox (encrypted) first, then sent with its own key. 'sent': the office has
-   * it; 'queued': it goes by itself once connected. A refusal from the office is thrown (and nothing is kept).
+   * it; 'posted': the office has it and it is in the books already (a receipt from someone who may approve vouchers);
+   * 'queued': it goes by itself once connected. A refusal from the office is thrown (and nothing is kept).
    */
-  queue(kind: OutboxKind, body: unknown, summary: OutboxSummary, target?: string): Promise<'sent' | 'queued'>;
+  queue(kind: OutboxKind, body: unknown, summary: OutboxSummary, target?: string): Promise<'sent' | 'posted' | 'queued'>;
   sendOutbox(): void;
   retryOutbox(id: string): Promise<void>;
   deleteOutbox(id: string): Promise<void>;

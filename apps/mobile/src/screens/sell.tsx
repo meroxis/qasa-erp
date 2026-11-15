@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { View } from 'react-native';
 import { today, type Settings } from '../api';
-import { cartCurrency, lineAmount, linesIn, orderBody, saleBody, total } from '../documents';
+import { cartCurrency, lineAmount, linesIn, orderBody, paymentReady, saleBody, total, type Payment } from '../documents';
 import { money, nameIn } from '../i18n';
 import { useLists } from '../lists';
 import { space } from '../theme';
@@ -11,7 +11,8 @@ import { useLoad } from '../use-load';
 /**
  * The sale being made: its lines with their quantities, the customer (or a walk-in customer paying cash), the
  * warehouse, and how it goes to the office — a draft invoice the accountant posts, or an order (a quote) the office
- * turns into an invoice on delivery.
+ * turns into an invoice on delivery. A sale is paid one way as a whole, as on the desktop's till and invoice (1.4):
+ * cash, or on credit to a chosen customer.
  */
 export function CartScreen() {
   const { t, lang } = useLook();
@@ -19,6 +20,7 @@ export function CartScreen() {
   const lists = useLists();
   const settings = useLoad<Settings | null>(() => api.settings().catch(() => null), []);
   const [mode, setMode] = useState<'sale' | 'order'>(can('sale') ? 'sale' : 'order');
+  const [payment, setPayment] = useState<Payment>('cash');
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<{ kind: 'ok' | 'bad' | 'warn'; text: string } | null>(null);
   const currency = cartCurrency(lists.cart);
@@ -32,6 +34,7 @@ export function CartScreen() {
     if (!lines.length) return;
     if (mode === 'order' && !customer) { setMessage({ kind: 'warn', text: t('orderNeedsCustomer') }); return; }
     if (mode === 'sale' && !lists.warehouseId) return;
+    if (mode === 'sale' && !paymentReady(payment, customer)) { setMessage({ kind: 'warn', text: t('creditNeedsCustomer') }); return; }
     setBusy(true);
     setMessage(null);
     const date = today();
@@ -41,11 +44,12 @@ export function CartScreen() {
       const result = mode === 'order'
         ? await queue('order', orderBody({ lines, currency, date, customer: customer!, notes, names }), summary)
         : await queue('sale', saleBody({
-          lines, currency, date, warehouseId: lists.warehouseId!, customer, notes,
+          lines, currency, date, warehouseId: lists.warehouseId!, customer, payment, notes,
           cashAccount: settings.data?.postingAccounts.cash ?? '1811', rateX100: settings.data?.defaultRateX100 ?? 142_000
         }), summary);
       lists.setCart(lists.cart.filter((l) => !lines.includes(l)));
       lists.setCustomer(null);
+      setPayment('cash');
       setMessage({ kind: 'ok', text: result === 'queued' ? t('queuedOne') : mode === 'order' ? t('orderSent') : t('draftSent') });
     } catch (e) {
       setMessage({ kind: 'bad', text: explain(e) });
@@ -75,11 +79,15 @@ export function CartScreen() {
       {!lists.cart.length ? <EmptyState icon="cart" title={t('cart')} text={t('cartEmpty')} /> : (
         <>
           {modes.length > 1 && <Segmented<'sale' | 'order'> label={t('cart')} options={modes} value={mode} onChange={setMode} />}
+          {mode === 'sale' && (
+            <Segmented<Payment> label={t('payment')} value={payment} onChange={(p) => { setPayment(p); setMessage(null); }}
+              options={[{ value: 'cash', label: t('payCash') }, { value: 'credit', label: t('payCredit') }]} />
+          )}
           <Section title={t('customer')}>
             <Card onPress={() => go({ name: 'customers', pick: 'sale' })} label={`${t('customer')}: ${customer?.name ?? t('walkIn')}`}>
               <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: space.m }}>
                 <View style={{ flex: 1 }}>
-                  <Txt v="bodyStrong">{customer?.name ?? (mode === 'order' ? t('chooseCustomer') : t('walkIn'))}</Txt>
+                  <Txt v="bodyStrong">{customer?.name ?? (mode === 'order' || payment === 'credit' ? t('chooseCustomer') : t('walkIn'))}</Txt>
                   {customer?.phone ? <Txt v="caption" tone="ink3">{customer.phone}</Txt> : null}
                 </View>
                 <Txt v="label" tone="accentText">{t('change')}</Txt>

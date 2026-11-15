@@ -193,7 +193,7 @@ export function CollectScreen({ id }: { id: string }) {
       const result = await queue('receipt', body, { title: customer.name, amount: minor, currency });
       setAmount('');
       setNote('');
-      setMessage({ kind: 'ok', text: result === 'queued' ? t('queuedOne') : t('collectSent') });
+      setMessage({ kind: 'ok', text: result === 'queued' ? t('queuedOne') : result === 'posted' ? t('collectPosted') : t('collectSent') });
     } catch (e) {
       setMessage({ kind: 'bad', text: explain(e) });
     } finally {

@@ -1,0 +1,130 @@
+import { beforeEach, expect, it, vi } from 'vitest';
+import type { ReactElement } from 'react';
+import { GetPhoneApp, PHONE_APP, PHONE_APP_READY, PhonesCard } from './Settings.tsx';
+import { ROWS } from './Plans.tsx';
+import { UI_TEXT } from '../i18n/ui.ts';
+import { PHONE_TEXT } from '../i18n/phone.ts';
+import { encodeQr, qrSvgPath } from '../industry/qr.ts';
+
+// 1.4.2 ships the phone app (an Android APK from qasaerp.com/phone/): Settings → Phones offers the download and the
+// pairing, behind the plan rules (Starter, Pro, Business); the plans page no longer marks it "soon".
+const fixture = vi.hoisted(() => ({ states: [] as unknown[], cursor: 0 }));
+vi.mock('react', () => ({
+  useState<T>(initial: T) {
+    const i = fixture.cursor++;
+    if (!(i in fixture.states)) fixture.states[i] = initial;
+    return [fixture.states[i], () => {}];
+  },
+  useEffect() {}, createContext: () => ({}), useContext: () => ({})
+}));
+vi.mock('../components.tsx', () => ({
+  AccountCombo: 'AccountCombo', ErrorBox: 'ErrorBox', Icon: 'Icon', Modal: 'Modal', downloadCsv: () => {}, useToast: () => () => {},
+  useData: () => ({ plan: null }), useBuildHas: () => true
+}));
+vi.mock('../i18n.ts', () => ({ isKey: () => true, useI18n: () => ({ t: (s: string) => s, digitsOf: String, date: String, int: String }) }));
+vi.mock('../router.ts', () => ({ href: (s: string) => s }));
+
+type Node = ReactElement<Record<string, unknown>>;
+function flatten(value: unknown): Node[] {
+  if (Array.isArray(value)) return value.flatMap(flatten);
+  if (!value || typeof value !== 'object' || !('props' in value)) return [];
+  const node = value as Node;
+  return [node, ...flatten(node.props.children)];
+}
+const status = { available: true, listening: true, port: 8789, addresses: [], devices: [], users: [{ id: 'u1', name: 'Raz' }], counts: [], signInRequired: true };
+const render = (ready?: boolean) => {
+  fixture.cursor = 0;
+  return JSON.stringify(flatten(PhonesCard(ready === undefined ? {} : { ready })).map((n) => [n.type, n.props.children ?? '']));
+};
+
+beforeEach(() => { fixture.states = [status]; });
+
+const cardNodes = (ready?: boolean) => {
+  fixture.cursor = 0;
+  return flatten(PhonesCard(ready === undefined ? {} : { ready }));
+};
+
+it('offers the phone app and the pairing in 1.4.2, with no "soon" mark', () => {
+  expect(PHONE_APP_READY).toBe(true);
+  const card = render();
+  for (const shown of ['ph_add', 'ph_actsAs', 'ph_help']) expect(card, shown).toContain(shown);
+  for (const hidden of ['ph_soonNote', '"soon"']) expect(card, hidden).not.toContain(hidden);
+  expect(cardNodes().some((n) => n.type === GetPhoneApp)).toBe(true);
+});
+
+it('offers the download and the pairing only on a plan with the phone app (Starter, Pro, Business)', () => {
+  fixture.states = [{ ...status, available: false }];
+  const card = render();
+  expect(card).toContain('ph_needsPro');
+  expect(card).not.toContain('ph_add');
+  expect(cardNodes().some((n) => n.type === GetPhoneApp)).toBe(false);
+});
+
+it('still says "coming" with no pairing and no download when the flag is off', () => {
+  const card = render(false);
+  expect(card).toContain('ph_soonNote');
+  for (const hidden of ['ph_add', 'ph_help']) expect(card, hidden).not.toContain(hidden);
+  expect(cardNodes(false).some((n) => n.type === GetPhoneApp)).toBe(false);
+});
+
+it('links the download page, as text and as a QR code, with the steps and both fingerprints', () => {
+  expect(PHONE_APP.url).toBe('https://qasaerp.com/phone/');
+  expect(PHONE_APP.apkSha256).toMatch(/^[0-9a-f]{64}$/);
+  expect(PHONE_APP.certSha256).toMatch(/^[0-9a-f]{64}$/);
+  const nodes = flatten(GetPhoneApp());
+  const text = JSON.stringify(nodes.map((n) => [n.props.children ?? '']));
+  for (const key of ['ph_getApp', 'ph_get1', 'ph_get2', 'ph_get3', 'ph_get4', 'ph_check', 'ph_apkSha', 'ph_certSha']) expect(text, key).toContain(key);
+  expect(text).toContain(PHONE_APP.apkSha256);
+  expect(text).toContain(PHONE_APP.certSha256);
+  const link = nodes.find((n) => n.type === 'a');
+  expect(link?.props.href).toBe(PHONE_APP.url);
+  expect(link?.props.rel).toMatch(/noopener/);
+  // the QR code is the download page's address, drawn by the app's own encoder
+  expect(nodes.find((n) => n.type === 'path')?.props.d).toBe(qrSvgPath(encodeQr(PHONE_APP.url, 'M'), 4).path);
+});
+
+it('says how to install the APK in each language, and no longer sends people to Google Play', () => {
+  for (const text of PHONE_TEXT.ph_getApp) expect(text).toContain('Android');
+  expect(PHONE_TEXT.ph_get2[1]).toMatch(/Install unknown apps/);
+  for (const text of PHONE_TEXT.ph_get2) expect(text).toMatch(/Android/);
+  for (const text of PHONE_TEXT.ph_step1) {
+    expect(text).toContain('qasaerp.com/phone');
+    expect(text).not.toMatch(/Google Play/);
+  }
+  // step 2 names the phone app's own button (apps/mobile/src/i18n.ts, "pair")
+  expect(PHONE_TEXT.ph_step2[1]).toContain('"Scan the pairing code"');
+  expect(PHONE_TEXT.ph_get4[1]).toContain('"Add a phone"');
+});
+
+it('lists the phone app on the plans page without "soon", and the tour still does not sell it', () => {
+  for (const key of ['tour_plan_pro', 'tour_proAdds'] as const) {
+    const [ar, en, ku] = UI_TEXT[key];
+    expect(en, key).not.toMatch(/phone/i);
+    expect(ar, key).not.toMatch(/الهاتف|الموبايل/);
+    expect(ku, key).not.toMatch(/مۆبایل/);
+  }
+  expect(ROWS.find((r) => r.label === 'f_phoneApp')?.soon).toBeFalsy();
+});
+
+it('names the plans the phone app is part of as the plan table has them: Starter, Pro and Business', () => {
+  for (const key of ['ph_needsPro', 'err_plan_limit_phoneApp'] as const) {
+    for (const text of PHONE_TEXT[key]) expect(text, key).toMatch(/Starter.*Pro.*Business/);
+  }
+});
+
+it('says in the tour, as on the plans page, that the online edition is coming soon', () => {
+  expect(ROWS.find((r) => r.label === 'f_online')?.soon).toBe(true);
+  const [ar, en, ku] = UI_TEXT.tour_plan_business;
+  expect(en).toMatch(/online edition is coming soon/);
+  expect(ar).toMatch(/النسخة الإلكترونية قادمة قريباً/);
+  expect(ku).toMatch(/وەشانی ئۆنلاین بەم زووانە دێت/);
+  // what ships in 1.0 is still said plainly
+  for (const [text, branches] of [[ar, 'الفروع'], [en, 'branches'], [ku, 'لقەکان']] as const) expect(text).toContain(branches);
+  // so does the line the Pro tour adds about Business
+  const [arAdds, enAdds, kuAdds] = UI_TEXT.tour_businessAdds;
+  // whole sentences: the online edition "is coming soon" (with its verb), as on the plans page
+  expect(enAdds).toBe('Business adds branches and real estate; the online edition is coming soon.');
+  expect(arAdds).toMatch(/؛ والنسخة الإلكترونية قادمة قريباً\.$/);
+  expect(kuAdds).toMatch(/؛ وەشانی ئۆنلاین بەم زووانە دێت\.$/);
+  for (const [text, branches] of [[arAdds, 'الفروع'], [enAdds, 'branches'], [kuAdds, 'لقەکان']] as const) expect(text).toContain(branches);
+});

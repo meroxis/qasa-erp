@@ -18,7 +18,7 @@ export type Feature =
   | 'sale'
   /** an order for a customer, sent as a quote */
   | 'order'
-  /** money received from a customer: a draft receipt voucher */
+  /** money received from a customer: a receipt voucher, a draft or waiting for approval (posted at once for an approver) */
   | 'collect'
   | 'statement'
   /** a count sent to the office as a list (Settings → Phones) */
@@ -48,7 +48,6 @@ export function featuresOf(me: Me | null): Set<Feature> {
   return out;
 }
 
-/** The name the phone shows for who it works as. */
 /**
  * The app lock (a PIN) is required, not offered, for a phone that acts as a user who sees the company's figures or is an
  * admin (FIGURES_ROLES), or as the owner when the office has no sign-in: a lost or taken phone then doesn't open on the
@@ -61,4 +60,5 @@ export function lockRequired(me: Me | null): boolean {
   return me.user.roles.some((r) => FIGURES_ROLES.includes(r)) || me.user.permissions.includes('admin');
 }
 
+/** The name the phone shows for who it works as. */
 export const actsAs = (me: Me | null): string | null => (me?.signInRequired && me.user ? me.user.name : null);

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { OfficeError, officeApi } from '../src/api';
 import { LinkError, OfficeLink } from '../src/link';
-import { Outbox, OUTBOX_MAX, openOutbox, outcomeOf, sealOutbox, type OutboxItem, type OutboxStorage } from '../src/outbox';
+import { Outbox, OUTBOX_MAX, RESULTS_MAX, openOutbox, outcomeOf, sealOutbox, type OutboxItem, type OutboxStorage } from '../src/outbox';
 import { generateKeyPair } from '../src/protocol';
 import { UUID_V4 } from '../src/uuid';
 import { fakeOffice, waitFor } from './fake-office';
@@ -83,18 +83,59 @@ describe('the outbox on the phone', () => {
       if (item.id === a.id) throw new OfficeError(403, 'forbidden', null);
       if (item.id === b.id) throw new LinkError('closed');
     });
-    expect(result).toEqual({ sent: 0, refused: 1 });
+    expect(result).toEqual({ sent: 0, refused: 1, receipts: [] });
     expect(tried).toEqual([a.id, b.id]);
     expect(box.list().map((i) => [i.kind, i.error ?? null, i.attempts])).toEqual([['sale', 'forbidden', 1], ['receipt', null, 1], ['count', null, 0]]);
     expect(box.waiting()).toBe(2);
 
-    // the office is back: b and c go, a stays until the user asks
-    expect(await box.replay(async () => {})).toEqual({ sent: 2, refused: 0 });
-    expect(box.list().map((i) => i.id)).toEqual([a.id]);
+    // the office is back: b and c go (the receipt stays listed with what the office made of it), a stays until asked
+    const back = await box.replay(async () => ({ id: 'e1', status: 'draft' }));
+    expect(back).toMatchObject({ sent: 2, refused: 0, receipts: [{ id: b.id, result: 'waiting' }] });
+    expect(box.list().map((i) => i.id)).toEqual([a.id, b.id]);
+    expect(box.waiting()).toBe(0);
     await box.retry(a.id);
-    expect(await box.replay(async () => {})).toEqual({ sent: 1, refused: 0 });
+    expect(await box.replay(async () => ({}))).toEqual({ sent: 1, refused: 0, receipts: [] });
+    expect(box.list().map((i) => i.id)).toEqual([b.id]);
+    await box.remove(b.id);
     expect(box.list()).toEqual([]);
     expect(changes.length).toBeGreaterThan(3);
+  });
+
+  it('a receipt sent later from the waiting list keeps what the office made of it: posted, or waiting for approval', async () => {
+    const disk = memory();
+    const box = new Outbox(disk);
+    await box.load();
+    const posted = await box.add('receipt', { amount: 1 }, { title: 'Las', amount: 25_000, currency: 'IQD' });
+    const waits = await box.add('receipt', { amount: 2 }, { title: 'Raz', amount: 50_000, currency: 'IQD' });
+    const sale = await box.add('sale', { n: 1 }, summary);
+    const answers: Record<string, unknown> = { [posted.id]: { id: 'e1', number: 'RV-1', status: 'approved' }, [waits.id]: { id: 'e2', status: 'draft' }, [sale.id]: { id: 'i1' } };
+    const run = await box.replay(async (item) => answers[item.id]);
+    expect(run.sent).toBe(3);
+    expect(run.receipts.map((r) => [r.summary.title, r.result])).toEqual([['Las', 'posted'], ['Raz', 'waiting']]);
+    // listed until cleared, without what was sent, and never sent again
+    const kept = box.list();
+    expect(kept.map((i) => [i.id, i.result])).toEqual([[posted.id, 'posted'], [waits.id, 'waiting']]);
+    expect(kept.every((i) => i.body === null && typeof i.sentAt === 'string')).toBe(true);
+    expect(box.waiting()).toBe(0);
+    let again = 0;
+    await box.replay(async () => { again++; });
+    expect(again).toBe(0);
+    // kept on the phone (encrypted) across a restart
+    const reopened = new Outbox(disk);
+    expect((await reopened.load()).map((i) => i.result)).toEqual(['posted', 'waiting']);
+    // one sent from its own screen is told there, not kept
+    const now = await box.add('receipt', {}, summary);
+    expect(await box.sendOne(now.id, async () => ({ status: 'approved' }))).toBe('sent');
+    expect(box.list().some((i) => i.id === now.id)).toBe(false);
+  });
+
+  it('keeps at most RESULTS_MAX sent receipts\' results, the oldest going first', async () => {
+    const box = new Outbox(memory());
+    await box.load();
+    const ids: string[] = [];
+    for (let i = 0; i < RESULTS_MAX + 3; i++) ids.push((await box.add('receipt', {}, summary)).id);
+    await box.replay(async () => ({ status: 'draft' }));
+    expect(box.list().map((i) => i.id)).toEqual(ids.slice(3));
   });
 
   it('keeps one run at a time, and a full outbox refuses more', async () => {
@@ -151,7 +192,7 @@ describe('the outbox on the phone', () => {
     expect(box.waiting()).toBe(1);
 
     await waitFor(() => link.state === 'online');
-    expect(await box.replay(send)).toEqual({ sent: 1, refused: 0 });
+    expect(await box.replay(send)).toEqual({ sent: 1, refused: 0, receipts: [] });
     const tries = o.seen.filter((m) => m.m === 'POST');
     expect(tries).toHaveLength(2);
     expect(tries.every((m) => m.k === item.id)).toBe(true);

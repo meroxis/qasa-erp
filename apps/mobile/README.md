@@ -1,9 +1,17 @@
 # Qasa ERP phone app
 
-The Qasa phone app for companies on Pro or Business, for sales reps (mandoob) and owners. Arabic, English and Kurdish
-(Sorani), right to left in Arabic and Kurdish, light and dark.
+The Qasa phone app for companies on Starter, Pro or Business (and the free trial), for sales reps (mandoob) and owners.
+Arabic, English and Kurdish (Sorani), right to left in Arabic and Kurdish, light and dark.
 
-Expo (SDK 58) and React Native, TypeScript. Android first; iOS builds from the same code.
+Plans (`packages/core/src/plans.ts` and the Pro module's own table, `pro/src/entitlement.ts`, both list `phoneApp`
+for Starter, Pro and Business; the office checks it on every message, `pro/src/phone/phone.ts`): up to 3 phones on
+Starter, Pro and the trial, no limit on a Business licence. Starter has no Qasa Relay, so its phones reach the office
+on the office Wi-Fi only; on Pro and Business they also reach it from anywhere through the relay.
+
+Expo (SDK 58) and React Native, TypeScript. Android first; iOS builds from the same code. It works with the office
+PC on Qasa ERP 1.4.2 or later with the Pro module (the first release whose Settings → Phones pairs a phone; the routes
+it calls and the rules below are those of 1.4.1). Version 1.0.0 is offered as a signed APK on
+https://qasaerp.com/phone/ (Google Play later).
 
 ## What it does
 
@@ -15,13 +23,21 @@ request again with the user's own permissions):
 | Home: today's sales, the month, cash in the safes, what customers owe, late customers, items running low | the owner (no sign-in at the office), admin, the accountants (preparer, checker, approver) and viewer |
 | Items: by barcode (camera, with the torch) or by name; price, wholesale and shelf (car parts), stock per warehouse | everyone |
 | New item with its photo | stock permission |
-| Sell: a quick sale sent as a draft invoice (cash or on credit), or an order sent as a quote | sales permission |
+| Sell: a quick sale sent as a draft invoice, or an order sent as a quote. A sale is Cash or Credit as a whole, one way per sale, as on the desktop's till and invoice (1.4): cash from a walk-in or a named customer, credit only to a chosen customer | sales permission |
 | Customers: balance, statement (this month, 3 months, this year) | sales, the accountants, admin, viewer |
-| Collect: money received from a customer, sent as a draft receipt voucher the accountant checks and approves | the preparer's permission (give a rep both roles: sales and preparer) |
+| Collect: money received from a customer, as a receipt voucher (see below) | the preparer's permission (give a rep both roles: sales and preparer) |
 | Count stock: straight into the warehouse's open count on the PC (stock permission), else a list for the admin in Settings → Phones | everyone |
 
-Nothing the phone sends is posted by itself: sales, receipts and counts reach the office as drafts and are checked
-on the PC as the office already works.
+Sales, orders and counts reach the office as drafts and are checked on the PC as the office already works. A receipt
+follows the office's 1.4.1 rule for vouchers: with **Vouchers need approval** on, it waits for approval unless the
+phone's user may approve vouchers (then it is posted at once, as on the PC; never under "Separate duties"); with the
+setting off it is a draft, checked and approved on the PC. The phone says which: posted, or counted once approved.
+
+Cost stays with those who may see it, by the office's own rule (`packages/server/src/cost-view.ts`, 1.4): every
+request from a phone runs through the office's API as the phone's user, so a user who neither keeps nor reads the
+books gets no purchase price, cost, stock value, profit or safe balances, and the day's figures (which hold the safes)
+are not opened to such a user's phone at all (`FIGURES_ROLES` in `pro/src/phone/phone.ts`). The app shows no cost or
+profit anywhere, and leaves out the safes when an office does not send them.
 
 ## How it reaches the office
 
@@ -77,7 +93,9 @@ VoiceOver. Icons are drawn in `src/icons.tsx` and the app icon by `scripts/icons
 
 ## Develop
 
-This folder is a project of its own (its own `package.json` and lock file), not one of the monorepo's workspaces.
+This folder is a project of its own (its own `package.json` and lock file), not one of the monorepo's workspaces:
+the root `npm ci` does not install its packages. Run `npm ci` here first in every checkout or worktree; without it,
+`tsc` or an editor reports the app's own packages (@noble, expo) as missing.
 
 ```
 cd apps/mobile
@@ -93,17 +111,84 @@ npx expo run:android         # a local development build (Android Studio and a p
 `node scripts/fonts.mjs` remakes the fonts from the monorepo's @fontsource packages; `node scripts/icons.mjs` remakes
 the icons.
 
-## Build and publish (Android) — done by the owner
+## The release key
+
+Every build of the app that phones install is signed with one key: the **Qasa release key** (RSA 4096, valid 30
+years, alias `qasa-mobile`). It is kept on the owner's PC, outside every repository, in `%USERPROFILE%\.qasa-keys\`
+(`qasa-mobile-release.jks`, and its password in `qasa-mobile-release.password` beside it; only the owner's Windows
+account may read the folder). **Keep this key and its password for as long as the app exists, with a copy offline
+(an encrypted USB stick in a safe place).** Android installs an update only when it is signed with the same key as
+the app on the phone: without it no phone can be updated, and every phone would have to uninstall the app (losing its
+pairing and anything not yet sent) to take a build signed with another key. Never commit it, mail it or put it in a
+chat; nothing in this folder holds it or its password (`plugins/with-release-signing.js` reads both from the
+environment at build time).
+
+## Build an APK on this PC (no Expo account, no Google Play)
+
+Needs Node 24, JDK 17 and an Android SDK with platform `android-37.0`, build-tools `37.0.0` and NDK `27.1.12297006`
+(what React Native 0.88 asks for). Windows stops paths at 260 characters (unless long paths are switched on for the
+PC), and the native part of the build writes long ones: build from a copy of this folder at a short path (for example
+`E:\qm`, made with `robocopy apps\mobile E:\qm /E /XD node_modules android .expo dist`; a `subst` drive does not work,
+Node resolves it back to the long path) and run `node scripts/short-native-paths.mjs` there after `npm ci`. In Git Bash:
+
+```
+cd /e/qm                                              # the short copy (on Linux or macOS: apps/mobile itself)
+npm ci
+node scripts/short-native-paths.mjs                   # Windows only: see above
+npx expo prebuild -p android --clean --no-install     # writes android/ (not in git: it is made again each time)
+                                                      # (prebuild rewrites the android/ios scripts of package.json: never commit that)
+export JAVA_HOME=<JDK 17>  ANDROID_HOME=<the SDK>  ANDROID_SDK_ROOT=<the SDK>  NODE_ENV=production
+export QASA_ANDROID_KEYSTORE=$USERPROFILE/.qasa-keys/qasa-mobile-release.jks
+export QASA_ANDROID_KEYSTORE_PASSWORD_FILE=$USERPROFILE/.qasa-keys/qasa-mobile-release.password
+cd android && ./gradlew assembleRelease
+# → android/app/build/outputs/apk/release/app-release.apk
+<build-tools 37.0.0>/apksigner verify --print-certs app/build/outputs/apk/release/app-release.apk
+```
+
+Raise `version` in app.json (and `versionCode` with it: Android refuses an update with the same or a lower
+versionCode; prebuild writes it from `android.versionCode` in app.json, 1 when it is not set) for each build that goes
+to phones already running the app.
+
+Installing on a phone (side-loading, for the office's own phones while the app is not in the store): copy the .apk to
+the phone (USB, or a link the owner sends), open it, allow "Install unknown apps" for the app that opens it (Files or
+the browser) when Android asks, then Install. Play Protect may say it does not know the developer: "Install anyway".
+Or with a USB cable and USB debugging on: `adb install -r qasa-erp-mobile-<version>.apk`.
+
+## Publish on Google Play — done by the owner
 
 1. Install EAS CLI: `npm i -g eas-cli`, then `eas login` with the Meroxis Expo account (free).
 2. In `apps/mobile`: `eas init` once (it adds the project ID to app.json under `extra.eas.projectId`), then commit it.
-3. A test APK for phones in the office: `eas build -p android --profile preview`, then install the link it gives.
-4. The Play Store build: `eas build -p android --profile production` (an .aab, signed by EAS; let Google Play App
-   Signing hold the app signing key, and keep the upload key EAS makes — `eas credentials` shows and downloads it).
-5. Google Play Console (a one-time USD 25 developer account, with identity verification): create the app **Qasa ERP**,
-   package `iq.qasaerp.mobile`, upload the .aab to Internal testing first, then Production.
-6. When the app is in the store, switch the desktop's Settings → Phones from "coming soon" to pairing
-   (`PHONE_APP_READY` in apps/web/src/pages/Settings.tsx) in a release of the Windows app.
+3. Give EAS the Qasa release key, so its builds are signed like the APKs already on phones: `eas credentials` →
+   Android → production → Keystore → "Set up a new keystore" → upload `qasa-mobile-release.jks` (alias `qasa-mobile`,
+   the password from the file beside it). Do not let EAS make a new key.
+4. A test APK for phones in the office: `eas build -p android --profile preview`, then install the link it gives.
+5. The Play Store build: `eas build -p android --profile production` (an .aab, `versionCode` counted up by EAS).
+6. Google Play Console (a one-time USD 25 developer account, with identity verification): create the app **Qasa ERP**,
+   package `iq.qasaerp.mobile`. Under Play App Signing choose to use your own key and upload the Qasa release key the
+   way the Console shows (its encryption tool), so phones that took a side-loaded APK update from Google Play; if
+   Google's own key is chosen instead, those phones must uninstall the side-loaded app first. Then upload the .aab to
+   Internal testing first (see the checklist below), then Production.
+7. Done in 1.4.2 for the direct download: the desktop's Settings → Phones offers the app (`PHONE_APP` and
+   `PHONE_APP_READY` in apps/web/src/pages/Settings.tsx, tested by apps/web/src/pages/phones-app.test.tsx). When the
+   app is in the store, add the Google Play link there and on qasaerp.com/phone/.
+
+### Checklist: the first internal-testing build
+
+- [ ] The release key and its password are copied offline (see "The release key").
+- [ ] Expo: `eas login`, `eas init` committed, the release key uploaded with `eas credentials` (step 3).
+- [ ] `npm ci`, `npm run typecheck`, `npm test`, `npm run lint` and `npx expo export --platform android` pass here.
+- [ ] `eas build -p android --profile production` finished; the .aab downloaded.
+- [ ] Play Console: developer account verified; app **Qasa ERP** created (default language Arabic, free, Business).
+- [ ] App content filled in: privacy policy URL, Data safety (notes below), ads: none, target audience: adults
+      (18+), content rating questionnaire, app access: "pairing with a Qasa PC is needed" with how a reviewer
+      can test (a Qasa ERP trial on a PC and its Settings → Phones).
+- [ ] Testing → Internal testing → a tester list (the owner's and the office's Google accounts) → new release →
+      upload the .aab → release name 1.0.0 → roll out.
+- [ ] On a phone: open the opt-in link from the tester list, install from Google Play, pair it with a Qasa ERP PC
+      with the Pro module. The released 1.4.1 shows "coming soon" in Settings → Phones and has no pairing button, so
+      pair from a test build of the Windows app made with `PHONE_APP_READY = true` (not released), then try: scan, a cash sale, a credit sale (with and without a customer), a receipt with
+      "Vouchers need approval" on and off, a count, the app lock, unpairing — in Arabic, English and Kurdish.
+- [ ] Then Production (or a closed test first), and step 7.
 
 Play Store listing notes:
 - Category: Business. Languages: Arabic (default for Iraq), English, Kurdish.
