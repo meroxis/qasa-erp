@@ -125,6 +125,9 @@ describe('the helper', () => {
     expect(two).toContain('<span class="dual-second" title="At the dollar rate of 14/11/2026: $1 = 1,310 IQD">≈ $763.36</span>');
     expect(render(<Amount value={-250_000} parens />, { dual: source('iqd_usd') })).toContain('(≈ $190.84)');
     expect(render(<Amount value={-250_000} parens />)).toBe('(250,000 IQD)');
+    // real dinars and dollars together with dinar only: each amount kept whole, so a narrow tile (Daily brief's cash)
+    // wraps at the "+", never between a figure and its currency
+    expect(render(<Amount value={{ IQD: 179_718_600, USD: 150_000 }} />)).toBe('<span class="dual-part">179,718,600 IQD</span> + <span class="dual-part">$1,500.00</span>');
     // real dollars are shown as they are and converted once
     expect(plain(render(<Amount value={50_000} currency="USD" />, { dual: source('usd_iqd') }))).toBe(' $500.00 ≈ 655,000 IQD ');
   });
@@ -253,7 +256,7 @@ describe('the home page and a report in the three choices', () => {
     const before = home(null);
     expect(home('iqd')).toBe(before);
     expect(before).toContain('1,310,000 IQD');
-    expect(before).toContain('655,000 IQD + $500.00');
+    expect(plain(before)).toContain('655,000 IQD + $500.00');
     expect(before).not.toContain('≈');
     // the receivables tile: the book-rate total, as before (not its dinars and dollars)
     expect(plain(before)).toContain('Owed by customers 655,000 IQD');

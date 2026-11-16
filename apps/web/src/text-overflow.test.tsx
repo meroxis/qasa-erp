@@ -37,6 +37,13 @@ describe('text stays inside its box', () => {
     expect(rule('.owe-tile .owe-line')).toContain('flex-wrap: wrap;');
   });
 
+  it('two amounts in one tile wrap between the amounts, never between a figure and its currency', () => {
+    // "179,718,600 د.ع + $1,500.00" broke as "179,718,600" / "د.ع + $1,500.00" in a 1280-wide Arabic window
+    // (each amount is a .dual-part that keeps itself whole; amounts-dual.test.tsx renders it)
+    expect(css).toContain('.dual-part, .dual-second { white-space: nowrap; }');
+    expect(read('./Amount.tsx')).toContain('<span className="dual-part">{wrap(p)}</span>');
+  });
+
   it('the kinds of expense are buttons whose words wrap inside them', () => {
     // "Electricity & generator", "Salaries & wages", "مووچە و هەقدەست" ran under the next button
     expect(rule('.btn.wraps')).toMatch(/white-space: normal; text-align: start; min-inline-size: 0; overflow-wrap: break-word;/);
