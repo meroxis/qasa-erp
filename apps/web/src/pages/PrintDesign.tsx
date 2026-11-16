@@ -515,7 +515,9 @@ export function PrintHeaderCard() {
         <label className="field"><span>{t('pp_taxNumber')}</span><input className="input ltr" maxLength={40} value={form.taxNumber} onChange={(e) => setForm({ ...form, taxNumber: e.target.value })} /></label>
       </div>
       <label className="field"><span>{t('pp_footer')}</span>
-        <input className="input" maxLength={300} value={form.footer} placeholder={t('pp_footerHint')} onChange={(e) => setForm({ ...form, footer: e.target.value })} />
+        {/* the example is a line of its own under the box: as the box's placeholder it was cut short in English and Kurdish */}
+        <input className="input" maxLength={300} value={form.footer} aria-describedby="pp-footer-hint" onChange={(e) => setForm({ ...form, footer: e.target.value })} />
+        <small id="pp-footer-hint" className="muted small">{t('pp_footerHint')}</small>
       </label>
       {localError && <div className="alert bad" role="alert">{localError}</div>}
       <ErrorBox error={error} />

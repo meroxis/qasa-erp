@@ -579,7 +579,8 @@ h3 { margin: 0; font-size: var(--fs-body); font-weight: 600; }
 .tile:has(.label a):hover { border-color: var(--line-2); box-shadow: var(--shadow-raised); }
 .tile:has(.label a):hover .label a { color: var(--accent-text); }
 .tile:has(.label a:focus-visible) { outline: 2px solid var(--focus-outer); outline-offset: 1px; }
-.tile .value { font-family: var(--font-num); font-size: var(--fs-value); font-weight: 600; line-height: 1.25; font-variant-numeric: tabular-nums; color: var(--ink); white-space: nowrap; }
+/* a figure too wide for its tile (dinars and dollars together, a long name) goes on to a second line inside it */
+.tile .value { font-family: var(--font-num); font-size: var(--fs-value); font-weight: 600; line-height: 1.25; font-variant-numeric: tabular-nums; color: var(--ink); min-inline-size: 0; overflow-wrap: break-word; }
 .tile .ico, .ico { display: inline-grid; place-items: center; inline-size: 32px; block-size: 32px; flex-shrink: 0; border-radius: var(--r-md); background: var(--accent-soft); color: var(--accent-soft-ink); }
 .ico svg { inline-size: 18px; block-size: 18px; }
 
@@ -615,6 +616,8 @@ a.step:hover { background: var(--subtle-hover); }
   transition: background-color var(--dur-fast) linear, border-color var(--dur-fast) linear, color var(--dur-fast) linear;
 }
 .btn svg { inline-size: 16px; block-size: 16px; flex-shrink: 0; }
+/* a button that is a tile of a grid (the kinds of expense): its words wrap inside it instead of running under the next */
+.btn.wraps { white-space: normal; text-align: start; min-inline-size: 0; overflow-wrap: break-word; }
 .btn:hover:not(:disabled) { background: var(--ctl-bg-hover); }
 .btn:active:not(:disabled) { background: var(--ctl-bg-press); border-block-end-color: var(--ctl-stroke); color: var(--ink-2); }
 .btn.primary { background: var(--accent); border-color: transparent; border-block-end-color: var(--accent-edge); color: var(--on-accent); font-weight: 600; }
@@ -841,6 +844,8 @@ input.input, select.input { block-size: var(--control-h); padding-block: 0; }
 
 /* ---------- account tree ---------- */
 .tree-row td:first-child { white-space: nowrap; }
+/* (the code stays on one line; the names may wrap, so a narrow window keeps the row's buttons inside the card) */
+.tree-row .tree-name { white-space: normal; min-inline-size: 0; }
 .tree-toggle {
   position: relative; inline-size: 24px; block-size: 24px; border: none; border-radius: var(--r-control);
   background: var(--fill-2); color: var(--accent-text); cursor: pointer;
@@ -1120,9 +1125,11 @@ html[dir='rtl'] .nav-group-btn[aria-expanded='false'] > svg.nav-chevron { transf
 .sidebar.collapsed .nav-scroll { margin-inline: 0; padding-inline: 0; scrollbar-gutter: auto; }
 .sidebar.collapsed .pane-footer { margin-inline-end: 0; }
 
-/* the search box in the title band */
+/* the search box in the title band: it gives way before the page's title does (the title is cut short only once the
+   box is at its smallest) */
 .search-trigger {
   display: inline-flex; align-items: center; gap: 8px; inline-size: clamp(180px, 26vw, 340px); block-size: var(--control-h);
+  flex-shrink: 100; min-inline-size: 150px;
   padding-inline: 10px 6px; border: 1px solid var(--ctl-stroke); border-radius: var(--r-control); background: var(--input-bg);
   color: var(--ink-3); font: inherit; font-size: 13px; cursor: pointer; text-align: start;
 }
@@ -1133,7 +1140,7 @@ html[dir='rtl'] .nav-group-btn[aria-expanded='false'] > svg.nav-chevron { transf
   padding: 0 5px; border: 1px solid var(--line-2); border-radius: 4px; background: var(--fill);
   font-family: var(--font-latin, inherit); font-size: 11px; line-height: 18px; color: var(--ink-3);
 }
-@media (max-width: 1240px) { .search-trigger { inline-size: auto; } .search-trigger > span, .search-trigger kbd { display: none; } }
+@media (max-width: 1240px) { .search-trigger { inline-size: auto; min-inline-size: 0; flex-shrink: 0; } .search-trigger > span, .search-trigger kbd { display: none; } }
 
 /* Ctrl+K */
 .palette-backdrop { align-items: flex-start; padding-block-start: 12vh; }
