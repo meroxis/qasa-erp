@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { expect, it } from 'vitest';
-import { addRefusal, canPrice, cashChange, cashTender, creditPartyNote, partyAskedAfter, parseScan, priceIn, priceRateFor, salePayments, tilePrice } from './pos-logic.ts';
+import { addRefusal, canPrice, creditPartyNote, partyAskedAfter, parseScan, priceIn, priceRateFor, tilePrice } from './pos-logic.ts';
 
 const dollarItem = { saleCurrency: 'USD' as const, salePrice: 50000 }; // $500.00
 const dinarItem = { saleCurrency: 'IQD' as const, salePrice: 710000 };
@@ -34,16 +34,6 @@ it('says there is no rate (not "no item with this code") and shows no price, whe
   expect(addRefusal(dinarItem, 'IQD', 0)).toBeNull();
   expect(tilePrice(dinarItem, 'IQD', 0)).toBe(710000);
   expect(tilePrice(dollarItem, 'IQD', 142000)).toBe(710000);
-});
-
-it('prints what was paid and the change on the receipt only when more cash was handed over than the sale', () => {
-  // sale 12,500, the customer hands over 15,000
-  expect(cashTender(15_000, cashChange(15_000, 12_500, []))).toEqual({ paid: 15_000, change: 2_500 });
-  // the exact money, or nothing typed: the total says it all
-  expect(cashTender(12_500, cashChange(12_500, 12_500, []))).toBeNull();
-  expect(cashTender(null, cashChange(null, 12_500, []))).toBeNull();
-  // on credit there is no change
-  expect(cashTender(15_000, cashChange(15_000, 12_500, salePayments('account', 12_500) ?? []))).toBeNull();
 });
 
 it('says credit needs a customer or a supplier only once it was asked for, each in its own words', () => {

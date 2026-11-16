@@ -65,17 +65,6 @@ export function parseScan<T extends Pick<ItemView, 'barcode' | 'code'> & { units
 }
 
 /**
- * Change for the cash the customer handed over. All cash (no split): against the whole total. A split sale: against
- * its cash part only (the other parts are paid apart); null when the split has no cash part.
- */
-export function cashChange(paid: number | null, total: number, parts: readonly { method: string; amount: number | null }[]): number | null {
-  if (paid === null) return null;
-  if (parts.length === 0) return paid - total;
-  const cash = parts.filter((p) => p.method === 'cash').reduce((s, p) => s + (p.amount ?? 0), 0);
-  return cash > 0 ? paid - cash : null;
-}
-
-/**
  * The note under "Cash / Credit" on an invoice while credit has nobody to go on: worded for the customer on a sale and
  * for the supplier on a purchase. A new purchase opens on credit with no supplier yet, so the note waits until it was
  * asked for (partyAskedAfter): the party box was used and left empty, or a save was tried.
@@ -109,17 +98,6 @@ export function partyAskedAfter(asked: boolean, event: 'credit' | 'leave' | 'sav
  */
 export function cartShortNote(short: readonly { code: string; haveMilli: number }[], one: (code: string, haveMilli: number) => string, separator: string): string {
   return short.map((s) => one(s.code, s.haveMilli)).join(separator);
-}
-
-/** The cash a customer handed over and the change given back, for the receipt. */
-export interface CashTender { paid: number; change: number }
-
-/**
- * What the receipt prints under the total: "Paid" and "Change", when more cash was handed over than was due. Nothing
- * when the exact money was given, nothing was typed, or the sale is on credit (no change is worked out then).
- */
-export function cashTender(paid: number | null, change: number | null): CashTender | null {
-  return paid !== null && change !== null && change > 0 ? { paid, change } : null;
 }
 
 /**
