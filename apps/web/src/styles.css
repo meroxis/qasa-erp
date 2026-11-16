@@ -1125,11 +1125,10 @@ html[dir='rtl'] .nav-group-btn[aria-expanded='false'] > svg.nav-chevron { transf
 .sidebar.collapsed .nav-scroll { margin-inline: 0; padding-inline: 0; scrollbar-gutter: auto; }
 .sidebar.collapsed .pane-footer { margin-inline-end: 0; }
 
-/* the search box in the title band: it gives way before the page's title does (the title is cut short only once the
-   box is at its smallest) */
+/* the search box in the title band: it starts small and grows into the room the page's title leaves, up to its usual
+   width, so the title is never cut short to make room for it */
 .search-trigger {
-  display: inline-flex; align-items: center; gap: 8px; inline-size: clamp(180px, 26vw, 340px); block-size: var(--control-h);
-  flex-shrink: 100; min-inline-size: 150px;
+  display: inline-flex; align-items: center; gap: 8px; flex: 3 1 150px; min-inline-size: 150px; max-inline-size: clamp(180px, 26vw, 340px); block-size: var(--control-h);
   padding-inline: 10px 6px; border: 1px solid var(--ctl-stroke); border-radius: var(--r-control); background: var(--input-bg);
   color: var(--ink-3); font: inherit; font-size: 13px; cursor: pointer; text-align: start;
 }
@@ -1140,7 +1139,7 @@ html[dir='rtl'] .nav-group-btn[aria-expanded='false'] > svg.nav-chevron { transf
   padding: 0 5px; border: 1px solid var(--line-2); border-radius: 4px; background: var(--fill);
   font-family: var(--font-latin, inherit); font-size: 11px; line-height: 18px; color: var(--ink-3);
 }
-@media (max-width: 1240px) { .search-trigger { inline-size: auto; min-inline-size: 0; flex-shrink: 0; } .search-trigger > span, .search-trigger kbd { display: none; } }
+@media (max-width: 1240px) { .search-trigger { flex: 0 0 auto; min-inline-size: 0; max-inline-size: none; } .search-trigger > span, .search-trigger kbd { display: none; } }
 
 /* Ctrl+K */
 .palette-backdrop { align-items: flex-start; padding-block-start: 12vh; }
@@ -1352,6 +1351,8 @@ html[dir='rtl'] .tour-card.center { transform: translate(50%, -50%); }
 .owe-line.ok, .owe-total.ok .value { color: var(--ok); }
 .owe-tile { font-size: 18px; }
 .owe-tile .owe { align-items: flex-start; }
+/* (on a customer's page, a narrow tile puts the amount under "Owes us" rather than past the tile's edge) */
+.owe-tile .owe-line { flex-wrap: wrap; row-gap: 0; }
 .owe-totals { display: flex; flex-wrap: wrap; gap: var(--sp-3) var(--sp-8); align-items: flex-start; }
 .owe-total { display: flex; flex-direction: column; gap: 4px; min-inline-size: 0; }
 .owe-total .label { font-size: 13px; color: var(--ink-2); }

@@ -14,10 +14,13 @@ const rule = (selector: string): string => {
 
 describe('text stays inside its box', () => {
   it('the title band: the search box gives way before the page’s title, and both carry their whole text', () => {
-    // at 1280 wide the title ("Purchase invoices", "فاتورة مبيعات جديدة") was cut to "…" while the search box kept 333px
-    expect(rule('.search-trigger')).toMatch(/flex-shrink: 100; min-inline-size: 150px;/);
-    // below 1240 the box is an icon only, and does not shrink further
-    expect(css).toContain('@media (max-width: 1240px) { .search-trigger { inline-size: auto; min-inline-size: 0; flex-shrink: 0; }');
+    // at 1280 wide the title ("Purchase invoices", "فاتورة مبيعات جديدة") was cut to "…" while the search box kept its
+    // fixed 26% of the window: now the box starts at 150px and grows only into the room left, up to that width
+    const search = rule('.search-trigger');
+    expect(search).toContain('flex: 3 1 150px; min-inline-size: 150px; max-inline-size: clamp(180px, 26vw, 340px);');
+    expect(search).not.toMatch(/(^|[^-])inline-size: clamp/);
+    // below 1240 the box is an icon only
+    expect(css).toContain('@media (max-width: 1240px) { .search-trigger { flex: 0 0 auto; min-inline-size: 0; max-inline-size: none; }');
     expect(css).toMatch(/\.topbar h1 > span:last-child \{[^}]*min-inline-size: 0; overflow: hidden; text-overflow: ellipsis;/);
     expect(app).toContain('<span title={title}>{title}</span>');
     expect(app).toContain("aria-label={t('searchHint')} title={t('searchHint')} aria-keyshortcuts=\"Control+K\"");
@@ -30,6 +33,8 @@ describe('text stays inside its box', () => {
     expect(value).toContain('overflow-wrap: break-word');
     expect(value).toContain('min-inline-size: 0');
     expect(css).toMatch(/\.grid-4 \{[^}]*grid-template-columns: repeat\(4, minmax\(0, 1fr\)\)/);
+    // the balance tile on a customer's page: "Owes us 1,600,000 IQD" ran past the tile's edge at 1280 wide
+    expect(rule('.owe-tile .owe-line')).toContain('flex-wrap: wrap;');
   });
 
   it('the kinds of expense are buttons whose words wrap inside them', () => {
