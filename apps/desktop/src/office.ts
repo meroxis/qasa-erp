@@ -41,10 +41,36 @@ export async function pair(address: string, code: string, timeoutMs = 8000, rela
   const wanted = String(code).slice(0, 100).replace(/[\s-]/g, '').toLowerCase();
   // 128 bits: a certificate made to start with a shorter code is within reach of a determined attacker
   if (!/^[0-9a-f]{32}$/.test(wanted)) return { error: 'code' };
+  const answer = await probe(target, office ? { url: relayBase, office } : undefined, (fingerprint) => fingerprint.startsWith(wanted), timeoutMs);
+  if ('error' in answer) return answer;
+  if (office) return { ok: true, remote: { host: '127.0.0.1', port: 0, fingerprint: answer.fingerprint, relay: { url: relayBase, office } } };
+  return { ok: true, remote: { ...target, fingerprint: answer.fingerprint } };
+}
+
+export type CheckResult = { ok: true } | { error: 'unreachable' | 'mismatch' | 'not_qasa' | 'offline' };
+
+/**
+ * A remembered office (office-memory.ts), before this PC goes back to it with no pairing code: the server must show
+ * exactly the certificate it was paired with (the whole SHA-256 fingerprint, nothing less) and answer as Qasa ERP.
+ * A changed certificate is "mismatch": the pairing code is needed again. (The window then pins it as strictly as ever.)
+ */
+export async function checkRemembered(remote: Remote, timeoutMs = 8000): Promise<CheckResult> {
+  if (!/^[0-9a-f]{64}$/.test(remote.fingerprint)) return { error: 'mismatch' };
+  const answer = await probe({ host: remote.host, port: remote.port }, remote.relay, (fingerprint) => fingerprint === remote.fingerprint, timeoutMs);
+  return 'error' in answer ? answer : { ok: true };
+}
+
+/** One TLS visit to the office server (straight, or through the relay): its certificate, then GET /api/health. */
+async function probe(
+  target: { host: string; port: number },
+  relay: { url: string; office: string } | undefined,
+  trusted: (fingerprint: string) => boolean,
+  timeoutMs: number
+): Promise<{ fingerprint: string } | { error: 'unreachable' | 'mismatch' | 'not_qasa' | 'offline' }> {
   let stream: Duplex | undefined;
-  if (office) {
+  if (relay) {
     try {
-      stream = await relayStream(relayBase, office, timeoutMs);
+      stream = await relayStream(relay.url, relay.office, timeoutMs);
     } catch (error) {
       return { error: error instanceof RelayError && error.code === 'office_offline' ? 'offline' : 'unreachable' };
     }
@@ -56,9 +82,9 @@ export async function pair(address: string, code: string, timeoutMs = 8000, rela
       ? { socket: stream, rejectUnauthorized: false, timeout: timeoutMs }
       : { host: target.host, port: target.port, rejectUnauthorized: false, timeout: timeoutMs };
     const socket = tlsConnect(options, () => {
-      // not verified by anyone: the pairing code is what vouches for this certificate
+      // not verified by anyone: the pairing code (or the fingerprint pinned at pairing) is what vouches for it
       fingerprint = derFingerprint(socket.getPeerCertificate(true).raw);
-      if (!fingerprint.startsWith(wanted)) {
+      if (!trusted(fingerprint)) {
         socket.destroy();
         return resolve({ fingerprint, body: '' });
       }
@@ -71,15 +97,14 @@ export async function pair(address: string, code: string, timeoutMs = 8000, rela
     socket.on('error', () => resolve(null));
   });
   if (!answer) return { error: 'unreachable' };
-  if (!answer.fingerprint.startsWith(wanted)) return { error: 'mismatch' };
+  if (!trusted(answer.fingerprint)) return { error: 'mismatch' };
   try {
     const health = JSON.parse(answer.body.slice(answer.body.indexOf('\r\n\r\n') + 4)) as { app?: string };
     if (health.app !== 'qasa-erp') return { error: 'not_qasa' };
   } catch {
     return { error: 'not_qasa' };
   }
-  if (office) return { ok: true, remote: { host: '127.0.0.1', port: 0, fingerprint: answer.fingerprint, relay: { url: relayBase, office } } };
-  return { ok: true, remote: { ...target, fingerprint: answer.fingerprint } };
+  return { fingerprint: answer.fingerprint };
 }
 
 // ——— Qasa Relay: the office server over the internet, with no public IP (the relay only passes the TLS bytes on) ———
