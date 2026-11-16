@@ -108,7 +108,8 @@ function assertPostingAccounts(db: Db, accounts: PostingAccounts): void {
 export function updateSettings(db: Db, patch: Partial<Settings>, user: string): Settings {
   if (patch.postingAccounts) assertPostingAccounts(db, { ...getPostingAccounts(db), ...patch.postingAccounts });
   if (patch.amountsShow !== undefined && !isAmountsShow(patch.amountsShow)) throw invalid([{ code: 'amounts_show_invalid', field: 'amountsShow' }]);
-  if (patch.posUse !== undefined && !isPosUse(patch.posUse)) throw invalid([{ code: 'pos_use_invalid', field: 'posUse' }]);  transaction(db, () => {
+  if (patch.posUse !== undefined && !isPosUse(patch.posUse)) throw invalid([{ code: 'pos_use_invalid', field: 'posUse' }]);
+  transaction(db, () => {
     if (patch.companyName) writeSetting(db, 'company_name', JSON.stringify(patch.companyName));
     if (patch.defaultRateX100 !== undefined) writeSetting(db, 'default_rate_x100', String(patch.defaultRateX100));
     if (patch.fiscalYearStart) writeSetting(db, 'fiscal_year_start', patch.fiscalYearStart);

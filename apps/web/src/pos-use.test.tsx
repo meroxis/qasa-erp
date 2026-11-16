@@ -6,7 +6,7 @@ import type { Settings } from './api.ts';
 import { DataContext } from './components.tsx';
 import { I18nContext, makeI18n } from './i18n.ts';
 import { POS_USE_TEXT } from './i18n/pos-use.ts';
-import { allPages, canSee, defaultFavourites, favourites, findPage, NAV, pageOpen, visibleItems, type NavViewer } from './nav.ts';
+import { allPages, canSee, defaultFavourites, favourites, findPage, NAV, pageOpen, recentsFor, visibleItems, type NavViewer } from './nav.ts';
 import { PosNotUsed } from './industry/PosNotUsed.tsx';
 import { PosUseSetting } from './industry/PosUseSetting.tsx';
 
@@ -41,6 +41,14 @@ describe('the till in the menu, the home page and the search', () => {
     // the search (Ctrl+K)
     expect(allPages(market).some((p) => p.key === 'pos_title')).toBe(true);
     expect(allPages(works).some((p) => p.key === 'pos_title')).toBe(false);
+    // nor among the search's recent pages, where it was opened before (records stay)
+    const recent = [
+      { kind: 'page' as const, label: 'Point of sale', path: 'pos', icon: 'wallet' },
+      { kind: 'page' as const, label: 'Sales invoices', path: 'sales', icon: 'invoice' },
+      { kind: 'party' as const, label: 'Raz', path: 'party/1', icon: 'contact' }
+    ];
+    expect(recentsFor(recent, works).map((r) => r.path)).toEqual(['sales', 'party/1']);
+    expect(recentsFor(recent, market).map((r) => r.path)).toEqual(['pos', 'sales', 'party/1']);
     // a cashier of a company without the till does not get it either
     expect(canSee(till, viewerOf(company(['realEstate']), false))).toBe(false);
   });

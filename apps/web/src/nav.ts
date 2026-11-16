@@ -326,6 +326,14 @@ export function recents(): Recent[] {
     return [];
   }
 }
+/**
+ * The recent list as the search offers it to this person: a page they no longer see (the till where the company does
+ * not use it, 1.5.2, or a page whose permission was taken away) is left out; records stay (their pages check access).
+ */
+export function recentsFor(list: readonly Recent[], v: NavViewer): Recent[] {
+  const paths = new Set(allPages(v).map((p) => p.path));
+  return list.filter((r) => r.kind !== 'page' || paths.has(r.path));
+}
 export function addRecent(r: Recent): void {
   write('qasa.recent', JSON.stringify([r, ...recents().filter((x) => x.path !== r.path)].slice(0, 8)));
 }
