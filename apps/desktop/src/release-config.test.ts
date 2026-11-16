@@ -237,7 +237,7 @@ describe('the Microsoft Store listing', () => {
       if (named === version) expect(l.releaseNotes, lang).not.toMatch(/\{\{|\}\}/);
       // a stable release (a beta never goes to the Store) is never sent with the text of an older one, nor with a draft
       // left for a version number it did not take (1.5.0 instead of 1.4.3). The one exception is a release that goes to
-      // GitHub and the website only (1.5.1): the Store keeps the version it has, and docs/releasing.md says so in that
+      // GitHub and the website only (1.5.1 at first): the Store keeps the version it has, and docs/releasing.md says so in that
       // version's release-day steps, naming the version the Store stays on
       // A stable release never goes out with a Store text naming a newer version than its own (a draft for a coming
       // version is written while that version is in beta, when the app's number is the same without the -beta part)
@@ -1208,7 +1208,7 @@ describe('the release notes of 1.4.3 (never released on its own: What\'s new sho
   });
 });
 
-describe('the release notes of 1.5.0 and the Store "What\'s new", which stays on 1.5.0 (1.5.1 is GitHub and the website only)', () => {
+describe('the release notes of 1.5.0, and the Store "What\'s new" of 1.5.1, which carries 1.5.0\'s items after its own', () => {
   const version = '1.5.0';
   const notes = read(`apps/desktop/release-notes/${version}.md`);
   const section = (lang: 'ar' | 'en' | 'ku') => new RegExp(`^::: ${lang}\\n([\\s\\S]*?)^:::$`, 'm').exec(notes)?.[1] ?? '';
@@ -1318,9 +1318,9 @@ describe('the release notes of 1.5.0 and the Store "What\'s new", which stays on
     expect(section('ku')).toContain('**ڕێکخستنەکان ← زمان و پیشاندان ← ئاگادارم بکەرەوە لە کاری مۆبایلەکان**');
     expect(section('ku')).toContain('چاوەڕێی پەسەندکردنی تۆن');
     for (const lang of ['en', 'ar', 'ku'] as const) expect(section(lang), lang).toContain('Qasa Relay');
-    expect(lines('en-us')[1]).toContain('The header’s From phones button and a Windows notification tell the office of new work from phones.');
-    expect(lines('ar')[1]).toContain('«من الهواتف»');
-    expect(lines('ku-arab')[1]).toContain('«لە مۆبایلەکانەوە»');
+    expect(lines('en-us')[2]).toContain('The header’s From phones button and a Windows notification tell the office of new work from phones.');
+    expect(lines('ar')[2]).toContain('«من الهواتف»');
+    expect(lines('ku-arab')[2]).toContain('«لە مۆبایلەکانەوە»');
   });
 
   it('tells of the fix on a database server, in the words of Settings', () => {
@@ -1365,45 +1365,44 @@ describe('the release notes of 1.5.0 and the Store "What\'s new", which stays on
     }
   });
 
-  it('names 1.5.0 first in the Store "What\'s new", then its own items, then 1.4.3\'s, with no placeholder left', () => {
-    expect(lines('en-us')[0]).toBe('Qasa ERP 1.5.0.');
-    expect(lines('ar')[0]).toBe('قاصة ERP 1.5.0.');
-    expect(lines('ku-arab')[0]).toBe('قاسە ERP 1.5.0.');
+  it('names 1.5.1 first in the Store "What\'s new" with the menu, then 1.5.0\'s items, then 1.4.3\'s, with no placeholder left', () => {
+    // the Store had 1.5.0 (live 2026-11-16) and gets 1.5.1 next; 1.4.1's line is gone, since every Store copy has had it
+    expect(lines('en-us')[0]).toBe('Qasa ERP 1.5.1.');
+    expect(lines('ar')[0]).toBe('قاصة ERP 1.5.1.');
+    expect(lines('ku-arab')[0]).toBe('قاسە ERP 1.5.1.');
     for (const lang of LANGS) {
       expect(lines(lang), lang).toHaveLength(4);
       expect(store[lang].releaseNotes, lang).not.toMatch(/\{\{|\}\}/);
-      expect(lines(lang)[1]!.length, lang).toBeGreaterThan(300);
+      expect(store[lang].releaseNotes, lang).not.toContain('1.4.1');
+      expect(lines(lang)[2]!.length, lang).toBeGreaterThan(300);
     }
-    expect(lines('en-us')[1]).toContain('Settings → Office network → Phones (Qasa app)');
-    expect(lines('en-us')[1]).toContain('The company file is upgraded the first time 1.5.0 opens it, and older versions cannot open it afterwards: update every PC that opens the same company.');
-    expect(lines('en-us')[2]).toBe('Also from 1.4.3, which was not released on its own: dinar and dollar on more screens, What’s new after skipped versions, and switching the office network off asks first.');
-    expect(lines('ar')[2]).toMatch(/^ومن الإصدار 1\.4\.3، الذي لم يصدر وحده: /);
-    expect(lines('ku-arab')[2]).toMatch(/^هەروەها لە وەشانی 1\.4\.3 ەوە، کە بە تەنها بڵاو نەکرایەوە: /);
-  });
-
-  it('tells Store copies, in the same words in each language, what 1.4.1 brought: the Store went from 1.4.0 straight to 1.4.2', () => {
-    expect(lines('en-us').at(-1)).toBe('Also from 1.4.1, which came to the Store with 1.4.2: a sales-only user no longer sees cheques, and sees only their own registers and shifts in End of day; with Vouchers need approval on, receipts from installments, deposits and collections wait for approval too; and printing fixes.');
-    expect(lines('ar').at(-1)).toBe('ومن الإصدار 1.4.1، الذي وصل إلى المتجر مع 1.4.2: من له دور المبيعات وحده لم يعد يرى الصكوك، ولا يرى في إغلاق اليوم إلا صناديقه ووردياته؛ وحين يكون خيار «السندات تحتاج موافقة» مفعّلاً تنتظر الموافقة أيضاً سندات القبض من الأقساط والعربون والجباية؛ وإصلاحات في الطباعة.');
-    expect(lines('ku-arab').at(-1)).toBe('هەروەها لە وەشانی 1.4.1 ەوە، کە لەگەڵ 1.4.2 گەیشتە Store: ئەوەی تەنها ڕۆڵی فرۆشتنی هەیە ئیتر چەکەکان نابینێت، و لە داخستنی ڕۆژ تەنها کاشێر و شەفتەکانی خۆی دەبینێت؛ کاتێک «سەنەدەکان پێویستیان بە پەسەندکردنە» چالاکە، سەنەدی وەرگرتن لە قیست، پێشەکی و کۆکردنەوە چاوەڕێی پەسەندکردن دەکات؛ و چاککردنەوەی چاپ.');
-    // in the words the 1.4.1 notes and the app use
-    const notes = read('apps/desktop/release-notes/1.4.1.md');
-    for (const words of ['**Vouchers need approval**', '**السندات تحتاج موافقة**', '**سەنەدەکان پێویستیان بە پەسەندکردنە**', '**End of day**', '**إغلاق اليوم**', '**داخستنی ڕۆژ**']) {
-      expect(notes, words).toContain(words);
-    }
+    expect(lines('en-us')[1]).toBe('The menu at the side keeps one group open at a time: the group you open slides into view with all its pages and is highlighted for a moment, and a page opened from search or Home opens its own group.');
+    expect(lines('ar')[1]).toContain('الرئيسية');
+    expect(lines('ku-arab')[1]).toContain('سەرەکی');
+    expect(lines('en-us')[2]).toMatch(/^Also from 1\.5\.0: with the Qasa phone app 1\.1, /);
+    expect(lines('ar')[2]).toMatch(/^ومن الإصدار 1\.5\.0: مع تطبيق الهاتف قاصة 1\.1، /);
+    expect(lines('ku-arab')[2]).toMatch(/^هەروەها لە وەشانی 1\.5\.0 ەوە: لەگەڵ ئەپی مۆبایلی قاسە 1\.1، /);
+    expect(lines('en-us')[2]).toContain('Settings → Office network → Phones (Qasa app)');
+    expect(lines('en-us')[2]).toContain('The company file is upgraded the first time 1.5.0 opens it, and older versions cannot open it afterwards: update every PC that opens the same company.');
+    expect(lines('ar')[2]).toContain('يُرقّى ملف الشركة أول مرة يفتحه فيها الإصدار 1.5.0، ولا تفتحه الإصدارات الأقدم بعد ذلك: حدّث كل حاسوب يفتح الشركة نفسها.');
+    expect(lines('ku-arab')[2]).toContain('فایلی کۆمپانیا یەکەم جار کە 1.5.0 دەیکاتەوە بەرز دەکرێتەوە، و دواتر وەشانە کۆنترەکان ناتوانن بیکەنەوە: هەموو ئەو کۆمپیوتەرانە نوێ بکەرەوە کە هەمان کۆمپانیا دەکەنەوە.');
+    expect(lines('en-us')[3]).toBe('Also from 1.4.3, which was not released on its own: dinar and dollar on more screens, What’s new after skipped versions, and switching the office network off asks first.');
+    expect(lines('ar')[3]).toMatch(/^ومن الإصدار 1\.4\.3، الذي لم يصدر وحده: /);
+    expect(lines('ku-arab')[3]).toMatch(/^هەروەها لە وەشانی 1\.4\.3 ەوە، کە بە تەنها بڵاو نەکرایەوە: /);
   });
 
   it('leaves out the line for the holders of 0.1.8 licences, which was for the first month on 1.0', () => {
     for (const lang of LANGS) expect(store[lang].releaseNotes, lang).not.toContain('0.1.8');
   });
 
-  it('keeps the 1.5.0 release-day steps in docs/releasing.md (the Store submission of 1.5.0 is still to come), in place of 1.4.3\'s', () => {
+  it('keeps the 1.5.0 release-day steps in docs/releasing.md, in place of 1.4.3\'s', () => {
     const releasing = read('docs/releasing.md');
     expect(releasing).toContain('## Release day for 1.5.0');
     expect(releasing).not.toContain('## Release day for 1.4.3');
   });
 });
 
-describe('the release notes of this version (1.5.1: the menu, on GitHub and the website only)', () => {
+describe('the release notes of this version (1.5.1: the menu, first on GitHub and the website, then in the Store)', () => {
   const version = (JSON.parse(read('apps/desktop/package.json')) as { version: string }).version;
   const notes = read(`apps/desktop/release-notes/${version}.md`);
   const section = (lang: 'ar' | 'en' | 'ku') => new RegExp(`^::: ${lang}\\n([\\s\\S]*?)^:::$`, 'm').exec(notes)?.[1] ?? '';
@@ -1449,13 +1448,13 @@ describe('the release notes of this version (1.5.1: the menu, on GitHub and the 
     expect(section('en')).not.toMatch(/\w'[\w\s]/);
   });
 
-  it('says the Microsoft Store copy gets it later, and leaves the Store "What\'s new" on 1.5.0', () => {
+  it('said on GitHub that the Store copy gets it later (kept as shipped), and the Store "What\'s new" now names 1.5.1', () => {
     expect(notes).toMatch(/^\*\*Qasa ERP 1\.5\.1 for Windows\*\*: [^\n]*the Microsoft Store version gets this change later, with the next Store update\./);
     expect(notes).toContain('copy stays on 1.5.0 for now.');
-    expect(store['en-us'].releaseNotes.split('\n')[0]).toBe('Qasa ERP 1.5.0.');
+    for (const lang of ['en-us', 'ar', 'ku-arab'] as const) expect(store[lang].releaseNotes.split('\n')[0], lang).toMatch(/^\S+ ERP 1\.5\.1\.$/);
     const releasing = read('docs/releasing.md');
     expect(releasing).toContain('## Release day for 1.5.1');
-    expect(releasing).toContain('the Store stays on 1.5.0');
+    expect(releasing).toContain('**The Store got 1.5.1 on 2026-11-16**');
   });
 });
 

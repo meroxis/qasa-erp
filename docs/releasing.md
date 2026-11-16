@@ -36,7 +36,7 @@ There are two channels:
 
 1. Set `"version"` in `apps/desktop/package.json`, for example `0.2.0`.
 2. Write `apps/desktop/release-notes/0.2.0.md` in the format below.
-3. Update the Store "What's new" text in `apps/desktop/store-listing.json`. It may already hold a draft for this version: write the version's items in place of its `{{0.2.0}}` line and keep the rest (such as a line for a version the Store skipped). If the release takes another number than the draft names, change the draft's number too. `release-config.test.ts` fails while a placeholder is left in the text of the version the app is on, while the text names a version newer than a stable app's, and while it names a version older than the app's. The one exception is a release that goes to GitHub and the website only (as 1.5.1 did): leave the Store text as it is, and write in that version's "Release day" section below that the Store stays on the version the text names (for example "the Store stays on 1.5.0"); skip step 7 for it.
+3. Update the Store "What's new" text in `apps/desktop/store-listing.json`. It may already hold a draft for this version: write the version's items in place of its `{{0.2.0}}` line and keep the rest (such as a line for a version the Store skipped). If the release takes another number than the draft names, change the draft's number too. `release-config.test.ts` fails while a placeholder is left in the text of the version the app is on, while the text names a version newer than a stable app's, and while it names a version older than the app's. The one exception is a release that goes to GitHub and the website only (as 1.5.1 was at first): leave the Store text as it is, and write in that version's "Release day" section below that the Store stays on the version the text names (for example "the Store stays on 1.5.0"); skip step 7 for it.
 4. **Tag the Pro module first.** Merge the Pro feature branch into Pro `main`, then push the tag `v0.2.0` on `meroxis/qasa-erp-pro` at that merge commit. `release.yml` checks out Pro at the tag of the same name as the app tag (never Pro's default branch), so a missing Pro tag stops the release run at the Pro checkout, and an unmerged Pro branch is never shipped by accident:
 
    ```
@@ -159,18 +159,20 @@ as the notes say first.
    update must exist first. Set its `APP_VERSION` (`build.mjs`, the `softwareVersion` the pages give search engines)
    to 1.5.0 in the same deploy.
 
-## Release day for 1.5.1 (the menu: GitHub and the website only)
+## Release day for 1.5.1 (the menu: GitHub and the website first, then the Store)
 
 1.5.1 carries one change: the menu at the side keeps one group open at a time, slides the group you open into view and
 highlights it for a moment, and a page opened from search or Home opens its own group. No schema change (the company
-file stays on 15) and no Pro change. **The Microsoft Store is not updated in this release: the Store stays on 1.5.0**
-(its "What's new" in `store-listing.json` still names 1.5.0) until the next Store submission, which then carries 1.5.1's
-change with its own version and "What's new".
+file stays on 15) and no Pro change. It went to GitHub and the website first, before the Store had
+1.5.0. **The Store got 1.5.1 on 2026-11-16**, submitted once 1.5.0 was live in the Store (that day): its "What's new" in
+`store-listing.json` names 1.5.1 first with the menu, then 1.5.0's items ("Also from 1.5.0", with the company-file
+warning) and 1.4.3's. The 1.4.1 line is gone, since every Store copy has had it since 1.4.2.
 
 1. **Tag Pro, then the app** (the stable steps above, without step 7): no Pro code changed, but `release.yml` checks out
    Pro at the tag named like the app's, so push `v1.5.1` on Pro `main` (at the commit of Pro's `v1.5.0`, or later if
    Pro `main` has moved on and passed its checks), then tag the app `v1.5.1` on `main` after the release PR is merged.
-2. **Don't submit the `microsoft-store-package` artifact** in Partner Center. The release workflow still builds it; leave it.
+2. **The Store submission came after the GitHub release:** once 1.5.0 was live in the Store, the 1.5.1
+   `microsoft-store-package` artifact of the release workflow was submitted in Partner Center with the 1.5.1 "What's new".
 3. **The website:** set its `APP_VERSION` (`build.mjs`, the `softwareVersion` the pages give search engines) to 1.5.1
    and deploy once the 1.5.1 GitHub release is out (the release workflow moves the website's download link, as for every
    release).
