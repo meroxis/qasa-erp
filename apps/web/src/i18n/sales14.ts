@@ -19,11 +19,12 @@ export const SALES14_TEXT = {
     'سەرەتا دابینکەر هەڵبژێرە: کڕین بە قەرز وەک قەرز بۆ ئەو دەمێنێتەوە.'
   ],
   s14_safe: ['القاصة', 'Safe', 'قاسە'],
-  // what the section holds now: the rule for selling stock past its date, the days of warning, dates on new items
+  // what the section holds now: the rule for selling stock past its date, the days of warning, dates on new items, and
+  // (1.5.2) whether the company uses the point of sale
   s14_salesSectionHelp: [
-    'بيع المنتهي الصلاحية، وأيام التنبيه قبل الانتهاء، وتاريخ الانتهاء للمواد الجديدة',
-    'Selling expired stock, the days of warning before expiry, and expiry dates on new items',
-    'فرۆشتنی کاڵای بەسەرچوو، ڕۆژەکانی ئاگاداری پێش بەسەرچوون، و بەرواری بەسەرچوون بۆ کاڵا نوێیەکان'
+    'بيع المنتهي الصلاحية، وأيام التنبيه قبل الانتهاء، وتاريخ الانتهاء للمواد الجديدة، واستعمال نقطة البيع',
+    'Selling expired stock, the days of warning before expiry, expiry dates on new items, and using the point of sale',
+    'فرۆشتنی کاڵای بەسەرچوو، ڕۆژەکانی ئاگاداری پێش بەسەرچوون، بەرواری بەسەرچوون بۆ کاڵا نوێیەکان، و بەکارهێنانی خاڵی فرۆشتن'
   ],
   err_pos_credit_not_mixed: [
     'البيع إما مدفوع الآن أو آجل كله، ولا يُقسم بينهما.',

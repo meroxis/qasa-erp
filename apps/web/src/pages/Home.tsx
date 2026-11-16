@@ -274,7 +274,7 @@ function Launcher({ viewer, user, favourites }: { viewer: NavViewer; user: strin
             {s.group === 'gIndustry' && <span className="launch-note">{t('bizSectionNote')}</span>}
           </div>
           <div className="launch-grid">
-            {s.items.map((item) => <LaunchTile key={item.key} item={item} pinned={favourites.includes(item.key)} user={user} label={t(navLabel(item, viewer))} locked={lockOf(item, plan?.features ?? null)} />)}
+            {s.items.map((item) => <LaunchTile key={item.key} item={item} pinned={favourites.includes(item.key)} user={user} pos={viewer.pos !== false} label={t(navLabel(item, viewer))} locked={lockOf(item, plan?.features ?? null)} />)}
           </div>
         </div>
       ))}
@@ -288,7 +288,7 @@ function lockOf(item: NavItem, features: readonly string[] | null): string | nul
   return feature === 'realEstate' ? 'Business' : 'Pro';
 }
 
-function LaunchTile({ item, pinned, user, label, locked }: { item: NavItem; pinned: boolean; user: string; label: string; locked: string | null }) {
+function LaunchTile({ item, pinned, user, pos, label, locked }: { item: NavItem; pinned: boolean; user: string; pos: boolean; label: string; locked: string | null }) {
   const { t } = useI18n();
   return (
     <div className="launch-tile" data-tour={item.key === 'br_title' ? 'brief' : undefined}>
@@ -300,7 +300,7 @@ function LaunchTile({ item, pinned, user, label, locked }: { item: NavItem; pinn
       <button
         type="button" className={'launch-pin' + (pinned ? ' on' : '')} aria-pressed={pinned}
         aria-label={`${t(pinned ? 'pinRemove' : 'pinAdd')}: ${label}`} title={t(pinned ? 'pinRemove' : 'pinAdd')}
-        onClick={() => toggleFavourite(user, item.key)}
+        onClick={() => toggleFavourite(user, item.key, pos)}
       >
         <svg width="15" height="15" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2.5l2.9 6 6.6.9-4.8 4.6 1.2 6.5L12 17.4l-5.9 3.1 1.2-6.5-4.8-4.6 6.6-.9z" fill={pinned ? 'currentColor' : 'none'} stroke="currentColor" strokeWidth="1.8" strokeLinejoin="round" /></svg>
       </button>
