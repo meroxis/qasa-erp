@@ -32,7 +32,7 @@ export const BRIEF_TEXT = {
   br_allClear: ['لا شيء هنا — كل شيء على ما يرام.', 'Nothing here — all clear.', 'هیچ شتێک لێرە نییە — هەموو شتێک باشە.'],
   br_seeAll: ['عرض الكل', 'See all', 'هەمووی ببینە'],
   br_days: ['{n} يوم', '{n} days', '{n} ڕۆژ'],
-  br_onlyPosted: ['الأرقام من الفواتير المرحّلة والسندات المصادق عليها فقط، بالدينار.', 'Figures come from posted invoices and approved vouchers only, in dinars.', 'ژمارەکان تەنها لە پسوولە تەرحیلکراوەکان و سەنەدە پەسەندکراوەکانەوە وەرگیراون، بە دینار.'],
+  br_onlyPosted: ['الأرقام من الفواتير المرحّلة والسندات المصادق عليها فقط، بالدينار.', 'Figures come from posted invoices and approved vouchers only, in dinars.', 'ژمارەکان تەنها لە پسوولە پۆستکراوەکان و سەنەدە پەسەندکراوەکانەوە وەرگیراون، بە دینار.'],
   br_prevDay: ['اليوم السابق', 'Previous day', 'ڕۆژی پێشوو'],
   br_nextDay: ['اليوم التالي', 'Next day', 'ڕۆژی دواتر'],
   br_sendWhatsApp: ['أرسل إلى واتساب', 'Send to WhatsApp', 'بنێرە بۆ واتسئاپ'],

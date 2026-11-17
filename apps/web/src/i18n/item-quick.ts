@@ -51,7 +51,7 @@ export const ITEM_QUICK_TEXT = {
   iq_stockWaiting: [
     'أُضيفت المادة. رصيدها مسودة تنتظر المصادقة (يرحّلها مصادق آخر من صفحة مستندات المخزن)، ولا تُباع قبل ذلك.',
     'The item was added. Its stock is a draft that waits for approval (another approver posts it on the Stock documents page); it cannot be sold before that.',
-    'کاڵاکە زیادکرا. بڕی کۆگاکەی ڕەشنووسێکە و چاوەڕێی پەسەندکردنە (پەسەندکەرێکی تر لە پەڕەی بەڵگەنامەکانی کۆگاوە تەرحیلی دەکات)؛ پێش ئەوە نافرۆشرێت.'
+    'کاڵاکە زیادکرا. بڕی کۆگاکەی ڕەشنووسێکە و چاوەڕێی پەسەندکردنە (پەسەندکەرێکی تر لە پەڕەی بەڵگەنامەکانی کۆگاوە پۆستی دەکات)؛ پێش ئەوە نافرۆشرێت.'
   ],
   iq_stockFailed: ['أُضيفت المادة، لكن رصيدها لم يُحفظ. حاول مرة أخرى.', 'The item was added, but its stock was not saved. Try again.', 'کاڵاکە زیادکرا، بەڵام بڕی کۆگاکەی پاشەکەوت نەکرا. دووبارە هەوڵ بدەرەوە.'],
   // the stock entry's try got no answer: the same entry is sent again with its key (the button is sc_tryAgain)
@@ -71,7 +71,7 @@ export const ITEM_QUICK_TEXT = {
   sc_help: [
     'قل كم يوجد الآن، أو كم تضيف أو تُخرج، ولماذا. يُعمل المستند المناسب ويُرحَّل (ومع «فصل المهام» تنتظر التسوية أو بضاعة أول المدة من يصادق عليها)، فتبقى الحسابات ومتوسط الكلفة والتقارير صحيحة.',
     'Say how much is there now, or how much to add or take out, and why. The matching document is made and posted (with Separate duties on, an adjustment or opening stock waits for an approver), so the books, the average cost and the reports stay right.',
-    'بڵێ ئێستا چەندی لێیە، یان چەند زیاد یان دەر دەکەیت، و بۆچی. بەڵگەنامەی گونجاو دروست و تەرحیل دەکرێت (لەگەڵ «جیاکردنەوەی ئەرکەکان»، ڕاستکردنەوەی کۆگا یان کاڵای سەرەتا چاوەڕێی پەسەندکەرێک دەکات)، بۆیە هەژمارەکان و تێکڕای تێچوو و ڕاپۆرتەکان ڕاست دەمێننەوە.'
+    'بڵێ ئێستا چەندی لێیە، یان چەند زیاد یان دەر دەکەیت، و بۆچی. بەڵگەنامەی گونجاو دروست و پۆست دەکرێت (لەگەڵ «جیاکردنەوەی ئەرکەکان»، ڕاستکردنەوەی کۆگا یان کاڵای سەرەتا چاوەڕێی پەسەندکەرێک دەکات)، بۆیە هەژمارەکان و تێکڕای تێچوو و ڕاپۆرتەکان ڕاست دەمێننەوە.'
   ],
   sc_onBooks: ['في الدفاتر الآن', 'On the books now', 'ئێستا لە هەژمارەکاندا'],
   sc_modeSet: ['العدد الموجود', 'Counted quantity', 'بڕی ژمێردراو'],
@@ -164,12 +164,12 @@ export const ITEM_QUICK_TEXT = {
   sc_waiting: [
     'حُفظت مسودة تنتظر المصادقة: يرحّلها مصادق آخر من صفحة تسوية المخزون. لم يتغير المخزون بعد.',
     'Saved as a draft that waits for approval: another approver posts it on the Stock adjustments page. The stock has not changed yet.',
-    'وەک ڕەشنووسێک پاشەکەوت کرا کە چاوەڕێی پەسەندکردنە: پەسەندکەرێکی تر لە پەڕەی ڕاستکردنەوەی کۆگاوە تەرحیلی دەکات. کۆگا هێشتا نەگۆڕاوە.'
+    'وەک ڕەشنووسێک پاشەکەوت کرا کە چاوەڕێی پەسەندکردنە: پەسەندکەرێکی تر لە پەڕەی ڕاستکردنەوەی کۆگاوە پۆستی دەکات. کۆگا هێشتا نەگۆڕاوە.'
   ],
   sc_waitingOpening: [
     'حُفظت مسودة تنتظر المصادقة: يرحّلها مصادق آخر من صفحة مستندات المخزن. لم يتغير المخزون بعد.',
     'Saved as a draft that waits for approval: another approver posts it on the Stock documents page. The stock has not changed yet.',
-    'وەک ڕەشنووسێک پاشەکەوت کرا کە چاوەڕێی پەسەندکردنە: پەسەندکەرێکی تر لە پەڕەی بەڵگەنامەکانی کۆگاوە تەرحیلی دەکات. کۆگا هێشتا نەگۆڕاوە.'
+    'وەک ڕەشنووسێک پاشەکەوت کرا کە چاوەڕێی پەسەندکردنە: پەسەندکەرێکی تر لە پەڕەی بەڵگەنامەکانی کۆگاوە پۆستی دەکات. کۆگا هێشتا نەگۆڕاوە.'
   ],
   sc_lastDone: ['آخر تصحيح', 'Last correction', 'دوایین ڕاستکردنەوە'],
   sc_openDoc: ['فتح المستند', 'Open the document', 'کردنەوەی بەڵگەنامە'],

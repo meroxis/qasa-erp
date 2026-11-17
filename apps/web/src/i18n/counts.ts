@@ -20,7 +20,7 @@ export const COUNT_TEXT = {
   nudgeText__one: [
     'رحّلت فاتورة مبيعات واحدة هذا الشهر. Pro يضيف فريق عمل على شبكة المكتب والتقسيط والرواتب والنسخ الاحتياطي.',
     'You posted {n} sales invoice this month. Pro adds a team on the office network, installments, payroll and backups.',
-    'ئەم مانگە {n} پسوولەی فرۆشتنت تەرحیل کردووە. Pro تیمێک لەسەر تۆڕی نووسینگە، قیست، مووچە و باکئەپ زیاد دەکات.'
+    'ئەم مانگە {n} پسوولەی فرۆشتنت پۆست کردووە. Pro تیمێک لەسەر تۆڕی نووسینگە، قیست، مووچە و باکئەپ زیاد دەکات.'
   ],
   bkCopies__one: ['نسخة واحدة', '{n} copy', '{n} کۆپی'],
   bl_unfinished_entries__one: [
@@ -31,7 +31,7 @@ export const COUNT_TEXT = {
   bl_unfinished_documents__one: [
     'فاتورة أو مستند واحد لا يزال مسودة: رحّله أو احذفه.',
     '{n} invoice or document is still a draft: post or delete it.',
-    '{n} پسوولە یان بەڵگە هێشتا ڕەشنووسە: تەرحیلی بکە یان بیسڕەوە.'
+    '{n} پسوولە یان بەڵگە هێشتا ڕەشنووسە: پۆستی بکە یان بیسڕەوە.'
   ],
   dbHasCompany__one: [
     'في قاعدة البيانات هذه شركة: {name} (قيد واحد). يمكن لهذا الحاسوب العمل عليها؛ ويُحفظ ملف الشركة على هذا الحاسوب جانباً ولا يُدمج معها.',

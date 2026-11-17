@@ -5,10 +5,10 @@
 export const SAFETY_TEXT = {
   // trial balance: opening, movement and closing, each as debit and credit
   tbMovement: ['الحركة خلال المدة', 'Movement in the period', 'جووڵە لەم ماوەیەدا'],
-  openingDebit: ['رصيد افتتاحي مدين', 'Opening debit', 'ڕەسیدی سەرەتای مەدین'],
-  openingCredit: ['رصيد افتتاحي دائن', 'Opening credit', 'ڕەسیدی سەرەتای دائین'],
-  closingDebit: ['رصيد ختامي مدين', 'Closing debit', 'ڕەسیدی کۆتایی مەدین'],
-  closingCredit: ['رصيد ختامي دائن', 'Closing credit', 'ڕەسیدی کۆتایی دائین'],
+  openingDebit: ['رصيد افتتاحي مدين', 'Opening debit', 'ڕەسیدی سەرەتای قەرزدار'],
+  openingCredit: ['رصيد افتتاحي دائن', 'Opening credit', 'ڕەسیدی سەرەتای قەرزدەر'],
+  closingDebit: ['رصيد ختامي مدين', 'Closing debit', 'ڕەسیدی کۆتایی قەرزدار'],
+  closingCredit: ['رصيد ختامي دائن', 'Closing credit', 'ڕەسیدی کۆتایی قەرزدەر'],
   tbOpeningHelp: [
     'الرصيد الافتتاحي هو مجموع كل ما رُحّل قبل تاريخ «من».',
     'The opening balance is everything posted before the From date.',

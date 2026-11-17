@@ -171,3 +171,40 @@ export function tileOffer(item: Pick<ItemView, 'saleCurrency' | 'salePrice' | 's
   const ownIn = own !== null ? priceIn({ salePrice: own, saleCurrency: item.saleCurrency }, currency, rateX100) : null;
   return { unit, price: salePriceFor(item, unit, priceIn(item, currency, rateX100), { own: ownIn }) };
 }
+
+/* ---------- the quick buttons (every company that uses the till) ---------- */
+
+/**
+ * The company's quick buttons as the till shows them: from the settings when they came with them (an office server
+ * from before the quick buttons sends none: no row), else, while the server can't be reached, the list last known on
+ * this PC (the offline till), else none.
+ */
+export function quickIdsFor(fromSettings: readonly string[] | undefined, lastKnown: readonly string[] | null | undefined): string[] {
+  return [...(fromSettings ?? lastKnown ?? [])];
+}
+
+/** The quick buttons' items, in the list's order; an id of an item the till does not list (deleted, inactive) has none. */
+export function quickRowItems<I extends { id: string }>(ids: readonly string[], items: readonly I[]): I[] {
+  const byId = new Map(items.map((it) => [it.id, it] as const));
+  return ids.flatMap((id) => { const it = byId.get(id); return it ? [it] : []; });
+}
+
+/**
+ * Edit buttons: a tap on a tile puts the item at the end of the quick buttons, or takes it off. A full row takes none
+ * more (`full`: said to the admin, nothing changes).
+ */
+export function toggleQuick(ids: readonly string[], id: string, max: number): { next: string[]; full: boolean } {
+  if (ids.includes(id)) return { next: ids.filter((x) => x !== id), full: false };
+  if (ids.length >= max) return { next: [...ids], full: true };
+  return { next: [...ids, id], full: false };
+}
+
+/** Edit buttons: a quick button one place back (-1) or forward (+1) in the row; at an end it stays where it is. */
+export function moveQuick(ids: readonly string[], id: string, step: -1 | 1): string[] {
+  const at = ids.indexOf(id);
+  const to = at + step;
+  if (at < 0 || to < 0 || to >= ids.length) return [...ids];
+  const next = [...ids];
+  [next[at], next[to]] = [next[to]!, next[at]!];
+  return next;
+}

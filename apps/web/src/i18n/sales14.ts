@@ -106,7 +106,7 @@ export const SALES14_TEXT = {
     'ڕاپۆرتەکانی تەمەنی قەرز پارەدانەکان لە کۆنترین قەرزەوە دەژمێرن، بۆیە لەوانەیە تەمەنەکانی ئەوێ لەوەی ئەم پسوولەیە پیشانی دەدات جیاواز بن.'
   ],
   s14_forInvoice: ['عن الفاتورة {n}', 'For invoice {n}', 'بۆ پسوولەی {n}'],
-  s14_posted: ['رُحّل السند {n}', 'Voucher {n} posted', 'سەنەدی {n} تەرحیل کرا'],
+  s14_posted: ['رُحّل السند {n}', 'Voucher {n} posted', 'سەنەدی {n} پۆست کرا'],
   s14_savedWaiting: ['حُفظ السند وهو بانتظار الموافقة.', 'Saved. It waits for approval.', 'پاشەکەوت کرا و چاوەڕێی پەسەندکردنە.'],
   s14_savedDraft: [
     'حُفظ مسودة: يحتاج التدقيق والمصادقة.',
@@ -175,7 +175,7 @@ export const SALES14_TEXT = {
   // vouchers that wait for approval
   s14_waiting: ['بانتظار الموافقة', 'Waiting for approval', 'چاوەڕێی پەسەندکردن'],
   s14_rejected: ['مرفوض', 'Rejected', 'ڕەتکراوە'],
-  s14_approve: ['موافقة وترحيل', 'Approve & post', 'پەسەندکردن و تەرحیلکردن'],
+  s14_approve: ['موافقة وترحيل', 'Approve & post', 'پەسەندکردن و پۆستکردن'],
   s14_reject: ['رفض', 'Reject', 'ڕەتکردنەوە'],
   s14_rejectTitle: ['رفض السند', 'Reject the voucher', 'ڕەتکردنەوەی سەنەد'],
   s14_rejectHelp: [

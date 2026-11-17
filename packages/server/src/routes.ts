@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import { BUILT_IN_FEATURES } from './features.ts';
 import { checkBranchRequest, filterBranchResult, isBranchLimited, userBranchLists } from './branches.ts';
-import { AMOUNTS_SHOW, APP_VERSION, BUSINESS_TYPES, MAX_BATCH_NO, MAX_ITEM_UNITS, MAX_UNIT_FACTOR_MILLI, POS_USE, UNIT_CODES } from '@qasa/core';
+import { AMOUNTS_SHOW, APP_VERSION, BUSINESS_TYPES, MAX_BATCH_NO, MAX_ITEM_UNITS, MAX_UNIT_FACTOR_MILLI, POS_BIG_PICTURES, POS_QUICK_MAX, POS_USE, UNIT_CODES } from '@qasa/core';
 import { schemaVersion, SCHEMA_VERSION, type Db } from './db.ts';
 import { AppError, conflict, invalid } from './errors.ts';
 import {
@@ -408,7 +408,10 @@ export function apiRoutes(db: Db, options: { demo?: boolean; extensions?: readon
       }).optional(),
       businessTypes: z.array(z.enum(BUSINESS_TYPES)).min(1).max(BUSINESS_TYPES.length).optional(),
       amountsShow: z.enum(AMOUNTS_SHOW).optional(),
-      posUse: z.enum(POS_USE).optional()
+      posUse: z.enum(POS_USE).optional(),
+      // the till's quick buttons (an admin's, as every change here): item ids, then checked against the items on sale
+      posQuickItems: z.array(z.string().min(1).max(64)).max(POS_QUICK_MAX).optional(),
+      posBigPictures: z.enum(POS_BIG_PICTURES).optional()
     }), req.body);
     const { postingAccounts, ...rest } = withoutUndefined(body);
     return updateSettings(db, { ...rest, ...(postingAccounts ? { postingAccounts: { ...getSettings(db).postingAccounts, ...withoutUndefined(postingAccounts) } } : {}) }, userOf(req));

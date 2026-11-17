@@ -1,7 +1,23 @@
 import initSqlJs from 'sql.js';
 import wasmUrl from 'sql.js/dist/sql-wasm.wasm?url';
-import { ApiReply, apiRoutes, errorResponse, initDatabase, seedDemo, seedPetrolStationDemo, type Db, type Route } from '@qasa/server/browser';
+import { ApiReply, apiRoutes, errorResponse, initDatabase, seedDemo, seedPetrolStationDemo, seedPhoneShopDemo, type Db, type Route } from '@qasa/server/browser';
 import { DatabaseSync } from './node-sqlite.ts';
+
+/**
+ * The phone-shop sample's pictures, as base64 by item code: drawn for the demo by Meroxis (own work, no photos of real
+ * products). Fetched only when the phone shop is asked for.
+ */
+async function phoneShopPictures(): Promise<Record<string, string>> {
+  const files = import.meta.glob('./phone-shop/*.png', { query: '?url', import: 'default', eager: true }) as Record<string, string>;
+  const out: Record<string, string> = {};
+  for (const [path, url] of Object.entries(files)) {
+    const bytes = new Uint8Array(await (await fetch(url)).arrayBuffer());
+    let bin = '';
+    for (let i = 0; i < bytes.length; i += 0x8000) bin += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
+    out[path.replace(/^.*\/(.+)\.png$/, '$1')] = btoa(bin);
+  }
+  return out;
+}
 
 /**
  * The website demo has no server: the real API runs in the page, on SQLite in WebAssembly, filled with the
@@ -15,8 +31,12 @@ export async function startDemoBackend(): Promise<void> {
   initDatabase(db);
   seedDemo(db);
   // ?petrol in the address opens the sample company as a petrol station
-  // (named in the language the visitor reads: its tanks and the wording of its entries)
-  if (new URLSearchParams(window.location.search).has('petrol')) seedPetrolStationDemo(db, demoLang());
+  // (named in the language the visitor reads: its tanks and the wording of its entries);
+  // ?phoneshop opens it as a phone shop, with its pictures (the till's big pictures and quick buttons);
+  // without either the demo is the sample company as always
+  const demoKind = new URLSearchParams(window.location.search);
+  if (demoKind.has('petrol')) seedPetrolStationDemo(db, demoLang());
+  else if (demoKind.has('phoneshop')) seedPhoneShopDemo(db, await phoneShopPictures());
 
   const routes = apiRoutes(db, { demo: true }).map((route) => ({ route, pattern: compile(route.path) }));
   const realFetch = window.fetch.bind(window);

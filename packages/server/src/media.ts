@@ -581,8 +581,8 @@ const importOpeningBalances: Importer = (db, input, actor, result) => {
 const ACCOUNT_WORDS: [string[], string][] = [
   [['صندوق', 'الصندوق', 'قاصة', 'القاصة', 'خزينة', 'الخزينة', 'cash', 'cash on hand', 'petty cash', 'safe', 'قاسە', 'سندوق'], '1811'],
   [['مصرف', 'المصرف', 'بنك', 'البنك', 'bank', 'بانک'], '1831'],
-  [['زبائن', 'الزبائن', 'عملاء', 'العملاء', 'مدينون', 'المدينون', 'ذمم مدينة', 'customers', 'receivable', 'receivables', 'accounts receivable', 'debtors', 'کڕیاران', 'قەرزداران'], '1611'],
-  [['مجهزون', 'المجهزون', 'موردون', 'الموردون', 'دائنون', 'الدائنون', 'ذمم دائنة', 'suppliers', 'vendors', 'payable', 'payables', 'accounts payable', 'creditors', 'دابینکەران'], '2611'],
+  [['زبائن', 'الزبائن', 'عملاء', 'العملاء', 'مدينون', 'المدينون', 'ذمم مدينة', 'customers', 'receivable', 'receivables', 'accounts receivable', 'debtors', 'کڕیاران', 'قەرزداران', 'قەرزدارەکان', 'قەرزارەکان'], '1611'],
+  [['مجهزون', 'المجهزون', 'موردون', 'الموردون', 'دائنون', 'الدائنون', 'ذمم دائنة', 'suppliers', 'vendors', 'payable', 'payables', 'accounts payable', 'creditors', 'دابینکەران', 'قەرزدەران', 'قەرزدەرەکان'], '2611'],
   [['مخزون', 'المخزون', 'بضاعة', 'البضاعة', 'بضاعة اول المدة', 'inventory', 'stock', 'goods', 'کۆگا'], '1371'],
   [['راس المال', 'رأس المال', 'capital', 'equity', "owner's equity", 'سەرمایە'], '21'],
   [['ارباح محتجزة', 'الأرباح المحتجزة', 'فائض متراكم', 'retained earnings', 'accumulated surplus'], '229'],

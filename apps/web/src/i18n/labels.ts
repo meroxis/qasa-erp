@@ -163,6 +163,6 @@ export const LABEL_TEXT = {
   pd_h_rate: ['سعر الصرف', 'Exchange rate', 'نرخی دۆلار'],
   pd_h_accountCode: ['رمز الحساب', 'Account code', 'کۆدی هەژمار'],
   pd_h_account: ['الحساب', 'Account', 'هەژمار'],
-  pd_h_debit: ['مدين', 'Debit', 'مەدین'],
-  pd_h_credit: ['دائن', 'Credit', 'دائین'],
+  pd_h_debit: ['مدين', 'Debit', 'قەرزدار'],
+  pd_h_credit: ['دائن', 'Credit', 'قەرزدەر'],
 } as const;

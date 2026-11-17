@@ -47,8 +47,8 @@ describe('texts', () => {
     }
   });
 
-  // the desktop's Kurdish words (1.4, apps/web/src/i18n): قەید an entry, ڕەسید a balance, تەرحیل posting, جەرد a count,
-  // مەدین/دائین, نەقد cash, قەرز credit as a way of paying, قاسە a safe, سەنەد a voucher, پسوولە an invoice, بڕ a
+  // the desktop's Kurdish words (apps/web/src/i18n): قەید an entry, ڕەسید a balance, پۆست posting, جەرد a count,
+  // قەرزدار/قەرزدەر the two sides (from 1.5.3; «تەرحیل»، «مەدین»/«دائین» were 1.4 to 1.5.2), نەقد cash, قەرز credit as a way of paying, قاسە a safe, سەنەد a voucher, پسوولە an invoice, بڕ a
   // quantity and بڕی پارە an amount, کۆگا a warehouse and بڕی کۆگا what is in it
   it('Kurdish uses the desktop\'s accounting words', () => {
     const ku = (key: Parameters<typeof translate>[1]) => translate('ku', key);
@@ -56,8 +56,8 @@ describe('texts', () => {
     expect(ku('amount')).toBe('بڕی پارە');
     expect(ku('warehouse')).toBe('کۆگا');
     expect(ku('stock')).toBe('بڕی کۆگا');
-    expect(ku('debit')).toBe('مەدین');
-    expect(ku('credit')).toBe('دائین');
+    expect(ku('debit')).toBe('قەرزدار');
+    expect(ku('credit')).toBe('قەرزدەر');
     expect(ku('closing')).toBe('ڕەسید');
     expect(ku('payCash')).toBe('نەقد');
     expect(ku('payCredit')).toBe('قەرز');
@@ -66,11 +66,11 @@ describe('texts', () => {
     expect(ku('cashTotal')).toContain('قاسە');
     expect(ku('kindReceipt')).toBe('سەنەدی وەرگرتن');
     expect(ku('modeSale')).toContain('پسوولە');
-    // posting is تەرحیل; the words an older pass used are gone
-    expect(ku('draftSent')).toContain('تەرحیل');
-    expect(ku('collectPosted')).toContain('تەرحیل');
+    // posting is پۆست; the words an older pass used are gone
+    expect(ku('draftSent')).toContain('پۆست');
+    expect(ku('collectPosted')).toContain('پۆست');
     for (const key of KEYS) {
-      expect(ku(key), key).not.toMatch(/باڵانس|نەختینە|سندوق|قەرزدار|قەرزدەر|تایبەتمەندی/);
+      expect(ku(key), key).not.toMatch(/باڵانس|نەختینە|سندوق|تەرحیل|مەدین|دائین|تایبەتمەندی/);
       const en = translate('en', key);
       if (/\bposts?\b|\bposted\b|\bentr(y|ies)\b/i.test(en)) expect(ku(key), key).not.toMatch(/تۆمار/);
     }
