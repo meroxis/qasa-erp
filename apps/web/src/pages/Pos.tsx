@@ -280,7 +280,7 @@ function Register({ initial, onClosed }: { initial: ShiftView; onClosed(): void 
   const toast = useToast();
   const { settings, permissions, reloadSettings } = useData();
   const market = !!settings?.businessTypes?.includes('market');
-  // big picture tiles: a phone shop's till by default, any company's by its choice (Settings → Sales and point of sale)
+  // big picture tiles: off for every company until an admin turns them on (Settings → Sales and point of sale)
   const bigTiles = posBigTiles(settings ?? {});
   // the quick buttons are the company's; an admin changes them (the server takes them from an admin only)
   const mayEditQuick = may(permissions, 'companyDetails');
