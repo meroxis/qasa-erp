@@ -121,7 +121,7 @@ describe('point of sale', () => {
     await post('/api/plan/trial');
     const ownerId = (await get('/api/users')).json()[0].id;
     expect((await post(`/api/users/${ownerId}/password`, { password: 'admin-pass-123' })).statusCode).toBe(200);
-    expect((await post('/api/users', { username: 'mer', name: 'Mer', password: 'mer-pass-123', roles: ['sales'] })).statusCode).toBe(201);
+    expect((await post('/api/users', { username: 'mer', name: 'Mer', password: 'mer-pass-123', roles: ['sales', 'pos'] })).statusCode).toBe(201);
     expect((await app.inject({ method: 'PUT', url: '/api/auth/signin', payload: { on: true }, headers })).statusCode).toBe(200);
     const res = await app.inject({ method: 'POST', url: '/api/auth/login', payload: { username: 'mer', password: 'mer-pass-123' }, headers: { 'x-qasa-client': '1' } });
     expect(res.statusCode, res.body).toBe(200);
@@ -165,13 +165,13 @@ describe('point of sale', () => {
     expect((await get('/api/pos/shifts?status=closed')).json()).toHaveLength(1);
   });
 
-  it('lets only the sales permission open and sell, and only the opener (or an admin) run a shift', async () => {
+  it('lets only the Point of sale permission open and sell (1.5.2), and only the opener (or an admin) run a shift', async () => {
     const shift = (await open()).json();
     // sign-in on (the Pro trial allows more users): a salesperson, a stock keeper, and the owner (admin)
     await post('/api/plan/trial');
     const ownerId = (await get('/api/users')).json()[0].id;
     expect((await post(`/api/users/${ownerId}/password`, { password: 'admin-pass-123' })).statusCode).toBe(200);
-    expect((await post('/api/users', { username: 'raz', name: 'Raz', password: 'raz-pass-123', roles: ['sales'] })).statusCode).toBe(201);
+    expect((await post('/api/users', { username: 'raz', name: 'Raz', password: 'raz-pass-123', roles: ['sales', 'pos'] })).statusCode).toBe(201);
     expect((await post('/api/users', { username: 'las', name: 'Las', password: 'las-pass-123', roles: ['storekeeper'] })).statusCode).toBe(201);
     expect((await app.inject({ method: 'PUT', url: '/api/auth/signin', payload: { on: true }, headers })).statusCode).toBe(200);
     const login = async (username: string, password: string) => {
@@ -206,7 +206,7 @@ describe('point of sale', () => {
     const ownerId = (await get('/api/users')).json()[0].id;
     expect((await post(`/api/users/${ownerId}/password`, { password: 'admin-pass-123' })).statusCode).toBe(200);
     for (const username of ['las1', 'las2']) {
-      expect((await post('/api/users', { username, name: 'Las S', password: `${username}-pass-123`, roles: ['sales'] })).statusCode).toBe(201);
+      expect((await post('/api/users', { username, name: 'Las S', password: `${username}-pass-123`, roles: ['sales', 'pos'] })).statusCode).toBe(201);
     }
     expect((await app.inject({ method: 'PUT', url: '/api/auth/signin', payload: { on: true }, headers })).statusCode).toBe(200);
     const login = async (username: string) => {
@@ -230,8 +230,8 @@ describe('point of sale', () => {
     await post('/api/plan/trial');
     const ownerId = (await get('/api/users')).json()[0].id;
     expect((await post(`/api/users/${ownerId}/password`, { password: 'admin-pass-123' })).statusCode).toBe(200);
-    expect((await post('/api/users', { username: 'raz', name: 'Raz', password: 'raz-pass-123', roles: ['sales'] })).statusCode).toBe(201);
-    expect((await post('/api/users', { username: 'las', name: 'Las', password: 'las-pass-123', roles: ['sales', 'approver'] })).statusCode).toBe(201);
+    expect((await post('/api/users', { username: 'raz', name: 'Raz', password: 'raz-pass-123', roles: ['sales', 'pos'] })).statusCode).toBe(201);
+    expect((await post('/api/users', { username: 'las', name: 'Las', password: 'las-pass-123', roles: ['sales', 'pos', 'approver'] })).statusCode).toBe(201);
     expect((await app.inject({ method: 'PUT', url: '/api/auth/separate-duties', payload: { on: true }, headers })).statusCode).toBe(200);
     expect((await app.inject({ method: 'PUT', url: '/api/auth/signin', payload: { on: true }, headers })).statusCode).toBe(200);
     const login = async (username: string) => {

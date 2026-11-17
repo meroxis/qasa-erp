@@ -15,12 +15,13 @@ describe('the point of sale by business type (1.5.2)', () => {
     expect(posByBusiness([])).toBe(true);
   });
 
-  it('keeps the till of a company that has used it, and the company’s own choice wins', () => {
+  it('follows the business type only while auto, and the company’s own choice wins', () => {
     const works = ['engineeringWorks'] as const;
-    expect(posShown({ posUse: 'auto', posUsed: false, businessTypes: works })).toBe(false);
-    expect(posShown({ posUse: 'auto', posUsed: true, businessTypes: works })).toBe(true);
-    expect(posShown({ posUse: 'on', posUsed: false, businessTypes: works })).toBe(true);
-    expect(posShown({ posUse: 'off', posUsed: true, businessTypes: ['market'] })).toBe(false);
+    expect(posShown({ posUse: 'auto', businessTypes: works })).toBe(false);
+    // a company that has sold at the till keeps nothing by that (the owner's decision): only the switch turns it on
+    expect(posShown({ posUse: 'auto', businessTypes: works, posUsed: true } as never)).toBe(false);
+    expect(posShown({ posUse: 'on', businessTypes: works })).toBe(true);
+    expect(posShown({ posUse: 'off', businessTypes: ['market'] })).toBe(false);
     // an office server older than 1.5.2 says nothing: the till shows, as it did
     expect(posShown({ businessTypes: works })).toBe(true);
   });

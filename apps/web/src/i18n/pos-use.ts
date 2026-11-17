@@ -22,10 +22,11 @@ export const POS_USE_TEXT = {
     'Off, from the business type (it doesn’t sell at a counter).',
     'ناکارایە بەپێی جۆری چالاکی کۆمپانیا (لەسەر کاونتەر نافرۆشێت).'
   ],
-  pu_autoUsed: [
-    'مفعّلة لأن الشركة باعت بنقطة البيع من قبل.',
-    'On, because the company has sold at the point of sale before.',
-    'کارایە چونکە کۆمپانیاکە پێشتر بە خاڵی فرۆشتن فرۆشتووە.'
+  // who may use the till where it is on: the Point of sale role, per person (1.5.2)
+  pu_who: [
+    'ويستعملها مدير النظام ومن أُعطي دور «نقطة البيع (الكاشير)» في المستخدمين.',
+    'Admins use it, and whoever is given the “Point of sale” role in Users.',
+    'بەڕێوەبەری سیستەم و ئەوەی ڕۆڵی «خاڵی فرۆشتن (کاشێر)»ی لە بەکارهێنەراندا پێدراوە بەکاری دەهێنن.'
   ],
   // against an office server not yet updated: it keeps no such choice
   pu_oldServer: [

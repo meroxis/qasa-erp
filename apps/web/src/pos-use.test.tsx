@@ -10,8 +10,8 @@ import { allPages, canSee, defaultFavourites, favourites, findPage, NAV, pageOpe
 import { PosNotUsed } from './industry/PosNotUsed.tsx';
 import { PosUseSetting } from './industry/PosUseSetting.tsx';
 
-// 1.5.2: the point of sale shows only where the company sells at a counter (by business type), where it has already
-// sold at the till, or where Settings → Sales and point of sale → Use the point of sale says so
+// 1.5.2: the point of sale shows only where the company sells at a counter (by business type) or where Settings → Sales
+// and point of sale → Use the point of sale says so, and only to a person with the Point of sale role (or an admin)
 
 const render = (node: ReactNode, settings: Partial<Settings> | null, lang: Lang = 'en') => renderToStaticMarkup(
   <I18nContext.Provider value={makeI18n(lang, 'western', () => {}, () => {})}>
@@ -22,9 +22,9 @@ const render = (node: ReactNode, settings: Partial<Settings> | null, lang: Lang 
 );
 const company = (businessTypes: BusinessType[], more: Partial<Settings> = {}): Settings => ({
   companyName: { ar: '', en: '', ku: '' }, defaultRateX100: 142_000, fiscalYearStart: '01-01', postingAccounts: {} as never,
-  businessTypes, amountsShow: 'iqd', posUse: 'auto', posUsed: false, ...more
+  businessTypes, amountsShow: 'iqd', posUse: 'auto', ...more
 });
-const viewerOf = (s: Settings, admin = true): NavViewer => ({ admin, permissions: admin ? ['admin'] : ['sales'], businessTypes: s.businessTypes ?? [], pos: posShown(s) });
+const viewerOf = (s: Settings, admin = true): NavViewer => ({ admin, permissions: admin ? ['admin'] : ['sales', 'pos'], businessTypes: s.businessTypes ?? [], pos: posShown(s) });
 const till = findPage('pos_title')!;
 const salesGroup = NAV.find((g) => g.group === 'gSales')!;
 
@@ -53,10 +53,10 @@ describe('the till in the menu, the home page and the search', () => {
     expect(canSee(till, viewerOf(company(['realEstate']), false))).toBe(false);
   });
 
-  it('keeps the till of a company that has used it, and follows the switch', () => {
-    expect(canSee(till, viewerOf(company(['engineeringWorks'], { posUsed: true })))).toBe(true);
+  it('follows the business type and the switch only (a till used before keeps nothing)', () => {
+    expect(canSee(till, viewerOf({ ...company(['engineeringWorks']), posUsed: true } as Settings))).toBe(false);
     expect(canSee(till, viewerOf(company(['engineeringWorks'], { posUse: 'on' })))).toBe(true);
-    expect(canSee(till, viewerOf(company(['market'], { posUse: 'off', posUsed: true })))).toBe(false);
+    expect(canSee(till, viewerOf(company(['market'], { posUse: 'off' })))).toBe(false);
     // a viewer that says nothing (before the settings come, or an older server): as before 1.5.2
     expect(canSee(till, { admin: true, permissions: ['admin'], businessTypes: ['engineeringWorks'] })).toBe(true);
     expect(canSee(till, viewerOf(company(['engineeringWorks'], { posUse: undefined })))).toBe(true);
@@ -82,7 +82,10 @@ describe('Settings → Sales and point of sale → Use the point of sale', () =>
     const works = render(<PosUseSetting />, company(['engineeringWorks']));
     expect(works).toMatch(/aria-checked="true"[^>]*>(?:(?!aria-checked).)*Don’t use it/);
     expect(works).toContain('Off, from the business type');
-    expect(render(<PosUseSetting />, company(['engineeringWorks'], { posUsed: true }))).toContain('has sold at the point of sale before');
+    expect(works).not.toContain('sold at the point of sale before');
+    // where it is on, who uses it: admins and the Point of sale role
+    expect(market).toContain('whoever is given the “Point of sale” role in Users');
+    expect(works).not.toContain('role in Users');
     // once chosen it says no more
     const chosen = render(<PosUseSetting />, company(['engineeringWorks'], { posUse: 'on' }));
     expect(chosen).toMatch(/aria-checked="true"[^>]*>(?:(?!aria-checked).)*Use it/);
@@ -90,7 +93,7 @@ describe('Settings → Sales and point of sale → Use the point of sale', () =>
   });
 
   it('cannot be changed against an office server older than 1.5.2', () => {
-    const old = render(<PosUseSetting />, { ...company(['engineeringWorks']), posUse: undefined, posUsed: undefined });
+    const old = render(<PosUseSetting />, { ...company(['engineeringWorks']), posUse: undefined });
     expect(old).toContain('aria-disabled="true"');
     expect(old).toContain('Update Qasa ERP on the office server PC');
     expect(old).toMatch(/aria-checked="true"[^>]*>(?:(?!aria-checked).)*Use it/);

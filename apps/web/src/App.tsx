@@ -170,13 +170,16 @@ export function App() {
   // 1.5.2: whether the company uses the point of sale (a business that sells at a counter, or Settings → Sales and point
   // of sale); until the settings come, as before
   const posOn = settings ? posShown(settings) : true;
+  // and whether this person may use it (the Point of sale role, or an admin): the favourites pinned before a person pins
+  // any offer the till only to them
+  const tillMine = posOn && !!me?.user?.permissions.some((p) => p === 'pos' || p === 'admin');
   const favUser = me?.signInRequired ? me.user?.name ?? '' : currentUser() || me?.user?.name || '';
   useEffect(() => {
-    const load = () => setFavs(favourites(favUser, posOn));
+    const load = () => setFavs(favourites(favUser, tillMine));
     load();
     window.addEventListener(FAVOURITES_EVENT, load);
     return () => window.removeEventListener(FAVOURITES_EVENT, load);
-  }, [favUser, posOn]);
+  }, [favUser, tillMine]);
   const routePage = route[0] ?? '';
   // Ctrl+K (⌘K) opens the search from anywhere
   useEffect(() => {

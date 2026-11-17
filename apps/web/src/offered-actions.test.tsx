@@ -286,9 +286,13 @@ describe('the menu, role by role', () => {
     for (const key of ['po_title', 'purchaseInvoices', 'suppliers', 'purchaseReturns', 'stockDocs', 'adj_title', 'bk_title', 'accounts', 'br_expenses'] as const) {
       expect(keys(sales), key).not.toContain(key);
     }
-    for (const key of ['pos_title', 'qt_title', 'invoices', 'customers', 'salesReturns', 'items', 'fx_title', 'vouchers', 'br_title', 'dc_title'] as const) {
+    for (const key of ['qt_title', 'invoices', 'customers', 'salesReturns', 'items', 'fx_title', 'vouchers', 'br_title', 'dc_title'] as const) {
       expect(keys(sales), key).toContain(key);
     }
+    // 1.5.2: the till is the Point of sale role's, not the sales role's
+    expect(keys(sales)).not.toContain('pos_title');
+    expect(keys(of('pos'))).toContain('pos_title');
+    expect(of('pos').viewer.noBooks).toBe(true);
   });
 
   it('lets the roles that read the books read those pages, each with its own buttons only', () => {
@@ -318,10 +322,14 @@ describe('a typed address', () => {
       ['stock-adjustments'], ['new-stock-adjustment'], ['stock-count'], ['stock-docs'], ['new-stock-doc'], ['banking'], ['cheque'], ['accounts'], ['new'], ['edit'], ['users'], ['import']] as [string, string?][]) {
       expect(open('sales', page, arg), `${page}/${arg ?? ''}`).toBe(false);
     }
-    for (const [page, arg] of [[''], ['home'], ['sales'], ['new-invoice', 'sale'], ['customers'], ['party'], ['invoice'], ['items'], ['item'], ['rates'], ['pos'], ['quotes'], ['new-quote'],
+    for (const [page, arg] of [[''], ['home'], ['sales'], ['new-invoice', 'sale'], ['customers'], ['party'], ['invoice'], ['items'], ['item'], ['rates'], ['quotes'], ['new-quote'],
       ['entries'], ['entry'], ['brief'], ['day-close'], ['settings'], ['labels']] as [string, string?][]) {
       expect(open('sales', page, arg), `${page}/${arg ?? ''}`).toBe(true);
     }
+    // the till (1.5.2): for the Point of sale role, not the sales role alone; a shift's report for whoever reads the shift
+    expect(open('sales', 'pos')).toBe(false);
+    expect(open('pos', 'pos')).toBe(true);
+    expect(open('sales', 'pos-shift', 'x')).toBe(true);
   });
 
   it('opens a form only for someone who may send it, whatever they may read', () => {

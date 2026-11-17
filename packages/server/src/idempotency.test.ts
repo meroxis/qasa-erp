@@ -110,7 +110,7 @@ describe('the idempotency key', () => {
     await post('/api/plan/trial');
     const ownerId = (await get('/api/users')).json()[0].id;
     expect((await post(`/api/users/${ownerId}/password`, { password: 'admin-pass-123' })).statusCode).toBe(200);
-    expect((await post('/api/users', { username: 'las', name: 'Las', password: 'las-pass-123', roles: ['sales'] })).statusCode).toBe(201);
+    expect((await post('/api/users', { username: 'las', name: 'Las', password: 'las-pass-123', roles: ['sales', 'pos'] })).statusCode).toBe(201);
     expect((await app.inject({ method: 'PUT', url: '/api/auth/signin', payload: { on: true }, headers })).statusCode).toBe(200);
     const login = async (username: string, password: string) => {
       const res = await app.inject({ method: 'POST', url: '/api/auth/login', payload: { username, password }, headers: { 'x-qasa-client': '1' } });

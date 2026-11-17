@@ -20,7 +20,10 @@ void ({ ...ACTIONS, ...PRO_ACTIONS } satisfies Record<Action, { needs: Permissio
  *   when one of these is theirs to do: its figures are not sent to them and every button on it would be refused
  * - `tile: false`: in the menu but not a tile on the home screen
  * - `till`: the point of sale: shown only when the company uses it (1.5.2, core pos-use.ts: a business that sells at a
- *   counter, a company that has sold at the till, or Settings → Sales and point of sale → Use the point of sale)
+ *   counter, or Settings → Sales and point of sale → Use the point of sale) and to a person with the Point of sale role
+ *   (`permission: 'pos'`, an admin always); the sales role alone does not show it. A shift's X or Z report (pos-shift)
+ *   is not the till's page: whoever the server lets read the shift opens it (the books' people every shift, a cashier
+ *   their own, linked from the end-of-day close too)
  */
 export interface NavItem {
   key: Key;
@@ -55,7 +58,7 @@ export const NAV: NavGroup[] = [
     group: 'gSales',
     icon: 'trend',
     items: [
-      { key: 'pos_title', icon: 'wallet', path: 'pos', match: ['pos', 'pos-shift'], permission: 'sales', till: true },
+      { key: 'pos_title', icon: 'wallet', path: 'pos', match: ['pos'], permission: 'pos', till: true },
       { key: 'qt_title', icon: 'doc', path: 'quotes', match: ['quotes', 'quote', 'new-quote', 'edit-quote'], work: ['quote'] },
       { key: 'invoices', icon: 'invoice', path: 'sales', match: ['sales', 'new-invoice:sale'], work: ['sale'] },
       { key: 'customers', icon: 'contact', path: 'customers', match: ['customers'], work: ['customer'] },

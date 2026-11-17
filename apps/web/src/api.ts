@@ -115,8 +115,6 @@ export interface Settings {
   amountsShow?: AmountsShow;
   /** 1.5.2: whether the company uses the point of sale (core pos-use.ts); older servers leave both out (the till shows) */
   posUse?: PosUse;
-  /** a till shift was ever opened: the company keeps the till while it follows the business type */
-  posUsed?: boolean;
 }
 
 export interface PlanStatus extends PlanResolution {
@@ -443,9 +441,9 @@ export interface InvoiceView extends InvoiceSummary {
   tender?: { paid: number; change: number };
 }
 
-export type Role = 'admin' | 'preparer' | 'checker' | 'approver' | 'sales' | 'purchasing' | 'storekeeper' | 'viewer';
-export const ROLES: Role[] = ['admin', 'preparer', 'checker', 'approver', 'sales', 'purchasing', 'storekeeper', 'viewer'];
-export type Permission = 'admin' | 'entries.prepare' | 'entries.check' | 'entries.approve' | 'sales' | 'purchases' | 'stock';
+export type Role = 'admin' | 'preparer' | 'checker' | 'approver' | 'sales' | 'pos' | 'purchasing' | 'storekeeper' | 'viewer';
+export const ROLES: Role[] = ['admin', 'preparer', 'checker', 'approver', 'sales', 'pos', 'purchasing', 'storekeeper', 'viewer'];
+export type Permission = 'admin' | 'entries.prepare' | 'entries.check' | 'entries.approve' | 'sales' | 'pos' | 'purchases' | 'stock';
 
 export interface Me {
   signInRequired: boolean;

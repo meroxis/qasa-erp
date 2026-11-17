@@ -422,6 +422,8 @@ const BASE = {
   role_checker: ['المدقق', 'Checker', 'وردبین'],
   role_approver: ['المصادق', 'Approver', 'پەسەندکەر'],
   role_sales: ['المبيعات', 'Sales', 'فرۆشتن'],
+  // 1.5.2: the till, given per person by an admin (the words of the till itself, i18n/pos.ts pos_title)
+  role_pos: ['نقطة البيع (الكاشير)', 'Point of sale', 'خاڵی فرۆشتن (کاشێر)'],
   role_purchasing: ['المشتريات', 'Purchasing', 'کڕین'],
   role_storekeeper: ['أمين المخزن', 'Storekeeper', 'کۆگادار'],
   role_viewer: ['اطلاع فقط', 'Viewer', 'تەنها بینین'],
@@ -430,6 +432,7 @@ const BASE = {
   roleHelp_checker: ['يدقق السندات أو يعيدها', 'Checks vouchers or sends them back', 'سەنەدەکان وردبینی دەکات یان دەیانگەڕێنێتەوە'],
   roleHelp_approver: ['يصادق السندات فتُرحّل', 'Approves vouchers, which posts them', 'سەنەدەکان پەسەند دەکات و تەرحیل دەبن'],
   roleHelp_sales: ['فواتير المبيعات والمردودات والزبائن، دون الكلفة والربح', 'Sales invoices, returns and customers, without cost or profit', 'پسوولەی فرۆشتن، گەڕاوە و کڕیاران، بێ تێچوو و قازانج'],
+  roleHelp_pos: ['يبيع بنقطة البيع: يفتح الوردية ويبيع ويغلقها، دون الكلفة والربح', 'Sells at the point of sale: opens a shift, sells and closes it, without cost or profit', 'بە خاڵی فرۆشتن دەفرۆشێت: شەفت دەکاتەوە، دەفرۆشێت و دایدەخات، بێ تێچوو و قازانج'],
   roleHelp_purchasing: ['فواتير الشراء والمردودات والمجهزون', 'Purchase invoices, returns and suppliers', 'پسوولەی کڕین، گەڕاوە و دابینکەران'],
   roleHelp_storekeeper: ['المواد وحركات المخزن', 'Items and stock documents', 'کاڵا و جووڵەکانی کۆگا'],
   roleHelp_viewer: ['يطّلع على الدفاتر والتقارير دون تعديل', 'Sees the books and reports without changing them', 'دەفتەر و ڕاپۆرتەکان دەبینێت بێ گۆڕین'],

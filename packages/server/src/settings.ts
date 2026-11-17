@@ -18,11 +18,10 @@ export interface Settings {
   amountsShow: AmountsShow;
   /**
    * 1.5.2: whether the company uses the point of sale: follow the business type (the default), on or off (core
-   * pos-use.ts). Only the app's menu, home page and search follow it; the till's API stays as it is.
+   * pos-use.ts). The menu, home page and search follow it; each person also needs the Point of sale role ('pos'),
+   * which the till's API checks (pos.ts).
    */
   posUse: PosUse;
-  /** Whether a till shift was ever opened in this company file: a company that has sold at the till keeps it. */
-  posUsed: boolean;
 }
 
 /** Where each posting account must sit in the unified chart. */
@@ -71,8 +70,7 @@ export function getSettings(db: Db): Settings {
     postingAccounts: getPostingAccounts(db),
     businessTypes: businessTypes(db),
     amountsShow: amountsShow(db),
-    posUse: posUse(db),
-    posUsed: posUsed(db)
+    posUse: posUse(db)
   };
 }
 
@@ -80,11 +78,6 @@ export function getSettings(db: Db): Settings {
 function posUse(db: Db): PosUse {
   const stored = readSetting(db, 'pos_use');
   return isPosUse(stored) ? stored : 'auto';
-}
-
-/** Whether a till shift was ever opened: one row read, however many sales the company has. */
-function posUsed(db: Db): boolean {
-  return !!db.prepare('SELECT 1 FROM pos_shifts LIMIT 1').get();
 }
 
 /** The company's choice of how amounts show; anything unknown (a value from a newer version) reads as dinar only. */

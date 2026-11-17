@@ -274,7 +274,7 @@ function Launcher({ viewer, user, favourites }: { viewer: NavViewer; user: strin
             {s.group === 'gIndustry' && <span className="launch-note">{t('bizSectionNote')}</span>}
           </div>
           <div className="launch-grid">
-            {s.items.map((item) => <LaunchTile key={item.key} item={item} pinned={favourites.includes(item.key)} user={user} pos={viewer.pos !== false} label={t(navLabel(item, viewer))} locked={lockOf(item, plan?.features ?? null)} />)}
+            {s.items.map((item) => <LaunchTile key={item.key} item={item} pinned={favourites.includes(item.key)} user={user} pos={viewer.pos !== false && (viewer.admin || viewer.permissions.includes('pos'))} label={t(navLabel(item, viewer))} locked={lockOf(item, plan?.features ?? null)} />)}
           </div>
         </div>
       ))}

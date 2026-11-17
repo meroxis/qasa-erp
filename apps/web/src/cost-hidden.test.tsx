@@ -33,7 +33,8 @@ const render = (node: ReactNode, data: object = {}) => renderToStaticMarkup(
 );
 
 describe('the menu of someone who may not read the books', () => {
-  const cashier: NavViewer = { admin: false, permissions: ['sales'], businessTypes: [], noBooks: true };
+  // a cashier at the till: the sales role and (1.5.2) the Point of sale role
+  const cashier: NavViewer = { admin: false, permissions: ['sales', 'pos'], businessTypes: [], noBooks: true };
   const accountant: NavViewer = { admin: false, permissions: ['entries.prepare'], businessTypes: [] };
   const keys = (v: NavViewer) => allPages(v).map((p) => p.key);
 

@@ -8,7 +8,8 @@ import { useI18n, type Key } from '../i18n.ts';
 /**
  * Settings → Sales and point of sale → Use the point of sale (1.5.2), for admins: one choice for the whole company, kept
  * with its settings on the server, saved as soon as it is picked. Until someone picks, it follows the business type
- * (core pos-use.ts) and says so under the choice; a company that has sold at the till keeps it.
+ * (core pos-use.ts) only, and says so under the choice. Who uses the till where it is on: admins, and each person an
+ * admin gives the Point of sale role in Users (said under the choice too).
  */
 export function PosUseSetting() {
   const { t } = useI18n();
@@ -25,7 +26,7 @@ export function PosUseSetting() {
     { value: 'on', label: t('pu_on'), icon: 'check' },
     { value: 'off', label: t('pu_off'), icon: 'x' }
   ];
-  const why: Key | null = !settings || settings.posUse !== 'auto' ? null : settings.posUsed ? 'pu_autoUsed' : on ? 'pu_autoOn' : 'pu_autoOff';
+  const why: Key | null = !settings || settings.posUse !== 'auto' ? null : on ? 'pu_autoOn' : 'pu_autoOff';
   async function choose(posUse: 'on' | 'off') {
     setBusy(true);
     setError(null);
@@ -47,6 +48,7 @@ export function PosUseSetting() {
         <div className="setting-ctl">
           <ChoiceTiles label={t('pu_title')} value={on ? 'on' : 'off'} options={options} onChange={(v) => void choose(v)} busy={busy} disabled={!settings || oldServer} />
           {why && <p className="small muted" data-note="pos-use-why">{t(why)}</p>}
+          {on && !oldServer && <p className="small muted" data-note="pos-use-who">{t('pu_who')}</p>}
           {oldServer && <p className="small muted" data-note="pos-use-old-server">{t('pu_oldServer')}</p>}
           <ErrorBox error={error} />
         </div>
