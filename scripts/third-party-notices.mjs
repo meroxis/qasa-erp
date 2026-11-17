@@ -186,6 +186,8 @@ not shipped. The licence texts of the components shipped with the Windows app ar
 file is installed with the app.
 
 Fonts: IBM Plex Sans, Noto Sans Arabic and Noto Kufi Arabic (via @fontsource) — SIL Open Font License 1.1.
+Pictures: the phone-shop sample pictures of the website demo (apps/web/src/demo/phone-shop) are own drawings by
+Meroxis — no third-party licence, no credit needed.
 The Node.js runtime and Chromium are part of Electron — MIT and BSD-style licences; SQLite (built into Node.js) is in
 the public domain.
 

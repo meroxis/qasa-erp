@@ -22,3 +22,4 @@ export * from './loyalty.ts';
 export * from './support.ts';
 export * from './scale-label.ts';
 export * from './pos-use.ts';
+export * from './pos-look.ts';

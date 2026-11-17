@@ -5,5 +5,5 @@
 // first: zod is told not to use eval before any schema below is made (the site CSP has no 'unsafe-eval')
 import './zod-jitless.ts';
 export { initDatabase, type Db } from './db.ts';
-export { seedDemo } from './demo-data.ts';
+export { seedDemo, seedPhoneShopDemo } from './demo-data.ts';
 export { ApiReply, apiRoutes, errorResponse, type ApiRequest, type HttpMethod, type Route } from './routes.ts';

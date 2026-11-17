@@ -27,6 +27,8 @@ export interface TillCache {
   items: ItemView[] | null;
   customers: PartyView[] | null;
   categories: CategoryView[] | null;
+  /** the company's quick buttons as last known (item ids, in their order): the offline till keeps showing them */
+  quick?: string[] | null;
 }
 
 let cache: TillCache | null = null;

@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { categoriesApi, inCategory, type CategoryView } from '../industry/categories-api.ts';
 import { createPortal } from 'react-dom';
-import { fromBase, normalizeForSearch, rateFromX100, rateToX100, toBase, todayIso, toWesternDigits, usableRate, type CurrencyCode } from '@qasa/core';
+import { fromBase, normalizeForSearch, POS_QUICK_MAX, posBigTiles, rateFromX100, rateToX100, toBase, todayIso, toWesternDigits, usableRate, type CurrencyCode } from '@qasa/core';
 import { api, ApiError, isNetworkError, serverReachable, type InvoiceView, type ItemView, type PartyView, type WarehouseView } from '../api.ts';
 import { AccountCombo, AmountInput, ErrorBox, Icon, Modal, SearchCombo, useData, useLoad, usePageNav, useToast, type PickOption } from '../components.tsx';
 import { useI18n, type I18n, type Key } from '../i18n.ts';
@@ -16,7 +16,7 @@ import { useItemPicture } from '../industry/ItemImage.tsx';
 import { PrintDocument } from '../industry/PrintDocument.tsx';
 import { invoiceModel } from '../industry/print-model.ts';
 import { usePrintSetup } from '../industry/print-api.ts';
-import { addRefusal, cartShortNote, changeLineUnit, chosenMethod, creditNeedsCustomer, parseScan, pickAfterLink, posSaleLine, priceIn, priceRateFor, salePayments, tileOffer, tillMethods, type TillMethod } from './pos-logic.ts';
+import { addRefusal, cartShortNote, changeLineUnit, chosenMethod, creditNeedsCustomer, moveQuick, parseScan, pickAfterLink, posSaleLine, priceIn, priceRateFor, quickIdsFor, quickRowItems, salePayments, tileOffer, tillMethods, toggleQuick, type TillMethod } from './pos-logic.ts';
 import { inUnits, salePriceFor, unitChoices, unitLabel, type LineUnit } from '../industry/units.ts';
 import { BatchPick, useExpiredConfirm } from '../industry/BatchFields.tsx';
 import { pharmacyApi, type MedicineView } from '../industry/pharmacy-api.ts';
@@ -30,6 +30,7 @@ import { perDollar } from '../industry/HeaderRate.tsx';
 import { QuickItemForm } from '../industry/QuickItemForm.tsx';
 import { addRowKind, anyItemMatches, mayAddItem, typedForForm, western } from '../industry/item-quick-add.ts';
 import { findByScaleBarcode } from '../industry/scale-barcode.ts';
+import { may } from '../may.ts';
 
 /**
  * Point of sale (every plan). Made for a cashier with no training: the search box always has the focus, so a barcode
@@ -76,6 +77,72 @@ function ItemPicture({ item, name }: { item: ItemView; name: string }) {
   return (
     <span ref={box} className="pos-picture" aria-hidden="true">
       {url ? <img className="pos-img" src={url} alt="" /> : <span className="pos-initials">{initials(name) || '•'}</span>}
+    </span>
+  );
+}
+
+/**
+ * The quick buttons: a row above the categories with what the company sells all day (a charger, a bag, a loaf of
+ * bread), each a small picture with its name and price; one tap adds one. The list is the company's (Settings key
+ * pos_quick_items, the same on every PC). An admin edits it here: "Edit buttons", then a tap on a tile below puts it
+ * on the row or takes it off (a star on those on it), the arrows move a button, and Done. While the server can't be
+ * reached the row shows the list last known and can't be edited.
+ */
+export function QuickRow({ items, currency, priceRate, editing, mayEdit, canEdit, error, onPick, onEdit, onMove }: {
+  items: readonly ItemView[]; currency: CurrencyCode; priceRate: number;
+  /** the admin is choosing the buttons (the row sells nothing meanwhile) */
+  editing: boolean;
+  /** an admin (the server takes the list from an admin only) */
+  mayEdit: boolean;
+  /** the server can be reached (offline the list is not changed) */
+  canEdit: boolean;
+  error?: unknown;
+  onPick(item: ItemView): void; onEdit(): void; onMove(id: string, step: -1 | 1): void;
+}) {
+  const i18n = useI18n();
+  const { t } = i18n;
+  if (!items.length && !mayEdit) return null;
+  return (
+    <div className={'pos-quick' + (editing ? ' editing' : '')} role="group" aria-label={t('tq_quick')} data-quick={items.length}>
+      {items.map((it, i) => {
+        const name = i18n.name(it.name);
+        const offer = tileOffer(it, currency, priceRate);
+        const face = (
+          <>
+            <QuickPicture item={it} name={name} />
+            <span className="pos-quick-text">
+              <span className="pos-quick-name">{name}</span>
+              <span className="pos-quick-price num">{offer.price === null ? '—' : i18n.money(offer.price, currency)}</span>
+            </span>
+          </>
+        );
+        if (!editing) return <button key={it.id} type="button" className="pos-quick-btn" title={name} onClick={() => onPick(it)}>{face}</button>;
+        return (
+          <span key={it.id} className="pos-quick-btn pos-quick-chosen">
+            <button type="button" className="pos-quick-move pos-quick-move-back" aria-label={`${t('tq_moveBack')}: ${name}`} disabled={i === 0} onClick={() => onMove(it.id, -1)}><Icon name="chevron" size={16} /></button>
+            {face}
+            <button type="button" className="pos-quick-move" aria-label={`${t('tq_moveForward')}: ${name}`} disabled={i === items.length - 1} onClick={() => onMove(it.id, 1)}><Icon name="chevron" size={16} className="flip" /></button>
+          </span>
+        );
+      })}
+      {!items.length && <span className="small muted pos-quick-empty">{t('tq_empty')}</span>}
+      {mayEdit && (
+        <button type="button" className={'btn small pos-quick-edit' + (editing ? ' primary' : '')} disabled={!editing && !canEdit} title={!canEdit ? t('tq_offlineEdit') : undefined} onClick={onEdit}>
+          <Icon name={editing ? 'check' : 'edit'} size={15} />{editing ? t('tq_done') : t('tq_edit')}
+        </button>
+      )}
+      {editing && <div className="small muted pos-quick-hint">{t('tq_editHint', { n: i18n.int(POS_QUICK_MAX) })}</div>}
+      {error ? <div className="pos-quick-hint"><ErrorBox error={error} /></div> : null}
+    </div>
+  );
+}
+
+/** A quick button's small picture, or the item's initials. */
+function QuickPicture({ item, name }: { item: ItemView; name: string }) {
+  const { box, url } = useItemPicture(item.id);
+  return (
+    <span ref={box} className="pos-quick-pic" aria-hidden="true">
+      {url ? <img src={url} alt="" /> : <span className="pos-initials">{initials(name) || '•'}</span>}
     </span>
   );
 }
@@ -211,8 +278,12 @@ function Register({ initial, onClosed }: { initial: ShiftView; onClosed(): void 
   const i18n = useI18n();
   const { t } = i18n;
   const toast = useToast();
-  const { settings, permissions } = useData();
+  const { settings, permissions, reloadSettings } = useData();
   const market = !!settings?.businessTypes?.includes('market');
+  // big picture tiles: a phone shop's till by default, any company's by its choice (Settings → Sales and point of sale)
+  const bigTiles = posBigTiles(settings ?? {});
+  // the quick buttons are the company's; an admin changes them (the server takes them from an admin only)
+  const mayEditQuick = may(permissions, 'companyDetails');
   usePageNav({ key: 'pos_title', group: 'gSales' });
   // 1.4.2: a search or a scan that finds nothing offers to add the item, to someone who keeps the stock
   const mayAdd = mayAddItem(permissions);
@@ -547,10 +618,43 @@ function Register({ initial, onClosed }: { initial: ShiftView; onClosed(): void 
     setQ('');
     focusSearch();
   };
+  /* the quick buttons: the company's list (or the one last known, offline), edited here by an admin */
+  const [quickIds, setQuickIds] = useState<string[]>(() => quickIdsFor(settings?.posQuickItems, tillCache(tillWho())?.quick));
+  const [editingQuick, setEditingQuick] = useState(false);
+  const [quickError, setQuickError] = useState<unknown>(null);
+  // each change is saved in turn, so the server ends with the last one whatever the network does
+  const quickSaves = useRef<Promise<unknown>>(Promise.resolve());
+  useEffect(() => {
+    // what the server says, unless an admin is choosing them now (their own changes are on their way)
+    if (editingQuick || !settings?.posQuickItems) return;
+    setQuickIds(settings.posQuickItems);
+    rememberTill(tillWho(), { quick: settings.posQuickItems });
+  }, [settings?.posQuickItems, editingQuick]);
+  const quickItems = useMemo(() => quickRowItems(quickIds, items), [quickIds, items]);
+  const saveQuick = (next: string[]) => {
+    setQuickIds(next);
+    setQuickError(null);
+    rememberTill(tillWho(), { quick: next });
+    quickSaves.current = quickSaves.current.then(() => api.updateSettings({ posQuickItems: next })).catch((e: unknown) => {
+      setQuickError(e);
+      // what the server keeps is what shows
+      void reloadSettings().then(() => setEditingQuick(false));
+    });
+  };
+  const tapWhileEditing = (id: string) => {
+    const { next, full } = toggleQuick(quickIds, id, POS_QUICK_MAX);
+    if (full) { toast(t('tq_full', { n: i18n.int(POS_QUICK_MAX) })); return; }
+    saveQuick(next);
+  };
+  const editQuick = () => {
+    if (!editingQuick) { setQuickError(null); setEditingQuick(true); return; }
+    // Done: once the last change is saved, the settings of every screen follow
+    void quickSaves.current.then(() => reloadSettings()).finally(() => { setEditingQuick(false); focusSearch(); });
+  };
   const customerOptions: PickOption[] = useMemo(() => customers.map((p) => ({ id: p.id, code: p.code, label: p.name, search: p.phone, hint: p.phone })), [customers]);
 
   return (
-    <div className="pos">
+    <div className={'pos' + (bigTiles ? ' pos-big' : '')}>
       {expired.dialog}
       {addingItem !== null && <QuickItemForm typed={addingItem} sale warehouseId={shift.warehouseId} onDone={addedItem} onClose={() => { setAddingItem(null); focusSearch(); }} />}
       {controlled.dialog}
@@ -595,15 +699,21 @@ function Register({ initial, onClosed }: { initial: ShiftView; onClosed(): void 
             </div>
           )}
           {noRate && <div className="alert bad" role="alert">{t('pos_noRate', { n: noRate })}</div>}
+          <QuickRow items={quickItems} currency={currency} priceRate={priceRate} editing={editingQuick} mayEdit={mayEditQuick} canEdit={!offline}
+            error={quickError} onPick={(it) => { add(it); focusSearch(); }} onEdit={editQuick} onMove={(id, step) => saveQuick(moveQuick(quickIds, id, step))} />
           {catList.length > 0 && <PosCategories list={catList} value={cat} onChange={setCat} />}
-          <div className="pos-grid">
+          <div className={'pos-grid' + (editingQuick ? ' pos-grid-editing' : '')}>
             {matches.map((it) => {
               const name = i18n.name(it.name);
               const out = it.trackStock && it.qtyMilli <= 0;
               // the price of what a tap adds: the item's sale unit
               const offer = tileOffer(it, currency, priceRate);
+              const isQuick = editingQuick && quickIds.includes(it.id);
               return (
-                <button key={it.id} type="button" className={'pos-tile' + (out ? ' out' : '')} onClick={() => { add(it); focusSearch(); }}>
+                <button key={it.id} type="button" className={'pos-tile' + (out ? ' out' : '') + (isQuick ? ' quick-on' : '')}
+                  aria-pressed={editingQuick ? isQuick : undefined}
+                  onClick={() => { if (editingQuick) tapWhileEditing(it.id); else { add(it); focusSearch(); } }}>
+                  {editingQuick && <span className="pos-tile-star" aria-hidden="true">{isQuick ? '★' : '☆'}</span>}
                   <ItemPicture item={it} name={name} />
                   <span className="pos-tile-name">{name}</span>
                   {medicines.get(it.id)?.genericName && (

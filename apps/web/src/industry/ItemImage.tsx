@@ -46,7 +46,9 @@ function setIndexEntry(itemId: string, updatedAt: string | null): void {
 function useImageVersion(itemId: string): string | null | undefined {
   return useSyncExternalStore(
     (onChange) => { listeners.add(onChange); loadIndex(); return () => listeners.delete(onChange); },
-    () => (index ? index.get(itemId) ?? null : undefined)
+    () => (index ? index.get(itemId) ?? null : undefined),
+    // drawn without a window (the tests): not known yet, so the initials
+    () => undefined
   );
 }
 
