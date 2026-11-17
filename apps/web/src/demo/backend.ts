@@ -1,7 +1,23 @@
 import initSqlJs from 'sql.js';
 import wasmUrl from 'sql.js/dist/sql-wasm.wasm?url';
-import { ApiReply, apiRoutes, errorResponse, initDatabase, seedDemo, type Db, type Route } from '@qasa/server/browser';
+import { ApiReply, apiRoutes, errorResponse, initDatabase, seedDemo, seedPhoneShopDemo, type Db, type Route } from '@qasa/server/browser';
 import { DatabaseSync } from './node-sqlite.ts';
+
+/**
+ * The phone-shop sample's pictures, as base64 by item code: drawn for the demo by Meroxis (own work, no photos of real
+ * products). Fetched only when the phone shop is asked for.
+ */
+async function phoneShopPictures(): Promise<Record<string, string>> {
+  const files = import.meta.glob('./phone-shop/*.png', { query: '?url', import: 'default', eager: true }) as Record<string, string>;
+  const out: Record<string, string> = {};
+  for (const [path, url] of Object.entries(files)) {
+    const bytes = new Uint8Array(await (await fetch(url)).arrayBuffer());
+    let bin = '';
+    for (let i = 0; i < bytes.length; i += 0x8000) bin += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
+    out[path.replace(/^.*\/(.+)\.png$/, '$1')] = btoa(bin);
+  }
+  return out;
+}
 
 /**
  * The website demo has no server: the real API runs in the page, on SQLite in WebAssembly, filled with the
@@ -14,6 +30,9 @@ export async function startDemoBackend(): Promise<void> {
   db.exec('PRAGMA foreign_keys = ON');
   initDatabase(db);
   seedDemo(db);
+  // ?phoneshop in the address opens the sample company as a phone shop, with its pictures (the till's big pictures and
+  // quick buttons); without it the demo is the sample company as always
+  if (new URLSearchParams(window.location.search).has('phoneshop')) seedPhoneShopDemo(db, await phoneShopPictures());
 
   const routes = apiRoutes(db, { demo: true }).map((route) => ({ route, pattern: compile(route.path) }));
   const realFetch = window.fetch.bind(window);

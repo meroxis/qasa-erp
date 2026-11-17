@@ -96,3 +96,43 @@
 /* 1.2 offline till: the chips on the bar, the stock note, and the temporary number on the receipt */
 .pos-offline-chip { background: var(--warn-bg); color: var(--warn); border-color: var(--warn-stroke); }
 .pos-r-offline { border: 1px dashed currentColor; padding: 2px 4px; text-align: center; }
+
+/* the quick buttons (every company that uses the till): a row above the categories, one tap sells one */
+.pos-quick { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.pos-quick-btn {
+  display: flex; align-items: center; gap: 8px; min-height: 52px; padding-block: 5px; padding-inline: 5px 12px;
+  border: 1px solid var(--border, #d9dee5); border-radius: 12px; background: var(--surface); color: inherit; font: inherit; cursor: pointer;
+  transition: transform .06s ease, border-color .1s ease;
+}
+button.pos-quick-btn:hover { border-color: var(--accent); }
+button.pos-quick-btn:active { transform: scale(.97); }
+.pos-quick-btn:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
+.pos-quick-pic { width: 40px; height: 40px; flex: none; border-radius: 8px; overflow: hidden; background: var(--neutral-bg, #eef1f5); display: grid; place-items: center; }
+.pos-quick-pic img { width: 100%; height: 100%; object-fit: contain; display: block; background: #fff; }
+.pos-quick-pic .pos-initials { width: 40px; height: 40px; font-size: .9rem; border-radius: 8px; }
+.pos-quick-text { display: flex; flex-direction: column; align-items: flex-start; line-height: 1.2; text-align: start; min-width: 0; }
+.pos-quick-name { font-weight: 600; font-size: .92rem; max-width: 190px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pos-quick-price { font-weight: 700; color: var(--accent-text); font-size: .92rem; }
+.pos-quick-edit { margin-inline-start: auto; }
+.pos-quick-hint { flex-basis: 100%; }
+/* Edit buttons: the chosen buttons, dashed, with arrows to move each one back or forward */
+.pos-quick-chosen { cursor: default; border-style: dashed; border-color: var(--accent); padding-inline: 2px; }
+.pos-quick-move { display: grid; place-items: center; width: 30px; height: 40px; border: none; border-radius: 8px; background: transparent; color: var(--accent-text); cursor: pointer; }
+.pos-quick-move:hover:not(:disabled) { background: var(--accent-soft); }
+.pos-quick-move:disabled { opacity: .3; cursor: default; }
+.pos-quick-move-back svg { transform: scaleX(-1); }
+html[dir='rtl'] .pos-quick-move-back svg { transform: none; }
+.pos-grid-editing .pos-tile { border-style: dashed; position: relative; }
+.pos-tile.quick-on { border: 2px solid var(--accent); background: var(--accent-soft); }
+.pos-tile-star { position: absolute; inset-block-start: 6px; inset-inline-end: 8px; font-size: 1.3rem; color: var(--accent); line-height: 1; }
+
+/* big pictures (a phone shop by default; Settings → Sales and point of sale): a large picture and a clear price.
+   An item without a picture keeps its initials, at the same size */
+.pos-big .pos-grid { grid-template-columns: repeat(auto-fill, minmax(176px, 1fr)); gap: 12px; }
+.pos-big .pos-tile { min-height: 236px; padding: 10px 10px 12px; position: relative; }
+.pos-big .pos-picture { width: 100%; }
+.pos-big .pos-tile .pos-img, .pos-big .pos-tile .pos-initials { width: 100%; height: 132px; border-radius: 10px; }
+.pos-big .pos-tile .pos-img { object-fit: contain; background: #fff; }
+.pos-big .pos-tile .pos-initials { font-size: 2rem; }
+.pos-big .pos-tile-name { font-size: .98rem; }
+.pos-big .pos-tile-price { font-size: 1.2rem; margin-top: auto; }

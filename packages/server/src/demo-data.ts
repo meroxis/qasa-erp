@@ -9,6 +9,7 @@ import { createStockDoc, postStockDoc } from './stock-docs.ts';
 import { createInvoice, postInvoice } from './invoices.ts';
 import { createCategory } from './categories.ts';
 import { createBrand } from './brands.ts';
+import { setItemImage } from './media.ts';
 
 /**
  * A small sample company — Meroxis — with customers, suppliers, items, invoices and vouchers.
@@ -215,4 +216,46 @@ export function seedPharmacyDemo(db: Db): void {
   sell('Mer', '2026-09-15', [{ itemId: amox.id, unit: 'strip', unitQtyMilli: 2_000, unitPrice: 2_500 }]);
   sell('Las', '2026-09-16', [{ itemId: para.id, unit: 'box', unitQtyMilli: 1_000, unitPrice: 9_000 }]);
   sell('Raz', '2026-09-17', [{ itemId: amox.id, unit: 'box', unitQtyMilli: 1_000, unitPrice: 4_800 }, { itemId: para.id, unit: 'strip', unitQtyMilli: 3_000, unitPrice: 1_000 }]);
+}
+
+/**
+ * The website demo with ?phoneshop in its address: the sample company as a phone shop. Phones and the small things sold
+ * beside them, each with a picture drawn for the demo (own work, no photos of real products; `pictures`: PNG files as
+ * base64, by item code), in stock, with the chargers, cables, cases, screen protectors and SIM cards as the till's
+ * quick buttons. Big pictures are turned on for it, as an admin would. Expects seedDemo to have run.
+ */
+export function seedPhoneShopDemo(db: Db, pictures: Readonly<Record<string, string>>): void {
+  const user = 'Mer';
+  updateSettings(db, {
+    companyName: { ar: 'ميروكسيس موبايل', en: 'Meroxis Mobile', ku: 'مێرۆکسیس مۆبایل' },
+    businessTypes: ['trade', 'mobileShop'],
+    posBigPictures: 'on'
+  }, user);
+  // the air-conditioning and solar sample stays in the books, off the till
+  db.prepare('UPDATE items SET active = 0').run();
+  db.prepare('UPDATE item_categories SET active = 0').run();
+  const main = listWarehouses(db)[0]!.id;
+  const phones = createCategory(db, { name: { ar: 'الهواتف', en: 'Phones', ku: 'مۆبایل' } }, user).id;
+  const extras = createCategory(db, { name: { ar: 'الإكسسوارات', en: 'Accessories', ku: 'ئێکسسوار' } }, user).id;
+  const rows: { code: string; name: [string, string, string]; price: number; cost: number; qty: number; cat: string; quick?: boolean }[] = [
+    { code: '1001', name: ['هاتف ذكي 6.7 إنش 256 غيغا', 'Smartphone 6.7″ 256 GB', 'مۆبایلی زیرەک 6.7 ئینچ 256 گێگا'], price: 850_000, cost: 760_000, qty: 8, cat: phones },
+    { code: '1002', name: ['هاتف ذكي 6.1 إنش 128 غيغا', 'Smartphone 6.1″ 128 GB', 'مۆبایلی زیرەک 6.1 ئینچ 128 گێگا'], price: 395_000, cost: 340_000, qty: 12, cat: phones },
+    { code: '2001', name: ['شاحن سريع 25 واط', 'Fast charger 25 W', 'شەحنی خێرا 25 وات'], price: 25_000, cost: 14_000, qty: 40, cat: extras, quick: true },
+    { code: '2002', name: ['كابل USB-C متر واحد', 'USB-C cable 1 m', 'وایەری USB-C یەک مەتر'], price: 7_000, cost: 3_000, qty: 80, cat: extras, quick: true },
+    { code: '2003', name: ['غلاف سيليكون', 'Silicone case', 'کەڤەری سیلیکۆن'], price: 10_000, cost: 4_000, qty: 60, cat: extras, quick: true },
+    { code: '2004', name: ['واقي شاشة زجاجي', 'Glass screen protector', 'شووشەی پارێزەری شاشە'], price: 5_000, cost: 1_500, qty: 100, cat: extras, quick: true },
+    { code: '2005', name: ['شريحة 4G', '4G SIM card', 'سیمکارتی 4G'], price: 5_000, cost: 3_500, qty: 50, cat: extras, quick: true },
+    { code: '2006', name: ['سماعات لاسلكية', 'Wireless earbuds', 'گوێگری بێ وایەر'], price: 45_000, cost: 28_000, qty: 20, cat: extras },
+    { code: '2007', name: ['باور بانك 10000 ملي أمبير', 'Power bank 10,000 mAh', 'پاوەر بانکی 10000 mAh'], price: 30_000, cost: 19_000, qty: 25, cat: extras }
+  ];
+  const made = rows.map((r) => ({ r, item: createItem(db, {
+    code: r.code, name: { ar: r.name[0], en: r.name[1], ku: r.name[2] }, unit: 'piece', salePrice: r.price, saleCurrency: 'IQD', categoryId: r.cat
+  }, user) }));
+  const doc = createStockDoc(db, {
+    kind: 'opening', date: '2026-09-01', warehouseId: main, counterAccountCode: '21', notes: 'المحل — أول المدة',
+    lines: made.map(({ r, item }) => ({ itemId: item.id, qtyMilli: r.qty * 1000, unitCost: r.cost }))
+  }, user);
+  postStockDoc(db, doc.id, user);
+  for (const { r, item } of made) if (pictures[r.code]) setItemImage(db, item.id, pictures[r.code]!, user);
+  updateSettings(db, { posQuickItems: made.filter(({ r }) => r.quick).map(({ item }) => item.id) }, user);
 }

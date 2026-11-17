@@ -1,4 +1,4 @@
-import { DEFAULT_AMOUNTS_SHOW, DEFAULT_POSTING_ACCOUNTS, fiscalYear, fiscalYearOf, isAmountsShow, isBusinessType, isPosUse, type AmountsShow, type BusinessType, type Names, type PosUse, type PostingAccounts } from '@qasa/core';
+import { DEFAULT_AMOUNTS_SHOW, DEFAULT_POSTING_ACCOUNTS, fiscalYear, fiscalYearOf, isAmountsShow, isBusinessType, isPosBigPictures, isPosUse, POS_QUICK_MAX, type AmountsShow, type BusinessType, type Names, type PosBigPictures, type PosUse, type PostingAccounts } from '@qasa/core';
 import type { Db } from './db.ts';
 import { audit } from './audit.ts';
 import { insertOrKeep, isMysql, transaction } from './db.ts';
@@ -22,6 +22,13 @@ export interface Settings {
    * which the till's API checks (pos.ts).
    */
   posUse: PosUse;
+  /**
+   * The till's quick buttons: the items shown as one-tap buttons above its categories, in their order (core
+   * pos-look.ts). Only items that still exist and are on sale are read back: one deleted or archived since drops out.
+   */
+  posQuickItems: string[];
+  /** Big picture tiles on the till: follow the business type (a phone shop), on or off (core pos-look.ts). */
+  posBigPictures: PosBigPictures;
 }
 
 /** Where each posting account must sit in the unified chart. */
@@ -70,8 +77,56 @@ export function getSettings(db: Db): Settings {
     postingAccounts: getPostingAccounts(db),
     businessTypes: businessTypes(db),
     amountsShow: amountsShow(db),
-    posUse: posUse(db)
+    posUse: posUse(db),
+    posQuickItems: quickItems(db),
+    posBigPictures: bigPictures(db)
   };
+}
+
+/** The ids as saved, each once, at most POS_QUICK_MAX; a value that is not a list of ids (damaged) reads as none. */
+function storedQuickItems(db: Db): string[] {
+  try {
+    const list = JSON.parse(readSetting(db, 'pos_quick_items') ?? '[]') as unknown;
+    return Array.isArray(list) ? [...new Set(list.filter((x): x is string => typeof x === 'string'))].slice(0, POS_QUICK_MAX) : [];
+  } catch {
+    return [];
+  }
+}
+
+/** Which of these ids are items on sale now: they exist and are active (what the till lists). */
+function onSale(db: Db, ids: readonly string[]): Set<string> {
+  if (!ids.length) return new Set();
+  const rows = db.prepare(`SELECT id FROM items WHERE active = 1 AND id IN (${ids.map(() => '?').join(', ')})`).all(...ids) as { id: string }[];
+  return new Set(rows.map((r) => r.id));
+}
+
+/**
+ * The till's quick buttons: the saved list less the items deleted or archived since. They drop out quietly; an item
+ * put on sale again comes back in its place.
+ */
+function quickItems(db: Db): string[] {
+  const ids = storedQuickItems(db);
+  const live = onSale(db, ids);
+  return ids.filter((id) => live.has(id));
+}
+
+/** The company's choice of big pictures; anything unknown (a value from a newer version) follows the business type. */
+function bigPictures(db: Db): PosBigPictures {
+  const stored = readSetting(db, 'pos_big_pictures');
+  return isPosBigPictures(stored) ? stored : 'auto';
+}
+
+/**
+ * A new list of quick buttons: ids of items on sale now, each once, at most POS_QUICK_MAX. An id that is no item, or
+ * an archived one, is refused (not dropped), so whoever sent it is told.
+ */
+function assertQuickItems(db: Db, ids: unknown): void {
+  const bad = () => invalid([{ code: 'pos_quick_items_invalid', field: 'posQuickItems' }]);
+  if (!Array.isArray(ids) || ids.length > POS_QUICK_MAX) throw bad();
+  if (ids.some((id) => typeof id !== 'string' || !id || id.length > 64) || new Set(ids).size !== ids.length) throw bad();
+  const live = onSale(db, ids as string[]);
+  const errors = (ids as string[]).flatMap((id, i) => (live.has(id) ? [] : [{ code: 'pos_quick_item_not_on_sale', field: `posQuickItems.${i}` }]));
+  if (errors.length) throw invalid(errors);
 }
 
 /** The company's choice about the till; anything unknown (a value from a newer version) follows the business type. */
@@ -102,6 +157,8 @@ export function updateSettings(db: Db, patch: Partial<Settings>, user: string): 
   if (patch.postingAccounts) assertPostingAccounts(db, { ...getPostingAccounts(db), ...patch.postingAccounts });
   if (patch.amountsShow !== undefined && !isAmountsShow(patch.amountsShow)) throw invalid([{ code: 'amounts_show_invalid', field: 'amountsShow' }]);
   if (patch.posUse !== undefined && !isPosUse(patch.posUse)) throw invalid([{ code: 'pos_use_invalid', field: 'posUse' }]);
+  if (patch.posBigPictures !== undefined && !isPosBigPictures(patch.posBigPictures)) throw invalid([{ code: 'pos_big_pictures_invalid', field: 'posBigPictures' }]);
+  if (patch.posQuickItems !== undefined) assertQuickItems(db, patch.posQuickItems);
   transaction(db, () => {
     if (patch.companyName) writeSetting(db, 'company_name', JSON.stringify(patch.companyName));
     if (patch.defaultRateX100 !== undefined) writeSetting(db, 'default_rate_x100', String(patch.defaultRateX100));
@@ -114,6 +171,8 @@ export function updateSettings(db: Db, patch: Partial<Settings>, user: string): 
     if (patch.businessTypes) writeSetting(db, 'business_types', JSON.stringify([...new Set(patch.businessTypes)]));
     if (patch.amountsShow !== undefined) writeSetting(db, 'amounts_show', patch.amountsShow);
     if (patch.posUse !== undefined) writeSetting(db, 'pos_use', patch.posUse);
+    if (patch.posBigPictures !== undefined) writeSetting(db, 'pos_big_pictures', patch.posBigPictures);
+    if (patch.posQuickItems !== undefined) writeSetting(db, 'pos_quick_items', JSON.stringify(patch.posQuickItems));
     audit(db, user, 'update', 'settings', null, patch);
   });
   return getSettings(db);

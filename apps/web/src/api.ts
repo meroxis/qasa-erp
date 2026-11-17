@@ -1,5 +1,5 @@
 import type {
-  AmountsShow, BusinessType, PosUse, Lang, LicenseInfo, LicenseState, PlanResolution,
+  AmountsShow, BusinessType, PosBigPictures, PosUse, Lang, LicenseInfo, LicenseState, PlanResolution,
   CurrencyCode, EntryAction, EntryStatus, EntryType, InvoiceDocKind, InvoiceInput, InvoiceKind, InvoiceStatus, Names, Nature, PaymentMode, PostingAccounts, UnitCode
 } from '@qasa/core';
 import { currentBranchHeader } from './industry/branches-api.ts';
@@ -115,6 +115,10 @@ export interface Settings {
   amountsShow?: AmountsShow;
   /** 1.5.2: whether the company uses the point of sale (core pos-use.ts); older servers leave both out (the till shows) */
   posUse?: PosUse;
+  /** The till's quick buttons, item ids in their order (core pos-look.ts); older servers leave it out (none) */
+  posQuickItems?: string[];
+  /** Big picture tiles on the till: by business type (a phone shop), on or off; older servers leave it out */
+  posBigPictures?: PosBigPictures;
 }
 
 export interface PlanStatus extends PlanResolution {
