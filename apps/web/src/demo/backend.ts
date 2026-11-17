@@ -15,7 +15,8 @@ export async function startDemoBackend(): Promise<void> {
   initDatabase(db);
   seedDemo(db);
   // ?petrol in the address opens the sample company as a petrol station
-  if (new URLSearchParams(window.location.search).has('petrol')) seedPetrolStationDemo(db);
+  // (named in the language the visitor reads: its tanks and the wording of its entries)
+  if (new URLSearchParams(window.location.search).has('petrol')) seedPetrolStationDemo(db, demoLang());
 
   const routes = apiRoutes(db, { demo: true }).map((route) => ({ route, pattern: compile(route.path) }));
   const realFetch = window.fetch.bind(window);
@@ -34,6 +35,16 @@ export async function startDemoBackend(): Promise<void> {
     }
     return json(404, { error: 'not_found', details: null });
   };
+}
+
+/** The language the app opens in (App.tsx keeps it as qasa.lang); Arabic when none is kept or storage is closed. */
+function demoLang(): 'ar' | 'en' | 'ku' {
+  try {
+    const kept = window.localStorage.getItem('qasa.lang');
+    return kept === 'en' || kept === 'ku' ? kept : 'ar';
+  } catch {
+    return 'ar';
+  }
 }
 
 function compile(path: string): RegExp {

@@ -69,7 +69,7 @@ function StatusChip({ status }: { status: ShiftSummary['status'] | DeliveryView[
 function EntryLink({ entry }: { entry: { id: string; number: string | null } | null }) {
   const { t } = useI18n();
   if (!entry) return <>—</>;
-  return <a className="num ltr" href={href(`entry/${entry.id}`)} onClick={(e) => e.stopPropagation()}>{entry.number ?? t('ps_entryWaiting')}</a>;
+  return <a className="num ltr" style={{ whiteSpace: 'nowrap' }} href={href(`entry/${entry.id}`)} onClick={(e) => e.stopPropagation()}>{entry.number ?? t('ps_entryWaiting')}</a>;
 }
 
 /** A form's busy state, its error and a run that toasts and reloads on success. */
@@ -210,7 +210,7 @@ function Shifts({ setup }: { setup: FuelSetupView }) {
               <tbody>
                 {shifts.map((x) => (
                   <tr key={x.id} className="click" onClick={() => go(`fuel-shift/${x.id}`)}>
-                    <td><a className="num ltr" href={href(`fuel-shift/${x.id}`)} onClick={(e) => e.stopPropagation()}>{x.number}</a></td>
+                    <td><a className="num ltr" style={{ whiteSpace: 'nowrap' }} href={href(`fuel-shift/${x.id}`)} onClick={(e) => e.stopPropagation()}>{x.number}</a></td>
                     <td className="num">{i18n.date(x.date)}</td>
                     <td>{t(`ps_shift_${x.shift}`)}</td>
                     <td>{x.attendant}</td>
@@ -603,7 +603,7 @@ function DeliveryModal({ setup, onClose, onDone }: { setup: FuelSetupView; onClo
   const i18n = useI18n();
   const { t } = i18n;
   const mayDo = useMay();
-  const suppliers = useLoad(() => api.parties({ type: 'supplier', active: '1' }), []);
+  const suppliers = useLoad(() => api.parties({ type: 'supplier', active: 'true' }), []);
   const tanks = setup.tanks.filter((x) => x.active);
   const [date, setDate] = useState(todayIso());
   const [tankId, setTankId] = useState(tanks[0]?.id ?? '');
@@ -700,11 +700,11 @@ function Deliveries({ setup, onChange }: { setup: FuelSetupView; onChange(): voi
               <tbody>
                 {rows.map((d) => (
                   <tr key={d.id}>
-                    <td className="num ltr">{d.number}</td>
+                    <td className="num ltr" style={{ whiteSpace: 'nowrap' }}>{d.number}</td>
                     <td className="num">{i18n.date(d.date)}</td>
                     <td>{tankName(setup.tanks, d.tankId)}</td>
                     <td>{d.supplierName}</td>
-                    <td className="num ltr">{d.noteNo}</td>
+                    <td className="num ltr" style={{ whiteSpace: 'nowrap' }}>{d.noteNo}</td>
                     <td className="amount num">{i18n.qty(d.qtyMilli)}</td>
                     {seesCost && <td className="amount num">{typeof d.costPerLitre === 'number' ? i18n.money(d.costPerLitre, 'IQD') : '—'}</td>}
                     {seesCost && <td className="amount num">{typeof d.cost === 'number' ? i18n.money(d.cost, 'IQD') : '—'}</td>}
@@ -828,7 +828,7 @@ function Dips({ setup, onChange }: { setup: FuelSetupView; onChange(): void }) {
               <tbody>
                 {rows.map((d) => (
                   <tr key={d.id}>
-                    <td className="num ltr">{d.number}</td>
+                    <td className="num ltr" style={{ whiteSpace: 'nowrap' }}>{d.number}</td>
                     <td className="num">{i18n.date(d.date)}</td>
                     <td>{tankName(setup.tanks, d.tankId)}</td>
                     <td className="amount num">{d.dipMm === null ? '—' : i18n.digitsOf(String(d.dipMm / 10))}</td>

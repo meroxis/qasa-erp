@@ -1216,8 +1216,8 @@ const ADMIN = 'admin' as const;
 /**
  * Reading the setup and the shifts is open to every signed-in user (cost and profit are left out for someone who may not
  * see cost: cost-view.ts); a cashier reads only the shifts they opened, and the attendants' totals, the deliveries, the
- * dips and the report are the books' (cost-view.ts BOOKS_ONLY). A cashier works only the sheet of a shift they opened. The shift sheet (open, save, close, delete an open shift) is the
- * Point of sale permission, as the till is; a tanker delivery is purchasing; a dip is stock (as a stock count is);
+ * dips and the report are the books' (cost-view.ts BOOKS_ONLY). A cashier works only the sheet of a shift they opened.
+ * The shift sheet (open, save, close, delete an open shift) is the Point of sale permission, as the till is; a tanker delivery is purchasing; a dip is stock (as a stock count is);
  * fuels, prices, tanks, pumps, nozzles, the accounts and every reversal need an admin.
  */
 export const fuelApi: ApiExtension = {
