@@ -290,6 +290,11 @@ const SAMPLE_LINES: Record<BusinessType, SampleLine[]> = {
     ['D-500', '6260000000079', 'باراسيتامول 500 ملغم، 20 حبة', 'Paracetamol 500 mg, 20 tablets', 'پاراسیتامۆڵ 500 ملگم، 20 حەب', 'box', 2000, 1_500],
     ['D-1000', '6260000000086', 'فيتامين C ‏1000 ملغم، 30 حبة', 'Vitamin C 1000 mg, 30 tablets', 'ڤیتامین C ‏1000 ملگم، 30 حەب', 'box', 1000, 8_000],
     ['S-006', null, 'قياس ضغط الدم', 'Blood pressure check', 'پشکنینی پەستانی خوێن', 'service', 1000, 2_000]
+  ],
+  petrolStation: [
+    ['B-REG', null, 'بنزين عادي', 'Regular benzine', 'بەنزینی ئاسایی', 'l', 40_000, 850],
+    ['GASOIL', null, 'كاز (ديزل)', 'Diesel (gas oil)', 'گازۆیل (دیزڵ)', 'l', 100_000, 750],
+    ['GAS-12', null, 'قنينة غاز 12 كغم', 'Cooking gas cylinder, 12 kg', 'بوتڵی غاز، 12 کیلۆ', 'piece', 1000, 9_000]
   ]
 };
 

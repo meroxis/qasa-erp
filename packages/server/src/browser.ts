@@ -6,4 +6,5 @@
 import './zod-jitless.ts';
 export { initDatabase, type Db } from './db.ts';
 export { seedDemo } from './demo-data.ts';
+export { seedPetrolStationDemo } from './demo-petrol.ts';
 export { ApiReply, apiRoutes, errorResponse, type ApiRequest, type HttpMethod, type Route } from './routes.ts';

@@ -15,6 +15,10 @@ export const ACTIONS = {
   quote: { needs: 'sales', route: 'POST /api/quotes' },
   // 1.5.2: the till is its own permission (the Point of sale role), not the sales role's
   till: { needs: 'pos', route: 'POST /api/pos/shifts' },
+  // petrol stations (prototype, packages/server/src/fuel.ts): the shift sheet (open, save, close, delete) is sales;
+  // fuels, prices, pumps, nozzles and the posting accounts are an admin's
+  fuelShift: { needs: 'sales', route: 'POST /api/fuel/shifts' },
+  fuelSetup: { needs: 'admin', route: 'PUT /api/fuel/settings' },
   // purchases
   purchase: { needs: 'purchases', route: 'POST /api/invoices', body: { kind: 'purchase' } },
   supplier: { needs: 'purchases', route: 'POST /api/parties', body: { type: 'supplier' } },

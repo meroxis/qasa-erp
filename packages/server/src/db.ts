@@ -5,7 +5,7 @@ import { DatabaseSync } from 'node:sqlite';
 import { brandKey, DEFAULT_POSTING_ACCOUNTS, IRAQI_UNIFIED_CHART, STARTER_SUB_ACCOUNTS } from '@qasa/core';
 import { AppError } from './errors.ts';
 import {
-  MYSQL_TABLES, MYSQL_TRIGGERS, mysqlCollations, mysqlTableSql, pendingMysqlSteps, V10_MYSQL_STEPS, V11_MYSQL_STEPS, V12_MYSQL_STEPS, V13_MYSQL_STEPS, V14_MYSQL_STEPS, V15_MYSQL_STEPS, type MysqlCollations, type MysqlStep
+  MYSQL_TABLES, MYSQL_TRIGGERS, mysqlCollations, mysqlTableSql, pendingMysqlSteps, V10_MYSQL_STEPS, V11_MYSQL_STEPS, V12_MYSQL_STEPS, V13_MYSQL_STEPS, V14_MYSQL_STEPS, V15_MYSQL_STEPS, V16_MYSQL_STEPS, type MysqlCollations, type MysqlStep
 } from './schema-mysql.ts';
 
 export type SqlParam = null | number | bigint | string | Uint8Array;
@@ -1790,6 +1790,72 @@ const V15 =
     WHEN (SELECT status FROM entries WHERE id = OLD.entry_id) = 'approved' BEGIN SELECT RAISE(ABORT, 'entry_image_is_permanent'); END;
   `;
 
+const V16 =
+  // 16 — petrol stations (prototype, fuel.ts): the fuels sold with their price per litre, the pumps and their nozzles
+  // (each nozzle one fuel, with the meter's last reading in millilitres), and the shifts: who worked it, each nozzle's
+  // opening and closing readings at the fuel's price that shift, the cash handed in and the entry the shift posted
+  `
+  CREATE TABLE fuel_types (
+    id TEXT PRIMARY KEY,
+    code TEXT NOT NULL UNIQUE,
+    name_ar TEXT NOT NULL,
+    name_en TEXT NOT NULL,
+    name_ku TEXT NOT NULL,
+    price INTEGER NOT NULL CHECK (price > 0),
+    revenue_account TEXT NOT NULL REFERENCES accounts(code),
+    active INTEGER NOT NULL DEFAULT 1 CHECK (active IN (0, 1)),
+    sort INTEGER NOT NULL DEFAULT 0,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+  );
+  CREATE TABLE fuel_pumps (
+    id TEXT PRIMARY KEY,
+    number INTEGER NOT NULL UNIQUE CHECK (number > 0),
+    active INTEGER NOT NULL DEFAULT 1 CHECK (active IN (0, 1)),
+    created_at TEXT NOT NULL
+  );
+  CREATE TABLE fuel_nozzles (
+    id TEXT PRIMARY KEY,
+    pump_id TEXT NOT NULL REFERENCES fuel_pumps(id),
+    number INTEGER NOT NULL CHECK (number > 0),
+    fuel_type_id TEXT NOT NULL REFERENCES fuel_types(id),
+    meter_milli INTEGER NOT NULL DEFAULT 0 CHECK (meter_milli >= 0),
+    active INTEGER NOT NULL DEFAULT 1 CHECK (active IN (0, 1)),
+    created_at TEXT NOT NULL,
+    UNIQUE (pump_id, number)
+  );
+  CREATE TABLE fuel_shifts (
+    id TEXT PRIMARY KEY,
+    number TEXT NOT NULL UNIQUE,
+    date TEXT NOT NULL,
+    shift TEXT NOT NULL CHECK (shift IN ('morning', 'evening', 'night')),
+    attendant TEXT NOT NULL,
+    status TEXT NOT NULL CHECK (status IN ('open', 'closed')),
+    credit INTEGER NOT NULL DEFAULT 0 CHECK (credit >= 0),
+    handed INTEGER CHECK (handed IS NULL OR handed >= 0),
+    sales INTEGER,
+    difference INTEGER,
+    cash_account TEXT REFERENCES accounts(code),
+    entry_id TEXT REFERENCES entries(id),
+    notes TEXT,
+    opened_by TEXT NOT NULL,
+    opened_at TEXT NOT NULL,
+    closed_by TEXT,
+    closed_at TEXT
+  );
+  CREATE INDEX fuel_shifts_date ON fuel_shifts(date);
+  CREATE TABLE fuel_readings (
+    shift_id TEXT NOT NULL REFERENCES fuel_shifts(id) ON DELETE CASCADE,
+    nozzle_id TEXT NOT NULL REFERENCES fuel_nozzles(id),
+    fuel_type_id TEXT NOT NULL REFERENCES fuel_types(id),
+    price INTEGER NOT NULL CHECK (price > 0),
+    opening_milli INTEGER NOT NULL CHECK (opening_milli >= 0),
+    closing_milli INTEGER CHECK (closing_milli IS NULL OR closing_milli >= opening_milli),
+    PRIMARY KEY (shift_id, nozzle_id)
+  );
+  CREATE INDEX fuel_readings_nozzle ON fuel_readings(nozzle_id);
+  `;
+
 const MIGRATIONS: Migration[] = [
   { sql: V1 }, { sql: V2, rebuild: true }, { sql: V3, rebuild: true }, { sql: V4 }, { sql: V5, rebuild: true },
   { sql: V6, mysql: 'tables' }, { sql: V7, mysql: 'tables' }, { sql: V8, mysql: 'tables' }, { sql: V9, mysql: 'tables' },
@@ -1798,7 +1864,8 @@ const MIGRATIONS: Migration[] = [
   { sql: V12, mysql: { tables: true, steps: () => V12_MYSQL_STEPS } },
   { sql: V13, mysql: { tables: true, steps: () => V13_MYSQL_STEPS } },
   { sql: V14, mysql: { tables: true, steps: () => V14_MYSQL_STEPS } },
-  { sql: V15, mysql: { tables: true, steps: () => V15_MYSQL_STEPS } }
+  { sql: V15, mysql: { tables: true, steps: () => V15_MYSQL_STEPS } },
+  { sql: V16, mysql: { tables: true, steps: () => V16_MYSQL_STEPS } }
 ];
 
 /** Server databases began at this version: its schema is in schema-mysql.ts (tables and triggers without `since`). */

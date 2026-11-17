@@ -237,6 +237,8 @@ export function Modal({ title, onClose, children }: { title: string; onClose(): 
 
 const PATHS: Record<string, string> = {
   home: 'M3 10.5 12 3l9 7.5M5 9.5V21h14V9.5M10 21v-6h4v6',
+  // a fuel pump: the pump with its window, and the hose to the nozzle (petrol stations, prototype)
+  fuel: 'M4 21V5a2 2 0 0 1 2-2h6a2 2 0 0 1 2 2v16M2.5 21h13M7 6.5h4v4H7zM14 10h2a1.5 1.5 0 0 1 1.5 1.5v4.5a1.5 1.5 0 0 0 3 0V8.5L18 6',
   receipt: 'M4 2v20l2-1 2 1 2-1 2 1 2-1 2 1 2-1 2 1V2l-2 1-2-1-2 1-2-1-2 1-2-1-2 1ZM16 8h-6a2 2 0 1 0 0 4h4a2 2 0 1 1 0 4H8M12 17.5v-11',
   tree: 'M21 12h-8M21 6H8M21 18h-8M3 6v4c0 1.1.9 2 2 2h3M3 10v6c0 1.1.9 2 2 2h3',
   chart: 'M3 3v18h18M18 17V9M13 17V5M8 17v-3',

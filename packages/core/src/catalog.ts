@@ -88,7 +88,7 @@ export function isStarterTrade(value: unknown): value is StarterTrade {
 /** The starter list a business type suggests first (any trade can still be picked). */
 export const BUSINESS_STARTER_TRADE: Record<BusinessType, StarterTrade> = {
   trade: 'general', market: 'grocery', realEstate: 'building', mobileShop: 'electronics', autoParts: 'autoParts', engineeringWorks: 'building',
-  electricalSolar: 'electricalSolar', generators: 'generators', pharmacy: 'pharmacy'
+  electricalSolar: 'electricalSolar', generators: 'generators', pharmacy: 'pharmacy', petrolStation: 'general'
 };
 
 /** The suggested trade for a company: its first business type with a list of its own, else general trade. */
@@ -380,7 +380,8 @@ export const BUSINESS_UNITS: Record<BusinessType, readonly UnitCode[] | null> = 
   engineeringWorks: ['piece', 'm', 'm2', 'kg', 'ton', 'bag', 'set', 'roll', 'l', 'service'],
   electricalSolar: ['piece', 'm', 'roll', 'set', 'box', 'carton', 'pair', 'service'],
   generators: ['piece', 'l', 'set', 'm', 'box', 'service'],
-  pharmacy: ['tablet', 'capsule', 'strip', 'box', 'bottle', 'tube', 'ampoule', 'vial', 'sachet', 'piece', 'pack', 'carton']
+  pharmacy: ['tablet', 'capsule', 'strip', 'box', 'bottle', 'tube', 'ampoule', 'vial', 'sachet', 'piece', 'pack', 'carton'],
+  petrolStation: ['l', 'bottle', 'piece', 'carton', 'box', 'service']
 };
 
 /**

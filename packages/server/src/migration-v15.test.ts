@@ -27,8 +27,7 @@ describe.skipIf(onServer)('a company file from schema 14 opened by schema 15', (
     old.close();
     const db = openDatabase(file);
     try {
-      expect(SCHEMA_VERSION).toBe(15);
-      expect(schemaVersion(db)).toBe(15);
+      expect(schemaVersion(db)).toBe(SCHEMA_VERSION);
       expect((db.prepare('PRAGMA table_info(entry_images)').all() as { name: string }[]).map((c) => c.name))
         .toEqual(['entry_id', 'mime', 'data', 'bytes', 'sha256', 'created_by', 'created_at']);
       expect((db.prepare("SELECT name FROM sqlite_master WHERE type = 'trigger' AND tbl_name = 'entry_images' ORDER BY name").all() as { name: string }[]).map((t) => t.name))
@@ -60,8 +59,8 @@ describe.skipIf(onServer)('a company file from schema 14 opened by schema 15', (
       let error: unknown;
       try { migrate(db, 14); } catch (e) { error = e; }
       expect(error).toBeInstanceOf(AppError);
-      expect(error).toMatchObject({ code: 'database_newer', details: { version: 15, app: 14 } });
-      expect(schemaVersion(db)).toBe(15);
+      expect(error).toMatchObject({ code: 'database_newer', details: { version: SCHEMA_VERSION, app: 14 } });
+      expect(schemaVersion(db)).toBe(SCHEMA_VERSION);
     } finally {
       db.close();
     }
@@ -104,7 +103,7 @@ describe('version 15 on a server database', () => {
     expect(ran.filter((s) => s.startsWith('ALTER TABLE'))).toEqual(['ALTER TABLE entries ADD COLUMN revision INT NOT NULL DEFAULT 0']);
     expect(ran.filter((s) => s.startsWith('CREATE TRIGGER entry_images_'))).toHaveLength(2);
     // nothing else is made again
-    expect(ran.filter((s) => s.startsWith('CREATE TABLE ') && !s.startsWith('CREATE TABLE entry_images') && !s.includes('schema_version'))).toEqual([]);
+    expect(ran.filter((s) => s.startsWith('CREATE TABLE ') && !s.startsWith('CREATE TABLE entry_images') && !s.startsWith('CREATE TABLE fuel_') && !s.includes('schema_version'))).toEqual([]);
   });
 
   it('adds the revision once, last in entries as on a company file, and skips it when an upgrade cut off half way made it', () => {
