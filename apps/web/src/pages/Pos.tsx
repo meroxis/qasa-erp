@@ -16,7 +16,7 @@ import { useItemPicture } from '../industry/ItemImage.tsx';
 import { PrintDocument } from '../industry/PrintDocument.tsx';
 import { invoiceModel } from '../industry/print-model.ts';
 import { usePrintSetup } from '../industry/print-api.ts';
-import { addRefusal, cartShortNote, cashChange, cashTender, changeLineUnit, chosenMethod, creditNeedsCustomer, parseScan, pickAfterLink, posSaleLine, priceIn, priceRateFor, salePayments, tileOffer, tillMethods, type CashTender, type TillMethod } from './pos-logic.ts';
+import { addRefusal, cartShortNote, changeLineUnit, chosenMethod, creditNeedsCustomer, parseScan, pickAfterLink, posSaleLine, priceIn, priceRateFor, salePayments, tileOffer, tillMethods, type TillMethod } from './pos-logic.ts';
 import { inUnits, salePriceFor, unitChoices, unitLabel, type LineUnit } from '../industry/units.ts';
 import { BatchPick, useExpiredConfirm } from '../industry/BatchFields.tsx';
 import { pharmacyApi, type MedicineView } from '../industry/pharmacy-api.ts';
@@ -226,7 +226,6 @@ function Register({ initial, onClosed }: { initial: ShiftView; onClosed(): void 
   const [currency, setCurrency] = useState<CurrencyCode>('IQD');
   const [rateText, setRateText] = useState(() => String(rateFromX100(settings?.defaultRateX100 ?? 142000)));
   const [discount, setDiscount] = useState<number | null>(0);
-  const [paid, setPaid] = useState<number | null>(null);
   const [partyId, setPartyId] = useState('');
   // how it is paid (1.4): one way for the whole sale, cash or credit, in every company
   const [picked, setPicked] = useState<TillMethod>('cash');
@@ -258,8 +257,6 @@ function Register({ initial, onClosed }: { initial: ShiftView; onClosed(): void 
   const [error, setError] = useState<unknown>(null);
   const expired = useExpiredConfirm();
   const [receipt, setReceipt] = useState<InvoiceView | null>(null);
-  // the cash handed over for that sale and the change given back (the server keeps the sale, not the notes handed over)
-  const [tender, setTender] = useState<CashTender | null>(null);
   const [closing, setClosing] = useState(false);
   const [notFound, setNotFound] = useState('');
   // an item that exists but has no rate to convert its price into this sale's currency
@@ -338,14 +335,12 @@ function Register({ initial, onClosed }: { initial: ShiftView; onClosed(): void 
     });
     setNotFound('');
     setNoRate('');
-    setPaid(null);
   }, [currency, priceRate, unitPriceOf]);
 
   // a different currency or rate re-prices the cart
   useEffect(() => {
     setCart((c) => c.map((l) => ({ ...l, unitPrice: unitPriceOf(l.item, l.unit) })));
     setDiscount(0);
-    setPaid(null);
   }, [currency, priceRate]);
 
   /** Enter in the search box: an exact barcode or code wins (a scanner), else the only match. "3*code" sells three. */
@@ -375,7 +370,6 @@ function Register({ initial, onClosed }: { initial: ShiftView; onClosed(): void 
 
   const setQty = (key: string, qtyMilli: number) => {
     setCart((c) => (qtyMilli <= 0 ? c.filter((l) => lineKey(l) !== key) : c.map((l) => (lineKey(l) === key ? { ...l, qtyMilli } : l))));
-    setPaid(null);
   };
 
   /**
@@ -392,7 +386,6 @@ function Register({ initial, onClosed }: { initial: ShiftView; onClosed(): void 
       const unit = choices[(at + 1) % choices.length]?.unit ?? null;
       return changeLineUnit(c, i, unit, unitPriceOf(l.item, unit));
     });
-    setPaid(null);
   };
 
   const subtotal = cart.reduce((s, l) => s + lineTotal(l), 0);
@@ -417,16 +410,12 @@ function Register({ initial, onClosed }: { initial: ShiftView; onClosed(): void 
   const payments = salePayments(method, due);
   // the items of this cart beyond the stock last known, with what is left of each
   const shortNow = cartShortNote(shortStock(cart), (code, have) => `${code} (${i18n.qty(Math.max(0, have))})`, i18n.lang === 'en' ? ', ' : '، ');
-  // change is for cash handed over: none on credit
-  const change = cashChange(paid, due, payments ?? []);
-  const handed = cashTender(paid, change);
   const needsCustomer = creditNeedsCustomer(method, partyId);
-  const canPay = cart.length > 0 && !busy && (discount ?? 0) <= subtotal && (currency === 'IQD' || rateX100 > 0) && (change === null || change >= 0) && !needsCustomer;
+  const canPay = cart.length > 0 && !busy && (discount ?? 0) <= subtotal && (currency === 'IQD' || rateX100 > 0) && !needsCustomer;
 
   const clear = () => {
     setCart([]);
     setDiscount(0);
-    setPaid(null);
     setPartyId('');
     setPicked('cash');
     setPoints({ points: 0, value: 0 });
@@ -455,7 +444,6 @@ function Register({ initial, onClosed }: { initial: ShiftView; onClosed(): void 
       user: { id: who?.id ?? null, name: who?.name ?? shift.openedBy }, summary: { total, currency, lines: cart.length, register: shift.register }
     });
     const stamp = kept.body.offline as { reference: string; soldAt: string; soldOn: string };
-    setTender(handed);
     setReceipt(offlineReceipt({
       key, reference: kept.reference ?? stamp.reference, soldAt: stamp.soldAt, soldOn: stamp.soldOn, shift, cashier: who?.name ?? shift.openedBy,
       lines: cart, currency, rateX100, discount: discount ?? 0, party: customers.find((p) => p.id === partyId) ?? null, payments: sale.payments ?? []
@@ -479,9 +467,7 @@ function Register({ initial, onClosed }: { initial: ShiftView; onClosed(): void 
         currency, ...(currency === 'USD' ? { rateX100 } : {}), ...(partyId ? { partyId } : {}), discount: discount ?? 0,
         lines: cart.map(posSaleLine),
         ...(payments ? { payments } : {}),
-        ...(points.points ? { loyaltyPoints: points.points } : {}),
-        // the cash handed over, kept with the sale: a later copy of the receipt prints it and the change again
-        ...(handed ? { tendered: handed.paid } : {})
+        ...(points.points ? { loyaltyPoints: points.points } : {})
       };
       // on a PC with an outbox the sale keeps its key over every Pay until it is booked or kept: a try whose answer
       // was lost is answered from the first, never booked twice (industry/offline-till.ts)
@@ -502,7 +488,6 @@ function Register({ initial, onClosed }: { initial: ShiftView; onClosed(): void 
       const res = done.result;
       setShift(res.shift);
       rememberTill(tillWho(), { shift: res.shift });
-      setTender(handed);
       setReceipt(res.invoice);
       clear();
       loadItems(); // stock changed
@@ -690,10 +675,7 @@ function Register({ initial, onClosed }: { initial: ShiftView; onClosed(): void 
                 onChange={(v, p) => { setPartyId(v); if (p) keepCustomer(p); }} onCreated={keepCustomer} />
             </div>
             <LoyaltyUse partyId={partyId} total={total} currency={currency} value={points.points} onChange={(n, v) => setPoints({ points: n, value: v })} />
-            <div className="grid-2">
-              <label className="field" id="pos-discount"><span>{t('pos_discount')} <span className="kbd">F8</span></span><AmountInput value={discount} currency={currency} onChange={setDiscount} ariaLabel={t('pos_discount')} /></label>
-              <label className="field"><span>{t('pos_paid')}</span><AmountInput value={paid} currency={currency} onChange={setPaid} ariaLabel={t('pos_paid')} /></label>
-            </div>
+            <label className="field" id="pos-discount"><span>{t('pos_discount')} <span className="kbd">F8</span></span><AmountInput value={discount} currency={currency} onChange={setDiscount} ariaLabel={t('pos_discount')} /></label>
             <div className="pos-total">
               <span>{t('pos_total')}</span>
               <strong className="num">{i18n.money(total, currency)}</strong>
@@ -713,12 +695,6 @@ function Register({ initial, onClosed }: { initial: ShiftView; onClosed(): void 
               {needsCustomer && <div className="small" role="alert" style={{ color: 'var(--bad)' }}>{t('s14_creditNeedsCustomer')}</div>}
               {offline && <div className="small muted">{t('pos_offlineNoAccount')}</div>}
             </div>
-            {change !== null && (
-              <div className={'pos-change' + (change < 0 ? ' bad' : '')}>
-                <span>{change < 0 ? t('pos_short') : t('pos_change')}</span>
-                <strong className="num">{i18n.money(Math.abs(change), currency)}</strong>
-              </div>
-            )}
             {unsure && (
               <div className="alert warn" role="alert">
                 {t('pos_unsure')}
@@ -749,7 +725,7 @@ function Register({ initial, onClosed }: { initial: ShiftView; onClosed(): void 
         </section>
       </div>
 
-      {receipt && <Receipt invoice={receipt} shift={shift} tender={tender} />}
+      {receipt && <Receipt invoice={receipt} shift={shift} />}
       {closing && <CloseShift shift={shift} keptHere={keptHere.length} onCancel={() => { setClosing(false); focusSearch(); }} onClosed={onClosed} />}
     </div>
   );
@@ -783,7 +759,7 @@ function printReceipt() {
   return printAlone('receipt', 'pos-printing');
 }
 
-function Receipt({ invoice, shift, tender }: { invoice: InvoiceView; shift: ShiftView; tender: CashTender | null }) {
+function Receipt({ invoice, shift }: { invoice: InvoiceView; shift: ShiftView }) {
   const i18n = useI18n();
   const { t } = i18n;
   const { settings, plan } = useData();
@@ -791,9 +767,9 @@ function Receipt({ invoice, shift, tender }: { invoice: InvoiceView; shift: Shif
   const company = settings ? i18n.name(settings.companyName) : '';
   // 1.2 (Pro): the points the sale used and earned, and the customer's balance
   const points = loyaltyLines(i18n, invoice.loyalty);
-  // more cash handed over than the sale: what was paid and the change, under the total. The server keeps it with the
-  // sale; a sale kept on this PC while the server can't be reached has only what the till remembers
-  const handed = invoice.tender ?? tender;
+  // a sale from when the till still asked for the amount paid: what was paid and the change, kept by the server with
+  // the sale, print again under the total on a copy of its receipt. The till no longer asks, so new sales carry none
+  const handed = invoice.tender ?? null;
   const tenderRows = handed && (
     <>
       <div className="pos-r-row small"><span>{t('pos_paid')}</span><span className="num">{i18n.money(handed.paid, invoice.currency)}</span></div>

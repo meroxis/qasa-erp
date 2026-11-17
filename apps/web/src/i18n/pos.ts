@@ -55,7 +55,6 @@ export const POS_TEXT = {
   pos_paid: ['المبلغ المدفوع', 'Amount paid', 'پارەی دراو'],
   pos_total: ['المجموع', 'Total', 'کۆ'],
   pos_change: ['الباقي للزبون', 'Change', 'باقی بۆ کڕیار'],
-  pos_short: ['ينقص', 'Short by', 'ماوە'],
   pos_clear: ['بيع جديد', 'New sale', 'فرۆشتنی نوێ'],
   pos_pay: ['دفع', 'Pay', 'پارەدان'],
   pos_saved: ['تم البيع — الفاتورة {n}', 'Sold — invoice {n}', 'فرۆشرا — پسوولەی {n}'],

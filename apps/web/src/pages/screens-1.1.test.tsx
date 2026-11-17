@@ -2,7 +2,7 @@ import { readdirSync, readFileSync } from 'node:fs';
 import { expect, it } from 'vitest';
 import { makeI18n } from '../i18n.ts';
 import { labelFace } from './Labels.tsx';
-import { cashChange, changeLineUnit, parseScan, tileOffer } from './pos-logic.ts';
+import { changeLineUnit, parseScan, tileOffer } from './pos-logic.ts';
 import { draftInValue, stockAfter } from './StockAdjustments.tsx';
 import { trackingInput } from './Items.tsx';
 import { recordableLines } from './Pharmacy.tsx';
@@ -40,17 +40,6 @@ it('a label for a unit without a barcode of its own carries none (never the base
   expect(strip).toEqual({ barcode: '6260000000102', price: 2_300 });
   expect(parseScan(strip.barcode, [med]).unit).toBe('strip');
   expect(labelFace(med, null)).toEqual({ barcode: '6260000000101', price: 250 });
-});
-
-it('POS split payment: the cash handed over is compared with the cash part only', () => {
-  // 25,000 paid FIB 15,000 + cash 10,000; 10,000 handed over: no change, nothing short
-  expect(cashChange(10_000, 25_000, [{ method: 'fib', amount: 15_000 }, { method: 'cash', amount: 10_000 }])).toBe(0);
-  expect(cashChange(20_000, 25_000, [{ method: 'fib', amount: 15_000 }, { method: 'cash', amount: 10_000 }])).toBe(10_000);
-  // no cash part: nothing to give back
-  expect(cashChange(5_000, 25_000, [{ method: 'fib', amount: 25_000 }])).toBeNull();
-  // all cash, as before
-  expect(cashChange(30_000, 25_000, [])).toBe(5_000);
-  expect(cashChange(null, 25_000, [])).toBeNull();
 });
 
 it('POS: a tile shows the price of the unit a tap adds (the sale unit)', () => {
