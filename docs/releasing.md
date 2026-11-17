@@ -177,6 +177,30 @@ warning) and 1.4.3's. The 1.4.1 line is gone, since every Store copy has had it 
    and deploy once the 1.5.1 GitHub release is out (the release workflow moves the website's download link, as for every
    release).
 
+## Release day for 1.5.2 (the point of sale by business type and by person: GitHub and the website now, the Store after 1.5.1)
+
+1.5.2 carries remembered office connections (File → Connect to an office server…), the till without Amount paid, text
+kept inside its box, and the point of sale by business type with the per-person **Point of sale** role. No schema
+change (the company file stays on 15; the company's switch is the `pos_use` setting in the existing settings table).
+Pro changed in its tests only (meroxis/qasa-erp-pro#22, in Pro's `release/1.5.2`). The notes open with "Before you
+update": nobody gets the Point of sale role with the update, so only admins use the till until an admin ticks it for
+each cashier in Users, and a company whose business type is only real estate, engineering works or generator owners has
+the till off until an admin turns on Use the point of sale in Settings → Sales and point of sale.
+
+1. **Tag Pro, then the app** (the stable steps above, without step 7 for now): merge Pro's `release/1.5.2` PR into Pro
+   `main` and push `v1.5.2` at that merge commit, then merge the app's release PR and tag the app `v1.5.2` on `main`.
+2. **GitHub and the website now; the Store after 1.5.1 passes.** 1.5.1 went to Partner Center on 2026-11-16 and is in
+   certification: don't submit 1.5.2 while it is. Once 1.5.1 has passed, submit the 1.5.2 `microsoft-store-package`
+   artifact of the release workflow with the 1.5.2 "What's new" in `store-listing.json` (1.5.2 first, with its "Before
+   you update", then "Also from 1.5.1" with the menu). If 1.5.1 fails certification, submit 1.5.2 in its place: its text
+   already carries 1.5.1's menu line.
+3. **The website:** set its `APP_VERSION` (`build.mjs`, the `softwareVersion` the pages give search engines) to 1.5.2
+   and deploy once the 1.5.2 GitHub release is out (the release workflow moves the website's download link, as for every
+   release).
+4. **Tell the companies that sell at the till** (support, WhatsApp) on the day: after updating, an admin ticks **Point
+   of sale** in **Users** for each cashier, and a real-estate, engineering-works or generator company that uses the till
+   turns on **Use the point of sale** in **Settings → Sales and point of sale**.
+
 ## Release notes format
 
 The notes are the GitHub release body (taken from `apps/desktop/release-notes/<version>.md`). The app shows them under **What's new**, as plain text with a little formatting and never as HTML.
