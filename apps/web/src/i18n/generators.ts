@@ -76,7 +76,7 @@ export const GEN_TEXT = {
   // months
   gen_billMonth: ['فاتورة هذا الشهر', 'Bill this month', 'پسوولەی ئەم مانگە'],
   gen_billHelp: ['أدخل سعر الأمبير لكل خط؛ تُحسب فاتورة كل مشترك فعّال (الأمبير × السعر) وتراجعها قبل الترحيل.', 'Enter the price of one amp per line; every active subscriber is billed (amps × price) and you check it before posting.', 'نرخی یەک ئەمپێر بۆ هەر هێڵێک بنووسە؛ پسوولەی هەر بەشداربوویەکی چالاک (ئەمپێر × نرخ) دەژمێردرێت و پێش تۆمارکردن دەیبینیت.'],
-  gen_monthsHelp: ['كل شهر يُرحَّل بقيد واحد: مدين كل مشترك، دائن إيراد المولدة، ثم يمر بالتدقيق والمصادقة.', 'Each month posts one entry: Dr each subscriber, Cr generator revenue — then it goes through checking and approval.', 'هەر مانگێک بە یەک قەید تۆمار دەکرێت: هەر بەشداربوویەک مەدین، داهاتی مۆلیدە دائین — پاشان بە وردبینی و پەسەندکردندا دەڕوات.'],
+  gen_monthsHelp: ['كل شهر يُرحَّل بقيد واحد: مدين كل مشترك، دائن إيراد المولدة، ثم يمر بالتدقيق والمصادقة.', 'Each month posts one entry: Dr each subscriber, Cr generator revenue — then it goes through checking and approval.', 'هەر مانگێک بە یەک قەید تۆمار دەکرێت: هەر بەشداربوویەک قەرزدار، داهاتی مۆلیدە قەرزدەر — پاشان بە وردبینی و پەسەندکردندا دەڕوات.'],
   gen_month: ['الشهر', 'Month', 'مانگ'],
   gen_priceNormal: ['سعر الأمبير — عادي', 'Price per amp — normal', 'نرخی ئەمپێر — ئاسایی'],
   gen_priceGolden: ['سعر الأمبير — ذهبي', 'Price per amp — golden', 'نرخی ئەمپێر — زێڕین'],

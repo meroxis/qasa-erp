@@ -32,11 +32,11 @@ export const PO_TEXT = {
   po_deliverTo: ['التسليم إلى', 'Deliver to', 'گەیاندن بۆ'],
   po_markSent: ['تم الإرسال', 'Mark as sent', 'نێردراو'],
   po_receive: ['استلام', 'Receive', 'وەرگرتن'],
-  po_receiveHelp: ['ستُنشأ فاتورة مشتريات مسودة بالكميات المتبقية. عدّل الكميات أو الأسعار حسب ما وصل فعلاً ثم رحّلها؛ لا يُحتسب الاستلام إلا بعد الترحيل.', 'A draft purchase invoice is made for the quantities still to come. Change the quantities or prices to match what actually arrived, then post it; nothing counts as received until it is posted.', 'پسوولەی کڕینی ڕەشنووس بە بڕی ماوە دروست دەکرێت. بڕ یان نرخەکان بگۆڕە بەپێی ئەوەی بەڕاستی گەیشتووە، پاشان تەرحیلی بکە؛ تا تەرحیل نەکرێت هیچ وەک وەرگیراو هەژمار ناکرێت.'],
+  po_receiveHelp: ['ستُنشأ فاتورة مشتريات مسودة بالكميات المتبقية. عدّل الكميات أو الأسعار حسب ما وصل فعلاً ثم رحّلها؛ لا يُحتسب الاستلام إلا بعد الترحيل.', 'A draft purchase invoice is made for the quantities still to come. Change the quantities or prices to match what actually arrived, then post it; nothing counts as received until it is posted.', 'پسوولەی کڕینی ڕەشنووس بە بڕی ماوە دروست دەکرێت. بڕ یان نرخەکان بگۆڕە بەپێی ئەوەی بەڕاستی گەیشتووە، پاشان پۆستی بکە؛ تا پۆست نەکرێت هیچ وەک وەرگیراو هەژمار ناکرێت.'],
   po_receiveDone: ['تم إنشاء فاتورة المشتريات المسودة', 'Draft purchase invoice made', 'پسوولەی کڕینی ڕەشنووس دروستکرا'],
   po_receipts: ['فواتير الاستلام', 'Receiving invoices', 'پسوولەکانی وەرگرتن'],
   po_draftInvoice: ['فاتورة مسودة', 'Draft invoice', 'پسوولەی ڕەشنووس'],
-  po_pendingHelp: ['هناك فاتورة استلام مسودة لهذا الأمر. افتحها ورحّلها أو احذفها قبل استلام جديد.', 'There is a draft receiving invoice for this order. Open it and post or delete it before receiving again.', 'پسوولەیەکی وەرگرتنی ڕەشنووس بۆ ئەم داواکارییە هەیە. پێش وەرگرتنی نوێ بیکەرەوە و تەرحیلی بکە یان بیسڕەوە.'],
+  po_pendingHelp: ['هناك فاتورة استلام مسودة لهذا الأمر. افتحها ورحّلها أو احذفها قبل استلام جديد.', 'There is a draft receiving invoice for this order. Open it and post or delete it before receiving again.', 'پسوولەیەکی وەرگرتنی ڕەشنووس بۆ ئەم داواکارییە هەیە. پێش وەرگرتنی نوێ بیکەرەوە و پۆستی بکە یان بیسڕەوە.'],
   po_cancel: ['إلغاء الأمر', 'Cancel order', 'هەڵوەشاندنەوەی داواکاری'],
   po_cancelHelp: ['سيُلغى أمر الشراء {n}. ما تم استلامه يبقى في فواتيره.', 'Purchase order {n} will be cancelled. Anything already received stays on its invoices.', 'داواکاریی کڕینی {n} هەڵدەوەشێنرێتەوە. ئەوەی وەرگیراوە لە پسوولەکانیدا دەمێنێتەوە.'],
   po_reason: ['السبب (اختياري)', 'Reason (optional)', 'هۆکار (ئارەزوومەندانە)'],
@@ -70,6 +70,6 @@ export const PO_TEXT = {
   err_po_expected_invalid: ['تاريخ الوصول المتوقع يجب أن يكون بعد تاريخ الأمر', 'The expected date must be on or after the order date', 'بەرواری گەیشتن نابێت پێش بەرواری داواکارییەکە بێت'],
   err_po_lines_required: ['أضف مادة واحدة على الأقل', 'Add at least one item', 'لانیکەم یەک کاڵا زیاد بکە'],
   err_line_item_invalid: ['اختر مادة فعّالة', 'Choose an active item', 'کاڵایەکی چالاک هەڵبژێرە'],
-  err_po_receipt_pending: ['هناك فاتورة استلام مسودة لهذا الأمر؛ رحّلها أو احذفها أولاً', 'This order has a draft receiving invoice; post or delete it first', 'ئەم داواکارییە پسوولەی وەرگرتنی ڕەشنووسی هەیە؛ سەرەتا تەرحیلی بکە یان بیسڕەوە'],
+  err_po_receipt_pending: ['هناك فاتورة استلام مسودة لهذا الأمر؛ رحّلها أو احذفها أولاً', 'This order has a draft receiving invoice; post or delete it first', 'ئەم داواکارییە پسوولەی وەرگرتنی ڕەشنووسی هەیە؛ سەرەتا پۆستی بکە یان بیسڕەوە'],
   err_price_list_customers_only: ['قوائم الأسعار للزبائن فقط', 'Price lists are for customers only', 'لیستی نرخ تەنها بۆ کڕیارانە']
 } as const satisfies Record<string, readonly [string, string, string]>;

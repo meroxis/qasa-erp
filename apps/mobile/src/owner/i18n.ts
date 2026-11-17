@@ -1,7 +1,7 @@
 /**
  * The texts of phone app 1.1 for the owner and the managers (approvals, the dollar rate, the dashboard, the end of the
  * day), in Arabic, English and Kurdish (Sorani), as src/i18n.ts. The desktop's own words where it has them (fx_*, dc_*,
- * the vouchers' actions); the Kurdish accounting words of the desktop (قەید، سەنەد، ڕەسید، تەرحیل، نەقد، قەرز).
+ * the vouchers' actions); the Kurdish accounting words of the desktop (قەید، سەنەد، ڕەسید، پۆست، نەقد، قەرز); posting is «پۆست» from 1.5.3 («تەرحیل» 1.4 to 1.5.2).
  */
 export const OWNER_T = {
   // ——— approvals ———
@@ -20,11 +20,11 @@ export const OWNER_T = {
   aprEntry: ['قيد', 'Entry', 'قەید'],
   aprDraft: ['مسودة', 'Draft', 'ڕەشنووس'],
   aprAccount: ['الحساب', 'Account', 'هەژمار'],
-  aprApprove: ['موافقة وترحيل', 'Approve & post', 'پەسەندکردن و تەرحیلکردن'],
-  aprApproveChecked: ['مصادقة وترحيل', 'Approve & post', 'پەسەندکردن و تەرحیلکردن'],
+  aprApprove: ['موافقة وترحيل', 'Approve & post', 'پەسەندکردن و پۆستکردن'],
+  aprApproveChecked: ['مصادقة وترحيل', 'Approve & post', 'پەسەندکردن و پۆستکردن'],
   aprChanged: ['تغيّر هذا السند بعد أن فتحته؛ راجعه من جديد.', 'This voucher was changed after you opened it; look at it again.', 'ئەم سەنەدە دوای ئەوەی کردووتەتەوە گۆڕدراوە؛ دووبارە سەیری بکە.'],
-  aprApproveConfirm: ['الموافقة عليه وترحيله؟ بعد الترحيل لا يُصحَّح إلا بقيد عكسي.', 'Approve and post it? Once posted, only a reversal entry corrects it.', 'پەسەند و تەرحیل بکرێت؟ دوای تەرحیل تەنها بە قەیدی پێچەوانە ڕاست دەکرێتەوە.'],
-  aprApproved: ['رُحّل وصار في الدفاتر.', 'Posted: it is in the books now.', 'تەرحیل کرا و ئێستا لە دەفتەرەکاندایە.'],
+  aprApproveConfirm: ['الموافقة عليه وترحيله؟ بعد الترحيل لا يُصحَّح إلا بقيد عكسي.', 'Approve and post it? Once posted, only a reversal entry corrects it.', 'پەسەند و پۆست بکرێت؟ دوای پۆستکردن تەنها بە قەیدی پێچەوانە ڕاست دەکرێتەوە.'],
+  aprApproved: ['رُحّل وصار في الدفاتر.', 'Posted: it is in the books now.', 'پۆست کرا و ئێستا لە دەفتەرەکاندایە.'],
   aprReject: ['رفض', 'Reject', 'ڕەتکردنەوە'],
   aprRejectHelp: ['يبقى السند مسودة خارج الأرصدة، ويرى منظّمه السبب.', 'The voucher stays a draft, out of every balance, and whoever prepared it sees the reason.', 'سەنەدەکە وەک ڕەشنووس دەمێنێتەوە و ناچێتە هیچ ڕەسیدێک، و ئامادەکارەکەی هۆکارەکە دەبینێت.'],
   aprRejectReason: ['سبب الرفض', 'Reason', 'هۆکاری ڕەتکردنەوە'],

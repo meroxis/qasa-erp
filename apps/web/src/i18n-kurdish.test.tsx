@@ -1,3 +1,4 @@
+import { readFileSync, readdirSync } from 'node:fs';
 import { expect, it } from 'vitest';
 
 // Sorani is written with Kurdish letters: ی and ک, never the Arabic ى, ي or ك (they look alike, but they break search
@@ -69,9 +70,10 @@ it('keeps quantity, amount, warehouse and stock apart in Kurdish', async () => {
   expect(checked).toBeGreaterThan(3);
 });
 
-// The screens made for 1.4 use the words of the Kurdish pass: ڕەسید for a balance, قەید for an entry, تەرحیل for posting.
+// The screens made for 1.4 use the words of the Kurdish pass: ڕەسید for a balance, قەید for an entry, and (from 1.5.3)
+// پۆست for posting and قەرزدار / قەرزدەر for the two sides; «تەرحیل»، «مەدین» and «دائین» (1.4 to 1.5.2) are gone.
 it('writes the 1.4 screens with the words of the rest of the app', () => {
-  const old = /باڵانس|نەختینە|سندوق|قەرزدار|قەرزدەر/;
+  const old = /باڵانس|نەختینە|سندوق|تەرحیل|مەدین|دائین/;
   const wrong: string[] = [];
   for (const file of ['./i18n/items14.ts', './i18n/sales14.ts', './i18n/shell14.ts', './i18n/print14.ts']) {
     for (const table of Object.values(modules[file]!)) {
@@ -80,7 +82,7 @@ it('writes the 1.4 screens with the words of the rest of the app', () => {
         const ku = Array.isArray(value) ? value[2] : undefined;
         if (typeof ku !== 'string') continue;
         if (old.test(ku)) wrong.push(`${file} ${key}: ${ku}`);
-        // "posted" is تەرحیل and an entry is قەید: تۆمار stays for recording something that is not a journal entry
+        // "posted" is پۆست and an entry is قەید: تۆمار stays for recording something that is not a journal entry
         const en = String((value as string[])[1]);
         if (/\bposted\b|\bpost\b|\bentr(y|ies)\b/i.test(en) && /تۆمار/.test(ku)) wrong.push(`${file} ${key}: ${ku}`);
       }
@@ -89,8 +91,27 @@ it('writes the 1.4 screens with the words of the rest of the app', () => {
   expect(wrong).toEqual([]);
   const text = (file: string, table: string, key: string) => (modules[file]![table] as Record<string, readonly string[]>)[key]![2];
   expect(text('./i18n/print14.ts', 'PRINT14_TEXT', 'pd_h_previousBalance')).toBe('ڕەسیدی پێشوو');
-  expect(text('./i18n/print14.ts', 'PRINT14_TEXT', 'pd_balanceHint')).toContain('تەرحیلکراو');
+  expect(text('./i18n/print14.ts', 'PRINT14_TEXT', 'pd_balanceHint')).toContain('پۆستکراو');
   expect(text('./i18n/sales14.ts', 'SALES14_TEXT', 's14_notYours')).toContain('قەید');
   // the Settings tile and its section call the posting accounts the same
-  expect(text('./i18n/settings-sections.ts', 'SETTINGS_SECTION_TEXT', 'ss_companyHelp')).toContain('هەژمارەکانی تەرحیلی پسوولە');
+  expect(text('./i18n/settings-sections.ts', 'SETTINGS_SECTION_TEXT', 'ss_companyHelp')).toContain('هەژمارەکانی پۆستکردنی پسوولە');
+});
+
+// From 1.5.3 (the owner's wording) the two sides of an entry are قەرزدار / قەرزدەر and posting is پۆست, in every Kurdish
+// text of the app; «مەدین»، «دائین» and «تەرحیل» (1.4 to 1.5.2) are still read by the importers, never shown.
+it('calls the sides قەرزدار / قەرزدەر and posting پۆست in every Kurdish text', () => {
+  const dir = new URL('./i18n/', import.meta.url);
+  const files = [new URL('./i18n.ts', import.meta.url), ...readdirSync(dir).filter((f) => f.endsWith('.ts')).map((f) => new URL(f, dir))];
+  const wrong: string[] = [];
+  for (const file of files) {
+    readFileSync(file, 'utf8').split(/\r?\n/).forEach((line, i) => {
+      if (/تەرحیل|مەدین|دائین/.test(line)) wrong.push(`${file.pathname.split('/').pop()}:${i + 1}`);
+    });
+  }
+  expect(files.length).toBeGreaterThan(10);
+  expect(wrong).toEqual([]);
+  const text = (file: string, table: string, key: string) => (modules[file]![table] as Record<string, readonly string[]>)[key]![2];
+  expect(text('./i18n/labels.ts', 'LABEL_TEXT', 'pd_h_debit')).toBe('قەرزدار');
+  expect(text('./i18n/labels.ts', 'LABEL_TEXT', 'pd_h_credit')).toBe('قەرزدەر');
+  expect(text('./i18n/payroll.ts', 'PAYROLL_TEXT', 'pay_st_posted')).toBe('پۆستکراو');
 });

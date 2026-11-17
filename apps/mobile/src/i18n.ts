@@ -134,7 +134,7 @@ const BASE = {
   modeOrder: ['طلبية (عرض سعر)', 'Order (quote)', 'داواکاری (عەرزی نرخ)'],
   sendDraft: ['إرسال كمسودة فاتورة', 'Send as a draft invoice', 'ناردن وەک ڕەشنووسی پسوولە'],
   sendOrder: ['إرسال الطلبية', 'Send the order', 'ناردنی داواکاری'],
-  draftSent: ['أُرسلت مسودة الفاتورة. يرحّلها المحاسب من الحاسوب.', 'The draft invoice was sent. The accountant posts it on the PC.', 'ڕەشنووسی پسوولە نێردرا. ژمێریار لەسەر کۆمپیوتەر تەرحیلی دەکات.'],
+  draftSent: ['أُرسلت مسودة الفاتورة. يرحّلها المحاسب من الحاسوب.', 'The draft invoice was sent. The accountant posts it on the PC.', 'ڕەشنووسی پسوولە نێردرا. ژمێریار لەسەر کۆمپیوتەر پۆستی دەکات.'],
   // one way for the whole sale, as the desktop's till and invoice (1.4): the desktop's own words (payMode, payCash, payCredit)
   payment: ['طريقة الدفع', 'Payment', 'شێوازی پارەدان'],
   payCash: ['نقداً', 'Cash', 'نەقد'],
@@ -161,8 +161,8 @@ const BASE = {
   thisYear: ['هذه السنة', 'This year', 'ئەمساڵ'],
   opening: ['الرصيد الافتتاحي', 'Opening balance', 'ڕەسیدی سەرەتا'],
   closing: ['الرصيد', 'Balance', 'ڕەسید'],
-  debit: ['مدين', 'Debit', 'مەدین'],
-  credit: ['دائن', 'Credit', 'دائین'],
+  debit: ['مدين', 'Debit', 'قەرزدار'],
+  credit: ['دائن', 'Credit', 'قەرزدەر'],
   noLines: ['لا قيود في هذه الفترة.', 'No entries in this period.', 'هیچ قەیدێک لەم ماوەیەدا نییە.'],
 
   // ——— collect ———
@@ -175,7 +175,7 @@ const BASE = {
     'The receipt voucher was sent. It counts in the customer\'s balance once it is approved on the PC.',
     'سەنەدی وەرگرتن نێردرا. دوای پەسەندکردنی لەسەر کۆمپیوتەر لە ڕەسیدی کڕیار دەژمێردرێت.'
   ],
-  collectPosted: ['رُحّل سند القبض ونزل المبلغ من حساب الزبون.', 'The receipt voucher is posted: the amount came off the customer\'s account.', 'سەنەدی وەرگرتن تەرحیل کرا: بڕی پارەکە لە قەرزی کڕیار کەم بووەوە.'],
+  collectPosted: ['رُحّل سند القبض ونزل المبلغ من حساب الزبون.', 'The receipt voucher is posted: the amount came off the customer\'s account.', 'سەنەدی وەرگرتن پۆست کرا: بڕی پارەکە لە قەرزی کڕیار کەم بووەوە.'],
   receiptDescription: ['قبض من {c} — تطبيق الهاتف', 'Received from {c} — phone app', 'وەرگیرا لە {c} — ئەپی مۆبایل'],
   amountInvalid: ['أدخل مبلغاً أكبر من صفر.', 'Enter an amount above zero.', 'بڕێکی سەرووی سفر بنووسە.'],
   noAccount: ['لا حساب لهذا الزبون في الدليل.', 'This customer has no account in the chart.', 'ئەم کڕیارە هیچ هەژمارێکی لە ڕێبەری هەژمارەکاندا نییە.'],
@@ -218,7 +218,7 @@ const BASE = {
   receiptsSentPosted: [
     'أُرسلت {n} من سندات القبض التي كانت بانتظار الإرسال ورُحّلت.',
     '{n} receipts that were waiting were sent and posted.',
-    '{n} سەنەدی وەرگرتن کە چاوەڕێ بوون نێردران و تەرحیل کران.'
+    '{n} سەنەدی وەرگرتن کە چاوەڕێ بوون نێردران و پۆست کران.'
   ],
 
   // ——— more, settings ———
