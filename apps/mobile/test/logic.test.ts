@@ -108,9 +108,10 @@ describe('what the phone offers, by the office user it acts as', () => {
 
 /** The office's roles and what each may change (packages/server/src/auth.ts; a test below holds them to it). */
 const ROLE_PERMISSIONS: Record<string, string[]> = {
-  admin: ['admin', 'entries.prepare', 'entries.check', 'entries.approve', 'sales', 'purchases', 'stock'],
+  admin: ['admin', 'entries.prepare', 'entries.check', 'entries.approve', 'sales', 'pos', 'purchases', 'stock'],
   preparer: ['entries.prepare'], checker: ['entries.check'], approver: ['entries.approve'],
-  sales: ['sales'], purchasing: ['purchases'], storekeeper: ['stock'], viewer: []
+  // pos (office 1.5.2): the till at the office; the phone has no till, so it changes nothing here
+  sales: ['sales'], pos: ['pos'], purchasing: ['purchases'], storekeeper: ['stock'], viewer: []
 };
 const ROLES = Object.keys(ROLE_PERMISSIONS);
 const asUser = (roles: string[], offers: string[] | null = ALL_OFFERS): Me => ({

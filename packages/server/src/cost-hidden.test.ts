@@ -209,7 +209,8 @@ beforeAll(async () => {
   const first = (await get('/api/users')).json()[0] as { id: string; username: string };
   await made(post(`/api/users/${first.id}/password`, { password: 'admin-pass-123' }), 200);
   for (const [username, name, role] of [['raz', 'Raz', 'sales'], ['las', 'Las', 'storekeeper'], ['las2', 'Las', 'purchasing'], ['mer', 'Mer', 'preparer'], ['mer2', 'Mer', 'viewer']] as const) {
-    await made(post('/api/users', { username, name, password: `${username}-pass-123`, roles: [role] }));
+    // the cashier sells at the till (1.5.2: the Point of sale role with the sales role)
+    await made(post('/api/users', { username, name, password: `${username}-pass-123`, roles: role === 'sales' ? ['sales', 'pos'] : [role] }));
   }
   await made(put('/api/auth/signin', { on: true }), 200);
   admin = await signIn(first.username, 'admin-pass-123');
@@ -315,6 +316,9 @@ const BOOKS_FIELDS = (): [string, string][] => [
  */
 const BOOKS_ROUTES = ['/api/entries/', '/api/reports/', '/api/year-end', '/api/fx/revaluation', '/api/assets', '/api/brief/reports/stock-value', '/api/brief/expenses', '/api/banking/statements', '/api/banking/cheques'];
 const ADMIN_ROUTES = ['/api/audit', '/api/auth/recovery-code', '/api/branches', '/api/users'];
+// the till's own reads (1.5.2): for the Point of sale permission only (an admin has it; a cashier at the till here too)
+const TILL_ROUTES = ['/api/pos/current', '/api/pos/payment-accounts'];
+const NOT_THEIRS = [...ADMIN_ROUTES, ...TILL_ROUTES].sort();
 const isOneOf = (route: string, list: string[]) => list.some((p) => route === p || route.startsWith(p.endsWith('/') ? p : `${p}/`));
 
 const find = (answers: Answer[], url: string): Answer => {
@@ -405,7 +409,7 @@ describe('cost, stock value and profit, by who asks', () => {
     for (const who of [keeper, buyer]) {
       const answers = await walk(who);
       expect(failed(answers)).toEqual([]);
-      expect(refused(answers)).toEqual(ADMIN_ROUTES);
+      expect(refused(answers)).toEqual(NOT_THEIRS);
       expect(missing(answers, [...COST_FIELDS(), ...BOOKS_FIELDS()])).toEqual([]);
     }
   });
@@ -414,7 +418,7 @@ describe('cost, stock value and profit, by who asks', () => {
     for (const who of [accountant, viewer]) {
       const answers = await walk(who);
       expect(failed(answers)).toEqual([]);
-      expect(refused(answers)).toEqual(ADMIN_ROUTES);
+      expect(refused(answers)).toEqual(NOT_THEIRS);
       expect(missing(answers, [...COST_FIELDS(), ...BOOKS_FIELDS()])).toEqual([]);
       // the suppliers' ageing with the rest of the books
       expect(find(answers, '/api/brief/reports/aging?type=supplier').status).toBe(200);
@@ -574,7 +578,7 @@ describe('cheques and the end-of-day close of someone who does not keep the book
   it('shows a cashier only the registers they opened, with the sales, best sellers and debts of those shifts', async () => {
     const today = todayIso();
     // a second cashier with the same name: the shifts are told apart by who opened them, not by the name
-    await made(post('/api/users', { username: 'raz2', name: 'Raz', password: 'raz2-pass-123', roles: ['sales'] }));
+    await made(post('/api/users', { username: 'raz2', name: 'Raz', password: 'raz2-pass-123', roles: ['sales', 'pos'] }));
     const other = await signIn('raz2', 'raz2-pass-123');
     const shift = async (register: string, h: Headers, sales: object[], counted: number) => {
       const s = await made(post('/api/pos/shifts', { register, cashAccountCode: '1811', warehouseId: at.warehouseId, openingCash: 10_000 }, h));

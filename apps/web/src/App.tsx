@@ -1,5 +1,5 @@
 import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ComponentType, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from 'react';
-import { APP_VERSION, DEFAULT_AMOUNTS_SHOW, htmlLang, isLang, type DigitStyle, type Lang } from '@qasa/core';
+import { APP_VERSION, DEFAULT_AMOUNTS_SHOW, htmlLang, isLang, posShown, type DigitStyle, type Lang } from '@qasa/core';
 import { api, currentUser, SIGNED_OUT_EVENT, type AccountView, type Me, type PlanStatus, type Settings as SettingsData } from './api.ts';
 import { buildHas, BusyBar, DataContext, DisplayContext, Icon, isDensity, isTheme, Logo, PageNavContext, ToastProvider, type Density, type PageNav, type Theme } from './components.tsx';
 import { I18nContext, isKey, makeI18n, useI18n, type Key } from './i18n.ts';
@@ -29,6 +29,7 @@ import { HeaderRate } from './industry/HeaderRate.tsx';
 import { PhoneBell } from './industry/PhoneActivity.tsx';
 import { DualProvider } from './Amount.tsx';
 import { dataPlaceLine, inWindowsApp, officeText, useDataPlace } from './industry/data-place.ts';
+import { PosNotUsed } from './industry/PosNotUsed.tsx';
 
 /**
  * Pages load when they are first opened, not with the app: the first screen comes up quickly and the window holds only
@@ -166,13 +167,19 @@ export function App() {
   const [openNav, setOpenNav] = useState<string[]>([]);
   const [searching, setSearching] = useState(false);
   const [favs, setFavs] = useState<string[]>([]);
+  // 1.5.2: whether the company uses the point of sale (a business that sells at a counter, or Settings → Sales and point
+  // of sale); until the settings come, as before
+  const posOn = settings ? posShown(settings) : true;
+  // and whether this person may use it (the Point of sale role, or an admin): the favourites pinned before a person pins
+  // any offer the till only to them
+  const tillMine = posOn && !!me?.user?.permissions.some((p) => p === 'pos' || p === 'admin');
   const favUser = me?.signInRequired ? me.user?.name ?? '' : currentUser() || me?.user?.name || '';
   useEffect(() => {
-    const load = () => setFavs(favourites(favUser));
+    const load = () => setFavs(favourites(favUser, tillMine));
     load();
     window.addEventListener(FAVOURITES_EVENT, load);
     return () => window.removeEventListener(FAVOURITES_EVENT, load);
-  }, [favUser]);
+  }, [favUser, tillMine]);
   const routePage = route[0] ?? '';
   // Ctrl+K (⌘K) opens the search from anywhere
   useEffect(() => {
@@ -334,7 +341,7 @@ export function App() {
   let title: string = t('home');
   let content: ReactNode;
   const isAdmin = !!me?.user?.permissions.includes('admin');
-  const viewer: NavViewer = { admin: isAdmin, permissions: me?.user?.permissions ?? [], businessTypes: settings?.businessTypes ?? [], branchLimited: !!me?.user?.branchLimited, noBooks: !seesBooks };
+  const viewer: NavViewer = { admin: isAdmin, permissions: me?.user?.permissions ?? [], businessTypes: settings?.businessTypes ?? [], branchLimited: !!me?.user?.branchLimited, noBooks: !seesBooks, pos: posOn };
   const books = seesCompanyBooks(viewer);
   // admin pages (the menu's admin-only items) open for admins only, and the company's books (trial balance, final
   // accounts, statements) not for someone limited to branches; everyone else lands on the home page
@@ -480,7 +487,8 @@ export function App() {
       break;
     case 'pos':
       title = t('pos_title');
-      content = <Pos />;
+      // a company that does not use the till: what to do instead (its address still opens, from a link or a favourite)
+      content = posOn ? <Pos /> : <PosNotUsed admin={isAdmin} />;
       break;
     case 'outbox':
       title = t('ob_title');

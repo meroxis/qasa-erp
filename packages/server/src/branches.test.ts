@@ -73,7 +73,7 @@ async function erbilBranch(): Promise<{ branchId: string; raz: Headers; owner: H
   expect((await put(`/api/branches/${branchId}/warehouses`, { warehouseIds: [erbil] })).statusCode).toBe(200);
   expect((await put(`/api/branches/${branchId}/accounts`, { accounts: ['1812'] })).statusCode).toBe(200);
   await post(`/api/users/${ownerId}/password`, { password: 'owner-pass-1' });
-  const razId = (await post('/api/users', { username: 'raz', name: 'Raz', roles: ['sales', 'preparer', 'storekeeper'], password: 'raz-pass-1' })).json().id;
+  const razId = (await post('/api/users', { username: 'raz', name: 'Raz', roles: ['sales', 'pos', 'preparer', 'storekeeper'], password: 'raz-pass-1' })).json().id;
   expect((await put(`/api/users/${razId}/branches`, { branchIds: [branchId] })).statusCode).toBe(200);
   expect((await put('/api/auth/signin', { on: true })).statusCode).toBe(200);
   const login = async (username: string, password: string) => {

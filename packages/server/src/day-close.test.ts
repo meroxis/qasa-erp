@@ -160,7 +160,7 @@ describe('the end-of-day close', () => {
 });
 
 describe('mine=1 for someone who also keeps the stock or buys (phone app 1.1, no PIN)', () => {
-  it.each([['sales and stock', ['sales', 'storekeeper']], ['sales and purchases', ['sales', 'purchasing']]])(
+  it.each([['sales and stock', ['sales', 'pos', 'storekeeper']], ['sales and purchases', ['sales', 'pos', 'purchasing']]])(
     'with %s: their own registers and sales, and none of the branch\'s expenses or money in and out', async (_name, roles) => {
       // sign-in on: Mer (the owner) and Raz, who sells and keeps the stock or buys, so reads the books on a PC
       resetLoginThrottle();
