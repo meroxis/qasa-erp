@@ -201,6 +201,38 @@ the till off until an admin turns on Use the point of sale in Settings → Sales
    of sale** in **Users** for each cashier, and a real-estate, engineering-works or generator company that uses the till
    turns on **Use the point of sale** in **Settings → Sales and point of sale**.
 
+## Release day for 1.6.0 (the petrol station and schema 16: the Store and the website go from 1.5.1 straight to 1.6.0)
+
+1.6.0 carries the **Petrol station** business type (meroxis/qasa-erp#52, with Pro's meroxis/qasa-erp-pro#24: Starter,
+Pro and Business have it), the till's quick buttons and the **Big pictures on the till** option (#50, off for every
+company until an admin turns it on), and the owner's Kurdish words for the two sides of an entry and for posting (#51:
+قەرزدار / قەرزدەر, پۆست; Arabic and English unchanged). It **upgrades the company file to schema 16** (the petrol
+station's tables, on a company file and on a MariaDB/MySQL server database alike): 1.5.2 and earlier, and a Store copy
+on 1.5.1, can't open it afterwards, as the notes say first. 1.5.2 is on GitHub (2026-11-17) but never went to the Store,
+and the website never showed it, so both go from 1.5.1 straight to 1.6.0.
+
+1. **Tag Pro, then the app** (the stable steps above): the petrol station's entitlements are merged on Pro `main`
+   (meroxis/qasa-erp-pro#24, merge commit `cf9b602`) and Pro needs no release commit of its own: push `v1.6.0` on Pro
+   `main` at that commit (or later, if Pro `main` has moved on and passed its checks), then merge the app's release PR
+   and tag the app `v1.6.0` on `main`.
+2. **The Store goes from 1.5.1 straight to 1.6.0.** Never submit 1.5.2 now. Submit the 1.6.0 `microsoft-store-package`
+   artifact of the release workflow in Partner Center with the 1.6.0 "What's new" in `store-listing.json`: 1.6.0 first,
+   with its Before you update (schema 16: back up, update the office server PC and every PC together; the Kurdish
+   words), then "Also from 1.5.2" with the Point of sale role and the till by business type. The 1.5.1 line is gone,
+   since the Store has had 1.5.1 since 2026-11-16. The description and the feature line with the pharmacy now name the
+   petrol station (paid plans), and the till's line names the quick buttons and big pictures.
+3. **The website:** set its `APP_VERSION` (`build.mjs`, the `softwareVersion` the pages give search engines) to 1.6.0
+   and deploy once the 1.6.0 GitHub release is out (the release workflow moves the website's download link, as for every
+   release). It goes from 1.5.1 straight to 1.6.0: the 1.5.2 deploy never happened, as it needs the owner to sign in to
+   cPanel. The petrol station has no website or user guide pages yet.
+4. **The phone app is unchanged:** 1.6.0 ships no phone build. The phone app's own Kurdish texts already have the new
+   words on `main` (#51), and they reach phones with the next phone app build; until then a phone shows the Kurdish words
+   it had. Say so to a Kurdish customer who asks, but not in the 1.6.0 notes or the Store text, which tell of the
+   Windows app only.
+5. **Tell the companies on the office network** (support, WhatsApp) on the day: take a backup first, then update the
+   office server PC and every PC that connects to it together, as the notes say (the office server PC's books go to
+   schema 16 the first time 1.6.0 opens them, and 1.5.2 or earlier can't open them afterwards).
+
 ## Release notes format
 
 The notes are the GitHub release body (taken from `apps/desktop/release-notes/<version>.md`). The app shows them under **What's new**, as plain text with a little formatting and never as HTML.

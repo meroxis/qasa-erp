@@ -70,7 +70,7 @@ it('keeps quantity, amount, warehouse and stock apart in Kurdish', async () => {
   expect(checked).toBeGreaterThan(3);
 });
 
-// The screens made for 1.4 use the words of the Kurdish pass: ڕەسید for a balance, قەید for an entry, and (from 1.5.3)
+// The screens made for 1.4 use the words of the Kurdish pass: ڕەسید for a balance, قەید for an entry, and (from 1.6.0)
 // پۆست for posting and قەرزدار / قەرزدەر for the two sides; «تەرحیل»، «مەدین» and «دائین» (1.4 to 1.5.2) are gone.
 it('writes the 1.4 screens with the words of the rest of the app', () => {
   const old = /باڵانس|نەختینە|سندوق|تەرحیل|مەدین|دائین/;
@@ -97,7 +97,7 @@ it('writes the 1.4 screens with the words of the rest of the app', () => {
   expect(text('./i18n/settings-sections.ts', 'SETTINGS_SECTION_TEXT', 'ss_companyHelp')).toContain('هەژمارەکانی پۆستکردنی پسوولە');
 });
 
-// From 1.5.3 (the owner's wording) the two sides of an entry are قەرزدار / قەرزدەر and posting is پۆست, in every Kurdish
+// From 1.6.0 (the owner's wording) the two sides of an entry are قەرزدار / قەرزدەر and posting is پۆست, in every Kurdish
 // text of the app; «مەدین»، «دائین» and «تەرحیل» (1.4 to 1.5.2) are still read by the importers, never shown.
 it('calls the sides قەرزدار / قەرزدەر and posting پۆست in every Kurdish text', () => {
   const dir = new URL('./i18n/', import.meta.url);

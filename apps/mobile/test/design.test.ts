@@ -48,7 +48,7 @@ describe('texts', () => {
   });
 
   // the desktop's Kurdish words (apps/web/src/i18n): قەید an entry, ڕەسید a balance, پۆست posting, جەرد a count,
-  // قەرزدار/قەرزدەر the two sides (from 1.5.3; «تەرحیل»، «مەدین»/«دائین» were 1.4 to 1.5.2), نەقد cash, قەرز credit as a way of paying, قاسە a safe, سەنەد a voucher, پسوولە an invoice, بڕ a
+  // قەرزدار/قەرزدەر the two sides (from 1.6.0; «تەرحیل»، «مەدین»/«دائین» were 1.4 to 1.5.2), نەقد cash, قەرز credit as a way of paying, قاسە a safe, سەنەد a voucher, پسوولە an invoice, بڕ a
   // quantity and بڕی پارە an amount, کۆگا a warehouse and بڕی کۆگا what is in it
   it('Kurdish uses the desktop\'s accounting words', () => {
     const ku = (key: Parameters<typeof translate>[1]) => translate('ku', key);
