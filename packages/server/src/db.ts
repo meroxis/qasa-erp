@@ -1791,9 +1791,11 @@ const V15 =
   `;
 
 const V16 =
-  // 16 — petrol stations (prototype, fuel.ts): the fuels sold with their price per litre, the pumps and their nozzles
-  // (each nozzle one fuel, with the meter's last reading in millilitres), and the shifts: who worked it, each nozzle's
-  // opening and closing readings at the fuel's price that shift, the cash handed in and the entry the shift posted
+  // 16 — petrol stations (fuel.ts): the fuels sold with their price per litre; the tanks (each one fuel, its capacity
+  // and calibration chart); the pumps and their nozzles (each nozzle draws from one tank, with its meter's last reading
+  // and the meter's maximum); the shifts with each nozzle's opening and closing readings; the tanker deliveries and
+  // the dips; and every litre in or out of a tank with what it cost (fuel_moves: a tank's book stock and its average
+  // cost are their sums). A posted shift, delivery or dip is corrected by reversing it, never by changing it.
   `
   CREATE TABLE fuel_types (
     id TEXT PRIMARY KEY,
@@ -1808,6 +1810,19 @@ const V16 =
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL
   );
+  CREATE TABLE fuel_tanks (
+    id TEXT PRIMARY KEY,
+    code TEXT NOT NULL UNIQUE,
+    name TEXT NOT NULL,
+    fuel_type_id TEXT NOT NULL REFERENCES fuel_types(id),
+    capacity_milli INTEGER NOT NULL CHECK (capacity_milli > 0),
+    chart TEXT,
+    last_cost INTEGER NOT NULL DEFAULT 0 CHECK (last_cost >= 0),
+    opening_entry_id TEXT REFERENCES entries(id),
+    active INTEGER NOT NULL DEFAULT 1 CHECK (active IN (0, 1)),
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+  );
   CREATE TABLE fuel_pumps (
     id TEXT PRIMARY KEY,
     number INTEGER NOT NULL UNIQUE CHECK (number > 0),
@@ -1819,7 +1834,9 @@ const V16 =
     pump_id TEXT NOT NULL REFERENCES fuel_pumps(id),
     number INTEGER NOT NULL CHECK (number > 0),
     fuel_type_id TEXT NOT NULL REFERENCES fuel_types(id),
+    tank_id TEXT NOT NULL REFERENCES fuel_tanks(id),
     meter_milli INTEGER NOT NULL DEFAULT 0 CHECK (meter_milli >= 0),
+    meter_max_milli INTEGER NOT NULL DEFAULT 999999990 CHECK (meter_max_milli > 0),
     active INTEGER NOT NULL DEFAULT 1 CHECK (active IN (0, 1)),
     created_at TEXT NOT NULL,
     UNIQUE (pump_id, number)
@@ -1830,30 +1847,96 @@ const V16 =
     date TEXT NOT NULL,
     shift TEXT NOT NULL CHECK (shift IN ('morning', 'evening', 'night')),
     attendant TEXT NOT NULL,
-    status TEXT NOT NULL CHECK (status IN ('open', 'closed')),
+    status TEXT NOT NULL CHECK (status IN ('open', 'closed', 'reversed')),
     credit INTEGER NOT NULL DEFAULT 0 CHECK (credit >= 0),
     handed INTEGER CHECK (handed IS NULL OR handed >= 0),
     sales INTEGER,
+    cost INTEGER,
     difference INTEGER,
     cash_account TEXT REFERENCES accounts(code),
     entry_id TEXT REFERENCES entries(id),
+    reversal_entry_id TEXT REFERENCES entries(id),
     notes TEXT,
     opened_by TEXT NOT NULL,
     opened_at TEXT NOT NULL,
     closed_by TEXT,
-    closed_at TEXT
+    closed_at TEXT,
+    reversed_by TEXT,
+    reversed_at TEXT,
+    reverse_reason TEXT
   );
   CREATE INDEX fuel_shifts_date ON fuel_shifts(date);
   CREATE TABLE fuel_readings (
     shift_id TEXT NOT NULL REFERENCES fuel_shifts(id) ON DELETE CASCADE,
     nozzle_id TEXT NOT NULL REFERENCES fuel_nozzles(id),
     fuel_type_id TEXT NOT NULL REFERENCES fuel_types(id),
+    tank_id TEXT NOT NULL REFERENCES fuel_tanks(id),
     price INTEGER NOT NULL CHECK (price > 0),
     opening_milli INTEGER NOT NULL CHECK (opening_milli >= 0),
-    closing_milli INTEGER CHECK (closing_milli IS NULL OR closing_milli >= opening_milli),
+    closing_milli INTEGER CHECK (closing_milli IS NULL OR closing_milli >= 0),
+    meter_max_milli INTEGER NOT NULL CHECK (meter_max_milli > 0),
+    rollover INTEGER NOT NULL DEFAULT 0 CHECK (rollover IN (0, 1)),
+    cost INTEGER,
     PRIMARY KEY (shift_id, nozzle_id)
   );
   CREATE INDEX fuel_readings_nozzle ON fuel_readings(nozzle_id);
+  CREATE TABLE fuel_deliveries (
+    id TEXT PRIMARY KEY,
+    number TEXT NOT NULL UNIQUE,
+    date TEXT NOT NULL,
+    tank_id TEXT NOT NULL REFERENCES fuel_tanks(id),
+    supplier_id TEXT NOT NULL REFERENCES parties(id),
+    note_no TEXT NOT NULL,
+    qty_milli INTEGER NOT NULL CHECK (qty_milli > 0),
+    cost_per_litre INTEGER NOT NULL CHECK (cost_per_litre > 0),
+    cost INTEGER NOT NULL CHECK (cost > 0),
+    payment TEXT NOT NULL CHECK (payment IN ('cash', 'credit')),
+    cash_account TEXT REFERENCES accounts(code),
+    status TEXT NOT NULL CHECK (status IN ('posted', 'reversed')),
+    entry_id TEXT REFERENCES entries(id),
+    reversal_entry_id TEXT REFERENCES entries(id),
+    notes TEXT,
+    created_by TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    reversed_by TEXT,
+    reversed_at TEXT,
+    reverse_reason TEXT
+  );
+  CREATE INDEX fuel_deliveries_note ON fuel_deliveries(supplier_id, note_no);
+  CREATE INDEX fuel_deliveries_date ON fuel_deliveries(date);
+  CREATE TABLE fuel_dips (
+    id TEXT PRIMARY KEY,
+    number TEXT NOT NULL UNIQUE,
+    date TEXT NOT NULL,
+    tank_id TEXT NOT NULL REFERENCES fuel_tanks(id),
+    dip_mm INTEGER CHECK (dip_mm IS NULL OR dip_mm >= 0),
+    measured_milli INTEGER NOT NULL CHECK (measured_milli >= 0),
+    book_milli INTEGER NOT NULL,
+    variance_milli INTEGER NOT NULL,
+    value INTEGER NOT NULL,
+    status TEXT NOT NULL CHECK (status IN ('posted', 'reversed')),
+    entry_id TEXT REFERENCES entries(id),
+    reversal_entry_id TEXT REFERENCES entries(id),
+    notes TEXT,
+    created_by TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    reversed_by TEXT,
+    reversed_at TEXT,
+    reverse_reason TEXT
+  );
+  CREATE INDEX fuel_dips_tank ON fuel_dips(tank_id, date);
+  CREATE TABLE fuel_moves (
+    id TEXT PRIMARY KEY,
+    tank_id TEXT NOT NULL REFERENCES fuel_tanks(id),
+    date TEXT NOT NULL,
+    kind TEXT NOT NULL CHECK (kind IN ('opening', 'delivery', 'sale', 'dip')),
+    source_id TEXT NOT NULL,
+    qty_milli INTEGER NOT NULL,
+    value INTEGER NOT NULL,
+    created_at TEXT NOT NULL
+  );
+  CREATE INDEX fuel_moves_tank ON fuel_moves(tank_id, date);
+  CREATE INDEX fuel_moves_source ON fuel_moves(source_id);
   `;
 
 const MIGRATIONS: Migration[] = [

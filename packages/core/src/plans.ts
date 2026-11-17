@@ -33,7 +33,7 @@ export type Feature =
   | 'payroll'
   | 'pipeline' // the sales pipeline: leads and deals
   | 'generators' // generator owners: subscribers by amps, monthly billing, collectors
-  | 'petrolStation' // petrol stations (prototype): pumps and nozzles, meter readings at each shift, cash against litres sold
+  | 'petrolStation' // petrol stations: pumps and shifts, tanks, tanker deliveries and dips, attendants' short and over
   | 'websiteApi' // API keys and webhooks for websites and online shops
   | 'phoneApp' // the Qasa phone app: scanning with the camera, prices, stock, items with photos
   | 'bankReconciliation' // matching the bank statement to the books

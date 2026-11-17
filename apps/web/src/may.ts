@@ -15,10 +15,14 @@ export const ACTIONS = {
   quote: { needs: 'sales', route: 'POST /api/quotes' },
   // 1.5.2: the till is its own permission (the Point of sale role), not the sales role's
   till: { needs: 'pos', route: 'POST /api/pos/shifts' },
-  // petrol stations (prototype, packages/server/src/fuel.ts): the shift sheet (open, save, close, delete) is sales;
-  // fuels, prices, pumps, nozzles and the posting accounts are an admin's
-  fuelShift: { needs: 'sales', route: 'POST /api/fuel/shifts' },
+  // petrol stations (packages/server/src/fuel.ts): the shift sheet (open, save, close, delete an open shift) is Point of
+  // sale, as the till is; a tanker delivery is purchasing; a dip is stock, as a stock count is; fuels, prices, tanks, pumps,
+  // nozzles, the posting accounts and every reversal are an admin's
+  fuelShift: { needs: 'pos', route: 'POST /api/fuel/shifts' },
+  fuelDelivery: { needs: 'purchases', route: 'POST /api/fuel/deliveries' },
+  fuelDip: { needs: 'stock', route: 'POST /api/fuel/dips' },
   fuelSetup: { needs: 'admin', route: 'PUT /api/fuel/settings' },
+  fuelReverse: { needs: 'admin', route: 'POST /api/fuel/shifts/:id/reverse' },
   // purchases
   purchase: { needs: 'purchases', route: 'POST /api/invoices', body: { kind: 'purchase' } },
   supplier: { needs: 'purchases', route: 'POST /api/parties', body: { type: 'supplier' } },

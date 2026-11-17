@@ -14,7 +14,7 @@ export async function startDemoBackend(): Promise<void> {
   db.exec('PRAGMA foreign_keys = ON');
   initDatabase(db);
   seedDemo(db);
-  // prototype (petrol station): ?petrol in the address opens the sample company as a petrol station
+  // ?petrol in the address opens the sample company as a petrol station
   if (new URLSearchParams(window.location.search).has('petrol')) seedPetrolStationDemo(db);
 
   const routes = apiRoutes(db, { demo: true }).map((route) => ({ route, pattern: compile(route.path) }));

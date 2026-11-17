@@ -11,7 +11,9 @@ const FILES = [
   'i18n.ts',
   'industry/print-model.ts',
   // the sample company of `npm run seed:demo` and the website demo: its parties, addresses and streets too
-  '../../../packages/server/src/demo-data.ts'
+  '../../../packages/server/src/demo-data.ts',
+  // the petrol station's sample (?petrol): its attendants and tanks
+  '../../../packages/server/src/demo-petrol.ts'
 ];
 
 /** Common first names and surnames (Arabic, Kurdish, Persian, Turkish and English), as written in Latin letters. */

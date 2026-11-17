@@ -54,8 +54,13 @@ const RENT_PAID = 77_077;
 const IN_THE_BANK = 913_913;
 // (1.5) an expense recorded with the photo of its receipt
 const PHOTO_EXPENSE = 66_067;
+// the petrol station: a tanker of fuel bought at this a litre (1,000 L), its cost, a shift's cost and the stock's value
+const FUEL_BOUGHT_AT = 777;
+const FUEL_DELIVERED = 777_000;
+const FUEL_SOLD_COST = 73_700;
+const FUEL_STOCK_VALUE = 8_025_930; // after the dip took 10 L out at 737
 /** Those, and what the server worked out from them (the cost of each line sold, the value of the stock). */
-const secrets = new Set<number>([OPENING_COST, TEA_PURCHASE_PRICE, TEA_BOUGHT_AT, SYRUP_PURCHASE_PRICE, SYRUP_BOUGHT_AT, ORDERED_AT, CUP_BOUGHT_AT, RENT_PAID, IN_THE_BANK, PHOTO_EXPENSE]);
+const secrets = new Set<number>([OPENING_COST, TEA_PURCHASE_PRICE, TEA_BOUGHT_AT, SYRUP_PURCHASE_PRICE, SYRUP_BOUGHT_AT, ORDERED_AT, CUP_BOUGHT_AT, RENT_PAID, IN_THE_BANK, PHOTO_EXPENSE, FUEL_BOUGHT_AT, FUEL_DELIVERED, FUEL_SOLD_COST, FUEL_STOCK_VALUE]);
 
 /** What stands in for the ":id" of each route, the query a route needs, and more addresses than one per route. */
 const ids: Record<string, string> = {};
@@ -116,6 +121,15 @@ beforeAll(async () => {
   await made(post(`/api/invoices/${cups.id}/post`), 200);
   const cupsSold = await made(post('/api/invoices', invoice('sale', customerId, [{ itemId: cupId, qtyMilli: 2_000, unitPrice: 1_250 }])));
   await made(post(`/api/invoices/${cupsSold.id}/post`), 200);
+  // the petrol station: 10,000 L of opening stock at 733 a litre, a tanker of 1,000 L at 777 (the average is now 737),
+  // a shift that sold 100 L of it (at 737: 73,700) and a dip a little under the book
+  const fuel = await made(post('/api/fuel/types', { code: 'B-REG', name: one('Benzine'), price: 950 }));
+  const fuelTank = await made(post('/api/fuel/tanks', { code: 'T1', name: 'Benzine', fuelTypeId: fuel.id, capacityMilli: 40_000_000, openingMilli: 10_000_000, openingCost: 733, openingDate: today }));
+  const fuelDelivery = await made(post('/api/fuel/deliveries', { date: today, tankId: fuelTank.id, supplierId, noteNo: 'N-1', qtyMilli: 1_000_000, costPerLitre: FUEL_BOUGHT_AT, payment: 'credit' }));
+  const fuelPump = await made(post('/api/fuel/pumps', { number: 1, nozzles: [{ number: 1, tankId: fuelTank.id, meterMilli: 5_000_000 }] }));
+  const fuelShift = await made(post('/api/fuel/shifts', { date: today, shift: 'morning', attendant: 'Las', pumpIds: [fuelPump.id] }));
+  await made(post(`/api/fuel/shifts/${fuelShift.id}/close`, { readings: [{ nozzleId: fuelPump.nozzles[0].id, closingMilli: 5_100_000 }], handed: 95_000 }), 200);
+  await made(post('/api/fuel/dips', { date: today, tankId: fuelTank.id, measuredMilli: 10_890_000 }));
   const quote = await made(post('/api/quotes', { date: today, partyId: customerId, currency: 'IQD', lines: [{ itemId: teaId, description: 'Tea', qtyMilli: 5_000, unitPrice: 2_400 }] }));
 
   // the stock is corrected and counted, an order waits at the supplier, a wholesale price is set
@@ -168,7 +182,8 @@ beforeAll(async () => {
     '/api/prices/party/:id': customerId, '/api/prices/item/:id': teaId,
     '/api/loyalty/parties/:id': customerId,
     '/api/banking/statements/:id': statement.id,
-    '/api/banking/cheques/:id': cheque.id
+    '/api/banking/cheques/:id': cheque.id,
+    '/api/fuel/shifts/:id': fuelShift.id, '/api/fuel/deliveries/:id': fuelDelivery.id
   });
   Object.assign(QUERY, {
     '/api/reports/final-accounts': `from=${today.slice(0, 4)}-01-01&to=${today}`,
@@ -182,7 +197,9 @@ beforeAll(async () => {
     '/api/adjustments/counts/open': `warehouseId=${storeId}`,
     '/api/prices': `itemId=${teaId}&partyId=${customerId}`,
     '/api/batches': `itemId=${medId}`,
-    '/api/batches/report': 'state=all'
+    '/api/batches/report': 'state=all',
+    '/api/fuel/attendants': `from=${month}-01&to=${today}`,
+    '/api/fuel/reports': `from=${month}-01&to=${today}`
   });
   Object.assign(at, {
     scan: '/api/items?barcode=6260000000017', boxScan: '/api/items?barcode=6260000000024', search: `/api/items?q=tea&warehouseId=${warehouseId}`,
@@ -195,6 +212,7 @@ beforeAll(async () => {
     batches: `/api/batches?itemId=${medId}`, order: `/api/purchase-orders/${order.id}`, entry: `/api/entries/${entryId}`,
     supplierStatement: `/api/parties/${supplierId}/statement`, customerStatement: `/api/parties/${customerId}/statement`,
     bankStatement: `/api/banking/statements/${statement.id}`, shift: `/api/pos/shifts/${closedShift.id}`, cheque: `/api/banking/cheques/${cheque.id}`,
+    fuelShift: `/api/fuel/shifts/${fuelShift.id}`, fuelDelivery: `/api/fuel/deliveries/${fuelDelivery.id}`, fuelReport: `/api/fuel/reports?from=${month}-01&to=${today}`,
     warehouseId, customerId, teaId, medId
   });
   // more than one answer of a route: the other documents, the item lists as the till and the screens ask for them
@@ -267,6 +285,7 @@ const NOT_COST = new Set([
   '/api/auth/me .user.seesCost',
   '/api/settings .postingAccounts.costOfSales',
   '/api/quotes/summary .openValue', '/api/quotes/summary .openValue.IQD', '/api/quotes/summary .openValue.USD',
+  '/api/fuel/setup .settings.costAccount',
   '/api/loyalty/settings .rules.pointValue', '/api/loyalty/parties/:id .rules.pointValue', '/api/loyalty/parties/:id .worth'
 ]);
 
@@ -280,7 +299,12 @@ const COST_FIELDS = (): [string, string][] => [
   ['/api/adjustments', '[].valueOut'], ['/api/adjustments', '[].valueIn'], [at.adjustment!, '.valueOut'], [at.adjustment!, '.lines[].unitCost'], [at.adjustment!, '.lines[].value'],
   [at.count!, '.lines[].unitCost'],
   [at.batches!, '[].value'], ['/api/batches/report?state=all', '.rows[].value'],
-  [at.sale!, '.lines[].cost'], [at.saleReturn!, '.lines[].cost'], [at.tillSale!, '.lines[].cost'], [at.draftSale!, '.lines[].cost']
+  [at.sale!, '.lines[].cost'], [at.saleReturn!, '.lines[].cost'], [at.tillSale!, '.lines[].cost'], [at.draftSale!, '.lines[].cost'],
+  // the petrol station: a tank's value and average cost, a shift's cost and profit, what a tanker cost, a dip's worth, the report's
+  ['/api/fuel/setup', '.tanks[].value'], ['/api/fuel/setup', '.tanks[].avgCost'], ['/api/fuel/setup', '.tanks[].lastCost'],
+  [at.fuelShift!, '.cost'], [at.fuelShift!, '.profit'], [at.fuelShift!, '.readings[].cost'], ['/api/fuel/shifts', '[].cost'],
+  ['/api/fuel/deliveries', '[].cost'], ['/api/fuel/deliveries', '[].costPerLitre'], [at.fuelDelivery!, '.costPerLitre'], ['/api/fuel/dips', '[].value'],
+  [at.fuelReport!, '.fuels[].cost'], [at.fuelReport!, '.fuels[].profit'], [at.fuelReport!, '.tanks[].value']
 ];
 
 /** The fields of the books and their reports, by address. */
