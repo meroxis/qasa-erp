@@ -409,7 +409,9 @@ const ENTRY_OWNERS: readonly { owner: string; sql: string; marks: number }[] = [
   { owner: 'disposal', sql: 'SELECT 1 FROM fixed_assets WHERE disposal_entry_id = ?', marks: 1 },
   { owner: 'payroll', sql: 'SELECT 1 FROM payroll_runs WHERE entry_id = ?', marks: 1 },
   { owner: 'generator_run', sql: 'SELECT 1 FROM gen_runs WHERE entry_id = ?', marks: 1 },
-  { owner: 'deposit', sql: 'SELECT 1 FROM re_deposits WHERE close_entry_id = ?', marks: 1 }
+  { owner: 'deposit', sql: 'SELECT 1 FROM re_deposits WHERE close_entry_id = ?', marks: 1 },
+  // petrol stations (fuel.ts): a shift, a tanker delivery, a dip or a tank's opening stock moves litres in the tanks too
+  { owner: 'fuel', sql: 'SELECT 1 FROM fuel_shifts WHERE entry_id = ? UNION ALL SELECT 1 FROM fuel_deliveries WHERE entry_id = ? UNION ALL SELECT 1 FROM fuel_dips WHERE entry_id = ? UNION ALL SELECT 1 FROM fuel_tanks WHERE opening_entry_id = ?', marks: 4 }
 ];
 
 export function entryOwner(db: Db, id: string): string | null {

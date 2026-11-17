@@ -110,6 +110,10 @@ const FixedAssets = lazyPage(() => import('./pages/FixedAssets.tsx'), 'FixedAsse
 const FixedAssetDetail = lazyPage(() => import('./pages/FixedAssets.tsx'), 'FixedAssetDetail');
 const GenRun = lazyPage(() => import('./pages/Generators.tsx'), 'GenRun');
 const Generators = lazyPage(() => import('./pages/Generators.tsx'), 'Generators');
+const PetrolStation = lazyPage(() => import('./pages/PetrolStation.tsx'), 'PetrolStation');
+// the petrol station's tabs (as pages/PetrolStation.tsx names them), written here so that page stays loaded lazily
+const PETROL_TABS = ['shifts', 'tanks', 'deliveries', 'dips', 'reports', 'setup'] as const;
+const FuelShiftSheet = lazyPage(() => import('./pages/PetrolStation.tsx'), 'FuelShiftSheet');
 const WebsiteApi = lazyPage(() => import('./pages/WebsiteApi.tsx'), 'WebsiteApi');
 const Solar = lazyPage(() => import('./pages/Solar.tsx'), 'Solar');
 const SolarSystem = lazyPage(() => import('./pages/Solar.tsx'), 'SolarSystem');
@@ -517,6 +521,14 @@ export function App() {
     case 'generators':
       title = t('gen_title');
       content = <Generators key={arg ?? 'collect'} tab={arg === 'subscribers' || arg === 'months' || arg === 'debts' ? arg : 'collect'} />;
+      break;
+    case 'petrol':
+      title = t('ps_title');
+      content = <PetrolStation key={arg ?? 'shifts'} tab={PETROL_TABS.find((x) => x === arg) ?? 'shifts'} />;
+      break;
+    case 'fuel-shift':
+      title = t('ps_title');
+      content = arg ? <FuelShiftSheet key={arg} id={arg} /> : null;
       break;
     case 'gen-run':
       title = t('gen_title');

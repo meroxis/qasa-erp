@@ -1,6 +1,6 @@
 import initSqlJs from 'sql.js';
 import wasmUrl from 'sql.js/dist/sql-wasm.wasm?url';
-import { ApiReply, apiRoutes, errorResponse, initDatabase, seedDemo, seedPhoneShopDemo, type Db, type Route } from '@qasa/server/browser';
+import { ApiReply, apiRoutes, errorResponse, initDatabase, seedDemo, seedPetrolStationDemo, seedPhoneShopDemo, type Db, type Route } from '@qasa/server/browser';
 import { DatabaseSync } from './node-sqlite.ts';
 
 /**
@@ -30,9 +30,13 @@ export async function startDemoBackend(): Promise<void> {
   db.exec('PRAGMA foreign_keys = ON');
   initDatabase(db);
   seedDemo(db);
-  // ?phoneshop in the address opens the sample company as a phone shop, with its pictures (the till's big pictures and
-  // quick buttons); without it the demo is the sample company as always
-  if (new URLSearchParams(window.location.search).has('phoneshop')) seedPhoneShopDemo(db, await phoneShopPictures());
+  // ?petrol in the address opens the sample company as a petrol station
+  // (named in the language the visitor reads: its tanks and the wording of its entries);
+  // ?phoneshop opens it as a phone shop, with its pictures (the till's big pictures and quick buttons);
+  // without either the demo is the sample company as always
+  const demoKind = new URLSearchParams(window.location.search);
+  if (demoKind.has('petrol')) seedPetrolStationDemo(db, demoLang());
+  else if (demoKind.has('phoneshop')) seedPhoneShopDemo(db, await phoneShopPictures());
 
   const routes = apiRoutes(db, { demo: true }).map((route) => ({ route, pattern: compile(route.path) }));
   const realFetch = window.fetch.bind(window);
@@ -51,6 +55,16 @@ export async function startDemoBackend(): Promise<void> {
     }
     return json(404, { error: 'not_found', details: null });
   };
+}
+
+/** The language the app opens in (App.tsx keeps it as qasa.lang); Arabic when none is kept or storage is closed. */
+function demoLang(): 'ar' | 'en' | 'ku' {
+  try {
+    const kept = window.localStorage.getItem('qasa.lang');
+    return kept === 'en' || kept === 'ku' ? kept : 'ar';
+  } catch {
+    return 'ar';
+  }
 }
 
 function compile(path: string): RegExp {

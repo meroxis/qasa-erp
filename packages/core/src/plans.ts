@@ -33,6 +33,7 @@ export type Feature =
   | 'payroll'
   | 'pipeline' // the sales pipeline: leads and deals
   | 'generators' // generator owners: subscribers by amps, monthly billing, collectors
+  | 'petrolStation' // petrol stations: pumps and shifts, tanks, tanker deliveries and dips, attendants' short and over
   | 'websiteApi' // API keys and webhooks for websites and online shops
   | 'phoneApp' // the Qasa phone app: scanning with the camera, prices, stock, items with photos
   | 'bankReconciliation' // matching the bank statement to the books
@@ -67,14 +68,14 @@ export interface PlanDefinition {
   features: readonly Feature[];
 }
 
-const PRO_FEATURES: readonly Feature[] = ['officeNetwork', 'relay', 'roles', 'installments', 'payroll', 'finalAccountsExport', 'noBranding', 'autoBackup', 'cloudBackup', 'mobileShop', 'autoParts', 'engineeringWorks', 'pipeline', 'generators', 'websiteApi', 'phoneApp', 'electricalSolar', 'bankReconciliation', 'pharmacy', 'loyalty', 'companyLogo'];
+const PRO_FEATURES: readonly Feature[] = ['officeNetwork', 'relay', 'roles', 'installments', 'payroll', 'finalAccountsExport', 'noBranding', 'autoBackup', 'cloudBackup', 'mobileShop', 'autoParts', 'engineeringWorks', 'pipeline', 'generators', 'websiteApi', 'phoneApp', 'electricalSolar', 'bankReconciliation', 'pharmacy', 'loyalty', 'companyLogo', 'petrolStation'];
 /** What Pro has and Starter leaves out: reaching the office over the internet (Qasa Relay) and the cloud backup. */
 export const STARTER_LEAVES_OUT: readonly Feature[] = ['relay', 'cloudBackup'];
 /**
  * Starter's features, written out in full and not worked out from Pro's: a feature added to Pro later is not given to
  * Starter by itself (a test keeps this list equal to Pro's without STARTER_LEAVES_OUT, so adding one is a decision).
  */
-const STARTER_FEATURES: readonly Feature[] = ['officeNetwork', 'roles', 'installments', 'payroll', 'finalAccountsExport', 'noBranding', 'autoBackup', 'mobileShop', 'autoParts', 'engineeringWorks', 'pipeline', 'generators', 'websiteApi', 'phoneApp', 'electricalSolar', 'bankReconciliation', 'pharmacy', 'loyalty', 'companyLogo'];
+const STARTER_FEATURES: readonly Feature[] = ['officeNetwork', 'roles', 'installments', 'payroll', 'finalAccountsExport', 'noBranding', 'autoBackup', 'mobileShop', 'autoParts', 'engineeringWorks', 'pipeline', 'generators', 'websiteApi', 'phoneApp', 'electricalSolar', 'bankReconciliation', 'pharmacy', 'loyalty', 'companyLogo', 'petrolStation'];
 
 export const PLANS: Record<PlanId, PlanDefinition> = {
   free: { id: 'free', limits: { companies: 1, users: 1, warehouses: 1 }, features: [] },
@@ -166,13 +167,13 @@ export function resolvePlan(input: { license: LicenseInfo | null; trialStarted: 
  * the plan still decides which of them can be used. 'trade' is the general accounting, sales, purchases and stock;
  * 'market' (1.4) is a supermarket or mini-market: the same pages, started for selling at the till by barcode and weight.
  */
-export const BUSINESS_TYPES = ['trade', 'market', 'realEstate', 'mobileShop', 'autoParts', 'engineeringWorks', 'electricalSolar', 'generators', 'pharmacy'] as const;
+export const BUSINESS_TYPES = ['trade', 'market', 'realEstate', 'mobileShop', 'autoParts', 'engineeringWorks', 'electricalSolar', 'generators', 'pharmacy', 'petrolStation'] as const;
 export type BusinessType = (typeof BUSINESS_TYPES)[number];
 
 /** The plan feature each industry needs (general trade needs none). */
 export const BUSINESS_FEATURE: Record<BusinessType, Feature | null> = {
   trade: null, market: null, realEstate: 'realEstate', mobileShop: 'mobileShop', autoParts: 'autoParts', engineeringWorks: 'engineeringWorks', electricalSolar: 'electricalSolar', generators: 'generators',
-  pharmacy: 'pharmacy'
+  pharmacy: 'pharmacy', petrolStation: 'petrolStation'
 };
 
 export function isBusinessType(value: unknown): value is BusinessType {

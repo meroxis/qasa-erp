@@ -1639,6 +1639,206 @@ export const MYSQL_TABLES: readonly MysqlObject[] = [
       FOREIGN KEY (source_id) REFERENCES loyalty_moves(id),
       FOREIGN KEY (branch_id) REFERENCES branches(id)
     )`
+  },
+  {
+    // 16: petrol stations: fuels, tanks, pumps, nozzles, shifts and their meter readings, deliveries, dips and each
+    // tank's moves (db.ts V16)
+    name: 'fuel_types',
+    since: 16,
+    sql: `CREATE TABLE fuel_types (
+      id ${ID} NOT NULL PRIMARY KEY,
+      code ${ID} NOT NULL UNIQUE,
+      name_ar TEXT NOT NULL,
+      name_en TEXT NOT NULL,
+      name_ku TEXT NOT NULL,
+      price BIGINT NOT NULL CHECK (price > 0),
+      revenue_account ${ID} NOT NULL,
+      active INT NOT NULL DEFAULT 1 CHECK (active IN (0, 1)),
+      sort INT NOT NULL DEFAULT 0,
+      created_at ${WHEN} NOT NULL,
+      updated_at ${WHEN} NOT NULL,
+      FOREIGN KEY (revenue_account) REFERENCES accounts(code)
+    )`
+  },
+  {
+    name: 'fuel_tanks',
+    since: 16,
+    sql: `CREATE TABLE fuel_tanks (
+      id ${ID} NOT NULL PRIMARY KEY,
+      code ${ID} NOT NULL UNIQUE,
+      name TEXT NOT NULL,
+      fuel_type_id ${ID} NOT NULL,
+      capacity_milli BIGINT NOT NULL CHECK (capacity_milli > 0),
+      chart TEXT,
+      last_cost BIGINT NOT NULL DEFAULT 0 CHECK (last_cost >= 0),
+      opening_entry_id ${ID},
+      active INT NOT NULL DEFAULT 1 CHECK (active IN (0, 1)),
+      created_at ${WHEN} NOT NULL,
+      updated_at ${WHEN} NOT NULL,
+      FOREIGN KEY (fuel_type_id) REFERENCES fuel_types(id),
+      FOREIGN KEY (opening_entry_id) REFERENCES entries(id)
+    )`
+  },
+  {
+    name: 'fuel_pumps',
+    since: 16,
+    sql: `CREATE TABLE fuel_pumps (
+      id ${ID} NOT NULL PRIMARY KEY,
+      number INT NOT NULL UNIQUE CHECK (number > 0),
+      active INT NOT NULL DEFAULT 1 CHECK (active IN (0, 1)),
+      created_at ${WHEN} NOT NULL
+    )`
+  },
+  {
+    name: 'fuel_nozzles',
+    since: 16,
+    sql: `CREATE TABLE fuel_nozzles (
+      id ${ID} NOT NULL PRIMARY KEY,
+      pump_id ${ID} NOT NULL,
+      number INT NOT NULL CHECK (number > 0),
+      fuel_type_id ${ID} NOT NULL,
+      tank_id ${ID} NOT NULL,
+      meter_milli BIGINT NOT NULL DEFAULT 0 CHECK (meter_milli >= 0),
+      meter_max_milli BIGINT NOT NULL DEFAULT 999999990 CHECK (meter_max_milli > 0),
+      active INT NOT NULL DEFAULT 1 CHECK (active IN (0, 1)),
+      created_at ${WHEN} NOT NULL,
+      UNIQUE KEY fuel_nozzles_pump_number (pump_id, number),
+      FOREIGN KEY (pump_id) REFERENCES fuel_pumps(id),
+      FOREIGN KEY (fuel_type_id) REFERENCES fuel_types(id),
+      FOREIGN KEY (tank_id) REFERENCES fuel_tanks(id)
+    )`
+  },
+  {
+    name: 'fuel_shifts',
+    since: 16,
+    sql: `CREATE TABLE fuel_shifts (
+      id ${ID} NOT NULL PRIMARY KEY,
+      number ${ID} NOT NULL UNIQUE,
+      date ${WHEN} NOT NULL,
+      shift ${WORD} NOT NULL CHECK (shift IN ('morning', 'evening', 'night')),
+      attendant TEXT NOT NULL,
+      status ${WORD} NOT NULL CHECK (status IN ('open', 'closed', 'reversed')),
+      credit BIGINT NOT NULL DEFAULT 0 CHECK (credit >= 0),
+      handed BIGINT CHECK (handed IS NULL OR handed >= 0),
+      sales BIGINT,
+      cost BIGINT,
+      difference BIGINT,
+      cash_account ${ID},
+      entry_id ${ID},
+      reversal_entry_id ${ID},
+      notes TEXT,
+      opened_by TEXT NOT NULL,
+      opened_at ${WHEN} NOT NULL,
+      closed_by TEXT,
+      closed_at ${WHEN},
+      reversed_by TEXT,
+      reversed_at ${WHEN},
+      reverse_reason TEXT,
+      INDEX fuel_shifts_date (date),
+      FOREIGN KEY (cash_account) REFERENCES accounts(code),
+      FOREIGN KEY (entry_id) REFERENCES entries(id),
+      FOREIGN KEY (reversal_entry_id) REFERENCES entries(id)
+    )`
+  },
+  {
+    name: 'fuel_readings',
+    since: 16,
+    sql: `CREATE TABLE fuel_readings (
+      shift_id ${ID} NOT NULL,
+      nozzle_id ${ID} NOT NULL,
+      fuel_type_id ${ID} NOT NULL,
+      tank_id ${ID} NOT NULL,
+      price BIGINT NOT NULL CHECK (price > 0),
+      opening_milli BIGINT NOT NULL CHECK (opening_milli >= 0),
+      closing_milli BIGINT CHECK (closing_milli IS NULL OR closing_milli >= 0),
+      meter_max_milli BIGINT NOT NULL CHECK (meter_max_milli > 0),
+      rollover INT NOT NULL DEFAULT 0 CHECK (rollover IN (0, 1)),
+      cost BIGINT,
+      PRIMARY KEY (shift_id, nozzle_id),
+      INDEX fuel_readings_nozzle (nozzle_id),
+      FOREIGN KEY (shift_id) REFERENCES fuel_shifts(id) ON DELETE CASCADE,
+      FOREIGN KEY (nozzle_id) REFERENCES fuel_nozzles(id),
+      FOREIGN KEY (fuel_type_id) REFERENCES fuel_types(id),
+      FOREIGN KEY (tank_id) REFERENCES fuel_tanks(id)
+    )`
+  },
+  {
+    name: 'fuel_deliveries',
+    since: 16,
+    sql: `CREATE TABLE fuel_deliveries (
+      id ${ID} NOT NULL PRIMARY KEY,
+      number ${ID} NOT NULL UNIQUE,
+      date ${WHEN} NOT NULL,
+      tank_id ${ID} NOT NULL,
+      supplier_id ${ID} NOT NULL,
+      note_no ${ID} NOT NULL,
+      qty_milli BIGINT NOT NULL CHECK (qty_milli > 0),
+      cost_per_litre BIGINT NOT NULL CHECK (cost_per_litre > 0),
+      cost BIGINT NOT NULL CHECK (cost > 0),
+      payment ${WORD} NOT NULL CHECK (payment IN ('cash', 'credit')),
+      cash_account ${ID},
+      status ${WORD} NOT NULL CHECK (status IN ('posted', 'reversed')),
+      entry_id ${ID},
+      reversal_entry_id ${ID},
+      notes TEXT,
+      created_by TEXT NOT NULL,
+      created_at ${WHEN} NOT NULL,
+      reversed_by TEXT,
+      reversed_at ${WHEN},
+      reverse_reason TEXT,
+      INDEX fuel_deliveries_note (supplier_id, note_no),
+      INDEX fuel_deliveries_date (date),
+      FOREIGN KEY (tank_id) REFERENCES fuel_tanks(id),
+      FOREIGN KEY (supplier_id) REFERENCES parties(id),
+      FOREIGN KEY (cash_account) REFERENCES accounts(code),
+      FOREIGN KEY (entry_id) REFERENCES entries(id),
+      FOREIGN KEY (reversal_entry_id) REFERENCES entries(id)
+    )`
+  },
+  {
+    name: 'fuel_dips',
+    since: 16,
+    sql: `CREATE TABLE fuel_dips (
+      id ${ID} NOT NULL PRIMARY KEY,
+      number ${ID} NOT NULL UNIQUE,
+      date ${WHEN} NOT NULL,
+      tank_id ${ID} NOT NULL,
+      dip_mm INT CHECK (dip_mm IS NULL OR dip_mm >= 0),
+      measured_milli BIGINT NOT NULL CHECK (measured_milli >= 0),
+      book_milli BIGINT NOT NULL,
+      variance_milli BIGINT NOT NULL,
+      value BIGINT NOT NULL,
+      status ${WORD} NOT NULL CHECK (status IN ('posted', 'reversed')),
+      entry_id ${ID},
+      reversal_entry_id ${ID},
+      notes TEXT,
+      created_by TEXT NOT NULL,
+      created_at ${WHEN} NOT NULL,
+      reversed_by TEXT,
+      reversed_at ${WHEN},
+      reverse_reason TEXT,
+      INDEX fuel_dips_tank (tank_id, date),
+      FOREIGN KEY (tank_id) REFERENCES fuel_tanks(id),
+      FOREIGN KEY (entry_id) REFERENCES entries(id),
+      FOREIGN KEY (reversal_entry_id) REFERENCES entries(id)
+    )`
+  },
+  {
+    name: 'fuel_moves',
+    since: 16,
+    sql: `CREATE TABLE fuel_moves (
+      id ${ID} NOT NULL PRIMARY KEY,
+      tank_id ${ID} NOT NULL,
+      date ${WHEN} NOT NULL,
+      kind ${WORD} NOT NULL CHECK (kind IN ('opening', 'delivery', 'sale', 'dip')),
+      source_id ${ID} NOT NULL,
+      qty_milli BIGINT NOT NULL,
+      value BIGINT NOT NULL,
+      created_at ${WHEN} NOT NULL,
+      INDEX fuel_moves_tank (tank_id, date),
+      INDEX fuel_moves_source (source_id),
+      FOREIGN KEY (tank_id) REFERENCES fuel_tanks(id)
+    )`
   }
 ];
 
@@ -1803,6 +2003,9 @@ export const V14_MYSQL_STEPS: readonly MysqlStep[] = [
 export const V15_MYSQL_STEPS: readonly MysqlStep[] = [
   mysqlAddColumn('entries', 'revision', 'INT NOT NULL DEFAULT 0')
 ];
+
+/** Version 16: petrol stations' tables only (MYSQL_TABLES, since 16); no column added to an older table. */
+export const V16_MYSQL_STEPS: readonly MysqlStep[] = [];
 
 /**
  * What a server database has already, for pendingMysqlSteps: "table.column", "table.column>parent" and "table.index"

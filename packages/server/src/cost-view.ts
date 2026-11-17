@@ -45,7 +45,10 @@ const COST_FIELDS: readonly (readonly [string, readonly string[]])[] = [
   // a sale's lines carry what the goods cost (set when posted): also in the till's answer and a quotation made an invoice
   ['/api/invoices', ['cost']],
   ['/api/pos', ['cost']],
-  ['/api/quotes', ['cost']]
+  ['/api/quotes', ['cost']],
+  // petrol stations (fuel.ts): what the litres sold cost and the profit on them, a tank's stock value and average cost,
+  // what a tanker delivery cost, and what a dip's difference is worth
+  ['/api/fuel', ['cost', 'profit', 'value', 'avgCost', 'lastCost', 'costPerLitre']]
 ];
 
 /** Answers under these paths lose these fields for someone who may not read the books. */
@@ -72,6 +75,9 @@ const PURCHASE_MONEY: ReadonlySet<string> = new Set(['discount', 'subtotal', 'to
  * and (1.4.1) the cheques: their list, each cheque, their summary and every step of one.
  */
 const BOOKS_ONLY: readonly string[] = ['/api/entries', '/api/vouchers', '/api/brief/reports/stock-value', '/api/brief/expenses', '/api/banking/statements', '/api/banking/cheques'];
+// petrol stations (fuel.ts): every attendant's shortages, the tanker deliveries (what is paid and owed for fuel), the
+// dips and the fuel report; a cashier works the shift sheet and reads only the shifts they opened
+const FUEL_BOOKS_ONLY: readonly string[] = ['/api/fuel/attendants', '/api/fuel/deliveries', '/api/fuel/dips', '/api/fuel/reports'];
 
 const under = (path: string, prefix: string): boolean => path === prefix || path.startsWith(`${prefix}/`);
 
@@ -94,7 +100,7 @@ export function checkCostRequest(actor: Actor | null, method: string, path: stri
   if (!actor || seesBooks(actor)) return;
   // their own vouchers: the routes limit the answer with ownVouchersOnly
   if (OWN_VOUCHER_READS.has(`${method} ${path}`)) return;
-  if (isCompanyBooks(path) || BOOKS_ONLY.some((p) => under(path, p))) throw new AppError(403, 'forbidden');
+  if (isCompanyBooks(path) || BOOKS_ONLY.some((p) => under(path, p)) || FUEL_BOOKS_ONLY.some((p) => under(path, p))) throw new AppError(403, 'forbidden');
 }
 
 /** A record of an answer: an object literal, or a row as the database gives it (no prototype); not a Buffer, not a Date. */
