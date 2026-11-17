@@ -55,6 +55,6 @@ export const PHARMACY_TEXT = {
   err_ph_form_invalid: ['الشكل الدوائي غير صحيح.', 'The dosage form isn’t valid.', 'شێوەی دەرمان دروست نییە.'],
   err_ph_generic_required: ['اكتب الاسم العلمي للدواء الخاضع للرقابة.', 'Enter the generic name of a controlled medicine.', 'ناوی زانستیی دەرمانی ژێر چاودێری بنووسە.'],
   err_ph_not_controlled: ['هذا الدواء ليس خاضعاً للرقابة.', 'This medicine isn’t controlled.', 'ئەم دەرمانە ژێر چاودێری نییە.'],
-  err_ph_not_posted_sale: ['السطر ليس من فاتورة بيع مرحّلة.', 'That line isn’t on a posted sale.', 'ئەو ڕیزە لە پسوولەیەکی فرۆشتنی تەرحیلکراودا نییە.'],
+  err_ph_not_posted_sale: ['السطر ليس من فاتورة بيع مرحّلة.', 'That line isn’t on a posted sale.', 'ئەو ڕیزە لە پسوولەیەکی فرۆشتنی پۆستکراودا نییە.'],
   err_ph_patient_required: ['اكتب اسم المريض.', 'Enter the patient’s name.', 'ناوی نەخۆش بنووسە.']
 } as const;

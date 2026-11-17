@@ -48,7 +48,7 @@ export const QUOTES_TEXT = {
   qt_reason: ['السبب (اختياري)', 'Reason (optional)', 'هۆکار (ئارەزوومەندانە)'],
   qt_moved: ['أصبح العرض: {s}', 'Quotation is now: {s}', 'عەرزی نرخ ئێستا: {s}'],
   qt_convert: ['تحويل إلى فاتورة', 'Turn into invoice', 'کردن بە پسوولە'],
-  qt_convertHelp: ['تُنشأ فاتورة مبيعات (مسودة) بنفس المواد والأسعار والخصم. راجعها ثم رحّلها كالعادة.', 'A sales invoice (draft) is made with the same lines, prices and discount. Check it, then post it as usual.', 'پسوولەیەکی فرۆشتن (ڕەشنووس) بە هەمان ڕیز و نرخ و داشکاندن دروست دەکرێت. پێیدا بچۆرەوە و پاشان وەک هەمیشە تەرحیلی بکە.'],
+  qt_convertHelp: ['تُنشأ فاتورة مبيعات (مسودة) بنفس المواد والأسعار والخصم. راجعها ثم رحّلها كالعادة.', 'A sales invoice (draft) is made with the same lines, prices and discount. Check it, then post it as usual.', 'پسوولەیەکی فرۆشتن (ڕەشنووس) بە هەمان ڕیز و نرخ و داشکاندن دروست دەکرێت. پێیدا بچۆرەوە و پاشان وەک هەمیشە پۆستی بکە.'],
   qt_becomesCustomer: ['سيُضاف «{n}» كزبون جديد.', '“{n}” will be added as a new customer.', '«{n}» وەک کڕیارێکی نوێ زیاد دەکرێت.'],
   qt_converted: ['تم إنشاء مسودة الفاتورة', 'Draft invoice created', 'ڕەشنووسی پسوولە دروستکرا'],
   qt_invoicedAs: ['صدرت فاتورة لهذا العرض:', 'This quotation was invoiced as', 'بۆ ئەم عەرزی نرخە پسوولە دەرکرا:'],

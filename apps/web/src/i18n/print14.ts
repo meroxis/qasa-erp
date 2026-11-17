@@ -53,7 +53,7 @@ export const PRINT14_TEXT = {
   pd_balanceHint: [
     'الرصيد يُطبع على الورقة المرحَّلة التي لها زبون أو مجهز من القائمة.',
     'The balance prints on a posted paper that has a customer or supplier from the list.',
-    'ڕەسید لەسەر ئەو پەڕە تەرحیلکراوانە چاپ دەکرێت کە کڕیار یان دابینکەرێکی ناو لیستەکەیان لەسەرە.'
+    'ڕەسید لەسەر ئەو پەڕە پۆستکراوانە چاپ دەکرێت کە کڕیار یان دابینکەرێکی ناو لیستەکەیان لەسەرە.'
   ],
 
   // headings printed on papers (in the paper's language)

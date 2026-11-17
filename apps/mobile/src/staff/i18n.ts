@@ -30,7 +30,7 @@ export const STAFF_T = {
   expPhotoTooBig: ['تعذّر تصغير الصورة بما يكفي. صوّر الوصل من مسافة أقرب.', 'The photo couldn’t be made small enough. Take it again from closer.', 'نەتوانرا وێنەکە بە پێی پێویست بچووک بکرێتەوە. لە نزیکترەوە دووبارە وێنەی بگرە.'],
   expUsdRate: ['بسعر {r} لكل 100 دولار', 'at {r} per $100', 'بە نرخی {r} بۆ هەر 100 دۆلار'],
   expSave: ['حفظ المصروف', 'Save expense', 'پاشەکەوتکردنی خەرجی'],
-  expPosted: ['رُحّل سند الصرف.', 'The payment voucher is posted.', 'سەنەدی پارەدان تەرحیل کرا.'],
+  expPosted: ['رُحّل سند الصرف.', 'The payment voucher is posted.', 'سەنەدی پارەدان پۆست کرا.'],
   expWaiting: ['سند الصرف بانتظار الموافقة؛ يُحتسب بعد الموافقة عليه.', 'The payment voucher waits for approval; it counts once approved.', 'سەنەدی پارەدان چاوەڕێی پەسەندکردنە؛ دوای پەسەندکردن دەژمێردرێت.'],
   expDraft: ['حُفظ سند الصرف مسودةً؛ يُحتسب بعد تدقيقه والمصادقة عليه.', 'The payment voucher is saved as a draft; it counts once it is checked and approved.', 'سەنەدی پارەدان وەک ڕەشنووس پاشەکەوت کرا؛ دوای وردبینی و پەسەندکردن دەژمێردرێت.'],
   expNotYet: ['حُفظ سند الصرف؛ يُحتسب بعد الموافقة عليه.', 'The payment voucher is saved; it counts once it is approved.', 'سەنەدی پارەدان پاشەکەوت کرا؛ دوای پەسەندکردن دەژمێردرێت.'],
@@ -41,7 +41,7 @@ export const STAFF_T = {
 
   // ——— a customer's invoice or statement as a PDF ———
   shrInvoices: ['الفواتير', 'Invoices', 'پسوولەکان'],
-  shrNoInvoices: ['لا فواتير مرحّلة لهذا الزبون في آخر 3 أشهر.', 'No posted invoices for this customer in the last 3 months.', 'هیچ پسوولەیەکی تەرحیلکراو بۆ ئەم کڕیارە لە 3 مانگی ڕابردوودا نییە.'],
+  shrNoInvoices: ['لا فواتير مرحّلة لهذا الزبون في آخر 3 أشهر.', 'No posted invoices for this customer in the last 3 months.', 'هیچ پسوولەیەکی پۆستکراو بۆ ئەم کڕیارە لە 3 مانگی ڕابردوودا نییە.'],
   shrSendPdf: ['إرسال كملف PDF', 'Send as PDF', 'ناردن وەک PDF'],
   shrHow: ['يُنشأ ملف PDF على هذا الهاتف، ثم تختار واتساب (أو تطبيقاً آخر) والمحادثة. لا يُرسل شيء دون ضغطتك.', 'A PDF is made on this phone; then you pick WhatsApp (or another app) and the chat. Nothing is sent without your tap.', 'فایلێکی PDF لەسەر ئەم مۆبایلە دروست دەکرێت؛ پاشان واتسئاپ (یان ئەپێکی تر) و گفتوگۆکە هەڵدەبژێریت. هیچ شتێک بەبێ لێدانی تۆ نانێردرێت.'],
   shrLang: ['لغة الملف', 'Language of the file', 'زمانی فایلەکە'],
@@ -88,9 +88,9 @@ export const STAFF_T = {
   mvSend: ['نقل المواد', 'Move the stock', 'گواستنەوەی کاڵاکان'],
   mvConfirm: ['نقل {n} سطر من {f} إلى {t}؟', 'Move {n} lines from {f} to {t}?', '{n} دێڕ لە {f} بۆ {t} بگوازرێتەوە؟'],
   mvPosted: ['نُقلت المواد: {n}', 'Moved: {n}', 'گوازرانەوە: {n}'],
-  mvDraft: ['حُفظت المناقلة مسودةً؛ ترحَّل على الحاسوب.', 'The transfer was saved as a draft; post it on the PC.', 'گواستنەوەکە وەک ڕەشنووس پاشەکەوت کرا؛ لەسەر کۆمپیوتەر تەرحیلی بکە.'],
-  mvQueuedNote: ['تصل المناقلة إلى الحاسوب مسودةً وتُرحَّل هناك.', 'The transfer reaches the PC as a draft, to be posted there.', 'گواستنەوەکە وەک ڕەشنووس دەگاتە کۆمپیوتەر و لەوێ تەرحیل دەکرێت.'],
-  mvPostQueued: ['المناقلة على الحاسوب مسودةً؛ تُرحَّل وحدها عند الاتصال.', 'The transfer is on the PC as a draft; it is posted by itself once connected.', 'گواستنەوەکە وەک ڕەشنووس لەسەر کۆمپیوتەرە؛ کاتی پەیوەندی خۆی تەرحیل دەکرێت.'],
+  mvDraft: ['حُفظت المناقلة مسودةً؛ ترحَّل على الحاسوب.', 'The transfer was saved as a draft; post it on the PC.', 'گواستنەوەکە وەک ڕەشنووس پاشەکەوت کرا؛ لەسەر کۆمپیوتەر پۆستی بکە.'],
+  mvQueuedNote: ['تصل المناقلة إلى الحاسوب مسودةً وتُرحَّل هناك.', 'The transfer reaches the PC as a draft, to be posted there.', 'گواستنەوەکە وەک ڕەشنووس دەگاتە کۆمپیوتەر و لەوێ پۆست دەکرێت.'],
+  mvPostQueued: ['المناقلة على الحاسوب مسودةً؛ تُرحَّل وحدها عند الاتصال.', 'The transfer is on the PC as a draft; it is posted by itself once connected.', 'گواستنەوەکە وەک ڕەشنووس لەسەر کۆمپیوتەرە؛ کاتی پەیوەندی خۆی پۆست دەکرێت.'],
 
   // ——— receiving goods against a purchase order ———
   rcvAction: ['استلام بضاعة', 'Receive goods', 'وەرگرتنی کاڵا'],
@@ -106,9 +106,9 @@ export const STAFF_T = {
   rcvAdd: ['أضف إلى ما وصل', 'Add to what arrived', 'زیادکردن بۆ ئەوەی گەیشت'],
   rcvNotOnOrder: ['هذه المادة ليست في أمر الشراء هذا.', 'This item isn’t on this purchase order.', 'ئەم کاڵایە لەم داواکارییەی کڕیندا نییە.'],
   rcvOverRemaining: ['أكثر من المتبقي في الأمر ({q}). أدخل الزيادة على الحاسوب.', 'More than is still to come on the order ({q}). Enter the extra on the PC.', 'زیاترە لەوەی لە داواکارییەکەدا ماوە ({q}). زیادەکە لەسەر کۆمپیوتەر تۆمار بکە.'],
-  rcvPending: ['لهذا الأمر فاتورة استلام مسودة على الحاسوب، تُرحَّل أو تُحذف قبل استلام جديد.', 'This order has a draft receiving invoice on the PC; it is posted or deleted before receiving again.', 'ئەم داواکارییە پسوولەی وەرگرتنی ڕەشنووسی لەسەر کۆمپیوتەر هەیە؛ پێش وەرگرتنی نوێ تەرحیل دەکرێت یان دەسڕدرێتەوە.'],
+  rcvPending: ['لهذا الأمر فاتورة استلام مسودة على الحاسوب، تُرحَّل أو تُحذف قبل استلام جديد.', 'This order has a draft receiving invoice on the PC; it is posted or deleted before receiving again.', 'ئەم داواکارییە پسوولەی وەرگرتنی ڕەشنووسی لەسەر کۆمپیوتەر هەیە؛ پێش وەرگرتنی نوێ پۆست دەکرێت یان دەسڕدرێتەوە.'],
   rcvSend: ['تسجيل ما وصل', 'Record what arrived', 'تۆمارکردنی ئەوەی گەیشت'],
-  rcvSent: ['أُنشئت فاتورة مشتريات مسودة بما وصل؛ تُدقَّق وتُرحَّل على الحاسوب.', 'A draft purchase invoice was made for what arrived; it is checked and posted on the PC.', 'پسوولەی کڕینی ڕەشنووس بۆ ئەوەی گەیشت دروست کرا؛ لەسەر کۆمپیوتەر وردبینی و تەرحیل دەکرێت.'],
+  rcvSent: ['أُنشئت فاتورة مشتريات مسودة بما وصل؛ تُدقَّق وتُرحَّل على الحاسوب.', 'A draft purchase invoice was made for what arrived; it is checked and posted on the PC.', 'پسوولەی کڕینی ڕەشنووس بۆ ئەوەی گەیشت دروست کرا؛ لەسەر کۆمپیوتەر وردبینی و پۆست دەکرێت.'],
   rcvAlreadyQueued: ['ما وصل لهذا الأمر بانتظار الإرسال. أرسله أولاً.', 'What arrived for this order is already waiting to be sent. Send it first.', 'ئەوەی بۆ ئەم داواکارییە گەیشتووە چاوەڕێی ناردنە. سەرەتا بینێرە.'],
 
   // ——— the office's refusals (src/staff/errors.ts) ———
@@ -120,6 +120,6 @@ export const STAFF_T = {
   errStockInsufficient: ['السطر {n}: الكمية غير متوفرة في المخزن (المتوفر {a})', 'Line {n}: not enough in stock (available {a})', 'ڕیزی {n}: بڕی پێویست لە کۆگا نییە (بەردەست {a})'],
   errSameWarehouse: ['المخزنان متماثلان — اختر مخزناً آخر', 'Both warehouses are the same — choose another', 'هەردوو کۆگاکە یەکن — کۆگایەکی تر هەڵبژێرە'],
   errItemNotStock: ['السطر {n}: الخدمات لا تُنقل في المخزن', 'Line {n}: services don’t move in stock', 'ڕیزی {n}: خزمەتگوزاری لە کۆگادا ناگوازرێتەوە'],
-  errPoPending: ['لهذا الأمر فاتورة استلام مسودة؛ تُرحَّل أو تُحذف أولاً', 'This order has a draft receiving invoice; it is posted or deleted first', 'ئەم داواکارییە پسوولەی وەرگرتنی ڕەشنووسی هەیە؛ سەرەتا تەرحیل دەکرێت یان دەسڕدرێتەوە'],
+  errPoPending: ['لهذا الأمر فاتورة استلام مسودة؛ تُرحَّل أو تُحذف أولاً', 'This order has a draft receiving invoice; it is posted or deleted first', 'ئەم داواکارییە پسوولەی وەرگرتنی ڕەشنووسی هەیە؛ سەرەتا پۆست دەکرێت یان دەسڕدرێتەوە'],
   errPoOver: ['الكمية أكثر من المتبقي في أمر الشراء', 'More than is still to come on the order', 'بڕەکە زیاترە لەوەی لە داواکاریی کڕیندا ماوە']
 } as const satisfies Record<string, readonly [string, string, string]>;

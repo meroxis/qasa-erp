@@ -34,20 +34,20 @@ export const ADJ_TEXT = {
   adj_after: ['بعد التسوية', 'After', 'دوای ڕاستکردنەوە'],
   adj_valueOut: ['قيمة الخارج', 'Value out', 'بەهای دەرچوو'],
   adj_valueIn: ['قيمة الداخل', 'Value in', 'بەهای هاتوو'],
-  adj_estimate: ['تقريبي — تُحسب الكلفة الفعلية عند الترحيل', 'Estimate — the exact cost is worked out on posting', 'نزیکەیی — تێچووی ڕاستەقینە لە کاتی تەرحیلکردندا دەژمێردرێت'],
+  adj_estimate: ['تقريبي — تُحسب الكلفة الفعلية عند الترحيل', 'Estimate — the exact cost is worked out on posting', 'نزیکەیی — تێچووی ڕاستەقینە لە کاتی پۆستکردندا دەژمێردرێت'],
   adj_postConfirm: [
     'ترحيل التسوية؟ ستتغير كميات المخزن ويُسجَّل القيد، ولا يمكن التعديل بعدها (يمكن الإلغاء بقيد عكسي).',
     'Post this adjustment? Stock quantities change and the entry is recorded; it can no longer be edited (it can be cancelled with a reversal).',
-    'ئەم ڕاستکردنەوەیە تەرحیل بکرێت؟ بڕی کۆگا دەگۆڕێت و قەیدەکە تۆمار دەکرێت؛ ئیتر دەستکاری ناکرێت (بە قەیدی پێچەوانە هەڵدەوەشێتەوە).'
+    'ئەم ڕاستکردنەوەیە پۆست بکرێت؟ بڕی کۆگا دەگۆڕێت و قەیدەکە تۆمار دەکرێت؛ ئیتر دەستکاری ناکرێت (بە قەیدی پێچەوانە هەڵدەوەشێتەوە).'
   ],
-  adj_post: ['ترحيل', 'Post', 'تەرحیلکردن'],
+  adj_post: ['ترحيل', 'Post', 'پۆستکردن'],
   adj_cancel: ['إلغاء بقيد عكسي', 'Cancel (reverse)', 'هەڵوەشاندنەوە (پێچەوانە)'],
   adj_cancelHelp: [
     'يُعكس القيد وتعود الكميات كما كانت. البضاعة المُدخلة يجب أن تكون ما زالت في المخزن.',
     'The entry is reversed and quantities go back as they were. Goods that were added must still be in the warehouse.',
     'قەیدەکە پێچەوانە دەکرێتەوە و بڕەکان دەگەڕێنەوە سەر دۆخی پێشوو. کاڵای زیادکراو دەبێت هێشتا لە کۆگادا بێت.'
   ],
-  adj_postedNote: ['التسوية مرحّلة: تم تحديث المخزن وتسجيل القيد.', 'Posted: stock updated and the entry recorded.', 'تەرحیل کرا: کۆگا نوێ کرایەوە و قەیدەکە تۆمار کرا.'],
+  adj_postedNote: ['التسوية مرحّلة: تم تحديث المخزن وتسجيل القيد.', 'Posted: stock updated and the entry recorded.', 'پۆست کرا: کۆگا نوێ کرایەوە و قەیدەکە تۆمار کرا.'],
   adj_lines: ['المواد', 'Items', 'کاڵاکان'],
   adj_noLines: ['أضف مادة واحدة على الأقل.', 'Add at least one item.', 'لانیکەم یەک کاڵا زیاد بکە.'],
   adj_settings: ['حسابات التسوية', 'Adjustment accounts', 'هەژمارەکانی ڕاستکردنەوە'],

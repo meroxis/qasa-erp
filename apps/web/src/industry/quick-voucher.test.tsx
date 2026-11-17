@@ -404,9 +404,10 @@ describe('the texts', () => {
     expect(ku.t('payCredit')).toBe('قەرز');
     expect(ku.t('pay_account')).toBe('قەرز');
     expect(STORE_TEXT.pay_account[2]).toBe('قەرز');
-    // the accounting side of an entry keeps its own word
-    expect(ku.t('credit')).toBe('دائین');
-    expect(ku.t('debit')).toBe('مەدین');
-    for (const side of [ku.t('debit'), ku.t('credit')]) expect(side).not.toContain('قەرز');
+    // the accounting sides of an entry keep their own words (from 1.5.3: قەرزدار / قەرزدەر), never the bare «قەرز»
+    expect(ku.t('credit')).toBe('قەرزدەر');
+    expect(ku.t('debit')).toBe('قەرزدار');
+    for (const side of [ku.t('debit'), ku.t('credit')]) expect(side).not.toBe('قەرز');
+    expect(ku.t('debit')).not.toBe(ku.t('credit'));
   });
 });

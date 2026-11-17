@@ -34,7 +34,7 @@ export const UI_TEXT = {
   fsItems: ['أضف موادك', 'Add your items', 'کاڵاکانت زیاد بکە'],
   fsItemsHint: ['ما تبيعه، مع الأسعار والوحدات.', 'What you sell, with prices and units.', 'ئەوەی دەیفرۆشیت، لەگەڵ نرخ و یەکەکان.'],
   fsInvoice: ['أول فاتورة بيع', 'Your first sale invoice', 'یەکەم پسوولەی فرۆشتن'],
-  fsInvoiceHint: ['اكتب فاتورة ورحّلها.', 'Write an invoice and post it.', 'پسوولەیەک بنووسە و تەرحیلی بکە.'],
+  fsInvoiceHint: ['اكتب فاتورة ورحّلها.', 'Write an invoice and post it.', 'پسوولەیەک بنووسە و پۆستی بکە.'],
   fsUsers: ['أضف فريقك', 'Add your team', 'تیمەکەت زیاد بکە'],
   fsUsersHint: ['مستخدمون بصلاحيات مناسبة لكل منهم.', 'Users, each with the right permissions.', 'بەکارهێنەران، هەریەکە بە دەسەڵاتی گونجاو.'],
 
