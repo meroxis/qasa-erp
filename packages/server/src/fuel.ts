@@ -297,7 +297,8 @@ export function openShift(db: Db, input: OpenShiftInput, actor: Actor): ShiftVie
 }
 
 export interface SheetInput {
-  readings: { nozzleId: string; openingMilli?: number | undefined; closingMilli: number | null }[];
+  /** closing readings only: an opening reading is the meter's last closing, never typed in (it would hide litres sold) */
+  readings: { nozzleId: string; closingMilli: number | null }[];
   credit?: number | undefined;
   handed?: number | null | undefined;
   notes?: string | undefined;
@@ -314,7 +315,6 @@ function writeSheet(db: Db, shift: ShiftView, input: SheetInput): ReadingView[] 
     const r = byId.get(given.nozzleId);
     if (!r) { errors.push({ code: 'fuel_nozzle_not_in_shift' }); continue; }
     const row = next.get(given.nozzleId)!;
-    if (given.openingMilli !== undefined) row.openingMilli = given.openingMilli;
     row.closingMilli = given.closingMilli;
     if (row.closingMilli !== null && row.closingMilli < row.openingMilli) errors.push({ code: 'fuel_closing_below_opening', line: nozzleLabel(r) });
   }
@@ -322,8 +322,8 @@ function writeSheet(db: Db, shift: ShiftView, input: SheetInput): ReadingView[] 
   const sales = shiftTotals([...next.values()]).sales;
   if (credit > sales) errors.push({ code: 'fuel_credit_over_sales', field: 'credit' });
   if (errors.length) throw invalid(errors);
-  const update = db.prepare('UPDATE fuel_readings SET opening_milli = ?, closing_milli = ? WHERE shift_id = ? AND nozzle_id = ?');
-  for (const r of next.values()) update.run(r.openingMilli, r.closingMilli, shift.id, r.nozzleId);
+  const update = db.prepare('UPDATE fuel_readings SET closing_milli = ? WHERE shift_id = ? AND nozzle_id = ?');
+  for (const r of next.values()) update.run(r.closingMilli, shift.id, r.nozzleId);
   db.prepare('UPDATE fuel_shifts SET credit = ?, handed = ?, notes = ? WHERE id = ?')
     .run(credit, input.handed === undefined ? shift.handed : input.handed, input.notes === undefined ? (shift.notes || null) : (input.notes.trim() || null), shift.id);
   return [...next.values()];
@@ -419,6 +419,7 @@ export function closeShift(db: Db, id: string, input: CloseInput, actor: Actor):
 
 /** An open shift is taken away (opened by mistake); its nozzles keep their meters. */
 export function cancelShift(db: Db, id: string, actor: Actor): void {
+  requirePlan(db);
   const shift = getShift(db, id);
   if (!shift.actions.includes('cancel')) throw conflict('action_not_allowed', { action: 'cancel' });
   transaction(db, () => {
@@ -456,7 +457,7 @@ const lang = z.enum(['ar', 'en', 'ku']).default('ar');
 const names = z.object({ ar: z.string().max(100), en: z.string().max(100), ku: z.string().max(100) }).strict();
 
 const sheet = {
-  readings: z.array(z.object({ nozzleId: id, openingMilli: meter.optional(), closingMilli: meter.nullable() }).strict()).max(200),
+  readings: z.array(z.object({ nozzleId: id, closingMilli: meter.nullable() }).strict()).max(200),
   credit: money.optional(),
   notes: z.string().max(500).optional()
 };

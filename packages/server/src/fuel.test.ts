@@ -64,6 +64,8 @@ describe('petrol station shifts', () => {
     for (const bad of ['100600', 100_600_000.5, -1]) {
       expect((await call('PUT', `/api/fuel/shifts/${shift.id}`, { readings: [{ nozzleId: pump.nozzles[0]!.id, closingMilli: bad }] })).statusCode).toBe(400);
     }
+    // the opening reading is the meter's last closing: it can't be typed in (raising it would hide litres sold)
+    expect((await call('PUT', `/api/fuel/shifts/${shift.id}`, { readings: [{ nozzleId: pump.nozzles[0]!.id, openingMilli: 100_500_000, closingMilli: 100_600_000 }] })).statusCode).toBe(400);
     // closing needs every nozzle's closing reading
     const missing = await call('POST', `/api/fuel/shifts/${shift.id}/close`, { readings: [{ nozzleId: pump.nozzles[0]!.id, closingMilli: 100_600_000 }], handed: 510_000 });
     expect(missing.json().details).toEqual([{ code: 'fuel_closing_missing', line: '1/2' }]);

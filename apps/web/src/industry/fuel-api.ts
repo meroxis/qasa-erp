@@ -21,7 +21,7 @@ export interface ShiftView extends ShiftSummary { readings: ReadingView[]; total
 export interface AttendantTotal { attendant: string; shifts: number; sales: number; short: number; over: number }
 
 export interface SheetBody {
-  readings: { nozzleId: string; openingMilli?: number; closingMilli: number | null }[];
+  readings: { nozzleId: string; closingMilli: number | null }[];
   credit?: number;
   handed?: number | null;
   notes?: string;
