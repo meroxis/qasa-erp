@@ -9,7 +9,7 @@ import type { StatementLineInput } from './banking-api.ts';
 export type StatementColumn = 'date' | 'description' | 'reference' | 'amount' | 'in' | 'out';
 export type ColumnMap = Partial<Record<StatementColumn, number>>;
 
-// Kurdish: from 1.5.3 the two sides are «قەرزدار» and «قەرزدەر»; «مەدین»/«دائین» (1.4 to 1.5.2) and «قەرزار»/«قەرزدەر»
+// Kurdish: from 1.6.0 the two sides are «قەرزدار» and «قەرزدەر»; «مەدین»/«دائین» (1.4 to 1.5.2) and «قەرزار»/«قەرزدەر»
 // (before 1.4) are still read
 const WORDS: Record<StatementColumn, string[]> = {
   date: ['التاريخ', 'تاريخ', 'تاريخ الحركة', 'تاريخ العملية', 'تاريخ القيد', 'date', 'transaction date', 'value date', 'posting date', 'بەروار'],

@@ -1,7 +1,7 @@
 /**
  * The texts of phone app 1.1 for the owner and the managers (approvals, the dollar rate, the dashboard, the end of the
  * day), in Arabic, English and Kurdish (Sorani), as src/i18n.ts. The desktop's own words where it has them (fx_*, dc_*,
- * the vouchers' actions); the Kurdish accounting words of the desktop (قەید، سەنەد، ڕەسید، پۆست، نەقد، قەرز); posting is «پۆست» from 1.5.3 («تەرحیل» 1.4 to 1.5.2).
+ * the vouchers' actions); the Kurdish accounting words of the desktop (قەید، سەنەد، ڕەسید، پۆست، نەقد، قەرز); posting is «پۆست» from 1.6.0 («تەرحیل» 1.4 to 1.5.2).
  */
 export const OWNER_T = {
   // ——— approvals ———

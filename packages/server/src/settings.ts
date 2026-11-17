@@ -27,7 +27,7 @@ export interface Settings {
    * pos-look.ts). Only items that still exist and are on sale are read back: one deleted or archived since drops out.
    */
   posQuickItems: string[];
-  /** Big picture tiles on the till: follow the business type (a phone shop), on or off (core pos-look.ts). */
+  /** Big picture tiles on the till: 'auto' (nobody has chosen: normal tiles), on or off (core pos-look.ts). */
   posBigPictures: PosBigPictures;
 }
 
@@ -110,7 +110,7 @@ function quickItems(db: Db): string[] {
   return ids.filter((id) => live.has(id));
 }
 
-/** The company's choice of big pictures; anything unknown (a value from a newer version) follows the business type. */
+/** The company's choice of big pictures; anything unknown (a value from a newer version) is 'auto': normal tiles. */
 function bigPictures(db: Db): PosBigPictures {
   const stored = readSetting(db, 'pos_big_pictures');
   return isPosBigPictures(stored) ? stored : 'auto';
