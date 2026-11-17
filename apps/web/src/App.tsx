@@ -853,11 +853,12 @@ export function App() {
               <header className="topbar">
                 <h1>
                   {crumb && <><span className="crumb" aria-hidden="true">{t(crumb)}</span><Icon name="chevron" size={16} className="flip" /></>}
-                  <span>{title}</span>
+                  {/* (the whole title on pointing at it, should a narrow window cut it short) */}
+                  <span title={title}>{title}</span>
                 </h1>
                 {guide && <GuideLink slug={guide} />}
                 <span className="spacer" />
-                <button type="button" className="search-trigger no-print" onClick={() => setSearching(true)} aria-label={t('searchHint')} aria-keyshortcuts="Control+K">
+                <button type="button" className="search-trigger no-print" onClick={() => setSearching(true)} aria-label={t('searchHint')} title={t('searchHint')} aria-keyshortcuts="Control+K">
                   <Icon name="search" size={16} />
                   <span>{t('searchHint')}</span>
                   <kbd className="ltr">Ctrl K</kbd>

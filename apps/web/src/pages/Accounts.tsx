@@ -112,7 +112,7 @@ export function Accounts() {
                           </button>
                         : <span style={{ width: 26, display: 'inline-block' }} />}
                       <span className="tree-code num">{a.code}</span>
-                      <span>
+                      <span className="tree-name">
                         <span style={{ fontWeight: hasKids ? 700 : 500 }}>{i18n.name(a.name)}</span>
                         {a.system && <span className="chip" style={{ marginInlineStart: 6 }}>{t('standard')}</span>}
                         <div className="muted small">{others(a.name)}</div>

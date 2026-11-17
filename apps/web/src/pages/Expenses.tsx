@@ -84,7 +84,7 @@ export function Expenses() {
           <div className="small muted" style={{ marginBottom: 8 }}>{t('br_whatFor')}</div>
           <div role="radiogroup" aria-label={t('br_whatFor')} style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(130px, 1fr))', gap: 8 }}>
             {EXPENSE_CATEGORIES.map((c) => (
-              <button key={c} type="button" role="radio" aria-checked={category === c} className={'btn' + (category === c ? ' primary' : '')}
+              <button key={c} type="button" role="radio" aria-checked={category === c} className={'btn wraps' + (category === c ? ' primary' : '')}
                 style={{ minHeight: 56, justifyContent: 'flex-start' }} onClick={() => setCategory(c)}>
                 <Icon name={ICONS[c]} size={18} />{t(label(c))}
               </button>
