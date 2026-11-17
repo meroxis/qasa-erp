@@ -3,12 +3,12 @@ import { BUSINESS_TYPES } from './plans.ts';
 import { isPosBigPictures, POS_QUICK_MAX, posBigTiles } from './pos-look.ts';
 
 describe('big pictures on the till', () => {
-  it('are on by the business type for a phone shop only', () => {
-    for (const b of BUSINESS_TYPES) expect(posBigTiles({ posBigPictures: 'auto', businessTypes: [b] }), b).toBe(b === 'mobileShop');
-    expect(posBigTiles({ posBigPictures: 'auto', businessTypes: ['trade', 'mobileShop'] })).toBe(true);
-    // a company that has not said what it does, or an office server from before the choice: normal tiles
+  it('are off by default for every company, a phone shop too', () => {
+    for (const b of BUSINESS_TYPES) expect(posBigTiles({ posBigPictures: 'auto', businessTypes: [b] }), b).toBe(false);
+    expect(posBigTiles({ posBigPictures: 'auto', businessTypes: ['trade', 'mobileShop'] })).toBe(false);
     expect(posBigTiles({ posBigPictures: 'auto', businessTypes: null })).toBe(false);
-    expect(posBigTiles({ businessTypes: ['mobileShop'] })).toBe(true);
+    // an office server from before the choice: normal tiles
+    expect(posBigTiles({ businessTypes: ['mobileShop'] })).toBe(false);
     expect(posBigTiles({})).toBe(false);
   });
 

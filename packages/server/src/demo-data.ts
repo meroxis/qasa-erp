@@ -222,13 +222,14 @@ export function seedPharmacyDemo(db: Db): void {
  * The website demo with ?phoneshop in its address: the sample company as a phone shop. Phones and the small things sold
  * beside them, each with a picture drawn for the demo (own work, no photos of real products; `pictures`: PNG files as
  * base64, by item code), in stock, with the chargers, cables, cases, screen protectors and SIM cards as the till's
- * quick buttons. The till shows big pictures by the business type. Expects seedDemo to have run.
+ * quick buttons. Big pictures are turned on for it, as an admin would. Expects seedDemo to have run.
  */
 export function seedPhoneShopDemo(db: Db, pictures: Readonly<Record<string, string>>): void {
   const user = 'Mer';
   updateSettings(db, {
     companyName: { ar: 'ميروكسيس موبايل', en: 'Meroxis Mobile', ku: 'مێرۆکسیس مۆبایل' },
-    businessTypes: ['trade', 'mobileShop']
+    businessTypes: ['trade', 'mobileShop'],
+    posBigPictures: 'on'
   }, user);
   // the air-conditioning and solar sample stays in the books, off the till
   db.prepare('UPDATE items SET active = 0').run();

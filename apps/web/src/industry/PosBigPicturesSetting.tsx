@@ -3,12 +3,12 @@ import { posBigTiles } from '@qasa/core';
 import { api } from '../api.ts';
 import { ChoiceTiles, type Choice } from '../ChoiceTiles.tsx';
 import { DataContext, ErrorBox, Icon, useToast } from '../components.tsx';
-import { useI18n, type Key } from '../i18n.ts';
+import { useI18n } from '../i18n.ts';
 
 /**
  * Settings → Sales and point of sale → Big pictures on the till, for admins: one choice for the whole company, kept
- * with its settings on the server, saved as soon as it is picked. Until someone picks, it follows the business type (a
- * phone shop has them, core pos-look.ts), and says so under the choice.
+ * with its settings on the server, saved as soon as it is picked. Off (normal tiles) for every company until an
+ * admin turns it on (core pos-look.ts).
  */
 export function PosBigPicturesSetting() {
   const { t } = useI18n();
@@ -25,7 +25,6 @@ export function PosBigPicturesSetting() {
     { value: 'on', label: t('tq_bigOn'), icon: 'layers' },
     { value: 'off', label: t('tq_bigOff'), icon: 'rows' }
   ];
-  const why: Key | null = !settings || oldServer || settings.posBigPictures !== 'auto' ? null : on ? 'tq_bigAutoOn' : 'tq_bigAutoOff';
   async function choose(posBigPictures: 'on' | 'off') {
     setBusy(true);
     setError(null);
@@ -46,7 +45,6 @@ export function PosBigPicturesSetting() {
         <div className="setting-text"><strong>{t('tq_bigTitle')}</strong><span>{t('tq_bigHelp')}</span></div>
         <div className="setting-ctl">
           <ChoiceTiles label={t('tq_bigTitle')} value={on ? 'on' : 'off'} options={options} onChange={(v) => void choose(v)} busy={busy} disabled={!settings || oldServer} />
-          {why && <p className="small muted" data-note="pos-big-why">{t(why)}</p>}
           {oldServer && <p className="small muted" data-note="pos-big-old-server">{t('tq_bigOldServer')}</p>}
           <ErrorBox error={error} />
         </div>

@@ -1,5 +1,5 @@
 /**
- * The till's quick buttons (every company that uses the till) and its big picture tiles (a phone shop by default;
+ * The till's quick buttons (every company that uses the till) and its big picture tiles (off by default; an admin turns them on in
  * Settings → Sales and point of sale → Big pictures on the till). Arabic, English and Kurdish (Sorani), in that
  * order, like i18n.ts.
  */
@@ -40,8 +40,6 @@ export const TILL_QUICK_TEXT = {
   ],
   tq_bigOn: ['صور كبيرة', 'Big pictures', 'وێنەی گەورە'],
   tq_bigOff: ['مربعات عادية', 'Normal tiles', 'چوارگۆشەی ئاسایی'],
-  tq_bigAutoOn: ['مفعّلة حسب نشاط الشركة (محل موبايل).', 'On, from the business type (mobile shop).', 'کارایە بەپێی جۆری چالاکی کۆمپانیا (دوکانی مۆبایل).'],
-  tq_bigAutoOff: ['غير مفعّلة حسب نشاط الشركة.', 'Off, from the business type.', 'ناکارایە بەپێی جۆری چالاکی کۆمپانیا.'],
   tq_bigOldServer: [
     'حدّث قاصة ERP على حاسوب خادم المكتب لتغيير هذا الخيار.',
     'Update Qasa ERP on the office server PC to change this.',

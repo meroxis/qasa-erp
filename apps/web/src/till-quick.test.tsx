@@ -14,7 +14,7 @@ import { forgetTill, rememberTill, tillCache } from './industry/offline-till.ts'
 import { may } from './may.ts';
 
 // The till's quick buttons, for every company that uses the till (a row above the categories, one tap adds one, an
-// admin edits them on the till), and its big pictures (a phone shop by default, Settings → Sales and point of sale)
+// admin edits them on the till), and its big pictures (off by default for every company, Settings → Sales and point of sale)
 
 const render = (node: ReactNode, settings: Partial<Settings> | null, lang: Lang = 'en') => renderToStaticMarkup(
   <I18nContext.Provider value={makeI18n(lang, 'western', () => {}, () => {})}>
@@ -143,9 +143,9 @@ describe('the quick buttons on the till', () => {
 });
 
 describe('big pictures on the till', () => {
-  it('follow the business type: a phone shop has them, a market not', () => {
-    expect(posBigTiles(company(['mobileShop']))).toBe(true);
-    expect(posBigTiles(company(['trade', 'mobileShop']))).toBe(true);
+  it('are off by default for every company, a phone shop too', () => {
+    expect(posBigTiles(company(['mobileShop']))).toBe(false);
+    expect(posBigTiles(company(['trade', 'mobileShop']))).toBe(false);
     expect(posBigTiles(company(['market']))).toBe(false);
     expect(posBigTiles(company(null))).toBe(false);
   });
@@ -155,18 +155,15 @@ describe('big pictures on the till', () => {
     expect(posBigTiles(company(['mobileShop'], { posBigPictures: 'off' }))).toBe(false);
   });
 
-  it('Settings → Sales and point of sale: starts where the business type puts it, and says why', () => {
-    const phone = render(<PosBigPicturesSetting />, company(['mobileShop']));
-    expect(phone).toContain('Big pictures on the till');
-    expect(phone).toMatch(/aria-checked="true"[^>]*>(?:(?!aria-checked).)*Big pictures</);
-    expect(phone).toContain('On, from the business type (mobile shop).');
-    const market = render(<PosBigPicturesSetting />, company(['market']));
-    expect(market).toMatch(/aria-checked="true"[^>]*>(?:(?!aria-checked).)*Normal tiles/);
-    expect(market).toContain('Off, from the business type.');
-    // once chosen it says no more
+  it('Settings → Sales and point of sale: starts on normal tiles for every company, and shows the admin’s choice', () => {
+    for (const types of [['mobileShop'], ['market']] as BusinessType[][]) {
+      const html = render(<PosBigPicturesSetting />, company(types));
+      expect(html).toContain('Big pictures on the till');
+      expect(html).toMatch(/aria-checked="true"[^>]*>(?:(?!aria-checked).)*Normal tiles/);
+      expect(html).not.toContain('business type');
+    }
     const chosen = render(<PosBigPicturesSetting />, company(['market'], { posBigPictures: 'on' }));
     expect(chosen).toMatch(/aria-checked="true"[^>]*>(?:(?!aria-checked).)*Big pictures</);
-    expect(chosen).not.toContain('from the business type');
   });
 
   it('cannot be changed against an office server from before this choice', () => {

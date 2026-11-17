@@ -6,7 +6,7 @@ import { openDatabase, type Db } from './db.ts';
 import { resetLoginThrottle } from './auth.ts';
 import { getSettings, updateSettings } from './settings.ts';
 
-// The till's quick buttons (every company that uses the till) and its big pictures (a phone shop by default): company
+// The till's quick buttons (every company that uses the till) and its big pictures (off by default for every company): company
 // settings, so every PC of the company agrees; changed by an admin only, as every setting
 
 let db: Db;
@@ -129,17 +129,17 @@ describe('the till’s quick buttons', () => {
 });
 
 describe('big pictures on the till', () => {
-  it('follow the business type until someone chooses: a phone shop has them', async () => {
+  it('are off until an admin turns them on, for every business type, a phone shop too', async () => {
     const s = (await get('/api/settings')).json();
     expect(s.posBigPictures).toBe('auto');
     expect(posBigTiles(s)).toBe(false);
-    expect(posBigTiles((await put({ businessTypes: ['mobileShop'] })).json())).toBe(true);
-    expect(posBigTiles((await put({ businessTypes: ['trade', 'mobileShop'] })).json())).toBe(true);
+    expect(posBigTiles((await put({ businessTypes: ['mobileShop'] })).json())).toBe(false);
+    expect(posBigTiles((await put({ businessTypes: ['trade', 'mobileShop'] })).json())).toBe(false);
     expect(posBigTiles((await put({ businessTypes: ['market'] })).json())).toBe(false);
     expect(posBigTiles((await put({ businessTypes: ['pharmacy', 'trade'] })).json())).toBe(false);
   });
 
-  it('can be turned on for any company and off for a phone shop, and back to the business type', async () => {
+  it('can be turned on for any company, off again, and back to the default (off)', async () => {
     await put({ businessTypes: ['market'] });
     const on = await put({ posBigPictures: 'on' });
     expect(on.statusCode).toBe(200);
@@ -147,13 +147,14 @@ describe('big pictures on the till', () => {
     expect(posBigTiles(on.json())).toBe(true);
     await put({ businessTypes: ['mobileShop'] });
     expect(posBigTiles((await put({ posBigPictures: 'off' })).json())).toBe(false);
-    expect(posBigTiles((await put({ posBigPictures: 'auto' })).json())).toBe(true);
+    expect(posBigTiles((await put({ posBigPictures: 'on' })).json())).toBe(true);
+    expect(posBigTiles((await put({ posBigPictures: 'auto' })).json())).toBe(false);
     for (const bad of ['yes', 1, null, '', true]) expect((await put({ posBigPictures: bad })).statusCode).toBe(400);
     expect(getSettings(db).posBigPictures).toBe('auto');
     expect(() => updateSettings(db, { posBigPictures: 'big' as never }, 'Mer')).toThrowError(expect.objectContaining({ code: 'validation' }));
   });
 
-  it('read an unknown stored value (from a newer version) as following the business type', () => {
+  it('read an unknown stored value (from a newer version) as the default', () => {
     db.prepare('INSERT INTO settings ("key", value) VALUES (?, ?)').run('pos_big_pictures', 'huge');
     expect(getSettings(db).posBigPictures).toBe('auto');
   });
@@ -177,7 +178,7 @@ describe('the website demo', () => {
     demo.close();
   });
 
-  it('opens as a phone shop on request (?phoneshop): big pictures by the business type, five quick buttons, drawn pictures', async () => {
+  it('opens as a phone shop on request (?phoneshop): big pictures turned on, five quick buttons, drawn pictures', async () => {
     const { readFileSync, readdirSync } = await import('node:fs');
     const { seedDemo, seedPhoneShopDemo } = await import('./demo-data.ts');
     const dir = new URL('../../../apps/web/src/demo/phone-shop/', import.meta.url);
@@ -188,6 +189,7 @@ describe('the website demo', () => {
     seedPhoneShopDemo(demo, pictures);
     const s = getSettings(demo);
     expect(s.businessTypes).toContain('mobileShop');
+    expect(s.posBigPictures).toBe('on');
     expect(posBigTiles(s)).toBe(true);
     const codes = (ids: string[]) => ids.map((id) => (demo.prepare('SELECT code FROM items WHERE id = ?').get(id) as { code: string }).code);
     expect(codes(s.posQuickItems)).toEqual(['2001', '2002', '2003', '2004', '2005']);
