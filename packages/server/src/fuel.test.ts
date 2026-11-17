@@ -427,27 +427,51 @@ describe('who may do what at the petrol station', () => {
     expect((await call('POST', '/api/fuel/deliveries', { ...body, noteNo: 'B', qtyMilli: L(1) })).statusCode).toBe(403);
   });
 
-  it('a cashier sees litres and sales but no cost, average cost, stock value or profit, in any answer', async () => {
+  it('a cashier sees litres and sales of their own shifts but no cost, stock value, profit, deliveries, dips or reports', async () => {
     const s = await station();
     const raz = (await call('POST', '/api/parties', { type: 'supplier', name: 'Raz' })).json();
     const d = (await call('POST', '/api/fuel/deliveries', { date: '2026-11-16', tankId: s.t1.id, supplierId: raz.id, noteNo: 'A', qtyMilli: L(1_000), costPerLitre: 800, payment: 'credit' })).json();
-    const closed = (await closeWith(s, 100, 100)).json();
-    const dip = (await call('POST', '/api/fuel/dips', { date: '2026-11-17', tankId: s.t2.id, measuredMilli: L(9_890) })).json();
+    const theirs = (await closeWith(s, 100, 100)).json();
+    expect((await call('POST', '/api/fuel/dips', { date: '2026-11-17', tankId: s.t2.id, measuredMilli: L(9_890) })).statusCode).toBe(201);
     const who = await people({ las: ['pos'], raz: ['sales', 'pos'] });
     const forbidden = /"(cost|profit|value|avgCost|lastCost|costPerLitre)"/;
-    for (const cashier of [who.las!, who.raz!]) {
-      as = cashier;
-      for (const url of ['/api/fuel/setup', '/api/fuel/shifts', `/api/fuel/shifts/${closed.id}`, '/api/fuel/deliveries', `/api/fuel/deliveries/${d.id}`, '/api/fuel/dips', '/api/fuel/reports?from=2026-11-01&to=2026-11-30']) {
-        const res = await call('GET', url);
-        expect(res.statusCode, url).toBe(200);
-        expect(res.body, url).not.toMatch(forbidden);
-      }
-      expect((await call('GET', `/api/fuel/shifts/${closed.id}`)).json().sales).toBe(160_000);
-      expect((await call('GET', '/api/fuel/setup')).json().tanks[0].bookMilli).toBe(L(20_900));
-      expect((await call('GET', '/api/fuel/dips')).json()[0]).toMatchObject({ id: dip.id, varianceMilli: -L(10) });
+    // Las opens and closes a shift of her own
+    as = who.las!;
+    const opened = (await openOn(s.pump.id)).json();
+    const [r1, r2] = opened.readings as { openingMilli: number }[];
+    const mine = await call('POST', `/api/fuel/shifts/${opened.id}/close`, {
+      readings: [{ nozzleId: s.pump.nozzles[0]!.id, closingMilli: r1!.openingMilli + L(10) }, { nozzleId: s.pump.nozzles[1]!.id, closingMilli: r2!.openingMilli }], handed: 8_500
+    });
+    expect(mine.statusCode, mine.body).toBe(200);
+    expect(mine.body).not.toMatch(forbidden);
+    for (const url of ['/api/fuel/setup', '/api/fuel/shifts', `/api/fuel/shifts/${opened.id}`]) {
+      const res = await call('GET', url);
+      expect(res.statusCode, url).toBe(200);
+      expect(res.body, url).not.toMatch(forbidden);
     }
+    expect((await call('GET', `/api/fuel/shifts/${opened.id}`)).json().sales).toBe(8_500);
+    expect((await call('GET', '/api/fuel/setup')).json().tanks[0].bookMilli).toBe(L(20_890));
+    // only their own shifts: the owner's shift is not there for them, and its sheet is not theirs to work
+    expect((await call('GET', '/api/fuel/shifts')).json().map((x: { id: string }) => x.id)).toEqual([opened.id]);
+    expect((await call('GET', `/api/fuel/shifts/${theirs.id}`)).statusCode).toBe(404);
+    // every attendant's short and over, the deliveries, the dips and the fuel report are the books'
+    for (const url of ['/api/fuel/attendants?from=2026-11-01&to=2026-11-30', '/api/fuel/deliveries', `/api/fuel/deliveries/${d.id}`, '/api/fuel/dips', '/api/fuel/reports?from=2026-11-01&to=2026-11-30']) {
+      expect((await call('GET', url)).statusCode, url).toBe(403);
+    }
+    // Raz (sales and Point of sale) reads none of Las's shifts, and cannot close or delete one she opened
+    as = who.raz!;
+    expect((await call('GET', '/api/fuel/shifts')).json()).toEqual([]);
+    expect((await call('GET', `/api/fuel/shifts/${opened.id}`)).statusCode).toBe(404);
+    as = who.las!;
+    const again = (await openOn(s.pump.id)).json();
+    as = who.raz!;
+    expect((await call('PUT', `/api/fuel/shifts/${again.id}`, { readings: [] })).statusCode).toBe(403);
+    expect((await call('POST', `/api/fuel/shifts/${again.id}/close`, { readings: [], handed: 0 })).statusCode).toBe(403);
+    expect((await call('DELETE', `/api/fuel/shifts/${again.id}`)).statusCode).toBe(403);
     as = who.admin!;
-    expect((await call('GET', `/api/fuel/shifts/${closed.id}`)).json()).toMatchObject({ cost: 78_095 + 69_000, profit: 160_000 - 147_095 }); // benzine at (15,600,000 + 800,000) ÷ 21,000 L
+    expect((await call('GET', `/api/fuel/shifts/${theirs.id}`)).json()).toMatchObject({ cost: 78_095 + 69_000, profit: 160_000 - 147_095 }); // benzine at (15,600,000 + 800,000) ÷ 21,000 L
+    expect((await call('GET', '/api/fuel/shifts')).json()).toHaveLength(3);
+    expect((await call('DELETE', `/api/fuel/shifts/${again.id}`)).statusCode).toBe(204);
   });
 });
 

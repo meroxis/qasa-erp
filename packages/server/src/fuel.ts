@@ -14,7 +14,7 @@ import { planStatus } from './license.ts';
 import { getPostingAccounts, isPeriodLocked, readSetting, writeSetting } from './settings.ts';
 import { createJournalEntry, deleteEntry, getEntry, reverseEntryInternal } from './journal.ts';
 import { preparerOf } from './quick-vouchers.ts';
-import type { Actor } from './auth.ts';
+import { seesBooks, signInRequired, type Actor } from './auth.ts';
 import type { ApiExtension, ApiRequest } from './routes.ts';
 
 /**
@@ -533,6 +533,38 @@ function shiftRow(db: Db, id: string): ShiftRow {
   return r;
 }
 
+/**
+ * Whether this user opened the shift (as the till's shifts, pos.ts): with sign-in on, the user id kept in the shift's
+ * append-only "open" audit record decides (names are not unique); without sign-in, the name typed on the PC.
+ */
+function isOpener(db: Db, row: Pick<ShiftRow, 'id' | 'opened_by'>, actor: Pick<Actor, 'id' | 'name'>): boolean {
+  if (actor.id && signInRequired(db)) {
+    const opened = db.prepare("SELECT details FROM audit_log WHERE entity = 'fuel_shift' AND entity_id = ? AND action = 'open' ORDER BY id DESC LIMIT 1")
+      .get(row.id) as { details: string | null } | undefined;
+    let openerId: unknown = null;
+    try { openerId = opened?.details ? (JSON.parse(opened.details) as { userId?: unknown }).userId ?? null : null; } catch { openerId = null; }
+    return typeof openerId === 'string' && openerId === actor.id;
+  }
+  return row.opened_by === actor.name;
+}
+
+/** Whoever keeps the books reads every shift; anyone else (a cashier) only the shifts they opened. */
+function readsShift(db: Db, row: Pick<ShiftRow, 'id' | 'opened_by'>, actor: Actor | null): boolean {
+  return !actor || seesBooks(actor) || isOpener(db, row, actor);
+}
+
+/** An open shift's sheet is worked by the person who opened it, or an admin (as a till's shift is). */
+function mayRun(db: Db, id: string, actor: Actor): void {
+  if (actor.permissions.includes('admin')) return;
+  if (!isOpener(db, shiftRow(db, id), actor)) throw new AppError(403, 'forbidden');
+}
+
+/** A shift as this user may read it: not there for a cashier who did not open it. */
+export function readShift(db: Db, id: string, actor: Actor): ShiftView {
+  if (!readsShift(db, shiftRow(db, id), actor)) throw notFound('fuel_shift');
+  return getShift(db, id);
+}
+
 export function getShift(db: Db, id: string): ShiftView {
   const r = shiftRow(db, id);
   const readings = readingsOf(db, id);
@@ -547,7 +579,9 @@ export function getShift(db: Db, id: string): ShiftView {
   };
 }
 
-export function listShifts(db: Db, f: { from?: string | undefined; to?: string | undefined; attendant?: string | undefined; status?: FuelShiftStatus | undefined } = {}): ShiftSummary[] {
+export function listShifts(db: Db, f: { from?: string | undefined; to?: string | undefined; attendant?: string | undefined; status?: FuelShiftStatus | undefined } = {},
+  actor: Actor | null = null): ShiftSummary[] {
+  const ownOnly = !!actor && !seesBooks(actor);
   const where: string[] = [];
   const params: string[] = [];
   if (f.from) { where.push('date >= ?'); params.push(f.from); }
@@ -555,8 +589,9 @@ export function listShifts(db: Db, f: { from?: string | undefined; to?: string |
   if (f.attendant) { where.push('attendant = ?'); params.push(f.attendant); }
   if (f.status) { where.push('status = ?'); params.push(f.status); }
   const rows = db.prepare(`SELECT * FROM fuel_shifts${where.length ? ' WHERE ' + where.join(' AND ') : ''}
-                           ORDER BY date DESC, CASE shift WHEN 'night' THEN 0 WHEN 'evening' THEN 1 ELSE 2 END, number DESC LIMIT 500`).all(...params) as unknown as ShiftRow[];
-  return rows.map((r) => summaryOf(db, r));
+                           ORDER BY date DESC, CASE shift WHEN 'night' THEN 0 WHEN 'evening' THEN 1 ELSE 2 END, number DESC${ownOnly ? '' : ' LIMIT 500'}`).all(...params) as unknown as ShiftRow[];
+  // a cashier gets their own shifts only (up to 500 of theirs, not of everyone's)
+  return rows.filter((r) => !ownOnly || readsShift(db, r, actor)).slice(0, 500).map((r) => summaryOf(db, r));
 }
 
 export interface OpenShiftInput { date: string; shift: FuelShift; attendant: string; pumpIds: string[] }
@@ -589,7 +624,7 @@ export function openShift(db: Db, input: OpenShiftInput, actor: Actor): ShiftVie
     const add = db.prepare(`INSERT INTO fuel_readings (shift_id, nozzle_id, fuel_type_id, tank_id, price, opening_milli, closing_milli, meter_max_milli, rollover)
                             VALUES (?, ?, ?, ?, ?, ?, NULL, ?, 0)`);
     for (const n of nozzles) add.run(id, n.id, n.fuelTypeId, n.tankId, types.get(n.fuelTypeId)!.price, n.meterMilli, n.meterMaxMilli);
-    audit(db, actor.name, 'open', 'fuel_shift', id, { number, attendant, shift: input.shift, nozzles: nozzles.length });
+    audit(db, actor.name, 'open', 'fuel_shift', id, { number, attendant, shift: input.shift, nozzles: nozzles.length, ...(actor.id ? { userId: actor.id } : {}) });
   });
   return getShift(db, id);
 }
@@ -647,6 +682,7 @@ function shiftFor(db: Db, id: string, action: FuelShiftAction): ShiftView {
 export function saveSheet(db: Db, id: string, input: SheetInput, actor: Actor): ShiftView {
   requirePlan(db);
   transaction(db, () => {
+    mayRun(db, id, actor);
     const shift = shiftFor(db, id, 'save');
     writeSheet(db, shift, input);
     audit(db, actor.name, 'save', 'fuel_shift', id, { number: shift.number });
@@ -734,6 +770,7 @@ export function closeShift(db: Db, id: string, input: CloseInput, actor: Actor):
   const cashAccount = input.cashAccount ?? settings.cashAccount;
   if (!cashAccount.startsWith('18') || !postableAccounts(db).has(cashAccount)) throw invalid([{ code: 'fuel_account_invalid', field: 'cashAccount', accountCode: cashAccount }]);
   transaction(db, () => {
+    mayRun(db, id, actor);
     const shift = shiftFor(db, id, 'close');
     const claimed = db.prepare(`UPDATE fuel_shifts SET status = 'closed', closed_by = ?, closed_at = ? WHERE id = ? AND status = 'open'`).run(actor.name, now(), id);
     if (Number(claimed.changes) !== 1) throw conflict('action_not_allowed', { action: 'close' });
@@ -784,6 +821,7 @@ export function closeShift(db: Db, id: string, input: CloseInput, actor: Actor):
 export function cancelShift(db: Db, id: string, actor: Actor): void {
   requirePlan(db);
   transaction(db, () => {
+    mayRun(db, id, actor);
     const shift = shiftFor(db, id, 'cancel');
     db.prepare('DELETE FROM fuel_readings WHERE shift_id = ?').run(id);
     const gone = db.prepare("DELETE FROM fuel_shifts WHERE id = ? AND status = 'open'").run(id);
@@ -1176,8 +1214,9 @@ const STOCK = 'stock' as const;
 const ADMIN = 'admin' as const;
 
 /**
- * Reading the setup, the shifts, deliveries, dips and reports is open to every signed-in user (cost and profit are left
- * out for someone who may not see cost: cost-view.ts). The shift sheet (open, save, close, delete an open shift) is the
+ * Reading the setup and the shifts is open to every signed-in user (cost and profit are left out for someone who may not
+ * see cost: cost-view.ts); a cashier reads only the shifts they opened, and the attendants' totals, the deliveries, the
+ * dips and the report are the books' (cost-view.ts BOOKS_ONLY). A cashier works only the sheet of a shift they opened. The shift sheet (open, save, close, delete an open shift) is the
  * Point of sale permission, as the till is; a tanker delivery is purchasing; a dip is stock (as a stock count is);
  * fuels, prices, tanks, pumps, nozzles, the accounts and every reversal need an admin.
  */
@@ -1273,7 +1312,7 @@ export const fuelApi: ApiExtension = {
         method: 'GET', path: '/api/fuel/shifts',
         handler: async (req) => listShifts(db, parse(z.object({
           from: isoDate.optional(), to: isoDate.optional(), attendant: z.string().max(100).optional(), status: z.enum(['open', 'closed', 'reversed']).optional()
-        }).strict(), req.query ?? {}))
+        }).strict(), req.query ?? {}), actor(req))
       },
       {
         method: 'GET', path: '/api/fuel/attendants',
@@ -1282,7 +1321,7 @@ export const fuelApi: ApiExtension = {
           return attendantTotals(db, q.from, q.to);
         }
       },
-      { method: 'GET', path: '/api/fuel/shifts/:id', handler: async (req) => getShift(db, parse(idParam, req.params).id) },
+      { method: 'GET', path: '/api/fuel/shifts/:id', handler: async (req) => readShift(db, parse(idParam, req.params).id, actor(req)) },
       {
         method: 'POST', path: '/api/fuel/shifts',
         handler: async (req, reply) => {

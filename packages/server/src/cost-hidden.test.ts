@@ -338,7 +338,8 @@ const BOOKS_FIELDS = (): [string, string][] => [
  * and no other: below), the company's books, the stock valuation, the expenses, bank reconciliation and (1.4.1) the
  * cheques: the list, each cheque and the summary.
  */
-const BOOKS_ROUTES = ['/api/entries/', '/api/reports/', '/api/year-end', '/api/fx/revaluation', '/api/assets', '/api/brief/reports/stock-value', '/api/brief/expenses', '/api/banking/statements', '/api/banking/cheques'];
+const BOOKS_ROUTES = ['/api/entries/', '/api/reports/', '/api/year-end', '/api/fx/revaluation', '/api/assets', '/api/brief/reports/stock-value', '/api/brief/expenses', '/api/banking/statements', '/api/banking/cheques',
+  '/api/fuel/attendants', '/api/fuel/deliveries', '/api/fuel/dips', '/api/fuel/reports'];
 const ADMIN_ROUTES = ['/api/audit', '/api/auth/recovery-code', '/api/branches', '/api/users'];
 // the till's own reads (1.5.2): for the Point of sale permission only (an admin has it; a cashier at the till here too)
 const TILL_ROUTES = ['/api/pos/current', '/api/pos/payment-accounts'];
@@ -369,8 +370,9 @@ describe('cost, stock value and profit, by who asks', () => {
 
   it('a cashier gets no cost, value or profit key from any route, and none of the numbers under another name', async () => {
     const answers = await walk(cashier);
-    // the till's shift the admin opened is not a cashier's to read (1.4.1): answered as not there
-    expect(failed(answers)).toEqual([`404 ${at.shift}`]);
+    // the till's shift the admin opened is not a cashier's to read (1.4.1): answered as not there; nor is the petrol
+    // station shift the admin closed
+    expect(failed(answers)).toEqual([`404 ${at.shift}`, `404 ${at.fuelShift}`]);
     // refused: the books and what only an admin reads; everything else answers
     // (and of the ageing report the suppliers' side: whom the company owes; the customers' side answers)
     const expected = [...new Set([...answers.map((a) => a.route).filter((r) => isOneOf(r, BOOKS_ROUTES) || ADMIN_ROUTES.includes(r)), '/api/brief/reports/aging'])].sort();

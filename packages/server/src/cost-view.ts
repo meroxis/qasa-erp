@@ -74,7 +74,10 @@ const PURCHASE_MONEY: ReadonlySet<string> = new Set(['discount', 'subtotal', 'to
  * (every payment voucher on an expense account, whoever prepared it), bank reconciliation (a bank account's lines)
  * and (1.4.1) the cheques: their list, each cheque, their summary and every step of one.
  */
-const BOOKS_ONLY: readonly string[] = ['/api/entries', '/api/vouchers', '/api/brief/reports/stock-value', '/api/brief/expenses', '/api/banking/statements', '/api/banking/cheques'];
+const BOOKS_ONLY: readonly string[] = ['/api/entries', '/api/vouchers', '/api/brief/reports/stock-value', '/api/brief/expenses', '/api/banking/statements', '/api/banking/cheques',
+  // petrol stations (fuel.ts): every attendant's shortages, the tanker deliveries (what is paid and owed for fuel), the
+  // dips and the fuel report; a cashier works the shift sheet and reads only the shifts they opened
+  '/api/fuel/attendants', '/api/fuel/deliveries', '/api/fuel/dips', '/api/fuel/reports'];
 
 const under = (path: string, prefix: string): boolean => path === prefix || path.startsWith(`${prefix}/`);
 

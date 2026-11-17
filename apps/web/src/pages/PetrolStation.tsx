@@ -26,6 +26,8 @@ export const PETROL_TABS: readonly PetrolTab[] = ['shifts', 'tanks', 'deliveries
 const TAB_LABEL: Record<PetrolTab, Key> = {
   shifts: 'ps_tabShifts', tanks: 'ps_tabTanks', deliveries: 'ps_tabDeliveries', dips: 'ps_tabDips', reports: 'ps_tabReports', setup: 'ps_tabSetup'
 };
+/** What a cashier (no books) does not read: every attendant's short and over, deliveries, dips and the fuel report. */
+const BOOKS_TABS: ReadonlySet<PetrolTab> = new Set(['deliveries', 'dips', 'reports']);
 const NAV = { key: 'ps_title' as Key, group: 'gIndustry' as Key };
 const thisMonth = () => todayIso().slice(0, 7);
 const monthEnd = (month: string) => {
@@ -120,8 +122,12 @@ function ReverseModal({ title, help, onReverse, onClose }: { title: string; help
 
 /* ---------- the page ---------- */
 
-export function PetrolStation({ tab = 'shifts' }: { tab?: PetrolTab }) {
+export function PetrolStation({ tab: asked = 'shifts' }: { tab?: PetrolTab }) {
   const { t } = useI18n();
+  const { seesBooks } = useData();
+  const books = seesBooks !== false;
+  const tabs = PETROL_TABS.filter((k) => books || !BOOKS_TABS.has(k));
+  const tab = tabs.includes(asked) ? asked : 'shifts';
   usePageNav(NAV);
   const setup = useLoad(() => fuelApi.setup(), []);
   if (setup.error) return <Unavailable error={setup.error} />;
@@ -131,7 +137,7 @@ export function PetrolStation({ tab = 'shifts' }: { tab?: PetrolTab }) {
       {s && !s.available && <div className="alert">{t('ps_needsPro')} <a href={href('plans')}>{t('planLicense')}</a></div>}
       <div className="row no-print" style={{ flexWrap: 'wrap' }}>
         <div className="track" role="tablist">
-          {PETROL_TABS.map((k) => (
+          {tabs.map((k) => (
             <a key={k} role="tab" aria-selected={tab === k} aria-pressed={tab === k} className="btn" style={{ border: 'none' }}
               href={href(k === 'shifts' ? 'petrol' : `petrol/${k}`)}>{t(TAB_LABEL[k])}</a>
           ))}
@@ -153,9 +159,11 @@ function Shifts({ setup }: { setup: FuelSetupView }) {
   const i18n = useI18n();
   const { t } = i18n;
   const mayDo = useMay();
+  const books = useData().seesBooks !== false;
   const month = thisMonth();
   const list = useLoad(() => fuelApi.shifts(), []);
-  const people = useLoad(() => fuelApi.attendants(`${month}-01`, monthEnd(month)), [month]);
+  // every attendant's short and over is for those who keep the books; a cashier sees their own shifts below
+  const people = useLoad(() => (books ? fuelApi.attendants(`${month}-01`, monthEnd(month)) : Promise.resolve([])), [month, books]);
   const [opening, setOpening] = useState(false);
   const today = todayIso();
   const shifts = list.data ?? [];
@@ -167,7 +175,7 @@ function Shifts({ setup }: { setup: FuelSetupView }) {
     { label: t('ps_tileOpen'), value: i18n.int(shifts.filter((x) => x.status === 'open').length), sub: '' },
     { label: t('ps_tileToday'), value: i18n.money(todays.reduce((sum, x) => sum + (x.sales ?? 0), 0), 'IQD'), sub: '' },
     { label: t('ps_tileLitres'), value: litres(i18n, litresToday.data ?? 0), sub: '' },
-    { label: t('ps_tileShort'), value: i18n.money(short, 'IQD'), sub: t('ps_tileOver', { a: i18n.money(over, 'IQD') }) }
+    ...(books ? [{ label: t('ps_tileShort'), value: i18n.money(short, 'IQD'), sub: t('ps_tileOver', { a: i18n.money(over, 'IQD') }) }] : [])
   ];
   return (
     <div className="stack">
