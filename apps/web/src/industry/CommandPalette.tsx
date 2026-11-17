@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react'
 import { api } from '../api.ts';
 import { Icon } from '../components.tsx';
 import { useI18n, type Key } from '../i18n.ts';
-import { addRecent, allPages, navLabel, recents, type NavViewer, type Recent } from '../nav.ts';
+import { addRecent, allPages, navLabel, recents, recentsFor, type NavViewer, type Recent } from '../nav.ts';
 import { go } from '../router.ts';
 import { showTour } from './Tour.tsx';
 
@@ -74,9 +74,9 @@ export function CommandPalette({ viewer, onClose }: { viewer: NavViewer; onClose
 
   const results: Hit[] = useMemo(() => {
     const text = norm(q);
-    if (!text) return [...recents().map((r) => ({ ...r, section: 'searchRecent' as Key })), ...pages];
+    if (!text) return [...recentsFor(recents(), viewer).map((r) => ({ ...r, section: 'searchRecent' as Key })), ...pages];
     return [...pages.filter((p) => norm(p.label).includes(text) || norm(p.sub ?? '').includes(text)), ...found];
-  }, [q, pages, found]);
+  }, [q, pages, found, viewer]);
 
   useEffect(() => { setIndex(0); }, [q, found]);
   useEffect(() => {

@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import { BUILT_IN_FEATURES } from './features.ts';
 import { checkBranchRequest, filterBranchResult, isBranchLimited, userBranchLists } from './branches.ts';
-import { AMOUNTS_SHOW, APP_VERSION, BUSINESS_TYPES, MAX_BATCH_NO, MAX_ITEM_UNITS, MAX_UNIT_FACTOR_MILLI, UNIT_CODES } from '@qasa/core';
+import { AMOUNTS_SHOW, APP_VERSION, BUSINESS_TYPES, MAX_BATCH_NO, MAX_ITEM_UNITS, MAX_UNIT_FACTOR_MILLI, POS_USE, UNIT_CODES } from '@qasa/core';
 import { schemaVersion, SCHEMA_VERSION, type Db } from './db.ts';
 import { AppError, conflict, invalid } from './errors.ts';
 import {
@@ -407,7 +407,8 @@ export function apiRoutes(db: Db, options: { demo?: boolean; extensions?: readon
         yearResult: z.string().max(12).optional()
       }).optional(),
       businessTypes: z.array(z.enum(BUSINESS_TYPES)).min(1).max(BUSINESS_TYPES.length).optional(),
-      amountsShow: z.enum(AMOUNTS_SHOW).optional()
+      amountsShow: z.enum(AMOUNTS_SHOW).optional(),
+      posUse: z.enum(POS_USE).optional()
     }), req.body);
     const { postingAccounts, ...rest } = withoutUndefined(body);
     return updateSettings(db, { ...rest, ...(postingAccounts ? { postingAccounts: { ...getSettings(db).postingAccounts, ...withoutUndefined(postingAccounts) } } : {}) }, userOf(req));

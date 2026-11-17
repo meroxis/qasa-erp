@@ -24,7 +24,9 @@ import { cachedPrinters, readWindowsPrinters } from './printer-info.ts';
 import { dataPlaceOf, officeName } from './data-place.ts';
 import { execFile } from 'node:child_process';
 import { sharePdfHandlers } from './share-pdf.ts';
-import { pair, parseAddress, parseOfficeId, pemFingerprint, startTunnel, type PairResult, type Remote } from './office.ts';
+import { checkRemembered, pair, pemFingerprint, startTunnel, type Remote } from './office.ts';
+import { officeMemory, OFFICES_FILE, validRemote } from './office-memory.ts';
+import { connectHandlers } from './connect-ipc.ts';
 import { openOutbox, OutboxRefusal, type OutboxStore } from './outbox.ts';
 import { makeSecretBox } from './secrets.ts';
 import { remoteSupportHandlers } from './remote-support.ts';
@@ -399,17 +401,20 @@ function networkFile(): string {
 function readRemote(): Remote | null {
   try {
     const r = JSON.parse(readFileSync(networkFile(), 'utf8')) as Record<string, unknown>;
-    if (r.mode === 'remote' && typeof r.host === 'string' && parseAddress(r.host) && Number.isInteger(r.port) && typeof r.fingerprint === 'string' && /^[0-9a-f]{64}$/.test(r.fingerprint)) {
-      // through Qasa Relay: the tunnel's local port is chosen when the app starts
-      const relay = r.relay as { url?: unknown; office?: unknown } | undefined;
-      if (relay && typeof relay.url === 'string' && /^https:\/\//.test(relay.url) && typeof relay.office === 'string' && parseOfficeId(relay.office)) {
-        return { host: '127.0.0.1', port: 0, fingerprint: r.fingerprint, relay: { url: relay.url, office: parseOfficeId(relay.office)! } };
-      }
-      return { host: r.host, port: r.port as number, fingerprint: r.fingerprint };
-    }
+    // the same checks as a remembered office's (office-memory.ts validRemote)
+    if (r.mode === 'remote') return validRemote(r);
   } catch { /* no file: this PC works on its own company file */ }
   return null;
 }
+
+/** The offices this PC remembers (office-memory.ts): offices.json next to network.json, never in the log. */
+const offices = officeMemory({
+  read: () => {
+    const file = join(app.getPath('userData'), OFFICES_FILE);
+    return existsSync(file) ? readFileSync(file, 'utf8') : null;
+  },
+  write: (text) => writeFileSync(join(app.getPath('userData'), OFFICES_FILE), text)
+});
 
 function saveRemote(next: Remote | null): void {
   writeFileSync(networkFile(), JSON.stringify(next ? { mode: 'remote', ...next } : { mode: 'local' }));
@@ -423,15 +428,6 @@ function pinCertificate(target: Remote): void {
   });
 }
 
-/** Pairing (office.ts), then this PC remembers the server and restarts on it. */
-async function pairAndSave(address: string, code: string): Promise<PairResult> {
-  const result = await pair(address, code);
-  if ('ok' in result) {
-    saveRemote(result.remote);
-    log(result.remote.relay ? `paired with office ${result.remote.relay.office} through Qasa Relay` : `paired with the office server ${result.remote.host}:${result.remote.port}`);
-  }
-  return result;
-}
 
 /** Restarts the app, on the office server or on this PC's own company file. */
 async function restartApp(): Promise<void> {
@@ -443,7 +439,7 @@ async function restartApp(): Promise<void> {
 function openConnectWindow(): void {
   if (connectWin) return void connectWin.focus();
   connectWin = new BrowserWindow({
-    width: 480, height: 560, resizable: false, minimizable: false, maximizable: false, parent: win ?? undefined, modal: !!win,
+    width: 480, height: 640, resizable: false, minimizable: false, maximizable: false, parent: win ?? undefined, modal: !!win,
     title: t('connect'), backgroundColor: '#F4F6FA', autoHideMenuBar: true, icon: join(__dirname, 'icon.png'),
     webPreferences: { preload: join(__dirname, 'connect-preload.cjs'), contextIsolation: true, sandbox: true, nodeIntegration: false, spellcheck: false }
   });
@@ -454,12 +450,24 @@ function openConnectWindow(): void {
   void connectWin.loadURL(`${APP_SCHEME}://connect/connect.html?lang=${lang}`).catch((error) => log('connect window did not load:', error));
 }
 
-ipcMain.handle('network:pair', async (event, address: unknown, code: unknown) => {
-  if (!connectWin || event.sender !== connectWin.webContents) return { error: 'address' };
-  const result = await pairAndSave(String(address ?? ''), String(code ?? ''));
-  if ('ok' in result) setTimeout(() => void restartApp(), 900);
-  return result;
+/**
+ * The connect window: pairing with a code (office.ts), and the remembered offices (office-memory.ts, connect-ipc.ts).
+ * Either way this PC saves the server in network.json and restarts on it; the window then pins its certificate.
+ */
+const connecting = connectHandlers<Electron.IpcMainInvokeEvent>({
+  fromConnectPage: (event) => !!connectWin && event.sender === connectWin.webContents && event.senderFrame === connectWin.webContents.mainFrame,
+  memory: offices,
+  current: () => remote,
+  pair: (address, code) => pair(address, code),
+  check: (target) => checkRemembered(target),
+  useRemote: (target) => saveRemote(target),
+  restart: () => { setTimeout(() => void restartApp(), 900); },
+  log
 });
+ipcMain.handle('network:pair', (event, address: unknown, code: unknown, remember: unknown) => connecting.pair(event, address, code, remember));
+ipcMain.handle('network:offices', (event) => connecting.offices(event));
+ipcMain.handle('network:useOffice', (event, id: unknown) => connecting.use(event, id));
+ipcMain.handle('network:forgetOffice', (event, id: unknown) => connecting.forget(event, id));
 
 /** The origin the app window shows (this PC's server or the office server); nothing else may use its bridge. */
 let appOrigin = '';
@@ -792,6 +800,7 @@ ipcMain.on('recover:close', (event) => {
 });
 
 async function workHere(): Promise<void> {
+  // the office stays in offices.json (if it was remembered): File → Connect to an office server… goes back with no code
   saveRemote(null);
   log('back to this PC’s own company file');
   await restartApp();
@@ -1184,6 +1193,11 @@ if (!app.requestSingleInstanceLock()) {
     readSavedTheme();
     nativeTheme.on('updated', () => { if (win && !win.isDestroyed()) win.setBackgroundColor(windowBackground()); });
     remote = readRemote();
+    // a PC paired before this version remembers its office once; the office in use is "last used" today
+    try {
+      offices.adopt(remote, new Date());
+      if (remote) offices.touch(remote, new Date());
+    } catch (error) { log('could not update the remembered offices:', error instanceof Error ? error.message : 'error'); }
     buildMenu();
     try {
       if (remote) {

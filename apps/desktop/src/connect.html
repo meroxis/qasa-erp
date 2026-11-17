@@ -8,9 +8,11 @@
 <style>
   :root { --navy: #0F1E3D; --blue: #1D5FD1; --ink: #141B2D; --ink-2: #4B5569; --line: #E1E6EF; --paper: #F4F6FA; --bad: #B42318; --ok: #0B6B45; }
   * { box-sizing: border-box; }
+  [hidden] { display: none !important; }
   body { margin: 0; font: 15px/1.55 'Segoe UI', Tahoma, system-ui, sans-serif; color: var(--ink); background: var(--paper); }
   main { padding: 26px 28px; display: grid; gap: 14px; }
   h1 { margin: 0; font-size: 20px; color: var(--navy); }
+  h2 { margin: 0; font-size: 16px; color: var(--navy); }
   p { margin: 0; color: var(--ink-2); }
   label { display: grid; gap: 6px; font-weight: 600; }
   input { font: inherit; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; background: #fff; direction: ltr; text-align: left; letter-spacing: .04em; }
@@ -20,23 +22,57 @@
   button { font: inherit; font-weight: 700; min-height: 40px; padding: 0 18px; border-radius: 10px; border: 1px solid var(--line); background: #fff; color: var(--ink); cursor: pointer; }
   button.primary { background: var(--blue); border-color: var(--blue); color: #fff; }
   button:disabled { opacity: .6; cursor: default; }
+  button:focus-visible { outline: 2px solid var(--blue); outline-offset: 2px; }
   .msg { min-height: 1.5em; font-weight: 600; }
   .msg.bad { color: var(--bad); }
   .msg.ok { color: var(--ok); }
+  /* the offices this PC remembers */
+  .saved { display: grid; gap: 8px; }
+  .offices { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+  .office { display: flex; align-items: center; gap: 10px; padding: 8px 12px; border: 1px solid var(--line); border-radius: 10px; background: #fff; }
+  .office .who { flex: 1; min-width: 0; display: grid; gap: 2px; }
+  .office .name { font-weight: 700; overflow-wrap: anywhere; }
+  .office .meta { font-size: 13px; color: var(--ink-2); overflow-wrap: anywhere; }
+  .office .now { color: var(--ok); font-weight: 600; }
+  .office .acts { display: flex; gap: 6px; flex: none; }
+  .office button { min-height: 34px; padding: 0 12px; }
+  .pairing > summary { cursor: pointer; font-weight: 700; color: var(--blue); padding: 6px 0; width: fit-content; }
+  .pairing > summary:focus-visible { outline: 2px solid var(--blue); outline-offset: 2px; border-radius: 4px; }
+  .pairing.solo > summary { display: none; }
+  .pairing-body { display: grid; gap: 14px; }
+  .pairing:not(.solo) .pairing-body { margin-top: 10px; }
+  .office .when { white-space: nowrap; }
+  #listMsg:empty { min-height: 0; }
+  label.check { display: flex; align-items: flex-start; gap: 10px; }
+  label.check input { width: 18px; height: 18px; margin: 3px 0 0; padding: 0; flex: none; accent-color: var(--blue); }
+  label.check > span { display: grid; gap: 2px; min-width: 0; }
 </style>
 </head>
 <body>
 <main>
   <h1 data-t="title">Connect to an office server</h1>
+  <section class="saved" id="saved" aria-labelledby="savedTitle" hidden>
+    <h2 id="savedTitle" data-t="savedTitle"></h2>
+    <small data-t="savedHint"></small>
+    <ul class="offices" id="offices"></ul>
+    <div class="msg" id="listMsg" role="status"></div>
+  </section>
+  <!-- with remembered offices, pairing with a new one opens from here; with none, it is all the window shows -->
+  <details class="pairing solo" id="pairing" open>
+  <summary data-t="newTitle"></summary>
+  <div class="pairing-body">
   <p data-t="lead"></p>
   <form id="form" autocomplete="off">
     <div style="display:grid;gap:14px">
       <label><span data-t="address"></span><input id="address" required maxlength="260" spellcheck="false" placeholder="192.168.1.20 / ABCDE-FGH23"><small data-t="addressHint"></small></label>
       <label><span data-t="code"></span><input id="code" required maxlength="80" spellcheck="false" placeholder="XXXX-XXXX-XXXX-XXXX-XXXX-XXXX-XXXX-XXXX"><small data-t="codeHint"></small></label>
+      <label class="check"><input type="checkbox" id="remember" checked><span><span data-t="remember"></span><small data-t="rememberHint"></small></span></label>
       <div class="msg" id="msg" role="status"></div>
       <div class="row"><button type="button" id="cancel" data-t="cancel"></button><button type="submit" class="primary" id="go" data-t="connect"></button></div>
     </div>
   </form>
+  </div>
+  </details>
 </main>
 <script>
 (() => {
@@ -56,33 +92,173 @@
     e_unreachable: ['لا يجيب أي خادم على هذا العنوان. تأكد أن الحاسوب يعمل وقاصة ERP مفتوح عليه وشبكة المكتب مفعّلة، وأن جدار حماية ويندوز يسمح لقاصة ERP.', 'Nothing answers at that address. Check that the PC is on with Qasa ERP open and the office network switched on, and that Windows Firewall allows Qasa ERP.', 'هیچ سێرڤەرێک لەو ناونیشانە وەڵام ناداتەوە. دڵنیابە کۆمپیوتەرەکە هەڵکراوە و قاسە ERP کراوەیە و تۆڕی نووسینگە هەڵکراوە، و فایەرواڵی ویندۆز ڕێگە بە قاسە ERP دەدات.'],
     e_mismatch: ['الرمز لا يطابق الخادم على هذا العنوان. تأكد من الرمز: قد يكون جهاز آخر ينتحل صفة الخادم.', 'The code doesn’t match the server at that address. Check the code: another device may be pretending to be the server.', 'کۆدەکە لەگەڵ سێرڤەری ئەو ناونیشانە ناگونجێت. کۆدەکە بپشکنە: لەوانەیە ئامێرێکی تر خۆی وەک سێرڤەرەکە پیشان بدات.'],
     e_offline: ['خادم المكتب غير متصل بـ Qasa Relay الآن. تأكد أن حاسوب الخادم يعمل وقاصة ERP مفتوح عليه و«الوصول عبر الإنترنت» مفعّل.', 'The office server isn’t on Qasa Relay right now. Check that the server PC is on with Qasa ERP open and “Reachable over the internet” switched on.', 'سێرڤەری نووسینگە ئێستا پەیوەندیی بە Qasa Relay نییە. دڵنیابە کۆمپیوتەری سێرڤەرەکە هەڵکراوە و قاسە ERP کراوەیە و «گەیشتن لە ڕێی ئینتەرنێتەوە» هەڵکراوە.'],
-    e_not_qasa: ['الجهاز على هذا العنوان ليس خادم قاصة ERP.', 'The device at that address isn’t a Qasa ERP server.', 'ئامێری ئەو ناونیشانە سێرڤەری قاسە ERP نییە.']
+    e_not_qasa: ['الجهاز على هذا العنوان ليس خادم قاصة ERP.', 'The device at that address isn’t a Qasa ERP server.', 'ئامێری ئەو ناونیشانە سێرڤەری قاسە ERP نییە.'],
+    // the offices this PC remembers (office-memory.ts): back to one with no pairing code, while its certificate is the same
+    savedTitle: ['المكاتب المحفوظة على هذا الحاسوب', 'Offices remembered on this PC', 'نووسینگە پاشەکەوتکراوەکان لەسەر ئەم کۆمپیوتەرە'],
+    savedHint: ['يتصل دون رمز الاقتران، ما دامت شهادة الخادم هي نفسها.', 'Connects with no pairing code, as long as the server’s certificate is the same.', 'بەبێ کۆدی جووتبوون پەیوەندی دەکات، تا بڕوانامەی سێرڤەرەکە هەمان بێت.'],
+    newTitle: ['الاتصال بمكتب آخر برمز الاقتران', 'Connect to another office with its pairing code', 'پەیوەندیکردن بە نووسینگەیەکی ترەوە بە کۆدی جووتبوون'],
+    lastUsed: ['آخر استخدام: {d}', 'Last used: {d}', 'دوایین بەکارهێنان: {d}'],
+    connectedNow: ['متصل الآن', 'Connected now', 'ئێستا پەیوەستە'],
+    forget: ['إزالة', 'Forget', 'لابردن'],
+    connectTo: ['اتصال بـ {name}', 'Connect to {name}', 'پەیوەندیکردن بە {name}'],
+    forgetName: ['إزالة {name} من هذا الحاسوب', 'Forget {name} on this PC', 'لابردنی {name} لەم کۆمپیوتەرە'],
+    forgotten: ['أُزيل {name} من هذا الحاسوب. للاتصال به مجدداً يلزم رمز الاقتران.', '{name} is no longer remembered on this PC. Connecting to it again needs the pairing code.', '{name} لەم کۆمپیوتەرە لابرا. بۆ پەیوەندیکردنەوە پێی کۆدی جووتبوون پێویستە.'],
+    remember: ['تذكّر هذا المكتب على هذا الحاسوب', 'Remember this office on this PC', 'ئەم نووسینگەیە لەسەر ئەم کۆمپیوتەرە لەبیر بمێنێت'],
+    rememberHint: ['في المرة القادمة يكفي زر «اتصال» دون رمز. رمز الاقتران نفسه لا يُحفظ.', 'Next time its Connect button is enough, with no code. The pairing code itself is not saved.', 'جاری داهاتوو دوگمەی «پەیوەندیکردن» بەسە، بەبێ کۆد. کۆدی جووتبوون خۆی پاشەکەوت ناکرێت.'],
+    back: ['تم الاتصال. يُعاد تشغيل قاصة ERP على خادم المكتب…', 'Connected. Qasa ERP restarts on the office server…', 'پەیوەندی کرا. قاسە ERP لەسەر سێرڤەری نووسینگە دەستپێدەکاتەوە…'],
+    e_changed: ['تغيّرت شهادة هذا الخادم، فلا يمكن التأكد أنه الخادم نفسه. اكتب رمز الاقتران الذي يظهر عليه.', 'This server’s certificate has changed, so it can’t be confirmed as the same server. Type the pairing code it shows.', 'بڕوانامەی ئەم سێرڤەرە گۆڕاوە، بۆیە ناتوانین دڵنیا بین کە هەمان سێرڤەرە. ئەو کۆدی جووتبوونەی لەسەری دەردەکەوێت بنووسە.'],
+    e_gone: ['لم يعد هذا المكتب محفوظاً على هذا الحاسوب. اتصل به برمز الاقتران.', 'This office is no longer remembered on this PC. Connect to it with the pairing code.', 'ئەم نووسینگەیە چیتر لەسەر ئەم کۆمپیوتەرە پاشەکەوت نییە. بە کۆدی جووتبوون پەیوەندی پێوە بکە.'],
+    e_current: ['هذا الحاسوب متصل بهذا المكتب الآن.', 'This PC is connected to this office now.', 'ئەم کۆمپیوتەرە ئێستا بەم نووسینگەیەوە پەیوەستە.']
   };
   const lang = ['ar', 'en', 'ku'].includes(new URLSearchParams(location.search).get('lang')) ? new URLSearchParams(location.search).get('lang') : 'ar';
   const i = lang === 'ar' ? 0 : lang === 'ku' ? 2 : 1;
   const t = (k) => T[k][i];
+  const fill = (k, vars) => Object.keys(vars).reduce((s, v) => s.replace('{' + v + '}', vars[v]), t(k));
   document.documentElement.lang = lang === 'ku' ? 'ckb' : lang;
   document.documentElement.dir = lang === 'en' ? 'ltr' : 'rtl';
   document.title = t('title');
   for (const el of document.querySelectorAll('[data-t]')) el.textContent = t(el.dataset.t);
   const msg = document.getElementById('msg');
   const go = document.getElementById('go');
-  const say = (text, tone) => { msg.textContent = text; msg.className = 'msg' + (tone ? ' ' + tone : ''); };
+  const list = document.getElementById('offices');
+  const pairing = document.getElementById('pairing');
+  const listMsg = document.getElementById('listMsg');
+  // a message under the pairing form, or under the remembered offices (each read out by screen readers)
+  const sayIn = (el, text, tone) => { el.textContent = text; el.className = 'msg' + (tone ? ' ' + tone : ''); };
+  const say = (text, tone) => { sayIn(msg, text, tone); sayIn(listMsg, ''); };
+  const sayList = (text, tone) => {
+    if (document.getElementById('saved').hidden) return say(text, tone);
+    sayIn(listMsg, text, tone);
+    sayIn(msg, '');
+  };
+  // when this PC last used an office, in Latin digits like the rest of the window: 2026-11-17 09:40
+  const when = (iso) => {
+    const d = new Date(iso);
+    if (Number.isNaN(d.getTime())) return '';
+    const two = (n) => String(n).padStart(2, '0');
+    return d.getFullYear() + '-' + two(d.getMonth() + 1) + '-' + two(d.getDate()) + ' ' + two(d.getHours()) + ':' + two(d.getMinutes());
+  };
+  let offices = [];
+  let busy = false;
+  const setBusy = (on) => {
+    busy = on;
+    go.disabled = on;
+    for (const b of list.querySelectorAll('button')) b.disabled = on;
+  };
+  const button = (label, aria, primary, onClick) => {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.textContent = label;
+    b.setAttribute('aria-label', aria);
+    if (primary) b.className = 'primary';
+    b.addEventListener('click', onClick);
+    return b;
+  };
+  // the page gets each office's id, name and kind only: it asks for one by its id, never names an address to trust
+  const show = (items) => {
+    offices = Array.isArray(items) ? items : [];
+    const rows = offices.map((o) => {
+      const li = document.createElement('li');
+      li.className = 'office';
+      const who = document.createElement('div');
+      who.className = 'who';
+      // an address or an office ID reads left to right, also in Arabic and Kurdish
+      const name = document.createElement('bdi');
+      name.className = 'name';
+      name.dir = 'ltr';
+      name.textContent = o.name;
+      const meta = document.createElement('span');
+      meta.className = 'meta';
+      if (o.current) {
+        meta.className = 'meta now';
+        meta.textContent = t('connectedNow');
+      } else {
+        // the date and time stay on one line
+        const d = document.createElement('bdi');
+        d.className = 'when';
+        d.dir = 'ltr';
+        d.textContent = when(o.lastUsed);
+        const [before, after] = t('lastUsed').split('{d}');
+        meta.append(before, d, after);
+      }
+      who.append(name, meta);
+      const acts = document.createElement('div');
+      acts.className = 'acts';
+      if (!o.current) acts.append(button(t('connect'), fill('connectTo', { name: o.name }), true, () => use(o)));
+      acts.append(button(t('forget'), fill('forgetName', { name: o.name }), false, () => forget(o)));
+      li.append(who, acts);
+      return li;
+    });
+    list.replaceChildren(...rows);
+    document.getElementById('saved').hidden = rows.length === 0;
+    // no remembered office: the pairing form is the whole window, as before
+    pairing.classList.toggle('solo', rows.length === 0);
+    if (rows.length === 0) pairing.open = true;
+  };
+  const refresh = async () => {
+    try { show(await window.qasaConnect.offices()); } catch { show([]); }
+  };
+  const use = async (o) => {
+    if (busy) return;
+    setBusy(true);
+    sayList(t('checking'));
+    let result;
+    try { result = await window.qasaConnect.useOffice(o.id); } catch { result = { error: 'unreachable' }; }
+    if (result && result.ok) return sayList(t('back'), 'ok');
+    const error = (result && result.error) || 'unreachable';
+    setBusy(false);
+    if (error === 'busy') return sayList(t('checking'));
+    if (error === 'mismatch') {
+      // the certificate changed: the pairing code is needed again, and the address is already in its box
+      pairing.open = true;
+      say(t('e_changed'), 'bad');
+      document.getElementById('address').value = o.address;
+      const code = document.getElementById('code');
+      code.value = '';
+      code.focus();
+      // the message under the form stays in sight with the code box
+      return msg.scrollIntoView({ block: 'nearest' });
+    }
+    if (error === 'gone') await refresh();
+    sayList(t(T['e_' + error] ? 'e_' + error : 'e_unreachable'), 'bad');
+  };
+  const forget = async (o) => {
+    if (busy) return;
+    let items = null;
+    try { items = await window.qasaConnect.forgetOffice(o.id); } catch { /* the list stays as it was */ }
+    if (!Array.isArray(items)) return;
+    const at = offices.findIndex((x) => x.id === o.id);
+    show(items);
+    sayList(fill('forgotten', { name: o.name }), 'ok');
+    // the focus goes to the next office's first button, or to the address box
+    const rows = list.querySelectorAll('li');
+    const next = rows[Math.min(Math.max(at, 0), rows.length - 1)];
+    const target = next ? next.querySelector('button') : document.getElementById('address');
+    if (target) target.focus();
+  };
   document.getElementById('cancel').addEventListener('click', () => window.qasaConnect.close());
   document.getElementById('form').addEventListener('submit', async (event) => {
     event.preventDefault();
-    go.disabled = true;
+    if (busy) return;
+    setBusy(true);
     say(t('checking'));
     try {
-      const result = await window.qasaConnect.pair(document.getElementById('address').value, document.getElementById('code').value);
+      const result = await window.qasaConnect.pair(document.getElementById('address').value, document.getElementById('code').value, document.getElementById('remember').checked === true);
       if (result && result.ok) return say(t('ok'), 'ok');
       say(t('e_' + ((result && result.error) || 'unreachable')), 'bad');
     } catch {
       say(t('e_unreachable'), 'bad');
     }
-    go.disabled = false;
+    setBusy(false);
   });
   document.getElementById('address').focus();
+  // with remembered offices, the first one's first button has the focus
+  refresh().then(() => {
+    const first = list.querySelector('button');
+    if (!first) return;
+    pairing.open = false;
+    first.focus();
+  });
 })();
 </script>
 </body>

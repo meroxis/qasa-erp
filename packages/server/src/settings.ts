@@ -1,4 +1,4 @@
-import { DEFAULT_AMOUNTS_SHOW, DEFAULT_POSTING_ACCOUNTS, fiscalYear, fiscalYearOf, isAmountsShow, isBusinessType, type AmountsShow, type BusinessType, type Names, type PostingAccounts } from '@qasa/core';
+import { DEFAULT_AMOUNTS_SHOW, DEFAULT_POSTING_ACCOUNTS, fiscalYear, fiscalYearOf, isAmountsShow, isBusinessType, isPosUse, type AmountsShow, type BusinessType, type Names, type PosUse, type PostingAccounts } from '@qasa/core';
 import type { Db } from './db.ts';
 import { audit } from './audit.ts';
 import { insertOrKeep, isMysql, transaction } from './db.ts';
@@ -16,6 +16,12 @@ export interface Settings {
   businessTypes: BusinessType[] | null;
   /** How the screens show amounts: dinar only (the default), dinar and dollar, or dollar and dinar (core dual.ts). */
   amountsShow: AmountsShow;
+  /**
+   * 1.5.2: whether the company uses the point of sale: follow the business type (the default), on or off (core
+   * pos-use.ts). The menu, home page and search follow it; each person also needs the Point of sale role ('pos'),
+   * which the till's API checks (pos.ts).
+   */
+  posUse: PosUse;
 }
 
 /** Where each posting account must sit in the unified chart. */
@@ -63,8 +69,15 @@ export function getSettings(db: Db): Settings {
     fiscalYearStart: readSetting(db, 'fiscal_year_start') ?? '01-01',
     postingAccounts: getPostingAccounts(db),
     businessTypes: businessTypes(db),
-    amountsShow: amountsShow(db)
+    amountsShow: amountsShow(db),
+    posUse: posUse(db)
   };
+}
+
+/** The company's choice about the till; anything unknown (a value from a newer version) follows the business type. */
+function posUse(db: Db): PosUse {
+  const stored = readSetting(db, 'pos_use');
+  return isPosUse(stored) ? stored : 'auto';
 }
 
 /** The company's choice of how amounts show; anything unknown (a value from a newer version) reads as dinar only. */
@@ -88,6 +101,7 @@ function assertPostingAccounts(db: Db, accounts: PostingAccounts): void {
 export function updateSettings(db: Db, patch: Partial<Settings>, user: string): Settings {
   if (patch.postingAccounts) assertPostingAccounts(db, { ...getPostingAccounts(db), ...patch.postingAccounts });
   if (patch.amountsShow !== undefined && !isAmountsShow(patch.amountsShow)) throw invalid([{ code: 'amounts_show_invalid', field: 'amountsShow' }]);
+  if (patch.posUse !== undefined && !isPosUse(patch.posUse)) throw invalid([{ code: 'pos_use_invalid', field: 'posUse' }]);
   transaction(db, () => {
     if (patch.companyName) writeSetting(db, 'company_name', JSON.stringify(patch.companyName));
     if (patch.defaultRateX100 !== undefined) writeSetting(db, 'default_rate_x100', String(patch.defaultRateX100));
@@ -99,6 +113,7 @@ export function updateSettings(db: Db, patch: Partial<Settings>, user: string): 
     if (patch.businessTypes?.includes('market') && !businessTypes(db)?.includes('market')) writeSetting(db, 'default_track_expiry', '1');
     if (patch.businessTypes) writeSetting(db, 'business_types', JSON.stringify([...new Set(patch.businessTypes)]));
     if (patch.amountsShow !== undefined) writeSetting(db, 'amounts_show', patch.amountsShow);
+    if (patch.posUse !== undefined) writeSetting(db, 'pos_use', patch.posUse);
     audit(db, user, 'update', 'settings', null, patch);
   });
   return getSettings(db);

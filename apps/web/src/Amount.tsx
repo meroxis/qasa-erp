@@ -249,9 +249,12 @@ export function Amount({ value, currency = 'IQD', date, inline = false, parens =
   const rate = dual.show === 'iqd' ? null : dual.rate(date);
   const { first, second } = dualText(i18n, money, dual.show, rate, book);
   const wrap = (text: string) => (negative ? `(${text})` : text);
-  if (!second || !rate) return <>{wrap(first)}</>;
   // real dinars and dollars together: each amount kept whole, the line free to wrap at the "+" in a narrow tile
   const parts = first.split(' + ');
+  if (!second || !rate) {
+    return parts.length < 2 ? <>{wrap(first)}</>
+      : <>{parts.map((p, i) => <Fragment key={i}>{i > 0 && ' + '}<span className="dual-part">{wrap(p)}</span></Fragment>)}</>;
+  }
   return (
     <span className={'dual' + (inline ? ' inline' : '')}>
       <span className="dual-first">{parts.map((p, i) => <Fragment key={i}>{i > 0 && ' + '}<span className="dual-part">{wrap(p)}</span></Fragment>)}</span>

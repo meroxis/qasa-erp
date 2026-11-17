@@ -19,6 +19,11 @@ void ({ ...ACTIONS, ...PRO_ACTIONS } satisfies Record<Action, { needs: Permissio
  *   page without them (an accountant, a stock keeper, a viewer); someone who may not (a cashier) gets the page only
  *   when one of these is theirs to do: its figures are not sent to them and every button on it would be refused
  * - `tile: false`: in the menu but not a tile on the home screen
+ * - `till`: the point of sale: shown only when the company uses it (1.5.2, core pos-use.ts: a business that sells at a
+ *   counter, or Settings → Sales and point of sale → Use the point of sale) and to a person with the Point of sale role
+ *   (`permission: 'pos'`, an admin always); the sales role alone does not show it. A shift's X or Z report (pos-shift)
+ *   is not the till's page: whoever the server lets read the shift opens it (the books' people every shift, a cashier
+ *   their own, linked from the end-of-day close too)
  */
 export interface NavItem {
   key: Key;
@@ -34,6 +39,7 @@ export interface NavItem {
   permission?: Permission;
   business?: BusinessType;
   tile?: boolean;
+  till?: boolean;
 }
 /** A group of the menu: its heading, the line icon beside the heading, and its pages in order. */
 export interface NavGroup { group: Key; icon: string; items: NavItem[] }
@@ -52,7 +58,7 @@ export const NAV: NavGroup[] = [
     group: 'gSales',
     icon: 'trend',
     items: [
-      { key: 'pos_title', icon: 'wallet', path: 'pos', match: ['pos', 'pos-shift'], permission: 'sales' },
+      { key: 'pos_title', icon: 'wallet', path: 'pos', match: ['pos'], permission: 'pos', till: true },
       { key: 'qt_title', icon: 'doc', path: 'quotes', match: ['quotes', 'quote', 'new-quote', 'edit-quote'], work: ['quote'] },
       { key: 'invoices', icon: 'invoice', path: 'sales', match: ['sales', 'new-invoice:sale'], work: ['sale'] },
       { key: 'customers', icon: 'contact', path: 'customers', match: ['customers'], work: ['customer'] },
@@ -140,9 +146,10 @@ export const NAV: NavGroup[] = [
 
 /**
  * Who is looking: decides which pages they see. `branchLimited`: limited to some branches; `noBooks`: someone who may
- * not read the books at all, a cashier (1.4). The server says both.
+ * not read the books at all, a cashier (1.4). The server says both. `pos`: whether the company uses the point of sale
+ * (core posShown); left out, it does (as before 1.5.2).
  */
-export interface NavViewer { admin: boolean; permissions: readonly Permission[]; businessTypes: readonly BusinessType[]; branchLimited?: boolean; noBooks?: boolean }
+export interface NavViewer { admin: boolean; permissions: readonly Permission[]; businessTypes: readonly BusinessType[]; branchLimited?: boolean; noBooks?: boolean; pos?: boolean }
 
 /** Whether this person may read the company's own books (the trial balance, final accounts, account statements). */
 export const seesCompanyBooks = (v: Pick<NavViewer, 'admin' | 'branchLimited' | 'noBooks'>): boolean => v.admin || (!v.branchLimited && !v.noBooks);
@@ -154,6 +161,7 @@ export function canSee(item: NavItem, v: NavViewer): boolean {
   if (item.permission && !v.admin && !v.permissions.includes(item.permission)) return false;
   if (item.work && v.noBooks && !v.admin && !mayAny(v.permissions, item.work)) return false;
   if (item.business && !v.businessTypes.includes(item.business)) return false;
+  if (item.till && v.pos === false) return false;
   return true;
 }
 
@@ -195,8 +203,9 @@ export function pageOpen(page: string, arg: string | undefined, v: NavViewer): b
   const action = routeAction(page, arg);
   if (action && !may(v.permissions, action)) return false;
   const owners = NAV.flatMap((g) => g.items).filter((i) => (i.match ?? []).some((m) => m === page || m === `${page}:${arg ?? ''}`));
-  // (a business the company does not do is a matter of Settings → Business type, not of who is signed in)
-  return owners.length === 0 || owners.some((i) => canSee(i, i.business ? { ...v, businessTypes: [i.business] } : v));
+  // (a business the company does not do is a matter of Settings → Business type, not of who is signed in, and a till the
+  // company does not use of Settings → Sales and point of sale: App.tsx says so on the page)
+  return owners.length === 0 || owners.some((i) => canSee(i, { ...v, pos: true, ...(i.business ? { businessTypes: [i.business] } : {}) }));
 }
 
 /** Every page that has a path, once (for favourites and the search). */
@@ -220,17 +229,23 @@ const write = (key: string, value: string) => {
 
 export const FAVOURITES_EVENT = 'qasa-favourites';
 
+/**
+ * The pages pinned before a person pins any: the till, the sales invoices and the brief; without the till where the
+ * company does not use it (1.5.2), the customers in its place.
+ */
+export const defaultFavourites = (pos = true): string[] => (pos ? ['pos_title', 'invoices', 'br_title'] : ['invoices', 'customers', 'br_title']);
+
 /** The pages a person pinned (★), by page key. */
-export function favourites(user: string): string[] {
+export function favourites(user: string, pos = true): string[] {
   try {
     const v = JSON.parse(read(`qasa.fav.${user || 'owner'}`) ?? 'null') as unknown;
     if (Array.isArray(v)) return v.filter((x): x is string => typeof x === 'string');
   } catch { /* fall through */ }
-  return ['pos_title', 'invoices', 'br_title'];
+  return defaultFavourites(pos);
 }
 
-export function toggleFavourite(user: string, key: string): void {
-  const list = favourites(user);
+export function toggleFavourite(user: string, key: string, pos = true): void {
+  const list = favourites(user, pos);
   const next = list.includes(key) ? list.filter((k) => k !== key) : [...list, key];
   write(`qasa.fav.${user || 'owner'}`, JSON.stringify(next));
   window.dispatchEvent(new Event(FAVOURITES_EVENT));
@@ -313,6 +328,14 @@ export function recents(): Recent[] {
   } catch {
     return [];
   }
+}
+/**
+ * The recent list as the search offers it to this person: a page they no longer see (the till where the company does
+ * not use it, 1.5.2, or a page whose permission was taken away) is left out; records stay (their pages check access).
+ */
+export function recentsFor(list: readonly Recent[], v: NavViewer): Recent[] {
+  const paths = new Set(allPages(v).map((p) => p.path));
+  return list.filter((r) => r.kind !== 'page' || paths.has(r.path));
 }
 export function addRecent(r: Recent): void {
   write('qasa.recent', JSON.stringify([r, ...recents().filter((x) => x.path !== r.path)].slice(0, 8)));

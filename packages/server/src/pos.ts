@@ -316,7 +316,7 @@ function isOpener(db: Db, row: ShiftRow, actor: ShiftActor, byIdOnly = false): b
 }
 
 const mayRun = (db: Db, row: ShiftRow, actor: ShiftActor | null) =>
-  !!actor && actor.permissions.includes('sales') && (actor.permissions.includes('admin') || isOpener(db, row, actor));
+  !!actor && actor.permissions.includes('pos') && (actor.permissions.includes('admin') || isOpener(db, row, actor));
 
 function shiftView(db: Db, row: ShiftRow, actor: ShiftActor | null): ShiftView {
   const { sales, cash, count, methods } = salesOf(db, row.id);
@@ -588,14 +588,24 @@ const idParam = z.object({ id });
 const text = (max: number) => z.string().max(max);
 
 /**
- * The point of sale API. Looking needs a signed-in user; opening, selling and closing need the sales permission, and
- * selling or closing a shift is for whoever opened it (or an admin).
+ * The point of sale API. Opening, selling and closing need the Point of sale permission ('pos', 1.5.2: the sales role
+ * alone no longer does; nobody gets it by an update, an admin gives it in Users), and selling or closing a shift is for
+ * whoever opened it (or an admin). The till's own reads (the open shift of this user, the card and wallet accounts it
+ * takes) need 'pos' too. Reading shifts and their reports (the X report of an open shift, the Z report of a closed
+ * one: GET /api/pos/shifts and /api/pos/shifts/:id) stays as it was: whoever keeps or reads the books reads every
+ * shift, anyone else only the shifts they opened (readsShift), so a cashier keeps reading their old shifts.
+ *
+ * The rules are checked before any route runs (routes.ts), for a request from this PC, from a PC on the office network
+ * or through Qasa Relay alike, and for a sale a till kept while offline and sends later (its outbox): sent by someone
+ * without 'pos' it is refused (403), never booked.
  */
 export const posApi: ApiExtension = {
   rules: {
-    'POST /api/pos/shifts': 'sales',
-    'POST /api/pos/shifts/:id/sales': 'sales',
-    'POST /api/pos/shifts/:id/close': 'sales'
+    'POST /api/pos/shifts': 'pos',
+    'POST /api/pos/shifts/:id/sales': 'pos',
+    'POST /api/pos/shifts/:id/close': 'pos',
+    'GET /api/pos/current': 'pos',
+    'GET /api/pos/payment-accounts': 'pos'
     // PUT /api/pos/payment-accounts is not listed: it needs an admin, as every change not listed does
   },
   routes(db, { actorOf }) {

@@ -13,7 +13,8 @@ export const ACTIONS = {
   sale: { needs: 'sales', route: 'POST /api/invoices', body: { kind: 'sale' } },
   customer: { needs: 'sales', route: 'POST /api/parties', body: { type: 'customer' } },
   quote: { needs: 'sales', route: 'POST /api/quotes' },
-  till: { needs: 'sales', route: 'POST /api/pos/shifts' },
+  // 1.5.2: the till is its own permission (the Point of sale role), not the sales role's
+  till: { needs: 'pos', route: 'POST /api/pos/shifts' },
   // purchases
   purchase: { needs: 'purchases', route: 'POST /api/invoices', body: { kind: 'purchase' } },
   supplier: { needs: 'purchases', route: 'POST /api/parties', body: { type: 'supplier' } },

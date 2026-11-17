@@ -172,8 +172,11 @@ describe('printed papers', () => {
     expect(invoiceModel(sale).tender).toEqual({ paid: 125_000, change: 25_000 });
     expect(invoiceModel({ ...sale, tender: undefined } as unknown as InvoiceView).tender).toBeNull();
     expect(src('./industry/PrintDocument.tsx')).toContain("label: plain('pos_paid'), value: money(model.tender.paid)");
-    // the till sends what was handed over with the sale
-    expect(src('./pages/Pos.tsx')).toContain('...(handed ? { tendered: handed.paid } : {})');
+    // the till no longer asks what was handed over, so a new sale sends none; a copy of an older sale's receipt still
+    // prints what the server kept with it
+    const till = src('./pages/Pos.tsx');
+    expect(till).not.toContain('tendered');
+    expect(till).toContain('const handed = invoice.tender ?? null;');
   });
 });
 
@@ -198,6 +201,28 @@ describe('the till', () => {
     const till = src('./pages/Pos.tsx');
     expect(till).toContain('cartShortNote(shortStock(cart)');
     expect(till).toContain("{shortNow && <div className=\"alert warn small\" role=\"status\">{t('pos_cartShort', { i: shortNow })}</div>}");
+  });
+
+  it('has no "Amount paid" field: the Discount stays, alone on its row, with its F8 key, and nothing is worked out as change', () => {
+    const till = src('./pages/Pos.tsx');
+    // the pay panel of the till, from its first field to the end of the till (the receipt below is another thing)
+    const panel = till.slice(till.indexOf('<div className="pos-pay stack">'), till.indexOf('/* ---------- the receipt (80 mm) ---------- */'));
+    expect(panel.length).toBeGreaterThan(500);
+    expect(panel).not.toContain("t('pos_paid')");
+    expect(panel).not.toContain("t('pos_change')");
+    expect(panel).not.toContain('pos-change');
+    expect(till).not.toMatch(/setPaid|cashChange|cashTender/);
+    // the Discount field is still there, reached by F8, and is the only field on its row
+    expect(panel).toContain(`<label className="field" id="pos-discount"><span>{t('pos_discount')} <span className="kbd">F8</span></span>`);
+    expect(panel).not.toMatch(/<div className="grid-2">\s*<label className="field" id="pos-discount">/);
+    expect(till).toContain("else if (e.key === 'F8') { e.preventDefault(); document.getElementById('pos-discount')?.querySelector('input')?.focus(); }");
+    // "Short by" went with the field; "Amount paid" and "Change" stay for older receipts and the invoice page
+    for (const lang of LANGS) {
+      expect(isKey('pos_short')).toBe(false);
+      expect(texts(lang).t('pos_paid')).not.toBe('pos_paid');
+      expect(texts(lang).t('pos_change')).not.toBe('pos_change');
+    }
+    expect(src('./pos.css')).not.toContain('.pos-change');
   });
 });
 

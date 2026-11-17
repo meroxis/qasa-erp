@@ -1,5 +1,5 @@
 import type {
-  AmountsShow, BusinessType, Lang, LicenseInfo, LicenseState, PlanResolution,
+  AmountsShow, BusinessType, PosUse, Lang, LicenseInfo, LicenseState, PlanResolution,
   CurrencyCode, EntryAction, EntryStatus, EntryType, InvoiceDocKind, InvoiceInput, InvoiceKind, InvoiceStatus, Names, Nature, PaymentMode, PostingAccounts, UnitCode
 } from '@qasa/core';
 import { currentBranchHeader } from './industry/branches-api.ts';
@@ -113,6 +113,8 @@ export interface Settings {
   businessTypes: BusinessType[] | null;
   /** How amounts show: dinar only, dinar and dollar, dollar and dinar (Settings → display); older servers leave it out */
   amountsShow?: AmountsShow;
+  /** 1.5.2: whether the company uses the point of sale (core pos-use.ts); older servers leave both out (the till shows) */
+  posUse?: PosUse;
 }
 
 export interface PlanStatus extends PlanResolution {
@@ -439,9 +441,9 @@ export interface InvoiceView extends InvoiceSummary {
   tender?: { paid: number; change: number };
 }
 
-export type Role = 'admin' | 'preparer' | 'checker' | 'approver' | 'sales' | 'purchasing' | 'storekeeper' | 'viewer';
-export const ROLES: Role[] = ['admin', 'preparer', 'checker', 'approver', 'sales', 'purchasing', 'storekeeper', 'viewer'];
-export type Permission = 'admin' | 'entries.prepare' | 'entries.check' | 'entries.approve' | 'sales' | 'purchases' | 'stock';
+export type Role = 'admin' | 'preparer' | 'checker' | 'approver' | 'sales' | 'pos' | 'purchasing' | 'storekeeper' | 'viewer';
+export const ROLES: Role[] = ['admin', 'preparer', 'checker', 'approver', 'sales', 'pos', 'purchasing', 'storekeeper', 'viewer'];
+export type Permission = 'admin' | 'entries.prepare' | 'entries.check' | 'entries.approve' | 'sales' | 'pos' | 'purchases' | 'stock';
 
 export interface Me {
   signInRequired: boolean;

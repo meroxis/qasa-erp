@@ -12,12 +12,12 @@ import { readSetting, writeSetting } from './settings.ts';
  * With sign-in on, every request needs a session: a random token in an HttpOnly cookie, stored here only as a hash.
  */
 
-export type Role = 'admin' | 'preparer' | 'checker' | 'approver' | 'sales' | 'purchasing' | 'storekeeper' | 'viewer';
-export const ROLES: readonly Role[] = ['admin', 'preparer', 'checker', 'approver', 'sales', 'purchasing', 'storekeeper', 'viewer'];
+export type Role = 'admin' | 'preparer' | 'checker' | 'approver' | 'sales' | 'pos' | 'purchasing' | 'storekeeper' | 'viewer';
+export const ROLES: readonly Role[] = ['admin', 'preparer', 'checker', 'approver', 'sales', 'pos', 'purchasing', 'storekeeper', 'viewer'];
 
 /** What a role may change. Every signed-in user may look at the books; changing them needs a permission. */
-export type Permission = 'admin' | 'entries.prepare' | 'entries.check' | 'entries.approve' | 'sales' | 'purchases' | 'stock';
-const ALL: Permission[] = ['admin', 'entries.prepare', 'entries.check', 'entries.approve', 'sales', 'purchases', 'stock'];
+export type Permission = 'admin' | 'entries.prepare' | 'entries.check' | 'entries.approve' | 'sales' | 'pos' | 'purchases' | 'stock';
+const ALL: Permission[] = ['admin', 'entries.prepare', 'entries.check', 'entries.approve', 'sales', 'pos', 'purchases', 'stock'];
 
 const ROLE_PERMISSIONS: Record<Role, Permission[]> = {
   admin: ALL,
@@ -25,6 +25,17 @@ const ROLE_PERMISSIONS: Record<Role, Permission[]> = {
   checker: ['entries.check'], // المدقق
   approver: ['entries.approve'], // المصادق
   sales: ['sales'],
+  /**
+   * Point of sale (1.5.2): the till (opening a shift, selling at it, closing it with its X and Z reports). Given by an
+   * admin per person in Users; nobody gets it by an update, so someone with the sales role alone no longer reaches the
+   * till until an admin ticks it (the owner's decision, 2026-11-17). An admin has it, as every permission.
+   *
+   * It is enough on its own to sell at the till: a till sale is the till's own (pos.ts), so 'pos' without 'sales' sells
+   * there but makes no sales invoice, quote or customer elsewhere. It is not one of the permissions that read the books
+   * (seesBooks below), so a person with 'pos' (with or without 'sales') is a cashier: own shifts and own day close only,
+   * no cost, profit, stock value or books, exactly as the sales role alone.
+   */
+  pos: ['pos'],
   purchasing: ['purchases'],
   storekeeper: ['stock'],
   viewer: []
@@ -34,7 +45,7 @@ const ROLE_PERMISSIONS: Record<Role, Permission[]> = {
  * Who may read the company's books and the reports made from them (1.4: the journal, the trial balance, final
  * accounts, profit in the reports and on the dashboard, what purchases cost): those who manage the company, buy or
  * keep the stock, the accounting roles (they prepare, check and approve the entries) and the viewer, whose role is to
- * read them. Not a cashier (the sales role alone), nor anyone else with none of these.
+ * read them. Not a cashier (the sales role, the Point of sale role, or both), nor anyone else with none of these.
  */
 export const seesBooks = (actor: Pick<Actor, 'permissions' | 'roles'>): boolean =>
   actor.permissions.some((p) => p === 'admin' || p === 'stock' || p === 'purchases' || p.startsWith('entries.')) || actor.roles.includes('viewer');
