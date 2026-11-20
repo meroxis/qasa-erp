@@ -54,9 +54,13 @@ export function forgetTill(): void {
  * Why a sale can't be kept for later, or null: a part on a customer's account (the live credit-limit check), or
  * loyalty points used (the customer's live balance). Both need the server's answer at the till.
  */
-export function offlineRefusal(sale: Pick<SaleInput, 'payments' | 'loyaltyPoints'>): 'pos_offline_on_account' | 'pos_offline_loyalty' | null {
+export function offlineRefusal(sale: Pick<SaleInput, 'payments' | 'loyaltyPoints'> & { vouchers?: readonly unknown[] | undefined; approvals?: readonly unknown[] | undefined }):
+  'pos_offline_on_account' | 'pos_offline_loyalty' | 'pos_offline_voucher' | 'pos_offline_supervisor' | null {
   if ((sale.payments ?? []).some((p) => p.method === 'account')) return 'pos_offline_on_account';
-  return sale.loyaltyPoints ? 'pos_offline_loyalty' : null;
+  if (sale.loyaltyPoints) return 'pos_offline_loyalty';
+  // 2.0: a gift voucher's balance and a supervisor's approval are the server's to check: the till waits for it
+  if (sale.vouchers?.length) return 'pos_offline_voucher';
+  return sale.approvals?.length ? 'pos_offline_supervisor' : null;
 }
 
 export interface TillLine { item: ItemView; qtyMilli: number; unit: UnitCode | null; unitPrice: number }

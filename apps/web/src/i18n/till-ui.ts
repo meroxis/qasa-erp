@@ -235,6 +235,7 @@ export const TILL_UI_TEXT = {
   err_feature_account_party: ['هذا حساب زبون أو مورد', "That is a customer's or supplier's account", 'ئەوە هەژماری کڕیار یان دابینکەرە'],
   err_feature_account_taken: ['ميزة أخرى تُرحِّل إلى هذا الحساب', 'Another feature posts to that account', 'تایبەتمەندییەکی تر تۆماری تێدا دەکات'],
   a_display_paired: ['ربط شاشة زبون', 'Customer screen paired', 'شاشەی کڕیار بەسترا'],
+  a_offline_price_review: ['بيع دون اتصال بسعر قديم — للمراجعة', 'Offline sale at an old price — to review', 'فرۆشتنی بێ هێڵ بە نرخی کۆن — بۆ پێداچوونەوە'],
   e_feature_account: ['حساب ميزة', 'Feature account', 'هەژماری تایبەتمەندی'],
   a_pin_lockout: ['أوقف الموافقات بعد رموز خاطئة', 'Approvals locked after wrong PINs', 'ڕەزامەندییەکان ڕاگیران دوای پینی هەڵە'],
   a_gift_voucher_returned: ['أعاد مبلغاً إلى قسيمة هدية', 'Amount put back on a gift voucher', 'بڕێک گەڕایەوە سەر کوپۆنی دیاری'],

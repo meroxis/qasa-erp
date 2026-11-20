@@ -163,6 +163,32 @@ describe("a supervisor's PIN", () => {
     expect((await get('/api/pos/rules', who.admin!)).json().pinAlert).toBeNull();
   });
 
+  it('counts PINs sent all at once before checking them: a burst is locked after five (reliability review #1)', async () => {
+    const who = await signIn({ las: ['pos'], raz: ['supervisor'] });
+    expect((await put('/api/pos/pin', { pin: '407193' }, who.raz!)).statusCode).toBe(200);
+    const shift = await openShift(who.las!);
+    const guesses = Array.from({ length: 40 }, (_, i) => String(500000 + i)).concat('407193');
+    const answers = await Promise.all(guesses.map((pin) => post('/api/pos/approve', { shiftId: shift.id, action: 'discount', pin }, who.las!)));
+    expect(answers.filter((r) => r.json().details?.[0]?.code === 'pin_wrong').length).toBeLessThanOrEqual(5);
+    expect(answers.at(-1)!.json().error).toBe('pin_locked');
+  });
+
+  it('keeps a sale a cut-off till sold below a price raised after it, for review; refuses one sold after the raise (reliability review #3)', async () => {
+    expect((await put('/api/pos/rules', { supervisor: { lineDelete: false, void: false, price: true, discountPct: 0, noSale: false, refund: false, creditOver: false } })).statusCode).toBe(200);
+    const shift = await openShift();
+    const before = new Date(Date.now() - 60_000).toISOString();
+    const item = (await get(`/api/items/${teaId}`)).json();
+    expect((await put(`/api/items/${teaId}`, { ...item, salePrice: 3_000 })).statusCode).toBe(200);
+    const after = new Date().toISOString();
+    const kept = await post(`/api/pos/shifts/${shift.id}/sales`, { currency: 'IQD', discount: 0, lines: [tea(1, 2_750)], offline: { reference: 'OFF-C1-0001', soldAt: before, soldOn: before.slice(0, 10) } },
+      { ...owner, 'x-qasa-idempotency': '7d0c2f9a-1b2c-4d3e-8f40-5a6b7c8d9e11' });
+    expect(kept.statusCode, kept.body).toBe(201);
+    expect(db.prepare("SELECT COUNT(*) AS n FROM audit_log WHERE action = 'offline_price_review'").get()).toMatchObject({ n: 1 });
+    const late = await post(`/api/pos/shifts/${shift.id}/sales`, { currency: 'IQD', discount: 0, lines: [tea(1, 2_750)], offline: { reference: 'OFF-C1-0002', soldAt: after, soldOn: after.slice(0, 10) } },
+      { ...owner, 'x-qasa-idempotency': '7d0c2f9a-1b2c-4d3e-8f40-5a6b7c8d9e12' });
+    expect(late.json()).toMatchObject({ details: [{ code: 'pos_offline_supervisor' }] });
+  });
+
   it('locks every till when many wrong PINs come from different cashiers', async () => {
     const people: Record<string, string[]> = { raz: ['supervisor'] };
     for (let i = 0; i < 5; i++) people[`cash${'abcde'[i]}`] = ['pos'];

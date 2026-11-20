@@ -560,12 +560,14 @@ export function sell(db: Db, shiftId: string, input: SaleInput, actor: Actor): {
   if (errors.length) throw invalid(errors);
   const gross = input.lines.reduce((sum, l) => sum + Math.round(((l.unitQtyMilli ?? l.qtyMilli ?? 1000) * l.unitPrice) / 1000), 0);
   const needs: ('discount' | 'price')[] = [];
+  const reviewOffline: string[] = [];
   if (rules.supervisor.discountPct > 0 && input.discount * 100 > rules.supervisor.discountPct * gross) needs.push('discount');
   if (rules.supervisor.price) {
     // a line below the item's own price, in whatever unit it is typed (the item's base unit, or another unit at that
     // unit's own price or the base price × its factor); same currency; the open-price item is open
     const price = db.prepare('SELECT sale_price, sale_currency, unit FROM items WHERE id = ?');
     const unitPrice = db.prepare('SELECT factor_milli, sale_price FROM item_units WHERE item_id = ? AND unit = ?');
+    const it_updated = (id: string) => (db.prepare('SELECT updated_at FROM items WHERE id = ?').get(id) as { updated_at: string | null } | undefined)?.updated_at ?? null;
     const lower = input.lines.some((l) => {
       if (l.itemId === rules.misc.itemId) return false;
       const it = price.get(l.itemId) as { sale_price: number | null; sale_currency: string; unit: string } | undefined;
@@ -576,7 +578,11 @@ export function sell(db: Db, shiftId: string, input: SaleInput, actor: Actor): {
         if (!u) return false; // an unknown unit is refused when the lines are read
         expected = u.sale_price !== null ? Number(u.sale_price) : Math.round((Number(it.sale_price) * Number(u.factor_milli)) / 1000);
       }
-      return l.unitPrice < expected;
+      if (l.unitPrice >= expected) return false;
+      // a sale kept by a till that was cut off, below a price raised after it was sold: the till had the old price.
+      // Taken (it can't wait for a supervisor) and written to the audit log for review (reliability review #3)
+      if (offline && Date.parse(it_updated(l.itemId) ?? '') > Date.parse(offline.soldAt)) { reviewOffline.push(l.itemId); return false; }
+      return true;
     });
     if (lower) needs.push('price');
   }
@@ -676,6 +682,7 @@ export function sell(db: Db, shiftId: string, input: SaleInput, actor: Actor): {
       audit(db, actor.name, 'offline_sale', 'invoice', posted.id, { reference: offline.reference, soldAt, number: posted.number });
     }
     if (rounding) audit(db, actor.name, 'cash_rounding', 'invoice', posted.id, { rounding, number: posted.number });
+    if (reviewOffline.length) audit(db, actor.name, 'offline_price_review', 'invoice', posted.id, { items: reviewOffline, number: posted.number });
     return { invoiceId: posted.id, rounding };
   });
   return { invoice: getInvoice(db, invoiceId, userBranchLists(db, actor)), shift: getShift(db, shiftId, actor), rounding: rounded };
