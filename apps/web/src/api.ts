@@ -111,6 +111,10 @@ export interface Settings {
   postingAccounts: PostingAccounts;
   /** What the company does; null until chosen (the app asks at the start). */
   businessTypes: BusinessType[] | null;
+  /** 1.7: the ONE type it mainly does (null until chosen); older servers leave it out, and the list is all there is */
+  businessType?: BusinessType | null;
+  /** 1.7: what it also does (at most two, more only when kept from before 1.7); older servers leave it out */
+  businessTypesExtra?: BusinessType[];
   /** How amounts show: dinar only, dinar and dollar, dollar and dinar (Settings → display); older servers leave it out */
   amountsShow?: AmountsShow;
   /** 1.5.2: whether the company uses the point of sale (core pos-use.ts); older servers leave both out (the till shows) */

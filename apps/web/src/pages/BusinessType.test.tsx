@@ -33,13 +33,13 @@ describe('the first-start “What does your company do?” dialog', () => {
     const en = makeI18n('en', 'western', () => {}, () => {});
     const ar = makeI18n('ar', 'western', () => {}, () => {});
     expect(html.indexOf('role="group" aria-label="' + ar.t('language') + '"')).toBeGreaterThan(-1);
-    expect(html.indexOf('عربي')).toBeLessThan(html.indexOf('<h2>'));
+    expect(html.indexOf('عربي')).toBeLessThan(html.indexOf('<h2'));
     expect(html).toContain('lang="en" aria-pressed="false">English<');
     expect(html).toContain('aria-pressed="true">عربي<');
     expect(html).toContain('>کوردی<');
     // in English the dialog is in English and English is the pressed one
     const inEnglish = wrap(<BusinessTypeChooser first />, 'en');
-    expect(inEnglish).toContain(`<h2>${en.t('bizWelcome')}</h2>`);
+    expect(inEnglish).toContain(`>${en.t('bizWelcome')}</h2>`);
     expect(inEnglish).toContain('lang="en" aria-pressed="true">English<');
   });
 

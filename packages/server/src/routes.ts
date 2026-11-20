@@ -407,6 +407,9 @@ export function apiRoutes(db: Db, options: { demo?: boolean; extensions?: readon
         yearResult: z.string().max(12).optional()
       }).optional(),
       businessTypes: z.array(z.enum(BUSINESS_TYPES)).min(1).max(BUSINESS_TYPES.length).optional(),
+      // 1.7: one main type and what the company also does (settings.ts checks the extras against what it had)
+      businessType: z.enum(BUSINESS_TYPES).optional(),
+      businessTypesExtra: z.array(z.enum(BUSINESS_TYPES)).max(BUSINESS_TYPES.length).optional(),
       amountsShow: z.enum(AMOUNTS_SHOW).optional(),
       posUse: z.enum(POS_USE).optional(),
       // the till's quick buttons (an admin's, as every change here): item ids, then checked against the items on sale
@@ -414,6 +417,8 @@ export function apiRoutes(db: Db, options: { demo?: boolean; extensions?: readon
       posBigPictures: z.enum(POS_BIG_PICTURES).optional()
     }), req.body);
     const { postingAccounts, ...rest } = withoutUndefined(body);
+    // the old list and the 1.7 fields are two ways to say the same thing: one at a time
+    if (body.businessTypes && (body.businessType || body.businessTypesExtra)) throw invalid([{ code: 'business_type_one_way', field: 'businessTypes' }]);
     return updateSettings(db, { ...rest, ...(postingAccounts ? { postingAccounts: { ...getSettings(db).postingAccounts, ...withoutUndefined(postingAccounts) } } : {}) }, userOf(req));
   });
   // year-end closing: every year's state; closing and reopening need an admin (the default for changes)
