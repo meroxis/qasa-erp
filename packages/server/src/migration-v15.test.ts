@@ -103,7 +103,7 @@ describe('version 15 on a server database', () => {
     expect(ran.filter((s) => s.startsWith('ALTER TABLE'))).toEqual(['ALTER TABLE entries ADD COLUMN revision INT NOT NULL DEFAULT 0']);
     expect(ran.filter((s) => s.startsWith('CREATE TRIGGER entry_images_'))).toHaveLength(2);
     // nothing else is made again
-    expect(ran.filter((s) => s.startsWith('CREATE TABLE ') && !s.startsWith('CREATE TABLE entry_images') && !s.startsWith('CREATE TABLE fuel_') && !s.includes('schema_version'))).toEqual([]);
+    expect(ran.filter((s) => s.startsWith('CREATE TABLE ') && !s.startsWith('CREATE TABLE entry_images') && !s.startsWith('CREATE TABLE fuel_') && !s.startsWith('CREATE TABLE consignment_') && !s.includes('schema_version'))).toEqual([]);
   });
 
   it('adds the revision once, last in entries as on a company file, and skips it when an upgrade cut off half way made it', () => {
