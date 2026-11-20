@@ -186,11 +186,14 @@ function runRule(rule: OfferRule, slots: Slot[], ctx: OfferContext, out: OfferAl
       if (!given) break;
       const bought = take(dearest(own), buy, used);
       if (!bought) break;
-      // what is given, at its share of the line, less the percentage
-      const discounts = given.map((p) => roundHalfUp((portion(p.slot, p.q) * pct) / 100));
-      // (portion() reads `taken`, so the given goods are booked before the bought ones)
-      total += commit(given, discounts, rule.id, out);
-      total += commit(bought, bought.map(() => 0), rule.id, out);
+      // what is given, at its share of the line, less the percentage …
+      const parts = [...given, ...bought];
+      const shares = sharesOf(parts);
+      const discount = given.reduce((sum, _p, i) => sum + roundHalfUp((shares[i]! * pct) / 100), 0);
+      // … spread over the goods bought and given by their value (2.0, accounting review #4): the offer is for the set,
+      // so a customer who brings back what they bought gets back what it really cost them, not its full price while
+      // keeping the free goods for nothing
+      total += commit(parts, allocateDiscount(shares, discount), rule.id, out);
     }
     return total;
   }
@@ -266,7 +269,13 @@ export function applyOffers(lines: readonly OfferLine[], rules: readonly OfferRu
   }
   const byLine: Record<number, number> = {};
   for (const a of allocations) byLine[a.lineNo] = (byLine[a.lineNo] ?? 0) + a.discount;
-  return { allocations, byLine, offers, total: offers.reduce((s, o) => s + o.discount, 0) };
+  // one allocation per offer and line (a set's bought and given goods on the same line are one)
+  const merged: OfferAllocation[] = [];
+  for (const a of allocations) {
+    const m = merged.find((x) => x.offerId === a.offerId && x.lineNo === a.lineNo);
+    if (m) { m.qtyMilli += a.qtyMilli; m.discount += a.discount; } else merged.push({ ...a });
+  }
+  return { allocations: merged, byLine, offers, total: offers.reduce((s, o) => s + o.discount, 0) };
 }
 
 /** Each line's offer discount, summed per line and offer (what a sale keeps: invoice_offer_lines). */

@@ -21,7 +21,9 @@ describe('buy X get Y', () => {
     const rule = { ...base, items: [], categories: ['drinks'] };
     const r = applyOffers([line(1, 'cola', 2000, 1500, 'drinks'), line(2, 'water', 1000, 500, 'drinks')], [rule], ctx);
     expect(r.total).toBe(500);
-    expect(r.byLine[2]).toBe(500);
+    // the free water's 500 is spread over the set by value (2.0): the colas bought carry most of it
+    expect(r.byLine[1]! + r.byLine[2]!).toBe(500);
+    expect(r.byLine[1]).toBeGreaterThan(r.byLine[2]!);
   });
   it('gives other goods at a percentage, and stops at the most per sale', () => {
     const rule = { ...base, getItems: ['chips'], getPercent: 50, buyMilli: 1000, maxPerSale: 2 };

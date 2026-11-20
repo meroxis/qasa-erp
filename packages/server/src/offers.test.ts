@@ -134,6 +134,22 @@ describe('offers on a sale invoice', () => {
   });
 });
 
+describe('a free item with another (accounting review #4)', () => {
+  it('spreads what is given over the set, so returning only what was bought gives back what it cost, not its full price', async () => {
+    await licensed();
+    // a can bought gives a bag of chips free
+    await offer({ code: 'C1F', items: [colaId], getItems: [chipsId], buyMilli: 1000, getMilli: 1000 });
+    const draft = await sale([colas(1), { itemId: chipsId, qtyMilli: 1000, unitPrice: 800 }]);
+    const posted = await post(`/api/invoices/${draft.json().id}/post`);
+    expect(posted.json()).toMatchObject({ total: 1_000, offerDiscount: 800 });
+    // the 800 off is on both lines by value: 1,000 and 800 → 445 and 355
+    const ret = await post(`/api/invoices/${posted.json().id}/returns`, { date: TODAY, payment: 'cash', cashAccountCode: '1811', lines: [{ lineNo: 1, qtyMilli: 1000 }] });
+    expect(ret.statusCode, ret.body).toBe(201);
+    expect(ret.json()).toMatchObject({ subtotal: 1_000, discount: 445, total: 555 });
+    // the chips kept are paid for (445), never free with the can given back
+  });
+});
+
 describe('offers at the till', () => {
   it('are in the till\'s list and preview, and the sale is paid at the server\'s figure', async () => {
     await licensed();

@@ -54,7 +54,7 @@ describe('offers on the screens', () => {
       offers: { result, rules: [rule] }
     });
     expect(receipt).toMatchObject({ subtotal: 3_000, discount: 1_100, offerDiscount: 1_000, total: 1_900 });
-    expect(receipt.offers).toEqual([{ offerId: 'o1', code: 'B2G1', names: rule.names, discount: 1_000, lines: [{ lineNo: 1, qtyMilli: 1000, discount: 1_000 }] }]);
+    expect(receipt.offers).toEqual([{ offerId: 'o1', code: 'B2G1', names: rule.names, discount: 1_000, lines: [{ lineNo: 1, qtyMilli: 3000, discount: 1_000 }] }]);
     expect(receipt.lines[0]!.offerDiscount).toBe(1_000);
   });
 });
