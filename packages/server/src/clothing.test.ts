@@ -154,12 +154,16 @@ describe('clothing models', () => {
     expect(sold.statusCode, sold.body).toBe(201);
     const sale = sold.json().invoice;
     // M is too small: XL instead (28,000), 3,000 more to pay
-    const ex = await call('POST', `/api/clothing/shifts/${shift.id}/exchange`, {
-      invoiceId: sale.id, back: [{ lineNo: 1, qtyMilli: 1_000 }],
-      sale: { discount: 0, lines: [{ itemId: v('POLO-XL-BLK').itemId, qtyMilli: 1_000, unitPrice: 28_000 }] }
-    });
+    const exBody = { invoiceId: sale.id, back: [{ lineNo: 1, qtyMilli: 1_000 }], sale: { discount: 0, lines: [{ itemId: v('POLO-XL-BLK').itemId, qtyMilli: 1_000, unitPrice: 28_000 }] } };
+    const once = { ...as, 'x-qasa-idempotency': '0b6e3f1a-2c4d-4e5f-8a9b-0c1d2e3f4a51' };
+    const ex = await call('POST', `/api/clothing/shifts/${shift.id}/exchange`, exBody, once);
     expect(ex.statusCode, ex.body).toBe(201);
     expect(ex.json().difference).toBe(3_000);
+    // sent again with its key (the answer was lost): the same exchange back, nothing returned or sold twice (reliability review #6)
+    const again = await call('POST', `/api/clothing/shifts/${shift.id}/exchange`, exBody, once);
+    expect(again.statusCode, again.body).toBe(201);
+    expect(again.headers['x-qasa-idempotent-replay']).toBe('1');
+    expect(again.json()).toEqual(ex.json());
     const after = (await call('GET', `/api/pos/shifts/${shift.id}`)).json();
     // opening 100,000 + 25,000 + 28,000 − 25,000 refunded
     expect(after.expected.IQD).toBe(128_000);

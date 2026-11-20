@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import { onceOnly } from './idempotency.ts';
 import { z } from 'zod';
 import { invoiceTotals, isLang, todayIso, UNIT_CODES, type Lang, type Names, type UnitCode } from '@qasa/core';
 import type { Db } from './db.ts';
@@ -493,7 +494,13 @@ export const deliveryApi: ApiExtension = {
       },
       {
         method: 'POST', path: '/api/delivery/orders',
-        handler: async (req, reply) => { reply.status(201).send(createDeliveryOrder(db, parse(orderBody, req.body), actor(req))); return undefined; }
+        handler: async (req, reply) => {
+          const who = actor(req);
+          const body = parse(orderBody, req.body);
+          reply.status(201).send(onceOnly(db, req, reply, who, 'POST /api/delivery/orders',
+            () => { const made = createDeliveryOrder(db, body, who); return { id: made.id, result: made }; }, (o) => getDeliveryOrder(db, o)));
+          return undefined;
+        }
       },
       { method: 'PUT', path: '/api/delivery/orders/:id', handler: async (req) => updateDeliveryOrder(db, parse(idParam, req.params).id, parse(orderBody, req.body), actor(req)) },
       {

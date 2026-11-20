@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import { onceOnly } from './idempotency.ts';
 import { z } from 'zod';
 import {
   cleanSize, cleanSizes, COLOR_CODE, gridOrder, internalBarcode, isIsoDate, isUnit, MAX_MODEL_COLORS, MAX_MODEL_SIZES, MAX_MODEL_VARIANTS, sellThroughBp,
@@ -473,6 +474,16 @@ export interface ExchangeInput {
  * the same shift, in one go. The drawer gives back the difference, or takes it: its expected cash is the sale's cash
  * less the refund. Both are documents of their own (a return and a sale), each in the shift's report.
  */
+/** An exchange already made, found again by its return (the audit row keeps the sale it made): for a retried request. */
+function exchangeOf(db: Db, returnId: string): { returnId: string; saleId: string | null; difference: number } {
+  const rows = db.prepare("SELECT details FROM audit_log WHERE action = 'exchange' AND entity = 'invoice' AND details LIKE ? ORDER BY id DESC LIMIT 5")
+    .all(`%${returnId}%`) as { details: string | null }[];
+  const made = rows.map((r) => JSON.parse(r.details ?? '{}') as { returnId?: string; saleId?: string | null }).find((d) => d.returnId === returnId);
+  const total = (id: string | null | undefined) => id ? Number((db.prepare('SELECT total FROM invoices WHERE id = ?').get(id) as { total: number } | undefined)?.total ?? 0) : 0;
+  const saleId = made?.saleId ?? null;
+  return { returnId, saleId, difference: total(saleId) - total(returnId) };
+}
+
 export function exchange(db: Db, shiftId: string, input: ExchangeInput, actor: Actor): { returnId: string; saleId: string | null; difference: number } {
   requirePlan(db);
   // the cashier's own open shift (or one an admin runs), as for a sale: a refund out of another cashier's drawer is refused
@@ -692,7 +703,11 @@ export const clothingApi: ApiExtension = {
       {
         method: 'POST', path: '/api/clothing/shifts/:id/exchange',
         handler: async (req, reply) => {
-          reply.status(201).send(exchange(db, parse(idParam, req.params).id, parse(exchangeBody, req.body) as ExchangeInput, actor(req)));
+          const who = actor(req);
+          const shiftId = parse(idParam, req.params).id;
+          const body = parse(exchangeBody, req.body) as ExchangeInput;
+          reply.status(201).send(onceOnly(db, req, reply, who, 'POST /api/clothing/shifts/:id/exchange',
+            () => { const made = exchange(db, shiftId, body, who); return { id: made.returnId, result: made }; }, (returnId) => exchangeOf(db, returnId)));
           return undefined;
         }
       },

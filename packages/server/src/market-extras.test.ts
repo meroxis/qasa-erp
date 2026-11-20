@@ -92,7 +92,12 @@ describe('delivery orders', () => {
     await stockIn(milkId, 10, 1_000);
     const cash = driverSafe();
     const driver = await ok('POST', '/api/delivery/drivers', { name: 'Hemin', phone: '07701112233', cashAccount: cash });
-    const created = await ok('POST', '/api/delivery/orders', order());
+    const keyed = { ...headers, 'x-qasa-idempotency': '5f1c2d3e-4a5b-4c6d-8e7f-9a0b1c2d3e41' };
+    const created = (await call('POST', '/api/delivery/orders', order(), keyed)).json();
+    // the same order sent again with its key: the first one back, not a second order (reliability review #6)
+    const twice = await call('POST', '/api/delivery/orders', order(), keyed);
+    expect(twice.headers['x-qasa-idempotent-replay']).toBe('1');
+    expect(twice.json().id).toBe(created.id);
     expect(created).toMatchObject({ status: 'new', number: 'DLV-2026-0001', subtotal: 6_000, fee: 2_000, total: 8_000, next: ['preparing', 'out', 'cancelled'] });
     // nothing in the books or the stock yet
     expect(stockQty(milkId)).toBe(10_000);
@@ -244,10 +249,17 @@ describe('daily-delivery suppliers', () => {
   it('lists the usual items with yesterday’s quantities, and posts today’s purchase and the returns of what did not sell', async () => {
     await ok('PUT', `/api/daily-suppliers/${supplierId}/items`, { items: [{ itemId: milkId, unitCost: 1_000 }, { itemId: breadId, unitCost: 150 }] });
     vi.setSystemTime(new Date('2026-11-19T07:00:00Z'));
-    await ok('POST', '/api/daily-suppliers/receipts', {
+    const receipt = {
       partyId: supplierId, date: '2026-11-19', warehouseId,
       lines: [{ itemId: milkId, receivedMilli: 20_000, returnedMilli: 0, unitCost: 1_000 }, { itemId: breadId, receivedMilli: 100_000, returnedMilli: 0, unitCost: 150 }]
-    });
+    };
+    const keyed = { ...headers, 'x-qasa-idempotency': '5f1c2d3e-4a5b-4c6d-8e7f-9a0b1c2d3e42' };
+    const first = await call('POST', '/api/daily-suppliers/receipts', receipt, keyed);
+    expect(first.statusCode, first.body).toBe(201);
+    // sent again with its key: the same receipt, the milk and bread taken in once (reliability review #6)
+    const again = await call('POST', '/api/daily-suppliers/receipts', receipt, keyed);
+    expect(again.headers['x-qasa-idempotent-replay']).toBe('1');
+    expect(again.json().id).toBe(first.json().id);
     vi.setSystemTime(new Date('2026-11-20T07:00:00Z'));
     const sheet = await ok('GET', `/api/daily-suppliers/${supplierId}/sheet?date=2026-11-20`);
     expect(sheet.balance).toBe(35_000);

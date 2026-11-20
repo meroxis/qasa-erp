@@ -33,7 +33,13 @@ const back = (invoiceId: string, qty: number, payment: 'cash' | 'credit' = 'cash
 describe('a sale a gift voucher paid', () => {
   it('expects no cash for it, shows it as a voucher, and a return puts it back on the voucher, never in cash', async () => {
     const shift = await openShift();
-    const v = await ok('POST', `/api/pos/shifts/${shift.id}/gift-vouchers`, { amount: 10_000 });
+    const keyed = { ...h, 'x-qasa-idempotency': '5f1c2d3e-4a5b-4c6d-8e7f-9a0b1c2d3e44' };
+    const sell = () => app.inject({ method: 'POST', url: `/api/pos/shifts/${shift.id}/gift-vouchers`, headers: keyed, payload: { amount: 10_000 } });
+    const v = (await sell()).json();
+    // sent again with its key: the same voucher, its cash taken once (reliability review #6)
+    const again = await sell();
+    expect(again.headers['x-qasa-idempotent-replay']).toBe('1');
+    expect(again.json().code).toBe(v.code);
     const sale = await ok('POST', `/api/pos/shifts/${shift.id}/sales`, { currency: 'IQD', discount: 0, lines: [tea(2)], vouchers: [{ code: v.code, amount: 5_500 }] });
     // the drawer holds the voucher's 10,000 only: the sale brought no cash
     expect(sale.shift.expected.IQD).toBe(10_000);

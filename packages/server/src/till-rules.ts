@@ -1,4 +1,5 @@
 import { createHash, randomBytes, randomInt, randomUUID } from 'node:crypto';
+import { onceOnly } from './idempotency.ts';
 import { z } from 'zod';
 import { isCashRounding, todayIso } from '@qasa/core';
 import type { Db } from './db.ts';
@@ -13,7 +14,7 @@ import { getShift } from './pos.ts';
 import { userBranchLists } from './branches.ts';
 import { imageMime, fromBase64, MAX_IMAGE_BYTES } from './media.ts';
 import { getPrintProfile } from './print-profile.ts';
-import { cancelGiftVoucher, findGiftVoucher, giftReport, sellGiftVoucher, writeOffExpired } from './gift-vouchers.ts';
+import { cancelGiftVoucher, findGiftVoucher, getGiftVoucher, giftReport, sellGiftVoucher, writeOffExpired } from './gift-vouchers.ts';
 import {
   APPROVAL_ACTIONS, APPROVAL_MS, maySellMisc, maySupervise, TILL_ONLY_ACTIONS, tillRules, type ApprovalAction, type TillRules
 } from './till-settings.ts';
@@ -406,7 +407,9 @@ export const tillRulesApi: ApiExtension = {
           if (shift.status !== 'open') throw conflict('pos_shift_closed');
           if (!shift.actions.includes('sell')) throw new AppError(403, 'forbidden', { need: 'shift_owner' });
           const body = parse(z.object({ amount: z.number().int().positive(), expiresOn: z.string().max(10).optional() }), req.body);
-          reply.status(201).send(transaction(db, () => sellGiftVoucher(db, { id: shift.id, cashAccount: shift.cashAccountCode }, body, who)));
+          reply.status(201).send(onceOnly(db, req, reply, who, 'POST /api/pos/shifts/:id/gift-vouchers',
+            () => { const v = transaction(db, () => sellGiftVoucher(db, { id: shift.id, cashAccount: shift.cashAccountCode }, body, who)); return { id: v.id, result: v }; },
+            (v) => getGiftVoucher(db, v)));
           return undefined;
         }
       },

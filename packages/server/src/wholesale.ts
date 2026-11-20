@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import { onceOnly } from './idempotency.ts';
 import { z } from 'zod';
 import { invoiceTotals, isIsoDate, todayIso, toBase, type CurrencyCode, type Names } from '@qasa/core';
 import type { Db } from './db.ts';
@@ -1045,7 +1046,11 @@ export const wholesaleApi: ApiExtension = {
         method: 'POST', path: '/api/wholesale/collections',
         handler: async (req, reply) => {
           const body = parse(z.object({ repId: id.optional(), partyId: id, date: isoDate, currency, rateX100: rate, amount: money, notes: z.string().max(300).optional() }).strict(), req.body);
-          reply.status(201).send(collect(db, body, actor(req)));
+          const who = actor(req);
+          reply.status(201).send(onceOnly(db, req, reply, who, 'POST /api/wholesale/collections', () => { const made = collect(db, body, who); return { id: made.id, result: made }; }, (c) => {
+            const rep = db.prepare('SELECT rep_id FROM ws_collections WHERE id = ?').get(c) as { rep_id: string };
+            return listCollections(db, { repId: rep.rep_id }, who).find((x) => x.id === c)!;
+          }));
           return undefined;
         }
       },

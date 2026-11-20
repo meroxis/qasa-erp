@@ -204,7 +204,13 @@ describe('wholesale and distribution', () => {
       kind: 'sale', date: '2026-11-19', partyId: shopA, warehouseId: mainId, currency: 'IQD', rateX100: 100, payment: 'credit', discount: 0, lines: [{ itemId: teaId, qtyMilli: 20_000, unitPrice: 2_000 }]
     });
     await ok(admin, 'POST', `/api/invoices/${sale.id}/post`, {});
-    const c = await ok(razH, 'POST', '/api/wholesale/collections', { partyId: shopA, date: '2026-11-20', currency: 'IQD', rateX100: 100, amount: 25_000 });
+    const keyed = { ...razH, 'x-qasa-idempotency': '5f1c2d3e-4a5b-4c6d-8e7f-9a0b1c2d3e43' };
+    const coll = { partyId: shopA, date: '2026-11-20', currency: 'IQD', rateX100: 100, amount: 25_000 };
+    const c = (await call(keyed, 'POST', '/api/wholesale/collections', coll)).json();
+    // the rep's phone sends it again with its key: one collection, the cash counted once (reliability review #6)
+    const again = await call(keyed, 'POST', '/api/wholesale/collections', coll);
+    expect(again.headers['x-qasa-idempotent-replay']).toBe('1');
+    expect(again.json()).toEqual(c);
     expect(c).toMatchObject({ number: 'CL-2026-00001', state: 'approved', repId: razId, amount: 25_000 });
     expect(getEntry(db, c.entryId).lines.map((l) => [l.accountCode, l.debit, l.credit])).toEqual([['1812', 25_000, 0], [expect.any(String), 0, 25_000]]);
     expect(balanceOf('1812')).toBe(25_000);

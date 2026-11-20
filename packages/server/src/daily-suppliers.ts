@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import { onceOnly } from './idempotency.ts';
 import { z } from 'zod';
 import { isIsoDate, todayIso, type Names, type UnitCode } from '@qasa/core';
 import type { Db } from './db.ts';
@@ -239,7 +240,9 @@ export const dailySuppliersApi: ApiExtension = {
             partyId: id, date: day, warehouseId: id, notes: z.string().max(500).optional(),
             lines: z.array(z.object({ itemId: id, receivedMilli: qty, returnedMilli: qty, unitCost: z.number().int().min(0).max(1e12).optional() })).max(100)
           }), req.body);
-          reply.status(201).send(saveDailyReceipt(db, body, actor(req)));
+          const who = actor(req);
+          reply.status(201).send(onceOnly(db, req, reply, who, 'POST /api/daily-suppliers/receipts',
+            () => { const made = saveDailyReceipt(db, body, who); return { id: made.id, result: made }; }, (r) => getDailyReceipt(db, r)));
           return undefined;
         }
       }
