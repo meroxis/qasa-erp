@@ -1,4 +1,5 @@
 import type { CurrencyCode, UnitCode } from '@qasa/core';
+import { setScaleItemDigits } from '@qasa/core';
 
 /**
  * The till on this PC (2.0, supermarkets): which named till it is, the baskets held on it, the customer screen it
@@ -90,6 +91,15 @@ export const scalePrefixesKept = (): string[] => {
   try { const v = JSON.parse(read(SCALE_KEY) ?? '[]') as unknown; return Array.isArray(v) ? v.filter((x): x is string => typeof x === 'string') : []; } catch { return []; }
 };
 export const keepScalePrefixes = (list: string[]): void => write(SCALE_KEY, JSON.stringify(list));
+/** 2.0.0: the scale label layout too (4 or 5 digits for the item), kept for the offline till and set for the label reader */
+export function keepScaleDigits(n: 4 | 5 | undefined): void {
+  const digits = n === 4 ? 4 : 5;
+  write(`${SCALE_KEY}.digits`, String(digits));
+  setScaleItemDigits(digits);
+}
+export function applyKeptScaleDigits(): void {
+  setScaleItemDigits(read(`${SCALE_KEY}.digits`) === '4' ? 4 : 5);
+}
 
 /* ---------- the customer screen ---------- */
 

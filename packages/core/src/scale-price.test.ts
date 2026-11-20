@@ -28,3 +28,20 @@ describe('scale labels that carry the price', () => {
     expect(cleanScalePrefixes(['22', '22', '2x', '31', 5, '29'])).toEqual(['22', '29']);
   });
 });
+
+describe('the scale label layout (2.0.0)', () => {
+  it('reads 4 digits for the item and 6 for the value when the scale is set that way', async () => {
+    const { parseScaleBarcode, parseScaleLabel, setScaleItemDigits } = await import('./scale-label.ts');
+    // 2 1 0 0 1 7 | 1 2 3 4 5 6 | check
+    const first12 = '210017123456';
+    let sum = 0;
+    for (let i = 0; i < 12; i++) sum += Number(first12[i]) * (i % 2 === 0 ? 1 : 3);
+    const code = first12 + String((10 - (sum % 10)) % 10);
+    expect(parseScaleBarcode(code, 4)).toEqual({ prefix: '210017', grams: 123_456 });
+    expect(parseScaleBarcode(code, 5)).toEqual({ prefix: '2100171', grams: 23_456 });
+    expect(parseScaleLabel(code, ['21'], 4)).toEqual({ prefix: '210017', price: 123_456 });
+    setScaleItemDigits(4);
+    expect(parseScaleBarcode(code)).toEqual({ prefix: '210017', grams: 123_456 });
+    setScaleItemDigits(5);
+  });
+});

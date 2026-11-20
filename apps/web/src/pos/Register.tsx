@@ -9,7 +9,7 @@ import { makeI18n, useI18n, type I18n } from '../i18n.ts';
 import { href } from '../router.ts';
 import { PartyPicker } from '../industry/PartyPicker.tsx';
 import { posApi, tillsApi, type PosMethod, type SaleInput, type ShiftView, type TillView } from '../industry/pos-api.ts';
-import { clearHeld, heldOn, HELD_MAX, holdBasket, inWindowsTill, thisTill, keepScalePrefixes, kickDrawer, openCustomerScreen, scalePrefixesKept, showOnCustomerScreen, takeHeld, type HeldBasket } from '../industry/till.ts';
+import { clearHeld, heldOn, HELD_MAX, holdBasket, inWindowsTill, thisTill, keepScalePrefixes, keepScaleDigits, applyKeptScaleDigits, kickDrawer, openCustomerScreen, scalePrefixesKept, showOnCustomerScreen, takeHeld, type HeldBasket } from '../industry/till.ts';
 import { outboxClient, outboxWho, type HeldKey } from '../industry/outbox.ts';
 import { useOutbox } from '../industry/OutboxBanner.tsx';
 import { baseQtyOf, offlineReceipt, offlineRefusal, payTillSale, rememberTill, shortStock, takeFromStock, tillCache } from '../industry/offline-till.ts';
@@ -102,7 +102,8 @@ export function Register({ initial, onClosed }: { initial: ShiftView; onClosed()
   useEffect(() => {
     if (initial.tillId) tillsApi.list().then((r) => setTill(r.tills.find((x) => x.id === initial.tillId) ?? null), () => {});
     tillsApi.paymentAccounts().then((r) => setCardMethods(r.methods.filter((m: PosMethod): m is Exclude<SplitMethod, 'cash'> => m !== 'cash' && m !== 'account')), () => {});
-    tillsApi.scale().then((r) => { setScalePrefixes(r.pricePrefixes); keepScalePrefixes(r.pricePrefixes); }, () => {});
+    applyKeptScaleDigits();
+    tillsApi.scale().then((r) => { setScalePrefixes(r.pricePrefixes); keepScalePrefixes(r.pricePrefixes); keepScaleDigits(r.itemDigits); }, () => {});
     tillRulesApi.rules().then(setRules, () => {});
   }, [initial.id, initial.tillId]);
   // 2.0: the till is one screen high (1366×768 included): the body takes what is left under the bar, and each column

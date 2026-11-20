@@ -16,12 +16,25 @@ function checkDigit(first12: string): number {
   return (10 - (sum % 10)) % 10;
 }
 
+/**
+ * 2.0.0: how the scale lays out its label (Settings → Tills and till rules): 5 digits for the item and 5 for the weight
+ * or price (2 + 2 + 5 + 5 + check, the usual), or 4 for the item and 6 for the value (prices up to 999,999 dinars, as
+ * some scales print for meat). The item's own barcode is then its first 7 or 6 digits.
+ */
+export type ScaleItemDigits = 4 | 5;
+export const isScaleItemDigits = (n: unknown): n is ScaleItemDigits => n === 4 || n === 5;
+let scaleDigits: ScaleItemDigits = 5;
+/** The layout the till reads labels with (the web app sets the company's; the server passes it on each call). */
+export function setScaleItemDigits(n: ScaleItemDigits): void { scaleDigits = n; }
+export const scaleItemDigits = (): ScaleItemDigits => scaleDigits;
+
 /** A scale label's two parts, or null when the code is not one (13 digits starting with 2, a correct check digit, a weight). */
-export function parseScaleBarcode(code: string): { prefix: string; grams: number } | null {
+export function parseScaleBarcode(code: string, itemDigits: ScaleItemDigits = scaleDigits): { prefix: string; grams: number } | null {
   if (!/^2\d{12}$/.test(code)) return null;
   if (checkDigit(code.slice(0, 12)) !== Number(code[12])) return null;
-  const grams = Number(code.slice(7, 12));
-  return grams > 0 ? { prefix: code.slice(0, 7), grams } : null;
+  const cut = 2 + itemDigits;
+  const grams = Number(code.slice(cut, 12));
+  return grams > 0 ? { prefix: code.slice(0, cut), grams } : null;
 }
 
 /** The units a scale label's weight is read in. */
@@ -45,8 +58,8 @@ export function cleanScalePrefixes(list: readonly unknown[]): string[] {
 export type ScaleLabel = { prefix: string; grams: number; price?: undefined } | { prefix: string; price: number; grams?: undefined };
 
 /** A scale label read as a weight or, when its two-digit prefix is one of `pricePrefixes`, as a price in dinars. */
-export function parseScaleLabel(code: string, pricePrefixes: readonly string[] = []): ScaleLabel | null {
-  const label = parseScaleBarcode(code);
+export function parseScaleLabel(code: string, pricePrefixes: readonly string[] = [], itemDigits: ScaleItemDigits = scaleDigits): ScaleLabel | null {
+  const label = parseScaleBarcode(code, itemDigits);
   if (!label) return null;
   return pricePrefixes.includes(code.slice(0, 2)) ? { prefix: label.prefix, price: label.grams } : label;
 }

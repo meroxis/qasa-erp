@@ -117,3 +117,12 @@ describe('the shift report and gift vouchers', () => {
     expect(report.gift).toEqual({ soldCount: 1, sold: 10_000, used: 2_750 });
   });
 });
+
+describe('the scale label layout setting', () => {
+  it('keeps 4 or 5 digits for the item, and nothing else', async () => {
+    expect((await get('/api/pos/scale')).json()).toEqual({ pricePrefixes: [], itemDigits: 5 });
+    expect((await put('/api/pos/scale', { pricePrefixes: ['22'], itemDigits: 4 })).json()).toEqual({ pricePrefixes: ['22'], itemDigits: 4 });
+    expect((await get('/api/pos/scale')).json()).toEqual({ pricePrefixes: ['22'], itemDigits: 4 });
+    expect((await put('/api/pos/scale', { pricePrefixes: [], itemDigits: 6 })).statusCode).toBe(400);
+  });
+});

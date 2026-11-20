@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { addDays, isCurrency, isMinorAmount, isUnit, isWeighedUnit, normalizeForSearch, parseScaleBarcode, todayIso, type CurrencyCode, type ItemUnit, type Names, type UnitCode } from '@qasa/core';
 import type { Db } from './db.ts';
+import { readSetting } from './settings.ts';
 import { nextSequence, transaction } from './db.ts';
 import { audit } from './audit.ts';
 import { conflict, invalid, notFound } from './errors.ts';
@@ -262,19 +263,21 @@ function assertNoScaleClash(db: Db, input: { barcode: string | undefined; unit: 
     ...(barcode && !sameBase ? [barcode] : []),
     ...(input.units ?? (id ? itemUnits(db, id) : [])).map((u) => u.barcode?.trim() ?? '').filter((b) => b && !before.has(b))
   ];
+  // 2.0.0: the company's scale label layout (4 or 5 digits for the item: Settings → Tills and till rules)
+  const digits = Number(readSetting(db, 'pos_scale_item_digits') ?? 5) === 4 ? 4 : 5;
   for (const code of checked) {
-    const label = parseScaleBarcode(code);
+    const label = parseScaleBarcode(code, digits);
     if (!label) continue;
     // this item's own label, as one of its units' barcodes, would ring up one unit instead of the weight
     if (code !== barcode && weighed && label.prefix === barcode) throw conflict('barcode_scale_label');
     const owner = db.prepare("SELECT unit FROM items WHERE barcode = ? AND id <> COALESCE(?, '')").all(label.prefix, id ?? null) as { unit: string }[];
     if (owner.some((o) => isWeighedUnit(o.unit))) throw conflict('barcode_scale_label');
   }
-  if (barcode && !sameBase && weighed && /^2\d{6}$/.test(barcode)) {
+  if (barcode && !sameBase && weighed && new RegExp(`^2\\d{${digits + 1}}$`).test(barcode)) {
     const labels = db.prepare(`SELECT barcode FROM items WHERE barcode LIKE ? AND length(barcode) = 13 AND id <> COALESCE(?, '')
                                UNION ALL SELECT barcode FROM item_units WHERE barcode LIKE ? AND length(barcode) = 13 AND item_id <> COALESCE(?, '')`)
       .all(`${barcode}%`, id ?? null, `${barcode}%`, id ?? null) as { barcode: string }[];
-    if (labels.some((l) => parseScaleBarcode(l.barcode) !== null)) throw conflict('barcode_scale_label');
+    if (labels.some((l) => parseScaleBarcode(l.barcode, digits) !== null)) throw conflict('barcode_scale_label');
   }
 }
 

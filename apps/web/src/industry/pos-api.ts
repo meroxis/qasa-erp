@@ -94,8 +94,8 @@ export const tillsApi = {
   summary: (f: { from?: string; to?: string } = {}) => request<{ from: string; to: string; rows: TillSummaryRow[] }>('GET', '/api/pos/tills/summary' + qs(f)),
   /** the drawer opened with no sale: written to the audit log before the drawer opens */
   drawer: (shiftId: string, reason = '', approvals?: string[]) => request<{ opened: number }>('POST', `/api/pos/shifts/${shiftId}/drawer`, { reason, ...(approvals?.length ? { approvals } : {}) }),
-  scale: () => request<{ pricePrefixes: string[] }>('GET', '/api/pos/scale'),
-  setScale: (pricePrefixes: string[]) => request<{ pricePrefixes: string[] }>('PUT', '/api/pos/scale', { pricePrefixes }),
+  scale: () => request<{ pricePrefixes: string[]; itemDigits?: 4 | 5 }>('GET', '/api/pos/scale'),
+  setScale: (pricePrefixes: string[], itemDigits?: 4 | 5) => request<{ pricePrefixes: string[]; itemDigits?: 4 | 5 }>('PUT', '/api/pos/scale', { pricePrefixes, ...(itemDigits ? { itemDigits } : {}) }),
   paymentAccounts: () => request<{ accounts: PosAccounts; methods: PosMethod[] }>('GET', '/api/pos/payment-accounts'),
   setPaymentAccounts: (accounts: PosAccounts) => request<{ accounts: PosAccounts; methods: PosMethod[] }>('PUT', '/api/pos/payment-accounts', accounts)
 };
