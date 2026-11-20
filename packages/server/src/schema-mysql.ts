@@ -2148,6 +2148,18 @@ export const MYSQL_TABLES: readonly MysqlObject[] = [
       FOREIGN KEY (till_id) REFERENCES pos_tills(id)
     )`
   },
+  {
+    name: 'pos_display_keys',
+    since: 18,
+    sql: `CREATE TABLE pos_display_keys (
+      key_hash VARCHAR(64) NOT NULL PRIMARY KEY,
+      till_id ${ID} NOT NULL,
+      created_at ${WHEN} NOT NULL,
+      seen_at ${WHEN},
+      INDEX pos_display_keys_till (till_id),
+      FOREIGN KEY (till_id) REFERENCES pos_tills(id)
+    )`
+  },
   // ===== end 18 · TILL RULES =====
   // ===== 18 · GOLD (db.ts V18, gold.ts) — begin =====
   {

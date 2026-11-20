@@ -1,4 +1,4 @@
-import { createHash, randomInt, randomUUID } from 'node:crypto';
+import { createHash, randomBytes, randomInt, randomUUID } from 'node:crypto';
 import { z } from 'zod';
 import { isCashRounding, todayIso } from '@qasa/core';
 import type { Db } from './db.ts';
@@ -10,6 +10,7 @@ import { readSetting, writeSetting } from './settings.ts';
 import { hashPassword, verifyPassword, type Actor } from './auth.ts';
 import { getParty } from './parties.ts';
 import { getShift } from './pos.ts';
+import { userBranchLists } from './branches.ts';
 import { imageMime, fromBase64, MAX_IMAGE_BYTES } from './media.ts';
 import { getPrintProfile } from './print-profile.ts';
 import { cancelGiftVoucher, findGiftVoucher, giftReport, sellGiftVoucher } from './gift-vouchers.ts';
@@ -200,11 +201,33 @@ const sha = (s: string) => createHash('sha256').update(s).digest('hex');
 /** The basket each till shows now (in memory: a customer screen only ever needs the moment). */
 const showing = new Map<string, { state: unknown; at: number }>();
 const STATE_MAX = 24 * 1024;
-let badCodes = { n: 0, since: Date.now() };
+/** wrong codes and keys per place (address) asking, a minute at a time */
+const badTries = new Map<string, { n: number; since: number }>();
+const CODE_MS = 10 * 60 * 1000;
+const BAD_PER_MINUTE = 20;
+/** for tests */
+export function resetDisplayTries(): void { badTries.clear(); }
+function badTry(source: string): void {
+  const now = Date.now();
+  const b = badTries.get(source);
+  if (!b || now - b.since > 60_000) badTries.set(source, { n: 1, since: now });
+  else b.n++;
+  if (badTries.size > 5000) badTries.clear();
+}
+function lockedOut(source: string): boolean {
+  const b = badTries.get(source);
+  return !!b && Date.now() - b.since <= 60_000 && b.n >= BAD_PER_MINUTE;
+}
 
-/** A new pairing code for a till's customer screen (the old one stops working). Six digits, kept only as a hash. */
-export function newDisplayCode(db: Db, tillId: string, user: string): { code: string } {
-  if (!db.prepare('SELECT 1 FROM pos_tills WHERE id = ?').get(tillId)) throw notFound('till');
+/**
+ * A new pairing code for a till's customer screen (the code before it stops working; screens already paired go on).
+ * Six digits, kept only as a hash, for ten minutes and one pairing. Only for a till in the asker's branches.
+ */
+export function newDisplayCode(db: Db, tillId: string, user: string, actor?: Actor): { code: string } {
+  const till = db.prepare('SELECT warehouse_id FROM pos_tills WHERE id = ?').get(tillId) as { warehouse_id: string } | undefined;
+  if (!till) throw notFound('till');
+  const lists = actor ? userBranchLists(db, actor) : null;
+  if (lists && !lists.warehouses.includes(till.warehouse_id)) throw notFound('till');
   const code = String(randomInt(0, 1_000_000)).padStart(6, '0');
   transaction(db, () => {
     db.prepare('DELETE FROM pos_display_codes WHERE till_id = ?').run(tillId);
@@ -214,16 +237,39 @@ export function newDisplayCode(db: Db, tillId: string, user: string): { code: st
   return { code };
 }
 
-/** The till a code pairs with (null: none). Twenty wrong codes in a minute shut the door for that minute. */
-function tillOfCode(db: Db, code: string): string | null {
-  if (Date.now() - badCodes.since > 60_000) badCodes = { n: 0, since: Date.now() };
-  if (badCodes.n >= 20) throw new AppError(429, 'too_many_requests', null);
-  if (!/^\d{6}$/.test(code)) { badCodes.n++; return null; }
-  for (const r of db.prepare('SELECT till_id, code_hash FROM pos_display_codes').all() as { till_id: string; code_hash: string }[]) {
-    if (sha(`${r.till_id}:${code}`) === r.code_hash) return r.till_id;
+/**
+ * Pairs a screen: a till's code (six digits, made in the last ten minutes) gives a long random key for that till, and
+ * the code is used up. A right code always works; twenty wrong ones in a minute from one place stop that place only.
+ */
+export function pairDisplay(db: Db, code: string, source: string): { key: string } {
+  if (/^\d{6}$/.test(code)) {
+    const since = new Date(Date.now() - CODE_MS).toISOString();
+    for (const r of db.prepare('SELECT till_id, code_hash, created_at FROM pos_display_codes').all() as { till_id: string; code_hash: string; created_at: string }[]) {
+      if (sha(`${r.till_id}:${code}`) !== r.code_hash) continue;
+      if (r.created_at < since) break;
+      const key = randomBytes(32).toString('hex');
+      transaction(db, () => {
+        db.prepare('DELETE FROM pos_display_codes WHERE till_id = ?').run(r.till_id);
+        db.prepare('INSERT INTO pos_display_keys (key_hash, till_id, created_at, seen_at) VALUES (?, ?, ?, NULL)').run(sha(key), r.till_id, new Date().toISOString());
+        audit(db, 'customer screen', 'display_paired', 'pos_till', r.till_id, { source: source.slice(0, 60) });
+      });
+      return { key };
+    }
   }
-  badCodes.n++;
-  return null;
+  if (lockedOut(source)) throw new AppError(429, 'too_many_requests', null);
+  badTry(source);
+  throw new AppError(404, 'not_found', { what: 'display_code' });
+}
+
+/** The till a paired screen's key is for (a key checked before the per-place lock, so others can't shut a screen out). */
+function tillOfKey(db: Db, key: string, source: string): string {
+  if (/^[0-9a-f]{64}$/.test(key)) {
+    const r = db.prepare('SELECT till_id FROM pos_display_keys WHERE key_hash = ?').get(sha(key)) as { till_id: string } | undefined;
+    if (r) return r.till_id;
+  }
+  if (lockedOut(source)) throw new AppError(429, 'too_many_requests', null);
+  badTry(source);
+  throw new AppError(404, 'not_found', { what: 'display_key' });
 }
 
 /** The till's basket, as the till sends it for its screens: only what a customer at the counter sees anyway. */
@@ -249,9 +295,8 @@ export function showOnTill(db: Db, tillId: string, state: unknown, actor: Actor)
 }
 
 /** What a paired screen shows: the till's basket now, the screen's rules, the offers running and the pictures' ids. */
-export function displayFeed(db: Db, code: string) {
-  const tillId = tillOfCode(db, code);
-  if (!tillId) throw new AppError(404, 'not_found', { what: 'display_code' });
+export function displayFeed(db: Db, key: string, source = '') {
+  const tillId = tillOfKey(db, key, source);
   const rules = tillRules(db).display;
   const now = showing.get(tillId);
   const today = todayIso();
@@ -268,8 +313,8 @@ export function displayFeed(db: Db, code: string) {
   };
 }
 
-export function displayImage(db: Db, code: string, id: string): { mime: string; data: string } {
-  if (!tillOfCode(db, code)) throw new AppError(404, 'not_found', { what: 'display_code' });
+export function displayImage(db: Db, key: string, id: string, source = ''): { mime: string; data: string } {
+  tillOfKey(db, key, source);
   const r = db.prepare('SELECT mime, data FROM pos_display_images WHERE id = ?').get(id) as { mime: string; data: string } | undefined;
   if (!r) throw notFound('image');
   return r;
@@ -323,7 +368,7 @@ export const tillRulesApi: ApiExtension = {
     'GET /api/pos/display/images': 'pos',
     'GET /api/pos/display/image-admin/:id': 'pos'
   },
-  public: ['GET /api/pos/display/feed', 'GET /api/pos/display/image/:id'],
+  public: ['POST /api/pos/display/pair', 'GET /api/pos/display/feed', 'GET /api/pos/display/image/:id'],
   routes(db, { actorOf }) {
     const actor = (req: ApiRequest) => actorOf(req);
     return [
@@ -367,7 +412,8 @@ export const tillRulesApi: ApiExtension = {
       },
       { method: 'GET', path: '/api/pos/gift-vouchers', handler: async () => giftReport(db) },
       { method: 'POST', path: '/api/pos/gift-vouchers/:id/cancel', handler: async (req) => transaction(db, () => cancelGiftVoucher(db, parse(z.object({ id }), req.params).id, actor(req).name)) },
-      { method: 'POST', path: '/api/pos/display/code', handler: async (req) => newDisplayCode(db, parse(z.object({ tillId: id }), req.body).tillId, actor(req).name) },
+      { method: 'POST', path: '/api/pos/display/code', handler: async (req) => newDisplayCode(db, parse(z.object({ tillId: id }), req.body).tillId, actor(req).name, actor(req)) },
+      { method: 'POST', path: '/api/pos/display/pair', handler: async (req) => pairDisplay(db, parse(z.object({ code: z.string().max(12) }), req.body).code, req.source ?? '') },
       {
         method: 'POST', path: '/api/pos/display/state',
         handler: async (req) => {
@@ -375,10 +421,10 @@ export const tillRulesApi: ApiExtension = {
           return showOnTill(db, body.tillId, body.state, actor(req));
         }
       },
-      { method: 'GET', path: '/api/pos/display/feed', handler: async (req) => displayFeed(db, parse(z.object({ code: z.string().max(12) }), req.query).code) },
+      { method: 'GET', path: '/api/pos/display/feed', handler: async (req) => displayFeed(db, parse(z.object({ key: z.string().max(80) }), req.query).key, req.source ?? '') },
       {
         method: 'GET', path: '/api/pos/display/image/:id',
-        handler: async (req) => displayImage(db, parse(z.object({ code: z.string().max(12) }), req.query).code, parse(z.object({ id }), req.params).id)
+        handler: async (req) => displayImage(db, parse(z.object({ key: z.string().max(80) }), req.query).key, parse(z.object({ id }), req.params).id, req.source ?? '')
       },
       { method: 'GET', path: '/api/pos/display/images', handler: async () => ({ images: (db.prepare('SELECT id, mime, sort FROM pos_display_images ORDER BY sort, created_at').all() as { id: string }[]), max: DISPLAY_IMAGES_MAX }) },
       {

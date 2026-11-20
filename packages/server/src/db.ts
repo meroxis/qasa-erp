@@ -2184,6 +2184,15 @@ const V18 =
     code_hash TEXT NOT NULL,
     created_at TEXT NOT NULL
   );
+  -- a customer screen paired with a code gets a long random key of its own (kept as a hash): the code works once, for
+  -- ten minutes, and the screen goes on with its key
+  CREATE TABLE pos_display_keys (
+    key_hash TEXT PRIMARY KEY,
+    till_id TEXT NOT NULL REFERENCES pos_tills(id),
+    created_at TEXT NOT NULL,
+    seen_at TEXT
+  );
+  CREATE INDEX pos_display_keys_till ON pos_display_keys(till_id);
   ALTER TABLE pos_sales ADD COLUMN rounding INTEGER NOT NULL DEFAULT 0;
   -- what gift vouchers paid of a till sale (a return gives that share back onto a voucher, never as cash)
   ALTER TABLE pos_sales ADD COLUMN voucher_paid INTEGER NOT NULL DEFAULT 0;

@@ -71,8 +71,10 @@ export const tillRulesApi = {
   cancelVoucher: (id: string) => request<GiftVoucherView>('POST', `/api/pos/gift-vouchers/${id}/cancel`, {}),
   displayCode: (tillId: string) => request<{ code: string }>('POST', '/api/pos/display/code', { tillId }),
   showState: (tillId: string, state: DisplayState) => request<{ ok: true }>('POST', '/api/pos/display/state', { tillId, state }),
-  feed: (code: string) => request<DisplayFeed>('GET', '/api/pos/display/feed' + qs({ code })),
-  feedImage: (code: string, id: string) => request<{ mime: string; data: string }>('GET', `/api/pos/display/image/${id}` + qs({ code })),
+  /** a screen pairs with the till's code once and goes on with the key it gets */
+  pair: (code: string) => request<{ key: string }>('POST', '/api/pos/display/pair', { code }),
+  feed: (key: string) => request<DisplayFeed>('GET', '/api/pos/display/feed' + qs({ key })),
+  feedImage: (key: string, id: string) => request<{ mime: string; data: string }>('GET', `/api/pos/display/image/${id}` + qs({ key })),
   images: () => request<{ images: { id: string }[]; max: number }>('GET', '/api/pos/display/images'),
   adminImage: (id: string) => request<{ mime: string; data: string }>('GET', `/api/pos/display/image-admin/${id}`),
   addImage: (base64: string) => request<{ id: string }>('POST', '/api/pos/display/images', { base64 }),

@@ -117,6 +117,15 @@ describe('with sign-in', () => {
     expect(new Set(sources)).toEqual(new Set(['net:10.0.0.66']));
   });
 
+  it('counts every loopback address as this one PC: rotating 127.x addresses does not get round the limit (security review #8)', async () => {
+    await officeWithSignIn();
+    const from = (remoteAddress: string, password: string) =>
+      app.inject({ method: 'POST', url: '/api/auth/login', payload: { username: 'admin', password }, headers: APP, remoteAddress });
+    for (let i = 0; i < 5; i++) expect((await from(`127.0.${i}.${i + 1}`, 'wrong-password')).statusCode).toBe(401);
+    expect((await from('127.9.9.9', 'owner-pass-1')).statusCode).toBe(429);
+    expect((await from('::1', 'owner-pass-1')).statusCode).toBe(429);
+  });
+
   it('guessing from many places waits everywhere after 30 failures, except on this PC and where the account signed in before', async () => {
     await officeWithSignIn();
     await expect(login(db, 'admin', 'owner-pass-1', undefined, 'net:10.0.0.7')).resolves.toBeTruthy();

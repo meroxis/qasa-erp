@@ -4,7 +4,7 @@ import { roundCash } from '@qasa/core';
 import { buildApp } from './app.ts';
 import { openDatabase, type Db } from './db.ts';
 import { resetLoginThrottle } from './auth.ts';
-import { resetPinFailures } from './till-rules.ts';
+import { resetDisplayTries, resetPinFailures } from './till-rules.ts';
 
 // 2.0, Iraqi markets: dinar rounding, a supervisor's PIN, a blind close, the open-price item, credit at the till,
 // gift vouchers and the customer screen on another device (till-rules.ts, till-settings.ts, gift-vouchers.ts).
@@ -26,6 +26,7 @@ const tea = (qty = 1, price = 2_750) => ({ itemId: teaId, qtyMilli: qty * 1000, 
 beforeEach(async () => {
   resetLoginThrottle();
   resetPinFailures();
+  resetDisplayTries();
   db = openDatabase(':memory:');
   app = buildApp(db);
   warehouseId = (await get('/api/warehouses')).json()[0].id;
@@ -310,12 +311,32 @@ describe('the customer screen on another device', () => {
     const state = { dir: 'ltr', lang: 'en', company: 'Mer', welcome: 'Welcome', totalLabel: 'Total', lines: [{ name: 'Tea', qty: '1', amount: '2,750' }], total: '2,750' };
     expect((await post('/api/pos/display/state', { tillId, state })).statusCode).toBe(200);
     expect((await post('/api/pos/display/state', { tillId, state: { ...state, secret: 'x' } })).statusCode).toBe(400);
-    // no session: the code alone
-    const feed = await app.inject({ url: `/api/pos/display/feed?code=${code}` });
+    // no session: the code pairs once (security review #7) and the screen goes on with its own key
+    const paired = await app.inject({ method: 'POST', url: '/api/pos/display/pair', payload: { code } });
+    expect(paired.statusCode, paired.body).toBe(200);
+    const key = paired.json().key as string;
+    expect(key).toMatch(/^[0-9a-f]{64}$/);
+    expect((await app.inject({ method: 'POST', url: '/api/pos/display/pair', payload: { code } })).statusCode).toBe(404);
+    const feed = await app.inject({ url: `/api/pos/display/feed?key=${key}` });
     expect(feed.statusCode, feed.body).toBe(200);
     expect(feed.json().state).toEqual(state);
-    expect((await app.inject({ url: '/api/pos/display/feed?code=000000' })).statusCode).toBe(404);
-    for (let i = 0; i < 25; i++) await app.inject({ url: `/api/pos/display/feed?code=${String(i).padStart(6, '1')}` });
-    expect((await app.inject({ url: `/api/pos/display/feed?code=${code}` })).statusCode).toBe(429);
+    expect((await app.inject({ url: `/api/pos/display/feed?key=${'0'.repeat(64)}` })).statusCode).toBe(404);
+    // guessing from one place shuts that place out, never the screen with its key
+    for (let i = 0; i < 25; i++) await app.inject({ method: 'POST', url: '/api/pos/display/pair', payload: { code: String(i).padStart(6, '1') } });
+    expect((await app.inject({ method: 'POST', url: '/api/pos/display/pair', payload: { code: '123123' } })).statusCode).toBe(429);
+    expect((await app.inject({ url: `/api/pos/display/feed?key=${key}` })).statusCode).toBe(200);
+    // a right code still pairs while that place is locked out, but only for ten minutes after it was made
+    const second = (await post('/api/pos/display/code', { tillId })).json().code;
+    expect((await app.inject({ method: 'POST', url: '/api/pos/display/pair', payload: { code: second } })).statusCode).toBe(200);
+    const third = (await post('/api/pos/display/code', { tillId })).json().code;
+    db.prepare("UPDATE pos_display_codes SET created_at = '2020-01-01T00:00:00.000Z'").run();
+    resetDisplayTries();
+    expect((await app.inject({ method: 'POST', url: '/api/pos/display/pair', payload: { code: third } })).statusCode).toBe(404);
+  });
+
+  it("makes a code only for a till in the asker's branches", async () => {
+    const tillRes = await post('/api/pos/tills', { name: 'Front', cashAccountCode: '1811', warehouseId, customerDisplay: true });
+    expect(tillRes.statusCode).toBe(201);
+    expect((await post('/api/pos/display/code', { tillId: 'nope' })).statusCode).toBe(404);
   });
 });

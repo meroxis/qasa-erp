@@ -13,7 +13,8 @@ import '../pos.css';
  * - a second window of the app's own page on the till's PC (the Windows app puts it on the second monitor): it hears
  *   the till in this browser, and reads the screen's pictures and logo with the till's own sign-in;
  * - another device (a tablet, a second PC) on the same network: `#/customer-display?code=123456`, the till's pairing
- *   code (Settings → Till rules). It reads that till's basket from the server with the code alone, never anything else.
+ *   code (Settings → Till rules), used once within ten minutes: the screen gets a key of its own for that till (kept
+ *   in this browser) and reads that till's basket from the server with it, never anything else.
  *
  * While the till is idle it shows the offers running and the company's pictures, in turn. It has no buttons.
  */
@@ -23,8 +24,12 @@ const codeInHash = (): string => {
   return m ? m[1]! : '';
 };
 
+const KEY = 'qasa.customerDisplayKey';
+const storedKey = (): string => { try { return localStorage.getItem(KEY) ?? ''; } catch { return ''; } };
+
 export function CustomerDisplay() {
   const [code, setCode] = useState(codeInHash);
+  const [key, setKey] = useState(storedKey);
   const [state, setState] = useState<CustomerScreenState | null>(null);
   const [feed, setFeed] = useState<Omit<DisplayFeed, 'state'> | null>(null);
   const [pictures, setPictures] = useState<string[]>([]);
@@ -32,14 +37,27 @@ export function CustomerDisplay() {
   // a device with no till in its browser (a tablet): after a moment with nothing heard, it asks for the till's code
   const [askCode, setAskCode] = useState(false);
   useEffect(() => {
-    if (code) return;
+    if (code || key) return;
     const timer = window.setTimeout(() => setAskCode(true), 3000);
     return () => window.clearTimeout(timer);
+  }, [code, key]);
+
+  // a code typed or in the link: paired once, then the key
+  useEffect(() => {
+    if (!code) return;
+    let alive = true;
+    tillRulesApi.pair(code).then((r) => {
+      if (!alive) return;
+      try { localStorage.setItem(KEY, r.key); } catch { /* kept for this visit only */ }
+      setKey(r.key); setCode(''); setWrong(false);
+      if (/[?&]code=/.test(location.hash)) location.hash = '#/customer-display';
+    }, () => { if (alive) { setCode(''); setWrong(true); } });
+    return () => { alive = false; };
   }, [code]);
 
   // the same browser: the till's own channel
   useEffect(() => {
-    if (code || typeof BroadcastChannel === 'undefined') return;
+    if (code || key || typeof BroadcastChannel === 'undefined') return;
     const channel = new BroadcastChannel(CUSTOMER_CHANNEL);
     channel.onmessage = (e: MessageEvent) => {
       const s = e.data as CustomerScreenState | null;
@@ -52,33 +70,36 @@ export function CustomerDisplay() {
       setPictures(urls.filter(Boolean));
     }, () => {});
     return () => channel.close();
-  }, [code]);
+  }, [code, key]);
 
-  // another device: the server, with the pairing code, about once a second
+  // another device: the server, with the screen's key, about once a second
   useEffect(() => {
-    if (!code) return;
+    if (!key) return;
     let alive = true;
     let pics: string[] = [];
     const tick = async () => {
       try {
-        const f = await tillRulesApi.feed(code);
+        const f = await tillRulesApi.feed(key);
         if (!alive) return;
         setWrong(false);
         setState(f.state as CustomerScreenState | null);
         setFeed(f);
         if (f.images.join() !== pics.join()) {
           pics = f.images;
-          const urls = await Promise.all(f.images.map((id) => tillRulesApi.feedImage(code, id).then((x) => `data:${x.mime};base64,${x.data}`, () => '')));
+          const urls = await Promise.all(f.images.map((id) => tillRulesApi.feedImage(key, id).then((x) => `data:${x.mime};base64,${x.data}`, () => '')));
           if (alive) setPictures(urls.filter(Boolean));
         }
-      } catch {
-        if (alive) setWrong(true);
+      } catch (e) {
+        if (!alive) return;
+        setWrong(true);
+        // a key the server no longer knows: forget it and ask for a new code
+        if ((e as { status?: number }).status === 404) { try { localStorage.removeItem(KEY); } catch { /* none */ } setKey(''); }
       }
     };
     void tick();
     const timer = window.setInterval(() => void tick(), 1000);
     return () => { alive = false; window.clearInterval(timer); };
-  }, [code]);
+  }, [key]);
 
   useEffect(() => {
     if (!state) return;
@@ -96,12 +117,12 @@ export function CustomerDisplay() {
     ...pictures.map((url) => ({ kind: 'picture' as const, url }))
   ], [feed?.offers, pictures, lang]);
 
-  if (code && wrong && !state) {
+  if (!key && wrong && !state) {
     return (
       <div className="cd cd-idle" dir="auto">
         <div className="cd-pair">
           <p>{t('tu_cd_wrong')}</p>
-          <PairForm label={t('tu_cd_connect')} hint={t('tu_cd_enterCode')} onCode={(c) => { setCode(c); location.hash = `#/customer-display?code=${c}`; }} />
+          <PairForm label={t('tu_cd_connect')} hint={t('tu_cd_enterCode')} onCode={(c) => { setWrong(false); setCode(c); }} />
         </div>
       </div>
     );
@@ -111,7 +132,7 @@ export function CustomerDisplay() {
       <div className="cd cd-idle">
         {logo && <img className="cd-logo" src={logo} alt="" />}
         <div className="cd-welcome">{company || t('tu_cd_waiting')}</div>
-        {!code && askCode && <div className="cd-pair"><p>{t('tu_cd_enterCode')}</p><PairForm label={t('tu_cd_connect')} hint={t('tu_cd_enterCode')} onCode={setCode} /></div>}
+        {!code && !key && askCode && <div className="cd-pair"><p>{t('tu_cd_enterCode')}</p><PairForm label={t('tu_cd_connect')} hint={t('tu_cd_enterCode')} onCode={setCode} /></div>}
       </div>
     );
   }
