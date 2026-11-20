@@ -32,7 +32,7 @@ export function ShortcutsHelp({ onClose }: { onClose(): void }) {
       <table className="table pos-keys">
         <tbody>
           {TILL_KEYS.map((k) => <tr key={k.key}><td><span className="kbd ltr">{k.key}</span></td><td>{t(k.label)}</td></tr>)}
-          <tr><td><span className="kbd ltr">3*</span></td><td>{t('pos_searchPlaceholder')}</td></tr>
+          <tr><td><span className="kbd ltr">3*</span></td><td>{t('ux_k_times')}</td></tr>
         </tbody>
       </table>
     </Modal>

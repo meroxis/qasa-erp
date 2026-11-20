@@ -1,5 +1,6 @@
 /** 2.0.0 (the hands-on review): a return at the till, and the other usability fixes. Arabic, English, Kurdish. */
 export const UXF_TEXT = {
+  ux_k_times: ['اكتب 3* ثم امسح المادة لبيع 3 منها', 'Type 3* then scan to sell 3', '3* بنووسە پاشان کاڵاکە بخوێنەوە بۆ فرۆشتنی 3 دانە'],
   ux_tillReturn: ['إرجاع من نقطة البيع', 'Return at the till', 'گەڕاندنەوە لە خاڵی فرۆشتن'],
   ux_receiptNumber: ['رقم الوصل', 'Receipt number', 'ژمارەی وەسڵ'],
   ux_receiptHint: ['اكتب رقم الوصل أو امسح الباركود المطبوع عليه، ثم اختر ما يعود.', 'Type the receipt number or scan its barcode, then pick what comes back.', 'ژمارەی وەسڵەکە بنووسە یان بارکۆدەکەی سەری بخوێنەوە، پاشان ئەوە هەڵبژێرە کە دەگەڕێتەوە.'],

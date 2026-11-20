@@ -1,6 +1,6 @@
 /** Offers (1.7, Starter and up). Arabic, English and Kurdish (Sorani), in that order, like i18n.ts. */
 export const OFFER_TEXT = {
-  of_title: ['العروض', 'Offers', 'ئۆفەرەکان'],
+  of_title: ['العروض الترويجية', 'Offers', 'ئۆفەرەکان'],
   f_promotions: ['العروض: اشترِ واحصل، الحزم، الأسعار الخاصة وساعات الخصم', 'Offers: buy X get Y, bundles, special prices and happy hours', 'ئۆفەر: بکڕە و وەربگرە، کۆمەڵە، نرخی تایبەت و کاتژمێری داشکاندن'],
   of_needsPlan: ['العروض جزء من باقات Starter وPro وBusiness.', 'Offers are part of Starter, Pro and Business.', 'ئۆفەرەکان بەشێکن لە Starter، Pro و Business.'],
   err_plan_limit_promotions: ['العروض متاحة في باقات Starter وPro وBusiness', 'Offers need Starter, Pro or Business', 'ئۆفەرەکان پێویستیان بە Starter، Pro یان Business هەیە'],
