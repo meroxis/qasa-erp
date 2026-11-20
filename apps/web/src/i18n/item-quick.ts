@@ -22,11 +22,11 @@ export const ITEM_QUICK_TEXT = {
   iq_added: ['أُضيفت المادة {name} ({code})', 'Item {name} added ({code})', 'کاڵای {name} زیادکرا ({code})'],
   iq_pricesHint: ['بالوحدة الأساسية: {u}', 'Per base unit: {u}', 'بۆ یەکەی بنەڕەتی: {u}'],
   iq_pricesCurrency: ['عملة السعرين', 'Currency of the prices', 'دراوی نرخەکان'],
-  iq_addScale: ['إضافة مادة موزونة لملصق الميزان {code}', 'Add a weighed item for scale label {code}', 'کاڵایەکی کێشراو بۆ لەیبڵی تەرازووی {code} زیاد بکە'],
+  iq_addScale: ['إضافة مادة موزونة لملصق الميزان {code}', 'Add a weighed item for scale label {code}', 'کاڵایەکی کێشراو بۆ لێبڵی تەرازووی {code} زیاد بکە'],
   iq_scaleHint: [
     'ملصق ميزان: باركود المادة أول سبعة أرقام منه ({p}) ووحدتها الكيلوغرام، فكل ملصق لها يجدها بوزنه.',
     'A scale label: the item’s barcode is its first seven digits ({p}) and its unit the kilogram, so every label of it finds it, with its own weight.',
-    'لەیبڵی تەرازوو: بارکۆدی کاڵاکە حەوت ژمارەی یەکەمیەتی ({p}) و یەکەکەی کیلۆگرامە، بۆیە هەموو لەیبڵێکی بە کێشی خۆیەوە دەیدۆزێتەوە.'
+    'لێبڵی تەرازوو: بارکۆدی کاڵاکە حەوت ژمارەی یەکەمیەتی ({p}) و یەکەکەی کیلۆگرامە، بۆیە هەموو لێبڵێکی بە کێشی خۆیەوە دەیدۆزێتەوە.'
   ],
   iq_sameItem: ['توجد مادة بالاسم نفسه أو الرمز أو الباركود نفسه:', 'An item with the same name, code or barcode already exists:', 'کاڵایەک بە هەمان ناو، کۆد یان بارکۆد پێشتر هەیە:'],
   iq_sameStock: [
@@ -188,6 +188,6 @@ export const ITEM_QUICK_TEXT = {
   err_barcode_scale_label: [
     'هذا الباركود يتعارض مع ملصقات ميزان مادة موزونة (أول سبعة أرقام منه باركود تلك المادة).',
     'This barcode clashes with a weighed item’s scale labels (their first seven digits are that item’s barcode).',
-    'ئەم بارکۆدە لەگەڵ لەیبڵەکانی تەرازووی کاڵایەکی کێشراو یەک دەگرێتەوە (حەوت ژمارەی یەکەمیان بارکۆدی ئەو کاڵایەیە).'
+    'ئەم بارکۆدە لەگەڵ لێبڵەکانی تەرازووی کاڵایەکی کێشراو یەک دەگرێتەوە (حەوت ژمارەی یەکەمیان بارکۆدی ئەو کاڵایەیە).'
   ]
 } as const;

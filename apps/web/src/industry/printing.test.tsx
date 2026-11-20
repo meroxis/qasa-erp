@@ -265,7 +265,7 @@ describe('printing one part of the page alone', () => {
     expect(styles).toContain('body.print-testing > #root { display: none !important; }');
     expect(pos).toContain('body.pos-printing > #root { display: none !important; }');
     // the parts that print alone are put straight into <body>, outside the root
-    for (const file of ['../pages/Pos.tsx', '../pages/Generators.tsx', './Printers.tsx']) {
+    for (const file of ['../pos/Receipt.tsx', '../pages/Generators.tsx', './Printers.tsx']) {
       expect(readFileSync(new URL(file, import.meta.url), 'utf8'), file).toContain('document.body');
     }
   });

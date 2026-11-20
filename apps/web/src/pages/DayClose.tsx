@@ -20,7 +20,7 @@ const good = 'var(--ok, #1F7A52)';
 const bad = 'var(--bad, #A4271A)';
 
 const METHOD_KEY: Record<DayMethod, Key> = {
-  cash: 'pay_cash', bank: 'dc_m_bank', card: 'pay_card', fib: 'pay_fib', zaincash: 'pay_zaincash', qi: 'pay_qi', credit: 'pay_account', loyalty: 'dc_m_loyalty'
+  cash: 'pay_cash', bank: 'dc_m_bank', card: 'pay_card', fib: 'pay_fib', zaincash: 'pay_zaincash', qi: 'pay_qi', credit: 'pay_account', loyalty: 'dc_m_loyalty', voucher: 'dc_m_voucher'
 };
 
 export const methodLabel = (i18n: I18n, m: DayMethod): string => i18n.t(METHOD_KEY[m]);
@@ -210,7 +210,8 @@ export function DayClose() {
               </div>
             </Section>
 
-            <Section title={t('dc_registers')} icon="receipt" empty={!c.registers.length}>
+            <Section title={t('dc_registers')} icon="receipt" empty={!c.registers.length}
+              action={c.registers.length > 1 ? <a className="btn small no-print" href={href(`pos-shifts/${c.registers.map((r) => r.shiftId).join(',')}`)}><Icon name="printer" size={14} />{t('ux_printAllZ', { n: i18n.int(c.registers.length) })}</a> : undefined}>
               <div className="table-wrap">
                 <table className="table">
                   <thead><tr><th>{t('pos_register')}</th><th className="num">{t('pos_expected')}</th><th className="num">{t('pos_counted')}</th><th className="num">{t('pos_difference')}</th></tr></thead>
@@ -280,6 +281,12 @@ export function DayClose() {
               </ul>
             </Section>
 
+            {!!c.giftExpired?.amount && (
+              <div className="alert warn no-print" role="note">
+                <span>{t('dc_giftExpired', { n: i18n.int(c.giftExpired.count), a: i18n.money(c.giftExpired.amount, 'IQD') })}</span>
+                <a href={href('settings/sales')}>{t('tu_gvWriteOff')}</a>
+              </div>
+            )}
             <Section title={t('br_lowStock')} icon="box" empty={!c.lowStock.count}
               action={c.lowStock.count ? <span className="chip bad num">{i18n.int(c.lowStock.count)}</span> : undefined}>
               <p style={{ margin: '0 16px 8px' }}>{t('dc_lowStockCount', { n: i18n.int(c.lowStock.count) })}</p>

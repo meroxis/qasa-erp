@@ -1,6 +1,9 @@
 import initSqlJs from 'sql.js';
 import wasmUrl from 'sql.js/dist/sql-wasm.wasm?url';
-import { ApiReply, apiRoutes, errorResponse, initDatabase, seedDemo, seedPetrolStationDemo, seedPhoneShopDemo, type Db, type Route } from '@qasa/server/browser';
+import {
+  ApiReply, apiRoutes, errorResponse, initDatabase, seedClothingDemo, seedDemo, seedGoldDemo, seedMarketDemo, seedPetrolStationDemo, seedPharmacyDemo, seedPhoneShopDemo,
+  seedWholesaleDemo, startDemoMonth, type Db, type Route
+} from '@qasa/server/browser';
 import { DatabaseSync } from './node-sqlite.ts';
 
 /**
@@ -35,8 +38,16 @@ export async function startDemoBackend(): Promise<void> {
   // ?phoneshop opens it as a phone shop, with its pictures (the till's big pictures and quick buttons);
   // without either the demo is the sample company as always
   const demoKind = new URLSearchParams(window.location.search);
+  // 2.0: ?market, ?gold, ?wholesale, ?clothing and ?pharmacy open it as those businesses; every demo runs in the free
+  // first month, so the paid pages show what they do instead of asking for a plan
+  startDemoMonth(db);
   if (demoKind.has('petrol')) seedPetrolStationDemo(db, demoLang());
   else if (demoKind.has('phoneshop')) seedPhoneShopDemo(db, await phoneShopPictures());
+  else if (demoKind.has('market')) seedMarketDemo(db);
+  else if (demoKind.has('gold')) seedGoldDemo(db);
+  else if (demoKind.has('wholesale')) seedWholesaleDemo(db);
+  else if (demoKind.has('clothing')) seedClothingDemo(db);
+  else if (demoKind.has('pharmacy')) seedPharmacyDemo(db);
 
   const routes = apiRoutes(db, { demo: true }).map((route) => ({ route, pattern: compile(route.path) }));
   const realFetch = window.fetch.bind(window);

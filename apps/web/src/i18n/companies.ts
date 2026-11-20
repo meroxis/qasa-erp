@@ -15,6 +15,8 @@ export const COMPANY_TEXT = {
   co_rename: ['تغيير الاسم', 'Rename', 'گۆڕینی ناو'],
   co_open: ['فتح', 'Open', 'کردنەوە'],
   co_backup: ['نسخة احتياطية', 'Back up', 'باکئەپ'],
+  co_waiting: ['بانتظار الخطة', 'Waiting for the plan', 'چاوەڕێی پلان'],
+  co_waitingHint: ['هذه الشركة بعد حد الشركات في خطتك؛ تفتح مجدداً حين تسمح الخطة. لم يُحذف شيء.', "This company is past your plan's company limit; it opens again when the plan allows it. Nothing is deleted.", 'ئەم کۆمپانیایە لە سنووری کۆمپانیاکانی پلانەکەت تێپەڕیوە؛ کاتێک پلان ڕێگە بدات دەکرێتەوە. هیچ شتێک نەسڕاوەتەوە.'],
   co_current: ['المفتوحة الآن', 'Open now', 'ئێستا کراوەیە'],
   co_created: ['أُنشئت الشركة', 'Company created', 'کۆمپانیاکە دروست کرا'],
   co_saved: ['حُفظ الاسم', 'Name saved', 'ناوەکە پاشەکەوت کرا'],

@@ -98,7 +98,7 @@ export const briefApi = {
 };
 
 /** How a sale was paid, on the end-of-day close. */
-export type DayMethod = 'cash' | 'bank' | 'card' | 'fib' | 'zaincash' | 'qi' | 'credit' | 'loyalty';
+export type DayMethod = 'cash' | 'bank' | 'card' | 'fib' | 'zaincash' | 'qi' | 'credit' | 'loyalty' | 'voucher';
 
 export interface DayRegisterView {
   shiftId: string; number: string; register: string; openedBy: string; status: 'open' | 'closed'; openedAt: string; closedAt: string | null;
@@ -120,6 +120,8 @@ export interface DayCloseView {
   debts: { collected: number; collectedRows: DayDebtRowView[]; added: number; addedRows: DayDebtRowView[] };
   flow?: { in: number; out: number };
   lowStock: { count: number; top: LowStockView[] };
+  /** 2.0: gift vouchers past their date still owed (for those who keep the books) */
+  giftExpired?: { count: number; amount: number };
   topItems: ItemSalesView[];
   ownerPhone: string;
 }

@@ -3,7 +3,8 @@
  * 127.0.0.1, the window shows the app from it, and the company file lives in the user's profile:
  *   %APPDATA%\Qasa ERP\data\qasa.sqlite
  */
-import { app, BrowserWindow, dialog, ipcMain, Menu, nativeTheme, Notification, protocol, safeStorage, session, shell, utilityProcess, type MenuItemConstructorOptions, type UtilityProcess } from 'electron';
+import { app, BrowserWindow, dialog, ipcMain, Menu, nativeTheme, Notification, protocol, safeStorage, screen, session, shell, utilityProcess, type MenuItemConstructorOptions, type UtilityProcess } from 'electron';
+import { pickScalePort, serialAllowed } from './serial-scale.ts';
 import electronUpdater from 'electron-updater';
 import { channelOf, notesText, updaterOptions, type UpdateChannel, type UpdateState } from './updates-logic.ts';
 import { randomBytes } from 'node:crypto';
@@ -11,7 +12,7 @@ import { appendFileSync, closeSync, existsSync, fstatSync, mkdirSync, openSync, 
 import { homedir, hostname, userInfo } from 'node:os';
 import { join } from 'node:path';
 import { Bridge } from './bridge.ts';
-import { confirmWithHello, resetWithWindows, windowsAccount, type ResetAnswer } from './windows-confirm.ts';
+import { confirmWithHello, resetWithWindows, windowsAccount, windowsIdentity, type ResetAnswer } from './windows-confirm.ts';
 import { companyDirOf, damagedFileChoices, isCompanyId, MAIN_COMPANY, readRegistry, writeRegistry, type DamagedChoice } from './companies.ts';
 import { guideUrl, isGuideUrl } from '@qasa/core';
 import { isAllowedExternal, refusedForLog } from './external-links.ts';
@@ -20,7 +21,8 @@ import { openNotices } from './notices.ts';
 import { booksBefore, markSeen, startVersion, type WhatsNew } from './whats-new.ts';
 import { closeFlow, noteCloseFailure, readCloseAsk, saveCloseAsk, takeCloseFailure, type AskChoice } from './close-backup.ts';
 import { printingHandlers } from './printing.ts';
-import { cachedPrinters, readWindowsPrinters } from './printer-info.ts';
+import { cachedPrinters, powershellPath, readWindowsPrinters } from './printer-info.ts';
+import { customerDisplayUrl, customerScreenBounds, drawerHandler } from './till-desktop.ts';
 import { dataPlaceOf, officeName } from './data-place.ts';
 import { execFile } from 'node:child_process';
 import { sharePdfHandlers } from './share-pdf.ts';
@@ -94,6 +96,10 @@ function saveGraphics(on: boolean, reason: string): void {
 /** What this start runs with (a change shows after a restart). */
 const graphicsAtStart = graphicsOn() && !app.commandLine.hasSwitch('disable-gpu');
 if (!graphicsAtStart) app.disableHardwareAcceleration();
+// 2.0.0: date boxes as Iraq writes dates (20/11/2026), whatever the Windows region is (many Iraqi PCs run US settings,
+// which showed 11/20/2026 in the day close, the stock count and the invoices). Chromium's date box follows this locale;
+// every other date and number the app shows is written by its own i18n, in the language the person chose.
+if (!app.commandLine.hasSwitch('lang')) app.commandLine.appendSwitch('lang', 'en-GB');
 
 let gpuCrashes = 0;
 app.on('child-process-gone', (_event, details) => {
@@ -648,6 +654,54 @@ ipcMain.handle('printers:list', (event, fresh: unknown) => printing.list(event, 
 ipcMain.handle('printers:get', (event) => printing.get(event));
 ipcMain.handle('printers:set', (event, kind: unknown, choice: unknown) => printing.set(event, kind, choice));
 ipcMain.handle('printers:print', (event, kind: unknown, layout: unknown) => printing.print(event, kind, layout));
+
+// 2.0, the till (till-desktop.ts): the cash drawer opened through this PC's receipt printer (a fixed script, the
+// printer's name in its environment, never in its text), and the customer screen, a second window of the app's own page
+const openDrawer = drawerHandler({
+  fromAppPage: (event) => invokedByAppPage(event as Electron.IpcMainInvokeEvent),
+  readPrintersFile: () => { try { return readFileSync(printersFile(), 'utf8'); } catch { return null; } },
+  printers: async () => (win && !win.isDestroyed() ? win.webContents.getPrintersAsync() : []),
+  run: (script, printer) => new Promise<string>((resolve, reject) => {
+    if (process.platform !== 'win32') { reject(new Error('the cash drawer is opened on Windows only')); return; }
+    execFile(powershellPath(process.env), ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-Command', script], {
+      windowsHide: true, timeout: 15_000, maxBuffer: 64 * 1024, encoding: 'utf8', shell: false, env: { ...process.env, QASA_DRAWER_PRINTER: printer }
+    }, (error, stdout) => { if (error) reject(error); else resolve(String(stdout)); });
+  }),
+  log
+});
+ipcMain.handle('till:drawer', (event) => openDrawer(event));
+// 2.0: Settings → Users binds the Windows Hello password reset to the Windows account signed in here (the page then
+// saves it through the admin-only /api/auth/hello-reset); only this PC's own window, never an office client
+ipcMain.handle('app:windowsAccount', async (event) => {
+  if (!invokedByAppPage(event) || remote) return null;
+  const who = await windowsIdentity();
+  return who ? { sid: who.sid, account: thisWindowsUser(), windowsAdmin: who.windowsAdmin } : null;
+});
+
+let customerWin: BrowserWindow | null = null;
+ipcMain.handle('till:customerDisplay', (event, open: unknown) => {
+  if (!invokedByAppPage(event) || !appOrigin) return false;
+  if (open !== true) {
+    if (customerWin && !customerWin.isDestroyed()) customerWin.close();
+    customerWin = null;
+    return false;
+  }
+  if (customerWin && !customerWin.isDestroyed()) { customerWin.show(); return true; }
+  const bounds = customerScreenBounds(screen.getAllDisplays(), screen.getPrimaryDisplay().id);
+  customerWin = new BrowserWindow({
+    ...(bounds ?? { width: 900, height: 600 }), fullscreen: !!bounds, autoHideMenuBar: true, title: 'Qasa ERP', backgroundColor: windowBackground(),
+    icon: join(__dirname, 'icon.png'),
+    // no bridge at all: the screen only shows what the till sends it in the page
+    webPreferences: { contextIsolation: true, sandbox: true, nodeIntegration: false, spellcheck: false }
+  });
+  customerWin.setMenu(null);
+  const origin = appOrigin;
+  customerWin.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
+  customerWin.webContents.on('will-navigate', (e, target) => { if (originOf(target) !== origin) e.preventDefault(); });
+  customerWin.on('closed', () => { customerWin = null; });
+  void customerWin.loadURL(customerDisplayUrl(origin));
+  return true;
+});
 // Send on WhatsApp as a PDF (share-pdf.ts): the app window printed to a PDF in this PC's own local app data (never synced),
 // shown in File Explorer for the person to drag into the chat the page opens. The page names a kind and a number only.
 const sharedPdfDir = () => {
@@ -945,9 +999,16 @@ async function createWindow(url: string): Promise<void> {
   const ses = session.defaultSession;
   // the key that opens this PC's own server; the office server needs none (everyone signs in there)
   if (!remote) await ses.cookies.set({ url, name: 'qasa_session', value: SESSION_KEY, httpOnly: true, sameSite: 'strict' });
-  // Qasa needs no camera, microphone, location, notifications or other device access.
+  // Qasa needs no camera, microphone, location, notifications or other device access. 2.0: the app's own page may use
+  // a serial port, for a weighing scale at the till (serial-scale.ts); nothing else, and no other page
   ses.setPermissionRequestHandler((_contents, _permission, callback) => callback(false));
-  ses.setPermissionCheckHandler(() => false);
+  ses.setPermissionCheckHandler((contents, permission, requestingOrigin) => !!win && contents === win.webContents && serialAllowed(permission, originOf(requestingOrigin), appOrigin));
+  ses.setDevicePermissionHandler((details) => details.deviceType === 'serial' && serialAllowed('serial', originOf(details.origin), appOrigin));
+  ses.removeAllListeners('select-serial-port');
+  ses.on('select-serial-port', (event, portList, contents, callback) => {
+    event.preventDefault();
+    callback(win && contents === win.webContents && originOf(contents.getURL()) === appOrigin ? pickScalePort(portList) : '');
+  });
 
   win = new BrowserWindow({
     width: 1360, height: 860, minWidth: 1024, minHeight: 640,
@@ -1003,7 +1064,12 @@ async function createWindow(url: string): Promise<void> {
     await readLanguage();
     buildMenu();
   });
-  win.on('closed', () => { log('window closed'); win = null; });
+  win.on('closed', () => {
+    log('window closed');
+    win = null;
+    // the customer screen has nothing to show without the till
+    if (customerWin && !customerWin.isDestroyed()) customerWin.close();
+  });
   win.webContents.on('render-process-gone', (_e, details) => log('screen process ended:', details.reason));
   if (remote) {
     // Chromium's certificate errors are -200 to -299

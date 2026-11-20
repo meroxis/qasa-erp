@@ -101,7 +101,7 @@ export const PAPER_MICRONS: Readonly<Partial<Record<PrinterPaper, { readonly wid
  * The layouts of the barcode labels page and the paper each is printed on: a label printer's label as it is, an A4
  * label sheet on A4.
  */
-export const LABEL_LAYOUT_PAPER = { '38x25': 'label38x25', '50x30': 'label50x30', a4_3x8: 'A4', a4_4x10: 'A4' } as const satisfies Readonly<Record<string, PrinterPaper>>;
+export const LABEL_LAYOUT_PAPER = { '38x25': 'label38x25', '50x30': 'label50x30', a4_3x8: 'A4', a4_4x10: 'A4', a4_shelf_3x7: 'A4' } as const satisfies Readonly<Record<string, PrinterPaper>>;
 export type LabelLayout = keyof typeof LABEL_LAYOUT_PAPER;
 export const LABEL_LAYOUTS = Object.keys(LABEL_LAYOUT_PAPER) as readonly LabelLayout[];
 export const isLabelLayout = (v: unknown): v is LabelLayout => oneOf(LABEL_LAYOUTS, v);

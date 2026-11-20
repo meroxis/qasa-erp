@@ -12,6 +12,7 @@ import { userBranchLists } from './branches.ts';
 import { readSetting, writeSetting } from './settings.ts';
 import type { Actor } from './auth.ts';
 import type { ApiExtension, ApiRequest } from './routes.ts';
+import { featureAccount } from './feature-accounts.ts';
 
 /**
  * Banking: the company's safes (181…), bank accounts and e-wallets (183…), moving money between them, cheques
@@ -192,18 +193,7 @@ const NR_NAMES: Names = { ar: 'أوراق القبض', en: 'Notes receivable', k
  * sub-account and the company's accountant has to choose another: setting banking_notes_receivable).
  */
 export function notesReceivable(db: Db, user: string): string {
-  const chosen = readSetting(db, 'banking_notes_receivable');
-  const accounts = loadAccounts(db);
-  const postable = (code: string) => accounts.some((a) => a.code === code && a.postable);
-  if (chosen && postable(chosen)) return chosen;
-  if (postable(NOTES_RECEIVABLE)) return NOTES_RECEIVABLE;
-  if (accounts.some((a) => a.code === NOTES_RECEIVABLE)) throw conflict('bk_notes_receivable_missing');
-  if (!accounts.some((a) => a.code === '16')) throw conflict('bk_notes_receivable_missing');
-  if (db.prepare('SELECT 1 FROM entry_lines WHERE account_code = ? LIMIT 1').get('16')) throw conflict('bk_notes_receivable_missing');
-  db.prepare('INSERT INTO accounts (code, name_ar, name_en, name_ku, "system", created_at) VALUES (?, ?, ?, ?, 1, ?)')
-    .run(NOTES_RECEIVABLE, NR_NAMES.ar, NR_NAMES.en, NR_NAMES.ku, new Date().toISOString());
-  audit(db, user, 'create', 'account', NOTES_RECEIVABLE, { name: NR_NAMES, standard: true });
-  return NOTES_RECEIVABLE;
+  return featureAccount(db, 'notesReceivable', user, NR_NAMES);
 }
 
 function notesPayable(db: Db): string {

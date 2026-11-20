@@ -111,6 +111,10 @@ export interface Settings {
   postingAccounts: PostingAccounts;
   /** What the company does; null until chosen (the app asks at the start). */
   businessTypes: BusinessType[] | null;
+  /** 1.7: the ONE type it mainly does (null until chosen); older servers leave it out, and the list is all there is */
+  businessType?: BusinessType | null;
+  /** 1.7: what it also does (at most two, more only when kept from before 1.7); older servers leave it out */
+  businessTypesExtra?: BusinessType[];
   /** How amounts show: dinar only, dinar and dollar, dollar and dinar (Settings → display); older servers leave it out */
   amountsShow?: AmountsShow;
   /** 1.5.2: whether the company uses the point of sale (core pos-use.ts); older servers leave both out (the till shows) */
@@ -417,6 +421,8 @@ export interface InvoiceView extends InvoiceSummary {
     /** 1.1: the unit the line was typed in (null: the base unit), its factor then and the quantity typed */
     lineUnit: UnitCode | null; unitFactorMilli: number | null; unitQtyMilli: number | null;
     batchNo: string | null; expiry: string | null; batchId: string | null;
+    /** 1.7: the discount offers gave this line (older servers leave it out) */
+    offerDiscount?: number;
   }[];
   actions: InvoiceAction[];
   returnOfNumber: string | null;
@@ -443,11 +449,14 @@ export interface InvoiceView extends InvoiceSummary {
   } | null;
   /** 1.4: a till's cash sale: the cash handed over and the change given back, when it was typed at the till */
   tender?: { paid: number; change: number };
+  /** 1.7: the part of `discount` offers gave (the rest is the discount typed), and the offers (older servers leave both out) */
+  offerDiscount?: number;
+  offers?: { offerId: string; code: string; names: Names; discount: number; lines: { lineNo: number; qtyMilli: number; discount: number }[] }[];
 }
 
-export type Role = 'admin' | 'preparer' | 'checker' | 'approver' | 'sales' | 'pos' | 'purchasing' | 'storekeeper' | 'viewer';
-export const ROLES: Role[] = ['admin', 'preparer', 'checker', 'approver', 'sales', 'pos', 'purchasing', 'storekeeper', 'viewer'];
-export type Permission = 'admin' | 'entries.prepare' | 'entries.check' | 'entries.approve' | 'sales' | 'pos' | 'purchases' | 'stock';
+export type Role = 'admin' | 'preparer' | 'checker' | 'approver' | 'sales' | 'pos' | 'supervisor' | 'purchasing' | 'storekeeper' | 'viewer';
+export const ROLES: Role[] = ['admin', 'preparer', 'checker', 'approver', 'sales', 'pos', 'supervisor', 'purchasing', 'storekeeper', 'viewer'];
+export type Permission = 'admin' | 'entries.prepare' | 'entries.check' | 'entries.approve' | 'sales' | 'pos' | 'posSupervise' | 'purchases' | 'stock';
 
 export interface Me {
   signInRequired: boolean;
@@ -463,7 +472,11 @@ export interface Me {
    * seesCost, seesBooks (1.4): false for someone the server sends no cost (purchase prices, stock value, a sale's cost)
    * or no books and profit to, a cashier for one; an older server leaves them out (everything is sent).
    */
-  user: { id: string | null; name: string; username: string; roles: Role[]; permissions: Permission[]; branchLimited?: boolean; seesCost?: boolean; seesBooks?: boolean } | null;
+  user: {
+    id: string | null; name: string; username: string; roles: Role[]; permissions: Permission[]; branchLimited?: boolean; seesCost?: boolean; seesBooks?: boolean;
+    /** 2.0 (an admin): an admin's password was reset with Windows Hello since an admin last looked */
+    resetNotice?: { at: string; username: string; windowsUser: string } | null;
+  } | null;
 }
 
 export interface UserView {
@@ -582,6 +595,19 @@ export const pendingRequests = (): number => inFlight;
 function setInFlight(n: number) {
   inFlight = n;
   for (const fn of busyListeners) fn(n);
+}
+
+/**
+ * 2.0: a till supervisor's approval for a refund (asked at the till before the returns page opens, or before an
+ * exchange): sent with the next return, cancel or exchange; the server takes it once, within two minutes.
+ */
+const REFUND_APPROVAL = 'qasa.refundApproval';
+export function setRefundApproval(token: string): void { try { sessionStorage.setItem(REFUND_APPROVAL, JSON.stringify({ token, at: Date.now() })); } catch { /* none kept */ } }
+export function refundApprovals(): { approvals?: string[] } {
+  try {
+    const v = JSON.parse(sessionStorage.getItem(REFUND_APPROVAL) ?? 'null') as { token: string; at: number } | null;
+    return v && Date.now() - v.at < 2 * 60 * 1000 ? { approvals: [v.token] } : {};
+  } catch { return {}; }
 }
 
 export async function request<T>(method: string, url: string, body?: unknown, options: SendOptions = {}): Promise<T> {
@@ -922,8 +948,8 @@ export const api = {
   deleteInvoice: (id: string) => request<void>('DELETE', `/api/invoices/${id}`),
   postInvoice: (id: string, opts: { allowExpired?: boolean; loyaltyPoints?: number } = {}) =>
     request<InvoiceView>('POST', `/api/invoices/${id}/post`, { ...(opts.allowExpired ? { allowExpired: true } : {}), ...(opts.loyaltyPoints ? { loyaltyPoints: opts.loyaltyPoints } : {}) }),
-  cancelInvoice: (id: string, date: string) => request<InvoiceView>('POST', `/api/invoices/${id}/cancel`, { date }),
-  createReturn: (id: string, input: ReturnInput) => request<InvoiceView>('POST', `/api/invoices/${id}/returns`, input),
+  cancelInvoice: (id: string, date: string) => request<InvoiceView>('POST', `/api/invoices/${id}/cancel`, { date, ...refundApprovals() }),
+  createReturn: (id: string, input: ReturnInput) => request<InvoiceView>('POST', `/api/invoices/${id}/returns`, { ...input, ...refundApprovals() }),
 
   stockDocs: (f: { kind?: StockDocKind; status?: string } = {}) => request<StockDocSummary[]>('GET', '/api/stock-docs' + qs(f)),
   stockDoc: (id: string) => request<StockDocView>('GET', `/api/stock-docs/${id}`),

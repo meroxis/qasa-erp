@@ -101,6 +101,16 @@ export class CompanyError extends Error {
 const find = (registry: Registry, id: string) => registry.list.find((c) => c.id === id) ?? null;
 
 /** Adds a company to the list (the folder and its file are made separately). */
+/**
+ * The companies the plan lets open now: the first `limit` in the list (the first company always among them), every one
+ * with no limit. A company past the limit (a licence ended, or companies.json written by hand) waits: nothing is deleted,
+ * and it opens again once the plan allows it (security review #10: the limit is checked when opening, not only adding).
+ */
+export function openableCompanies(registry: Registry, limit: number | null): Set<string> {
+  const list = [...registry.list].sort((a, b) => (a.id === MAIN_COMPANY ? -1 : b.id === MAIN_COMPANY ? 1 : 0));
+  return new Set((limit === null ? list : list.slice(0, Math.max(1, limit))).map((c) => c.id));
+}
+
 export function addCompany(registry: Registry, input: { id: string; name: unknown; now: string; limit: number | null }): Registry {
   const name = cleanName(input.name);
   if (!name) throw new CompanyError('company_name_invalid');

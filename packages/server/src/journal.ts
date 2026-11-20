@@ -411,6 +411,18 @@ const ENTRY_OWNERS: readonly { owner: string; sql: string; marks: number }[] = [
   { owner: 'generator_run', sql: 'SELECT 1 FROM gen_runs WHERE entry_id = ?', marks: 1 },
   { owner: 'deposit', sql: 'SELECT 1 FROM re_deposits WHERE close_entry_id = ?', marks: 1 },
   // petrol stations (fuel.ts): a shift, a tanker delivery, a dip or a tank's opening stock moves litres in the tanks too
+  // goods on consignment (consignment.ts): receipts and returns post their entry at once; a settlement's entry is what
+  // the supplier is owed for what sold, and the moves it covers stay settled while it stands
+  { owner: 'consignment', sql: 'SELECT 1 FROM consignment_docs WHERE entry_id = ? UNION ALL SELECT 1 FROM consignment_settlements WHERE entry_id = ? OR cancel_entry_id = ?', marks: 3 },
+  // gold shops (gold.ts): old gold bought, pieces received from a supplier and gold handed to one post their entry at once
+  { owner: 'gold', sql: 'SELECT 1 FROM gold_docs WHERE entry_id = ?', marks: 1 },
+  // wholesale (wholesale.ts): a rep's collection and a handover of the rep's cash to the office are that document's receipts
+  { owner: 'wholesale', sql: 'SELECT 1 FROM ws_collections WHERE entry_id = ? UNION ALL SELECT 1 FROM ws_handovers WHERE entry_id = ?', marks: 2 },
+  // gift vouchers (gift-vouchers.ts): a voucher sold, cancelled or written off when it expired unused is that voucher's
+  // entry; reversing it from the journal would leave the voucher spendable
+  { owner: 'gift_voucher', sql: 'SELECT 1 FROM gift_vouchers WHERE entry_id = ? OR cancel_entry_id = ? OR expire_entry_id = ?', marks: 3 },
+  // delivery orders (delivery.ts): a driver's cash handed over to the office is the handover's own voucher
+  { owner: 'delivery_handover', sql: 'SELECT 1 FROM delivery_handovers WHERE entry_id = ?', marks: 1 },
   { owner: 'fuel', sql: 'SELECT 1 FROM fuel_shifts WHERE entry_id = ? UNION ALL SELECT 1 FROM fuel_deliveries WHERE entry_id = ? UNION ALL SELECT 1 FROM fuel_dips WHERE entry_id = ? UNION ALL SELECT 1 FROM fuel_tanks WHERE opening_entry_id = ?', marks: 4 }
 ];
 

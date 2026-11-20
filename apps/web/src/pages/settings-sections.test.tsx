@@ -77,7 +77,7 @@ describe('Settings sections', () => {
     expect(tiles(forUser).map((x) => x.id)).toEqual(settingsSectionsFor(false).map((s) => s.id));
     const forAdmin = wrap(<Settings admin section={null} />);
     expect(tiles(forAdmin).map((x) => x.id)).toEqual(settingsSectionsFor(true).map((s) => s.id));
-    expect(tiles(forAdmin).map((x) => x.id)).toEqual(['display', 'company', 'periods', 'sales', 'loyalty', 'printers', 'backups', 'network', 'users', 'usage', 'about']);
+    expect(tiles(forAdmin).map((x) => x.id)).toEqual(['display', 'company', 'periods', 'sales', 'tills', 'loyalty', 'printers', 'backups', 'network', 'users', 'usage', 'about']);
     for (const html of [forUser, forAdmin]) {
       // the grid alone: a nav of rectangles, no section beside it, no Back link, no list at the side
       expect(html.startsWith('<nav class="settings-grid" aria-label="Settings">')).toBe(true);

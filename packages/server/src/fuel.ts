@@ -168,12 +168,27 @@ function stockAccountCanBeMade(db: Db): boolean {
   return !db.prepare("SELECT 1 FROM entry_lines WHERE account_code = '137' LIMIT 1").get();
 }
 
+/** Whether the petrol station made account 1379 itself (standard, or audited as made for the fuel stock before 2.0). */
+export function fuelMadeStock(db: Db): boolean {
+  const a = db.prepare('SELECT "system" AS s FROM accounts WHERE code = ?').get(FUEL_STOCK_ACCOUNT) as { s: number } | undefined;
+  if (!a) return false;
+  if (Number(a.s) === 1) return true;
+  return !!db.prepare("SELECT 1 FROM audit_log WHERE entity = 'account' AND entity_id = ? AND action = 'create' AND details LIKE '%fuel_stock%' LIMIT 1").get(FUEL_STOCK_ACCOUNT);
+}
+
+/** The fuel settings were saved with 1379 as the stock account (the accountant's own choice). */
+function fuelSettingsSaysStock(db: Db): boolean {
+  try { return (JSON.parse(readSetting(db, 'fuel_settings') ?? '{}') as { stockAccount?: string }).stockAccount === FUEL_STOCK_ACCOUNT; } catch { return false; }
+}
+
 /** The fuel stock account to post to: the one chosen, made under 137 the first time when it is the default one. */
 function stockAccount(db: Db, settings: FuelSettings, user: string): string {
   const code = settings.stockAccount;
-  if (postableAccounts(db).has(code)) return code;
+  // 2.0 (accounting review #3): the default 1379 is taken only when the petrol station made it (or the accountant chose
+  // it in the fuel settings); an account 1379 the company made itself for something else never is
+  if (postableAccounts(db).has(code) && (code !== FUEL_STOCK_ACCOUNT || fuelSettingsSaysStock(db) || fuelMadeStock(db))) return code;
   if (code === FUEL_STOCK_ACCOUNT && stockAccountCanBeMade(db)) {
-    db.prepare('INSERT INTO accounts (code, name_ar, name_en, name_ku, "system", created_at) VALUES (?, ?, ?, ?, 0, ?)')
+    db.prepare('INSERT INTO accounts (code, name_ar, name_en, name_ku, "system", created_at) VALUES (?, ?, ?, ?, 1, ?)')
       .run(FUEL_STOCK_ACCOUNT, FUEL_STOCK_NAMES.ar, FUEL_STOCK_NAMES.en, FUEL_STOCK_NAMES.ku, now());
     audit(db, user, 'create', 'account', FUEL_STOCK_ACCOUNT, { name: FUEL_STOCK_NAMES, for: 'fuel_stock' });
     return FUEL_STOCK_ACCOUNT;

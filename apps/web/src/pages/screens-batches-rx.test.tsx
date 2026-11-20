@@ -1,4 +1,5 @@
 import { readFileSync } from 'node:fs';
+import { tillSource } from '../till-source.ts';
 import { describe, expect, it, vi } from 'vitest';
 import type { ReactNode } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
@@ -69,8 +70,9 @@ describe('a batch picked by hand on a POS line', () => {
   });
 
   it('is offered on each cart line of an item that tracks batches, from the shift’s warehouse', () => {
-    const pos = src('./Pos.tsx');
-    expect(pos).toContain("<BatchPick item={l.item} warehouseId={shift.warehouseId} value={l.batchId ?? ''}");
+    const pos = tillSource();
+    expect(pos).toContain("<BatchPick item={l.item} warehouseId={warehouseId} value={l.batchId ?? ''}");
+    expect(pos).toContain('warehouseId={shift.warehouseId}');
     expect(pos).toContain('lines: cart.map(posSaleLine)');
     // the picker: automatic first; nothing for an item without batches
     expect(wrap(<BatchPick item={tracked} warehouseId="w1" value="" onChange={() => {}} />)).toContain('Automatic (earliest expiry)');
@@ -107,7 +109,7 @@ describe('a pharmacy’s sale invoice', () => {
     expect(ticked).not.toContain('var(--warn)');
     expect(wrap(<RxTick seen={false} onChange={() => {}} />, 'ar')).toContain('رأيت الوصفة');
     expect(src('./Invoices.tsx')).toContain("{kind === 'sale' && it && rxItems.has(it.id) && <RxTick");
-    expect(src('./Pos.tsx')).toContain('{rxItems.has(l.item.id) && <RxTick');
+    expect(tillSource()).toContain('{rxItems.has(l.item.id) && <RxTick');
   });
 
   it('asks for the controlled medicines of the sale just posted, from the editor and from its page', () => {
@@ -120,7 +122,7 @@ describe('a pharmacy’s sale invoice', () => {
     expect(inv).toContain('const controlled = useControlledPrompt(id);');
     expect(inv).toContain("if (data.kind === 'sale') controlled.check(id);");
     expect(inv).toContain('{controlled.dialog}');
-    expect(src('./Pos.tsx')).toContain('controlled.check(res.invoice.id);');
+    expect(tillSource()).toContain('controlled.check(res.invoice.id);');
   });
 
   it('has the new text in Arabic, English and Kurdish', () => {

@@ -67,7 +67,7 @@ describe('the market', () => {
     expect(BUSINESS_TYPES).toContain('market');
     expect(BUSINESS_STARTER_TRADE.market).toBe('grocery');
     expect(isKey('bt_market') && isKey('bt_marketText')).toBe(true);
-    expect(readFileSync(new URL('../pages/BusinessType.tsx', import.meta.url), 'utf8')).toContain("market: { icon: 'receipt', title: 'bt_market', text: 'bt_marketText' }");
+    expect(readFileSync(new URL('./business-cards.ts', import.meta.url), 'utf8')).toContain("{ type: 'market', group: 'shops', pages: ['pos_title', 'items', 'lb_title', 'ex_title', 'of_title'] }");
   });
 
   // 21 00017 01250 + check digit 3

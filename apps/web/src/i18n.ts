@@ -55,9 +55,20 @@ import { DOC_APPROVAL_TEXT } from './i18n/doc-approval.ts';
 import { AMOUNTS_TEXT } from './i18n/amounts.ts';
 import { POS_USE_TEXT } from './i18n/pos-use.ts';
 import { TILL_QUICK_TEXT } from './i18n/till-quick.ts';
+import { SMR_TEXT } from './i18n/supermarket-reports.ts';
 import { ITEM_QUICK_TEXT } from './i18n/item-quick.ts';
 import { RECEIPT_PHOTO_TEXT } from './i18n/receipt-photo.ts';
 import { PETROL_TEXT } from './i18n/petrol.ts';
+import { BIZ_CHOICE_TEXT } from './i18n/business-choice.ts';
+import { WHOLESALE_TEXT } from './i18n/wholesale.ts';
+import { TILL_TEXT } from './i18n/till.ts';
+import { TILL_UI_TEXT } from './i18n/till-ui.ts';
+import { UXF_TEXT } from './i18n/ux-fix.ts';
+import { CONSIGNMENT_TEXT } from './i18n/consignment.ts';
+import { OFFER_TEXT } from './i18n/offers.ts';
+import { GOLD_TEXT } from './i18n/gold.ts';
+import { MKX_TEXT } from './i18n/market-extras.ts';
+import { CLOTHING_TEXT } from './i18n/clothing.ts';
 import { formatAmount, formatDate, formatDateTime, formatInteger, formatQty, formatTime, hasLeadingSign, LANGS, ltrIsolate, monthName, textDigits, toEasternDigits, type CurrencyCode, type DigitStyle, type Lang, type Names } from '@qasa/core';
 
 /** Every UI string in Arabic, English and Kurdish (Sorani) — in that order. */
@@ -426,6 +437,7 @@ const BASE = {
   role_sales: ['المبيعات', 'Sales', 'فرۆشتن'],
   // 1.5.2: the till, given per person by an admin (the words of the till itself, i18n/pos.ts pos_title)
   role_pos: ['نقطة البيع (الكاشير)', 'Point of sale', 'خاڵی فرۆشتن (کاشێر)'],
+  role_supervisor: ['مشرف الصندوق', 'Till supervisor', 'سەرپەرشتیاری سندووق'],
   role_purchasing: ['المشتريات', 'Purchasing', 'کڕین'],
   role_storekeeper: ['أمين المخزن', 'Storekeeper', 'کۆگادار'],
   role_viewer: ['اطلاع فقط', 'Viewer', 'تەنها بینین'],
@@ -435,6 +447,7 @@ const BASE = {
   roleHelp_approver: ['يصادق السندات فتُرحّل', 'Approves vouchers, which posts them', 'سەنەدەکان پەسەند دەکات و پۆست دەبن'],
   roleHelp_sales: ['فواتير المبيعات والمردودات والزبائن، دون الكلفة والربح', 'Sales invoices, returns and customers, without cost or profit', 'پسوولەی فرۆشتن، گەڕاوە و کڕیاران، بێ تێچوو و قازانج'],
   roleHelp_pos: ['يبيع بنقطة البيع: يفتح الوردية ويبيع ويغلقها، دون الكلفة والربح', 'Sells at the point of sale: opens a shift, sells and closes it, without cost or profit', 'بە خاڵی فرۆشتن دەفرۆشێت: شەفت دەکاتەوە، دەفرۆشێت و دایدەخات، بێ تێچوو و قازانج'],
+  roleHelp_supervisor: ['يوافق برمزه السري على ما لا يفعله الكاشير وحده: حذف سطر، إلغاء سلة، تغيير سعر، خصم كبير، فتح الدرج، استرجاع، بيع آجل فوق الحد', 'Approves with their PIN what a cashier may not do alone: a line taken off, a basket voided, a price change, a big discount, the drawer opened, a refund, credit over the limit', 'بە پینی خۆی ڕەزامەندی دەدات لەسەر ئەوەی کاشێر بە تەنها ناتوانێت: لابردنی دێڕێک، هەڵوەشاندنەوەی سەبەتە، گۆڕینی نرخ، داشکاندنی گەورە، کردنەوەی چەکمەجە، گەڕاندنەوە، قەرز سەرووی سنوور'],
   roleHelp_purchasing: ['فواتير الشراء والمردودات والمجهزون', 'Purchase invoices, returns and suppliers', 'پسوولەی کڕین، گەڕاوە و دابینکەران'],
   roleHelp_storekeeper: ['المواد وحركات المخزن', 'Items and stock documents', 'کاڵا و جووڵەکانی کۆگا'],
   roleHelp_viewer: ['يطّلع على الدفاتر والتقارير دون تعديل', 'Sees the books and reports without changing them', 'دەفتەر و ڕاپۆرتەکان دەبینێت بێ گۆڕین'],
@@ -722,6 +735,30 @@ const BASE = {
   err_stock_already_used: ['السطر {n}: بيعت مواد من هذه الفاتورة — لا يمكن إلغاؤها', 'Line {n}: goods from this invoice were already sold, so it can’t be cancelled', 'ڕیزی {n}: کاڵای ئەم پسوولەیە فرۆشراوە، بۆیە هەڵناوەشێندرێتەوە'],
   err_lines_required: ['أضف مادة واحدة على الأقل', 'Add at least one item', 'لانیکەم یەک کاڵا زیاد بکە'],
   err_line_qty_invalid: ['السطر {n}: الكمية غير صحيحة', 'Line {n}: invalid quantity', 'ڕیزی {n}: بڕ دروست نییە'],
+  err_qty_invalid: ['الكمية غير صحيحة', 'The quantity is not valid', 'بڕەکە دروست نییە'],
+  err_category_unknown: ['الفئة المختارة غير موجودة', 'The chosen category no longer exists', 'پۆلە هەڵبژێردراوەکە نەماوە'],
+  err_brand_unknown: ['العلامة التجارية المختارة غير موجودة', 'The chosen brand no longer exists', 'براندە هەڵبژێردراوەکە نەماوە'],
+  err_supplier_invalid: ['اختر مورّداً فعّالاً', 'Choose an active supplier', 'دابینکەرێکی چالاک هەڵبژێرە'],
+  err_kind_invalid: ['نوع المستند غير صحيح', 'The document type is not valid', 'جۆری بەڵگەنامەکە دروست نییە'],
+  err_image_invalid: ['تعذّرت قراءة الصورة', 'The picture could not be read', 'وێنەکە نەخوێندرایەوە'],
+  err_image_too_big: ['الصورة كبيرة جداً — اختر صورة أصغر', 'The picture is too big — choose a smaller one', 'وێنەکە زۆر گەورەیە — وێنەیەکی بچووکتر هەڵبژێرە'],
+  err_image_type: ['استخدم صورة PNG أو JPEG أو WebP', 'Use a PNG, JPEG or WebP picture', 'وێنەی PNG یان JPEG یان WebP بەکاربهێنە'],
+  err_date_future: ['لا يمكن أن يكون التاريخ في المستقبل', 'The date can’t be in the future', 'بەروار ناتوانێت لە داهاتوودا بێت'],
+  err_entry_changed: ['تغيّر القيد منذ فتحته — افتحه من جديد وراجعه', 'The entry changed since you opened it — open it again and check it', 'قەیدەکە گۆڕا لەو کاتەوەی کردتەوە — دووبارە بیکەرەوە و بیپشکنە'],
+  err_lang_invalid: ['اللغة غير معروفة', 'Unknown language', 'زمانەکە نەناسراوە'],
+  err_amounts_show_invalid: ['خيار عرض المبالغ غير صحيح', 'The amounts display choice is not valid', 'هەڵبژاردەی پیشاندانی بڕەکان دروست نییە'],
+  err_pos_use_invalid: ['خيار استخدام الصندوق غير صحيح', 'The till use choice is not valid', 'هەڵبژاردەی بەکارهێنانی سندووق دروست نییە'],
+  err_backup_name: ['اسم النسخة الاحتياطية غير صحيح', 'The backup name is not valid', 'ناوی پاشەکەوتەکە دروست نییە'],
+  err_backup_settings: ['إعدادات النسخ الاحتياطي غير صحيحة', 'The backup settings are not valid', 'ڕێکخستنەکانی پاشەکەوت دروست نین'],
+  err_on_required: ['اختر تشغيل أو إيقاف', 'Choose on or off', 'هەڵکردن یان کوژاندنەوە هەڵبژێرە'],
+  err_md_account_not_chosen: ['السطر {n}: اختر حساباً', 'Line {n}: choose an account', 'ڕیزی {n}: هەژمارێک هەڵبژێرە'],
+  err_md_account_full: ['السطر {n}: لا مكان لحساب جديد تحت هذا الحساب', 'Line {n}: there is no room for a new account under this one', 'ڕیزی {n}: شوێن نییە بۆ هەژمارێکی نوێ لە ژێر ئەمەدا'],
+  err_md_account_not_postable: ['السطر {n}: لا يمكن القيد على هذا الحساب', 'Line {n}: this account can’t take entries', 'ڕیزی {n}: ئەم هەژمارە قەید وەرناگرێت'],
+  err_md_not_balanced: ['الأرصدة غير متوازنة — اختر حساباً مقابلاً للفرق', 'The balances don’t balance — choose an account for the difference', 'باڵانسەکان هاوسەنگ نین — هەژمارێک بۆ جیاوازییەکە هەڵبژێرە'],
+  err_md_sheet_link_invalid: ['رابط الجدول غير صحيح', 'The sheet link is not valid', 'بەستەری خشتەکە دروست نییە'],
+  err_md_sheet_not_shared: ['الجدول غير مشارك — اجعله متاحاً لمن لديه الرابط', 'The sheet isn’t shared — let anyone with the link view it', 'خشتەکە هاوبەش نەکراوە — با هەر کەسێک بەستەرەکەی هەبێت بیبینێت'],
+  err_md_sheet_too_large: ['الجدول كبير جداً', 'The sheet is too large', 'خشتەکە زۆر گەورەیە'],
+  err_md_sheet_unreachable: ['تعذّر الوصول إلى الجدول — تحقّق من الاتصال', 'The sheet could not be reached — check the connection', 'نەگەیشتە خشتەکە — پەیوەندییەکە بپشکنە'],
   err_line_price_invalid: ['السطر {n}: السعر غير صحيح', 'Line {n}: invalid price', 'ڕیزی {n}: نرخ دروست نییە'],
   err_discount_invalid: ['الخصم أكبر من المجموع أو غير صحيح', 'The discount is more than the subtotal or not valid', 'داشکاندن لە کۆ زیاترە یان دروست نییە'],
   err_total_invalid: ['صافي الفاتورة يجب أن يكون أكبر من صفر', 'The invoice total must be more than zero', 'کۆی پسوولە دەبێت لە سفر زیاتر بێت'],
@@ -1051,7 +1088,7 @@ const BASE = {
 /** The industry features keep their texts in files of their own (i18n/), in the same three languages. */
 const D = { ...BASE, ...AUDIT_TEXT, ...REAL_ESTATE_TEXT, ...MOBILE_TEXT, ...PARTS_TEXT, ...ENGINEERING_TEXT,
   ...PAYROLL_TEXT, ...POS_TEXT, ...QUOTES_TEXT, ...PIPELINE_TEXT, ...MEDIA_TEXT, ...BRIEF_TEXT, ...CLOUD_TEXT, ...RELAY_TEXT, ...ACTIVATION_TEXT, ...FX_TEXT, ...VERIFY_TEXT, ...GEN_TEXT, ...WEBAPI_TEXT, ...PHONE_TEXT, ...USAGE_TEXT, ...SOLAR_TEXT, ...LEGAL_TEXT, ...BRANCH_TEXT, ...BANK_TEXT, ...WAVE2_TEXT, ...ASSET_TEXT, ...ADJ_TEXT, ...PO_TEXT, ...COMPANY_TEXT, ...LABEL_TEXT, ...PRINTER_TEXT, ...SAFETY_TEXT, ...UI_TEXT, ...UNIT_TEXT, ...BATCH_TEXT, ...STORE_TEXT, ...CATALOG_TEXT, ...PHARMACY_TEXT, ...HARDENING_TEXT, ...OUTBOX_TEXT, ...DAY_CLOSE_TEXT, ...WHATSAPP_TEXT, ...LOYALTY_TEXT, ...SUPPORT_TEXT, ...SETTINGS_SECTION_TEXT, ...LOOK_TEXT, ...INVOICE_SPEED_TEXT, ...ITEMS14_TEXT, ...SALES14_TEXT, ...SHELL14_TEXT, ...PRINT14_TEXT, ...DOC_APPROVAL_TEXT, ...ITEM_QUICK_TEXT, ...COUNT_TEXT, ...AMOUNTS_TEXT, ...POS_USE_TEXT, ...TILL_QUICK_TEXT,
-  ...RECEIPT_PHOTO_TEXT, ...PETROL_TEXT };
+  ...RECEIPT_PHOTO_TEXT, ...PETROL_TEXT, ...SMR_TEXT, ...TILL_TEXT, ...TILL_UI_TEXT, ...CONSIGNMENT_TEXT, ...OFFER_TEXT, ...BIZ_CHOICE_TEXT, ...GOLD_TEXT, ...WHOLESALE_TEXT, ...MKX_TEXT, ...CLOTHING_TEXT, ...UXF_TEXT };
 
 export type Key = keyof typeof D;
 

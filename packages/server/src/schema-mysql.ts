@@ -339,6 +339,8 @@ export const MYSQL_TABLES: readonly MysqlObject[] = [
       cancelled_by TEXT,
       cancelled_at ${WHEN},
       updated_at ${WHEN} NOT NULL,
+      offers_on INT NOT NULL DEFAULT 0 CHECK (offers_on IN (0, 1)),
+      offer_discount BIGINT NOT NULL DEFAULT 0 CHECK (offer_discount >= 0),
       CHECK ((kind IN ('sale_return', 'purchase_return')) = (return_of IS NOT NULL)),
       INDEX invoices_date (date),
       INDEX invoices_return_of (return_of),
@@ -836,6 +838,24 @@ export const MYSQL_TABLES: readonly MysqlObject[] = [
     )`
   },
   {
+    // ——— 17, TILLS ——— (before pos_shifts, whose till_id points at it)
+    name: 'pos_tills',
+    since: 17,
+    sql: `CREATE TABLE pos_tills (
+      id ${ID} NOT NULL PRIMARY KEY,
+      name TEXT NOT NULL,
+      cash_account ${ID} NOT NULL,
+      warehouse_id ${ID} NOT NULL,
+      drawer ${WORD} NOT NULL DEFAULT 'off' CHECK (drawer IN ('off', 'cash')),
+      customer_display INT NOT NULL DEFAULT 0 CHECK (customer_display IN (0, 1)),
+      active INT NOT NULL DEFAULT 1 CHECK (active IN (0, 1)),
+      created_at ${WHEN} NOT NULL,
+      updated_at ${WHEN} NOT NULL,
+      FOREIGN KEY (cash_account) REFERENCES accounts(code),
+      FOREIGN KEY (warehouse_id) REFERENCES warehouses(id)
+    )`
+  },
+  {
     name: 'pos_shifts',
     since: 7,
     sql: `CREATE TABLE pos_shifts (
@@ -855,8 +875,10 @@ export const MYSQL_TABLES: readonly MysqlObject[] = [
       expected_usd BIGINT,
       counted_usd BIGINT,
       notes TEXT,
+      till_id ${ID},
       FOREIGN KEY (cash_account) REFERENCES accounts(code),
-      FOREIGN KEY (warehouse_id) REFERENCES warehouses(id)
+      FOREIGN KEY (warehouse_id) REFERENCES warehouses(id),
+      FOREIGN KEY (till_id) REFERENCES pos_tills(id)
     )`
   },
   {
@@ -866,6 +888,10 @@ export const MYSQL_TABLES: readonly MysqlObject[] = [
       invoice_id ${ID} NOT NULL PRIMARY KEY,
       shift_id ${ID} NOT NULL,
       tendered BIGINT CHECK (tendered IS NULL OR tendered >= 0),
+      usd_cash BIGINT CHECK (usd_cash IS NULL OR usd_cash > 0),
+      usd_rate_x100 BIGINT CHECK (usd_rate_x100 IS NULL OR usd_rate_x100 > 0),
+      rounding BIGINT NOT NULL DEFAULT 0,
+      voucher_paid BIGINT NOT NULL DEFAULT 0,
       INDEX pos_sales_shift (shift_id),
       FOREIGN KEY (invoice_id) REFERENCES invoices(id),
       FOREIGN KEY (shift_id) REFERENCES pos_shifts(id)
@@ -1839,7 +1865,847 @@ export const MYSQL_TABLES: readonly MysqlObject[] = [
       INDEX fuel_moves_source (source_id),
       FOREIGN KEY (tank_id) REFERENCES fuel_tanks(id)
     )`
+  },
+  // ——— v17: supermarket reports (db.ts V17) ———
+  {
+    // 17: shelf labels to reprint (shelf-labels.ts)
+    name: 'shelf_label_flags',
+    since: 17,
+    sql: `CREATE TABLE shelf_label_flags (
+      item_id ${ID} NOT NULL,
+      unit ${WORD} NOT NULL DEFAULT '',
+      old_price BIGINT CHECK (old_price IS NULL OR old_price >= 0),
+      new_price BIGINT NOT NULL CHECK (new_price >= 0),
+      currency ${WORD} NOT NULL CHECK (currency IN ('IQD', 'USD')),
+      changed_at ${WHEN} NOT NULL,
+      changed_by TEXT NOT NULL,
+      PRIMARY KEY (item_id, unit),
+      INDEX shelf_label_flags_changed (changed_at),
+      FOREIGN KEY (item_id) REFERENCES items(id)
+    )`
+  },
+  // ——— end v17: supermarket reports ———
+  // ===== 17 · CONSIGNMENT (db.ts V17, consignment.ts) — begin =====
+  {
+    name: 'consignment_items',
+    since: 17,
+    sql: `CREATE TABLE consignment_items (
+      item_id ${ID} NOT NULL PRIMARY KEY,
+      supplier_id ${ID} NOT NULL,
+      currency ${WORD} NOT NULL CHECK (currency IN ('IQD', 'USD')),
+      unit_cost BIGINT NOT NULL CHECK (unit_cost >= 0),
+      active INT NOT NULL DEFAULT 1 CHECK (active IN (0, 1)),
+      created_at ${WHEN} NOT NULL,
+      updated_at ${WHEN} NOT NULL,
+      INDEX consignment_items_supplier (supplier_id),
+      FOREIGN KEY (item_id) REFERENCES items(id),
+      FOREIGN KEY (supplier_id) REFERENCES parties(id)
+    )`
+  },
+  {
+    name: 'consignment_docs',
+    since: 17,
+    sql: `CREATE TABLE consignment_docs (
+      id ${ID} NOT NULL PRIMARY KEY,
+      kind ${WORD} NOT NULL CHECK (kind IN ('receipt', 'return')),
+      number ${ID} UNIQUE,
+      date ${WHEN} NOT NULL,
+      supplier_id ${ID} NOT NULL,
+      warehouse_id ${ID} NOT NULL,
+      currency ${WORD} NOT NULL CHECK (currency IN ('IQD', 'USD')),
+      rate_x100 BIGINT NOT NULL CHECK (rate_x100 > 0),
+      status ${WORD} NOT NULL CHECK (status IN ('draft', 'posted', 'cancelled')),
+      entry_id ${ID},
+      notes TEXT,
+      created_by TEXT NOT NULL,
+      prepared_by_id ${ID},
+      created_at ${WHEN} NOT NULL,
+      updated_at ${WHEN} NOT NULL,
+      INDEX consignment_docs_supplier (supplier_id, date),
+      FOREIGN KEY (supplier_id) REFERENCES parties(id),
+      FOREIGN KEY (warehouse_id) REFERENCES warehouses(id),
+      FOREIGN KEY (entry_id) REFERENCES entries(id),
+      FOREIGN KEY (prepared_by_id) REFERENCES users(id)
+    )`
+  },
+  {
+    name: 'consignment_doc_lines',
+    since: 17,
+    sql: `CREATE TABLE consignment_doc_lines (
+      doc_id ${ID} NOT NULL,
+      seq INT NOT NULL,
+      item_id ${ID} NOT NULL,
+      qty_milli BIGINT NOT NULL CHECK (qty_milli > 0),
+      unit_cost BIGINT,
+      unit ${WORD},
+      unit_factor_milli BIGINT,
+      unit_qty_milli BIGINT,
+      batch_no ${BATCH},
+      expiry ${WHEN},
+      batch_id ${ID},
+      PRIMARY KEY (doc_id, seq),
+      FOREIGN KEY (doc_id) REFERENCES consignment_docs(id),
+      FOREIGN KEY (item_id) REFERENCES items(id)
+    )`
+  },
+  {
+    name: 'consignment_settlements',
+    since: 17,
+    sql: `CREATE TABLE consignment_settlements (
+      id ${ID} NOT NULL PRIMARY KEY,
+      number ${ID} NOT NULL UNIQUE,
+      date ${WHEN} NOT NULL,
+      supplier_id ${ID} NOT NULL,
+      currency ${WORD} NOT NULL CHECK (currency IN ('IQD', 'USD')),
+      rate_x100 BIGINT NOT NULL CHECK (rate_x100 > 0),
+      amount BIGINT NOT NULL CHECK (amount > 0),
+      book_value BIGINT NOT NULL,
+      status ${WORD} NOT NULL CHECK (status IN ('open', 'cancelled')),
+      entry_id ${ID},
+      cancel_entry_id ${ID},
+      notes TEXT,
+      created_by TEXT NOT NULL,
+      created_at ${WHEN} NOT NULL,
+      updated_at ${WHEN} NOT NULL,
+      INDEX consignment_settlements_supplier (supplier_id, date),
+      FOREIGN KEY (supplier_id) REFERENCES parties(id),
+      FOREIGN KEY (entry_id) REFERENCES entries(id),
+      FOREIGN KEY (cancel_entry_id) REFERENCES entries(id)
+    )`
+  },
+  {
+    name: 'consignment_moves',
+    since: 17,
+    sql: `CREATE TABLE consignment_moves (
+      id ${ID} NOT NULL PRIMARY KEY,
+      item_id ${ID} NOT NULL,
+      supplier_id ${ID} NOT NULL,
+      warehouse_id ${ID} NOT NULL,
+      date ${WHEN} NOT NULL,
+      kind ${WORD} NOT NULL CHECK (kind IN ('received', 'returned', 'sold', 'transfer')),
+      source_type ${WORD} NOT NULL,
+      source_id ${ID} NOT NULL,
+      qty_milli BIGINT NOT NULL,
+      value BIGINT NOT NULL,
+      currency ${WORD} NOT NULL CHECK (currency IN ('IQD', 'USD')),
+      ccy_value BIGINT NOT NULL,
+      settlement_id ${ID},
+      created_at ${WHEN} NOT NULL,
+      INDEX consignment_moves_item (item_id, warehouse_id),
+      INDEX consignment_moves_supplier (supplier_id, kind, date),
+      INDEX consignment_moves_settlement (settlement_id),
+      INDEX consignment_moves_source (source_type, source_id),
+      FOREIGN KEY (item_id) REFERENCES items(id),
+      FOREIGN KEY (supplier_id) REFERENCES parties(id),
+      FOREIGN KEY (warehouse_id) REFERENCES warehouses(id),
+      FOREIGN KEY (settlement_id) REFERENCES consignment_settlements(id)
+    )`
+  },
+  // ===== 17 · CONSIGNMENT — end =====
+  // ===== 17 · OFFERS (db.ts V17) =====
+  {
+    name: 'offers',
+    since: 17,
+    sql: `CREATE TABLE offers (
+      id ${ID} NOT NULL PRIMARY KEY,
+      code ${ID} NOT NULL UNIQUE,
+      name_ar TEXT NOT NULL,
+      name_en TEXT NOT NULL,
+      name_ku TEXT NOT NULL,
+      kind ${WORD} NOT NULL CHECK (kind IN ('buyGet', 'bundle', 'price')),
+      active INT NOT NULL DEFAULT 1 CHECK (active IN (0, 1)),
+      priority INT NOT NULL DEFAULT 0 CHECK (priority >= 0),
+      exclusive INT NOT NULL DEFAULT 0 CHECK (exclusive IN (0, 1)),
+      max_per_sale BIGINT CHECK (max_per_sale IS NULL OR max_per_sale > 0),
+      starts_on ${WHEN},
+      ends_on ${WHEN},
+      weekdays ${WORD},
+      from_time ${WORD},
+      to_time ${WORD},
+      branch_ids TEXT,
+      items TEXT NOT NULL,
+      categories TEXT NOT NULL,
+      get_items TEXT NOT NULL,
+      get_categories TEXT NOT NULL,
+      buy_milli BIGINT,
+      get_milli BIGINT,
+      get_percent INT,
+      bundle_milli BIGINT,
+      bundle_price BIGINT,
+      price BIGINT,
+      percent_off INT,
+      notes TEXT,
+      created_by TEXT NOT NULL,
+      created_at ${WHEN} NOT NULL,
+      updated_at ${WHEN} NOT NULL
+    )`
+  },
+  {
+    name: 'invoice_offer_lines',
+    since: 17,
+    sql: `CREATE TABLE invoice_offer_lines (
+      invoice_id ${ID} NOT NULL,
+      line_no INT NOT NULL,
+      offer_id ${ID} NOT NULL,
+      qty_milli BIGINT NOT NULL CHECK (qty_milli >= 0),
+      discount BIGINT NOT NULL CHECK (discount >= 0),
+      PRIMARY KEY (invoice_id, line_no, offer_id),
+      INDEX invoice_offer_lines_offer (offer_id),
+      FOREIGN KEY (invoice_id) REFERENCES invoices(id) ON DELETE CASCADE,
+      FOREIGN KEY (offer_id) REFERENCES offers(id)
+    )`
+  },
+  // ===== 18 · TILL RULES (till-rules.ts, gift-vouchers.ts) =====
+  {
+    name: 'pos_pins',
+    since: 18,
+    sql: `CREATE TABLE pos_pins (
+      user_id ${ID} NOT NULL PRIMARY KEY,
+      pin_hash TEXT NOT NULL,
+      digits INT,
+      updated_at ${WHEN} NOT NULL,
+      FOREIGN KEY (user_id) REFERENCES users(id)
+    )`
+  },
+  {
+    name: 'pos_approvals',
+    since: 18,
+    sql: `CREATE TABLE pos_approvals (
+      id ${ID} NOT NULL PRIMARY KEY,
+      shift_id ${ID} NOT NULL,
+      action ${WORD} NOT NULL CHECK (action IN ('line_delete', 'void', 'price', 'discount', 'no_sale', 'refund', 'credit_over', 'blind_view')),
+      approver TEXT NOT NULL,
+      approver_id ${ID},
+      cashier TEXT NOT NULL,
+      detail TEXT,
+      created_at ${WHEN} NOT NULL,
+      expires_at ${WHEN} NOT NULL,
+      used_at ${WHEN},
+      INDEX pos_approvals_shift (shift_id),
+      FOREIGN KEY (shift_id) REFERENCES pos_shifts(id)
+    )`
+  },
+  {
+    name: 'gift_vouchers',
+    since: 18,
+    sql: `CREATE TABLE gift_vouchers (
+      id ${ID} NOT NULL PRIMARY KEY,
+      code ${WORD} NOT NULL,
+      amount BIGINT NOT NULL CHECK (amount > 0),
+      balance BIGINT NOT NULL CHECK (balance >= 0),
+      currency ${WORD} NOT NULL DEFAULT 'IQD' CHECK (currency IN ('IQD')),
+      expires_on ${WHEN},
+      status ${WORD} NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'cancelled')),
+      account_code ${ID} NOT NULL,
+      shift_id ${ID},
+      entry_id ${ID},
+      cancel_entry_id ${ID},
+      expire_entry_id ${ID},
+      created_by TEXT NOT NULL,
+      created_at ${WHEN} NOT NULL,
+      UNIQUE KEY gift_vouchers_code (code),
+      INDEX gift_vouchers_shift (shift_id),
+      INDEX gift_vouchers_entry (entry_id),
+      INDEX gift_vouchers_cancel_entry (cancel_entry_id),
+      INDEX gift_vouchers_expire_entry (expire_entry_id),
+      FOREIGN KEY (account_code) REFERENCES accounts(code),
+      FOREIGN KEY (shift_id) REFERENCES pos_shifts(id),
+      FOREIGN KEY (entry_id) REFERENCES entries(id),
+      FOREIGN KEY (cancel_entry_id) REFERENCES entries(id),
+      FOREIGN KEY (expire_entry_id) REFERENCES entries(id)
+    )`
+  },
+  {
+    name: 'gift_voucher_moves',
+    since: 18,
+    sql: `CREATE TABLE gift_voucher_moves (
+      id ${ID} NOT NULL PRIMARY KEY,
+      voucher_id ${ID} NOT NULL,
+      kind ${WORD} NOT NULL CHECK (kind IN ('sold', 'redeemed', 'restored', 'cancelled', 'returned', 'expired')),
+      amount BIGINT NOT NULL,
+      invoice_id ${ID},
+      created_by TEXT NOT NULL,
+      created_at ${WHEN} NOT NULL,
+      INDEX gift_voucher_moves_voucher (voucher_id),
+      INDEX gift_voucher_moves_invoice (invoice_id),
+      FOREIGN KEY (voucher_id) REFERENCES gift_vouchers(id),
+      FOREIGN KEY (invoice_id) REFERENCES invoices(id)
+    )`
+  },
+  {
+    name: 'pos_display_images',
+    since: 18,
+    sql: `CREATE TABLE pos_display_images (
+      id ${ID} NOT NULL PRIMARY KEY,
+      mime ${WORD} NOT NULL,
+      data MEDIUMTEXT NOT NULL,
+      sort INT NOT NULL DEFAULT 0,
+      created_by TEXT NOT NULL,
+      created_at ${WHEN} NOT NULL
+    )`
+  },
+  {
+    name: 'pos_display_codes',
+    since: 18,
+    sql: `CREATE TABLE pos_display_codes (
+      till_id ${ID} NOT NULL PRIMARY KEY,
+      code_hash TEXT NOT NULL,
+      created_at ${WHEN} NOT NULL,
+      FOREIGN KEY (till_id) REFERENCES pos_tills(id)
+    )`
+  },
+  {
+    name: 'pos_display_keys',
+    since: 18,
+    sql: `CREATE TABLE pos_display_keys (
+      key_hash VARCHAR(64) NOT NULL PRIMARY KEY,
+      till_id ${ID} NOT NULL,
+      created_at ${WHEN} NOT NULL,
+      seen_at ${WHEN},
+      INDEX pos_display_keys_till (till_id),
+      FOREIGN KEY (till_id) REFERENCES pos_tills(id)
+    )`
+  },
+  // ===== end 18 · TILL RULES =====
+  // ===== 18 · GOLD (db.ts V18, gold.ts) — begin =====
+  {
+    name: 'gold_items',
+    since: 18,
+    sql: `CREATE TABLE gold_items (
+      item_id ${ID} NOT NULL PRIMARY KEY,
+      weight_mg BIGINT NOT NULL CHECK (weight_mg > 0),
+      karat INT NOT NULL CHECK (karat IN (18, 21, 22, 24)),
+      making_kind ${WORD} NOT NULL CHECK (making_kind IN ('gram', 'piece')),
+      making_amount BIGINT NOT NULL DEFAULT 0 CHECK (making_amount >= 0),
+      created_at ${WHEN} NOT NULL,
+      updated_at ${WHEN} NOT NULL,
+      FOREIGN KEY (item_id) REFERENCES items(id)
+    )`
+  },
+  {
+    name: 'gold_prices',
+    since: 18,
+    sql: `CREATE TABLE gold_prices (
+      id ${ID} NOT NULL PRIMARY KEY,
+      date ${WHEN} NOT NULL,
+      karat INT NOT NULL CHECK (karat IN (18, 21, 22, 24)),
+      currency ${WORD} NOT NULL CHECK (currency IN ('IQD', 'USD')),
+      buy_per_gram BIGINT NOT NULL CHECK (buy_per_gram >= 0),
+      sell_per_gram BIGINT NOT NULL CHECK (sell_per_gram >= 0),
+      created_by TEXT NOT NULL,
+      created_at ${WHEN} NOT NULL,
+      UNIQUE KEY gold_prices_day (date, karat, currency)
+    )`
+  },
+  {
+    name: 'gold_suppliers',
+    since: 18,
+    sql: `CREATE TABLE gold_suppliers (
+      party_id ${ID} NOT NULL PRIMARY KEY,
+      basis_karat INT NOT NULL CHECK (basis_karat IN (21, 24)),
+      updated_at ${WHEN} NOT NULL,
+      FOREIGN KEY (party_id) REFERENCES parties(id)
+    )`
+  },
+  {
+    name: 'gold_docs',
+    since: 18,
+    sql: `CREATE TABLE gold_docs (
+      id ${ID} NOT NULL PRIMARY KEY,
+      kind ${WORD} NOT NULL CHECK (kind IN ('buy', 'melt', 'receipt', 'delivery')),
+      number ${ID} UNIQUE,
+      date ${WHEN} NOT NULL,
+      status ${WORD} NOT NULL CHECK (status IN ('draft', 'posted', 'cancelled')),
+      party_id ${ID},
+      customer_name TEXT,
+      warehouse_id ${ID},
+      cash_account ${ID},
+      currency ${WORD} NOT NULL CHECK (currency IN ('IQD', 'USD')),
+      rate_x100 BIGINT NOT NULL CHECK (rate_x100 > 0),
+      karat INT CHECK (karat IS NULL OR karat IN (18, 21, 22, 24)),
+      weight_mg BIGINT CHECK (weight_mg IS NULL OR weight_mg > 0),
+      price_per_gram BIGINT CHECK (price_per_gram IS NULL OR price_per_gram >= 0),
+      karat_out INT CHECK (karat_out IS NULL OR karat_out IN (18, 21, 22, 24)),
+      weight_out_mg BIGINT CHECK (weight_out_mg IS NULL OR weight_out_mg > 0),
+      entry_id ${ID},
+      notes TEXT,
+      created_by TEXT NOT NULL,
+      prepared_by_id ${ID},
+      created_at ${WHEN} NOT NULL,
+      updated_at ${WHEN} NOT NULL,
+      INDEX gold_docs_kind (kind, date),
+      INDEX gold_docs_party (party_id),
+      INDEX gold_docs_entry (entry_id),
+      FOREIGN KEY (party_id) REFERENCES parties(id),
+      FOREIGN KEY (warehouse_id) REFERENCES warehouses(id),
+      FOREIGN KEY (cash_account) REFERENCES accounts(code),
+      FOREIGN KEY (entry_id) REFERENCES entries(id),
+      FOREIGN KEY (prepared_by_id) REFERENCES users(id)
+    )`
+  },
+  {
+    name: 'gold_doc_lines',
+    since: 18,
+    sql: `CREATE TABLE gold_doc_lines (
+      doc_id ${ID} NOT NULL,
+      seq INT NOT NULL,
+      item_id ${ID} NOT NULL,
+      making BIGINT NOT NULL DEFAULT 0 CHECK (making >= 0),
+      PRIMARY KEY (doc_id, seq),
+      INDEX gold_doc_lines_item (item_id),
+      FOREIGN KEY (doc_id) REFERENCES gold_docs(id) ON DELETE CASCADE,
+      FOREIGN KEY (item_id) REFERENCES items(id)
+    )`
+  },
+  {
+    name: 'gold_scrap_moves',
+    since: 18,
+    sql: `CREATE TABLE gold_scrap_moves (
+      id ${ID} NOT NULL PRIMARY KEY,
+      date ${WHEN} NOT NULL,
+      karat INT NOT NULL CHECK (karat IN (18, 21, 22, 24)),
+      weight_mg BIGINT NOT NULL,
+      value BIGINT NOT NULL,
+      source_type ${WORD} NOT NULL,
+      source_id ${ID} NOT NULL,
+      created_at ${WHEN} NOT NULL,
+      INDEX gold_scrap_moves_karat (karat, date),
+      INDEX gold_scrap_moves_source (source_id)
+    )`
+  },
+  {
+    name: 'gold_supplier_moves',
+    since: 18,
+    sql: `CREATE TABLE gold_supplier_moves (
+      id ${ID} NOT NULL PRIMARY KEY,
+      party_id ${ID} NOT NULL,
+      date ${WHEN} NOT NULL,
+      fine_mg BIGINT NOT NULL,
+      value BIGINT NOT NULL,
+      source_type ${WORD} NOT NULL,
+      source_id ${ID} NOT NULL,
+      created_at ${WHEN} NOT NULL,
+      INDEX gold_supplier_moves_party (party_id, date),
+      INDEX gold_supplier_moves_source (source_id),
+      FOREIGN KEY (party_id) REFERENCES parties(id)
+    )`
+  },
+  // ===== 18 · GOLD — end =====
+  // ===== 18 · WHOLESALE (db.ts V18, wholesale.ts) — begin =====
+  {
+    name: 'ws_reps',
+    since: 18,
+    sql: `CREATE TABLE ws_reps (
+      id ${ID} NOT NULL PRIMARY KEY,
+      user_id ${ID} NOT NULL UNIQUE,
+      name TEXT NOT NULL,
+      warehouse_id ${ID} NOT NULL UNIQUE,
+      load_warehouse_id ${ID} NOT NULL,
+      cash_account ${ID} NOT NULL,
+      active INT NOT NULL DEFAULT 1 CHECK (active IN (0, 1)),
+      created_at ${WHEN} NOT NULL,
+      updated_at ${WHEN} NOT NULL,
+      FOREIGN KEY (user_id) REFERENCES users(id),
+      FOREIGN KEY (warehouse_id) REFERENCES warehouses(id),
+      FOREIGN KEY (load_warehouse_id) REFERENCES warehouses(id),
+      FOREIGN KEY (cash_account) REFERENCES accounts(code)
+    )`
+  },
+  {
+    name: 'ws_route_stops',
+    since: 18,
+    sql: `CREATE TABLE ws_route_stops (
+      id ${ID} NOT NULL PRIMARY KEY,
+      rep_id ${ID} NOT NULL,
+      weekday INT NOT NULL CHECK (weekday BETWEEN 0 AND 6),
+      party_id ${ID} NOT NULL,
+      seq INT NOT NULL CHECK (seq >= 0),
+      UNIQUE KEY ws_route_stops_unique (rep_id, weekday, party_id),
+      INDEX ws_route_stops_party (party_id),
+      FOREIGN KEY (rep_id) REFERENCES ws_reps(id),
+      FOREIGN KEY (party_id) REFERENCES parties(id)
+    )`
+  },
+  {
+    name: 'ws_visits',
+    since: 18,
+    sql: `CREATE TABLE ws_visits (
+      id ${ID} NOT NULL PRIMARY KEY,
+      rep_id ${ID} NOT NULL,
+      party_id ${ID} NOT NULL,
+      date ${WHEN} NOT NULL,
+      outcome ${WORD} NOT NULL CHECK (outcome IN ('order', 'no_order', 'closed', 'collected')),
+      notes TEXT,
+      created_by TEXT NOT NULL,
+      created_at ${WHEN} NOT NULL,
+      INDEX ws_visits_rep (rep_id, date),
+      FOREIGN KEY (rep_id) REFERENCES ws_reps(id),
+      FOREIGN KEY (party_id) REFERENCES parties(id)
+    )`
+  },
+  {
+    name: 'ws_orders',
+    since: 18,
+    sql: `CREATE TABLE ws_orders (
+      id ${ID} NOT NULL PRIMARY KEY,
+      number ${ID} NOT NULL UNIQUE,
+      rep_id ${ID},
+      party_id ${ID} NOT NULL,
+      date ${WHEN} NOT NULL,
+      warehouse_id ${ID} NOT NULL,
+      currency ${WORD} NOT NULL CHECK (currency IN ('IQD', 'USD')),
+      rate_x100 BIGINT NOT NULL CHECK (rate_x100 > 0),
+      status ${WORD} NOT NULL CHECK (status IN ('draft', 'approved', 'delivered', 'cancelled')),
+      total BIGINT NOT NULL CHECK (total >= 0),
+      limit_check ${WORD} CHECK (limit_check IS NULL OR limit_check IN ('ok', 'warn', 'override')),
+      override_by TEXT,
+      override_reason TEXT,
+      approved_by TEXT,
+      approved_at ${WHEN},
+      invoice_id ${ID},
+      notes TEXT,
+      created_by TEXT NOT NULL,
+      created_at ${WHEN} NOT NULL,
+      updated_at ${WHEN} NOT NULL,
+      INDEX ws_orders_party (party_id, date),
+      INDEX ws_orders_rep (rep_id, date),
+      INDEX ws_orders_invoice (invoice_id),
+      FOREIGN KEY (rep_id) REFERENCES ws_reps(id),
+      FOREIGN KEY (party_id) REFERENCES parties(id),
+      FOREIGN KEY (warehouse_id) REFERENCES warehouses(id),
+      FOREIGN KEY (invoice_id) REFERENCES invoices(id)
+    )`
+  },
+  {
+    name: 'ws_order_lines',
+    since: 18,
+    sql: `CREATE TABLE ws_order_lines (
+      order_id ${ID} NOT NULL,
+      line_no INT NOT NULL,
+      item_id ${ID} NOT NULL,
+      qty_milli BIGINT NOT NULL CHECK (qty_milli > 0),
+      unit ${WORD},
+      unit_qty_milli BIGINT,
+      unit_price BIGINT NOT NULL CHECK (unit_price >= 0),
+      amount BIGINT NOT NULL CHECK (amount >= 0),
+      PRIMARY KEY (order_id, line_no),
+      FOREIGN KEY (order_id) REFERENCES ws_orders(id),
+      FOREIGN KEY (item_id) REFERENCES items(id)
+    )`
+  },
+  {
+    name: 'ws_van_counts',
+    since: 18,
+    sql: `CREATE TABLE ws_van_counts (
+      id ${ID} NOT NULL PRIMARY KEY,
+      rep_id ${ID} NOT NULL,
+      date ${WHEN} NOT NULL,
+      status ${WORD} NOT NULL CHECK (status IN ('open', 'closed')),
+      adjustment_id ${ID},
+      created_by TEXT NOT NULL,
+      created_at ${WHEN} NOT NULL,
+      closed_by TEXT,
+      closed_at ${WHEN},
+      UNIQUE KEY ws_van_counts_day (rep_id, date),
+      FOREIGN KEY (rep_id) REFERENCES ws_reps(id),
+      FOREIGN KEY (adjustment_id) REFERENCES stock_adjustments(id)
+    )`
+  },
+  {
+    name: 'ws_van_count_lines',
+    since: 18,
+    sql: `CREATE TABLE ws_van_count_lines (
+      count_id ${ID} NOT NULL,
+      item_id ${ID} NOT NULL,
+      expected_milli BIGINT NOT NULL,
+      counted_milli BIGINT NOT NULL CHECK (counted_milli >= 0),
+      PRIMARY KEY (count_id, item_id),
+      FOREIGN KEY (count_id) REFERENCES ws_van_counts(id),
+      FOREIGN KEY (item_id) REFERENCES items(id)
+    )`
+  },
+  {
+    name: 'ws_handovers',
+    since: 18,
+    sql: `CREATE TABLE ws_handovers (
+      id ${ID} NOT NULL PRIMARY KEY,
+      number ${ID} NOT NULL UNIQUE,
+      rep_id ${ID} NOT NULL,
+      date ${WHEN} NOT NULL,
+      to_account ${ID} NOT NULL,
+      currency ${WORD} NOT NULL CHECK (currency IN ('IQD', 'USD')),
+      rate_x100 BIGINT NOT NULL CHECK (rate_x100 > 0),
+      amount BIGINT NOT NULL CHECK (amount > 0),
+      entry_id ${ID},
+      created_by TEXT NOT NULL,
+      created_at ${WHEN} NOT NULL,
+      INDEX ws_handovers_rep (rep_id),
+      INDEX ws_handovers_entry (entry_id),
+      FOREIGN KEY (rep_id) REFERENCES ws_reps(id),
+      FOREIGN KEY (to_account) REFERENCES accounts(code),
+      FOREIGN KEY (entry_id) REFERENCES entries(id)
+    )`
+  },
+  {
+    name: 'ws_collections',
+    since: 18,
+    sql: `CREATE TABLE ws_collections (
+      id ${ID} NOT NULL PRIMARY KEY,
+      number ${ID} NOT NULL UNIQUE,
+      rep_id ${ID} NOT NULL,
+      party_id ${ID} NOT NULL,
+      date ${WHEN} NOT NULL,
+      currency ${WORD} NOT NULL CHECK (currency IN ('IQD', 'USD')),
+      rate_x100 BIGINT NOT NULL CHECK (rate_x100 > 0),
+      amount BIGINT NOT NULL CHECK (amount > 0),
+      entry_id ${ID},
+      handover_id ${ID},
+      notes TEXT,
+      created_by TEXT NOT NULL,
+      created_at ${WHEN} NOT NULL,
+      INDEX ws_collections_rep (rep_id, date),
+      INDEX ws_collections_entry (entry_id),
+      INDEX ws_collections_handover (handover_id),
+      FOREIGN KEY (rep_id) REFERENCES ws_reps(id),
+      FOREIGN KEY (party_id) REFERENCES parties(id),
+      FOREIGN KEY (entry_id) REFERENCES entries(id),
+      FOREIGN KEY (handover_id) REFERENCES ws_handovers(id)
+    )`
+  },
+  // ===== end 18 · WHOLESALE =====
+  // ===== 18 · MARKET EXTRAS (db.ts V18) — begin =====
+  {
+    name: 'delivery_drivers',
+    since: 18,
+    sql: `CREATE TABLE delivery_drivers (
+      id ${ID} NOT NULL PRIMARY KEY,
+      name TEXT NOT NULL,
+      phone TEXT,
+      user_id ${ID},
+      cash_account ${ID},
+      active INT NOT NULL DEFAULT 1 CHECK (active IN (0, 1)),
+      created_at ${WHEN} NOT NULL,
+      updated_at ${WHEN} NOT NULL,
+      FOREIGN KEY (user_id) REFERENCES users(id),
+      FOREIGN KEY (cash_account) REFERENCES accounts(code)
+    )`
+  },
+  {
+    name: 'delivery_orders',
+    since: 18,
+    sql: `CREATE TABLE delivery_orders (
+      id ${ID} NOT NULL PRIMARY KEY,
+      number ${ID} NOT NULL UNIQUE,
+      status ${WORD} NOT NULL CHECK (status IN ('new', 'preparing', 'out', 'delivered', 'cancelled')),
+      party_id ${ID},
+      customer_name TEXT NOT NULL,
+      phone TEXT,
+      address TEXT NOT NULL,
+      area TEXT,
+      notes TEXT,
+      lang ${WORD} CHECK (lang IS NULL OR lang IN ('ar', 'en', 'ku')),
+      warehouse_id ${ID} NOT NULL,
+      payment ${WORD} NOT NULL CHECK (payment IN ('cod', 'account')),
+      fee BIGINT NOT NULL DEFAULT 0 CHECK (fee >= 0),
+      driver_id ${ID},
+      invoice_id ${ID},
+      cancel_reason TEXT,
+      created_by TEXT NOT NULL,
+      created_at ${WHEN} NOT NULL,
+      updated_at ${WHEN} NOT NULL,
+      out_at ${WHEN},
+      delivered_at ${WHEN},
+      INDEX delivery_orders_status (status, created_at),
+      INDEX delivery_orders_party (party_id),
+      INDEX delivery_orders_driver (driver_id),
+      INDEX delivery_orders_invoice (invoice_id),
+      FOREIGN KEY (party_id) REFERENCES parties(id),
+      FOREIGN KEY (warehouse_id) REFERENCES warehouses(id),
+      FOREIGN KEY (driver_id) REFERENCES delivery_drivers(id),
+      FOREIGN KEY (invoice_id) REFERENCES invoices(id)
+    )`
+  },
+  {
+    name: 'delivery_order_lines',
+    since: 18,
+    sql: `CREATE TABLE delivery_order_lines (
+      order_id ${ID} NOT NULL,
+      line_no INT NOT NULL,
+      item_id ${ID} NOT NULL,
+      qty_milli BIGINT NOT NULL CHECK (qty_milli > 0),
+      unit_price BIGINT NOT NULL CHECK (unit_price >= 0),
+      unit ${WORD},
+      unit_qty_milli BIGINT CHECK (unit_qty_milli IS NULL OR unit_qty_milli > 0),
+      PRIMARY KEY (order_id, line_no),
+      FOREIGN KEY (order_id) REFERENCES delivery_orders(id) ON DELETE CASCADE,
+      FOREIGN KEY (item_id) REFERENCES items(id)
+    )`
+  },
+  {
+    name: 'delivery_handovers',
+    since: 18,
+    sql: `CREATE TABLE delivery_handovers (
+      id ${ID} NOT NULL PRIMARY KEY,
+      driver_id ${ID} NOT NULL,
+      entry_id ${ID} NOT NULL,
+      amount BIGINT NOT NULL CHECK (amount > 0),
+      created_by TEXT NOT NULL,
+      created_at ${WHEN} NOT NULL,
+      INDEX delivery_handovers_driver (driver_id, created_at),
+      INDEX delivery_handovers_entry (entry_id),
+      FOREIGN KEY (driver_id) REFERENCES delivery_drivers(id),
+      FOREIGN KEY (entry_id) REFERENCES entries(id)
+    )`
+  },
+  {
+    name: 'party_reminders',
+    since: 18,
+    sql: `CREATE TABLE party_reminders (
+      id ${ID} NOT NULL PRIMARY KEY,
+      party_id ${ID} NOT NULL,
+      amount BIGINT NOT NULL,
+      currency ${WORD} NOT NULL CHECK (currency IN ('IQD', 'USD')),
+      days INT NOT NULL CHECK (days >= 0),
+      lang ${WORD} NOT NULL CHECK (lang IN ('ar', 'en', 'ku')),
+      created_by TEXT NOT NULL,
+      created_at ${WHEN} NOT NULL,
+      INDEX party_reminders_party (party_id, created_at),
+      FOREIGN KEY (party_id) REFERENCES parties(id)
+    )`
+  },
+  {
+    name: 'price_checker_devices',
+    since: 18,
+    sql: `CREATE TABLE price_checker_devices (
+      id ${ID} NOT NULL PRIMARY KEY,
+      name TEXT NOT NULL,
+      token_hash ${ID} NOT NULL UNIQUE,
+      warehouse_id ${ID},
+      created_by TEXT NOT NULL,
+      created_at ${WHEN} NOT NULL,
+      last_seen_at ${WHEN},
+      revoked_at ${WHEN},
+      FOREIGN KEY (warehouse_id) REFERENCES warehouses(id)
+    )`
+  },
+  {
+    name: 'daily_supplier_items',
+    since: 18,
+    sql: `CREATE TABLE daily_supplier_items (
+      party_id ${ID} NOT NULL,
+      item_id ${ID} NOT NULL,
+      sort INT NOT NULL DEFAULT 0,
+      unit_cost BIGINT CHECK (unit_cost IS NULL OR unit_cost >= 0),
+      PRIMARY KEY (party_id, item_id),
+      FOREIGN KEY (party_id) REFERENCES parties(id),
+      FOREIGN KEY (item_id) REFERENCES items(id)
+    )`
+  },
+  {
+    name: 'daily_receipts',
+    since: 18,
+    sql: `CREATE TABLE daily_receipts (
+      id ${ID} NOT NULL PRIMARY KEY,
+      party_id ${ID} NOT NULL,
+      date ${WHEN} NOT NULL,
+      warehouse_id ${ID} NOT NULL,
+      purchase_id ${ID},
+      created_by TEXT NOT NULL,
+      created_at ${WHEN} NOT NULL,
+      INDEX daily_receipts_party (party_id, date),
+      FOREIGN KEY (party_id) REFERENCES parties(id),
+      FOREIGN KEY (warehouse_id) REFERENCES warehouses(id),
+      FOREIGN KEY (purchase_id) REFERENCES invoices(id)
+    )`
+  },
+  {
+    name: 'daily_receipt_lines',
+    since: 18,
+    sql: `CREATE TABLE daily_receipt_lines (
+      receipt_id ${ID} NOT NULL,
+      item_id ${ID} NOT NULL,
+      received_milli BIGINT NOT NULL CHECK (received_milli >= 0),
+      returned_milli BIGINT NOT NULL CHECK (returned_milli >= 0),
+      unit_cost BIGINT NOT NULL CHECK (unit_cost >= 0),
+      PRIMARY KEY (receipt_id, item_id),
+      FOREIGN KEY (receipt_id) REFERENCES daily_receipts(id) ON DELETE CASCADE,
+      FOREIGN KEY (item_id) REFERENCES items(id)
+    )`
+  },
+  {
+    name: 'daily_receipt_returns',
+    since: 18,
+    sql: `CREATE TABLE daily_receipt_returns (
+      receipt_id ${ID} NOT NULL,
+      return_id ${ID} NOT NULL,
+      PRIMARY KEY (receipt_id, return_id),
+      FOREIGN KEY (receipt_id) REFERENCES daily_receipts(id) ON DELETE CASCADE,
+      FOREIGN KEY (return_id) REFERENCES invoices(id)
+    )`
+  },
+  // ===== end 18 · MARKET EXTRAS =====
+  // ===== 18 · CLOTHING (db.ts V18, clothing.ts) — begin =====
+  {
+    name: 'cl_colors',
+    since: 18,
+    sql: `CREATE TABLE cl_colors (
+      id ${ID} NOT NULL PRIMARY KEY,
+      code ${WORD} NOT NULL,
+      name_ar TEXT NOT NULL,
+      name_en TEXT NOT NULL,
+      name_ku TEXT NOT NULL,
+      hex ${WORD},
+      sort INT NOT NULL DEFAULT 0,
+      active INT NOT NULL DEFAULT 1 CHECK (active IN (0, 1)),
+      created_at ${WHEN} NOT NULL,
+      updated_at ${WHEN} NOT NULL,
+      UNIQUE KEY cl_colors_code (code)
+    )`
+  },
+  {
+    name: 'cl_models',
+    since: 18,
+    sql: `CREATE TABLE cl_models (
+      id ${ID} NOT NULL PRIMARY KEY,
+      code ${ID} NOT NULL,
+      name_ar TEXT NOT NULL,
+      name_en TEXT NOT NULL,
+      name_ku TEXT NOT NULL,
+      sizes TEXT NOT NULL,
+      season ${ID},
+      category_id ${ID},
+      brand_id ${ID},
+      unit ${WORD} NOT NULL,
+      sale_price BIGINT NOT NULL DEFAULT 0 CHECK (sale_price >= 0),
+      sale_currency ${WORD} NOT NULL CHECK (sale_currency IN ('IQD', 'USD')),
+      purchase_price BIGINT CHECK (purchase_price IS NULL OR purchase_price >= 0),
+      purchase_currency ${WORD} CHECK (purchase_currency IS NULL OR purchase_currency IN ('IQD', 'USD')),
+      active INT NOT NULL DEFAULT 1 CHECK (active IN (0, 1)),
+      created_by TEXT NOT NULL,
+      created_at ${WHEN} NOT NULL,
+      updated_at ${WHEN} NOT NULL,
+      UNIQUE KEY cl_models_code (code),
+      INDEX cl_models_season (season),
+      INDEX cl_models_category (category_id),
+      FOREIGN KEY (category_id) REFERENCES item_categories(id),
+      FOREIGN KEY (brand_id) REFERENCES brands(id)
+    )`
+  },
+  {
+    name: 'cl_variants',
+    since: 18,
+    sql: `CREATE TABLE cl_variants (
+      item_id ${ID} NOT NULL PRIMARY KEY,
+      model_id ${ID} NOT NULL,
+      size ${WORD} NOT NULL,
+      color_id ${ID} NOT NULL DEFAULT '',
+      created_at ${WHEN} NOT NULL,
+      UNIQUE KEY cl_variants_cell (model_id, size, color_id),
+      FOREIGN KEY (item_id) REFERENCES items(id),
+      FOREIGN KEY (model_id) REFERENCES cl_models(id)
+    )`
   }
+  // ===== end 18 · CLOTHING =====
 ];
 
 const refuse = (message: string) => `SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = '${message}'`;
@@ -2006,6 +2872,30 @@ export const V15_MYSQL_STEPS: readonly MysqlStep[] = [
 
 /** Version 16: petrol stations' tables only (MYSQL_TABLES, since 16); no column added to an older table. */
 export const V16_MYSQL_STEPS: readonly MysqlStep[] = [];
+
+// ——— 17, TILLS ———
+/**
+ * Version 17 (supermarket): the columns it adds to older tables. Its new tables (tills, consignment, shelf labels, offers)
+ * come from MYSQL_TABLES, since 17. Tills: a shift's till, and the dollar notes taken on a dinar sale; offers: two invoice columns.
+ */
+export const V17_MYSQL_STEPS: readonly MysqlStep[] = [
+  mysqlAddColumn('pos_shifts', 'till_id', ID),
+  mysqlAddForeignKey('pos_shifts', 'till_id', 'pos_tills', 'id'),
+  mysqlAddColumn('pos_sales', 'usd_cash', 'BIGINT CHECK (usd_cash IS NULL OR usd_cash > 0)'),
+  mysqlAddColumn('pos_sales', 'usd_rate_x100', 'BIGINT CHECK (usd_rate_x100 IS NULL OR usd_rate_x100 > 0)'),
+  // offers: worked out for this invoice, and the part of its discount that came from them
+  mysqlAddColumn('invoices', 'offers_on', 'INT NOT NULL DEFAULT 0 CHECK (offers_on IN (0, 1))'),
+  mysqlAddColumn('invoices', 'offer_discount', 'BIGINT NOT NULL DEFAULT 0 CHECK (offer_discount >= 0)')
+];
+// ——— end of 17, TILLS ———
+
+// ===== 18 · TILL RULES =====
+/** Version 18 (till rules): the dinar rounding of a till sale's cash. The new tables come from MYSQL_TABLES, since 18. */
+export const V18_MYSQL_STEPS: readonly MysqlStep[] = [
+  mysqlAddColumn('pos_sales', 'rounding', 'BIGINT NOT NULL DEFAULT 0'),
+  mysqlAddColumn('pos_sales', 'voucher_paid', 'BIGINT NOT NULL DEFAULT 0')
+];
+// ===== end of 18 · TILL RULES =====
 
 /**
  * What a server database has already, for pendingMysqlSteps: "table.column", "table.column>parent" and "table.index"

@@ -4,7 +4,7 @@ import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { migrate, openDatabase, SCHEMA_VERSION, schemaVersion, type Db, type SqlValue } from './db.ts';
-import { MYSQL_TABLES, tableColumns, V16_MYSQL_STEPS } from './schema-mysql.ts';
+import { MYSQL_TABLES, tableColumns, V16_MYSQL_STEPS, V17_MYSQL_STEPS, V18_MYSQL_STEPS } from './schema-mysql.ts';
 
 // Version 16: petrol stations (fuel.ts): fuels, tanks, pumps and nozzles, shifts and their readings, tanker deliveries,
 // dips and each tank's moves. New tables only, on a company file and on a server database alike.
@@ -26,8 +26,8 @@ describe.skipIf(onServer)('a company file from schema 15 opened by schema 16', (
     old.close();
     const db = openDatabase(file);
     try {
-      expect(SCHEMA_VERSION).toBe(16);
-      expect(schemaVersion(db)).toBe(16);
+      expect(SCHEMA_VERSION).toBeGreaterThanOrEqual(16);
+      expect(schemaVersion(db)).toBe(SCHEMA_VERSION);
       const tables = (db.prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name LIKE 'fuel_%' ORDER BY name").all() as { name: string }[]).map((t) => t.name);
       expect(tables).toEqual([...FUEL_TABLES].sort());
       expect((db.prepare('PRAGMA table_info(fuel_nozzles)').all() as { name: string }[]).map((c) => c.name))
@@ -76,8 +76,11 @@ describe('version 16 on a server database', () => {
     };
     migrate(fake);
     expect(version).toBe(SCHEMA_VERSION);
-    const made = ran.filter((s) => s.startsWith('CREATE TABLE ') && !s.includes('schema_version')).map((s) => s.split(' ')[2]);
+    // (the tables of later versions, 17 on, are made after these: migrate runs every version)
+    const later = new Set(MYSQL_TABLES.filter((t) => (t.since ?? 0) > 16).map((t) => t.name));
+    const made = ran.filter((s) => s.startsWith('CREATE TABLE ') && !s.includes('schema_version')).map((s) => s.split(' ')[2]).filter((n) => !later.has(n!));
     expect(made.sort()).toEqual([...FUEL_TABLES].sort());
-    expect(ran.filter((s) => s.startsWith('ALTER TABLE'))).toEqual([]);
+    const laterAlters = [...V17_MYSQL_STEPS, ...V18_MYSQL_STEPS].map((x) => x.sql);
+    expect(ran.filter((s) => s.startsWith('ALTER TABLE') && !laterAlters.includes(s))).toEqual([]);
   });
 });

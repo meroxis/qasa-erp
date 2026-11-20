@@ -2,11 +2,12 @@ import { z } from 'zod';
 import { BUILT_IN_FEATURES } from './features.ts';
 import { checkBranchRequest, filterBranchResult, isBranchLimited, userBranchLists } from './branches.ts';
 import { AMOUNTS_SHOW, APP_VERSION, BUSINESS_TYPES, MAX_BATCH_NO, MAX_ITEM_UNITS, MAX_UNIT_FACTOR_MILLI, POS_BIG_PICTURES, POS_QUICK_MAX, POS_USE, UNIT_CODES } from '@qasa/core';
-import { schemaVersion, SCHEMA_VERSION, type Db } from './db.ts';
+import { schemaVersion, SCHEMA_VERSION, transaction, type Db } from './db.ts';
 import { AppError, conflict, invalid } from './errors.ts';
 import {
   changeOwnPassword, createUser, hasRecoveryCode, issueRecoveryCode, listUsers, login, logout, ownerActor, ROLES, separateDuties, SESSION_COOKIE, sessionActor, sessionCookie,
   seesBooks, seesCost, setPassword, setSeparateDuties, setSignInRequired, signInRequired, updateUser, type Actor, type Permission
+, adminResetNotice, helloResetAccount, setHelloResetAccount
 } from './auth.ts';
 import { checkCostRequest, hideCost, ownVouchersOnly } from './cost-view.ts';
 import { createAccount, deleteAccount, listAccounts, renameAccount } from './accounts.ts';
@@ -16,8 +17,9 @@ import {
 } from './journal.ts';
 import { finalAccountsReport, statementReport, trialBalanceReport } from './reports.ts';
 import { reorderList } from './reorder.ts';
-import { getSettings, lockPeriod, lockedPeriods, unlockPeriod, updateSettings } from './settings.ts';
-import { listAudit } from './audit.ts';
+import { getSettings, lockPeriod, lockedPeriods, unlockPeriod, updateSettings, writeSetting } from './settings.ts';
+import { audit, listAudit } from './audit.ts';
+import { assertRefundApproved } from './till-settings.ts';
 import { createParty, deleteParty, getParty, isForeignKeyFailure, listParties, partyStatement, partyTotals, updateParty } from './parties.ts';
 import {
   createItem, createWarehouse, deleteItem, findByBarcode, getItem, itemMoves, itemStock, listItems, listWarehouses, updateItem, updateWarehouse
@@ -150,6 +152,8 @@ const invoiceSchema = z.object({
 
 const returnSchema = z.object({
   date: isoDate,
+  /** 2.0: a till supervisor's approvals, when the till's rules ask one for refunds (till-settings.ts) */
+  approvals: z.array(z.string().max(64)).max(4).optional(),
   payment: z.enum(['cash', 'credit']),
   cashAccountCode: z.string().max(12).optional(),
   notes: z.string().max(1000).optional(),
@@ -334,7 +338,7 @@ export function apiRoutes(db: Db, options: { demo?: boolean; extensions?: readon
     'POST /api/invoices/:id/returns': (req) => invoicePermission(kindOf(idOf(req))),
     'POST /api/stock-docs': 'stock', 'PUT /api/stock-docs/:id': 'stock', 'DELETE /api/stock-docs/:id': 'stock',
     'POST /api/stock-docs/:id/post': 'stock', 'POST /api/stock-docs/:id/cancel': 'stock',
-    'GET /api/audit': 'admin', 'GET /api/users': 'admin', 'GET /api/auth/recovery-code': 'admin'
+    'GET /api/audit': 'admin', 'GET /api/users': 'admin', 'GET /api/auth/recovery-code': 'admin', 'GET /api/auth/hello-reset': 'admin'
   };
   for (const extension of [...BUILT_IN_FEATURES, ...(options.extensions ?? [])]) Object.assign(RULES, extension.rules ?? {});
   const PUBLIC = new Set(['GET /api/health', 'GET /api/auth/me', 'POST /api/auth/login', 'POST /api/auth/logout']);
@@ -407,6 +411,9 @@ export function apiRoutes(db: Db, options: { demo?: boolean; extensions?: readon
         yearResult: z.string().max(12).optional()
       }).optional(),
       businessTypes: z.array(z.enum(BUSINESS_TYPES)).min(1).max(BUSINESS_TYPES.length).optional(),
+      // 1.7: one main type and what the company also does (settings.ts checks the extras against what it had)
+      businessType: z.enum(BUSINESS_TYPES).optional(),
+      businessTypesExtra: z.array(z.enum(BUSINESS_TYPES)).max(BUSINESS_TYPES.length).optional(),
       amountsShow: z.enum(AMOUNTS_SHOW).optional(),
       posUse: z.enum(POS_USE).optional(),
       // the till's quick buttons (an admin's, as every change here): item ids, then checked against the items on sale
@@ -414,6 +421,8 @@ export function apiRoutes(db: Db, options: { demo?: boolean; extensions?: readon
       posBigPictures: z.enum(POS_BIG_PICTURES).optional()
     }), req.body);
     const { postingAccounts, ...rest } = withoutUndefined(body);
+    // the old list and the 1.7 fields are two ways to say the same thing: one at a time
+    if (body.businessTypes && (body.businessType || body.businessTypesExtra)) throw invalid([{ code: 'business_type_one_way', field: 'businessTypes' }]);
     return updateSettings(db, { ...rest, ...(postingAccounts ? { postingAccounts: { ...getSettings(db).postingAccounts, ...withoutUndefined(postingAccounts) } } : {}) }, userOf(req));
   });
   // year-end closing: every year's state; closing and reopening need an admin (the default for changes)
@@ -633,9 +642,10 @@ export function apiRoutes(db: Db, options: { demo?: boolean; extensions?: readon
   app.get('/api/invoices/:id', async (req) => getInvoice(db, parse(idParam, req.params).id, branchOfUser(req)));
   app.post('/api/invoices', async (req, reply) => {
     const body = withoutUndefined(parse(invoiceSchema, req.body));
-    return reply.status(201).send(once(req, reply, 'POST /api/invoices', () => createInvoice(db, body, userOf(req)), (id) => getInvoice(db, id, branchOfUser(req))));
+    // 1.7: a sale made on the invoice screen gets the offers that are on (offers.ts)
+    return reply.status(201).send(once(req, reply, 'POST /api/invoices', () => createInvoice(db, body, userOf(req), { offersAt: new Date() }), (id) => getInvoice(db, id, branchOfUser(req))));
   });
-  app.put('/api/invoices/:id', async (req) => updateInvoice(db, parse(idParam, req.params).id, withoutUndefined(parse(invoiceSchema, req.body)), userOf(req)));
+  app.put('/api/invoices/:id', async (req) => updateInvoice(db, parse(idParam, req.params).id, withoutUndefined(parse(invoiceSchema, req.body)), userOf(req), { offersAt: new Date() }));
   app.delete('/api/invoices/:id', async (req, reply) => {
     deleteInvoice(db, parse(idParam, req.params).id, userOf(req));
     return reply.status(204).send();
@@ -651,15 +661,22 @@ export function apiRoutes(db: Db, options: { demo?: boolean; extensions?: readon
       (doc) => getInvoice(db, doc, branchOfUser(req)));
   });
   app.post('/api/invoices/:id/cancel', async (req) => {
-    const body = parse(z.object({ date: isoDate.optional() }), req.body ?? {});
-    return cancelInvoice(db, parse(idParam, req.params).id, userOf(req), body.date, actorOf(req));
+    const body = parse(z.object({ date: isoDate.optional(), approvals: z.array(z.string().max(64)).max(4).optional() }), req.body ?? {});
+    const id = parse(idParam, req.params).id;
+    return transaction(db, () => {
+      assertRefundApproved(db, id, actorOf(req), body.approvals);
+      return cancelInvoice(db, id, userOf(req), body.date, actorOf(req));
+    });
   });
 
   // returns (مردودات), made from a posted invoice
   app.post('/api/invoices/:id/returns', async (req, reply) => {
     const { id } = parse(idParam, req.params);
-    const body = withoutUndefined(parse(returnSchema, req.body));
-    return reply.status(201).send(once(req, reply, 'POST /api/invoices/:id/returns', () => createReturn(db, id, body, userOf(req), actorOf(req)), (doc) => getInvoice(db, doc, branchOfUser(req))));
+    const { approvals, ...body } = withoutUndefined(parse(returnSchema, req.body));
+    return reply.status(201).send(once(req, reply, 'POST /api/invoices/:id/returns', () => transaction(db, () => {
+      assertRefundApproved(db, id, actorOf(req), approvals);
+      return createReturn(db, id, body, userOf(req), actorOf(req));
+    }), (doc) => getInvoice(db, doc, branchOfUser(req))));
   });
 
   // stock documents: opening stock and transfers between warehouses
@@ -698,9 +715,21 @@ export function apiRoutes(db: Db, options: { demo?: boolean; extensions?: readon
       // limited to some branches: the company's own books (trial balance, final accounts, statements…) are not for them
       branchLimited: isBranchLimited(db, actor),
       // 1.4: whether cost (purchase prices, stock value, a sale's cost) and the books and their reports are for them
-      seesCost: seesCost(actor), seesBooks: seesBooks(actor)
+      seesCost: seesCost(actor), seesBooks: seesBooks(actor),
+      // 2.0: an admin's password was reset with Windows Hello since an admin last looked
+      ...(actor.permissions.includes('admin') ? { resetNotice: adminResetNotice(db) } : {})
     } : null
   });
+  // 2.0: the Windows account the Windows Hello password reset is bound to (an admin's, set from the Windows app)
+  app.get('/api/auth/hello-reset', async () => { const a = helloResetAccount(db); return a ? { bound: true, account: a.account, at: a.at } : { bound: false }; });
+  app.put('/api/auth/hello-reset', async (req) => {
+    notInDemo();
+    const body = parse(z.object({ sid: z.string().max(200), account: z.string().max(100) }), req.body);
+    setHelloResetAccount(db, body, actorOf(req).name);
+    return { bound: true, account: body.account };
+  });
+  app.delete('/api/auth/hello-reset', async (req) => { notInDemo(); setHelloResetAccount(db, null, actorOf(req).name); return { bound: false }; });
+  app.delete('/api/auth/reset-notice', async (req) => { writeSetting(db, 'admin_reset_notice', ''); audit(db, actorOf(req).name, 'seen', 'admin_reset_notice', null, {}); return { ok: true }; });
   app.get('/api/auth/me', async (req) => me((req as ApiRequest & { actor?: Actor | null }).actor ?? null));
   app.post('/api/auth/login', async (req, reply) => {
     notInDemo();

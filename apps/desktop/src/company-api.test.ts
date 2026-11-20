@@ -103,14 +103,18 @@ describe('companies on this PC', () => {
     }
   });
 
-  it('a company over the plan limit still opens: the limit only stops adding (never locked out of the books)', async () => {
+  it('a company past the plan limit waits: the first ones open, nothing is deleted (security review #10)', async () => {
     await create('B');
     limit = 1;
-    const listed = (await app.inject({ url: '/api/companies', headers })).json() as { canAdd: boolean; list: object[] };
+    const listed = (await app.inject({ url: '/api/companies', headers })).json() as { canAdd: boolean; list: { id: string; waiting: boolean }[] };
     expect(listed.canAdd).toBe(false);
     expect(listed.list).toHaveLength(2);
-    // every company opens, so the list carries no 'openable' flag at all (the screens no longer read one)
-    for (const company of listed.list) expect(company).not.toHaveProperty('openable');
+    expect(listed.list.map((c) => c.waiting)).toEqual([false, true]);
+    // a company added by hand to companies.json, or one past a lower plan, is refused until the plan allows it
+    const refused = await app.inject({ method: 'POST', url: '/api/companies/c01020304/open', headers });
+    expect(refused.json()).toMatchObject({ error: 'company_limit' });
+    expect(switched).toEqual([]);
+    limit = 2;
     const opened = await app.inject({ method: 'POST', url: '/api/companies/c01020304/open', headers });
     expect(opened.statusCode, opened.body).toBe(200);
     await new Promise((r) => setTimeout(r, 80));

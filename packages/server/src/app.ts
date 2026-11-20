@@ -82,7 +82,10 @@ export function buildApp(db: Db, options: {
   const sourceOf = (req: FastifyRequest): string => {
     const named = options.clientSource?.(req);
     if (named) return `net:${named}`.slice(0, 100);
-    return `${!https && isLoopbackIp(req.ip) ? 'local' : 'net'}:${req.ip}`.slice(0, 100);
+    // every loopback address (127.x.y.z, ::1) is this PC, one place: a program here can't rotate them to guess
+    // passwords without the per-place limit (security review #8)
+    if (!https && isLoopbackIp(req.ip)) return 'local:loopback';
+    return `net:${req.ip}`.slice(0, 100);
   };
 
   app.setErrorHandler((error, _req, reply) => {
