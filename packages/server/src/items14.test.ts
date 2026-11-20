@@ -129,7 +129,8 @@ describe('a market or supermarket', () => {
     expect((await get('/api/batches/settings')).json()).toMatchObject({ defaultTrackExpiry: false });
     const saved = await put('/api/settings', { businessTypes: ['trade', 'market'] });
     expect(saved.statusCode, saved.body).toBe(200);
-    expect(saved.json().businessTypes).toEqual(['trade', 'market']);
+    // (1.7: the list from an older app is read as a company file from before 1.7: the market is the main type)
+    expect(saved.json()).toMatchObject({ businessType: 'market', businessTypes: ['market', 'trade'] });
     expect((await get('/api/batches/settings')).json()).toMatchObject({ defaultTrackExpiry: true });
     const made = (await post('/api/items', item({ unit: 'kg' }))).json();
     expect(made).toMatchObject({ unit: 'kg', trackExpiry: true, trackBatches: true });

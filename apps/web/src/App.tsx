@@ -920,7 +920,7 @@ export function App() {
               {touring && settings && settings.businessTypes !== null && <Tour user={favUser} businessTypes={settings.businessTypes} office={dataPlace?.kind === 'office'} onClose={() => setTouring(false)} />}
               {/* the first time an admin opens the company: what does it do? (decides the menu; changed later under System) */}
               {isAdmin && settings && settings.businessTypes === null && import.meta.env.MODE !== 'demo' && (
-                <div className="backdrop"><div className="modal biz-modal" role="dialog" aria-modal="true" aria-label={t('bizWelcome')}><Suspense fallback={<PageLoading />}><BusinessTypeChooser first /></Suspense></div></div>
+                <div className="biz-screen" role="dialog" aria-modal="true" aria-labelledby="biz-title"><Suspense fallback={<PageLoading />}><BusinessTypeChooser first /></Suspense></div>
               )}
               <UpdateBanner />
               <WhatsNewAfterUpdate />

@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { z } from 'zod';
-import { APP_VERSION, isLang, type Lang } from '@qasa/core';
+import { APP_VERSION, inAppOrder, isLang, type Lang } from '@qasa/core';
 import type { Db } from './db.ts';
 import { AppError } from './errors.ts';
 import { planStatus } from './license.ts';
@@ -147,7 +147,8 @@ export function usagePayload(db: Db, options: UsageOptions, state: UsageState): 
     os: osName(options.os),
     lang: state.lang,
     plan: plan.source === 'trial' ? 'trial' : plan.plan,
-    businessTypes: [...(getSettings(db).businessTypes ?? [])],
+    // in the app's own order, as before 1.7 (the main type first would only shuffle the portal's counts)
+    businessTypes: inAppOrder(getSettings(db).businessTypes ?? []),
     companies: Math.max(1, Math.floor(options.companies?.() ?? 1)),
     users: activeUsers(db),
     firstRun: state.lastSent === null,
