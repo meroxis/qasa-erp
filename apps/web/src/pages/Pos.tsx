@@ -33,6 +33,7 @@ import { addRowKind, anyItemMatches, mayAddItem, typedForForm, western } from '.
 import { findByScaleBarcode } from '../industry/scale-barcode.ts';
 import { offersApi, tillOfferPreview } from '../industry/offers-api.ts';
 import { may } from '../may.ts';
+import { TillClothingButtons } from '../industry/ClothingTools.tsx';
 
 /**
  * Point of sale (every plan). Made for a cashier with no training: the search box always has the focus, so a barcode
@@ -1039,6 +1040,9 @@ function Register({ initial, onClosed }: { initial: ShiftView; onClosed(): void 
             <div className="pos-actions">
               <button type="button" className="btn pos-touch" onClick={clear} disabled={busy}><Icon name="x" size={18} />{t('pos_clear')} <span className="kbd">F4</span></button>
               <button type="button" className="btn pos-touch" onClick={hold} disabled={busy || cart.length === 0}><Icon name="clock" size={18} />{t('tl_hold')} <span className="kbd">F6</span></button>
+              {/* a clothing shop: a model by size and colour, and an exchange (a return and a sale in one go) */}
+              <TillClothingButtons shiftId={shift.id} currency={currency} items={items} disabled={busy} onPick={(item) => { add(item); focusSearch(); }}
+                onExchanged={() => { posApi.current().then((r) => { if (r.shift?.id === shift.id) setShift(r.shift); }, () => {}); }} />
               <button type="button" className="btn primary pos-touch pos-pay-btn" onClick={() => void pay()} disabled={!canPay}>
                 <Icon name="check" size={20} />{t('pos_pay')} <span className="kbd">F9</span>
               </button>

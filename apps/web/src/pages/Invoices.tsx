@@ -34,6 +34,7 @@ import { askControlledOnOpen, RxTick, useControlledPrompt, usePharmacyOn, useRxI
 import { QuickVoucherButton } from '../industry/QuickVoucher.tsx';
 import { invoiceOpen } from '../industry/quick-voucher.ts';
 import { DocAmount } from '../Amount.tsx';
+import { ClothingGridButton, linesIn } from '../industry/ClothingTools.tsx';
 
 const STATUSES: (InvoiceStatus | '')[] = ['', 'draft', 'posted', 'cancelled'];
 
@@ -630,6 +631,12 @@ export function InvoiceEditor({ kind: initialKind, id, partyId: initialParty }: 
         </table>
         <div className="row" style={{ padding: '10px 16px 14px', alignItems: 'flex-start' }}>
           <button type="button" className="btn small" onClick={() => setRows((rs) => [...rs, emptyRow()])}><Icon name="plus" size={15} />{t('addLine')}</button>
+          {/* a clothing shop: a model's quantities by size and colour, as lines (prices in another currency are left to fill) */}
+          <ClothingGridButton kind={kind} onLines={(lines) => setRows((rs) => [
+            ...rs.filter((r) => r.itemId),
+            ...linesIn(lines, currency, (l, price) => ({ ...emptyRow(), itemId: l.itemId, qtyMilli: l.qtyMilli, unitPrice: price })),
+            emptyRow()
+          ])} />
           <span className="spacer" />
           <div className="totals">
             <span className="muted">{t('subtotal')}</span><strong className="num">{i18n.money(totals.subtotal, currency)}</strong>

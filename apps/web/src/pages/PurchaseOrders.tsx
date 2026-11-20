@@ -16,6 +16,7 @@ import { baseQty, unitLabel, type LineUnit } from '../industry/units.ts';
 import type { PoLineView } from '../industry/purchasing-api.ts';
 import { printDocument } from '../industry/printing.ts';
 import { DocAmount } from '../Amount.tsx';
+import { ClothingGridButton, linesIn } from '../industry/ClothingTools.tsx';
 
 /**
  * أوامر الشراء — purchase orders. Routes: `purchase-orders` (list + reorder suggestions), `new-purchase-order`,
@@ -337,6 +338,11 @@ export function PurchaseOrderEditor({ id }: { id?: string }) {
         </div>
         <div className="row" style={{ paddingTop: 10 }}>
           <button type="button" className="btn small" onClick={() => setRows((rs) => [...rs, emptyRow()])}><Icon name="plus" size={15} />{t('addLine')}</button>
+          <ClothingGridButton kind="purchase" onLines={(lines) => setRows((rs) => [
+            ...rs.filter((r) => r.itemId),
+            ...linesIn(lines, form.currency, (l, price) => ({ ...emptyRow(), itemId: l.itemId, qtyMilli: l.qtyMilli, unitPrice: price ?? 0 })),
+            emptyRow()
+          ])} />
           <span className="spacer" />
           <span className="muted">{t('total')}</span><strong className="num" style={{ fontSize: 18 }}><DocAmount value={total} currency={form.currency} date={form.date} inline /></strong>
         </div>

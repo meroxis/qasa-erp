@@ -17,7 +17,8 @@ const CHOICES: Record<BusinessType, { icon: string; title: Key; text: Key }> = {
   electricalSolar: { icon: 'sun', title: 'bt_electricalSolar', text: 'bt_electricalSolarText' },
   generators: { icon: 'zap', title: 'bt_generators', text: 'bt_generatorsText' },
   pharmacy: { icon: 'pill', title: 'bt_pharmacy', text: 'bt_pharmacyText' },
-  petrolStation: { icon: 'fuel', title: 'bt_petrolStation', text: 'bt_petrolStationText' }
+  petrolStation: { icon: 'fuel', title: 'bt_petrolStation', text: 'bt_petrolStationText' },
+  clothingShop: { icon: 'shirt', title: 'bt_clothingShop', text: 'bt_clothingShopText' }
 };
 
 /** The cheapest plan that includes an industry, for the badge on its card. */

@@ -5,7 +5,7 @@ import { COUNTER_BUSINESS_TYPES, isPosUse, POS_USE, posByBusiness, posShown } fr
 describe('the point of sale by business type (1.5.2)', () => {
   it('shows by default only for a business that sells at a counter', () => {
     const counter = BUSINESS_TYPES.filter((b) => posByBusiness([b]));
-    expect(counter).toEqual(['trade', 'market', 'mobileShop', 'autoParts', 'electricalSolar', 'pharmacy']);
+    expect(counter).toEqual(['trade', 'market', 'mobileShop', 'autoParts', 'electricalSolar', 'pharmacy', 'clothingShop']);
     expect([...COUNTER_BUSINESS_TYPES].sort()).toEqual([...counter].sort());
     for (const b of ['realEstate', 'engineeringWorks', 'generators'] as const) expect(posByBusiness([b])).toBe(false);
     // any of several types that sells at a counter is enough

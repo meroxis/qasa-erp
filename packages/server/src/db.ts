@@ -5,7 +5,7 @@ import { DatabaseSync } from 'node:sqlite';
 import { brandKey, DEFAULT_POSTING_ACCOUNTS, IRAQI_UNIFIED_CHART, STARTER_SUB_ACCOUNTS } from '@qasa/core';
 import { AppError } from './errors.ts';
 import {
-  MYSQL_TABLES, MYSQL_TRIGGERS, mysqlCollations, mysqlTableSql, pendingMysqlSteps, V10_MYSQL_STEPS, V11_MYSQL_STEPS, V12_MYSQL_STEPS, V13_MYSQL_STEPS, V14_MYSQL_STEPS, V15_MYSQL_STEPS, V16_MYSQL_STEPS, V17_MYSQL_STEPS, type MysqlCollations, type MysqlStep
+  MYSQL_TABLES, MYSQL_TRIGGERS, mysqlCollations, mysqlTableSql, pendingMysqlSteps, V10_MYSQL_STEPS, V11_MYSQL_STEPS, V12_MYSQL_STEPS, V13_MYSQL_STEPS, V14_MYSQL_STEPS, V15_MYSQL_STEPS, V16_MYSQL_STEPS, V17_MYSQL_STEPS, V18_MYSQL_STEPS, type MysqlCollations, type MysqlStep
 } from './schema-mysql.ts';
 
 export type SqlParam = null | number | bigint | string | Uint8Array;
@@ -2119,6 +2119,56 @@ const V17 =
   `;
   // ——— end of 17 (tills, shelf labels, consignment, offers) ———
 
+// ===== 18 · CLOTHING (clothing.ts) — begin; other 2.0 work adds its own tables beside it =====
+const V18 =
+  // 18 — clothing and shoes: the shop's colours, its models (one design, with the sizes it comes in), and which item is
+  // which size and colour of which model. A variant is a real item (its stock, price, barcode and lines are the item's);
+  // color_id '' is a model without colours.
+  `
+  CREATE TABLE cl_colors (
+    id TEXT PRIMARY KEY,
+    code TEXT NOT NULL UNIQUE,
+    name_ar TEXT NOT NULL,
+    name_en TEXT NOT NULL,
+    name_ku TEXT NOT NULL,
+    hex TEXT,
+    sort INTEGER NOT NULL DEFAULT 0,
+    active INTEGER NOT NULL DEFAULT 1 CHECK (active IN (0, 1)),
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+  );
+  CREATE TABLE cl_models (
+    id TEXT PRIMARY KEY,
+    code TEXT NOT NULL UNIQUE,
+    name_ar TEXT NOT NULL,
+    name_en TEXT NOT NULL,
+    name_ku TEXT NOT NULL,
+    sizes TEXT NOT NULL,
+    season TEXT,
+    category_id TEXT REFERENCES item_categories(id),
+    brand_id TEXT REFERENCES brands(id),
+    unit TEXT NOT NULL,
+    sale_price INTEGER NOT NULL DEFAULT 0 CHECK (sale_price >= 0),
+    sale_currency TEXT NOT NULL CHECK (sale_currency IN ('IQD', 'USD')),
+    purchase_price INTEGER CHECK (purchase_price IS NULL OR purchase_price >= 0),
+    purchase_currency TEXT CHECK (purchase_currency IS NULL OR purchase_currency IN ('IQD', 'USD')),
+    active INTEGER NOT NULL DEFAULT 1 CHECK (active IN (0, 1)),
+    created_by TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+  );
+  CREATE INDEX cl_models_season ON cl_models(season);
+  CREATE TABLE cl_variants (
+    item_id TEXT PRIMARY KEY REFERENCES items(id),
+    model_id TEXT NOT NULL REFERENCES cl_models(id),
+    size TEXT NOT NULL,
+    color_id TEXT NOT NULL DEFAULT '',
+    created_at TEXT NOT NULL,
+    UNIQUE (model_id, size, color_id)
+  );
+  `;
+// ===== end 18 · CLOTHING =====
+
 const MIGRATIONS: Migration[] = [
   { sql: V1 }, { sql: V2, rebuild: true }, { sql: V3, rebuild: true }, { sql: V4 }, { sql: V5, rebuild: true },
   { sql: V6, mysql: 'tables' }, { sql: V7, mysql: 'tables' }, { sql: V8, mysql: 'tables' }, { sql: V9, mysql: 'tables' },
@@ -2129,7 +2179,8 @@ const MIGRATIONS: Migration[] = [
   { sql: V14, mysql: { tables: true, steps: () => V14_MYSQL_STEPS } },
   { sql: V15, mysql: { tables: true, steps: () => V15_MYSQL_STEPS } },
   { sql: V16, mysql: { tables: true, steps: () => V16_MYSQL_STEPS } },
-  { sql: V17, mysql: { tables: true, steps: () => V17_MYSQL_STEPS } }
+  { sql: V17, mysql: { tables: true, steps: () => V17_MYSQL_STEPS } },
+  { sql: V18, mysql: { tables: true, steps: () => V18_MYSQL_STEPS } }
 ];
 
 /** Server databases began at this version: its schema is in schema-mysql.ts (tables and triggers without `since`). */

@@ -295,6 +295,11 @@ const SAMPLE_LINES: Record<BusinessType, SampleLine[]> = {
     ['B-REG', null, 'بنزين عادي', 'Regular benzine', 'بەنزینی ئاسایی', 'l', 40_000, 850],
     ['GASOIL', null, 'كاز (ديزل)', 'Diesel (gas oil)', 'گازۆیل (دیزڵ)', 'l', 100_000, 750],
     ['GAS-12', null, 'قنينة غاز 12 كغم', 'Cooking gas cylinder, 12 kg', 'بوتڵی غاز، 12 کیلۆ', 'piece', 1000, 9_000]
+  ],
+  clothingShop: [
+    ['POLO-L-BLK', '0400000000077', 'قميص بولو · L · أسود', 'Polo shirt · L · Black', 'کراسی پۆلۆ · L · ڕەش', 'piece', 2000, 25_000],
+    ['JEAN-32-BLU', '0400000000084', 'بنطلون جينز · 32 · أزرق', 'Jeans · 32 · Blue', 'پانتۆڵی جینز · 32 · شین', 'piece', 1000, 35_000],
+    ['SHOE-42-WHT', '0400000000091', 'حذاء رياضي · 42 · أبيض', 'Trainers · 42 · White', 'پێڵاوی وەرزشی · 42 · سپی', 'pair', 1000, 45_000]
   ]
 };
 
