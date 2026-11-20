@@ -213,6 +213,14 @@ export const TILL_UI_TEXT = {
   a_set_pin: ['وضع رمز المشرف', 'Supervisor PIN set', 'پینی سەرپەرشتیاری دانا'],
   a_supervisor_ok: ['وافق المشرف', 'Supervisor approved', 'سەرپەرشتیار ڕەزامەندی دا'],
   e_gift_voucher: ['قسيمة هدية', 'Gift voucher', 'کوپۆنی دیاری'],
+  a_pin_lockout: ['أوقف الموافقات بعد رموز خاطئة', 'Approvals locked after wrong PINs', 'ڕەزامەندییەکان ڕاگیران دوای پینی هەڵە'],
+  a_gift_voucher_returned: ['أعاد مبلغاً إلى قسيمة هدية', 'Amount put back on a gift voucher', 'بڕێک گەڕایەوە سەر کوپۆنی دیاری'],
+  a_hello_reset_bound: ['ربط إعادة التعيين بحساب ويندوز', 'Reset bound to a Windows account', 'گەڕاندنەوە بەسترا بە هەژمارێکی ویندۆز'],
+  a_hello_reset_unbound: ['ألغى ربط إعادة التعيين', 'Reset unbound', 'بەستنی گەڕاندنەوە لابرا'],
+  a_seen: ['اطّلع', 'Marked as seen', 'وەک بینراو دیاری کرا'],
+  e_pos_pin_alert: ['تنبيه رموز المشرف', 'Supervisor PIN alert', 'ئاگاداری پینی سەرپەرشتیار'],
+  e_admin_reset_notice: ['تنبيه إعادة تعيين كلمة المرور', 'Password reset notice', 'ئاگاداری گەڕاندنەوەی وشەی نهێنی'],
+  tu_pinAlert__one: ['رمز مشرف خاطئ من {name} (مرة واحدة) أوقف موافقاته مؤقتاً — {at}', 'A wrong supervisor PIN from {name} ({n} time) locked their approvals for a while — {at}', 'پینێکی هەڵەی سەرپەرشتیار لە {name} ({n} جار) ڕەزامەندییەکانی بۆ ماوەیەک ڕاگرت — {at}'],
   e_pos_rules: ['قواعد الصندوق', 'Till rules', 'یاساکانی سندووق'],
   e_pos_display_image: ['صورة شاشة الزبون', 'Customer screen picture', 'وێنەی شاشەی کڕیار']
 } as const;

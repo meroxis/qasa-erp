@@ -12,7 +12,8 @@ import { planStatus } from './license.ts';
 import { createItem, deleteItem, getItem, updateItem, type ItemView } from './items.ts';
 import { userBranchLists } from './branches.ts';
 import { createReturn } from './returns.ts';
-import { getShift, sell, type SaleInput } from './pos.ts';
+import { getShift, requireRunnable, sell, type SaleInput } from './pos.ts';
+import { assertRefundApproved } from './till-settings.ts';
 import { getInvoice } from './invoices.ts';
 import type { Actor } from './auth.ts';
 import type { ApiExtension, ApiRequest } from './routes.ts';
@@ -460,6 +461,8 @@ export interface ExchangeInput {
   invoiceId: string;
   /** its lines and how much of each comes back */
   back: { lineNo: number; qtyMilli: number }[];
+  /** a till supervisor's approvals, when the till's rules ask one for refunds */
+  approvals?: string[] | undefined;
   /** the new goods, sold as at the till (payments, the customer, the cash handed over …); none: a plain return */
   sale?: Omit<SaleInput, 'currency'> | undefined;
 }
@@ -472,14 +475,16 @@ export interface ExchangeInput {
  */
 export function exchange(db: Db, shiftId: string, input: ExchangeInput, actor: Actor): { returnId: string; saleId: string | null; difference: number } {
   requirePlan(db);
+  // the cashier's own open shift (or one an admin runs), as for a sale: a refund out of another cashier's drawer is refused
+  requireRunnable(db, shiftId, actor);
   const shift = getShift(db, shiftId, actor);
-  if (shift.status !== 'open') throw conflict('shift_closed');
   const original = getInvoice(db, input.invoiceId);
   if (original.kind !== 'sale' || original.status !== 'posted') throw conflict('action_not_allowed', { status: original.status, action: 'exchange' });
   // a till sale of this company's till only: the drawer pays back what came into a drawer
   if (!db.prepare('SELECT 1 FROM pos_sales WHERE invoice_id = ?').get(input.invoiceId)) throw conflict('cl_exchange_not_till_sale');
   if (!input.back.length) throw invalid([{ code: 'cl_exchange_nothing_back' }]);
   return transaction(db, () => {
+    assertRefundApproved(db, input.invoiceId, actor, input.approvals);
     const back = createReturn(db, input.invoiceId, {
       date: todayIso(), payment: 'cash', cashAccountCode: shift.cashAccountCode, notes: 'exchange', lines: input.back
     }, actor.name, actor);
@@ -603,6 +608,7 @@ const saleLine = z.object({
 }).strict();
 const exchangeBody = z.object({
   invoiceId: id,
+  approvals: z.array(z.string().max(64)).max(4).optional(),
   back: z.array(z.object({ lineNo: z.number().int().positive().max(10_000), qtyMilli: z.number().int().positive().max(1_000_000_000) }).strict()).min(1).max(200),
   sale: z.object({
     rateX100: z.number().int().positive().optional(), partyId: id.optional(), discount: money, notes: z.string().max(300).optional(),

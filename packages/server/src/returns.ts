@@ -15,7 +15,9 @@ import { getPostingAccounts, isPeriodLocked } from './settings.ts';
 import { assertMayUndoPosSale, fromBase, getInvoice, returnedByLine, returnedTotals, type InvoiceView } from './invoices.ts';
 import type { Actor } from './auth.ts';
 import { addTaken, batchTracking, ensureBatch, purchaseReturnPicks, saleReturnPicks, writeBatchMoves, type BatchError, type BatchMove } from './batches.ts';
-import { loyaltyAccount, recordReturnLoyalty, returnLoyalty } from './loyalty.ts';
+import { loyaltyAccount, loyaltyPaidFor, recordReturnLoyalty, returnLoyalty } from './loyalty.ts';
+import { roundingAccount } from './till-settings.ts';
+import { giveBackToVoucher } from './gift-vouchers.ts';
 
 export interface ReturnInput {
   date: string;
@@ -55,15 +57,35 @@ interface ReturnLine {
  * back from it. A card sale is never paid back from the drawer (that would take cash out of it that never came in);
  * what went on the customer's account comes back as credit.
  */
-function assertPaidBackAsPaid(db: Db, originalId: string, accountCode: string, total: number): void {
+const currency_ = (inv: { currency: string }) => inv.currency;
+
+/** The liability account the gift vouchers that paid a sale are kept on. */
+function voucherAccountOf(db: Db, invoiceId: string): string {
+  const r = db.prepare(`SELECT v.account_code FROM gift_voucher_moves m JOIN gift_vouchers v ON v.id = m.voucher_id
+                        WHERE m.invoice_id = ? AND m.kind = 'redeemed' ORDER BY m.created_at LIMIT 1`).get(invoiceId) as { account_code: string } | undefined;
+  if (!r) throw conflict('return_totals_invalid');
+  return r.account_code;
+}
+
+function assertPaidBackAsPaid(db: Db, originalId: string, accountCode: string, cashOut: number): void {
   const parts = db.prepare("SELECT account_code, amount FROM invoice_payments WHERE invoice_id = ? AND kind = 'pos'").all(originalId) as { account_code: string; amount: number }[];
-  if (!parts.length) return;
-  const paidIn = parts.filter((p) => p.account_code === accountCode).reduce((s, p) => s + Number(p.amount), 0);
-  // (points given back on an earlier return were no money paid back)
-  const paidBack = Number((db.prepare(`SELECT COALESCE(SUM(i.total - COALESCE((SELECT SUM(m.value) FROM loyalty_moves m WHERE m.invoice_id = i.id AND m.kind = 'return_redeem'), 0)), 0) AS t
-                                       FROM invoices i WHERE i.return_of = ? AND i.status = 'posted' AND i.payment = 'cash' AND i.cash_account = ?`)
+  // 2.0: every till sale is held to it, also one that kept no parts (all its money then went into its own safe, less
+  // what points and gift vouchers paid, with the dinar rounding)
+  const till = db.prepare('SELECT voucher_paid, rounding FROM pos_sales WHERE invoice_id = ?').get(originalId) as { voucher_paid: number | null; rounding: number | null } | undefined;
+  if (!parts.length && !till) return;
+  let paidIn: number;
+  if (parts.length) paidIn = parts.filter((p) => p.account_code === accountCode).reduce((s, p) => s + Number(p.amount), 0);
+  else {
+    const inv = db.prepare('SELECT total, payment, cash_account FROM invoices WHERE id = ?').get(originalId) as { total: number; payment: string; cash_account: string | null };
+    paidIn = inv.payment === 'cash' && inv.cash_account === accountCode
+      ? Number(inv.total) - (loyaltyPaidFor(db, [originalId]).get(originalId) ?? 0) - Number(till!.voucher_paid ?? 0) + Number(till!.rounding ?? 0)
+      : 0;
+  }
+  // what earlier returns paid out of that account: their entries' credits to it (never points or vouchers given back)
+  const paidBack = Number((db.prepare(`SELECT COALESCE(SUM(l.credit), 0) AS t FROM entry_lines l JOIN invoices i ON i.entry_id = l.entry_id
+                                       WHERE i.return_of = ? AND i.status = 'posted' AND l.account_code = ?`)
     .get(originalId, accountCode) as { t: number }).t);
-  if (paidBack + total > paidIn) throw invalid([{ code: 'refund_more_than_paid', available: Math.max(0, paidIn - paidBack) }]);
+  if (paidBack + cashOut > paidIn) throw invalid([{ code: 'refund_more_than_paid', available: Math.max(0, paidIn - paidBack) }]);
 }
 
 export function createReturn(db: Db, originalId: string, input: ReturnInput, user: string, actor?: Pick<Actor, 'name' | 'permissions'>): InvoiceView {
@@ -142,7 +164,21 @@ export function createReturn(db: Db, originalId: string, input: ReturnInput, use
   // 1.2 (Pro): what loyalty points paid of the goods coming back goes back as points, not money; what they earned goes too
   const points = kind === 'sale_return' ? returnLoyalty(db, original, returnedTotals(db, originalId).total, total) : null;
   const pointsBack = points?.valueBack ?? 0;
-  if (kind === 'sale_return' && input.payment === 'cash') assertPaidBackAsPaid(db, originalId, input.cashAccountCode!, total - pointsBack);
+  // 2.0: a till sale's gift vouchers and dinar rounding come back in proportion to what is returned (to the dinar,
+  // summing to exactly what the sale had once everything is back): the voucher share onto a gift voucher, never as
+  // money, and the rounding with the money (a sale rounded down gives back the rounded cash)
+  let voucherBack = 0, roundingBack = 0;
+  const tillSale = kind === 'sale_return' && currency_(original) === 'IQD'
+    ? db.prepare('SELECT voucher_paid, rounding FROM pos_sales WHERE invoice_id = ?').get(originalId) as { voucher_paid: number | null; rounding: number | null } | undefined
+    : undefined;
+  if (tillSale && original.total > 0) {
+    const before = returnedTotals(db, originalId).total;
+    const share = (x: number) => roundHalfUp((x * (before + total)) / original.total) - roundHalfUp((x * before) / original.total);
+    voucherBack = Math.min(Math.max(0, total - pointsBack), share(Number(tillSale.voucher_paid ?? 0)));
+    roundingBack = share(Number(tillSale.rounding ?? 0));
+    if (total - pointsBack - voucherBack + roundingBack < 0) roundingBack = -(total - pointsBack - voucherBack);
+  }
+  if (kind === 'sale_return' && input.payment === 'cash') assertPaidBackAsPaid(db, originalId, input.cashAccountCode!, total - pointsBack - voucherBack + roundingBack);
   const accounts = getPostingAccounts(db);
   const warehouseAccount = (db.prepare('SELECT account_code FROM warehouses WHERE id = ?').get(original.warehouseId) as { account_code: string }).account_code;
   const party = original.partyId ? getParty(db, original.partyId) : null;
@@ -150,8 +186,9 @@ export function createReturn(db: Db, originalId: string, input: ReturnInput, use
   const counterParty = input.payment === 'credit' && party ? { partyId: party.id } : {};
   const { currency, rateX100 } = original;
   const refunded = returnedTotals(db, originalId);
-  if (refunded.total > original.total || refunded.baseTotal > original.baseTotal) throw conflict('return_totals_invalid');
-  const baseTotal = remainingShare(original.baseTotal, refunded.baseTotal, total, refunded.total, original.total);
+  if (refunded.total > original.total || (currency !== 'IQD' && refunded.baseTotal > original.baseTotal)) throw conflict('return_totals_invalid');
+  // (a dinar invoice's base is its own amount: its settlement figure leaves out what vouchers paid and the rounding)
+  const baseTotal = currency === 'IQD' ? total : remainingShare(original.baseTotal, refunded.baseTotal, total, refunded.total, original.total);
   const entryLines: LineInput[] = [];
   const moves: { itemId: string; qtyMilli: number; value: number }[] = [];
   const batchMoves: BatchMove[] = [];
@@ -162,9 +199,12 @@ export function createReturn(db: Db, originalId: string, input: ReturnInput, use
     if (total > 0) {
       entryLines.push({ accountCode: accounts.sales, debit: total, credit: 0, baseDebit: baseTotal, baseCredit: 0 });
       // points are only ever used on dinar sales, so their value is the same in both columns
-      const money = total - pointsBack;
-      if (money > 0) entryLines.push({ accountCode: counterAccount, debit: 0, credit: money, baseDebit: 0, baseCredit: baseTotal - pointsBack, ...counterParty });
+      const money = total - pointsBack - voucherBack + roundingBack;
+      if (money > 0) entryLines.push({ accountCode: counterAccount, debit: 0, credit: money, baseDebit: 0, baseCredit: baseTotal - pointsBack - voucherBack + roundingBack, ...counterParty });
       if (pointsBack > 0) entryLines.push({ accountCode: points!.accountCode ?? loyaltyAccount(db), debit: 0, credit: pointsBack, baseDebit: 0, baseCredit: pointsBack });
+      if (voucherBack > 0) entryLines.push({ accountCode: voucherAccountOf(db, originalId), debit: 0, credit: voucherBack, baseDebit: 0, baseCredit: voucherBack });
+      if (roundingBack < 0) entryLines.push({ accountCode: roundingAccount(db, Number(tillSale!.rounding)), debit: 0, credit: -roundingBack, baseDebit: 0, baseCredit: -roundingBack });
+      if (roundingBack > 0) entryLines.push({ accountCode: roundingAccount(db, Number(tillSale!.rounding)), debit: roundingBack, credit: 0, baseDebit: roundingBack, baseCredit: 0 });
     }
     const totalCost = lines.reduce((s, l) => s + (l.trackStock ? l.cost ?? 0 : 0), 0);
     if (totalCost > 0) {
@@ -251,6 +291,7 @@ export function createReturn(db: Db, originalId: string, input: ReturnInput, use
     db.prepare(`UPDATE invoices SET status = 'posted', number = ?, entry_id = ?, posted_by = ?, posted_at = ?, updated_at = ? WHERE id = ?`)
       .run(number, entryId, user, now, now, id);
     recordReturnLoyalty(db, { invoiceId: id, partyId: original.partyId, date: input.date, warehouseId: original.warehouseId }, points, user);
+    if (voucherBack > 0) giveBackToVoucher(db, { originalId, returnId: id, entryId, amount: voucherBack }, user);
     audit(db, user, 'post', 'invoice', id, { kind, number, returnOf: original.number });
   });
   return getInvoice(db, id);

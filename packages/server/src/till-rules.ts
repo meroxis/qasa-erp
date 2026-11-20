@@ -335,7 +335,7 @@ export const tillRulesApi: ApiExtension = {
           shiftId: id, action: z.enum(APPROVAL_ACTIONS), pin: z.string().max(12), detail: z.string().max(300).optional()
         }), req.body), actor(req))
       },
-      { method: 'DELETE', path: '/api/pos/pin-alert', handler: async (req) => { writeSetting(db, 'pos_pin_alert', ''); audit(db, actor(req).name, 'clear', 'pos_pin_alert', null, {}); return { ok: true }; } },
+      { method: 'DELETE', path: '/api/pos/pin-alert', handler: async (req) => { writeSetting(db, 'pos_pin_alert', ''); audit(db, actor(req).name, 'seen', 'pos_pin_alert', null, {}); return { ok: true }; } },
       { method: 'PUT', path: '/api/pos/pin', handler: async (req) => setPin(db, actor(req), parse(z.object({ pin: z.string().max(12) }), req.body).pin) },
       {
         method: 'GET', path: '/api/pos/customer/:id',

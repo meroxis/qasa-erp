@@ -184,6 +184,29 @@ describe("a supervisor's PIN", () => {
   });
 });
 
+describe('a refund at the till (security review #6)', () => {
+  it('needs a supervisor on the server for a return or a cancel of a till sale, and an exchange only on the cashier\'s own shift', async () => {
+    const who = await signIn({ las: ['pos', 'sales'], kay: ['pos', 'sales'], raz: ['supervisor'] });
+    expect((await put('/api/pos/pin', { pin: '407193' }, who.raz!)).statusCode).toBe(200);
+    expect((await put('/api/pos/rules', { supervisor: { lineDelete: false, void: false, price: false, discountPct: 0, noSale: false, refund: true, creditOver: false } }, who.admin!)).statusCode).toBe(200);
+    const shift = await openShift(who.las!);
+    const sale = (await post(`/api/pos/shifts/${shift.id}/sales`, { currency: 'IQD', discount: 0, lines: [tea(2)] }, who.las!)).json();
+    const ret = { date: sale.invoice.date, payment: 'cash', cashAccountCode: '1811', lines: [{ lineNo: 1, qtyMilli: 1000 }] };
+    expect((await post(`/api/invoices/${sale.invoice.id}/returns`, ret, who.las!)).json()).toMatchObject({ details: [{ code: 'pos_needs_supervisor', action: 'refund' }] });
+    expect((await post(`/api/invoices/${sale.invoice.id}/cancel`, {}, who.las!)).json()).toMatchObject({ details: [{ code: 'pos_needs_supervisor', action: 'refund' }] });
+    const ok = (await post('/api/pos/approve', { shiftId: shift.id, action: 'refund', pin: '407193' }, who.las!)).json();
+    const done = await post(`/api/invoices/${sale.invoice.id}/returns`, { ...ret, approvals: [ok.token] }, who.las!);
+    expect(done.statusCode, done.body).toBe(201);
+    // used once
+    expect((await post(`/api/invoices/${sale.invoice.id}/returns`, { ...ret, approvals: [ok.token] }, who.las!)).json()).toMatchObject({ details: [{ code: 'pos_needs_supervisor' }] });
+    // another cashier can't take money out of this drawer by an exchange
+    const kayShift = await openShift(who.kay!, 'K1');
+    void kayShift;
+    expect((await post(`/api/clothing/shifts/${shift.id}/exchange`, { invoiceId: sale.invoice.id, back: [{ lineNo: 1, qtyMilli: 1000 }] }, who.kay!)).statusCode).toBeGreaterThanOrEqual(400);
+    expect((await post(`/api/clothing/shifts/${shift.id}/exchange`, { invoiceId: sale.invoice.id, back: [{ lineNo: 1, qtyMilli: 1000 }] }, who.kay!)).json().error).not.toBe(undefined);
+  });
+});
+
 describe('a blind close', () => {
   it('hides the cash expected from a cashier; a supervisor and the books still read it', async () => {
     const who = await signIn({ las: ['pos'], raz: ['supervisor'] });

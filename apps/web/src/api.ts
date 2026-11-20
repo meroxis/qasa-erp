@@ -597,6 +597,19 @@ function setInFlight(n: number) {
   for (const fn of busyListeners) fn(n);
 }
 
+/**
+ * 2.0: a till supervisor's approval for a refund (asked at the till before the returns page opens, or before an
+ * exchange): sent with the next return, cancel or exchange; the server takes it once, within two minutes.
+ */
+const REFUND_APPROVAL = 'qasa.refundApproval';
+export function setRefundApproval(token: string): void { try { sessionStorage.setItem(REFUND_APPROVAL, JSON.stringify({ token, at: Date.now() })); } catch { /* none kept */ } }
+export function refundApprovals(): { approvals?: string[] } {
+  try {
+    const v = JSON.parse(sessionStorage.getItem(REFUND_APPROVAL) ?? 'null') as { token: string; at: number } | null;
+    return v && Date.now() - v.at < 2 * 60 * 1000 ? { approvals: [v.token] } : {};
+  } catch { return {}; }
+}
+
 export async function request<T>(method: string, url: string, body?: unknown, options: SendOptions = {}): Promise<T> {
   setInFlight(inFlight + 1);
   try {
@@ -935,8 +948,8 @@ export const api = {
   deleteInvoice: (id: string) => request<void>('DELETE', `/api/invoices/${id}`),
   postInvoice: (id: string, opts: { allowExpired?: boolean; loyaltyPoints?: number } = {}) =>
     request<InvoiceView>('POST', `/api/invoices/${id}/post`, { ...(opts.allowExpired ? { allowExpired: true } : {}), ...(opts.loyaltyPoints ? { loyaltyPoints: opts.loyaltyPoints } : {}) }),
-  cancelInvoice: (id: string, date: string) => request<InvoiceView>('POST', `/api/invoices/${id}/cancel`, { date }),
-  createReturn: (id: string, input: ReturnInput) => request<InvoiceView>('POST', `/api/invoices/${id}/returns`, input),
+  cancelInvoice: (id: string, date: string) => request<InvoiceView>('POST', `/api/invoices/${id}/cancel`, { date, ...refundApprovals() }),
+  createReturn: (id: string, input: ReturnInput) => request<InvoiceView>('POST', `/api/invoices/${id}/returns`, { ...input, ...refundApprovals() }),
 
   stockDocs: (f: { kind?: StockDocKind; status?: string } = {}) => request<StockDocSummary[]>('GET', '/api/stock-docs' + qs(f)),
   stockDoc: (id: string) => request<StockDocView>('GET', `/api/stock-docs/${id}`),

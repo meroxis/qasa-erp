@@ -17,6 +17,7 @@ export const DAY_CLOSE_TEXT = {
   dc_invoices: ['الفواتير', 'Invoices', 'پسوولەکان'],
   dc_m_bank: ['إلى المصرف', 'Into the bank', 'بۆ بانک'],
   dc_m_loyalty: ['نقاط الولاء', 'Loyalty points', 'خاڵەکانی دڵسۆزی'],
+  dc_m_voucher: ['قسائم الهدايا', 'Gift vouchers', 'کوپۆنی دیاری'],
   dc_registers: ['الصناديق (الكاشير)', 'Registers', 'کاشێرەکان'],
   dc_noRegisters: ['لم يُفتح صندوق في هذا اليوم.', 'No register was open on this day.', 'لەم ڕۆژەدا هیچ کاشێرێک نەکراوەتەوە.'],
   // 1.4.1: someone who does not keep the books sees the registers they opened, and the sales and debts of those shifts

@@ -98,7 +98,7 @@ export const briefApi = {
 };
 
 /** How a sale was paid, on the end-of-day close. */
-export type DayMethod = 'cash' | 'bank' | 'card' | 'fib' | 'zaincash' | 'qi' | 'credit' | 'loyalty';
+export type DayMethod = 'cash' | 'bank' | 'card' | 'fib' | 'zaincash' | 'qi' | 'credit' | 'loyalty' | 'voucher';
 
 export interface DayRegisterView {
   shiftId: string; number: string; register: string; openedBy: string; status: 'open' | 'closed'; openedAt: string; closedAt: string | null;

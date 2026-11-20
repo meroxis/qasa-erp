@@ -15,7 +15,7 @@ import { seesBooks, type Actor } from './auth.ts';
 export const APPROVAL_ACTIONS = ['line_delete', 'void', 'price', 'discount', 'no_sale', 'refund', 'credit_over', 'blind_view'] as const;
 export type ApprovalAction = (typeof APPROVAL_ACTIONS)[number];
 /** Approved at the till and done there (nothing the server books): the approval is used as it is given. */
-export const TILL_ONLY_ACTIONS: readonly ApprovalAction[] = ['line_delete', 'void', 'refund', 'blind_view'];
+export const TILL_ONLY_ACTIONS: readonly ApprovalAction[] = ['line_delete', 'void', 'blind_view'];
 /** How long an approval waits for the action it was given for. */
 export const APPROVAL_MS = 2 * 60 * 1000;
 
@@ -122,6 +122,23 @@ export function useApproval(db: Db, tokens: readonly string[] | undefined, shift
     return r.approver;
   }
   throw invalid([{ code: 'pos_needs_supervisor', action }]);
+}
+
+/**
+ * A refund of a till sale (a return, a cancel, an exchange at the till) when the rule asks a supervisor for refunds:
+ * someone who neither supervises nor is an admin brings an approval given at one of their own open shifts. Checked by
+ * the server whatever screen asks (the till asks for the PIN first). Sales made elsewhere are not the till's rule.
+ */
+export function assertRefundApproved(db: Db, invoiceId: string, actor: Pick<Actor, 'name' | 'permissions' | 'roles'> | undefined, tokens: readonly string[] | undefined): void {
+  if (!tillRules(db).supervisor.refund || !actor) return;
+  if (!db.prepare('SELECT 1 FROM pos_sales WHERE invoice_id = ?').get(invoiceId)) return;
+  if (actor.permissions.includes('admin') || maySupervise(actor)) return;
+  // (an approval is given only at a shift of the cashier who asked for it: any open shift may hold theirs)
+  const shifts = db.prepare("SELECT id FROM pos_shifts WHERE status = 'open'").all() as { id: string }[];
+  for (const s of shifts) {
+    try { useApproval(db, tokens, s.id, 'refund', actor.name); return; } catch { /* the next shift */ }
+  }
+  throw invalid([{ code: 'pos_needs_supervisor', action: 'refund' }]);
 }
 
 /** Whether this person closes blind: the rule is on and they neither supervise nor read the books. */

@@ -891,6 +891,7 @@ export const MYSQL_TABLES: readonly MysqlObject[] = [
       usd_cash BIGINT CHECK (usd_cash IS NULL OR usd_cash > 0),
       usd_rate_x100 BIGINT CHECK (usd_rate_x100 IS NULL OR usd_rate_x100 > 0),
       rounding BIGINT NOT NULL DEFAULT 0,
+      voucher_paid BIGINT NOT NULL DEFAULT 0,
       INDEX pos_sales_shift (shift_id),
       FOREIGN KEY (invoice_id) REFERENCES invoices(id),
       FOREIGN KEY (shift_id) REFERENCES pos_shifts(id)
@@ -2114,7 +2115,7 @@ export const MYSQL_TABLES: readonly MysqlObject[] = [
     sql: `CREATE TABLE gift_voucher_moves (
       id ${ID} NOT NULL PRIMARY KEY,
       voucher_id ${ID} NOT NULL,
-      kind ${WORD} NOT NULL CHECK (kind IN ('sold', 'redeemed', 'restored', 'cancelled')),
+      kind ${WORD} NOT NULL CHECK (kind IN ('sold', 'redeemed', 'restored', 'cancelled', 'returned', 'expired')),
       amount BIGINT NOT NULL,
       invoice_id ${ID},
       created_by TEXT NOT NULL,
@@ -2440,6 +2441,7 @@ export const MYSQL_TABLES: readonly MysqlObject[] = [
       created_at ${WHEN} NOT NULL,
       INDEX ws_collections_rep (rep_id, date),
       INDEX ws_collections_entry (entry_id),
+      INDEX ws_collections_handover (handover_id),
       FOREIGN KEY (rep_id) REFERENCES ws_reps(id),
       FOREIGN KEY (party_id) REFERENCES parties(id),
       FOREIGN KEY (entry_id) REFERENCES entries(id),
@@ -2861,7 +2863,8 @@ export const V17_MYSQL_STEPS: readonly MysqlStep[] = [
 // ===== 18 · TILL RULES =====
 /** Version 18 (till rules): the dinar rounding of a till sale's cash. The new tables come from MYSQL_TABLES, since 18. */
 export const V18_MYSQL_STEPS: readonly MysqlStep[] = [
-  mysqlAddColumn('pos_sales', 'rounding', 'BIGINT NOT NULL DEFAULT 0')
+  mysqlAddColumn('pos_sales', 'rounding', 'BIGINT NOT NULL DEFAULT 0'),
+  mysqlAddColumn('pos_sales', 'voucher_paid', 'BIGINT NOT NULL DEFAULT 0')
 ];
 // ===== end of 18 · TILL RULES =====
 

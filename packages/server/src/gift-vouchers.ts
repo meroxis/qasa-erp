@@ -132,6 +132,36 @@ export function giftParts(db: Db, list: readonly { code: string; amount: number 
   return parts;
 }
 
+/**
+ * A return of goods a gift voucher paid for: that share goes back onto the voucher (the first one the sale used that
+ * is still active), or onto a new voucher when none is (cancelled meanwhile), whose code is in the audit log and the
+ * voucher list. Never as money. Inside the return's transaction; its entry credits the voucher account.
+ */
+export function giveBackToVoucher(db: Db, input: { originalId: string; returnId: string; entryId: string | null; amount: number }, user: string): { voucherId: string; code: string } {
+  const used = db.prepare(`SELECT v.id, v.code, v.status, v.account_code, v.expires_on FROM gift_voucher_moves m JOIN gift_vouchers v ON v.id = m.voucher_id
+                           WHERE m.invoice_id = ? AND m.kind = 'redeemed' ORDER BY m.created_at`).all(input.originalId) as
+    { id: string; code: string; status: string; account_code: string; expires_on: string | null }[];
+  const now = new Date().toISOString();
+  const active = used.find((v) => v.status === 'active');
+  let target: { id: string; code: string };
+  if (active) {
+    db.prepare('UPDATE gift_vouchers SET balance = balance + ?, amount = CASE WHEN balance + ? > amount THEN balance + ? ELSE amount END WHERE id = ?')
+      .run(input.amount, input.amount, input.amount, active.id);
+    target = active;
+  } else {
+    const id = randomUUID();
+    const code = newVoucherCode();
+    db.prepare(`INSERT INTO gift_vouchers (id, code, amount, balance, currency, expires_on, status, account_code, shift_id, entry_id, created_by, created_at)
+                VALUES (?, ?, ?, ?, 'IQD', ?, 'active', ?, NULL, ?, ?, ?)`)
+      .run(id, code, input.amount, input.amount, used[0]?.expires_on ?? null, used[0]?.account_code ?? GIFT_ACCOUNT, input.entryId, user, now);
+    target = { id, code };
+  }
+  db.prepare("INSERT INTO gift_voucher_moves (id, voucher_id, kind, amount, invoice_id, created_by, created_at) VALUES (?, ?, 'returned', ?, ?, ?, ?)")
+    .run(randomUUID(), target.id, input.amount, input.returnId, user, now);
+  audit(db, user, 'gift_voucher_returned', 'gift_voucher', target.id, { code: target.code, amount: input.amount, returnId: input.returnId, made: !active });
+  return { voucherId: target.id, code: target.code };
+}
+
 /** The vouchers a posted sale paid with: their balances go down. Inside the sale's transaction. */
 export function takeGiftParts(db: Db, invoiceId: string, parts: readonly GiftPart[], user: string): void {
   const now = new Date().toISOString();

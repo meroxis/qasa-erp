@@ -129,7 +129,7 @@ export interface ShiftView {
   /** what was counted at closing (null while open) */
   counted: Money | null;
   /** 1.1: the posted sales by how they were paid (a sale not split: all cash); 1.2: loyalty, what points paid */
-  methods: Partial<Record<PosMethod | 'loyalty', Money>>;
+  methods: Partial<Record<PosMethod | 'loyalty' | 'voucher', Money>>;
   /** counted − expected, by currency (null while open) */
   difference: Money | null;
   notes: string;
@@ -252,9 +252,9 @@ function usdTakenOf(db: Db, shiftId: string): { usd: number; iqd: number } {
 /** The dinars dollar notes stand for: cents × (dinars per dollar × 100) / 10 000, rounded. */
 export const usdCashValue = (cents: number, rateX100: number): number => Math.round((cents * rateX100) / 10000);
 
-function salesOf(db: Db, shiftId: string): { sales: Money; cash: Money; count: number; methods: Partial<Record<PosMethod | 'loyalty', Money>> } {
-  const rows = db.prepare(`SELECT i.id, i.currency AS currency, i.total FROM pos_sales s JOIN invoices i ON i.id = s.invoice_id
-                           WHERE s.shift_id = ? AND i.status = 'posted'`).all(shiftId) as { id: string; currency: CurrencyCode; total: number }[];
+function salesOf(db: Db, shiftId: string): { sales: Money; cash: Money; count: number; methods: Partial<Record<PosMethod | 'loyalty' | 'voucher', Money>> } {
+  const rows = db.prepare(`SELECT i.id, i.currency AS currency, i.total, s.voucher_paid, s.rounding FROM pos_sales s JOIN invoices i ON i.id = s.invoice_id
+                           WHERE s.shift_id = ? AND i.status = 'posted'`).all(shiftId) as { id: string; currency: CurrencyCode; total: number; voucher_paid: number | null; rounding: number | null }[];
   const parts = new Map<string, { method: PosMethod; amount: number }[]>();
   if (rows.length) {
     for (const p of db.prepare(`SELECT p.invoice_id, p.method, p.amount FROM invoice_payments p JOIN pos_sales s ON s.invoice_id = p.invoice_id
@@ -264,14 +264,17 @@ function salesOf(db: Db, shiftId: string): { sales: Money; cash: Money; count: n
   }
   const sales = zero();
   const cash = zero();
-  const methods: Partial<Record<PosMethod | 'loyalty', Money>> = {};
-  // 1.2: what loyalty points paid (never in the drawer)
+  const methods: Partial<Record<PosMethod | 'loyalty' | 'voucher', Money>> = {};
+  // 1.2: what loyalty points paid (never in the drawer); 2.0: what gift vouchers paid (never in it either), and the
+  // dinar rounding of the cash part (in it: a sale's cash rows hold it already; a sale with none is cash only)
   const points = loyaltyPaidFor(db, rows.map((r) => r.id));
   for (const r of rows) {
     sales[r.currency] += Number(r.total);
     const byPoints = points.get(r.id) ?? 0;
     if (byPoints) (methods.loyalty ??= zero())[r.currency] += byPoints;
-    const rest = Number(r.total) - byPoints;
+    const byVoucher = Number(r.voucher_paid ?? 0);
+    if (byVoucher) (methods.voucher ??= zero())[r.currency] += byVoucher;
+    const rest = Number(r.total) - byPoints - byVoucher + Number(r.rounding ?? 0);
     for (const p of parts.get(r.id) ?? (rest > 0 ? [{ method: 'cash' as const, amount: rest }] : [])) {
       (methods[p.method] ??= zero())[r.currency] += p.amount;
       if (p.method === 'cash') cash[r.currency] += p.amount;
@@ -288,10 +291,11 @@ function salesOf(db: Db, shiftId: string): { sales: Money; cash: Money; count: n
  */
 function refundsOf(db: Db, row: ShiftRow): Money {
   const [where, params] = shiftReturnsWhere(row);
-  // points given back on a return never leave the drawer
-  const rows = db.prepare(`SELECT i.currency AS currency,
-                                  COALESCE(SUM(i.total - COALESCE((SELECT SUM(m.value) FROM loyalty_moves m WHERE m.invoice_id = i.id AND m.kind = 'return_redeem'), 0)), 0) AS total
-                           FROM invoices i WHERE ${where}
+  // what left the drawer: the returns' credits to its safe (points and gift vouchers given back never do, and a sale
+  // rounded down pays back the rounded cash)
+  const rows = db.prepare(`SELECT i.currency AS currency, COALESCE(SUM(l.credit - l.debit), 0) AS total
+                           FROM invoices i JOIN entry_lines l ON l.entry_id = i.entry_id AND l.account_code = i.cash_account
+                           WHERE ${where}
                            GROUP BY i.currency`)
     .all(...params) as { currency: CurrencyCode; total: number }[];
   const refunds = zero();
@@ -478,7 +482,7 @@ export function openShift(db: Db, input: OpenShiftInput, actor: Actor): ShiftVie
     if (till && db.prepare("SELECT 1 FROM pos_shifts WHERE status = 'open' AND till_id = ?").get(till.id)) throw conflict('pos_register_open', { register });
     // one open shift per cashier (an admin may keep several): a second one would only reset what is counted per shift
     if (!actor.permissions.includes('admin')) {
-      const mine = db.prepare("SELECT register FROM pos_shifts WHERE status = 'open' AND opened_by = ?").get(actor.name) as { register: string } | undefined;
+      const mine = (db.prepare("SELECT * FROM pos_shifts WHERE status = 'open'").all() as unknown as ShiftRow[]).find((r) => isOpener(db, r, actor));
       if (mine) throw conflict('pos_shift_already_open', { register: mine.register });
     }
     const newId = randomUUID();
@@ -496,7 +500,7 @@ export function openShift(db: Db, input: OpenShiftInput, actor: Actor): ShiftVie
   return getShift(db, id, actor);
 }
 
-function requireRunnable(db: Db, id: string, actor: Actor): ShiftRow {
+export function requireRunnable(db: Db, id: string, actor: Actor): ShiftRow {
   const row = loadShift(db, id);
   if (row.status !== 'open') throw conflict('pos_shift_closed');
   if (!mayRun(db, row, actor)) throw new AppError(403, 'forbidden', { need: 'shift_owner' });
@@ -625,7 +629,9 @@ export function sell(db: Db, shiftId: string, input: SaleInput, actor: Actor): {
       for (const g of gifts) split!.push({ accountCode: g.accountCode, amount: g.amount, kind: 'voucher' });
       const cashPart = split?.find((p) => p.method === 'cash');
       if (cashPart && input.currency === 'IQD' && rules.rounding.step) {
-        rounding = roundCash(cashPart.amount, rules.rounding) - cashPart.amount;
+        // never down to no cash at all (a small sale rounded down to 0 would give the goods away)
+        const roundedCash = roundCash(cashPart.amount, rules.rounding);
+        rounding = roundedCash > 0 ? roundedCash - cashPart.amount : 0;
         if (rounding) {
           cashPart.amount += rounding;
           split!.push({ accountCode: roundingAccount(db, rounding), amount: -rounding, kind: 'rounding' });
@@ -653,8 +659,8 @@ export function sell(db: Db, shiftId: string, input: SaleInput, actor: Actor): {
       const worth = usdCashValue(usdCash.amount, usdCash.rateX100);
       if (cashDue <= 0 || worth - cashDue >= usdCash.rateX100) throw invalid([{ code: 'pos_usd_cash_too_much', due: cashDue } as { code: string }]);
     }
-    db.prepare('INSERT INTO pos_sales (invoice_id, shift_id, tendered, usd_cash, usd_rate_x100, rounding) VALUES (?, ?, ?, ?, ?, ?)')
-      .run(posted.id, shiftId, tendered, usdCash?.amount ?? null, usdCash?.rateX100 ?? null, rounding);
+    db.prepare('INSERT INTO pos_sales (invoice_id, shift_id, tendered, usd_cash, usd_rate_x100, rounding, voucher_paid) VALUES (?, ?, ?, ?, ?, ?, ?)')
+      .run(posted.id, shiftId, tendered, usdCash?.amount ?? null, usdCash?.rateX100 ?? null, rounding, byGifts);
     if (usdCash) audit(db, actor.name, 'usd_cash', 'invoice', posted.id, { usd: usdCash.amount, rateX100: usdCash.rateX100, number: posted.number });
     if (split) {
       const insert = db.prepare(`INSERT INTO invoice_payments (id, invoice_id, kind, method, account_code, amount, currency, entry_id, source, reference, created_by, created_at)

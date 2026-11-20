@@ -2,7 +2,7 @@ import { z } from 'zod';
 import { BUILT_IN_FEATURES } from './features.ts';
 import { checkBranchRequest, filterBranchResult, isBranchLimited, userBranchLists } from './branches.ts';
 import { AMOUNTS_SHOW, APP_VERSION, BUSINESS_TYPES, MAX_BATCH_NO, MAX_ITEM_UNITS, MAX_UNIT_FACTOR_MILLI, POS_BIG_PICTURES, POS_QUICK_MAX, POS_USE, UNIT_CODES } from '@qasa/core';
-import { schemaVersion, SCHEMA_VERSION, type Db } from './db.ts';
+import { schemaVersion, SCHEMA_VERSION, transaction, type Db } from './db.ts';
 import { AppError, conflict, invalid } from './errors.ts';
 import {
   changeOwnPassword, createUser, hasRecoveryCode, issueRecoveryCode, listUsers, login, logout, ownerActor, ROLES, separateDuties, SESSION_COOKIE, sessionActor, sessionCookie,
@@ -19,6 +19,7 @@ import { finalAccountsReport, statementReport, trialBalanceReport } from './repo
 import { reorderList } from './reorder.ts';
 import { getSettings, lockPeriod, lockedPeriods, unlockPeriod, updateSettings, writeSetting } from './settings.ts';
 import { audit, listAudit } from './audit.ts';
+import { assertRefundApproved } from './till-settings.ts';
 import { createParty, deleteParty, getParty, isForeignKeyFailure, listParties, partyStatement, partyTotals, updateParty } from './parties.ts';
 import {
   createItem, createWarehouse, deleteItem, findByBarcode, getItem, itemMoves, itemStock, listItems, listWarehouses, updateItem, updateWarehouse
@@ -151,6 +152,8 @@ const invoiceSchema = z.object({
 
 const returnSchema = z.object({
   date: isoDate,
+  /** 2.0: a till supervisor's approvals, when the till's rules ask one for refunds (till-settings.ts) */
+  approvals: z.array(z.string().max(64)).max(4).optional(),
   payment: z.enum(['cash', 'credit']),
   cashAccountCode: z.string().max(12).optional(),
   notes: z.string().max(1000).optional(),
@@ -658,15 +661,22 @@ export function apiRoutes(db: Db, options: { demo?: boolean; extensions?: readon
       (doc) => getInvoice(db, doc, branchOfUser(req)));
   });
   app.post('/api/invoices/:id/cancel', async (req) => {
-    const body = parse(z.object({ date: isoDate.optional() }), req.body ?? {});
-    return cancelInvoice(db, parse(idParam, req.params).id, userOf(req), body.date, actorOf(req));
+    const body = parse(z.object({ date: isoDate.optional(), approvals: z.array(z.string().max(64)).max(4).optional() }), req.body ?? {});
+    const id = parse(idParam, req.params).id;
+    return transaction(db, () => {
+      assertRefundApproved(db, id, actorOf(req), body.approvals);
+      return cancelInvoice(db, id, userOf(req), body.date, actorOf(req));
+    });
   });
 
   // returns (مردودات), made from a posted invoice
   app.post('/api/invoices/:id/returns', async (req, reply) => {
     const { id } = parse(idParam, req.params);
-    const body = withoutUndefined(parse(returnSchema, req.body));
-    return reply.status(201).send(once(req, reply, 'POST /api/invoices/:id/returns', () => createReturn(db, id, body, userOf(req), actorOf(req)), (doc) => getInvoice(db, doc, branchOfUser(req))));
+    const { approvals, ...body } = withoutUndefined(parse(returnSchema, req.body));
+    return reply.status(201).send(once(req, reply, 'POST /api/invoices/:id/returns', () => transaction(db, () => {
+      assertRefundApproved(db, id, actorOf(req), approvals);
+      return createReturn(db, id, body, userOf(req), actorOf(req));
+    }), (doc) => getInvoice(db, doc, branchOfUser(req))));
   });
 
   // stock documents: opening stock and transfers between warehouses
@@ -719,7 +729,7 @@ export function apiRoutes(db: Db, options: { demo?: boolean; extensions?: readon
     return { bound: true, account: body.account };
   });
   app.delete('/api/auth/hello-reset', async (req) => { notInDemo(); setHelloResetAccount(db, null, actorOf(req).name); return { bound: false }; });
-  app.delete('/api/auth/reset-notice', async (req) => { writeSetting(db, 'admin_reset_notice', ''); audit(db, actorOf(req).name, 'clear', 'admin_reset_notice', null, {}); return { ok: true }; });
+  app.delete('/api/auth/reset-notice', async (req) => { writeSetting(db, 'admin_reset_notice', ''); audit(db, actorOf(req).name, 'seen', 'admin_reset_notice', null, {}); return { ok: true }; });
   app.get('/api/auth/me', async (req) => me((req as ApiRequest & { actor?: Actor | null }).actor ?? null));
   app.post('/api/auth/login', async (req, reply) => {
     notInDemo();

@@ -3,7 +3,7 @@ import { inCategory, categoriesApi } from '../industry/categories-api.ts';
 import {
   isWeighedUnit, normalizeForSearch, POS_QUICK_MAX, posBigTiles, rateFromX100, rateToX100, roundCash, toWesternDigits, type CurrencyCode, type Lang, type OfferRule
 } from '@qasa/core';
-import { api, ApiError, serverReachable, type InvoiceView, type ItemView, type PartyView } from '../api.ts';
+import { api, ApiError, serverReachable, setRefundApproval, type InvoiceView, type ItemView, type PartyView } from '../api.ts';
 import { ErrorBox, Icon, Modal, useData, useLoad, usePageNav, useToast, type PickOption } from '../components.tsx';
 import { makeI18n, useI18n, type I18n } from '../i18n.ts';
 import { href } from '../router.ts';
@@ -389,6 +389,8 @@ export function Register({ initial, onClosed }: { initial: ShiftView; onClosed()
     if (rules.supervisor.refund) {
       const ok = await supervisor.ask('refund');
       if (!ok) { focusSearch(); return; }
+      // the server takes it with the return (2.0: checked there too)
+      setRefundApproval(ok.token);
     }
     location.hash = href('sales-returns');
   };
@@ -714,7 +716,8 @@ export function Register({ initial, onClosed }: { initial: ShiftView; onClosed()
           {miscItem && rules.misc.allowed && <button type="button" className="btn" onClick={() => setDialog('misc')}><Icon name="plus" size={16} />{t('tu_misc')}</button>}
           {/* a clothing shop: a model by size and colour, and an exchange (a return and a sale in one go) */}
           <TillClothingButtons shiftId={shift.id} currency={currency} items={items} disabled={busy} onPick={(item) => { add(item); focusSearch(); }}
-            onExchanged={() => { posApi.current().then((r) => { if (r.shift?.id === shift.id) setShift(r.shift); }, () => {}); }} />
+            onExchanged={() => { posApi.current().then((r) => { if (r.shift?.id === shift.id) setShift(r.shift); }, () => {}); }}
+            {...(rules.supervisor.refund ? { beforeExchange: async () => { const ok = await supervisor.ask('refund'); if (ok) setRefundApproval(ok.token); return !!ok; } } : {})} />
           {/* a delivery order from this basket (market extras): the sale itself is made when it is delivered */}
           {!offline && <DeliveryFromTill partyId={partyId || null} warehouseId={shift.warehouseId} onSent={clearNow}
             lines={cart.map((l) => { const q = baseQtyOf(l); return { itemId: l.item.id, qtyMilli: q, unitPrice: q ? Math.round((lineTotal(l) * 1000) / q) : l.unitPrice }; })} />}

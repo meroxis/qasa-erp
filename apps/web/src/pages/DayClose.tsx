@@ -20,7 +20,7 @@ const good = 'var(--ok, #1F7A52)';
 const bad = 'var(--bad, #A4271A)';
 
 const METHOD_KEY: Record<DayMethod, Key> = {
-  cash: 'pay_cash', bank: 'dc_m_bank', card: 'pay_card', fib: 'pay_fib', zaincash: 'pay_zaincash', qi: 'pay_qi', credit: 'pay_account', loyalty: 'dc_m_loyalty'
+  cash: 'pay_cash', bank: 'dc_m_bank', card: 'pay_card', fib: 'pay_fib', zaincash: 'pay_zaincash', qi: 'pay_qi', credit: 'pay_account', loyalty: 'dc_m_loyalty', voucher: 'dc_m_voucher'
 };
 
 export const methodLabel = (i18n: I18n, m: DayMethod): string => i18n.t(METHOD_KEY[m]);

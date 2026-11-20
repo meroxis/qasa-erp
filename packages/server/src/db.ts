@@ -2163,7 +2163,7 @@ const V18 =
   CREATE TABLE gift_voucher_moves (
     id TEXT PRIMARY KEY,
     voucher_id TEXT NOT NULL REFERENCES gift_vouchers(id),
-    kind TEXT NOT NULL CHECK (kind IN ('sold', 'redeemed', 'restored', 'cancelled')),
+    kind TEXT NOT NULL CHECK (kind IN ('sold', 'redeemed', 'restored', 'cancelled', 'returned', 'expired')),
     amount INTEGER NOT NULL,
     invoice_id TEXT REFERENCES invoices(id),
     created_by TEXT NOT NULL,
@@ -2185,6 +2185,8 @@ const V18 =
     created_at TEXT NOT NULL
   );
   ALTER TABLE pos_sales ADD COLUMN rounding INTEGER NOT NULL DEFAULT 0;
+  -- what gift vouchers paid of a till sale (a return gives that share back onto a voucher, never as cash)
+  ALTER TABLE pos_sales ADD COLUMN voucher_paid INTEGER NOT NULL DEFAULT 0;
 
   -- ===== 18 · GOLD =====
   -- 18 — gold and jewellery shops: pieces by weight and karat with their making charge, the day's gold board, old gold
@@ -2390,6 +2392,7 @@ const V18 =
   );
   CREATE INDEX ws_collections_rep ON ws_collections(rep_id, date);
   CREATE INDEX ws_collections_entry ON ws_collections(entry_id);
+  CREATE INDEX ws_collections_handover ON ws_collections(handover_id);
   -- ===== 18 · MARKET EXTRAS =====
   -- 18 — market extras: delivery orders taken by phone or WhatsApp (drivers, the order and its lines, the cash a driver
   -- hands over), the WhatsApp reminders sent to customers who owe, the price checker screens near the shelves (a device

@@ -394,7 +394,7 @@ const BOOKS_ROUTES = ['/api/entries/', '/api/reports/', '/api/year-end', '/api/f
   '/api/gold/stock', '/api/gold/suppliers', '/api/gold/docs',
   // the cash delivery drivers hand over (2.0)
   '/api/delivery/handovers'];
-const ADMIN_ROUTES = ['/api/audit', '/api/auth/recovery-code', '/api/branches', '/api/pos/gift-vouchers', '/api/price-checker/devices', '/api/users'];
+const ADMIN_ROUTES = ['/api/audit', '/api/auth/hello-reset', '/api/auth/recovery-code', '/api/branches', '/api/pos/gift-vouchers', '/api/price-checker/devices', '/api/users'];
 // the till's own reads (1.5.2): for the Point of sale permission only (an admin has it; a cashier at the till here too)
 const TILL_ROUTES = ['/api/pos/current', '/api/pos/customer/:id', '/api/pos/display/image-admin/:id', '/api/pos/display/images', '/api/pos/gift-vouchers/lookup', '/api/pos/payment-accounts', '/api/pos/rules', '/api/pos/scale', '/api/pos/tills'];
 const NOT_THEIRS = [...ADMIN_ROUTES, ...TILL_ROUTES].sort();
@@ -568,6 +568,8 @@ describe('a cashier sells without seeing cost', () => {
 
     // the same documents, read by the admin, have their cost
     expect((await get(`/api/invoices/${sold.json().invoice.id}`)).json().lines[0].cost).toBe(Math.round(avg * 2));
+    // (2.0: a cashier holds one open shift at a time; this one is closed for the tests after it)
+    expect((await post(`/api/pos/shifts/${shift.json().id}/close`, { countedCash: 2_500 }, cashier)).statusCode).toBe(200);
   });
 
   it('reads the vouchers they prepared, with the approval and the reason of a rejection, and nothing else of the journal', async () => {

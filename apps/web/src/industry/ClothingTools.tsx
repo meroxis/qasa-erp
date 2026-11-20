@@ -304,8 +304,10 @@ export function ExchangeDialog({ shiftId, currency, items, onDone, onClose }: {
 }
 
 /** The till's buttons for a clothing shop: pick by size and colour, and exchange. */
-export function TillClothingButtons({ shiftId, currency, items, onPick, onExchanged, disabled }: {
+export function TillClothingButtons({ shiftId, currency, items, onPick, onExchanged, disabled, beforeExchange }: {
   shiftId: string; currency: CurrencyCode; items: readonly ItemView[]; onPick(item: ItemView): void; onExchanged(): void; disabled?: boolean;
+  /** (2.0) asks a supervisor first when the till's rules ask one for refunds; false: not approved */
+  beforeExchange?: () => Promise<boolean>;
 }) {
   const { t } = useI18n();
   const on = useClothingOn();
@@ -314,7 +316,7 @@ export function TillClothingButtons({ shiftId, currency, items, onPick, onExchan
   return (
     <>
       <button type="button" className="btn pos-touch" disabled={disabled} onClick={() => setOpen('pick')}><Icon name="shirt" size={18} />{t('cw_bySizes')}</button>
-      <button type="button" className="btn pos-touch" disabled={disabled} onClick={() => setOpen('exchange')}><Icon name="swap" size={18} />{t('cw_exchange')}</button>
+      <button type="button" className="btn pos-touch" disabled={disabled} onClick={() => void (beforeExchange ? beforeExchange() : Promise.resolve(true)).then((go) => { if (go) setOpen('exchange'); })}><Icon name="swap" size={18} />{t('cw_exchange')}</button>
       {open === 'pick' && <TillModelPick items={items} onPick={onPick} onClose={() => setOpen(null)} />}
       {open === 'exchange' && <ExchangeDialog shiftId={shiftId} currency={currency} items={items} onDone={onExchanged} onClose={() => setOpen(null)} />}
     </>

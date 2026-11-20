@@ -22,7 +22,7 @@ import type { ApiExtension } from './routes.ts';
 type Money = Record<CurrencyCode, number>;
 
 /** How a sale was paid: cash or a bank (a cash invoice into a safe or a bank), a card or wallet at the till, on account, or points. */
-export const DAY_METHODS = ['cash', 'bank', 'card', 'fib', 'zaincash', 'qi', 'credit', 'loyalty'] as const;
+export const DAY_METHODS = ['cash', 'bank', 'card', 'fib', 'zaincash', 'qi', 'credit', 'loyalty', 'voucher'] as const;
 export type DayMethod = (typeof DAY_METHODS)[number];
 
 export interface DayRegister {
@@ -91,6 +91,14 @@ function salesByMethod(db: Db, date: string, branch: BranchFilter, own: OwnPart 
     parts.set(p.invoice_id, [...(parts.get(p.invoice_id) ?? []), { method: p.method, amount: num(p.amount) }]);
   }
   const points = loyaltyPaid(db, rows.map((r) => r.id));
+  // 2.0: a till sale's gift vouchers and dinar rounding (pos_sales)
+  const till = new Map<string, { voucher: number; rounding: number }>();
+  if (rows.length) {
+    for (const t of db.prepare(`SELECT s.invoice_id, s.voucher_paid, s.rounding FROM pos_sales s JOIN invoices i ON i.id = s.invoice_id
+                                WHERE i.status = 'posted' AND i.kind = 'sale' AND i.date = ?${w}`).all(date, ...wp) as { invoice_id: string; voucher_paid: number | null; rounding: number | null }[]) {
+      till.set(t.invoice_id, { voucher: num(t.voucher_paid ?? 0), rounding: num(t.rounding ?? 0) });
+    }
+  }
   const methods = new Map<DayMethod, { amount: number; invoices: Set<string> }>();
   const refunds = new Map<DayMethod, number>();
   const add = (method: DayMethod, amount: number, invoice: string) => {
@@ -120,8 +128,11 @@ function salesByMethod(db: Db, date: string, branch: BranchFilter, own: OwnPart 
     const own = parts.get(r.id) ?? [];
     for (const p of own) add(fromPos(p.method), base(p.amount), r.id);
     add('loyalty', byPoints, r.id);
-    // what no part says: the invoice's own way, into its safe or bank, or on the customer's account
-    const rest = base(total - own.reduce((s, p) => s + p.amount, 0)) - byPoints;
+    const t = till.get(r.id) ?? { voucher: 0, rounding: 0 };
+    add('voucher', t.voucher, r.id);
+    // what no part says: the invoice's own way, into its safe or bank, or on the customer's account (a till sale's
+    // vouchers paid none of it, and its cash rows hold the rounding already)
+    const rest = base(total - own.reduce((s, p) => s + p.amount, 0)) - byPoints - t.voucher + t.rounding;
     add(r.payment === 'credit' ? 'credit' : cashOrBank(r.cash_account), rest, r.id);
   }
   const order = (a: { amount: number; method: DayMethod }, b: { amount: number; method: DayMethod }) =>
