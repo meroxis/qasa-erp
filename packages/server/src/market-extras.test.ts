@@ -122,6 +122,10 @@ describe('delivery orders', () => {
     expect((await ok('GET', '/api/delivery/drivers'))[0].holding).toBe(0);
     const entry = db.prepare('SELECT status FROM entries WHERE id = ?').get(handover.entryId) as { status: string };
     expect(entry.status).toBe('draft');
+    // (accounting review #5) the handover's voucher is changed only from the handover: never edited or deleted here
+    expect((await call('PUT', `/api/entries/${handover.entryId}`, { date: '2026-11-20', description: 'x', currency: 'IQD', rateX100: 100,
+      lines: [{ accountCode: '1811', debit: 1_000, credit: 0 }, { accountCode: cash, debit: 0, credit: 1_000 }] })).json()).toMatchObject({ error: 'entry_belongs_to_delivery_handover' });
+    expect((await call('DELETE', `/api/entries/${handover.entryId}`)).json()).toMatchObject({ error: 'entry_belongs_to_delivery_handover' });
     await ok('POST', `/api/entries/${handover.entryId}/check`, {});
     await ok('POST', `/api/entries/${handover.entryId}/approve`, {});
     expect(balanceOf(cash)).toBe(0);

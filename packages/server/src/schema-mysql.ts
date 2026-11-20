@@ -2100,13 +2100,15 @@ export const MYSQL_TABLES: readonly MysqlObject[] = [
       shift_id ${ID},
       entry_id ${ID},
       cancel_entry_id ${ID},
+      expire_entry_id ${ID},
       created_by TEXT NOT NULL,
       created_at ${WHEN} NOT NULL,
       UNIQUE KEY gift_vouchers_code (code),
       FOREIGN KEY (account_code) REFERENCES accounts(code),
       FOREIGN KEY (shift_id) REFERENCES pos_shifts(id),
       FOREIGN KEY (entry_id) REFERENCES entries(id),
-      FOREIGN KEY (cancel_entry_id) REFERENCES entries(id)
+      FOREIGN KEY (cancel_entry_id) REFERENCES entries(id),
+      FOREIGN KEY (expire_entry_id) REFERENCES entries(id)
     )`
   },
   {

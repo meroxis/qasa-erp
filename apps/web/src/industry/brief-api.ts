@@ -120,6 +120,8 @@ export interface DayCloseView {
   debts: { collected: number; collectedRows: DayDebtRowView[]; added: number; addedRows: DayDebtRowView[] };
   flow?: { in: number; out: number };
   lowStock: { count: number; top: LowStockView[] };
+  /** 2.0: gift vouchers past their date still owed (for those who keep the books) */
+  giftExpired?: { count: number; amount: number };
   topItems: ItemSalesView[];
   ownerPhone: string;
 }

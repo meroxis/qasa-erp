@@ -280,6 +280,12 @@ export function DayClose() {
               </ul>
             </Section>
 
+            {!!c.giftExpired?.amount && (
+              <div className="alert warn no-print" role="note">
+                <span>{t('dc_giftExpired', { n: i18n.int(c.giftExpired.count), a: i18n.money(c.giftExpired.amount, 'IQD') })}</span>
+                <a href={href('settings/sales')}>{t('tu_gvWriteOff')}</a>
+              </div>
+            )}
             <Section title={t('br_lowStock')} icon="box" empty={!c.lowStock.count}
               action={c.lowStock.count ? <span className="chip bad num">{i18n.int(c.lowStock.count)}</span> : undefined}>
               <p style={{ margin: '0 16px 8px' }}>{t('dc_lowStockCount', { n: i18n.int(c.lowStock.count) })}</p>

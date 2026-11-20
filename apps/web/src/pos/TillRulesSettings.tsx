@@ -3,6 +3,7 @@ import { ROUNDING_STEPS, type CashRounding } from '@qasa/core';
 import { api, type ItemView, type UserView } from '../api.ts';
 import { AccountCombo, AmountInput, ErrorBox, Icon, useLoad, useToast } from '../components.tsx';
 import { useI18n } from '../i18n.ts';
+import { href } from '../router.ts';
 import { tillsApi } from '../industry/pos-api.ts';
 import { tillRulesApi, type DisplayRules, type SupervisorRules, type TillRulesView } from './rules-api.ts';
 import { BAUDS, DEFAULT_SCALE, hexBytes, readScaleSettings, readWeight, serialHere, validPattern, writeScaleSettings, type ScaleSettings } from './scale.ts';
@@ -241,6 +242,12 @@ function VouchersCard() {
             <span>{t('tu_gvOutstanding')}: <strong className="num">{i18n.money(data.outstanding, 'IQD')}</strong></span>
             <span>{t('tu_gvExpired')}: <strong className="num">{i18n.money(data.expiredUnused, 'IQD')}</strong></span>
           </div>
+          {data.expiredUnused > 0 && (
+            <div className="row" style={{ gap: 8 }}>
+              <button type="button" className="btn small" onClick={() => void tillRulesApi.expireVouchers().then((r) => { if (r.entryId) location.hash = href(`entry/${r.entryId}`); reload(); }, setError)}>{t('tu_gvWriteOff')}</button>
+              <span className="small muted">{t('tu_gvWriteOffHint')}</span>
+            </div>
+          )}
           {data.vouchers.length > 0 && (
             <div className="table-wrap">
               <table className="table">

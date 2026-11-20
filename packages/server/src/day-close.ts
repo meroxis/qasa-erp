@@ -9,6 +9,7 @@ import { loyaltyPaidFor } from './loyalty.ts';
 import { branchOf, cashFlowOn, expensesBetween, lowStock, salesByItem, type BranchFilter, type ExpenseRow, type ItemSales, type LowStock } from './brief.ts';
 import { seesBooks, type Actor } from './auth.ts';
 import { closesBlind } from './till-settings.ts';
+import { expiredUnused } from './gift-vouchers.ts';
 import type { ApiExtension } from './routes.ts';
 
 /**
@@ -52,6 +53,8 @@ export interface DayCloseView {
   /** the money in and out of the safes and banks: left out of someone's own part (OwnPart), as expenses are */
   flow?: { in: number; out: number };
   lowStock: { count: number; top: LowStock[] };
+  /** 2.0: gift vouchers past their date still owed (for those who keep the books) */
+  giftExpired?: { count: number; amount: number };
   topItems: ItemSales[];
   ownerPhone: string;
 }
@@ -240,6 +243,8 @@ export function dayClose(db: Db, date: string, branch: BranchFilter = null, view
     debts: debtsOn(db, date, branch, own),
     ...(money ? { flow: money.flow } : {}),
     lowStock: { count: short.length, top: short.slice(0, 5) },
+    // 2.0: gift vouchers past their date still owed in the books (for those who keep them: an admin writes them off)
+    ...(money ? { giftExpired: expiredUnused(db, date) } : {}),
     topItems: salesByItem(db, date, date, 5, branch, own ? own.invoiceIds : null),
     ownerPhone: readSetting(db, 'brief_phone') ?? ''
   };

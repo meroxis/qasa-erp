@@ -14,8 +14,7 @@ import {
 } from '@qasa/server';
 import {
   addCompany, backupFileName, chooseCompany, CompanyError, companyDirOf, hasCompanyFile, isCompanyId,
-  readRegistry, renameCompany, writeRegistry, type Registry
-} from './companies.ts';
+  readRegistry, renameCompany, writeRegistry, type Registry, openableCompanies } from './companies.ts';
 
 /**
  * What a new company takes over from the one open now: the licence and this PC's activation of it. Both belong to
@@ -120,8 +119,8 @@ export function companyApi(deps: CompanyApiDeps): ApiExtension {
       current: deps.currentId,
       limit,
       canAdd: limit === null || r.list.length < limit,
-      // the plan's limit only stops adding companies: every company already made always opens, whatever the plan
-      list: r.list.map((c) => ({ ...c, current: c.id === deps.currentId }))
+      // past the plan's limit a company waits (nothing is deleted): the first ones made open
+      list: r.list.map((c) => ({ ...c, current: c.id === deps.currentId, waiting: !openableCompanies(r, limit).has(c.id) }))
     };
   };
   const idOf = (req: ApiRequest) => {
@@ -198,8 +197,9 @@ export function companyApi(deps: CompanyApiDeps): ApiExtension {
             const r = registry();
             if (id === deps.currentId) throw conflict('company_is_current');
             const next = guard(() => chooseCompany(r, id));
-            // never limited by the plan (nobody is locked out of their own books); a file from a newer version is
-            // refused here, before companies.json names it, so the next start never lands on it
+            // the plan's limit: the first companies made open, the others wait until the plan allows them; a file
+            // from a newer version is refused here, before companies.json names it, so the next start never lands on it
+            if (!openableCompanies(r, deps.limit()).has(id)) throw conflict('company_limit');
             const dir = companyDirOf(deps.userDataDir, id);
             const server = onDatabaseServer(dir);
             if (!server && !hasCompanyFile(dir)) throw notFound('company');

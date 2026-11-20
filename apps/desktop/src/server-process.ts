@@ -9,7 +9,7 @@ import { createServer } from 'node:net';
 import { extname, join, normalize, sep } from 'node:path';
 import type { FastifyInstance } from 'fastify';
 import { buildApp, configureLicensing, configureVerifyKeyVault, openDatabase, planStatus, startUsagePings, type Db } from '@qasa/server';
-import { companyDirOf, isCompanyId, MAIN_COMPANY, readRegistry, writeRegistry } from './companies.ts';
+import { companyDirOf, isCompanyId, MAIN_COMPANY, openableCompanies, readRegistry, writeRegistry } from './companies.ts';
 import { companyApi } from './company-api.ts';
 import { handleRecoverRequest, recoverableAdmins } from './recover.ts';
 import { startOver } from './start-over.ts';
@@ -376,6 +376,14 @@ async function startServer(bridge: Bridge, given: ServerInit): Promise<string> {
   // paid plans need an activation for this PC (online once, then a check every few weeks); official builds (with the
   // Pro module) also check every licence in the Rust module shipped beside app.asar
   configureLicensing({ strict: true, dataDir: given.userDataDir, markerDirs: trialMarkerDirs(given).slice(1), requireNative: !!proModule });
+  // a company past the plan's limit (a licence ended, or companies.json written by hand) waits: the app opens the first
+  // company instead (security review #10)
+  if (companyId() !== MAIN_COMPANY && !openableCompanies(readRegistry(given.userDataDir), planStatus(db).limits.companies).has(companyId())) {
+    log('the company', companyId(), 'is past the plan\'s company limit: opening the first company');
+    writeRegistry(given.userDataDir, { ...readRegistry(given.userDataDir), current: MAIN_COMPANY });
+    await bridge.call('relaunch', [], { timeoutMs: 0 });
+    return new Promise<never>(() => {});
+  }
   // the anonymous daily usage ping (Settings → Anonymous usage statistics; can be switched off)
   pings = startUsagePings(db, {
     dataDir: given.userDataDir, version: given.appVersion, os: process.platform === 'win32' ? 'windows' : process.platform,

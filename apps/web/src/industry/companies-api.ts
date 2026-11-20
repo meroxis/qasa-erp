@@ -2,7 +2,7 @@ import { request } from '../api.ts';
 
 /** Companies on this PC (Windows app only; the routes come from the app's own server process). */
 
-export interface CompanyView { id: string; name: string; createdAt: string; current: boolean }
+export interface CompanyView { id: string; name: string; createdAt: string; current: boolean; /** past the plan's limit: waits until the plan allows it */ waiting?: boolean }
 export interface CompaniesView { current: string; limit: number | null; canAdd: boolean; list: CompanyView[] }
 
 export const companiesApi = {

@@ -5,7 +5,8 @@ import { audit } from './audit.ts';
 import { conflict, invalid, notFound } from './errors.ts';
 import { loadAccounts } from './accounts.ts';
 import { readSetting } from './settings.ts';
-import { postVoucherNow, reverseEntryInternal } from './journal.ts';
+import { createJournalEntry, postVoucherNow, reverseEntryInternal } from './journal.ts';
+import { transaction } from './db.ts';
 
 /**
  * Gift vouchers (2.0, the till): a customer buys a voucher at the till (cash into the shift's drawer), and whoever holds
@@ -207,6 +208,46 @@ export function cancelGiftVoucher(db: Db, id: string, user: string): GiftVoucher
 export function giftCashOf(db: Db, shiftId: string): number {
   const r = db.prepare("SELECT COALESCE(SUM(amount), 0) AS total FROM gift_vouchers WHERE shift_id = ? AND status = 'active'").get(shiftId) as { total: number };
   return Number(r.total);
+}
+
+/** What vouchers past their date still hold (still owed in the books until an admin writes it off). */
+export function expiredUnused(db: Db, today = todayIso()): { count: number; amount: number } {
+  const r = db.prepare("SELECT COUNT(*) AS n, COALESCE(SUM(balance), 0) AS amount FROM gift_vouchers WHERE status = 'active' AND balance > 0 AND expires_on IS NOT NULL AND expires_on < ?")
+    .get(today) as { n: number; amount: number };
+  return { count: Number(r.n), amount: Number(r.amount) };
+}
+
+/**
+ * An admin takes what expired vouchers still hold into income (other revenue, 49…), through one draft journal entry
+ * that is checked and approved like any other: Dr each voucher's liability account / Cr the income account. The
+ * vouchers are emptied (move 'expired') and keep the entry, which only this feature changes (journal.ts ENTRY_OWNERS).
+ */
+export function writeOffExpired(db: Db, actor: { id: string | null; name: string }, incomeAccount?: string): { entryId: string | null; count: number; amount: number } {
+  const today = todayIso();
+  const rows = db.prepare("SELECT id, code, balance, account_code FROM gift_vouchers WHERE status = 'active' AND balance > 0 AND expires_on IS NOT NULL AND expires_on < ?")
+    .all(today) as { id: string; code: string; balance: number; account_code: string }[];
+  if (!rows.length) return { entryId: null, count: 0, amount: 0 };
+  const accounts = loadAccounts(db).filter((a) => a.postable);
+  const income = incomeAccount && accounts.some((a) => a.code === incomeAccount && a.code.startsWith('4')) ? incomeAccount
+    : accounts.filter((a) => a.code.startsWith('49')).sort((x, y) => x.code.localeCompare(y.code))[0]?.code;
+  if (!income) throw conflict('gv_income_account_missing');
+  const byAccount = new Map<string, number>();
+  for (const r of rows) byAccount.set(r.account_code, (byAccount.get(r.account_code) ?? 0) + Number(r.balance));
+  const amount = rows.reduce((s, r) => s + Number(r.balance), 0);
+  return transaction(db, () => {
+    const entry = createJournalEntry(db, {
+      date: today, currency: 'IQD', rateX100: 100, description: `Expired gift vouchers (${rows.length})`,
+      lines: [...[...byAccount].map(([accountCode, value]) => ({ accountCode, debit: value, credit: 0 })), { accountCode: income, debit: 0, credit: amount }]
+    }, actor.name, actor.id);
+    const now = new Date().toISOString();
+    for (const r of rows) {
+      db.prepare('UPDATE gift_vouchers SET balance = 0, expire_entry_id = ? WHERE id = ?').run(entry.id, r.id);
+      db.prepare("INSERT INTO gift_voucher_moves (id, voucher_id, kind, amount, invoice_id, created_by, created_at) VALUES (?, ?, 'expired', ?, NULL, ?, ?)")
+        .run(randomUUID(), r.id, -Number(r.balance), actor.name, now);
+    }
+    audit(db, actor.name, 'gift_vouchers_expired', 'entry', entry.id, { count: rows.length, amount });
+    return { entryId: entry.id, count: rows.length, amount };
+  });
 }
 
 export interface GiftReport { vouchers: GiftVoucherView[]; sold: number; used: number; outstanding: number; expiredUnused: number }

@@ -2157,6 +2157,8 @@ const V18 =
     shift_id TEXT REFERENCES pos_shifts(id),
     entry_id TEXT REFERENCES entries(id),
     cancel_entry_id TEXT REFERENCES entries(id),
+    -- what an expired voucher still held, taken into income through a draft entry (an admin's write-off)
+    expire_entry_id TEXT REFERENCES entries(id),
     created_by TEXT NOT NULL,
     created_at TEXT NOT NULL
   );

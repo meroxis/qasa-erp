@@ -418,6 +418,11 @@ const ENTRY_OWNERS: readonly { owner: string; sql: string; marks: number }[] = [
   { owner: 'gold', sql: 'SELECT 1 FROM gold_docs WHERE entry_id = ?', marks: 1 },
   // wholesale (wholesale.ts): a rep's collection and a handover of the rep's cash to the office are that document's receipts
   { owner: 'wholesale', sql: 'SELECT 1 FROM ws_collections WHERE entry_id = ? UNION ALL SELECT 1 FROM ws_handovers WHERE entry_id = ?', marks: 2 },
+  // gift vouchers (gift-vouchers.ts): a voucher sold, cancelled or written off when it expired unused is that voucher's
+  // entry; reversing it from the journal would leave the voucher spendable
+  { owner: 'gift_voucher', sql: 'SELECT 1 FROM gift_vouchers WHERE entry_id = ? OR cancel_entry_id = ? OR expire_entry_id = ?', marks: 3 },
+  // delivery orders (delivery.ts): a driver's cash handed over to the office is the handover's own voucher
+  { owner: 'delivery_handover', sql: 'SELECT 1 FROM delivery_handovers WHERE entry_id = ?', marks: 1 },
   { owner: 'fuel', sql: 'SELECT 1 FROM fuel_shifts WHERE entry_id = ? UNION ALL SELECT 1 FROM fuel_deliveries WHERE entry_id = ? UNION ALL SELECT 1 FROM fuel_dips WHERE entry_id = ? UNION ALL SELECT 1 FROM fuel_tanks WHERE opening_entry_id = ?', marks: 4 }
 ];
 

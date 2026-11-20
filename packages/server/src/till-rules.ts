@@ -13,7 +13,7 @@ import { getShift } from './pos.ts';
 import { userBranchLists } from './branches.ts';
 import { imageMime, fromBase64, MAX_IMAGE_BYTES } from './media.ts';
 import { getPrintProfile } from './print-profile.ts';
-import { cancelGiftVoucher, findGiftVoucher, giftReport, sellGiftVoucher } from './gift-vouchers.ts';
+import { cancelGiftVoucher, findGiftVoucher, giftReport, sellGiftVoucher, writeOffExpired } from './gift-vouchers.ts';
 import {
   APPROVAL_ACTIONS, APPROVAL_MS, maySellMisc, maySupervise, TILL_ONLY_ACTIONS, tillRules, type ApprovalAction, type TillRules
 } from './till-settings.ts';
@@ -364,6 +364,7 @@ export const tillRulesApi: ApiExtension = {
     'POST /api/pos/display/code': 'pos',
     // the codes of vouchers sold are worth money: the list is an admin's
     'GET /api/pos/gift-vouchers': 'admin',
+    'POST /api/pos/gift-vouchers/expire': 'admin',
     // the screen's pictures are shown to customers anyway: a till reads them for the screen beside it
     'GET /api/pos/display/images': 'pos',
     'GET /api/pos/display/image-admin/:id': 'pos'
@@ -411,6 +412,10 @@ export const tillRulesApi: ApiExtension = {
         }
       },
       { method: 'GET', path: '/api/pos/gift-vouchers', handler: async () => giftReport(db) },
+      {
+        method: 'POST', path: '/api/pos/gift-vouchers/expire',
+        handler: async (req) => writeOffExpired(db, actor(req), parse(z.object({ incomeAccount: z.string().max(12).optional() }), req.body ?? {}).incomeAccount)
+      },
       { method: 'POST', path: '/api/pos/gift-vouchers/:id/cancel', handler: async (req) => transaction(db, () => cancelGiftVoucher(db, parse(z.object({ id }), req.params).id, actor(req).name)) },
       { method: 'POST', path: '/api/pos/display/code', handler: async (req) => newDisplayCode(db, parse(z.object({ tillId: id }), req.body).tillId, actor(req).name, actor(req)) },
       { method: 'POST', path: '/api/pos/display/pair', handler: async (req) => pairDisplay(db, parse(z.object({ code: z.string().max(12) }), req.body).code, req.source ?? '') },

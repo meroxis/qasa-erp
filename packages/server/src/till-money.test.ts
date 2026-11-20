@@ -10,7 +10,7 @@ import { resetPinFailures } from './till-rules.ts';
 // close, and what a return gives back (vouchers onto a voucher, never cash; the rounded cash, never more)
 let db: Db; let app: FastifyInstance; let warehouseId: string; let teaId: string;
 const h = { 'x-qasa-user': encodeURIComponent('Mer'), 'x-qasa-client': '1' };
-const call = (method: 'GET' | 'POST' | 'PUT', url: string, body?: unknown) => app.inject({ method, url, headers: h, ...(body === undefined ? {} : { payload: body as object }) });
+const call = (method: 'GET' | 'POST' | 'PUT' | 'DELETE', url: string, body?: unknown) => app.inject({ method, url, headers: h, ...(body === undefined ? {} : { payload: body as object }) });
 async function ok(method: 'GET' | 'POST' | 'PUT', url: string, body?: unknown) { const r = await call(method, url, body); expect(r.statusCode, `${method} ${url}: ${r.body}`).toBeLessThan(300); return r.json(); }
 const bal = (code: string) => Number((db.prepare(`SELECT COALESCE(SUM(l.base_debit - l.base_credit), 0) AS b FROM entry_lines l JOIN entries e ON e.id = l.entry_id WHERE l.account_code = ? AND e.status = 'approved'`).get(code) as { b: number }).b);
 const tea = (qty = 1, price = 2_750) => ({ itemId: teaId, qtyMilli: qty * 1000, unitPrice: price });
@@ -96,5 +96,25 @@ describe('a till sale on the customer\'s account', () => {
     await ok('POST', `/api/pos/shifts/${shift.id}/sales`, { currency: 'IQD', discount: 0, lines: [tea(4)] });
     expect((await back(sale.invoice.id, 1)).json()).toMatchObject({ details: [{ code: 'refund_more_than_paid', available: 0 }] });
     expect((await back(sale.invoice.id, 1, 'credit')).statusCode).toBe(201);
+  });
+});
+
+describe("a gift voucher's own entries", () => {
+  it("can't be reversed or deleted from the journal; expired balances go to income through a draft entry", async () => {
+    const shift = await openShift();
+    const v = await ok('POST', `/api/pos/shifts/${shift.id}/gift-vouchers`, { amount: 10_000 });
+    db.prepare("UPDATE gift_vouchers SET expires_on = '2020-01-31' WHERE id = ?").run(v.id);
+    const entryId = (db.prepare('SELECT entry_id FROM gift_vouchers WHERE id = ?').get(v.id) as { entry_id: string }).entry_id;
+    // (accounting review #5) reversing the sale of the voucher from the journal would leave it spendable
+    expect((await call('POST', `/api/entries/${entryId}/reverse`, {})).json()).toMatchObject({ error: 'entry_belongs_to_gift_voucher' });
+    // expired with 10,000 on it: still owed until an admin writes it off
+    expect((await ok('GET', `/api/brief/day-close?date=${today}`)).giftExpired).toEqual({ count: 1, amount: 10_000 });
+    const off = await ok('POST', '/api/pos/gift-vouchers/expire', {});
+    expect(off).toMatchObject({ count: 1, amount: 10_000 });
+    const entry = await ok('GET', `/api/entries/${off.entryId}`);
+    expect(entry).toMatchObject({ status: 'draft' });
+    expect((await call('DELETE', `/api/entries/${off.entryId}`)).json()).toMatchObject({ error: 'entry_belongs_to_gift_voucher' });
+    expect((await ok('GET', `/api/pos/gift-vouchers/lookup?code=${v.code}`)).balance).toBe(0);
+    expect((await ok('GET', `/api/brief/day-close?date=${today}`)).giftExpired).toEqual({ count: 0, amount: 0 });
   });
 });

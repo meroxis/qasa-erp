@@ -67,6 +67,8 @@ export const tillRulesApi = {
   sellVoucher: (shiftId: string, amount: number, expiresOn?: string) =>
     request<GiftVoucherView>('POST', `/api/pos/shifts/${shiftId}/gift-vouchers`, { amount, ...(expiresOn ? { expiresOn } : {}) }),
   lookupVoucher: (code: string) => request<GiftVoucherView>('GET', '/api/pos/gift-vouchers/lookup' + qs({ code })),
+  /** an admin: what expired vouchers still hold goes to income through a draft entry */
+  expireVouchers: () => request<{ entryId: string | null; count: number; amount: number }>('POST', '/api/pos/gift-vouchers/expire', {}),
   vouchers: () => request<{ vouchers: GiftVoucherView[]; sold: number; used: number; outstanding: number; expiredUnused: number }>('GET', '/api/pos/gift-vouchers'),
   cancelVoucher: (id: string) => request<GiftVoucherView>('POST', `/api/pos/gift-vouchers/${id}/cancel`, {}),
   displayCode: (tillId: string) => request<{ code: string }>('POST', '/api/pos/display/code', { tillId }),
