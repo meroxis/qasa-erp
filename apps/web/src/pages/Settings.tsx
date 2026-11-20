@@ -56,6 +56,8 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
   { id: 'company', icon: 'building', name: 'company', help: 'ss_companyHelp', admin: true },
   { id: 'periods', icon: 'cal', name: 'ss_periods', help: 'ss_periodsHelp', admin: true },
   { id: 'sales', icon: 'cart', name: 'ss_sales', help: 's14_salesSectionHelp', admin: true },
+  // 2.0.0: the till's own settings, apart from the sales ones (the sales section had grown too long to find them in)
+  { id: 'tills', icon: 'wallet', name: 'ux_tillsSection', help: 'ux_tillsSectionHelp', admin: true },
   { id: 'loyalty', icon: 'star', name: 'ly_title', help: 'ss_loyaltyHelp', admin: true },
   { id: 'printers', icon: 'printer', name: 'prn_title', help: 'ss_printersHelp' },
   { id: 'backups', icon: 'upload', name: 'bkTitle', help: 'ss_backupsHelp', admin: true },
@@ -228,7 +230,9 @@ function SettingsSectionContent({ id, admin }: { id: string; admin: boolean }) {
     case 'periods':
       return <PeriodsSettings />;
     case 'sales':
-      return <><PosUseSetting /><PosBigPicturesSetting /><TillSettings admin={admin} /><TillRulesSettings admin={admin} /><ExpirySettingsCard /></>;
+      return <><PosUseSetting /><PosBigPicturesSetting /><ExpirySettingsCard /></>;
+    case 'tills':
+      return <><TillSettings admin={admin} /><TillRulesSettings admin={admin} /></>;
     case 'loyalty':
       return <LoyaltySettingsCard />;
     case 'printers':

@@ -160,3 +160,37 @@ describe('the texts', () => {
     }
   });
 });
+
+describe('the till reloads its own shift', () => {
+  it('asks for this PC\u2019s till and keeps the shift only when it is still this one (after a gift voucher is sold, too)', () => {
+    const register = tillPart('Register.tsx');
+    expect(register).toContain('posApi.current(thisTill() || null).then((r) => { if (r.shift?.id === shift.id)');
+    expect(register).not.toContain('posApi.current()');
+    expect(register).toContain('onSold={() => { reloadShift();');
+  });
+});
+
+describe('the customer screen pictures', () => {
+  it('are made small in the browser before upload, as item pictures are (a 3 MB phone photo works)', () => {
+    const settings = tillPart('TillRulesSettings.tsx');
+    expect(settings).toContain('await preparePicture(file, { maxSide: 1280, targetBytes: 380 * 1024 })');
+    expect(settings).not.toContain('await file.arrayBuffer()');
+  });
+});
+
+describe('a return at the till (2.0.0)', () => {
+  it('is made in a dialog on the till, sent to the till’s own return route with the supervisor’s approval when the rules ask', () => {
+    const register = tillPart('Register.tsx');
+    expect(register).not.toContain("location.hash = href('sales-returns')");
+    expect(register).toContain("<TillReturnDialog shiftId={shift.id} needsSupervisor={rules.supervisor.refund} ask={() => supervisor.ask('refund')}");
+    const dialog = tillPart('TillReturn.tsx');
+    expect(dialog).toContain('posApi.giveBack(p.shiftId, { invoiceId: sale.id, lines: picked, ...(approvals ? { approvals } : {}) }, { key })');
+    expect(dialog).toContain('posApi.findSale(p.shiftId, q.trim())');
+  });
+
+  it('only lets back what is left of each line', async () => {
+    const { returnable } = await import('./TillReturn.tsx');
+    expect(returnable({ lines: [{ lineNo: 1, qtyMilli: 3_000, returnedQtyMilli: 1_000 }, { lineNo: 2, qtyMilli: 1_000, returnedQtyMilli: 1_000 }] } as never))
+      .toEqual([{ lineNo: 1, leftMilli: 2_000 }, { lineNo: 2, leftMilli: 0 }]);
+  });
+});

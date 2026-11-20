@@ -63,8 +63,8 @@ export const TILL_TEXT = {
   tl_noSaleCol: ['فتح بلا بيع', 'Opened with no sale', 'کردنەوە بێ فرۆشتن'],
   tl_diff: ['الفرق', 'Difference', 'جیاوازی'],
 
-  tl_scaleTitle: ['ملصقات الميزان التي تحمل السعر', 'Scale labels that carry the price', 'لەیبڵی تەرازوو کە نرخ هەڵدەگرن'],
-  tl_scaleHelp: ['بعض الموازين تطبع السعر (بالدينار) بدل الوزن. اكتب بادئات تلك الملصقات (رقمان يبدآن بـ 2، مثل 22). البادئات الأخرى تُقرأ وزناً.', 'Some scales print the price (in dinars) instead of the weight. Type those labels’ prefixes (two digits starting with 2, such as 22). Other prefixes are read as a weight.', 'هەندێک تەرازوو نرخ (بە دینار) چاپ دەکەن لە جیاتی کێش. پێشگری ئەو لەیبڵانە بنووسە (دوو ژمارە کە بە 2 دەست پێدەکەن، وەک 22). پێشگرەکانی تر وەک کێش دەخوێنرێنەوە.'],
+  tl_scaleTitle: ['ملصقات الميزان التي تحمل السعر', 'Scale labels that carry the price', 'لێبڵی تەرازوو کە نرخ هەڵدەگرن'],
+  tl_scaleHelp: ['بعض الموازين تطبع السعر (بالدينار) بدل الوزن. اكتب بادئات تلك الملصقات (رقمان يبدآن بـ 2، مثل 22). البادئات الأخرى تُقرأ وزناً.', 'Some scales print the price (in dinars) instead of the weight. Type those labels’ prefixes (two digits starting with 2, such as 22). Other prefixes are read as a weight.', 'هەندێک تەرازوو نرخ (بە دینار) چاپ دەکەن لە جیاتی کێش. پێشگری ئەو لێبڵانە بنووسە (دوو ژمارە کە بە 2 دەست پێدەکەن، وەک 22). پێشگرەکانی تر وەک کێش دەخوێنرێنەوە.'],
   tl_scalePrefixes: ['البادئات (مثل 22، 29)', 'Prefixes (such as 22, 29)', 'پێشگرەکان (وەک 22، 29)'],
   tl_payAccounts: ['حسابات البطاقة والمحافظ', 'Card and wallet accounts', 'هەژمارەکانی کارت و جزدان'],
   tl_payAccountsHelp: ['اختر الحساب الذي يدخل فيه كل نوع؛ عندها يعرضه الصندوق مع النقد. اتركه فارغاً ليبقى مخفياً.', 'Choose the account each one goes into; the till then offers it beside cash. Leave it empty to keep it hidden.', 'ئەو هەژمارە هەڵبژێرە کە هەریەکەیان دەچێتە ناوی؛ ئینجا سندووقەکە لە تەنیشت نەخت پێشکەشی دەکات. بە بەتاڵی جێبهێڵە بۆ شاردنەوە.'],

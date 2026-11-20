@@ -3,10 +3,10 @@ import { api, type WarehouseView } from '../api.ts';
 import { AccountCombo, ErrorBox, Icon, useLoad, useToast } from '../components.tsx';
 import { useI18n, type Key } from '../i18n.ts';
 import { tillsApi, type PosAccounts, type TillInput, type TillView } from './pos-api.ts';
-import { keepScalePrefixes } from './till.ts';
+import { keepScalePrefixes, keepScaleDigits } from './till.ts';
 
 /**
- * Settings → Sales and point of sale (2.0), for admins: the shop's named tills, the accounts card and wallet payments
+ * Settings → Tills and till rules (2.0; its own section since 2.0.0), for admins: the shop's named tills, the accounts card and wallet payments
  * go into (the till offers each once it has one), and the scale prefixes whose labels carry a price.
  */
 export function TillSettings({ admin }: { admin: boolean }) {
@@ -150,7 +150,8 @@ function ScalePricesCard() {
   const toast = useToast();
   const { data } = useLoad(() => tillsApi.scale(), []);
   const [text, setText] = useState<string | null>(null);
-  useEffect(() => { if (data) setText(data.pricePrefixes.join(', ')); }, [data]);
+  const [digits, setDigits] = useState<4 | 5>(5);
+  useEffect(() => { if (data) { setText(data.pricePrefixes.join(', ')); setDigits(data.itemDigits === 4 ? 4 : 5); } }, [data]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<unknown>(null);
   if (text === null) return null;
@@ -159,8 +160,9 @@ function ScalePricesCard() {
     setError(null);
     try {
       const list = text.split(/[\s,،]+/).map((s) => s.trim()).filter(Boolean);
-      const saved = await tillsApi.setScale(list);
+      const saved = await tillsApi.setScale(list, digits);
       keepScalePrefixes(saved.pricePrefixes);
+      keepScaleDigits(saved.itemDigits);
       setText(saved.pricePrefixes.join(', '));
       toast(t('saved'));
     } catch (e) {
@@ -175,6 +177,12 @@ function ScalePricesCard() {
         <Icon name="scale" size={20} className="setting-icon" />
         <div className="setting-text"><strong>{t('tl_scaleTitle')}</strong><span>{t('tl_scaleHelp')}</span></div>
         <div className="setting-ctl stack" style={{ gap: 8 }}>
+          <label className="field"><span>{t('ux_scaleLayout')}</span>
+            <select className="input" value={digits} onChange={(e) => setDigits(e.target.value === '4' ? 4 : 5)}>
+              <option value={5}>{t('ux_scaleLayout5')}</option>
+              <option value={4}>{t('ux_scaleLayout4')}</option>
+            </select>
+          </label>
           <label className="field"><span>{t('tl_scalePrefixes')}</span><input className="input num ltr" value={text} maxLength={40} onChange={(e) => setText(e.target.value)} /></label>
           <ErrorBox error={error} />
           <div><button type="button" className="btn small primary" disabled={busy} onClick={() => void save()}>{t('save')}</button></div>

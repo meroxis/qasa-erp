@@ -45,6 +45,8 @@ export interface ShiftSaleView {
 export interface ShiftReport extends ShiftView {
   invoices: ShiftSaleView[];
   items: { itemId: string; code: string; name: Names; qtyMilli: number; amount: Money2 }[];
+  /** 2.0.0: gift vouchers sold at this till and used on its sales */
+  gift?: { soldCount: number; sold: number; used: number };
 }
 
 export interface OpenShiftInput { tillId?: string; register: string; cashAccountCode: string; warehouseId: string; openingCash: number; notes?: string }
@@ -92,8 +94,8 @@ export const tillsApi = {
   summary: (f: { from?: string; to?: string } = {}) => request<{ from: string; to: string; rows: TillSummaryRow[] }>('GET', '/api/pos/tills/summary' + qs(f)),
   /** the drawer opened with no sale: written to the audit log before the drawer opens */
   drawer: (shiftId: string, reason = '', approvals?: string[]) => request<{ opened: number }>('POST', `/api/pos/shifts/${shiftId}/drawer`, { reason, ...(approvals?.length ? { approvals } : {}) }),
-  scale: () => request<{ pricePrefixes: string[] }>('GET', '/api/pos/scale'),
-  setScale: (pricePrefixes: string[]) => request<{ pricePrefixes: string[] }>('PUT', '/api/pos/scale', { pricePrefixes }),
+  scale: () => request<{ pricePrefixes: string[]; itemDigits?: 4 | 5 }>('GET', '/api/pos/scale'),
+  setScale: (pricePrefixes: string[], itemDigits?: 4 | 5) => request<{ pricePrefixes: string[]; itemDigits?: 4 | 5 }>('PUT', '/api/pos/scale', { pricePrefixes, ...(itemDigits ? { itemDigits } : {}) }),
   paymentAccounts: () => request<{ accounts: PosAccounts; methods: PosMethod[] }>('GET', '/api/pos/payment-accounts'),
   setPaymentAccounts: (accounts: PosAccounts) => request<{ accounts: PosAccounts; methods: PosMethod[] }>('PUT', '/api/pos/payment-accounts', accounts)
 };
@@ -106,5 +108,9 @@ export const posApi = {
   open: (input: OpenShiftInput) => request<ShiftView>('POST', '/api/pos/shifts', input),
   /** options (1.2): the sale's idempotency key on a PC with an outbox, and how long to wait before keeping it there */
   sell: (shiftId: string, input: SaleInput, options: SendOptions = {}) => request<{ invoice: InvoiceView; shift: ShiftView; rounding?: number }>('POST', `/api/pos/shifts/${shiftId}/sales`, input, options),
-  close: (shiftId: string, body: { countedCash: number; countedUsd?: number; notes?: string }) => request<ShiftView>('POST', `/api/pos/shifts/${shiftId}/close`, body)
+  close: (shiftId: string, body: { countedCash: number; countedUsd?: number; notes?: string }) => request<ShiftView>('POST', `/api/pos/shifts/${shiftId}/close`, body),
+  /** 2.0.0: a till sale by its receipt number, and a return of it paid back from the shift (till-returns.ts) */
+  findSale: (shiftId: string, q: string) => request<InvoiceView>('GET', `/api/pos/shifts/${shiftId}/sale` + qs({ q })),
+  giveBack: (shiftId: string, body: { invoiceId: string; lines: { lineNo: number; qtyMilli: number }[]; approvals?: string[] }, options: SendOptions = {}) =>
+    request<InvoiceView>('POST', `/api/pos/shifts/${shiftId}/returns`, body, options)
 };

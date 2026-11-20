@@ -96,6 +96,10 @@ function saveGraphics(on: boolean, reason: string): void {
 /** What this start runs with (a change shows after a restart). */
 const graphicsAtStart = graphicsOn() && !app.commandLine.hasSwitch('disable-gpu');
 if (!graphicsAtStart) app.disableHardwareAcceleration();
+// 2.0.0: date boxes as Iraq writes dates (20/11/2026), whatever the Windows region is (many Iraqi PCs run US settings,
+// which showed 11/20/2026 in the day close, the stock count and the invoices). Chromium's date box follows this locale;
+// every other date and number the app shows is written by its own i18n, in the language the person chose.
+if (!app.commandLine.hasSwitch('lang')) app.commandLine.appendSwitch('lang', 'en-GB');
 
 let gpuCrashes = 0;
 app.on('child-process-gone', (_event, details) => {

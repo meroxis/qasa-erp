@@ -1513,8 +1513,8 @@ describe('the release notes of 1.5.2 (kept as shipped: on GitHub only; the Store
   });
 });
 
-describe('the release notes of this version (1.6.0: the petrol station, the till\'s quick buttons and big pictures, the Kurdish words; schema 16)', () => {
-  const version = (JSON.parse(read('apps/desktop/package.json')) as { version: string }).version;
+describe('the release notes of 1.6.0 (kept as shipped: the petrol station, the till\'s quick buttons and big pictures, the Kurdish words; schema 16)', () => {
+  const version = '1.6.0';
   const notes = read(`apps/desktop/release-notes/${version}.md`);
   const section = (lang: 'ar' | 'en' | 'ku') => new RegExp(`^::: ${lang}\\n([\\s\\S]*?)^:::$`, 'm').exec(notes)?.[1] ?? '';
   const before = (lang: 'ar' | 'en' | 'ku') => section(lang).split('\n### ')[0]!;
@@ -1524,14 +1524,6 @@ describe('the release notes of this version (1.6.0: the petrol station, the till
   const store = listing.listings;
   const LANGS = ['en-us', 'ar', 'ku-arab'] as const;
   const lines = (lang: (typeof LANGS)[number]) => store[lang].releaseNotes.split('\n');
-
-  it('is 1.6.0, the same in the app, the core and the lock file, with a notes file that has Arabic, English and Kurdish', () => {
-    expect(version).toBe('1.6.0');
-    expect(read('packages/core/src/version.ts')).toContain(`APP_VERSION = '${version}'`);
-    const lock = JSON.parse(read('package-lock.json')) as { packages: Record<string, { version?: string }> };
-    expect(lock.packages['apps/desktop']?.version).toBe(version);
-    for (const lang of ['ar', 'en', 'ku'] as const) expect(notes, lang).toMatch(new RegExp(`^::: ${lang}\\n[\\s\\S]+?^:::$`, 'm'));
-  });
 
   it('has the same sections in each language, Before you update first', () => {
     const heads = (lang: 'ar' | 'en' | 'ku') => section(lang).split('\n').filter((l) => l.startsWith('### '));
@@ -1570,7 +1562,7 @@ describe('the release notes of this version (1.6.0: the petrol station, the till
       for (const word of ['**قەرزدار**', '**قەرزدەر**', '**پۆست**', '**پۆستکراو**']) expect(before(lang), `${lang} ${word}`).toContain(word);
     }
     // the owner's wording: the old Kurdish words are in no new text (Arabic ترحيل/مدين/دائن stay)
-    const kurdish = [notes, store['ku-arab'].releaseNotes, store['ku-arab'].description, ...store['ku-arab'].features].join('\n');
+    const kurdish = [notes, store['ku-arab'].description, ...store['ku-arab'].features].join('\n');
     expect(kurdish).not.toMatch(/تەرحیل|مەدین|دائین/);
     for (const word of ['قەید', 'نەقد', 'قەرز', 'قاسە', 'کۆگا', 'کاڵا', 'کڕیار', 'دابینکەر']) expect(section('ku'), word).toContain(word);
   });
@@ -1623,10 +1615,10 @@ describe('the release notes of this version (1.6.0: the petrol station, the till
   });
 
   it('writes Kurdish with no tatweel and no Arabic letters, and English with one apostrophe', () => {
-    const ku = section('ku') + store['ku-arab'].releaseNotes + store['ku-arab'].description + store['ku-arab'].features.join('\n');
+    const ku = section('ku') + store['ku-arab'].description + store['ku-arab'].features.join('\n');
     expect(ku).not.toContain('ـ');
     expect(ku).not.toMatch(/[ىيك]/);
-    expect(notes + store['en-us'].releaseNotes).not.toMatch(/\w'[\w\s]/);
+    expect(notes).not.toMatch(/\w'[\w\s]/);
   });
 
   it('says on GitHub that the Store copy goes from 1.5.1 straight to 1.6.0, as the release day says', () => {
@@ -1636,31 +1628,6 @@ describe('the release notes of this version (1.6.0: the petrol station, the till
     expect(releasing).toContain('## Release day for 1.6.0 ');
     expect(releasing).toContain('**The Store goes from 1.5.1 straight to 1.6.0.**');
     expect(releasing).toContain('**The phone app is unchanged:**');
-  });
-
-  it('names 1.6.0 first in the Store "What\'s new" with its Before you update, then 1.5.2\'s items, within 1500 characters', () => {
-    // the Store has 1.5.1 (live 2026-11-16) and gets 1.6.0 next: 1.5.2 never went to the Store, 1.5.1's line is gone
-    expect(lines('en-us')[0]).toBe('Qasa ERP 1.6.0.');
-    expect(lines('ar')[0]).toBe('قاصة ERP 1.6.0.');
-    expect(lines('ku-arab')[0]).toBe('قاسە ERP 1.6.0.');
-    for (const lang of LANGS) {
-      expect(lines(lang), lang).toHaveLength(4);
-      expect(store[lang].releaseNotes.length, lang).toBeLessThanOrEqual(1500);
-      expect(store[lang].releaseNotes, lang).not.toMatch(/\{\{|\}\}|1\.5\.1|1\.5\.0|1\.4\.|0\.1\.8/);
-    }
-    expect(lines('en-us')[1]).toMatch(/^Before you update: the company file is upgraded to version 16 the first time 1\.6\.0 opens it, /);
-    expect(lines('en-us')[1]).toContain('take a backup first, and update the office server PC and every PC that opens the same company together.');
-    expect(lines('ar')[1]).toMatch(/^قبل التحديث: يُرقّى ملف الشركة إلى الإصدار 16 /);
-    expect(lines('ku-arab')[1]).toMatch(/^پێش نوێکردنەوە: فایلی کۆمپانیا /);
-    for (const lang of LANGS) for (const word of ['قەرزدار', 'قەرزدەر', 'پۆست']) expect(lines(lang)[1], `${lang} ${word}`).toContain(word);
-    expect(lines('en-us')[2]).toMatch(/^New: the Petrol station business type \(paid plans\), /);
-    expect(lines('en-us')[2]).toContain('off until an admin turns them on in Settings → Sales and point of sale.');
-    expect(lines('ar')[2]).toMatch(/^الجديد: نشاط محطة الوقود \(الخطط المدفوعة\)/);
-    expect(lines('ku-arab')[2]).toMatch(/^نوێ: چالاکیی بەنزینخانە \(پلانەکانی بە پارە\)/);
-    expect(lines('en-us')[3]).toMatch(/^Also from 1\.5\.2: nobody gets the new Point of sale role with the update, /);
-    expect(lines('en-us')[3]).toContain('Real estate, Engineering works or Generator owners');
-    expect(lines('ar')[3]).toMatch(/^ومن الإصدار 1\.5\.2: /);
-    expect(lines('ku-arab')[3]).toMatch(/^هەروەها لە وەشانی 1\.5\.2 ەوە: /);
   });
 
   it('names the petrol station in the Store description and the feature line with the pharmacy, for the paid plans, within Partner Center\'s limits', () => {
@@ -1675,6 +1642,95 @@ describe('the release notes of this version (1.6.0: the petrol station, the till
       for (const feature of store[lang].features) expect(feature.length, lang).toBeLessThanOrEqual(200);
       expect(store[lang].description.length, lang).toBeLessThanOrEqual(10_000);
     }
+  });
+});
+
+describe('the release notes of this version (2.0.0: the new till, gold, wholesale, clothing and the market extras; schema 18)', () => {
+  const version = (JSON.parse(read('apps/desktop/package.json')) as { version: string }).version;
+  const notes = read(`apps/desktop/release-notes/${version}.md`);
+  const section = (lang: 'ar' | 'en' | 'ku') => new RegExp(`^::: ${lang}\\n([\\s\\S]*?)^:::$`, 'm').exec(notes)?.[1] ?? '';
+  const before = (lang: 'ar' | 'en' | 'ku') => section(lang).split('\n### ')[0]!;
+  const store = (JSON.parse(read('apps/desktop/store-listing.json')) as {
+    listings: Record<'en-us' | 'ar' | 'ku-arab', { releaseNotes: string }>;
+  }).listings;
+  const LANGS = ['en-us', 'ar', 'ku-arab'] as const;
+  const lines = (lang: (typeof LANGS)[number]) => store[lang].releaseNotes.split('\n');
+
+  it('is 2.0.0, the same in the app, the core and the lock file, with a notes file that has Arabic, English and Kurdish', () => {
+    expect(version).toBe('2.0.0');
+    expect(read('packages/core/src/version.ts')).toContain(`APP_VERSION = '${version}'`);
+    const lock = JSON.parse(read('package-lock.json')) as { packages: Record<string, { version?: string }> };
+    expect(lock.packages['apps/desktop']?.version).toBe(version);
+    for (const lang of ['ar', 'en', 'ku'] as const) expect(notes, lang).toMatch(new RegExp(`^::: ${lang}\\n[\\s\\S]+?^:::$`, 'm'));
+  });
+
+  it('has the same sections in each language, Before you update first', () => {
+    const heads = (lang: 'ar' | 'en' | 'ku') => section(lang).split('\n').filter((l) => l.startsWith('### '));
+    expect(heads('en')).toEqual(['### Before you update', '### Licences from 0.1.8', '### New', '### Changed']);
+    expect(heads('ar')).toEqual(['### قبل التحديث', '### تراخيص الإصدار 0.1.8', '### الجديد', '### ما تغيّر']);
+    expect(heads('ku')).toEqual(['### پێش نوێکردنەوە', '### مۆڵەتەکانی وەشانی 0.1.8', '### نوێ', '### گۆڕاوەکان']);
+    const shape = (lang: 'ar' | 'en' | 'ku') => section(lang).split('\n').filter((l) => /^(### |- )/.test(l)).map((l) => l.slice(0, 2)).join('');
+    expect(shape('ar')).toBe(shape('en'));
+    expect(shape('ku')).toBe(shape('en'));
+  });
+
+  it('says first that the company file goes to schema 18, to back up and to update the office server PC with every PC', () => {
+    const db = read('packages/server/src/db.ts');
+    expect(db).toMatch(/\{ sql: V18, mysql: \{ tables: true, steps: \(\) => V18_MYSQL_STEPS \} \}\n\];/);
+    expect(db).toContain('-before-update-v');
+    expect(before('en')).toContain('**The company file is upgraded to a new version (18) the first time 2.0.0 opens it.** Take a backup first (**Settings → Backups**)');
+    expect(before('en')).toContain('Qasa ERP 1.6.0 and earlier cannot open a file that 2.0.0 has upgraded');
+    expect(before('en')).toContain('On the office network, update the office server PC and every PC that connects to it together.');
+    expect(before('en')).toContain('A Microsoft Store copy opens these books only once the Store has 2.0.0.');
+    expect(before('ar')).toContain('**يُرقّى ملف الشركة إلى إصدار جديد (18) أول مرة يفتحه فيها الإصدار 2.0.0.**');
+    expect(before('ar')).toContain('حاسوب خادم المكتب');
+    expect(before('ku')).toContain('**فایلی کۆمپانیا یەکەم جار کە 2.0.0 دەیکاتەوە بۆ وەشانێکی نوێ (18) بەرز دەکرێتەوە.**');
+    expect(before('ku')).toContain('کۆمپیوتەری سێرڤەری نووسینگە');
+  });
+
+  it('names the business types and the till settings in the words of the app', () => {
+    const i18n = ['apps/web/src/i18n.ts', ...['gold.ts', 'wholesale.ts', 'clothing.ts', 'biztype.ts', 'ux-fix.ts'].map((f) => `apps/web/src/i18n/${f}`)]
+      .filter((f) => existsSync(join(root, f))).map(read).join('\n');
+    expect(i18n).toContain("ux_tillsSection: ['الصناديق وقواعد نقطة البيع', 'Tills and till rules', 'سندووقەکان و یاساکانی خاڵی فرۆشتن']");
+    expect(section('en')).toContain('**Settings → Tills and till rules**');
+    expect(section('ar')).toContain('**الإعدادات ← الصناديق وقواعد نقطة البيع**');
+    expect(section('ku')).toContain('**ڕێکخستنەکان ← سندووقەکان و یاساکانی خاڵی فرۆشتن**');
+    for (const [lang, words] of [['en', ['Gold and jewellery', 'Wholesale and distribution', 'Clothing and shoes']], ['ar', ['الذهب والمجوهرات', 'الجملة والتوزيع', 'الملابس والأحذية']], ['ku', ['زێڕ و خشڵ', 'جوملە و دابەشکردن', 'جل و پێڵاو']]] as const) {
+      for (const word of words) expect(section(lang), `${lang} ${word}`).toContain(word);
+    }
+  });
+
+  it('still tells the holders of 0.1.8 licences to connect once in the first month, in the words of 1.5.2', () => {
+    const earlier = read('apps/desktop/release-notes/1.5.2.md');
+    const part = (text: string, lang: string, heading: string) => new RegExp(`^::: ${lang}\\n[\\s\\S]*?(### ${heading}\\n[^\\n]+\\n)`, 'm').exec(text)?.[1];
+    for (const [lang, heading] of [['en', 'Licences from 0.1.8'], ['ar', 'تراخيص الإصدار 0.1.8'], ['ku', 'مۆڵەتەکانی وەشانی 0.1.8']] as const) {
+      expect(part(notes, lang, heading), lang).toBeTruthy();
+      expect(part(notes, lang, heading), lang).toBe(part(earlier, lang, heading));
+    }
+  });
+
+  it('writes Kurdish with no tatweel and no Arabic letters, and English with one apostrophe', () => {
+    const ku = section('ku') + store['ku-arab'].releaseNotes;
+    expect(ku).not.toContain('ـ');
+    expect(ku).not.toMatch(/[ىيك]/);
+    expect(notes + store['en-us'].releaseNotes).not.toMatch(/\w'[\w\s]/);
+  });
+
+  it('names 2.0.0 first in the Store "What\'s new" with its Before you update, within 1500 characters', () => {
+    expect(lines('en-us')[0]).toBe('Qasa ERP 2.0.0.');
+    expect(lines('ar')[0]).toBe('قاصة ERP 2.0.0.');
+    expect(lines('ku-arab')[0]).toBe('قاسە ERP 2.0.0.');
+    for (const lang of LANGS) {
+      expect(store[lang].releaseNotes.length, lang).toBeLessThanOrEqual(1500);
+      expect(store[lang].releaseNotes, lang).not.toMatch(/\{\{|\}\}|0\.1\.8/);
+    }
+    expect(lines('en-us')[1]).toMatch(/^Before you update: the company file is upgraded to version 18 the first time 2\.0\.0 opens it, /);
+    expect(lines('ar')[1]).toMatch(/^قبل التحديث: يُرقّى ملف الشركة إلى الإصدار 18 /);
+    expect(lines('ku-arab')[1]).toMatch(/^پێش نوێکردنەوە: فایلی کۆمپانیا /);
+  });
+
+  it('has a release day in docs/releasing.md', () => {
+    expect(read('docs/releasing.md')).toContain('## Release day for 2.0.0 ');
   });
 });
 

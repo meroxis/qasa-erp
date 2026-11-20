@@ -3,15 +3,15 @@
  * handovers. Arabic, English and Kurdish (Sorani), in that order, like i18n.ts.
  */
 export const WHOLESALE_TEXT = {
-  bt_wholesale: ['جملة وتوزيع', 'Wholesale and distribution', 'کۆفرۆشی و دابەشکردن'],
+  bt_wholesale: ['جملة وتوزيع', 'Wholesale and distribution', 'جوملە و دابەشکردن'],
   bt_wholesaleText: [
     'مندوبون بخطوط سير وسيارات محمّلة، طلبيات المحلات، حد الدين والمتأخرات، والتحصيل وتسليمه للمكتب.',
     'Sales reps with routes and loaded vans, shop orders, credit limits and overdue control, and collections handed to the office.',
     'نوێنەری فرۆشتن بە ڕێڕەو و ئۆتۆمبێلی بارکراو، داواکاری دوکانەکان، سنووری قەرز و دواکەوتوو، و کۆکردنەوەی پارە و ڕادەستکردنی بە ئۆفیس.'
   ],
-  f_wholesale: ['الجملة والتوزيع: المندوبون والخطوط والسيارات والطلبيات والتحصيل', 'Wholesale: reps, routes, vans, orders and collections', 'کۆفرۆشی: نوێنەر، ڕێڕەو، ئۆتۆمبێل، داواکاری و کۆکردنەوە'],
-  ws_title: ['الجملة والتوزيع', 'Wholesale', 'کۆفرۆشی'],
-  ws_needsPlan: ['الجملة والتوزيع من مزايا الخطط المدفوعة.', 'Wholesale and distribution is part of the paid plans.', 'کۆفرۆشی و دابەشکردن بەشێکە لە پلانە پارەدارەکان.'],
+  f_wholesale: ['الجملة والتوزيع: المندوبون والخطوط والسيارات والطلبيات والتحصيل', 'Wholesale: reps, routes, vans, orders and collections', 'جوملە: نوێنەر، ڕێڕەو، ئۆتۆمبێل، داواکاری و کۆکردنەوە'],
+  ws_title: ['الجملة والتوزيع', 'Wholesale', 'جوملە'],
+  ws_needsPlan: ['الجملة والتوزيع من مزايا الخطط المدفوعة.', 'Wholesale and distribution is part of the paid plans.', 'جوملە و دابەشکردن بەشێکە لە پلانە پارەدارەکان.'],
   ws_tabDay: ['يوم المندوب', 'Rep’s day', 'ڕۆژی نوێنەر'],
   ws_tabOrders: ['الطلبيات', 'Orders', 'داواکارییەکان'],
   ws_tabVans: ['السيارات', 'Vans', 'ئۆتۆمبێلەکان'],
@@ -166,9 +166,9 @@ export const WHOLESALE_TEXT = {
   e_ws_van_count: ['جرد سيارة', 'Van count', 'ژمێرانی ئۆتۆمبێل'],
   e_ws_collection: ['تحصيل مندوب', 'Rep’s collection', 'کۆکراوەی نوێنەر'],
   e_ws_handover: ['تسليم نقد المندوب', 'Rep’s cash handover', 'ڕادەستکردنی پارەی نوێنەر'],
-  e_wholesale_settings: ['إعدادات الجملة', 'Wholesale settings', 'ڕێکخستنەکانی کۆفرۆشی'],
+  e_wholesale_settings: ['إعدادات الجملة', 'Wholesale settings', 'ڕێکخستنەکانی جوملە'],
   // errors
-  err_plan_limit_wholesale: ['الجملة والتوزيع من مزايا الخطط المدفوعة — راجع «الخطة والترخيص».', 'Wholesale and distribution is part of the paid plans. See Plan & license.', 'کۆفرۆشی و دابەشکردن بەشێکە لە پلانە پارەدارەکان — «پلان و مۆڵەت» ببینە.'],
+  err_plan_limit_wholesale: ['الجملة والتوزيع من مزايا الخطط المدفوعة — راجع «الخطة والترخيص».', 'Wholesale and distribution is part of the paid plans. See Plan & license.', 'جوملە و دابەشکردن بەشێکە لە پلانە پارەدارەکان — «پلان و مۆڵەت» ببینە.'],
   err_ws_rep_taken: ['هذا المستخدم أو هذه السيارة لمندوب آخر.', 'That user or van already belongs to another rep.', 'ئەو بەکارهێنەرە یان ئۆتۆمبێلە هی نوێنەرێکی ترە.'],
   err_ws_cash_taken: ['هذه القاصة لمندوب آخر.', 'That cash account belongs to another rep.', 'ئەو قاسەیە هی نوێنەرێکی ترە.'],
   err_ws_van_same_warehouse: ['تُحمَّل السيارة من مخزن غيرها.', 'A van is loaded from another warehouse than itself.', 'ئۆتۆمبێل لە کۆگایەکی تر باردەکرێت نەک لە خۆی.'],

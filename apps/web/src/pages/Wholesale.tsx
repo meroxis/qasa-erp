@@ -9,6 +9,8 @@ import { pricesApi } from '../industry/prices-api.ts';
 import {
   wholesaleApi, type CollectionView, type DocState, type OrderInput, type OrderView, type RepView, type StockLine, type VanDay, type WsOrderStatus, type WsOutcome, type WsSettings
 } from '../industry/wholesale-api.ts';
+import { LockedFeature } from '../industry/LockedFeature.tsx';
+import { Paper, PrintPart, PrintPartButton } from '../industry/PrintPart.tsx';
 
 /**
  * الجملة والتوزيع (1.8): the rep's day on their route (visits, orders, collections), the sales orders with credit
@@ -28,6 +30,13 @@ export const wholesaleTabsFor = (admin: boolean): WholesaleTab[] => WHOLESALE_TA
 const NAV = { key: 'ws_title' as Key, group: 'gIndustry' as Key };
 const WEEKDAYS: Key[] = ['ws_weekday0', 'ws_weekday1', 'ws_weekday2', 'ws_weekday3', 'ws_weekday4', 'ws_weekday5', 'ws_weekday6'];
 const OUTCOMES: WsOutcome[] = ['order', 'no_order', 'closed', 'collected'];
+
+/** the company's name in the reader's language, for the top of a printed paper */
+function useCompany(): string {
+  const i18n = useI18n();
+  const { settings } = useData();
+  return settings ? i18n.name(settings.companyName) : '';
+}
 
 function Field({ label, children }: { label: string; children: ReactNode }) {
   return <label className="field"><span>{label}</span>{children}</label>;
@@ -73,7 +82,14 @@ function RepPicker({ reps, value, onChange }: { reps: readonly RepView[]; value:
 
 /* ---------- the page ---------- */
 
-export function Wholesale({ tab: asked = 'day' }: { tab?: WholesaleTab }) {
+/** 2.0.0: without the plan, what the page does and how to get it (LockedFeature), not its tabs over an empty page. */
+export function Wholesale(props: { tab?: WholesaleTab }) {
+  const { plan } = useData();
+  if (plan && !plan.features.includes('wholesale')) return <LockedFeature feature="wholesale" icon="truck" />;
+  return <WholesalePage {...props} />;
+}
+
+function WholesalePage({ tab: asked = 'day' }: { tab?: WholesaleTab }) {
   const { t } = useI18n();
   const { permissions } = useData();
   const admin = !!permissions?.includes('admin');
@@ -113,6 +129,7 @@ export function Wholesale({ tab: asked = 'day' }: { tab?: WholesaleTab }) {
 function Day({ reps }: { reps: RepView[] }) {
   const i18n = useI18n();
   const { t } = i18n;
+  const company = useCompany();
   const [repId, setRepId] = useState(reps[0]!.id);
   const [date, setDate] = useState(todayIso());
   const day = useLoad(() => wholesaleApi.day(repId, date), [repId, date]);
@@ -125,6 +142,7 @@ function Day({ reps }: { reps: RepView[] }) {
         <RepPicker reps={reps} value={repId} onChange={setRepId} />
         <Field label={t('ws_date')}><input className="input" type="date" value={date} onChange={(e) => setDate(e.target.value || todayIso())} /></Field>
         {day.data && <span className="muted">{t(WEEKDAYS[day.data.weekday]!)}</span>}
+        {day.data && day.data.stops.length > 0 && <PrintPartButton id="ws-route" label={t('ux_printRoute')} />}
       </div>
       <p className="muted small" style={{ margin: 0 }}>{t('ws_phoneSoon')}</p>
       <ErrorBox error={day.error ?? error} />
@@ -162,6 +180,24 @@ function Day({ reps }: { reps: RepView[] }) {
             </tbody>
           </table>
         </div>
+      )}
+      {day.data && day.data.stops.length > 0 && (
+        <PrintPart id="ws-route">
+          <Paper company={company} title={t('ux_routeSheet')} sub={`${reps.find((r) => r.id === repId)?.name ?? ''} · ${i18n.date(date)} · ${t(WEEKDAYS[day.data.weekday]!)}`}>
+            <table>
+              <thead><tr><th>#</th><th>{t('ws_shop')}</th><th className="num">{t('ws_balance')}</th><th>{t('ux_orderNote')}</th><th>{t('ux_collectedNote')}</th></tr></thead>
+              <tbody>
+                {day.data.stops.map((s, i) => (
+                  <tr key={s.id}>
+                    <td>{i18n.int(i + 1)}</td>
+                    <td>{s.partyName}<div className="small">{[s.address, s.phone].filter(Boolean).join(' · ')}</div></td>
+                    <td className="num">{i18n.money(s.balance, 'IQD')}</td><td style={{ minWidth: 140 }} /><td style={{ minWidth: 110 }} />
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </Paper>
+        </PrintPart>
       )}
       {ordering && <OrderForm reps={reps} repId={repId} partyId={ordering} date={date} onClose={() => { setOrdering(null); day.reload(); }} />}
       {collecting && <CollectForm repId={repId} partyId={collecting} date={date} onClose={() => { setCollecting(null); day.reload(); }} />}
@@ -329,6 +365,7 @@ function OrderActions({ order, onDone }: { order: OrderView; onDone(): void }) {
 function Orders({ reps }: { reps: RepView[] }) {
   const i18n = useI18n();
   const { t } = i18n;
+  const company = useCompany();
   const [status, setStatus] = useState<WsOrderStatus | ''>('');
   const list = useLoad(() => wholesaleApi.orders(status ? { status } : {}), [status]);
   const [editing, setEditing] = useState<OrderView | 'new' | null>(null);
@@ -365,7 +402,21 @@ function Orders({ reps }: { reps: RepView[] }) {
                     {o.limitCheck === 'override' && <div className="muted small">{t('ws_limitOverride', { r: o.overrideReason ?? '' })}</div>}
                     {o.invoiceId && <div className="small"><a href={href(`invoice/${o.invoiceId}`)}>{t('ws_invoice')} {o.invoiceNumber ?? ''}</a></div>}
                   </td>
-                  <td><OrderActions order={o} onDone={list.reload} /></td>
+                  <td>
+                    <div className="row" style={{ gap: 6 }}><OrderActions order={o} onDone={list.reload} /><PrintPartButton id={`ws-order-${o.id}`} /></div>
+                    <PrintPart id={`ws-order-${o.id}`}>
+                      <Paper company={company} title={`${t('ux_salesOrder')} ${o.number}`} sub={`${o.partyName} · ${i18n.date(o.date)}${o.repName ? ` · ${o.repName}` : ''}`}>
+                        <table>
+                          <thead><tr><th>{t('item')}</th><th className="num">{t('qty')}</th><th className="num">{t('unitPrice')}</th><th className="num">{t('amount')}</th></tr></thead>
+                          <tbody>
+                            {o.lines.map((l) => <tr key={l.lineNo}><td>{l.itemCode} · {i18n.name(l.itemName)}</td><td className="num">{i18n.qty(l.qtyMilli)}</td><td className="num">{i18n.money(l.unitPrice, o.currency)}</td><td className="num">{i18n.money(l.amount, o.currency)}</td></tr>)}
+                            <tr><td colSpan={3}><strong>{t('total')}</strong></td><td className="num"><strong>{i18n.money(o.total, o.currency)}</strong></td></tr>
+                          </tbody>
+                        </table>
+                        {o.notes && <p>{o.notes}</p>}
+                      </Paper>
+                    </PrintPart>
+                  </td>
                 </tr>
               ))}
             </tbody>
@@ -382,6 +433,7 @@ function Orders({ reps }: { reps: RepView[] }) {
 function Vans({ reps }: { reps: RepView[] }) {
   const i18n = useI18n();
   const { t } = i18n;
+  const company = useCompany();
   const { permissions, seesBooks } = useData();
   const stock = !!permissions?.includes('admin') || !!permissions?.includes('stock');
   const [repId, setRepId] = useState(reps[0]!.id);
@@ -403,7 +455,20 @@ function Vans({ reps }: { reps: RepView[] }) {
         {stock && <button type="button" className="btn" onClick={() => setMoving('unload')}>{t('ws_unload')}</button>}
       </div>
       <ErrorBox error={day.error ?? error} />
-      <h3 style={{ margin: 0 }}>{t('ws_vanDay')}</h3>
+      <div className="row" style={{ gap: 8 }}><h3 style={{ margin: 0 }}>{t('ws_vanDay')}</h3>{d && d.rows.length > 0 && <PrintPartButton id="ws-van" label={t('ux_printVan')} />}</div>
+      {d && d.rows.length > 0 && (
+        <PrintPart id="ws-van">
+          <Paper company={company} title={t('ux_vanSheet')} sub={`${reps.find((r) => r.id === repId)?.name ?? ''} · ${i18n.date(date)}`}>
+            <table>
+              <thead><tr><th>{t('item')}</th><th className="num">{t('ux_vanOpening')}</th><th className="num">{t('ux_vanLoaded')}</th><th className="num">{t('ux_vanUnloaded')}</th><th className="num">{t('ux_vanSold')}</th><th className="num">{t('ux_vanExpected')}</th><th className="num">{t('ws_counted')}</th></tr></thead>
+              <tbody>
+                {d.rows.map((r) => <tr key={r.itemId}><td>{r.code} · {i18n.name(r.name)}</td><td className="num">{i18n.qty(r.opening)}</td><td className="num">{i18n.qty(r.loaded)}</td><td className="num">{i18n.qty(r.unloaded)}</td><td className="num">{i18n.qty(r.sold - r.returned)}</td><td className="num">{i18n.qty(r.expected)}</td><td className="num">{r.counted === null ? '' : i18n.qty(r.counted)}</td></tr>)}
+              </tbody>
+            </table>
+            <p className="small">{t('ux_signRep')} ____________ &nbsp; {t('ux_signStore')} ____________</p>
+          </Paper>
+        </PrintPart>
+      )}
       {d && !d.rows.length && <div className="muted">{t('ws_nothingInVan')}</div>}
       {d && d.rows.length > 0 && (
         <div className="card table-wrap">
@@ -579,6 +644,7 @@ function HandOverForm({ repId, settings, onClose }: { repId: string; settings: W
 function Money({ reps, settings }: { reps: RepView[]; settings: WsSettings | null }) {
   const i18n = useI18n();
   const { t } = i18n;
+  const company = useCompany();
   const { seesBooks, permissions } = useData();
   const office = seesBooks !== false || !!permissions?.includes('admin');
   const [repId, setRepId] = useState(reps[0]!.id);
@@ -602,13 +668,23 @@ function Money({ reps, settings }: { reps: RepView[]; settings: WsSettings | nul
       {(collections.data ?? []).length === 0 ? <div className="muted">{t('ws_noData')}</div> : (
         <div className="card table-wrap">
           <table className="table">
-            <thead><tr><th>#</th><th>{t('ws_date')}</th><th>{t('ws_shop')}</th><th className="num">{t('ws_amount')}</th><th>{t('ws_status')}</th></tr></thead>
+            <thead><tr><th>#</th><th>{t('ws_date')}</th><th>{t('ws_shop')}</th><th className="num">{t('ws_amount')}</th><th>{t('ws_status')}</th><th /></tr></thead>
             <tbody>
               {(collections.data ?? []).map((c) => (
                 <tr key={c.id}>
                   <td className="num ltr">{c.number}</td><td>{i18n.date(c.date)}</td><td>{c.partyName}</td>
                   <td className="num">{i18n.money(c.amount, c.currency)}</td>
                   <td>{t(stateKey(c.state))}{c.state === 'approved' ? ` · ${t(c.handoverId ? 'ws_handed' : 'ws_notHanded')}` : ''}</td>
+                  <td>
+                    <PrintPartButton id={`ws-col-${c.id}`} />
+                    <PrintPart id={`ws-col-${c.id}`}>
+                      <Paper company={company} title={`${t('ux_collectionReceipt')} ${c.number}`} sub={i18n.date(c.date)}>
+                        <p>{t('ux_receivedFrom', { p: c.partyName, a: i18n.money(c.amount, c.currency) })}</p>
+                        {c.notes && <p>{c.notes}</p>}
+                        <p className="small">{t('ux_signRep')}: {c.repName} ____________</p>
+                      </Paper>
+                    </PrintPart>
+                  </td>
                 </tr>
               ))}
             </tbody>

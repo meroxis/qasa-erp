@@ -15,6 +15,7 @@ import { seesBooks, type Actor } from './auth.ts';
 export const APPROVAL_ACTIONS = ['line_delete', 'void', 'price', 'discount', 'no_sale', 'refund', 'credit_over', 'blind_view'] as const;
 export type ApprovalAction = (typeof APPROVAL_ACTIONS)[number];
 /** Approved at the till and done there (nothing the server books): the approval is used as it is given. */
+// a refund (returns, cancels, exchanges, the till's own return) is checked on the server: assertRefundApproved
 export const TILL_ONLY_ACTIONS: readonly ApprovalAction[] = ['line_delete', 'void', 'blind_view'];
 /** How long an approval waits for the action it was given for. */
 export const APPROVAL_MS = 2 * 60 * 1000;

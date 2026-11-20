@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { tillRules, useApproval } from './till-settings.ts';
 import { z } from 'zod';
-import { cleanScalePrefixes, todayIso, toBase, type CurrencyCode } from '@qasa/core';
+import { cleanScalePrefixes, isScaleItemDigits, todayIso, toBase, type CurrencyCode, type ScaleItemDigits } from '@qasa/core';
 import type { Db } from './db.ts';
 import { transaction } from './db.ts';
 import { audit } from './audit.ts';
@@ -141,6 +141,18 @@ export function drawerOpenings(db: Db, shiftId: string): number {
 
 const SCALE_KEY = 'pos_scale_price_prefixes';
 
+const SCALE_DIGITS_KEY = 'pos_scale_item_digits';
+/** 2.0.0: how the company's scales lay out their labels (4 or 5 digits for the item; core scale-label.ts). */
+export function scaleItemDigitsOf(db: Db): ScaleItemDigits {
+  const n = Number(readSetting(db, SCALE_DIGITS_KEY) ?? 5);
+  return isScaleItemDigits(n) ? n : 5;
+}
+export function setScaleItemDigitsOf(db: Db, n: ScaleItemDigits, user: string): ScaleItemDigits {
+  writeSetting(db, SCALE_DIGITS_KEY, String(n));
+  audit(db, user, 'update', 'settings', 'scale', { itemDigits: n });
+  return n;
+}
+
 export function scalePricePrefixes(db: Db): string[] {
   try { return cleanScalePrefixes(JSON.parse(readSetting(db, SCALE_KEY) ?? '[]') as unknown[]); } catch { return []; }
 }
@@ -258,10 +270,15 @@ export const posTillsApi: ApiExtension = {
           return drawerOpened(db, parse(z.object({ id }), req.params).id, body.reason ?? '', actor(req), body.approvals);
         }
       },
-      { method: 'GET', path: '/api/pos/scale', handler: async () => ({ pricePrefixes: scalePricePrefixes(db) }) },
+      { method: 'GET', path: '/api/pos/scale', handler: async () => ({ pricePrefixes: scalePricePrefixes(db), itemDigits: scaleItemDigitsOf(db) }) },
       {
         method: 'PUT', path: '/api/pos/scale',
-        handler: async (req) => ({ pricePrefixes: setScalePricePrefixes(db, parse(z.object({ pricePrefixes: z.array(z.string().max(4)).max(10) }), req.body).pricePrefixes, actor(req).name) })
+        handler: async (req) => {
+          const body = parse(z.object({ pricePrefixes: z.array(z.string().max(4)).max(10), itemDigits: z.union([z.literal(4), z.literal(5)]).optional() }), req.body);
+          const pricePrefixes = setScalePricePrefixes(db, body.pricePrefixes, actor(req).name);
+          const itemDigits = body.itemDigits ? setScaleItemDigitsOf(db, body.itemDigits, actor(req).name) : scaleItemDigitsOf(db);
+          return { pricePrefixes, itemDigits };
+        }
       }
     ];
   }

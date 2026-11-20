@@ -79,6 +79,7 @@ const BusinessTypePage = lazyPage(() => import('./pages/BusinessType.tsx'), 'Bus
 const Pos = lazyPage(() => import('./pages/Pos.tsx'), 'Pos');
 const OutboxPage = lazyPage(() => import('./pages/Outbox.tsx'), 'OutboxPage');
 const PosShiftReport = lazyPage(() => import('./pages/Pos.tsx'), 'PosShiftReport');
+const PosShiftReports = lazyPage(() => import('./pages/Pos.tsx'), 'PosShiftReports');
 const Payroll = lazyPage(() => import('./pages/Payroll.tsx'), 'Payroll');
 const PayrollRun = lazyPage(() => import('./pages/Payroll.tsx'), 'PayrollRun');
 const Import = lazyPage(() => import('./pages/Import.tsx'), 'Import');
@@ -188,7 +189,10 @@ export function App() {
   const [collapsed, setCollapsed] = useState(navCollapsed);
   // a narrow window or a phone (the website demo): the menu is the icon rail, whatever was chosen on a wide window
   const narrow = useNarrow();
-  const railed = collapsed || narrow;
+  // 2.0: the till takes the whole width (a 1366×768 laptop has no room for the menu beside its three columns): on the
+  // till the menu is the icon rail, and it comes back as it was on any other page
+  const onTill = (route[0] ?? '') === 'pos';
+  const railed = collapsed || narrow || onTill;
   const [openNav, setOpenNav] = useState<string[]>([]);
   const [searching, setSearching] = useState(false);
   const [favs, setFavs] = useState<string[]>([]);
@@ -522,6 +526,11 @@ export function App() {
     case 'pos-shift':
       title = t('pos_title');
       content = arg ? <PosShiftReport key={arg} id={arg} /> : null;
+      break;
+    case 'pos-shifts':
+      // 2.0.0: every till's X/Z report of a day, printed in one go (from the end-of-day close)
+      title = t('pos_title');
+      content = arg ? <PosShiftReports key={arg} ids={arg.split(',').filter(Boolean).slice(0, 40)} /> : null;
       break;
     case 'solar':
       title = t('sl_title');
@@ -900,7 +909,7 @@ export function App() {
                   <div className="brand-name">{t('appName')}</div>
                   <div className="brand-tag">{t('tagline')}</div>
                 </div>
-                {!narrow && <button type="button" className="btn subtle icon nav-toggle" aria-label={collapsed ? t('navExpand') : t('navCollapse')} title={collapsed ? t('navExpand') : t('navCollapse')} aria-pressed={collapsed} onClick={() => { setCollapsed(!collapsed); setNavCollapsed(!collapsed); }}>
+                {!narrow && !onTill && <button type="button" className="btn subtle icon nav-toggle" aria-label={collapsed ? t('navExpand') : t('navCollapse')} title={collapsed ? t('navExpand') : t('navCollapse')} aria-pressed={collapsed} onClick={() => { setCollapsed(!collapsed); setNavCollapsed(!collapsed); }}>
                   <Icon name="panel" size={16} className="flip" />
                 </button>}
               </div>

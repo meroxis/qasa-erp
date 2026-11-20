@@ -68,6 +68,7 @@ export function Invoices({ kind }: { kind: InvoiceDocKind }) {
       <ErrorBox error={error} />
       <div className="card">{data && (data.length > 0 ? <InvoicesTable invoices={data} /> : q.trim() || status
         ? <EmptyState compact icon="search" title={t('es_search')} text={t('es_searchText')} />
+        : isReturnKind(kind) ? <EmptyState icon="undo" title={t('ux_noReturnsTitle')} text={t('ux_noReturnsYet')} />
         : <EmptyState icon="invoice" title={t('es_invoices')} text={t('es_invoicesText')} action={isReturnKind(kind) || !mayMake ? undefined : { label: kind === 'sale' ? t('newSale') : t('newPurchase'), icon: 'plus', href: href(`new-invoice/${kind}`) }} />)}</div>
     </div>
   );

@@ -103,8 +103,6 @@ export function PaymentPanel(p: {
             )}
           </div>
         )}
-        {p.customer}
-        {p.debt}
         {p.loyalty}
         {sum.offers.map((o) => (
           <div key={o.id} className="pos-r-row pos-offer-row" role="status">
@@ -112,9 +110,6 @@ export function PaymentPanel(p: {
             <span className="num">−{i18n.money(o.discount, currency)}</span>
           </div>
         ))}
-        <label className="field pos-discount-field" id="pos-discount"><span>{t('pos_discount')} <span className="kbd">F8</span></span>
-          <AmountInput value={sum.discount} currency={currency} onChange={p.onDiscount} ariaLabel={t('pos_discount')} />
-        </label>
         {sum.points > 0 && <div className="pos-r-row"><span>{t('ly_title')}</span><span className="num">−{i18n.money(sum.points, currency)}</span></div>}
         {sum.vouchers.map((v) => (
           <div key={v.code} className="pos-r-row">
@@ -129,6 +124,15 @@ export function PaymentPanel(p: {
         {p.keypad}
         {p.notes}
         <ErrorBox error={p.error} />
+      </div>
+
+      {/* the customer and the discount stay in sight however long the sale is (a 1366×768 till): only the middle scrolls */}
+      <div className="pos-pay-fixed">
+        {p.customer}
+        <label className="field pos-discount-field" id="pos-discount"><span>{t('pos_discount')} <span className="kbd">F8</span></span>
+          <AmountInput value={sum.discount} currency={currency} onChange={p.onDiscount} ariaLabel={t('pos_discount')} />
+        </label>
+        {p.debt}
       </div>
 
       <div className="pos-actions">

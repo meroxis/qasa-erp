@@ -121,9 +121,11 @@ function toBlob(canvas: HTMLCanvasElement, type: string, quality: number): Promi
 }
 
 /** Makes a photo small enough: at most 800 px on its long side and about 300 KB, as WebP (or JPEG where WebP can't be made). */
-export async function shrinkPicture(file: Blob): Promise<Blob> {
+export async function shrinkPicture(file: Blob, size: { maxSide?: number; targetBytes?: number } = {}): Promise<Blob> {
+  const maxSide = size.maxSide ?? MAX_SIDE;
+  const target = size.targetBytes ?? TARGET_BYTES;
   const bitmap = await createImageBitmap(file, { imageOrientation: 'from-image' } as ImageBitmapOptions);
-  let scale = Math.min(1, MAX_SIDE / Math.max(bitmap.width, bitmap.height));
+  let scale = Math.min(1, maxSide / Math.max(bitmap.width, bitmap.height));
   const canvas = document.createElement('canvas');
   try {
     for (let attempt = 0; attempt < 6; attempt++) {
@@ -137,7 +139,7 @@ export async function shrinkPicture(file: Blob): Promise<Blob> {
       for (const quality of [0.85, 0.72, 0.6]) {
         let blob = await toBlob(canvas, 'image/webp', quality);
         if (!blob || blob.type !== 'image/webp') blob = await toBlob(canvas, 'image/jpeg', quality);
-        if (blob && blob.size <= TARGET_BYTES) return blob;
+        if (blob && blob.size <= target) return blob;
       }
       scale *= 0.75;
     }
@@ -162,11 +164,11 @@ export interface PreparedPicture { data: string; mime: string }
  * name and declared type are not trusted), and it is drawn again on a canvas, so nothing but pixels is sent; the
  * server checks the bytes again.
  */
-export async function preparePicture(file: File): Promise<PreparedPicture | { refused: 'too_big' | 'unreadable' }> {
+export async function preparePicture(file: File, size: { maxSide?: number; targetBytes?: number } = {}): Promise<PreparedPicture | { refused: 'too_big' | 'unreadable' }> {
   if (file.size > MAX_PICTURE_FILE_BYTES) return { refused: 'too_big' };
   if (file.size === 0 || (file.type && !file.type.startsWith('image/'))) return { refused: 'unreadable' };
   try {
-    const small = await shrinkPicture(file);
+    const small = await shrinkPicture(file, size);
     return { data: await base64Of(small), mime: small.type };
   } catch {
     return { refused: 'unreadable' };
