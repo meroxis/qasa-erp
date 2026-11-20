@@ -160,3 +160,20 @@ describe('the texts', () => {
     }
   });
 });
+
+describe('the till reloads its own shift', () => {
+  it('asks for this PC\u2019s till and keeps the shift only when it is still this one (after a gift voucher is sold, too)', () => {
+    const register = tillPart('Register.tsx');
+    expect(register).toContain('posApi.current(thisTill() || null).then((r) => { if (r.shift?.id === shift.id)');
+    expect(register).not.toContain('posApi.current()');
+    expect(register).toContain('onSold={() => { reloadShift();');
+  });
+});
+
+describe('the customer screen pictures', () => {
+  it('are made small in the browser before upload, as item pictures are (a 3 MB phone photo works)', () => {
+    const settings = tillPart('TillRulesSettings.tsx');
+    expect(settings).toContain('await preparePicture(file, { maxSide: 1280, targetBytes: 380 * 1024 })');
+    expect(settings).not.toContain('await file.arrayBuffer()');
+  });
+});

@@ -9,7 +9,7 @@ import { makeI18n, useI18n, type I18n } from '../i18n.ts';
 import { href } from '../router.ts';
 import { PartyPicker } from '../industry/PartyPicker.tsx';
 import { posApi, tillsApi, type PosMethod, type SaleInput, type ShiftView, type TillView } from '../industry/pos-api.ts';
-import { clearHeld, heldOn, HELD_MAX, holdBasket, inWindowsTill, keepScalePrefixes, kickDrawer, openCustomerScreen, scalePrefixesKept, showOnCustomerScreen, takeHeld, type HeldBasket } from '../industry/till.ts';
+import { clearHeld, heldOn, HELD_MAX, holdBasket, inWindowsTill, thisTill, keepScalePrefixes, kickDrawer, openCustomerScreen, scalePrefixesKept, showOnCustomerScreen, takeHeld, type HeldBasket } from '../industry/till.ts';
 import { outboxClient, outboxWho, type HeldKey } from '../industry/outbox.ts';
 import { useOutbox } from '../industry/OutboxBanner.tsx';
 import { baseQtyOf, offlineReceipt, offlineRefusal, payTillSale, rememberTill, shortStock, takeFromStock, tillCache } from '../industry/offline-till.ts';
@@ -104,6 +104,30 @@ export function Register({ initial, onClosed }: { initial: ShiftView; onClosed()
     tillsApi.scale().then((r) => { setScalePrefixes(r.pricePrefixes); keepScalePrefixes(r.pricePrefixes); }, () => {});
     tillRulesApi.rules().then(setRules, () => {});
   }, [initial.id, initial.tillId]);
+  // 2.0: the till is one screen high (1366×768 included): the body takes what is left under the bar, and each column
+  // scrolls inside itself, so Pay, the total, the customer and the discount never leave the screen
+  const tillRoot = useRef<HTMLDivElement | null>(null);
+  const tillBody = useRef<HTMLDivElement | null>(null);
+  const [bodyHeight, setBodyHeight] = useState<number | null>(null);
+  useEffect(() => {
+    const fit = () => {
+      const body = tillBody.current;
+      if (!body || window.innerWidth < 760) { setBodyHeight(null); return; }
+      const footer = document.querySelector('.app-footer, .statusline, footer');
+      const bottom = footer ? footer.getBoundingClientRect().height : 0;
+      const h = Math.floor(window.innerHeight - body.getBoundingClientRect().top - bottom - 12);
+      setBodyHeight(h >= 360 ? h : null);
+    };
+    fit();
+    window.addEventListener('resize', fit);
+    const ro = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(fit);
+    if (ro && tillRoot.current) ro.observe(tillRoot.current);
+    return () => { window.removeEventListener('resize', fit); ro?.disconnect(); };
+  }, []);
+  /** The shift again from the server: this PC's till's (several tills may have shifts open), and only if it is still this one. */
+  const reloadShift = (after?: (s: ShiftView) => void) => {
+    posApi.current(thisTill() || null).then((r) => { if (r.shift?.id === shift.id) { setShift(r.shift); after?.(r.shift); } }, () => {});
+  };
   const outbox = useOutbox();
   const offline = !!outbox && !outbox.online;
   const shiftPath = `/api/pos/shifts/${shift.id}/sales`;
@@ -119,7 +143,7 @@ export function Register({ initial, onClosed }: { initial: ShiftView; onClosed()
     const fewer = keptCount < keptBefore.current;
     keptBefore.current = keptCount;
     if (!fewer || !outbox?.online) return;
-    posApi.current().then((r) => { if (r.shift?.id === shift.id) { setShift(r.shift); rememberTill(tillWho(), { shift: r.shift }); } }, () => {});
+    reloadShift((s) => rememberTill(tillWho(), { shift: s }));
     loadItems();
   }, [keptCount, outbox?.online]); // eslint-disable-line react-hooks/exhaustive-deps
   const [points, setPoints] = useState({ points: 0, value: 0 });
@@ -684,7 +708,7 @@ export function Register({ initial, onClosed }: { initial: ShiftView; onClosed()
   const priceLine = typeof dialog === 'object' && dialog !== null && 'price' in dialog ? cart.find((l) => lineKey(l) === dialog.price) ?? null : null;
 
   return (
-    <div className={'pos pos-v2' + (bigTiles ? ' pos-big' : '') + (prefs.touch ? ' pos-touch-mode' : '')}>
+    <div className={'pos pos-v2' + (bigTiles ? ' pos-big' : '') + (prefs.touch ? ' pos-touch-mode' : '')} ref={tillRoot}>
       {expired.dialog}
       {supervisor.dialog}
       {addingItem !== null && <QuickItemForm typed={addingItem} sale warehouseId={shift.warehouseId} onDone={addedItem} onClose={() => { setAddingItem(null); focusSearch(); }} />}
@@ -714,7 +738,7 @@ export function Register({ initial, onClosed }: { initial: ShiftView; onClosed()
           {miscItem && rules.misc.allowed && <button type="button" className="btn" onClick={() => setDialog('misc')}><Icon name="plus" size={16} />{t('tu_misc')}</button>}
           {/* a clothing shop: a model by size and colour, and an exchange (a return and a sale in one go) */}
           <TillClothingButtons shiftId={shift.id} currency={currency} items={items} disabled={busy} onPick={(item) => { add(item); focusSearch(); }}
-            onExchanged={() => { posApi.current().then((r) => { if (r.shift?.id === shift.id) setShift(r.shift); }, () => {}); }} />
+            onExchanged={() => reloadShift()} />
           {/* a delivery order from this basket (market extras): the sale itself is made when it is delivered */}
           {!offline && <DeliveryFromTill partyId={partyId || null} warehouseId={shift.warehouseId} onSent={clearNow}
             lines={cart.map((l) => { const q = baseQtyOf(l); return { itemId: l.item.id, qtyMilli: q, unitPrice: q ? Math.round((lineTotal(l) * 1000) / q) : l.unitPrice }; })} />}
@@ -730,7 +754,7 @@ export function Register({ initial, onClosed }: { initial: ShiftView; onClosed()
       )}
       {noRate && <div className="alert bad no-print" role="alert">{t('pos_noRate', { n: noRate })}</div>}
 
-      <div className="pos-body">
+      <div className="pos-body" ref={tillBody} style={bodyHeight ? { height: bodyHeight } : undefined}>
         <section className="pos-items" aria-label={t('pos_items')}>
           <QuickRow items={quickItems} currency={currency} priceRate={priceRate} editing={editingQuick} mayEdit={mayEditQuick} canEdit={!offline}
             error={quickError} onPick={(it) => { add(it); focusSearch(); }} onEdit={editQuick} onMove={(id, step) => saveQuick(moveQuick(quickIds, id, step))} />
@@ -849,7 +873,7 @@ export function Register({ initial, onClosed }: { initial: ShiftView; onClosed()
               {lastDone.change && <div className="pos-giveback"><span>{t('tu_changeDue')}</span><strong className="num">{lastDone.change}</strong></div>}
               {receipt && (
                 <div className="row" style={{ gap: 8, flexWrap: 'wrap' }}>
-                  <button type="button" className="btn" onClick={() => void printReceipt()}><Icon name="printer" size={16} />{t('pos_printLast', { n: receipt.number ?? '' })} <span className="kbd">F10</span></button>
+                  <button type="button" className="btn" onClick={() => void printReceipt()}><Icon name="printer" size={16} />{t('print')} <span className="kbd">F10</span></button>
                   <ReceiptWhatsApp invoice={receipt} />
                 </div>
               )}
@@ -879,7 +903,7 @@ export function Register({ initial, onClosed }: { initial: ShiftView; onClosed()
             focusSearch();
           }} />
       )}
-      {dialog === 'voucherSell' && <VoucherSellDialog shiftId={shift.id} onSold={() => { posApi.current().then((r) => { if (r.shift) setShift(r.shift); }, () => {}); if (drawerOnCash) openDrawerForSale(); }} onClose={() => { setDialog(null); focusSearch(); }} />}
+      {dialog === 'voucherSell' && <VoucherSellDialog shiftId={shift.id} onSold={() => { reloadShift(); if (drawerOnCash) openDrawerForSale(); }} onClose={() => { setDialog(null); focusSearch(); }} />}
       {dialog === 'voucherPay' && (
         <VoucherPayDialog due={Math.max(0, due)} onClose={() => { setDialog(null); focusSearch(); }}
           onUse={(code, amount) => { setVouchers((v) => [...v.filter((x) => x.code !== code), { code, amount }]); setDialog(null); focusSearch(); }} />

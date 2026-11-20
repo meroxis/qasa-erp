@@ -17,7 +17,7 @@
 .pos-search-input.input { border: none; box-shadow: none; background: transparent; font-size: 1.25rem; min-height: 48px; padding-inline: 0; }
 .pos-search-input.input:focus { outline: none; box-shadow: none; }
 
-.pos-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 10px; }
+.pos-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(132px, 1fr)); gap: 10px; }
 .pos-tile {
   display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 12px 10px; min-height: 150px;
   border: 1px solid var(--border, #d9dee5); border-radius: 14px; background: var(--surface); color: inherit; font: inherit;
@@ -264,3 +264,37 @@ html[dir='rtl'] .pos-quick-move-back svg { transform: none; }
   .pos-giveback strong { font-size: 1.5rem; }
 }
 .pos-v2 .pos-actions .btn { min-width: 0; padding-inline: 10px; }
+
+/* ---------- 2.0.0: one screen high, everything in sight (1366×768 and up) ----------
+   The register measures the room under its bar and gives it to .pos-body (Register.tsx): the three columns fill it
+   and each scrolls inside itself, so the page never scrolls and Pay, the total, the customer and the discount stay. */
+.pos-v2 .pos-body[style] { align-items: stretch; min-height: 0; }
+.pos-v2 .pos-body[style] > .pos-items { overflow: auto; min-height: 0; padding-inline-end: 2px; }
+.pos-v2 .pos-body[style] > .pos-cart, .pos-v2 .pos-body[style] > .pos-pay-panel { max-height: none; min-height: 0; height: 100%; }
+.pos-v2 .pos-body[style] .pos-lines { overflow: auto; }
+.pos-pay-fixed { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; padding-top: 8px; border-top: 1px solid var(--border, #e4e7ec); }
+.pos-pay-fixed .pos-customer { grid-column: 1 / -1; margin: 0; }
+.pos-pay-fixed .pos-discount-field { margin: 0; }
+.pos-pay-fixed .pos-debt { grid-column: 1 / -1; }
+@container (min-width: 1151px) { .pos-pay-fixed .pos-customer { grid-column: auto; } }
+/* a cart line on one row: name (two lines at most), quantity, amount, remove */
+.pos-v2 .pos-line { grid-template-columns: minmax(0, 1fr) auto auto auto; grid-template-areas: "name qty total remove"; row-gap: 0; padding-block: 6px; }
+.pos-v2 .pos-qty-btn.btn { min-width: 34px; min-height: 34px; font-size: 1.1rem; }
+.pos-v2 .pos-remove.btn { min-width: 32px; min-height: 32px; }
+.pos-v2 .pos-line-total { min-width: 0; font-size: 1rem; white-space: nowrap; }
+.pos-v2 .pos-line-name { font-size: .95rem; }
+.pos-touch-mode.pos-v2 .pos-line { grid-template-columns: minmax(0, 1fr) auto auto; grid-template-areas: "name name name" "qty total remove"; row-gap: 4px; }
+/* the "sale done" card: its buttons wrap rather than spill out (long Kurdish labels) */
+.pos-done .btn { white-space: normal; text-align: start; }
+@media (max-height: 820px) {
+  .pos-pay-panel { gap: 8px; padding: 10px 12px; }
+  .pos-total-big { font-size: 1.8rem; }
+  .pos-saved { font-size: .8rem; }
+  .pos-pay-scroll .pos-touch.btn { min-height: 38px; }
+  .pos-methods > button { min-height: 36px; }
+  .pos-pay-fixed { gap: 6px; padding-top: 6px; }
+  .pos-pay-fixed .field > span { font-size: .8rem; }
+  .pos-pay-fixed .input { min-height: 36px; }
+  .pos-v2 .pos-actions .btn { min-height: 38px; }
+  .pos-cash { padding: 8px; gap: 6px; }
+}

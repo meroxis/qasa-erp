@@ -6,6 +6,7 @@ import { useI18n } from '../i18n.ts';
 import { tillsApi } from '../industry/pos-api.ts';
 import { tillRulesApi, type DisplayRules, type SupervisorRules, type TillRulesView } from './rules-api.ts';
 import { BAUDS, DEFAULT_SCALE, hexBytes, readScaleSettings, readWeight, serialHere, validPattern, writeScaleSettings, type ScaleSettings } from './scale.ts';
+import { MAX_PICTURE_FILE_BYTES, preparePicture } from '../industry/ItemImage.tsx';
 
 /**
  * Settings → Sales and point of sale (2.0): the till's rules an admin sets for every till (dinar rounding, a blind
@@ -175,10 +176,11 @@ function ScreenCard() {
   const upload = async (file: File) => {
     setError(null);
     try {
-      const bytes = new Uint8Array(await file.arrayBuffer());
-      let bin = '';
-      for (const b of bytes) bin += String.fromCharCode(b);
-      await tillRulesApi.addImage(btoa(bin));
+      // a phone photo (3 MB and more) is made small in the browser first, as item pictures are: a customer screen needs
+      // no more than 1280 px, and the server takes up to 400 KB
+      const picture = await preparePicture(file, { maxSide: 1280, targetBytes: 380 * 1024 });
+      if ('refused' in picture) { toast(picture.refused === 'too_big' ? t('it_pictureTooBig', { n: MAX_PICTURE_FILE_BYTES / (1024 * 1024) }) : t('md_imageUnreadable')); return; }
+      await tillRulesApi.addImage(picture.data);
       reload();
     } catch (e) {
       setError(e);

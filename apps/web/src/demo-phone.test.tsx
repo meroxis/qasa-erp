@@ -9,9 +9,10 @@ const app = readFileSync(new URL('./App.tsx', import.meta.url), 'utf8').replace(
 
 it('turns the menu into the icon rail at 760 px and narrower, and hides the wide/narrow toggle there', () => {
   expect(app).toContain("window.matchMedia('(max-width: 760px)')");
-  expect(app).toContain('const railed = collapsed || narrow;');
+  // 2.0.0: on the till too (its three columns need the width of a 1366×768 laptop)
+  expect(app).toContain('const railed = collapsed || narrow || onTill;');
   expect(app).toContain("<nav className={'sidebar' + (railed ? ' collapsed' : '')}");
-  expect(app).toMatch(/\{!narrow && <button type="button" className="btn subtle icon nav-toggle"/);
+  expect(app).toMatch(/\{!narrow && !onTill && <button type="button" className="btn subtle icon nav-toggle"/);
   const narrow = /@media screen and \(max-width: 760px\) \{([\s\S]*?)\n\}/.exec(css)?.[1] ?? '';
   expect(narrow).toContain('.sidebar.collapsed { inline-size: 56px;');
   expect(narrow).toMatch(/\.card:has\(> \.table\), \.card:has\(> \.table-wrap\) \{ overflow-x: auto; \}/);

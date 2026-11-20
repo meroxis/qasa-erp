@@ -188,7 +188,10 @@ export function App() {
   const [collapsed, setCollapsed] = useState(navCollapsed);
   // a narrow window or a phone (the website demo): the menu is the icon rail, whatever was chosen on a wide window
   const narrow = useNarrow();
-  const railed = collapsed || narrow;
+  // 2.0: the till takes the whole width (a 1366×768 laptop has no room for the menu beside its three columns): on the
+  // till the menu is the icon rail, and it comes back as it was on any other page
+  const onTill = (route[0] ?? '') === 'pos';
+  const railed = collapsed || narrow || onTill;
   const [openNav, setOpenNav] = useState<string[]>([]);
   const [searching, setSearching] = useState(false);
   const [favs, setFavs] = useState<string[]>([]);
@@ -900,7 +903,7 @@ export function App() {
                   <div className="brand-name">{t('appName')}</div>
                   <div className="brand-tag">{t('tagline')}</div>
                 </div>
-                {!narrow && <button type="button" className="btn subtle icon nav-toggle" aria-label={collapsed ? t('navExpand') : t('navCollapse')} title={collapsed ? t('navExpand') : t('navCollapse')} aria-pressed={collapsed} onClick={() => { setCollapsed(!collapsed); setNavCollapsed(!collapsed); }}>
+                {!narrow && !onTill && <button type="button" className="btn subtle icon nav-toggle" aria-label={collapsed ? t('navExpand') : t('navCollapse')} title={collapsed ? t('navExpand') : t('navCollapse')} aria-pressed={collapsed} onClick={() => { setCollapsed(!collapsed); setNavCollapsed(!collapsed); }}>
                   <Icon name="panel" size={16} className="flip" />
                 </button>}
               </div>
