@@ -414,6 +414,8 @@ const ENTRY_OWNERS: readonly { owner: string; sql: string; marks: number }[] = [
   // goods on consignment (consignment.ts): receipts and returns post their entry at once; a settlement's entry is what
   // the supplier is owed for what sold, and the moves it covers stay settled while it stands
   { owner: 'consignment', sql: 'SELECT 1 FROM consignment_docs WHERE entry_id = ? UNION ALL SELECT 1 FROM consignment_settlements WHERE entry_id = ? OR cancel_entry_id = ?', marks: 3 },
+  // wholesale (wholesale.ts): a rep's collection and a handover of the rep's cash to the office are that document's receipts
+  { owner: 'wholesale', sql: 'SELECT 1 FROM ws_collections WHERE entry_id = ? UNION ALL SELECT 1 FROM ws_handovers WHERE entry_id = ?', marks: 2 },
   { owner: 'fuel', sql: 'SELECT 1 FROM fuel_shifts WHERE entry_id = ? UNION ALL SELECT 1 FROM fuel_deliveries WHERE entry_id = ? UNION ALL SELECT 1 FROM fuel_dips WHERE entry_id = ? UNION ALL SELECT 1 FROM fuel_tanks WHERE opening_entry_id = ?', marks: 4 }
 ];
 

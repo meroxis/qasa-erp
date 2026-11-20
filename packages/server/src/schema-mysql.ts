@@ -2052,8 +2052,186 @@ export const MYSQL_TABLES: readonly MysqlObject[] = [
       FOREIGN KEY (invoice_id) REFERENCES invoices(id) ON DELETE CASCADE,
       FOREIGN KEY (offer_id) REFERENCES offers(id)
     )`
-  }
+  },
   // ===== end 17 · OFFERS =====
+  // ===== 18 · WHOLESALE (db.ts V18, wholesale.ts) — begin =====
+  {
+    name: 'ws_reps',
+    since: 18,
+    sql: `CREATE TABLE ws_reps (
+      id ${ID} NOT NULL PRIMARY KEY,
+      user_id ${ID} NOT NULL UNIQUE,
+      name TEXT NOT NULL,
+      warehouse_id ${ID} NOT NULL UNIQUE,
+      load_warehouse_id ${ID} NOT NULL,
+      cash_account ${ID} NOT NULL,
+      active INT NOT NULL DEFAULT 1 CHECK (active IN (0, 1)),
+      created_at ${WHEN} NOT NULL,
+      updated_at ${WHEN} NOT NULL,
+      FOREIGN KEY (user_id) REFERENCES users(id),
+      FOREIGN KEY (warehouse_id) REFERENCES warehouses(id),
+      FOREIGN KEY (load_warehouse_id) REFERENCES warehouses(id),
+      FOREIGN KEY (cash_account) REFERENCES accounts(code)
+    )`
+  },
+  {
+    name: 'ws_route_stops',
+    since: 18,
+    sql: `CREATE TABLE ws_route_stops (
+      id ${ID} NOT NULL PRIMARY KEY,
+      rep_id ${ID} NOT NULL,
+      weekday INT NOT NULL CHECK (weekday BETWEEN 0 AND 6),
+      party_id ${ID} NOT NULL,
+      seq INT NOT NULL CHECK (seq >= 0),
+      UNIQUE KEY ws_route_stops_unique (rep_id, weekday, party_id),
+      INDEX ws_route_stops_party (party_id),
+      FOREIGN KEY (rep_id) REFERENCES ws_reps(id),
+      FOREIGN KEY (party_id) REFERENCES parties(id)
+    )`
+  },
+  {
+    name: 'ws_visits',
+    since: 18,
+    sql: `CREATE TABLE ws_visits (
+      id ${ID} NOT NULL PRIMARY KEY,
+      rep_id ${ID} NOT NULL,
+      party_id ${ID} NOT NULL,
+      date ${WHEN} NOT NULL,
+      outcome ${WORD} NOT NULL CHECK (outcome IN ('order', 'no_order', 'closed', 'collected')),
+      notes TEXT,
+      created_by TEXT NOT NULL,
+      created_at ${WHEN} NOT NULL,
+      INDEX ws_visits_rep (rep_id, date),
+      FOREIGN KEY (rep_id) REFERENCES ws_reps(id),
+      FOREIGN KEY (party_id) REFERENCES parties(id)
+    )`
+  },
+  {
+    name: 'ws_orders',
+    since: 18,
+    sql: `CREATE TABLE ws_orders (
+      id ${ID} NOT NULL PRIMARY KEY,
+      number ${ID} NOT NULL UNIQUE,
+      rep_id ${ID},
+      party_id ${ID} NOT NULL,
+      date ${WHEN} NOT NULL,
+      warehouse_id ${ID} NOT NULL,
+      currency ${WORD} NOT NULL CHECK (currency IN ('IQD', 'USD')),
+      rate_x100 BIGINT NOT NULL CHECK (rate_x100 > 0),
+      status ${WORD} NOT NULL CHECK (status IN ('draft', 'approved', 'delivered', 'cancelled')),
+      total BIGINT NOT NULL CHECK (total >= 0),
+      limit_check ${WORD} CHECK (limit_check IS NULL OR limit_check IN ('ok', 'warn', 'override')),
+      override_by TEXT,
+      override_reason TEXT,
+      approved_by TEXT,
+      approved_at ${WHEN},
+      invoice_id ${ID},
+      notes TEXT,
+      created_by TEXT NOT NULL,
+      created_at ${WHEN} NOT NULL,
+      updated_at ${WHEN} NOT NULL,
+      INDEX ws_orders_party (party_id, date),
+      INDEX ws_orders_rep (rep_id, date),
+      FOREIGN KEY (rep_id) REFERENCES ws_reps(id),
+      FOREIGN KEY (party_id) REFERENCES parties(id),
+      FOREIGN KEY (warehouse_id) REFERENCES warehouses(id),
+      FOREIGN KEY (invoice_id) REFERENCES invoices(id)
+    )`
+  },
+  {
+    name: 'ws_order_lines',
+    since: 18,
+    sql: `CREATE TABLE ws_order_lines (
+      order_id ${ID} NOT NULL,
+      line_no INT NOT NULL,
+      item_id ${ID} NOT NULL,
+      qty_milli BIGINT NOT NULL CHECK (qty_milli > 0),
+      unit ${WORD},
+      unit_qty_milli BIGINT,
+      unit_price BIGINT NOT NULL CHECK (unit_price >= 0),
+      amount BIGINT NOT NULL CHECK (amount >= 0),
+      PRIMARY KEY (order_id, line_no),
+      FOREIGN KEY (order_id) REFERENCES ws_orders(id),
+      FOREIGN KEY (item_id) REFERENCES items(id)
+    )`
+  },
+  {
+    name: 'ws_van_counts',
+    since: 18,
+    sql: `CREATE TABLE ws_van_counts (
+      id ${ID} NOT NULL PRIMARY KEY,
+      rep_id ${ID} NOT NULL,
+      date ${WHEN} NOT NULL,
+      status ${WORD} NOT NULL CHECK (status IN ('open', 'closed')),
+      adjustment_id ${ID},
+      created_by TEXT NOT NULL,
+      created_at ${WHEN} NOT NULL,
+      closed_by TEXT,
+      closed_at ${WHEN},
+      UNIQUE KEY ws_van_counts_day (rep_id, date),
+      FOREIGN KEY (rep_id) REFERENCES ws_reps(id),
+      FOREIGN KEY (adjustment_id) REFERENCES stock_adjustments(id)
+    )`
+  },
+  {
+    name: 'ws_van_count_lines',
+    since: 18,
+    sql: `CREATE TABLE ws_van_count_lines (
+      count_id ${ID} NOT NULL,
+      item_id ${ID} NOT NULL,
+      expected_milli BIGINT NOT NULL,
+      counted_milli BIGINT NOT NULL CHECK (counted_milli >= 0),
+      PRIMARY KEY (count_id, item_id),
+      FOREIGN KEY (count_id) REFERENCES ws_van_counts(id),
+      FOREIGN KEY (item_id) REFERENCES items(id)
+    )`
+  },
+  {
+    name: 'ws_handovers',
+    since: 18,
+    sql: `CREATE TABLE ws_handovers (
+      id ${ID} NOT NULL PRIMARY KEY,
+      number ${ID} NOT NULL UNIQUE,
+      rep_id ${ID} NOT NULL,
+      date ${WHEN} NOT NULL,
+      to_account ${ID} NOT NULL,
+      currency ${WORD} NOT NULL CHECK (currency IN ('IQD', 'USD')),
+      rate_x100 BIGINT NOT NULL CHECK (rate_x100 > 0),
+      amount BIGINT NOT NULL CHECK (amount > 0),
+      entry_id ${ID},
+      created_by TEXT NOT NULL,
+      created_at ${WHEN} NOT NULL,
+      FOREIGN KEY (rep_id) REFERENCES ws_reps(id),
+      FOREIGN KEY (to_account) REFERENCES accounts(code),
+      FOREIGN KEY (entry_id) REFERENCES entries(id)
+    )`
+  },
+  {
+    name: 'ws_collections',
+    since: 18,
+    sql: `CREATE TABLE ws_collections (
+      id ${ID} NOT NULL PRIMARY KEY,
+      number ${ID} NOT NULL UNIQUE,
+      rep_id ${ID} NOT NULL,
+      party_id ${ID} NOT NULL,
+      date ${WHEN} NOT NULL,
+      currency ${WORD} NOT NULL CHECK (currency IN ('IQD', 'USD')),
+      rate_x100 BIGINT NOT NULL CHECK (rate_x100 > 0),
+      amount BIGINT NOT NULL CHECK (amount > 0),
+      entry_id ${ID},
+      handover_id ${ID},
+      notes TEXT,
+      created_by TEXT NOT NULL,
+      created_at ${WHEN} NOT NULL,
+      INDEX ws_collections_rep (rep_id, date),
+      INDEX ws_collections_entry (entry_id),
+      FOREIGN KEY (rep_id) REFERENCES ws_reps(id),
+      FOREIGN KEY (party_id) REFERENCES parties(id),
+      FOREIGN KEY (entry_id) REFERENCES entries(id),
+      FOREIGN KEY (handover_id) REFERENCES ws_handovers(id)
+    )`
+  },
+  // ===== end 18 · WHOLESALE =====
 ];
 
 const refuse = (message: string) => `SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = '${message}'`;
@@ -2236,6 +2414,11 @@ export const V17_MYSQL_STEPS: readonly MysqlStep[] = [
   mysqlAddColumn('invoices', 'offer_discount', 'BIGINT NOT NULL DEFAULT 0 CHECK (offer_discount >= 0)')
 ];
 // ——— end of 17, TILLS ———
+
+// ===== 18 · WHOLESALE =====
+/** Version 18 (wholesale and distribution): new tables only (MYSQL_TABLES, since 18); no column added to an older table. */
+export const V18_MYSQL_STEPS: readonly MysqlStep[] = [];
+// ===== end 18 · WHOLESALE =====
 
 /**
  * What a server database has already, for pendingMysqlSteps: "table.column", "table.column>parent" and "table.index"

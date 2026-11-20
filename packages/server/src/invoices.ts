@@ -691,7 +691,9 @@ export function onlinePaidAmount(db: Db, invoiceId: string): number {
 
 export function postInvoice(
   db: Db, id: string, user: string,
-  opts: { settledNow?: number; allowExpired?: boolean; split?: readonly SalePart[]; loyaltyPoints?: number | undefined; offersAt?: Date | undefined } = {}
+  opts: { settledNow?: number; allowExpired?: boolean; split?: readonly SalePart[]; loyaltyPoints?: number | undefined; offersAt?: Date | undefined;
+    /** 1.8 wholesale: a sales order approved over the customer's credit limit (a warning, or an admin's override) */
+    allowOverLimit?: boolean | undefined } = {}
 ): InvoiceView {
   requireAction(db, loadRow(db, id), 'post');
   // 1.7: a sale that gets offers gets them as they are when it is posted (the server works them out, never the till)
@@ -731,7 +733,7 @@ export function postInvoice(
   if (view.kind === 'sale') {
     const settled = Number.isSafeInteger(opts.settledNow) ? Math.min(Math.max(opts.settledNow!, 0), total) : 0;
     const onCredit = baseTotal - (settled ? toBase(settled, view.currency, view.rateX100) : 0) - (redeemed?.value ?? 0);
-    if (party && view.payment === 'credit' && party.creditLimit !== null && party.balance + onCredit > party.creditLimit) {
+    if (!opts.allowOverLimit && party && view.payment === 'credit' && party.creditLimit !== null && party.balance + onCredit > party.creditLimit) {
       throw conflict('credit_limit_exceeded', { balance: party.balance, limit: party.creditLimit, total: baseTotal });
     }
     // a split sale (POS): only the part put on the customer's account counts against their credit limit

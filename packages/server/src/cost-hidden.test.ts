@@ -69,7 +69,10 @@ const EXTRA: string[] = [];
 /** Addresses the checks below name. */
 const at: Record<string, string> = {};
 /** Routes whose record this company has none of (fixed assets, item pictures): 404 for everyone. */
-const NO_RECORD = new Set(['/api/assets/depreciation/:id', '/api/assets/:id', '/api/items/:id/image']);
+const NO_RECORD = new Set(['/api/assets/depreciation/:id', '/api/assets/:id', '/api/items/:id/image',
+  // wholesale (1.8): a rep's route, day, van and count, an order, a customer's credit (no rep or order in this company)
+  '/api/wholesale/reps/:id/route', '/api/wholesale/reps/:id/day', '/api/wholesale/reps/:id/van-moves', '/api/wholesale/reps/:id/van-count',
+  '/api/wholesale/orders/:id', '/api/wholesale/credit/:id']);
 
 beforeAll(async () => {
   resetLoginThrottle();

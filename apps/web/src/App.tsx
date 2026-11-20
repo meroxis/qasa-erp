@@ -113,6 +113,9 @@ const FixedAssetDetail = lazyPage(() => import('./pages/FixedAssets.tsx'), 'Fixe
 const GenRun = lazyPage(() => import('./pages/Generators.tsx'), 'GenRun');
 const Generators = lazyPage(() => import('./pages/Generators.tsx'), 'Generators');
 const PetrolStation = lazyPage(() => import('./pages/PetrolStation.tsx'), 'PetrolStation');
+const Wholesale = lazyPage(() => import('./pages/Wholesale.tsx'), 'Wholesale');
+// wholesale's tabs (as pages/Wholesale.tsx names them)
+const WHOLESALE_TABS = ['day', 'orders', 'vans', 'money', 'reps', 'reports', 'settings'] as const;
 // the petrol station's tabs (as pages/PetrolStation.tsx names them), written here so that page stays loaded lazily
 const PETROL_TABS = ['shifts', 'tanks', 'deliveries', 'dips', 'reports', 'setup'] as const;
 // goods on consignment's tabs (as pages/Consignment.tsx names them)
@@ -529,6 +532,10 @@ export function App() {
     case 'petrol':
       title = t('ps_title');
       content = <PetrolStation key={arg ?? 'shifts'} tab={PETROL_TABS.find((x) => x === arg) ?? 'shifts'} />;
+      break;
+    case 'wholesale':
+      title = t('ws_title');
+      content = <Wholesale key={arg ?? 'day'} tab={WHOLESALE_TABS.find((x) => x === arg) ?? 'day'} />;
       break;
     case 'fuel-shift':
       title = t('ps_title');
