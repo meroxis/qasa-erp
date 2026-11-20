@@ -218,6 +218,26 @@ describe('goods on consignment', () => {
     expect(balanceOf('268')).toBe(0);
   });
 
+  it('charges a customer return to the supplier whose goods were sold, after the item changed supplier (accounting review #10)', async () => {
+    await ok('POST', '/api/plan/trial');
+    const other = (await ok('POST', '/api/parties', { type: 'supplier', name: 'Second Bakery' })).id;
+    await ok('PUT', `/api/consignment/items/${breadId}`, { supplierId, currency: 'IQD', unitCost: 800 });
+    const r1 = await postDoc(receipt([{ itemId: breadId, qtyMilli: 2_000 }]));
+    expect(r1.statusCode, r1.body).toBe(200);
+    const first = await invoiceSale(2);
+    expect((await call('POST', '/api/consignment/settlements', { supplierId, currency: 'IQD', date: '2026-11-20' })).statusCode).toBeLessThan(300);
+    await ok('PUT', `/api/consignment/items/${breadId}`, { supplierId: other, currency: 'IQD', unitCost: 800 });
+    const r2 = await postDoc(receipt([{ itemId: breadId, qtyMilli: 5_000 }], { supplierId: other, date: '2026-11-13' }));
+    expect(r2.statusCode, r2.body).toBe(200);
+    await invoiceSale(5, '2026-11-14');
+    expect((await call('POST', `/api/invoices/${first.id}/returns`, { date: '2026-11-20', payment: 'credit', lines: [{ lineNo: 1, qtyMilli: 1_000 }] })).statusCode).toBe(201);
+    // the second bakery delivered 5 and 5 sold: it is owed 5 × 800, untouched by the first bakery's bread coming back
+    const owed = await ok('GET', `/api/consignment/settlements/preview?supplierId=${other}&currency=IQD&date=2026-11-20`);
+    expect(owed.amount).toBe(4_000);
+    const back = db.prepare("SELECT supplier_id FROM consignment_moves WHERE source_type = 'sale_return'").get() as { supplier_id: string };
+    expect(back.supplier_id).toBe(supplierId);
+  });
+
   it('settles dollars at the day’s rate, the difference going to other expenses', async () => {
     await ok('POST', '/api/plan/trial');
     await ok('PUT', `/api/consignment/items/${breadId}`, { supplierId, currency: 'USD', unitCost: 100 });

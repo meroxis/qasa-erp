@@ -230,6 +230,21 @@ export function onStockMove(db: Db, move: StockMove): void {
   if (!item) return;
   if (move.qtyMilli > 0 && (move.sourceType === 'purchase' || move.sourceType === 'opening')) throw conflict('item_on_consignment', { itemId: move.itemId });
   const kind: MoveKind = move.sourceType === 'transfer' || move.sourceType === 'transfer_cancel' ? 'transfer' : 'sold';
+  // goods coming back from a sale (a customer's return, or the sale cancelled) are the supplier's whose goods were sold,
+  // at what they were sold at, even if the item has another supplier or terms now (accounting review #10)
+  if (move.qtyMilli > 0 && (move.sourceType === 'sale_return' || move.sourceType === 'sale_cancel')) {
+    const saleId = move.sourceType === 'sale_cancel'
+      ? move.sourceId
+      : (db.prepare('SELECT return_of FROM invoices WHERE id = ?').get(move.sourceId) as { return_of: string | null } | undefined)?.return_of ?? null;
+    const sold = saleId ? db.prepare(`SELECT supplier_id, currency, SUM(qty_milli) AS q, SUM(ccy_value) AS c FROM consignment_moves
+                                       WHERE item_id = ? AND source_id = ? AND kind = 'sold' AND qty_milli < 0 GROUP BY supplier_id, currency`)
+      .get(move.itemId, saleId) as { supplier_id: string; currency: CurrencyCode; q: number; c: number } | undefined : undefined;
+    if (sold && Number(sold.q) < 0) {
+      const ccy = Math.round((Number(sold.c) * move.qtyMilli) / Number(sold.q));
+      db.prepare(MOVE_INSERT).run(randomUUID(), move.itemId, sold.supplier_id, move.warehouseId, move.date, 'sold', move.sourceType, move.sourceId, move.qtyMilli, move.value, sold.currency, ccy, nowIso());
+      return;
+    }
+  }
   const ccy = ccyValueOf(db, item, move.warehouseId, move.qtyMilli, move.value);
   writeMove(db, item, { warehouseId: move.warehouseId, date: move.date, kind, sourceType: move.sourceType, sourceId: move.sourceId, qtyMilli: move.qtyMilli, value: move.value, ccy });
 }
@@ -752,6 +767,11 @@ export function cancelSettlement(db: Db, id: string, actor: Actor, date?: string
       const entry = getEntry(db, row.entry_id);
       if (entry.status === 'approved') {
         if (entry.reversedById) throw conflict('cs_entry_reversed');
+        // reversing an approved settlement takes back what the supplier is owed: someone who may approve entries,
+        // and not the one who made it when duties are separate (accounting review #8)
+        if (!actor.permissions.includes('admin') && !actor.permissions.includes('entries.approve')) throw new AppError(403, 'forbidden', { need: 'entries.approve' });
+        if (readSetting(db, 'separate_duties') === '1' && !actor.permissions.includes('admin')
+          && ((actor.id && entry.preparedById === actor.id) || entry.preparedBy === actor.name)) throw conflict('same_person');
         const d = date ?? (todayIso() < row.date ? row.date : todayIso());
         if (d < row.date) throw invalid([{ code: 'date_before_document' }]);
         reversal = reverseEntryInternal(db, row.entry_id, actor.name, d);
