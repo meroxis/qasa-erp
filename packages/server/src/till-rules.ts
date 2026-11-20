@@ -107,10 +107,17 @@ export async function approve(db: Db, input: { shiftId: string; action: Approval
   const key = cashierKey(cashier);
   const lock = failures.get(key);
   if (lock && lock.n >= LOCK_AFTER && lock.until > now0) throw conflict('pin_locked', { seconds: Math.ceil((lock.until - now0) / 1000) });
+  // counted before the slow PIN check (reliability review #1): a burst sent at once can't all pass the lock while
+  // the first ones are still being checked; taken back if the PIN is right
+  const n = (lock && lock.until > now0 ? lock.n : 0) + 1;
+  failures.set(key, { n, until: now0 + LOCK_MS });
+  allFailures.n++;
+  const undo = () => {
+    const f = failures.get(key);
+    if (f) { f.n = Math.max(0, f.n - 1); if (!f.n) failures.delete(key); }
+    allFailures.n = Math.max(0, allFailures.n - 1);
+  };
   const fail = (self: boolean): never => {
-    const n = (lock && lock.until > Date.now() ? lock.n : 0) + 1;
-    failures.set(key, { n, until: Date.now() + LOCK_MS });
-    allFailures.n++;
     audit(db, cashier.name, 'pin_failed', 'pos_shift', input.shiftId, { action: input.action, tries: n, self });
     if (n === LOCK_AFTER) pinAlert(db, { scope: 'cashier', cashier: cashier.name, tries: n });
     if (allFailures.n >= ALL_LOCK_AFTER && allFailures.until <= Date.now()) {
@@ -125,7 +132,7 @@ export async function approve(db: Db, input: { shiftId: string; action: Approval
     if (await verifyPassword(input.pin, s.hash)) { found = s; break; }
   }
   if (!found || (found.id === cashier.id && !cashier.permissions.includes('admin'))) return fail(!!found);
-  failures.delete(key);
+  undo();
   const token = randomUUID();
   const now = new Date();
   const expiresAt = new Date(now.getTime() + APPROVAL_MS).toISOString();
