@@ -119,6 +119,13 @@ describe("a supervisor's PIN", () => {
     expect((await post(`/api/pos/shifts/${shift.id}/sales`, { ...sale, approvals: [ok.json().token] }, who.las!)).json()).toMatchObject({ details: [{ code: 'pos_needs_supervisor' }] });
     // a price below the item's own
     expect((await post(`/api/pos/shifts/${shift.id}/sales`, { currency: 'IQD', discount: 0, lines: [tea(1, 2_000)] }, who.las!)).json()).toMatchObject({ details: [{ action: 'price' }] });
+    // … in whatever unit the line names: the base unit by name, or a box at its own price (security review #2)
+    expect((await post(`/api/pos/shifts/${shift.id}/sales`, { currency: 'IQD', discount: 0, lines: [{ itemId: teaId, unit: 'piece', unitQtyMilli: 50_000, unitPrice: 1 }] }, who.las!)).json())
+      .toMatchObject({ details: [{ action: 'price' }] });
+    expect((await put(`/api/items/${teaId}`, { code: 'TEA', name: { ar: 'شاي', en: 'Tea', ku: 'چا' }, unit: 'piece', salePrice: 2_750, saleCurrency: 'IQD', units: [{ unit: 'box', factorMilli: 10_000, barcode: '', salePrice: 25_000 }] }, who.admin!)).statusCode).toBe(200);
+    expect((await post(`/api/pos/shifts/${shift.id}/sales`, { currency: 'IQD', discount: 0, lines: [{ itemId: teaId, unit: 'box', unitQtyMilli: 1_000, unitPrice: 20_000 }] }, who.las!)).json())
+      .toMatchObject({ details: [{ action: 'price' }] });
+    expect((await post(`/api/pos/shifts/${shift.id}/sales`, { currency: 'IQD', discount: 0, lines: [{ itemId: teaId, unit: 'box', unitQtyMilli: 1_000, unitPrice: 25_000 }] }, who.las!)).statusCode).toBe(201);
     // the drawer with no sale
     expect((await post(`/api/pos/shifts/${shift.id}/drawer`, {}, who.las!)).json()).toMatchObject({ details: [{ action: 'no_sale' }] });
     const drawer = (await post('/api/pos/approve', { shiftId: shift.id, action: 'no_sale', pin: '407193' }, who.las!)).json();

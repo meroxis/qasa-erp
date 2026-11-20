@@ -558,12 +558,21 @@ export function sell(db: Db, shiftId: string, input: SaleInput, actor: Actor): {
   const needs: ('discount' | 'price')[] = [];
   if (rules.supervisor.discountPct > 0 && input.discount * 100 > rules.supervisor.discountPct * gross) needs.push('discount');
   if (rules.supervisor.price) {
-    // a line below the item's own price (same currency, its base unit; the open-price item is open)
-    const price = db.prepare('SELECT sale_price, sale_currency FROM items WHERE id = ?');
+    // a line below the item's own price, in whatever unit it is typed (the item's base unit, or another unit at that
+    // unit's own price or the base price × its factor); same currency; the open-price item is open
+    const price = db.prepare('SELECT sale_price, sale_currency, unit FROM items WHERE id = ?');
+    const unitPrice = db.prepare('SELECT factor_milli, sale_price FROM item_units WHERE item_id = ? AND unit = ?');
     const lower = input.lines.some((l) => {
-      if (l.unit || l.itemId === rules.misc.itemId) return false;
-      const it = price.get(l.itemId) as { sale_price: number | null; sale_currency: string } | undefined;
-      return !!it && it.sale_price !== null && it.sale_currency === input.currency && l.unitPrice < Number(it.sale_price);
+      if (l.itemId === rules.misc.itemId) return false;
+      const it = price.get(l.itemId) as { sale_price: number | null; sale_currency: string; unit: string } | undefined;
+      if (!it || it.sale_price === null || it.sale_currency !== input.currency) return false;
+      let expected = Number(it.sale_price);
+      if (l.unit && l.unit !== it.unit) {
+        const u = unitPrice.get(l.itemId, l.unit) as { factor_milli: number; sale_price: number | null } | undefined;
+        if (!u) return false; // an unknown unit is refused when the lines are read
+        expected = u.sale_price !== null ? Number(u.sale_price) : Math.round((Number(it.sale_price) * Number(u.factor_milli)) / 1000);
+      }
+      return l.unitPrice < expected;
     });
     if (lower) needs.push('price');
   }
