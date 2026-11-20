@@ -2129,6 +2129,7 @@ const V18 =
   CREATE TABLE pos_pins (
     user_id TEXT PRIMARY KEY REFERENCES users(id),
     pin_hash TEXT NOT NULL,
+    digits INTEGER,
     updated_at TEXT NOT NULL
   );
   CREATE TABLE pos_approvals (

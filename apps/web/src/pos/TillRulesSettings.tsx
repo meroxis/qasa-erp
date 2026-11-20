@@ -17,10 +17,11 @@ export function TillRulesSettings({ admin }: { admin: boolean }) {
   if (!rules) return null;
   return (
     <>
+      {admin && rules.pinAlert && <PinAlert alert={rules.pinAlert} onCleared={reload} />}
       {admin && <RulesCard rules={rules} onSaved={reload} />}
       {admin && <ScreenCard />}
       {admin && <VouchersCard />}
-      {rules.mayApprove && <PinCard has={rules.hasPin} onSaved={reload} />}
+      {rules.mayApprove && <PinCard has={rules.hasPin} short={!!rules.pinShort} onSaved={reload} />}
       <ScaleCard />
     </>
   );
@@ -265,8 +266,20 @@ function VouchersCard() {
   );
 }
 
+/** Wrong PINs locked approvals at a till: an admin sees it here until they clear it. */
+function PinAlert({ alert, onCleared }: { alert: NonNullable<TillRulesView['pinAlert']>; onCleared(): void }) {
+  const { t, dateTime } = useI18n();
+  return (
+    <div className="alert warn row" role="alert" data-setting="pos-pin-alert" style={{ gap: 10, marginBottom: 14 }}>
+      <Icon name="key" size={18} />
+      <span>{t(alert.scope === 'all' ? 'tu_pinAlertAll' : 'tu_pinAlert', { name: alert.cashier, n: alert.tries, at: dateTime(alert.at) })}</span>
+      <button type="button" className="btn btn-sm" onClick={() => void tillRulesApi.clearPinAlert().then(onCleared)}>{t('tu_pinAlertSeen')}</button>
+    </div>
+  );
+}
+
 /** A supervisor's own PIN (an admin is a supervisor too). */
-function PinCard({ has, onSaved }: { has: boolean; onSaved(): void }) {
+function PinCard({ has, short, onSaved }: { has: boolean; short: boolean; onSaved(): void }) {
   const { t } = useI18n();
   const toast = useToast();
   const [pin, setPin] = useState('');
@@ -275,13 +288,13 @@ function PinCard({ has, onSaved }: { has: boolean; onSaved(): void }) {
     <div className="settings-group" data-setting="pos-pin">
       <div className="setting">
         <Icon name="key" size={20} className="setting-icon" />
-        <div className="setting-text"><strong>{t('tu_myPin')}</strong><span>{t('tu_pinRule')}</span>{has && <span className="small muted">✓</span>}</div>
+        <div className="setting-text"><strong>{t('tu_myPin')}</strong><span>{t('tu_pinRule')}</span>{has && !short && <span className="small muted">✓</span>}{short && <span className="chip warn">{t('tu_pinShort')}</span>}</div>
         <form className="setting-ctl row" style={{ gap: 8 }} onSubmit={(e) => {
           e.preventDefault();
           void tillRulesApi.setPin(pin).then(() => { setPin(''); setError(null); toast(t('tu_pinSaved')); onSaved(); }, setError);
         }}>
           <input className="input num ltr" type="password" inputMode="numeric" autoComplete="new-password" maxLength={8} value={pin} onChange={(e) => setPin(e.target.value.replace(/\D/g, ''))} aria-label={t('tu_myPin')} />
-          <button type="submit" className="btn" disabled={!/^\d{4,8}$/.test(pin)}>{t('tu_setPin')}</button>
+          <button type="submit" className="btn" disabled={!/^\d{6,8}$/.test(pin)}>{t('tu_setPin')}</button>
           <ErrorBox error={error} />
         </form>
       </div>

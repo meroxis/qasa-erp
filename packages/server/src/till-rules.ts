@@ -23,28 +23,48 @@ import type { ApiExtension, ApiRequest } from './routes.ts';
  * PINs and the approvals they give at a till, a customer's debt read at the till, gift vouchers sold and looked up there,
  * and the customer screen on another device (a tablet or a second PC) paired to a till with a code.
  *
- * A PIN is a supervisor's own (4–8 digits), stored as a password is (scrypt). An approval is given for one action at
- * one shift and used once within two minutes; each one, and each PIN that failed, is written to the audit log. Five
- * wrong PINs at a shift lock its approvals for five minutes. Approvals need the server: a till that can't reach it
- * holds the basket instead (an offline PIN check would need the PINs on the cashier's PC).
+ * A PIN is a supervisor's own (6–8 digits; one set before 2.0 may still be 4 or 5 until it is changed), stored as a
+ * password is (scrypt). An approval is given for one action at one shift and used once within two minutes; each one,
+ * and each PIN that failed, is written to the audit log. Wrong PINs are counted per cashier (whatever shift they type
+ * them at: opening another shift does not start the count again) and for the whole company: five from one cashier lock
+ * that cashier's approvals for fifteen minutes, twenty from everyone in ten minutes lock every till's for ten, and each
+ * lock is written to the audit log and shown to an admin in Settings. Approvals need the server: a till that can't
+ * reach it holds the basket instead (an offline PIN check would need the PINs on the cashier's PC).
  */
 
+/** what a PIN typed at a till may be (older 4-digit PINs keep working until changed) */
 const PIN = /^\d{4,8}$/;
+/** what a PIN set now must be */
+const NEW_PIN = /^\d{6,8}$/;
 /** PINs anyone would try first */
 const WEAK = new Set(['0000', '1111', '1234', '12345', '123456', '1234567', '12345678', '4321', '2580', '9999', '1212']);
 const LOCK_AFTER = 5;
-const LOCK_MS = 5 * 60 * 1000;
+const LOCK_MS = 15 * 60 * 1000;
+const ALL_LOCK_AFTER = 20;
+const ALL_WINDOW_MS = 10 * 60 * 1000;
+const ALL_LOCK_MS = 10 * 60 * 1000;
+/** wrong PINs per cashier (by user id, or name with sign-in off) and for the whole company */
 const failures = new Map<string, { n: number; until: number }>();
+let allFailures = { n: 0, since: Date.now(), until: 0 };
+/** for tests: forget the counts */
+export function resetPinFailures(): void { failures.clear(); allFailures = { n: 0, since: Date.now(), until: 0 }; }
+const cashierKey = (a: Pick<Actor, 'id' | 'name'>) => a.id ? `u:${a.id}` : `n:${a.name}`;
+
+function pinAlert(db: Db, alert: { scope: 'cashier' | 'all'; cashier: string; tries: number }): void {
+  const at = new Date().toISOString();
+  writeSetting(db, 'pos_pin_alert', JSON.stringify({ ...alert, at }));
+  audit(db, alert.cashier, 'pin_lockout', 'pos_rules', null, alert);
+}
 
 export function setPin(db: Db, actor: Pick<Actor, 'id' | 'name' | 'permissions'>, pin: string): Promise<{ ok: true }> {
   if (!maySupervise(actor) || !actor.id) throw new AppError(403, 'forbidden', { need: 'posSupervise' });
-  if (!PIN.test(pin)) throw invalid([{ code: 'pin_invalid' }]);
-  if (WEAK.has(pin) || /^(\d)\1+$/.test(pin)) throw invalid([{ code: 'pin_weak' }]);
+  if (!NEW_PIN.test(pin)) throw invalid([{ code: 'pin_invalid' }]);
+  if (WEAK.has(pin) || /^(\d)\1+$/.test(pin) || '0123456789'.includes(pin) || '9876543210'.includes(pin)) throw invalid([{ code: 'pin_weak' }]);
   const id = actor.id;
   return hashPassword(pin).then((hash) => {
     transaction(db, () => {
       db.prepare('DELETE FROM pos_pins WHERE user_id = ?').run(id);
-      db.prepare('INSERT INTO pos_pins (user_id, pin_hash, updated_at) VALUES (?, ?, ?)').run(id, hash, new Date().toISOString());
+      db.prepare('INSERT INTO pos_pins (user_id, pin_hash, digits, updated_at) VALUES (?, ?, ?, ?)').run(id, hash, pin.length, new Date().toISOString());
       audit(db, actor.name, 'set_pin', 'user', id, {});
     });
     return { ok: true as const };
@@ -52,6 +72,12 @@ export function setPin(db: Db, actor: Pick<Actor, 'id' | 'name' | 'permissions'>
 }
 
 export const hasPin = (db: Db, userId: string | null): boolean => !!userId && !!db.prepare('SELECT 1 FROM pos_pins WHERE user_id = ?').get(userId);
+/** a PIN set before 6 digits were asked for (or of unknown length): Settings asks for a new one */
+const pinShort = (db: Db, userId: string | null): boolean => {
+  if (!userId) return false;
+  const r = db.prepare('SELECT digits FROM pos_pins WHERE user_id = ?').get(userId) as { digits: number | null } | undefined;
+  return !!r && (r.digits === null || Number(r.digits) < 6);
+};
 
 interface Supervisor { id: string; name: string; hash: string }
 
@@ -74,20 +100,31 @@ export async function approve(db: Db, input: { shiftId: string; action: Approval
   const shift = getShift(db, input.shiftId, cashier);
   if (shift.status !== 'open') throw conflict('pos_shift_closed');
   if (!shift.actions.includes('sell')) throw new AppError(403, 'forbidden', { need: 'shift_owner' });
-  const lock = failures.get(input.shiftId);
-  if (lock && lock.n >= LOCK_AFTER && lock.until > Date.now()) throw conflict('pin_locked', { seconds: Math.ceil((lock.until - Date.now()) / 1000) });
-  if (!PIN.test(input.pin)) throw invalid([{ code: 'pin_wrong' }]);
+  const now0 = Date.now();
+  if (allFailures.until > now0) throw conflict('pin_locked', { seconds: Math.ceil((allFailures.until - now0) / 1000) });
+  if (now0 - allFailures.since > ALL_WINDOW_MS) allFailures = { n: 0, since: now0, until: 0 };
+  const key = cashierKey(cashier);
+  const lock = failures.get(key);
+  if (lock && lock.n >= LOCK_AFTER && lock.until > now0) throw conflict('pin_locked', { seconds: Math.ceil((lock.until - now0) / 1000) });
+  const fail = (self: boolean): never => {
+    const n = (lock && lock.until > Date.now() ? lock.n : 0) + 1;
+    failures.set(key, { n, until: Date.now() + LOCK_MS });
+    allFailures.n++;
+    audit(db, cashier.name, 'pin_failed', 'pos_shift', input.shiftId, { action: input.action, tries: n, self });
+    if (n === LOCK_AFTER) pinAlert(db, { scope: 'cashier', cashier: cashier.name, tries: n });
+    if (allFailures.n >= ALL_LOCK_AFTER && allFailures.until <= Date.now()) {
+      allFailures.until = Date.now() + ALL_LOCK_MS;
+      pinAlert(db, { scope: 'all', cashier: cashier.name, tries: allFailures.n });
+    }
+    throw invalid([{ code: self ? 'pin_self' : 'pin_wrong' }]);
+  };
+  if (!PIN.test(input.pin)) fail(false);
   let found: Supervisor | null = null;
   for (const s of supervisors(db)) {
     if (await verifyPassword(input.pin, s.hash)) { found = s; break; }
   }
-  if (!found || (found.id === cashier.id && !cashier.permissions.includes('admin'))) {
-    const n = (lock && lock.until > Date.now() ? lock.n : 0) + 1;
-    failures.set(input.shiftId, { n, until: Date.now() + LOCK_MS });
-    audit(db, cashier.name, 'pin_failed', 'pos_shift', input.shiftId, { action: input.action, tries: n, self: !!found });
-    throw invalid([{ code: found ? 'pin_self' : 'pin_wrong' }]);
-  }
-  failures.delete(input.shiftId);
+  if (!found || (found.id === cashier.id && !cashier.permissions.includes('admin'))) return fail(!!found);
+  failures.delete(key);
   const token = randomUUID();
   const now = new Date();
   const expiresAt = new Date(now.getTime() + APPROVAL_MS).toISOString();
@@ -107,8 +144,14 @@ export function rulesForTill(db: Db, actor: Actor) {
     rounding: rules.rounding, blindClose: rules.blindClose, supervisor: rules.supervisor,
     misc: { itemId: rules.misc.itemId, max: rules.misc.max, allowed: maySellMisc(rules.misc, actor) },
     display: rules.display,
-    mayApprove: maySupervise(actor), hasPin: hasPin(db, actor.id)
+    mayApprove: maySupervise(actor), hasPin: hasPin(db, actor.id), pinShort: pinShort(db, actor.id),
+    // the last time wrong PINs locked approvals: shown to an admin until they clear it
+    pinAlert: actor.permissions.includes('admin') ? readPinAlert(db) : null
   };
+}
+
+function readPinAlert(db: Db): { scope: 'cashier' | 'all'; cashier: string; tries: number; at: string } | null {
+  try { const v = readSetting(db, 'pos_pin_alert'); return v ? JSON.parse(v) as { scope: 'cashier' | 'all'; cashier: string; tries: number; at: string } : null; } catch { return null; }
 }
 
 const roundingBody = z.object({ step: z.union([z.literal(0), z.literal(250), z.literal(500), z.literal(1000)]), mode: z.enum(['nearest', 'up', 'down']) });
@@ -292,6 +335,7 @@ export const tillRulesApi: ApiExtension = {
           shiftId: id, action: z.enum(APPROVAL_ACTIONS), pin: z.string().max(12), detail: z.string().max(300).optional()
         }), req.body), actor(req))
       },
+      { method: 'DELETE', path: '/api/pos/pin-alert', handler: async (req) => { writeSetting(db, 'pos_pin_alert', ''); audit(db, actor(req).name, 'clear', 'pos_pin_alert', null, {}); return { ok: true }; } },
       { method: 'PUT', path: '/api/pos/pin', handler: async (req) => setPin(db, actor(req), parse(z.object({ pin: z.string().max(12) }), req.body).pin) },
       {
         method: 'GET', path: '/api/pos/customer/:id',

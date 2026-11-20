@@ -2061,6 +2061,7 @@ export const MYSQL_TABLES: readonly MysqlObject[] = [
     sql: `CREATE TABLE pos_pins (
       user_id ${ID} NOT NULL PRIMARY KEY,
       pin_hash TEXT NOT NULL,
+      digits INT,
       updated_at ${WHEN} NOT NULL,
       FOREIGN KEY (user_id) REFERENCES users(id)
     )`

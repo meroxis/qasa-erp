@@ -16,6 +16,10 @@ export interface TillRulesView {
   display: DisplayRules;
   mayApprove: boolean;
   hasPin: boolean;
+  /** this person's PIN is from before 6 digits were asked for */
+  pinShort?: boolean;
+  /** (an admin) the last time wrong PINs locked approvals */
+  pinAlert?: { scope: 'cashier' | 'all'; cashier: string; tries: number; at: string } | null;
 }
 
 export interface TillRulesInput {
@@ -56,6 +60,7 @@ export const tillRulesApi = {
   rules: () => request<TillRulesView>('GET', '/api/pos/rules'),
   save: (input: TillRulesInput) => request<unknown>('PUT', '/api/pos/rules', input),
   setPin: (pin: string) => request<{ ok: true }>('PUT', '/api/pos/pin', { pin }),
+  clearPinAlert: () => request<{ ok: true }>('DELETE', '/api/pos/pin-alert'),
   approve: (shiftId: string, action: ApprovalAction, pin: string, detail?: string) =>
     request<Approval>('POST', '/api/pos/approve', { shiftId, action, pin, ...(detail ? { detail } : {}) }),
   customer: (id: string) => request<{ id: string; balance: number; creditLimit: number | null; overLimit: boolean }>('GET', `/api/pos/customer/${id}`),

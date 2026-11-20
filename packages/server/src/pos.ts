@@ -476,6 +476,11 @@ export function openShift(db: Db, input: OpenShiftInput, actor: Actor): ShiftVie
       .some((r) => r.register.trim().toLowerCase() === register.toLowerCase());
     if (busy) throw conflict('pos_register_open', { register });
     if (till && db.prepare("SELECT 1 FROM pos_shifts WHERE status = 'open' AND till_id = ?").get(till.id)) throw conflict('pos_register_open', { register });
+    // one open shift per cashier (an admin may keep several): a second one would only reset what is counted per shift
+    if (!actor.permissions.includes('admin')) {
+      const mine = db.prepare("SELECT register FROM pos_shifts WHERE status = 'open' AND opened_by = ?").get(actor.name) as { register: string } | undefined;
+      if (mine) throw conflict('pos_shift_already_open', { register: mine.register });
+    }
     const newId = randomUUID();
     const year = todayIso().slice(0, 4);
     const number = `POS-${year}-${String(nextSequence(db, `pos_shift:${year}`)).padStart(4, '0')}`;
