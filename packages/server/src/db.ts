@@ -5,7 +5,7 @@ import { DatabaseSync } from 'node:sqlite';
 import { brandKey, DEFAULT_POSTING_ACCOUNTS, IRAQI_UNIFIED_CHART, STARTER_SUB_ACCOUNTS } from '@qasa/core';
 import { AppError } from './errors.ts';
 import {
-  MYSQL_TABLES, MYSQL_TRIGGERS, mysqlCollations, mysqlTableSql, pendingMysqlSteps, V10_MYSQL_STEPS, V11_MYSQL_STEPS, V12_MYSQL_STEPS, V13_MYSQL_STEPS, V14_MYSQL_STEPS, V15_MYSQL_STEPS, V16_MYSQL_STEPS, type MysqlCollations, type MysqlStep
+  MYSQL_TABLES, MYSQL_TRIGGERS, mysqlCollations, mysqlTableSql, pendingMysqlSteps, V10_MYSQL_STEPS, V11_MYSQL_STEPS, V12_MYSQL_STEPS, V13_MYSQL_STEPS, V14_MYSQL_STEPS, V15_MYSQL_STEPS, V16_MYSQL_STEPS, V17_MYSQL_STEPS, type MysqlCollations, type MysqlStep
 } from './schema-mysql.ts';
 
 export type SqlParam = null | number | bigint | string | Uint8Array;
@@ -1939,6 +1939,61 @@ const V16 =
   CREATE INDEX fuel_moves_source ON fuel_moves(source_id);
   `;
 
+const V17 =
+  // ===== 17 · OFFERS (offers.ts) — supermarket promotions; another 1.7 block may join this migration =====
+  // The offers themselves (buy X get Y, bundles, special prices; their dates, days, hours and branches; the goods as
+  // JSON lists of item and category ids), and what each sale got: one row per line and offer (qty taken into the
+  // offer, discount given). invoices.offers_on: offers are worked out for this invoice (the till and the invoice
+  // screen; never a website order or a converted quotation); invoices.offer_discount: the part of its discount that
+  // came from offers (discount = what was typed + offer_discount).
+  `
+  CREATE TABLE offers (
+    id TEXT PRIMARY KEY,
+    code TEXT NOT NULL UNIQUE,
+    name_ar TEXT NOT NULL,
+    name_en TEXT NOT NULL,
+    name_ku TEXT NOT NULL,
+    kind TEXT NOT NULL CHECK (kind IN ('buyGet', 'bundle', 'price')),
+    active INTEGER NOT NULL DEFAULT 1 CHECK (active IN (0, 1)),
+    priority INTEGER NOT NULL DEFAULT 0 CHECK (priority >= 0),
+    exclusive INTEGER NOT NULL DEFAULT 0 CHECK (exclusive IN (0, 1)),
+    max_per_sale INTEGER CHECK (max_per_sale IS NULL OR max_per_sale > 0),
+    starts_on TEXT,
+    ends_on TEXT,
+    weekdays TEXT,
+    from_time TEXT,
+    to_time TEXT,
+    branch_ids TEXT,
+    items TEXT NOT NULL,
+    categories TEXT NOT NULL,
+    get_items TEXT NOT NULL,
+    get_categories TEXT NOT NULL,
+    buy_milli INTEGER,
+    get_milli INTEGER,
+    get_percent INTEGER,
+    bundle_milli INTEGER,
+    bundle_price INTEGER,
+    price INTEGER,
+    percent_off INTEGER,
+    notes TEXT,
+    created_by TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+  );
+  CREATE TABLE invoice_offer_lines (
+    invoice_id TEXT NOT NULL REFERENCES invoices(id) ON DELETE CASCADE,
+    line_no INTEGER NOT NULL,
+    offer_id TEXT NOT NULL REFERENCES offers(id),
+    qty_milli INTEGER NOT NULL CHECK (qty_milli >= 0),
+    discount INTEGER NOT NULL CHECK (discount >= 0),
+    PRIMARY KEY (invoice_id, line_no, offer_id)
+  );
+  CREATE INDEX invoice_offer_lines_offer ON invoice_offer_lines(offer_id);
+  ALTER TABLE invoices ADD COLUMN offers_on INTEGER NOT NULL DEFAULT 0 CHECK (offers_on IN (0, 1));
+  ALTER TABLE invoices ADD COLUMN offer_discount INTEGER NOT NULL DEFAULT 0 CHECK (offer_discount >= 0);
+  `;
+  // ===== end 17 · OFFERS =====
+
 const MIGRATIONS: Migration[] = [
   { sql: V1 }, { sql: V2, rebuild: true }, { sql: V3, rebuild: true }, { sql: V4 }, { sql: V5, rebuild: true },
   { sql: V6, mysql: 'tables' }, { sql: V7, mysql: 'tables' }, { sql: V8, mysql: 'tables' }, { sql: V9, mysql: 'tables' },
@@ -1948,7 +2003,8 @@ const MIGRATIONS: Migration[] = [
   { sql: V13, mysql: { tables: true, steps: () => V13_MYSQL_STEPS } },
   { sql: V14, mysql: { tables: true, steps: () => V14_MYSQL_STEPS } },
   { sql: V15, mysql: { tables: true, steps: () => V15_MYSQL_STEPS } },
-  { sql: V16, mysql: { tables: true, steps: () => V16_MYSQL_STEPS } }
+  { sql: V16, mysql: { tables: true, steps: () => V16_MYSQL_STEPS } },
+  { sql: V17, mysql: { tables: true, steps: () => V17_MYSQL_STEPS } }
 ];
 
 /** Server databases began at this version: its schema is in schema-mysql.ts (tables and triggers without `since`). */

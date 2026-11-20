@@ -162,6 +162,10 @@ beforeAll(async () => {
     direction: 'received', number: '700123', bank: 'Rafidain', partyId: customerId, currency: 'IQD', amount: 41_041, issueDate: today, dueDate: addDays(today, 3), lang: 'en'
   }));
 
+  // 1.7: an offer (written straight in and switched off, so the sales below are as before), read back by its own route
+  db.prepare(`INSERT INTO offers (id, code, name_ar, name_en, name_ku, kind, active, items, categories, get_items, get_categories, percent_off, created_by, created_at, updated_at)
+              VALUES ('offer-1', 'TEA10', 'شاي', 'Tea', 'چا', 'price', 0, ?, '[]', '[]', '[]', 10, 'Mer', ?, ?)`).run(JSON.stringify([teaId]), today, today);
+
   // what the server worked out: the cost of every line sold or returned, the value of every stock movement and of the stock
   for (const r of db.prepare('SELECT cost AS n FROM invoice_lines WHERE cost IS NOT NULL').all() as { n: number }[]) secrets.add(Math.abs(Number(r.n)));
   for (const r of db.prepare('SELECT value AS n FROM stock_moves').all() as { n: number }[]) secrets.add(Math.abs(Number(r.n)));
@@ -183,7 +187,8 @@ beforeAll(async () => {
     '/api/loyalty/parties/:id': customerId,
     '/api/banking/statements/:id': statement.id,
     '/api/banking/cheques/:id': cheque.id,
-    '/api/fuel/shifts/:id': fuelShift.id, '/api/fuel/deliveries/:id': fuelDelivery.id
+    '/api/fuel/shifts/:id': fuelShift.id, '/api/fuel/deliveries/:id': fuelDelivery.id,
+    '/api/offers/:id': 'offer-1'
   });
   Object.assign(QUERY, {
     '/api/reports/final-accounts': `from=${today.slice(0, 4)}-01-01&to=${today}`,

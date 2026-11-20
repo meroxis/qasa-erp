@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { categoriesApi, inCategory, type CategoryView } from '../industry/categories-api.ts';
 import { createPortal } from 'react-dom';
-import { fromBase, normalizeForSearch, POS_QUICK_MAX, posBigTiles, rateFromX100, rateToX100, toBase, todayIso, toWesternDigits, usableRate, type CurrencyCode } from '@qasa/core';
+import { fromBase, normalizeForSearch, POS_QUICK_MAX, posBigTiles, rateFromX100, rateToX100, toBase, todayIso, toWesternDigits, usableRate, type CurrencyCode, type OfferRule } from '@qasa/core';
 import { api, ApiError, isNetworkError, serverReachable, type InvoiceView, type ItemView, type PartyView, type WarehouseView } from '../api.ts';
 import { AccountCombo, AmountInput, ErrorBox, Icon, Modal, SearchCombo, useData, useLoad, usePageNav, useToast, type PickOption } from '../components.tsx';
 import { useI18n, type I18n, type Key } from '../i18n.ts';
@@ -10,7 +10,7 @@ import { PartyPicker } from '../industry/PartyPicker.tsx';
 import { posApi, type Money2, type SaleInput, type ShiftReport, type ShiftView } from '../industry/pos-api.ts';
 import { outboxClient, outboxWho, whoKey, type HeldKey } from '../industry/outbox.ts';
 import { useOutbox } from '../industry/OutboxBanner.tsx';
-import { offlineReceipt, offlineRefusal, payTillSale, rememberTill, shortStock, takeFromStock, tillCache } from '../industry/offline-till.ts';
+import { baseQtyOf, offlineReceipt, offlineRefusal, payTillSale, rememberTill, shortStock, takeFromStock, tillCache } from '../industry/offline-till.ts';
 import '../pos.css';
 import { useItemPicture } from '../industry/ItemImage.tsx';
 import { PrintDocument } from '../industry/PrintDocument.tsx';
@@ -30,6 +30,7 @@ import { perDollar } from '../industry/HeaderRate.tsx';
 import { QuickItemForm } from '../industry/QuickItemForm.tsx';
 import { addRowKind, anyItemMatches, mayAddItem, typedForForm, western } from '../industry/item-quick-add.ts';
 import { findByScaleBarcode } from '../industry/scale-barcode.ts';
+import { offersApi, tillOfferPreview } from '../industry/offers-api.ts';
 import { may } from '../may.ts';
 
 /**
@@ -341,6 +342,13 @@ function Register({ initial, onClosed }: { initial: ShiftView; onClosed(): void 
   const loadItems = useCallback(() => {
     void fromServerOrTill(() => api.items({ active: 'true' }), (list) => rememberTill(tillWho(), { items: list }), () => tillCache(tillWho())?.items).then(setItems, setError);
   }, []);
+  // 1.7: the offers this till works with (kept for offline too); the server works them out again for every sale
+  const [offerRules, setOfferRules] = useState<OfferRule[]>(() => tillCache(tillWho())?.offers ?? []);
+  const loadOffers = useCallback(() => {
+    void fromServerOrTill(() => offersApi.till(shift.warehouseId).then((r) => r.offers), (list) => rememberTill(tillWho(), { offers: list }), () => tillCache(tillWho())?.offers)
+      .then(setOfferRules, () => {});
+  }, [shift.warehouseId]);
+  useEffect(() => { loadOffers(); }, [loadOffers]);
   useEffect(() => {
     loadItems();
     void fromServerOrTill(() => api.parties({ type: 'customer', active: 'true' }), (list) => rememberTill(tillWho(), { customers: list }), () => tillCache(tillWho())?.customers)
@@ -460,7 +468,12 @@ function Register({ initial, onClosed }: { initial: ShiftView; onClosed(): void 
   };
 
   const subtotal = cart.reduce((s, l) => s + lineTotal(l), 0);
-  const total = Math.max(0, subtotal - (discount ?? 0));
+  // the offers the cart gets now (a preview: the server's own figure is the one paid)
+  const offerResult = useMemo(() => tillOfferPreview(
+    cart.map((l) => ({ itemId: l.item.id, categoryId: l.item.categoryId ?? null, qtyMilli: baseQtyOf(l), amount: lineTotal(l) })), offerRules, { currency, rateX100 }
+  ), [cart, offerRules, currency, rateX100]);
+  const offerTotal = offerResult.total;
+  const total = Math.max(0, subtotal - offerTotal - (discount ?? 0));
   // 1.2 (Pro): loyalty points pay part of the sale; the rest is paid as before
   const due = total - points.value;
   // another customer, total or currency: the points are chosen again
@@ -482,7 +495,7 @@ function Register({ initial, onClosed }: { initial: ShiftView; onClosed(): void 
   // the items of this cart beyond the stock last known, with what is left of each
   const shortNow = cartShortNote(shortStock(cart), (code, have) => `${code} (${i18n.qty(Math.max(0, have))})`, i18n.lang === 'en' ? ', ' : '، ');
   const needsCustomer = creditNeedsCustomer(method, partyId);
-  const canPay = cart.length > 0 && !busy && (discount ?? 0) <= subtotal && (currency === 'IQD' || rateX100 > 0) && !needsCustomer;
+  const canPay = cart.length > 0 && !busy && (discount ?? 0) <= subtotal - offerTotal && (currency === 'IQD' || rateX100 > 0) && !needsCustomer;
 
   const clear = () => {
     setCart([]);
@@ -517,7 +530,8 @@ function Register({ initial, onClosed }: { initial: ShiftView; onClosed(): void 
     const stamp = kept.body.offline as { reference: string; soldAt: string; soldOn: string };
     setReceipt(offlineReceipt({
       key, reference: kept.reference ?? stamp.reference, soldAt: stamp.soldAt, soldOn: stamp.soldOn, shift, cashier: who?.name ?? shift.openedBy,
-      lines: cart, currency, rateX100, discount: discount ?? 0, party: customers.find((p) => p.id === partyId) ?? null, payments: sale.payments ?? []
+      lines: cart, currency, rateX100, discount: discount ?? 0, party: customers.find((p) => p.id === partyId) ?? null, payments: sale.payments ?? [],
+      ...(offerTotal > 0 ? { offers: { result: offerResult, rules: offerRules } } : {})
     }));
     // the stock last known, less this sale: the next sale is checked against it
     const left = takeFromStock(items, cart);
@@ -566,6 +580,8 @@ function Register({ initial, onClosed }: { initial: ShiftView; onClosed(): void 
       // controlled medicines sold: the patient and the prescription, now or later from the pharmacy log
       controlled.check(res.invoice.id);
     } catch (e) {
+      // the server's offers differ from the till's (one began, ended or changed): the till takes them again
+      if (e instanceof ApiError && e.code === 'validation' && Array.isArray(e.details) && (e.details as { code?: string }[]).some((d) => d.code === 'payments_total_mismatch')) loadOffers();
       setError(e);
     } finally {
       // a try of this sale went out and no answer came: it may be booked, and the cashier is told so
@@ -770,7 +786,10 @@ function Register({ initial, onClosed }: { initial: ShiftView; onClosed(): void 
                   <span className="num pos-qty-n">{i18n.qty(l.qtyMilli)}</span>
                   <button type="button" className="btn pos-qty-btn" aria-label={t('pos_more')} onClick={() => setQty(lineKey(l), l.qtyMilli + 1000)}>+</button>
                 </div>
-                <span className="num pos-line-total">{i18n.money(lineTotal(l), currency)}</span>
+                <span className="num pos-line-total">
+                  {i18n.money(lineTotal(l), currency)}
+                  {(offerResult.byLine[cart.indexOf(l) + 1] ?? 0) > 0 && <span className="small pos-line-offer">−{i18n.money(offerResult.byLine[cart.indexOf(l) + 1]!, currency)}</span>}
+                </span>
                 <button type="button" className="btn pos-remove" aria-label={t('pos_remove')} onClick={() => setQty(lineKey(l), 0)}><Icon name="x" size={16} /></button>
               </div>
             ))}
@@ -785,6 +804,15 @@ function Register({ initial, onClosed }: { initial: ShiftView; onClosed(): void 
                 onChange={(v, p) => { setPartyId(v); if (p) keepCustomer(p); }} onCreated={keepCustomer} />
             </div>
             <LoyaltyUse partyId={partyId} total={total} currency={currency} value={points.points} onChange={(n, v) => setPoints({ points: n, value: v })} />
+            {offerResult.offers.map((o) => {
+              const rule = offerRules.find((r) => r.id === o.offerId);
+              return (
+                <div key={o.offerId} className="pos-r-row pos-offer-row" role="status">
+                  <span><Icon name="tag" size={14} /> {rule ? i18n.name(rule.names) : t('of_lineOffer')}</span>
+                  <span className="num">−{i18n.money(o.discount, currency)}</span>
+                </div>
+              );
+            })}
             <label className="field" id="pos-discount"><span>{t('pos_discount')} <span className="kbd">F8</span></span><AmountInput value={discount} currency={currency} onChange={setDiscount} ariaLabel={t('pos_discount')} /></label>
             <div className="pos-total">
               <span>{t('pos_total')}</span>
@@ -921,7 +949,12 @@ function Receipt({ invoice, shift }: { invoice: InvoiceView; shift: ShiftView })
           </div>
         ))}
         <div className="pos-r-sep" />
-        {invoice.discount > 0 && <div className="pos-r-row"><span>{t('pos_discount')}</span><span className="num">−{i18n.money(invoice.discount, invoice.currency)}</span></div>}
+        {(invoice.offers ?? []).map((o) => (
+          <div key={o.offerId} className="pos-r-row"><span>{i18n.name(o.names)}</span><span className="num">−{i18n.money(o.discount, invoice.currency)}</span></div>
+        ))}
+        {invoice.discount - (invoice.offerDiscount ?? 0) > 0 && (
+          <div className="pos-r-row"><span>{t('pos_discount')}</span><span className="num">−{i18n.money(invoice.discount - (invoice.offerDiscount ?? 0), invoice.currency)}</span></div>
+        )}
         <div className="pos-r-row pos-r-total"><span>{t('pos_total')}</span><span className="num">{i18n.money(invoice.total, invoice.currency)}</span></div>
         {(invoice.payments ?? []).filter((p) => p.kind === 'pos').map((p) => (
           <div key={p.id} className="pos-r-row small"><span>{t(`pay_${p.method}` as Key)}</span><span className="num">{i18n.money(p.amount, p.currency)}</span></div>

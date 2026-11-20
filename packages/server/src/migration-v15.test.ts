@@ -100,10 +100,13 @@ describe('version 15 on a server database', () => {
     migrate(fake);
     expect(version).toBe(SCHEMA_VERSION);
     expect(ran.filter((s) => s.startsWith('CREATE TABLE entry_images'))).toHaveLength(1);
-    expect(ran.filter((s) => s.startsWith('ALTER TABLE'))).toEqual(['ALTER TABLE entries ADD COLUMN revision INT NOT NULL DEFAULT 0']);
+    // (what later versions add is theirs: only 15's own change is looked at)
+    const later = new Set([...MYSQL_TABLES.filter((t) => (t.since ?? 0) > 15).map((t) => t.name)]);
+    const laterColumns = /^ALTER TABLE invoices ADD COLUMN (offers_on|offer_discount) /;
+    expect(ran.filter((s) => s.startsWith('ALTER TABLE') && !laterColumns.test(s))).toEqual(['ALTER TABLE entries ADD COLUMN revision INT NOT NULL DEFAULT 0']);
     expect(ran.filter((s) => s.startsWith('CREATE TRIGGER entry_images_'))).toHaveLength(2);
     // nothing else is made again
-    expect(ran.filter((s) => s.startsWith('CREATE TABLE ') && !s.startsWith('CREATE TABLE entry_images') && !s.startsWith('CREATE TABLE fuel_') && !s.includes('schema_version'))).toEqual([]);
+    expect(ran.filter((s) => s.startsWith('CREATE TABLE ') && !s.startsWith('CREATE TABLE entry_images') && !later.has(s.split(' ')[2]!) && !s.includes('schema_version'))).toEqual([]);
   });
 
   it('adds the revision once, last in entries as on a company file, and skips it when an upgrade cut off half way made it', () => {

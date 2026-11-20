@@ -36,6 +36,7 @@ import { entryInBranchSql } from './branches.ts';
 import { postedRevaluations } from './fx.ts';
 import { cancelLoyalty, invoiceLoyalty, planRedemption, recordSaleLoyalty, type InvoiceLoyaltyView } from './loyalty.ts';
 import { resolveLines } from './item-units.ts';
+import { invoiceOffers, saleOffers, writeOfferLines, type InvoiceOfferView } from './offers.ts';
 import {
   addTaken, allocateOut, assertReversible, batchColumns, batchTracking, cancelBatchMoves, inboundBatch, lineBatchErrors, writeBatchMoves,
   type BatchError, type BatchMove
@@ -73,6 +74,10 @@ export interface InvoiceLineView {
   batchNo: string | null;
   expiry: string | null;
   batchId: string | null;
+  /** 1.7: the discount offers gave this line (0: none) */
+  offerDiscount: number;
+  /** the line's part of the invoice's whole discount, when it is kept line by line (a sale with offers, a return) */
+  discountShare: number | null;
 }
 
 export interface InvoiceSummary {
@@ -168,6 +173,9 @@ export interface InvoiceView extends InvoiceSummary {
   settlement: InvoiceSettlement | null;
   /** 1.4: a till's cash sale: the cash handed over and the change given back (only when it was typed at the till) */
   tender?: { paid: number; change: number };
+  /** 1.7: the part of `discount` that offers gave (the rest is the discount typed), and the offers themselves */
+  offerDiscount: number;
+  offers: InvoiceOfferView[];
 }
 
 interface InvoiceRow {
@@ -178,6 +186,8 @@ interface InvoiceRow {
   party_code: string | null; party_name: string | null;
   settlement_base: number | null;
   online_paid: number | null;
+  offers_on?: number | null;
+  offer_discount?: number | null;
 }
 
 export const isReturn = (kind: InvoiceDocKind) => kind === 'sale_return' || kind === 'purchase_return';
@@ -255,13 +265,16 @@ export function getInvoice(db: Db, id: string, branch: ReaderBranch = null): Inv
   const w = db.prepare('SELECT code, name_ar, name_en, name_ku FROM warehouses WHERE id = ?').get(r.warehouse_id) as { code: string; name_ar: string; name_en: string; name_ku: string };
   const cash = r.cash_account ? db.prepare('SELECT name_ar, name_en, name_ku FROM accounts WHERE code = ?').get(r.cash_account) as { name_ar: string; name_en: string; name_ku: string } : null;
   const numberOf = (entryId: string | null) => entryId ? (db.prepare('SELECT number FROM entries WHERE id = ?').get(entryId) as { number: string | null }).number : null;
-  const lines = (db.prepare(`SELECT l.line_no, l.item_id, l.description, l.qty_milli, l.unit_price, l.amount, l.cost, l.source_line, l.unit AS line_unit, l.unit_factor_milli, l.unit_qty_milli, l.batch_no, l.expiry, l.batch_id, i.code, i.name_ar, i.name_en, i.name_ku, i.unit, i.track_stock FROM invoice_lines l JOIN items i ON i.id = l.item_id
+  const lines = (db.prepare(`SELECT l.line_no, l.item_id, l.description, l.qty_milli, l.unit_price, l.amount, l.cost, l.source_line, l.unit AS line_unit, l.unit_factor_milli, l.unit_qty_milli, l.batch_no, l.expiry, l.batch_id, l.discount_share, i.code, i.name_ar, i.name_en, i.name_ku, i.unit, i.track_stock FROM invoice_lines l JOIN items i ON i.id = l.item_id
                              WHERE l.invoice_id = ? ORDER BY l.line_no`).all(id) as {
     line_no: number; item_id: string; description: string | null; qty_milli: number; unit_price: number; amount: number; cost: number | null; source_line: number | null;
     code: string; name_ar: string; name_en: string; name_ku: string; unit: UnitCode; track_stock: number;
     line_unit: UnitCode | null; unit_factor_milli: number | null; unit_qty_milli: number | null;
-    batch_no: string | null; expiry: string | null; batch_id: string | null;
+    batch_no: string | null; expiry: string | null; batch_id: string | null; discount_share: number | null;
   }[]);
+  const offers = r.kind === 'sale' ? invoiceOffers(db, id) : [];
+  const offerByLine = new Map<number, number>();
+  for (const o of offers) for (const l of o.lines) offerByLine.set(l.lineNo, (offerByLine.get(l.lineNo) ?? 0) + l.discount);
   const returned = r.status === 'posted' && !isReturn(r.kind) ? returnedByLine(db, id) : new Map<number, { qtyMilli: number; amount: number }>();
   const lineViews: InvoiceLineView[] = lines.map((l) => ({
     lineNo: l.line_no, itemId: l.item_id, itemCode: l.code, itemName: { ar: l.name_ar, en: l.name_en, ku: l.name_ku }, unit: l.unit,
@@ -270,7 +283,8 @@ export function getInvoice(db: Db, id: string, branch: ReaderBranch = null): Inv
     lineUnit: l.line_unit ?? null,
     unitFactorMilli: l.unit_factor_milli === null ? null : Number(l.unit_factor_milli),
     unitQtyMilli: l.unit_qty_milli === null ? null : Number(l.unit_qty_milli),
-    batchNo: l.batch_no ?? null, expiry: l.expiry ?? null, batchId: l.batch_id ?? null
+    batchNo: l.batch_no ?? null, expiry: l.expiry ?? null, batchId: l.batch_id ?? null,
+    offerDiscount: offerByLine.get(l.line_no) ?? 0, discountShare: l.discount_share === null ? null : Number(l.discount_share)
   }));
   const returns = db.prepare('SELECT id, kind, number, date, status, total FROM invoices WHERE return_of = ? ORDER BY date, created_at').all(id) as
     { id: string; kind: InvoiceDocKind; number: string | null; date: string; status: InvoiceStatus; total: number }[];
@@ -289,7 +303,9 @@ export function getInvoice(db: Db, id: string, branch: ReaderBranch = null): Inv
     loyalty: r.status === 'posted' && (r.kind === 'sale' || r.kind === 'sale_return') ? invoiceLoyalty(db, id, r.party_id) : null,
     settlement: invoiceSettlement(db, r, branch),
     ...tenderOf(db, r),
-    ...offlineRefOf(db, id)
+    ...offlineRefOf(db, id),
+    offerDiscount: Number(r.offer_discount ?? 0),
+    offers
   };
 }
 
@@ -543,23 +559,50 @@ function assertInvoice(db: Db, input: InvoiceInput): void {
   if (errors.length) throw invalid(errors);
 }
 
-function writeDraft(db: Db, id: string, input: InvoiceInput): void {
+/**
+ * 1.7: how a draft sale is worked out with offers. `offersAt`: offers apply (the till and the invoice screen), as at
+ * that moment; absent: none (a website order, a converted quotation, a purchase), as before.
+ */
+export interface DraftOptions { offersAt?: Date | undefined }
+
+function writeDraft(db: Db, id: string, input: InvoiceInput, opts: DraftOptions = {}): void {
   const totals = invoiceTotals(input.lines, input.discount);
+  const withOffers = input.kind === 'sale' && !!opts.offersAt;
+  const offers = withOffers
+    ? saleOffers(db, { date: input.date, warehouseId: input.warehouseId, currency: input.currency, rateX100: input.rateX100,
+      lines: input.lines.map((l, i) => ({ itemId: l.itemId, qtyMilli: l.qtyMilli, amount: totals.lineAmounts[i] ?? 0 })) }, opts.offersAt!)
+    : null;
+  const offerTotal = offers?.total ?? 0;
+  // the discount typed comes off what is left after the offers, and something must still be paid
+  if (offerTotal > 0 && input.discount > totals.subtotal - offerTotal) throw invalid([{ code: 'discount_invalid' }]);
+  if (offerTotal > 0 && totals.subtotal - offerTotal - input.discount <= 0) throw invalid([{ code: 'total_invalid' }]);
+  const discount = input.discount + offerTotal;
+  // a sale with offers keeps each line's part of the discount: its offers, then its share of the discount typed
+  const shares = offerTotal > 0
+    ? (() => {
+      const net = totals.lineAmounts.map((a, i) => a - (offers!.byLine[i + 1] ?? 0));
+      const typed = allocateDiscount(net, input.discount);
+      return totals.lineAmounts.map((_, i) => (offers!.byLine[i + 1] ?? 0) + (typed[i] ?? 0));
+    })()
+    : null;
   db.prepare(`UPDATE invoices SET date = ?, party_id = ?, warehouse_id = ?, currency = ?, rate_x100 = ?, payment = ?, cash_account = ?, discount = ?,
-              subtotal = ?, total = ?, notes = ?, updated_at = ? WHERE id = ?`)
+              subtotal = ?, total = ?, notes = ?, offers_on = ?, offer_discount = ?, updated_at = ? WHERE id = ?`)
     .run(input.date, input.partyId ?? null, input.warehouseId, input.currency, input.rateX100, input.payment, input.cashAccountCode ?? null,
-      input.discount, totals.subtotal, totals.total, input.notes?.trim() || null, new Date().toISOString(), id);
+      discount, totals.subtotal, totals.subtotal - discount, input.notes?.trim() || null, withOffers ? 1 : 0, offerTotal, new Date().toISOString(), id);
+  db.prepare('DELETE FROM invoice_offer_lines WHERE invoice_id = ?').run(id);
   db.prepare('DELETE FROM invoice_lines WHERE invoice_id = ?').run(id);
   const insert = db.prepare(`INSERT INTO invoice_lines (invoice_id, line_no, item_id, description, qty_milli, unit_price, amount, unit, unit_factor_milli, unit_qty_milli,
-                                                        batch_no, expiry, batch_id)
-                             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`);
+                                                        batch_no, expiry, batch_id, discount_share)
+                             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`);
   input.lines.forEach((l, i) => insert.run(id, i + 1, l.itemId, l.description?.trim() || null, l.qtyMilli, l.unitPrice, totals.lineAmounts[i] ?? 0,
     l.unit ?? null, l.unit ? l.unitFactorMilli ?? null : null, l.unit ? l.unitQtyMilli ?? null : null,
     // a purchase line brings a batch in (number, expiry); a sale line may be pinned to one
-    ...(input.kind === 'purchase' ? batchColumns({ batchNo: l.batchNo, expiry: l.expiry }) : batchColumns({ batchId: l.batchId }))));
+    ...(input.kind === 'purchase' ? batchColumns({ batchNo: l.batchNo, expiry: l.expiry }) : batchColumns({ batchId: l.batchId })),
+    shares ? shares[i] ?? 0 : null));
+  if (offers && offerTotal > 0) writeOfferLines(db, id, offers);
 }
 
-export function createInvoice(db: Db, raw: InvoiceInput | InvoiceRequest, user: string): InvoiceView {
+export function createInvoice(db: Db, raw: InvoiceInput | InvoiceRequest, user: string, opts: DraftOptions = {}): InvoiceView {
   const input = normalize(withUnits(db, raw as InvoiceRequest));
   assertInvoice(db, input);
   const id = randomUUID();
@@ -568,7 +611,7 @@ export function createInvoice(db: Db, raw: InvoiceInput | InvoiceRequest, user: 
     db.prepare(`INSERT INTO invoices (id, kind, status, date, warehouse_id, currency, rate_x100, payment, discount, subtotal, total, created_by, created_at, updated_at)
                 VALUES (?, ?, 'draft', ?, ?, ?, ?, ?, 0, 0, 0, ?, ?, ?)`)
       .run(id, input.kind, input.date, input.warehouseId, input.currency, input.rateX100, input.payment, user, now, now);
-    writeDraft(db, id, input);
+    writeDraft(db, id, input, opts);
     audit(db, user, 'create', 'invoice', id, { kind: input.kind });
   });
   return getInvoice(db, id);
@@ -579,14 +622,14 @@ function requireAction(db: Db, row: InvoiceRow, action: InvoiceAction): void {
   if (!actionsFor(db, row, action === 'return').includes(action)) throw conflict('action_not_allowed', { status: row.status, action });
 }
 
-export function updateInvoice(db: Db, id: string, raw: InvoiceInput | InvoiceRequest, user: string): InvoiceView {
+export function updateInvoice(db: Db, id: string, raw: InvoiceInput | InvoiceRequest, user: string, opts: DraftOptions = {}): InvoiceView {
   const row = loadRow(db, id);
   requireAction(db, row, 'edit');
   if (isReturn(row.kind)) throw conflict('action_not_allowed', { status: row.status, action: 'edit' });
   const input = normalize(withUnits(db, { ...(raw as InvoiceRequest), kind: row.kind as InvoiceKind }));
   assertInvoice(db, input);
   transaction(db, () => {
-    writeDraft(db, id, input);
+    writeDraft(db, id, input, opts);
     audit(db, user, 'update', 'invoice', id);
   });
   return getInvoice(db, id);
@@ -608,7 +651,8 @@ export function deleteInvoice(db: Db, id: string, user: string): void {
 function storedInput(view: InvoiceView): InvoiceInput {
   return {
     kind: view.kind as InvoiceKind, date: view.date, warehouseId: view.warehouseId, currency: view.currency, rateX100: view.rateX100, payment: view.payment,
-    discount: view.discount, notes: view.notes,
+    // (what was typed: the offers' part is worked out again)
+    discount: view.discount - view.offerDiscount, notes: view.notes,
     ...(view.partyId ? { partyId: view.partyId } : {}),
     ...(view.cashAccountCode ? { cashAccountCode: view.cashAccountCode } : {}),
     // the factor kept with the line, never the item's factor now: a later change of the factor leaves the line as it was
@@ -646,10 +690,13 @@ export function onlinePaidAmount(db: Db, invoiceId: string): number {
 }
 
 export function postInvoice(
-  db: Db, id: string, user: string, opts: { settledNow?: number; allowExpired?: boolean; split?: readonly SalePart[]; loyaltyPoints?: number | undefined } = {}
+  db: Db, id: string, user: string,
+  opts: { settledNow?: number; allowExpired?: boolean; split?: readonly SalePart[]; loyaltyPoints?: number | undefined; offersAt?: Date | undefined } = {}
 ): InvoiceView {
-  const view = getInvoice(db, id);
   requireAction(db, loadRow(db, id), 'post');
+  // 1.7: a sale that gets offers gets them as they are when it is posted (the server works them out, never the till)
+  refreshOffers(db, id, opts.offersAt ?? new Date());
+  const view = getInvoice(db, id);
   if (opts.loyaltyPoints !== undefined && view.kind !== 'sale') throw invalid([{ code: 'loyalty_points_invalid' }]);
   // money already taken online for this order is on the customer's account: posted as cash too, it would be taken twice
   if (view.kind === 'sale' && (view.payment !== 'credit' || opts.split?.length) && onlinePaidAmount(db, id) > 0) throw conflict('invoice_has_online_payments');
@@ -658,7 +705,7 @@ export function postInvoice(
   const accounts = getPostingAccounts(db);
   const warehouseAccount = (db.prepare('SELECT account_code FROM warehouses WHERE id = ?').get(view.warehouseId) as { account_code: string }).account_code;
   const party = view.partyId ? getParty(db, view.partyId) : null;
-  const { total } = invoiceTotals(input.lines, input.discount);
+  const { total } = invoiceTotals(input.lines, input.discount + view.offerDiscount);
   const baseTotal = toBase(total, view.currency, view.rateX100);
   const counterAccount = view.payment === 'cash' ? view.cashAccountCode! : party!.accountCode;
   const counterParty = view.payment === 'credit' && party ? { partyId: party.id } : {};
@@ -784,6 +831,14 @@ export function postInvoice(
     if (usedExpired) audit(db, user, 'sell_expired', 'invoice', id, { number, batches: batchMoves.map((m) => m.batchId) });
   });
   return getInvoice(db, id);
+}
+
+/** A draft sale that gets offers, worked out again as at `at` (an offer may have ended, or begun, since it was saved). */
+function refreshOffers(db: Db, id: string, at: Date): void {
+  const row = loadRow(db, id);
+  if (row.kind !== 'sale' || row.status !== 'draft' || Number(row.offers_on ?? 0) !== 1) return;
+  const input = storedInput(getInvoice(db, id));
+  transaction(db, () => writeDraft(db, id, input, { offersAt: at }));
 }
 
 /**

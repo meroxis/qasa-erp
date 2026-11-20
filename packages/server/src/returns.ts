@@ -107,7 +107,10 @@ export function createReturn(db: Db, originalId: string, input: ReturnInput, use
   }
   if (errors.length) throw invalid(errors);
 
-  const shares = allocateDiscount(original.lines.map((l) => l.amount), original.discount);
+  // a sale whose discount is kept line by line (1.7, offers) gives back each line's own; else the discount is shared out
+  const shares = original.lines.length && original.lines.every((l) => l.discountShare !== null)
+    ? original.lines.map((l) => l.discountShare ?? 0)
+    : allocateDiscount(original.lines.map((l) => l.amount), original.discount);
   const lines: ReturnLine[] = [...wanted.entries()].sort((a, b) => a[0] - b[0]).map(([lineNo, qty]) => {
     const { line: ol, index } = byLine.get(lineNo)!;
     const prev = returned.get(lineNo) ?? { qtyMilli: 0, amount: 0, discount: 0, cost: 0 };

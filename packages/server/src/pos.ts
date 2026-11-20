@@ -482,6 +482,8 @@ export function sell(db: Db, shiftId: string, input: SaleInput, actor: Actor): {
   if (errors.length) throw invalid(errors);
   const now = new Date();
   const date = offline ? offlineSaleDate(offline.soldOn, row.opened_at, now) : todayIso(now);
+  // 1.7: the offers are those on when it was sold (an offline sale: the moment on its receipt, never in the future)
+  const offersAt = offline && Date.parse(offline.soldAt) <= now.getTime() ? new Date(offline.soldAt) : now;
   const invoiceId = transaction(db, () => {
     const draft = createInvoice(db, {
       kind: 'sale', date, ...(input.partyId ? { partyId: input.partyId } : {}), warehouseId: row.warehouse_id,
@@ -493,7 +495,7 @@ export function sell(db: Db, shiftId: string, input: SaleInput, actor: Actor): {
         itemId: l.itemId, qtyMilli: l.qtyMilli, unitPrice: l.unitPrice, ...(l.unit ? { unit: l.unit, unitQtyMilli: l.unitQtyMilli ?? l.qtyMilli } : {}),
         ...(l.batchId ? { batchId: l.batchId } : {})
       }))
-    }, actor.name);
+    }, actor.name, { offersAt });
     let split: (SalePart & { method: PosMethod })[] | undefined;
     // what loyalty points pay (checked again as the sale is posted); the parts pay the rest
     const byPoints = input.loyaltyPoints
@@ -513,7 +515,7 @@ export function sell(db: Db, shiftId: string, input: SaleInput, actor: Actor): {
     }
     // (a credit invoice posts to the customer's account by itself, with its credit limit checked: no parts are passed)
     const posted = postInvoice(db, draft.id, actor.name, {
-      allowExpired: input.allowExpired === true, ...(split && !onCredit ? { split } : {}), ...(input.loyaltyPoints ? { loyaltyPoints: input.loyaltyPoints } : {})
+      allowExpired: input.allowExpired === true, ...(split && !onCredit ? { split } : {}), ...(input.loyaltyPoints ? { loyaltyPoints: input.loyaltyPoints } : {}), offersAt
     });
     // the cash handed over: kept for a cash sale when it covers the cash due (the cash part, or all that points left)
     const cashDue = onCredit ? 0 : split ? split.filter((p) => p.method === 'cash').reduce((s, p) => s + p.amount, 0) : draft.total - byPoints;
