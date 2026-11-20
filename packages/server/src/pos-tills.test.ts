@@ -114,9 +114,9 @@ describe('tills', () => {
   });
 
   it('keeps the scale prefixes whose labels carry a price', async () => {
-    expect((await get('/api/pos/scale')).json()).toEqual({ pricePrefixes: [] });
-    expect((await put('/api/pos/scale', { pricePrefixes: ['22', '29'] })).json()).toEqual({ pricePrefixes: ['22', '29'] });
+    expect((await get('/api/pos/scale')).json()).toEqual({ pricePrefixes: [], itemDigits: 5 });
+    expect((await put('/api/pos/scale', { pricePrefixes: ['22', '29'] })).json()).toEqual({ pricePrefixes: ['22', '29'], itemDigits: 5 });
     expect((await put('/api/pos/scale', { pricePrefixes: ['2x'] })).statusCode).toBe(400);
-    expect((await get('/api/pos/scale')).json()).toEqual({ pricePrefixes: ['22', '29'] });
+    expect((await get('/api/pos/scale')).json()).toEqual({ pricePrefixes: ['22', '29'], itemDigits: 5 });
   });
 });
