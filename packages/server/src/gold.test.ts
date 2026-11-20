@@ -175,6 +175,21 @@ describe('gold and jewellery shops', () => {
     expect(balanceOf('1811')).toBe(0);
   });
 
+  it("puts the making charge on the supplier's statement, and refuses to cancel a receipt once gold was handed over against it (accounting review #2, #6)", async () => {
+    await setUp();
+    const ring2 = (await ok('POST', '/api/items', { code: 'RING-B', name: { ar: 'خاتم ب', en: 'Ring B', ku: 'ئەنگوستیلەی ب' }, unit: 'piece', salePrice: 0, saleCurrency: 'IQD' })).id;
+    await ok('PUT', `/api/gold/items/${ring2}`, { weightMg: 5000, karat: 21, makingKind: 'gram', makingAmount: 5_000 });
+    const a = (await postDoc({ kind: 'receipt', date: '2026-11-20', partyId: supplierId, warehouseId, pricePerGram: 100_000, lines: [{ itemId: ringId }] })).json();
+    // the making charge (25,000) is owed to the supplier by name
+    expect((await ok('GET', `/api/parties/${supplierId}`)).balance).toBe(25_000);
+    const b = (await postDoc({ kind: 'receipt', date: '2026-11-20', partyId: supplierId, warehouseId, pricePerGram: 140_000, lines: [{ itemId: ring2, making: 0 }] })).json();
+    void a;
+    expect((await postDoc({ kind: 'buy', date: '2026-11-20', customerName: 'x', karat: 24, weightMg: 4375, pricePerGram: 110_000, cashAccount: '1811' })).statusCode).toBe(200);
+    expect((await postDoc({ kind: 'delivery', date: '2026-11-20', partyId: supplierId, karat: 24, weightMg: 4375 })).statusCode).toBe(200);
+    // undoing B now would leave gold owed of no weight but a value: refused, the delivery is cancelled first
+    expect((await call('POST', `/api/gold/docs/${b.id}/cancel`, {})).json()).toMatchObject({ details: [{ code: 'gold_already_settled' }] });
+  });
+
   it('refuses to cancel old gold that was melted, and posting by the preparer with separate duties on', async () => {
     await setUp();
     const buy = await postDoc({ kind: 'buy', date: '2026-11-20', customerName: 'Raz', karat: 18, weightMg: 4_000, pricePerGram: 70_000, cashAccount: '1811' });

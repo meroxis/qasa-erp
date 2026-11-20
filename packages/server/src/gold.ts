@@ -586,7 +586,8 @@ export function postGoldDoc(db: Db, id: string, actor: Actor, lang: GoldLang = '
         const stockAccount = warehouseAccount(db, doc.warehouseId!);
         if (total > 0) {
           const lines: EntryInput['lines'] = [{ accountCode: stockAccount, debit: total, credit: 0, description }];
-          if (making > 0) lines.push({ accountCode: supplier.account_code, debit: 0, credit: making, description });
+          // the supplier's line names the supplier, so their statement and balance show what is owed for the making
+          if (making > 0) lines.push({ accountCode: supplier.account_code, debit: 0, credit: making, description, partyId: supplier.id });
           if (gold > 0) lines.push({ accountCode: owed, debit: 0, credit: gold, description });
           entryId = insertApproved(db, { type: 'journal', date: doc.date, currency: doc.currency, rateX100: doc.rateX100, description, party: supplier.name, lines } as EntryInput, actor.name);
         }
@@ -655,7 +656,10 @@ export function cancelGoldDoc(db: Db, id: string, actor: Actor, date?: string): 
   }
   for (const m of supplierMoves) {
     const g = supplierGold(db, m.party_id);
-    if (Number(m.fine_mg) > 0 && g.fineMg < Number(m.fine_mg)) errors.push({ code: 'gold_already_settled' });
+    // gold handed over since: undoing the receipt would leave the supplier owed less than nothing, or no gold with value
+    // still on the books (accounting review #6): refused, the delivery is cancelled first
+    const after = { fineMg: g.fineMg - Number(m.fine_mg), value: g.value - Number(m.value) };
+    if (Number(m.fine_mg) > 0 && (g.fineMg < Number(m.fine_mg) || after.value < 0 || (after.fineMg === 0 && after.value !== 0))) errors.push({ code: 'gold_already_settled' });
   }
   if (errors.length) throw invalid(errors);
 
