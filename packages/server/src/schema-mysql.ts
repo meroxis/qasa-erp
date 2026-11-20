@@ -2104,6 +2104,10 @@ export const MYSQL_TABLES: readonly MysqlObject[] = [
       created_by TEXT NOT NULL,
       created_at ${WHEN} NOT NULL,
       UNIQUE KEY gift_vouchers_code (code),
+      INDEX gift_vouchers_shift (shift_id),
+      INDEX gift_vouchers_entry (entry_id),
+      INDEX gift_vouchers_cancel_entry (cancel_entry_id),
+      INDEX gift_vouchers_expire_entry (expire_entry_id),
       FOREIGN KEY (account_code) REFERENCES accounts(code),
       FOREIGN KEY (shift_id) REFERENCES pos_shifts(id),
       FOREIGN KEY (entry_id) REFERENCES entries(id),
@@ -2230,6 +2234,8 @@ export const MYSQL_TABLES: readonly MysqlObject[] = [
       created_at ${WHEN} NOT NULL,
       updated_at ${WHEN} NOT NULL,
       INDEX gold_docs_kind (kind, date),
+      INDEX gold_docs_party (party_id),
+      INDEX gold_docs_entry (entry_id),
       FOREIGN KEY (party_id) REFERENCES parties(id),
       FOREIGN KEY (warehouse_id) REFERENCES warehouses(id),
       FOREIGN KEY (cash_account) REFERENCES accounts(code),
@@ -2246,6 +2252,7 @@ export const MYSQL_TABLES: readonly MysqlObject[] = [
       item_id ${ID} NOT NULL,
       making BIGINT NOT NULL DEFAULT 0 CHECK (making >= 0),
       PRIMARY KEY (doc_id, seq),
+      INDEX gold_doc_lines_item (item_id),
       FOREIGN KEY (doc_id) REFERENCES gold_docs(id) ON DELETE CASCADE,
       FOREIGN KEY (item_id) REFERENCES items(id)
     )`
@@ -2362,6 +2369,7 @@ export const MYSQL_TABLES: readonly MysqlObject[] = [
       updated_at ${WHEN} NOT NULL,
       INDEX ws_orders_party (party_id, date),
       INDEX ws_orders_rep (rep_id, date),
+      INDEX ws_orders_invoice (invoice_id),
       FOREIGN KEY (rep_id) REFERENCES ws_reps(id),
       FOREIGN KEY (party_id) REFERENCES parties(id),
       FOREIGN KEY (warehouse_id) REFERENCES warehouses(id),
@@ -2431,6 +2439,8 @@ export const MYSQL_TABLES: readonly MysqlObject[] = [
       entry_id ${ID},
       created_by TEXT NOT NULL,
       created_at ${WHEN} NOT NULL,
+      INDEX ws_handovers_rep (rep_id),
+      INDEX ws_handovers_entry (entry_id),
       FOREIGN KEY (rep_id) REFERENCES ws_reps(id),
       FOREIGN KEY (to_account) REFERENCES accounts(code),
       FOREIGN KEY (entry_id) REFERENCES entries(id)
@@ -2506,6 +2516,9 @@ export const MYSQL_TABLES: readonly MysqlObject[] = [
       out_at ${WHEN},
       delivered_at ${WHEN},
       INDEX delivery_orders_status (status, created_at),
+      INDEX delivery_orders_party (party_id),
+      INDEX delivery_orders_driver (driver_id),
+      INDEX delivery_orders_invoice (invoice_id),
       FOREIGN KEY (party_id) REFERENCES parties(id),
       FOREIGN KEY (warehouse_id) REFERENCES warehouses(id),
       FOREIGN KEY (driver_id) REFERENCES delivery_drivers(id),
@@ -2539,6 +2552,7 @@ export const MYSQL_TABLES: readonly MysqlObject[] = [
       created_by TEXT NOT NULL,
       created_at ${WHEN} NOT NULL,
       INDEX delivery_handovers_driver (driver_id, created_at),
+      INDEX delivery_handovers_entry (entry_id),
       FOREIGN KEY (driver_id) REFERENCES delivery_drivers(id),
       FOREIGN KEY (entry_id) REFERENCES entries(id)
     )`
@@ -2672,6 +2686,7 @@ export const MYSQL_TABLES: readonly MysqlObject[] = [
       updated_at ${WHEN} NOT NULL,
       UNIQUE KEY cl_models_code (code),
       INDEX cl_models_season (season),
+      INDEX cl_models_category (category_id),
       FOREIGN KEY (category_id) REFERENCES item_categories(id),
       FOREIGN KEY (brand_id) REFERENCES brands(id)
     )`

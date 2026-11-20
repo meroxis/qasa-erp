@@ -2162,6 +2162,10 @@ const V18 =
     created_by TEXT NOT NULL,
     created_at TEXT NOT NULL
   );
+  CREATE INDEX gift_vouchers_expire_entry ON gift_vouchers(expire_entry_id);
+  CREATE INDEX gift_vouchers_cancel_entry ON gift_vouchers(cancel_entry_id);
+  CREATE INDEX gift_vouchers_entry ON gift_vouchers(entry_id);
+  CREATE INDEX gift_vouchers_shift ON gift_vouchers(shift_id);
   CREATE TABLE gift_voucher_moves (
     id TEXT PRIMARY KEY,
     voucher_id TEXT NOT NULL REFERENCES gift_vouchers(id),
@@ -2251,6 +2255,8 @@ const V18 =
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL
   );
+  CREATE INDEX gold_docs_entry ON gold_docs(entry_id);
+  CREATE INDEX gold_docs_party ON gold_docs(party_id);
   CREATE INDEX gold_docs_kind ON gold_docs(kind, date);
   CREATE TABLE gold_doc_lines (
     doc_id TEXT NOT NULL REFERENCES gold_docs(id) ON DELETE CASCADE,
@@ -2259,6 +2265,7 @@ const V18 =
     making INTEGER NOT NULL DEFAULT 0 CHECK (making >= 0),
     PRIMARY KEY (doc_id, seq)
   );
+  CREATE INDEX gold_doc_lines_item ON gold_doc_lines(item_id);
   CREATE TABLE gold_scrap_moves (
     id TEXT PRIMARY KEY,
     date TEXT NOT NULL,
@@ -2341,6 +2348,7 @@ const V18 =
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL
   );
+  CREATE INDEX ws_orders_invoice ON ws_orders(invoice_id);
   CREATE INDEX ws_orders_party ON ws_orders(party_id, date);
   CREATE INDEX ws_orders_rep ON ws_orders(rep_id, date);
   CREATE TABLE ws_order_lines (
@@ -2386,6 +2394,8 @@ const V18 =
     created_by TEXT NOT NULL,
     created_at TEXT NOT NULL
   );
+  CREATE INDEX ws_handovers_entry ON ws_handovers(entry_id);
+  CREATE INDEX ws_handovers_rep ON ws_handovers(rep_id);
   CREATE TABLE ws_collections (
     id TEXT PRIMARY KEY,
     number TEXT NOT NULL UNIQUE,
@@ -2441,6 +2451,9 @@ const V18 =
     out_at TEXT,
     delivered_at TEXT
   );
+  CREATE INDEX delivery_orders_invoice ON delivery_orders(invoice_id);
+  CREATE INDEX delivery_orders_driver ON delivery_orders(driver_id);
+  CREATE INDEX delivery_orders_party ON delivery_orders(party_id);
   CREATE INDEX delivery_orders_status ON delivery_orders(status, created_at);
   CREATE TABLE delivery_order_lines (
     order_id TEXT NOT NULL REFERENCES delivery_orders(id) ON DELETE CASCADE,
@@ -2460,6 +2473,7 @@ const V18 =
     created_by TEXT NOT NULL,
     created_at TEXT NOT NULL
   );
+  CREATE INDEX delivery_handovers_entry ON delivery_handovers(entry_id);
   CREATE INDEX delivery_handovers_driver ON delivery_handovers(driver_id, created_at);
   CREATE TABLE party_reminders (
     id TEXT PRIMARY KEY,
@@ -2548,6 +2562,7 @@ const V18 =
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL
   );
+  CREATE INDEX cl_models_category ON cl_models(category_id);
   CREATE INDEX cl_models_season ON cl_models(season);
   CREATE TABLE cl_variants (
     item_id TEXT PRIMARY KEY REFERENCES items(id),
