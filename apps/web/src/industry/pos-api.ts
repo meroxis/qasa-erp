@@ -106,5 +106,9 @@ export const posApi = {
   open: (input: OpenShiftInput) => request<ShiftView>('POST', '/api/pos/shifts', input),
   /** options (1.2): the sale's idempotency key on a PC with an outbox, and how long to wait before keeping it there */
   sell: (shiftId: string, input: SaleInput, options: SendOptions = {}) => request<{ invoice: InvoiceView; shift: ShiftView; rounding?: number }>('POST', `/api/pos/shifts/${shiftId}/sales`, input, options),
-  close: (shiftId: string, body: { countedCash: number; countedUsd?: number; notes?: string }) => request<ShiftView>('POST', `/api/pos/shifts/${shiftId}/close`, body)
+  close: (shiftId: string, body: { countedCash: number; countedUsd?: number; notes?: string }) => request<ShiftView>('POST', `/api/pos/shifts/${shiftId}/close`, body),
+  /** 2.0.0: a till sale by its receipt number, and a return of it paid back from the shift (till-returns.ts) */
+  findSale: (shiftId: string, q: string) => request<InvoiceView>('GET', `/api/pos/shifts/${shiftId}/sale` + qs({ q })),
+  giveBack: (shiftId: string, body: { invoiceId: string; lines: { lineNo: number; qtyMilli: number }[]; approvals?: string[] }, options: SendOptions = {}) =>
+    request<InvoiceView>('POST', `/api/pos/shifts/${shiftId}/returns`, body, options)
 };

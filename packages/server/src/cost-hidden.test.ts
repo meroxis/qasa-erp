@@ -122,6 +122,7 @@ beforeAll(async () => {
   const closedShift = await made(post('/api/pos/shifts', { register: 'Counter 1', cashAccountCode: '1811', warehouseId, openingCash: 50_000 }));
   const tillSale = await made(post(`/api/pos/shifts/${closedShift.id}/sales`, { currency: 'IQD', lines: [{ itemId: teaId, qtyMilli: 3_000, unitPrice: 2_500 }] }));
   await made(post(`/api/pos/shifts/${closedShift.id}/close`, { countedCash: 57_500 }), 200);
+  QUERY['/api/pos/shifts/:id/sale'] = `q=${encodeURIComponent(String((tillSale as { invoice: { number: string } }).invoice.number))}`;
   // an item bought and sold out: the list of what to order names it, with the last price paid
   const cupId = (await made(post('/api/items', { code: 'CUP', name: one('Cup'), unit: 'piece', salePrice: 1_250, saleCurrency: 'IQD' }))).id as string;
   const cups = await made(post('/api/invoices', invoice('purchase', supplierId, [{ itemId: cupId, qtyMilli: 2_000, unitPrice: CUP_BOUGHT_AT }])));
@@ -207,6 +208,8 @@ beforeAll(async () => {
     '/api/invoices/:id': sale.id, '/api/verify/invoices/:id': sale.id,
     '/api/stock-docs/:id': opening.id,
     '/api/pos/shifts/:id': closedShift.id,
+    // 2.0.0: a till sale by its receipt number (for a return at the till), asked on the shift it was sold on
+    '/api/pos/shifts/:id/sale': closedShift.id,
     '/api/quotes/:id': quote.id,
     '/api/adjustments/:id': adjustment.id, '/api/adjustments/counts/:id': count.id,
     '/api/purchase-orders/:id': order.id,
@@ -396,7 +399,7 @@ const BOOKS_ROUTES = ['/api/entries/', '/api/reports/', '/api/year-end', '/api/f
   '/api/delivery/handovers'];
 const ADMIN_ROUTES = ['/api/audit', '/api/auth/recovery-code', '/api/branches', '/api/pos/gift-vouchers', '/api/price-checker/devices', '/api/users'];
 // the till's own reads (1.5.2): for the Point of sale permission only (an admin has it; a cashier at the till here too)
-const TILL_ROUTES = ['/api/pos/current', '/api/pos/customer/:id', '/api/pos/display/image-admin/:id', '/api/pos/display/images', '/api/pos/gift-vouchers/lookup', '/api/pos/payment-accounts', '/api/pos/rules', '/api/pos/scale', '/api/pos/tills'];
+const TILL_ROUTES = ['/api/pos/current', '/api/pos/customer/:id', '/api/pos/display/image-admin/:id', '/api/pos/display/images', '/api/pos/gift-vouchers/lookup', '/api/pos/payment-accounts', '/api/pos/rules', '/api/pos/scale', '/api/pos/shifts/:id/sale', '/api/pos/tills'];
 const NOT_THEIRS = [...ADMIN_ROUTES, ...TILL_ROUTES].sort();
 const isOneOf = (route: string, list: string[]) => list.some((p) => route === p || route.startsWith(p.endsWith('/') ? p : `${p}/`));
 

@@ -41,6 +41,7 @@ import { beep, readPrefs, writePrefs, type TillPrefs } from './feedback.ts';
 import { NO_RULES, tillRulesApi, type ApprovalAction, type DisplayState, type TillRulesView } from './rules-api.ts';
 import { readScaleSettings, readWeight, serialHere } from './scale.ts';
 import { TillClothingButtons } from '../industry/ClothingTools.tsx';
+import { TillReturnDialog } from './TillReturn.tsx';
 import { DeliveryFromTill } from '../industry/DeliveryFromTill.tsx';
 
 /**
@@ -94,7 +95,7 @@ export function Register({ initial, onClosed }: { initial: ShiftView; onClosed()
   const [vouchers, setVouchers] = useState<{ code: string; amount: number }[]>([]);
   const [miscNotes, setMiscNotes] = useState<string[]>([]);
   const [debt, setDebt] = useState<{ balance: number; creditLimit: number | null } | null>(null);
-  const [dialog, setDialog] = useState<null | 'help' | 'misc' | 'voucherSell' | 'voucherPay' | 'qty' | { price: string } | 'more'>(null);
+  const [dialog, setDialog] = useState<null | 'help' | 'misc' | 'voucherSell' | 'voucherPay' | 'qty' | { price: string } | 'more' | 'return'>(null);
   const [pad, setPad] = useState<{ target: 'cash' | 'qty'; value: string } | null>(null);
   const [flash, setFlash] = useState<string | null>(null);
   const [said, setSaid] = useState('');
@@ -409,12 +410,11 @@ export function Register({ initial, onClosed }: { initial: ShiftView; onClosed()
       focusSearch();
     }
   };
-  const openReturns = async () => {
-    if (rules.supervisor.refund) {
-      const ok = await supervisor.ask('refund');
-      if (!ok) { focusSearch(); return; }
-    }
-    location.hash = href('sales-returns');
+  // 2.0.0: a return is made here, at the till (pos/TillReturn.tsx): the supervisor's PIN, when the rules ask for it, is
+  // checked by the server with the return itself
+  const openReturns = () => {
+    if (offline) { toast(t('ux_returnOffline')); return; }
+    setDialog('return');
   };
 
   const hold = () => {
@@ -885,6 +885,17 @@ export function Register({ initial, onClosed }: { initial: ShiftView; onClosed()
       </div>
 
       {receipt && <Receipt invoice={receipt} shift={shift} rounding={receiptRounding} />}
+      {dialog === 'return' && (
+        <TillReturnDialog shiftId={shift.id} needsSupervisor={rules.supervisor.refund} ask={() => supervisor.ask('refund')}
+          onClose={() => { setDialog(null); focusSearch(); }}
+          onDone={(back) => {
+            setDialog(null);
+            toast(t('ux_returnDone', { n: i18n.money(back.total, back.currency) }));
+            reloadShift();
+            openDrawerForSale();
+            focusSearch();
+          }} />
+      )}
       {dialog === 'help' && <ShortcutsHelp onClose={() => { setDialog(null); focusSearch(); }} />}
       {dialog === 'qty' && lastLine && (
         <QtyDialog name={i18n.name(lastLine.item.name)} qtyMilli={lastLine.qtyMilli} weighed={isWeighedUnit(lastLine.unit ?? lastLine.item.unit)}
@@ -915,7 +926,7 @@ export function Register({ initial, onClosed }: { initial: ShiftView; onClosed()
             <label className="row"><input type="checkbox" checked={prefs.beep} onChange={(e) => setPrefs({ ...prefs, beep: e.target.checked })} /> {t('tu_beep')}</label>
             <hr />
             {!offline && <button type="button" className="btn" onClick={() => setDialog('voucherSell')}><Icon name="tag" size={16} />{t('tu_gvSell')}</button>}
-            <button type="button" className="btn" onClick={() => { setDialog(null); void openReturns(); }}><Icon name="undo" size={16} />{t('tu_returns')}</button>
+            <button type="button" className="btn" onClick={() => openReturns()}><Icon name="undo" size={16} />{t('tu_returns')}</button>
             {drawerOnCash && <button type="button" className="btn" onClick={() => { setDialog(null); void noSale(); }}><Icon name="wallet" size={16} />{t('tl_noSale')}</button>}
             <button type="button" className="btn" onClick={() => { setDialog(null); void openCustomerScreen().then((ok) => { if (!ok) toast(t('tl_screenBlocked')); }); }}><Icon name="panel" size={16} />{t('tl_customerScreen')}</button>
             {held.length > 0 && <button type="button" className="btn" onClick={() => { setDialog(null); setShowHeld(true); }}><Icon name="clock" size={16} />{t('tl_held', { n: i18n.int(held.length) })}</button>}

@@ -177,3 +177,20 @@ describe('the customer screen pictures', () => {
     expect(settings).not.toContain('await file.arrayBuffer()');
   });
 });
+
+describe('a return at the till (2.0.0)', () => {
+  it('is made in a dialog on the till, sent to the till’s own return route with the supervisor’s approval when the rules ask', () => {
+    const register = tillPart('Register.tsx');
+    expect(register).not.toContain("location.hash = href('sales-returns')");
+    expect(register).toContain("<TillReturnDialog shiftId={shift.id} needsSupervisor={rules.supervisor.refund} ask={() => supervisor.ask('refund')}");
+    const dialog = tillPart('TillReturn.tsx');
+    expect(dialog).toContain('posApi.giveBack(p.shiftId, { invoiceId: sale.id, lines: picked, ...(approvals ? { approvals } : {}) }, { key })');
+    expect(dialog).toContain('posApi.findSale(p.shiftId, q.trim())');
+  });
+
+  it('only lets back what is left of each line', async () => {
+    const { returnable } = await import('./TillReturn.tsx');
+    expect(returnable({ lines: [{ lineNo: 1, qtyMilli: 3_000, returnedQtyMilli: 1_000 }, { lineNo: 2, qtyMilli: 1_000, returnedQtyMilli: 1_000 }] } as never))
+      .toEqual([{ lineNo: 1, leftMilli: 2_000 }, { lineNo: 2, leftMilli: 0 }]);
+  });
+});
