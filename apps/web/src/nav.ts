@@ -65,7 +65,10 @@ export const NAV: NavGroup[] = [
       { key: 'salesReturns', icon: 'undo', path: 'sales-returns', match: ['sales-returns'], work: ['sale'] },
       { key: 'installments', icon: 'cal', path: 'installments', match: ['installments', 'installment', 'new-installment', 'guarantors', 'installments-aging'] },
       { key: 'pl_title', icon: 'trend', path: 'pipeline', match: ['pipeline'] },
-      { key: 'of_title', icon: 'tag', path: 'offers', match: ['offers'] }
+      { key: 'of_title', icon: 'tag', path: 'offers', match: ['offers'] },
+      // 2.0, market extras: delivery orders and the WhatsApp reminders of customers who owe
+      { key: 'mx_deliveryTitle', icon: 'truck', path: 'delivery', match: ['delivery'] },
+      { key: 'mx_rmTitle', icon: 'mail', path: 'debt-reminders', match: ['debt-reminders'] }
     ]
   },
   {
@@ -77,7 +80,9 @@ export const NAV: NavGroup[] = [
       { key: 'suppliers', icon: 'truck', path: 'suppliers', match: ['suppliers'], work: ['supplier'] },
       { key: 'purchaseReturns', icon: 'undo', path: 'purchase-returns', match: ['purchase-returns'], work: ['purchase'] },
       // goods on consignment (1.7): the shop's costs and what it owes its suppliers, for those who keep the books
-      { key: 'cg_title', icon: 'truck', path: 'consignment', match: ['consignment'], books: true }
+      { key: 'cg_title', icon: 'truck', path: 'consignment', match: ['consignment'], books: true },
+      // 2.0: bread, milk and eggs that come every day, and what goes back unsold
+      { key: 'mx_dsTitle', icon: 'cal', path: 'daily-suppliers', match: ['daily-suppliers'] }
     ]
   },
   {
@@ -88,6 +93,8 @@ export const NAV: NavGroup[] = [
       { key: 'stockDocs', icon: 'swap', path: 'stock-docs', match: ['stock-docs', 'stock-doc', 'new-stock-doc', 'edit-stock-doc'], work: ['stockDoc'] },
       { key: 'lb_title', icon: 'tag', path: 'labels', match: ['labels'] },
       { key: 'ex_title', icon: 'clock', path: 'expiry', match: ['expiry'] },
+      // 2.0: the price checker screens near the shelves (the admin adds and revokes them)
+      { key: 'mx_pcTitle', icon: 'scale', path: 'price-checkers', match: ['price-checkers'], adminOnly: true },
       { key: 'adj_title', icon: 'tag', path: 'stock-adjustments', match: ['stock-adjustments', 'stock-adjustment', 'new-stock-adjustment', 'edit-stock-adjustment', 'stock-count'], work: ['adjustment'] }
     ]
   },

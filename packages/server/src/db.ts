@@ -2389,6 +2389,114 @@ const V18 =
   );
   CREATE INDEX ws_collections_rep ON ws_collections(rep_id, date);
   CREATE INDEX ws_collections_entry ON ws_collections(entry_id);
+  -- ===== 18 · MARKET EXTRAS =====
+  -- 18 — market extras: delivery orders taken by phone or WhatsApp (drivers, the order and its lines, the cash a driver
+  -- hands over), the WhatsApp reminders sent to customers who owe, the price checker screens near the shelves (a device
+  -- token, kept as its hash), and the suppliers who deliver every day (their usual items and each day's receipt).
+  CREATE TABLE delivery_drivers (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    phone TEXT,
+    user_id TEXT REFERENCES users(id),
+    cash_account TEXT REFERENCES accounts(code),
+    active INTEGER NOT NULL DEFAULT 1 CHECK (active IN (0, 1)),
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+  );
+  CREATE TABLE delivery_orders (
+    id TEXT PRIMARY KEY,
+    number TEXT NOT NULL UNIQUE,
+    status TEXT NOT NULL CHECK (status IN ('new', 'preparing', 'out', 'delivered', 'cancelled')),
+    party_id TEXT REFERENCES parties(id),
+    customer_name TEXT NOT NULL,
+    phone TEXT,
+    address TEXT NOT NULL,
+    area TEXT,
+    notes TEXT,
+    lang TEXT CHECK (lang IS NULL OR lang IN ('ar', 'en', 'ku')),
+    warehouse_id TEXT NOT NULL REFERENCES warehouses(id),
+    payment TEXT NOT NULL CHECK (payment IN ('cod', 'account')),
+    fee INTEGER NOT NULL DEFAULT 0 CHECK (fee >= 0),
+    driver_id TEXT REFERENCES delivery_drivers(id),
+    invoice_id TEXT REFERENCES invoices(id),
+    cancel_reason TEXT,
+    created_by TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    out_at TEXT,
+    delivered_at TEXT
+  );
+  CREATE INDEX delivery_orders_status ON delivery_orders(status, created_at);
+  CREATE TABLE delivery_order_lines (
+    order_id TEXT NOT NULL REFERENCES delivery_orders(id) ON DELETE CASCADE,
+    line_no INTEGER NOT NULL,
+    item_id TEXT NOT NULL REFERENCES items(id),
+    qty_milli INTEGER NOT NULL CHECK (qty_milli > 0),
+    unit_price INTEGER NOT NULL CHECK (unit_price >= 0),
+    unit TEXT,
+    unit_qty_milli INTEGER CHECK (unit_qty_milli IS NULL OR unit_qty_milli > 0),
+    PRIMARY KEY (order_id, line_no)
+  );
+  CREATE TABLE delivery_handovers (
+    id TEXT PRIMARY KEY,
+    driver_id TEXT NOT NULL REFERENCES delivery_drivers(id),
+    entry_id TEXT NOT NULL REFERENCES entries(id),
+    amount INTEGER NOT NULL CHECK (amount > 0),
+    created_by TEXT NOT NULL,
+    created_at TEXT NOT NULL
+  );
+  CREATE INDEX delivery_handovers_driver ON delivery_handovers(driver_id, created_at);
+  CREATE TABLE party_reminders (
+    id TEXT PRIMARY KEY,
+    party_id TEXT NOT NULL REFERENCES parties(id),
+    amount INTEGER NOT NULL,
+    currency TEXT NOT NULL CHECK (currency IN ('IQD', 'USD')),
+    days INTEGER NOT NULL CHECK (days >= 0),
+    lang TEXT NOT NULL CHECK (lang IN ('ar', 'en', 'ku')),
+    created_by TEXT NOT NULL,
+    created_at TEXT NOT NULL
+  );
+  CREATE INDEX party_reminders_party ON party_reminders(party_id, created_at);
+  CREATE TABLE price_checker_devices (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    token_hash TEXT NOT NULL UNIQUE,
+    warehouse_id TEXT REFERENCES warehouses(id),
+    created_by TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    last_seen_at TEXT,
+    revoked_at TEXT
+  );
+  CREATE TABLE daily_supplier_items (
+    party_id TEXT NOT NULL REFERENCES parties(id),
+    item_id TEXT NOT NULL REFERENCES items(id),
+    sort INTEGER NOT NULL DEFAULT 0,
+    unit_cost INTEGER CHECK (unit_cost IS NULL OR unit_cost >= 0),
+    PRIMARY KEY (party_id, item_id)
+  );
+  CREATE TABLE daily_receipts (
+    id TEXT PRIMARY KEY,
+    party_id TEXT NOT NULL REFERENCES parties(id),
+    date TEXT NOT NULL,
+    warehouse_id TEXT NOT NULL REFERENCES warehouses(id),
+    purchase_id TEXT REFERENCES invoices(id),
+    created_by TEXT NOT NULL,
+    created_at TEXT NOT NULL
+  );
+  CREATE INDEX daily_receipts_party ON daily_receipts(party_id, date);
+  CREATE TABLE daily_receipt_lines (
+    receipt_id TEXT NOT NULL REFERENCES daily_receipts(id) ON DELETE CASCADE,
+    item_id TEXT NOT NULL REFERENCES items(id),
+    received_milli INTEGER NOT NULL CHECK (received_milli >= 0),
+    returned_milli INTEGER NOT NULL CHECK (returned_milli >= 0),
+    unit_cost INTEGER NOT NULL CHECK (unit_cost >= 0),
+    PRIMARY KEY (receipt_id, item_id)
+  );
+  CREATE TABLE daily_receipt_returns (
+    receipt_id TEXT NOT NULL REFERENCES daily_receipts(id) ON DELETE CASCADE,
+    return_id TEXT NOT NULL REFERENCES invoices(id),
+    PRIMARY KEY (receipt_id, return_id)
+  );
   `;
 // ===== end of 18 · TILL RULES =====
 

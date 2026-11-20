@@ -2446,6 +2446,173 @@ export const MYSQL_TABLES: readonly MysqlObject[] = [
     )`
   },
   // ===== end 18 · WHOLESALE =====
+  // ===== 18 · MARKET EXTRAS (db.ts V18) — begin =====
+  {
+    name: 'delivery_drivers',
+    since: 18,
+    sql: `CREATE TABLE delivery_drivers (
+      id ${ID} NOT NULL PRIMARY KEY,
+      name TEXT NOT NULL,
+      phone TEXT,
+      user_id ${ID},
+      cash_account ${ID},
+      active INT NOT NULL DEFAULT 1 CHECK (active IN (0, 1)),
+      created_at ${WHEN} NOT NULL,
+      updated_at ${WHEN} NOT NULL,
+      FOREIGN KEY (user_id) REFERENCES users(id),
+      FOREIGN KEY (cash_account) REFERENCES accounts(code)
+    )`
+  },
+  {
+    name: 'delivery_orders',
+    since: 18,
+    sql: `CREATE TABLE delivery_orders (
+      id ${ID} NOT NULL PRIMARY KEY,
+      number ${ID} NOT NULL UNIQUE,
+      status ${WORD} NOT NULL CHECK (status IN ('new', 'preparing', 'out', 'delivered', 'cancelled')),
+      party_id ${ID},
+      customer_name TEXT NOT NULL,
+      phone TEXT,
+      address TEXT NOT NULL,
+      area TEXT,
+      notes TEXT,
+      lang ${WORD} CHECK (lang IS NULL OR lang IN ('ar', 'en', 'ku')),
+      warehouse_id ${ID} NOT NULL,
+      payment ${WORD} NOT NULL CHECK (payment IN ('cod', 'account')),
+      fee BIGINT NOT NULL DEFAULT 0 CHECK (fee >= 0),
+      driver_id ${ID},
+      invoice_id ${ID},
+      cancel_reason TEXT,
+      created_by TEXT NOT NULL,
+      created_at ${WHEN} NOT NULL,
+      updated_at ${WHEN} NOT NULL,
+      out_at ${WHEN},
+      delivered_at ${WHEN},
+      INDEX delivery_orders_status (status, created_at),
+      FOREIGN KEY (party_id) REFERENCES parties(id),
+      FOREIGN KEY (warehouse_id) REFERENCES warehouses(id),
+      FOREIGN KEY (driver_id) REFERENCES delivery_drivers(id),
+      FOREIGN KEY (invoice_id) REFERENCES invoices(id)
+    )`
+  },
+  {
+    name: 'delivery_order_lines',
+    since: 18,
+    sql: `CREATE TABLE delivery_order_lines (
+      order_id ${ID} NOT NULL,
+      line_no INT NOT NULL,
+      item_id ${ID} NOT NULL,
+      qty_milli BIGINT NOT NULL CHECK (qty_milli > 0),
+      unit_price BIGINT NOT NULL CHECK (unit_price >= 0),
+      unit ${WORD},
+      unit_qty_milli BIGINT CHECK (unit_qty_milli IS NULL OR unit_qty_milli > 0),
+      PRIMARY KEY (order_id, line_no),
+      FOREIGN KEY (order_id) REFERENCES delivery_orders(id) ON DELETE CASCADE,
+      FOREIGN KEY (item_id) REFERENCES items(id)
+    )`
+  },
+  {
+    name: 'delivery_handovers',
+    since: 18,
+    sql: `CREATE TABLE delivery_handovers (
+      id ${ID} NOT NULL PRIMARY KEY,
+      driver_id ${ID} NOT NULL,
+      entry_id ${ID} NOT NULL,
+      amount BIGINT NOT NULL CHECK (amount > 0),
+      created_by TEXT NOT NULL,
+      created_at ${WHEN} NOT NULL,
+      INDEX delivery_handovers_driver (driver_id, created_at),
+      FOREIGN KEY (driver_id) REFERENCES delivery_drivers(id),
+      FOREIGN KEY (entry_id) REFERENCES entries(id)
+    )`
+  },
+  {
+    name: 'party_reminders',
+    since: 18,
+    sql: `CREATE TABLE party_reminders (
+      id ${ID} NOT NULL PRIMARY KEY,
+      party_id ${ID} NOT NULL,
+      amount BIGINT NOT NULL,
+      currency ${WORD} NOT NULL CHECK (currency IN ('IQD', 'USD')),
+      days INT NOT NULL CHECK (days >= 0),
+      lang ${WORD} NOT NULL CHECK (lang IN ('ar', 'en', 'ku')),
+      created_by TEXT NOT NULL,
+      created_at ${WHEN} NOT NULL,
+      INDEX party_reminders_party (party_id, created_at),
+      FOREIGN KEY (party_id) REFERENCES parties(id)
+    )`
+  },
+  {
+    name: 'price_checker_devices',
+    since: 18,
+    sql: `CREATE TABLE price_checker_devices (
+      id ${ID} NOT NULL PRIMARY KEY,
+      name TEXT NOT NULL,
+      token_hash ${ID} NOT NULL UNIQUE,
+      warehouse_id ${ID},
+      created_by TEXT NOT NULL,
+      created_at ${WHEN} NOT NULL,
+      last_seen_at ${WHEN},
+      revoked_at ${WHEN},
+      FOREIGN KEY (warehouse_id) REFERENCES warehouses(id)
+    )`
+  },
+  {
+    name: 'daily_supplier_items',
+    since: 18,
+    sql: `CREATE TABLE daily_supplier_items (
+      party_id ${ID} NOT NULL,
+      item_id ${ID} NOT NULL,
+      sort INT NOT NULL DEFAULT 0,
+      unit_cost BIGINT CHECK (unit_cost IS NULL OR unit_cost >= 0),
+      PRIMARY KEY (party_id, item_id),
+      FOREIGN KEY (party_id) REFERENCES parties(id),
+      FOREIGN KEY (item_id) REFERENCES items(id)
+    )`
+  },
+  {
+    name: 'daily_receipts',
+    since: 18,
+    sql: `CREATE TABLE daily_receipts (
+      id ${ID} NOT NULL PRIMARY KEY,
+      party_id ${ID} NOT NULL,
+      date ${WHEN} NOT NULL,
+      warehouse_id ${ID} NOT NULL,
+      purchase_id ${ID},
+      created_by TEXT NOT NULL,
+      created_at ${WHEN} NOT NULL,
+      INDEX daily_receipts_party (party_id, date),
+      FOREIGN KEY (party_id) REFERENCES parties(id),
+      FOREIGN KEY (warehouse_id) REFERENCES warehouses(id),
+      FOREIGN KEY (purchase_id) REFERENCES invoices(id)
+    )`
+  },
+  {
+    name: 'daily_receipt_lines',
+    since: 18,
+    sql: `CREATE TABLE daily_receipt_lines (
+      receipt_id ${ID} NOT NULL,
+      item_id ${ID} NOT NULL,
+      received_milli BIGINT NOT NULL CHECK (received_milli >= 0),
+      returned_milli BIGINT NOT NULL CHECK (returned_milli >= 0),
+      unit_cost BIGINT NOT NULL CHECK (unit_cost >= 0),
+      PRIMARY KEY (receipt_id, item_id),
+      FOREIGN KEY (receipt_id) REFERENCES daily_receipts(id) ON DELETE CASCADE,
+      FOREIGN KEY (item_id) REFERENCES items(id)
+    )`
+  },
+  {
+    name: 'daily_receipt_returns',
+    since: 18,
+    sql: `CREATE TABLE daily_receipt_returns (
+      receipt_id ${ID} NOT NULL,
+      return_id ${ID} NOT NULL,
+      PRIMARY KEY (receipt_id, return_id),
+      FOREIGN KEY (receipt_id) REFERENCES daily_receipts(id) ON DELETE CASCADE,
+      FOREIGN KEY (return_id) REFERENCES invoices(id)
+    )`
+  }
+  // ===== end 18 · MARKET EXTRAS =====
 ];
 
 const refuse = (message: string) => `SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = '${message}'`;

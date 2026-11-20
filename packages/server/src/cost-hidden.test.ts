@@ -74,7 +74,9 @@ const NO_RECORD = new Set(['/api/assets/depreciation/:id', '/api/assets/:id', '/
   '/api/pos/display/image/:id', '/api/pos/display/image-admin/:id', '/api/pos/gift-vouchers/lookup', '/api/pos/display/feed',
   // wholesale (1.8): a rep's route, day, van and count, an order, a customer's credit (no rep or order in this company)
   '/api/wholesale/reps/:id/route', '/api/wholesale/reps/:id/day', '/api/wholesale/reps/:id/van-moves', '/api/wholesale/reps/:id/van-count',
-  '/api/wholesale/orders/:id', '/api/wholesale/credit/:id']);
+  '/api/wholesale/orders/:id', '/api/wholesale/credit/:id', '/api/delivery/orders/:id']);
+/** Routes for a price checker's device token alone (2.0): no signed-in user reaches them. */
+const DEVICE_ONLY = new Set(['/api/price-check', '/api/price-check/offers']);
 
 beforeAll(async () => {
   resetLoginThrottle();
@@ -211,7 +213,8 @@ beforeAll(async () => {
     '/api/consignment/statement/:id': supplierId,
     '/api/offers/:id': 'offer-1',
     '/api/pos/customer/:id': customerId,
-    '/api/gold/items/:id': ringId, '/api/gold/docs/:id': goldReceipt.id, '/api/gold/suppliers/:id': supplierId, '/api/gold/slip/:id': sale.id
+    '/api/gold/items/:id': ringId, '/api/gold/docs/:id': goldReceipt.id, '/api/gold/suppliers/:id': supplierId, '/api/gold/slip/:id': sale.id,
+    '/api/parties/:id/reminders': customerId, '/api/daily-suppliers/:id/sheet': supplierId, '/api/daily-suppliers/:id/receipts': supplierId
   });
   Object.assign(QUERY, {
     '/api/reports/final-accounts': `from=${today.slice(0, 4)}-01-01&to=${today}`,
@@ -293,7 +296,7 @@ interface Answer { route: string; url: string; status: number; paths: Set<string
 
 /** Asks every GET route of the API (each with a real record where it takes one), and the extra addresses. */
 async function walk(as: Headers): Promise<Answer[]> {
-  const routes = apiRoutes(db).filter((r) => r.method === 'GET').map((r) => r.path);
+  const routes = apiRoutes(db).filter((r) => r.method === 'GET' && !DEVICE_ONLY.has(r.path)).map((r) => r.path);
   const asked = routes.map((route) => {
     const params = route.match(/:\w+/g) ?? [];
     // a new route with a record in its address must be given one here, so it is walked with a real answer
@@ -379,8 +382,10 @@ const BOOKS_ROUTES = ['/api/entries/', '/api/reports/', '/api/year-end', '/api/f
   // goods on consignment (1.7): what the shop owes its suppliers, and at what cost it holds their goods
   '/api/consignment',
   // a gold shop (1.8): its gold at cost, the documents of what it paid and its suppliers' gold
-  '/api/gold/stock', '/api/gold/suppliers', '/api/gold/docs'];
-const ADMIN_ROUTES = ['/api/audit', '/api/auth/recovery-code', '/api/branches', '/api/pos/gift-vouchers', '/api/users'];
+  '/api/gold/stock', '/api/gold/suppliers', '/api/gold/docs',
+  // the cash delivery drivers hand over (2.0)
+  '/api/delivery/handovers'];
+const ADMIN_ROUTES = ['/api/audit', '/api/auth/recovery-code', '/api/branches', '/api/pos/gift-vouchers', '/api/price-checker/devices', '/api/users'];
 // the till's own reads (1.5.2): for the Point of sale permission only (an admin has it; a cashier at the till here too)
 const TILL_ROUTES = ['/api/pos/current', '/api/pos/customer/:id', '/api/pos/display/image-admin/:id', '/api/pos/display/images', '/api/pos/gift-vouchers/lookup', '/api/pos/payment-accounts', '/api/pos/rules', '/api/pos/scale', '/api/pos/tills'];
 const NOT_THEIRS = [...ADMIN_ROUTES, ...TILL_ROUTES].sort();
@@ -455,7 +460,7 @@ describe('cost, stock value and profit, by who asks', () => {
     // parties, their statements, the aging report, the brief's late customers), an item's stock, loyalty points
     // (the brief's customers who owe the most, phone app 1.1: what customers owe, as its late customers)
     // (2.0: the till reads what the customer it picked owes, for a credit sale: /api/pos/customer/:id)
-    const notMoney = /^\/api\/(parties|brief\/reports\/aging|items|loyalty|pos\/customer)[/ ]|^\/api\/brief \.(lateCustomers|topDebtors)\[\]\.balance$/;
+    const notMoney = /^\/api\/(parties|brief\/reports\/aging|items|loyalty|pos\/customer|debt-reminders|daily-suppliers)[/ ]|^\/api\/brief \.(lateCustomers|topDebtors)\[\]\.balance$/;
     const money = answers.flatMap((a) => [...a.paths].filter((p) => /balance|flow|expenses/i.test(p.split('.').pop()!)).map((p) => `${a.route} ${p}`));
     expect(money.filter((p) => !notMoney.test(p))).toEqual([]);
     // what the till needs stays: the safes by name (to pick one), and the day close's sales and debts (1.4.1: of the

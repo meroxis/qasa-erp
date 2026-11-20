@@ -56,6 +56,8 @@ export type Feature =
   | 'goldShop' // gold and jewellery shops: pieces by weight and karat, the day's gold board, old gold, suppliers in gold (1.8)
   | 'promotions' // offers at the till and on sale invoices: buy X get Y, bundles, special prices and happy hours (1.7)
   | 'wholesale' // wholesale and distribution: sales reps, routes, van stock, sales orders, credit control, collections (1.8)
+  | 'delivery' // delivery orders taken by phone or WhatsApp: drivers, statuses, cash on delivery handed over (2.0)
+  | 'priceChecker' // price checker screens near the shelves: scan to see the price and the offer (2.0)
   | 'databaseServer'; // the company database on the company's own MariaDB or MySQL server
 
 export interface PlanLimits {
@@ -73,14 +75,14 @@ export interface PlanDefinition {
   features: readonly Feature[];
 }
 
-const PRO_FEATURES: readonly Feature[] = ['officeNetwork', 'relay', 'roles', 'installments', 'payroll', 'finalAccountsExport', 'noBranding', 'autoBackup', 'cloudBackup', 'mobileShop', 'autoParts', 'engineeringWorks', 'pipeline', 'generators', 'websiteApi', 'phoneApp', 'electricalSolar', 'bankReconciliation', 'pharmacy', 'loyalty', 'companyLogo', 'petrolStation', 'multiTill', 'consignment', 'promotions', 'goldShop', 'wholesale'];
+const PRO_FEATURES: readonly Feature[] = ['officeNetwork', 'relay', 'roles', 'installments', 'payroll', 'finalAccountsExport', 'noBranding', 'autoBackup', 'cloudBackup', 'mobileShop', 'autoParts', 'engineeringWorks', 'pipeline', 'generators', 'websiteApi', 'phoneApp', 'electricalSolar', 'bankReconciliation', 'pharmacy', 'loyalty', 'companyLogo', 'petrolStation', 'multiTill', 'consignment', 'promotions', 'goldShop', 'wholesale', 'delivery', 'priceChecker'];
 /** What Pro has and Starter leaves out: reaching the office over the internet (Qasa Relay) and the cloud backup. */
 export const STARTER_LEAVES_OUT: readonly Feature[] = ['relay', 'cloudBackup'];
 /**
  * Starter's features, written out in full and not worked out from Pro's: a feature added to Pro later is not given to
  * Starter by itself (a test keeps this list equal to Pro's without STARTER_LEAVES_OUT, so adding one is a decision).
  */
-const STARTER_FEATURES: readonly Feature[] = ['officeNetwork', 'roles', 'installments', 'payroll', 'finalAccountsExport', 'noBranding', 'autoBackup', 'mobileShop', 'autoParts', 'engineeringWorks', 'pipeline', 'generators', 'websiteApi', 'phoneApp', 'electricalSolar', 'bankReconciliation', 'pharmacy', 'loyalty', 'companyLogo', 'petrolStation', 'multiTill', 'consignment', 'promotions', 'goldShop', 'wholesale'];
+const STARTER_FEATURES: readonly Feature[] = ['officeNetwork', 'roles', 'installments', 'payroll', 'finalAccountsExport', 'noBranding', 'autoBackup', 'mobileShop', 'autoParts', 'engineeringWorks', 'pipeline', 'generators', 'websiteApi', 'phoneApp', 'electricalSolar', 'bankReconciliation', 'pharmacy', 'loyalty', 'companyLogo', 'petrolStation', 'multiTill', 'consignment', 'promotions', 'goldShop', 'wholesale', 'delivery', 'priceChecker'];
 
 export const PLANS: Record<PlanId, PlanDefinition> = {
   free: { id: 'free', limits: { companies: 1, users: 1, warehouses: 1 }, features: [] },

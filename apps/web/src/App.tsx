@@ -106,6 +106,12 @@ const Labels = lazyPage(() => import('./pages/Labels.tsx'), 'Labels');
 const Expiry = lazyPage(() => import('./pages/Expiry.tsx'), 'Expiry');
 const Consignment = lazyPage(() => import('./pages/Consignment.tsx'), 'Consignment');
 const Offers = lazyPage(() => import('./pages/Offers.tsx'), 'Offers');
+const Delivery = lazyPage(() => import('./pages/Delivery.tsx'), 'Delivery');
+const DebtReminders = lazyPage(() => import('./pages/DebtReminders.tsx'), 'DebtReminders');
+const DailySuppliers = lazyPage(() => import('./pages/DailySuppliers.tsx'), 'DailySuppliers');
+const PriceCheckers = lazyPage(() => import('./pages/PriceCheckers.tsx'), 'PriceCheckers');
+// the delivery board's tabs (as pages/Delivery.tsx names them)
+const DELIVERY_TABS = ['board', 'drivers', 'handovers'] as const;
 const Pharmacy = lazyPage(() => import('./pages/Pharmacy.tsx'), 'Pharmacy');
 const Companies = lazyPage(() => import('./pages/Companies.tsx'), 'Companies');
 const FixedAssets = lazyPage(() => import('./pages/FixedAssets.tsx'), 'FixedAssets');
@@ -608,6 +614,22 @@ export function App() {
     case 'offers':
       title = t('of_title');
       content = <Offers key={arg ?? 'list'} admin={isAdmin} tab={arg === 'report' ? 'report' : 'list'} />;
+      break;
+    case 'delivery':
+      title = t('mx_deliveryTitle');
+      content = <Delivery key={arg ?? 'board'} tab={DELIVERY_TABS.find((x) => x === arg) ?? 'board'} />;
+      break;
+    case 'debt-reminders':
+      title = t('mx_rmTitle');
+      content = <DebtReminders />;
+      break;
+    case 'daily-suppliers':
+      title = t('mx_dsTitle');
+      content = <DailySuppliers key={arg ?? 'list'} partyId={arg} />;
+      break;
+    case 'price-checkers':
+      title = t('mx_pcTitle');
+      content = isAdmin ? <PriceCheckers /> : null;
       break;
     case 'expiry':
       title = t('ex_title');
