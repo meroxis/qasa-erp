@@ -29,7 +29,6 @@ import { PosUseSetting } from '../industry/PosUseSetting.tsx';
 import { PosBigPicturesSetting } from '../industry/PosBigPicturesSetting.tsx';
 import { TillSettings } from '../industry/TillSettings.tsx';
 import { TillRulesSettings } from '../pos/TillRulesSettings.tsx';
-import { FeatureAccountsCard } from '../industry/FeatureAccountsCard.tsx';
 import { CloseAskSetting } from '../industry/CloseAsk.tsx';
 import { dataPlaceLine, inWindowsApp, officeText, useDataPlace, type DataPlace } from '../industry/data-place.ts';
 
@@ -226,7 +225,7 @@ function NetworkSection() {
 function SettingsSectionContent({ id, admin }: { id: string; admin: boolean }) {
   switch (id) {
     case 'company':
-      return <><CompanyDetailsCard /><PostingAccountsCard /><FeatureAccountsCard /></>;
+      return <><CompanyDetailsCard /><PostingAccountsCard /></>;
     case 'periods':
       return <PeriodsSettings />;
     case 'sales':
