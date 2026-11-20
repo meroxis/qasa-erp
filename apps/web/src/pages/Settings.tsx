@@ -27,6 +27,7 @@ import { batchesApi, type BatchSettingsView } from '../industry/batches-api.ts';
 import { LoyaltySettingsCard } from '../industry/Loyalty.tsx';
 import { PosUseSetting } from '../industry/PosUseSetting.tsx';
 import { PosBigPicturesSetting } from '../industry/PosBigPicturesSetting.tsx';
+import { TillSettings } from '../industry/TillSettings.tsx';
 import { CloseAskSetting } from '../industry/CloseAsk.tsx';
 import { dataPlaceLine, inWindowsApp, officeText, useDataPlace, type DataPlace } from '../industry/data-place.ts';
 
@@ -225,7 +226,7 @@ function SettingsSectionContent({ id, admin }: { id: string; admin: boolean }) {
     case 'periods':
       return <PeriodsSettings />;
     case 'sales':
-      return <><PosUseSetting /><PosBigPicturesSetting /><ExpirySettingsCard /></>;
+      return <><PosUseSetting /><PosBigPicturesSetting /><TillSettings admin={admin} /><ExpirySettingsCard /></>;
     case 'loyalty':
       return <LoyaltySettingsCard />;
     case 'printers':

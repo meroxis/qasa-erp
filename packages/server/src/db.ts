@@ -1939,11 +1939,29 @@ const V16 =
   CREATE INDEX fuel_moves_source ON fuel_moves(source_id);
   `;
 
-// ——— v17: supermarket reports (shelf-labels.ts) ———
 const V17 =
-  // 17 — shelf labels to reprint: an item (and unit; '' its own) whose sale price changed, or that is new, until its
-  // shelf label is printed. old_price is what the label on the shelf shows (null: a new item, or a currency change).
+  // ——— 17, TILLS (pos-tills.ts) — kept in one block; other 2.0 work adds its own tables beside it ———
+  // the named tills (registers) of the shop: each with the safe and warehouse its shifts use by default, whether the
+  // cash drawer opens on a cash sale (through this PC's receipt printer) and whether it has a customer screen. A shift
+  // opened on a till keeps it. And a dinar sale paid partly in dollar notes at the till: the dollars taken (cents) and
+  // the rate they were taken at, so the drawer's dollars and dinars are expected right at closing
   `
+  CREATE TABLE pos_tills (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    cash_account TEXT NOT NULL REFERENCES accounts(code),
+    warehouse_id TEXT NOT NULL REFERENCES warehouses(id),
+    drawer TEXT NOT NULL DEFAULT 'off' CHECK (drawer IN ('off', 'cash')),
+    customer_display INTEGER NOT NULL DEFAULT 0 CHECK (customer_display IN (0, 1)),
+    active INTEGER NOT NULL DEFAULT 1 CHECK (active IN (0, 1)),
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+  );
+  ALTER TABLE pos_shifts ADD COLUMN till_id TEXT REFERENCES pos_tills(id);
+  ALTER TABLE pos_sales ADD COLUMN usd_cash INTEGER CHECK (usd_cash IS NULL OR usd_cash > 0);
+  ALTER TABLE pos_sales ADD COLUMN usd_rate_x100 INTEGER CHECK (usd_rate_x100 IS NULL OR usd_rate_x100 > 0);
+  -- ——— 17, SUPERMARKET REPORTS (shelf-labels.ts): an item (and unit; '' its own) whose sale price changed, or that
+  -- is new, until its shelf label is printed; old_price is what the label on the shelf shows ———
   CREATE TABLE shelf_label_flags (
     item_id TEXT NOT NULL REFERENCES items(id),
     unit TEXT NOT NULL DEFAULT '',
@@ -1956,7 +1974,7 @@ const V17 =
   );
   CREATE INDEX shelf_label_flags_changed ON shelf_label_flags(changed_at);
   `;
-// ——— end v17: supermarket reports ———
+  // ——— end of 17, TILLS ———
 
 const MIGRATIONS: Migration[] = [
   { sql: V1 }, { sql: V2, rebuild: true }, { sql: V3, rebuild: true }, { sql: V4 }, { sql: V5, rebuild: true },

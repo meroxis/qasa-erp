@@ -6,7 +6,8 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { migrate, openDatabase, schemaVersion, SCHEMA_VERSION, type Db, type SqlValue } from './db.ts';
 import { MYSQL_TABLES, tableColumns, V17_MYSQL_STEPS } from './schema-mysql.ts';
 
-// Version 17: shelf labels to reprint (shelf-labels.ts). A new table only, on a company file and on a server database.
+// Version 17 (supermarket): the tills, offers, consignment goods and the shelf labels to reprint, with the columns it adds
+// to older tables, on a company file and on a server database.
 const onServer = !!process.env.QASA_TEST_DB;
 
 let dir: string;
@@ -38,7 +39,8 @@ describe('version 17 on a server database', () => {
     const names = MYSQL_TABLES.map((t) => t.name);
     expect(MYSQL_TABLES.find((t) => t.name === 'shelf_label_flags')?.since).toBe(17);
     expect(names.indexOf('shelf_label_flags')).toBeGreaterThan(names.indexOf('items'));
-    expect(V17_MYSQL_STEPS).toEqual([]);
+    // the columns version 17 adds to older tables are each a step of their own
+    for (const step of V17_MYSQL_STEPS) expect(step.sql).toMatch(/^ALTER TABLE /);
     expect(tableColumns('shelf_label_flags').columns).toEqual(['item_id', 'unit', 'old_price', 'new_price', 'currency', 'changed_at', 'changed_by']);
   });
 
@@ -65,6 +67,8 @@ describe('version 17 on a server database', () => {
     expect(made).toContain('shelf_label_flags');
     const v17 = new Set(MYSQL_TABLES.filter((t) => (t.since ?? 0) >= 17).map((t) => t.name));
     expect(made.filter((n) => !v17.has(n!))).toEqual([]);
-    expect(ran.filter((s) => s.startsWith('ALTER TABLE'))).toEqual([]);
+    // no column is added but version 17's own
+    const steps = V17_MYSQL_STEPS.map((x) => x.sql);
+    expect(ran.filter((s) => s.startsWith('ALTER TABLE') && !steps.includes(s))).toEqual([]);
   });
 });

@@ -26,3 +26,37 @@ export function parseScaleBarcode(code: string): { prefix: string; grams: number
 
 /** The units a scale label's weight is read in. */
 export const isWeighedUnit = (unit: string | null | undefined): boolean => unit === 'kg' || unit === 'g';
+
+/**
+ * Labels that carry the PRICE instead of the weight (2.0, markets): some scales print the price of what was weighed in
+ * the last five digits. Which ones do is set per label prefix (the two digits after the 2, as the scale is set up),
+ * e.g. "22": a label 22 00017 | 27500 | c is item 2200017, 27,500 dinars. The quantity is the price over the item's
+ * price per kg. Nothing tells the two kinds apart in the code itself, so a prefix not listed is read as a weight.
+ */
+export const SCALE_PRICE_PREFIX = /^2\d$/;
+
+/** The prefixes kept: each "2d" once, at most 10. */
+export function cleanScalePrefixes(list: readonly unknown[]): string[] {
+  const out: string[] = [];
+  for (const p of list) if (typeof p === 'string' && SCALE_PRICE_PREFIX.test(p) && !out.includes(p) && out.length < 10) out.push(p);
+  return out;
+}
+
+export type ScaleLabel = { prefix: string; grams: number; price?: undefined } | { prefix: string; price: number; grams?: undefined };
+
+/** A scale label read as a weight or, when its two-digit prefix is one of `pricePrefixes`, as a price in dinars. */
+export function parseScaleLabel(code: string, pricePrefixes: readonly string[] = []): ScaleLabel | null {
+  const label = parseScaleBarcode(code);
+  if (!label) return null;
+  return pricePrefixes.includes(code.slice(0, 2)) ? { prefix: label.prefix, price: label.grams } : label;
+}
+
+/**
+ * The quantity a price label stands for, in thousandths of the item's base unit (kg or g), at the item's price per
+ * that unit (in the same currency as the label: dinars). Null when the item has no price to divide by.
+ */
+export function qtyForLabelPrice(price: number, unitPrice: number): number | null {
+  if (!(unitPrice > 0) || !(price > 0)) return null;
+  const qty = Math.round((price * 1000) / unitPrice);
+  return qty > 0 ? qty : null;
+}

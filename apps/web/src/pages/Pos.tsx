@@ -7,7 +7,8 @@ import { AccountCombo, AmountInput, ErrorBox, Icon, Modal, SearchCombo, useData,
 import { useI18n, type I18n, type Key } from '../i18n.ts';
 import { href } from '../router.ts';
 import { PartyPicker } from '../industry/PartyPicker.tsx';
-import { posApi, type Money2, type SaleInput, type ShiftReport, type ShiftView } from '../industry/pos-api.ts';
+import { posApi, tillsApi, type Money2, type PosMethod, type SaleInput, type ShiftReport, type ShiftView, type TillView } from '../industry/pos-api.ts';
+import { clearHeld, heldOn, HELD_MAX, holdBasket, inWindowsTill, keepScalePrefixes, kickDrawer, openCustomerScreen, scalePrefixesKept, setThisTill, showOnCustomerScreen, takeHeld, thisTill, type HeldBasket } from '../industry/till.ts';
 import { outboxClient, outboxWho, whoKey, type HeldKey } from '../industry/outbox.ts';
 import { useOutbox } from '../industry/OutboxBanner.tsx';
 import { offlineReceipt, offlineRefusal, payTillSale, rememberTill, shortStock, takeFromStock, tillCache } from '../industry/offline-till.ts';
@@ -16,7 +17,7 @@ import { useItemPicture } from '../industry/ItemImage.tsx';
 import { PrintDocument } from '../industry/PrintDocument.tsx';
 import { invoiceModel } from '../industry/print-model.ts';
 import { usePrintSetup } from '../industry/print-api.ts';
-import { addRefusal, cartShortNote, changeLineUnit, chosenMethod, creditNeedsCustomer, moveQuick, parseScan, pickAfterLink, posSaleLine, priceIn, priceRateFor, quickIdsFor, quickRowItems, salePayments, tileOffer, tillMethods, toggleQuick, type TillMethod } from './pos-logic.ts';
+import { addRefusal, cartShortNote, changeLineUnit, chosenMethod, creditNeedsCustomer, moveQuick, parseScan, pickAfterLink, posSaleLine, priceIn, priceRateFor, quickIdsFor, quickRowItems, salePayments, tileOffer, tillMethods, toggleQuick, type TillMethod, cashPartOf, changeInDinars, splitPayments, type SplitMethod } from './pos-logic.ts';
 import { inUnits, salePriceFor, unitChoices, unitLabel, type LineUnit } from '../industry/units.ts';
 import { BatchPick, useExpiredConfirm } from '../industry/BatchFields.tsx';
 import { pharmacyApi, type MedicineView } from '../industry/pharmacy-api.ts';
@@ -168,7 +169,7 @@ async function fromServerOrTill<T>(load: () => Promise<T>, remember: (v: T) => v
   }
 }
 
-const currentShift = () => fromServerOrTill(() => posApi.current(), (r) => rememberTill(tillWho(), { shift: r.shift }),
+const currentShift = () => fromServerOrTill(() => posApi.current(thisTill()), (r) => rememberTill(tillWho(), { shift: r.shift }),
   () => { const shift = tillCache(tillWho())?.shift; return shift ? { shift } : null; });
 
 export function Pos() {
@@ -193,6 +194,11 @@ function OpenShift({ onOpened }: { onOpened(): void }) {
   const [error, setError] = useState<unknown>(null);
   const { data: warehouses } = useLoad(() => api.warehouses(), []);
   const { data: recent } = useLoad(() => posApi.shifts({ limit: '10' }), []);
+  // 2.0: the shop's named tills; this PC remembers which one it is
+  const { data: tillList } = useLoad(() => tillsApi.list().catch(() => ({ tills: [] as TillView[], multiTill: false })), []);
+  const tills = (tillList?.tills ?? []).filter((x) => x.active);
+  const [tillId, setTillId] = useState(thisTill());
+  const till = tills.find((x) => x.id === tillId) ?? null;
   useEffect(() => {
     if (!warehouseId && warehouses?.length) setWarehouseId((warehouses.find((w: WarehouseView) => w.active) ?? warehouses[0]!).id);
   }, [warehouses, warehouseId]);
@@ -201,8 +207,14 @@ function OpenShift({ onOpened }: { onOpened(): void }) {
     setBusy(true);
     setError(null);
     try {
-      await posApi.open({ register: register.trim(), cashAccountCode: cashAccount, warehouseId, openingCash: opening ?? 0 });
-      remember(register.trim());
+      if (till) {
+        await posApi.open({ tillId: till.id, register: till.name, cashAccountCode: till.cashAccountCode, warehouseId: till.warehouseId, openingCash: opening ?? 0 });
+        setThisTill(till.id);
+      } else {
+        await posApi.open({ register: register.trim(), cashAccountCode: cashAccount, warehouseId, openingCash: opening ?? 0 });
+        remember(register.trim());
+        setThisTill('');
+      }
       onOpened();
     } catch (e) {
       setError(e);
@@ -216,24 +228,61 @@ function OpenShift({ onOpened }: { onOpened(): void }) {
       <div className="card pad stack">
         <h2 style={{ margin: 0 }}>{t('pos_openTitle')}</h2>
         <p className="muted" style={{ margin: 0 }}>{t('pos_openHelp')}</p>
-        <div className="grid-2">
-          <label className="field"><span>{t('pos_register')}</span><input className="input pos-big-input" maxLength={60} value={register} onChange={(e) => setRegister(e.target.value)} /></label>
-          <label className="field"><span>{t('pos_openingCash')}</span><AmountInput value={opening} currency="IQD" onChange={setOpening} ariaLabel={t('pos_openingCash')} /></label>
-          <div className="field"><span>{t('pos_cashAccount')}</span><AccountCombo value={cashAccount} onChange={setCashAccount} filter={(a) => a.code.startsWith('18')} ariaLabel={t('pos_cashAccount')} /></div>
-          <label className="field"><span>{t('pos_warehouse')}</span>
-            <select className="input" value={warehouseId} onChange={(e) => setWarehouseId(e.target.value)}>
-              {(warehouses ?? []).filter((w) => w.active).map((w) => <option key={w.id} value={w.id}>{w.code} — {i18n.name(w.name)}</option>)}
+        {tills.length > 0 && (
+          <label className="field"><span>{t('tl_pickTill')}</span>
+            <select className="input pos-big-input" value={till ? till.id : ''} onChange={(e) => setTillId(e.target.value)}>
+              {tills.map((x) => <option key={x.id} value={x.id} disabled={!!x.openShiftId}>{x.name}{x.openShiftId ? ` (${t('pos_statusOpen')})` : ''}</option>)}
+              <option value="">{t('tl_byName')}</option>
             </select>
           </label>
+        )}
+        <div className="grid-2">
+          {!till && <label className="field"><span>{t('pos_register')}</span><input className="input pos-big-input" maxLength={60} value={register} onChange={(e) => setRegister(e.target.value)} /></label>}
+          <label className="field"><span>{t('pos_openingCash')}</span><AmountInput value={opening} currency="IQD" onChange={setOpening} ariaLabel={t('pos_openingCash')} /></label>
+          {!till && <div className="field"><span>{t('pos_cashAccount')}</span><AccountCombo value={cashAccount} onChange={setCashAccount} filter={(a) => a.code.startsWith('18')} ariaLabel={t('pos_cashAccount')} /></div>}
+          {!till && (
+            <label className="field"><span>{t('pos_warehouse')}</span>
+              <select className="input" value={warehouseId} onChange={(e) => setWarehouseId(e.target.value)}>
+                {(warehouses ?? []).filter((w) => w.active).map((w) => <option key={w.id} value={w.id}>{w.code} — {i18n.name(w.name)}</option>)}
+              </select>
+            </label>
+          )}
         </div>
         <ErrorBox error={error} />
         <div className="row">
-          <button type="button" className="btn primary pos-touch" disabled={busy || !warehouseId} onClick={() => void open()}>
+          <button type="button" className="btn primary pos-touch" disabled={busy || (!till && !warehouseId) || !!till?.openShiftId} onClick={() => void open()}>
             <Icon name="wallet" size={18} />{t('pos_openButton')}
           </button>
         </div>
       </div>
+      <TillsToday />
       {recent && recent.length > 0 && <ShiftList shifts={recent} />}
+    </div>
+  );
+}
+
+/** 2.0: today's shifts till by till (whoever keeps the books: every till; a cashier: their own shifts). */
+function TillsToday() {
+  const i18n = useI18n();
+  const { t } = i18n;
+  const { data } = useLoad(() => tillsApi.summary().catch(() => null), []);
+  if (!data || data.rows.length < 2) return null;
+  return (
+    <div className="card pad stack">
+      <h3 style={{ margin: 0 }}>{t('tl_today')}</h3>
+      <div className="table-wrap">
+        <table className="table">
+          <thead><tr><th>{t('tl_till')}</th><th className="num">{t('tl_shifts')}</th><th className="num">{t('pos_salesCount')}</th><th className="num">{t('pos_sales')}</th><th className="num">{t('tl_noSaleCol')}</th><th className="num">{t('tl_diff')}</th></tr></thead>
+          <tbody>
+            {data.rows.map((r) => (
+              <tr key={r.tillId ?? r.register}>
+                <td>{r.register}</td><td className="num">{i18n.int(r.shifts)}</td><td className="num">{i18n.int(r.count)}</td>
+                <td className="num">{money2(i18n, r.sales)}</td><td className="num">{i18n.int(r.noSale)}</td><td className="num"><DiffText d={r.difference} /></td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
     </div>
   );
 }
@@ -300,6 +349,25 @@ function Register({ initial, onClosed }: { initial: ShiftView; onClosed(): void 
   const [partyId, setPartyId] = useState('');
   // how it is paid (1.4): one way for the whole sale, cash or credit, in every company
   const [picked, setPicked] = useState<TillMethod>('cash');
+  // 2.0: the till this shift is on (its drawer), the card and wallets an admin gave accounts, what the customer handed
+  // over (dinars and dollar notes), scale labels that carry a price, and the baskets held on this shift
+  const [till, setTill] = useState<TillView | null>(null);
+  const [cardMethods, setCardMethods] = useState<Exclude<SplitMethod, 'cash'>[]>([]);
+  const [split, setSplit] = useState<Partial<Record<Exclude<SplitMethod, 'cash'>, number | null>>>({});
+  const [handed, setHanded] = useState<number | null>(null);
+  const [handedUsd, setHandedUsd] = useState<number | null>(null);
+  const [usdRateText, setUsdRateText] = useState(() => String(rateFromX100(settings?.defaultRateX100 ?? 142000)));
+  const [scalePrefixes, setScalePrefixes] = useState<string[]>(scalePrefixesKept);
+  const [held, setHeld] = useState<HeldBasket[]>(() => heldOn(initial.id));
+  const [showHeld, setShowHeld] = useState(false);
+  const [lastDone, setLastDone] = useState<{ total: string; change: string | null } | null>(null);
+  // a basket resumed in another currency: its discount comes back once the cart is re-priced
+  const resumedDiscount = useRef<number | null>(null);
+  useEffect(() => {
+    if (initial.tillId) tillsApi.list().then((r) => setTill(r.tills.find((x) => x.id === initial.tillId) ?? null), () => {});
+    tillsApi.paymentAccounts().then((r) => setCardMethods(r.methods.filter((m: PosMethod): m is Exclude<SplitMethod, 'cash'> => m !== 'cash' && m !== 'account')), () => {});
+    tillsApi.scale().then((r) => { setScalePrefixes(r.pricePrefixes); keepScalePrefixes(r.pricePrefixes); }, () => {});
+  }, [initial.id, initial.tillId]);
   // 1.2: on a PC connected to an office server, a sale the server can't take now is kept here and sent later
   const outbox = useOutbox();
   const offline = !!outbox && !outbox.online;
@@ -411,14 +479,15 @@ function Register({ initial, onClosed }: { initial: ShiftView; onClosed(): void 
   // a different currency or rate re-prices the cart
   useEffect(() => {
     setCart((c) => c.map((l) => ({ ...l, unitPrice: unitPriceOf(l.item, l.unit) })));
-    setDiscount(0);
+    setDiscount(resumedDiscount.current ?? 0);
+    resumedDiscount.current = null;
   }, [currency, priceRate]);
 
   /** Enter in the search box: an exact barcode or code wins (a scanner), else the only match. "3*code" sells three. */
   const onEnter = () => {
     const raw = toWesternDigits(q).trim();
     if (!raw) return;
-    const { code, qtyMilli: qty, exact, unit } = parseScan(raw, items);
+    const { code, qtyMilli: qty, exact, unit } = parseScan(raw, items, scalePrefixes);
     const pick = exact ?? (matches.length === 1 ? matches[0] : undefined);
     if (pick && qty > 0) {
       // a box's barcode adds a box; the item's own barcode its base unit; a search match its sale unit
@@ -478,11 +547,21 @@ function Register({ initial, onClosed }: { initial: ShiftView; onClosed(): void 
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [kept, picked]);
   const onCredit = method === 'account';
-  const payments = salePayments(method, due);
+  // 2.0: a sale paid now may be split over card and wallets (cash pays the rest); dollar notes may pay a dinar sale's cash
+  const typedSplit = onCredit ? undefined : splitPayments(due, split);
+  const splitBad = typedSplit === null;
+  const payments = onCredit ? salePayments(method, due) : typedSplit ?? undefined;
+  const cashDue = onCredit ? 0 : cashPartOf(due, typedSplit ?? undefined);
+  const usdRateX100 = rateToX100(Number(toWesternDigits(usdRateText).replace(/,/g, '')) || 0);
+  const usdOn = currency === 'IQD' && !onCredit && cashDue > 0 && (handedUsd ?? 0) > 0;
+  const handedAny = currency === 'IQD' && !onCredit && cashDue > 0 && ((handed ?? 0) > 0 || usdOn);
+  const change = handedAny ? changeInDinars(cashDue, handed ?? 0, usdOn ? handedUsd! : 0, usdRateX100) : null;
+  const handedShort = change !== null && change < 0;
   // the items of this cart beyond the stock last known, with what is left of each
   const shortNow = cartShortNote(shortStock(cart), (code, have) => `${code} (${i18n.qty(Math.max(0, have))})`, i18n.lang === 'en' ? ', ' : '، ');
   const needsCustomer = creditNeedsCustomer(method, partyId);
-  const canPay = cart.length > 0 && !busy && (discount ?? 0) <= subtotal && (currency === 'IQD' || rateX100 > 0) && !needsCustomer;
+  const canPay = cart.length > 0 && !busy && (discount ?? 0) <= subtotal && (currency === 'IQD' || rateX100 > 0) && !needsCustomer
+    && !splitBad && !handedShort && (!usdOn || usdRateX100 > 0);
 
   const clear = () => {
     setCart([]);
@@ -490,6 +569,9 @@ function Register({ initial, onClosed }: { initial: ShiftView; onClosed(): void 
     setPartyId('');
     setPicked('cash');
     setPoints({ points: 0, value: 0 });
+    setSplit({});
+    setHanded(null);
+    setHandedUsd(null);
     setError(null);
     setQ('');
     // the next sale is another one, with a key of its own
@@ -497,6 +579,76 @@ function Register({ initial, onClosed }: { initial: ShiftView; onClosed(): void 
     setUnsure(false);
     focusSearch();
   };
+
+  /** 2.0: the cash drawer, through this PC's receipt printer (Windows app), when the till is set to open it. */
+  const drawerSaid = (s: string) => {
+    if (s === 'no_printer') toast(t('tl_drawer_no_printer'));
+    else if (s === 'failed') toast(t('tl_drawer_failed'));
+  };
+  const drawerOnCash = till?.drawer === 'cash' && inWindowsTill();
+  const openDrawerForSale = () => { if (drawerOnCash) void kickDrawer().then(drawerSaid); };
+  const noSale = async () => {
+    try {
+      await tillsApi.drawer(shift.id);
+      const s = await kickDrawer();
+      if (s === 'opened') toast(t('tl_noSaleDone')); else drawerSaid(s);
+    } catch (e) {
+      setError(e);
+    } finally {
+      focusSearch();
+    }
+  };
+
+  /** 2.0: holds the basket on this till (this shift) and frees the till for the next customer. */
+  const hold = () => {
+    if (!cart.length || busy) return;
+    const basket = holdBasket({
+      shiftId: shift.id, currency, rateText, partyId, discount: discount ?? 0, total,
+      lines: cart.map((l) => ({ itemId: l.item.id, qtyMilli: l.qtyMilli, unit: l.unit, unitPrice: l.unitPrice, ...(l.batchId ? { batchId: l.batchId } : {}) }))
+    });
+    if (!basket) { toast(t('tl_heldFull', { n: i18n.int(HELD_MAX) })); return; }
+    setHeld(heldOn(shift.id));
+    clear();
+    toast(t('tl_heldSaved'));
+  };
+  const resume = (id: string) => {
+    if (cart.length) { toast(t('tl_finishFirst')); return; }
+    const basket = takeHeld(shift.id, id);
+    setHeld(heldOn(shift.id));
+    setShowHeld(false);
+    if (!basket) return;
+    const lines: CartLine[] = [];
+    for (const l of basket.lines) {
+      const item = items.find((it) => it.id === l.itemId);
+      if (item) lines.push({ item, qtyMilli: l.qtyMilli, unit: l.unit, unitPrice: l.unitPrice, ...(l.batchId ? { batchId: l.batchId } : {}) });
+    }
+    const missing = basket.lines.length - lines.length;
+    if (missing) toast(t('tl_heldMissing', { n: i18n.int(missing) }));
+    setCart(lines);
+    setPartyId(basket.partyId);
+    if (basket.currency === currency && basket.rateText === rateText) setDiscount(basket.discount);
+    else { resumedDiscount.current = basket.discount; setCurrency(basket.currency); setRateText(basket.rateText); }
+    focusSearch();
+  };
+
+  /** 2.0: what the customer screen shows, in the till's language: the cart as it is, or the last sale's thanks. */
+  useEffect(() => {
+    if (cart.length && lastDone) setLastDone(null);
+  }, [cart.length]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    const base = { dir: i18n.dir, lang: i18n.lang, company: settings ? i18n.name(settings.companyName) : '', welcome: t('tl_welcome'), totalLabel: t('pos_total') };
+    if (!cart.length && lastDone) {
+      showOnCustomerScreen({ ...base, lines: [], total: lastDone.total, ...(lastDone.change ? { change: { label: t('tl_change'), value: lastDone.change } } : {}), done: t('tl_thanks') });
+      return;
+    }
+    showOnCustomerScreen({
+      ...base,
+      lines: cart.map((l) => ({ name: i18n.name(l.item.name), qty: i18n.qty(l.qtyMilli), amount: i18n.money(lineTotal(l), currency) })),
+      total: i18n.money(total, currency),
+      ...(handedAny ? { paid: { label: t('tl_paid'), value: [(handed ?? 0) > 0 ? i18n.money(handed ?? 0, 'IQD') : '', usdOn ? i18n.money(handedUsd ?? 0, 'USD') : ''].filter(Boolean).join(' + ') } } : {}),
+      ...(change !== null && change >= 0 ? { change: { label: t('tl_change'), value: i18n.money(change, 'IQD') } } : {})
+    });
+  }, [cart, total, currency, handed, handedUsd, change, lastDone, i18n.lang]); // eslint-disable-line react-hooks/exhaustive-deps
 
   /**
    * The server can't be reached: the sale is kept on this PC (encrypted, power-cut safe) with its key and sent later,
@@ -524,6 +676,8 @@ function Register({ initial, onClosed }: { initial: ShiftView; onClosed(): void 
     setItems(left);
     rememberTill(tillWho(), { items: left });
     setShortNote(short.map((x) => `${x.code} (${i18n.qty(x.haveMilli)})`).join(i18n.lang === 'en' ? ', ' : '، '));
+    if (cashDue > 0) openDrawerForSale();
+    setLastDone({ total: i18n.money(total, currency), change: change !== null && change >= 0 ? i18n.money(change, 'IQD') : null });
     clear();
     toast(t('ob_savedHere', { n: kept.reference ?? '' }));
   };
@@ -538,7 +692,10 @@ function Register({ initial, onClosed }: { initial: ShiftView; onClosed(): void 
         currency, ...(currency === 'USD' ? { rateX100 } : {}), ...(partyId ? { partyId } : {}), discount: discount ?? 0,
         lines: cart.map(posSaleLine),
         ...(payments ? { payments } : {}),
-        ...(points.points ? { loyaltyPoints: points.points } : {})
+        ...(points.points ? { loyaltyPoints: points.points } : {}),
+        // what the customer handed over: dinars alone are kept as "Amount paid" for the receipt; dollar notes go with their rate
+        ...(handedAny && !usdOn && (handed ?? 0) >= cashDue ? { tendered: handed ?? 0 } : {}),
+        ...(usdOn ? { usdCash: { amount: handedUsd!, rateX100: usdRateX100 } } : {})
       };
       // on a PC with an outbox the sale keeps its key over every Pay until it is booked or kept: a try whose answer
       // was lost is answered from the first, never booked twice (industry/offline-till.ts)
@@ -560,6 +717,8 @@ function Register({ initial, onClosed }: { initial: ShiftView; onClosed(): void 
       setShift(res.shift);
       rememberTill(tillWho(), { shift: res.shift });
       setReceipt(res.invoice);
+      if (cashDue > 0) openDrawerForSale();
+      setLastDone({ total: i18n.money(total, currency), change: change !== null && change >= 0 ? i18n.money(change, 'IQD') : null });
       clear();
       loadItems(); // stock changed
       toast(t('pos_saved', { n: res.invoice.number ?? '' }));
@@ -577,12 +736,15 @@ function Register({ initial, onClosed }: { initial: ShiftView; onClosed(): void 
   // F-keys: F2 search, F4 clear the sale, F8 discount, F9 pay, F10 print the last receipt
   const payRef = useRef(pay);
   payRef.current = pay;
+  const holdRef = useRef(hold);
+  holdRef.current = hold;
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       // a dialog over the sale (closing the shift, a new item, any other) keeps the keys to itself
       if (closing || addingItem !== null || document.querySelector('.backdrop')) return;
       if (e.key === 'F2') { e.preventDefault(); search.current?.focus(); }
       else if (e.key === 'F4') { e.preventDefault(); clear(); }
+      else if (e.key === 'F6') { e.preventDefault(); holdRef.current(); }
       else if (e.key === 'F8') { e.preventDefault(); document.getElementById('pos-discount')?.querySelector('input')?.focus(); }
       else if (e.key === 'F9') { e.preventDefault(); void payRef.current(); }
       else if (e.key === 'F10' && receipt) { e.preventDefault(); void printReceipt(); }
@@ -667,6 +829,9 @@ function Register({ initial, onClosed }: { initial: ShiftView; onClosed(): void 
           {keptHere.length > 0 && <a className="chip warn num" href={href('outbox')}>{t('pos_offlineWaiting', { n: i18n.int(keptHere.length) })}</a>}
         </div>
         <div className="row">
+          {held.length > 0 && <button type="button" className="btn" onClick={() => setShowHeld(true)}><Icon name="clock" size={16} />{t('tl_held', { n: i18n.int(held.length) })}</button>}
+          {drawerOnCash && <button type="button" className="btn" onClick={() => void noSale()}><Icon name="wallet" size={16} />{t('tl_noSale')}</button>}
+          <button type="button" className="btn" onClick={() => { void openCustomerScreen().then((ok) => { if (!ok) toast(t('tl_screenBlocked')); }); focusSearch(); }}><Icon name="panel" size={16} />{t('tl_customerScreen')}</button>
           <a className="btn" href={href(`pos-shift/${shift.id}`)}><Icon name="doc" size={16} />{t('pos_xReport')}</a>
           <button type="button" className="btn" onClick={() => setClosing(true)}><Icon name="logout" size={16} />{t('pos_closeShift')}</button>
         </div>
@@ -805,6 +970,32 @@ function Register({ initial, onClosed }: { initial: ShiftView; onClosed(): void 
               {needsCustomer && <div className="small" role="alert" style={{ color: 'var(--bad)' }}>{t('s14_creditNeedsCustomer')}</div>}
               {offline && <div className="small muted">{t('pos_offlineNoAccount')}</div>}
             </div>
+            {/* 2.0: card and wallets (once an admin gave them accounts): cash pays what they don't */}
+            {!onCredit && cardMethods.length > 0 && (
+              <details className="pos-split" open={Object.values(split).some((v) => (v ?? 0) > 0)}>
+                <summary className="small">{t('tl_cardWallet')}</summary>
+                <div className="grid-2" style={{ marginTop: 6 }}>
+                  {cardMethods.map((m) => (
+                    <label key={m} className="field"><span>{t(`pay_${m}` as Key)}</span>
+                      <AmountInput value={split[m] ?? null} currency={currency} onChange={(v) => setSplit((s) => ({ ...s, [m]: v }))} ariaLabel={t(`pay_${m}` as Key)} />
+                    </label>
+                  ))}
+                </div>
+                {typedSplit && <div className="pos-r-row small"><span>{t('tl_cashPart')}</span><span className="num">{i18n.money(cashDue, currency)}</span></div>}
+                {splitBad && <div className="small" role="alert" style={{ color: 'var(--bad)' }}>{t('tl_splitTooMuch')}</div>}
+              </details>
+            )}
+            {/* 2.0: what the customer handed over for the cash part (dinars and dollar notes); the change is in dinars */}
+            {currency === 'IQD' && !onCredit && cashDue > 0 && (
+              <div className="grid-2 pos-handed">
+                <label className="field"><span>{t('tl_handed')}</span><AmountInput value={handed} currency="IQD" onChange={setHanded} ariaLabel={t('tl_handed')} /></label>
+                <label className="field"><span>{t('tl_handedUsd')}</span><AmountInput value={handedUsd} currency="USD" onChange={setHandedUsd} ariaLabel={t('tl_handedUsd')} /></label>
+                {usdOn && <label className="field"><span>{t('tl_usdRate')}</span><input className="input num ltr" inputMode="decimal" value={usdRateText} onChange={(e) => setUsdRateText(e.target.value)} /></label>}
+                {change !== null && (
+                  <div className="pos-r-row" role="status"><span>{handedShort ? t('tl_short') : t('tl_change')}</span><strong className="num" style={handedShort ? { color: 'var(--bad)' } : undefined}>{i18n.money(Math.abs(change), 'IQD')}</strong></div>
+                )}
+              </div>
+            )}
             {unsure && (
               <div className="alert warn" role="alert">
                 {t('pos_unsure')}
@@ -819,6 +1010,7 @@ function Register({ initial, onClosed }: { initial: ShiftView; onClosed(): void 
             {shortNow && <div className="alert warn small" role="status">{t('pos_cartShort', { i: shortNow })}</div>}
             <div className="pos-actions">
               <button type="button" className="btn pos-touch" onClick={clear} disabled={busy}><Icon name="x" size={18} />{t('pos_clear')} <span className="kbd">F4</span></button>
+              <button type="button" className="btn pos-touch" onClick={hold} disabled={busy || cart.length === 0}><Icon name="clock" size={18} />{t('tl_hold')} <span className="kbd">F6</span></button>
               <button type="button" className="btn primary pos-touch pos-pay-btn" onClick={() => void pay()} disabled={!canPay}>
                 <Icon name="check" size={20} />{t('pos_pay')} <span className="kbd">F9</span>
               </button>
@@ -836,7 +1028,20 @@ function Register({ initial, onClosed }: { initial: ShiftView; onClosed(): void 
       </div>
 
       {receipt && <Receipt invoice={receipt} shift={shift} />}
-      {closing && <CloseShift shift={shift} keptHere={keptHere.length} onCancel={() => { setClosing(false); focusSearch(); }} onClosed={onClosed} />}
+      {showHeld && (
+        <Modal title={t('tl_heldTitle')} onClose={() => { setShowHeld(false); focusSearch(); }}>
+          <div className="stack">
+            {held.length === 0 && <p className="muted">{t('tl_heldNone')}</p>}
+            {held.map((b) => (
+              <div key={b.id} className="pos-r-row">
+                <span className="num">{i18n.digitsOf(new Date(b.at).toTimeString().slice(0, 5))} · {i18n.int(b.lines.length)} · {i18n.money(b.total, b.currency)}</span>
+                <button type="button" className="btn small primary" onClick={() => resume(b.id)}>{t('tl_resume')}</button>
+              </div>
+            ))}
+          </div>
+        </Modal>
+      )}
+      {closing && <CloseShift shift={shift} keptHere={keptHere.length} held={held.length} onCancel={() => { setClosing(false); focusSearch(); }} onClosed={() => { clearHeld(shift.id); onClosed(); }} />}
     </div>
   );
 }
@@ -940,7 +1145,7 @@ function Receipt({ invoice, shift }: { invoice: InvoiceView; shift: ShiftView })
 
 /* ---------- closing ---------- */
 
-function CloseShift({ shift, keptHere = 0, onCancel, onClosed }: { shift: ShiftView; keptHere?: number; onCancel(): void; onClosed(): void }) {
+function CloseShift({ shift, keptHere = 0, held = 0, onCancel, onClosed }: { shift: ShiftView; keptHere?: number; held?: number; onCancel(): void; onClosed(): void }) {
   const i18n = useI18n();
   const { t } = i18n;
   const [iqd, setIqd] = useState<number | null>(null);
@@ -994,6 +1199,8 @@ function CloseShift({ shift, keptHere = 0, onCancel, onClosed }: { shift: ShiftV
         </div>
         {iqd !== null && <div className="pos-r-row"><span>{t('pos_difference')}</span><strong className="num"><DiffText d={diff} /></strong></div>}
         {keptHere > 0 && <div className="alert warn" role="alert">{t('pos_closeWaiting', { n: i18n.int(keptHere) })} <a href={href('outbox')}>{t('ob_open')}</a></div>}
+        {held > 0 && <div className="alert warn" role="alert">{t('tl_heldAtClose', { n: i18n.int(held) })}</div>}
+        {(shift.usdTaken?.usd ?? 0) > 0 && <div className="pos-r-row small"><span>{t('tl_usdTaken')}</span><span className="num">{i18n.money(shift.usdTaken!.usd, 'USD')} = {i18n.money(shift.usdTaken!.iqd, 'IQD')}</span></div>}
         <label className="field"><span>{t('pos_notes')}</span><textarea className="input" rows={2} maxLength={500} value={notes} onChange={(e) => setNotes(e.target.value)} /></label>
         <ErrorBox error={error} />
         <div className="row">
@@ -1044,6 +1251,7 @@ export function PosShiftReport({ id }: { id: string }) {
             <tr><td>{t('pos_sales')}</td><td className="num">{money2(i18n, r.sales)}</td></tr>
             {(r.refunds.IQD > 0 || r.refunds.USD > 0) && <tr><td>{t('pos_refunds')}</td><td className="num">−{money2(i18n, r.refunds)}</td></tr>}
             {Object.entries(r.methods ?? {}).filter(([m]) => m !== 'cash' || Object.keys(r.methods ?? {}).length > 1).map(([m, v]) => <tr key={m}><td>{t(`pay_${m}` as Key)}</td><td className="num">{money2(i18n, v as Money2)}</td></tr>)}
+            {(r.usdTaken?.usd ?? 0) > 0 && <tr><td>{t('tl_usdTaken')}<div className="small muted">{t('tl_usdTakenHelp')}</div></td><td className="num">{i18n.money(r.usdTaken!.usd, 'USD')} = {i18n.money(r.usdTaken!.iqd, 'IQD')}</td></tr>}
             <tr><td><strong>{t('pos_expected')}</strong></td><td className="num"><strong>{money2(i18n, r.expected)}</strong></td></tr>
             {r.counted && <tr><td>{t('pos_counted')}</td><td className="num">{money2(i18n, r.counted)}</td></tr>}
             {r.difference && <tr><td>{t('pos_difference')}</td><td className="num"><DiffText d={r.difference} /></td></tr>}

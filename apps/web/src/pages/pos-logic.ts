@@ -40,7 +40,9 @@ export const addRefusal = (item: Pick<ItemView, 'saleCurrency'>, currency: Curre
  * otherwise "3*code" or "3x code" sells three of that code. A barcode of one of an item's units (a box, a strip) finds
  * the item with that unit (`unit`; null: the item's own barcode or code, its base unit).
  */
-export function parseScan<T extends Pick<ItemView, 'barcode' | 'code'> & { units?: ItemView['units']; unit?: UnitCode }>(raw: string, items: readonly T[]): {
+export function parseScan<T extends Pick<ItemView, 'barcode' | 'code'> & { units?: ItemView['units']; unit?: UnitCode; salePrice?: number; saleCurrency?: CurrencyCode }>(
+  raw: string, items: readonly T[], pricePrefixes: readonly string[] = []
+): {
   code: string; qtyMilli: number; exact: T | undefined; unit: UnitCode | null;
 } {
   const find = (code: string): { item: T; unit: UnitCode | null } | undefined => {
@@ -55,7 +57,7 @@ export function parseScan<T extends Pick<ItemView, 'barcode' | 'code'> & { units
   const whole = find(raw);
   if (whole) return { code: raw, qtyMilli: 1000, exact: whole.item, unit: whole.unit };
   // 1.4 — a scale's label (markets): the item by the label's first seven digits, the weight on it as the quantity
-  const weighed = findByScaleBarcode(raw, items);
+  const weighed = findByScaleBarcode(raw, items, pricePrefixes);
   if (weighed) return { code: raw, qtyMilli: weighed.qtyMilli, exact: weighed.item, unit: null };
   const star = /^(\d+(?:\.\d+)?)\s*[*x×]\s*(.+)$/i.exec(raw);
   if (!star) return { code: raw, qtyMilli: 1000, exact: undefined, unit: null };
@@ -207,4 +209,40 @@ export function moveQuick(ids: readonly string[], id: string, step: -1 | 1): str
   const next = [...ids];
   [next[at], next[to]] = [next[to]!, next[at]!];
   return next;
+}
+
+/* ---------- 2.0: card and wallets at the till, and dollar notes on a dinar sale ---------- */
+
+/** The ways a sale paid now can be split over at the till: cash and, once an admin gave them accounts, card and wallets. */
+export type SplitMethod = 'cash' | 'card' | 'fib' | 'zaincash' | 'qi';
+export const SPLIT_METHODS: readonly SplitMethod[] = ['cash', 'card', 'fib', 'zaincash', 'qi'];
+
+/**
+ * The parts a sale paid now is sent with: what the cashier typed for each card or wallet, and cash for the rest. Nothing
+ * typed: undefined (all cash, as before). Answers null when the card and wallet parts pass what is due, or more than
+ * four parts would be sent (the server takes four).
+ */
+export function splitPayments(due: number, typed: Partial<Record<Exclude<SplitMethod, 'cash'>, number | null>>): { method: SplitMethod; amount: number }[] | undefined | null {
+  const parts = (Object.entries(typed) as [Exclude<SplitMethod, 'cash'>, number | null][])
+    .filter(([, a]) => (a ?? 0) > 0).map(([method, amount]) => ({ method: method as SplitMethod, amount: amount! }));
+  if (!parts.length) return undefined;
+  const other = parts.reduce((s, p) => s + p.amount, 0);
+  if (other > due) return null;
+  const all = other < due ? [{ method: 'cash' as SplitMethod, amount: due - other }, ...parts] : parts;
+  return all.length > 4 ? null : all;
+}
+
+/** The cash part of a sale paid now: what is left after the card and wallet parts. */
+export const cashPartOf = (due: number, parts: readonly { method: string; amount: number }[] | undefined): number =>
+  parts ? parts.filter((p) => p.method === 'cash').reduce((s, p) => s + p.amount, 0) : Math.max(0, due);
+
+/** The dinars dollar notes stand for at a rate (cents × dinars-per-dollar × 100 / 10 000). */
+export const usdWorth = (cents: number, rateX100: number): number => Math.round((cents * rateX100) / 10000);
+
+/**
+ * What the drawer gives back on a cash part, in dinars: the dinars handed over plus what the dollar notes stand for,
+ * less the cash due. Negative: still short. The server refuses dollars worth a 100-dollar note past what is due.
+ */
+export function changeInDinars(cashDue: number, dinars: number, usdCents: number, rateX100: number): number {
+  return dinars + (usdCents > 0 ? usdWorth(usdCents, rateX100) : 0) - cashDue;
 }

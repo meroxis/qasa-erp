@@ -19,6 +19,13 @@ async function start() {
     const { startDemoBackend } = await import('./demo/backend.ts');
     await startDemoBackend();
   }
+  // 2.0: the customer screen, a second window of this page facing the customer (pages/CustomerDisplay.tsx): only what
+  // the till in this browser sends it, no sign-in and nothing from the server
+  if (location.hash.startsWith('#/customer-display')) {
+    const { CustomerDisplay } = await import('./pages/CustomerDisplay.tsx');
+    createRoot(document.getElementById('root')!).render(<StrictMode><CustomerDisplay /></StrictMode>);
+    return;
+  }
   createRoot(document.getElementById('root')!).render(
     <StrictMode>
       <App />

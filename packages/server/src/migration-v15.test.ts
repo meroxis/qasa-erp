@@ -4,7 +4,7 @@ import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { migrate, openDatabase, SCHEMA_VERSION, schemaVersion, type Db, type SqlValue } from './db.ts';
-import { MYSQL_TABLES, MYSQL_TRIGGERS, pendingMysqlSteps, tableColumns, V15_MYSQL_STEPS } from './schema-mysql.ts';
+import { MYSQL_TABLES, MYSQL_TRIGGERS, pendingMysqlSteps, tableColumns, V15_MYSQL_STEPS, V17_MYSQL_STEPS } from './schema-mysql.ts';
 import { AppError } from './errors.ts';
 
 // tables of the versions after 16 (17 on): made on a server at 14 too, as the newer versions run after this one
@@ -103,7 +103,9 @@ describe('version 15 on a server database', () => {
     migrate(fake);
     expect(version).toBe(SCHEMA_VERSION);
     expect(ran.filter((s) => s.startsWith('CREATE TABLE entry_images'))).toHaveLength(1);
-    expect(ran.filter((s) => s.startsWith('ALTER TABLE'))).toEqual(['ALTER TABLE entries ADD COLUMN revision INT NOT NULL DEFAULT 0']);
+    // (and the tills' columns of version 17, after it)
+    const later = V17_MYSQL_STEPS.map((x) => x.sql);
+    expect(ran.filter((s) => s.startsWith('ALTER TABLE') && !later.includes(s))).toEqual(['ALTER TABLE entries ADD COLUMN revision INT NOT NULL DEFAULT 0']);
     expect(ran.filter((s) => s.startsWith('CREATE TRIGGER entry_images_'))).toHaveLength(2);
     // nothing else is made again
     expect(ran.filter((s) => s.startsWith('CREATE TABLE ') && !s.startsWith('CREATE TABLE entry_images') && !s.startsWith('CREATE TABLE fuel_') && !LATER.has(s.split(' ')[2]!) && !s.includes('schema_version'))).toEqual([]);

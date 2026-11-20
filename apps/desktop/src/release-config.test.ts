@@ -1084,7 +1084,7 @@ describe('the release notes of 1.4.3 (never released on its own: What\'s new sho
   it('upgrades no company file in 1.4.3, so it has no "Before you update" warning', () => {
     // why: 1.4.3 adds no migration; 1.4.2 and 1.4.3 open the same company file (schema 14; 15, the receipt photos,
     // comes with the next release, whose notes say so; 16, the petrol station, with a later one)
-    expect(read('packages/server/src/db.ts')).toMatch(/\{ sql: V14, mysql: \{ tables: true, steps: \(\) => V14_MYSQL_STEPS \} \},?\n( {2}\{ sql: V15, mysql: \{ tables: true, steps: \(\) => V15_MYSQL_STEPS \} \},?\n)?( {2}\{ sql: V16, mysql: \{ tables: true, steps: \(\) => V16_MYSQL_STEPS \} \},?\n)?( {2}\{ sql: V17, mysql: \{ tables: true, steps: \(\) => V17_MYSQL_STEPS \} \}\n)?\];/);
+    expect(read('packages/server/src/db.ts')).toMatch(/\{ sql: V14, mysql: \{ tables: true, steps: \(\) => V14_MYSQL_STEPS \} \},?\n( {2}\{ sql: V15, mysql: \{ tables: true, steps: \(\) => V15_MYSQL_STEPS \} \},?\n)?( {2}\{ sql: V16, mysql: \{ tables: true, steps: \(\) => V16_MYSQL_STEPS \} \},?\n( {2}\{ sql: V17, mysql: \{ tables: true, steps: \(\) => V17_MYSQL_STEPS \} \}\n)?)?\];/);
     expect(notes).not.toMatch(/Before you update|قبل التحديث|پێش نوێکردنەوە/);
   });
 
@@ -1242,7 +1242,7 @@ describe('the release notes of 1.5.0 (kept as shipped; the Store "What\'s new" o
   it('says first that the company file is upgraded to 15, which 1.4.3 and earlier (a Store copy on 1.4.2 too) cannot open', () => {
     // why: 1.5.0 adds migration 15 (entry_images, the receipt photos, and entries' revision), and an app refuses a newer file
     const db = read('packages/server/src/db.ts');
-    expect(db).toMatch(/\{ sql: V15, mysql: \{ tables: true, steps: \(\) => V15_MYSQL_STEPS \} \},?\n( {2}\{ sql: V16, mysql: \{ tables: true, steps: \(\) => V16_MYSQL_STEPS \} \},?\n)?( {2}\{ sql: V17, mysql: \{ tables: true, steps: \(\) => V17_MYSQL_STEPS \} \}\n)?\];/);
+    expect(db).toMatch(/\{ sql: V15, mysql: \{ tables: true, steps: \(\) => V15_MYSQL_STEPS \} \},?\n( {2}\{ sql: V16, mysql: \{ tables: true, steps: \(\) => V16_MYSQL_STEPS \} \},?\n( {2}\{ sql: V17, mysql: \{ tables: true, steps: \(\) => V17_MYSQL_STEPS \} \}\n)?)?\];/);
     expect(db).toContain('ALTER TABLE entries ADD COLUMN revision INTEGER NOT NULL DEFAULT 0;');
     expect(db).toContain('export const SCHEMA_VERSION = MIGRATIONS.length;');
     expect(db).toContain('CREATE TABLE entry_images (');
@@ -1382,7 +1382,7 @@ describe('the release notes of 1.5.1 (kept as shipped: the menu, first on GitHub
   });
 
   it('has the same short Changed section in each language, and no Before you update: the company file stays on schema 15', () => {
-    expect(read('packages/server/src/db.ts')).toMatch(/\{ sql: V15, mysql: \{ tables: true, steps: \(\) => V15_MYSQL_STEPS \} \},?\n( {2}\{ sql: V16, mysql: \{ tables: true, steps: \(\) => V16_MYSQL_STEPS \} \},?\n)?( {2}\{ sql: V17, mysql: \{ tables: true, steps: \(\) => V17_MYSQL_STEPS \} \}\n)?\];/);
+    expect(read('packages/server/src/db.ts')).toMatch(/\{ sql: V15, mysql: \{ tables: true, steps: \(\) => V15_MYSQL_STEPS \} \},?\n( {2}\{ sql: V16, mysql: \{ tables: true, steps: \(\) => V16_MYSQL_STEPS \} \},?\n( {2}\{ sql: V17, mysql: \{ tables: true, steps: \(\) => V17_MYSQL_STEPS \} \}\n)?)?\];/);
     expect(section('en')).toMatch(/\n### Changed\n- \*\*One menu group open at a time:\*\*[^\n]+\n$/);
     expect(section('ar')).toMatch(/\n### ما تغيّر\n- \*\*مجموعة واحدة مفتوحة في القائمة:\*\*[^\n]+\n$/);
     expect(section('ku')).toMatch(/\n### گۆڕاوەکان\n- \*\*یەک گرووپی کراوە لە لیستدا:\*\*[^\n]+\n$/);
@@ -1433,7 +1433,7 @@ describe('the release notes of 1.5.2 (kept as shipped: on GitHub only; the Store
   });
 
   it('has the same sections in each language, Before you update first, and upgrades no company file (schema 15)', () => {
-    expect(read('packages/server/src/db.ts')).toMatch(/\{ sql: V15, mysql: \{ tables: true, steps: \(\) => V15_MYSQL_STEPS \} \},?\n( {2}\{ sql: V16, mysql: \{ tables: true, steps: \(\) => V16_MYSQL_STEPS \} \},?\n)?( {2}\{ sql: V17, mysql: \{ tables: true, steps: \(\) => V17_MYSQL_STEPS \} \}\n)?\];/);
+    expect(read('packages/server/src/db.ts')).toMatch(/\{ sql: V15, mysql: \{ tables: true, steps: \(\) => V15_MYSQL_STEPS \} \},?\n( {2}\{ sql: V16, mysql: \{ tables: true, steps: \(\) => V16_MYSQL_STEPS \} \},?\n( {2}\{ sql: V17, mysql: \{ tables: true, steps: \(\) => V17_MYSQL_STEPS \} \}\n)?)?\];/);
     const heads = (lang: 'ar' | 'en' | 'ku') => section(lang).split('\n').filter((l) => l.startsWith('### '));
     expect(heads('en')).toEqual(['### Before you update', '### Licences from 0.1.8', '### New', '### Changed', '### Fixed']);
     expect(heads('ar')).toEqual(['### قبل التحديث', '### تراخيص الإصدار 0.1.8', '### الجديد', '### ما تغيّر', '### الإصلاحات']);
