@@ -15,6 +15,17 @@ export function deviceLink(token: string, base: string = `${location.origin}${lo
   return `${base}#/price-checker?token=${encodeURIComponent(token)}`;
 }
 
+/**
+ * 2.0.0: the bases a tablet can reach. In the Windows app the page is served to this PC only (127.0.0.1), so the link
+ * is built with the office network's addresses instead (the app is served there over https, with the office's own
+ * certificate), one per address; with the network off, this page's own address and a note.
+ */
+export function deviceBases(here: { origin: string; pathname: string; hostname: string }, network: { on: boolean; port: number; addresses: string[] } | null): string[] {
+  const local = /^(127\.|localhost$|\[::1\]$)/.test(here.hostname);
+  if (!local || !network?.on || !network.addresses.length) return [`${here.origin}${here.pathname}`];
+  return network.addresses.map((a) => `https://${a.includes(':') ? `[${a}]` : a}${network.port === 443 ? '' : `:${network.port}`}/`);
+}
+
 /** 2.0.0: without the plan, what the page does and how to get it (LockedFeature), not its tabs over an empty page. */
 export function PriceCheckers() {
   const { plan } = useData();
@@ -32,7 +43,8 @@ function PriceCheckersPage() {
   const { data, error, reload } = useLoad(() => priceCheckerApi.devices(), []);
   const warehouses = useLoad(() => api.warehouses(), []);
   const [adding, setAdding] = useState<{ name: string; warehouseId: string } | null>(null);
-  const [link, setLink] = useState<string | null>(null);
+  const [link, setLink] = useState<string[] | null>(null);
+  const network = useLoad(() => api.network().catch(() => null), []);
   const [actionError, setActionError] = useState<unknown>(null);
 
   async function add() {
@@ -41,7 +53,7 @@ function PriceCheckersPage() {
     try {
       const made = await priceCheckerApi.add({ name: adding.name, warehouseId: adding.warehouseId || null });
       setAdding(null);
-      setLink(deviceLink(made.token));
+      setLink(deviceBases(location, network.data ?? null).map((base) => deviceLink(made.token, base)));
       reload();
     } catch (e) { setActionError(e); }
   }
@@ -101,10 +113,11 @@ function PriceCheckersPage() {
         <Modal title={t('mx_pcLinkTitle')} onClose={() => setLink(null)}>
           <div className="stack">
             <p style={{ margin: 0 }}>{t('mx_pcLinkHelp')}</p>
-            <input className="input ltr" readOnly value={link} onFocus={(e) => e.target.select()} aria-label={t('mx_pcLinkTitle')} />
-            {local && <div className="alert info small">{t('mx_pcLocalNote')}</div>}
+            {link.map((l) => <input key={l} className="input ltr" readOnly value={l} onFocus={(e) => e.target.select()} aria-label={t('mx_pcLinkTitle')} />)}
+            {local && !link[0]!.startsWith('https://') && <div className="alert info small">{t('mx_pcLocalNote')}</div>}
+            {link[0]!.startsWith('https://') && local && <div className="small muted">{t('ux_pcCertNote')}</div>}
             <div className="row" style={{ justifyContent: 'flex-end' }}>
-              <button type="button" className="btn" onClick={() => { void navigator.clipboard?.writeText(link).then(() => toast(t('mx_pcCopied'))); }}><Icon name="clipboard" size={16} />{t('mx_pcCopy')}</button>
+              <button type="button" className="btn" onClick={() => { void navigator.clipboard?.writeText(link[0]!).then(() => toast(t('mx_pcCopied'))); }}><Icon name="clipboard" size={16} />{t('mx_pcCopy')}</button>
               <button type="button" className="btn primary" onClick={() => setLink(null)}>{t('mx_close')}</button>
             </div>
           </div>
