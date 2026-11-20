@@ -6,6 +6,7 @@ export const UXF_TEXT = {
   ux_giftUsed: ['قسائم هدايا مستعملة في المبيعات', 'Gift vouchers used on sales', 'کوپۆنی دیاری بەکارهاتوو لە فرۆشتن'],
   ux_printAllZ: ['طباعة تقارير كل الصناديق ({n})', 'Print every till’s report ({n})', 'چاپکردنی ڕاپۆرتی هەموو سندووقەکان ({n})'],
   ux_backToDayClose: ['العودة إلى إغلاق اليوم', 'Back to the day close', 'گەڕانەوە بۆ داخستنی ڕۆژ'],
+  ux_fullCountZeroes__one: ['جرد كامل: مادة واحدة لم تُعدّ ولها رصيد ستصبح صفراً. هل تتابع؟', 'Full count: 1 item with stock was not counted and will be set to zero. Go on?', 'جەردی تەواو: یەک کاڵای خاوەن بڕ نەژمێردراوە و دەکرێتە سفر. بەردەوام دەبیت؟'],
   ux_tillReturn: ['إرجاع من نقطة البيع', 'Return at the till', 'گەڕاندنەوە لە خاڵی فرۆشتن'],
   ux_receiptNumber: ['رقم الوصل', 'Receipt number', 'ژمارەی وەسڵ'],
   ux_receiptHint: ['اكتب رقم الوصل أو امسح الباركود المطبوع عليه، ثم اختر ما يعود.', 'Type the receipt number or scan its barcode, then pick what comes back.', 'ژمارەی وەسڵەکە بنووسە یان بارکۆدەکەی سەری بخوێنەوە، پاشان ئەوە هەڵبژێرە کە دەگەڕێتەوە.'],
