@@ -8,6 +8,7 @@ import { DeliveryOrderForm, draftOf, emptyDraft } from '../industry/DeliveryOrde
 import { deliveryMessage } from '../industry/market-messages.ts';
 import { deliveryApi, type DeliveryOrderSummary, type DeliveryStatus, type Driver, type DriverInput } from '../industry/market-extras-api.ts';
 import { LockedFeature } from '../industry/LockedFeature.tsx';
+import { Paper, PrintPart, PrintPartButton } from '../industry/PrintPart.tsx';
 
 /**
  * طلبات التوصيل — delivery orders taken by phone or WhatsApp (2.0, Starter and up). Route: delivery/<tab> (board,
@@ -131,6 +132,14 @@ function Board({ available, sales }: { available: boolean; sales: boolean }) {
                           ))}
                           {(status === 'new' || status === 'preparing') && <button type="button" className="btn small" onClick={() => void edit(o.id)}>{t('actEdit')}</button>}
                           {o.phone && <button type="button" className="btn small" onClick={() => whatsapp(o, status)} aria-label={t('mx_whatsapp')}><Icon name="mail" size={14} />{t('mx_whatsapp')}</button>}
+                          <PrintPartButton id={`dl-${o.id}`} label={t('ux_deliverySlip')} />
+                          <PrintPart id={`dl-${o.id}`}>
+                            <Paper company={settings ? i18n.name(settings.companyName) : ''} title={`${t('ux_deliverySlip')} ${o.number}`} sub={o.driverName ?? ''}>
+                              <p><strong>{o.customerName}</strong> · <span className="ltr">{o.phone}</span></p>
+                              <p>{[o.area, o.address].filter(Boolean).join(' — ')}</p>
+                              <p>{t('ux_toCollect')}: <strong>{o.payment === 'cod' ? i18n.money(o.total, 'IQD') : t('mx_pay_account')}</strong></p>
+                            </Paper>
+                          </PrintPart>
                           <button type="button" className="btn small" onClick={() => setMoving({ order: o, to: 'cancelled' })}>{t('mx_to_cancelled')}</button>
                         </div>
                       )}

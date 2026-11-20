@@ -1481,3 +1481,12 @@ a.fx-chip:focus-visible { outline: 2px solid var(--focus-outer); outline-offset:
 .cd-done { text-align: center; font-size: 40px; font-weight: 700; color: var(--accent, #0b5); }
 /* 2.0.0: several papers on one page (every till's report of a day) print one to a page */
 @media print { .page-break-after { break-after: page; } }
+/* 2.0.0: one paper printed alone (industry/PrintPart.tsx) */
+.print-part-host { display: none; }
+@media print {
+  body.print-part .app, body.print-part .toast, body.print-part .backdrop, body.print-part > #root { display: none !important; }
+  body.print-part .print-part-host.print-part-on { display: block; }
+}
+.print-part-paper table { width: 100%; border-collapse: collapse; }
+.print-part-paper th, .print-part-paper td { border-bottom: 1px solid #ccc; padding: 4px 6px; text-align: start; }
+.print-part-paper .num { text-align: end; }

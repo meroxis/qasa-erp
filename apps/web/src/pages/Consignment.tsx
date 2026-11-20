@@ -10,6 +10,8 @@ import {
   consignmentApi, type ConsignmentDoc, type ConsignmentDocKind, type ConsignmentItem, type ConsignmentStatement, type Settlement
 } from '../industry/consignment-api.ts';
 import { LockedFeature } from '../industry/LockedFeature.tsx';
+import { Paper, PrintPart, PrintPartButton } from '../industry/PrintPart.tsx';
+import { shareStatement } from '../share.ts';
 
 /**
  * بضاعة الأمانة — goods on consignment (sale-or-return). Route: consignment/<tab> (suppliers, items, docs, settlements).
@@ -92,6 +94,8 @@ function SuppliersTab() {
 function StatementModal({ supplierId, onClose }: { supplierId: string; onClose(): void }) {
   const i18n = useI18n();
   const { t } = i18n;
+  const { settings } = useData();
+  const company = settings ? i18n.name(settings.companyName) : '';
   const [from, setFrom] = useState('');
   const [to, setTo] = useState(todayIso());
   const { data, error } = useLoad(() => consignmentApi.statement(supplierId, { ...(from ? { from } : {}), ...(to ? { to } : {}) }), [supplierId, from, to]);
@@ -102,7 +106,20 @@ function StatementModal({ supplierId, onClose }: { supplierId: string; onClose()
         <label className="field"><span>{t('to')}</span><input className="input" type="date" value={to} onChange={(e) => setTo(e.target.value)} /></label>
       </div>
       <ErrorBox error={error} />
+      {data && (
+        <div className="row" style={{ gap: 8 }}>
+          <PrintPartButton id="cg-statement" />
+          <button type="button" className="btn small" onClick={() => shareStatement(i18n, company, { name: data.supplierName, balance: data.balance, currency: 'IQD', date: data.to })}><Icon name="mail" size={14} />WhatsApp</button>
+        </div>
+      )}
       {data && <StatementBody st={data} />}
+      {data && (
+        <PrintPart id="cg-statement">
+          <Paper company={company} title={`${t('ux_consStatement')} — ${data.supplierName}`} sub={`${data.from ? i18n.date(data.from) + ' — ' : ''}${i18n.date(data.to)}`}>
+            <StatementBody st={data} />
+          </Paper>
+        </PrintPart>
+      )}
     </Modal>
   );
 }
