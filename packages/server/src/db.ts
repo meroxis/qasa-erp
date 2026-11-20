@@ -5,7 +5,7 @@ import { DatabaseSync } from 'node:sqlite';
 import { brandKey, DEFAULT_POSTING_ACCOUNTS, IRAQI_UNIFIED_CHART, STARTER_SUB_ACCOUNTS } from '@qasa/core';
 import { AppError } from './errors.ts';
 import {
-  MYSQL_TABLES, MYSQL_TRIGGERS, mysqlCollations, mysqlTableSql, pendingMysqlSteps, V10_MYSQL_STEPS, V11_MYSQL_STEPS, V12_MYSQL_STEPS, V13_MYSQL_STEPS, V14_MYSQL_STEPS, V15_MYSQL_STEPS, V16_MYSQL_STEPS, V17_MYSQL_STEPS, type MysqlCollations, type MysqlStep
+  MYSQL_TABLES, MYSQL_TRIGGERS, mysqlCollations, mysqlTableSql, pendingMysqlSteps, V10_MYSQL_STEPS, V11_MYSQL_STEPS, V12_MYSQL_STEPS, V13_MYSQL_STEPS, V14_MYSQL_STEPS, V15_MYSQL_STEPS, V16_MYSQL_STEPS, V17_MYSQL_STEPS, V18_MYSQL_STEPS, type MysqlCollations, type MysqlStep
 } from './schema-mysql.ts';
 
 export type SqlParam = null | number | bigint | string | Uint8Array;
@@ -2119,6 +2119,119 @@ const V17 =
   `;
   // ——— end of 17 (tills, shelf labels, consignment, offers) ———
 
+// ===== 18 · MARKET EXTRAS (delivery.ts, debt-reminders.ts, price-checker.ts, daily-suppliers.ts) — begin =====
+const V18 =
+  // 18 — market extras: delivery orders taken by phone or WhatsApp (drivers, the order and its lines, the cash a driver
+  // hands over), the WhatsApp reminders sent to customers who owe, the price checker screens near the shelves (a device
+  // token, kept as its hash), and the suppliers who deliver every day (their usual items and each day's receipt).
+  `
+  CREATE TABLE delivery_drivers (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    phone TEXT,
+    user_id TEXT REFERENCES users(id),
+    cash_account TEXT REFERENCES accounts(code),
+    active INTEGER NOT NULL DEFAULT 1 CHECK (active IN (0, 1)),
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+  );
+  CREATE TABLE delivery_orders (
+    id TEXT PRIMARY KEY,
+    number TEXT NOT NULL UNIQUE,
+    status TEXT NOT NULL CHECK (status IN ('new', 'preparing', 'out', 'delivered', 'cancelled')),
+    party_id TEXT REFERENCES parties(id),
+    customer_name TEXT NOT NULL,
+    phone TEXT,
+    address TEXT NOT NULL,
+    area TEXT,
+    notes TEXT,
+    lang TEXT CHECK (lang IS NULL OR lang IN ('ar', 'en', 'ku')),
+    warehouse_id TEXT NOT NULL REFERENCES warehouses(id),
+    payment TEXT NOT NULL CHECK (payment IN ('cod', 'account')),
+    fee INTEGER NOT NULL DEFAULT 0 CHECK (fee >= 0),
+    driver_id TEXT REFERENCES delivery_drivers(id),
+    invoice_id TEXT REFERENCES invoices(id),
+    cancel_reason TEXT,
+    created_by TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    out_at TEXT,
+    delivered_at TEXT
+  );
+  CREATE INDEX delivery_orders_status ON delivery_orders(status, created_at);
+  CREATE TABLE delivery_order_lines (
+    order_id TEXT NOT NULL REFERENCES delivery_orders(id) ON DELETE CASCADE,
+    line_no INTEGER NOT NULL,
+    item_id TEXT NOT NULL REFERENCES items(id),
+    qty_milli INTEGER NOT NULL CHECK (qty_milli > 0),
+    unit_price INTEGER NOT NULL CHECK (unit_price >= 0),
+    unit TEXT,
+    unit_qty_milli INTEGER CHECK (unit_qty_milli IS NULL OR unit_qty_milli > 0),
+    PRIMARY KEY (order_id, line_no)
+  );
+  CREATE TABLE delivery_handovers (
+    id TEXT PRIMARY KEY,
+    driver_id TEXT NOT NULL REFERENCES delivery_drivers(id),
+    entry_id TEXT NOT NULL REFERENCES entries(id),
+    amount INTEGER NOT NULL CHECK (amount > 0),
+    created_by TEXT NOT NULL,
+    created_at TEXT NOT NULL
+  );
+  CREATE INDEX delivery_handovers_driver ON delivery_handovers(driver_id, created_at);
+  CREATE TABLE party_reminders (
+    id TEXT PRIMARY KEY,
+    party_id TEXT NOT NULL REFERENCES parties(id),
+    amount INTEGER NOT NULL,
+    currency TEXT NOT NULL CHECK (currency IN ('IQD', 'USD')),
+    days INTEGER NOT NULL CHECK (days >= 0),
+    lang TEXT NOT NULL CHECK (lang IN ('ar', 'en', 'ku')),
+    created_by TEXT NOT NULL,
+    created_at TEXT NOT NULL
+  );
+  CREATE INDEX party_reminders_party ON party_reminders(party_id, created_at);
+  CREATE TABLE price_checker_devices (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    token_hash TEXT NOT NULL UNIQUE,
+    warehouse_id TEXT REFERENCES warehouses(id),
+    created_by TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    last_seen_at TEXT,
+    revoked_at TEXT
+  );
+  CREATE TABLE daily_supplier_items (
+    party_id TEXT NOT NULL REFERENCES parties(id),
+    item_id TEXT NOT NULL REFERENCES items(id),
+    sort INTEGER NOT NULL DEFAULT 0,
+    unit_cost INTEGER CHECK (unit_cost IS NULL OR unit_cost >= 0),
+    PRIMARY KEY (party_id, item_id)
+  );
+  CREATE TABLE daily_receipts (
+    id TEXT PRIMARY KEY,
+    party_id TEXT NOT NULL REFERENCES parties(id),
+    date TEXT NOT NULL,
+    warehouse_id TEXT NOT NULL REFERENCES warehouses(id),
+    purchase_id TEXT REFERENCES invoices(id),
+    created_by TEXT NOT NULL,
+    created_at TEXT NOT NULL
+  );
+  CREATE INDEX daily_receipts_party ON daily_receipts(party_id, date);
+  CREATE TABLE daily_receipt_lines (
+    receipt_id TEXT NOT NULL REFERENCES daily_receipts(id) ON DELETE CASCADE,
+    item_id TEXT NOT NULL REFERENCES items(id),
+    received_milli INTEGER NOT NULL CHECK (received_milli >= 0),
+    returned_milli INTEGER NOT NULL CHECK (returned_milli >= 0),
+    unit_cost INTEGER NOT NULL CHECK (unit_cost >= 0),
+    PRIMARY KEY (receipt_id, item_id)
+  );
+  CREATE TABLE daily_receipt_returns (
+    receipt_id TEXT NOT NULL REFERENCES daily_receipts(id) ON DELETE CASCADE,
+    return_id TEXT NOT NULL REFERENCES invoices(id),
+    PRIMARY KEY (receipt_id, return_id)
+  );
+  `;
+// ===== end 18 · MARKET EXTRAS =====
+
 const MIGRATIONS: Migration[] = [
   { sql: V1 }, { sql: V2, rebuild: true }, { sql: V3, rebuild: true }, { sql: V4 }, { sql: V5, rebuild: true },
   { sql: V6, mysql: 'tables' }, { sql: V7, mysql: 'tables' }, { sql: V8, mysql: 'tables' }, { sql: V9, mysql: 'tables' },
@@ -2129,7 +2242,8 @@ const MIGRATIONS: Migration[] = [
   { sql: V14, mysql: { tables: true, steps: () => V14_MYSQL_STEPS } },
   { sql: V15, mysql: { tables: true, steps: () => V15_MYSQL_STEPS } },
   { sql: V16, mysql: { tables: true, steps: () => V16_MYSQL_STEPS } },
-  { sql: V17, mysql: { tables: true, steps: () => V17_MYSQL_STEPS } }
+  { sql: V17, mysql: { tables: true, steps: () => V17_MYSQL_STEPS } },
+  { sql: V18, mysql: { tables: true, steps: () => V18_MYSQL_STEPS } }
 ];
 
 /** Server databases began at this version: its schema is in schema-mysql.ts (tables and triggers without `since`). */

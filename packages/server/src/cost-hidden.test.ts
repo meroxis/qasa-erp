@@ -69,7 +69,9 @@ const EXTRA: string[] = [];
 /** Addresses the checks below name. */
 const at: Record<string, string> = {};
 /** Routes whose record this company has none of (fixed assets, item pictures): 404 for everyone. */
-const NO_RECORD = new Set(['/api/assets/depreciation/:id', '/api/assets/:id', '/api/items/:id/image']);
+const NO_RECORD = new Set(['/api/assets/depreciation/:id', '/api/assets/:id', '/api/items/:id/image', '/api/delivery/orders/:id']);
+/** Routes for a price checker's device token alone (2.0): no signed-in user reaches them. */
+const DEVICE_ONLY = new Set(['/api/price-check', '/api/price-check/offers']);
 
 beforeAll(async () => {
   resetLoginThrottle();
@@ -198,7 +200,8 @@ beforeAll(async () => {
     '/api/fuel/shifts/:id': fuelShift.id, '/api/fuel/deliveries/:id': fuelDelivery.id,
     '/api/consignment/items/:id': breadId, '/api/consignment/docs/:id': consigned.id, '/api/consignment/settlements/:id': consignmentSettlement.id,
     '/api/consignment/statement/:id': supplierId,
-    '/api/offers/:id': 'offer-1'
+    '/api/offers/:id': 'offer-1',
+    '/api/parties/:id/reminders': customerId, '/api/daily-suppliers/:id/sheet': supplierId, '/api/daily-suppliers/:id/receipts': supplierId
   });
   Object.assign(QUERY, {
     '/api/reports/final-accounts': `from=${today.slice(0, 4)}-01-01&to=${today}`,
@@ -277,7 +280,7 @@ interface Answer { route: string; url: string; status: number; paths: Set<string
 
 /** Asks every GET route of the API (each with a real record where it takes one), and the extra addresses. */
 async function walk(as: Headers): Promise<Answer[]> {
-  const routes = apiRoutes(db).filter((r) => r.method === 'GET').map((r) => r.path);
+  const routes = apiRoutes(db).filter((r) => r.method === 'GET' && !DEVICE_ONLY.has(r.path)).map((r) => r.path);
   const asked = routes.map((route) => {
     const params = route.match(/:\w+/g) ?? [];
     // a new route with a record in its address must be given one here, so it is walked with a real answer
@@ -359,8 +362,10 @@ const BOOKS_FIELDS = (): [string, string][] => [
 const BOOKS_ROUTES = ['/api/entries/', '/api/reports/', '/api/year-end', '/api/fx/revaluation', '/api/assets', '/api/brief/reports/stock-value', '/api/brief/expenses', '/api/banking/statements', '/api/banking/cheques',
   '/api/fuel/attendants', '/api/fuel/deliveries', '/api/fuel/dips', '/api/fuel/reports',
   // goods on consignment (1.7): what the shop owes its suppliers, and at what cost it holds their goods
-  '/api/consignment'];
-const ADMIN_ROUTES = ['/api/audit', '/api/auth/recovery-code', '/api/branches', '/api/users'];
+  '/api/consignment',
+  // the cash delivery drivers hand over (2.0)
+  '/api/delivery/handovers'];
+const ADMIN_ROUTES = ['/api/audit', '/api/auth/recovery-code', '/api/branches', '/api/price-checker/devices', '/api/users'];
 // the till's own reads (1.5.2): for the Point of sale permission only (an admin has it; a cashier at the till here too)
 const TILL_ROUTES = ['/api/pos/current', '/api/pos/payment-accounts', '/api/pos/scale', '/api/pos/tills'];
 const NOT_THEIRS = [...ADMIN_ROUTES, ...TILL_ROUTES].sort();
@@ -434,7 +439,7 @@ describe('cost, stock value and profit, by who asks', () => {
     // under any address they can ask. Other things have a balance, and stay: what a customer or a supplier owes (the
     // parties, their statements, the aging report, the brief's late customers), an item's stock, loyalty points
     // (the brief's customers who owe the most, phone app 1.1: what customers owe, as its late customers)
-    const notMoney = /^\/api\/(parties|brief\/reports\/aging|items|loyalty)[/ ]|^\/api\/brief \.(lateCustomers|topDebtors)\[\]\.balance$/;
+    const notMoney = /^\/api\/(parties|brief\/reports\/aging|items|loyalty|debt-reminders|daily-suppliers)[/ ]|^\/api\/brief \.(lateCustomers|topDebtors)\[\]\.balance$/;
     const money = answers.flatMap((a) => [...a.paths].filter((p) => /balance|flow|expenses/i.test(p.split('.').pop()!)).map((p) => `${a.route} ${p}`));
     expect(money.filter((p) => !notMoney.test(p))).toEqual([]);
     // what the till needs stays: the safes by name (to pick one), and the day close's sales and debts (1.4.1: of the
