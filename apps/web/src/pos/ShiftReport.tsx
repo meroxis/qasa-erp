@@ -16,17 +16,50 @@ export function PosShiftReport({ id }: { id: string }) {
   const { data: r, error } = useLoad<ShiftReport>(() => posApi.shift(id), [id]);
   if (error) return <ErrorBox error={error} />;
   if (!r) return null;
-  const time = (iso: string | null) => shiftTime(i18n, iso);
   return (
     <div className="stack">
       <div className="row no-print">
         <a className="btn" href={href('pos')}>{t('pos_backToRegister')}</a>
         <button type="button" className="btn primary" onClick={() => void printDocument('report')}><Icon name="printer" size={16} />{t('pos_print')}</button>
       </div>
+      <ShiftPaper r={r} company={settings ? i18n.name(settings.companyName) : ''} />
+    </div>
+  );
+}
+
+/**
+ * 2.0.0: the X/Z reports of several shifts (every till of a day, from the end-of-day close) on one page, one paper
+ * after another, printed in one go.
+ */
+export function PosShiftReports({ ids }: { ids: string[] }) {
+  const i18n = useI18n();
+  const { t } = i18n;
+  const { settings } = useData();
+  usePageNav({ key: 'pos_title', group: 'gSales', title: 'pos_shiftReport' });
+  const { data, error } = useLoad<ShiftReport[]>(() => Promise.all(ids.map((id) => posApi.shift(id))), [ids.join(',')]);
+  if (error) return <ErrorBox error={error} />;
+  if (!data) return null;
+  const company = settings ? i18n.name(settings.companyName) : '';
+  return (
+    <div className="stack">
+      <div className="row no-print">
+        <a className="btn" href={href('day-close')}>{t('ux_backToDayClose')}</a>
+        <button type="button" className="btn primary" onClick={() => void printDocument('report')}><Icon name="printer" size={16} />{t('ux_printAllZ', { n: i18n.int(data.length) })}</button>
+      </div>
+      {data.map((r) => <div key={r.id} className="page-break-after"><ShiftPaper r={r} company={company} /></div>)}
+    </div>
+  );
+}
+
+function ShiftPaper({ r, company }: { r: ShiftReport; company: string }) {
+  const i18n = useI18n();
+  const { t } = i18n;
+  const time = (iso: string | null) => shiftTime(i18n, iso);
+  return (
       <div className="card pad stack paper">
         <div className="paper-head">
           <div>
-            <div className="small muted">{settings ? i18n.name(settings.companyName) : ''}</div>
+            <div className="small muted">{company}</div>
             <h2 style={{ margin: 0 }}>{r.status === 'open' ? t('pos_xReport') : t('pos_zReport')} — {r.number}</h2>
           </div>
           <span className={'chip ' + (r.status === 'open' ? 'info' : '')}>{r.status === 'open' ? t('pos_statusOpen') : t('pos_statusClosed')}</span>
@@ -49,6 +82,8 @@ export function PosShiftReport({ id }: { id: string }) {
             <tr><td><strong>{t('pos_expected')}</strong></td><td className="num"><strong>{money2(i18n, r.expected)}</strong></td></tr>
             {r.counted && <tr><td>{t('pos_counted')}</td><td className="num">{money2(i18n, r.counted)}</td></tr>}
             {r.difference && <tr><td>{t('pos_difference')}</td><td className="num"><DiffText d={r.difference} /></td></tr>}
+            {r.gift && r.gift.soldCount > 0 && <tr><td>{t('ux_giftSold', { n: i18n.int(r.gift.soldCount) })}</td><td className="num">{i18n.money(r.gift.sold, 'IQD')}</td></tr>}
+            {r.gift && r.gift.used > 0 && <tr><td>{t('ux_giftUsed')}</td><td className="num">{i18n.money(r.gift.used, 'IQD')}</td></tr>}
           </tbody>
         </table>
         {r.notes && <p className="small" style={{ whiteSpace: 'pre-line' }}>{t('pos_notes')}: {r.notes}</p>}
@@ -85,7 +120,6 @@ export function PosShiftReport({ id }: { id: string }) {
         </div>
         <p className="small muted">{t('pos_returnsNote')}</p>
       </div>
-    </div>
   );
 }
 

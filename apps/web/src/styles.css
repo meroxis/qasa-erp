@@ -1479,3 +1479,5 @@ a.fx-chip:focus-visible { outline: 2px solid var(--focus-outer); outline-offset:
 .cd-row { display: flex; justify-content: space-between; font-size: 30px; }
 .cd-change strong { color: var(--accent, #0b5); }
 .cd-done { text-align: center; font-size: 40px; font-weight: 700; color: var(--accent, #0b5); }
+/* 2.0.0: several papers on one page (every till's report of a day) print one to a page */
+@media print { .page-break-after { break-after: page; } }

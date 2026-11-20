@@ -23,4 +23,4 @@ export { shiftTime } from '../pos/shared.ts';
 export { QuickRow, PosCategories } from '../pos/Tiles.tsx';
 export { CartName } from '../pos/CartName.tsx';
 export { TillEquivalent } from '../pos/TillEquivalent.tsx';
-export { PosShiftReport } from '../pos/ShiftReport.tsx';
+export { PosShiftReport, PosShiftReports } from '../pos/ShiftReport.tsx';

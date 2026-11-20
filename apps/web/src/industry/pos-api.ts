@@ -45,6 +45,8 @@ export interface ShiftSaleView {
 export interface ShiftReport extends ShiftView {
   invoices: ShiftSaleView[];
   items: { itemId: string; code: string; name: Names; qtyMilli: number; amount: Money2 }[];
+  /** 2.0.0: gift vouchers sold at this till and used on its sales */
+  gift?: { soldCount: number; sold: number; used: number };
 }
 
 export interface OpenShiftInput { tillId?: string; register: string; cashAccountCode: string; warehouseId: string; openingCash: number; notes?: string }

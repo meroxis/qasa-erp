@@ -834,6 +834,11 @@ export function StockCount() {
     if (!saver) return;
     // nothing counted and not "count all": nothing to finish, so no count is started on the server for it
     if (nothingToCount(full, counted)) { setMessage(t('adj_nothingCounted')); return; }
+    // 2.0.0: a full count takes every item not counted as zero: say how many first, as it can't be guessed from the sheet
+    if (full) {
+      const zeroed = rows.filter((r) => !counted.has(r.itemId) && bookOf(r) !== 0).length;
+      if (zeroed > 0 && !window.confirm(t('ux_fullCountZeroes', { n: i18n.int(zeroed) }))) return;
+    }
     setBusy(true);
     setError(null);
     try {

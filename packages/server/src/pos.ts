@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { roundCash } from '@qasa/core';
-import { giftCashOf, giftParts, takeGiftParts } from './gift-vouchers.ts';
+import { giftCashOf, giftOfShift, giftParts, takeGiftParts } from './gift-vouchers.ts';
 import { blindShift, closesBlind, maySellMisc, roundingAccount, tillRules, useApproval } from './till-settings.ts';
 import { z } from 'zod';
 import { todayIso, UNIT_CODES, type CurrencyCode, type UnitCode } from '@qasa/core';
@@ -148,6 +148,8 @@ export interface ShiftReport extends ShiftView {
   invoices: ShiftSaleView[];
   /** what was sold, item by item (posted sales only) */
   items: { itemId: string; code: string; name: { ar: string; en: string; ku: string }; qtyMilli: number; amount: Money }[];
+  /** 2.0.0: gift vouchers sold at this till and used on its sales */
+  gift: { soldCount: number; sold: number; used: number };
 }
 
 export interface OpenShiftInput {
@@ -445,7 +447,7 @@ export function shiftReport(db: Db, id: string, actor: Actor | null = null): Shi
     e.amount[l.currency] += Math.round(Number(l.amount)); // after the invoice discount, so the items add up to the sales
     byItem.set(l.item_id, e);
   }
-  return { ...shiftView(db, row, actor), invoices, items: [...byItem.values()] };
+  return { ...shiftView(db, row, actor), invoices, items: [...byItem.values()], gift: giftOfShift(db, id) };
 }
 
 const trimmed = (s: string | undefined) => s?.trim() || null;

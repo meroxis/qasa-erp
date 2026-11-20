@@ -179,6 +179,15 @@ export function giftCashOf(db: Db, shiftId: string): number {
   return Number(r.total);
 }
 
+/** 2.0.0: the gift vouchers of one shift for its X/Z report: sold at this till (count and amount), and used on its sales (less what came back). */
+export function giftOfShift(db: Db, shiftId: string): { soldCount: number; sold: number; used: number } {
+  const sold = db.prepare("SELECT COUNT(*) AS n, COALESCE(SUM(amount), 0) AS total FROM gift_vouchers WHERE shift_id = ? AND status = 'active'").get(shiftId) as { n: number; total: number };
+  // a redemption is kept as a minus on the voucher, a restore (the sale cancelled) as a plus: their sum, turned round
+  const used = db.prepare(`SELECT COALESCE(SUM(m.amount), 0) AS total FROM gift_voucher_moves m JOIN pos_sales s ON s.invoice_id = m.invoice_id
+                           WHERE s.shift_id = ? AND m.kind IN ('redeemed', 'restored')`).get(shiftId) as { total: number };
+  return { soldCount: Number(sold.n), sold: Number(sold.total), used: Math.max(0, -Number(used.total)) };
+}
+
 export interface GiftReport { vouchers: GiftVoucherView[]; sold: number; used: number; outstanding: number; expiredUnused: number }
 
 /** Every voucher (newest first) with the totals: sold, used, still owed, and what expired unused. */

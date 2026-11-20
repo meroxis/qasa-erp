@@ -79,6 +79,7 @@ const BusinessTypePage = lazyPage(() => import('./pages/BusinessType.tsx'), 'Bus
 const Pos = lazyPage(() => import('./pages/Pos.tsx'), 'Pos');
 const OutboxPage = lazyPage(() => import('./pages/Outbox.tsx'), 'OutboxPage');
 const PosShiftReport = lazyPage(() => import('./pages/Pos.tsx'), 'PosShiftReport');
+const PosShiftReports = lazyPage(() => import('./pages/Pos.tsx'), 'PosShiftReports');
 const Payroll = lazyPage(() => import('./pages/Payroll.tsx'), 'Payroll');
 const PayrollRun = lazyPage(() => import('./pages/Payroll.tsx'), 'PayrollRun');
 const Import = lazyPage(() => import('./pages/Import.tsx'), 'Import');
@@ -525,6 +526,11 @@ export function App() {
     case 'pos-shift':
       title = t('pos_title');
       content = arg ? <PosShiftReport key={arg} id={arg} /> : null;
+      break;
+    case 'pos-shifts':
+      // 2.0.0: every till's X/Z report of a day, printed in one go (from the end-of-day close)
+      title = t('pos_title');
+      content = arg ? <PosShiftReports key={arg} ids={arg.split(',').filter(Boolean).slice(0, 40)} /> : null;
       break;
     case 'solar':
       title = t('sl_title');

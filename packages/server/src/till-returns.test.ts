@@ -104,3 +104,16 @@ describe('a return at the till', () => {
     expect((await post(`/api/pos/shifts/${shift.id}/returns`, { invoiceId: inv.json().id, lines: body.lines }, who.las!)).json()).toMatchObject({ error: 'pos_return_not_till_sale' });
   });
 });
+
+describe('the shift report and gift vouchers', () => {
+  it('counts the vouchers sold at the till and used on its sales', async () => {
+    const shift = await openShift();
+    const sold = await post(`/api/pos/shifts/${shift.id}/gift-vouchers`, { amount: 10_000 });
+    expect(sold.statusCode, sold.body).toBe(201);
+    const code = sold.json().code as string;
+    const sale = await post(`/api/pos/shifts/${shift.id}/sales`, { currency: 'IQD', discount: 0, lines: [tea(1)], vouchers: [{ code, amount: 2_750 }] });
+    expect(sale.statusCode, sale.body).toBe(201);
+    const report = (await get(`/api/pos/shifts/${shift.id}`)).json();
+    expect(report.gift).toEqual({ soldCount: 1, sold: 10_000, used: 2_750 });
+  });
+});

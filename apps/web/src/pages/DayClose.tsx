@@ -210,7 +210,8 @@ export function DayClose() {
               </div>
             </Section>
 
-            <Section title={t('dc_registers')} icon="receipt" empty={!c.registers.length}>
+            <Section title={t('dc_registers')} icon="receipt" empty={!c.registers.length}
+              action={c.registers.length > 1 ? <a className="btn small no-print" href={href(`pos-shifts/${c.registers.map((r) => r.shiftId).join(',')}`)}><Icon name="printer" size={14} />{t('ux_printAllZ', { n: i18n.int(c.registers.length) })}</a> : undefined}>
               <div className="table-wrap">
                 <table className="table">
                   <thead><tr><th>{t('pos_register')}</th><th className="num">{t('pos_expected')}</th><th className="num">{t('pos_counted')}</th><th className="num">{t('pos_difference')}</th></tr></thead>
