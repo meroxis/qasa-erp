@@ -2052,8 +2052,129 @@ export const MYSQL_TABLES: readonly MysqlObject[] = [
       FOREIGN KEY (invoice_id) REFERENCES invoices(id) ON DELETE CASCADE,
       FOREIGN KEY (offer_id) REFERENCES offers(id)
     )`
-  }
+  },
   // ===== end 17 · OFFERS =====
+  // ===== 18 · GOLD (db.ts V18, gold.ts) — begin =====
+  {
+    name: 'gold_items',
+    since: 18,
+    sql: `CREATE TABLE gold_items (
+      item_id ${ID} NOT NULL PRIMARY KEY,
+      weight_mg BIGINT NOT NULL CHECK (weight_mg > 0),
+      karat INT NOT NULL CHECK (karat IN (18, 21, 22, 24)),
+      making_kind ${WORD} NOT NULL CHECK (making_kind IN ('gram', 'piece')),
+      making_amount BIGINT NOT NULL DEFAULT 0 CHECK (making_amount >= 0),
+      created_at ${WHEN} NOT NULL,
+      updated_at ${WHEN} NOT NULL,
+      FOREIGN KEY (item_id) REFERENCES items(id)
+    )`
+  },
+  {
+    name: 'gold_prices',
+    since: 18,
+    sql: `CREATE TABLE gold_prices (
+      id ${ID} NOT NULL PRIMARY KEY,
+      date ${WHEN} NOT NULL,
+      karat INT NOT NULL CHECK (karat IN (18, 21, 22, 24)),
+      currency ${WORD} NOT NULL CHECK (currency IN ('IQD', 'USD')),
+      buy_per_gram BIGINT NOT NULL CHECK (buy_per_gram >= 0),
+      sell_per_gram BIGINT NOT NULL CHECK (sell_per_gram >= 0),
+      created_by TEXT NOT NULL,
+      created_at ${WHEN} NOT NULL,
+      UNIQUE KEY gold_prices_day (date, karat, currency)
+    )`
+  },
+  {
+    name: 'gold_suppliers',
+    since: 18,
+    sql: `CREATE TABLE gold_suppliers (
+      party_id ${ID} NOT NULL PRIMARY KEY,
+      basis_karat INT NOT NULL CHECK (basis_karat IN (21, 24)),
+      updated_at ${WHEN} NOT NULL,
+      FOREIGN KEY (party_id) REFERENCES parties(id)
+    )`
+  },
+  {
+    name: 'gold_docs',
+    since: 18,
+    sql: `CREATE TABLE gold_docs (
+      id ${ID} NOT NULL PRIMARY KEY,
+      kind ${WORD} NOT NULL CHECK (kind IN ('buy', 'melt', 'receipt', 'delivery')),
+      number ${ID} UNIQUE,
+      date ${WHEN} NOT NULL,
+      status ${WORD} NOT NULL CHECK (status IN ('draft', 'posted', 'cancelled')),
+      party_id ${ID},
+      customer_name TEXT,
+      warehouse_id ${ID},
+      cash_account ${ID},
+      currency ${WORD} NOT NULL CHECK (currency IN ('IQD', 'USD')),
+      rate_x100 BIGINT NOT NULL CHECK (rate_x100 > 0),
+      karat INT CHECK (karat IS NULL OR karat IN (18, 21, 22, 24)),
+      weight_mg BIGINT CHECK (weight_mg IS NULL OR weight_mg > 0),
+      price_per_gram BIGINT CHECK (price_per_gram IS NULL OR price_per_gram >= 0),
+      karat_out INT CHECK (karat_out IS NULL OR karat_out IN (18, 21, 22, 24)),
+      weight_out_mg BIGINT CHECK (weight_out_mg IS NULL OR weight_out_mg > 0),
+      entry_id ${ID},
+      notes TEXT,
+      created_by TEXT NOT NULL,
+      prepared_by_id ${ID},
+      created_at ${WHEN} NOT NULL,
+      updated_at ${WHEN} NOT NULL,
+      INDEX gold_docs_kind (kind, date),
+      FOREIGN KEY (party_id) REFERENCES parties(id),
+      FOREIGN KEY (warehouse_id) REFERENCES warehouses(id),
+      FOREIGN KEY (cash_account) REFERENCES accounts(code),
+      FOREIGN KEY (entry_id) REFERENCES entries(id),
+      FOREIGN KEY (prepared_by_id) REFERENCES users(id)
+    )`
+  },
+  {
+    name: 'gold_doc_lines',
+    since: 18,
+    sql: `CREATE TABLE gold_doc_lines (
+      doc_id ${ID} NOT NULL,
+      seq INT NOT NULL,
+      item_id ${ID} NOT NULL,
+      making BIGINT NOT NULL DEFAULT 0 CHECK (making >= 0),
+      PRIMARY KEY (doc_id, seq),
+      FOREIGN KEY (doc_id) REFERENCES gold_docs(id) ON DELETE CASCADE,
+      FOREIGN KEY (item_id) REFERENCES items(id)
+    )`
+  },
+  {
+    name: 'gold_scrap_moves',
+    since: 18,
+    sql: `CREATE TABLE gold_scrap_moves (
+      id ${ID} NOT NULL PRIMARY KEY,
+      date ${WHEN} NOT NULL,
+      karat INT NOT NULL CHECK (karat IN (18, 21, 22, 24)),
+      weight_mg BIGINT NOT NULL,
+      value BIGINT NOT NULL,
+      source_type ${WORD} NOT NULL,
+      source_id ${ID} NOT NULL,
+      created_at ${WHEN} NOT NULL,
+      INDEX gold_scrap_moves_karat (karat, date),
+      INDEX gold_scrap_moves_source (source_id)
+    )`
+  },
+  {
+    name: 'gold_supplier_moves',
+    since: 18,
+    sql: `CREATE TABLE gold_supplier_moves (
+      id ${ID} NOT NULL PRIMARY KEY,
+      party_id ${ID} NOT NULL,
+      date ${WHEN} NOT NULL,
+      fine_mg BIGINT NOT NULL,
+      value BIGINT NOT NULL,
+      source_type ${WORD} NOT NULL,
+      source_id ${ID} NOT NULL,
+      created_at ${WHEN} NOT NULL,
+      INDEX gold_supplier_moves_party (party_id, date),
+      INDEX gold_supplier_moves_source (source_id),
+      FOREIGN KEY (party_id) REFERENCES parties(id)
+    )`
+  }
+  // ===== 18 · GOLD — end =====
 ];
 
 const refuse = (message: string) => `SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = '${message}'`;
@@ -2236,6 +2357,11 @@ export const V17_MYSQL_STEPS: readonly MysqlStep[] = [
   mysqlAddColumn('invoices', 'offer_discount', 'BIGINT NOT NULL DEFAULT 0 CHECK (offer_discount >= 0)')
 ];
 // ——— end of 17, TILLS ———
+
+// ===== 18 · GOLD =====
+/** Version 18: the gold shop's tables only (MYSQL_TABLES, since 18); no column added to an older table. */
+export const V18_MYSQL_STEPS: readonly MysqlStep[] = [];
+// ===== 18 · GOLD — end =====
 
 /**
  * What a server database has already, for pendingMysqlSteps: "table.column", "table.column>parent" and "table.index"

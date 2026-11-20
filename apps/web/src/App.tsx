@@ -113,6 +113,10 @@ const FixedAssetDetail = lazyPage(() => import('./pages/FixedAssets.tsx'), 'Fixe
 const GenRun = lazyPage(() => import('./pages/Generators.tsx'), 'GenRun');
 const Generators = lazyPage(() => import('./pages/Generators.tsx'), 'Generators');
 const PetrolStation = lazyPage(() => import('./pages/PetrolStation.tsx'), 'PetrolStation');
+const Gold = lazyPage(() => import('./pages/Gold.tsx'), 'Gold');
+const GoldSlipPage = lazyPage(() => import('./pages/Gold.tsx'), 'GoldSlipPage');
+// the gold shop's tabs (as pages/Gold.tsx names them)
+const GOLD_TABS = ['board', 'pieces', 'old', 'suppliers', 'stock'] as const;
 // the petrol station's tabs (as pages/PetrolStation.tsx names them), written here so that page stays loaded lazily
 const PETROL_TABS = ['shifts', 'tanks', 'deliveries', 'dips', 'reports', 'setup'] as const;
 // goods on consignment's tabs (as pages/Consignment.tsx names them)
@@ -529,6 +533,14 @@ export function App() {
     case 'petrol':
       title = t('ps_title');
       content = <PetrolStation key={arg ?? 'shifts'} tab={PETROL_TABS.find((x) => x === arg) ?? 'shifts'} />;
+      break;
+    case 'gold':
+      title = t('gd_title');
+      content = <Gold key={arg ?? 'board'} tab={GOLD_TABS.find((x) => x === arg) ?? 'board'} />;
+      break;
+    case 'gold-slip':
+      title = t('gd_slip');
+      content = arg ? <GoldSlipPage key={arg} id={arg} /> : null;
       break;
     case 'fuel-shift':
       title = t('ps_title');

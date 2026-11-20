@@ -138,6 +138,12 @@ beforeAll(async () => {
   const breadSold = await made(post('/api/invoices', invoice('sale', customerId, [{ itemId: breadId, qtyMilli: 1_000, unitPrice: 1_000 }])));
   await made(post(`/api/invoices/${breadSold.id}/post`), 200);
   const consignmentSettlement = await made(post('/api/consignment/settlements', { supplierId, currency: 'IQD', date: today }));
+  // a gold shop (1.8): a ring priced from the day's board, received from a supplier in gold
+  const ringId = (await made(post('/api/items', { code: 'RING', name: one('Ring'), unit: 'piece', salePrice: 0, saleCurrency: 'IQD' }))).id as string;
+  await made(put(`/api/gold/items/${ringId}`, { weightMg: 5_000, karat: 21, makingKind: 'gram', makingAmount: 5_000 }), 200);
+  await made(put('/api/gold/board', { date: today, currency: 'IQD', prices: [{ karat: 21, buyPerGram: 95_000, sellPerGram: 100_000 }] }), 200);
+  const goldReceipt = await made(post('/api/gold/docs', { kind: 'receipt', date: today, partyId: supplierId, warehouseId, pricePerGram: 120_000, lines: [{ itemId: ringId }] }));
+  await made(post(`/api/gold/docs/${goldReceipt.id}/post`), 200);
   const quote = await made(post('/api/quotes', { date: today, partyId: customerId, currency: 'IQD', lines: [{ itemId: teaId, description: 'Tea', qtyMilli: 5_000, unitPrice: 2_400 }] }));
 
   // the stock is corrected and counted, an order waits at the supplier, a wholesale price is set
@@ -198,7 +204,8 @@ beforeAll(async () => {
     '/api/fuel/shifts/:id': fuelShift.id, '/api/fuel/deliveries/:id': fuelDelivery.id,
     '/api/consignment/items/:id': breadId, '/api/consignment/docs/:id': consigned.id, '/api/consignment/settlements/:id': consignmentSettlement.id,
     '/api/consignment/statement/:id': supplierId,
-    '/api/offers/:id': 'offer-1'
+    '/api/offers/:id': 'offer-1',
+    '/api/gold/items/:id': ringId, '/api/gold/docs/:id': goldReceipt.id, '/api/gold/suppliers/:id': supplierId, '/api/gold/slip/:id': sale.id
   });
   Object.assign(QUERY, {
     '/api/reports/final-accounts': `from=${today.slice(0, 4)}-01-01&to=${today}`,
@@ -348,7 +355,9 @@ const BOOKS_FIELDS = (): [string, string][] => [
   // 1.4.1: other people's cheques, in the cheque pages, the Daily Brief and the dashboard
   ['/api/banking/cheques', '[].amount'], ['/api/banking/cheques', '[].number'], [at.cheque!, '.amount'], ['/api/banking/cheques/summary', '.inHandCount'], ['/api/banking/cheques/summary', '.inHand.IQD'],
   ['/api/brief', '.cheques.due[].amount'], ['/api/brief', '.cheques.due[].party'], ['/api/brief', '.cheques.dueTotal.IQD'], ['/api/brief', '.cheques.bounced'],
-  ['/api/brief/dashboard', '.cheques.due'], ['/api/brief/dashboard', '.cheques.dueTotal.IQD']
+  ['/api/brief/dashboard', '.cheques.due'], ['/api/brief/dashboard', '.cheques.dueTotal.IQD'],
+  // a gold shop (1.8): the gold it holds at cost, what its suppliers are owed in gold, and what a receipt from one cost
+  ['/api/gold/stock', '.value'], ['/api/gold/stock', '.byKarat[].piecesValue'], ['/api/gold/suppliers', '[].value'], ['/api/gold/docs', '[].amount']
 ];
 
 /**
@@ -359,7 +368,9 @@ const BOOKS_FIELDS = (): [string, string][] => [
 const BOOKS_ROUTES = ['/api/entries/', '/api/reports/', '/api/year-end', '/api/fx/revaluation', '/api/assets', '/api/brief/reports/stock-value', '/api/brief/expenses', '/api/banking/statements', '/api/banking/cheques',
   '/api/fuel/attendants', '/api/fuel/deliveries', '/api/fuel/dips', '/api/fuel/reports',
   // goods on consignment (1.7): what the shop owes its suppliers, and at what cost it holds their goods
-  '/api/consignment'];
+  '/api/consignment',
+  // a gold shop (1.8): its gold at cost, the documents of what it paid and its suppliers' gold
+  '/api/gold/stock', '/api/gold/suppliers', '/api/gold/docs'];
 const ADMIN_ROUTES = ['/api/audit', '/api/auth/recovery-code', '/api/branches', '/api/users'];
 // the till's own reads (1.5.2): for the Point of sale permission only (an admin has it; a cashier at the till here too)
 const TILL_ROUTES = ['/api/pos/current', '/api/pos/payment-accounts', '/api/pos/scale', '/api/pos/tills'];
