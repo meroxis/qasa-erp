@@ -197,13 +197,13 @@ describe('gift vouchers', () => {
     const v = sold.json();
     expect(v).toMatchObject({ amount: 10_000, balance: 10_000, usable: true });
     expect(v.code).toMatch(/^GV[2-9A-HJ-NP-Z]{10}$/);
-    expect(balanceOf('269')).toBe(-10_000);
+    expect(balanceOf('263')).toBe(-10_000);
     expect((await get('/api/pos/current')).json().shift.expected.IQD).toBe(10_000);
     // a sale of 5,500 paid 5,000 by the voucher, 500 in cash
     const sale = await post(`/api/pos/shifts/${shift.id}/sales`, { currency: 'IQD', discount: 0, lines: [tea(2)], vouchers: [{ code: v.code.toLowerCase(), amount: 5_000 }] });
     expect(sale.statusCode, sale.body).toBe(201);
     expect((await get(`/api/pos/gift-vouchers/lookup?code=${v.code}`)).json().balance).toBe(5_000);
-    expect(balanceOf('269')).toBe(-5_000);
+    expect(balanceOf('263')).toBe(-5_000);
     expect(sale.json().shift.expected.IQD).toBe(10_500);
     expect((await post(`/api/pos/shifts/${shift.id}/sales`, { currency: 'IQD', discount: 0, lines: [tea(3)], vouchers: [{ code: v.code, amount: 6_000 }] })).json()).toMatchObject({ details: [{ code: 'gv_balance', balance: 5_000 }] });
     // the sale cancelled: the voucher has its 10,000 again; it was used, so it can't be cancelled meanwhile
@@ -212,7 +212,7 @@ describe('gift vouchers', () => {
     expect((await get(`/api/pos/gift-vouchers/lookup?code=${v.code}`)).json().balance).toBe(10_000);
     const cancelled = await post(`/api/pos/gift-vouchers/${v.id}/cancel`, {});
     expect(cancelled.json()).toMatchObject({ status: 'cancelled', balance: 0, usable: false });
-    expect(balanceOf('269')).toBe(0);
+    expect(balanceOf('263')).toBe(0);
     expect((await get('/api/pos/gift-vouchers')).json()).toMatchObject({ outstanding: 0 });
   });
 

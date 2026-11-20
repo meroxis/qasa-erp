@@ -107,7 +107,7 @@ describe('gold and jewellery shops', () => {
     const entry = getEntry(db, doc.entryId);
     expect(entry.status).toBe('approved');
     expect(balanceOf(stockAccount)).toBe(550_000);
-    expect(balanceOf('269')).toBe(-525_000);
+    expect(balanceOf('264')).toBe(-525_000);
     expect(stock(ringId)).toEqual({ q: 1000, v: 550_000 });
     const suppliers = await ok('GET', '/api/gold/suppliers');
     expect(suppliers).toEqual([expect.objectContaining({ partyId: supplierId, basisKarat: 21, fineMg: 4375, basisMg: 5000, value: 525_000 })]);
@@ -135,7 +135,7 @@ describe('gold and jewellery shops', () => {
     const buy = await postDoc({ kind: 'buy', date: '2026-11-20', customerName: 'A walk-in customer', karat: 21, weightMg: 10_000, pricePerGram: 90_000, cashAccount: '1811' });
     expect(buy.statusCode, buy.body).toBe(200);
     expect(buy.json()).toMatchObject({ number: 'GB-2026-0001', amount: 900_000 });
-    expect(balanceOf('1379')).toBe(900_000);
+    expect(balanceOf('1378')).toBe(900_000);
     expect(balanceOf('1811')).toBe(-900_000);
     // melting: fine gold can't grow
     const gains = await call('POST', '/api/gold/docs', { kind: 'melt', date: '2026-11-20', karat: 21, weightMg: 10_000, karatOut: 24, weightOutMg: 9_000 });
@@ -156,8 +156,8 @@ describe('gold and jewellery shops', () => {
     const delivery = await postDoc({ kind: 'delivery', date: '2026-11-20', partyId: supplierId, karat: 24, weightMg: 4_375 });
     expect(delivery.statusCode, delivery.body).toBe(200);
     // the gold owed (525,000) is settled with old gold that cost 900,000 × 4.375 / 8.6 = 457,849: a gain of 67,151
-    expect(balanceOf('269')).toBe(0);
-    expect(balanceOf('1379')).toBe(900_000 - 457_849);
+    expect(balanceOf('264')).toBe(0);
+    expect(balanceOf('1378')).toBe(900_000 - 457_849);
     const gain = db.prepare(`SELECT SUM(l.base_credit) AS c FROM entry_lines l WHERE l.entry_id = ? AND l.account_code LIKE '49%'`).get(delivery.json().entryId) as { c: number };
     expect(Number(gain.c)).toBe(67_151);
     expect((await ok('GET', '/api/gold/suppliers'))[0]).toMatchObject({ fineMg: 0, value: 0 });
@@ -165,13 +165,13 @@ describe('gold and jewellery shops', () => {
     // cancelling the delivery gives the gold owed back; then the melt can't be cancelled while the gold it made is used? it can: the delivery's gold is back
     const cancelled = await call('POST', `/api/gold/docs/${delivery.json().id}/cancel`, {});
     expect(cancelled.statusCode, cancelled.body).toBe(200);
-    expect(balanceOf('269')).toBe(-525_000);
-    expect(balanceOf('1379')).toBe(900_000);
+    expect(balanceOf('264')).toBe(-525_000);
+    expect(balanceOf('1378')).toBe(900_000);
     expect((await call('POST', `/api/gold/docs/${melt.json().id}/cancel`, {})).statusCode).toBe(200);
     expect((await ok('GET', '/api/gold/stock')).byKarat.find((k: { karat: number }) => k.karat === 21)).toMatchObject({ scrapWeightMg: 10_000, scrapValue: 900_000 });
     // old gold bought and already melted again can't be cancelled while the melt stands: here it was taken back, so it can
     expect((await call('POST', `/api/gold/docs/${buy.json().id}/cancel`, {})).statusCode).toBe(200);
-    expect(balanceOf('1379')).toBe(0);
+    expect(balanceOf('1378')).toBe(0);
     expect(balanceOf('1811')).toBe(0);
   });
 

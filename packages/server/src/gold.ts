@@ -27,12 +27,12 @@ import { onceOnly } from './idempotency.ts';
  *   so the till, invoices, the offline till and labels all sell at the day's price without anything else changing.
  *   The cashier may still change a price (the making charge is often bargained over), as with any item.
  * - Old gold bought from customers (kind 'buy') is kept by karat and weight with its cost (gold_scrap_moves), in an
- *   "old gold" stock account (1379 under 137, goods held for sale; made the first time it is needed): Dr old gold /
+ *   "old gold" stock account (1378 under 137 (1379 is the petrol station's fuel stock), goods held for sale; made the first time it is needed): Dr old gold /
  *   Cr the safe. Melting (kind 'melt') turns a weight of one karat into a weight of another (refined, or lost in the
  *   fire): the cost moves with it, so only the cost per gram changes; there is no entry.
  * - Suppliers who are settled in gold: pieces received from them (kind 'receipt') come into stock at their gold value
  *   (the pure gold in them at the 24 karat price used for the receipt) plus the making charge in money. Dr the
- *   warehouse / Cr the supplier (the making charge, paid in money as usual) and Cr gold owed to suppliers (269 under
+ *   warehouse / Cr the supplier (the making charge, paid in money as usual) and Cr gold owed to suppliers (264 under
  *   26, creditors) for the gold. Each supplier's gold balance is kept in pure gold (gold_supplier_moves) and shown in
  *   the karat it is settled in (21 or 24). Old gold handed to a supplier (kind 'delivery') settles that balance: Dr gold
  *   owed (at what the gold owed is carried at) / Cr old gold (at its cost); the difference is a gain (49, other revenue)
@@ -42,8 +42,8 @@ import { onceOnly } from './idempotency.ts';
  * "separate duties" on it is the approver's step and not the preparer's. Cancelling reverses the entry.
  */
 
-export const OLD_GOLD_ACCOUNT = '1379';
-export const GOLD_OWED_ACCOUNT = '269';
+export const OLD_GOLD_ACCOUNT = '1378';
+export const GOLD_OWED_ACCOUNT = '264';
 const OLD_GOLD_NAMES: Names = { ar: 'الذهب الكسر (المستعمل)', en: 'Old gold (scrap)', ku: 'زێڕی شکاو (بەکارهاتوو)' };
 const GOLD_OWED_NAMES: Names = { ar: 'ذهب مستحق للمجهزين', en: 'Gold owed to suppliers', ku: 'زێڕی قەرزاری دابینکەران' };
 

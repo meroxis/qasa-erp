@@ -16,11 +16,11 @@ import { postVoucherNow, reverseEntryInternal } from './journal.ts';
  * points are. A sale cancelled gives the voucher back what it took. An unused voucher can be cancelled by an admin (its
  * receipt reversed: the money goes back to the customer).
  *
- * The account: the company's choice (setting gift_voucher_account), else 269 "Gift vouchers sold" under 26 creditors,
+ * The account: the company's choice (setting gift_voucher_account), else 263 "Gift vouchers sold" under 26 creditors,
  * made the first time it is needed, as consignment's 268 is.
  */
 
-export const GIFT_ACCOUNT = '269';
+export const GIFT_ACCOUNT = '263';
 const GIFT_NAMES: Names = { ar: 'قسائم الهدايا المباعة', en: 'Gift vouchers sold', ku: 'کوپۆنی دیاری فرۆشراو' };
 /** The largest voucher the till sells (dinars). */
 export const GIFT_MAX = 100_000_000;
