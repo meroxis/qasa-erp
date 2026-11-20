@@ -291,6 +291,11 @@ const SAMPLE_LINES: Record<BusinessType, SampleLine[]> = {
     ['D-1000', '6260000000086', 'فيتامين C ‏1000 ملغم، 30 حبة', 'Vitamin C 1000 mg, 30 tablets', 'ڤیتامین C ‏1000 ملگم، 30 حەب', 'box', 1000, 8_000],
     ['S-006', null, 'قياس ضغط الدم', 'Blood pressure check', 'پشکنینی پەستانی خوێن', 'service', 1000, 2_000]
   ],
+  goldShop: [
+    ['RING-21', null, 'خاتم ذهب عيار 21، 5 غم', 'Gold ring, 21 karat, 5 g', 'ئەنگوستیلەی زێڕ، عەیاری 21، 5 گرام', 'piece', 1000, 525_000],
+    ['CHAIN-18', null, 'سلسلة ذهب عيار 18، 8 غم', 'Gold chain, 18 karat, 8 g', 'زنجیری زێڕ، عەیاری 18، 8 گرام', 'piece', 1000, 640_000],
+    ['S-011', null, 'تصليح وتلميع', 'Repair and polish', 'چاککردنەوە و بریقاندن', 'service', 1000, 10_000]
+  ],
   petrolStation: [
     ['B-REG', null, 'بنزين عادي', 'Regular benzine', 'بەنزینی ئاسایی', 'l', 40_000, 850],
     ['GASOIL', null, 'كاز (ديزل)', 'Diesel (gas oil)', 'گازۆیل (دیزڵ)', 'l', 100_000, 750],

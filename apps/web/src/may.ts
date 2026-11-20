@@ -44,7 +44,12 @@ export const ACTIONS = {
   companyDetails: { needs: 'admin', route: 'PUT /api/settings' },
   users: { needs: 'admin', route: 'POST /api/users' },
   // the daily brief's own settings: the owner's WhatsApp number (and where each quick expense goes)
-  briefSettings: { needs: 'admin', route: 'PUT /api/brief/settings' }
+  briefSettings: { needs: 'admin', route: 'PUT /api/brief/settings' },
+  // gold shops (packages/server/src/gold.ts): the day's board is the seller's; a piece's gold terms are stock; old gold
+  // bought, melted, pieces received from a supplier and gold handed to one are purchasing
+  goldBoard: { needs: 'sales', route: 'PUT /api/gold/board' },
+  goldPiece: { needs: 'stock', route: 'PUT /api/gold/items/:id' },
+  goldDoc: { needs: 'purchases', route: 'POST /api/gold/docs' }
 } as const satisfies Record<string, { needs: string; route: string; body?: Record<string, string> }>;
 
 /**

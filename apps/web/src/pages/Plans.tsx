@@ -60,6 +60,7 @@ export const ROWS: Row[] = [
   { label: 'f_electricalSolar', cells: has('electricalSolar') },
   { label: 'f_generators', cells: has('generators') },
   { label: 'f_petrolStation', cells: has('petrolStation') },
+  { label: 'f_goldShop', cells: has('goldShop') },
   { label: 'f_realEstate', cells: has('realEstate') },
   { label: 'f_branches', cells: has('branches') },
   // the online edition (in the browser) is not in 1.0 yet: the plan table must not promise it as included. Working from

@@ -795,6 +795,8 @@ export function InvoiceDetail({ id }: { id: string }) {
         {/* without its money (a purchase, for someone who may not read the books) there is no paper to send or print */}
         {priced && <InvoiceWhatsApp company={company} invoice={v} />}
         {priced && <button type="button" className="btn" onClick={() => void printDocument('invoice')}><Icon name="printer" size={16} />{t('print')}</button>}
+        {/* a gold shop's slip: weight, karat, the price a gram and the making charge of each piece */}
+        {v.kind === 'sale' && v.status === 'posted' && settings?.businessTypes?.includes('goldShop') && plan?.features.includes('goldShop') && <a className="btn" href={href(`gold-slip/${v.id}`)}><Icon name="gem" size={16} />{t('gd_slip')}</a>}
       </div>
       <ErrorBox error={cancelling ? null : actionError} />
       {v.kind === 'sale' && v.actions.includes('post') && v.partyId && (

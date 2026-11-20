@@ -2184,6 +2184,91 @@ const V18 =
     created_at TEXT NOT NULL
   );
   ALTER TABLE pos_sales ADD COLUMN rounding INTEGER NOT NULL DEFAULT 0;
+
+  -- ===== 18 · GOLD =====
+  -- 18 — gold and jewellery shops: pieces by weight and karat with their making charge, the day's gold board, old gold
+  -- bought from customers and melted (kept by karat and weight beside the stock), and suppliers settled in gold
+  CREATE TABLE gold_items (
+    item_id TEXT PRIMARY KEY REFERENCES items(id),
+    weight_mg INTEGER NOT NULL CHECK (weight_mg > 0),
+    karat INTEGER NOT NULL CHECK (karat IN (18, 21, 22, 24)),
+    making_kind TEXT NOT NULL CHECK (making_kind IN ('gram', 'piece')),
+    making_amount INTEGER NOT NULL DEFAULT 0 CHECK (making_amount >= 0),
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+  );
+  CREATE TABLE gold_prices (
+    id TEXT PRIMARY KEY,
+    date TEXT NOT NULL,
+    karat INTEGER NOT NULL CHECK (karat IN (18, 21, 22, 24)),
+    currency TEXT NOT NULL CHECK (currency IN ('IQD', 'USD')),
+    buy_per_gram INTEGER NOT NULL CHECK (buy_per_gram >= 0),
+    sell_per_gram INTEGER NOT NULL CHECK (sell_per_gram >= 0),
+    created_by TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    UNIQUE (date, karat, currency)
+  );
+  CREATE TABLE gold_suppliers (
+    party_id TEXT PRIMARY KEY REFERENCES parties(id),
+    basis_karat INTEGER NOT NULL CHECK (basis_karat IN (21, 24)),
+    updated_at TEXT NOT NULL
+  );
+  CREATE TABLE gold_docs (
+    id TEXT PRIMARY KEY,
+    kind TEXT NOT NULL CHECK (kind IN ('buy', 'melt', 'receipt', 'delivery')),
+    number TEXT UNIQUE,
+    date TEXT NOT NULL,
+    status TEXT NOT NULL CHECK (status IN ('draft', 'posted', 'cancelled')),
+    party_id TEXT REFERENCES parties(id),
+    customer_name TEXT,
+    warehouse_id TEXT REFERENCES warehouses(id),
+    cash_account TEXT REFERENCES accounts(code),
+    currency TEXT NOT NULL CHECK (currency IN ('IQD', 'USD')),
+    rate_x100 INTEGER NOT NULL CHECK (rate_x100 > 0),
+    karat INTEGER CHECK (karat IS NULL OR karat IN (18, 21, 22, 24)),
+    weight_mg INTEGER CHECK (weight_mg IS NULL OR weight_mg > 0),
+    price_per_gram INTEGER CHECK (price_per_gram IS NULL OR price_per_gram >= 0),
+    karat_out INTEGER CHECK (karat_out IS NULL OR karat_out IN (18, 21, 22, 24)),
+    weight_out_mg INTEGER CHECK (weight_out_mg IS NULL OR weight_out_mg > 0),
+    entry_id TEXT REFERENCES entries(id),
+    notes TEXT,
+    created_by TEXT NOT NULL,
+    prepared_by_id TEXT REFERENCES users(id),
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+  );
+  CREATE INDEX gold_docs_kind ON gold_docs(kind, date);
+  CREATE TABLE gold_doc_lines (
+    doc_id TEXT NOT NULL REFERENCES gold_docs(id) ON DELETE CASCADE,
+    seq INTEGER NOT NULL,
+    item_id TEXT NOT NULL REFERENCES items(id),
+    making INTEGER NOT NULL DEFAULT 0 CHECK (making >= 0),
+    PRIMARY KEY (doc_id, seq)
+  );
+  CREATE TABLE gold_scrap_moves (
+    id TEXT PRIMARY KEY,
+    date TEXT NOT NULL,
+    karat INTEGER NOT NULL CHECK (karat IN (18, 21, 22, 24)),
+    weight_mg INTEGER NOT NULL,
+    value INTEGER NOT NULL,
+    source_type TEXT NOT NULL,
+    source_id TEXT NOT NULL,
+    created_at TEXT NOT NULL
+  );
+  CREATE INDEX gold_scrap_moves_karat ON gold_scrap_moves(karat, date);
+  CREATE INDEX gold_scrap_moves_source ON gold_scrap_moves(source_id);
+  CREATE TABLE gold_supplier_moves (
+    id TEXT PRIMARY KEY,
+    party_id TEXT NOT NULL REFERENCES parties(id),
+    date TEXT NOT NULL,
+    fine_mg INTEGER NOT NULL,
+    value INTEGER NOT NULL,
+    source_type TEXT NOT NULL,
+    source_id TEXT NOT NULL,
+    created_at TEXT NOT NULL
+  );
+  CREATE INDEX gold_supplier_moves_party ON gold_supplier_moves(party_id, date);
+  CREATE INDEX gold_supplier_moves_source ON gold_supplier_moves(source_id);
   `;
 // ===== end of 18 · TILL RULES =====
 

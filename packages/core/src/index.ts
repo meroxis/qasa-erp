@@ -27,3 +27,4 @@ export * from './pos-look.ts';
 export * from './offers.ts';
 export * from './cash-rounding.ts';
 export * from './business-choice.ts';
+export * from './gold.ts';
