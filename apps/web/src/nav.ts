@@ -38,11 +38,28 @@ export interface NavItem {
   work?: readonly Action[];
   permission?: Permission;
   business?: BusinessType;
+  /** 2.0.0: shown when the company does any of these (pages made for shops: offers, labels, price checkers…); a company
+   *  that has not said what it does yet sees them, as before */
+  businesses?: readonly BusinessType[];
   tile?: boolean;
   till?: boolean;
 }
 /** A group of the menu: its heading, the line icon beside the heading, and its pages in order. */
 export interface NavGroup { group: Key; icon: string; items: NavItem[] }
+
+/** 2.0.0: which businesses the shop pages are for (the product review: an engineering works or a real estate office
+ * saw "Daily suppliers" and "Price checkers") */
+const COUNTER_SHOPS: readonly BusinessType[] = ['trade', 'market', 'clothingShop', 'pharmacy', 'mobileShop', 'autoParts', 'electricalSolar'];
+const GROCERS: readonly BusinessType[] = ['trade', 'market', 'pharmacy'];
+const SHOPS_FOR = {
+  offers: COUNTER_SHOPS,
+  delivery: ['trade', 'market', 'pharmacy', 'clothingShop'],
+  consignment: ['trade', 'market', 'pharmacy', 'clothingShop', 'mobileShop'],
+  dailySuppliers: ['trade', 'market'],
+  priceCheckers: ['trade', 'market', 'clothingShop', 'pharmacy'],
+  labels: [...COUNTER_SHOPS, 'goldShop', 'wholesale'],
+  expiry: GROCERS
+} as const satisfies Record<string, readonly BusinessType[]>;
 
 export const NAV: NavGroup[] = [
   {
@@ -65,9 +82,9 @@ export const NAV: NavGroup[] = [
       { key: 'salesReturns', icon: 'undo', path: 'sales-returns', match: ['sales-returns'], work: ['sale'] },
       { key: 'installments', icon: 'cal', path: 'installments', match: ['installments', 'installment', 'new-installment', 'guarantors', 'installments-aging'] },
       { key: 'pl_title', icon: 'trend', path: 'pipeline', match: ['pipeline'] },
-      { key: 'of_title', icon: 'tag', path: 'offers', match: ['offers'] },
+      { key: 'of_title', icon: 'tag', path: 'offers', match: ['offers'], businesses: SHOPS_FOR.offers },
       // 2.0, market extras: delivery orders and the WhatsApp reminders of customers who owe
-      { key: 'mx_deliveryTitle', icon: 'truck', path: 'delivery', match: ['delivery'] },
+      { key: 'mx_deliveryTitle', icon: 'truck', path: 'delivery', match: ['delivery'], businesses: SHOPS_FOR.delivery },
       { key: 'mx_rmTitle', icon: 'mail', path: 'debt-reminders', match: ['debt-reminders'] }
     ]
   },
@@ -80,9 +97,9 @@ export const NAV: NavGroup[] = [
       { key: 'suppliers', icon: 'truck', path: 'suppliers', match: ['suppliers'], work: ['supplier'] },
       { key: 'purchaseReturns', icon: 'undo', path: 'purchase-returns', match: ['purchase-returns'], work: ['purchase'] },
       // goods on consignment (1.7): the shop's costs and what it owes its suppliers, for those who keep the books
-      { key: 'cg_title', icon: 'truck', path: 'consignment', match: ['consignment'], books: true },
+      { key: 'cg_title', icon: 'truck', path: 'consignment', match: ['consignment'], books: true, businesses: SHOPS_FOR.consignment },
       // 2.0: bread, milk and eggs that come every day, and what goes back unsold
-      { key: 'mx_dsTitle', icon: 'cal', path: 'daily-suppliers', match: ['daily-suppliers'] }
+      { key: 'mx_dsTitle', icon: 'cal', path: 'daily-suppliers', match: ['daily-suppliers'], businesses: SHOPS_FOR.dailySuppliers }
     ]
   },
   {
@@ -91,10 +108,10 @@ export const NAV: NavGroup[] = [
     items: [
       { key: 'items', icon: 'box', path: 'items', match: ['items', 'item'] },
       { key: 'stockDocs', icon: 'swap', path: 'stock-docs', match: ['stock-docs', 'stock-doc', 'new-stock-doc', 'edit-stock-doc'], work: ['stockDoc'] },
-      { key: 'lb_title', icon: 'tag', path: 'labels', match: ['labels'] },
-      { key: 'ex_title', icon: 'clock', path: 'expiry', match: ['expiry'] },
+      { key: 'lb_title', icon: 'tag', path: 'labels', match: ['labels'], businesses: SHOPS_FOR.labels },
+      { key: 'ex_title', icon: 'clock', path: 'expiry', match: ['expiry'], businesses: SHOPS_FOR.expiry },
       // 2.0: the price checker screens near the shelves (the admin adds and revokes them)
-      { key: 'mx_pcTitle', icon: 'scale', path: 'price-checkers', match: ['price-checkers'], adminOnly: true },
+      { key: 'mx_pcTitle', icon: 'scale', path: 'price-checkers', match: ['price-checkers'], adminOnly: true, businesses: SHOPS_FOR.priceCheckers },
       { key: 'adj_title', icon: 'tag', path: 'stock-adjustments', match: ['stock-adjustments', 'stock-adjustment', 'new-stock-adjustment', 'edit-stock-adjustment', 'stock-count'], work: ['adjustment'] }
     ]
   },
@@ -175,6 +192,7 @@ export function canSee(item: NavItem, v: NavViewer): boolean {
   if (item.permission && !v.admin && !v.permissions.includes(item.permission)) return false;
   if (item.work && v.noBooks && !v.admin && !mayAny(v.permissions, item.work)) return false;
   if (item.business && !v.businessTypes.includes(item.business)) return false;
+  if (item.businesses && v.businessTypes.length > 0 && !item.businesses.some((b) => v.businessTypes.includes(b))) return false;
   if (item.till && v.pos === false) return false;
   return true;
 }
@@ -219,7 +237,7 @@ export function pageOpen(page: string, arg: string | undefined, v: NavViewer): b
   const owners = NAV.flatMap((g) => g.items).filter((i) => (i.match ?? []).some((m) => m === page || m === `${page}:${arg ?? ''}`));
   // (a business the company does not do is a matter of Settings → Business type, not of who is signed in, and a till the
   // company does not use of Settings → Sales and point of sale: App.tsx says so on the page)
-  return owners.length === 0 || owners.some((i) => canSee(i, { ...v, pos: true, ...(i.business ? { businessTypes: [i.business] } : {}) }));
+  return owners.length === 0 || owners.some((i) => canSee(i, { ...v, pos: true, ...(i.business ? { businessTypes: [i.business] } : i.businesses ? { businessTypes: [...i.businesses] } : {}) }));
 }
 
 /** Every page that has a path, once (for favourites and the search). */
