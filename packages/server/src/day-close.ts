@@ -8,6 +8,7 @@ import { getShift, openedShift, shiftInvoiceIds, type PosMethod } from './pos.ts
 import { loyaltyPaidFor } from './loyalty.ts';
 import { branchOf, cashFlowOn, expensesBetween, lowStock, salesByItem, type BranchFilter, type ExpenseRow, type ItemSales, type LowStock } from './brief.ts';
 import { seesBooks, type Actor } from './auth.ts';
+import { closesBlind } from './till-settings.ts';
 import type { ApiExtension } from './routes.ts';
 
 /**
@@ -27,6 +28,8 @@ export type DayMethod = (typeof DAY_METHODS)[number];
 export interface DayRegister {
   shiftId: string; number: string; register: string; openedBy: string; status: 'open' | 'closed'; openedAt: string; closedAt: string | null;
   sales: Money; count: number; expected: Money; counted: Money | null; difference: Money | null;
+  /** an open shift of a cashier who closes blind: its figures are left out */
+  blind?: true;
 }
 
 export interface DayDebtRow { partyId: string; code: string; name: string; amount: number }
@@ -195,7 +198,11 @@ export function dayClose(db: Db, date: string, branch: BranchFilter = null, view
   let own: OwnPart | null = null;
   if (viewer && (mine || !seesBooks(viewer))) {
     registers = registers.filter((r) => openedShift(db, r.shiftId, viewer));
-    const shiftIds = registers.map((r) => r.shiftId);
+    // a cashier who closes blind (till-settings.ts) never reads what an open shift of theirs expects: its register shows
+    // no sales, expected cash or difference, and its sales are left out of the day's totals until it is closed
+    const blind = closesBlind(db, viewer);
+    if (blind) registers = registers.map((r) => r.status === 'open' ? { ...r, sales: { IQD: 0, USD: 0 }, expected: { IQD: 0, USD: 0 }, difference: null, blind: true } : r);
+    const shiftIds = registers.filter((r) => !(blind && r.status === 'open')).map((r) => r.shiftId);
     own = { userId: viewer.id, shiftIds, invoiceIds: [...new Set(shiftIds.flatMap((id) => shiftInvoiceIds(db, id)))] };
   }
   const closed = registers.filter((r) => r.status === 'closed' && r.counted && r.difference);

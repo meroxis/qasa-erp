@@ -192,6 +192,11 @@ describe('a blind close', () => {
     const sold = await post(`/api/pos/shifts/${shift.id}/sales`, { currency: 'IQD', discount: 0, lines: [tea(1)] }, who.las!);
     expect(sold.json().shift).toMatchObject({ blind: true, expected: { IQD: 0, USD: 0 } });
     expect((await get('/api/pos/current', who.las!)).json().shift.blind).toBe(true);
+    // the day close tells them nothing more while the shift is open (security review #3)
+    const day = (await get(`/api/brief/day-close?date=${shift.openedAt.slice(0, 10)}`, who.las!)).json();
+    expect(day.registers[0]).toMatchObject({ blind: true, expected: { IQD: 0 }, sales: { IQD: 0 }, difference: null });
+    expect(day.sales.gross).toBe(0);
+    expect(day.methods).toEqual([]);
     const closed = await post(`/api/pos/shifts/${shift.id}/close`, { countedCash: 2_500 }, who.las!);
     expect(closed.json()).toMatchObject({ blind: true, difference: null });
     expect((await get(`/api/pos/shifts/${shift.id}`, who.raz!)).json()).toMatchObject({ expected: { IQD: 2_750 }, difference: { IQD: -250 } });
