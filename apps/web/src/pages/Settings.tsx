@@ -28,6 +28,7 @@ import { LoyaltySettingsCard } from '../industry/Loyalty.tsx';
 import { PosUseSetting } from '../industry/PosUseSetting.tsx';
 import { PosBigPicturesSetting } from '../industry/PosBigPicturesSetting.tsx';
 import { TillSettings } from '../industry/TillSettings.tsx';
+import { TillRulesSettings } from '../pos/TillRulesSettings.tsx';
 import { CloseAskSetting } from '../industry/CloseAsk.tsx';
 import { dataPlaceLine, inWindowsApp, officeText, useDataPlace, type DataPlace } from '../industry/data-place.ts';
 
@@ -226,7 +227,7 @@ function SettingsSectionContent({ id, admin }: { id: string; admin: boolean }) {
     case 'periods':
       return <PeriodsSettings />;
     case 'sales':
-      return <><PosUseSetting /><PosBigPicturesSetting /><TillSettings admin={admin} /><ExpirySettingsCard /></>;
+      return <><PosUseSetting /><PosBigPicturesSetting /><TillSettings admin={admin} /><TillRulesSettings admin={admin} /><ExpirySettingsCard /></>;
     case 'loyalty':
       return <LoyaltySettingsCard />;
     case 'printers':

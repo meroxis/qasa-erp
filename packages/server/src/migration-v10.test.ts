@@ -6,7 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { FastifyInstance } from 'fastify';
 import { COMPANY_TABLES, migrate, openDatabase, SCHEMA_VERSION, schemaVersion, updateCopies, type Db, type SqlValue } from './db.ts';
 import { buildApp } from './app.ts';
-import { pendingMysqlSteps, tableColumns, V10_MYSQL_STEPS, V11_MYSQL_STEPS, V12_MYSQL_STEPS, V13_MYSQL_STEPS, V14_MYSQL_STEPS, V15_MYSQL_STEPS, V16_MYSQL_STEPS, V17_MYSQL_STEPS, MYSQL_TABLES, MYSQL_TRIGGERS } from './schema-mysql.ts';
+import { pendingMysqlSteps, tableColumns, V10_MYSQL_STEPS, V11_MYSQL_STEPS, V12_MYSQL_STEPS, V13_MYSQL_STEPS, V14_MYSQL_STEPS, V15_MYSQL_STEPS, V16_MYSQL_STEPS, V17_MYSQL_STEPS, V18_MYSQL_STEPS, MYSQL_TABLES, MYSQL_TRIGGERS } from './schema-mysql.ts';
 import { AppError } from './errors.ts';
 
 // upgrading a whole company file takes about a second here, and several times that on a busy build machine
@@ -203,7 +203,7 @@ describe('version 10 on a server database', () => {
     expect(alters[0]).toBe('ALTER TABLE items ADD COLUMN purchase_unit VARCHAR(32)');
     expect(alters).toContain('ALTER TABLE items ADD CONSTRAINT items_category_id_fk FOREIGN KEY (category_id) REFERENCES item_categories(id)');
     expect(alters).toHaveLength(V10_MYSQL_STEPS.length - 2 + V11_MYSQL_STEPS.length + V12_MYSQL_STEPS.length + V13_MYSQL_STEPS.length + V14_MYSQL_STEPS.length + V15_MYSQL_STEPS.length
-      + V16_MYSQL_STEPS.length + V17_MYSQL_STEPS.length);
+      + V16_MYSQL_STEPS.length + V17_MYSQL_STEPS.length + V18_MYSQL_STEPS.length);
   });
 
   it('upgrades a server database from version 6: a table whose key points at a table of a later version is made with key checks off for that one CREATE', () => {

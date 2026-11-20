@@ -60,6 +60,7 @@ import { ITEM_QUICK_TEXT } from './i18n/item-quick.ts';
 import { RECEIPT_PHOTO_TEXT } from './i18n/receipt-photo.ts';
 import { PETROL_TEXT } from './i18n/petrol.ts';
 import { TILL_TEXT } from './i18n/till.ts';
+import { TILL_UI_TEXT } from './i18n/till-ui.ts';
 import { CONSIGNMENT_TEXT } from './i18n/consignment.ts';
 import { OFFER_TEXT } from './i18n/offers.ts';
 import { formatAmount, formatDate, formatDateTime, formatInteger, formatQty, formatTime, hasLeadingSign, LANGS, ltrIsolate, monthName, textDigits, toEasternDigits, type CurrencyCode, type DigitStyle, type Lang, type Names } from '@qasa/core';
@@ -430,6 +431,7 @@ const BASE = {
   role_sales: ['المبيعات', 'Sales', 'فرۆشتن'],
   // 1.5.2: the till, given per person by an admin (the words of the till itself, i18n/pos.ts pos_title)
   role_pos: ['نقطة البيع (الكاشير)', 'Point of sale', 'خاڵی فرۆشتن (کاشێر)'],
+  role_supervisor: ['مشرف الصندوق', 'Till supervisor', 'سەرپەرشتیاری سندووق'],
   role_purchasing: ['المشتريات', 'Purchasing', 'کڕین'],
   role_storekeeper: ['أمين المخزن', 'Storekeeper', 'کۆگادار'],
   role_viewer: ['اطلاع فقط', 'Viewer', 'تەنها بینین'],
@@ -439,6 +441,7 @@ const BASE = {
   roleHelp_approver: ['يصادق السندات فتُرحّل', 'Approves vouchers, which posts them', 'سەنەدەکان پەسەند دەکات و پۆست دەبن'],
   roleHelp_sales: ['فواتير المبيعات والمردودات والزبائن، دون الكلفة والربح', 'Sales invoices, returns and customers, without cost or profit', 'پسوولەی فرۆشتن، گەڕاوە و کڕیاران، بێ تێچوو و قازانج'],
   roleHelp_pos: ['يبيع بنقطة البيع: يفتح الوردية ويبيع ويغلقها، دون الكلفة والربح', 'Sells at the point of sale: opens a shift, sells and closes it, without cost or profit', 'بە خاڵی فرۆشتن دەفرۆشێت: شەفت دەکاتەوە، دەفرۆشێت و دایدەخات، بێ تێچوو و قازانج'],
+  roleHelp_supervisor: ['يوافق برمزه السري على ما لا يفعله الكاشير وحده: حذف سطر، إلغاء سلة، تغيير سعر، خصم كبير، فتح الدرج، استرجاع، بيع آجل فوق الحد', 'Approves with their PIN what a cashier may not do alone: a line taken off, a basket voided, a price change, a big discount, the drawer opened, a refund, credit over the limit', 'بە پینی خۆی ڕەزامەندی دەدات لەسەر ئەوەی کاشێر بە تەنها ناتوانێت: لابردنی دێڕێک، هەڵوەشاندنەوەی سەبەتە، گۆڕینی نرخ، داشکاندنی گەورە، کردنەوەی چەکمەجە، گەڕاندنەوە، قەرز سەرووی سنوور'],
   roleHelp_purchasing: ['فواتير الشراء والمردودات والمجهزون', 'Purchase invoices, returns and suppliers', 'پسوولەی کڕین، گەڕاوە و دابینکەران'],
   roleHelp_storekeeper: ['المواد وحركات المخزن', 'Items and stock documents', 'کاڵا و جووڵەکانی کۆگا'],
   roleHelp_viewer: ['يطّلع على الدفاتر والتقارير دون تعديل', 'Sees the books and reports without changing them', 'دەفتەر و ڕاپۆرتەکان دەبینێت بێ گۆڕین'],
@@ -1055,7 +1058,7 @@ const BASE = {
 /** The industry features keep their texts in files of their own (i18n/), in the same three languages. */
 const D = { ...BASE, ...AUDIT_TEXT, ...REAL_ESTATE_TEXT, ...MOBILE_TEXT, ...PARTS_TEXT, ...ENGINEERING_TEXT,
   ...PAYROLL_TEXT, ...POS_TEXT, ...QUOTES_TEXT, ...PIPELINE_TEXT, ...MEDIA_TEXT, ...BRIEF_TEXT, ...CLOUD_TEXT, ...RELAY_TEXT, ...ACTIVATION_TEXT, ...FX_TEXT, ...VERIFY_TEXT, ...GEN_TEXT, ...WEBAPI_TEXT, ...PHONE_TEXT, ...USAGE_TEXT, ...SOLAR_TEXT, ...LEGAL_TEXT, ...BRANCH_TEXT, ...BANK_TEXT, ...WAVE2_TEXT, ...ASSET_TEXT, ...ADJ_TEXT, ...PO_TEXT, ...COMPANY_TEXT, ...LABEL_TEXT, ...PRINTER_TEXT, ...SAFETY_TEXT, ...UI_TEXT, ...UNIT_TEXT, ...BATCH_TEXT, ...STORE_TEXT, ...CATALOG_TEXT, ...PHARMACY_TEXT, ...HARDENING_TEXT, ...OUTBOX_TEXT, ...DAY_CLOSE_TEXT, ...WHATSAPP_TEXT, ...LOYALTY_TEXT, ...SUPPORT_TEXT, ...SETTINGS_SECTION_TEXT, ...LOOK_TEXT, ...INVOICE_SPEED_TEXT, ...ITEMS14_TEXT, ...SALES14_TEXT, ...SHELL14_TEXT, ...PRINT14_TEXT, ...DOC_APPROVAL_TEXT, ...ITEM_QUICK_TEXT, ...COUNT_TEXT, ...AMOUNTS_TEXT, ...POS_USE_TEXT, ...TILL_QUICK_TEXT,
-  ...RECEIPT_PHOTO_TEXT, ...PETROL_TEXT, ...SMR_TEXT, ...TILL_TEXT, ...CONSIGNMENT_TEXT, ...OFFER_TEXT };
+  ...RECEIPT_PHOTO_TEXT, ...PETROL_TEXT, ...SMR_TEXT, ...TILL_TEXT, ...TILL_UI_TEXT, ...CONSIGNMENT_TEXT, ...OFFER_TEXT };
 
 export type Key = keyof typeof D;
 

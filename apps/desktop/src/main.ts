@@ -4,6 +4,7 @@
  *   %APPDATA%\Qasa ERP\data\qasa.sqlite
  */
 import { app, BrowserWindow, dialog, ipcMain, Menu, nativeTheme, Notification, protocol, safeStorage, screen, session, shell, utilityProcess, type MenuItemConstructorOptions, type UtilityProcess } from 'electron';
+import { pickScalePort, serialAllowed } from './serial-scale.ts';
 import electronUpdater from 'electron-updater';
 import { channelOf, notesText, updaterOptions, type UpdateChannel, type UpdateState } from './updates-logic.ts';
 import { randomBytes } from 'node:crypto';
@@ -987,9 +988,16 @@ async function createWindow(url: string): Promise<void> {
   const ses = session.defaultSession;
   // the key that opens this PC's own server; the office server needs none (everyone signs in there)
   if (!remote) await ses.cookies.set({ url, name: 'qasa_session', value: SESSION_KEY, httpOnly: true, sameSite: 'strict' });
-  // Qasa needs no camera, microphone, location, notifications or other device access.
+  // Qasa needs no camera, microphone, location, notifications or other device access. 2.0: the app's own page may use
+  // a serial port, for a weighing scale at the till (serial-scale.ts); nothing else, and no other page
   ses.setPermissionRequestHandler((_contents, _permission, callback) => callback(false));
-  ses.setPermissionCheckHandler(() => false);
+  ses.setPermissionCheckHandler((contents, permission, requestingOrigin) => !!win && contents === win.webContents && serialAllowed(permission, originOf(requestingOrigin), appOrigin));
+  ses.setDevicePermissionHandler((details) => details.deviceType === 'serial' && serialAllowed('serial', originOf(details.origin), appOrigin));
+  ses.removeAllListeners('select-serial-port');
+  ses.on('select-serial-port', (event, portList, contents, callback) => {
+    event.preventDefault();
+    callback(win && contents === win.webContents && originOf(contents.getURL()) === appOrigin ? pickScalePort(portList) : '');
+  });
 
   win = new BrowserWindow({
     width: 1360, height: 860, minWidth: 1024, minHeight: 640,

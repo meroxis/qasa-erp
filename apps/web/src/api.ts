@@ -450,9 +450,9 @@ export interface InvoiceView extends InvoiceSummary {
   offers?: { offerId: string; code: string; names: Names; discount: number; lines: { lineNo: number; qtyMilli: number; discount: number }[] }[];
 }
 
-export type Role = 'admin' | 'preparer' | 'checker' | 'approver' | 'sales' | 'pos' | 'purchasing' | 'storekeeper' | 'viewer';
-export const ROLES: Role[] = ['admin', 'preparer', 'checker', 'approver', 'sales', 'pos', 'purchasing', 'storekeeper', 'viewer'];
-export type Permission = 'admin' | 'entries.prepare' | 'entries.check' | 'entries.approve' | 'sales' | 'pos' | 'purchases' | 'stock';
+export type Role = 'admin' | 'preparer' | 'checker' | 'approver' | 'sales' | 'pos' | 'supervisor' | 'purchasing' | 'storekeeper' | 'viewer';
+export const ROLES: Role[] = ['admin', 'preparer', 'checker', 'approver', 'sales', 'pos', 'supervisor', 'purchasing', 'storekeeper', 'viewer'];
+export type Permission = 'admin' | 'entries.prepare' | 'entries.check' | 'entries.approve' | 'sales' | 'pos' | 'posSupervise' | 'purchases' | 'stock';
 
 export interface Me {
   signInRequired: boolean;

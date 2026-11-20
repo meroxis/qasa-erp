@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import { restoreGiftVouchers } from './gift-vouchers.ts';
 import {
   accountNames,
   allocateDiscount,
@@ -45,7 +46,14 @@ import {
 export type InvoiceAction = 'edit' | 'delete' | 'post' | 'cancel' | 'return';
 
 /** A part of a sale paid another way (POS split payments): internal callers only, never from a request. */
-export interface SalePart { accountCode: string; amount: number; partyId?: string | undefined }
+export interface SalePart {
+  accountCode: string;
+  /** a debit; 2.0: a negative part is a credit (the till's dinar rounding up: the customer paid more than the sale) */
+  amount: number;
+  partyId?: string | undefined;
+  /** 2.0: what the part is when it is no payment of money now: a gift voucher, or the till's dinar rounding */
+  kind?: 'voucher' | 'rounding' | undefined;
+}
 
 export interface InvoiceLineView {
   lineNo: number;
@@ -691,7 +699,7 @@ export function onlinePaidAmount(db: Db, invoiceId: string): number {
 
 export function postInvoice(
   db: Db, id: string, user: string,
-  opts: { settledNow?: number; allowExpired?: boolean; split?: readonly SalePart[]; loyaltyPoints?: number | undefined; offersAt?: Date | undefined } = {}
+  opts: { settledNow?: number; allowExpired?: boolean; split?: readonly SalePart[]; loyaltyPoints?: number | undefined; offersAt?: Date | undefined; overLimit?: boolean | undefined } = {}
 ): InvoiceView {
   requireAction(db, loadRow(db, id), 'post');
   // 1.7: a sale that gets offers gets them as they are when it is posted (the server works them out, never the till)
@@ -731,7 +739,8 @@ export function postInvoice(
   if (view.kind === 'sale') {
     const settled = Number.isSafeInteger(opts.settledNow) ? Math.min(Math.max(opts.settledNow!, 0), total) : 0;
     const onCredit = baseTotal - (settled ? toBase(settled, view.currency, view.rateX100) : 0) - (redeemed?.value ?? 0);
-    if (party && view.payment === 'credit' && party.creditLimit !== null && party.balance + onCredit > party.creditLimit) {
+    // 2.0: a till's credit sale over the limit, approved there by a supervisor's PIN (till-rules.ts), goes through
+    if (party && view.payment === 'credit' && party.creditLimit !== null && party.balance + onCredit > party.creditLimit && !opts.overLimit) {
       throw conflict('credit_limit_exceeded', { balance: party.balance, limit: party.creditLimit, total: baseTotal });
     }
     // a split sale (POS): only the part put on the customer's account counts against their credit limit
@@ -740,7 +749,7 @@ export function postInvoice(
       const onAccount = toBase(split.filter((p) => p.partyId).reduce((s, p) => s + p.amount, 0), view.currency, view.rateX100);
       if (onAccount > 0) {
         if (!party || split.some((p) => p.partyId && p.partyId !== party.id)) throw invalid([{ code: 'party_required' }]);
-        if (party.creditLimit !== null && party.balance + onAccount > party.creditLimit) {
+        if (party.creditLimit !== null && party.balance + onAccount > party.creditLimit && !opts.overLimit) {
           throw conflict('credit_limit_exceeded', { balance: party.balance, limit: party.creditLimit, total: onAccount });
         }
       }
@@ -771,7 +780,10 @@ export function postInvoice(
     const totalCost = lineCosts.reduce<number>((s, c) => s + (c ?? 0), 0);
     if (split?.length) {
       // one debit line per part: the safe for cash, a card or wallet account, or the customer for what goes on account
-      for (const p of split) lines.push({ accountCode: p.accountCode, debit: p.amount, credit: 0, ...(p.partyId ? { partyId: p.partyId } : {}) });
+      for (const p of split) {
+        if (p.amount >= 0) lines.push({ accountCode: p.accountCode, debit: p.amount, credit: 0, ...(p.partyId ? { partyId: p.partyId } : {}) });
+        else lines.push({ accountCode: p.accountCode, debit: 0, credit: -p.amount });
+      }
     } else lines.push({ accountCode: counterAccount, debit: total, credit: 0, ...counterParty });
     lines.push({ accountCode: accounts.sales, debit: 0, credit: total });
     if (totalCost > 0) {
@@ -823,7 +835,7 @@ export function postInvoice(
     if (view.kind === 'sale') {
       // the points used, and those earned on what was paid now (not on account, not with points)
       const paidNow = split?.length
-        ? split.filter((p) => !p.partyId && p.accountCode !== redeemed?.accountCode).reduce((s, p) => s + p.amount, 0)
+        ? split.filter((p) => !p.partyId && !p.kind && p.accountCode !== redeemed?.accountCode).reduce((s, p) => s + p.amount, 0)
         : view.payment === 'cash' ? total : 0;
       recordSaleLoyalty(db, { invoiceId: id, partyId: view.partyId, date: view.date, warehouseId: view.warehouseId, paidIqd: toBase(paidNow, view.currency, view.rateX100), redeemed }, user);
     }
@@ -895,6 +907,8 @@ export function cancelInvoice(db: Db, id: string, user: string, date?: string, a
       .run(reversalId, user, now, now, id);
     // its loyalty points movements are undone too (the reversal gives the points' value back in the books)
     cancelLoyalty(db, id, cancelDate, user);
+    // 2.0: what it took from gift vouchers goes back on them
+    restoreGiftVouchers(db, id, user);
     // phones this sale took are back in stock, with no customer and no warranty. A job's bill (solar) keeps its
     // equipment linked: the job shows it waiting for the next bill, and reads it as unsold meanwhile
     if (view.kind === 'sale' && !db.prepare('SELECT 1 FROM jobs WHERE invoice_id = ?').get(id)) {

@@ -4,7 +4,7 @@ import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { migrate, openDatabase, schemaVersion, SCHEMA_VERSION, type Db, type SqlValue } from './db.ts';
-import { MYSQL_TABLES, tableColumns, V17_MYSQL_STEPS } from './schema-mysql.ts';
+import { MYSQL_TABLES, tableColumns, V17_MYSQL_STEPS, V18_MYSQL_STEPS } from './schema-mysql.ts';
 
 // Version 17 (supermarket): the tills, offers, consignment goods and the shelf labels to reprint, with the columns it adds
 // to older tables, on a company file and on a server database.
@@ -75,8 +75,8 @@ describe('version 17 on a server database', () => {
     for (const table of ['shelf_label_flags', 'pos_tills', ...CONSIGNMENT]) expect(made).toContain(table);
     const v17 = new Set(MYSQL_TABLES.filter((t) => (t.since ?? 0) >= 17).map((t) => t.name));
     expect(made.filter((n) => !v17.has(n!))).toEqual([]);
-    // no column is added but version 17's own
-    const steps = V17_MYSQL_STEPS.map((x) => x.sql);
+    // no column is added but version 17's own (and the later versions', which run after it)
+    const steps = [...V17_MYSQL_STEPS, ...V18_MYSQL_STEPS].map((x) => x.sql);
     expect(ran.filter((s) => s.startsWith('ALTER TABLE') && !steps.includes(s))).toEqual([]);
   });
 });
