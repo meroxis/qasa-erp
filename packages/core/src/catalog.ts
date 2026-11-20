@@ -77,7 +77,8 @@ export interface StarterBrand { name: string; ar?: string; ku?: string; country?
 export interface StarterList { name: Names; categories: readonly StarterCategory[]; brands: readonly StarterBrand[] }
 
 export const STARTER_TRADES = [
-  'general', 'electronics', 'autoParts', 'pharmacy', 'grocery', 'building', 'clothing', 'cosmetics', 'homeAppliances', 'stationery', 'electricalSolar', 'generators'
+  'general', 'electronics', 'autoParts', 'pharmacy', 'grocery', 'building', 'clothing', 'cosmetics', 'homeAppliances', 'stationery', 'electricalSolar', 'generators',
+  'jewellery'
 ] as const;
 export type StarterTrade = (typeof STARTER_TRADES)[number];
 
@@ -88,7 +89,7 @@ export function isStarterTrade(value: unknown): value is StarterTrade {
 /** The starter list a business type suggests first (any trade can still be picked). */
 export const BUSINESS_STARTER_TRADE: Record<BusinessType, StarterTrade> = {
   trade: 'general', market: 'grocery', realEstate: 'building', mobileShop: 'electronics', autoParts: 'autoParts', engineeringWorks: 'building',
-  electricalSolar: 'electricalSolar', generators: 'generators', pharmacy: 'pharmacy', petrolStation: 'general', goldShop: 'general', wholesale: 'grocery', clothingShop: 'clothing'
+  electricalSolar: 'electricalSolar', generators: 'generators', pharmacy: 'pharmacy', petrolStation: 'general', goldShop: 'jewellery', wholesale: 'grocery', clothingShop: 'clothing'
 };
 
 /** The suggested trade for a company: its first business type with a list of its own, else general trade. */
@@ -324,6 +325,26 @@ export const STARTER_LISTS: Record<StarterTrade, StarterList> = {
       { name: 'Pelikan', country: 'DE' }, { name: 'Double A', country: 'TH' }, { name: 'PaperOne', country: 'ID' }, { name: 'Canson', country: 'FR' },
       { name: 'Deli', country: 'CN' }, { name: 'M&G', country: 'CN' }, { name: 'Casio', country: 'JP' }, { name: 'Epson', country: 'JP' },
       { name: 'Canon', country: 'JP' }, { name: 'HP', country: 'US' }, { name: '3M', country: 'US' }
+    ]
+  },
+
+  // 2.0.0: a gold shop's own list (it got the general trade's): the pieces by kind, coins and bars, old gold
+  jewellery: {
+    name: n('ذهب ومجوهرات', 'Gold and jewellery', 'زێڕ و خشڵ'),
+    categories: [
+      { name: n('خواتم', 'Rings', 'ئەنگوستیلە'), sub: [n('خواتم رجالية', 'Men’s rings', 'ئەنگوستیلەی پیاوان'), n('خواتم نسائية', 'Women’s rings', 'ئەنگوستیلەی ئافرەتان'), n('محابس', 'Wedding bands', 'ئەڵقەی هاوسەرگیری')] },
+      { name: n('أساور', 'Bracelets', 'بازن'), sub: [n('أساور عيار 21', 'Bracelets, 21 karat', 'بازنی 21 قیرات'), n('أساور عيار 18', 'Bracelets, 18 karat', 'بازنی 18 قیرات')] },
+      { name: n('قلائد وأطقم', 'Necklaces and sets', 'ملوانکە و سێت'), sub: [n('قلائد', 'Necklaces', 'ملوانکە'), n('أطقم', 'Sets', 'سێت'), n('سلاسل', 'Chains', 'زنجیر')] },
+      { name: n('أقراط', 'Earrings', 'گوارە') },
+      { name: n('ليرات وسبائك', 'Coins and bars', 'لیرە و شمش'), sub: [n('ليرات ذهب', 'Gold coins', 'لیرەی زێڕ'), n('سبائك', 'Bars', 'شمش')] },
+      { name: n('ذهب للأطفال', 'Children’s gold', 'زێڕی منداڵان') },
+      { name: n('فضة', 'Silver', 'زیو') }
+    ],
+    brands: [
+      { name: 'Damas', ar: 'داماس', ku: 'داماس', country: 'AE' }, { name: 'Joyalukkas', country: 'AE' }, { name: 'Malabar Gold', country: 'IN' },
+      { name: 'Tanishq', country: 'IN' }, { name: 'Kalyan Jewellers', country: 'IN' }, { name: 'L’azurde', ar: 'لازوردي', ku: 'لازوردی', country: 'SA' },
+      { name: 'Atasay', country: 'TR' }, { name: 'Altınbaş', country: 'TR' }, { name: 'Zen Diamond', country: 'TR' },
+      { name: 'Pandora', country: 'DK' }, { name: 'Swarovski', country: 'AT' }, { name: 'Cartier', country: 'FR' }
     ]
   },
 
