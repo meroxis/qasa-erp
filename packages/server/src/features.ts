@@ -24,10 +24,12 @@ import { quickVouchersApi } from './quick-vouchers.ts';
 import { stockCorrectionApi } from './stock-correction.ts';
 import { expensesApi } from './expenses.ts';
 import { fuelApi } from './fuel.ts';
+import { slowStockApi } from './slow-stock.ts';
+import { shelfLabelsApi } from './shelf-labels.ts';
 
 /**
  * The app's own features that are built like modules (each in a file of its own, as an ApiExtension): served on every
  * edition, the website demo included, behind the same sign-in, permission and same-site checks as the rest of the API.
  */
 export const BUILT_IN_FEATURES: readonly ApiExtension[] = [posApi, mediaApi, quotesApi, activationApi, briefApi, fxApi, verifyApi, usageApi, branchesApi, bankingApi, assetsApi, adjustmentsApi, purchasingApi, pricesApi, printProfileApi, batchesApi, categoriesApi, brandsApi, outboxApi, dayCloseApi, loyaltyApi, quickVouchersApi, stockCorrectionApi,
-  expensesApi, fuelApi];
+  expensesApi, fuelApi, slowStockApi, shelfLabelsApi];

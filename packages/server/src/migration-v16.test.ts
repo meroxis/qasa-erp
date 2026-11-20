@@ -26,8 +26,8 @@ describe.skipIf(onServer)('a company file from schema 15 opened by schema 16', (
     old.close();
     const db = openDatabase(file);
     try {
-      expect(SCHEMA_VERSION).toBe(16);
-      expect(schemaVersion(db)).toBe(16);
+      expect(SCHEMA_VERSION).toBeGreaterThanOrEqual(16);
+      expect(schemaVersion(db)).toBe(SCHEMA_VERSION);
       const tables = (db.prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name LIKE 'fuel_%' ORDER BY name").all() as { name: string }[]).map((t) => t.name);
       expect(tables).toEqual([...FUEL_TABLES].sort());
       expect((db.prepare('PRAGMA table_info(fuel_nozzles)').all() as { name: string }[]).map((c) => c.name))
@@ -76,7 +76,9 @@ describe('version 16 on a server database', () => {
     };
     migrate(fake);
     expect(version).toBe(SCHEMA_VERSION);
-    const made = ran.filter((s) => s.startsWith('CREATE TABLE ') && !s.includes('schema_version')).map((s) => s.split(' ')[2]);
+    // (the tables of later versions, 17 on, are made after these: migrate runs every version)
+    const later = new Set(MYSQL_TABLES.filter((t) => (t.since ?? 0) > 16).map((t) => t.name));
+    const made = ran.filter((s) => s.startsWith('CREATE TABLE ') && !s.includes('schema_version')).map((s) => s.split(' ')[2]).filter((n) => !later.has(n!));
     expect(made.sort()).toEqual([...FUEL_TABLES].sort());
     expect(ran.filter((s) => s.startsWith('ALTER TABLE'))).toEqual([]);
   });

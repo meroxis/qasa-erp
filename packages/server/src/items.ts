@@ -5,6 +5,7 @@ import { nextSequence, transaction } from './db.ts';
 import { audit } from './audit.ts';
 import { conflict, invalid, notFound } from './errors.ts';
 import { assertWithinLimit } from './license.ts';
+import { dropShelfFlags, notePriceChanges, shelfPrices } from './shelf-labels.ts';
 import { assertItemUnits, itemUnits, openDocumentsWithItem, replaceItemUnits, unitsByItem, type ItemUnitView } from './item-units.ts';
 import { startTracking } from './batches.ts';
 import { assertItemCategory, IN_CATEGORY_SQL } from './categories.ts';
@@ -327,6 +328,8 @@ export function createItem(db: Db, input: ItemInput, user: string): ItemView {
         input.reorderMilli ?? null, input.purchasePrice ?? null,
         input.purchasePrice === undefined || input.purchasePrice === null ? null : input.purchaseCurrency ?? input.saleCurrency);
     if (input.units?.length) replaceItemUnits(db, id, input.units);
+    // a new item has no shelf label yet (shelf-labels.ts)
+    notePriceChanges(db, id, null, user);
     audit(db, user, 'create', 'item', id, { code });
   });
   return getItem(db, id);
@@ -353,6 +356,8 @@ export function updateItem(db: Db, id: string, input: ItemInput, user: string): 
   const purchaseCurrency = purchasePrice === null ? null
     : input.purchasePrice === undefined ? current.purchaseCurrency ?? input.saleCurrency : input.purchaseCurrency ?? input.saleCurrency;
   transaction(db, () => {
+    // the prices the shelf labels show now, to list those that change (shelf-labels.ts)
+    const shelfBefore = shelfPrices(db, id);
     db.prepare(`UPDATE items SET code = ?, barcode = ?, name_ar = ?, name_en = ?, name_ku = ?, unit = ?, sale_price = ?, sale_currency = ?,
                 track_stock = ?, active = ?, sale_unit = ?, purchase_unit = ?, updated_at = ? WHERE id = ?`)
       .run(input.code?.trim() || current.code, input.barcode?.trim() || null, name.ar, name.en, name.ku,
@@ -366,6 +371,7 @@ export function updateItem(db: Db, id: string, input: ItemInput, user: string): 
         purchasePrice, purchaseCurrency, id);
     // switched on: what is in stock goes into the batch with no number, so the batches add up to the stock from now on
     if (trackBatches && !current.trackBatches) startTracking(db, id);
+    notePriceChanges(db, id, shelfBefore, user);
     audit(db, user, 'update', 'item', id, input);
   });
   return getItem(db, id);
@@ -390,6 +396,7 @@ export function deleteItem(db: Db, id: string, user: string): void {
     for (const table of ['item_images', 'item_prices', 'part_fitments', 'part_numbers', 'part_details', 'stock_count_items', 'item_units', 'pharma_details', 'item_batches']) {
       db.prepare(`DELETE FROM ${table} WHERE item_id = ?`).run(id);
     }
+    dropShelfFlags(db, id);
     db.prepare('DELETE FROM items WHERE id = ?').run(id);
     audit(db, user, 'delete', 'item', id);
   });

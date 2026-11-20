@@ -1839,7 +1839,26 @@ export const MYSQL_TABLES: readonly MysqlObject[] = [
       INDEX fuel_moves_source (source_id),
       FOREIGN KEY (tank_id) REFERENCES fuel_tanks(id)
     )`
+  },
+  // ——— v17: supermarket reports (db.ts V17) ———
+  {
+    // 17: shelf labels to reprint (shelf-labels.ts)
+    name: 'shelf_label_flags',
+    since: 17,
+    sql: `CREATE TABLE shelf_label_flags (
+      item_id ${ID} NOT NULL,
+      unit ${WORD} NOT NULL DEFAULT '',
+      old_price BIGINT CHECK (old_price IS NULL OR old_price >= 0),
+      new_price BIGINT NOT NULL CHECK (new_price >= 0),
+      currency ${WORD} NOT NULL CHECK (currency IN ('IQD', 'USD')),
+      changed_at ${WHEN} NOT NULL,
+      changed_by TEXT NOT NULL,
+      PRIMARY KEY (item_id, unit),
+      INDEX shelf_label_flags_changed (changed_at),
+      FOREIGN KEY (item_id) REFERENCES items(id)
+    )`
   }
+  // ——— end v17: supermarket reports ———
 ];
 
 const refuse = (message: string) => `SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = '${message}'`;
@@ -2006,6 +2025,9 @@ export const V15_MYSQL_STEPS: readonly MysqlStep[] = [
 
 /** Version 16: petrol stations' tables only (MYSQL_TABLES, since 16); no column added to an older table. */
 export const V16_MYSQL_STEPS: readonly MysqlStep[] = [];
+
+/** Version 17: new tables only (MYSQL_TABLES, since 17); no column added to an older table. */
+export const V17_MYSQL_STEPS: readonly MysqlStep[] = [];
 
 /**
  * What a server database has already, for pendingMysqlSteps: "table.column", "table.column>parent" and "table.index"

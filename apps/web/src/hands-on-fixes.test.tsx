@@ -95,7 +95,7 @@ describe('small things said truly', () => {
   });
 
   it('reports: without the books no profit, no stock valuation and no ageing of what suppliers are owed', () => {
-    expect(reportTabsFor(false)).toEqual(['sales-items', 'sales-categories', 'sales-brands', 'sales-customers', 'aging']);
+    expect(reportTabsFor(false)).toEqual(['sales-items', 'sales-categories', 'sales-brands', 'sales-customers', 'slow-stock', 'aging']);
     expect(reportTabsFor(true)).toContain('supplier-aging');
   });
 
@@ -240,7 +240,7 @@ describe('after the final check of 1.4', () => {
     expect(reports).toContain("useEffect(() => { if (closed) window.location.replace(href('reports-more/sales-items')); }, [closed]);");
     expect(reports).toContain("{t('br_agingRule')}");
     // (the three reports of the books are not among a sales-only user's)
-    for (const tab of ['profit', 'supplier-aging', 'stock-value'] as const) expect(reportTabsFor(false)).not.toContain(tab);
+    for (const tab of ['profit', 'profit-categories', 'profit-brands', 'supplier-aging', 'stock-value'] as const) expect(reportTabsFor(false)).not.toContain(tab);
   });
 
   it('asks a build without the Pro module neither for medicines nor for the module\'s licence check', () => {

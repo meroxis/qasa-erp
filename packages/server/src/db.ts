@@ -5,7 +5,7 @@ import { DatabaseSync } from 'node:sqlite';
 import { brandKey, DEFAULT_POSTING_ACCOUNTS, IRAQI_UNIFIED_CHART, STARTER_SUB_ACCOUNTS } from '@qasa/core';
 import { AppError } from './errors.ts';
 import {
-  MYSQL_TABLES, MYSQL_TRIGGERS, mysqlCollations, mysqlTableSql, pendingMysqlSteps, V10_MYSQL_STEPS, V11_MYSQL_STEPS, V12_MYSQL_STEPS, V13_MYSQL_STEPS, V14_MYSQL_STEPS, V15_MYSQL_STEPS, V16_MYSQL_STEPS, type MysqlCollations, type MysqlStep
+  MYSQL_TABLES, MYSQL_TRIGGERS, mysqlCollations, mysqlTableSql, pendingMysqlSteps, V10_MYSQL_STEPS, V11_MYSQL_STEPS, V12_MYSQL_STEPS, V13_MYSQL_STEPS, V14_MYSQL_STEPS, V15_MYSQL_STEPS, V16_MYSQL_STEPS, V17_MYSQL_STEPS, type MysqlCollations, type MysqlStep
 } from './schema-mysql.ts';
 
 export type SqlParam = null | number | bigint | string | Uint8Array;
@@ -1939,6 +1939,25 @@ const V16 =
   CREATE INDEX fuel_moves_source ON fuel_moves(source_id);
   `;
 
+// ——— v17: supermarket reports (shelf-labels.ts) ———
+const V17 =
+  // 17 — shelf labels to reprint: an item (and unit; '' its own) whose sale price changed, or that is new, until its
+  // shelf label is printed. old_price is what the label on the shelf shows (null: a new item, or a currency change).
+  `
+  CREATE TABLE shelf_label_flags (
+    item_id TEXT NOT NULL REFERENCES items(id),
+    unit TEXT NOT NULL DEFAULT '',
+    old_price INTEGER CHECK (old_price IS NULL OR old_price >= 0),
+    new_price INTEGER NOT NULL CHECK (new_price >= 0),
+    currency TEXT NOT NULL CHECK (currency IN ('IQD', 'USD')),
+    changed_at TEXT NOT NULL,
+    changed_by TEXT NOT NULL,
+    PRIMARY KEY (item_id, unit)
+  );
+  CREATE INDEX shelf_label_flags_changed ON shelf_label_flags(changed_at);
+  `;
+// ——— end v17: supermarket reports ———
+
 const MIGRATIONS: Migration[] = [
   { sql: V1 }, { sql: V2, rebuild: true }, { sql: V3, rebuild: true }, { sql: V4 }, { sql: V5, rebuild: true },
   { sql: V6, mysql: 'tables' }, { sql: V7, mysql: 'tables' }, { sql: V8, mysql: 'tables' }, { sql: V9, mysql: 'tables' },
@@ -1948,7 +1967,8 @@ const MIGRATIONS: Migration[] = [
   { sql: V13, mysql: { tables: true, steps: () => V13_MYSQL_STEPS } },
   { sql: V14, mysql: { tables: true, steps: () => V14_MYSQL_STEPS } },
   { sql: V15, mysql: { tables: true, steps: () => V15_MYSQL_STEPS } },
-  { sql: V16, mysql: { tables: true, steps: () => V16_MYSQL_STEPS } }
+  { sql: V16, mysql: { tables: true, steps: () => V16_MYSQL_STEPS } },
+  { sql: V17, mysql: { tables: true, steps: () => V17_MYSQL_STEPS } }
 ];
 
 /** Server databases began at this version: its schema is in schema-mysql.ts (tables and triggers without `since`). */
