@@ -101,9 +101,13 @@ export interface CustomerScreenState {
   lang: string;
   company: string;
   welcome: string;
-  lines: { name: string; qty: string; amount: string }[];
+  lines: { name: string; qty: string; amount: string; offer?: string | undefined }[];
   totalLabel: string;
   total: string;
+  /** 2.0: what offers saved on this basket, the customer's points, and that the cashier is taking the payment now */
+  saved?: { label: string; value: string } | undefined;
+  points?: { label: string; value: string } | undefined;
+  paying?: boolean | undefined;
   /** "Paid" and "Change", once the cashier types what was handed over */
   paid?: { label: string; value: string } | undefined;
   change?: { label: string; value: string } | undefined;

@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import { tillRules, useApproval } from './till-settings.ts';
 import { z } from 'zod';
 import { cleanScalePrefixes, todayIso, toBase, type CurrencyCode } from '@qasa/core';
 import type { Db } from './db.ts';
@@ -121,11 +122,13 @@ export function updateTill(db: Db, id: string, input: TillInput, user: string): 
  * The drawer opened with no sale (to give change, or a check): by whoever runs the shift, written to the audit log
  * with the reason. The Windows app opens the drawer after this answers, never before, so every opening is on record.
  */
-export function drawerOpened(db: Db, shiftId: string, reason: string, actor: Actor): { opened: number } {
+export function drawerOpened(db: Db, shiftId: string, reason: string, actor: Actor, approvals?: readonly string[]): { opened: number } {
   const shift = getShift(db, shiftId, actor);
   if (shift.status !== 'open') throw conflict('pos_shift_closed');
   if (!shift.actions.includes('sell')) throw new AppError(403, 'forbidden', { need: 'shift_owner' });
-  audit(db, actor.name, 'drawer_open', 'pos_shift', shiftId, { reason: reason.trim().slice(0, 200) || null, register: shift.register });
+  // 2.0: a company may want a supervisor's PIN for each opening with no sale (till-settings.ts)
+  const approver = tillRules(db).supervisor.noSale ? useApproval(db, approvals, shiftId, 'no_sale', actor.name) : null;
+  audit(db, actor.name, 'drawer_open', 'pos_shift', shiftId, { reason: reason.trim().slice(0, 200) || null, register: shift.register, ...(approver ? { approver } : {}) });
   return { opened: drawerOpenings(db, shiftId) };
 }
 
@@ -251,8 +254,8 @@ export const posTillsApi: ApiExtension = {
       {
         method: 'POST', path: '/api/pos/shifts/:id/drawer',
         handler: async (req) => {
-          const body = parse(z.object({ reason: z.string().max(200).optional() }), req.body ?? {});
-          return drawerOpened(db, parse(z.object({ id }), req.params).id, body.reason ?? '', actor(req));
+          const body = parse(z.object({ reason: z.string().max(200).optional(), approvals: z.array(id).max(4).optional() }), req.body ?? {});
+          return drawerOpened(db, parse(z.object({ id }), req.params).id, body.reason ?? '', actor(req), body.approvals);
         }
       },
       { method: 'GET', path: '/api/pos/scale', handler: async () => ({ pricePrefixes: scalePricePrefixes(db) }) },

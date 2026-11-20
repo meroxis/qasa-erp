@@ -14,7 +14,7 @@ const person = (permissions: Permission[], more: Partial<NavViewer> = {}): NavVi
 
 describe('the Point of sale role in Users', () => {
   it('is offered next to Sales, with its words in Arabic, English and Kurdish', () => {
-    expect(ROLES).toEqual(['admin', 'preparer', 'checker', 'approver', 'sales', 'pos', 'purchasing', 'storekeeper', 'viewer']);
+    expect(ROLES).toEqual(['admin', 'preparer', 'checker', 'approver', 'sales', 'pos', 'supervisor', 'purchasing', 'storekeeper', 'viewer']);
     const words = (lang: 'ar' | 'en' | 'ku') => { const { t } = makeI18n(lang, 'western', () => {}, () => {}); return [t('role_pos'), t('roleHelp_pos')]; };
     expect(words('en')).toEqual(['Point of sale', 'Sells at the point of sale: opens a shift, sells and closes it, without cost or profit']);
     // the till's own words (i18n/pos.ts pos_title)

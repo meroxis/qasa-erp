@@ -44,3 +44,14 @@ export function generateKeyPairSync(): never {
 export function sign(): never {
   throw new Error('not in the demo');
 }
+
+/** A whole number from min (or 0) up to max, not included: gift voucher codes and pairing codes (till-rules.ts). */
+export function randomInt(min: number, max?: number): number {
+  const lo = max === undefined ? 0 : min;
+  const hi = max === undefined ? min : max;
+  const span = hi - lo;
+  const limit = Math.floor(0x100000000 / span) * span;
+  const box = new Uint32Array(1);
+  do crypto.getRandomValues(box); while (box[0]! >= limit);
+  return lo + (box[0]! % span);
+}

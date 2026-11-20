@@ -12,12 +12,12 @@ import { readSetting, writeSetting } from './settings.ts';
  * With sign-in on, every request needs a session: a random token in an HttpOnly cookie, stored here only as a hash.
  */
 
-export type Role = 'admin' | 'preparer' | 'checker' | 'approver' | 'sales' | 'pos' | 'purchasing' | 'storekeeper' | 'viewer';
-export const ROLES: readonly Role[] = ['admin', 'preparer', 'checker', 'approver', 'sales', 'pos', 'purchasing', 'storekeeper', 'viewer'];
+export type Role = 'admin' | 'preparer' | 'checker' | 'approver' | 'sales' | 'pos' | 'supervisor' | 'purchasing' | 'storekeeper' | 'viewer';
+export const ROLES: readonly Role[] = ['admin', 'preparer', 'checker', 'approver', 'sales', 'pos', 'supervisor', 'purchasing', 'storekeeper', 'viewer'];
 
 /** What a role may change. Every signed-in user may look at the books; changing them needs a permission. */
-export type Permission = 'admin' | 'entries.prepare' | 'entries.check' | 'entries.approve' | 'sales' | 'pos' | 'purchases' | 'stock';
-const ALL: Permission[] = ['admin', 'entries.prepare', 'entries.check', 'entries.approve', 'sales', 'pos', 'purchases', 'stock'];
+export type Permission = 'admin' | 'entries.prepare' | 'entries.check' | 'entries.approve' | 'sales' | 'pos' | 'posSupervise' | 'purchases' | 'stock';
+const ALL: Permission[] = ['admin', 'entries.prepare', 'entries.check', 'entries.approve', 'sales', 'pos', 'posSupervise', 'purchases', 'stock'];
 
 const ROLE_PERMISSIONS: Record<Role, Permission[]> = {
   admin: ALL,
@@ -36,6 +36,13 @@ const ROLE_PERMISSIONS: Record<Role, Permission[]> = {
    * no cost, profit, stock value or books, exactly as the sales role alone.
    */
   pos: ['pos'],
+  /**
+   * Till supervisor (2.0): approves at a till with their own PIN what a cashier may not do alone (a line taken off
+   * after its scan, a basket voided, a price or a discount beyond the limit, the drawer opened with no sale, a refund,
+   * a credit sale over the customer's limit) and sees a till's expected cash on a blind close. Each approval is written
+   * to the audit log with who gave it (till-rules.ts). It reads no books by itself.
+   */
+  supervisor: ['posSupervise'],
   purchasing: ['purchases'],
   storekeeper: ['stock'],
   viewer: []

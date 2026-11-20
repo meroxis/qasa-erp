@@ -1,4 +1,5 @@
 import { readdirSync, readFileSync } from 'node:fs';
+import { tillPart, tillSource } from './till-source.ts';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { renderToStaticMarkup } from 'react-dom/server';
@@ -164,7 +165,7 @@ describe('printed papers', () => {
     expect(invoiceModel(sale).titleKey).toBe('sale');
     // every other paper keeps its own title
     for (const doc of PRINT_DOCS) if (doc !== 'pos') expect(sampleModel(doc, 'ku').titleKey).not.toBe(POS_TITLE);
-    expect(src('./pages/Pos.tsx')).toContain("{t('pos_receipt')}");
+    expect(tillSource()).toContain("{t('pos_receipt')}");
   });
 
   it('a till sale read later still carries the cash handed over and the change, for a copy of its receipt', () => {
@@ -175,8 +176,8 @@ describe('printed papers', () => {
     // 2.0: what was handed over is asked again, but only as an option (for the change, and dollar notes on a dinar
     // sale): a sale sends it only when dinars alone covered the cash; a copy of an older sale's receipt still prints
     // what the server kept with it
-    const till = src('./pages/Pos.tsx');
-    expect(till).toContain('...(handedAny && !usdOn && (handed ?? 0) >= cashDue ? { tendered: handed ?? 0 } : {})');
+    const till = tillSource();
+    expect(till).toContain('...(handedAnyNow && !usdOn && (handedNow ?? 0) >= cashRounded ? { tendered: handedNow ?? 0 } : {})');
     expect(till).toContain('const handed = invoice.tender ?? null;');
   });
 });
@@ -190,7 +191,7 @@ describe('the till', () => {
     expect(html).toContain('Engine oil 5W-30, 4 L, synthetic, for petrol engines');
     const css = src('./pos.css');
     expect(css).toContain('.pos-line-name > span:first-child.pos-name-open { display: block; -webkit-line-clamp: unset; overflow: visible; }');
-    expect(src('./pages/Pos.tsx')).toContain('<CartName name={i18n.name(l.item.name)} />');
+    expect(tillSource()).toContain('<CartName name={i18n.name(l.item.name)} />');
   });
 
   it('warns as an item beyond the stock is added, with what is left of it; the server still decides at Pay', () => {
@@ -199,22 +200,23 @@ describe('the till', () => {
     expect(cartShortNote([{ code: 'TEA', haveMilli: 0 }], one, ', ')).toBe('TEA (0)');
     expect(cartShortNote([{ code: 'TEA', haveMilli: 0 }, { code: 'CUP', haveMilli: 2000 }], one, '، ')).toBe('TEA (0)، CUP (2)');
     for (const lang of LANGS) expect(texts(lang).t('pos_cartShort', { i: 'TEA (0)' })).toContain('TEA (0)');
-    const till = src('./pages/Pos.tsx');
+    const till = tillSource();
     expect(till).toContain('cartShortNote(shortStock(cart)');
     expect(till).toContain("{shortNow && <div className=\"alert warn small\" role=\"status\">{t('pos_cartShort', { i: shortNow })}</div>}");
   });
 
   it('has no "Amount paid" field: the Discount stays, alone on its row, with its F8 key, and nothing is worked out as change', () => {
-    const till = src('./pages/Pos.tsx');
+    const till = tillSource();
     // the pay panel of the till, from its first field to the end of the till (the receipt below is another thing)
-    const panel = till.slice(till.indexOf('<div className="pos-pay stack">'), till.indexOf('/* ---------- the receipt (80 mm) ---------- */'));
+    // 2.0: the pay panel is a file of its own (pos/PaymentPanel.tsx)
+    const panel = tillPart('PaymentPanel.tsx');
     expect(panel.length).toBeGreaterThan(500);
     expect(panel).not.toContain("t('pos_paid')");
     expect(panel).not.toContain("t('pos_change')");
     expect(panel).not.toContain('pos-change');
     expect(till).not.toMatch(/setPaid|cashChange|cashTender/);
     // the Discount field is still there, reached by F8, and is the only field on its row
-    expect(panel).toContain(`<label className="field" id="pos-discount"><span>{t('pos_discount')} <span className="kbd">F8</span></span>`);
+    expect(panel).toContain(`<label className="field pos-discount-field" id="pos-discount"><span>{t('pos_discount')} <span className="kbd">F8</span></span>`);
     expect(panel).not.toMatch(/<div className="grid-2">\s*<label className="field" id="pos-discount">/);
     expect(till).toContain("else if (e.key === 'F8') { e.preventDefault(); document.getElementById('pos-discount')?.querySelector('input')?.focus(); }");
     // "Short by" went with the field; "Amount paid" and "Change" stay for older receipts and the invoice page
@@ -250,7 +252,7 @@ describe('after the final check of 1.4', () => {
     // a server from before the list: the pages ask as they did
     expect(buildHas(undefined, 'pharmacy')).toBe(true);
     expect(src('./industry/PharmacyPrompts.tsx')).toContain("&& buildHas(modules, 'pharmacy')");
-    const till = src('./pages/Pos.tsx');
+    const till = tillSource();
     expect(till).toContain('const pharmacy = usePharmacyOn();');
     expect(till).not.toContain("plan?.features.includes('pharmacy')");
     const plans = src('./pages/Plans.tsx');
@@ -270,7 +272,7 @@ describe('the hands-on test of 1.4.1', () => {
     } finally {
       if (tz === undefined) delete process.env.TZ; else process.env.TZ = tz;
     }
-    const pos = src('./pages/Pos.tsx');
+    const pos = tillSource();
     expect(pos).toContain('<td className="num">{shiftTime(i18n, s.openedAt)}</td>');
     expect(pos).toContain('const time = (iso: string | null) => shiftTime(i18n, iso);');
   });

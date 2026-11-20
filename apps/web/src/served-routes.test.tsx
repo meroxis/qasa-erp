@@ -87,7 +87,7 @@ describe('what a browser build asks its server for', () => {
     expect([...new Set(moduleCalls.values())].sort()).toEqual(['backup', 'database', 'network']);
     // a component rendered only by a parent that read the module's status first
     const nested: Record<string, string> = { RelaySection: 'OfficeNetworkCard', CloudBackup: 'ThisPcBackupCard' };
-    const screens = ['pages/Settings.tsx', 'pages/Plans.tsx', 'pages/Pos.tsx', 'pages/WebsiteApi.tsx', 'industry/BackupNotice.tsx', 'industry/PharmacyPrompts.tsx', 'App.tsx'];
+    const screens = ['pages/Settings.tsx', 'pages/Plans.tsx', 'pos/Register.tsx', 'pages/WebsiteApi.tsx', 'industry/BackupNotice.tsx', 'industry/PharmacyPrompts.tsx', 'App.tsx'];
     const rxCallersGuarded = () => files.filter((f) => /useRxItems\(/.test(readFileSync(f, 'utf8')) && !f.endsWith('PharmacyPrompts.tsx'))
       .every((f) => /useRxItems\(usePharmacyOn\(\)|const pharmacy = usePharmacyOn\(\);[\s\S]*useRxItems\(pharmacy\)/.test(readFileSync(f, 'utf8')));
     const unguarded: string[] = [];

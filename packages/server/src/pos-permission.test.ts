@@ -65,7 +65,7 @@ afterEach(async () => {
 
 describe('the Point of sale role', () => {
   it('is a role of its own granting the pos permission; the admin role has it, the sales role does not', () => {
-    expect(ROLES).toEqual(['admin', 'preparer', 'checker', 'approver', 'sales', 'pos', 'purchasing', 'storekeeper', 'viewer']);
+    expect(ROLES).toEqual(['admin', 'preparer', 'checker', 'approver', 'sales', 'pos', 'supervisor', 'purchasing', 'storekeeper', 'viewer']);
     expect(permissionsOf(['pos'])).toEqual(['pos']);
     expect(permissionsOf(['admin'])).toContain('pos');
     expect(permissionsOf(['sales'])).toEqual(['sales']);

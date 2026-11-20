@@ -890,6 +890,7 @@ export const MYSQL_TABLES: readonly MysqlObject[] = [
       tendered BIGINT CHECK (tendered IS NULL OR tendered >= 0),
       usd_cash BIGINT CHECK (usd_cash IS NULL OR usd_cash > 0),
       usd_rate_x100 BIGINT CHECK (usd_rate_x100 IS NULL OR usd_rate_x100 > 0),
+      rounding BIGINT NOT NULL DEFAULT 0,
       INDEX pos_sales_shift (shift_id),
       FOREIGN KEY (invoice_id) REFERENCES invoices(id),
       FOREIGN KEY (shift_id) REFERENCES pos_shifts(id)
@@ -2052,8 +2053,100 @@ export const MYSQL_TABLES: readonly MysqlObject[] = [
       FOREIGN KEY (invoice_id) REFERENCES invoices(id) ON DELETE CASCADE,
       FOREIGN KEY (offer_id) REFERENCES offers(id)
     )`
+  },
+  // ===== 18 · TILL RULES (till-rules.ts, gift-vouchers.ts) =====
+  {
+    name: 'pos_pins',
+    since: 18,
+    sql: `CREATE TABLE pos_pins (
+      user_id ${ID} NOT NULL PRIMARY KEY,
+      pin_hash TEXT NOT NULL,
+      updated_at ${WHEN} NOT NULL,
+      FOREIGN KEY (user_id) REFERENCES users(id)
+    )`
+  },
+  {
+    name: 'pos_approvals',
+    since: 18,
+    sql: `CREATE TABLE pos_approvals (
+      id ${ID} NOT NULL PRIMARY KEY,
+      shift_id ${ID} NOT NULL,
+      action ${WORD} NOT NULL CHECK (action IN ('line_delete', 'void', 'price', 'discount', 'no_sale', 'refund', 'credit_over', 'blind_view')),
+      approver TEXT NOT NULL,
+      approver_id ${ID},
+      cashier TEXT NOT NULL,
+      detail TEXT,
+      created_at ${WHEN} NOT NULL,
+      expires_at ${WHEN} NOT NULL,
+      used_at ${WHEN},
+      INDEX pos_approvals_shift (shift_id),
+      FOREIGN KEY (shift_id) REFERENCES pos_shifts(id)
+    )`
+  },
+  {
+    name: 'gift_vouchers',
+    since: 18,
+    sql: `CREATE TABLE gift_vouchers (
+      id ${ID} NOT NULL PRIMARY KEY,
+      code ${WORD} NOT NULL,
+      amount BIGINT NOT NULL CHECK (amount > 0),
+      balance BIGINT NOT NULL CHECK (balance >= 0),
+      currency ${WORD} NOT NULL DEFAULT 'IQD' CHECK (currency IN ('IQD')),
+      expires_on ${WHEN},
+      status ${WORD} NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'cancelled')),
+      account_code ${ID} NOT NULL,
+      shift_id ${ID},
+      entry_id ${ID},
+      cancel_entry_id ${ID},
+      created_by TEXT NOT NULL,
+      created_at ${WHEN} NOT NULL,
+      UNIQUE KEY gift_vouchers_code (code),
+      FOREIGN KEY (account_code) REFERENCES accounts(code),
+      FOREIGN KEY (shift_id) REFERENCES pos_shifts(id),
+      FOREIGN KEY (entry_id) REFERENCES entries(id),
+      FOREIGN KEY (cancel_entry_id) REFERENCES entries(id)
+    )`
+  },
+  {
+    name: 'gift_voucher_moves',
+    since: 18,
+    sql: `CREATE TABLE gift_voucher_moves (
+      id ${ID} NOT NULL PRIMARY KEY,
+      voucher_id ${ID} NOT NULL,
+      kind ${WORD} NOT NULL CHECK (kind IN ('sold', 'redeemed', 'restored', 'cancelled')),
+      amount BIGINT NOT NULL,
+      invoice_id ${ID},
+      created_by TEXT NOT NULL,
+      created_at ${WHEN} NOT NULL,
+      INDEX gift_voucher_moves_voucher (voucher_id),
+      INDEX gift_voucher_moves_invoice (invoice_id),
+      FOREIGN KEY (voucher_id) REFERENCES gift_vouchers(id),
+      FOREIGN KEY (invoice_id) REFERENCES invoices(id)
+    )`
+  },
+  {
+    name: 'pos_display_images',
+    since: 18,
+    sql: `CREATE TABLE pos_display_images (
+      id ${ID} NOT NULL PRIMARY KEY,
+      mime ${WORD} NOT NULL,
+      data MEDIUMTEXT NOT NULL,
+      sort INT NOT NULL DEFAULT 0,
+      created_by TEXT NOT NULL,
+      created_at ${WHEN} NOT NULL
+    )`
+  },
+  {
+    name: 'pos_display_codes',
+    since: 18,
+    sql: `CREATE TABLE pos_display_codes (
+      till_id ${ID} NOT NULL PRIMARY KEY,
+      code_hash TEXT NOT NULL,
+      created_at ${WHEN} NOT NULL,
+      FOREIGN KEY (till_id) REFERENCES pos_tills(id)
+    )`
   }
-  // ===== end 17 · OFFERS =====
+  // ===== end 18 · TILL RULES =====
 ];
 
 const refuse = (message: string) => `SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = '${message}'`;
@@ -2236,6 +2329,13 @@ export const V17_MYSQL_STEPS: readonly MysqlStep[] = [
   mysqlAddColumn('invoices', 'offer_discount', 'BIGINT NOT NULL DEFAULT 0 CHECK (offer_discount >= 0)')
 ];
 // ——— end of 17, TILLS ———
+
+// ===== 18 · TILL RULES =====
+/** Version 18 (till rules): the dinar rounding of a till sale's cash. The new tables come from MYSQL_TABLES, since 18. */
+export const V18_MYSQL_STEPS: readonly MysqlStep[] = [
+  mysqlAddColumn('pos_sales', 'rounding', 'BIGINT NOT NULL DEFAULT 0')
+];
+// ===== end of 18 · TILL RULES =====
 
 /**
  * What a server database has already, for pendingMysqlSteps: "table.column", "table.column>parent" and "table.index"

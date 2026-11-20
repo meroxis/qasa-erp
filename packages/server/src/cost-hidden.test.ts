@@ -69,7 +69,9 @@ const EXTRA: string[] = [];
 /** Addresses the checks below name. */
 const at: Record<string, string> = {};
 /** Routes whose record this company has none of (fixed assets, item pictures): 404 for everyone. */
-const NO_RECORD = new Set(['/api/assets/depreciation/:id', '/api/assets/:id', '/api/items/:id/image']);
+const NO_RECORD = new Set(['/api/assets/depreciation/:id', '/api/assets/:id', '/api/items/:id/image',
+  // 2.0 till rules: no picture or voucher is made here, and a screen's feed needs a real pairing code
+  '/api/pos/display/image/:id', '/api/pos/display/image-admin/:id', '/api/pos/gift-vouchers/lookup', '/api/pos/display/feed']);
 
 beforeAll(async () => {
   resetLoginThrottle();
@@ -198,11 +200,15 @@ beforeAll(async () => {
     '/api/fuel/shifts/:id': fuelShift.id, '/api/fuel/deliveries/:id': fuelDelivery.id,
     '/api/consignment/items/:id': breadId, '/api/consignment/docs/:id': consigned.id, '/api/consignment/settlements/:id': consignmentSettlement.id,
     '/api/consignment/statement/:id': supplierId,
-    '/api/offers/:id': 'offer-1'
+    '/api/offers/:id': 'offer-1',
+    '/api/pos/customer/:id': customerId
   });
   Object.assign(QUERY, {
     '/api/reports/final-accounts': `from=${today.slice(0, 4)}-01-01&to=${today}`,
     '/api/reports/statement': 'account=1811',
+    '/api/pos/gift-vouchers/lookup': 'code=GVNONE2345',
+    '/api/pos/display/feed': 'code=000000',
+    '/api/pos/display/image/:id': 'code=000000',
     '/api/brief/reports/sales-by-group': 'by=category',
     '/api/brief/reports/aging': 'type=customer',
     '/api/parties/totals': 'type=customer',
@@ -360,9 +366,9 @@ const BOOKS_ROUTES = ['/api/entries/', '/api/reports/', '/api/year-end', '/api/f
   '/api/fuel/attendants', '/api/fuel/deliveries', '/api/fuel/dips', '/api/fuel/reports',
   // goods on consignment (1.7): what the shop owes its suppliers, and at what cost it holds their goods
   '/api/consignment'];
-const ADMIN_ROUTES = ['/api/audit', '/api/auth/recovery-code', '/api/branches', '/api/users'];
+const ADMIN_ROUTES = ['/api/audit', '/api/auth/recovery-code', '/api/branches', '/api/pos/gift-vouchers', '/api/users'];
 // the till's own reads (1.5.2): for the Point of sale permission only (an admin has it; a cashier at the till here too)
-const TILL_ROUTES = ['/api/pos/current', '/api/pos/payment-accounts', '/api/pos/scale', '/api/pos/tills'];
+const TILL_ROUTES = ['/api/pos/current', '/api/pos/customer/:id', '/api/pos/display/image-admin/:id', '/api/pos/display/images', '/api/pos/gift-vouchers/lookup', '/api/pos/payment-accounts', '/api/pos/rules', '/api/pos/scale', '/api/pos/tills'];
 const NOT_THEIRS = [...ADMIN_ROUTES, ...TILL_ROUTES].sort();
 const isOneOf = (route: string, list: string[]) => list.some((p) => route === p || route.startsWith(p.endsWith('/') ? p : `${p}/`));
 
@@ -434,7 +440,8 @@ describe('cost, stock value and profit, by who asks', () => {
     // under any address they can ask. Other things have a balance, and stay: what a customer or a supplier owes (the
     // parties, their statements, the aging report, the brief's late customers), an item's stock, loyalty points
     // (the brief's customers who owe the most, phone app 1.1: what customers owe, as its late customers)
-    const notMoney = /^\/api\/(parties|brief\/reports\/aging|items|loyalty)[/ ]|^\/api\/brief \.(lateCustomers|topDebtors)\[\]\.balance$/;
+    // (2.0: the till reads what the customer it picked owes, for a credit sale: /api/pos/customer/:id)
+    const notMoney = /^\/api\/(parties|brief\/reports\/aging|items|loyalty|pos\/customer)[/ ]|^\/api\/brief \.(lateCustomers|topDebtors)\[\]\.balance$/;
     const money = answers.flatMap((a) => [...a.paths].filter((p) => /balance|flow|expenses/i.test(p.split('.').pop()!)).map((p) => `${a.route} ${p}`));
     expect(money.filter((p) => !notMoney.test(p))).toEqual([]);
     // what the till needs stays: the safes by name (to pick one), and the day close's sales and debts (1.4.1: of the

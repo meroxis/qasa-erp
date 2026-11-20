@@ -28,6 +28,8 @@ export interface ShiftView {
   difference: Money2 | null;
   notes: string;
   actions: ('sell' | 'close')[];
+  /** 2.0: a cashier who closes blind reads no totals (the server leaves them at zero) */
+  blind?: true;
   /** 2.0: the named till the shift is on (older servers leave it out) */
   tillId?: string | null;
   /** 2.0: dollar notes taken for dinar sales (usd in cents) and the dinars they stood for */
@@ -62,6 +64,10 @@ export interface SaleInput {
   tendered?: number;
   /** 2.0: a dinar sale paid partly in dollar notes: the dollars (cents) and the rate they were taken at */
   usdCash?: { amount: number; rateX100: number };
+  /** 2.0: approvals a supervisor gave at this till (pos/rules-api.ts) */
+  approvals?: string[];
+  /** 2.0: gift vouchers that pay part of the sale */
+  vouchers?: { code: string; amount: number }[];
   /** qtyMilli in base units, or unit + unitQtyMilli: the quantity in one of the item's units, priced per that unit */
   lines: (({ itemId: string; qtyMilli: number; unitPrice: number } | { itemId: string; unit: UnitCode; unitQtyMilli: number; unitPrice: number }) & { batchId?: string })[];
 }
@@ -85,7 +91,7 @@ export const tillsApi = {
   update: (id: string, input: TillInput) => request<TillView>('PUT', `/api/pos/tills/${id}`, input),
   summary: (f: { from?: string; to?: string } = {}) => request<{ from: string; to: string; rows: TillSummaryRow[] }>('GET', '/api/pos/tills/summary' + qs(f)),
   /** the drawer opened with no sale: written to the audit log before the drawer opens */
-  drawer: (shiftId: string, reason = '') => request<{ opened: number }>('POST', `/api/pos/shifts/${shiftId}/drawer`, { reason }),
+  drawer: (shiftId: string, reason = '', approvals?: string[]) => request<{ opened: number }>('POST', `/api/pos/shifts/${shiftId}/drawer`, { reason, ...(approvals?.length ? { approvals } : {}) }),
   scale: () => request<{ pricePrefixes: string[] }>('GET', '/api/pos/scale'),
   setScale: (pricePrefixes: string[]) => request<{ pricePrefixes: string[] }>('PUT', '/api/pos/scale', { pricePrefixes }),
   paymentAccounts: () => request<{ accounts: PosAccounts; methods: PosMethod[] }>('GET', '/api/pos/payment-accounts'),
@@ -99,6 +105,6 @@ export const posApi = {
   shift: (id: string) => request<ShiftReport>('GET', `/api/pos/shifts/${id}`),
   open: (input: OpenShiftInput) => request<ShiftView>('POST', '/api/pos/shifts', input),
   /** options (1.2): the sale's idempotency key on a PC with an outbox, and how long to wait before keeping it there */
-  sell: (shiftId: string, input: SaleInput, options: SendOptions = {}) => request<{ invoice: InvoiceView; shift: ShiftView }>('POST', `/api/pos/shifts/${shiftId}/sales`, input, options),
+  sell: (shiftId: string, input: SaleInput, options: SendOptions = {}) => request<{ invoice: InvoiceView; shift: ShiftView; rounding?: number }>('POST', `/api/pos/shifts/${shiftId}/sales`, input, options),
   close: (shiftId: string, body: { countedCash: number; countedUsd?: number; notes?: string }) => request<ShiftView>('POST', `/api/pos/shifts/${shiftId}/close`, body)
 };

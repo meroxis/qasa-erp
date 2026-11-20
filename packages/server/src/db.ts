@@ -5,7 +5,7 @@ import { DatabaseSync } from 'node:sqlite';
 import { brandKey, DEFAULT_POSTING_ACCOUNTS, IRAQI_UNIFIED_CHART, STARTER_SUB_ACCOUNTS } from '@qasa/core';
 import { AppError } from './errors.ts';
 import {
-  MYSQL_TABLES, MYSQL_TRIGGERS, mysqlCollations, mysqlTableSql, pendingMysqlSteps, V10_MYSQL_STEPS, V11_MYSQL_STEPS, V12_MYSQL_STEPS, V13_MYSQL_STEPS, V14_MYSQL_STEPS, V15_MYSQL_STEPS, V16_MYSQL_STEPS, V17_MYSQL_STEPS, type MysqlCollations, type MysqlStep
+  MYSQL_TABLES, MYSQL_TRIGGERS, mysqlCollations, mysqlTableSql, pendingMysqlSteps, V10_MYSQL_STEPS, V11_MYSQL_STEPS, V12_MYSQL_STEPS, V13_MYSQL_STEPS, V14_MYSQL_STEPS, V15_MYSQL_STEPS, V16_MYSQL_STEPS, V17_MYSQL_STEPS, V18_MYSQL_STEPS, type MysqlCollations, type MysqlStep
 } from './schema-mysql.ts';
 
 export type SqlParam = null | number | bigint | string | Uint8Array;
@@ -2119,6 +2119,74 @@ const V17 =
   `;
   // ——— end of 17 (tills, shelf labels, consignment, offers) ———
 
+// ===== 18 · TILL RULES (till-rules.ts, gift-vouchers.ts) — kept in one block; other 2.0 work adds its own beside it =====
+const V18 =
+  // the till's rules: supervisors' PINs (scrypt, as passwords), the one-use approvals a supervisor gives at a till
+  // (each in the audit log with who approved), gift vouchers (a liability until used) and their movements, the pictures
+  // the customer screen shows while idle, the pairing codes of customer screens on other devices (hashed), and the
+  // dinar rounding of a till sale's cash
+  `
+  CREATE TABLE pos_pins (
+    user_id TEXT PRIMARY KEY REFERENCES users(id),
+    pin_hash TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+  );
+  CREATE TABLE pos_approvals (
+    id TEXT PRIMARY KEY,
+    shift_id TEXT NOT NULL REFERENCES pos_shifts(id),
+    action TEXT NOT NULL CHECK (action IN ('line_delete', 'void', 'price', 'discount', 'no_sale', 'refund', 'credit_over', 'blind_view')),
+    approver TEXT NOT NULL,
+    approver_id TEXT,
+    cashier TEXT NOT NULL,
+    detail TEXT,
+    created_at TEXT NOT NULL,
+    expires_at TEXT NOT NULL,
+    used_at TEXT
+  );
+  CREATE INDEX pos_approvals_shift ON pos_approvals(shift_id);
+  CREATE TABLE gift_vouchers (
+    id TEXT PRIMARY KEY,
+    code TEXT NOT NULL UNIQUE,
+    amount INTEGER NOT NULL CHECK (amount > 0),
+    balance INTEGER NOT NULL CHECK (balance >= 0),
+    currency TEXT NOT NULL DEFAULT 'IQD' CHECK (currency IN ('IQD')),
+    expires_on TEXT,
+    status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'cancelled')),
+    account_code TEXT NOT NULL REFERENCES accounts(code),
+    shift_id TEXT REFERENCES pos_shifts(id),
+    entry_id TEXT REFERENCES entries(id),
+    cancel_entry_id TEXT REFERENCES entries(id),
+    created_by TEXT NOT NULL,
+    created_at TEXT NOT NULL
+  );
+  CREATE TABLE gift_voucher_moves (
+    id TEXT PRIMARY KEY,
+    voucher_id TEXT NOT NULL REFERENCES gift_vouchers(id),
+    kind TEXT NOT NULL CHECK (kind IN ('sold', 'redeemed', 'restored', 'cancelled')),
+    amount INTEGER NOT NULL,
+    invoice_id TEXT REFERENCES invoices(id),
+    created_by TEXT NOT NULL,
+    created_at TEXT NOT NULL
+  );
+  CREATE INDEX gift_voucher_moves_voucher ON gift_voucher_moves(voucher_id);
+  CREATE INDEX gift_voucher_moves_invoice ON gift_voucher_moves(invoice_id);
+  CREATE TABLE pos_display_images (
+    id TEXT PRIMARY KEY,
+    mime TEXT NOT NULL,
+    data TEXT NOT NULL,
+    sort INTEGER NOT NULL DEFAULT 0,
+    created_by TEXT NOT NULL,
+    created_at TEXT NOT NULL
+  );
+  CREATE TABLE pos_display_codes (
+    till_id TEXT PRIMARY KEY REFERENCES pos_tills(id),
+    code_hash TEXT NOT NULL,
+    created_at TEXT NOT NULL
+  );
+  ALTER TABLE pos_sales ADD COLUMN rounding INTEGER NOT NULL DEFAULT 0;
+  `;
+// ===== end of 18 · TILL RULES =====
+
 const MIGRATIONS: Migration[] = [
   { sql: V1 }, { sql: V2, rebuild: true }, { sql: V3, rebuild: true }, { sql: V4 }, { sql: V5, rebuild: true },
   { sql: V6, mysql: 'tables' }, { sql: V7, mysql: 'tables' }, { sql: V8, mysql: 'tables' }, { sql: V9, mysql: 'tables' },
@@ -2129,7 +2197,8 @@ const MIGRATIONS: Migration[] = [
   { sql: V14, mysql: { tables: true, steps: () => V14_MYSQL_STEPS } },
   { sql: V15, mysql: { tables: true, steps: () => V15_MYSQL_STEPS } },
   { sql: V16, mysql: { tables: true, steps: () => V16_MYSQL_STEPS } },
-  { sql: V17, mysql: { tables: true, steps: () => V17_MYSQL_STEPS } }
+  { sql: V17, mysql: { tables: true, steps: () => V17_MYSQL_STEPS } },
+  { sql: V18, mysql: { tables: true, steps: () => V18_MYSQL_STEPS } }
 ];
 
 /** Server databases began at this version: its schema is in schema-mysql.ts (tables and triggers without `since`). */
