@@ -1,3 +1,4 @@
+import { TILL_CARD_PAYMENTS } from '@qasa/core';
 import { useEffect, useState } from 'react';
 import { ROUNDING_STEPS, type CashRounding } from '@qasa/core';
 import { api, type ItemView, type UserView } from '../api.ts';
@@ -146,9 +147,9 @@ function RulesCard({ rules, onSaved }: { rules: TillRulesView; onSaved(): void }
                   <option value="en">English</option>
                 </select>
               </label>
-              <label className="field" style={{ flex: 1, minInlineSize: 220 }}><span>{t('tu_payText')}</span>
+              {TILL_CARD_PAYMENTS && <label className="field" style={{ flex: 1, minInlineSize: 220 }}><span>{t('tu_payText')}</span>
                 <input className="input" maxLength={200} value={display.paymentText} onChange={(e) => setDisplay({ ...display, paymentText: e.target.value.replace(/[<>]/g, '') })} />
-              </label>
+              </label>}
             </div>
             <label className="row" style={{ gap: 6 }}><input type="checkbox" checked={display.slideshow} onChange={(e) => setDisplay({ ...display, slideshow: e.target.checked })} />{t('tu_slideshow')}</label>
           </fieldset>

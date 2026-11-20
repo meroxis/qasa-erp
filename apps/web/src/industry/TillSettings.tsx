@@ -1,3 +1,4 @@
+import { TILL_CARD_PAYMENTS } from '@qasa/core';
 import { useEffect, useState } from 'react';
 import { api, type WarehouseView } from '../api.ts';
 import { AccountCombo, ErrorBox, Icon, useLoad, useToast } from '../components.tsx';
@@ -11,7 +12,7 @@ import { keepScalePrefixes, keepScaleDigits } from './till.ts';
  */
 export function TillSettings({ admin }: { admin: boolean }) {
   if (!admin) return null;
-  return <><TillsCard /><PayAccountsCard /><ScalePricesCard /></>;
+  return <><TillsCard />{TILL_CARD_PAYMENTS && <PayAccountsCard />}<ScalePricesCard /></>;
 }
 
 function TillsCard() {

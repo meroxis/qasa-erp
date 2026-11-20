@@ -1,8 +1,7 @@
 import { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
 import { inCategory, categoriesApi } from '../industry/categories-api.ts';
 import {
-  isWeighedUnit, normalizeForSearch, POS_QUICK_MAX, posBigTiles, rateFromX100, rateToX100, roundCash, toWesternDigits, type CurrencyCode, type Lang, type OfferRule
-} from '@qasa/core';
+  isWeighedUnit, normalizeForSearch, POS_QUICK_MAX, posBigTiles, rateFromX100, rateToX100, roundCash, toWesternDigits, type CurrencyCode, type Lang, type OfferRule, TILL_CARD_PAYMENTS } from '@qasa/core';
 import { api, ApiError, serverReachable, setRefundApproval, type InvoiceView, type ItemView, type PartyView } from '../api.ts';
 import { ErrorBox, Icon, Modal, useData, useLoad, usePageNav, useToast, type PickOption } from '../components.tsx';
 import { makeI18n, useI18n, type I18n } from '../i18n.ts';
@@ -101,7 +100,7 @@ export function Register({ initial, onClosed }: { initial: ShiftView; onClosed()
   const [said, setSaid] = useState('');
   useEffect(() => {
     if (initial.tillId) tillsApi.list().then((r) => setTill(r.tills.find((x) => x.id === initial.tillId) ?? null), () => {});
-    tillsApi.paymentAccounts().then((r) => setCardMethods(r.methods.filter((m: PosMethod): m is Exclude<SplitMethod, 'cash'> => m !== 'cash' && m !== 'account')), () => {});
+    if (TILL_CARD_PAYMENTS) tillsApi.paymentAccounts().then((r) => setCardMethods(r.methods.filter((m: PosMethod): m is Exclude<SplitMethod, 'cash'> => m !== 'cash' && m !== 'account')), () => {});
     applyKeptScaleDigits();
     tillsApi.scale().then((r) => { setScalePrefixes(r.pricePrefixes); keepScalePrefixes(r.pricePrefixes); keepScaleDigits(r.itemDigits); }, () => {});
     tillRulesApi.rules().then(setRules, () => {});

@@ -1,3 +1,4 @@
+import { TILL_CARD_PAYMENTS } from '@qasa/core';
 import { useEffect, useMemo, useState } from 'react';
 import type { Lang, Names } from '@qasa/core';
 import { CUSTOMER_CHANNEL, type CustomerScreenState } from '../industry/till.ts';
@@ -165,7 +166,7 @@ export function CustomerDisplay() {
           {state.points && <div className="cd-row"><span>{state.points.label}</span><span className="num">{state.points.value}</span></div>}
           {state.paid && <div className="cd-row"><span>{state.paid.label}</span><span className="num">{state.paid.value}</span></div>}
           {state.change && <div className="cd-row cd-change"><span>{state.change.label}</span><strong className="num">{state.change.value}</strong></div>}
-          {state.paying && feed?.display.paymentText && <div className="cd-pay"><span>{t('tu_cd_payTo')}</span><strong dir="ltr">{feed.display.paymentText}</strong></div>}
+          {TILL_CARD_PAYMENTS && state.paying && feed?.display.paymentText && <div className="cd-pay"><span>{t('tu_cd_payTo')}</span><strong dir="ltr">{feed.display.paymentText}</strong></div>}
           {state.done && <div className="cd-done">{state.done}</div>}
         </>
       )}
