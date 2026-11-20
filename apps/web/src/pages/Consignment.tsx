@@ -9,6 +9,7 @@ import { parseRateText } from '../industry/quick-voucher.ts';
 import {
   consignmentApi, type ConsignmentDoc, type ConsignmentDocKind, type ConsignmentItem, type ConsignmentStatement, type Settlement
 } from '../industry/consignment-api.ts';
+import { LockedFeature } from '../industry/LockedFeature.tsx';
 
 /**
  * بضاعة الأمانة — goods on consignment (sale-or-return). Route: consignment/<tab> (suppliers, items, docs, settlements).
@@ -24,7 +25,14 @@ function useSuppliers() {
   return (parties.data ?? []).map((p): PickOption => ({ id: p.id, code: p.code, label: p.name, search: p.phone ?? '' }));
 }
 
-export function Consignment({ tab = 'suppliers' }: { tab?: ConsignmentTab }) {
+/** 2.0.0: without the plan, what the page does and how to get it (LockedFeature), not its tabs over an empty page. */
+export function Consignment(props: { tab?: ConsignmentTab }) {
+  const { plan } = useData();
+  if (plan && !plan.features.includes('consignment')) return <LockedFeature feature="consignment" icon="truck" />;
+  return <ConsignmentPage {...props} />;
+}
+
+function ConsignmentPage({ tab = 'suppliers' }: { tab?: ConsignmentTab }) {
   const { t } = useI18n();
   usePageNav({ key: 'cg_title', group: 'gPurchases' });
   const { plan } = useData();

@@ -3,6 +3,7 @@ import { api } from '../api.ts';
 import { EmptyState, ErrorBox, Icon, Modal, useData, useLoad, usePageNav, useToast } from '../components.tsx';
 import { useI18n } from '../i18n.ts';
 import { priceCheckerApi } from '../industry/market-extras-api.ts';
+import { LockedFeature } from '../industry/LockedFeature.tsx';
 
 /**
  * أجهزة فحص الأسعار — the price checker screens near the shelves (2.0, Starter and up; the admin's page). Adding one
@@ -14,7 +15,14 @@ export function deviceLink(token: string, base: string = `${location.origin}${lo
   return `${base}#/price-checker?token=${encodeURIComponent(token)}`;
 }
 
+/** 2.0.0: without the plan, what the page does and how to get it (LockedFeature), not its tabs over an empty page. */
 export function PriceCheckers() {
+  const { plan } = useData();
+  if (plan && !plan.features.includes('priceChecker')) return <LockedFeature feature="priceChecker" icon="scale" />;
+  return <PriceCheckersPage />;
+}
+
+function PriceCheckersPage() {
   const i18n = useI18n();
   const { t } = i18n;
   const toast = useToast();

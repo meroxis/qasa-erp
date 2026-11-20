@@ -9,6 +9,7 @@ import { pricesApi } from '../industry/prices-api.ts';
 import {
   wholesaleApi, type CollectionView, type DocState, type OrderInput, type OrderView, type RepView, type StockLine, type VanDay, type WsOrderStatus, type WsOutcome, type WsSettings
 } from '../industry/wholesale-api.ts';
+import { LockedFeature } from '../industry/LockedFeature.tsx';
 
 /**
  * الجملة والتوزيع (1.8): the rep's day on their route (visits, orders, collections), the sales orders with credit
@@ -73,7 +74,14 @@ function RepPicker({ reps, value, onChange }: { reps: readonly RepView[]; value:
 
 /* ---------- the page ---------- */
 
-export function Wholesale({ tab: asked = 'day' }: { tab?: WholesaleTab }) {
+/** 2.0.0: without the plan, what the page does and how to get it (LockedFeature), not its tabs over an empty page. */
+export function Wholesale(props: { tab?: WholesaleTab }) {
+  const { plan } = useData();
+  if (plan && !plan.features.includes('wholesale')) return <LockedFeature feature="wholesale" icon="truck" />;
+  return <WholesalePage {...props} />;
+}
+
+function WholesalePage({ tab: asked = 'day' }: { tab?: WholesaleTab }) {
   const { t } = useI18n();
   const { permissions } = useData();
   const admin = !!permissions?.includes('admin');

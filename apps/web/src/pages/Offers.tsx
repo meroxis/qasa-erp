@@ -1,3 +1,4 @@
+import { useData } from '../components.tsx';
 import { useState } from 'react';
 import { OFFER_KINDS, formatQty, parseQty, todayIso, type Names, type OfferKind } from '@qasa/core';
 import { api } from '../api.ts';
@@ -8,6 +9,7 @@ import { categoriesApi } from '../industry/categories-api.ts';
 import { branchesApi } from '../industry/branches-api.ts';
 import { offersApi, type OfferInput, type OfferView } from '../industry/offers-api.ts';
 import { wholeOf } from '../industry/Loyalty.tsx';
+import { LockedFeature } from '../industry/LockedFeature.tsx';
 
 /**
  * العروض — offers a sale gets by itself at the till and on sale invoices (1.7, Starter and up): the list with what is
@@ -58,7 +60,14 @@ function inputOf(o: OfferView): OfferInput {
   return rest;
 }
 
-export function Offers({ admin, tab }: { admin: boolean; tab: 'list' | 'report' }) {
+/** 2.0.0: without the plan, what the page does and how to get it (LockedFeature), not its tabs over an empty page. */
+export function Offers(props: { admin: boolean; tab: 'list' | 'report' }) {
+  const { plan } = useData();
+  if (plan && !plan.features.includes('promotions')) return <LockedFeature feature="promotions" icon="tag" />;
+  return <OffersPage {...props} />;
+}
+
+function OffersPage({ admin, tab }: { admin: boolean; tab: 'list' | 'report' }) {
   const i18n = useI18n();
   const { t } = i18n;
   const toast = useToast();

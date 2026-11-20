@@ -11,6 +11,7 @@ import { useI18n, type I18n, type Key } from '../i18n.ts';
 import { href } from '../router.ts';
 import { printDocument } from '../industry/printing.ts';
 import { goldApi, type GoldBoard, type GoldDocInput, type GoldDocKind, type GoldDocView, type GoldItemView } from '../industry/gold-api.ts';
+import { LockedFeature } from '../industry/LockedFeature.tsx';
 
 /** The gold shop's tabs, as App.tsx routes them (gold/<tab>). */
 export const GOLD_TABS = ['board', 'pieces', 'old', 'suppliers', 'stock'] as const;
@@ -33,7 +34,14 @@ const karatName = (i18n: I18n, k: number) => i18n.t('gd_karatN', { n: i18n.digit
 const weight = (i18n: I18n, mg: number) => `${i18n.qty(mg)} ${i18n.lang === 'en' ? 'g' : i18n.lang === 'ar' ? 'غم' : 'گرام'}`;
 
 /** الذهب والمجوهرات (goldShop): the day's board, the pieces, old gold, suppliers in gold and the gold in the shop. */
-export function Gold({ tab = 'board' }: { tab?: GoldTab }) {
+/** 2.0.0: without the plan, what the page does and how to get it (LockedFeature), not its tabs over an empty page. */
+export function Gold(props: { tab?: GoldTab }) {
+  const { plan } = useData();
+  if (plan && !plan.features.includes('goldShop')) return <LockedFeature feature="goldShop" icon="gem" />;
+  return <GoldPage {...props} />;
+}
+
+function GoldPage({ tab = 'board' }: { tab?: GoldTab }) {
   const { t } = useI18n();
   const { plan, seesCost } = useData();
   const allowed = !!plan?.features.includes('goldShop');

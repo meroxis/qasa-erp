@@ -7,6 +7,7 @@ import { whatsappUrl } from '../share.ts';
 import { DeliveryOrderForm, draftOf, emptyDraft } from '../industry/DeliveryOrderForm.tsx';
 import { deliveryMessage } from '../industry/market-messages.ts';
 import { deliveryApi, type DeliveryOrderSummary, type DeliveryStatus, type Driver, type DriverInput } from '../industry/market-extras-api.ts';
+import { LockedFeature } from '../industry/LockedFeature.tsx';
 
 /**
  * طلبات التوصيل — delivery orders taken by phone or WhatsApp (2.0, Starter and up). Route: delivery/<tab> (board,
@@ -24,7 +25,14 @@ export function waited(fromIso: string, now: Date = new Date()): number {
   return Math.max(0, Math.floor((now.getTime() - Date.parse(fromIso)) / 60000));
 }
 
-export function Delivery({ tab = 'board' }: { tab?: DeliveryTab }) {
+/** 2.0.0: without the plan, what the page does and how to get it (LockedFeature), not its tabs over an empty page. */
+export function Delivery(props: { tab?: DeliveryTab }) {
+  const { plan } = useData();
+  if (plan && !plan.features.includes('delivery')) return <LockedFeature feature="delivery" icon="truck" />;
+  return <DeliveryPage {...props} />;
+}
+
+function DeliveryPage({ tab = 'board' }: { tab?: DeliveryTab }) {
   const { t } = useI18n();
   usePageNav({ key: 'mx_deliveryTitle', group: 'gSales' });
   const { plan, seesBooks, permissions } = useData();

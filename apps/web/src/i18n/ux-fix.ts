@@ -9,6 +9,8 @@ export const UXF_TEXT = {
   ux_fullCountZeroes__one: ['جرد كامل: مادة واحدة لم تُعدّ ولها رصيد ستصبح صفراً. هل تتابع؟', 'Full count: 1 item with stock was not counted and will be set to zero. Go on?', 'جەردی تەواو: یەک کاڵای خاوەن بڕ نەژمێردراوە و دەکرێتە سفر. بەردەوام دەبیت؟'],
   ux_tillsSection: ['الصناديق وقواعد نقطة البيع', 'Tills and till rules', 'سندووقەکان و یاساکانی خاڵی فرۆشتن'],
   ux_tillsSectionHelp: ['الصناديق، والدفع بالبطاقة والمحافظ، وتقريب الدينار، ورمز المشرف، وقسائم الهدايا، وشاشة الزبون، والميزان', 'Tills, card and wallet payments, dinar rounding, the supervisor PIN, gift vouchers, the customer screen, and the scale', 'سندووقەکان، پارەدان بە کارت و جزدان، خڕکردنەوەی دینار، ژمارەی نهێنیی سەرپەرشتیار، کوپۆنی دیاری، شاشەی کڕیار و تەرازوو'],
+  ux_lockedText: ['هذه الصفحة من مزايا الخطط المدفوعة (Starter وPro وBusiness)، وهي في الشهر الأول المجاني أيضاً.', 'This page is part of the paid plans (Starter, Pro and Business), and of the free first month.', 'ئەم پەڕەیە بەشێکە لە پلانە پارەدارەکان (Starter، Pro و Business)، و لە مانگی یەکەمی بەخۆڕاییش.'],
+  ux_lockedTrial: ['ابدأ الشهر الأول المجاني', 'Start the free first month', 'مانگی یەکەمی بەخۆڕایی دەست پێبکە'],
   ux_tillReturn: ['إرجاع من نقطة البيع', 'Return at the till', 'گەڕاندنەوە لە خاڵی فرۆشتن'],
   ux_receiptNumber: ['رقم الوصل', 'Receipt number', 'ژمارەی وەسڵ'],
   ux_receiptHint: ['اكتب رقم الوصل أو امسح الباركود المطبوع عليه، ثم اختر ما يعود.', 'Type the receipt number or scan its barcode, then pick what comes back.', 'ژمارەی وەسڵەکە بنووسە یان بارکۆدەکەی سەری بخوێنەوە، پاشان ئەوە هەڵبژێرە کە دەگەڕێتەوە.'],

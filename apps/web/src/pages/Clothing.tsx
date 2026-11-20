@@ -8,6 +8,7 @@ import { categoriesApi } from '../industry/categories-api.ts';
 import { clothingApi, type ColorView, type ModelView } from '../industry/clothing-api.ts';
 import { ColorName } from '../industry/ClothingTools.tsx';
 import { queueLabels } from '../industry/label-queue.ts';
+import { LockedFeature } from '../industry/LockedFeature.tsx';
 
 /**
  * Clothing and shoes (2.0). Route: clothing/<tab> (models, colors, reports) and clothing-model/<id>. A model is one
@@ -20,7 +21,14 @@ export type ClothingTab = (typeof CLOTHING_TABS)[number];
 const TAB_KEYS: Record<ClothingTab, Key> = { models: 'cw_tabModels', colors: 'cw_tabColors', reports: 'cw_tabReports' };
 const empty: Names = { ar: '', en: '', ku: '' };
 
-export function Clothing({ tab = 'models', canEdit }: { tab?: ClothingTab; canEdit: boolean }) {
+/** 2.0.0: without the plan, what the page does and how to get it (LockedFeature), not its tabs over an empty page. */
+export function Clothing(props: { tab?: ClothingTab; canEdit: boolean }) {
+  const { plan } = useData();
+  if (plan && !plan.features.includes('clothingShop')) return <LockedFeature feature="clothingShop" icon="shirt" />;
+  return <ClothingPage {...props} />;
+}
+
+function ClothingPage({ tab = 'models', canEdit }: { tab?: ClothingTab; canEdit: boolean }) {
   const { t } = useI18n();
   usePageNav({ key: 'cw_title', group: 'gIndustry' });
   const { plan } = useData();
