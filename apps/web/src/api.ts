@@ -417,6 +417,8 @@ export interface InvoiceView extends InvoiceSummary {
     /** 1.1: the unit the line was typed in (null: the base unit), its factor then and the quantity typed */
     lineUnit: UnitCode | null; unitFactorMilli: number | null; unitQtyMilli: number | null;
     batchNo: string | null; expiry: string | null; batchId: string | null;
+    /** 1.7: the discount offers gave this line (older servers leave it out) */
+    offerDiscount?: number;
   }[];
   actions: InvoiceAction[];
   returnOfNumber: string | null;
@@ -443,6 +445,9 @@ export interface InvoiceView extends InvoiceSummary {
   } | null;
   /** 1.4: a till's cash sale: the cash handed over and the change given back, when it was typed at the till */
   tender?: { paid: number; change: number };
+  /** 1.7: the part of `discount` offers gave (the rest is the discount typed), and the offers (older servers leave both out) */
+  offerDiscount?: number;
+  offers?: { offerId: string; code: string; names: Names; discount: number; lines: { lineNo: number; qtyMilli: number; discount: number }[] }[];
 }
 
 export type Role = 'admin' | 'preparer' | 'checker' | 'approver' | 'sales' | 'pos' | 'purchasing' | 'storekeeper' | 'viewer';

@@ -53,6 +53,7 @@ export type Feature =
   | 'consignment' // goods on consignment (sale-or-return): received from a supplier, paid for as they sell (1.7)
   | 'companyLogo' // the company's own logo printed on its papers (1.4)
   | 'multiTill' // several named tills, each with its own shift, cash, drawer and customer screen (2.0)
+  | 'promotions' // offers at the till and on sale invoices: buy X get Y, bundles, special prices and happy hours (1.7)
   | 'databaseServer'; // the company database on the company's own MariaDB or MySQL server
 
 export interface PlanLimits {
@@ -70,14 +71,14 @@ export interface PlanDefinition {
   features: readonly Feature[];
 }
 
-const PRO_FEATURES: readonly Feature[] = ['officeNetwork', 'relay', 'roles', 'installments', 'payroll', 'finalAccountsExport', 'noBranding', 'autoBackup', 'cloudBackup', 'mobileShop', 'autoParts', 'engineeringWorks', 'pipeline', 'generators', 'websiteApi', 'phoneApp', 'electricalSolar', 'bankReconciliation', 'pharmacy', 'loyalty', 'companyLogo', 'petrolStation', 'multiTill', 'consignment'];
+const PRO_FEATURES: readonly Feature[] = ['officeNetwork', 'relay', 'roles', 'installments', 'payroll', 'finalAccountsExport', 'noBranding', 'autoBackup', 'cloudBackup', 'mobileShop', 'autoParts', 'engineeringWorks', 'pipeline', 'generators', 'websiteApi', 'phoneApp', 'electricalSolar', 'bankReconciliation', 'pharmacy', 'loyalty', 'companyLogo', 'petrolStation', 'multiTill', 'consignment', 'promotions'];
 /** What Pro has and Starter leaves out: reaching the office over the internet (Qasa Relay) and the cloud backup. */
 export const STARTER_LEAVES_OUT: readonly Feature[] = ['relay', 'cloudBackup'];
 /**
  * Starter's features, written out in full and not worked out from Pro's: a feature added to Pro later is not given to
  * Starter by itself (a test keeps this list equal to Pro's without STARTER_LEAVES_OUT, so adding one is a decision).
  */
-const STARTER_FEATURES: readonly Feature[] = ['officeNetwork', 'roles', 'installments', 'payroll', 'finalAccountsExport', 'noBranding', 'autoBackup', 'mobileShop', 'autoParts', 'engineeringWorks', 'pipeline', 'generators', 'websiteApi', 'phoneApp', 'electricalSolar', 'bankReconciliation', 'pharmacy', 'loyalty', 'companyLogo', 'petrolStation', 'multiTill', 'consignment'];
+const STARTER_FEATURES: readonly Feature[] = ['officeNetwork', 'roles', 'installments', 'payroll', 'finalAccountsExport', 'noBranding', 'autoBackup', 'mobileShop', 'autoParts', 'engineeringWorks', 'pipeline', 'generators', 'websiteApi', 'phoneApp', 'electricalSolar', 'bankReconciliation', 'pharmacy', 'loyalty', 'companyLogo', 'petrolStation', 'multiTill', 'consignment', 'promotions'];
 
 export const PLANS: Record<PlanId, PlanDefinition> = {
   free: { id: 'free', limits: { companies: 1, users: 1, warehouses: 1 }, features: [] },

@@ -633,9 +633,10 @@ export function apiRoutes(db: Db, options: { demo?: boolean; extensions?: readon
   app.get('/api/invoices/:id', async (req) => getInvoice(db, parse(idParam, req.params).id, branchOfUser(req)));
   app.post('/api/invoices', async (req, reply) => {
     const body = withoutUndefined(parse(invoiceSchema, req.body));
-    return reply.status(201).send(once(req, reply, 'POST /api/invoices', () => createInvoice(db, body, userOf(req)), (id) => getInvoice(db, id, branchOfUser(req))));
+    // 1.7: a sale made on the invoice screen gets the offers that are on (offers.ts)
+    return reply.status(201).send(once(req, reply, 'POST /api/invoices', () => createInvoice(db, body, userOf(req), { offersAt: new Date() }), (id) => getInvoice(db, id, branchOfUser(req))));
   });
-  app.put('/api/invoices/:id', async (req) => updateInvoice(db, parse(idParam, req.params).id, withoutUndefined(parse(invoiceSchema, req.body)), userOf(req)));
+  app.put('/api/invoices/:id', async (req) => updateInvoice(db, parse(idParam, req.params).id, withoutUndefined(parse(invoiceSchema, req.body)), userOf(req), { offersAt: new Date() }));
   app.delete('/api/invoices/:id', async (req, reply) => {
     deleteInvoice(db, parse(idParam, req.params).id, userOf(req));
     return reply.status(204).send();

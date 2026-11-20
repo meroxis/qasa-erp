@@ -64,7 +64,8 @@ export const NAV: NavGroup[] = [
       { key: 'customers', icon: 'contact', path: 'customers', match: ['customers'], work: ['customer'] },
       { key: 'salesReturns', icon: 'undo', path: 'sales-returns', match: ['sales-returns'], work: ['sale'] },
       { key: 'installments', icon: 'cal', path: 'installments', match: ['installments', 'installment', 'new-installment', 'guarantors', 'installments-aging'] },
-      { key: 'pl_title', icon: 'trend', path: 'pipeline', match: ['pipeline'] }
+      { key: 'pl_title', icon: 'trend', path: 'pipeline', match: ['pipeline'] },
+      { key: 'of_title', icon: 'tag', path: 'offers', match: ['offers'] }
     ]
   },
   {

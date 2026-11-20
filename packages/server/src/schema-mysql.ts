@@ -339,6 +339,8 @@ export const MYSQL_TABLES: readonly MysqlObject[] = [
       cancelled_by TEXT,
       cancelled_at ${WHEN},
       updated_at ${WHEN} NOT NULL,
+      offers_on INT NOT NULL DEFAULT 0 CHECK (offers_on IN (0, 1)),
+      offer_discount BIGINT NOT NULL DEFAULT 0 CHECK (offer_discount >= 0),
       CHECK ((kind IN ('sale_return', 'purchase_return')) = (return_of IS NOT NULL)),
       INDEX invoices_date (date),
       INDEX invoices_return_of (return_of),
@@ -1996,8 +1998,62 @@ export const MYSQL_TABLES: readonly MysqlObject[] = [
       FOREIGN KEY (warehouse_id) REFERENCES warehouses(id),
       FOREIGN KEY (settlement_id) REFERENCES consignment_settlements(id)
     )`
-  }
+  },
   // ===== 17 · CONSIGNMENT — end =====
+  // ===== 17 · OFFERS (db.ts V17) =====
+  {
+    name: 'offers',
+    since: 17,
+    sql: `CREATE TABLE offers (
+      id ${ID} NOT NULL PRIMARY KEY,
+      code ${ID} NOT NULL UNIQUE,
+      name_ar TEXT NOT NULL,
+      name_en TEXT NOT NULL,
+      name_ku TEXT NOT NULL,
+      kind ${WORD} NOT NULL CHECK (kind IN ('buyGet', 'bundle', 'price')),
+      active INT NOT NULL DEFAULT 1 CHECK (active IN (0, 1)),
+      priority INT NOT NULL DEFAULT 0 CHECK (priority >= 0),
+      exclusive INT NOT NULL DEFAULT 0 CHECK (exclusive IN (0, 1)),
+      max_per_sale BIGINT CHECK (max_per_sale IS NULL OR max_per_sale > 0),
+      starts_on ${WHEN},
+      ends_on ${WHEN},
+      weekdays ${WORD},
+      from_time ${WORD},
+      to_time ${WORD},
+      branch_ids TEXT,
+      items TEXT NOT NULL,
+      categories TEXT NOT NULL,
+      get_items TEXT NOT NULL,
+      get_categories TEXT NOT NULL,
+      buy_milli BIGINT,
+      get_milli BIGINT,
+      get_percent INT,
+      bundle_milli BIGINT,
+      bundle_price BIGINT,
+      price BIGINT,
+      percent_off INT,
+      notes TEXT,
+      created_by TEXT NOT NULL,
+      created_at ${WHEN} NOT NULL,
+      updated_at ${WHEN} NOT NULL
+    )`
+  },
+  {
+    name: 'invoice_offer_lines',
+    since: 17,
+    sql: `CREATE TABLE invoice_offer_lines (
+      invoice_id ${ID} NOT NULL,
+      line_no INT NOT NULL,
+      offer_id ${ID} NOT NULL,
+      qty_milli BIGINT NOT NULL CHECK (qty_milli >= 0),
+      discount BIGINT NOT NULL CHECK (discount >= 0),
+      PRIMARY KEY (invoice_id, line_no, offer_id),
+      INDEX invoice_offer_lines_offer (offer_id),
+      FOREIGN KEY (invoice_id) REFERENCES invoices(id) ON DELETE CASCADE,
+      FOREIGN KEY (offer_id) REFERENCES offers(id)
+    )`
+  }
+  // ===== end 17 · OFFERS =====
 ];
 
 const refuse = (message: string) => `SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = '${message}'`;
@@ -2168,13 +2224,16 @@ export const V16_MYSQL_STEPS: readonly MysqlStep[] = [];
 // ——— 17, TILLS ———
 /**
  * Version 17 (supermarket): the columns it adds to older tables. Its new tables (tills, consignment, shelf labels, offers)
- * come from MYSQL_TABLES, since 17. Tills: a shift's till, and the dollar notes taken on a dinar sale.
+ * come from MYSQL_TABLES, since 17. Tills: a shift's till, and the dollar notes taken on a dinar sale; offers: two invoice columns.
  */
 export const V17_MYSQL_STEPS: readonly MysqlStep[] = [
   mysqlAddColumn('pos_shifts', 'till_id', ID),
   mysqlAddForeignKey('pos_shifts', 'till_id', 'pos_tills', 'id'),
   mysqlAddColumn('pos_sales', 'usd_cash', 'BIGINT CHECK (usd_cash IS NULL OR usd_cash > 0)'),
-  mysqlAddColumn('pos_sales', 'usd_rate_x100', 'BIGINT CHECK (usd_rate_x100 IS NULL OR usd_rate_x100 > 0)')
+  mysqlAddColumn('pos_sales', 'usd_rate_x100', 'BIGINT CHECK (usd_rate_x100 IS NULL OR usd_rate_x100 > 0)'),
+  // offers: worked out for this invoice, and the part of its discount that came from them
+  mysqlAddColumn('invoices', 'offers_on', 'INT NOT NULL DEFAULT 0 CHECK (offers_on IN (0, 1))'),
+  mysqlAddColumn('invoices', 'offer_discount', 'BIGINT NOT NULL DEFAULT 0 CHECK (offer_discount >= 0)')
 ];
 // ——— end of 17, TILLS ———
 

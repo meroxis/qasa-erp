@@ -2066,8 +2066,58 @@ const V17 =
   CREATE INDEX consignment_moves_supplier ON consignment_moves(supplier_id, kind, date);
   CREATE INDEX consignment_moves_settlement ON consignment_moves(settlement_id);
   CREATE INDEX consignment_moves_source ON consignment_moves(source_type, source_id);
+  -- ===== 17 · OFFERS (offers.ts) — supermarket promotions; another 1.7 block may join this migration =====
+  -- The offers themselves (buy X get Y, bundles, special prices; their dates, days, hours and branches; the goods as
+  -- JSON lists of item and category ids), and what each sale got: one row per line and offer (qty taken into the
+  -- offer, discount given). invoices.offers_on: offers are worked out for this invoice (the till and the invoice
+  -- screen; never a website order or a converted quotation); invoices.offer_discount: the part of its discount that
+  -- came from offers (discount = what was typed + offer_discount).
+  CREATE TABLE offers (
+    id TEXT PRIMARY KEY,
+    code TEXT NOT NULL UNIQUE,
+    name_ar TEXT NOT NULL,
+    name_en TEXT NOT NULL,
+    name_ku TEXT NOT NULL,
+    kind TEXT NOT NULL CHECK (kind IN ('buyGet', 'bundle', 'price')),
+    active INTEGER NOT NULL DEFAULT 1 CHECK (active IN (0, 1)),
+    priority INTEGER NOT NULL DEFAULT 0 CHECK (priority >= 0),
+    exclusive INTEGER NOT NULL DEFAULT 0 CHECK (exclusive IN (0, 1)),
+    max_per_sale INTEGER CHECK (max_per_sale IS NULL OR max_per_sale > 0),
+    starts_on TEXT,
+    ends_on TEXT,
+    weekdays TEXT,
+    from_time TEXT,
+    to_time TEXT,
+    branch_ids TEXT,
+    items TEXT NOT NULL,
+    categories TEXT NOT NULL,
+    get_items TEXT NOT NULL,
+    get_categories TEXT NOT NULL,
+    buy_milli INTEGER,
+    get_milli INTEGER,
+    get_percent INTEGER,
+    bundle_milli INTEGER,
+    bundle_price INTEGER,
+    price INTEGER,
+    percent_off INTEGER,
+    notes TEXT,
+    created_by TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+  );
+  CREATE TABLE invoice_offer_lines (
+    invoice_id TEXT NOT NULL REFERENCES invoices(id) ON DELETE CASCADE,
+    line_no INTEGER NOT NULL,
+    offer_id TEXT NOT NULL REFERENCES offers(id),
+    qty_milli INTEGER NOT NULL CHECK (qty_milli >= 0),
+    discount INTEGER NOT NULL CHECK (discount >= 0),
+    PRIMARY KEY (invoice_id, line_no, offer_id)
+  );
+  CREATE INDEX invoice_offer_lines_offer ON invoice_offer_lines(offer_id);
+  ALTER TABLE invoices ADD COLUMN offers_on INTEGER NOT NULL DEFAULT 0 CHECK (offers_on IN (0, 1));
+  ALTER TABLE invoices ADD COLUMN offer_discount INTEGER NOT NULL DEFAULT 0 CHECK (offer_discount >= 0);
   `;
-  // ——— end of 17, TILLS ———
+  // ——— end of 17 (tills, shelf labels, consignment, offers) ———
 
 const MIGRATIONS: Migration[] = [
   { sql: V1 }, { sql: V2, rebuild: true }, { sql: V3, rebuild: true }, { sql: V4 }, { sql: V5, rebuild: true },
