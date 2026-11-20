@@ -836,6 +836,24 @@ export const MYSQL_TABLES: readonly MysqlObject[] = [
     )`
   },
   {
+    // ——— 17, TILLS ——— (before pos_shifts, whose till_id points at it)
+    name: 'pos_tills',
+    since: 17,
+    sql: `CREATE TABLE pos_tills (
+      id ${ID} NOT NULL PRIMARY KEY,
+      name TEXT NOT NULL,
+      cash_account ${ID} NOT NULL,
+      warehouse_id ${ID} NOT NULL,
+      drawer ${WORD} NOT NULL DEFAULT 'off' CHECK (drawer IN ('off', 'cash')),
+      customer_display INT NOT NULL DEFAULT 0 CHECK (customer_display IN (0, 1)),
+      active INT NOT NULL DEFAULT 1 CHECK (active IN (0, 1)),
+      created_at ${WHEN} NOT NULL,
+      updated_at ${WHEN} NOT NULL,
+      FOREIGN KEY (cash_account) REFERENCES accounts(code),
+      FOREIGN KEY (warehouse_id) REFERENCES warehouses(id)
+    )`
+  },
+  {
     name: 'pos_shifts',
     since: 7,
     sql: `CREATE TABLE pos_shifts (
@@ -855,8 +873,10 @@ export const MYSQL_TABLES: readonly MysqlObject[] = [
       expected_usd BIGINT,
       counted_usd BIGINT,
       notes TEXT,
+      till_id ${ID},
       FOREIGN KEY (cash_account) REFERENCES accounts(code),
-      FOREIGN KEY (warehouse_id) REFERENCES warehouses(id)
+      FOREIGN KEY (warehouse_id) REFERENCES warehouses(id),
+      FOREIGN KEY (till_id) REFERENCES pos_tills(id)
     )`
   },
   {
@@ -866,6 +886,8 @@ export const MYSQL_TABLES: readonly MysqlObject[] = [
       invoice_id ${ID} NOT NULL PRIMARY KEY,
       shift_id ${ID} NOT NULL,
       tendered BIGINT CHECK (tendered IS NULL OR tendered >= 0),
+      usd_cash BIGINT CHECK (usd_cash IS NULL OR usd_cash > 0),
+      usd_rate_x100 BIGINT CHECK (usd_rate_x100 IS NULL OR usd_rate_x100 > 0),
       INDEX pos_sales_shift (shift_id),
       FOREIGN KEY (invoice_id) REFERENCES invoices(id),
       FOREIGN KEY (shift_id) REFERENCES pos_shifts(id)
@@ -2006,6 +2028,16 @@ export const V15_MYSQL_STEPS: readonly MysqlStep[] = [
 
 /** Version 16: petrol stations' tables only (MYSQL_TABLES, since 16); no column added to an older table. */
 export const V16_MYSQL_STEPS: readonly MysqlStep[] = [];
+
+// ——— 17, TILLS ———
+/** Version 17 (tills): a shift's till, and the dollar notes taken on a dinar sale. pos_tills comes from MYSQL_TABLES. */
+export const V17_MYSQL_STEPS: readonly MysqlStep[] = [
+  mysqlAddColumn('pos_shifts', 'till_id', ID),
+  mysqlAddForeignKey('pos_shifts', 'till_id', 'pos_tills', 'id'),
+  mysqlAddColumn('pos_sales', 'usd_cash', 'BIGINT CHECK (usd_cash IS NULL OR usd_cash > 0)'),
+  mysqlAddColumn('pos_sales', 'usd_rate_x100', 'BIGINT CHECK (usd_rate_x100 IS NULL OR usd_rate_x100 > 0)')
+];
+// ——— end of 17, TILLS ———
 
 /**
  * What a server database has already, for pendingMysqlSteps: "table.column", "table.column>parent" and "table.index"

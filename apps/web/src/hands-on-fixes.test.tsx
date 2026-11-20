@@ -172,10 +172,11 @@ describe('printed papers', () => {
     expect(invoiceModel(sale).tender).toEqual({ paid: 125_000, change: 25_000 });
     expect(invoiceModel({ ...sale, tender: undefined } as unknown as InvoiceView).tender).toBeNull();
     expect(src('./industry/PrintDocument.tsx')).toContain("label: plain('pos_paid'), value: money(model.tender.paid)");
-    // the till no longer asks what was handed over, so a new sale sends none; a copy of an older sale's receipt still
-    // prints what the server kept with it
+    // 2.0: what was handed over is asked again, but only as an option (for the change, and dollar notes on a dinar
+    // sale): a sale sends it only when dinars alone covered the cash; a copy of an older sale's receipt still prints
+    // what the server kept with it
     const till = src('./pages/Pos.tsx');
-    expect(till).not.toContain('tendered');
+    expect(till).toContain('...(handedAny && !usdOn && (handed ?? 0) >= cashDue ? { tendered: handed ?? 0 } : {})');
     expect(till).toContain('const handed = invoice.tender ?? null;');
   });
 });

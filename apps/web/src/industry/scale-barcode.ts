@@ -1,4 +1,4 @@
-import { isWeighedUnit, parseScaleBarcode, type UnitCode } from '@qasa/core';
+import { isWeighedUnit, parseScaleBarcode, parseScaleLabel, qtyForLabelPrice, type CurrencyCode, type UnitCode } from '@qasa/core';
 
 /**
  * Labels printed by a shop scale (1.4, markets). The scale prints an EAN-13 that starts with 2: two digits of prefix,
@@ -18,10 +18,18 @@ export { parseScaleBarcode };
  * The item a scale label is for and the quantity on it, in thousandths of the item's base unit: the item whose own
  * barcode is the label's first seven digits and that is kept in kg or g.
  */
-export function findByScaleBarcode<T extends { barcode: string; unit?: UnitCode }>(code: string, items: readonly T[]): { item: T; qtyMilli: number } | null {
-  const label = parseScaleBarcode(code);
+export function findByScaleBarcode<T extends { barcode: string; unit?: UnitCode; salePrice?: number; saleCurrency?: CurrencyCode }>(
+  code: string, items: readonly T[], pricePrefixes: readonly string[] = []
+): { item: T; qtyMilli: number; price?: number } | null {
+  const label = parseScaleLabel(code, pricePrefixes);
   if (!label) return null;
   const item = items.find((it) => it.barcode === label.prefix && isWeighedUnit(it.unit));
   if (!item) return null;
+  if (label.price !== undefined) {
+    // 2.0: a label that carries the price (in dinars): the quantity is the price over the item's dinar price per unit
+    if (item.saleCurrency !== 'IQD' || !item.salePrice) return null;
+    const qtyMilli = qtyForLabelPrice(label.price, item.salePrice);
+    return qtyMilli ? { item, qtyMilli, price: label.price } : null;
+  }
   return { item, qtyMilli: item.unit === 'kg' ? label.grams : label.grams * 1000 };
 }

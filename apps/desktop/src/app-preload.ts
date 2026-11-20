@@ -84,6 +84,14 @@ contextBridge.exposeInMainWorld('qasaDesktop', {
    * Send on WhatsApp as a PDF (main.ts, share-pdf.ts): this window as it prints now, saved as "<kind>-<number>.pdf" in
    * the app's own folder and shown in File Explorer. Only a kind and a number cross; the main process checks both.
    */
+  /**
+   * 2.0, the till (main.ts, till-desktop.ts): open the cash drawer through this PC's receipt printer (no argument
+   * crosses; answers { status }), and show or close the customer screen (only true or false crosses).
+   */
+  till: {
+    openDrawer: () => ipcRenderer.invoke('till:drawer') as Promise<unknown>,
+    customerDisplay: (open: boolean) => ipcRenderer.invoke('till:customerDisplay', open === true) as Promise<unknown>
+  },
   sharePdf: (kind: string, ref: string) => ipcRenderer.invoke('share:pdf', String(kind), String(ref)) as Promise<unknown>,
   /**
    * 1.5: work from phones as a Windows notification (main.ts, phone-notices.ts): a title, a line and the app's own page

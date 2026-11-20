@@ -3,7 +3,7 @@
  * 127.0.0.1, the window shows the app from it, and the company file lives in the user's profile:
  *   %APPDATA%\Qasa ERP\data\qasa.sqlite
  */
-import { app, BrowserWindow, dialog, ipcMain, Menu, nativeTheme, Notification, protocol, safeStorage, session, shell, utilityProcess, type MenuItemConstructorOptions, type UtilityProcess } from 'electron';
+import { app, BrowserWindow, dialog, ipcMain, Menu, nativeTheme, Notification, protocol, safeStorage, screen, session, shell, utilityProcess, type MenuItemConstructorOptions, type UtilityProcess } from 'electron';
 import electronUpdater from 'electron-updater';
 import { channelOf, notesText, updaterOptions, type UpdateChannel, type UpdateState } from './updates-logic.ts';
 import { randomBytes } from 'node:crypto';
@@ -20,7 +20,8 @@ import { openNotices } from './notices.ts';
 import { booksBefore, markSeen, startVersion, type WhatsNew } from './whats-new.ts';
 import { closeFlow, noteCloseFailure, readCloseAsk, saveCloseAsk, takeCloseFailure, type AskChoice } from './close-backup.ts';
 import { printingHandlers } from './printing.ts';
-import { cachedPrinters, readWindowsPrinters } from './printer-info.ts';
+import { cachedPrinters, powershellPath, readWindowsPrinters } from './printer-info.ts';
+import { customerDisplayUrl, customerScreenBounds, drawerHandler } from './till-desktop.ts';
 import { dataPlaceOf, officeName } from './data-place.ts';
 import { execFile } from 'node:child_process';
 import { sharePdfHandlers } from './share-pdf.ts';
@@ -648,6 +649,47 @@ ipcMain.handle('printers:list', (event, fresh: unknown) => printing.list(event, 
 ipcMain.handle('printers:get', (event) => printing.get(event));
 ipcMain.handle('printers:set', (event, kind: unknown, choice: unknown) => printing.set(event, kind, choice));
 ipcMain.handle('printers:print', (event, kind: unknown, layout: unknown) => printing.print(event, kind, layout));
+
+// 2.0, the till (till-desktop.ts): the cash drawer opened through this PC's receipt printer (a fixed script, the
+// printer's name in its environment, never in its text), and the customer screen, a second window of the app's own page
+const openDrawer = drawerHandler({
+  fromAppPage: (event) => invokedByAppPage(event as Electron.IpcMainInvokeEvent),
+  readPrintersFile: () => { try { return readFileSync(printersFile(), 'utf8'); } catch { return null; } },
+  printers: async () => (win && !win.isDestroyed() ? win.webContents.getPrintersAsync() : []),
+  run: (script, printer) => new Promise<string>((resolve, reject) => {
+    if (process.platform !== 'win32') { reject(new Error('the cash drawer is opened on Windows only')); return; }
+    execFile(powershellPath(process.env), ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-Command', script], {
+      windowsHide: true, timeout: 15_000, maxBuffer: 64 * 1024, encoding: 'utf8', shell: false, env: { ...process.env, QASA_DRAWER_PRINTER: printer }
+    }, (error, stdout) => { if (error) reject(error); else resolve(String(stdout)); });
+  }),
+  log
+});
+ipcMain.handle('till:drawer', (event) => openDrawer(event));
+
+let customerWin: BrowserWindow | null = null;
+ipcMain.handle('till:customerDisplay', (event, open: unknown) => {
+  if (!invokedByAppPage(event) || !appOrigin) return false;
+  if (open !== true) {
+    if (customerWin && !customerWin.isDestroyed()) customerWin.close();
+    customerWin = null;
+    return false;
+  }
+  if (customerWin && !customerWin.isDestroyed()) { customerWin.show(); return true; }
+  const bounds = customerScreenBounds(screen.getAllDisplays(), screen.getPrimaryDisplay().id);
+  customerWin = new BrowserWindow({
+    ...(bounds ?? { width: 900, height: 600 }), fullscreen: !!bounds, autoHideMenuBar: true, title: 'Qasa ERP', backgroundColor: windowBackground(),
+    icon: join(__dirname, 'icon.png'),
+    // no bridge at all: the screen only shows what the till sends it in the page
+    webPreferences: { contextIsolation: true, sandbox: true, nodeIntegration: false, spellcheck: false }
+  });
+  customerWin.setMenu(null);
+  const origin = appOrigin;
+  customerWin.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
+  customerWin.webContents.on('will-navigate', (e, target) => { if (originOf(target) !== origin) e.preventDefault(); });
+  customerWin.on('closed', () => { customerWin = null; });
+  void customerWin.loadURL(customerDisplayUrl(origin));
+  return true;
+});
 // Send on WhatsApp as a PDF (share-pdf.ts): the app window printed to a PDF in this PC's own local app data (never synced),
 // shown in File Explorer for the person to drag into the chat the page opens. The page names a kind and a number only.
 const sharedPdfDir = () => {
@@ -1003,7 +1045,12 @@ async function createWindow(url: string): Promise<void> {
     await readLanguage();
     buildMenu();
   });
-  win.on('closed', () => { log('window closed'); win = null; });
+  win.on('closed', () => {
+    log('window closed');
+    win = null;
+    // the customer screen has nothing to show without the till
+    if (customerWin && !customerWin.isDestroyed()) customerWin.close();
+  });
   win.webContents.on('render-process-gone', (_e, details) => log('screen process ended:', details.reason));
   if (remote) {
     // Chromium's certificate errors are -200 to -299

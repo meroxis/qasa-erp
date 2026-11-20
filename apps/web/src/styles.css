@@ -1412,3 +1412,18 @@ a.fx-chip:focus-visible { outline: 2px solid var(--focus-outer); outline-offset:
 /* a long printer name never widens the table: the list keeps its column */
 .printers-table tr.printers-kind > td:nth-child(2) select { max-inline-size: 22em; }
 .card-head:has(> .settings-repeat-title:only-child) { display: contents; }
+
+/* 2.0: the customer screen (pages/CustomerDisplay.tsx) */
+.cd { min-height: 100vh; display: flex; flex-direction: column; gap: 16px; padding: 32px 40px; background: var(--bg, #fff); color: var(--text, #111); font-size: 26px; }
+.cd-idle { align-items: center; justify-content: center; }
+.cd-head { font-size: 30px; font-weight: 700; color: var(--accent, #0b5); border-bottom: 2px solid var(--line, #ddd); padding-bottom: 12px; }
+.cd-welcome { flex: 1; display: flex; align-items: center; justify-content: center; font-size: 56px; font-weight: 700; }
+.cd-lines { flex: 1; display: flex; flex-direction: column; gap: 8px; overflow: hidden; }
+.cd-line { display: grid; grid-template-columns: 1fr auto auto; gap: 24px; align-items: baseline; padding: 6px 0; border-bottom: 1px solid var(--line, #eee); }
+.cd-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cd-qty { color: var(--muted, #666); }
+.cd-amount { min-width: 8ch; text-align: end; }
+.cd-total { display: flex; justify-content: space-between; font-size: 44px; font-weight: 700; padding-top: 12px; border-top: 3px solid var(--text, #111); }
+.cd-row { display: flex; justify-content: space-between; font-size: 30px; }
+.cd-change strong { color: var(--accent, #0b5); }
+.cd-done { text-align: center; font-size: 40px; font-weight: 700; color: var(--accent, #0b5); }

@@ -132,6 +132,13 @@ export interface ShiftView {
   notes: string;
   /** the actions this user may take */
   actions: ('sell' | 'close')[];
+  /** 2.0: the named till the shift was opened on (null: a register typed by name, as before) */
+  tillId: string | null;
+  /**
+   * 2.0: dollar notes taken at the till for dinar sales (`usd` in cents) and the dinars they stood for (`iqd`): in the
+   * drawer they are dollars, so the dinars expected are that much less and the dollars that much more
+   */
+  usdTaken: { usd: number; iqd: number };
 }
 
 export interface ShiftReport extends ShiftView {
@@ -141,6 +148,8 @@ export interface ShiftReport extends ShiftView {
 }
 
 export interface OpenShiftInput {
+  /** 2.0: a named till (pos-tills.ts): its name, safe and warehouse are the shift's */
+  tillId?: string | undefined;
   register: string;
   cashAccountCode: string;
   warehouseId: string;
@@ -172,6 +181,12 @@ export interface SaleInput {
    * due, so the receipt prints "Amount paid" and "Change" again later; it changes nothing in the books.
    */
   tendered?: number | undefined;
+  /**
+   * 2.0: a dinar sale paid partly in dollar notes: the dollars taken (cents) and the rate they were taken at. The books
+   * keep the sale in dinars (the dollars' worth is part of the cash); the shift expects those dollars in the drawer
+   * instead of their dinars, and any change from them is given in dinars.
+   */
+  usdCash?: { amount: number; rateX100: number } | undefined;
 }
 
 export interface OfflineSale { reference: string; soldAt: string; soldOn: string }
@@ -205,6 +220,7 @@ interface ShiftRow {
   id: string; number: string; register: string; cash_account: string; warehouse_id: string; status: 'open' | 'closed';
   opened_by: string; opened_at: string; opening_cash: number; closed_by: string | null; closed_at: string | null;
   expected_cash: number | null; counted_cash: number | null; expected_usd: number | null; counted_usd: number | null; notes: string | null;
+  till_id?: string | null;
 }
 
 function loadShift(db: Db, id: string): ShiftRow {
@@ -217,6 +233,18 @@ function loadShift(db: Db, id: string): ShiftRow {
  * The shift's posted sales: all of them, the cash in them (a split sale counts only its cash part; a sale from before
  * 1.1 or not split is all cash), and the totals per method.
  */
+/** 2.0: the dollar notes taken for the shift's posted dinar sales, and the dinars they stood for. */
+function usdTakenOf(db: Db, shiftId: string): { usd: number; iqd: number } {
+  const rows = db.prepare(`SELECT s.usd_cash, s.usd_rate_x100 FROM pos_sales s JOIN invoices i ON i.id = s.invoice_id
+                           WHERE s.shift_id = ? AND i.status = 'posted' AND s.usd_cash IS NOT NULL`).all(shiftId) as { usd_cash: number; usd_rate_x100: number }[];
+  let usd = 0, iqd = 0;
+  for (const r of rows) { usd += Number(r.usd_cash); iqd += usdCashValue(Number(r.usd_cash), Number(r.usd_rate_x100)); }
+  return { usd, iqd };
+}
+
+/** The dinars dollar notes stand for: cents × (dinars per dollar × 100) / 10 000, rounded. */
+export const usdCashValue = (cents: number, rateX100: number): number => Math.round((cents * rateX100) / 10000);
+
 function salesOf(db: Db, shiftId: string): { sales: Money; cash: Money; count: number; methods: Partial<Record<PosMethod | 'loyalty', Money>> } {
   const rows = db.prepare(`SELECT i.id, i.currency AS currency, i.total FROM pos_sales s JOIN invoices i ON i.id = s.invoice_id
                            WHERE s.shift_id = ? AND i.status = 'posted'`).all(shiftId) as { id: string; currency: CurrencyCode; total: number }[];
@@ -321,8 +349,10 @@ const mayRun = (db: Db, row: ShiftRow, actor: ShiftActor | null) =>
 function shiftView(db: Db, row: ShiftRow, actor: ShiftActor | null): ShiftView {
   const { sales, cash, count, methods } = salesOf(db, row.id);
   const refunds = refundsOf(db, row);
-  // only the cash that went into the drawer: a card or a wallet part of a sale never was there
-  const expected: Money = { IQD: Number(row.opening_cash) + cash.IQD - refunds.IQD, USD: cash.USD - refunds.USD };
+  const usdTaken = usdTakenOf(db, row.id);
+  // only the cash that went into the drawer: a card or a wallet part of a sale never was there; dollar notes taken for
+  // dinar sales are in it as dollars
+  const expected: Money = { IQD: Number(row.opening_cash) + cash.IQD - refunds.IQD - usdTaken.iqd, USD: cash.USD - refunds.USD + usdTaken.usd };
   const notes = row.notes ?? '';
   let counted: Money | null = null;
   let difference: Money | null = null;
@@ -337,7 +367,8 @@ function shiftView(db: Db, row: ShiftRow, actor: ShiftActor | null): ShiftView {
   return {
     id: row.id, number: row.number, register: row.register, cashAccountCode: row.cash_account, warehouseId: row.warehouse_id,
     status: row.status, openedBy: row.opened_by, openedAt: row.opened_at, openingCash: Number(row.opening_cash),
-    closedBy: row.closed_by, closedAt: row.closed_at, sales, count, refunds, expected, counted, difference, notes, actions, methods
+    closedBy: row.closed_by, closedAt: row.closed_at, sales, count, refunds, expected, counted, difference, notes, actions, methods,
+    tillId: row.till_id ?? null, usdTaken
   };
 }
 
@@ -364,10 +395,13 @@ export function listShifts(db: Db, f: { status?: 'open' | 'closed' | undefined; 
   return rows.slice(0, limit).map((r) => shiftView(db, r, actor));
 }
 
-/** The open shift this user can sell on (their own; the newest if several registers). */
-export function myShift(db: Db, actor: ShiftActor): ShiftView | null {
+/**
+ * The open shift this user can sell on (their own; the newest if several registers). 2.0: a PC that chose a till asks
+ * for that till's shift only, so two tills of the same cashier never mix.
+ */
+export function myShift(db: Db, actor: ShiftActor, tillId?: string | null): ShiftView | null {
   const open = db.prepare("SELECT * FROM pos_shifts WHERE status = 'open' ORDER BY opened_at DESC").all() as unknown as ShiftRow[];
-  const row = open.find((r) => isOpener(db, r, actor));
+  const row = open.find((r) => (!tillId || r.till_id === tillId) && isOpener(db, r, actor));
   return row ? shiftView(db, row, actor) : null;
 }
 
@@ -414,6 +448,11 @@ function cashAccountOk(db: Db, code: string): boolean {
 }
 
 export function openShift(db: Db, input: OpenShiftInput, actor: Actor): ShiftView {
+  // 2.0: on a named till, its name, safe and warehouse are the shift's
+  const till = input.tillId ? db.prepare('SELECT id, name, cash_account, warehouse_id, active FROM pos_tills WHERE id = ?').get(input.tillId) as
+    { id: string; name: string; cash_account: string; warehouse_id: string; active: number } | undefined : undefined;
+  if (input.tillId && (!till || Number(till.active) !== 1)) throw invalid([{ code: 'till_invalid' }]);
+  if (till) input = { ...input, register: till.name, cashAccountCode: till.cash_account, warehouseId: till.warehouse_id };
   const register = input.register?.trim() ?? '';
   const errors: { code: string }[] = [];
   if (!register) errors.push({ code: 'pos_register_required' });
@@ -426,12 +465,13 @@ export function openShift(db: Db, input: OpenShiftInput, actor: Actor): ShiftVie
     const busy = (db.prepare("SELECT register FROM pos_shifts WHERE status = 'open'").all() as { register: string }[])
       .some((r) => r.register.trim().toLowerCase() === register.toLowerCase());
     if (busy) throw conflict('pos_register_open', { register });
+    if (till && db.prepare("SELECT 1 FROM pos_shifts WHERE status = 'open' AND till_id = ?").get(till.id)) throw conflict('pos_register_open', { register });
     const newId = randomUUID();
     const year = todayIso().slice(0, 4);
     const number = `POS-${year}-${String(nextSequence(db, `pos_shift:${year}`)).padStart(4, '0')}`;
-    db.prepare(`INSERT INTO pos_shifts (id, number, register, cash_account, warehouse_id, status, opened_by, opened_at, opening_cash, notes)
-                VALUES (?, ?, ?, ?, ?, 'open', ?, ?, ?, ?)`)
-      .run(newId, number, register, input.cashAccountCode, input.warehouseId, actor.name, new Date().toISOString(), input.openingCash, trimmed(input.notes));
+    db.prepare(`INSERT INTO pos_shifts (id, number, register, cash_account, warehouse_id, status, opened_by, opened_at, opening_cash, notes, till_id)
+                VALUES (?, ?, ?, ?, ?, 'open', ?, ?, ?, ?, ?)`)
+      .run(newId, number, register, input.cashAccountCode, input.warehouseId, actor.name, new Date().toISOString(), input.openingCash, trimmed(input.notes), till?.id ?? null);
     // the user id decides who opened it only with sign-in on; without it every PC is the owner, and the typed name does
     audit(db, actor.name, 'open', 'pos_shift', newId, {
       number, register, openingCash: input.openingCash, ...(signInRequired(db) && actor.id ? { userId: actor.id } : {})
@@ -479,6 +519,14 @@ export function sell(db: Db, shiftId: string, input: SaleInput, actor: Actor): {
   }
   // loyalty points need the customer's live balance: never from a till that was offline
   if (offline && input.loyaltyPoints) errors.push({ code: 'pos_offline_loyalty' });
+  // 2.0: dollar notes on a dinar sale paid now, at a rate near the company's (a slip of a digit is refused)
+  const usdCash = input.usdCash;
+  if (usdCash) {
+    const companyRate = Number(readSetting(db, 'default_rate_x100') ?? '142000');
+    if (input.currency !== 'IQD' || onCredit) errors.push({ code: 'pos_usd_cash_not_here' });
+    else if (!Number.isSafeInteger(usdCash.amount) || usdCash.amount <= 0 || usdCash.amount > 10_000_000) errors.push({ code: 'pos_usd_cash_invalid' });
+    else if (!Number.isSafeInteger(usdCash.rateX100) || usdCash.rateX100 <= 0 || Math.abs(usdCash.rateX100 - companyRate) > companyRate * 0.15) errors.push({ code: 'pos_usd_rate_far' });
+  }
   if (errors.length) throw invalid(errors);
   const now = new Date();
   const date = offline ? offlineSaleDate(offline.soldOn, row.opened_at, now) : todayIso(now);
@@ -518,7 +566,15 @@ export function sell(db: Db, shiftId: string, input: SaleInput, actor: Actor): {
     // the cash handed over: kept for a cash sale when it covers the cash due (the cash part, or all that points left)
     const cashDue = onCredit ? 0 : split ? split.filter((p) => p.method === 'cash').reduce((s, p) => s + p.amount, 0) : draft.total - byPoints;
     const tendered = Number.isSafeInteger(input.tendered) && cashDue > 0 && input.tendered! >= cashDue ? input.tendered! : null;
-    db.prepare('INSERT INTO pos_sales (invoice_id, shift_id, tendered) VALUES (?, ?, ?)').run(posted.id, shiftId, tendered);
+    if (usdCash) {
+      // the dollars stand for part of the cash due (or all of it, with change in dinars), never more than a 100-dollar
+      // note past it, and never on a sale with no cash part
+      const worth = usdCashValue(usdCash.amount, usdCash.rateX100);
+      if (cashDue <= 0 || worth - cashDue >= usdCash.rateX100) throw invalid([{ code: 'pos_usd_cash_too_much', due: cashDue } as { code: string }]);
+    }
+    db.prepare('INSERT INTO pos_sales (invoice_id, shift_id, tendered, usd_cash, usd_rate_x100) VALUES (?, ?, ?, ?, ?)')
+      .run(posted.id, shiftId, tendered, usdCash?.amount ?? null, usdCash?.rateX100 ?? null);
+    if (usdCash) audit(db, actor.name, 'usd_cash', 'invoice', posted.id, { usd: usdCash.amount, rateX100: usdCash.rateX100, number: posted.number });
     if (split) {
       const insert = db.prepare(`INSERT INTO invoice_payments (id, invoice_id, kind, method, account_code, amount, currency, entry_id, source, reference, created_by, created_at)
                                  VALUES (?, ?, 'pos', ?, ?, ?, ?, ?, NULL, NULL, ?, ?)`);
@@ -618,7 +674,10 @@ export const posApi: ApiExtension = {
           return listShifts(db, f, actor(req));
         }
       },
-      { method: 'GET', path: '/api/pos/current', handler: async (req) => ({ shift: myShift(db, actor(req)) }) },
+      {
+        method: 'GET', path: '/api/pos/current',
+        handler: async (req) => ({ shift: myShift(db, actor(req), parse(z.object({ tillId: id.optional() }), req.query ?? {}).tillId ?? null) })
+      },
       { method: 'GET', path: '/api/pos/payment-accounts', handler: async (req) => ({ accounts: posAccountsFor(db, actor(req)), methods: posMethods(db, actor(req)) }) },
       {
         method: 'PUT', path: '/api/pos/payment-accounts',
@@ -633,7 +692,7 @@ export const posApi: ApiExtension = {
         method: 'POST', path: '/api/pos/shifts',
         handler: async (req, reply) => {
           const body = parse(z.object({
-            register: text(60), cashAccountCode: z.string().min(1).max(12), warehouseId: id, openingCash: amount, notes: text(500).optional()
+            tillId: id.optional(), register: text(60), cashAccountCode: z.string().min(1).max(12), warehouseId: id, openingCash: amount, notes: text(500).optional()
           }), req.body);
           reply.status(201).send(openShift(db, body, actor(req)));
           return undefined;
@@ -655,7 +714,8 @@ export const posApi: ApiExtension = {
               reference: z.string().max(40).regex(OFFLINE_REFERENCE), soldAt: z.string().max(30).regex(ISO_INSTANT), soldOn: z.string().regex(/^\d{4}-\d{2}-\d{2}$/)
             }).optional(),
             loyaltyPoints: z.number().int().positive().max(100_000_000).optional(),
-            tendered: amount.optional()
+            tendered: amount.optional(),
+            usdCash: z.object({ amount: z.number().int().positive().max(10_000_000), rateX100: z.number().int().positive().max(100_000_000) }).optional()
           }), req.body);
           const shiftId = parse(idParam, req.params).id;
           const who = actor(req);

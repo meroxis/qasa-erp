@@ -5,7 +5,7 @@ import { DatabaseSync } from 'node:sqlite';
 import { brandKey, DEFAULT_POSTING_ACCOUNTS, IRAQI_UNIFIED_CHART, STARTER_SUB_ACCOUNTS } from '@qasa/core';
 import { AppError } from './errors.ts';
 import {
-  MYSQL_TABLES, MYSQL_TRIGGERS, mysqlCollations, mysqlTableSql, pendingMysqlSteps, V10_MYSQL_STEPS, V11_MYSQL_STEPS, V12_MYSQL_STEPS, V13_MYSQL_STEPS, V14_MYSQL_STEPS, V15_MYSQL_STEPS, V16_MYSQL_STEPS, type MysqlCollations, type MysqlStep
+  MYSQL_TABLES, MYSQL_TRIGGERS, mysqlCollations, mysqlTableSql, pendingMysqlSteps, V10_MYSQL_STEPS, V11_MYSQL_STEPS, V12_MYSQL_STEPS, V13_MYSQL_STEPS, V14_MYSQL_STEPS, V15_MYSQL_STEPS, V16_MYSQL_STEPS, V17_MYSQL_STEPS, type MysqlCollations, type MysqlStep
 } from './schema-mysql.ts';
 
 export type SqlParam = null | number | bigint | string | Uint8Array;
@@ -1939,6 +1939,30 @@ const V16 =
   CREATE INDEX fuel_moves_source ON fuel_moves(source_id);
   `;
 
+const V17 =
+  // ——— 17, TILLS (pos-tills.ts) — kept in one block; other 2.0 work adds its own tables beside it ———
+  // the named tills (registers) of the shop: each with the safe and warehouse its shifts use by default, whether the
+  // cash drawer opens on a cash sale (through this PC's receipt printer) and whether it has a customer screen. A shift
+  // opened on a till keeps it. And a dinar sale paid partly in dollar notes at the till: the dollars taken (cents) and
+  // the rate they were taken at, so the drawer's dollars and dinars are expected right at closing
+  `
+  CREATE TABLE pos_tills (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    cash_account TEXT NOT NULL REFERENCES accounts(code),
+    warehouse_id TEXT NOT NULL REFERENCES warehouses(id),
+    drawer TEXT NOT NULL DEFAULT 'off' CHECK (drawer IN ('off', 'cash')),
+    customer_display INTEGER NOT NULL DEFAULT 0 CHECK (customer_display IN (0, 1)),
+    active INTEGER NOT NULL DEFAULT 1 CHECK (active IN (0, 1)),
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+  );
+  ALTER TABLE pos_shifts ADD COLUMN till_id TEXT REFERENCES pos_tills(id);
+  ALTER TABLE pos_sales ADD COLUMN usd_cash INTEGER CHECK (usd_cash IS NULL OR usd_cash > 0);
+  ALTER TABLE pos_sales ADD COLUMN usd_rate_x100 INTEGER CHECK (usd_rate_x100 IS NULL OR usd_rate_x100 > 0);
+  `;
+  // ——— end of 17, TILLS ———
+
 const MIGRATIONS: Migration[] = [
   { sql: V1 }, { sql: V2, rebuild: true }, { sql: V3, rebuild: true }, { sql: V4 }, { sql: V5, rebuild: true },
   { sql: V6, mysql: 'tables' }, { sql: V7, mysql: 'tables' }, { sql: V8, mysql: 'tables' }, { sql: V9, mysql: 'tables' },
@@ -1948,7 +1972,8 @@ const MIGRATIONS: Migration[] = [
   { sql: V13, mysql: { tables: true, steps: () => V13_MYSQL_STEPS } },
   { sql: V14, mysql: { tables: true, steps: () => V14_MYSQL_STEPS } },
   { sql: V15, mysql: { tables: true, steps: () => V15_MYSQL_STEPS } },
-  { sql: V16, mysql: { tables: true, steps: () => V16_MYSQL_STEPS } }
+  { sql: V16, mysql: { tables: true, steps: () => V16_MYSQL_STEPS } },
+  { sql: V17, mysql: { tables: true, steps: () => V17_MYSQL_STEPS } }
 ];
 
 /** Server databases began at this version: its schema is in schema-mysql.ts (tables and triggers without `since`). */
