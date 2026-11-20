@@ -117,6 +117,9 @@ const Gold = lazyPage(() => import('./pages/Gold.tsx'), 'Gold');
 const GoldSlipPage = lazyPage(() => import('./pages/Gold.tsx'), 'GoldSlipPage');
 // the gold shop's tabs (as pages/Gold.tsx names them)
 const GOLD_TABS = ['board', 'pieces', 'old', 'suppliers', 'stock'] as const;
+const Wholesale = lazyPage(() => import('./pages/Wholesale.tsx'), 'Wholesale');
+// wholesale's tabs (as pages/Wholesale.tsx names them)
+const WHOLESALE_TABS = ['day', 'orders', 'vans', 'money', 'reps', 'reports', 'settings'] as const;
 // the petrol station's tabs (as pages/PetrolStation.tsx names them), written here so that page stays loaded lazily
 const PETROL_TABS = ['shifts', 'tanks', 'deliveries', 'dips', 'reports', 'setup'] as const;
 // goods on consignment's tabs (as pages/Consignment.tsx names them)
@@ -541,6 +544,10 @@ export function App() {
     case 'gold-slip':
       title = t('gd_slip');
       content = arg ? <GoldSlipPage key={arg} id={arg} /> : null;
+      break;
+    case 'wholesale':
+      title = t('ws_title');
+      content = <Wholesale key={arg ?? 'day'} tab={WHOLESALE_TABS.find((x) => x === arg) ?? 'day'} />;
       break;
     case 'fuel-shift':
       title = t('ps_title');

@@ -71,7 +71,10 @@ const at: Record<string, string> = {};
 /** Routes whose record this company has none of (fixed assets, item pictures): 404 for everyone. */
 const NO_RECORD = new Set(['/api/assets/depreciation/:id', '/api/assets/:id', '/api/items/:id/image',
   // 2.0 till rules: no picture or voucher is made here, and a screen's feed needs a real pairing code
-  '/api/pos/display/image/:id', '/api/pos/display/image-admin/:id', '/api/pos/gift-vouchers/lookup', '/api/pos/display/feed']);
+  '/api/pos/display/image/:id', '/api/pos/display/image-admin/:id', '/api/pos/gift-vouchers/lookup', '/api/pos/display/feed',
+  // wholesale (1.8): a rep's route, day, van and count, an order, a customer's credit (no rep or order in this company)
+  '/api/wholesale/reps/:id/route', '/api/wholesale/reps/:id/day', '/api/wholesale/reps/:id/van-moves', '/api/wholesale/reps/:id/van-count',
+  '/api/wholesale/orders/:id', '/api/wholesale/credit/:id']);
 
 beforeAll(async () => {
   resetLoginThrottle();

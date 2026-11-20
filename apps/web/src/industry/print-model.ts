@@ -300,6 +300,11 @@ const SAMPLE_LINES: Record<BusinessType, SampleLine[]> = {
     ['B-REG', null, 'بنزين عادي', 'Regular benzine', 'بەنزینی ئاسایی', 'l', 40_000, 850],
     ['GASOIL', null, 'كاز (ديزل)', 'Diesel (gas oil)', 'گازۆیل (دیزڵ)', 'l', 100_000, 750],
     ['GAS-12', null, 'قنينة غاز 12 كغم', 'Cooking gas cylinder, 12 kg', 'بوتڵی غاز، 12 کیلۆ', 'piece', 1000, 9_000]
+  ],
+  wholesale: [
+    ['W-101', '6260000000093', 'شاي 24 علبة', 'Tea, carton of 24', 'چا، کارتۆنی 24', 'carton', 10_000, 45_000],
+    ['W-102', '6260000000109', 'معجون طماطم 12 علبة', 'Tomato paste, carton of 12', 'دۆشاوی تەماتە، کارتۆنی 12', 'carton', 5_000, 18_000],
+    ['W-201', null, 'سكر 50 كغم', 'Sugar, 50 kg sack', 'شەکر، گۆنیەی 50 کیلۆ', 'bag', 2_000, 60_000]
   ]
 };
 

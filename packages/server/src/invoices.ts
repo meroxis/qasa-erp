@@ -699,7 +699,10 @@ export function onlinePaidAmount(db: Db, invoiceId: string): number {
 
 export function postInvoice(
   db: Db, id: string, user: string,
-  opts: { settledNow?: number; allowExpired?: boolean; split?: readonly SalePart[]; loyaltyPoints?: number | undefined; offersAt?: Date | undefined; overLimit?: boolean | undefined } = {}
+  opts: { settledNow?: number; allowExpired?: boolean; split?: readonly SalePart[]; loyaltyPoints?: number | undefined; offersAt?: Date | undefined;
+    /** over the customer's credit limit, allowed: a till's credit sale a supervisor approved by PIN (till-rules.ts), or a
+     * wholesale order approved with a warning or an admin's override (wholesale.ts) */
+    overLimit?: boolean | undefined } = {}
 ): InvoiceView {
   requireAction(db, loadRow(db, id), 'post');
   // 1.7: a sale that gets offers gets them as they are when it is posted (the server works them out, never the till)
@@ -739,7 +742,7 @@ export function postInvoice(
   if (view.kind === 'sale') {
     const settled = Number.isSafeInteger(opts.settledNow) ? Math.min(Math.max(opts.settledNow!, 0), total) : 0;
     const onCredit = baseTotal - (settled ? toBase(settled, view.currency, view.rateX100) : 0) - (redeemed?.value ?? 0);
-    // 2.0: a till's credit sale over the limit, approved there by a supervisor's PIN (till-rules.ts), goes through
+    // over the limit goes through only when allowed: a till sale a supervisor approved by PIN, or a wholesale order approved over it
     if (party && view.payment === 'credit' && party.creditLimit !== null && party.balance + onCredit > party.creditLimit && !opts.overLimit) {
       throw conflict('credit_limit_exceeded', { balance: party.balance, limit: party.creditLimit, total: baseTotal });
     }

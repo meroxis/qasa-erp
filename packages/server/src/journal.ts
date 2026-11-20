@@ -416,6 +416,8 @@ const ENTRY_OWNERS: readonly { owner: string; sql: string; marks: number }[] = [
   { owner: 'consignment', sql: 'SELECT 1 FROM consignment_docs WHERE entry_id = ? UNION ALL SELECT 1 FROM consignment_settlements WHERE entry_id = ? OR cancel_entry_id = ?', marks: 3 },
   // gold shops (gold.ts): old gold bought, pieces received from a supplier and gold handed to one post their entry at once
   { owner: 'gold', sql: 'SELECT 1 FROM gold_docs WHERE entry_id = ?', marks: 1 },
+  // wholesale (wholesale.ts): a rep's collection and a handover of the rep's cash to the office are that document's receipts
+  { owner: 'wholesale', sql: 'SELECT 1 FROM ws_collections WHERE entry_id = ? UNION ALL SELECT 1 FROM ws_handovers WHERE entry_id = ?', marks: 2 },
   { owner: 'fuel', sql: 'SELECT 1 FROM fuel_shifts WHERE entry_id = ? UNION ALL SELECT 1 FROM fuel_deliveries WHERE entry_id = ? UNION ALL SELECT 1 FROM fuel_dips WHERE entry_id = ? UNION ALL SELECT 1 FROM fuel_tanks WHERE opening_entry_id = ?', marks: 4 }
 ];
 

@@ -2269,6 +2269,126 @@ const V18 =
   );
   CREATE INDEX gold_supplier_moves_party ON gold_supplier_moves(party_id, date);
   CREATE INDEX gold_supplier_moves_source ON gold_supplier_moves(source_id);
+  -- ===== 18 · WHOLESALE =====
+  -- 18 — wholesale and distribution: the sales reps (each a user, with a van that is a warehouse of its own and a cash
+  -- account for what they collect), their routes (shop customers by weekday, in visiting order), the visits made, the
+  -- sales orders taken for a shop and delivered as a sale invoice, the van counts at the end of a day, the collections a
+  -- rep takes (a receipt voucher into the rep's own cash account) and the handovers of that cash to the office
+  CREATE TABLE ws_reps (
+    id TEXT PRIMARY KEY,
+    user_id TEXT NOT NULL UNIQUE REFERENCES users(id),
+    name TEXT NOT NULL,
+    warehouse_id TEXT NOT NULL UNIQUE REFERENCES warehouses(id),
+    load_warehouse_id TEXT NOT NULL REFERENCES warehouses(id),
+    cash_account TEXT NOT NULL REFERENCES accounts(code),
+    active INTEGER NOT NULL DEFAULT 1 CHECK (active IN (0, 1)),
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+  );
+  CREATE TABLE ws_route_stops (
+    id TEXT PRIMARY KEY,
+    rep_id TEXT NOT NULL REFERENCES ws_reps(id),
+    weekday INTEGER NOT NULL CHECK (weekday BETWEEN 0 AND 6),
+    party_id TEXT NOT NULL REFERENCES parties(id),
+    seq INTEGER NOT NULL CHECK (seq >= 0),
+    UNIQUE (rep_id, weekday, party_id)
+  );
+  CREATE INDEX ws_route_stops_party ON ws_route_stops(party_id);
+  CREATE TABLE ws_visits (
+    id TEXT PRIMARY KEY,
+    rep_id TEXT NOT NULL REFERENCES ws_reps(id),
+    party_id TEXT NOT NULL REFERENCES parties(id),
+    date TEXT NOT NULL,
+    outcome TEXT NOT NULL CHECK (outcome IN ('order', 'no_order', 'closed', 'collected')),
+    notes TEXT,
+    created_by TEXT NOT NULL,
+    created_at TEXT NOT NULL
+  );
+  CREATE INDEX ws_visits_rep ON ws_visits(rep_id, date);
+  CREATE TABLE ws_orders (
+    id TEXT PRIMARY KEY,
+    number TEXT NOT NULL UNIQUE,
+    rep_id TEXT REFERENCES ws_reps(id),
+    party_id TEXT NOT NULL REFERENCES parties(id),
+    date TEXT NOT NULL,
+    warehouse_id TEXT NOT NULL REFERENCES warehouses(id),
+    currency TEXT NOT NULL CHECK (currency IN ('IQD', 'USD')),
+    rate_x100 INTEGER NOT NULL CHECK (rate_x100 > 0),
+    status TEXT NOT NULL CHECK (status IN ('draft', 'approved', 'delivered', 'cancelled')),
+    total INTEGER NOT NULL CHECK (total >= 0),
+    limit_check TEXT CHECK (limit_check IS NULL OR limit_check IN ('ok', 'warn', 'override')),
+    override_by TEXT,
+    override_reason TEXT,
+    approved_by TEXT,
+    approved_at TEXT,
+    invoice_id TEXT REFERENCES invoices(id),
+    notes TEXT,
+    created_by TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+  );
+  CREATE INDEX ws_orders_party ON ws_orders(party_id, date);
+  CREATE INDEX ws_orders_rep ON ws_orders(rep_id, date);
+  CREATE TABLE ws_order_lines (
+    order_id TEXT NOT NULL REFERENCES ws_orders(id),
+    line_no INTEGER NOT NULL,
+    item_id TEXT NOT NULL REFERENCES items(id),
+    qty_milli INTEGER NOT NULL CHECK (qty_milli > 0),
+    unit TEXT,
+    unit_qty_milli INTEGER,
+    unit_price INTEGER NOT NULL CHECK (unit_price >= 0),
+    amount INTEGER NOT NULL CHECK (amount >= 0),
+    PRIMARY KEY (order_id, line_no)
+  );
+  CREATE TABLE ws_van_counts (
+    id TEXT PRIMARY KEY,
+    rep_id TEXT NOT NULL REFERENCES ws_reps(id),
+    date TEXT NOT NULL,
+    status TEXT NOT NULL CHECK (status IN ('open', 'closed')),
+    adjustment_id TEXT REFERENCES stock_adjustments(id),
+    created_by TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    closed_by TEXT,
+    closed_at TEXT,
+    UNIQUE (rep_id, date)
+  );
+  CREATE TABLE ws_van_count_lines (
+    count_id TEXT NOT NULL REFERENCES ws_van_counts(id),
+    item_id TEXT NOT NULL REFERENCES items(id),
+    expected_milli INTEGER NOT NULL,
+    counted_milli INTEGER NOT NULL CHECK (counted_milli >= 0),
+    PRIMARY KEY (count_id, item_id)
+  );
+  CREATE TABLE ws_handovers (
+    id TEXT PRIMARY KEY,
+    number TEXT NOT NULL UNIQUE,
+    rep_id TEXT NOT NULL REFERENCES ws_reps(id),
+    date TEXT NOT NULL,
+    to_account TEXT NOT NULL REFERENCES accounts(code),
+    currency TEXT NOT NULL CHECK (currency IN ('IQD', 'USD')),
+    rate_x100 INTEGER NOT NULL CHECK (rate_x100 > 0),
+    amount INTEGER NOT NULL CHECK (amount > 0),
+    entry_id TEXT REFERENCES entries(id),
+    created_by TEXT NOT NULL,
+    created_at TEXT NOT NULL
+  );
+  CREATE TABLE ws_collections (
+    id TEXT PRIMARY KEY,
+    number TEXT NOT NULL UNIQUE,
+    rep_id TEXT NOT NULL REFERENCES ws_reps(id),
+    party_id TEXT NOT NULL REFERENCES parties(id),
+    date TEXT NOT NULL,
+    currency TEXT NOT NULL CHECK (currency IN ('IQD', 'USD')),
+    rate_x100 INTEGER NOT NULL CHECK (rate_x100 > 0),
+    amount INTEGER NOT NULL CHECK (amount > 0),
+    entry_id TEXT REFERENCES entries(id),
+    handover_id TEXT REFERENCES ws_handovers(id),
+    notes TEXT,
+    created_by TEXT NOT NULL,
+    created_at TEXT NOT NULL
+  );
+  CREATE INDEX ws_collections_rep ON ws_collections(rep_id, date);
+  CREATE INDEX ws_collections_entry ON ws_collections(entry_id);
   `;
 // ===== end of 18 · TILL RULES =====
 
