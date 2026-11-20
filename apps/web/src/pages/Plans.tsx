@@ -39,7 +39,7 @@ export const ROWS: Row[] = [
   { label: 'f_installments', cells: has('installments') },
   { label: 'f_pipeline', cells: has('pipeline') },
   // the phone app (Android, from qasaerp.com/phone/) ships with 1.4.2; Starter's phones work on the office Wi-Fi only
-  { label: 'f_phoneApp', cells: has('phoneApp'), soon: true },
+  { label: 'f_phoneApp', cells: has('phoneApp') },
   { label: 'f_websiteApi', cells: has('websiteApi') },
   { label: 'f_cloudBackup', cells: has('cloudBackup') },
   { label: 'f_bankReconciliation', cells: has('bankReconciliation') },
