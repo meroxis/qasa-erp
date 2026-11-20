@@ -104,6 +104,7 @@ const StockCount = lazyPage(() => import('./pages/StockAdjustments.tsx'), 'Stock
 const PrintDesignPage = lazyPage(() => import('./pages/PrintDesign.tsx'), 'PrintDesignPage');
 const Labels = lazyPage(() => import('./pages/Labels.tsx'), 'Labels');
 const Expiry = lazyPage(() => import('./pages/Expiry.tsx'), 'Expiry');
+const Consignment = lazyPage(() => import('./pages/Consignment.tsx'), 'Consignment');
 const Pharmacy = lazyPage(() => import('./pages/Pharmacy.tsx'), 'Pharmacy');
 const Companies = lazyPage(() => import('./pages/Companies.tsx'), 'Companies');
 const FixedAssets = lazyPage(() => import('./pages/FixedAssets.tsx'), 'FixedAssets');
@@ -113,6 +114,8 @@ const Generators = lazyPage(() => import('./pages/Generators.tsx'), 'Generators'
 const PetrolStation = lazyPage(() => import('./pages/PetrolStation.tsx'), 'PetrolStation');
 // the petrol station's tabs (as pages/PetrolStation.tsx names them), written here so that page stays loaded lazily
 const PETROL_TABS = ['shifts', 'tanks', 'deliveries', 'dips', 'reports', 'setup'] as const;
+// goods on consignment's tabs (as pages/Consignment.tsx names them)
+const CONSIGNMENT_TABS = ['suppliers', 'items', 'docs', 'settlements'] as const;
 const FuelShiftSheet = lazyPage(() => import('./pages/PetrolStation.tsx'), 'FuelShiftSheet');
 const WebsiteApi = lazyPage(() => import('./pages/WebsiteApi.tsx'), 'WebsiteApi');
 const Solar = lazyPage(() => import('./pages/Solar.tsx'), 'Solar');
@@ -585,6 +588,10 @@ export function App() {
     case 'expiry':
       title = t('ex_title');
       content = <Expiry />;
+      break;
+    case 'consignment':
+      title = t('cg_title');
+      content = <Consignment key={arg ?? 'suppliers'} tab={CONSIGNMENT_TABS.find((x) => x === arg) ?? 'suppliers'} />;
       break;
     case 'pharmacy':
       title = t('phm_title');

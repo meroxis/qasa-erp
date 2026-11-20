@@ -9,6 +9,7 @@ import { MYSQL_TABLES, tableColumns, V17_MYSQL_STEPS } from './schema-mysql.ts';
 // Version 17 (supermarket): the tills, offers, consignment goods and the shelf labels to reprint, with the columns it adds
 // to older tables, on a company file and on a server database.
 const onServer = !!process.env.QASA_TEST_DB;
+const CONSIGNMENT = ['consignment_items', 'consignment_docs', 'consignment_doc_lines', 'consignment_settlements', 'consignment_moves'];
 
 let dir: string;
 beforeEach(() => { dir = mkdtempSync(join(tmpdir(), 'qasa-v17-')); });
@@ -28,6 +29,9 @@ describe.skipIf(onServer)('a company file from schema 16 opened by schema 17', (
       expect(SCHEMA_VERSION).toBeGreaterThanOrEqual(17);
       expect(db.prepare('SELECT COUNT(*) AS n FROM shelf_label_flags').get()).toEqual({ n: 0 });
       expect(db.prepare("SELECT code FROM items WHERE id = 'i-old'").get()).toEqual({ code: 'OLD' });
+      const tables = (db.prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name LIKE 'consignment_%' ORDER BY name").all() as { name: string }[]).map((t) => t.name);
+      expect(tables).toEqual([...CONSIGNMENT].sort());
+      expect(db.prepare('SELECT COUNT(*) AS n FROM pos_tills').get()).toEqual({ n: 0 });
     } finally {
       db.close();
     }
@@ -39,6 +43,10 @@ describe('version 17 on a server database', () => {
     const names = MYSQL_TABLES.map((t) => t.name);
     expect(MYSQL_TABLES.find((t) => t.name === 'shelf_label_flags')?.since).toBe(17);
     expect(names.indexOf('shelf_label_flags')).toBeGreaterThan(names.indexOf('items'));
+    for (const table of CONSIGNMENT) expect(MYSQL_TABLES.find((x) => x.name === table)?.since, table).toBe(17);
+    expect(names.indexOf('consignment_doc_lines')).toBeGreaterThan(names.indexOf('consignment_docs'));
+    expect(names.indexOf('consignment_moves')).toBeGreaterThan(names.indexOf('consignment_settlements'));
+    expect(names.indexOf('pos_tills')).toBeLessThan(names.indexOf('pos_shifts'));
     // the columns version 17 adds to older tables are each a step of their own
     for (const step of V17_MYSQL_STEPS) expect(step.sql).toMatch(/^ALTER TABLE /);
     expect(tableColumns('shelf_label_flags').columns).toEqual(['item_id', 'unit', 'old_price', 'new_price', 'currency', 'changed_at', 'changed_by']);
@@ -64,7 +72,7 @@ describe('version 17 on a server database', () => {
     expect(version).toBe(SCHEMA_VERSION);
     const made = ran.filter((s) => s.startsWith('CREATE TABLE ') && !s.includes('schema_version')).map((s) => s.split(' ')[2]);
     // (other version 17 tables may be made beside it; nothing older is made again)
-    expect(made).toContain('shelf_label_flags');
+    for (const table of ['shelf_label_flags', 'pos_tills', ...CONSIGNMENT]) expect(made).toContain(table);
     const v17 = new Set(MYSQL_TABLES.filter((t) => (t.since ?? 0) >= 17).map((t) => t.name));
     expect(made.filter((n) => !v17.has(n!))).toEqual([]);
     // no column is added but version 17's own

@@ -411,6 +411,9 @@ const ENTRY_OWNERS: readonly { owner: string; sql: string; marks: number }[] = [
   { owner: 'generator_run', sql: 'SELECT 1 FROM gen_runs WHERE entry_id = ?', marks: 1 },
   { owner: 'deposit', sql: 'SELECT 1 FROM re_deposits WHERE close_entry_id = ?', marks: 1 },
   // petrol stations (fuel.ts): a shift, a tanker delivery, a dip or a tank's opening stock moves litres in the tanks too
+  // goods on consignment (consignment.ts): receipts and returns post their entry at once; a settlement's entry is what
+  // the supplier is owed for what sold, and the moves it covers stay settled while it stands
+  { owner: 'consignment', sql: 'SELECT 1 FROM consignment_docs WHERE entry_id = ? UNION ALL SELECT 1 FROM consignment_settlements WHERE entry_id = ? OR cancel_entry_id = ?', marks: 3 },
   { owner: 'fuel', sql: 'SELECT 1 FROM fuel_shifts WHERE entry_id = ? UNION ALL SELECT 1 FROM fuel_deliveries WHERE entry_id = ? UNION ALL SELECT 1 FROM fuel_dips WHERE entry_id = ? UNION ALL SELECT 1 FROM fuel_tanks WHERE opening_entry_id = ?', marks: 4 }
 ];
 

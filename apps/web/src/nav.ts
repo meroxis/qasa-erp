@@ -74,7 +74,9 @@ export const NAV: NavGroup[] = [
       { key: 'po_title', icon: 'clipboard', path: 'purchase-orders', match: ['purchase-orders', 'purchase-order', 'new-purchase-order', 'edit-purchase-order'], work: ['purchaseOrder'] },
       { key: 'purchaseInvoices', icon: 'cart', path: 'purchases', match: ['purchases', 'new-invoice:purchase'], work: ['purchase'] },
       { key: 'suppliers', icon: 'truck', path: 'suppliers', match: ['suppliers'], work: ['supplier'] },
-      { key: 'purchaseReturns', icon: 'undo', path: 'purchase-returns', match: ['purchase-returns'], work: ['purchase'] }
+      { key: 'purchaseReturns', icon: 'undo', path: 'purchase-returns', match: ['purchase-returns'], work: ['purchase'] },
+      // goods on consignment (1.7): the shop's costs and what it owes its suppliers, for those who keep the books
+      { key: 'cg_title', icon: 'truck', path: 'consignment', match: ['consignment'], books: true }
     ]
   },
   {

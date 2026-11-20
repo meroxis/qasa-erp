@@ -130,6 +130,14 @@ beforeAll(async () => {
   const fuelShift = await made(post('/api/fuel/shifts', { date: today, shift: 'morning', attendant: 'Las', pumpIds: [fuelPump.id] }));
   await made(post(`/api/fuel/shifts/${fuelShift.id}/close`, { readings: [{ nozzleId: fuelPump.nozzles[0].id, closingMilli: 5_100_000 }], handed: 95_000 }), 200);
   await made(post('/api/fuel/dips', { date: today, tankId: fuelTank.id, measuredMilli: 10_890_000 }));
+  // goods on consignment (1.7): a baker's bread received, one sold, and settled
+  const breadId = (await made(post('/api/items', { code: 'BREAD', name: one('Bread'), unit: 'piece', salePrice: 1_000, saleCurrency: 'IQD' }))).id as string;
+  await made(put(`/api/consignment/items/${breadId}`, { supplierId, currency: 'IQD', unitCost: 619 }), 200);
+  const consigned = await made(post('/api/consignment/docs', { kind: 'receipt', date: today, supplierId, warehouseId, lines: [{ itemId: breadId, qtyMilli: 10_000 }] }));
+  await made(post(`/api/consignment/docs/${consigned.id}/post`), 200);
+  const breadSold = await made(post('/api/invoices', invoice('sale', customerId, [{ itemId: breadId, qtyMilli: 1_000, unitPrice: 1_000 }])));
+  await made(post(`/api/invoices/${breadSold.id}/post`), 200);
+  const consignmentSettlement = await made(post('/api/consignment/settlements', { supplierId, currency: 'IQD', date: today }));
   const quote = await made(post('/api/quotes', { date: today, partyId: customerId, currency: 'IQD', lines: [{ itemId: teaId, description: 'Tea', qtyMilli: 5_000, unitPrice: 2_400 }] }));
 
   // the stock is corrected and counted, an order waits at the supplier, a wholesale price is set
@@ -183,7 +191,9 @@ beforeAll(async () => {
     '/api/loyalty/parties/:id': customerId,
     '/api/banking/statements/:id': statement.id,
     '/api/banking/cheques/:id': cheque.id,
-    '/api/fuel/shifts/:id': fuelShift.id, '/api/fuel/deliveries/:id': fuelDelivery.id
+    '/api/fuel/shifts/:id': fuelShift.id, '/api/fuel/deliveries/:id': fuelDelivery.id,
+    '/api/consignment/items/:id': breadId, '/api/consignment/docs/:id': consigned.id, '/api/consignment/settlements/:id': consignmentSettlement.id,
+    '/api/consignment/statement/:id': supplierId
   });
   Object.assign(QUERY, {
     '/api/reports/final-accounts': `from=${today.slice(0, 4)}-01-01&to=${today}`,
@@ -199,7 +209,8 @@ beforeAll(async () => {
     '/api/batches': `itemId=${medId}`,
     '/api/batches/report': 'state=all',
     '/api/fuel/attendants': `from=${month}-01&to=${today}`,
-    '/api/fuel/reports': `from=${month}-01&to=${today}`
+    '/api/fuel/reports': `from=${month}-01&to=${today}`,
+    '/api/consignment/settlements/preview': `supplierId=${supplierId}&currency=IQD&date=${today}`
   });
   Object.assign(at, {
     scan: '/api/items?barcode=6260000000017', boxScan: '/api/items?barcode=6260000000024', search: `/api/items?q=tea&warehouseId=${warehouseId}`,
@@ -304,7 +315,9 @@ const COST_FIELDS = (): [string, string][] => [
   ['/api/fuel/setup', '.tanks[].value'], ['/api/fuel/setup', '.tanks[].avgCost'], ['/api/fuel/setup', '.tanks[].lastCost'],
   [at.fuelShift!, '.cost'], [at.fuelShift!, '.profit'], [at.fuelShift!, '.readings[].cost'], ['/api/fuel/shifts', '[].cost'],
   ['/api/fuel/deliveries', '[].cost'], ['/api/fuel/deliveries', '[].costPerLitre'], [at.fuelDelivery!, '.costPerLitre'], ['/api/fuel/dips', '[].value'],
-  [at.fuelReport!, '.fuels[].cost'], [at.fuelReport!, '.fuels[].profit'], [at.fuelReport!, '.tanks[].value']
+  [at.fuelReport!, '.fuels[].cost'], [at.fuelReport!, '.fuels[].profit'], [at.fuelReport!, '.tanks[].value'],
+  // goods on consignment: the agreed cost and the goods' value
+  ['/api/consignment/items', '[].unitCost'], ['/api/consignment/items', '[].onHandValue']
 ];
 
 /** The fields of the books and their reports, by address. */
@@ -339,7 +352,9 @@ const BOOKS_FIELDS = (): [string, string][] => [
  * cheques: the list, each cheque and the summary.
  */
 const BOOKS_ROUTES = ['/api/entries/', '/api/reports/', '/api/year-end', '/api/fx/revaluation', '/api/assets', '/api/brief/reports/stock-value', '/api/brief/expenses', '/api/banking/statements', '/api/banking/cheques',
-  '/api/fuel/attendants', '/api/fuel/deliveries', '/api/fuel/dips', '/api/fuel/reports'];
+  '/api/fuel/attendants', '/api/fuel/deliveries', '/api/fuel/dips', '/api/fuel/reports',
+  // goods on consignment (1.7): what the shop owes its suppliers, and at what cost it holds their goods
+  '/api/consignment'];
 const ADMIN_ROUTES = ['/api/audit', '/api/auth/recovery-code', '/api/branches', '/api/users'];
 // the till's own reads (1.5.2): for the Point of sale permission only (an admin has it; a cashier at the till here too)
 const TILL_ROUTES = ['/api/pos/current', '/api/pos/payment-accounts', '/api/pos/scale', '/api/pos/tills'];

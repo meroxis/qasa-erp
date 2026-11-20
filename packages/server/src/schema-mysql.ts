@@ -1879,8 +1879,125 @@ export const MYSQL_TABLES: readonly MysqlObject[] = [
       INDEX shelf_label_flags_changed (changed_at),
       FOREIGN KEY (item_id) REFERENCES items(id)
     )`
-  }
+  },
   // ——— end v17: supermarket reports ———
+  // ===== 17 · CONSIGNMENT (db.ts V17, consignment.ts) — begin =====
+  {
+    name: 'consignment_items',
+    since: 17,
+    sql: `CREATE TABLE consignment_items (
+      item_id ${ID} NOT NULL PRIMARY KEY,
+      supplier_id ${ID} NOT NULL,
+      currency ${WORD} NOT NULL CHECK (currency IN ('IQD', 'USD')),
+      unit_cost BIGINT NOT NULL CHECK (unit_cost >= 0),
+      active INT NOT NULL DEFAULT 1 CHECK (active IN (0, 1)),
+      created_at ${WHEN} NOT NULL,
+      updated_at ${WHEN} NOT NULL,
+      INDEX consignment_items_supplier (supplier_id),
+      FOREIGN KEY (item_id) REFERENCES items(id),
+      FOREIGN KEY (supplier_id) REFERENCES parties(id)
+    )`
+  },
+  {
+    name: 'consignment_docs',
+    since: 17,
+    sql: `CREATE TABLE consignment_docs (
+      id ${ID} NOT NULL PRIMARY KEY,
+      kind ${WORD} NOT NULL CHECK (kind IN ('receipt', 'return')),
+      number ${ID} UNIQUE,
+      date ${WHEN} NOT NULL,
+      supplier_id ${ID} NOT NULL,
+      warehouse_id ${ID} NOT NULL,
+      currency ${WORD} NOT NULL CHECK (currency IN ('IQD', 'USD')),
+      rate_x100 BIGINT NOT NULL CHECK (rate_x100 > 0),
+      status ${WORD} NOT NULL CHECK (status IN ('draft', 'posted', 'cancelled')),
+      entry_id ${ID},
+      notes TEXT,
+      created_by TEXT NOT NULL,
+      prepared_by_id ${ID},
+      created_at ${WHEN} NOT NULL,
+      updated_at ${WHEN} NOT NULL,
+      INDEX consignment_docs_supplier (supplier_id, date),
+      FOREIGN KEY (supplier_id) REFERENCES parties(id),
+      FOREIGN KEY (warehouse_id) REFERENCES warehouses(id),
+      FOREIGN KEY (entry_id) REFERENCES entries(id),
+      FOREIGN KEY (prepared_by_id) REFERENCES users(id)
+    )`
+  },
+  {
+    name: 'consignment_doc_lines',
+    since: 17,
+    sql: `CREATE TABLE consignment_doc_lines (
+      doc_id ${ID} NOT NULL,
+      seq INT NOT NULL,
+      item_id ${ID} NOT NULL,
+      qty_milli BIGINT NOT NULL CHECK (qty_milli > 0),
+      unit_cost BIGINT,
+      unit ${WORD},
+      unit_factor_milli BIGINT,
+      unit_qty_milli BIGINT,
+      batch_no ${BATCH},
+      expiry ${WHEN},
+      batch_id ${ID},
+      PRIMARY KEY (doc_id, seq),
+      FOREIGN KEY (doc_id) REFERENCES consignment_docs(id),
+      FOREIGN KEY (item_id) REFERENCES items(id)
+    )`
+  },
+  {
+    name: 'consignment_settlements',
+    since: 17,
+    sql: `CREATE TABLE consignment_settlements (
+      id ${ID} NOT NULL PRIMARY KEY,
+      number ${ID} NOT NULL UNIQUE,
+      date ${WHEN} NOT NULL,
+      supplier_id ${ID} NOT NULL,
+      currency ${WORD} NOT NULL CHECK (currency IN ('IQD', 'USD')),
+      rate_x100 BIGINT NOT NULL CHECK (rate_x100 > 0),
+      amount BIGINT NOT NULL CHECK (amount > 0),
+      book_value BIGINT NOT NULL,
+      status ${WORD} NOT NULL CHECK (status IN ('open', 'cancelled')),
+      entry_id ${ID},
+      cancel_entry_id ${ID},
+      notes TEXT,
+      created_by TEXT NOT NULL,
+      created_at ${WHEN} NOT NULL,
+      updated_at ${WHEN} NOT NULL,
+      INDEX consignment_settlements_supplier (supplier_id, date),
+      FOREIGN KEY (supplier_id) REFERENCES parties(id),
+      FOREIGN KEY (entry_id) REFERENCES entries(id),
+      FOREIGN KEY (cancel_entry_id) REFERENCES entries(id)
+    )`
+  },
+  {
+    name: 'consignment_moves',
+    since: 17,
+    sql: `CREATE TABLE consignment_moves (
+      id ${ID} NOT NULL PRIMARY KEY,
+      item_id ${ID} NOT NULL,
+      supplier_id ${ID} NOT NULL,
+      warehouse_id ${ID} NOT NULL,
+      date ${WHEN} NOT NULL,
+      kind ${WORD} NOT NULL CHECK (kind IN ('received', 'returned', 'sold', 'transfer')),
+      source_type ${WORD} NOT NULL,
+      source_id ${ID} NOT NULL,
+      qty_milli BIGINT NOT NULL,
+      value BIGINT NOT NULL,
+      currency ${WORD} NOT NULL CHECK (currency IN ('IQD', 'USD')),
+      ccy_value BIGINT NOT NULL,
+      settlement_id ${ID},
+      created_at ${WHEN} NOT NULL,
+      INDEX consignment_moves_item (item_id, warehouse_id),
+      INDEX consignment_moves_supplier (supplier_id, kind, date),
+      INDEX consignment_moves_settlement (settlement_id),
+      INDEX consignment_moves_source (source_type, source_id),
+      FOREIGN KEY (item_id) REFERENCES items(id),
+      FOREIGN KEY (supplier_id) REFERENCES parties(id),
+      FOREIGN KEY (warehouse_id) REFERENCES warehouses(id),
+      FOREIGN KEY (settlement_id) REFERENCES consignment_settlements(id)
+    )`
+  }
+  // ===== 17 · CONSIGNMENT — end =====
 ];
 
 const refuse = (message: string) => `SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = '${message}'`;
@@ -2049,7 +2166,10 @@ export const V15_MYSQL_STEPS: readonly MysqlStep[] = [
 export const V16_MYSQL_STEPS: readonly MysqlStep[] = [];
 
 // ——— 17, TILLS ———
-/** Version 17 (tills): a shift's till, and the dollar notes taken on a dinar sale. pos_tills comes from MYSQL_TABLES. */
+/**
+ * Version 17 (supermarket): the columns it adds to older tables. Its new tables (tills, consignment, shelf labels, offers)
+ * come from MYSQL_TABLES, since 17. Tills: a shift's till, and the dollar notes taken on a dinar sale.
+ */
 export const V17_MYSQL_STEPS: readonly MysqlStep[] = [
   mysqlAddColumn('pos_shifts', 'till_id', ID),
   mysqlAddForeignKey('pos_shifts', 'till_id', 'pos_tills', 'id'),

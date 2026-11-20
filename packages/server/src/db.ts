@@ -1973,6 +1973,99 @@ const V17 =
     PRIMARY KEY (item_id, unit)
   );
   CREATE INDEX shelf_label_flags_changed ON shelf_label_flags(changed_at);
+  -- ===== 17 · CONSIGNMENT (consignment.ts) — begin =====
+  -- Goods a supplier leaves in the shop and is paid for only as they sell (sale-or-return, بضاعة أمانة). An item on
+  -- consignment belongs to one supplier at an agreed cost per base unit (IQD or USD). A receipt brings it into stock at
+  -- that cost (Dr the warehouse / Cr consignment goods held, 268), a return gives it back (the reverse); every other
+  -- move of the item (a sale, a customer's return, a cancel, a write-off) is recorded beside its stock move with its
+  -- value in the agreed currency. A settlement turns what sold and was not settled yet into what the supplier is owed:
+  -- a journal entry (Dr 268 / Cr the supplier) that goes through checking and approval like any voucher.
+  CREATE TABLE consignment_items (
+    item_id TEXT PRIMARY KEY REFERENCES items(id),
+    supplier_id TEXT NOT NULL REFERENCES parties(id),
+    currency TEXT NOT NULL CHECK (currency IN ('IQD', 'USD')),
+    -- the agreed cost per base unit, in the currency's minor units
+    unit_cost INTEGER NOT NULL CHECK (unit_cost >= 0),
+    active INTEGER NOT NULL DEFAULT 1 CHECK (active IN (0, 1)),
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+  );
+  CREATE INDEX consignment_items_supplier ON consignment_items(supplier_id);
+  CREATE TABLE consignment_docs (
+    id TEXT PRIMARY KEY,
+    kind TEXT NOT NULL CHECK (kind IN ('receipt', 'return')),
+    number TEXT UNIQUE,
+    date TEXT NOT NULL,
+    supplier_id TEXT NOT NULL REFERENCES parties(id),
+    warehouse_id TEXT NOT NULL REFERENCES warehouses(id),
+    currency TEXT NOT NULL CHECK (currency IN ('IQD', 'USD')),
+    rate_x100 INTEGER NOT NULL CHECK (rate_x100 > 0),
+    status TEXT NOT NULL CHECK (status IN ('draft', 'posted', 'cancelled')),
+    entry_id TEXT REFERENCES entries(id),
+    notes TEXT,
+    created_by TEXT NOT NULL,
+    prepared_by_id TEXT REFERENCES users(id),
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+  );
+  CREATE INDEX consignment_docs_supplier ON consignment_docs(supplier_id, date);
+  CREATE TABLE consignment_doc_lines (
+    doc_id TEXT NOT NULL REFERENCES consignment_docs(id),
+    seq INTEGER NOT NULL,
+    item_id TEXT NOT NULL REFERENCES items(id),
+    qty_milli INTEGER NOT NULL CHECK (qty_milli > 0),
+    -- receipts: the agreed cost per unit of the line (its own unit when it has one), in the document's currency
+    unit_cost INTEGER,
+    unit TEXT,
+    unit_factor_milli INTEGER,
+    unit_qty_milli INTEGER,
+    batch_no TEXT,
+    expiry TEXT,
+    batch_id TEXT,
+    PRIMARY KEY (doc_id, seq)
+  );
+  CREATE TABLE consignment_settlements (
+    id TEXT PRIMARY KEY,
+    number TEXT NOT NULL UNIQUE,
+    date TEXT NOT NULL,
+    supplier_id TEXT NOT NULL REFERENCES parties(id),
+    currency TEXT NOT NULL CHECK (currency IN ('IQD', 'USD')),
+    rate_x100 INTEGER NOT NULL CHECK (rate_x100 > 0),
+    -- owed to the supplier (the currency's minor units) and the goods' value in the books (IQD)
+    amount INTEGER NOT NULL CHECK (amount > 0),
+    book_value INTEGER NOT NULL,
+    status TEXT NOT NULL CHECK (status IN ('open', 'cancelled')),
+    entry_id TEXT REFERENCES entries(id),
+    cancel_entry_id TEXT REFERENCES entries(id),
+    notes TEXT,
+    created_by TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+  );
+  CREATE INDEX consignment_settlements_supplier ON consignment_settlements(supplier_id, date);
+  -- every stock move of an item on consignment, as the supplier sees it: received, returned, sold (anything else
+  -- that took it out or brought it back: sales, customers' returns, cancels, write-offs) or moved between warehouses
+  CREATE TABLE consignment_moves (
+    id TEXT PRIMARY KEY,
+    item_id TEXT NOT NULL REFERENCES items(id),
+    supplier_id TEXT NOT NULL REFERENCES parties(id),
+    warehouse_id TEXT NOT NULL REFERENCES warehouses(id),
+    date TEXT NOT NULL,
+    kind TEXT NOT NULL CHECK (kind IN ('received', 'returned', 'sold', 'transfer')),
+    source_type TEXT NOT NULL,
+    source_id TEXT NOT NULL,
+    qty_milli INTEGER NOT NULL,
+    -- IQD, as the stock move
+    value INTEGER NOT NULL,
+    currency TEXT NOT NULL CHECK (currency IN ('IQD', 'USD')),
+    ccy_value INTEGER NOT NULL,
+    settlement_id TEXT REFERENCES consignment_settlements(id),
+    created_at TEXT NOT NULL
+  );
+  CREATE INDEX consignment_moves_item ON consignment_moves(item_id, warehouse_id);
+  CREATE INDEX consignment_moves_supplier ON consignment_moves(supplier_id, kind, date);
+  CREATE INDEX consignment_moves_settlement ON consignment_moves(settlement_id);
+  CREATE INDEX consignment_moves_source ON consignment_moves(source_type, source_id);
   `;
   // ——— end of 17, TILLS ———
 
