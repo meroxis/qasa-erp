@@ -40,6 +40,8 @@ import { Keypad, MiscDialog, PriceDialog, QtyDialog, ShortcutsHelp, VoucherPayDi
 import { beep, readPrefs, writePrefs, type TillPrefs } from './feedback.ts';
 import { NO_RULES, tillRulesApi, type ApprovalAction, type DisplayState, type TillRulesView } from './rules-api.ts';
 import { readScaleSettings, readWeight, serialHere } from './scale.ts';
+import { TillClothingButtons } from '../industry/ClothingTools.tsx';
+import { DeliveryFromTill } from '../industry/DeliveryFromTill.tsx';
 
 /**
  * The register: an open shift (2.0, made for supermarkets). Scan first: the search box keeps the focus, so a barcode
@@ -710,6 +712,12 @@ export function Register({ initial, onClosed }: { initial: ShiftView; onClosed()
         <div className="row pos-tools">
           {scaleOn && <button type="button" className="btn" onClick={() => void readScale()}><Icon name="scale" size={16} />{t('tu_scaleRead')}</button>}
           {miscItem && rules.misc.allowed && <button type="button" className="btn" onClick={() => setDialog('misc')}><Icon name="plus" size={16} />{t('tu_misc')}</button>}
+          {/* a clothing shop: a model by size and colour, and an exchange (a return and a sale in one go) */}
+          <TillClothingButtons shiftId={shift.id} currency={currency} items={items} disabled={busy} onPick={(item) => { add(item); focusSearch(); }}
+            onExchanged={() => { posApi.current().then((r) => { if (r.shift?.id === shift.id) setShift(r.shift); }, () => {}); }} />
+          {/* a delivery order from this basket (market extras): the sale itself is made when it is delivered */}
+          {!offline && <DeliveryFromTill partyId={partyId || null} warehouseId={shift.warehouseId} onSent={clearNow}
+            lines={cart.map((l) => { const q = baseQtyOf(l); return { itemId: l.item.id, qtyMilli: q, unitPrice: q ? Math.round((lineTotal(l) * 1000) / q) : l.unitPrice }; })} />}
           <button type="button" className="btn" onClick={() => setDialog('more')} aria-haspopup="dialog"><Icon name="rows" size={16} />{t('tu_more')}</button>
           <button type="button" className="btn" onClick={() => setDialog('help')} title={t('tu_help')}><span className="kbd">F1</span></button>
         </div>

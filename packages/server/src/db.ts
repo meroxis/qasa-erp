@@ -2497,6 +2497,51 @@ const V18 =
     return_id TEXT NOT NULL REFERENCES invoices(id),
     PRIMARY KEY (receipt_id, return_id)
   );
+  -- ===== 18 · CLOTHING =====
+  -- 18 — clothing and shoes: the shop's colours, its models (one design, with the sizes it comes in), and which item is
+  -- which size and colour of which model. A variant is a real item (its stock, price, barcode and lines are the item's),
+  -- color_id '' is a model without colours.
+  CREATE TABLE cl_colors (
+    id TEXT PRIMARY KEY,
+    code TEXT NOT NULL UNIQUE,
+    name_ar TEXT NOT NULL,
+    name_en TEXT NOT NULL,
+    name_ku TEXT NOT NULL,
+    hex TEXT,
+    sort INTEGER NOT NULL DEFAULT 0,
+    active INTEGER NOT NULL DEFAULT 1 CHECK (active IN (0, 1)),
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+  );
+  CREATE TABLE cl_models (
+    id TEXT PRIMARY KEY,
+    code TEXT NOT NULL UNIQUE,
+    name_ar TEXT NOT NULL,
+    name_en TEXT NOT NULL,
+    name_ku TEXT NOT NULL,
+    sizes TEXT NOT NULL,
+    season TEXT,
+    category_id TEXT REFERENCES item_categories(id),
+    brand_id TEXT REFERENCES brands(id),
+    unit TEXT NOT NULL,
+    sale_price INTEGER NOT NULL DEFAULT 0 CHECK (sale_price >= 0),
+    sale_currency TEXT NOT NULL CHECK (sale_currency IN ('IQD', 'USD')),
+    purchase_price INTEGER CHECK (purchase_price IS NULL OR purchase_price >= 0),
+    purchase_currency TEXT CHECK (purchase_currency IS NULL OR purchase_currency IN ('IQD', 'USD')),
+    active INTEGER NOT NULL DEFAULT 1 CHECK (active IN (0, 1)),
+    created_by TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+  );
+  CREATE INDEX cl_models_season ON cl_models(season);
+  CREATE TABLE cl_variants (
+    item_id TEXT PRIMARY KEY REFERENCES items(id),
+    model_id TEXT NOT NULL REFERENCES cl_models(id),
+    size TEXT NOT NULL,
+    color_id TEXT NOT NULL DEFAULT '',
+    created_at TEXT NOT NULL,
+    UNIQUE (model_id, size, color_id)
+  );
   `;
 // ===== end of 18 · TILL RULES =====
 

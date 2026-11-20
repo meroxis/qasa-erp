@@ -1460,7 +1460,8 @@ describe('the release notes of 1.5.2 (kept as shipped: on GitHub only; the Store
   });
 
   it('says first that a company that does not sell at a counter has the till off, with the business types and the setting as the app names them', () => {
-    expect(read('packages/core/src/pos-use.ts')).toContain("COUNTER_BUSINESS_TYPES: readonly BusinessType[] = ['trade', 'market', 'pharmacy', 'mobileShop', 'autoParts', 'electricalSolar'];");
+    // (business types added later that also sell at a counter come after these: clothing and shoes, 2.0)
+    expect(read('packages/core/src/pos-use.ts')).toMatch(/COUNTER_BUSINESS_TYPES: readonly BusinessType\[\] = \['trade', 'market', 'pharmacy', 'mobileShop', 'autoParts', 'electricalSolar'(, '\w+')*\];/);
     const i18n = read('apps/web/src/i18n.ts');
     expect(i18n).toContain("bt_realEstate: ['عقارات', 'Real estate', 'خانووبەرە']");
     expect(i18n).toContain("bt_engineeringWorks: ['أعمال هندسية', 'Engineering works', 'کاری ئەندازیاری']");

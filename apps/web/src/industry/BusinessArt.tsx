@@ -40,6 +40,24 @@ const ART: Partial<Record<BusinessType, ReactNode>> = {
     <circle {...S} cx="32" cy="32" r="6" />
     <path {...S} d="M32 12v14M32 38v14M12 32h14M38 32h14" />
   </>,
+  // a ring with a stone
+  goldShop: <>
+    <circle {...SOFT} cx="32" cy="40" r="14" />
+    <circle {...S} cx="32" cy="40" r="14" />
+    <path {...S} d="M24 18h16l4 6-12 9-12-9zM24 18l8 15 8-15M20 24h24" />
+  </>,
+  // a delivery truck
+  wholesale: <>
+    <rect {...SOFT} x="8" y="20" width="30" height="22" rx="2" />
+    <path {...S} d="M8 20h30v22H8zM38 28h10l8 8v6H38z" />
+    <circle {...S} cx="18" cy="46" r="4" />
+    <circle {...S} cx="46" cy="46" r="4" />
+  </>,
+  // a shirt
+  clothingShop: <>
+    <path {...SOFT} d="M22 12l-12 8 5 9 5-3v26h24V26l5 3 5-9-12-8c-1.5 4-5 6-10 6s-8.5-2-10-6z" />
+    <path {...S} d="M22 12l-12 8 5 9 5-3v26h24V26l5 3 5-9-12-8c-1.5 4-5 6-10 6s-8.5-2-10-6z" />
+  </>,
   // a spanner over a steel beam
   engineeringWorks: <>
     <path {...SOFT} d="M8 44h48v8H8z" />

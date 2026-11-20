@@ -51,7 +51,9 @@ const COST_FIELDS: readonly (readonly [string, readonly string[]])[] = [
   ['/api/fuel', ['cost', 'profit', 'value', 'avgCost', 'lastCost', 'costPerLitre']],
   // 2.0, suppliers who deliver every day (daily-suppliers.ts): the agreed cost of each item, and what each day's
   // purchase and returns came to
-  ['/api/daily-suppliers', ['unitCost', 'received', 'returned', 'total']]
+  ['/api/daily-suppliers', ['unitCost', 'received', 'returned', 'total']],
+  // clothing (clothing.ts): what a model and its variants are bought for
+  ['/api/clothing', ['purchasePrice', 'purchaseCurrency']]
 ];
 
 /** Answers under these paths lose these fields for someone who may not read the books. */

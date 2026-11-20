@@ -1,4 +1,4 @@
-import { useMemo, useState, type CSSProperties } from 'react';
+import { useEffect, useMemo, useState, type CSSProperties } from 'react';
 import { api, type ItemView } from '../api.ts';
 import { EmptyState, ErrorBox, Icon, SearchCombo, useData, useLoad, usePageNav, type PickOption } from '../components.tsx';
 import { useI18n, type Key } from '../i18n.ts';
@@ -9,6 +9,7 @@ import { unitPrice, type UnitCode } from '@qasa/core';
 import { UnitPicker } from '../industry/UnitPicker.tsx';
 import { unitLabel } from '../industry/units.ts';
 import { supermarketReportsApi, type ShelfFlagView } from '../industry/supermarket-reports-api.ts';
+import { clearQueuedLabels, queuedLabels } from '../industry/label-queue.ts';
 
 /**
  * Barcode labels (every plan): choose items and how many of each, a label size, and print — on a label printer
@@ -88,7 +89,9 @@ export function Labels() {
   const { settings } = useData();
   usePageNav({ key: 'lb_title', group: 'gStock' });
   const items = useLoad(() => api.items({ active: 'true' }), []);
-  const [rows, setRows] = useState<Row[]>([]);
+  // rows another page queued (a clothing model's variants, a purchase's goods) start the list
+  const [rows, setRows] = useState<Row[]>(() => queuedLabels().map((q) => ({ itemId: q.itemId, copies: q.copies, unit: null })));
+  useEffect(() => clearQueuedLabels(), []);
   const [size, setSize] = useState<LabelSize>('38x25');
   const [showName, setShowName] = useState(true);
   const [showPrice, setShowPrice] = useState(true);

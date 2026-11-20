@@ -187,6 +187,12 @@ beforeAll(async () => {
   db.prepare(`INSERT INTO offers (id, code, name_ar, name_en, name_ku, kind, active, items, categories, get_items, get_categories, percent_off, created_by, created_at, updated_at)
               VALUES ('offer-1', 'TEA10', 'شاي', 'Tea', 'چا', 'price', 0, ?, '[]', '[]', '[]', 10, 'Mer', ?, ?)`).run(JSON.stringify([teaId]), today, today);
 
+  // 2.0: a clothing model, with what it is bought for (a cost: kept from those who may not see it)
+  const color = await made(post('/api/clothing/colors', { code: 'BLK', name: { ar: 'أسود', en: 'Black', ku: 'ڕەش' } }));
+  const model = await made(post('/api/clothing/models', {
+    code: 'POLO', name: { ar: 'بولو', en: 'Polo', ku: 'پۆلۆ' }, sizes: ['M', 'L'], colorIds: [color.id], salePrice: 25_000, saleCurrency: 'IQD', purchasePrice: 12_345, purchaseCurrency: 'IQD'
+  }));
+
   // what the server worked out: the cost of every line sold or returned, the value of every stock movement and of the stock
   for (const r of db.prepare('SELECT cost AS n FROM invoice_lines WHERE cost IS NOT NULL').all() as { n: number }[]) secrets.add(Math.abs(Number(r.n)));
   for (const r of db.prepare('SELECT value AS n FROM stock_moves').all() as { n: number }[]) secrets.add(Math.abs(Number(r.n)));
@@ -214,7 +220,8 @@ beforeAll(async () => {
     '/api/offers/:id': 'offer-1',
     '/api/pos/customer/:id': customerId,
     '/api/gold/items/:id': ringId, '/api/gold/docs/:id': goldReceipt.id, '/api/gold/suppliers/:id': supplierId, '/api/gold/slip/:id': sale.id,
-    '/api/parties/:id/reminders': customerId, '/api/daily-suppliers/:id/sheet': supplierId, '/api/daily-suppliers/:id/receipts': supplierId
+    '/api/parties/:id/reminders': customerId, '/api/daily-suppliers/:id/sheet': supplierId, '/api/daily-suppliers/:id/receipts': supplierId,
+    '/api/clothing/models/:id': model.id, '/api/clothing/invoices/:id/variants': purchase.id
   });
   Object.assign(QUERY, {
     '/api/reports/final-accounts': `from=${today.slice(0, 4)}-01-01&to=${today}`,
@@ -234,7 +241,9 @@ beforeAll(async () => {
     '/api/batches/report': 'state=all',
     '/api/fuel/attendants': `from=${month}-01&to=${today}`,
     '/api/fuel/reports': `from=${month}-01&to=${today}`,
-    '/api/consignment/settlements/preview': `supplierId=${supplierId}&currency=IQD&date=${today}`
+    '/api/consignment/settlements/preview': `supplierId=${supplierId}&currency=IQD&date=${today}`,
+    '/api/clothing/reports': `from=${month}-01&to=${today}`,
+    '/api/clothing/variants': `itemIds=${teaId}`
   });
   Object.assign(at, {
     scan: '/api/items?barcode=6260000000017', boxScan: '/api/items?barcode=6260000000024', search: `/api/items?q=tea&warehouseId=${warehouseId}`,

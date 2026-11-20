@@ -2611,8 +2611,69 @@ export const MYSQL_TABLES: readonly MysqlObject[] = [
       FOREIGN KEY (receipt_id) REFERENCES daily_receipts(id) ON DELETE CASCADE,
       FOREIGN KEY (return_id) REFERENCES invoices(id)
     )`
-  }
+  },
   // ===== end 18 · MARKET EXTRAS =====
+  // ===== 18 · CLOTHING (db.ts V18, clothing.ts) — begin =====
+  {
+    name: 'cl_colors',
+    since: 18,
+    sql: `CREATE TABLE cl_colors (
+      id ${ID} NOT NULL PRIMARY KEY,
+      code ${WORD} NOT NULL,
+      name_ar TEXT NOT NULL,
+      name_en TEXT NOT NULL,
+      name_ku TEXT NOT NULL,
+      hex ${WORD},
+      sort INT NOT NULL DEFAULT 0,
+      active INT NOT NULL DEFAULT 1 CHECK (active IN (0, 1)),
+      created_at ${WHEN} NOT NULL,
+      updated_at ${WHEN} NOT NULL,
+      UNIQUE KEY cl_colors_code (code)
+    )`
+  },
+  {
+    name: 'cl_models',
+    since: 18,
+    sql: `CREATE TABLE cl_models (
+      id ${ID} NOT NULL PRIMARY KEY,
+      code ${ID} NOT NULL,
+      name_ar TEXT NOT NULL,
+      name_en TEXT NOT NULL,
+      name_ku TEXT NOT NULL,
+      sizes TEXT NOT NULL,
+      season ${ID},
+      category_id ${ID},
+      brand_id ${ID},
+      unit ${WORD} NOT NULL,
+      sale_price BIGINT NOT NULL DEFAULT 0 CHECK (sale_price >= 0),
+      sale_currency ${WORD} NOT NULL CHECK (sale_currency IN ('IQD', 'USD')),
+      purchase_price BIGINT CHECK (purchase_price IS NULL OR purchase_price >= 0),
+      purchase_currency ${WORD} CHECK (purchase_currency IS NULL OR purchase_currency IN ('IQD', 'USD')),
+      active INT NOT NULL DEFAULT 1 CHECK (active IN (0, 1)),
+      created_by TEXT NOT NULL,
+      created_at ${WHEN} NOT NULL,
+      updated_at ${WHEN} NOT NULL,
+      UNIQUE KEY cl_models_code (code),
+      INDEX cl_models_season (season),
+      FOREIGN KEY (category_id) REFERENCES item_categories(id),
+      FOREIGN KEY (brand_id) REFERENCES brands(id)
+    )`
+  },
+  {
+    name: 'cl_variants',
+    since: 18,
+    sql: `CREATE TABLE cl_variants (
+      item_id ${ID} NOT NULL PRIMARY KEY,
+      model_id ${ID} NOT NULL,
+      size ${WORD} NOT NULL,
+      color_id ${ID} NOT NULL DEFAULT '',
+      created_at ${WHEN} NOT NULL,
+      UNIQUE KEY cl_variants_cell (model_id, size, color_id),
+      FOREIGN KEY (item_id) REFERENCES items(id),
+      FOREIGN KEY (model_id) REFERENCES cl_models(id)
+    )`
+  }
+  // ===== end 18 · CLOTHING =====
 ];
 
 const refuse = (message: string) => `SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = '${message}'`;
