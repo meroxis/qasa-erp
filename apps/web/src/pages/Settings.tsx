@@ -1,3 +1,4 @@
+import { FeatureAccountsCard } from '../industry/FeatureAccountsCard.tsx';
 import { useContext, useEffect, useRef, useState } from 'react';
 import { DEFAULT_AMOUNTS_SHOW, formatAmount, htmlLang, MONTHS, rateFromX100, todayIso, toWesternDigits, type AmountsShow, type DigitStyle, type Lang, type Names, type PostingAccounts } from '@qasa/core';
 import {
@@ -223,7 +224,7 @@ function NetworkSection() {
 function SettingsSectionContent({ id, admin }: { id: string; admin: boolean }) {
   switch (id) {
     case 'company':
-      return <><CompanyDetailsCard /><PostingAccountsCard /></>;
+      return <><CompanyDetailsCard /><PostingAccountsCard /><FeatureAccountsCard /></>;
     case 'periods':
       return <PeriodsSettings />;
     case 'sales':

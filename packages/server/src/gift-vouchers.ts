@@ -7,6 +7,7 @@ import { loadAccounts } from './accounts.ts';
 import { readSetting } from './settings.ts';
 import { createJournalEntry, postVoucherNow, reverseEntryInternal } from './journal.ts';
 import { transaction } from './db.ts';
+import { featureAccount } from './feature-accounts.ts';
 
 /**
  * Gift vouchers (2.0, the till): a customer buys a voucher at the till (cash into the shift's drawer), and whoever holds
@@ -57,17 +58,7 @@ export function newVoucherCode(): string {
 
 /** The liability account vouchers sold are kept in (see above). */
 export function giftAccount(db: Db, user: string): string {
-  const accounts = loadAccounts(db);
-  const postable = (code: string) => accounts.some((a) => a.code === code && a.postable);
-  const chosen = readSetting(db, 'gift_voucher_account');
-  if (chosen && postable(chosen)) return chosen;
-  if (postable(GIFT_ACCOUNT)) return GIFT_ACCOUNT;
-  if (accounts.some((a) => a.code === GIFT_ACCOUNT) || !accounts.some((a) => a.code === '26')
-    || db.prepare('SELECT 1 FROM entry_lines WHERE account_code = ? LIMIT 1').get('26')) throw conflict('gv_account_missing');
-  db.prepare('INSERT INTO accounts (code, name_ar, name_en, name_ku, "system", created_at) VALUES (?, ?, ?, ?, 1, ?)')
-    .run(GIFT_ACCOUNT, GIFT_NAMES.ar, GIFT_NAMES.en, GIFT_NAMES.ku, new Date().toISOString());
-  audit(db, user, 'create', 'account', GIFT_ACCOUNT, { name: GIFT_NAMES, standard: true });
-  return GIFT_ACCOUNT;
+  return featureAccount(db, 'giftVouchers', user, GIFT_NAMES);
 }
 
 /**

@@ -118,3 +118,17 @@ describe("a gift voucher's own entries", () => {
     expect((await ok('GET', `/api/brief/day-close?date=${today}`)).giftExpired).toEqual({ count: 0, amount: 0 });
   });
 });
+
+describe('an account of the same code the company made itself (accounting review #3)', () => {
+  it('is never taken by a feature: the accountant chooses one, and no customer or supplier is put on a feature account', async () => {
+    expect((await call('POST', '/api/accounts', { parentCode: '26', code: '263', name: { ar: 'إيجار مستحق', en: 'Rent payable', ku: 'کرێ' } })).statusCode).toBe(201);
+    const shift = await openShift();
+    expect((await call('POST', `/api/pos/shifts/${shift.id}/gift-vouchers`, { amount: 10_000 })).json()).toMatchObject({ error: 'gv_account_missing' });
+    expect(bal('263')).toBe(0);
+    expect((await call('POST', '/api/accounts', { parentCode: '26', code: '269', name: { ar: 'قسائم', en: 'Vouchers', ku: 'کوپۆن' } })).statusCode).toBe(201);
+    expect((await call('PUT', '/api/feature-accounts/giftVouchers', { accountCode: '269' })).statusCode).toBe(200);
+    expect((await call('POST', `/api/pos/shifts/${shift.id}/gift-vouchers`, { amount: 10_000 })).statusCode).toBe(201);
+    expect(bal('269')).toBe(-10_000);
+    expect((await call('POST', '/api/parties', { type: 'supplier', name: 'Landlord', accountCode: '269' })).json()).toMatchObject({ details: [{ code: 'account_feature' }] });
+  });
+});

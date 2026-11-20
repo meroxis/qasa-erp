@@ -16,6 +16,7 @@ import { addStockMove, stockOf } from './items.ts';
 import { seesBooks, type Actor } from './auth.ts';
 import type { ApiExtension, ApiRequest } from './routes.ts';
 import { onceOnly } from './idempotency.ts';
+import { featureAccount } from './feature-accounts.ts';
 
 /**
  * Gold and jewellery shops (goldShop; Starter, Pro and Business).
@@ -60,23 +61,9 @@ const nowIso = () => new Date().toISOString();
 
 // ——— accounts ———
 
-/** A standard account made the first time it is needed (as banking makes 162), unless the accountant chose another. */
-function standardAccount(db: Db, user: string, setting: string, code: string, parent: string, names: Names): string {
-  const chosen = readSetting(db, setting);
-  const accounts = loadAccounts(db);
-  const postable = (c: string) => accounts.some((a) => a.code === c && a.postable);
-  if (chosen && postable(chosen)) return chosen;
-  if (postable(code)) return code;
-  if (accounts.some((a) => a.code === code) || !accounts.some((a) => a.code === parent)) throw conflict('gold_account_missing', { code });
-  if (db.prepare('SELECT 1 FROM entry_lines WHERE account_code = ? LIMIT 1').get(parent)) throw conflict('gold_account_missing', { code });
-  db.prepare('INSERT INTO accounts (code, name_ar, name_en, name_ku, "system", created_at) VALUES (?, ?, ?, ?, 1, ?)')
-    .run(code, names.ar, names.en, names.ku, nowIso());
-  audit(db, user, 'create', 'account', code, { name: names, standard: true });
-  return code;
-}
 
-export const oldGoldAccount = (db: Db, user: string): string => standardAccount(db, user, 'gold_scrap_account', OLD_GOLD_ACCOUNT, '137', OLD_GOLD_NAMES);
-export const goldOwedAccount = (db: Db, user: string): string => standardAccount(db, user, 'gold_owed_account', GOLD_OWED_ACCOUNT, '26', GOLD_OWED_NAMES);
+export const oldGoldAccount = (db: Db, user: string): string => featureAccount(db, 'oldGold', user, OLD_GOLD_NAMES);
+export const goldOwedAccount = (db: Db, user: string): string => featureAccount(db, 'goldOwed', user, GOLD_OWED_NAMES);
 
 function firstPostableUnder(db: Db, root: string): string {
   const a = loadAccounts(db).filter((x) => x.postable && x.code.startsWith(root)).sort((x, y) => x.code.localeCompare(y.code))[0];

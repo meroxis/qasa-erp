@@ -29,6 +29,7 @@ import { clothingApi } from './clothing.ts';
 import { slowStockApi } from './slow-stock.ts';
 import { shelfLabelsApi } from './shelf-labels.ts';
 import { posTillsApi } from './pos-tills.ts';
+import { featureAccountsApi } from './feature-accounts.ts';
 import { tillRulesApi } from './till-rules.ts';
 import { wholesaleApi } from './wholesale.ts';
 import { consignmentApi } from './consignment.ts';
@@ -43,4 +44,4 @@ import { dailySuppliersApi } from './daily-suppliers.ts';
  * edition, the website demo included, behind the same sign-in, permission and same-site checks as the rest of the API.
  */
 export const BUILT_IN_FEATURES: readonly ApiExtension[] = [posApi, mediaApi, quotesApi, activationApi, briefApi, fxApi, verifyApi, usageApi, branchesApi, bankingApi, assetsApi, adjustmentsApi, purchasingApi, pricesApi, printProfileApi, batchesApi, categoriesApi, brandsApi, outboxApi, dayCloseApi, loyaltyApi, quickVouchersApi, stockCorrectionApi,
-  expensesApi, fuelApi, slowStockApi, shelfLabelsApi, posTillsApi, tillRulesApi, consignmentApi, offersApi, goldApi, wholesaleApi, deliveryApi, debtRemindersApi, priceCheckerApi, dailySuppliersApi, clothingApi];
+  expensesApi, fuelApi, slowStockApi, shelfLabelsApi, posTillsApi, featureAccountsApi, tillRulesApi, consignmentApi, offersApi, goldApi, wholesaleApi, deliveryApi, debtRemindersApi, priceCheckerApi, dailySuppliersApi, clothingApi];

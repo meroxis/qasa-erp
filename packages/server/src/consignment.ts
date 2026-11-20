@@ -17,6 +17,7 @@ import { preparerOf } from './quick-vouchers.ts';
 import { seesBooks, type Actor } from './auth.ts';
 import type { ApiExtension, ApiRequest } from './routes.ts';
 import { onceOnly } from './idempotency.ts';
+import { featureAccount } from './feature-accounts.ts';
 import {
   addTaken, allocateOut, assertReversible, batchColumns, batchTracking, cancelBatchMoves, inboundBatch, lineBatchErrors, writeBatchMoves,
   type BatchError, type BatchMove
@@ -69,18 +70,7 @@ const nowIso = () => new Date().toISOString();
  * itself already holds entries (then it can't take a sub-account; the accountant chooses one: setting consignment_account).
  */
 export function consignmentAccount(db: Db, user: string): string {
-  const chosen = readSetting(db, 'consignment_account');
-  const accounts = loadAccounts(db);
-  const postable = (code: string) => accounts.some((a) => a.code === code && a.postable);
-  if (chosen && postable(chosen)) return chosen;
-  if (postable(CONSIGNMENT_HELD)) return CONSIGNMENT_HELD;
-  if (accounts.some((a) => a.code === CONSIGNMENT_HELD)) throw conflict('cs_account_missing');
-  if (!accounts.some((a) => a.code === '26')) throw conflict('cs_account_missing');
-  if (db.prepare('SELECT 1 FROM entry_lines WHERE account_code = ? LIMIT 1').get('26')) throw conflict('cs_account_missing');
-  db.prepare('INSERT INTO accounts (code, name_ar, name_en, name_ku, "system", created_at) VALUES (?, ?, ?, ?, 1, ?)')
-    .run(CONSIGNMENT_HELD, HELD_NAMES.ar, HELD_NAMES.en, HELD_NAMES.ku, nowIso());
-  audit(db, user, 'create', 'account', CONSIGNMENT_HELD, { name: HELD_NAMES, standard: true });
-  return CONSIGNMENT_HELD;
+  return featureAccount(db, 'consignment', user, HELD_NAMES);
 }
 
 /** The first postable account at or under `root` (other expenses 39, other revenue 49): exchange differences. */

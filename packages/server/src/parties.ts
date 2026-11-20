@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { isLang, isMinorAmount, normalizeForSearch, type CurrencyCode, type Lang } from '@qasa/core';
 import type { Db } from './db.ts';
+import { featureAccountCodes } from './feature-accounts.ts';
 import { nextSequence, transaction } from './db.ts';
 import { audit } from './audit.ts';
 import { conflict, invalid, notFound } from './errors.ts';
@@ -227,6 +228,8 @@ function assertInput(db: Db, type: PartyType, input: PartyInput, accountCode: st
   if (!input.name?.trim()) errors.push({ code: 'name_required' });
   const account = loadAccounts(db).find((a) => a.code === accountCode);
   if (!account || !accountCode.startsWith(ACCOUNT_ROOT[type])) errors.push({ code: 'account_invalid' });
+  // 2.0 (accounting review #3): never an account a feature posts to (gift vouchers, gold owed, consignment…)
+  else if (featureAccountCodes(db).has(accountCode)) errors.push({ code: 'account_feature' });
   else if (!account.postable) errors.push({ code: 'account_not_postable' });
   if (input.creditLimit !== undefined && input.creditLimit !== null && (!isMinorAmount(input.creditLimit) || input.creditLimit < 0)) {
     errors.push({ code: 'credit_limit_invalid' });
