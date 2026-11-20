@@ -472,7 +472,11 @@ export interface Me {
    * seesCost, seesBooks (1.4): false for someone the server sends no cost (purchase prices, stock value, a sale's cost)
    * or no books and profit to, a cashier for one; an older server leaves them out (everything is sent).
    */
-  user: { id: string | null; name: string; username: string; roles: Role[]; permissions: Permission[]; branchLimited?: boolean; seesCost?: boolean; seesBooks?: boolean } | null;
+  user: {
+    id: string | null; name: string; username: string; roles: Role[]; permissions: Permission[]; branchLimited?: boolean; seesCost?: boolean; seesBooks?: boolean;
+    /** 2.0 (an admin): an admin's password was reset with Windows Hello since an admin last looked */
+    resetNotice?: { at: string; username: string; windowsUser: string } | null;
+  } | null;
 }
 
 export interface UserView {

@@ -3,7 +3,7 @@ import type { FastifyInstance } from 'fastify';
 import { openDatabase, type Db } from './db.ts';
 import { buildApp } from './app.ts';
 import {
-  adminUsernames, auditUnconfirmedReset, hasRecoveryCode, login, makeRecoveryCode, normalizeRecoveryCode, recoverAdminWithCode, resetAdminOnThisPc,
+  adminResetNotice, adminUsernames, auditUnconfirmedReset, hasRecoveryCode, setHelloResetAccount, login, makeRecoveryCode, normalizeRecoveryCode, recoverAdminWithCode, resetAdminOnThisPc,
   resetLoginThrottle
 } from './auth.ts';
 import { readSetting } from './settings.ts';
@@ -14,7 +14,7 @@ let ownerId: string;
 
 const APP = { 'x-qasa-client': '1' };
 type Headers = Record<string, string>;
-const req = (method: 'GET' | 'POST' | 'PUT', url: string, body?: unknown, headers: Headers = {}) =>
+const req = (method: 'GET' | 'POST' | 'PUT' | 'DELETE', url: string, body?: unknown, headers: Headers = {}) =>
   app.inject({ method, url, headers: { ...APP, ...headers }, ...(body !== undefined ? { payload: body as object } : {}) });
 
 async function signIn(username: string, password: string): Promise<Headers> {
@@ -121,7 +121,7 @@ describe('admin recovery code', () => {
     await expect(login(db, 'admin', 'new-owner-pass', undefined, 'net:10.0.0.7')).resolves.toBeTruthy();
     await lockOut().catch(() => undefined);
     for (let i = 0; i < 5; i++) await login(db, 'admin', 'wrong-password', undefined, 'net:10.0.0.8').catch(() => undefined);
-    await resetAdminOnThisPc(db, { username: 'admin', password: 'newer-owner-pass', windowsUser: 'PC\\Mer', computer: 'PC', method: 'windows_hello' });
+    await resetAdminOnThisPc(db, { username: 'admin', password: 'newer-owner-pass', windowsUser: 'PC\\Mer', computer: 'PC', method: 'windows_hello', windowsAdmin: true });
     await expect(login(db, 'admin', 'newer-owner-pass', undefined, 'net:10.0.0.8')).resolves.toBeTruthy();
   });
 
@@ -153,16 +153,37 @@ describe('reset on this PC (Windows app only)', () => {
     await signInOn();
     const admin = await signIn('admin', 'owner-pass-1');
     expect(adminUsernames(db)).toEqual(['admin']);
-    await resetAdminOnThisPc(db, { username: 'admin', password: 'from-windows-1', windowsUser: 'OFFICE-PC\\Raz', computer: 'OFFICE-PC', method: 'windows_hello' });
+    await resetAdminOnThisPc(db, { username: 'admin', password: 'from-windows-1', windowsUser: 'OFFICE-PC\\Raz', computer: 'OFFICE-PC', method: 'windows_hello', windowsAdmin: true });
     expect((await req('GET', '/api/auth/me', undefined, admin)).json().user).toBeNull();
     await signIn('admin', 'from-windows-1');
     const [row] = audits('password_recovered');
     expect(row!.user_name).toBe('Windows: OFFICE-PC\\Raz');
     expect(JSON.parse(row!.details!)).toMatchObject({ username: 'admin', method: 'windows_hello', windowsUser: 'OFFICE-PC\\Raz', computer: 'OFFICE-PC' });
     // never for a user who is not an admin
-    await expect(resetAdminOnThisPc(db, { username: 'mer', password: 'from-windows-1', windowsUser: 'x', computer: 'y', method: 'windows_hello' }))
+    await expect(resetAdminOnThisPc(db, { username: 'mer', password: 'from-windows-1', windowsUser: 'x', computer: 'y', method: 'windows_hello', windowsAdmin: true }))
       .rejects.toMatchObject({ code: 'validation' });
     await signIn('mer', 'mer-pass-1');
+  });
+
+  it('is for the Windows account an admin bound it to, else only a Windows administrator; admins are told (security review #4)', async () => {
+    await signInOn();
+    const base = { username: 'admin', password: 'from-windows-1', windowsUser: 'OFFICE-PC\\Las', computer: 'OFFICE-PC', method: 'windows_hello' as const };
+    // nothing bound: a Windows user who is not an administrator of the PC (a cashier's own login) is refused
+    await expect(resetAdminOnThisPc(db, { ...base, windowsSid: 'S-1-5-21-1-2-3-1002', windowsAdmin: false }))
+      .rejects.toMatchObject({ details: [{ code: 'recovery_windows_not_admin' }] });
+    // bound to the owner's Windows account: another account is refused, even an administrator
+    setHelloResetAccount(db, { sid: 'S-1-5-21-1-2-3-1001', account: 'OFFICE-PC\\Mer' }, 'Admin');
+    await expect(resetAdminOnThisPc(db, { ...base, windowsSid: 'S-1-5-21-1-2-3-1002', windowsAdmin: true }))
+      .rejects.toMatchObject({ details: [{ code: 'recovery_windows_account' }] });
+    expect(audits('recovery_failed').map((r) => JSON.parse(r.details!).outcome)).toEqual(['windows_not_administrator', 'windows_account_not_bound']);
+    expect(adminResetNotice(db)).toBeNull();
+    // the bound account resets it; the admins see a notice at their next sign-in until one clears it
+    await resetAdminOnThisPc(db, { ...base, windowsUser: 'OFFICE-PC\\Mer', windowsSid: 'S-1-5-21-1-2-3-1001', windowsAdmin: false });
+    const admin = await signIn('admin', 'from-windows-1');
+    expect((await req('GET', '/api/auth/me', undefined, admin)).json().user.resetNotice).toMatchObject({ username: 'admin', windowsUser: 'OFFICE-PC\\Mer' });
+    expect((await req('DELETE', '/api/auth/reset-notice', undefined, admin)).statusCode).toBe(200);
+    expect((await req('GET', '/api/auth/me', undefined, admin)).json().user.resetNotice).toBeNull();
+    expect(() => setHelloResetAccount(db, { sid: 'not-a-sid', account: 'x' }, 'Admin')).toThrow();
   });
 
   it('takes Windows Hello only: a one-click confirmation is refused, and every try is audited', async () => {

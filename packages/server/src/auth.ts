@@ -422,7 +422,7 @@ function auditThisPcAttempt(
  * and PC), for which admin, and how it ended.
  */
 export async function resetAdminOnThisPc(
-  db: Db, input: { username: string; password: string; windowsUser: string; computer: string; method: ThisPcResetMethod }
+  db: Db, input: { username: string; password: string; windowsUser: string; computer: string; method: ThisPcResetMethod; windowsSid?: string; windowsAdmin?: boolean }
 ): Promise<void> {
   const row = activeAdmin(db, String(input.username ?? '').trim());
   if (input.method !== 'windows_hello') {
@@ -439,11 +439,38 @@ export async function resetAdminOnThisPc(
     auditThisPcAttempt(db, input, null, { method: input.method, outcome: 'not_admin' });
     throw invalid([{ code: 'recovery_not_admin' }]);
   }
+  // 2.0 (security review): Windows Hello proves only "the signed-in Windows user", who may be a cashier with their own
+  // Windows login. The reset is for the Windows account an admin bound it to (Settings → Users), or, with none bound,
+  // for a member of this PC's Administrators group only
+  const bound = helloResetAccount(db);
+  const sid = String(input.windowsSid ?? '');
+  if (input.method === 'windows_hello' && (bound ? sid !== bound.sid : input.windowsAdmin !== true)) {
+    auditThisPcAttempt(db, input, row?.id ?? null, { method: input.method, outcome: bound ? 'windows_account_not_bound' : 'windows_not_administrator', windowsSid: sid.slice(0, 200) });
+    throw invalid([{ code: bound ? 'recovery_windows_account' : 'recovery_windows_not_admin' }]);
+  }
   const hash = await hashPassword(input.password);
   const windowsUser = String(input.windowsUser).slice(0, 100);
   transaction(db, () => {
     replaceAdminPassword(db, row, hash, `Windows: ${windowsUser}`, { method: input.method, windowsUser, computer: String(input.computer).slice(0, 100) });
+    // the admins hear of it when they next sign in (until one of them says they have seen it)
+    writeSetting(db, 'admin_reset_notice', JSON.stringify({ at: new Date().toISOString(), username: row.username, windowsUser, method: input.method }));
   });
+}
+
+/** The Windows account an admin bound the Windows Hello reset to (SID and its name as shown), or null. */
+export function helloResetAccount(db: Db): { sid: string; account: string; at: string } | null {
+  try { const v = readSetting(db, 'hello_reset_account'); return v ? JSON.parse(v) as { sid: string; account: string; at: string } : null; } catch { return null; }
+}
+
+export function setHelloResetAccount(db: Db, value: { sid: string; account: string } | null, by: string): void {
+  if (value && !/^S-1-\d{1,3}(-\d{1,12}){1,15}$/.test(value.sid)) throw invalid([{ code: 'windows_sid_invalid' }]);
+  writeSetting(db, 'hello_reset_account', value ? JSON.stringify({ sid: value.sid, account: value.account.slice(0, 100), at: new Date().toISOString() }) : '');
+  audit(db, by, value ? 'hello_reset_bound' : 'hello_reset_unbound', 'user', null, value ? { account: value.account.slice(0, 100) } : {});
+}
+
+/** A password reset done with Windows Hello since an admin last looked (shown to admins at sign-in). */
+export function adminResetNotice(db: Db): { at: string; username: string; windowsUser: string } | null {
+  try { const v = readSetting(db, 'admin_reset_notice'); return v ? JSON.parse(v) as { at: string; username: string; windowsUser: string } : null; } catch { return null; }
 }
 
 /**

@@ -33,7 +33,7 @@ describe('File → Reset admin password (server process side)', () => {
   });
 
   it('resets as the Windows user on this PC, and says plainly what went wrong otherwise', async () => {
-    expect(await handleRecoverRequest(db, { mode: 'windows', username: owner().username, password: 'win-pass-33', windowsUser: 'OFFICE\\Raz', computer: 'OFFICE', method: 'windows_hello' }))
+    expect(await handleRecoverRequest(db, { mode: 'windows', username: owner().username, password: 'win-pass-33', windowsUser: 'OFFICE\\Raz', computer: 'OFFICE', method: 'windows_hello', windowsAdmin: true }))
       .toEqual({ ok: true });
     await expect(login(db, owner().username, 'win-pass-33')).resolves.toBeTruthy();
     expect(await handleRecoverRequest(db, { mode: 'windows', username: 'nobody', password: 'win-pass-33', windowsUser: 'x', computer: 'y', method: 'windows_hello' }))
@@ -46,7 +46,7 @@ describe('File → Reset admin password (server process side)', () => {
   });
 
   it('takes nothing it does not expect: no other mode, no missing or oversized field, no unknown confirmation', () => {
-    const ok = { mode: 'windows', username: 'admin', password: 'win-pass-33', windowsUser: 'PC\\Mer', computer: 'PC', method: 'windows_hello' };
+    const ok = { mode: 'windows', username: 'admin', password: 'win-pass-33', windowsUser: 'PC\\Mer', computer: 'PC', method: 'windows_hello', windowsSid: '', windowsAdmin: false };
     expect(parseRecoverRequest(ok)).toEqual(ok);
     expect(parseRecoverRequest({ ...ok, mode: 'trust_me' })).toBeNull();
     expect(parseRecoverRequest({ ...ok, method: 'none' })).toBeNull();
@@ -90,6 +90,9 @@ describe('File → Reset admin password (server process side)', () => {
 describe('confirming with Windows (main process side)', () => {
   it('passes only when Windows Hello says Verified', () => {
     expect(parseHelloOutput('result:Verified\r\n')).toEqual({ kind: 'verified' });
+    // with who confirmed: the account's SID and whether it is a Windows administrator
+    expect(parseHelloOutput('sid:S-1-5-21-11-22-33-1001\r\nadmin:False\r\nresult:Verified')).toEqual({ kind: 'verified', sid: 'S-1-5-21-11-22-33-1001', windowsAdmin: false });
+    expect(parseHelloOutput('sid:not-a-sid\nadmin:maybe\nresult:Verified')).toEqual({ kind: 'verified' });
     expect(parseHelloOutput('result:Canceled')).toEqual({ kind: 'cancelled' });
     expect(parseHelloOutput('unavailable:DeviceNotPresent')).toEqual({ kind: 'unavailable', why: 'DeviceNotPresent' });
     expect(parseHelloOutput('unavailable:NotConfiguredForUser')).toEqual({ kind: 'unavailable', why: 'NotConfiguredForUser' });
@@ -122,7 +125,7 @@ describe('confirming with Windows (main process side)', () => {
     };
     const verified = await run({ kind: 'verified' });
     expect(verified.answer).toEqual({ ok: true });
-    expect(verified.asked).toEqual([{ mode: 'windows', ...input, method: 'windows_hello' }]);
+    expect(verified.asked).toEqual([{ mode: 'windows', ...input, method: 'windows_hello', windowsSid: '', windowsAdmin: false }]);
     // Windows Hello not set up here: no reset (the recovery code is the way), but the server writes the try down
     const none = await run({ kind: 'unavailable', why: 'NotConfiguredForUser' });
     expect(none.answer).toEqual({ ok: false, error: 'hello_unavailable' });

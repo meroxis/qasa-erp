@@ -41,6 +41,8 @@ contextBridge.exposeInMainWorld('qasaDesktop', {
     get: () => ipcRenderer.invoke('app:closeAsk') as Promise<unknown>,
     set: (on: boolean) => ipcRenderer.invoke('app:closeAsk:set', on === true) as Promise<unknown>
   },
+  /** 2.0: the signed-in Windows account (SID and PC\\name), to bind the Windows Hello password reset to it. */
+  windowsAccount: () => ipcRenderer.invoke('app:windowsAccount') as Promise<unknown>,
   /** This app can keep several companies (Settings → Companies; the routes are on its own server, admins only). */
   companies: true,
   /**

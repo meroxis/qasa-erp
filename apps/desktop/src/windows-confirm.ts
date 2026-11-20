@@ -12,7 +12,9 @@ const { dirname, join } = win32;
  */
 
 export type HelloResult =
-  | { kind: 'verified' }
+  /** with who Windows says confirmed: the account's SID, and whether it is in the PC's Administrators group (counted
+   *  even while it runs without elevation) */
+  | { kind: 'verified'; sid?: string; windowsAdmin?: boolean }
   | { kind: 'cancelled' }
   | { kind: 'unavailable'; why: string }
   | { kind: 'failed'; why: string };
@@ -21,7 +23,7 @@ export type HelloResult =
  * Windows PowerShell 5.1 (on every Windows 10 and 11): WinRT's UserConsentVerifier, awaited through AsTask. The
  * message comes in through an environment variable, never inside the script text.
  */
-export const HELLO_SCRIPT = [
+const HELLO_SCRIPT_PARTS = [
   "$ErrorActionPreference = 'Stop'",
   'Add-Type -AssemblyName System.Runtime.WindowsRuntime',
   '$null = [Windows.Security.Credentials.UI.UserConsentVerifier, Windows.Security.Credentials.UI, ContentType = WindowsRuntime]',
@@ -30,13 +32,42 @@ export const HELLO_SCRIPT = [
   '$available = Wait-Op ([Windows.Security.Credentials.UI.UserConsentVerifier]::CheckAvailabilityAsync()) ([Windows.Security.Credentials.UI.UserConsentVerifierAvailability])',
   "if ([string]$available -ne 'Available') { Write-Output ('unavailable:' + $available); exit 0 }",
   '$result = Wait-Op ([Windows.Security.Credentials.UI.UserConsentVerifier]::RequestVerificationAsync([string]$env:QASA_HELLO_MESSAGE)) ([Windows.Security.Credentials.UI.UserConsentVerificationResult])',
+  // who confirmed: the signed-in account's SID, and Administrators (S-1-5-32-544) among its groups (whoami lists it
+  // even as "deny only" while the app runs unelevated); whoami.exe by its full path, as PowerShell itself is
+  'IDENTITY',
   "Write-Output ('result:' + $result)"
+];
+
+/** Prints the signed-in Windows account: its SID and whether it is a local administrator. */
+export const IDENTITY_LINES = [
+  "Write-Output ('sid:' + [Security.Principal.WindowsIdentity]::GetCurrent().User.Value)",
+  "$groups = & (Join-Path $env:SystemRoot 'System32\\whoami.exe') /groups /fo csv /nh",
+  "Write-Output ('admin:' + [bool](@($groups) -match 'S-1-5-32-544'))"
 ].join('; ');
+/** the identity alone (to bind the reset to this Windows account), no Windows Hello */
+export const IDENTITY_SCRIPT = ["$ErrorActionPreference = 'Stop'", IDENTITY_LINES].join('; ');
+export const HELLO_SCRIPT = HELLO_SCRIPT_PARTS.map((l) => (l === 'IDENTITY' ? IDENTITY_LINES : l)).join('; ');
+
+/** The SID and Administrators lines the scripts print (null where missing or malformed). */
+export function parseIdentity(output: string): { sid: string | null; windowsAdmin: boolean | null } {
+  let sid: string | null = null; let windowsAdmin: boolean | null = null;
+  for (const raw of output.split(/\r?\n/)) {
+    const line = raw.trim();
+    const s = /^sid:(S-1-\d{1,3}(?:-\d{1,12}){1,15})$/.exec(line);
+    if (s) sid = s[1]!;
+    const a = /^admin:(True|False)$/.exec(line);
+    if (a) windowsAdmin = a[1] === 'True';
+  }
+  return { sid, windowsAdmin };
+}
 
 /** What the script printed, as a result. Anything unexpected is a failure, never a pass. */
 export function parseHelloOutput(output: string): HelloResult {
   const line = output.trim().split(/\r?\n/).pop()?.trim() ?? '';
-  if (line === 'result:Verified') return { kind: 'verified' };
+  if (line === 'result:Verified') {
+    const who = parseIdentity(output);
+    return { kind: 'verified', ...(who.sid ? { sid: who.sid } : {}), ...(who.windowsAdmin !== null ? { windowsAdmin: who.windowsAdmin } : {}) };
+  }
   if (line === 'result:Canceled') return { kind: 'cancelled' };
   const unavailable = /^unavailable:(\w{1,40})$/.exec(line);
   // not set up for this user, or no PIN / sensor: Hello can't confirm anyone here
@@ -86,6 +117,17 @@ export async function confirmWithHello(message: string, run: RunScript = runPowe
   }
 }
 
+/** This PC's signed-in Windows account (SID, Administrators), for binding the reset to it; null when it can't be read. */
+export async function windowsIdentity(run: RunScript = runPowerShell): Promise<{ sid: string; windowsAdmin: boolean } | null> {
+  if (process.platform !== 'win32' && run === runPowerShell) return null;
+  try {
+    const who = parseIdentity(await run(IDENTITY_SCRIPT, {}));
+    return who.sid ? { sid: who.sid, windowsAdmin: who.windowsAdmin === true } : null;
+  } catch {
+    return null;
+  }
+}
+
 export type ResetAnswer = { ok: boolean; error?: string; retryAfterSeconds?: number };
 
 /**
@@ -100,7 +142,9 @@ export async function resetWithWindows(
 ): Promise<ResetAnswer> {
   const hello = await confirm();
   const base = { username: input.username, windowsUser: input.windowsUser, computer: input.computer };
-  if (hello.kind === 'verified') return ask({ mode: 'windows', ...base, password: input.password, method: 'windows_hello' });
+  if (hello.kind === 'verified') {
+    return ask({ mode: 'windows', ...base, password: input.password, method: 'windows_hello', windowsSid: hello.sid ?? '', windowsAdmin: hello.windowsAdmin === true });
+  }
   const outcome = hello.kind === 'unavailable' ? 'hello_unavailable' : hello.kind === 'cancelled' ? 'cancelled' : 'windows_failed';
   await ask({ mode: 'windows_unconfirmed', ...base, outcome }).catch(() => undefined);
   return { ok: false, error: outcome };

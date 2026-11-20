@@ -7,6 +7,7 @@ import { AppError, conflict, invalid } from './errors.ts';
 import {
   changeOwnPassword, createUser, hasRecoveryCode, issueRecoveryCode, listUsers, login, logout, ownerActor, ROLES, separateDuties, SESSION_COOKIE, sessionActor, sessionCookie,
   seesBooks, seesCost, setPassword, setSeparateDuties, setSignInRequired, signInRequired, updateUser, type Actor, type Permission
+, adminResetNotice, helloResetAccount, setHelloResetAccount
 } from './auth.ts';
 import { checkCostRequest, hideCost, ownVouchersOnly } from './cost-view.ts';
 import { createAccount, deleteAccount, listAccounts, renameAccount } from './accounts.ts';
@@ -16,8 +17,8 @@ import {
 } from './journal.ts';
 import { finalAccountsReport, statementReport, trialBalanceReport } from './reports.ts';
 import { reorderList } from './reorder.ts';
-import { getSettings, lockPeriod, lockedPeriods, unlockPeriod, updateSettings } from './settings.ts';
-import { listAudit } from './audit.ts';
+import { getSettings, lockPeriod, lockedPeriods, unlockPeriod, updateSettings, writeSetting } from './settings.ts';
+import { audit, listAudit } from './audit.ts';
 import { createParty, deleteParty, getParty, isForeignKeyFailure, listParties, partyStatement, partyTotals, updateParty } from './parties.ts';
 import {
   createItem, createWarehouse, deleteItem, findByBarcode, getItem, itemMoves, itemStock, listItems, listWarehouses, updateItem, updateWarehouse
@@ -334,7 +335,7 @@ export function apiRoutes(db: Db, options: { demo?: boolean; extensions?: readon
     'POST /api/invoices/:id/returns': (req) => invoicePermission(kindOf(idOf(req))),
     'POST /api/stock-docs': 'stock', 'PUT /api/stock-docs/:id': 'stock', 'DELETE /api/stock-docs/:id': 'stock',
     'POST /api/stock-docs/:id/post': 'stock', 'POST /api/stock-docs/:id/cancel': 'stock',
-    'GET /api/audit': 'admin', 'GET /api/users': 'admin', 'GET /api/auth/recovery-code': 'admin'
+    'GET /api/audit': 'admin', 'GET /api/users': 'admin', 'GET /api/auth/recovery-code': 'admin', 'GET /api/auth/hello-reset': 'admin'
   };
   for (const extension of [...BUILT_IN_FEATURES, ...(options.extensions ?? [])]) Object.assign(RULES, extension.rules ?? {});
   const PUBLIC = new Set(['GET /api/health', 'GET /api/auth/me', 'POST /api/auth/login', 'POST /api/auth/logout']);
@@ -704,9 +705,21 @@ export function apiRoutes(db: Db, options: { demo?: boolean; extensions?: readon
       // limited to some branches: the company's own books (trial balance, final accounts, statements…) are not for them
       branchLimited: isBranchLimited(db, actor),
       // 1.4: whether cost (purchase prices, stock value, a sale's cost) and the books and their reports are for them
-      seesCost: seesCost(actor), seesBooks: seesBooks(actor)
+      seesCost: seesCost(actor), seesBooks: seesBooks(actor),
+      // 2.0: an admin's password was reset with Windows Hello since an admin last looked
+      ...(actor.permissions.includes('admin') ? { resetNotice: adminResetNotice(db) } : {})
     } : null
   });
+  // 2.0: the Windows account the Windows Hello password reset is bound to (an admin's, set from the Windows app)
+  app.get('/api/auth/hello-reset', async () => { const a = helloResetAccount(db); return a ? { bound: true, account: a.account, at: a.at } : { bound: false }; });
+  app.put('/api/auth/hello-reset', async (req) => {
+    notInDemo();
+    const body = parse(z.object({ sid: z.string().max(200), account: z.string().max(100) }), req.body);
+    setHelloResetAccount(db, body, actorOf(req).name);
+    return { bound: true, account: body.account };
+  });
+  app.delete('/api/auth/hello-reset', async (req) => { notInDemo(); setHelloResetAccount(db, null, actorOf(req).name); return { bound: false }; });
+  app.delete('/api/auth/reset-notice', async (req) => { writeSetting(db, 'admin_reset_notice', ''); audit(db, actorOf(req).name, 'clear', 'admin_reset_notice', null, {}); return { ok: true }; });
   app.get('/api/auth/me', async (req) => me((req as ApiRequest & { actor?: Actor | null }).actor ?? null));
   app.post('/api/auth/login', async (req, reply) => {
     notInDemo();

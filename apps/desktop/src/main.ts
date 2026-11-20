@@ -12,7 +12,7 @@ import { appendFileSync, closeSync, existsSync, fstatSync, mkdirSync, openSync, 
 import { homedir, hostname, userInfo } from 'node:os';
 import { join } from 'node:path';
 import { Bridge } from './bridge.ts';
-import { confirmWithHello, resetWithWindows, windowsAccount, type ResetAnswer } from './windows-confirm.ts';
+import { confirmWithHello, resetWithWindows, windowsAccount, windowsIdentity, type ResetAnswer } from './windows-confirm.ts';
 import { companyDirOf, damagedFileChoices, isCompanyId, MAIN_COMPANY, readRegistry, writeRegistry, type DamagedChoice } from './companies.ts';
 import { guideUrl, isGuideUrl } from '@qasa/core';
 import { isAllowedExternal, refusedForLog } from './external-links.ts';
@@ -666,6 +666,13 @@ const openDrawer = drawerHandler({
   log
 });
 ipcMain.handle('till:drawer', (event) => openDrawer(event));
+// 2.0: Settings → Users binds the Windows Hello password reset to the Windows account signed in here (the page then
+// saves it through the admin-only /api/auth/hello-reset); only this PC's own window, never an office client
+ipcMain.handle('app:windowsAccount', async (event) => {
+  if (!invokedByAppPage(event) || remote) return null;
+  const who = await windowsIdentity();
+  return who ? { sid: who.sid, account: thisWindowsUser(), windowsAdmin: who.windowsAdmin } : null;
+});
 
 let customerWin: BrowserWindow | null = null;
 ipcMain.handle('till:customerDisplay', (event, open: unknown) => {

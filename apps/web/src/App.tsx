@@ -1,6 +1,6 @@
 import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ComponentType, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from 'react';
 import { APP_VERSION, DEFAULT_AMOUNTS_SHOW, htmlLang, isLang, posShown, type DigitStyle, type Lang } from '@qasa/core';
-import { api, currentUser, SIGNED_OUT_EVENT, type AccountView, type Me, type PlanStatus, type Settings as SettingsData } from './api.ts';
+import { api, currentUser, request, SIGNED_OUT_EVENT, type AccountView, type Me, type PlanStatus, type Settings as SettingsData } from './api.ts';
 import { buildHas, BusyBar, DataContext, DisplayContext, Icon, isDensity, isTheme, Logo, PageNavContext, ToastProvider, type Density, type PageNav, type Theme } from './components.tsx';
 import { I18nContext, isKey, makeI18n, useI18n, type Key } from './i18n.ts';
 import { closedPageAddress, href, useRoute } from './router.ts';
@@ -985,6 +985,12 @@ export function App() {
                   <div className="alert warn plan-banner no-print" style={{ marginBottom: 14 }}>
                     <span>{t('graceNote', { p: t(`plan_${plan.license.plan}`), d: i18n.date(plan.license.expires), g: i18n.date(plan.graceEnds) })}</span>
                     <a href={href('plans')}>{t('planLicense')}</a>
+                  </div>
+                )}
+                {isAdmin && me?.user?.resetNotice && (
+                  <div className="alert warn plan-banner no-print" role="alert" style={{ marginBottom: 14 }}>
+                    <span>{t('adminResetNotice', { u: me.user.resetNotice.username, w: me.user.resetNotice.windowsUser, d: i18n.dateTime(me.user.resetNotice.at) })}</span>
+                    <button type="button" className="btn btn-sm" onClick={() => void request('DELETE', '/api/auth/reset-notice').then(() => reloadMe())}>{t('tu_pinAlertSeen')}</button>
                   </div>
                 )}
                 {/* (the 0.1.8 grace notice for everyone at this PC; the others for admins, with their link to Plan & license) */}

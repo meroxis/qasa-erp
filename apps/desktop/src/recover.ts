@@ -15,7 +15,7 @@ export type UnconfirmedOutcome = (typeof UNCONFIRMED_OUTCOMES)[number];
 
 export type RecoverRequest =
   | { mode: 'code'; username: string; code: string; password: string; windowsUser: string }
-  | { mode: 'windows'; username: string; password: string; windowsUser: string; computer: string; method: 'windows_hello' }
+  | { mode: 'windows'; username: string; password: string; windowsUser: string; computer: string; method: 'windows_hello'; windowsSid: string; windowsAdmin: boolean }
   | { mode: 'windows_unconfirmed'; username: string; windowsUser: string; computer: string; outcome: UnconfirmedOutcome };
 
 export type RecoverAnswer = { ok: true; recoveryCode?: string } | { ok: false; error: string; retryAfterSeconds?: number };
@@ -43,7 +43,10 @@ export function parseRecoverRequest(value: unknown): RecoverRequest | null {
   if (r.mode === 'windows') {
     const computer = text(r.computer, 100);
     // Windows Hello only: a reset confirmed any other way is never taken
-    return computer && r.method === 'windows_hello' ? { mode: 'windows', username, password, windowsUser, computer, method: 'windows_hello' } : null;
+    const windowsSid = typeof r.windowsSid === 'string' && /^(S-1-\d{1,3}(-\d{1,12}){1,15})?$/.test(r.windowsSid) ? r.windowsSid : '';
+    return computer && r.method === 'windows_hello'
+      ? { mode: 'windows', username, password, windowsUser, computer, method: 'windows_hello', windowsSid, windowsAdmin: r.windowsAdmin === true }
+      : null;
   }
   return null;
 }
@@ -73,7 +76,11 @@ export async function handleRecoverRequest(db: Db | null, value: unknown): Promi
     }
     if (code === 'validation') {
       const first = (e.details as { code?: string }[] | null)?.[0]?.code;
-      return { ok: false, error: first === 'recovery_not_admin' ? 'not_admin' : first === 'password_too_short' ? 'password_short' : first === 'password_too_long' ? 'password_long' : 'invalid' };
+      return {
+        ok: false,
+        error: first === 'recovery_not_admin' ? 'not_admin' : first === 'password_too_short' ? 'password_short' : first === 'password_too_long' ? 'password_long'
+          : first === 'recovery_windows_account' ? 'windows_account' : first === 'recovery_windows_not_admin' ? 'windows_not_admin' : 'invalid'
+      };
     }
     return { ok: false, error: code === 'recovery_failed' ? 'recovery_failed' : 'error' };
   }
