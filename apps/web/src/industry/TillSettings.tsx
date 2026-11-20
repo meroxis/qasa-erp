@@ -6,7 +6,7 @@ import { tillsApi, type PosAccounts, type TillInput, type TillView } from './pos
 import { keepScalePrefixes } from './till.ts';
 
 /**
- * Settings → Sales and point of sale (2.0), for admins: the shop's named tills, the accounts card and wallet payments
+ * Settings → Tills and till rules (2.0; its own section since 2.0.0), for admins: the shop's named tills, the accounts card and wallet payments
  * go into (the till offers each once it has one), and the scale prefixes whose labels carry a price.
  */
 export function TillSettings({ admin }: { admin: boolean }) {

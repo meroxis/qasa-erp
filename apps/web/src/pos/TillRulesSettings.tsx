@@ -9,7 +9,7 @@ import { BAUDS, DEFAULT_SCALE, hexBytes, readScaleSettings, readWeight, serialHe
 import { MAX_PICTURE_FILE_BYTES, preparePicture } from '../industry/ItemImage.tsx';
 
 /**
- * Settings → Sales and point of sale (2.0): the till's rules an admin sets for every till (dinar rounding, a blind
+ * Settings → Tills and till rules (2.0; its own section since 2.0.0): the till's rules an admin sets for every till (dinar rounding, a blind
  * close, what needs a supervisor's PIN, the open-price item, the customer screen with its pictures and pairing, gift
  * vouchers), a supervisor's own PIN, and this PC's weighing scale. Every rule starts off.
  */
