@@ -7,10 +7,11 @@ import { COMPANY_TEXT } from '../i18n/companies.ts';
 vi.mock('react', () => ({ useState: <T,>(initial: T) => [initial, () => {}] }));
 vi.mock('../components.tsx', () => ({
   ErrorBox: 'ErrorBox', Icon: 'Icon', Modal: 'Modal', usePageNav: () => {}, useToast: () => () => {},
-  // an older answer could still say a company is not openable; every company on the PC opens
-  useLoad: () => ({ data: { current: 'main', limit: 1, canAdd: false, list: [
+  // an older answer could still say a company is not openable: only `waiting` (past the plan's limit) holds one back
+  useLoad: () => ({ data: { current: 'main', limit: 2, canAdd: false, list: [
     { id: 'main', name: 'Head office', createdAt: '2026-01-01T00:00:00Z', current: true },
-    { id: 'c2', name: 'Workshop', createdAt: '2026-02-01T00:00:00Z', current: false, openable: false }
+    { id: 'c2', name: 'Workshop', createdAt: '2026-02-01T00:00:00Z', current: false, openable: false },
+    { id: 'c3', name: 'Branch 3', createdAt: '2026-03-01T00:00:00Z', current: false, waiting: true }
   ] } })
 }));
 vi.mock('../i18n.ts', () => ({ useI18n: () => ({ t: (s: string) => s, int: String, date: String }) }));
@@ -25,11 +26,10 @@ function flatten(value: unknown): Node[] {
   return [node, ...flatten(node.props.children)];
 }
 
-it('never shows a company as waiting for a licence: every company opens, whatever the plan (no lock-out)', () => {
+it('opens every company within the plan, and shows one past it as waiting, not openable (security review #10)', () => {
   const nodes = flatten(Companies());
-  const open = nodes.find((n) => n.type === 'button' && JSON.stringify(n.props.children).includes('co_open'))!;
-  expect(open).toBeDefined();
-  expect(open.props.disabled).toBe(false);
-  expect(nodes.some((n) => n.type === 'span' && JSON.stringify(n.props.children ?? '').includes('co_waiting'))).toBe(false);
-  expect(Object.keys(COMPANY_TEXT).filter((k) => k.startsWith('co_waiting'))).toEqual([]);
+  const opens = nodes.filter((n) => n.type === 'button' && JSON.stringify(n.props.children).includes('co_open'));
+  expect(opens.map((b) => b.props.disabled)).toEqual([false, true]);
+  expect(nodes.filter((n) => n.type === 'span' && JSON.stringify(n.props.children ?? '').includes('co_waiting'))).toHaveLength(1);
+  expect(COMPANY_TEXT).toHaveProperty('co_waitingHint');
 });

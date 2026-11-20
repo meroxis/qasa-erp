@@ -221,7 +221,7 @@ export const TILL_UI_TEXT = {
   err_gv_income_account_missing: ['لا يوجد حساب إيرادات أخرى (49) لتحويل القسائم المنتهية إليه', 'There is no other-revenue account (49) to take expired vouchers into', 'هیچ هەژمارێکی داهاتی تر (49) نییە بۆ گواستنەوەی کوپۆنە بەسەرچووەکان'],
   err_entry_belongs_to_gift_voucher: ['هذا القيد لقسيمة هدية؛ يُعتمد أو يُرفض من هنا، ويُلغى من القسيمة نفسها', 'This entry belongs to a gift voucher: approve or reject it here, and cancel it from the voucher', 'ئەم قەیدە هی کوپۆنێکی دیارییە؛ لێرە پەسەند یان ڕەت دەکرێت و لە کوپۆنەکەوە هەڵدەوەشێتەوە'],
   err_entry_belongs_to_delivery_handover: ['هذا القيد لتسليم نقد سائق؛ يُعتمد أو يُرفض من هنا ولا يُغيَّر', "This entry is a driver's cash handover: it is approved or rejected here, never changed", 'ئەم قەیدە هی ڕادەستکردنی پارەی شۆفێرە؛ لێرە پەسەند یان ڕەت دەکرێت، هەرگیز ناگۆڕدرێت'],
-  fa_title: ['الحسابات التي تُرحِّل إليها الميزات', 'Accounts features post to', 'ئەو هەژمارانەی تایبەتمەندییەکان تۆماری تێدا دەکەن'],
+  fa_accountsTitle: ['الحسابات التي تُرحِّل إليها الميزات', 'Accounts features post to', 'ئەو هەژمارانەی تایبەتمەندییەکان تۆماری تێدا دەکەن'],
   fa_hint: ['لا تأخذ ميزةٌ حساباً أنشأته الشركة بنفس الرمز؛ اختر هنا حين تقول إن حسابها غير موجود', 'A feature never takes an account the company made with the same code; choose one here when it says its account is missing', 'هیچ تایبەتمەندییەک هەژمارێک ناگرێت کە کۆمپانیا بە هەمان کۆد دروستی کردبێت؛ کاتێک دەڵێت هەژمارەکەی نییە، لێرە هەڵیبژێرە'],
   fa_notesReceivable: ['أوراق القبض (الصكوك المستلمة)', 'Notes receivable (cheques received)', 'بەڵگەنامەکانی وەرگرتن (چەکی وەرگیراو)'],
   fa_consignment: ['بضاعة الأمانة', 'Consignment goods held', 'کاڵای ئەمانەت'],

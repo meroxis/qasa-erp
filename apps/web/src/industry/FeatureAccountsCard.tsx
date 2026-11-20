@@ -24,7 +24,7 @@ export function FeatureAccountsCard() {
     <div className="settings-group" data-setting="feature-accounts">
       <div className="setting">
         <Icon name="accounts" size={20} className="setting-icon" />
-        <div className="setting-text"><strong>{t('fa_title')}</strong><span>{t('fa_hint')}</span></div>
+        <div className="setting-text"><strong>{t('fa_accountsTitle')}</strong><span>{t('fa_hint')}</span></div>
       </div>
       {data.map((f) => (
         <div className="setting" key={f.key}>
