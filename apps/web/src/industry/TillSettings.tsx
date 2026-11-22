@@ -5,6 +5,7 @@ import { AccountCombo, ErrorBox, Icon, useLoad, useToast } from '../components.t
 import { useI18n, type Key } from '../i18n.ts';
 import { tillsApi, type PosAccounts, type TillInput, type TillView } from './pos-api.ts';
 import { keepScalePrefixes, keepScaleDigits } from './till.ts';
+import { CustomerScreenCard } from './CustomerScreenControl.tsx';
 
 /**
  * Settings → Tills and till rules (2.0; its own section since 2.0.0), for admins: the shop's named tills, the accounts card and wallet payments
@@ -12,7 +13,7 @@ import { keepScalePrefixes, keepScaleDigits } from './till.ts';
  */
 export function TillSettings({ admin }: { admin: boolean }) {
   if (!admin) return null;
-  return <><TillsCard />{TILL_CARD_PAYMENTS && <PayAccountsCard />}<ScalePricesCard /></>;
+  return <><TillsCard /><CustomerScreenCard />{TILL_CARD_PAYMENTS && <PayAccountsCard />}<ScalePricesCard /></>;
 }
 
 function TillsCard() {

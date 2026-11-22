@@ -1,5 +1,6 @@
 import type { CurrencyCode, Lang, Names } from '@qasa/core';
 import { qs, request, type EntryView } from '../api.ts';
+import { sendOnce } from './send-once.ts';
 
 /** Banking: safes, banks and e-wallets, transfers, cheques (every plan) and bank reconciliation (Pro). */
 
@@ -122,12 +123,13 @@ export const bankingApi = {
   addAccount: (body: { name: Names; kind: WalletKind; currency: CurrencyCode | null }) => request<MoneyAccountView>('POST', '/api/banking/accounts', body),
   setAccount: (code: string, body: { kind: MoneyKind; currency: CurrencyCode | null }) => request<MoneyAccountView>('PUT', `/api/banking/accounts/${encodeURIComponent(code)}`, body),
   transfer: (body: { date: string; from: string; to: string; currency: CurrencyCode; rateX100?: number; amount: number; charge?: number; chargeAccount?: string; description?: string; lang: Lang }) =>
-    request<EntryView>('POST', '/api/banking/transfers', body),
+    // money moves at once: sent again after a lost answer, it goes with the same key and is made once
+    sendOnce<EntryView>('POST', '/api/banking/transfers', body),
 
   cheques: (f: ChequeFilters = {}) => request<ChequeView[]>('GET', '/api/banking/cheques' + qs({ direction: f.direction, status: f.status, due: f.due, q: f.q })),
   cheque: (id: string) => request<ChequeView>('GET', `/api/banking/cheques/${encodeURIComponent(id)}`),
   chequeSummary: () => request<ChequeSummary>('GET', '/api/banking/cheques/summary'),
-  addCheque: (body: ChequeInput) => request<ChequeView>('POST', '/api/banking/cheques', body),
+  addCheque: (body: ChequeInput) => sendOnce<ChequeView>('POST', '/api/banking/cheques', body),
   deposit: (id: string, body: { bankAccount: string; date?: string }) => request<ChequeView>('POST', `/api/banking/cheques/${encodeURIComponent(id)}/deposit`, body),
   clear: (id: string, body: { date: string; bankAccount?: string; rateX100?: number; lang: Lang }) => request<ChequeView>('POST', `/api/banking/cheques/${encodeURIComponent(id)}/clear`, body),
   bounce: (id: string, body: { date: string; fee?: number; feeAccount?: string; reason?: string; lang: Lang }) => request<ChequeView>('POST', `/api/banking/cheques/${encodeURIComponent(id)}/bounce`, body),

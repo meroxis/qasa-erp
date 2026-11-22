@@ -63,6 +63,27 @@ export const MODULE_ROUTES: Readonly<Record<string, string>> = {
  * clientSource: names where a request really comes from when the address alone can't tell (Qasa Relay: every PC
  * arrives from 127.0.0.1, the relay knows each one's own address). Sign-in failures are counted per source.
  */
+let viewOnly: (() => boolean) | null = null;
+/**
+ * The Windows app with several companies: a company past the plan's company limit opens to be viewed, not changed.
+ * Asked at each change, so it follows the licence (a check-in that brings the plan back lifts it at once). Every server
+ * built here refuses changes then (this PC's, the office network's, the phones'), with 409 company_view_only. Signing
+ * in, the licence and plan, the companies themselves, backups and the usage setting stay open.
+ */
+export function configureViewOnly(check: (() => boolean) | null): void {
+  viewOnly = check;
+}
+const VIEW_ONLY_OPEN = ['/api/auth', '/api/plan', '/api/companies', '/api/usage', '/api/backup'];
+/** Whether a request would change the company's records (so a view-only company refuses it). */
+export function changesRecords(method: string, url: string): boolean {
+  if (method === 'GET' || method === 'HEAD' || method === 'OPTIONS') return false;
+  const path = url.split('?')[0] ?? '';
+  if (!path.startsWith('/api/')) return false;
+  // putting a backup in place of the company file is a change like any other
+  if (path === '/api/backup/restore') return true;
+  return !VIEW_ONLY_OPEN.some((open) => path === open || path.startsWith(`${open}/`));
+}
+
 export function buildApp(db: Db, options: {
   https?: { key: string; cert: string };
   extensions?: readonly ApiExtension[];
@@ -76,6 +97,7 @@ export function buildApp(db: Db, options: {
   app.addHook('onRequest', async (req, reply) => {
     const refused = requestRefusal(req, https, allowedHosts);
     if (refused) return reply.status(403).send({ error: 'forbidden', details: { reason: refused } });
+    if (viewOnly && changesRecords(req.method, req.url) && viewOnly()) return reply.status(409).send({ error: 'company_view_only', details: null });
   });
 
   /** Where a request comes from: this PC's own server only on plain http from this PC's own address. */

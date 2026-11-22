@@ -4,6 +4,9 @@ import { beforeEach, expect, it, vi } from 'vitest';
 const sent = vi.hoisted(() => [] as { method: string; url: string; body: unknown }[]);
 vi.mock('../api.ts', () => ({
   qs: () => '',
+  // transfers, cheques and an adjustment's posting go with a held key (send-once.ts)
+  newIdempotencyKey: () => '6f1c2b8e-3d4a-4b5c-9d6e-7f8091a2b3c4',
+  isNetworkError: () => false,
   request: async (method: string, url: string, body?: unknown) => { sent.push({ method, url, body }); return {}; }
 }));
 

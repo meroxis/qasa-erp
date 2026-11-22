@@ -15,6 +15,7 @@ import { ADMIN_PAGES, canSee, COMPANY_BOOK_PAGES, navLabel, pageOpen, NO_BOOKS_P
 import { CommandPalette } from './industry/CommandPalette.tsx';
 import { Tour, TOUR_EVENT, tourDone } from './industry/Tour.tsx';
 import { UpdateBanner } from './industry/UpdateBanner.tsx';
+import { CompanyViewOnlyBanner } from './industry/CompanyViewOnly.tsx';
 import { WhatsNewAfterUpdate } from './industry/WhatsNew.tsx';
 import { RemoteSupportFromMenu } from './industry/RemoteSupport.tsx';
 import { BackupNoticeBar } from './industry/BackupNotice.tsx';
@@ -985,6 +986,7 @@ export function App() {
                 <div className="biz-screen" role="dialog" aria-modal="true" aria-labelledby="biz-title"><Suspense fallback={<PageLoading />}><BusinessTypeChooser first /></Suspense></div>
               )}
               <UpdateBanner />
+              <CompanyViewOnlyBanner plan={plan?.plan} />
               <WhatsNewAfterUpdate />
               <RemoteSupportFromMenu />
               <PrintNotices />

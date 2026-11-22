@@ -4,7 +4,7 @@ import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { migrate, openDatabase, schemaVersion, SCHEMA_VERSION, type Db, type SqlValue } from './db.ts';
-import { MYSQL_TABLES, tableColumns, V17_MYSQL_STEPS, V18_MYSQL_STEPS } from './schema-mysql.ts';
+import { MYSQL_TABLES, pendingMysqlSteps, tableColumns, V17_MYSQL_STEPS, V18_MYSQL_STEPS } from './schema-mysql.ts';
 
 // Version 17 (supermarket): the tills, offers, consignment goods and the shelf labels to reprint, with the columns it adds
 // to older tables, on a company file and on a server database.
@@ -50,6 +50,28 @@ describe('version 17 on a server database', () => {
     // the columns version 17 adds to older tables are each a step of their own
     for (const step of V17_MYSQL_STEPS) expect(step.sql).toMatch(/^ALTER TABLE /);
     expect(tableColumns('shelf_label_flags').columns).toEqual(['item_id', 'unit', 'old_price', 'new_price', 'currency', 'changed_at', 'changed_by']);
+  });
+
+  it('gives an upgraded server the index a new one has for a shift\'s till (named after the column), and leaves a server upgraded before as it is', () => {
+    const sql = V17_MYSQL_STEPS.map((x) => x.sql);
+    const index = 'ALTER TABLE pos_shifts ADD INDEX till_id (till_id)';
+    const constraint = 'ALTER TABLE pos_shifts ADD CONSTRAINT pos_shifts_till_id_fk FOREIGN KEY (till_id) REFERENCES pos_tills(id)';
+    // column, then the index under the column's name, then the constraint (which then uses that index)
+    expect(sql.indexOf(index)).toBe(sql.indexOf('ALTER TABLE pos_shifts ADD COLUMN till_id VARCHAR(191)') + 1);
+    expect(sql[0]).toBe('ALTER TABLE pos_shifts ADD COLUMN till_id VARCHAR(191)');
+    expect(sql.indexOf(index)).toBe(sql.indexOf(constraint) - 1);
+    const none = { columns: new Set<string>(), foreignKeys: new Set<string>(), indexes: new Set<string>() };
+    expect(pendingMysqlSteps(V17_MYSQL_STEPS, none)).toEqual(sql);
+    // upgraded before this step existed: the constraint is there (its index under the constraint's name); no second index
+    const before = { columns: new Set(['pos_shifts.till_id']), foreignKeys: new Set(['pos_shifts.till_id>pos_tills']), indexes: new Set(['pos_shifts.pos_shifts_till_id_fk']) };
+    const left = pendingMysqlSteps(V17_MYSQL_STEPS, before);
+    expect(left).not.toContain(index);
+    expect(left).not.toContain(constraint);
+    // stopped between the two (a server's ALTERs are not one transaction): only the constraint is left
+    const half = { columns: new Set(['pos_shifts.till_id']), foreignKeys: new Set<string>(), indexes: new Set(['pos_shifts.till_id']) };
+    expect(pendingMysqlSteps(V17_MYSQL_STEPS, half).filter((x) => x.includes('pos_shifts'))).toEqual([constraint]);
+    // a new server: no name given, so MariaDB names the index after the column
+    expect(MYSQL_TABLES.find((t) => t.name === 'pos_shifts')!.sql).toMatch(/\n\s+FOREIGN KEY \(till_id\) REFERENCES pos_tills\(id\)/);
   });
 
   it('runs on a server at version 16: the version 17 tables are made, nothing else, then the version is written', () => {

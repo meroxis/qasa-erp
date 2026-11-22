@@ -96,9 +96,9 @@ export const CLOTHING_TEXT = {
   cw_customerPays: ['يدفع الزبون', 'The customer pays', 'کڕیار دەدات'],
   cw_customerGets: ['يُعاد للزبون', 'The customer gets back', 'بۆ کڕیار دەگەڕێتەوە'],
   cw_exchangeNote: [
-    'يُسجَّل إرجاع يُدفع من صندوق الوردية وبيع جديد؛ الدرج يتوقع الفرق فقط. ما دُفع ببطاقة يُعاد كما دُفع.',
-    'A return paid from the shift’s drawer and a new sale are recorded; the drawer expects only the difference. What was paid by card is paid back as it was paid.',
-    'گەڕاندنەوەیەک کە لە قاسەی شەفتەکە دەدرێت و فرۆشتنێکی نوێ پۆست دەکرێن؛ قاسەکە تەنها جیاوازییەکە چاوەڕێ دەکات. ئەوەی بە کارت دراوە وەک خۆی دەگەڕێندرێتەوە.'
+    'يُسجَّل إرجاع يُدفع من صندوق الوردية وبيع جديد؛ الدرج يتوقع الفرق فقط. ما دُفع بقسيمة هدية أو قُيّد آجلاً على حساب الزبون يُعاد بالطريقة نفسها، لا نقداً.',
+    'A return paid from the shift’s drawer and a new sale are recorded; the drawer expects only the difference. What a gift voucher paid, or what went on the customer’s account, is given back the same way, not in cash.',
+    'گەڕاندنەوەیەک کە لە قاسەی شەفتەکە دەدرێت و فرۆشتنێکی نوێ پۆست دەکرێن؛ قاسەکە تەنها جیاوازییەکە چاوەڕێ دەکات. ئەوەی بە کوپۆنی دیاری دراوە یان بە قەرز خراوەتە سەر حسابی کڕیار، بە هەمان شێوە دەگەڕێندرێتەوە، نەک بە نەقد.'
   ],
   cw_exchangeDo: ['استبدل', 'Exchange', 'بیگۆڕەوە'],
   cw_exchangeTake: ['تم الاستبدال: خذ من الزبون {a}', 'Exchanged: take {a} from the customer', 'گۆڕدرایەوە: {a} لە کڕیار وەربگرە'],

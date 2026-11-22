@@ -1,4 +1,4 @@
-# Offline outbox and offline till (1.2)
+# Offline outbox and offline till (1.2, brought up to date for 2.0)
 
 PCs connected to an office server (over the office network or through Qasa Relay) used to be online only: a save that
 could not reach the server failed. From 1.2 they keep what the counter can't lose and send it when the link is back.
@@ -10,7 +10,10 @@ Every posting route a client may send again takes an idempotency key in the head
 the same format the phone app uses): `POST /api/pos/shifts/:id/sales`, `POST /api/invoices`,
 `POST /api/invoices/:id/post`, `POST /api/invoices/:id/returns`, `POST /api/vouchers`, `POST /api/stock-docs`,
 `POST /api/stock-docs/:id/post`, `POST /api/adjustments` and `POST /api/adjustments/:id/post`
-(`packages/server/src/idempotency.ts`).
+(`packages/server/src/idempotency.ts`); from 2.0 also bank transfers and cheques (`POST /api/banking/transfers`,
+`POST /api/banking/cheques`) and a clothes shop's exchange (`POST /api/clothing/shifts/:id/exchange`). The app window
+sends each of these with a key it holds until the answer comes (`sendOnce`, `apps/web/src/industry/send-once.ts`), so a
+second press or a lost answer makes nothing twice.
 
 - The key is written in the same transaction as the document, so a power cut keeps both or neither.
 - The same key again answers with the document made the first time (header `x-qasa-idempotent-replay: 1`) and makes
@@ -51,11 +54,17 @@ why, and only then removed from the PC, so discarding needs the server.
 
 ## The offline till: the rules
 
-- **Cash, card and wallet sales go on.** The till sells from what it last had from the server in this window's memory
-  (never on disk): items, prices, units, barcodes, categories, the stock last known, customers, payment methods and the
-  open shift.
-- **On a customer's account (credit) is online only**: it needs the live credit-limit check. The method is hidden
-  while offline, and the server refuses an offline sale on account (`pos_offline_on_account`).
+- **Cash sales go on** (dinars, and dollar notes on a dinar sale). The till sells from what it last had from the server
+  in this window's memory (never on disk): items, prices, units, barcodes, categories, the stock last known, customers,
+  the offers and the till's rules as last known, and the open shift. (2.0: the till takes cash, credit and gift
+  vouchers only; card and wallet payments are switched off in the app, see tills.md.)
+- **Online only, because the server must check them**: a sale on a customer's account (credit: the live credit-limit
+  check, `pos_offline_on_account`), paying with loyalty points (`pos_offline_loyalty`) or with a gift voucher (its
+  balance, `pos_offline_voucher`), selling a gift voucher, and any sale that needs a supervisor's approval (a discount
+  beyond the limit, a typed price: `pos_offline_supervisor`; a PIN is never checked on the cashier's PC). The till
+  hides these or holds the basket until the server answers, and the server refuses them from a till that was offline.
+- **Dinar rounding** is applied by the rule the till last had from the server; the server works it out again when the
+  sale arrives.
 - **Stock** is checked against the stock last known, less what was sold offline since. A sale beyond it is not
   blocked; the till says which items are short, and the office server checks it when the sale arrives. If it refuses,
   the sale stays in the list for a person (fix the stock, then Send now; or discard it and record it by hand).
@@ -75,7 +84,8 @@ why, and only then removed from the PC, so discarding needs the server.
   in **Waiting to send** with the reason: a supervisor types their PIN there for that receipt ("Supervisor's
   approval") and the sale is sent again as it was kept (audit: `offline_sale_accepted`, with both names), or an admin
   discards it.
-- **Online only**: opening and closing a shift, returns, batch picking by hand (the server picks by expiry when the
+- **Also online only**: opening and closing a shift, returns and exchanges, opening the drawer with no sale (it is
+  written to the audit log first), batch picking by hand (the server picks by expiry when the
   sale arrives), the controlled-medicine prompt (afterwards from the pharmacy log). A shift can't be closed while sales
   of it still wait on that PC, so the expected cash is right.
 - Receipt vouchers (new ones) are kept the same way; payment vouchers and other documents stay online only.

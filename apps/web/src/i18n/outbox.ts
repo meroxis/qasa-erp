@@ -5,7 +5,8 @@
 export const OUTBOX_TEXT = {
   ob_title: ['ما ينتظر الإرسال', 'Waiting to send', 'چاوەڕێی ناردن'],
   ob_bannerOffline: ['غير متصل — {n} بانتظار الإرسال', 'Offline — {n} waiting to send', 'بێ پەیوەندی — {n} چاوەڕێی ناردنن'],
-  ob_bannerOfflineNone: ['غير متصل بخادم المكتب — يستمر البيع نقداً وبالبطاقة، ويُحفظ على هذا الحاسوب حتى يعود الاتصال', 'Offline from the office server — cash and card sales go on and are kept on this PC until the link is back', 'پەیوەندی بە سێرڤەری نووسینگەوە نییە — فرۆشتن بە نەقد و کارت بەردەوامە و تا پەیوەندی دەگەڕێتەوە لەسەر ئەم کۆمپیوتەرە پاشەکەوت دەکرێت'],
+  // 2.0: the till takes cash, credit and gift vouchers; of these only cash is sold while offline (docs/offline-till.md)
+  ob_bannerOfflineNone: ['غير متصل بخادم المكتب — يستمر البيع نقداً، ويُحفظ على هذا الحاسوب حتى يعود الاتصال', 'Offline from the office server — cash sales go on and are kept on this PC until the link is back', 'پەیوەندی بە سێرڤەری نووسینگەوە نییە — فرۆشتن بە نەقد بەردەوامە و تا پەیوەندی دەگەڕێتەوە لەسەر ئەم کۆمپیوتەرە پاشەکەوت دەکرێت'],
   ob_bannerSending: ['يجري إرسال {n} كانت بانتظار الاتصال…', 'Sending {n} that waited for the link…', 'ناردنی {n} کە چاوەڕێی پەیوەندی بوون…'],
   ob_bannerWaiting: ['{n} بانتظار الإرسال على هذا الحاسوب', '{n} waiting to send on this PC', '{n} لەسەر ئەم کۆمپیوتەرە چاوەڕێی ناردنن'],
   ob_bannerRefused: ['{n} لم يقبلها الخادم وتحتاج إلى من يراجعها', '{n} not accepted by the server and need a person', 'سێرڤەر {n} دانەی وەرنەگرتووە و پێویستە کەسێک سەیریان بکات'],

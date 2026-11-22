@@ -107,6 +107,21 @@ describe('offers on a sale invoice', () => {
     expect((await del(`/api/offers/${o.id}`)).statusCode).toBe(204);
   });
 
+  it('are not put on a phone\'s draft sale (2.0: the phone showed its customer its own total), at posting either; saved on a PC, they are', async () => {
+    await licensed();
+    await offer();
+    const body = { kind: 'sale', date: TODAY, warehouseId, currency: 'IQD', rateX100: 100, payment: 'cash', cashAccountCode: '1811', discount: 0, lines: [colas(3)] };
+    // as the phone link sends it (pro/src/phone/phone.ts)
+    const draft = await app.inject({ method: 'POST', url: '/api/invoices', payload: body, headers: { ...headers, 'x-qasa-phone': '1' } });
+    expect(draft.statusCode, draft.body).toBe(201);
+    expect(draft.json()).toMatchObject({ subtotal: 3_000, offerDiscount: 0, total: 3_000, offers: [] });
+    const posted = await post(`/api/invoices/${draft.json().id}/post`);
+    expect(posted.json()).toMatchObject({ status: 'posted', total: 3_000, offerDiscount: 0 });
+    // a second one, opened and saved at the office: the offers apply, and whoever saved it sees the total
+    const other = await app.inject({ method: 'POST', url: '/api/invoices', payload: body, headers: { ...headers, 'x-qasa-phone': '1' } });
+    expect((await put(`/api/invoices/${other.json().id}`, body)).json()).toMatchObject({ offerDiscount: 1_000, total: 2_000 });
+  });
+
   it('give nothing without the plan, and nothing on a back-dated sale for an offer limited to hours', async () => {
     await licensed();
     await offer({ fromTime: '00:00', toTime: '23:59' });

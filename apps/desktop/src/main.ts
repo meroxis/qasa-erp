@@ -4,11 +4,11 @@
  *   %APPDATA%\Qasa ERP\data\qasa.sqlite
  */
 import { app, BrowserWindow, dialog, ipcMain, Menu, nativeTheme, Notification, protocol, safeStorage, screen, session, shell, utilityProcess, type MenuItemConstructorOptions, type UtilityProcess } from 'electron';
-import { pickScalePort, serialAllowed } from './serial-scale.ts';
+import { chosenDevice, listScalePorts, pickScalePort, readChosenPort, serialAllowed, writeChosenPort, type SerialPortChoice } from './serial-scale.ts';
 import electronUpdater from 'electron-updater';
 import { channelOf, notesText, updaterOptions, type UpdateChannel, type UpdateState } from './updates-logic.ts';
-import { randomBytes } from 'node:crypto';
-import { appendFileSync, closeSync, existsSync, fstatSync, mkdirSync, openSync, readdirSync, readFileSync, readSync, statSync, unlinkSync, writeFileSync } from 'node:fs';
+import { createHash, randomBytes } from 'node:crypto';
+import { appendFileSync, closeSync, existsSync, fstatSync, mkdirSync, mkdtempSync, openSync, readdirSync, readFileSync, readSync, rmSync, statSync, unlinkSync, writeFileSync } from 'node:fs';
 import { homedir, hostname, userInfo } from 'node:os';
 import { join } from 'node:path';
 import { Bridge } from './bridge.ts';
@@ -22,7 +22,7 @@ import { booksBefore, markSeen, startVersion, type WhatsNew } from './whats-new.
 import { closeFlow, noteCloseFailure, readCloseAsk, saveCloseAsk, takeCloseFailure, type AskChoice } from './close-backup.ts';
 import { printingHandlers } from './printing.ts';
 import { cachedPrinters, powershellPath, readWindowsPrinters } from './printer-info.ts';
-import { customerDisplayUrl, customerScreenBounds, drawerHandler } from './till-desktop.ts';
+import { customerDisplayUrl, customerScreenOf, customerScreenPlan, drawerHandler, type CustomerScreenAt } from './till-desktop.ts';
 import { dataPlaceOf, officeName } from './data-place.ts';
 import { execFile } from 'node:child_process';
 import { sharePdfHandlers } from './share-pdf.ts';
@@ -657,19 +657,63 @@ ipcMain.handle('printers:print', (event, kind: unknown, layout: unknown) => prin
 
 // 2.0, the till (till-desktop.ts): the cash drawer opened through this PC's receipt printer (a fixed script, the
 // printer's name in its environment, never in its text), and the customer screen, a second window of the app's own page
+// the drawer's helper (compiled once for this run of the app): a file in a folder made for this run, removed on quit
+let drawerHelperDir: string | null | undefined;
+const drawerHelperFile = (): string | null => {
+  if (drawerHelperDir === undefined) {
+    try {
+      drawerHelperDir = mkdtempSync(join(app.getPath('temp'), 'qasa-drawer-'));
+    } catch (error) {
+      drawerHelperDir = null;
+      log('cash drawer: no folder for the helper:', error);
+    }
+  }
+  return drawerHelperDir ? join(drawerHelperDir, 'QasaRaw.dll') : null;
+};
+app.on('will-quit', () => {
+  if (drawerHelperDir) try { rmSync(drawerHelperDir, { recursive: true, force: true }); } catch { /* Windows clears its temp folder */ }
+});
 const openDrawer = drawerHandler({
   fromAppPage: (event) => invokedByAppPage(event as Electron.IpcMainInvokeEvent),
   readPrintersFile: () => { try { return readFileSync(printersFile(), 'utf8'); } catch { return null; } },
   printers: async () => (win && !win.isDestroyed() ? win.webContents.getPrintersAsync() : []),
-  run: (script, printer) => new Promise<string>((resolve, reject) => {
+  run: (script, printer, helper) => new Promise<string>((resolve, reject) => {
     if (process.platform !== 'win32') { reject(new Error('the cash drawer is opened on Windows only')); return; }
     execFile(powershellPath(process.env), ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-Command', script], {
-      windowsHide: true, timeout: 15_000, maxBuffer: 64 * 1024, encoding: 'utf8', shell: false, env: { ...process.env, QASA_DRAWER_PRINTER: printer }
-    }, (error, stdout) => { if (error) reject(error); else resolve(String(stdout)); });
+      windowsHide: true, timeout: 15_000, maxBuffer: 64 * 1024, encoding: 'utf8', shell: false,
+      env: { ...process.env, QASA_DRAWER_PRINTER: printer, QASA_DRAWER_HELPER: helper ?? '' }
+    }, (error, stdout, stderr) => {
+      if (!error) { resolve(String(stdout)); return; }
+      // what Windows or PowerShell said (never the script's own text, which Node puts in its message), so a policy
+      // that blocks it is told from a printer that did not answer (till-desktop.ts, drawerBlocked)
+      const code = (error as NodeJS.ErrnoException).code;
+      const said = String(stderr ?? '').trim().slice(0, 1_000) || (error.killed ? 'timed out' : typeof code === 'string' ? code : 'failed');
+      reject(Object.assign(new Error(said), typeof code === 'string' ? { code } : {}));
+    });
   }),
+  helperFile: drawerHelperFile,
+  fileHash: (file) => { try { return createHash('sha256').update(readFileSync(file)).digest('hex'); } catch { return null; } },
   log
 });
-ipcMain.handle('till:drawer', (event) => openDrawer(event));
+// a PC that has opened a drawer before compiles the helper as the window comes up, so the day's first sale does not wait
+const drawerUsedFile = () => join(app.getPath('userData'), 'drawer-used');
+let drawerNoted = false;
+ipcMain.handle('till:drawer', async (event) => {
+  const out = await openDrawer(event);
+  if (out.status === 'opened' && !drawerNoted) {
+    drawerNoted = true;
+    try { if (!existsSync(drawerUsedFile())) writeFileSync(drawerUsedFile(), '1'); } catch { /* the next sale notes it */ }
+  }
+  return out;
+});
+let drawerWarmed = false;
+function warmDrawer(): void {
+  if (drawerWarmed || process.platform !== 'win32') return;
+  drawerWarmed = true;
+  let used = false;
+  try { used = existsSync(drawerUsedFile()); } catch { used = false; }
+  if (used) setTimeout(() => { void openDrawer.prepare().catch(() => false); }, 5_000);
+}
 // 2.0: Settings → Users binds the Windows Hello password reset to the Windows account signed in here (the page then
 // saves it through the admin-only /api/auth/hello-reset); only this PC's own window, never an office client
 ipcMain.handle('app:windowsAccount', async (event) => {
@@ -678,27 +722,104 @@ ipcMain.handle('app:windowsAccount', async (event) => {
   return who ? { sid: who.sid, account: thisWindowsUser(), windowsAdmin: who.windowsAdmin } : null;
 });
 
+// the weighing scale's port, chosen for this PC in Settings → Tills and till rules (serial-scale.ts)
+let scalePortsSeen: readonly SerialPortChoice[] = [];
+let scalePortKey: string | null = null;
+const chosenScalePort = (): string => (scalePortKey ??= readChosenPort(app.getPath('userData')));
+ipcMain.handle('till:serialPorts', (event) => {
+  if (!invokedByAppPage(event)) return { ports: [], chosen: '' };
+  return { ports: listScalePorts(scalePortsSeen), chosen: chosenScalePort() };
+});
+ipcMain.handle('till:chooseSerialPort', (event, key: unknown) => {
+  if (!invokedByAppPage(event) || typeof key !== 'string') return false;
+  // only a port this PC really showed, or none
+  if (key && !listScalePorts(scalePortsSeen).some((p) => p.key === key)) return false;
+  try {
+    writeChosenPort(app.getPath('userData'), key);
+    scalePortKey = key;
+    return true;
+  } catch (error) {
+    log('the scale port could not be kept:', error);
+    return false;
+  }
+});
+
 let customerWin: BrowserWindow | null = null;
+// where its window is (till-desktop.ts): on a second screen, a window the cashier placed, or hidden until its screen is back
+let customerAt: CustomerScreenAt = { at: 'window' };
+const customerOpen = () => !!customerWin && !customerWin.isDestroyed();
+const CUSTOMER_WINDOW = { width: 900, height: 600 };
+/** Full screen on that screen, without taking the keyboard from the till. */
+function showCustomerOn(displayId: number, bounds: Electron.Rectangle): void {
+  if (!customerOpen()) return;
+  const w = customerWin!;
+  if (w.isFullScreen()) w.setFullScreen(false);
+  w.setBounds(bounds);
+  w.showInactive();
+  w.setFullScreen(true);
+  customerAt = { at: 'second', displayId };
+}
+/** The PC's screens changed: a customer screen whose screen is gone is hidden (never over the till), and comes back with it. */
+function customerScreensChanged(): void {
+  if (!customerOpen()) return;
+  const step = customerScreenPlan(screen.getAllDisplays(), screen.getPrimaryDisplay().id, customerAt);
+  if (step.do === 'hide') {
+    const w = customerWin!;
+    if (w.isFullScreen()) w.setFullScreen(false);
+    w.hide();
+    customerAt = { at: 'waiting' };
+    log('customer screen: its screen was unplugged; hidden until a second screen is back');
+  } else if (step.do === 'show') {
+    showCustomerOn(step.displayId, step.bounds);
+    log('customer screen: shown on the second screen');
+  }
+}
+app.whenReady().then(() => {
+  screen.on('display-removed', customerScreensChanged);
+  screen.on('display-added', customerScreensChanged);
+  // a screen made the main one, or its place changed
+  screen.on('display-metrics-changed', customerScreensChanged);
+}).catch(() => { /* no screens to watch */ });
+/** What the till and Settings show of it: open at all, and hidden for want of its screen. */
+ipcMain.handle('till:customerDisplayState', (event) => {
+  if (!invokedByAppPage(event)) return { open: false, waiting: false };
+  return { open: customerOpen(), waiting: customerOpen() && customerAt.at === 'waiting' };
+});
 ipcMain.handle('till:customerDisplay', (event, open: unknown) => {
   if (!invokedByAppPage(event) || !appOrigin) return false;
   if (open !== true) {
-    if (customerWin && !customerWin.isDestroyed()) customerWin.close();
+    if (customerOpen()) customerWin!.close();
     customerWin = null;
     return false;
   }
-  if (customerWin && !customerWin.isDestroyed()) { customerWin.show(); return true; }
-  const bounds = customerScreenBounds(screen.getAllDisplays(), screen.getPrimaryDisplay().id);
+  const second = customerScreenOf(screen.getAllDisplays(), screen.getPrimaryDisplay().id);
+  if (customerOpen()) {
+    const w = customerWin!;
+    if (second) showCustomerOn(second.id, second.bounds);
+    else {
+      // asked for on a PC with one screen (now): a normal window the cashier places, as when it is first opened so
+      if (customerAt.at !== 'window') {
+        if (w.isFullScreen()) w.setFullScreen(false);
+        w.setSize(CUSTOMER_WINDOW.width, CUSTOMER_WINDOW.height);
+        w.center();
+        customerAt = { at: 'window' };
+      }
+      w.show();
+    }
+    return true;
+  }
   customerWin = new BrowserWindow({
-    ...(bounds ?? { width: 900, height: 600 }), fullscreen: !!bounds, autoHideMenuBar: true, title: 'Qasa ERP', backgroundColor: windowBackground(),
+    ...(second?.bounds ?? CUSTOMER_WINDOW), fullscreen: !!second, autoHideMenuBar: true, title: 'Qasa ERP', backgroundColor: windowBackground(),
     icon: join(__dirname, 'icon.png'),
     // no bridge at all: the screen only shows what the till sends it in the page
     webPreferences: { contextIsolation: true, sandbox: true, nodeIntegration: false, spellcheck: false }
   });
+  customerAt = second ? { at: 'second', displayId: second.id } : { at: 'window' };
   customerWin.setMenu(null);
   const origin = appOrigin;
   customerWin.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
   customerWin.webContents.on('will-navigate', (e, target) => { if (originOf(target) !== origin) e.preventDefault(); });
-  customerWin.on('closed', () => { customerWin = null; });
+  customerWin.on('closed', () => { customerWin = null; customerAt = { at: 'window' }; });
   void customerWin.loadURL(customerDisplayUrl(origin));
   return true;
 });
@@ -1003,11 +1124,17 @@ async function createWindow(url: string): Promise<void> {
   // a serial port, for a weighing scale at the till (serial-scale.ts); nothing else, and no other page
   ses.setPermissionRequestHandler((_contents, _permission, callback) => callback(false));
   ses.setPermissionCheckHandler((contents, permission, requestingOrigin) => !!win && contents === win.webContents && serialAllowed(permission, originOf(requestingOrigin), appOrigin));
-  ses.setDevicePermissionHandler((details) => details.deviceType === 'serial' && serialAllowed('serial', originOf(details.origin), appOrigin));
+  // the one port an admin chose for this PC's scale (serial-scale.ts): the page reaches that port and no other, so the
+  // till's request bytes never go to another device
+  ses.setDevicePermissionHandler((details) => details.deviceType === 'serial' && serialAllowed('serial', originOf(details.origin), appOrigin) && chosenDevice(details.device, chosenScalePort()));
   ses.removeAllListeners('select-serial-port');
   ses.on('select-serial-port', (event, portList, contents, callback) => {
     event.preventDefault();
-    callback(win && contents === win.webContents && originOf(contents.getURL()) === appOrigin ? pickScalePort(portList) : '');
+    const own = !!win && contents === win.webContents && originOf(contents.getURL()) === appOrigin;
+    // the list is kept for Settings to show (the page asks for a port when the admin looks for them); no port is
+    // ever picked by a guess
+    if (own) scalePortsSeen = portList;
+    callback(own ? pickScalePort(portList, chosenScalePort()) : '');
   });
 
   win = new BrowserWindow({
@@ -1063,6 +1190,7 @@ async function createWindow(url: string): Promise<void> {
   win.webContents.on('did-finish-load', async () => {
     await readLanguage();
     buildMenu();
+    warmDrawer();
   });
   win.on('closed', () => {
     log('window closed');

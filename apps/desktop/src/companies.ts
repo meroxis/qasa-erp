@@ -102,13 +102,19 @@ const find = (registry: Registry, id: string) => registry.list.find((c) => c.id 
 
 /** Adds a company to the list (the folder and its file are made separately). */
 /**
- * The companies the plan lets open now: the first `limit` in the list (the first company always among them), every one
- * with no limit. A company past the limit (a licence ended, or companies.json written by hand) waits: nothing is deleted,
- * and it opens again once the plan allows it (security review #10: the limit is checked when opening, not only adding).
+ * The companies the plan lets work in full now: the first `limit` in the list (the first company always among them),
+ * every one with no limit. A company past the limit (a licence ended, the free month over, or companies.json written by
+ * hand) still opens, to be viewed and not changed: nothing is deleted or hidden, and it works in full again once the
+ * plan allows it (security review #10: the limit counts when a company is open, not only when one is added).
  */
 export function openableCompanies(registry: Registry, limit: number | null): Set<string> {
   const list = [...registry.list].sort((a, b) => (a.id === MAIN_COMPANY ? -1 : b.id === MAIN_COMPANY ? 1 : 0));
   return new Set((limit === null ? list : list.slice(0, Math.max(1, limit))).map((c) => c.id));
+}
+
+/** Whether the company `id` is past the plan's limit: it opens to be viewed, and the server refuses changes. */
+export function viewOnlyCompany(registry: Registry, id: string, limit: number | null): boolean {
+  return id !== MAIN_COMPANY && !openableCompanies(registry, limit).has(id);
 }
 
 export function addCompany(registry: Registry, input: { id: string; name: unknown; now: string; limit: number | null }): Registry {
