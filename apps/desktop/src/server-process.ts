@@ -253,12 +253,18 @@ function placeCompanyFile(name: string): void {
 /**
  * What the main process is told when the company file can't be opened at the start. `cause` tells a file that is
  * damaged (or not a company file) from one that is fine but could not be updated, because the copy kept before a
- * schema update could not be written (a full disk, no access): that one must never be set aside as damaged.
+ * schema update could not be written (a full disk, no access), or because a version of the update could not be
+ * applied (`update`: the file is as it was before that version). Neither must ever be set aside as damaged: the books
+ * in it are fine, and an empty company in their place would look like lost books.
  */
-export function companyFileProblem(error: unknown, main: boolean): { main: boolean; reason: string; cause: 'update_copy' | 'damaged' } {
-  const e = error as { code?: unknown; details?: { reason?: unknown } | null } | null;
+export function companyFileProblem(error: unknown, main: boolean): { main: boolean; reason: string; cause: 'update_copy' | 'update' | 'damaged' } {
+  const e = error as { code?: unknown; details?: { reason?: unknown; version?: unknown } | null } | null;
   if (e && e.code === 'update_copy_failed') {
     return { main, reason: String(e.details?.reason ?? '').slice(0, 200), cause: 'update_copy' };
+  }
+  if (e && e.code === 'update_failed') {
+    const version = Number(e.details?.version);
+    return { main, reason: `${Number.isFinite(version) ? `${version}: ` : ''}${String(e.details?.reason ?? '')}`.slice(0, 200), cause: 'update' };
   }
   return { main, reason: error instanceof Error ? error.message.slice(0, 200) : String(error).slice(0, 200), cause: 'damaged' };
 }
@@ -283,7 +289,8 @@ async function openCompanyDatabase(bridge: Bridge): Promise<Db> {
       if (typeof problem.host !== 'string') {
         // the company file itself can't be opened (damaged, or not a company file): never a raw error and a quit,
         // because restoring a backup is exactly what this needs. A file that is fine but had no room for its copy
-        // before an update is said so, and is never set aside (companyFileProblem).
+        // before an update, or that a version of the update could not be applied to, is said so, and is never set
+        // aside (companyFileProblem).
         const fileProblem = companyFileProblem(error, companyId() === MAIN_COMPANY);
         const choice = await bridge.call<'retry' | 'aside' | 'first' | 'quit'>('dbDamaged', [fileProblem], { timeoutMs: 0 });
         if (choice === 'aside' && fileProblem.cause === 'damaged') {

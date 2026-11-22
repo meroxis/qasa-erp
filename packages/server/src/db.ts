@@ -2615,10 +2615,14 @@ const V18 =
 // has no shift; pos_approvals of version 18 stays, empty and unused), the counts of wrong PINs, the shift that paid a
 // cash refund, the items' price history, the voucher a returned share stands for, and the taking back of a wholesale
 // collection or handover.
+//
+// Builds made while the reviews were going on left some files at 18 with part of this already there (their version 18
+// had these tables and columns). So 19 never stops on what is there: its tables and indexes are made IF NOT EXISTS,
+// and its columns (V19_COLUMNS) are added one by one, each only when the table lacks it (addMissingColumns).
 const V19 =
   `
   -- ===== 19 · TILL RULES =====
-  CREATE TABLE till_approvals (
+  CREATE TABLE IF NOT EXISTS till_approvals (
     id TEXT PRIMARY KEY,
     -- the shift it was given at; none: given at the office for a refund (the invoice screens)
     shift_id TEXT REFERENCES pos_shifts(id),
@@ -2641,10 +2645,10 @@ const V19 =
     expires_at TEXT NOT NULL,
     used_at TEXT
   );
-  CREATE INDEX till_approvals_shift ON till_approvals(shift_id);
+  CREATE INDEX IF NOT EXISTS till_approvals_shift ON till_approvals(shift_id);
   -- wrong supervisor PINs, counted per cashier (per till with sign-in off) and for the whole company ('all'): kept
   -- here so a restart or a second server process does not start the count again
-  CREATE TABLE pos_pin_tries (
+  CREATE TABLE IF NOT EXISTS pos_pin_tries (
     k TEXT PRIMARY KEY,
     n INTEGER NOT NULL DEFAULT 0,
     since TEXT NOT NULL,
@@ -2653,16 +2657,16 @@ const V19 =
     day_n INTEGER NOT NULL DEFAULT 0
   );
   -- the shift whose drawer paid a cash refund (a return at the till, an exchange): counted in that shift alone
-  CREATE TABLE pos_shift_refunds (
+  CREATE TABLE IF NOT EXISTS pos_shift_refunds (
     invoice_id TEXT PRIMARY KEY REFERENCES invoices(id),
     shift_id TEXT NOT NULL REFERENCES pos_shifts(id),
     created_at TEXT NOT NULL
   );
-  CREATE INDEX pos_shift_refunds_shift ON pos_shift_refunds(shift_id);
+  CREATE INDEX IF NOT EXISTS pos_shift_refunds_shift ON pos_shift_refunds(shift_id);
   -- an item's sale prices over time, per unit ('' = the item's own unit): written at every change (the first change
   -- also keeps the price before it). A sale a till kept while cut off, at a price that was the list price since its
   -- shift opened, is told from one below the price list
-  CREATE TABLE item_price_history (
+  CREATE TABLE IF NOT EXISTS item_price_history (
     id TEXT PRIMARY KEY,
     item_id TEXT NOT NULL REFERENCES items(id),
     unit TEXT NOT NULL DEFAULT '',
@@ -2670,17 +2674,51 @@ const V19 =
     currency TEXT NOT NULL,
     changed_at TEXT NOT NULL
   );
-  CREATE INDEX item_price_history_item ON item_price_history(item_id, unit, changed_at);
-  -- a share given back by a return: the voucher of the sale it stands for (itself, or the one a new voucher replaces)
-  ALTER TABLE gift_voucher_moves ADD COLUMN for_voucher_id TEXT;
-  -- ===== 19 · WHOLESALE =====
-  -- taken back by the office: its receipt deleted (not in the books yet) or reversed (cancel_entry_id)
-  ALTER TABLE ws_handovers ADD COLUMN cancelled_at TEXT;
-  ALTER TABLE ws_handovers ADD COLUMN cancel_entry_id TEXT REFERENCES entries(id);
-  ALTER TABLE ws_collections ADD COLUMN cancelled_at TEXT;
-  ALTER TABLE ws_collections ADD COLUMN cancel_entry_id TEXT REFERENCES entries(id);
+  CREATE INDEX IF NOT EXISTS item_price_history_item ON item_price_history(item_id, unit, changed_at);
   `;
-// ===== end of 18 · TILL RULES =====
+
+/** A column a version adds to a table that is already there: added only when the table lacks it. */
+interface AddedColumn { table: string; column: string; definition: string }
+
+// The columns of 19, in this order (the order they stand in on a new file and on a server database):
+// - gift_voucher_moves.for_voucher_id: a share given back by a return: the voucher of the sale it stands for (itself,
+//   or the one a new voucher replaces)
+// - ws_handovers and ws_collections: taken back by the office: its receipt deleted (not in the books yet) or reversed
+//   (cancel_entry_id)
+const V19_COLUMNS: readonly AddedColumn[] = [
+  { table: 'gift_voucher_moves', column: 'for_voucher_id', definition: 'TEXT' },
+  { table: 'ws_handovers', column: 'cancelled_at', definition: 'TEXT' },
+  { table: 'ws_handovers', column: 'cancel_entry_id', definition: 'TEXT REFERENCES entries(id)' },
+  { table: 'ws_collections', column: 'cancelled_at', definition: 'TEXT' },
+  { table: 'ws_collections', column: 'cancel_entry_id', definition: 'TEXT REFERENCES entries(id)' }
+];
+
+function addMissingColumns(db: Db, columns: readonly AddedColumn[]): void {
+  for (const c of columns) {
+    const has = (db.prepare(`PRAGMA table_info(${c.table})`).all() as { name: string }[]).some((x) => x.name === c.column);
+    if (!has) db.exec(`ALTER TABLE ${c.table} ADD COLUMN ${c.column} ${c.definition}`);
+  }
+}
+
+/**
+ * What a company file needs beside a version's SQL (SQLite only; a server database has its own steps): for 19, its
+ * columns, and version 18's approvals table back as version 18 made it. Some builds made while 2.0 was reviewed gave
+ * that table more columns; it is unused from 19 on (till_approvals took its place) and was only ever a two-minute
+ * approval, so it is made again, empty.
+ */
+function finishV19(db: Db): void {
+  addMissingColumns(db, V19_COLUMNS);
+  const approvals = (db.prepare('PRAGMA table_info(pos_approvals)').all() as { name: string }[]).map((x) => x.name);
+  if (approvals.includes('cashier_id') || approvals.includes('subject')) {
+    const made = /CREATE TABLE pos_approvals \([\s\S]*?\n {2}\);\n(?: {2}CREATE INDEX [^\n]*ON pos_approvals[^\n]*\n)*/.exec(V18);
+    if (!made) throw new Error('version 18 has no pos_approvals');
+    db.exec('DROP TABLE pos_approvals');
+    db.exec(made[0]);
+  }
+}
+
+/** SQLite-only work of a version, after its SQL and before its rows, in the same transaction (by the version's SQL). */
+const SQLITE_FINISH: ReadonlyMap<string, (db: Db) => void> = new Map([[V19, finishV19]]);
 
 const MIGRATIONS: Migration[] = [
   { sql: V1 }, { sql: V2, rebuild: true }, { sql: V3, rebuild: true }, { sql: V4 }, { sql: V5, rebuild: true },
@@ -2706,19 +2744,30 @@ export const SCHEMA_VERSION = MIGRATIONS.length;
 export function openDatabase(file: string, options: { now?: () => Date } = {}): Db {
   if (file !== ':memory:') refuseNewerFile(file);
   const db: Db = new DatabaseSync(file);
+  let copy: { target: string; version: number } | null = null;
   try {
     db.exec('PRAGMA foreign_keys = ON');
     if (file !== ':memory:') {
       // WAL + FULL sync: a committed voucher survives a power cut (generator switch-over).
       db.exec('PRAGMA journal_mode = WAL');
       db.exec('PRAGMA synchronous = FULL');
-      copyBeforeUpdate(db, file, options.now?.() ?? new Date());
+      copy = copyBeforeUpdate(db, file, options.now?.() ?? new Date());
     }
     initDatabase(db);
   } catch (error) {
+    // The update did not go through. A copy is only worth keeping once something was updated: when the file is still
+    // at the version it was copied at (the failed version was rolled back whole), this try's copy goes, so tries that
+    // fail again and again never fill the folder and never push out an older copy (the one from before 2.0).
+    if (copy) {
+      try {
+        if (schemaVersion(db) === copy.version) unlinkSync(copy.target);
+      } catch { /* it stays: harmless */ }
+    }
     db.close();
     throw error;
   }
+  // only after the update worked are older copies let go
+  if (copy) pruneUpdateCopies(file);
   return db;
 }
 
@@ -2750,12 +2799,12 @@ function updateCopyStamp(name: string, pattern: RegExp): string {
 
 /**
  * Before this version changes the schema of an existing company file, a consistent copy of it as it is (SQLite's
- * VACUUM INTO, so work still in the write-ahead log is in it) goes beside it, and only the newest
- * UPDATE_COPIES_KEPT are kept. A new file (no schema yet) and a file already up to date are left alone. When the copy
+ * VACUUM INTO, so work still in the write-ahead log is in it) goes beside it, and once the update has worked only the
+ * newest UPDATE_COPIES_KEPT are kept (a try that fails removes nothing but its own copy: openDatabase). A new file (no schema yet) and a file already up to date are left alone. When the copy
  * can't be made (a full disk) the schema is not changed: the file opens on a later try, never updated without a copy.
  * That failure is its own error (update_copy_failed), so the app never takes the file for a damaged one.
  */
-function copyBeforeUpdate(db: Db, file: string, now: Date): string | null {
+function copyBeforeUpdate(db: Db, file: string, now: Date): { target: string; version: number } | null {
   if (!db.prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'schema_version'").get()) return null;
   const version = schemaVersion(db);
   if (version === 0 || version >= MIGRATIONS.length) return null;
@@ -2775,13 +2824,16 @@ function copyBeforeUpdate(db: Db, file: string, now: Date): string | null {
     // the file itself is fine: it is not damaged, there was only no room (or no access) for its copy
     throw new AppError(507, 'update_copy_failed', { reason: (error instanceof Error ? error.message : String(error)).slice(0, 300) });
   }
-  // only this company file's own copies are ever removed, the oldest first
+  return { target, version };
+}
+
+/** Only this company file's own copies are ever removed, the oldest first, and only once an update has worked. */
+function pruneUpdateCopies(file: string): void {
   for (const old of updateCopies(file).slice(UPDATE_COPIES_KEPT)) {
     try {
       unlinkSync(old);
     } catch { /* a copy in use stays until next time */ }
   }
-  return target;
 }
 
 /** Brings any database (a file, or the in-browser demo) to the current schema and fills in the defaults. */
@@ -2825,6 +2877,18 @@ function refuseNewerFile(file: string): void {
   }
 }
 
+/**
+ * A version that could not be applied to a company file. The file is as it was before that version (each runs in one
+ * transaction), so it is not a damaged file and must never be set aside as one: update_failed says so, with the
+ * version and the reason. What SQLite itself calls damage (a malformed image, not a database) stays what it is.
+ */
+function updateFailed(error: unknown, version: number): unknown {
+  if (error instanceof AppError) return error;
+  const reason = error instanceof Error ? error.message : String(error);
+  if (/malformed|not a database|disk image|corrupt/i.test(reason)) return error;
+  return new AppError(500, 'update_failed', { version, reason: reason.slice(0, 300) });
+}
+
 /** Applies pending migrations, optionally stopping at `target` (used by the upgrade test). */
 export function migrate(db: Db, target = MIGRATIONS.length): void {
   if (isMysql(db)) return migrateMysql(db);
@@ -2853,11 +2917,16 @@ export function migrate(db: Db, target = MIGRATIONS.length): void {
         db.exec('PRAGMA foreign_keys = ON');
       }
     } else {
-      transaction(db, () => {
-        db.exec(migration.sql);
-        migration.data?.(db);
-        db.prepare('UPDATE schema_version SET version = ?').run(next);
-      });
+      try {
+        transaction(db, () => {
+          db.exec(migration.sql);
+          SQLITE_FINISH.get(migration.sql)?.(db);
+          migration.data?.(db);
+          db.prepare('UPDATE schema_version SET version = ?').run(next);
+        });
+      } catch (error) {
+        throw updateFailed(error, next);
+      }
     }
     version = next;
   }

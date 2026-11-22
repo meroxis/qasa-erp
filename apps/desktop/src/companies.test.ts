@@ -119,6 +119,9 @@ describe('a company file that cannot be opened at the start', () => {
 
   it('a file that is fine but had no room for its copy before an update is never offered to be set aside for a backup', () => {
     expect(damagedFileChoices(true, 'update_copy').choices).toEqual(['retry', 'quit']);
+    // nor one a version of the update could not be applied to: its books are fine as they were
+    expect(damagedFileChoices(true, 'update').choices).toEqual(['retry', 'quit']);
+    expect(damagedFileChoices(false, 'update').choices).toEqual(['retry', 'first', 'quit']);
     expect(damagedFileChoices(false, 'update_copy').choices).toEqual(['retry', 'first', 'quit']);
     for (const main of [true, false]) {
       const { choices, defaultId, cancelId } = damagedFileChoices(main, 'update_copy');

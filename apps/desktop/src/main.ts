@@ -241,18 +241,21 @@ function openFirstCompanyNext(): void {
  * The company file can't be opened at the start (damaged, or not a company file): try again, keep it aside and open
  * an empty company to restore a backup into, open the first company instead, or quit. When the file is fine but the
  * copy kept before a schema update could not be written (no space, no access), it says that, and there is no
- * "Restore from a backup": the file needs room, not replacing.
+ * "Restore from a backup": the file needs room, not replacing. The same when a version of the update could not be
+ * applied to it: the file is as it was, the dialog says to write to support, and never offers to set it aside.
  */
 async function companyFileDamaged(problem: { main?: unknown; reason?: unknown; cause?: unknown }): Promise<DamagedChoice> {
   const updateCopy = problem.cause === 'update_copy';
-  log(updateCopy ? 'the company file was not updated (no copy could be kept first):' : 'the company file could not be opened:', String(problem.reason ?? ''));
+  // a version of the update could not be applied: the file is as it was, and is never offered to be set aside
+  const update = problem.cause === 'update';
+  log(updateCopy ? 'the company file was not updated (no copy could be kept first):' : update ? 'the company file was not updated (a version could not be applied):' : 'the company file could not be opened:', String(problem.reason ?? ''));
   // Enter is Try again: a file locked only for a moment is never set aside with one keypress
-  const { choices, defaultId, cancelId } = damagedFileChoices(problem.main !== false, updateCopy ? 'update_copy' : 'damaged');
+  const { choices, defaultId, cancelId } = damagedFileChoices(problem.main !== false, updateCopy ? 'update_copy' : update ? 'update' : 'damaged');
   const label = { retry: t('tryAgain'), aside: t('dbRestoreFromBackup'), first: t('openFirstCompany'), quit: t('quit') };
   const reason = String(problem.reason ?? '').slice(0, 200);
   const { response } = await dialog.showMessageBox({
-    type: 'error', title: 'Qasa ERP', message: rtlLines(t(updateCopy ? 'dbUpdateCopyFailed' : 'dbDamaged')),
-    detail: rtlLines(t(updateCopy ? 'dbUpdateCopyFailedDetail' : 'dbDamagedDetail', { reason })),
+    type: 'error', title: 'Qasa ERP', message: rtlLines(t(updateCopy ? 'dbUpdateCopyFailed' : update ? 'dbUpdateFailed' : 'dbDamaged')),
+    detail: rtlLines(t(updateCopy ? 'dbUpdateCopyFailedDetail' : update ? 'dbUpdateFailedDetail' : 'dbDamagedDetail', { reason })),
     buttons: choices.map((c) => label[c]), defaultId, cancelId, noLink: true
   });
   const choice = choices[response] ?? 'quit';

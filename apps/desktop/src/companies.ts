@@ -155,8 +155,9 @@ export type DamagedChoice = 'retry' | 'aside' | 'first' | 'quit';
  * again: a file only locked for a moment (antivirus, a OneDrive sync, a second copy of the app) must never be set aside
  * with one keypress. Escape quits. A file that is fine but could not be updated, because no copy of it could be kept
  * first (`update_copy`: a full disk), is never offered to be set aside for a backup: it needs room, then Try again.
+ * Nor is one a version of the update could not be applied to (`update`): its books are fine as they were.
  */
-export function damagedFileChoices(main: boolean, cause: 'damaged' | 'update_copy' = 'damaged'): { choices: DamagedChoice[]; defaultId: number; cancelId: number } {
+export function damagedFileChoices(main: boolean, cause: 'damaged' | 'update_copy' | 'update' = 'damaged'): { choices: DamagedChoice[]; defaultId: number; cancelId: number } {
   const choices: DamagedChoice[] = ['retry', ...(cause === 'damaged' ? ['aside' as const] : []), ...(main ? [] : ['first' as const]), 'quit'];
   return { choices, defaultId: choices.indexOf('retry'), cancelId: choices.length - 1 };
 }

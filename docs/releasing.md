@@ -242,7 +242,11 @@ price checkers and daily-delivery suppliers for markets. It **upgrades the compa
 and 19 run together the first time 2.0.0 opens a 1.6.0 file, on a company file and on a MariaDB/MySQL server database
 alike): 1.6.0 and earlier can't open it afterwards, as the notes say first. Version 19 holds what the reviews of 2.0
 added after the first builds (the approvals table `till_approvals`, the counts of wrong PINs, a shift's refunds, the
-items' price history): a file an early 2.0 build left at 18 gets them on its next opening. Card, FIB, ZainCash and Qi at
+items' price history): a file any build of 2.0 left at 18 gets them on its next opening, whether that build's version
+18 had none of them (the first build) or some already (builds made while the reviews went on): 19 makes its tables and
+indexes only where they are missing and adds each column only where the table lacks it (`migration-v19.test.ts`). A
+version that can't be applied is reported as `update_failed`, never as a damaged file: the file stays as it was, the
+app never offers to set it aside, and a try that failed removes no older copy from before an update. Card, FIB, ZainCash and Qi at
 the till are off in 2.0.0 (`TILL_CARD_PAYMENTS`), so the notes ask for waiting sales to be sent before the update.
 
 1. **Tag Pro, then the app** (the stable steps above): the new features' entitlements must be on Pro `main` first.
