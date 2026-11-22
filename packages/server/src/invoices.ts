@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { restoreGiftVouchers } from './gift-vouchers.ts';
+import { restoreGiftVouchers, takeBackReturnedVouchers } from './gift-vouchers.ts';
 import {
   accountNames,
   allocateDiscount,
@@ -936,6 +936,8 @@ export function cancelInvoice(db: Db, id: string, user: string, date?: string, a
     cancelLoyalty(db, id, cancelDate, user);
     // 2.0: what it took from gift vouchers goes back on them
     restoreGiftVouchers(db, id, user);
+    // … and what a sales return put back on vouchers is taken off them again (refused when they spent it since)
+    if (view.kind === 'sale_return') takeBackReturnedVouchers(db, id, user);
     // phones this sale took are back in stock, with no customer and no warranty. A job's bill (solar) keeps its
     // equipment linked: the job shows it waiting for the next bill, and reads it as unsold meanwhile
     if (view.kind === 'sale' && !db.prepare('SELECT 1 FROM jobs WHERE invoice_id = ?').get(id)) {

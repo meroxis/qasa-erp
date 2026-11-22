@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import type { FastifyInstance } from 'fastify';
-import { todayIso } from '@qasa/core';
+import { addDays, todayIso } from '@qasa/core';
 import { buildApp } from './app.ts';
 import { openDatabase, type Db } from './db.ts';
 import { resetLoginThrottle } from './auth.ts';
@@ -66,6 +66,13 @@ const openShift = async (h: H = owner, register = 'C1', cashAccountCode = '1811'
   return r.json() as { id: string };
 };
 const sell = (shiftId: string, body: object, h: H = owner) => post(`/api/pos/shifts/${shiftId}/sales`, { currency: 'IQD', discount: 0, ...body }, h);
+const voucher = async (shiftId: string, amount: number, extra: object = {}) => {
+  const r = await post(`/api/pos/shifts/${shiftId}/gift-vouchers`, { amount, ...extra });
+  expect(r.statusCode, r.body).toBe(201);
+  return r.json() as { id: string; code: string };
+};
+const voucherRow = (id: string) => db.prepare('SELECT amount, balance, status, entry_id, cancel_entry_id FROM gift_vouchers WHERE id = ?').get(id) as
+  { amount: number; balance: number; status: string; entry_id: string | null; cancel_entry_id: string | null };
 const approve = async (h: H, body: object) => (await post('/api/pos/approve', { pin: PIN, ...body }, h)).json() as { token: string };
 const needsSupervisor = (action: string) => ({ details: [{ code: 'pos_needs_supervisor', action }] });
 const wrongPin = (shiftId: string, i: number, h: H) => post('/api/pos/approve', { shiftId, action: 'void', pin: `9000${10 + i}` }, h);
@@ -77,6 +84,110 @@ function later(minutes: number): void {
     db.prepare('UPDATE pos_pin_tries SET since = ?, locked_until = ? WHERE k = ?').run(back(r.since), back(r.locked_until), r.k);
   }
 }
+
+describe('2 · a sales return cancelled, that had put money back on gift vouchers', () => {
+  it('takes it off the vouchers again, so the same money is not on the voucher and back in the sale', async () => {
+    const shift = await openShift();
+    const v = await voucher(shift.id, 6_000);
+    // two teas, 5,500, all by the voucher (500 stays on it)
+    const sale = (await sell(shift.id, { lines: [tea(2)], vouchers: [{ code: v.code, amount: 5_500 }] })).json();
+    const back = await post(`/api/pos/shifts/${shift.id}/returns`, { invoiceId: sale.invoice.id, lines: [{ lineNo: 1, qtyMilli: 2_000 }] });
+    expect(back.statusCode, back.body).toBe(201);
+    expect(voucherRow(v.id).balance).toBe(6_000);
+    expect(balanceOf('263')).toBe(-6_000);
+    // the return is cancelled: the sale stands again, paid by the voucher, which holds 500 as before the return
+    const cancelled = await post(`/api/invoices/${back.json().id ?? back.json().invoice?.id}/cancel`, {});
+    expect(cancelled.statusCode, cancelled.body).toBe(200);
+    expect(voucherRow(v.id).balance).toBe(500);
+    expect(balanceOf('263')).toBe(-500);
+    expect((await get('/api/pos/gift-vouchers')).json()).toMatchObject({ sold: 6_000, used: 5_500, outstanding: 500 });
+    // … and a new return gives the voucher its share again, no more than it paid
+    const again = await post(`/api/pos/shifts/${shift.id}/returns`, { invoiceId: sale.invoice.id, lines: [{ lineNo: 1, qtyMilli: 1_000 }] });
+    expect(again.statusCode, again.body).toBe(201);
+    expect(again.json().voucherBack).toEqual([{ code: v.code, amount: 2_750, made: false }]);
+    expect(voucherRow(v.id).balance).toBe(3_250);
+  });
+
+  it('is refused once the voucher spent what the return gave it, with words in three languages', async () => {
+    const shift = await openShift();
+    const v = await voucher(shift.id, 5_500);
+    const sale = (await sell(shift.id, { lines: [tea(2)], vouchers: [{ code: v.code, amount: 5_500 }] })).json();
+    const back = await post(`/api/pos/shifts/${shift.id}/returns`, { invoiceId: sale.invoice.id, lines: [{ lineNo: 1, qtyMilli: 2_000 }] });
+    const returnId = back.json().id ?? back.json().invoice?.id;
+    // the customer spends the 5,500 that came back on other goods
+    expect((await sell(shift.id, { lines: [tea(2)], vouchers: [{ code: v.code, amount: 5_500 }] })).statusCode).toBe(201);
+    const refused = await post(`/api/invoices/${returnId}/cancel`, {});
+    expect(refused.statusCode).toBe(409);
+    expect(refused.json()).toMatchObject({ error: 'gv_return_spent', details: { voucher: v.code } });
+    // nothing changed: the return stands, the voucher is empty, the books hold nothing for it
+    expect((await get(`/api/invoices/${returnId}`)).json().status).toBe('posted');
+    expect(voucherRow(v.id).balance).toBe(0);
+    expect(balanceOf('263')).toBe(0);
+  });
+
+  it('cancels the voucher the return made, when the first one was past its date', async () => {
+    const shift = await openShift();
+    const v = await voucher(shift.id, 5_500, { expiresOn: addDays(TODAY, 10) });
+    const sale = (await sell(shift.id, { lines: [tea(2)], vouchers: [{ code: v.code, amount: 5_500 }] })).json();
+    db.prepare('UPDATE gift_vouchers SET created_at = ?, expires_on = ? WHERE id = ?').run(`${addDays(TODAY, -51)}T08:00:00.000Z`, addDays(TODAY, -1), v.id);
+    const back = await post(`/api/pos/shifts/${shift.id}/returns`, { invoiceId: sale.invoice.id, lines: [{ lineNo: 1, qtyMilli: 2_000 }] });
+    const [made] = back.json().voucherBack as { code: string; amount: number; made: boolean }[];
+    const fresh = (await get(`/api/pos/gift-vouchers/lookup?code=${made!.code}`)).json();
+    expect(fresh).toMatchObject({ balance: 5_500, usable: true });
+    expect((await post(`/api/invoices/${back.json().id ?? back.json().invoice?.id}/cancel`, {})).statusCode).toBe(200);
+    expect(voucherRow(fresh.id)).toMatchObject({ balance: 0, status: 'cancelled' });
+    expect((await sell(shift.id, { lines: [tea(1)], vouchers: [{ code: made!.code, amount: 2_750 }] })).statusCode).toBe(400);
+    expect(balanceOf('263')).toBe(0);
+  });
+});
+
+describe('3 · a voucher a refund made', () => {
+  it('keeps no entry of the return; cancelling it pays the customer with its own entry and never reverses the return', async () => {
+    const shift = await openShift();
+    const v = await voucher(shift.id, 5_500, { expiresOn: addDays(TODAY, 10) });
+    const sale = (await sell(shift.id, { lines: [tea(2)], vouchers: [{ code: v.code, amount: 5_500 }] })).json();
+    db.prepare('UPDATE gift_vouchers SET created_at = ?, expires_on = ? WHERE id = ?').run(`${addDays(TODAY, -51)}T08:00:00.000Z`, addDays(TODAY, -1), v.id);
+    const back = await post(`/api/pos/shifts/${shift.id}/returns`, { invoiceId: sale.invoice.id, lines: [{ lineNo: 1, qtyMilli: 2_000 }] });
+    const returnId = back.json().id ?? back.json().invoice?.id;
+    const ret = (await get(`/api/invoices/${returnId}`)).json();
+    const [made] = back.json().voucherBack as { code: string }[];
+    const fresh = (await get(`/api/pos/gift-vouchers/lookup?code=${made!.code}`)).json();
+    expect(voucherRow(fresh.id).entry_id).toBeNull();
+    // the return's entry is the return's alone: the journal does not say a gift voucher owns it
+    expect((await get(`/api/entries/${ret.entryId}`)).json().owner ?? null).not.toBe('gift_voucher');
+    expect(balanceOf('263')).toBe(-5_500);
+    const safe = balanceOf('1811');
+    // an admin cancels the unused voucher: 5,500 paid out of the safe, the liability gone, the return untouched
+    const cancelled = await post(`/api/pos/gift-vouchers/${fresh.id}/cancel`, { cashAccountCode: '1811' });
+    expect(cancelled.statusCode, cancelled.body).toBe(200);
+    expect(balanceOf('263')).toBe(0);
+    expect(balanceOf('1811')).toBe(safe - 5_500);
+    expect((await get(`/api/invoices/${returnId}`)).json()).toMatchObject({ status: 'posted', entryId: ret.entryId });
+    const row = voucherRow(fresh.id);
+    expect(row).toMatchObject({ status: 'cancelled', balance: 0 });
+    expect(row.cancel_entry_id).not.toBeNull();
+    expect(row.cancel_entry_id).not.toBe(ret.entryId);
+    const entry = db.prepare('SELECT type, status, reverses_id FROM entries WHERE id = ?').get(row.cancel_entry_id) as { type: string; status: string; reverses_id: string | null };
+    expect(entry).toMatchObject({ type: 'payment', status: 'approved', reverses_id: null });
+    // that payment is the voucher's: not reversed from the journal
+    expect((await post(`/api/entries/${row.cancel_entry_id}/reverse`, {})).statusCode).toBeGreaterThanOrEqual(400);
+    // a voucher from before this fix that kept the return's entry does not own it either
+    const old = await voucher(shift.id, 1_000);
+    db.prepare('UPDATE gift_vouchers SET shift_id = NULL, entry_id = ? WHERE id = ?').run(ret.entryId, old.id);
+    expect(db.prepare('SELECT 1 AS x FROM gift_vouchers WHERE (entry_id = ? AND shift_id IS NOT NULL)').get(ret.entryId)).toBeUndefined();
+  });
+
+  it('still reverses the receipt of a voucher sold at a till', async () => {
+    const shift = await openShift();
+    const v = await voucher(shift.id, 4_000);
+    expect(balanceOf('1811')).toBe(4_000);
+    expect((await post(`/api/pos/gift-vouchers/${v.id}/cancel`, {})).statusCode).toBe(200);
+    expect(balanceOf('1811')).toBe(0);
+    expect(balanceOf('263')).toBe(0);
+    const row = voucherRow(v.id);
+    expect(db.prepare('SELECT reverses_id FROM entries WHERE id = ?').get(row.cancel_entry_id)).toMatchObject({ reverses_id: row.entry_id });
+  });
+});
 
 describe('4 · the locks wrong PINs leave', () => {
   it('starts a cashier\'s count again when a supervisor types the right PIN', async () => {

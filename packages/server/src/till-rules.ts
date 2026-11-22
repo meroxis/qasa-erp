@@ -583,7 +583,9 @@ export const tillRulesApi: ApiExtension = {
         method: 'POST', path: '/api/pos/gift-vouchers/expire',
         handler: async (req) => writeOffExpired(db, actor(req), parse(z.object({ incomeAccount: z.string().max(12).optional() }), req.body ?? {}).incomeAccount)
       },
-      { method: 'POST', path: '/api/pos/gift-vouchers/:id/cancel', handler: async (req) => transaction(db, () => cancelGiftVoucher(db, parse(z.object({ id }), req.params).id, actor(req).name)) },
+      { method: 'POST', path: '/api/pos/gift-vouchers/:id/cancel', handler: async (req) => transaction(db, () => cancelGiftVoucher(db, parse(z.object({ id }), req.params).id, actor(req),
+          // (a voucher a refund made is paid out of a safe: this one, else the company's cash account)
+          parse(z.object({ cashAccountCode: z.string().max(12).optional() }), req.body ?? {}).cashAccountCode)) },
       { method: 'POST', path: '/api/pos/display/code', handler: async (req) => newDisplayCode(db, parse(z.object({ tillId: id }), req.body).tillId, actor(req).name, actor(req)) },
       { method: 'POST', path: '/api/pos/display/pair', handler: async (req) => pairDisplay(db, parse(z.object({ code: z.string().max(12) }), req.body).code, req.source ?? '') },
       {

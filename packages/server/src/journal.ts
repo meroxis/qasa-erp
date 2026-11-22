@@ -435,8 +435,10 @@ const ENTRY_OWNERS: readonly { owner: string; sql: string; marks: number }[] = [
   // wholesale (wholesale.ts): a rep's collection and a handover of the rep's cash to the office are that document's receipts
   { owner: 'wholesale', sql: 'SELECT 1 FROM ws_collections WHERE entry_id = ? UNION ALL SELECT 1 FROM ws_handovers WHERE entry_id = ?', marks: 2 },
   // gift vouchers (gift-vouchers.ts): a voucher sold, cancelled or written off when it expired unused is that voucher's
-  // entry; reversing it from the journal would leave the voucher spendable
-  { owner: 'gift_voucher', sql: 'SELECT 1 FROM gift_vouchers WHERE entry_id = ? OR cancel_entry_id = ? OR expire_entry_id = ?', marks: 3 },
+  // entry; reversing it from the journal would leave the voucher spendable. A voucher a refund made has no entry of its
+  // own (one from before that kept the return's entry does not make the return's entry the voucher's: only a voucher
+  // sold at a shift owns its receipt)
+  { owner: 'gift_voucher', sql: 'SELECT 1 FROM gift_vouchers WHERE (entry_id = ? AND shift_id IS NOT NULL) OR cancel_entry_id = ? OR expire_entry_id = ?', marks: 3 },
   // delivery orders (delivery.ts): a driver's cash handed over to the office is the handover's own voucher
   { owner: 'delivery_handover', sql: 'SELECT 1 FROM delivery_handovers WHERE entry_id = ?', marks: 1 },
   { owner: 'fuel', sql: 'SELECT 1 FROM fuel_shifts WHERE entry_id = ? UNION ALL SELECT 1 FROM fuel_deliveries WHERE entry_id = ? UNION ALL SELECT 1 FROM fuel_dips WHERE entry_id = ? UNION ALL SELECT 1 FROM fuel_tanks WHERE opening_entry_id = ?', marks: 4 }

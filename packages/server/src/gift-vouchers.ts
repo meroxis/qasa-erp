@@ -4,7 +4,7 @@ import type { Db } from './db.ts';
 import { audit } from './audit.ts';
 import { conflict, invalid, notFound } from './errors.ts';
 import { loadAccounts } from './accounts.ts';
-import { readSetting } from './settings.ts';
+import { getPostingAccounts, readSetting } from './settings.ts';
 import { createJournalEntry, postVoucherNow, reverseEntryInternal } from './journal.ts';
 import { transaction } from './db.ts';
 import { featureAccount } from './feature-accounts.ts';
@@ -16,7 +16,9 @@ import { featureAccount } from './feature-accounts.ts';
  * The books: selling it is a receipt posted at once with the till's sale (Dr the shift's safe / Cr gift vouchers sold,
  * a liability: the company owes the goods). Paying with it is part of the sale (Dr gift vouchers sold), as loyalty
  * points are. A sale cancelled gives the voucher back what it took. An unused voucher can be cancelled by an admin (its
- * receipt reversed: the money goes back to the customer).
+ * receipt reversed: the money goes back to the customer). A voucher a refund made (goods paid by a voucher past its
+ * date came back) has no receipt of its own: cancelling it pays the customer out of a safe, with its own entry. A
+ * return cancelled takes back what it put on vouchers, and is refused once they spent it.
  *
  * The account: the company's choice (setting gift_voucher_account), else 263 "Gift vouchers sold" under 26 creditors,
  * made the first time it is needed, as consignment's 268 is.
@@ -197,9 +199,11 @@ export function giveBackToVoucher(db: Db, input: { returnId: string; entryId: st
       while (db.prepare('SELECT 1 FROM gift_vouchers WHERE code = ?').get(code)) code = newVoucherCode();
       const life = v.expires_on ? Math.round((Date.parse(`${v.expires_on}T00:00:00.000Z`) - Date.parse(`${v.created_at.slice(0, 10)}T00:00:00.000Z`)) / 86_400_000) : 0;
       const expiresOn = v.expires_on ? addDays(today, Math.max(REFUND_VOUCHER_DAYS, life)) : null;
+      // it has no entry of its own: what it holds is in the return's entry, which stays the return's alone (cancelling
+      // this voucher never reverses a return: cancelGiftVoucher)
       db.prepare(`INSERT INTO gift_vouchers (id, code, amount, balance, currency, expires_on, status, account_code, shift_id, entry_id, created_by, created_at)
-                  VALUES (?, ?, ?, ?, 'IQD', ?, 'active', ?, NULL, ?, ?, ?)`)
-        .run(id, code, p.amount, p.amount, expiresOn, p.accountCode, input.entryId, user, now);
+                  VALUES (?, ?, ?, ?, 'IQD', ?, 'active', ?, NULL, NULL, ?, ?)`)
+        .run(id, code, p.amount, p.amount, expiresOn, p.accountCode, user, now);
       target = { id, code };
     }
     db.prepare("INSERT INTO gift_voucher_moves (id, voucher_id, kind, amount, invoice_id, for_voucher_id, created_by, created_at) VALUES (?, ?, 'returned', ?, ?, ?, ?, ?)")
@@ -213,7 +217,7 @@ export function giveBackToVoucher(db: Db, input: { returnId: string; entryId: st
 /** The vouchers a return gave money back onto (the till shows the codes: a new voucher's code is nowhere else for the customer). */
 export function vouchersOfReturn(db: Db, returnId: string): { code: string; amount: number; made: boolean }[] {
   return (db.prepare(`SELECT v.code, m.amount, m.for_voucher_id, m.voucher_id FROM gift_voucher_moves m JOIN gift_vouchers v ON v.id = m.voucher_id
-                      WHERE m.invoice_id = ? AND m.kind = 'returned' ORDER BY m.created_at, v.code`).all(returnId) as { code: string; amount: number; for_voucher_id: string | null; voucher_id: string }[])
+                      WHERE m.invoice_id = ? AND m.kind = 'returned' AND m.amount > 0 ORDER BY m.created_at, v.code`).all(returnId) as { code: string; amount: number; for_voucher_id: string | null; voucher_id: string }[])
     .map((r) => ({ code: r.code, amount: Number(r.amount), made: !!r.for_voucher_id && r.for_voucher_id !== r.voucher_id }));
 }
 
@@ -244,13 +248,51 @@ export function restoreGiftVouchers(db: Db, invoiceId: string, user: string): vo
   }
 }
 
-/** An unused voucher cancelled by an admin: its receipt is reversed (the money is paid back). */
-export function cancelGiftVoucher(db: Db, id: string, user: string): GiftVoucherView {
+/**
+ * A sales return cancelled: what it put back on gift vouchers is taken off them again (the return's entry, reversed,
+ * takes it out of the books), and a voucher the return made is cancelled. Refused when a voucher no longer holds it
+ * (spent since, or written off after its date): the money is gone, and the return stands. Called from cancelInvoice,
+ * inside its transaction.
+ */
+export function takeBackReturnedVouchers(db: Db, returnId: string, user: string): void {
+  const moves = db.prepare(`SELECT m.voucher_id, m.for_voucher_id, v.code, SUM(m.amount) AS amount FROM gift_voucher_moves m JOIN gift_vouchers v ON v.id = m.voucher_id
+                            WHERE m.invoice_id = ? AND m.kind = 'returned' GROUP BY m.voucher_id, m.for_voucher_id, v.code ORDER BY v.code`).all(returnId) as
+    { voucher_id: string; for_voucher_id: string | null; code: string; amount: number }[];
+  const now = new Date().toISOString();
+  for (const m of moves) {
+    const back = Number(m.amount);
+    if (back <= 0) continue;
+    const taken = db.prepare("UPDATE gift_vouchers SET balance = balance - ? WHERE id = ? AND status = 'active' AND balance >= ?").run(back, m.voucher_id, back);
+    if (Number(taken.changes) !== 1) throw conflict('gv_return_spent', { voucher: m.code });
+    db.prepare("INSERT INTO gift_voucher_moves (id, voucher_id, kind, amount, invoice_id, for_voucher_id, created_by, created_at) VALUES (?, ?, 'returned', ?, ?, ?, ?, ?)")
+      .run(randomUUID(), m.voucher_id, -back, returnId, m.for_voucher_id, user, now);
+    // a voucher this return made holds nothing now and never will: cancelled with it
+    const made = !!m.for_voucher_id && m.for_voucher_id !== m.voucher_id;
+    if (made) db.prepare("UPDATE gift_vouchers SET status = 'cancelled' WHERE id = ? AND balance = 0").run(m.voucher_id);
+    audit(db, user, 'gift_voucher_return_cancelled', 'gift_voucher', m.voucher_id, { code: m.code, amount: back, returnId, made });
+  }
+}
+
+/**
+ * An unused voucher cancelled by an admin. One sold at a till: its receipt is reversed (the money is paid back out of
+ * the safe it went into). One a refund made has no receipt (what it holds came from a return's entry, which is the
+ * return's alone): the customer is paid in cash instead, with the voucher's own payment out of `cashAccountCode`
+ * (else the company's cash account): Dr gift vouchers / Cr the safe.
+ */
+export function cancelGiftVoucher(db: Db, id: string, actor: { id: string | null; name: string }, cashAccountCode?: string): GiftVoucherView {
+  const user = actor.name;
   const r = db.prepare('SELECT * FROM gift_vouchers WHERE id = ?').get(id) as Row | undefined;
   if (!r) throw notFound('gift_voucher');
   if (r.status !== 'active') throw conflict('gv_cancelled');
   if (Number(r.balance) !== Number(r.amount)) throw conflict('gv_used');
-  const reversal = r.entry_id ? reverseEntryInternal(db, r.entry_id, user) : null;
+  // sold at a till (it has that shift, and its own receipt); else made by a refund
+  const sold = !!r.shift_id;
+  const reversal = sold
+    ? (r.entry_id ? reverseEntryInternal(db, r.entry_id, user) : null)
+    : postVoucherNow(db, {
+      kind: 'payment', date: todayIso(), cashAccountCode: cashAccountCode ?? getPostingAccounts(db).cash, currency: 'IQD', rateX100: 100,
+      description: `${GIFT_NAMES.en} ${r.code}`, items: [{ accountCode: r.account_code, amount: Number(r.amount), description: r.code }]
+    }, actor);
   db.prepare("UPDATE gift_vouchers SET status = 'cancelled', balance = 0, cancel_entry_id = ? WHERE id = ?").run(reversal, id);
   db.prepare("INSERT INTO gift_voucher_moves (id, voucher_id, kind, amount, invoice_id, created_by, created_at) VALUES (?, ?, 'cancelled', ?, NULL, ?, ?)")
     .run(randomUUID(), id, -Number(r.amount), user, new Date().toISOString());
