@@ -38,7 +38,7 @@ import { useSupervisor } from './Supervisor.tsx';
 import { Keypad, MiscDialog, PriceDialog, QtyDialog, ShortcutsHelp, VoucherPayDialog, VoucherSellDialog } from './Dialogs.tsx';
 import { beep, readPrefs, writePrefs, type TillPrefs } from './feedback.ts';
 import { NO_RULES, tillRulesApi, type ApprovalAction, type DisplayState, type TillRulesView } from './rules-api.ts';
-import { readScaleSettings, readWeight, serialHere } from './scale.ts';
+import { readScaleSettings, readWeight, scaleProblem, serialHere } from './scale.ts';
 import { TillClothingButtons } from '../industry/ClothingTools.tsx';
 import { TillReturnDialog } from './TillReturn.tsx';
 import { DeliveryFromTill } from '../industry/DeliveryFromTill.tsx';
@@ -603,13 +603,13 @@ export function Register({ initial, onClosed }: { initial: ShiftView; onClosed()
     if (!lastLine || !isWeighedUnit(lastLine.unit ?? lastLine.item.unit)) { toast(t('tu_scaleNotWeighed')); return; }
     try {
       const kg = await readWeight(scale);
-      if (kg === null) { toast(t('tu_scaleNone')); return; }
       const unit = lastLine.unit ?? lastLine.item.unit;
       const qtyMilli = Math.round((unit === 'g' ? kg * 1000 : kg) * 1000);
       setCart((c) => c.map((l) => (l === lastLine ? { ...l, qtyMilli } : l)));
       setFlash(lineKey(lastLine));
-    } catch {
-      toast(t('tu_scaleNone'));
+    } catch (e) {
+      // what stood in the way: no port chosen, nothing came, or the weight did not settle (never a guessed weight)
+      toast(t(scaleProblem(e)));
     } finally {
       focusSearch();
     }

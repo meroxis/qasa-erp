@@ -5,7 +5,11 @@
  *
  * Scales speak many small protocols. Most send the weight by themselves, a few times a second, as text such as
  * "ST,GS,  1.250kg"; others answer a request byte (often ENQ, 05, or "W"). So: an optional request (hex bytes), then the
- * text read for a moment, and the last weight in it that matches the pattern.
+ * lines read for a moment. A weight counts only from a whole line (never from one cut off in the middle: "1.2" of
+ * "1.250"), only when the scale does not mark it unstable, and only once two readings in a row agree.
+ *
+ * The port is the one chosen for this PC (ScalePort.tsx; in the Windows app the choice is kept by the app, which lets
+ * the page reach that port alone). Nothing is ever written to a port nobody chose.
  */
 
 export interface ScaleSettings {
@@ -76,46 +80,99 @@ export function parseScaleText(text: string, s: Pick<ScaleSettings, 'pattern' | 
   return kg > 1000 ? null : kg;
 }
 
+/** What stood in the way of a reading: no port was chosen, nothing came, or the weight did not settle. */
+export class ScaleError extends Error {
+  constructor(readonly code: 'scale_no_port' | 'scale_timeout' | 'scale_unstable') {
+    super(code);
+  }
+}
+
+/** The whole lines of what the scale sent so far (ended by CR, LF or ETX); a last piece still coming is left out. */
+export function wholeLines(text: string): string[] {
+  const parts = text.split(/[\r\n\x03]/);
+  parts.pop();
+  // eslint-disable-next-line no-control-regex
+  return parts.map((line) => line.replace(/[\x00-\x08\x0b\x0c\x0e-\x1f]/g, '').trim()).filter(Boolean);
+}
+
+/** A line the scale marks as not settled yet ("US,GS, 1.250kg"; ST is stable) or as over its range. */
+export const unstableLine = (line: string): boolean => /(^|[,;\s])(US|OL)([,;\s]|$)/i.test(line);
+
+/**
+ * The weight (kg) the scale has settled on, from the text read so far: the last two readings, each from a whole line the
+ * scale does not mark unstable, must be the same. `lines` says how many whole lines came (to tell "nothing came" from
+ * "it did not settle").
+ */
+export function settledWeight(text: string, s: Pick<ScaleSettings, 'pattern' | 'unit'>): { kg: number | null; lines: number } {
+  const lines = wholeLines(text);
+  let last: number | null = null;
+  let kg: number | null = null;
+  for (const line of lines) {
+    // an unstable line breaks the run: the two that agree must follow one another
+    const reading = unstableLine(line) ? null : parseScaleText(line, s);
+    kg = reading !== null && reading === last ? reading : null;
+    last = reading;
+  }
+  return { kg, lines: lines.length };
+}
+
 /** Whether this window can reach a serial port at all (the Windows app, or a browser with Web Serial). */
 export const serialHere = (): boolean => typeof navigator !== 'undefined' && 'serial' in navigator;
 
-interface SerialLike {
+export interface SerialLike {
   getPorts(): Promise<PortLike[]>;
   requestPort(): Promise<PortLike>;
 }
-interface PortLike {
+export interface PortLike {
   open(o: { baudRate: number }): Promise<void>;
   close(): Promise<void>;
   readable: ReadableStream<Uint8Array> | null;
   writable: WritableStream<Uint8Array> | null;
 }
 
-/** One reading: opens the port, asks if it must, reads for up to `ms`, closes it. The weight in kg, or null. */
-export async function readWeight(s: ScaleSettings, ms = 1500): Promise<number | null> {
-  const serial = (navigator as unknown as { serial?: SerialLike }).serial;
-  if (!serial) return null;
+const serialOf = (): SerialLike | null => (typeof navigator === 'undefined' ? null : (navigator as unknown as { serial?: SerialLike }).serial ?? null);
+
+/**
+ * One reading: opens the chosen port, asks if it must, reads until two readings in a row agree (at most `ms`), closes
+ * it. The weight in kg. Throws a ScaleError when no port was chosen for this PC (it never asks for one here, and never
+ * writes to a port nobody chose), when nothing came, or when the weight did not settle in time.
+ */
+export async function readWeight(s: ScaleSettings, ms = 2500, serial: SerialLike | null = serialOf()): Promise<number> {
+  if (!serial) throw new ScaleError('scale_no_port');
   const ports = await serial.getPorts();
-  const port = ports[0] ?? await serial.requestPort();
+  const port = ports[0];
+  if (!port) throw new ScaleError('scale_no_port');
   await port.open({ baudRate: s.baud });
   let text = '';
+  let seen = 0;
   try {
     const ask = hexBytes(s.request);
-    if (ask?.length && port.writable) {
+    const request = async () => {
+      if (!ask?.length || !port.writable) return;
       const w = port.writable.getWriter();
       try { await w.write(ask); } finally { w.releaseLock(); }
-    }
-    if (!port.readable) return null;
+    };
+    await request();
+    if (!port.readable) throw new ScaleError('scale_timeout');
     const reader = port.readable.getReader();
     const decoder = new TextDecoder('latin1');
-    const timer = setTimeout(() => { void reader.cancel(); }, ms);
+    const timer = setTimeout(() => { void reader.cancel().catch(() => {}); }, ms);
     try {
       for (;;) {
         const { value, done } = await reader.read();
         if (done) break;
-        if (value) text += decoder.decode(value, { stream: true });
-        if (text.length > 4096) text = text.slice(-2048);
-        // a scale that answered once (a request): its line is in, no need to wait
-        if (ask?.length && /[\r\n]/.test(text) && parseScaleText(text, s) !== null) break;
+        const chunk = value ? decoder.decode(value, { stream: true }) : '';
+        text += chunk;
+        if (text.length > 4096) {
+          // keep the newest whole lines: cut at a line end, never inside a number
+          const newest = text.slice(-2048);
+          text = newest.slice(newest.search(/[\r\n\x03]/) + 1);
+        }
+        const now = settledWeight(text, s);
+        if (now.kg !== null) return now.kg;
+        // a scale that answers a request sends one line for each: ask again for the reading that must agree
+        const ended = (chunk.match(/[\r\n\x03]+/g) ?? []).length;
+        if (ended) { seen += ended; await request(); }
       }
     } finally {
       clearTimeout(timer);
@@ -124,5 +181,48 @@ export async function readWeight(s: ScaleSettings, ms = 1500): Promise<number | 
   } finally {
     await port.close().catch(() => {});
   }
-  return parseScaleText(text, s);
+  throw new ScaleError(wholeLines(text).length ? 'scale_unstable' : 'scale_timeout');
+}
+
+/** The text key that says what went wrong with a reading (i18n/scale.ts). */
+export function scaleProblem(error: unknown): 'sc_noPort' | 'sc_timeout' | 'sc_unstable' | 'sc_failed' {
+  const code = error instanceof ScaleError ? error.code : '';
+  return code === 'scale_no_port' ? 'sc_noPort' : code === 'scale_timeout' ? 'sc_timeout' : code === 'scale_unstable' ? 'sc_unstable' : 'sc_failed';
+}
+
+/* ---------- the port chosen for this PC ---------- */
+
+export interface ScalePort { key: string; label: string }
+interface DesktopScale {
+  serialPorts?(): Promise<{ ports: ScalePort[]; chosen: string }>;
+  chooseSerialPort?(key: string): Promise<boolean>;
+}
+/** The Windows app's own keeping of the choice (app-preload.ts); null in a browser, which keeps what its own chooser granted. */
+export function desktopScale(): Required<DesktopScale> | null {
+  const till = typeof window === 'undefined' ? undefined : (window as unknown as { qasaDesktop?: { till?: DesktopScale } }).qasaDesktop?.till;
+  return till?.serialPorts && till.chooseSerialPort ? { serialPorts: till.serialPorts.bind(till), chooseSerialPort: till.chooseSerialPort.bind(till) } : null;
+}
+
+/**
+ * Asks for a port (a click must have led here). In a browser its own chooser shows. In the Windows app this hands the
+ * app the list of ports, and is granted only the port chosen for this PC; with none chosen yet it is refused, which is
+ * expected: the list is then shown for the admin to pick from (ScalePort.tsx).
+ */
+export async function askForPort(serial: SerialLike | null = serialOf()): Promise<boolean> {
+  if (!serial) return false;
+  try {
+    await serial.requestPort();
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/** Whether a port is chosen for this PC now (the page can reach it). */
+export async function portChosen(serial: SerialLike | null = serialOf()): Promise<boolean> {
+  try {
+    return !!serial && (await serial.getPorts()).length > 0;
+  } catch {
+    return false;
+  }
 }

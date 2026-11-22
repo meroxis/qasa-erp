@@ -92,7 +92,11 @@ contextBridge.exposeInMainWorld('qasaDesktop', {
    */
   till: {
     openDrawer: () => ipcRenderer.invoke('till:drawer') as Promise<unknown>,
-    customerDisplay: (open: boolean) => ipcRenderer.invoke('till:customerDisplay', open === true) as Promise<unknown>
+    customerDisplay: (open: boolean) => ipcRenderer.invoke('till:customerDisplay', open === true) as Promise<unknown>,
+    /** the serial ports this PC showed when the page last asked for one, and the one chosen for the scale */
+    serialPorts: () => ipcRenderer.invoke('till:serialPorts') as Promise<unknown>,
+    /** keeps the scale's port for this PC ('' for none); the page is then granted that port alone */
+    chooseSerialPort: (key: string) => ipcRenderer.invoke('till:chooseSerialPort', String(key)) as Promise<unknown>
   },
   sharePdf: (kind: string, ref: string) => ipcRenderer.invoke('share:pdf', String(kind), String(ref)) as Promise<unknown>,
   /**

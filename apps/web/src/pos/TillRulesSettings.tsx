@@ -7,7 +7,8 @@ import { useI18n } from '../i18n.ts';
 import { href } from '../router.ts';
 import { tillsApi } from '../industry/pos-api.ts';
 import { tillRulesApi, type DisplayRules, type SupervisorRules, type TillRulesView } from './rules-api.ts';
-import { BAUDS, DEFAULT_SCALE, hexBytes, readScaleSettings, readWeight, serialHere, validPattern, writeScaleSettings, type ScaleSettings } from './scale.ts';
+import { BAUDS, DEFAULT_SCALE, hexBytes, readScaleSettings, readWeight, scaleProblem, serialHere, validPattern, writeScaleSettings, type ScaleSettings } from './scale.ts';
+import { ScalePortChoice } from './ScalePort.tsx';
 import { MAX_PICTURE_FILE_BYTES, preparePicture } from '../industry/ItemImage.tsx';
 
 /**
@@ -328,6 +329,7 @@ function ScaleCard() {
           <label className="row" style={{ gap: 6 }}><input type="checkbox" checked={s.on} disabled={!here} onChange={(e) => save({ ...s, on: e.target.checked })} />{t('tu_scaleOn')}</label>
           {s.on && (
             <>
+              <ScalePortChoice />
               <div className="row" style={{ gap: 8, flexWrap: 'wrap' }}>
                 <label className="field"><span>{t('tu_scaleBaud')}</span>
                   <select className="input" value={s.baud} onChange={(e) => save({ ...s, baud: Number(e.target.value) })}>{BAUDS.map((b) => <option key={b} value={b}>{b}</option>)}</select>
@@ -343,7 +345,7 @@ function ScaleCard() {
                 <input className="input ltr" maxLength={200} value={s.pattern} aria-invalid={!validPattern(s.pattern)} onChange={(e) => setS({ ...s, pattern: e.target.value })} onBlur={() => save(validPattern(s.pattern) ? s : { ...s, pattern: DEFAULT_SCALE.pattern })} />
               </label>
               <div className="row" style={{ gap: 8 }}>
-                <button type="button" className="btn small" onClick={() => void readWeight(s).then((kg) => setSaid(kg === null ? t('tu_scaleNone') : t('tu_scaleGot', { n: `${qty(Math.round(kg * 1000))} kg` })), () => setSaid(t('tu_scaleNone')))}>{t('tu_scaleTest')}</button>
+                <button type="button" className="btn small" onClick={() => void readWeight(s).then((kg) => setSaid(t('tu_scaleGot', { n: `${qty(Math.round(kg * 1000))} kg` })), (e: unknown) => setSaid(t(scaleProblem(e))))}>{t('tu_scaleTest')}</button>
                 {said && <span className="small" role="status">{said}</span>}
               </div>
             </>

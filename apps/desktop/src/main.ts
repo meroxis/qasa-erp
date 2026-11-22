@@ -4,7 +4,7 @@
  *   %APPDATA%\Qasa ERP\data\qasa.sqlite
  */
 import { app, BrowserWindow, dialog, ipcMain, Menu, nativeTheme, Notification, protocol, safeStorage, screen, session, shell, utilityProcess, type MenuItemConstructorOptions, type UtilityProcess } from 'electron';
-import { pickScalePort, serialAllowed } from './serial-scale.ts';
+import { chosenDevice, listScalePorts, pickScalePort, readChosenPort, serialAllowed, writeChosenPort, type SerialPortChoice } from './serial-scale.ts';
 import electronUpdater from 'electron-updater';
 import { channelOf, notesText, updaterOptions, type UpdateChannel, type UpdateState } from './updates-logic.ts';
 import { randomBytes } from 'node:crypto';
@@ -678,6 +678,28 @@ ipcMain.handle('app:windowsAccount', async (event) => {
   return who ? { sid: who.sid, account: thisWindowsUser(), windowsAdmin: who.windowsAdmin } : null;
 });
 
+// the weighing scale's port, chosen for this PC in Settings → Tills and till rules (serial-scale.ts)
+let scalePortsSeen: readonly SerialPortChoice[] = [];
+let scalePortKey: string | null = null;
+const chosenScalePort = (): string => (scalePortKey ??= readChosenPort(app.getPath('userData')));
+ipcMain.handle('till:serialPorts', (event) => {
+  if (!invokedByAppPage(event)) return { ports: [], chosen: '' };
+  return { ports: listScalePorts(scalePortsSeen), chosen: chosenScalePort() };
+});
+ipcMain.handle('till:chooseSerialPort', (event, key: unknown) => {
+  if (!invokedByAppPage(event) || typeof key !== 'string') return false;
+  // only a port this PC really showed, or none
+  if (key && !listScalePorts(scalePortsSeen).some((p) => p.key === key)) return false;
+  try {
+    writeChosenPort(app.getPath('userData'), key);
+    scalePortKey = key;
+    return true;
+  } catch (error) {
+    log('the scale port could not be kept:', error);
+    return false;
+  }
+});
+
 let customerWin: BrowserWindow | null = null;
 ipcMain.handle('till:customerDisplay', (event, open: unknown) => {
   if (!invokedByAppPage(event) || !appOrigin) return false;
@@ -1003,11 +1025,17 @@ async function createWindow(url: string): Promise<void> {
   // a serial port, for a weighing scale at the till (serial-scale.ts); nothing else, and no other page
   ses.setPermissionRequestHandler((_contents, _permission, callback) => callback(false));
   ses.setPermissionCheckHandler((contents, permission, requestingOrigin) => !!win && contents === win.webContents && serialAllowed(permission, originOf(requestingOrigin), appOrigin));
-  ses.setDevicePermissionHandler((details) => details.deviceType === 'serial' && serialAllowed('serial', originOf(details.origin), appOrigin));
+  // the one port an admin chose for this PC's scale (serial-scale.ts): the page reaches that port and no other, so the
+  // till's request bytes never go to another device
+  ses.setDevicePermissionHandler((details) => details.deviceType === 'serial' && serialAllowed('serial', originOf(details.origin), appOrigin) && chosenDevice(details.device, chosenScalePort()));
   ses.removeAllListeners('select-serial-port');
   ses.on('select-serial-port', (event, portList, contents, callback) => {
     event.preventDefault();
-    callback(win && contents === win.webContents && originOf(contents.getURL()) === appOrigin ? pickScalePort(portList) : '');
+    const own = !!win && contents === win.webContents && originOf(contents.getURL()) === appOrigin;
+    // the list is kept for Settings to show (the page asks for a port when the admin looks for them); no port is
+    // ever picked by a guess
+    if (own) scalePortsSeen = portList;
+    callback(own ? pickScalePort(portList, chosenScalePort()) : '');
   });
 
   win = new BrowserWindow({

@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { generateKeyPairSync, sign } from 'node:crypto';
+import { generateKeyPairSync, sign, type KeyObject } from 'node:crypto';
 import { buildApp, changesRecords, configureLicensing, configureViewOnly, keyHash, machineId, openDatabase, planStatus, readSetting, SCHEMA_VERSION, writeSetting, type Db } from '@qasa/server';
 import { resetLicensingForTests } from '../../../packages/server/src/activation.ts';
 import { setLicensePublicKeyForTests } from '../../../packages/server/src/license.ts';
@@ -307,7 +307,7 @@ describe('companies on this PC', () => {
 
   describe('the licence is the PC\'s: a company takes over a newer one from the others', () => {
     const MACHINE_GUID = '6f1c1b6e-3a59-4c1f-9d7e-0b2f4c9a1e11';
-    let pair: ReturnType<typeof generateKeyPairSync>;
+    let pair: { publicKey: KeyObject; privateKey: KeyObject };
     const signed = (prefix: string, payload: Record<string, unknown>) => {
       const body = `${prefix}.${Buffer.from(JSON.stringify(payload)).toString('base64url')}`;
       return `${body}.${sign(null, Buffer.from(body), pair.privateKey).toString('base64url')}`;
