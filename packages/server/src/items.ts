@@ -7,6 +7,7 @@ import { audit } from './audit.ts';
 import { conflict, invalid, notFound } from './errors.ts';
 import { assertWithinLimit } from './license.ts';
 import { dropShelfFlags, notePriceChanges, shelfPrices } from './shelf-labels.ts';
+import { dropPriceHistory, listPrices, notePriceHistory } from './price-history.ts';
 import { assertItemUnits, itemUnits, openDocumentsWithItem, replaceItemUnits, unitsByItem, type ItemUnitView } from './item-units.ts';
 import { startTracking } from './batches.ts';
 import { assertItemCategory, IN_CATEGORY_SQL } from './categories.ts';
@@ -362,6 +363,7 @@ export function updateItem(db: Db, id: string, input: ItemInput, user: string): 
   transaction(db, () => {
     // the prices the shelf labels show now, to list those that change (shelf-labels.ts)
     const shelfBefore = shelfPrices(db, id);
+    const pricesBefore = listPrices(db, id);
     db.prepare(`UPDATE items SET code = ?, barcode = ?, name_ar = ?, name_en = ?, name_ku = ?, unit = ?, sale_price = ?, sale_currency = ?,
                 track_stock = ?, active = ?, sale_unit = ?, purchase_unit = ?, updated_at = ? WHERE id = ?`)
       .run(input.code?.trim() || current.code, input.barcode?.trim() || null, name.ar, name.en, name.ku,
@@ -376,6 +378,8 @@ export function updateItem(db: Db, id: string, input: ItemInput, user: string): 
     // switched on: what is in stock goes into the batch with no number, so the batches add up to the stock from now on
     if (trackBatches && !current.trackBatches) startTracking(db, id);
     notePriceChanges(db, id, shelfBefore, user);
+    // the item's prices over time (price-history.ts): the till's price rule reads them for sales kept while cut off
+    notePriceHistory(db, id, pricesBefore);
     audit(db, user, 'update', 'item', id, input);
   });
   return getItem(db, id);
@@ -401,6 +405,7 @@ export function deleteItem(db: Db, id: string, user: string): void {
       db.prepare(`DELETE FROM ${table} WHERE item_id = ?`).run(id);
     }
     dropShelfFlags(db, id);
+    dropPriceHistory(db, id);
     db.prepare('DELETE FROM items WHERE id = ?').run(id);
     audit(db, user, 'delete', 'item', id);
   });
