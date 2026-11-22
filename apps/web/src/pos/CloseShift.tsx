@@ -4,6 +4,7 @@ import { useI18n } from '../i18n.ts';
 import { href } from '../router.ts';
 import { posApi, type ShiftView } from '../industry/pos-api.ts';
 import { money2 } from './shared.ts';
+import { CashMoveList, cashMoveSums, hasCashMoves } from './CashMoves.tsx';
 import { DiffText } from './OpenShift.tsx';
 
 /* ---------- closing ---------- */
@@ -59,7 +60,15 @@ export function CloseShift({ shift, keptHere = 0, held = 0, onCancel, onClosed }
             <div className="pos-r-row"><span>{t('pos_sales')}</span><span className="num">{money2(i18n, shift.sales)}</span></div>
             {(shift.refunds.IQD > 0 || shift.refunds.USD > 0) && <div className="pos-r-row"><span>{t('pos_refunds')}</span><span className="num">−{money2(i18n, shift.refunds)}</span></div>}
             {shift.otherCash && (shift.otherCash.IQD !== 0 || shift.otherCash.USD !== 0) && <div className="pos-r-row"><span>{t('tu_otherCash')}</span><span className="num">{money2(i18n, shift.otherCash)}</span></div>}
+            {/* a supplier or an expense paid out of the drawer, a debt collected into it: expected too, with its documents */}
+            {cashMoveSums(i18n, shift.cashMoves).map((row) => <div key={row.key} className="pos-r-row"><span>{row.label}</span><span className="num">{row.value}</span></div>)}
             <div className="pos-r-row"><span>{t('pos_expected')}</span><strong className="num">{money2(i18n, shift.expected)}</strong></div>
+            {hasCashMoves(shift.cashMoves) && shift.cashMoves.lines.length > 0 && (
+              <details className="small">
+                <summary>{t('tu_cashMoves')} ({i18n.int(shift.cashMoves.count)})</summary>
+                <CashMoveList moves={shift.cashMoves} />
+              </details>
+            )}
           </>
         )}
         <div className="grid-2">

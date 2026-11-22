@@ -4,7 +4,7 @@ import type { Db } from './db.ts';
 import { AppError } from './errors.ts';
 import { readSetting } from './settings.ts';
 import { entryInBranchSql } from './branches.ts';
-import { getShift, openedShift, shiftInvoiceIds, type PosMethod } from './pos.ts';
+import { getShift, openedShift, shiftInvoiceIds, type CashMoves, type PosMethod } from './pos.ts';
 import { loyaltyPaidFor } from './loyalty.ts';
 import { branchOf, cashFlowOn, expensesBetween, lowStock, salesByItem, type BranchFilter, type ExpenseRow, type ItemSales, type LowStock } from './brief.ts';
 import { seesBooks, type Actor } from './auth.ts';
@@ -29,6 +29,11 @@ export type DayMethod = (typeof DAY_METHODS)[number];
 export interface DayRegister {
   shiftId: string; number: string; register: string; openedBy: string; status: 'open' | 'closed'; openedAt: string; closedAt: string | null;
   sales: Money; count: number; expected: Money; counted: Money | null; difference: Money | null;
+  /**
+   * 2.0: the other cash on the register's safe while its shift was open (a supplier or an expense paid out of the
+   * drawer, a debt collected into it), which `expected` holds; left out when there was none
+   */
+  cashMoves?: CashMoves;
   /** an open shift of a cashier who closes blind: its figures are left out */
   blind?: true;
 }
@@ -163,7 +168,8 @@ function registersOn(db: Db, date: string, branch: BranchFilter): DayRegister[] 
       const v = getShift(db, s.id);
       return {
         shiftId: v.id, number: v.number, register: v.register, openedBy: v.openedBy, status: v.status, openedAt: v.openedAt, closedAt: v.closedAt,
-        sales: v.sales, count: v.count, expected: v.expected, counted: v.counted, difference: v.difference
+        sales: v.sales, count: v.count, expected: v.expected, counted: v.counted, difference: v.difference,
+        ...(v.cashMoves.count ? { cashMoves: v.cashMoves } : {})
       };
     });
 }
@@ -215,7 +221,14 @@ export function dayClose(db: Db, date: string, branch: BranchFilter = null, view
     // a cashier who closes blind (till-settings.ts) never reads what an open shift of theirs expects: its register shows
     // no sales, expected cash or difference, and its sales are left out of the day's totals until it is closed
     const blind = closesBlind(db, viewer);
-    if (blind) registers = registers.map((r) => r.status === 'open' ? { ...r, sales: { IQD: 0, USD: 0 }, expected: { IQD: 0, USD: 0 }, difference: null, blind: true } : r);
+    if (blind) {
+      registers = registers.map((r) => {
+        if (r.status !== 'open') return r;
+        // (the other cash on its safe tells what it expects too)
+        const { cashMoves: _moves, ...rest } = r;
+        return { ...rest, sales: { IQD: 0, USD: 0 }, expected: { IQD: 0, USD: 0 }, difference: null, blind: true as const };
+      });
+    }
     const shiftIds = registers.filter((r) => !(blind && r.status === 'open')).map((r) => r.shiftId);
     own = { userId: viewer.id, shiftIds, invoiceIds: [...new Set(shiftIds.flatMap((id) => shiftInvoiceIds(db, id)))] };
   }

@@ -37,7 +37,14 @@ export interface ShiftView {
   usdTaken?: { usd: number; iqd: number };
   /** 2.0: cash sales made on another screen into this shift's safe while it was open (expected in the drawer too) */
   otherCash?: Money2;
+  /** 2.0: every other document that moved cash on the shift's safe while it was open (expected in the drawer too) */
+  cashMoves?: CashMoves;
 }
+
+/** One document that moved cash on a shift's safe beside the till's own sales: + into the drawer, − out of it. */
+export interface CashMoveLine { entryId: string; type: string; number: string | null; description: string; currency: CurrencyCode; amount: number; by: string; at: string }
+/** The other cash of a shift: in and out by currency, and the documents (the first 200; `count`: all of them). */
+export interface CashMoves { in: Money2; out: Money2; count: number; lines: CashMoveLine[] }
 
 export interface ShiftSaleView {
   invoiceId: string; number: string | null; createdAt: string; partyName: string | null; currency: CurrencyCode; total: number; status: string;

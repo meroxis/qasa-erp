@@ -28,6 +28,36 @@ describe('the end-of-day close on the phone', () => {
     expect(drawerTone(null)).toBeNull();
   });
 
+  it('reads a register an office 2.0 sends with fields this app does not know (the other cash on its safe)', async () => {
+    // office 2.0: what a register expects holds the other cash on its safe (a supplier paid out of the drawer); its
+    // sums come along as `cashMoves`, which this app (1.1.0) has no use for and must simply pass over
+    const answer = {
+      date: '2026-11-22', sales: { gross: 60_000, invoices: 3, returns: 0, returnsCount: 0, net: 60_000 }, methods: [{ method: 'cash', amount: 60_000, invoices: 3 }],
+      registers: [
+        { shiftId: 's1', number: 'POS-2026-0001', register: 'Counter 1', openedBy: 'Las', status: 'closed', openedAt: '2026-11-22T05:00:00Z', closedAt: '2026-11-22T15:00:00Z',
+          sales: { IQD: 60_000, USD: 0 }, count: 3, expected: { IQD: 130_000, USD: 0 }, counted: { IQD: 130_000, USD: 0 }, difference: { IQD: 0, USD: 0 },
+          cashMoves: { in: { IQD: 0, USD: 0 }, out: { IQD: 30_000, USD: 0 }, count: 1 }, somethingLater: [1, 2, 3] }
+      ],
+      debts: { collected: 0, added: 0 }, lowStock: { count: 0 }
+    };
+    const { ownerApi } = await import('../src/owner/api');
+    const link = { request: async () => ({ s: 200, b: JSON.parse(JSON.stringify(answer)) as unknown }) };
+    const got = await ownerApi(link as never).dayClose('2026-11-22', false);
+    const r = got.registers[0]!;
+    // everything the screen draws of a register (screens/owner/dayclose.tsx) is there and unchanged
+    expect([r.shiftId, r.register, r.openedBy, r.status]).toEqual(['s1', 'Counter 1', 'Las', 'closed']);
+    expect(r.sales).toEqual({ IQD: 60_000, USD: 0 });
+    expect(r.expected).toEqual({ IQD: 130_000, USD: 0 });
+    expect(r.counted).toEqual({ IQD: 130_000, USD: 0 });
+    expect(drawerTone(r.difference)).toEqual({ key: 'dayMatches', tone: 'ok' });
+    // the screen reads only fields it names: none of the new ones
+    const { readFileSync } = await import('node:fs');
+    const screen = readFileSync(new URL('../src/screens/owner/dayclose.tsx', import.meta.url), 'utf8');
+    expect(screen).toContain('c.registers.map((r) =>');
+    expect(screen).not.toContain('cashMoves');
+    expect(screen).not.toMatch(/Object\.(keys|entries|values)\(r\)/);
+  });
+
   it('names how sales were paid in the desktop\'s words', () => {
     expect(translate('en', METHOD_KEY.cash)).toBe('Cash');
     expect(translate('en', METHOD_KEY.credit)).toBe('On credit');

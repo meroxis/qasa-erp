@@ -13,7 +13,11 @@ import { resetDisplayTries, resetPinFailures } from './till-rules.ts';
 // tills know: cash sales in dinars (rounded to the notes) and in dollars, dollar notes on a dinar sale, sales on a
 // customer's account, gift vouchers sold, used, given back by a return (a new voucher when the first is past its
 // date) and cancelled by an admin, returns at the till and on the invoice screen, returns cancelled, sales cancelled,
-// cash sales made on the invoice screen, shifts closed and opened again. After every step, for each safe and each
+// cash sales made on the invoice screen, shifts closed and opened again. And every other document that moves cash on
+// a till's safe (before 2.0, "other cash in / out"): a supplier paid in cash, the purchase cancelled or goods given back
+// for cash, expenses, receipt and payment vouchers in dinars and in dollars, cash carried between the two safes; each
+// of them a draft first, approved at once or steps later (after its shift closed too: it is then on the shift open on
+// its safe when it is approved), and reversed. After every step, for each safe and each
 // currency: what its shifts expect (less their opening cash, with dollar notes counted as the dinars they stood for)
 // is exactly what the ledger moved on that safe. A step the server refuses changes nothing, and is checked as well.
 //
@@ -22,7 +26,7 @@ import { resetDisplayTries, resetPinFailures } from './till-rules.ts';
 
 // (on a database server, QASA_TEST_DB, two seeds: the same SQL, a tenth of the time)
 const SEEDS = Number(process.env.QASA_CASH_SEEDS ?? '') || (process.env.QASA_TEST_DB ? 2 : 8);
-const STEPS = 110;
+const STEPS = 150;
 const RATE = 142_000;
 const SAFES = ['1811', '1812'] as const;
 
@@ -89,7 +93,9 @@ function expectedOn(safe: string): { IQD: number; USD: number } {
 }
 
 type Kind = 'sale' | 'usdNotes' | 'usdSale' | 'credit' | 'voucherSold' | 'voucherPaid' | 'tillReturn' | 'screenReturn' | 'returnCancel' | 'saleCancel'
-  | 'screenSale' | 'closeOpen' | 'voucherCancel' | 'voucherExpire';
+  | 'screenSale' | 'closeOpen' | 'voucherCancel' | 'voucherExpire'
+  // the other cash on the safes
+  | 'purchase' | 'purchaseCancel' | 'purchaseReturn' | 'expense' | 'receipt' | 'payment' | 'transfer' | 'approveLater' | 'reverse';
 
 async function day(seed: number, done: Map<Kind, number>): Promise<void> {
   const rnd = random(seed);
@@ -109,6 +115,7 @@ async function day(seed: number, done: Map<Kind, number>): Promise<void> {
   await must('POST', `/api/stock-docs/${stock.id}/post`, {});
   await must('POST', '/api/accounts', { parentCode: '181', code: '1812', name: { ar: 'قاصة ثانية', en: 'Second safe', ku: 'قاسەی دووەم' } });
   const customer = await must('POST', '/api/parties', { type: 'customer', name: 'Saman' });
+  const supplier = await must('POST', '/api/parties', { type: 'supplier', name: 'Las' });
   await must('PUT', '/api/pos/rules', { rounding: { step: pick([250, 500, 1000] as const), mode: pick(['nearest', 'up', 'down'] as const) } });
 
   // three tills: two on the first safe, one on the second; each with some opening cash
@@ -124,12 +131,25 @@ async function day(seed: number, done: Map<Kind, number>): Promise<void> {
   const sales: { id: string; lines: number; cancelled?: boolean }[] = [];
   const returns: { id: string; cancelled?: boolean }[] = [];
   const vouchers: { id: string; code: string }[] = [];
+  const purchases: { id: string; cancelled?: boolean }[] = [];
+  // vouchers and transfers written and not yet approved, and those approved (which can be reversed once)
+  const drafts: string[] = [];
+  const posted: string[] = [];
+  /** checked and approved: posted now */
+  const approve = async (id: string) => {
+    const checked = await call('POST', `/api/entries/${id}/check`, {});
+    expect(checked.statusCode, checked.body).toBe(200);
+    const res = await call('POST', `/api/entries/${id}/approve`, {});
+    if (res.statusCode < 300) posted.push(id);
+    return res;
+  };
   const cart = () => Array.from({ length: between(1, 3) }, () => { const i = pick(items); return { itemId: i.id, qtyMilli: between(1, 4) * 1000, unitPrice: i.price }; });
   const totalOf = (lines: { qtyMilli: number; unitPrice: number }[]) => lines.reduce((s, l) => s + Math.round((l.qtyMilli * l.unitPrice) / 1000), 0);
   const tick = (kind: Kind) => done.set(kind, (done.get(kind) ?? 0) + 1);
 
   const kinds: [Kind, number][] = [['sale', 16], ['usdNotes', 7], ['usdSale', 7], ['credit', 5], ['voucherSold', 8], ['voucherPaid', 10], ['tillReturn', 10], ['screenReturn', 8],
-    ['returnCancel', 9], ['saleCancel', 6], ['screenSale', 8], ['closeOpen', 5], ['voucherCancel', 5], ['voucherExpire', 3]];
+    ['returnCancel', 9], ['saleCancel', 6], ['screenSale', 8], ['closeOpen', 7], ['voucherCancel', 5], ['voucherExpire', 3],
+    ['purchase', 7], ['purchaseCancel', 3], ['purchaseReturn', 3], ['expense', 6], ['receipt', 6], ['payment', 6], ['transfer', 5], ['approveLater', 9], ['reverse', 4]];
   const weight = kinds.reduce((s, [, w]) => s + w, 0);
 
   for (let step = 0; step < STEPS; step++) {
@@ -200,6 +220,48 @@ async function day(seed: number, done: Map<Kind, number>): Promise<void> {
       const sale = pick(live);
       res = await call('POST', `/api/invoices/${sale.id}/cancel`, {});
       if (res.statusCode < 300) sale.cancelled = true;
+    } else if (kind === 'purchase') {
+      // a supplier paid in cash out of a safe, in dinars or in dollars
+      const usd = rnd() < 0.25;
+      const item = pick(items);
+      const draft = await must('POST', '/api/invoices', {
+        kind: 'purchase', date: today, partyId: supplier.id, warehouseId, currency: usd ? 'USD' : 'IQD', rateX100: usd ? RATE : 100, payment: 'cash', cashAccountCode: pick(SAFES), discount: 0,
+        lines: [{ itemId: item.id, qtyMilli: between(2, 9) * 1000, unitPrice: usd ? between(2, 9) * 50 : between(4, 30) * 250 }]
+      });
+      res = await call('POST', `/api/invoices/${draft.id}/post`, {});
+      if (res.statusCode < 300) purchases.push({ id: draft.id });
+    } else if (kind === 'purchaseCancel' || kind === 'purchaseReturn') {
+      const live = purchases.filter((x) => !x.cancelled);
+      if (!live.length) continue;
+      const bought = pick(live);
+      if (kind === 'purchaseCancel') {
+        res = await call('POST', `/api/invoices/${bought.id}/cancel`, {});
+        if (res.statusCode < 300) bought.cancelled = true;
+      } else {
+        // goods given back to the supplier, the cash for them into a safe (not always the one that paid)
+        res = await call('POST', `/api/invoices/${bought.id}/returns`, { date: today, lines: [{ lineNo: 1, qtyMilli: 1000 }], payment: 'cash', cashAccountCode: pick(SAFES) });
+      }
+    } else if (kind === 'expense' || kind === 'receipt' || kind === 'payment' || kind === 'transfer') {
+      const usd = kind !== 'expense' && rnd() < 0.25;
+      const amount = usd ? between(1, 40) * 100 : between(1, 60) * 250;
+      const safe = pick(SAFES);
+      const made = kind === 'expense'
+        ? await must('POST', '/api/expenses', { category: pick(['fuel', 'rent', 'other'] as const), amount, currency: 'IQD', cashAccountCode: safe, date: today, lang: 'ku' })
+        : kind === 'transfer'
+          ? await must('POST', '/api/banking/transfers', { date: today, from: safe, to: SAFES.find((x) => x !== safe)!, currency: usd ? 'USD' : 'IQD', ...(usd ? { rateX100: RATE } : {}), amount, lang: 'ar' })
+          : await must('POST', '/api/vouchers', {
+            kind, date: today, cashAccountCode: safe, description: kind === 'receipt' ? 'Debt collected' : 'Paid out', currency: usd ? 'USD' : 'IQD', rateX100: usd ? RATE : 100,
+            items: [{ accountCode: kind === 'receipt' ? '42' : '33', amount }]
+          });
+      expect(made.status, `${kind}: a draft first`).toBe('draft');
+      // most are approved at once; the rest wait, some until after their shift closed
+      if (rnd() < 0.6) res = await approve(made.id); else { drafts.push(made.id); tick(kind); }
+    } else if (kind === 'approveLater') {
+      if (!drafts.length) continue;
+      res = await approve(drafts.splice(Math.floor(rnd() * drafts.length), 1)[0]!);
+    } else if (kind === 'reverse') {
+      if (!posted.length) continue;
+      res = await call('POST', `/api/entries/${posted.splice(Math.floor(rnd() * posted.length), 1)[0]!}/reverse`, {});
     } else if (kind === 'voucherCancel') {
       if (!vouchers.length) continue;
       const v = pick(vouchers);
@@ -233,7 +295,8 @@ describe('what the tills expect in their drawers is what the ledger moved on the
     }, 120_000);
   }
   it.skipIf(!!only)('went through every kind of step', () => {
-    for (const kind of ['sale', 'usdNotes', 'usdSale', 'credit', 'voucherSold', 'voucherPaid', 'tillReturn', 'screenReturn', 'returnCancel', 'saleCancel', 'screenSale', 'closeOpen', 'voucherCancel'] as const) {
+    for (const kind of ['sale', 'usdNotes', 'usdSale', 'credit', 'voucherSold', 'voucherPaid', 'tillReturn', 'screenReturn', 'returnCancel', 'saleCancel', 'screenSale', 'closeOpen', 'voucherCancel',
+      'purchase', 'purchaseCancel', 'purchaseReturn', 'expense', 'receipt', 'payment', 'transfer', 'approveLater', 'reverse'] as const) {
       expect(done.get(kind) ?? 0, kind).toBeGreaterThan(0);
     }
   });

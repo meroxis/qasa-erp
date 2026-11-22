@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { cashToTake, TILL_CARD_PAYMENTS } from '@qasa/core';
-import { rateOn } from './fx.ts';
+import { postedRevaluations, rateOn } from './fx.ts';
 import { giftCashOf, giftOfShift, giftParts, takeGiftParts } from './gift-vouchers.ts';
 import {
   blindShift, closesBlind, maySellMisc, offlineApprovalWaits, priceSubject, rateStanding, rateSubject, referenceRate, roundingAccount, tillRules, useApproval, useOfflineApproval
@@ -128,7 +128,7 @@ export interface ShiftView {
   count: number;
   /** cash refunds (posted cash sales returns from this safe while the shift was open), by currency */
   refunds: Money;
-  /** cash that should be in the drawer: the opening cash (IQD) plus the sales, less the cash refunds */
+  /** cash that should be in the drawer: the opening cash (IQD) plus the cash sales, less the cash refunds, with the other cash on its safe (otherCash, cashMoves) */
   expected: Money;
   /** what was counted at closing (null while open) */
   counted: Money | null;
@@ -151,7 +151,31 @@ export interface ShiftView {
    * cancelled meanwhile: that money is in the drawer too, so it is expected at closing
    */
   otherCash: Money;
+  /**
+   * 2.0: every other document that moved cash on the shift's safe while it was open (cashMovesOf): a supplier or an
+   * expense paid out of the drawer, a debt collected into it, cash carried to another safe. Expected at closing too.
+   */
+  cashMoves: CashMoves;
 }
+
+/** One document that moved cash on a shift's safe beside the till's own sales, refunds and gift vouchers. */
+export interface CashMoveLine {
+  entryId: string;
+  /** the entry's type: a purchase, a receipt or a payment voucher, a journal entry (a transfer between safes), a reversal */
+  type: string;
+  number: string | null;
+  description: string;
+  currency: CurrencyCode;
+  /** into the drawer (+) or out of it (−), in the document's currency */
+  amount: number;
+  /** who wrote it */
+  by: string;
+  /** when it was posted (approved): that is when it counts */
+  at: string;
+}
+
+/** The other cash of a shift: what came in and what went out, by currency, and the documents (the first 200; `count`: all). */
+export interface CashMoves { in: Money; out: Money; count: number; lines: CashMoveLine[] }
 
 export interface ShiftReport extends ShiftView {
   invoices: ShiftSaleView[];
@@ -392,6 +416,117 @@ function giftPaidBackOf(db: Db, row: ShiftRow): number {
   return Number(r.total);
 }
 
+const MOVE_LINES = 200;
+const IN_CHUNK = 400;
+
+/** The id of the user who opened a shift, where its "open" record kept one (sign-in on). */
+function openerId(db: Db, shiftId: string): string | null {
+  const opened = db.prepare("SELECT details FROM audit_log WHERE entity = 'pos_shift' AND entity_id = ? AND action = 'open' ORDER BY id DESC LIMIT 1")
+    .get(shiftId) as { details: string | null } | undefined;
+  try {
+    const id: unknown = opened?.details ? (JSON.parse(opened.details) as { userId?: unknown }).userId : null;
+    return typeof id === 'string' ? id : null;
+  } catch { return null; }
+}
+
+/**
+ * Every other document that moved cash on the shift's safe while the shift was open (before 2.0 none was expected, so
+ * a supplier or an expense paid out of the drawer closed it short): a purchase paid in cash and its return, a receipt
+ * or a payment voucher (an expense, a debt collected, a salary), a transfer to or from another safe or a bank, an
+ * installment collected, any journal entry on the safe's account, and the reversal or cancelling of any of them. With
+ * the till's own money (its sales, refunds, gift vouchers and the cash sales of other screens, counted above) this is
+ * all the ledger holds on the safe, so what a shift expects is its opening cash plus what the ledger moved on its
+ * safe while it was open, in dinars and in dollars.
+ *
+ * The rules:
+ *  - a document counts when it is posted (approved), at that moment, whatever its own date: a draft or a voucher that
+ *    waits for approval is no money yet. One approved after its shift closed is on the shift open on that safe when
+ *    it is approved; with no shift open then it is on no shift (a closed shift never changes, and the safe's own
+ *    account has it as always);
+ *  - two shifts open on one safe: the money is on the shift of whoever wrote the document if they have one open on
+ *    that safe then (by user id with sign-in on, else by name), else of whoever approved it, else on the oldest
+ *    shift open on it. That depends only on the moment, the people and the shifts open at it, so each shift answers
+ *    the same and the money is on exactly one of them;
+ *  - not cash, though on the safe's account: a revaluation of dollar balances (fx.ts: dinars in the books for the
+ *    same notes) and its reversal.
+ */
+function cashMovesOf(db: Db, row: ShiftRow): CashMoves {
+  const moves: CashMoves = { in: zero(), out: zero(), count: 0, lines: [] };
+  // first the documents posted in the shift's time (few, and no index is on the safe's lines by time: reading every
+  // line the safe ever had would be slow in a busy shop's second year), then their lines on the safe
+  const at = 'COALESCE(e.approved_at, e.prepared_at)';
+  const posted = db.prepare(`SELECT e.id, e.type, e.number, e.description, e.currency, e.prepared_by, e.prepared_by_id, e.approved_by, e.reverses_id,
+                                    ${at} AS moved_at, o.type AS reversed_type
+                             FROM entries e LEFT JOIN entries o ON o.id = e.reverses_id
+                             WHERE e.status = 'approved' AND e.type NOT IN ('sale', 'sale_return')
+                               AND ${at} >= ? ${row.closed_at ? `AND ${at} <= ?` : ''}
+                             ORDER BY ${at}, e.id`)
+    .all(row.opened_at, ...(row.closed_at ? [row.closed_at] : [])) as {
+      id: string; type: string; number: string | null; description: string; currency: CurrencyCode; prepared_by: string; prepared_by_id: string | null;
+      approved_by: string | null; reverses_id: string | null; moved_at: string; reversed_type: string | null;
+    }[];
+  const revalued = new Set(postedRevaluations(db));
+  // a till or screen sale, a sales return and their cancelling are the shift's own money (counted above); a
+  // revaluation is no cash
+  const kept = posted.filter((e) => e.reversed_type !== 'sale' && e.reversed_type !== 'sale_return' && !revalued.has(e.id) && !(e.reverses_id && revalued.has(e.reverses_id)));
+  if (!kept.length) return moves;
+  // one line a document, however many lines it has on the safe
+  const amounts = new Map<string, number>();
+  for (let i = 0; i < kept.length; i += IN_CHUNK) {
+    const chunk = kept.slice(i, i + IN_CHUNK).map((e) => e.id);
+    for (const l of db.prepare(`SELECT entry_id, debit, credit FROM entry_lines WHERE account_code = ? AND entry_id IN (${chunk.map(() => '?').join(', ')})`)
+      .all(row.cash_account, ...chunk) as { entry_id: string; debit: number; credit: number }[]) {
+      amounts.set(l.entry_id, (amounts.get(l.entry_id) ?? 0) + Number(l.debit) - Number(l.credit));
+    }
+  }
+  const entries = new Map<string, (typeof kept)[number] & { amount: number }>();
+  for (const e of kept) {
+    const amount = amounts.get(e.id) ?? 0;
+    if (amount !== 0) entries.set(e.id, { ...e, amount });
+  }
+  // a gift voucher sold, or cancelled and paid back: counted with the vouchers (giftCashOf, giftPaidBackOf)
+  const ids = [...entries.keys()];
+  for (let i = 0; i < ids.length; i += IN_CHUNK) {
+    const chunk = ids.slice(i, i + IN_CHUNK);
+    const marks = chunk.map(() => '?').join(', ');
+    for (const v of db.prepare(`SELECT entry_id, cancel_entry_id FROM gift_vouchers WHERE entry_id IN (${marks}) OR cancel_entry_id IN (${marks})`)
+      .all(...chunk, ...chunk) as { entry_id: string | null; cancel_entry_id: string | null }[]) {
+      if (v.entry_id) entries.delete(v.entry_id);
+      if (v.cancel_entry_id) entries.delete(v.cancel_entry_id);
+    }
+  }
+  if (!entries.size) return moves;
+
+  // the shifts open on this safe at some moment of this shift's time, the oldest first
+  const others = (db.prepare(`SELECT id, opened_by, opened_at, closed_at FROM pos_shifts
+                              WHERE cash_account = ? ${row.closed_at ? 'AND opened_at <= ?' : ''} AND (closed_at IS NULL OR closed_at >= ?)
+                              ORDER BY opened_at, id`)
+    .all(row.cash_account, ...(row.closed_at ? [row.closed_at] : []), row.opened_at) as { id: string; opened_by: string; opened_at: string; closed_at: string | null }[]);
+  const shared = others.length > 1;
+  const openers = new Map<string, string | null>();
+  const opener = (id: string): string | null => {
+    if (!openers.has(id)) openers.set(id, openerId(db, id));
+    return openers.get(id) ?? null;
+  };
+  for (const e of entries.values()) {
+    if (shared) {
+      const open = others.filter((s) => s.opened_at <= e.moved_at && (s.closed_at === null || s.closed_at >= e.moved_at));
+      const wrote = (s: (typeof others)[number]) => {
+        const id = opener(s.id);
+        return id && e.prepared_by_id ? id === e.prepared_by_id : s.opened_by === e.prepared_by;
+      };
+      const owner = open.find(wrote) ?? open.find((s) => !!e.approved_by && s.opened_by === e.approved_by) ?? open[0];
+      if (owner?.id !== row.id) continue;
+    }
+    if (e.amount > 0) moves.in[e.currency] += e.amount; else moves.out[e.currency] -= e.amount;
+    moves.count++;
+    if (moves.lines.length < MOVE_LINES) {
+      moves.lines.push({ entryId: e.id, type: e.type, number: e.number, description: e.description, currency: e.currency, amount: e.amount, by: e.prepared_by, at: e.moved_at });
+    }
+  }
+  return moves;
+}
+
 /**
  * The invoices of a shift (1.4.1, the end-of-day close of someone who does not keep the books): the sales made on it
  * and the returns paid out of its drawer.
@@ -436,7 +571,12 @@ function isOpener(db: Db, row: ShiftRow, actor: ShiftActor, byIdOnly = false): b
 const mayRun = (db: Db, row: ShiftRow, actor: ShiftActor | null) =>
   !!actor && actor.permissions.includes('pos') && (actor.permissions.includes('admin') || isOpener(db, row, actor));
 
-function shiftView(db: Db, row: ShiftRow, actor: ShiftActor | null): ShiftView {
+/** A shift in a list: as ShiftView, but a closed shift's other cash is left out (see listShifts). */
+export type ShiftListView = Omit<ShiftView, 'cashMoves'> & { cashMoves?: CashMoves };
+
+const shiftView = (db: Db, row: ShiftRow, actor: ShiftActor | null): ShiftView => shiftViewOf(db, row, actor, true) as ShiftView;
+
+function shiftViewOf(db: Db, row: ShiftRow, actor: ShiftActor | null, withMoves: boolean): ShiftListView {
   const { sales, cash, count, methods } = salesOf(db, row.id);
   const refunds = refundsOf(db, row);
   const usdTaken = usdTakenOf(db, row.id);
@@ -445,8 +585,13 @@ function shiftView(db: Db, row: ShiftRow, actor: ShiftActor | null): ShiftView {
   // 2.0: gift vouchers sold at this till were paid in cash into its drawer
   const giftCash = giftCashOf(db, row.id);
   const otherCash = otherCashOf(db, row);
+  // every other document on the safe: a supplier or an expense paid out of the drawer, a debt collected into it
+  // (a list leaves it out for a closed shift, whose expected cash is the one kept at its closing)
+  const kept = row.status === 'closed' && row.expected_cash !== null && row.expected_usd !== null;
+  const cashMoves = withMoves || !kept ? cashMovesOf(db, row) : null;
   const expected: Money = {
-    IQD: Number(row.opening_cash) + cash.IQD - refunds.IQD - usdTaken.iqd + giftCash + otherCash.IQD, USD: cash.USD - refunds.USD + usdTaken.usd + otherCash.USD
+    IQD: Number(row.opening_cash) + cash.IQD - refunds.IQD - usdTaken.iqd + giftCash + otherCash.IQD + (cashMoves ? cashMoves.in.IQD - cashMoves.out.IQD : 0),
+    USD: cash.USD - refunds.USD + usdTaken.usd + otherCash.USD + (cashMoves ? cashMoves.in.USD - cashMoves.out.USD : 0)
   };
   const notes = row.notes ?? '';
   let counted: Money | null = null;
@@ -463,7 +608,7 @@ function shiftView(db: Db, row: ShiftRow, actor: ShiftActor | null): ShiftView {
     id: row.id, number: row.number, register: row.register, cashAccountCode: row.cash_account, warehouseId: row.warehouse_id,
     status: row.status, openedBy: row.opened_by, openedAt: row.opened_at, openingCash: Number(row.opening_cash),
     closedBy: row.closed_by, closedAt: row.closed_at, sales, count, refunds, expected, counted, difference, notes, actions, methods,
-    tillId: row.till_id ?? null, usdTaken, otherCash
+    tillId: row.till_id ?? null, usdTaken, otherCash, ...(cashMoves ? { cashMoves } : {})
   };
 }
 
@@ -480,15 +625,20 @@ function readsShift(db: Db, row: ShiftRow, actor: Actor | null): boolean {
   return !actor || seesBooks(actor) || actor.permissions.includes('posSupervise') || isOpener(db, row, actor, true);
 }
 
+/**
+ * The shifts, newest first. A closed shift here comes without its other cash (`cashMoves`): what it expected is kept
+ * from its closing, and looking the documents up again for a hundred closed shifts is work no list shows. The shift
+ * itself (getShift, its X/Z report, the day close) has them.
+ */
 export function listShifts(db: Db, f: { status?: 'open' | 'closed' | undefined; limit?: number | undefined } = {},
-  actor: Actor | null = null): ShiftView[] {
+  actor: Actor | null = null): ShiftListView[] {
   const limit = f.limit ?? 100;
   const ownOnly = !!actor && !seesBooks(actor);
   // someone who reads only their own shifts gets up to `limit` of theirs, not of everyone's
   const rows = (db.prepare(`SELECT * FROM pos_shifts ${f.status ? 'WHERE status = ?' : ''} ORDER BY opened_at DESC${ownOnly ? '' : ' LIMIT ?'}`)
     .all(...(f.status ? [f.status] : []), ...(ownOnly ? [] : [limit])) as unknown as ShiftRow[])
     .filter((r) => !ownOnly || readsShift(db, r, actor));
-  return rows.slice(0, limit).map((r) => shiftView(db, r, actor));
+  return rows.slice(0, limit).map((r) => shiftViewOf(db, r, actor, false));
 }
 
 /**

@@ -1,6 +1,7 @@
 import type { Names } from '@qasa/core';
 import { qs, request } from '../api.ts';
 import type { ChequeCounts, ChequesAheadView } from './ChequesAhead.tsx';
+import type { CashMoves } from './pos-api.ts';
 
 /** The owner's dashboard, the Daily Brief, the management reports and quick expenses. Amounts in IQD unless said. */
 export type Money2 = { IQD: number; USD: number };
@@ -103,6 +104,8 @@ export type DayMethod = 'cash' | 'bank' | 'card' | 'fib' | 'zaincash' | 'qi' | '
 export interface DayRegisterView {
   shiftId: string; number: string; register: string; openedBy: string; status: 'open' | 'closed'; openedAt: string; closedAt: string | null;
   sales: Money2; count: number; expected: Money2; counted: Money2 | null; difference: Money2 | null;
+  /** 2.0: the other cash on the register's safe while its shift was open (in `expected`); left out when there was none */
+  cashMoves?: CashMoves;
 }
 export interface DayDebtRowView { partyId: string; code: string; name: string; amount: number }
 

@@ -4,6 +4,7 @@ import { href } from '../router.ts';
 import { posApi, type Money2, type ShiftReport } from '../industry/pos-api.ts';
 import { printDocument } from '../industry/printing.ts';
 import { money2, shiftTime } from './shared.ts';
+import { CashMoveList, cashMoveSums } from './CashMoves.tsx';
 import { DiffText } from './OpenShift.tsx';
 
 /* ---------- the shift report (X while open, Z once closed) ---------- */
@@ -51,7 +52,7 @@ export function PosShiftReports({ ids }: { ids: string[] }) {
   );
 }
 
-function ShiftPaper({ r, company }: { r: ShiftReport; company: string }) {
+export function ShiftPaper({ r, company }: { r: ShiftReport; company: string }) {
   const i18n = useI18n();
   const { t } = i18n;
   const time = (iso: string | null) => shiftTime(i18n, iso);
@@ -78,6 +79,7 @@ function ShiftPaper({ r, company }: { r: ShiftReport; company: string }) {
             <tr><td>{t('pos_sales')}</td><td className="num">{money2(i18n, r.sales)}</td></tr>
             {(r.refunds.IQD > 0 || r.refunds.USD > 0) && <tr><td>{t('pos_refunds')}</td><td className="num">−{money2(i18n, r.refunds)}</td></tr>}
             {r.otherCash && (r.otherCash.IQD !== 0 || r.otherCash.USD !== 0) && <tr><td>{t('tu_otherCash')}</td><td className="num">{money2(i18n, r.otherCash)}</td></tr>}
+            {cashMoveSums(i18n, r.cashMoves).map((row) => <tr key={row.key}><td>{row.label}</td><td className="num">{row.value}</td></tr>)}
             {Object.entries(r.methods ?? {}).filter(([m]) => m !== 'cash' || Object.keys(r.methods ?? {}).length > 1).map(([m, v]) => <tr key={m}><td>{t(m === 'voucher' ? 'dc_m_voucher' : `pay_${m}` as Key)}</td><td className="num">{money2(i18n, v as Money2)}</td></tr>)}
             {(r.usdTaken?.usd ?? 0) > 0 && <tr><td>{t('tl_usdTaken')}<div className="small muted">{t('tl_usdTakenHelp')}</div></td><td className="num">{i18n.money(r.usdTaken!.usd, 'USD')} = {i18n.money(r.usdTaken!.iqd, 'IQD')}</td></tr>}
             <tr><td><strong>{t('pos_expected')}</strong></td><td className="num"><strong>{money2(i18n, r.expected)}</strong></td></tr>
@@ -88,6 +90,8 @@ function ShiftPaper({ r, company }: { r: ShiftReport; company: string }) {
           </tbody>
         </table>
         {r.notes && <p className="small" style={{ whiteSpace: 'pre-line' }}>{t('pos_notes')}: {r.notes}</p>}
+        {/* 2.0: the documents behind the other cash on the safe (a supplier, an expense, a debt collected) */}
+        <CashMoveList moves={r.cashMoves} />
 
         <h3 style={{ marginBlockEnd: 0 }}>{t('pos_itemsSold')}</h3>
         <div className="table-wrap">

@@ -272,14 +272,17 @@ const NONE = { IQD: 0, USD: 0 };
 
 /**
  * A shift as a cashier who closes blind sees it: nothing that tells the cash expected (the sales, their methods, the
- * refunds, the dollars taken, the expected cash and the difference); `blind` says so. Their counted cash stays theirs.
+ * refunds, the dollars taken, the other cash on the safe with its documents, the expected cash and the difference);
+ * `blind` says so. Their counted cash stays theirs.
  * A shift's report (X/Z) keeps its list of sales and of items, without their amounts, and no gift voucher sums.
  */
 export function blindShift<T extends { expected: unknown; difference: unknown; sales: unknown; refunds: unknown; methods?: unknown; usdTaken?: unknown }>(view: T): T & { blind: true } {
-  const report = view as T & { invoices?: { total: number }[]; items?: { amount: unknown }[]; gift?: unknown; otherCash?: unknown };
+  const report = view as T & { invoices?: { total: number }[]; items?: { amount: unknown }[]; gift?: unknown; otherCash?: unknown; cashMoves?: unknown };
   return {
     ...view, expected: NONE, difference: null, sales: NONE, refunds: NONE, methods: {}, usdTaken: { usd: 0, iqd: 0 },
     ...('otherCash' in report ? { otherCash: NONE } : {}),
+    // the other cash on the safe (a supplier paid out of the drawer) tells the cash expected as well
+    ...('cashMoves' in report ? { cashMoves: { in: NONE, out: NONE, count: 0, lines: [] } } : {}),
     ...(Array.isArray(report.invoices) ? { invoices: report.invoices.map((i) => ({ ...i, total: 0 })) } : {}),
     ...(Array.isArray(report.items) ? { items: report.items.map((i) => ({ ...i, amount: NONE })) } : {}),
     ...(report.gift ? { gift: { soldCount: 0, sold: 0, used: 0 } } : {}),
