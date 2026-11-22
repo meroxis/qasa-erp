@@ -133,19 +133,46 @@ export function showOnCustomerScreen(state: CustomerScreenState): void {
   try { channel.postMessage(state); } catch { /* the screen is gone */ }
 }
 
-interface TillBridge { openDrawer(): Promise<unknown>; customerDisplay(open: boolean): Promise<unknown> }
+interface TillBridge {
+  openDrawer(): Promise<unknown>; customerDisplay(open: boolean): Promise<unknown>;
+  /** absent in a Windows app older than 2.0's last fix */
+  customerDisplayState?(): Promise<unknown>;
+}
 const bridge = (): TillBridge | undefined =>
   typeof window !== 'undefined' ? (window as unknown as { qasaDesktop?: { till?: TillBridge } }).qasaDesktop?.till : undefined;
 
 /** Whether this is the Windows app (the drawer can be opened, the customer screen goes to the second screen). */
 export const inWindowsTill = (): boolean => !!bridge();
 
+// in a browser: the window this page opened for the customer (closed from here; a reload forgets it, and the cashier
+// closes that window by hand)
+let popup: Window | null = null;
+
 /** Opens the customer screen: on Windows on the second screen; in a browser, a window the cashier moves there. */
 export async function openCustomerScreen(): Promise<boolean> {
   const b = bridge();
   if (b) return (await b.customerDisplay(true).catch(() => false)) === true;
-  const w = window.open(`${location.pathname}#/customer-display`, 'qasa-customer-display', 'popup,width=900,height=600');
-  return !!w;
+  popup = window.open(`${location.pathname}#/customer-display`, 'qasa-customer-display', 'popup,width=900,height=600');
+  return !!popup;
+}
+
+/** Closes the customer screen this PC opened (the till's menu and Settings → Tills). */
+export async function closeCustomerScreen(): Promise<void> {
+  const b = bridge();
+  if (b) { await b.customerDisplay(false).catch(() => false); return; }
+  try { popup?.close(); } catch { /* closed already */ }
+  popup = null;
+}
+
+/**
+ * The customer screen this PC opened: `open`, and `waiting` when the Windows app hid it because its screen was
+ * unplugged (it comes back with the screen; never shown over the till).
+ */
+export async function customerScreenState(): Promise<{ open: boolean; waiting: boolean }> {
+  const b = bridge();
+  if (!b) return { open: !!popup && !popup.closed, waiting: false };
+  const s = await b.customerDisplayState?.().catch(() => null) as { open?: unknown; waiting?: unknown } | null | undefined;
+  return { open: s?.open === true, waiting: s?.waiting === true };
 }
 
 /** 'blocked': Windows on this PC does not let the app run what opens the drawer (a policy, not the printer or its cable). */

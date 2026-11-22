@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { customerDisplayUrl, customerScreenBounds, DRAWER_BUILD_SCRIPT, DRAWER_FAST_SCRIPT, DRAWER_SCRIPT, drawerBlocked, drawerHandler, receiptPrinter } from './till-desktop.ts';
+import { customerDisplayUrl, customerScreenBounds, customerScreenOf, customerScreenPlan, DRAWER_BUILD_SCRIPT, DRAWER_FAST_SCRIPT, DRAWER_SCRIPT, drawerBlocked, drawerHandler, receiptPrinter } from './till-desktop.ts';
 
 const file = (printer: string | null) => JSON.stringify({ choices: { receipt: { printer, paper: 'auto', margins: 'default', copies: 1, silent: true } } });
 
@@ -123,6 +123,28 @@ describe('the customer screen', () => {
     const two = { id: 2, bounds: { x: 1920, y: 0, width: 1024, height: 768 } };
     expect(customerScreenBounds([one, two], 1)).toEqual(two.bounds);
     expect(customerScreenBounds([one], 1)).toBeNull();
+  });
+  it('is hidden when its screen is unplugged, never left over the till, and comes back when a second screen is there again', () => {
+    const till = { id: 1, bounds: { x: 0, y: 0, width: 1920, height: 1080 } };
+    const pole = { id: 2, bounds: { x: 1920, y: 0, width: 1024, height: 768 } };
+    const other = { id: 3, bounds: { x: -800, y: 0, width: 800, height: 600 } };
+    expect(customerScreenOf([till, pole], 1)).toEqual(pole);
+    // on its screen, nothing changed
+    expect(customerScreenPlan([till, pole], 1, { at: 'second', displayId: 2 })).toEqual({ do: 'none' });
+    // unplugged: Windows would put the window on the till's screen; it is hidden instead
+    expect(customerScreenPlan([till], 1, { at: 'second', displayId: 2 })).toEqual({ do: 'hide' });
+    // still no second screen: it stays hidden
+    expect(customerScreenPlan([till], 1, { at: 'waiting' })).toEqual({ do: 'none' });
+    // plugged in again (Windows may give it another id): back, full screen, on it
+    expect(customerScreenPlan([till, { ...pole, id: 7 }], 1, { at: 'waiting' })).toEqual({ do: 'show', displayId: 7, bounds: pole.bounds });
+    // its screen gone but the PC has a third: moved there, never onto the till's
+    expect(customerScreenPlan([till, other], 1, { at: 'second', displayId: 2 })).toEqual({ do: 'show', displayId: 3, bounds: other.bounds });
+    // Windows made its screen the main one (the till is there now): moved to the other screen, or hidden
+    expect(customerScreenPlan([till, pole], 2, { at: 'second', displayId: 2 })).toEqual({ do: 'show', displayId: 1, bounds: till.bounds });
+    expect(customerScreenPlan([pole], 2, { at: 'second', displayId: 2 })).toEqual({ do: 'hide' });
+    // a window the cashier placed on a PC with one screen is left alone, whatever is plugged in
+    expect(customerScreenPlan([till], 1, { at: 'window' })).toEqual({ do: 'none' });
+    expect(customerScreenPlan([till, pole], 1, { at: 'window' })).toEqual({ do: 'none' });
   });
   it('opens only the app page’s own route', () => {
     expect(customerDisplayUrl('http://127.0.0.1:4100')).toBe('http://127.0.0.1:4100/#/customer-display');

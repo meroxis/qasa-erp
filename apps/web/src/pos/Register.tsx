@@ -8,7 +8,8 @@ import { makeI18n, useI18n, type I18n } from '../i18n.ts';
 import { href } from '../router.ts';
 import { PartyPicker } from '../industry/PartyPicker.tsx';
 import { posApi, tillsApi, type PosMethod, type SaleInput, type ShiftView, type TillView } from '../industry/pos-api.ts';
-import { clearHeld, heldOn, HELD_MAX, holdBasket, inWindowsTill, thisTill, keepScalePrefixes, keepScaleDigits, applyKeptScaleDigits, kickDrawer, openCustomerScreen, scalePrefixesKept, showOnCustomerScreen, takeHeld, type HeldBasket } from '../industry/till.ts';
+import { clearHeld, heldOn, HELD_MAX, holdBasket, inWindowsTill, thisTill, keepScalePrefixes, keepScaleDigits, applyKeptScaleDigits, kickDrawer, scalePrefixesKept, showOnCustomerScreen, takeHeld, type HeldBasket } from '../industry/till.ts';
+import { CustomerScreenButtons } from '../industry/CustomerScreenControl.tsx';
 import { outboxClient, outboxWho, type HeldKey } from '../industry/outbox.ts';
 import { useOutbox } from '../industry/OutboxBanner.tsx';
 import { baseQtyOf, offlineReceipt, offlineRefusal, payTillSale, rememberTill, shortStock, takeFromStock, tillCache } from '../industry/offline-till.ts';
@@ -930,7 +931,7 @@ export function Register({ initial, onClosed }: { initial: ShiftView; onClosed()
             {!offline && <button type="button" className="btn" onClick={() => setDialog('voucherSell')}><Icon name="tag" size={16} />{t('tu_gvSell')}</button>}
             <button type="button" className="btn" onClick={() => openReturns()}><Icon name="undo" size={16} />{t('tu_returns')}</button>
             {drawerOnCash && <button type="button" className="btn" onClick={() => { setDialog(null); void noSale(); }}><Icon name="wallet" size={16} />{t('tl_noSale')}</button>}
-            <button type="button" className="btn" onClick={() => { setDialog(null); void openCustomerScreen().then((ok) => { if (!ok) toast(t('tl_screenBlocked')); }); }}><Icon name="panel" size={16} />{t('tl_customerScreen')}</button>
+            <CustomerScreenButtons onDone={() => setDialog(null)} />
             {held.length > 0 && <button type="button" className="btn" onClick={() => { setDialog(null); setShowHeld(true); }}><Icon name="clock" size={16} />{t('tl_held', { n: i18n.int(held.length) })}</button>}
             <a className="btn" href={href(`pos-shift/${shift.id}`)}><Icon name="doc" size={16} />{t('pos_xReport')}</a>
             <button type="button" className="btn" onClick={() => { setDialog(null); setClosing(true); }}><Icon name="logout" size={16} />{t('pos_closeShift')}</button>

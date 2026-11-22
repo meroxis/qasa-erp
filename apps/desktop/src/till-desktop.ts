@@ -15,7 +15,9 @@
  *
  * The customer screen is a second window of the app's own page (#/customer-display), on the PC's second screen when it
  * has one, full screen; without one, a normal window the cashier can move. It shows what the till sends it in the same
- * browser session (a BroadcastChannel); it has no bridge to this process and opens nothing else.
+ * browser session (a BroadcastChannel); it has no bridge to this process and opens nothing else. The till and Settings
+ * close it; when its screen is unplugged it is hidden, never left over the till, and comes back with the screen
+ * (customerScreenPlan).
  */
 import { isPrinterName, readPrinterChoices } from '@qasa/core';
 
@@ -214,12 +216,43 @@ export function drawerHandler(deps: DrawerDeps) {
   return Object.assign(open, { prepare });
 }
 
-/** Where the customer screen goes: the first screen that is not the main one (full screen there), or null for none. */
-export function customerScreenBounds(
-  displays: readonly { id: number; bounds: { x: number; y: number; width: number; height: number } }[], primaryId: number
-): { x: number; y: number; width: number; height: number } | null {
+interface ScreenInfo { id: number; bounds: { x: number; y: number; width: number; height: number } }
+
+/** The screen the customer screen goes on: the first that is not the main one, or null when the PC has one screen. */
+export function customerScreenOf(displays: readonly ScreenInfo[], primaryId: number): ScreenInfo | null {
   const other = displays.find((d) => d.id !== primaryId);
-  return other ? { ...other.bounds } : null;
+  return other ? { id: other.id, bounds: { ...other.bounds } } : null;
+}
+
+/** Where the customer screen goes: the first screen that is not the main one (full screen there), or null for none. */
+export function customerScreenBounds(displays: readonly ScreenInfo[], primaryId: number): ScreenInfo['bounds'] | null {
+  return customerScreenOf(displays, primaryId)?.bounds ?? null;
+}
+
+/**
+ * Where the customer screen's window is: full screen on a second screen ('second', with that screen's id), a normal
+ * window the cashier placed because the PC had one screen ('window'), or hidden until its screen is plugged in again
+ * ('waiting').
+ */
+export type CustomerScreenAt = { at: 'second'; displayId: number } | { at: 'window' } | { at: 'waiting' };
+export type CustomerScreenStep = { do: 'none' } | { do: 'hide' } | { do: 'show'; displayId: number; bounds: ScreenInfo['bounds'] };
+
+/**
+ * What to do with the customer screen's window when the PC's screens change (one unplugged, one plugged in). Windows
+ * moves a window whose screen is gone onto the main screen, where a full-screen customer screen would cover the till:
+ * it is hidden instead, and shown again, full screen, when there is a second screen. A window the cashier placed on a
+ * PC with one screen is left where it is.
+ */
+export function customerScreenPlan(displays: readonly ScreenInfo[], primaryId: number, now: CustomerScreenAt): CustomerScreenStep {
+  if (now.at === 'window') return { do: 'none' };
+  const other = customerScreenOf(displays, primaryId);
+  if (now.at === 'second') {
+    // its own screen is still there, and is not the till's
+    const own = displays.find((d) => d.id === now.displayId);
+    if (own && own.id !== primaryId) return { do: 'none' };
+    return other ? { do: 'show', displayId: other.id, bounds: other.bounds } : { do: 'hide' };
+  }
+  return other ? { do: 'show', displayId: other.id, bounds: other.bounds } : { do: 'none' };
 }
 
 /** The page the customer screen shows: the app's own origin, its #/customer-display route, nothing else. */

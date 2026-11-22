@@ -93,6 +93,8 @@ contextBridge.exposeInMainWorld('qasaDesktop', {
   till: {
     openDrawer: () => ipcRenderer.invoke('till:drawer') as Promise<unknown>,
     customerDisplay: (open: boolean) => ipcRenderer.invoke('till:customerDisplay', open === true) as Promise<unknown>,
+    /** { open, waiting }: whether the customer screen's window is open, and hidden until its screen is plugged in again */
+    customerDisplayState: () => ipcRenderer.invoke('till:customerDisplayState') as Promise<unknown>,
     /** the serial ports this PC showed when the page last asked for one, and the one chosen for the scale */
     serialPorts: () => ipcRenderer.invoke('till:serialPorts') as Promise<unknown>,
     /** keeps the scale's port for this PC ('' for none); the page is then granted that port alone */

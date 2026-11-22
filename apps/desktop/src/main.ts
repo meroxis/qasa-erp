@@ -22,7 +22,7 @@ import { booksBefore, markSeen, startVersion, type WhatsNew } from './whats-new.
 import { closeFlow, noteCloseFailure, readCloseAsk, saveCloseAsk, takeCloseFailure, type AskChoice } from './close-backup.ts';
 import { printingHandlers } from './printing.ts';
 import { cachedPrinters, powershellPath, readWindowsPrinters } from './printer-info.ts';
-import { customerDisplayUrl, customerScreenBounds, drawerHandler } from './till-desktop.ts';
+import { customerDisplayUrl, customerScreenOf, customerScreenPlan, drawerHandler, type CustomerScreenAt } from './till-desktop.ts';
 import { dataPlaceOf, officeName } from './data-place.ts';
 import { execFile } from 'node:child_process';
 import { sharePdfHandlers } from './share-pdf.ts';
@@ -745,26 +745,81 @@ ipcMain.handle('till:chooseSerialPort', (event, key: unknown) => {
 });
 
 let customerWin: BrowserWindow | null = null;
+// where its window is (till-desktop.ts): on a second screen, a window the cashier placed, or hidden until its screen is back
+let customerAt: CustomerScreenAt = { at: 'window' };
+const customerOpen = () => !!customerWin && !customerWin.isDestroyed();
+const CUSTOMER_WINDOW = { width: 900, height: 600 };
+/** Full screen on that screen, without taking the keyboard from the till. */
+function showCustomerOn(displayId: number, bounds: Electron.Rectangle): void {
+  if (!customerOpen()) return;
+  const w = customerWin!;
+  if (w.isFullScreen()) w.setFullScreen(false);
+  w.setBounds(bounds);
+  w.showInactive();
+  w.setFullScreen(true);
+  customerAt = { at: 'second', displayId };
+}
+/** The PC's screens changed: a customer screen whose screen is gone is hidden (never over the till), and comes back with it. */
+function customerScreensChanged(): void {
+  if (!customerOpen()) return;
+  const step = customerScreenPlan(screen.getAllDisplays(), screen.getPrimaryDisplay().id, customerAt);
+  if (step.do === 'hide') {
+    const w = customerWin!;
+    if (w.isFullScreen()) w.setFullScreen(false);
+    w.hide();
+    customerAt = { at: 'waiting' };
+    log('customer screen: its screen was unplugged; hidden until a second screen is back');
+  } else if (step.do === 'show') {
+    showCustomerOn(step.displayId, step.bounds);
+    log('customer screen: shown on the second screen');
+  }
+}
+app.whenReady().then(() => {
+  screen.on('display-removed', customerScreensChanged);
+  screen.on('display-added', customerScreensChanged);
+  // a screen made the main one, or its place changed
+  screen.on('display-metrics-changed', customerScreensChanged);
+}).catch(() => { /* no screens to watch */ });
+/** What the till and Settings show of it: open at all, and hidden for want of its screen. */
+ipcMain.handle('till:customerDisplayState', (event) => {
+  if (!invokedByAppPage(event)) return { open: false, waiting: false };
+  return { open: customerOpen(), waiting: customerOpen() && customerAt.at === 'waiting' };
+});
 ipcMain.handle('till:customerDisplay', (event, open: unknown) => {
   if (!invokedByAppPage(event) || !appOrigin) return false;
   if (open !== true) {
-    if (customerWin && !customerWin.isDestroyed()) customerWin.close();
+    if (customerOpen()) customerWin!.close();
     customerWin = null;
     return false;
   }
-  if (customerWin && !customerWin.isDestroyed()) { customerWin.show(); return true; }
-  const bounds = customerScreenBounds(screen.getAllDisplays(), screen.getPrimaryDisplay().id);
+  const second = customerScreenOf(screen.getAllDisplays(), screen.getPrimaryDisplay().id);
+  if (customerOpen()) {
+    const w = customerWin!;
+    if (second) showCustomerOn(second.id, second.bounds);
+    else {
+      // asked for on a PC with one screen (now): a normal window the cashier places, as when it is first opened so
+      if (customerAt.at !== 'window') {
+        if (w.isFullScreen()) w.setFullScreen(false);
+        w.setSize(CUSTOMER_WINDOW.width, CUSTOMER_WINDOW.height);
+        w.center();
+        customerAt = { at: 'window' };
+      }
+      w.show();
+    }
+    return true;
+  }
   customerWin = new BrowserWindow({
-    ...(bounds ?? { width: 900, height: 600 }), fullscreen: !!bounds, autoHideMenuBar: true, title: 'Qasa ERP', backgroundColor: windowBackground(),
+    ...(second?.bounds ?? CUSTOMER_WINDOW), fullscreen: !!second, autoHideMenuBar: true, title: 'Qasa ERP', backgroundColor: windowBackground(),
     icon: join(__dirname, 'icon.png'),
     // no bridge at all: the screen only shows what the till sends it in the page
     webPreferences: { contextIsolation: true, sandbox: true, nodeIntegration: false, spellcheck: false }
   });
+  customerAt = second ? { at: 'second', displayId: second.id } : { at: 'window' };
   customerWin.setMenu(null);
   const origin = appOrigin;
   customerWin.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
   customerWin.webContents.on('will-navigate', (e, target) => { if (originOf(target) !== origin) e.preventDefault(); });
-  customerWin.on('closed', () => { customerWin = null; });
+  customerWin.on('closed', () => { customerWin = null; customerAt = { at: 'window' }; });
   void customerWin.loadURL(customerDisplayUrl(origin));
   return true;
 });
