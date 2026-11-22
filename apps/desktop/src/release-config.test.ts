@@ -1729,6 +1729,92 @@ describe('the release notes of this version (2.0.0: the new till, gold, wholesal
     expect(lines('ku-arab')[1]).toMatch(/^پێش نوێکردنەوە: فایلی کۆمپانیا /);
   });
 
+  // the third review of 2.0.0: the notes called new features changes ("now 6 digits", "paired again"), and left out
+  // what an owner must know before updating
+  it('presents supervisor PINs and paired customer screens as new, never as something to redo', () => {
+    const all = [notes, ...LANGS.map((l) => store[l].releaseNotes)].join('\n');
+    expect(all).not.toMatch(/are now 6 digits|4-digit PIN|paired again|must be paired|which now expires/);
+    expect(all).not.toMatch(/صار 6 أرقام|ذو 4 أرقام|مرة أخرى برمز جديد|ئێستا 6 ژمارەیە|پینی 4 ژمارەیی|جارێکی تر بە کۆدێکی نوێ/);
+    const fresh = (lang: 'ar' | 'en' | 'ku', heading: string) => section(lang).split(`### ${heading}\n`)[1]!.split('\n### ')[0]!;
+    expect(fresh('en', 'New')).toContain('A PIN is each supervisor’s own, 6 to 8 digits.');
+    expect(fresh('en', 'New')).toContain('paired with a till by a 6-digit code from Settings. A code works once, for ten minutes.');
+    expect(fresh('ar', 'الجديد')).toContain('من 6 إلى 8 أرقام');
+    expect(fresh('ku', 'نوێ')).toContain('لە 6 تا 8 ژمارە');
+    // as the server has them (till-rules.ts)
+    const rules = read('packages/server/src/till-rules.ts');
+    expect(rules).toContain('const NEW_PIN = /^\\d{6,8}$/;');
+    expect(rules).toContain('const CODE_MS = 10 * 60 * 1000;');
+  });
+
+  it('says before the update: a server database is upgraded in place, the update installs on closing, and a company past the limit opens to be viewed', () => {
+    const bullets = (lang: 'ar' | 'en' | 'ku') => before(lang).split('\n').filter((l) => l.startsWith('- '));
+    for (const lang of ['ar', 'en', 'ku'] as const) expect(bullets(lang), lang).toHaveLength(4);
+    expect(bullets('en')[1]).toMatch(/^- \*\*Books on your own MariaDB or MySQL server are upgraded in place, on the server itself\.\*\* No copy is kept beside them as for a company file, so back up that database first\. Then update the office server PC and every PC that connects to it together/);
+    expect(bullets('en')[2]).toMatch(/^- \*\*The update installs when Qasa ERP is closed\.\*\*/);
+    expect(bullets('en')[2]).toContain('“Restart to update”');
+    expect(read('apps/desktop/src/main.ts')).toContain('autoUpdater.autoInstallOnAppQuit = true;');
+    expect(read('apps/desktop/src/texts.ts')).toContain('Click “Restart to update” in the bar at the top of the window, or it installs when you close the app.');
+    expect(bullets('en')[3]).toMatch(/^- \*\*More companies than your plan allows:\*\* every company still opens\. One beyond the plan’s limit opens to be viewed only/);
+    expect(bullets('en')[3]).toContain('**Plans and licence**');
+    expect(bullets('ar')[1]).toContain('تُرقّى في مكانها');
+    expect(bullets('ar')[3]).toContain('للعرض فقط');
+    expect(bullets('ar')[3]).toContain('**الخطط والترخيص**');
+    expect(bullets('ku')[1]).toContain('لە شوێنی خۆیان');
+    expect(bullets('ku')[3]).toContain('تەنها بۆ بینین');
+    expect(bullets('ku')[3]).toContain('**پلان و مۆڵەت**');
+    // the app's own words for the bar's link and for "view only" (i18n/companies.ts), and what the server does
+    const words = read('apps/web/src/i18n/companies.ts');
+    expect(words).toContain("co_viewOnlyPlans: ['الخطط والترخيص', 'Plans and licence', 'پلان و مۆڵەت']");
+    expect(words).toContain("co_waiting: ['للعرض فقط', 'View only', 'تەنها بۆ بینین']");
+    expect(read('apps/desktop/src/server-process.ts')).toContain('configureViewOnly(viewOnly)');
+    expect(read('apps/desktop/src/server-process.ts')).not.toMatch(/relaunch[^\n]*MAIN_COMPANY/);
+  });
+
+  it('keeps the Store listing true: a company past the limit is still viewed, in the description and in "What\'s new"', () => {
+    const full = (JSON.parse(read('apps/desktop/store-listing.json')) as { listings: Record<(typeof LANGS)[number], { description: string }> }).listings;
+    expect(full['en-us'].description).toContain('All your data stays: records made during the month remain and can be viewed');
+    expect(full['en-us'].description).toContain('those beyond the limit open to be viewed only (view, print and back up), and nothing in them is hidden or deleted.');
+    expect(full.ar.description).toContain('تُفتح للعرض فقط');
+    expect(full['ku-arab'].description).toContain('تەنها بۆ بینین دەکرێنەوە');
+    expect(store['en-us'].releaseNotes).toContain('a company beyond your plan’s limit still opens, to be viewed only');
+    expect(store.ar.releaseNotes).toContain('للعرض فقط');
+    expect(store['ku-arab'].releaseNotes).toContain('تەنها بۆ بینین');
+    for (const lang of LANGS) {
+      expect(store[lang].releaseNotes, lang).toMatch(/MariaDB/);
+      expect(store[lang].releaseNotes, lang).toMatch(/Starter.*Pro.*Business/);
+      expect(full[lang].description.length, lang).toBeLessThanOrEqual(10_000);
+    }
+  });
+
+  it('says which of the new features need a paid plan, as the plans have them', () => {
+    const plans = read('packages/core/src/plans.ts');
+    const starter = /const STARTER_FEATURES: readonly Feature\[\] = \[([^\]]+)\]/.exec(plans)?.[1] ?? '';
+    // the Free plan has no paid feature at all
+    expect(plans).toContain("free: { id: 'free', limits: { companies: 1, users: 1, warehouses: 1 }, features: [] }");
+    for (const feature of ['multiTill', 'promotions', 'consignment', 'delivery', 'priceChecker', 'goldShop', 'wholesale', 'clothingShop']) expect(starter, feature).toContain(`'${feature}'`);
+    expect(section('en')).toContain('- **Which plan:** the new till with its rules, gift vouchers, debt reminders and daily-delivery suppliers are on every plan. More than one till, offers, goods on consignment, delivery orders, price checker screens, and the Gold and jewellery, Wholesale and distribution, and Clothing and shoes business types need Starter, Pro or Business; the free first month has them all.');
+    expect(section('ar')).toMatch(/- \*\*أي خطة:\*\* [^\n]*تحتاج Starter أو Pro أو Business/);
+    expect(section('ku')).toMatch(/- \*\*کام پلان:\*\* [^\n]*پێویستیان بە Starter، Pro یان Business هەیە/);
+    // what the notes call free has no plan check of its own on the server
+    for (const file of ['gift-vouchers.ts', 'till-rules.ts', 'debt-reminders.ts', 'daily-suppliers.ts']) expect(read(`packages/server/src/${file}`), file).not.toContain("'plan_limit'");
+  });
+
+  it('describes the Windows Hello reset as the server enforces it, and uses the app\'s words (gift vouchers, a 1366×768 screen, suppliers in gold)', () => {
+    expect(section('en')).toContain('- **Resetting the admin password with Windows Hello:** an admin can now choose, in **Settings → Users**, the one Windows account on this PC that may do it; every other Windows account is then refused, a Windows administrator too. Until an account is chosen, only a member of this PC’s Administrators group can do it.');
+    expect(section('en')).not.toMatch(/or for a Windows administrator/);
+    expect(section('ar')).toContain('حتى مدير Windows');
+    expect(section('ku')).toContain('بەڕێوەبەری Windows یش');
+    // auth.ts: bound → that account's SID only; none bound → a Windows administrator only
+    expect(read('packages/server/src/auth.ts')).toContain('(bound ? sid !== bound.sid : input.windowsAdmin !== true)');
+    const all = [notes, ...LANGS.map((l) => store[l].releaseNotes)].join('\n');
+    expect(all).not.toMatch(/بطاقات الهدايا|کارتی دیاری|تسع شاشة|دابینکەری زێڕ،/);
+    expect(section('ar')).toContain('شاشة واحدة تناسب شاشة 1366×768');
+    expect(section('ar')).toContain('قسائم الهدايا');
+    expect(section('ku')).toContain('کوپۆنی دیاری');
+    expect(section('ku')).toContain('ئەو دابینکەرانەی قەرزەکەیان بە زێڕە');
+    expect(read('apps/web/src/i18n/day-close.ts')).toContain("dc_m_voucher: ['قسائم الهدايا', 'Gift vouchers', 'کوپۆنی دیاری']");
+  });
+
   it('has a release day in docs/releasing.md', () => {
     expect(read('docs/releasing.md')).toContain('## Release day for 2.0.0 ');
   });
