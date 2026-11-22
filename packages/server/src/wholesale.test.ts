@@ -344,6 +344,43 @@ describe('wholesale and distribution', () => {
     expect([balanceOf('1812'), balanceOf('1811')]).toEqual([150_000, 0]);
   });
 
+  it('lets someone who only reads the books (the Viewer role) change nothing (review of the fixes, finding 8)', async () => {
+    await ok(admin, 'POST', '/api/users', { username: 'vera', name: 'vera', password: 'vera-pass-123', roles: ['viewer'] });
+    const vera = await signIn('vera', 'vera-pass-123');
+    const sale = await ok(admin, 'POST', '/api/invoices', {
+      kind: 'sale', date: '2026-11-19', partyId: shopA, warehouseId: mainId, currency: 'IQD', rateX100: 100, payment: 'credit', discount: 0, lines: [{ itemId: teaId, qtyMilli: 20_000, unitPrice: 2_000 }]
+    });
+    await ok(admin, 'POST', `/api/invoices/${sale.id}/post`, {});
+    const c = await ok(razH, 'POST', '/api/wholesale/collections', { partyId: shopA, date: '2026-11-20', currency: 'IQD', rateX100: 100, amount: 25_000 });
+    const o = await ok(razH, 'POST', '/api/wholesale/orders', order(shopB, 1));
+    // she reads everything
+    expect((await ok(vera, 'GET', '/api/wholesale/collections')).length).toBe(1);
+    // and changes nothing: no handover, no order approved, delivered or cancelled, no collection made or taken back, no van, no settings
+    const before = balanceOf('1812');
+    const writes: [('POST' | 'PUT'), string, unknown][] = [
+      ['POST', '/api/wholesale/handovers', { repId: razId, date: '2026-11-20', currency: 'IQD', rateX100: 100 }],
+      ['POST', `/api/wholesale/orders/${o.id}/approve`, {}],
+      ['POST', `/api/wholesale/orders/${o.id}/deliver`, {}],
+      ['POST', `/api/wholesale/orders/${o.id}/cancel`, {}],
+      ['POST', '/api/wholesale/orders', order(shopB, 1)],
+      ['PUT', `/api/wholesale/orders/${o.id}`, order(shopB, 2)],
+      ['POST', '/api/wholesale/collections', { repId: razId, partyId: shopA, date: '2026-11-20', currency: 'IQD', rateX100: 100, amount: 1_000 }],
+      ['POST', `/api/wholesale/collections/${c.id}/cancel`, {}],
+      ['POST', '/api/wholesale/visits', { partyId: shopB, date: '2026-11-20', outcome: 'closed' }],
+      ['POST', `/api/wholesale/reps/${razId}/van`, { direction: 'load', date: '2026-11-20', lines: [{ itemId: teaId, qtyMilli: 1000 }] }],
+      ['PUT', `/api/wholesale/reps/${razId}/van-count`, { date: '2026-11-20', lines: [] }],
+      ['POST', `/api/wholesale/reps/${razId}/van-count/close`, { date: '2026-11-20' }],
+      ['PUT', '/api/wholesale/settings', { overdueDays: 1 }],
+      ['PUT', `/api/wholesale/reps/${razId}/route`, { weekday: 5, partyIds: [] }]
+    ];
+    for (const [method, url, body] of writes) expect((await call(vera, method, url, body)).statusCode, `${method} ${url}`).toBe(403);
+    expect(balanceOf('1812')).toBe(before);
+    expect((await ok(admin, 'GET', '/api/wholesale/collections')).length).toBe(1);
+    // a handover made by the office, then: she can't take it back either
+    const h = await ok(office, 'POST', '/api/wholesale/handovers', { repId: razId, date: '2026-11-20', currency: 'IQD', rateX100: 100 });
+    expect((await call(vera, 'POST', `/api/wholesale/handovers/${h.id}/cancel`, {})).statusCode).toBe(403);
+  });
+
   it('records visits and sets them against the route', async () => {
     await ok(razH, 'POST', '/api/wholesale/visits', { partyId: shopA, date: '2026-11-20', outcome: 'no_order' });
     expect((await call(razH, 'POST', '/api/wholesale/visits', { partyId: shopC, date: '2026-11-20', outcome: 'closed' })).statusCode).toBe(403);

@@ -115,8 +115,14 @@ function assertDate(db: Db, date: string): void {
 
 // ——— who sees what ———
 
-/** The office: an admin, or someone who keeps the books. Everyone else with a rep record is a rep, scoped to their own. */
+/** The office, for what it reads: an admin, or someone who keeps or reads the books. Everyone else with a rep record is a rep, scoped to their own. */
 const isOffice = (actor: Actor) => actor.permissions.includes('admin') || seesBooks(actor);
+/**
+ * The office, for what it changes (approving an order, collecting for a rep, a handover, taking one back): an admin or
+ * someone who works on the entries (prepares, checks or approves). Reading the books alone (the Viewer role), or the
+ * stock or purchases permission, changes nothing here (review of the fixes, finding 8).
+ */
+const officeWrites = (actor: Actor) => actor.permissions.includes('admin') || actor.permissions.some((p) => p.startsWith('entries.'));
 
 interface RepRow { id: string; user_id: string; name: string; warehouse_id: string; load_warehouse_id: string; cash_account: string; active: number; created_at: string; updated_at: string }
 
@@ -135,7 +141,7 @@ export function ownRep(db: Db, actor: Actor): RepRow | null {
  * someone who keeps the books. The sales permission alone takes orders for the office, but approves and collects nothing.
  */
 function assertOffice(actor: Actor): void {
-  if (!isOffice(actor)) throw new AppError(403, 'ws_office_only');
+  if (!officeWrites(actor)) throw new AppError(403, 'ws_office_only');
 }
 
 function repRow(db: Db, id: string): RepRow {
@@ -320,7 +326,7 @@ function orderFor(db: Db, id: string, actor: Actor): OrderRow {
 
 function orderActions(db: Db, r: OrderRow, actor: Actor): OrderView['actions'] {
   const rep = ownRep(db, actor);
-  const mayApprove = !rep && isOffice(actor);
+  const mayApprove = !rep && officeWrites(actor);
   if (r.status === 'draft') return ['edit', ...(mayApprove ? ['approve' as const] : []), 'cancel'];
   if (r.status === 'approved') return [...(rep && r.warehouse_id !== rep.warehouse_id ? [] : ['deliver' as const]), ...(rep ? [] : ['cancel' as const])];
   return [];
@@ -747,7 +753,7 @@ export function listCollections(db: Db, f: { repId?: string | undefined; from?: 
     return {
       id: r.id, number: r.number, repId: r.rep_id, repName: r.rep_name, partyId: r.party_id, partyName: r.party_name, date: r.date, currency: r.currency,
       rateX100: Number(r.rate_x100), amount: Number(r.amount), entryId: r.entry_id, state, handoverId, notes: r.notes ?? '', createdBy: r.created_by,
-      mayCancel: state !== 'cancelled' && !handoverId && (state === 'approved' ? mayReverse : isOffice(actor) || r.created_by === actor.name)
+      mayCancel: state !== 'cancelled' && !handoverId && (state === 'approved' ? mayReverse : officeWrites(actor) || r.created_by === actor.name)
     };
   });
   return f.open ? list.filter((c) => c.state === 'approved' && !c.handoverId) : list;
@@ -805,7 +811,7 @@ export function listHandovers(db: Db, f: { repId?: string | undefined }, actor: 
     return {
       id: r.id, number: r.number, repId: r.rep_id, repName: r.rep_name, date: r.date, toAccount: r.to_account, currency: r.currency, amount: Number(r.amount),
       entryId: r.entry_id, state, collections: Number(r.n), createdBy: r.created_by, createdAt: r.created_at,
-      mayCancel: state !== 'cancelled' && isOffice(actor) && (state !== 'approved' || mayReverse)
+      mayCancel: state !== 'cancelled' && officeWrites(actor) && (state !== 'approved' || mayReverse)
     };
   });
 }
@@ -816,7 +822,7 @@ export function listHandovers(db: Db, f: { repId?: string | undefined }, actor: 
  */
 export function handOver(db: Db, input: { repId: string; date: string; currency: CurrencyCode; rateX100: number; toAccount?: string | undefined }, actor: Actor): HandoverView {
   requirePlan(db);
-  if (!isOffice(actor)) throw new AppError(403, 'ws_handover_office_only');
+  if (!officeWrites(actor)) throw new AppError(403, 'ws_handover_office_only');
   const rep = repRow(db, input.repId);
   assertDate(db, input.date);
   if (input.currency !== 'IQD' && input.currency !== 'USD') throw invalid([{ code: 'currency_invalid' }]);
@@ -886,7 +892,7 @@ export function cancelCollection(db: Db, id: string, actor: Actor, date?: string
   if (!row || (own && row.rep_id !== own.id)) throw notFound('ws_collection');
   if (row.cancelled_at) throw conflict('action_not_allowed', { status: 'cancelled', action: 'cancel' });
   if (row.handover_id && handedSet(db).has(row.handover_id)) throw conflict('ws_collection_handed_over');
-  if (!isOffice(actor) && row.created_by !== actor.name) throw new AppError(403, 'ws_office_only');
+  if (!officeWrites(actor) && row.created_by !== actor.name) throw new AppError(403, 'ws_office_only');
   transaction(db, () => {
     const approved = !!row.entry_id && (db.prepare('SELECT status FROM entries WHERE id = ?').get(row.entry_id) as { status: string } | undefined)?.status === 'approved';
     if (!approved) db.prepare('UPDATE ws_collections SET entry_id = NULL WHERE id = ?').run(id);
