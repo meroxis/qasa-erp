@@ -1828,8 +1828,8 @@ describe('the release notes of this version (2.0.0: the new till, gold, wholesal
     const changed = (lang: 'ar' | 'en' | 'ku', heading: string) => section(lang).split(`### ${heading}\n`)[1]!.split('\n### ')[0]!.split('\n').filter((l) => l.startsWith('- '));
     const en = changed('en', 'Changed');
     expect(en[0]).toBe('- **Card, FIB, ZainCash and Qi at the till are switched off for now.** The till takes cash and credit (on the customer’s account).');
-    expect(en[1]).toBe('- **Dollars at the till follow the day’s rate:** today’s rate on the **Dollar rate** page, or the company’s rate when today has none. A rate within 3% of it is taken as typed, one up to 15% away needs a supervisor’s PIN, and one further away is refused. The till shows the day’s rate.');
-    expect(en[2]).toBe('- **A cash sale made at a till is not cancelled once its shift is closed:** its money was counted with that shift. Take the goods back with a return.');
+    expect(en[1]).toBe('- **Dollars at the till follow the day’s rate:** today’s rate on the **Dollar rate** page, or the company’s rate when today has none. An admin enters today’s rate there each morning before the tills open, so that the tills are held to it. A rate within 3% of it is taken as typed, one up to 15% away needs a supervisor’s PIN, and one further away is refused. The till shows the day’s rate. A sale a till kept while it could not reach the office server is held to the rate of the day it was sold and to today’s: within 3% of both it is taken, and any other waits in **Waiting to send** for a supervisor.');
+    expect(en[2]).toBe('- **A cash sale made at a till is not cancelled once its shift is closed:** its money was counted with that shift. Take the goods back with a return. A cash return that shift paid is not cancelled after it closed either.');
     expect(en[3]).toBe('- **Cash taken on the invoice screens into a till’s safe counts in that till’s shift,** and paying it back out of that safe can ask for a supervisor’s PIN, typed on the invoice screen.');
     for (const [lang, heading, words] of [['ar', 'ما تغيّر', ['متوقف حالياً', '**سعر الدولار**', 'بعد إغلاق ورديته', 'شاشات الفواتير']], ['ku', 'گۆڕاوەکان', ['بۆ ئێستا ڕاگیراوە', '**نرخی دۆلار**', 'دوای داخستنی شەفتەکەی', 'شاشەکانی پسوولەوە']]] as const) {
       const list = changed(lang, heading);
@@ -1846,7 +1846,7 @@ describe('the release notes of this version (2.0.0: the new till, gold, wholesal
     expect(read('packages/server/src/till-rules.ts')).toContain("path: '/api/refund-approvals'");
     // the supervisor's bullet: the new approvals, and the locks as they are counted
     const sup = (lang: 'ar' | 'en' | 'ku', heading: string) => changed(lang, heading)[1]!;
-    expect(sup('en', 'New')).toBe('- **Supervisor approval at the till:** refunds, voids, a price below the list price, discounts beyond the limit, credit over a customer’s limit and opening the drawer with no sale can ask for a supervisor’s PIN. A PIN is each supervisor’s own, 6 to 8 digits. Each cashier has one open shift at a time. Five wrong PINs within fifteen minutes lock that cashier’s approvals for fifteen minutes, and fifteen in one day until the next day; an admin can unlock them in **Settings → Tills and till rules**.');
+    expect(sup('en', 'New')).toBe('- **Supervisor approval at the till:** refunds, voids, a price below the list price, discounts beyond the limit, credit over a customer’s limit and opening the drawer with no sale can ask for a supervisor’s PIN. A PIN is each supervisor’s own, 6 to 8 digits. Each cashier has one open shift at a time. Five wrong PINs within fifteen minutes lock that cashier’s approvals for fifteen minutes. With sign-in on, fifteen in one day lock them until the next day (with sign-in off the count is the till’s, and no till stops for a day); an admin can unlock them in **Settings → Tills and till rules**.');
     expect(sup('ar', 'الجديد')).toContain('بسعر أقل من سعر القائمة');
     expect(sup('ar', 'الجديد')).toContain('فوق حد الزبون');
     expect(sup('ar', 'الجديد')).toContain('فك القفل');
@@ -1855,6 +1855,25 @@ describe('the release notes of this version (2.0.0: the new till, gold, wholesal
     expect(sup('ku', 'نوێ')).toContain('قفڵەکە بکاتەوە');
     const rules = read('packages/server/src/till-rules.ts');
     for (const line of ['const LOCK_AFTER = 5;', 'const LOCK_MS = 15 * 60 * 1000;', 'const DAY_LOCK_AFTER = 15;', "path: '/api/pos/pin-unlock'"]) expect(rules, line).toContain(line);
+    // round four of the review, finding 10: the day's lock is a signed-in cashier's (as the server counts it), an
+    // admin is told to enter today's rate on the rate board, a kept sale's rate is held to its day and to today, and
+    // a cash return a closed shift paid is not cancelled; in the three languages
+    expect(rules).toContain('if (signedIn && mine.day_on === today && mine.day_n >= DAY_LOCK_AFTER) {');
+    expect(sup('ar', 'الجديد')).toContain('وعند تفعيل تسجيل الدخول، خمسة عشر رمزاً خاطئاً في يوم واحد توقفها حتى اليوم التالي');
+    expect(sup('ku', 'نوێ')).toContain('کاتێک چوونەژوورەوە چالاکە، پازدە پینی هەڵە لە یەک ڕۆژدا تا ڕۆژی دواتر');
+    expect(changed('ar', 'ما تغيّر')[1]).toContain('يُدخل مدير النظام سعر اليوم هناك كل صباح قبل فتح الصناديق');
+    expect(changed('ku', 'گۆڕاوەکان')[1]).toContain('بەڕێوەبەری سیستەم هەموو بەیانییەک پێش کردنەوەی سندووقەکان نرخی ئەمڕۆ لەوێ دادەنێت');
+    expect(changed('ar', 'ما تغيّر')[1]).toContain('**ما ينتظر الإرسال**');
+    expect(changed('ku', 'گۆڕاوەکان')[1]).toContain('**چاوەڕێی ناردن**');
+    expect(changed('ar', 'ما تغيّر')[2]).toContain('المرتجع النقدي الذي دفعته تلك الوردية لا يُلغى بعد إغلاقها');
+    expect(changed('ku', 'گۆڕاوەکان')[2]).toContain('دوای داخستنی هەڵناوەشێتەوە');
+    expect(read('packages/server/src/pos.ts')).toContain("return now === 'ok' && rateStanding(rateX100, dayRate) === 'ok' ? 'ok' : 'approve';");
+    expect(read('packages/server/src/invoices.ts')).toContain("throw conflict('pos_return_shift_closed')");
+    expect(store['en-us'].releaseNotes).toContain('an admin enters today’s rate on the Dollar rate page each morning');
+    expect(store.ar.releaseNotes).toContain('يُدخل مدير النظام سعر اليوم في صفحة سعر الدولار كل صباح');
+    expect(store['ku-arab'].releaseNotes).toContain('نرخی ئەمڕۆ لە پەڕەی نرخی دۆلار دادەنێت');
+    // (the Store shows at most 1,500 characters of what is new)
+    for (const lang of LANGS) expect(store[lang].releaseNotes.length, lang).toBeLessThanOrEqual(1500);
     const all = [notes, ...LANGS.map((l) => store[l].releaseNotes)].join('\n');
     expect(all).not.toMatch(/for a while\.|مدة من الوقت|بۆ ماوەیەک ڕەزامەندییەکانی/);
     // the Store text says the two an owner must know before the update
