@@ -22,6 +22,9 @@ import type { ApiExtension } from './routes.ts';
  * otherwise get the gift vouchers posted into it). The feature then refuses with its "account missing" error until the
  * accountant chooses one. A customer or supplier can't be put on any of these accounts either.
  *
+ * Changing the choice (books review #13): refused while the account in use holds a balance, and a stock account (a
+ * warehouse's, the fuel stock) is never chosen.
+ *
  * Existing companies: an account a feature made before (always system = 1) keeps working, and its setting is written
  * the first time it is used; one the company had made itself with the same code before 2.0 was already being posted
  * into by the feature, so it keeps working only if the setting points at it (the accountant's choice).
@@ -113,6 +116,27 @@ export function featureAccountsView(db: Db): FeatureAccountView[] {
   });
 }
 
+/** A warehouse's stock account, or the fuel stock the petrol station posts to (chosen in its settings, or the one it made). */
+function isStockAccount(db: Db, code: string): boolean {
+  if (db.prepare('SELECT 1 FROM warehouses WHERE account_code = ? LIMIT 1').get(code)) return true;
+  let fuelStock: unknown;
+  try { fuelStock = (JSON.parse(readSetting(db, 'fuel_settings') ?? '{}') as { stockAccount?: unknown }).stockAccount; } catch { fuelStock = undefined; }
+  if (fuelStock === code) return true;
+  return code === FUEL_STOCK_STANDARD && !!db.prepare('SELECT 1 FROM accounts WHERE code = ? AND "system" = 1').get(code);
+}
+
+/** The petrol station's standard fuel stock account (fuel.ts names it; a test holds the two together). */
+export const FUEL_STOCK_STANDARD = '1379';
+
+/** Whether an account holds a balance, in any currency: entries in the books and those waiting (a refused one is in none). */
+function accountHolds(db: Db, code: string): boolean {
+  const rows = db.prepare(`SELECT COALESCE(SUM(l.debit - l.credit), 0) AS b, COALESCE(SUM(l.base_debit - l.base_credit), 0) AS base
+                           FROM entry_lines l JOIN entries e ON e.id = l.entry_id
+                           WHERE l.account_code = ? AND NOT EXISTS (SELECT 1 FROM voucher_approvals vp WHERE vp.entry_id = e.id AND vp.state = 'rejected')
+                           GROUP BY e.currency`).all(code) as { b: number; base: number }[];
+  return rows.some((r) => Number(r.b) !== 0 || Number(r.base) !== 0);
+}
+
 /** The accountant chooses the account a feature posts to: postable, of the right kind, and no customer's or supplier's. */
 export function chooseFeatureAccount(db: Db, key: FeatureAccountKey, code: string, user: string): FeatureAccountView[] {
   const def: FeatureAccountDef = FEATURE_ACCOUNTS[key];
@@ -121,6 +145,14 @@ export function chooseFeatureAccount(db: Db, key: FeatureAccountKey, code: strin
   if (db.prepare('SELECT 1 FROM parties WHERE account_code = ? LIMIT 1').get(code)) throw invalid([{ code: 'feature_account_party', accountCode: code } as { code: string }]);
   const others = (Object.entries(FEATURE_ACCOUNTS) as [FeatureAccountKey, FeatureAccountDef][]).filter(([k]) => k !== key);
   if (others.some(([, d]) => readSetting(db, d.setting) === code)) throw invalid([{ code: 'feature_account_taken', accountCode: code } as { code: string }]);
+  // a warehouse's stock account, or the petrol station's fuel stock, is its stock's value and nothing else: old gold (the
+  // one feature account among the stock accounts) posted there would no longer agree with the stock it is the value of
+  if (isStockAccount(db, code)) throw invalid([{ code: 'feature_account_stock', accountCode: code } as { code: string }]);
+  // what the feature holds now (vouchers not yet used, goods held, gold owed, cheques in hand) stays where it was
+  // posted: with the account changed, what is paid, used or settled after would come out of an account it never went
+  // into. The account is changed once it holds nothing (or the balance is moved first, by an entry)
+  const current = featureAccountsView(db).find((v) => v.key === key)?.code ?? null;
+  if (current && current !== code && accountHolds(db, current)) throw invalid([{ code: 'feature_account_in_use', accountCode: current } as { code: string }]);
   transaction(db, () => {
     writeSetting(db, def.setting, code);
     audit(db, user, 'update', 'feature_account', key, { accountCode: code });
