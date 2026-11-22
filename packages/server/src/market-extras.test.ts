@@ -368,6 +368,39 @@ describe('daily-delivery suppliers', () => {
     expect((await ok('GET', '/api/daily-suppliers'))).toMatchObject([{ partyId: supplierId, items: 2, balance: 65_500, doneToday: true }]);
   });
 
+  it('refuses a second sheet for the same supplier and day unless the person says the supplier came again (2.0 books review #16)', async () => {
+    await ok('PUT', `/api/daily-suppliers/${supplierId}/items`, { items: [{ itemId: breadId, unitCost: 150 }] });
+    const sheet = { partyId: supplierId, date: '2026-11-20', warehouseId, lines: [{ itemId: breadId, receivedMilli: 100_000, returnedMilli: 0, unitCost: 150 }] };
+    await ok('POST', '/api/daily-suppliers/receipts', sheet);
+    // typed again (no key: another tab, another person): refused, nothing bought twice
+    const second = await call('POST', '/api/daily-suppliers/receipts', sheet);
+    expect(second.statusCode).toBe(409);
+    expect(second.json()).toMatchObject({ error: 'ds_sheet_exists' });
+    expect(stockQty(breadId)).toBe(100_000);
+    expect((await ok('GET', `/api/parties/${supplierId}`)).balance).toBe(15_000);
+    // the supplier did come a second time
+    await ok('POST', '/api/daily-suppliers/receipts', { ...sheet, again: true, lines: [{ itemId: breadId, receivedMilli: 40_000, returnedMilli: 0, unitCost: 150 }] });
+    expect(stockQty(breadId)).toBe(140_000);
+    expect(await ok('GET', `/api/daily-suppliers/${supplierId}/receipts`)).toHaveLength(2);
+  });
+
+  it('offers to return only what is still on the shelf: what sold is not there to hand back (2.0 books review #16)', async () => {
+    await ok('PUT', `/api/daily-suppliers/${supplierId}/items`, { items: [{ itemId: breadId, unitCost: 150 }] });
+    await ok('POST', '/api/daily-suppliers/receipts', { partyId: supplierId, date: '2026-11-19', warehouseId, lines: [{ itemId: breadId, receivedMilli: 100_000, returnedMilli: 0, unitCost: 150 }] });
+    const buyer = (await ok('POST', '/api/parties', { type: 'customer', name: 'Corner cafe' })).id;
+    const sale = await ok('POST', '/api/invoices', {
+      kind: 'sale', date: '2026-11-19', partyId: buyer, warehouseId, currency: 'IQD', rateX100: 100, payment: 'credit', discount: 0, lines: [{ itemId: breadId, qtyMilli: 80_000, unitPrice: 250 }]
+    });
+    await ok('POST', `/api/invoices/${sale.id}/post`, {});
+    const sheet = await ok('GET', `/api/daily-suppliers/${supplierId}/sheet?date=2026-11-20`);
+    expect(sheet.items[0]).toMatchObject({ code: 'SAMOON', lastReceivedMilli: 100_000, returnableMilli: 20_000 });
+    const tooMuch = await call('POST', '/api/daily-suppliers/receipts', { partyId: supplierId, date: '2026-11-20', warehouseId, lines: [{ itemId: breadId, receivedMilli: 0, returnedMilli: 30_000, unitCost: 150 }] });
+    expect(tooMuch.json().details).toEqual([{ code: 'ds_return_too_much', line: 1, available: 20_000 }]);
+    const back = await ok('POST', '/api/daily-suppliers/receipts', { partyId: supplierId, date: '2026-11-20', warehouseId, lines: [{ itemId: breadId, receivedMilli: 0, returnedMilli: 20_000, unitCost: 150 }] });
+    expect(back).toMatchObject({ returned: 3_000 });
+    expect(stockQty(breadId)).toBe(0);
+  });
+
   it('is for purchasing staff', async () => {
     await ok('POST', '/api/plan/trial');
     await ok('PUT', `/api/daily-suppliers/${supplierId}/items`, { items: [{ itemId: milkId, unitCost: 1_000 }] });
