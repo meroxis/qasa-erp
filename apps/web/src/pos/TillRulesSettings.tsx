@@ -7,7 +7,7 @@ import { useI18n } from '../i18n.ts';
 import { href } from '../router.ts';
 import { tillsApi } from '../industry/pos-api.ts';
 import { tillRulesApi, type DisplayRules, type SupervisorRules, type TillRulesView } from './rules-api.ts';
-import { BAUDS, DEFAULT_SCALE, hexBytes, readScaleSettings, readWeight, scaleProblem, serialHere, validPattern, writeScaleSettings, type ScaleSettings } from './scale.ts';
+import { BAUDS, DEFAULT_SCALE, hexBytes, readScaleSettings, readWeight, SCALE_UNITS, scaleProblem, serialHere, validPattern, writeScaleSettings, type ScaleSettings, type ScaleUnit } from './scale.ts';
 import { ScalePortChoice } from './ScalePort.tsx';
 import { MAX_PICTURE_FILE_BYTES, preparePicture } from '../industry/ItemImage.tsx';
 
@@ -341,7 +341,7 @@ function ScaleCard() {
                   <select className="input" value={s.baud} onChange={(e) => save({ ...s, baud: Number(e.target.value) })}>{BAUDS.map((b) => <option key={b} value={b}>{b}</option>)}</select>
                 </label>
                 <label className="field"><span>{t('tu_scaleUnit')}</span>
-                  <select className="input" value={s.unit} onChange={(e) => save({ ...s, unit: e.target.value === 'g' ? 'g' : 'kg' })}><option value="kg">kg</option><option value="g">g</option></select>
+                  <select className="input" value={s.unit} onChange={(e) => save({ ...s, unit: SCALE_UNITS.includes(e.target.value as ScaleUnit) ? e.target.value as ScaleUnit : 'kg' })}>{SCALE_UNITS.map((u) => <option key={u} value={u}>{u}</option>)}</select>
                 </label>
                 <label className="field"><span>{t('tu_scaleRequest')}</span>
                   <input className="input ltr" maxLength={48} value={s.request} placeholder="05" aria-invalid={hexBytes(s.request) === null} onChange={(e) => setS({ ...s, request: e.target.value })} onBlur={() => { if (hexBytes(s.request)) save(s); }} />

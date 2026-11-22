@@ -19,9 +19,16 @@ export interface ScaleSettings {
   request: string;
   /** a regular expression whose first group is the weight */
   pattern: string;
-  /** what the number is in */
-  unit: 'kg' | 'g';
+  /**
+   * what the number is in when the scale names no unit beside it; a scale set to pounds or ounces is read only when
+   * this says so (lb, oz): on a PC set to kg or g a weight the scale sends in lb or oz is no reading
+   */
+  unit: ScaleUnit;
 }
+export type ScaleUnit = 'kg' | 'g' | 'lb' | 'oz';
+export const SCALE_UNITS: readonly ScaleUnit[] = ['kg', 'g', 'lb', 'oz'];
+/** one of each unit in kilograms (the international pound and ounce) */
+const KG_PER: Record<ScaleUnit, number> = { kg: 1, g: 0.001, lb: 0.45359237, oz: 0.028349523125 };
 
 export const SCALE_KEY = 'qasa.pos.scale';
 export const DEFAULT_SCALE: ScaleSettings = { on: false, baud: 9600, request: '', pattern: '([0-9]+[.,][0-9]+|[0-9]+)\\s*(?:kg|KG|g|G)?', unit: 'kg' };
@@ -36,7 +43,7 @@ export function readScaleSettings(store: Pick<Storage, 'getItem'> | null = stora
       baud: (BAUDS as readonly number[]).includes(v.baud as number) ? v.baud! : DEFAULT_SCALE.baud,
       request: typeof v.request === 'string' && hexBytes(v.request) ? v.request : '',
       pattern: typeof v.pattern === 'string' && validPattern(v.pattern) ? v.pattern : DEFAULT_SCALE.pattern,
-      unit: v.unit === 'g' ? 'g' : 'kg'
+      unit: SCALE_UNITS.includes(v.unit as ScaleUnit) ? v.unit as ScaleUnit : 'kg'
     };
   } catch {
     return { ...DEFAULT_SCALE };
@@ -64,19 +71,46 @@ export function validPattern(p: string): boolean {
   try { new RegExp(p); return true; } catch { return false; }
 }
 
+/** The unit a scale names right after a number ("1.250kg", "500 g", "2.75 lb"); a lone capital G is not one (gross). */
+function unitAfter(text: string): ScaleUnit | null {
+  const m = /^[ \t]*(kg|KG|Kg|g|lbs?|LBS?|Lbs?|oz|OZ|Oz)(?![A-Za-z])/.exec(text);
+  if (!m) return null;
+  const u = m[1]!.toLowerCase();
+  return u === 'kg' ? 'kg' : u === 'g' ? 'g' : u.startsWith('lb') ? 'lb' : 'oz';
+}
+
 /**
  * The weight in kilograms the text read from the scale ends with (the last match: a scale streaming the weight sends
- * the newest last), or null. A comma is a decimal point; a negative or absurd weight (over 1,000 kg) is no reading.
+ * the newest last), or null. A comma is a decimal point.
+ *
+ * - The weight is the number the scale names a unit beside: on a line with one, numbers without a unit (a count, a
+ *   code, a time after the weight) are never the weight. A line with no unit at all: its last number, in the unit set
+ *   for this PC.
+ * - A unit the scale names is the one the number is in. Pounds and ounces are turned into kilograms only on a PC set to
+ *   lb or oz; on one set to kg or g such a line is no reading (a scale switched to pounds by a wrong key must not sell
+ *   2.2 lb as 2.2 kg).
+ * - A weight with a minus before it (more taken off than the tare), zero, or an absurd one (over 1,000 kg) is no reading.
  */
 export function parseScaleText(text: string, s: Pick<ScaleSettings, 'pattern' | 'unit'>): number | null {
   if (!validPattern(s.pattern)) return null;
   const re = new RegExp(s.pattern, 'g');
-  let last: string | null = null;
-  for (const m of text.matchAll(re)) if (m[1] ?? m[0]) last = (m[1] ?? m[0])!;
-  if (last === null) return null;
-  const n = Number(last.replace(',', '.'));
+  let last: { n: string; unit: ScaleUnit | null; minus: boolean } | null = null;
+  for (const m of text.matchAll(re)) {
+    const n = m[1] ?? m[0];
+    if (!n) continue;
+    const at = (m.index ?? 0) + Math.max(0, m[0].indexOf(n));
+    const read = { n, unit: unitAfter(text.slice(at + n.length)), minus: /[-\u2212][ \t]*$/.test(text.slice(0, at)) };
+    // a number with its unit is never replaced by a bare one that follows it on the same line
+    if (last?.unit && !read.unit && !/[\r\n\x03]/.test(text.slice(text.lastIndexOf(last.n, at), at))) continue;
+    last = read;
+  }
+  if (last === null || last.minus) return null;
+  const n = Number(last.n.replace(',', '.'));
   if (!Number.isFinite(n) || n <= 0) return null;
-  const kg = s.unit === 'g' ? n / 1000 : n;
+  const metric = (u: ScaleUnit) => u === 'kg' || u === 'g';
+  if (last.unit && !metric(last.unit) && metric(s.unit)) return null;
+  // (to the gram: a pound is not a round number of kilograms)
+  const kg = Math.round(n * KG_PER[last.unit ?? s.unit] * 1_000_000) / 1_000_000;
   return kg > 1000 ? null : kg;
 }
 

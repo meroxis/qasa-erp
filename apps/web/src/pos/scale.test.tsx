@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { DEFAULT_SCALE, readWeight, scaleProblem, ScaleError, settledWeight, unstableLine, wholeLines, type PortLike, type SerialLike } from './scale.ts';
+import { DEFAULT_SCALE, parseScaleText, readScaleSettings, readWeight, scaleProblem, ScaleError, settledWeight, unstableLine, wholeLines, type PortLike, type SerialLike } from './scale.ts';
 
 const enc = new TextEncoder();
 /** A scale on a port: sends the given chunks (a streaming scale), or one line for each request written (answers). */
@@ -87,5 +87,57 @@ describe('reading the scale (reliability review, finding 5)', () => {
     const moving = fakeSerial({ chunks: ['US,GS,  1.100kg\r\nUS,GS,  1.180kg\r\nST,GS,  1.2'] });
     expect(scaleProblem(await readWeight(DEFAULT_SCALE, 60, moving.serial).catch((e: unknown) => e))).toBe('sc_unstable');
     expect(scaleProblem(new Error('port busy'))).toBe('sc_failed');
+  });
+});
+
+describe('what the scale says is a weight (verify report, finding 12)', () => {
+  const kg = { pattern: DEFAULT_SCALE.pattern, unit: 'kg' as const };
+
+  it('never reads a negative weight as a weight', () => {
+    // more taken off the pan than the tare: the scale shows a minus
+    expect(parseScaleText('ST,NT,-  0.250kg', kg)).toBeNull();
+    expect(parseScaleText('ST,NT,-0.250kg', kg)).toBeNull();
+    expect(parseScaleText('ST,NT,\u22120.250 kg', kg)).toBeNull();
+    expect(settledWeight('ST,NT,-  0.250kg\r\nST,NT,-  0.250kg\r\n', kg).kg).toBeNull();
+    // a plus, or a minus that belongs to an earlier field, is not one
+    expect(parseScaleText('ST,GS,+  1.250kg', kg)).toBe(1.25);
+    expect(parseScaleText('A-1,ST,GS, 1.250kg', kg)).toBe(1.25);
+    expect(parseScaleText('0.000kg', kg)).toBeNull();
+  });
+
+  it('takes the number that has the unit, never one that follows it on the line', () => {
+    // a count, a code or a time after the weight used to be read as the weight: 12 kg, 59 kg
+    expect(parseScaleText('ST,GS,  1.250kg,0012', kg)).toBe(1.25);
+    expect(parseScaleText('ST,GS,  1.250 kg  PLU 0042  14:59', kg)).toBe(1.25);
+    expect(settledWeight('ST,GS, 1.250kg,0012\r\nST,GS, 1.250kg,0013\r\n', kg).kg).toBe(1.25);
+    // the newest line is still the one read, and a later weight with its unit on the same line (net after gross) wins
+    expect(parseScaleText('ST,GS,  1.250kg,0012\r\nST,GS,  1.300kg,0013\r\n', kg)).toBe(1.3);
+    expect(parseScaleText('G 1.350kg T 0.100kg N 1.250kg', kg)).toBe(1.25);
+    // a line with no unit at all: its last number, in the unit set for this PC (as before)
+    expect(parseScaleText('01 1.250', kg)).toBe(1.25);
+    expect(parseScaleText('1250', { pattern: '(\\d+)', unit: 'g' })).toBe(1.25);
+    // "GS" and a lone capital G (gross) are not grams
+    expect(parseScaleText('1.250 GS', kg)).toBe(1.25);
+    expect(parseScaleText('1.250 G', kg)).toBe(1.25);
+  });
+
+  it('reads the unit the scale names: grams on a PC set to kg, and pounds or ounces only where the PC is set to them', () => {
+    expect(parseScaleText('ST,GS,  750g', kg)).toBe(0.75);
+    expect(parseScaleText('ST,GS,  0.750kg', { ...kg, unit: 'g' })).toBe(0.75);
+    // a scale switched to pounds on a PC set to kilograms: no reading (2.2 lb is not 2.2 kg)
+    expect(parseScaleText('ST,GS,  2.20lb', kg)).toBeNull();
+    expect(parseScaleText('ST,GS,  16 oz', kg)).toBeNull();
+    expect(parseScaleText('ST,GS,  2.20 LBS', { ...kg, unit: 'g' })).toBeNull();
+    expect(settledWeight('ST,GS, 2.20lb\r\nST,GS, 2.20lb\r\n', kg).kg).toBeNull();
+    // set to pounds or ounces, they are turned into kilograms
+    expect(parseScaleText('ST,GS,  2.20lb', { ...kg, unit: 'lb' })).toBeCloseTo(0.997903, 6);
+    expect(parseScaleText('ST,GS,  16 oz', { ...kg, unit: 'lb' })).toBeCloseTo(0.453592, 6);
+    expect(parseScaleText('  2.5', { ...kg, unit: 'lb' })).toBeCloseTo(1.133981, 6);
+    expect(parseScaleText('  8', { pattern: '(\\d+)', unit: 'oz' })).toBeCloseTo(0.226796, 6);
+    // … and a line in kilograms is still kilograms there
+    expect(parseScaleText('ST,GS,  1.250kg', { ...kg, unit: 'lb' })).toBe(1.25);
+    // the setting keeps lb and oz, and anything else is kg
+    const store = (unit: string) => ({ getItem: () => JSON.stringify({ on: true, unit }) });
+    expect(['kg', 'g', 'lb', 'oz', 'stone'].map((u) => readScaleSettings(store(u)).unit)).toEqual(['kg', 'g', 'lb', 'oz', 'kg']);
   });
 });
