@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { tillRules, useApproval } from './till-settings.ts';
+import { blindShift, closesBlind, tillRules, useApproval } from './till-settings.ts';
 import { z } from 'zod';
 import { cleanScalePrefixes, isScaleItemDigits, todayIso, toBase, type CurrencyCode, type ScaleItemDigits } from '@qasa/core';
 import type { Db } from './db.ts';
@@ -127,7 +127,7 @@ export function drawerOpened(db: Db, shiftId: string, reason: string, actor: Act
   if (shift.status !== 'open') throw conflict('pos_shift_closed');
   if (!shift.actions.includes('sell')) throw new AppError(403, 'forbidden', { need: 'shift_owner' });
   // 2.0: a company may want a supervisor's PIN for each opening with no sale (till-settings.ts)
-  const approver = tillRules(db).supervisor.noSale ? useApproval(db, approvals, shiftId, 'no_sale', actor.name) : null;
+  const approver = tillRules(db).supervisor.noSale ? useApproval(db, approvals, 'no_sale', actor, { shiftId }) : null;
   audit(db, actor.name, 'drawer_open', 'pos_shift', shiftId, { reason: reason.trim().slice(0, 200) || null, register: shift.register, ...(approver ? { approver } : {}) });
   return { opened: drawerOpenings(db, shiftId) };
 }
@@ -194,11 +194,13 @@ export function tillSummary(db: Db, from: string, to: string, actor: Actor | nul
   const rows = db.prepare('SELECT id, register, till_id, opened_at FROM pos_shifts ORDER BY opened_at').all() as { id: string; register: string; till_id: string | null; opened_at: string }[];
   const out = new Map<string, TillSummaryRow>();
   const own = !!actor && !seesBooks(actor);
+  const blind = closesBlind(db, actor);
   for (const r of rows) {
     const day = todayIso(new Date(r.opened_at));
     if (day < from || day > to) continue;
     if (own && !openedShift(db, r.id, actor!)) continue;
-    const s = getShift(db, r.id, actor);
+    // someone who closes blind reads their tills' shifts without what tells the cash expected (till-settings.ts)
+    const s = blind ? blindShift(getShift(db, r.id, actor)) : getShift(db, r.id, actor);
     const key = r.till_id ?? `name:${r.register.trim().toLowerCase()}`;
     const row = out.get(key) ?? { tillId: r.till_id, register: s.register, shifts: 0, sales: { IQD: 0, USD: 0 }, count: 0, methods: {}, difference: { IQD: 0, USD: 0 }, noSale: 0 };
     row.shifts++;

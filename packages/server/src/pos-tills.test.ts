@@ -66,7 +66,8 @@ describe('tills', () => {
     expect(shift.json()).toMatchObject({ register: 'Front', cashAccountCode: '1811', tillId: t.id });
     expect((await post('/api/pos/shifts', { tillId: t.id, register: 'x', cashAccountCode: '1811', warehouseId, openingCash: 0 })).json()).toMatchObject({ error: 'pos_register_open' });
     expect((await get(`/api/pos/current?tillId=${t.id}`)).json().shift.id).toBe(shift.json().id);
-    expect((await get('/api/pos/current?tillId=other')).json().shift).toBeNull();
+    // a PC set to another till still finds the cashier's own open shift (they can open no second one): review 2.0
+    expect((await get('/api/pos/current?tillId=other')).json().shift.id).toBe(shift.json().id);
     // the till's name, safe and warehouse can't change while its shift is open; the drawer setting can
     expect((await put(`/api/pos/tills/${t.id}`, { name: 'Front door', cashAccountCode: '1811', warehouseId })).json()).toMatchObject({ error: 'till_has_open_shift' });
     expect((await put(`/api/pos/tills/${t.id}`, { name: 'Front', cashAccountCode: '1811', warehouseId, drawer: 'cash' })).json()).toMatchObject({ drawer: 'cash', openShiftId: shift.json().id });

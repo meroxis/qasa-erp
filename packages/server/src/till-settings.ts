@@ -12,13 +12,26 @@ import { seesBooks, type Actor } from './auth.ts';
  * (till-rules.ts). Every rule is off until an admin turns it on, so a till works as before.
  */
 
-export const APPROVAL_ACTIONS = ['line_delete', 'void', 'price', 'discount', 'no_sale', 'refund', 'credit_over', 'blind_view'] as const;
+export const APPROVAL_ACTIONS = ['line_delete', 'void', 'price', 'discount', 'no_sale', 'refund', 'credit_over', 'blind_view', 'offline_sale'] as const;
 export type ApprovalAction = (typeof APPROVAL_ACTIONS)[number];
-/** Approved at the till and done there (nothing the server books): the approval is used as it is given. */
+/**
+ * Approved at the till and done there (nothing the server books): the approval is used as it is given.
+ * Taking a scanned line off and voiding a basket happen before anything reaches the server (a basket is the till's
+ * own, in the cashier's browser), so the server cannot enforce them: the rule is the till page's, and the approval and
+ * its detail in the audit log are the record. A sale's price, discount, credit and refunds are enforced here.
+ */
 // a refund (returns, cancels, exchanges, the till's own return) is checked on the server: assertRefundApproved
 export const TILL_ONLY_ACTIONS: readonly ApprovalAction[] = ['line_delete', 'void', 'blind_view'];
 /** How long an approval waits for the action it was given for. */
 export const APPROVAL_MS = 2 * 60 * 1000;
+/** A lower price is approved while the basket is still being rung up: it waits this long for its sale. */
+export const PRICE_APPROVAL_MS = 20 * 60 * 1000;
+/**
+ * A sale a cut-off till kept that the server refuses for want of a supervisor (a price below the list, a discount over
+ * the limit) is approved afterwards, from the list of what waits on that PC: for that receipt (its temporary
+ * reference) and no smaller a sale. It waits a day for the PC that kept the sale to send it again.
+ */
+export const OFFLINE_APPROVAL_MS = 24 * 60 * 60 * 1000;
 
 export interface SupervisorRules {
   lineDelete: boolean; void: boolean; price: boolean;
@@ -108,38 +121,107 @@ export function roundingAccount(db: Db, diff: number): string {
   return a.code;
 }
 
+/** What an approval is used for now, to hold against what the supervisor approved (see approve, till-rules.ts). */
+export interface ApprovalUse {
+  /** the shift it must have been given at (a sale, the drawer); none: any shift still open (a refund asked from another screen) */
+  shiftId?: string | undefined;
+  /** the invoice (refund), the customer (credit over the limit) or the item and unit (a lower price): approvalSubject */
+  subject?: string | null | undefined;
+  /** a lower price: the line's unit price (not below the approved one); a discount, credit over the limit: the amount (not above) */
+  value?: number | undefined;
+  /** a refund: the lines coming back (within those approved); none = the whole invoice (a cancel) */
+  lines?: readonly { lineNo: number; qtyMilli: number }[] | undefined;
+}
+
+/** The subject of a lower-price approval: the item, and the unit when it is not the item's own. */
+export const priceSubject = (itemId: string, unit: string | null | undefined): string => `${itemId}|${unit ?? ''}`;
+
+/** How an approval's amount is held, by action: a floor (the price), a ceiling, or none. */
+const BOUND: Partial<Record<ApprovalAction, 'floor' | 'ceiling' | 'subject'>> = { price: 'floor', discount: 'ceiling', credit_over: 'ceiling', refund: 'subject' };
+
 /**
- * Uses one approval a supervisor gave at this shift's till for `action`: unused, not expired. Inside the sale's (or the
- * drawer's) transaction; refused otherwise, so one PIN never approves two things.
+ * Uses one approval a supervisor gave for `action`: unused, not expired, given to this cashier (never another's), at
+ * this shift (or, for a refund asked from another screen, at a shift still open), and for this very thing: the invoice
+ * and lines of a refund, the item and lowest price of a price change, the largest discount, the customer and largest
+ * amount of a credit sale over the limit. Inside the transaction of what it approves, so an approval is never used up
+ * by something that then fails, and one PIN never approves two things (the update is checked: a second process that
+ * took it first leaves nothing to take).
  */
-export function useApproval(db: Db, tokens: readonly string[] | undefined, shiftId: string, action: ApprovalAction, user: string): string {
+export function useApproval(db: Db, tokens: readonly string[] | undefined, action: ApprovalAction, who: { id?: string | null | undefined; name: string }, use: ApprovalUse = {}): string {
   const now = new Date().toISOString();
   for (const token of tokens ?? []) {
-    const r = db.prepare('SELECT id, approver FROM pos_approvals WHERE id = ? AND shift_id = ? AND action = ? AND used_at IS NULL AND expires_at >= ?')
-      .get(token, shiftId, action, now) as { id: string; approver: string } | undefined;
+    const r = db.prepare(`SELECT a.id, a.approver, a.shift_id, a.cashier, a.cashier_id, a.subject, a.amount, a.scope, s.status AS shift_status
+                          FROM pos_approvals a JOIN pos_shifts s ON s.id = a.shift_id
+                          WHERE a.id = ? AND a.action = ? AND a.used_at IS NULL AND a.expires_at >= ?`)
+      .get(token, action, now) as { id: string; approver: string; shift_id: string; cashier: string; cashier_id: string | null; subject: string | null; amount: number | null; scope: string | null; shift_status: string } | undefined;
     if (!r) continue;
-    db.prepare('UPDATE pos_approvals SET used_at = ? WHERE id = ? AND used_at IS NULL').run(now, r.id);
-    audit(db, user, 'approval_used', 'pos_shift', shiftId, { action, approver: r.approver, approval: r.id });
+    if (use.shiftId ? r.shift_id !== use.shiftId : r.shift_status !== 'open') continue;
+    if (r.cashier_id && who.id ? r.cashier_id !== who.id : r.cashier !== who.name) continue;
+    const bound = BOUND[action];
+    if (bound && action !== 'discount' && (r.subject ?? null) !== (use.subject ?? null)) continue;
+    if (bound === 'floor' && (r.amount === null || !Number.isSafeInteger(use.value) || use.value! < Number(r.amount))) continue;
+    if (bound === 'ceiling' && (r.amount === null || !Number.isSafeInteger(use.value) || use.value! > Number(r.amount))) continue;
+    if (action === 'refund' && r.scope !== null) {
+      let allowed: [number, number][] = [];
+      try { allowed = JSON.parse(r.scope) as [number, number][]; } catch { allowed = []; }
+      const most = new Map(allowed.map(([lineNo, qty]) => [Number(lineNo), Number(qty)]));
+      const asked = new Map<number, number>();
+      for (const l of use.lines ?? []) asked.set(l.lineNo, (asked.get(l.lineNo) ?? 0) + l.qtyMilli);
+      if (!use.lines || [...asked].some(([lineNo, qty]) => qty > (most.get(lineNo) ?? 0))) continue;
+    }
+    const taken = db.prepare('UPDATE pos_approvals SET used_at = ? WHERE id = ? AND used_at IS NULL').run(now, r.id);
+    if (Number(taken.changes) !== 1) continue;
+    audit(db, who.name, 'approval_used', 'pos_shift', r.shift_id, { action, approver: r.approver, approval: r.id });
     return r.approver;
   }
   throw invalid([{ code: 'pos_needs_supervisor', action }]);
 }
 
+/** Whether a supervisor has approved the kept sale with this receipt reference (not used yet). */
+export function offlineApprovalWaits(db: Db, shiftId: string, reference: string): boolean {
+  return !!db.prepare("SELECT 1 FROM pos_approvals WHERE action = 'offline_sale' AND shift_id = ? AND subject = ? AND used_at IS NULL AND expires_at >= ?")
+    .get(shiftId, reference, new Date().toISOString());
+}
+
 /**
- * A refund of a till sale (a return, a cancel, an exchange at the till) when the rule asks a supervisor for refunds:
- * someone who neither supervises nor is an admin brings an approval given at one of their own open shifts. Checked by
- * the server whatever screen asks (the till asks for the PIN first). Sales made elsewhere are not the till's rule.
+ * Uses the approval a supervisor gave for a kept sale (by its receipt reference: the kept sale itself can't carry a
+ * token, it is sent as it was kept): the sale is worth no less than what was approved. Null when there is none.
+ * Inside the sale's transaction.
  */
-export function assertRefundApproved(db: Db, invoiceId: string, actor: Pick<Actor, 'name' | 'permissions' | 'roles'> | undefined, tokens: readonly string[] | undefined): void {
-  if (!tillRules(db).supervisor.refund || !actor) return;
-  if (!db.prepare('SELECT 1 FROM pos_sales WHERE invoice_id = ?').get(invoiceId)) return;
-  if (actor.permissions.includes('admin') || maySupervise(actor)) return;
-  // (an approval is given only at a shift of the cashier who asked for it: any open shift may hold theirs)
-  const shifts = db.prepare("SELECT id FROM pos_shifts WHERE status = 'open'").all() as { id: string }[];
-  for (const s of shifts) {
-    try { useApproval(db, tokens, s.id, 'refund', actor.name); return; } catch { /* the next shift */ }
+export function useOfflineApproval(db: Db, shiftId: string, reference: string, value: number, user: string): string | null {
+  const now = new Date().toISOString();
+  const rows = db.prepare("SELECT id, approver, amount FROM pos_approvals WHERE action = 'offline_sale' AND shift_id = ? AND subject = ? AND used_at IS NULL AND expires_at >= ? ORDER BY created_at")
+    .all(shiftId, reference, now) as { id: string; approver: string; amount: number | null }[];
+  for (const r of rows) {
+    if (r.amount === null || value < Number(r.amount)) continue;
+    if (Number(db.prepare('UPDATE pos_approvals SET used_at = ? WHERE id = ? AND used_at IS NULL').run(now, r.id).changes) !== 1) continue;
+    audit(db, user, 'approval_used', 'pos_shift', shiftId, { action: 'offline_sale', approver: r.approver, approval: r.id, reference });
+    return r.approver;
   }
-  throw invalid([{ code: 'pos_needs_supervisor', action: 'refund' }]);
+  return null;
+}
+
+/**
+ * A refund when the company's rule asks a supervisor for refunds: a return or a cancel of a till sale, and (review
+ * 2.0) any cash paid back out of a safe a shift is open on, whatever screen the sale was made on: that money leaves
+ * a cashier's drawer too. Someone who neither supervises nor is an admin brings an approval a supervisor gave them
+ * for this invoice (and, for a return, for these lines). Checked by the server whatever screen asks, inside the
+ * transaction of the return or the cancel.
+ *
+ * `cashAccount`: the safe a return pays the money back from (none: on the customer's account). A cancel pays back
+ * into the invoice's own safe.
+ */
+export function assertRefundApproved(db: Db, invoiceId: string, actor: Pick<Actor, 'id' | 'name' | 'permissions' | 'roles'> | undefined, tokens: readonly string[] | undefined,
+  refund: { cashAccount?: string | null | undefined; lines?: readonly { lineNo: number; qtyMilli: number }[] | undefined; cancel?: boolean } = {}): void {
+  if (!tillRules(db).supervisor.refund || !actor) return;
+  if (actor.permissions.includes('admin') || maySupervise(actor)) return;
+  const inv = db.prepare('SELECT kind, payment, cash_account FROM invoices WHERE id = ?').get(invoiceId) as { kind: string; payment: string; cash_account: string | null } | undefined;
+  if (!inv || inv.kind !== 'sale') return;
+  const tillSale = !!db.prepare('SELECT 1 FROM pos_sales WHERE invoice_id = ?').get(invoiceId);
+  const safe = refund.cancel ? (inv.payment === 'cash' ? inv.cash_account : null) : refund.cashAccount ?? null;
+  const fromDrawer = !!safe && !!db.prepare("SELECT 1 FROM pos_shifts WHERE status = 'open' AND cash_account = ?").get(safe);
+  if (!tillSale && !fromDrawer) return;
+  useApproval(db, tokens, 'refund', actor, { subject: invoiceId, lines: refund.cancel ? undefined : refund.lines });
 }
 
 /** Whether this person closes blind: the rule is on and they neither supervise nor read the books. */
@@ -151,7 +233,46 @@ const NONE = { IQD: 0, USD: 0 };
 /**
  * A shift as a cashier who closes blind sees it: nothing that tells the cash expected (the sales, their methods, the
  * refunds, the dollars taken, the expected cash and the difference); `blind` says so. Their counted cash stays theirs.
+ * A shift's report (X/Z) keeps its list of sales and of items, without their amounts, and no gift voucher sums.
  */
 export function blindShift<T extends { expected: unknown; difference: unknown; sales: unknown; refunds: unknown; methods?: unknown; usdTaken?: unknown }>(view: T): T & { blind: true } {
-  return { ...view, expected: NONE, difference: null, sales: NONE, refunds: NONE, methods: {}, usdTaken: { usd: 0, iqd: 0 }, blind: true };
+  const report = view as T & { invoices?: { total: number }[]; items?: { amount: unknown }[]; gift?: unknown; otherCash?: unknown };
+  return {
+    ...view, expected: NONE, difference: null, sales: NONE, refunds: NONE, methods: {}, usdTaken: { usd: 0, iqd: 0 },
+    ...('otherCash' in report ? { otherCash: NONE } : {}),
+    ...(Array.isArray(report.invoices) ? { invoices: report.invoices.map((i) => ({ ...i, total: 0 })) } : {}),
+    ...(Array.isArray(report.items) ? { items: report.items.map((i) => ({ ...i, amount: NONE })) } : {}),
+    ...(report.gift ? { gift: { soldCount: 0, sold: 0, used: 0 } } : {}),
+    blind: true
+  };
+}
+
+/**
+ * What else tells a cashier who closes blind the day's takings (review 2.0): the sales figures of the Daily Brief and
+ * the dashboard, the sales reports, and the totals in the list of invoices. Sent without those sums (the router calls
+ * this for every answer, as it does for cost: routes.ts). One invoice opened by itself keeps its total: its receipt
+ * prints it anyway.
+ */
+export function blindAnswer(db: Db, actor: Pick<Actor, 'permissions' | 'roles'> | null, method: string, path: string, result: unknown): unknown {
+  if (method !== 'GET' || !result || typeof result !== 'object' || !actor) return result;
+  const brief = path === '/api/brief' || path === '/api/brief/dashboard';
+  const reports = path.startsWith('/api/brief/reports/sales-');
+  const list = path === '/api/invoices';
+  if (!brief && !reports && !list) return result;
+  if (!closesBlind(db, actor)) return result;
+  if (list && Array.isArray(result)) {
+    return result.map((r) => (r && typeof r === 'object' && ((r as { kind?: string }).kind === 'sale' || (r as { kind?: string }).kind === 'sale_return')
+      ? { ...r, total: 0, subtotal: 0, discount: 0, baseTotal: 0, blind: true } : r));
+  }
+  const o = result as Record<string, unknown>;
+  if (reports) return { ...o, rows: [], blind: true };
+  if (brief) {
+    const out: Record<string, unknown> = { ...o, blind: true };
+    if (o.sales && typeof o.sales === 'object') out.sales = Object.fromEntries(Object.keys(o.sales as object).map((k) => [k, 0]));
+    for (const k of ['salesMonth', 'salesLastMonth']) if (typeof o[k] === 'number') out[k] = 0;
+    if (Array.isArray(o.topItems)) out.topItems = [];
+    if (Array.isArray(o.months)) out.months = (o.months as Record<string, unknown>[]).map((m) => ({ ...m, sales: 0 }));
+    return out;
+  }
+  return result;
 }

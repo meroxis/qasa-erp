@@ -1,12 +1,14 @@
 import { z } from 'zod';
 import { todayIso } from '@qasa/core';
 import type { Db } from './db.ts';
+import { transaction } from './db.ts';
 import { AppError, conflict, invalid } from './errors.ts';
 import { createReturn } from './returns.ts';
 import { getShift } from './pos.ts';
 import { getInvoice, type InvoiceView } from './invoices.ts';
 import { userBranchLists } from './branches.ts';
 import { assertRefundApproved } from './till-settings.ts';
+import { vouchersOfReturn } from './gift-vouchers.ts';
 import { onceOnly } from './idempotency.ts';
 import { parse } from './categories.ts';
 import type { Actor } from './auth.ts';
@@ -41,13 +43,16 @@ export function tillReturn(db: Db, shiftId: string, input: TillReturnInput, acto
   if (!shift.actions.includes('sell')) throw new AppError(403, 'forbidden', { need: 'shift_owner' });
   if (!db.prepare('SELECT 1 FROM pos_sales WHERE invoice_id = ?').get(input.invoiceId)) throw conflict('pos_return_not_till_sale');
   if (!input.lines.some((l) => l.qtyMilli > 0)) throw invalid([{ code: 'pos_return_nothing' }]);
-  // the one refund rule (till-settings.ts), as for returns, cancels and exchanges
-  assertRefundApproved(db, input.invoiceId, actor, input.approvals);
-  const back = createReturn(db, input.invoiceId, {
-    date: todayIso(), payment: 'cash', cashAccountCode: shift.cashAccountCode, lines: input.lines.filter((l) => l.qtyMilli > 0),
-    ...(input.notes ? { notes: input.notes } : {})
-  }, actor.name, actor);
-  return back;
+  const lines = input.lines.filter((l) => l.qtyMilli > 0);
+  // the approval is used in the return's own transaction: a return that fails leaves it to be used again
+  return transaction(db, () => {
+    // the one refund rule (till-settings.ts), as for returns, cancels and exchanges: for this sale and these lines
+    assertRefundApproved(db, input.invoiceId, actor, input.approvals, { cashAccount: shift.cashAccountCode, lines });
+    return createReturn(db, input.invoiceId, {
+      date: todayIso(), payment: 'cash', cashAccountCode: shift.cashAccountCode, lines,
+      ...(input.notes ? { notes: input.notes } : {})
+    }, actor.name, actor, { shiftId });
+  });
 }
 
 const id = z.string().min(1).max(64);
@@ -75,10 +80,12 @@ export const tillReturnsApi: ApiExtension = {
         }), req.body);
         const shiftId = parse(z.object({ id }), req.params).id;
         const who = actorOf(req);
+        // with the gift vouchers money went back onto (a new voucher's code is the customer's only way to it)
+        const withVouchers = (doc: InvoiceView) => ({ ...doc, voucherBack: vouchersOfReturn(db, doc.id) });
         const made = onceOnly(db, req, reply, who, 'POST /api/pos/shifts/:id/returns', () => {
           const doc = tillReturn(db, shiftId, body as TillReturnInput, who);
-          return { id: doc.id, result: doc };
-        }, (docId) => getInvoice(db, docId, userBranchLists(db, who)));
+          return { id: doc.id, result: withVouchers(doc) };
+        }, (docId) => withVouchers(getInvoice(db, docId, userBranchLists(db, who))));
         reply.status(201).send(made);
         return undefined;
       }

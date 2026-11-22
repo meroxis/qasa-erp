@@ -17,7 +17,7 @@ import type { Actor } from './auth.ts';
 import { addTaken, batchTracking, ensureBatch, purchaseReturnPicks, saleReturnPicks, writeBatchMoves, type BatchError, type BatchMove } from './batches.ts';
 import { loyaltyAccount, loyaltyPaidFor, recordReturnLoyalty, returnLoyalty } from './loyalty.ts';
 import { roundingAccount } from './till-settings.ts';
-import { giveBackToVoucher } from './gift-vouchers.ts';
+import { giveBackToVoucher, planVoucherBack, type VoucherBack } from './gift-vouchers.ts';
 
 export interface ReturnInput {
   date: string;
@@ -59,14 +59,6 @@ interface ReturnLine {
  */
 const currency_ = (inv: { currency: string }) => inv.currency;
 
-/** The liability account the gift vouchers that paid a sale are kept on. */
-function voucherAccountOf(db: Db, invoiceId: string): string {
-  const r = db.prepare(`SELECT v.account_code FROM gift_voucher_moves m JOIN gift_vouchers v ON v.id = m.voucher_id
-                        WHERE m.invoice_id = ? AND m.kind = 'redeemed' ORDER BY m.created_at LIMIT 1`).get(invoiceId) as { account_code: string } | undefined;
-  if (!r) throw conflict('return_totals_invalid');
-  return r.account_code;
-}
-
 function assertPaidBackAsPaid(db: Db, originalId: string, accountCode: string, cashOut: number): void {
   const parts = db.prepare("SELECT account_code, amount FROM invoice_payments WHERE invoice_id = ? AND kind = 'pos'").all(originalId) as { account_code: string; amount: number }[];
   // 2.0: every till sale is held to it, also one that kept no parts (all its money then went into its own safe, less
@@ -88,7 +80,12 @@ function assertPaidBackAsPaid(db: Db, originalId: string, accountCode: string, c
   if (paidBack + cashOut > paidIn) throw invalid([{ code: 'refund_more_than_paid', available: Math.max(0, paidIn - paidBack) }]);
 }
 
-export function createReturn(db: Db, originalId: string, input: ReturnInput, user: string, actor?: Pick<Actor, 'name' | 'permissions'>): InvoiceView {
+/**
+ * `opts.shiftId`: the till shift that pays a cash return of a sale back out of its drawer (the till's own return, an
+ * exchange). Without it, a cash return out of a safe a shift is open on belongs to that shift (the newest, when two
+ * share the safe). Kept in pos_shift_refunds, so each shift's expected cash counts its own refunds only.
+ */
+export function createReturn(db: Db, originalId: string, input: ReturnInput, user: string, actor?: Pick<Actor, 'name' | 'permissions'>, opts: { shiftId?: string | undefined } = {}): InvoiceView {
   const original = getInvoice(db, originalId);
   if ((original.kind !== 'sale' && original.kind !== 'purchase') || original.status !== 'posted') {
     throw conflict('action_not_allowed', { status: original.status, action: 'return' });
@@ -178,6 +175,9 @@ export function createReturn(db: Db, originalId: string, input: ReturnInput, use
     roundingBack = share(Number(tillSale.rounding ?? 0));
     if (total - pointsBack - voucherBack + roundingBack < 0) roundingBack = -(total - pointsBack - voucherBack);
   }
+  // each voucher its own share (never more than it paid on this sale, less what already came back)
+  const voucherPlan: VoucherBack[] = voucherBack > 0 ? planVoucherBack(db, originalId, voucherBack) : [];
+  if (voucherPlan.reduce((sum, v) => sum + v.amount, 0) !== voucherBack) throw conflict('return_totals_invalid');
   if (kind === 'sale_return' && input.payment === 'cash') assertPaidBackAsPaid(db, originalId, input.cashAccountCode!, total - pointsBack - voucherBack + roundingBack);
   const accounts = getPostingAccounts(db);
   const warehouseAccount = (db.prepare('SELECT account_code FROM warehouses WHERE id = ?').get(original.warehouseId) as { account_code: string }).account_code;
@@ -202,7 +202,9 @@ export function createReturn(db: Db, originalId: string, input: ReturnInput, use
       const money = total - pointsBack - voucherBack + roundingBack;
       if (money > 0) entryLines.push({ accountCode: counterAccount, debit: 0, credit: money, baseDebit: 0, baseCredit: baseTotal - pointsBack - voucherBack + roundingBack, ...counterParty });
       if (pointsBack > 0) entryLines.push({ accountCode: points!.accountCode ?? loyaltyAccount(db), debit: 0, credit: pointsBack, baseDebit: 0, baseCredit: pointsBack });
-      if (voucherBack > 0) entryLines.push({ accountCode: voucherAccountOf(db, originalId), debit: 0, credit: voucherBack, baseDebit: 0, baseCredit: voucherBack });
+      const byAccount = new Map<string, number>();
+      for (const v of voucherPlan) byAccount.set(v.accountCode, (byAccount.get(v.accountCode) ?? 0) + v.amount);
+      for (const [accountCode, back] of byAccount) entryLines.push({ accountCode, debit: 0, credit: back, baseDebit: 0, baseCredit: back });
       if (roundingBack < 0) entryLines.push({ accountCode: roundingAccount(db, Number(tillSale!.rounding)), debit: 0, credit: -roundingBack, baseDebit: 0, baseCredit: -roundingBack });
       if (roundingBack > 0) entryLines.push({ accountCode: roundingAccount(db, Number(tillSale!.rounding)), debit: roundingBack, credit: 0, baseDebit: roundingBack, baseCredit: 0 });
     }
@@ -291,7 +293,13 @@ export function createReturn(db: Db, originalId: string, input: ReturnInput, use
     db.prepare(`UPDATE invoices SET status = 'posted', number = ?, entry_id = ?, posted_by = ?, posted_at = ?, updated_at = ? WHERE id = ?`)
       .run(number, entryId, user, now, now, id);
     recordReturnLoyalty(db, { invoiceId: id, partyId: original.partyId, date: input.date, warehouseId: original.warehouseId }, points, user);
-    if (voucherBack > 0) giveBackToVoucher(db, { originalId, returnId: id, entryId, amount: voucherBack }, user);
+    if (voucherPlan.length) giveBackToVoucher(db, { returnId: id, entryId, plan: voucherPlan }, user);
+    // cash paid back out of a till's drawer: the shift it belongs to
+    if (kind === 'sale_return' && input.payment === 'cash') {
+      const shift = opts.shiftId
+        ?? (db.prepare("SELECT id FROM pos_shifts WHERE status = 'open' AND cash_account = ? ORDER BY opened_at DESC, id DESC LIMIT 1").get(input.cashAccountCode!) as { id: string } | undefined)?.id;
+      if (shift) db.prepare('INSERT INTO pos_shift_refunds (invoice_id, shift_id, created_at) VALUES (?, ?, ?)').run(id, shift, now);
+    }
     audit(db, user, 'post', 'invoice', id, { kind, number, returnOf: original.number });
   });
   return getInvoice(db, id);

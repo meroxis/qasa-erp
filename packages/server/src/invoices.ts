@@ -378,6 +378,18 @@ function standings(db: Db, partyId: string, kind: 'sale' | 'purchase', branch: R
       else of.waiting += Number(p.amount);
     }
   }
+  if (kind === 'sale') {
+    // 2.0: a till sale on account partly paid with gift vouchers: that part is paid (less what returns put back on vouchers)
+    const gifts = db.prepare(`SELECT s.invoice_id, s.voucher_paid,
+                                (SELECT COALESCE(SUM(m.amount), 0) FROM gift_voucher_moves m JOIN invoices r ON r.id = m.invoice_id
+                                 WHERE r.return_of = s.invoice_id AND r.status = 'posted' AND m.kind = 'returned') AS back
+                              FROM pos_sales s JOIN invoices v ON v.id = s.invoice_id
+                              WHERE v.party_id = ? AND v.payment = 'credit' AND s.voucher_paid > 0`).all(partyId) as { invoice_id: string; voucher_paid: number; back: number }[];
+    for (const g of gifts) {
+      const of = map.get(g.invoice_id);
+      if (of) of.received += Math.max(0, Number(g.voucher_paid) - Number(g.back));
+    }
+  }
   // an invoice carries no more than its own total: money typed above it is the party's advance, on the account only
   for (const of of map.values()) {
     const due = Math.max(0, of.total - of.returned);
@@ -742,8 +754,9 @@ export function postInvoice(
   if (view.kind === 'sale') {
     const settled = Number.isSafeInteger(opts.settledNow) ? Math.min(Math.max(opts.settledNow!, 0), total) : 0;
     const onCredit = baseTotal - (settled ? toBase(settled, view.currency, view.rateX100) : 0) - (redeemed?.value ?? 0);
+    // (a sale with parts is checked below, on the part that goes on the account: what points or gift vouchers pay is not owed)
     // over the limit goes through only when allowed: a till sale a supervisor approved by PIN, or a wholesale order approved over it
-    if (party && view.payment === 'credit' && party.creditLimit !== null && party.balance + onCredit > party.creditLimit && !opts.overLimit) {
+    if (party && view.payment === 'credit' && !split?.length && party.creditLimit !== null && party.balance + onCredit > party.creditLimit && !opts.overLimit) {
       throw conflict('credit_limit_exceeded', { balance: party.balance, limit: party.creditLimit, total: baseTotal });
     }
     // a split sale (POS): only the part put on the customer's account counts against their credit limit
@@ -877,6 +890,13 @@ export function cancelInvoice(db: Db, id: string, user: string, date?: string, a
   if (view.installmentContract) throw conflict('invoice_has_contract', { contract: view.installmentContract.number });
   requireAction(db, loadRow(db, id), 'cancel');
   if (view.kind === 'sale') assertMayUndoPosSale(db, id, view.postedBy, actor);
+  // a till sale paid in cash whose shift is closed: its money was counted and handed over with that shift, so a cancel
+  // would take it out of a drawer nobody counts it in. The goods come back through a return, which pays from a safe
+  // (and counts in the shift open on it)
+  if (view.kind === 'sale' && view.payment === 'cash') {
+    const shift = db.prepare('SELECT h.status FROM pos_sales s JOIN pos_shifts h ON h.id = s.shift_id WHERE s.invoice_id = ?').get(id) as { status: string } | undefined;
+    if (shift && shift.status !== 'open') throw conflict('pos_sale_shift_closed');
+  }
   // (no date: today, or the document's own date when that is later: a reversal is never dated before what it reverses)
   const cancelDate = date ?? (todayIso() < view.date ? view.date : todayIso());
   if (isPeriodLocked(db, cancelDate)) throw invalid([{ code: 'period_locked', period: cancelDate.slice(0, 7) }]);

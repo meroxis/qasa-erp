@@ -38,6 +38,9 @@ export const OUTBOX_TEXT = {
     'هۆکارەکە لەسەر سێرڤەر چاک بکە (کۆگا، کاڵا، شەفت…) و «ئێستا بینێرە» دابگرە، یان لە لیستەکە لایببە و بە دەست تۆماری بکە.'
   ],
   ob_sendNow: ['أرسل الآن', 'Send now', 'ئێستا بینێرە'],
+  ob_supervisor: ['موافقة المشرف', 'Supervisor’s approval', 'ڕەزامەندی سەرپەرشتیار'],
+  ob_supervisorHint: ['يحتاج هذا البيع موافقة المشرف (سعر أقل من القائمة أو خصم فوق الحد). يكتب المشرف رمزه هنا فيُرسل البيع، أو يتجاهله المدير.', 'This sale needs a supervisor’s approval (a price below the list, or a discount over the limit). A supervisor types their PIN here and the sale is sent, or an admin discards it.', 'ئەم فرۆشتنە پێویستی بە ڕەزامەندی سەرپەرشتیارە (نرخێکی خوار لیست یان داشکاندنی سەرووی سنوور). سەرپەرشتیار پینەکەی لێرە دەنووسێت و فرۆشتنەکە دەنێردرێت، یان بەڕێوەبەر پشتگوێی دەخات.'],
+  ob_supervisorOk: ['تمت الموافقة؛ يُرسل البيع الآن', 'Approved; the sale is being sent', 'ڕەزامەندی درا؛ فرۆشتنەکە دەنێردرێت'],
   ob_discard: ['حذف من القائمة…', 'Discard…', 'لابردن لە لیستەکە…'],
   ob_discardTitle: ['حذف من قائمة الانتظار؟', 'Discard from the waiting list?', 'لە لیستی چاوەڕوانی لاببرێت؟'],
   ob_discardText: [

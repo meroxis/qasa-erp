@@ -1,7 +1,8 @@
 import { randomUUID } from 'node:crypto';
-import { roundCash } from '@qasa/core';
+import { cashToTake, TILL_CARD_PAYMENTS } from '@qasa/core';
 import { giftCashOf, giftOfShift, giftParts, takeGiftParts } from './gift-vouchers.ts';
-import { blindShift, closesBlind, maySellMisc, roundingAccount, tillRules, useApproval } from './till-settings.ts';
+import { blindShift, closesBlind, maySellMisc, offlineApprovalWaits, priceSubject, roundingAccount, tillRules, useApproval, useOfflineApproval } from './till-settings.ts';
+import { lowestListPrice } from './price-history.ts';
 import { z } from 'zod';
 import { todayIso, UNIT_CODES, type CurrencyCode, type UnitCode } from '@qasa/core';
 import type { Db } from './db.ts';
@@ -142,6 +143,11 @@ export interface ShiftView {
    * drawer they are dollars, so the dinars expected are that much less and the dollars that much more
    */
   usdTaken: { usd: number; iqd: number };
+  /**
+   * 2.0: cash sales made on another screen (the invoice screen) into this shift's safe while it was open, less those
+   * cancelled meanwhile: that money is in the drawer too, so it is expected at closing
+   */
+  otherCash: Money;
 }
 
 export interface ShiftReport extends ShiftView {
@@ -305,14 +311,50 @@ function refundsOf(db: Db, row: ShiftRow): Money {
   return refunds;
 }
 
-/** The returns paid out of a shift's drawer (the rule above), as a condition on invoices `i` with its parameters. */
-function shiftReturnsWhere(row: ShiftRow): [string, string[]] {
-  return [`i.kind = 'sale_return' AND i.status = 'posted' AND i.payment = 'cash' AND i.cash_account = ?
-             AND i.posted_at >= ? ${row.closed_at ? 'AND i.posted_at <= ?' : ''}
+/**
+ * Something that happened at `at` (a column of invoices `i`) on the shift's safe while the shift was open, and on no
+ * newer shift of the same safe (two registers can share a safe: the same money is never counted on two drawers).
+ */
+function inShiftWindow(row: ShiftRow, at: string): [string, string[]] {
+  return [`i.cash_account = ? AND ${at} >= ? ${row.closed_at ? `AND ${at} <= ?` : ''}
              AND NOT EXISTS (SELECT 1 FROM pos_shifts o WHERE o.cash_account = i.cash_account AND o.id <> ?
-                               AND o.opened_at > ? AND o.opened_at <= i.posted_at
-                               AND (o.closed_at IS NULL OR o.closed_at >= i.posted_at))`,
+                               AND o.opened_at > ? AND o.opened_at <= ${at}
+                               AND (o.closed_at IS NULL OR o.closed_at >= ${at}))`,
   [row.cash_account, row.opened_at, ...(row.closed_at ? [row.closed_at] : []), row.id, row.opened_at]];
+}
+
+/**
+ * The returns paid out of a shift's drawer, as a condition on invoices `i` with its parameters: those kept for this
+ * shift when they were made (pos_shift_refunds: the till's own return or exchange names its shift, any other cash
+ * return belongs to the shift open on that safe). A return from before that was kept goes by the rule above.
+ */
+function shiftReturnsWhere(row: ShiftRow): [string, string[]] {
+  const [window, params] = inShiftWindow(row, 'i.posted_at');
+  return [`i.kind = 'sale_return' AND i.status = 'posted' AND i.payment = 'cash'
+             AND (EXISTS (SELECT 1 FROM pos_shift_refunds f WHERE f.invoice_id = i.id AND f.shift_id = ?)
+                  OR (NOT EXISTS (SELECT 1 FROM pos_shift_refunds f WHERE f.invoice_id = i.id) AND ${window}))`,
+  [row.id, ...params]];
+}
+
+/**
+ * Cash sales made on another screen into the shift's safe while it was open (review 2.0): their money is in the
+ * drawer, so the shift expects it. What went in: the posting's debit to the safe; one cancelled while the shift was
+ * open took its money out again (whenever it was sold).
+ */
+function otherCashOf(db: Db, row: ShiftRow): Money {
+  const other = zero();
+  const sum = (at: string, status: string, sign: 1 | -1) => {
+    const [window, params] = inShiftWindow(row, at);
+    const rows = db.prepare(`SELECT i.currency AS currency, COALESCE(SUM(l.debit - l.credit), 0) AS total
+                             FROM invoices i JOIN entry_lines l ON l.entry_id = i.entry_id AND l.account_code = i.cash_account
+                             WHERE i.kind = 'sale' AND i.payment = 'cash' AND ${status} AND ${at} IS NOT NULL AND ${window}
+                               AND NOT EXISTS (SELECT 1 FROM pos_sales s WHERE s.invoice_id = i.id)
+                             GROUP BY i.currency`).all(...params) as { currency: CurrencyCode; total: number }[];
+    for (const r of rows) other[r.currency] += sign * Number(r.total);
+  };
+  sum('i.posted_at', "i.status IN ('posted', 'cancelled')", 1);
+  sum('i.cancelled_at', "i.status = 'cancelled'", -1);
+  return other;
 }
 
 /**
@@ -367,7 +409,10 @@ function shiftView(db: Db, row: ShiftRow, actor: ShiftActor | null): ShiftView {
   // dinar sales are in it as dollars
   // 2.0: gift vouchers sold at this till were paid in cash into its drawer
   const giftCash = giftCashOf(db, row.id);
-  const expected: Money = { IQD: Number(row.opening_cash) + cash.IQD - refunds.IQD - usdTaken.iqd + giftCash, USD: cash.USD - refunds.USD + usdTaken.usd };
+  const otherCash = otherCashOf(db, row);
+  const expected: Money = {
+    IQD: Number(row.opening_cash) + cash.IQD - refunds.IQD - usdTaken.iqd + giftCash + otherCash.IQD, USD: cash.USD - refunds.USD + usdTaken.usd + otherCash.USD
+  };
   const notes = row.notes ?? '';
   let counted: Money | null = null;
   let difference: Money | null = null;
@@ -383,7 +428,7 @@ function shiftView(db: Db, row: ShiftRow, actor: ShiftActor | null): ShiftView {
     id: row.id, number: row.number, register: row.register, cashAccountCode: row.cash_account, warehouseId: row.warehouse_id,
     status: row.status, openedBy: row.opened_by, openedAt: row.opened_at, openingCash: Number(row.opening_cash),
     closedBy: row.closed_by, closedAt: row.closed_at, sales, count, refunds, expected, counted, difference, notes, actions, methods,
-    tillId: row.till_id ?? null, usdTaken
+    tillId: row.till_id ?? null, usdTaken, otherCash
   };
 }
 
@@ -417,7 +462,9 @@ export function listShifts(db: Db, f: { status?: 'open' | 'closed' | undefined; 
  */
 export function myShift(db: Db, actor: ShiftActor, tillId?: string | null): ShiftView | null {
   const open = db.prepare("SELECT * FROM pos_shifts WHERE status = 'open' ORDER BY opened_at DESC").all() as unknown as ShiftRow[];
-  const row = open.find((r) => (!tillId || r.till_id === tillId) && isOpener(db, r, actor));
+  // their shift on the till this PC chose; without one there, the shift they do have open (on another till, or opened by
+  // name before the PC chose a till): they can open no second one, so answering "none" would leave them unable to sell
+  const row = open.find((r) => (!tillId || r.till_id === tillId) && isOpener(db, r, actor)) ?? (tillId ? open.find((r) => isOpener(db, r, actor)) : undefined);
   return row ? shiftView(db, row, actor) : null;
 }
 
@@ -509,11 +556,35 @@ export function requireRunnable(db: Db, id: string, actor: Actor): ShiftRow {
   return row;
 }
 
+/**
+ * Card, FIB, ZainCash and Qi at the till are switched off for now (TILL_CARD_PAYMENTS, core): the till hides them, and
+ * the server refuses them too, whatever accounts an admin once set (a page loaded before, or a request made by hand).
+ */
+let cardPayments: boolean = TILL_CARD_PAYMENTS;
+/** for tests of the dormant card code only */
+export function allowCardPaymentsForTests(on: boolean): void { cardPayments = on; }
+
+/** the most one line may be: a unit price of a million million, a thousand million units */
+const MAX_UNIT_PRICE = 1e12;
+const MAX_QTY_MILLI = 1e12;
+/** how far a rate typed at the till may be from the company's (a slip of a digit is refused) */
+const RATE_BAND = 0.15;
+
 /** One sale at the counter: a cash sale invoice into the shift's safe, posted at once and kept with the shift. */
 export function sell(db: Db, shiftId: string, input: SaleInput, actor: Actor): { invoice: InvoiceView; shift: ShiftView; rounding: number } {
   const row = requireRunnable(db, shiftId, actor);
   if (!Array.isArray(input.lines) || input.lines.length === 0) throw invalid([{ code: 'pos_cart_empty' }]);
   if (input.currency === 'USD' && !(Number.isSafeInteger(input.rateX100) && (input.rateX100 ?? 0) > 0)) throw invalid([{ code: 'rate_invalid' }]);
+  const companyRate = Number(readSetting(db, 'default_rate_x100') ?? '142000');
+  // a dollar sale at a rate far from the company's: refused, as dollar notes on a dinar sale are (its rate decides
+  // what the sale is worth in the books, and what a dinar list price is in dollars)
+  if (input.currency === 'USD' && Math.abs(input.rateX100! - companyRate) > companyRate * RATE_BAND) throw invalid([{ code: 'pos_rate_far', rateX100: companyRate } as { code: string }]);
+  // nothing a slip (or a request made by hand) could turn into an amount the books can't hold
+  for (const l of input.lines) {
+    const qty = l.unitQtyMilli ?? l.qtyMilli ?? 1000;
+    if (!Number.isSafeInteger(l.unitPrice) || l.unitPrice < 0 || l.unitPrice > MAX_UNIT_PRICE || !Number.isSafeInteger(qty) || qty <= 0 || qty > MAX_QTY_MILLI
+      || !Number.isSafeInteger(Math.round((qty * l.unitPrice) / 1000)) || (qty * l.unitPrice) / 1000 > MAX_UNIT_PRICE * 10) throw invalid([{ code: 'pos_line_too_large' }]);
+  }
   const payments = input.payments ?? [];
   if (payments.length > 4) throw invalid([{ code: 'payments_too_many' }]);
   // 1.4: a sale is paid now or put on the customer's account, never part one and part the other
@@ -526,6 +597,8 @@ export function sell(db: Db, shiftId: string, input: SaleInput, actor: Actor): {
   const errors: { code: string; method?: string }[] = [];
   for (const p of payments) {
     if (!(POS_METHODS as readonly string[]).includes(p.method) || !Number.isSafeInteger(p.amount) || p.amount <= 0) errors.push({ code: 'pos_payment_invalid', method: String(p.method) });
+    // card and wallets are off for now: refused whatever accounts are set
+    else if (p.method !== 'cash' && p.method !== 'account' && !cardPayments) errors.push({ code: 'pos_method_unavailable', method: p.method });
     // a method the admin gave no account is not offered at the counter, and refused here
     else if (p.method !== 'cash' && p.method !== 'account' && !accounts[p.method as keyof PosAccounts]) errors.push({ code: 'pos_method_unavailable', method: p.method });
     // its account is outside the user's branches: not offered to them either, and never debited for them
@@ -543,10 +616,14 @@ export function sell(db: Db, shiftId: string, input: SaleInput, actor: Actor): {
   // 2.0: dollar notes on a dinar sale paid now, at a rate near the company's (a slip of a digit is refused)
   const usdCash = input.usdCash;
   if (usdCash) {
-    const companyRate = Number(readSetting(db, 'default_rate_x100') ?? '142000');
     if (input.currency !== 'IQD' || onCredit) errors.push({ code: 'pos_usd_cash_not_here' });
     else if (!Number.isSafeInteger(usdCash.amount) || usdCash.amount <= 0 || usdCash.amount > 10_000_000) errors.push({ code: 'pos_usd_cash_invalid' });
-    else if (!Number.isSafeInteger(usdCash.rateX100) || usdCash.rateX100 <= 0 || Math.abs(usdCash.rateX100 - companyRate) > companyRate * 0.15) errors.push({ code: 'pos_usd_rate_far' });
+    // the dollars are worth the company's rate at most: a cashier never types a better one (each dollar would then
+    // stand for more dinars than it is, and the drawer would be short with nothing showing it). Lower, down to the
+    // band, is the shop's own buying rate. The company's rate goes back with the refusal, for the till to show.
+    else if (!Number.isSafeInteger(usdCash.rateX100) || usdCash.rateX100 <= 0 || usdCash.rateX100 > companyRate || companyRate - usdCash.rateX100 > companyRate * RATE_BAND) {
+      errors.push({ code: 'pos_usd_rate_far', rateX100: companyRate } as { code: string });
+    }
   }
   // 2.0: the till's rules (till-settings.ts): gift vouchers, the open-price item, prices and discounts a supervisor approves
   const rules = tillRules(db);
@@ -563,32 +640,51 @@ export function sell(db: Db, shiftId: string, input: SaleInput, actor: Actor): {
   const gross = input.lines.reduce((sum, l) => sum + Math.round(((l.unitQtyMilli ?? l.qtyMilli ?? 1000) * l.unitPrice) / 1000), 0);
   const needs: ('discount' | 'price')[] = [];
   const reviewOffline: string[] = [];
+  /** the lowest price asked for each item and unit sold below its list price: each needs its own approval */
+  const lowered = new Map<string, number>();
   if (rules.supervisor.discountPct > 0 && input.discount * 100 > rules.supervisor.discountPct * gross) needs.push('discount');
   if (rules.supervisor.price) {
     // a line below the item's own price, in whatever unit it is typed (the item's base unit, or another unit at that
-    // unit's own price or the base price × its factor); same currency; the open-price item is open
+    // unit's own price or the base price × its factor), in whatever currency it is sold (a list price in the other
+    // currency is turned at the company's rate, as the till does: pos-logic.ts priceIn); the open-price item is open
     const price = db.prepare('SELECT sale_price, sale_currency, unit FROM items WHERE id = ?');
     const unitPrice = db.prepare('SELECT factor_milli, sale_price FROM item_units WHERE item_id = ? AND unit = ?');
-    const it_updated = (id: string) => (db.prepare('SELECT updated_at FROM items WHERE id = ?').get(id) as { updated_at: string | null } | undefined)?.updated_at ?? null;
-    const lower = input.lines.some((l) => {
-      if (l.itemId === rules.misc.itemId) return false;
+    const inSaleCurrency = (amount: number, from: string): number =>
+      from === input.currency ? amount : input.currency === 'USD' ? Math.round((amount * 10000) / companyRate) : Math.round((amount * companyRate) / 10000);
+    // a kept sale's own moment, when it lies within its shift and not in the future (anything else gets no allowance)
+    const soldAt = offline && Date.parse(offline.soldAt) <= Date.now() && Date.parse(offline.soldAt) >= Date.parse(row.opened_at) ? new Date(offline.soldAt).toISOString() : null;
+    for (const l of input.lines) {
+      if (l.itemId === rules.misc.itemId) continue;
       const it = price.get(l.itemId) as { sale_price: number | null; sale_currency: string; unit: string } | undefined;
-      if (!it || it.sale_price === null || it.sale_currency !== input.currency) return false;
-      let expected = Number(it.sale_price);
-      if (l.unit && l.unit !== it.unit) {
-        const u = unitPrice.get(l.itemId, l.unit) as { factor_milli: number; sale_price: number | null } | undefined;
-        if (!u) return false; // an unknown unit is refused when the lines are read
-        expected = u.sale_price !== null ? Number(u.sale_price) : Math.round((Number(it.sale_price) * Number(u.factor_milli)) / 1000);
+      if (!it || it.sale_price === null) continue;
+      const other = !!l.unit && l.unit !== it.unit;
+      const u = other ? unitPrice.get(l.itemId, l.unit!) as { factor_milli: number; sale_price: number | null } | undefined : undefined;
+      if (other && !u) continue; // an unknown unit is refused when the lines are read
+      // a unit's own price, else the item's price × its factor: turned into the sale's currency first, as the till
+      // does (industry/units.ts salePriceFor), so a line the cashier never touched is never a dinar "below" its price
+      const inUnit = (base: number, own: number | null): number => {
+        const b = inSaleCurrency(base, it.sale_currency);
+        return !u ? b : own !== null ? inSaleCurrency(own, it.sale_currency) : Math.round((b * Number(u.factor_milli)) / 1000);
+      };
+      if (l.unitPrice >= inUnit(Number(it.sale_price), u && u.sale_price !== null ? Number(u.sale_price) : null)) continue;
+      // a sale kept by a till that was cut off: the till had the prices of its last load. Taken without a supervisor
+      // (it can't wait for one) only when its price is not below the lowest list price the item had at any time
+      // from the shift's opening to the sale, and written to the audit log for review; anything lower is refused
+      if (offline) {
+        const lowestOwn = soldAt ? lowestListPrice(db, l.itemId, other ? l.unit! : '', it.sale_currency, row.opened_at, soldAt) : null;
+        const lowestBase = soldAt && other ? lowestListPrice(db, l.itemId, '', it.sale_currency, row.opened_at, soldAt) : null;
+        const floors = [...(lowestOwn !== null ? [inSaleCurrency(lowestOwn, it.sale_currency)] : []), ...(lowestBase !== null ? [inUnit(lowestBase, null)] : [])];
+        if (floors.length && l.unitPrice >= Math.min(...floors)) { reviewOffline.push(l.itemId); continue; }
       }
-      if (l.unitPrice >= expected) return false;
-      // a sale kept by a till that was cut off, below a price raised after it was sold: the till had the old price.
-      // Taken (it can't wait for a supervisor) and written to the audit log for review (reliability review #3)
-      if (offline && Date.parse(it_updated(l.itemId) ?? '') > Date.parse(offline.soldAt)) { reviewOffline.push(l.itemId); return false; }
-      return true;
-    });
-    if (lower) needs.push('price');
+      const subject = priceSubject(l.itemId, other ? l.unit : null);
+      lowered.set(subject, Math.min(lowered.get(subject) ?? Infinity, l.unitPrice));
+    }
+    if (lowered.size) needs.push('price');
   }
-  if (needs.length && offline) throw invalid([{ code: 'pos_offline_supervisor' }]);
+  // a kept sale that needs a supervisor is refused (it waits on its PC, in the list a person reads) until a supervisor
+  // approves that very receipt there: then it is taken as it was kept
+  if (needs.length && offline && !offlineApprovalWaits(db, shiftId, offline.reference)) throw invalid([{ code: 'pos_offline_supervisor' }]);
+  let offlineApprover: string | null = null;
   const now = new Date();
   const date = offline ? offlineSaleDate(offline.soldOn, row.opened_at, now) : todayIso(now);
   const voucherCheck = vouchers.length ? giftParts(db, vouchers, date) : [];
@@ -607,7 +703,15 @@ export function sell(db: Db, shiftId: string, input: SaleInput, actor: Actor): {
         ...(l.batchId ? { batchId: l.batchId } : {})
       }))
     }, actor.name, { offersAt });
-    for (const action of needs) useApproval(db, input.approvals, shiftId, action, actor.name);
+    // each approval is for this shift, this cashier and this very thing: the discount (as the server reckons it, offers
+    // and all) not above the one approved, each lowered item at a price not below the one approved for it
+    if (needs.length && offline) {
+      offlineApprover = useOfflineApproval(db, shiftId, offline.reference, gross - input.discount, actor.name);
+      if (!offlineApprover) throw invalid([{ code: 'pos_offline_supervisor' }]);
+    } else {
+      if (needs.includes('discount')) useApproval(db, input.approvals, 'discount', actor, { shiftId, value: input.discount });
+      for (const [subject, lowest] of lowered) useApproval(db, input.approvals, 'price', actor, { shiftId, subject, value: lowest });
+    }
     let split: (SalePart & { method?: PosMethod })[] | undefined;
     // what loyalty points pay (checked again as the sale is posted); the parts pay the rest
     const byPoints = input.loyaltyPoints
@@ -631,6 +735,14 @@ export function sell(db: Db, shiftId: string, input: SaleInput, actor: Actor): {
     }
     // 2.0: gift vouchers and the dinar rounding of the cash part are parts of their own beside the money paid
     let rounding = 0;
+    if (onCredit && gifts.length) {
+      // a sale on account partly paid by a gift voucher (review 2.0): the customer owes what the vouchers left, never
+      // the whole total (the vouchers' money was taken when they were sold)
+      const rest = draft.total - byPoints - byGifts;
+      split = (split ?? []).filter((p) => p.method === 'account');
+      if (!split.length && rest > 0) throw invalid([{ code: 'payments_total_mismatch', total: rest } as { code: string }]);
+      for (const g of gifts) split.push({ accountCode: g.accountCode, amount: g.amount, kind: 'voucher' });
+    }
     if (!onCredit) {
       const rest = draft.total - byPoints - byGifts;
       if ((gifts.length || rules.rounding.step) && !split) split = rest > 0 ? [{ method: 'cash', amount: rest, accountCode: row.cash_account }] : [];
@@ -638,8 +750,7 @@ export function sell(db: Db, shiftId: string, input: SaleInput, actor: Actor): {
       const cashPart = split?.find((p) => p.method === 'cash');
       if (cashPart && input.currency === 'IQD' && rules.rounding.step) {
         // never down to no cash at all (a small sale rounded down to 0 would give the goods away)
-        const roundedCash = roundCash(cashPart.amount, rules.rounding);
-        rounding = roundedCash > 0 ? roundedCash - cashPart.amount : 0;
+        rounding = cashToTake(cashPart.amount, rules.rounding) - cashPart.amount;
         if (rounding) {
           cashPart.amount += rounding;
           split!.push({ accountCode: roundingAccount(db, rounding), amount: -rounding, kind: 'rounding' });
@@ -650,11 +761,13 @@ export function sell(db: Db, shiftId: string, input: SaleInput, actor: Actor): {
     // a credit sale over the customer's limit: only with a supervisor's approval given at this till
     let overLimit = false;
     if (onCredit && rules.supervisor.creditOver && input.approvals?.length) {
-      try { useApproval(db, input.approvals, shiftId, 'credit_over', actor.name); overLimit = true; } catch { overLimit = false; }
+      const onAccount = draft.total - byPoints - byGifts;
+      try { useApproval(db, input.approvals, 'credit_over', actor, { shiftId, subject: input.partyId ?? null, value: onAccount }); overLimit = true; } catch { overLimit = false; }
     }
-    // (a credit invoice posts to the customer's account by itself, with its credit limit checked: no parts are passed)
+    // (a credit invoice posts to the customer's account by itself, with its credit limit checked: no parts are passed,
+    // but for gift vouchers that pay part of it)
     const posted = postInvoice(db, draft.id, actor.name, {
-      allowExpired: input.allowExpired === true, ...(split && !onCredit ? { split } : {}), ...(input.loyaltyPoints ? { loyaltyPoints: input.loyaltyPoints } : {}), offersAt,
+      allowExpired: input.allowExpired === true, ...(split && (!onCredit || gifts.length) ? { split } : {}), ...(input.loyaltyPoints ? { loyaltyPoints: input.loyaltyPoints } : {}), offersAt,
       ...(overLimit ? { overLimit: true } : {})
     });
     if (gifts.length) takeGiftParts(db, posted.id, gifts, actor.name);
@@ -684,6 +797,7 @@ export function sell(db: Db, shiftId: string, input: SaleInput, actor: Actor): {
       audit(db, actor.name, 'offline_sale', 'invoice', posted.id, { reference: offline.reference, soldAt, number: posted.number });
     }
     if (rounding) audit(db, actor.name, 'cash_rounding', 'invoice', posted.id, { rounding, number: posted.number });
+    if (offlineApprover) audit(db, actor.name, 'offline_sale_accepted', 'invoice', posted.id, { reference: offline!.reference, approver: offlineApprover, needs, number: posted.number });
     if (reviewOffline.length) audit(db, actor.name, 'offline_price_review', 'invoice', posted.id, { items: reviewOffline, number: posted.number });
     return { invoiceId: posted.id, rounding };
   });
@@ -826,7 +940,7 @@ export const posApi: ApiExtension = {
             loyaltyPoints: z.number().int().positive().max(100_000_000).optional(),
             tendered: amount.optional(),
             usdCash: z.object({ amount: z.number().int().positive().max(10_000_000), rateX100: z.number().int().positive().max(100_000_000) }).optional(),
-            approvals: z.array(id).max(8).optional(),
+            approvals: z.array(id).max(40).optional(),
             vouchers: z.array(z.object({ code: z.string().min(4).max(40), amount: amount.refine((n) => n > 0) })).max(4).optional()
           }), req.body);
           const shiftId = parse(idParam, req.params).id;

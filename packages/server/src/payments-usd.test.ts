@@ -6,6 +6,10 @@ import { buildApp } from './app.ts';
 import { copyCompany } from './db-copy.ts';
 import { aging } from './brief.ts';
 import { batchBalance } from './batches.ts';
+import { allowCardPaymentsForTests } from './pos.ts';
+
+// card and wallet parts at the till are switched off for now (TILL_CARD_PAYMENTS): these tests keep the dormant code working
+allowCardPaymentsForTests(true);
 
 let db: Db;
 let app: FastifyInstance;

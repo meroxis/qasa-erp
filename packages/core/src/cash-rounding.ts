@@ -25,6 +25,16 @@ export function roundCash(cashDue: number, rule: CashRounding | null | undefined
   return cashDue - down >= up - cashDue ? up : down;
 }
 
+/**
+ * The cash the till takes for `cashDue` dinars: rounded by the rule, but never down to nothing (a small sale rounded
+ * down to 0 would give the goods away: it is taken as it is). The one figure the till shows and the server books
+ * (pos.ts): both call this, so a sale kept by a cut-off till is booked for exactly the cash that was taken.
+ */
+export function cashToTake(cashDue: number, rule: CashRounding | null | undefined): number {
+  const rounded = roundCash(cashDue, rule);
+  return rounded > 0 ? rounded : cashDue;
+}
+
 /** rounded − due: what the rounding adds (> 0) or takes off (< 0) the cash. */
 export const roundingOf = (cashDue: number, rule: CashRounding | null | undefined): number => roundCash(cashDue, rule) - cashDue;
 

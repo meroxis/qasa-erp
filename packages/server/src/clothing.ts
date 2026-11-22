@@ -495,10 +495,10 @@ export function exchange(db: Db, shiftId: string, input: ExchangeInput, actor: A
   if (!db.prepare('SELECT 1 FROM pos_sales WHERE invoice_id = ?').get(input.invoiceId)) throw conflict('cl_exchange_not_till_sale');
   if (!input.back.length) throw invalid([{ code: 'cl_exchange_nothing_back' }]);
   return transaction(db, () => {
-    assertRefundApproved(db, input.invoiceId, actor, input.approvals);
+    assertRefundApproved(db, input.invoiceId, actor, input.approvals, { cashAccount: shift.cashAccountCode, lines: input.back });
     const back = createReturn(db, input.invoiceId, {
       date: todayIso(), payment: 'cash', cashAccountCode: shift.cashAccountCode, notes: 'exchange', lines: input.back
-    }, actor.name, actor);
+    }, actor.name, actor, { shiftId });
     let saleId: string | null = null;
     let saleTotal = 0;
     if (input.sale?.lines.length) {

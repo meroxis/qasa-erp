@@ -3,6 +3,8 @@ import type { FastifyInstance } from 'fastify';
 import { buildApp } from './app.ts';
 import { openDatabase, type Db } from './db.ts';
 import { resetLoginThrottle } from './auth.ts';
+import { todayIso } from '@qasa/core';
+const TODAY = todayIso();
 
 // 2.0.0: a return at the till (till-returns.ts): a till sale found by its receipt number, paid back from the open shift's
 // safe, by the Point of sale role, with a supervisor's approval checked on the server when the till rules ask for one.
@@ -81,8 +83,8 @@ describe('a return at the till', () => {
     const body = { invoiceId: found.json().id, lines: [{ lineNo: 1, qtyMilli: 1_000 }] };
     expect((await post(`/api/pos/shifts/${shift.id}/returns`, body, who.las!)).json()).toMatchObject({ details: [{ code: 'pos_needs_supervisor', action: 'refund' }] });
     // the Point of sale role alone may not use the ordinary returns route
-    expect((await post(`/api/invoices/${found.json().id}/returns`, { date: '2026-11-20', payment: 'cash', cashAccountCode: '1811', lines: body.lines }, who.las!)).statusCode).toBe(403);
-    const ok = (await post('/api/pos/approve', { shiftId: shift.id, action: 'refund', pin: '407163' }, who.las!)).json();
+    expect((await post(`/api/invoices/${found.json().id}/returns`, { date: TODAY, payment: 'cash', cashAccountCode: '1811', lines: body.lines }, who.las!)).statusCode).toBe(403);
+    const ok = (await post('/api/pos/approve', { shiftId: shift.id, action: 'refund', pin: '407163', invoiceId: body.invoiceId, lines: body.lines }, who.las!)).json();
     expect(ok).toMatchObject({ action: 'refund', used: false });
     const back = await post(`/api/pos/shifts/${shift.id}/returns`, { ...body, approvals: [ok.token] }, who.las!);
     expect(back.statusCode, back.body).toBe(201);
@@ -98,7 +100,7 @@ describe('a return at the till', () => {
     const sold = (await post(`/api/pos/shifts/${shift.id}/sales`, { currency: 'IQD', discount: 0, lines: [tea(1)] }, who.las!)).json();
     const body = { invoiceId: sold.invoice.id, lines: [{ lineNo: 1, qtyMilli: 1_000 }] };
     expect((await post(`/api/pos/shifts/${other.id}/returns`, body, who.las!)).statusCode).toBe(403);
-    const inv = await post('/api/invoices', { kind: 'sale', date: '2026-11-20', warehouseId, currency: 'IQD', rateX100: 100, payment: 'cash', cashAccountCode: '1811', discount: 0, lines: [tea(1)] }, who.admin!);
+    const inv = await post('/api/invoices', { kind: 'sale', date: TODAY, warehouseId, currency: 'IQD', rateX100: 100, payment: 'cash', cashAccountCode: '1811', discount: 0, lines: [tea(1)] }, who.admin!);
     expect(inv.statusCode, inv.body).toBe(201);
     expect((await post(`/api/invoices/${inv.json().id}/post`, {}, who.admin!)).statusCode).toBe(200);
     expect((await post(`/api/pos/shifts/${shift.id}/returns`, { invoiceId: inv.json().id, lines: body.lines }, who.las!)).json()).toMatchObject({ error: 'pos_return_not_till_sale' });

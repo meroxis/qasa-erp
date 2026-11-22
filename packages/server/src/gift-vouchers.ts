@@ -1,5 +1,5 @@
 import { randomInt, randomUUID } from 'node:crypto';
-import { todayIso, type Names } from '@qasa/core';
+import { isIsoDate, todayIso, type Names } from '@qasa/core';
 import type { Db } from './db.ts';
 import { audit } from './audit.ts';
 import { conflict, invalid, notFound } from './errors.ts';
@@ -68,7 +68,8 @@ export function sellGiftVoucher(db: Db, shift: { id: string; cashAccount: string
   actor: { id: string | null; name: string }): GiftVoucherView {
   const today = todayIso();
   if (!Number.isSafeInteger(input.amount) || input.amount <= 0 || input.amount > GIFT_MAX) throw invalid([{ code: 'gv_amount_invalid' }]);
-  if (input.expiresOn !== undefined && (!/^\d{4}-\d{2}-\d{2}$/.test(input.expiresOn) || input.expiresOn < today)) throw invalid([{ code: 'gv_expiry_invalid' }]);
+  // a real day of the calendar (never 2026-13-45, which would sort as a date and never expire as one)
+  if (input.expiresOn !== undefined && (!isIsoDate(input.expiresOn) || input.expiresOn < today)) throw invalid([{ code: 'gv_expiry_invalid' }]);
   const account = giftAccount(db, actor.name);
   let code = newVoucherCode();
   while (db.prepare('SELECT 1 FROM gift_vouchers WHERE code = ?').get(code)) code = newVoucherCode();
@@ -124,34 +125,96 @@ export function giftParts(db: Db, list: readonly { code: string; amount: number 
   return parts;
 }
 
+export interface VoucherBack { voucherId: string; code: string; accountCode: string; amount: number }
+
 /**
- * A return of goods a gift voucher paid for: that share goes back onto the voucher (the first one the sale used that
- * is still active), or onto a new voucher when none is (cancelled meanwhile), whose code is in the audit log and the
- * voucher list. Never as money. Inside the return's transaction; its entry credits the voucher account.
+ * A return of goods gift vouchers paid for: how that share (`amount`) goes back, each voucher its own part. A voucher
+ * never gets back more than it paid on this sale less what earlier returns already gave it back, so no return puts on
+ * a voucher what another voucher (or money) paid; the shares follow what is still out on each, and the last takes
+ * the remainder to the dinar.
  */
-export function giveBackToVoucher(db: Db, input: { originalId: string; returnId: string; entryId: string | null; amount: number }, user: string): { voucherId: string; code: string } {
-  const used = db.prepare(`SELECT v.id, v.code, v.status, v.account_code, v.expires_on FROM gift_voucher_moves m JOIN gift_vouchers v ON v.id = m.voucher_id
-                           WHERE m.invoice_id = ? AND m.kind = 'redeemed' ORDER BY m.created_at`).all(input.originalId) as
-    { id: string; code: string; status: string; account_code: string; expires_on: string | null }[];
-  const now = new Date().toISOString();
-  const active = used.find((v) => v.status === 'active');
-  let target: { id: string; code: string };
-  if (active) {
-    db.prepare('UPDATE gift_vouchers SET balance = balance + ?, amount = CASE WHEN balance + ? > amount THEN balance + ? ELSE amount END WHERE id = ?')
-      .run(input.amount, input.amount, input.amount, active.id);
-    target = active;
-  } else {
-    const id = randomUUID();
-    const code = newVoucherCode();
-    db.prepare(`INSERT INTO gift_vouchers (id, code, amount, balance, currency, expires_on, status, account_code, shift_id, entry_id, created_by, created_at)
-                VALUES (?, ?, ?, ?, 'IQD', ?, 'active', ?, NULL, ?, ?, ?)`)
-      .run(id, code, input.amount, input.amount, used[0]?.expires_on ?? null, used[0]?.account_code ?? GIFT_ACCOUNT, input.entryId, user, now);
-    target = { id, code };
+export function planVoucherBack(db: Db, originalId: string, amount: number): VoucherBack[] {
+  const paid = db.prepare(`SELECT v.id, v.code, v.account_code, -SUM(m.amount) AS paid, MIN(m.created_at) AS first_at FROM gift_voucher_moves m JOIN gift_vouchers v ON v.id = m.voucher_id
+                           WHERE m.invoice_id = ? AND m.kind IN ('redeemed', 'restored') GROUP BY v.id, v.code, v.account_code ORDER BY first_at, v.code`).all(originalId) as
+    { id: string; code: string; account_code: string; paid: number }[];
+  const back = db.prepare(`SELECT COALESCE(m.for_voucher_id, m.voucher_id) AS id, SUM(m.amount) AS back FROM gift_voucher_moves m JOIN invoices r ON r.id = m.invoice_id
+                           WHERE r.return_of = ? AND m.kind = 'returned' GROUP BY COALESCE(m.for_voucher_id, m.voucher_id)`).all(originalId) as { id: string; back: number }[];
+  const given = new Map(back.map((b) => [b.id, Number(b.back)]));
+  const open = paid.map((v) => ({ voucherId: v.id, code: v.code, accountCode: v.account_code, left: Math.max(0, Number(v.paid) - (given.get(v.id) ?? 0)) })).filter((v) => v.left > 0);
+  const out = open.reduce((sum, v) => sum + v.left, 0);
+  const share = Math.min(amount, out);
+  if (share <= 0) return [];
+  const plan: VoucherBack[] = [];
+  let rest = share;
+  open.forEach((v, i) => {
+    const part = i === open.length - 1 ? rest : Math.min(v.left, rest, Math.round((share * v.left) / out));
+    rest -= part;
+    if (part > 0) plan.push({ voucherId: v.voucherId, code: v.code, accountCode: v.accountCode, amount: part });
+  });
+  // what rounding left over goes to whichever still has room
+  for (const v of open) {
+    if (rest <= 0) break;
+    const has = plan.find((x) => x.voucherId === v.voucherId);
+    const room = v.left - (has?.amount ?? 0);
+    const more = Math.min(room, rest);
+    if (more <= 0) continue;
+    if (has) has.amount += more; else plan.push({ voucherId: v.voucherId, code: v.code, accountCode: v.accountCode, amount: more });
+    rest -= more;
   }
-  db.prepare("INSERT INTO gift_voucher_moves (id, voucher_id, kind, amount, invoice_id, created_by, created_at) VALUES (?, ?, 'returned', ?, ?, ?, ?)")
-    .run(randomUUID(), target.id, input.amount, input.returnId, user, now);
-  audit(db, user, 'gift_voucher_returned', 'gift_voucher', target.id, { code: target.code, amount: input.amount, returnId: input.returnId, made: !active });
-  return { voucherId: target.id, code: target.code };
+  return plan;
+}
+
+const addDays = (iso: string, days: number): string => {
+  const d = new Date(`${iso}T00:00:00.000Z`);
+  d.setUTCDate(d.getUTCDate() + days);
+  return d.toISOString().slice(0, 10);
+};
+/** the shortest life a voucher made for a refund gets */
+const REFUND_VOUCHER_DAYS = 30;
+
+/**
+ * The shares of planVoucherBack put back, each onto its own voucher, never as money. A voucher's `amount` (what it was
+ * sold for) never changes. One that can no longer be used (cancelled, or past its date: the customer would hold a
+ * refund they can't spend) gets a new voucher instead, good for as long as the first one was (thirty days at least),
+ * whose code is on the return's answer, in the audit log and in the voucher list. Inside the return's transaction;
+ * its entry credits the vouchers' accounts.
+ */
+export function giveBackToVoucher(db: Db, input: { returnId: string; entryId: string | null; plan: readonly VoucherBack[] }, user: string): { voucherId: string; code: string; amount: number; made: boolean }[] {
+  const now = new Date().toISOString();
+  const today = todayIso();
+  const done: { voucherId: string; code: string; amount: number; made: boolean }[] = [];
+  for (const p of input.plan) {
+    const v = db.prepare('SELECT id, code, status, expires_on, created_at FROM gift_vouchers WHERE id = ?').get(p.voucherId) as
+      { id: string; code: string; status: string; expires_on: string | null; created_at: string };
+    const usable = v.status === 'active' && (!v.expires_on || v.expires_on >= today);
+    let target = { id: v.id, code: v.code };
+    if (usable) {
+      const changed = db.prepare('UPDATE gift_vouchers SET balance = balance + ? WHERE id = ? AND balance + ? <= amount').run(p.amount, v.id, p.amount);
+      if (Number(changed.changes) !== 1) throw conflict('gv_balance');
+    } else {
+      const id = randomUUID();
+      let code = newVoucherCode();
+      while (db.prepare('SELECT 1 FROM gift_vouchers WHERE code = ?').get(code)) code = newVoucherCode();
+      const life = v.expires_on ? Math.round((Date.parse(`${v.expires_on}T00:00:00.000Z`) - Date.parse(`${v.created_at.slice(0, 10)}T00:00:00.000Z`)) / 86_400_000) : 0;
+      const expiresOn = v.expires_on ? addDays(today, Math.max(REFUND_VOUCHER_DAYS, life)) : null;
+      db.prepare(`INSERT INTO gift_vouchers (id, code, amount, balance, currency, expires_on, status, account_code, shift_id, entry_id, created_by, created_at)
+                  VALUES (?, ?, ?, ?, 'IQD', ?, 'active', ?, NULL, ?, ?, ?)`)
+        .run(id, code, p.amount, p.amount, expiresOn, p.accountCode, input.entryId, user, now);
+      target = { id, code };
+    }
+    db.prepare("INSERT INTO gift_voucher_moves (id, voucher_id, kind, amount, invoice_id, for_voucher_id, created_by, created_at) VALUES (?, ?, 'returned', ?, ?, ?, ?, ?)")
+      .run(randomUUID(), target.id, p.amount, input.returnId, p.voucherId, user, now);
+    audit(db, user, 'gift_voucher_returned', 'gift_voucher', target.id, { code: target.code, amount: p.amount, returnId: input.returnId, made: !usable, ...(usable ? {} : { instead: v.code }) });
+    done.push({ voucherId: target.id, code: target.code, amount: p.amount, made: !usable });
+  }
+  return done;
+}
+
+/** The vouchers a return gave money back onto (the till shows the codes: a new voucher's code is nowhere else for the customer). */
+export function vouchersOfReturn(db: Db, returnId: string): { code: string; amount: number; made: boolean }[] {
+  return (db.prepare(`SELECT v.code, m.amount, m.for_voucher_id, m.voucher_id FROM gift_voucher_moves m JOIN gift_vouchers v ON v.id = m.voucher_id
+                      WHERE m.invoice_id = ? AND m.kind = 'returned' ORDER BY m.created_at, v.code`).all(returnId) as { code: string; amount: number; for_voucher_id: string | null; voucher_id: string }[])
+    .map((r) => ({ code: r.code, amount: Number(r.amount), made: !!r.for_voucher_id && r.for_voucher_id !== r.voucher_id }));
 }
 
 /** The vouchers a posted sale paid with: their balances go down. Inside the sale's transaction. */
@@ -195,9 +258,13 @@ export function cancelGiftVoucher(db: Db, id: string, user: string): GiftVoucher
   return getGiftVoucher(db, id);
 }
 
-/** Cash a shift took for vouchers it sold (those cancelled since are paid back, so not expected in the drawer). */
+/**
+ * Cash a shift took for vouchers it sold (those cancelled since are paid back, so not expected in the drawer): what
+ * they were sold for, from the 'sold' moves, whatever came back onto them since (a refund is no cash in the drawer).
+ */
 export function giftCashOf(db: Db, shiftId: string): number {
-  const r = db.prepare("SELECT COALESCE(SUM(amount), 0) AS total FROM gift_vouchers WHERE shift_id = ? AND status = 'active'").get(shiftId) as { total: number };
+  const r = db.prepare(`SELECT COALESCE(SUM(m.amount), 0) AS total FROM gift_voucher_moves m JOIN gift_vouchers v ON v.id = m.voucher_id
+                        WHERE v.shift_id = ? AND v.status = 'active' AND m.kind = 'sold'`).get(shiftId) as { total: number };
   return Number(r.total);
 }
 
@@ -243,7 +310,8 @@ export function writeOffExpired(db: Db, actor: { id: string | null; name: string
 
 /** 2.0.0: the gift vouchers of one shift for its X/Z report: sold at this till (count and amount), and used on its sales (less what came back). */
 export function giftOfShift(db: Db, shiftId: string): { soldCount: number; sold: number; used: number } {
-  const sold = db.prepare("SELECT COUNT(*) AS n, COALESCE(SUM(amount), 0) AS total FROM gift_vouchers WHERE shift_id = ? AND status = 'active'").get(shiftId) as { n: number; total: number };
+  const sold = db.prepare(`SELECT COUNT(*) AS n, COALESCE(SUM(m.amount), 0) AS total FROM gift_voucher_moves m JOIN gift_vouchers v ON v.id = m.voucher_id
+                           WHERE v.shift_id = ? AND v.status = 'active' AND m.kind = 'sold'`).get(shiftId) as { n: number; total: number };
   // a redemption is kept as a minus on the voucher, a restore (the sale cancelled) as a plus: their sum, turned round
   const used = db.prepare(`SELECT COALESCE(SUM(m.amount), 0) AS total FROM gift_voucher_moves m JOIN pos_sales s ON s.invoice_id = m.invoice_id
                            WHERE s.shift_id = ? AND m.kind IN ('redeemed', 'restored')`).get(shiftId) as { total: number };
@@ -256,11 +324,16 @@ export interface GiftReport { vouchers: GiftVoucherView[]; sold: number; used: n
 export function giftReport(db: Db, limit = 500): GiftReport {
   const today = todayIso();
   const rows = db.prepare('SELECT * FROM gift_vouchers ORDER BY created_at DESC LIMIT ?').all(limit) as unknown as Row[];
-  const all = db.prepare("SELECT amount, balance, expires_on, status FROM gift_vouchers WHERE status = 'active'").all() as { amount: number; balance: number; expires_on: string | null }[];
-  let sold = 0, used = 0, outstanding = 0, expiredUnused = 0;
+  const all = db.prepare("SELECT balance, expires_on FROM gift_vouchers WHERE status = 'active'").all() as { balance: number; expires_on: string | null }[];
+  // sold: what was paid for vouchers (a voucher made for a refund was not sold); used: what sales took, less what
+  // cancels and returns put back
+  const moved = db.prepare(`SELECT m.kind, COALESCE(SUM(m.amount), 0) AS total FROM gift_voucher_moves m JOIN gift_vouchers v ON v.id = m.voucher_id
+                            WHERE v.status = 'active' AND m.kind IN ('sold', 'redeemed', 'restored', 'returned') GROUP BY m.kind`).all() as { kind: string; total: number }[];
+  const sum = (kind: string) => Number(moved.find((m) => m.kind === kind)?.total ?? 0);
+  const sold = sum('sold');
+  const used = Math.max(0, -(sum('redeemed') + sum('restored') + sum('returned')));
+  let outstanding = 0, expiredUnused = 0;
   for (const r of all) {
-    sold += Number(r.amount);
-    used += Number(r.amount) - Number(r.balance);
     if (r.expires_on && r.expires_on < today) expiredUnused += Number(r.balance);
     else outstanding += Number(r.balance);
   }

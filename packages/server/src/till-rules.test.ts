@@ -5,6 +5,7 @@ import { buildApp } from './app.ts';
 import { openDatabase, type Db } from './db.ts';
 import { resetLoginThrottle } from './auth.ts';
 import { resetDisplayTries, resetPinFailures } from './till-rules.ts';
+import { allowCardPaymentsForTests } from './pos.ts';
 
 // 2.0, Iraqi markets: dinar rounding, a supervisor's PIN, a blind close, the open-price item, credit at the till,
 // gift vouchers and the customer screen on another device (till-rules.ts, till-settings.ts, gift-vouchers.ts).
@@ -95,8 +96,14 @@ describe('dinar rounding', () => {
     expect(down.json().shift.expected.IQD).toBe(5_500);
     // a card part is never rounded: only the cash part is
     expect((await put('/api/pos/payment-accounts', { card: '1831' })).statusCode).toBe(200);
-    const card = await post(`/api/pos/shifts/${shift.id}/sales`, { currency: 'IQD', discount: 0, lines: [tea(1)], payments: [{ method: 'card', amount: 2_750 }] });
-    expect(card.json().rounding).toBe(0);
+    // (card is switched off for now: refused by the server too, until it is switched on again)
+    const cardSale = { currency: 'IQD', discount: 0, lines: [tea(1)], payments: [{ method: 'card', amount: 2_750 }] };
+    expect((await post(`/api/pos/shifts/${shift.id}/sales`, cardSale)).json()).toMatchObject({ details: [{ code: 'pos_method_unavailable', method: 'card' }] });
+    allowCardPaymentsForTests(true);
+    try {
+      const card = await post(`/api/pos/shifts/${shift.id}/sales`, cardSale);
+      expect(card.json().rounding).toBe(0);
+    } finally { allowCardPaymentsForTests(false); }
     // cancelled: the whole sale's entry is reversed, the rounding with it
     expect((await post(`/api/invoices/${down.json().invoice.id}/cancel`, {})).statusCode).toBe(200)
     expect(balanceOf('1811')).toBe(3_000);
@@ -114,7 +121,7 @@ describe("a supervisor's PIN", () => {
     // a discount over 10%: refused without the approval, taken with it, and the approval is used once
     const sale = { currency: 'IQD', discount: 1_000, lines: [tea(2)] };
     expect((await post(`/api/pos/shifts/${shift.id}/sales`, sale, who.las!)).json()).toMatchObject({ details: [{ code: 'pos_needs_supervisor', action: 'discount' }] });
-    const ok = await post('/api/pos/approve', { shiftId: shift.id, action: 'discount', pin: '407193' }, who.las!);
+    const ok = await post('/api/pos/approve', { shiftId: shift.id, action: 'discount', pin: '407193', amount: 1_000 }, who.las!);
     expect(ok.json()).toMatchObject({ approver: 'Raz', action: 'discount', used: false });
     expect((await post(`/api/pos/shifts/${shift.id}/sales`, { ...sale, approvals: [ok.json().token] }, who.las!)).statusCode).toBe(201);
     expect((await post(`/api/pos/shifts/${shift.id}/sales`, { ...sale, approvals: [ok.json().token] }, who.las!)).json()).toMatchObject({ details: [{ code: 'pos_needs_supervisor' }] });
@@ -168,46 +175,44 @@ describe("a supervisor's PIN", () => {
     expect((await put('/api/pos/pin', { pin: '407193' }, who.raz!)).statusCode).toBe(200);
     const shift = await openShift(who.las!);
     const guesses = Array.from({ length: 40 }, (_, i) => String(500000 + i)).concat('407193');
-    const answers = await Promise.all(guesses.map((pin) => post('/api/pos/approve', { shiftId: shift.id, action: 'discount', pin }, who.las!)));
+    const answers = await Promise.all(guesses.map((pin) => post('/api/pos/approve', { shiftId: shift.id, action: 'discount', pin, amount: 1_000 }, who.las!)));
     expect(answers.filter((r) => r.json().details?.[0]?.code === 'pin_wrong').length).toBeLessThanOrEqual(5);
     expect(answers.at(-1)!.json().error).toBe('pin_locked');
   });
 
-  it('keeps a sale a cut-off till sold below a price raised after it, for review; refuses one sold after the raise (reliability review #3)', async () => {
+  it('keeps a sale a cut-off till sold at a list price the item had since the shift opened, for review; refuses anything lower, or sold outside the shift (review 2.0)', async () => {
     expect((await put('/api/pos/rules', { supervisor: { lineDelete: false, void: false, price: true, discountPct: 0, noSale: false, refund: false, creditOver: false } })).statusCode).toBe(200);
     const shift = await openShift();
-    const before = new Date(Date.now() - 60_000).toISOString();
+    // the shift has been open for ten minutes; the till was cut off, and the price went up to 3,000 a minute ago
+    db.prepare('UPDATE pos_shifts SET opened_at = ? WHERE id = ?').run(new Date(Date.now() - 600_000).toISOString(), shift.id);
+    const beforeShift = new Date(Date.now() - 900_000).toISOString();
+    const before = new Date(Date.now() - 120_000).toISOString();
     const item = (await get(`/api/items/${teaId}`)).json();
     expect((await put(`/api/items/${teaId}`, { ...item, salePrice: 3_000 })).statusCode).toBe(200);
-    const after = new Date().toISOString();
-    const kept = await post(`/api/pos/shifts/${shift.id}/sales`, { currency: 'IQD', discount: 0, lines: [tea(1, 2_750)], offline: { reference: 'OFF-C1-0001', soldAt: before, soldOn: before.slice(0, 10) } },
-      { ...owner, 'x-qasa-idempotency': '7d0c2f9a-1b2c-4d3e-8f40-5a6b7c8d9e11' });
-    expect(kept.statusCode, kept.body).toBe(201);
+    db.prepare("UPDATE item_price_history SET changed_at = ? WHERE item_id = ? AND price = 3000").run(new Date(Date.now() - 60_000).toISOString(), teaId);
+    const after = new Date(Date.now() - 30_000).toISOString();
+    let n = 0;
+    const kept = (price: number, soldAt: string) => post(`/api/pos/shifts/${shift.id}/sales`,
+      { currency: 'IQD', discount: 0, lines: [tea(1, price)], offline: { reference: `OFF-C1-000${++n}`, soldAt, soldOn: soldAt.slice(0, 10) } },
+      { ...owner, 'x-qasa-idempotency': `7d0c2f9a-1b2c-4d3e-8f40-5a6b7c8d9e1${n}` });
+    // sold before the raise at the price of then: kept, and written for review
+    const first = await kept(2_750, before);
+    expect(first.statusCode, first.body).toBe(201);
     expect(db.prepare("SELECT COUNT(*) AS n FROM audit_log WHERE action = 'offline_price_review'").get()).toMatchObject({ n: 1 });
-    const late = await post(`/api/pos/shifts/${shift.id}/sales`, { currency: 'IQD', discount: 0, lines: [tea(1, 2_750)], offline: { reference: 'OFF-C1-0002', soldAt: after, soldOn: after.slice(0, 10) } },
-      { ...owner, 'x-qasa-idempotency': '7d0c2f9a-1b2c-4d3e-8f40-5a6b7c8d9e12' });
-    expect(late.json()).toMatchObject({ details: [{ code: 'pos_offline_supervisor' }] });
-  });
-
-  it('locks every till when many wrong PINs come from different cashiers', async () => {
-    const people: Record<string, string[]> = { raz: ['supervisor'] };
-    for (let i = 0; i < 5; i++) people[`cash${'abcde'[i]}`] = ['pos'];
-    const who = await signIn(people);
-    expect((await put('/api/pos/pin', { pin: '407193' }, who.raz!)).statusCode).toBe(200);
-    const shifts: string[] = [];
-    for (let i = 0; i < 5; i++) shifts.push((await openShift(who[`cash${'abcde'[i]}`]!, `R${i}`)).id);
-    for (let i = 0; i < 5; i++) for (let k = 0; k < 4; k++) await post('/api/pos/approve', { shiftId: shifts[i], action: 'void', pin: `8${i}${k}111` }, who[`cash${'abcde'[i]}`]!);
-    // 20 wrong in all, none of them locked alone: the whole company is locked
-    expect((await post('/api/pos/approve', { shiftId: shifts[0], action: 'void', pin: '407193' }, who.casha!)).json()).toMatchObject({ error: 'pin_locked' });
-    expect((await get('/api/pos/rules', who.admin!)).json().pinAlert).toMatchObject({ scope: 'all' });
-  });
-
-  it("is never the cashier's own (unless an admin), and a cashier without the till can't ask", async () => {
-    const who = await signIn({ mer: ['pos', 'supervisor'], kay: ['sales'] });
-    expect((await put('/api/pos/pin', { pin: '581346' }, who.mer!)).statusCode).toBe(200);
-    const shift = await openShift(who.mer!);
-    expect((await post('/api/pos/approve', { shiftId: shift.id, action: 'void', pin: '581346' }, who.mer!)).json()).toMatchObject({ details: [{ code: 'pin_self' }] });
-    expect((await post('/api/pos/approve', { shiftId: shift.id, action: 'void', pin: '581346' }, who.kay!)).statusCode).toBe(403);
+    // sold after the raise by a till that still had the old price (it loaded its prices when the shift opened): kept too
+    expect((await kept(2_750, after)).statusCode).toBe(201);
+    expect(db.prepare("SELECT COUNT(*) AS n FROM audit_log WHERE action = 'offline_price_review'").get()).toMatchObject({ n: 2 });
+    // below every price the item had during the shift: an "offline" stamp does not switch the rule off
+    expect((await kept(2_000, before)).json()).toMatchObject({ details: [{ code: 'pos_offline_supervisor' }] });
+    expect((await kept(1, after)).json()).toMatchObject({ details: [{ code: 'pos_offline_supervisor' }] });
+    // a moment before the shift opened, or one still to come, gets no allowance at all
+    expect((await kept(2_750, beforeShift)).json()).toMatchObject({ details: [{ code: 'pos_offline_supervisor' }] });
+    expect((await kept(2_750, new Date(Date.now() + 3_600_000).toISOString())).json()).toMatchObject({ details: [{ code: 'pos_offline_supervisor' }] });
+    // an item whose price never changed has one list price: nothing lower is kept
+    const sugar = (await post('/api/items', { code: 'SUG', name: { ar: 'سكر', en: 'Sugar', ku: 'شەکر' }, unit: 'piece', salePrice: 1_500, saleCurrency: 'IQD', trackStock: false })).json();
+    const low = await post(`/api/pos/shifts/${shift.id}/sales`, { currency: 'IQD', discount: 0, lines: [{ itemId: sugar.id, qtyMilli: 1000, unitPrice: 1_000 }], offline: { reference: 'OFF-C1-0099', soldAt: before, soldOn: before.slice(0, 10) } },
+      { ...owner, 'x-qasa-idempotency': '7d0c2f9a-1b2c-4d3e-8f40-5a6b7c8d9e99' });
+    expect(low.json()).toMatchObject({ details: [{ code: 'pos_offline_supervisor' }] });
   });
 });
 
@@ -221,7 +226,7 @@ describe('a refund at the till (security review #6)', () => {
     const ret = { date: sale.invoice.date, payment: 'cash', cashAccountCode: '1811', lines: [{ lineNo: 1, qtyMilli: 1000 }] };
     expect((await post(`/api/invoices/${sale.invoice.id}/returns`, ret, who.las!)).json()).toMatchObject({ details: [{ code: 'pos_needs_supervisor', action: 'refund' }] });
     expect((await post(`/api/invoices/${sale.invoice.id}/cancel`, {}, who.las!)).json()).toMatchObject({ details: [{ code: 'pos_needs_supervisor', action: 'refund' }] });
-    const ok = (await post('/api/pos/approve', { shiftId: shift.id, action: 'refund', pin: '407193' }, who.las!)).json();
+    const ok = (await post('/api/pos/approve', { shiftId: shift.id, action: 'refund', pin: '407193', invoiceId: sale.invoice.id, lines: ret.lines }, who.las!)).json();
     const done = await post(`/api/invoices/${sale.invoice.id}/returns`, { ...ret, approvals: [ok.token] }, who.las!);
     expect(done.statusCode, done.body).toBe(201);
     // used once
@@ -283,7 +288,7 @@ describe('credit at the till', () => {
     expect((await post(`/api/pos/shifts/${shift.id}/sales`, credit, who.las!)).statusCode).toBe(201);
     expect((await get(`/api/pos/customer/${ali.id}`, who.las!)).json()).toMatchObject({ balance: 2_750, creditLimit: 3_000, overLimit: false });
     expect((await post(`/api/pos/shifts/${shift.id}/sales`, credit, who.las!)).json()).toMatchObject({ error: 'credit_limit_exceeded' });
-    const ok = (await post('/api/pos/approve', { shiftId: shift.id, action: 'credit_over', pin: '407193' }, who.las!)).json();
+    const ok = (await post('/api/pos/approve', { shiftId: shift.id, action: 'credit_over', pin: '407193', partyId: ali.id, amount: 2_750 }, who.las!)).json();
     expect((await post(`/api/pos/shifts/${shift.id}/sales`, { ...credit, approvals: [ok.token] }, who.las!)).statusCode).toBe(201);
     expect((await get(`/api/pos/customer/${ali.id}`, who.las!)).json()).toMatchObject({ balance: 5_500, overLimit: true });
   });

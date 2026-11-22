@@ -19,7 +19,7 @@ import { finalAccountsReport, statementReport, trialBalanceReport } from './repo
 import { reorderList } from './reorder.ts';
 import { getSettings, lockPeriod, lockedPeriods, unlockPeriod, updateSettings, writeSetting } from './settings.ts';
 import { audit, listAudit } from './audit.ts';
-import { assertRefundApproved } from './till-settings.ts';
+import { assertRefundApproved, blindAnswer } from './till-settings.ts';
 import { createParty, deleteParty, getParty, isForeignKeyFailure, listParties, partyStatement, partyTotals, updateParty } from './parties.ts';
 import {
   createItem, createWarehouse, deleteItem, findByBarcode, getItem, itemMoves, itemStock, listItems, listWarehouses, updateItem, updateWarehouse
@@ -382,7 +382,8 @@ export function apiRoutes(db: Db, options: { demo?: boolean; extensions?: readon
         checkCostRequest(actor, method, path);
         const result = await handler(req, reply);
         if (reply.sent) reply.payload = forActor(path, hideCost(actor, path, reply.payload), actor);
-        return forActor(path, hideCost(actor, path, filterBranchResult(db, actor, method, path, result)), actor);
+        // (and, for a cashier who closes blind, without the day's takings: till-settings.ts blindAnswer)
+        return blindAnswer(db, actor, method, path, forActor(path, hideCost(actor, path, filterBranchResult(db, actor, method, path, result)), actor));
       }
     });
   };
@@ -664,7 +665,7 @@ export function apiRoutes(db: Db, options: { demo?: boolean; extensions?: readon
     const body = parse(z.object({ date: isoDate.optional(), approvals: z.array(z.string().max(64)).max(4).optional() }), req.body ?? {});
     const id = parse(idParam, req.params).id;
     return transaction(db, () => {
-      assertRefundApproved(db, id, actorOf(req), body.approvals);
+      assertRefundApproved(db, id, actorOf(req), body.approvals, { cancel: true });
       return cancelInvoice(db, id, userOf(req), body.date, actorOf(req));
     });
   });
@@ -674,7 +675,7 @@ export function apiRoutes(db: Db, options: { demo?: boolean; extensions?: readon
     const { id } = parse(idParam, req.params);
     const { approvals, ...body } = withoutUndefined(parse(returnSchema, req.body));
     return reply.status(201).send(once(req, reply, 'POST /api/invoices/:id/returns', () => transaction(db, () => {
-      assertRefundApproved(db, id, actorOf(req), approvals);
+      assertRefundApproved(db, id, actorOf(req), approvals, { cashAccount: body.payment === 'cash' ? body.cashAccountCode : null, lines: body.lines });
       return createReturn(db, id, body, userOf(req), actorOf(req));
     }), (doc) => getInvoice(db, doc, branchOfUser(req))));
   });
