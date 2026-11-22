@@ -32,6 +32,33 @@ function fakeSerial(o: { chunks?: string[]; answers?: string[]; ports?: number }
   return { serial, log };
 }
 
+describe('a weight that begins with its decimal point (round four of the review)', () => {
+  it('reads ".250kg" as a quarter of a kilogram, never as 250 kg', () => {
+    expect(parseScaleText('.250kg', DEFAULT_SCALE)).toBe(0.25);
+    expect(parseScaleText('ST,GS,   .250kg', DEFAULT_SCALE)).toBe(0.25);
+    expect(parseScaleText('ST,GS,   ,250 kg', DEFAULT_SCALE)).toBe(0.25);
+    expect(parseScaleText('W .075', DEFAULT_SCALE)).toBe(0.075);
+    expect(parseScaleText('.500 g', DEFAULT_SCALE)).toBe(0.0005);
+    expect(parseScaleText('.5 lb', { ...DEFAULT_SCALE, unit: 'lb' })).toBe(0.226796);
+    expect(settledWeight('ST,GS,   .250kg\r\nST,GS,   .250kg\r\n', DEFAULT_SCALE).kg).toBe(0.25);
+    // what it read before is unchanged
+    expect(parseScaleText('ST,GS,  1.250kg', DEFAULT_SCALE)).toBe(1.25);
+    expect(parseScaleText('0,750', DEFAULT_SCALE)).toBe(0.75);
+    expect(parseScaleText('750', { ...DEFAULT_SCALE, unit: 'g' })).toBe(0.75);
+    expect(parseScaleText('2 kg', DEFAULT_SCALE)).toBe(2);
+    // a minus before it is still no reading; nor is a point with nothing after it
+    expect(parseScaleText('-.250kg', DEFAULT_SCALE)).toBeNull();
+    expect(parseScaleText('ST,GS, .kg', DEFAULT_SCALE)).toBeNull();
+  });
+
+  it('gives a PC that kept the pattern of before the new one, and leaves a pattern someone wrote alone', () => {
+    const kept = (pattern: string) => readScaleSettings({ getItem: () => JSON.stringify({ on: true, baud: 9600, request: '', pattern, unit: 'kg' }) });
+    expect(kept('([0-9]+[.,][0-9]+|[0-9]+)\\s*(?:kg|KG|g|G)?').pattern).toBe(DEFAULT_SCALE.pattern);
+    expect(parseScaleText('.250kg', kept('([0-9]+[.,][0-9]+|[0-9]+)\\s*(?:kg|KG|g|G)?'))).toBe(0.25);
+    expect(kept('W(\\d+)').pattern).toBe('W(\\d+)');
+  });
+});
+
 describe('reading the scale (reliability review, finding 5)', () => {
   it('takes whole lines only: a number cut off at the end of what was read is never a weight', () => {
     expect(wholeLines('ST,GS,  1.250kg\r\nST,GS,  1.2')).toEqual(['ST,GS,  1.250kg']);

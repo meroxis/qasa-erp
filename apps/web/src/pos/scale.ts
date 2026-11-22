@@ -31,7 +31,13 @@ export const SCALE_UNITS: readonly ScaleUnit[] = ['kg', 'g', 'lb', 'oz'];
 const KG_PER: Record<ScaleUnit, number> = { kg: 1, g: 0.001, lb: 0.45359237, oz: 0.028349523125 };
 
 export const SCALE_KEY = 'qasa.pos.scale';
-export const DEFAULT_SCALE: ScaleSettings = { on: false, baud: 9600, request: '', pattern: '([0-9]+[.,][0-9]+|[0-9]+)\\s*(?:kg|KG|g|G)?', unit: 'kg' };
+/**
+ * The number may begin with its decimal point: some scales send a weight under a kilogram as ".250kg" (round four of
+ * the review: the pattern before read that as 250 kg).
+ */
+export const DEFAULT_SCALE: ScaleSettings = { on: false, baud: 9600, request: '', pattern: '([0-9]*[.,][0-9]+|[0-9]+)\\s*(?:kg|KG|g|G)?', unit: 'kg' };
+/** the pattern a PC kept from before that: read as today's (it was nobody's own choice) */
+const PATTERN_BEFORE = '([0-9]+[.,][0-9]+|[0-9]+)\\s*(?:kg|KG|g|G)?';
 export const BAUDS = [1200, 2400, 4800, 9600, 19200, 38400, 57600, 115200] as const;
 
 export function readScaleSettings(store: Pick<Storage, 'getItem'> | null = storage()): ScaleSettings {
@@ -42,7 +48,7 @@ export function readScaleSettings(store: Pick<Storage, 'getItem'> | null = stora
       on: v.on === true,
       baud: (BAUDS as readonly number[]).includes(v.baud as number) ? v.baud! : DEFAULT_SCALE.baud,
       request: typeof v.request === 'string' && hexBytes(v.request) ? v.request : '',
-      pattern: typeof v.pattern === 'string' && validPattern(v.pattern) ? v.pattern : DEFAULT_SCALE.pattern,
+      pattern: typeof v.pattern === 'string' && validPattern(v.pattern) && v.pattern !== PATTERN_BEFORE ? v.pattern : DEFAULT_SCALE.pattern,
       unit: SCALE_UNITS.includes(v.unit as ScaleUnit) ? v.unit as ScaleUnit : 'kg'
     };
   } catch {
