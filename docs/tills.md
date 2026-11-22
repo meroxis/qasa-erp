@@ -26,8 +26,14 @@
   supervisor (deleting a line, voiding the basket, a changed price, a discount beyond the limit, opening the drawer
   with no sale, a refund, a credit sale over the customer's limit, seeing a blind shift's figures). A supervisor has a PIN of their own, 6 to 8
   digits, kept as a password is; an approval is for one action at one shift, used once within two minutes, and written
-  to the audit log with every PIN that failed. Five wrong PINs from one cashier lock that cashier's approvals for
-  fifteen minutes; twenty from everyone in ten minutes lock every till's for ten. Approvals need the server.
+  to the audit log with every PIN that failed. It is held to the very thing approved (`till_approvals`): a refund's
+  invoice and lines, a price's item, unit and currency, a discount's basket (never a larger share of a smaller one),
+  a customer and amount on account, a dollar rate. Five wrong PINs from one cashier within fifteen minutes of the
+  first lock that cashier's approvals for fifteen minutes (a right PIN starts the count again; with sign-in off the
+  count is the till's); fifteen in a day from a signed-in cashier lock them until the next day; twenty from everyone
+  in ten minutes lock every till's for ten. An admin lifts the locks in Settings (`POST /api/pos/pin-unlock`, in the
+  audit log). A refund made on the invoice screens (a return or a cancel there) asks for the supervisor's PIN on that
+  screen (`POST /api/refund-approvals`: no shift). Approvals need the server.
 - **Returns at the till**: paid back as the sale was paid (`packages/server/src/returns.ts`): from the drawer at most
   what came into it in cash for that sale, less what earlier returns paid out; the part a gift voucher paid goes back
   onto a voucher, the part put on the customer's account comes back as credit, points as points. Rounding comes back
@@ -35,8 +41,10 @@
   it up. A clothes shop's exchange is such a return and a new sale in one step (`clothing.ts`).
 - **Dollar notes on a dinar sale** (`usdCash: { amount, rateX100 }`, `pos_sales.usd_cash/usd_rate_x100`): the books keep the
   sale in dinars; the shift expects those dollars in the drawer instead of their dinars (`usdTaken` on the shift, the X/Z
-  report and the day close). The rate must be within 15% of the company's; the dollars may pass what is due by less than a
-  100-dollar note (change in dinars). The accountant may record the exchange.
+  report and the day close). The rate is held to the day's (`referenceRate`: today's on the rate board, else the
+  company's), as a dollar sale's own rate is: within 3% it passes, to 15% a supervisor approves that very rate, beyond
+  it is refused; the till shows the day's rate and checks before it sends or keeps a sale. The dollars may pass what is
+  due by less than a 100-dollar note (change in dinars). The accountant may record the exchange.
 - **Cash drawer** (`apps/desktop/src/till-desktop.ts`): ESC p 0 25 250 sent RAW through winspool to the receipt printer
   chosen in Settings → Printers, by a fixed PowerShell script with the printer name in its environment. The script's C#
   is compiled once for each run of the app into a helper file in a folder made for that run (loaded only while its

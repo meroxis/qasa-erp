@@ -1540,6 +1540,8 @@ describe('the release notes of 1.6.0 (kept as shipped: the petrol station, the t
     const db = read('packages/server/src/db.ts');
     expect(db).toMatch(/\{ sql: V16, mysql: \{ tables: true, steps: \(\) => V16_MYSQL_STEPS \} \},?\n( {2}\{ sql: V17, mysql: \{ tables: true, steps: \(\) => V17_MYSQL_STEPS \} \},?\n( {2}\{ sql: V18, mysql: \{ tables: true, steps: \(\) => V18_MYSQL_STEPS \} \},?\n( {2}\{ sql: V19, mysql: \{ tables: true, steps: \(\) => V19_MYSQL_STEPS \}, data: keepFeatureAccounts \}\n)?)?)?\];/);
     expect(db).toContain('-before-update-v');
+    // the number the notes name is the number of migrations (19: migration-v19.test.ts)
+    expect(db).toContain('export const SCHEMA_VERSION = MIGRATIONS.length;');
     expect(read('apps/web/src/i18n.ts')).toContain("bkTitle: ['النسخ الاحتياطية', 'Backups', 'باکئەپەکان']");
     expect(before('en')).toContain('**The company file is upgraded to a new version (16) the first time 1.6.0 opens it.** Take a backup first (**Settings → Backups**)');
     expect(before('en')).toContain('Qasa ERP 1.5.2 and earlier cannot open a file that 1.6.0 has upgraded');
@@ -1645,7 +1647,7 @@ describe('the release notes of 1.6.0 (kept as shipped: the petrol station, the t
   });
 });
 
-describe('the release notes of this version (2.0.0: the new till, gold, wholesale, clothing and the market extras; schema 18)', () => {
+describe('the release notes of this version (2.0.0: the new till, gold, wholesale, clothing and the market extras; schema 19)', () => {
   const version = (JSON.parse(read('apps/desktop/package.json')) as { version: string }).version;
   const notes = read(`apps/desktop/release-notes/${version}.md`);
   const section = (lang: 'ar' | 'en' | 'ku') => new RegExp(`^::: ${lang}\\n([\\s\\S]*?)^:::$`, 'm').exec(notes)?.[1] ?? '';
@@ -1674,17 +1676,17 @@ describe('the release notes of this version (2.0.0: the new till, gold, wholesal
     expect(shape('ku')).toBe(shape('en'));
   });
 
-  it('says first that the company file goes to schema 18, to back up and to update the office server PC with every PC', () => {
+  it('says first that the company file goes to schema 19, to back up and to update the office server PC with every PC', () => {
     const db = read('packages/server/src/db.ts');
     expect(db).toMatch(/\{ sql: V18, mysql: \{ tables: true, steps: \(\) => V18_MYSQL_STEPS \} \},\n {2}\{ sql: V19, mysql: \{ tables: true, steps: \(\) => V19_MYSQL_STEPS \}, data: keepFeatureAccounts \}\n\];/);
     expect(db).toContain('-before-update-v');
-    expect(before('en')).toContain('**The company file is upgraded to a new version (18) the first time 2.0.0 opens it.** Take a backup first (**Settings → Backups**)');
+    expect(before('en')).toContain('**The company file is upgraded to a new version (19) the first time 2.0.0 opens it.** Take a backup first (**Settings → Backups**)');
     expect(before('en')).toContain('Qasa ERP 1.6.0 and earlier cannot open a file that 2.0.0 has upgraded');
     expect(before('en')).toContain('On the office network, update the office server PC and every PC that connects to it together.');
     expect(before('en')).toContain('A Microsoft Store copy opens these books only once the Store has 2.0.0.');
-    expect(before('ar')).toContain('**يُرقّى ملف الشركة إلى إصدار جديد (18) أول مرة يفتحه فيها الإصدار 2.0.0.**');
+    expect(before('ar')).toContain('**يُرقّى ملف الشركة إلى إصدار جديد (19) أول مرة يفتحه فيها الإصدار 2.0.0.**');
     expect(before('ar')).toContain('حاسوب خادم المكتب');
-    expect(before('ku')).toContain('**فایلی کۆمپانیا یەکەم جار کە 2.0.0 دەیکاتەوە بۆ وەشانێکی نوێ (18) بەرز دەکرێتەوە.**');
+    expect(before('ku')).toContain('**فایلی کۆمپانیا یەکەم جار کە 2.0.0 دەیکاتەوە بۆ وەشانێکی نوێ (19) بەرز دەکرێتەوە.**');
     expect(before('ku')).toContain('کۆمپیوتەری سێرڤەری نووسینگە');
   });
 
@@ -1724,8 +1726,8 @@ describe('the release notes of this version (2.0.0: the new till, gold, wholesal
       expect(store[lang].releaseNotes.length, lang).toBeLessThanOrEqual(1500);
       expect(store[lang].releaseNotes, lang).not.toMatch(/\{\{|\}\}|0\.1\.8/);
     }
-    expect(lines('en-us')[1]).toMatch(/^Before you update: the company file is upgraded to version 18 the first time 2\.0\.0 opens it, /);
-    expect(lines('ar')[1]).toMatch(/^قبل التحديث: يُرقّى ملف الشركة إلى الإصدار 18 /);
+    expect(lines('en-us')[1]).toMatch(/^Before you update: the company file is upgraded to version 19 the first time 2\.0\.0 opens it, /);
+    expect(lines('ar')[1]).toMatch(/^قبل التحديث: يُرقّى ملف الشركة إلى الإصدار 19 /);
     expect(lines('ku-arab')[1]).toMatch(/^پێش نوێکردنەوە: فایلی کۆمپانیا /);
   });
 
@@ -1746,22 +1748,28 @@ describe('the release notes of this version (2.0.0: the new till, gold, wholesal
     expect(rules).toContain('const CODE_MS = 10 * 60 * 1000;');
   });
 
-  it('says before the update: a server database is upgraded in place, the update installs on closing, and a company past the limit opens to be viewed', () => {
+  it('says before the update: a server database is upgraded in place, waiting sales go first, the update installs on closing, and a company past the limit opens to be viewed', () => {
     const bullets = (lang: 'ar' | 'en' | 'ku') => before(lang).split('\n').filter((l) => l.startsWith('- '));
-    for (const lang of ['ar', 'en', 'ku'] as const) expect(bullets(lang), lang).toHaveLength(4);
+    for (const lang of ['ar', 'en', 'ku'] as const) expect(bullets(lang), lang).toHaveLength(5);
     expect(bullets('en')[1]).toMatch(/^- \*\*Books on your own MariaDB or MySQL server are upgraded in place, on the server itself\.\*\* No copy is kept beside them as for a company file, so back up that database first\. Then update the office server PC and every PC that connects to it together/);
-    expect(bullets('en')[2]).toMatch(/^- \*\*The update installs when Qasa ERP is closed\.\*\*/);
-    expect(bullets('en')[2]).toContain('“Restart to update”');
+    // sales a till kept while cut off are sent before the update: a card sale among them is refused by 2.0.0
+    expect(bullets('en')[2]).toMatch(/^- \*\*Send what is waiting first\.\*\* If a till kept sales while the office server could not be reached, open \*\*Waiting to send\*\* on that PC and let them all be sent before you update\. Card, FIB, ZainCash and Qi at the till are switched off in 2\.0\.0 for now, so a card sale still waiting after the update is refused/);
+    expect(bullets('ar')[2]).toContain('**ما ينتظر الإرسال**');
+    expect(bullets('ku')[2]).toContain('**چاوەڕێی ناردن**');
+    expect(read('apps/web/src/i18n/outbox.ts')).toContain("ob_title: ['ما ينتظر الإرسال', 'Waiting to send', 'چاوەڕێی ناردن']");
+    expect(read('packages/core/src/till-payments.ts')).toContain('export const TILL_CARD_PAYMENTS = false as boolean;');
+    expect(bullets('en')[3]).toMatch(/^- \*\*The update installs when Qasa ERP is closed\.\*\*/);
+    expect(bullets('en')[3]).toContain('“Restart to update”');
     expect(read('apps/desktop/src/main.ts')).toContain('autoUpdater.autoInstallOnAppQuit = true;');
     expect(read('apps/desktop/src/texts.ts')).toContain('Click “Restart to update” in the bar at the top of the window, or it installs when you close the app.');
-    expect(bullets('en')[3]).toMatch(/^- \*\*More companies than your plan allows:\*\* every company still opens\. One beyond the plan’s limit opens to be viewed only/);
-    expect(bullets('en')[3]).toContain('**Plans and licence**');
+    expect(bullets('en')[4]).toMatch(/^- \*\*More companies than your plan allows:\*\* every company still opens\. One beyond the plan’s limit opens to be viewed only/);
+    expect(bullets('en')[4]).toContain('**Plans and licence**');
     expect(bullets('ar')[1]).toContain('تُرقّى في مكانها');
-    expect(bullets('ar')[3]).toContain('للعرض فقط');
-    expect(bullets('ar')[3]).toContain('**الخطط والترخيص**');
+    expect(bullets('ar')[4]).toContain('للعرض فقط');
+    expect(bullets('ar')[4]).toContain('**الخطط والترخيص**');
     expect(bullets('ku')[1]).toContain('لە شوێنی خۆیان');
-    expect(bullets('ku')[3]).toContain('تەنها بۆ بینین');
-    expect(bullets('ku')[3]).toContain('**پلان و مۆڵەت**');
+    expect(bullets('ku')[4]).toContain('تەنها بۆ بینین');
+    expect(bullets('ku')[4]).toContain('**پلان و مۆڵەت**');
     // the app's own words for the bar's link and for "view only" (i18n/companies.ts), and what the server does
     const words = read('apps/web/src/i18n/companies.ts');
     expect(words).toContain("co_viewOnlyPlans: ['الخطط والترخيص', 'Plans and licence', 'پلان و مۆڵەت']");
@@ -1815,8 +1823,49 @@ describe('the release notes of this version (2.0.0: the new till, gold, wholesal
     expect(read('apps/web/src/i18n/day-close.ts')).toContain("dc_m_voucher: ['قسائم الهدايا', 'Gift vouchers', 'کوپۆنی دیاری']");
   });
 
+  // the "Verify the review fixes" report, finding 10: what the last fixes changed at the till is in the notes, as the server has it
+  it('says what changed at the till: cards off, the day\'s dollar rate, the PIN locks, no cancel after the shift closed, invoice-screen cash in the shift, the new approvals', () => {
+    const changed = (lang: 'ar' | 'en' | 'ku', heading: string) => section(lang).split(`### ${heading}\n`)[1]!.split('\n### ')[0]!.split('\n').filter((l) => l.startsWith('- '));
+    const en = changed('en', 'Changed');
+    expect(en[0]).toBe('- **Card, FIB, ZainCash and Qi at the till are switched off for now.** The till takes cash and credit (on the customer’s account).');
+    expect(en[1]).toBe('- **Dollars at the till follow the day’s rate:** today’s rate on the **Dollar rate** page, or the company’s rate when today has none. A rate within 3% of it is taken as typed, one up to 15% away needs a supervisor’s PIN, and one further away is refused. The till shows the day’s rate.');
+    expect(en[2]).toBe('- **A cash sale made at a till is not cancelled once its shift is closed:** its money was counted with that shift. Take the goods back with a return.');
+    expect(en[3]).toBe('- **Cash taken on the invoice screens into a till’s safe counts in that till’s shift,** and paying it back out of that safe can ask for a supervisor’s PIN, typed on the invoice screen.');
+    for (const [lang, heading, words] of [['ar', 'ما تغيّر', ['متوقف حالياً', '**سعر الدولار**', 'بعد إغلاق ورديته', 'شاشات الفواتير']], ['ku', 'گۆڕاوەکان', ['بۆ ئێستا ڕاگیراوە', '**نرخی دۆلار**', 'دوای داخستنی شەفتەکەی', 'شاشەکانی پسوولەوە']]] as const) {
+      const list = changed(lang, heading);
+      words.forEach((w, i) => expect(list[i], `${lang} ${w}`).toContain(w));
+      for (const l of list.slice(1, 2)) { expect(l).toContain('3%'); expect(l).toContain('15%'); }
+    }
+    // as the server has them
+    const settings = read('packages/server/src/till-settings.ts');
+    expect(settings).toContain('export const RATE_FREE = 0.03;');
+    expect(settings).toContain('export const RATE_BAND = 0.15;');
+    expect(settings).toMatch(/SELECT rate_x100 FROM fx_rates WHERE date = \?/);
+    expect(read('apps/web/src/i18n/fx.ts')).toContain("fx_title: ['سعر الدولار', 'Dollar rate', 'نرخی دۆلار']");
+    expect(read('packages/server/src/invoices.ts')).toContain("throw conflict('pos_sale_shift_closed')");
+    expect(read('packages/server/src/till-rules.ts')).toContain("path: '/api/refund-approvals'");
+    // the supervisor's bullet: the new approvals, and the locks as they are counted
+    const sup = (lang: 'ar' | 'en' | 'ku', heading: string) => changed(lang, heading)[1]!;
+    expect(sup('en', 'New')).toBe('- **Supervisor approval at the till:** refunds, voids, a price below the list price, discounts beyond the limit, credit over a customer’s limit and opening the drawer with no sale can ask for a supervisor’s PIN. A PIN is each supervisor’s own, 6 to 8 digits. Each cashier has one open shift at a time. Five wrong PINs within fifteen minutes lock that cashier’s approvals for fifteen minutes, and fifteen in one day until the next day; an admin can unlock them in **Settings → Tills and till rules**.');
+    expect(sup('ar', 'الجديد')).toContain('بسعر أقل من سعر القائمة');
+    expect(sup('ar', 'الجديد')).toContain('فوق حد الزبون');
+    expect(sup('ar', 'الجديد')).toContain('فك القفل');
+    expect(sup('ku', 'نوێ')).toContain('کەمتر لە نرخی لیست');
+    expect(sup('ku', 'نوێ')).toContain('سەرووی سنووری کڕیار');
+    expect(sup('ku', 'نوێ')).toContain('قفڵەکە بکاتەوە');
+    const rules = read('packages/server/src/till-rules.ts');
+    for (const line of ['const LOCK_AFTER = 5;', 'const LOCK_MS = 15 * 60 * 1000;', 'const DAY_LOCK_AFTER = 15;', "path: '/api/pos/pin-unlock'"]) expect(rules, line).toContain(line);
+    const all = [notes, ...LANGS.map((l) => store[l].releaseNotes)].join('\n');
+    expect(all).not.toMatch(/for a while\.|مدة من الوقت|بۆ ماوەیەک ڕەزامەندییەکانی/);
+    // the Store text says the two an owner must know before the update
+    expect(store['en-us'].releaseNotes).toContain('Send any sales a till kept while offline before you update: card, FIB, ZainCash and Qi at the till are off for now.');
+    expect(store['en-us'].releaseNotes).toContain('Dollars at the till follow the day’s rate (beyond 3% a supervisor approves, beyond 15% it is refused)');
+    for (const lang of LANGS) { expect(store[lang].releaseNotes, lang).toContain('ZainCash'); expect(store[lang].releaseNotes, lang).toContain('15%'); }
+  });
+
   it('has a release day in docs/releasing.md', () => {
     expect(read('docs/releasing.md')).toContain('## Release day for 2.0.0 ');
+    expect(read('docs/releasing.md')).toContain('It **upgrades the company file to schema 19**');
   });
 });
 

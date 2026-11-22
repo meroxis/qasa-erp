@@ -233,14 +233,17 @@ and the website never showed it, so both go from 1.5.1 straight to 1.6.0.
    office server PC and every PC that connects to it together, as the notes say (the office server PC's books go to
    schema 16 the first time 1.6.0 opens them, and 1.5.2 or earlier can't open them afterwards).
 
-## Release day for 2.0.0 (the new till, gold, wholesale, clothing and the market extras; schema 18)
+## Release day for 2.0.0 (the new till, gold, wholesale, clothing and the market extras; schema 19)
 
 2.0.0 carries the new till (tills of their own, a Z report for each till, returns at the till, supervisor approvals,
 scale labels in a 2+5+5 or 2+4+6 layout, gift vouchers), the business type picker, and the Gold and jewellery, Wholesale
 and distribution, and Clothing and shoes business types, with offers, consignment, delivery orders, debt reminders,
-price checkers and daily-delivery suppliers for markets. It **upgrades the company file to schema 18** (versions 17 and
-18 run together the first time 2.0.0 opens a 1.6.0 file, on a company file and on a MariaDB/MySQL server database
-alike): 1.6.0 and earlier can't open it afterwards, as the notes say first.
+price checkers and daily-delivery suppliers for markets. It **upgrades the company file to schema 19** (versions 17, 18
+and 19 run together the first time 2.0.0 opens a 1.6.0 file, on a company file and on a MariaDB/MySQL server database
+alike): 1.6.0 and earlier can't open it afterwards, as the notes say first. Version 19 holds what the reviews of 2.0
+added after the first builds (the approvals table `till_approvals`, the counts of wrong PINs, a shift's refunds, the
+items' price history): a file an early 2.0 build left at 18 gets them on its next opening. Card, FIB, ZainCash and Qi at
+the till are off in 2.0.0 (`TILL_CARD_PAYMENTS`), so the notes ask for waiting sales to be sent before the update.
 
 1. **Tag Pro, then the app** (the stable steps above): the new features' entitlements must be on Pro `main` first.
 2. **The Store** gets the 2.0.0 `microsoft-store-package` artifact with the 2.0.0 "What's new" in `store-listing.json`.
