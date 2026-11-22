@@ -8,9 +8,9 @@ import { appendFileSync, closeSync, copyFileSync, existsSync, fsyncSync, mkdirSy
 import { createServer } from 'node:net';
 import { extname, join, normalize, sep } from 'node:path';
 import type { FastifyInstance } from 'fastify';
-import { buildApp, configureLicensing, configureVerifyKeyVault, openDatabase, planStatus, startUsagePings, type Db } from '@qasa/server';
-import { companyDirOf, isCompanyId, MAIN_COMPANY, openableCompanies, readRegistry, writeRegistry } from './companies.ts';
-import { companyApi } from './company-api.ts';
+import { buildApp, configureLicensing, configureVerifyKeyVault, configureViewOnly, openDatabase, planStatus, startUsagePings, type Db } from '@qasa/server';
+import { companyDirOf, isCompanyId, MAIN_COMPANY, readRegistry, viewOnlyCompany, writeRegistry } from './companies.ts';
+import { companyApi, takeNewerLicence } from './company-api.ts';
 import { handleRecoverRequest, recoverableAdmins } from './recover.ts';
 import { startOver } from './start-over.ts';
 import { closeAskNeeded, lastBookChangeAt } from './close-backup.ts';
@@ -376,14 +376,24 @@ async function startServer(bridge: Bridge, given: ServerInit): Promise<string> {
   // paid plans need an activation for this PC (online once, then a check every few weeks); official builds (with the
   // Pro module) also check every licence in the Rust module shipped beside app.asar
   configureLicensing({ strict: true, dataDir: given.userDataDir, markerDirs: trialMarkerDirs(given).slice(1), requireNative: !!proModule });
-  // a company past the plan's limit (a licence ended, or companies.json written by hand) waits: the app opens the first
-  // company instead (security review #10)
-  if (companyId() !== MAIN_COMPANY && !openableCompanies(readRegistry(given.userDataDir), planStatus(db).limits.companies).has(companyId())) {
-    log('the company', companyId(), 'is past the plan\'s company limit: opening the first company');
-    writeRegistry(given.userDataDir, { ...readRegistry(given.userDataDir), current: MAIN_COMPANY });
-    await bridge.call('relaunch', [], { timeoutMs: 0 });
-    return new Promise<never>(() => {});
-  }
+  // the licence is this PC's: a renewal or a fresh check-in made in another company counts here from the start, so this
+  // company never comes up on Free (and past the company limit) only because it was not opened for weeks
+  takeNewerLicence(db, given.userDataDir, companyId(), log);
+  // a company past the plan's company limit (a licence ended, the free month over, or companies.json written by hand)
+  // still opens, to be viewed: it refuses changes until the plan allows it again, and says so in a banner. It is never
+  // swapped for another company at the start (people took that for lost records), and nothing is hidden or deleted.
+  // Asked at each change: the check-in that brings the plan back lifts it without a restart (security review #10)
+  const open0 = db;
+  const viewOnly = (): boolean => {
+    try {
+      return viewOnlyCompany(readRegistry(given.userDataDir), companyId(), planStatus(open0).limits.companies);
+    } catch {
+      // the list can't be read just now: never a reason to refuse work
+      return false;
+    }
+  };
+  configureViewOnly(viewOnly);
+  if (viewOnly()) log('the company', companyId(), 'is past the plan\'s company limit: it opens to be viewed');
   // the anonymous daily usage ping (Settings → Anonymous usage statistics; can be switched off)
   pings = startUsagePings(db, {
     dataDir: given.userDataDir, version: given.appVersion, os: process.platform === 'win32' ? 'windows' : process.platform,
@@ -393,6 +403,7 @@ async function startServer(bridge: Bridge, given: ServerInit): Promise<string> {
   const companies = companyApi({
     db: open, userDataDir: given.userDataDir, currentId: companyId(), log,
     limit: () => planStatus(open).limits.companies,
+    viewOnly,
     makeCompanyFile: (file, prepare) => {
       const made = openDatabase(file);
       try { prepare(made); } finally { made.close(); }

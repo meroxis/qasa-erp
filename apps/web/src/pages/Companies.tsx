@@ -85,7 +85,7 @@ export function Companies() {
               {c.waiting && <span className="chip warn" title={t('co_waitingHint')}>{t('co_waiting')}</span>}
             </div>
             <div className="row">
-              {!c.current && <button type="button" className="btn primary" disabled={!!busy || !!c.waiting} onClick={() => void open(c)}><Icon name="swap" size={16} />{t('co_open')}</button>}
+              {!c.current && <button type="button" className="btn primary" disabled={!!busy} onClick={() => void open(c)}><Icon name="swap" size={16} />{t('co_open')}</button>}
               <button type="button" className="btn" disabled={!!busy} onClick={() => void backup(c)}><Icon name="download" size={16} />{t('co_backup')}</button>
               <button type="button" className="btn subtle" disabled={!!busy} onClick={() => setEditing(c)}><Icon name="edit" size={16} />{t('co_rename')}</button>
             </div>
