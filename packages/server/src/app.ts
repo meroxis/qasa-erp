@@ -77,7 +77,11 @@ const VIEW_ONLY_OPEN = ['/api/auth', '/api/plan', '/api/companies', '/api/usage'
 /** Whether a request would change the company's records (so a view-only company refuses it). */
 export function changesRecords(method: string, url: string): boolean {
   if (method === 'GET' || method === 'HEAD' || method === 'OPTIONS') return false;
-  const path = url.split('?')[0] ?? '';
+  // the path as the router reads it: percent-escapes undone ("/%61pi/items" is /api/items), doubled slashes and a
+  // trailing one dropped; one that can't be read counts as a change
+  let path = url.split('?')[0] ?? '';
+  try { path = decodeURIComponent(path); } catch { return true; }
+  path = path.replace(/\/{2,}/g, '/').replace(/(.)\/+$/, '$1');
   if (!path.startsWith('/api/')) return false;
   // putting a backup in place of the company file is a change like any other
   if (path === '/api/backup/restore') return true;
@@ -97,7 +101,10 @@ export function buildApp(db: Db, options: {
   app.addHook('onRequest', async (req, reply) => {
     const refused = requestRefusal(req, https, allowedHosts);
     if (refused) return reply.status(403).send({ error: 'forbidden', details: { reason: refused } });
-    if (viewOnly && changesRecords(req.method, req.url) && viewOnly()) return reply.status(409).send({ error: 'company_view_only', details: null });
+    // judged by the route the request was matched to (what will really run), not by how its address was written:
+    // an escaped or oddly written address reaches the same route (review of the fixes, finding 9)
+    const route = (req as { routeOptions?: { url?: string } }).routeOptions?.url;
+    if (viewOnly && changesRecords(req.method, route ?? req.url) && viewOnly()) return reply.status(409).send({ error: 'company_view_only', details: null });
   });
 
   /** Where a request comes from: this PC's own server only on plain http from this PC's own address. */
