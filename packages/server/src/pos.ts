@@ -579,7 +579,8 @@ export function sell(db: Db, shiftId: string, input: SaleInput, actor: Actor): {
   // of it passes, one further (up to 15%) a supervisor approves, that very rate; beyond is refused. So for a dollar
   // sale (its rate decides what the sale is worth in the books, and what a dinar list price is in dollars) and for
   // dollar notes on a dinar sale (below)
-  const reference = referenceRate(db);
+  // (a sale a cut-off till kept: the rate of the day it was sold, as its till had it)
+  const reference = referenceRate(db, input.offline ? offlineSaleDate(String(input.offline.soldOn ?? ''), row.opened_at) : todayIso());
   /** the rate a supervisor must approve, if any: `notes:<rate>` or `sale:<rate>` */
   let rateToApprove: string | null = null;
   if (input.currency === 'USD') {

@@ -295,7 +295,9 @@ export function rulesForTill(db: Db, actor: Actor) {
     // the rate dollars are held to today (the rate board's, else the company's) and how far a typed one may be from it
     rate: { referenceX100: referenceRate(db), freePct: RATE_FREE * 100, bandPct: RATE_BAND * 100 },
     mayApprove: maySupervise(actor), hasPin: hasPin(db, actor.id), pinShort: pinShort(db, actor.id),
-    pinLocked: actor.permissions.includes('admin') && !!db.prepare('SELECT 1 FROM pos_pin_tries WHERE locked_until > ? OR day_n >= ?').get(new Date().toISOString(), DAY_LOCK_AFTER),
+    // (the day's lock is a signed-in cashier's, counted under their own key, for today)
+    pinLocked: actor.permissions.includes('admin') && !!db.prepare("SELECT 1 FROM pos_pin_tries WHERE locked_until > ? OR (day_n >= ? AND day_on = ? AND k LIKE 'u:%')")
+      .get(new Date().toISOString(), DAY_LOCK_AFTER, todayIso()),
     // the last time wrong PINs locked approvals: shown to an admin until they clear it
     pinAlert: actor.permissions.includes('admin') ? readPinAlert(db) : null
   };

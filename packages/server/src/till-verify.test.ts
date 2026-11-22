@@ -252,6 +252,10 @@ describe('4 · the locks wrong PINs leave', () => {
     expect((await get('/api/pos/rules', who.admin!)).json()).toMatchObject({ pinLocked: false, pinAlert: null });
     expect((await rightPin(shift.id, who.las!)).json()).toMatchObject({ approver: 'Raz' });
     expect(db.prepare("SELECT user FROM audit_log WHERE action = 'pin_unlock'").get()).toMatchObject({ user: 'Admin' });
+    // a count left from yesterday is no lock today
+    db.prepare("UPDATE pos_pin_tries SET day_n = 15, day_on = ? WHERE k <> 'all'").run(addDays(TODAY, -1));
+    expect((await get('/api/pos/rules', who.admin!)).json()).toMatchObject({ pinLocked: false });
+    expect((await rightPin(shift.id, who.las!)).json()).toMatchObject({ approver: 'Raz' });
     // the day's lock too
     db.prepare("UPDATE pos_pin_tries SET day_n = 15, day_on = ? WHERE k <> 'all'").run(TODAY);
     expect((await rightPin(shift.id, who.las!)).json()).toMatchObject({ error: 'pin_locked' });
@@ -302,6 +306,20 @@ describe('5 · the rate of dollars at the till', () => {
     }, who.las!);
     expect((await kept('OFF-C1-000001', 141_000)).statusCode).toBe(201);
     expect((await kept('OFF-C1-000002', 125_000)).json()).toMatchObject({ details: [{ code: 'pos_offline_supervisor' }] });
+    // the rate of the day it was sold: yesterday's board rate (1,300), though today's is 1,500
+    db.prepare('UPDATE pos_shifts SET opened_at = ? WHERE id = ?').run(`${addDays(TODAY, -1)}T06:00:00.000Z`, shift.id);
+    db.prepare('INSERT INTO fx_rates (date, rate_x100, source, created_by, created_at) VALUES (?, ?, ?, ?, ?)').run(addDays(TODAY, -1), 130_000, 'test', 'Mer', new Date().toISOString());
+    expect((await post('/api/fx/rates', { date: TODAY, rateX100: 150_000 }, who.admin!)).statusCode).toBeLessThan(300);
+    // (a service: stock sold today is not sold again on an earlier date)
+    const wash = (await post('/api/items', { code: 'WASH', name: { ar: 'غسيل', en: 'Wash', ku: 'شۆردن' }, unit: 'service', salePrice: 27_500, saleCurrency: 'IQD', trackStock: false }, who.admin!)).json();
+    const yesterday = (reference: string, rateX100: number) => sell(shift.id, {
+      lines: [{ itemId: wash.id, qtyMilli: 1000, unitPrice: 27_500 }], usdCash: { amount: 2000, rateX100 }, offline: { reference, soldAt: `${addDays(TODAY, -1)}T10:00:00.000Z`, soldOn: addDays(TODAY, -1) }
+    }, who.las!);
+    { const r = await yesterday('OFF-C1-000003', 130_000); expect(r.statusCode, r.body).toBe(201); }
+    expect((await yesterday('OFF-C1-000004', 140_000)).json()).toMatchObject({ details: [{ code: 'pos_offline_supervisor' }] });
+    expect((await yesterday('OFF-C1-000006', 150_000)).json()).toMatchObject({ details: [{ code: 'pos_usd_rate_far', rateX100: 130_000 }] });
+    // sold today, it is held to today's
+    expect((await kept('OFF-C1-000005', 150_000)).statusCode).toBe(201);
   });
 });
 
