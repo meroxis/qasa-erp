@@ -7,6 +7,7 @@ import { getEntry } from './journal.ts';
 import { writeSetting } from './settings.ts';
 import { createGoldDoc, postGoldDoc, updateGoldDoc } from './gold.ts';
 import type { Actor } from './auth.ts';
+import { lowestListPrice } from './price-history.ts';
 
 // Gold and jewellery shops: pieces by weight and karat, the day's board pricing them, sales and the customer's slip,
 // old gold bought and melted, suppliers settled in gold, cancelling, separate duties and the plan.
@@ -86,6 +87,14 @@ describe('gold and jewellery shops', () => {
     const r = await board([{ karat: 21, buyPerGram: 96_000, sellPerGram: 102_000 }], '2026-11-21');
     expect(r.repriced).toBe(1);
     expect(salePrice(ringId)).toBe(535_000);
+    // the board's change is kept as a list price change, so a till that was cut off with yesterday's price sells at it
+    // by the same rule as any item (pos.ts: the lowest list price since the shift opened)
+    const history = db.prepare("SELECT price FROM item_price_history WHERE item_id = ? AND unit = '' ORDER BY changed_at").all(ringId) as { price: number }[];
+    expect(history.map((h) => Number(h.price))).toEqual([0, 525_000, 535_000]); // 0: the piece before it was priced
+    // the unpriced moment gives no allowance: a shift open since before the piece was made can't sell it for nothing
+    expect(lowestListPrice(db, ringId, '', 'IQD', '2026-11-01T00:00:00.000Z', '2026-11-21T10:00:00.000Z')).toBe(525_000);
+    expect(lowestListPrice(db, ringId, '', 'IQD', '2026-11-21T08:00:00.000Z', '2026-11-21T10:00:00.000Z')).toBe(525_000);
+    expect(lowestListPrice(db, ringId, '', 'IQD', '2026-11-21T09:30:00.000Z', '2026-11-21T10:00:00.000Z')).toBe(535_000);
     // a making charge per piece
     await ok('PUT', `/api/gold/items/${ringId}`, { weightMg: 5000, karat: 21, makingKind: 'piece', makingAmount: 30_000 });
     expect(salePrice(ringId)).toBe(540_000);

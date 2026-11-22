@@ -17,6 +17,7 @@ import { seesBooks, type Actor } from './auth.ts';
 import type { ApiExtension, ApiRequest } from './routes.ts';
 import { onceOnly } from './idempotency.ts';
 import { featureAccount } from './feature-accounts.ts';
+import { listPrices, notePriceHistory } from './price-history.ts';
 
 /**
  * Gold and jewellery shops (goldShop; Starter, Pro and Business).
@@ -163,7 +164,10 @@ export function repriceGoldItems(db: Db, onlyItem?: string): number {
     const board = (boards[currency] ??= boardOn(db, today, currency));
     const price = boardPriceOf({ weightMg: Number(r.weight_mg), karat: Number(r.karat) as GoldKarat, makingKind: r.making_kind as MakingKind, makingAmount: Number(r.making_amount) }, board);
     if (price === null || price === Number(r.sale_price)) continue;
+    // the board's change is a list price change like one made on the item's page: the till's offline price rule reads it
+    const before = listPrices(db, String(r.item_id));
     db.prepare('UPDATE items SET sale_price = ?, updated_at = ? WHERE id = ?').run(price, nowIso(), String(r.item_id));
+    notePriceHistory(db, String(r.item_id), before);
     changed++;
   }
   return changed;

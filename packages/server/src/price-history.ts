@@ -51,7 +51,9 @@ export function lowestListPrice(db: Db, itemId: string, unit: string, currency: 
   for (const r of rows) {
     if (r.changed_at <= from) atFrom = r; else during.push(r);
   }
-  const prices = [...(atFrom ? [atFrom] : []), ...during].filter((r) => r.currency === currency).map((r) => Number(r.price));
+  // a price of nothing is an item not priced yet (a gold piece before its first board, an item made without a
+  // price), never a list price to sell at: it gives no allowance
+  const prices = [...(atFrom ? [atFrom] : []), ...during].filter((r) => r.currency === currency && Number(r.price) > 0).map((r) => Number(r.price));
   return prices.length ? Math.min(...prices) : null;
 }
 
