@@ -1,7 +1,7 @@
 import { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
 import { inCategory, categoriesApi } from '../industry/categories-api.ts';
 import {
-  isWeighedUnit, normalizeForSearch, POS_QUICK_MAX, posBigTiles, rateFromX100, rateToX100, roundCash, toWesternDigits, type CurrencyCode, type Lang, type OfferRule, TILL_CARD_PAYMENTS } from '@qasa/core';
+  isWeighedUnit, normalizeForSearch, POS_QUICK_MAX, posBigTiles, rateFromX100, rateToX100, cashToTake, toWesternDigits, type CurrencyCode, type Lang, type OfferRule, TILL_CARD_PAYMENTS } from '@qasa/core';
 import { api, ApiError, serverReachable, setRefundApproval, type InvoiceView, type ItemView, type PartyView } from '../api.ts';
 import { ErrorBox, Icon, Modal, useData, useLoad, usePageNav, useToast, type PickOption } from '../components.tsx';
 import { makeI18n, useI18n, type I18n } from '../i18n.ts';
@@ -35,6 +35,7 @@ import { CartLines } from './Cart.tsx';
 import { PaymentPanel, type PaySummary } from './PaymentPanel.tsx';
 import { StatusBar } from './StatusBar.tsx';
 import { useSupervisor } from './Supervisor.tsx';
+import { approvalNeeds, companyRateOf, covers, dropDead, priceSubjectOf, type HeldApproval } from './approvals.ts';
 import { Keypad, MiscDialog, PriceDialog, QtyDialog, ShortcutsHelp, VoucherPayDialog, VoucherSellDialog } from './Dialogs.tsx';
 import { beep, readPrefs, writePrefs, type TillPrefs } from './feedback.ts';
 import { NO_RULES, tillRulesApi, type ApprovalAction, type DisplayState, type TillRulesView } from './rules-api.ts';
@@ -87,10 +88,10 @@ export function Register({ initial, onClosed }: { initial: ShiftView; onClosed()
   const resumedDiscount = useRef<number | null>(null);
   // 2.0: the till's rules, this PC's preferences, the approvals a supervisor gave for this sale, gift vouchers on it,
   // what the open-price lines are, and the customer's debt
-  const [rules, setRules] = useState<TillRulesView>(NO_RULES);
+  const [rules, setRules] = useState<TillRulesView>(() => tillCache(tillWho())?.rules ?? NO_RULES);
   const [prefs, setPrefsState] = useState<TillPrefs>(readPrefs);
   const setPrefs = (p: TillPrefs) => { setPrefsState(p); writePrefs(p); };
-  const [approvals, setApprovals] = useState<{ action: ApprovalAction; token: string }[]>([]);
+  const [approvals, setApprovals] = useState<HeldApproval[]>([]);
   const [vouchers, setVouchers] = useState<{ code: string; amount: number }[]>([]);
   const [miscNotes, setMiscNotes] = useState<string[]>([]);
   const [debt, setDebt] = useState<{ balance: number; creditLimit: number | null } | null>(null);
@@ -103,7 +104,9 @@ export function Register({ initial, onClosed }: { initial: ShiftView; onClosed()
     if (TILL_CARD_PAYMENTS) tillsApi.paymentAccounts().then((r) => setCardMethods(r.methods.filter((m: PosMethod): m is Exclude<SplitMethod, 'cash'> => m !== 'cash' && m !== 'account')), () => {});
     applyKeptScaleDigits();
     tillsApi.scale().then((r) => { setScalePrefixes(r.pricePrefixes); keepScalePrefixes(r.pricePrefixes); keepScaleDigits(r.itemDigits); }, () => {});
-    tillRulesApi.rules().then(setRules, () => {});
+    // kept with the offline till: a till that can't reach the server goes on with the rules it last had (the dinar
+    // rounding above all: the server rounds a kept sale when it arrives, and the till must have taken the same cash)
+    void fromServerOrTill(() => tillRulesApi.rules(), (r) => rememberTill(tillWho(), { rules: r }), () => tillCache(tillWho())?.rules).then(setRules, () => {});
   }, [initial.id, initial.tillId]);
   // 2.0: the till is one screen high (1366×768 included): the body takes what is left under the bar, and each column
   // scrolls inside itself, so Pay, the total, the customer and the discount never leave the screen
@@ -223,6 +226,16 @@ export function Register({ initial, onClosed }: { initial: ShiftView; onClosed()
     const ownIn = own !== null ? priceIn({ salePrice: own, saleCurrency: item.saleCurrency }, currency, priceRate) : null;
     return salePriceFor(item, unit, priceIn(item, currency, priceRate), { own: ownIn });
   }, [currency, priceRate]);
+  /**
+   * The item's list price as the server reckons it for the "lower price" rule: at the company's rate, whatever rate is
+   * typed for a dollar sale (a better rate typed here is a lower price, and needs the supervisor like any other).
+   */
+  const listPriceOf = useCallback((item: ItemView, unit: LineUnit) => {
+    const rate = currency === 'USD' ? settings?.defaultRateX100 ?? priceRate : priceRate;
+    const own = unit ? item.units.find((u) => u.unit === unit)?.salePrice ?? null : null;
+    const ownIn = own !== null ? priceIn({ salePrice: own, saleCurrency: item.saleCurrency }, currency, rate) : null;
+    return salePriceFor(item, unit, priceIn(item, currency, rate), { own: ownIn });
+  }, [currency, priceRate, settings?.defaultRateX100]);
 
   const add = useCallback((item: ItemView, qtyMilli = 1000, unit: LineUnit = item.saleUnit ?? null, price?: number) => {
     if (addRefusal(item, currency, priceRate)) { setNotFound(''); setNoRate(item.code); if (prefs.beep) beep('bad'); return; }
@@ -337,7 +350,7 @@ export function Register({ initial, onClosed }: { initial: ShiftView; onClosed()
   const payments = onCredit ? salePayments(method, due) : typedSplit ?? undefined;
   const cashDue = onCredit ? 0 : cashPartOf(due, typedSplit ?? undefined);
   // the drawer takes the cash rounded as the company says (the server books the difference)
-  const cashRounded = currency === 'IQD' && !onCredit ? roundCash(cashDue, rules.rounding) : cashDue;
+  const cashRounded = currency === 'IQD' && !onCredit ? cashToTake(cashDue, rules.rounding) : cashDue;
   const usdRateX100 = rateToX100(Number(toWesternDigits(usdRateText).replace(/,/g, '')) || 0);
   const usdOn = currency === 'IQD' && !onCredit && cashDue > 0 && (handedUsd ?? 0) > 0;
   const handedAny = currency === 'IQD' && !onCredit && cashDue > 0 && ((handed ?? 0) > 0 || usdOn);
@@ -500,7 +513,8 @@ export function Register({ initial, onClosed }: { initial: ShiftView; onClosed()
       lines: cart, currency, rateX100, discount: discount ?? 0, party: customers.find((p) => p.id === partyId) ?? null, payments: sale.payments ?? [],
       ...(offerTotal > 0 ? { offers: { result: offerResult, rules: offerRules } } : {})
     }));
-    setReceiptRounding(0);
+    // the cash was taken rounded, as the server will book it when the sale arrives
+    setReceiptRounding(cashRounded - cashDue);
     const left = takeFromStock(items, cart);
     setItems(left);
     rememberTill(tillWho(), { items: left });
@@ -511,25 +525,33 @@ export function Register({ initial, onClosed }: { initial: ShiftView; onClosed()
     toast(t('ob_savedHere', { n: kept.reference ?? '' }));
   };
 
-  /** The approvals this sale needs before it goes (a big discount, credit over the limit), asked for now. */
-  const askBeforePay = async (): Promise<string[] | null> => {
-    const tokens = approvals.map((a) => a.token);
-    const need: ApprovalAction[] = [];
-    if (rules.supervisor.discountPct > 0 && (discount ?? 0) * 100 > rules.supervisor.discountPct * subtotal && !approvals.some((a) => a.action === 'discount')) need.push('discount');
-    if (overLimit && rules.supervisor.creditOver && !approvals.some((a) => a.action === 'credit_over')) need.push('credit_over');
-    for (const action of need) {
-      const ok = await supervisor.ask(action);
+  /**
+   * The approvals this sale needs before it goes (a price below the list, a big discount, credit over the limit): those
+   * the till holds that still cover the basket as it is, and the others asked for now. Null: not approved.
+   */
+  const askBeforePay = async (have: readonly HeldApproval[]): Promise<HeldApproval[] | null> => {
+    const needs = approvalNeeds({
+      rules: rules.supervisor, miscItemId: rules.misc.itemId, discount: discount ?? 0, subtotal, overLimit, partyId, onAccount: due,
+      lines: cart.map((l) => ({ itemId: l.item.id, itemUnit: l.item.unit, unit: l.unit, unitPrice: l.unitPrice, listPrice: listPriceOf(l.item, l.unit), name: i18n.name(l.item.name) }))
+    });
+    let list = have.filter((a) => needs.some((n) => covers(a, n)));
+    for (const need of needs) {
+      if (list.some((a) => covers(a, need))) continue;
+      const detail = need.line ? `${need.line.name ?? ''}: ${i18n.money(need.line.listPrice, currency)} → ${i18n.money(need.line.unitPrice, currency)}` : i18n.money(need.amount, currency);
+      const ok = await supervisor.ask(need.action, detail, need.what);
       if (!ok) return null;
-      tokens.push(ok.token);
-      setApprovals((list) => [...list, { action, token: ok.token }]);
+      list = [...list, { action: need.action, token: ok.token, subject: need.subject, amount: need.amount }];
     }
-    return tokens;
+    setApprovals(list);
+    return list;
   };
 
-  const pay = async (exact = false) => {
+  const pay = async (exact = false, have?: readonly HeldApproval[]): Promise<void> => {
     if (!canPay) return;
-    const tokens = await askBeforePay();
-    if (tokens === null) { focusSearch(); return; }
+    const held = await askBeforePay(have ?? approvals);
+    if (held === null) { focusSearch(); return; }
+    const tokens = held.map((a) => a.token);
+    let again: HeldApproval[] | null = null;
     setBusy(true);
     setError(null);
     setShortNote('');
@@ -574,22 +596,34 @@ export function Register({ initial, onClosed }: { initial: ShiftView; onClosed()
       controlled.check(res.invoice.id);
     } catch (e) {
       if (e instanceof ApiError && e.code === 'validation' && Array.isArray(e.details) && (e.details as { code?: string }[]).some((d) => d.code === 'payments_total_mismatch')) loadOffers();
-      setError(e);
+      // a rate typed too far from the company's: the company's goes back in the field, for the cashier to see and pay again
+      const usdRate = companyRateOf(e, 'pos_usd_rate_far');
+      if (usdRate) setUsdRateText(String(rateFromX100(usdRate)));
+      const saleRate = companyRateOf(e, 'pos_rate_far');
+      if (saleRate) setRateText(String(rateFromX100(saleRate)));
+      // an approval the till sent that the server no longer takes (it ran out while the basket waited, or was used):
+      // dropped, and asked for again, once
+      again = have ? null : dropDead(held, e);
+      if (again) setApprovals(again); else setError(e);
     } finally {
       setUnsure(!!saleKey.current?.lost);
       setBusy(false);
     }
+    if (again) await pay(exact, again);
   };
 
   /** A price typed for a line; a lower one than the item's own needs a supervisor when the company says so. */
   const setPrice = async (key: string, price: number) => {
     const line = cart.find((l) => lineKey(l) === key);
     if (!line) return;
-    const own = unitPriceOf(line.item, line.unit);
-    if (price < own && rules.supervisor.price) {
-      const ok = await supervisor.ask('price', `${i18n.name(line.item.name)}: ${i18n.money(own, currency)} → ${i18n.money(price, currency)}`);
+    const own = listPriceOf(line.item, line.unit);
+    if (price < own && rules.supervisor.price && line.item.id !== rules.misc.itemId) {
+      // for this item, at this price: the server holds the approval to both
+      const subject = priceSubjectOf({ itemId: line.item.id, itemUnit: line.item.unit, unit: line.unit });
+      const ok = await supervisor.ask('price', `${i18n.name(line.item.name)}: ${i18n.money(own, currency)} → ${i18n.money(price, currency)}`,
+        { itemId: line.item.id, ...(line.unit ? { unit: line.unit } : {}), amount: price });
       if (!ok) { setDialog(null); focusSearch(); return; }
-      setApprovals((list) => [...list, { action: 'price', token: ok.token }]);
+      setApprovals((list) => [...list.filter((a) => !(a.action === 'price' && a.subject === subject)), { action: 'price', token: ok.token, subject, amount: price }]);
     }
     setCart((c) => c.map((l) => (lineKey(l) === key ? { ...l, unitPrice: price } : l)));
     setDialog(null);
@@ -739,7 +773,7 @@ export function Register({ initial, onClosed }: { initial: ShiftView; onClosed()
           {/* a clothing shop: a model by size and colour, and an exchange (a return and a sale in one go) */}
           <TillClothingButtons shiftId={shift.id} currency={currency} items={items} disabled={busy} onPick={(item) => { add(item); focusSearch(); }}
             onExchanged={() => reloadShift()}
-            {...(rules.supervisor.refund ? { beforeExchange: async () => { const ok = await supervisor.ask('refund'); if (ok) setRefundApproval(ok.token); return !!ok; } } : {})} />
+            {...(rules.supervisor.refund ? { beforeExchange: async (what: { invoiceId: string; lines: { lineNo: number; qtyMilli: number }[] }) => { const ok = await supervisor.ask('refund', undefined, what); if (ok) setRefundApproval(ok.token); return !!ok; } } : {})} />
           {/* a delivery order from this basket (market extras): the sale itself is made when it is delivered */}
           {!offline && <DeliveryFromTill partyId={partyId || null} warehouseId={shift.warehouseId} onSent={clearNow}
             lines={cart.map((l) => { const q = baseQtyOf(l); return { itemId: l.item.id, qtyMilli: q, unitPrice: q ? Math.round((lineTotal(l) * 1000) / q) : l.unitPrice }; })} />}
@@ -887,7 +921,7 @@ export function Register({ initial, onClosed }: { initial: ShiftView; onClosed()
 
       {receipt && <Receipt invoice={receipt} shift={shift} rounding={receiptRounding} />}
       {dialog === 'return' && (
-        <TillReturnDialog shiftId={shift.id} needsSupervisor={rules.supervisor.refund} ask={() => supervisor.ask('refund')}
+        <TillReturnDialog shiftId={shift.id} needsSupervisor={rules.supervisor.refund} ask={(what) => supervisor.ask('refund', undefined, what)}
           onClose={() => { setDialog(null); focusSearch(); }}
           onDone={(back) => {
             setDialog(null);

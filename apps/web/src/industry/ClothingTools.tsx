@@ -192,8 +192,9 @@ export function TillModelPick({ items, onPick, onClose }: { items: readonly Item
  * An exchange at the till: find the receipt, choose what comes back, add what goes out, and see the difference. The
  * server books a return paid from the drawer and a new sale, so the drawer expects only the difference.
  */
-export function ExchangeDialog({ shiftId, currency, items, onDone, onClose }: {
+export function ExchangeDialog({ shiftId, currency, items, onDone, onClose, beforeExchange }: {
   shiftId: string; currency: CurrencyCode; items: readonly ItemView[]; onDone(): void; onClose(): void;
+  beforeExchange?: (what: { invoiceId: string; lines: { lineNo: number; qtyMilli: number }[] }) => Promise<boolean>;
 }) {
   const i18n = useI18n();
   const { t } = i18n;
@@ -229,6 +230,8 @@ export function ExchangeDialog({ shiftId, currency, items, onDone, onClose }: {
   const backLines = sale ? sale.lines.filter((l) => (back[l.lineNo] ?? 0) > 0).map((l) => ({ lineNo: l.lineNo, qtyMilli: back[l.lineNo]! })) : [];
   const submit = async () => {
     if (!sale) return;
+    // the supervisor approves this very exchange: the sale and the lines that come back (asked now that both are known)
+    if (beforeExchange && !(await beforeExchange({ invoiceId: sale.id, lines: backLines }))) return;
     setBusy(true); setError(null);
     try {
       const r = await clothingApi.exchange(shiftId, {
@@ -306,8 +309,8 @@ export function ExchangeDialog({ shiftId, currency, items, onDone, onClose }: {
 /** The till's buttons for a clothing shop: pick by size and colour, and exchange. */
 export function TillClothingButtons({ shiftId, currency, items, onPick, onExchanged, disabled, beforeExchange }: {
   shiftId: string; currency: CurrencyCode; items: readonly ItemView[]; onPick(item: ItemView): void; onExchanged(): void; disabled?: boolean;
-  /** (2.0) asks a supervisor first when the till's rules ask one for refunds; false: not approved */
-  beforeExchange?: () => Promise<boolean>;
+  /** (2.0) asks a supervisor when the till's rules ask one for refunds, for this sale and these lines; false: not approved */
+  beforeExchange?: (what: { invoiceId: string; lines: { lineNo: number; qtyMilli: number }[] }) => Promise<boolean>;
 }) {
   const { t } = useI18n();
   const on = useClothingOn();
@@ -316,9 +319,9 @@ export function TillClothingButtons({ shiftId, currency, items, onPick, onExchan
   return (
     <>
       <button type="button" className="btn pos-touch" disabled={disabled} onClick={() => setOpen('pick')}><Icon name="shirt" size={18} />{t('cw_bySizes')}</button>
-      <button type="button" className="btn pos-touch" disabled={disabled} onClick={() => void (beforeExchange ? beforeExchange() : Promise.resolve(true)).then((go) => { if (go) setOpen('exchange'); })}><Icon name="swap" size={18} />{t('cw_exchange')}</button>
+      <button type="button" className="btn pos-touch" disabled={disabled} onClick={() => setOpen('exchange')}><Icon name="swap" size={18} />{t('cw_exchange')}</button>
       {open === 'pick' && <TillModelPick items={items} onPick={onPick} onClose={() => setOpen(null)} />}
-      {open === 'exchange' && <ExchangeDialog shiftId={shiftId} currency={currency} items={items} onDone={onExchanged} onClose={() => setOpen(null)} />}
+      {open === 'exchange' && <ExchangeDialog shiftId={shiftId} currency={currency} items={items} onDone={onExchanged} onClose={() => setOpen(null)} {...(beforeExchange ? { beforeExchange } : {})} />}
     </>
   );
 }

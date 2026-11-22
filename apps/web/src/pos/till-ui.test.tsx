@@ -182,9 +182,12 @@ describe('a return at the till (2.0.0)', () => {
   it('is made in a dialog on the till, sent to the till’s own return route with the supervisor’s approval when the rules ask', () => {
     const register = tillPart('Register.tsx');
     expect(register).not.toContain("location.hash = href('sales-returns')");
-    expect(register).toContain("<TillReturnDialog shiftId={shift.id} needsSupervisor={rules.supervisor.refund} ask={() => supervisor.ask('refund')}");
+    // the supervisor approves this very return: the sale and the lines that come back
+    expect(register).toContain("<TillReturnDialog shiftId={shift.id} needsSupervisor={rules.supervisor.refund} ask={(what) => supervisor.ask('refund', undefined, what)}");
     const dialog = tillPart('TillReturn.tsx');
-    expect(dialog).toContain('posApi.giveBack(p.shiftId, { invoiceId: sale.id, lines: picked, ...(approvals ? { approvals } : {}) }, { key })');
+    expect(dialog).toContain('await p.ask({ invoiceId: sale.id, lines: picked })');
+    // sent once (send-once.ts, through posApi.giveBack): the same return again goes with the same key and approval
+    expect(dialog).toContain('posApi.giveBack(p.shiftId, { invoiceId: sale.id, lines: picked, ...(approvals ? { approvals } : {}) })');
     expect(dialog).toContain('posApi.findSale(p.shiftId, q.trim())');
   });
 

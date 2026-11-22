@@ -1,21 +1,22 @@
 import { useCallback, useRef, useState, type ReactNode } from 'react';
 import { ErrorBox, Icon, Modal } from '../components.tsx';
 import { useI18n, type Key } from '../i18n.ts';
-import { tillRulesApi, type Approval, type ApprovalAction } from './rules-api.ts';
+import { tillRulesApi, type Approval, type ApprovalAction, type ApprovalFor } from './rules-api.ts';
 
 /**
- * A supervisor's PIN at the till (2.0): `ask(action)` opens a small dialog; the supervisor types their PIN on the
+ * A supervisor's PIN at the till (2.0): `ask(action, detail, what)` opens a small dialog (`what`: the very thing approved,
+ * which the server holds the approval to: rules-api.ts ApprovalFor); the supervisor types their PIN on the
  * cashier's screen and the server answers with an approval (till-rules.ts), or says the PIN is wrong. The promise gives
  * the approval, or null when the dialog is closed. The PIN is never kept here: it goes to the server once and is gone.
  */
-export function useSupervisor(shiftId: string, online: boolean, onOffline: () => void): { ask(action: ApprovalAction, detail?: string): Promise<Approval | null>; dialog: ReactNode } {
-  const [asking, setAsking] = useState<{ action: ApprovalAction; detail?: string | undefined } | null>(null);
+export function useSupervisor(shiftId: string, online: boolean, onOffline: () => void): { ask(action: ApprovalAction, detail?: string, what?: ApprovalFor): Promise<Approval | null>; dialog: ReactNode } {
+  const [asking, setAsking] = useState<{ action: ApprovalAction; detail?: string | undefined; what?: ApprovalFor | undefined } | null>(null);
   const done = useRef<((a: Approval | null) => void) | null>(null);
-  const ask = useCallback((action: ApprovalAction, detail?: string) => {
+  const ask = useCallback((action: ApprovalAction, detail?: string, what?: ApprovalFor) => {
     if (!online) { onOffline(); return Promise.resolve(null); }
     return new Promise<Approval | null>((resolve) => {
       done.current = resolve;
-      setAsking({ action, detail });
+      setAsking({ action, detail, what });
     });
   }, [online, onOffline]);
   const finish = (a: Approval | null) => {
@@ -25,11 +26,11 @@ export function useSupervisor(shiftId: string, online: boolean, onOffline: () =>
   };
   return {
     ask,
-    dialog: asking ? <PinDialog shiftId={shiftId} action={asking.action} detail={asking.detail} onDone={finish} /> : null
+    dialog: asking ? <PinDialog shiftId={shiftId} action={asking.action} detail={asking.detail} what={asking.what} onDone={finish} /> : null
   };
 }
 
-function PinDialog({ shiftId, action, detail, onDone }: { shiftId: string; action: ApprovalAction; detail?: string | undefined; onDone(a: Approval | null): void }) {
+export function PinDialog({ shiftId, action, detail, what, onDone }: { shiftId: string; action: ApprovalAction; detail?: string | undefined; what?: ApprovalFor | undefined; onDone(a: Approval | null): void }) {
   const { t } = useI18n();
   const [pin, setPin] = useState('');
   const [busy, setBusy] = useState(false);
@@ -39,7 +40,7 @@ function PinDialog({ shiftId, action, detail, onDone }: { shiftId: string; actio
     setBusy(true);
     setError(null);
     try {
-      onDone(await tillRulesApi.approve(shiftId, action, pin, detail));
+      onDone(await tillRulesApi.approve(shiftId, action, pin, detail, what));
     } catch (e) {
       setError(e);
       setPin('');

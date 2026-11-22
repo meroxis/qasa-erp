@@ -1,5 +1,6 @@
 import type { CurrencyCode, Names, UnitCode } from '@qasa/core';
 import { qs, request, type InvoiceView, type SendOptions } from '../api.ts';
+import { sendOnce } from './send-once.ts';
 
 /** Point of sale (every plan): shifts on a register, and cash sales posted at once. */
 
@@ -34,6 +35,8 @@ export interface ShiftView {
   tillId?: string | null;
   /** 2.0: dollar notes taken for dinar sales (usd in cents) and the dinars they stood for */
   usdTaken?: { usd: number; iqd: number };
+  /** 2.0: cash sales made on another screen into this shift's safe while it was open (expected in the drawer too) */
+  otherCash?: Money2;
 }
 
 export interface ShiftSaleView {
@@ -100,6 +103,9 @@ export const tillsApi = {
   setPaymentAccounts: (accounts: PosAccounts) => request<{ accounts: PosAccounts; methods: PosMethod[] }>('PUT', '/api/pos/payment-accounts', accounts)
 };
 
+/** A return made at the till: the return, and the gift vouchers money went back onto (`made`: a new voucher, for one that can no longer be used). */
+export type TillReturnView = InvoiceView & { voucherBack?: { code: string; amount: number; made: boolean }[] };
+
 export const posApi = {
   /** 2.0: on a PC that picked a till, that till's open shift only */
   current: (tillId?: string | null) => request<{ shift: ShiftView | null }>('GET', '/api/pos/current' + (tillId ? qs({ tillId }) : '')),
@@ -111,6 +117,7 @@ export const posApi = {
   close: (shiftId: string, body: { countedCash: number; countedUsd?: number; notes?: string }) => request<ShiftView>('POST', `/api/pos/shifts/${shiftId}/close`, body),
   /** 2.0.0: a till sale by its receipt number, and a return of it paid back from the shift (till-returns.ts) */
   findSale: (shiftId: string, q: string) => request<InvoiceView>('GET', `/api/pos/shifts/${shiftId}/sale` + qs({ q })),
-  giveBack: (shiftId: string, body: { invoiceId: string; lines: { lineNo: number; qtyMilli: number }[]; approvals?: string[] }, options: SendOptions = {}) =>
-    request<InvoiceView>('POST', `/api/pos/shifts/${shiftId}/returns`, body, options)
+  /** sent once: the same return sent again (a second tap, a retry after the answer was lost) goes with the same key */
+  giveBack: (shiftId: string, body: { invoiceId: string; lines: { lineNo: number; qtyMilli: number }[]; approvals?: string[] }) =>
+    sendOnce<TillReturnView>('POST', `/api/pos/shifts/${shiftId}/returns`, body)
 };

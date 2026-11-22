@@ -75,7 +75,7 @@ export function PaymentPanel(p: {
             {p.splitBad && <div className="small" role="alert" style={{ color: 'var(--bad)' }}>{t('tl_splitTooMuch')}</div>}
           </div>
         )}
-        {p.onVoucher && !p.onCredit && <button type="button" className="btn pos-touch" onClick={p.onVoucher}><Icon name="tag" size={16} />{t('tu_gvPay')}</button>}
+        {p.onVoucher && <button type="button" className="btn pos-touch" onClick={p.onVoucher}><Icon name="tag" size={16} />{t('tu_gvPay')}</button>}
 
         {cashIQD && (
           <div className="pos-cash stack">

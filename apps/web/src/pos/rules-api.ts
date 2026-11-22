@@ -1,9 +1,20 @@
 import type { CashRounding, Names } from '@qasa/core';
 import { qs, request } from '../api.ts';
+import { sendOnce } from '../industry/send-once.ts';
 
 /** The till's rules and what goes with them (2.0, server till-rules.ts). */
 
-export type ApprovalAction = 'line_delete' | 'void' | 'price' | 'discount' | 'no_sale' | 'refund' | 'credit_over' | 'blind_view';
+export type ApprovalAction = 'line_delete' | 'void' | 'price' | 'discount' | 'no_sale' | 'refund' | 'credit_over' | 'blind_view' | 'offline_sale';
+
+/**
+ * What an approval is for, beside its action (the server keeps it with the approval and holds the use to it): a refund's
+ * invoice and lines; a lower price's item, unit and price; a discount's amount; credit over the limit: the customer
+ * and the amount on account; a kept sale the server refused: its receipt reference and what it is worth.
+ */
+export interface ApprovalFor {
+  invoiceId?: string; lines?: { lineNo: number; qtyMilli: number }[];
+  itemId?: string; unit?: string; partyId?: string; reference?: string; amount?: number;
+}
 
 export interface SupervisorRules { lineDelete: boolean; void: boolean; price: boolean; discountPct: number; noSale: boolean; refund: boolean; creditOver: boolean }
 export interface DisplayRules { lang: 'till' | 'ar' | 'en' | 'ku'; paymentText: string; slideshow: boolean }
@@ -61,11 +72,12 @@ export const tillRulesApi = {
   save: (input: TillRulesInput) => request<unknown>('PUT', '/api/pos/rules', input),
   setPin: (pin: string) => request<{ ok: true }>('PUT', '/api/pos/pin', { pin }),
   clearPinAlert: () => request<{ ok: true }>('DELETE', '/api/pos/pin-alert'),
-  approve: (shiftId: string, action: ApprovalAction, pin: string, detail?: string) =>
-    request<Approval>('POST', '/api/pos/approve', { shiftId, action, pin, ...(detail ? { detail } : {}) }),
+  approve: (shiftId: string, action: ApprovalAction, pin: string, detail?: string, what: ApprovalFor = {}) =>
+    request<Approval>('POST', '/api/pos/approve', { shiftId, action, pin, ...(detail ? { detail } : {}), ...what }),
   customer: (id: string) => request<{ id: string; balance: number; creditLimit: number | null; overLimit: boolean }>('GET', `/api/pos/customer/${id}`),
+  /** sent once: a second tap, or a retry after the answer was lost, goes with the same key and makes one voucher */
   sellVoucher: (shiftId: string, amount: number, expiresOn?: string) =>
-    request<GiftVoucherView>('POST', `/api/pos/shifts/${shiftId}/gift-vouchers`, { amount, ...(expiresOn ? { expiresOn } : {}) }),
+    sendOnce<GiftVoucherView>('POST', `/api/pos/shifts/${shiftId}/gift-vouchers`, { amount, ...(expiresOn ? { expiresOn } : {}) }),
   lookupVoucher: (code: string) => request<GiftVoucherView>('GET', '/api/pos/gift-vouchers/lookup' + qs({ code })),
   /** an admin: what expired vouchers still hold goes to income through a draft entry */
   expireVouchers: () => request<{ entryId: string | null; count: number; amount: number }>('POST', '/api/pos/gift-vouchers/expire', {}),

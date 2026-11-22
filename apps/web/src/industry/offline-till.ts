@@ -3,6 +3,7 @@ import { isNetworkError, type InvoiceView, type ItemView, type PartyView, type S
 import type { CategoryView } from './categories-api.ts';
 import { holdKey, SALE_TIMEOUT_MS, type HeldKey } from './outbox.ts';
 import type { PosMethod, SaleInput, ShiftView } from './pos-api.ts';
+import type { TillRulesView } from '../pos/rules-api.ts';
 
 /**
  * The offline till (1.2), on a PC connected to an office server. While the server can't be reached, the till keeps
@@ -31,6 +32,11 @@ export interface TillCache {
   quick?: string[] | null;
   /** 1.7: the offers this till works with, as last known (the offline till previews them; the server decides) */
   offers?: OfferRule[] | null;
+  /**
+   * 2.0: the till's rules as last known (the dinar rounding above all): a till that comes back to the page while the
+   * server can't be reached rounds the cash as the server will when the sale arrives, never by "no rules"
+   */
+  rules?: TillRulesView | null;
 }
 
 let cache: TillCache | null = null;

@@ -58,6 +58,7 @@ export function CloseShift({ shift, keptHere = 0, held = 0, onCancel, onClosed }
           <>
             <div className="pos-r-row"><span>{t('pos_sales')}</span><span className="num">{money2(i18n, shift.sales)}</span></div>
             {(shift.refunds.IQD > 0 || shift.refunds.USD > 0) && <div className="pos-r-row"><span>{t('pos_refunds')}</span><span className="num">−{money2(i18n, shift.refunds)}</span></div>}
+            {shift.otherCash && (shift.otherCash.IQD !== 0 || shift.otherCash.USD !== 0) && <div className="pos-r-row"><span>{t('tu_otherCash')}</span><span className="num">{money2(i18n, shift.otherCash)}</span></div>}
             <div className="pos-r-row"><span>{t('pos_expected')}</span><strong className="num">{money2(i18n, shift.expected)}</strong></div>
           </>
         )}

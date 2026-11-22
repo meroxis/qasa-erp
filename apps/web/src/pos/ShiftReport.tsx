@@ -77,6 +77,7 @@ function ShiftPaper({ r, company }: { r: ShiftReport; company: string }) {
             <tr><td>{t('pos_openingCash')}</td><td className="num">{i18n.money(r.openingCash, 'IQD')}</td></tr>
             <tr><td>{t('pos_sales')}</td><td className="num">{money2(i18n, r.sales)}</td></tr>
             {(r.refunds.IQD > 0 || r.refunds.USD > 0) && <tr><td>{t('pos_refunds')}</td><td className="num">−{money2(i18n, r.refunds)}</td></tr>}
+            {r.otherCash && (r.otherCash.IQD !== 0 || r.otherCash.USD !== 0) && <tr><td>{t('tu_otherCash')}</td><td className="num">{money2(i18n, r.otherCash)}</td></tr>}
             {Object.entries(r.methods ?? {}).filter(([m]) => m !== 'cash' || Object.keys(r.methods ?? {}).length > 1).map(([m, v]) => <tr key={m}><td>{t(m === 'voucher' ? 'dc_m_voucher' : `pay_${m}` as Key)}</td><td className="num">{money2(i18n, v as Money2)}</td></tr>)}
             {(r.usdTaken?.usd ?? 0) > 0 && <tr><td>{t('tl_usdTaken')}<div className="small muted">{t('tl_usdTakenHelp')}</div></td><td className="num">{i18n.money(r.usdTaken!.usd, 'USD')} = {i18n.money(r.usdTaken!.iqd, 'IQD')}</td></tr>}
             <tr><td><strong>{t('pos_expected')}</strong></td><td className="num"><strong>{money2(i18n, r.expected)}</strong></td></tr>

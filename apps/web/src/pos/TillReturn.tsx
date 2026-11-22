@@ -1,8 +1,8 @@
-import { useState } from 'react';
-import { newIdempotencyKey, type InvoiceView } from '../api.ts';
+import { useRef, useState } from 'react';
+import { isNetworkError, type InvoiceView } from '../api.ts';
 import { ErrorBox, Icon, Modal } from '../components.tsx';
 import { useI18n } from '../i18n.ts';
-import { posApi } from '../industry/pos-api.ts';
+import { posApi, type TillReturnView } from '../industry/pos-api.ts';
 
 /** What may still come back of each line: sold, less what returns already gave back. */
 export function returnable(invoice: Pick<InvoiceView, 'lines'>): { lineNo: number; leftMilli: number }[] {
@@ -12,12 +12,15 @@ export function returnable(invoice: Pick<InvoiceView, 'lines'>): { lineNo: numbe
 /**
  * A return at the till (2.0.0): type or scan the receipt number, pick what comes back, and the money is paid back from
  * this shift's safe. When the company's till rules ask for a supervisor on refunds, the PIN is asked just before the
- * return is sent, and the server checks that approval (till-returns.ts). No Sales permission is needed: the Point of
+ * return is sent, for this sale and these lines, and the server checks that approval (till-returns.ts). The return is
+ * sent once (send-once.ts): a retry after a lost answer goes with the same approval and the same key, so it is never
+ * made twice. Money that goes back onto a gift voucher is shown with the voucher's code (a new one, when the first
+ * can no longer be used), for the cashier to hand over. No Sales permission is needed: the Point of
  * sale role and the cashier's own open shift are enough.
  */
 export function TillReturnDialog(p: {
   shiftId: string; needsSupervisor: boolean;
-  ask(): Promise<{ token: string } | null>;
+  ask(what: { invoiceId: string; lines: { lineNo: number; qtyMilli: number }[] }): Promise<{ token: string } | null>;
   onDone(back: InvoiceView): void; onClose(): void;
 }) {
   const i18n = useI18n();
@@ -27,7 +30,9 @@ export function TillReturnDialog(p: {
   const [qty, setQty] = useState<Record<number, number>>({});
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<unknown>(null);
-  const [key] = useState(newIdempotencyKey);
+  // the approval given for this very return, kept while its answer is not known (a retry sends the same request)
+  const approved = useRef<{ of: string; token: string } | null>(null);
+  const [done, setDone] = useState<TillReturnView | null>(null);
   const find = async () => {
     setError(null);
     setBusy(true);
@@ -50,20 +55,41 @@ export function TillReturnDialog(p: {
     setError(null);
     let approvals: string[] | undefined;
     if (p.needsSupervisor) {
-      const ok = await p.ask();
-      if (!ok) return;
-      approvals = [ok.token];
+      const of = JSON.stringify([sale.id, picked]);
+      if (approved.current?.of !== of) {
+        const ok = await p.ask({ invoiceId: sale.id, lines: picked });
+        if (!ok) return;
+        approved.current = { of, token: ok.token };
+      }
+      approvals = [approved.current.token];
     }
     setBusy(true);
     try {
-      const back = await posApi.giveBack(p.shiftId, { invoiceId: sale.id, lines: picked, ...(approvals ? { approvals } : {}) }, { key });
-      p.onDone(back);
+      const back = await posApi.giveBack(p.shiftId, { invoiceId: sale.id, lines: picked, ...(approvals ? { approvals } : {}) });
+      approved.current = null;
+      // money back onto a gift voucher: the cashier reads the code before the dialog goes
+      if (back.voucherBack?.length) setDone(back); else p.onDone(back);
     } catch (e) {
+      // answered: the approval is used or no longer good (the next try asks again); no answer: kept for the retry
+      if (!isNetworkError(e)) approved.current = null;
       setError(e);
     } finally {
       setBusy(false);
     }
   };
+  if (done) {
+    return (
+      <Modal title={t('ux_tillReturn')} onClose={() => p.onDone(done)}>
+        <div className="stack">
+          <p style={{ margin: 0 }}>{t('tu_returnOnVoucher')}</p>
+          {done.voucherBack!.map((v) => (
+            <div key={v.code} className="pos-r-row"><span><bdi className="ltr num">{v.code}</bdi>{v.made ? ` — ${t('tu_returnNewVoucher')}` : ''}</span><strong className="num">{i18n.money(v.amount, 'IQD')}</strong></div>
+          ))}
+          <div className="row" style={{ justifyContent: 'flex-end' }}><button type="button" className="btn primary" autoFocus onClick={() => p.onDone(done)}>{t('tu_returnVoucherOk')}</button></div>
+        </div>
+      </Modal>
+    );
+  }
   return (
     <Modal title={t('ux_tillReturn')} onClose={p.onClose}>
       <div className="stack">

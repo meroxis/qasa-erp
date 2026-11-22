@@ -23,6 +23,25 @@ describe('a document sent once (reliability review #6)', () => {
     expect(heldOnceKeys()).toBe(0);
   });
 
+  it('sends a gift voucher sale and a till return once: a retry after a lost answer goes with the same key (third review)', async () => {
+    const { tillRulesApi } = await import('../pos/rules-api.ts');
+    const { posApi } = await import('./pos-api.ts');
+    answer = async () => { throw new TypeError('Failed to fetch'); };
+    await expect(tillRulesApi.sellVoucher('s1', 25_000)).rejects.toThrow();
+    await expect(posApi.giveBack('s1', { invoiceId: 'i1', lines: [{ lineNo: 1, qtyMilli: 1000 }], approvals: ['a1'] })).rejects.toThrow();
+    answer = async () => ({ id: 'v1' });
+    await tillRulesApi.sellVoucher('s1', 25_000);
+    await posApi.giveBack('s1', { invoiceId: 'i1', lines: [{ lineNo: 1, qtyMilli: 1000 }], approvals: ['a1'] });
+    const keys = (url: string) => sent.filter((s) => s.url === url).map((s) => s.key);
+    expect(new Set(keys('/api/pos/shifts/s1/gift-vouchers')).size).toBe(1);
+    expect(keys('/api/pos/shifts/s1/gift-vouchers')).toHaveLength(2);
+    expect(new Set(keys('/api/pos/shifts/s1/returns')).size).toBe(1);
+    // another voucher, sold after the first was answered, is a new one
+    await tillRulesApi.sellVoucher('s1', 25_000);
+    expect(new Set(keys('/api/pos/shifts/s1/gift-vouchers')).size).toBe(2);
+    expect(heldOnceKeys()).toBe(0);
+  });
+
   it('lets the key go when the server said no', async () => {
     answer = async () => { throw new Error('pos_shift_closed'); };
     await expect(sendOnce('POST', '/api/pos/shifts/s/gift-vouchers', { amount: 1 })).rejects.toThrow();
