@@ -6,6 +6,7 @@ import { buildApp } from './app.ts';
 import { openDatabase, type Db } from './db.ts';
 import { setLicensePublicKeyForTests } from './license.ts';
 import { resetLoginThrottle } from './auth.ts';
+import { deleteSetting } from './settings.ts';
 
 // Offers (1.7): buy X get Y, bundles and special prices, worked out by the server on the invoice screen and at the
 // till, posted at the net amount, given back in proportion on returns, and reported per offer.
@@ -126,7 +127,8 @@ describe('offers on a sale invoice', () => {
     await licensed();
     await offer({ fromTime: '00:00', toTime: '23:59' });
     expect((await sale([colas(3)], { date: '2026-01-05' })).json()).toMatchObject({ total: 3_000, offerDiscount: 0 });
-    db.prepare("DELETE FROM settings WHERE key LIKE 'license%'").run();
+    // (the column is `key`, a reserved word on a database server: named with the dialect's own quoting by the settings module)
+    deleteSetting(db, 'license_key');
     const plain = await sale([colas(3)]);
     expect(plain.json()).toMatchObject({ total: 3_000, offerDiscount: 0 });
   });

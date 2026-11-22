@@ -4,6 +4,7 @@ import { addDays, todayIso } from '@qasa/core';
 import { buildApp } from './app.ts';
 import { openDatabase, type Db } from './db.ts';
 import { resetLoginThrottle } from './auth.ts';
+import { readSetting } from './settings.ts';
 import { resetDisplayTries } from './till-rules.ts';
 
 // The review of the till's server code before 2.0 ("Review till server code"): one regression test for each finding.
@@ -107,7 +108,7 @@ describe('2 · the price rule across currencies', () => {
     const who = await signIn({ las: ['pos'], raz: ['supervisor'] });
     expect((await put('/api/pos/pin', { pin: PIN }, who.raz!)).statusCode).toBe(200);
     expect((await put('/api/pos/rules', { supervisor: { ...RULES, price: true } }, who.admin!)).statusCode).toBe(200);
-    const rate = Number((db.prepare("SELECT value FROM settings WHERE key = 'default_rate_x100'").get() as { value: string } | undefined)?.value ?? '142000');
+    const rate = Number(readSetting(db, 'default_rate_x100') ?? '142000');
     // a phone listed at 100 dollars
     const phone = (await post('/api/items', { code: 'PH', name: { ar: 'هاتف', en: 'Phone', ku: 'مۆبایل' }, unit: 'piece', salePrice: 10_000, saleCurrency: 'USD', trackStock: false }, who.admin!)).json();
     const shift = await openShift(who.las!);

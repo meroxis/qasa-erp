@@ -7,7 +7,11 @@ import { MYSQL_TABLES, tableColumns, V18_MYSQL_STEPS } from './schema-mysql.ts';
 // pairing codes, and the dinar rounding of a till sale's cash.
 const V18_TABLES = ['pos_pins', 'pos_approvals', 'pos_pin_tries', 'pos_shift_refunds', 'item_price_history', 'gift_vouchers', 'gift_voucher_moves', 'pos_display_images', 'pos_display_codes'];
 
-describe('version 18', () => {
+// what a company file (SQLite) has, read with its own PRAGMA: not a test for a run on a database server, whose
+// upgrade is tested in pro/src/mysql/server.test.ts (as migration-v17.test.ts does)
+const onServer = !!process.env.QASA_TEST_DB;
+
+describe.skipIf(onServer)('version 18', () => {
   it('makes its tables empty, and a till sale made before it has no rounding', () => {
     const db = openDatabase(':memory:');
     try {

@@ -169,7 +169,6 @@ export const TILL_UI_TEXT = {
   tu_scaleRead: ['اقرأ الوزن', 'Read weight', 'کێش بخوێنەوە'],
   tu_scaleTest: ['جرّب الآن', 'Try it now', 'ئێستا تاقی بکەرەوە'],
   tu_scaleGot: ['الوزن: {n}', 'Weight: {n}', 'کێش: {n}'],
-  tu_scaleNone: ['لم يُقرأ وزن من الميزان', 'No weight came from the scale', 'هیچ کێشێک لە تەرازووەوە نەهات'],
   tu_scaleNotHere: ['قراءة الميزان تحتاج برنامج ويندوز', 'Reading a scale needs the Windows app', 'خوێندنەوەی تەرازوو پێویستی بە بەرنامەی ویندۆزە'],
   tu_scaleNotWeighed: ['اختر صنفاً يُباع بالوزن أولاً', 'Pick an item sold by weight first', 'سەرەتا کاڵایەک هەڵبژێرە کە بە کێش دەفرۆشرێت'],
   // the customer screen
