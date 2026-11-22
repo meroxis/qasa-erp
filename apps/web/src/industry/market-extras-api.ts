@@ -1,5 +1,6 @@
 import type { CurrencyCode, Lang, Names, OfferKind, UnitCode } from '@qasa/core';
 import { qs, request } from '../api.ts';
+import { sendOnce } from './send-once.ts';
 
 /**
  * The market extras (2.0): delivery orders, debt reminders, price checkers and suppliers who deliver every day. Server
@@ -34,7 +35,9 @@ export const deliveryApi = {
   orders: (f: { status?: DeliveryStatus | 'open'; from?: string; to?: string; driverId?: string } = {}) =>
     request<{ available: boolean; orders: DeliveryOrderSummary[] }>('GET', '/api/delivery/orders' + qs(f)),
   order: (id: string) => request<DeliveryOrder>('GET', `/api/delivery/orders/${id}`),
-  create: (input: DeliveryOrderInput) => request<DeliveryOrder>('POST', '/api/delivery/orders', input),
+  // what books money or stock goes with a key held until the server answers (send-once.ts): a second tap, or a retry
+  // after the link dropped, is answered with the first one and books nothing twice
+  create: (input: DeliveryOrderInput) => sendOnce<DeliveryOrder>('POST', '/api/delivery/orders', input),
   update: (id: string, input: DeliveryOrderInput) => request<DeliveryOrder>('PUT', `/api/delivery/orders/${id}`, input),
   remove: (id: string) => request<void>('DELETE', `/api/delivery/orders/${id}`),
   status: (id: string, body: { status: DeliveryStatus; driverId?: string | null; reason?: string }) => request<DeliveryOrder>('POST', `/api/delivery/orders/${id}/status`, body),
@@ -43,7 +46,8 @@ export const deliveryApi = {
   addDriver: (input: DriverInput) => request<Driver>('POST', '/api/delivery/drivers', input),
   updateDriver: (id: string, input: DriverInput) => request<Driver>('PUT', `/api/delivery/drivers/${id}`, input),
   handovers: (driverId?: string) => request<Handover[]>('GET', '/api/delivery/handovers' + qs({ driverId })),
-  handOver: (body: { driverId: string; amount: number; cashAccountCode: string; note?: string }) => request<Handover>('POST', '/api/delivery/handovers', body)
+  handOver: (body: { driverId: string; amount: number; cashAccountCode: string; note?: string }) => sendOnce<Handover>('POST', '/api/delivery/handovers', body),
+  cancelHandover: (id: string) => sendOnce<{ cancelled: true; reversalId: string | null }>('POST', `/api/delivery/handovers/${id}/cancel`, {})
 };
 
 // ——— debt reminders ———
@@ -108,5 +112,6 @@ export const dailyApi = {
   sheet: (partyId: string, date?: string) => request<DailySheet>('GET', `/api/daily-suppliers/${partyId}/sheet` + qs({ date })),
   setItems: (partyId: string, items: { itemId: string; unitCost?: number | null | undefined }[]) => request<DailySheet>('PUT', `/api/daily-suppliers/${partyId}/items`, { items }),
   receipts: (partyId: string) => request<DailyReceipt[]>('GET', `/api/daily-suppliers/${partyId}/receipts`),
-  save: (body: { partyId: string; date: string; warehouseId: string; notes?: string; lines: DailyLineInput[] }) => request<DailyReceipt>('POST', '/api/daily-suppliers/receipts', body)
+  /** again: the supplier came a second time that day (the server refuses a second sheet otherwise: ds_sheet_exists) */
+  save: (body: { partyId: string; date: string; warehouseId: string; notes?: string; again?: boolean; lines: DailyLineInput[] }) => sendOnce<DailyReceipt>('POST', '/api/daily-suppliers/receipts', body)
 };

@@ -1,5 +1,6 @@
 import type { CurrencyCode, GoldKarat, MakingKind, Names } from '@qasa/core';
 import { qs, request } from '../api.ts';
+import { sendOnce } from './send-once.ts';
 
 /** Gold and jewellery shops (packages/server/src/gold.ts). */
 
@@ -42,10 +43,12 @@ export const goldApi = {
   suppliers: () => request<GoldSupplierView[]>('GET', '/api/gold/suppliers'),
   setBasis: (partyId: string, basisKarat: 21 | 24) => request<unknown>('PUT', `/api/gold/suppliers/${partyId}`, { basisKarat }),
   docs: (f: { kind?: GoldDocKind; status?: GoldDocStatus; partyId?: string } = {}) => request<GoldDocView[]>('GET', '/api/gold/docs' + qs(f)),
-  createDoc: (body: GoldDocInput) => request<GoldDocView>('POST', '/api/gold/docs', body),
+  // what books money or stock goes with a key held until the server answers (send-once.ts): a second tap, or a retry
+  // after the link dropped, is answered with the first one and books nothing twice
+  createDoc: (body: GoldDocInput) => sendOnce<GoldDocView>('POST', '/api/gold/docs', body),
   deleteDoc: (id: string) => request<void>('DELETE', `/api/gold/docs/${id}`),
-  postDoc: (id: string, lang: 'ar' | 'en' | 'ku') => request<GoldDocView>('POST', `/api/gold/docs/${id}/post`, { lang }),
-  cancelDoc: (id: string) => request<GoldDocView>('POST', `/api/gold/docs/${id}/cancel`, {}),
+  postDoc: (id: string, lang: 'ar' | 'en' | 'ku') => sendOnce<GoldDocView>('POST', `/api/gold/docs/${id}/post`, { lang }),
+  cancelDoc: (id: string) => sendOnce<GoldDocView>('POST', `/api/gold/docs/${id}/cancel`, {}),
   slip: (invoiceId: string) => request<GoldSlip>('GET', `/api/gold/slip/${invoiceId}`)
 };
 

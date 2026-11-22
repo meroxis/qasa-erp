@@ -66,7 +66,7 @@ function useAction(onDone: () => void) {
   return { busy, error, setError, run };
 }
 
-const stateKey = (s: DocState): Key => (s === 'approved' ? 'ws_state_approved' : s === 'waiting' ? 'ws_state_waiting' : 'ws_state_rejected');
+const stateKey = (s: DocState): Key => (s === 'approved' ? 'ws_state_approved' : s === 'waiting' ? 'ws_state_waiting' : s === 'cancelled' ? 'ws_state_cancelled' : 'ws_state_rejected');
 
 function RepPicker({ reps, value, onChange }: { reps: readonly RepView[]; value: string; onChange(id: string): void }) {
   const { t } = useI18n();
@@ -653,6 +653,14 @@ function Money({ reps, settings }: { reps: RepView[]; settings: WsSettings | nul
   const [collecting, setCollecting] = useState(false);
   const [handing, setHanding] = useState(false);
   const reload = () => { collections.reload(); handovers.reload(); };
+  const toast = useToast();
+  const [failure, setFailure] = useState<unknown>(null);
+  /** Takes a collection or a handover back (the wrong amount, shop or safe): the server deletes or reverses its receipt. */
+  async function takeBack(send: () => Promise<unknown>) {
+    if (!window.confirm(t('ws_takeBackConfirm'))) return;
+    setFailure(null);
+    try { await send(); toast(t('saved')); reload(); } catch (e) { setFailure(e); }
+  }
   const open = (collections.data ?? []).filter((c: CollectionView) => c.state === 'approved' && !c.handoverId);
   const sum = (cur: CurrencyCode) => open.filter((c) => c.currency === cur).reduce((s, c) => s + c.amount, 0);
   return (
@@ -663,7 +671,7 @@ function Money({ reps, settings }: { reps: RepView[]; settings: WsSettings | nul
         {office && <button type="button" className="btn" onClick={() => setHanding(true)}>{t('ws_handOver')}</button>}
         <span className="muted">{t('ws_notHanded')}: {i18n.money(sum('IQD'), 'IQD')}{sum('USD') ? ` · ${i18n.money(sum('USD'), 'USD')}` : ''}</span>
       </div>
-      <ErrorBox error={collections.error ?? handovers.error} />
+      <ErrorBox error={collections.error ?? handovers.error ?? failure} />
       <h3 style={{ margin: 0 }}>{t('ws_collections')}</h3>
       {(collections.data ?? []).length === 0 ? <div className="muted">{t('ws_noData')}</div> : (
         <div className="card table-wrap">
@@ -676,6 +684,7 @@ function Money({ reps, settings }: { reps: RepView[]; settings: WsSettings | nul
                   <td className="num">{i18n.money(c.amount, c.currency)}</td>
                   <td>{t(stateKey(c.state))}{c.state === 'approved' ? ` · ${t(c.handoverId ? 'ws_handed' : 'ws_notHanded')}` : ''}</td>
                   <td>
+                    {c.mayCancel && <button type="button" className="btn small ghost no-print" onClick={() => void takeBack(() => wholesaleApi.cancelCollection(c.id))}>{t('ws_takeBack')}</button>}
                     <PrintPartButton id={`ws-col-${c.id}`} />
                     <PrintPart id={`ws-col-${c.id}`}>
                       <Paper company={company} title={`${t('ux_collectionReceipt')} ${c.number}`} sub={i18n.date(c.date)}>
@@ -695,12 +704,13 @@ function Money({ reps, settings }: { reps: RepView[]; settings: WsSettings | nul
       {(handovers.data ?? []).length === 0 ? <div className="muted">{t('ws_noData')}</div> : (
         <div className="card table-wrap">
           <table className="table">
-            <thead><tr><th>#</th><th>{t('ws_date')}</th><th>{t('ws_toAccount')}</th><th className="num">{t('ws_amount')}</th><th className="num">{t('ws_count')}</th><th>{t('ws_status')}</th></tr></thead>
+            <thead><tr><th>#</th><th>{t('ws_date')}</th><th>{t('ws_toAccount')}</th><th className="num">{t('ws_amount')}</th><th className="num">{t('ws_count')}</th><th>{t('ws_status')}</th><th /></tr></thead>
             <tbody>
               {(handovers.data ?? []).map((h) => (
                 <tr key={h.id}>
                   <td className="num ltr">{h.number}</td><td>{i18n.date(h.date)}</td><td className="num ltr">{h.toAccount}</td>
                   <td className="num">{i18n.money(h.amount, h.currency)}</td><td className="num">{i18n.int(h.collections)}</td><td>{t(stateKey(h.state))}</td>
+                  <td>{h.mayCancel && <button type="button" className="btn small ghost no-print" onClick={() => void takeBack(() => wholesaleApi.cancelHandover(h.id))}>{t('ws_takeBack')}</button>}</td>
                 </tr>
               ))}
             </tbody>

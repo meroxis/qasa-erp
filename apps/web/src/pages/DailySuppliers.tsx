@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { todayIso } from '@qasa/core';
-import { api } from '../api.ts';
+import { api, ApiError } from '../api.ts';
 import { AmountInput, EmptyState, ErrorBox, Icon, Modal, QtyInput, SearchCombo, useData, useLoad, usePageNav, useToast, type PickOption } from '../components.tsx';
 import { useI18n } from '../i18n.ts';
 import { go, href } from '../router.ts';
@@ -105,12 +105,12 @@ function Sheet({ partyId }: { partyId: string }) {
     return s + Math.round(((l.received ?? 0) * (l.unitCost ?? 0)) / 1000) - Math.round(((l.returned ?? 0) * (l.unitCost ?? 0)) / 1000);
   }, 0);
 
-  async function save() {
+  async function save(again = false) {
     setError(null);
     setBusy(true);
     try {
       await dailyApi.save({
-        partyId, date, warehouseId,
+        partyId, date, warehouseId, ...(again ? { again: true } : {}),
         // someone who may not see cost sends none: the server uses the cost agreed with the supplier
         lines: items.map((it) => {
           const l = lineOf(it);
@@ -122,6 +122,8 @@ function Sheet({ partyId }: { partyId: string }) {
       sheet.reload();
       history.reload();
     } catch (e) {
+      // a sheet is already saved for this supplier and day: typed twice far more often than a second visit, so ask
+      if (!again && e instanceof ApiError && e.code === 'ds_sheet_exists' && window.confirm(t('mx_dsAgainConfirm'))) { await save(true); return; }
       setError(e);
     } finally {
       setBusy(false);
