@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { todayIso, type CurrencyCode } from '@qasa/core';
-import { api } from '../api.ts';
+import { api, type EntryView, type VoucherInput } from '../api.ts';
+import { sendOnce } from '../industry/send-once.ts';
 import { briefApi, EXPENSE_CATEGORIES, type ExpenseCategory } from '../industry/brief-api.ts';
 import { AccountCombo, AmountInput, ErrorBox, Icon, Modal, StatusChip, useData, useLoad, useMay, usePageNav, useToast } from '../components.tsx';
 import { useI18n, type Key } from '../i18n.ts';
@@ -51,11 +52,12 @@ export function Expenses() {
     setError(null);
     try {
       const description = note.trim() || t(label(category));
-      const entry = await api.createVoucher({
+      // paid out of the safe at once: sent again after a lost answer it goes with the same key, so it is paid once
+      const entry = await sendOnce<EntryView>('POST', '/api/vouchers', {
         kind: 'payment', date, cashAccountCode: cash, description, currency,
         rateX100: currency === 'IQD' ? 100 : settings?.defaultRateX100 ?? 142000,
         items: [{ accountCode: account, amount, description }]
-      });
+      } satisfies VoucherInput);
       toast(t('br_expenseSaved', { n: entry.number ?? '' }));
       setAmount(null);
       setNote('');

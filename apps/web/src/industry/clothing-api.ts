@@ -1,5 +1,6 @@
 import type { CurrencyCode, Names, UnitCode } from '@qasa/core';
 import { qs, request, refundApprovals } from '../api.ts';
+import { sendOnce } from './send-once.ts';
 
 /** Clothing and shoes (2.0, Starter, Pro and Business): server side in packages/server/src/clothing.ts. */
 
@@ -54,6 +55,7 @@ export const clothingApi = {
   lines: (id: string, kind: 'sale' | 'purchase', cells: GridCell[]) => request<{ lines: GridLine[] }>('POST', `/api/clothing/models/${id}/lines`, { kind, cells }),
   invoiceVariants: (invoiceId: string) => request<{ lines: { itemId: string; qtyMilli: number }[] }>('GET', `/api/clothing/invoices/${invoiceId}/variants`),
   exchange: (shiftId: string, input: { invoiceId: string; back: { lineNo: number; qtyMilli: number }[]; sale?: ExchangeSale }) =>
-    request<{ returnId: string; saleId: string | null; difference: number }>('POST', `/api/clothing/shifts/${shiftId}/exchange`, { ...input, ...refundApprovals() }),
+    // a cash refund and a sale in one: sent again after a lost answer it goes with the same key, so it is booked once
+    sendOnce<{ returnId: string; saleId: string | null; difference: number }>('POST', `/api/clothing/shifts/${shiftId}/exchange`, { ...input, ...refundApprovals() }),
   report: (f: { from: string; to: string; season?: string }) => request<ClothingReport>('GET', '/api/clothing/reports' + qs(f))
 };
