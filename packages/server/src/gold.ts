@@ -485,6 +485,9 @@ export function updateGoldDoc(db: Db, id: string, raw: GoldDocInput, actor: Acto
   const input = checked(db, { ...raw, kind: row.kind });
   transaction(db, () => {
     writeDoc(db, id, input);
+    // whoever changed the draft last is its preparer (as on a voucher, a stock adjustment or a consignment document):
+    // under "separate duties" an approver can't rewrite someone's draft and post it himself
+    db.prepare('UPDATE gold_docs SET prepared_by_id = ? WHERE id = ?').run(actor.id, id);
     audit(db, actor.name, 'update', 'gold_doc', id);
   });
   return getGoldDoc(db, id);

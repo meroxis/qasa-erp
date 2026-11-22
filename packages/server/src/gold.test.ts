@@ -5,6 +5,8 @@ import { openDatabase, type Db } from './db.ts';
 import { resetLoginThrottle } from './auth.ts';
 import { getEntry } from './journal.ts';
 import { writeSetting } from './settings.ts';
+import { createGoldDoc, postGoldDoc, updateGoldDoc } from './gold.ts';
+import type { Actor } from './auth.ts';
 
 // Gold and jewellery shops: pieces by weight and karat, the day's board pricing them, sales and the customer's slip,
 // old gold bought and melted, suppliers settled in gold, cancelling, separate duties and the plan.
@@ -203,6 +205,24 @@ describe('gold and jewellery shops', () => {
     const same = await call('POST', `/api/gold/docs/${draft.id}/post`, {});
     expect(same.statusCode).toBe(409);
     expect(same.json().error).toBe('same_person');
+  });
+
+  it('makes whoever rewrote a draft its preparer: with separate duties on, an approver can’t change it and post it himself (2.0 books review #3)', async () => {
+    await setUp();
+    writeSetting(db, 'separate_duties', '1');
+    const k = await ok('POST', '/api/users', { username: 'kawa', name: 'Kawa', password: 'kawa-pass-123', roles: ['purchasing'] });
+    const z = await ok('POST', '/api/users', { username: 'azad', name: 'Azad', password: 'azad-pass-123', roles: ['purchasing', 'approver'] });
+    const kawa = { id: k.id, name: 'Kawa', username: 'kawa', roles: [], permissions: ['purchases'] } as unknown as Actor;
+    const azad = { id: z.id, name: 'Azad', username: 'azad', roles: [], permissions: ['purchases', 'entries.approve'] } as unknown as Actor;
+    const body = { kind: 'buy' as const, date: '2026-11-20', customerName: 'Raz', karat: 18 as const, weightMg: 1_000, pricePerGram: 70_000, cashAccount: '1811' };
+    const draft = createGoldDoc(db, body, kawa);
+    // Azad rewrites it to 100 g at 95,000 and tries to post it: it is his draft now
+    updateGoldDoc(db, draft.id, { ...body, customerName: 'his cousin', weightMg: 100_000, pricePerGram: 95_000 }, azad);
+    expect(() => postGoldDoc(db, draft.id, azad)).toThrowError(expect.objectContaining({ code: 'same_person' }));
+    expect(balanceOf('1811')).toBe(0);
+    // untouched by him, Kawa's draft is his to post
+    const other = createGoldDoc(db, body, kawa);
+    expect(postGoldDoc(db, other.id, azad).status).toBe('posted');
   });
 
   it('checks what a document needs, and keeps the entries it posts out of the vouchers page', async () => {

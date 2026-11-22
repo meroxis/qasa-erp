@@ -1691,6 +1691,41 @@ export function movePartReorder(db: Db): void {
   db.prepare('UPDATE part_details SET reorder_milli = NULL WHERE reorder_milli IS NOT NULL').run();
 }
 
+/**
+ * Version 18's rows (2.0): from 2.0 a feature posts only into an account it made itself or one the accountant chose
+ * (feature-accounts.ts). Before, cheques posted into any postable 162 and the petrol station into any postable 1379.
+ * A company that made such an account itself and already has that feature's entries on it keeps posting there: the
+ * choice is written down for it here (nothing to do in Settings, no balance split over two accounts). An account of
+ * that code the feature never posted to stays the company's own. Safe to run again.
+ */
+export function keepFeatureAccounts(db: Db): void {
+  const setting = (key: string): string | null => (db.prepare('SELECT value FROM settings WHERE "key" = ?').get(key) as { value: string } | undefined)?.value ?? null;
+  const save = (key: string, value: string): void => {
+    if (setting(key) === null) db.prepare('INSERT INTO settings ("key", value) VALUES (?, ?)').run(key, value);
+    else db.prepare('UPDATE settings SET value = ? WHERE "key" = ?').run(value, key);
+  };
+  const ownAccount = (code: string): boolean => !!db.prepare('SELECT 1 FROM accounts WHERE code = ? AND "system" = 0').get(code);
+  // notes receivable: a cheque's entry (received, cleared or bounced) has a line on the company's own 162
+  if (setting('banking_notes_receivable') === null && ownAccount('162')
+    && db.prepare(`SELECT 1 FROM entry_lines l WHERE l.account_code = '162' AND (l.entry_id IN (SELECT entry_id FROM cheques WHERE entry_id IS NOT NULL)
+                     OR l.entry_id IN (SELECT clear_entry_id FROM cheques WHERE clear_entry_id IS NOT NULL)
+                     OR l.entry_id IN (SELECT bounce_entry_id FROM cheques WHERE bounce_entry_id IS NOT NULL)) LIMIT 1`).get()) {
+    save('banking_notes_receivable', '162');
+  }
+  // the fuel stock: a shift's, a delivery's, a dip's or a tank's opening entry has a line on the company's own 1379,
+  // which the petrol station did not make (no audit row says so) and the fuel settings do not name yet
+  if (ownAccount('1379')
+    && !db.prepare("SELECT 1 FROM audit_log WHERE entity = 'account' AND entity_id = '1379' AND action = 'create' AND details LIKE '%fuel_stock%' LIMIT 1").get()
+    && db.prepare(`SELECT 1 FROM entry_lines l WHERE l.account_code = '1379' AND (l.entry_id IN (SELECT entry_id FROM fuel_shifts WHERE entry_id IS NOT NULL)
+                     OR l.entry_id IN (SELECT entry_id FROM fuel_deliveries WHERE entry_id IS NOT NULL)
+                     OR l.entry_id IN (SELECT entry_id FROM fuel_dips WHERE entry_id IS NOT NULL)
+                     OR l.entry_id IN (SELECT opening_entry_id FROM fuel_tanks WHERE opening_entry_id IS NOT NULL)) LIMIT 1`).get()) {
+    let stored: Record<string, unknown> = {};
+    try { const parsed = JSON.parse(setting('fuel_settings') ?? '{}') as unknown; if (parsed && typeof parsed === 'object') stored = parsed as Record<string, unknown>; } catch { /* unreadable: written anew */ }
+    if (stored.stockAccount === undefined) save('fuel_settings', JSON.stringify({ ...stored, stockAccount: '1379' }));
+  }
+}
+
 const V12_OWNER_TOOLS =
   // 12 — owner tools (1.2): the language a customer gets their WhatsApp messages in (NULL: the app's language), and
   // the loyalty points ledger (Pro): every movement of a customer's points, kept for ever like stock moves. points is
@@ -2592,7 +2627,7 @@ const MIGRATIONS: Migration[] = [
   { sql: V15, mysql: { tables: true, steps: () => V15_MYSQL_STEPS } },
   { sql: V16, mysql: { tables: true, steps: () => V16_MYSQL_STEPS } },
   { sql: V17, mysql: { tables: true, steps: () => V17_MYSQL_STEPS } },
-  { sql: V18, mysql: { tables: true, steps: () => V18_MYSQL_STEPS } }
+  { sql: V18, mysql: { tables: true, steps: () => V18_MYSQL_STEPS }, data: keepFeatureAccounts }
 ];
 
 /** Server databases began at this version: its schema is in schema-mysql.ts (tables and triggers without `since`). */

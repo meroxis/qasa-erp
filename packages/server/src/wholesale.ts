@@ -449,9 +449,10 @@ export function updateOrder(db: Db, id: string, input: OrderInput, actor: Actor)
   const target = orderTarget(db, { ...input, repId: input.repId === undefined ? row.rep_id : input.repId }, actor);
   transaction(db, () => {
     const total = writeOrder(db, id, input, target.warehouseId);
-    db.prepare(`UPDATE ws_orders SET party_id = ?, date = ?, rep_id = ?, warehouse_id = ?, currency = ?, rate_x100 = ?, total = ?, notes = ?, updated_at = ?
+    // whoever changed the draft last is the one who took it: under "separate duties" nobody rewrites an order and approves it
+    db.prepare(`UPDATE ws_orders SET party_id = ?, date = ?, rep_id = ?, warehouse_id = ?, currency = ?, rate_x100 = ?, total = ?, notes = ?, created_by = ?, updated_at = ?
                 WHERE id = ? AND status = 'draft'`)
-      .run(input.partyId, input.date, target.repId, target.warehouseId, input.currency, input.rateX100, total, input.notes?.trim() || null, now(), id);
+      .run(input.partyId, input.date, target.repId, target.warehouseId, input.currency, input.rateX100, total, input.notes?.trim() || null, actor.name, now(), id);
     audit(db, actor.name, 'update', 'ws_order', id);
   });
   return getOrder(db, id, actor);
