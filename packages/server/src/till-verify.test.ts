@@ -315,11 +315,54 @@ describe('5 · the rate of dollars at the till', () => {
     const yesterday = (reference: string, rateX100: number) => sell(shift.id, {
       lines: [{ itemId: wash.id, qtyMilli: 1000, unitPrice: 27_500 }], usdCash: { amount: 2000, rateX100 }, offline: { reference, soldAt: `${addDays(TODAY, -1)}T10:00:00.000Z`, soldOn: addDays(TODAY, -1) }
     }, who.las!);
-    { const r = await yesterday('OFF-C1-000003', 130_000); expect(r.statusCode, r.body).toBe(201); }
+    // (round four) yesterday's own rate is 13% from today's: not taken unseen, it waits for a supervisor
+    expect((await yesterday('OFF-C1-000003', 130_000)).json()).toMatchObject({ details: [{ code: 'pos_offline_supervisor' }] });
     expect((await yesterday('OFF-C1-000004', 140_000)).json()).toMatchObject({ details: [{ code: 'pos_offline_supervisor' }] });
-    expect((await yesterday('OFF-C1-000006', 150_000)).json()).toMatchObject({ details: [{ code: 'pos_usd_rate_far', rateX100: 130_000 }] });
+    // today's rate on a sale of yesterday (15.4% from yesterday's): the same, never refused for good
+    expect((await yesterday('OFF-C1-000006', 150_000)).json()).toMatchObject({ details: [{ code: 'pos_offline_supervisor' }] });
     // sold today, it is held to today's
     expect((await kept('OFF-C1-000005', 150_000)).statusCode).toBe(201);
+  });
+
+  it('takes a kept sale of a past day freely only at a rate within 3% of that day\'s rate and of today\'s; any other waits for a supervisor, none is a dead end (round four)', async () => {
+    const who = await signIn({ las: ['pos'], raz: ['supervisor'] });
+    expect((await put('/api/pos/pin', { pin: PIN }, who.raz!)).statusCode).toBe(200);
+    const shift = await openShift(who.las!);
+    const day = (n: number) => addDays(TODAY, -n);
+    db.prepare('UPDATE pos_shifts SET opened_at = ? WHERE id = ?').run(`${day(3)}T06:00:00.000Z`, shift.id);
+    const board = (date: string, rateX100: number) => db.prepare('INSERT INTO fx_rates (date, rate_x100, source, created_by, created_at) VALUES (?, ?, ?, ?, ?)').run(date, rateX100, 'test', 'Mer', new Date().toISOString());
+    // the board: 1,400 three days ago, nothing two days ago, 1,440 yesterday; today 1,450
+    board(day(3), 140_000); board(day(1), 144_000);
+    expect((await post('/api/fx/rates', { date: TODAY, rateX100: 145_000 }, who.admin!)).statusCode).toBeLessThan(300);
+    const wash = (await post('/api/items', { code: 'WASH', name: { ar: 'غسيل', en: 'Wash', ku: 'شۆردن' }, unit: 'service', salePrice: 27_500, saleCurrency: 'IQD', trackStock: false }, who.admin!)).json();
+    let n = 100;
+    const kept = (ago: number, body: object, reference = `OFF-C1-000${++n}`) => sell(shift.id, {
+      lines: [{ itemId: wash.id, qtyMilli: 1000, unitPrice: 27_500 }], ...body, offline: { reference, soldAt: `${day(ago)}T10:00:00.000Z`, soldOn: day(ago) }
+    }, who.las!);
+    const notes = (rateX100: number) => ({ usdCash: { amount: 1900, rateX100 } });
+    const waits = { details: [{ code: 'pos_offline_supervisor' }] };
+    // two days ago the board had no rate of its own: the latest before it (1,400) is that day's, not the company's
+    // rate of today. 1,410 is within 3% of 1,400 and of 1,450: taken
+    { const r = await kept(2, notes(141_000)); expect(r.statusCode, r.body).toBe(201); }
+    // 1,360 is within 3% of 1,400 but 6.2% from today's: waits
+    expect((await kept(2, notes(136_000))).json()).toMatchObject(waits);
+    // 1,490 is within 3% of today's but 6.4% from that day's: waits (naming an old day buys no better rate)
+    expect((await kept(2, notes(149_000))).json()).toMatchObject(waits);
+    // a dollar sale the same: its own rate against both
+    { const r = await kept(1, { currency: 'USD', rateX100: 144_500, lines: [{ itemId: wash.id, qtyMilli: 1000, unitPrice: 1_900 }] }); expect(r.statusCode, r.body).toBe(201); }
+    expect((await kept(1, { currency: 'USD', rateX100: 150_000, lines: [{ itemId: wash.id, qtyMilli: 1000, unitPrice: 1_900 }] })).json()).toMatchObject(waits);
+    // far from both (a slip of a digit at the cut-off till): it was sold, so it waits for a supervisor too, and is
+    // taken as it was kept once one approves that very receipt
+    const slip = () => kept(2, notes(114_000), 'OFF-C1-000199');
+    expect((await slip()).json()).toMatchObject(waits);
+    const ok = await post('/api/pos/approve', { shiftId: shift.id, action: 'offline_sale', pin: PIN, reference: 'OFF-C1-000199', amount: 27_500 }, who.las!);
+    expect(ok.statusCode, ok.body).toBeLessThan(300);
+    { const r = await slip(); expect(r.statusCode, r.body).toBe(201); }
+    const log = db.prepare("SELECT details FROM audit_log WHERE action = 'offline_sale_accepted'").all() as { details: string }[];
+    expect(log).toHaveLength(1);
+    expect(JSON.parse(log[0]!.details)).toMatchObject({ approver: 'Raz', needs: ['rate'], rate: 'notes:114000', dayRateX100: 140_000, todayRateX100: 145_000 });
+    // a sale made now (not kept) is still refused beyond 15%, with the day's rate for the till to show
+    expect((await sell(shift.id, { lines: [tea(10)], usdCash: { amount: 1900, rateX100: 114_000 } }, who.las!)).json()).toMatchObject({ details: [{ code: 'pos_usd_rate_far', rateX100: 145_000 }] });
   });
 });
 

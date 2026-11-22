@@ -56,7 +56,11 @@
   sale in dinars; the shift expects those dollars in the drawer instead of their dinars (`usdTaken` on the shift, the X/Z
   report and the day close). The rate is held to the day's (`referenceRate`: today's on the rate board, else the
   company's), as a dollar sale's own rate is: within 3% it passes, to 15% a supervisor approves that very rate, beyond
-  it is refused; the till shows the day's rate and checks before it sends or keeps a sale. The dollars may pass what is
+  it is refused; the till shows the day's rate and checks before it sends or keeps a sale. A sale a cut-off till kept
+  is held to two rates: the one of the day it was sold (the board's on that day or the latest before it, `rateOn`) and
+  today's; within 3% of both it is taken, anything else (however far) waits for a supervisor to approve that very
+  receipt (`offline_sale`, in Waiting to send), so naming an old day buys no better rate and no kept sale is refused
+  for good. The dollars may pass what is
   due by less than a 100-dollar note (change in dinars). The accountant may record the exchange.
 - **Cash drawer** (`apps/desktop/src/till-desktop.ts`): ESC p 0 25 250 sent RAW through winspool to the receipt printer
   chosen in Settings → Printers, by a fixed PowerShell script with the printer name in its environment. The script's C#

@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { cashToTake, TILL_CARD_PAYMENTS } from '@qasa/core';
+import { rateOn } from './fx.ts';
 import { giftCashOf, giftOfShift, giftParts, takeGiftParts } from './gift-vouchers.ts';
 import {
   blindShift, closesBlind, maySellMisc, offlineApprovalWaits, priceSubject, rateStanding, rateSubject, referenceRate, roundingAccount, tillRules, useApproval, useOfflineApproval
@@ -611,12 +612,23 @@ export function sell(db: Db, shiftId: string, input: SaleInput, actor: Actor): {
   // of it passes, one further (up to 15%) a supervisor approves, that very rate; beyond is refused. So for a dollar
   // sale (its rate decides what the sale is worth in the books, and what a dinar list price is in dollars) and for
   // dollar notes on a dinar sale (below)
-  // (a sale a cut-off till kept: the rate of the day it was sold, as its till had it)
-  const reference = referenceRate(db, input.offline ? offlineSaleDate(String(input.offline.soldOn ?? ''), row.opened_at) : todayIso());
+  const reference = referenceRate(db, todayIso());
+  // a sale a cut-off till kept (round four of the review): its rate was typed against the rate of the day it was
+  // sold, which the till names itself; so it passes freely only when it is within 3% of that day's rate (the rate
+  // board's on that day or the latest before it: fx.ts rateOn) AND of today's. Anything else waits for a supervisor
+  // to look at that very receipt (the kept sale's own approval, below): never taken unseen, and never refused for
+  // good, since the sale was made and its money is in the drawer.
+  const soldDay = input.offline ? offlineSaleDate(String(input.offline.soldOn ?? ''), row.opened_at) : null;
+  const dayRate = soldDay && soldDay !== todayIso() ? rateOn(db, soldDay).rateX100 : reference;
+  const standingOf = (rateX100: number): 'ok' | 'approve' | 'far' => {
+    const now = rateStanding(rateX100, reference);
+    if (!input.offline) return now;
+    return now === 'ok' && rateStanding(rateX100, dayRate) === 'ok' ? 'ok' : 'approve';
+  };
   /** the rate a supervisor must approve, if any: `notes:<rate>` or `sale:<rate>` */
   let rateToApprove: string | null = null;
   if (input.currency === 'USD') {
-    const standing = rateStanding(input.rateX100!, reference);
+    const standing = standingOf(input.rateX100!);
     if (standing === 'far') throw invalid([{ code: 'pos_rate_far', rateX100: reference } as { code: string }]);
     if (standing === 'approve') rateToApprove = rateSubject('sale', input.rateX100!);
   }
@@ -663,7 +675,7 @@ export function sell(db: Db, shiftId: string, input: SaleInput, actor: Actor): {
     // showing it; a much worse one cheats the customer): further, a supervisor approves that very rate; beyond 15% it
     // is a slip. The day's rate goes back with the refusal, for the till to show.
     else {
-      const standing = rateStanding(usdCash.rateX100, reference);
+      const standing = standingOf(usdCash.rateX100);
       if (standing === 'far') errors.push({ code: 'pos_usd_rate_far', rateX100: reference } as { code: string });
       else if (standing === 'approve') rateToApprove = rateSubject('notes', usdCash.rateX100);
     }
@@ -843,7 +855,8 @@ export function sell(db: Db, shiftId: string, input: SaleInput, actor: Actor): {
       audit(db, actor.name, 'offline_sale', 'invoice', posted.id, { reference: offline.reference, soldAt, number: posted.number });
     }
     if (rounding) audit(db, actor.name, 'cash_rounding', 'invoice', posted.id, { rounding, number: posted.number });
-    if (offlineApprover) audit(db, actor.name, 'offline_sale_accepted', 'invoice', posted.id, { reference: offline!.reference, approver: offlineApprover, needs, number: posted.number });
+    if (offlineApprover) audit(db, actor.name, 'offline_sale_accepted', 'invoice', posted.id, { reference: offline!.reference, approver: offlineApprover, needs, number: posted.number,
+      ...(rateToApprove ? { rate: rateToApprove, dayRateX100: dayRate, todayRateX100: reference } : {}) });
     if (reviewOffline.length) audit(db, actor.name, 'offline_price_review', 'invoice', posted.id, { items: reviewOffline, number: posted.number });
     return { invoiceId: posted.id, rounding };
   });
