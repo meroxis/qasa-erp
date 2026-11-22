@@ -98,6 +98,24 @@ describe('gold and jewellery shops', () => {
     expect(b.board['18']).toBeNull();
   });
 
+  it('leaves gold owed out of the revaluation of dollar balances: it is gold by weight, kept in its own ledger (2.0 books review #9)', async () => {
+    await setUp();
+    // a 5 g ring of 21 karat from the workshop at $80 a gram of pure gold when a dollar is 1,500: 4.375 g, $350
+    const r = await postDoc({ kind: 'receipt', date: '2026-11-20', partyId: supplierId, warehouseId, currency: 'USD', rateX100: 150_000, pricePerGram: 8_000, lines: [{ itemId: ringId, making: 0 }] });
+    expect(r.statusCode, r.body).toBe(200);
+    expect(balanceOf('264')).toBe(-525_000);
+    const owed = () => db.prepare('SELECT COALESCE(SUM(fine_mg), 0) AS mg, COALESCE(SUM(value), 0) AS v FROM gold_supplier_moves WHERE party_id = ?').get(supplierId);
+    expect(owed()).toEqual({ mg: 4375, v: 525_000 });
+
+    // the dollar rises to 1,600: 264 is not dollars owed (a delivery of gold relieves it in dinars at the ledger's
+    // value), so there is nothing to revalue and nothing is posted on it
+    const report = await ok('GET', '/api/fx/revaluation?date=2026-11-20&rateX100=160000');
+    expect(report.rows).toEqual([]);
+    expect((await call('POST', '/api/fx/revaluation', { date: '2026-11-20', rateX100: 160_000, lang: 'en' })).json()).toMatchObject({ error: 'fx_nothing_to_post' });
+    expect(balanceOf('264')).toBe(-525_000);
+    expect(owed()).toEqual({ mg: 4375, v: 525_000 });
+  });
+
   it('takes pieces in from a supplier in gold and money, sells one, and prints the customer’s slip', async () => {
     await setUp();
     const r = await postDoc({ kind: 'receipt', date: '2026-11-20', partyId: supplierId, warehouseId, pricePerGram: 120_000, lines: [{ itemId: ringId }] });

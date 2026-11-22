@@ -272,6 +272,13 @@ describe('goods on consignment', () => {
     expect(approved.statusCode, approved.body).toBe(200);
     expect(getEntry(db, s.entryId).status).toBe('approved');
     expect(balanceOf(CONSIGNMENT_HELD_CODE)).toBe(-(13_000 - 5_200));
+
+    // revaluing dollar balances (books review #9): the supplier is owed $4, revalued like any debt; the goods held are
+    // kept in dinars by the consignment's own ledger, so no line is put on 268 that a later settlement could not take off
+    const report = await ok('GET', '/api/fx/revaluation?date=2026-11-20&rateX100=150000');
+    expect(report.rows.map((r: { accountCode: string }) => r.accountCode)).not.toContain(CONSIGNMENT_HELD_CODE);
+    expect(report.rows).toHaveLength(1);
+    expect(report.rows[0]).toMatchObject({ partyId: supplierId, usd: -400, carried: -5_600, revalued: -6_000, mixed: false });
   });
 
   it('moves dollar goods between warehouses without changing the dollars owed (2.0 books review #4)', async () => {
