@@ -50,15 +50,12 @@ export interface NavGroup { group: Key; icon: string; items: NavItem[] }
 /** 2.0.0: which businesses the shop pages are for (the product review: an engineering works or a real estate office
  * saw "Daily suppliers" and "Price checkers") */
 const COUNTER_SHOPS: readonly BusinessType[] = ['trade', 'market', 'clothingShop', 'pharmacy', 'mobileShop', 'autoParts', 'electricalSolar'];
-const GROCERS: readonly BusinessType[] = ['trade', 'market', 'pharmacy'];
 const SHOPS_FOR = {
   offers: COUNTER_SHOPS,
   delivery: ['trade', 'market', 'pharmacy', 'clothingShop'],
   consignment: ['trade', 'market', 'pharmacy', 'clothingShop', 'mobileShop'],
   dailySuppliers: ['trade', 'market'],
-  priceCheckers: ['trade', 'market', 'clothingShop', 'pharmacy'],
-  labels: [...COUNTER_SHOPS, 'goldShop', 'wholesale'],
-  expiry: GROCERS
+  priceCheckers: ['trade', 'market', 'clothingShop', 'pharmacy']
 } as const satisfies Record<string, readonly BusinessType[]>;
 
 export const NAV: NavGroup[] = [
@@ -108,8 +105,11 @@ export const NAV: NavGroup[] = [
     items: [
       { key: 'items', icon: 'box', path: 'items', match: ['items', 'item'] },
       { key: 'stockDocs', icon: 'swap', path: 'stock-docs', match: ['stock-docs', 'stock-doc', 'new-stock-doc', 'edit-stock-doc'], work: ['stockDoc'] },
-      { key: 'lb_title', icon: 'tag', path: 'labels', match: ['labels'], businesses: SHOPS_FOR.labels },
-      { key: 'ex_title', icon: 'clock', path: 'expiry', match: ['expiry'], businesses: SHOPS_FOR.expiry },
+      // "Barcode labels" and "Expiry & batches" are older than 2.0 and every company had them: a company upgraded
+      // from 1.x keeps them whatever it does (a workshop with batches, a wholesaler with expiry dates), so neither
+      // is among the pages kept for shops (SHOPS_FOR)
+      { key: 'lb_title', icon: 'tag', path: 'labels', match: ['labels'] },
+      { key: 'ex_title', icon: 'clock', path: 'expiry', match: ['expiry'] },
       // 2.0: the price checker screens near the shelves (the admin adds and revokes them)
       { key: 'mx_pcTitle', icon: 'scale', path: 'price-checkers', match: ['price-checkers'], adminOnly: true, businesses: SHOPS_FOR.priceCheckers },
       { key: 'adj_title', icon: 'tag', path: 'stock-adjustments', match: ['stock-adjustments', 'stock-adjustment', 'new-stock-adjustment', 'edit-stock-adjustment', 'stock-count'], work: ['adjustment'] }
