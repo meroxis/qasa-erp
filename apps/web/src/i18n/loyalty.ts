@@ -70,6 +70,7 @@ export const LOYALTY_TEXT = {
   err_loyalty_rule_invalid: ['قيمة غير صحيحة في قواعد النقاط.', 'A loyalty rule has a value that isn’t valid.', 'یەکێک لە یاساکانی خاڵ بەهایەکی هەڵەی هەیە.'],
   err_loyalty_account_invalid: ['اختر حساب مصروف (3…) أو إيراد (4…) يقبل القيود.', 'Choose a postable expense (3…) or revenue (4…) account.', 'هەژمارێکی خەرجی (3…) یان داهات (4…) هەڵبژێرە کە قەید وەردەگرێت.'],
   err_loyalty_note_required: ['اكتب سبب التصحيح.', 'Write the reason for the correction.', 'هۆکاری ڕاستکردنەوەکە بنووسە.'],
+  err_loyalty_return_spent: ['صرف الزبون النقاط التي أعادها هذا المرتجع ({points})؛ لا يمكن إلغاء المرتجع', 'The customer has spent the points this return gave back ({points}); the return can’t be cancelled', 'کڕیار ئەو خاڵانەی خەرج کردووە کە ئەم گەڕاندنەوەیە گەڕاندبوویەوە ({points})؛ گەڕاندنەوەکە هەڵناوەشێتەوە'],
   err_loyalty_moves_are_permanent: ['حركات النقاط لا تُعدّل ولا تُحذف.', 'Points movements can’t be changed or deleted.', 'جووڵەکانی خاڵ ناگۆڕدرێن و ناسڕدرێنەوە.'],
   err_plan_limit_loyalty: ['نقاط الولاء متاحة في باقة Pro', 'Loyalty points need the Pro plan', 'خاڵەکانی دڵسۆزی پێویستی بە پلانی Pro هەیە']
 } as const;

@@ -164,6 +164,49 @@ describe('loyalty points at the till', () => {
     expect([Number(net.p), Number(net.paid_out), Number(net.came_back)]).toEqual([0, 2_010, 2_010]);
   });
 
+  it('refuses to cancel a return once the customer spent the points it gave back, in three languages; before that it is undone exactly (round four)', async () => {
+    await switchOn();
+    await post(`/api/loyalty/parties/${lasId}/adjust`, { points: 300, note: 'Welcome' });
+    const shift = (await post('/api/pos/shifts', { register: 'Counter 1', cashAccountCode: '1811', warehouseId, openingCash: 0 })).json();
+    const sell = (body: object) => post(`/api/pos/shifts/${shift.id}/sales`, { currency: 'IQD', discount: 0, partyId: lasId, ...body });
+    // 300 points pay 3,000 of a 20,000 sale: 17 earned; nothing else left
+    const sale = (await sell({ lines: cuts(2), loyaltyPoints: 300 })).json().invoice;
+    expect(balance(lasId)).toBe(17);
+    const back = async () => {
+      const r = await post(`/api/invoices/${sale.id}/returns`, { date: TODAY, payment: 'cash', cashAccountCode: '1811', lines: [{ lineNo: 1, qtyMilli: 1000 }] });
+      expect(r.statusCode, r.body).toBe(201);
+      return r.json();
+    };
+    // half comes back: 150 points given back, 8 of the earned ones taken
+    const first = await back();
+    expect(first.loyalty).toMatchObject({ earned: -8, redeemed: -150 });
+    expect(balance(lasId)).toBe(17 - 8 + 150);
+    // cancelled while the points are still there: exactly as before the return
+    expect((await post(`/api/invoices/${first.id}/cancel`)).statusCode).toBe(200);
+    expect(balance(lasId)).toBe(17);
+    // again; this time the customer spends the points the return gave back
+    // (the cancelled return's movements are not counted as given: the same goods come back with the same points,
+    // never with cash for what points had paid)
+    const second = await back();
+    expect(second.loyalty).toMatchObject({ earned: -8, redeemed: -150 });
+    expect(entryLines(second.id)).toEqual(entryLines(first.id));
+    expect(balance(lasId)).toBe(159);
+    const spent = await sell({ lines: cuts(1), loyaltyPoints: 150 });
+    expect(spent.statusCode, spent.body).toBe(201);
+    const left = balance(lasId);
+    expect(left).toBeLessThan(142);
+    const moves = () => Number((db.prepare('SELECT COUNT(*) AS n FROM loyalty_moves').get() as { n: number }).n);
+    const before = moves();
+    const refused = await post(`/api/invoices/${second.id}/cancel`);
+    expect(refused.statusCode).toBe(409);
+    expect(refused.json()).toMatchObject({ error: 'loyalty_return_spent', details: { points: 142, balance: left } });
+    // nothing changed: the return stands, no movement written, the balance as it was
+    expect((await get(`/api/invoices/${second.id}`)).json().status).toBe('posted');
+    expect(moves()).toBe(before);
+    expect(balance(lasId)).toBe(left);
+    // (its words in the three languages: apps/web/src/i18n/loyalty.ts, held by i18n-errors.test.tsx)
+  });
+
   it('undoes every movement of a cancelled sale, and the reversal gives the points\' value back in the books', async () => {
     await switchOn();
     await post(`/api/loyalty/parties/${razId}/adjust`, { points: 300, note: 'Welcome' });
