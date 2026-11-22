@@ -233,7 +233,11 @@ function VouchersCard() {
   const { t } = i18n;
   const { data, reload } = useLoad(() => tillRulesApi.vouchers().catch(() => null), []);
   const [error, setError] = useState<unknown>(null);
+  // a voucher a refund made is paid back out of a safe the admin names here (never one nobody chose)
+  const [safe, setSafe] = useState('');
   if (!data) return null;
+  const unused = (v: { status: string; balance: number; amount: number }) => v.status !== 'cancelled' && v.balance === v.amount;
+  const asksSafe = data.vouchers.slice(0, 50).some((v) => v.fromRefund && unused(v));
   return (
     <div className="settings-group" data-setting="pos-vouchers">
       <div className="setting">
@@ -252,6 +256,12 @@ function VouchersCard() {
               <span className="small muted">{t('tu_gvWriteOffHint')}</span>
             </div>
           )}
+          {asksSafe && (
+            <div className="field" data-setting="pos-voucher-safe">
+              <span>{t('tu_gvPayFrom')}</span>
+              <AccountCombo value={safe} onChange={setSafe} filter={(a) => a.postable && a.code.startsWith('18')} ariaLabel={t('tu_gvPayFrom')} />
+            </div>
+          )}
           {data.vouchers.length > 0 && (
             <div className="table-wrap">
               <table className="table">
@@ -263,7 +273,8 @@ function VouchersCard() {
                       <td className="num">{i18n.money(v.balance, 'IQD')}</td>
                       <td className="small">{v.expiresOn ? i18n.date(v.expiresOn) : '—'}</td>
                       <td>{v.status === 'cancelled' ? <span className="chip">{t('pos_cancelled')}</span>
-                        : v.balance === v.amount ? <button type="button" className="btn small" onClick={() => void tillRulesApi.cancelVoucher(v.id).then(reload, setError)}>{t('tu_gvCancel')}</button> : null}</td>
+                        : unused(v) ? <button type="button" className="btn small" disabled={!!v.fromRefund && !safe} title={v.fromRefund && !safe ? t('err_gv_cancel_safe_required') : undefined}
+                          onClick={() => { setError(null); void tillRulesApi.cancelVoucher(v.id, v.fromRefund ? safe : undefined).then(reload, setError); }}>{t('tu_gvCancel')}</button> : null}</td>
                     </tr>
                   ))}
                 </tbody>

@@ -15,8 +15,11 @@
 - **Gift vouchers** (`packages/server/src/gift-vouchers.ts`): sold at the till for cash into the shift's drawer (a receipt
   posted at once: Dr the shift's safe / Cr 263 "Gift vouchers sold", a liability, or the account the company chose);
   paid with later, all at once or in parts, as part of the sale. Dinars only; a code without 0/O or 1/I/L. A cancelled
-  sale gives the voucher back what it took; an admin may cancel an unused voucher (its receipt is reversed) and writes
-  off the ones past their date. The day close and the phone's day close count them apart from cash (a phone app that
+  sale gives the voucher back what it took; an admin may cancel an unused voucher and writes off the ones past their
+  date. Cancelling pays the customer back out of a safe: one sold at a till out of the safe it was paid into (its
+  receipt is reversed), one a refund made out of a safe the admin names (`gv_cancel_safe_required` without one). A shift
+  open on that safe counts the money going out: the selling shift while it is open (the voucher leaves its voucher
+  cash), else the newest shift open on the safe (its "other cash"). The day close and the phone's day close count them apart from cash (a phone app that
   has no word for them gets them under points: `pro/src/phone/owner-routes.ts`).
 - **Dinar rounding** (`packages/core/src/cash-rounding.ts`, Settings → Tills and till rules): the cash part of a dinar
   sale to 250, 500 or 1,000 dinars, to the nearest, up or down. Only the cash part; the difference is booked to the
@@ -39,6 +42,16 @@
   onto a voucher, the part put on the customer's account comes back as credit, points as points. Rounding comes back
   in proportion. With separate duties on, voiding a till sale or paying one back takes an approver who did not ring
   it up. A clothes shop's exchange is such a return and a new sale in one step (`clothing.ts`).
+- **What a shift expects in its drawer** (`pos.ts` `shiftView`): its opening cash, its cash sales (dollar notes as
+  notes), the vouchers it sold, less the cash returns it paid (`pos_shift_refunds`: the till's own return names its
+  shift, any other cash return belongs to the newest shift open on that safe), and the other cash that moved on its
+  safe while it was open (invoice-screen cash sales and their cancels, a return no shift paid that was cancelled, a
+  voucher paid back). A closed shift keeps what it was closed with, so nothing may move its money afterwards: a cash
+  till sale of a closed shift is not cancelled (`pos_sale_shift_closed`: return it instead), and a cash return a closed
+  shift paid is not cancelled either (`pos_return_shift_closed`: sell again instead). Cancelling a return while its
+  shift is open puts the money back in that shift, and needs the supervisor a refund needs (for that very return).
+  `till-cash-ledger.test.ts` plays random days at three tills on two safes and checks after every step that what the
+  shifts expect is what the ledger moved on their safes (fixed seeds; `QASA_CASH_SEEDS=150` for more).
 - **Dollar notes on a dinar sale** (`usdCash: { amount, rateX100 }`, `pos_sales.usd_cash/usd_rate_x100`): the books keep the
   sale in dinars; the shift expects those dollars in the drawer instead of their dinars (`usdTaken` on the shift, the X/Z
   report and the day close). The rate is held to the day's (`referenceRate`: today's on the rate board, else the

@@ -155,7 +155,7 @@ function boundTo(db: Db, input: Omit<ApprovalAsk, 'shiftId' | 'pin'>): Bound {
     return { ...none, subject: input.partyId, amount };
   }
   if (input.action === 'refund') {
-    if (!input.invoiceId || !db.prepare("SELECT 1 FROM invoices WHERE id = ? AND kind = 'sale'").get(input.invoiceId)) throw invalid([{ code: 'pos_approval_incomplete' }]);
+    if (!input.invoiceId || !db.prepare("SELECT 1 FROM invoices WHERE id = ? AND kind IN ('sale', 'sale_return')").get(input.invoiceId)) throw invalid([{ code: 'pos_approval_incomplete' }]);
     const lines = input.lines?.filter((l) => l.qtyMilli > 0);
     return { ...none, subject: input.invoiceId, amount: null, scope: lines?.length ? JSON.stringify(lines.map((l) => [l.lineNo, l.qtyMilli])) : null };
   }

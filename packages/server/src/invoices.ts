@@ -889,6 +889,26 @@ export function assertMayUndoPosSale(db: Db, invoiceId: string, postedBy: string
   if (postedBy && postedBy === actor.name) throw conflict('same_person');
 }
 
+/**
+ * The till shift that paid a cash sales return out of its drawer: the one kept for it when it was made
+ * (pos_shift_refunds); for a return from before that was kept, the newest shift open on its safe when it was posted.
+ * None: paid from a safe no shift was open on.
+ */
+export function shiftOfReturn(db: Db, returnId: string): { id: string; status: string } | null {
+  const kept = db.prepare('SELECT h.id, h.status FROM pos_shift_refunds f JOIN pos_shifts h ON h.id = f.shift_id WHERE f.invoice_id = ?').get(returnId) as { id: string; status: string } | undefined;
+  if (kept) return kept;
+  const old = db.prepare(`SELECT h.id, h.status FROM invoices i JOIN pos_shifts h ON h.cash_account = i.cash_account AND h.opened_at <= i.posted_at
+                            AND (h.closed_at IS NULL OR h.closed_at >= i.posted_at)
+                          WHERE i.id = ? AND i.kind = 'sale_return' AND i.payment = 'cash' ORDER BY h.opened_at DESC, h.id DESC LIMIT 1`).get(returnId) as { id: string; status: string } | undefined;
+  return old ?? null;
+}
+
+/** What a posted cash invoice moved on its own safe, in its currency (a sale: in; a return: out, as a minus). */
+function cashMovedBy(db: Db, invoiceId: string): number {
+  return Number((db.prepare(`SELECT COALESCE(SUM(l.debit - l.credit), 0) AS t FROM invoices i JOIN entry_lines l ON l.entry_id = i.entry_id AND l.account_code = i.cash_account
+                             WHERE i.id = ?`).get(invoiceId) as { t: number }).t);
+}
+
 export function cancelInvoice(db: Db, id: string, user: string, date?: string, actor?: Pick<Actor, 'name' | 'permissions'>): InvoiceView {
   const view = getInvoice(db, id);
   if (view.installmentContract) throw conflict('invoice_has_contract', { contract: view.installmentContract.number });
@@ -900,6 +920,14 @@ export function cancelInvoice(db: Db, id: string, user: string, date?: string, a
   if (view.kind === 'sale' && view.payment === 'cash') {
     const shift = db.prepare('SELECT h.status FROM pos_sales s JOIN pos_shifts h ON h.id = s.shift_id WHERE s.invoice_id = ?').get(id) as { status: string } | undefined;
     if (shift && shift.status !== 'open') throw conflict('pos_sale_shift_closed');
+  }
+  // a cash sales return a till's shift paid out of its drawer (round four of the review): that shift counted the
+  // drawer without that money and is closed, so a cancel would put the money back into a safe no shift expects it in.
+  // The return stands; what was wrong with it is put right with a new sale. (One that paid no cash, all of it back
+  // onto a gift voucher or points, moves no drawer and is cancelled as before.)
+  if (view.kind === 'sale_return' && view.payment === 'cash') {
+    const paid = shiftOfReturn(db, id);
+    if (paid && paid.status !== 'open' && cashMovedBy(db, id) !== 0) throw conflict('pos_return_shift_closed');
   }
   // (no date: today, or the document's own date when that is later: a reversal is never dated before what it reverses)
   const cancelDate = date ?? (todayIso() < view.date ? view.date : todayIso());

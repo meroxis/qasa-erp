@@ -52,6 +52,8 @@ export interface Approval { token: string; approver: string; action: ApprovalAct
 export interface GiftVoucherView {
   id: string; code: string; amount: number; balance: number; currency: 'IQD'; expiresOn: string | null; status: 'active' | 'cancelled';
   createdBy: string; createdAt: string; usable: boolean;
+  /** made by a refund (not sold at a till): cancelling it pays the customer out of a safe the admin names */
+  fromRefund?: boolean;
 }
 
 /** What the customer screens show: only what a customer at the counter sees anyway. */
@@ -96,7 +98,8 @@ export const tillRulesApi = {
   /** an admin: what expired vouchers still hold goes to income through a draft entry */
   expireVouchers: () => request<{ entryId: string | null; count: number; amount: number }>('POST', '/api/pos/gift-vouchers/expire', {}),
   vouchers: () => request<{ vouchers: GiftVoucherView[]; sold: number; used: number; outstanding: number; expiredUnused: number }>('GET', '/api/pos/gift-vouchers'),
-  cancelVoucher: (id: string) => request<GiftVoucherView>('POST', `/api/pos/gift-vouchers/${id}/cancel`, {}),
+  /** `cashAccountCode`: the safe that pays a voucher a refund made (one sold at a till goes back out of the safe it was paid into) */
+  cancelVoucher: (id: string, cashAccountCode?: string) => request<GiftVoucherView>('POST', `/api/pos/gift-vouchers/${id}/cancel`, cashAccountCode ? { cashAccountCode } : {}),
   displayCode: (tillId: string) => request<{ code: string }>('POST', '/api/pos/display/code', { tillId }),
   showState: (tillId: string, state: DisplayState) => request<{ ok: true }>('POST', '/api/pos/display/state', { tillId, state }),
   /** a screen pairs with the till's code once and goes on with the key it gets */

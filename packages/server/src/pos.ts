@@ -339,9 +339,14 @@ function shiftReturnsWhere(row: ShiftRow): [string, string[]] {
 }
 
 /**
- * Cash sales made on another screen into the shift's safe while it was open (review 2.0): their money is in the
- * drawer, so the shift expects it. What went in: the posting's debit to the safe; one cancelled while the shift was
- * open took its money out again (whenever it was sold).
+ * Other cash into and out of the shift's safe while it was open, that no till sale or refund of its own accounts for:
+ *  - cash sales made on another screen (review 2.0): what went in is the posting's debit to the safe; one cancelled
+ *    while the shift was open took its money out again (whenever it was sold);
+ *  - a cash sales return no shift paid (made on a safe no shift was open on), cancelled while this shift is open: its
+ *    money came back into the drawer (round four of the review);
+ *  - a gift voucher an admin cancelled and paid back out of this safe (round four): one a refund made, or one sold by
+ *    a shift that had closed by then. (One sold by a shift still open is simply no longer in that shift's voucher
+ *    cash: giftCashOf.)
  */
 function otherCashOf(db: Db, row: ShiftRow): Money {
   const other = zero();
@@ -356,7 +361,34 @@ function otherCashOf(db: Db, row: ShiftRow): Money {
   };
   sum('i.posted_at', "i.status IN ('posted', 'cancelled')", 1);
   sum('i.cancelled_at', "i.status = 'cancelled'", -1);
+  const [cancelled, cancelParams] = inShiftWindow(row, 'i.cancelled_at');
+  const back = db.prepare(`SELECT i.currency AS currency, COALESCE(SUM(l.credit - l.debit), 0) AS total
+                           FROM invoices i JOIN entry_lines l ON l.entry_id = i.entry_id AND l.account_code = i.cash_account
+                           WHERE i.kind = 'sale_return' AND i.payment = 'cash' AND i.status = 'cancelled' AND i.cancelled_at IS NOT NULL AND ${cancelled}
+                             AND NOT EXISTS (SELECT 1 FROM pos_shift_refunds f WHERE f.invoice_id = i.id)
+                             AND NOT EXISTS (SELECT 1 FROM pos_shifts p WHERE p.cash_account = i.cash_account AND p.opened_at <= i.posted_at
+                                               AND (p.closed_at IS NULL OR p.closed_at >= i.posted_at))
+                           GROUP BY i.currency`).all(...cancelParams) as { currency: CurrencyCode; total: number }[];
+  for (const r of back) other[r.currency] += Number(r.total);
+  other.IQD -= giftPaidBackOf(db, row);
   return other;
+}
+
+/**
+ * Dinars paid back out of the shift's safe for gift vouchers an admin cancelled while it was open (the newest shift
+ * open on that safe then): the credits of each voucher's cancelling entry to the safe. Not the vouchers whose own
+ * selling shift was still open when they were cancelled: those left that shift's voucher cash instead.
+ */
+function giftPaidBackOf(db: Db, row: ShiftRow): number {
+  const r = db.prepare(`SELECT COALESCE(SUM(l.credit - l.debit), 0) AS total
+                        FROM gift_vouchers v JOIN gift_voucher_moves m ON m.voucher_id = v.id AND m.kind = 'cancelled'
+                          JOIN entry_lines l ON l.entry_id = v.cancel_entry_id AND l.account_code = ?
+                        WHERE v.status = 'cancelled' AND m.created_at >= ? ${row.closed_at ? 'AND m.created_at <= ?' : ''}
+                          AND NOT EXISTS (SELECT 1 FROM pos_shifts o WHERE o.cash_account = ? AND o.id <> ? AND o.opened_at > ? AND o.opened_at <= m.created_at
+                                            AND (o.closed_at IS NULL OR o.closed_at >= m.created_at))
+                          AND NOT EXISTS (SELECT 1 FROM pos_shifts g WHERE g.id = v.shift_id AND (g.closed_at IS NULL OR g.closed_at >= m.created_at))`)
+    .get(row.cash_account, row.opened_at, ...(row.closed_at ? [row.closed_at] : []), row.cash_account, row.id, row.opened_at) as { total: number };
+  return Number(r.total);
 }
 
 /**

@@ -4,7 +4,6 @@ import type { Db } from './db.ts';
 import { audit } from './audit.ts';
 import { conflict, invalid, notFound } from './errors.ts';
 import { loadAccounts } from './accounts.ts';
-import { getPostingAccounts, readSetting } from './settings.ts';
 import { createJournalEntry, postVoucherNow, reverseEntryInternal } from './journal.ts';
 import { transaction } from './db.ts';
 import { featureAccount } from './feature-accounts.ts';
@@ -36,6 +35,8 @@ export interface GiftVoucherView {
   status: 'active' | 'cancelled'; createdBy: string; createdAt: string;
   /** may pay with it today: active, not expired, something left on it */
   usable: boolean;
+  /** made by a refund (not sold at a till): cancelling it pays the customer out of a safe the admin names */
+  fromRefund: boolean;
 }
 
 interface Row {
@@ -45,7 +46,7 @@ interface Row {
 
 const view = (r: Row, today = todayIso()): GiftVoucherView => ({
   id: r.id, code: r.code, amount: Number(r.amount), balance: Number(r.balance), currency: 'IQD', expiresOn: r.expires_on, status: r.status,
-  createdBy: r.created_by, createdAt: r.created_at,
+  createdBy: r.created_by, createdAt: r.created_at, fromRefund: !r.shift_id,
   usable: r.status === 'active' && Number(r.balance) > 0 && (!r.expires_on || r.expires_on >= today)
 });
 
@@ -276,8 +277,10 @@ export function takeBackReturnedVouchers(db: Db, returnId: string, user: string)
 /**
  * An unused voucher cancelled by an admin. One sold at a till: its receipt is reversed (the money is paid back out of
  * the safe it went into). One a refund made has no receipt (what it holds came from a return's entry, which is the
- * return's alone): the customer is paid in cash instead, with the voucher's own payment out of `cashAccountCode`
- * (else the company's cash account): Dr gift vouchers / Cr the safe.
+ * return's alone): the customer is paid in cash instead, with the voucher's own payment out of `cashAccountCode`, a
+ * safe the admin names (round four of the review: never a safe nobody chose): Dr gift vouchers / Cr the safe.
+ * Either way the money leaves a safe: a shift open on it counts it (pos.ts: the selling shift's voucher cash while
+ * that shift is open, else the other cash of the shift open on the safe).
  */
 export function cancelGiftVoucher(db: Db, id: string, actor: { id: string | null; name: string }, cashAccountCode?: string): GiftVoucherView {
   const user = actor.name;
@@ -287,10 +290,14 @@ export function cancelGiftVoucher(db: Db, id: string, actor: { id: string | null
   if (Number(r.balance) !== Number(r.amount)) throw conflict('gv_used');
   // sold at a till (it has that shift, and its own receipt); else made by a refund
   const sold = !!r.shift_id;
+  if (!sold) {
+    const safe = cashAccountCode?.startsWith('18') ? loadAccounts(db).find((a) => a.code === cashAccountCode) : undefined;
+    if (!safe || !safe.postable) throw invalid([{ code: 'gv_cancel_safe_required' }]);
+  }
   const reversal = sold
     ? (r.entry_id ? reverseEntryInternal(db, r.entry_id, user) : null)
     : postVoucherNow(db, {
-      kind: 'payment', date: todayIso(), cashAccountCode: cashAccountCode ?? getPostingAccounts(db).cash, currency: 'IQD', rateX100: 100,
+      kind: 'payment', date: todayIso(), cashAccountCode: cashAccountCode!, currency: 'IQD', rateX100: 100,
       description: `${GIFT_NAMES.en} ${r.code}`, items: [{ accountCode: r.account_code, amount: Number(r.amount), description: r.code }]
     }, actor);
   db.prepare("UPDATE gift_vouchers SET status = 'cancelled', balance = 0, cancel_entry_id = ? WHERE id = ?").run(reversal, id);

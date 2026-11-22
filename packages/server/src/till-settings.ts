@@ -250,9 +250,14 @@ export function assertRefundApproved(db: Db, invoiceId: string, actor: Pick<Acto
   refund: { cashAccount?: string | null | undefined; lines?: readonly { lineNo: number; qtyMilli: number }[] | undefined; cancel?: boolean } = {}): void {
   if (!tillRules(db).supervisor.refund || !actor) return;
   if (actor.permissions.includes('admin') || maySupervise(actor)) return;
-  const inv = db.prepare('SELECT kind, payment, cash_account FROM invoices WHERE id = ?').get(invoiceId) as { kind: string; payment: string; cash_account: string | null } | undefined;
-  if (!inv || inv.kind !== 'sale') return;
-  const tillSale = !!db.prepare('SELECT 1 FROM pos_sales WHERE invoice_id = ?').get(invoiceId);
+  const inv = db.prepare('SELECT kind, payment, cash_account, return_of FROM invoices WHERE id = ?').get(invoiceId) as
+    { kind: string; payment: string; cash_account: string | null; return_of: string | null } | undefined;
+  // a sales return cancelled (round four of the review) undoes a refund: the goods leave again and the drawer is
+  // expected to hold the money again, so it is approved like the refund was, for that very return
+  const returnCancelled = !!inv && inv.kind === 'sale_return' && refund.cancel === true;
+  if (!inv || (inv.kind !== 'sale' && !returnCancelled)) return;
+  const saleId = returnCancelled ? inv.return_of : invoiceId;
+  const tillSale = !!saleId && !!db.prepare('SELECT 1 FROM pos_sales WHERE invoice_id = ?').get(saleId);
   const safe = refund.cancel ? (inv.payment === 'cash' ? inv.cash_account : null) : refund.cashAccount ?? null;
   const fromDrawer = !!safe && !!db.prepare("SELECT 1 FROM pos_shifts WHERE status = 'open' AND cash_account = ?").get(safe);
   if (!tillSale && !fromDrawer) return;
