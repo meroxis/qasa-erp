@@ -35,6 +35,7 @@ import { QuickVoucherButton } from '../industry/QuickVoucher.tsx';
 import { invoiceOpen } from '../industry/quick-voucher.ts';
 import { DocAmount } from '../Amount.tsx';
 import { ClothingGridButton, linesIn } from '../industry/ClothingTools.tsx';
+import { sendReturn } from '../industry/returns-api.ts';
 
 const STATUSES: (InvoiceStatus | '')[] = ['', 'draft', 'posted', 'cancelled'];
 
@@ -1030,7 +1031,7 @@ function ReturnModal({ invoice: v, onClose }: { invoice: InvoiceView; onClose():
     setBusy(true);
     setError(null);
     try {
-      const ret = await api.createReturn(v.id, {
+      const ret = await sendReturn(v.id, {
         date, payment, lines: chosen.map((l) => ({ lineNo: l.lineNo, qtyMilli: baseOf(l)! })),
         ...(payment === 'cash' ? { cashAccountCode: cashAccount } : {}),
         ...(notes.trim() ? { notes: notes.trim() } : {})

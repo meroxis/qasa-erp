@@ -12,6 +12,8 @@ export { planStatus, readLicenseKey } from './license.ts';
 export { configureLicensing, keyHash, licensingToday, machineId, noteFirstStart, noteFirstStartBeforeCarry, readActivationToken } from './activation.ts';
 export { getSettings, readSetting, writeSetting } from './settings.ts';
 export { audit } from './audit.ts';
+export { onceOnly } from './idempotency.ts';
+export { allowCardPaymentsForTests } from './pos.ts';
 export { AppError, conflict, invalid, notFound } from './errors.ts';
 export {
   createJournalEntry, createVoucher, deleteEntry, documentVoucherStates, documentVoucherWaits, getEntry, postDocumentVoucher, postVoucherNow, reverseEntryInternal,

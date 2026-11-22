@@ -10,12 +10,15 @@ vi.mock('../api.ts', () => ({
   newIdempotencyKey: (() => { let n = 0; return () => `k${++n}`; })(),
   isNetworkError: (e: unknown) => e instanceof TypeError,
   qs: () => '',
+  refundApprovals: () => ({}),
   request: async (method: string, url: string, _b: unknown, o?: { key?: string }) => { sent.push({ method, url, key: o?.key }); return answer(); }
 }));
 const { wholesaleApi } = await import('./wholesale-api.ts');
 const { deliveryApi, dailyApi } = await import('./market-extras-api.ts');
 const { consignmentApi } = await import('./consignment-api.ts');
 const { goldApi } = await import('./gold-api.ts');
+const { sendReturn, collectInstallmentOnce } = await import('./returns-api.ts');
+const { payrollApi } = await import('./payroll-api.ts');
 const { heldOnceKeys } = await import('./send-once.ts');
 
 const collection = { repId: 'r', partyId: 'p', date: '2026-11-20', currency: 'IQD' as const, rateX100: 100, amount: 25_000 };
@@ -41,7 +44,10 @@ const CALLS: [string, () => Promise<unknown>][] = [
   ['consignment settlement cancelled', () => consignmentApi.cancelSettlement('s1')],
   ['gold document', () => goldApi.createDoc(goldDoc as never)],
   ['gold document posted', () => goldApi.postDoc('g1', 'en')],
-  ['gold document cancelled', () => goldApi.cancelDoc('g1')]
+  ['gold document cancelled', () => goldApi.cancelDoc('g1')],
+  ['an installment collected', () => collectInstallmentOnce('c1', { date: '2026-11-20', amount: 250_000, cashAccountCode: '1811', lang: 'en' })],
+  ['a salary advance paid', () => payrollApi.payAdvance({ employeeId: 'e1', date: '2026-11-20', amount: 100_000, monthly: 50_000, cashAccountCode: '1811', lang: 'en' })],
+  ['a return from the invoice page', () => sendReturn('inv1', { date: '2026-11-20', payment: 'cash', cashAccountCode: '1811', lines: [{ lineNo: 1, qtyMilli: 1000 }] })]
 ];
 
 describe('money and stock are sent once (2.0 review: the web uses the key the server honours)', () => {

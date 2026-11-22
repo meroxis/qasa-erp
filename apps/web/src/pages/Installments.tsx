@@ -8,6 +8,7 @@ import { EmptyState, AccountCombo, AmountInput, ErrorBox, Icon, Modal, SearchCom
 import { useI18n, type I18n } from '../i18n.ts';
 import { ReceiptApproval, receiptDoneText, type ApprovalOf } from '../industry/ReceiptApproval.tsx';
 import { go, href } from '../router.ts';
+import { collectInstallmentOnce } from '../industry/returns-api.ts';
 import { PartyPicker } from '../industry/PartyPicker.tsx';
 import { printDocument } from '../industry/printing.ts';
 
@@ -308,7 +309,7 @@ function CollectModal({ contract: c, onClose, onDone }: { contract: ContractView
     setError(null);
     try {
       const rateX100 = Math.round(Number(toWesternDigits(rate).replace(/,/g, '')) * 100);
-      const after = await api.collectInstallment(c.id, {
+      const after = await collectInstallmentOnce(c.id, {
         date, amount: amount ?? 0, cashAccountCode: cashAccount, lang: i18n.lang, ...(c.currency === 'USD' ? { rateX100 } : {})
       });
       onDone(after.receipts[after.receipts.length - 1]);
