@@ -2135,16 +2135,52 @@ const V18 =
   CREATE TABLE pos_approvals (
     id TEXT PRIMARY KEY,
     shift_id TEXT NOT NULL REFERENCES pos_shifts(id),
-    action TEXT NOT NULL CHECK (action IN ('line_delete', 'void', 'price', 'discount', 'no_sale', 'refund', 'credit_over', 'blind_view')),
+    action TEXT NOT NULL CHECK (action IN ('line_delete', 'void', 'price', 'discount', 'no_sale', 'refund', 'credit_over', 'blind_view', 'offline_sale')),
     approver TEXT NOT NULL,
     approver_id TEXT,
     cashier TEXT NOT NULL,
+    -- who asked (the user's id with sign-in on) and what exactly was approved: the invoice (a refund), the customer
+    -- (credit over the limit) or the item and unit (a lower price); the lowest price, the largest discount or the
+    -- largest total; and for a return its scope: the lines and quantities that may come back (JSON; none = the whole invoice)
+    cashier_id TEXT,
+    subject TEXT,
+    amount INTEGER,
+    scope TEXT,
     detail TEXT,
     created_at TEXT NOT NULL,
     expires_at TEXT NOT NULL,
     used_at TEXT
   );
   CREATE INDEX pos_approvals_shift ON pos_approvals(shift_id);
+  -- wrong supervisor PINs, counted per cashier and for the whole company ('all'): kept here so a restart or a second
+  -- server process does not start the count again
+  CREATE TABLE pos_pin_tries (
+    k TEXT PRIMARY KEY,
+    n INTEGER NOT NULL DEFAULT 0,
+    since TEXT NOT NULL,
+    locked_until TEXT,
+    day_on TEXT,
+    day_n INTEGER NOT NULL DEFAULT 0
+  );
+  -- the shift whose drawer paid a cash refund (a return at the till, an exchange): counted in that shift alone
+  CREATE TABLE pos_shift_refunds (
+    invoice_id TEXT PRIMARY KEY REFERENCES invoices(id),
+    shift_id TEXT NOT NULL REFERENCES pos_shifts(id),
+    created_at TEXT NOT NULL
+  );
+  CREATE INDEX pos_shift_refunds_shift ON pos_shift_refunds(shift_id);
+  -- an item's sale prices over time, per unit ('' = the item's own unit): written at every change (the first change
+  -- also keeps the price before it). A sale a till kept while cut off, at a price that was the list price since its
+  -- shift opened, is told from one below the price list
+  CREATE TABLE item_price_history (
+    id TEXT PRIMARY KEY,
+    item_id TEXT NOT NULL REFERENCES items(id),
+    unit TEXT NOT NULL DEFAULT '',
+    price INTEGER NOT NULL,
+    currency TEXT NOT NULL,
+    changed_at TEXT NOT NULL
+  );
+  CREATE INDEX item_price_history_item ON item_price_history(item_id, unit, changed_at);
   CREATE TABLE gift_vouchers (
     id TEXT PRIMARY KEY,
     code TEXT NOT NULL UNIQUE,
@@ -2172,6 +2208,8 @@ const V18 =
     kind TEXT NOT NULL CHECK (kind IN ('sold', 'redeemed', 'restored', 'cancelled', 'returned', 'expired')),
     amount INTEGER NOT NULL,
     invoice_id TEXT REFERENCES invoices(id),
+    -- a share given back by a return: the voucher of the sale it stands for (itself, or the one a new voucher replaces)
+    for_voucher_id TEXT,
     created_by TEXT NOT NULL,
     created_at TEXT NOT NULL
   );

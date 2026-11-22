@@ -5,7 +5,7 @@ import { MYSQL_TABLES, tableColumns, V18_MYSQL_STEPS } from './schema-mysql.ts';
 
 // Version 18 (2.0, the till's rules): supervisors' PINs and approvals, gift vouchers, the customer screen's pictures and
 // pairing codes, and the dinar rounding of a till sale's cash.
-const V18_TABLES = ['pos_pins', 'pos_approvals', 'gift_vouchers', 'gift_voucher_moves', 'pos_display_images', 'pos_display_codes'];
+const V18_TABLES = ['pos_pins', 'pos_approvals', 'pos_pin_tries', 'pos_shift_refunds', 'item_price_history', 'gift_vouchers', 'gift_voucher_moves', 'pos_display_images', 'pos_display_codes'];
 
 describe('version 18', () => {
   it('makes its tables empty, and a till sale made before it has no rounding', () => {

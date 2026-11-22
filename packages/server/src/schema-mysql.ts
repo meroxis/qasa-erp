@@ -2073,16 +2073,58 @@ export const MYSQL_TABLES: readonly MysqlObject[] = [
     sql: `CREATE TABLE pos_approvals (
       id ${ID} NOT NULL PRIMARY KEY,
       shift_id ${ID} NOT NULL,
-      action ${WORD} NOT NULL CHECK (action IN ('line_delete', 'void', 'price', 'discount', 'no_sale', 'refund', 'credit_over', 'blind_view')),
+      action ${WORD} NOT NULL CHECK (action IN ('line_delete', 'void', 'price', 'discount', 'no_sale', 'refund', 'credit_over', 'blind_view', 'offline_sale')),
       approver TEXT NOT NULL,
       approver_id ${ID},
       cashier TEXT NOT NULL,
+      cashier_id ${ID},
+      subject VARCHAR(160),
+      amount BIGINT,
+      scope TEXT,
       detail TEXT,
       created_at ${WHEN} NOT NULL,
       expires_at ${WHEN} NOT NULL,
       used_at ${WHEN},
       INDEX pos_approvals_shift (shift_id),
       FOREIGN KEY (shift_id) REFERENCES pos_shifts(id)
+    )`
+  },
+  {
+    name: 'pos_pin_tries',
+    since: 18,
+    sql: `CREATE TABLE pos_pin_tries (
+      k VARCHAR(160) NOT NULL PRIMARY KEY,
+      n INT NOT NULL DEFAULT 0,
+      since ${WHEN} NOT NULL,
+      locked_until ${WHEN},
+      day_on ${WHEN},
+      day_n INT NOT NULL DEFAULT 0
+    )`
+  },
+  {
+    name: 'pos_shift_refunds',
+    since: 18,
+    sql: `CREATE TABLE pos_shift_refunds (
+      invoice_id ${ID} NOT NULL PRIMARY KEY,
+      shift_id ${ID} NOT NULL,
+      created_at ${WHEN} NOT NULL,
+      INDEX pos_shift_refunds_shift (shift_id),
+      FOREIGN KEY (invoice_id) REFERENCES invoices(id),
+      FOREIGN KEY (shift_id) REFERENCES pos_shifts(id)
+    )`
+  },
+  {
+    name: 'item_price_history',
+    since: 18,
+    sql: `CREATE TABLE item_price_history (
+      id ${ID} NOT NULL PRIMARY KEY,
+      item_id ${ID} NOT NULL,
+      unit ${WORD} NOT NULL DEFAULT '',
+      price BIGINT NOT NULL,
+      currency ${WORD} NOT NULL,
+      changed_at ${WHEN} NOT NULL,
+      INDEX item_price_history_item (item_id, unit, changed_at),
+      FOREIGN KEY (item_id) REFERENCES items(id)
     )`
   },
   {
@@ -2124,6 +2166,7 @@ export const MYSQL_TABLES: readonly MysqlObject[] = [
       kind ${WORD} NOT NULL CHECK (kind IN ('sold', 'redeemed', 'restored', 'cancelled', 'returned', 'expired')),
       amount BIGINT NOT NULL,
       invoice_id ${ID},
+      for_voucher_id ${ID},
       created_by TEXT NOT NULL,
       created_at ${WHEN} NOT NULL,
       INDEX gift_voucher_moves_voucher (voucher_id),
