@@ -4,7 +4,7 @@ import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { generateKeyPairSync, sign, type KeyObject } from 'node:crypto';
-import { buildApp, changesRecords, configureLicensing, configureViewOnly, keyHash, machineId, openDatabase, planStatus, readSetting, SCHEMA_VERSION, writeSetting, type Db } from '@qasa/server';
+import { buildApp, changesRecords, configureLicensing, configureViewOnly, keyHash, machineId, openDatabase, planStatus, readSetting, registeredRoutes, SCHEMA_VERSION, VIEW_ONLY_ALLOWED, writeSetting, type Db } from '@qasa/server';
 import { resetLicensingForTests } from '../../../packages/server/src/activation.ts';
 import { setLicensePublicKeyForTests } from '../../../packages/server/src/license.ts';
 import { companyApi, isNewerLicence, takeNewerLicence, type StoredLicence } from './company-api.ts';
@@ -446,6 +446,16 @@ describe('companies on this PC', () => {
     writeFileSync(join(dir, 'backup.json'), '{"on": true, "secr');
     expect((await app.inject({ method: 'POST', url: '/api/companies/main/backup', headers })).statusCode).toBe(409);
     expect(readdirSync(backups)).toEqual([]);
+  });
+
+  it('keeps the companies\' own routes, each by name, on the list a view-only company still takes (round four)', async () => {
+    await app.ready();
+    const mine = registeredRoutes(app).filter((r) => r.url.startsWith('/api/companies') && !['GET', 'HEAD', 'OPTIONS'].includes(r.method)).map((r) => `${r.method} ${r.url}`).sort();
+    expect(mine).toEqual(['POST /api/companies', 'POST /api/companies/:id/backup', 'POST /api/companies/:id/open', 'PUT /api/companies/:id']);
+    for (const r of mine) expect(VIEW_ONLY_ALLOWED.has(r), r).toBe(true);
+    // … and nothing else under that address is open because it is under it
+    expect(changesRecords('DELETE', '/api/companies/:id')).toBe(true);
+    expect(changesRecords('POST', '/api/companies/:id/restore')).toBe(true);
   });
 
   it('only an admin sees or changes the companies', async () => {

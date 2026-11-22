@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from 'vitest';
-import { buildApp, changesRecords, configureViewOnly } from './app.ts';
+import { buildApp, changesRecords, configureViewOnly, registeredRoutes, VIEW_ONLY_ALLOWED } from './app.ts';
 import { openDatabase } from './db.ts';
 
 // A company past the plan's limit opens view-only: no request changes it, however its address is written
@@ -43,8 +43,55 @@ describe('a view-only company', () => {
     expect(changesRecords('POST', '/api//items/')).toBe(true);
     expect(changesRecords('POST', '/api/%E0%A4%A')).toBe(true);
     expect(changesRecords('POST', '/api/backup/restore')).toBe(true);
-    expect(changesRecords('POST', '/api/backup')).toBe(false);
+    expect(changesRecords('PUT', '/api/backup')).toBe(false);
     expect(changesRecords('POST', '/%61pi/auth/login')).toBe(false);
     expect(changesRecords('GET', '/api/items')).toBe(false);
+  });
+
+  it('opens exact routes only, never everything under an address (round four)', () => {
+    // these passed while /api/auth and /api/backup were open as a whole
+    for (const [method, route] of [['PUT', '/api/auth/signin'], ['PUT', '/api/auth/separate-duties'], ['POST', '/api/backup/cloud/restore'], ['POST', '/api/backup/restore'],
+      ['PUT', '/api/auth/hello-reset'], ['DELETE', '/api/auth/hello-reset'], ['POST', '/api/auth/recovery-code'], ['DELETE', '/api/auth/reset-notice']] as const) {
+      expect(changesRecords(method, route), `${method} ${route}`).toBe(true);
+    }
+    // a route nobody listed is closed, wherever it is; another method on a listed address too
+    expect(changesRecords('POST', '/api/auth/anything-new')).toBe(true);
+    expect(changesRecords('POST', '/api/backup')).toBe(true);
+    expect(changesRecords('DELETE', '/api/auth/login')).toBe(true);
+    expect(changesRecords('POST', '/api/auth/login/extra')).toBe(true);
+    expect(changesRecords('POST', '/api/plan/license/../../items')).toBe(true);
+    // the listed ones, as a route and as an address that names a company
+    expect(changesRecords('post', '/api/auth/login')).toBe(false);
+    expect(changesRecords('POST', '/api/companies/:id/open')).toBe(false);
+    expect(changesRecords('POST', '/api/companies/3f2a/open')).toBe(false);
+    expect(changesRecords('POST', '/api/companies/3f2a/b/open')).toBe(true);
+    expect(changesRecords('POST', '/api/companies/3f2a/delete')).toBe(true);
+  });
+
+  it('refuses every route that is not a read, one by one, unless it is on the list (the sweep)', async () => {
+    const db = openDatabase(':memory:');
+    const app = buildApp(db);
+    try {
+      await app.ready();
+      const writes = registeredRoutes(app).filter((r) => !['GET', 'HEAD', 'OPTIONS'].includes(r.method));
+      expect(writes.length).toBeGreaterThan(150);
+      configureViewOnly(() => true);
+      const open: string[] = [];
+      for (const r of writes) {
+        const url = r.url.replace(/:[A-Za-z]+/g, 'x1');
+        const res = await app.inject({ method: r.method as 'POST', url, payload: {}, headers: { 'x-qasa-client': '1' } });
+        const refused = res.statusCode === 409 && (res.json() as { error?: string }).error === 'company_view_only';
+        if (!refused) open.push(`${r.method} ${r.url}`);
+        expect(refused, `${r.method} ${r.url}`).toBe(!VIEW_ONLY_ALLOWED.has(`${r.method} ${r.url}`));
+      }
+      // what this server leaves open, by name: nothing else
+      expect(open.sort()).toEqual(['DELETE /api/plan/license', 'POST /api/auth/login', 'POST /api/auth/logout', 'POST /api/auth/password', 'POST /api/plan/activate', 'POST /api/plan/check',
+        'POST /api/plan/deactivate', 'POST /api/plan/license', 'POST /api/plan/trial', 'POST /api/usage/context', 'PUT /api/usage']);
+      // reads still pass
+      expect((await app.inject({ method: 'GET', url: '/api/items' })).statusCode).toBe(200);
+    } finally {
+      await app.close();
+      db.close();
+    }
   });
 });

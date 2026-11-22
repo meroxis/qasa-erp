@@ -4,7 +4,7 @@ export {
 } from './db.ts';
 export { copyCompany, CopyError, type CopySummary } from './db-copy.ts';
 export { MYSQL_TRIGGERS } from './schema-mysql.ts';
-export { buildApp, changesRecords, configureViewOnly } from './app.ts';
+export { buildApp, changesRecords, configureViewOnly, registeredRoutes, VIEW_ONLY_ALLOWED } from './app.ts';
 // for the Pro module: who is asking, the plan, settings, the audit log, and routes of its own (ApiExtension)
 export { ApiReply, requestActor, type ApiExtension, type ApiRequest, type HttpMethod, type Route } from './routes.ts';
 export { adminUsernames, auditUnconfirmedReset, recoverAdminWithCode, resetAdminOnThisPc, signInRequired, type Actor, type Permission } from './auth.ts';
