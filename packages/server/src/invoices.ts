@@ -583,14 +583,18 @@ function assertInvoice(db: Db, input: InvoiceInput): void {
  * 1.7: how a draft sale is worked out with offers. `offersAt`: offers apply (the till and the invoice screen), as at
  * that moment; absent: none (a website order, a converted quotation, a purchase), as before.
  */
-export interface DraftOptions { offersAt?: Date | undefined }
+export interface DraftOptions {
+  offersAt?: Date | undefined;
+  /** the day the offers are those of, when it is not the invoice's own date: a delivery order's, delivered on a later day */
+  offersOn?: string | undefined;
+}
 
 function writeDraft(db: Db, id: string, input: InvoiceInput, opts: DraftOptions = {}): void {
   const totals = invoiceTotals(input.lines, input.discount);
   const withOffers = input.kind === 'sale' && !!opts.offersAt;
   const offers = withOffers
     ? saleOffers(db, { date: input.date, warehouseId: input.warehouseId, currency: input.currency, rateX100: input.rateX100,
-      lines: input.lines.map((l, i) => ({ itemId: l.itemId, qtyMilli: l.qtyMilli, amount: totals.lineAmounts[i] ?? 0 })) }, opts.offersAt!)
+      lines: input.lines.map((l, i) => ({ itemId: l.itemId, qtyMilli: l.qtyMilli, amount: totals.lineAmounts[i] ?? 0 })) }, opts.offersAt!, opts.offersOn)
     : null;
   const offerTotal = offers?.total ?? 0;
   // the discount typed comes off what is left after the offers, and something must still be paid
@@ -711,14 +715,14 @@ export function onlinePaidAmount(db: Db, invoiceId: string): number {
 
 export function postInvoice(
   db: Db, id: string, user: string,
-  opts: { settledNow?: number; allowExpired?: boolean; split?: readonly SalePart[]; loyaltyPoints?: number | undefined; offersAt?: Date | undefined;
+  opts: { settledNow?: number; allowExpired?: boolean; split?: readonly SalePart[]; loyaltyPoints?: number | undefined; offersAt?: Date | undefined; offersOn?: string | undefined;
     /** over the customer's credit limit, allowed: a till's credit sale a supervisor approved by PIN (till-rules.ts), or a
      * wholesale order approved with a warning or an admin's override (wholesale.ts) */
     overLimit?: boolean | undefined } = {}
 ): InvoiceView {
   requireAction(db, loadRow(db, id), 'post');
   // 1.7: a sale that gets offers gets them as they are when it is posted (the server works them out, never the till)
-  refreshOffers(db, id, opts.offersAt ?? new Date());
+  refreshOffers(db, id, opts.offersAt ?? new Date(), opts.offersOn);
   const view = getInvoice(db, id);
   if (opts.loyaltyPoints !== undefined && view.kind !== 'sale') throw invalid([{ code: 'loyalty_points_invalid' }]);
   // money already taken online for this order is on the customer's account: posted as cash too, it would be taken twice
@@ -862,11 +866,11 @@ export function postInvoice(
 }
 
 /** A draft sale that gets offers, worked out again as at `at` (an offer may have ended, or begun, since it was saved). */
-function refreshOffers(db: Db, id: string, at: Date): void {
+function refreshOffers(db: Db, id: string, at: Date, on?: string): void {
   const row = loadRow(db, id);
   if (row.kind !== 'sale' || row.status !== 'draft' || Number(row.offers_on ?? 0) !== 1) return;
   const input = storedInput(getInvoice(db, id));
-  transaction(db, () => writeDraft(db, id, input, { offersAt: at }));
+  transaction(db, () => writeDraft(db, id, input, { offersAt: at, offersOn: on }));
 }
 
 /**

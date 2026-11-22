@@ -137,6 +137,120 @@ describe('delivery orders', () => {
     expect(balanceOf('1811')).toBe(8_000);
   });
 
+  it('books a driver’s handover, and one taken back, once when the request comes twice with its key', async () => {
+    await ok('POST', '/api/plan/trial');
+    await stockIn(milkId, 10, 1_000);
+    const cash = driverSafe();
+    const driver = await ok('POST', '/api/delivery/drivers', { name: 'Hemin', cashAccount: cash });
+    const o = await ok('POST', '/api/delivery/orders', order());
+    await ok('POST', `/api/delivery/orders/${o.id}/status`, { status: 'out', driverId: driver.id });
+    await ok('POST', `/api/delivery/orders/${o.id}/status`, { status: 'delivered' });
+    const key = (n: number) => ({ ...headers, 'x-qasa-idempotency': `5f1c2d3e-4a5b-4c6d-8e7f-9a0b1c2d3e6${n}` });
+    const body = { driverId: driver.id, amount: 5_000, cashAccountCode: '1811' };
+    const first = await call('POST', '/api/delivery/handovers', body, key(1));
+    expect(first.statusCode, first.body).toBe(201);
+    // a second tap, or the phone sending it again: 5,000 handed over once, not 10,000
+    const again = await call('POST', '/api/delivery/handovers', body, key(1));
+    expect(again.headers['x-qasa-idempotent-replay']).toBe('1');
+    expect(again.json().id).toBe(first.json().id);
+    expect(db.prepare('SELECT COUNT(*) AS n FROM delivery_handovers').get()).toEqual({ n: 1 });
+    expect((await ok('GET', '/api/delivery/drivers'))[0].holding).toBe(3_000);
+    await ok('POST', `/api/entries/${first.json().entryId}/check`, {});
+    await ok('POST', `/api/entries/${first.json().entryId}/approve`, {});
+
+    const back = await call('POST', `/api/delivery/handovers/${first.json().id}/cancel`, {}, key(2));
+    expect(back.statusCode, back.body).toBe(200);
+    // sent again: the same reversal, not "already taken back" and not a second reversal
+    const backAgain = await call('POST', `/api/delivery/handovers/${first.json().id}/cancel`, {}, key(2));
+    expect(backAgain.headers['x-qasa-idempotent-replay']).toBe('1');
+    expect(backAgain.json()).toEqual(back.json());
+    expect([balanceOf(cash), balanceOf('1811')]).toEqual([8_000, 0]);
+  });
+
+  it('takes a handover back, a draft or one in the books, and the driver holds the cash again (2.0 books review #2)', async () => {
+    await ok('POST', '/api/plan/trial');
+    await stockIn(milkId, 10, 1_000);
+    const cash = driverSafe();
+    const driver = await ok('POST', '/api/delivery/drivers', { name: 'Hemin', cashAccount: cash });
+    const o = await ok('POST', '/api/delivery/orders', order());
+    await ok('POST', `/api/delivery/orders/${o.id}/status`, { status: 'out', driverId: driver.id });
+    await ok('POST', `/api/delivery/orders/${o.id}/status`, { status: 'delivered' });
+    // sent to the office for 8,000, but he brought 5,000: the draft is taken back, then made again
+    const wrong = await ok('POST', '/api/delivery/handovers', { driverId: driver.id, amount: 8_000, cashAccountCode: '1811' });
+    expect((await ok('GET', '/api/delivery/drivers'))[0].holding).toBe(0);
+    await ok('POST', `/api/delivery/handovers/${wrong.id}/cancel`, {});
+    expect(db.prepare('SELECT 1 FROM entries WHERE id = ?').get(wrong.entryId)).toBeUndefined();
+    expect((await ok('GET', '/api/delivery/handovers')).length).toBe(0);
+    expect((await ok('GET', '/api/delivery/drivers'))[0].holding).toBe(8_000);
+    const right = await ok('POST', '/api/delivery/handovers', { driverId: driver.id, amount: 5_000, cashAccountCode: '1811' });
+    await ok('POST', `/api/entries/${right.entryId}/check`, {});
+    await ok('POST', `/api/entries/${right.entryId}/approve`, {});
+    expect([balanceOf(cash), balanceOf('1811')]).toEqual([3_000, 5_000]);
+    // in the books: reversed (never from the vouchers page), and not twice
+    expect((await call('POST', `/api/entries/${right.entryId}/reverse`, {})).json()).toMatchObject({ error: 'entry_belongs_to_delivery_handover' });
+    expect((await ok('POST', `/api/delivery/handovers/${right.id}/cancel`, {})).reversalId).toEqual(expect.any(String));
+    expect([balanceOf(cash), balanceOf('1811')]).toEqual([8_000, 0]);
+    expect((await ok('GET', '/api/delivery/handovers'))[0].entryStatus).toBe('reversed');
+    expect((await ok('GET', '/api/delivery/drivers'))[0].holding).toBe(8_000);
+    expect((await call('POST', `/api/delivery/handovers/${right.id}/cancel`, {})).json().error).toBe('dl_handover_cancelled');
+  });
+
+  it('keeps a refused handover out of what the driver holds back and out of the year’s close; reversing one in the books needs an approver (2.0 books review #2)', async () => {
+    await ok('POST', '/api/plan/trial');
+    await stockIn(milkId, 10, 1_000);
+    const cash = driverSafe();
+    const driver = await ok('POST', '/api/delivery/drivers', { name: 'Hemin', cashAccount: cash });
+    const o = await ok('POST', '/api/delivery/orders', order());
+    await ok('POST', `/api/delivery/orders/${o.id}/status`, { status: 'out', driverId: driver.id });
+    await ok('POST', `/api/delivery/orders/${o.id}/status`, { status: 'delivered' });
+    const owner = (await ok('GET', '/api/users'))[0] as { username: string };
+    const las = await signInAs(['preparer']);
+    const login = await app.inject({ method: 'POST', url: '/api/auth/login', payload: { username: owner.username, password: 'admin-pass-123' }, headers: { 'x-qasa-client': '1' } });
+    const admin = { cookie: String(login.headers['set-cookie']).split(';')[0]!, 'x-qasa-client': '1' };
+    writeSetting(db, 'vouchers_need_approval', '1');
+    const h = await ok('POST', '/api/delivery/handovers', { driverId: driver.id, amount: 8_000, cashAccountCode: '1811' }, las);
+    const refused = await call('POST', `/api/entries/${h.entryId}/reject`, { reason: 'brought 5,000 only' }, admin);
+    expect(refused.statusCode, refused.body).toBe(200);
+    // the driver still holds it all, the right handover can be made, and the year is not held up by the refused one
+    expect((await ok('GET', '/api/delivery/drivers', undefined, admin))[0].holding).toBe(8_000);
+    const year = (await ok('GET', '/api/year-end', undefined, admin)).years.find((y: { year: number }) => y.year === 2026);
+    expect(year.blockers ?? []).not.toContainEqual(expect.objectContaining({ code: 'unfinished_entries' }));
+    const right = await ok('POST', '/api/delivery/handovers', { driverId: driver.id, amount: 5_000, cashAccountCode: '1811' }, admin);
+    // the preparer takes the refused one away, but does not reverse one that is in the books
+    await ok('POST', `/api/delivery/handovers/${h.id}/cancel`, {}, las);
+    if (right.entryStatus !== 'approved') { await ok('POST', `/api/entries/${right.entryId}/check`, {}, admin); await ok('POST', `/api/entries/${right.entryId}/approve`, {}, admin); }
+    expect((await call('POST', `/api/delivery/handovers/${right.id}/cancel`, {}, las)).statusCode).toBe(403);
+  });
+
+  it('gives each driver a cash account of his own: not another driver’s, nor the main safe (2.0 books review #14)', async () => {
+    await ok('POST', '/api/plan/trial');
+    const cash = driverSafe();
+    const hemin = await ok('POST', '/api/delivery/drivers', { name: 'Hemin', cashAccount: cash });
+    expect((await call('POST', '/api/delivery/drivers', { name: 'Dara', cashAccount: cash })).json().details).toEqual([{ code: 'dl_cash_account_taken' }]);
+    expect((await call('POST', '/api/delivery/drivers', { name: 'Dara', cashAccount: '1811' })).json().details).toEqual([{ code: 'dl_cash_account_taken' }]);
+    // his own stays his when the rest of him is changed
+    expect((await ok('PUT', `/api/delivery/drivers/${hemin.id}`, { name: 'Hemin K.', cashAccount: cash })).cashAccount).toBe(cash);
+  });
+
+  it('gives an order delivered the next day the offers of the day it was taken (2.0 books review #8)', async () => {
+    await ok('POST', '/api/plan/trial');
+    await stockIn(milkId, 10, 1_000);
+    const driver = await ok('POST', '/api/delivery/drivers', { name: 'Hemin', cashAccount: driverSafe() });
+    await ok('POST', '/api/offers', {
+      code: 'MILK20', names: { ar: 'حليب', en: 'Milk 20% off', ku: 'شیر' }, kind: 'price', priority: 0, exclusive: false, maxPerSale: null,
+      startsOn: null, endsOn: '2026-11-20', weekdays: null, fromTime: null, toTime: null, branchIds: null, items: [milkId], categories: [], getItems: [], getCategories: [],
+      buyMilli: null, getMilli: null, getPercent: null, bundleMilli: null, bundlePrice: null, price: null, percentOff: 20
+    });
+    const o = await ok('POST', '/api/delivery/orders', order());
+    expect(o.total).toBe(6_800);
+    vi.setSystemTime(new Date('2026-11-21T08:00:00Z'));
+    await ok('POST', `/api/delivery/orders/${o.id}/status`, { status: 'out', driverId: driver.id });
+    const done = await ok('POST', `/api/delivery/orders/${o.id}/status`, { status: 'delivered' });
+    expect(done.total).toBe(6_800);
+    // what the driver was told to collect is what went into his cash
+    expect(balanceOf('1812')).toBe(6_800);
+  });
+
   it('delivers on the customer’s account, cancels with a reason, and deletes only a new order', async () => {
     await ok('POST', '/api/plan/trial');
     await stockIn(milkId, 10, 1_000);
@@ -282,6 +396,39 @@ describe('daily-delivery suppliers', () => {
     expect((await ok('GET', `/api/parties/${supplierId}`)).balance).toBe(65_500);
     expect(balanceOf(stockAccount)).toBe(65_500);
     expect((await ok('GET', '/api/daily-suppliers'))).toMatchObject([{ partyId: supplierId, items: 2, balance: 65_500, doneToday: true }]);
+  });
+
+  it('refuses a second sheet for the same supplier and day unless the person says the supplier came again (2.0 books review #16)', async () => {
+    await ok('PUT', `/api/daily-suppliers/${supplierId}/items`, { items: [{ itemId: breadId, unitCost: 150 }] });
+    const sheet = { partyId: supplierId, date: '2026-11-20', warehouseId, lines: [{ itemId: breadId, receivedMilli: 100_000, returnedMilli: 0, unitCost: 150 }] };
+    await ok('POST', '/api/daily-suppliers/receipts', sheet);
+    // typed again (no key: another tab, another person): refused, nothing bought twice
+    const second = await call('POST', '/api/daily-suppliers/receipts', sheet);
+    expect(second.statusCode).toBe(409);
+    expect(second.json()).toMatchObject({ error: 'ds_sheet_exists' });
+    expect(stockQty(breadId)).toBe(100_000);
+    expect((await ok('GET', `/api/parties/${supplierId}`)).balance).toBe(15_000);
+    // the supplier did come a second time
+    await ok('POST', '/api/daily-suppliers/receipts', { ...sheet, again: true, lines: [{ itemId: breadId, receivedMilli: 40_000, returnedMilli: 0, unitCost: 150 }] });
+    expect(stockQty(breadId)).toBe(140_000);
+    expect(await ok('GET', `/api/daily-suppliers/${supplierId}/receipts`)).toHaveLength(2);
+  });
+
+  it('offers to return only what is still on the shelf: what sold is not there to hand back (2.0 books review #16)', async () => {
+    await ok('PUT', `/api/daily-suppliers/${supplierId}/items`, { items: [{ itemId: breadId, unitCost: 150 }] });
+    await ok('POST', '/api/daily-suppliers/receipts', { partyId: supplierId, date: '2026-11-19', warehouseId, lines: [{ itemId: breadId, receivedMilli: 100_000, returnedMilli: 0, unitCost: 150 }] });
+    const buyer = (await ok('POST', '/api/parties', { type: 'customer', name: 'Corner cafe' })).id;
+    const sale = await ok('POST', '/api/invoices', {
+      kind: 'sale', date: '2026-11-19', partyId: buyer, warehouseId, currency: 'IQD', rateX100: 100, payment: 'credit', discount: 0, lines: [{ itemId: breadId, qtyMilli: 80_000, unitPrice: 250 }]
+    });
+    await ok('POST', `/api/invoices/${sale.id}/post`, {});
+    const sheet = await ok('GET', `/api/daily-suppliers/${supplierId}/sheet?date=2026-11-20`);
+    expect(sheet.items[0]).toMatchObject({ code: 'SAMOON', lastReceivedMilli: 100_000, returnableMilli: 20_000 });
+    const tooMuch = await call('POST', '/api/daily-suppliers/receipts', { partyId: supplierId, date: '2026-11-20', warehouseId, lines: [{ itemId: breadId, receivedMilli: 0, returnedMilli: 30_000, unitCost: 150 }] });
+    expect(tooMuch.json().details).toEqual([{ code: 'ds_return_too_much', line: 1, available: 20_000 }]);
+    const back = await ok('POST', '/api/daily-suppliers/receipts', { partyId: supplierId, date: '2026-11-20', warehouseId, lines: [{ itemId: breadId, receivedMilli: 0, returnedMilli: 20_000, unitCost: 150 }] });
+    expect(back).toMatchObject({ returned: 3_000 });
+    expect(stockQty(breadId)).toBe(0);
   });
 
   it('is for purchasing staff', async () => {

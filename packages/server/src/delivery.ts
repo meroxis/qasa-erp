@@ -11,7 +11,7 @@ import { planStatus } from './license.ts';
 import { readSetting, writeSetting } from './settings.ts';
 import { createInvoice, getInvoice, postInvoice, withUnits, type InvoiceView } from './invoices.ts';
 import { createItem } from './items.ts';
-import { createJournalEntry } from './journal.ts';
+import { assertMayReverseFeatureEntry, createJournalEntry, deleteFeatureDraft, reverseEntryInternal, voucherPendingSql } from './journal.ts';
 import { preparerOf } from './quick-vouchers.ts';
 import { saleOffers } from './offers.ts';
 import { userBranchLists } from './branches.ts';
@@ -79,7 +79,7 @@ function approvedBalance(db: Db, account: string): number {
 
 function pendingHandovers(db: Db, driverId: string): number {
   return Number((db.prepare(`SELECT COALESCE(SUM(h.amount), 0) AS s FROM delivery_handovers h JOIN entries e ON e.id = h.entry_id
-                             WHERE h.driver_id = ? AND e.status IN ('draft', 'checked')`).get(driverId) as { s: number }).s);
+                             WHERE h.driver_id = ? AND e.status IN ('draft', 'checked') AND ${voucherPendingSql('e')}`).get(driverId) as { s: number }).s);
 }
 
 function driverView(db: Db, r: DriverRow): DriverView {
@@ -97,12 +97,25 @@ export function getDriver(db: Db, id: string): DriverView {
   return driverView(db, r);
 }
 
-function checkDriver(db: Db, input: DriverInput): void {
+function checkDriver(db: Db, input: DriverInput, selfId?: string): void {
   const errors: { code: string }[] = [];
   if (!input.name.trim()) errors.push({ code: 'dl_driver_name_required' });
   if (input.cashAccount && !isCashAccount(db, input.cashAccount)) errors.push({ code: 'dl_cash_account_invalid' });
+  // what a driver holds is his cash account's balance: it is his alone (not another driver's, a rep's, a till's safe
+  // or the office safe that handovers go to), or two people would each "hold" the same money
+  else if (input.cashAccount && cashAccountTaken(db, input.cashAccount, selfId)) errors.push({ code: 'dl_cash_account_taken' });
   if (input.userId && !db.prepare('SELECT 1 FROM users WHERE id = ?').get(input.userId)) errors.push({ code: 'dl_user_invalid' });
   if (errors.length) throw invalid(errors);
+}
+
+function cashAccountTaken(db: Db, code: string, selfId?: string): boolean {
+  if (db.prepare('SELECT 1 FROM delivery_drivers WHERE cash_account = ? AND id <> ?').get(code, selfId ?? '')) return true;
+  if (db.prepare('SELECT 1 FROM ws_reps WHERE cash_account = ?').get(code)) return true;
+  if (db.prepare('SELECT 1 FROM pos_tills WHERE cash_account = ?').get(code)) return true;
+  if (db.prepare("SELECT 1 FROM pos_shifts WHERE cash_account = ? AND status = 'open'").get(code)) return true;
+  // the main safe: the first cash account of the chart
+  const first = loadAccounts(db).filter((a) => a.postable && a.code.startsWith('18')).map((a) => a.code).sort()[0];
+  return code === first;
 }
 
 export function createDriver(db: Db, input: DriverInput, user: string): DriverView {
@@ -118,8 +131,9 @@ export function createDriver(db: Db, input: DriverInput, user: string): DriverVi
 
 export function updateDriver(db: Db, id: string, input: DriverInput, user: string): DriverView {
   requirePlan(db);
-  getDriver(db, id);
-  checkDriver(db, input);
+  const before = getDriver(db, id);
+  // (a driver made before this rule keeps the account he has until it is changed)
+  checkDriver(db, input.cashAccount === before.cashAccount ? { ...input, cashAccount: null } : input, id);
   db.prepare('UPDATE delivery_drivers SET name = ?, phone = ?, user_id = ?, cash_account = ?, active = ?, updated_at = ? WHERE id = ?')
     .run(input.name.trim(), input.phone?.trim() || null, input.userId || null, input.cashAccount || null, input.active === false ? 0 : 1, nowIso(), id);
   audit(db, user, 'update', 'delivery_driver', id);
@@ -344,8 +358,10 @@ function deliver(db: Db, row: OrderRow, actor: Actor): DeliveryOrderView {
     item_id: string; qty_milli: number; unit_price: number; unit: UnitCode | null; unit_qty_milli: number | null;
   }[];
   // the offers the customer was told of: those on when the order was taken (never a moment in the future)
+  // (also when it is delivered on a later day: the invoice is dated today, its offers are the order's day's)
   const taken = new Date(row.created_at);
   const offersAt = taken.getTime() <= Date.now() ? taken : new Date();
+  const offersOn = todayIso(offersAt);
   transaction(db, () => {
     const feeLines = row.fee > 0 ? [{ itemId: deliveryFeeItem(db, actor.name), qtyMilli: 1000, unitPrice: Number(row.fee) }] : [];
     const draft = createInvoice(db, {
@@ -356,8 +372,8 @@ function deliver(db: Db, row: OrderRow, actor: Actor): DeliveryOrderView {
         ...lines.map((l) => ({ itemId: l.item_id, qtyMilli: Number(l.qty_milli), unitPrice: Number(l.unit_price), ...(l.unit ? { unit: l.unit, unitQtyMilli: Number(l.unit_qty_milli ?? l.qty_milli) } : {}) })),
         ...feeLines
       ]
-    }, actor.name, { offersAt });
-    const posted: InvoiceView = postInvoice(db, draft.id, actor.name, { offersAt });
+    }, actor.name, { offersAt, offersOn });
+    const posted: InvoiceView = postInvoice(db, draft.id, actor.name, { offersAt, offersOn });
     const now = nowIso();
     db.prepare("UPDATE delivery_orders SET status = 'delivered', invoice_id = ?, delivered_at = ?, updated_at = ? WHERE id = ?").run(posted.id, now, now, row.id);
     audit(db, actor.name, 'deliver', 'delivery_order', row.id, { number: row.number, invoice: posted.number });
@@ -420,6 +436,31 @@ export function handOver(db: Db, input: { driverId: string; amount: number; cash
   return listHandovers(db, driver.id).find((h) => h.entryId === entryId)!;
 }
 
+/**
+ * Takes a handover back (the wrong amount or safe, or one that was refused): while its entry is not in the books it is
+ * deleted with the handover; once approved it is reversed, by someone who may approve entries and, under separate
+ * duties, not the one who made it. Either way the driver holds the cash again.
+ */
+export function cancelHandover(db: Db, id: string, actor: Actor, date?: string): { cancelled: true; reversalId: string | null } {
+  requirePlan(db);
+  const row = db.prepare('SELECT id, driver_id, entry_id, amount FROM delivery_handovers WHERE id = ?').get(id) as { id: string; driver_id: string; entry_id: string; amount: number } | undefined;
+  if (!row) throw notFound('delivery_handover');
+  const entry = db.prepare('SELECT status, reversed_by_id FROM entries WHERE id = ?').get(row.entry_id) as { status: string; reversed_by_id: string | null } | undefined;
+  let reversalId: string | null = null;
+  transaction(db, () => {
+    if (entry?.status === 'approved') {
+      if (entry.reversed_by_id) throw conflict('dl_handover_cancelled');
+      assertMayReverseFeatureEntry(db, row.entry_id, actor);
+      reversalId = reverseEntryInternal(db, row.entry_id, actor.name, date);
+    } else {
+      db.prepare('DELETE FROM delivery_handovers WHERE id = ?').run(id);
+      if (entry) deleteFeatureDraft(db, row.entry_id, actor.name);
+    }
+    audit(db, actor.name, 'cancel', 'delivery_handover', id, { amount: Number(row.amount), reversalId });
+  });
+  return { cancelled: true, reversalId };
+}
+
 export function listHandovers(db: Db, driverId?: string): HandoverView[] {
   const rows = db.prepare(`SELECT h.*, d.name AS driver_name FROM delivery_handovers h JOIN delivery_drivers d ON d.id = h.driver_id
                            ${driverId ? 'WHERE h.driver_id = ?' : ''} ORDER BY h.created_at DESC LIMIT 200`).all(...(driverId ? [driverId] : [])) as {
@@ -471,7 +512,8 @@ export const deliveryApi: ApiExtension = {
     'DELETE /api/delivery/orders/:id': 'sales',
     'POST /api/delivery/orders/:id/status': 'sales',
     'POST /api/delivery/preview': 'sales',
-    'POST /api/delivery/handovers': 'entries.prepare'
+    'POST /api/delivery/handovers': 'entries.prepare',
+    'POST /api/delivery/handovers/:id/cancel': 'entries.prepare'
   },
   routes(db, { actorOf }) {
     const actor = (req: ApiRequest) => actorOf(req);
@@ -541,8 +583,24 @@ export const deliveryApi: ApiExtension = {
         method: 'POST', path: '/api/delivery/handovers',
         handler: async (req, reply) => {
           const body = parse(z.object({ driverId: id, amount: z.number().int().positive().max(1e12), cashAccountCode: z.string().max(12), date: day.optional(), note: z.string().max(300).optional() }), req.body);
-          reply.status(201).send(handOver(db, body, actor(req)));
+          const who = actor(req);
+          // sent again with its key (a second tap, a retry after the link dropped): the same handover, the cash moved once
+          reply.status(201).send(onceOnly(db, req, reply, who, 'POST /api/delivery/handovers',
+            () => { const made = handOver(db, body, who); return { id: made.id, result: made }; }, (h) => listHandovers(db).find((x) => x.id === h)!));
           return undefined;
+        }
+      },
+      {
+        method: 'POST', path: '/api/delivery/handovers/:id/cancel',
+        handler: async (req, reply) => {
+          const hid = parse(idParam, req.params).id;
+          const on = parse(z.object({ date: day.optional() }), req.body ?? {}).date;
+          const who = actor(req);
+          return onceOnly(db, req, reply, who, 'POST /api/delivery/handovers/:id/cancel', () => ({ id: hid, result: cancelHandover(db, hid, who, on) }), (h) => {
+            // a draft was deleted with its handover; one in the books has its reversal
+            const row = db.prepare('SELECT e.reversed_by_id FROM delivery_handovers d JOIN entries e ON e.id = d.entry_id WHERE d.id = ?').get(h) as { reversed_by_id: string | null } | undefined;
+            return { cancelled: true as const, reversalId: row?.reversed_by_id ?? null };
+          });
         }
       }
     ];

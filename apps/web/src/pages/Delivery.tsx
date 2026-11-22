@@ -330,10 +330,17 @@ function Handovers({ available }: { available: boolean }) {
       list.reload();
     } catch (e) { setError(e); }
   }
+  const [failure, setFailure] = useState<unknown>(null);
+  /** Takes a handover back (the wrong amount or safe, or one that was refused): the driver holds the cash again. */
+  async function takeBack(id: string) {
+    if (!window.confirm(t('mx_takeBackConfirm'))) return;
+    setFailure(null);
+    try { await deliveryApi.cancelHandover(id); toast(t('saved')); drivers.reload(); list.reload(); } catch (e) { setFailure(e); }
+  }
   return (
     <div className="stack">
       <p className="muted small" style={{ margin: 0 }}>{t('mx_handoverHelp')}</p>
-      <ErrorBox error={drivers.error ?? list.error} />
+      <ErrorBox error={drivers.error ?? list.error ?? failure} />
       <div className="card">
         <table className="table">
           <thead><tr><th>{t('mx_driver')}</th><th className="num">{t('mx_holding')}</th><th className="no-print" /></tr></thead>
@@ -352,12 +359,13 @@ function Handovers({ available }: { available: boolean }) {
       {list.data && list.data.length > 0 && (
         <div className="card">
           <table className="table">
-            <thead><tr><th>{t('date')}</th><th>{t('mx_driver')}</th><th className="num">{t('amount')}</th><th>{t('mx_entry')}</th></tr></thead>
+            <thead><tr><th>{t('date')}</th><th>{t('mx_driver')}</th><th className="num">{t('amount')}</th><th>{t('mx_entry')}</th><th className="no-print" /></tr></thead>
             <tbody>
               {list.data.map((h) => (
                 <tr key={h.id}>
                   <td>{i18n.dateTime(h.createdAt)}</td><td>{h.driverName}</td><td className="num">{i18n.money(h.amount, 'IQD')}</td>
                   <td><a href={href(`entry/${h.entryId}`)} className="ltr">{h.entryNumber || '—'}</a> <span className="chip">{t(`mx_entry_${h.entryStatus}` as Key)}</span></td>
+                  <td className="no-print">{available && h.entryStatus !== 'reversed' && <button type="button" className="btn small ghost" onClick={() => void takeBack(h.id)}>{t('mx_takeBack')}</button>}</td>
                 </tr>
               ))}
             </tbody>

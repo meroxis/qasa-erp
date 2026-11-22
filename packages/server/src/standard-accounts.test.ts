@@ -4,7 +4,7 @@ import { CONSIGNMENT_HELD } from './consignment.ts';
 import { FUEL_STOCK_ACCOUNT } from './fuel.ts';
 import { GIFT_ACCOUNT } from './gift-vouchers.ts';
 import { GOLD_OWED_ACCOUNT, OLD_GOLD_ACCOUNT } from './gold.ts';
-import { FEATURE_ACCOUNTS } from './feature-accounts.ts';
+import { FEATURE_ACCOUNTS, FUEL_STOCK_STANDARD } from './feature-accounts.ts';
 
 // The accounts features make the first time they need one (2.0). Each has a code of its own: two features sharing one
 // would post into each other's account without anyone seeing it (gold's old gold and the petrol station's fuel stock
@@ -16,6 +16,7 @@ const MADE_ON_DEMAND: Record<string, string> = {
 describe('accounts made on demand', () => {
   it("each feature's helper makes the code its module names", () => {
     expect(FEATURE_ACCOUNTS.consignment.code).toBe(CONSIGNMENT_HELD);
+    expect(FUEL_STOCK_STANDARD).toBe(FUEL_STOCK_ACCOUNT);
     expect(FEATURE_ACCOUNTS.giftVouchers.code).toBe(GIFT_ACCOUNT);
     expect(FEATURE_ACCOUNTS.goldOwed.code).toBe(GOLD_OWED_ACCOUNT);
     expect(FEATURE_ACCOUNTS.oldGold.code).toBe(OLD_GOLD_ACCOUNT);

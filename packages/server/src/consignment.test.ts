@@ -17,6 +17,7 @@ let stockAccount: string;
 let supplierId: string;
 let customerId: string;
 let breadId: string;
+const CONSIGNMENT_HELD_CODE = '268';
 
 type H = Record<string, string>;
 const headers: H = { 'x-qasa-user': encodeURIComponent('Mer') };
@@ -256,6 +257,123 @@ describe('goods on consignment', () => {
     expect(e.lines.find((l) => l.partyId === supplierId)).toMatchObject({ credit: 400, baseCredit: 5_600 });
     expect(e.lines.find((l) => l.accountCode === '268')).toMatchObject({ debit: 400, baseDebit: 5_200 });
     expect(e.lines.find((l) => l.accountCode.startsWith('39'))).toMatchObject({ baseDebit: 400 });
+  });
+
+  it('makes, posts, settles and cancels once when a request comes twice with its key', async () => {
+    await ok('POST', '/api/plan/trial');
+    await ok('PUT', `/api/consignment/items/${breadId}`, { supplierId, currency: 'IQD', unitCost: 500 });
+    const key = (n: number) => ({ ...headers, 'x-qasa-idempotency': `5f1c2d3e-4a5b-4c6d-8e7f-9a0b1c2d3e7${n}` });
+    const twice = async (n: number, url: string, body: object) => {
+      const first = await call('POST', url, body, key(n));
+      expect(first.statusCode, first.body).toBeLessThan(300);
+      const again = await call('POST', url, body, key(n));
+      expect(again.headers['x-qasa-idempotent-replay'], url).toBe('1');
+      expect(again.json().id).toBe(first.json().id);
+      return first.json();
+    };
+    const count = (table: string) => (db.prepare(`SELECT COUNT(*) AS n FROM ${table}`).get() as { n: number }).n;
+    const stock = () => Number((db.prepare('SELECT COALESCE(SUM(qty_milli), 0) AS q FROM stock_moves WHERE item_id = ?').get(breadId) as { q: number }).q);
+
+    // the document, and posting it: one receipt, the goods in once
+    const doc = await twice(1, '/api/consignment/docs', receipt([{ itemId: breadId, qtyMilli: 10_000 }]));
+    expect(count('consignment_docs')).toBe(1);
+    await twice(2, `/api/consignment/docs/${doc.id}/post`, { lang: 'en' });
+    expect(stock()).toBe(10_000);
+    expect(balanceOf(CONSIGNMENT_HELD_CODE)).toBe(-5_000);
+
+    // the settlement of what sold: one settlement, the supplier owed once
+    await sellAtTill(4);
+    const settlement = await twice(3, '/api/consignment/settlements', { supplierId, currency: 'IQD', date: '2026-11-20', lang: 'en' });
+    expect(count('consignment_settlements')).toBe(1);
+    expect(settlement.amount).toBe(2_000);
+
+    // taking the settlement back, and a second receipt cancelled: each once, the retry answered with the first
+    const entries = count('entries');
+    expect(await twice(4, `/api/consignment/settlements/${settlement.id}/cancel`, {})).toMatchObject({ status: 'cancelled' });
+    expect(count('entries')).toBeLessThanOrEqual(entries);
+    const second = await ok('POST', '/api/consignment/docs', receipt([{ itemId: breadId, qtyMilli: 3_000 }], { date: '2026-11-20' }));
+    await ok('POST', `/api/consignment/docs/${second.id}/post`, { lang: 'en' });
+    expect(await twice(5, `/api/consignment/docs/${second.id}/cancel`, {})).toMatchObject({ status: 'cancelled' });
+    expect(stock()).toBe(6_000);
+  });
+
+  it('lets a dollar settlement at another rate be checked and approved (2.0 books review #1)', async () => {
+    await ok('POST', '/api/plan/trial');
+    await ok('PUT', `/api/consignment/items/${breadId}`, { supplierId, currency: 'USD', unitCost: 100 });
+    expect((await postDoc(receipt([{ itemId: breadId, qtyMilli: 10_000 }], { rateX100: 130_000 }))).statusCode).toBe(200);
+    await sellAtTill(4);
+    const s = await ok('POST', '/api/consignment/settlements', { supplierId, currency: 'USD', date: '2026-11-20', rateX100: 140_000 });
+    // the line in dinars only (the exchange difference, 400) is no empty line
+    const checked = await call('POST', `/api/entries/${s.entryId}/check`);
+    expect(checked.statusCode, checked.body).toBe(200);
+    const approved = await call('POST', `/api/entries/${s.entryId}/approve`);
+    expect(approved.statusCode, approved.body).toBe(200);
+    expect(getEntry(db, s.entryId).status).toBe('approved');
+    expect(balanceOf(CONSIGNMENT_HELD_CODE)).toBe(-(13_000 - 5_200));
+
+    // revaluing dollar balances (books review #9): the supplier is owed $4, revalued like any debt; the goods held are
+    // kept in dinars by the consignment's own ledger, so no line is put on 268 that a later settlement could not take off
+    const report = await ok('GET', '/api/fx/revaluation?date=2026-11-20&rateX100=150000');
+    expect(report.rows.map((r: { accountCode: string }) => r.accountCode)).not.toContain(CONSIGNMENT_HELD_CODE);
+    expect(report.rows).toHaveLength(1);
+    expect(report.rows[0]).toMatchObject({ partyId: supplierId, usd: -400, carried: -5_600, revalued: -6_000, mixed: false });
+  });
+
+  it('moves dollar goods between warehouses without changing the dollars owed (2.0 books review #4)', async () => {
+    await ok('POST', '/api/plan/trial');
+    const w2 = (await ok('POST', '/api/warehouses', { code: 'W2', name: { ar: 'مخزن ٢', en: 'Second store', ku: 'کۆگای ٢' } })).id;
+    await ok('PUT', `/api/consignment/items/${breadId}`, { supplierId, currency: 'USD', unitCost: 1_000 });
+    // 10 × $10 in the second store when a dollar is 1,300, and 10 × $10 in the main one at 1,500
+    expect((await postDoc(receipt([{ itemId: breadId, qtyMilli: 10_000 }], { warehouseId: w2, rateX100: 130_000 }))).statusCode).toBe(200);
+    expect((await postDoc(receipt([{ itemId: breadId, qtyMilli: 10_000 }], { rateX100: 150_000 }))).statusCode).toBe(200);
+    const transfer = await ok('POST', '/api/stock-docs', { kind: 'transfer', date: '2026-11-11', warehouseId, toWarehouseId: w2, lines: [{ itemId: breadId, qtyMilli: 10_000 }] });
+    await ok('POST', `/api/stock-docs/${transfer.id}/post`, {});
+    const legs = db.prepare("SELECT qty_milli, ccy_value FROM consignment_moves WHERE source_type = 'transfer' ORDER BY qty_milli").all() as { qty_milli: number; ccy_value: number }[];
+    expect(legs.map((l) => Number(l.ccy_value))).toEqual([-10_000, 10_000]);
+    const sale = await ok('POST', '/api/invoices', {
+      kind: 'sale', date: '2026-11-12', partyId: customerId, warehouseId: w2, currency: 'IQD', rateX100: 100, payment: 'credit', discount: 0,
+      lines: [{ itemId: breadId, qtyMilli: 20_000, unitPrice: 20_000 }]
+    });
+    await ok('POST', `/api/invoices/${sale.id}/post`, {});
+    const owed = await ok('GET', `/api/consignment/settlements/preview?supplierId=${supplierId}&currency=USD&date=2026-11-20`);
+    expect(owed.amount).toBe(20_000);
+  });
+
+  it('keeps goods already received at what they were received at when the agreed cost changes, also across a transfer (2.0 books review #4)', async () => {
+    await ok('POST', '/api/plan/trial');
+    const w2 = (await ok('POST', '/api/warehouses', { code: 'W2', name: { ar: 'مخزن ٢', en: 'Second store', ku: 'کۆگای ٢' } })).id;
+    await ok('PUT', `/api/consignment/items/${breadId}`, { supplierId, currency: 'USD', unitCost: 1_000 });
+    expect((await postDoc(receipt([{ itemId: breadId, qtyMilli: 10_000 }], { rateX100: 130_000 }))).statusCode).toBe(200);
+    await ok('PUT', `/api/consignment/items/${breadId}`, { supplierId, currency: 'USD', unitCost: 1_200 });
+    const transfer = await ok('POST', '/api/stock-docs', { kind: 'transfer', date: '2026-11-11', warehouseId, toWarehouseId: w2, lines: [{ itemId: breadId, qtyMilli: 10_000 }] });
+    await ok('POST', `/api/stock-docs/${transfer.id}/post`, {});
+    const sale = await ok('POST', '/api/invoices', {
+      kind: 'sale', date: '2026-11-12', partyId: customerId, warehouseId: w2, currency: 'IQD', rateX100: 100, payment: 'credit', discount: 0,
+      lines: [{ itemId: breadId, qtyMilli: 10_000, unitPrice: 20_000 }]
+    });
+    await ok('POST', `/api/invoices/${sale.id}/post`, {});
+    expect((await ok('GET', `/api/consignment/settlements/preview?supplierId=${supplierId}&currency=USD&date=2026-11-20`)).amount).toBe(10_000);
+  });
+
+  it('owes a returned unit sold again to the supplier whose goods it is (2.0 books review #11)', async () => {
+    await ok('POST', '/api/plan/trial');
+    const other = (await ok('POST', '/api/parties', { type: 'supplier', name: 'Second Bakery' })).id;
+    await ok('PUT', `/api/consignment/items/${breadId}`, { supplierId, currency: 'IQD', unitCost: 800 });
+    expect((await postDoc(receipt([{ itemId: breadId, qtyMilli: 2_000 }]))).statusCode).toBe(200);
+    const first = await invoiceSale(2);
+    await ok('POST', '/api/consignment/settlements', { supplierId, currency: 'IQD', date: '2026-11-12' });
+    await ok('PUT', `/api/consignment/items/${breadId}`, { supplierId: other, currency: 'IQD', unitCost: 900 });
+    expect((await postDoc(receipt([{ itemId: breadId, qtyMilli: 5_000 }], { supplierId: other, date: '2026-11-13' }))).statusCode).toBe(200);
+    // one of the first bakery's loaves comes back, then all six on the shelf sell
+    expect((await call('POST', `/api/invoices/${first.id}/returns`, { date: '2026-11-14', payment: 'credit', lines: [{ lineNo: 1, qtyMilli: 1_000 }] })).statusCode).toBe(201);
+    await invoiceSale(6, '2026-11-15');
+    const second = await ok('GET', `/api/consignment/settlements/preview?supplierId=${other}&currency=IQD&date=2026-11-20`);
+    expect(second.amount).toBe(4_500);
+    const firstAgain = await ok('GET', `/api/consignment/settlements/preview?supplierId=${supplierId}&currency=IQD&date=2026-11-20`);
+    // the loaf that came back (−800) and was sold again (+800): nothing more is owed to the first bakery
+    expect(firstAgain.amount).toBe(0);
+    const onHand = db.prepare('SELECT supplier_id, SUM(qty_milli) AS q, SUM(value) AS v FROM consignment_moves GROUP BY supplier_id').all() as { supplier_id: string; q: number; v: number }[];
+    expect(onHand.map((r) => [Number(r.q), Number(r.v)])).toEqual([[0, 0], [0, 0]]);
   });
 
   it('keeps batches and expiry dates for consigned goods', async () => {

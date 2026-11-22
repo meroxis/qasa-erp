@@ -76,6 +76,9 @@ export const CONSIGNMENT_TEXT = {
   e_consignment_settlement: ['تسوية بضاعة أمانة', 'Consignment settlement', 'یەکلاکردنەوەی کاڵای ئەمانەت'],
 
   err_cs_item_has_stock: ['عندك رصيد من هذه المادة؛ أرجِعه إلى المجهز أو بِعه أولاً.', 'Some of this item is on hand; return it to the supplier or sell it first.', 'هێشتا بڕێک لەم کاڵایە ماوە؛ سەرەتا بیگەڕێنەوە بۆ دابینکەر یان بیفرۆشە.'],
+  // the accounts features post to (Settings → Accounts): the two refusals of the 2.0 books review
+  err_feature_account_in_use: ['الحساب الحالي ({c}) فيه رصيد؛ يُغيَّر الحساب بعد أن يصفَّر (أو يُنقل رصيده بقيد أولاً)', 'The account in use ({c}) holds a balance: change it once that is zero (or move the balance with an entry first)', 'هەژماری ئێستا ({c}) ڕەسیدی تێدایە؛ دوای سفربوونی بیگۆڕە (یان سەرەتا ڕەسیدەکە بە قەیدێک بگوازەوە)'],
+  err_feature_account_stock: ['هذا حساب مخزون (مخزن أو وقود)؛ اختر حساباً آخر', 'That is a stock account (a warehouse’s or the fuel’s): choose another', 'ئەوە هەژماری کۆگایە (کۆگا یان سووتەمەنی)؛ هەژمارێکی تر هەڵبژێرە'],
   err_cs_item_not_stocked: ['المادة لا يُتابَع مخزونها، فلا توضع على الأمانة.', 'This item doesn’t track stock, so it can’t be on consignment.', 'ئەم کاڵایە کۆگاکەی بەدوادا ناچێت، بۆیە ناخرێتە سەر ئەمانەت.'],
   err_cs_item_not_from_supplier: ['هذه المادة ليست على الأمانة مع هذا المجهز.', 'This item isn’t on consignment with this supplier.', 'ئەم کاڵایە لەگەڵ ئەم دابینکەرەدا لەسەر ئەمانەت نییە.'],
   err_cs_mixed_currencies: ['مواد المستند بعملتين؛ اجعل كل عملة في مستند.', 'The document mixes two currencies; make one document per currency.', 'بەڵگەنامەکە دوو دراوی تێکەڵ کردووە؛ بۆ هەر دراوێک بەڵگەنامەیەک دروست بکە.'],

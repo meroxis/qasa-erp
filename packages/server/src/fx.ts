@@ -8,6 +8,7 @@ import { loadAccounts } from './accounts.ts';
 import { createJournalEntry, type EntryView } from './journal.ts';
 import { getSettings, readSetting, updateSettings, writeSetting } from './settings.ts';
 import type { ApiExtension, ApiRequest } from './routes.ts';
+import { featureAccountsView, type FeatureAccountKey } from './feature-accounts.ts';
 
 /**
  * The dollar rate board (سعر الصرف). The company enters the day's market rate; the history is kept, the latest rate
@@ -60,6 +61,27 @@ export interface RevaluationReport {
 /** The accounts whose dollar balances are money (not stock, assets or capital). */
 const MONETARY = ['14', '16', '18', '24', '25', '26'];
 const MONETARY_SQL = MONETARY.map((p) => `l.account_code LIKE '${p}%'`).join(' OR ');
+
+/**
+ * Feature accounts that are not dollars owed, though dollar entries pass through them (2.0 books review #9). Each is
+ * kept by its feature's own ledger in dinars, and relieved at what that ledger carries — so a revaluation line on one
+ * would never be taken off again, and the account would stop agreeing with its page:
+ *
+ * - gold owed to suppliers (264): fine gold owed by weight (gold_supplier_moves), valued in dinars when it came in. A
+ *   dollar receipt credits it in dollars, a delivery of gold relieves it in dinars at the ledger's average.
+ * - consignment goods held (268): the goods' value in the books, in dinars (consignment_moves). The dollars owed for
+ *   what sold become the supplier's when a settlement is made, and the exchange difference is posted then (39/49);
+ *   from there the supplier's own dollar balance is revalued like any other.
+ *
+ * The other feature accounts stay in: cheques in hand (162) are dollars to come, revalued like a customer's debt (a
+ * cheque cleared at its own rate leaves the difference, which the next revaluation takes off); gift vouchers (263) are
+ * dinars only; old gold (1378) is stock.
+ */
+const OWN_LEDGER: FeatureAccountKey[] = ['goldOwed', 'consignment'];
+function ownLedgerAccounts(db: Db): Set<string> {
+  const view = featureAccountsView(db);
+  return new Set(OWN_LEDGER.map((key) => view.find((v) => v.key === key)?.code).filter((c): c is string => !!c));
+}
 
 /** Entries the revaluation posted, so the next revaluation counts them in what is carried. */
 const POSTED_KEY = 'fx_revaluation_entries';
@@ -185,8 +207,10 @@ export function revaluation(db: Db, f: { date?: string | undefined; rateX100?: n
   const accounts = new Map(loadAccounts(db).map((a) => [a.code, a.name]));
   const partyNames = new Map((db.prepare('SELECT id, name FROM parties').all() as { id: string; name: string }[]).map((p) => [p.id, p.name]));
 
+  const ownLedger = ownLedgerAccounts(db);
   const rows: RevaluationRow[] = [];
   for (const r of usdRows) {
+    if (ownLedger.has(r.account)) continue;
     const usd = Number(r.usd);
     const key = keyOf(r.account, r.party);
     const carried = Number(r.base) + (adjust.get(key) ?? 0);

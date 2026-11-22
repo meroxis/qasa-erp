@@ -9,7 +9,7 @@ import { AppError, conflict, invalid, notFound } from './errors.ts';
 import { loadAccounts } from './accounts.ts';
 import { planStatus } from './license.ts';
 import { isPeriodLocked, readSetting, writeSetting } from './settings.ts';
-import { documentVoucherStates, postDocumentVoucher } from './journal.ts';
+import { assertMayReverseFeatureEntry, deleteFeatureDraft, documentVoucherStates, postDocumentVoucher, reverseEntryInternal } from './journal.ts';
 import { getParty } from './parties.ts';
 import { createInvoice, postInvoice, withUnits } from './invoices.ts';
 import { createStockDoc, postStockDoc } from './stock-docs.ts';
@@ -90,11 +90,14 @@ export interface VanRow {
 export interface VanDay { repId: string; date: string; status: 'none' | 'open' | 'closed'; adjustmentId: string | null; rows: VanRow[] }
 export interface CollectionView {
   id: string; number: string; repId: string; repName: string; partyId: string; partyName: string; date: string; currency: CurrencyCode; rateX100: number;
-  amount: number; entryId: string | null; state: 'approved' | 'waiting' | 'rejected'; handoverId: string | null; notes: string; createdBy: string;
+  amount: number; entryId: string | null; state: 'approved' | 'waiting' | 'rejected' | 'cancelled'; handoverId: string | null; notes: string; createdBy: string;
+  /** whether this person may take it back now (not handed over; a receipt in the books by someone who may approve entries) */
+  mayCancel: boolean;
 }
 export interface HandoverView {
   id: string; number: string; repId: string; repName: string; date: string; toAccount: string; currency: CurrencyCode; amount: number;
-  entryId: string | null; state: 'approved' | 'waiting' | 'rejected'; collections: number; createdBy: string; createdAt: string;
+  entryId: string | null; state: 'approved' | 'waiting' | 'rejected' | 'cancelled'; collections: number; createdBy: string; createdAt: string;
+  mayCancel: boolean;
 }
 
 const now = () => new Date().toISOString();
@@ -117,10 +120,22 @@ const isOffice = (actor: Actor) => actor.permissions.includes('admin') || seesBo
 
 interface RepRow { id: string; user_id: string; name: string; warehouse_id: string; load_warehouse_id: string; cash_account: string; active: number; created_at: string; updated_at: string }
 
-/** The rep record of a user who works as a rep (not the office): their reads and changes are limited to their own. */
+/**
+ * The rep record of a user who works as a rep (not the office): their reads and changes are limited to their own. A rep
+ * who was switched off stays a rep here (still limited to their own, and unable to take orders or collect): switching a
+ * rep off must never open the other reps' work to them.
+ */
 export function ownRep(db: Db, actor: Actor): RepRow | null {
   if (!actor.id || isOffice(actor)) return null;
-  return (db.prepare('SELECT * FROM ws_reps WHERE user_id = ? AND active = 1').get(actor.id) as RepRow | undefined) ?? null;
+  return (db.prepare('SELECT * FROM ws_reps WHERE user_id = ? ORDER BY active DESC').get(actor.id) as RepRow | undefined) ?? null;
+}
+
+/**
+ * The office's own work (approving an order, collecting for a rep, a handover, taking one of those back): an admin or
+ * someone who keeps the books. The sales permission alone takes orders for the office, but approves and collects nothing.
+ */
+function assertOffice(actor: Actor): void {
+  if (!isOffice(actor)) throw new AppError(403, 'ws_office_only');
 }
 
 function repRow(db: Db, id: string): RepRow {
@@ -305,7 +320,7 @@ function orderFor(db: Db, id: string, actor: Actor): OrderRow {
 
 function orderActions(db: Db, r: OrderRow, actor: Actor): OrderView['actions'] {
   const rep = ownRep(db, actor);
-  const mayApprove = !rep && (actor.permissions.includes('admin') || actor.permissions.includes('sales'));
+  const mayApprove = !rep && isOffice(actor);
   if (r.status === 'draft') return ['edit', ...(mayApprove ? ['approve' as const] : []), 'cancel'];
   if (r.status === 'approved') return [...(rep && r.warehouse_id !== rep.warehouse_id ? [] : ['deliver' as const]), ...(rep ? [] : ['cancel' as const])];
   return [];
@@ -434,9 +449,10 @@ export function updateOrder(db: Db, id: string, input: OrderInput, actor: Actor)
   const target = orderTarget(db, { ...input, repId: input.repId === undefined ? row.rep_id : input.repId }, actor);
   transaction(db, () => {
     const total = writeOrder(db, id, input, target.warehouseId);
-    db.prepare(`UPDATE ws_orders SET party_id = ?, date = ?, rep_id = ?, warehouse_id = ?, currency = ?, rate_x100 = ?, total = ?, notes = ?, updated_at = ?
+    // whoever changed the draft last is the one who took it: under "separate duties" nobody rewrites an order and approves it
+    db.prepare(`UPDATE ws_orders SET party_id = ?, date = ?, rep_id = ?, warehouse_id = ?, currency = ?, rate_x100 = ?, total = ?, notes = ?, created_by = ?, updated_at = ?
                 WHERE id = ? AND status = 'draft'`)
-      .run(input.partyId, input.date, target.repId, target.warehouseId, input.currency, input.rateX100, total, input.notes?.trim() || null, now(), id);
+      .run(input.partyId, input.date, target.repId, target.warehouseId, input.currency, input.rateX100, total, input.notes?.trim() || null, actor.name, now(), id);
     audit(db, actor.name, 'update', 'ws_order', id);
   });
   return getOrder(db, id, actor);
@@ -461,6 +477,7 @@ export function approveOrder(db: Db, id: string, override: Override | undefined,
   requirePlan(db);
   const row = orderFor(db, id, actor);
   if (ownRep(db, actor)) throw new AppError(403, 'ws_rep_cannot_approve');
+  assertOffice(actor);
   if (row.status !== 'draft') throw conflict('action_not_allowed', { status: row.status, action: 'approve' });
   // under "separate duties" whoever took the order does not approve it
   if (readSetting(db, 'separate_duties') === '1' && row.created_by === actor.name && !actor.permissions.includes('admin')) throw conflict('ws_approve_own');
@@ -705,7 +722,7 @@ export function closeVanCount(db: Db, repId: string, date: string, actor: Actor)
 
 // ——— collections and handovers ———
 
-interface CollectionRow { id: string; number: string; rep_id: string; party_id: string; date: string; currency: CurrencyCode; rate_x100: number; amount: number; entry_id: string | null; handover_id: string | null; notes: string | null; created_by: string }
+interface CollectionRow { id: string; number: string; rep_id: string; party_id: string; date: string; currency: CurrencyCode; rate_x100: number; amount: number; entry_id: string | null; handover_id: string | null; cancelled_at: string | null; notes: string | null; created_by: string }
 
 function states(db: Db, ids: (string | null)[]): Map<string, { state: 'waiting' | 'rejected' }> {
   return documentVoucherStates(db, ids.filter((x): x is string => !!x)) as Map<string, { state: 'waiting' | 'rejected' }>;
@@ -723,17 +740,22 @@ export function listCollections(db: Db, f: { repId?: string | undefined; from?: 
                            ${where.length ? `WHERE ${where.join(' AND ')}` : ''} ORDER BY c.date DESC, c.number DESC LIMIT 1000`).all(...params) as unknown as (CollectionRow & { rep_name: string; party_name: string })[];
   const st = states(db, rows.map((r) => r.entry_id));
   const handed = handedSet(db);
-  const list = rows.map((r) => ({
-    id: r.id, number: r.number, repId: r.rep_id, repName: r.rep_name, partyId: r.party_id, partyName: r.party_name, date: r.date, currency: r.currency,
-    rateX100: Number(r.rate_x100), amount: Number(r.amount), entryId: r.entry_id, state: (r.entry_id ? st.get(r.entry_id)?.state : 'rejected') ?? 'approved' as const,
-    handoverId: r.handover_id && handed.has(r.handover_id) ? r.handover_id : null, notes: r.notes ?? '', createdBy: r.created_by
-  }));
+  const mayReverse = actor.permissions.includes('admin') || actor.permissions.includes('entries.approve');
+  const list = rows.map((r): CollectionView => {
+    const state = r.cancelled_at ? 'cancelled' as const : (r.entry_id ? st.get(r.entry_id)?.state : 'rejected') ?? 'approved' as const;
+    const handoverId = r.handover_id && handed.has(r.handover_id) ? r.handover_id : null;
+    return {
+      id: r.id, number: r.number, repId: r.rep_id, repName: r.rep_name, partyId: r.party_id, partyName: r.party_name, date: r.date, currency: r.currency,
+      rateX100: Number(r.rate_x100), amount: Number(r.amount), entryId: r.entry_id, state, handoverId, notes: r.notes ?? '', createdBy: r.created_by,
+      mayCancel: state !== 'cancelled' && !handoverId && (state === 'approved' ? mayReverse : isOffice(actor) || r.created_by === actor.name)
+    };
+  });
   return f.open ? list.filter((c) => c.state === 'approved' && !c.handoverId) : list;
 }
 
 /** The handovers that stand: their receipt is approved or waiting (a rejected or deleted one frees its collections). */
 function handedSet(db: Db): Set<string> {
-  const rows = db.prepare('SELECT h.id, h.entry_id FROM ws_handovers h LEFT JOIN entries e ON e.id = h.entry_id WHERE e.id IS NOT NULL').all() as { id: string; entry_id: string }[];
+  const rows = db.prepare('SELECT h.id, h.entry_id FROM ws_handovers h LEFT JOIN entries e ON e.id = h.entry_id WHERE e.id IS NOT NULL AND h.cancelled_at IS NULL').all() as { id: string; entry_id: string }[];
   const st = states(db, rows.map((r) => r.entry_id));
   return new Set(rows.filter((r) => st.get(r.entry_id)?.state !== 'rejected').map((r) => r.id));
 }
@@ -742,6 +764,8 @@ export function collect(db: Db, input: { repId?: string | undefined; partyId: st
   requirePlan(db);
   assertDate(db, input.date);
   const own = ownRep(db, actor);
+  // a rep collects into their own cash; for another rep only the office does
+  if (!own) assertOffice(actor);
   const repId = own ? own.id : input.repId;
   if (!repId) throw invalid([{ code: 'ws_rep_required' }]);
   const rep = repRow(db, repId);
@@ -772,13 +796,18 @@ export function listHandovers(db: Db, f: { repId?: string | undefined }, actor: 
   const repId = own ? own.id : f.repId;
   const rows = db.prepare(`SELECT h.*, r.name AS rep_name, (SELECT COUNT(*) FROM ws_collections c WHERE c.handover_id = h.id) AS n
                            FROM ws_handovers h JOIN ws_reps r ON r.id = h.rep_id ${repId ? 'WHERE h.rep_id = ?' : ''} ORDER BY h.date DESC, h.number DESC LIMIT 500`)
-    .all(...(repId ? [repId] : [])) as { id: string; number: string; rep_id: string; rep_name: string; date: string; to_account: string; currency: CurrencyCode; amount: number; entry_id: string | null; created_by: string; created_at: string; n: number }[];
+    .all(...(repId ? [repId] : [])) as { id: string; number: string; rep_id: string; rep_name: string; date: string; to_account: string; currency: CurrencyCode; amount: number; entry_id: string | null; cancelled_at: string | null; created_by: string; created_at: string; n: number }[];
   const st = states(db, rows.map((r) => r.entry_id));
   const exists = db.prepare('SELECT 1 FROM entries WHERE id = ?');
-  return rows.map((r) => ({
-    id: r.id, number: r.number, repId: r.rep_id, repName: r.rep_name, date: r.date, toAccount: r.to_account, currency: r.currency, amount: Number(r.amount),
-    entryId: r.entry_id, state: r.entry_id && exists.get(r.entry_id) ? st.get(r.entry_id)?.state ?? 'approved' : 'rejected', collections: Number(r.n), createdBy: r.created_by, createdAt: r.created_at
-  }));
+  const mayReverse = actor.permissions.includes('admin') || actor.permissions.includes('entries.approve');
+  return rows.map((r): HandoverView => {
+    const state = r.cancelled_at ? 'cancelled' as const : r.entry_id && exists.get(r.entry_id) ? st.get(r.entry_id)?.state ?? 'approved' : 'rejected';
+    return {
+      id: r.id, number: r.number, repId: r.rep_id, repName: r.rep_name, date: r.date, toAccount: r.to_account, currency: r.currency, amount: Number(r.amount),
+      entryId: r.entry_id, state, collections: Number(r.n), createdBy: r.created_by, createdAt: r.created_at,
+      mayCancel: state !== 'cancelled' && isOffice(actor) && (state !== 'approved' || mayReverse)
+    };
+  });
 }
 
 /**
@@ -802,10 +831,22 @@ export function handOver(db: Db, input: { repId: string; date: string; currency:
     if (!open.length) throw conflict('ws_nothing_to_hand_over');
     const amount = open.reduce((s, c) => s + c.amount, 0);
     const number = `HO-${input.date.slice(0, 4)}-${String(nextSequence(db, `ws_handover:${input.date.slice(0, 4)}`)).padStart(5, '0')}`;
+    // dollars collected at one rate and handed over at another: the rep's cash goes out at the dinars it came in at
+    // (so a rep with no dollars left has no dinars left either), and the difference is the office's, on other
+    // expenses (39) or other revenue (49), as a line in dinars only
+    const carried = open.reduce((s, c) => s + toBase(c.amount, c.currency, c.rateX100), 0);
+    const taken = toBase(amount, input.currency, input.rateX100);
+    const diff = input.currency === 'USD' ? carried - taken : 0;
     const voucher = postDocumentVoucher(db, {
       kind: 'receipt', date: input.date, cashAccountCode: toAccount, description: `${number} · ${rep.name}`, currency: input.currency, rateX100: input.rateX100,
       items: [{ accountCode: rep.cash_account, amount }]
-    }, actor);
+    }, actor, diff === 0 ? undefined : (entry) => ({
+      ...entry,
+      lines: [
+        ...entry.lines.map((l) => (l.debit > 0 ? { ...l, baseDebit: taken, baseCredit: 0 } : { ...l, baseDebit: 0, baseCredit: carried })),
+        { accountCode: firstPostableUnder(db, diff > 0 ? '39' : '49'), debit: 0, credit: 0, baseDebit: diff > 0 ? diff : 0, baseCredit: diff < 0 ? -diff : 0, description: `${number} · ${rep.name}` }
+      ]
+    }));
     db.prepare(`INSERT INTO ws_handovers (id, number, rep_id, date, to_account, currency, rate_x100, amount, entry_id, created_by, created_at)
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
       .run(id, number, rep.id, input.date, toAccount, input.currency, input.rateX100, amount, voucher.id, actor.name, now());
@@ -814,6 +855,65 @@ export function handOver(db: Db, input: { repId: string; date: string; currency:
     audit(db, actor.name, 'create', 'ws_handover', id, { number, amount, currency: input.currency, collections: open.length });
   });
   return listHandovers(db, { repId: rep.id }, actor).find((h) => h.id === id)!;
+}
+
+/** The first postable account at or under `root` (other expenses 39, other revenue 49): a handover's exchange difference. */
+function firstPostableUnder(db: Db, root: string): string {
+  const a = loadAccounts(db).filter((x) => x.postable && x.code.startsWith(root)).sort((x, y) => x.code.localeCompare(y.code))[0];
+  if (!a) throw conflict('account_missing', { root });
+  return a.code;
+}
+
+/** Takes a receipt of this module back: deleted while it is not in the books, reversed (by someone who may) once it is. */
+function takeBack(db: Db, entryId: string | null, actor: Actor, date?: string): string | null {
+  if (!entryId) return null;
+  const entry = db.prepare('SELECT status, reversed_by_id FROM entries WHERE id = ?').get(entryId) as { status: string; reversed_by_id: string | null } | undefined;
+  if (!entry) return null;
+  if (entry.status !== 'approved') { deleteFeatureDraft(db, entryId, actor.name); return null; }
+  if (entry.reversed_by_id) return null;
+  assertMayReverseFeatureEntry(db, entryId, actor);
+  return reverseEntryInternal(db, entryId, actor.name, date);
+}
+
+/**
+ * Takes a collection back (the wrong amount or customer): not once it was handed over (the handover is taken back
+ * first). A rep takes back their own while it waits; one in the books is reversed by someone who may approve entries.
+ */
+export function cancelCollection(db: Db, id: string, actor: Actor, date?: string): CollectionView {
+  requirePlan(db);
+  const row = db.prepare('SELECT * FROM ws_collections WHERE id = ?').get(id) as CollectionRow | undefined;
+  const own = ownRep(db, actor);
+  if (!row || (own && row.rep_id !== own.id)) throw notFound('ws_collection');
+  if (row.cancelled_at) throw conflict('action_not_allowed', { status: 'cancelled', action: 'cancel' });
+  if (row.handover_id && handedSet(db).has(row.handover_id)) throw conflict('ws_collection_handed_over');
+  if (!isOffice(actor) && row.created_by !== actor.name) throw new AppError(403, 'ws_office_only');
+  transaction(db, () => {
+    const approved = !!row.entry_id && (db.prepare('SELECT status FROM entries WHERE id = ?').get(row.entry_id) as { status: string } | undefined)?.status === 'approved';
+    if (!approved) db.prepare('UPDATE ws_collections SET entry_id = NULL WHERE id = ?').run(id);
+    const reversal = takeBack(db, row.entry_id, actor, date);
+    db.prepare('UPDATE ws_collections SET cancelled_at = ?, cancel_entry_id = ?, handover_id = NULL WHERE id = ?').run(now(), reversal, id);
+    audit(db, actor.name, 'cancel', 'ws_collection', id, { number: row.number, amount: Number(row.amount), currency: row.currency, reversal });
+  });
+  return listCollections(db, { repId: row.rep_id }, actor).find((c) => c.id === id)!;
+}
+
+/** The office takes a handover back: its receipt is deleted or reversed, and its collections are with the rep again. */
+export function cancelHandover(db: Db, id: string, actor: Actor, date?: string): HandoverView {
+  requirePlan(db);
+  assertOffice(actor);
+  const row = db.prepare('SELECT id, number, rep_id, amount, currency, entry_id, cancelled_at FROM ws_handovers WHERE id = ?').get(id) as
+    { id: string; number: string; rep_id: string; amount: number; currency: CurrencyCode; entry_id: string | null; cancelled_at: string | null } | undefined;
+  if (!row) throw notFound('ws_handover');
+  if (row.cancelled_at) throw conflict('action_not_allowed', { status: 'cancelled', action: 'cancel' });
+  transaction(db, () => {
+    const approved = !!row.entry_id && (db.prepare('SELECT status FROM entries WHERE id = ?').get(row.entry_id) as { status: string } | undefined)?.status === 'approved';
+    if (!approved) db.prepare('UPDATE ws_handovers SET entry_id = NULL WHERE id = ?').run(id);
+    const reversal = takeBack(db, row.entry_id, actor, date);
+    db.prepare('UPDATE ws_handovers SET cancelled_at = ?, cancel_entry_id = ? WHERE id = ?').run(now(), reversal, id);
+    db.prepare('UPDATE ws_collections SET handover_id = NULL WHERE handover_id = ?').run(id);
+    audit(db, actor.name, 'cancel', 'ws_handover', id, { number: row.number, amount: Number(row.amount), currency: row.currency, reversal });
+  });
+  return listHandovers(db, { repId: row.rep_id }, actor).find((h) => h.id === id)!;
 }
 
 // ——— reports ———
@@ -923,6 +1023,12 @@ function mayRead(actor: Actor): void {
   if (!(actor.permissions.includes('sales') || isOffice(actor))) throw new AppError(403, 'forbidden');
 }
 
+/** A handover as it is now, for a request that came again with its key. */
+const handoverAgainOf = (db: Db, who: Actor) => (handoverId: string): HandoverView => {
+  const rep = db.prepare('SELECT rep_id FROM ws_handovers WHERE id = ?').get(handoverId) as { rep_id: string };
+  return listHandovers(db, { repId: rep.rep_id }, who).find((x) => x.id === handoverId)!;
+};
+
 export const wholesaleApi: ApiExtension = {
   rules: {
     'POST /api/wholesale/reps': ADMIN,
@@ -937,6 +1043,8 @@ export const wholesaleApi: ApiExtension = {
     'POST /api/wholesale/visits': SALES,
     'POST /api/wholesale/collections': SALES,
     'POST /api/wholesale/handovers': null,
+    'POST /api/wholesale/collections/:id/cancel': SALES,
+    'POST /api/wholesale/handovers/:id/cancel': null,
     'POST /api/wholesale/reps/:id/van': STOCK,
     'PUT /api/wholesale/reps/:id/van-count': SALES,
     'POST /api/wholesale/reps/:id/van-count/close': STOCK
@@ -1059,8 +1167,31 @@ export const wholesaleApi: ApiExtension = {
         method: 'POST', path: '/api/wholesale/handovers',
         handler: async (req, reply) => {
           const body = parse(z.object({ repId: id, date: isoDate, currency, rateX100: rate, toAccount: account.optional() }).strict(), req.body);
-          reply.status(201).send(handOver(db, body, actor(req)));
+          const who = actor(req);
+          // sent again with its key (a second tap, a retry after the link dropped): the same handover, the cash moved once
+          reply.status(201).send(onceOnly(db, req, reply, who, 'POST /api/wholesale/handovers', () => { const made = handOver(db, body, who); return { id: made.id, result: made }; }, handoverAgainOf(db, who)));
           return undefined;
+        }
+      },
+      {
+        method: 'POST', path: '/api/wholesale/collections/:id/cancel',
+        handler: async (req, reply) => {
+          const cid = parse(idParam, req.params).id;
+          const on = parse(z.object({ date: isoDate.optional() }).strict(), req.body ?? {}).date;
+          const who = actor(req);
+          return onceOnly(db, req, reply, who, 'POST /api/wholesale/collections/:id/cancel', () => { const done = cancelCollection(db, cid, who, on); return { id: done.id, result: done }; }, (c) => {
+            const rep = db.prepare('SELECT rep_id FROM ws_collections WHERE id = ?').get(c) as { rep_id: string };
+            return listCollections(db, { repId: rep.rep_id }, who).find((x) => x.id === c)!;
+          });
+        }
+      },
+      {
+        method: 'POST', path: '/api/wholesale/handovers/:id/cancel',
+        handler: async (req, reply) => {
+          const hid = parse(idParam, req.params).id;
+          const on = parse(z.object({ date: isoDate.optional() }).strict(), req.body ?? {}).date;
+          const who = actor(req);
+          return onceOnly(db, req, reply, who, 'POST /api/wholesale/handovers/:id/cancel', () => { const done = cancelHandover(db, hid, who, on); return { id: done.id, result: done }; }, handoverAgainOf(db, who));
         }
       },
       {

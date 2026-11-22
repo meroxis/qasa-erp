@@ -1,5 +1,6 @@
 import type { CurrencyCode, Names, UnitCode } from '@qasa/core';
 import { qs, request } from '../api.ts';
+import { sendOnce } from './send-once.ts';
 
 /** Goods on consignment (sale-or-return; Starter, Pro and Business): server side in packages/server/src/consignment.ts. */
 
@@ -60,15 +61,17 @@ export const consignmentApi = {
   endItem: (itemId: string) => request<ConsignmentItem>('POST', `/api/consignment/items/${itemId}/end`, {}),
   docs: (f: { supplierId?: string; kind?: ConsignmentDocKind; status?: ConsignmentDocStatus } = {}) => request<ConsignmentDocSummary[]>('GET', '/api/consignment/docs' + qs(f)),
   doc: (id: string) => request<ConsignmentDoc>('GET', `/api/consignment/docs/${id}`),
-  createDoc: (body: ConsignmentDocInput) => request<ConsignmentDoc>('POST', '/api/consignment/docs', body),
+  // what books money or stock goes with a key held until the server answers (send-once.ts): a second tap, or a retry
+  // after the link dropped, is answered with the first one and books nothing twice
+  createDoc: (body: ConsignmentDocInput) => sendOnce<ConsignmentDoc>('POST', '/api/consignment/docs', body),
   updateDoc: (id: string, body: ConsignmentDocInput) => request<ConsignmentDoc>('PUT', `/api/consignment/docs/${id}`, body),
   deleteDoc: (id: string) => request<void>('DELETE', `/api/consignment/docs/${id}`),
-  postDoc: (id: string, lang: 'ar' | 'en' | 'ku') => request<ConsignmentDoc>('POST', `/api/consignment/docs/${id}/post`, { lang }),
-  cancelDoc: (id: string) => request<ConsignmentDoc>('POST', `/api/consignment/docs/${id}/cancel`, {}),
+  postDoc: (id: string, lang: 'ar' | 'en' | 'ku') => sendOnce<ConsignmentDoc>('POST', `/api/consignment/docs/${id}/post`, { lang }),
+  cancelDoc: (id: string) => sendOnce<ConsignmentDoc>('POST', `/api/consignment/docs/${id}/cancel`, {}),
   settlements: (f: { supplierId?: string } = {}) => request<Settlement[]>('GET', '/api/consignment/settlements' + qs(f)),
   preview: (f: { supplierId: string; currency: CurrencyCode; date: string }) => request<SettlementPreview>('GET', '/api/consignment/settlements/preview' + qs(f)),
   settle: (body: { supplierId: string; currency: CurrencyCode; date: string; rateX100?: number; notes?: string; lang: 'ar' | 'en' | 'ku' }) =>
-    request<Settlement>('POST', '/api/consignment/settlements', body),
-  cancelSettlement: (id: string) => request<Settlement>('POST', `/api/consignment/settlements/${id}/cancel`, {}),
+    sendOnce<Settlement>('POST', '/api/consignment/settlements', body),
+  cancelSettlement: (id: string) => sendOnce<Settlement>('POST', `/api/consignment/settlements/${id}/cancel`, {}),
   statement: (supplierId: string, f: { from?: string; to?: string } = {}) => request<ConsignmentStatement>('GET', `/api/consignment/statement/${supplierId}` + qs(f))
 };

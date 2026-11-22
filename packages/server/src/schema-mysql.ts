@@ -2480,13 +2480,16 @@ export const MYSQL_TABLES: readonly MysqlObject[] = [
       rate_x100 BIGINT NOT NULL CHECK (rate_x100 > 0),
       amount BIGINT NOT NULL CHECK (amount > 0),
       entry_id ${ID},
+      cancelled_at ${WHEN},
+      cancel_entry_id ${ID},
       created_by TEXT NOT NULL,
       created_at ${WHEN} NOT NULL,
       INDEX ws_handovers_rep (rep_id),
       INDEX ws_handovers_entry (entry_id),
       FOREIGN KEY (rep_id) REFERENCES ws_reps(id),
       FOREIGN KEY (to_account) REFERENCES accounts(code),
-      FOREIGN KEY (entry_id) REFERENCES entries(id)
+      FOREIGN KEY (entry_id) REFERENCES entries(id),
+      FOREIGN KEY (cancel_entry_id) REFERENCES entries(id)
     )`
   },
   {
@@ -2503,6 +2506,8 @@ export const MYSQL_TABLES: readonly MysqlObject[] = [
       amount BIGINT NOT NULL CHECK (amount > 0),
       entry_id ${ID},
       handover_id ${ID},
+      cancelled_at ${WHEN},
+      cancel_entry_id ${ID},
       notes TEXT,
       created_by TEXT NOT NULL,
       created_at ${WHEN} NOT NULL,
@@ -2512,7 +2517,8 @@ export const MYSQL_TABLES: readonly MysqlObject[] = [
       FOREIGN KEY (rep_id) REFERENCES ws_reps(id),
       FOREIGN KEY (party_id) REFERENCES parties(id),
       FOREIGN KEY (entry_id) REFERENCES entries(id),
-      FOREIGN KEY (handover_id) REFERENCES ws_handovers(id)
+      FOREIGN KEY (handover_id) REFERENCES ws_handovers(id),
+      FOREIGN KEY (cancel_entry_id) REFERENCES entries(id)
     )`
   },
   // ===== end 18 · WHOLESALE =====

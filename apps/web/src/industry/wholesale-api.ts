@@ -1,5 +1,6 @@
 import type { CurrencyCode, Names } from '@qasa/core';
 import { qs, request } from '../api.ts';
+import { sendOnce } from './send-once.ts';
 
 /**
  * Wholesale and distribution (packages/server/src/wholesale.ts): sales reps with their van and cash, routes, the rep's
@@ -10,7 +11,7 @@ import { qs, request } from '../api.ts';
 export type WsOutcome = 'order' | 'no_order' | 'closed' | 'collected';
 export type WsOrderStatus = 'draft' | 'approved' | 'delivered' | 'cancelled';
 export type WsPolicy = 'off' | 'warn' | 'block';
-export type DocState = 'approved' | 'waiting' | 'rejected';
+export type DocState = 'approved' | 'waiting' | 'rejected' | 'cancelled';
 
 export interface WsSettings { creditPolicy: 'warn' | 'block'; overdueDays: number; overduePolicy: WsPolicy; officeCashAccount: string; vanShortAccount: string }
 export interface RepView {
@@ -45,10 +46,13 @@ export interface StockLine { itemId: string; qtyMilli?: number; unit?: string; u
 export interface CollectionView {
   id: string; number: string; repId: string; repName: string; partyId: string; partyName: string; date: string; currency: CurrencyCode; rateX100: number;
   amount: number; entryId: string | null; state: DocState; handoverId: string | null; notes: string; createdBy: string;
+  /** whether this person may take it back now */
+  mayCancel?: boolean;
 }
 export interface HandoverView {
   id: string; number: string; repId: string; repName: string; date: string; toAccount: string; currency: CurrencyCode; amount: number;
   entryId: string | null; state: DocState; collections: number; createdBy: string; createdAt: string;
+  mayCancel?: boolean;
 }
 export interface WsReports {
   from: string; to: string;
@@ -83,9 +87,13 @@ export const wholesaleApi = {
   credit: (partyId: string, adding?: number) => request<CreditState>('GET', `/api/wholesale/credit/${partyId}` + qs({ adding: adding ? String(adding) : undefined })),
   visit: (body: { repId?: string; partyId: string; date: string; outcome: WsOutcome; notes?: string }) => request<{ id: string }>('POST', '/api/wholesale/visits', body),
   collections: (f: { repId?: string; from?: string; to?: string; open?: '1' } = {}) => request<CollectionView[]>('GET', '/api/wholesale/collections' + qs(f)),
+  // what books money or stock goes with a key held until the server answers (send-once.ts): a second tap, or a retry
+  // after the link dropped, is answered with the first one and books nothing twice
   collect: (body: { repId?: string; partyId: string; date: string; currency: CurrencyCode; rateX100: number; amount: number; notes?: string }) =>
-    request<CollectionView>('POST', '/api/wholesale/collections', body),
+    sendOnce<CollectionView>('POST', '/api/wholesale/collections', body),
+  cancelCollection: (id: string) => sendOnce<CollectionView>('POST', `/api/wholesale/collections/${id}/cancel`, {}),
   handovers: (repId?: string) => request<HandoverView[]>('GET', '/api/wholesale/handovers' + qs({ repId })),
-  handOver: (body: { repId: string; date: string; currency: CurrencyCode; rateX100: number; toAccount?: string }) => request<HandoverView>('POST', '/api/wholesale/handovers', body),
+  handOver: (body: { repId: string; date: string; currency: CurrencyCode; rateX100: number; toAccount?: string }) => sendOnce<HandoverView>('POST', '/api/wholesale/handovers', body),
+  cancelHandover: (id: string) => sendOnce<HandoverView>('POST', `/api/wholesale/handovers/${id}/cancel`, {}),
   reports: (from?: string, to?: string) => request<WsReports>('GET', '/api/wholesale/reports' + qs({ from, to }))
 };

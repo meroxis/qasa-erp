@@ -239,6 +239,111 @@ describe('wholesale and distribution', () => {
     expect((await call(office, 'POST', '/api/wholesale/handovers', { repId: razId, date: '2026-11-20', currency: 'IQD', rateX100: 100 })).json().error).toBe('ws_nothing_to_hand_over');
   });
 
+  it('books a handover, and a handover or a collection taken back, once when the request comes twice with its key', async () => {
+    const key = (n: number) => ({ 'x-qasa-idempotency': `5f1c2d3e-4a5b-4c6d-8e7f-9a0b1c2d3e5${n}` });
+    const c = await ok(razH, 'POST', '/api/wholesale/collections', { partyId: shopA, date: '2026-11-20', currency: 'IQD', rateX100: 100, amount: 30_000 });
+    const handover = { repId: razId, date: '2026-11-20', currency: 'IQD', rateX100: 100 };
+    const first = await call({ ...office, ...key(1) }, 'POST', '/api/wholesale/handovers', handover);
+    expect(first.statusCode, first.body).toBe(201);
+    // the office's PC lost the answer and sends it again: the same handover (not "nothing to hand over"), the cash moved once
+    const again = await call({ ...office, ...key(1) }, 'POST', '/api/wholesale/handovers', handover);
+    expect(again.headers['x-qasa-idempotent-replay']).toBe('1');
+    expect(again.json()).toEqual(first.json());
+    expect(db.prepare('SELECT COUNT(*) AS n FROM ws_handovers').get()).toEqual({ n: 1 });
+    expect([balanceOf('1811'), balanceOf('1812')]).toEqual([30_000, 0]);
+
+    const entries = () => (db.prepare('SELECT COUNT(*) AS n FROM entries').get() as { n: number }).n;
+    const back = await call({ ...admin, ...key(2) }, 'POST', `/api/wholesale/handovers/${first.json().id}/cancel`, {});
+    expect(back.statusCode, back.body).toBe(200);
+    const before = entries();
+    const backAgain = await call({ ...admin, ...key(2) }, 'POST', `/api/wholesale/handovers/${first.json().id}/cancel`, {});
+    expect(backAgain.headers['x-qasa-idempotent-replay']).toBe('1');
+    expect(backAgain.json()).toMatchObject({ id: first.json().id, state: 'cancelled' });
+    expect(entries()).toBe(before);
+    expect([balanceOf('1811'), balanceOf('1812')]).toEqual([0, 30_000]);
+
+    const taken = await call({ ...admin, ...key(3) }, 'POST', `/api/wholesale/collections/${c.id}/cancel`, {});
+    expect(taken.statusCode, taken.body).toBe(200);
+    const takenAgain = await call({ ...admin, ...key(3) }, 'POST', `/api/wholesale/collections/${c.id}/cancel`, {});
+    expect(takenAgain.headers['x-qasa-idempotent-replay']).toBe('1');
+    expect(takenAgain.json()).toMatchObject({ id: c.id, state: 'cancelled' });
+    expect(entries()).toBe(before + 1);
+    expect(balanceOf('1812')).toBe(0);
+  });
+
+  it('takes a collection and a handover back: a waiting one is deleted, one in the books is reversed by someone who may approve (2.0 books review #5)', async () => {
+    // the rep typed 1,000,000 for 100,000
+    const c = await ok(razH, 'POST', '/api/wholesale/collections', { partyId: shopA, date: '2026-11-20', currency: 'IQD', rateX100: 100, amount: 1_000_000 });
+    expect(c).toMatchObject({ state: 'approved', mayCancel: false });
+    expect(balanceOf('1812')).toBe(1_000_000);
+    // a rep does not reverse a receipt in the books; the office's preparer neither; an admin (or an approver) does
+    expect((await call(razH, 'POST', `/api/wholesale/collections/${c.id}/cancel`, {})).statusCode).toBe(403);
+    expect((await call(office, 'POST', `/api/wholesale/collections/${c.id}/cancel`, {})).statusCode).toBe(403);
+    // handed over first: the handover is taken back before the collection
+    const h = await ok(office, 'POST', '/api/wholesale/handovers', { repId: razId, date: '2026-11-20', currency: 'IQD', rateX100: 100 });
+    expect(balanceOf('1811')).toBe(1_000_000);
+    expect((await call(admin, 'POST', `/api/wholesale/collections/${c.id}/cancel`, {})).json().error).toBe('ws_collection_handed_over');
+    expect((await call(razH, 'POST', `/api/wholesale/handovers/${h.id}/cancel`, {})).statusCode).toBe(403);
+    const hBack = await ok(admin, 'POST', `/api/wholesale/handovers/${h.id}/cancel`, {});
+    expect(hBack).toMatchObject({ state: 'cancelled', mayCancel: false });
+    expect([balanceOf('1811'), balanceOf('1812')]).toEqual([0, 1_000_000]);
+    expect((await ok(razH, 'GET', '/api/wholesale/collections?open=1')).map((x: { id: string }) => x.id)).toEqual([c.id]);
+    const back = await ok(admin, 'POST', `/api/wholesale/collections/${c.id}/cancel`, {});
+    expect(back).toMatchObject({ state: 'cancelled', handoverId: null });
+    expect(balanceOf('1812')).toBe(0);
+    expect((await ok(admin, 'GET', `/api/parties/${shopA}`)).balance).toBe(0);
+    expect((await call(admin, 'POST', `/api/wholesale/collections/${c.id}/cancel`, {})).statusCode).toBe(409);
+    // the right amount, collected and handed over again
+    await ok(razH, 'POST', '/api/wholesale/collections', { partyId: shopA, date: '2026-11-20', currency: 'IQD', rateX100: 100, amount: 100_000 });
+    expect((await ok(office, 'POST', '/api/wholesale/handovers', { repId: razId, date: '2026-11-20', currency: 'IQD', rateX100: 100 })).amount).toBe(100_000);
+    const report = await ok(admin, 'GET', '/api/wholesale/reports?from=2026-11-01&to=2026-11-30');
+    expect(report.collections).toEqual([expect.objectContaining({ repId: razId, IQD: 100_000, handedIQD: 100_000, count: 1 })]);
+  });
+
+  it('keeps a refused collection out of the year’s close, and lets the rep take a waiting one back (2.0 books review #5)', async () => {
+    writeSetting(db, 'vouchers_need_approval', '1');
+    const refused = await ok(razH, 'POST', '/api/wholesale/collections', { partyId: shopA, date: '2026-11-20', currency: 'IQD', rateX100: 100, amount: 5_000 });
+    const r = await call(admin, 'POST', `/api/entries/${refused.entryId}/reject`, { reason: 'the shop says 4,000' });
+    expect(r.statusCode, r.body).toBe(200);
+    const year = (await ok(admin, 'GET', '/api/year-end')).years.find((y: { year: number }) => y.year === 2026);
+    expect(year.blockers ?? []).not.toContainEqual(expect.objectContaining({ code: 'unfinished_entries' }));
+    const waiting = await ok(razH, 'POST', '/api/wholesale/collections', { partyId: shopA, date: '2026-11-20', currency: 'IQD', rateX100: 100, amount: 4_000 });
+    expect(waiting).toMatchObject({ state: 'waiting', mayCancel: true });
+    expect((await ok(razH, 'POST', `/api/wholesale/collections/${waiting.id}/cancel`, {})).state).toBe('cancelled');
+    expect(db.prepare('SELECT 1 FROM entries WHERE id = ?').get(waiting.entryId)).toBeUndefined();
+  });
+
+  it('keeps a rep who was switched off to their own work, and leaves approving and collecting for others to the office (2.0 books review #10)', async () => {
+    const o = await ok(lasH, 'POST', '/api/wholesale/orders', order(shopC, 1));
+    const users = await ok(admin, 'GET', '/api/users') as { id: string; username: string }[];
+    await ok(admin, 'PUT', `/api/wholesale/reps/${razId}`, { userId: users.find((u) => u.username === 'raz')!.id, name: 'Raz', warehouseId: vanId, loadWarehouseId: mainId, cashAccount: '1812', active: false });
+    expect((await call(razH, 'GET', `/api/wholesale/orders/${o.id}`)).statusCode).toBe(404);
+    expect((await ok(razH, 'GET', '/api/wholesale/orders')).length).toBe(0);
+    expect((await call(razH, 'POST', `/api/wholesale/orders/${o.id}/approve`, {})).statusCode).toBeGreaterThanOrEqual(403);
+    expect((await call(razH, 'POST', '/api/wholesale/collections', { repId: lasId, partyId: shopC, date: '2026-11-20', currency: 'USD', rateX100: 150_000, amount: 10_000 })).statusCode).toBeGreaterThanOrEqual(400);
+    expect(balanceOf('1813')).toBe(0);
+    // someone with sales alone and no rep record takes orders for the office, but approves and collects nothing
+    await ok(admin, 'POST', '/api/users', { username: 'sami', name: 'sami', password: 'sami-pass-123', roles: ['sales'] });
+    const sami = await signIn('sami', 'sami-pass-123');
+    expect((await call(sami, 'POST', `/api/wholesale/orders/${o.id}/approve`, {})).json().error).toBe('ws_office_only');
+    expect((await call(sami, 'POST', '/api/wholesale/collections', { repId: lasId, partyId: shopC, date: '2026-11-20', currency: 'IQD', rateX100: 100, amount: 1_000 })).json().error).toBe('ws_office_only');
+    expect((await ok(office, 'POST', `/api/wholesale/orders/${o.id}/approve`, {})).status).toBe('approved');
+  });
+
+  it('hands dollars over at another rate without leaving dinars on a rep who holds no dollars (2.0 books review #15)', async () => {
+    await ok(razH, 'POST', '/api/wholesale/collections', { partyId: shopA, date: '2026-11-20', currency: 'USD', rateX100: 150_000, amount: 10_000 });
+    expect(balanceOf('1812')).toBe(150_000);
+    const h = await ok(admin, 'POST', '/api/wholesale/handovers', { repId: razId, date: '2026-11-20', currency: 'USD', rateX100: 140_000 });
+    expect(h.state).toBe('approved');
+    expect([balanceOf('1812'), balanceOf('1811')]).toEqual([0, 140_000]);
+    const lines = getEntry(db, h.entryId).lines;
+    expect(lines.reduce((t, l) => t + l.baseDebit - l.baseCredit, 0)).toBe(0);
+    expect(lines.find((l) => l.accountCode.startsWith('39'))).toMatchObject({ debit: 0, credit: 0, baseDebit: 10_000 });
+    // taken back, everything is as before
+    await ok(admin, 'POST', `/api/wholesale/handovers/${h.id}/cancel`, {});
+    expect([balanceOf('1812'), balanceOf('1811')]).toEqual([150_000, 0]);
+  });
+
   it('records visits and sets them against the route', async () => {
     await ok(razH, 'POST', '/api/wholesale/visits', { partyId: shopA, date: '2026-11-20', outcome: 'no_order' });
     expect((await call(razH, 'POST', '/api/wholesale/visits', { partyId: shopC, date: '2026-11-20', outcome: 'closed' })).statusCode).toBe(403);

@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { z } from 'zod';
 import {
-  applyOffers, minutesOf, offerActive, offerLineRows, offerRuleErrors, orderRules, roundHalfUp, todayIso,
+  applyOffers, minutesOf, offerActive, offerLineRows, offerRuleErrors, orderRules, roundHalfUp, toBase, todayIso,
   type CurrencyCode, type Names, type OfferKind, type OfferResult, type OfferRule
 } from '@qasa/core';
 import type { Db } from './db.ts';
@@ -204,7 +204,9 @@ export interface SaleOfferLine { itemId: string; qtyMilli: number; amount: numbe
  * a back-dated invoice gets no offer limited to hours).
  */
 export function saleOffers(
-  db: Db, sale: { date: string; warehouseId: string; currency: CurrencyCode; rateX100: number; lines: readonly SaleOfferLine[] }, at: Date
+  db: Db, sale: { date: string; warehouseId: string; currency: CurrencyCode; rateX100: number; lines: readonly SaleOfferLine[] }, at: Date,
+  /** the day whose offers these are, when not the sale's own date (a delivery order delivered on a later day) */
+  on?: string
 ): OfferResult {
   const rules = activeRules(db);
   if (!rules.length || !sale.lines.length) return { allocations: [], byLine: {}, offers: [], total: 0 };
@@ -214,7 +216,7 @@ export function saleOffers(
     categoryId: (category.get(l.itemId) as { category_id: string | null } | undefined)?.category_id ?? null
   }));
   return applyOffers(lines, rules, {
-    date: sale.date, minutes: todayIso(at) === sale.date ? minutesOf(at) : null, branchId: branchOfWarehouse(db, sale.warehouseId),
+    date: on ?? sale.date, minutes: todayIso(at) === (on ?? sale.date) ? minutesOf(at) : null, branchId: branchOfWarehouse(db, sale.warehouseId),
     currency: sale.currency, rateX100: sale.currency === 'IQD' ? 100 : sale.rateX100
   });
 }
@@ -270,7 +272,7 @@ export function offersReport(db: Db, from: string, to: string): { from: string; 
                               JOIN invoices s ON s.id = r.return_of
                               WHERE r.kind = 'sale_return' AND r.status = 'posted' AND s.date >= ? AND s.date <= ? GROUP BY r.return_of, rl.source_line`)
     .all(from, to) as { return_of: string; source_line: number; qty: number }[]) returned.set(`${r.return_of}|${r.source_line}`, Number(r.qty));
-  const iqd = (v: number, currency: CurrencyCode, rate: number) => (currency === 'IQD' ? v : roundHalfUp((v * rate) / 100));
+  const iqd = (v: number, currency: CurrencyCode, rate: number) => toBase(v, currency, rate);
   const by = new Map<string, { sales: Set<string>; given: number; returned: number }>();
   for (const l of lines) {
     const row = by.get(l.offer_id) ?? { sales: new Set<string>(), given: 0, returned: 0 };

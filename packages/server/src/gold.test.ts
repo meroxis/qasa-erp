@@ -5,6 +5,8 @@ import { openDatabase, type Db } from './db.ts';
 import { resetLoginThrottle } from './auth.ts';
 import { getEntry } from './journal.ts';
 import { writeSetting } from './settings.ts';
+import { createGoldDoc, postGoldDoc, updateGoldDoc } from './gold.ts';
+import type { Actor } from './auth.ts';
 
 // Gold and jewellery shops: pieces by weight and karat, the day's board pricing them, sales and the customer's slip,
 // old gold bought and melted, suppliers settled in gold, cancelling, separate duties and the plan.
@@ -94,6 +96,47 @@ describe('gold and jewellery shops', () => {
     const b = await ok('GET', '/api/gold/board?currency=IQD&date=2026-11-20');
     expect(b.board['21']).toMatchObject({ sellPerGram: 100_000, date: '2026-11-20' });
     expect(b.board['18']).toBeNull();
+  });
+
+  it('makes, posts and cancels a document once when a request comes twice with its key', async () => {
+    await setUp();
+    const key = (n: number) => ({ ...headers, 'x-qasa-idempotency': `5f1c2d3e-4a5b-4c6d-8e7f-9a0b1c2d3e8${n}` });
+    const twice = async (n: number, url: string, body: object) => {
+      const first = await call('POST', url, body, key(n));
+      expect(first.statusCode, first.body).toBeLessThan(300);
+      const again = await call('POST', url, body, key(n));
+      expect(again.headers['x-qasa-idempotent-replay'], url).toBe('1');
+      expect(again.json().id).toBe(first.json().id);
+      return first.json();
+    };
+    const doc = await twice(1, '/api/gold/docs', { kind: 'receipt', date: '2026-11-20', partyId: supplierId, warehouseId, pricePerGram: 120_000, lines: [{ itemId: ringId, making: 0 }] });
+    expect(db.prepare('SELECT COUNT(*) AS n FROM gold_docs').get()).toEqual({ n: 1 });
+    // posted once: one ring in stock, 4.375 g owed once
+    await twice(2, `/api/gold/docs/${doc.id}/post`, { lang: 'en' });
+    expect(stock(ringId).q).toBe(1000);
+    expect(balanceOf('264')).toBe(-525_000);
+    // cancelled once: the retry gets the cancelled document, not "already cancelled", and no second reversal
+    expect(await twice(3, `/api/gold/docs/${doc.id}/cancel`, {})).toMatchObject({ status: 'cancelled' });
+    expect(stock(ringId).q).toBe(0);
+    expect(balanceOf('264')).toBe(0);
+  });
+
+  it('leaves gold owed out of the revaluation of dollar balances: it is gold by weight, kept in its own ledger (2.0 books review #9)', async () => {
+    await setUp();
+    // a 5 g ring of 21 karat from the workshop at $80 a gram of pure gold when a dollar is 1,500: 4.375 g, $350
+    const r = await postDoc({ kind: 'receipt', date: '2026-11-20', partyId: supplierId, warehouseId, currency: 'USD', rateX100: 150_000, pricePerGram: 8_000, lines: [{ itemId: ringId, making: 0 }] });
+    expect(r.statusCode, r.body).toBe(200);
+    expect(balanceOf('264')).toBe(-525_000);
+    const owed = () => db.prepare('SELECT COALESCE(SUM(fine_mg), 0) AS mg, COALESCE(SUM(value), 0) AS v FROM gold_supplier_moves WHERE party_id = ?').get(supplierId);
+    expect(owed()).toEqual({ mg: 4375, v: 525_000 });
+
+    // the dollar rises to 1,600: 264 is not dollars owed (a delivery of gold relieves it in dinars at the ledger's
+    // value), so there is nothing to revalue and nothing is posted on it
+    const report = await ok('GET', '/api/fx/revaluation?date=2026-11-20&rateX100=160000');
+    expect(report.rows).toEqual([]);
+    expect((await call('POST', '/api/fx/revaluation', { date: '2026-11-20', rateX100: 160_000, lang: 'en' })).json()).toMatchObject({ error: 'fx_nothing_to_post' });
+    expect(balanceOf('264')).toBe(-525_000);
+    expect(owed()).toEqual({ mg: 4375, v: 525_000 });
   });
 
   it('takes pieces in from a supplier in gold and money, sells one, and prints the customer’s slip', async () => {
@@ -203,6 +246,24 @@ describe('gold and jewellery shops', () => {
     const same = await call('POST', `/api/gold/docs/${draft.id}/post`, {});
     expect(same.statusCode).toBe(409);
     expect(same.json().error).toBe('same_person');
+  });
+
+  it('makes whoever rewrote a draft its preparer: with separate duties on, an approver can’t change it and post it himself (2.0 books review #3)', async () => {
+    await setUp();
+    writeSetting(db, 'separate_duties', '1');
+    const k = await ok('POST', '/api/users', { username: 'kawa', name: 'Kawa', password: 'kawa-pass-123', roles: ['purchasing'] });
+    const z = await ok('POST', '/api/users', { username: 'azad', name: 'Azad', password: 'azad-pass-123', roles: ['purchasing', 'approver'] });
+    const kawa = { id: k.id, name: 'Kawa', username: 'kawa', roles: [], permissions: ['purchases'] } as unknown as Actor;
+    const azad = { id: z.id, name: 'Azad', username: 'azad', roles: [], permissions: ['purchases', 'entries.approve'] } as unknown as Actor;
+    const body = { kind: 'buy' as const, date: '2026-11-20', customerName: 'Raz', karat: 18 as const, weightMg: 1_000, pricePerGram: 70_000, cashAccount: '1811' };
+    const draft = createGoldDoc(db, body, kawa);
+    // Azad rewrites it to 100 g at 95,000 and tries to post it: it is his draft now
+    updateGoldDoc(db, draft.id, { ...body, customerName: 'his cousin', weightMg: 100_000, pricePerGram: 95_000 }, azad);
+    expect(() => postGoldDoc(db, draft.id, azad)).toThrowError(expect.objectContaining({ code: 'same_person' }));
+    expect(balanceOf('1811')).toBe(0);
+    // untouched by him, Kawa's draft is his to post
+    const other = createGoldDoc(db, body, kawa);
+    expect(postGoldDoc(db, other.id, azad).status).toBe('posted');
   });
 
   it('checks what a document needs, and keeps the entries it posts out of the vouchers page', async () => {

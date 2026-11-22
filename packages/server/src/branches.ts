@@ -149,15 +149,20 @@ export function checkBranchRequest(db: Db, actor: Actor | null, method: string, 
   const scope = scopeOf(db, actor);
   if (!scope) return;
   if (isCompanyBooks(path)) throw forbidden();
+  // the gold on hand (every warehouse's pieces and the old gold) and the gold owed to suppliers are the whole company's
+  if (path === '/api/gold/stock' || path.startsWith('/api/gold/suppliers')) throw forbidden();
   const body = (req.body && typeof req.body === 'object' ? req.body : {}) as Record<string, unknown>;
   if (method !== 'GET') {
     // a document's own warehouse and safe (the destination of a transfer may be any branch)
     if (typeof body.warehouseId === 'string' && !scope.warehouses.has(body.warehouseId)) throw forbidden();
     // every safe or bank named in the body: a voucher's, a bank transfer's both ends, a cheque's or a statement's bank,
     // and the account an opening stock document credits
-    for (const key of ['cashAccountCode', 'cashAccount', 'downPaymentCashAccount', 'from', 'to', 'bankAccount', 'accountCode', 'counterAccountCode']) {
+    // (toAccount: the safe a wholesale rep's cash is handed over to)
+    for (const key of ['cashAccountCode', 'cashAccount', 'downPaymentCashAccount', 'from', 'to', 'toAccount', 'bankAccount', 'accountCode', 'counterAccountCode']) {
       if (isCash(body[key]) && !scope.accounts.has(body[key])) throw forbidden();
     }
+    // the warehouse a wholesale rep's van is loaded from: the stock leaves it
+    if (typeof body.loadWarehouseId === 'string' && !scope.warehouses.has(body.loadWarehouseId)) throw forbidden();
     for (const list of [body.lines, body.items]) {
       if (!Array.isArray(list)) continue;
       for (const line of list as { accountCode?: unknown }[]) if (isCash(line?.accountCode) && !scope.accounts.has(line.accountCode)) throw forbidden();
@@ -166,6 +171,15 @@ export function checkBranchRequest(db: Db, actor: Actor | null, method: string, 
   // a warehouse asked for in the query: a count sheet, a list narrowed to one warehouse
   const query = (req.query && typeof req.query === 'object' ? req.query : {}) as Record<string, unknown>;
   if (typeof query.warehouseId === 'string' && query.warehouseId && !scope.warehouses.has(query.warehouseId)) throw forbidden();
+  // the features' own records (2.0 books review #6), named in the body or the query: a wholesale rep (a collection, a
+  // handover, a visit, a list narrowed to one rep), a delivery driver (a handover, an order given to him), and the
+  // supplier a consignment settlement is made or previewed for
+  const feature = featureScope(db, scope);
+  for (const named of [body, query]) {
+    if (path.startsWith('/api/wholesale/') && typeof named.repId === 'string' && named.repId) feature.rep(named.repId);
+    if (path.startsWith('/api/delivery/') && typeof named.driverId === 'string' && named.driverId) feature.driver(named.driverId);
+    if (path.startsWith('/api/consignment/settlements') && typeof named.supplierId === 'string' && named.supplierId) feature.consignmentSupplier(named.supplierId);
+  }
   const id = (req.params as { id?: unknown } | undefined)?.id;
   if (typeof id !== 'string') return;
   /** A document of one warehouse: refused when that warehouse is outside the user's branches (none: no branch). */
@@ -202,7 +216,75 @@ export function checkBranchRequest(db: Db, actor: Actor | null, method: string, 
   } else if (path.startsWith('/api/banking/statements/:id')) {
     const row = db.prepare('SELECT account_code FROM bank_statements WHERE id = ?').get(id) as { account_code: string } | undefined;
     if (row && !scope.accounts.has(row.account_code)) throw forbidden();
+  } else if (path.startsWith('/api/consignment/docs/:id')) {
+    ofWarehouse('SELECT warehouse_id FROM consignment_docs WHERE id = ?');
+  } else if (path.startsWith('/api/consignment/settlements/:id')) {
+    const row = db.prepare('SELECT supplier_id FROM consignment_settlements WHERE id = ?').get(id) as { supplier_id: string } | undefined;
+    if (row) feature.consignmentSupplier(row.supplier_id);
+  } else if (path.startsWith('/api/consignment/statement/:id')) {
+    feature.consignmentSupplier(id);
+  } else if (path.startsWith('/api/gold/docs/:id')) {
+    // old gold melted or handed to a supplier has no warehouse and no safe: it belongs to no branch
+    const row = db.prepare('SELECT warehouse_id, cash_account FROM gold_docs WHERE id = ?').get(id) as { warehouse_id: string | null; cash_account: string | null } | undefined;
+    if (row && ((row.warehouse_id && !scope.warehouses.has(row.warehouse_id)) || (isCash(row.cash_account) && !scope.accounts.has(row.cash_account)))) throw forbidden();
+  } else if (path.startsWith('/api/gold/slip/:id') || path.startsWith('/api/clothing/invoices/:id')) {
+    // the customer's slip of a gold sale, the sizes and colours of an invoice: the invoice's branch
+    ofWarehouse('SELECT warehouse_id FROM invoices WHERE id = ?');
+  } else if (path.startsWith('/api/clothing/shifts/:id')) {
+    // an exchange at the till: the shift's branch, as for a sale
+    const row = db.prepare('SELECT warehouse_id, cash_account FROM pos_shifts WHERE id = ?').get(id) as { warehouse_id: string; cash_account: string } | undefined;
+    if (row && (!scope.warehouses.has(row.warehouse_id) || !scope.accounts.has(row.cash_account))) throw forbidden();
+  } else if (path.startsWith('/api/wholesale/reps/:id')) {
+    // loading or unloading a van also moves the stock of the warehouse it is loaded from
+    feature.rep(id, method !== 'GET' && path === '/api/wholesale/reps/:id/van');
+  } else if (path.startsWith('/api/wholesale/orders/:id')) {
+    ofWarehouse('SELECT warehouse_id FROM ws_orders WHERE id = ?');
+  } else if (path.startsWith('/api/wholesale/collections/:id')) {
+    const row = db.prepare('SELECT rep_id FROM ws_collections WHERE id = ?').get(id) as { rep_id: string } | undefined;
+    if (row) feature.rep(row.rep_id);
+  } else if (path.startsWith('/api/wholesale/handovers/:id')) {
+    const row = db.prepare('SELECT rep_id, to_account FROM ws_handovers WHERE id = ?').get(id) as { rep_id: string; to_account: string } | undefined;
+    if (row) { feature.rep(row.rep_id); if (isCash(row.to_account) && !scope.accounts.has(row.to_account)) throw forbidden(); }
+  } else if (path.startsWith('/api/delivery/orders/:id')) {
+    ofWarehouse('SELECT warehouse_id FROM delivery_orders WHERE id = ?');
+  } else if (path.startsWith('/api/delivery/drivers/:id')) {
+    feature.driver(id);
+  } else if (path.startsWith('/api/delivery/handovers/:id')) {
+    // the driver's own cash account and the safe his cash went into
+    const rows = db.prepare(`SELECT l.account_code FROM delivery_handovers h JOIN entry_lines l ON l.entry_id = h.entry_id WHERE h.id = ?`).all(id) as { account_code: string }[];
+    if (rows.some((r) => isCash(r.account_code) && !scope.accounts.has(r.account_code))) throw forbidden();
   }
+}
+
+/**
+ * The 2.0 features' records and the branch each belongs to (books review #6):
+ *
+ * - a wholesale rep: his van's branch (the van is a warehouse), and his cash account's. His orders are their
+ *   warehouse's; his collections and handovers are his;
+ * - a delivery driver: his cash account's branch (a driver with none belongs to no branch); an order its warehouse's;
+ * - a consignment document: its warehouse's. A settlement, and the supplier's statement, cover the supplier's goods in
+ *   every warehouse: they are for a limited user only when all of those are in their branches (otherwise the head
+ *   office settles with that supplier);
+ * - a gold document: its warehouse's and its safe's; a daily supplier's sheet: its warehouse's.
+ */
+function featureScope(db: Db, scope: BranchScope) {
+  const repOutside = (repId: string, loading = false): boolean => {
+    const r = db.prepare('SELECT warehouse_id, load_warehouse_id, cash_account FROM ws_reps WHERE id = ?').get(repId) as { warehouse_id: string; load_warehouse_id: string; cash_account: string } | undefined;
+    if (!r) return false;
+    return !scope.warehouses.has(r.warehouse_id) || (isCash(r.cash_account) && !scope.accounts.has(r.cash_account)) || (loading && !scope.warehouses.has(r.load_warehouse_id));
+  };
+  const driverOutside = (driverId: string): boolean => {
+    const r = db.prepare('SELECT cash_account FROM delivery_drivers WHERE id = ?').get(driverId) as { cash_account: string | null } | undefined;
+    return !!r && isCash(r.cash_account) && !scope.accounts.has(r.cash_account);
+  };
+  const consignmentSupplierOutside = (supplierId: string): boolean =>
+    (db.prepare('SELECT DISTINCT warehouse_id FROM consignment_moves WHERE supplier_id = ?').all(supplierId) as { warehouse_id: string }[]).some((m) => !scope.warehouses.has(m.warehouse_id));
+  return {
+    repOutside, driverOutside, consignmentSupplierOutside,
+    rep: (repId: string, loading = false) => { if (repOutside(repId, loading)) throw forbidden(); },
+    driver: (driverId: string) => { if (driverOutside(driverId)) throw forbidden(); },
+    consignmentSupplier: (supplierId: string) => { if (consignmentSupplierOutside(supplierId)) throw forbidden(); }
+  };
 }
 
 /**
@@ -232,9 +314,23 @@ export function visibleEntryIds(db: Db, scope: BranchScope, ids: readonly string
 export function filterBranchResult(db: Db, actor: Actor | null, method: string, path: string, result: unknown): unknown {
   if (method !== 'GET' || !result || typeof result !== 'object' || !actor || actor.permissions.includes('admin') || !anyBranches(db)) return result;
   const banking = path === '/api/banking/accounts';
-  if (!Array.isArray(result) && !banking) return result;
+  const consignment = path === '/api/consignment';
+  const wholesaleReports = path === '/api/wholesale/reports';
+  if (!Array.isArray(result) && !banking && !consignment && !wholesaleReports) return result;
   const scope = scopeOf(db, actor);
   if (!scope) return result;
+  const feature = featureScope(db, scope);
+  if (consignment) {
+    // the suppliers with goods on consignment: those whose goods are all in the user's branches
+    const r = result as { suppliers?: { supplierId: string }[] };
+    return Array.isArray(r.suppliers) ? { ...r, suppliers: r.suppliers.filter((x) => !feature.consignmentSupplierOutside(x.supplierId)) } : result;
+  }
+  if (wholesaleReports) {
+    // sales, collections and visits by rep: the reps of the user's branches (an order with no rep is the head office's)
+    const r = result as Record<string, unknown>;
+    const mine = (rows: unknown) => Array.isArray(rows) ? (rows as { repId: string | null }[]).filter((x) => !!x.repId && !feature.repOutside(x.repId)) : rows;
+    return { ...r, sales: mine(r.sales), collections: mine(r.collections), visits: mine(r.visits) };
+  }
   if (banking) {
     // the banking page's safes, banks and wallets: only the branch's own, as in the chart of accounts
     const r = result as { accounts?: { code: string }[] };
@@ -273,6 +369,26 @@ export function filterBranchResult(db: Db, actor: Actor | null, method: string, 
       const visible = visibleEntries(db, scope, rows.map((r) => r.id));
       return rows.filter((r) => visible.has(r.id));
     }
+    // the 2.0 features' lists (books review #6), each by the branch its record belongs to (featureScope)
+    case '/api/consignment/docs':
+    case '/api/wholesale/orders':
+    case '/api/daily-suppliers/:id/receipts':
+      return (result as { warehouseId: string }[]).filter((d) => scope.warehouses.has(d.warehouseId));
+    case '/api/consignment/settlements':
+      return (result as { supplierId: string }[]).filter((x) => !feature.consignmentSupplierOutside(x.supplierId));
+    case '/api/gold/docs':
+      return (result as { warehouseId: string | null; cashAccount: string | null }[])
+        .filter((d) => (!d.warehouseId || scope.warehouses.has(d.warehouseId)) && (!isCash(d.cashAccount) || scope.accounts.has(d.cashAccount)));
+    case '/api/wholesale/reps':
+      return (result as { id: string }[]).filter((r) => !feature.repOutside(r.id));
+    case '/api/wholesale/collections':
+      return (result as { repId: string }[]).filter((c) => !feature.repOutside(c.repId));
+    case '/api/wholesale/handovers':
+      return (result as { repId: string; toAccount: string }[]).filter((h) => !feature.repOutside(h.repId) && (!isCash(h.toAccount) || scope.accounts.has(h.toAccount)));
+    case '/api/delivery/drivers':
+      return (result as { id: string }[]).filter((d) => !feature.driverOutside(d.id));
+    case '/api/delivery/handovers':
+      return (result as { driverId: string }[]).filter((h) => !feature.driverOutside(h.driverId));
     default:
       return result;
   }

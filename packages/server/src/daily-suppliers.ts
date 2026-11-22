@@ -5,7 +5,7 @@ import { isIsoDate, todayIso, type Names, type UnitCode } from '@qasa/core';
 import type { Db } from './db.ts';
 import { transaction } from './db.ts';
 import { audit } from './audit.ts';
-import { AppError, invalid, notFound } from './errors.ts';
+import { AppError, conflict, invalid, notFound } from './errors.ts';
 import { createInvoice, getInvoice, postInvoice, returnedByLine } from './invoices.ts';
 import { createReturn } from './returns.ts';
 import { getParty } from './parties.ts';
@@ -23,7 +23,8 @@ import type { ApiExtension, ApiRequest } from './routes.ts';
  *     invoice screen posts one (purchases);
  *   - what goes back is an ordinary purchase return (Dr the supplier / Cr stock) of the supplier's earlier daily
  *     purchases, newest first, as far as each has goods left to return: one return per earlier invoice.
- *   Both or neither: the sheet is one transaction.
+ *   Both or neither: the sheet is one transaction. One sheet per supplier and day, unless the person says the supplier
+ *   came again (`again`).
  * - The supplier's running balance is their account's, as on their statement; they are paid with a payment voucher.
  * Undoing a sheet is cancelling its purchase or returns on the invoice screen, as for any purchase.
  */
@@ -37,18 +38,33 @@ function supplier(db: Db, partyId: string) {
   return p;
 }
 
-/** What of each item the supplier's earlier daily purchases still hold to return: [invoice, line, qty left], newest first. */
+/**
+ * What of each item the supplier's earlier daily purchases still hold to return: [invoice, line, qty left], newest
+ * first. Only goods still on the shelf go back (2.0 books review #16): what was bought and not returned yet, as far as
+ * the warehouse it came into still has of the item — bread that sold is not there to hand back.
+ */
 function returnable(db: Db, partyId: string, itemId: string, before: string): { invoiceId: string; lineNo: number; left: number }[] {
   const rows = db.prepare(`SELECT r.purchase_id AS invoice_id, r.date FROM daily_receipts r JOIN invoices i ON i.id = r.purchase_id
                            WHERE r.party_id = ? AND r.date <= ? AND i.status = 'posted' ORDER BY r.date DESC, r.created_at DESC LIMIT 14`).all(partyId, before) as { invoice_id: string; date: string }[];
   const out: { invoiceId: string; lineNo: number; left: number }[] = [];
+  const onHand = new Map<string, number>();
+  const shelf = (warehouseId: string): number => {
+    if (!onHand.has(warehouseId)) {
+      const r = db.prepare('SELECT COALESCE(SUM(qty_milli), 0) AS q FROM stock_moves WHERE item_id = ? AND warehouse_id = ?').get(itemId, warehouseId) as { q: number };
+      onHand.set(warehouseId, Math.max(0, Number(r.q)));
+    }
+    return onHand.get(warehouseId)!;
+  };
   for (const r of rows) {
     const inv = getInvoice(db, r.invoice_id);
     const back = returnedByLine(db, r.invoice_id);
     for (const l of inv.lines) {
       if (l.itemId !== itemId) continue;
-      const left = l.qtyMilli - (back.get(l.lineNo)?.qtyMilli ?? 0);
-      if (left > 0) out.push({ invoiceId: r.invoice_id, lineNo: l.lineNo, left });
+      const left = Math.min(l.qtyMilli - (back.get(l.lineNo)?.qtyMilli ?? 0), shelf(inv.warehouseId));
+      if (left > 0) {
+        out.push({ invoiceId: r.invoice_id, lineNo: l.lineNo, left });
+        onHand.set(inv.warehouseId, shelf(inv.warehouseId) - left);
+      }
     }
   }
   return out;
@@ -103,7 +119,8 @@ export function setDailyItems(db: Db, partyId: string, items: { itemId: string; 
 
 /** unitCost left out: the cost agreed with the supplier, else the last one paid, else the item's purchase price */
 export interface DailyLineInput { itemId: string; receivedMilli: number; returnedMilli: number; unitCost?: number | undefined }
-export interface DailyReceiptInput { partyId: string; date: string; warehouseId: string; notes?: string | undefined; lines: DailyLineInput[] }
+/** again: the supplier came a second time that day, and the person said so (a second sheet is otherwise refused) */
+export interface DailyReceiptInput { partyId: string; date: string; warehouseId: string; notes?: string | undefined; again?: boolean | undefined; lines: DailyLineInput[] }
 export interface DailyReceiptView {
   id: string; partyId: string; date: string; warehouseId: string; purchaseId: string | null; purchaseNumber: string | null;
   returns: { id: string; number: string | null; total: number }[]; received: number; returned: number; createdBy: string; createdAt: string;
@@ -139,6 +156,11 @@ export function saveDailyReceipt(db: Db, input: DailyReceiptInput, actor: Actor)
   if (!db.prepare('SELECT 1 FROM warehouses WHERE id = ? AND active = 1').get(input.warehouseId)) errors.push({ code: 'warehouse_invalid' });
   const mine = userBranchLists(db, actor)?.warehouses ?? null;
   if (mine && !mine.includes(input.warehouseId)) throw new AppError(403, 'forbidden', { need: 'branch' });
+  // one sheet per supplier and day: a second one is the same delivery typed twice far more often than a second visit,
+  // and it would buy the goods twice. The page asks, and sends `again` when the person says the supplier did come again
+  if (!errors.length && !input.again && db.prepare('SELECT 1 FROM daily_receipts WHERE party_id = ? AND date = ? LIMIT 1').get(input.partyId, input.date)) {
+    throw conflict('ds_sheet_exists', { date: input.date });
+  }
   const seen = new Set<string>();
   const known = new Map(dailySheet(db, input.partyId, input.date).items.map((it) => [it.itemId, it.unitCost]));
   const lines = input.lines.filter((l) => l.receivedMilli > 0 || l.returnedMilli > 0)
@@ -237,7 +259,7 @@ export const dailySuppliersApi: ApiExtension = {
         method: 'POST', path: '/api/daily-suppliers/receipts',
         handler: async (req, reply) => {
           const body = parse(z.object({
-            partyId: id, date: day, warehouseId: id, notes: z.string().max(500).optional(),
+            partyId: id, date: day, warehouseId: id, notes: z.string().max(500).optional(), again: z.boolean().optional(),
             lines: z.array(z.object({ itemId: id, receivedMilli: qty, returnedMilli: qty, unitCost: z.number().int().min(0).max(1e12).optional() })).max(100)
           }), req.body);
           const who = actor(req);
