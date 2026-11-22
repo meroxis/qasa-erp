@@ -64,6 +64,17 @@ why, and only then removed from the PC, so discarding needs the server.
   is booked; the invoice keeps the reference, and the invoice search finds it by either.
 - **The date** is the till's date when it was sold, never before the shift was opened and never after the server's
   today.
+- **The till's rules** (2.0: the dinar rounding, what needs a supervisor) are kept with the rest of what the till last
+  had from the server. The cash is rounded by one shared function (`cashToTake`, core) at the till and on the server, so
+  a kept sale is booked for exactly the cash that was taken (never rounded down to nothing).
+- **A supervisor's approval needs the server.** A basket that needs one (a price below the list, a discount over the
+  limit) is held until the link is back. A kept sale below today's list price is taken without a supervisor only when
+  its price was the item's list price at some time between the shift's opening and the sale (the till's cached price:
+  `item_price_history`), and is written to the audit log for review (`offline_price_review`); a sale stamped before
+  its shift opened or in the future gets no allowance. Anything lower is refused (`pos_offline_supervisor`) and waits
+  in **Waiting to send** with the reason: a supervisor types their PIN there for that receipt ("Supervisor's
+  approval") and the sale is sent again as it was kept (audit: `offline_sale_accepted`, with both names), or an admin
+  discards it.
 - **Online only**: opening and closing a shift, returns, batch picking by hand (the server picks by expiry when the
   sale arrives), the controlled-medicine prompt (afterwards from the pharmacy log). A shift can't be closed while sales
   of it still wait on that PC, so the expected cash is right.
