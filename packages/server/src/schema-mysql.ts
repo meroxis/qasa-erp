@@ -2073,14 +2073,10 @@ export const MYSQL_TABLES: readonly MysqlObject[] = [
     sql: `CREATE TABLE pos_approvals (
       id ${ID} NOT NULL PRIMARY KEY,
       shift_id ${ID} NOT NULL,
-      action ${WORD} NOT NULL CHECK (action IN ('line_delete', 'void', 'price', 'discount', 'no_sale', 'refund', 'credit_over', 'blind_view', 'offline_sale')),
+      action ${WORD} NOT NULL CHECK (action IN ('line_delete', 'void', 'price', 'discount', 'no_sale', 'refund', 'credit_over', 'blind_view')),
       approver TEXT NOT NULL,
       approver_id ${ID},
       cashier TEXT NOT NULL,
-      cashier_id ${ID},
-      subject VARCHAR(160),
-      amount BIGINT,
-      scope TEXT,
       detail TEXT,
       created_at ${WHEN} NOT NULL,
       expires_at ${WHEN} NOT NULL,
@@ -2089,9 +2085,35 @@ export const MYSQL_TABLES: readonly MysqlObject[] = [
       FOREIGN KEY (shift_id) REFERENCES pos_shifts(id)
     )`
   },
+  // ——— 19: the approvals as they are now (pos_approvals above stays, empty and unused), the PIN counts, the shift
+  // that paid a refund, and the items' price history ———
+  {
+    name: 'till_approvals',
+    since: 19,
+    sql: `CREATE TABLE till_approvals (
+      id ${ID} NOT NULL PRIMARY KEY,
+      shift_id ${ID},
+      action ${WORD} NOT NULL,
+      approver TEXT NOT NULL,
+      approver_id ${ID},
+      cashier TEXT NOT NULL,
+      cashier_id ${ID},
+      subject VARCHAR(160),
+      amount BIGINT,
+      currency ${WORD},
+      gross BIGINT,
+      scope TEXT,
+      detail TEXT,
+      created_at ${WHEN} NOT NULL,
+      expires_at ${WHEN} NOT NULL,
+      used_at ${WHEN},
+      INDEX till_approvals_shift (shift_id),
+      FOREIGN KEY (shift_id) REFERENCES pos_shifts(id)
+    )`
+  },
   {
     name: 'pos_pin_tries',
-    since: 18,
+    since: 19,
     sql: `CREATE TABLE pos_pin_tries (
       k VARCHAR(160) NOT NULL PRIMARY KEY,
       n INT NOT NULL DEFAULT 0,
@@ -2103,7 +2125,7 @@ export const MYSQL_TABLES: readonly MysqlObject[] = [
   },
   {
     name: 'pos_shift_refunds',
-    since: 18,
+    since: 19,
     sql: `CREATE TABLE pos_shift_refunds (
       invoice_id ${ID} NOT NULL PRIMARY KEY,
       shift_id ${ID} NOT NULL,
@@ -2115,7 +2137,7 @@ export const MYSQL_TABLES: readonly MysqlObject[] = [
   },
   {
     name: 'item_price_history',
-    since: 18,
+    since: 19,
     sql: `CREATE TABLE item_price_history (
       id ${ID} NOT NULL PRIMARY KEY,
       item_id ${ID} NOT NULL,
@@ -2166,9 +2188,9 @@ export const MYSQL_TABLES: readonly MysqlObject[] = [
       kind ${WORD} NOT NULL CHECK (kind IN ('sold', 'redeemed', 'restored', 'cancelled', 'returned', 'expired')),
       amount BIGINT NOT NULL,
       invoice_id ${ID},
-      for_voucher_id ${ID},
       created_by TEXT NOT NULL,
       created_at ${WHEN} NOT NULL,
+      for_voucher_id ${ID},
       INDEX gift_voucher_moves_voucher (voucher_id),
       INDEX gift_voucher_moves_invoice (invoice_id),
       FOREIGN KEY (voucher_id) REFERENCES gift_vouchers(id),
@@ -2480,10 +2502,10 @@ export const MYSQL_TABLES: readonly MysqlObject[] = [
       rate_x100 BIGINT NOT NULL CHECK (rate_x100 > 0),
       amount BIGINT NOT NULL CHECK (amount > 0),
       entry_id ${ID},
-      cancelled_at ${WHEN},
-      cancel_entry_id ${ID},
       created_by TEXT NOT NULL,
       created_at ${WHEN} NOT NULL,
+      cancelled_at ${WHEN},
+      cancel_entry_id ${ID},
       INDEX ws_handovers_rep (rep_id),
       INDEX ws_handovers_entry (entry_id),
       FOREIGN KEY (rep_id) REFERENCES ws_reps(id),
@@ -2506,11 +2528,11 @@ export const MYSQL_TABLES: readonly MysqlObject[] = [
       amount BIGINT NOT NULL CHECK (amount > 0),
       entry_id ${ID},
       handover_id ${ID},
-      cancelled_at ${WHEN},
-      cancel_entry_id ${ID},
       notes TEXT,
       created_by TEXT NOT NULL,
       created_at ${WHEN} NOT NULL,
+      cancelled_at ${WHEN},
+      cancel_entry_id ${ID},
       INDEX ws_collections_rep (rep_id, date),
       INDEX ws_collections_entry (entry_id),
       INDEX ws_collections_handover (handover_id),
@@ -2949,6 +2971,20 @@ export const V17_MYSQL_STEPS: readonly MysqlStep[] = [
 export const V18_MYSQL_STEPS: readonly MysqlStep[] = [
   mysqlAddColumn('pos_sales', 'rounding', 'BIGINT NOT NULL DEFAULT 0'),
   mysqlAddColumn('pos_sales', 'voucher_paid', 'BIGINT NOT NULL DEFAULT 0')
+];
+
+/**
+ * Version 19 (what the reviews of 2.0 added after 18 was first built): the voucher a returned share stands for, and the
+ * taking back of a wholesale collection or handover. Its new tables come from MYSQL_TABLES, since 19.
+ */
+export const V19_MYSQL_STEPS: readonly MysqlStep[] = [
+  mysqlAddColumn('gift_voucher_moves', 'for_voucher_id', ID),
+  mysqlAddColumn('ws_handovers', 'cancelled_at', WHEN),
+  mysqlAddColumn('ws_handovers', 'cancel_entry_id', ID),
+  mysqlAddForeignKey('ws_handovers', 'cancel_entry_id', 'entries', 'id'),
+  mysqlAddColumn('ws_collections', 'cancelled_at', WHEN),
+  mysqlAddColumn('ws_collections', 'cancel_entry_id', ID),
+  mysqlAddForeignKey('ws_collections', 'cancel_entry_id', 'entries', 'id')
 ];
 // ===== end of 18 · TILL RULES =====
 

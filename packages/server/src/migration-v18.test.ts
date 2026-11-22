@@ -1,11 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import type { Db, SqlValue } from './db.ts';
 import { migrate, openDatabase, SCHEMA_VERSION } from './db.ts';
-import { MYSQL_TABLES, tableColumns, V18_MYSQL_STEPS } from './schema-mysql.ts';
+import { MYSQL_TABLES, tableColumns, V18_MYSQL_STEPS, V19_MYSQL_STEPS } from './schema-mysql.ts';
 
 // Version 18 (2.0, the till's rules): supervisors' PINs and approvals, gift vouchers, the customer screen's pictures and
 // pairing codes, and the dinar rounding of a till sale's cash.
-const V18_TABLES = ['pos_pins', 'pos_approvals', 'pos_pin_tries', 'pos_shift_refunds', 'item_price_history', 'gift_vouchers', 'gift_voucher_moves', 'pos_display_images', 'pos_display_codes'];
+const V18_TABLES = ['pos_pins', 'pos_approvals', 'gift_vouchers', 'gift_voucher_moves', 'pos_display_images', 'pos_display_codes'];
 
 // what a company file (SQLite) has, read with its own PRAGMA: not a test for a run on a database server, whose
 // upgrade is tested in pro/src/mysql/server.test.ts (as migration-v17.test.ts does)
@@ -58,6 +58,6 @@ describe.skipIf(onServer)('version 18', () => {
     const made = ran.filter((s) => s.startsWith('CREATE TABLE ') && !s.includes('schema_version')).map((s) => s.split(' ')[2]);
     expect(made.sort()).toEqual(MYSQL_TABLES.filter((t) => (t.since ?? 0) >= 18).map((t) => t.name).sort());
     for (const t of V18_TABLES) expect(made).toContain(t);
-    expect(ran.filter((s) => s.startsWith('ALTER TABLE'))).toEqual(V18_MYSQL_STEPS.map((x) => x.sql));
+    expect(ran.filter((s) => s.startsWith('ALTER TABLE'))).toEqual([...V18_MYSQL_STEPS, ...V19_MYSQL_STEPS].map((x) => x.sql));
   });
 });

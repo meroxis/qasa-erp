@@ -218,7 +218,7 @@ export async function approve(db: Db, input: ApprovalAsk, cashier: Actor): Promi
   const expiresAt = new Date(now.getTime() + (input.action === 'price' ? PRICE_APPROVAL_MS : input.action === 'offline_sale' ? OFFLINE_APPROVAL_MS : APPROVAL_MS)).toISOString();
   const used = TILL_ONLY_ACTIONS.includes(input.action);
   const detail = input.detail?.trim().slice(0, 300) || null;
-  db.prepare(`INSERT INTO pos_approvals (id, shift_id, action, approver, approver_id, cashier, cashier_id, subject, amount, scope, detail, created_at, expires_at, used_at)
+  db.prepare(`INSERT INTO till_approvals (id, shift_id, action, approver, approver_id, cashier, cashier_id, subject, amount, scope, detail, created_at, expires_at, used_at)
               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
     .run(token, input.shiftId, input.action, found.name, found.id, cashier.name, cashier.id ?? null, bound.subject, bound.amount, bound.scope, detail,
       now.toISOString(), expiresAt, used ? now.toISOString() : null);

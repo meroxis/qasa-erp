@@ -151,7 +151,7 @@ export function useApproval(db: Db, tokens: readonly string[] | undefined, actio
   const now = new Date().toISOString();
   for (const token of tokens ?? []) {
     const r = db.prepare(`SELECT a.id, a.approver, a.shift_id, a.cashier, a.cashier_id, a.subject, a.amount, a.scope, s.status AS shift_status
-                          FROM pos_approvals a JOIN pos_shifts s ON s.id = a.shift_id
+                          FROM till_approvals a JOIN pos_shifts s ON s.id = a.shift_id
                           WHERE a.id = ? AND a.action = ? AND a.used_at IS NULL AND a.expires_at >= ?`)
       .get(token, action, now) as { id: string; approver: string; shift_id: string; cashier: string; cashier_id: string | null; subject: string | null; amount: number | null; scope: string | null; shift_status: string } | undefined;
     if (!r) continue;
@@ -169,7 +169,7 @@ export function useApproval(db: Db, tokens: readonly string[] | undefined, actio
       for (const l of use.lines ?? []) asked.set(l.lineNo, (asked.get(l.lineNo) ?? 0) + l.qtyMilli);
       if (!use.lines || [...asked].some(([lineNo, qty]) => qty > (most.get(lineNo) ?? 0))) continue;
     }
-    const taken = db.prepare('UPDATE pos_approvals SET used_at = ? WHERE id = ? AND used_at IS NULL').run(now, r.id);
+    const taken = db.prepare('UPDATE till_approvals SET used_at = ? WHERE id = ? AND used_at IS NULL').run(now, r.id);
     if (Number(taken.changes) !== 1) continue;
     audit(db, who.name, 'approval_used', 'pos_shift', r.shift_id, { action, approver: r.approver, approval: r.id });
     return r.approver;
@@ -179,7 +179,7 @@ export function useApproval(db: Db, tokens: readonly string[] | undefined, actio
 
 /** Whether a supervisor has approved the kept sale with this receipt reference (not used yet). */
 export function offlineApprovalWaits(db: Db, shiftId: string, reference: string): boolean {
-  return !!db.prepare("SELECT 1 FROM pos_approvals WHERE action = 'offline_sale' AND shift_id = ? AND subject = ? AND used_at IS NULL AND expires_at >= ?")
+  return !!db.prepare("SELECT 1 FROM till_approvals WHERE action = 'offline_sale' AND shift_id = ? AND subject = ? AND used_at IS NULL AND expires_at >= ?")
     .get(shiftId, reference, new Date().toISOString());
 }
 
@@ -190,11 +190,11 @@ export function offlineApprovalWaits(db: Db, shiftId: string, reference: string)
  */
 export function useOfflineApproval(db: Db, shiftId: string, reference: string, value: number, user: string): string | null {
   const now = new Date().toISOString();
-  const rows = db.prepare("SELECT id, approver, amount FROM pos_approvals WHERE action = 'offline_sale' AND shift_id = ? AND subject = ? AND used_at IS NULL AND expires_at >= ? ORDER BY created_at")
+  const rows = db.prepare("SELECT id, approver, amount FROM till_approvals WHERE action = 'offline_sale' AND shift_id = ? AND subject = ? AND used_at IS NULL AND expires_at >= ? ORDER BY created_at")
     .all(shiftId, reference, now) as { id: string; approver: string; amount: number | null }[];
   for (const r of rows) {
     if (r.amount === null || value < Number(r.amount)) continue;
-    if (Number(db.prepare('UPDATE pos_approvals SET used_at = ? WHERE id = ? AND used_at IS NULL').run(now, r.id).changes) !== 1) continue;
+    if (Number(db.prepare('UPDATE till_approvals SET used_at = ? WHERE id = ? AND used_at IS NULL').run(now, r.id).changes) !== 1) continue;
     audit(db, user, 'approval_used', 'pos_shift', shiftId, { action: 'offline_sale', approver: r.approver, approval: r.id, reference });
     return r.approver;
   }
