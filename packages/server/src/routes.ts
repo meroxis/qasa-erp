@@ -642,8 +642,13 @@ export function apiRoutes(db: Db, options: { demo?: boolean; extensions?: readon
   app.get('/api/invoices/:id', async (req) => getInvoice(db, parse(idParam, req.params).id, branchOfUser(req)));
   app.post('/api/invoices', async (req, reply) => {
     const body = withoutUndefined(parse(invoiceSchema, req.body));
-    // 1.7: a sale made on the invoice screen gets the offers that are on (offers.ts)
-    return reply.status(201).send(once(req, reply, 'POST /api/invoices', () => createInvoice(db, body, userOf(req), { offersAt: new Date() }), (id) => getInvoice(db, id, branchOfUser(req))));
+    // 1.7: a sale made on the invoice screen gets the offers that are on (offers.ts). 2.0: not a phone's draft (the
+    // phone link marks its requests, pro/src/phone/phone.ts): the released phone app shows its customer the total it
+    // worked out itself and reads only the draft's id back, so the office keeps that total, at posting too (the draft
+    // carries no offers, invoices.ts refreshOffers). Whoever opens the draft on a PC and saves it gets the offers,
+    // and sees the new total.
+    const fromPhone = req.headers['x-qasa-phone'] === '1';
+    return reply.status(201).send(once(req, reply, 'POST /api/invoices', () => createInvoice(db, body, userOf(req), fromPhone ? {} : { offersAt: new Date() }), (id) => getInvoice(db, id, branchOfUser(req))));
   });
   app.put('/api/invoices/:id', async (req) => updateInvoice(db, parse(idParam, req.params).id, withoutUndefined(parse(invoiceSchema, req.body)), userOf(req), { offersAt: new Date() }));
   app.delete('/api/invoices/:id', async (req, reply) => {
