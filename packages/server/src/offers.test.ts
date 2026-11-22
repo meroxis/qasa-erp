@@ -134,6 +134,21 @@ describe('offers on a sale invoice', () => {
   });
 });
 
+describe('the offers report in dollars (2.0 books review #12)', () => {
+  it('counts what a dollar sale gave at its rate: cents × dinars per dollar, not a hundred times that', async () => {
+    await licensed();
+    await offer();
+    // three cans at $1.00 when a dollar is 1,500 dinars: one free, $1.00 given = 1,500 dinars
+    const draft = await sale([{ itemId: colaId, qtyMilli: 3000, unitPrice: 100 }], { currency: 'USD', rateX100: 150_000 });
+    expect(draft.statusCode, draft.body).toBe(201);
+    expect(draft.json()).toMatchObject({ offerDiscount: 100, total: 200 });
+    expect((await post(`/api/invoices/${draft.json().id}/post`)).statusCode).toBe(200);
+    const report = (await get(`/api/offers/report?from=${TODAY}&to=${TODAY}`)).json();
+    expect(report.rows).toEqual([expect.objectContaining({ code: 'B2G1', sales: 1, given: 1_500, returned: 0, net: 1_500 })]);
+    expect(report.total).toBe(1_500);
+  });
+});
+
 describe('a free item with another (accounting review #4)', () => {
   it('spreads what is given over the set, so returning only what was bought gives back what it cost, not its full price', async () => {
     await licensed();
