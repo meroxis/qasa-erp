@@ -283,14 +283,18 @@ export function onStockMove(db: Db, move: StockMove): void {
       for (const l of layers) {
         if (left <= 0) break;
         const take = Math.min(left, Number(l.q));
-        const value = Math.min(valueLeft, costOut(Number(l.q), Number(l.v), take));
+        // at what that supplier's goods are carried at, and all of it with the last of them (costOut), whatever the
+        // stock's one average made of this move: capping it at the move's value left dinars on a supplier with no
+        // goods (verify report #14). The difference is the current supplier's, below
+        const value = costOut(Number(l.q), Number(l.v), take);
         const ccy = l.currency === 'IQD' ? value : costOut(Number(l.q), Number(l.c), take);
         insert(l.supplier_id, l.currency, -take, -value, -ccy);
         left -= take;
         valueLeft -= value;
       }
       // the current supplier's part; with none of its goods in this move, what the stock's one average cost put on
-      // the earlier supplier's goods beyond what they are carried at stays with the current supplier's (no quantity)
+      // the earlier supplier's goods beyond what they are carried at (or short of it) stays with the current
+      // supplier's (no quantity): its goods carry it, and it goes out with the last of them
       if (left > 0 || valueLeft !== 0) {
         const own = ledgerOfSupplier(db, move.itemId, move.warehouseId, item.supplier_id, item.currency);
         const ccy = item.currency === 'IQD' ? valueLeft : left > 0 ? costOut(own.qtyMilli, own.ccy, left) : 0;
@@ -584,6 +588,7 @@ export function postConsignmentDoc(db: Db, id: string, actor: Actor, lang: Consi
   const errors: { code: string; line: number; available?: number }[] = [];
   const stock = new Map<string, { qtyMilli: number; value: number }>();
   const ledgers = new Map<string, Ledger>();
+  const owns = new Map<string, Ledger>();
   for (const l of view.lines) {
     const item = consignedItem(db, l.itemId)!;
     if (row.kind === 'receipt') {
@@ -594,10 +599,16 @@ export function postConsignmentDoc(db: Db, id: string, actor: Actor, lang: Consi
       const s = stock.get(l.itemId) ?? stockOf(db, l.itemId, row.warehouse_id);
       const led = ledgers.get(l.itemId) ?? ledgerOf(db, l.itemId, row.warehouse_id);
       if (s.qtyMilli < l.qtyMilli) errors.push({ code: 'stock_insufficient', line: l.seq, available: Math.max(0, s.qtyMilli) });
-      const value = costOut(s.qtyMilli, s.value, l.qtyMilli);
-      const ccy = currency === 'IQD' ? value : costOut(led.qtyMilli, led.ccy, l.qtyMilli);
+      // the goods going back are this supplier's: at what its own goods are carried at (all of it with the last of
+      // them), when another supplier's unit shares the shelf; never a share of the shelf's average, which would leave
+      // dinars on a supplier with no goods (verify report #14)
+      const own = owns.get(l.itemId) ?? ledgerOfSupplier(db, l.itemId, row.warehouse_id, item.supplier_id, item.currency);
+      const mixed = own.qtyMilli !== led.qtyMilli && own.qtyMilli >= l.qtyMilli;
+      const value = mixed ? costOut(own.qtyMilli, own.value, l.qtyMilli) : costOut(s.qtyMilli, s.value, l.qtyMilli);
+      const ccy = currency === 'IQD' ? value : mixed ? costOut(own.qtyMilli, own.ccy, l.qtyMilli) : costOut(led.qtyMilli, led.ccy, l.qtyMilli);
       stock.set(l.itemId, { qtyMilli: s.qtyMilli - l.qtyMilli, value: s.value - value });
       ledgers.set(l.itemId, { qtyMilli: led.qtyMilli - l.qtyMilli, value: led.value - value, ccy: led.ccy - ccy });
+      owns.set(l.itemId, { qtyMilli: own.qtyMilli - l.qtyMilli, value: own.value - value, ccy: own.ccy - ccy });
       planned.push({ item, qtyMilli: -l.qtyMilli, value: -value, ccy: -ccy, seq: l.seq });
     }
   }
