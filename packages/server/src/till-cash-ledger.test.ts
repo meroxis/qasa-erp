@@ -20,7 +20,8 @@ import { resetDisplayTries, resetPinFailures } from './till-rules.ts';
 // The seeds are fixed, so a failure names the seed and the step and can be run again as it was. More seeds:
 // QASA_CASH_SEEDS=150 npx vitest run packages/server/src/till-cash-ledger.test.ts
 
-const SEEDS = Number(process.env.QASA_CASH_SEEDS ?? '') || 8;
+// (on a database server, QASA_TEST_DB, two seeds: the same SQL, a tenth of the time)
+const SEEDS = Number(process.env.QASA_CASH_SEEDS ?? '') || (process.env.QASA_TEST_DB ? 2 : 8);
 const STEPS = 110;
 const RATE = 142_000;
 const SAFES = ['1811', '1812'] as const;
@@ -224,12 +225,14 @@ async function day(seed: number, done: Map<Kind, number>): Promise<void> {
 
 describe('what the tills expect in their drawers is what the ledger moved on their safes', () => {
   const done = new Map<Kind, number>();
-  for (let seed = 1; seed <= SEEDS; seed++) {
+  // one seed again, as it was: QASA_CASH_SEED=11
+  const only = Number(process.env.QASA_CASH_SEED ?? '') || 0;
+  for (let seed = only || 1; seed <= (only || SEEDS); seed++) {
     it(`seed ${seed}: ${STEPS} random steps at three tills on two safes`, async () => {
       await day(seed, done);
     }, 120_000);
   }
-  it('went through every kind of step', () => {
+  it.skipIf(!!only)('went through every kind of step', () => {
     for (const kind of ['sale', 'usdNotes', 'usdSale', 'credit', 'voucherSold', 'voucherPaid', 'tillReturn', 'screenReturn', 'returnCancel', 'saleCancel', 'screenSale', 'closeOpen', 'voucherCancel'] as const) {
       expect(done.get(kind) ?? 0, kind).toBeGreaterThan(0);
     }

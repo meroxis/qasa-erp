@@ -274,10 +274,10 @@ export function onStockMove(db: Db, move: StockMove): void {
     const saleId = move.sourceType === 'sale_cancel'
       ? move.sourceId
       : (db.prepare('SELECT return_of FROM invoices WHERE id = ?').get(move.sourceId) as { return_of: string | null } | undefined)?.return_of ?? null;
-    const open = saleId ? openOfSale(db, move.itemId, saleId) : [];
+    const taken = saleId ? openOfSale(db, move.itemId, saleId) : [];
     let left = move.qtyMilli;
     const parts: Share[] = [];
-    for (const o of open) {
+    for (const o of taken) {
       if (left <= 0) break;
       const take = Math.min(left, o.qty);
       const share = (of: number) => Math.max(0, take === o.qty ? of : Math.round((of * take) / o.qty));
@@ -287,15 +287,26 @@ export function onStockMove(db: Db, move: StockMove): void {
     if (parts.length) {
       // more came back than the sale's rows know of (a sale from before the item was on consignment): the rest is the
       // current supplier's, like any goods that come in
-      if (left > 0) parts.push({ supplierId: item.supplier_id, currency: item.currency, qty: left, value: 0, ccy: -1 });
-      // the stock move's own dinars, to the dinar: each supplier's share of what the sale took, the last one the rest
-      let valueLeft = move.value;
-      parts.forEach((part, i) => {
-        const value = i === parts.length - 1 ? valueLeft : Math.min(part.value, valueLeft);
-        valueLeft -= value;
-        const ccy = part.ccy < 0 ? ccyValueOf(db, item, move.warehouseId, part.qty, value) : part.ccy;
-        insert(part.supplierId, part.currency, part.qty, value, ccy);
-      });
+      if (left > 0) {
+        const present = parts.find((x) => x.supplierId === item.supplier_id && x.currency === item.currency);
+        if (present) { present.qty += left; present.ccy = -1; } else parts.push({ supplierId: item.supplier_id, currency: item.currency, qty: left, value: 0, ccy: -1 });
+      }
+      // the stock move's own dinars, to the dinar: each supplier's goods come back at what the sale took them at.
+      // What is left over (what the shelf's one average had put on those goods beyond what they are carried at, or
+      // short of it) stays with the item's present supplier, as when goods go out: on its goods in this move, or
+      // with no quantity. Never on an earlier supplier's goods, which are owed at what they are carried at.
+      const mine = parts.find((x) => x.supplierId === item.supplier_id && x.currency === item.currency);
+      let rest = move.value;
+      for (const part of parts) {
+        if (part !== mine) part.value = Math.max(0, part.value);
+        rest -= part === mine ? 0 : part.value;
+      }
+      if (mine) mine.value = rest;
+      for (const part of parts) {
+        const ccy = part.ccy < 0 ? ccyValueOf(db, item, move.warehouseId, part.qty, part.value) : part.ccy;
+        insert(part.supplierId, part.currency, part.qty, part.value, ccy);
+      }
+      if (!mine && rest !== 0) insert(item.supplier_id, item.currency, 0, rest, 0);
       return;
     }
   }
@@ -764,7 +775,11 @@ export function cancelConsignmentDoc(db: Db, id: string, actor: Actor, date?: st
   const moves = db.prepare('SELECT item_id, supplier_id, currency, qty_milli, value, ccy_value FROM consignment_moves WHERE source_type = ? AND source_id = ? ORDER BY created_at, id')
     .all(sourceType, id) as Record<string, unknown>[];
   const remaining = new Map<string, { qtyMilli: number; value: number }>();
-  const ownLeft = new Map<string, number>();
+  const ownLeft = new Map<string, { qtyMilli: number; value: number }>();
+  const isPresent = (m: Record<string, unknown>): boolean => {
+    const now = consignedItem(db, String(m.item_id));
+    return !!now && now.supplier_id === String(m.supplier_id) && now.currency === m.currency;
+  };
   const errors: { code: string; itemId: string; available?: number }[] = [];
   for (const m of moves) {
     const qty = Number(m.qty_milli);
@@ -774,9 +789,14 @@ export function cancelConsignmentDoc(db: Db, id: string, actor: Actor, date?: st
     const after = { qtyMilli: s.qtyMilli - qty, value: s.value - Number(m.value) };
     // (the goods of that very supplier: an earlier supplier's unit a customer brought back does not stand in for them)
     const ownKey = `${itemId}|${String(m.supplier_id)}|${String(m.currency)}`;
-    const own = ownLeft.get(ownKey) ?? ledgerOfSupplier(db, itemId, row.warehouse_id, String(m.supplier_id), m.currency as CurrencyCode).qtyMilli;
-    ownLeft.set(ownKey, own - qty);
+    const had = ownLeft.get(ownKey) ?? ledgerOfSupplier(db, itemId, row.warehouse_id, String(m.supplier_id), m.currency as CurrencyCode);
+    const own = had.qtyMilli;
+    ownLeft.set(ownKey, { qtyMilli: own - qty, value: had.value - Number(m.value) });
     if (after.qtyMilli < 0 || own < qty) errors.push({ code: 'stock_insufficient', itemId, available: Math.max(0, Math.min(s.qtyMilli, own)) });
+    // an earlier supplier's goods: the last of them leave at exactly what they are carried at, or not this way (they
+    // came back from customers at other dinars than they were received at, so the receipt is no longer what is there).
+    // (The item's present supplier may carry dinars with no goods while an earlier supplier's unit is on the shelf.)
+    else if (!isPresent(m) && own === qty && had.value !== Number(m.value)) errors.push({ code: 'stock_already_used', itemId });
     else if (after.value < 0 || (after.qtyMilli === 0 && after.value !== 0)) errors.push({ code: 'stock_already_used', itemId });
     remaining.set(itemId, after);
   }
@@ -901,7 +921,12 @@ export function createSettlement(db: Db, input: { supplierId: string; currency: 
       // dollars owed at today's rate; the goods are carried in the books at the dinars they came in at
       const owedIqd = toBase(preview.amount, 'USD', rate);
       const diff = owedIqd - preview.value;
-      lines.push({ accountCode: held, debit: preview.amount, credit: 0, baseDebit: preview.value, baseCredit: 0, description });
+      // (the dinars can be nothing or less while dollars are owed: goods a customer brought back after the last
+      // settlement, carried at a dearer dollar, and others sold since at a cheaper one. Then the dollars leave the
+      // account with no dinars, and the dinars that came back onto it are put there by a line of their own: an
+      // amount below nothing can't be written, and used to stop the settlement with an error — round four)
+      lines.push({ accountCode: held, debit: preview.amount, credit: 0, baseDebit: Math.max(0, preview.value), baseCredit: 0, description });
+      if (preview.value < 0) lines.push({ accountCode: held, debit: 0, credit: 0, baseDebit: 0, baseCredit: -preview.value, description });
       lines.push({ accountCode: supplier.account_code, debit: 0, credit: preview.amount, baseDebit: 0, baseCredit: owedIqd, description, partyId: supplier.id });
       if (diff > 0) lines.push({ accountCode: firstPostableUnder(db, '39'), debit: 0, credit: 0, baseDebit: diff, baseCredit: 0, description });
       if (diff < 0) lines.push({ accountCode: firstPostableUnder(db, '49'), debit: 0, credit: 0, baseDebit: 0, baseCredit: -diff, description });

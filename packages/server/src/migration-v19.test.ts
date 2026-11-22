@@ -134,7 +134,9 @@ function shapeOf(db: { prepare(sql: string): { all(...a: unknown[]): unknown[] }
 }
 
 describe.skipIf(onServer)('version 19 on a file a build of the review left at 18', () => {
-  const fresh = (() => { const db = openDatabase(':memory:'); try { return shapeOf(db); } finally { db.close(); } })();
+  // (worked out when a test first asks: a suite that is skipped on a database server still has its body read)
+  let made: ReturnType<typeof shapeOf> | null = null;
+  const freshShape = () => (made ??= (() => { const db = openDatabase(':memory:'); try { return shapeOf(db); } finally { db.close(); } })());
 
   for (const [build, extra] of Object.entries(SHAPES_AT_18)) {
     it(`${build}: reaches 19 with the tables, columns and indexes of a new file, and what it held stays`, () => {
@@ -153,10 +155,10 @@ describe.skipIf(onServer)('version 19 on a file a build of the review left at 18
         try {
           expect(schemaVersion(db)).toBe(19);
           const got = shapeOf(db);
-          expect(got.tables).toEqual(fresh.tables);
-          expect(got.indexes).toEqual(fresh.indexes);
+          expect(got.tables).toEqual(freshShape().tables);
+          expect(got.indexes).toEqual(freshShape().indexes);
           // version 18's approvals table is as version 18 made it, column for column
-          expect(got.order.pos_approvals).toEqual(fresh.order.pos_approvals);
+          expect(got.order.pos_approvals).toEqual(freshShape().order.pos_approvals);
           if (extra.includes('pos_pin_tries')) expect(Number((db.prepare("SELECT n FROM pos_pin_tries WHERE k = 'all'").get() as { n: number }).n)).toBe(2);
           expect(db.prepare('PRAGMA foreign_key_check').all()).toEqual([]);
         } finally {

@@ -17,7 +17,8 @@ import { resetLoginThrottle } from './auth.ts';
 //
 // The seeds are fixed. More: QASA_CONSIGNMENT_SEEDS=150 npx vitest run packages/server/src/consignment-random.test.ts
 
-const SEEDS = Number(process.env.QASA_CONSIGNMENT_SEEDS ?? '') || 30;
+// (on a database server, QASA_TEST_DB, four seeds: the same SQL, a fraction of the time)
+const SEEDS = Number(process.env.QASA_CONSIGNMENT_SEEDS ?? '') || (process.env.QASA_TEST_DB ? 4 : 30);
 const STEPS = 70;
 const DAY = '2026-11-20';
 
@@ -134,7 +135,13 @@ async function history(seed: number, done: Map<Kind, number>): Promise<void> {
         // supplier may carry dinars with no goods, while an earlier supplier's unit is still on the shelf: what the
         // shelf's one average put on that unit beyond what it is carried at; it goes out with it. Never dollars.)
         const present = terms.get(item)!;
-        if (g.q === 0 && !(g.supplier === present.supplier && g.currency === present.currency)) expect({ v: g.v, c: g.c }, `${where}: an earlier supplier with no goods (${g.currency})`).toEqual({ v: 0, c: 0 });
+        if (g.q === 0 && !(g.supplier === present.supplier && g.currency === present.currency) && (g.v !== 0 || g.c !== 0)) {
+          // (what happened on that shelf, for whoever reads the failure)
+          const rows = (db.prepare('SELECT supplier_id, currency, kind, source_type, qty_milli, value, ccy_value FROM consignment_moves WHERE item_id = ? AND warehouse_id = ? ORDER BY created_at').all(item, warehouse) as
+            { supplier_id: string; currency: string; kind: string; source_type: string; qty_milli: number; value: number; ccy_value: number }[])
+            .map((r) => `${suppliers.indexOf(r.supplier_id) + 1}${r.currency} ${r.source_type} ${r.qty_milli} ${r.value} ${r.ccy_value}`).join(' | ');
+          expect({ v: g.v, c: g.c }, `${where}: an earlier supplier with no goods (supplier ${suppliers.indexOf(g.supplier) + 1} ${g.currency}; present ${suppliers.indexOf(present.supplier) + 1} ${present.currency}): ${rows}`).toEqual({ v: 0, c: 0 });
+        }
         if (g.q === 0 && g.currency === 'USD') expect(g.c, `${where}: dollars on a supplier with no goods`).toBe(0);
       }
     }
@@ -210,7 +217,8 @@ async function history(seed: number, done: Map<Kind, number>): Promise<void> {
       res = await call('POST', `/api/consignment/docs/${doc.id}/cancel`, {});
       if (res.statusCode < 300) doc.cancelled = true;
     } else {
-      res = await call('POST', '/api/consignment/settlements', { supplierId: pick(suppliers), currency: pick(['IQD', 'USD'] as const), date: DAY, rateX100: 145_000 });
+      // what one of the item's suppliers is owed so far, in its currency (refused when nothing is owed yet)
+      res = await call('POST', '/api/consignment/settlements', { supplierId: t.supplier, currency: t.currency, date: DAY, ...(t.currency === 'USD' ? { rateX100: 145_000 } : {}) });
     }
     expect(res.statusCode, `seed ${seed} step ${step} ${kind}: ${res.body}`).toBeLessThan(500);
     if (res.statusCode < 300) tick(kind);
@@ -231,12 +239,14 @@ async function history(seed: number, done: Map<Kind, number>): Promise<void> {
 
 describe('goods on consignment, random histories', () => {
   const done = new Map<Kind, number>();
-  for (let seed = 1; seed <= SEEDS; seed++) {
+  // one seed again, as it was: QASA_CONSIGNMENT_SEED=11
+  const only = Number(process.env.QASA_CONSIGNMENT_SEED ?? '') || 0;
+  for (let seed = only || 1; seed <= (only || SEEDS); seed++) {
     it(`seed ${seed}: ${STEPS} random steps end exact, in dinars and in dollars`, async () => {
       await history(seed, done);
     }, 120_000);
   }
-  it('went through every kind of step', () => {
+  it.skipIf(!!only)('went through every kind of step', () => {
     for (const kind of ['terms', 'newSupplier', 'receipt', 'sendBack', 'sale', 'customerReturn', 'returnCancel', 'saleCancel', 'transfer', 'docCancel', 'settle'] as const) {
       expect(done.get(kind) ?? 0, kind).toBeGreaterThan(0);
     }

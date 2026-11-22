@@ -452,15 +452,20 @@ describe('goods on consignment', () => {
       const two = await call('POST', `/api/invoices/${sale.id}/returns`, { date: '2026-11-16', payment: 'credit', lines: [{ lineNo: 1, qtyMilli: 2_000 }] });
       expect(two.statusCode, two.body).toBe(201);
       expect(rowsOf('sale_return', two.json().id).map((r) => [r[0], r[1], r[3]])).toEqual([['second', 2_000, 200]]);
+      expect(rowsOf('sale_return', two.json().id)[0]![2]).toBe(two.json().lines[0].cost);
       expect(await owed(other, 'USD')).toBe(0);
       expect(await owed(supplierId, 'IQD')).toBe(1_800);
       // the third: the first bakery's loaf, a dinar row worth its dinars
       const third = await call('POST', `/api/invoices/${sale.id}/returns`, { date: '2026-11-16', payment: 'credit', lines: [{ lineNo: 1, qtyMilli: 1_000 }] });
       expect(third.statusCode, third.body).toBe(201);
+      // at the 900 it is carried at; what the shelf's average made of the move beyond that stays with the present
+      // supplier (the second), with no quantity and no dollars
       const back = rowsOf('sale_return', third.json().id);
-      expect(back.map((r) => [r[0], r[1]])).toEqual([['first', 1_000]]);
-      expect(back[0]![3]).toBe(back[0]![2]);
-      expect(await owed(supplierId, 'IQD')).toBe(1_800 - Number(back[0]![2]));
+      expect(back.filter((r) => r[1] !== 0)).toEqual([['first', 1_000, 900, 900]]);
+      expect(back.filter((r) => r[1] === 0).map((r) => [r[0], r[3]])).toEqual(back.length > 1 ? [['second', 0]] : []);
+      expect(back.reduce((t, r) => t + Number(r[2]), 0)).toBe(third.json().lines[0].cost);
+      expect(await owed(supplierId, 'IQD')).toBe(900);
+      expect(await owed(other, 'USD')).toBe(0);
       // that return cancelled: the loaf leaves again, the first bakery's, at what it is carried at
       expect((await call('POST', `/api/invoices/${third.json().id}/cancel`, {})).statusCode).toBe(200);
       expect(rowsOf('sale_return_cancel', third.json().id).filter((r) => r[1] !== 0).map((r) => [r[0], r[1]])).toEqual([['first', -1_000]]);
@@ -513,6 +518,38 @@ describe('goods on consignment', () => {
       expect(await owed(supplierId, 'IQD')).toBe(1_800);
       expect(await owed(other, 'USD')).toBe(500);
     });
+  });
+
+  it('settles dollars owed when the goods\' dinars since the last settlement are less than nothing (round four: it answered 500)', async () => {
+    await ok('POST', '/api/plan/trial');
+    await ok('PUT', `/api/consignment/items/${breadId}`, { supplierId, currency: 'USD', unitCost: 100 });
+    // ten at a dollar each when a dollar is 1,550; all sold and settled
+    expect((await postDoc(receipt([{ itemId: breadId, qtyMilli: 10_000 }], { rateX100: 155_000 }))).statusCode).toBe(200);
+    const first = await invoiceSale(10);
+    await ok('POST', '/api/consignment/settlements', { supplierId, currency: 'USD', date: '2026-11-12', rateX100: 155_000 });
+    // five come back (5 dollars, 7,750 dinars); twenty more arrive when a dollar is 1,300; 5.2 sell
+    expect((await call('POST', `/api/invoices/${first.id}/returns`, { date: '2026-11-13', payment: 'credit', lines: [{ lineNo: 1, qtyMilli: 5_000 }] })).statusCode).toBe(201);
+    expect((await postDoc(receipt([{ itemId: breadId, qtyMilli: 20_000 }], { date: '2026-11-13', rateX100: 130_000 }))).statusCode).toBe(200);
+    const sale = await ok('POST', '/api/invoices', { kind: 'sale', date: '2026-11-14', partyId: customerId, warehouseId, currency: 'IQD', rateX100: 100, payment: 'credit', discount: 0, lines: [{ itemId: breadId, qtyMilli: 5_200, unitPrice: 2_000 }] });
+    await ok('POST', `/api/invoices/${sale.id}/post`, {});
+    // owed since the settlement: 5.20 − 5.00 dollars; in dinars the goods sold (7,020) are less than those that came back (7,750)
+    const owed = await ok('GET', `/api/consignment/settlements/preview?supplierId=${supplierId}&currency=USD&date=2026-11-20`);
+    expect(owed).toMatchObject({ amount: 20, value: -730 });
+    const held = balanceOf(CONSIGNMENT_HELD_CODE);
+    const s = await call('POST', '/api/consignment/settlements', { supplierId, currency: 'USD', date: '2026-11-20', rateX100: 145_000 });
+    expect(s.statusCode, s.body).toBeLessThan(300);
+    expect(s.json()).toMatchObject({ amount: 20, value: -730, currency: 'USD' });
+    const e = getEntry(db, s.json().entryId);
+    // balanced in dollars and in dinars; the supplier is owed 20 cents (290 dinars at 1,450), and the 730 dinars that
+    // came back are on the goods' account again
+    expect(e.lines.reduce((t, l) => t + l.debit - l.credit, 0)).toBe(0);
+    expect(e.lines.reduce((t, l) => t + l.baseDebit - l.baseCredit, 0)).toBe(0);
+    expect(e.lines.find((l) => l.partyId === supplierId)).toMatchObject({ credit: 20, baseCredit: 290 });
+    expect(e.lines.filter((l) => l.accountCode === '268').map((l) => [l.debit, l.baseDebit, l.baseCredit])).toEqual([[20, 0, 0], [0, 0, 730]]);
+    expect(e.lines.find((l) => l.accountCode.startsWith('39'))).toMatchObject({ baseDebit: 1_020 });
+    if (e.status === 'approved') expect(balanceOf(CONSIGNMENT_HELD_CODE) - held).toBe(-730);
+    // nothing is left to settle
+    expect((await ok('GET', `/api/consignment/settlements/preview?supplierId=${supplierId}&currency=USD&date=2026-11-20`)).amount).toBe(0);
   });
 
   it('keeps batches and expiry dates for consigned goods', async () => {
