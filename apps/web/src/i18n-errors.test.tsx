@@ -10,7 +10,7 @@ const serverFiles = (dir: string) => readdirSync(join(root, dir))
 const dirs = ['packages/server/src', 'packages/core/src', 'pro/src'].filter((d) => { try { readdirSync(join(root, d)); return true; } catch { return false; } });
 
 /** Shown by the desktop app's own windows (recovery, start over, update), never by these pages. */
-const ELSEWHERE = new Set(['recovery_failed', 'recovery_method_invalid', 'recovery_not_admin', 'start_over_confirmation', 'start_over_on_server', 'update_copy_failed',
+const ELSEWHERE = new Set(['recovery_failed', 'recovery_method_invalid', 'recovery_not_admin', 'start_over_confirmation', 'start_over_on_server', 'update_copy_failed', 'update_failed',
   // the error of every refused form: its details carry the codes
   'validation']);
 
