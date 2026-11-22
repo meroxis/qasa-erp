@@ -148,7 +148,8 @@ export async function openCustomerScreen(): Promise<boolean> {
   return !!w;
 }
 
-export type DrawerStatus = 'opened' | 'no_printer' | 'failed' | 'refused' | 'busy' | 'not_here';
+/** 'blocked': Windows on this PC does not let the app run what opens the drawer (a policy, not the printer or its cable). */
+export type DrawerStatus = 'opened' | 'no_printer' | 'failed' | 'refused' | 'busy' | 'blocked' | 'not_here';
 
 /** Opens the cash drawer through this PC's receipt printer (Windows app only). */
 export async function kickDrawer(): Promise<DrawerStatus> {
@@ -156,5 +157,5 @@ export async function kickDrawer(): Promise<DrawerStatus> {
   if (!b) return 'not_here';
   const out = await b.openDrawer().catch(() => null) as { status?: unknown } | null;
   const s = out?.status;
-  return s === 'opened' || s === 'no_printer' || s === 'failed' || s === 'refused' || s === 'busy' ? s : 'failed';
+  return s === 'opened' || s === 'no_printer' || s === 'failed' || s === 'refused' || s === 'busy' || s === 'blocked' ? s : 'failed';
 }

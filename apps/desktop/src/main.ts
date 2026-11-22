@@ -7,8 +7,8 @@ import { app, BrowserWindow, dialog, ipcMain, Menu, nativeTheme, Notification, p
 import { chosenDevice, listScalePorts, pickScalePort, readChosenPort, serialAllowed, writeChosenPort, type SerialPortChoice } from './serial-scale.ts';
 import electronUpdater from 'electron-updater';
 import { channelOf, notesText, updaterOptions, type UpdateChannel, type UpdateState } from './updates-logic.ts';
-import { randomBytes } from 'node:crypto';
-import { appendFileSync, closeSync, existsSync, fstatSync, mkdirSync, openSync, readdirSync, readFileSync, readSync, statSync, unlinkSync, writeFileSync } from 'node:fs';
+import { createHash, randomBytes } from 'node:crypto';
+import { appendFileSync, closeSync, existsSync, fstatSync, mkdirSync, mkdtempSync, openSync, readdirSync, readFileSync, readSync, rmSync, statSync, unlinkSync, writeFileSync } from 'node:fs';
 import { homedir, hostname, userInfo } from 'node:os';
 import { join } from 'node:path';
 import { Bridge } from './bridge.ts';
@@ -657,19 +657,63 @@ ipcMain.handle('printers:print', (event, kind: unknown, layout: unknown) => prin
 
 // 2.0, the till (till-desktop.ts): the cash drawer opened through this PC's receipt printer (a fixed script, the
 // printer's name in its environment, never in its text), and the customer screen, a second window of the app's own page
+// the drawer's helper (compiled once for this run of the app): a file in a folder made for this run, removed on quit
+let drawerHelperDir: string | null | undefined;
+const drawerHelperFile = (): string | null => {
+  if (drawerHelperDir === undefined) {
+    try {
+      drawerHelperDir = mkdtempSync(join(app.getPath('temp'), 'qasa-drawer-'));
+    } catch (error) {
+      drawerHelperDir = null;
+      log('cash drawer: no folder for the helper:', error);
+    }
+  }
+  return drawerHelperDir ? join(drawerHelperDir, 'QasaRaw.dll') : null;
+};
+app.on('will-quit', () => {
+  if (drawerHelperDir) try { rmSync(drawerHelperDir, { recursive: true, force: true }); } catch { /* Windows clears its temp folder */ }
+});
 const openDrawer = drawerHandler({
   fromAppPage: (event) => invokedByAppPage(event as Electron.IpcMainInvokeEvent),
   readPrintersFile: () => { try { return readFileSync(printersFile(), 'utf8'); } catch { return null; } },
   printers: async () => (win && !win.isDestroyed() ? win.webContents.getPrintersAsync() : []),
-  run: (script, printer) => new Promise<string>((resolve, reject) => {
+  run: (script, printer, helper) => new Promise<string>((resolve, reject) => {
     if (process.platform !== 'win32') { reject(new Error('the cash drawer is opened on Windows only')); return; }
     execFile(powershellPath(process.env), ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-Command', script], {
-      windowsHide: true, timeout: 15_000, maxBuffer: 64 * 1024, encoding: 'utf8', shell: false, env: { ...process.env, QASA_DRAWER_PRINTER: printer }
-    }, (error, stdout) => { if (error) reject(error); else resolve(String(stdout)); });
+      windowsHide: true, timeout: 15_000, maxBuffer: 64 * 1024, encoding: 'utf8', shell: false,
+      env: { ...process.env, QASA_DRAWER_PRINTER: printer, QASA_DRAWER_HELPER: helper ?? '' }
+    }, (error, stdout, stderr) => {
+      if (!error) { resolve(String(stdout)); return; }
+      // what Windows or PowerShell said (never the script's own text, which Node puts in its message), so a policy
+      // that blocks it is told from a printer that did not answer (till-desktop.ts, drawerBlocked)
+      const code = (error as NodeJS.ErrnoException).code;
+      const said = String(stderr ?? '').trim().slice(0, 1_000) || (error.killed ? 'timed out' : typeof code === 'string' ? code : 'failed');
+      reject(Object.assign(new Error(said), typeof code === 'string' ? { code } : {}));
+    });
   }),
+  helperFile: drawerHelperFile,
+  fileHash: (file) => { try { return createHash('sha256').update(readFileSync(file)).digest('hex'); } catch { return null; } },
   log
 });
-ipcMain.handle('till:drawer', (event) => openDrawer(event));
+// a PC that has opened a drawer before compiles the helper as the window comes up, so the day's first sale does not wait
+const drawerUsedFile = () => join(app.getPath('userData'), 'drawer-used');
+let drawerNoted = false;
+ipcMain.handle('till:drawer', async (event) => {
+  const out = await openDrawer(event);
+  if (out.status === 'opened' && !drawerNoted) {
+    drawerNoted = true;
+    try { if (!existsSync(drawerUsedFile())) writeFileSync(drawerUsedFile(), '1'); } catch { /* the next sale notes it */ }
+  }
+  return out;
+});
+let drawerWarmed = false;
+function warmDrawer(): void {
+  if (drawerWarmed || process.platform !== 'win32') return;
+  drawerWarmed = true;
+  let used = false;
+  try { used = existsSync(drawerUsedFile()); } catch { used = false; }
+  if (used) setTimeout(() => { void openDrawer.prepare().catch(() => false); }, 5_000);
+}
 // 2.0: Settings → Users binds the Windows Hello password reset to the Windows account signed in here (the page then
 // saves it through the admin-only /api/auth/hello-reset); only this PC's own window, never an office client
 ipcMain.handle('app:windowsAccount', async (event) => {
@@ -1091,6 +1135,7 @@ async function createWindow(url: string): Promise<void> {
   win.webContents.on('did-finish-load', async () => {
     await readLanguage();
     buildMenu();
+    warmDrawer();
   });
   win.on('closed', () => {
     log('window closed');

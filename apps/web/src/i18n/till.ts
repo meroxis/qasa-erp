@@ -51,6 +51,7 @@ export const TILL_TEXT = {
   tl_noSaleDone: ['فُتح الدرج (سُجّل في السجل).', 'Drawer opened (written to the log).', 'چەکمەجەکە کرایەوە (لە تۆمارەکەدا نووسرا).'],
   tl_drawer_no_printer: ['اختر طابعة الإيصالات في الإعدادات ← الطابعات لفتح الدرج.', 'Choose the receipt printer in Settings → Printers to open the drawer.', 'بۆ کردنەوەی چەکمەجە، چاپکەری پسوولە لە ڕێکخستنەکان ← چاپکەرەکان هەڵبژێرە.'],
   tl_drawer_failed: ['لم يُفتح الدرج. افحص طابعة الإيصالات وكابل الدرج.', 'The drawer did not open. Check the receipt printer and the drawer cable.', 'چەکمەجەکە نەکرایەوە. چاپکەری پسوولە و کێبڵی چەکمەجەکە بپشکنە.'],
+  tl_drawer_blocked: ['ويندوز على هذا الحاسوب يمنع التطبيق من فتح الدرج (سياسة تحظر PowerShell). اضبط تعريف الطابعة ليفتح الدرج عند طباعة الإيصال، أو راجع مسؤول الحاسوب.', 'Windows on this PC does not let the app open the drawer (a policy blocks PowerShell). Set the printer\'s driver to open the drawer when a receipt prints, or ask whoever manages this PC.', 'ویندۆزی ئەم کۆمپیوتەرە ڕێگە بە بەرنامەکە نادات چەکمەجەکە بکاتەوە (سیاسەتێک PowerShell ڕادەگرێت). درایڤەری چاپکەرەکە وا ڕێکبخە کە لەگەڵ چاپکردنی پسوولە چەکمەجەکە بکاتەوە، یان پرس بە بەڕێوەبەری کۆمپیوتەرەکە بکە.'],
   tl_customerScreen: ['شاشة الزبون', 'Customer screen', 'شاشەی کڕیار'],
   tl_screenBlocked: ['لم تُفتح نافذة شاشة الزبون. اسمح للنوافذ المنبثقة لهذا الموقع.', 'The customer screen window did not open. Allow pop-ups for this site.', 'پەنجەرەی شاشەی کڕیار نەکرایەوە. ڕێگە بە پەنجەرە دەرکەوتووەکان بدە بۆ ئەم ماڵپەڕە.'],
   tl_welcome: ['أهلاً بكم', 'Welcome', 'بەخێربێن'],

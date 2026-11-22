@@ -390,6 +390,7 @@ export function Register({ initial, onClosed }: { initial: ShiftView; onClosed()
   const drawerSaid = (s: string) => {
     if (s === 'no_printer') toast(t('tl_drawer_no_printer'));
     else if (s === 'failed') toast(t('tl_drawer_failed'));
+    else if (s === 'blocked') toast(t('tl_drawer_blocked'));
   };
   const drawerOnCash = till?.drawer === 'cash' && inWindowsTill();
   const openDrawerForSale = () => { if (drawerOnCash) void kickDrawer().then(drawerSaid); };
