@@ -535,7 +535,13 @@ function revalidateStored(db: Db, id: string): void {
   const view = getEntry(db, id);
   assertValid(db, {
     type: view.type, date: view.date, description: view.description, currency: view.currency, rateX100: view.rateX100,
-    lines: view.lines.map((l) => ({ accountCode: l.accountCode, debit: l.debit, credit: l.credit, ...(l.partyId ? { partyId: l.partyId } : {}) }))
+    // a dollar entry is checked with the dinars its lines were stored with: a feature's entry (a consignment settlement
+    // at a rate other than the goods') carries its own base amounts, and a line in dinars only (the exchange difference)
+    // has no dollars at all, so working the dinars out again from the dollars would refuse it as an empty line
+    lines: view.lines.map((l) => ({
+      accountCode: l.accountCode, debit: l.debit, credit: l.credit, ...(l.partyId ? { partyId: l.partyId } : {}),
+      ...(view.currency === 'USD' ? { baseDebit: l.baseDebit, baseCredit: l.baseCredit } : {})
+    }))
   });
 }
 

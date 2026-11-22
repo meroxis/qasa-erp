@@ -29,6 +29,8 @@ import {
  *
  * - An item is put on consignment with one supplier at an agreed cost per base unit, in dinars or dollars. While it
  *   is, all of its stock is that supplier's: it is never bought on a purchase invoice or brought in as opening stock.
+ *   A new agreed cost is for the goods received from then on: what is already on hand stays owed at what it was
+ *   received at, wherever it is moved (a transfer's leg that comes in carries what its leg that went out took).
  * - A consignment receipt brings the goods into a warehouse at the agreed cost: Dr the warehouse's stock account /
  *   Cr consignment goods held (268, under creditors: the goods are the supplier's, not ours; nothing is payable yet).
  *   A return to the supplier is the reverse, at the cost the goods are carried at. Both post at once, as stock
@@ -235,8 +237,76 @@ export function onStockMove(db: Db, move: StockMove): void {
       return;
     }
   }
+  const base = { warehouseId: move.warehouseId, date: move.date, kind, sourceType: move.sourceType, sourceId: move.sourceId };
+  const insert = (supplierId: string, currency: CurrencyCode, qtyMilli: number, value: number, ccy: number) =>
+    db.prepare(MOVE_INSERT).run(randomUUID(), move.itemId, supplierId, base.warehouseId, base.date, base.kind, base.sourceType, base.sourceId, qtyMilli, value, currency, ccy, nowIso());
+
+  // the leg of a transfer that comes in carries what its leg that went out took, supplier by supplier: the same goods
+  // moved, so the dollars owed for them are the same in the other warehouse (never worked out again from dinars at
+  // that warehouse's average, nor from the agreed cost of today) — review of the 2.0 books #4
+  if (kind === 'transfer' && move.qtyMilli > 0) {
+    const legs = db.prepare(`SELECT supplier_id, currency, SUM(CASE WHEN qty_milli < 0 THEN -qty_milli ELSE 0 END) AS out_q, SUM(CASE WHEN qty_milli < 0 THEN -ccy_value ELSE 0 END) AS out_c,
+                                    SUM(CASE WHEN qty_milli > 0 THEN qty_milli ELSE 0 END) AS in_q, SUM(CASE WHEN qty_milli > 0 THEN ccy_value ELSE 0 END) AS in_c, MIN(created_at) AS first
+                             FROM consignment_moves WHERE item_id = ? AND source_type = ? AND source_id = ? GROUP BY supplier_id, currency ORDER BY first, supplier_id`)
+      .all(move.itemId, move.sourceType, move.sourceId) as { supplier_id: string; currency: CurrencyCode; out_q: number; out_c: number; in_q: number; in_c: number }[];
+    const open = legs.map((l) => ({ supplierId: l.supplier_id, currency: l.currency, qty: Number(l.out_q) - Number(l.in_q), ccy: Number(l.out_c) - Number(l.in_c) })).filter((l) => l.qty > 0);
+    let left = move.qtyMilli;
+    let valueLeft = move.value;
+    const parts: { supplierId: string; currency: CurrencyCode; qty: number; ccy: number }[] = [];
+    for (const l of open) {
+      if (left <= 0) break;
+      const take = Math.min(left, l.qty);
+      parts.push({ supplierId: l.supplierId, currency: l.currency, qty: take, ccy: take === l.qty ? l.ccy : Math.round((l.ccy * take) / l.qty) });
+      left -= take;
+    }
+    if (left === 0 && parts.length) {
+      parts.forEach((part, i) => {
+        const value = i === parts.length - 1 ? valueLeft : Math.round((move.value * part.qty) / move.qtyMilli);
+        valueLeft -= value;
+        insert(part.supplierId, part.currency, part.qty, value, part.currency === 'IQD' ? value : part.ccy);
+      });
+      return;
+    }
+  }
+
+  // goods going out (a sale, a write-off, a transfer's first leg): what is on hand of an earlier supplier's goods (a
+  // unit a customer brought back after the item changed supplier) goes first, and is owed to that supplier at what it
+  // is carried at; the rest is the current supplier's — review of the 2.0 books #11
+  if (move.qtyMilli < 0) {
+    const layers = (db.prepare(`SELECT supplier_id, currency, SUM(qty_milli) AS q, SUM(value) AS v, SUM(ccy_value) AS c, MIN(created_at) AS first FROM consignment_moves
+                                WHERE item_id = ? AND warehouse_id = ? GROUP BY supplier_id, currency HAVING SUM(qty_milli) > 0 ORDER BY first, supplier_id`)
+      .all(move.itemId, move.warehouseId) as { supplier_id: string; currency: CurrencyCode; q: number; v: number; c: number }[])
+      .filter((l) => l.supplier_id !== item.supplier_id || l.currency !== item.currency);
+    if (layers.length) {
+      let left = -move.qtyMilli;
+      let valueLeft = -move.value;
+      for (const l of layers) {
+        if (left <= 0) break;
+        const take = Math.min(left, Number(l.q));
+        const value = Math.min(valueLeft, costOut(Number(l.q), Number(l.v), take));
+        const ccy = l.currency === 'IQD' ? value : costOut(Number(l.q), Number(l.c), take);
+        insert(l.supplier_id, l.currency, -take, -value, -ccy);
+        left -= take;
+        valueLeft -= value;
+      }
+      // the current supplier's part; with none of its goods in this move, what the stock's one average cost put on
+      // the earlier supplier's goods beyond what they are carried at stays with the current supplier's (no quantity)
+      if (left > 0 || valueLeft !== 0) {
+        const own = ledgerOfSupplier(db, move.itemId, move.warehouseId, item.supplier_id, item.currency);
+        const ccy = item.currency === 'IQD' ? valueLeft : left > 0 ? costOut(own.qtyMilli, own.ccy, left) : 0;
+        insert(item.supplier_id, item.currency, -left, -valueLeft, -ccy);
+      }
+      return;
+    }
+  }
   const ccy = ccyValueOf(db, item, move.warehouseId, move.qtyMilli, move.value);
-  writeMove(db, item, { warehouseId: move.warehouseId, date: move.date, kind, sourceType: move.sourceType, sourceId: move.sourceId, qtyMilli: move.qtyMilli, value: move.value, ccy });
+  writeMove(db, item, { ...base, qtyMilli: move.qtyMilli, value: move.value, ccy });
+}
+
+function ledgerOfSupplier(db: Db, itemId: string, warehouseId: string, supplierId: string, currency: CurrencyCode): Ledger {
+  const r = db.prepare('SELECT SUM(qty_milli) AS q, SUM(value) AS v, SUM(ccy_value) AS c FROM consignment_moves WHERE item_id = ? AND warehouse_id = ? AND supplier_id = ? AND currency = ?')
+    .get(itemId, warehouseId, supplierId, currency) as { q: number | null; v: number | null; c: number | null };
+  return { qtyMilli: Number(r.q ?? 0), value: Number(r.v ?? 0), ccy: Number(r.c ?? 0) };
 }
 
 // ——— receipts and returns ———
