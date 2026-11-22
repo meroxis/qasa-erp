@@ -833,7 +833,13 @@ export const goldApi: ApiExtension = {
       },
       {
         method: 'POST', path: '/api/gold/docs/:id/cancel',
-        handler: async (req) => cancelGoldDoc(db, parse(idParam, req.params).id, actor(req), parse(z.object({ date: date.optional() }), req.body ?? {}).date)
+        handler: async (req, reply) => {
+          const docId = parse(idParam, req.params).id;
+          const on = parse(z.object({ date: date.optional() }), req.body ?? {}).date;
+          const who = actor(req);
+          // sent again with its key: the document as it was cancelled the first time, not "already cancelled"
+          return onceOnly(db, req, reply, who, 'POST /api/gold/docs/:id/cancel', () => { const done = cancelGoldDoc(db, docId, who, on); return { id: done.id, result: done }; }, (d) => getGoldDoc(db, d));
+        }
       },
       {
         method: 'GET', path: '/api/gold/slip/:id',

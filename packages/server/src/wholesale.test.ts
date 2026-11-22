@@ -239,6 +239,38 @@ describe('wholesale and distribution', () => {
     expect((await call(office, 'POST', '/api/wholesale/handovers', { repId: razId, date: '2026-11-20', currency: 'IQD', rateX100: 100 })).json().error).toBe('ws_nothing_to_hand_over');
   });
 
+  it('books a handover, and a handover or a collection taken back, once when the request comes twice with its key', async () => {
+    const key = (n: number) => ({ 'x-qasa-idempotency': `5f1c2d3e-4a5b-4c6d-8e7f-9a0b1c2d3e5${n}` });
+    const c = await ok(razH, 'POST', '/api/wholesale/collections', { partyId: shopA, date: '2026-11-20', currency: 'IQD', rateX100: 100, amount: 30_000 });
+    const handover = { repId: razId, date: '2026-11-20', currency: 'IQD', rateX100: 100 };
+    const first = await call({ ...office, ...key(1) }, 'POST', '/api/wholesale/handovers', handover);
+    expect(first.statusCode, first.body).toBe(201);
+    // the office's PC lost the answer and sends it again: the same handover (not "nothing to hand over"), the cash moved once
+    const again = await call({ ...office, ...key(1) }, 'POST', '/api/wholesale/handovers', handover);
+    expect(again.headers['x-qasa-idempotent-replay']).toBe('1');
+    expect(again.json()).toEqual(first.json());
+    expect(db.prepare('SELECT COUNT(*) AS n FROM ws_handovers').get()).toEqual({ n: 1 });
+    expect([balanceOf('1811'), balanceOf('1812')]).toEqual([30_000, 0]);
+
+    const entries = () => (db.prepare('SELECT COUNT(*) AS n FROM entries').get() as { n: number }).n;
+    const back = await call({ ...admin, ...key(2) }, 'POST', `/api/wholesale/handovers/${first.json().id}/cancel`, {});
+    expect(back.statusCode, back.body).toBe(200);
+    const before = entries();
+    const backAgain = await call({ ...admin, ...key(2) }, 'POST', `/api/wholesale/handovers/${first.json().id}/cancel`, {});
+    expect(backAgain.headers['x-qasa-idempotent-replay']).toBe('1');
+    expect(backAgain.json()).toMatchObject({ id: first.json().id, state: 'cancelled' });
+    expect(entries()).toBe(before);
+    expect([balanceOf('1811'), balanceOf('1812')]).toEqual([0, 30_000]);
+
+    const taken = await call({ ...admin, ...key(3) }, 'POST', `/api/wholesale/collections/${c.id}/cancel`, {});
+    expect(taken.statusCode, taken.body).toBe(200);
+    const takenAgain = await call({ ...admin, ...key(3) }, 'POST', `/api/wholesale/collections/${c.id}/cancel`, {});
+    expect(takenAgain.headers['x-qasa-idempotent-replay']).toBe('1');
+    expect(takenAgain.json()).toMatchObject({ id: c.id, state: 'cancelled' });
+    expect(entries()).toBe(before + 1);
+    expect(balanceOf('1812')).toBe(0);
+  });
+
   it('takes a collection and a handover back: a waiting one is deleted, one in the books is reversed by someone who may approve (2.0 books review #5)', async () => {
     // the rep typed 1,000,000 for 100,000
     const c = await ok(razH, 'POST', '/api/wholesale/collections', { partyId: shopA, date: '2026-11-20', currency: 'IQD', rateX100: 100, amount: 1_000_000 });

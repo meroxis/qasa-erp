@@ -1023,6 +1023,12 @@ function mayRead(actor: Actor): void {
   if (!(actor.permissions.includes('sales') || isOffice(actor))) throw new AppError(403, 'forbidden');
 }
 
+/** A handover as it is now, for a request that came again with its key. */
+const handoverAgainOf = (db: Db, who: Actor) => (handoverId: string): HandoverView => {
+  const rep = db.prepare('SELECT rep_id FROM ws_handovers WHERE id = ?').get(handoverId) as { rep_id: string };
+  return listHandovers(db, { repId: rep.rep_id }, who).find((x) => x.id === handoverId)!;
+};
+
 export const wholesaleApi: ApiExtension = {
   rules: {
     'POST /api/wholesale/reps': ADMIN,
@@ -1161,17 +1167,32 @@ export const wholesaleApi: ApiExtension = {
         method: 'POST', path: '/api/wholesale/handovers',
         handler: async (req, reply) => {
           const body = parse(z.object({ repId: id, date: isoDate, currency, rateX100: rate, toAccount: account.optional() }).strict(), req.body);
-          reply.status(201).send(handOver(db, body, actor(req)));
+          const who = actor(req);
+          // sent again with its key (a second tap, a retry after the link dropped): the same handover, the cash moved once
+          reply.status(201).send(onceOnly(db, req, reply, who, 'POST /api/wholesale/handovers', () => { const made = handOver(db, body, who); return { id: made.id, result: made }; }, handoverAgainOf(db, who)));
           return undefined;
         }
       },
       {
         method: 'POST', path: '/api/wholesale/collections/:id/cancel',
-        handler: async (req) => cancelCollection(db, parse(idParam, req.params).id, actor(req), parse(z.object({ date: isoDate.optional() }).strict(), req.body ?? {}).date)
+        handler: async (req, reply) => {
+          const cid = parse(idParam, req.params).id;
+          const on = parse(z.object({ date: isoDate.optional() }).strict(), req.body ?? {}).date;
+          const who = actor(req);
+          return onceOnly(db, req, reply, who, 'POST /api/wholesale/collections/:id/cancel', () => { const done = cancelCollection(db, cid, who, on); return { id: done.id, result: done }; }, (c) => {
+            const rep = db.prepare('SELECT rep_id FROM ws_collections WHERE id = ?').get(c) as { rep_id: string };
+            return listCollections(db, { repId: rep.rep_id }, who).find((x) => x.id === c)!;
+          });
+        }
       },
       {
         method: 'POST', path: '/api/wholesale/handovers/:id/cancel',
-        handler: async (req) => cancelHandover(db, parse(idParam, req.params).id, actor(req), parse(z.object({ date: isoDate.optional() }).strict(), req.body ?? {}).date)
+        handler: async (req, reply) => {
+          const hid = parse(idParam, req.params).id;
+          const on = parse(z.object({ date: isoDate.optional() }).strict(), req.body ?? {}).date;
+          const who = actor(req);
+          return onceOnly(db, req, reply, who, 'POST /api/wholesale/handovers/:id/cancel', () => { const done = cancelHandover(db, hid, who, on); return { id: done.id, result: done }; }, handoverAgainOf(db, who));
+        }
       },
       {
         method: 'GET', path: '/api/wholesale/reports',

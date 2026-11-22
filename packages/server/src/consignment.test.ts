@@ -259,6 +259,44 @@ describe('goods on consignment', () => {
     expect(e.lines.find((l) => l.accountCode.startsWith('39'))).toMatchObject({ baseDebit: 400 });
   });
 
+  it('makes, posts, settles and cancels once when a request comes twice with its key', async () => {
+    await ok('POST', '/api/plan/trial');
+    await ok('PUT', `/api/consignment/items/${breadId}`, { supplierId, currency: 'IQD', unitCost: 500 });
+    const key = (n: number) => ({ ...headers, 'x-qasa-idempotency': `5f1c2d3e-4a5b-4c6d-8e7f-9a0b1c2d3e7${n}` });
+    const twice = async (n: number, url: string, body: object) => {
+      const first = await call('POST', url, body, key(n));
+      expect(first.statusCode, first.body).toBeLessThan(300);
+      const again = await call('POST', url, body, key(n));
+      expect(again.headers['x-qasa-idempotent-replay'], url).toBe('1');
+      expect(again.json().id).toBe(first.json().id);
+      return first.json();
+    };
+    const count = (table: string) => (db.prepare(`SELECT COUNT(*) AS n FROM ${table}`).get() as { n: number }).n;
+    const stock = () => Number((db.prepare('SELECT COALESCE(SUM(qty_milli), 0) AS q FROM stock_moves WHERE item_id = ?').get(breadId) as { q: number }).q);
+
+    // the document, and posting it: one receipt, the goods in once
+    const doc = await twice(1, '/api/consignment/docs', receipt([{ itemId: breadId, qtyMilli: 10_000 }]));
+    expect(count('consignment_docs')).toBe(1);
+    await twice(2, `/api/consignment/docs/${doc.id}/post`, { lang: 'en' });
+    expect(stock()).toBe(10_000);
+    expect(balanceOf(CONSIGNMENT_HELD_CODE)).toBe(-5_000);
+
+    // the settlement of what sold: one settlement, the supplier owed once
+    await sellAtTill(4);
+    const settlement = await twice(3, '/api/consignment/settlements', { supplierId, currency: 'IQD', date: '2026-11-20', lang: 'en' });
+    expect(count('consignment_settlements')).toBe(1);
+    expect(settlement.amount).toBe(2_000);
+
+    // taking the settlement back, and a second receipt cancelled: each once, the retry answered with the first
+    const entries = count('entries');
+    expect(await twice(4, `/api/consignment/settlements/${settlement.id}/cancel`, {})).toMatchObject({ status: 'cancelled' });
+    expect(count('entries')).toBeLessThanOrEqual(entries);
+    const second = await ok('POST', '/api/consignment/docs', receipt([{ itemId: breadId, qtyMilli: 3_000 }], { date: '2026-11-20' }));
+    await ok('POST', `/api/consignment/docs/${second.id}/post`, { lang: 'en' });
+    expect(await twice(5, `/api/consignment/docs/${second.id}/cancel`, {})).toMatchObject({ status: 'cancelled' });
+    expect(stock()).toBe(6_000);
+  });
+
   it('lets a dollar settlement at another rate be checked and approved (2.0 books review #1)', async () => {
     await ok('POST', '/api/plan/trial');
     await ok('PUT', `/api/consignment/items/${breadId}`, { supplierId, currency: 'USD', unitCost: 100 });

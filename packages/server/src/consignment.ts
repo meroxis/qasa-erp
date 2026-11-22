@@ -1037,7 +1037,13 @@ export const consignmentApi: ApiExtension = {
       },
       {
         method: 'POST', path: '/api/consignment/docs/:id/cancel',
-        handler: async (req) => cancelConsignmentDoc(db, parse(idParam, req.params).id, actor(req), parse(z.object({ date: date.optional() }), req.body ?? {}).date)
+        handler: async (req, reply) => {
+          const docId = parse(idParam, req.params).id;
+          const on = parse(z.object({ date: date.optional() }), req.body ?? {}).date;
+          const who = actor(req);
+          // sent again with its key: the document as it was cancelled the first time, not "already cancelled"
+          return onceOnly(db, req, reply, who, 'POST /api/consignment/docs/:id/cancel', () => { const done = cancelConsignmentDoc(db, docId, who, on); return { id: done.id, result: done }; }, (d) => getConsignmentDoc(db, d));
+        }
       },
       {
         method: 'GET', path: '/api/consignment/settlements',
@@ -1063,7 +1069,12 @@ export const consignmentApi: ApiExtension = {
       },
       {
         method: 'POST', path: '/api/consignment/settlements/:id/cancel',
-        handler: async (req) => cancelSettlement(db, parse(idParam, req.params).id, actor(req), parse(z.object({ date: date.optional() }), req.body ?? {}).date)
+        handler: async (req, reply) => {
+          const sid = parse(idParam, req.params).id;
+          const on = parse(z.object({ date: date.optional() }), req.body ?? {}).date;
+          const who = actor(req);
+          return onceOnly(db, req, reply, who, 'POST /api/consignment/settlements/:id/cancel', () => { const done = cancelSettlement(db, sid, who, on); return { id: done.id, result: done }; }, (x) => getSettlement(db, x));
+        }
       },
       {
         method: 'GET', path: '/api/consignment/statement/:id',

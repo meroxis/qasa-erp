@@ -583,13 +583,25 @@ export const deliveryApi: ApiExtension = {
         method: 'POST', path: '/api/delivery/handovers',
         handler: async (req, reply) => {
           const body = parse(z.object({ driverId: id, amount: z.number().int().positive().max(1e12), cashAccountCode: z.string().max(12), date: day.optional(), note: z.string().max(300).optional() }), req.body);
-          reply.status(201).send(handOver(db, body, actor(req)));
+          const who = actor(req);
+          // sent again with its key (a second tap, a retry after the link dropped): the same handover, the cash moved once
+          reply.status(201).send(onceOnly(db, req, reply, who, 'POST /api/delivery/handovers',
+            () => { const made = handOver(db, body, who); return { id: made.id, result: made }; }, (h) => listHandovers(db).find((x) => x.id === h)!));
           return undefined;
         }
       },
       {
         method: 'POST', path: '/api/delivery/handovers/:id/cancel',
-        handler: async (req) => cancelHandover(db, parse(idParam, req.params).id, actor(req), parse(z.object({ date: day.optional() }), req.body ?? {}).date)
+        handler: async (req, reply) => {
+          const hid = parse(idParam, req.params).id;
+          const on = parse(z.object({ date: day.optional() }), req.body ?? {}).date;
+          const who = actor(req);
+          return onceOnly(db, req, reply, who, 'POST /api/delivery/handovers/:id/cancel', () => ({ id: hid, result: cancelHandover(db, hid, who, on) }), (h) => {
+            // a draft was deleted with its handover; one in the books has its reversal
+            const row = db.prepare('SELECT e.reversed_by_id FROM delivery_handovers d JOIN entries e ON e.id = d.entry_id WHERE d.id = ?').get(h) as { reversed_by_id: string | null } | undefined;
+            return { cancelled: true as const, reversalId: row?.reversed_by_id ?? null };
+          });
+        }
       }
     ];
   }

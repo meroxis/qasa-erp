@@ -137,6 +137,36 @@ describe('delivery orders', () => {
     expect(balanceOf('1811')).toBe(8_000);
   });
 
+  it('books a driver’s handover, and one taken back, once when the request comes twice with its key', async () => {
+    await ok('POST', '/api/plan/trial');
+    await stockIn(milkId, 10, 1_000);
+    const cash = driverSafe();
+    const driver = await ok('POST', '/api/delivery/drivers', { name: 'Hemin', cashAccount: cash });
+    const o = await ok('POST', '/api/delivery/orders', order());
+    await ok('POST', `/api/delivery/orders/${o.id}/status`, { status: 'out', driverId: driver.id });
+    await ok('POST', `/api/delivery/orders/${o.id}/status`, { status: 'delivered' });
+    const key = (n: number) => ({ ...headers, 'x-qasa-idempotency': `5f1c2d3e-4a5b-4c6d-8e7f-9a0b1c2d3e6${n}` });
+    const body = { driverId: driver.id, amount: 5_000, cashAccountCode: '1811' };
+    const first = await call('POST', '/api/delivery/handovers', body, key(1));
+    expect(first.statusCode, first.body).toBe(201);
+    // a second tap, or the phone sending it again: 5,000 handed over once, not 10,000
+    const again = await call('POST', '/api/delivery/handovers', body, key(1));
+    expect(again.headers['x-qasa-idempotent-replay']).toBe('1');
+    expect(again.json().id).toBe(first.json().id);
+    expect(db.prepare('SELECT COUNT(*) AS n FROM delivery_handovers').get()).toEqual({ n: 1 });
+    expect((await ok('GET', '/api/delivery/drivers'))[0].holding).toBe(3_000);
+    await ok('POST', `/api/entries/${first.json().entryId}/check`, {});
+    await ok('POST', `/api/entries/${first.json().entryId}/approve`, {});
+
+    const back = await call('POST', `/api/delivery/handovers/${first.json().id}/cancel`, {}, key(2));
+    expect(back.statusCode, back.body).toBe(200);
+    // sent again: the same reversal, not "already taken back" and not a second reversal
+    const backAgain = await call('POST', `/api/delivery/handovers/${first.json().id}/cancel`, {}, key(2));
+    expect(backAgain.headers['x-qasa-idempotent-replay']).toBe('1');
+    expect(backAgain.json()).toEqual(back.json());
+    expect([balanceOf(cash), balanceOf('1811')]).toEqual([8_000, 0]);
+  });
+
   it('takes a handover back, a draft or one in the books, and the driver holds the cash again (2.0 books review #2)', async () => {
     await ok('POST', '/api/plan/trial');
     await stockIn(milkId, 10, 1_000);

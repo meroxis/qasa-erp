@@ -98,6 +98,29 @@ describe('gold and jewellery shops', () => {
     expect(b.board['18']).toBeNull();
   });
 
+  it('makes, posts and cancels a document once when a request comes twice with its key', async () => {
+    await setUp();
+    const key = (n: number) => ({ ...headers, 'x-qasa-idempotency': `5f1c2d3e-4a5b-4c6d-8e7f-9a0b1c2d3e8${n}` });
+    const twice = async (n: number, url: string, body: object) => {
+      const first = await call('POST', url, body, key(n));
+      expect(first.statusCode, first.body).toBeLessThan(300);
+      const again = await call('POST', url, body, key(n));
+      expect(again.headers['x-qasa-idempotent-replay'], url).toBe('1');
+      expect(again.json().id).toBe(first.json().id);
+      return first.json();
+    };
+    const doc = await twice(1, '/api/gold/docs', { kind: 'receipt', date: '2026-11-20', partyId: supplierId, warehouseId, pricePerGram: 120_000, lines: [{ itemId: ringId, making: 0 }] });
+    expect(db.prepare('SELECT COUNT(*) AS n FROM gold_docs').get()).toEqual({ n: 1 });
+    // posted once: one ring in stock, 4.375 g owed once
+    await twice(2, `/api/gold/docs/${doc.id}/post`, { lang: 'en' });
+    expect(stock(ringId).q).toBe(1000);
+    expect(balanceOf('264')).toBe(-525_000);
+    // cancelled once: the retry gets the cancelled document, not "already cancelled", and no second reversal
+    expect(await twice(3, `/api/gold/docs/${doc.id}/cancel`, {})).toMatchObject({ status: 'cancelled' });
+    expect(stock(ringId).q).toBe(0);
+    expect(balanceOf('264')).toBe(0);
+  });
+
   it('leaves gold owed out of the revaluation of dollar balances: it is gold by weight, kept in its own ledger (2.0 books review #9)', async () => {
     await setUp();
     // a 5 g ring of 21 karat from the workshop at $80 a gram of pure gold when a dollar is 1,500: 4.375 g, $350
