@@ -15,6 +15,20 @@ the same format the phone app uses): `POST /api/pos/shifts/:id/sales`, `POST /ap
 sends each of these with a key it holds until the answer comes (`sendOnce`, `apps/web/src/industry/send-once.ts`), so a
 second press or a lost answer makes nothing twice.
 
+How long the app window holds such a key (`sendOnce`):
+
+- Until the server answers, yes or no. A lost answer keeps it for ten minutes from the last try (`HOLD_MS`), so a
+  retry goes with the same key and the server answers with the document made the first time.
+- The keys held are also kept in the tab's session storage (`qasa.sendOnce`), so a page loaded again after a lost
+  answer (F5, an update of the page) still retries with the same key. They go on a definite answer, after the ten
+  minutes, and when the person signs out.
+- What remains, on purpose: the same document sent again more than ten minutes after a try whose answer was lost goes
+  with a new key. If that first try did reach the server, it is booked a second time. The ten minutes are a choice
+  between two mistakes: held longer, the key would turn a genuine second document (the same customer paying the same
+  amount again that afternoon) into a silent replay of the first, answered as made and never booked. Whoever retries
+  that late checks the list first. Closing the tab or the app also drops the keys (session storage is the tab's);
+  the till's own sales do not depend on this: they wait in the outbox with their key until the server has them.
+
 - The key is written in the same transaction as the document, so a power cut keeps both or neither.
 - The same key again answers with the document made the first time (header `x-qasa-idempotent-replay: 1`) and makes
   nothing, also when two requests with it arrive at once.

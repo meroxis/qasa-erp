@@ -25,6 +25,7 @@ import { activationNoticeFor } from './industry/activation-notice.ts';
 import { isReportTab, isSolarTab } from './pages/tabs.ts';
 import { canSwitchCompanies } from './industry/companies-api.ts';
 import { outboxClient, setOutboxUser, startOutbox } from './industry/outbox.ts';
+import { forgetOnceKeys } from './industry/send-once.ts';
 import { OutboxBanner } from './industry/OutboxBanner.tsx';
 import { HeaderRate } from './industry/HeaderRate.tsx';
 import { PhoneBell } from './industry/PhoneActivity.tsx';
@@ -891,6 +892,7 @@ export function App() {
 
   async function signOut() {
     try { await api.logout(); } catch { /* signed out either way */ }
+    forgetOnceKeys();
     setMe((m) => (m ? { ...m, user: null } : m));
   }
 
