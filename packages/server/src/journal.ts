@@ -244,6 +244,15 @@ function assertValidVoucher(db: Db, v: VoucherInput): EntryInput {
   return entry;
 }
 
+function shaped(db: Db, entry: EntryInput, shape?: (entry: EntryInput) => EntryInput): EntryInput {
+  if (!shape) return entry;
+  const out = shape(entry);
+  assertValid(db, out);
+  const base = withBaseAmounts(out).reduce((t, l) => t + l.baseDebit - l.baseCredit, 0);
+  if (base !== 0) throw invalid([{ code: 'not_balanced' }]);
+  return out;
+}
+
 function insertLines(db: Db, id: string, input: EntryInput): void {
   const insert = db.prepare(`INSERT INTO entry_lines (entry_id, line_no, account_code, debit, credit, base_debit, base_credit, description, party_id)
                              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`);
@@ -272,8 +281,8 @@ function assertNotPreparer(db: Db, row: EntryRow, actorId: string | null | undef
  * A receipt or payment that a document makes (an installment collected): checked like any voucher, then numbered and
  * approved at once by whoever made it, as invoices post their entries. Call inside a transaction.
  */
-export function postVoucherNow(db: Db, v: VoucherInput, actor: { id: string | null; name: string }): string {
-  const entry = assertValidVoucher(db, v);
+export function postVoucherNow(db: Db, v: VoucherInput, actor: { id: string | null; name: string }, shape?: (entry: EntryInput) => EntryInput): string {
+  const entry = shaped(db, assertValidVoucher(db, v), shape);
   const id = insertEntry(db, entry, actor.name, v.cashAccountCode);
   const now = new Date().toISOString();
   db.prepare(`UPDATE entries SET status = 'approved', number = ?, prepared_by_id = ?, checked_by = ?, checked_at = ?, checked_by_id = ?,
@@ -290,7 +299,10 @@ export function postVoucherNow(db: Db, v: VoucherInput, actor: { id: string | nu
  * system paid, a generator collection, a unit's reservation deposit. Such a receipt is changed only from its document
  * (its amount is the document's), and a draft of it that is deleted takes its link with it.
  */
-const DOCUMENT_RECEIPTS: readonly string[] = ['installment_receipts', 'job_receipts', 'gen_collections', 're_deposits'];
+const DOCUMENT_RECEIPTS: readonly string[] = ['installment_receipts', 'job_receipts', 'gen_collections', 're_deposits',
+  // 2.0: a rep's collection and a handover of a rep's or a driver's cash to the office. One that was refused stays as
+  // that document's record, in no balance, and holds up neither the year's close nor the cash of the rep or driver
+  'ws_collections', 'ws_handovers', 'delivery_handovers'];
 
 function isDocumentReceipt(db: Db, id: string): boolean {
   return DOCUMENT_RECEIPTS.some((table) => db.prepare(`SELECT 1 FROM ${table} WHERE entry_id = ?`).get(id));
@@ -313,9 +325,13 @@ export function documentVoucherWaits(db: Db, actor: { permissions: readonly stri
  * "request_approval" in the audit log), approved or rejected with a reason by someone who may approve vouchers, and
  * counted by its document only once approved. Call inside a transaction; the caller links it to its document.
  */
-export function postDocumentVoucher(db: Db, v: VoucherInput, actor: { id: string | null; name: string; permissions: readonly string[] }): { id: string; waiting: boolean } {
-  if (!documentVoucherWaits(db, actor)) return { id: postVoucherNow(db, v, actor), waiting: false };
-  const entry = assertValidVoucher(db, v);
+export function postDocumentVoucher(
+  db: Db, v: VoucherInput, actor: { id: string | null; name: string; permissions: readonly string[] },
+  /** the document's own shape of the voucher's entry (dinar amounts of its own, a line in dinars only for an exchange difference) */
+  shape?: (entry: EntryInput) => EntryInput
+): { id: string; waiting: boolean } {
+  if (!documentVoucherWaits(db, actor)) return { id: postVoucherNow(db, v, actor, shape), waiting: false };
+  const entry = shaped(db, assertValidVoucher(db, v), shape);
   const id = insertEntry(db, entry, actor.name, v.cashAccountCode);
   if (actor.id) db.prepare('UPDATE entries SET prepared_by_id = ? WHERE id = ?').run(actor.id, id);
   audit(db, actor.name, 'create', 'entry', id, { type: entry.type, document: true });
@@ -348,7 +364,7 @@ export const voucherPendingSql = (e: string): string =>
   `(${e}.status <> 'approved' AND NOT EXISTS (SELECT 1 FROM voucher_approvals vp WHERE vp.entry_id = ${e}.id AND vp.state = 'rejected'))`;
 
 /** Every receipt linked to a document, as a subquery of entry ids. */
-const DOCUMENT_RECEIPT_IDS = DOCUMENT_RECEIPTS.map((table) => `SELECT entry_id FROM ${table}`).join(' UNION ALL ');
+const DOCUMENT_RECEIPT_IDS = DOCUMENT_RECEIPTS.map((table) => `SELECT entry_id FROM ${table} WHERE entry_id IS NOT NULL`).join(' UNION ALL ');
 
 /**
  * A condition on an entry `e`: not a document's receipt that was rejected. Such a receipt is kept as the document's
@@ -529,6 +545,30 @@ export function deleteEntry(db: Db, id: string, user: string): void {
     db.prepare('DELETE FROM entries WHERE id = ?').run(id);
     audit(db, user, 'delete', 'entry', id, { type: row.type, ...(online.length ? { onlinePayments: online.map((p) => p.id) } : {}) });
   });
+}
+
+/**
+ * Takes a feature's own entry that is not in the books yet (a draft, checked, waiting or refused) out for good: for the
+ * feature's "cancel" only, after it has unlinked or marked its document. An approved entry is reversed instead.
+ */
+export function deleteFeatureDraft(db: Db, id: string, user: string): void {
+  const row = loadRow(db, id);
+  if (row.status === 'approved') throw conflict('action_not_allowed', { status: row.status, action: 'delete' });
+  if (db.prepare('SELECT 1 FROM bank_statement_lines WHERE entry_id = ?').get(id)) throw conflict('entry_matched_to_statement');
+  db.prepare('DELETE FROM voucher_approvals WHERE entry_id = ?').run(id);
+  db.prepare('DELETE FROM entries WHERE id = ?').run(id);
+  audit(db, user, 'delete', 'entry', id, { type: row.type });
+}
+
+/**
+ * Whether this person may take an approved entry of a feature back (it is reversed): someone who may approve entries,
+ * and under "separate duties" not the one who prepared it. Admins always.
+ */
+export function assertMayReverseFeatureEntry(db: Db, entryId: string, actor: { id: string | null; name: string; permissions: readonly string[] }): void {
+  if (actor.permissions.includes('admin')) return;
+  if (!actor.permissions.includes('entries.approve')) throw new AppError(403, 'forbidden', { need: 'entries.approve' });
+  const row = loadRow(db, entryId);
+  if (readSetting(db, 'separate_duties') === '1' && ((actor.id && row.prepared_by_id === actor.id) || row.prepared_by === actor.name)) throw conflict('same_person');
 }
 
 function revalidateStored(db: Db, id: string): void {

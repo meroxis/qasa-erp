@@ -137,6 +137,90 @@ describe('delivery orders', () => {
     expect(balanceOf('1811')).toBe(8_000);
   });
 
+  it('takes a handover back, a draft or one in the books, and the driver holds the cash again (2.0 books review #2)', async () => {
+    await ok('POST', '/api/plan/trial');
+    await stockIn(milkId, 10, 1_000);
+    const cash = driverSafe();
+    const driver = await ok('POST', '/api/delivery/drivers', { name: 'Hemin', cashAccount: cash });
+    const o = await ok('POST', '/api/delivery/orders', order());
+    await ok('POST', `/api/delivery/orders/${o.id}/status`, { status: 'out', driverId: driver.id });
+    await ok('POST', `/api/delivery/orders/${o.id}/status`, { status: 'delivered' });
+    // sent to the office for 8,000, but he brought 5,000: the draft is taken back, then made again
+    const wrong = await ok('POST', '/api/delivery/handovers', { driverId: driver.id, amount: 8_000, cashAccountCode: '1811' });
+    expect((await ok('GET', '/api/delivery/drivers'))[0].holding).toBe(0);
+    await ok('POST', `/api/delivery/handovers/${wrong.id}/cancel`, {});
+    expect(db.prepare('SELECT 1 FROM entries WHERE id = ?').get(wrong.entryId)).toBeUndefined();
+    expect((await ok('GET', '/api/delivery/handovers')).length).toBe(0);
+    expect((await ok('GET', '/api/delivery/drivers'))[0].holding).toBe(8_000);
+    const right = await ok('POST', '/api/delivery/handovers', { driverId: driver.id, amount: 5_000, cashAccountCode: '1811' });
+    await ok('POST', `/api/entries/${right.entryId}/check`, {});
+    await ok('POST', `/api/entries/${right.entryId}/approve`, {});
+    expect([balanceOf(cash), balanceOf('1811')]).toEqual([3_000, 5_000]);
+    // in the books: reversed (never from the vouchers page), and not twice
+    expect((await call('POST', `/api/entries/${right.entryId}/reverse`, {})).json()).toMatchObject({ error: 'entry_belongs_to_delivery_handover' });
+    expect((await ok('POST', `/api/delivery/handovers/${right.id}/cancel`, {})).reversalId).toEqual(expect.any(String));
+    expect([balanceOf(cash), balanceOf('1811')]).toEqual([8_000, 0]);
+    expect((await ok('GET', '/api/delivery/handovers'))[0].entryStatus).toBe('reversed');
+    expect((await ok('GET', '/api/delivery/drivers'))[0].holding).toBe(8_000);
+    expect((await call('POST', `/api/delivery/handovers/${right.id}/cancel`, {})).json().error).toBe('dl_handover_cancelled');
+  });
+
+  it('keeps a refused handover out of what the driver holds back and out of the year’s close; reversing one in the books needs an approver (2.0 books review #2)', async () => {
+    await ok('POST', '/api/plan/trial');
+    await stockIn(milkId, 10, 1_000);
+    const cash = driverSafe();
+    const driver = await ok('POST', '/api/delivery/drivers', { name: 'Hemin', cashAccount: cash });
+    const o = await ok('POST', '/api/delivery/orders', order());
+    await ok('POST', `/api/delivery/orders/${o.id}/status`, { status: 'out', driverId: driver.id });
+    await ok('POST', `/api/delivery/orders/${o.id}/status`, { status: 'delivered' });
+    const owner = (await ok('GET', '/api/users'))[0] as { username: string };
+    const las = await signInAs(['preparer']);
+    const login = await app.inject({ method: 'POST', url: '/api/auth/login', payload: { username: owner.username, password: 'admin-pass-123' }, headers: { 'x-qasa-client': '1' } });
+    const admin = { cookie: String(login.headers['set-cookie']).split(';')[0]!, 'x-qasa-client': '1' };
+    writeSetting(db, 'vouchers_need_approval', '1');
+    const h = await ok('POST', '/api/delivery/handovers', { driverId: driver.id, amount: 8_000, cashAccountCode: '1811' }, las);
+    const refused = await call('POST', `/api/entries/${h.entryId}/reject`, { reason: 'brought 5,000 only' }, admin);
+    expect(refused.statusCode, refused.body).toBe(200);
+    // the driver still holds it all, the right handover can be made, and the year is not held up by the refused one
+    expect((await ok('GET', '/api/delivery/drivers', undefined, admin))[0].holding).toBe(8_000);
+    const year = (await ok('GET', '/api/year-end', undefined, admin)).years.find((y: { year: number }) => y.year === 2026);
+    expect(year.blockers ?? []).not.toContainEqual(expect.objectContaining({ code: 'unfinished_entries' }));
+    const right = await ok('POST', '/api/delivery/handovers', { driverId: driver.id, amount: 5_000, cashAccountCode: '1811' }, admin);
+    // the preparer takes the refused one away, but does not reverse one that is in the books
+    await ok('POST', `/api/delivery/handovers/${h.id}/cancel`, {}, las);
+    if (right.entryStatus !== 'approved') { await ok('POST', `/api/entries/${right.entryId}/check`, {}, admin); await ok('POST', `/api/entries/${right.entryId}/approve`, {}, admin); }
+    expect((await call('POST', `/api/delivery/handovers/${right.id}/cancel`, {}, las)).statusCode).toBe(403);
+  });
+
+  it('gives each driver a cash account of his own: not another driver’s, nor the main safe (2.0 books review #14)', async () => {
+    await ok('POST', '/api/plan/trial');
+    const cash = driverSafe();
+    const hemin = await ok('POST', '/api/delivery/drivers', { name: 'Hemin', cashAccount: cash });
+    expect((await call('POST', '/api/delivery/drivers', { name: 'Dara', cashAccount: cash })).json().details).toEqual([{ code: 'dl_cash_account_taken' }]);
+    expect((await call('POST', '/api/delivery/drivers', { name: 'Dara', cashAccount: '1811' })).json().details).toEqual([{ code: 'dl_cash_account_taken' }]);
+    // his own stays his when the rest of him is changed
+    expect((await ok('PUT', `/api/delivery/drivers/${hemin.id}`, { name: 'Hemin K.', cashAccount: cash })).cashAccount).toBe(cash);
+  });
+
+  it('gives an order delivered the next day the offers of the day it was taken (2.0 books review #8)', async () => {
+    await ok('POST', '/api/plan/trial');
+    await stockIn(milkId, 10, 1_000);
+    const driver = await ok('POST', '/api/delivery/drivers', { name: 'Hemin', cashAccount: driverSafe() });
+    await ok('POST', '/api/offers', {
+      code: 'MILK20', names: { ar: 'حليب', en: 'Milk 20% off', ku: 'شیر' }, kind: 'price', priority: 0, exclusive: false, maxPerSale: null,
+      startsOn: null, endsOn: '2026-11-20', weekdays: null, fromTime: null, toTime: null, branchIds: null, items: [milkId], categories: [], getItems: [], getCategories: [],
+      buyMilli: null, getMilli: null, getPercent: null, bundleMilli: null, bundlePrice: null, price: null, percentOff: 20
+    });
+    const o = await ok('POST', '/api/delivery/orders', order());
+    expect(o.total).toBe(6_800);
+    vi.setSystemTime(new Date('2026-11-21T08:00:00Z'));
+    await ok('POST', `/api/delivery/orders/${o.id}/status`, { status: 'out', driverId: driver.id });
+    const done = await ok('POST', `/api/delivery/orders/${o.id}/status`, { status: 'delivered' });
+    expect(done.total).toBe(6_800);
+    // what the driver was told to collect is what went into his cash
+    expect(balanceOf('1812')).toBe(6_800);
+  });
+
   it('delivers on the customer’s account, cancels with a reason, and deletes only a new order', async () => {
     await ok('POST', '/api/plan/trial');
     await stockIn(milkId, 10, 1_000);

@@ -2391,6 +2391,9 @@ const V18 =
     rate_x100 INTEGER NOT NULL CHECK (rate_x100 > 0),
     amount INTEGER NOT NULL CHECK (amount > 0),
     entry_id TEXT REFERENCES entries(id),
+    -- taken back by the office: its receipt deleted (not in the books yet) or reversed (cancel_entry_id); its collections are free again
+    cancelled_at TEXT,
+    cancel_entry_id TEXT REFERENCES entries(id),
     created_by TEXT NOT NULL,
     created_at TEXT NOT NULL
   );
@@ -2407,6 +2410,9 @@ const V18 =
     amount INTEGER NOT NULL CHECK (amount > 0),
     entry_id TEXT REFERENCES entries(id),
     handover_id TEXT REFERENCES ws_handovers(id),
+    -- taken back (typed wrong): its receipt deleted (not in the books yet) or reversed (cancel_entry_id)
+    cancelled_at TEXT,
+    cancel_entry_id TEXT REFERENCES entries(id),
     notes TEXT,
     created_by TEXT NOT NULL,
     created_at TEXT NOT NULL
