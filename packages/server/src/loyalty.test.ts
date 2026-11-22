@@ -160,8 +160,8 @@ describe('loyalty points at the till', () => {
     expect(entryLines(second.id)).toEqual({ 42: 10_000, 1811: -8_995, 39: -1_005 });
     // all of it back: exactly as before the sale
     expect(balance(lasId)).toBe(500);
-    const net = db.prepare("SELECT SUM(points) AS p, SUM(CASE WHEN kind = 'redeem' THEN value ELSE 0 END) AS out, SUM(CASE WHEN kind = 'return_redeem' THEN value ELSE 0 END) AS back FROM loyalty_moves WHERE invoice_id IS NOT NULL").get() as { p: number; out: number; back: number };
-    expect([Number(net.p), Number(net.out), Number(net.back)]).toEqual([0, 2_010, 2_010]);
+    const net = db.prepare("SELECT SUM(points) AS p, SUM(CASE WHEN kind = 'redeem' THEN value ELSE 0 END) AS paid_out, SUM(CASE WHEN kind = 'return_redeem' THEN value ELSE 0 END) AS came_back FROM loyalty_moves WHERE invoice_id IS NOT NULL").get() as { p: number; paid_out: number; came_back: number };
+    expect([Number(net.p), Number(net.paid_out), Number(net.came_back)]).toEqual([0, 2_010, 2_010]);
   });
 
   it('undoes every movement of a cancelled sale, and the reversal gives the points\' value back in the books', async () => {

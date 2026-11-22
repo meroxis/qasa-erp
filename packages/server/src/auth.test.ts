@@ -3,6 +3,7 @@ import type { FastifyInstance } from 'fastify';
 import { openDatabase, type Db } from './db.ts';
 import { buildApp } from './app.ts';
 import { login, resetLoginThrottle } from './auth.ts';
+import { writeSetting } from './settings.ts';
 
 let db: Db;
 let app: FastifyInstance;
@@ -368,7 +369,8 @@ describe('more active users than the plan allows', () => {
     await officeWithSignIn([{ username: 'las', roles: ROLE }, { username: 'raz', roles: ROLE }, { username: 'mer', roles: ['admin'] }, { username: 'late', roles: ROLE }]);
   }
   /** The free month ends: Free, one user. */
-  const trialEnds = () => db.prepare("UPDATE settings SET value = '2020-01-01' WHERE key = 'trial_started'").run();
+  // (through the settings module: "key" is a word a database server keeps for itself)
+  const trialEnds = () => writeSetting(db, 'trial_started', '2020-01-01');
   const tryLogin = (username: string) => req('POST', '/api/auth/login', { username, password: `${username}-pass-1` });
 
   it('lets only as many sign in as the plan has: admins first, then the earliest made; nothing is deleted or switched off', async () => {
