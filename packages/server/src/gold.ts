@@ -17,7 +17,7 @@ import { seesBooks, type Actor } from './auth.ts';
 import type { ApiExtension, ApiRequest } from './routes.ts';
 import { onceOnly } from './idempotency.ts';
 import { featureAccount } from './feature-accounts.ts';
-import { listPrices, notePriceHistory } from './price-history.ts';
+import { historyCutoff, listPrices, notePriceHistory, prunePriceHistory } from './price-history.ts';
 
 /**
  * Gold and jewellery shops (goldShop; Starter, Pro and Business).
@@ -155,19 +155,26 @@ function boardPriceOf(terms: GoldTerms, board: Record<GoldKarat, GoldBoardRow | 
 export function repriceGoldItems(db: Db, onlyItem?: string): number {
   const today = todayIso();
   const boards: Partial<Record<CurrencyCode, Record<GoldKarat, GoldBoardRow | null>>> = {};
-  const rows = db.prepare(`SELECT g.item_id, g.weight_mg, g.karat, g.making_kind, g.making_amount, i.sale_price, i.sale_currency
+  const rows = db.prepare(`SELECT g.item_id, g.weight_mg, g.karat, g.making_kind, g.making_amount, i.sale_price, i.sale_currency, i.active,
+                                  (SELECT COALESCE(SUM(m.qty_milli), 0) FROM stock_moves m WHERE m.item_id = g.item_id) AS on_hand
                            FROM gold_items g JOIN items i ON i.id = g.item_id${onlyItem ? ' WHERE g.item_id = ?' : ''}`)
     .all(...(onlyItem ? [onlyItem] : [])) as Record<string, unknown>[];
   let changed = 0;
+  const cutoff = historyCutoff(db);
   for (const r of rows) {
     const currency = r.sale_currency as CurrencyCode;
     const board = (boards[currency] ??= boardOn(db, today, currency));
     const price = boardPriceOf({ weightMg: Number(r.weight_mg), karat: Number(r.karat) as GoldKarat, makingKind: r.making_kind as MakingKind, makingAmount: Number(r.making_amount) }, board);
     if (price === null || price === Number(r.sale_price)) continue;
-    // the board's change is a list price change like one made on the item's page: the till's offline price rule reads it
-    const before = listPrices(db, String(r.item_id));
+    // the board's change is a list price change like one made on the item's page: the till's offline price rule reads
+    // it. Kept only for a piece that can be sold (on hand, in use): a shop's sold pieces are most of its pieces, and a
+    // row a day for each of them is read by nobody (a piece that comes back starts its history from then; until it
+    // has one the till's rule gives it no allowance). What is too old to be read goes either way
+    const selling = Number(r.on_hand) > 0 && Number(r.active) === 1;
+    const before = selling ? listPrices(db, String(r.item_id)) : null;
     db.prepare('UPDATE items SET sale_price = ?, updated_at = ? WHERE id = ?').run(price, nowIso(), String(r.item_id));
-    notePriceHistory(db, String(r.item_id), before);
+    if (before) notePriceHistory(db, String(r.item_id), before, new Date(), cutoff);
+    else prunePriceHistory(db, String(r.item_id), cutoff);
     changed++;
   }
   return changed;

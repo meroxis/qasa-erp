@@ -77,11 +77,65 @@ describe('gold and jewellery shops', () => {
     expect((await call('PUT', `/api/gold/items/${ringId}`, { weightMg: 5000, karat: 21, makingKind: 'gram', makingAmount: 5_000 })).statusCode).toBe(200);
   });
 
+  it('keeps price history only for pieces on hand, and drops what is older than the oldest open shift or thirty days (verify report #11)', async () => {
+    await setUp();
+    const sold = (await ok('POST', '/api/items', { code: 'RING-OLD', name: { ar: 'خاتم مباع', en: 'Sold ring', ku: 'ئەنگوستیلەی فرۆشراو' }, unit: 'piece', salePrice: 0, saleCurrency: 'IQD' })).id;
+    await ok('PUT', `/api/gold/items/${sold}`, { weightMg: 4000, karat: 21, makingKind: 'gram', makingAmount: 5_000 });
+    expect((await postDoc({ kind: 'receipt', date: '2026-11-20', partyId: supplierId, warehouseId, pricePerGram: 90_000, lines: [{ itemId: ringId, making: 0 }] })).statusCode).toBe(200);
+    const rowsOf = (id: string) => (db.prepare("SELECT price, changed_at FROM item_price_history WHERE item_id = ? AND unit = '' ORDER BY changed_at").all(id) as { price: number; changed_at: string }[]).map((h) => Number(h.price));
+    /** a day passes: everything kept so far is a day older (the clock stays, so the trial does not run out) */
+    const dayPasses = () => {
+      const back = (iso: string) => new Date(Date.parse(iso) - 86_400_000).toISOString();
+      for (const r of db.prepare("SELECT id, changed_at FROM item_price_history WHERE changed_at > '1'").all() as { id: string; changed_at: string }[]) {
+        db.prepare('UPDATE item_price_history SET changed_at = ? WHERE id = ?').run(back(r.changed_at), r.id);
+      }
+      for (const r of db.prepare("SELECT id, opened_at FROM pos_shifts WHERE status = 'open'").all() as { id: string; opened_at: string }[]) {
+        db.prepare('UPDATE pos_shifts SET opened_at = ? WHERE id = ?').run(back(r.opened_at), r.id);
+      }
+    };
+    const perGram = (day: number) => 100_000 + day * 1_000;
+    const ring = (day: number) => 5 * perGram(day) + 25_000;
+    // forty days of boards, a new price every day
+    for (let day = 1; day <= 40; day++) {
+      dayPasses();
+      expect((await board([{ karat: 21, buyPerGram: 95_000, sellPerGram: perGram(day) }])).repriced).toBe(2);
+    }
+    // both pieces are priced at today's board …
+    expect(salePrice(ringId)).toBe(ring(40));
+    expect(salePrice(sold)).toBe(4 * perGram(40) + 20_000);
+    // … the piece that is not on hand has no history at all
+    expect(rowsOf(sold)).toEqual([]);
+    // the one on hand keeps thirty days: the price in force thirty days ago, and every one since
+    const kept = rowsOf(ringId);
+    expect(kept.length).toBe(31);
+    expect([kept[0], kept.at(-1)]).toEqual([ring(10), ring(40)]);
+    // what the till's rule reads is unchanged by the pruning: the lowest price since a shift opened ten days ago
+    const tenDaysAgo = new Date(Date.now() - 10 * 86_400_000 + 3_600_000).toISOString();
+    expect(lowestListPrice(db, ringId, '', 'IQD', tenDaysAgo, new Date().toISOString())).toBe(ring(30));
+    // a shift left open keeps everything since it opened, also past thirty days
+    await ok('POST', '/api/pos/shifts', { register: 'G1', cashAccountCode: '1811', warehouseId, openingCash: 0 });
+    for (let day = 41; day <= 80; day++) {
+      dayPasses();
+      await board([{ karat: 21, buyPerGram: 95_000, sellPerGram: perGram(day) }]);
+    }
+    // (the shift opened on day 40: the price of that day, and the forty since)
+    expect(rowsOf(ringId)[0]).toBe(ring(40));
+    expect(rowsOf(ringId).length).toBe(41);
+    // a piece taken out of use is still priced by the board, and keeps no new history
+    db.prepare('UPDATE items SET active = 0 WHERE id = ?').run(ringId);
+    dayPasses();
+    await board([{ karat: 21, buyPerGram: 95_000, sellPerGram: 200_000 }]);
+    expect(salePrice(ringId)).toBe(5 * 200_000 + 25_000);
+    expect(rowsOf(ringId).at(-1)).toBe(ring(80));
+  });
+
   it('prices every piece from the day’s board: weight × the karat’s selling price + making', async () => {
     await setUp();
     expect(salePrice(ringId)).toBe(525_000); // 5 g × 100,000 + 5 g × 5,000
     const item = await ok('GET', `/api/gold/items/${ringId}`);
     expect(item).toMatchObject({ karat: 21, weightMg: 5000, fineMg: 4375, boardPrice: 525_000, salePrice: 525_000 });
+    // (the ring is in the showcase: a piece on hand keeps its prices over time)
+    expect((await postDoc({ kind: 'receipt', date: '2026-11-20', partyId: supplierId, warehouseId, pricePerGram: 90_000, lines: [{ itemId: ringId, making: 0 }] })).statusCode).toBe(200);
     // a new board the next day prices it again
     vi.setSystemTime(new Date('2026-11-21T09:00:00Z'));
     const r = await board([{ karat: 21, buyPerGram: 96_000, sellPerGram: 102_000 }], '2026-11-21');
@@ -90,7 +144,7 @@ describe('gold and jewellery shops', () => {
     // the board's change is kept as a list price change, so a till that was cut off with yesterday's price sells at it
     // by the same rule as any item (pos.ts: the lowest list price since the shift opened)
     const history = db.prepare("SELECT price FROM item_price_history WHERE item_id = ? AND unit = '' ORDER BY changed_at").all(ringId) as { price: number }[];
-    expect(history.map((h) => Number(h.price))).toEqual([0, 525_000, 535_000]); // 0: the piece before it was priced
+    expect(history.map((h) => Number(h.price))).toEqual([525_000, 535_000]);
     // the unpriced moment gives no allowance: a shift open since before the piece was made can't sell it for nothing
     expect(lowestListPrice(db, ringId, '', 'IQD', '2026-11-01T00:00:00.000Z', '2026-11-21T10:00:00.000Z')).toBe(525_000);
     expect(lowestListPrice(db, ringId, '', 'IQD', '2026-11-21T08:00:00.000Z', '2026-11-21T10:00:00.000Z')).toBe(525_000);

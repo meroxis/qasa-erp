@@ -25,8 +25,36 @@ export function listPrices(db: Db, itemId: string): ListPrices {
   return out;
 }
 
-/** Keeps what changed between `before` and the item's prices now. Inside the item's transaction. */
-export function notePriceHistory(db: Db, itemId: string, before: ListPrices, at: Date = new Date()): void {
+/** History is kept for thirty days, and longer while a shift opened before that is still open. */
+const KEEP_MS = 30 * 24 * 60 * 60 * 1000;
+
+/**
+ * The moment before which the history is not read any more: the till's rule reads it from the opening of a shift that
+ * is still open (a sale kept offline is only taken into an open shift), so nothing before the oldest open shift's
+ * opening matters, except the price in force at that moment. Never less than thirty days ago.
+ */
+export function historyCutoff(db: Db, at: Date = new Date()): string {
+  const oldest = (db.prepare("SELECT MIN(opened_at) AS t FROM pos_shifts WHERE status = 'open'").get() as { t: string | null }).t;
+  const month = new Date(at.getTime() - KEEP_MS).toISOString();
+  return oldest && oldest < month ? oldest : month;
+}
+
+/**
+ * Drops an item's prices from before `cutoff` that nothing reads any more: for each unit, the price in force at the
+ * cutoff (the newest at or before it) stays, with every price after it; the older ones go. Returns how many went.
+ */
+export function prunePriceHistory(db: Db, itemId: string, cutoff: string): number {
+  const units = db.prepare('SELECT unit, MAX(changed_at) AS keep FROM item_price_history WHERE item_id = ? AND changed_at <= ? GROUP BY unit').all(itemId, cutoff) as { unit: string; keep: string }[];
+  let gone = 0;
+  for (const u of units) gone += Number(db.prepare('DELETE FROM item_price_history WHERE item_id = ? AND unit = ? AND changed_at < ?').run(itemId, u.unit, u.keep).changes);
+  return gone;
+}
+
+/**
+ * Keeps what changed between `before` and the item's prices now, and drops what is too old to be read (`cutoff`: given
+ * by a caller that prices many items at once, else worked out here). Inside the item's transaction.
+ */
+export function notePriceHistory(db: Db, itemId: string, before: ListPrices, at: Date = new Date(), cutoff?: string): void {
   const now = at.toISOString();
   const has = db.prepare('SELECT 1 FROM item_price_history WHERE item_id = ? AND unit = ? LIMIT 1');
   const add = db.prepare('INSERT INTO item_price_history (id, item_id, unit, price, currency, changed_at) VALUES (?, ?, ?, ?, ?, ?)');
@@ -36,6 +64,7 @@ export function notePriceHistory(db: Db, itemId: string, before: ListPrices, at:
     if (was && !has.get(itemId, unit)) add.run(randomUUID(), itemId, unit, was.price, was.currency, EVER);
     add.run(randomUUID(), itemId, unit, p.price, p.currency, now);
   }
+  prunePriceHistory(db, itemId, cutoff ?? historyCutoff(db, at));
 }
 
 /**
