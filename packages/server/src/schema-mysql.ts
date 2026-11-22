@@ -2775,7 +2775,8 @@ export const MYSQL_TRIGGERS: readonly MysqlObject[] = [
 export type MysqlStep =
   | { kind: 'column'; table: string; column: string; sql: string }
   | { kind: 'foreignKey'; table: string; column: string; parent: string; sql: string }
-  | { kind: 'index'; table: string; name: string; sql: string };
+  /** `unlessForeignKey` ("table.column>parent"): also skipped on a database that has that foreign key already */
+  | { kind: 'index'; table: string; name: string; sql: string; unlessForeignKey?: string };
 
 const NAME = /^\w+$/;
 
@@ -2798,9 +2799,9 @@ export function mysqlAddForeignKey(table: string, column: string, parent: string
  * ALTER TABLE … ADD INDEX; skipped when the table has an index of that name. A TEXT column is indexed by a prefix, which
  * its entry in `columns` carries ("entity(32)").
  */
-export function mysqlAddIndex(table: string, name: string, columns: readonly string[]): MysqlStep {
+export function mysqlAddIndex(table: string, name: string, columns: readonly string[], unlessForeignKey?: string): MysqlStep {
   if (!NAME.test(table) || !NAME.test(name) || !columns.length || !columns.every((c) => /^\w+(\(\d+\))?$/.test(c))) throw new Error(`bad index ${table}.${name}`);
-  return { kind: 'index', table, name, sql: `ALTER TABLE ${table} ADD INDEX ${name} (${columns.join(', ')})` };
+  return { kind: 'index', table, name, sql: `ALTER TABLE ${table} ADD INDEX ${name} (${columns.join(', ')})`, ...(unlessForeignKey ? { unlessForeignKey } : {}) };
 }
 
 const lineColumns = (table: string, batches: boolean): MysqlStep[] => [
@@ -2880,6 +2881,11 @@ export const V16_MYSQL_STEPS: readonly MysqlStep[] = [];
  */
 export const V17_MYSQL_STEPS: readonly MysqlStep[] = [
   mysqlAddColumn('pos_shifts', 'till_id', ID),
+  // the index a new database gets by itself for this foreign key is named after the column ("till_id"); made here under
+  // that name first, the constraint below uses it, so an upgraded server has the index a new one has. A server
+  // upgraded before this step existed has the constraint already (and its index under the constraint's name): left as
+  // it is, never given a second index.
+  mysqlAddIndex('pos_shifts', 'till_id', ['till_id'], 'pos_shifts.till_id>pos_tills'),
   mysqlAddForeignKey('pos_shifts', 'till_id', 'pos_tills', 'id'),
   mysqlAddColumn('pos_sales', 'usd_cash', 'BIGINT CHECK (usd_cash IS NULL OR usd_cash > 0)'),
   mysqlAddColumn('pos_sales', 'usd_rate_x100', 'BIGINT CHECK (usd_rate_x100 IS NULL OR usd_rate_x100 > 0)'),
@@ -2908,7 +2914,7 @@ export function pendingMysqlSteps(steps: readonly MysqlStep[], state: MysqlSchem
   const done = (s: MysqlStep) =>
     s.kind === 'column' ? state.columns.has(`${s.table}.${s.column}`)
       : s.kind === 'foreignKey' ? state.foreignKeys.has(`${s.table}.${s.column}>${s.parent}`)
-        : !!state.indexes?.has(`${s.table}.${s.name}`);
+        : !!state.indexes?.has(`${s.table}.${s.name}`) || (!!s.unlessForeignKey && state.foreignKeys.has(s.unlessForeignKey));
   return steps.filter((s) => !done(s)).map((s) => s.sql);
 }
 
