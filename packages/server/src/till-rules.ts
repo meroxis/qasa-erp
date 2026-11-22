@@ -8,7 +8,7 @@ import { audit } from './audit.ts';
 import { AppError, conflict, invalid, notFound } from './errors.ts';
 import { loadAccounts } from './accounts.ts';
 import { readSetting, writeSetting } from './settings.ts';
-import { hashPassword, verifyPassword, type Actor } from './auth.ts';
+import { hashPassword, signInRequired, verifyPassword, type Actor } from './auth.ts';
 import { getParty } from './parties.ts';
 import { getShift, OFFLINE_REFERENCE } from './pos.ts';
 import { userBranchLists } from './branches.ts';
@@ -16,7 +16,7 @@ import { imageMime, fromBase64, MAX_IMAGE_BYTES } from './media.ts';
 import { getPrintProfile } from './print-profile.ts';
 import { cancelGiftVoucher, findGiftVoucher, getGiftVoucher, giftReport, sellGiftVoucher, writeOffExpired } from './gift-vouchers.ts';
 import {
-  APPROVAL_ACTIONS, APPROVAL_MS, maySellMisc, maySupervise, OFFLINE_APPROVAL_MS, PRICE_APPROVAL_MS, priceSubject, TILL_ONLY_ACTIONS, tillRules, type ApprovalAction, type TillRules
+  APPROVAL_ACTIONS, APPROVAL_MS, maySellMisc, maySupervise, OFFLINE_APPROVAL_MS, PRICE_APPROVAL_MS, priceSubject, RATE_BAND, RATE_FREE, rateSubject, referenceRate, TILL_ONLY_ACTIONS, tillRules, type ApprovalAction, type TillRules
 } from './till-settings.ts';
 import type { ApiExtension, ApiRequest } from './routes.ts';
 
@@ -29,11 +29,13 @@ import type { ApiExtension, ApiRequest } from './routes.ts';
  * password is (scrypt). An approval is given for one action at one shift, to one cashier, for one very thing (the
  * invoice and lines of a refund, the item and price, the discount, the customer and amount: boundTo) and used once
  * within two minutes (a price: twenty, while the basket is rung up); each one, and each PIN that failed, is written to
- * the audit log. The counts of wrong PINs are kept in the database (pos_pin_tries), so a restart does not clear them;
- * fifteen wrong PINs from one cashier in a day stop that cashier's approvals until the next day. Wrong PINs are counted per cashier (whatever shift they type
- * them at: opening another shift does not start the count again) and for the whole company: five from one cashier lock
- * that cashier's approvals for fifteen minutes, twenty from everyone in ten minutes lock every till's for ten, and each
- * lock is written to the audit log and shown to an admin in Settings. Approvals need the server: a till that can't
+ * the audit log. The counts of wrong PINs are kept in the database (pos_pin_tries), so a restart does not clear them.
+ * Wrong PINs are counted per cashier (whatever shift they type them at: opening another shift does not start the count
+ * again; with sign-in off every PC is the owner, so they are counted per till) and for the whole company: five from
+ * one cashier within fifteen minutes of the first lock that cashier's approvals for fifteen minutes, twenty from
+ * everyone in ten minutes lock every till's for ten; fifteen wrong PINs from one signed-in cashier in a day stop that
+ * cashier's approvals until the next day. A right PIN starts the cashier's count again (a typo an hour never adds up
+ * to a lock). Each lock is written to the audit log and shown to an admin in Settings, who can lift it there. Approvals need the server: a till that can't
  * reach it holds the basket instead (an offline PIN check would need the PINs on the cashier's PC).
  */
 
@@ -50,7 +52,9 @@ const ALL_WINDOW_MS = 10 * 60 * 1000;
 const ALL_LOCK_MS = 10 * 60 * 1000;
 /** a cashier's wrong PINs in one day (however slowly they come): their approvals stop until tomorrow, and an admin is told */
 const DAY_LOCK_AFTER = 15;
-const cashierKey = (a: Pick<Actor, 'id' | 'name'>) => a.id ? `u:${a.id}` : `n:${a.name}`;
+/** Who the wrong PINs are counted for: the signed-in cashier; with sign-in off (every PC is the owner) the till they are typed at. */
+const cashierKey = (db: Db, a: Pick<Actor, 'id' | 'name'>, register?: string | null): string =>
+  signInRequired(db) && a.id ? `u:${a.id}` : register ? `t:${register.trim().toLowerCase()}` : a.id ? `u:${a.id}` : `n:${a.name}`;
 
 /**
  * Wrong PINs are counted in the database (pos_pin_tries), per cashier (by user id, or name with sign-in off) and under
@@ -124,34 +128,126 @@ export interface ApprovalAsk {
   reference?: string | undefined;
   /** the lowest price, the largest discount, the largest amount on account, or the least a kept sale is worth */
   amount?: number | undefined;
+  /** a lower price: the currency the line is sold in */
+  currency?: 'IQD' | 'USD' | undefined;
+  /** a discount: the basket it is given on (before discounts) */
+  gross?: number | undefined;
+  /** dollars at a rate away from the day's: dollar notes on a dinar sale ('notes') or a dollar sale ('sale'), and the rate */
+  rate?: { kind: 'notes' | 'sale'; rateX100: number } | undefined;
 }
 
 /** What the approval is bound to, from what was asked: refused when the action's own details are missing. */
-function boundTo(db: Db, input: ApprovalAsk): { subject: string | null; amount: number | null; scope: string | null } {
+interface Bound { subject: string | null; amount: number | null; currency: string | null; gross: number | null; scope: string | null }
+function boundTo(db: Db, input: Omit<ApprovalAsk, 'shiftId' | 'pin'>): Bound {
   const amount = Number.isSafeInteger(input.amount) && input.amount! >= 0 ? input.amount! : null;
+  const none = { currency: null, gross: null, scope: null };
   if (input.action === 'price') {
     const it = input.itemId ? db.prepare('SELECT unit FROM items WHERE id = ?').get(input.itemId) as { unit: string } | undefined : undefined;
-    if (!it || amount === null) throw invalid([{ code: 'pos_approval_incomplete' }]);
-    return { subject: priceSubject(input.itemId!, input.unit && input.unit !== it.unit ? input.unit : null), amount, scope: null };
+    if (!it || amount === null || (input.currency !== 'IQD' && input.currency !== 'USD')) throw invalid([{ code: 'pos_approval_incomplete' }]);
+    return { ...none, subject: priceSubject(input.itemId!, input.unit && input.unit !== it.unit ? input.unit : null), amount, currency: input.currency };
   }
   if (input.action === 'discount') {
-    if (amount === null) throw invalid([{ code: 'pos_approval_incomplete' }]);
-    return { subject: null, amount, scope: null };
+    if (amount === null || !Number.isSafeInteger(input.gross) || input.gross! <= 0 || amount > input.gross!) throw invalid([{ code: 'pos_approval_incomplete' }]);
+    return { ...none, subject: null, amount, gross: input.gross! };
   }
   if (input.action === 'credit_over') {
     if (!input.partyId || amount === null) throw invalid([{ code: 'pos_approval_incomplete' }]);
-    return { subject: input.partyId, amount, scope: null };
+    return { ...none, subject: input.partyId, amount };
   }
   if (input.action === 'refund') {
     if (!input.invoiceId || !db.prepare("SELECT 1 FROM invoices WHERE id = ? AND kind = 'sale'").get(input.invoiceId)) throw invalid([{ code: 'pos_approval_incomplete' }]);
     const lines = input.lines?.filter((l) => l.qtyMilli > 0);
-    return { subject: input.invoiceId, amount: null, scope: lines?.length ? JSON.stringify(lines.map((l) => [l.lineNo, l.qtyMilli])) : null };
+    return { ...none, subject: input.invoiceId, amount: null, scope: lines?.length ? JSON.stringify(lines.map((l) => [l.lineNo, l.qtyMilli])) : null };
   }
   if (input.action === 'offline_sale') {
     if (!input.reference || !OFFLINE_REFERENCE.test(input.reference) || amount === null) throw invalid([{ code: 'pos_approval_incomplete' }]);
-    return { subject: input.reference, amount, scope: null };
+    return { ...none, subject: input.reference, amount };
   }
-  return { subject: null, amount: null, scope: null };
+  if (input.action === 'rate') {
+    const r = input.rate;
+    if (!r || (r.kind !== 'notes' && r.kind !== 'sale') || !Number.isSafeInteger(r.rateX100) || r.rateX100 <= 0) throw invalid([{ code: 'pos_approval_incomplete' }]);
+    return { ...none, subject: rateSubject(r.kind, r.rateX100), amount: null };
+  }
+  return { ...none, subject: null, amount: null };
+}
+
+/**
+ * A supervisor's PIN, typed by someone who may not approve themselves: counted first (so a burst sent at once can't
+ * all pass the lock while the first ones are still being checked), then checked. `key` is who the wrong ones are
+ * counted for; `shiftId` where they were typed (for the audit log; none: the office). The supervisor found is never
+ * the one asking, unless that one is an admin.
+ */
+async function supervisorByPin(db: Db, asker: Actor, key: string, pin: string, where: { shiftId: string | null; action: ApprovalAction }): Promise<Supervisor> {
+  const now0 = Date.now();
+  const nowIso = new Date(now0).toISOString();
+  const today = todayIso(new Date(now0));
+  const signedIn = signInRequired(db) && !!asker.id;
+  ensureTries(db, 'all', nowIso);
+  ensureTries(db, key, nowIso);
+  const secondsTo = (iso: string) => Math.max(1, Math.ceil((Date.parse(iso) - now0) / 1000));
+  const all = readTries(db, 'all')!;
+  if (all.locked_until && all.locked_until > nowIso) throw conflict('pin_locked', { seconds: secondsTo(all.locked_until) });
+  // a new ten minutes for the company's count
+  db.prepare('UPDATE pos_pin_tries SET n = 0, since = ? WHERE k = ? AND since <= ?').run(nowIso, 'all', new Date(now0 - ALL_WINDOW_MS).toISOString());
+  const mine = readTries(db, key)!;
+  if (mine.locked_until && mine.locked_until > nowIso) throw conflict('pin_locked', { seconds: secondsTo(mine.locked_until) });
+  // the day's lock is a signed-in cashier's own: with sign-in off the count is a till's, which must not stop for a day
+  if (signedIn && mine.day_on === today && mine.day_n >= DAY_LOCK_AFTER) {
+    const tomorrow = new Date(now0); tomorrow.setHours(24, 0, 0, 0);
+    throw conflict('pin_locked', { seconds: secondsTo(tomorrow.toISOString()) });
+  }
+  // the count starts again when its lock has run out, or fifteen minutes after its FIRST wrong PIN (a window that
+  // does not move with each try: a typo now and then never adds up)
+  db.prepare('UPDATE pos_pin_tries SET n = 0, since = ?, locked_until = NULL WHERE k = ? AND ((locked_until IS NOT NULL AND locked_until <= ?) OR (locked_until IS NULL AND (n = 0 OR since <= ?)))')
+    .run(nowIso, key, nowIso, new Date(now0 - LOCK_MS).toISOString());
+  db.prepare('UPDATE pos_pin_tries SET day_n = 0, day_on = ? WHERE k = ? AND (day_on IS NULL OR day_on <> ?)').run(today, key, today);
+  // counted before the slow PIN check; the fifth locks at once (lifted again below if this PIN is right)
+  db.prepare('UPDATE pos_pin_tries SET n = n + 1, day_n = day_n + 1 WHERE k = ?').run(key);
+  db.prepare('UPDATE pos_pin_tries SET locked_until = ? WHERE k = ? AND n >= ? AND locked_until IS NULL').run(new Date(now0 + LOCK_MS).toISOString(), key, LOCK_AFTER);
+  db.prepare('UPDATE pos_pin_tries SET n = n + 1 WHERE k = ?').run('all');
+  const counted = readTries(db, key)!;
+  const n = counted.n;
+  if (n > LOCK_AFTER) throw conflict('pin_locked', { seconds: secondsTo(counted.locked_until ?? new Date(now0 + LOCK_MS).toISOString()) });
+  const fail = (self: boolean): never => {
+    audit(db, asker.name, 'pin_failed', where.shiftId ? 'pos_shift' : 'pos_rules', where.shiftId, { action: where.action, tries: n, self });
+    if (n === LOCK_AFTER) pinAlert(db, { scope: 'cashier', cashier: asker.name, tries: n });
+    // slow guessing (a few tries, a wait, a few more) never reaches the short lock: the day's count does
+    else if (signedIn && counted.day_n === DAY_LOCK_AFTER) pinAlert(db, { scope: 'cashier', cashier: asker.name, tries: counted.day_n });
+    const everyone = readTries(db, 'all')!;
+    if (everyone.n >= ALL_LOCK_AFTER && !(everyone.locked_until && everyone.locked_until > new Date().toISOString())) {
+      db.prepare('UPDATE pos_pin_tries SET locked_until = ? WHERE k = ?').run(new Date(Date.now() + ALL_LOCK_MS).toISOString(), 'all');
+      pinAlert(db, { scope: 'all', cashier: asker.name, tries: everyone.n });
+    }
+    throw invalid([{ code: self ? 'pin_self' : 'pin_wrong' }]);
+  };
+  if (!PIN.test(pin)) fail(false);
+  let found: Supervisor | null = null;
+  for (const s of supervisors(db)) {
+    if (await verifyPassword(pin, s.hash)) { found = s; break; }
+  }
+  if (!found || (found.id === asker.id && !asker.permissions.includes('admin'))) return fail(!!found);
+  // a right PIN: this try is not a wrong one, and the cashier's count starts again
+  db.prepare('UPDATE pos_pin_tries SET n = 0, locked_until = NULL, day_n = CASE WHEN day_n > 0 THEN day_n - 1 ELSE 0 END WHERE k = ?').run(key);
+  db.prepare('UPDATE pos_pin_tries SET n = CASE WHEN n > 0 THEN n - 1 ELSE 0 END WHERE k = ?').run('all');
+  return found;
+}
+
+function writeApproval(db: Db, input: { shiftId: string | null; action: ApprovalAction; detail?: string | undefined }, bound: Bound, found: Supervisor, asker: Actor): ApprovalView {
+  const token = randomUUID();
+  const now = new Date();
+  // a lower price is approved while the basket is still being rung up: it waits longer for its sale than the others
+  const expiresAt = new Date(now.getTime() + (input.action === 'price' ? PRICE_APPROVAL_MS : input.action === 'offline_sale' ? OFFLINE_APPROVAL_MS : APPROVAL_MS)).toISOString();
+  const used = TILL_ONLY_ACTIONS.includes(input.action);
+  const detail = input.detail?.trim().slice(0, 300) || null;
+  db.prepare(`INSERT INTO till_approvals (id, shift_id, action, approver, approver_id, cashier, cashier_id, subject, amount, currency, gross, scope, detail, created_at, expires_at, used_at)
+              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+    .run(token, input.shiftId, input.action, found.name, found.id, asker.name, asker.id ?? null, bound.subject, bound.amount, bound.currency, bound.gross, bound.scope, detail,
+      now.toISOString(), expiresAt, used ? now.toISOString() : null);
+  audit(db, asker.name, 'supervisor_ok', input.shiftId ? 'pos_shift' : 'invoice', input.shiftId ?? bound.subject, {
+    action: input.action, approver: found.name, detail, ...(bound.subject ? { subject: bound.subject } : {}), ...(bound.amount !== null ? { amount: bound.amount } : {}),
+    ...(bound.currency ? { currency: bound.currency } : {}), ...(bound.gross !== null ? { gross: bound.gross } : {})
+  });
+  return { token, approver: found.name, action: input.action, expiresAt, used };
 }
 
 /**
@@ -164,66 +260,29 @@ export async function approve(db: Db, input: ApprovalAsk, cashier: Actor): Promi
   if (shift.status !== 'open') throw conflict('pos_shift_closed');
   if (!shift.actions.includes('sell')) throw new AppError(403, 'forbidden', { need: 'shift_owner' });
   const bound = boundTo(db, input);
-  const now0 = Date.now();
-  const nowIso = new Date(now0).toISOString();
-  const today = todayIso(new Date(now0));
-  const key = cashierKey(cashier);
-  ensureTries(db, 'all', nowIso);
-  ensureTries(db, key, nowIso);
-  const secondsTo = (iso: string) => Math.max(1, Math.ceil((Date.parse(iso) - now0) / 1000));
-  const all = readTries(db, 'all')!;
-  if (all.locked_until && all.locked_until > nowIso) throw conflict('pin_locked', { seconds: secondsTo(all.locked_until) });
-  // a new ten minutes for the company's count
-  db.prepare('UPDATE pos_pin_tries SET n = 0, since = ? WHERE k = ? AND since <= ?').run(nowIso, 'all', new Date(now0 - ALL_WINDOW_MS).toISOString());
-  const mine = readTries(db, key)!;
-  if (mine.n >= LOCK_AFTER && mine.locked_until && mine.locked_until > nowIso) throw conflict('pin_locked', { seconds: secondsTo(mine.locked_until) });
-  if (mine.day_on === today && mine.day_n >= DAY_LOCK_AFTER) {
-    const tomorrow = new Date(now0); tomorrow.setHours(24, 0, 0, 0);
-    throw conflict('pin_locked', { seconds: secondsTo(tomorrow.toISOString()) });
-  }
-  // counted before the slow PIN check (reliability review #1): a burst sent at once can't all pass the lock while
-  // the first ones are still being checked; taken back if the PIN is right
-  db.prepare('UPDATE pos_pin_tries SET n = 0 WHERE k = ? AND (locked_until IS NULL OR locked_until <= ?)').run(key, nowIso);
-  db.prepare('UPDATE pos_pin_tries SET day_n = 0, day_on = ? WHERE k = ? AND (day_on IS NULL OR day_on <> ?)').run(today, key, today);
-  db.prepare('UPDATE pos_pin_tries SET n = n + 1, day_n = day_n + 1, locked_until = ? WHERE k = ?').run(new Date(now0 + LOCK_MS).toISOString(), key);
-  db.prepare('UPDATE pos_pin_tries SET n = n + 1 WHERE k = ?').run('all');
-  const counted = readTries(db, key)!;
-  const n = counted.n;
-  const undo = () => {
-    db.prepare('UPDATE pos_pin_tries SET n = CASE WHEN n > 0 THEN n - 1 ELSE 0 END, day_n = CASE WHEN day_n > 0 THEN day_n - 1 ELSE 0 END WHERE k = ?').run(key);
-    db.prepare('UPDATE pos_pin_tries SET n = CASE WHEN n > 0 THEN n - 1 ELSE 0 END WHERE k = ?').run('all');
-  };
-  const fail = (self: boolean): never => {
-    audit(db, cashier.name, 'pin_failed', 'pos_shift', input.shiftId, { action: input.action, tries: n, self });
-    if (n === LOCK_AFTER) pinAlert(db, { scope: 'cashier', cashier: cashier.name, tries: n });
-    // slow guessing (a few tries, a wait, a few more) never reaches the short lock: the day's count does
-    else if (counted.day_n === DAY_LOCK_AFTER) pinAlert(db, { scope: 'cashier', cashier: cashier.name, tries: counted.day_n });
-    const everyone = readTries(db, 'all')!;
-    if (everyone.n >= ALL_LOCK_AFTER && !(everyone.locked_until && everyone.locked_until > new Date().toISOString())) {
-      db.prepare('UPDATE pos_pin_tries SET locked_until = ? WHERE k = ?').run(new Date(Date.now() + ALL_LOCK_MS).toISOString(), 'all');
-      pinAlert(db, { scope: 'all', cashier: cashier.name, tries: everyone.n });
-    }
-    throw invalid([{ code: self ? 'pin_self' : 'pin_wrong' }]);
-  };
-  if (!PIN.test(input.pin)) fail(false);
-  let found: Supervisor | null = null;
-  for (const s of supervisors(db)) {
-    if (await verifyPassword(input.pin, s.hash)) { found = s; break; }
-  }
-  if (!found || (found.id === cashier.id && !cashier.permissions.includes('admin'))) return fail(!!found);
-  undo();
-  const token = randomUUID();
-  const now = new Date();
-  // a lower price is approved while the basket is still being rung up: it waits longer for its sale than the others
-  const expiresAt = new Date(now.getTime() + (input.action === 'price' ? PRICE_APPROVAL_MS : input.action === 'offline_sale' ? OFFLINE_APPROVAL_MS : APPROVAL_MS)).toISOString();
-  const used = TILL_ONLY_ACTIONS.includes(input.action);
-  const detail = input.detail?.trim().slice(0, 300) || null;
-  db.prepare(`INSERT INTO till_approvals (id, shift_id, action, approver, approver_id, cashier, cashier_id, subject, amount, scope, detail, created_at, expires_at, used_at)
-              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
-    .run(token, input.shiftId, input.action, found.name, found.id, cashier.name, cashier.id ?? null, bound.subject, bound.amount, bound.scope, detail,
-      now.toISOString(), expiresAt, used ? now.toISOString() : null);
-  audit(db, cashier.name, 'supervisor_ok', 'pos_shift', input.shiftId, { action: input.action, approver: found.name, detail, ...(bound.subject ? { subject: bound.subject } : {}), ...(bound.amount !== null ? { amount: bound.amount } : {}) });
-  return { token, approver: found.name, action: input.action, expiresAt, used };
+  const found = await supervisorByPin(db, cashier, cashierKey(db, cashier, shift.register), input.pin, { shiftId: input.shiftId, action: input.action });
+  return writeApproval(db, input, bound, found, cashier);
+}
+
+/**
+ * A refund asked from the office (the invoice screens: a return or a cancel there, review of the fixes, finding 7):
+ * when the company's rule asks a supervisor for refunds and the money leaves a till's safe, someone with the sales
+ * permission who neither supervises nor is an admin brings a supervisor to type their PIN on that screen. The approval
+ * is for that invoice (and, for a return, those lines), that person, once, within two minutes; it belongs to no shift.
+ */
+export async function approveOfficeRefund(db: Db, input: { invoiceId: string; lines?: { lineNo: number; qtyMilli: number }[] | undefined; pin: string; detail?: string | undefined }, asker: Actor): Promise<ApprovalView> {
+  const bound = boundTo(db, { action: 'refund', invoiceId: input.invoiceId, lines: input.lines });
+  const found = await supervisorByPin(db, asker, cashierKey(db, asker), input.pin, { shiftId: null, action: 'refund' });
+  return writeApproval(db, { shiftId: null, action: 'refund', detail: input.detail }, bound, found, asker);
+}
+
+/** An admin lifts the locks wrong PINs left (every till's and each cashier's, the day's too) and clears the notice; written to the audit log. */
+export function unlockPins(db: Db, user: string): { ok: true } {
+  const locked = (db.prepare('SELECT k FROM pos_pin_tries WHERE n > 0 OR day_n > 0 OR locked_until IS NOT NULL').all() as { k: string }[]).map((r) => r.k);
+  db.prepare('DELETE FROM pos_pin_tries').run();
+  writeSetting(db, 'pos_pin_alert', '');
+  audit(db, user, 'pin_unlock', 'pos_rules', null, { keys: locked });
+  return { ok: true };
 }
 
 /** What the till reads of its rules: everything but who may sell the open-price item (only whether this person may). */
@@ -233,7 +292,10 @@ export function rulesForTill(db: Db, actor: Actor) {
     rounding: rules.rounding, blindClose: rules.blindClose, supervisor: rules.supervisor,
     misc: { itemId: rules.misc.itemId, max: rules.misc.max, allowed: maySellMisc(rules.misc, actor) },
     display: rules.display,
+    // the rate dollars are held to today (the rate board's, else the company's) and how far a typed one may be from it
+    rate: { referenceX100: referenceRate(db), freePct: RATE_FREE * 100, bandPct: RATE_BAND * 100 },
     mayApprove: maySupervise(actor), hasPin: hasPin(db, actor.id), pinShort: pinShort(db, actor.id),
+    pinLocked: actor.permissions.includes('admin') && !!db.prepare('SELECT 1 FROM pos_pin_tries WHERE locked_until > ? OR day_n >= ?').get(new Date().toISOString(), DAY_LOCK_AFTER),
     // the last time wrong PINs locked approvals: shown to an admin until they clear it
     pinAlert: actor.permissions.includes('admin') ? readPinAlert(db) : null
   };
@@ -444,6 +506,8 @@ export const tillRulesApi: ApiExtension = {
   rules: {
     'GET /api/pos/rules': 'pos',
     'POST /api/pos/approve': 'pos',
+    // asked by whoever makes the refund on the invoice screens
+    'POST /api/refund-approvals': 'sales',
     'PUT /api/pos/pin': 'posSupervise',
     'GET /api/pos/customer/:id': 'pos',
     'POST /api/pos/shifts/:id/gift-vouchers': 'pos',
@@ -468,9 +532,20 @@ export const tillRulesApi: ApiExtension = {
         handler: async (req) => approve(db, parse(z.object({
           shiftId: id, action: z.enum(APPROVAL_ACTIONS), pin: z.string().max(12), detail: z.string().max(300).optional(),
           invoiceId: id.optional(), lines: z.array(z.object({ lineNo: z.number().int().min(1), qtyMilli: z.number().int().min(0).max(1e12) })).max(500).optional(),
-          itemId: id.optional(), unit: z.string().max(32).optional(), partyId: id.optional(), reference: z.string().max(40).optional(), amount: z.number().int().nonnegative().max(1e15).optional()
+          itemId: id.optional(), unit: z.string().max(32).optional(), partyId: id.optional(), reference: z.string().max(40).optional(), amount: z.number().int().nonnegative().max(1e15).optional(),
+          currency: z.enum(['IQD', 'USD']).optional(), gross: z.number().int().positive().max(1e15).optional(),
+          rate: z.object({ kind: z.enum(['notes', 'sale']), rateX100: z.number().int().positive().max(1e12) }).optional()
         }), req.body), actor(req))
       },
+      {
+        // a supervisor's PIN typed on an invoice screen for a refund there (no shift)
+        method: 'POST', path: '/api/refund-approvals',
+        handler: async (req) => approveOfficeRefund(db, parse(z.object({
+          invoiceId: id, pin: z.string().max(12), detail: z.string().max(300).optional(),
+          lines: z.array(z.object({ lineNo: z.number().int().min(1), qtyMilli: z.number().int().min(0).max(1e12) })).max(500).optional()
+        }), req.body), actor(req))
+      },
+      { method: 'POST', path: '/api/pos/pin-unlock', handler: async (req) => unlockPins(db, actor(req).name) },
       { method: 'DELETE', path: '/api/pos/pin-alert', handler: async (req) => { writeSetting(db, 'pos_pin_alert', ''); audit(db, actor(req).name, 'seen', 'pos_pin_alert', null, {}); return { ok: true }; } },
       { method: 'PUT', path: '/api/pos/pin', handler: async (req) => setPin(db, actor(req), parse(z.object({ pin: z.string().max(12) }), req.body).pin) },
       {

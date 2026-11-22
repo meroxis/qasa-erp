@@ -1,7 +1,9 @@
 import { randomUUID } from 'node:crypto';
 import { cashToTake, TILL_CARD_PAYMENTS } from '@qasa/core';
 import { giftCashOf, giftOfShift, giftParts, takeGiftParts } from './gift-vouchers.ts';
-import { blindShift, closesBlind, maySellMisc, offlineApprovalWaits, priceSubject, roundingAccount, tillRules, useApproval, useOfflineApproval } from './till-settings.ts';
+import {
+  blindShift, closesBlind, maySellMisc, offlineApprovalWaits, priceSubject, rateStanding, rateSubject, referenceRate, roundingAccount, tillRules, useApproval, useOfflineApproval
+} from './till-settings.ts';
 import { lowestListPrice } from './price-history.ts';
 import { z } from 'zod';
 import { todayIso, UNIT_CODES, type CurrencyCode, type UnitCode } from '@qasa/core';
@@ -567,18 +569,24 @@ export function allowCardPaymentsForTests(on: boolean): void { cardPayments = on
 /** the most one line may be: a unit price of a million million, a thousand million units */
 const MAX_UNIT_PRICE = 1e12;
 const MAX_QTY_MILLI = 1e12;
-/** how far a rate typed at the till may be from the company's (a slip of a digit is refused) */
-const RATE_BAND = 0.15;
-
 /** One sale at the counter: a cash sale invoice into the shift's safe, posted at once and kept with the shift. */
 export function sell(db: Db, shiftId: string, input: SaleInput, actor: Actor): { invoice: InvoiceView; shift: ShiftView; rounding: number } {
   const row = requireRunnable(db, shiftId, actor);
   if (!Array.isArray(input.lines) || input.lines.length === 0) throw invalid([{ code: 'pos_cart_empty' }]);
   if (input.currency === 'USD' && !(Number.isSafeInteger(input.rateX100) && (input.rateX100 ?? 0) > 0)) throw invalid([{ code: 'rate_invalid' }]);
   const companyRate = Number(readSetting(db, 'default_rate_x100') ?? '142000');
-  // a dollar sale at a rate far from the company's: refused, as dollar notes on a dinar sale are (its rate decides
-  // what the sale is worth in the books, and what a dinar list price is in dollars)
-  if (input.currency === 'USD' && Math.abs(input.rateX100! - companyRate) > companyRate * RATE_BAND) throw invalid([{ code: 'pos_rate_far', rateX100: companyRate } as { code: string }]);
+  // dollars at the till are held to the day's rate (the rate board's for today, else the company's): a rate within 3%
+  // of it passes, one further (up to 15%) a supervisor approves, that very rate; beyond is refused. So for a dollar
+  // sale (its rate decides what the sale is worth in the books, and what a dinar list price is in dollars) and for
+  // dollar notes on a dinar sale (below)
+  const reference = referenceRate(db);
+  /** the rate a supervisor must approve, if any: `notes:<rate>` or `sale:<rate>` */
+  let rateToApprove: string | null = null;
+  if (input.currency === 'USD') {
+    const standing = rateStanding(input.rateX100!, reference);
+    if (standing === 'far') throw invalid([{ code: 'pos_rate_far', rateX100: reference } as { code: string }]);
+    if (standing === 'approve') rateToApprove = rateSubject('sale', input.rateX100!);
+  }
   // nothing a slip (or a request made by hand) could turn into an amount the books can't hold
   for (const l of input.lines) {
     const qty = l.unitQtyMilli ?? l.qtyMilli ?? 1000;
@@ -618,11 +626,13 @@ export function sell(db: Db, shiftId: string, input: SaleInput, actor: Actor): {
   if (usdCash) {
     if (input.currency !== 'IQD' || onCredit) errors.push({ code: 'pos_usd_cash_not_here' });
     else if (!Number.isSafeInteger(usdCash.amount) || usdCash.amount <= 0 || usdCash.amount > 10_000_000) errors.push({ code: 'pos_usd_cash_invalid' });
-    // the dollars are worth the company's rate at most: a cashier never types a better one (each dollar would then
-    // stand for more dinars than it is, and the drawer would be short with nothing showing it). Lower, down to the
-    // band, is the shop's own buying rate. The company's rate goes back with the refusal, for the till to show.
-    else if (!Number.isSafeInteger(usdCash.rateX100) || usdCash.rateX100 <= 0 || usdCash.rateX100 > companyRate || companyRate - usdCash.rateX100 > companyRate * RATE_BAND) {
-      errors.push({ code: 'pos_usd_rate_far', rateX100: companyRate } as { code: string });
+    // each dollar stands for the day's rate, give or take 3% (a better rate would leave the drawer short with nothing
+    // showing it; a much worse one cheats the customer): further, a supervisor approves that very rate; beyond 15% it
+    // is a slip. The day's rate goes back with the refusal, for the till to show.
+    else {
+      const standing = rateStanding(usdCash.rateX100, reference);
+      if (standing === 'far') errors.push({ code: 'pos_usd_rate_far', rateX100: reference } as { code: string });
+      else if (standing === 'approve') rateToApprove = rateSubject('notes', usdCash.rateX100);
     }
   }
   // 2.0: the till's rules (till-settings.ts): gift vouchers, the open-price item, prices and discounts a supervisor approves
@@ -638,7 +648,8 @@ export function sell(db: Db, shiftId: string, input: SaleInput, actor: Actor): {
   }
   if (errors.length) throw invalid(errors);
   const gross = input.lines.reduce((sum, l) => sum + Math.round(((l.unitQtyMilli ?? l.qtyMilli ?? 1000) * l.unitPrice) / 1000), 0);
-  const needs: ('discount' | 'price')[] = [];
+  const needs: ('discount' | 'price' | 'rate')[] = [];
+  if (rateToApprove) needs.push('rate');
   const reviewOffline: string[] = [];
   /** the lowest price asked for each item and unit sold below its list price: each needs its own approval */
   const lowered = new Map<string, number>();
@@ -709,8 +720,10 @@ export function sell(db: Db, shiftId: string, input: SaleInput, actor: Actor): {
       offlineApprover = useOfflineApproval(db, shiftId, offline.reference, gross - input.discount, actor.name);
       if (!offlineApprover) throw invalid([{ code: 'pos_offline_supervisor' }]);
     } else {
-      if (needs.includes('discount')) useApproval(db, input.approvals, 'discount', actor, { shiftId, value: input.discount });
-      for (const [subject, lowest] of lowered) useApproval(db, input.approvals, 'price', actor, { shiftId, subject, value: lowest });
+      if (rateToApprove) useApproval(db, input.approvals, 'rate', actor, { shiftId, subject: rateToApprove });
+      // the discount on this very basket: one approved on a larger basket is no larger a share of this one
+      if (needs.includes('discount')) useApproval(db, input.approvals, 'discount', actor, { shiftId, value: input.discount, gross });
+      for (const [subject, lowest] of lowered) useApproval(db, input.approvals, 'price', actor, { shiftId, subject, value: lowest, currency: input.currency });
     }
     let split: (SalePart & { method?: PosMethod })[] | undefined;
     // what loyalty points pay (checked again as the sale is posted); the parts pay the rest

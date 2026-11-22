@@ -226,14 +226,14 @@ describe('7 · what an approval is for', () => {
     expect((await post(`/api/invoices/${a.invoice.id}/returns`, { ...ret(one), approvals: [refund.token] }, who.las!)).json()).toMatchObject(needsSupervisor('refund'));
     // a lower price: for that item, at that price or above
     const sugar = (await post('/api/items', { code: 'SUG', name: { ar: 'سكر', en: 'Sugar', ku: 'شەکر' }, unit: 'piece', salePrice: 1_500, saleCurrency: 'IQD', trackStock: false }, who.admin!)).json();
-    const price = await approve(who.las!, { shiftId: shift.id, action: 'price', itemId: teaId, amount: 2_500 });
+    const price = await approve(who.las!, { shiftId: shift.id, action: 'price', itemId: teaId, amount: 2_500, currency: 'IQD' });
     expect((await sell(shift.id, { lines: [{ itemId: sugar.id, qtyMilli: 1000, unitPrice: 1 }], approvals: [price.token] }, who.las!)).json()).toMatchObject(needsSupervisor('price'));
     expect((await sell(shift.id, { lines: [tea(1, 1)], approvals: [price.token] }, who.las!)).json()).toMatchObject(needsSupervisor('price'));
     expect((await sell(shift.id, { lines: [tea(1, 2_500), { itemId: sugar.id, qtyMilli: 1000, unitPrice: 1 }], approvals: [price.token] }, who.las!)).json()).toMatchObject(needsSupervisor('price'));
     expect((await sell(kayShift.id, { lines: [tea(1, 2_500)], approvals: [price.token] }, who.kay!)).json()).toMatchObject(needsSupervisor('price'));
     expect((await sell(shift.id, { lines: [tea(1, 2_500)], approvals: [price.token] }, who.las!)).statusCode).toBe(201);
     // a discount: no larger than the one approved
-    const discount = await approve(who.las!, { shiftId: shift.id, action: 'discount', amount: 1_000 });
+    const discount = await approve(who.las!, { shiftId: shift.id, action: 'discount', amount: 1_000, gross: 5_500 });
     expect((await sell(shift.id, { discount: 5_000, lines: [tea(2)], approvals: [discount.token] }, who.las!)).json()).toMatchObject(needsSupervisor('discount'));
     expect((await sell(shift.id, { discount: 1_000, lines: [tea(2)], approvals: [discount.token] }, who.las!)).statusCode).toBe(201);
     // credit over the limit: that customer, no more than that amount
@@ -248,16 +248,17 @@ describe('7 · what an approval is for', () => {
 });
 
 describe('8 · dollar notes on a dinar sale', () => {
-  it('never values them above the company\'s rate, and says what that rate is', async () => {
+  it('never values them far from the day\'s rate, and says what that rate is', async () => {
     const shift = await openShift();
     const rate = 142_000;
     const usd = (rateX100: number) => sell(shift.id, { lines: [{ itemId: teaId, qtyMilli: 1000, unitPrice: 25_000 }], usdCash: { amount: 2000, rateX100 } });
-    // 20 dollars at 1,600 would stand for 32,000 dinars: 3,600 more change than the notes are worth
-    expect((await usd(160_000)).json()).toMatchObject({ details: [{ code: 'pos_usd_rate_far', rateX100: rate }] });
-    expect((await usd(rate + 100)).json()).toMatchObject({ details: [{ code: 'pos_usd_rate_far', rateX100: rate }] });
-    // the company's rate, or the shop's own lower buying rate
+    // 20 dollars at 1,700 would stand for 34,000 dinars: 5,600 more change than the notes are worth
+    expect((await usd(170_000)).json()).toMatchObject({ details: [{ code: 'pos_usd_rate_far', rateX100: rate }] });
+    // a little above or below (within 3%) is the shop's own rate of the day
     expect((await usd(rate)).statusCode).toBe(201);
     expect((await usd(140_000)).statusCode).toBe(201);
+    // further (up to 15%): a supervisor's to approve (the "Verify the review fixes" report, finding 5)
+    expect((await usd(rate + 5_000)).json()).toMatchObject({ details: [{ code: 'pos_needs_supervisor', action: 'rate' }] });
     expect((await usd(14_200)).json()).toMatchObject({ details: [{ code: 'pos_usd_rate_far' }] });
   });
 });

@@ -35,6 +35,8 @@ export function PaymentPanel(p: {
   onSplit(m: Exclude<SplitMethod, 'cash'>, v: number | null): void;
   handed: number | null; onHanded(v: number | null): void; handedUsd: number | null; onHandedUsd(v: number | null): void;
   usdRateText: string; onUsdRate(v: string): void; usdOn: boolean; change: number | null;
+  /** the day's dollar rate, in words, under the rate field */
+  rateHint?: string;
   onDiscount(v: number | null): void;
   onVoucher: (() => void) | null; onRemoveVoucher(code: string): void;
   customer: ReactNode; loyalty: ReactNode; debt: ReactNode;
@@ -93,7 +95,8 @@ export function PaymentPanel(p: {
             <div className="grid-2 pos-handed">
               <label className="field"><span>{t('tl_handed')}</span><AmountInput value={p.handed} currency="IQD" onChange={p.onHanded} ariaLabel={t('tl_handed')} /></label>
               <label className="field"><span>{t('tl_handedUsd')}</span><AmountInput value={p.handedUsd} currency="USD" onChange={p.onHandedUsd} ariaLabel={t('tl_handedUsd')} /></label>
-              {p.usdOn && <label className="field"><span>{t('tl_usdRate')}</span><input className="input num ltr" inputMode="decimal" value={p.usdRateText} onChange={(e) => p.onUsdRate(e.target.value)} /></label>}
+              {p.usdOn && <label className="field"><span>{t('tl_usdRate')}</span><input className="input num ltr" inputMode="decimal" value={p.usdRateText} onChange={(e) => p.onUsdRate(e.target.value)} />
+                {p.rateHint && <small className="muted">{p.rateHint}</small>}</label>}
             </div>
             {p.change !== null && (
               <div className={'pos-giveback' + (p.change < 0 ? ' short' : '')} role="status">

@@ -69,7 +69,7 @@ describe('point of sale', () => {
     expect(db.prepare('SELECT shift_id FROM pos_sales WHERE invoice_id = ?').get(invoice.id)).toMatchObject({ shift_id: shift.id });
 
     // a walk-in sale in dollars at a rate, and one for a known customer
-    const usd = await post(`/api/pos/shifts/${shift.id}/sales`, { currency: 'USD', rateX100: 131_000, lines: [{ itemId: teaId, qtyMilli: 1000, unitPrice: 200 }] });
+    const usd = await post(`/api/pos/shifts/${shift.id}/sales`, { currency: 'USD', rateX100: 140_000, lines: [{ itemId: teaId, qtyMilli: 1000, unitPrice: 200 }] });
     expect(usd.statusCode, usd.body).toBe(201);
     expect((await post(`/api/pos/shifts/${shift.id}/sales`, { currency: 'USD', lines: [{ itemId: teaId, qtyMilli: 1000, unitPrice: 200 }] })).json()).toMatchObject({ error: 'validation' });
     const known = await post(`/api/pos/shifts/${shift.id}/sales`, { currency: 'IQD', partyId: customerId, lines: [{ itemId: cupId, qtyMilli: 2000, unitPrice: 1_000 }] });
@@ -147,7 +147,7 @@ describe('point of sale', () => {
   it('closes with the counted cash and the difference, by currency, and frees the register', async () => {
     const shift = (await open()).json();
     await post(`/api/pos/shifts/${shift.id}/sales`, { currency: 'IQD', lines: [{ itemId: teaId, qtyMilli: 2000, unitPrice: 2_500 }] });
-    await post(`/api/pos/shifts/${shift.id}/sales`, { currency: 'USD', rateX100: 131_000, lines: [{ itemId: cupId, qtyMilli: 1000, unitPrice: 500 }] });
+    await post(`/api/pos/shifts/${shift.id}/sales`, { currency: 'USD', rateX100: 140_000, lines: [{ itemId: cupId, qtyMilli: 1000, unitPrice: 500 }] });
     const closed = await post(`/api/pos/shifts/${shift.id}/close`, { countedCash: 54_000, countedUsd: 500, notes: 'short 1,000' });
     expect(closed.statusCode, closed.body).toBe(200);
     expect(closed.json()).toMatchObject({

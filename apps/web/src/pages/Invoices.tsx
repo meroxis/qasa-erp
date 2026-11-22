@@ -36,6 +36,7 @@ import { invoiceOpen } from '../industry/quick-voucher.ts';
 import { DocAmount } from '../Amount.tsx';
 import { ClothingGridButton, linesIn } from '../industry/ClothingTools.tsx';
 import { sendReturn } from '../industry/returns-api.ts';
+import { useRefundPin } from '../pos/Supervisor.tsx';
 
 const STATUSES: (InvoiceStatus | '')[] = ['', 'draft', 'posted', 'cancelled'];
 
@@ -729,6 +730,8 @@ export function InvoiceDetail({ id }: { id: string }) {
   const expired = useExpiredConfirm();
   // a pharmacy's sale with controlled medicines: the patient and the prescription, asked once it is posted
   const controlled = useControlledPrompt(id);
+  // a refund out of a till's safe may need a supervisor: their PIN is typed here (pos/Supervisor.tsx)
+  const refundPin = useRefundPin();
 
   if (refused) return null;
   if (error) return <ErrorBox error={error} />;
@@ -970,6 +973,7 @@ export function InvoiceDetail({ id }: { id: string }) {
       {expired.dialog}
       {controlled.dialog}
       {returning && <ReturnModal invoice={v} onClose={() => setReturning(false)} />}
+      {refundPin.dialog}
 
       {cancelling && (
         <Modal title={t('cancelTitle')} onClose={() => setCancelling(false)}>
@@ -978,7 +982,7 @@ export function InvoiceDetail({ id }: { id: string }) {
             <label className="field"><span>{t('cancelDate')}</span><input className="input" type="date" min={v.date} value={cancelDate} onChange={(e) => setCancelDate(e.target.value)} /></label>
             <ErrorBox error={actionError} />
             <div className="row">
-              <button type="button" className="btn danger" disabled={busy || !cancelDate} onClick={() => act(() => api.cancelInvoice(id, cancelDate), t('a_cancel'))}>{t('confirm')}</button>
+              <button type="button" className="btn danger" disabled={busy || !cancelDate} onClick={() => act(() => refundPin.run(id, undefined, () => api.cancelInvoice(id, cancelDate)), t('a_cancel'))}>{t('confirm')}</button>
               <button type="button" className="btn" onClick={() => setCancelling(false)}>{t('cancel')}</button>
             </div>
           </div>
@@ -1012,6 +1016,7 @@ function ReturnModal({ invoice: v, onClose }: { invoice: InvoiceView; onClose():
   const [inBase, setInBase] = useState<Record<number, boolean>>({});
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<unknown>(null);
+  const refundPin = useRefundPin();
   // a line sold in boxes is returned in boxes: the quantity typed is in the line's unit, at the factor kept with the line
   const unitOf = (l: InvoiceView['lines'][number]) => (l.lineUnit && l.unitFactorMilli ? { unit: l.lineUnit, factor: l.unitFactorMilli } : null);
   const baseFor = (l: InvoiceView['lines'][number], typed: number) => returnQtyBase(l, typed, !!inBase[l.lineNo]);
@@ -1031,11 +1036,13 @@ function ReturnModal({ invoice: v, onClose }: { invoice: InvoiceView; onClose():
     setBusy(true);
     setError(null);
     try {
-      const ret = await sendReturn(v.id, {
-        date, payment, lines: chosen.map((l) => ({ lineNo: l.lineNo, qtyMilli: baseOf(l)! })),
+      const back = chosen.map((l) => ({ lineNo: l.lineNo, qtyMilli: baseOf(l)! }));
+      // a supervisor's PIN is asked for here when the server wants one (cash back out of a till's safe)
+      const ret = await refundPin.run(v.id, back, () => sendReturn(v.id, {
+        date, payment, lines: back,
         ...(payment === 'cash' ? { cashAccountCode: cashAccount } : {}),
         ...(notes.trim() ? { notes: notes.trim() } : {})
-      });
+      }));
       await reloadAccounts();
       toast(t('a_post'));
       go(`invoice/${ret.id}`);
@@ -1048,6 +1055,7 @@ function ReturnModal({ invoice: v, onClose }: { invoice: InvoiceView; onClose():
   return (
     <Modal title={t('returnTitle', { n: v.number ?? '' })} onClose={onClose}>
       <div className="stack return-modal">
+      {refundPin.dialog}
         <table className="table">
           <thead>
             <tr><th>{t('item')}</th><th className="amount">{t('qty')}</th><th className="amount">{t('canReturn')}</th><th className="amount" style={{ width: 130 }}>{t('returnQty')}</th></tr>

@@ -21,7 +21,7 @@ export function TillRulesSettings({ admin }: { admin: boolean }) {
   if (!rules) return null;
   return (
     <>
-      {admin && rules.pinAlert && <PinAlert alert={rules.pinAlert} onCleared={reload} />}
+      {admin && (rules.pinAlert || rules.pinLocked) && <PinAlert alert={rules.pinAlert ?? null} locked={!!rules.pinLocked} onCleared={reload} />}
       {admin && <RulesCard rules={rules} onSaved={reload} />}
       {admin && <ScreenCard />}
       {admin && <VouchersCard />}
@@ -277,14 +277,20 @@ function VouchersCard() {
   );
 }
 
-/** Wrong PINs locked approvals at a till: an admin sees it here until they clear it. */
-function PinAlert({ alert, onCleared }: { alert: NonNullable<TillRulesView['pinAlert']>; onCleared(): void }) {
+/**
+ * Wrong PINs locked approvals at a till: an admin sees it here until they clear it, and can lift the locks at once
+ * (the fifteen minutes, and a cashier's lock for the day) instead of waiting them out; the server writes that to the
+ * audit log.
+ */
+function PinAlert({ alert, locked, onCleared }: { alert: NonNullable<TillRulesView['pinAlert']> | null; locked: boolean; onCleared(): void }) {
   const { t, dateTime } = useI18n();
+  const toast = useToast();
   return (
     <div className="alert warn row" role="alert" data-setting="pos-pin-alert" style={{ gap: 10, marginBottom: 14 }}>
       <Icon name="key" size={18} />
-      <span>{t(alert.scope === 'all' ? 'tu_pinAlertAll' : 'tu_pinAlert', { name: alert.cashier, n: alert.tries, at: dateTime(alert.at) })}</span>
-      <button type="button" className="btn btn-sm" onClick={() => void tillRulesApi.clearPinAlert().then(onCleared)}>{t('tu_pinAlertSeen')}</button>
+      <span>{alert ? t(alert.scope === 'all' ? 'tu_pinAlertAll' : 'tu_pinAlert', { name: alert.cashier, n: alert.tries, at: dateTime(alert.at) }) : t('tu_pinLockedNow')}</span>
+      <button type="button" className="btn btn-sm" data-action="pin-unlock" onClick={() => void tillRulesApi.unlockPins().then(() => { toast(t('tu_pinUnlocked')); onCleared(); })}>{t('tu_pinUnlock')}</button>
+      {alert && <button type="button" className="btn btn-sm" onClick={() => void tillRulesApi.clearPinAlert().then(onCleared)}>{t('tu_pinAlertSeen')}</button>}
     </div>
   );
 }

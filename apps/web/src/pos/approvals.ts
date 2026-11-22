@@ -1,20 +1,27 @@
 import { ApiError } from '../api.ts';
-import type { ApprovalAction, ApprovalFor, SupervisorRules } from './rules-api.ts';
+import type { ApprovalAction, ApprovalFor, RateRule, SupervisorRules } from './rules-api.ts';
 
 /**
  * The approvals a sale needs from a supervisor (2.0), worked out at the till as the server will (pos.ts): each is for
  * one very thing, which the server keeps with the approval and holds its use to. The till keeps what was approved
  * with each token, so it knows which approvals still cover the basket as it is now, and asks again for the others
- * (a price changed again, a larger discount, a basket held and resumed, an approval that ran out).
+ * (a price changed again, a larger discount, a basket that got smaller under its discount, another currency, a basket
+ * held and resumed, an approval that ran out).
  */
-export interface HeldApproval { action: ApprovalAction; token: string; subject?: string | undefined; amount?: number | undefined }
+export interface HeldApproval {
+  action: ApprovalAction; token: string; subject?: string | undefined; amount?: number | undefined;
+  /** a price: the currency it was approved in; a discount: the basket (before discounts) it was approved on */
+  currency?: string | undefined; gross?: number | undefined;
+}
 
 export interface ApprovalNeed {
-  action: 'price' | 'discount' | 'credit_over';
-  /** the item and unit (price), or the customer (credit over the limit) */
+  action: 'price' | 'discount' | 'credit_over' | 'rate';
+  /** the item and unit (price), the customer (credit over the limit), or the kind of sale and the rate (`notes:142000`) */
   subject?: string;
-  /** the lowest price asked, the discount, or the amount going on account */
+  /** the lowest price asked, the discount, or the amount going on account (a rate: the rate) */
   amount: number;
+  /** a price: the sale's currency; a discount: the basket before discounts */
+  currency?: string; gross?: number;
   what: ApprovalFor;
   /** the line a price need is about (for the words shown to the supervisor) */
   line?: ApprovalLine;
@@ -27,21 +34,45 @@ export const priceSubjectOf = (l: Pick<ApprovalLine, 'itemId' | 'itemUnit' | 'un
 
 /** Whether an approval the till holds covers a need of the sale as it is now. */
 export function covers(a: HeldApproval, need: ApprovalNeed): boolean {
-  if (a.action !== need.action || a.amount === undefined) return false;
-  if (need.action === 'price') return a.subject === need.subject && a.amount <= need.amount;
-  if (need.action === 'discount') return a.amount >= need.amount;
+  if (a.action !== need.action) return false;
+  if (need.action === 'rate') return a.subject === need.subject;
+  if (a.amount === undefined) return false;
+  // in the currency it was approved in: 90.00 dollars is not 9,000 dinars
+  if (need.action === 'price') return a.subject === need.subject && a.amount <= need.amount && a.currency === need.currency;
+  // no larger a share of the basket than the one approved: a basket that got smaller is asked again
+  if (need.action === 'discount') return a.amount >= need.amount && !!a.gross && !!need.gross && need.amount * a.gross <= a.amount * need.gross;
   return a.subject === need.subject && a.amount >= need.amount;
+}
+
+/** How a typed dollar rate stands against the day's (as the server reckons it): fine, a supervisor's to approve, or too far. */
+export function rateStanding(rateX100: number, rule: RateRule): 'ok' | 'approve' | 'far' {
+  if (!Number.isSafeInteger(rateX100) || rateX100 <= 0) return 'far';
+  const off = Math.abs(rateX100 - rule.referenceX100) * 100;
+  return off <= rule.referenceX100 * rule.freePct ? 'ok' : off <= rule.referenceX100 * rule.bandPct ? 'approve' : 'far';
 }
 
 /**
  * What this sale needs approved: each item and unit sold below its list price (its lowest line price), a discount
- * over the company's limit, and credit over the customer's limit (the amount that goes on their account).
+ * over the company's limit, credit over the customer's limit (the amount that goes on their account), and dollars
+ * (a dollar sale, or dollar notes on a dinar sale) at a rate more than a little away from the day's.
  */
 export function approvalNeeds(input: {
   rules: SupervisorRules; miscItemId: string | null; lines: readonly ApprovalLine[];
   discount: number; subtotal: number; overLimit: boolean; partyId: string; onAccount: number;
+  /** the sale's currency (a price is approved in it) */
+  currency?: 'IQD' | 'USD';
+  /** the day's rate, and the rates typed: a dollar sale's own, dollar notes' on a dinar sale */
+  rate?: RateRule | undefined; saleRateX100?: number | undefined; notesRateX100?: number | undefined;
 }): ApprovalNeed[] {
   const needs: ApprovalNeed[] = [];
+  const currency = input.currency ?? 'IQD';
+  if (input.rate) {
+    for (const [kind, typed] of [['sale', input.saleRateX100], ['notes', input.notesRateX100]] as const) {
+      if (typed !== undefined && rateStanding(typed, input.rate) === 'approve') {
+        needs.push({ action: 'rate', subject: `${kind}:${typed}`, amount: typed, what: { rate: { kind, rateX100: typed } } });
+      }
+    }
+  }
   if (input.rules.price) {
     const lowest = new Map<string, ApprovalLine>();
     for (const l of input.lines) {
@@ -51,11 +82,11 @@ export function approvalNeeds(input: {
       if (!had || l.unitPrice < had.unitPrice) lowest.set(subject, l);
     }
     for (const [subject, l] of lowest) {
-      needs.push({ action: 'price', subject, amount: l.unitPrice, line: l, what: { itemId: l.itemId, ...(l.unit ? { unit: l.unit } : {}), amount: l.unitPrice } });
+      needs.push({ action: 'price', subject, amount: l.unitPrice, currency, line: l, what: { itemId: l.itemId, ...(l.unit ? { unit: l.unit } : {}), amount: l.unitPrice, currency } });
     }
   }
   if (input.rules.discountPct > 0 && input.discount * 100 > input.rules.discountPct * input.subtotal) {
-    needs.push({ action: 'discount', amount: input.discount, what: { amount: input.discount } });
+    needs.push({ action: 'discount', amount: input.discount, gross: input.subtotal, what: { amount: input.discount, gross: input.subtotal } });
   }
   if (input.overLimit && input.rules.creditOver && input.partyId) {
     needs.push({ action: 'credit_over', subject: input.partyId, amount: input.onAccount, what: { partyId: input.partyId, amount: input.onAccount } });
@@ -79,7 +110,7 @@ export function dropDead(held: readonly HeldApproval[], error: unknown): HeldApp
   return held.filter((a) => !dead.includes(a.action));
 }
 
-/** The company's rate a refusal carries (a rate typed too far from it), to put back in the till's field. */
+/** The day's rate a refusal carries (a rate typed too far from it), to put back in the till's field. */
 export function companyRateOf(error: unknown, code: 'pos_usd_rate_far' | 'pos_rate_far'): number | null {
   if (!(error instanceof ApiError) || !Array.isArray(error.details)) return null;
   const d = (error.details as { code?: string; rateX100?: unknown }[]).find((x) => x.code === code);

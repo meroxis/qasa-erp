@@ -36,7 +36,7 @@ import { CartLines } from './Cart.tsx';
 import { PaymentPanel, type PaySummary } from './PaymentPanel.tsx';
 import { StatusBar } from './StatusBar.tsx';
 import { useSupervisor } from './Supervisor.tsx';
-import { approvalNeeds, companyRateOf, covers, dropDead, priceSubjectOf, type HeldApproval } from './approvals.ts';
+import { approvalNeeds, companyRateOf, covers, dropDead, priceSubjectOf, rateStanding, type HeldApproval } from './approvals.ts';
 import { Keypad, MiscDialog, PriceDialog, QtyDialog, ShortcutsHelp, VoucherPayDialog, VoucherSellDialog } from './Dialogs.tsx';
 import { beep, readPrefs, writePrefs, type TillPrefs } from './feedback.ts';
 import { NO_RULES, tillRulesApi, type ApprovalAction, type DisplayState, type TillRulesView } from './rules-api.ts';
@@ -72,7 +72,8 @@ export function Register({ initial, onClosed }: { initial: ShiftView; onClosed()
   const [q, setQ] = useState('');
   const [cart, setCart] = useState<CartLine[]>([]);
   const [currency, setCurrency] = useState<CurrencyCode>('IQD');
-  const [rateText, setRateText] = useState(() => String(rateFromX100(settings?.defaultRateX100 ?? 142000)));
+  // dollars start at the day's rate (the rate board's for today, else the company's: the till's rules carry it)
+  const [rateText, setRateText] = useState(() => String(rateFromX100(tillCache(tillWho())?.rules?.rate?.referenceX100 ?? settings?.defaultRateX100 ?? 142000)));
   const [discount, setDiscount] = useState<number | null>(0);
   const [partyId, setPartyId] = useState('');
   const [picked, setPicked] = useState<TillMethod>('cash');
@@ -81,7 +82,7 @@ export function Register({ initial, onClosed }: { initial: ShiftView; onClosed()
   const [split, setSplit] = useState<Partial<Record<Exclude<SplitMethod, 'cash'>, number | null>>>({});
   const [handed, setHanded] = useState<number | null>(null);
   const [handedUsd, setHandedUsd] = useState<number | null>(null);
-  const [usdRateText, setUsdRateText] = useState(() => String(rateFromX100(settings?.defaultRateX100 ?? 142000)));
+  const [usdRateText, setUsdRateText] = useState(() => String(rateFromX100(tillCache(tillWho())?.rules?.rate?.referenceX100 ?? settings?.defaultRateX100 ?? 142000)));
   const [scalePrefixes, setScalePrefixes] = useState<string[]>(scalePrefixesKept);
   const [held, setHeld] = useState<HeldBasket[]>(() => heldOn(initial.id));
   const [showHeld, setShowHeld] = useState(false);
@@ -93,6 +94,18 @@ export function Register({ initial, onClosed }: { initial: ShiftView; onClosed()
   const [prefs, setPrefsState] = useState<TillPrefs>(readPrefs);
   const setPrefs = (p: TillPrefs) => { setPrefsState(p); writePrefs(p); };
   const [approvals, setApprovals] = useState<HeldApproval[]>([]);
+  // the day's rate, as the server holds dollars to it (kept with the till's rules for a till that is cut off); a rate
+  // field nobody typed in follows it when it changes
+  const dayRate = rules.rate ?? null;
+  const shownRate = useRef(rateText);
+  useEffect(() => {
+    if (!dayRate) return;
+    const next = String(rateFromX100(dayRate.referenceX100));
+    const before = shownRate.current;
+    shownRate.current = next;
+    setRateText((v) => (v === before ? next : v));
+    setUsdRateText((v) => (v === before ? next : v));
+  }, [dayRate?.referenceX100]);
   const [vouchers, setVouchers] = useState<{ code: string; amount: number }[]>([]);
   const [miscNotes, setMiscNotes] = useState<string[]>([]);
   const [debt, setDebt] = useState<{ balance: number; creditLimit: number | null } | null>(null);
@@ -534,15 +547,17 @@ export function Register({ initial, onClosed }: { initial: ShiftView; onClosed()
   const askBeforePay = async (have: readonly HeldApproval[]): Promise<HeldApproval[] | null> => {
     const needs = approvalNeeds({
       rules: rules.supervisor, miscItemId: rules.misc.itemId, discount: discount ?? 0, subtotal, overLimit, partyId, onAccount: due,
+      currency, rate: dayRate ?? undefined, ...(currency === 'USD' ? { saleRateX100: rateX100 } : {}), ...(usdOn ? { notesRateX100: usdRateX100 } : {}),
       lines: cart.map((l) => ({ itemId: l.item.id, itemUnit: l.item.unit, unit: l.unit, unitPrice: l.unitPrice, listPrice: listPriceOf(l.item, l.unit), name: i18n.name(l.item.name) }))
     });
     let list = have.filter((a) => needs.some((n) => covers(a, n)));
     for (const need of needs) {
       if (list.some((a) => covers(a, need))) continue;
-      const detail = need.line ? `${need.line.name ?? ''}: ${i18n.money(need.line.listPrice, currency)} → ${i18n.money(need.line.unitPrice, currency)}` : i18n.money(need.amount, currency);
+      const detail = need.action === 'rate' ? t('tu_rateAsk', { r: String(rateFromX100(need.amount)), d: String(rateFromX100(dayRate?.referenceX100 ?? 0)) })
+        : need.line ? `${need.line.name ?? ''}: ${i18n.money(need.line.listPrice, currency)} → ${i18n.money(need.line.unitPrice, currency)}` : i18n.money(need.amount, currency);
       const ok = await supervisor.ask(need.action, detail, need.what);
       if (!ok) return null;
-      list = [...list, { action: need.action, token: ok.token, subject: need.subject, amount: need.amount }];
+      list = [...list, { action: need.action, token: ok.token, subject: need.subject, amount: need.amount, currency: need.currency, gross: need.gross }];
     }
     setApprovals(list);
     return list;
@@ -550,6 +565,16 @@ export function Register({ initial, onClosed }: { initial: ShiftView; onClosed()
 
   const pay = async (exact = false, have?: readonly HeldApproval[]): Promise<void> => {
     if (!canPay) return;
+    // a dollar rate far from the day's is a slip of a digit: said here, before anything is sent or kept for later
+    // (the server says the same; a till that is cut off checks with the rate it last had)
+    if (dayRate) {
+      const far = usdOn && rateStanding(usdRateX100, dayRate) === 'far' ? 'pos_usd_rate_far' : currency === 'USD' && rateStanding(rateX100, dayRate) === 'far' ? 'pos_rate_far' : null;
+      if (far) {
+        (far === 'pos_usd_rate_far' ? setUsdRateText : setRateText)(String(rateFromX100(dayRate.referenceX100)));
+        setError(new ApiError(400, 'validation', [{ code: far, rateX100: dayRate.referenceX100 }]));
+        return;
+      }
+    }
     const held = await askBeforePay(have ?? approvals);
     if (held === null) { focusSearch(); return; }
     const tokens = held.map((a) => a.token);
@@ -623,9 +648,9 @@ export function Register({ initial, onClosed }: { initial: ShiftView; onClosed()
       // for this item, at this price: the server holds the approval to both
       const subject = priceSubjectOf({ itemId: line.item.id, itemUnit: line.item.unit, unit: line.unit });
       const ok = await supervisor.ask('price', `${i18n.name(line.item.name)}: ${i18n.money(own, currency)} → ${i18n.money(price, currency)}`,
-        { itemId: line.item.id, ...(line.unit ? { unit: line.unit } : {}), amount: price });
+        { itemId: line.item.id, ...(line.unit ? { unit: line.unit } : {}), amount: price, currency });
       if (!ok) { setDialog(null); focusSearch(); return; }
-      setApprovals((list) => [...list.filter((a) => !(a.action === 'price' && a.subject === subject)), { action: 'price', token: ok.token, subject, amount: price }]);
+      setApprovals((list) => [...list.filter((a) => !(a.action === 'price' && a.subject === subject)), { action: 'price', token: ok.token, subject, amount: price, currency }]);
     }
     setCart((c) => c.map((l) => (lineKey(l) === key ? { ...l, unitPrice: price } : l)));
     setDialog(null);
@@ -839,7 +864,8 @@ export function Register({ initial, onClosed }: { initial: ShiftView; onClosed()
             </div>
           </div>
           {currency === 'USD' && (
-            <label className="field pos-rate"><span>{t('pos_rate')}</span><input className="input num ltr" inputMode="decimal" value={rateText} onChange={(e) => setRateText(e.target.value)} /></label>
+            <label className="field pos-rate"><span>{t('pos_rate')}</span><input className="input num ltr" inputMode="decimal" value={rateText} onChange={(e) => setRateText(e.target.value)} />
+              {dayRate && <small className="muted">{t('tu_rateToday', { r: String(rateFromX100(dayRate.referenceX100)) })}</small>}</label>
           )}
           <CartLines cart={cart} currency={currency} warehouseId={shift.warehouseId} offerByLine={offerResult.byLine} offerNames={offerNames} flash={flash} rxItems={rxItems}
             onQty={(k, n) => void setQty(k, n)} onUnit={nextUnit} onLine={setLine} onRemove={(k) => void setQty(k, 0)}
@@ -856,6 +882,7 @@ export function Register({ initial, onClosed }: { initial: ShiftView; onClosed()
           cardMethods={cardMethods} split={split} splitBad={splitBad} onSplit={(m, v) => setSplit((s) => ({ ...s, [m]: v }))}
           handed={handed} onHanded={(v) => { setHanded(v); focusSearch(); }} handedUsd={handedUsd} onHandedUsd={setHandedUsd}
           usdRateText={usdRateText} onUsdRate={setUsdRateText} usdOn={usdOn} change={change}
+          {...(dayRate ? { rateHint: t('tu_rateToday', { r: String(rateFromX100(dayRate.referenceX100)) }) } : {})}
           onDiscount={setDiscount}
           onVoucher={!offline && currency === 'IQD' && due > 0 ? () => setDialog('voucherPay') : null}
           onRemoveVoucher={(code) => setVouchers((v) => v.filter((x) => x.code !== code))}

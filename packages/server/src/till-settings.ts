@@ -1,4 +1,4 @@
-import { isCashRounding, NO_ROUNDING, type CashRounding } from '@qasa/core';
+import { isCashRounding, NO_ROUNDING, todayIso, type CashRounding } from '@qasa/core';
 import type { Db } from './db.ts';
 import { audit } from './audit.ts';
 import { conflict, invalid } from './errors.ts';
@@ -12,7 +12,7 @@ import { seesBooks, type Actor } from './auth.ts';
  * (till-rules.ts). Every rule is off until an admin turns it on, so a till works as before.
  */
 
-export const APPROVAL_ACTIONS = ['line_delete', 'void', 'price', 'discount', 'no_sale', 'refund', 'credit_over', 'blind_view', 'offline_sale'] as const;
+export const APPROVAL_ACTIONS = ['line_delete', 'void', 'price', 'discount', 'no_sale', 'refund', 'credit_over', 'blind_view', 'offline_sale', 'rate'] as const;
 export type ApprovalAction = (typeof APPROVAL_ACTIONS)[number];
 /**
  * Approved at the till and done there (nothing the server books): the approval is used as it is given.
@@ -131,36 +131,71 @@ export interface ApprovalUse {
   value?: number | undefined;
   /** a refund: the lines coming back (within those approved); none = the whole invoice (a cancel) */
   lines?: readonly { lineNo: number; qtyMilli: number }[] | undefined;
+  /** a lower price: the currency the line is sold in (the approved price is in that currency, never another) */
+  currency?: string | undefined;
+  /** a discount: the basket it is given on now (before discounts); never a smaller share than the one approved */
+  gross?: number | undefined;
 }
+
+/**
+ * The rate dollars are held to at a till: today's on the rate board when one was set for today, else the company's own.
+ * A rate typed within RATE_FREE of it passes; further, up to RATE_BAND, a supervisor approves that very rate; beyond
+ * is refused (a slip of a digit).
+ */
+export function referenceRate(db: Db, date = todayIso()): number {
+  const r = db.prepare('SELECT rate_x100 FROM fx_rates WHERE date = ?').get(date) as { rate_x100: number } | undefined;
+  return r ? Number(r.rate_x100) : Number(readSetting(db, 'default_rate_x100') ?? '142000');
+}
+export const RATE_FREE = 0.03;
+export const RATE_BAND = 0.15;
+/** How a typed rate stands against the reference: fine, a supervisor's to approve, or too far. */
+export function rateStanding(rateX100: number, reference: number): 'ok' | 'approve' | 'far' {
+  if (!Number.isSafeInteger(rateX100) || rateX100 <= 0) return 'far';
+  // whole numbers only: 3% and 15% of the reference, never a float's rounding
+  const off = Math.abs(rateX100 - reference) * 100;
+  return off <= reference * 3 ? 'ok' : off <= reference * 15 ? 'approve' : 'far';
+}
+
+/** The subject of a dollar-rate approval: dollar notes on a dinar sale ('notes') or a dollar sale's own rate ('sale'), at this very rate. */
+export const rateSubject = (kind: 'notes' | 'sale', rateX100: number): string => `${kind}:${rateX100}`;
 
 /** The subject of a lower-price approval: the item, and the unit when it is not the item's own. */
 export const priceSubject = (itemId: string, unit: string | null | undefined): string => `${itemId}|${unit ?? ''}`;
 
 /** How an approval's amount is held, by action: a floor (the price), a ceiling, or none. */
-const BOUND: Partial<Record<ApprovalAction, 'floor' | 'ceiling' | 'subject'>> = { price: 'floor', discount: 'ceiling', credit_over: 'ceiling', refund: 'subject' };
+const BOUND: Partial<Record<ApprovalAction, 'floor' | 'ceiling' | 'subject'>> = { price: 'floor', discount: 'ceiling', credit_over: 'ceiling', refund: 'subject', rate: 'subject' };
 
 /**
  * Uses one approval a supervisor gave for `action`: unused, not expired, given to this cashier (never another's), at
- * this shift (or, for a refund asked from another screen, at a shift still open), and for this very thing: the invoice
- * and lines of a refund, the item and lowest price of a price change, the largest discount, the customer and largest
- * amount of a credit sale over the limit. Inside the transaction of what it approves, so an approval is never used up
+ * this shift (or, for a refund asked from another screen, at a shift still open or at the office), and for this very
+ * thing: the invoice and lines of a refund, the item, unit, currency and lowest price of a price change, the largest
+ * discount on a basket no smaller than the one it was given on (so never a larger share of the sale), the customer and
+ * largest amount of a credit sale over the limit, the very rate of dollars. Inside the transaction of what it approves, so an approval is never used up
  * by something that then fails, and one PIN never approves two things (the update is checked: a second process that
  * took it first leaves nothing to take).
  */
 export function useApproval(db: Db, tokens: readonly string[] | undefined, action: ApprovalAction, who: { id?: string | null | undefined; name: string }, use: ApprovalUse = {}): string {
   const now = new Date().toISOString();
   for (const token of tokens ?? []) {
-    const r = db.prepare(`SELECT a.id, a.approver, a.shift_id, a.cashier, a.cashier_id, a.subject, a.amount, a.scope, s.status AS shift_status
-                          FROM till_approvals a JOIN pos_shifts s ON s.id = a.shift_id
+    const r = db.prepare(`SELECT a.id, a.approver, a.shift_id, a.cashier, a.cashier_id, a.subject, a.amount, a.currency, a.gross, a.scope, s.status AS shift_status
+                          FROM till_approvals a LEFT JOIN pos_shifts s ON s.id = a.shift_id
                           WHERE a.id = ? AND a.action = ? AND a.used_at IS NULL AND a.expires_at >= ?`)
-      .get(token, action, now) as { id: string; approver: string; shift_id: string; cashier: string; cashier_id: string | null; subject: string | null; amount: number | null; scope: string | null; shift_status: string } | undefined;
+      .get(token, action, now) as { id: string; approver: string; shift_id: string | null; cashier: string; cashier_id: string | null; subject: string | null; amount: number | null;
+        currency: string | null; gross: number | null; scope: string | null; shift_status: string | null } | undefined;
     if (!r) continue;
-    if (use.shiftId ? r.shift_id !== use.shiftId : r.shift_status !== 'open') continue;
+    // at this shift; or, asked from another screen: one given at the office (no shift), or at a shift still open
+    if (use.shiftId ? r.shift_id !== use.shiftId : (r.shift_id !== null && r.shift_status !== 'open')) continue;
     if (r.cashier_id && who.id ? r.cashier_id !== who.id : r.cashier !== who.name) continue;
     const bound = BOUND[action];
     if (bound && action !== 'discount' && (r.subject ?? null) !== (use.subject ?? null)) continue;
     if (bound === 'floor' && (r.amount === null || !Number.isSafeInteger(use.value) || use.value! < Number(r.amount))) continue;
     if (bound === 'ceiling' && (r.amount === null || !Number.isSafeInteger(use.value) || use.value! > Number(r.amount))) continue;
+    // a price is approved in one currency: 100.00 dollars never stands for 10,000 dinars
+    if (action === 'price' && (r.currency ?? null) !== (use.currency ?? null)) continue;
+    // a discount was approved on a basket: it never becomes a larger share of a smaller one (8,000 off 55,000 is not
+    // 8,000 off 8,250)
+    if (action === 'discount' && (r.gross === null || !Number.isSafeInteger(use.gross) || use.gross! <= 0
+      || BigInt(use.value!) * BigInt(Number(r.gross)) > BigInt(Number(r.amount)) * BigInt(use.gross!))) continue;
     if (action === 'refund' && r.scope !== null) {
       let allowed: [number, number][] = [];
       try { allowed = JSON.parse(r.scope) as [number, number][]; } catch { allowed = []; }
@@ -171,7 +206,7 @@ export function useApproval(db: Db, tokens: readonly string[] | undefined, actio
     }
     const taken = db.prepare('UPDATE till_approvals SET used_at = ? WHERE id = ? AND used_at IS NULL').run(now, r.id);
     if (Number(taken.changes) !== 1) continue;
-    audit(db, who.name, 'approval_used', 'pos_shift', r.shift_id, { action, approver: r.approver, approval: r.id });
+    audit(db, who.name, 'approval_used', r.shift_id ? 'pos_shift' : 'invoice', r.shift_id ?? r.subject, { action, approver: r.approver, approval: r.id });
     return r.approver;
   }
   throw invalid([{ code: 'pos_needs_supervisor', action }]);

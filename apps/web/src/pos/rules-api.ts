@@ -4,17 +4,22 @@ import { sendOnce } from '../industry/send-once.ts';
 
 /** The till's rules and what goes with them (2.0, server till-rules.ts). */
 
-export type ApprovalAction = 'line_delete' | 'void' | 'price' | 'discount' | 'no_sale' | 'refund' | 'credit_over' | 'blind_view' | 'offline_sale';
+export type ApprovalAction = 'line_delete' | 'void' | 'price' | 'discount' | 'no_sale' | 'refund' | 'credit_over' | 'blind_view' | 'offline_sale' | 'rate';
 
 /**
  * What an approval is for, beside its action (the server keeps it with the approval and holds the use to it): a refund's
- * invoice and lines; a lower price's item, unit and price; a discount's amount; credit over the limit: the customer
- * and the amount on account; a kept sale the server refused: its receipt reference and what it is worth.
+ * invoice and lines; a lower price's item, unit, currency and price; a discount's amount and the basket it is given on;
+ * credit over the limit: the customer and the amount on account; a kept sale the server refused: its receipt
+ * reference and what it is worth; dollars at a rate away from the day's: the kind of sale and that very rate.
  */
 export interface ApprovalFor {
   invoiceId?: string; lines?: { lineNo: number; qtyMilli: number }[];
   itemId?: string; unit?: string; partyId?: string; reference?: string; amount?: number;
+  currency?: 'IQD' | 'USD'; gross?: number; rate?: { kind: 'notes' | 'sale'; rateX100: number };
 }
+
+/** The rate dollars are held to at the till today, and how far a typed one may be from it (per cent). */
+export interface RateRule { referenceX100: number; freePct: number; bandPct: number }
 
 export interface SupervisorRules { lineDelete: boolean; void: boolean; price: boolean; discountPct: number; noSale: boolean; refund: boolean; creditOver: boolean }
 export interface DisplayRules { lang: 'till' | 'ar' | 'en' | 'ku'; paymentText: string; slideshow: boolean }
@@ -29,6 +34,10 @@ export interface TillRulesView {
   hasPin: boolean;
   /** this person's PIN is from before 6 digits were asked for */
   pinShort?: boolean;
+  /** the day's dollar rate (the rate board's for today, else the company's); none from a server before 2.0's last fixes */
+  rate?: RateRule;
+  /** (an admin) wrong PINs hold someone's approvals locked right now */
+  pinLocked?: boolean;
   /** (an admin) the last time wrong PINs locked approvals */
   pinAlert?: { scope: 'cashier' | 'all'; cashier: string; tries: number; at: string } | null;
 }
@@ -72,6 +81,11 @@ export const tillRulesApi = {
   save: (input: TillRulesInput) => request<unknown>('PUT', '/api/pos/rules', input),
   setPin: (pin: string) => request<{ ok: true }>('PUT', '/api/pos/pin', { pin }),
   clearPinAlert: () => request<{ ok: true }>('DELETE', '/api/pos/pin-alert'),
+  /** an admin lifts the locks wrong PINs left (written to the audit log) */
+  unlockPins: () => request<{ ok: true }>('POST', '/api/pos/pin-unlock', {}),
+  /** a supervisor's PIN typed on an invoice screen for a refund there (no shift) */
+  approveRefund: (invoiceId: string, pin: string, lines?: { lineNo: number; qtyMilli: number }[]) =>
+    request<Approval>('POST', '/api/refund-approvals', { invoiceId, pin, ...(lines ? { lines } : {}) }),
   approve: (shiftId: string, action: ApprovalAction, pin: string, detail?: string, what: ApprovalFor = {}) =>
     request<Approval>('POST', '/api/pos/approve', { shiftId, action, pin, ...(detail ? { detail } : {}), ...what }),
   customer: (id: string) => request<{ id: string; balance: number; creditLimit: number | null; overLimit: boolean }>('GET', `/api/pos/customer/${id}`),

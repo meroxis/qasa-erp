@@ -121,7 +121,7 @@ describe("a supervisor's PIN", () => {
     // a discount over 10%: refused without the approval, taken with it, and the approval is used once
     const sale = { currency: 'IQD', discount: 1_000, lines: [tea(2)] };
     expect((await post(`/api/pos/shifts/${shift.id}/sales`, sale, who.las!)).json()).toMatchObject({ details: [{ code: 'pos_needs_supervisor', action: 'discount' }] });
-    const ok = await post('/api/pos/approve', { shiftId: shift.id, action: 'discount', pin: '407193', amount: 1_000 }, who.las!);
+    const ok = await post('/api/pos/approve', { shiftId: shift.id, action: 'discount', pin: '407193', amount: 1_000, gross: 5_500 }, who.las!);
     expect(ok.json()).toMatchObject({ approver: 'Raz', action: 'discount', used: false });
     expect((await post(`/api/pos/shifts/${shift.id}/sales`, { ...sale, approvals: [ok.json().token] }, who.las!)).statusCode).toBe(201);
     expect((await post(`/api/pos/shifts/${shift.id}/sales`, { ...sale, approvals: [ok.json().token] }, who.las!)).json()).toMatchObject({ details: [{ code: 'pos_needs_supervisor' }] });
@@ -175,7 +175,7 @@ describe("a supervisor's PIN", () => {
     expect((await put('/api/pos/pin', { pin: '407193' }, who.raz!)).statusCode).toBe(200);
     const shift = await openShift(who.las!);
     const guesses = Array.from({ length: 40 }, (_, i) => String(500000 + i)).concat('407193');
-    const answers = await Promise.all(guesses.map((pin) => post('/api/pos/approve', { shiftId: shift.id, action: 'discount', pin, amount: 1_000 }, who.las!)));
+    const answers = await Promise.all(guesses.map((pin) => post('/api/pos/approve', { shiftId: shift.id, action: 'discount', pin, amount: 1_000, gross: 10_000 }, who.las!)));
     expect(answers.filter((r) => r.json().details?.[0]?.code === 'pin_wrong').length).toBeLessThanOrEqual(5);
     expect(answers.at(-1)!.json().error).toBe('pin_locked');
   });

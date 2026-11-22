@@ -87,7 +87,7 @@ export const TILL_TEXT = {
   err_plan_limit_multiTill: ['صندوق واحد في كل خطة؛ الصندوق الثاني من مزايا Starter وPro وBusiness — راجع «الخطة والترخيص».', 'One till on every plan; a second is part of Starter, Pro and Business. See Plan & license.', 'یەک سندووق لە هەموو پلانێکدا؛ سندووقی دووەم بەشێکە لە Starter و Pro و Business — «پلان و مۆڵەت» ببینە.'],
   err_pos_usd_cash_not_here: ['أوراق الدولار تُؤخذ لبيع بالدينار يُدفع الآن.', 'Dollar notes are taken on a dinar sale paid now.', 'پارەی دۆلار بۆ فرۆشتنێکی دینار وەردەگیرێت کە ئێستا دەدرێت.'],
   err_pos_usd_cash_invalid: ['مبلغ الدولار غير صحيح.', 'The dollar amount isn’t right.', 'بڕی دۆلارەکە دروست نییە.'],
-  err_pos_usd_rate_far: ['سعر الدولار بعيد عن سعر الشركة. صححه.', 'The dollar rate is far from the company’s rate. Correct it.', 'نرخی دۆلار لە نرخی کۆمپانیا دوورە. ڕاستی بکەرەوە.'],
+  err_pos_usd_rate_far: ['سعر الدولار بعيد جداً عن سعر اليوم. صححه.', 'The dollar rate is too far from today’s rate. Correct it.', 'نرخی دۆلار زۆر لە نرخی ئەمڕۆ دوورە. ڕاستی بکەرەوە.'],
   err_pos_usd_cash_too_much: ['الدولارات أكثر من المطلوب بأكثر من ورقة 100 دولار.', 'The dollars are more than a 100-dollar note past what is due.', 'دۆلارەکان زیاتر لە پارەیەکی 100 دۆلاری لە پێویست زیاترن.'],
   err_scale_prefix_invalid: ['البادئة رقمان يبدآن بـ 2 (مثل 22)، حتى 10 بادئات.', 'A prefix is two digits starting with 2 (such as 22), up to 10 of them.', 'پێشگر دوو ژمارەیە کە بە 2 دەست پێدەکات (وەک 22)، تا 10 دانە.']
 } as const;
