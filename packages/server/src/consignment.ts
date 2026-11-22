@@ -205,11 +205,51 @@ function ccyValueOf(db: Db, item: ConsignmentItemRow, warehouseId: string, qtyMi
 const MOVE_INSERT = `INSERT INTO consignment_moves (id, item_id, supplier_id, warehouse_id, date, kind, source_type, source_id, qty_milli, value, currency, ccy_value, settlement_id, created_at)
                      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?)`;
 
+/**
+ * The moment a move is written, never the same twice in this process: the rows one stock move is split into (one per
+ * supplier whose goods it took) keep the order they were written in, which is the order a return gives them back in.
+ */
+let lastStamp = 0;
+function stamp(): string {
+  const now = Date.now();
+  lastStamp = now > lastStamp ? now : lastStamp + 1;
+  return new Date(lastStamp).toISOString();
+}
+
 function writeMove(db: Db, item: ConsignmentItemRow, m: { warehouseId: string; date: string; kind: MoveKind; sourceType: string; sourceId: string; qtyMilli: number; value: number; ccy: number }): void {
-  db.prepare(MOVE_INSERT).run(randomUUID(), item.item_id, item.supplier_id, m.warehouseId, m.date, m.kind, m.sourceType, m.sourceId, m.qtyMilli, m.value, item.currency, m.ccy, nowIso());
+  // (a dinar row is worth its dinars, whatever was worked out for it)
+  db.prepare(MOVE_INSERT).run(randomUUID(), item.item_id, item.supplier_id, m.warehouseId, m.date, m.kind, m.sourceType, m.sourceId, m.qtyMilli, m.value, item.currency, item.currency === 'IQD' ? m.value : m.ccy, stamp());
 }
 
 type StockMove = { itemId: string; warehouseId: string; date: string; qtyMilli: number; value: number; sourceType: string; sourceId: string };
+type Share = { supplierId: string; currency: CurrencyCode; qty: number; value: number; ccy: number };
+
+/**
+ * What a sale took of an item from each supplier and has not had back (its customers' returns, those returns
+ * cancelled, the sale itself cancelled), newest first: a sale takes an earlier supplier's goods first and the current
+ * supplier's after them, so what comes back goes to the current supplier's part first (round four of the review: a
+ * return used to go to one supplier only, whoever's goods the sale had taken).
+ */
+function openOfSale(db: Db, itemId: string, saleId: string): Share[] {
+  const rows = db.prepare(`SELECT supplier_id, currency, SUM(-qty_milli) AS q, SUM(-value) AS v, SUM(-ccy_value) AS c, MIN(CASE WHEN qty_milli < 0 THEN created_at END) AS first
+                           FROM consignment_moves
+                           WHERE item_id = ? AND kind = 'sold'
+                             AND ((source_id = ? AND source_type IN ('sale', 'sale_cancel'))
+                               OR (source_type IN ('sale_return', 'sale_return_cancel') AND source_id IN (SELECT id FROM invoices WHERE return_of = ?)))
+                           GROUP BY supplier_id, currency`).all(itemId, saleId, saleId) as { supplier_id: string; currency: CurrencyCode; q: number; v: number; c: number; first: string | null }[];
+  return rows.filter((r) => Number(r.q) > 0)
+    .sort((x, y) => (x.first === y.first ? x.supplier_id.localeCompare(y.supplier_id) : (y.first ?? '').localeCompare(x.first ?? '')))
+    .map((r) => ({ supplierId: r.supplier_id, currency: r.currency, qty: Number(r.q), value: Number(r.v), ccy: Number(r.c) }));
+}
+
+/** What a customer's return gave back of an item to each supplier and still stands (less what its cancel took so far), in the order given. */
+function givenByReturn(db: Db, itemId: string, returnId: string): Share[] {
+  const rows = db.prepare(`SELECT supplier_id, currency, SUM(qty_milli) AS q, MIN(created_at) AS first FROM consignment_moves
+                           WHERE item_id = ? AND kind = 'sold' AND source_id = ? AND source_type IN ('sale_return', 'sale_return_cancel')
+                           GROUP BY supplier_id, currency`).all(itemId, returnId) as { supplier_id: string; currency: CurrencyCode; q: number; first: string }[];
+  return rows.filter((r) => Number(r.q) > 0).sort((x, y) => (x.first === y.first ? x.supplier_id.localeCompare(y.supplier_id) : x.first.localeCompare(y.first)))
+    .map((r) => ({ supplierId: r.supplier_id, currency: r.currency, qty: Number(r.q), value: 0, ccy: 0 }));
+}
 
 /**
  * Called by addStockMove before every stock move is written (in its transaction). For an item on consignment: a
@@ -222,67 +262,99 @@ export function onStockMove(db: Db, move: StockMove): void {
   if (!item) return;
   if (move.qtyMilli > 0 && (move.sourceType === 'purchase' || move.sourceType === 'opening')) throw conflict('item_on_consignment', { itemId: move.itemId });
   const kind: MoveKind = move.sourceType === 'transfer' || move.sourceType === 'transfer_cancel' ? 'transfer' : 'sold';
-  // goods coming back from a sale (a customer's return, or the sale cancelled) are the supplier's whose goods were sold,
-  // at what they were sold at, even if the item has another supplier or terms now (accounting review #10)
+  const base = { warehouseId: move.warehouseId, date: move.date, kind, sourceType: move.sourceType, sourceId: move.sourceId };
+  // (a dinar row is worth its dinars: the supplier is owed what the goods are carried at)
+  const insert = (supplierId: string, currency: CurrencyCode, qtyMilli: number, value: number, ccy: number) =>
+    db.prepare(MOVE_INSERT).run(randomUUID(), move.itemId, supplierId, base.warehouseId, base.date, base.kind, base.sourceType, base.sourceId, qtyMilli, value, currency, currency === 'IQD' ? value : ccy, stamp());
+
+  // goods coming back from a sale (a customer's return, or the sale cancelled) are the suppliers' whose goods were
+  // sold, at what they were sold at, even if the item has another supplier or terms now (accounting review #10): each
+  // supplier the sale took goods from gets its own back, the last taken first, with the dollars that were owed for them
   if (move.qtyMilli > 0 && (move.sourceType === 'sale_return' || move.sourceType === 'sale_cancel')) {
     const saleId = move.sourceType === 'sale_cancel'
       ? move.sourceId
       : (db.prepare('SELECT return_of FROM invoices WHERE id = ?').get(move.sourceId) as { return_of: string | null } | undefined)?.return_of ?? null;
-    const sold = saleId ? db.prepare(`SELECT supplier_id, currency, SUM(qty_milli) AS q, SUM(ccy_value) AS c FROM consignment_moves
-                                       WHERE item_id = ? AND source_id = ? AND kind = 'sold' AND qty_milli < 0 GROUP BY supplier_id, currency`)
-      .get(move.itemId, saleId) as { supplier_id: string; currency: CurrencyCode; q: number; c: number } | undefined : undefined;
-    if (sold && Number(sold.q) < 0) {
-      const ccy = Math.round((Number(sold.c) * move.qtyMilli) / Number(sold.q));
-      db.prepare(MOVE_INSERT).run(randomUUID(), move.itemId, sold.supplier_id, move.warehouseId, move.date, 'sold', move.sourceType, move.sourceId, move.qtyMilli, move.value, sold.currency, ccy, nowIso());
-      return;
-    }
-  }
-  const base = { warehouseId: move.warehouseId, date: move.date, kind, sourceType: move.sourceType, sourceId: move.sourceId };
-  const insert = (supplierId: string, currency: CurrencyCode, qtyMilli: number, value: number, ccy: number) =>
-    db.prepare(MOVE_INSERT).run(randomUUID(), move.itemId, supplierId, base.warehouseId, base.date, base.kind, base.sourceType, base.sourceId, qtyMilli, value, currency, ccy, nowIso());
-
-  // the leg of a transfer that comes in carries what its leg that went out took, supplier by supplier: the same goods
-  // moved, so the dollars owed for them are the same in the other warehouse (never worked out again from dinars at
-  // that warehouse's average, nor from the agreed cost of today) — review of the 2.0 books #4
-  if (kind === 'transfer' && move.qtyMilli > 0) {
-    const legs = db.prepare(`SELECT supplier_id, currency, SUM(CASE WHEN qty_milli < 0 THEN -qty_milli ELSE 0 END) AS out_q, SUM(CASE WHEN qty_milli < 0 THEN -ccy_value ELSE 0 END) AS out_c,
-                                    SUM(CASE WHEN qty_milli > 0 THEN qty_milli ELSE 0 END) AS in_q, SUM(CASE WHEN qty_milli > 0 THEN ccy_value ELSE 0 END) AS in_c, MIN(created_at) AS first
-                             FROM consignment_moves WHERE item_id = ? AND source_type = ? AND source_id = ? GROUP BY supplier_id, currency ORDER BY first, supplier_id`)
-      .all(move.itemId, move.sourceType, move.sourceId) as { supplier_id: string; currency: CurrencyCode; out_q: number; out_c: number; in_q: number; in_c: number }[];
-    const open = legs.map((l) => ({ supplierId: l.supplier_id, currency: l.currency, qty: Number(l.out_q) - Number(l.in_q), ccy: Number(l.out_c) - Number(l.in_c) })).filter((l) => l.qty > 0);
+    const open = saleId ? openOfSale(db, move.itemId, saleId) : [];
     let left = move.qtyMilli;
-    let valueLeft = move.value;
-    const parts: { supplierId: string; currency: CurrencyCode; qty: number; ccy: number }[] = [];
-    for (const l of open) {
+    const parts: Share[] = [];
+    for (const o of open) {
       if (left <= 0) break;
-      const take = Math.min(left, l.qty);
-      parts.push({ supplierId: l.supplierId, currency: l.currency, qty: take, ccy: take === l.qty ? l.ccy : Math.round((l.ccy * take) / l.qty) });
+      const take = Math.min(left, o.qty);
+      const share = (of: number) => Math.max(0, take === o.qty ? of : Math.round((of * take) / o.qty));
+      parts.push({ supplierId: o.supplierId, currency: o.currency, qty: take, value: share(o.value), ccy: share(o.ccy) });
       left -= take;
     }
-    if (left === 0 && parts.length) {
+    if (parts.length) {
+      // more came back than the sale's rows know of (a sale from before the item was on consignment): the rest is the
+      // current supplier's, like any goods that come in
+      if (left > 0) parts.push({ supplierId: item.supplier_id, currency: item.currency, qty: left, value: 0, ccy: -1 });
+      // the stock move's own dinars, to the dinar: each supplier's share of what the sale took, the last one the rest
+      let valueLeft = move.value;
       parts.forEach((part, i) => {
-        const value = i === parts.length - 1 ? valueLeft : Math.round((move.value * part.qty) / move.qtyMilli);
+        const value = i === parts.length - 1 ? valueLeft : Math.min(part.value, valueLeft);
         valueLeft -= value;
-        insert(part.supplierId, part.currency, part.qty, value, part.currency === 'IQD' ? value : part.ccy);
+        const ccy = part.ccy < 0 ? ccyValueOf(db, item, move.warehouseId, part.qty, value) : part.ccy;
+        insert(part.supplierId, part.currency, part.qty, value, ccy);
       });
       return;
     }
   }
 
-  // goods going out (a sale, a write-off, a transfer's first leg): what is on hand of an earlier supplier's goods (a
-  // unit a customer brought back after the item changed supplier) goes first, and is owed to that supplier at what it
-  // is carried at; the rest is the current supplier's — review of the 2.0 books #11
+  // the leg of a transfer that comes in carries what its leg that went out took, supplier by supplier: the same goods
+  // moved, so the dollars owed for them are the same in the other warehouse (never worked out again from dinars at
+  // that warehouse's average, nor from the agreed cost of today) — review of the 2.0 books #4. And the same dinars
+  // (round four): each supplier's goods arrive carried at what they left at, never at a share of the move by
+  // quantity, which moved dinars from one supplier's goods to another's on the way (and with them what a dinar
+  // supplier is owed). What the shelf's average put beyond that stays with the current supplier, as where it left.
+  if (kind === 'transfer' && move.qtyMilli > 0) {
+    const legs = db.prepare(`SELECT supplier_id, currency,
+                                    SUM(CASE WHEN warehouse_id <> ? THEN -qty_milli ELSE 0 END) AS out_q, SUM(CASE WHEN warehouse_id <> ? THEN -value ELSE 0 END) AS out_v,
+                                    SUM(CASE WHEN warehouse_id <> ? THEN -ccy_value ELSE 0 END) AS out_c,
+                                    SUM(CASE WHEN warehouse_id = ? THEN qty_milli ELSE 0 END) AS in_q, SUM(CASE WHEN warehouse_id = ? THEN value ELSE 0 END) AS in_v,
+                                    SUM(CASE WHEN warehouse_id = ? THEN ccy_value ELSE 0 END) AS in_c, MIN(created_at) AS first
+                             FROM consignment_moves WHERE item_id = ? AND source_type = ? AND source_id = ? GROUP BY supplier_id, currency ORDER BY first, supplier_id`)
+      .all(move.warehouseId, move.warehouseId, move.warehouseId, move.warehouseId, move.warehouseId, move.warehouseId, move.itemId, move.sourceType, move.sourceId) as
+      { supplier_id: string; currency: CurrencyCode; out_q: number; out_v: number; out_c: number; in_q: number; in_v: number; in_c: number }[];
+    const open = legs.map((l) => ({
+      supplierId: l.supplier_id, currency: l.currency, qty: Number(l.out_q) - Number(l.in_q), value: Number(l.out_v) - Number(l.in_v), ccy: Number(l.out_c) - Number(l.in_c)
+    })).filter((l) => l.qty > 0);
+    let left = move.qtyMilli;
+    const parts: Share[] = [];
+    for (const l of open) {
+      if (left <= 0) break;
+      const take = Math.min(left, l.qty);
+      const share = (of: number) => (take === l.qty ? of : Math.round((of * take) / l.qty));
+      parts.push({ supplierId: l.supplierId, currency: l.currency, qty: take, value: share(l.value), ccy: share(l.ccy) });
+      left -= take;
+    }
+    if (left === 0 && parts.length) {
+      const rest = move.value - parts.reduce((t, x) => t + x.value, 0);
+      const mine = parts.find((x) => x.supplierId === item.supplier_id && x.currency === item.currency);
+      if (mine) mine.value += rest;
+      for (const part of parts) insert(part.supplierId, part.currency, part.qty, part.value, part.ccy);
+      if (!mine && rest !== 0) insert(item.supplier_id, item.currency, 0, rest, 0);
+      return;
+    }
+  }
+
+  // goods going out (a sale, a write-off, a transfer's first leg, a customer's return cancelled): what is on hand of
+  // an earlier supplier's goods (a unit a customer brought back after the item changed supplier) goes first, and is
+  // owed to that supplier at what it is carried at; the rest is the current supplier's — review of the 2.0 books #11.
+  // A customer's return cancelled takes first from the suppliers that return gave goods back to (as far as they
+  // still have them), then as any goods going out.
   if (move.qtyMilli < 0) {
-    const layers = (db.prepare(`SELECT supplier_id, currency, SUM(qty_milli) AS q, SUM(value) AS v, SUM(ccy_value) AS c, MIN(created_at) AS first FROM consignment_moves
+    const isCurrent = (l: { supplier_id: string; currency: CurrencyCode }) => l.supplier_id === item.supplier_id && l.currency === item.currency;
+    const onShelf = db.prepare(`SELECT supplier_id, currency, SUM(qty_milli) AS q, SUM(value) AS v, SUM(ccy_value) AS c, MIN(created_at) AS first FROM consignment_moves
                                 WHERE item_id = ? AND warehouse_id = ? GROUP BY supplier_id, currency HAVING SUM(qty_milli) > 0 ORDER BY first, supplier_id`)
-      .all(move.itemId, move.warehouseId) as { supplier_id: string; currency: CurrencyCode; q: number; v: number; c: number }[])
-      .filter((l) => l.supplier_id !== item.supplier_id || l.currency !== item.currency);
+      .all(move.itemId, move.warehouseId) as { supplier_id: string; currency: CurrencyCode; q: number; v: number; c: number }[];
+    const layers = onShelf.filter((l) => !isCurrent(l));
+    const given = move.sourceType === 'sale_return_cancel' ? givenByReturn(db, move.itemId, move.sourceId) : [];
     if (layers.length) {
       let left = -move.qtyMilli;
       let valueLeft = -move.value;
-      for (const l of layers) {
-        if (left <= 0) break;
-        const take = Math.min(left, Number(l.q));
+      const takeFrom = (l: { supplier_id: string; currency: CurrencyCode; q: number; v: number; c: number }, most: number) => {
+        const take = Math.min(left, Number(l.q), most);
+        if (take <= 0) return;
         // at what that supplier's goods are carried at, and all of it with the last of them (costOut), whatever the
         // stock's one average made of this move: capping it at the move's value left dinars on a supplier with no
         // goods (verify report #14). The difference is the current supplier's, below
@@ -291,12 +363,25 @@ export function onStockMove(db: Db, move: StockMove): void {
         insert(l.supplier_id, l.currency, -take, -value, -ccy);
         left -= take;
         valueLeft -= value;
+        l.q = Number(l.q) - take; l.v = Number(l.v) - value; l.c = Number(l.c) - ccy;
+      };
+      // what the cancelled return gave the current supplier stays the current supplier's to give (it is not taken
+      // from an earlier supplier's goods instead)
+      const own = ledgerOfSupplier(db, move.itemId, move.warehouseId, item.supplier_id, item.currency);
+      let ownFirst = 0;
+      for (const g of given) {
+        if (g.supplierId === item.supplier_id && g.currency === item.currency) { ownFirst += g.qty; continue; }
+        const layer = layers.find((l) => l.supplier_id === g.supplierId && l.currency === g.currency);
+        if (layer) takeFrom(layer, g.qty);
       }
+      const reserved = Math.min(left, Math.max(0, own.qtyMilli), ownFirst);
+      left -= reserved;
+      for (const l of layers) takeFrom(l, Infinity);
+      left += reserved;
       // the current supplier's part; with none of its goods in this move, what the stock's one average cost put on
       // the earlier supplier's goods beyond what they are carried at (or short of it) stays with the current
       // supplier's (no quantity): its goods carry it, and it goes out with the last of them
       if (left > 0 || valueLeft !== 0) {
-        const own = ledgerOfSupplier(db, move.itemId, move.warehouseId, item.supplier_id, item.currency);
         const ccy = item.currency === 'IQD' ? valueLeft : left > 0 ? costOut(own.qtyMilli, own.ccy, left) : 0;
         insert(item.supplier_id, item.currency, -left, -valueLeft, -ccy);
       }
@@ -603,6 +688,9 @@ export function postConsignmentDoc(db: Db, id: string, actor: Actor, lang: Consi
       // them), when another supplier's unit shares the shelf; never a share of the shelf's average, which would leave
       // dinars on a supplier with no goods (verify report #14)
       const own = owns.get(l.itemId) ?? ledgerOfSupplier(db, l.itemId, row.warehouse_id, item.supplier_id, item.currency);
+      // … and never more than this supplier's own goods here: a unit of an earlier supplier's that a customer brought
+      // back is not this supplier's to take (round four of the review: it left this supplier with less than nothing)
+      if (s.qtyMilli >= l.qtyMilli && own.qtyMilli < l.qtyMilli) errors.push({ code: 'stock_insufficient', line: l.seq, available: Math.max(0, own.qtyMilli) });
       const mixed = own.qtyMilli !== led.qtyMilli && own.qtyMilli >= l.qtyMilli;
       const value = mixed ? costOut(own.qtyMilli, own.value, l.qtyMilli) : costOut(s.qtyMilli, s.value, l.qtyMilli);
       const ccy = currency === 'IQD' ? value : mixed ? costOut(own.qtyMilli, own.ccy, l.qtyMilli) : costOut(led.qtyMilli, led.ccy, l.qtyMilli);
@@ -676,6 +764,7 @@ export function cancelConsignmentDoc(db: Db, id: string, actor: Actor, date?: st
   const moves = db.prepare('SELECT item_id, supplier_id, currency, qty_milli, value, ccy_value FROM consignment_moves WHERE source_type = ? AND source_id = ? ORDER BY created_at, id')
     .all(sourceType, id) as Record<string, unknown>[];
   const remaining = new Map<string, { qtyMilli: number; value: number }>();
+  const ownLeft = new Map<string, number>();
   const errors: { code: string; itemId: string; available?: number }[] = [];
   for (const m of moves) {
     const qty = Number(m.qty_milli);
@@ -683,7 +772,11 @@ export function cancelConsignmentDoc(db: Db, id: string, actor: Actor, date?: st
     const itemId = String(m.item_id);
     const s = remaining.get(itemId) ?? stockOf(db, itemId, row.warehouse_id);
     const after = { qtyMilli: s.qtyMilli - qty, value: s.value - Number(m.value) };
-    if (after.qtyMilli < 0) errors.push({ code: 'stock_insufficient', itemId, available: Math.max(0, s.qtyMilli) });
+    // (the goods of that very supplier: an earlier supplier's unit a customer brought back does not stand in for them)
+    const ownKey = `${itemId}|${String(m.supplier_id)}|${String(m.currency)}`;
+    const own = ownLeft.get(ownKey) ?? ledgerOfSupplier(db, itemId, row.warehouse_id, String(m.supplier_id), m.currency as CurrencyCode).qtyMilli;
+    ownLeft.set(ownKey, own - qty);
+    if (after.qtyMilli < 0 || own < qty) errors.push({ code: 'stock_insufficient', itemId, available: Math.max(0, Math.min(s.qtyMilli, own)) });
     else if (after.value < 0 || (after.qtyMilli === 0 && after.value !== 0)) errors.push({ code: 'stock_already_used', itemId });
     remaining.set(itemId, after);
   }

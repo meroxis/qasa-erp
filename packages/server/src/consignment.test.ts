@@ -422,6 +422,99 @@ describe('goods on consignment', () => {
     expect(balanceOf(CONSIGNMENT_HELD_CODE)).toBe(-(db.prepare("SELECT COALESCE(SUM(value), 0) AS v FROM consignment_moves WHERE kind IN ('received', 'returned')").get() as { v: number }).v);
   });
 
+  describe('a sale that took two suppliers\' goods (round four of the review)', () => {
+    let other: string;
+    const rowsOf = (sourceType: string, sourceId: string) => (db.prepare('SELECT supplier_id, qty_milli, value, currency, ccy_value FROM consignment_moves WHERE source_type = ? AND source_id = ? ORDER BY created_at').all(sourceType, sourceId) as
+      { supplier_id: string; qty_milli: number; value: number; currency: string; ccy_value: number }[])
+      .map((r) => [r.supplier_id === supplierId ? 'first' : 'second', Number(r.qty_milli), Number(r.value), Number(r.ccy_value)]);
+    const owed = async (id: string, currency: 'IQD' | 'USD') => (await ok('GET', `/api/consignment/settlements/preview?supplierId=${id}&currency=${currency}&date=2026-11-20`)).amount as number;
+    /** the first bakery's loaf (dinars, 900) a customer brought back, on a shelf with five of the second bakery's (a dollar each, at 1,400) */
+    async function mixedShelf(): Promise<{ first: { id: string } }> {
+      await ok('POST', '/api/plan/trial');
+      other = (await ok('POST', '/api/parties', { type: 'supplier', name: 'Second Bakery' })).id;
+      await ok('PUT', `/api/consignment/items/${breadId}`, { supplierId, currency: 'IQD', unitCost: 900 });
+      expect((await postDoc(receipt([{ itemId: breadId, qtyMilli: 2_000 }]))).statusCode).toBe(200);
+      const first = await invoiceSale(2);
+      await ok('PUT', `/api/consignment/items/${breadId}`, { supplierId: other, currency: 'USD', unitCost: 100 });
+      expect((await postDoc(receipt([{ itemId: breadId, qtyMilli: 5_000 }], { supplierId: other, date: '2026-11-13', rateX100: 140_000 }))).statusCode).toBe(200);
+      expect((await call('POST', `/api/invoices/${first.id}/returns`, { date: '2026-11-14', payment: 'credit', lines: [{ lineNo: 1, qtyMilli: 1_000 }] })).statusCode).toBe(201);
+      return { first };
+    }
+
+    it('gives each supplier its own goods back on a customer\'s return, the last taken first, with the dollars owed for them', async () => {
+      await mixedShelf();
+      // three loaves sell: the first bakery's one (900), then two of the second's (2 dollars; the rest of the move's dinars)
+      const sale = await invoiceSale(3, '2026-11-15');
+      expect(rowsOf('sale', sale.id)).toEqual([['first', -1_000, -900, -900], ['second', -2_000, -3_050, -200]]);
+      expect(await owed(supplierId, 'IQD')).toBe(1_800);
+      expect(await owed(other, 'USD')).toBe(200);
+      // two come back: the second bakery's two, with their two dollars (they used to go to one supplier only)
+      const two = await call('POST', `/api/invoices/${sale.id}/returns`, { date: '2026-11-16', payment: 'credit', lines: [{ lineNo: 1, qtyMilli: 2_000 }] });
+      expect(two.statusCode, two.body).toBe(201);
+      expect(rowsOf('sale_return', two.json().id).map((r) => [r[0], r[1], r[3]])).toEqual([['second', 2_000, 200]]);
+      expect(await owed(other, 'USD')).toBe(0);
+      expect(await owed(supplierId, 'IQD')).toBe(1_800);
+      // the third: the first bakery's loaf, a dinar row worth its dinars
+      const third = await call('POST', `/api/invoices/${sale.id}/returns`, { date: '2026-11-16', payment: 'credit', lines: [{ lineNo: 1, qtyMilli: 1_000 }] });
+      expect(third.statusCode, third.body).toBe(201);
+      const back = rowsOf('sale_return', third.json().id);
+      expect(back.map((r) => [r[0], r[1]])).toEqual([['first', 1_000]]);
+      expect(back[0]![3]).toBe(back[0]![2]);
+      expect(await owed(supplierId, 'IQD')).toBe(1_800 - Number(back[0]![2]));
+      // that return cancelled: the loaf leaves again, the first bakery's, at what it is carried at
+      expect((await call('POST', `/api/invoices/${third.json().id}/cancel`, {})).statusCode).toBe(200);
+      expect(rowsOf('sale_return_cancel', third.json().id).filter((r) => r[1] !== 0).map((r) => [r[0], r[1]])).toEqual([['first', -1_000]]);
+      expect(await owed(supplierId, 'IQD')).toBe(1_800);
+      expect(db.prepare("SELECT COUNT(*) AS n FROM consignment_moves WHERE currency = 'IQD' AND ccy_value <> value").get()).toMatchObject({ n: 0 });
+      // the suppliers' side of the stock is the stock
+      expect(db.prepare('SELECT SUM(qty_milli) AS q, SUM(value) AS v FROM consignment_moves').get()).toMatchObject(stock(breadId));
+    });
+
+    it('puts a cancelled sale\'s goods back on both suppliers as they were taken', async () => {
+      await mixedShelf();
+      const before = db.prepare('SELECT supplier_id, SUM(qty_milli) AS q, SUM(value) AS v, SUM(ccy_value) AS c FROM consignment_moves GROUP BY supplier_id ORDER BY supplier_id').all();
+      const sale = await invoiceSale(3, '2026-11-15');
+      expect((await call('POST', `/api/invoices/${sale.id}/cancel`, {})).statusCode).toBe(200);
+      expect(rowsOf('sale_cancel', sale.id)).toEqual([['second', 2_000, 3_050, 200], ['first', 1_000, 900, 900]]);
+      expect(db.prepare('SELECT supplier_id, SUM(qty_milli) AS q, SUM(value) AS v, SUM(ccy_value) AS c FROM consignment_moves GROUP BY supplier_id ORDER BY supplier_id').all()).toEqual(before);
+      expect(await owed(supplierId, 'IQD')).toBe(900);
+      expect(await owed(other, 'USD')).toBe(0);
+    });
+
+    it('sends back to a supplier no more than its own goods, and cancels a receipt only while its own goods are there', async () => {
+      await mixedShelf();
+      // six loaves on the shelf, five of them the second bakery's
+      const six = await postDoc({ kind: 'return', date: '2026-11-15', supplierId: other, warehouseId, rateX100: 140_000, lines: [{ itemId: breadId, qtyMilli: 6_000 }] });
+      expect(six.statusCode).toBe(400);
+      expect(six.json().details).toEqual([{ code: 'stock_insufficient', line: 1, available: 5_000 }]);
+      // one of the second bakery's sells; its receipt of five can't be undone with the first bakery's loaf standing in
+      await ok('POST', '/api/consignment/settlements', { supplierId, currency: 'IQD', date: '2026-11-14' });
+      const sale = await ok('POST', '/api/invoices', { kind: 'sale', date: '2026-11-15', partyId: customerId, warehouseId, currency: 'IQD', rateX100: 100, payment: 'credit', discount: 0, lines: [{ itemId: breadId, qtyMilli: 2_000, unitPrice: 2_000 }] });
+      await ok('POST', `/api/invoices/${sale.id}/post`, {});
+      expect((await call('POST', `/api/invoices/${sale.id}/returns`, { date: '2026-11-16', payment: 'credit', lines: [{ lineNo: 1, qtyMilli: 2_000 }] })).statusCode).toBe(201);
+      const five = db.prepare("SELECT id FROM consignment_docs WHERE supplier_id = ? AND kind = 'receipt'").get(other) as { id: string };
+      expect((await call('POST', `/api/consignment/docs/${five.id}/cancel`, {})).statusCode).toBe(200);
+      const left = (db.prepare('SELECT supplier_id, SUM(qty_milli) AS q FROM consignment_moves GROUP BY supplier_id').all() as { supplier_id: string; q: number }[]).map((r) => [r.supplier_id === supplierId ? 'first' : 'second', Number(r.q)]).sort();
+      expect(left).toEqual([['first', 1_000], ['second', 0]]);
+    });
+
+    it('moves each supplier\'s goods to another warehouse carried at what they left at', async () => {
+      await mixedShelf();
+      const w2 = (await ok('POST', '/api/warehouses', { code: 'W2', name: { ar: 'مخزن ٢', en: 'Second store', ku: 'کۆگای ٢' } })).id;
+      const transfer = await ok('POST', '/api/stock-docs', { kind: 'transfer', date: '2026-11-15', warehouseId, toWarehouseId: w2, lines: [{ itemId: breadId, qtyMilli: 6_000 }] });
+      await ok('POST', `/api/stock-docs/${transfer.id}/post`, {});
+      // (it used to arrive as a sixth of the move's dinars on the first bakery's loaf: 1,317 instead of 900)
+      const there = (db.prepare('SELECT supplier_id, SUM(qty_milli) AS q, SUM(value) AS v, SUM(ccy_value) AS c FROM consignment_moves WHERE warehouse_id = ? GROUP BY supplier_id').all(w2) as { supplier_id: string; q: number; v: number; c: number }[])
+        .map((r) => [r.supplier_id === supplierId ? 'first' : 'second', Number(r.q), Number(r.v), Number(r.c)]).sort();
+      expect(there).toEqual([['first', 1_000, 900, 900], ['second', 5_000, 7_000, 500]]);
+      const sale = await ok('POST', '/api/invoices', { kind: 'sale', date: '2026-11-16', partyId: customerId, warehouseId: w2, currency: 'IQD', rateX100: 100, payment: 'credit', discount: 0, lines: [{ itemId: breadId, qtyMilli: 6_000, unitPrice: 2_000 }] });
+      await ok('POST', `/api/invoices/${sale.id}/post`, {});
+      // each is owed what it delivered: two loaves at 900, five dollars
+      expect(await owed(supplierId, 'IQD')).toBe(1_800);
+      expect(await owed(other, 'USD')).toBe(500);
+    });
+  });
+
   it('keeps batches and expiry dates for consigned goods', async () => {
     await ok('POST', '/api/plan/trial');
     const milk = (await ok('POST', '/api/items', { code: 'MILK', name: { ar: 'حليب', en: 'Milk', ku: 'شیر' }, unit: 'piece', salePrice: 1_500, saleCurrency: 'IQD', trackExpiry: true })).id;
