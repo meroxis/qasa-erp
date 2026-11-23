@@ -29,6 +29,33 @@ jobs:
       - run: npm test
       - run: npm run build:demo -w @qasa/web
 
+  # The compiled licence checks as a Windows PC gets them: built the way the release builds them, which stops when the
+  # addon still asks Windows for the Visual C++ runtime (a new PC has none, and the app then checks no licence and no
+  # free month: native/licence/.cargo/config.toml), then loaded by Node.
+  licence-windows:
+    runs-on: windows-latest
+    name: Licence addon on Windows
+
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+
+      - name: Build
+        shell: bash
+        run: |
+          rustup toolchain install stable --profile minimal
+          rustup default stable
+          node native/licence/build.mjs
+
+      - name: Load
+        shell: bash
+        run: node -e "const m = require('./native/licence/dist/qasa_licence.node'); if (!m.publicKeys().length || typeof m.machineId('x') !== 'string') process.exit(1); console.log('loaded, keys:', m.publicKeys().length)"
+
   # The phone app (apps/mobile) is not in the workspace above: its own packages, its type check and its tests (the
   # protocol client, the outbox, the PIN rule). Nothing is built for a phone here.
   phone:

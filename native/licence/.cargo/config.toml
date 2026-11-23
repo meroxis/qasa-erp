@@ -1,0 +1,12 @@
+# The Windows addon carries Microsoft's C runtime inside it (static CRT).
+#
+# Built the usual way it needs VCRUNTIME140.dll, which Windows itself does not have: it comes with the Visual C++
+# Redistributable, installed by some other program or not at all. On a new PC the addon then does not load, and the
+# app can check no licence and no free month: every key is "not valid" and the trial "has ended" (found with a shop's
+# new till PC, 2.0.0-beta.2; 1.6.0 and earlier have the same fault). native/licence/build.mjs stops a Windows build
+# whose addon still asks for that runtime, and the "Licence addon on Windows" job of tests.yml builds and loads it.
+[target.x86_64-pc-windows-msvc]
+rustflags = ["-C", "target-feature=+crt-static"]
+
+[target.aarch64-pc-windows-msvc]
+rustflags = ["-C", "target-feature=+crt-static"]
