@@ -3,7 +3,8 @@ import { describe, expect, it } from 'vitest';
 // @ts-expect-error a plain script of the addon's build, with no types of its own
 import { vcRuntimeNeeded } from '../../../native/licence/vc-runtime.mjs';
 
-const read = (path: string) => readFileSync(new URL(`../../../${path}`, import.meta.url), 'utf8');
+// (line ends as Linux has them: a Windows checkout, as the release build's, gives the files \r\n)
+const read = (path: string) => readFileSync(new URL(`../../../${path}`, import.meta.url), 'utf8').replace(/\r\n/g, '\n');
 const needed = vcRuntimeNeeded as (file: Buffer) => string[];
 
 describe('the Windows licence addon needs no Visual C++ runtime (a new PC has none)', () => {
@@ -37,6 +38,8 @@ describe('the Windows licence addon needs no Visual C++ runtime (a new PC has no
     expect(job).toContain('node native/licence/build.mjs');
     expect(job).toContain("require('./native/licence/dist/qasa_licence.node')");
     expect(job).toContain('persist-credentials: false');
+    // and the app's tests run there too, as on release day (2.0.0-beta.3's run failed on a test only Windows failed)
+    expect(job).toMatch(/- run: npm ci\n\s+- run: npm test\n/);
     expect(read('.github/workflows/release.yml')).toContain('node native/licence/build.mjs');
   });
 

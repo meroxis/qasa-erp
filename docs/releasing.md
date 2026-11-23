@@ -254,9 +254,9 @@ version that can't be applied is reported as `update_failed`, never as a damaged
 app never offers to set it aside, and a try that failed removes no older copy from before an update. Card, FIB, ZainCash and Qi at
 the till are off in 2.0.0 (`TILL_CARD_PAYMENTS`), so the notes ask for waiting sales to be sent before the update.
 
-0. **A beta first** (the owner's choice): `2.0.0-beta.3` is the current one. A beta goes to the copies that joined the beta, from the release
+0. **A beta first** (the owner's choice): `2.0.0-beta.4` is the current one (beta.3 was tagged and not published: two tests failed on the Windows runner only, so the tests of every pull request now run on Windows too). A beta goes to the copies that joined the beta, from the release
    branches of the app and Pro (nothing is merged into `main` for a beta), with notes of its own
-   (`release-notes/2.0.0-beta.3.md`: what joining means, what to test, what is known). `2.0.0-beta.1` was tagged
+   (`release-notes/2.0.0-beta.4.md`: what joining means, what to test, what is known). `2.0.0-beta.1` was tagged
    and never published: its run stopped because the build had no `beta.yml` (fixed in the workflow, below). 2.0.0 follows when the till has
    been tried on shops' own PCs: set the version back to `2.0.0` in `apps/desktop/package.json`,
    `packages/core/src/version.ts` and `package-lock.json`, merge both branches, and go on below.

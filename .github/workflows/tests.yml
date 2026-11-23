@@ -32,9 +32,11 @@ jobs:
   # The compiled licence checks as a Windows PC gets them: built the way the release builds them, which stops when the
   # addon still asks Windows for the Visual C++ runtime (a new PC has none, and the app then checks no licence and no
   # free month: native/licence/.cargo/config.toml), then loaded by Node.
+  # Then the app's own tests on Windows, with that addon, as the release build runs them (it adds the Pro module's):
+  # a test that only fails there (line ends, slower timing) is found here, not on release day.
   licence-windows:
     runs-on: windows-latest
-    name: Licence addon on Windows
+    name: Windows (licence addon, tests)
 
     steps:
       - uses: actions/checkout@v5
@@ -44,6 +46,7 @@ jobs:
       - uses: actions/setup-node@v5
         with:
           node-version: 24
+          cache: npm
 
       - name: Build
         shell: bash
@@ -55,6 +58,9 @@ jobs:
       - name: Load
         shell: bash
         run: node -e "const m = require('./native/licence/dist/qasa_licence.node'); if (!m.publicKeys().length || typeof m.machineId('x') !== 'string') process.exit(1); console.log('loaded, keys:', m.publicKeys().length)"
+
+      - run: npm ci
+      - run: npm test
 
   # The phone app (apps/mobile) is not in the workspace above: its own packages, its type check and its tests (the
   # protocol client, the outbox, the PIN rule). Nothing is built for a phone here.
