@@ -36,6 +36,10 @@ export const PRODUCT_LOOKUP_TEXT = {
   plk_takePhoto: ['التقط صورة', 'Take a photo', 'وێنە بگرە'],
   plk_chooseFile: ['اختر ملفاً', 'Choose a file', 'فایلێک هەڵبژێرە'],
   // the items list
+  plk_findOne: ['ابحث عن صورة', 'Find a picture', 'بەدوای وێنەدا بگەڕێ'],
+  plk_noneForItem: ['لم توجد صورة لهذا الباركود.', 'No picture was found for this barcode.', 'هیچ وێنەیەک بۆ ئەم بارکۆدە نەدۆزرایەوە.'],
+  plk_busyOne: ['عمليات بحث كثيرة الآن. حاول بعد دقيقة.', 'Too many searches just now. Try again in a minute.', 'ئێستا گەڕان زۆرە. دوای خولەکێک هەوڵ بدەرەوە.'],
+  plk_unreachableOne: ['تعذّر الوصول إلى قاعدة البيانات (تحقق من الإنترنت).', 'The database could not be reached (check the internet).', 'نەتوانرا بگەینە بنکەدراوەکە (ئینتەرنێتەکە بپشکنە).'],
   plk_findAll: ['البحث عن صور للمواد التي بلا صورة', 'Find pictures for items without one', 'گەڕان بەدوای وێنە بۆ ئەو کاڵایانەی وێنەیان نییە'],
   plk_findAllHelp: [
     'يبحث البرنامج بباركود كل مادة ليس لها صورة، واحدة بعد أخرى وبهدوء في الخلفية (نحو ست مواد في الدقيقة). لا يستبدل صورة موجودة أبداً. يمكنك إغلاق هذه النافذة ومتابعة عملك.',

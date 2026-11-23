@@ -1,8 +1,8 @@
 import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import { creditNames, PRODUCT_SOURCE_NAMES, publicBarcode, type ProductSource } from '@qasa/core';
-import { ErrorBox, Icon, Modal, useMay } from '../components.tsx';
+import { ErrorBox, Icon, Modal, useMay, useToast } from '../components.tsx';
 import { useI18n } from '../i18n.ts';
-import { refreshItemImages, type PreparedPicture } from './ItemImage.tsx';
+import { refreshItemImages, saveItemPicture, type PreparedPicture } from './ItemImage.tsx';
 import { western } from './item-quick-add.ts';
 import { productLookupApi, type BulkStatus, type LookupSettings, type NameSuggestion, type ProductLookupResult } from './product-lookup-api.ts';
 
@@ -195,6 +195,91 @@ export function ProductLookupPanel({ barcode, picture, onPicture, onName }: {
   }
   if (shows === 'looking' || found?.state !== 'done') return <div className="muted small product-lookup" role="status">{t('plk_looking')}</div>;
   return <LookupResultView code={code} result={found.result} picture={picture} onPicture={onPicture} onName={onName} />;
+}
+
+/* ---------- on an item that is already there ---------- */
+
+/**
+ * Whether an item's page offers "Find a picture": the setting is on, the person may look up and may change items,
+ * and the item carries a manufacturer's barcode (the shop's own codes are never sent anywhere).
+ */
+export function findPictureShows(known: LookupSettings | null, barcode: string | null | undefined, may: { look: boolean; edit: boolean }): string | null {
+  if (!known?.available || !known.enabled || !may.look || !may.edit) return null;
+  return publicBarcode(western(barcode ?? ''));
+}
+
+/** What a search for one item's picture answered: the picture with "Use this picture", or one plain line. */
+export function FoundPictureOffer({ result, busy, onUse, onCancel }: { result: ProductLookupResult; busy: boolean; onUse(): void; onCancel(): void }) {
+  const { t } = useI18n();
+  const image = result.found ? result.image ?? null : null;
+  if (!image || !result.source) {
+    const key = result.found || result.reason === 'not_found' || result.reason === 'own' ? 'plk_noneForItem'
+      : result.reason === 'busy' ? 'plk_busyOne' : result.reason === 'off' ? 'plk_endOff' : 'plk_unreachableOne';
+    return <div className="muted small product-lookup" role="status" style={{ textAlign: 'center' }}>{t(key)}</div>;
+  }
+  return (
+    <div className="stack product-lookup" style={{ gap: 6, alignItems: 'center' }} role="status">
+      <img src={`data:${image.mime};base64,${image.data}`} alt={t('plk_found')} width={72} height={72}
+        style={{ inlineSize: 72, blockSize: 72, objectFit: 'contain', borderRadius: 'var(--r-md)', background: 'var(--surface)' }} />
+      <PictureSourceLine source={result.source} />
+      <div className="row" style={{ gap: 6, justifyContent: 'center', flexWrap: 'wrap' }}>
+        <button type="button" className="btn primary small" disabled={busy} onClick={onUse}>{t('plk_useThis')}</button>
+        <button type="button" className="btn ghost small" disabled={busy} onClick={onCancel}>{t('cancel')}</button>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * "Find a picture" under the picture of an item that is already there: asks the open databases for this one barcode
+ * when the button is pressed (never by itself), shows what came back, and saves it only when "Use this picture" is
+ * pressed, so a picture the shop chose is never replaced without a say.
+ */
+export function FindItemPicture({ itemId, barcode }: { itemId: string; barcode: string | null | undefined }) {
+  const { t } = useI18n();
+  const can = useMay();
+  const toast = useToast();
+  const known = useLookupSettings();
+  const code = findPictureShows(known, barcode, { look: can('productLookup'), edit: can('item') });
+  const [state, setState] = useState<{ code: string; looking: true } | { code: string; looking: false; result: ProductLookupResult } | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<unknown>(null);
+  if (!code) return null;
+  // an answer for another barcode (the item's barcode was changed meanwhile) is not this item's
+  const mine = state?.code === code ? state : null;
+
+  const look = () => {
+    setError(null);
+    setState({ code, looking: true });
+    productLookupApi.lookup(code).catch((): ProductLookupResult => ({ found: false, reason: 'unreachable' }))
+      .then((result) => setState((now) => (now?.code === code && now.looking ? { code, looking: false, result } : now)));
+  };
+  const use = async (result: ProductLookupResult) => {
+    if (!result.image) return;
+    setBusy(true);
+    setError(null);
+    try {
+      await saveItemPicture(itemId, result.image.data, code);
+      toast(t('md_imageSaved'));
+      setState(null);
+    } catch (e) {
+      setError(e);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="stack no-print" style={{ gap: 6, alignItems: 'center' }}>
+      {(!mine || mine.looking || !(mine.result.found && mine.result.image)) && (
+        <button type="button" className="btn small" disabled={!!mine?.looking} onClick={look}>
+          <Icon name="search" size={14} />{mine?.looking ? t('plk_looking') : t('plk_findOne')}
+        </button>
+      )}
+      {mine && !mine.looking && <FoundPictureOffer result={mine.result} busy={busy} onUse={() => void use(mine.result)} onCancel={() => setState(null)} />}
+      <ErrorBox error={error} />
+    </div>
+  );
 }
 
 /* ---------- Settings ---------- */

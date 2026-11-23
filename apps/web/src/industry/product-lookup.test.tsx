@@ -10,7 +10,7 @@ import { PRODUCT_LOOKUP_TEXT } from '../i18n/product-lookup.ts';
 import { may } from '../may.ts';
 import { NewItemPicture, type PreparedPicture } from './ItemImage.tsx';
 import {
-  BulkStatusView, LookupAsk, LookupResultView, LookupSettingView, lookupShows, PictureCredit, pictureAfterLookup, ProductLookupPanel, ProductLookupSettingCard, FindPicturesButton
+  BulkStatusView, FindItemPicture, findPictureShows, FoundPictureOffer, LookupAsk, LookupResultView, LookupSettingView, lookupShows, PictureCredit, pictureAfterLookup, ProductLookupPanel, ProductLookupSettingCard, FindPicturesButton
 } from './ProductLookup.tsx';
 import type { LookupSettings, ProductLookupResult } from './product-lookup-api.ts';
 
@@ -190,6 +190,7 @@ describe('before anything is known the form is as it was', () => {
     expect(wrap(<ProductLookupPanel barcode={COKE} picture={null} onPicture={() => {}} onName={() => {}} />, 'en', ['admin', 'stock'])).toBe('');
     expect(wrap(<ProductLookupSettingCard />, 'en', ['admin'])).toBe('');
     expect(wrap(<FindPicturesButton />, 'en', ['admin'])).toBe('');
+    expect(wrap(<FindItemPicture itemId="it1" barcode={COKE} />, 'en', ['admin', 'stock'])).toBe('');
   });
 
   it('the manual path is still there: choose a picture, change it, remove it (and the camera on a phone or tablet)', () => {
@@ -203,6 +204,54 @@ describe('before anything is known the form is as it was', () => {
     expect(source).toContain('capture="environment"');
     expect(source).toContain("t('plk_takePhoto')");
     expect(source).toContain("t('plk_chooseFile')");
+  });
+});
+
+describe('an item that is already there: "Find a picture"', () => {
+  const all = { look: true, edit: true };
+
+  it('is offered with the setting on, to whoever may look up and change items, for a manufacturer’s barcode only', () => {
+    expect(findPictureShows(ON, COKE, all)).toBe(COKE);
+    expect(findPictureShows(ON, '٥٤٤٩٠٠٠٠٠٠٩٩٦', all)).toBe(COKE);
+    expect(findPictureShows(null, COKE, all)).toBeNull();
+    expect(findPictureShows(NEVER_ASKED, COKE, all)).toBeNull();
+    expect(findPictureShows({ ...ON, available: false }, COKE, all)).toBeNull();
+    expect(findPictureShows(ON, COKE, { look: false, edit: true })).toBeNull();
+    expect(findPictureShows(ON, COKE, { look: true, edit: false })).toBeNull();
+    // no barcode, or one the shop made itself (a scale's label, an in-store code): nothing is sent, so no button
+    for (const own of ['', null, undefined, 'TEA-1', '2112345001500']) expect(findPictureShows(ON, own, all), String(own)).toBeNull();
+  });
+
+  it.each(LANGS)('%s: a picture found is shown with its source, and is saved only by "Use this picture"', (lang) => {
+    const html = wrap(<FoundPictureOffer result={FOUND} busy={false} onUse={() => {}} onCancel={() => {}} />, lang);
+    expect(html).toContain('src="data:image/jpeg;base64,/9j/4AAQ"');
+    expect(html).toContain(esc(textOf(lang, 'plk_from', { s: 'Open Food Facts' })));
+    expect(html).toContain(`>${esc(textOf(lang, 'plk_useThis'))}</button>`);
+    expect(html).toContain(`>${esc(textOf(lang, 'cancel'))}</button>`);
+  });
+
+  it.each(LANGS)('%s: nothing found, too many searches, no internet: one plain line each, and no picture', (lang) => {
+    const line = (result: ProductLookupResult) => wrap(<FoundPictureOffer result={result} busy={false} onUse={() => {}} onCancel={() => {}} />, lang);
+    expect(line({ found: false, reason: 'not_found' })).toContain(esc(textOf(lang, 'plk_noneForItem')));
+    expect(line({ ...FOUND, image: null })).toContain(esc(textOf(lang, 'plk_noneForItem')));
+    expect(line({ found: false, reason: 'busy' })).toContain(esc(textOf(lang, 'plk_busyOne')));
+    expect(line({ found: false, reason: 'unreachable' })).toContain(esc(textOf(lang, 'plk_unreachableOne')));
+    expect(line({ found: false, reason: 'off' })).toContain(esc(textOf(lang, 'plk_endOff')));
+    for (const reason of ['not_found', 'busy', 'unreachable', 'off'] as const) {
+      expect(line({ found: false, reason }), reason).not.toContain('<img');
+      expect(line({ found: false, reason }), reason).not.toContain('<button');
+    }
+  });
+
+  it('asks only when the button is pressed, saves with the barcode (so the source is recorded), and sits on the item’s page and its form', () => {
+    const source = read('./ProductLookup.tsx');
+    const part = source.slice(source.indexOf('export function FindItemPicture'), source.indexOf('/* ---------- Settings ---------- */'));
+    expect(part).not.toContain('useEffect');
+    expect(part).toContain('onClick={look}');
+    expect(part).toContain('saveItemPicture(itemId, result.image.data, code)');
+    const items = read('../pages/Items.tsx');
+    expect(items).toContain('<FindItemPicture itemId={item.id} barcode={item.barcode} />');
+    expect(items).toContain('<FindItemPicture itemId={it.id} barcode={it.barcode} />');
   });
 });
 

@@ -12,7 +12,7 @@ import { ExpiryChip } from './Expiry.tsx';
 import { useI18n, type I18n, isKey, type Key } from '../i18n.ts';
 import { go, href } from '../router.ts';
 import { ImagePicker, ItemImage, NewItemPicture, saveItemPicture, type PreparedPicture } from '../industry/ItemImage.tsx';
-import { FindPicturesButton, ProductLookupPanel } from '../industry/ProductLookup.tsx';
+import { FindItemPicture, FindPicturesButton, ProductLookupPanel } from '../industry/ProductLookup.tsx';
 import { NameField } from '../industry/NameField.tsx';
 import { WholesalePriceField } from '../industry/WholesalePriceField.tsx';
 import { printDocument } from '../industry/printing.ts';
@@ -400,7 +400,13 @@ export function ItemForm({ item, onClose, onSaved }: { item: ItemView | null; on
       <div className="stack item-form">
         <div className="row" style={{ alignItems: 'flex-start', flexWrap: 'wrap', gap: 16 }}>
           {item
-            ? <div style={{ inlineSize: 128, flexShrink: 0 }}><ImagePicker itemId={item.id} name={i18n.name(item.name)} size={104} /></div>
+            ? (
+              <div className="stack" style={{ inlineSize: 128, flexShrink: 0, gap: 8 }}>
+                <ImagePicker itemId={item.id} name={i18n.name(item.name)} size={104} />
+                {/* by the barcode the item is saved with: one typed here counts once the form is saved */}
+                <FindItemPicture itemId={item.id} barcode={item.barcode} />
+              </div>
+            )
             : <NewItemPicture value={picture} onChange={setPicture} />}
           <div className="stack" style={{ flex: '1 1 260px', minInlineSize: 0 }}>
             <NameField label={t('it_name')} value={name} onChange={setName} autoFocus />
@@ -827,7 +833,10 @@ export function ItemDetail({ id }: { id: string }) {
 
       <div className="grid-4">
         <div className="card pad tile" style={{ gridColumn: 'span 2', flexDirection: 'row', alignItems: 'center', gap: 16 }}>
-          <ImagePicker itemId={it.id} name={i18n.name(it.name)} canEdit={can('item')} />
+          <div className="stack" style={{ gap: 8, alignItems: 'center', flexShrink: 0 }}>
+            <ImagePicker itemId={it.id} name={i18n.name(it.name)} canEdit={can('item')} />
+            <FindItemPicture itemId={it.id} barcode={it.barcode} />
+          </div>
           <div className="stack" style={{ gap: 6, minWidth: 0 }}>
             <div className="label"><span className="ltr">{it.code}</span>{it.barcode && <> · <span className="ltr">{it.barcode}</span></>}</div>
             <div className="value" style={{ fontSize: 20, whiteSpace: 'normal' }}>{i18n.name(it.name)}</div>

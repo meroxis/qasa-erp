@@ -42,6 +42,9 @@ and Open Pet Food Facts. It is free, needs no account, and is **off until an adm
 - **Items → Find pictures for items without one** (an admin, with the setting on) goes through the items that have a
   manufacturer's barcode and no picture, about six a minute, in the background. It can be stopped, and it never
   replaces a picture that is there.
+- **Find a picture** under the picture of one item (its page and its edit form; whoever may add items, with the setting
+  on) asks about that one barcode when the button is pressed. What comes back is shown first and saved only with
+  **Use this picture**, so a picture the shop chose is never replaced by itself.
 
 ## Limits the app keeps
 
