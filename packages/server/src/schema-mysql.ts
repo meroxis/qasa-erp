@@ -2149,6 +2149,40 @@ export const MYSQL_TABLES: readonly MysqlObject[] = [
       FOREIGN KEY (item_id) REFERENCES items(id)
     )`
   },
+  // ——— 20: what the open product databases answered for a barcode (kept a while, a "not found" too), and where an
+  // item's picture came from when it came from one of them (its credit) ———
+  {
+    name: 'product_lookups',
+    since: 20,
+    sql: `CREATE TABLE product_lookups (
+      barcode VARCHAR(64) NOT NULL PRIMARY KEY,
+      found TINYINT NOT NULL DEFAULT 0 CHECK (found IN (0, 1)),
+      source ${WORD},
+      name TEXT,
+      name_ar TEXT,
+      name_en TEXT,
+      name_ku TEXT,
+      brand TEXT,
+      quantity TEXT,
+      image_url TEXT,
+      image_small_url TEXT,
+      page_url TEXT,
+      looked_at ${WHEN} NOT NULL,
+      INDEX product_lookups_when (looked_at)
+    )`
+  },
+  {
+    name: 'item_image_sources',
+    since: 20,
+    sql: `CREATE TABLE item_image_sources (
+      item_id ${ID} NOT NULL PRIMARY KEY,
+      source ${WORD} NOT NULL,
+      licence ${WORD} NOT NULL,
+      url TEXT NOT NULL,
+      created_at ${WHEN} NOT NULL,
+      FOREIGN KEY (item_id) REFERENCES items(id)
+    )`
+  },
   {
     name: 'gift_vouchers',
     since: 18,
