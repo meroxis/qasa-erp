@@ -1,0 +1,21 @@
+Draft lines for the release after 2.0.0 (not released; apps/desktop/release-notes/2.0.0.md stays as reviewed). When the
+next version's notes are written, these go into its `::: en`, `::: ar` and `::: ku` parts.
+
+**Before you update (all languages):** the company file is upgraded to version 20 the first time this version opens it
+(two small tables; nothing in the books changes). As with 2.0.0: take a backup first, and update every PC that opens
+the same company together. Qasa ERP 2.0.0 and earlier cannot open a file this version has upgraded.
+
+::: en
+- **Product pictures and names from the barcode:** when you add an item by scanning its barcode (Items, an invoice, or the till's "add item"), Qasa ERP can find its picture and suggest its name from the open product database Open Food Facts and its sister projects. Tick or untick **Use this picture**, tap a suggested name to use it, or add your own with **Take a photo** or **Choose a file**. **Items → Find pictures for items without one** fills in the items you already have, in the background, and never replaces a picture. It is off until an admin switches it on in **Settings → Sales and point of sale**; only the barcode number is sent, never a barcode your own shop makes, and without internet everything works as before. Pictures from the database are credited where customers see them.
+- **Phone app 1.2 (when offered):** "New item" on the phone shows the found picture and name suggestions too, when the office PC has this version and the setting is on, and lets you choose a picture from the gallery. A phone on 1.1 keeps working as before.
+:::
+
+::: ar
+- **صور وأسماء المواد من الباركود:** عند إضافة مادة بمسح باركودها (من المواد أو الفاتورة أو «إضافة مادة» في نقطة البيع) يستطيع قاصة ERP أن يجد صورتها ويقترح اسمها من قاعدة بيانات المنتجات المفتوحة Open Food Facts ومشاريعها الشقيقة. ضع علامة أو أزلها عن **استخدم هذه الصورة**، واضغط على اسم مقترح لاستخدامه، أو أضف صورتك بـ **التقط صورة** أو **اختر ملفاً**. و**المواد ← البحث عن صور للمواد التي بلا صورة** يكمل صور المواد الموجودة عندك في الخلفية ولا يستبدل صورة موجودة أبداً. الخيار مطفأ إلى أن يفعّله المدير من **الإعدادات ← المبيعات ونقطة البيع**؛ يُرسَل رقم الباركود فقط، ولا يُرسَل أبداً باركود يصنعه محلك، وبدون إنترنت يعمل كل شيء كما كان. تُذكر مصادر الصور المأخوذة من قاعدة البيانات حيث يراها الزبائن.
+- **تطبيق الهاتف 1.2 (عند توفره):** شاشة «إضافة مادة جديدة» في الهاتف تعرض أيضاً الصورة الموجودة والأسماء المقترحة عندما يكون حاسوب المكتب على هذا الإصدار والخيار مفعّلاً، وتتيح اختيار صورة من المعرض. الهاتف الذي على 1.1 يستمر في العمل كما كان.
+:::
+
+::: ku
+- **وێنە و ناوی کاڵا لە بارکۆدەوە:** کاتێک کاڵایەک بە سکانکردنی بارکۆدەکەی زیاد دەکەیت (لە کاڵاکان، لە پسوولە، یان «زیادکردنی کاڵا» لە خاڵی فرۆشتن) قاسە ERP دەتوانێت وێنەکەی بدۆزێتەوە و ناوەکەی پێشنیار بکات لە بنکەدراوەی کراوەی بەرهەمەکان Open Food Facts و پڕۆژە خوشکەکانی. نیشانەی **ئەم وێنەیە بەکاربهێنە** دابنێ یان لایببە، دەست لە ناوێکی پێشنیارکراو بدە بۆ بەکارهێنانی، یان وێنەی خۆت زیاد بکە بە **وێنە بگرە** یان **فایلێک هەڵبژێرە**. **کاڵاکان ← گەڕان بەدوای وێنە بۆ ئەو کاڵایانەی وێنەیان نییە** وێنەی ئەو کاڵایانەی هەتن لە پشتەوە تەواو دەکات و هەرگیز وێنەیەکی هەبوو ناگۆڕێت. کوژاوەتەوە تا بەڕێوەبەر لە **ڕێکخستنەکان ← فرۆشتن و خاڵی فرۆشتن** چالاکی دەکات؛ تەنها ژمارەی بارکۆدەکە دەنێردرێت، هەرگیز ئەو بارکۆدەی دوکانەکەت خۆی دروستی دەکات نانێردرێت، و بەبێ ئینتەرنێت هەموو شتێک وەک پێشوو کار دەکات. سەرچاوەی ئەو وێنانەی لە بنکەدراوەکەوە هاتوون لەو شوێنانە دەنووسرێت کە کڕیاران دەیانبینن.
+- **ئەپی مۆبایل 1.2 (کاتێک بەردەست دەبێت):** پەڕەی «زیادکردنی کاڵای نوێ» لە مۆبایلەکە وێنەی دۆزراوە و ناوە پێشنیارکراوەکانیش پیشان دەدات کاتێک کۆمپیوتەری نووسینگە لەسەر ئەم وەشانەیە و ڕێکخستنەکە چالاکە، و دەتوانیت وێنەیەک لە گالەری هەڵبژێریت. مۆبایلێک کە لەسەر 1.1 ـە وەک پێشوو کار دەکات.
+:::

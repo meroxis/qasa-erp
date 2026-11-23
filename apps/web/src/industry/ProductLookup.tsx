@@ -216,7 +216,7 @@ export function LookupSettingView({ known, busy, error, onChange }: { known: Loo
   );
 }
 
-/** Settings → Sales: "Look up product pictures and names online". An admin's; off until switched on. */
+/** Settings → Sales and point of sale: "Look up product pictures and names online". An admin's; off until switched on. */
 export function ProductLookupSettingCard() {
   const known = useLookupSettings();
   const [busy, setBusy] = useState(false);
