@@ -11,10 +11,16 @@ import {
   defaultPrinter, desktopPrinters, PRINT_NOTICE_EVENT, printAlone, printersOf, saveChoice, savedChoices, suggestedChoice, type PrinterInfo, type PrintNotice
 } from './printing.ts';
 
-/** A kind's choice with another printer: a first printer starts on the paper that kind usually takes; none is "Ask every time". */
+/** Receipts and labels go to a printer of their own, one after another: a print window at every one only slows the till. */
+const STRAIGHT_KINDS: readonly PrintKind[] = ['receipt', 'label'];
+
+/**
+ * A kind's choice with another printer: a first printer starts on the paper that kind usually takes, and a receipt or
+ * a label printer prints straight away, without the print window (the box can be unticked); none is "Ask every time".
+ */
 export function withPrinter(kind: PrintKind, current: PrinterChoice | undefined, printer: string | null): PrinterChoice | null {
   if (printer === null) return null;
-  return { ...(current ?? { ...DEFAULT_PRINTER_CHOICE, paper: USUAL_PAPER[kind] }), printer };
+  return { ...(current ?? { ...DEFAULT_PRINTER_CHOICE, paper: USUAL_PAPER[kind], silent: STRAIGHT_KINDS.includes(kind) }), printer };
 }
 
 /**

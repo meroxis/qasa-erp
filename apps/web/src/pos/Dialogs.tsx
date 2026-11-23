@@ -19,7 +19,7 @@ export const TILL_KEYS: readonly { key: string; label: Key }[] = [
   { key: 'F7', label: 'tu_k_qty' },
   { key: 'F8', label: 'tu_k_discount' },
   { key: 'F9', label: 'tu_k_pay' },
-  { key: 'F10', label: 'tu_k_print' },
+  { key: 'F10', label: 'tu_k_payPrint' },
   { key: 'Ctrl+Enter', label: 'tu_k_exact' },
   { key: 'Ctrl+Delete', label: 'tu_k_removeLast' },
   { key: 'Esc', label: 'tu_k_esc' }

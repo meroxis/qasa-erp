@@ -23,7 +23,7 @@ export function draftFromBasket(lines: readonly TillLine[], warehouseId: string,
   };
 }
 
-export function DeliveryFromTill({ lines, warehouseId, partyId, onSent }: { lines: readonly TillLine[]; warehouseId: string; partyId?: string | null; onSent?(order: DeliveryOrder): void }) {
+export function DeliveryFromTill({ lines, warehouseId, partyId, onSent, iconOnly }: { lines: readonly TillLine[]; warehouseId: string; partyId?: string | null; onSent?(order: DeliveryOrder): void; /** the simple till: the lorry alone, its name read out and shown on hover */ iconOnly?: boolean }) {
   const { t } = useI18n();
   const toast = useToast();
   const { plan, permissions } = useData();
@@ -31,8 +31,9 @@ export function DeliveryFromTill({ lines, warehouseId, partyId, onSent }: { line
   if (!plan?.features.includes('delivery') || (permissions && !permissions.includes('sales'))) return null;
   return (
     <>
-      <button type="button" className="btn" disabled={!lines.length} onClick={() => setDraft(draftFromBasket(lines, warehouseId, partyId))}>
-        <Icon name="truck" size={16} />{t('mx_sendAsDelivery')}
+      <button type="button" className="btn" disabled={!lines.length} onClick={() => setDraft(draftFromBasket(lines, warehouseId, partyId))}
+        {...(iconOnly ? { title: t('mx_sendAsDelivery'), 'aria-label': t('mx_sendAsDelivery') } : {})}>
+        <Icon name="truck" size={16} />{iconOnly ? null : t('mx_sendAsDelivery')}
       </button>
       {draft && (
         <DeliveryOrderForm id={null} initial={draft} onClose={() => setDraft(null)}

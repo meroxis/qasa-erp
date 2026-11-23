@@ -9,17 +9,25 @@ export interface TillPrefs {
   touch: boolean;
   /** a short beep on each scan (a lower one when nothing is found) */
   beep: boolean;
+  /**
+   * All the till's tools on screen (the discount, the customer, the cash handed over, Hold, a gift voucher). Off: the
+   * simple till, which shows the total, cash or credit and the two Sale buttons, and keeps the rest under More.
+   */
+  full: boolean;
 }
 
 export const TILL_PREFS_KEY = 'qasa.pos.prefs';
-export const DEFAULT_PREFS: TillPrefs = { touch: false, beep: true };
+export const DEFAULT_PREFS: TillPrefs = { touch: false, beep: true, full: false };
 
 export function readPrefs(store: Pick<Storage, 'getItem'> | null = safeStorage()): TillPrefs {
   try {
     const raw = store?.getItem(TILL_PREFS_KEY);
     if (!raw) return { ...DEFAULT_PREFS };
     const v = JSON.parse(raw) as Partial<TillPrefs>;
-    return { touch: typeof v.touch === 'boolean' ? v.touch : DEFAULT_PREFS.touch, beep: typeof v.beep === 'boolean' ? v.beep : DEFAULT_PREFS.beep };
+    return {
+      touch: typeof v.touch === 'boolean' ? v.touch : DEFAULT_PREFS.touch, beep: typeof v.beep === 'boolean' ? v.beep : DEFAULT_PREFS.beep,
+      full: typeof v.full === 'boolean' ? v.full : DEFAULT_PREFS.full
+    };
   } catch {
     return { ...DEFAULT_PREFS };
   }
@@ -58,23 +66,6 @@ export function beep(kind: 'ok' | 'bad'): void {
       osc.stop(start + tone.d);
     }
   } catch { /* no sound on this PC */ }
-}
-
-/** The common Iraqi dinar notes a customer hands over, smallest first: the quick cash buttons. */
-export const IQD_NOTES = [5_000, 10_000, 25_000, 50_000] as const;
-
-/**
- * The quick cash buttons for what is due in cash: the exact amount, then each note (and pairs of the big note) that
- * covers it, at most four, nearest first. Nothing for a sale with nothing due in cash.
- */
-export function quickTenders(cashDue: number): number[] {
-  if (cashDue <= 0) return [];
-  const out = new Set<number>([cashDue]);
-  for (const note of IQD_NOTES) {
-    const n = Math.ceil(cashDue / note) * note;
-    if (n > cashDue) out.add(n);
-  }
-  return [...out].sort((a, b) => a - b).slice(0, 4);
 }
 
 /** The keypad's keys, in the order they show (a calculator's layout: 7 8 9 on top). */

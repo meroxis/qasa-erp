@@ -83,3 +83,19 @@
   dinars and the quantity is the price over the item's dinar price per kg (or g).
 - **By till**: `GET /api/pos/tills/summary?from&to` (books keepers all, cashiers their own shifts); the till's opening
   screen shows today's.
+
+## The simple till and the full till (2.0.0-beta.3)
+
+A sale ends in one of two buttons: **Sale** (F9) and **Sale & print** (F10), which prints the receipt as soon as the
+sale is made (a sale kept while the office is away prints too). F10 with no basket prints the last receipt again.
+
+The till is **simple** unless the cashier chooses otherwise: the total, cash or credit, and the two buttons. The
+customer comes when the sale is on credit; the discount (F8), the customer (F3), the cash handed over with its change,
+a gift voucher and Hold are under **More**, and each stays on screen for that sale only. **More → All the tools on
+screen** gives the full till, which keeps them in sight. The choice is this PC's own (`qasa.pos.prefs`, with touch mode
+and the beep). No amounts are suggested for the cash handed over on either till.
+
+The cash drawer opens on a cash sale unless the till was told it has none (Settings → Tills; a new till starts on
+"opens on a cash sale", and a PC with no till set up opens it too). It opens through the receipt printer chosen in
+Settings → Printers on that PC; where none is chosen nothing happens and nothing is said at every sale. A receipt or
+label printer chosen for the first time prints without the print window (the box can be unticked).

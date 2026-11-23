@@ -218,7 +218,9 @@ describe('the till', () => {
     // the Discount field is still there, reached by F8, and is the only field on its row
     expect(panel).toContain(`<label className="field pos-discount-field" id="pos-discount"><span>{t('pos_discount')} <span className="kbd">F8</span></span>`);
     expect(panel).not.toMatch(/<div className="grid-2">\s*<label className="field" id="pos-discount">/);
-    expect(till).toContain("else if (e.key === 'F8') { e.preventDefault(); document.getElementById('pos-discount')?.querySelector('input')?.focus(); }");
+    // (2.0.0-beta.3: F8 first brings the field on screen on the simple till, then puts the cursor in it)
+    expect(till).toContain("else if (e.key === 'F8') { e.preventDefault(); revealRef.current('discount'); }");
+    expect(till).toContain("what === 'discount' ? '#pos-discount input'");
     // "Short by" went with the field; "Amount paid" and "Change" stay for older receipts and the invoice page
     for (const lang of LANGS) {
       expect(isKey('pos_short')).toBe(false);

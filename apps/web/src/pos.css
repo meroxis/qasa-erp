@@ -298,3 +298,37 @@ html[dir='rtl'] .pos-quick-move-back svg { transform: none; }
   .pos-v2 .pos-actions .btn { min-height: 38px; }
   .pos-cash { padding: 8px; gap: 6px; }
 }
+
+/* 2.0.0-beta.3: a sale ends in one of two big buttons side by side (Sale, Sale & print), on both tills */
+.pos-v2 .pos-actions .btn.pos-pay-btn { grid-column: auto; min-height: 60px; font-size: 1.2rem; white-space: normal; line-height: 1.15; gap: 6px; }
+.pos-v2 .pos-actions .pos-pay-btn { padding-inline: 8px; }
+.pos-v2 .pos-pay-print { background: var(--surface); color: var(--accent); border: 2px solid var(--accent); }
+.pos-v2 .pos-pay-print:hover:not(:disabled) { background: color-mix(in srgb, var(--accent) 10%, var(--surface)); }
+.pos-v2 .pos-pay-print:disabled { border-color: var(--border, #e4e7ec); color: var(--muted, #667085); }
+/* the simple till: the total, cash or credit, the two buttons; a field comes only when it is needed or asked for */
+.pos-pay-simple .pos-total-big { font-size: 3rem; }
+.pos-pay-simple .pos-methods > button { min-height: 52px; font-size: 1.05rem; }
+.pos-v2 .pos-pay-simple .pos-actions .btn.pos-pay-btn { min-height: 76px; font-size: 1.3rem; }
+.pos-pay-fixed.pos-pay-one { grid-template-columns: 1fr; }
+.pos-done-slim { padding: 8px 10px; gap: 6px; border-width: 1px; }
+.pos-done-slim .pos-done-head { font-size: 1rem; flex-wrap: wrap; }
+.pos-done-slim .pos-done-head .spacer { flex: 1; }
+.pos-simple .pos-tools .btn { white-space: nowrap; }
+@media (max-height: 800px) {
+  .pos-pay-simple .pos-total-big { font-size: 2.3rem; }
+  .pos-v2 .pos-actions .btn.pos-pay-btn { min-height: 52px; }
+  .pos-v2 .pos-pay-simple .pos-actions .btn.pos-pay-btn { min-height: 62px; font-size: 1.2rem; }
+  .pos-pay-simple .pos-methods > button { min-height: 44px; }
+}
+/* a sale just made on the simple till: its slim box, in the total's place, a little bigger */
+.pos-pay-simple .pos-done-slim .pos-done-head strong.num { font-size: 1.35rem; }
+/* a till screen too narrow for three columns (the items go under the basket): the basket and the payment get the
+   bigger share of the height, so the total, cash or credit and the two buttons never squeeze each other */
+@container (max-width: 1150px) { .pos-v2 .pos-body[style] { grid-template-rows: minmax(0, 3fr) minmax(0, 2fr); } }
+@container (max-width: 760px) { .pos-v2 .pos-body[style] { grid-template-rows: none; } }
+.pos-pay-simple { gap: 8px; }
+.pos-pay-simple .pos-pay-scroll:empty { display: none; }
+@media (max-height: 800px) {
+  .pos-pay-simple .pos-total-box { padding: 6px 12px; }
+  .pos-pay-simple .pos-total-big { font-size: 2.1rem; }
+}

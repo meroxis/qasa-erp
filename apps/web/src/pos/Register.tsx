@@ -93,6 +93,11 @@ export function Register({ initial, onClosed }: { initial: ShiftView; onClosed()
   const [rules, setRules] = useState<TillRulesView>(() => tillCache(tillWho())?.rules ?? NO_RULES);
   const [prefs, setPrefsState] = useState<TillPrefs>(readPrefs);
   const setPrefs = (p: TillPrefs) => { setPrefsState(p); writePrefs(p); };
+  const simple = !prefs.full;
+  // the simple till: what the cashier asked to see for this sale (More, F3, F8); gone again with the basket
+  const [show, setShow] = useState({ customer: false, discount: false, cash: false });
+  // "Sale & print": the receipt goes to the printer as soon as the sale is made and its receipt is on the page
+  const printNext = useRef(false);
   const [approvals, setApprovals] = useState<HeldApproval[]>([]);
   // the day's rate, as the server holds dollars to it (kept with the till's rules for a till that is cut off); a rate
   // field nobody typed in follows it when it changes
@@ -386,6 +391,7 @@ export function Register({ initial, onClosed }: { initial: ShiftView; onClosed()
   const overLimit = !!debt && debt.creditLimit !== null && onCredit && debt.balance + due > debt.creditLimit;
 
   const clearNow = () => {
+    setShow({ customer: false, discount: false, cash: false });
     setCart([]);
     setDiscount(0);
     setPartyId('');
@@ -414,13 +420,17 @@ export function Register({ initial, onClosed }: { initial: ShiftView; onClosed()
     clearNow();
   };
 
-  const drawerSaid = (s: string) => {
-    if (s === 'no_printer') toast(t('tl_drawer_no_printer'));
+  // `asked`: the cashier pressed "open the drawer". After a sale the drawer opens by itself, and a PC with no receipt
+  // printer chosen (a shop with no drawer) is not told so at every sale
+  const drawerSaid = (s: string, asked = true) => {
+    if (s === 'no_printer') { if (asked) toast(t('tl_drawer_no_printer')); }
     else if (s === 'failed') toast(t('tl_drawer_failed'));
     else if (s === 'blocked') toast(t('tl_drawer_blocked'));
   };
-  const drawerOnCash = till?.drawer === 'cash' && inWindowsTill();
-  const openDrawerForSale = () => { if (drawerOnCash) void kickDrawer().then(drawerSaid); };
+  // the drawer opens on a cash sale unless this till was told it has none (a PC with no till set up opens it too:
+  // through the receipt printer chosen on this PC, and nothing happens where there is none)
+  const drawerOnCash = inWindowsTill() && (till ? till.drawer === 'cash' : true);
+  const openDrawerForSale = () => { if (drawerOnCash) void kickDrawer().then((s) => drawerSaid(s, false)); };
   const noSale = async () => {
     try {
       let tokens: string[] | undefined;
@@ -563,8 +573,9 @@ export function Register({ initial, onClosed }: { initial: ShiftView; onClosed()
     return list;
   };
 
-  const pay = async (exact = false, have?: readonly HeldApproval[]): Promise<void> => {
+  const pay = async (exact = false, have?: readonly HeldApproval[], print = false): Promise<void> => {
     if (!canPay) return;
+    printNext.current = print;
     // a dollar rate far from the day's is a slip of a digit: said here, before anything is sent or kept for later
     // (the server says the same; a till that is cut off checks with the rate it last had)
     if (dayRate) {
@@ -636,7 +647,7 @@ export function Register({ initial, onClosed }: { initial: ShiftView; onClosed()
       setUnsure(!!saleKey.current?.lost);
       setBusy(false);
     }
-    if (again) await pay(exact, again);
+    if (again) await pay(exact, again, print);
   };
 
   /** A price typed for a line; a lower one than the item's own needs a supervisor when the company says so. */
@@ -678,6 +689,23 @@ export function Register({ initial, onClosed }: { initial: ShiftView; onClosed()
 
   const payRef = useRef(pay);
   payRef.current = pay;
+  const cartRef = useRef(false);
+  cartRef.current = cart.length > 0;
+  // a sale made with "Sale & print": its receipt is on the page now (sent, or kept here while the office is away)
+  useEffect(() => {
+    if (!receipt || !printNext.current) return;
+    printNext.current = false;
+    const timer = window.setTimeout(() => { void printReceipt(); }, 60);
+    return () => window.clearTimeout(timer);
+  }, [receipt]);
+  /** F3 / F8 and More: bring a field of the simple till on screen, then put the cursor in it. */
+  const reveal = (what: 'customer' | 'discount' | 'cash') => {
+    setShow((v) => ({ ...v, [what]: true }));
+    const target = what === 'customer' ? '.pos-customer input, .pos-customer button' : what === 'discount' ? '#pos-discount input' : '.pos-handed input';
+    window.setTimeout(() => document.querySelector<HTMLElement>(target)?.focus(), 30);
+  };
+  const revealRef = useRef(reveal);
+  revealRef.current = reveal;
   const holdRef = useRef(hold);
   holdRef.current = hold;
   const clearRef = useRef(clear);
@@ -690,12 +718,14 @@ export function Register({ initial, onClosed }: { initial: ShiftView; onClosed()
       if (closing || addingItem !== null || dialog !== null || document.querySelector('.backdrop')) return;
       if (e.key === 'F1') { e.preventDefault(); setDialog('help'); }
       else if (e.key === 'F2') { e.preventDefault(); search.current?.focus(); }
-      else if (e.key === 'F3') { e.preventDefault(); document.querySelector<HTMLElement>('.pos-customer input, .pos-customer button')?.focus(); }
+      else if (e.key === 'F3') { e.preventDefault(); revealRef.current('customer'); }
       else if (e.key === 'F4') { e.preventDefault(); void clearRef.current(); }
       else if (e.key === 'F6') { e.preventDefault(); holdRef.current(); }
       else if (e.key === 'F7') { e.preventDefault(); if (lastLine) setDialog('qty'); }
-      else if (e.key === 'F8') { e.preventDefault(); document.getElementById('pos-discount')?.querySelector('input')?.focus(); }
+      else if (e.key === 'F8') { e.preventDefault(); revealRef.current('discount'); }
       else if (e.key === 'F9') { e.preventDefault(); void payRef.current(); }
+      // F10: a basket is sold and its receipt printed; with no basket, the last receipt prints again
+      else if (e.key === 'F10' && cartRef.current) { e.preventDefault(); void payRef.current(false, undefined, true); }
       else if (e.key === 'F10' && receipt) { e.preventDefault(); void printReceipt(); }
       else if (e.key === 'Enter' && e.ctrlKey) { e.preventDefault(); void payRef.current(true); }
       else if (e.key === 'Delete' && e.ctrlKey) { e.preventDefault(); removeLastRef.current(); }
@@ -769,7 +799,7 @@ export function Register({ initial, onClosed }: { initial: ShiftView; onClosed()
   const priceLine = typeof dialog === 'object' && dialog !== null && 'price' in dialog ? cart.find((l) => lineKey(l) === dialog.price) ?? null : null;
 
   return (
-    <div className={'pos pos-v2' + (bigTiles ? ' pos-big' : '') + (prefs.touch ? ' pos-touch-mode' : '')} ref={tillRoot}>
+    <div className={'pos pos-v2' + (bigTiles ? ' pos-big' : '') + (prefs.touch ? ' pos-touch-mode' : '') + (simple ? ' pos-simple' : '')} ref={tillRoot}>
       {expired.dialog}
       {supervisor.dialog}
       {addingItem !== null && <QuickItemForm typed={addingItem} sale warehouseId={shift.warehouseId} onDone={addedItem} onClose={() => { setAddingItem(null); focusSearch(); }} />}
@@ -802,7 +832,7 @@ export function Register({ initial, onClosed }: { initial: ShiftView; onClosed()
             onExchanged={() => reloadShift()}
             {...(rules.supervisor.refund ? { beforeExchange: async (what: { invoiceId: string; lines: { lineNo: number; qtyMilli: number }[] }) => { const ok = await supervisor.ask('refund', undefined, what); if (ok) setRefundApproval(ok.token); return !!ok; } } : {})} />
           {/* a delivery order from this basket (market extras): the sale itself is made when it is delivered */}
-          {!offline && <DeliveryFromTill partyId={partyId || null} warehouseId={shift.warehouseId} onSent={clearNow}
+          {!offline && <DeliveryFromTill partyId={partyId || null} warehouseId={shift.warehouseId} onSent={clearNow} iconOnly={simple}
             lines={cart.map((l) => { const q = baseQtyOf(l); return { itemId: l.item.id, qtyMilli: q, unitPrice: q ? Math.round((lineTotal(l) * 1000) / q) : l.unitPrice }; })} />}
           <button type="button" className="btn" onClick={() => setDialog('more')} aria-haspopup="dialog"><Icon name="rows" size={16} />{t('tu_more')}</button>
           <button type="button" className="btn" onClick={() => setDialog('help')} title={t('tu_help')}><span className="kbd">F1</span></button>
@@ -901,7 +931,8 @@ export function Register({ initial, onClosed }: { initial: ShiftView; onClosed()
             </div>
           ) : null}
           loyalty={<LoyaltyUse partyId={partyId} total={total} currency={currency} value={points.points} onChange={(n, v) => setPoints({ points: n, value: v })} />}
-          canPay={canPay} busy={busy} onPay={() => void pay()} onExact={() => void pay(true)} onClear={() => void clear()} onHold={hold} cartEmpty={cart.length === 0}
+          canPay={canPay} busy={busy} onPay={() => void pay()} onPayPrint={() => void pay(false, undefined, true)} onExact={() => void pay(true)} onClear={() => void clear()} onHold={hold} cartEmpty={cart.length === 0}
+          simple={simple} show={show}
           keypad={prefs.touch ? (
             <div className="stack" style={{ gap: 6 }}>
               <div className="track" role="group" aria-label={t('tu_keypad')}>
@@ -930,7 +961,19 @@ export function Register({ initial, onClosed }: { initial: ShiftView; onClosed()
             </>
           )}
           error={error}
-          done={lastDone && !cart.length ? (
+          done={lastDone && !cart.length ? simple ? (
+            // the simple till: one slim box (the receipt's number, the total, the change), and the next scan starts a new sale
+            <div className="pos-done pos-done-slim" role="status">
+              <div className="pos-done-head"><Icon name="check" size={20} /><strong>{t('tu_saleDone')}</strong>{lastDone.number && <span className="muted small ltr">{lastDone.number}</span>}<span className="spacer" /><strong className="num">{lastDone.total}</strong></div>
+              {lastDone.change && <div className="pos-giveback"><span>{t('tu_changeDue')}</span><strong className="num">{lastDone.change}</strong></div>}
+              {receipt && (
+                <div className="row" style={{ gap: 8, flexWrap: 'wrap' }}>
+                  <button type="button" className="btn small" onClick={() => void printReceipt()}><Icon name="printer" size={15} />{t('tu_printAgain')} <span className="kbd">F10</span></button>
+                  <ReceiptWhatsApp invoice={receipt} />
+                </div>
+              )}
+            </div>
+          ) : (
             <div className="pos-done" role="status">
               <div className="pos-done-head"><Icon name="check" size={22} /><strong>{t('tu_saleDone')}</strong>{lastDone.number && <span className="muted small ltr">{t('tu_receiptNo', { n: lastDone.number })}</span>}</div>
               <div className="pos-r-row"><span>{t('pos_total')}</span><strong className="num">{lastDone.total}</strong></div>
@@ -988,7 +1031,19 @@ export function Register({ initial, onClosed }: { initial: ShiftView; onClosed()
           <div className="pos-more">
             <label className="row"><input type="checkbox" checked={prefs.touch} onChange={(e) => setPrefs({ ...prefs, touch: e.target.checked })} /> <span>{t('tu_touch')}<div className="small muted">{t('tu_touchHelp')}</div></span></label>
             <label className="row"><input type="checkbox" checked={prefs.beep} onChange={(e) => setPrefs({ ...prefs, beep: e.target.checked })} /> {t('tu_beep')}</label>
+            <label className="row"><input type="checkbox" checked={prefs.full} onChange={(e) => setPrefs({ ...prefs, full: e.target.checked })} /> <span style={{ flex: 1, minWidth: 0 }}>{t('tu_full')}<div className="small muted">{t('tu_fullHelp')}</div></span></label>
             <hr />
+            {/* the simple till keeps these here: each opens its field for this sale */}
+            {simple && (
+              <>
+                <button type="button" className="btn" onClick={() => { setDialog(null); reveal('discount'); }}><Icon name="tag" size={16} />{t('pos_discount')} <span className="kbd">F8</span></button>
+                <button type="button" className="btn" onClick={() => { setDialog(null); reveal('customer'); }}><Icon name="users" size={16} />{t('pos_customer')} <span className="kbd">F3</span></button>
+                {currency === 'IQD' && !onCredit && <button type="button" className="btn" onClick={() => { setDialog(null); reveal('cash'); }}><Icon name="wallet" size={16} />{t('tu_cashAndChange')}</button>}
+                {!offline && currency === 'IQD' && due > 0 && <button type="button" className="btn" onClick={() => setDialog('voucherPay')}><Icon name="tag" size={16} />{t('tu_gvPay')}</button>}
+                <button type="button" className="btn" disabled={busy || cart.length === 0} onClick={() => { setDialog(null); hold(); }}><Icon name="clock" size={16} />{t('tl_hold')} <span className="kbd">F6</span></button>
+                <hr />
+              </>
+            )}
             {!offline && <button type="button" className="btn" onClick={() => setDialog('voucherSell')}><Icon name="tag" size={16} />{t('tu_gvSell')}</button>}
             <button type="button" className="btn" onClick={() => openReturns()}><Icon name="undo" size={16} />{t('tu_returns')}</button>
             {drawerOnCash && <button type="button" className="btn" onClick={() => { setDialog(null); void noSale(); }}><Icon name="wallet" size={16} />{t('tl_noSale')}</button>}

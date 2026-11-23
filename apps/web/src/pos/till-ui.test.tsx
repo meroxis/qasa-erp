@@ -2,7 +2,8 @@ import { describe, expect, it } from 'vitest';
 import type { ReactNode } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { I18nContext, isKey, makeI18n } from '../i18n.ts';
-import { DEFAULT_PREFS, padPress, quickTenders, readPrefs, writePrefs, TILL_PREFS_KEY } from './feedback.ts';
+import { DEFAULT_PREFS, padPress, readPrefs, writePrefs, TILL_PREFS_KEY } from './feedback.ts';
+import * as feedback from './feedback.ts';
 import { DEFAULT_SCALE, hexBytes, parseScaleText, readScaleSettings, validPattern } from './scale.ts';
 import { PaymentPanel, type PaySummary } from './PaymentPanel.tsx';
 import { Keypad, ShortcutsHelp, TILL_KEYS } from './Dialogs.tsx';
@@ -19,12 +20,10 @@ const wrap = (node: ReactNode, lang: 'ar' | 'en' | 'ku' = 'en') => renderToStati
 );
 const store = () => { const m = new Map<string, string>(); return { getItem: (k: string) => m.get(k) ?? null, setItem: (k: string, v: string) => { m.set(k, v); }, m }; };
 
-describe('quick cash and the keypad', () => {
-  it('offers the exact amount, then the notes that cover it, nearest first, at most four', () => {
-    expect(quickTenders(0)).toEqual([]);
-    expect(quickTenders(7_250)).toEqual([7_250, 10_000, 25_000, 50_000]);
-    expect(quickTenders(10_000)).toEqual([10_000, 25_000, 50_000]);
-    expect(quickTenders(63_000)).toEqual([63_000, 65_000, 70_000, 75_000]);
+describe('the keypad, and no suggested cash', () => {
+  it('suggests no amounts for the cash handed over any more (the owner: the till needs none)', () => {
+    expect(Object.keys(feedback)).not.toContain('quickTenders');
+    expect(tillPart('PaymentPanel.tsx')).not.toContain('pos-tenders');
   });
 
   it('types whole numbers with the keypad, without a leading zero, and takes the last digit back', () => {
@@ -40,11 +39,16 @@ describe('quick cash and the keypad', () => {
 });
 
 describe("this PC's till preferences", () => {
-  it('keeps touch mode and the beep, and falls back to the defaults on anything else', () => {
+  it('keeps touch mode, the beep and the full till, and falls back to the defaults on anything else', () => {
     const s = store();
     expect(readPrefs(s)).toEqual(DEFAULT_PREFS);
-    writePrefs({ touch: true, beep: false }, s);
-    expect(readPrefs(s)).toEqual({ touch: true, beep: false });
+    // the simple till is the usual one
+    expect(DEFAULT_PREFS.full).toBe(false);
+    writePrefs({ touch: true, beep: false, full: true }, s);
+    expect(readPrefs(s)).toEqual({ touch: true, beep: false, full: true });
+    // a choice kept by an earlier build (no layout yet) gets the simple till
+    s.m.set(TILL_PREFS_KEY, '{"touch":true,"beep":false}');
+    expect(readPrefs(s)).toEqual({ touch: true, beep: false, full: false });
     s.m.set(TILL_PREFS_KEY, '{"touch":"yes"}');
     expect(readPrefs(s)).toEqual(DEFAULT_PREFS);
     s.m.set(TILL_PREFS_KEY, 'not json');
@@ -118,26 +122,87 @@ const sum = (over: Partial<PaySummary> = {}): PaySummary => ({
   subtotal: 7_500, offers: [{ id: 'o', name: 'Bread', discount: 250 }], offerTotal: 250, discount: 0, total: 7_250, points: 0, vouchers: [], due: 7_250,
   cashDue: 7_250, cashRounded: 7_250, ...over
 });
+const NOTHING_ASKED = { customer: false, discount: false, cash: false };
 const panel = (over: Partial<Parameters<typeof PaymentPanel>[0]> = {}) => wrap(
   <PaymentPanel currency="IQD" rateX100={100} sum={sum()} method="cash" offered={['cash', 'account']} offline={false} needsCustomer={false} onCredit={false} onPick={() => {}}
     cardMethods={['fib']} split={{}} splitBad={false} onSplit={() => {}} handed={null} onHanded={() => {}} handedUsd={null} onHandedUsd={() => {}}
     usdRateText="1420" onUsdRate={() => {}} usdOn={false} change={null} onDiscount={() => {}} onVoucher={() => {}} onRemoveVoucher={() => {}}
-    customer={null} loyalty={null} debt={null} canPay onPay={() => {}} onExact={() => {}} onClear={() => {}} onHold={() => {}} cartEmpty={false} busy={false}
-    keypad={null} notes={null} error={null} done={null} {...over} />
+    customer={<div className="pos-customer">Customer</div>} loyalty={null} debt={null} canPay onPay={() => {}} onPayPrint={() => {}} onExact={() => {}} onClear={() => {}} onHold={() => {}} cartEmpty={false} busy={false}
+    keypad={null} notes={null} error={null} done={null} simple={false} show={NOTHING_ASKED} {...over} />
 );
 
 describe('the payment panel', () => {
-  it('shows the total big, what offers saved, quick cash, the wallets and a gift voucher', () => {
+  it('the full till shows the total big, what offers saved, the cash handed over, the wallets, a gift voucher, Hold and New sale', () => {
     const html = panel();
     expect(html).toContain('pos-total-big');
     expect(html).toContain('You saved 250');
-    expect(html).toContain('>Exact<');
-    expect(html).toContain('10,000');
+    expect(html).toContain('pos-handed');
+    expect(html).not.toContain('>Exact<');
+    expect(html).not.toContain('10,000');
     expect(html).toContain('FIB');
     expect(html).toContain('Pay with a voucher');
+    expect(html).toContain('id="pos-discount"');
+    expect(html).toContain('pos-customer');
+    expect(html).toContain('>F4<');
+    expect(html).toContain('>F6<');
+    expect(html).not.toContain('pos-pay-simple');
   });
 
-  it('shows the change big, or what is short, and the rounding of the cash', () => {
+  it.each(['ar', 'en', 'ku'] as const)('%s: a sale ends in one of two buttons, Sale (F9) or Sale & print (F10), on both tills', (lang) => {
+    const text = (key: keyof typeof TILL_UI_TEXT) => TILL_UI_TEXT[key][lang === 'ar' ? 0 : lang === 'en' ? 1 : 2].replace(/&/g, '&amp;');
+    for (const simple of [true, false]) {
+      const html = wrap(<PanelFor simple={simple} />, lang);
+      const actions = html.slice(html.indexOf('pos-actions'));
+      expect(actions, String(simple)).toMatch(new RegExp(`pos-pay-btn"[^>]*>(?:<svg[\\s\\S]*?</svg>)?${text('tu_sale')} <span class="kbd">F9</span>`));
+      expect(actions, String(simple)).toMatch(new RegExp(`pos-pay-print"[^>]*>(?:<svg[\\s\\S]*?</svg>)?${text('tu_salePrint')} <span class="kbd">F10</span>`));
+      expect(actions.match(/pos-pay-btn/g), String(simple)).toHaveLength(2);
+    }
+  });
+
+  it('the simple till shows the total, cash or credit and the two buttons, and nothing else until it is asked for', () => {
+    const html = panel({ simple: true });
+    expect(html).toContain('pos-pay-simple');
+    expect(html).toContain('pos-total-big');
+    expect(html).toContain('pos-methods');
+    for (const gone of ['pos-handed', 'pos-cash', 'id="pos-discount"', 'pos-customer', 'Pay with a voucher', '>F6<', 'pos-pay-fixed', 'Ctrl+Enter']) expect(html, gone).not.toContain(gone);
+    // the basket is cleared from a small link (and F4), not a third big button
+    expect(html).toMatch(/link-btn[^>]*>Clear the basket <span class="kbd ltr">F4<\/span>/);
+    expect(panel({ simple: true, cartEmpty: true })).not.toContain('Clear the basket');
+  });
+
+  it('the simple till brings each field when it is needed or asked for', () => {
+    // on credit the customer is needed
+    expect(panel({ simple: true, onCredit: true, method: 'account' })).toContain('pos-customer');
+    // asked for from More, F3 or F8
+    expect(panel({ simple: true, show: { ...NOTHING_ASKED, customer: true } })).toContain('pos-customer');
+    expect(panel({ simple: true, show: { ...NOTHING_ASKED, discount: true } })).toContain('id="pos-discount"');
+    expect(panel({ simple: true, show: { ...NOTHING_ASKED, cash: true } })).toContain('pos-handed');
+    // a discount or cash already typed stays in sight
+    expect(panel({ simple: true, sum: sum({ discount: 500 }) })).toContain('id="pos-discount"');
+    expect(panel({ simple: true, handed: 10_000, change: 2_750 })).toMatch(/pos-giveback[^"]*"[^>]*>.*Change.*2,750/);
+    // cash rounded to the notes in use: what to take is always said, also with the cash fields away
+    const rounded = panel({ simple: true, sum: sum({ cashDue: 7_250, cashRounded: 7_500 }) });
+    expect(rounded).toContain('Cash to pay');
+    expect(rounded).toContain('7,500');
+    expect(rounded).not.toContain('pos-handed');
+  });
+
+  it('prints straight after "Sale & print", takes F10 for it, and keeps the tools of the simple till under More', () => {
+    const register = tillPart('Register.tsx');
+    expect(register).toContain('onPayPrint={() => void pay(false, undefined, true)}');
+    expect(register).toContain("else if (e.key === 'F10' && cartRef.current) { e.preventDefault(); void payRef.current(false, undefined, true); }");
+    expect(register).toContain("else if (e.key === 'F10' && receipt) { e.preventDefault(); void printReceipt(); }");
+    // the receipt is printed once it is on the page, for a sale sent and for one kept while the office is away
+    expect(register).toMatch(/if \(!receipt \|\| !printNext\.current\) return;\s+printNext\.current = false;\s+const timer = window\.setTimeout\(\(\) => \{ void printReceipt\(\); \}, 60\);/);
+    expect(register).toContain('printNext.current = print;');
+    expect(register).toContain('if (again) await pay(exact, again, print);');
+    const more = register.slice(register.indexOf("{dialog === 'more' && ("), register.indexOf('{showHeld && ('));
+    for (const tool of ["reveal('discount')", "reveal('customer')", "reveal('cash')", "setDialog('voucherPay')", 'hold();', 'checked={prefs.full}']) expect(more, tool).toContain(tool);
+    // and they go away again with the basket
+    expect(register).toMatch(/const clearNow = \(\) => \{\s+setShow\(\{ customer: false, discount: false, cash: false \}\);/);
+  });
+
+  it('the full till shows the change big, or what is short, and the rounding of the cash', () => {
     expect(panel({ handed: 10_000, change: 2_750 })).toMatch(/pos-giveback[^"]*"[^>]*>.*Change.*2,750/);
     expect(panel({ handed: 5_000, change: -2_250 })).toMatch(/pos-giveback short/);
     const rounded = panel({ sum: sum({ cashDue: 7_250, cashRounded: 7_500 }) });
@@ -149,6 +214,27 @@ describe('the payment panel', () => {
     const credit = panel({ onCredit: true, method: 'account' });
     expect(credit).not.toContain('pos-tenders');
     expect(tillPart('PaymentPanel.tsx')).not.toContain("t('pos_paid')");
+  });
+});
+
+function PanelFor({ simple }: { simple: boolean }) {
+  return (
+    <PaymentPanel currency="IQD" rateX100={100} sum={sum()} method="cash" offered={['cash', 'account']} offline={false} needsCustomer={false} onCredit={false} onPick={() => {}}
+      cardMethods={[]} split={{}} splitBad={false} onSplit={() => {}} handed={null} onHanded={() => {}} handedUsd={null} onHandedUsd={() => {}}
+      usdRateText="1420" onUsdRate={() => {}} usdOn={false} change={null} onDiscount={() => {}} onVoucher={null} onRemoveVoucher={() => {}}
+      customer={null} loyalty={null} debt={null} canPay onPay={() => {}} onPayPrint={() => {}} onExact={() => {}} onClear={() => {}} onHold={() => {}} cartEmpty={false} busy={false}
+      keypad={null} notes={null} error={null} done={null} simple={simple} show={NOTHING_ASKED} />
+  );
+}
+
+describe('the cash drawer after a sale', () => {
+  it('opens on a cash sale unless the till was told it has none, and says nothing at every sale where no receipt printer is chosen', () => {
+    const register = tillPart('Register.tsx');
+    expect(register).toContain("const drawerOnCash = inWindowsTill() && (till ? till.drawer === 'cash' : true);");
+    expect(register).toContain('void kickDrawer().then((s) => drawerSaid(s, false));');
+    expect(register).toContain("if (s === 'no_printer') { if (asked) toast(t('tl_drawer_no_printer')); }");
+    // a new till opens its drawer on cash sales unless the admin chooses "No drawer"
+    expect(tillPart('../industry/TillSettings.tsx')).toContain("drawer: 'cash', customerDisplay: false, active: true }");
   });
 });
 

@@ -59,7 +59,7 @@ function TillForm({ till, warehouses, onDone, onCancel }: { till: TillView | nul
   const active = warehouses.filter((w) => w.active);
   const [form, setForm] = useState<TillInput>(() => till
     ? { name: till.name, cashAccountCode: till.cashAccountCode, warehouseId: till.warehouseId, drawer: till.drawer, customerDisplay: till.customerDisplay, active: till.active }
-    : { name: '', cashAccountCode: '1811', warehouseId: '', drawer: 'off', customerDisplay: false, active: true });
+    : { name: '', cashAccountCode: '1811', warehouseId: '', drawer: 'cash', customerDisplay: false, active: true });
   useEffect(() => { if (!form.warehouseId && active[0]) setForm((f) => ({ ...f, warehouseId: active[0]!.id })); }, [active.length]); // eslint-disable-line react-hooks/exhaustive-deps
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<unknown>(null);

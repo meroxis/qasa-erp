@@ -94,7 +94,7 @@ export function createTill(db: Db, input: TillInput, user: string): TillView {
   transaction(db, () => {
     db.prepare(`INSERT INTO pos_tills (id, name, cash_account, warehouse_id, drawer, customer_display, active, created_at, updated_at)
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`)
-      .run(id, input.name.trim(), input.cashAccountCode, input.warehouseId, input.drawer ?? 'off', input.customerDisplay ? 1 : 0, input.active === false ? 0 : 1, now, now);
+      .run(id, input.name.trim(), input.cashAccountCode, input.warehouseId, input.drawer ?? 'cash', input.customerDisplay ? 1 : 0, input.active === false ? 0 : 1, now, now);
     audit(db, user, 'create', 'pos_till', id, { name: input.name.trim() });
   });
   return getTill(db, id);
