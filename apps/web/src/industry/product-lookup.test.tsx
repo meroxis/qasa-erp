@@ -112,7 +112,7 @@ describe('the states, in three languages', () => {
 
   it.each(LANGS)('%s: the question says what is sent and to whom, and offers both answers', (lang) => {
     const html = wrap(<LookupAsk busy={false} error={null} onAnswer={() => {}} />, lang);
-    for (const key of ['pl_askTitle', 'pl_explain', 'pl_changeLater', 'pl_turnOn', 'pl_notNow'] as const) expect(html, key).toContain(esc(textOf(lang, key)));
+    for (const key of ['plk_askTitle', 'plk_explain', 'plk_changeLater', 'plk_turnOn', 'plk_notNow'] as const) expect(html, key).toContain(esc(textOf(lang, key)));
     expect(html).toContain('Open Food Facts');
   });
 
@@ -120,10 +120,10 @@ describe('the states, in three languages', () => {
     const html = wrap(<LookupResultView code={COKE} result={FOUND} picture={FROM_LOOKUP} onPicture={() => {}} onName={() => {}} />, lang);
     expect(html).toContain('src="data:image/jpeg;base64,/9j/4AAQ"');
     expect(html).toMatch(/<input type="checkbox"[^>]*checked=""/);
-    expect(html).toContain(esc(textOf(lang, 'pl_useThis')));
-    expect(html).toContain(esc(textOf(lang, 'pl_from', { s: 'Open Food Facts' })));
+    expect(html).toContain(esc(textOf(lang, 'plk_useThis')));
+    expect(html).toContain(esc(textOf(lang, 'plk_from', { s: 'Open Food Facts' })));
     expect(html).toContain('CC BY-SA');
-    expect(html).toContain(esc(textOf(lang, 'pl_names')));
+    expect(html).toContain(esc(textOf(lang, 'plk_names')));
     for (const name of ['كوكاكولا', 'Coca-Cola', 'Coca-Cola 330 ml']) expect(html).toContain(`>${name}</button>`);
     // names are buttons to press: nothing is written into the form by itself
     expect((html.match(/<button type="button"/g) ?? []).length).toBe(3);
@@ -131,22 +131,22 @@ describe('the states, in three languages', () => {
 
   it.each(LANGS)('%s: with the person’s own picture the found one is offered unticked', (lang) => {
     const html = wrap(<LookupResultView code={COKE} result={FOUND} picture={OWN} onPicture={() => {}} onName={() => {}} />, lang);
-    expect(html).toContain(esc(textOf(lang, 'pl_useThis')));
+    expect(html).toContain(esc(textOf(lang, 'plk_useThis')));
     expect(html).not.toMatch(/<input type="checkbox"[^>]*checked=""/);
   });
 
   it.each(LANGS)('%s: nothing found, or names without a picture: one quiet line, and none once a picture is chosen', (lang) => {
     for (const reason of ['not_found', 'unreachable', 'busy'] as const) {
       const html = wrap(<LookupResultView code={COKE} result={{ found: false, reason }} picture={null} onPicture={() => {}} onName={() => {}} />, lang);
-      expect(html, reason).toContain(esc(textOf(lang, 'pl_none')));
+      expect(html, reason).toContain(esc(textOf(lang, 'plk_none')));
       expect(html, reason).not.toContain('<img');
       expect(html, reason).not.toContain('alert');
     }
     const namesOnly = wrap(<LookupResultView code={COKE} result={{ ...FOUND, image: null }} picture={null} onPicture={() => {}} onName={() => {}} />, lang);
-    expect(namesOnly).toContain(esc(textOf(lang, 'pl_noneNames')));
+    expect(namesOnly).toContain(esc(textOf(lang, 'plk_noneNames')));
     expect(namesOnly).toContain('>Coca-Cola</button>');
     const chosen = wrap(<LookupResultView code={COKE} result={{ found: false, reason: 'not_found' }} picture={OWN} onPicture={() => {}} onName={() => {}} />, lang);
-    expect(chosen).not.toContain(esc(textOf(lang, 'pl_none')));
+    expect(chosen).not.toContain(esc(textOf(lang, 'plk_none')));
   });
 
   it('a name from outside is shown as text, never as markup', () => {
@@ -157,31 +157,31 @@ describe('the states, in three languages', () => {
 
   it.each(LANGS)('%s: the setting in Settings: off by default, with what is sent in plain words', (lang) => {
     const off = wrap(<LookupSettingView known={{ enabled: false, asked: false, available: true }} busy={false} error={null} onChange={() => {}} />, lang, ['admin']);
-    for (const key of ['pl_title', 'pl_setting', 'pl_explain', 'pl_offNote'] as const) expect(off, key).toContain(esc(textOf(lang, key)));
+    for (const key of ['plk_title', 'plk_setting', 'plk_explain', 'plk_offNote'] as const) expect(off, key).toContain(esc(textOf(lang, key)));
     expect(off).not.toMatch(/checked=""/);
     expect(wrap(<LookupSettingView known={ON} busy={false} error={null} onChange={() => {}} />, lang, ['admin'])).toMatch(/checked=""/);
     const demo = wrap(<LookupSettingView known={{ enabled: false, asked: false, available: false }} busy={false} error={null} onChange={() => {}} />, lang, ['admin']);
-    expect(demo).toContain(esc(textOf(lang, 'pl_unavailable')));
+    expect(demo).toContain(esc(textOf(lang, 'plk_unavailable')));
     expect(demo).toMatch(/<input type="checkbox" disabled=""/);
   });
 
   it.each(LANGS)('%s: the search over every item says how far it is and how it ended', (lang) => {
     const running = wrap(<BulkStatusView status={{ running: true, total: 40, done: 12, added: 7, ended: null, startedAt: 'x' }} />, lang);
     expect(running).toContain('<progress value="12" max="40"');
-    expect(running).toContain(esc(textOf(lang, 'pl_progress', { done: 12, total: 40, added: 7 })));
-    expect(running).toContain(esc(textOf(lang, 'pl_running')));
-    const ends = { done: 'pl_endDone', stopped: 'pl_endStopped', off: 'pl_endOff', unreachable: 'pl_endUnreachable' } as const;
+    expect(running).toContain(esc(textOf(lang, 'plk_progress', { done: 12, total: 40, added: 7 })));
+    expect(running).toContain(esc(textOf(lang, 'plk_running')));
+    const ends = { done: 'plk_endDone', stopped: 'plk_endStopped', off: 'plk_endOff', unreachable: 'plk_endUnreachable' } as const;
     for (const [ended, key] of Object.entries(ends) as [keyof typeof ends, Key][]) {
       expect(wrap(<BulkStatusView status={{ running: false, total: 40, done: 12, added: 7, ended, startedAt: 'x' }} />, lang), ended).toContain(esc(textOf(lang, key)));
     }
-    expect(wrap(<BulkStatusView status={{ running: false, total: 0, done: 0, added: 0, ended: 'done', startedAt: 'x' }} />, lang)).toContain(esc(textOf(lang, 'pl_nothingToFind')));
+    expect(wrap(<BulkStatusView status={{ running: false, total: 0, done: 0, added: 0, ended: 'done', startedAt: 'x' }} />, lang)).toContain(esc(textOf(lang, 'plk_nothingToFind')));
     expect(wrap(<BulkStatusView status={{ running: false, total: 0, done: 0, added: 0, ended: null, startedAt: null }} />, lang)).toBe('');
   });
 
   it.each(LANGS)('%s: the credit names the databases the pictures came from, and is absent for the shop’s own', (lang) => {
-    expect(wrap(<PictureCredit sources={['openfoodfacts', 'openbeautyfacts']} />, lang)).toContain(esc(textOf(lang, 'pl_credit', { s: 'Open Food Facts, Open Beauty Facts' })));
+    expect(wrap(<PictureCredit sources={['openfoodfacts', 'openbeautyfacts']} />, lang)).toContain(esc(textOf(lang, 'plk_credit', { s: 'Open Food Facts, Open Beauty Facts' })));
     expect(wrap(<PictureCredit sources={[]} />, lang)).toBe('');
-    expect(textOf(lang, 'pl_credit', { s: 'Open Food Facts' })).toContain('CC BY-SA');
+    expect(textOf(lang, 'plk_credit', { s: 'Open Food Facts' })).toContain('CC BY-SA');
   });
 });
 
@@ -201,8 +201,8 @@ describe('before anything is known the form is as it was', () => {
     expect(chosen).toContain(`aria-label="${textOf('en', 'md_removePicture')}"`);
     const source = read('./ItemImage.tsx');
     expect(source).toContain('capture="environment"');
-    expect(source).toContain("t('pl_takePhoto')");
-    expect(source).toContain("t('pl_chooseFile')");
+    expect(source).toContain("t('plk_takePhoto')");
+    expect(source).toContain("t('plk_chooseFile')");
   });
 });
 
@@ -217,8 +217,8 @@ describe('where it is wired in', () => {
     expect(quick).toContain('<NewItemPicture value={picture} onChange={setPicture} size={64} />');
     expect(quick).toContain('saveItemPicture(item.id, picture.data, picture.lookupBarcode)');
     expect(read('../pages/Settings.tsx')).toContain('<ProductLookupSettingCard />');
-    expect(read('../pages/PriceCheckerScreen.tsx')).toContain("t('pl_credit', { s: creditNames(credited) })");
-    expect(read('./PrintDocument.tsx')).toContain("L.t('pl_credit', { s: creditNames(pictureSources) })");
+    expect(read('../pages/PriceCheckerScreen.tsx')).toContain("t('plk_credit', { s: creditNames(credited) })");
+    expect(read('./PrintDocument.tsx')).toContain("L.t('plk_credit', { s: creditNames(pictureSources) })");
     expect(read('./LegalPanel.tsx')).toContain("t('lg_openData')");
   });
 

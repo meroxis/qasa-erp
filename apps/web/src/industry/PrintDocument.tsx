@@ -317,7 +317,7 @@ export function PrintDocument({ model: given, design, profile, company, lang, br
         </table>
       )}
       {/* 2.1: pictures that came from an open product database carry its credit (their licence asks for it) */}
-      {show.itemImage && pictureSources.length > 0 && <div className="qd-muted qd-credit">{L.t('pl_credit', { s: creditNames(pictureSources) })}</div>}
+      {show.itemImage && pictureSources.length > 0 && <div className="qd-muted qd-credit">{L.t('plk_credit', { s: creditNames(pictureSources) })}</div>}
 
       {items && receipt && (
         <div className="qd-receipt-lines">

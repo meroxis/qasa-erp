@@ -145,7 +145,7 @@ export function PriceCheckerScreen({ fetcher = fetch, hash }: { fetcher?: typeof
         )}
         {problem === 'network' && <p className="muted small">{t('mx_pcOffline')}</p>}
       </section>
-      {credited.length > 0 && <footer className="muted" style={{ fontSize: 12 }}>{t('pl_credit', { s: creditNames(credited) })}</footer>}
+      {credited.length > 0 && <footer className="muted" style={{ fontSize: 12 }}>{t('plk_credit', { s: creditNames(credited) })}</footer>}
       <nav aria-label={t('language')} style={{ display: 'flex', gap: 8 }}>
         {(['ar', 'ku', 'en'] as const).map((l) => (
           <button key={l} type="button" className="btn small" aria-pressed={lang === l} onClick={() => setLangState(l)}>{l === 'ar' ? 'عربي' : l === 'ku' ? 'کوردی' : 'English'}</button>

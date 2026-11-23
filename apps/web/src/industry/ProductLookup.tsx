@@ -42,14 +42,14 @@ async function saveLookupSetting(enabled: boolean): Promise<void> {
 /** "Picture from Open Food Facts · CC BY-SA": the line under a picture that came from one of the databases. */
 export function PictureSourceLine({ source }: { source: ProductSource }) {
   const { t } = useI18n();
-  return <span className="muted small">{t('pl_from', { s: PRODUCT_SOURCE_NAMES[source] })} · <span className="ltr">CC BY-SA</span></span>;
+  return <span className="muted small">{t('plk_from', { s: PRODUCT_SOURCE_NAMES[source] })} · <span className="ltr">CC BY-SA</span></span>;
 }
 
 /** The credit a page that shows such pictures to the public carries (the price checker's footer, a printed document). */
 export function PictureCredit({ sources }: { sources: readonly ProductSource[] }) {
   const { t } = useI18n();
   if (sources.length === 0) return null;
-  return <div className="muted small picture-credit" style={{ fontSize: 11 }}>{t('pl_credit', { s: creditNames(sources) })}</div>;
+  return <div className="muted small picture-credit" style={{ fontSize: 11 }}>{t('plk_credit', { s: creditNames(sources) })}</div>;
 }
 
 /* ---------- in the add-item forms ---------- */
@@ -83,14 +83,14 @@ export function pictureAfterLookup(result: ProductLookupResult, current: Prepare
 export function LookupAsk({ busy, error, onAnswer }: { busy: boolean; error: unknown; onAnswer(on: boolean): void }) {
   const { t } = useI18n();
   return (
-    <div className="alert info stack product-lookup-ask" style={{ gap: 8 }} role="group" aria-label={t('pl_askTitle')}>
-      <strong>{t('pl_askTitle')}</strong>
-      <span className="small">{t('pl_explain')}</span>
-      <span className="muted small">{t('pl_changeLater')}</span>
+    <div className="alert info stack product-lookup-ask" style={{ gap: 8 }} role="group" aria-label={t('plk_askTitle')}>
+      <strong>{t('plk_askTitle')}</strong>
+      <span className="small">{t('plk_explain')}</span>
+      <span className="muted small">{t('plk_changeLater')}</span>
       <ErrorBox error={error} />
       <div className="row">
-        <button type="button" className="btn small primary" disabled={busy} onClick={() => onAnswer(true)}>{t('pl_turnOn')}</button>
-        <button type="button" className="btn small" disabled={busy} onClick={() => onAnswer(false)}>{t('pl_notNow')}</button>
+        <button type="button" className="btn small primary" disabled={busy} onClick={() => onAnswer(true)}>{t('plk_turnOn')}</button>
+        <button type="button" className="btn small" disabled={busy} onClick={() => onAnswer(false)}>{t('plk_notNow')}</button>
       </div>
     </div>
   );
@@ -112,21 +112,21 @@ export function LookupResultView({ code, result, picture, onPicture, onName }: {
     <div className="stack product-lookup" style={{ gap: 8 }} role="status">
       {image && result.source ? (
         <div className="row" style={{ gap: 12, alignItems: 'center', flexWrap: 'nowrap' }}>
-          <img src={`data:${image.mime};base64,${image.data}`} alt={t('pl_found')} width={56} height={56}
+          <img src={`data:${image.mime};base64,${image.data}`} alt={t('plk_found')} width={56} height={56}
             style={{ inlineSize: 56, blockSize: 56, objectFit: 'contain', borderRadius: 'var(--r-md)', background: 'var(--surface)', flexShrink: 0 }} />
           <div className="stack" style={{ gap: 2, minInlineSize: 0 }}>
             <label className="row" style={{ gap: 8 }}>
               <input type="checkbox" checked={used}
                 onChange={(e) => onPicture(e.target.checked ? { data: image.data, mime: image.mime, lookupBarcode: code, source: result.source! } : null)} />
-              {t('pl_useThis')}
+              {t('plk_useThis')}
             </label>
             <PictureSourceLine source={result.source} />
           </div>
         </div>
-      ) : !picture && <span className="muted small">{t(result.found ? 'pl_noneNames' : 'pl_none')}</span>}
+      ) : !picture && <span className="muted small">{t(result.found ? 'plk_noneNames' : 'plk_none')}</span>}
       {names.length > 0 && (
         <div className="stack" style={{ gap: 4 }}>
-          <span className="muted small">{t('pl_names')}</span>
+          <span className="muted small">{t('plk_names')}</span>
           <div className="row" style={{ gap: 6, flexWrap: 'wrap' }}>
             {names.map((n) => (
               <button key={`${n.lang}:${n.text}`} type="button" className="btn small" dir="auto" lang={n.lang === 'ku' ? 'ckb' : n.lang} onClick={() => onName(n)}>{n.text}</button>
@@ -193,7 +193,7 @@ export function ProductLookupPanel({ barcode, picture, onPicture, onName }: {
     };
     return <LookupAsk busy={asking} error={error} onAnswer={(on) => void answer(on)} />;
   }
-  if (shows === 'looking' || found?.state !== 'done') return <div className="muted small product-lookup" role="status">{t('pl_looking')}</div>;
+  if (shows === 'looking' || found?.state !== 'done') return <div className="muted small product-lookup" role="status">{t('plk_looking')}</div>;
   return <LookupResultView code={code} result={found.result} picture={picture} onPicture={onPicture} onName={onName} />;
 }
 
@@ -204,13 +204,13 @@ export function LookupSettingView({ known, busy, error, onChange }: { known: Loo
   const { t } = useI18n();
   return (
     <div className="card pad stack">
-      <h2>{t('pl_title')}</h2>
+      <h2>{t('plk_title')}</h2>
       <label className="row" style={{ gap: 8 }}>
         <input type="checkbox" checked={known.enabled} disabled={busy || !known.available} onChange={(e) => onChange(e.target.checked)} />
-        {t('pl_setting')}
+        {t('plk_setting')}
       </label>
-      <div className="muted small">{t('pl_explain')}</div>
-      <div className="muted small">{known.available ? t('pl_offNote') : t('pl_unavailable')}</div>
+      <div className="muted small">{t('plk_explain')}</div>
+      <div className="muted small">{known.available ? t('plk_offNote') : t('plk_unavailable')}</div>
       <ErrorBox error={error} />
     </div>
   );
@@ -232,7 +232,7 @@ export function ProductLookupSettingCard() {
 
 /* ---------- the items list: pictures for every item that has none ---------- */
 
-const END_TEXT = { done: 'pl_endDone', stopped: 'pl_endStopped', off: 'pl_endOff', unreachable: 'pl_endUnreachable' } as const;
+const END_TEXT = { done: 'plk_endDone', stopped: 'plk_endStopped', off: 'plk_endOff', unreachable: 'plk_endUnreachable' } as const;
 
 /**
  * "Find pictures for items without one" (an admin, with the setting on): starts the search on the server, shows how
@@ -246,7 +246,7 @@ export function FindPicturesButton({ onAdded }: { onAdded?: () => void }) {
   if (!known?.available || !known.enabled || !can('productLookupAll')) return null;
   return (
     <>
-      <button type="button" className="btn" onClick={() => setOpen(true)}><Icon name="search" size={16} />{t('pl_findAll')}</button>
+      <button type="button" className="btn" onClick={() => setOpen(true)}><Icon name="search" size={16} />{t('plk_findAll')}</button>
       {open && <FindPicturesDialog onClose={() => setOpen(false)} {...(onAdded ? { onAdded } : {})} />}
     </>
   );
@@ -258,11 +258,11 @@ export function BulkStatusView({ status }: { status: BulkStatus }) {
   if (!status.running && !status.ended) return null;
   return (
     <div className="stack" style={{ gap: 6 }} role="status">
-      {status.total > 0 && <progress value={status.done} max={status.total} style={{ inlineSize: '100%' }} aria-label={t('pl_findAll')} />}
-      {status.total > 0 && <span>{t('pl_progress', { done: status.done, total: status.total, added: status.added })}</span>}
-      {status.running ? <span className="muted small">{t('pl_running')}</span>
+      {status.total > 0 && <progress value={status.done} max={status.total} style={{ inlineSize: '100%' }} aria-label={t('plk_findAll')} />}
+      {status.total > 0 && <span>{t('plk_progress', { done: status.done, total: status.total, added: status.added })}</span>}
+      {status.running ? <span className="muted small">{t('plk_running')}</span>
         : status.ended && <span className={status.ended === 'unreachable' || status.ended === 'off' ? 'alert warn small' : 'muted small'}>
-          {status.ended === 'done' && status.total === 0 ? t('pl_nothingToFind') : t(END_TEXT[status.ended])}
+          {status.ended === 'done' && status.total === 0 ? t('plk_nothingToFind') : t(END_TEXT[status.ended])}
         </span>}
     </div>
   );
@@ -293,16 +293,16 @@ export function FindPicturesDialog({ onClose, onAdded }: { onClose(): void; onAd
     try { take(what === 'start' ? await productLookupApi.startBulk() : await productLookupApi.stopBulk()); } catch (e) { setError(e); } finally { setBusy(false); }
   };
   return (
-    <Modal title={t('pl_findAll')} onClose={onClose}>
+    <Modal title={t('plk_findAll')} onClose={onClose}>
       <div className="stack">
-        <div className="muted small">{t('pl_findAllHelp')}</div>
+        <div className="muted small">{t('plk_findAllHelp')}</div>
         {status && <BulkStatusView status={status} />}
         <ErrorBox error={error} />
         <div className="row">
           {status?.running
-            ? <button type="button" className="btn" disabled={busy} onClick={() => void act('stop')}><Icon name="x" size={16} />{t('pl_stop')}</button>
-            : <button type="button" className="btn primary" disabled={busy || !status} onClick={() => void act('start')}><Icon name="search" size={16} />{t('pl_start')}</button>}
-          <button type="button" className="btn" onClick={onClose}>{t('pl_close')}</button>
+            ? <button type="button" className="btn" disabled={busy} onClick={() => void act('stop')}><Icon name="x" size={16} />{t('plk_stop')}</button>
+            : <button type="button" className="btn primary" disabled={busy || !status} onClick={() => void act('start')}><Icon name="search" size={16} />{t('plk_start')}</button>}
+          <button type="button" className="btn" onClick={onClose}>{t('plk_close')}</button>
         </div>
       </div>
     </Modal>

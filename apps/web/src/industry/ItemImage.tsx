@@ -245,7 +245,7 @@ export function NewItemPicture({ value, onChange, size = 104 }: { value: Prepare
       </span>
       <div className="row" style={{ justifyContent: 'center', gap: 4, flexWrap: 'nowrap' }}>
         <input ref={input} type="file" accept="image/jpeg,image/png,image/webp,image/*" hidden onChange={(e) => void choose(e.target.files?.[0])} />
-        <button type="button" className="btn small" disabled={busy} onClick={() => input.current?.click()}>{touch ? t('pl_chooseFile') : value ? t('md_changePicture') : t('md_addPicture')}</button>
+        <button type="button" className="btn small" disabled={busy} onClick={() => input.current?.click()}>{touch ? t('plk_chooseFile') : value ? t('md_changePicture') : t('md_addPicture')}</button>
         {value && (
           <button type="button" className="btn small ghost" disabled={busy} onClick={() => onChange(null)} aria-label={t('md_removePicture')} title={t('md_removePicture')}><Icon name="x" size={14} /></button>
         )}
@@ -254,7 +254,7 @@ export function NewItemPicture({ value, onChange, size = 104 }: { value: Prepare
         <>
           {/* a phone or a tablet: straight to the camera (the photo is made small like any other picture) */}
           <input ref={camera} type="file" accept="image/*" capture="environment" hidden onChange={(e) => void choose(e.target.files?.[0])} />
-          <button type="button" className="btn small" disabled={busy} onClick={() => camera.current?.click()}>{t('pl_takePhoto')}</button>
+          <button type="button" className="btn small" disabled={busy} onClick={() => camera.current?.click()}>{t('plk_takePhoto')}</button>
         </>
       )}
       {problem && <div className="alert bad small" role="alert">{problem}</div>}
