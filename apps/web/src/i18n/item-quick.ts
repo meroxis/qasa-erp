@@ -5,6 +5,8 @@
 export const ITEM_QUICK_TEXT = {
   // the quick add in an item picker (invoices, quotations, orders, the till)
   iq_addItem: ['إضافة مادة جديدة', 'Add a new item', 'زیادکردنی کاڵای نوێ'],
+  sd_firstOpening: ['لا توجد مواد بعد. اضغط «+» في خانة المادة لتضيف مادتك الأولى هنا مباشرة، ثم اكتب كميتها وكلفتها.', 'No items yet. Press “+” in the item box to add your first item right here, then type its quantity and cost.', 'هێشتا هیچ کاڵایەک نییە. لە خانەی کاڵادا «+» دابگرە بۆ زیادکردنی یەکەم کاڵات لێرەدا، پاشان بڕ و تێچووەکەی بنووسە.'],
+  sd_firstOpeningImport: ['أو استوردها من ملف Excel', 'Or import them from an Excel file', 'یان لە فایلی Excel هاوردەیان بکە'],
   iq_addNamed: ['إضافة «{name}» مادةً جديدة', 'Add “{name}” as a new item', '«{name}» وەک کاڵای نوێ زیاد بکە'],
   iq_addBarcode: ['إضافة مادة بالباركود {code}', 'Add an item with barcode {code}', 'کاڵایەک بە بارکۆدی {code} زیاد بکە'],
   iq_title: ['مادة جديدة', 'New item', 'کاڵای نوێ'],
