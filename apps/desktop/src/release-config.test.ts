@@ -22,6 +22,30 @@ describe('the installer build (electron-builder.yml)', () => {
     expect(read('apps/desktop/package.json')).toContain('electron-builder --win --publish never');
   });
 
+  it('a beta\'s update file goes on its release as beta.yml, made from the latest.yml the build writes (2.0.0-beta.1 stopped here)', () => {
+    const workflow = read('.github/workflows/release.yml');
+    // electron-builder names the file latest.yml for GitHub whatever the version: a step that waits for beta.yml never passes
+    expect(workflow).not.toContain('cp apps/desktop/release/beta.yml');
+    expect(workflow).toContain('if [ "$BETA" = "true" ]; then cp apps/desktop/release/latest.yml release-files/beta.yml; else cp apps/desktop/release/latest.yml release-files/; fi');
+    // and the file is this version's, naming this version's installer
+    expect(workflow).toContain('grep -Eq "^version: ${VERSION}[[:space:]]*$" "$update"');
+    expect(workflow).toContain('grep -q "Qasa-ERP-Setup-$VERSION.exe" "$update"');
+    expect(workflow).toContain('if [ "$BETA" = "true" ]; then update=beta.yml; fi');
+    expect(read('apps/desktop/electron-builder.yml')).toContain('electron-builder itself always names the file latest.yml for GitHub');
+  });
+
+  it('takes over a release made by hand for the tag only when it has no file on it, and never replaces one that has', () => {
+    const workflow = read('.github/workflows/release.yml');
+    const step = workflow.slice(workflow.indexOf('- name: Create the release draft'), workflow.indexOf('- name: Installer, update file and block map'));
+    expect(step).toContain(`if files=$(gh release view "$GITHUB_REF_NAME" --json assets --jq '.assets | length' 2>/dev/null); then`);
+    expect(step).toContain('if [ "$files" != "0" ]; then echo "A release for $GITHUB_REF_NAME with $files file(s) is already there: not replaced"; exit 1; fi');
+    expect(step).toContain('gh release edit "$GITHUB_REF_NAME" --draft "${extra[@]}" --title "$title" --notes-file release-notes.md');
+    // no release there: made as before, as a draft, for a tag that exists
+    expect(step).toContain('gh release create "$GITHUB_REF_NAME" --draft --verify-tag "${extra[@]}" --title "$title" --notes-file release-notes.md');
+    expect(step.indexOf('exit 1; fi')).toBeLessThan(step.indexOf('gh release edit'));
+    expect(read('docs/releasing.md')).toContain('The app\'s run takes that hand-made release over (title, notes, files) as long as it has no file');
+  });
+
   it('installs the third-party notices with the app (promises-15)', () => {
     expect(config).toMatch(/- from: \.\.\/\.\.\/THIRD_PARTY_NOTICES\.md\n\s+to: THIRD_PARTY_NOTICES\.md/);
   });
@@ -1965,7 +1989,7 @@ describe('the release checklist (docs/releasing.md) and the handoff notes (docs/
   const handoff = read('docs/HANDOFF.md');
 
   it('says a stable GitHub release writes latest.yml only, which beta copies read too (app-release-15)', () => {
-    expect(releasing).toMatch(/^\| Update file \| `latest\.yml` only \(beta copies read it too\) \| `beta\.yml` \|$/m);
+    expect(releasing).toMatch(/^\| Update file \| `latest\.yml` only \(beta copies read it too\) \| `beta\.yml` \(the build's `latest\.yml`, put on the release under that name by the workflow\) \|$/m);
     expect(releasing).not.toMatch(/stable release also writes `beta\.yml`|`latest\.yml` and `beta\.yml`/);
   });
 

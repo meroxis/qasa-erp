@@ -8,7 +8,7 @@ There are two channels:
 |---|---|---|
 | Version and tag | `0.2.0`, tag `v0.2.0` | `0.2.0-beta.1`, tag `v0.2.0-beta.1` |
 | GitHub release | normal, marked **Latest** | **prerelease**, never "Latest" |
-| Update file | `latest.yml` only (beta copies read it too) | `beta.yml` |
+| Update file | `latest.yml` only (beta copies read it too) | `beta.yml` (the build's `latest.yml`, put on the release under that name by the workflow) |
 | Who gets it | everyone, including beta testers | only copies that joined the beta |
 | Microsoft Store package | yes (workflow artifact) | no |
 | Website download link (`releases/latest/download/Qasa-ERP-Setup.exe`) | moves to this version | unchanged |
@@ -73,6 +73,11 @@ There are two channels:
    ```
    git tag v0.2.0-beta.1 && git push origin v0.2.0-beta.1
    ```
+
+   Without a PC, the tag can be made on GitHub's website (it has no way to make a tag but with a release): **Releases →
+   Draft a new release**, type the tag, choose the branch as its target, tick **Set as a pre-release**, publish. Pro
+   first, then the app. The app's run takes that hand-made release over (title, notes, files) as long as it has no file
+   on it; a release that already has files is never touched.
 
 4. The release appears as a GitHub prerelease. Only beta testers are offered it.
 5. For the next round, use `0.2.0-beta.2`, and so on.
@@ -249,9 +254,10 @@ version that can't be applied is reported as `update_failed`, never as a damaged
 app never offers to set it aside, and a try that failed removes no older copy from before an update. Card, FIB, ZainCash and Qi at
 the till are off in 2.0.0 (`TILL_CARD_PAYMENTS`), so the notes ask for waiting sales to be sent before the update.
 
-0. **A beta first** (the owner's choice): `2.0.0-beta.1` goes to the copies that joined the beta, from the release
+0. **A beta first** (the owner's choice): `2.0.0-beta.2` goes to the copies that joined the beta, from the release
    branches of the app and Pro (nothing is merged into `main` for a beta), with notes of its own
-   (`release-notes/2.0.0-beta.1.md`: what joining means, what to test, what is known). 2.0.0 follows when the till has
+   (`release-notes/2.0.0-beta.2.md`: what joining means, what to test, what is known). `2.0.0-beta.1` was tagged
+   and never published: its run stopped because the build had no `beta.yml` (fixed in the workflow, below). 2.0.0 follows when the till has
    been tried on shops' own PCs: set the version back to `2.0.0` in `apps/desktop/package.json`,
    `packages/core/src/version.ts` and `package-lock.json`, merge both branches, and go on below.
 1. **Tag Pro, then the app** (the stable steps above): the new features' entitlements must be on Pro `main` first.
