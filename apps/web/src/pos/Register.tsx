@@ -966,12 +966,8 @@ export function Register({ initial, onClosed }: { initial: ShiftView; onClosed()
             <div className="pos-done pos-done-slim" role="status">
               <div className="pos-done-head"><Icon name="check" size={20} /><strong>{t('tu_saleDone')}</strong>{lastDone.number && <span className="muted small ltr">{lastDone.number}</span>}<span className="spacer" /><strong className="num">{lastDone.total}</strong></div>
               {lastDone.change && <div className="pos-giveback"><span>{t('tu_changeDue')}</span><strong className="num">{lastDone.change}</strong></div>}
-              {receipt && (
-                <div className="row" style={{ gap: 8, flexWrap: 'wrap' }}>
-                  <button type="button" className="btn small" onClick={() => void printReceipt()}><Icon name="printer" size={15} />{t('tu_printAgain')} <span className="kbd">F10</span></button>
-                  <ReceiptWhatsApp invoice={receipt} />
-                </div>
-              )}
+              {/* the receipt again, and nothing else: sending it on WhatsApp is a tool of the full till (the owner: not needed at the till) */}
+              {receipt && <div><button type="button" className="btn small" onClick={() => void printReceipt()}><Icon name="printer" size={15} />{t('tu_printAgain')} <span className="kbd">F10</span></button></div>}
             </div>
           ) : (
             <div className="pos-done" role="status">

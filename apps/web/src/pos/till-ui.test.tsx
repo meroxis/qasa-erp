@@ -227,6 +227,17 @@ function PanelFor({ simple }: { simple: boolean }) {
   );
 }
 
+describe('a sale just made on the simple till', () => {
+  it('shows its number, total and change with "Print the receipt", and no WhatsApp button (that stays on the full till)', () => {
+    const register = tillPart('Register.tsx');
+    const slim = register.slice(register.indexOf('pos-done pos-done-slim'), register.indexOf('<div className="pos-done" role="status">'));
+    expect(slim).toContain("t('tu_printAgain')");
+    expect(slim).not.toContain('ReceiptWhatsApp');
+    const full = register.slice(register.indexOf('<div className="pos-done" role="status">'));
+    expect(full).toContain('<ReceiptWhatsApp invoice={receipt} />');
+  });
+});
+
 describe('the cash drawer after a sale', () => {
   it('opens on a cash sale unless the till was told it has none, and says nothing at every sale where no receipt printer is chosen', () => {
     const register = tillPart('Register.tsx');
