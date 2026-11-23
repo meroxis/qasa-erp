@@ -1131,9 +1131,9 @@ describe('the release notes of 1.4.3 (never released on its own: What\'s new sho
   });
 
   it('offers phone app 1.0.2, and says plainly what goes to Google: never the codes scanned, maybe the scanner\'s statistics', () => {
-    // (Settings offers 1.1.0 from 1.5.0, with the office's phone link that has its features; 1.0.2 was 1.4.3's)
+    // (Settings offers 1.1.0 from 1.5.0, with the office's phone link that has its features; 1.0.2 was 1.4.3's; 1.2.0 is app.json's next build, not offered yet)
     const mobile = JSON.parse(read('apps/mobile/app.json')) as { expo: { version: string } };
-    expect(['1.0.2', '1.1.0']).toContain(mobile.expo.version);
+    expect(['1.0.2', '1.1.0', '1.2.0']).toContain(mobile.expo.version);
     for (const lang of ['ar', 'en', 'ku'] as const) expect(section(lang), lang).toMatch(/1\.0\.2[\s\S]*SHA-256/);
     expect(section('en')).toContain('The barcodes you scan never go to Google, and Google ML Kit’s own usage reports are taken out; Google Play services may still receive brief usage statistics about the scanning.');
     expect(section('ar')).toContain('ما تمسحه من باركود لا يذهب إلى Google أبداً');
@@ -1256,8 +1256,10 @@ describe('the release notes of 1.5.0 (kept as shipped; the Store "What\'s new" o
 
   it('offers phone app 1.1.0 as Settings does and app.json has it, and says truly that a phone on 1.0.x keeps working without the new features', () => {
     const mobile = JSON.parse(read('apps/mobile/app.json')) as { expo: { version: string; android: { versionCode: number } } };
-    expect(mobile.expo.version).toBe('1.1.0');
-    expect(mobile.expo.android.versionCode).toBe(5);
+    // app.json is at the build Settings offers or ahead of it (1.2.0, code 6, is written but not built yet: Settings
+    // offers a newer phone app only from the office release that comes with it)
+    expect(mobile.expo.version).toMatch(/^1\.[1-9]\d*\.\d+$/);
+    expect(mobile.expo.android.versionCode).toBeGreaterThanOrEqual(5);
     expect(read('apps/web/src/pages/Settings.tsx')).toContain("version: '1.1.0',");
     for (const lang of ['ar', 'en', 'ku'] as const) expect(section(lang), lang).toMatch(/1\.1\.0[\s\S]*SHA-256/);
     expect(section('en')).toContain('A phone still on 1.0.x keeps working with 1.5.0 as before, without the new features.');

@@ -19,8 +19,10 @@ describe('the app\'s build settings', () => {
     // 1.0.1 (code 2) was the first build offered, with the PIN that can't be turned off; 1.0.2 (code 3) sends Google
     // no usage reports and tells the office its version; 1.1.0 (code 4) has the owner's and the staff's features that an
     // office of the same release offers
-    expect(app.expo.version).toBe('1.1.0');
-    expect(app.expo.android.versionCode).toBe(5);
+    // 1.2.0 (code 6) looks a new item's picture and names up through an office that offers it, and takes a picture
+    // from the gallery
+    expect(app.expo.version).toBe('1.2.0');
+    expect(app.expo.android.versionCode).toBe(6);
     expect(JSON.parse(readFileSync(join(root, 'package.json'), 'utf8')).version).toBe(app.expo.version);
     const lock = JSON.parse(readFileSync(join(root, 'package-lock.json'), 'utf8')) as { version: string; packages: Record<string, { version: string }> };
     expect([lock.version, lock.packages['']!.version]).toEqual([app.expo.version, app.expo.version]);
