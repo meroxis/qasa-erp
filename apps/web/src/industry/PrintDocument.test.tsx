@@ -13,7 +13,7 @@ vi.mock('../api.ts', async (importOriginal) => ({
   api: { partyStatement: () => new Promise(() => {}), items: () => new Promise(() => {}) }
 }));
 vi.mock('./InvoiceQr.tsx', () => ({ InvoiceQr: () => null }));
-vi.mock('./ItemImage.tsx', () => ({ ItemImage: () => null }));
+vi.mock('./ItemImage.tsx', () => ({ ItemImage: () => null, usePictureSources: () => [] }));
 vi.mock('./print-design.css', () => ({}));
 
 const i18n = makeI18n('en', 'western', () => {}, () => {});

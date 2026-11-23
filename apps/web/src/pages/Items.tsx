@@ -12,6 +12,7 @@ import { ExpiryChip } from './Expiry.tsx';
 import { useI18n, type I18n, isKey, type Key } from '../i18n.ts';
 import { go, href } from '../router.ts';
 import { ImagePicker, ItemImage, NewItemPicture, saveItemPicture, type PreparedPicture } from '../industry/ItemImage.tsx';
+import { FindPicturesButton, ProductLookupPanel } from '../industry/ProductLookup.tsx';
 import { NameField } from '../industry/NameField.tsx';
 import { WholesalePriceField } from '../industry/WholesalePriceField.tsx';
 import { printDocument } from '../industry/printing.ts';
@@ -135,6 +136,7 @@ export function Items({ tab: initialTab }: { tab?: 'reorder' | 'warehouses' } = 
             )}
             <input className="input" style={{ width: 240 }} type="search" placeholder={t('search')} aria-label={t('search')} value={q} onChange={(e) => setQ(e.target.value)} />
             <button type="button" className="btn" onClick={exportCsv}><Icon name="download" size={16} />{t('exportExcel')}</button>
+            <FindPicturesButton />
           </div>
           {selected.size > 0 && can('item') && (
             <div className="card pad row">
@@ -375,7 +377,8 @@ export function ItemForm({ item, onClose, onSaved }: { item: ItemView | null; on
       let pictureSaved = true;
       if (!item && picture) {
         // the item exists now; a picture that fails leaves it saved, and can be added from its page
-        try { await saveItemPicture(saved.id, picture.data); } catch { pictureSaved = false; }
+        // (one found by the barcode is saved with where it came from; the form drops it when the barcode changes)
+        try { await saveItemPicture(saved.id, picture.data, picture.lookupBarcode); } catch { pictureSaved = false; }
       }
       toast(pictureSaved ? t('saved') : t('it_pictureNotSaved'));
       onSaved(saved);
@@ -405,6 +408,8 @@ export function ItemForm({ item, onClose, onSaved }: { item: ItemView | null; on
               <label className="field"><span>{t('code')}</span><input className="input ltr" value={code} placeholder="I-0001" maxLength={24} onChange={(e) => setCode(e.target.value)} /></label>
               <label className="field"><span>{t('barcode')}</span><input className="input ltr" value={barcode} maxLength={64} onChange={(e) => setBarcode(e.target.value)} /></label>
             </div>
+            {/* 2.1: a new item's picture and name by its barcode, when the company has that on (never waited for) */}
+            {!item && <ProductLookupPanel barcode={barcode} picture={picture} onPicture={setPicture} onName={(n) => setName((names) => ({ ...names, [n.lang]: n.text }))} />}
           </div>
         </div>
         <div className="grid-2">

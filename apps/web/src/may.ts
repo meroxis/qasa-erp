@@ -49,7 +49,12 @@ export const ACTIONS = {
   // bought, melted, pieces received from a supplier and gold handed to one are purchasing
   goldBoard: { needs: 'sales', route: 'PUT /api/gold/board' },
   goldPiece: { needs: 'stock', route: 'PUT /api/gold/items/:id' },
-  goldDoc: { needs: 'purchases', route: 'POST /api/gold/docs' }
+  goldDoc: { needs: 'purchases', route: 'POST /api/gold/docs' },
+  // 2.1, product lookup (packages/server/src/product-lookup.ts): looking one barcode up is for whoever adds items;
+  // the setting and the search over every item are an admin's
+  productLookup: { needs: 'stock', route: 'POST /api/items/lookup' },
+  productLookupSetup: { needs: 'admin', route: 'PUT /api/items/lookup/settings' },
+  productLookupAll: { needs: 'admin', route: 'POST /api/items/lookup/bulk' }
 } as const satisfies Record<string, { needs: string; route: string; body?: Record<string, string> }>;
 
 /**

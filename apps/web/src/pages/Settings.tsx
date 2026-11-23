@@ -25,6 +25,7 @@ import { canSwitchCompanies } from '../industry/companies-api.ts';
 import { cloudChoices } from './cloud-providers.ts';
 import { backupFailureKey, backupNoticeKey } from '../industry/BackupNotice.tsx';
 import { batchesApi, type BatchSettingsView } from '../industry/batches-api.ts';
+import { ProductLookupSettingCard } from '../industry/ProductLookup.tsx';
 import { LoyaltySettingsCard } from '../industry/Loyalty.tsx';
 import { PosUseSetting } from '../industry/PosUseSetting.tsx';
 import { PosBigPicturesSetting } from '../industry/PosBigPicturesSetting.tsx';
@@ -230,7 +231,7 @@ function SettingsSectionContent({ id, admin }: { id: string; admin: boolean }) {
     case 'periods':
       return <PeriodsSettings />;
     case 'sales':
-      return <><PosUseSetting /><PosBigPicturesSetting /><ExpirySettingsCard /></>;
+      return <><PosUseSetting /><PosBigPicturesSetting /><ExpirySettingsCard /><ProductLookupSettingCard /></>;
     case 'tills':
       return <><TillSettings admin={admin} /><TillRulesSettings admin={admin} /></>;
     case 'loyalty':

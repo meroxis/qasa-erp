@@ -70,6 +70,7 @@ import { OFFER_TEXT } from './i18n/offers.ts';
 import { GOLD_TEXT } from './i18n/gold.ts';
 import { MKX_TEXT } from './i18n/market-extras.ts';
 import { CLOTHING_TEXT } from './i18n/clothing.ts';
+import { PRODUCT_LOOKUP_TEXT } from './i18n/product-lookup.ts';
 import { formatAmount, formatDate, formatDateTime, formatInteger, formatQty, formatTime, hasLeadingSign, LANGS, ltrIsolate, monthName, textDigits, toEasternDigits, type CurrencyCode, type DigitStyle, type Lang, type Names } from '@qasa/core';
 
 /** Every UI string in Arabic, English and Kurdish (Sorani) — in that order. */
@@ -1089,7 +1090,7 @@ const BASE = {
 /** The industry features keep their texts in files of their own (i18n/), in the same three languages. */
 const D = { ...BASE, ...AUDIT_TEXT, ...REAL_ESTATE_TEXT, ...MOBILE_TEXT, ...PARTS_TEXT, ...ENGINEERING_TEXT,
   ...PAYROLL_TEXT, ...POS_TEXT, ...QUOTES_TEXT, ...PIPELINE_TEXT, ...MEDIA_TEXT, ...BRIEF_TEXT, ...CLOUD_TEXT, ...RELAY_TEXT, ...ACTIVATION_TEXT, ...FX_TEXT, ...VERIFY_TEXT, ...GEN_TEXT, ...WEBAPI_TEXT, ...PHONE_TEXT, ...USAGE_TEXT, ...SOLAR_TEXT, ...LEGAL_TEXT, ...BRANCH_TEXT, ...BANK_TEXT, ...WAVE2_TEXT, ...ASSET_TEXT, ...ADJ_TEXT, ...PO_TEXT, ...COMPANY_TEXT, ...SCALE_TEXT, ...LABEL_TEXT, ...PRINTER_TEXT, ...SAFETY_TEXT, ...UI_TEXT, ...UNIT_TEXT, ...BATCH_TEXT, ...STORE_TEXT, ...CATALOG_TEXT, ...PHARMACY_TEXT, ...HARDENING_TEXT, ...OUTBOX_TEXT, ...DAY_CLOSE_TEXT, ...WHATSAPP_TEXT, ...LOYALTY_TEXT, ...SUPPORT_TEXT, ...SETTINGS_SECTION_TEXT, ...LOOK_TEXT, ...INVOICE_SPEED_TEXT, ...ITEMS14_TEXT, ...SALES14_TEXT, ...SHELL14_TEXT, ...PRINT14_TEXT, ...DOC_APPROVAL_TEXT, ...ITEM_QUICK_TEXT, ...COUNT_TEXT, ...AMOUNTS_TEXT, ...POS_USE_TEXT, ...TILL_QUICK_TEXT,
-  ...RECEIPT_PHOTO_TEXT, ...PETROL_TEXT, ...SMR_TEXT, ...TILL_TEXT, ...TILL_UI_TEXT, ...CONSIGNMENT_TEXT, ...OFFER_TEXT, ...BIZ_CHOICE_TEXT, ...GOLD_TEXT, ...WHOLESALE_TEXT, ...MKX_TEXT, ...CLOTHING_TEXT, ...UXF_TEXT };
+  ...RECEIPT_PHOTO_TEXT, ...PETROL_TEXT, ...SMR_TEXT, ...TILL_TEXT, ...TILL_UI_TEXT, ...CONSIGNMENT_TEXT, ...OFFER_TEXT, ...BIZ_CHOICE_TEXT, ...GOLD_TEXT, ...WHOLESALE_TEXT, ...MKX_TEXT, ...CLOTHING_TEXT, ...UXF_TEXT, ...PRODUCT_LOOKUP_TEXT };
 
 export type Key = keyof typeof D;
 

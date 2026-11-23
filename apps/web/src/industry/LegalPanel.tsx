@@ -74,6 +74,7 @@ export function LegalPanel() {
         <p className="muted" style={{ margin: 0 }}>{t('lg_core')} <Out href={SOURCE}>{t('lg_source')}</Out></p>
         <p className="muted" style={{ margin: 0 }}>{t('lg_pro')}</p>
         <p className="muted" style={{ margin: 0 }}>{t('lg_privacyNote')}</p>
+        <p className="muted" style={{ margin: 0 }}>{t('lg_openData')}</p>
       </div>
       <div className="row" style={{ gap: 8, flexWrap: 'wrap' }}>
         {LINKS.map(([page, key]) => page === 'third-party' && openNotices
