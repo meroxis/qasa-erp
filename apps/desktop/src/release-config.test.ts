@@ -1084,7 +1084,7 @@ describe('the release notes of 1.4.3 (never released on its own: What\'s new sho
   it('upgrades no company file in 1.4.3, so it has no "Before you update" warning', () => {
     // why: 1.4.3 adds no migration; 1.4.2 and 1.4.3 open the same company file (schema 14; 15, the receipt photos,
     // comes with the next release, whose notes say so; 16, the petrol station, with a later one)
-    expect(read('packages/server/src/db.ts')).toMatch(/\{ sql: V14, mysql: \{ tables: true, steps: \(\) => V14_MYSQL_STEPS \} \},?\n( {2}\{ sql: V15, mysql: \{ tables: true, steps: \(\) => V15_MYSQL_STEPS \} \},?\n)?( {2}\{ sql: V16, mysql: \{ tables: true, steps: \(\) => V16_MYSQL_STEPS \} \},?\n( {2}\{ sql: V17, mysql: \{ tables: true, steps: \(\) => V17_MYSQL_STEPS \} \},?\n( {2}\{ sql: V18, mysql: \{ tables: true, steps: \(\) => V18_MYSQL_STEPS \} \},?\n( {2}\{ sql: V19, mysql: \{ tables: true, steps: \(\) => V19_MYSQL_STEPS \}, data: keepFeatureAccounts \}\n)?)?)?)?\];/);
+    expect(read('packages/server/src/db.ts')).toMatch(/\{ sql: V14, mysql: \{ tables: true, steps: \(\) => V14_MYSQL_STEPS \} \},?\n( {2}\{ sql: V15, mysql: \{ tables: true, steps: \(\) => V15_MYSQL_STEPS \} \},?\n)?( {2}\{ sql: V16, mysql: \{ tables: true, steps: \(\) => V16_MYSQL_STEPS \} \},?\n( {2}\{ sql: V17, mysql: \{ tables: true, steps: \(\) => V17_MYSQL_STEPS \} \},?\n( {2}\{ sql: V18, mysql: \{ tables: true, steps: \(\) => V18_MYSQL_STEPS \} \},?\n( {2}\{ sql: V19, mysql: \{ tables: true, steps: \(\) => V19_MYSQL_STEPS \}, data: keepFeatureAccounts \},?\n( {2}\{ sql: V20, mysql: 'tables' \}\n)?)?)?)?)?\];/);
     expect(notes).not.toMatch(/Before you update|قبل التحديث|پێش نوێکردنەوە/);
   });
 
@@ -1131,9 +1131,9 @@ describe('the release notes of 1.4.3 (never released on its own: What\'s new sho
   });
 
   it('offers phone app 1.0.2, and says plainly what goes to Google: never the codes scanned, maybe the scanner\'s statistics', () => {
-    // (Settings offers 1.1.0 from 1.5.0, with the office's phone link that has its features; 1.0.2 was 1.4.3's)
+    // (Settings offers 1.1.0 from 1.5.0, with the office's phone link that has its features; 1.0.2 was 1.4.3's; 1.2.0 is app.json's next build, not offered yet)
     const mobile = JSON.parse(read('apps/mobile/app.json')) as { expo: { version: string } };
-    expect(['1.0.2', '1.1.0']).toContain(mobile.expo.version);
+    expect(['1.0.2', '1.1.0', '1.2.0']).toContain(mobile.expo.version);
     for (const lang of ['ar', 'en', 'ku'] as const) expect(section(lang), lang).toMatch(/1\.0\.2[\s\S]*SHA-256/);
     expect(section('en')).toContain('The barcodes you scan never go to Google, and Google ML Kit’s own usage reports are taken out; Google Play services may still receive brief usage statistics about the scanning.');
     expect(section('ar')).toContain('ما تمسحه من باركود لا يذهب إلى Google أبداً');
@@ -1242,7 +1242,7 @@ describe('the release notes of 1.5.0 (kept as shipped; the Store "What\'s new" o
   it('says first that the company file is upgraded to 15, which 1.4.3 and earlier (a Store copy on 1.4.2 too) cannot open', () => {
     // why: 1.5.0 adds migration 15 (entry_images, the receipt photos, and entries' revision), and an app refuses a newer file
     const db = read('packages/server/src/db.ts');
-    expect(db).toMatch(/\{ sql: V15, mysql: \{ tables: true, steps: \(\) => V15_MYSQL_STEPS \} \},?\n( {2}\{ sql: V16, mysql: \{ tables: true, steps: \(\) => V16_MYSQL_STEPS \} \},?\n( {2}\{ sql: V17, mysql: \{ tables: true, steps: \(\) => V17_MYSQL_STEPS \} \},?\n( {2}\{ sql: V18, mysql: \{ tables: true, steps: \(\) => V18_MYSQL_STEPS \} \},?\n( {2}\{ sql: V19, mysql: \{ tables: true, steps: \(\) => V19_MYSQL_STEPS \}, data: keepFeatureAccounts \}\n)?)?)?)?\];/);
+    expect(db).toMatch(/\{ sql: V15, mysql: \{ tables: true, steps: \(\) => V15_MYSQL_STEPS \} \},?\n( {2}\{ sql: V16, mysql: \{ tables: true, steps: \(\) => V16_MYSQL_STEPS \} \},?\n( {2}\{ sql: V17, mysql: \{ tables: true, steps: \(\) => V17_MYSQL_STEPS \} \},?\n( {2}\{ sql: V18, mysql: \{ tables: true, steps: \(\) => V18_MYSQL_STEPS \} \},?\n( {2}\{ sql: V19, mysql: \{ tables: true, steps: \(\) => V19_MYSQL_STEPS \}, data: keepFeatureAccounts \},?\n( {2}\{ sql: V20, mysql: 'tables' \}\n)?)?)?)?)?\];/);
     expect(db).toContain('ALTER TABLE entries ADD COLUMN revision INTEGER NOT NULL DEFAULT 0;');
     expect(db).toContain('export const SCHEMA_VERSION = MIGRATIONS.length;');
     expect(db).toContain('CREATE TABLE entry_images (');
@@ -1256,8 +1256,10 @@ describe('the release notes of 1.5.0 (kept as shipped; the Store "What\'s new" o
 
   it('offers phone app 1.1.0 as Settings does and app.json has it, and says truly that a phone on 1.0.x keeps working without the new features', () => {
     const mobile = JSON.parse(read('apps/mobile/app.json')) as { expo: { version: string; android: { versionCode: number } } };
-    expect(mobile.expo.version).toBe('1.1.0');
-    expect(mobile.expo.android.versionCode).toBe(5);
+    // app.json is at the build Settings offers or ahead of it (1.2.0, code 6, is written but not built yet: Settings
+    // offers a newer phone app only from the office release that comes with it)
+    expect(mobile.expo.version).toMatch(/^1\.[1-9]\d*\.\d+$/);
+    expect(mobile.expo.android.versionCode).toBeGreaterThanOrEqual(5);
     expect(read('apps/web/src/pages/Settings.tsx')).toContain("version: '1.1.0',");
     for (const lang of ['ar', 'en', 'ku'] as const) expect(section(lang), lang).toMatch(/1\.1\.0[\s\S]*SHA-256/);
     expect(section('en')).toContain('A phone still on 1.0.x keeps working with 1.5.0 as before, without the new features.');
@@ -1382,7 +1384,7 @@ describe('the release notes of 1.5.1 (kept as shipped: the menu, first on GitHub
   });
 
   it('has the same short Changed section in each language, and no Before you update: the company file stays on schema 15', () => {
-    expect(read('packages/server/src/db.ts')).toMatch(/\{ sql: V15, mysql: \{ tables: true, steps: \(\) => V15_MYSQL_STEPS \} \},?\n( {2}\{ sql: V16, mysql: \{ tables: true, steps: \(\) => V16_MYSQL_STEPS \} \},?\n( {2}\{ sql: V17, mysql: \{ tables: true, steps: \(\) => V17_MYSQL_STEPS \} \},?\n( {2}\{ sql: V18, mysql: \{ tables: true, steps: \(\) => V18_MYSQL_STEPS \} \},?\n( {2}\{ sql: V19, mysql: \{ tables: true, steps: \(\) => V19_MYSQL_STEPS \}, data: keepFeatureAccounts \}\n)?)?)?)?\];/);
+    expect(read('packages/server/src/db.ts')).toMatch(/\{ sql: V15, mysql: \{ tables: true, steps: \(\) => V15_MYSQL_STEPS \} \},?\n( {2}\{ sql: V16, mysql: \{ tables: true, steps: \(\) => V16_MYSQL_STEPS \} \},?\n( {2}\{ sql: V17, mysql: \{ tables: true, steps: \(\) => V17_MYSQL_STEPS \} \},?\n( {2}\{ sql: V18, mysql: \{ tables: true, steps: \(\) => V18_MYSQL_STEPS \} \},?\n( {2}\{ sql: V19, mysql: \{ tables: true, steps: \(\) => V19_MYSQL_STEPS \}, data: keepFeatureAccounts \},?\n( {2}\{ sql: V20, mysql: 'tables' \}\n)?)?)?)?)?\];/);
     expect(section('en')).toMatch(/\n### Changed\n- \*\*One menu group open at a time:\*\*[^\n]+\n$/);
     expect(section('ar')).toMatch(/\n### ما تغيّر\n- \*\*مجموعة واحدة مفتوحة في القائمة:\*\*[^\n]+\n$/);
     expect(section('ku')).toMatch(/\n### گۆڕاوەکان\n- \*\*یەک گرووپی کراوە لە لیستدا:\*\*[^\n]+\n$/);
@@ -1433,7 +1435,7 @@ describe('the release notes of 1.5.2 (kept as shipped: on GitHub only; the Store
   });
 
   it('has the same sections in each language, Before you update first, and upgrades no company file (schema 15)', () => {
-    expect(read('packages/server/src/db.ts')).toMatch(/\{ sql: V15, mysql: \{ tables: true, steps: \(\) => V15_MYSQL_STEPS \} \},?\n( {2}\{ sql: V16, mysql: \{ tables: true, steps: \(\) => V16_MYSQL_STEPS \} \},?\n( {2}\{ sql: V17, mysql: \{ tables: true, steps: \(\) => V17_MYSQL_STEPS \} \},?\n( {2}\{ sql: V18, mysql: \{ tables: true, steps: \(\) => V18_MYSQL_STEPS \} \},?\n( {2}\{ sql: V19, mysql: \{ tables: true, steps: \(\) => V19_MYSQL_STEPS \}, data: keepFeatureAccounts \}\n)?)?)?)?\];/);
+    expect(read('packages/server/src/db.ts')).toMatch(/\{ sql: V15, mysql: \{ tables: true, steps: \(\) => V15_MYSQL_STEPS \} \},?\n( {2}\{ sql: V16, mysql: \{ tables: true, steps: \(\) => V16_MYSQL_STEPS \} \},?\n( {2}\{ sql: V17, mysql: \{ tables: true, steps: \(\) => V17_MYSQL_STEPS \} \},?\n( {2}\{ sql: V18, mysql: \{ tables: true, steps: \(\) => V18_MYSQL_STEPS \} \},?\n( {2}\{ sql: V19, mysql: \{ tables: true, steps: \(\) => V19_MYSQL_STEPS \}, data: keepFeatureAccounts \},?\n( {2}\{ sql: V20, mysql: 'tables' \}\n)?)?)?)?)?\];/);
     const heads = (lang: 'ar' | 'en' | 'ku') => section(lang).split('\n').filter((l) => l.startsWith('### '));
     expect(heads('en')).toEqual(['### Before you update', '### Licences from 0.1.8', '### New', '### Changed', '### Fixed']);
     expect(heads('ar')).toEqual(['### قبل التحديث', '### تراخيص الإصدار 0.1.8', '### الجديد', '### ما تغيّر', '### الإصلاحات']);
@@ -1538,7 +1540,7 @@ describe('the release notes of 1.6.0 (kept as shipped: the petrol station, the t
   it('says first that the company file goes to schema 16, to back up and to update the office server PC with every PC', () => {
     // schema 16 (the petrol station's tables) is the last migration, and a copy of the file is kept before it runs
     const db = read('packages/server/src/db.ts');
-    expect(db).toMatch(/\{ sql: V16, mysql: \{ tables: true, steps: \(\) => V16_MYSQL_STEPS \} \},?\n( {2}\{ sql: V17, mysql: \{ tables: true, steps: \(\) => V17_MYSQL_STEPS \} \},?\n( {2}\{ sql: V18, mysql: \{ tables: true, steps: \(\) => V18_MYSQL_STEPS \} \},?\n( {2}\{ sql: V19, mysql: \{ tables: true, steps: \(\) => V19_MYSQL_STEPS \}, data: keepFeatureAccounts \}\n)?)?)?\];/);
+    expect(db).toMatch(/\{ sql: V16, mysql: \{ tables: true, steps: \(\) => V16_MYSQL_STEPS \} \},?\n( {2}\{ sql: V17, mysql: \{ tables: true, steps: \(\) => V17_MYSQL_STEPS \} \},?\n( {2}\{ sql: V18, mysql: \{ tables: true, steps: \(\) => V18_MYSQL_STEPS \} \},?\n( {2}\{ sql: V19, mysql: \{ tables: true, steps: \(\) => V19_MYSQL_STEPS \}, data: keepFeatureAccounts \},?\n( {2}\{ sql: V20, mysql: 'tables' \}\n)?)?)?)?\];/);
     expect(db).toContain('-before-update-v');
     // the number the notes name is the number of migrations (19: migration-v19.test.ts)
     expect(db).toContain('export const SCHEMA_VERSION = MIGRATIONS.length;');
@@ -1678,7 +1680,7 @@ describe('the release notes of this version (2.0.0: the new till, gold, wholesal
 
   it('says first that the company file goes to schema 19, to back up and to update the office server PC with every PC', () => {
     const db = read('packages/server/src/db.ts');
-    expect(db).toMatch(/\{ sql: V18, mysql: \{ tables: true, steps: \(\) => V18_MYSQL_STEPS \} \},\n {2}\{ sql: V19, mysql: \{ tables: true, steps: \(\) => V19_MYSQL_STEPS \}, data: keepFeatureAccounts \}\n\];/);
+    expect(db).toMatch(/\{ sql: V18, mysql: \{ tables: true, steps: \(\) => V18_MYSQL_STEPS \} \},\n {2}\{ sql: V19, mysql: \{ tables: true, steps: \(\) => V19_MYSQL_STEPS \}, data: keepFeatureAccounts \},?\n( {2}\{ sql: V20, mysql: 'tables' \}\n)?\];/);
     expect(db).toContain('-before-update-v');
     expect(before('en')).toContain('**The company file is upgraded to a new version (19) the first time 2.0.0 opens it.** Take a backup first (**Settings → Backups**)');
     expect(before('en')).toContain('Qasa ERP 1.6.0 and earlier cannot open a file that 2.0.0 has upgraded');

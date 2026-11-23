@@ -112,6 +112,14 @@ const BASE = {
   currency: ['العملة', 'Currency', 'دراو'],
   takePhoto: ['التقاط صورة', 'Take a photo', 'وێنە گرتن'],
   retake: ['صورة أخرى', 'Retake', 'وێنەی تر'],
+  // ——— phone app 1.2: a new item's picture and names by its barcode (item-lookup.ts), and a picture from the gallery ———
+  chooseFromGallery: ['اختيار من المعرض', 'Choose from gallery', 'هەڵبژاردن لە گالەری'],
+  removePhoto: ['إزالة الصورة', 'Remove the picture', 'لابردنی وێنەکە'],
+  lookingPicture: ['جارٍ البحث عن صورة…', 'Looking for a picture…', 'گەڕان بەدوای وێنەدا…'],
+  noPictureFound: ['لم توجد صورة — أضف واحدة.', 'No picture found — add one.', 'وێنە نەدۆزرایەوە — یەکێک زیاد بکە.'],
+  useThisPicture: ['استخدم هذه الصورة', 'Use this picture', 'ئەم وێنەیە بەکاربهێنە'],
+  pictureFrom: ['الصورة من {s} · CC BY-SA', 'Picture from {s} · CC BY-SA', 'وێنە لە {s} · CC BY-SA'],
+  suggestedNames: ['أسماء مقترحة (اضغط للاستخدام)', 'Suggested names (tap to use)', 'ناوە پێشنیارکراوەکان (دەست لێبدە بۆ بەکارهێنان)'],
   piece: ['قطعة', 'piece', 'دانە'],
   service: ['خدمة', 'service', 'خزمەتگوزاری'],
   kg: ['كغم', 'kg', 'کگم'],
@@ -312,7 +320,8 @@ const BASE = {
   featExpense: ['المصاريف مع صورة الوصل', 'expenses with a photo of the receipt', 'خەرجی لەگەڵ وێنەی وەسڵ'],
   featShare: ['إرسال الفواتير وكشوف الحساب', 'sending invoices and statements', 'ناردنی پسوولە و کەشفی هەژمار'],
   featTransfer: ['المناقلة بين المخازن', 'moving stock between warehouses', 'گواستنەوەی کاڵا لە نێوان کۆگاکان'],
-  featReceive: ['استلام البضاعة', 'receiving goods', 'وەرگرتنی کاڵا']
+  featReceive: ['استلام البضاعة', 'receiving goods', 'وەرگرتنی کاڵا'],
+  featItemLookup: ['صور وأسماء المواد من الباركود', 'item pictures and names from the barcode', 'وێنە و ناوی کاڵا لە بارکۆدەوە']
 } as const satisfies Record<string, readonly [string, string, string]>;
 
 /**

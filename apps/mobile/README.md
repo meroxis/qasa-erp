@@ -24,6 +24,26 @@ Qasa ERP on the office PC needs the latest version for the rest. Phone 1.0.x kee
 routes and answers are unchanged; the new fields are read past). 1.1.0 goes on qasaerp.com/phone/ only with or after
 that office release, so the update the phone asks for exists.
 
+Version 1.2.0 (versionCode 6, not built or released yet) adds one thing to "New item": the item's picture and name
+suggestions looked up by its barcode, and a picture chosen from the phone's gallery. The phone asks only its office
+(`POST /api/items/lookup` with the barcode, through the phone link); the office looks the barcode up in the open
+product databases (Open Food Facts and its sister projects) when its admin has switched that on (Qasa ERP 2.1,
+docs/product-lookup.md). It shows only when the office offers it (`phoneLink.offers` has `itemLookup`) and the user
+may add items; with any other office the screen is as in 1.1.0. Phone 1.1.0 keeps working with the newer office: it
+never calls the new route, and the picture it saves is sent as before (the new `lookupBarcode` field is optional).
+
+What a 1.2.0 build needs before it goes to phones (nothing here was built: the steps of "Build" below, plus):
+- `npx expo prebuild` after `npm install`: 1.2.0 adds one native module, `expo-image-picker` (the gallery, through
+  the system's own picker). Check the manifest the build prints (scripts/check-release-apk.mjs lists the APK's
+  permissions): still only CAMERA, VIBRATE and USE_BIOMETRIC; no storage, media or microphone permission (app.json
+  blocks them, and the plugin is set with `microphonePermission: false`).
+- Add the module to NOTICES.md ("Components", from the release build's dependency tree) once the APK exists.
+- Try on a phone: scan a new product with an office that has the lookup on (picture ticked, names as chips, save,
+  the credit on the office's price checker), with the lookup off, with an office on 2.0 (no lookup shown), without
+  internet at the office ("No picture found"), a photo, a picture from the gallery, removing it.
+- Offer it from the office release that comes with it: `PHONE_APP` in apps/web/src/pages/Settings.tsx (version,
+  size, SHA-256) and qasaerp.com/phone/, as for 1.1.0.
+
 ## What it does
 
 Each phone works as the Qasa user it was paired for, and offers what that user's role allows (the office checks every
@@ -34,6 +54,7 @@ request again with the user's own permissions):
 | Home: today's sales, the month, cash in the safes, what customers owe, late customers, items running low | the owner (no sign-in at the office), admin, the accountants (preparer, checker, approver) and viewer |
 | Items: by barcode (camera, with the torch) or by name; price, wholesale and shelf (car parts), stock per warehouse | everyone |
 | New item with its photo | stock permission |
+| 1.2 — New item: its picture and name suggestions found by the barcode (the office asks the open product databases, when its admin has switched that on; a name is filled only when tapped, the picture can be unticked), or a picture from the gallery | stock permission, with an office that offers it |
 | Sell: a quick sale sent as a draft invoice, or an order sent as a quote. A sale is Cash or Credit as a whole, one way per sale, as on the desktop's till and invoice (1.4): cash from a walk-in or a named customer, credit only to a chosen customer | sales permission |
 | Customers: balance, statement (this month, 3 months, this year) | sales, the accountants, admin, viewer |
 | Collect: money received from a customer, as a receipt voucher (see below) | the preparer's permission (give a rep both roles: sales and preparer) |

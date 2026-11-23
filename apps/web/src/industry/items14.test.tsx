@@ -133,7 +133,7 @@ describe('the item form', () => {
     expect(itemForm.indexOf("t('it_purchasePrice')")).toBeGreaterThan(0);
     expect(itemForm.indexOf("<span>{t('it_purchasePrice')}</span>")).toBeLessThan(itemForm.indexOf("<span>{t('salePrice')}</span>"));
     expect(itemForm).toContain('<NewItemPicture value={picture} onChange={setPicture} />');
-    expect(itemForm).toContain('await saveItemPicture(saved.id, picture.data)');
+    expect(itemForm).toContain('await saveItemPicture(saved.id, picture.data, picture.lookupBarcode)');
   });
 
   it('has every new text in Arabic, English and Kurdish', () => {

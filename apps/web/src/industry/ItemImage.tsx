@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, useSyncExternalStore, type RefObject } from 'react';
+import { creditedSources, type ProductSource } from '@qasa/core';
 import { ErrorBox, Icon, useToast } from '../components.tsx';
 import { useI18n } from '../i18n.ts';
 import { mediaApi } from './media-api.ts';
@@ -17,6 +18,8 @@ export const MAX_PICTURE_FILE_BYTES = 20 * 1024 * 1024;
 /* ---------- which items have a picture ---------- */
 
 let index: Map<string, string> | null = null;
+// 2.1: the pictures that came from an open product database (their credit is shown where they are shown publicly)
+let sources = new Map<string, ProductSource>();
 let loading: Promise<void> | null = null;
 const listeners = new Set<() => void>();
 const notify = () => listeners.forEach((l) => l());
@@ -24,8 +27,11 @@ const notify = () => listeners.forEach((l) => l());
 function loadIndex(): void {
   if (loading) return;
   loading = mediaApi.imageIndex()
-    .then((rows) => { index = new Map(rows.map((r) => [r.itemId, r.updatedAt])); })
-    .catch(() => { index = new Map(); })
+    .then((rows) => {
+      index = new Map(rows.map((r) => [r.itemId, r.updatedAt]));
+      sources = new Map(rows.flatMap((r) => (r.source ? [[r.itemId, r.source] as const] : [])));
+    })
+    .catch(() => { index = new Map(); sources = new Map(); })
     .finally(() => notify());
 }
 
@@ -35,12 +41,28 @@ export function refreshItemImages(): void {
   loadIndex();
 }
 
-function setIndexEntry(itemId: string, updatedAt: string | null): void {
+function setIndexEntry(itemId: string, updatedAt: string | null, source?: ProductSource): void {
   index ??= new Map();
   index = new Map(index);
+  sources = new Map(sources);
   if (updatedAt) index.set(itemId, updatedAt);
   else index.delete(itemId);
+  if (updatedAt && source) sources.set(itemId, source);
+  else sources.delete(itemId);
   notify();
+}
+
+/**
+ * The open product databases the pictures of these items came from (each once): what a page that shows them to
+ * people outside the shop credits. Empty while the list of pictures is not known, and for the shop's own pictures.
+ */
+export function usePictureSources(itemIds: readonly (string | null | undefined)[]): ProductSource[] {
+  const key = useSyncExternalStore(
+    (onChange) => { listeners.add(onChange); loadIndex(); return () => listeners.delete(onChange); },
+    () => creditedSources(itemIds.map((id) => (id ? sources.get(id) : undefined))).join(','),
+    () => ''
+  );
+  return key ? key.split(',') as ProductSource[] : [];
 }
 
 function useImageVersion(itemId: string): string | null | undefined {
@@ -157,7 +179,12 @@ async function base64Of(blob: Blob): Promise<string> {
 }
 
 /** A picture chosen in a form, ready to send: made small, as base64, with its type (what the canvas really wrote). */
-export interface PreparedPicture { data: string; mime: string }
+export interface PreparedPicture {
+  data: string; mime: string;
+  /** 2.1: the picture a lookup of this barcode found (not the shop's own): saved with its source, for the credit */
+  lookupBarcode?: string;
+  source?: ProductSource;
+}
 
 /**
  * Checks a chosen file and makes it small. Only a file the browser can really decode as a picture gets through (its
@@ -176,10 +203,13 @@ export async function preparePicture(file: File, size: { maxSide?: number; targe
 }
 
 /** Saves a prepared picture as an item's picture, and lets the lists know. */
-export async function saveItemPicture(itemId: string, data: string): Promise<void> {
-  const saved = await mediaApi.setImage(itemId, data);
-  setIndexEntry(itemId, saved.updatedAt);
+export async function saveItemPicture(itemId: string, data: string, lookupBarcode?: string): Promise<void> {
+  const saved = await mediaApi.setImage(itemId, data, lookupBarcode);
+  setIndexEntry(itemId, saved.updatedAt, saved.source?.source);
 }
+
+/** A phone or a tablet (a finger, not a mouse): there "Take a photo" opens the camera; on a PC it would only open the same file box. */
+export const hasCamera = (): boolean => typeof window !== 'undefined' && typeof window.matchMedia === 'function' && window.matchMedia('(pointer: coarse)').matches;
 
 /**
  * The picture of an item that is not saved yet (the new-item form): chosen and shown here, sent by the form once the
@@ -188,6 +218,8 @@ export async function saveItemPicture(itemId: string, data: string): Promise<voi
 export function NewItemPicture({ value, onChange, size = 104 }: { value: PreparedPicture | null; onChange(picture: PreparedPicture | null): void; size?: number }) {
   const { t } = useI18n();
   const input = useRef<HTMLInputElement>(null);
+  const camera = useRef<HTMLInputElement>(null);
+  const [touch] = useState(hasCamera);
   const [busy, setBusy] = useState(false);
   const [problem, setProblem] = useState<string | null>(null);
   const choose = async (file: File | undefined) => {
@@ -201,6 +233,7 @@ export function NewItemPicture({ value, onChange, size = 104 }: { value: Prepare
     } finally {
       setBusy(false);
       if (input.current) input.current.value = '';
+      if (camera.current) camera.current.value = '';
     }
   };
   return (
@@ -212,11 +245,18 @@ export function NewItemPicture({ value, onChange, size = 104 }: { value: Prepare
       </span>
       <div className="row" style={{ justifyContent: 'center', gap: 4, flexWrap: 'nowrap' }}>
         <input ref={input} type="file" accept="image/jpeg,image/png,image/webp,image/*" hidden onChange={(e) => void choose(e.target.files?.[0])} />
-        <button type="button" className="btn small" disabled={busy} onClick={() => input.current?.click()}>{value ? t('md_changePicture') : t('md_addPicture')}</button>
+        <button type="button" className="btn small" disabled={busy} onClick={() => input.current?.click()}>{touch ? t('plk_chooseFile') : value ? t('md_changePicture') : t('md_addPicture')}</button>
         {value && (
           <button type="button" className="btn small ghost" disabled={busy} onClick={() => onChange(null)} aria-label={t('md_removePicture')} title={t('md_removePicture')}><Icon name="x" size={14} /></button>
         )}
       </div>
+      {touch && (
+        <>
+          {/* a phone or a tablet: straight to the camera (the photo is made small like any other picture) */}
+          <input ref={camera} type="file" accept="image/*" capture="environment" hidden onChange={(e) => void choose(e.target.files?.[0])} />
+          <button type="button" className="btn small" disabled={busy} onClick={() => camera.current?.click()}>{t('plk_takePhoto')}</button>
+        </>
+      )}
       {problem && <div className="alert bad small" role="alert">{problem}</div>}
     </div>
   );

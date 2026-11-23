@@ -1,11 +1,12 @@
 import { createHash, randomBytes, randomUUID, timingSafeEqual } from 'node:crypto';
 import { z } from 'zod';
-import { todayIso, type CurrencyCode, type Names, type OfferKind, type UnitCode } from '@qasa/core';
+import { todayIso, type CurrencyCode, type Names, type OfferKind, type ProductSource, type UnitCode } from '@qasa/core';
 import type { Db } from './db.ts';
 import { audit } from './audit.ts';
 import { AppError, conflict, invalid, notFound } from './errors.ts';
 import { planStatus } from './license.ts';
 import { findByBarcode, getItem } from './items.ts';
+import { itemImageSource } from './media.ts';
 import { offerOnNow, tillOffers } from './offers.ts';
 import type { ApiExtension, ApiRequest } from './routes.ts';
 
@@ -100,6 +101,8 @@ export interface PriceCheck {
   name?: Names; unit?: UnitCode; price?: number; currency?: CurrencyCode;
   /** a data: URL of the item's picture, when it has one */
   image?: string | null;
+  /** 2.1: the open product database the picture came from, when it is not the shop's own (the screen credits it) */
+  imageSource?: ProductSource;
   offers?: CheckerOffer[];
 }
 
@@ -113,6 +116,12 @@ function offerView(r: ReturnType<typeof tillOffers>[number]): CheckerOffer {
 function imageOf(db: Db, itemId: string): string | null {
   const row = db.prepare('SELECT mime, data FROM item_images WHERE item_id = ?').get(itemId) as { mime: string; data: Uint8Array } | undefined;
   return row ? `data:${row.mime};base64,${Buffer.from(row.data).toString('base64')}` : null;
+}
+
+/** The open product database a picture came from, for the screen's credit line; nothing for the shop's own picture. */
+function sourceOf(db: Db, itemId: string): { imageSource?: ProductSource } {
+  const source = itemImageSource(db, itemId)?.source;
+  return source ? { imageSource: source } : {};
 }
 
 /** What the screen shows for a code scanned or typed: by barcode (an item's, or one of its units'), else by item code. */
@@ -132,10 +141,10 @@ export function priceCheck(db: Db, device: Pick<DeviceRow, 'warehouse_id'>, code
     .filter((r) => r.items.includes(item!.id) || (!!item!.categoryId && r.categories.includes(item!.categoryId)))
     .filter((r) => offerOnNow(r, now))
     .map(offerView);
-  return { found: true, name: item.name, unit: unit ?? item.unit, price, currency: item.saleCurrency, image: imageOf(db, item.id), offers };
+  return { found: true, name: item.name, unit: unit ?? item.unit, price, currency: item.saleCurrency, image: imageOf(db, item.id), ...sourceOf(db, item.id), offers };
 }
 
-export interface SlideOffer extends CheckerOffer { items: { name: Names; price: number; currency: CurrencyCode; unit: UnitCode; image: string | null }[] }
+export interface SlideOffer extends CheckerOffer { items: { name: Names; price: number; currency: CurrencyCode; unit: UnitCode; image: string | null; imageSource?: ProductSource }[] }
 
 /** The offers on now, with a few of their goods: what the screen shows while nobody scans. */
 export function offerSlides(db: Db, device: Pick<DeviceRow, 'warehouse_id'>, now: Date = new Date()): SlideOffer[] {
@@ -149,7 +158,7 @@ export function offerSlides(db: Db, device: Pick<DeviceRow, 'warehouse_id'>, now
       } | undefined;
       if (!it || it.active !== 1) return [];
       // one picture per slide is enough for a cheap tablet
-      return [{ name: { ar: it.name_ar, en: it.name_en, ku: it.name_ku }, price: Number(it.sale_price), currency: it.sale_currency, unit: it.unit, image: i === 0 ? imageOf(db, itemId) : null }];
+      return [{ name: { ar: it.name_ar, en: it.name_en, ku: it.name_ku }, price: Number(it.sale_price), currency: it.sale_currency, unit: it.unit, image: i === 0 ? imageOf(db, itemId) : null, ...(i === 0 ? sourceOf(db, itemId) : {}) }];
     });
     return { ...offerView(r), items };
   });

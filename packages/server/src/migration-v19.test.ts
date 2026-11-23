@@ -16,7 +16,7 @@ const V19_COLUMNS: [string, string][] = [['gift_voucher_moves', 'for_voucher_id'
 const onServer = !!process.env.QASA_TEST_DB;
 
 describe.skipIf(onServer)('version 19', () => {
-  it('is the current version', () => { expect(SCHEMA_VERSION).toBe(19); });
+  it('is at least the current version', () => { expect(SCHEMA_VERSION).toBeGreaterThanOrEqual(19); });
 
   it('a file left at 18 by the first 2.0 build gets the tables and columns of 19, and its till works', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'qasa-v19-'));
@@ -33,7 +33,7 @@ describe.skipIf(onServer)('version 19', () => {
 
       const db = openDatabase(file);
       try {
-        expect(Number((db.prepare('SELECT version FROM schema_version').get() as { version: number }).version)).toBe(19);
+        expect(Number((db.prepare('SELECT version FROM schema_version').get() as { version: number }).version)).toBe(SCHEMA_VERSION);
         for (const t of V19_TABLES) expect(Number((db.prepare(`SELECT COUNT(*) AS n FROM ${t}`).get() as { n: number }).n), t).toBe(0);
         for (const [t, c] of V19_COLUMNS) expect((db.prepare(`PRAGMA table_info(${t})`).all() as { name: string }[]).map((x) => x.name), `${t}.${c}`).toContain(c);
         // what answered 500 on such a file: the till's shift, a sale, its close, and a price change
@@ -153,7 +153,7 @@ describe.skipIf(onServer)('version 19 on a file a build of the review left at 18
 
         const db = openDatabase(file);
         try {
-          expect(schemaVersion(db)).toBe(19);
+          expect(schemaVersion(db)).toBe(SCHEMA_VERSION);
           const got = shapeOf(db);
           expect(got.tables).toEqual(freshShape().tables);
           expect(got.indexes).toEqual(freshShape().indexes);

@@ -2677,6 +2677,38 @@ const V19 =
   CREATE INDEX IF NOT EXISTS item_price_history_item ON item_price_history(item_id, unit, changed_at);
   `;
 
+// 20 — product lookup (2.1): what the open product databases (Open Food Facts and its sister projects) answered for a
+// barcode, kept a while so the same code is not asked twice (a "not found" too), and where an item's picture came
+// from when it came from one of them: the source, its licence and the product's page, for the credit the licence
+// asks for wherever the picture is shown. Nothing here is the company's own records: both tables can be emptied.
+const V20 =
+  `
+  -- ===== 20 · PRODUCT LOOKUP =====
+  CREATE TABLE IF NOT EXISTS product_lookups (
+    barcode TEXT PRIMARY KEY,
+    found INTEGER NOT NULL DEFAULT 0 CHECK (found IN (0, 1)),
+    source TEXT,
+    name TEXT,
+    name_ar TEXT,
+    name_en TEXT,
+    name_ku TEXT,
+    brand TEXT,
+    quantity TEXT,
+    image_url TEXT,
+    image_small_url TEXT,
+    page_url TEXT,
+    looked_at TEXT NOT NULL
+  );
+  CREATE INDEX IF NOT EXISTS product_lookups_when ON product_lookups(looked_at);
+  CREATE TABLE IF NOT EXISTS item_image_sources (
+    item_id TEXT PRIMARY KEY REFERENCES items(id),
+    source TEXT NOT NULL,
+    licence TEXT NOT NULL,
+    url TEXT NOT NULL,
+    created_at TEXT NOT NULL
+  );
+  `;
+
 /** A column a version adds to a table that is already there: added only when the table lacks it. */
 interface AddedColumn { table: string; column: string; definition: string }
 
@@ -2732,7 +2764,8 @@ const MIGRATIONS: Migration[] = [
   { sql: V16, mysql: { tables: true, steps: () => V16_MYSQL_STEPS } },
   { sql: V17, mysql: { tables: true, steps: () => V17_MYSQL_STEPS } },
   { sql: V18, mysql: { tables: true, steps: () => V18_MYSQL_STEPS } },
-  { sql: V19, mysql: { tables: true, steps: () => V19_MYSQL_STEPS }, data: keepFeatureAccounts }
+  { sql: V19, mysql: { tables: true, steps: () => V19_MYSQL_STEPS }, data: keepFeatureAccounts },
+  { sql: V20, mysql: 'tables' }
 ];
 
 /** Server databases began at this version: its schema is in schema-mysql.ts (tables and triggers without `since`). */

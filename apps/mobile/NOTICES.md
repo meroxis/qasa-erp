@@ -30,6 +30,12 @@ PDF of an invoice or a statement on the phone, expo-sharing 58.0.23 hands it to 
 
 ## Components (runtime, native: in the Android APK)
 
+(1.2.0, not built yet, adds `expo-image-picker` ~58.0.10 — MIT, copyright 650 Industries, Inc. (Expo) — for choosing
+an item's picture from the gallery; add its native libraries to the table below from the release build's dependency
+tree when the APK exists. Pictures and names a new item gets by its barcode come through the office from Open Food
+Facts and its sister projects: data under the Open Database License, pictures under Creative Commons
+Attribution-ShareAlike; nothing of them ships with the app.)
+
 What the APK holds besides the app's own code, as of 1.1.0 (the same libraries as 1.0.2: 1.1 adds only Expo's print
 and sharing modules, compiled into the app's code, and sharing's file provider in the manifest, not exported; no new
 permission). Taken from the release build's dependency tree

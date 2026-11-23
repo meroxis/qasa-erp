@@ -1,4 +1,4 @@
-import type { CurrencyCode, Lang, Names, OfferKind, UnitCode } from '@qasa/core';
+import type { CurrencyCode, Lang, Names, OfferKind, ProductSource, UnitCode } from '@qasa/core';
 import { qs, request } from '../api.ts';
 import { sendOnce } from './send-once.ts';
 
@@ -71,8 +71,8 @@ export interface CheckerOffer {
   names: Names; kind: OfferKind; endsOn: string | null;
   buyMilli: number | null; getMilli: number | null; getPercent: number | null; bundleMilli: number | null; bundlePrice: number | null; price: number | null; percentOff: number | null;
 }
-export interface PriceCheck { found: boolean; name?: Names; unit?: UnitCode; price?: number; currency?: CurrencyCode; image?: string | null; offers?: CheckerOffer[] }
-export interface SlideOffer extends CheckerOffer { items: { name: Names; price: number; currency: CurrencyCode; unit: UnitCode; image: string | null }[] }
+export interface PriceCheck { found: boolean; name?: Names; unit?: UnitCode; price?: number; currency?: CurrencyCode; image?: string | null; imageSource?: ProductSource; offers?: CheckerOffer[] }
+export interface SlideOffer extends CheckerOffer { items: { name: Names; price: number; currency: CurrencyCode; unit: UnitCode; image: string | null; imageSource?: ProductSource }[] }
 
 export const priceCheckerApi = {
   devices: () => request<{ available: boolean; devices: PriceCheckerDevice[] }>('GET', '/api/price-checker/devices'),

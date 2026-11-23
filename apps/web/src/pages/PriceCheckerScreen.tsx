@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { isLang, UNITS, type Lang } from '@qasa/core';
+import { creditedSources, creditNames, isLang, UNITS, type Lang } from '@qasa/core';
 import { makeI18n } from '../i18n.ts';
 import { offerSummary } from './Offers.tsx';
 import { deviceGet, type PriceCheck, type SlideOffer } from '../industry/market-extras-api.ts';
@@ -108,6 +108,8 @@ export function PriceCheckerScreen({ fetcher = fetch, hash }: { fetcher?: typeof
     );
   }
   const shown = slides[slide % Math.max(1, slides.length)];
+  // 2.1: a picture on the screen that came from an open product database is credited in the footer (its licence asks)
+  const credited = creditedSources([result ? (result.found && result.image ? result.imageSource : null) : shown?.items[0]?.image ? shown.items[0].imageSource : null]);
   return (
     <main style={page}>
       <form onSubmit={(e) => { e.preventDefault(); void look(code); }} style={{ width: 'min(560px, 100%)' }}>
@@ -143,6 +145,7 @@ export function PriceCheckerScreen({ fetcher = fetch, hash }: { fetcher?: typeof
         )}
         {problem === 'network' && <p className="muted small">{t('mx_pcOffline')}</p>}
       </section>
+      {credited.length > 0 && <footer className="muted" style={{ fontSize: 12 }}>{t('plk_credit', { s: creditNames(credited) })}</footer>}
       <nav aria-label={t('language')} style={{ display: 'flex', gap: 8 }}>
         {(['ar', 'ku', 'en'] as const).map((l) => (
           <button key={l} type="button" className="btn small" aria-pressed={lang === l} onClick={() => setLangState(l)}>{l === 'ar' ? 'عربي' : l === 'ku' ? 'کوردی' : 'English'}</button>
