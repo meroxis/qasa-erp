@@ -7,7 +7,7 @@ import { western } from './item-quick-add.ts';
 import { productLookupApi, type BulkStatus, type LookupSettings, type NameSuggestion, type ProductLookupResult } from './product-lookup-api.ts';
 
 /**
- * Product lookup in the web app (2.1): when an item is added with a manufacturer's barcode, its picture and name are
+ * Product lookup in the web app (2.0): when an item is added with a manufacturer's barcode, its picture and name are
  * looked for in the open product databases, by the app's own server (packages/server/src/product-lookup.ts). Off
  * until an admin switches it on; the form never waits for it and works the same without it.
  */
@@ -21,7 +21,7 @@ const notify = () => listeners.forEach((l) => l());
 
 function loadSettings(): void {
   if (loading) return;
-  // an office server from before 2.1 has no such setting: the lookup is simply not there
+  // an office server from before 2.0 has no such setting: the lookup is simply not there
   loading = productLookupApi.settings().then((s) => { settings = s; }, () => { settings = { enabled: false, asked: true, available: false }; }).finally(notify);
 }
 /** Tests, and a change of company: forget what was known. */

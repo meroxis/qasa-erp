@@ -21,7 +21,9 @@ describe("What's new in this version", () => {
     for (const lang of ['ar', 'en', 'ku'] as const) {
       const html = render(lang, <WhatsNewDialog version={APP_VERSION} onClose={() => {}} />);
       expect(html).not.toContain(':::');
-      expect(html).toContain(lang === 'en' ? 'Licences from 0.1.8' : lang === 'ar' ? 'تراخيص الإصدار 0.1.8' : 'مۆڵەتەکانی وەشانی 0.1.8');
+      // a release's notes keep the standing section for 0.1.8 licences; a beta's start with what joining means
+      if (APP_VERSION.includes('-')) expect(html).toContain(lang === 'en' ? 'Before you join the beta' : lang === 'ar' ? 'قبل الانضمام إلى النسخة التجريبية' : 'پێش بەشداریکردن لە وەشانی تاقیکاری');
+      else expect(html).toContain(lang === 'en' ? 'Licences from 0.1.8' : lang === 'ar' ? 'تراخيص الإصدار 0.1.8' : 'مۆڵەتەکانی وەشانی 0.1.8');
       expect(html).not.toMatch(/<a /);
       // one version: no heading of its own over its notes
       expect(html).not.toContain(`>${upd(lang, 'up_notesOf', { v: APP_VERSION })}</h4>`);

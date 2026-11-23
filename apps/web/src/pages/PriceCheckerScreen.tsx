@@ -108,7 +108,7 @@ export function PriceCheckerScreen({ fetcher = fetch, hash }: { fetcher?: typeof
     );
   }
   const shown = slides[slide % Math.max(1, slides.length)];
-  // 2.1: a picture on the screen that came from an open product database is credited in the footer (its licence asks)
+  // 2.0: a picture on the screen that came from an open product database is credited in the footer (its licence asks)
   const credited = creditedSources([result ? (result.found && result.image ? result.imageSource : null) : shown?.items[0]?.image ? shown.items[0].imageSource : null]);
   return (
     <main style={page}>

@@ -414,7 +414,7 @@ export function ItemForm({ item, onClose, onSaved }: { item: ItemView | null; on
               <label className="field"><span>{t('code')}</span><input className="input ltr" value={code} placeholder="I-0001" maxLength={24} onChange={(e) => setCode(e.target.value)} /></label>
               <label className="field"><span>{t('barcode')}</span><input className="input ltr" value={barcode} maxLength={64} onChange={(e) => setBarcode(e.target.value)} /></label>
             </div>
-            {/* 2.1: a new item's picture and name by its barcode, when the company has that on (never waited for) */}
+            {/* 2.0: a new item's picture and name by its barcode, when the company has that on (never waited for) */}
             {!item && <ProductLookupPanel barcode={barcode} picture={picture} onPicture={setPicture} onName={(n) => setName((names) => ({ ...names, [n.lang]: n.text }))} />}
           </div>
         </div>

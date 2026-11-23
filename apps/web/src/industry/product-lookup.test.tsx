@@ -16,7 +16,7 @@ import type { LookupSettings, ProductLookupResult } from './product-lookup-api.t
 
 vi.mock('../api.ts', async (importOriginal) => ({ ...(await importOriginal<typeof import('../api.ts')>()), request: vi.fn(() => new Promise(() => {})) }));
 
-// 2.1: a new item's picture and name looked up by its barcode. The form's states, in Arabic, English and Kurdish.
+// 2.0: a new item's picture and name looked up by its barcode. The form's states, in Arabic, English and Kurdish.
 
 const LANGS: Lang[] = ['ar', 'en', 'ku'];
 const i18nOf = (lang: Lang) => makeI18n(lang, 'western', () => {}, () => {});

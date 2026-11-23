@@ -4,7 +4,7 @@ import { request } from '../api.ts';
 /** Item pictures and importing from Excel (packages/server/src/media.ts). */
 
 export type ImageMime = 'image/jpeg' | 'image/png' | 'image/webp';
-/** 2.1: where a picture came from when it is not the shop's own (an open product database), for its credit */
+/** 2.0: where a picture came from when it is not the shop's own (an open product database), for its credit */
 export interface ItemImageSource { source: ProductSource; licence: string; url: string }
 export interface ItemImageView { itemId: string; mime: ImageMime; data: string; updatedAt: string; source?: ItemImageSource }
 

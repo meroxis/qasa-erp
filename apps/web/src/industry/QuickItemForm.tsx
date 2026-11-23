@@ -134,7 +134,7 @@ export function QuickItemForm({ typed, sale = false, stockOnly = false, warehous
   const expiryDefault = useLoad(() => (asksStock ? batchesApi.settings().then((b) => b.defaultTrackExpiry, () => false) : Promise.resolve(false)), [asksStock]);
   const dated = !!expiryDefault.data;
   const [batch, setBatch] = useState({ batchNo: '', expiry: '' });
-  // 2.1: the new item's picture: found by its barcode (when the company has that on), or a photo or a file
+  // 2.0: the new item's picture: found by its barcode (when the company has that on), or a photo or a file
   const [picture, setPicture] = useState<PreparedPicture | null>(null);
 
   const set = (patch: Partial<QuickItemFields>) => { setFields((f) => ({ ...f, ...patch })); setProblem(null); setSame(null); setChosen(null); };

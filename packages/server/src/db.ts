@@ -2677,7 +2677,7 @@ const V19 =
   CREATE INDEX IF NOT EXISTS item_price_history_item ON item_price_history(item_id, unit, changed_at);
   `;
 
-// 20 — product lookup (2.1): what the open product databases (Open Food Facts and its sister projects) answered for a
+// 20 — product lookup (2.0): what the open product databases (Open Food Facts and its sister projects) answered for a
 // barcode, kept a while so the same code is not asked twice (a "not found" too), and where an item's picture came
 // from when it came from one of them: the source, its licence and the product's page, for the credit the licence
 // asks for wherever the picture is shown. Nothing here is the company's own records: both tables can be emptied.

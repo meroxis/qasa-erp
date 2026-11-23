@@ -55,7 +55,7 @@ export type Feature =
   | 'transfer'
   /** goods received against a purchase order */
   | 'receive'
-  // ——— phone app 1.2: with an office of Qasa ERP 2.1 on that offers it ———
+  // ——— phone app 1.2: with an office of Qasa ERP 2.0 on that offers it ———
   /** a new item's picture and names looked up by its barcode (when the office's admin has switched that on) */
   | 'itemLookup';
 

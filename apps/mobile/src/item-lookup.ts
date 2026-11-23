@@ -1,5 +1,5 @@
 /**
- * A new item's picture and names by its barcode (phone app 1.2, with an office of Qasa ERP 2.1 on that offers it):
+ * A new item's picture and names by its barcode (phone app 1.2, with an office of Qasa ERP 2.0 on that offers it):
  * the office looks the barcode up in the open product databases (Open Food Facts and its sister projects) when its
  * admin has switched that on, and answers with name suggestions and the picture. The phone itself asks nobody but
  * its office; what comes back is somebody else's text and bytes, so it is read here field by field and anything that

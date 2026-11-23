@@ -1649,8 +1649,10 @@ describe('the release notes of 1.6.0 (kept as shipped: the petrol station, the t
   });
 });
 
-describe('the release notes of this version (2.0.0: the new till, gold, wholesale, clothing and the market extras; schema 19)', () => {
-  const version = (JSON.parse(read('apps/desktop/package.json')) as { version: string }).version;
+describe('the release notes of this version (2.0.0: the new till, gold, wholesale, clothing and the market extras; schema 20)', () => {
+  // the app's number: 2.0.0, or one of its betas (2.0.0-beta.N). The 2.0.0 notes are kept ready while a beta is out
+  const appVersion = (JSON.parse(read('apps/desktop/package.json')) as { version: string }).version;
+  const version = appVersion.split('-')[0]!;
   const notes = read(`apps/desktop/release-notes/${version}.md`);
   const section = (lang: 'ar' | 'en' | 'ku') => new RegExp(`^::: ${lang}\\n([\\s\\S]*?)^:::$`, 'm').exec(notes)?.[1] ?? '';
   const before = (lang: 'ar' | 'en' | 'ku') => section(lang).split('\n### ')[0]!;
@@ -1662,9 +1664,10 @@ describe('the release notes of this version (2.0.0: the new till, gold, wholesal
 
   it('is 2.0.0, the same in the app, the core and the lock file, with a notes file that has Arabic, English and Kurdish', () => {
     expect(version).toBe('2.0.0');
-    expect(read('packages/core/src/version.ts')).toContain(`APP_VERSION = '${version}'`);
+    expect(appVersion).toMatch(/^2\.0\.0(-beta\.[1-9]\d?)?$/);
+    expect(read('packages/core/src/version.ts')).toContain(`APP_VERSION = '${appVersion}'`);
     const lock = JSON.parse(read('package-lock.json')) as { packages: Record<string, { version?: string }> };
-    expect(lock.packages['apps/desktop']?.version).toBe(version);
+    expect(lock.packages['apps/desktop']?.version).toBe(appVersion);
     for (const lang of ['ar', 'en', 'ku'] as const) expect(notes, lang).toMatch(new RegExp(`^::: ${lang}\\n[\\s\\S]+?^:::$`, 'm'));
   });
 
@@ -1678,17 +1681,17 @@ describe('the release notes of this version (2.0.0: the new till, gold, wholesal
     expect(shape('ku')).toBe(shape('en'));
   });
 
-  it('says first that the company file goes to schema 19, to back up and to update the office server PC with every PC', () => {
+  it('says first that the company file goes to schema 20, to back up and to update the office server PC with every PC', () => {
     const db = read('packages/server/src/db.ts');
     expect(db).toMatch(/\{ sql: V18, mysql: \{ tables: true, steps: \(\) => V18_MYSQL_STEPS \} \},\n {2}\{ sql: V19, mysql: \{ tables: true, steps: \(\) => V19_MYSQL_STEPS \}, data: keepFeatureAccounts \},?\n( {2}\{ sql: V20, mysql: 'tables' \}\n)?\];/);
     expect(db).toContain('-before-update-v');
-    expect(before('en')).toContain('**The company file is upgraded to a new version (19) the first time 2.0.0 opens it.** Take a backup first (**Settings → Backups**)');
+    expect(before('en')).toContain('**The company file is upgraded to a new version (20) the first time 2.0.0 opens it.** Take a backup first (**Settings → Backups**)');
     expect(before('en')).toContain('Qasa ERP 1.6.0 and earlier cannot open a file that 2.0.0 has upgraded');
     expect(before('en')).toContain('On the office network, update the office server PC and every PC that connects to it together.');
     expect(before('en')).toContain('A Microsoft Store copy opens these books only once the Store has 2.0.0.');
-    expect(before('ar')).toContain('**يُرقّى ملف الشركة إلى إصدار جديد (19) أول مرة يفتحه فيها الإصدار 2.0.0.**');
+    expect(before('ar')).toContain('**يُرقّى ملف الشركة إلى إصدار جديد (20) أول مرة يفتحه فيها الإصدار 2.0.0.**');
     expect(before('ar')).toContain('حاسوب خادم المكتب');
-    expect(before('ku')).toContain('**فایلی کۆمپانیا یەکەم جار کە 2.0.0 دەیکاتەوە بۆ وەشانێکی نوێ (19) بەرز دەکرێتەوە.**');
+    expect(before('ku')).toContain('**فایلی کۆمپانیا یەکەم جار کە 2.0.0 دەیکاتەوە بۆ وەشانێکی نوێ (20) بەرز دەکرێتەوە.**');
     expect(before('ku')).toContain('کۆمپیوتەری سێرڤەری نووسینگە');
   });
 
@@ -1728,8 +1731,8 @@ describe('the release notes of this version (2.0.0: the new till, gold, wholesal
       expect(store[lang].releaseNotes.length, lang).toBeLessThanOrEqual(1500);
       expect(store[lang].releaseNotes, lang).not.toMatch(/\{\{|\}\}|0\.1\.8/);
     }
-    expect(lines('en-us')[1]).toMatch(/^Before you update: the company file is upgraded to version 19 the first time 2\.0\.0 opens it, /);
-    expect(lines('ar')[1]).toMatch(/^قبل التحديث: يُرقّى ملف الشركة إلى الإصدار 19 /);
+    expect(lines('en-us')[1]).toMatch(/^Before you update: the company file is upgraded to version 20 the first time 2\.0\.0 opens it, /);
+    expect(lines('ar')[1]).toMatch(/^قبل التحديث: يُرقّى ملف الشركة إلى الإصدار 20 /);
     expect(lines('ku-arab')[1]).toMatch(/^پێش نوێکردنەوە: فایلی کۆمپانیا /);
   });
 
@@ -1884,9 +1887,42 @@ describe('the release notes of this version (2.0.0: the new till, gold, wholesal
     for (const lang of LANGS) { expect(store[lang].releaseNotes, lang).toContain('ZainCash'); expect(store[lang].releaseNotes, lang).toContain('15%'); }
   });
 
+  it('a beta of 2.0.0 has notes of its own: what joining means, what to test, what is known, and the 2.0.0 news as they are', () => {
+    if (!appVersion.includes('-')) return;
+    const beta = read(`apps/desktop/release-notes/${appVersion}.md`);
+    const part = (lang: 'ar' | 'en' | 'ku') => new RegExp(`^::: ${lang}\\n([\\s\\S]*?)^:::$`, 'm').exec(beta)?.[1] ?? '';
+    const heads = (lang: 'ar' | 'en' | 'ku') => part(lang).split('\n').filter((l) => l.startsWith('### '));
+    expect(heads('en')).toEqual(['### Before you join the beta', '### What to test', '### Known in this beta', '### New', '### Changed']);
+    expect(heads('ar')).toHaveLength(5);
+    expect(heads('ku')).toHaveLength(5);
+    const shape = (lang: 'ar' | 'en' | 'ku') => part(lang).split('\n').filter((l) => /^(### |- )/.test(l)).map((l) => l.slice(0, 2)).join('');
+    expect(shape('ar')).toBe(shape('en'));
+    expect(shape('ku')).toBe(shape('en'));
+    // first: a backup, no way back to the stable version with the same books, and every PC of the company together
+    const first = (lang: 'ar' | 'en' | 'ku') => part(lang).split('\n### ')[0]!;
+    expect(first('en')).toContain('take a backup before you update (**Settings → Backups**)');
+    expect(first('en')).toContain('**There is no way back to 1.6.0 with the same books.** The company file is upgraded to a new version (20)');
+    expect(first('en')).toContain('every PC of the same company must be on the beta');
+    expect(first('en')).toContain('**A Microsoft Store copy cannot join the beta.**');
+    expect(first('ar')).toContain('**الإعدادات ← النسخ الاحتياطية**');
+    expect(first('ar')).toContain('(20)');
+    expect(first('ku')).toContain('**ڕێکخستنەکان ← باکئەپەکان**');
+    expect(first('ku')).toContain('(20)');
+    // the news are the 2.0.0 notes' own New and Changed, word for word, so the two never tell different stories
+    for (const lang of ['ar', 'en', 'ku'] as const) {
+      const news = section(lang).slice(section(lang).indexOf(heads(lang)[3]!)).trimEnd();
+      expect(news.length, lang).toBeGreaterThan(500);
+      expect(part(lang).trimEnd().endsWith(news), lang).toBe(true);
+    }
+    // the header says who gets it; nothing promises the Store or the website link
+    expect(beta.split('::: en')[0]).toContain('only copies that joined the beta (**Settings → Updates → Join the beta**)');
+    expect(beta.split('::: en')[0]).not.toMatch(/Microsoft Store\]|qasaerp\.com\/en\/#download/);
+    expect(read('apps/web/src/i18n/updates.ts')).toContain("up_beta: ['الانضمام إلى النسخ التجريبية', 'Join the beta', 'بەشداربوون لە وەشانە تاقیکارییەکان']");
+  });
+
   it('has a release day in docs/releasing.md', () => {
     expect(read('docs/releasing.md')).toContain('## Release day for 2.0.0 ');
-    expect(read('docs/releasing.md')).toContain('It **upgrades the company file to schema 19**');
+    expect(read('docs/releasing.md')).toContain('It **upgrades the company file to schema 20**');
   });
 });
 

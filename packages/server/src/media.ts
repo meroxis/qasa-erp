@@ -70,7 +70,7 @@ export function toBase64(bytes: Uint8Array): string {
 }
 
 /**
- * Where a picture came from when it is not the shop's own (2.1): one of the open product databases, the licence it is
+ * Where a picture came from when it is not the shop's own (2.0): one of the open product databases, the licence it is
  * under and the product's page there. Kept with the picture so the credit the licence asks for can be shown wherever
  * the picture is shown to the public, and dropped as soon as the picture is replaced or removed.
  */
@@ -863,7 +863,7 @@ export const mediaApi: ApiExtension = {
       {
         method: 'PUT', path: '/api/items/:id/image',
         handler: async (req) => {
-          // lookupBarcode (2.1, optional: older apps send none): the picture is the one the open product databases
+          // lookupBarcode (2.0, optional: older apps send none): the picture is the one the open product databases
           // have for that barcode, as this server looked it up; its credit is what the lookup kept, never the client's
           const body = parse(z.object({ data: z.string().min(1).max(Math.ceil(MAX_IMAGE_BYTES * 4 / 3) + 200), lookupBarcode: z.string().min(8).max(14).regex(/^\d+$/).optional() }), req.body);
           return setItemImage(db, parse(idParam, req.params).id, body.data, actor(req).name, body.lookupBarcode ? lookedUpSource(db, body.lookupBarcode) : null);

@@ -8,7 +8,7 @@ import type { Db } from './db.ts';
 import { COMPANY_TABLES, migrate, openDatabase, SCHEMA_VERSION } from './db.ts';
 import { MYSQL_TABLES, tableColumns } from './schema-mysql.ts';
 
-// Version 20 (2.1): the answers of the open product databases kept a while, and where an item's picture came from.
+// Version 20 (2.0): the answers of the open product databases kept a while, and where an item's picture came from.
 // Version 19 is the schema 2.0 was reviewed with: it stays as it was, and a 2.0 company file gets 20 on top of it.
 const V20_TABLES = ['product_lookups', 'item_image_sources'];
 const onServer = !!process.env.QASA_TEST_DB;

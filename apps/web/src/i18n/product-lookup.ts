@@ -1,5 +1,5 @@
 /**
- * Product lookup (2.1): a product's picture and name from its barcode, out of the open product databases (Open Food
+ * Product lookup (2.0): a product's picture and name from its barcode, out of the open product databases (Open Food
  * Facts and its sister projects). Arabic, English and Kurdish (Sorani), in that order, like i18n.ts. The databases'
  * names are proper names and stay in Latin letters.
  */

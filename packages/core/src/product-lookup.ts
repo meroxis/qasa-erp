@@ -1,5 +1,5 @@
 /**
- * Looking a product up by its barcode in the open product databases (2.1): Open Food Facts and its sister projects.
+ * Looking a product up by its barcode in the open product databases (2.0): Open Food Facts and its sister projects.
  * What is here is shared by the server (which asks), the web app and the phone app (which show the answer and the
  * credit): which barcodes may be asked about at all, the databases, and the credit their licences ask for.
  *

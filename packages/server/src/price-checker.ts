@@ -101,7 +101,7 @@ export interface PriceCheck {
   name?: Names; unit?: UnitCode; price?: number; currency?: CurrencyCode;
   /** a data: URL of the item's picture, when it has one */
   image?: string | null;
-  /** 2.1: the open product database the picture came from, when it is not the shop's own (the screen credits it) */
+  /** 2.0: the open product database the picture came from, when it is not the shop's own (the screen credits it) */
   imageSource?: ProductSource;
   offers?: CheckerOffer[];
 }

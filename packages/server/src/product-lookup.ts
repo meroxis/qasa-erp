@@ -11,7 +11,7 @@ import { readSetting, writeSetting } from './settings.ts';
 import type { ApiExtension } from './routes.ts';
 
 /**
- * Product lookup (2.1, every plan): a product's picture and name from its barcode, out of the open product databases
+ * Product lookup (2.0, every plan): a product's picture and name from its barcode, out of the open product databases
  * (Open Food Facts and its sister projects: beauty, pet food, other products). Free, no account, no key.
  *
  * What leaves the building, and when:

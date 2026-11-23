@@ -18,7 +18,7 @@ export const MAX_PICTURE_FILE_BYTES = 20 * 1024 * 1024;
 /* ---------- which items have a picture ---------- */
 
 let index: Map<string, string> | null = null;
-// 2.1: the pictures that came from an open product database (their credit is shown where they are shown publicly)
+// 2.0: the pictures that came from an open product database (their credit is shown where they are shown publicly)
 let sources = new Map<string, ProductSource>();
 let loading: Promise<void> | null = null;
 const listeners = new Set<() => void>();
@@ -181,7 +181,7 @@ async function base64Of(blob: Blob): Promise<string> {
 /** A picture chosen in a form, ready to send: made small, as base64, with its type (what the canvas really wrote). */
 export interface PreparedPicture {
   data: string; mime: string;
-  /** 2.1: the picture a lookup of this barcode found (not the shop's own): saved with its source, for the credit */
+  /** 2.0: the picture a lookup of this barcode found (not the shop's own): saved with its source, for the credit */
   lookupBarcode?: string;
   source?: ProductSource;
 }
