@@ -1,3 +1,4 @@
+import { loadNative } from './native-licence.ts';
 import { generateKeyPairSync, sign, type KeyObject } from 'node:crypto';
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -710,7 +711,10 @@ describe('official builds check every licence in the Rust module too', () => {
     // the test key pair is known to license.ts (setLicensePublicKeyForTests) but not embedded in the native module
     configureLicensing({ strict: false, requireNative: true });
     const res = await post('/api/plan/license', { key: licenceKey() });
-    expect(res.statusCode).toBe(400);
+    // with the module: not a key it holds, so a wrong key (400). Without it (a build from the public source, or a PC
+    // where it did not load): no key can be checked at all, and that is what is said (409), never "your key is wrong"
+    expect(res.statusCode).toBe(loadNative() ? 400 : 409);
+    expect(res.body).toContain(loadNative() ? 'license_invalid' : 'license_module_missing');
     configureLicensing({ requireNative: false });
   });
 });
