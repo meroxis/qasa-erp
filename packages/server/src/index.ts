@@ -14,6 +14,7 @@ export { getSettings, readSetting, writeSetting } from './settings.ts';
 export { audit } from './audit.ts';
 export { onceOnly } from './idempotency.ts';
 export { allowCardPaymentsForTests } from './pos.ts';
+export { bulkFinished, configureProductLookup, lookupProduct, lookupSettings, resetProductLookup, type ProductLookupResult } from './product-lookup.ts';
 export { AppError, conflict, invalid, notFound } from './errors.ts';
 export {
   createJournalEntry, createVoucher, deleteEntry, documentVoucherStates, documentVoucherWaits, getEntry, postDocumentVoucher, postVoucherNow, reverseEntryInternal,
