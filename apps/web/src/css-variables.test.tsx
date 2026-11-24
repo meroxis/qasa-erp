@@ -1,11 +1,13 @@
 import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 
 // Every colour, size or font variable the app reads is one it defines. A variable that is never defined makes the
 // whole declaration void: a background becomes see-through (the business type screen over the dashboard,
 // 2.0.0-beta.4: var(--bg)), a colour falls back to the parent's. var(--name, fallback) is fine: the fallback holds.
-const here = new URL('.', import.meta.url).pathname;
+// a path Windows reads too (URL.pathname gives /D:/... there)
+const here = fileURLToPath(new URL('.', import.meta.url));
 const files = (dir: string): string[] => readdirSync(dir).flatMap((name) => {
   const path = join(dir, name);
   if (statSync(path).isDirectory()) return name === 'node_modules' ? [] : files(path);
