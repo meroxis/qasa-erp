@@ -198,7 +198,7 @@ function SerialsTable({ serials, onPick }: { serials: SerialView[]; onPick(s: Se
             <td><span className="ltr num">{i18n.digitsOf(s.serial)}</span>{s.grade === 'used' && <span className="chip warn" style={{ marginInlineStart: 6 }}>{t('mob_used')}</span>}</td>
             <td>{i18n.name(s.item.name)}<div className="muted small ltr">{s.item.code}</div></td>
             <td>{s.party?.name ?? s.fromParty?.name ?? '—'}{s.saleInvoice && <div className="muted small num">{i18n.date(s.saleInvoice.date)}</div>}</td>
-            <td className="num">{s.warrantyUntil ? <span style={s.warrantyActive ? undefined : { color: 'var(--muted)' }}>{i18n.date(s.warrantyUntil)}</span> : '—'}</td>
+            <td className="num">{s.warrantyUntil ? <span style={s.warrantyActive ? undefined : { color: 'var(--ink-3)' }}>{i18n.date(s.warrantyUntil)}</span> : '—'}</td>
             <td><SerialChip status={s.status} /></td>
           </tr>
         ))}
