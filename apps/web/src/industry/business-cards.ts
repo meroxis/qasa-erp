@@ -29,6 +29,7 @@ export const BUSINESS_CARDS: readonly BusinessCard[] = [
   { type: 'clothingShop', group: 'shops', pages: ['cw_title', 'pos_title', 'lb_title', 'items', 'of_title'] },
   { type: 'goldShop', group: 'shops', pages: ['gd_title', 'pos_title', 'invoices', 'items'] },
   { type: 'wholesale', group: 'shops', pages: ['ws_title', 'invoices', 'customers', 'po_title', 'purchaseInvoices'] },
+  { type: 'restaurant', group: 'shops', pages: ['rs_restaurant', 'pos_title', 'items', 'br_expenses'] },
   { type: 'engineeringWorks', group: 'services', pages: ['ew_jobs', 'qt_title', 'purchaseInvoices', 'br_expenses'] },
   { type: 'electricalSolar', group: 'energy', pages: ['sl_title', 'qt_title', 'items', 'installments'] },
   { type: 'generators', group: 'energy', pages: ['gen_title', 'customers', 'br_expenses'] },

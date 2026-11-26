@@ -194,6 +194,12 @@ beforeAll(async () => {
     code: 'POLO', name: { ar: 'بولو', en: 'Polo', ku: 'پۆلۆ' }, sizes: ['M', 'L'], colorIds: [color.id], salePrice: 25_000, saleCurrency: 'IQD', purchasePrice: 12_345, purchaseCurrency: 'IQD'
   }));
 
+  // 2.1: a restaurant's table eating tea (an order shows the price it sells at, never a cost)
+  const room = await made(post('/api/restaurant/room', { tables: 2, family: 0 }), 200);
+  const tableOrder = await made(post('/api/restaurant/orders', { kind: 'table', tableId: room.tables[0].id, guests: 2 }));
+  await made(post(`/api/restaurant/orders/${tableOrder.id}/lines`, { lines: [{ itemId: teaId, qtyMilli: 2_000 }] }), 200);
+  await made(post(`/api/restaurant/orders/${tableOrder.id}/send`, {}), 200);
+
   // what the server worked out: the cost of every line sold or returned, the value of every stock movement and of the stock
   for (const r of db.prepare('SELECT cost AS n FROM invoice_lines WHERE cost IS NOT NULL').all() as { n: number }[]) secrets.add(Math.abs(Number(r.n)));
   for (const r of db.prepare('SELECT value AS n FROM stock_moves').all() as { n: number }[]) secrets.add(Math.abs(Number(r.n)));
@@ -224,7 +230,8 @@ beforeAll(async () => {
     '/api/pos/customer/:id': customerId,
     '/api/gold/items/:id': ringId, '/api/gold/docs/:id': goldReceipt.id, '/api/gold/suppliers/:id': supplierId, '/api/gold/slip/:id': sale.id,
     '/api/parties/:id/reminders': customerId, '/api/daily-suppliers/:id/sheet': supplierId, '/api/daily-suppliers/:id/receipts': supplierId,
-    '/api/clothing/models/:id': model.id, '/api/clothing/invoices/:id/variants': purchase.id
+    '/api/clothing/models/:id': model.id, '/api/clothing/invoices/:id/variants': purchase.id,
+    '/api/restaurant/orders/:id': tableOrder.id, '/api/restaurant/orders/:id/ticket': tableOrder.id
   });
   Object.assign(QUERY, {
     '/api/reports/final-accounts': `from=${today.slice(0, 4)}-01-01&to=${today}`,
@@ -246,7 +253,8 @@ beforeAll(async () => {
     '/api/fuel/reports': `from=${month}-01&to=${today}`,
     '/api/consignment/settlements/preview': `supplierId=${supplierId}&currency=IQD&date=${today}`,
     '/api/clothing/reports': `from=${month}-01&to=${today}`,
-    '/api/clothing/variants': `itemIds=${teaId}`
+    '/api/clothing/variants': `itemIds=${teaId}`,
+    '/api/restaurant/orders/:id/ticket': 'n=1'
   });
   Object.assign(at, {
     scan: '/api/items?barcode=6260000000017', boxScan: '/api/items?barcode=6260000000024', search: `/api/items?q=tea&warehouseId=${warehouseId}`,

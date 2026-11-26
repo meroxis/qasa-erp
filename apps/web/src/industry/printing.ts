@@ -58,7 +58,7 @@ export function printersOf(value: unknown): PrinterInfo[] {
 export const defaultPrinter = (printers: readonly PrinterInfo[] | null | undefined): PrinterInfo | null => (printers ?? []).find((p) => p.isDefault) ?? null;
 
 /** What each kind of paper is printed on: a receipt roll, labels, or a page. */
-const KIND_NEEDS: Record<PrintKind, 'receipt' | 'label' | 'page'> = { invoice: 'page', voucher: 'page', quote: 'page', receipt: 'receipt', label: 'label', report: 'page' };
+const KIND_NEEDS: Record<PrintKind, 'receipt' | 'label' | 'page'> = { invoice: 'page', voucher: 'page', quote: 'page', receipt: 'receipt', label: 'label', report: 'page', kitchen: 'receipt' };
 
 /**
  * 1.4: the printer to suggest for a kind of paper, with its paper: a receipt printer for POS receipts, a label

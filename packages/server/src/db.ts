@@ -2778,6 +2778,90 @@ const V21 =
   CREATE INDEX IF NOT EXISTS serials_from_party ON serials(from_party_id);
 `;
 
+/**
+ * Version 22 (2.1): restaurants and cafés (restaurant.ts). The dining room's areas (a family section among them) and
+ * tables; orders (a table's tab, one to take away or to deliver) and their lines, each with its kitchen ticket once
+ * sent and its cancelling by a supervisor; and what each till sale paid of which line, so an order is paid in parts.
+ */
+const V22 =
+  `
+  -- ===== 22 · RESTAURANTS AND CAFÉS =====
+  CREATE TABLE IF NOT EXISTS rs_areas (
+    id TEXT PRIMARY KEY,
+    name_ar TEXT NOT NULL,
+    name_en TEXT NOT NULL,
+    name_ku TEXT NOT NULL,
+    family INTEGER NOT NULL DEFAULT 0 CHECK (family IN (0, 1)),
+    sort INTEGER NOT NULL DEFAULT 0,
+    active INTEGER NOT NULL DEFAULT 1 CHECK (active IN (0, 1)),
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+  );
+  CREATE TABLE IF NOT EXISTS rs_tables (
+    id TEXT PRIMARY KEY,
+    area_id TEXT NOT NULL REFERENCES rs_areas(id),
+    name TEXT NOT NULL,
+    seats INTEGER NOT NULL DEFAULT 4 CHECK (seats >= 1),
+    sort INTEGER NOT NULL DEFAULT 0,
+    active INTEGER NOT NULL DEFAULT 1 CHECK (active IN (0, 1)),
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    UNIQUE (area_id, name)
+  );
+  CREATE TABLE IF NOT EXISTS rs_orders (
+    id TEXT PRIMARY KEY,
+    number TEXT NOT NULL UNIQUE,
+    kind TEXT NOT NULL CHECK (kind IN ('table', 'takeaway', 'delivery')),
+    table_id TEXT REFERENCES rs_tables(id),
+    guests INTEGER CHECK (guests IS NULL OR guests >= 1),
+    party_id TEXT REFERENCES parties(id),
+    phone TEXT,
+    address TEXT,
+    notes TEXT,
+    status TEXT NOT NULL CHECK (status IN ('open', 'closed', 'cancelled')),
+    warehouse_id TEXT NOT NULL REFERENCES warehouses(id),
+    tickets INTEGER NOT NULL DEFAULT 0,
+    bill_printed_at TEXT,
+    opened_by TEXT NOT NULL,
+    opened_by_id TEXT,
+    opened_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    closed_at TEXT,
+    closed_by TEXT,
+    cancel_reason TEXT
+  );
+  CREATE INDEX IF NOT EXISTS rs_orders_status ON rs_orders(status, opened_at);
+  CREATE INDEX IF NOT EXISTS rs_orders_table ON rs_orders(table_id, status);
+  CREATE TABLE IF NOT EXISTS rs_order_lines (
+    id TEXT PRIMARY KEY,
+    order_id TEXT NOT NULL REFERENCES rs_orders(id),
+    line_no INTEGER NOT NULL,
+    item_id TEXT NOT NULL REFERENCES items(id),
+    qty_milli INTEGER NOT NULL CHECK (qty_milli > 0),
+    unit_price INTEGER NOT NULL CHECK (unit_price >= 0),
+    note TEXT,
+    ticket INTEGER,
+    sent_at TEXT,
+    voided_at TEXT,
+    voided_by TEXT,
+    void_reason TEXT,
+    added_by TEXT NOT NULL,
+    added_at TEXT NOT NULL,
+    UNIQUE (order_id, line_no)
+  );
+  CREATE INDEX IF NOT EXISTS rs_order_lines_item ON rs_order_lines(item_id);
+  CREATE TABLE IF NOT EXISTS rs_paid (
+    id TEXT PRIMARY KEY,
+    order_id TEXT NOT NULL REFERENCES rs_orders(id),
+    line_id TEXT NOT NULL REFERENCES rs_order_lines(id),
+    invoice_id TEXT NOT NULL REFERENCES invoices(id),
+    qty_milli INTEGER NOT NULL CHECK (qty_milli > 0),
+    created_at TEXT NOT NULL
+  );
+  CREATE INDEX IF NOT EXISTS rs_paid_order ON rs_paid(order_id);
+  CREATE INDEX IF NOT EXISTS rs_paid_invoice ON rs_paid(invoice_id);
+`;
+
 /** SQLite-only work of a version, after its SQL and before its rows, in the same transaction (by the version's SQL). */
 const SQLITE_FINISH: ReadonlyMap<string, (db: Db) => void> = new Map([[V19, finishV19]]);
 
@@ -2796,7 +2880,8 @@ const MIGRATIONS: Migration[] = [
   { sql: V19, mysql: { tables: true, steps: () => V19_MYSQL_STEPS }, data: keepFeatureAccounts },
   { sql: V20, mysql: 'tables' },
   // on a server the barcode and party columns are indexed already: the stock, entry and till cash indexes only
-  { sql: V21, mysql: { tables: true, steps: () => V21_MYSQL_STEPS } }
+  { sql: V21, mysql: { tables: true, steps: () => V21_MYSQL_STEPS } },
+  { sql: V22, mysql: 'tables' }
 ];
 
 /** Server databases began at this version: its schema is in schema-mysql.ts (tables and triggers without `since`). */

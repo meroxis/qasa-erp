@@ -2,7 +2,7 @@ import { DatabaseSync } from 'node:sqlite';
 import { describe, expect, it } from 'vitest';
 import { initDatabase, type Db } from './db.ts';
 import { seedDemo, seedPharmacyDemo } from './demo-data.ts';
-import { seedClothingDemo, seedGoldDemo, seedMarketDemo, seedWholesaleDemo, startDemoMonth } from './demo-samples.ts';
+import { seedClothingDemo, seedGoldDemo, seedMarketDemo, seedRestaurantDemo, seedWholesaleDemo, startDemoMonth } from './demo-samples.ts';
 import { planStatus } from './license.ts';
 import { getSettings } from './settings.ts';
 
@@ -59,6 +59,15 @@ describe('the website demo samples of 2.0', () => {
     expect(getSettings(db).businessType).toBe('clothingShop');
     expect(count(db, 'SELECT COUNT(*) AS n FROM cl_models')).toBe(2);
     expect(count(db, 'SELECT COUNT(*) AS n FROM cl_variants')).toBe(12);
+  });
+
+  it('?restaurant (2.1): a menu, a hall and a family section, two tables eating', () => {
+    const db = fresh();
+    seedRestaurantDemo(db);
+    expect(getSettings(db).businessType).toBe('restaurant');
+    expect(count(db, 'SELECT COUNT(*) AS n FROM rs_tables')).toBe(14);
+    expect(count(db, "SELECT COUNT(*) AS n FROM rs_orders WHERE status = 'open'")).toBe(2);
+    expect(count(db, 'SELECT COUNT(*) AS n FROM rs_order_lines WHERE ticket IS NULL')).toBe(0);
   });
 
   it('?pharmacy: the pharmacy sample', () => {

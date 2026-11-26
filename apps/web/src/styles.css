@@ -1496,3 +1496,50 @@ a.fx-chip:focus-visible { outline: 2px solid var(--focus-outer); outline-offset:
 /* 2.0.0: a long table's "not shown yet" row (industry/LongList.tsx) */
 .more-rows td { text-align: center; padding-block: 10px; }
 .more-rows td > * + * { margin-inline-start: 10px; }
+
+/* 2.1: restaurants and cafés (pages/Restaurant.tsx) */
+.rs-floor-body { display: grid; grid-template-columns: minmax(0, 1fr) 280px; gap: 16px; align-items: start; }
+@media (max-width: 900px) { .rs-floor-body { grid-template-columns: 1fr; } }
+.rs-tables { display: grid; grid-template-columns: repeat(auto-fill, minmax(118px, 1fr)); gap: 10px; }
+.rs-table { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; min-height: 104px; padding: 10px; border-radius: 14px;
+  border: 2px solid var(--line); background: var(--surface); color: var(--ink); cursor: pointer; font: inherit; text-align: center; }
+.rs-table:hover { border-color: var(--accent); }
+.rs-table:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
+.rs-table.busy { background: var(--accent-soft); color: var(--accent-soft-ink); border-color: var(--accent); }
+.rs-table.billed { border-style: dashed; }
+.rs-table-name { font-size: 1.5rem; font-weight: 700; line-height: 1; }
+.rs-side { gap: 8px; padding: 12px; }
+.rs-other { display: grid; gap: 2px; padding: 8px 10px; border-radius: 10px; border: 1px solid var(--line); background: var(--surface); color: var(--ink); font: inherit; text-align: start; cursor: pointer; }
+.rs-other:hover { border-color: var(--accent); }
+.rs-num { min-width: 48px; justify-content: center; }
+.rs-order { display: grid; grid-template-columns: minmax(0, 1.4fr) minmax(300px, 1fr); gap: 16px; align-items: start; }
+@media (max-width: 900px) { .rs-order { grid-template-columns: 1fr; } }
+.rs-tiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(130px, 1fr)); gap: 8px; }
+.rs-tile { display: flex; flex-direction: column; justify-content: space-between; gap: 6px; min-height: 76px; padding: 10px; border-radius: 12px;
+  border: 1px solid var(--line); background: var(--surface); color: var(--ink); font: inherit; text-align: start; cursor: pointer; }
+.rs-tile:hover:not(:disabled) { border-color: var(--accent); }
+.rs-tile:disabled { opacity: .55; cursor: default; }
+.rs-tile-name { font-weight: 600; }
+.rs-lines { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; max-height: 52vh; overflow: auto; }
+.rs-line { display: grid; gap: 4px; padding: 8px; border-radius: 10px; border: 1px solid var(--line); }
+.rs-line.unsent, .rs-line.new { border-color: var(--warn, #b54708); }
+.rs-line.new { background: var(--fill); }
+.rs-line.voided { opacity: .6; text-decoration: line-through; }
+.rs-line-main { display: flex; gap: 8px; align-items: baseline; }
+.rs-line-name { flex: 1; min-width: 0; }
+.rs-part { align-items: center; }
+
+/* the kitchen ticket and the bill: hidden on screen, printed alone on their roll */
+.rs-ticket-host, .rs-bill-host { display: none; }
+@media print {
+  body.rs-printing-ticket .app, body.rs-printing-ticket .toast, body.rs-printing-ticket .backdrop, body.rs-printing-ticket > #root,
+  body.rs-printing-ticket .pos-receipt-host, body.rs-printing-ticket .rs-bill-host { display: none !important; }
+  body.rs-printing-ticket .rs-ticket-host { display: block; }
+  body.rs-printing-bill .app, body.rs-printing-bill .toast, body.rs-printing-bill .backdrop, body.rs-printing-bill > #root,
+  body.rs-printing-bill .pos-receipt-host, body.rs-printing-bill .rs-ticket-host { display: none !important; }
+  body.rs-printing-bill .rs-bill-host { display: block; }
+  .rs-ticket-head { font-size: 16pt; font-weight: 700; letter-spacing: .05em; }
+  .rs-ticket-where { font-size: 18pt; font-weight: 700; margin: 2px 0 4px; }
+  .rs-ticket-line { font-size: 14pt; margin: 4px 0; }
+  .rs-ticket-note { font-size: 12pt; font-style: italic; padding-inline-start: 8px; }
+}

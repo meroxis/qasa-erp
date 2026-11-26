@@ -130,7 +130,8 @@ export const NAV: NavGroup[] = [
       { key: 'ps_title', icon: 'fuel', path: 'petrol', match: ['petrol', 'fuel-shift'], business: 'petrolStation' },
       { key: 'gd_title', icon: 'gem', path: 'gold', match: ['gold', 'gold-slip'], business: 'goldShop' },
       { key: 'ws_title', icon: 'truck', path: 'wholesale', match: ['wholesale'], business: 'wholesale' },
-      { key: 'cw_title', icon: 'shirt', path: 'clothing', match: ['clothing', 'clothing-model'], business: 'clothingShop' }
+      { key: 'cw_title', icon: 'shirt', path: 'clothing', match: ['clothing', 'clothing-model'], business: 'clothingShop' },
+      { key: 'rs_restaurant', icon: 'cup', path: 'restaurant', match: ['restaurant', 'restaurant-order'], business: 'restaurant' }
     ]
   },
   {

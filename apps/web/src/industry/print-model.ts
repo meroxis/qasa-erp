@@ -310,6 +310,11 @@ const SAMPLE_LINES: Record<BusinessType, SampleLine[]> = {
     ['POLO-L-BLK', '0400000000077', 'قميص بولو · L · أسود', 'Polo shirt · L · Black', 'کراسی پۆلۆ · L · ڕەش', 'piece', 2000, 25_000],
     ['JEAN-32-BLU', '0400000000084', 'بنطلون جينز · 32 · أزرق', 'Jeans · 32 · Blue', 'پانتۆڵی جینز · 32 · شین', 'piece', 1000, 35_000],
     ['SHOE-42-WHT', '0400000000091', 'حذاء رياضي · 42 · أبيض', 'Trainers · 42 · White', 'پێڵاوی وەرزشی · 42 · سپی', 'pair', 1000, 45_000]
+  ],
+  restaurant: [
+    ['M-101', null, 'كباب لحم، صحن', 'Lamb kebab, a plate', 'کەبابی گۆشت، قاپێک', 'piece', 2000, 12_000],
+    ['M-210', null, 'تكة دجاج، صحن', 'Chicken tikka, a plate', 'تکەی مریشک، قاپێک', 'piece', 1000, 10_000],
+    ['D-301', null, 'شاي', 'Tea', 'چا', 'piece', 3000, 1_000]
   ]
 };
 
