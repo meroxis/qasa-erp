@@ -59,6 +59,7 @@ export type Feature =
   | 'wholesale' // wholesale and distribution: sales reps, routes, van stock, sales orders, credit control, collections (1.8)
   | 'delivery' // delivery orders taken by phone or WhatsApp: drivers, statuses, cash on delivery handed over (2.0)
   | 'priceChecker' // price checker screens near the shelves: scan to see the price and the offer (2.0)
+  | 'restaurant' // restaurants and cafés: tables and areas, orders per table, kitchen tickets, split bills (2.1)
   | 'databaseServer'; // the company database on the company's own MariaDB or MySQL server
 
 export interface PlanLimits {
@@ -76,14 +77,14 @@ export interface PlanDefinition {
   features: readonly Feature[];
 }
 
-const PRO_FEATURES: readonly Feature[] = ['officeNetwork', 'relay', 'roles', 'installments', 'payroll', 'finalAccountsExport', 'noBranding', 'autoBackup', 'cloudBackup', 'mobileShop', 'autoParts', 'engineeringWorks', 'pipeline', 'generators', 'websiteApi', 'phoneApp', 'electricalSolar', 'bankReconciliation', 'pharmacy', 'loyalty', 'companyLogo', 'petrolStation', 'multiTill', 'consignment', 'promotions', 'goldShop', 'wholesale', 'delivery', 'priceChecker', 'clothingShop'];
+const PRO_FEATURES: readonly Feature[] = ['officeNetwork', 'relay', 'roles', 'installments', 'payroll', 'finalAccountsExport', 'noBranding', 'autoBackup', 'cloudBackup', 'mobileShop', 'autoParts', 'engineeringWorks', 'pipeline', 'generators', 'websiteApi', 'phoneApp', 'electricalSolar', 'bankReconciliation', 'pharmacy', 'loyalty', 'companyLogo', 'petrolStation', 'multiTill', 'consignment', 'promotions', 'goldShop', 'wholesale', 'delivery', 'priceChecker', 'clothingShop', 'restaurant'];
 /** What Pro has and Starter leaves out: reaching the office over the internet (Qasa Relay) and the cloud backup. */
 export const STARTER_LEAVES_OUT: readonly Feature[] = ['relay', 'cloudBackup'];
 /**
  * Starter's features, written out in full and not worked out from Pro's: a feature added to Pro later is not given to
  * Starter by itself (a test keeps this list equal to Pro's without STARTER_LEAVES_OUT, so adding one is a decision).
  */
-const STARTER_FEATURES: readonly Feature[] = ['officeNetwork', 'roles', 'installments', 'payroll', 'finalAccountsExport', 'noBranding', 'autoBackup', 'mobileShop', 'autoParts', 'engineeringWorks', 'pipeline', 'generators', 'websiteApi', 'phoneApp', 'electricalSolar', 'bankReconciliation', 'pharmacy', 'loyalty', 'companyLogo', 'petrolStation', 'multiTill', 'consignment', 'promotions', 'goldShop', 'wholesale', 'delivery', 'priceChecker', 'clothingShop'];
+const STARTER_FEATURES: readonly Feature[] = ['officeNetwork', 'roles', 'installments', 'payroll', 'finalAccountsExport', 'noBranding', 'autoBackup', 'mobileShop', 'autoParts', 'engineeringWorks', 'pipeline', 'generators', 'websiteApi', 'phoneApp', 'electricalSolar', 'bankReconciliation', 'pharmacy', 'loyalty', 'companyLogo', 'petrolStation', 'multiTill', 'consignment', 'promotions', 'goldShop', 'wholesale', 'delivery', 'priceChecker', 'clothingShop', 'restaurant'];
 
 export const PLANS: Record<PlanId, PlanDefinition> = {
   free: { id: 'free', limits: { companies: 1, users: 1, warehouses: 1 }, features: [] },
@@ -175,13 +176,13 @@ export function resolvePlan(input: { license: LicenseInfo | null; trialStarted: 
  * the plan still decides which of them can be used. 'trade' is the general accounting, sales, purchases and stock;
  * 'market' (1.4) is a supermarket or mini-market: the same pages, started for selling at the till by barcode and weight.
  */
-export const BUSINESS_TYPES = ['trade', 'market', 'realEstate', 'mobileShop', 'autoParts', 'engineeringWorks', 'electricalSolar', 'generators', 'pharmacy', 'petrolStation', 'goldShop', 'wholesale', 'clothingShop'] as const;
+export const BUSINESS_TYPES = ['trade', 'market', 'realEstate', 'mobileShop', 'autoParts', 'engineeringWorks', 'electricalSolar', 'generators', 'pharmacy', 'petrolStation', 'goldShop', 'wholesale', 'clothingShop', 'restaurant'] as const;
 export type BusinessType = (typeof BUSINESS_TYPES)[number];
 
 /** The plan feature each industry needs (general trade needs none). */
 export const BUSINESS_FEATURE: Record<BusinessType, Feature | null> = {
   trade: null, market: null, realEstate: 'realEstate', mobileShop: 'mobileShop', autoParts: 'autoParts', engineeringWorks: 'engineeringWorks', electricalSolar: 'electricalSolar', generators: 'generators',
-  pharmacy: 'pharmacy', petrolStation: 'petrolStation', goldShop: 'goldShop', wholesale: 'wholesale', clothingShop: 'clothingShop'
+  pharmacy: 'pharmacy', petrolStation: 'petrolStation', goldShop: 'goldShop', wholesale: 'wholesale', clothingShop: 'clothingShop', restaurant: 'restaurant'
 };
 
 export function isBusinessType(value: unknown): value is BusinessType {

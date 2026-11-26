@@ -283,6 +283,8 @@ const PATHS: Record<string, string> = {
   // a capsule, drawn in-house
   pill: 'M10.5 20.5a5 5 0 0 1-7-7l6-6a5 5 0 0 1 7 7ZM7.5 10.5l6 6',
   shirt: 'M9 3 4 5.5 2.5 10l3.5 1.5V21h12v-9.5l3.5-1.5L20 5.5 15 3a3 3 0 0 1-6 0Z',
+  // 2.1: restaurants and cafés (a cup with its handle and steam)
+  cup: 'M4 9h13v5a6 6 0 0 1-6 6h-1a6 6 0 0 1-6-6V9Zm13 2h1.5a2.5 2.5 0 0 1 0 5H17M8 3v3m4-3v3',
   wallet: 'M19 7V4a1 1 0 0 0-1-1H5a2 2 0 0 0 0 4h15a1 1 0 0 1 1 1v4h-3a2 2 0 0 0 0 4h3a1 1 0 0 0 1-1v-2a1 1 0 0 0-1-1M3 5v14a2 2 0 0 0 2 2h15a1 1 0 0 0 1-1v-4',
   key: 'm15.5 7.5 2.3 2.3a1 1 0 0 0 1.4 0l2.1-2.1a1 1 0 0 0 0-1.4L19 4M21 2l-9.6 9.6M13 15.5a5.5 5.5 0 1 1-11 0 5.5 5.5 0 0 1 11 0',
   logout: 'M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9',

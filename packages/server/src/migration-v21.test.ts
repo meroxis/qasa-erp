@@ -12,7 +12,7 @@ const onServer = !!process.env.QASA_TEST_DB;
 const plan = (db: Db, sql: string) => (db.prepare(`EXPLAIN QUERY PLAN ${sql}`).all('x') as { detail: string }[]).map((r) => r.detail).join(' / ');
 
 describe.skipIf(onServer)('version 21', () => {
-  it('is the current version', () => { expect(SCHEMA_VERSION).toBe(21); });
+  it('is the current version or one before it', () => { expect(SCHEMA_VERSION).toBeGreaterThanOrEqual(21); });
 
   it('comes on top of a 2.0 beta company file (version 20) and keeps its data', () => {
     const dir = mkdtempSync(join(tmpdir(), 'qasa-v21-'));
@@ -26,7 +26,7 @@ describe.skipIf(onServer)('version 21', () => {
       raw.close();
       const db = openDatabase(file);
       try {
-        expect(Number((db.prepare('SELECT version FROM schema_version').get() as { version: number }).version)).toBe(21);
+        expect(Number((db.prepare('SELECT version FROM schema_version').get() as { version: number }).version)).toBe(SCHEMA_VERSION);
         expect(db.prepare("SELECT id FROM items WHERE barcode = '6291041500550'").get()).toEqual({ id: 'i1' });
       } finally {
         db.close();

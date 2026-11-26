@@ -1,18 +1,23 @@
-import { Fragment, useCallback, useEffect, useState } from 'react';
+import { Fragment, useCallback, useContext, useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
 import {
   DEFAULT_PRINTER_CHOICE, MAX_PRINT_COPIES, PRINT_KINDS, PRINTER_MARGINS, PRINTER_PAPERS, todayIso, USUAL_PAPER,
-  type PrinterChoice, type PrinterChoices, type PrinterEntry, type PrinterPaper, type PrintKind
+  type BusinessType, type PrinterChoice, type PrinterChoices, type PrinterEntry, type PrinterPaper, type PrintKind
 } from '@qasa/core';
-import { Icon, useToast } from '../components.tsx';
+import { DataContext, Icon, useToast } from '../components.tsx';
 import { ChoiceTiles } from '../ChoiceTiles.tsx';
 import { useI18n, type Key } from '../i18n.ts';
 import {
   defaultPrinter, desktopPrinters, PRINT_NOTICE_EVENT, printAlone, printersOf, saveChoice, savedChoices, suggestedChoice, type PrinterInfo, type PrintNotice
 } from './printing.ts';
 
-/** Receipts and labels go to a printer of their own, one after another: a print window at every one only slows the till. */
-const STRAIGHT_KINDS: readonly PrintKind[] = ['receipt', 'label'];
+/** Receipts, labels and kitchen tickets go to a printer of their own, one after another: a print window at every one only slows the till. */
+const STRAIGHT_KINDS: readonly PrintKind[] = ['receipt', 'label', 'kitchen'];
+
+/** 2.1: the kinds the page lists: kitchen tickets only for a restaurant or café, so the other shops see the same six rows as before. */
+export function printKindsFor(businessTypes: readonly BusinessType[] | null | undefined): readonly PrintKind[] {
+  return PRINT_KINDS.filter((kind) => kind !== 'kitchen' || !!businessTypes?.includes('restaurant'));
+}
 
 /**
  * A kind's choice with another printer: a first printer starts on the paper that kind usually takes, and a receipt or
@@ -47,6 +52,8 @@ export interface PrintersCardViewProps {
   onRefresh(): void;
   /** 1.4: saves the suggested printer for every kind that has none chosen */
   onUseSuggested?(): void;
+  /** 2.1: the kinds listed (printKindsFor the company's business); every kind when not given */
+  kinds?: readonly PrintKind[];
 }
 
 /** 1.4: the printers of this computer as rectangles: Windows' default, ready or offline, and what each looks like. */
@@ -77,11 +84,11 @@ export function InstalledPrinters({ printers }: { printers: PrinterInfo[] }) {
 }
 
 /** Settings → Printers as it looks; PrintersCard gives it the Windows app's printers and choices. */
-export function PrintersCardView({ desktop, printers, choices, busy, error, onChange, onTest, onRefresh, onUseSuggested }: PrintersCardViewProps) {
+export function PrintersCardView({ desktop, printers, choices, busy, error, onChange, onTest, onRefresh, onUseSuggested, kinds = PRINT_KINDS }: PrintersCardViewProps) {
   const { t } = useI18n();
   const usual = defaultPrinter(printers);
   // the kinds with no printer chosen that have one to suggest
-  const open = printers ? PRINT_KINDS.filter((kind) => !choices[kind]?.printer && suggestedChoice(kind, printers)) : [];
+  const open = printers ? kinds.filter((kind) => !choices[kind]?.printer && suggestedChoice(kind, printers)) : [];
   const detailed = !!printers?.some((p) => p.isDefault || p.state || p.guess);
   const head = <div className="card-head"><h2 id="printers-title"><Icon name="printer" size={18} /> {t('prn_title')}</h2></div>;
   if (!desktop) {
@@ -115,7 +122,7 @@ export function PrintersCardView({ desktop, printers, choices, busy, error, onCh
             </tr>
           </thead>
           <tbody>
-            {PRINT_KINDS.map((kind) => {
+            {kinds.map((kind) => {
               const c = choices[kind];
               const printer = c?.printer ?? null;
               const gone = goneIn(c, printers) !== null;
@@ -211,6 +218,7 @@ export function PrintersCardView({ desktop, printers, choices, busy, error, onCh
 export function PrintersCard() {
   const { t } = useI18n();
   const toast = useToast();
+  const kinds = printKindsFor(useContext(DataContext)?.settings?.businessTypes);
   const [desktop] = useState(desktopPrinters);
   const [printers, setPrinters] = useState<PrinterInfo[] | null>(null);
   const [choices, setChoices] = useState<PrinterChoices>({});
@@ -247,7 +255,7 @@ export function PrintersCard() {
     if (!desktop || !printers) return;
     setError(null);
     let saved: PrinterChoices | null = null;
-    for (const kind of PRINT_KINDS) {
+    for (const kind of kinds) {
       if (choices[kind]?.printer) continue;
       const choice = suggestedChoice(kind, printers);
       if (!choice) continue;
@@ -282,6 +290,7 @@ export function PrintersCard() {
         onTest={(kind) => { setBusy(kind); setTesting(kind); }}
         onRefresh={() => void load(true)}
         onUseSuggested={() => void useSuggested()}
+        kinds={kinds}
       />
       {testing && createPortal(<PrintTestSheet kind={testing} choice={choices[testing]} />, document.body)}
     </>
