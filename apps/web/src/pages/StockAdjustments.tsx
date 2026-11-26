@@ -14,7 +14,10 @@ import {
 import { worksApi, type JobSummaryView } from '../industry/works-api.ts';
 import { reverseDefaultDate } from '../industry/ReverseModal.tsx';
 import { printDocument } from '../industry/printing.ts';
-import { CountSaver, costFor, fromSession, nothingToCount, useLeaveGuard, type CountSessionView, type SaveState } from '../industry/count-session.ts';
+import { CountSaver, costFor, fromSession, mergeCounted, nothingToCount, useLeaveGuard, type CountSessionView, type SaveState } from '../industry/count-session.ts';
+
+/** How often an open count is read again while phones may count into it (2.1). */
+const COUNT_REFRESH_MS = 15_000;
 import { brandLabel, brandsApi, categoriesApi, categoryLabel, inCategory } from '../industry/categories-api.ts';
 import { CategoryOptions } from '../industry/CatalogPickers.tsx';
 import type { CountScope } from '../industry/adjustments-api.ts';
@@ -692,7 +695,13 @@ export function StockCount() {
         save: adjustmentsApi.saveCount
       }, warehouseId, meta,
       {
-        saved: (s) => { if (saverRef.current === saver) { setFrozen(fromSession(s).frozen); setSessionScope(s.scope ?? null); } },
+        saved: (s) => {
+          if (saverRef.current !== saver) return;
+          setFrozen(fromSession(s).frozen);
+          setSessionScope(s.scope ?? null);
+          // what phones added meanwhile shows here too (what is typed here and not sent yet stays as typed)
+          setCounted((prev) => mergeCounted(prev, s, (id) => saver.isPending(id)));
+        },
         state: (state) => { if (saverRef.current === saver) setSaveState(state); },
         closed: () => {
           if (saverRef.current !== saver) return;
@@ -720,6 +729,23 @@ export function StockCount() {
     }, (e) => { if (live) setError(e); });
     return () => { live = false; };
   }, [warehouseId, reopen]);
+  // 2.1: phones count into the same count (a shelf at a time): while nothing typed here waits, what the count has is read
+  // again every little while, so their parts show up here
+  useEffect(() => {
+    if (!warehouseId || !ready) return;
+    let live = true;
+    const timer = window.setInterval(() => {
+      const saver = saverRef.current;
+      if (!saver?.sessionId || saver.dirty) return;
+      adjustmentsApi.openCount(warehouseId).then((s) => {
+        if (!live || saverRef.current !== saver || !s || s.id !== saver.sessionId || saver.dirty) return;
+        setCounted((prev) => mergeCounted(prev, s, (id) => saver.isPending(id)));
+        setFrozen(fromSession(s).frozen);
+        saver.frozen = fromSession(s).frozen;
+      }, () => { /* the next one */ });
+    }, COUNT_REFRESH_MS);
+    return () => { live = false; window.clearInterval(timer); };
+  }, [warehouseId, ready]);
   // leaving the page: what is still waiting goes to the server
   useEffect(() => () => saverRef.current?.dispose(), []);
   useLeaveGuard(() => !!saverRef.current?.dirty, t('adj_leaveCount'));

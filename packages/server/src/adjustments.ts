@@ -804,14 +804,22 @@ function assertOpen(row: CountRow, action: string): void {
   if (row.status !== 'open') throw conflict('action_not_allowed', { status: row.status, action });
 }
 
+/** The most a count may hold of one item (a million million thousandths: the API's own limit on one line). */
+const MAX_COUNTED_MILLI = 1e12;
+
 /**
  * Saves what was counted since the last save. An item counted for the first time gets its book quantity frozen now;
  * one counted before keeps the quantity frozen then. `countedMilli: null` takes an item off the count (counted again
- * later, it is frozen again then).
+ * later, it is frozen again then). 2.1: `add` puts the quantity on top of what the count already has for the item
+ * (one shelf of it, counted by one person, then another shelf, perhaps by someone else on another phone): added here,
+ * inside the save, so two phones that send at once both count.
  */
 export function saveCountLines(
   db: Db, id: string,
-  input: { date?: string | undefined; notes?: string | undefined; full?: boolean | undefined; counts: { itemId: string; countedMilli: number | null; unitCost?: number | undefined }[] },
+  input: {
+    date?: string | undefined; notes?: string | undefined; full?: boolean | undefined;
+    counts: { itemId: string; countedMilli: number | null; unitCost?: number | undefined; add?: boolean | undefined }[];
+  },
   actor: Actor
 ): CountSession {
   const row = loadCount(db, id);
@@ -826,6 +834,8 @@ export function saveCountLines(
     if (!it || Number(it.active) !== 1 || Number(it.track_stock) !== 1) errors.push({ code: 'item_invalid', row: i + 1 });
     else if (covered && !covered.has(c.itemId) && c.countedMilli !== null) errors.push({ code: 'item_outside_count', row: i + 1 });
     if (c.countedMilli !== null && (!Number.isSafeInteger(c.countedMilli) || c.countedMilli < 0)) errors.push({ code: 'line_qty_invalid', row: i + 1 });
+    // (nothing to add to: taking an item off the count is a count of its own)
+    else if (c.add && c.countedMilli === null) errors.push({ code: 'line_qty_invalid', row: i + 1 });
     if (c.unitCost !== undefined && (!Number.isSafeInteger(c.unitCost) || c.unitCost < 0)) errors.push({ code: 'line_price_invalid', row: i + 1 });
   });
   if (errors.length) throw invalid(errors);
@@ -833,7 +843,7 @@ export function saveCountLines(
     // checked again inside: another PC may have finished or discarded it meanwhile
     assertOpen(loadCount(db, id), 'edit');
     const now = new Date().toISOString();
-    const existing = db.prepare('SELECT book_milli FROM stock_count_lines WHERE count_id = ? AND item_id = ?');
+    const existing = db.prepare('SELECT counted_milli, unit_cost FROM stock_count_lines WHERE count_id = ? AND item_id = ?');
     const insert = db.prepare('INSERT INTO stock_count_lines (count_id, item_id, counted_milli, book_milli, unit_cost, counted_at) VALUES (?, ?, ?, ?, ?, ?)');
     const update = db.prepare('UPDATE stock_count_lines SET counted_milli = ?, unit_cost = ?, counted_at = ? WHERE count_id = ? AND item_id = ?');
     const remove = db.prepare('DELETE FROM stock_count_lines WHERE count_id = ? AND item_id = ?');
@@ -842,8 +852,13 @@ export function saveCountLines(
         remove.run(id, c.itemId);
         continue;
       }
-      if (existing.get(id, c.itemId)) update.run(c.countedMilli, c.unitCost ?? null, now, id, c.itemId);
-      else insert.run(id, c.itemId, c.countedMilli, stockOf(db, c.itemId, row.warehouse_id).qtyMilli, c.unitCost ?? null, now);
+      const had = existing.get(id, c.itemId) as { counted_milli: number; unit_cost: number | null } | undefined;
+      const counted = c.add && had ? Number(had.counted_milli) + c.countedMilli : c.countedMilli;
+      if (!Number.isSafeInteger(counted) || counted > MAX_COUNTED_MILLI) throw invalid([{ code: 'line_qty_invalid', row: input.counts.indexOf(c) + 1 }]);
+      // (added to: the cost given before stays when this part comes with none)
+      const cost = c.unitCost ?? (c.add && had && had.unit_cost !== null ? Number(had.unit_cost) : null);
+      if (had) update.run(counted, cost, now, id, c.itemId);
+      else insert.run(id, c.itemId, counted, stockOf(db, c.itemId, row.warehouse_id).qtyMilli, c.unitCost ?? null, now);
     }
     db.prepare('UPDATE stock_counts SET date = ?, notes = ?, count_all = ?, updated_by = ?, updated_at = ? WHERE id = ?').run(
       input.date ?? row.date,
@@ -1023,7 +1038,9 @@ export const adjustmentsApi: ApiExtension = {
             date: date.optional(), notes: z.string().max(500).optional(), full: z.boolean().optional(),
             counts: z.array(z.object({
               itemId: id, countedMilli: z.number().int().min(0).max(1e12).nullable(),
-              unitCost: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER).optional()
+              unitCost: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER).optional(),
+              // 2.1: on top of what the count has for the item (a shelf at a time, several people)
+              add: z.boolean().optional()
             })).max(COUNT_LIMIT)
           }), req.body);
           return saveCountLines(db, parse(idParam, req.params).id, body, actor(req));

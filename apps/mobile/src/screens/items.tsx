@@ -4,7 +4,7 @@ import { CameraView, useCameraPermissions } from 'expo-camera';
 import { ImageManipulator, SaveFormat } from 'expo-image-manipulator';
 import * as ImagePicker from 'expo-image-picker';
 import { exactMatch, type Currency, type Item, type ItemDetail, type PartHit } from '../api';
-import { addLine, countListBody, countSessionBody, readAmount, readQty, setCount } from '../documents';
+import { addCount, addLine, countListBody, countSessionBody, readAmount, readQty } from '../documents';
 import { lookupBarcodeFor, namesFor, photoAfterLookup, SOURCE_NAMES, type ChosenPhoto, type ItemLookup } from '../item-lookup';
 import { money, nameIn, qty as qtyText } from '../i18n';
 import { useLists } from '../lists';
@@ -119,7 +119,8 @@ function LookItemScreen({ code, itemId, purpose }: { code: string; itemId?: stri
   const add = () => {
     if (!n) return;
     if (purpose === 'count') {
-      lists.setCount(setCount(lists.count, item, n));
+      // counted again (another shelf of it): on top of what the list has
+      lists.setCount(addCount(lists.count, item, n));
       nav({ type: 'replace', route: { name: 'scan', purpose } });
     } else {
       lists.setCart(addLine(lists.cart, item, n));
@@ -130,6 +131,7 @@ function LookItemScreen({ code, itemId, purpose }: { code: string; itemId?: stri
     }
   };
   const canAdd = purpose === 'count' ? true : can('sale') || can('order');
+  const inList = purpose === 'count' ? lists.count.find((l) => l.item.id === item.id) : undefined;
   return (
     <Screen title={nameIn(lang, item.name)} subtitle={[item.code, item.barcode].filter(Boolean).join(' · ')} onBack={back}
       footer={canAdd ? (
@@ -138,6 +140,7 @@ function LookItemScreen({ code, itemId, purpose }: { code: string; itemId?: stri
           <Button style={{ flex: 1 }} icon={purpose === 'count' ? 'clipboard' : 'cart'} label={purpose === 'count' ? t('addToCount') : t('addToCart')} onPress={add} disabled={!n} />
         </View>
       ) : undefined}>
+      {inList && <Banner kind="info" icon="clipboard" text={t('inYourList', { n: qtyText(Math.round(inList.qty * 1000)) })} />}
       <Card>
         {picture ? <Image source={{ uri: picture }} style={{ width: '100%', height: 220, borderRadius: radius.m }} resizeMode="contain" accessibilityIgnoresInvertColors accessibilityLabel={nameIn(lang, item.name)} /> : null}
         <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
@@ -304,6 +307,9 @@ export function CountScreen() {
   const open = useLoad(async () => (warehouseId && can('countSession') ? api.openCount(warehouseId).catch(() => null) : null), [warehouseId]);
   const session = open.data ?? null;
   const warehouse = lists.warehouses.find((w) => w.id === warehouseId);
+  // an office that offers it: what is sent adds to the open count (a shelf at a time, several phones)
+  const adds = !!session && can('countAdd');
+  const soFar = new Map((session?.lines ?? []).map((l) => [l.itemId, l.countedMilli]));
 
   async function send() {
     if (!lists.count.length) return;
@@ -312,10 +318,12 @@ export function CountScreen() {
     try {
       const summary = { title: warehouse ? nameIn(lang, warehouse.name) : t('count'), lines: lists.count.length };
       const result = session
-        ? await queue('countSession', countSessionBody(lists.count), summary, session.id)
+        ? await queue('countSession', countSessionBody(lists.count, adds), summary, session.id)
         : await queue('count', countListBody(warehouseId, lists.count, (i) => nameIn(lang, i.name)), summary);
       lists.setCount([]);
       setMessage({ kind: 'ok', text: result === 'queued' ? t('queuedOne') : session ? t('countSessionSent') : t('countSent') });
+      // what the count has now, for "counted so far"
+      if (session && result !== 'queued') open.reload();
     } catch (e) {
       setMessage({ kind: 'bad', text: explain(e) });
     } finally {
@@ -331,14 +339,16 @@ export function CountScreen() {
           {lists.warehouses.map((w) => <Chip key={w.id} label={nameIn(lang, w.name)} on={w.id === warehouseId} onPress={() => lists.setWarehouseId(w.id)} />)}
         </View>
       )}
-      {session && <Banner kind="info" icon="clipboard" text={t('openCountNote')} />}
+      {session && <Banner kind="info" icon="clipboard" text={t(adds ? 'openCountAddNote' : 'openCountNote')} />}
       {message && <Banner kind={message.kind} text={message.text} />}
       <Button icon="scan" label={t('scan')} onPress={() => go({ name: 'scan', purpose: 'count' })} />
       {!lists.count.length ? <EmptyState icon="clipboard" title={t('count')} text={t('countEmpty')} /> : (
         <Section title={t('linesN', { n: lists.count.length })}>
           <Group>
             {lists.count.map((l) => (
-              <ListItem key={l.item.id} title={nameIn(lang, l.item.name)} subtitle={l.item.code} value={qtyText(Math.round(l.qty * 1000))}
+              <ListItem key={l.item.id} title={nameIn(lang, l.item.name)}
+                subtitle={soFar.has(l.item.id) ? `${l.item.code} · ${t('countedSoFar', { n: qtyText(soFar.get(l.item.id)!) })}` : l.item.code}
+                value={qtyText(Math.round(l.qty * 1000))}
                 right={<IconButton icon="trash" label={`${t('remove')} ${nameIn(lang, l.item.name)}`} tone="bad" onPress={() => lists.setCount(lists.count.filter((x) => x !== l))} />} />
             ))}
           </Group>

@@ -146,7 +146,7 @@ describe('phone app 1.1: what the office offers, and to whom', () => {
   });
 
   it('tells the owner and an admin what needs the office PC updated, and nobody else', () => {
-    const every = ['approvals', 'rate', 'rateSet', 'dayClose', 'expense', 'share', 'transfer', 'receive', 'itemLookup'];
+    const every = ['approvals', 'rate', 'rateSet', 'dayClose', 'expense', 'share', 'transfer', 'receive', 'itemLookup', 'countAdd'];
     expect(needsNewerOffice({ signInRequired: false, user: null })).toEqual(every);
     expect(needsNewerOffice(asUser(['admin'], null))).toEqual(every);
     expect(needsNewerOffice(asUser(['admin']))).toEqual([]);
@@ -365,10 +365,11 @@ describe('the features of phone app 1.1, by what the office offers and who the p
 
   it('says what a user would get from an office that does not offer it yet (the owner\'s and admins\' update banner)', () => {
     expect(needsNewerOffice(null)).toEqual([]);
-    expect(needsNewerOffice(user(['storekeeper']))).toEqual(['rate', 'transfer', 'receive', 'itemLookup']);
+    expect(needsNewerOffice(user(['storekeeper']))).toEqual(['rate', 'transfer', 'receive', 'itemLookup', 'countAdd']);
     // an office of phone link 1.1 offers everything but the lookup of phone app 1.2
-    expect(needsNewerOffice(user(['storekeeper'], ['rate', 'transfer', 'receive']))).toEqual(['itemLookup']);
-    expect(needsNewerOffice(user(['storekeeper'], ['rate', 'transfer', 'receive', 'itemLookup']))).toEqual([]);
+    expect(needsNewerOffice(user(['storekeeper'], ['rate', 'transfer', 'receive']))).toEqual(['itemLookup', 'countAdd']);
+    expect(needsNewerOffice(user(['storekeeper'], ['rate', 'transfer', 'receive', 'itemLookup']))).toEqual(['countAdd']);
+    expect(needsNewerOffice(user(['storekeeper'], ['rate', 'transfer', 'receive', 'itemLookup', 'countAdd']))).toEqual([]);
     expect(needsNewerOffice({ signInRequired: false, user: null })).toEqual(Object.keys(OFFER_OF));
     expect(needsNewerOffice({ signInRequired: false, user: null, phoneLink: { v: 2, offers: ALL_OFFERS } })).toEqual([]);
   });
