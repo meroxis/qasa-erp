@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { readFileSync } from 'node:fs';
-import { CountSaver, costFor, fromSession, leaveGuard, nothingToCount, type CountChange, type CountSessionView, type SaveState } from './count-session.ts';
+import { CountSaver, costFor, fromSession, leaveGuard, mergeCounted, nothingToCount, type CountChange, type CountSessionView, type SaveState } from './count-session.ts';
 import { guardHashChange, holdRoute } from '../router.ts';
 
 const session = (id: string, lines: CountSessionView['lines'] = []): CountSessionView => ({
@@ -235,7 +235,11 @@ describe('the stock count page', () => {
   const page = readFileSync(new URL('../pages/StockAdjustments.tsx', import.meta.url), 'utf8');
 
   it('hears only the current saver, so another warehouse’s quantities never show', () => {
-    expect(page).toContain('saved: (s) => { if (saverRef.current === saver) { setFrozen(fromSession(s).frozen); setSessionScope(s.scope ?? null); } }');
+    expect(page).toContain('if (saverRef.current !== saver) return;');
+    expect(page).toContain('setFrozen(fromSession(s).frozen);');
+    // 2.1: and what phones added, never over what is typed here
+    expect(page).toContain('setCounted((prev) => mergeCounted(prev, s, (id) => saver.isPending(id)));');
+    expect(page).toContain('if (!live || saverRef.current !== saver || !s || s.id !== saver.sessionId || saver.dirty) return;');
     expect(page).toContain('state: (state) => { if (saverRef.current === saver) setSaveState(state); }');
     // the sheet of the warehouse being counted, never the one before it while the next loads
     expect(page).toContain('sheet.data.warehouseId === warehouseId ? sheet.data.rows : NO_ROWS');
@@ -258,5 +262,25 @@ describe('the stock count page', () => {
     const draft = page.slice(page.indexOf('async function makeDraft()'));
     expect(draft.indexOf('nothingToCount(full, counted)')).toBeGreaterThan(0);
     expect(draft.indexOf('nothingToCount(full, counted)')).toBeLessThan(draft.indexOf('saver.setMeta({ full })'));
+  });
+});
+
+describe('2.1: what phones added shows on the PC', () => {
+  const session = (lines: [string, number][]): CountSessionView => ({
+    id: 'c', warehouseId: 'w', date: '2026-11-26', notes: '', full: false, status: 'open', adjustmentId: null, createdBy: 'Mer', updatedBy: 'Mer', updatedAt: '',
+    lines: lines.map(([itemId, countedMilli]) => ({ itemId, countedMilli, bookMilli: 0, countedAt: '' }))
+  });
+  it('takes the server\'s quantities, but keeps what is typed here and not sent yet', () => {
+    const local = new Map([['a', 5_000], ['b', 3_000], ['gone', 1_000]]);
+    // a phone added 4 to a; b is being typed here; "gone" was taken off the count elsewhere; c was counted on a phone
+    const merged = mergeCounted(local, session([['a', 9_000], ['b', 2_000], ['c', 6_000]]), (id) => id === 'b');
+    expect([...merged].sort()).toEqual([['a', 9_000], ['b', 3_000], ['c', 6_000]]);
+  });
+  it('the saver says which items wait to be sent', () => {
+    const saver = new CountSaver({ start: async () => session([]), save: async () => session([]) }, 'w', { date: '2026-11-26', notes: '', full: false }, { saved: () => {}, state: () => {} }, 'c', 10_000);
+    saver.setCount('a', 1_000);
+    expect(saver.isPending('a')).toBe(true);
+    expect(saver.isPending('b')).toBe(false);
+    saver.dispose();
   });
 });

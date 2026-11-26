@@ -57,7 +57,7 @@ const start = async () => {
   expect(res.statusCode, res.body).toBe(201);
   return res.json() as { id: string; lines: { itemId: string; countedMilli: number; bookMilli: number }[] };
 };
-const save = (id: string, counts: { itemId: string; countedMilli: number | null; unitCost?: number }[], extra: object = {}) =>
+const save = (id: string, counts: { itemId: string; countedMilli: number | null; unitCost?: number; add?: boolean }[], extra: object = {}) =>
   send('PUT', `/api/adjustments/counts/${id}`, { counts, ...extra });
 
 describe('stock count sessions', () => {
@@ -226,5 +226,38 @@ describe('a count limited to some categories and brands (1.1)', () => {
     const count = (await send('POST', '/api/adjustments/counts', { date: '2026-09-10', warehouseId, scope: { brandIds: [brand.id] } })).json();
     expect(db.prepare('SELECT item_id FROM stock_count_items WHERE count_id = ?').all(count.id)).toEqual([{ item_id: cableId }]);
     expect((await save(count.id, [{ itemId: cableId, countedMilli: 9_000 }])).statusCode).toBe(200);
+  });
+
+  it('2.1: a shelf at a time, by several people: an added quantity goes on top of what the count has', async () => {
+    const session = await start();
+    // shelf A: 12 pipes; shelf B (another phone): 7 more; the cable once
+    expect((await save(session.id, [{ itemId: pipeId, countedMilli: 12_000, add: true }])).statusCode).toBe(200);
+    const both = await Promise.all([
+      save(session.id, [{ itemId: pipeId, countedMilli: 7_000, add: true }]),
+      save(session.id, [{ itemId: cableId, countedMilli: 9_000, add: true }, { itemId: pipeId, countedMilli: 1_000, add: true }])
+    ]);
+    for (const r of both) expect(r.statusCode, r.body).toBe(200);
+    const open = (await send('GET', `/api/adjustments/counts/open?warehouseId=${warehouseId}`)).json();
+    const counted = new Map(open.lines.map((l: { itemId: string; countedMilli: number; bookMilli: number }) => [l.itemId, [l.countedMilli, l.bookMilli]]));
+    // the book quantity is still the one frozen at the first part
+    expect(counted.get(pipeId)).toEqual([20_000, 20_000]);
+    expect(counted.get(cableId)).toEqual([9_000, 10_000]);
+    // a total typed on the PC still replaces it
+    await save(session.id, [{ itemId: pipeId, countedMilli: 19_000 }]);
+    expect((await send('GET', `/api/adjustments/counts/${session.id}`)).json().lines.find((l: { itemId: string }) => l.itemId === pipeId).countedMilli).toBe(19_000);
+    // nothing to add to taking an item off, and a sum past the limit
+    expect((await save(session.id, [{ itemId: pipeId, countedMilli: null, add: true }])).statusCode).toBe(400);
+    await save(session.id, [{ itemId: cableId, countedMilli: 1e12 }]);
+    const over = await save(session.id, [{ itemId: cableId, countedMilli: 1, add: true }]);
+    expect(over.statusCode).toBe(400);
+    expect((await send('GET', `/api/adjustments/counts/${session.id}`)).json().lines.find((l: { itemId: string }) => l.itemId === cableId).countedMilli).toBe(1e12);
+  });
+
+  it('2.1: an added part keeps the cost a surplus was given before', async () => {
+    const session = await start();
+    await save(session.id, [{ itemId: cableId, countedMilli: 11_000, unitCost: 4_500 }]);
+    await save(session.id, [{ itemId: cableId, countedMilli: 2_000, add: true }]);
+    const line = (await send('GET', `/api/adjustments/counts/${session.id}`)).json().lines[0];
+    expect(line).toMatchObject({ itemId: cableId, countedMilli: 13_000, unitCost: 4_500 });
   });
 });

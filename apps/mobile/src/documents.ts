@@ -40,6 +40,14 @@ export function addLine(lines: CartLine[], item: Item, qty: number): CartLine[] 
 
 /** A count line is set, not added: the latest count of an item is the one that counts. */
 export const setCount = (lines: CountLine[], item: Item, qty: number): CountLine[] => [{ item, qty }, ...lines.filter((l) => l.item.id !== item.id)];
+/**
+ * An item counted again on the phone (another shelf of it): the new quantity goes on top of what the list has, and the
+ * line moves to the top. A slip is taken off with the line's bin and counted again.
+ */
+export const addCount = (lines: CountLine[], item: Item, qty: number): CountLine[] => {
+  const had = lines.find((l) => l.item.id === item.id)?.qty ?? 0;
+  return [{ item, qty: Math.round((had + qty) * 1000) / 1000 }, ...lines.filter((l) => l.item.id !== item.id)];
+};
 
 export const lineAmount = (l: CartLine) => Math.round(l.item.salePrice * l.qty);
 
@@ -110,7 +118,12 @@ export function receiptBody(r: {
 export { receiptPosted } from './outbox';
 
 /** Counted quantities for the warehouse's open count on the PC. */
-export const countSessionBody = (lines: CountLine[]) => ({ counts: lines.map((l) => ({ itemId: l.item.id, countedMilli: toMilli(l.qty) })) });
+/**
+ * The lines for the warehouse's open count. `add` (an office that offers 'countAdd'): each quantity goes on top of what
+ * the count has for the item; without it the office keeps it as the item's whole count, as phone app 1.0 sent it.
+ */
+export const countSessionBody = (lines: CountLine[], add = false) =>
+  ({ counts: lines.map((l) => ({ itemId: l.item.id, countedMilli: toMilli(l.qty), ...(add ? { add: true } : {}) })) });
 
 /** A count kept for the admin in Settings → Office network → Phones (when no count is open on the PC). */
 export const countListBody = (warehouseId: string | null, lines: CountLine[], names: (i: Item) => string) => ({
