@@ -2813,8 +2813,157 @@ export const MYSQL_TABLES: readonly MysqlObject[] = [
       FOREIGN KEY (item_id) REFERENCES items(id),
       FOREIGN KEY (model_id) REFERENCES cl_models(id)
     )`
-  }
+  },
   // ===== end 18 · CLOTHING =====
+  // ===== 22 · RESTAURANTS AND CAFÉS (db.ts V22, restaurant.ts) — begin =====
+  {
+    name: 'rs_areas',
+    since: 22,
+    sql: `CREATE TABLE rs_areas (
+      id ${ID} NOT NULL PRIMARY KEY,
+      name_ar TEXT NOT NULL,
+      name_en TEXT NOT NULL,
+      name_ku TEXT NOT NULL,
+      family INT NOT NULL DEFAULT 0 CHECK (family IN (0, 1)),
+      sort INT NOT NULL DEFAULT 0,
+      active INT NOT NULL DEFAULT 1 CHECK (active IN (0, 1)),
+      created_at ${WHEN} NOT NULL,
+      updated_at ${WHEN} NOT NULL
+    )`
+  },
+  {
+    name: 'rs_tables',
+    since: 22,
+    sql: `CREATE TABLE rs_tables (
+      id ${ID} NOT NULL PRIMARY KEY,
+      area_id ${ID} NOT NULL,
+      name ${WORD} NOT NULL,
+      seats INT NOT NULL DEFAULT 4 CHECK (seats >= 1),
+      sort INT NOT NULL DEFAULT 0,
+      active INT NOT NULL DEFAULT 1 CHECK (active IN (0, 1)),
+      created_at ${WHEN} NOT NULL,
+      updated_at ${WHEN} NOT NULL,
+      UNIQUE KEY rs_tables_name (area_id, name),
+      FOREIGN KEY (area_id) REFERENCES rs_areas(id)
+    )`
+  },
+  {
+    name: 'rs_orders',
+    since: 22,
+    sql: `CREATE TABLE rs_orders (
+      id ${ID} NOT NULL PRIMARY KEY,
+      number ${WORD} NOT NULL,
+      kind ${WORD} NOT NULL CHECK (kind IN ('table', 'takeaway', 'delivery')),
+      table_id ${ID},
+      guests INT CHECK (guests IS NULL OR guests >= 1),
+      party_id ${ID},
+      phone ${WORD},
+      address TEXT,
+      notes TEXT,
+      status ${WORD} NOT NULL CHECK (status IN ('open', 'closed', 'cancelled')),
+      warehouse_id ${ID} NOT NULL,
+      tickets INT NOT NULL DEFAULT 0,
+      bill_printed_at ${WHEN},
+      opened_by TEXT NOT NULL,
+      opened_by_id ${ID},
+      opened_at ${WHEN} NOT NULL,
+      updated_at ${WHEN} NOT NULL,
+      closed_at ${WHEN},
+      closed_by TEXT,
+      cancel_reason TEXT,
+      UNIQUE KEY rs_orders_number (number),
+      INDEX rs_orders_status (status, opened_at),
+      INDEX rs_orders_table (table_id, status),
+      FOREIGN KEY (table_id) REFERENCES rs_tables(id),
+      FOREIGN KEY (party_id) REFERENCES parties(id),
+      FOREIGN KEY (warehouse_id) REFERENCES warehouses(id)
+    )`
+  },
+  {
+    name: 'rs_order_lines',
+    since: 22,
+    sql: `CREATE TABLE rs_order_lines (
+      id ${ID} NOT NULL PRIMARY KEY,
+      order_id ${ID} NOT NULL,
+      line_no INT NOT NULL,
+      item_id ${ID} NOT NULL,
+      qty_milli BIGINT NOT NULL CHECK (qty_milli > 0),
+      unit_price BIGINT NOT NULL CHECK (unit_price >= 0),
+      note TEXT,
+      ticket INT,
+      sent_at ${WHEN},
+      voided_at ${WHEN},
+      voided_by TEXT,
+      void_reason TEXT,
+      added_by TEXT NOT NULL,
+      added_at ${WHEN} NOT NULL,
+      station ${WORD} CHECK (station IS NULL OR station IN ('kitchen', 'grill', 'bar')),
+      ready_at ${WHEN},
+      ready_by TEXT,
+      served_at ${WHEN},
+      UNIQUE KEY rs_order_lines_no (order_id, line_no),
+      INDEX rs_order_lines_item (item_id),
+      INDEX rs_order_lines_sent (sent_at),
+      FOREIGN KEY (order_id) REFERENCES rs_orders(id),
+      FOREIGN KEY (item_id) REFERENCES items(id)
+    )`
+  },
+  {
+    name: 'rs_paid',
+    since: 22,
+    sql: `CREATE TABLE rs_paid (
+      id ${ID} NOT NULL PRIMARY KEY,
+      order_id ${ID} NOT NULL,
+      line_id ${ID} NOT NULL,
+      invoice_id ${ID} NOT NULL,
+      qty_milli BIGINT NOT NULL CHECK (qty_milli > 0),
+      created_at ${WHEN} NOT NULL,
+      INDEX rs_paid_order (order_id),
+      INDEX rs_paid_invoice (invoice_id),
+      FOREIGN KEY (order_id) REFERENCES rs_orders(id),
+      FOREIGN KEY (line_id) REFERENCES rs_order_lines(id),
+      FOREIGN KEY (invoice_id) REFERENCES invoices(id)
+    )`
+  },
+  {
+    name: 'rs_category_stations',
+    since: 22,
+    sql: `CREATE TABLE rs_category_stations (
+      category_id ${ID} NOT NULL PRIMARY KEY,
+      station ${WORD} NOT NULL CHECK (station IN ('kitchen', 'grill', 'bar')),
+      updated_at ${WHEN} NOT NULL,
+      FOREIGN KEY (category_id) REFERENCES item_categories(id)
+    )`
+  },
+  {
+    name: 'item_recipes',
+    since: 22,
+    sql: `CREATE TABLE item_recipes (
+      item_id ${ID} NOT NULL,
+      ingredient_id ${ID} NOT NULL,
+      qty_milli BIGINT NOT NULL CHECK (qty_milli > 0),
+      updated_at ${WHEN} NOT NULL,
+      PRIMARY KEY (item_id, ingredient_id),
+      INDEX item_recipes_ingredient (ingredient_id),
+      FOREIGN KEY (item_id) REFERENCES items(id),
+      FOREIGN KEY (ingredient_id) REFERENCES items(id)
+    )`
+  },
+  {
+    name: 'invoice_recipe_moves',
+    since: 22,
+    sql: `CREATE TABLE invoice_recipe_moves (
+      invoice_id ${ID} NOT NULL,
+      line_no INT NOT NULL,
+      item_id ${ID} NOT NULL,
+      qty_milli BIGINT NOT NULL CHECK (qty_milli > 0),
+      value BIGINT NOT NULL CHECK (value >= 0),
+      PRIMARY KEY (invoice_id, line_no, item_id),
+      FOREIGN KEY (invoice_id) REFERENCES invoices(id),
+      FOREIGN KEY (item_id) REFERENCES items(id)
+    )`
+  }
+  // ===== end 22 · RESTAURANTS AND CAFÉS =====
 ];
 
 const refuse = (message: string) => `SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = '${message}'`;

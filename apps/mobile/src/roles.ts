@@ -57,7 +57,12 @@ export type Feature =
   | 'receive'
   // ——— phone app 1.2: with an office of Qasa ERP 2.0 on that offers it ———
   /** a new item's picture and names looked up by its barcode (when the office's admin has switched that on) */
-  | 'itemLookup';
+  | 'itemLookup'
+  // ——— with an office of Qasa ERP 2.1 on ———
+  /** what is counted into the open count adds to what it has (a shelf at a time, several phones) */
+  | 'countAdd'
+  /** a restaurant's waiter: the tables, a table's order, dishes sent to the kitchen, what is ready (offered to restaurants only) */
+  | 'waiter';
 
 /** The same roles as the office's FIGURES_ROLES (pro/src/phone/rules.ts). */
 export const FIGURES_ROLES: readonly string[] = ['admin', 'preparer', 'checker', 'approver', 'viewer'];
@@ -68,7 +73,7 @@ export const BASE_FEATURES: readonly Feature[] = ['figures', 'lookup', 'newItem'
 /** The features of phone app 1.1, each with what its office must offer for it (phoneLink.offers). */
 export const OFFER_OF = {
   approvals: 'approvals', rate: 'rate', rateSet: 'rate', dayClose: 'dayClose', expense: 'expense', share: 'share', transfer: 'transfer', receive: 'receive',
-  itemLookup: 'itemLookup'
+  itemLookup: 'itemLookup', countAdd: 'countAdd', waiter: 'waiter'
 } as const satisfies Partial<Record<Feature, string>>;
 
 type OfferedFeature = keyof typeof OFFER_OF;
@@ -99,6 +104,10 @@ function mayUse(f: OfferedFeature, can: (p: string) => boolean, figures: boolean
     case 'receive': return can('stock') || can('purchases');
     // whoever may add items (the office asks the same of POST /api/items/lookup)
     case 'itemLookup': return can('stock');
+    // whoever counts into the open count (countSession)
+    case 'countAdd': return can('stock');
+    // whoever takes orders at the office: the till's or the invoices' people (the office asks the same)
+    case 'waiter': return can('pos') || can('sales');
   }
 }
 
@@ -138,8 +147,14 @@ export function featuresOf(me: Me | null): Set<Feature> {
 export function needsNewerOffice(me: Me | null): Feature[] {
   if (!me) return [];
   const offers = offered(me);
-  return roleFeatures(me).filter((f) => !offers.has(OFFER_OF[f]));
+  return roleFeatures(me).filter((f) => !BUSINESS_FEATURES.includes(f) && !offers.has(OFFER_OF[f]));
 }
+
+/**
+ * Features an office offers only to a company of that business (2.1: tables for a restaurant's waiter): one it doesn't
+ * offer is no sign of an older office, so the phone never asks for an update for it.
+ */
+export const BUSINESS_FEATURES: readonly Feature[] = ['waiter'];
 
 /**
  * The app lock (a PIN) is required, not offered, for a phone that acts as a user who sees the company's figures or is an

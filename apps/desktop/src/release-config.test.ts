@@ -1108,7 +1108,7 @@ describe('the release notes of 1.4.3 (never released on its own: What\'s new sho
   it('upgrades no company file in 1.4.3, so it has no "Before you update" warning', () => {
     // why: 1.4.3 adds no migration; 1.4.2 and 1.4.3 open the same company file (schema 14; 15, the receipt photos,
     // comes with the next release, whose notes say so; 16, the petrol station, with a later one)
-    expect(read('packages/server/src/db.ts')).toMatch(/\{ sql: V14, mysql: \{ tables: true, steps: \(\) => V14_MYSQL_STEPS \} \},?\n( {2}\{ sql: V15, mysql: \{ tables: true, steps: \(\) => V15_MYSQL_STEPS \} \},?\n)?( {2}\{ sql: V16, mysql: \{ tables: true, steps: \(\) => V16_MYSQL_STEPS \} \},?\n( {2}\{ sql: V17, mysql: \{ tables: true, steps: \(\) => V17_MYSQL_STEPS \} \},?\n( {2}\{ sql: V18, mysql: \{ tables: true, steps: \(\) => V18_MYSQL_STEPS \} \},?\n( {2}\{ sql: V19, mysql: \{ tables: true, steps: \(\) => V19_MYSQL_STEPS \}, data: keepFeatureAccounts \},?\n( {2}\{ sql: V20, mysql: 'tables' \},?\n( {2}\/\/ .*\n)?( {2}\{ sql: V21, mysql: \{ tables: true, steps: \(\) => V21_MYSQL_STEPS \} \}\n)?)?)?)?)?)?\];/);
+    expect(read('packages/server/src/db.ts')).toMatch(/\{ sql: V14, mysql: \{ tables: true, steps: \(\) => V14_MYSQL_STEPS \} \},?\n( {2}\{ sql: V15, mysql: \{ tables: true, steps: \(\) => V15_MYSQL_STEPS \} \},?\n)?( {2}\{ sql: V16, mysql: \{ tables: true, steps: \(\) => V16_MYSQL_STEPS \} \},?\n( {2}\{ sql: V17, mysql: \{ tables: true, steps: \(\) => V17_MYSQL_STEPS \} \},?\n( {2}\{ sql: V18, mysql: \{ tables: true, steps: \(\) => V18_MYSQL_STEPS \} \},?\n( {2}\{ sql: V19, mysql: \{ tables: true, steps: \(\) => V19_MYSQL_STEPS \}, data: keepFeatureAccounts \},?\n( {2}\{ sql: V20, mysql: 'tables' \},?\n( {2}\/\/ .*\n)?( {2}\{ sql: V21, mysql: \{ tables: true, steps: \(\) => V21_MYSQL_STEPS \} \},?\n( {2}\{ sql: V22, mysql: 'tables' \}\n)?)?)?)?)?)?)?\];/);
     expect(notes).not.toMatch(/Before you update|قبل التحديث|پێش نوێکردنەوە/);
   });
 
@@ -1155,9 +1155,10 @@ describe('the release notes of 1.4.3 (never released on its own: What\'s new sho
   });
 
   it('offers phone app 1.0.2, and says plainly what goes to Google: never the codes scanned, maybe the scanner\'s statistics', () => {
-    // (Settings offers 1.1.0 from 1.5.0, with the office's phone link that has its features; 1.0.2 was 1.4.3's; 1.2.0 is app.json's next build, not offered yet)
+    // (Settings offers 1.1.0 from 1.5.0, with the office's phone link that has its features; 1.0.2 was 1.4.3's; 1.2.0 and
+    // 1.3.0 (2.1) are app.json's next builds, not offered yet)
     const mobile = JSON.parse(read('apps/mobile/app.json')) as { expo: { version: string } };
-    expect(['1.0.2', '1.1.0', '1.2.0']).toContain(mobile.expo.version);
+    expect(['1.0.2', '1.1.0', '1.2.0', '1.3.0']).toContain(mobile.expo.version);
     for (const lang of ['ar', 'en', 'ku'] as const) expect(section(lang), lang).toMatch(/1\.0\.2[\s\S]*SHA-256/);
     expect(section('en')).toContain('The barcodes you scan never go to Google, and Google ML Kit’s own usage reports are taken out; Google Play services may still receive brief usage statistics about the scanning.');
     expect(section('ar')).toContain('ما تمسحه من باركود لا يذهب إلى Google أبداً');
@@ -1266,7 +1267,7 @@ describe('the release notes of 1.5.0 (kept as shipped; the Store "What\'s new" o
   it('says first that the company file is upgraded to 15, which 1.4.3 and earlier (a Store copy on 1.4.2 too) cannot open', () => {
     // why: 1.5.0 adds migration 15 (entry_images, the receipt photos, and entries' revision), and an app refuses a newer file
     const db = read('packages/server/src/db.ts');
-    expect(db).toMatch(/\{ sql: V15, mysql: \{ tables: true, steps: \(\) => V15_MYSQL_STEPS \} \},?\n( {2}\{ sql: V16, mysql: \{ tables: true, steps: \(\) => V16_MYSQL_STEPS \} \},?\n( {2}\{ sql: V17, mysql: \{ tables: true, steps: \(\) => V17_MYSQL_STEPS \} \},?\n( {2}\{ sql: V18, mysql: \{ tables: true, steps: \(\) => V18_MYSQL_STEPS \} \},?\n( {2}\{ sql: V19, mysql: \{ tables: true, steps: \(\) => V19_MYSQL_STEPS \}, data: keepFeatureAccounts \},?\n( {2}\{ sql: V20, mysql: 'tables' \},?\n( {2}\/\/ .*\n)?( {2}\{ sql: V21, mysql: \{ tables: true, steps: \(\) => V21_MYSQL_STEPS \} \}\n)?)?)?)?)?)?\];/);
+    expect(db).toMatch(/\{ sql: V15, mysql: \{ tables: true, steps: \(\) => V15_MYSQL_STEPS \} \},?\n( {2}\{ sql: V16, mysql: \{ tables: true, steps: \(\) => V16_MYSQL_STEPS \} \},?\n( {2}\{ sql: V17, mysql: \{ tables: true, steps: \(\) => V17_MYSQL_STEPS \} \},?\n( {2}\{ sql: V18, mysql: \{ tables: true, steps: \(\) => V18_MYSQL_STEPS \} \},?\n( {2}\{ sql: V19, mysql: \{ tables: true, steps: \(\) => V19_MYSQL_STEPS \}, data: keepFeatureAccounts \},?\n( {2}\{ sql: V20, mysql: 'tables' \},?\n( {2}\/\/ .*\n)?( {2}\{ sql: V21, mysql: \{ tables: true, steps: \(\) => V21_MYSQL_STEPS \} \},?\n( {2}\{ sql: V22, mysql: 'tables' \}\n)?)?)?)?)?)?)?\];/);
     expect(db).toContain('ALTER TABLE entries ADD COLUMN revision INTEGER NOT NULL DEFAULT 0;');
     expect(db).toContain('export const SCHEMA_VERSION = MIGRATIONS.length;');
     expect(db).toContain('CREATE TABLE entry_images (');
@@ -1408,7 +1409,7 @@ describe('the release notes of 1.5.1 (kept as shipped: the menu, first on GitHub
   });
 
   it('has the same short Changed section in each language, and no Before you update: the company file stays on schema 15', () => {
-    expect(read('packages/server/src/db.ts')).toMatch(/\{ sql: V15, mysql: \{ tables: true, steps: \(\) => V15_MYSQL_STEPS \} \},?\n( {2}\{ sql: V16, mysql: \{ tables: true, steps: \(\) => V16_MYSQL_STEPS \} \},?\n( {2}\{ sql: V17, mysql: \{ tables: true, steps: \(\) => V17_MYSQL_STEPS \} \},?\n( {2}\{ sql: V18, mysql: \{ tables: true, steps: \(\) => V18_MYSQL_STEPS \} \},?\n( {2}\{ sql: V19, mysql: \{ tables: true, steps: \(\) => V19_MYSQL_STEPS \}, data: keepFeatureAccounts \},?\n( {2}\{ sql: V20, mysql: 'tables' \},?\n( {2}\/\/ .*\n)?( {2}\{ sql: V21, mysql: \{ tables: true, steps: \(\) => V21_MYSQL_STEPS \} \}\n)?)?)?)?)?)?\];/);
+    expect(read('packages/server/src/db.ts')).toMatch(/\{ sql: V15, mysql: \{ tables: true, steps: \(\) => V15_MYSQL_STEPS \} \},?\n( {2}\{ sql: V16, mysql: \{ tables: true, steps: \(\) => V16_MYSQL_STEPS \} \},?\n( {2}\{ sql: V17, mysql: \{ tables: true, steps: \(\) => V17_MYSQL_STEPS \} \},?\n( {2}\{ sql: V18, mysql: \{ tables: true, steps: \(\) => V18_MYSQL_STEPS \} \},?\n( {2}\{ sql: V19, mysql: \{ tables: true, steps: \(\) => V19_MYSQL_STEPS \}, data: keepFeatureAccounts \},?\n( {2}\{ sql: V20, mysql: 'tables' \},?\n( {2}\/\/ .*\n)?( {2}\{ sql: V21, mysql: \{ tables: true, steps: \(\) => V21_MYSQL_STEPS \} \},?\n( {2}\{ sql: V22, mysql: 'tables' \}\n)?)?)?)?)?)?)?\];/);
     expect(section('en')).toMatch(/\n### Changed\n- \*\*One menu group open at a time:\*\*[^\n]+\n$/);
     expect(section('ar')).toMatch(/\n### ما تغيّر\n- \*\*مجموعة واحدة مفتوحة في القائمة:\*\*[^\n]+\n$/);
     expect(section('ku')).toMatch(/\n### گۆڕاوەکان\n- \*\*یەک گرووپی کراوە لە لیستدا:\*\*[^\n]+\n$/);
@@ -1459,7 +1460,7 @@ describe('the release notes of 1.5.2 (kept as shipped: on GitHub only; the Store
   });
 
   it('has the same sections in each language, Before you update first, and upgrades no company file (schema 15)', () => {
-    expect(read('packages/server/src/db.ts')).toMatch(/\{ sql: V15, mysql: \{ tables: true, steps: \(\) => V15_MYSQL_STEPS \} \},?\n( {2}\{ sql: V16, mysql: \{ tables: true, steps: \(\) => V16_MYSQL_STEPS \} \},?\n( {2}\{ sql: V17, mysql: \{ tables: true, steps: \(\) => V17_MYSQL_STEPS \} \},?\n( {2}\{ sql: V18, mysql: \{ tables: true, steps: \(\) => V18_MYSQL_STEPS \} \},?\n( {2}\{ sql: V19, mysql: \{ tables: true, steps: \(\) => V19_MYSQL_STEPS \}, data: keepFeatureAccounts \},?\n( {2}\{ sql: V20, mysql: 'tables' \},?\n( {2}\/\/ .*\n)?( {2}\{ sql: V21, mysql: \{ tables: true, steps: \(\) => V21_MYSQL_STEPS \} \}\n)?)?)?)?)?)?\];/);
+    expect(read('packages/server/src/db.ts')).toMatch(/\{ sql: V15, mysql: \{ tables: true, steps: \(\) => V15_MYSQL_STEPS \} \},?\n( {2}\{ sql: V16, mysql: \{ tables: true, steps: \(\) => V16_MYSQL_STEPS \} \},?\n( {2}\{ sql: V17, mysql: \{ tables: true, steps: \(\) => V17_MYSQL_STEPS \} \},?\n( {2}\{ sql: V18, mysql: \{ tables: true, steps: \(\) => V18_MYSQL_STEPS \} \},?\n( {2}\{ sql: V19, mysql: \{ tables: true, steps: \(\) => V19_MYSQL_STEPS \}, data: keepFeatureAccounts \},?\n( {2}\{ sql: V20, mysql: 'tables' \},?\n( {2}\/\/ .*\n)?( {2}\{ sql: V21, mysql: \{ tables: true, steps: \(\) => V21_MYSQL_STEPS \} \},?\n( {2}\{ sql: V22, mysql: 'tables' \}\n)?)?)?)?)?)?)?\];/);
     const heads = (lang: 'ar' | 'en' | 'ku') => section(lang).split('\n').filter((l) => l.startsWith('### '));
     expect(heads('en')).toEqual(['### Before you update', '### Licences from 0.1.8', '### New', '### Changed', '### Fixed']);
     expect(heads('ar')).toEqual(['### قبل التحديث', '### تراخيص الإصدار 0.1.8', '### الجديد', '### ما تغيّر', '### الإصلاحات']);
@@ -1564,7 +1565,7 @@ describe('the release notes of 1.6.0 (kept as shipped: the petrol station, the t
   it('says first that the company file goes to schema 16, to back up and to update the office server PC with every PC', () => {
     // schema 16 (the petrol station's tables) is the last migration, and a copy of the file is kept before it runs
     const db = read('packages/server/src/db.ts');
-    expect(db).toMatch(/\{ sql: V16, mysql: \{ tables: true, steps: \(\) => V16_MYSQL_STEPS \} \},?\n( {2}\{ sql: V17, mysql: \{ tables: true, steps: \(\) => V17_MYSQL_STEPS \} \},?\n( {2}\{ sql: V18, mysql: \{ tables: true, steps: \(\) => V18_MYSQL_STEPS \} \},?\n( {2}\{ sql: V19, mysql: \{ tables: true, steps: \(\) => V19_MYSQL_STEPS \}, data: keepFeatureAccounts \},?\n( {2}\{ sql: V20, mysql: 'tables' \},?\n( {2}\/\/ .*\n)?( {2}\{ sql: V21, mysql: \{ tables: true, steps: \(\) => V21_MYSQL_STEPS \} \}\n)?)?)?)?)?\];/);
+    expect(db).toMatch(/\{ sql: V16, mysql: \{ tables: true, steps: \(\) => V16_MYSQL_STEPS \} \},?\n( {2}\{ sql: V17, mysql: \{ tables: true, steps: \(\) => V17_MYSQL_STEPS \} \},?\n( {2}\{ sql: V18, mysql: \{ tables: true, steps: \(\) => V18_MYSQL_STEPS \} \},?\n( {2}\{ sql: V19, mysql: \{ tables: true, steps: \(\) => V19_MYSQL_STEPS \}, data: keepFeatureAccounts \},?\n( {2}\{ sql: V20, mysql: 'tables' \},?\n( {2}\/\/ .*\n)?( {2}\{ sql: V21, mysql: \{ tables: true, steps: \(\) => V21_MYSQL_STEPS \} \},?\n( {2}\{ sql: V22, mysql: 'tables' \}\n)?)?)?)?)?)?\];/);
     expect(db).toContain('-before-update-v');
     // the number the notes name is the number of migrations (19: migration-v19.test.ts)
     expect(db).toContain('export const SCHEMA_VERSION = MIGRATIONS.length;');
@@ -1673,10 +1674,10 @@ describe('the release notes of 1.6.0 (kept as shipped: the petrol station, the t
   });
 });
 
-describe('the release notes of this version (2.0.0: the new till, gold, wholesale, clothing and the market extras; schema 21)', () => {
-  // the app's number: 2.0.0, or one of its betas (2.0.0-beta.N). The 2.0.0 notes are kept ready while a beta is out
-  const appVersion = (JSON.parse(read('apps/desktop/package.json')) as { version: string }).version;
-  const version = appVersion.split('-')[0]!;
+describe('the release notes of 2.0.0 (the new till, gold, wholesale, clothing and the market extras; schema 21; kept as written)', () => {
+  // 2.1 comes after 2.0.0 (its notes and the Store's "What's new" stay 2.0.0's until 2.1.0 goes stable)
+  const appVersion = '2.0.0';
+  const version = appVersion;
   const notes = read(`apps/desktop/release-notes/${version}.md`);
   const section = (lang: 'ar' | 'en' | 'ku') => new RegExp(`^::: ${lang}\\n([\\s\\S]*?)^:::$`, 'm').exec(notes)?.[1] ?? '';
   const before = (lang: 'ar' | 'en' | 'ku') => section(lang).split('\n### ')[0]!;
@@ -1686,12 +1687,8 @@ describe('the release notes of this version (2.0.0: the new till, gold, wholesal
   const LANGS = ['en-us', 'ar', 'ku-arab'] as const;
   const lines = (lang: (typeof LANGS)[number]) => store[lang].releaseNotes.split('\n');
 
-  it('is 2.0.0, the same in the app, the core and the lock file, with a notes file that has Arabic, English and Kurdish', () => {
+  it('is 2.0.0, with a notes file that has Arabic, English and Kurdish', () => {
     expect(version).toBe('2.0.0');
-    expect(appVersion).toMatch(/^2\.0\.0(-beta\.[1-9]\d?)?$/);
-    expect(read('packages/core/src/version.ts')).toContain(`APP_VERSION = '${appVersion}'`);
-    const lock = JSON.parse(read('package-lock.json')) as { packages: Record<string, { version?: string }> };
-    expect(lock.packages['apps/desktop']?.version).toBe(appVersion);
     for (const lang of ['ar', 'en', 'ku'] as const) expect(notes, lang).toMatch(new RegExp(`^::: ${lang}\\n[\\s\\S]+?^:::$`, 'm'));
   });
 
@@ -1707,7 +1704,7 @@ describe('the release notes of this version (2.0.0: the new till, gold, wholesal
 
   it('says first that the company file goes to schema 21, to back up and to update the office server PC with every PC', () => {
     const db = read('packages/server/src/db.ts');
-    expect(db).toMatch(/\{ sql: V18, mysql: \{ tables: true, steps: \(\) => V18_MYSQL_STEPS \} \},\n {2}\{ sql: V19, mysql: \{ tables: true, steps: \(\) => V19_MYSQL_STEPS \}, data: keepFeatureAccounts \},?\n( {2}\{ sql: V20, mysql: 'tables' \},?\n( {2}\/\/ .*\n)?( {2}\{ sql: V21, mysql: \{ tables: true, steps: \(\) => V21_MYSQL_STEPS \} \}\n)?)?\];/);
+    expect(db).toMatch(/\{ sql: V18, mysql: \{ tables: true, steps: \(\) => V18_MYSQL_STEPS \} \},\n {2}\{ sql: V19, mysql: \{ tables: true, steps: \(\) => V19_MYSQL_STEPS \}, data: keepFeatureAccounts \},?\n( {2}\{ sql: V20, mysql: 'tables' \},?\n( {2}\/\/ .*\n)?( {2}\{ sql: V21, mysql: \{ tables: true, steps: \(\) => V21_MYSQL_STEPS \} \},?\n( {2}\{ sql: V22, mysql: 'tables' \}\n)?)?)?\];/);
     expect(db).toContain('-before-update-v');
     expect(before('en')).toContain('**The company file is upgraded to a new version (21) the first time 2.0.0 opens it.** Take a backup first (**Settings → Backups**)');
     expect(before('en')).toContain('Qasa ERP 1.6.0 and earlier cannot open a file that 2.0.0 has upgraded');
@@ -2035,5 +2032,57 @@ describe('the release checklist (docs/releasing.md) and the handoff notes (docs/
       expect(doc).not.toMatch(/waits for approval|give (that environment|it) a required reviewer|a person approves each release/);
       expect(doc).toMatch(/no\s+(#\s+)?required reviewer/);
     }
+  });
+});
+
+describe('the release notes of this version (2.1.0: restaurants and cafés, recipes, waiters\' phones, counting a shelf at a time; schema 22)', () => {
+  // the app's number: 2.1.0, or one of its betas (2.1.0-beta.N). The 2.1.0 notes are kept ready while a beta is out
+  const appVersion = (JSON.parse(read('apps/desktop/package.json')) as { version: string }).version;
+  const version = appVersion.split('-')[0]!;
+  const files = [`apps/desktop/release-notes/${version}.md`, ...(appVersion.includes('-') ? [`apps/desktop/release-notes/${appVersion}.md`] : [])];
+  const sectionOf = (notes: string, lang: 'ar' | 'en' | 'ku') => new RegExp(`^::: ${lang}\\n([\\s\\S]*?)^:::$`, 'm').exec(notes)?.[1] ?? '';
+
+  it('is 2.1.0 (or its beta), the same in the app, the core and the lock file, with notes in Arabic, English and Kurdish', () => {
+    expect(version).toBe('2.1.0');
+    expect(appVersion).toMatch(/^2\.1\.0(-beta\.[1-9]\d?)?$/);
+    expect(read('packages/core/src/version.ts')).toContain(`APP_VERSION = '${appVersion}'`);
+    const lock = JSON.parse(read('package-lock.json')) as { packages: Record<string, { version?: string }> };
+    expect(lock.packages['apps/desktop']?.version).toBe(appVersion);
+    for (const file of files) for (const lang of ['ar', 'en', 'ku'] as const) expect(sectionOf(read(file), lang).trim().length, `${file} ${lang}`).toBeGreaterThan(1500);
+  });
+
+  it('has the same sections in each language, and says first that the company file goes to schema 22', () => {
+    for (const file of files) {
+      const notes = read(file);
+      const heads = (lang: 'ar' | 'en' | 'ku') => sectionOf(notes, lang).split('\n').filter((l) => l.startsWith('### ')).length;
+      expect(heads('ar'), file).toBe(heads('en'));
+      expect(heads('ku'), file).toBe(heads('en'));
+      for (const lang of ['ar', 'en', 'ku'] as const) expect(sectionOf(notes, lang).split('\n### ')[0], `${file} ${lang}`).toContain('22');
+    }
+    expect(read('packages/server/src/migration-v22.test.ts')).toContain('expect(SCHEMA_VERSION).toBe(22)');
+  });
+
+  it('names what is new in the words of the app, and phone app 1.3 for the phone features', () => {
+    const notes = read(`apps/desktop/release-notes/${version}.md`);
+    expect(sectionOf(notes, 'en')).toContain('Restaurants and cafés');
+    expect(sectionOf(notes, 'ar')).toContain('المطاعم والمقاهي');
+    expect(sectionOf(notes, 'ku')).toContain('چێشتخانە و کافێ');
+    for (const lang of ['ar', 'en', 'ku'] as const) expect(sectionOf(notes, lang), lang).toContain('1.3');
+    expect(JSON.parse(read('apps/mobile/app.json')).expo.version).toBe('1.3.0');
+  });
+
+  it('writes Kurdish with no tatweel and no Arabic letters, and English with one apostrophe', () => {
+    for (const file of files) {
+      const notes = read(file);
+      expect(sectionOf(notes, 'ku'), file).not.toMatch(/[ـىيك]/);
+      expect(notes, file).not.toMatch(/\w'[\w\s]/);
+    }
+  });
+
+  it('has release-day steps: 2.0.0 first, a beta, phone app 1.3.0, then 2.1.0', () => {
+    const day = read('docs/releasing.md').split(/^(?=## )/m).find((d) => d.startsWith('## Release day for 2.1.0 ')) ?? '';
+    expect(day).toContain('**2.1.0 first.**'.replace('2.1.0', '2.0.0'));
+    expect(day).toContain('`2.1.0-beta.1` sorts above `2.0.0-beta.5`');
+    expect(day).toContain('**The phone app 1.3.0**');
   });
 });

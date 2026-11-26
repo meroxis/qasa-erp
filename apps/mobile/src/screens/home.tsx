@@ -12,7 +12,7 @@ import { OwnerCards } from './owner/cards';
 /** Each 1.1 feature's name in the banner that asks for an update of the office PC (both rate features: one name). */
 const FEATURE_NAME: Partial<Record<Feature, Key>> = {
   approvals: 'featApprovals', rate: 'featRate', rateSet: 'featRate', dayClose: 'featDayClose', expense: 'featExpense', share: 'featShare', transfer: 'featTransfer', receive: 'featReceive',
-  itemLookup: 'featItemLookup'
+  itemLookup: 'featItemLookup', countAdd: 'featCountAdd', waiter: 'featWaiter'
 };
 
 /**
@@ -53,7 +53,9 @@ export function Home() {
     // phone app 1.1, for the staff (each only when the office offers it)
     { icon: 'receipt', label: t('expAction'), route: { name: 'expense' }, on: can('expense') },
     { icon: 'truck', label: t('mvAction'), route: { name: 'transfer' }, on: can('transfer') },
-    { icon: 'inbox', label: t('rcvAction'), route: { name: 'receive' }, on: can('receive') }
+    { icon: 'inbox', label: t('rcvAction'), route: { name: 'receive' }, on: can('receive') },
+    // phone app 1.3, a restaurant's waiter (an office of 2.1 offers it to restaurants only)
+    { icon: 'table', label: t('rsTables'), route: { name: 'tables' }, on: can('waiter') }
   ];
   const open = (route: Route | 'sell') => {
     if (route === 'sell') return nav({ type: 'open', tab: 'sell' });

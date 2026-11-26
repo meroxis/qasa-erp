@@ -269,6 +269,35 @@ the till are off in 2.0.0 (`TILL_CARD_PAYMENTS`), so the notes ask for waiting s
 5. **Tell the companies on the office network** (support, WhatsApp): take a backup first, then update the office server
    PC and every PC that connects to it together.
 
+## Release day for 2.1.0 (restaurants and cafés, recipes, waiters' phones, counting a shelf at a time; schema 22)
+
+2.1 comes **after 2.0.0**: its branch (`release/2.1` in the app and in Pro) is `feature/supermarket` with
+`feature/stock-count-phone` (meroxis/qasa-erp#57, Pro #27) and `feature/restaurants` (#58, Pro #28) merged in. It carries
+the **Restaurants and cafés** business type (Starter, Pro and Business: tables and a family section, orders for a table,
+takeaway or delivery, a ticket and a printer for each station: kitchen, grill, drinks; the kitchen screen; paying at the
+till's own sale), **recipes** (a dish's ingredients leave stock at their cost when it sells), **waiters' phones** and
+**counting a shelf at a time** (phone app 1.3). It **upgrades the company file to schema 22** (the restaurant's tables,
+the recipes and what each sale took of them, on a company file and on a MariaDB/MySQL server database alike; every table
+is made only where it is missing): 2.0 and earlier can't open it afterwards, as the notes say first.
+
+0. **2.0.0 first.** Don't tag anything of 2.1 while 2.0 is in beta: `2.1.0-beta.1` sorts above `2.0.0-beta.5` and above
+   `2.0.0`, so a 2.0 beta tester would jump to 2.1. Once 2.0.0 is out and merged into `main` (app and Pro), merge `main`
+   into `release/2.1` on both and let the tests pass.
+1. **A beta first** (the owner's choice for a schema change): the version is `2.1.0-beta.1` in `apps/desktop/package.json`,
+   `packages/core/src/version.ts` and `package-lock.json`, with its notes in `release-notes/2.1.0-beta.1.md`. Push the
+   tag `v2.1.0-beta.1` on Pro's `release/2.1` first, then on the app's. Nothing is merged into `main` for a beta.
+2. **The phone app 1.3.0** (versionCode 7: counting a shelf at a time, and the waiter's tables), built from
+   `release/2.1` as the phone app's README says. Put its SHA-256 and size in `PHONE_APP` (`apps/web/src/pages/Settings.tsx`)
+   and on the website's /phone/ pages. Phones on 1.2 keep working without the new features.
+3. **2.1.0 stable:** set the version to `2.1.0` (the three files), keep `release-notes/2.1.0.md`, and write the Store
+   "What's new" in `store-listing.json` (2.1.0 first, with its Before you update; the Store must have 2.0.0 by then).
+   Merge Pro's `release/2.1` into Pro `main`, push `v2.1.0` there, then merge the app's release PR and tag `v2.1.0` on
+   `main`.
+4. **The website:** set `APP_VERSION` to 2.1.0 and deploy once the GitHub release is out. Restaurants have no website
+   or user guide pages yet (`docs/restaurants.md` is the guide for now).
+5. **Tell the companies on the office network** (support, WhatsApp): take a backup first, then update the office server
+   PC and every PC that connects to it together.
+
 ## Release notes format
 
 The notes are the GitHub release body (taken from `apps/desktop/release-notes/<version>.md`). The app shows them under **What's new**, as plain text with a little formatting and never as HTML.

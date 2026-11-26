@@ -4,6 +4,7 @@ import type { OfficeLink } from './link';
 import { ownerApi } from './owner/api';
 import type { Me } from './roles';
 import { staffApi } from './staff/api';
+import { waiterApi } from './staff/waiter';
 
 /** The office's answers the app reads (the same shapes as the desktop app's API). */
 export type Names = { ar: string; en: string; ku: string };
@@ -80,7 +81,7 @@ export { OfficeError, ok, q, safeId };
  * (owner/api.ts) and for the staff (staff/api.ts). No call is in two of them (logic.test.ts).
  */
 export function officeApi(link: OfficeLink) {
-  return { ...coreApi(link), ...ownerApi(link), ...staffApi(link) };
+  return { ...coreApi(link), ...ownerApi(link), ...staffApi(link), ...waiterApi(link) };
 }
 
 export function coreApi(link: OfficeLink) {

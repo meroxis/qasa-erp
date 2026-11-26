@@ -15,10 +15,12 @@ import { sellGiftVoucher } from './gift-vouchers.ts';
 import { setBoard, setGoldItem } from './gold.ts';
 import { moveVan, saveRep, setRouteDay, createOrder } from './wholesale.ts';
 import { createModel, listColors, saveColor } from './clothing.ts';
+import { addLines, markReady, openOrder, quickRoom, saveKitchenSettings, sendToKitchen } from './restaurant.ts';
+import { saveRecipe } from './recipes.ts';
 
 /**
  * The website demo's samples for the business types of 2.0 (apps/web/src/demo/backend.ts): ?market, ?gold, ?wholesale and
- * ?clothing. Each expects seedDemo to have run (the people Mer, Las and Raz, the warehouse and the safes) and turns the
+ * ?clothing (2.1: and ?restaurant). Each expects seedDemo to have run (the people Mer, Las and Raz, the warehouse and the safes) and turns the
  * sample company into that business, with enough in it to try the pages. The paid pages run in the free first month
  * (startDemoMonth), as the petrol station's sample does.
  */
@@ -160,3 +162,53 @@ export function seedClothingDemo(db: Db): void {
   opening(db, main(db), 'المحل — أول المدة', lines);
 }
 
+/** ?restaurant (2.1): a restaurant. A menu by course and drink, a hall of 10 tables and a family section of 4, and two tables eating. */
+export function seedRestaurantDemo(db: Db): void {
+  startDemoMonth(db);
+  retireSampleItems(db);
+  updateSettings(db, { companyName: n3('مطعم ميروكسيس', 'Meroxis Restaurant', 'چێشتخانەی مێرۆکسیس'), businessTypes: ['restaurant'] }, user);
+  const owner = ownerActor(db, user);
+  db.prepare('UPDATE item_categories SET active = 0').run();
+  const grill = createCategory(db, { name: n3('مشويات', 'Grills', 'برژاو') }, user).id;
+  const mains = createCategory(db, { name: n3('أطباق رئيسية', 'Main dishes', 'خواردنی سەرەکی') }, user).id;
+  const drinks = createCategory(db, { name: n3('مشروبات', 'Drinks', 'خواردنەوە') }, user).id;
+  const sweets = createCategory(db, { name: n3('حلويات', 'Desserts', 'شیرینی') }, user).id;
+  const dish = (code: string, name: [string, string, string], price: number, categoryId: string) =>
+    createItem(db, { code, name: n3(...name), unit: 'piece', salePrice: price, saleCurrency: 'IQD', trackStock: false, categoryId }, user).id;
+  const kebab = dish('KEBAB', ['كباب لحم', 'Lamb kebab', 'کەبابی گۆشت'], 12_000, grill);
+  const tikka = dish('TIKKA', ['تكة دجاج', 'Chicken tikka', 'تکەی مریشک'], 10_000, grill);
+  dish('QUZI', ['قوزي', 'Quzi', 'قوزی'], 18_000, mains);
+  dish('DOLMA', ['دولمة', 'Dolma', 'دۆڵمە'], 9_000, mains);
+  const tea = dish('TEA', ['شاي', 'Tea', 'چا'], 1_000, drinks);
+  dish('DOW', ['لبن', 'Yoghurt drink', 'دۆ'], 1_500, drinks);
+  dish('KUNAFA', ['كنافة', 'Kunafa', 'کونافە'], 5_000, sweets);
+  // 2.1: the grill and the drinks bar make their own (each with its ticket), the kitchen the rest
+  saveKitchenSettings(db, { tickets: 'print', stations: [{ categoryId: grill, station: 'grill' }, { categoryId: drinks, station: 'bar' }] }, owner);
+  // what the plates are made of, kept in stock: a kebab plate takes 250 g of lamb, 2 breads and a little rice
+  const stock = (code: string, name: [string, string, string], unit: 'kg' | 'piece') =>
+    createItem(db, { code, name: n3(...name), unit, salePrice: 0, saleCurrency: 'IQD', trackStock: true }, user).id;
+  const lamb = stock('LAMB', ['لحم غنم', 'Lamb', 'گۆشتی مەڕ'], 'kg');
+  const chicken = stock('CHICKEN', ['دجاج', 'Chicken', 'مریشک'], 'kg');
+  const rice = stock('RICE', ['رز', 'Rice', 'برنج'], 'kg');
+  const bread = stock('BREAD', ['خبز', 'Bread', 'نان'], 'piece');
+  const teaLeaves = stock('TEALEAF', ['شاي جاف', 'Tea leaves', 'چای وشک'], 'kg');
+  opening(db, main(db), 'Kitchen stock', [
+    { itemId: lamb, qtyMilli: 40_000, unitCost: 22_000 }, { itemId: chicken, qtyMilli: 30_000, unitCost: 6_000 }, { itemId: rice, qtyMilli: 50_000, unitCost: 2_000 },
+    { itemId: bread, qtyMilli: 400_000, unitCost: 250 }, { itemId: teaLeaves, qtyMilli: 5_000, unitCost: 12_000 }
+  ]);
+  saveRecipe(db, kebab, [{ ingredientId: lamb, qtyMilli: 250 }, { ingredientId: bread, qtyMilli: 2_000 }, { ingredientId: rice, qtyMilli: 100 }], owner);
+  saveRecipe(db, tikka, [{ ingredientId: chicken, qtyMilli: 300 }, { ingredientId: bread, qtyMilli: 2_000 }, { ingredientId: rice, qtyMilli: 100 }], owner);
+  saveRecipe(db, tea, [{ ingredientId: teaLeaves, qtyMilli: 5 }], owner);
+  const room = quickRoom(db, { tables: 10, family: 4 }, owner);
+  const eat = (tableName: string, guests: number, lines: { itemId: string; qtyMilli: number; note?: string }[]) => {
+    const table = room.tables.find((t) => t.name === tableName)!;
+    const order = openOrder(db, { kind: 'table', tableId: table.id, guests }, owner);
+    addLines(db, order.id, lines, owner);
+    sendToKitchen(db, order.id, owner);
+    return order.id;
+  };
+  const three = eat('3', 4, [{ itemId: kebab, qtyMilli: 2_000, note: 'بدون بصل' }, { itemId: tikka, qtyMilli: 1_000 }, { itemId: tea, qtyMilli: 4_000 }]);
+  eat('F2', 6, [{ itemId: kebab, qtyMilli: 3_000 }, { itemId: tea, qtyMilli: 6_000 }]);
+  // table 3's tea is ready at the bar: the table shows it waiting to go
+  markReady(db, three, { ticket: 1, station: 'bar', ready: true }, owner);
+}

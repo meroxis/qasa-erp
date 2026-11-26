@@ -147,7 +147,8 @@ export function createReturn(db: Db, originalId: string, input: ReturnInput, use
     return {
       sourceLine: lineNo, itemId: ol.itemId, trackStock: ol.trackStock, qtyMilli: qty, unitPrice: unitPriceKept,
       amount, discountShare,
-      cost: ol.cost === null ? null : remainingShare(ol.cost, prev.cost, qty, prev.qtyMilli, ol.qtyMilli),
+      // (2.1: a dish's cost was its recipe's ingredients, which a return doesn't bring back: no cost to reverse)
+      cost: ol.cost === null || !ol.trackStock ? null : remainingShare(ol.cost, prev.cost, qty, prev.qtyMilli, ol.qtyMilli),
       unit: inUnit !== null ? ol.lineUnit : null,
       unitFactorMilli: inUnit !== null ? ol.unitFactorMilli : null,
       unitQtyMilli: inUnit

@@ -38,7 +38,7 @@ describe('who sees it', () => {
       expect(keeper.has('newItem')).toBe(true);
     }
     // the owner is told the office PC needs an update for it, by name
-    expect(needsNewerOffice(me(['admin'], ['admin'], ['approvals', 'rate', 'dayClose', 'expense', 'share', 'transfer', 'receive']))).toEqual(['itemLookup']);
+    expect(needsNewerOffice(me(['admin'], ['admin'], ['approvals', 'rate', 'dayClose', 'expense', 'share', 'transfer', 'receive', 'countAdd']))).toEqual(['itemLookup']);
     for (const lang of LANGS) expect(translate(lang, 'featItemLookup').length).toBeGreaterThan(5);
   });
 });

@@ -296,7 +296,7 @@ export class OfficeLink {
    * One request to the office's API (connecting first if needed). `key`: the change's own key (a UUID v4) when it may
    * be sent again; the office makes it once (x-qasa-idempotency).
    */
-  async request<T = unknown>(method: 'GET' | 'POST' | 'PUT' | 'count', path?: string, body?: unknown, key?: string): Promise<Answer<T>> {
+  async request<T = unknown>(method: 'GET' | 'POST' | 'PUT' | 'DELETE' | 'count', path?: string, body?: unknown, key?: string): Promise<Answer<T>> {
     await this.connect();
     return (await this.send({ m: method, ...(path ? { p: path } : {}), ...(body !== undefined ? { b: body } : {}), ...(key ? { k: key } : {}) })) as Answer<T>;
   }

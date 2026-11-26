@@ -199,6 +199,14 @@ const BASE = {
   ],
   openCountNote: ['هناك جرد مفتوح لهذا المخزن على الحاسوب: تدخل الكميات فيه مباشرة.', 'A count is open for this warehouse on the PC: the quantities go straight into it.', 'جەردێکی کراوە بۆ ئەم کۆگایە لەسەر کۆمپیوتەر هەیە: بڕەکان ڕاستەوخۆ دەچنە ناوی.'],
   countSessionSent: ['أُدخلت الكميات في الجرد المفتوح على الحاسوب.', 'The quantities were entered into the open count on the PC.', 'بڕەکان خرانە ناو جەردە کراوەکەی سەر کۆمپیوتەر.'],
+  // 2.1: a count a shelf at a time
+  openCountAddNote: [
+    'هناك جرد مفتوح لهذا المخزن على الحاسوب: تُضاف كمياتك إلى ما عُدّ فيه، فيمكن عدّ المادة رفاً رفاً ومن أكثر من هاتف.',
+    'A count is open for this warehouse on the PC: your quantities add to what it already has, so an item can be counted a shelf at a time, and on more than one phone.',
+    'جەردێکی کراوە بۆ ئەم کۆگایە لەسەر کۆمپیوتەر هەیە: بڕەکانت دەخرێنە سەر ئەوەی تێیدا ژمێردراوە، بۆیە کاڵا دەتوانرێت ڕەفە بە ڕەفە و لە زیاتر لە مۆبایلێکەوە بژمێردرێت.'
+  ],
+  countedSoFar: ['عُدّ حتى الآن: {n}', 'Counted so far: {n}', 'تا ئێستا ژمێردراوە: {n}'],
+  inYourList: ['في قائمتك: {n} (تُضاف الكمية الجديدة إليها)', 'In your list: {n} (the new quantity adds to it)', 'لە لیستەکەتدا: {n} (بڕە نوێیەکە دەخرێتە سەری)'],
 
   // ——— outbox ———
   outbox: ['بانتظار الإرسال', 'Waiting to send', 'چاوەڕێی ناردن'],
@@ -321,7 +329,9 @@ const BASE = {
   featShare: ['إرسال الفواتير وكشوف الحساب', 'sending invoices and statements', 'ناردنی پسوولە و کەشفی هەژمار'],
   featTransfer: ['المناقلة بين المخازن', 'moving stock between warehouses', 'گواستنەوەی کاڵا لە نێوان کۆگاکان'],
   featReceive: ['استلام البضاعة', 'receiving goods', 'وەرگرتنی کاڵا'],
-  featItemLookup: ['صور وأسماء المواد من الباركود', 'item pictures and names from the barcode', 'وێنە و ناوی کاڵا لە بارکۆدەوە']
+  featItemLookup: ['صور وأسماء المواد من الباركود', 'item pictures and names from the barcode', 'وێنە و ناوی کاڵا لە بارکۆدەوە'],
+  featCountAdd: ['الجرد رفاً رفاً ومن أكثر من هاتف', 'counting a shelf at a time, on several phones', 'جەرد ڕەفە بە ڕەفە و لە چەند مۆبایلێکەوە'],
+  featWaiter: ['طلبات الطاولات', 'table orders', 'داواکاریی مێزەکان']
 } as const satisfies Record<string, readonly [string, string, string]>;
 
 /**

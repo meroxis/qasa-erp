@@ -23,5 +23,10 @@ export const STAFF_ERRORS: Record<string, ErrorText> = {
   item_not_stock: { key: 'errItemNotStock', vars: (d) => (count(d.line) !== null ? { n: count(d.line)! } : null) },
   po_receipt_pending: 'errPoPending',
   po_over_remaining: 'errPoOver',
-  po_line_unknown: 'rcvNotOnOrder'
+  po_line_unknown: 'rcvNotOnOrder',
+  // phone app 1.3, a waiter: what the office can say of a table's order
+  rs_table_busy: 'errRsTableBusy',
+  rs_order_closed: 'errRsOrderClosed',
+  rs_line_sent: 'errRsLineSent',
+  rs_too_many_lines: 'errRsTooMany'
 };

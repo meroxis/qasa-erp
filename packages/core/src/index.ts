@@ -29,5 +29,6 @@ export * from './cash-rounding.ts';
 export * from './business-choice.ts';
 export * from './gold.ts';
 export * from './clothing.ts';
+export * from './restaurant.ts';
 export * from './product-lookup.ts';
 export * from './till-payments.ts';

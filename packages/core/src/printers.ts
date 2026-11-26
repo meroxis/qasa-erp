@@ -7,8 +7,12 @@
  * page sends) before it saves and again before it prints.
  */
 
-/** The kinds of paper a printer can be chosen for. Each print button in the app belongs to one of them. */
-export const PRINT_KINDS = ['invoice', 'voucher', 'quote', 'receipt', 'label', 'report'] as const;
+/**
+ * The kinds of paper a printer can be chosen for. Each print button in the app belongs to one of them. 2.1: 'kitchen',
+ * 'grill' and 'bar', a restaurant's order tickets for each station (core restaurant.ts RS_STATIONS): a printer of its
+ * own at each, usually an 80 mm roll.
+ */
+export const PRINT_KINDS = ['invoice', 'voucher', 'quote', 'receipt', 'label', 'report', 'kitchen', 'grill', 'bar'] as const;
 export type PrintKind = (typeof PRINT_KINDS)[number];
 
 /**
@@ -43,7 +47,7 @@ export const DEFAULT_PRINTER_CHOICE: PrinterChoice = { printer: null, paper: 'au
 
 /** The paper a kind usually takes, offered first when a printer is chosen for it. */
 export const USUAL_PAPER: Record<PrintKind, PrinterPaper> = {
-  invoice: 'A4', voucher: 'A4', quote: 'A4', receipt: 'receipt80', label: 'label38x25', report: 'A4'
+  invoice: 'A4', voucher: 'A4', quote: 'A4', receipt: 'receipt80', label: 'label38x25', report: 'A4', kitchen: 'receipt80', grill: 'receipt80', bar: 'receipt80'
 };
 
 const oneOf = <T extends string>(list: readonly T[], v: unknown): v is T => typeof v === 'string' && (list as readonly string[]).includes(v);
