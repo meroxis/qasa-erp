@@ -108,10 +108,11 @@ describe('what the phone offers, by the office user it acts as', () => {
 
 /** The office's roles and what each may change (packages/server/src/auth.ts; a test below holds them to it). */
 const ROLE_PERMISSIONS: Record<string, string[]> = {
-  admin: ['admin', 'entries.prepare', 'entries.check', 'entries.approve', 'sales', 'pos', 'purchases', 'stock'],
+  admin: ['admin', 'entries.prepare', 'entries.check', 'entries.approve', 'sales', 'pos', 'posSupervise', 'purchases', 'stock'],
   preparer: ['entries.prepare'], checker: ['entries.check'], approver: ['entries.approve'],
   // pos (office 1.5.2): the till at the office; the phone has no till, so it changes nothing here
-  sales: ['sales'], pos: ['pos'], purchasing: ['purchases'], storekeeper: ['stock'], viewer: []
+  // supervisor (office 2.0): approves at the office's till with a PIN; nothing on the phone
+  sales: ['sales'], pos: ['pos'], supervisor: ['posSupervise'], purchasing: ['purchases'], storekeeper: ['stock'], viewer: []
 };
 const ROLES = Object.keys(ROLE_PERMISSIONS);
 const asUser = (roles: string[], offers: string[] | null = ALL_OFFERS): Me => ({
@@ -145,7 +146,7 @@ describe('phone app 1.1: what the office offers, and to whom', () => {
   });
 
   it('tells the owner and an admin what needs the office PC updated, and nobody else', () => {
-    const every = ['approvals', 'rate', 'rateSet', 'dayClose', 'expense', 'share', 'transfer', 'receive'];
+    const every = ['approvals', 'rate', 'rateSet', 'dayClose', 'expense', 'share', 'transfer', 'receive', 'itemLookup'];
     expect(needsNewerOffice({ signInRequired: false, user: null })).toEqual(every);
     expect(needsNewerOffice(asUser(['admin'], null))).toEqual(every);
     expect(needsNewerOffice(asUser(['admin']))).toEqual([]);
@@ -364,8 +365,10 @@ describe('the features of phone app 1.1, by what the office offers and who the p
 
   it('says what a user would get from an office that does not offer it yet (the owner\'s and admins\' update banner)', () => {
     expect(needsNewerOffice(null)).toEqual([]);
-    expect(needsNewerOffice(user(['storekeeper']))).toEqual(['rate', 'transfer', 'receive']);
-    expect(needsNewerOffice(user(['storekeeper'], ['rate', 'transfer', 'receive']))).toEqual([]);
+    expect(needsNewerOffice(user(['storekeeper']))).toEqual(['rate', 'transfer', 'receive', 'itemLookup']);
+    // an office of phone link 1.1 offers everything but the lookup of phone app 1.2
+    expect(needsNewerOffice(user(['storekeeper'], ['rate', 'transfer', 'receive']))).toEqual(['itemLookup']);
+    expect(needsNewerOffice(user(['storekeeper'], ['rate', 'transfer', 'receive', 'itemLookup']))).toEqual([]);
     expect(needsNewerOffice({ signInRequired: false, user: null })).toEqual(Object.keys(OFFER_OF));
     expect(needsNewerOffice({ signInRequired: false, user: null, phoneLink: { v: 2, offers: ALL_OFFERS } })).toEqual([]);
   });

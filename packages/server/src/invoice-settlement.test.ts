@@ -391,7 +391,7 @@ describe('schema 13 carries the link and the cash handed over', () => {
       expect(schemaVersion(opened)).toBe(SCHEMA_VERSION);
       expect(opened.prepare('SELECT COUNT(*) AS n FROM invoice_vouchers').get()).toMatchObject({ n: 0 });
       expect(opened.prepare("SELECT name FROM sqlite_master WHERE type = 'index' AND name = 'invoice_vouchers_invoice'").get()).toBeTruthy();
-      expect((opened.prepare('PRAGMA table_info(pos_sales)').all() as { name: string }[]).map((c) => c.name)).toEqual(['invoice_id', 'shift_id', 'tendered']);
+      expect((opened.prepare('PRAGMA table_info(pos_sales)').all() as { name: string }[]).map((c) => c.name).slice(0, 3)).toEqual(['invoice_id', 'shift_id', 'tendered']);
       // a link needs its voucher and its invoice
       expect(() => opened.prepare("INSERT INTO invoice_vouchers (entry_id, invoice_id) VALUES ('none', 'none')").run()).toThrow();
     } finally {

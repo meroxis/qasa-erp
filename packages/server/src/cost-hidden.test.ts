@@ -69,7 +69,14 @@ const EXTRA: string[] = [];
 /** Addresses the checks below name. */
 const at: Record<string, string> = {};
 /** Routes whose record this company has none of (fixed assets, item pictures): 404 for everyone. */
-const NO_RECORD = new Set(['/api/assets/depreciation/:id', '/api/assets/:id', '/api/items/:id/image']);
+const NO_RECORD = new Set(['/api/assets/depreciation/:id', '/api/assets/:id', '/api/items/:id/image',
+  // 2.0 till rules: no picture or voucher is made here, and a screen's feed needs a real pairing code
+  '/api/pos/display/image/:id', '/api/pos/display/image-admin/:id', '/api/pos/gift-vouchers/lookup', '/api/pos/display/feed',
+  // wholesale (1.8): a rep's route, day, van and count, an order, a customer's credit (no rep or order in this company)
+  '/api/wholesale/reps/:id/route', '/api/wholesale/reps/:id/day', '/api/wholesale/reps/:id/van-moves', '/api/wholesale/reps/:id/van-count',
+  '/api/wholesale/orders/:id', '/api/wholesale/credit/:id', '/api/delivery/orders/:id']);
+/** Routes for a price checker's device token alone (2.0): no signed-in user reaches them. */
+const DEVICE_ONLY = new Set(['/api/price-check', '/api/price-check/offers']);
 
 beforeAll(async () => {
   resetLoginThrottle();
@@ -115,6 +122,7 @@ beforeAll(async () => {
   const closedShift = await made(post('/api/pos/shifts', { register: 'Counter 1', cashAccountCode: '1811', warehouseId, openingCash: 50_000 }));
   const tillSale = await made(post(`/api/pos/shifts/${closedShift.id}/sales`, { currency: 'IQD', lines: [{ itemId: teaId, qtyMilli: 3_000, unitPrice: 2_500 }] }));
   await made(post(`/api/pos/shifts/${closedShift.id}/close`, { countedCash: 57_500 }), 200);
+  QUERY['/api/pos/shifts/:id/sale'] = `q=${encodeURIComponent(String((tillSale as { invoice: { number: string } }).invoice.number))}`;
   // an item bought and sold out: the list of what to order names it, with the last price paid
   const cupId = (await made(post('/api/items', { code: 'CUP', name: one('Cup'), unit: 'piece', salePrice: 1_250, saleCurrency: 'IQD' }))).id as string;
   const cups = await made(post('/api/invoices', invoice('purchase', supplierId, [{ itemId: cupId, qtyMilli: 2_000, unitPrice: CUP_BOUGHT_AT }])));
@@ -130,6 +138,20 @@ beforeAll(async () => {
   const fuelShift = await made(post('/api/fuel/shifts', { date: today, shift: 'morning', attendant: 'Las', pumpIds: [fuelPump.id] }));
   await made(post(`/api/fuel/shifts/${fuelShift.id}/close`, { readings: [{ nozzleId: fuelPump.nozzles[0].id, closingMilli: 5_100_000 }], handed: 95_000 }), 200);
   await made(post('/api/fuel/dips', { date: today, tankId: fuelTank.id, measuredMilli: 10_890_000 }));
+  // goods on consignment (1.7): a baker's bread received, one sold, and settled
+  const breadId = (await made(post('/api/items', { code: 'BREAD', name: one('Bread'), unit: 'piece', salePrice: 1_000, saleCurrency: 'IQD' }))).id as string;
+  await made(put(`/api/consignment/items/${breadId}`, { supplierId, currency: 'IQD', unitCost: 619 }), 200);
+  const consigned = await made(post('/api/consignment/docs', { kind: 'receipt', date: today, supplierId, warehouseId, lines: [{ itemId: breadId, qtyMilli: 10_000 }] }));
+  await made(post(`/api/consignment/docs/${consigned.id}/post`), 200);
+  const breadSold = await made(post('/api/invoices', invoice('sale', customerId, [{ itemId: breadId, qtyMilli: 1_000, unitPrice: 1_000 }])));
+  await made(post(`/api/invoices/${breadSold.id}/post`), 200);
+  const consignmentSettlement = await made(post('/api/consignment/settlements', { supplierId, currency: 'IQD', date: today }));
+  // a gold shop (1.8): a ring priced from the day's board, received from a supplier in gold
+  const ringId = (await made(post('/api/items', { code: 'RING', name: one('Ring'), unit: 'piece', salePrice: 0, saleCurrency: 'IQD' }))).id as string;
+  await made(put(`/api/gold/items/${ringId}`, { weightMg: 5_000, karat: 21, makingKind: 'gram', makingAmount: 5_000 }), 200);
+  await made(put('/api/gold/board', { date: today, currency: 'IQD', prices: [{ karat: 21, buyPerGram: 95_000, sellPerGram: 100_000 }] }), 200);
+  const goldReceipt = await made(post('/api/gold/docs', { kind: 'receipt', date: today, partyId: supplierId, warehouseId, pricePerGram: 120_000, lines: [{ itemId: ringId }] }));
+  await made(post(`/api/gold/docs/${goldReceipt.id}/post`), 200);
   const quote = await made(post('/api/quotes', { date: today, partyId: customerId, currency: 'IQD', lines: [{ itemId: teaId, description: 'Tea', qtyMilli: 5_000, unitPrice: 2_400 }] }));
 
   // the stock is corrected and counted, an order waits at the supplier, a wholesale price is set
@@ -162,6 +184,16 @@ beforeAll(async () => {
     direction: 'received', number: '700123', bank: 'Rafidain', partyId: customerId, currency: 'IQD', amount: 41_041, issueDate: today, dueDate: addDays(today, 3), lang: 'en'
   }));
 
+  // 1.7: an offer (written straight in and switched off, so the sales below are as before), read back by its own route
+  db.prepare(`INSERT INTO offers (id, code, name_ar, name_en, name_ku, kind, active, items, categories, get_items, get_categories, percent_off, created_by, created_at, updated_at)
+              VALUES ('offer-1', 'TEA10', 'شاي', 'Tea', 'چا', 'price', 0, ?, '[]', '[]', '[]', 10, 'Mer', ?, ?)`).run(JSON.stringify([teaId]), today, today);
+
+  // 2.0: a clothing model, with what it is bought for (a cost: kept from those who may not see it)
+  const color = await made(post('/api/clothing/colors', { code: 'BLK', name: { ar: 'أسود', en: 'Black', ku: 'ڕەش' } }));
+  const model = await made(post('/api/clothing/models', {
+    code: 'POLO', name: { ar: 'بولو', en: 'Polo', ku: 'پۆلۆ' }, sizes: ['M', 'L'], colorIds: [color.id], salePrice: 25_000, saleCurrency: 'IQD', purchasePrice: 12_345, purchaseCurrency: 'IQD'
+  }));
+
   // what the server worked out: the cost of every line sold or returned, the value of every stock movement and of the stock
   for (const r of db.prepare('SELECT cost AS n FROM invoice_lines WHERE cost IS NOT NULL').all() as { n: number }[]) secrets.add(Math.abs(Number(r.n)));
   for (const r of db.prepare('SELECT value AS n FROM stock_moves').all() as { n: number }[]) secrets.add(Math.abs(Number(r.n)));
@@ -176,6 +208,8 @@ beforeAll(async () => {
     '/api/invoices/:id': sale.id, '/api/verify/invoices/:id': sale.id,
     '/api/stock-docs/:id': opening.id,
     '/api/pos/shifts/:id': closedShift.id,
+    // 2.0.0: a till sale by its receipt number (for a return at the till), asked on the shift it was sold on
+    '/api/pos/shifts/:id/sale': closedShift.id,
     '/api/quotes/:id': quote.id,
     '/api/adjustments/:id': adjustment.id, '/api/adjustments/counts/:id': count.id,
     '/api/purchase-orders/:id': order.id,
@@ -183,11 +217,21 @@ beforeAll(async () => {
     '/api/loyalty/parties/:id': customerId,
     '/api/banking/statements/:id': statement.id,
     '/api/banking/cheques/:id': cheque.id,
-    '/api/fuel/shifts/:id': fuelShift.id, '/api/fuel/deliveries/:id': fuelDelivery.id
+    '/api/fuel/shifts/:id': fuelShift.id, '/api/fuel/deliveries/:id': fuelDelivery.id,
+    '/api/consignment/items/:id': breadId, '/api/consignment/docs/:id': consigned.id, '/api/consignment/settlements/:id': consignmentSettlement.id,
+    '/api/consignment/statement/:id': supplierId,
+    '/api/offers/:id': 'offer-1',
+    '/api/pos/customer/:id': customerId,
+    '/api/gold/items/:id': ringId, '/api/gold/docs/:id': goldReceipt.id, '/api/gold/suppliers/:id': supplierId, '/api/gold/slip/:id': sale.id,
+    '/api/parties/:id/reminders': customerId, '/api/daily-suppliers/:id/sheet': supplierId, '/api/daily-suppliers/:id/receipts': supplierId,
+    '/api/clothing/models/:id': model.id, '/api/clothing/invoices/:id/variants': purchase.id
   });
   Object.assign(QUERY, {
     '/api/reports/final-accounts': `from=${today.slice(0, 4)}-01-01&to=${today}`,
     '/api/reports/statement': 'account=1811',
+    '/api/pos/gift-vouchers/lookup': 'code=GVNONE2345',
+    '/api/pos/display/feed': 'key=' + '0'.repeat(64),
+    '/api/pos/display/image/:id': 'key=' + '0'.repeat(64),
     '/api/brief/reports/sales-by-group': 'by=category',
     '/api/brief/reports/aging': 'type=customer',
     '/api/parties/totals': 'type=customer',
@@ -199,7 +243,10 @@ beforeAll(async () => {
     '/api/batches': `itemId=${medId}`,
     '/api/batches/report': 'state=all',
     '/api/fuel/attendants': `from=${month}-01&to=${today}`,
-    '/api/fuel/reports': `from=${month}-01&to=${today}`
+    '/api/fuel/reports': `from=${month}-01&to=${today}`,
+    '/api/consignment/settlements/preview': `supplierId=${supplierId}&currency=IQD&date=${today}`,
+    '/api/clothing/reports': `from=${month}-01&to=${today}`,
+    '/api/clothing/variants': `itemIds=${teaId}`
   });
   Object.assign(at, {
     scan: '/api/items?barcode=6260000000017', boxScan: '/api/items?barcode=6260000000024', search: `/api/items?q=tea&warehouseId=${warehouseId}`,
@@ -261,7 +308,7 @@ interface Answer { route: string; url: string; status: number; paths: Set<string
 
 /** Asks every GET route of the API (each with a real record where it takes one), and the extra addresses. */
 async function walk(as: Headers): Promise<Answer[]> {
-  const routes = apiRoutes(db).filter((r) => r.method === 'GET').map((r) => r.path);
+  const routes = apiRoutes(db).filter((r) => r.method === 'GET' && !DEVICE_ONLY.has(r.path)).map((r) => r.path);
   const asked = routes.map((route) => {
     const params = route.match(/:\w+/g) ?? [];
     // a new route with a record in its address must be given one here, so it is walked with a real answer
@@ -304,7 +351,9 @@ const COST_FIELDS = (): [string, string][] => [
   ['/api/fuel/setup', '.tanks[].value'], ['/api/fuel/setup', '.tanks[].avgCost'], ['/api/fuel/setup', '.tanks[].lastCost'],
   [at.fuelShift!, '.cost'], [at.fuelShift!, '.profit'], [at.fuelShift!, '.readings[].cost'], ['/api/fuel/shifts', '[].cost'],
   ['/api/fuel/deliveries', '[].cost'], ['/api/fuel/deliveries', '[].costPerLitre'], [at.fuelDelivery!, '.costPerLitre'], ['/api/fuel/dips', '[].value'],
-  [at.fuelReport!, '.fuels[].cost'], [at.fuelReport!, '.fuels[].profit'], [at.fuelReport!, '.tanks[].value']
+  [at.fuelReport!, '.fuels[].cost'], [at.fuelReport!, '.fuels[].profit'], [at.fuelReport!, '.tanks[].value'],
+  // goods on consignment: the agreed cost and the goods' value
+  ['/api/consignment/items', '[].unitCost'], ['/api/consignment/items', '[].onHandValue']
 ];
 
 /** The fields of the books and their reports, by address. */
@@ -330,7 +379,9 @@ const BOOKS_FIELDS = (): [string, string][] => [
   // 1.4.1: other people's cheques, in the cheque pages, the Daily Brief and the dashboard
   ['/api/banking/cheques', '[].amount'], ['/api/banking/cheques', '[].number'], [at.cheque!, '.amount'], ['/api/banking/cheques/summary', '.inHandCount'], ['/api/banking/cheques/summary', '.inHand.IQD'],
   ['/api/brief', '.cheques.due[].amount'], ['/api/brief', '.cheques.due[].party'], ['/api/brief', '.cheques.dueTotal.IQD'], ['/api/brief', '.cheques.bounced'],
-  ['/api/brief/dashboard', '.cheques.due'], ['/api/brief/dashboard', '.cheques.dueTotal.IQD']
+  ['/api/brief/dashboard', '.cheques.due'], ['/api/brief/dashboard', '.cheques.dueTotal.IQD'],
+  // a gold shop (1.8): the gold it holds at cost, what its suppliers are owed in gold, and what a receipt from one cost
+  ['/api/gold/stock', '.value'], ['/api/gold/stock', '.byKarat[].piecesValue'], ['/api/gold/suppliers', '[].value'], ['/api/gold/docs', '[].amount']
 ];
 
 /**
@@ -339,10 +390,16 @@ const BOOKS_FIELDS = (): [string, string][] => [
  * cheques: the list, each cheque and the summary.
  */
 const BOOKS_ROUTES = ['/api/entries/', '/api/reports/', '/api/year-end', '/api/fx/revaluation', '/api/assets', '/api/brief/reports/stock-value', '/api/brief/expenses', '/api/banking/statements', '/api/banking/cheques',
-  '/api/fuel/attendants', '/api/fuel/deliveries', '/api/fuel/dips', '/api/fuel/reports'];
-const ADMIN_ROUTES = ['/api/audit', '/api/auth/recovery-code', '/api/branches', '/api/users'];
+  '/api/fuel/attendants', '/api/fuel/deliveries', '/api/fuel/dips', '/api/fuel/reports',
+  // goods on consignment (1.7): what the shop owes its suppliers, and at what cost it holds their goods
+  '/api/consignment',
+  // a gold shop (1.8): its gold at cost, the documents of what it paid and its suppliers' gold
+  '/api/gold/stock', '/api/gold/suppliers', '/api/gold/docs',
+  // the cash delivery drivers hand over (2.0)
+  '/api/delivery/handovers'];
+const ADMIN_ROUTES = ['/api/audit', '/api/auth/hello-reset', '/api/auth/recovery-code', '/api/feature-accounts', '/api/branches', '/api/pos/gift-vouchers', '/api/price-checker/devices', '/api/users'];
 // the till's own reads (1.5.2): for the Point of sale permission only (an admin has it; a cashier at the till here too)
-const TILL_ROUTES = ['/api/pos/current', '/api/pos/payment-accounts'];
+const TILL_ROUTES = ['/api/pos/current', '/api/pos/customer/:id', '/api/pos/display/image-admin/:id', '/api/pos/display/images', '/api/pos/gift-vouchers/lookup', '/api/pos/payment-accounts', '/api/pos/rules', '/api/pos/scale', '/api/pos/shifts/:id/sale', '/api/pos/tills'];
 const NOT_THEIRS = [...ADMIN_ROUTES, ...TILL_ROUTES].sort();
 const isOneOf = (route: string, list: string[]) => list.some((p) => route === p || route.startsWith(p.endsWith('/') ? p : `${p}/`));
 
@@ -414,7 +471,8 @@ describe('cost, stock value and profit, by who asks', () => {
     // under any address they can ask. Other things have a balance, and stay: what a customer or a supplier owes (the
     // parties, their statements, the aging report, the brief's late customers), an item's stock, loyalty points
     // (the brief's customers who owe the most, phone app 1.1: what customers owe, as its late customers)
-    const notMoney = /^\/api\/(parties|brief\/reports\/aging|items|loyalty)[/ ]|^\/api\/brief \.(lateCustomers|topDebtors)\[\]\.balance$/;
+    // (2.0: the till reads what the customer it picked owes, for a credit sale: /api/pos/customer/:id)
+    const notMoney = /^\/api\/(parties|brief\/reports\/aging|items|loyalty|pos\/customer|debt-reminders|daily-suppliers)[/ ]|^\/api\/brief \.(lateCustomers|topDebtors)\[\]\.balance$/;
     const money = answers.flatMap((a) => [...a.paths].filter((p) => /balance|flow|expenses/i.test(p.split('.').pop()!)).map((p) => `${a.route} ${p}`));
     expect(money.filter((p) => !notMoney.test(p))).toEqual([]);
     // what the till needs stays: the safes by name (to pick one), and the day close's sales and debts (1.4.1: of the
@@ -513,6 +571,8 @@ describe('a cashier sells without seeing cost', () => {
 
     // the same documents, read by the admin, have their cost
     expect((await get(`/api/invoices/${sold.json().invoice.id}`)).json().lines[0].cost).toBe(Math.round(avg * 2));
+    // (2.0: a cashier holds one open shift at a time; this one is closed for the tests after it)
+    expect((await post(`/api/pos/shifts/${shift.json().id}/close`, { countedCash: 2_500 }, cashier)).statusCode).toBe(200);
   });
 
   it('reads the vouchers they prepared, with the approval and the reason of a rejection, and nothing else of the journal', async () => {

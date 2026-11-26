@@ -343,15 +343,14 @@ function FirstSteps({ viewer }: { viewer: NavViewer }) {
   const { t } = i18n;
   const { settings } = useData();
   const [hidden, setHidden] = useState(() => { try { return localStorage.getItem(STEPS_HIDDEN) === '1'; } catch { return false; } });
-  const parties = useLoad(() => api.parties(), []);
-  const items = useLoad(() => api.items(), []);
-  const sales = useLoad(() => api.invoices({ kind: 'sale', status: 'posted' }), []);
+  // yes or no for each, not every item, party and sale (2.0: megabytes at each visit in a big company)
+  const facts = useLoad(() => briefApi.firstSteps(), []);
   const users = useLoad(() => (viewer.admin ? api.users() : Promise.resolve(null)), [viewer.admin]);
-  if (hidden || !settings || !parties.data || !items.data || !sales.data) return null;
+  if (hidden || !settings || !facts.data) return null;
   const named = !!(settings.companyName.ar || settings.companyName.en || settings.companyName.ku);
   const steps = firstStepsFor(viewer.admin ? ['admin'] : viewer.permissions, {
-    named, parties: parties.data.length, items: items.data.length, sales: sales.data.length, users: users.data ? users.data.length : null,
-    customers: parties.data.filter((p) => p.type === 'customer').length
+    named, parties: facts.data.parties, items: facts.data.items, sales: facts.data.sales, users: users.data ? users.data.length : null,
+    customers: facts.data.customers
   });
   const done = steps.filter((s) => s.done).length;
   // nothing this person can do (a viewer, an accountant), or all of it done: no card

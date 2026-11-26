@@ -41,6 +41,8 @@ contextBridge.exposeInMainWorld('qasaDesktop', {
     get: () => ipcRenderer.invoke('app:closeAsk') as Promise<unknown>,
     set: (on: boolean) => ipcRenderer.invoke('app:closeAsk:set', on === true) as Promise<unknown>
   },
+  /** 2.0: the signed-in Windows account (SID and PC\\name), to bind the Windows Hello password reset to it. */
+  windowsAccount: () => ipcRenderer.invoke('app:windowsAccount') as Promise<unknown>,
   /** This app can keep several companies (Settings → Companies; the routes are on its own server, admins only). */
   companies: true,
   /**
@@ -84,6 +86,20 @@ contextBridge.exposeInMainWorld('qasaDesktop', {
    * Send on WhatsApp as a PDF (main.ts, share-pdf.ts): this window as it prints now, saved as "<kind>-<number>.pdf" in
    * the app's own folder and shown in File Explorer. Only a kind and a number cross; the main process checks both.
    */
+  /**
+   * 2.0, the till (main.ts, till-desktop.ts): open the cash drawer through this PC's receipt printer (no argument
+   * crosses; answers { status }), and show or close the customer screen (only true or false crosses).
+   */
+  till: {
+    openDrawer: () => ipcRenderer.invoke('till:drawer') as Promise<unknown>,
+    customerDisplay: (open: boolean) => ipcRenderer.invoke('till:customerDisplay', open === true) as Promise<unknown>,
+    /** { open, waiting }: whether the customer screen's window is open, and hidden until its screen is plugged in again */
+    customerDisplayState: () => ipcRenderer.invoke('till:customerDisplayState') as Promise<unknown>,
+    /** the serial ports this PC showed when the page last asked for one, and the one chosen for the scale */
+    serialPorts: () => ipcRenderer.invoke('till:serialPorts') as Promise<unknown>,
+    /** keeps the scale's port for this PC ('' for none); the page is then granted that port alone */
+    chooseSerialPort: (key: string) => ipcRenderer.invoke('till:chooseSerialPort', String(key)) as Promise<unknown>
+  },
   sharePdf: (kind: string, ref: string) => ipcRenderer.invoke('share:pdf', String(kind), String(ref)) as Promise<unknown>,
   /**
    * 1.5: work from phones as a Windows notification (main.ts, phone-notices.ts): a title, a line and the app's own page

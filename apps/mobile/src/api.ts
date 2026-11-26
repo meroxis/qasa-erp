@@ -1,4 +1,5 @@
 import { OfficeError, ok, q, safeId } from './answers';
+import { NOTHING_FOUND, readLookup, type ItemLookup } from './item-lookup';
 import type { OfficeLink } from './link';
 import { ownerApi } from './owner/api';
 import type { Me } from './roles';
@@ -88,7 +89,8 @@ export function coreApi(link: OfficeLink) {
     settings: async () => ok(await link.request<Settings>('GET', '/api/settings')),
     brief: async () => ok(await link.request<Brief>('GET', '/api/brief')),
     warehouses: async () => ok(await link.request<Warehouse[]>('GET', '/api/warehouses')),
-    items: async (text: string) => ok(await link.request<Item[]>('GET', '/api/items' + q({ q: text, active: 'true' }))),
+    /** `limit`: the first so many by code (an office from before 2.0 sends them all; the link carries a megabyte at most) */
+    items: async (text: string, limit?: number) => ok(await link.request<Item[]>('GET', '/api/items' + q({ q: text, active: 'true', ...(limit ? { limit: String(limit) } : {}) }))),
     item: async (id: string) => ok(await link.request<ItemDetail>('GET', `/api/items/${safeId(id)}`)),
     /** car parts: shelf, brand, wholesale price (absent without the feature: null) */
     part: async (id: string): Promise<PartHit | null> => {
@@ -99,8 +101,22 @@ export function coreApi(link: OfficeLink) {
       const a = await link.request<{ mime: string; data: string }>('GET', `/api/items/${safeId(id)}/image`);
       return a.s === 200 && /^image\/(jpeg|png|webp)$/.test(a.b.mime) ? `data:${a.b.mime};base64,${a.b.data}` : null;
     },
-    setImage: async (id: string, base64: string) => ok(await link.request('PUT', `/api/items/${safeId(id)}/image`, { data: base64 })),
-    customers: async (text: string) => ok(await link.request<Party[]>('GET', '/api/parties' + q({ type: 'customer', q: text }))),
+    /** `lookupBarcode` (phone app 1.2): the picture is the one the office's lookup of that barcode found; the office credits its source */
+    setImage: async (id: string, base64: string, lookupBarcode?: string) =>
+      ok(await link.request('PUT', `/api/items/${safeId(id)}/image`, { data: base64, ...(lookupBarcode ? { lookupBarcode } : {}) })),
+    /**
+     * Phone app 1.2: a new item's names and picture by its barcode, as the office found them (only where the office
+     * offers 'itemLookup'). Never an error for the person: no answer, a refusal, the setting off are "nothing found".
+     */
+    lookupItem: async (barcode: string): Promise<ItemLookup> => {
+      try {
+        const a = await link.request<unknown>('POST', '/api/items/lookup', { barcode });
+        return a.s === 200 ? readLookup(a.b) : NOTHING_FOUND;
+      } catch {
+        return NOTHING_FOUND;
+      }
+    },
+    customers: async (text: string, limit?: number) => ok(await link.request<Party[]>('GET', '/api/parties' + q({ type: 'customer', q: text, ...(limit ? { limit: String(limit) } : {}) }))),
     customer: async (id: string) => ok(await link.request<Party>('GET', `/api/parties/${safeId(id)}`)),
     statement: async (id: string, from?: string) => ok(await link.request<Statement>('GET', `/api/parties/${safeId(id)}/statement${from ? q({ from }) : ''}`)),
     createItem: async (input: { name: Names; barcode?: string; unit: string; salePrice: number; saleCurrency: Currency }) =>

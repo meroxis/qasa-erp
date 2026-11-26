@@ -19,6 +19,20 @@ async function start() {
     const { startDemoBackend } = await import('./demo/backend.ts');
     await startDemoBackend();
   }
+  // 2.0: the customer screen, a second window of this page facing the customer (pages/CustomerDisplay.tsx): only what
+  // the till in this browser sends it, no sign-in and nothing from the server
+  // 2.0: a price checker screen near the shelves (pages/PriceCheckerScreen.tsx): its device token only, no sign-in
+  // (not the admin's page of the devices, #/price-checkers)
+  if (/^#\/price-checker(\?|$)/.test(location.hash)) {
+    const { PriceCheckerScreen } = await import('./pages/PriceCheckerScreen.tsx');
+    createRoot(document.getElementById('root')!).render(<StrictMode><PriceCheckerScreen /></StrictMode>);
+    return;
+  }
+  if (location.hash.startsWith('#/customer-display')) {
+    const { CustomerDisplay } = await import('./pages/CustomerDisplay.tsx');
+    createRoot(document.getElementById('root')!).render(<StrictMode><CustomerDisplay /></StrictMode>);
+    return;
+  }
   createRoot(document.getElementById('root')!).render(
     <StrictMode>
       <App />

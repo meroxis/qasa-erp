@@ -94,6 +94,25 @@ describe('safes, banks and wallets', () => {
 });
 
 describe('transfers', () => {
+  it('a transfer or a cheque sent again with the same key (a lost answer, a second press) is recorded once', async () => {
+    await fund('1811', 10_000_000);
+    const keyed = (key: string) => ({ ...headers, 'x-qasa-idempotency': key });
+    const body = { date: day(-1), from: '1811', to: '1831', currency: 'IQD', amount: 250_000, description: 'To the bank' };
+    const entries = () => (db.prepare("SELECT COUNT(*) AS n FROM entries WHERE description = 'To the bank'").get() as { n: number }).n;
+    const first = await app.inject({ method: 'POST', url: '/api/banking/transfers', payload: body, headers: keyed('3a0f4b1c-6d2e-4f80-9a1b-2c3d4e5f6071') });
+    const again = await app.inject({ method: 'POST', url: '/api/banking/transfers', payload: body, headers: keyed('3a0f4b1c-6d2e-4f80-9a1b-2c3d4e5f6071') });
+    expect([first.statusCode, again.statusCode]).toEqual([201, 201]);
+    expect(again.json().id).toBe(first.json().id);
+    expect(entries()).toBe(1);
+    // without a key (an older page) each request is its own transfer, as before
+    await post('/api/banking/transfers', body);
+    expect(entries()).toBe(2);
+    // the key is for that transfer only: another amount with it is refused, never made
+    const other = await app.inject({ method: 'POST', url: '/api/banking/transfers', payload: { ...body, amount: 1 }, headers: keyed('3a0f4b1c-6d2e-4f80-9a1b-2c3d4e5f6071') });
+    expect(other.json()).toMatchObject({ error: 'idempotency_key_reused' });
+    expect(entries()).toBe(2);
+  });
+
   it('makes a balanced draft entry with the bank charge, and changes balances only once approved', async () => {
     await fund('1811', 10_000_000);
     const t = await post('/api/banking/transfers', { date: day(-1), from: '1811', to: '1831', currency: 'IQD', amount: 5_000_000, charge: 2_500, description: 'Deposit' });

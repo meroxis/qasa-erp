@@ -2,8 +2,10 @@ import { useEffect, useRef, useState } from 'react';
 import { Alert, Image, View } from 'react-native';
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import { ImageManipulator, SaveFormat } from 'expo-image-manipulator';
+import * as ImagePicker from 'expo-image-picker';
 import { exactMatch, type Currency, type Item, type ItemDetail, type PartHit } from '../api';
 import { addLine, countListBody, countSessionBody, readAmount, readQty, setCount } from '../documents';
+import { lookupBarcodeFor, namesFor, photoAfterLookup, SOURCE_NAMES, type ChosenPhoto, type ItemLookup } from '../item-lookup';
 import { money, nameIn, qty as qtyText } from '../i18n';
 import { useLists } from '../lists';
 import type { Purpose } from '../nav';
@@ -30,7 +32,7 @@ export function ItemsScreen() {
     let live = true;
     const timer = setTimeout(() => {
       setBusy(true);
-      api.items(q).then((r) => { if (live) { setResults(r.slice(0, 50)); setError(null); } }, (e: unknown) => { if (live) setError(explain(e)); })
+      api.items(q, 50).then((r) => { if (live) { setResults(r.slice(0, 50)); setError(null); } }, (e: unknown) => { if (live) setError(explain(e)); })
         .finally(() => { if (live) setBusy(false); });
     }, 300);
     return () => { live = false; clearTimeout(timer); };
@@ -166,27 +168,58 @@ const UNITS = ['piece', 'box', 'carton', 'kg', 'm', 'service'] as const;
 
 export function NewItemScreen({ barcode }: { barcode: string }) {
   const { t, lang } = useLook();
-  const { api, nav, explain, toast } = useApp();
+  const { api, nav, explain, toast, can } = useApp();
   const camera = useRef<CameraView>(null);
   const [permission, requestPermission] = useCameraPermissions();
   const [name, setName] = useState('');
   const [price, setPrice] = useState('');
   const [currency, setCurrency] = useState<Currency>('IQD');
   const [unit, setUnit] = useState<(typeof UNITS)[number]>('piece');
-  const [photo, setPhoto] = useState<{ uri: string; base64: string } | null>(null);
+  const [photo, setPhoto] = useState<ChosenPhoto | null>(null);
+  // phone app 1.2: what the office found for this barcode (only an office that offers it; the form never waits for it)
+  const looksUp = can('itemLookup');
+  const [lookup, setLookup] = useState<ItemLookup | 'looking' | null>(looksUp ? 'looking' : null);
   const [shooting, setShooting] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const minor = readAmount(price, currency);
 
+  useEffect(() => {
+    if (!looksUp) return;
+    let live = true;
+    void api.lookupItem(barcode).then((found) => {
+      if (!live) return;
+      setLookup(found);
+      // the found picture is used unless the person took or chose their own meanwhile
+      setPhoto((current) => photoAfterLookup(found, current));
+    });
+    return () => { live = false; };
+  }, [api, barcode, looksUp]);
+
+  /** A picture made small enough for the office (≤ 800 px, JPEG): the same size the desktop app keeps. */
+  async function keepSmall(uri: string, width?: number) {
+    const picture = ImageManipulator.manipulate(uri);
+    const ref = await (width !== undefined && width > 0 && width <= 800 ? picture : picture.resize({ width: 800 })).renderAsync();
+    const saved = await ref.saveAsync({ compress: 0.7, format: SaveFormat.JPEG, base64: true });
+    if (saved.base64) setPhoto({ from: 'own', uri: saved.uri, base64: saved.base64 });
+  }
+
   async function shoot() {
     const shot = await camera.current?.takePictureAsync({ quality: 0.8 });
     if (!shot) return;
-    // small enough for the office (≤ 800 px, JPEG): the same size the desktop app keeps
-    const ref = await ImageManipulator.manipulate(shot.uri).resize({ width: 800 }).renderAsync();
-    const saved = await ref.saveAsync({ compress: 0.7, format: SaveFormat.JPEG, base64: true });
-    if (saved.base64) setPhoto({ uri: saved.uri, base64: saved.base64 });
+    await keepSmall(shot.uri);
     setShooting(false);
+  }
+
+  /** A picture already on the phone (the system's own picker: the app asks for no permission to the gallery). */
+  async function choose() {
+    try {
+      const picked = await ImagePicker.launchImageLibraryAsync({ mediaTypes: 'images', quality: 1 });
+      const asset = picked.canceled ? null : picked.assets[0];
+      if (asset) await keepSmall(asset.uri, asset.width);
+    } catch (e) {
+      setError(explain(e));
+    }
   }
 
   async function save() {
@@ -196,7 +229,8 @@ export function NewItemScreen({ barcode }: { barcode: string }) {
     try {
       const names = { ar: '', en: '', ku: '', [lang]: name.trim().slice(0, 200) } as { ar: string; en: string; ku: string };
       const item = await api.createItem({ name: names, barcode: barcode.slice(0, 64), unit, salePrice: minor, saleCurrency: currency });
-      if (photo) await api.setImage(item.id, photo.base64);
+      // a picture the office's lookup found is saved with its barcode: the office keeps where it came from, for the credit
+      if (photo) await api.setImage(item.id, photo.base64, lookupBarcodeFor(photo, barcode));
       toast(t('saved'), 'ok');
       nav({ type: 'replace', route: { name: 'item', code: barcode, itemId: item.id, purpose: 'look' } });
     } catch (e) {
@@ -206,6 +240,7 @@ export function NewItemScreen({ barcode }: { barcode: string }) {
     }
   }
 
+  const found = lookup !== null && lookup !== 'looking' && lookup.found ? lookup : null;
   if (shooting) {
     return (
       <View style={{ flex: 1, backgroundColor: '#000' }}>
@@ -222,15 +257,36 @@ export function NewItemScreen({ barcode }: { barcode: string }) {
       footer={<Button icon="check" label={t('save')} onPress={() => void save()} busy={busy} disabled={!name.trim() || minor === null} />}>
       <Field label={t('barcode')} value={barcode} editable={false} />
       <Field label={t('name')} value={name} onChangeText={setName} autoFocus maxLength={200} />
+      {found && found.names.length > 0 && (
+        <>
+          {/* a name is filled in only when its chip is pressed: what was typed is never replaced by itself */}
+          <Txt v="label" tone="ink2">{t('suggestedNames')}</Txt>
+          <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: space.s }}>
+            {namesFor(found.names, lang).map((n) => <Chip key={`${n.lang}:${n.text}`} label={n.text} on={name === n.text} onPress={() => setName(n.text)} />)}
+          </View>
+        </>
+      )}
       <Segmented<Currency> label={t('currency')} options={[{ value: 'IQD', label: t('iqdShort') }, { value: 'USD', label: '$' }]} value={currency} onChange={setCurrency} />
       <Field label={t('price')} value={price} onChangeText={setPrice} keyboardType="decimal-pad" numeric error={price && minor === null ? t('amountInvalid') : undefined} />
       <Txt v="label" tone="ink2">{t('unit')}</Txt>
       <View accessibilityRole="radiogroup" style={{ flexDirection: 'row', flexWrap: 'wrap', gap: space.s }}>
         {UNITS.map((u) => <Chip key={u} label={t(u)} on={unit === u} onPress={() => setUnit(u)} />)}
       </View>
+      {lookup === 'looking' && !photo && <Txt v="label" tone="ink2">{t('lookingPicture')}</Txt>}
+      {lookup !== null && lookup !== 'looking' && !lookup.picture && !photo && <Txt v="label" tone="ink2">{t('noPictureFound')}</Txt>}
       {photo && <Image source={{ uri: photo.uri }} style={{ width: '100%', height: 200, borderRadius: radius.m }} resizeMode="contain" accessibilityIgnoresInvertColors />}
-      <Button kind="secondary" icon="camera" label={photo ? t('retake') : t('takePhoto')}
+      {found?.picture && found.source && (
+        <View style={{ gap: space.xs }}>
+          <View style={{ flexDirection: 'row' }}>
+            <Chip label={t('useThisPicture')} on={photo?.from === 'lookup'} onPress={() => setPhoto(photo?.from === 'lookup' ? null : photoAfterLookup(found, null))} />
+          </View>
+          {photo?.from === 'lookup' && <Txt v="label" tone="ink2">{t('pictureFrom', { s: SOURCE_NAMES[found.source] })}</Txt>}
+        </View>
+      )}
+      <Button kind="secondary" icon="camera" label={photo?.from === 'own' ? t('retake') : t('takePhoto')}
         onPress={() => { if (!permission?.granted) void requestPermission().then((r) => r.granted && setShooting(true)); else setShooting(true); }} />
+      <Button kind="secondary" label={t('chooseFromGallery')} onPress={() => void choose()} />
+      {photo && <Button kind="secondary" label={t('removePhoto')} onPress={() => setPhoto(null)} />}
       {error && <Banner kind="bad" text={error} />}
     </Screen>
   );

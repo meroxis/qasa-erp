@@ -1,8 +1,9 @@
-import type { CurrencyCode, Names, UnitCode } from '@qasa/core';
+import type { CurrencyCode, Names, OfferResult, OfferRule, UnitCode } from '@qasa/core';
 import { isNetworkError, type InvoiceView, type ItemView, type PartyView, type SendOptions } from '../api.ts';
 import type { CategoryView } from './categories-api.ts';
 import { holdKey, SALE_TIMEOUT_MS, type HeldKey } from './outbox.ts';
 import type { PosMethod, SaleInput, ShiftView } from './pos-api.ts';
+import type { TillRulesView } from '../pos/rules-api.ts';
 
 /**
  * The offline till (1.2), on a PC connected to an office server. While the server can't be reached, the till keeps
@@ -29,6 +30,13 @@ export interface TillCache {
   categories: CategoryView[] | null;
   /** the company's quick buttons as last known (item ids, in their order): the offline till keeps showing them */
   quick?: string[] | null;
+  /** 1.7: the offers this till works with, as last known (the offline till previews them; the server decides) */
+  offers?: OfferRule[] | null;
+  /**
+   * 2.0: the till's rules as last known (the dinar rounding above all): a till that comes back to the page while the
+   * server can't be reached rounds the cash as the server will when the sale arrives, never by "no rules"
+   */
+  rules?: TillRulesView | null;
 }
 
 let cache: TillCache | null = null;
@@ -52,9 +60,13 @@ export function forgetTill(): void {
  * Why a sale can't be kept for later, or null: a part on a customer's account (the live credit-limit check), or
  * loyalty points used (the customer's live balance). Both need the server's answer at the till.
  */
-export function offlineRefusal(sale: Pick<SaleInput, 'payments' | 'loyaltyPoints'>): 'pos_offline_on_account' | 'pos_offline_loyalty' | null {
+export function offlineRefusal(sale: Pick<SaleInput, 'payments' | 'loyaltyPoints'> & { vouchers?: readonly unknown[] | undefined; approvals?: readonly unknown[] | undefined }):
+  'pos_offline_on_account' | 'pos_offline_loyalty' | 'pos_offline_voucher' | 'pos_offline_supervisor' | null {
   if ((sale.payments ?? []).some((p) => p.method === 'account')) return 'pos_offline_on_account';
-  return sale.loyaltyPoints ? 'pos_offline_loyalty' : null;
+  if (sale.loyaltyPoints) return 'pos_offline_loyalty';
+  // 2.0: a gift voucher's balance and a supervisor's approval are the server's to check: the till waits for it
+  if (sale.vouchers?.length) return 'pos_offline_voucher';
+  return sale.approvals?.length ? 'pos_offline_supervisor' : null;
 }
 
 export interface TillLine { item: ItemView; qtyMilli: number; unit: UnitCode | null; unitPrice: number }
@@ -99,15 +111,25 @@ export function offlineReceipt(input: {
   key: string; reference: string; soldAt: string; soldOn: string; shift: Pick<ShiftView, 'warehouseId' | 'cashAccountCode'>; cashier: string;
   lines: readonly TillLine[]; currency: CurrencyCode; rateX100: number; discount: number;
   party: Pick<PartyView, 'id' | 'code' | 'name' | 'phone' | 'address'> | null; payments: readonly { method: PosMethod; amount: number }[];
+  /** 1.7: the offers the till worked out for it (the server works them out again when it is booked) */
+  offers?: { result: OfferResult; rules: readonly OfferRule[] };
 }): InvoiceView {
   const subtotal = input.lines.reduce((s, l) => s + lineTotal(l), 0);
-  const total = Math.max(0, subtotal - input.discount);
+  const offerTotal = input.offers?.result.total ?? 0;
+  const total = Math.max(0, subtotal - input.discount - offerTotal);
+  const offers = input.offers ? input.offers.result.offers.map((o) => {
+    const rule = input.offers!.rules.find((r) => r.id === o.offerId);
+    return {
+      offerId: o.offerId, code: rule?.code ?? '', names: rule?.names ?? blank, discount: o.discount,
+      lines: input.offers!.result.allocations.filter((a) => a.offerId === o.offerId && a.discount > 0).map((a) => ({ lineNo: a.lineNo, qtyMilli: a.qtyMilli, discount: a.discount }))
+    };
+  }) : [];
   const factorOf = (l: TillLine) => (l.unit && l.unit !== l.item.unit ? l.item.units.find((u) => u.unit === l.unit)?.factorMilli ?? null : null);
   return {
     id: input.key, kind: 'sale', status: 'posted', number: input.reference, date: input.soldOn,
     partyId: input.party?.id ?? null, partyCode: input.party?.code ?? null, partyName: input.party?.name ?? null,
     warehouseId: input.shift.warehouseId, currency: input.currency, rateX100: input.currency === 'IQD' ? 100 : input.rateX100,
-    payment: 'cash', cashAccountCode: input.shift.cashAccountCode, discount: input.discount, subtotal, total,
+    payment: 'cash', cashAccountCode: input.shift.cashAccountCode, discount: input.discount + offerTotal, subtotal, total,
     baseTotal: input.currency === 'IQD' ? total : Math.round((total * input.rateX100) / 100), notes: '', returnOf: null,
     createdBy: input.cashier, createdAt: input.soldAt,
     partyPhone: input.party?.phone ?? null, partyAddress: input.party?.address ?? null, warehouseCode: '', warehouseName: blank, cashAccountName: null,
@@ -117,14 +139,15 @@ export function offlineReceipt(input: {
       lineNo: i + 1, itemId: l.item.id, itemCode: l.item.code, itemName: l.item.name, unit: l.item.unit, trackStock: l.item.trackStock,
       description: '', qtyMilli: baseQtyOf(l), unitPrice: l.unitPrice, amount: lineTotal(l), cost: null, sourceLine: null,
       returnedQtyMilli: 0, returnedAmount: 0, lineUnit: l.unit, unitFactorMilli: factorOf(l), unitQtyMilli: l.unit ? l.qtyMilli : null,
-      batchNo: null, expiry: null, batchId: null
+      batchNo: null, expiry: null, batchId: null, offerDiscount: input.offers?.result.byLine[i + 1] ?? 0
     })),
     actions: [], returnOfNumber: null, returns: [], installmentContract: null,
     payments: input.payments.map((p, i) => ({
       id: `${input.key}-${i}`, kind: 'pos', method: p.method, accountCode: '', amount: p.amount, currency: input.currency,
       reference: null, source: null, entryId: null, entryNumber: null, entryStatus: null, createdAt: input.soldAt
     })),
-    offlineRef: input.reference
+    offlineRef: input.reference,
+    offerDiscount: offerTotal, offers
   };
 }
 

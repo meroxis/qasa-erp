@@ -21,6 +21,10 @@ describe('the offline till', () => {
     // loyalty points need the customer's live balance: never kept for later either
     expect(offlineRefusal({ loyaltyPoints: 50 })).toBe('pos_offline_loyalty');
     expect(offlineRefusal({ loyaltyPoints: 0 })).toBeNull();
+    // a gift voucher's balance and a supervisor's approval are the server's to check (reliability review #2)
+    expect(offlineRefusal({ vouchers: [{ code: 'GV-1', amount: 1 }] })).toBe('pos_offline_voucher');
+    expect(offlineRefusal({ approvals: ['token'] })).toBe('pos_offline_supervisor');
+    expect(offlineRefusal({ vouchers: [], approvals: [] })).toBeNull();
   });
 
   it('checks a sale against the stock last known (boxes counted in pieces), says what is short, and does not block it', () => {

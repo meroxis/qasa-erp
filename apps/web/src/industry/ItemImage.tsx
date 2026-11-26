@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, useSyncExternalStore, type RefObject } from 'react';
+import { creditedSources, type ProductSource } from '@qasa/core';
 import { ErrorBox, Icon, useToast } from '../components.tsx';
 import { useI18n } from '../i18n.ts';
 import { mediaApi } from './media-api.ts';
@@ -17,6 +18,8 @@ export const MAX_PICTURE_FILE_BYTES = 20 * 1024 * 1024;
 /* ---------- which items have a picture ---------- */
 
 let index: Map<string, string> | null = null;
+// 2.0: the pictures that came from an open product database (their credit is shown where they are shown publicly)
+let sources = new Map<string, ProductSource>();
 let loading: Promise<void> | null = null;
 const listeners = new Set<() => void>();
 const notify = () => listeners.forEach((l) => l());
@@ -24,8 +27,11 @@ const notify = () => listeners.forEach((l) => l());
 function loadIndex(): void {
   if (loading) return;
   loading = mediaApi.imageIndex()
-    .then((rows) => { index = new Map(rows.map((r) => [r.itemId, r.updatedAt])); })
-    .catch(() => { index = new Map(); })
+    .then((rows) => {
+      index = new Map(rows.map((r) => [r.itemId, r.updatedAt]));
+      sources = new Map(rows.flatMap((r) => (r.source ? [[r.itemId, r.source] as const] : [])));
+    })
+    .catch(() => { index = new Map(); sources = new Map(); })
     .finally(() => notify());
 }
 
@@ -35,12 +41,28 @@ export function refreshItemImages(): void {
   loadIndex();
 }
 
-function setIndexEntry(itemId: string, updatedAt: string | null): void {
+function setIndexEntry(itemId: string, updatedAt: string | null, source?: ProductSource): void {
   index ??= new Map();
   index = new Map(index);
+  sources = new Map(sources);
   if (updatedAt) index.set(itemId, updatedAt);
   else index.delete(itemId);
+  if (updatedAt && source) sources.set(itemId, source);
+  else sources.delete(itemId);
   notify();
+}
+
+/**
+ * The open product databases the pictures of these items came from (each once): what a page that shows them to
+ * people outside the shop credits. Empty while the list of pictures is not known, and for the shop's own pictures.
+ */
+export function usePictureSources(itemIds: readonly (string | null | undefined)[]): ProductSource[] {
+  const key = useSyncExternalStore(
+    (onChange) => { listeners.add(onChange); loadIndex(); return () => listeners.delete(onChange); },
+    () => creditedSources(itemIds.map((id) => (id ? sources.get(id) : undefined))).join(','),
+    () => ''
+  );
+  return key ? key.split(',') as ProductSource[] : [];
 }
 
 function useImageVersion(itemId: string): string | null | undefined {
@@ -121,9 +143,11 @@ function toBlob(canvas: HTMLCanvasElement, type: string, quality: number): Promi
 }
 
 /** Makes a photo small enough: at most 800 px on its long side and about 300 KB, as WebP (or JPEG where WebP can't be made). */
-export async function shrinkPicture(file: Blob): Promise<Blob> {
+export async function shrinkPicture(file: Blob, size: { maxSide?: number; targetBytes?: number } = {}): Promise<Blob> {
+  const maxSide = size.maxSide ?? MAX_SIDE;
+  const target = size.targetBytes ?? TARGET_BYTES;
   const bitmap = await createImageBitmap(file, { imageOrientation: 'from-image' } as ImageBitmapOptions);
-  let scale = Math.min(1, MAX_SIDE / Math.max(bitmap.width, bitmap.height));
+  let scale = Math.min(1, maxSide / Math.max(bitmap.width, bitmap.height));
   const canvas = document.createElement('canvas');
   try {
     for (let attempt = 0; attempt < 6; attempt++) {
@@ -137,7 +161,7 @@ export async function shrinkPicture(file: Blob): Promise<Blob> {
       for (const quality of [0.85, 0.72, 0.6]) {
         let blob = await toBlob(canvas, 'image/webp', quality);
         if (!blob || blob.type !== 'image/webp') blob = await toBlob(canvas, 'image/jpeg', quality);
-        if (blob && blob.size <= TARGET_BYTES) return blob;
+        if (blob && blob.size <= target) return blob;
       }
       scale *= 0.75;
     }
@@ -155,18 +179,23 @@ async function base64Of(blob: Blob): Promise<string> {
 }
 
 /** A picture chosen in a form, ready to send: made small, as base64, with its type (what the canvas really wrote). */
-export interface PreparedPicture { data: string; mime: string }
+export interface PreparedPicture {
+  data: string; mime: string;
+  /** 2.0: the picture a lookup of this barcode found (not the shop's own): saved with its source, for the credit */
+  lookupBarcode?: string;
+  source?: ProductSource;
+}
 
 /**
  * Checks a chosen file and makes it small. Only a file the browser can really decode as a picture gets through (its
  * name and declared type are not trusted), and it is drawn again on a canvas, so nothing but pixels is sent; the
  * server checks the bytes again.
  */
-export async function preparePicture(file: File): Promise<PreparedPicture | { refused: 'too_big' | 'unreadable' }> {
+export async function preparePicture(file: File, size: { maxSide?: number; targetBytes?: number } = {}): Promise<PreparedPicture | { refused: 'too_big' | 'unreadable' }> {
   if (file.size > MAX_PICTURE_FILE_BYTES) return { refused: 'too_big' };
   if (file.size === 0 || (file.type && !file.type.startsWith('image/'))) return { refused: 'unreadable' };
   try {
-    const small = await shrinkPicture(file);
+    const small = await shrinkPicture(file, size);
     return { data: await base64Of(small), mime: small.type };
   } catch {
     return { refused: 'unreadable' };
@@ -174,10 +203,13 @@ export async function preparePicture(file: File): Promise<PreparedPicture | { re
 }
 
 /** Saves a prepared picture as an item's picture, and lets the lists know. */
-export async function saveItemPicture(itemId: string, data: string): Promise<void> {
-  const saved = await mediaApi.setImage(itemId, data);
-  setIndexEntry(itemId, saved.updatedAt);
+export async function saveItemPicture(itemId: string, data: string, lookupBarcode?: string): Promise<void> {
+  const saved = await mediaApi.setImage(itemId, data, lookupBarcode);
+  setIndexEntry(itemId, saved.updatedAt, saved.source?.source);
 }
+
+/** A phone or a tablet (a finger, not a mouse): there "Take a photo" opens the camera; on a PC it would only open the same file box. */
+export const hasCamera = (): boolean => typeof window !== 'undefined' && typeof window.matchMedia === 'function' && window.matchMedia('(pointer: coarse)').matches;
 
 /**
  * The picture of an item that is not saved yet (the new-item form): chosen and shown here, sent by the form once the
@@ -186,6 +218,8 @@ export async function saveItemPicture(itemId: string, data: string): Promise<voi
 export function NewItemPicture({ value, onChange, size = 104 }: { value: PreparedPicture | null; onChange(picture: PreparedPicture | null): void; size?: number }) {
   const { t } = useI18n();
   const input = useRef<HTMLInputElement>(null);
+  const camera = useRef<HTMLInputElement>(null);
+  const [touch] = useState(hasCamera);
   const [busy, setBusy] = useState(false);
   const [problem, setProblem] = useState<string | null>(null);
   const choose = async (file: File | undefined) => {
@@ -199,6 +233,7 @@ export function NewItemPicture({ value, onChange, size = 104 }: { value: Prepare
     } finally {
       setBusy(false);
       if (input.current) input.current.value = '';
+      if (camera.current) camera.current.value = '';
     }
   };
   return (
@@ -210,11 +245,18 @@ export function NewItemPicture({ value, onChange, size = 104 }: { value: Prepare
       </span>
       <div className="row" style={{ justifyContent: 'center', gap: 4, flexWrap: 'nowrap' }}>
         <input ref={input} type="file" accept="image/jpeg,image/png,image/webp,image/*" hidden onChange={(e) => void choose(e.target.files?.[0])} />
-        <button type="button" className="btn small" disabled={busy} onClick={() => input.current?.click()}>{value ? t('md_changePicture') : t('md_addPicture')}</button>
+        <button type="button" className="btn small" disabled={busy} onClick={() => input.current?.click()}>{touch ? t('plk_chooseFile') : value ? t('md_changePicture') : t('md_addPicture')}</button>
         {value && (
           <button type="button" className="btn small ghost" disabled={busy} onClick={() => onChange(null)} aria-label={t('md_removePicture')} title={t('md_removePicture')}><Icon name="x" size={14} /></button>
         )}
       </div>
+      {touch && (
+        <>
+          {/* a phone or a tablet: straight to the camera (the photo is made small like any other picture) */}
+          <input ref={camera} type="file" accept="image/*" capture="environment" hidden onChange={(e) => void choose(e.target.files?.[0])} />
+          <button type="button" className="btn small" disabled={busy} onClick={() => camera.current?.click()}>{t('plk_takePhoto')}</button>
+        </>
+      )}
       {problem && <div className="alert bad small" role="alert">{problem}</div>}
     </div>
   );

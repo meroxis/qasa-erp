@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { isLang, isMinorAmount, normalizeForSearch, type CurrencyCode, type Lang } from '@qasa/core';
 import type { Db } from './db.ts';
+import { featureAccountCodes } from './feature-accounts.ts';
 import { nextSequence, transaction } from './db.ts';
 import { audit } from './audit.ts';
 import { conflict, invalid, notFound } from './errors.ts';
@@ -60,20 +61,27 @@ const ACCOUNT_ROOT: Record<PartyType, string> = { customer: '16', supplier: '26'
 const CODE_PREFIX: Record<PartyType, string> = { customer: 'C', supplier: 'S' };
 
 /** Each party's approved debits and credits; for a user limited to branches, only their branches' entries count. */
-function balances(db: Db, branch: PartyBranch = null): Map<string, { debit: number; credit: number }> {
-  const [b, bp] = entryInBranchSql('e', branch);
-  const rows = db.prepare(`SELECT l.party_id, SUM(l.base_debit) AS debit, SUM(l.base_credit) AS credit
-                           FROM entry_lines l JOIN entries e ON e.id = l.entry_id
-                           WHERE e.status = 'approved' AND l.party_id IS NOT NULL${b} GROUP BY l.party_id`).all(...bp) as
-    { party_id: string; debit: number; credit: number }[];
-  const own = db.prepare(`SELECT l.party_id, e.currency, SUM(l.debit) AS debit, SUM(l.credit) AS credit
-                          FROM entry_lines l JOIN entries e ON e.id = l.entry_id
-                          WHERE e.status = 'approved' AND l.party_id IS NOT NULL${b} GROUP BY l.party_id, e.currency`).all(...bp) as
-    { party_id: string; currency: CurrencyCode; debit: number; credit: number }[];
-  const map = new Map(rows.map((r) => [r.party_id, { debit: r.debit, credit: r.credit, own: { IQD: { debit: 0, credit: 0 }, USD: { debit: 0, credit: 0 } } }]));
-  for (const r of own) {
-    const e = map.get(r.party_id);
-    if (e && (r.currency === 'IQD' || r.currency === 'USD')) e.own[r.currency] = { debit: Number(r.debit), credit: Number(r.credit) };
+/**
+ * `only`: the one party asked for, summed from its own lines (the entry_lines_party index). Without it every party's
+ * lines were summed to read one: at every credit sale, a big company (bench/big-company.ts) spent 70% of the sale there.
+ */
+function balances(db: Db, branch: PartyBranch = null, only?: string): Map<string, { debit: number; credit: number }> {
+  const [b0, bp0] = entryInBranchSql('e', branch);
+  const b = only === undefined ? b0 : `${b0} AND l.party_id = ?`;
+  const bp = only === undefined ? bp0 : [...bp0, only];
+  // one pass, from the parties' own lines (the entry_lines_party index; CROSS JOIN keeps that order in SQLite): taken
+  // from every approved entry first, a big company's list of customers read the whole journal (bench/big-company.ts)
+  const rows = db.prepare(`SELECT l.party_id, e.currency, SUM(l.base_debit) AS base_debit, SUM(l.base_credit) AS base_credit, SUM(l.debit) AS debit, SUM(l.credit) AS credit
+                           FROM entry_lines l CROSS JOIN entries e ON e.id = l.entry_id
+                           WHERE e.status = 'approved' AND l.party_id IS NOT NULL${b} GROUP BY l.party_id, e.currency`).all(...bp) as
+    { party_id: string; currency: CurrencyCode; base_debit: number; base_credit: number; debit: number; credit: number }[];
+  const map = new Map<string, { debit: number; credit: number; own: Record<CurrencyCode, { debit: number; credit: number }> }>();
+  for (const r of rows) {
+    let e = map.get(r.party_id);
+    if (!e) map.set(r.party_id, e = { debit: 0, credit: 0, own: { IQD: { debit: 0, credit: 0 }, USD: { debit: 0, credit: 0 } } });
+    e.debit += Number(r.base_debit);
+    e.credit += Number(r.base_credit);
+    if (r.currency === 'IQD' || r.currency === 'USD') e.own[r.currency] = { debit: Number(r.debit), credit: Number(r.credit) };
   }
   return map;
 }
@@ -108,6 +116,11 @@ const PARTY_USERS: readonly [table: string, column: string][] = [
 function usedParties(db: Db): Set<string> {
   const rows = db.prepare(PARTY_USERS.map(([t, c]) => `SELECT DISTINCT ${c} AS id FROM ${t} WHERE ${c} IS NOT NULL`).join(' UNION ')).all() as { id: string }[];
   return new Set(rows.map((r) => r.id));
+}
+
+/** Whether one party is used anywhere: a look in each table for that party alone, not a list of every party used. */
+function partyUsed(db: Db, id: string): boolean {
+  return PARTY_USERS.some(([t, c]) => !!db.prepare(`SELECT 1 FROM ${t} WHERE ${c} = ? LIMIT 1`).get(id));
 }
 
 /**
@@ -152,6 +165,8 @@ export interface PartyListFilters {
   owing?: boolean | undefined;
   /** 1.4: 'debt' puts the biggest balance first (IQD at the book rates, as `balance`); otherwise by code */
   sort?: 'code' | 'debt' | undefined;
+  /** 2.0.0: at most this many, after the sort (a phone's search: its link carries a megabyte at most) */
+  limit?: number | undefined;
 }
 
 export function listParties(db: Db, filters: PartyListFilters = {}, branch: PartyBranch = null): PartyView[] {
@@ -169,7 +184,7 @@ export function listParties(db: Db, filters: PartyListFilters = {}, branch: Part
     .filter((p) => !filters.owing || partyOwes(p));
   // the rows come by code; the sort is stable, so equal balances keep that order
   if (filters.sort === 'debt') list.sort((a, b) => b.balance - a.balance);
-  return list;
+  return filters.limit === undefined ? list : list.slice(0, filters.limit);
 }
 
 /** Each currency's own amounts: dinars in dinars, dollars in cents. */
@@ -219,7 +234,7 @@ function loadRow(db: Db, id: string): PartyRow {
 
 export function getParty(db: Db, id: string, branch: PartyBranch = null): PartyView {
   const row = loadRow(db, id);
-  return toView(row, balances(db, branch).get(id), usedParties(db).has(id));
+  return toView(row, balances(db, branch, id).get(id), partyUsed(db, id));
 }
 
 function assertInput(db: Db, type: PartyType, input: PartyInput, accountCode: string): void {
@@ -227,6 +242,8 @@ function assertInput(db: Db, type: PartyType, input: PartyInput, accountCode: st
   if (!input.name?.trim()) errors.push({ code: 'name_required' });
   const account = loadAccounts(db).find((a) => a.code === accountCode);
   if (!account || !accountCode.startsWith(ACCOUNT_ROOT[type])) errors.push({ code: 'account_invalid' });
+  // 2.0 (accounting review #3): never an account a feature posts to (gift vouchers, gold owed, consignment…)
+  else if (featureAccountCodes(db).has(accountCode)) errors.push({ code: 'account_feature' });
   else if (!account.postable) errors.push({ code: 'account_not_postable' });
   if (input.creditLimit !== undefined && input.creditLimit !== null && (!isMinorAmount(input.creditLimit) || input.creditLimit < 0)) {
     errors.push({ code: 'credit_limit_invalid' });
@@ -272,7 +289,7 @@ export function updateParty(db: Db, id: string, input: PartyInput, user: string)
 
 export function deleteParty(db: Db, id: string, user: string): void {
   loadRow(db, id);
-  if (usedParties(db).has(id)) throw conflict('party_has_entries');
+  if (partyUsed(db, id)) throw conflict('party_has_entries');
   try {
     transaction(db, () => {
       // the party's own price list goes with it

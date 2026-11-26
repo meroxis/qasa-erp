@@ -110,6 +110,17 @@ const T = {
     'Before each update Qasa ERP keeps a copy of the company file beside it in the data folder. Free some disk space (or check that the data folder isn’t locked and you may write to it), then choose Try again. Don’t restore a backup: your file doesn’t need it.\nReason: {reason}',
     'پێش هەر نوێکردنەوەیەک قاسە ERP کۆپییەکی فایلی کۆمپانیا لە تەنیشتیەوە لە بوخچەی داتادا دەپارێزێت. هەندێک شوێن لە دیسکەکەدا بەتاڵ بکە (یان دڵنیابە کە بوخچەی داتا قفڵ نەکراوە و دەسەڵاتی نووسینت تێیدا هەیە)، پاشان «دووبارە هەوڵ بدەرەوە» هەڵبژێرە. باکئەپ مەگەڕێنەوە: فایلەکەت پێویستی پێی نییە.\nهۆکار: {reason}'
   ],
+  // the company file is fine, but a version of the update could not be applied to it (db.ts update_failed)
+  dbUpdateFailed: [
+    'تعذّر تحديث ملف الشركة إلى هذا الإصدار. الملف سليم ودفاترك فيه كما كانت، ولم يتغيّر فيه شيء.',
+    'The company file couldn’t be updated to this version. The file is fine: your books are in it as they were, and nothing in it changed.',
+    'فایلی کۆمپانیا بۆ ئەم وەشانە نوێ نەکرایەوە. فایلەکە ساغە: دەفتەرەکانت وەک خۆیان تێیدان و هیچ شتێکی تێدا نەگۆڕاوە.'
+  ],
+  dbUpdateFailedDetail: [
+    'اختر «حاول مجدداً». إن تكرر ذلك فأغلق قاصة ERP وراسل الدعم على واتساب أو info@qasaerp.com مع السبب المكتوب أدناه. لا تسترجع نسخة احتياطية ولا تحذف شيئاً: ملف الشركة ونسخه المحفوظة بجانبه في مجلد البيانات باقية كما هي.\nالسبب: {reason}',
+    'Choose Try again. If it happens again, close Qasa ERP and write to support on WhatsApp or at info@qasaerp.com with the reason below. Don’t restore a backup and don’t delete anything: the company file and the copies kept beside it in the data folder stay as they are.\nReason: {reason}',
+    '«دووبارە هەوڵ بدەرەوە» هەڵبژێرە. ئەگەر دووبارە بووەوە، قاسە ERP دابخە و لە واتساپ یان info@qasaerp.com بۆ پشتگیری بنووسە لەگەڵ ئەو هۆکارەی خوارەوە. باکئەپ مەگەڕێنەوە و هیچ مەسڕەوە: فایلی کۆمپانیا و ئەو کۆپییانەی لە تەنیشتیەوە لە بوخچەی داتادا پارێزراون وەک خۆیان دەمێننەوە.\nهۆکار: {reason}'
+  ],
   dbRestoreFromBackup: ['الاسترجاع من نسخة احتياطية', 'Restore from a backup', 'گەڕاندنەوە لە باکئەپێک'],
   openFirstCompany: ['فتح الشركة الأولى', 'Open the first company', 'کردنەوەی کۆمپانیای یەکەم']
 } as const;

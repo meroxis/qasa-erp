@@ -48,7 +48,8 @@ describe('the outbox on the phone', () => {
     const sealed = sealOutbox(items, key);
     expect(openOutbox(sealed, key)).toEqual(items);
     expect(openOutbox(sealed, new Uint8Array(32).fill(2))).toBeNull();
-    const altered = sealed.slice(0, -3) + (sealed.endsWith('A') ? 'B' : 'A') + sealed.slice(-2);
+    // change the very letter that is replaced (were it already an A, putting an A there changes nothing: 1 run in 64)
+    const altered = sealed.slice(0, -3) + (sealed.at(-3) === 'A' ? 'B' : 'A') + sealed.slice(-2);
     expect(openOutbox(altered, key)).toBeNull();
     expect(openOutbox('{"plain":true}', key)).toBeNull();
     // a file that can't be read: a new, empty outbox (nothing crashes)

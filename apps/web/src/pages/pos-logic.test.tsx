@@ -1,4 +1,5 @@
 import { readFileSync } from 'node:fs';
+import { tillSource } from '../till-source.ts';
 import { expect, it } from 'vitest';
 import { addRefusal, canPrice, creditPartyNote, partyAskedAfter, parseScan, priceIn, priceRateFor, tilePrice } from './pos-logic.ts';
 
@@ -66,7 +67,7 @@ it('does not ask for the party because Credit was chosen or pressed again, nor b
 });
 
 it('shows a tile\'s picture the way the Items screen does: no address that answers JSON, and nothing asked for an item without a picture', () => {
-  const till = readFileSync(new URL('./Pos.tsx', import.meta.url), 'utf8');
+  const till = tillSource();
   // GET /api/items/:id/image answers JSON (the picture as base64), so it is never an <img> address
   expect(till).not.toMatch(/src=\{`\/api\/items\//);
   expect(till).toContain('useItemPicture(item.id)');

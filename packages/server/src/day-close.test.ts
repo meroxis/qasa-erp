@@ -5,6 +5,10 @@ import { buildApp } from './app.ts';
 import { openDatabase, type Db } from './db.ts';
 import { dayClose } from './day-close.ts';
 import { resetLoginThrottle } from './auth.ts';
+import { allowCardPaymentsForTests } from './pos.ts';
+
+// card and wallet parts at the till are switched off for now (TILL_CARD_PAYMENTS): these tests keep the dormant code working
+allowCardPaymentsForTests(true);
 
 // The end-of-day close: the day's sales by how they were paid, the registers' drawers, expenses, debts and stock.
 let db: Db;
@@ -88,7 +92,8 @@ describe('the end-of-day close', () => {
 
     expect(c.registers.map((r: { register: string; status: string }) => [r.register, r.status])).toEqual([['Counter 1', 'closed'], ['Counter 2', 'open']]);
     expect(c.registers[0]).toMatchObject({ expected: { IQD: 75_000, USD: 0 }, counted: { IQD: 73_000, USD: 0 }, difference: { IQD: -2_000, USD: 0 }, count: 3 });
-    expect(c.registers[1]).toMatchObject({ counted: null, difference: null, expected: { IQD: 10_000, USD: 0 } });
+    // (the 40,000 sold on the invoice screen into this register's safe while it was open are in its drawer: review 2.0)
+    expect(c.registers[1]).toMatchObject({ counted: null, difference: null, expected: { IQD: 10_000 + 40_000, USD: 0 } });
     // only closed drawers add up to a count
     expect(c.drawers).toEqual({ expected: { IQD: 75_000, USD: 0 }, counted: { IQD: 73_000, USD: 0 }, difference: { IQD: -2_000, USD: 0 } });
     expect(c.topItems[0]).toMatchObject({ code: 'TEA', qtyMilli: 20_000 });

@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { MoreRows, useRowsShown } from '../industry/LongList.tsx';
 import { formatQty, MAX_ITEM_UNITS, roundHalfUp, UNITS, unitsForBusiness, type CurrencyCode, type Names, type UnitCode } from '@qasa/core';
 import { api, type ItemInput, type ItemView, type StockCorrectionResult, type WarehouseView } from '../api.ts';
 import { EmptyState, AmountInput, ErrorBox, Icon, Modal, QtyInput, downloadCsv, useData, useLandHome, useLoad, useMay, useToast } from '../components.tsx';
@@ -12,6 +13,7 @@ import { ExpiryChip } from './Expiry.tsx';
 import { useI18n, type I18n, isKey, type Key } from '../i18n.ts';
 import { go, href } from '../router.ts';
 import { ImagePicker, ItemImage, NewItemPicture, saveItemPicture, type PreparedPicture } from '../industry/ItemImage.tsx';
+import { FindItemPicture, FindPicturesButton, ProductLookupPanel } from '../industry/ProductLookup.tsx';
 import { NameField } from '../industry/NameField.tsx';
 import { WholesalePriceField } from '../industry/WholesalePriceField.tsx';
 import { printDocument } from '../industry/printing.ts';
@@ -64,6 +66,8 @@ export function Items({ tab: initialTab }: { tab?: 'reorder' | 'warehouses' } = 
   const [bulkCategory, setBulkCategory] = useState('');
   const [bulkError, setBulkError] = useState<unknown>(null);
   const items = useLoad(() => api.items({ q: q.trim(), warehouseId, ...(categoryId ? { categoryId } : {}), ...(brandId ? { brandId } : {}) }), [q, warehouseId, categoryId, brandId]);
+  // a few hundred rows at a time: a big shop's whole list on the screen at once stood the app still (LongList.tsx)
+  const rows = useRowsShown(items.data, { reset: `${q}|${warehouseId}|${categoryId}|${brandId}` });
   const warehouses = useLoad(() => api.warehouses(), []);
   const categories = useLoad(() => categoriesApi.list(), []);
   const brands = useLoad(() => brandsApi.list(), []);
@@ -135,6 +139,7 @@ export function Items({ tab: initialTab }: { tab?: 'reorder' | 'warehouses' } = 
             )}
             <input className="input" style={{ width: 240 }} type="search" placeholder={t('search')} aria-label={t('search')} value={q} onChange={(e) => setQ(e.target.value)} />
             <button type="button" className="btn" onClick={exportCsv}><Icon name="download" size={16} />{t('exportExcel')}</button>
+            <FindPicturesButton />
           </div>
           {selected.size > 0 && can('item') && (
             <div className="card pad row">
@@ -170,7 +175,7 @@ export function Items({ tab: initialTab }: { tab?: 'reorder' | 'warehouses' } = 
                   </tr>
                 </thead>
                 <tbody>
-                  {items.data.map((it) => (
+                  {rows.shown.map((it) => (
                     <tr key={it.id} className="click" onClick={() => go(`item/${it.id}`)}>
                       <td onClick={(e) => e.stopPropagation()}>{can('item') && <input type="checkbox" checked={selected.has(it.id)} onChange={() => toggle(it.id)} aria-label={it.code} />}</td>
                       <td><span className="tree-code">{it.code}</span></td>
@@ -210,6 +215,7 @@ export function Items({ tab: initialTab }: { tab?: 'reorder' | 'warehouses' } = 
                       </td>
                     </tr>
                   ))}
+                  <MoreRows hidden={rows.hidden} columns={cost ? 8 : 6} onMore={rows.more} onAll={rows.all} />
                 </tbody>
                 {cost && (
                   <tfoot>
@@ -375,7 +381,8 @@ export function ItemForm({ item, onClose, onSaved }: { item: ItemView | null; on
       let pictureSaved = true;
       if (!item && picture) {
         // the item exists now; a picture that fails leaves it saved, and can be added from its page
-        try { await saveItemPicture(saved.id, picture.data); } catch { pictureSaved = false; }
+        // (one found by the barcode is saved with where it came from; the form drops it when the barcode changes)
+        try { await saveItemPicture(saved.id, picture.data, picture.lookupBarcode); } catch { pictureSaved = false; }
       }
       toast(pictureSaved ? t('saved') : t('it_pictureNotSaved'));
       onSaved(saved);
@@ -397,7 +404,13 @@ export function ItemForm({ item, onClose, onSaved }: { item: ItemView | null; on
       <div className="stack item-form">
         <div className="row" style={{ alignItems: 'flex-start', flexWrap: 'wrap', gap: 16 }}>
           {item
-            ? <div style={{ inlineSize: 128, flexShrink: 0 }}><ImagePicker itemId={item.id} name={i18n.name(item.name)} size={104} /></div>
+            ? (
+              <div className="stack" style={{ inlineSize: 128, flexShrink: 0, gap: 8 }}>
+                <ImagePicker itemId={item.id} name={i18n.name(item.name)} size={104} />
+                {/* by the barcode the item is saved with: one typed here counts once the form is saved */}
+                <FindItemPicture itemId={item.id} barcode={item.barcode} />
+              </div>
+            )
             : <NewItemPicture value={picture} onChange={setPicture} />}
           <div className="stack" style={{ flex: '1 1 260px', minInlineSize: 0 }}>
             <NameField label={t('it_name')} value={name} onChange={setName} autoFocus />
@@ -405,6 +418,8 @@ export function ItemForm({ item, onClose, onSaved }: { item: ItemView | null; on
               <label className="field"><span>{t('code')}</span><input className="input ltr" value={code} placeholder="I-0001" maxLength={24} onChange={(e) => setCode(e.target.value)} /></label>
               <label className="field"><span>{t('barcode')}</span><input className="input ltr" value={barcode} maxLength={64} onChange={(e) => setBarcode(e.target.value)} /></label>
             </div>
+            {/* 2.0: a new item's picture and name by its barcode, when the company has that on (never waited for) */}
+            {!item && <ProductLookupPanel barcode={barcode} picture={picture} onPicture={setPicture} onName={(n) => setName((names) => ({ ...names, [n.lang]: n.text }))} />}
           </div>
         </div>
         <div className="grid-2">
@@ -794,6 +809,8 @@ export function ItemDetail({ id }: { id: string }) {
   const can = useMay();
   const { seesBooks } = useData();
   const { data, error, reload } = useLoad(() => api.item(id), [id]);
+  // an item that sells every day has a move for every sale: the newest first, the earlier ones folded (LongList.tsx)
+  const moves = useRowsShown(data?.moves, { from: 'end', reset: id });
   if (useLandHome(error)) return null;
   if (error) return <ErrorBox error={error} />;
   if (!data) return null;
@@ -822,7 +839,10 @@ export function ItemDetail({ id }: { id: string }) {
 
       <div className="grid-4">
         <div className="card pad tile" style={{ gridColumn: 'span 2', flexDirection: 'row', alignItems: 'center', gap: 16 }}>
-          <ImagePicker itemId={it.id} name={i18n.name(it.name)} canEdit={can('item')} />
+          <div className="stack" style={{ gap: 8, alignItems: 'center', flexShrink: 0 }}>
+            <ImagePicker itemId={it.id} name={i18n.name(it.name)} canEdit={can('item')} />
+            <FindItemPicture itemId={it.id} barcode={it.barcode} />
+          </div>
           <div className="stack" style={{ gap: 6, minWidth: 0 }}>
             <div className="label"><span className="ltr">{it.code}</span>{it.barcode && <> · <span className="ltr">{it.barcode}</span></>}</div>
             <div className="value" style={{ fontSize: 20, whiteSpace: 'normal' }}>{i18n.name(it.name)}</div>
@@ -887,7 +907,8 @@ export function ItemDetail({ id }: { id: string }) {
               </tr>
             </thead>
             <tbody>
-              {it.moves.map((m) => {
+              <MoreRows hidden={moves.hidden} columns={6 + (it.stock.length > 1 ? 1 : 0) + (cost ? 1 : 0)} earlier onMore={moves.more} onAll={moves.all} />
+              {moves.shown.map((m) => {
                 const key = sourceKey(m.sourceType);
                 return (
                   <tr key={m.id} className={m.sourceId && opens(m.sourceType) ? 'click' : ''} onClick={() => m.sourceId && opens(m.sourceType) && go(sourcePath(m.sourceType, m.sourceId))}>

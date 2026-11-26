@@ -1,7 +1,7 @@
 import { accountStatement, DATE_RANGE_REVERSED, finalAccounts, isReversedRange, trialBalance, type CurrencyCode, type Names } from '@qasa/core';
 import type { Db } from './db.ts';
 import { loadAccounts } from './accounts.ts';
-import { postedLines } from './journal.ts';
+import { postedLines, postedTotals } from './journal.ts';
 import { AppError, notFound } from './errors.ts';
 
 function names(db: Db): Map<string, Names> {
@@ -15,7 +15,7 @@ export function trialBalanceReport(db: Db, opts: { from?: string | undefined; to
   const range: { from?: string; to?: string } = {};
   if (opts.from) range.from = opts.from;
   if (opts.to) range.to = opts.to;
-  const tb = trialBalance(postedLines(db, opts.to ? { to: opts.to } : {}), range);
+  const tb = trialBalance(postedTotals(db, { from: opts.from, to: opts.to }), range);
   return { ...tb, rows: tb.rows.map((r) => ({ ...r, name: byCode.get(r.code) ?? { ar: r.code, en: r.code, ku: r.code } })) };
 }
 
@@ -27,9 +27,10 @@ export function statementReport(db: Db, code: string, opts: { from?: string | un
   if (opts.from) range.from = opts.from;
   if (opts.to) range.to = opts.to;
   // one currency (1.1): that currency's lines in their own amounts, so a dollar safe runs a dollar balance
+  // the account and its sub-accounts only, read so (accountStatement keeps the same ones)
   const lines = opts.currency
-    ? postedLines(db).filter((l) => l.currency === opts.currency).map((l) => ({ ...l, debit: l.ownDebit, credit: l.ownCredit }))
-    : postedLines(db);
+    ? postedLines(db, { account: code, currency: opts.currency }).map((l) => ({ ...l, debit: l.ownDebit, credit: l.ownCredit }))
+    : postedLines(db, { account: code });
   const st = accountStatement(code, lines, range);
   return { ...st, name, currency: opts.currency ?? null, rows: st.rows.map((r) => ({ ...r, accountName: byCode.get(r.accountCode) ?? name })) };
 }
@@ -39,7 +40,7 @@ export function finalAccountsReport(db: Db, opts: { from: string; to: string }) 
   const byCode = names(db);
   const name = (code: string) => byCode.get(code) ?? { ar: code, en: code, ku: code };
   const withNames = (details: { code: string; amount: number }[]) => details.map((d) => ({ ...d, name: name(d.code) }));
-  const fa = finalAccounts(postedLines(db, { to: opts.to }), opts);
+  const fa = finalAccounts(postedTotals(db, { from: opts.from, to: opts.to }), opts);
   const group = (g: { code: string; amount: number; details: { code: string; amount: number }[] }) => ({ ...g, name: name(g.code), details: withNames(g.details) });
   return {
     ...fa,

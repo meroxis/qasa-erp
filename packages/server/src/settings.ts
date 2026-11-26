@@ -1,3 +1,4 @@
+import { businessUnion, checkBusinessChoice, choiceFromStored, type BusinessChoice } from '@qasa/core';
 import { DEFAULT_AMOUNTS_SHOW, DEFAULT_POSTING_ACCOUNTS, fiscalYear, fiscalYearOf, isAmountsShow, isBusinessType, isPosBigPictures, isPosUse, POS_QUICK_MAX, type AmountsShow, type BusinessType, type Names, type PosBigPictures, type PosUse, type PostingAccounts } from '@qasa/core';
 import type { Db } from './db.ts';
 import { audit } from './audit.ts';
@@ -12,8 +13,15 @@ export interface Settings {
   fiscalYearStart: string;
   /** Accounts that invoices post to. */
   postingAccounts: PostingAccounts;
-  /** What the company does (which industry pages the menu shows); null until it is chosen. */
+  /**
+   * What the company does (which industry pages the menu shows): every type, the main one first; null until it is
+   * chosen. Everything that decides pages reads this one list (core business-choice.ts).
+   */
   businessTypes: BusinessType[] | null;
+  /** 1.7: the ONE type the company mainly does (null until chosen). */
+  businessType: BusinessType | null;
+  /** 1.7: what it also does (Settings → "My company also does…"): at most two, more only when kept from before 1.7. */
+  businessTypesExtra: BusinessType[];
   /** How the screens show amounts: dinar only (the default), dinar and dollar, or dollar and dinar (core dual.ts). */
   amountsShow: AmountsShow;
   /**
@@ -58,24 +66,28 @@ export function getPostingAccounts(db: Db): PostingAccounts {
   return { ...DEFAULT_POSTING_ACCOUNTS, ...stored, yearResult };
 }
 
+/** The company's choice: `business_type` (1.7, the main one) and `business_types` (every type, the main one first). */
+function businessChoice(db: Db): BusinessChoice | null {
+  let list: unknown = null;
+  try { list = JSON.parse(readSetting(db, 'business_types') ?? 'null'); } catch { list = null; }
+  return choiceFromStored(readSetting(db, 'business_type'), list);
+}
+
 function businessTypes(db: Db): BusinessType[] | null {
-  const stored = readSetting(db, 'business_types');
-  if (!stored) return null;
-  try {
-    const list = JSON.parse(stored) as unknown;
-    return Array.isArray(list) ? list.filter(isBusinessType) : null;
-  } catch {
-    return null;
-  }
+  const choice = businessChoice(db);
+  return choice ? businessUnion(choice) : null;
 }
 
 export function getSettings(db: Db): Settings {
+  const choice = businessChoice(db);
   return {
     companyName: JSON.parse(readSetting(db, 'company_name') ?? '{"ar":"","en":"","ku":""}') as Names,
     defaultRateX100: Number(readSetting(db, 'default_rate_x100') ?? '142000'),
     fiscalYearStart: readSetting(db, 'fiscal_year_start') ?? '01-01',
     postingAccounts: getPostingAccounts(db),
-    businessTypes: businessTypes(db),
+    businessTypes: choice ? businessUnion(choice) : null,
+    businessType: choice?.main ?? null,
+    businessTypesExtra: choice?.extras ?? [],
     amountsShow: amountsShow(db),
     posUse: posUse(db),
     posQuickItems: quickItems(db),
@@ -153,7 +165,28 @@ function assertPostingAccounts(db: Db, accounts: PostingAccounts): void {
   if (errors.length) throw invalid(errors);
 }
 
+/**
+ * The choice a patch asks for, or undefined when it changes nothing about it. `businessType` and/or
+ * `businessTypesExtra` (1.7): a new main type keeps the extras (all but itself); extras alone keep the main type.
+ * `businessTypes` (a list, as before 1.7 and from older apps on an office network): its first industry is the main
+ * type and every other one an extra, none dropped.
+ */
+function choiceOf(db: Db, patch: Partial<Settings>): BusinessChoice | undefined {
+  const before = businessChoice(db);
+  // read as a company file from before 1.7 is: the first industry is the main type, every other one stays
+  if (patch.businessTypes) return choiceFromStored(undefined, patch.businessTypes) ?? undefined;
+  if (!patch.businessType && !patch.businessTypesExtra) return undefined;
+  const main = patch.businessType ?? before?.main;
+  if (!main) throw invalid([{ code: 'business_type_required', field: 'businessType' }]);
+  const extras = patch.businessTypesExtra ?? (before?.extras ?? []).filter((t) => t !== main);
+  const next = { main, extras: [...extras] };
+  const error = checkBusinessChoice(next, before);
+  if (error) throw invalid([{ code: error, field: 'businessTypesExtra' }]);
+  return next;
+}
+
 export function updateSettings(db: Db, patch: Partial<Settings>, user: string): Settings {
+  const choice = choiceOf(db, patch);
   if (patch.postingAccounts) assertPostingAccounts(db, { ...getPostingAccounts(db), ...patch.postingAccounts });
   if (patch.amountsShow !== undefined && !isAmountsShow(patch.amountsShow)) throw invalid([{ code: 'amounts_show_invalid', field: 'amountsShow' }]);
   if (patch.posUse !== undefined && !isPosUse(patch.posUse)) throw invalid([{ code: 'pos_use_invalid', field: 'posUse' }]);
@@ -164,11 +197,17 @@ export function updateSettings(db: Db, patch: Partial<Settings>, user: string): 
     if (patch.defaultRateX100 !== undefined) writeSetting(db, 'default_rate_x100', String(patch.defaultRateX100));
     if (patch.fiscalYearStart) writeSetting(db, 'fiscal_year_start', patch.fiscalYearStart);
     if (patch.postingAccounts) writeSetting(db, 'posting_accounts', JSON.stringify({ ...getPostingAccounts(db), ...patch.postingAccounts }));
-    // a pharmacy starts its new items with expiry dates (1.1); switching it off later is the company's own choice
-    if (patch.businessTypes?.includes('pharmacy') && !businessTypes(db)?.includes('pharmacy')) writeSetting(db, 'default_track_expiry', '1');
-    // so does a market or supermarket (1.4): food and drink carry a date
-    if (patch.businessTypes?.includes('market') && !businessTypes(db)?.includes('market')) writeSetting(db, 'default_track_expiry', '1');
-    if (patch.businessTypes) writeSetting(db, 'business_types', JSON.stringify([...new Set(patch.businessTypes)]));
+    if (choice) {
+      const types = businessUnion(choice);
+      const had = businessTypes(db) ?? [];
+      // a pharmacy starts its new items with expiry dates (1.1); switching it off later is the company's own choice
+      if (types.includes('pharmacy') && !had.includes('pharmacy')) writeSetting(db, 'default_track_expiry', '1');
+      // so does a market or supermarket (1.4): food and drink carry a date
+      if (types.includes('market') && !had.includes('market')) writeSetting(db, 'default_track_expiry', '1');
+      // the list stays every type (main first), as the app before 1.7 reads it: an older copy shows the same pages
+      writeSetting(db, 'business_types', JSON.stringify(types));
+      writeSetting(db, 'business_type', choice.main);
+    }
     if (patch.amountsShow !== undefined) writeSetting(db, 'amounts_show', patch.amountsShow);
     if (patch.posUse !== undefined) writeSetting(db, 'pos_use', patch.posUse);
     if (patch.posBigPictures !== undefined) writeSetting(db, 'pos_big_pictures', patch.posBigPictures);

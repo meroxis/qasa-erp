@@ -3,6 +3,7 @@ import type { FastifyInstance } from 'fastify';
 import { openDatabase, type Db } from './db.ts';
 import { buildApp } from './app.ts';
 import { login, resetLoginThrottle } from './auth.ts';
+import { writeSetting } from './settings.ts';
 
 let db: Db;
 let app: FastifyInstance;
@@ -115,6 +116,15 @@ describe('with sign-in', () => {
     // the failures name where they came from
     const sources = (db.prepare("SELECT details FROM audit_log WHERE action = 'login_failed'").all() as { details: string }[]).map((r) => JSON.parse(r.details).source);
     expect(new Set(sources)).toEqual(new Set(['net:10.0.0.66']));
+  });
+
+  it('counts every loopback address as this one PC: rotating 127.x addresses does not get round the limit (security review #8)', async () => {
+    await officeWithSignIn();
+    const from = (remoteAddress: string, password: string) =>
+      app.inject({ method: 'POST', url: '/api/auth/login', payload: { username: 'admin', password }, headers: APP, remoteAddress });
+    for (let i = 0; i < 5; i++) expect((await from(`127.0.${i}.${i + 1}`, 'wrong-password')).statusCode).toBe(401);
+    expect((await from('127.9.9.9', 'owner-pass-1')).statusCode).toBe(429);
+    expect((await from('::1', 'owner-pass-1')).statusCode).toBe(429);
   });
 
   it('guessing from many places waits everywhere after 30 failures, except on this PC and where the account signed in before', async () => {
@@ -359,7 +369,8 @@ describe('more active users than the plan allows', () => {
     await officeWithSignIn([{ username: 'las', roles: ROLE }, { username: 'raz', roles: ROLE }, { username: 'mer', roles: ['admin'] }, { username: 'late', roles: ROLE }]);
   }
   /** The free month ends: Free, one user. */
-  const trialEnds = () => db.prepare("UPDATE settings SET value = '2020-01-01' WHERE key = 'trial_started'").run();
+  // (through the settings module: "key" is a word a database server keeps for itself)
+  const trialEnds = () => writeSetting(db, 'trial_started', '2020-01-01');
   const tryLogin = (username: string) => req('POST', '/api/auth/login', { username, password: `${username}-pass-1` });
 
   it('lets only as many sign in as the plan has: admins first, then the earliest made; nothing is deleted or switched off', async () => {

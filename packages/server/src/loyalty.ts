@@ -210,7 +210,10 @@ export function returnLoyalty(db: Db, original: { id: string; total: number }, r
   const earn = moves.find((m) => m.kind === 'earn') ?? null;
   const redeem = moves.find((m) => m.kind === 'redeem') ?? null;
   const later = (sourceId: string | undefined, kind: LoyaltyKind) => sourceId
-    ? (db.prepare('SELECT COALESCE(SUM(points), 0) AS p, COALESCE(SUM(value), 0) AS v FROM loyalty_moves WHERE source_id = ? AND kind = ?').get(sourceId, kind) as { p: number; v: number })
+    // (not those of a return cancelled since: its movements were undone, so the goods' points are still to give back
+    // or take; counting them left the next return of the same goods paying cash for what points had paid)
+    ? (db.prepare(`SELECT COALESCE(SUM(m.points), 0) AS p, COALESCE(SUM(m.value), 0) AS v FROM loyalty_moves m WHERE m.source_id = ? AND m.kind = ?
+                     AND NOT EXISTS (SELECT 1 FROM loyalty_moves c WHERE c.kind = 'cancel' AND c.source_id = m.id)`).get(sourceId, kind) as { p: number; v: number })
     : { p: 0, v: 0 };
   const taken = later(earn?.id, 'return_earn');
   const given = later(redeem?.id, 'return_redeem');
@@ -238,6 +241,18 @@ export function recordReturnLoyalty(db: Db, ret: { invoiceId: string; partyId: s
 export function cancelLoyalty(db: Db, invoiceId: string, date: string, user: string): void {
   const moves = invoiceMoves(db, invoiceId);
   const undone = new Set(moves.filter((m) => m.kind === 'cancel').map((m) => m.sourceId));
+  // a return that gave points back (round four of the review): cancelling it takes them off the customer again, and
+  // its reversed entry takes their value out of the books. Refused once the customer has spent them (or they lapsed):
+  // the money is gone, as with a gift voucher that spent what a return put back on it; the return stands.
+  const live = moves.filter((m) => m.kind !== 'cancel' && !undone.has(m.id));
+  const givenBack = live.find((m) => m.kind === 'return_redeem' && m.points > 0);
+  if (givenBack) {
+    const party = (db.prepare('SELECT party_id FROM loyalty_moves WHERE id = ?').get(givenBack.id) as { party_id: string }).party_id;
+    // what the cancel does to the balance: the points given back go, those the return took back (earned ones) come
+    const change = live.reduce((sum, m) => sum - m.points, 0);
+    const has = loyaltyLedger(movesOf(db, party), date < todayIso() ? todayIso() : date).balance;
+    if (change < 0 && has + change < 0) throw conflict('loyalty_return_spent', { points: -change, balance: Math.max(0, has) });
+  }
   for (const m of moves) {
     if (m.kind === 'cancel' || undone.has(m.id)) continue;
     const party = (db.prepare('SELECT party_id FROM loyalty_moves WHERE id = ?').get(m.id) as { party_id: string }).party_id;

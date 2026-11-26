@@ -1,14 +1,18 @@
 import { randomUUID } from 'node:crypto';
 import { addDays, isCurrency, isMinorAmount, isUnit, isWeighedUnit, normalizeForSearch, parseScaleBarcode, todayIso, type CurrencyCode, type ItemUnit, type Names, type UnitCode } from '@qasa/core';
 import type { Db } from './db.ts';
+import { readSetting } from './settings.ts';
 import { nextSequence, transaction } from './db.ts';
 import { audit } from './audit.ts';
 import { conflict, invalid, notFound } from './errors.ts';
 import { assertWithinLimit } from './license.ts';
+import { dropShelfFlags, notePriceChanges, shelfPrices } from './shelf-labels.ts';
+import { dropPriceHistory, listPrices, notePriceHistory } from './price-history.ts';
 import { assertItemUnits, itemUnits, openDocumentsWithItem, replaceItemUnits, unitsByItem, type ItemUnitView } from './item-units.ts';
 import { startTracking } from './batches.ts';
 import { assertItemCategory, IN_CATEGORY_SQL } from './categories.ts';
 import { assertItemBrand } from './brands.ts';
+import { onStockMove } from './consignment.ts';
 
 // ——— Warehouses (المخازن) ———
 
@@ -183,15 +187,24 @@ export type WarehouseFilter = readonly string[] | null | undefined;
 const whereWarehouse = (col: string, warehouses: WarehouseFilter): [string, string[]] =>
   warehouses ? [` AND ${col} IN (${warehouses.length ? warehouses.map(() => '?').join(', ') : 'NULL'})`, [...warehouses]] : ['', []];
 
-function itemRows(db: Db, where: string, params: string[], warehouses?: WarehouseFilter): ItemRow[] {
-  const [stockFilter, stockParams] = whereWarehouse('m.warehouse_id', warehouses);
-  // hasMoves is about the item itself (it decides whether stock tracking may still be switched), so it counts everywhere
-  return db.prepare(`SELECT i.*, b.name AS brand_name, s.qty, s.value, a.moves FROM items i
+/**
+ * The items with their stock, read in one pass over the stock moves (2.0.0, bench/big-company.ts: 100,000 items and a
+ * year of sales, a till's whole item list read in seconds before). The moves' quantities and values come from the
+ * stock_moves_stock index alone (version 21), and the count of moves (every warehouse: it decides whether stock
+ * tracking may still be switched) from the same pass. `only`: the item (or items) asked for, read from their own moves.
+ */
+function itemRows(db: Db, where: string, params: string[], warehouses?: WarehouseFilter, only?: string | readonly string[]): ItemRow[] {
+  const inStock = warehouses ? `m.warehouse_id IN (${warehouses.length ? warehouses.map(() => '?').join(', ') : 'NULL'})` : '1 = 1';
+  const stockParams = warehouses ? [...warehouses] : [];
+  const one = only === undefined ? '' : typeof only === 'string' ? 'WHERE m.item_id = ?' : `WHERE m.item_id IN (${only.map(() => '?').join(', ')})`;
+  const oneParams = only === undefined ? [] : typeof only === 'string' ? [only] : [...only];
+  // a warehouse's own figures stay empty (NULL) when the item has no move there, as a sum over no rows is
+  return db.prepare(`SELECT i.*, b.name AS brand_name, s.qty, s.value, s.moves FROM items i
                      LEFT JOIN brands b ON b.id = i.brand_id
-                     LEFT JOIN (SELECT item_id, SUM(qty_milli) AS qty, SUM(value) AS value
-                                FROM stock_moves m WHERE 1 = 1${stockFilter} GROUP BY item_id) s ON s.item_id = i.id
-                     LEFT JOIN (SELECT item_id, COUNT(*) AS moves FROM stock_moves GROUP BY item_id) a ON a.item_id = i.id
-                     ${where} ORDER BY i.code`).all(...stockParams, ...params) as unknown as ItemRow[];
+                     LEFT JOIN (SELECT m.item_id, SUM(CASE WHEN ${inStock} THEN m.qty_milli END) AS qty, SUM(CASE WHEN ${inStock} THEN m.value END) AS value,
+                                       COUNT(*) AS moves
+                                FROM stock_moves m ${one} GROUP BY m.item_id) s ON s.item_id = i.id
+                     ${where} ORDER BY i.code`).all(...stockParams, ...stockParams, ...oneParams, ...params) as unknown as ItemRow[];
 }
 
 /**
@@ -199,7 +212,13 @@ function itemRows(db: Db, where: string, params: string[], warehouses?: Warehous
  * branches' warehouses only), or else in every warehouse.
  */
 export function listItems(
-  db: Db, filters: { q?: string | undefined; warehouseId?: string | undefined; active?: boolean | undefined; categoryId?: string | undefined; brandId?: string | undefined } = {},
+  db: Db, filters: {
+    q?: string | undefined; warehouseId?: string | undefined; active?: boolean | undefined; categoryId?: string | undefined; brandId?: string | undefined;
+    /** these items only (a printed document's lines: not the whole list for a few barcodes) */
+    ids?: readonly string[] | undefined;
+    /** at most this many, the first by code (a phone's search: its link carries a megabyte at most) */
+    limit?: number | undefined;
+  } = {},
   warehouses: WarehouseFilter = null
 ): ItemView[] {
   const conditions: string[] = [];
@@ -210,19 +229,38 @@ export function listItems(
   else if (filters.categoryId) { conditions.push(IN_CATEGORY_SQL('i.category_id')); params.push(filters.categoryId, filters.categoryId); }
   if (filters.brandId === 'none') conditions.push('i.brand_id IS NULL');
   else if (filters.brandId) { conditions.push('i.brand_id = ?'); params.push(filters.brandId); }
+  if (filters.ids) {
+    if (!filters.ids.length) return [];
+    conditions.push(`i.id IN (${filters.ids.map(() => '?').join(', ')})`);
+    params.push(...filters.ids);
+  }
   const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
   const q = filters.q ? normalizeForSearch(filters.q) : '';
   const units = unitsByItem(db);
-  // a unit's barcode finds its item too
+  const stockIn = filters.warehouseId ? [filters.warehouseId] : warehouses;
+  const limit = filters.limit ?? Number.POSITIVE_INFINITY;
+  if (!q) return itemRows(db, where, params, stockIn, filters.ids).slice(0, limit).map((r) => toView(r, units.get(r.id)));
+  // a search: the words of the items first, then the stock of those found only (2.0.0: a big company's search read the
+  // stock of all 100,000 items to show a few, bench/big-company.ts). A unit's barcode finds its item too.
   const unitBarcodes = (id: string) => (units.get(id) ?? []).map((u) => u.barcode).join(' ');
-  return itemRows(db, where, params, filters.warehouseId ? [filters.warehouseId] : warehouses)
-    .filter((r) => !q || normalizeForSearch(`${r.code} ${r.barcode ?? ''} ${unitBarcodes(r.id)} ${r.name_ar} ${r.name_en} ${r.name_ku} ${r.brand_name ?? ''}`).includes(q))
-    .map((r) => toView(r, units.get(r.id)));
+  const found = (db.prepare(`SELECT i.id, i.code, i.barcode, i.name_ar, i.name_en, i.name_ku, b.name AS brand_name FROM items i
+                             LEFT JOIN brands b ON b.id = i.brand_id ${where} ORDER BY i.code`).all(...params) as
+    { id: string; code: string; barcode: string | null; name_ar: string; name_en: string; name_ku: string; brand_name: string | null }[])
+    .filter((r) => normalizeForSearch(`${r.code} ${r.barcode ?? ''} ${unitBarcodes(r.id)} ${r.name_ar} ${r.name_en} ${r.name_ku} ${r.brand_name ?? ''}`).includes(q))
+    .map((r) => r.id)
+    .slice(0, limit);
+  const rows: ItemRow[] = [];
+  // in code order, a few hundred at a time (a short search finds many: "a" is in most names)
+  for (let at = 0; at < found.length; at += 400) {
+    const ids = found.slice(at, at + 400);
+    rows.push(...itemRows(db, `WHERE i.id IN (${ids.map(() => '?').join(', ')})`, ids, stockIn, ids));
+  }
+  return rows.map((r) => toView(r, units.get(r.id)));
 }
 
 /** An item with its stock in `warehouses` (null: every warehouse). */
 export function getItem(db: Db, id: string, warehouses: WarehouseFilter = null): ItemView {
-  const row = itemRows(db, 'WHERE i.id = ?', [id], warehouses)[0];
+  const row = itemRows(db, 'WHERE i.id = ?', [id], warehouses, id)[0];
   if (!row) throw notFound('item');
   return toView(row, unitsByItem(db, [id]).get(id));
 }
@@ -260,19 +298,21 @@ function assertNoScaleClash(db: Db, input: { barcode: string | undefined; unit: 
     ...(barcode && !sameBase ? [barcode] : []),
     ...(input.units ?? (id ? itemUnits(db, id) : [])).map((u) => u.barcode?.trim() ?? '').filter((b) => b && !before.has(b))
   ];
+  // 2.0.0: the company's scale label layout (4 or 5 digits for the item: Settings → Tills and till rules)
+  const digits = Number(readSetting(db, 'pos_scale_item_digits') ?? 5) === 4 ? 4 : 5;
   for (const code of checked) {
-    const label = parseScaleBarcode(code);
+    const label = parseScaleBarcode(code, digits);
     if (!label) continue;
     // this item's own label, as one of its units' barcodes, would ring up one unit instead of the weight
     if (code !== barcode && weighed && label.prefix === barcode) throw conflict('barcode_scale_label');
     const owner = db.prepare("SELECT unit FROM items WHERE barcode = ? AND id <> COALESCE(?, '')").all(label.prefix, id ?? null) as { unit: string }[];
     if (owner.some((o) => isWeighedUnit(o.unit))) throw conflict('barcode_scale_label');
   }
-  if (barcode && !sameBase && weighed && /^2\d{6}$/.test(barcode)) {
+  if (barcode && !sameBase && weighed && new RegExp(`^2\\d{${digits + 1}}$`).test(barcode)) {
     const labels = db.prepare(`SELECT barcode FROM items WHERE barcode LIKE ? AND length(barcode) = 13 AND id <> COALESCE(?, '')
                                UNION ALL SELECT barcode FROM item_units WHERE barcode LIKE ? AND length(barcode) = 13 AND item_id <> COALESCE(?, '')`)
       .all(`${barcode}%`, id ?? null, `${barcode}%`, id ?? null) as { barcode: string }[];
-    if (labels.some((l) => parseScaleBarcode(l.barcode) !== null)) throw conflict('barcode_scale_label');
+    if (labels.some((l) => parseScaleBarcode(l.barcode, digits) !== null)) throw conflict('barcode_scale_label');
   }
 }
 
@@ -327,6 +367,8 @@ export function createItem(db: Db, input: ItemInput, user: string): ItemView {
         input.reorderMilli ?? null, input.purchasePrice ?? null,
         input.purchasePrice === undefined || input.purchasePrice === null ? null : input.purchaseCurrency ?? input.saleCurrency);
     if (input.units?.length) replaceItemUnits(db, id, input.units);
+    // a new item has no shelf label yet (shelf-labels.ts)
+    notePriceChanges(db, id, null, user);
     audit(db, user, 'create', 'item', id, { code });
   });
   return getItem(db, id);
@@ -353,6 +395,9 @@ export function updateItem(db: Db, id: string, input: ItemInput, user: string): 
   const purchaseCurrency = purchasePrice === null ? null
     : input.purchasePrice === undefined ? current.purchaseCurrency ?? input.saleCurrency : input.purchaseCurrency ?? input.saleCurrency;
   transaction(db, () => {
+    // the prices the shelf labels show now, to list those that change (shelf-labels.ts)
+    const shelfBefore = shelfPrices(db, id);
+    const pricesBefore = listPrices(db, id);
     db.prepare(`UPDATE items SET code = ?, barcode = ?, name_ar = ?, name_en = ?, name_ku = ?, unit = ?, sale_price = ?, sale_currency = ?,
                 track_stock = ?, active = ?, sale_unit = ?, purchase_unit = ?, updated_at = ? WHERE id = ?`)
       .run(input.code?.trim() || current.code, input.barcode?.trim() || null, name.ar, name.en, name.ku,
@@ -366,6 +411,9 @@ export function updateItem(db: Db, id: string, input: ItemInput, user: string): 
         purchasePrice, purchaseCurrency, id);
     // switched on: what is in stock goes into the batch with no number, so the batches add up to the stock from now on
     if (trackBatches && !current.trackBatches) startTracking(db, id);
+    notePriceChanges(db, id, shelfBefore, user);
+    // the item's prices over time (price-history.ts): the till's price rule reads them for sales kept while cut off
+    notePriceHistory(db, id, pricesBefore);
     audit(db, user, 'update', 'item', id, input);
   });
   return getItem(db, id);
@@ -381,15 +429,17 @@ export function deleteItem(db: Db, id: string, user: string): void {
     throw conflict('item_has_moves');
   }
   // documents that are not in the books yet still name the item: deleting it would break them
-  const usedBy = ['quote_lines', 'purchase_order_lines', 'stock_doc_lines', 'stock_adjustment_lines', 'serials', 're_projects']
-    .map((table) => `SELECT 1 FROM ${table} WHERE item_id = ?`).join(' UNION ALL ');
-  if (db.prepare(`${usedBy} LIMIT 1`).get(id, id, id, id, id, id)) throw conflict('item_in_use');
+  const usedByTables = ['quote_lines', 'purchase_order_lines', 'stock_doc_lines', 'stock_adjustment_lines', 'serials', 're_projects', 'consignment_doc_lines'];
+  const usedBy = usedByTables.map((table) => `SELECT 1 FROM ${table} WHERE item_id = ?`).join(' UNION ALL ');
+  if (db.prepare(`${usedBy} LIMIT 1`).get(...usedByTables.map(() => id))) throw conflict('item_in_use');
   transaction(db, () => {
     // what belongs to the item alone goes with it: its picture, its price-list prices and its car-part details
     // (and its place on the item list a stock count fixed when it started: that is no document)
-    for (const table of ['item_images', 'item_prices', 'part_fitments', 'part_numbers', 'part_details', 'stock_count_items', 'item_units', 'pharma_details', 'item_batches']) {
+    for (const table of ['item_images', 'item_image_sources', 'item_prices', 'part_fitments', 'part_numbers', 'part_details', 'stock_count_items', 'item_units', 'pharma_details', 'item_batches', 'consignment_items']) {
       db.prepare(`DELETE FROM ${table} WHERE item_id = ?`).run(id);
     }
+    dropShelfFlags(db, id);
+    dropPriceHistory(db, id);
     db.prepare('DELETE FROM items WHERE id = ?').run(id);
     audit(db, user, 'delete', 'item', id);
   });
@@ -480,6 +530,8 @@ export function addStockMove(db: Db, move: { itemId: string; warehouseId: string
   const latest = (db.prepare('SELECT MAX(date) AS date FROM stock_moves WHERE item_id = ? AND warehouse_id = ?')
     .get(move.itemId, move.warehouseId) as { date: string | null }).date;
   if (latest && move.date < latest) throw invalid([{ code: 'stock_date_before_latest', date: latest }]);
+  // goods on consignment: a purchase of them is refused, and every move is kept as the supplier sees it
+  onStockMove(db, move);
   db.prepare('INSERT INTO stock_moves (item_id, warehouse_id, date, qty_milli, value, source_type, source_id, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)')
     .run(move.itemId, move.warehouseId, move.date, move.qtyMilli, move.value, move.sourceType, move.sourceId, new Date().toISOString());
 }

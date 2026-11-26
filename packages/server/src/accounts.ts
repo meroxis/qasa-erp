@@ -3,7 +3,7 @@ import type { Db } from './db.ts';
 import { transaction } from './db.ts';
 import { audit } from './audit.ts';
 import { conflict, invalid, notFound } from './errors.ts';
-import { postedLines } from './journal.ts';
+import { postedTotals } from './journal.ts';
 import { getPostingAccounts } from './settings.ts';
 
 export interface AccountView extends Account {
@@ -33,7 +33,7 @@ export function accountsWithEntries(db: Db): Set<string> {
  */
 export function listAccounts(db: Db, branch: { warehouses: string[]; accounts: string[] } | null = null): AccountView[] {
   const accounts = loadAccounts(db);
-  const balances = rollupBalances(accounts, postedLines(db, { branch }));
+  const balances = rollupBalances(accounts, postedTotals(db, { branch }));
   const used = accountsWithEntries(db);
   return accounts.map((a) => ({ ...a, nature: natureOf(a.code), balance: balances.get(a.code) ?? 0, hasEntries: used.has(a.code) }));
 }

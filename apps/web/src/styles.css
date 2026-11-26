@@ -1034,29 +1034,83 @@ a.plan-chip:hover { text-decoration: underline; }
   .tabs button[aria-pressed='true']::after { forced-color-adjust: none; background: Highlight; }
 }
 
-/* business type: "What does your company do?" */
-.modal.biz-modal { inline-size: min(820px, 100%); }
-.biz-chooser h2 { margin: 0 0 var(--sp-2); font-size: var(--fs-title, 1.4rem); }
-.biz-chooser .biz-lang { float: inline-end; margin-inline-start: var(--sp-3); margin-block-end: var(--sp-2); }
-.biz-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: var(--sp-3); margin: var(--sp-4) 0; }
+/* business type (1.7): "What does your company mainly do?", one choice; the first screen of a new company is full screen */
+/* its own page background, as the body has it: the screen covers the app under it (the --bg it read was never defined, so
+   it was see-through over the dashboard: 2.0.0-beta.4) */
+.biz-screen { position: fixed; inset: 0; z-index: 90; overflow: auto; background: var(--mica); background-color: var(--mica-base); padding: clamp(16px, 3vw, 40px); }
+.biz-screen .biz-chooser { max-inline-size: 1180px; margin-inline: auto; }
+.biz-head { display: flex; gap: var(--sp-4); align-items: flex-start; justify-content: space-between; margin-block-end: var(--sp-4); }
+.biz-head h2 { margin: 0 0 var(--sp-1); font-size: var(--fs-title, 1.4rem); }
+.biz-head p { margin: 0 0 var(--sp-1); }
+.biz-head .biz-lang { order: 2; flex-shrink: 0; }
+.biz-question { font-size: 1.15rem; font-weight: 600; }
+.biz-layout { display: grid; grid-template-columns: minmax(0, 1fr) minmax(280px, 340px); gap: var(--sp-5); align-items: start; }
+.biz-search { display: flex; align-items: center; gap: var(--sp-2); padding: 10px 14px; border: 1px solid var(--line); border-radius: 12px; background: var(--surface); color: var(--ink-3); }
+.biz-search input { flex: 1; border: 0; outline: 0; background: transparent; font: inherit; color: var(--text, inherit); min-inline-size: 0; }
+.biz-search:focus-within { border-color: var(--accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 22%, transparent); }
+.biz-group h3 { margin: var(--sp-4) 0 var(--sp-2); font-size: 0.95rem; color: var(--ink-3); font-weight: 600; }
+.biz-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: var(--sp-3); }
 .biz-card {
-  position: relative; display: flex; gap: var(--sp-3); align-items: flex-start; text-align: start; padding: var(--sp-4);
-  border: 2px solid var(--line); border-radius: 12px; background: var(--surface); color: inherit; font: inherit; cursor: pointer;
+  position: relative; display: flex; gap: var(--sp-3); align-items: center; text-align: start; padding: var(--sp-3) var(--sp-4);
+  border: 2px solid var(--line); border-radius: 14px; background: var(--surface); color: inherit; font: inherit; cursor: pointer;
+  transition: border-color 0.15s, background-color 0.15s, transform 0.15s;
 }
-.biz-card:hover { border-color: var(--accent); }
+.biz-card:hover { border-color: color-mix(in srgb, var(--accent) 55%, var(--line)); }
+.biz-card:focus-visible { outline: 3px solid color-mix(in srgb, var(--accent) 45%, transparent); outline-offset: 2px; }
 .biz-card.on { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 8%, var(--surface)); }
-.biz-card .biz-icon { flex-shrink: 0; display: grid; place-items: center; inline-size: 40px; block-size: 40px; border-radius: 10px; background: var(--surface-2, var(--bg)); }
-.biz-card .biz-text { display: flex; flex-direction: column; gap: 4px; padding-inline-end: var(--sp-5); }
-.biz-card .biz-text span { color: var(--muted); font-size: 0.9em; line-height: 1.45; }
-.biz-card .chip { position: absolute; inset-block-end: var(--sp-2); inset-inline-end: var(--sp-2); }
-/* room for the plan chip under the text, so a long description (Kurdish) never runs under it */
-.biz-card:has(> .chip) { padding-block-end: calc(var(--sp-2) + 30px); }
-.biz-card .chip::before { display: none; }
+.biz-card .biz-text { display: flex; flex-direction: column; gap: 3px; padding-inline-end: var(--sp-5); min-inline-size: 0; }
+.biz-card .biz-text span { color: var(--ink-3); font-size: 0.88em; line-height: 1.45; }
+.biz-suggested { font-style: normal; font-size: 0.8em; color: var(--accent); font-weight: 600; }
 .biz-card .biz-check {
-  position: absolute; inset-block-start: var(--sp-3); inset-inline-end: var(--sp-3); inline-size: 22px; block-size: 22px; border-radius: 50%;
-  border: 2px solid var(--line); display: grid; place-items: center; color: #fff;
+  position: absolute; inset-block-start: var(--sp-2); inset-inline-end: var(--sp-2); inline-size: 22px; block-size: 22px; border-radius: 50%;
+  border: 2px solid var(--line); display: grid; place-items: center; color: transparent;
 }
-.biz-card.on .biz-check { background: var(--accent); border-color: var(--accent); }
+.biz-card.on .biz-check { background: var(--accent); border-color: var(--accent); color: #fff; }
+.biz-art { flex-shrink: 0; color: var(--accent); }
+.biz-art .soft { fill: color-mix(in srgb, var(--accent) 16%, transparent); stroke: none; }
+.biz-none { padding: var(--sp-4) 0; }
+.biz-preview {
+  position: sticky; inset-block-start: var(--sp-3); display: flex; flex-direction: column; gap: var(--sp-3); padding: var(--sp-4);
+  border: 1px solid var(--line); border-radius: 16px; background: var(--surface); box-shadow: 0 6px 24px rgb(0 0 0 / 0.06);
+}
+.biz-preview-head { display: flex; gap: var(--sp-3); align-items: center; }
+.biz-preview-head h3 { margin: 0 0 4px; font-size: 1.15rem; }
+.biz-preview-head p { margin: 0; color: var(--ink-3); line-height: 1.5; }
+.biz-pages ul { list-style: none; margin: var(--sp-2) 0; padding: 0; display: grid; gap: 6px; }
+.biz-pages li { display: flex; gap: 8px; align-items: center; }
+.biz-pages li .icon, .biz-pages li svg { color: var(--accent); }
+.biz-plan { display: flex; gap: 8px; align-items: center; margin: 0; padding: 8px 10px; border-radius: 10px; background: var(--fill); font-size: 0.92em; }
+.biz-preview-actions { display: flex; flex-direction: column; gap: var(--sp-2); }
+.biz-start { inline-size: 100%; padding-block: 14px; font-size: 1.05rem; }
+.biz-lists summary { cursor: pointer; color: var(--ink-3); font-size: 0.9em; }
+.biz-lists[open] summary { margin-block-end: var(--sp-2); }
+.biz-current { display: flex; gap: var(--sp-3); align-items: center; padding: var(--sp-3) var(--sp-4); border: 2px solid var(--accent); border-radius: 14px; }
+.biz-current .biz-text { display: flex; flex-direction: column; gap: 3px; flex: 1; min-inline-size: 0; }
+.biz-confirm { display: flex; flex-direction: column; gap: var(--sp-2); padding: var(--sp-3); border-radius: 12px; background: color-mix(in srgb, var(--accent) 7%, var(--surface)); }
+.biz-confirm p { margin: 0; line-height: 1.55; }
+.biz-switch { display: flex; gap: var(--sp-3); align-items: flex-start; cursor: pointer; }
+.biz-switch > span:last-child { display: flex; flex-direction: column; gap: 2px; }
+.biz-switch input { position: absolute; opacity: 0; inline-size: 1px; block-size: 1px; }
+.biz-switch-track { flex-shrink: 0; position: relative; inline-size: 42px; block-size: 24px; border-radius: 12px; background: var(--line); transition: background-color 0.15s; margin-block-start: 2px; }
+.biz-switch-track::after { content: ''; position: absolute; inset-block-start: 3px; inset-inline-start: 3px; inline-size: 18px; block-size: 18px; border-radius: 50%; background: #fff; transition: inset-inline-start 0.15s; }
+.biz-switch input:checked + .biz-switch-track { background: var(--accent); }
+.biz-switch input:checked + .biz-switch-track::after { inset-inline-start: 21px; }
+.biz-switch input:focus-visible + .biz-switch-track { outline: 3px solid color-mix(in srgb, var(--accent) 45%, transparent); outline-offset: 2px; }
+.biz-minis { display: flex; flex-wrap: wrap; gap: var(--sp-2); }
+.biz-mini { display: inline-flex; gap: 8px; align-items: center; padding: 6px 12px 6px 8px; border: 2px solid var(--line); border-radius: 999px; background: var(--surface); color: inherit; font: inherit; cursor: pointer; }
+.biz-mini.on { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 8%, var(--surface)); }
+.biz-mini:disabled { opacity: 0.45; cursor: not-allowed; }
+/* a small laptop or a narrow window: the chosen card's panel comes under the list and keeps its button in reach */
+@media (max-width: 900px) {
+  .biz-layout { grid-template-columns: 1fr; }
+  .biz-preview { position: sticky; inset-block-start: auto; inset-block-end: 0; box-shadow: 0 -6px 24px rgb(0 0 0 / 0.08); }
+  .biz-preview .biz-pages { display: none; }
+  .biz-head { flex-direction: column; }
+  .biz-head .biz-lang { order: 0; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .biz-card, .biz-switch-track, .biz-switch-track::after { transition: none; }
+}
 
 /* A page's file is loading (first visit to that page only). */
 .page-loading { display: flex; justify-content: center; padding: 48px 0; }
@@ -1412,3 +1466,33 @@ a.fx-chip:focus-visible { outline: 2px solid var(--focus-outer); outline-offset:
 /* a long printer name never widens the table: the list keeps its column */
 .printers-table tr.printers-kind > td:nth-child(2) select { max-inline-size: 22em; }
 .card-head:has(> .settings-repeat-title:only-child) { display: contents; }
+
+/* 2.0: the customer screen (pages/CustomerDisplay.tsx) */
+.cd { min-height: 100vh; display: flex; flex-direction: column; gap: 16px; padding: 32px 40px; background: var(--bg, #fff); color: var(--text, #111); font-size: 26px; }
+.cd-idle { align-items: center; justify-content: center; }
+.cd-head { font-size: 30px; font-weight: 700; color: var(--accent, #0b5); border-bottom: 2px solid var(--line, #ddd); padding-bottom: 12px; }
+.cd-welcome { flex: 1; display: flex; align-items: center; justify-content: center; font-size: 56px; font-weight: 700; }
+.cd-lines { flex: 1; display: flex; flex-direction: column; gap: 8px; overflow: hidden; }
+.cd-line { display: grid; grid-template-columns: 1fr auto auto; gap: 24px; align-items: baseline; padding: 6px 0; border-bottom: 1px solid var(--line, #eee); }
+.cd-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cd-qty { color: var(--muted, #666); }
+.cd-amount { min-width: 8ch; text-align: end; }
+.cd-total { display: flex; justify-content: space-between; font-size: 44px; font-weight: 700; padding-top: 12px; border-top: 3px solid var(--text, #111); }
+.cd-row { display: flex; justify-content: space-between; font-size: 30px; }
+.cd-change strong { color: var(--accent, #0b5); }
+.cd-done { text-align: center; font-size: 40px; font-weight: 700; color: var(--accent, #0b5); }
+/* 2.0.0: several papers on one page (every till's report of a day) print one to a page */
+@media print { .page-break-after { break-after: page; } }
+/* 2.0.0: one paper printed alone (industry/PrintPart.tsx) */
+.print-part-host { display: none; }
+@media print {
+  body.print-part .app, body.print-part .toast, body.print-part .backdrop, body.print-part > #root { display: none !important; }
+  body.print-part .print-part-host.print-part-on { display: block; }
+}
+.print-part-paper table { width: 100%; border-collapse: collapse; }
+.print-part-paper th, .print-part-paper td { border-bottom: 1px solid #ccc; padding: 4px 6px; text-align: start; }
+.print-part-paper .num { text-align: end; }
+
+/* 2.0.0: a long table's "not shown yet" row (industry/LongList.tsx) */
+.more-rows td { text-align: center; padding-block: 10px; }
+.more-rows td > * + * { margin-inline-start: 10px; }

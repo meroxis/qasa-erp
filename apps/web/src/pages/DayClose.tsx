@@ -7,6 +7,7 @@ import { href } from '../router.ts';
 import { copyText } from '../share.ts';
 import { WhatsAppSendButton } from '../industry/WhatsAppSend.tsx';
 import { printDocument } from '../industry/printing.ts';
+import { CashMoveList, cashMoveSums, cashMoveType, hasCashMoves } from '../pos/CashMoves.tsx';
 import { itemStyle, listStyle, moneyBoth, Section, Stat } from './Brief.tsx';
 import { Amount, amountTextOf, DINAR_ONLY, DualNote, DualRateHint, useDual, type AmountText } from '../Amount.tsx';
 
@@ -20,7 +21,7 @@ const good = 'var(--ok, #1F7A52)';
 const bad = 'var(--bad, #A4271A)';
 
 const METHOD_KEY: Record<DayMethod, Key> = {
-  cash: 'pay_cash', bank: 'dc_m_bank', card: 'pay_card', fib: 'pay_fib', zaincash: 'pay_zaincash', qi: 'pay_qi', credit: 'pay_account', loyalty: 'dc_m_loyalty'
+  cash: 'pay_cash', bank: 'dc_m_bank', card: 'pay_card', fib: 'pay_fib', zaincash: 'pay_zaincash', qi: 'pay_qi', credit: 'pay_account', loyalty: 'dc_m_loyalty', voucher: 'dc_m_voucher'
 };
 
 export const methodLabel = (i18n: I18n, m: DayMethod): string => i18n.t(METHOD_KEY[m]);
@@ -91,6 +92,10 @@ export function dayCloseRows(i18n: I18n, c: DayCloseView): (string | number)[][]
     const label = `${r.register} (${r.number})`;
     rows.push([t('dc_registers'), `${label} — ${t('pos_expected')} IQD`, r.count, iqd(r.expected.IQD)]);
     if (r.expected.USD || r.counted?.USD) rows.push([t('dc_registers'), `${label} — ${t('pos_expected')} USD`, '', usd(r.expected.USD)]);
+    // 2.0: the other cash on the register's safe (in what it expects), document by document
+    for (const l of r.cashMoves?.lines ?? []) {
+      rows.push([t('dc_registers'), `${label} — ${[cashMoveType(i18n, l.type), l.number ?? '', l.description, l.by, l.currency].filter(Boolean).join(' · ')}`, '', l.currency === 'USD' ? usd(l.amount) : iqd(l.amount)]);
+    }
     if (r.counted) {
       rows.push([t('dc_registers'), `${label} — ${t('pos_counted')} IQD`, '', iqd(r.counted.IQD)]);
       if (r.counted.USD || r.expected.USD) rows.push([t('dc_registers'), `${label} — ${t('pos_counted')} USD`, '', usd(r.counted.USD)]);
@@ -210,7 +215,8 @@ export function DayClose() {
               </div>
             </Section>
 
-            <Section title={t('dc_registers')} icon="receipt" empty={!c.registers.length}>
+            <Section title={t('dc_registers')} icon="receipt" empty={!c.registers.length}
+              action={c.registers.length > 1 ? <a className="btn small no-print" href={href(`pos-shifts/${c.registers.map((r) => r.shiftId).join(',')}`)}><Icon name="printer" size={14} />{t('ux_printAllZ', { n: i18n.int(c.registers.length) })}</a> : undefined}>
               <div className="table-wrap">
                 <table className="table">
                   <thead><tr><th>{t('pos_register')}</th><th className="num">{t('pos_expected')}</th><th className="num">{t('pos_counted')}</th><th className="num">{t('pos_difference')}</th></tr></thead>
@@ -222,6 +228,7 @@ export function DayClose() {
                           <td>
                             <a href={href(`pos-shift/${r.shiftId}`)}>{r.register}</a>
                             <span className="small muted" style={{ display: 'block' }}><span className="ltr">{r.number}</span> · {r.openedBy}</span>
+                            {cashMoveSums(i18n, r.cashMoves).map((row) => <span key={row.key} className="small muted" style={{ display: 'block' }}>{row.label}: <span className="num">{row.value}</span></span>)}
                           </td>
                           <MoneyCell>{moneyBoth(i18n, r.expected)}</MoneyCell>
                           <MoneyCell>{r.counted ? moneyBoth(i18n, r.counted) : <span className="chip info">{t('dc_stillOpen')}</span>}</MoneyCell>
@@ -232,6 +239,10 @@ export function DayClose() {
                   </tbody>
                 </table>
               </div>
+              {/* 2.0: what was paid out of a drawer or taken into it beside its sales, document by document */}
+              {c.registers.filter((r) => hasCashMoves(r.cashMoves)).map((r) => (
+                <CashMoveList key={r.shiftId} moves={r.cashMoves} title={t('tu_cashMovesOf', { r: `${r.register} (${r.number})` })} links={!!c.expenses} />
+              ))}
             </Section>
 
             {c.expenses && <Section title={t('dc_expenses')} icon="wallet" empty={!c.expenses.rows.length}
@@ -280,6 +291,12 @@ export function DayClose() {
               </ul>
             </Section>
 
+            {!!c.giftExpired?.amount && (
+              <div className="alert warn no-print" role="note">
+                <span>{t('dc_giftExpired', { n: i18n.int(c.giftExpired.count), a: i18n.money(c.giftExpired.amount, 'IQD') })}</span>
+                <a href={href('settings/sales')}>{t('tu_gvWriteOff')}</a>
+              </div>
+            )}
             <Section title={t('br_lowStock')} icon="box" empty={!c.lowStock.count}
               action={c.lowStock.count ? <span className="chip bad num">{i18n.int(c.lowStock.count)}</span> : undefined}>
               <p style={{ margin: '0 16px 8px' }}>{t('dc_lowStockCount', { n: i18n.int(c.lowStock.count) })}</p>

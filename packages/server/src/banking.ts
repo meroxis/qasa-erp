@@ -12,6 +12,8 @@ import { userBranchLists } from './branches.ts';
 import { readSetting, writeSetting } from './settings.ts';
 import type { Actor } from './auth.ts';
 import type { ApiExtension, ApiRequest } from './routes.ts';
+import { featureAccount } from './feature-accounts.ts';
+import { onceOnly } from './idempotency.ts';
 
 /**
  * Banking: the company's safes (181…), bank accounts and e-wallets (183…), moving money between them, cheques
@@ -192,18 +194,7 @@ const NR_NAMES: Names = { ar: 'أوراق القبض', en: 'Notes receivable', k
  * sub-account and the company's accountant has to choose another: setting banking_notes_receivable).
  */
 export function notesReceivable(db: Db, user: string): string {
-  const chosen = readSetting(db, 'banking_notes_receivable');
-  const accounts = loadAccounts(db);
-  const postable = (code: string) => accounts.some((a) => a.code === code && a.postable);
-  if (chosen && postable(chosen)) return chosen;
-  if (postable(NOTES_RECEIVABLE)) return NOTES_RECEIVABLE;
-  if (accounts.some((a) => a.code === NOTES_RECEIVABLE)) throw conflict('bk_notes_receivable_missing');
-  if (!accounts.some((a) => a.code === '16')) throw conflict('bk_notes_receivable_missing');
-  if (db.prepare('SELECT 1 FROM entry_lines WHERE account_code = ? LIMIT 1').get('16')) throw conflict('bk_notes_receivable_missing');
-  db.prepare('INSERT INTO accounts (code, name_ar, name_en, name_ku, "system", created_at) VALUES (?, ?, ?, ?, 1, ?)')
-    .run(NOTES_RECEIVABLE, NR_NAMES.ar, NR_NAMES.en, NR_NAMES.ku, new Date().toISOString());
-  audit(db, user, 'create', 'account', NOTES_RECEIVABLE, { name: NR_NAMES, standard: true });
-  return NOTES_RECEIVABLE;
+  return featureAccount(db, 'notesReceivable', user, NR_NAMES);
 }
 
 function notesPayable(db: Db): string {
@@ -1036,7 +1027,9 @@ export const bankingApi: ApiExtension = {
             date, from: code, to: code, currency, rateX100: positive.optional(), amount: positive, charge: z.number().int().min(0).max(Number.MAX_SAFE_INTEGER).optional(),
             chargeAccount: code.optional(), description: z.string().max(300).optional(), lang
           }), req.body);
-          reply.status(201).send(transfer(db, body, actor(req)));
+          // money moves at once: a transfer sent again after a lost answer (the same key) is made once
+          const who = actor(req);
+          reply.status(201).send(onceOnly(db, req, reply, who, 'POST /api/banking/transfers', () => { const made = transfer(db, body, who); return { id: made.id, result: made }; }, (entry) => getEntry(db, entry)));
           return undefined;
         }
       },
@@ -1058,7 +1051,10 @@ export const bankingApi: ApiExtension = {
         handler: async (req, reply) => {
           const body = parse(chequeBody.extend({ direction: z.enum(['received', 'issued']) }), req.body);
           const { direction, ...input } = body;
-          reply.status(201).send(direction === 'received' ? receiveCheque(db, input, actor(req)) : issueCheque(db, input, actor(req)));
+          // a cheque posts its entry at once: sent again with the same key, it is recorded once
+          const who = actor(req);
+          reply.status(201).send(onceOnly(db, req, reply, who, 'POST /api/banking/cheques',
+            () => { const made = direction === 'received' ? receiveCheque(db, input, who) : issueCheque(db, input, who); return { id: made.id, result: made }; }, (cheque) => getCheque(db, cheque)));
           return undefined;
         }
       },

@@ -4,7 +4,7 @@ import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { canAddCompany, PLANS, resolvePlan } from '@qasa/core';
 import {
-  addCompany, backupFileName, chooseCompany, cleanName, companyDirOf, damagedFileChoices, isCompanyId, MAIN_COMPANY,
+  addCompany, openableCompanies, viewOnlyCompany, backupFileName, chooseCompany, cleanName, companyDirOf, damagedFileChoices, isCompanyId, MAIN_COMPANY,
   newCompanyId, parseRegistry, readRegistry, renameCompany, writeRegistry, type Registry
 } from './companies.ts';
 
@@ -119,11 +119,32 @@ describe('a company file that cannot be opened at the start', () => {
 
   it('a file that is fine but had no room for its copy before an update is never offered to be set aside for a backup', () => {
     expect(damagedFileChoices(true, 'update_copy').choices).toEqual(['retry', 'quit']);
+    // nor one a version of the update could not be applied to: its books are fine as they were
+    expect(damagedFileChoices(true, 'update').choices).toEqual(['retry', 'quit']);
+    expect(damagedFileChoices(false, 'update').choices).toEqual(['retry', 'first', 'quit']);
     expect(damagedFileChoices(false, 'update_copy').choices).toEqual(['retry', 'first', 'quit']);
     for (const main of [true, false]) {
       const { choices, defaultId, cancelId } = damagedFileChoices(main, 'update_copy');
       expect(choices[defaultId]).toBe('retry');
       expect(choices[cancelId]).toBe('quit');
     }
+  });
+});
+
+describe('companies past the plan limit', () => {
+  const list = (ids: string[]) => ({ current: MAIN_COMPANY, list: ids.map((id, i) => ({ id, name: `C${i}`, createdAt: '2026-11-01T00:00:00.000Z' })) });
+  it('the first ones made work in full; the others open to be viewed, the first company never among them', () => {
+    const r = list(['c00000002', MAIN_COMPANY, 'c00000003']);
+    // Free after the free month: the first company works, the two made in that month are viewed
+    expect([...openableCompanies(r, 1)]).toEqual([MAIN_COMPANY]);
+    expect(viewOnlyCompany(r, MAIN_COMPANY, 1)).toBe(false);
+    expect(viewOnlyCompany(r, 'c00000002', 1)).toBe(true);
+    expect(viewOnlyCompany(r, 'c00000003', 1)).toBe(true);
+    // Pro (3): all three; Business (no limit): every one
+    expect(['c00000002', 'c00000003'].map((id) => viewOnlyCompany(r, id, 3))).toEqual([false, false]);
+    expect(viewOnlyCompany(list([MAIN_COMPANY, 'c00000002', 'c00000003', 'c00000004']), 'c00000004', 3)).toBe(true);
+    expect(viewOnlyCompany(list([MAIN_COMPANY, 'c00000002', 'c00000003', 'c00000004']), 'c00000004', null)).toBe(false);
+    // a limit of 0 or less never locks the first company out
+    expect(viewOnlyCompany(r, MAIN_COMPANY, 0)).toBe(false);
   });
 });

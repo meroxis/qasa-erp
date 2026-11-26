@@ -244,6 +244,15 @@ function assertValidVoucher(db: Db, v: VoucherInput): EntryInput {
   return entry;
 }
 
+function shaped(db: Db, entry: EntryInput, shape?: (entry: EntryInput) => EntryInput): EntryInput {
+  if (!shape) return entry;
+  const out = shape(entry);
+  assertValid(db, out);
+  const base = withBaseAmounts(out).reduce((t, l) => t + l.baseDebit - l.baseCredit, 0);
+  if (base !== 0) throw invalid([{ code: 'not_balanced' }]);
+  return out;
+}
+
 function insertLines(db: Db, id: string, input: EntryInput): void {
   const insert = db.prepare(`INSERT INTO entry_lines (entry_id, line_no, account_code, debit, credit, base_debit, base_credit, description, party_id)
                              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`);
@@ -272,8 +281,8 @@ function assertNotPreparer(db: Db, row: EntryRow, actorId: string | null | undef
  * A receipt or payment that a document makes (an installment collected): checked like any voucher, then numbered and
  * approved at once by whoever made it, as invoices post their entries. Call inside a transaction.
  */
-export function postVoucherNow(db: Db, v: VoucherInput, actor: { id: string | null; name: string }): string {
-  const entry = assertValidVoucher(db, v);
+export function postVoucherNow(db: Db, v: VoucherInput, actor: { id: string | null; name: string }, shape?: (entry: EntryInput) => EntryInput): string {
+  const entry = shaped(db, assertValidVoucher(db, v), shape);
   const id = insertEntry(db, entry, actor.name, v.cashAccountCode);
   const now = new Date().toISOString();
   db.prepare(`UPDATE entries SET status = 'approved', number = ?, prepared_by_id = ?, checked_by = ?, checked_at = ?, checked_by_id = ?,
@@ -290,7 +299,10 @@ export function postVoucherNow(db: Db, v: VoucherInput, actor: { id: string | nu
  * system paid, a generator collection, a unit's reservation deposit. Such a receipt is changed only from its document
  * (its amount is the document's), and a draft of it that is deleted takes its link with it.
  */
-const DOCUMENT_RECEIPTS: readonly string[] = ['installment_receipts', 'job_receipts', 'gen_collections', 're_deposits'];
+const DOCUMENT_RECEIPTS: readonly string[] = ['installment_receipts', 'job_receipts', 'gen_collections', 're_deposits',
+  // 2.0: a rep's collection and a handover of a rep's or a driver's cash to the office. One that was refused stays as
+  // that document's record, in no balance, and holds up neither the year's close nor the cash of the rep or driver
+  'ws_collections', 'ws_handovers', 'delivery_handovers'];
 
 function isDocumentReceipt(db: Db, id: string): boolean {
   return DOCUMENT_RECEIPTS.some((table) => db.prepare(`SELECT 1 FROM ${table} WHERE entry_id = ?`).get(id));
@@ -313,9 +325,13 @@ export function documentVoucherWaits(db: Db, actor: { permissions: readonly stri
  * "request_approval" in the audit log), approved or rejected with a reason by someone who may approve vouchers, and
  * counted by its document only once approved. Call inside a transaction; the caller links it to its document.
  */
-export function postDocumentVoucher(db: Db, v: VoucherInput, actor: { id: string | null; name: string; permissions: readonly string[] }): { id: string; waiting: boolean } {
-  if (!documentVoucherWaits(db, actor)) return { id: postVoucherNow(db, v, actor), waiting: false };
-  const entry = assertValidVoucher(db, v);
+export function postDocumentVoucher(
+  db: Db, v: VoucherInput, actor: { id: string | null; name: string; permissions: readonly string[] },
+  /** the document's own shape of the voucher's entry (dinar amounts of its own, a line in dinars only for an exchange difference) */
+  shape?: (entry: EntryInput) => EntryInput
+): { id: string; waiting: boolean } {
+  if (!documentVoucherWaits(db, actor)) return { id: postVoucherNow(db, v, actor, shape), waiting: false };
+  const entry = shaped(db, assertValidVoucher(db, v), shape);
   const id = insertEntry(db, entry, actor.name, v.cashAccountCode);
   if (actor.id) db.prepare('UPDATE entries SET prepared_by_id = ? WHERE id = ?').run(actor.id, id);
   audit(db, actor.name, 'create', 'entry', id, { type: entry.type, document: true });
@@ -348,7 +364,7 @@ export const voucherPendingSql = (e: string): string =>
   `(${e}.status <> 'approved' AND NOT EXISTS (SELECT 1 FROM voucher_approvals vp WHERE vp.entry_id = ${e}.id AND vp.state = 'rejected'))`;
 
 /** Every receipt linked to a document, as a subquery of entry ids. */
-const DOCUMENT_RECEIPT_IDS = DOCUMENT_RECEIPTS.map((table) => `SELECT entry_id FROM ${table}`).join(' UNION ALL ');
+const DOCUMENT_RECEIPT_IDS = DOCUMENT_RECEIPTS.map((table) => `SELECT entry_id FROM ${table} WHERE entry_id IS NOT NULL`).join(' UNION ALL ');
 
 /**
  * A condition on an entry `e`: not a document's receipt that was rejected. Such a receipt is kept as the document's
@@ -411,6 +427,20 @@ const ENTRY_OWNERS: readonly { owner: string; sql: string; marks: number }[] = [
   { owner: 'generator_run', sql: 'SELECT 1 FROM gen_runs WHERE entry_id = ?', marks: 1 },
   { owner: 'deposit', sql: 'SELECT 1 FROM re_deposits WHERE close_entry_id = ?', marks: 1 },
   // petrol stations (fuel.ts): a shift, a tanker delivery, a dip or a tank's opening stock moves litres in the tanks too
+  // goods on consignment (consignment.ts): receipts and returns post their entry at once; a settlement's entry is what
+  // the supplier is owed for what sold, and the moves it covers stay settled while it stands
+  { owner: 'consignment', sql: 'SELECT 1 FROM consignment_docs WHERE entry_id = ? UNION ALL SELECT 1 FROM consignment_settlements WHERE entry_id = ? OR cancel_entry_id = ?', marks: 3 },
+  // gold shops (gold.ts): old gold bought, pieces received from a supplier and gold handed to one post their entry at once
+  { owner: 'gold', sql: 'SELECT 1 FROM gold_docs WHERE entry_id = ?', marks: 1 },
+  // wholesale (wholesale.ts): a rep's collection and a handover of the rep's cash to the office are that document's receipts
+  { owner: 'wholesale', sql: 'SELECT 1 FROM ws_collections WHERE entry_id = ? UNION ALL SELECT 1 FROM ws_handovers WHERE entry_id = ?', marks: 2 },
+  // gift vouchers (gift-vouchers.ts): a voucher sold, cancelled or written off when it expired unused is that voucher's
+  // entry; reversing it from the journal would leave the voucher spendable. A voucher a refund made has no entry of its
+  // own (one from before that kept the return's entry does not make the return's entry the voucher's: only a voucher
+  // sold at a shift owns its receipt)
+  { owner: 'gift_voucher', sql: 'SELECT 1 FROM gift_vouchers WHERE (entry_id = ? AND shift_id IS NOT NULL) OR cancel_entry_id = ? OR expire_entry_id = ?', marks: 3 },
+  // delivery orders (delivery.ts): a driver's cash handed over to the office is the handover's own voucher
+  { owner: 'delivery_handover', sql: 'SELECT 1 FROM delivery_handovers WHERE entry_id = ?', marks: 1 },
   { owner: 'fuel', sql: 'SELECT 1 FROM fuel_shifts WHERE entry_id = ? UNION ALL SELECT 1 FROM fuel_deliveries WHERE entry_id = ? UNION ALL SELECT 1 FROM fuel_dips WHERE entry_id = ? UNION ALL SELECT 1 FROM fuel_tanks WHERE opening_entry_id = ?', marks: 4 }
 ];
 
@@ -519,11 +549,41 @@ export function deleteEntry(db: Db, id: string, user: string): void {
   });
 }
 
+/**
+ * Takes a feature's own entry that is not in the books yet (a draft, checked, waiting or refused) out for good: for the
+ * feature's "cancel" only, after it has unlinked or marked its document. An approved entry is reversed instead.
+ */
+export function deleteFeatureDraft(db: Db, id: string, user: string): void {
+  const row = loadRow(db, id);
+  if (row.status === 'approved') throw conflict('action_not_allowed', { status: row.status, action: 'delete' });
+  if (db.prepare('SELECT 1 FROM bank_statement_lines WHERE entry_id = ?').get(id)) throw conflict('entry_matched_to_statement');
+  db.prepare('DELETE FROM voucher_approvals WHERE entry_id = ?').run(id);
+  db.prepare('DELETE FROM entries WHERE id = ?').run(id);
+  audit(db, user, 'delete', 'entry', id, { type: row.type });
+}
+
+/**
+ * Whether this person may take an approved entry of a feature back (it is reversed): someone who may approve entries,
+ * and under "separate duties" not the one who prepared it. Admins always.
+ */
+export function assertMayReverseFeatureEntry(db: Db, entryId: string, actor: { id: string | null; name: string; permissions: readonly string[] }): void {
+  if (actor.permissions.includes('admin')) return;
+  if (!actor.permissions.includes('entries.approve')) throw new AppError(403, 'forbidden', { need: 'entries.approve' });
+  const row = loadRow(db, entryId);
+  if (readSetting(db, 'separate_duties') === '1' && ((actor.id && row.prepared_by_id === actor.id) || row.prepared_by === actor.name)) throw conflict('same_person');
+}
+
 function revalidateStored(db: Db, id: string): void {
   const view = getEntry(db, id);
   assertValid(db, {
     type: view.type, date: view.date, description: view.description, currency: view.currency, rateX100: view.rateX100,
-    lines: view.lines.map((l) => ({ accountCode: l.accountCode, debit: l.debit, credit: l.credit, ...(l.partyId ? { partyId: l.partyId } : {}) }))
+    // a dollar entry is checked with the dinars its lines were stored with: a feature's entry (a consignment settlement
+    // at a rate other than the goods') carries its own base amounts, and a line in dinars only (the exchange difference)
+    // has no dollars at all, so working the dinars out again from the dollars would refuse it as an empty line
+    lines: view.lines.map((l) => ({
+      accountCode: l.accountCode, debit: l.debit, credit: l.credit, ...(l.partyId ? { partyId: l.partyId } : {}),
+      ...(view.currency === 'USD' ? { baseDebit: l.baseDebit, baseCredit: l.baseCredit } : {})
+    }))
   });
 }
 
@@ -749,12 +809,18 @@ export function listEntries(db: Db, f: EntryFilters = {}): EntrySummary[] {
 
 /** Lines of approved entries in IQD — the input for every report. */
 export function postedLines(
-  db: Db, opts: { to?: string; partyId?: string; branch?: { warehouses: string[]; accounts: string[] } | null } = {}
+  db: Db, opts: {
+    to?: string; partyId?: string; branch?: { warehouses: string[]; accounts: string[] } | null;
+    /** an account and its sub-accounts only (a statement), and/or one currency's entries only */
+    account?: string; currency?: CurrencyCode;
+  } = {}
 ): (PostedLine & { partyId: string | null; currency: CurrencyCode; ownDebit: number; ownCredit: number; approvedAt: string | null })[] {
   const where = ["e.status = 'approved'"];
-  const params: string[] = [];
+  const params: (string | number)[] = [];
   if (opts.to) { where.push('e.date <= ?'); params.push(opts.to); }
   if (opts.partyId) { where.push('l.party_id = ?'); params.push(opts.partyId); }
+  if (opts.account) { where.push('substr(l.account_code, 1, ?) = ?'); params.push(opts.account.length, opts.account); }
+  if (opts.currency) { where.push('e.currency = ?'); params.push(opts.currency); }
   // one branch's entries only (branches.ts), for a user limited to branches
   if (opts.branch) {
     const [sql, p] = entryInBranchSql('e', opts.branch);
@@ -776,6 +842,41 @@ export function postedLines(
     entryId: r.id, number: r.number, date: r.date, accountCode: r.account_code, debit: r.base_debit, credit: r.base_credit,
     description: r.description, partyId: r.party_id, currency: r.currency, ownDebit: Number(r.debit), ownCredit: Number(r.credit),
     approvedAt: r.approved_at ?? null,
+    ...(r.closing ? { closing: true } : {})
+  }));
+}
+
+/**
+ * The posted lines summed per account, for a report that only adds them up: the trial balance, the final accounts and
+ * the chart of accounts' balances. One line per account and part of the period (before `from`; from `from` to `to`),
+ * apart for the year-end closing entries, dated the first day of its part. Every test those reports make of a line
+ * (its account, before `from`, up to `to`, a closing entry) gives the same answer for each line of a part, so their sums
+ * are exactly what the lines one by one would give. A big company (bench/big-company.ts: a year, 600,000 lines) read
+ * them one by one in seconds, most of it spent making objects of the lines.
+ */
+export function postedTotals(
+  db: Db, opts: { from?: string | undefined; to?: string | undefined; branch?: { warehouses: string[]; accounts: string[] } | null } = {}
+): PostedLine[] {
+  const where = ["e.status = 'approved'"];
+  const params: (string | null)[] = [opts.from ?? null, opts.from ?? null];
+  if (opts.to) { where.push('e.date <= ?'); params.push(opts.to); }
+  if (opts.branch) {
+    const [sql, p] = entryInBranchSql('e', opts.branch);
+    where.push(sql.replace(/^ AND /, ''));
+    params.push(...p);
+  }
+  const rows = db.prepare(`SELECT l.account_code, MIN(e.date) AS date, SUM(l.base_debit) AS debit, SUM(l.base_credit) AS credit,
+                                  CASE WHEN ? IS NOT NULL AND e.date < ? THEN 0 ELSE 1 END AS part,
+                                  CASE WHEN e.type = 'closing' OR (e.type = 'reversal' AND EXISTS (SELECT 1 FROM entries r WHERE r.id = e.reverses_id AND r.type = 'closing'))
+                                       THEN 1 ELSE 0 END AS closing
+                           FROM entry_lines l JOIN entries e ON e.id = l.entry_id
+                           WHERE ${where.join(' AND ')}
+                           GROUP BY l.account_code, part, closing
+                           ORDER BY l.account_code, part, closing`).all(...params) as {
+    account_code: string; date: string; debit: number; credit: number; closing: number;
+  }[];
+  return rows.map((r) => ({
+    entryId: '', number: '', date: r.date, accountCode: r.account_code, debit: Number(r.debit), credit: Number(r.credit), description: '',
     ...(r.closing ? { closing: true } : {})
   }));
 }

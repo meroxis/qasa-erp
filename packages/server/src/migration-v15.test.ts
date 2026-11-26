@@ -4,8 +4,11 @@ import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { migrate, openDatabase, SCHEMA_VERSION, schemaVersion, type Db, type SqlValue } from './db.ts';
-import { MYSQL_TABLES, MYSQL_TRIGGERS, pendingMysqlSteps, tableColumns, V15_MYSQL_STEPS } from './schema-mysql.ts';
+import { MYSQL_TABLES, MYSQL_TRIGGERS, pendingMysqlSteps, tableColumns, V15_MYSQL_STEPS, V17_MYSQL_STEPS, V18_MYSQL_STEPS, V19_MYSQL_STEPS, V21_MYSQL_STEPS } from './schema-mysql.ts';
 import { AppError } from './errors.ts';
+
+// tables of the versions after 16 (17 on): made on a server at 14 too, as the newer versions run after this one
+const LATER = new Set(MYSQL_TABLES.filter((t) => (t.since ?? 0) > 16).map((t) => t.name));
 
 // Version 15 (1.5): the photo of a paper receipt kept with its voucher (entry_images), and each entry's revision (what an
 // approval from the phone is checked against: entry-seen.ts), a company-file upgrade.
@@ -100,10 +103,12 @@ describe('version 15 on a server database', () => {
     migrate(fake);
     expect(version).toBe(SCHEMA_VERSION);
     expect(ran.filter((s) => s.startsWith('CREATE TABLE entry_images'))).toHaveLength(1);
-    expect(ran.filter((s) => s.startsWith('ALTER TABLE'))).toEqual(['ALTER TABLE entries ADD COLUMN revision INT NOT NULL DEFAULT 0']);
+    // (and the tills' columns of version 17, after it)
+    const later = [...V17_MYSQL_STEPS, ...V18_MYSQL_STEPS, ...V19_MYSQL_STEPS, ...V21_MYSQL_STEPS].map((x) => x.sql);
+    expect(ran.filter((s) => s.startsWith('ALTER TABLE') && !later.includes(s))).toEqual(['ALTER TABLE entries ADD COLUMN revision INT NOT NULL DEFAULT 0']);
     expect(ran.filter((s) => s.startsWith('CREATE TRIGGER entry_images_'))).toHaveLength(2);
     // nothing else is made again
-    expect(ran.filter((s) => s.startsWith('CREATE TABLE ') && !s.startsWith('CREATE TABLE entry_images') && !s.startsWith('CREATE TABLE fuel_') && !s.includes('schema_version'))).toEqual([]);
+    expect(ran.filter((s) => s.startsWith('CREATE TABLE ') && !s.startsWith('CREATE TABLE entry_images') && !s.startsWith('CREATE TABLE fuel_') && !LATER.has(s.split(' ')[2]!) && !s.includes('schema_version'))).toEqual([]);
   });
 
   it('adds the revision once, last in entries as on a company file, and skips it when an upgrade cut off half way made it', () => {

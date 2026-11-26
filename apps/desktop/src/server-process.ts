@@ -8,9 +8,9 @@ import { appendFileSync, closeSync, copyFileSync, existsSync, fsyncSync, mkdirSy
 import { createServer } from 'node:net';
 import { extname, join, normalize, sep } from 'node:path';
 import type { FastifyInstance } from 'fastify';
-import { buildApp, configureLicensing, configureVerifyKeyVault, openDatabase, planStatus, startUsagePings, type Db } from '@qasa/server';
-import { companyDirOf, isCompanyId, MAIN_COMPANY, readRegistry, writeRegistry } from './companies.ts';
-import { companyApi } from './company-api.ts';
+import { buildApp, configureLicensing, configureVerifyKeyVault, configureViewOnly, openDatabase, planStatus, startUsagePings, type Db } from '@qasa/server';
+import { companyDirOf, isCompanyId, MAIN_COMPANY, readRegistry, viewOnlyCompany, writeRegistry } from './companies.ts';
+import { companyApi, takeNewerLicence } from './company-api.ts';
 import { handleRecoverRequest, recoverableAdmins } from './recover.ts';
 import { startOver } from './start-over.ts';
 import { closeAskNeeded, lastBookChangeAt } from './close-backup.ts';
@@ -253,12 +253,18 @@ function placeCompanyFile(name: string): void {
 /**
  * What the main process is told when the company file can't be opened at the start. `cause` tells a file that is
  * damaged (or not a company file) from one that is fine but could not be updated, because the copy kept before a
- * schema update could not be written (a full disk, no access): that one must never be set aside as damaged.
+ * schema update could not be written (a full disk, no access), or because a version of the update could not be
+ * applied (`update`: the file is as it was before that version). Neither must ever be set aside as damaged: the books
+ * in it are fine, and an empty company in their place would look like lost books.
  */
-export function companyFileProblem(error: unknown, main: boolean): { main: boolean; reason: string; cause: 'update_copy' | 'damaged' } {
-  const e = error as { code?: unknown; details?: { reason?: unknown } | null } | null;
+export function companyFileProblem(error: unknown, main: boolean): { main: boolean; reason: string; cause: 'update_copy' | 'update' | 'damaged' } {
+  const e = error as { code?: unknown; details?: { reason?: unknown; version?: unknown } | null } | null;
   if (e && e.code === 'update_copy_failed') {
     return { main, reason: String(e.details?.reason ?? '').slice(0, 200), cause: 'update_copy' };
+  }
+  if (e && e.code === 'update_failed') {
+    const version = Number(e.details?.version);
+    return { main, reason: `${Number.isFinite(version) ? `${version}: ` : ''}${String(e.details?.reason ?? '')}`.slice(0, 200), cause: 'update' };
   }
   return { main, reason: error instanceof Error ? error.message.slice(0, 200) : String(error).slice(0, 200), cause: 'damaged' };
 }
@@ -283,7 +289,8 @@ async function openCompanyDatabase(bridge: Bridge): Promise<Db> {
       if (typeof problem.host !== 'string') {
         // the company file itself can't be opened (damaged, or not a company file): never a raw error and a quit,
         // because restoring a backup is exactly what this needs. A file that is fine but had no room for its copy
-        // before an update is said so, and is never set aside (companyFileProblem).
+        // before an update, or that a version of the update could not be applied to, is said so, and is never set
+        // aside (companyFileProblem).
         const fileProblem = companyFileProblem(error, companyId() === MAIN_COMPANY);
         const choice = await bridge.call<'retry' | 'aside' | 'first' | 'quit'>('dbDamaged', [fileProblem], { timeoutMs: 0 });
         if (choice === 'aside' && fileProblem.cause === 'damaged') {
@@ -376,6 +383,24 @@ async function startServer(bridge: Bridge, given: ServerInit): Promise<string> {
   // paid plans need an activation for this PC (online once, then a check every few weeks); official builds (with the
   // Pro module) also check every licence in the Rust module shipped beside app.asar
   configureLicensing({ strict: true, dataDir: given.userDataDir, markerDirs: trialMarkerDirs(given).slice(1), requireNative: !!proModule });
+  // the licence is this PC's: a renewal or a fresh check-in made in another company counts here from the start, so this
+  // company never comes up on Free (and past the company limit) only because it was not opened for weeks
+  takeNewerLicence(db, given.userDataDir, companyId(), log);
+  // a company past the plan's company limit (a licence ended, the free month over, or companies.json written by hand)
+  // still opens, to be viewed: it refuses changes until the plan allows it again, and says so in a banner. It is never
+  // swapped for another company at the start (people took that for lost records), and nothing is hidden or deleted.
+  // Asked at each change: the check-in that brings the plan back lifts it without a restart (security review #10)
+  const open0 = db;
+  const viewOnly = (): boolean => {
+    try {
+      return viewOnlyCompany(readRegistry(given.userDataDir), companyId(), planStatus(open0).limits.companies);
+    } catch {
+      // the list can't be read just now: never a reason to refuse work
+      return false;
+    }
+  };
+  configureViewOnly(viewOnly);
+  if (viewOnly()) log('the company', companyId(), 'is past the plan\'s company limit: it opens to be viewed');
   // the anonymous daily usage ping (Settings → Anonymous usage statistics; can be switched off)
   pings = startUsagePings(db, {
     dataDir: given.userDataDir, version: given.appVersion, os: process.platform === 'win32' ? 'windows' : process.platform,
@@ -385,6 +410,7 @@ async function startServer(bridge: Bridge, given: ServerInit): Promise<string> {
   const companies = companyApi({
     db: open, userDataDir: given.userDataDir, currentId: companyId(), log,
     limit: () => planStatus(open).limits.companies,
+    viewOnly,
     makeCompanyFile: (file, prepare) => {
       const made = openDatabase(file);
       try { prepare(made); } finally { made.close(); }

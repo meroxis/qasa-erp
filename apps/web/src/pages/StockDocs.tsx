@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { lineAmount, todayIso } from '@qasa/core';
-import { api, type StockDocInput, type StockDocKind, type StockDocView } from '../api.ts';
+import { api, type ItemView, type StockDocInput, type StockDocKind, type StockDocView } from '../api.ts';
 import {
   AccountCombo, AmountInput, ErrorBox, Icon, InvoiceStatusChip, Modal, QtyInput, SearchCombo, useData, useLoad, useMay, useToast, type PickOption
 } from '../components.tsx';
@@ -12,6 +12,7 @@ import { baseQty, factorOf, type LineUnit } from '../industry/units.ts';
 import { BatchInFields, BatchPick } from '../industry/BatchFields.tsx';
 import { reverseDefaultDate } from '../industry/ReverseModal.tsx';
 import { printDocument } from '../industry/printing.ts';
+import { focusLineQty, ItemPicker, withAdded } from '../industry/QuickItemForm.tsx';
 
 import { transferOffer } from './transfer-offer.ts';
 
@@ -83,6 +84,18 @@ interface Row { key: number; itemId: string; qtyMilli: number | null; unitCost: 
 let rowKey = 1;
 const emptyRow = (): Row => ({ key: rowKey++, itemId: '', qtyMilli: 1000, unitCost: null });
 
+/**
+ * The opening stock line of an item just made in the item box ("+"): the item, its weight when a scale's label was
+ * scanned for it (in the base unit; else the line keeps its quantity, in the item's purchase unit), and its purchase
+ * price as the cost of one, unless a cost was already typed. The cost box is in dinars, so a dollar price is left to type.
+ */
+export function openingLineOf(made: Pick<ItemView, 'id' | 'purchaseUnit' | 'purchasePrice' | 'purchaseCurrency'>, weighed: number | null, typedCost: number | null):
+  { itemId: string; unit: LineUnit; unitCost: number | null; qtyMilli?: number } {
+  const scaled = typeof weighed === 'number';
+  const price = made.purchaseCurrency === 'IQD' && typeof made.purchasePrice === 'number' && made.purchasePrice > 0 ? made.purchasePrice : null;
+  return { itemId: made.id, unit: scaled ? null : made.purchaseUnit ?? null, unitCost: typedCost ?? price, ...(scaled ? { qtyMilli: weighed } : {}) };
+}
+
 export function StockDocEditor({ kind: initialKind, id }: { kind?: StockDocKind; id?: string }) {
   const i18n = useI18n();
   const { t } = i18n;
@@ -102,7 +115,10 @@ export function StockDocEditor({ kind: initialKind, id }: { kind?: StockDocKind;
   const [error, setError] = useState<unknown>(null);
 
   const warehouses = useLoad(() => api.warehouses(), []);
-  const items = useLoad(() => api.items({ active: 'true', ...(warehouseId ? { warehouseId } : {}) }), [warehouseId]);
+  const itemsLoad = useLoad(() => api.items({ active: 'true', ...(warehouseId ? { warehouseId } : {}) }), [warehouseId]);
+  // items added from the item box of an opening stock (a first opening starts with no items at all), until the list loads again
+  const [addedItems, setAddedItems] = useState<ItemView[]>([]);
+  const items = useMemo(() => ({ ...itemsLoad, data: itemsLoad.data || addedItems.length ? withAdded(itemsLoad.data, addedItems) : itemsLoad.data }), [itemsLoad, addedItems]);
   const active = (warehouses.data ?? []).filter((w) => w.active);
 
   useEffect(() => {
@@ -218,6 +234,11 @@ export function StockDocEditor({ kind: initialKind, id }: { kind?: StockDocKind;
 
       <div className="card">
         <div style={{ padding: '14px 16px 8px' }}><h2>{t('invoiceLines')}</h2></div>
+        {kind === 'opening' && itemsLoad.data && itemOptions.length === 0 && (
+          <div className="muted small" role="note" style={{ padding: '0 16px 10px' }}>
+            {t('sd_firstOpening')} <a href={href('import')}>{t('sd_firstOpeningImport')}</a>
+          </div>
+        )}
         <table className="table">
           <thead>
             <tr>
@@ -236,10 +257,22 @@ export function StockDocEditor({ kind: initialKind, id }: { kind?: StockDocKind;
               // the average cost of one of the line's unit
               const avg = it ? Math.round((averageCost(it.qtyMilli, it.value ?? 0) * factorOf(it, r.unit ?? null)) / 1000) : 0;
               return (
-                <tr key={r.key}>
+                <tr key={r.key} data-line={r.key}>
                   <td className="muted num">{i18n.int(i + 1)}</td>
                   <td>
-                    <SearchCombo value={r.itemId} options={itemOptions} onChange={(v) => pickItem(r.key, v)} placeholder={t('chooseItem')} ariaLabel={t('item')} />
+                    {kind === 'opening'
+                      // an opening stock can make the item right here ("+"): the first opening has nothing to choose from.
+                      // The form gets no warehouse, so it enters no stock of its own: this document does.
+                      ? <ItemPicker value={r.itemId} options={itemOptions} onChange={(v) => pickItem(r.key, v)} placeholder={t('chooseItem')} ariaLabel={t('item')}
+                          stockOnly onCreated={(made, weighed) => {
+                            setAddedItems((a) => [...a.filter((x) => x.id !== made.id), made]);
+                            setRows((rs) => {
+                              const next = rs.map((x) => (x.key === r.key ? { ...x, ...openingLineOf(made, weighed, x.unitCost) } : x));
+                              return next[next.length - 1]?.itemId ? [...next, emptyRow()] : next;
+                            });
+                            focusLineQty(r.key, t('qty'));
+                          }} />
+                      : <SearchCombo value={r.itemId} options={itemOptions} onChange={(v) => pickItem(r.key, v)} placeholder={t('chooseItem')} ariaLabel={t('item')} />}
                     {short && <div className="small" style={{ color: 'var(--bad)', marginTop: 3 }}>{t('available')}: {qtyText(i18n, it.qtyMilli)}</div>}
                     {kind === 'opening'
                       ? <BatchInFields item={it} batchNo={r.batchNo ?? ''} expiry={r.expiry ?? ''} date={date} onChange={(v) => update(r.key, v)} />

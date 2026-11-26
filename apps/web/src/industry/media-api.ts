@@ -1,10 +1,12 @@
-import type { CurrencyCode, Lang } from '@qasa/core';
+import type { CurrencyCode, Lang, ProductSource } from '@qasa/core';
 import { request } from '../api.ts';
 
 /** Item pictures and importing from Excel (packages/server/src/media.ts). */
 
 export type ImageMime = 'image/jpeg' | 'image/png' | 'image/webp';
-export interface ItemImageView { itemId: string; mime: ImageMime; data: string; updatedAt: string }
+/** 2.0: where a picture came from when it is not the shop's own (an open product database), for its credit */
+export interface ItemImageSource { source: ProductSource; licence: string; url: string }
+export interface ItemImageView { itemId: string; mime: ImageMime; data: string; updatedAt: string; source?: ItemImageSource }
 
 export type ImportKind = 'customers' | 'suppliers' | 'items' | 'opening_stock' | 'opening_balances';
 export interface ImportOptions {
@@ -28,10 +30,11 @@ export interface ImportResult {
 }
 
 export const mediaApi = {
-  imageIndex: () => request<{ itemId: string; updatedAt: string }[]>('GET', '/api/item-images'),
+  imageIndex: () => request<{ itemId: string; updatedAt: string; source?: ProductSource }[]>('GET', '/api/item-images'),
   image: (itemId: string) => request<ItemImageView>('GET', `/api/items/${encodeURIComponent(itemId)}/image`),
-  setImage: (itemId: string, data: string) =>
-    request<{ itemId: string; mime: ImageMime; bytes: number; updatedAt: string }>('PUT', `/api/items/${encodeURIComponent(itemId)}/image`, { data }),
+  /** `lookupBarcode`: the picture is the one a lookup of that barcode found (the server credits its source) */
+  setImage: (itemId: string, data: string, lookupBarcode?: string) =>
+    request<{ itemId: string; mime: ImageMime; bytes: number; updatedAt: string; source?: ItemImageSource }>('PUT', `/api/items/${encodeURIComponent(itemId)}/image`, { data, ...(lookupBarcode ? { lookupBarcode } : {}) }),
   deleteImage: (itemId: string) => request<void>('DELETE', `/api/items/${encodeURIComponent(itemId)}/image`),
   /** lang: the language of the words written on the documents the import makes (the person's own; Arabic by default) */
   // items have their own route: whoever can make items may import them (the other kinds need an admin)

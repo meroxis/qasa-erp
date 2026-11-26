@@ -50,10 +50,11 @@ nsis:
   installerLanguages: [en_US, ar_SA]
   license: ../../LICENSE
   deleteAppDataOnUninstall: false
-# Update channels: with GitHub each release has one update file. A stable version (1.2.0) writes latest.yml; beta
+# Update channels: with GitHub each release has one update file. A stable version (1.2.0) has latest.yml; beta
 # testers still get it, because electron-updater falls back to latest.yml when prereleases are allowed. A beta version
-# (1.2.0-beta.1) writes beta.yml and is published as a prerelease, so it reaches nobody but the testers
-# (docs/releasing.md).
+# (1.2.0-beta.1) has beta.yml and is published as a prerelease, so it reaches nobody but the testers
+# (docs/releasing.md). electron-builder itself always names the file latest.yml for GitHub: the release workflow puts a
+# beta's on the release under the name beta.yml (found with 2.0.0-beta.1, the first beta: its run had no beta.yml).
 publish:
   provider: github
   owner: meroxis

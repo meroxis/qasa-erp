@@ -14,7 +14,7 @@ import { createParty } from './parties.ts';
 import { createStockDoc } from './stock-docs.ts';
 import { createJournalEntry } from './journal.ts';
 import { createAccount, loadAccounts } from './accounts.ts';
-import type { Account } from '@qasa/core';
+import { isProductSource, PRODUCT_IMAGE_LICENCE, type Account, type ProductSource } from '@qasa/core';
 import type { ApiExtension, ApiRequest } from './routes.ts';
 import type { Actor } from './auth.ts';
 
@@ -69,7 +69,31 @@ export function toBase64(bytes: Uint8Array): string {
   return btoa(binary);
 }
 
-export interface ItemImageView { itemId: string; mime: ImageMime; data: string; updatedAt: string }
+/**
+ * Where a picture came from when it is not the shop's own (2.0): one of the open product databases, the licence it is
+ * under and the product's page there. Kept with the picture so the credit the licence asks for can be shown wherever
+ * the picture is shown to the public, and dropped as soon as the picture is replaced or removed.
+ */
+export interface ItemImageSource { source: ProductSource; licence: string; url: string }
+
+export interface ItemImageView { itemId: string; mime: ImageMime; data: string; updatedAt: string; source?: ItemImageSource }
+
+/** The picture's source, or null when it is the shop's own (or the row says something this app does not know). */
+export function itemImageSource(db: Db, itemId: string): ItemImageSource | null {
+  const row = db.prepare('SELECT source, licence, url FROM item_image_sources WHERE item_id = ?').get(itemId) as { source: string; licence: string; url: string } | undefined;
+  return row && isProductSource(row.source) ? { source: row.source, licence: row.licence, url: row.url } : null;
+}
+
+/**
+ * The source of the picture the open product databases have for a barcode, from what was kept of the lookup (the app
+ * itself asked them: product-lookup.ts): what a picture saved from a lookup is credited with. Null when no lookup of
+ * that barcode found a picture, so a client can never write a credit of its own making.
+ */
+export function lookedUpSource(db: Db, barcode: string): ItemImageSource | null {
+  const row = db.prepare('SELECT source, page_url FROM product_lookups WHERE barcode = ? AND found = 1 AND image_url IS NOT NULL').get(barcode.trim()) as
+    { source: string | null; page_url: string | null } | undefined;
+  return row && isProductSource(row.source) && row.page_url ? { source: row.source, licence: PRODUCT_IMAGE_LICENCE, url: row.page_url } : null;
+}
 
 function itemExists(db: Db, id: string): boolean {
   return !!db.prepare('SELECT 1 FROM items WHERE id = ?').get(id);
@@ -79,16 +103,25 @@ export function getItemImage(db: Db, itemId: string): ItemImageView {
   const row = db.prepare('SELECT mime, data, updated_at FROM item_images WHERE item_id = ?').get(itemId) as
     { mime: ImageMime; data: Uint8Array; updated_at: string } | undefined;
   if (!row) throw notFound('item_image');
-  return { itemId, mime: row.mime, data: toBase64(new Uint8Array(row.data)), updatedAt: row.updated_at };
+  const source = itemImageSource(db, itemId);
+  return { itemId, mime: row.mime, data: toBase64(new Uint8Array(row.data)), updatedAt: row.updated_at, ...(source ? { source } : {}) };
 }
 
 /** Which items have a picture, and since when (the page asks for a picture only when there is one). */
-export function listItemImages(db: Db): { itemId: string; updatedAt: string }[] {
+export function listItemImages(db: Db): { itemId: string; updatedAt: string; source?: ProductSource }[] {
+  const sources = new Map((db.prepare('SELECT item_id, source FROM item_image_sources').all() as { item_id: string; source: string }[]).map((r) => [r.item_id, r.source]));
   return (db.prepare('SELECT item_id, updated_at FROM item_images ORDER BY item_id').all() as { item_id: string; updated_at: string }[])
-    .map((r) => ({ itemId: r.item_id, updatedAt: r.updated_at }));
+    .map((r) => {
+      const source = sources.get(r.item_id);
+      return { itemId: r.item_id, updatedAt: r.updated_at, ...(isProductSource(source) ? { source } : {}) };
+    });
 }
 
-export function setItemImage(db: Db, itemId: string, base64: string, user: string): { itemId: string; mime: ImageMime; bytes: number; updatedAt: string } {
+/**
+ * Saves an item's picture in place of the one it has. `source`: where it came from when it is not the shop's own; a
+ * picture saved without one (a photo, a file) drops the source of the picture before it.
+ */
+export function setItemImage(db: Db, itemId: string, base64: string, user: string, source: ItemImageSource | null = null): { itemId: string; mime: ImageMime; bytes: number; updatedAt: string; source?: ItemImageSource } {
   if (!itemExists(db, itemId)) throw notFound('item');
   const bytes = fromBase64(base64);
   if (!bytes || bytes.length === 0) throw invalid([{ code: 'md_image_invalid' }]);
@@ -101,16 +134,19 @@ export function setItemImage(db: Db, itemId: string, base64: string, user: strin
     db.prepare('DELETE FROM item_images WHERE item_id = ?').run(itemId);
     // the picture's hash tells an online shop when it changed (no need to download it to compare)
     db.prepare('INSERT INTO item_images (item_id, mime, data, updated_at, sha256) VALUES (?, ?, ?, ?, ?)').run(itemId, mime, bytes, now, imageSha256(bytes));
+    db.prepare('DELETE FROM item_image_sources WHERE item_id = ?').run(itemId);
+    if (source) db.prepare('INSERT INTO item_image_sources (item_id, source, licence, url, created_at) VALUES (?, ?, ?, ?, ?)').run(itemId, source.source, source.licence, source.url, now);
     db.prepare('UPDATE items SET updated_at = ? WHERE id = ?').run(now, itemId);
-    audit(db, user, 'update', 'item_image', itemId, { mime, bytes: bytes.length });
+    audit(db, user, 'update', 'item_image', itemId, { mime, bytes: bytes.length, ...(source ? { source: source.source } : {}) });
   });
-  return { itemId, mime, bytes: bytes.length, updatedAt: now };
+  return { itemId, mime, bytes: bytes.length, updatedAt: now, ...(source ? { source } : {}) };
 }
 
 export function deleteItemImage(db: Db, itemId: string, user: string): void {
   if (!itemExists(db, itemId)) throw notFound('item');
   transaction(db, () => {
     const removed = db.prepare('DELETE FROM item_images WHERE item_id = ?').run(itemId);
+    db.prepare('DELETE FROM item_image_sources WHERE item_id = ?').run(itemId);
     db.prepare('UPDATE items SET updated_at = ? WHERE id = ?').run(new Date().toISOString(), itemId);
     if (Number(removed.changes) > 0) audit(db, user, 'delete', 'item_image', itemId);
   });
@@ -827,8 +863,10 @@ export const mediaApi: ApiExtension = {
       {
         method: 'PUT', path: '/api/items/:id/image',
         handler: async (req) => {
-          const body = parse(z.object({ data: z.string().min(1).max(Math.ceil(MAX_IMAGE_BYTES * 4 / 3) + 200) }), req.body);
-          return setItemImage(db, parse(idParam, req.params).id, body.data, actor(req).name);
+          // lookupBarcode (2.0, optional: older apps send none): the picture is the one the open product databases
+          // have for that barcode, as this server looked it up; its credit is what the lookup kept, never the client's
+          const body = parse(z.object({ data: z.string().min(1).max(Math.ceil(MAX_IMAGE_BYTES * 4 / 3) + 200), lookupBarcode: z.string().min(8).max(14).regex(/^\d+$/).optional() }), req.body);
+          return setItemImage(db, parse(idParam, req.params).id, body.data, actor(req).name, body.lookupBarcode ? lookedUpSource(db, body.lookupBarcode) : null);
         }
       },
       {

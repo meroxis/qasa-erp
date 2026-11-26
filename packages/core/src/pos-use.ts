@@ -22,10 +22,10 @@ export function isPosUse(value: unknown): value is PosUse {
 
 /**
  * The business types that sell at a counter, so the till shows for them by default: general trade and shops, a market
- * or supermarket, a pharmacy, a phone shop, a car-parts shop, an electrical and solar shop. Not: real estate,
+ * or supermarket, a pharmacy, a phone shop, a car-parts shop, an electrical and solar shop, a clothing and shoe shop. Not: real estate,
  * engineering works, generators (they bill by invoice or by subscription).
  */
-export const COUNTER_BUSINESS_TYPES: readonly BusinessType[] = ['trade', 'market', 'pharmacy', 'mobileShop', 'autoParts', 'electricalSolar'];
+export const COUNTER_BUSINESS_TYPES: readonly BusinessType[] = ['trade', 'market', 'pharmacy', 'mobileShop', 'autoParts', 'electricalSolar', 'clothingShop', 'goldShop', 'wholesale'];
 
 /**
  * Whether the till shows by default for these business types: when any of them sells at a counter. A company that has

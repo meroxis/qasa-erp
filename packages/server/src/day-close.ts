@@ -4,10 +4,12 @@ import type { Db } from './db.ts';
 import { AppError } from './errors.ts';
 import { readSetting } from './settings.ts';
 import { entryInBranchSql } from './branches.ts';
-import { getShift, openedShift, shiftInvoiceIds, type PosMethod } from './pos.ts';
+import { getShift, openedShift, shiftInvoiceIds, type CashMoves, type PosMethod } from './pos.ts';
 import { loyaltyPaidFor } from './loyalty.ts';
 import { branchOf, cashFlowOn, expensesBetween, lowStock, salesByItem, type BranchFilter, type ExpenseRow, type ItemSales, type LowStock } from './brief.ts';
 import { seesBooks, type Actor } from './auth.ts';
+import { closesBlind } from './till-settings.ts';
+import { expiredUnused } from './gift-vouchers.ts';
 import type { ApiExtension } from './routes.ts';
 
 /**
@@ -21,12 +23,19 @@ import type { ApiExtension } from './routes.ts';
 type Money = Record<CurrencyCode, number>;
 
 /** How a sale was paid: cash or a bank (a cash invoice into a safe or a bank), a card or wallet at the till, on account, or points. */
-export const DAY_METHODS = ['cash', 'bank', 'card', 'fib', 'zaincash', 'qi', 'credit', 'loyalty'] as const;
+export const DAY_METHODS = ['cash', 'bank', 'card', 'fib', 'zaincash', 'qi', 'credit', 'loyalty', 'voucher'] as const;
 export type DayMethod = (typeof DAY_METHODS)[number];
 
 export interface DayRegister {
   shiftId: string; number: string; register: string; openedBy: string; status: 'open' | 'closed'; openedAt: string; closedAt: string | null;
   sales: Money; count: number; expected: Money; counted: Money | null; difference: Money | null;
+  /**
+   * 2.0: the other cash on the register's safe while its shift was open (a supplier or an expense paid out of the
+   * drawer, a debt collected into it), which `expected` holds; left out when there was none
+   */
+  cashMoves?: CashMoves;
+  /** an open shift of a cashier who closes blind: its figures are left out */
+  blind?: true;
 }
 
 export interface DayDebtRow { partyId: string; code: string; name: string; amount: number }
@@ -49,6 +58,8 @@ export interface DayCloseView {
   /** the money in and out of the safes and banks: left out of someone's own part (OwnPart), as expenses are */
   flow?: { in: number; out: number };
   lowStock: { count: number; top: LowStock[] };
+  /** 2.0: gift vouchers past their date still owed (for those who keep the books) */
+  giftExpired?: { count: number; amount: number };
   topItems: ItemSales[];
   ownerPhone: string;
 }
@@ -88,6 +99,14 @@ function salesByMethod(db: Db, date: string, branch: BranchFilter, own: OwnPart 
     parts.set(p.invoice_id, [...(parts.get(p.invoice_id) ?? []), { method: p.method, amount: num(p.amount) }]);
   }
   const points = loyaltyPaid(db, rows.map((r) => r.id));
+  // 2.0: a till sale's gift vouchers and dinar rounding (pos_sales)
+  const till = new Map<string, { voucher: number; rounding: number }>();
+  if (rows.length) {
+    for (const t of db.prepare(`SELECT s.invoice_id, s.voucher_paid, s.rounding FROM pos_sales s JOIN invoices i ON i.id = s.invoice_id
+                                WHERE i.status = 'posted' AND i.kind = 'sale' AND i.date = ?${w}`).all(date, ...wp) as { invoice_id: string; voucher_paid: number | null; rounding: number | null }[]) {
+      till.set(t.invoice_id, { voucher: num(t.voucher_paid ?? 0), rounding: num(t.rounding ?? 0) });
+    }
+  }
   const methods = new Map<DayMethod, { amount: number; invoices: Set<string> }>();
   const refunds = new Map<DayMethod, number>();
   const add = (method: DayMethod, amount: number, invoice: string) => {
@@ -117,8 +136,11 @@ function salesByMethod(db: Db, date: string, branch: BranchFilter, own: OwnPart 
     const own = parts.get(r.id) ?? [];
     for (const p of own) add(fromPos(p.method), base(p.amount), r.id);
     add('loyalty', byPoints, r.id);
-    // what no part says: the invoice's own way, into its safe or bank, or on the customer's account
-    const rest = base(total - own.reduce((s, p) => s + p.amount, 0)) - byPoints;
+    const t = till.get(r.id) ?? { voucher: 0, rounding: 0 };
+    add('voucher', t.voucher, r.id);
+    // what no part says: the invoice's own way, into its safe or bank, or on the customer's account (a till sale's
+    // vouchers paid none of it, and its cash rows hold the rounding already)
+    const rest = base(total - own.reduce((s, p) => s + p.amount, 0)) - byPoints - t.voucher + t.rounding;
     add(r.payment === 'credit' ? 'credit' : cashOrBank(r.cash_account), rest, r.id);
   }
   const order = (a: { amount: number; method: DayMethod }, b: { amount: number; method: DayMethod }) =>
@@ -146,7 +168,8 @@ function registersOn(db: Db, date: string, branch: BranchFilter): DayRegister[] 
       const v = getShift(db, s.id);
       return {
         shiftId: v.id, number: v.number, register: v.register, openedBy: v.openedBy, status: v.status, openedAt: v.openedAt, closedAt: v.closedAt,
-        sales: v.sales, count: v.count, expected: v.expected, counted: v.counted, difference: v.difference
+        sales: v.sales, count: v.count, expected: v.expected, counted: v.counted, difference: v.difference,
+        ...(v.cashMoves.count ? { cashMoves: v.cashMoves } : {})
       };
     });
 }
@@ -195,7 +218,18 @@ export function dayClose(db: Db, date: string, branch: BranchFilter = null, view
   let own: OwnPart | null = null;
   if (viewer && (mine || !seesBooks(viewer))) {
     registers = registers.filter((r) => openedShift(db, r.shiftId, viewer));
-    const shiftIds = registers.map((r) => r.shiftId);
+    // a cashier who closes blind (till-settings.ts) never reads what an open shift of theirs expects: its register shows
+    // no sales, expected cash or difference, and its sales are left out of the day's totals until it is closed
+    const blind = closesBlind(db, viewer);
+    if (blind) {
+      registers = registers.map((r) => {
+        if (r.status !== 'open') return r;
+        // (the other cash on its safe tells what it expects too)
+        const { cashMoves: _moves, ...rest } = r;
+        return { ...rest, sales: { IQD: 0, USD: 0 }, expected: { IQD: 0, USD: 0 }, difference: null, blind: true as const };
+      });
+    }
+    const shiftIds = registers.filter((r) => !(blind && r.status === 'open')).map((r) => r.shiftId);
     own = { userId: viewer.id, shiftIds, invoiceIds: [...new Set(shiftIds.flatMap((id) => shiftInvoiceIds(db, id)))] };
   }
   const closed = registers.filter((r) => r.status === 'closed' && r.counted && r.difference);
@@ -222,6 +256,8 @@ export function dayClose(db: Db, date: string, branch: BranchFilter = null, view
     debts: debtsOn(db, date, branch, own),
     ...(money ? { flow: money.flow } : {}),
     lowStock: { count: short.length, top: short.slice(0, 5) },
+    // 2.0: gift vouchers past their date still owed in the books (for those who keep them: an admin writes them off)
+    ...(money ? { giftExpired: expiredUnused(db, date) } : {}),
     topItems: salesByItem(db, date, date, 5, branch, own ? own.invoiceIds : null),
     ownerPhone: readSetting(db, 'brief_phone') ?? ''
   };

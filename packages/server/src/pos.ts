@@ -1,4 +1,11 @@
 import { randomUUID } from 'node:crypto';
+import { cashToTake, TILL_CARD_PAYMENTS } from '@qasa/core';
+import { postedRevaluations, rateOn } from './fx.ts';
+import { giftCashOf, giftOfShift, giftParts, takeGiftParts } from './gift-vouchers.ts';
+import {
+  blindShift, closesBlind, maySellMisc, offlineApprovalWaits, priceSubject, rateStanding, rateSubject, referenceRate, roundingAccount, tillRules, useApproval, useOfflineApproval
+} from './till-settings.ts';
+import { lowestListPrice } from './price-history.ts';
 import { z } from 'zod';
 import { todayIso, UNIT_CODES, type CurrencyCode, type UnitCode } from '@qasa/core';
 import type { Db } from './db.ts';
@@ -121,26 +128,66 @@ export interface ShiftView {
   count: number;
   /** cash refunds (posted cash sales returns from this safe while the shift was open), by currency */
   refunds: Money;
-  /** cash that should be in the drawer: the opening cash (IQD) plus the sales, less the cash refunds */
+  /** cash that should be in the drawer: the opening cash (IQD) plus the cash sales, less the cash refunds, with the other cash on its safe (otherCash, cashMoves) */
   expected: Money;
   /** what was counted at closing (null while open) */
   counted: Money | null;
   /** 1.1: the posted sales by how they were paid (a sale not split: all cash); 1.2: loyalty, what points paid */
-  methods: Partial<Record<PosMethod | 'loyalty', Money>>;
+  methods: Partial<Record<PosMethod | 'loyalty' | 'voucher', Money>>;
   /** counted − expected, by currency (null while open) */
   difference: Money | null;
   notes: string;
   /** the actions this user may take */
   actions: ('sell' | 'close')[];
+  /** 2.0: the named till the shift was opened on (null: a register typed by name, as before) */
+  tillId: string | null;
+  /**
+   * 2.0: dollar notes taken at the till for dinar sales (`usd` in cents) and the dinars they stood for (`iqd`): in the
+   * drawer they are dollars, so the dinars expected are that much less and the dollars that much more
+   */
+  usdTaken: { usd: number; iqd: number };
+  /**
+   * 2.0: cash sales made on another screen (the invoice screen) into this shift's safe while it was open, less those
+   * cancelled meanwhile: that money is in the drawer too, so it is expected at closing
+   */
+  otherCash: Money;
+  /**
+   * 2.0: every other document that moved cash on the shift's safe while it was open (cashMovesOf): a supplier or an
+   * expense paid out of the drawer, a debt collected into it, cash carried to another safe. Expected at closing too.
+   */
+  cashMoves: CashMoves;
 }
+
+/** One document that moved cash on a shift's safe beside the till's own sales, refunds and gift vouchers. */
+export interface CashMoveLine {
+  entryId: string;
+  /** the entry's type: a purchase, a receipt or a payment voucher, a journal entry (a transfer between safes), a reversal */
+  type: string;
+  number: string | null;
+  description: string;
+  currency: CurrencyCode;
+  /** into the drawer (+) or out of it (−), in the document's currency */
+  amount: number;
+  /** who wrote it */
+  by: string;
+  /** when it was posted (approved): that is when it counts */
+  at: string;
+}
+
+/** The other cash of a shift: what came in and what went out, by currency, and the documents (the first 200; `count`: all). */
+export interface CashMoves { in: Money; out: Money; count: number; lines: CashMoveLine[] }
 
 export interface ShiftReport extends ShiftView {
   invoices: ShiftSaleView[];
   /** what was sold, item by item (posted sales only) */
   items: { itemId: string; code: string; name: { ar: string; en: string; ku: string }; qtyMilli: number; amount: Money }[];
+  /** 2.0.0: gift vouchers sold at this till and used on its sales */
+  gift: { soldCount: number; sold: number; used: number };
 }
 
 export interface OpenShiftInput {
+  /** 2.0: a named till (pos-tills.ts): its name, safe and warehouse are the shift's */
+  tillId?: string | undefined;
   register: string;
   cashAccountCode: string;
   warehouseId: string;
@@ -172,6 +219,16 @@ export interface SaleInput {
    * due, so the receipt prints "Amount paid" and "Change" again later; it changes nothing in the books.
    */
   tendered?: number | undefined;
+  /**
+   * 2.0: a dinar sale paid partly in dollar notes: the dollars taken (cents) and the rate they were taken at. The books
+   * keep the sale in dinars (the dollars' worth is part of the cash); the shift expects those dollars in the drawer
+   * instead of their dinars, and any change from them is given in dinars.
+   */
+  usdCash?: { amount: number; rateX100: number } | undefined;
+  /** 2.0: approvals a supervisor gave at this till (till-rules.ts) for what the sale needs one for */
+  approvals?: string[] | undefined;
+  /** 2.0: gift vouchers that pay part of the sale (gift-vouchers.ts) */
+  vouchers?: { code: string; amount: number }[] | undefined;
 }
 
 export interface OfflineSale { reference: string; soldAt: string; soldOn: string }
@@ -205,6 +262,7 @@ interface ShiftRow {
   id: string; number: string; register: string; cash_account: string; warehouse_id: string; status: 'open' | 'closed';
   opened_by: string; opened_at: string; opening_cash: number; closed_by: string | null; closed_at: string | null;
   expected_cash: number | null; counted_cash: number | null; expected_usd: number | null; counted_usd: number | null; notes: string | null;
+  till_id?: string | null;
 }
 
 function loadShift(db: Db, id: string): ShiftRow {
@@ -217,9 +275,21 @@ function loadShift(db: Db, id: string): ShiftRow {
  * The shift's posted sales: all of them, the cash in them (a split sale counts only its cash part; a sale from before
  * 1.1 or not split is all cash), and the totals per method.
  */
-function salesOf(db: Db, shiftId: string): { sales: Money; cash: Money; count: number; methods: Partial<Record<PosMethod | 'loyalty', Money>> } {
-  const rows = db.prepare(`SELECT i.id, i.currency AS currency, i.total FROM pos_sales s JOIN invoices i ON i.id = s.invoice_id
-                           WHERE s.shift_id = ? AND i.status = 'posted'`).all(shiftId) as { id: string; currency: CurrencyCode; total: number }[];
+/** 2.0: the dollar notes taken for the shift's posted dinar sales, and the dinars they stood for. */
+function usdTakenOf(db: Db, shiftId: string): { usd: number; iqd: number } {
+  const rows = db.prepare(`SELECT s.usd_cash, s.usd_rate_x100 FROM pos_sales s JOIN invoices i ON i.id = s.invoice_id
+                           WHERE s.shift_id = ? AND i.status = 'posted' AND s.usd_cash IS NOT NULL`).all(shiftId) as { usd_cash: number; usd_rate_x100: number }[];
+  let usd = 0, iqd = 0;
+  for (const r of rows) { usd += Number(r.usd_cash); iqd += usdCashValue(Number(r.usd_cash), Number(r.usd_rate_x100)); }
+  return { usd, iqd };
+}
+
+/** The dinars dollar notes stand for: cents × (dinars per dollar × 100) / 10 000, rounded. */
+export const usdCashValue = (cents: number, rateX100: number): number => Math.round((cents * rateX100) / 10000);
+
+function salesOf(db: Db, shiftId: string): { sales: Money; cash: Money; count: number; methods: Partial<Record<PosMethod | 'loyalty' | 'voucher', Money>> } {
+  const rows = db.prepare(`SELECT i.id, i.currency AS currency, i.total, s.voucher_paid, s.rounding FROM pos_sales s JOIN invoices i ON i.id = s.invoice_id
+                           WHERE s.shift_id = ? AND i.status = 'posted'`).all(shiftId) as { id: string; currency: CurrencyCode; total: number; voucher_paid: number | null; rounding: number | null }[];
   const parts = new Map<string, { method: PosMethod; amount: number }[]>();
   if (rows.length) {
     for (const p of db.prepare(`SELECT p.invoice_id, p.method, p.amount FROM invoice_payments p JOIN pos_sales s ON s.invoice_id = p.invoice_id
@@ -229,14 +299,17 @@ function salesOf(db: Db, shiftId: string): { sales: Money; cash: Money; count: n
   }
   const sales = zero();
   const cash = zero();
-  const methods: Partial<Record<PosMethod | 'loyalty', Money>> = {};
-  // 1.2: what loyalty points paid (never in the drawer)
+  const methods: Partial<Record<PosMethod | 'loyalty' | 'voucher', Money>> = {};
+  // 1.2: what loyalty points paid (never in the drawer); 2.0: what gift vouchers paid (never in it either), and the
+  // dinar rounding of the cash part (in it: a sale's cash rows hold it already; a sale with none is cash only)
   const points = loyaltyPaidFor(db, rows.map((r) => r.id));
   for (const r of rows) {
     sales[r.currency] += Number(r.total);
     const byPoints = points.get(r.id) ?? 0;
     if (byPoints) (methods.loyalty ??= zero())[r.currency] += byPoints;
-    const rest = Number(r.total) - byPoints;
+    const byVoucher = Number(r.voucher_paid ?? 0);
+    if (byVoucher) (methods.voucher ??= zero())[r.currency] += byVoucher;
+    const rest = Number(r.total) - byPoints - byVoucher + Number(r.rounding ?? 0);
     for (const p of parts.get(r.id) ?? (rest > 0 ? [{ method: 'cash' as const, amount: rest }] : [])) {
       (methods[p.method] ??= zero())[r.currency] += p.amount;
       if (p.method === 'cash') cash[r.currency] += p.amount;
@@ -253,10 +326,11 @@ function salesOf(db: Db, shiftId: string): { sales: Money; cash: Money; count: n
  */
 function refundsOf(db: Db, row: ShiftRow): Money {
   const [where, params] = shiftReturnsWhere(row);
-  // points given back on a return never leave the drawer
-  const rows = db.prepare(`SELECT i.currency AS currency,
-                                  COALESCE(SUM(i.total - COALESCE((SELECT SUM(m.value) FROM loyalty_moves m WHERE m.invoice_id = i.id AND m.kind = 'return_redeem'), 0)), 0) AS total
-                           FROM invoices i WHERE ${where}
+  // what left the drawer: the returns' credits to its safe (points and gift vouchers given back never do, and a sale
+  // rounded down pays back the rounded cash)
+  const rows = db.prepare(`SELECT i.currency AS currency, COALESCE(SUM(l.credit - l.debit), 0) AS total
+                           FROM invoices i JOIN entry_lines l ON l.entry_id = i.entry_id AND l.account_code = i.cash_account
+                           WHERE ${where}
                            GROUP BY i.currency`)
     .all(...params) as { currency: CurrencyCode; total: number }[];
   const refunds = zero();
@@ -264,14 +338,193 @@ function refundsOf(db: Db, row: ShiftRow): Money {
   return refunds;
 }
 
-/** The returns paid out of a shift's drawer (the rule above), as a condition on invoices `i` with its parameters. */
-function shiftReturnsWhere(row: ShiftRow): [string, string[]] {
-  return [`i.kind = 'sale_return' AND i.status = 'posted' AND i.payment = 'cash' AND i.cash_account = ?
-             AND i.posted_at >= ? ${row.closed_at ? 'AND i.posted_at <= ?' : ''}
+/**
+ * Something that happened at `at` (a column of invoices `i`) on the shift's safe while the shift was open, and on no
+ * newer shift of the same safe (two registers can share a safe: the same money is never counted on two drawers).
+ */
+function inShiftWindow(row: ShiftRow, at: string): [string, string[]] {
+  return [`i.cash_account = ? AND ${at} >= ? ${row.closed_at ? `AND ${at} <= ?` : ''}
              AND NOT EXISTS (SELECT 1 FROM pos_shifts o WHERE o.cash_account = i.cash_account AND o.id <> ?
-                               AND o.opened_at > ? AND o.opened_at <= i.posted_at
-                               AND (o.closed_at IS NULL OR o.closed_at >= i.posted_at))`,
+                               AND o.opened_at > ? AND o.opened_at <= ${at}
+                               AND (o.closed_at IS NULL OR o.closed_at >= ${at}))`,
   [row.cash_account, row.opened_at, ...(row.closed_at ? [row.closed_at] : []), row.id, row.opened_at]];
+}
+
+/**
+ * The returns paid out of a shift's drawer, as a condition on invoices `i` with its parameters: those kept for this
+ * shift when they were made (pos_shift_refunds: the till's own return or exchange names its shift, any other cash
+ * return belongs to the shift open on that safe). A return from before that was kept goes by the rule above.
+ */
+function shiftReturnsWhere(row: ShiftRow): [string, string[]] {
+  const [window, params] = inShiftWindow(row, 'i.posted_at');
+  return [`i.kind = 'sale_return' AND i.status = 'posted' AND i.payment = 'cash'
+             AND (EXISTS (SELECT 1 FROM pos_shift_refunds f WHERE f.invoice_id = i.id AND f.shift_id = ?)
+                  OR (NOT EXISTS (SELECT 1 FROM pos_shift_refunds f WHERE f.invoice_id = i.id) AND ${window}))`,
+  [row.id, ...params]];
+}
+
+/**
+ * Other cash into and out of the shift's safe while it was open, that no till sale or refund of its own accounts for:
+ *  - cash sales made on another screen (review 2.0): what went in is the posting's debit to the safe; one cancelled
+ *    while the shift was open took its money out again (whenever it was sold);
+ *  - a cash sales return no shift paid (made on a safe no shift was open on), cancelled while this shift is open: its
+ *    money came back into the drawer (round four of the review);
+ *  - a gift voucher an admin cancelled and paid back out of this safe (round four): one a refund made, or one sold by
+ *    a shift that had closed by then. (One sold by a shift still open is simply no longer in that shift's voucher
+ *    cash: giftCashOf.)
+ */
+function otherCashOf(db: Db, row: ShiftRow): Money {
+  const other = zero();
+  const sum = (at: string, status: string, sign: 1 | -1) => {
+    const [window, params] = inShiftWindow(row, at);
+    const rows = db.prepare(`SELECT i.currency AS currency, COALESCE(SUM(l.debit - l.credit), 0) AS total
+                             FROM invoices i JOIN entry_lines l ON l.entry_id = i.entry_id AND l.account_code = i.cash_account
+                             WHERE i.kind = 'sale' AND i.payment = 'cash' AND ${status} AND ${at} IS NOT NULL AND ${window}
+                               AND NOT EXISTS (SELECT 1 FROM pos_sales s WHERE s.invoice_id = i.id)
+                             GROUP BY i.currency`).all(...params) as { currency: CurrencyCode; total: number }[];
+    for (const r of rows) other[r.currency] += sign * Number(r.total);
+  };
+  sum('i.posted_at', "i.status IN ('posted', 'cancelled')", 1);
+  sum('i.cancelled_at', "i.status = 'cancelled'", -1);
+  const [cancelled, cancelParams] = inShiftWindow(row, 'i.cancelled_at');
+  const back = db.prepare(`SELECT i.currency AS currency, COALESCE(SUM(l.credit - l.debit), 0) AS total
+                           FROM invoices i JOIN entry_lines l ON l.entry_id = i.entry_id AND l.account_code = i.cash_account
+                           WHERE i.kind = 'sale_return' AND i.payment = 'cash' AND i.status = 'cancelled' AND i.cancelled_at IS NOT NULL AND ${cancelled}
+                             AND NOT EXISTS (SELECT 1 FROM pos_shift_refunds f WHERE f.invoice_id = i.id)
+                             AND NOT EXISTS (SELECT 1 FROM pos_shifts p WHERE p.cash_account = i.cash_account AND p.opened_at <= i.posted_at
+                                               AND (p.closed_at IS NULL OR p.closed_at >= i.posted_at))
+                           GROUP BY i.currency`).all(...cancelParams) as { currency: CurrencyCode; total: number }[];
+  for (const r of back) other[r.currency] += Number(r.total);
+  other.IQD -= giftPaidBackOf(db, row);
+  return other;
+}
+
+/**
+ * Dinars paid back out of the shift's safe for gift vouchers an admin cancelled while it was open (the newest shift
+ * open on that safe then): the credits of each voucher's cancelling entry to the safe. Not the vouchers whose own
+ * selling shift was still open when they were cancelled: those left that shift's voucher cash instead.
+ */
+function giftPaidBackOf(db: Db, row: ShiftRow): number {
+  const r = db.prepare(`SELECT COALESCE(SUM(l.credit - l.debit), 0) AS total
+                        FROM gift_vouchers v JOIN gift_voucher_moves m ON m.voucher_id = v.id AND m.kind = 'cancelled'
+                          JOIN entry_lines l ON l.entry_id = v.cancel_entry_id AND l.account_code = ?
+                        WHERE v.status = 'cancelled' AND m.created_at >= ? ${row.closed_at ? 'AND m.created_at <= ?' : ''}
+                          AND NOT EXISTS (SELECT 1 FROM pos_shifts o WHERE o.cash_account = ? AND o.id <> ? AND o.opened_at > ? AND o.opened_at <= m.created_at
+                                            AND (o.closed_at IS NULL OR o.closed_at >= m.created_at))
+                          AND NOT EXISTS (SELECT 1 FROM pos_shifts g WHERE g.id = v.shift_id AND (g.closed_at IS NULL OR g.closed_at >= m.created_at))`)
+    .get(row.cash_account, row.opened_at, ...(row.closed_at ? [row.closed_at] : []), row.cash_account, row.id, row.opened_at) as { total: number };
+  return Number(r.total);
+}
+
+const MOVE_LINES = 200;
+const IN_CHUNK = 400;
+
+/** The id of the user who opened a shift, where its "open" record kept one (sign-in on). */
+function openerId(db: Db, shiftId: string): string | null {
+  const opened = db.prepare("SELECT details FROM audit_log WHERE entity = 'pos_shift' AND entity_id = ? AND action = 'open' ORDER BY id DESC LIMIT 1")
+    .get(shiftId) as { details: string | null } | undefined;
+  try {
+    const id: unknown = opened?.details ? (JSON.parse(opened.details) as { userId?: unknown }).userId : null;
+    return typeof id === 'string' ? id : null;
+  } catch { return null; }
+}
+
+/**
+ * Every other document that moved cash on the shift's safe while the shift was open (before 2.0 none was expected, so
+ * a supplier or an expense paid out of the drawer closed it short): a purchase paid in cash and its return, a receipt
+ * or a payment voucher (an expense, a debt collected, a salary), a transfer to or from another safe or a bank, an
+ * installment collected, any journal entry on the safe's account, and the reversal or cancelling of any of them. With
+ * the till's own money (its sales, refunds, gift vouchers and the cash sales of other screens, counted above) this is
+ * all the ledger holds on the safe, so what a shift expects is its opening cash plus what the ledger moved on its
+ * safe while it was open, in dinars and in dollars.
+ *
+ * The rules:
+ *  - a document counts when it is posted (approved), at that moment, whatever its own date: a draft or a voucher that
+ *    waits for approval is no money yet. One approved after its shift closed is on the shift open on that safe when
+ *    it is approved; with no shift open then it is on no shift (a closed shift never changes, and the safe's own
+ *    account has it as always);
+ *  - two shifts open on one safe: the money is on the shift of whoever wrote the document if they have one open on
+ *    that safe then (by user id with sign-in on, else by name), else of whoever approved it, else on the oldest
+ *    shift open on it. That depends only on the moment, the people and the shifts open at it, so each shift answers
+ *    the same and the money is on exactly one of them;
+ *  - not cash, though on the safe's account: a revaluation of dollar balances (fx.ts: dinars in the books for the
+ *    same notes) and its reversal.
+ */
+function cashMovesOf(db: Db, row: ShiftRow): CashMoves {
+  const moves: CashMoves = { in: zero(), out: zero(), count: 0, lines: [] };
+  // first the documents posted in the shift's time (few, and no index is on the safe's lines by time: reading every
+  // line the safe ever had would be slow in a busy shop's second year), then their lines on the safe
+  const at = 'COALESCE(e.approved_at, e.prepared_at)';
+  const posted = db.prepare(`SELECT e.id, e.type, e.number, e.description, e.currency, e.prepared_by, e.prepared_by_id, e.approved_by, e.reverses_id,
+                                    ${at} AS moved_at, o.type AS reversed_type
+                             FROM entries e LEFT JOIN entries o ON o.id = e.reverses_id
+                             WHERE e.status = 'approved' AND e.type NOT IN ('sale', 'sale_return')
+                               AND ${at} >= ? ${row.closed_at ? `AND ${at} <= ?` : ''}
+                             ORDER BY ${at}, e.id`)
+    .all(row.opened_at, ...(row.closed_at ? [row.closed_at] : [])) as {
+      id: string; type: string; number: string | null; description: string; currency: CurrencyCode; prepared_by: string; prepared_by_id: string | null;
+      approved_by: string | null; reverses_id: string | null; moved_at: string; reversed_type: string | null;
+    }[];
+  const revalued = new Set(postedRevaluations(db));
+  // a till or screen sale, a sales return and their cancelling are the shift's own money (counted above); a
+  // revaluation is no cash
+  const kept = posted.filter((e) => e.reversed_type !== 'sale' && e.reversed_type !== 'sale_return' && !revalued.has(e.id) && !(e.reverses_id && revalued.has(e.reverses_id)));
+  if (!kept.length) return moves;
+  // one line a document, however many lines it has on the safe
+  const amounts = new Map<string, number>();
+  for (let i = 0; i < kept.length; i += IN_CHUNK) {
+    const chunk = kept.slice(i, i + IN_CHUNK).map((e) => e.id);
+    for (const l of db.prepare(`SELECT entry_id, debit, credit FROM entry_lines WHERE account_code = ? AND entry_id IN (${chunk.map(() => '?').join(', ')})`)
+      .all(row.cash_account, ...chunk) as { entry_id: string; debit: number; credit: number }[]) {
+      amounts.set(l.entry_id, (amounts.get(l.entry_id) ?? 0) + Number(l.debit) - Number(l.credit));
+    }
+  }
+  const entries = new Map<string, (typeof kept)[number] & { amount: number }>();
+  for (const e of kept) {
+    const amount = amounts.get(e.id) ?? 0;
+    if (amount !== 0) entries.set(e.id, { ...e, amount });
+  }
+  // a gift voucher sold, or cancelled and paid back: counted with the vouchers (giftCashOf, giftPaidBackOf)
+  const ids = [...entries.keys()];
+  for (let i = 0; i < ids.length; i += IN_CHUNK) {
+    const chunk = ids.slice(i, i + IN_CHUNK);
+    const marks = chunk.map(() => '?').join(', ');
+    for (const v of db.prepare(`SELECT entry_id, cancel_entry_id FROM gift_vouchers WHERE entry_id IN (${marks}) OR cancel_entry_id IN (${marks})`)
+      .all(...chunk, ...chunk) as { entry_id: string | null; cancel_entry_id: string | null }[]) {
+      if (v.entry_id) entries.delete(v.entry_id);
+      if (v.cancel_entry_id) entries.delete(v.cancel_entry_id);
+    }
+  }
+  if (!entries.size) return moves;
+
+  // the shifts open on this safe at some moment of this shift's time, the oldest first
+  const others = (db.prepare(`SELECT id, opened_by, opened_at, closed_at FROM pos_shifts
+                              WHERE cash_account = ? ${row.closed_at ? 'AND opened_at <= ?' : ''} AND (closed_at IS NULL OR closed_at >= ?)
+                              ORDER BY opened_at, id`)
+    .all(row.cash_account, ...(row.closed_at ? [row.closed_at] : []), row.opened_at) as { id: string; opened_by: string; opened_at: string; closed_at: string | null }[]);
+  const shared = others.length > 1;
+  const openers = new Map<string, string | null>();
+  const opener = (id: string): string | null => {
+    if (!openers.has(id)) openers.set(id, openerId(db, id));
+    return openers.get(id) ?? null;
+  };
+  for (const e of entries.values()) {
+    if (shared) {
+      const open = others.filter((s) => s.opened_at <= e.moved_at && (s.closed_at === null || s.closed_at >= e.moved_at));
+      const wrote = (s: (typeof others)[number]) => {
+        const id = opener(s.id);
+        return id && e.prepared_by_id ? id === e.prepared_by_id : s.opened_by === e.prepared_by;
+      };
+      const owner = open.find(wrote) ?? open.find((s) => !!e.approved_by && s.opened_by === e.approved_by) ?? open[0];
+      if (owner?.id !== row.id) continue;
+    }
+    if (e.amount > 0) moves.in[e.currency] += e.amount; else moves.out[e.currency] -= e.amount;
+    moves.count++;
+    if (moves.lines.length < MOVE_LINES) {
+      moves.lines.push({ entryId: e.id, type: e.type, number: e.number, description: e.description, currency: e.currency, amount: e.amount, by: e.prepared_by, at: e.moved_at });
+    }
+  }
+  return moves;
 }
 
 /**
@@ -318,11 +571,28 @@ function isOpener(db: Db, row: ShiftRow, actor: ShiftActor, byIdOnly = false): b
 const mayRun = (db: Db, row: ShiftRow, actor: ShiftActor | null) =>
   !!actor && actor.permissions.includes('pos') && (actor.permissions.includes('admin') || isOpener(db, row, actor));
 
-function shiftView(db: Db, row: ShiftRow, actor: ShiftActor | null): ShiftView {
+/** A shift in a list: as ShiftView, but a closed shift's other cash is left out (see listShifts). */
+export type ShiftListView = Omit<ShiftView, 'cashMoves'> & { cashMoves?: CashMoves };
+
+const shiftView = (db: Db, row: ShiftRow, actor: ShiftActor | null): ShiftView => shiftViewOf(db, row, actor, true) as ShiftView;
+
+function shiftViewOf(db: Db, row: ShiftRow, actor: ShiftActor | null, withMoves: boolean): ShiftListView {
   const { sales, cash, count, methods } = salesOf(db, row.id);
   const refunds = refundsOf(db, row);
-  // only the cash that went into the drawer: a card or a wallet part of a sale never was there
-  const expected: Money = { IQD: Number(row.opening_cash) + cash.IQD - refunds.IQD, USD: cash.USD - refunds.USD };
+  const usdTaken = usdTakenOf(db, row.id);
+  // only the cash that went into the drawer: a card or a wallet part of a sale never was there; dollar notes taken for
+  // dinar sales are in it as dollars
+  // 2.0: gift vouchers sold at this till were paid in cash into its drawer
+  const giftCash = giftCashOf(db, row.id);
+  const otherCash = otherCashOf(db, row);
+  // every other document on the safe: a supplier or an expense paid out of the drawer, a debt collected into it
+  // (a list leaves it out for a closed shift, whose expected cash is the one kept at its closing)
+  const kept = row.status === 'closed' && row.expected_cash !== null && row.expected_usd !== null;
+  const cashMoves = withMoves || !kept ? cashMovesOf(db, row) : null;
+  const expected: Money = {
+    IQD: Number(row.opening_cash) + cash.IQD - refunds.IQD - usdTaken.iqd + giftCash + otherCash.IQD + (cashMoves ? cashMoves.in.IQD - cashMoves.out.IQD : 0),
+    USD: cash.USD - refunds.USD + usdTaken.usd + otherCash.USD + (cashMoves ? cashMoves.in.USD - cashMoves.out.USD : 0)
+  };
   const notes = row.notes ?? '';
   let counted: Money | null = null;
   let difference: Money | null = null;
@@ -337,7 +607,8 @@ function shiftView(db: Db, row: ShiftRow, actor: ShiftActor | null): ShiftView {
   return {
     id: row.id, number: row.number, register: row.register, cashAccountCode: row.cash_account, warehouseId: row.warehouse_id,
     status: row.status, openedBy: row.opened_by, openedAt: row.opened_at, openingCash: Number(row.opening_cash),
-    closedBy: row.closed_by, closedAt: row.closed_at, sales, count, refunds, expected, counted, difference, notes, actions, methods
+    closedBy: row.closed_by, closedAt: row.closed_at, sales, count, refunds, expected, counted, difference, notes, actions, methods,
+    tillId: row.till_id ?? null, usdTaken, otherCash, ...(cashMoves ? { cashMoves } : {})
   };
 }
 
@@ -350,24 +621,35 @@ export function getShift(db: Db, id: string, actor: ShiftActor | null = null): S
  * shift; anyone else (a cashier) only the shifts they opened, matched by the user id of the shift's "open" record.
  */
 function readsShift(db: Db, row: ShiftRow, actor: Actor | null): boolean {
-  return !actor || seesBooks(actor) || isOpener(db, row, actor, true);
+  // 2.0: a till supervisor reads every shift too (they see the difference on a blind close)
+  return !actor || seesBooks(actor) || actor.permissions.includes('posSupervise') || isOpener(db, row, actor, true);
 }
 
+/**
+ * The shifts, newest first. A closed shift here comes without its other cash (`cashMoves`): what it expected is kept
+ * from its closing, and looking the documents up again for a hundred closed shifts is work no list shows. The shift
+ * itself (getShift, its X/Z report, the day close) has them.
+ */
 export function listShifts(db: Db, f: { status?: 'open' | 'closed' | undefined; limit?: number | undefined } = {},
-  actor: Actor | null = null): ShiftView[] {
+  actor: Actor | null = null): ShiftListView[] {
   const limit = f.limit ?? 100;
   const ownOnly = !!actor && !seesBooks(actor);
   // someone who reads only their own shifts gets up to `limit` of theirs, not of everyone's
   const rows = (db.prepare(`SELECT * FROM pos_shifts ${f.status ? 'WHERE status = ?' : ''} ORDER BY opened_at DESC${ownOnly ? '' : ' LIMIT ?'}`)
     .all(...(f.status ? [f.status] : []), ...(ownOnly ? [] : [limit])) as unknown as ShiftRow[])
     .filter((r) => !ownOnly || readsShift(db, r, actor));
-  return rows.slice(0, limit).map((r) => shiftView(db, r, actor));
+  return rows.slice(0, limit).map((r) => shiftViewOf(db, r, actor, false));
 }
 
-/** The open shift this user can sell on (their own; the newest if several registers). */
-export function myShift(db: Db, actor: ShiftActor): ShiftView | null {
+/**
+ * The open shift this user can sell on (their own; the newest if several registers). 2.0: a PC that chose a till asks
+ * for that till's shift only, so two tills of the same cashier never mix.
+ */
+export function myShift(db: Db, actor: ShiftActor, tillId?: string | null): ShiftView | null {
   const open = db.prepare("SELECT * FROM pos_shifts WHERE status = 'open' ORDER BY opened_at DESC").all() as unknown as ShiftRow[];
-  const row = open.find((r) => isOpener(db, r, actor));
+  // their shift on the till this PC chose; without one there, the shift they do have open (on another till, or opened by
+  // name before the PC chose a till): they can open no second one, so answering "none" would leave them unable to sell
+  const row = open.find((r) => (!tillId || r.till_id === tillId) && isOpener(db, r, actor)) ?? (tillId ? open.find((r) => isOpener(db, r, actor)) : undefined);
   return row ? shiftView(db, row, actor) : null;
 }
 
@@ -401,7 +683,7 @@ export function shiftReport(db: Db, id: string, actor: Actor | null = null): Shi
     e.amount[l.currency] += Math.round(Number(l.amount)); // after the invoice discount, so the items add up to the sales
     byItem.set(l.item_id, e);
   }
-  return { ...shiftView(db, row, actor), invoices, items: [...byItem.values()] };
+  return { ...shiftView(db, row, actor), invoices, items: [...byItem.values()], gift: giftOfShift(db, id) };
 }
 
 const trimmed = (s: string | undefined) => s?.trim() || null;
@@ -414,6 +696,11 @@ function cashAccountOk(db: Db, code: string): boolean {
 }
 
 export function openShift(db: Db, input: OpenShiftInput, actor: Actor): ShiftView {
+  // 2.0: on a named till, its name, safe and warehouse are the shift's
+  const till = input.tillId ? db.prepare('SELECT id, name, cash_account, warehouse_id, active FROM pos_tills WHERE id = ?').get(input.tillId) as
+    { id: string; name: string; cash_account: string; warehouse_id: string; active: number } | undefined : undefined;
+  if (input.tillId && (!till || Number(till.active) !== 1)) throw invalid([{ code: 'till_invalid' }]);
+  if (till) input = { ...input, register: till.name, cashAccountCode: till.cash_account, warehouseId: till.warehouse_id };
   const register = input.register?.trim() ?? '';
   const errors: { code: string }[] = [];
   if (!register) errors.push({ code: 'pos_register_required' });
@@ -426,12 +713,18 @@ export function openShift(db: Db, input: OpenShiftInput, actor: Actor): ShiftVie
     const busy = (db.prepare("SELECT register FROM pos_shifts WHERE status = 'open'").all() as { register: string }[])
       .some((r) => r.register.trim().toLowerCase() === register.toLowerCase());
     if (busy) throw conflict('pos_register_open', { register });
+    if (till && db.prepare("SELECT 1 FROM pos_shifts WHERE status = 'open' AND till_id = ?").get(till.id)) throw conflict('pos_register_open', { register });
+    // one open shift per cashier (an admin may keep several): a second one would only reset what is counted per shift
+    if (!actor.permissions.includes('admin')) {
+      const mine = (db.prepare("SELECT * FROM pos_shifts WHERE status = 'open'").all() as unknown as ShiftRow[]).find((r) => isOpener(db, r, actor));
+      if (mine) throw conflict('pos_shift_already_open', { register: mine.register });
+    }
     const newId = randomUUID();
     const year = todayIso().slice(0, 4);
     const number = `POS-${year}-${String(nextSequence(db, `pos_shift:${year}`)).padStart(4, '0')}`;
-    db.prepare(`INSERT INTO pos_shifts (id, number, register, cash_account, warehouse_id, status, opened_by, opened_at, opening_cash, notes)
-                VALUES (?, ?, ?, ?, ?, 'open', ?, ?, ?, ?)`)
-      .run(newId, number, register, input.cashAccountCode, input.warehouseId, actor.name, new Date().toISOString(), input.openingCash, trimmed(input.notes));
+    db.prepare(`INSERT INTO pos_shifts (id, number, register, cash_account, warehouse_id, status, opened_by, opened_at, opening_cash, notes, till_id)
+                VALUES (?, ?, ?, ?, ?, 'open', ?, ?, ?, ?, ?)`)
+      .run(newId, number, register, input.cashAccountCode, input.warehouseId, actor.name, new Date().toISOString(), input.openingCash, trimmed(input.notes), till?.id ?? null);
     // the user id decides who opened it only with sign-in on; without it every PC is the owner, and the typed name does
     audit(db, actor.name, 'open', 'pos_shift', newId, {
       number, register, openingCash: input.openingCash, ...(signInRequired(db) && actor.id ? { userId: actor.id } : {})
@@ -441,18 +734,60 @@ export function openShift(db: Db, input: OpenShiftInput, actor: Actor): ShiftVie
   return getShift(db, id, actor);
 }
 
-function requireRunnable(db: Db, id: string, actor: Actor): ShiftRow {
+export function requireRunnable(db: Db, id: string, actor: Actor): ShiftRow {
   const row = loadShift(db, id);
   if (row.status !== 'open') throw conflict('pos_shift_closed');
   if (!mayRun(db, row, actor)) throw new AppError(403, 'forbidden', { need: 'shift_owner' });
   return row;
 }
 
+/**
+ * Card, FIB, ZainCash and Qi at the till are switched off for now (TILL_CARD_PAYMENTS, core): the till hides them, and
+ * the server refuses them too, whatever accounts an admin once set (a page loaded before, or a request made by hand).
+ */
+let cardPayments: boolean = TILL_CARD_PAYMENTS;
+/** for tests of the dormant card code only */
+export function allowCardPaymentsForTests(on: boolean): void { cardPayments = on; }
+
+/** the most one line may be: a unit price of a million million, a thousand million units */
+const MAX_UNIT_PRICE = 1e12;
+const MAX_QTY_MILLI = 1e12;
 /** One sale at the counter: a cash sale invoice into the shift's safe, posted at once and kept with the shift. */
-export function sell(db: Db, shiftId: string, input: SaleInput, actor: Actor): { invoice: InvoiceView; shift: ShiftView } {
+export function sell(db: Db, shiftId: string, input: SaleInput, actor: Actor): { invoice: InvoiceView; shift: ShiftView; rounding: number } {
   const row = requireRunnable(db, shiftId, actor);
   if (!Array.isArray(input.lines) || input.lines.length === 0) throw invalid([{ code: 'pos_cart_empty' }]);
   if (input.currency === 'USD' && !(Number.isSafeInteger(input.rateX100) && (input.rateX100 ?? 0) > 0)) throw invalid([{ code: 'rate_invalid' }]);
+  const companyRate = Number(readSetting(db, 'default_rate_x100') ?? '142000');
+  // dollars at the till are held to the day's rate (the rate board's for today, else the company's): a rate within 3%
+  // of it passes, one further (up to 15%) a supervisor approves, that very rate; beyond is refused. So for a dollar
+  // sale (its rate decides what the sale is worth in the books, and what a dinar list price is in dollars) and for
+  // dollar notes on a dinar sale (below)
+  const reference = referenceRate(db, todayIso());
+  // a sale a cut-off till kept (round four of the review): its rate was typed against the rate of the day it was
+  // sold, which the till names itself; so it passes freely only when it is within 3% of that day's rate (the rate
+  // board's on that day or the latest before it: fx.ts rateOn) AND of today's. Anything else waits for a supervisor
+  // to look at that very receipt (the kept sale's own approval, below): never taken unseen, and never refused for
+  // good, since the sale was made and its money is in the drawer.
+  const soldDay = input.offline ? offlineSaleDate(String(input.offline.soldOn ?? ''), row.opened_at) : null;
+  const dayRate = soldDay && soldDay !== todayIso() ? rateOn(db, soldDay).rateX100 : reference;
+  const standingOf = (rateX100: number): 'ok' | 'approve' | 'far' => {
+    const now = rateStanding(rateX100, reference);
+    if (!input.offline) return now;
+    return now === 'ok' && rateStanding(rateX100, dayRate) === 'ok' ? 'ok' : 'approve';
+  };
+  /** the rate a supervisor must approve, if any: `notes:<rate>` or `sale:<rate>` */
+  let rateToApprove: string | null = null;
+  if (input.currency === 'USD') {
+    const standing = standingOf(input.rateX100!);
+    if (standing === 'far') throw invalid([{ code: 'pos_rate_far', rateX100: reference } as { code: string }]);
+    if (standing === 'approve') rateToApprove = rateSubject('sale', input.rateX100!);
+  }
+  // nothing a slip (or a request made by hand) could turn into an amount the books can't hold
+  for (const l of input.lines) {
+    const qty = l.unitQtyMilli ?? l.qtyMilli ?? 1000;
+    if (!Number.isSafeInteger(l.unitPrice) || l.unitPrice < 0 || l.unitPrice > MAX_UNIT_PRICE || !Number.isSafeInteger(qty) || qty <= 0 || qty > MAX_QTY_MILLI
+      || !Number.isSafeInteger(Math.round((qty * l.unitPrice) / 1000)) || (qty * l.unitPrice) / 1000 > MAX_UNIT_PRICE * 10) throw invalid([{ code: 'pos_line_too_large' }]);
+  }
   const payments = input.payments ?? [];
   if (payments.length > 4) throw invalid([{ code: 'payments_too_many' }]);
   // 1.4: a sale is paid now or put on the customer's account, never part one and part the other
@@ -465,6 +800,8 @@ export function sell(db: Db, shiftId: string, input: SaleInput, actor: Actor): {
   const errors: { code: string; method?: string }[] = [];
   for (const p of payments) {
     if (!(POS_METHODS as readonly string[]).includes(p.method) || !Number.isSafeInteger(p.amount) || p.amount <= 0) errors.push({ code: 'pos_payment_invalid', method: String(p.method) });
+    // card and wallets are off for now: refused whatever accounts are set
+    else if (p.method !== 'cash' && p.method !== 'account' && !cardPayments) errors.push({ code: 'pos_method_unavailable', method: p.method });
     // a method the admin gave no account is not offered at the counter, and refused here
     else if (p.method !== 'cash' && p.method !== 'account' && !accounts[p.method as keyof PosAccounts]) errors.push({ code: 'pos_method_unavailable', method: p.method });
     // its account is outside the user's branches: not offered to them either, and never debited for them
@@ -479,10 +816,88 @@ export function sell(db: Db, shiftId: string, input: SaleInput, actor: Actor): {
   }
   // loyalty points need the customer's live balance: never from a till that was offline
   if (offline && input.loyaltyPoints) errors.push({ code: 'pos_offline_loyalty' });
+  // 2.0: dollar notes on a dinar sale paid now, at a rate near the company's (a slip of a digit is refused)
+  const usdCash = input.usdCash;
+  if (usdCash) {
+    if (input.currency !== 'IQD' || onCredit) errors.push({ code: 'pos_usd_cash_not_here' });
+    else if (!Number.isSafeInteger(usdCash.amount) || usdCash.amount <= 0 || usdCash.amount > 10_000_000) errors.push({ code: 'pos_usd_cash_invalid' });
+    // each dollar stands for the day's rate, give or take 3% (a better rate would leave the drawer short with nothing
+    // showing it; a much worse one cheats the customer): further, a supervisor approves that very rate; beyond 15% it
+    // is a slip. The day's rate goes back with the refusal, for the till to show.
+    else {
+      const standing = standingOf(usdCash.rateX100);
+      if (standing === 'far') errors.push({ code: 'pos_usd_rate_far', rateX100: reference } as { code: string });
+      else if (standing === 'approve') rateToApprove = rateSubject('notes', usdCash.rateX100);
+    }
+  }
+  // 2.0: the till's rules (till-settings.ts): gift vouchers, the open-price item, prices and discounts a supervisor approves
+  const rules = tillRules(db);
+  const vouchers = input.vouchers ?? [];
+  if (vouchers.length && offline) errors.push({ code: 'pos_offline_voucher' });
+  if (vouchers.length && input.currency !== 'IQD') errors.push({ code: 'gv_dinar_only' });
+  const misc = rules.misc.itemId ? input.lines.filter((l) => l.itemId === rules.misc.itemId) : [];
+  if (misc.length) {
+    if (!maySellMisc(rules.misc, actor)) errors.push({ code: 'pos_misc_not_allowed' });
+    else if (misc.some((l) => Math.round(((l.unitQtyMilli ?? l.qtyMilli ?? 1000) * l.unitPrice) / 1000) > rules.misc.max)) errors.push({ code: 'pos_misc_over_max' });
+    if (!input.notes?.trim()) errors.push({ code: 'pos_misc_note_required' });
+  }
   if (errors.length) throw invalid(errors);
+  const gross = input.lines.reduce((sum, l) => sum + Math.round(((l.unitQtyMilli ?? l.qtyMilli ?? 1000) * l.unitPrice) / 1000), 0);
+  const needs: ('discount' | 'price' | 'rate')[] = [];
+  if (rateToApprove) needs.push('rate');
+  const reviewOffline: string[] = [];
+  /** the lowest price asked for each item and unit sold below its list price: each needs its own approval */
+  const lowered = new Map<string, number>();
+  if (rules.supervisor.discountPct > 0 && input.discount * 100 > rules.supervisor.discountPct * gross) needs.push('discount');
+  if (rules.supervisor.price) {
+    // a line below the item's own price, in whatever unit it is typed (the item's base unit, or another unit at that
+    // unit's own price or the base price × its factor), in whatever currency it is sold (a list price in the other
+    // currency is turned at the company's rate, as the till does: pos-logic.ts priceIn); the open-price item is open
+    const price = db.prepare('SELECT sale_price, sale_currency, unit FROM items WHERE id = ?');
+    const unitPrice = db.prepare('SELECT factor_milli, sale_price FROM item_units WHERE item_id = ? AND unit = ?');
+    const inSaleCurrency = (amount: number, from: string): number =>
+      from === input.currency ? amount : input.currency === 'USD' ? Math.round((amount * 10000) / companyRate) : Math.round((amount * companyRate) / 10000);
+    // a kept sale's own moment, when it lies within its shift and not in the future (anything else gets no allowance)
+    const soldAt = offline && Date.parse(offline.soldAt) <= Date.now() && Date.parse(offline.soldAt) >= Date.parse(row.opened_at) ? new Date(offline.soldAt).toISOString() : null;
+    for (const l of input.lines) {
+      if (l.itemId === rules.misc.itemId) continue;
+      const it = price.get(l.itemId) as { sale_price: number | null; sale_currency: string; unit: string } | undefined;
+      if (!it || it.sale_price === null) continue;
+      const other = !!l.unit && l.unit !== it.unit;
+      const u = other ? unitPrice.get(l.itemId, l.unit!) as { factor_milli: number; sale_price: number | null } | undefined : undefined;
+      if (other && !u) continue; // an unknown unit is refused when the lines are read
+      // a unit's own price, else the item's price × its factor: turned into the sale's currency first, as the till
+      // does (industry/units.ts salePriceFor), so a line the cashier never touched is never a dinar "below" its price
+      const inUnit = (base: number, own: number | null): number => {
+        const b = inSaleCurrency(base, it.sale_currency);
+        return !u ? b : own !== null ? inSaleCurrency(own, it.sale_currency) : Math.round((b * Number(u.factor_milli)) / 1000);
+      };
+      if (l.unitPrice >= inUnit(Number(it.sale_price), u && u.sale_price !== null ? Number(u.sale_price) : null)) continue;
+      // a sale kept by a till that was cut off: the till had the prices of its last load. Taken without a supervisor
+      // (it can't wait for one) only when its price is not below the lowest list price the item had at any time
+      // from the shift's opening to the sale, and written to the audit log for review; anything lower is refused
+      if (offline) {
+        const lowestOwn = soldAt ? lowestListPrice(db, l.itemId, other ? l.unit! : '', it.sale_currency, row.opened_at, soldAt) : null;
+        const lowestBase = soldAt && other ? lowestListPrice(db, l.itemId, '', it.sale_currency, row.opened_at, soldAt) : null;
+        const floors = [...(lowestOwn !== null ? [inSaleCurrency(lowestOwn, it.sale_currency)] : []), ...(lowestBase !== null ? [inUnit(lowestBase, null)] : [])];
+        if (floors.length && l.unitPrice >= Math.min(...floors)) { reviewOffline.push(l.itemId); continue; }
+      }
+      const subject = priceSubject(l.itemId, other ? l.unit : null);
+      lowered.set(subject, Math.min(lowered.get(subject) ?? Infinity, l.unitPrice));
+    }
+    if (lowered.size) needs.push('price');
+  }
+  // a kept sale that needs a supervisor is refused (it waits on its PC, in the list a person reads) until a supervisor
+  // approves that very receipt there: then it is taken as it was kept
+  if (needs.length && offline && !offlineApprovalWaits(db, shiftId, offline.reference)) throw invalid([{ code: 'pos_offline_supervisor' }]);
+  let offlineApprover: string | null = null;
   const now = new Date();
   const date = offline ? offlineSaleDate(offline.soldOn, row.opened_at, now) : todayIso(now);
-  const invoiceId = transaction(db, () => {
+  const voucherCheck = vouchers.length ? giftParts(db, vouchers, date) : [];
+  void voucherCheck;
+  // 1.7: the offers are those on when it was sold (an offline sale: the moment on its receipt, never in the future)
+  const offersAt = offline && Date.parse(offline.soldAt) <= now.getTime() ? new Date(offline.soldAt) : now;
+  const { invoiceId, rounding: rounded } = transaction(db, () => {
     const draft = createInvoice(db, {
       kind: 'sale', date, ...(input.partyId ? { partyId: input.partyId } : {}), warehouseId: row.warehouse_id,
       currency: input.currency, rateX100: input.currency === 'IQD' ? 100 : input.rateX100!,
@@ -493,14 +908,29 @@ export function sell(db: Db, shiftId: string, input: SaleInput, actor: Actor): {
         itemId: l.itemId, qtyMilli: l.qtyMilli, unitPrice: l.unitPrice, ...(l.unit ? { unit: l.unit, unitQtyMilli: l.unitQtyMilli ?? l.qtyMilli } : {}),
         ...(l.batchId ? { batchId: l.batchId } : {})
       }))
-    }, actor.name);
-    let split: (SalePart & { method: PosMethod })[] | undefined;
+    }, actor.name, { offersAt });
+    // each approval is for this shift, this cashier and this very thing: the discount (as the server reckons it, offers
+    // and all) not above the one approved, each lowered item at a price not below the one approved for it
+    if (needs.length && offline) {
+      offlineApprover = useOfflineApproval(db, shiftId, offline.reference, gross - input.discount, actor.name);
+      if (!offlineApprover) throw invalid([{ code: 'pos_offline_supervisor' }]);
+    } else {
+      if (rateToApprove) useApproval(db, input.approvals, 'rate', actor, { shiftId, subject: rateToApprove });
+      // the discount on this very basket: one approved on a larger basket is no larger a share of this one
+      if (needs.includes('discount')) useApproval(db, input.approvals, 'discount', actor, { shiftId, value: input.discount, gross });
+      for (const [subject, lowest] of lowered) useApproval(db, input.approvals, 'price', actor, { shiftId, subject, value: lowest, currency: input.currency });
+    }
+    let split: (SalePart & { method?: PosMethod })[] | undefined;
     // what loyalty points pay (checked again as the sale is posted); the parts pay the rest
     const byPoints = input.loyaltyPoints
       ? planRedemption(db, { partyId: input.partyId, points: input.loyaltyPoints, total: draft.total, currency: draft.currency, date: draft.date }).value
       : 0;
+    // 2.0: what gift vouchers pay (checked and taken in this transaction)
+    const gifts = vouchers.length ? giftParts(db, vouchers, draft.date) : [];
+    const byGifts = gifts.reduce((sum, g) => sum + g.amount, 0);
+    if (byGifts > draft.total - byPoints) throw invalid([{ code: 'gv_too_much' }]);
     if (payments.length) {
-      if (payments.reduce((s, p) => s + p.amount, 0) !== draft.total - byPoints) throw invalid([{ code: 'payments_total_mismatch', total: draft.total - byPoints } as { code: string }]);
+      if (payments.reduce((s, p) => s + p.amount, 0) !== draft.total - byPoints - byGifts) throw invalid([{ code: 'payments_total_mismatch', total: draft.total - byPoints - byGifts } as { code: string }]);
       const partyAccount = input.partyId ? (db.prepare('SELECT account_code FROM parties WHERE id = ?').get(input.partyId) as { account_code: string } | undefined)?.account_code : undefined;
       // the same method twice is one part
       const merged = new Map<PosMethod, number>();
@@ -511,19 +941,61 @@ export function sell(db: Db, shiftId: string, input: SaleInput, actor: Actor): {
         ...(method === 'account' ? { partyId: input.partyId } : {})
       }));
     }
-    // (a credit invoice posts to the customer's account by itself, with its credit limit checked: no parts are passed)
+    // 2.0: gift vouchers and the dinar rounding of the cash part are parts of their own beside the money paid
+    let rounding = 0;
+    if (onCredit && gifts.length) {
+      // a sale on account partly paid by a gift voucher (review 2.0): the customer owes what the vouchers left, never
+      // the whole total (the vouchers' money was taken when they were sold)
+      const rest = draft.total - byPoints - byGifts;
+      split = (split ?? []).filter((p) => p.method === 'account');
+      if (!split.length && rest > 0) throw invalid([{ code: 'payments_total_mismatch', total: rest } as { code: string }]);
+      for (const g of gifts) split.push({ accountCode: g.accountCode, amount: g.amount, kind: 'voucher' });
+    }
+    if (!onCredit) {
+      const rest = draft.total - byPoints - byGifts;
+      if ((gifts.length || rules.rounding.step) && !split) split = rest > 0 ? [{ method: 'cash', amount: rest, accountCode: row.cash_account }] : [];
+      for (const g of gifts) split!.push({ accountCode: g.accountCode, amount: g.amount, kind: 'voucher' });
+      const cashPart = split?.find((p) => p.method === 'cash');
+      if (cashPart && input.currency === 'IQD' && rules.rounding.step) {
+        // never down to no cash at all (a small sale rounded down to 0 would give the goods away)
+        rounding = cashToTake(cashPart.amount, rules.rounding) - cashPart.amount;
+        if (rounding) {
+          cashPart.amount += rounding;
+          split!.push({ accountCode: roundingAccount(db, rounding), amount: -rounding, kind: 'rounding' });
+        }
+      }
+      if (split && !split.length) split = undefined;
+    }
+    // a credit sale over the customer's limit: only with a supervisor's approval given at this till
+    let overLimit = false;
+    if (onCredit && rules.supervisor.creditOver && input.approvals?.length) {
+      const onAccount = draft.total - byPoints - byGifts;
+      try { useApproval(db, input.approvals, 'credit_over', actor, { shiftId, subject: input.partyId ?? null, value: onAccount }); overLimit = true; } catch { overLimit = false; }
+    }
+    // (a credit invoice posts to the customer's account by itself, with its credit limit checked: no parts are passed,
+    // but for gift vouchers that pay part of it)
     const posted = postInvoice(db, draft.id, actor.name, {
-      allowExpired: input.allowExpired === true, ...(split && !onCredit ? { split } : {}), ...(input.loyaltyPoints ? { loyaltyPoints: input.loyaltyPoints } : {})
+      allowExpired: input.allowExpired === true, ...(split && (!onCredit || gifts.length) ? { split } : {}), ...(input.loyaltyPoints ? { loyaltyPoints: input.loyaltyPoints } : {}), offersAt,
+      ...(overLimit ? { overLimit: true } : {})
     });
+    if (gifts.length) takeGiftParts(db, posted.id, gifts, actor.name);
     // the cash handed over: kept for a cash sale when it covers the cash due (the cash part, or all that points left)
     const cashDue = onCredit ? 0 : split ? split.filter((p) => p.method === 'cash').reduce((s, p) => s + p.amount, 0) : draft.total - byPoints;
     const tendered = Number.isSafeInteger(input.tendered) && cashDue > 0 && input.tendered! >= cashDue ? input.tendered! : null;
-    db.prepare('INSERT INTO pos_sales (invoice_id, shift_id, tendered) VALUES (?, ?, ?)').run(posted.id, shiftId, tendered);
+    if (usdCash) {
+      // the dollars stand for part of the cash due (or all of it, with change in dinars), never more than a 100-dollar
+      // note past it, and never on a sale with no cash part
+      const worth = usdCashValue(usdCash.amount, usdCash.rateX100);
+      if (cashDue <= 0 || worth - cashDue >= usdCash.rateX100) throw invalid([{ code: 'pos_usd_cash_too_much', due: cashDue } as { code: string }]);
+    }
+    db.prepare('INSERT INTO pos_sales (invoice_id, shift_id, tendered, usd_cash, usd_rate_x100, rounding, voucher_paid) VALUES (?, ?, ?, ?, ?, ?, ?)')
+      .run(posted.id, shiftId, tendered, usdCash?.amount ?? null, usdCash?.rateX100 ?? null, rounding, byGifts);
+    if (usdCash) audit(db, actor.name, 'usd_cash', 'invoice', posted.id, { usd: usdCash.amount, rateX100: usdCash.rateX100, number: posted.number });
     if (split) {
       const insert = db.prepare(`INSERT INTO invoice_payments (id, invoice_id, kind, method, account_code, amount, currency, entry_id, source, reference, created_by, created_at)
                                  VALUES (?, ?, 'pos', ?, ?, ?, ?, ?, NULL, NULL, ?, ?)`);
       const now = new Date().toISOString();
-      for (const p of split) insert.run(randomUUID(), posted.id, p.method, p.accountCode, p.amount, posted.currency, posted.entryId, actor.name, now);
+      for (const p of split) if (p.method) insert.run(randomUUID(), posted.id, p.method, p.accountCode, p.amount, posted.currency, posted.entryId, actor.name, now);
     }
     if (offline) {
       // the receipt's temporary reference stays with the sale, so both it and the invoice number find it
@@ -532,9 +1004,13 @@ export function sell(db: Db, shiftId: string, input: SaleInput, actor: Actor): {
         .run(posted.id, offline.reference, soldAt, now.toISOString());
       audit(db, actor.name, 'offline_sale', 'invoice', posted.id, { reference: offline.reference, soldAt, number: posted.number });
     }
-    return posted.id;
+    if (rounding) audit(db, actor.name, 'cash_rounding', 'invoice', posted.id, { rounding, number: posted.number });
+    if (offlineApprover) audit(db, actor.name, 'offline_sale_accepted', 'invoice', posted.id, { reference: offline!.reference, approver: offlineApprover, needs, number: posted.number,
+      ...(rateToApprove ? { rate: rateToApprove, dayRateX100: dayRate, todayRateX100: reference } : {}) });
+    if (reviewOffline.length) audit(db, actor.name, 'offline_price_review', 'invoice', posted.id, { items: reviewOffline, number: posted.number });
+    return { invoiceId: posted.id, rounding };
   });
-  return { invoice: getInvoice(db, invoiceId, userBranchLists(db, actor)), shift: getShift(db, shiftId, actor) };
+  return { invoice: getInvoice(db, invoiceId, userBranchLists(db, actor)), shift: getShift(db, shiftId, actor), rounding: rounded };
 }
 
 /**
@@ -615,10 +1091,19 @@ export const posApi: ApiExtension = {
         method: 'GET', path: '/api/pos/shifts',
         handler: async (req) => {
           const f = parse(z.object({ status: z.enum(['open', 'closed']).optional(), limit: z.coerce.number().int().min(1).max(500).optional() }), req.query);
-          return listShifts(db, f, actor(req));
+          const who = actor(req);
+          // 2.0: a cashier who closes blind never reads the cash expected (till-settings.ts)
+          return closesBlind(db, who) ? listShifts(db, f, who).map(blindShift) : listShifts(db, f, who);
         }
       },
-      { method: 'GET', path: '/api/pos/current', handler: async (req) => ({ shift: myShift(db, actor(req)) }) },
+      {
+        method: 'GET', path: '/api/pos/current',
+        handler: async (req) => {
+          const who = actor(req);
+          const shift = myShift(db, who, parse(z.object({ tillId: id.optional() }), req.query ?? {}).tillId ?? null);
+          return { shift: shift && closesBlind(db, who) ? blindShift(shift) : shift };
+        }
+      },
       { method: 'GET', path: '/api/pos/payment-accounts', handler: async (req) => ({ accounts: posAccountsFor(db, actor(req)), methods: posMethods(db, actor(req)) }) },
       {
         method: 'PUT', path: '/api/pos/payment-accounts',
@@ -628,12 +1113,19 @@ export const posApi: ApiExtension = {
           return { accounts: setPosPaymentAccounts(db, body, actor(req).name), methods: posMethods(db, actor(req)) };
         }
       },
-      { method: 'GET', path: '/api/pos/shifts/:id', handler: async (req) => shiftReport(db, parse(idParam, req.params).id, actor(req)) },
+      {
+        method: 'GET', path: '/api/pos/shifts/:id',
+        handler: async (req) => {
+          const who = actor(req);
+          const report = shiftReport(db, parse(idParam, req.params).id, who);
+          return closesBlind(db, who) ? blindShift(report) : report;
+        }
+      },
       {
         method: 'POST', path: '/api/pos/shifts',
         handler: async (req, reply) => {
           const body = parse(z.object({
-            register: text(60), cashAccountCode: z.string().min(1).max(12), warehouseId: id, openingCash: amount, notes: text(500).optional()
+            tillId: id.optional(), register: text(60), cashAccountCode: z.string().min(1).max(12), warehouseId: id, openingCash: amount, notes: text(500).optional()
           }), req.body);
           reply.status(201).send(openShift(db, body, actor(req)));
           return undefined;
@@ -655,7 +1147,10 @@ export const posApi: ApiExtension = {
               reference: z.string().max(40).regex(OFFLINE_REFERENCE), soldAt: z.string().max(30).regex(ISO_INSTANT), soldOn: z.string().regex(/^\d{4}-\d{2}-\d{2}$/)
             }).optional(),
             loyaltyPoints: z.number().int().positive().max(100_000_000).optional(),
-            tendered: amount.optional()
+            tendered: amount.optional(),
+            usdCash: z.object({ amount: z.number().int().positive().max(10_000_000), rateX100: z.number().int().positive().max(100_000_000) }).optional(),
+            approvals: z.array(id).max(40).optional(),
+            vouchers: z.array(z.object({ code: z.string().min(4).max(40), amount: amount.refine((n) => n > 0) })).max(4).optional()
           }), req.body);
           const shiftId = parse(idParam, req.params).id;
           const who = actor(req);
@@ -668,9 +1163,11 @@ export const posApi: ApiExtension = {
             return { id: result.invoice.id, result };
           }, (invoiceId) => {
             if (body.offline) attachOfflineReference(db, invoiceId, body.offline, who.name);
-            return { invoice: getInvoice(db, invoiceId, userBranchLists(db, who)), shift: getShift(db, shiftId, who) };
+            const kept = db.prepare('SELECT rounding FROM pos_sales WHERE invoice_id = ?').get(invoiceId) as { rounding: number } | undefined;
+            return { invoice: getInvoice(db, invoiceId, userBranchLists(db, who)), shift: getShift(db, shiftId, who), rounding: Number(kept?.rounding ?? 0) };
           }, { fingerprint: sameEachTime });
-          reply.status(201).send(made);
+          // a cashier who closes blind: the shift's totals stay out of the answer
+          reply.status(201).send(closesBlind(db, who) && made && typeof made === 'object' && 'shift' in made ? { ...made, shift: blindShift((made as { shift: ShiftView }).shift) } : made);
           return undefined;
         }
       },
@@ -678,7 +1175,9 @@ export const posApi: ApiExtension = {
         method: 'POST', path: '/api/pos/shifts/:id/close',
         handler: async (req) => {
           const body = parse(z.object({ countedCash: amount, countedUsd: amount.optional(), notes: text(500).optional() }), req.body);
-          return closeShift(db, parse(idParam, req.params).id, body, actor(req));
+          const who = actor(req);
+          const closed = closeShift(db, parse(idParam, req.params).id, body, who);
+          return closesBlind(db, who) ? blindShift(closed) : closed;
         }
       }
     ];

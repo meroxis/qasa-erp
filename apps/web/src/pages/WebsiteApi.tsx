@@ -19,7 +19,7 @@ function OnceSecret({ label, value, onClose }: { label: string; value: string; o
     <Modal title={label} onClose={onClose}>
       <div className="stack">
         <div className="alert warn">{t('wa_shownOnce')}</div>
-        <code className="ltr" style={{ wordBreak: 'break-all', padding: 12, background: 'var(--surface-2, var(--bg))', borderRadius: 8 }}>{value}</code>
+        <code className="ltr" style={{ wordBreak: 'break-all', padding: 12, background: 'var(--fill)', borderRadius: 8 }}>{value}</code>
         <div className="actions">
           <button type="button" className="btn" onClick={() => { void navigator.clipboard?.writeText(value); toast(t('wa_copied')); }}>
             <Icon name="doc" size={16} />{t('wa_copy')}

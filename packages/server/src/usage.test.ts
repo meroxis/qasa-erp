@@ -54,7 +54,9 @@ describe('the anonymous usage ping', () => {
     expect(Object.keys(body).sort()).toEqual(['businessTypes', 'channel', 'companies', 'firstRun', 'install', 'lang', 'nonce', 'os', 'plan', 'users', 'version']);
     expect({ ...body, install: '<id>', nonce: '<nonce>' }).toEqual({
       install: '<id>', version: APP_VERSION, os: 'windows', lang: 'ar', plan: 'free',
-      businessTypes: ['trade', 'autoParts'], companies: 2, users: 1, firstRun: true, channel: 'stable', nonce: '<nonce>'
+      businessTypes: ['trade', 'autoParts'], companies: 2, users: 1, firstRun: true,
+      // a beta build reports the beta channel (no saved choice here), a release the stable one
+      channel: /^\d+\.\d+\.\d+-/.test(APP_VERSION) ? 'beta' : 'stable', nonce: '<nonce>'
     });
     expect(body.install).toMatch(/^[0-9a-f-]{36}$/);
     // the nonce is random and new for every ping

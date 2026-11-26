@@ -8,7 +8,7 @@ There are two channels:
 |---|---|---|
 | Version and tag | `0.2.0`, tag `v0.2.0` | `0.2.0-beta.1`, tag `v0.2.0-beta.1` |
 | GitHub release | normal, marked **Latest** | **prerelease**, never "Latest" |
-| Update file | `latest.yml` only (beta copies read it too) | `beta.yml` |
+| Update file | `latest.yml` only (beta copies read it too) | `beta.yml` (the build's `latest.yml`, put on the release under that name by the workflow) |
 | Who gets it | everyone, including beta testers | only copies that joined the beta |
 | Microsoft Store package | yes (workflow artifact) | no |
 | Website download link (`releases/latest/download/Qasa-ERP-Setup.exe`) | moves to this version | unchanged |
@@ -73,6 +73,11 @@ There are two channels:
    ```
    git tag v0.2.0-beta.1 && git push origin v0.2.0-beta.1
    ```
+
+   Without a PC, the tag can be made on GitHub's website (it has no way to make a tag but with a release): **Releases →
+   Draft a new release**, type the tag, choose the branch as its target, tick **Set as a pre-release**, publish. Pro
+   first, then the app. The app's run takes that hand-made release over (title, notes, files) as long as it has no file
+   on it; a release that already has files is never touched.
 
 4. The release appears as a GitHub prerelease. Only beta testers are offered it.
 5. For the next round, use `0.2.0-beta.2`, and so on.
@@ -232,6 +237,37 @@ and the website never showed it, so both go from 1.5.1 straight to 1.6.0.
 5. **Tell the companies on the office network** (support, WhatsApp) on the day: take a backup first, then update the
    office server PC and every PC that connects to it together, as the notes say (the office server PC's books go to
    schema 16 the first time 1.6.0 opens them, and 1.5.2 or earlier can't open them afterwards).
+
+## Release day for 2.0.0 (the new till, gold, wholesale, clothing and the market extras; schema 21)
+
+2.0.0 carries the new till (tills of their own, a Z report for each till, returns at the till, supervisor approvals,
+scale labels in a 2+5+5 or 2+4+6 layout, gift vouchers), the business type picker, and the Gold and jewellery, Wholesale
+and distribution, and Clothing and shoes business types, with offers, consignment, delivery orders, debt reminders,
+price checkers and daily-delivery suppliers for markets. It **upgrades the company file to schema 21** (versions 17 to 21 run together the first time 2.0.0 opens a 1.6.0 file, on a company file and on a MariaDB/MySQL server database
+alike; 20 is two small tables for product pictures and names from the barcode, `docs/product-lookup.md`; 21 is indexes a big company needs, SQLite only, `packages/server/bench/big-company.ts`): 1.6.0 and earlier can't open it afterwards, as the notes say first. Version 19 holds what the reviews of 2.0
+added after the first builds (the approvals table `till_approvals`, the counts of wrong PINs, a shift's refunds, the
+items' price history): a file any build of 2.0 left at 18 gets them on its next opening, whether that build's version
+18 had none of them (the first build) or some already (builds made while the reviews went on): 19 makes its tables and
+indexes only where they are missing and adds each column only where the table lacks it (`migration-v19.test.ts`). A
+version that can't be applied is reported as `update_failed`, never as a damaged file: the file stays as it was, the
+app never offers to set it aside, and a try that failed removes no older copy from before an update. Card, FIB, ZainCash and Qi at
+the till are off in 2.0.0 (`TILL_CARD_PAYMENTS`), so the notes ask for waiting sales to be sent before the update.
+
+0. **A beta first** (the owner's choice): `2.0.0-beta.5` is the current one (beta.4 was published; beta.3 was tagged and not published: two tests failed on the Windows runner only, so the tests of every pull request now run on Windows too). A beta goes to the copies that joined the beta, from the release
+   branches of the app and Pro (nothing is merged into `main` for a beta), with notes of its own
+   (`release-notes/2.0.0-beta.5.md`: what joining means, what to test, what is known). `2.0.0-beta.1` was tagged
+   and never published: its run stopped because the build had no `beta.yml` (fixed in the workflow, below). 2.0.0 follows when the till has
+   been tried on shops' own PCs: set the version back to `2.0.0` in `apps/desktop/package.json`,
+   `packages/core/src/version.ts` and `package-lock.json`, merge both branches, and go on below.
+1. **Tag Pro, then the app** (the stable steps above): the new features' entitlements must be on Pro `main` first.
+2. **The Store** gets the 2.0.0 `microsoft-store-package` artifact with the 2.0.0 "What's new" in `store-listing.json`.
+   If the Store still has 1.5.1 on the day (1.6.0 never submitted), say the petrol station is in it too before
+   submitting, or submit 1.6.0 first.
+3. **The website:** set its `APP_VERSION` to 2.0.0 and deploy once the GitHub release is out. The new business types
+   have no website or user guide pages yet.
+4. **The phone app is unchanged:** the wholesale reps' phone flows are not in 2.0.0.
+5. **Tell the companies on the office network** (support, WhatsApp): take a backup first, then update the office server
+   PC and every PC that connects to it together.
 
 ## Release notes format
 

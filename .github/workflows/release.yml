@@ -178,7 +178,14 @@ jobs:
         run: |
           mkdir -p release-files
           cp "apps/desktop/release/Qasa-ERP-Setup-$VERSION.exe" "apps/desktop/release/Qasa-ERP-Setup-$VERSION.exe.blockmap" release-files/
-          if [ "$BETA" = "true" ]; then cp apps/desktop/release/beta.yml release-files/; else cp apps/desktop/release/latest.yml release-files/; fi
+          # electron-builder names the update file latest.yml for a GitHub release whatever the version (it writes
+          # beta.yml only for other providers). A beta's goes on its release as beta.yml: that is the name a copy on the
+          # beta channel asks for first, and no copy on the stable channel reads a file of that name.
+          if [ "$BETA" = "true" ]; then cp apps/desktop/release/latest.yml release-files/beta.yml; else cp apps/desktop/release/latest.yml release-files/; fi
+          # the update file names this version's installer and nothing else
+          update=release-files/latest.yml; if [ "$BETA" = "true" ]; then update=release-files/beta.yml; fi
+          grep -Eq "^version: ${VERSION}[[:space:]]*$" "$update" || { echo "$update is not for $VERSION"; exit 1; }
+          grep -q "Qasa-ERP-Setup-$VERSION.exe" "$update" || { echo "$update does not name Qasa-ERP-Setup-$VERSION.exe"; exit 1; }
           notes="apps/desktop/release-notes/$VERSION.md"
           if [ -f "$notes" ]; then cp "$notes" release-files/release-notes.md; fi
           (cd release-files && sha256sum * > SHA256SUMS)
@@ -239,7 +246,14 @@ jobs:
           title="Qasa ERP $VERSION"
           extra=()
           if [ "$BETA" = "true" ]; then title="Qasa ERP $VERSION (beta)"; extra=(--prerelease); fi
-          if [ -f release-notes.md ]; then
+          # A tag made on GitHub's website comes with a release made by hand (the website has no other way to make a
+          # tag). When that release is there and has no file on it, it is taken over: back to a draft, with this
+          # version's title and notes. A release that already has files is never touched: the run stops.
+          if files=$(gh release view "$GITHUB_REF_NAME" --json assets --jq '.assets | length' 2>/dev/null); then
+            if [ "$files" != "0" ]; then echo "A release for $GITHUB_REF_NAME with $files file(s) is already there: not replaced"; exit 1; fi
+            if [ ! -f release-notes.md ]; then echo "No release notes for $VERSION"; exit 1; fi
+            gh release edit "$GITHUB_REF_NAME" --draft "${extra[@]}" --title "$title" --notes-file release-notes.md
+          elif [ -f release-notes.md ]; then
             gh release create "$GITHUB_REF_NAME" --draft --verify-tag "${extra[@]}" --title "$title" --notes-file release-notes.md
           else
             gh release create "$GITHUB_REF_NAME" --draft --verify-tag "${extra[@]}" --title "$title" --generate-notes

@@ -1,6 +1,6 @@
 import { useState, type FormEvent } from 'react';
 import { htmlLang, todayIso } from '@qasa/core';
-import { api, ROLES, type Me, type Role, type UserView } from '../api.ts';
+import { api, request, ROLES, type Me, type Role, type UserView } from '../api.ts';
 import { ErrorBox, Icon, Logo, Modal, useData, useLoad, useToast } from '../components.tsx';
 import { VoucherApprovalSetting } from '../industry/VoucherApproval.tsx';
 import { useI18n, type Key } from '../i18n.ts';
@@ -194,6 +194,7 @@ export function Users({ me, onMeChanged }: { me: Me; onMeChanged(me: Me | null):
   return (
     <div className="stack" style={{ maxWidth: 1000 }}>
       {me.demo && <div className="alert info">{t('demoSignInNote')}</div>}
+      {!me.demo && inWindowsApp() && <HelloResetCard />}
 
       <div className="card pad stack">
         <div className="row">
@@ -332,6 +333,35 @@ export function Users({ me, onMeChanged }: { me: Me; onMeChanged(me: Me | null):
           </form>
         </Modal>
       )}
+    </div>
+  );
+}
+
+/**
+ * 2.0 (security review): who may reset an admin's password with Windows Hello on this PC. Bound to the Windows account
+ * signed in now, only that account can; with none bound, only a member of this PC's Administrators group can.
+ */
+function HelloResetCard() {
+  const { t, dateTime } = useI18n();
+  const { data, reload } = useLoad(() => request<{ bound: boolean; account?: string; at?: string }>('GET', '/api/auth/hello-reset').catch(() => null), []);
+  const [error, setError] = useState<unknown>(null);
+  const desktop = (window as unknown as { qasaDesktop?: { windowsAccount?: () => Promise<unknown> } }).qasaDesktop;
+  if (!data || !desktop?.windowsAccount) return null;
+  const bind = async () => {
+    setError(null);
+    const who = await desktop.windowsAccount!() as { sid: string; account: string } | null;
+    if (!who) { setError(new Error(t('helloBindNoAccount'))); return; }
+    try { await request('PUT', '/api/auth/hello-reset', { sid: who.sid, account: who.account }); reload(); } catch (e) { setError(e); }
+  };
+  return (
+    <div className="card pad stack" data-setting="hello-reset">
+      <h2>{t('helloResetTitle')}</h2>
+      <p className="muted" style={{ margin: 0 }}>{data.bound ? t('helloResetBound', { a: data.account ?? '', d: data.at ? dateTime(data.at) : '' }) : t('helloResetAdmins')}</p>
+      <div className="row" style={{ gap: 8 }}>
+        <button type="button" className="btn" onClick={() => void bind()}>{t('helloBindMe')}</button>
+        {data.bound && <button type="button" className="btn" onClick={() => void request('DELETE', '/api/auth/hello-reset').then(reload, setError)}>{t('helloUnbind')}</button>}
+      </div>
+      <ErrorBox error={error} />
     </div>
   );
 }

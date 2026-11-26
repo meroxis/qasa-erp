@@ -135,6 +135,13 @@ describe('a company file that had no room for its copy before an update', () => 
     const full = Object.assign(new Error('update_copy_failed'), { code: 'update_copy_failed', details: { reason: 'database or disk is full' } });
     expect(companyFileProblem(full, true)).toEqual({ main: true, reason: 'database or disk is full', cause: 'update_copy' });
     expect(companyFileProblem(new Error('file is not a database'), false)).toEqual({ main: false, reason: 'file is not a database', cause: 'damaged' });
+    // a version of the update that could not be applied (db.ts update_failed) is not a damaged file either
+    const stuck = Object.assign(new Error('update_failed'), { code: 'update_failed', details: { version: 19, reason: 'table pos_pin_tries already exists' } });
+    expect(companyFileProblem(stuck, true)).toEqual({ main: true, reason: '19: table pos_pin_tries already exists', cause: 'update' });
+    for (const lang of ['ar', 'en', 'ku'] as const) {
+      expect(text(lang, 'dbUpdateFailed')).not.toBe(text(lang, 'dbDamaged'));
+      expect(text(lang, 'dbUpdateFailedDetail', { reason: 'R' })).toContain('R');
+    }
     for (const lang of ['ar', 'en', 'ku'] as const) {
       expect(text(lang, 'dbUpdateCopyFailed')).not.toBe(text(lang, 'dbDamaged'));
       expect(text(lang, 'dbUpdateCopyFailedDetail', { reason: 'R' })).toContain('R');

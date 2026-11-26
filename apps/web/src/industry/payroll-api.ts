@@ -1,5 +1,6 @@
 import type { CurrencyCode, Lang } from '@qasa/core';
 import { qs, request } from '../api.ts';
+import { sendOnce } from './send-once.ts';
 
 /** Payroll (Pro module): employees, monthly runs and advances. Missing (404) in builds without Pro; admins only. */
 
@@ -75,5 +76,5 @@ export const payrollApi = {
   reverseRun: (id: string, body: { date?: string } = {}) => request<RunView>('POST', `/api/payroll/runs/${id}/reverse`, body),
   advances: (f: { employeeId?: string; open?: 'true' | 'false' } = {}) => request<AdvanceView[]>('GET', '/api/payroll/advances' + qs(f)),
   payAdvance: (body: { employeeId: string; date: string; amount: number; monthly: number; cashAccountCode: string; rateX100?: number; notes?: string; lang: Lang }) =>
-    request<AdvanceView>('POST', '/api/payroll/advances', body)
+    sendOnce<AdvanceView>('POST', '/api/payroll/advances', body) // cash at once: a retry carries the same key
 };

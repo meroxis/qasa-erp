@@ -1,6 +1,6 @@
 import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ComponentType, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from 'react';
 import { APP_VERSION, DEFAULT_AMOUNTS_SHOW, htmlLang, isLang, posShown, type DigitStyle, type Lang } from '@qasa/core';
-import { api, currentUser, SIGNED_OUT_EVENT, type AccountView, type Me, type PlanStatus, type Settings as SettingsData } from './api.ts';
+import { api, currentUser, request, SIGNED_OUT_EVENT, type AccountView, type Me, type PlanStatus, type Settings as SettingsData } from './api.ts';
 import { buildHas, BusyBar, DataContext, DisplayContext, Icon, isDensity, isTheme, Logo, PageNavContext, ToastProvider, type Density, type PageNav, type Theme } from './components.tsx';
 import { I18nContext, isKey, makeI18n, useI18n, type Key } from './i18n.ts';
 import { closedPageAddress, href, useRoute } from './router.ts';
@@ -15,6 +15,7 @@ import { ADMIN_PAGES, canSee, COMPANY_BOOK_PAGES, navLabel, pageOpen, NO_BOOKS_P
 import { CommandPalette } from './industry/CommandPalette.tsx';
 import { Tour, TOUR_EVENT, tourDone } from './industry/Tour.tsx';
 import { UpdateBanner } from './industry/UpdateBanner.tsx';
+import { CompanyViewOnlyBanner } from './industry/CompanyViewOnly.tsx';
 import { WhatsNewAfterUpdate } from './industry/WhatsNew.tsx';
 import { RemoteSupportFromMenu } from './industry/RemoteSupport.tsx';
 import { BackupNoticeBar } from './industry/BackupNotice.tsx';
@@ -24,6 +25,7 @@ import { activationNoticeFor } from './industry/activation-notice.ts';
 import { isReportTab, isSolarTab } from './pages/tabs.ts';
 import { canSwitchCompanies } from './industry/companies-api.ts';
 import { outboxClient, setOutboxUser, startOutbox } from './industry/outbox.ts';
+import { forgetOnceKeys } from './industry/send-once.ts';
 import { OutboxBanner } from './industry/OutboxBanner.tsx';
 import { HeaderRate } from './industry/HeaderRate.tsx';
 import { PhoneBell } from './industry/PhoneActivity.tsx';
@@ -79,6 +81,7 @@ const BusinessTypePage = lazyPage(() => import('./pages/BusinessType.tsx'), 'Bus
 const Pos = lazyPage(() => import('./pages/Pos.tsx'), 'Pos');
 const OutboxPage = lazyPage(() => import('./pages/Outbox.tsx'), 'OutboxPage');
 const PosShiftReport = lazyPage(() => import('./pages/Pos.tsx'), 'PosShiftReport');
+const PosShiftReports = lazyPage(() => import('./pages/Pos.tsx'), 'PosShiftReports');
 const Payroll = lazyPage(() => import('./pages/Payroll.tsx'), 'Payroll');
 const PayrollRun = lazyPage(() => import('./pages/Payroll.tsx'), 'PayrollRun');
 const Import = lazyPage(() => import('./pages/Import.tsx'), 'Import');
@@ -104,6 +107,16 @@ const StockCount = lazyPage(() => import('./pages/StockAdjustments.tsx'), 'Stock
 const PrintDesignPage = lazyPage(() => import('./pages/PrintDesign.tsx'), 'PrintDesignPage');
 const Labels = lazyPage(() => import('./pages/Labels.tsx'), 'Labels');
 const Expiry = lazyPage(() => import('./pages/Expiry.tsx'), 'Expiry');
+const Consignment = lazyPage(() => import('./pages/Consignment.tsx'), 'Consignment');
+const Clothing = lazyPage(() => import('./pages/Clothing.tsx'), 'Clothing');
+const ClothingModel = lazyPage(() => import('./pages/Clothing.tsx'), 'ClothingModel');
+const Offers = lazyPage(() => import('./pages/Offers.tsx'), 'Offers');
+const Delivery = lazyPage(() => import('./pages/Delivery.tsx'), 'Delivery');
+const DebtReminders = lazyPage(() => import('./pages/DebtReminders.tsx'), 'DebtReminders');
+const DailySuppliers = lazyPage(() => import('./pages/DailySuppliers.tsx'), 'DailySuppliers');
+const PriceCheckers = lazyPage(() => import('./pages/PriceCheckers.tsx'), 'PriceCheckers');
+// the delivery board's tabs (as pages/Delivery.tsx names them)
+const DELIVERY_TABS = ['board', 'drivers', 'handovers'] as const;
 const Pharmacy = lazyPage(() => import('./pages/Pharmacy.tsx'), 'Pharmacy');
 const Companies = lazyPage(() => import('./pages/Companies.tsx'), 'Companies');
 const FixedAssets = lazyPage(() => import('./pages/FixedAssets.tsx'), 'FixedAssets');
@@ -111,8 +124,19 @@ const FixedAssetDetail = lazyPage(() => import('./pages/FixedAssets.tsx'), 'Fixe
 const GenRun = lazyPage(() => import('./pages/Generators.tsx'), 'GenRun');
 const Generators = lazyPage(() => import('./pages/Generators.tsx'), 'Generators');
 const PetrolStation = lazyPage(() => import('./pages/PetrolStation.tsx'), 'PetrolStation');
+const Gold = lazyPage(() => import('./pages/Gold.tsx'), 'Gold');
+const GoldSlipPage = lazyPage(() => import('./pages/Gold.tsx'), 'GoldSlipPage');
+// the gold shop's tabs (as pages/Gold.tsx names them)
+const GOLD_TABS = ['board', 'pieces', 'old', 'suppliers', 'stock'] as const;
+const Wholesale = lazyPage(() => import('./pages/Wholesale.tsx'), 'Wholesale');
+// wholesale's tabs (as pages/Wholesale.tsx names them)
+const WHOLESALE_TABS = ['day', 'orders', 'vans', 'money', 'reps', 'reports', 'settings'] as const;
 // the petrol station's tabs (as pages/PetrolStation.tsx names them), written here so that page stays loaded lazily
 const PETROL_TABS = ['shifts', 'tanks', 'deliveries', 'dips', 'reports', 'setup'] as const;
+// goods on consignment's tabs (as pages/Consignment.tsx names them)
+const CONSIGNMENT_TABS = ['suppliers', 'items', 'docs', 'settlements'] as const;
+// the clothing page's tabs (as pages/Clothing.tsx names them)
+const CLOTHING_TABS = ['models', 'colors', 'reports'] as const;
 const FuelShiftSheet = lazyPage(() => import('./pages/PetrolStation.tsx'), 'FuelShiftSheet');
 const WebsiteApi = lazyPage(() => import('./pages/WebsiteApi.tsx'), 'WebsiteApi');
 const Solar = lazyPage(() => import('./pages/Solar.tsx'), 'Solar');
@@ -167,7 +191,10 @@ export function App() {
   const [collapsed, setCollapsed] = useState(navCollapsed);
   // a narrow window or a phone (the website demo): the menu is the icon rail, whatever was chosen on a wide window
   const narrow = useNarrow();
-  const railed = collapsed || narrow;
+  // 2.0: the till takes the whole width (a 1366×768 laptop has no room for the menu beside its three columns): on the
+  // till the menu is the icon rail, and it comes back as it was on any other page
+  const onTill = (route[0] ?? '') === 'pos';
+  const railed = collapsed || narrow || onTill;
   const [openNav, setOpenNav] = useState<string[]>([]);
   const [searching, setSearching] = useState(false);
   const [favs, setFavs] = useState<string[]>([]);
@@ -502,6 +529,11 @@ export function App() {
       title = t('pos_title');
       content = arg ? <PosShiftReport key={arg} id={arg} /> : null;
       break;
+    case 'pos-shifts':
+      // 2.0.0: every till's X/Z report of a day, printed in one go (from the end-of-day close)
+      title = t('pos_title');
+      content = arg ? <PosShiftReports key={arg} ids={arg.split(',').filter(Boolean).slice(0, 40)} /> : null;
+      break;
     case 'solar':
       title = t('sl_title');
       content = <Solar key={arg ?? 'home'} tab={isSolarTab(arg) ? arg : 'home'} />;
@@ -525,6 +557,18 @@ export function App() {
     case 'petrol':
       title = t('ps_title');
       content = <PetrolStation key={arg ?? 'shifts'} tab={PETROL_TABS.find((x) => x === arg) ?? 'shifts'} />;
+      break;
+    case 'gold':
+      title = t('gd_title');
+      content = <Gold key={arg ?? 'board'} tab={GOLD_TABS.find((x) => x === arg) ?? 'board'} />;
+      break;
+    case 'gold-slip':
+      title = t('gd_slip');
+      content = arg ? <GoldSlipPage key={arg} id={arg} /> : null;
+      break;
+    case 'wholesale':
+      title = t('ws_title');
+      content = <Wholesale key={arg ?? 'day'} tab={WHOLESALE_TABS.find((x) => x === arg) ?? 'day'} />;
       break;
     case 'fuel-shift':
       title = t('ps_title');
@@ -582,9 +626,41 @@ export function App() {
       title = t('lb_title');
       content = <Labels />;
       break;
+    case 'offers':
+      title = t('of_title');
+      content = <Offers key={arg ?? 'list'} admin={isAdmin} tab={arg === 'report' ? 'report' : 'list'} />;
+      break;
+    case 'delivery':
+      title = t('mx_deliveryTitle');
+      content = <Delivery key={arg ?? 'board'} tab={DELIVERY_TABS.find((x) => x === arg) ?? 'board'} />;
+      break;
+    case 'debt-reminders':
+      title = t('mx_rmTitle');
+      content = <DebtReminders />;
+      break;
+    case 'daily-suppliers':
+      title = t('mx_dsTitle');
+      content = <DailySuppliers key={arg ?? 'list'} partyId={arg} />;
+      break;
+    case 'price-checkers':
+      title = t('mx_pcTitle');
+      content = isAdmin ? <PriceCheckers /> : null;
+      break;
     case 'expiry':
       title = t('ex_title');
       content = <Expiry />;
+      break;
+    case 'consignment':
+      title = t('cg_title');
+      content = <Consignment key={arg ?? 'suppliers'} tab={CONSIGNMENT_TABS.find((x) => x === arg) ?? 'suppliers'} />;
+      break;
+    case 'clothing':
+      title = t('cw_title');
+      content = <Clothing key={arg ?? 'models'} tab={CLOTHING_TABS.find((x) => x === arg) ?? 'models'} canEdit={isAdmin || viewer.permissions.includes('stock')} />;
+      break;
+    case 'clothing-model':
+      title = t('cw_title');
+      content = arg ? <ClothingModel key={arg} id={arg} canEdit={isAdmin || viewer.permissions.includes('stock')} /> : null;
       break;
     case 'pharmacy':
       title = t('phm_title');
@@ -816,6 +892,7 @@ export function App() {
 
   async function signOut() {
     try { await api.logout(); } catch { /* signed out either way */ }
+    forgetOnceKeys();
     setMe((m) => (m ? { ...m, user: null } : m));
   }
 
@@ -835,7 +912,7 @@ export function App() {
                   <div className="brand-name">{t('appName')}</div>
                   <div className="brand-tag">{t('tagline')}</div>
                 </div>
-                {!narrow && <button type="button" className="btn subtle icon nav-toggle" aria-label={collapsed ? t('navExpand') : t('navCollapse')} title={collapsed ? t('navExpand') : t('navCollapse')} aria-pressed={collapsed} onClick={() => { setCollapsed(!collapsed); setNavCollapsed(!collapsed); }}>
+                {!narrow && !onTill && <button type="button" className="btn subtle icon nav-toggle" aria-label={collapsed ? t('navExpand') : t('navCollapse')} title={collapsed ? t('navExpand') : t('navCollapse')} aria-pressed={collapsed} onClick={() => { setCollapsed(!collapsed); setNavCollapsed(!collapsed); }}>
                   <Icon name="panel" size={16} className="flip" />
                 </button>}
               </div>
@@ -908,9 +985,10 @@ export function App() {
               {touring && settings && settings.businessTypes !== null && <Tour user={favUser} businessTypes={settings.businessTypes} office={dataPlace?.kind === 'office'} onClose={() => setTouring(false)} />}
               {/* the first time an admin opens the company: what does it do? (decides the menu; changed later under System) */}
               {isAdmin && settings && settings.businessTypes === null && import.meta.env.MODE !== 'demo' && (
-                <div className="backdrop"><div className="modal biz-modal" role="dialog" aria-modal="true" aria-label={t('bizWelcome')}><Suspense fallback={<PageLoading />}><BusinessTypeChooser first /></Suspense></div></div>
+                <div className="biz-screen" role="dialog" aria-modal="true" aria-labelledby="biz-title"><Suspense fallback={<PageLoading />}><BusinessTypeChooser first /></Suspense></div>
               )}
               <UpdateBanner />
+              <CompanyViewOnlyBanner plan={plan?.plan} />
               <WhatsNewAfterUpdate />
               <RemoteSupportFromMenu />
               <PrintNotices />
@@ -920,6 +998,12 @@ export function App() {
                   <div className="alert warn plan-banner no-print" style={{ marginBottom: 14 }}>
                     <span>{t('graceNote', { p: t(`plan_${plan.license.plan}`), d: i18n.date(plan.license.expires), g: i18n.date(plan.graceEnds) })}</span>
                     <a href={href('plans')}>{t('planLicense')}</a>
+                  </div>
+                )}
+                {isAdmin && me?.user?.resetNotice && (
+                  <div className="alert warn plan-banner no-print" role="alert" style={{ marginBottom: 14 }}>
+                    <span>{t('adminResetNotice', { u: me.user.resetNotice.username, w: me.user.resetNotice.windowsUser, d: i18n.dateTime(me.user.resetNotice.at) })}</span>
+                    <button type="button" className="btn btn-sm" onClick={() => void request('DELETE', '/api/auth/reset-notice').then(() => reloadMe())}>{t('tu_pinAlertSeen')}</button>
                   </div>
                 )}
                 {/* (the 0.1.8 grace notice for everyone at this PC; the others for admins, with their link to Plan & license) */}

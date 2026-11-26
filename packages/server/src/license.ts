@@ -131,7 +131,9 @@ export function planStatus(db: Db, today: string = licensingToday()): PlanStatus
   const trialStarted = trustedTrialStart(db, readSetting(db, TRIAL_SETTING) ?? null);
   const resolved = resolvePlan({ license: counts ? license : null, trialStarted, today });
   if (licensingConfig().strict) maybeCheckInBackground(db, activation);
-  const salesThisMonth = count(db, "SELECT COUNT(*) AS n FROM invoices WHERE kind = 'sale' AND status = 'posted' AND date LIKE ?", today.slice(0, 7) + '-%');
+  // the month as a range of days, which the invoices_date index answers (a "LIKE" read every invoice, at every request)
+  const salesThisMonth = count(db, "SELECT COUNT(*) AS n FROM invoices WHERE kind = 'sale' AND status = 'posted' AND date >= ? AND date <= ?",
+    `${today.slice(0, 7)}-01`, `${today.slice(0, 7)}-31`);
   return {
     ...resolved,
     license: license ? { ...license, state: licenseState(license, today) } : null,
@@ -152,6 +154,9 @@ export function assertWithinLimit(db: Db, limit: LimitName, current: number): vo
 
 export function activateLicense(db: Db, text: string, user: string, today: string = licensingToday()): PlanStatus {
   const info = readLicenseKey(text);
+  // an official build whose compiled checks did not load on this PC can check no key at all: said as what it is,
+  // not as a fault of the key (a new PC without the Visual C++ runtime, before the addon carried it: 2.0.0-beta.3)
+  if (!info && licensingConfig().requireNative && !loadNative()) throw new AppError(409, 'license_module_missing');
   if (!info) throw new AppError(400, 'license_invalid');
   if (licenseState(info, today) === 'expired') throw conflict('license_expired', { expires: info.expires });
   // recorded before the key is stored, so a key entered in this version never gets the 0.1.8 grace

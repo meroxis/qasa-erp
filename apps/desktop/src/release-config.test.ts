@@ -22,6 +22,30 @@ describe('the installer build (electron-builder.yml)', () => {
     expect(read('apps/desktop/package.json')).toContain('electron-builder --win --publish never');
   });
 
+  it('a beta\'s update file goes on its release as beta.yml, made from the latest.yml the build writes (2.0.0-beta.1 stopped here)', () => {
+    const workflow = read('.github/workflows/release.yml');
+    // electron-builder names the file latest.yml for GitHub whatever the version: a step that waits for beta.yml never passes
+    expect(workflow).not.toContain('cp apps/desktop/release/beta.yml');
+    expect(workflow).toContain('if [ "$BETA" = "true" ]; then cp apps/desktop/release/latest.yml release-files/beta.yml; else cp apps/desktop/release/latest.yml release-files/; fi');
+    // and the file is this version's, naming this version's installer
+    expect(workflow).toContain('grep -Eq "^version: ${VERSION}[[:space:]]*$" "$update"');
+    expect(workflow).toContain('grep -q "Qasa-ERP-Setup-$VERSION.exe" "$update"');
+    expect(workflow).toContain('if [ "$BETA" = "true" ]; then update=beta.yml; fi');
+    expect(read('apps/desktop/electron-builder.yml')).toContain('electron-builder itself always names the file latest.yml for GitHub');
+  });
+
+  it('takes over a release made by hand for the tag only when it has no file on it, and never replaces one that has', () => {
+    const workflow = read('.github/workflows/release.yml');
+    const step = workflow.slice(workflow.indexOf('- name: Create the release draft'), workflow.indexOf('- name: Installer, update file and block map'));
+    expect(step).toContain(`if files=$(gh release view "$GITHUB_REF_NAME" --json assets --jq '.assets | length' 2>/dev/null); then`);
+    expect(step).toContain('if [ "$files" != "0" ]; then echo "A release for $GITHUB_REF_NAME with $files file(s) is already there: not replaced"; exit 1; fi');
+    expect(step).toContain('gh release edit "$GITHUB_REF_NAME" --draft "${extra[@]}" --title "$title" --notes-file release-notes.md');
+    // no release there: made as before, as a draft, for a tag that exists
+    expect(step).toContain('gh release create "$GITHUB_REF_NAME" --draft --verify-tag "${extra[@]}" --title "$title" --notes-file release-notes.md');
+    expect(step.indexOf('exit 1; fi')).toBeLessThan(step.indexOf('gh release edit'));
+    expect(read('docs/releasing.md')).toContain('The app\'s run takes that hand-made release over (title, notes, files) as long as it has no file');
+  });
+
   it('installs the third-party notices with the app (promises-15)', () => {
     expect(config).toMatch(/- from: \.\.\/\.\.\/THIRD_PARTY_NOTICES\.md\n\s+to: THIRD_PARTY_NOTICES\.md/);
   });
@@ -455,7 +479,7 @@ describe('the release notes of 1.4.0 (kept as shipped)', () => {
     expect(words).toContain("payCash: ['نقداً', 'Cash', 'نەقد']");
     expect(words).toContain("payCredit: ['آجل', 'On credit', 'قەرز']");
     expect(read('apps/web/src/i18n/sales14.ts')).toContain("'A sale is either paid now or on credit as a whole, never part one and part the other.'");
-    expect(read('apps/web/src/pages/Pos.tsx')).toContain("t('s14_creditNeedsCustomer')");
+    expect(read('apps/web/src/pos/PaymentPanel.tsx')).toContain("t('s14_creditNeedsCustomer')");
     expect(section('en')).toContain('a sales invoice and a sale at the till are paid one of two ways: **Cash** (paid now) or **On credit** (the whole sale goes on the customer’s account as a debt). A credit sale needs a customer, and a sale is never part cash and part credit.');
     expect(section('ar')).toContain('**نقداً** (يُدفع الآن) أو **آجل** (يُسجَّل البيع كله ديناً على حساب الزبون). البيع الآجل يحتاج زبوناً، ولا يُقسم البيع بين النقد والآجل.');
     expect(section('ku')).toContain('**نەقد** (ئێستا دەدرێت) یان **قەرز** (هەموو فرۆشتنەکە وەک قەرز لەسەر کڕیار تۆمار دەکرێت). فرۆشتن بە قەرز پێویستی بە کڕیار هەیە');
@@ -968,7 +992,7 @@ describe('the release notes of 1.4.2 (kept as shipped, with the stock-correction
     }
     // where the notes say: the item box of invoices, quotations, purchase orders and the till; the row and the item's page
     for (const page of ['Invoices', 'Quotes', 'PurchaseOrders']) expect(read(`apps/web/src/pages/${page}.tsx`), page).toContain('<ItemPicker ');
-    expect(read('apps/web/src/pages/Pos.tsx')).toContain('<QuickItemForm ');
+    expect(read('apps/web/src/pos/Register.tsx')).toContain('<QuickItemForm ');
     expect(read('apps/web/src/pages/Items.tsx').match(/can\('adjustment'\) && it\.trackStock && it\.active/g)).toHaveLength(2);
   });
 
@@ -1084,7 +1108,7 @@ describe('the release notes of 1.4.3 (never released on its own: What\'s new sho
   it('upgrades no company file in 1.4.3, so it has no "Before you update" warning', () => {
     // why: 1.4.3 adds no migration; 1.4.2 and 1.4.3 open the same company file (schema 14; 15, the receipt photos,
     // comes with the next release, whose notes say so; 16, the petrol station, with a later one)
-    expect(read('packages/server/src/db.ts')).toMatch(/\{ sql: V14, mysql: \{ tables: true, steps: \(\) => V14_MYSQL_STEPS \} \},?\n( {2}\{ sql: V15, mysql: \{ tables: true, steps: \(\) => V15_MYSQL_STEPS \} \},?\n)?( {2}\{ sql: V16, mysql: \{ tables: true, steps: \(\) => V16_MYSQL_STEPS \} \}\n)?\];/);
+    expect(read('packages/server/src/db.ts')).toMatch(/\{ sql: V14, mysql: \{ tables: true, steps: \(\) => V14_MYSQL_STEPS \} \},?\n( {2}\{ sql: V15, mysql: \{ tables: true, steps: \(\) => V15_MYSQL_STEPS \} \},?\n)?( {2}\{ sql: V16, mysql: \{ tables: true, steps: \(\) => V16_MYSQL_STEPS \} \},?\n( {2}\{ sql: V17, mysql: \{ tables: true, steps: \(\) => V17_MYSQL_STEPS \} \},?\n( {2}\{ sql: V18, mysql: \{ tables: true, steps: \(\) => V18_MYSQL_STEPS \} \},?\n( {2}\{ sql: V19, mysql: \{ tables: true, steps: \(\) => V19_MYSQL_STEPS \}, data: keepFeatureAccounts \},?\n( {2}\{ sql: V20, mysql: 'tables' \},?\n( {2}\/\/ .*\n)?( {2}\{ sql: V21, mysql: \{ tables: true, steps: \(\) => V21_MYSQL_STEPS \} \}\n)?)?)?)?)?)?\];/);
     expect(notes).not.toMatch(/Before you update|قبل التحديث|پێش نوێکردنەوە/);
   });
 
@@ -1131,9 +1155,9 @@ describe('the release notes of 1.4.3 (never released on its own: What\'s new sho
   });
 
   it('offers phone app 1.0.2, and says plainly what goes to Google: never the codes scanned, maybe the scanner\'s statistics', () => {
-    // (Settings offers 1.1.0 from 1.5.0, with the office's phone link that has its features; 1.0.2 was 1.4.3's)
+    // (Settings offers 1.1.0 from 1.5.0, with the office's phone link that has its features; 1.0.2 was 1.4.3's; 1.2.0 is app.json's next build, not offered yet)
     const mobile = JSON.parse(read('apps/mobile/app.json')) as { expo: { version: string } };
-    expect(['1.0.2', '1.1.0']).toContain(mobile.expo.version);
+    expect(['1.0.2', '1.1.0', '1.2.0']).toContain(mobile.expo.version);
     for (const lang of ['ar', 'en', 'ku'] as const) expect(section(lang), lang).toMatch(/1\.0\.2[\s\S]*SHA-256/);
     expect(section('en')).toContain('The barcodes you scan never go to Google, and Google ML Kit’s own usage reports are taken out; Google Play services may still receive brief usage statistics about the scanning.');
     expect(section('ar')).toContain('ما تمسحه من باركود لا يذهب إلى Google أبداً');
@@ -1242,7 +1266,7 @@ describe('the release notes of 1.5.0 (kept as shipped; the Store "What\'s new" o
   it('says first that the company file is upgraded to 15, which 1.4.3 and earlier (a Store copy on 1.4.2 too) cannot open', () => {
     // why: 1.5.0 adds migration 15 (entry_images, the receipt photos, and entries' revision), and an app refuses a newer file
     const db = read('packages/server/src/db.ts');
-    expect(db).toMatch(/\{ sql: V15, mysql: \{ tables: true, steps: \(\) => V15_MYSQL_STEPS \} \},?\n( {2}\{ sql: V16, mysql: \{ tables: true, steps: \(\) => V16_MYSQL_STEPS \} \}\n)?\];/);
+    expect(db).toMatch(/\{ sql: V15, mysql: \{ tables: true, steps: \(\) => V15_MYSQL_STEPS \} \},?\n( {2}\{ sql: V16, mysql: \{ tables: true, steps: \(\) => V16_MYSQL_STEPS \} \},?\n( {2}\{ sql: V17, mysql: \{ tables: true, steps: \(\) => V17_MYSQL_STEPS \} \},?\n( {2}\{ sql: V18, mysql: \{ tables: true, steps: \(\) => V18_MYSQL_STEPS \} \},?\n( {2}\{ sql: V19, mysql: \{ tables: true, steps: \(\) => V19_MYSQL_STEPS \}, data: keepFeatureAccounts \},?\n( {2}\{ sql: V20, mysql: 'tables' \},?\n( {2}\/\/ .*\n)?( {2}\{ sql: V21, mysql: \{ tables: true, steps: \(\) => V21_MYSQL_STEPS \} \}\n)?)?)?)?)?)?\];/);
     expect(db).toContain('ALTER TABLE entries ADD COLUMN revision INTEGER NOT NULL DEFAULT 0;');
     expect(db).toContain('export const SCHEMA_VERSION = MIGRATIONS.length;');
     expect(db).toContain('CREATE TABLE entry_images (');
@@ -1256,8 +1280,10 @@ describe('the release notes of 1.5.0 (kept as shipped; the Store "What\'s new" o
 
   it('offers phone app 1.1.0 as Settings does and app.json has it, and says truly that a phone on 1.0.x keeps working without the new features', () => {
     const mobile = JSON.parse(read('apps/mobile/app.json')) as { expo: { version: string; android: { versionCode: number } } };
-    expect(mobile.expo.version).toBe('1.1.0');
-    expect(mobile.expo.android.versionCode).toBe(5);
+    // app.json is at the build Settings offers or ahead of it (1.2.0, code 6, is written but not built yet: Settings
+    // offers a newer phone app only from the office release that comes with it)
+    expect(mobile.expo.version).toMatch(/^1\.[1-9]\d*\.\d+$/);
+    expect(mobile.expo.android.versionCode).toBeGreaterThanOrEqual(5);
     expect(read('apps/web/src/pages/Settings.tsx')).toContain("version: '1.1.0',");
     for (const lang of ['ar', 'en', 'ku'] as const) expect(section(lang), lang).toMatch(/1\.1\.0[\s\S]*SHA-256/);
     expect(section('en')).toContain('A phone still on 1.0.x keeps working with 1.5.0 as before, without the new features.');
@@ -1382,7 +1408,7 @@ describe('the release notes of 1.5.1 (kept as shipped: the menu, first on GitHub
   });
 
   it('has the same short Changed section in each language, and no Before you update: the company file stays on schema 15', () => {
-    expect(read('packages/server/src/db.ts')).toMatch(/\{ sql: V15, mysql: \{ tables: true, steps: \(\) => V15_MYSQL_STEPS \} \},?\n( {2}\{ sql: V16, mysql: \{ tables: true, steps: \(\) => V16_MYSQL_STEPS \} \}\n)?\];/);
+    expect(read('packages/server/src/db.ts')).toMatch(/\{ sql: V15, mysql: \{ tables: true, steps: \(\) => V15_MYSQL_STEPS \} \},?\n( {2}\{ sql: V16, mysql: \{ tables: true, steps: \(\) => V16_MYSQL_STEPS \} \},?\n( {2}\{ sql: V17, mysql: \{ tables: true, steps: \(\) => V17_MYSQL_STEPS \} \},?\n( {2}\{ sql: V18, mysql: \{ tables: true, steps: \(\) => V18_MYSQL_STEPS \} \},?\n( {2}\{ sql: V19, mysql: \{ tables: true, steps: \(\) => V19_MYSQL_STEPS \}, data: keepFeatureAccounts \},?\n( {2}\{ sql: V20, mysql: 'tables' \},?\n( {2}\/\/ .*\n)?( {2}\{ sql: V21, mysql: \{ tables: true, steps: \(\) => V21_MYSQL_STEPS \} \}\n)?)?)?)?)?)?\];/);
     expect(section('en')).toMatch(/\n### Changed\n- \*\*One menu group open at a time:\*\*[^\n]+\n$/);
     expect(section('ar')).toMatch(/\n### ما تغيّر\n- \*\*مجموعة واحدة مفتوحة في القائمة:\*\*[^\n]+\n$/);
     expect(section('ku')).toMatch(/\n### گۆڕاوەکان\n- \*\*یەک گرووپی کراوە لە لیستدا:\*\*[^\n]+\n$/);
@@ -1433,7 +1459,7 @@ describe('the release notes of 1.5.2 (kept as shipped: on GitHub only; the Store
   });
 
   it('has the same sections in each language, Before you update first, and upgrades no company file (schema 15)', () => {
-    expect(read('packages/server/src/db.ts')).toMatch(/\{ sql: V15, mysql: \{ tables: true, steps: \(\) => V15_MYSQL_STEPS \} \},?\n( {2}\{ sql: V16, mysql: \{ tables: true, steps: \(\) => V16_MYSQL_STEPS \} \}\n)?\];/);
+    expect(read('packages/server/src/db.ts')).toMatch(/\{ sql: V15, mysql: \{ tables: true, steps: \(\) => V15_MYSQL_STEPS \} \},?\n( {2}\{ sql: V16, mysql: \{ tables: true, steps: \(\) => V16_MYSQL_STEPS \} \},?\n( {2}\{ sql: V17, mysql: \{ tables: true, steps: \(\) => V17_MYSQL_STEPS \} \},?\n( {2}\{ sql: V18, mysql: \{ tables: true, steps: \(\) => V18_MYSQL_STEPS \} \},?\n( {2}\{ sql: V19, mysql: \{ tables: true, steps: \(\) => V19_MYSQL_STEPS \}, data: keepFeatureAccounts \},?\n( {2}\{ sql: V20, mysql: 'tables' \},?\n( {2}\/\/ .*\n)?( {2}\{ sql: V21, mysql: \{ tables: true, steps: \(\) => V21_MYSQL_STEPS \} \}\n)?)?)?)?)?)?\];/);
     const heads = (lang: 'ar' | 'en' | 'ku') => section(lang).split('\n').filter((l) => l.startsWith('### '));
     expect(heads('en')).toEqual(['### Before you update', '### Licences from 0.1.8', '### New', '### Changed', '### Fixed']);
     expect(heads('ar')).toEqual(['### قبل التحديث', '### تراخيص الإصدار 0.1.8', '### الجديد', '### ما تغيّر', '### الإصلاحات']);
@@ -1460,7 +1486,8 @@ describe('the release notes of 1.5.2 (kept as shipped: on GitHub only; the Store
   });
 
   it('says first that a company that does not sell at a counter has the till off, with the business types and the setting as the app names them', () => {
-    expect(read('packages/core/src/pos-use.ts')).toContain("COUNTER_BUSINESS_TYPES: readonly BusinessType[] = ['trade', 'market', 'pharmacy', 'mobileShop', 'autoParts', 'electricalSolar'];");
+    // (business types added later that also sell at a counter come after these: clothing and shoes, 2.0)
+    expect(read('packages/core/src/pos-use.ts')).toMatch(/COUNTER_BUSINESS_TYPES: readonly BusinessType\[\] = \['trade', 'market', 'pharmacy', 'mobileShop', 'autoParts', 'electricalSolar'(, '\w+')*\];/);
     const i18n = read('apps/web/src/i18n.ts');
     expect(i18n).toContain("bt_realEstate: ['عقارات', 'Real estate', 'خانووبەرە']");
     expect(i18n).toContain("bt_engineeringWorks: ['أعمال هندسية', 'Engineering works', 'کاری ئەندازیاری']");
@@ -1512,8 +1539,8 @@ describe('the release notes of 1.5.2 (kept as shipped: on GitHub only; the Store
   });
 });
 
-describe('the release notes of this version (1.6.0: the petrol station, the till\'s quick buttons and big pictures, the Kurdish words; schema 16)', () => {
-  const version = (JSON.parse(read('apps/desktop/package.json')) as { version: string }).version;
+describe('the release notes of 1.6.0 (kept as shipped: the petrol station, the till\'s quick buttons and big pictures, the Kurdish words; schema 16)', () => {
+  const version = '1.6.0';
   const notes = read(`apps/desktop/release-notes/${version}.md`);
   const section = (lang: 'ar' | 'en' | 'ku') => new RegExp(`^::: ${lang}\\n([\\s\\S]*?)^:::$`, 'm').exec(notes)?.[1] ?? '';
   const before = (lang: 'ar' | 'en' | 'ku') => section(lang).split('\n### ')[0]!;
@@ -1523,14 +1550,6 @@ describe('the release notes of this version (1.6.0: the petrol station, the till
   const store = listing.listings;
   const LANGS = ['en-us', 'ar', 'ku-arab'] as const;
   const lines = (lang: (typeof LANGS)[number]) => store[lang].releaseNotes.split('\n');
-
-  it('is 1.6.0, the same in the app, the core and the lock file, with a notes file that has Arabic, English and Kurdish', () => {
-    expect(version).toBe('1.6.0');
-    expect(read('packages/core/src/version.ts')).toContain(`APP_VERSION = '${version}'`);
-    const lock = JSON.parse(read('package-lock.json')) as { packages: Record<string, { version?: string }> };
-    expect(lock.packages['apps/desktop']?.version).toBe(version);
-    for (const lang of ['ar', 'en', 'ku'] as const) expect(notes, lang).toMatch(new RegExp(`^::: ${lang}\\n[\\s\\S]+?^:::$`, 'm'));
-  });
 
   it('has the same sections in each language, Before you update first', () => {
     const heads = (lang: 'ar' | 'en' | 'ku') => section(lang).split('\n').filter((l) => l.startsWith('### '));
@@ -1545,8 +1564,10 @@ describe('the release notes of this version (1.6.0: the petrol station, the till
   it('says first that the company file goes to schema 16, to back up and to update the office server PC with every PC', () => {
     // schema 16 (the petrol station's tables) is the last migration, and a copy of the file is kept before it runs
     const db = read('packages/server/src/db.ts');
-    expect(db).toMatch(/\{ sql: V16, mysql: \{ tables: true, steps: \(\) => V16_MYSQL_STEPS \} \}\n\];/);
+    expect(db).toMatch(/\{ sql: V16, mysql: \{ tables: true, steps: \(\) => V16_MYSQL_STEPS \} \},?\n( {2}\{ sql: V17, mysql: \{ tables: true, steps: \(\) => V17_MYSQL_STEPS \} \},?\n( {2}\{ sql: V18, mysql: \{ tables: true, steps: \(\) => V18_MYSQL_STEPS \} \},?\n( {2}\{ sql: V19, mysql: \{ tables: true, steps: \(\) => V19_MYSQL_STEPS \}, data: keepFeatureAccounts \},?\n( {2}\{ sql: V20, mysql: 'tables' \},?\n( {2}\/\/ .*\n)?( {2}\{ sql: V21, mysql: \{ tables: true, steps: \(\) => V21_MYSQL_STEPS \} \}\n)?)?)?)?)?\];/);
     expect(db).toContain('-before-update-v');
+    // the number the notes name is the number of migrations (19: migration-v19.test.ts)
+    expect(db).toContain('export const SCHEMA_VERSION = MIGRATIONS.length;');
     expect(read('apps/web/src/i18n.ts')).toContain("bkTitle: ['النسخ الاحتياطية', 'Backups', 'باکئەپەکان']");
     expect(before('en')).toContain('**The company file is upgraded to a new version (16) the first time 1.6.0 opens it.** Take a backup first (**Settings → Backups**)');
     expect(before('en')).toContain('Qasa ERP 1.5.2 and earlier cannot open a file that 1.6.0 has upgraded');
@@ -1569,7 +1590,7 @@ describe('the release notes of this version (1.6.0: the petrol station, the till
       for (const word of ['**قەرزدار**', '**قەرزدەر**', '**پۆست**', '**پۆستکراو**']) expect(before(lang), `${lang} ${word}`).toContain(word);
     }
     // the owner's wording: the old Kurdish words are in no new text (Arabic ترحيل/مدين/دائن stay)
-    const kurdish = [notes, store['ku-arab'].releaseNotes, store['ku-arab'].description, ...store['ku-arab'].features].join('\n');
+    const kurdish = [notes, store['ku-arab'].description, ...store['ku-arab'].features].join('\n');
     expect(kurdish).not.toMatch(/تەرحیل|مەدین|دائین/);
     for (const word of ['قەید', 'نەقد', 'قەرز', 'قاسە', 'کۆگا', 'کاڵا', 'کڕیار', 'دابینکەر']) expect(section('ku'), word).toContain(word);
   });
@@ -1622,10 +1643,10 @@ describe('the release notes of this version (1.6.0: the petrol station, the till
   });
 
   it('writes Kurdish with no tatweel and no Arabic letters, and English with one apostrophe', () => {
-    const ku = section('ku') + store['ku-arab'].releaseNotes + store['ku-arab'].description + store['ku-arab'].features.join('\n');
+    const ku = section('ku') + store['ku-arab'].description + store['ku-arab'].features.join('\n');
     expect(ku).not.toContain('ـ');
     expect(ku).not.toMatch(/[ىيك]/);
-    expect(notes + store['en-us'].releaseNotes).not.toMatch(/\w'[\w\s]/);
+    expect(notes).not.toMatch(/\w'[\w\s]/);
   });
 
   it('says on GitHub that the Store copy goes from 1.5.1 straight to 1.6.0, as the release day says', () => {
@@ -1635,31 +1656,6 @@ describe('the release notes of this version (1.6.0: the petrol station, the till
     expect(releasing).toContain('## Release day for 1.6.0 ');
     expect(releasing).toContain('**The Store goes from 1.5.1 straight to 1.6.0.**');
     expect(releasing).toContain('**The phone app is unchanged:**');
-  });
-
-  it('names 1.6.0 first in the Store "What\'s new" with its Before you update, then 1.5.2\'s items, within 1500 characters', () => {
-    // the Store has 1.5.1 (live 2026-11-16) and gets 1.6.0 next: 1.5.2 never went to the Store, 1.5.1's line is gone
-    expect(lines('en-us')[0]).toBe('Qasa ERP 1.6.0.');
-    expect(lines('ar')[0]).toBe('قاصة ERP 1.6.0.');
-    expect(lines('ku-arab')[0]).toBe('قاسە ERP 1.6.0.');
-    for (const lang of LANGS) {
-      expect(lines(lang), lang).toHaveLength(4);
-      expect(store[lang].releaseNotes.length, lang).toBeLessThanOrEqual(1500);
-      expect(store[lang].releaseNotes, lang).not.toMatch(/\{\{|\}\}|1\.5\.1|1\.5\.0|1\.4\.|0\.1\.8/);
-    }
-    expect(lines('en-us')[1]).toMatch(/^Before you update: the company file is upgraded to version 16 the first time 1\.6\.0 opens it, /);
-    expect(lines('en-us')[1]).toContain('take a backup first, and update the office server PC and every PC that opens the same company together.');
-    expect(lines('ar')[1]).toMatch(/^قبل التحديث: يُرقّى ملف الشركة إلى الإصدار 16 /);
-    expect(lines('ku-arab')[1]).toMatch(/^پێش نوێکردنەوە: فایلی کۆمپانیا /);
-    for (const lang of LANGS) for (const word of ['قەرزدار', 'قەرزدەر', 'پۆست']) expect(lines(lang)[1], `${lang} ${word}`).toContain(word);
-    expect(lines('en-us')[2]).toMatch(/^New: the Petrol station business type \(paid plans\), /);
-    expect(lines('en-us')[2]).toContain('off until an admin turns them on in Settings → Sales and point of sale.');
-    expect(lines('ar')[2]).toMatch(/^الجديد: نشاط محطة الوقود \(الخطط المدفوعة\)/);
-    expect(lines('ku-arab')[2]).toMatch(/^نوێ: چالاکیی بەنزینخانە \(پلانەکانی بە پارە\)/);
-    expect(lines('en-us')[3]).toMatch(/^Also from 1\.5\.2: nobody gets the new Point of sale role with the update, /);
-    expect(lines('en-us')[3]).toContain('Real estate, Engineering works or Generator owners');
-    expect(lines('ar')[3]).toMatch(/^ومن الإصدار 1\.5\.2: /);
-    expect(lines('ku-arab')[3]).toMatch(/^هەروەها لە وەشانی 1\.5\.2 ەوە: /);
   });
 
   it('names the petrol station in the Store description and the feature line with the pharmacy, for the paid plans, within Partner Center\'s limits', () => {
@@ -1674,6 +1670,283 @@ describe('the release notes of this version (1.6.0: the petrol station, the till
       for (const feature of store[lang].features) expect(feature.length, lang).toBeLessThanOrEqual(200);
       expect(store[lang].description.length, lang).toBeLessThanOrEqual(10_000);
     }
+  });
+});
+
+describe('the release notes of this version (2.0.0: the new till, gold, wholesale, clothing and the market extras; schema 21)', () => {
+  // the app's number: 2.0.0, or one of its betas (2.0.0-beta.N). The 2.0.0 notes are kept ready while a beta is out
+  const appVersion = (JSON.parse(read('apps/desktop/package.json')) as { version: string }).version;
+  const version = appVersion.split('-')[0]!;
+  const notes = read(`apps/desktop/release-notes/${version}.md`);
+  const section = (lang: 'ar' | 'en' | 'ku') => new RegExp(`^::: ${lang}\\n([\\s\\S]*?)^:::$`, 'm').exec(notes)?.[1] ?? '';
+  const before = (lang: 'ar' | 'en' | 'ku') => section(lang).split('\n### ')[0]!;
+  const store = (JSON.parse(read('apps/desktop/store-listing.json')) as {
+    listings: Record<'en-us' | 'ar' | 'ku-arab', { releaseNotes: string }>;
+  }).listings;
+  const LANGS = ['en-us', 'ar', 'ku-arab'] as const;
+  const lines = (lang: (typeof LANGS)[number]) => store[lang].releaseNotes.split('\n');
+
+  it('is 2.0.0, the same in the app, the core and the lock file, with a notes file that has Arabic, English and Kurdish', () => {
+    expect(version).toBe('2.0.0');
+    expect(appVersion).toMatch(/^2\.0\.0(-beta\.[1-9]\d?)?$/);
+    expect(read('packages/core/src/version.ts')).toContain(`APP_VERSION = '${appVersion}'`);
+    const lock = JSON.parse(read('package-lock.json')) as { packages: Record<string, { version?: string }> };
+    expect(lock.packages['apps/desktop']?.version).toBe(appVersion);
+    for (const lang of ['ar', 'en', 'ku'] as const) expect(notes, lang).toMatch(new RegExp(`^::: ${lang}\\n[\\s\\S]+?^:::$`, 'm'));
+  });
+
+  it('has the same sections in each language, Before you update first', () => {
+    const heads = (lang: 'ar' | 'en' | 'ku') => section(lang).split('\n').filter((l) => l.startsWith('### '));
+    expect(heads('en')).toEqual(['### Before you update', '### Licences from 0.1.8', '### New', '### Changed']);
+    expect(heads('ar')).toEqual(['### قبل التحديث', '### تراخيص الإصدار 0.1.8', '### الجديد', '### ما تغيّر']);
+    expect(heads('ku')).toEqual(['### پێش نوێکردنەوە', '### مۆڵەتەکانی وەشانی 0.1.8', '### نوێ', '### گۆڕاوەکان']);
+    const shape = (lang: 'ar' | 'en' | 'ku') => section(lang).split('\n').filter((l) => /^(### |- )/.test(l)).map((l) => l.slice(0, 2)).join('');
+    expect(shape('ar')).toBe(shape('en'));
+    expect(shape('ku')).toBe(shape('en'));
+  });
+
+  it('says first that the company file goes to schema 21, to back up and to update the office server PC with every PC', () => {
+    const db = read('packages/server/src/db.ts');
+    expect(db).toMatch(/\{ sql: V18, mysql: \{ tables: true, steps: \(\) => V18_MYSQL_STEPS \} \},\n {2}\{ sql: V19, mysql: \{ tables: true, steps: \(\) => V19_MYSQL_STEPS \}, data: keepFeatureAccounts \},?\n( {2}\{ sql: V20, mysql: 'tables' \},?\n( {2}\/\/ .*\n)?( {2}\{ sql: V21, mysql: \{ tables: true, steps: \(\) => V21_MYSQL_STEPS \} \}\n)?)?\];/);
+    expect(db).toContain('-before-update-v');
+    expect(before('en')).toContain('**The company file is upgraded to a new version (21) the first time 2.0.0 opens it.** Take a backup first (**Settings → Backups**)');
+    expect(before('en')).toContain('Qasa ERP 1.6.0 and earlier cannot open a file that 2.0.0 has upgraded');
+    expect(before('en')).toContain('On the office network, update the office server PC and every PC that connects to it together.');
+    expect(before('en')).toContain('A Microsoft Store copy opens these books only once the Store has 2.0.0.');
+    expect(before('ar')).toContain('**يُرقّى ملف الشركة إلى إصدار جديد (21) أول مرة يفتحه فيها الإصدار 2.0.0.**');
+    expect(before('ar')).toContain('حاسوب خادم المكتب');
+    expect(before('ku')).toContain('**فایلی کۆمپانیا یەکەم جار کە 2.0.0 دەیکاتەوە بۆ وەشانێکی نوێ (21) بەرز دەکرێتەوە.**');
+    expect(before('ku')).toContain('کۆمپیوتەری سێرڤەری نووسینگە');
+  });
+
+  it('names the business types and the till settings in the words of the app', () => {
+    const i18n = ['apps/web/src/i18n.ts', ...['gold.ts', 'wholesale.ts', 'clothing.ts', 'biztype.ts', 'ux-fix.ts'].map((f) => `apps/web/src/i18n/${f}`)]
+      .filter((f) => existsSync(join(root, f))).map(read).join('\n');
+    expect(i18n).toContain("ux_tillsSection: ['الصناديق وقواعد نقطة البيع', 'Tills and till rules', 'سندووقەکان و یاساکانی خاڵی فرۆشتن']");
+    expect(section('en')).toContain('**Settings → Tills and till rules**');
+    expect(section('ar')).toContain('**الإعدادات ← الصناديق وقواعد نقطة البيع**');
+    expect(section('ku')).toContain('**ڕێکخستنەکان ← سندووقەکان و یاساکانی خاڵی فرۆشتن**');
+    for (const [lang, words] of [['en', ['Gold and jewellery', 'Wholesale and distribution', 'Clothing and shoes']], ['ar', ['الذهب والمجوهرات', 'الجملة والتوزيع', 'الملابس والأحذية']], ['ku', ['زێڕ و خشڵ', 'جوملە و دابەشکردن', 'جل و پێڵاو']]] as const) {
+      for (const word of words) expect(section(lang), `${lang} ${word}`).toContain(word);
+    }
+  });
+
+  it('still tells the holders of 0.1.8 licences to connect once in the first month, in the words of 1.5.2', () => {
+    const earlier = read('apps/desktop/release-notes/1.5.2.md');
+    const part = (text: string, lang: string, heading: string) => new RegExp(`^::: ${lang}\\n[\\s\\S]*?(### ${heading}\\n[^\\n]+\\n)`, 'm').exec(text)?.[1];
+    for (const [lang, heading] of [['en', 'Licences from 0.1.8'], ['ar', 'تراخيص الإصدار 0.1.8'], ['ku', 'مۆڵەتەکانی وەشانی 0.1.8']] as const) {
+      expect(part(notes, lang, heading), lang).toBeTruthy();
+      expect(part(notes, lang, heading), lang).toBe(part(earlier, lang, heading));
+    }
+  });
+
+  it('writes Kurdish with no tatweel and no Arabic letters, and English with one apostrophe', () => {
+    const ku = section('ku') + store['ku-arab'].releaseNotes;
+    expect(ku).not.toContain('ـ');
+    expect(ku).not.toMatch(/[ىيك]/);
+    expect(notes + store['en-us'].releaseNotes).not.toMatch(/\w'[\w\s]/);
+  });
+
+  it('names 2.0.0 first in the Store "What\'s new" with its Before you update, within 1500 characters', () => {
+    expect(lines('en-us')[0]).toBe('Qasa ERP 2.0.0.');
+    expect(lines('ar')[0]).toBe('قاصة ERP 2.0.0.');
+    expect(lines('ku-arab')[0]).toBe('قاسە ERP 2.0.0.');
+    for (const lang of LANGS) {
+      expect(store[lang].releaseNotes.length, lang).toBeLessThanOrEqual(1500);
+      expect(store[lang].releaseNotes, lang).not.toMatch(/\{\{|\}\}|0\.1\.8/);
+    }
+    expect(lines('en-us')[1]).toMatch(/^Before you update: the company file is upgraded to version 21 the first time 2\.0\.0 opens it, /);
+    expect(lines('ar')[1]).toMatch(/^قبل التحديث: يُرقّى ملف الشركة إلى الإصدار 21 /);
+    expect(lines('ku-arab')[1]).toMatch(/^پێش نوێکردنەوە: فایلی کۆمپانیا /);
+  });
+
+  // the third review of 2.0.0: the notes called new features changes ("now 6 digits", "paired again"), and left out
+  // what an owner must know before updating
+  it('presents supervisor PINs and paired customer screens as new, never as something to redo', () => {
+    const all = [notes, ...LANGS.map((l) => store[l].releaseNotes)].join('\n');
+    expect(all).not.toMatch(/are now 6 digits|4-digit PIN|paired again|must be paired|which now expires/);
+    expect(all).not.toMatch(/صار 6 أرقام|ذو 4 أرقام|مرة أخرى برمز جديد|ئێستا 6 ژمارەیە|پینی 4 ژمارەیی|جارێکی تر بە کۆدێکی نوێ/);
+    const fresh = (lang: 'ar' | 'en' | 'ku', heading: string) => section(lang).split(`### ${heading}\n`)[1]!.split('\n### ')[0]!;
+    expect(fresh('en', 'New')).toContain('A PIN is each supervisor’s own, 6 to 8 digits.');
+    expect(fresh('en', 'New')).toContain('paired with a till by a 6-digit code from Settings. A code works once, for ten minutes.');
+    expect(fresh('ar', 'الجديد')).toContain('من 6 إلى 8 أرقام');
+    expect(fresh('ku', 'نوێ')).toContain('لە 6 تا 8 ژمارە');
+    // as the server has them (till-rules.ts)
+    const rules = read('packages/server/src/till-rules.ts');
+    expect(rules).toContain('const NEW_PIN = /^\\d{6,8}$/;');
+    expect(rules).toContain('const CODE_MS = 10 * 60 * 1000;');
+  });
+
+  it('says before the update: a server database is upgraded in place, waiting sales go first, the update installs on closing, and a company past the limit opens to be viewed', () => {
+    const bullets = (lang: 'ar' | 'en' | 'ku') => before(lang).split('\n').filter((l) => l.startsWith('- '));
+    for (const lang of ['ar', 'en', 'ku'] as const) expect(bullets(lang), lang).toHaveLength(5);
+    expect(bullets('en')[1]).toMatch(/^- \*\*Books on your own MariaDB or MySQL server are upgraded in place, on the server itself\.\*\* No copy is kept beside them as for a company file, so back up that database first\. Then update the office server PC and every PC that connects to it together/);
+    // sales a till kept while cut off are sent before the update: a card sale among them is refused by 2.0.0
+    expect(bullets('en')[2]).toMatch(/^- \*\*Send what is waiting first\.\*\* If a till kept sales while the office server could not be reached, open \*\*Waiting to send\*\* on that PC and let them all be sent before you update\. Card, FIB, ZainCash and Qi at the till are switched off in 2\.0\.0 for now, so a card sale still waiting after the update is refused/);
+    expect(bullets('ar')[2]).toContain('**ما ينتظر الإرسال**');
+    expect(bullets('ku')[2]).toContain('**چاوەڕێی ناردن**');
+    expect(read('apps/web/src/i18n/outbox.ts')).toContain("ob_title: ['ما ينتظر الإرسال', 'Waiting to send', 'چاوەڕێی ناردن']");
+    expect(read('packages/core/src/till-payments.ts')).toContain('export const TILL_CARD_PAYMENTS = false as boolean;');
+    expect(bullets('en')[3]).toMatch(/^- \*\*The update installs when Qasa ERP is closed\.\*\*/);
+    expect(bullets('en')[3]).toContain('“Restart to update”');
+    expect(read('apps/desktop/src/main.ts')).toContain('autoUpdater.autoInstallOnAppQuit = true;');
+    expect(read('apps/desktop/src/texts.ts')).toContain('Click “Restart to update” in the bar at the top of the window, or it installs when you close the app.');
+    expect(bullets('en')[4]).toMatch(/^- \*\*More companies than your plan allows:\*\* every company still opens\. One beyond the plan’s limit opens to be viewed only/);
+    expect(bullets('en')[4]).toContain('**Plans and licence**');
+    expect(bullets('ar')[1]).toContain('تُرقّى في مكانها');
+    expect(bullets('ar')[4]).toContain('للعرض فقط');
+    expect(bullets('ar')[4]).toContain('**الخطط والترخيص**');
+    expect(bullets('ku')[1]).toContain('لە شوێنی خۆیان');
+    expect(bullets('ku')[4]).toContain('تەنها بۆ بینین');
+    expect(bullets('ku')[4]).toContain('**پلان و مۆڵەت**');
+    // the app's own words for the bar's link and for "view only" (i18n/companies.ts), and what the server does
+    const words = read('apps/web/src/i18n/companies.ts');
+    expect(words).toContain("co_viewOnlyPlans: ['الخطط والترخيص', 'Plans and licence', 'پلان و مۆڵەت']");
+    expect(words).toContain("co_waiting: ['للعرض فقط', 'View only', 'تەنها بۆ بینین']");
+    expect(read('apps/desktop/src/server-process.ts')).toContain('configureViewOnly(viewOnly)');
+    expect(read('apps/desktop/src/server-process.ts')).not.toMatch(/relaunch[^\n]*MAIN_COMPANY/);
+  });
+
+  it('keeps the Store listing true: a company past the limit is still viewed, in the description and in "What\'s new"', () => {
+    const full = (JSON.parse(read('apps/desktop/store-listing.json')) as { listings: Record<(typeof LANGS)[number], { description: string }> }).listings;
+    expect(full['en-us'].description).toContain('All your data stays: records made during the month remain and can be viewed');
+    expect(full['en-us'].description).toContain('those beyond the limit open to be viewed only (view, print and back up), and nothing in them is hidden or deleted.');
+    expect(full.ar.description).toContain('تُفتح للعرض فقط');
+    expect(full['ku-arab'].description).toContain('تەنها بۆ بینین دەکرێنەوە');
+    expect(store['en-us'].releaseNotes).toContain('a company beyond your plan’s limit still opens, to be viewed only');
+    expect(store.ar.releaseNotes).toContain('للعرض فقط');
+    expect(store['ku-arab'].releaseNotes).toContain('تەنها بۆ بینین');
+    for (const lang of LANGS) {
+      expect(store[lang].releaseNotes, lang).toMatch(/MariaDB/);
+      expect(store[lang].releaseNotes, lang).toMatch(/Starter.*Pro.*Business/);
+      expect(full[lang].description.length, lang).toBeLessThanOrEqual(10_000);
+    }
+  });
+
+  it('says which of the new features need a paid plan, as the plans have them', () => {
+    const plans = read('packages/core/src/plans.ts');
+    const starter = /const STARTER_FEATURES: readonly Feature\[\] = \[([^\]]+)\]/.exec(plans)?.[1] ?? '';
+    // the Free plan has no paid feature at all
+    expect(plans).toContain("free: { id: 'free', limits: { companies: 1, users: 1, warehouses: 1 }, features: [] }");
+    for (const feature of ['multiTill', 'promotions', 'consignment', 'delivery', 'priceChecker', 'goldShop', 'wholesale', 'clothingShop']) expect(starter, feature).toContain(`'${feature}'`);
+    expect(section('en')).toContain('- **Which plan:** the new till with its rules, gift vouchers, debt reminders and daily-delivery suppliers are on every plan. More than one till, offers, goods on consignment, delivery orders, price checker screens, and the Gold and jewellery, Wholesale and distribution, and Clothing and shoes business types need Starter, Pro or Business; the free first month has them all.');
+    expect(section('ar')).toMatch(/- \*\*أي خطة:\*\* [^\n]*تحتاج Starter أو Pro أو Business/);
+    expect(section('ku')).toMatch(/- \*\*کام پلان:\*\* [^\n]*پێویستیان بە Starter، Pro یان Business هەیە/);
+    // what the notes call free has no plan check of its own on the server
+    for (const file of ['gift-vouchers.ts', 'till-rules.ts', 'debt-reminders.ts', 'daily-suppliers.ts']) expect(read(`packages/server/src/${file}`), file).not.toContain("'plan_limit'");
+  });
+
+  it('describes the Windows Hello reset as the server enforces it, and uses the app\'s words (gift vouchers, a 1366×768 screen, suppliers in gold)', () => {
+    expect(section('en')).toContain('- **Resetting the admin password with Windows Hello:** an admin can now choose, in **Settings → Users**, the one Windows account on this PC that may do it; every other Windows account is then refused, a Windows administrator too. Until an account is chosen, only a member of this PC’s Administrators group can do it.');
+    expect(section('en')).not.toMatch(/or for a Windows administrator/);
+    expect(section('ar')).toContain('حتى مدير Windows');
+    expect(section('ku')).toContain('بەڕێوەبەری Windows یش');
+    // auth.ts: bound → that account's SID only; none bound → a Windows administrator only
+    expect(read('packages/server/src/auth.ts')).toContain('(bound ? sid !== bound.sid : input.windowsAdmin !== true)');
+    const all = [notes, ...LANGS.map((l) => store[l].releaseNotes)].join('\n');
+    expect(all).not.toMatch(/بطاقات الهدايا|کارتی دیاری|تسع شاشة|دابینکەری زێڕ،/);
+    expect(section('ar')).toContain('شاشة واحدة تناسب شاشة 1366×768');
+    expect(section('ar')).toContain('قسائم الهدايا');
+    expect(section('ku')).toContain('کوپۆنی دیاری');
+    expect(section('ku')).toContain('ئەو دابینکەرانەی قەرزەکەیان بە زێڕە');
+    expect(read('apps/web/src/i18n/day-close.ts')).toContain("dc_m_voucher: ['قسائم الهدايا', 'Gift vouchers', 'کوپۆنی دیاری']");
+  });
+
+  // the "Verify the review fixes" report, finding 10: what the last fixes changed at the till is in the notes, as the server has it
+  it('says what changed at the till: cards off, the day\'s dollar rate, the PIN locks, no cancel after the shift closed, invoice-screen cash in the shift, the new approvals', () => {
+    const changed = (lang: 'ar' | 'en' | 'ku', heading: string) => section(lang).split(`### ${heading}\n`)[1]!.split('\n### ')[0]!.split('\n').filter((l) => l.startsWith('- '));
+    const en = changed('en', 'Changed');
+    expect(en[0]).toBe('- **Card, FIB, ZainCash and Qi at the till are switched off for now.** The till takes cash and credit (on the customer’s account).');
+    expect(en[1]).toBe('- **Dollars at the till follow the day’s rate:** today’s rate on the **Dollar rate** page, or the company’s rate when today has none. An admin enters today’s rate there each morning before the tills open, so that the tills are held to it. A rate within 3% of it is taken as typed, one up to 15% away needs a supervisor’s PIN, and one further away is refused. The till shows the day’s rate. A sale a till kept while it could not reach the office server is held to the rate of the day it was sold and to today’s: within 3% of both it is taken, and any other waits in **Waiting to send** for a supervisor.');
+    expect(en[2]).toBe('- **A cash sale made at a till is not cancelled once its shift is closed:** its money was counted with that shift. Take the goods back with a return. A cash return that shift paid is not cancelled after it closed either.');
+    expect(en[3]).toBe('- **Cash taken on the invoice screens into a till’s safe counts in that till’s shift,** and paying it back out of that safe can ask for a supervisor’s PIN, typed on the invoice screen.');
+    for (const [lang, heading, words] of [['ar', 'ما تغيّر', ['متوقف حالياً', '**سعر الدولار**', 'بعد إغلاق ورديته', 'شاشات الفواتير']], ['ku', 'گۆڕاوەکان', ['بۆ ئێستا ڕاگیراوە', '**نرخی دۆلار**', 'دوای داخستنی شەفتەکەی', 'شاشەکانی پسوولەوە']]] as const) {
+      const list = changed(lang, heading);
+      words.forEach((w, i) => expect(list[i], `${lang} ${w}`).toContain(w));
+      for (const l of list.slice(1, 2)) { expect(l).toContain('3%'); expect(l).toContain('15%'); }
+    }
+    // as the server has them
+    const settings = read('packages/server/src/till-settings.ts');
+    expect(settings).toContain('export const RATE_FREE = 0.03;');
+    expect(settings).toContain('export const RATE_BAND = 0.15;');
+    expect(settings).toMatch(/SELECT rate_x100 FROM fx_rates WHERE date = \?/);
+    expect(read('apps/web/src/i18n/fx.ts')).toContain("fx_title: ['سعر الدولار', 'Dollar rate', 'نرخی دۆلار']");
+    expect(read('packages/server/src/invoices.ts')).toContain("throw conflict('pos_sale_shift_closed')");
+    expect(read('packages/server/src/till-rules.ts')).toContain("path: '/api/refund-approvals'");
+    // the supervisor's bullet: the new approvals, and the locks as they are counted
+    const sup = (lang: 'ar' | 'en' | 'ku', heading: string) => changed(lang, heading)[1]!;
+    expect(sup('en', 'New')).toBe('- **Supervisor approval at the till:** refunds, voids, a price below the list price, discounts beyond the limit, credit over a customer’s limit and opening the drawer with no sale can ask for a supervisor’s PIN. A PIN is each supervisor’s own, 6 to 8 digits. Each cashier has one open shift at a time. Five wrong PINs within fifteen minutes lock that cashier’s approvals for fifteen minutes. With sign-in on, fifteen in one day lock them until the next day (with sign-in off the count is the till’s, and no till stops for a day); an admin can unlock them in **Settings → Tills and till rules**.');
+    expect(sup('ar', 'الجديد')).toContain('بسعر أقل من سعر القائمة');
+    expect(sup('ar', 'الجديد')).toContain('فوق حد الزبون');
+    expect(sup('ar', 'الجديد')).toContain('فك القفل');
+    expect(sup('ku', 'نوێ')).toContain('کەمتر لە نرخی لیست');
+    expect(sup('ku', 'نوێ')).toContain('سەرووی سنووری کڕیار');
+    expect(sup('ku', 'نوێ')).toContain('قفڵەکە بکاتەوە');
+    const rules = read('packages/server/src/till-rules.ts');
+    for (const line of ['const LOCK_AFTER = 5;', 'const LOCK_MS = 15 * 60 * 1000;', 'const DAY_LOCK_AFTER = 15;', "path: '/api/pos/pin-unlock'"]) expect(rules, line).toContain(line);
+    // round four of the review, finding 10: the day's lock is a signed-in cashier's (as the server counts it), an
+    // admin is told to enter today's rate on the rate board, a kept sale's rate is held to its day and to today, and
+    // a cash return a closed shift paid is not cancelled; in the three languages
+    expect(rules).toContain('if (signedIn && mine.day_on === today && mine.day_n >= DAY_LOCK_AFTER) {');
+    expect(sup('ar', 'الجديد')).toContain('وعند تفعيل تسجيل الدخول، خمسة عشر رمزاً خاطئاً في يوم واحد توقفها حتى اليوم التالي');
+    expect(sup('ku', 'نوێ')).toContain('کاتێک چوونەژوورەوە چالاکە، پازدە پینی هەڵە لە یەک ڕۆژدا تا ڕۆژی دواتر');
+    expect(changed('ar', 'ما تغيّر')[1]).toContain('يُدخل مدير النظام سعر اليوم هناك كل صباح قبل فتح الصناديق');
+    expect(changed('ku', 'گۆڕاوەکان')[1]).toContain('بەڕێوەبەری سیستەم هەموو بەیانییەک پێش کردنەوەی سندووقەکان نرخی ئەمڕۆ لەوێ دادەنێت');
+    expect(changed('ar', 'ما تغيّر')[1]).toContain('**ما ينتظر الإرسال**');
+    expect(changed('ku', 'گۆڕاوەکان')[1]).toContain('**چاوەڕێی ناردن**');
+    expect(changed('ar', 'ما تغيّر')[2]).toContain('المرتجع النقدي الذي دفعته تلك الوردية لا يُلغى بعد إغلاقها');
+    expect(changed('ku', 'گۆڕاوەکان')[2]).toContain('دوای داخستنی هەڵناوەشێتەوە');
+    expect(read('packages/server/src/pos.ts')).toContain("return now === 'ok' && rateStanding(rateX100, dayRate) === 'ok' ? 'ok' : 'approve';");
+    expect(read('packages/server/src/invoices.ts')).toContain("throw conflict('pos_return_shift_closed')");
+    expect(store['en-us'].releaseNotes).toContain('an admin enters today’s rate on the Dollar rate page each morning');
+    expect(store.ar.releaseNotes).toContain('يُدخل مدير النظام سعر اليوم في صفحة سعر الدولار كل صباح');
+    expect(store['ku-arab'].releaseNotes).toContain('نرخی ئەمڕۆ لە پەڕەی نرخی دۆلار دادەنێت');
+    // (the Store shows at most 1,500 characters of what is new)
+    for (const lang of LANGS) expect(store[lang].releaseNotes.length, lang).toBeLessThanOrEqual(1500);
+    const all = [notes, ...LANGS.map((l) => store[l].releaseNotes)].join('\n');
+    expect(all).not.toMatch(/for a while\.|مدة من الوقت|بۆ ماوەیەک ڕەزامەندییەکانی/);
+    // the Store text says the two an owner must know before the update
+    expect(store['en-us'].releaseNotes).toContain('Send any sales a till kept while offline before you update: card, FIB, ZainCash and Qi at the till are off for now.');
+    expect(store['en-us'].releaseNotes).toContain('Dollars at the till follow the day’s rate (beyond 3% a supervisor approves, beyond 15% it is refused)');
+    for (const lang of LANGS) { expect(store[lang].releaseNotes, lang).toContain('ZainCash'); expect(store[lang].releaseNotes, lang).toContain('15%'); }
+  });
+
+  it('a beta of 2.0.0 has notes of its own: what joining means, what to test, what is known, and the 2.0.0 news as they are', () => {
+    if (!appVersion.includes('-')) return;
+    const beta = read(`apps/desktop/release-notes/${appVersion}.md`);
+    const part = (lang: 'ar' | 'en' | 'ku') => new RegExp(`^::: ${lang}\\n([\\s\\S]*?)^:::$`, 'm').exec(beta)?.[1] ?? '';
+    const heads = (lang: 'ar' | 'en' | 'ku') => part(lang).split('\n').filter((l) => l.startsWith('### '));
+    expect(heads('en')).toEqual(['### Before you join the beta', '### What to test', '### Known in this beta', '### New', '### Changed']);
+    expect(heads('ar')).toHaveLength(5);
+    expect(heads('ku')).toHaveLength(5);
+    const shape = (lang: 'ar' | 'en' | 'ku') => part(lang).split('\n').filter((l) => /^(### |- )/.test(l)).map((l) => l.slice(0, 2)).join('');
+    expect(shape('ar')).toBe(shape('en'));
+    expect(shape('ku')).toBe(shape('en'));
+    // first: a backup, no way back to the stable version with the same books, and every PC of the company together
+    const first = (lang: 'ar' | 'en' | 'ku') => part(lang).split('\n### ')[0]!;
+    expect(first('en')).toContain('take a backup before you update (**Settings → Backups**)');
+    expect(first('en')).toContain('**There is no way back to 1.6.0 with the same books.** The company file is upgraded to a new version (21)');
+    expect(first('en')).toContain('every PC of the same company must be on the beta');
+    expect(first('en')).toContain('**A Microsoft Store copy cannot join the beta.**');
+    expect(first('ar')).toContain('**الإعدادات ← النسخ الاحتياطية**');
+    expect(first('ar')).toContain('(21)');
+    expect(first('ku')).toContain('**ڕێکخستنەکان ← باکئەپەکان**');
+    expect(first('ku')).toContain('(21)');
+    // the news are the 2.0.0 notes' own New and Changed, word for word, so the two never tell different stories
+    for (const lang of ['ar', 'en', 'ku'] as const) {
+      const news = section(lang).slice(section(lang).indexOf(heads(lang)[3]!)).trimEnd();
+      expect(news.length, lang).toBeGreaterThan(500);
+      expect(part(lang).trimEnd().endsWith(news), lang).toBe(true);
+    }
+    // the header says who gets it; nothing promises the Store or the website link
+    expect(beta.split('::: en')[0]).toContain('only copies that joined the beta (**Settings → Updates → Join the beta**)');
+    expect(beta.split('::: en')[0]).not.toMatch(/Microsoft Store\]|qasaerp\.com\/en\/#download/);
+    expect(read('apps/web/src/i18n/updates.ts')).toContain("up_beta: ['الانضمام إلى النسخ التجريبية', 'Join the beta', 'بەشداربوون لە وەشانە تاقیکارییەکان']");
+  });
+
+  it('has a release day in docs/releasing.md', () => {
+    expect(read('docs/releasing.md')).toContain('## Release day for 2.0.0 ');
+    expect(read('docs/releasing.md')).toContain('It **upgrades the company file to schema 21**');
   });
 });
 
@@ -1716,7 +1989,7 @@ describe('the release checklist (docs/releasing.md) and the handoff notes (docs/
   const handoff = read('docs/HANDOFF.md');
 
   it('says a stable GitHub release writes latest.yml only, which beta copies read too (app-release-15)', () => {
-    expect(releasing).toMatch(/^\| Update file \| `latest\.yml` only \(beta copies read it too\) \| `beta\.yml` \|$/m);
+    expect(releasing).toMatch(/^\| Update file \| `latest\.yml` only \(beta copies read it too\) \| `beta\.yml` \(the build's `latest\.yml`, put on the release under that name by the workflow\) \|$/m);
     expect(releasing).not.toMatch(/stable release also writes `beta\.yml`|`latest\.yml` and `beta\.yml`/);
   });
 

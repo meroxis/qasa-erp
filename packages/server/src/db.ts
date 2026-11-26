@@ -5,7 +5,7 @@ import { DatabaseSync } from 'node:sqlite';
 import { brandKey, DEFAULT_POSTING_ACCOUNTS, IRAQI_UNIFIED_CHART, STARTER_SUB_ACCOUNTS } from '@qasa/core';
 import { AppError } from './errors.ts';
 import {
-  MYSQL_TABLES, MYSQL_TRIGGERS, mysqlCollations, mysqlTableSql, pendingMysqlSteps, V10_MYSQL_STEPS, V11_MYSQL_STEPS, V12_MYSQL_STEPS, V13_MYSQL_STEPS, V14_MYSQL_STEPS, V15_MYSQL_STEPS, V16_MYSQL_STEPS, type MysqlCollations, type MysqlStep
+  MYSQL_TABLES, MYSQL_TRIGGERS, mysqlCollations, mysqlTableSql, pendingMysqlSteps, V10_MYSQL_STEPS, V11_MYSQL_STEPS, V12_MYSQL_STEPS, V13_MYSQL_STEPS, V14_MYSQL_STEPS, V15_MYSQL_STEPS, V16_MYSQL_STEPS, V17_MYSQL_STEPS, V18_MYSQL_STEPS, V19_MYSQL_STEPS, V21_MYSQL_STEPS, type MysqlCollations, type MysqlStep
 } from './schema-mysql.ts';
 
 export type SqlParam = null | number | bigint | string | Uint8Array;
@@ -1691,6 +1691,41 @@ export function movePartReorder(db: Db): void {
   db.prepare('UPDATE part_details SET reorder_milli = NULL WHERE reorder_milli IS NOT NULL').run();
 }
 
+/**
+ * Version 19's rows (2.0): from 2.0 a feature posts only into an account it made itself or one the accountant chose
+ * (feature-accounts.ts). Before, cheques posted into any postable 162 and the petrol station into any postable 1379.
+ * A company that made such an account itself and already has that feature's entries on it keeps posting there: the
+ * choice is written down for it here (nothing to do in Settings, no balance split over two accounts). An account of
+ * that code the feature never posted to stays the company's own. Safe to run again.
+ */
+export function keepFeatureAccounts(db: Db): void {
+  const setting = (key: string): string | null => (db.prepare('SELECT value FROM settings WHERE "key" = ?').get(key) as { value: string } | undefined)?.value ?? null;
+  const save = (key: string, value: string): void => {
+    if (setting(key) === null) db.prepare('INSERT INTO settings ("key", value) VALUES (?, ?)').run(key, value);
+    else db.prepare('UPDATE settings SET value = ? WHERE "key" = ?').run(value, key);
+  };
+  const ownAccount = (code: string): boolean => !!db.prepare('SELECT 1 FROM accounts WHERE code = ? AND "system" = 0').get(code);
+  // notes receivable: a cheque's entry (received, cleared or bounced) has a line on the company's own 162
+  if (setting('banking_notes_receivable') === null && ownAccount('162')
+    && db.prepare(`SELECT 1 FROM entry_lines l WHERE l.account_code = '162' AND (l.entry_id IN (SELECT entry_id FROM cheques WHERE entry_id IS NOT NULL)
+                     OR l.entry_id IN (SELECT clear_entry_id FROM cheques WHERE clear_entry_id IS NOT NULL)
+                     OR l.entry_id IN (SELECT bounce_entry_id FROM cheques WHERE bounce_entry_id IS NOT NULL)) LIMIT 1`).get()) {
+    save('banking_notes_receivable', '162');
+  }
+  // the fuel stock: a shift's, a delivery's, a dip's or a tank's opening entry has a line on the company's own 1379,
+  // which the petrol station did not make (no audit row says so) and the fuel settings do not name yet
+  if (ownAccount('1379')
+    && !db.prepare("SELECT 1 FROM audit_log WHERE entity = 'account' AND entity_id = '1379' AND action = 'create' AND details LIKE '%fuel_stock%' LIMIT 1").get()
+    && db.prepare(`SELECT 1 FROM entry_lines l WHERE l.account_code = '1379' AND (l.entry_id IN (SELECT entry_id FROM fuel_shifts WHERE entry_id IS NOT NULL)
+                     OR l.entry_id IN (SELECT entry_id FROM fuel_deliveries WHERE entry_id IS NOT NULL)
+                     OR l.entry_id IN (SELECT entry_id FROM fuel_dips WHERE entry_id IS NOT NULL)
+                     OR l.entry_id IN (SELECT opening_entry_id FROM fuel_tanks WHERE opening_entry_id IS NOT NULL)) LIMIT 1`).get()) {
+    let stored: Record<string, unknown> = {};
+    try { const parsed = JSON.parse(setting('fuel_settings') ?? '{}') as unknown; if (parsed && typeof parsed === 'object') stored = parsed as Record<string, unknown>; } catch { /* unreadable: written anew */ }
+    if (stored.stockAccount === undefined) save('fuel_settings', JSON.stringify({ ...stored, stockAccount: '1379' }));
+  }
+}
+
 const V12_OWNER_TOOLS =
   // 12 — owner tools (1.2): the language a customer gets their WhatsApp messages in (NULL: the app's language), and
   // the loyalty points ledger (Pro): every movement of a customer's points, kept for ever like stock moves. points is
@@ -1939,6 +1974,813 @@ const V16 =
   CREATE INDEX fuel_moves_source ON fuel_moves(source_id);
   `;
 
+const V17 =
+  // ——— 17, TILLS (pos-tills.ts) — kept in one block; other 2.0 work adds its own tables beside it ———
+  // the named tills (registers) of the shop: each with the safe and warehouse its shifts use by default, whether the
+  // cash drawer opens on a cash sale (through this PC's receipt printer) and whether it has a customer screen. A shift
+  // opened on a till keeps it. And a dinar sale paid partly in dollar notes at the till: the dollars taken (cents) and
+  // the rate they were taken at, so the drawer's dollars and dinars are expected right at closing
+  `
+  CREATE TABLE pos_tills (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    cash_account TEXT NOT NULL REFERENCES accounts(code),
+    warehouse_id TEXT NOT NULL REFERENCES warehouses(id),
+    drawer TEXT NOT NULL DEFAULT 'off' CHECK (drawer IN ('off', 'cash')),
+    customer_display INTEGER NOT NULL DEFAULT 0 CHECK (customer_display IN (0, 1)),
+    active INTEGER NOT NULL DEFAULT 1 CHECK (active IN (0, 1)),
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+  );
+  ALTER TABLE pos_shifts ADD COLUMN till_id TEXT REFERENCES pos_tills(id);
+  ALTER TABLE pos_sales ADD COLUMN usd_cash INTEGER CHECK (usd_cash IS NULL OR usd_cash > 0);
+  ALTER TABLE pos_sales ADD COLUMN usd_rate_x100 INTEGER CHECK (usd_rate_x100 IS NULL OR usd_rate_x100 > 0);
+  -- ——— 17, SUPERMARKET REPORTS (shelf-labels.ts): an item (and unit; '' its own) whose sale price changed, or that
+  -- is new, until its shelf label is printed; old_price is what the label on the shelf shows ———
+  CREATE TABLE shelf_label_flags (
+    item_id TEXT NOT NULL REFERENCES items(id),
+    unit TEXT NOT NULL DEFAULT '',
+    old_price INTEGER CHECK (old_price IS NULL OR old_price >= 0),
+    new_price INTEGER NOT NULL CHECK (new_price >= 0),
+    currency TEXT NOT NULL CHECK (currency IN ('IQD', 'USD')),
+    changed_at TEXT NOT NULL,
+    changed_by TEXT NOT NULL,
+    PRIMARY KEY (item_id, unit)
+  );
+  CREATE INDEX shelf_label_flags_changed ON shelf_label_flags(changed_at);
+  -- ===== 17 · CONSIGNMENT (consignment.ts) — begin =====
+  -- Goods a supplier leaves in the shop and is paid for only as they sell (sale-or-return, بضاعة أمانة). An item on
+  -- consignment belongs to one supplier at an agreed cost per base unit (IQD or USD). A receipt brings it into stock at
+  -- that cost (Dr the warehouse / Cr consignment goods held, 268), a return gives it back (the reverse); every other
+  -- move of the item (a sale, a customer's return, a cancel, a write-off) is recorded beside its stock move with its
+  -- value in the agreed currency. A settlement turns what sold and was not settled yet into what the supplier is owed:
+  -- a journal entry (Dr 268 / Cr the supplier) that goes through checking and approval like any voucher.
+  CREATE TABLE consignment_items (
+    item_id TEXT PRIMARY KEY REFERENCES items(id),
+    supplier_id TEXT NOT NULL REFERENCES parties(id),
+    currency TEXT NOT NULL CHECK (currency IN ('IQD', 'USD')),
+    -- the agreed cost per base unit, in the currency's minor units
+    unit_cost INTEGER NOT NULL CHECK (unit_cost >= 0),
+    active INTEGER NOT NULL DEFAULT 1 CHECK (active IN (0, 1)),
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+  );
+  CREATE INDEX consignment_items_supplier ON consignment_items(supplier_id);
+  CREATE TABLE consignment_docs (
+    id TEXT PRIMARY KEY,
+    kind TEXT NOT NULL CHECK (kind IN ('receipt', 'return')),
+    number TEXT UNIQUE,
+    date TEXT NOT NULL,
+    supplier_id TEXT NOT NULL REFERENCES parties(id),
+    warehouse_id TEXT NOT NULL REFERENCES warehouses(id),
+    currency TEXT NOT NULL CHECK (currency IN ('IQD', 'USD')),
+    rate_x100 INTEGER NOT NULL CHECK (rate_x100 > 0),
+    status TEXT NOT NULL CHECK (status IN ('draft', 'posted', 'cancelled')),
+    entry_id TEXT REFERENCES entries(id),
+    notes TEXT,
+    created_by TEXT NOT NULL,
+    prepared_by_id TEXT REFERENCES users(id),
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+  );
+  CREATE INDEX consignment_docs_supplier ON consignment_docs(supplier_id, date);
+  CREATE TABLE consignment_doc_lines (
+    doc_id TEXT NOT NULL REFERENCES consignment_docs(id),
+    seq INTEGER NOT NULL,
+    item_id TEXT NOT NULL REFERENCES items(id),
+    qty_milli INTEGER NOT NULL CHECK (qty_milli > 0),
+    -- receipts: the agreed cost per unit of the line (its own unit when it has one), in the document's currency
+    unit_cost INTEGER,
+    unit TEXT,
+    unit_factor_milli INTEGER,
+    unit_qty_milli INTEGER,
+    batch_no TEXT,
+    expiry TEXT,
+    batch_id TEXT,
+    PRIMARY KEY (doc_id, seq)
+  );
+  CREATE TABLE consignment_settlements (
+    id TEXT PRIMARY KEY,
+    number TEXT NOT NULL UNIQUE,
+    date TEXT NOT NULL,
+    supplier_id TEXT NOT NULL REFERENCES parties(id),
+    currency TEXT NOT NULL CHECK (currency IN ('IQD', 'USD')),
+    rate_x100 INTEGER NOT NULL CHECK (rate_x100 > 0),
+    -- owed to the supplier (the currency's minor units) and the goods' value in the books (IQD)
+    amount INTEGER NOT NULL CHECK (amount > 0),
+    book_value INTEGER NOT NULL,
+    status TEXT NOT NULL CHECK (status IN ('open', 'cancelled')),
+    entry_id TEXT REFERENCES entries(id),
+    cancel_entry_id TEXT REFERENCES entries(id),
+    notes TEXT,
+    created_by TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+  );
+  CREATE INDEX consignment_settlements_supplier ON consignment_settlements(supplier_id, date);
+  -- every stock move of an item on consignment, as the supplier sees it: received, returned, sold (anything else
+  -- that took it out or brought it back: sales, customers' returns, cancels, write-offs) or moved between warehouses
+  CREATE TABLE consignment_moves (
+    id TEXT PRIMARY KEY,
+    item_id TEXT NOT NULL REFERENCES items(id),
+    supplier_id TEXT NOT NULL REFERENCES parties(id),
+    warehouse_id TEXT NOT NULL REFERENCES warehouses(id),
+    date TEXT NOT NULL,
+    kind TEXT NOT NULL CHECK (kind IN ('received', 'returned', 'sold', 'transfer')),
+    source_type TEXT NOT NULL,
+    source_id TEXT NOT NULL,
+    qty_milli INTEGER NOT NULL,
+    -- IQD, as the stock move
+    value INTEGER NOT NULL,
+    currency TEXT NOT NULL CHECK (currency IN ('IQD', 'USD')),
+    ccy_value INTEGER NOT NULL,
+    settlement_id TEXT REFERENCES consignment_settlements(id),
+    created_at TEXT NOT NULL
+  );
+  CREATE INDEX consignment_moves_item ON consignment_moves(item_id, warehouse_id);
+  CREATE INDEX consignment_moves_supplier ON consignment_moves(supplier_id, kind, date);
+  CREATE INDEX consignment_moves_settlement ON consignment_moves(settlement_id);
+  CREATE INDEX consignment_moves_source ON consignment_moves(source_type, source_id);
+  -- ===== 17 · OFFERS (offers.ts) — supermarket promotions; another 1.7 block may join this migration =====
+  -- The offers themselves (buy X get Y, bundles, special prices; their dates, days, hours and branches; the goods as
+  -- JSON lists of item and category ids), and what each sale got: one row per line and offer (qty taken into the
+  -- offer, discount given). invoices.offers_on: offers are worked out for this invoice (the till and the invoice
+  -- screen; never a website order or a converted quotation); invoices.offer_discount: the part of its discount that
+  -- came from offers (discount = what was typed + offer_discount).
+  CREATE TABLE offers (
+    id TEXT PRIMARY KEY,
+    code TEXT NOT NULL UNIQUE,
+    name_ar TEXT NOT NULL,
+    name_en TEXT NOT NULL,
+    name_ku TEXT NOT NULL,
+    kind TEXT NOT NULL CHECK (kind IN ('buyGet', 'bundle', 'price')),
+    active INTEGER NOT NULL DEFAULT 1 CHECK (active IN (0, 1)),
+    priority INTEGER NOT NULL DEFAULT 0 CHECK (priority >= 0),
+    exclusive INTEGER NOT NULL DEFAULT 0 CHECK (exclusive IN (0, 1)),
+    max_per_sale INTEGER CHECK (max_per_sale IS NULL OR max_per_sale > 0),
+    starts_on TEXT,
+    ends_on TEXT,
+    weekdays TEXT,
+    from_time TEXT,
+    to_time TEXT,
+    branch_ids TEXT,
+    items TEXT NOT NULL,
+    categories TEXT NOT NULL,
+    get_items TEXT NOT NULL,
+    get_categories TEXT NOT NULL,
+    buy_milli INTEGER,
+    get_milli INTEGER,
+    get_percent INTEGER,
+    bundle_milli INTEGER,
+    bundle_price INTEGER,
+    price INTEGER,
+    percent_off INTEGER,
+    notes TEXT,
+    created_by TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+  );
+  CREATE TABLE invoice_offer_lines (
+    invoice_id TEXT NOT NULL REFERENCES invoices(id) ON DELETE CASCADE,
+    line_no INTEGER NOT NULL,
+    offer_id TEXT NOT NULL REFERENCES offers(id),
+    qty_milli INTEGER NOT NULL CHECK (qty_milli >= 0),
+    discount INTEGER NOT NULL CHECK (discount >= 0),
+    PRIMARY KEY (invoice_id, line_no, offer_id)
+  );
+  CREATE INDEX invoice_offer_lines_offer ON invoice_offer_lines(offer_id);
+  ALTER TABLE invoices ADD COLUMN offers_on INTEGER NOT NULL DEFAULT 0 CHECK (offers_on IN (0, 1));
+  ALTER TABLE invoices ADD COLUMN offer_discount INTEGER NOT NULL DEFAULT 0 CHECK (offer_discount >= 0);
+  `;
+  // ——— end of 17 (tills, shelf labels, consignment, offers) ———
+
+// ===== 18 · TILL RULES (till-rules.ts, gift-vouchers.ts) — kept in one block; other 2.0 work adds its own beside it =====
+const V18 =
+  // the till's rules: supervisors' PINs (scrypt, as passwords), the one-use approvals a supervisor gives at a till
+  // (each in the audit log with who approved), gift vouchers (a liability until used) and their movements, the pictures
+  // the customer screen shows while idle, the pairing codes of customer screens on other devices (hashed), and the
+  // dinar rounding of a till sale's cash
+  `
+  CREATE TABLE pos_pins (
+    user_id TEXT PRIMARY KEY REFERENCES users(id),
+    pin_hash TEXT NOT NULL,
+    digits INTEGER,
+    updated_at TEXT NOT NULL
+  );
+  CREATE TABLE pos_approvals (
+    id TEXT PRIMARY KEY,
+    shift_id TEXT NOT NULL REFERENCES pos_shifts(id),
+    action TEXT NOT NULL CHECK (action IN ('line_delete', 'void', 'price', 'discount', 'no_sale', 'refund', 'credit_over', 'blind_view')),
+    approver TEXT NOT NULL,
+    approver_id TEXT,
+    cashier TEXT NOT NULL,
+    detail TEXT,
+    created_at TEXT NOT NULL,
+    expires_at TEXT NOT NULL,
+    used_at TEXT
+  );
+  CREATE INDEX pos_approvals_shift ON pos_approvals(shift_id);
+  CREATE TABLE gift_vouchers (
+    id TEXT PRIMARY KEY,
+    code TEXT NOT NULL UNIQUE,
+    amount INTEGER NOT NULL CHECK (amount > 0),
+    balance INTEGER NOT NULL CHECK (balance >= 0),
+    currency TEXT NOT NULL DEFAULT 'IQD' CHECK (currency IN ('IQD')),
+    expires_on TEXT,
+    status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'cancelled')),
+    account_code TEXT NOT NULL REFERENCES accounts(code),
+    shift_id TEXT REFERENCES pos_shifts(id),
+    entry_id TEXT REFERENCES entries(id),
+    cancel_entry_id TEXT REFERENCES entries(id),
+    -- what an expired voucher still held, taken into income through a draft entry (an admin's write-off)
+    expire_entry_id TEXT REFERENCES entries(id),
+    created_by TEXT NOT NULL,
+    created_at TEXT NOT NULL
+  );
+  CREATE INDEX gift_vouchers_expire_entry ON gift_vouchers(expire_entry_id);
+  CREATE INDEX gift_vouchers_cancel_entry ON gift_vouchers(cancel_entry_id);
+  CREATE INDEX gift_vouchers_entry ON gift_vouchers(entry_id);
+  CREATE INDEX gift_vouchers_shift ON gift_vouchers(shift_id);
+  CREATE TABLE gift_voucher_moves (
+    id TEXT PRIMARY KEY,
+    voucher_id TEXT NOT NULL REFERENCES gift_vouchers(id),
+    kind TEXT NOT NULL CHECK (kind IN ('sold', 'redeemed', 'restored', 'cancelled', 'returned', 'expired')),
+    amount INTEGER NOT NULL,
+    invoice_id TEXT REFERENCES invoices(id),
+    created_by TEXT NOT NULL,
+    created_at TEXT NOT NULL
+  );
+  CREATE INDEX gift_voucher_moves_voucher ON gift_voucher_moves(voucher_id);
+  CREATE INDEX gift_voucher_moves_invoice ON gift_voucher_moves(invoice_id);
+  CREATE TABLE pos_display_images (
+    id TEXT PRIMARY KEY,
+    mime TEXT NOT NULL,
+    data TEXT NOT NULL,
+    sort INTEGER NOT NULL DEFAULT 0,
+    created_by TEXT NOT NULL,
+    created_at TEXT NOT NULL
+  );
+  CREATE TABLE pos_display_codes (
+    till_id TEXT PRIMARY KEY REFERENCES pos_tills(id),
+    code_hash TEXT NOT NULL,
+    created_at TEXT NOT NULL
+  );
+  -- a customer screen paired with a code gets a long random key of its own (kept as a hash): the code works once, for
+  -- ten minutes, and the screen goes on with its key
+  CREATE TABLE pos_display_keys (
+    key_hash TEXT PRIMARY KEY,
+    till_id TEXT NOT NULL REFERENCES pos_tills(id),
+    created_at TEXT NOT NULL,
+    seen_at TEXT
+  );
+  CREATE INDEX pos_display_keys_till ON pos_display_keys(till_id);
+  ALTER TABLE pos_sales ADD COLUMN rounding INTEGER NOT NULL DEFAULT 0;
+  -- what gift vouchers paid of a till sale (a return gives that share back onto a voucher, never as cash)
+  ALTER TABLE pos_sales ADD COLUMN voucher_paid INTEGER NOT NULL DEFAULT 0;
+
+  -- ===== 18 · GOLD =====
+  -- 18 — gold and jewellery shops: pieces by weight and karat with their making charge, the day's gold board, old gold
+  -- bought from customers and melted (kept by karat and weight beside the stock), and suppliers settled in gold
+  CREATE TABLE gold_items (
+    item_id TEXT PRIMARY KEY REFERENCES items(id),
+    weight_mg INTEGER NOT NULL CHECK (weight_mg > 0),
+    karat INTEGER NOT NULL CHECK (karat IN (18, 21, 22, 24)),
+    making_kind TEXT NOT NULL CHECK (making_kind IN ('gram', 'piece')),
+    making_amount INTEGER NOT NULL DEFAULT 0 CHECK (making_amount >= 0),
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+  );
+  CREATE TABLE gold_prices (
+    id TEXT PRIMARY KEY,
+    date TEXT NOT NULL,
+    karat INTEGER NOT NULL CHECK (karat IN (18, 21, 22, 24)),
+    currency TEXT NOT NULL CHECK (currency IN ('IQD', 'USD')),
+    buy_per_gram INTEGER NOT NULL CHECK (buy_per_gram >= 0),
+    sell_per_gram INTEGER NOT NULL CHECK (sell_per_gram >= 0),
+    created_by TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    UNIQUE (date, karat, currency)
+  );
+  CREATE TABLE gold_suppliers (
+    party_id TEXT PRIMARY KEY REFERENCES parties(id),
+    basis_karat INTEGER NOT NULL CHECK (basis_karat IN (21, 24)),
+    updated_at TEXT NOT NULL
+  );
+  CREATE TABLE gold_docs (
+    id TEXT PRIMARY KEY,
+    kind TEXT NOT NULL CHECK (kind IN ('buy', 'melt', 'receipt', 'delivery')),
+    number TEXT UNIQUE,
+    date TEXT NOT NULL,
+    status TEXT NOT NULL CHECK (status IN ('draft', 'posted', 'cancelled')),
+    party_id TEXT REFERENCES parties(id),
+    customer_name TEXT,
+    warehouse_id TEXT REFERENCES warehouses(id),
+    cash_account TEXT REFERENCES accounts(code),
+    currency TEXT NOT NULL CHECK (currency IN ('IQD', 'USD')),
+    rate_x100 INTEGER NOT NULL CHECK (rate_x100 > 0),
+    karat INTEGER CHECK (karat IS NULL OR karat IN (18, 21, 22, 24)),
+    weight_mg INTEGER CHECK (weight_mg IS NULL OR weight_mg > 0),
+    price_per_gram INTEGER CHECK (price_per_gram IS NULL OR price_per_gram >= 0),
+    karat_out INTEGER CHECK (karat_out IS NULL OR karat_out IN (18, 21, 22, 24)),
+    weight_out_mg INTEGER CHECK (weight_out_mg IS NULL OR weight_out_mg > 0),
+    entry_id TEXT REFERENCES entries(id),
+    notes TEXT,
+    created_by TEXT NOT NULL,
+    prepared_by_id TEXT REFERENCES users(id),
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+  );
+  CREATE INDEX gold_docs_entry ON gold_docs(entry_id);
+  CREATE INDEX gold_docs_party ON gold_docs(party_id);
+  CREATE INDEX gold_docs_kind ON gold_docs(kind, date);
+  CREATE TABLE gold_doc_lines (
+    doc_id TEXT NOT NULL REFERENCES gold_docs(id) ON DELETE CASCADE,
+    seq INTEGER NOT NULL,
+    item_id TEXT NOT NULL REFERENCES items(id),
+    making INTEGER NOT NULL DEFAULT 0 CHECK (making >= 0),
+    PRIMARY KEY (doc_id, seq)
+  );
+  CREATE INDEX gold_doc_lines_item ON gold_doc_lines(item_id);
+  CREATE TABLE gold_scrap_moves (
+    id TEXT PRIMARY KEY,
+    date TEXT NOT NULL,
+    karat INTEGER NOT NULL CHECK (karat IN (18, 21, 22, 24)),
+    weight_mg INTEGER NOT NULL,
+    value INTEGER NOT NULL,
+    source_type TEXT NOT NULL,
+    source_id TEXT NOT NULL,
+    created_at TEXT NOT NULL
+  );
+  CREATE INDEX gold_scrap_moves_karat ON gold_scrap_moves(karat, date);
+  CREATE INDEX gold_scrap_moves_source ON gold_scrap_moves(source_id);
+  CREATE TABLE gold_supplier_moves (
+    id TEXT PRIMARY KEY,
+    party_id TEXT NOT NULL REFERENCES parties(id),
+    date TEXT NOT NULL,
+    fine_mg INTEGER NOT NULL,
+    value INTEGER NOT NULL,
+    source_type TEXT NOT NULL,
+    source_id TEXT NOT NULL,
+    created_at TEXT NOT NULL
+  );
+  CREATE INDEX gold_supplier_moves_party ON gold_supplier_moves(party_id, date);
+  CREATE INDEX gold_supplier_moves_source ON gold_supplier_moves(source_id);
+  -- ===== 18 · WHOLESALE =====
+  -- 18 — wholesale and distribution: the sales reps (each a user, with a van that is a warehouse of its own and a cash
+  -- account for what they collect), their routes (shop customers by weekday, in visiting order), the visits made, the
+  -- sales orders taken for a shop and delivered as a sale invoice, the van counts at the end of a day, the collections a
+  -- rep takes (a receipt voucher into the rep's own cash account) and the handovers of that cash to the office
+  CREATE TABLE ws_reps (
+    id TEXT PRIMARY KEY,
+    user_id TEXT NOT NULL UNIQUE REFERENCES users(id),
+    name TEXT NOT NULL,
+    warehouse_id TEXT NOT NULL UNIQUE REFERENCES warehouses(id),
+    load_warehouse_id TEXT NOT NULL REFERENCES warehouses(id),
+    cash_account TEXT NOT NULL REFERENCES accounts(code),
+    active INTEGER NOT NULL DEFAULT 1 CHECK (active IN (0, 1)),
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+  );
+  CREATE TABLE ws_route_stops (
+    id TEXT PRIMARY KEY,
+    rep_id TEXT NOT NULL REFERENCES ws_reps(id),
+    weekday INTEGER NOT NULL CHECK (weekday BETWEEN 0 AND 6),
+    party_id TEXT NOT NULL REFERENCES parties(id),
+    seq INTEGER NOT NULL CHECK (seq >= 0),
+    UNIQUE (rep_id, weekday, party_id)
+  );
+  CREATE INDEX ws_route_stops_party ON ws_route_stops(party_id);
+  CREATE TABLE ws_visits (
+    id TEXT PRIMARY KEY,
+    rep_id TEXT NOT NULL REFERENCES ws_reps(id),
+    party_id TEXT NOT NULL REFERENCES parties(id),
+    date TEXT NOT NULL,
+    outcome TEXT NOT NULL CHECK (outcome IN ('order', 'no_order', 'closed', 'collected')),
+    notes TEXT,
+    created_by TEXT NOT NULL,
+    created_at TEXT NOT NULL
+  );
+  CREATE INDEX ws_visits_rep ON ws_visits(rep_id, date);
+  CREATE TABLE ws_orders (
+    id TEXT PRIMARY KEY,
+    number TEXT NOT NULL UNIQUE,
+    rep_id TEXT REFERENCES ws_reps(id),
+    party_id TEXT NOT NULL REFERENCES parties(id),
+    date TEXT NOT NULL,
+    warehouse_id TEXT NOT NULL REFERENCES warehouses(id),
+    currency TEXT NOT NULL CHECK (currency IN ('IQD', 'USD')),
+    rate_x100 INTEGER NOT NULL CHECK (rate_x100 > 0),
+    status TEXT NOT NULL CHECK (status IN ('draft', 'approved', 'delivered', 'cancelled')),
+    total INTEGER NOT NULL CHECK (total >= 0),
+    limit_check TEXT CHECK (limit_check IS NULL OR limit_check IN ('ok', 'warn', 'override')),
+    override_by TEXT,
+    override_reason TEXT,
+    approved_by TEXT,
+    approved_at TEXT,
+    invoice_id TEXT REFERENCES invoices(id),
+    notes TEXT,
+    created_by TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+  );
+  CREATE INDEX ws_orders_invoice ON ws_orders(invoice_id);
+  CREATE INDEX ws_orders_party ON ws_orders(party_id, date);
+  CREATE INDEX ws_orders_rep ON ws_orders(rep_id, date);
+  CREATE TABLE ws_order_lines (
+    order_id TEXT NOT NULL REFERENCES ws_orders(id),
+    line_no INTEGER NOT NULL,
+    item_id TEXT NOT NULL REFERENCES items(id),
+    qty_milli INTEGER NOT NULL CHECK (qty_milli > 0),
+    unit TEXT,
+    unit_qty_milli INTEGER,
+    unit_price INTEGER NOT NULL CHECK (unit_price >= 0),
+    amount INTEGER NOT NULL CHECK (amount >= 0),
+    PRIMARY KEY (order_id, line_no)
+  );
+  CREATE TABLE ws_van_counts (
+    id TEXT PRIMARY KEY,
+    rep_id TEXT NOT NULL REFERENCES ws_reps(id),
+    date TEXT NOT NULL,
+    status TEXT NOT NULL CHECK (status IN ('open', 'closed')),
+    adjustment_id TEXT REFERENCES stock_adjustments(id),
+    created_by TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    closed_by TEXT,
+    closed_at TEXT,
+    UNIQUE (rep_id, date)
+  );
+  CREATE TABLE ws_van_count_lines (
+    count_id TEXT NOT NULL REFERENCES ws_van_counts(id),
+    item_id TEXT NOT NULL REFERENCES items(id),
+    expected_milli INTEGER NOT NULL,
+    counted_milli INTEGER NOT NULL CHECK (counted_milli >= 0),
+    PRIMARY KEY (count_id, item_id)
+  );
+  CREATE TABLE ws_handovers (
+    id TEXT PRIMARY KEY,
+    number TEXT NOT NULL UNIQUE,
+    rep_id TEXT NOT NULL REFERENCES ws_reps(id),
+    date TEXT NOT NULL,
+    to_account TEXT NOT NULL REFERENCES accounts(code),
+    currency TEXT NOT NULL CHECK (currency IN ('IQD', 'USD')),
+    rate_x100 INTEGER NOT NULL CHECK (rate_x100 > 0),
+    amount INTEGER NOT NULL CHECK (amount > 0),
+    entry_id TEXT REFERENCES entries(id),
+    created_by TEXT NOT NULL,
+    created_at TEXT NOT NULL
+  );
+  CREATE INDEX ws_handovers_entry ON ws_handovers(entry_id);
+  CREATE INDEX ws_handovers_rep ON ws_handovers(rep_id);
+  CREATE TABLE ws_collections (
+    id TEXT PRIMARY KEY,
+    number TEXT NOT NULL UNIQUE,
+    rep_id TEXT NOT NULL REFERENCES ws_reps(id),
+    party_id TEXT NOT NULL REFERENCES parties(id),
+    date TEXT NOT NULL,
+    currency TEXT NOT NULL CHECK (currency IN ('IQD', 'USD')),
+    rate_x100 INTEGER NOT NULL CHECK (rate_x100 > 0),
+    amount INTEGER NOT NULL CHECK (amount > 0),
+    entry_id TEXT REFERENCES entries(id),
+    handover_id TEXT REFERENCES ws_handovers(id),
+    notes TEXT,
+    created_by TEXT NOT NULL,
+    created_at TEXT NOT NULL
+  );
+  CREATE INDEX ws_collections_rep ON ws_collections(rep_id, date);
+  CREATE INDEX ws_collections_entry ON ws_collections(entry_id);
+  CREATE INDEX ws_collections_handover ON ws_collections(handover_id);
+  -- ===== 18 · MARKET EXTRAS =====
+  -- 18 — market extras: delivery orders taken by phone or WhatsApp (drivers, the order and its lines, the cash a driver
+  -- hands over), the WhatsApp reminders sent to customers who owe, the price checker screens near the shelves (a device
+  -- token, kept as its hash), and the suppliers who deliver every day (their usual items and each day's receipt).
+  CREATE TABLE delivery_drivers (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    phone TEXT,
+    user_id TEXT REFERENCES users(id),
+    cash_account TEXT REFERENCES accounts(code),
+    active INTEGER NOT NULL DEFAULT 1 CHECK (active IN (0, 1)),
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+  );
+  CREATE TABLE delivery_orders (
+    id TEXT PRIMARY KEY,
+    number TEXT NOT NULL UNIQUE,
+    status TEXT NOT NULL CHECK (status IN ('new', 'preparing', 'out', 'delivered', 'cancelled')),
+    party_id TEXT REFERENCES parties(id),
+    customer_name TEXT NOT NULL,
+    phone TEXT,
+    address TEXT NOT NULL,
+    area TEXT,
+    notes TEXT,
+    lang TEXT CHECK (lang IS NULL OR lang IN ('ar', 'en', 'ku')),
+    warehouse_id TEXT NOT NULL REFERENCES warehouses(id),
+    payment TEXT NOT NULL CHECK (payment IN ('cod', 'account')),
+    fee INTEGER NOT NULL DEFAULT 0 CHECK (fee >= 0),
+    driver_id TEXT REFERENCES delivery_drivers(id),
+    invoice_id TEXT REFERENCES invoices(id),
+    cancel_reason TEXT,
+    created_by TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    out_at TEXT,
+    delivered_at TEXT
+  );
+  CREATE INDEX delivery_orders_invoice ON delivery_orders(invoice_id);
+  CREATE INDEX delivery_orders_driver ON delivery_orders(driver_id);
+  CREATE INDEX delivery_orders_party ON delivery_orders(party_id);
+  CREATE INDEX delivery_orders_status ON delivery_orders(status, created_at);
+  CREATE TABLE delivery_order_lines (
+    order_id TEXT NOT NULL REFERENCES delivery_orders(id) ON DELETE CASCADE,
+    line_no INTEGER NOT NULL,
+    item_id TEXT NOT NULL REFERENCES items(id),
+    qty_milli INTEGER NOT NULL CHECK (qty_milli > 0),
+    unit_price INTEGER NOT NULL CHECK (unit_price >= 0),
+    unit TEXT,
+    unit_qty_milli INTEGER CHECK (unit_qty_milli IS NULL OR unit_qty_milli > 0),
+    PRIMARY KEY (order_id, line_no)
+  );
+  CREATE TABLE delivery_handovers (
+    id TEXT PRIMARY KEY,
+    driver_id TEXT NOT NULL REFERENCES delivery_drivers(id),
+    entry_id TEXT NOT NULL REFERENCES entries(id),
+    amount INTEGER NOT NULL CHECK (amount > 0),
+    created_by TEXT NOT NULL,
+    created_at TEXT NOT NULL
+  );
+  CREATE INDEX delivery_handovers_entry ON delivery_handovers(entry_id);
+  CREATE INDEX delivery_handovers_driver ON delivery_handovers(driver_id, created_at);
+  CREATE TABLE party_reminders (
+    id TEXT PRIMARY KEY,
+    party_id TEXT NOT NULL REFERENCES parties(id),
+    amount INTEGER NOT NULL,
+    currency TEXT NOT NULL CHECK (currency IN ('IQD', 'USD')),
+    days INTEGER NOT NULL CHECK (days >= 0),
+    lang TEXT NOT NULL CHECK (lang IN ('ar', 'en', 'ku')),
+    created_by TEXT NOT NULL,
+    created_at TEXT NOT NULL
+  );
+  CREATE INDEX party_reminders_party ON party_reminders(party_id, created_at);
+  CREATE TABLE price_checker_devices (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    token_hash TEXT NOT NULL UNIQUE,
+    warehouse_id TEXT REFERENCES warehouses(id),
+    created_by TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    last_seen_at TEXT,
+    revoked_at TEXT
+  );
+  CREATE TABLE daily_supplier_items (
+    party_id TEXT NOT NULL REFERENCES parties(id),
+    item_id TEXT NOT NULL REFERENCES items(id),
+    sort INTEGER NOT NULL DEFAULT 0,
+    unit_cost INTEGER CHECK (unit_cost IS NULL OR unit_cost >= 0),
+    PRIMARY KEY (party_id, item_id)
+  );
+  CREATE TABLE daily_receipts (
+    id TEXT PRIMARY KEY,
+    party_id TEXT NOT NULL REFERENCES parties(id),
+    date TEXT NOT NULL,
+    warehouse_id TEXT NOT NULL REFERENCES warehouses(id),
+    purchase_id TEXT REFERENCES invoices(id),
+    created_by TEXT NOT NULL,
+    created_at TEXT NOT NULL
+  );
+  CREATE INDEX daily_receipts_party ON daily_receipts(party_id, date);
+  CREATE TABLE daily_receipt_lines (
+    receipt_id TEXT NOT NULL REFERENCES daily_receipts(id) ON DELETE CASCADE,
+    item_id TEXT NOT NULL REFERENCES items(id),
+    received_milli INTEGER NOT NULL CHECK (received_milli >= 0),
+    returned_milli INTEGER NOT NULL CHECK (returned_milli >= 0),
+    unit_cost INTEGER NOT NULL CHECK (unit_cost >= 0),
+    PRIMARY KEY (receipt_id, item_id)
+  );
+  CREATE TABLE daily_receipt_returns (
+    receipt_id TEXT NOT NULL REFERENCES daily_receipts(id) ON DELETE CASCADE,
+    return_id TEXT NOT NULL REFERENCES invoices(id),
+    PRIMARY KEY (receipt_id, return_id)
+  );
+  -- ===== 18 · CLOTHING =====
+  -- 18 — clothing and shoes: the shop's colours, its models (one design, with the sizes it comes in), and which item is
+  -- which size and colour of which model. A variant is a real item (its stock, price, barcode and lines are the item's),
+  -- color_id '' is a model without colours.
+  CREATE TABLE cl_colors (
+    id TEXT PRIMARY KEY,
+    code TEXT NOT NULL UNIQUE,
+    name_ar TEXT NOT NULL,
+    name_en TEXT NOT NULL,
+    name_ku TEXT NOT NULL,
+    hex TEXT,
+    sort INTEGER NOT NULL DEFAULT 0,
+    active INTEGER NOT NULL DEFAULT 1 CHECK (active IN (0, 1)),
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+  );
+  CREATE TABLE cl_models (
+    id TEXT PRIMARY KEY,
+    code TEXT NOT NULL UNIQUE,
+    name_ar TEXT NOT NULL,
+    name_en TEXT NOT NULL,
+    name_ku TEXT NOT NULL,
+    sizes TEXT NOT NULL,
+    season TEXT,
+    category_id TEXT REFERENCES item_categories(id),
+    brand_id TEXT REFERENCES brands(id),
+    unit TEXT NOT NULL,
+    sale_price INTEGER NOT NULL DEFAULT 0 CHECK (sale_price >= 0),
+    sale_currency TEXT NOT NULL CHECK (sale_currency IN ('IQD', 'USD')),
+    purchase_price INTEGER CHECK (purchase_price IS NULL OR purchase_price >= 0),
+    purchase_currency TEXT CHECK (purchase_currency IS NULL OR purchase_currency IN ('IQD', 'USD')),
+    active INTEGER NOT NULL DEFAULT 1 CHECK (active IN (0, 1)),
+    created_by TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+  );
+  CREATE INDEX cl_models_category ON cl_models(category_id);
+  CREATE INDEX cl_models_season ON cl_models(season);
+  CREATE TABLE cl_variants (
+    item_id TEXT PRIMARY KEY REFERENCES items(id),
+    model_id TEXT NOT NULL REFERENCES cl_models(id),
+    size TEXT NOT NULL,
+    color_id TEXT NOT NULL DEFAULT '',
+    created_at TEXT NOT NULL,
+    UNIQUE (model_id, size, color_id)
+  );
+  `;
+
+// 19 — what the reviews of 2.0 added after version 18 was first built (a company file opened once by that build is at
+// 18 already, so these come as a version of their own): the supervisor approvals as they are now (till_approvals:
+// bound to the cashier, the subject, the amount and its currency, and for a refund its lines; one asked from the office
+// has no shift; pos_approvals of version 18 stays, empty and unused), the counts of wrong PINs, the shift that paid a
+// cash refund, the items' price history, the voucher a returned share stands for, and the taking back of a wholesale
+// collection or handover.
+//
+// Builds made while the reviews were going on left some files at 18 with part of this already there (their version 18
+// had these tables and columns). So 19 never stops on what is there: its tables and indexes are made IF NOT EXISTS,
+// and its columns (V19_COLUMNS) are added one by one, each only when the table lacks it (addMissingColumns).
+const V19 =
+  `
+  -- ===== 19 · TILL RULES =====
+  CREATE TABLE IF NOT EXISTS till_approvals (
+    id TEXT PRIMARY KEY,
+    -- the shift it was given at; none: given at the office for a refund (the invoice screens)
+    shift_id TEXT REFERENCES pos_shifts(id),
+    action TEXT NOT NULL,
+    approver TEXT NOT NULL,
+    approver_id TEXT,
+    cashier TEXT NOT NULL,
+    -- who asked (the user's id with sign-in on) and what exactly was approved: the invoice (a refund), the customer
+    -- (credit over the limit), the item and unit (a lower price), a kept sale's reference, or the rate (dollars);
+    -- the lowest price, the largest discount or the largest total; its currency; for a discount the basket it was
+    -- given on (gross); and for a return its scope: the lines and quantities that may come back (JSON; none = the whole invoice)
+    cashier_id TEXT,
+    subject TEXT,
+    amount INTEGER,
+    currency TEXT,
+    gross INTEGER,
+    scope TEXT,
+    detail TEXT,
+    created_at TEXT NOT NULL,
+    expires_at TEXT NOT NULL,
+    used_at TEXT
+  );
+  CREATE INDEX IF NOT EXISTS till_approvals_shift ON till_approvals(shift_id);
+  -- wrong supervisor PINs, counted per cashier (per till with sign-in off) and for the whole company ('all'): kept
+  -- here so a restart or a second server process does not start the count again
+  CREATE TABLE IF NOT EXISTS pos_pin_tries (
+    k TEXT PRIMARY KEY,
+    n INTEGER NOT NULL DEFAULT 0,
+    since TEXT NOT NULL,
+    locked_until TEXT,
+    day_on TEXT,
+    day_n INTEGER NOT NULL DEFAULT 0
+  );
+  -- the shift whose drawer paid a cash refund (a return at the till, an exchange): counted in that shift alone
+  CREATE TABLE IF NOT EXISTS pos_shift_refunds (
+    invoice_id TEXT PRIMARY KEY REFERENCES invoices(id),
+    shift_id TEXT NOT NULL REFERENCES pos_shifts(id),
+    created_at TEXT NOT NULL
+  );
+  CREATE INDEX IF NOT EXISTS pos_shift_refunds_shift ON pos_shift_refunds(shift_id);
+  -- an item's sale prices over time, per unit ('' = the item's own unit): written at every change (the first change
+  -- also keeps the price before it). A sale a till kept while cut off, at a price that was the list price since its
+  -- shift opened, is told from one below the price list
+  CREATE TABLE IF NOT EXISTS item_price_history (
+    id TEXT PRIMARY KEY,
+    item_id TEXT NOT NULL REFERENCES items(id),
+    unit TEXT NOT NULL DEFAULT '',
+    price INTEGER NOT NULL,
+    currency TEXT NOT NULL,
+    changed_at TEXT NOT NULL
+  );
+  CREATE INDEX IF NOT EXISTS item_price_history_item ON item_price_history(item_id, unit, changed_at);
+  `;
+
+// 20 — product lookup (2.0): what the open product databases (Open Food Facts and its sister projects) answered for a
+// barcode, kept a while so the same code is not asked twice (a "not found" too), and where an item's picture came
+// from when it came from one of them: the source, its licence and the product's page, for the credit the licence
+// asks for wherever the picture is shown. Nothing here is the company's own records: both tables can be emptied.
+const V20 =
+  `
+  -- ===== 20 · PRODUCT LOOKUP =====
+  CREATE TABLE IF NOT EXISTS product_lookups (
+    barcode TEXT PRIMARY KEY,
+    found INTEGER NOT NULL DEFAULT 0 CHECK (found IN (0, 1)),
+    source TEXT,
+    name TEXT,
+    name_ar TEXT,
+    name_en TEXT,
+    name_ku TEXT,
+    brand TEXT,
+    quantity TEXT,
+    image_url TEXT,
+    image_small_url TEXT,
+    page_url TEXT,
+    looked_at TEXT NOT NULL
+  );
+  CREATE INDEX IF NOT EXISTS product_lookups_when ON product_lookups(looked_at);
+  CREATE TABLE IF NOT EXISTS item_image_sources (
+    item_id TEXT PRIMARY KEY REFERENCES items(id),
+    source TEXT NOT NULL,
+    licence TEXT NOT NULL,
+    url TEXT NOT NULL,
+    created_at TEXT NOT NULL
+  );
+  `;
+
+/** A column a version adds to a table that is already there: added only when the table lacks it. */
+interface AddedColumn { table: string; column: string; definition: string }
+
+// The columns of 19, in this order (the order they stand in on a new file and on a server database):
+// - gift_voucher_moves.for_voucher_id: a share given back by a return: the voucher of the sale it stands for (itself,
+//   or the one a new voucher replaces)
+// - ws_handovers and ws_collections: taken back by the office: its receipt deleted (not in the books yet) or reversed
+//   (cancel_entry_id)
+const V19_COLUMNS: readonly AddedColumn[] = [
+  { table: 'gift_voucher_moves', column: 'for_voucher_id', definition: 'TEXT' },
+  { table: 'ws_handovers', column: 'cancelled_at', definition: 'TEXT' },
+  { table: 'ws_handovers', column: 'cancel_entry_id', definition: 'TEXT REFERENCES entries(id)' },
+  { table: 'ws_collections', column: 'cancelled_at', definition: 'TEXT' },
+  { table: 'ws_collections', column: 'cancel_entry_id', definition: 'TEXT REFERENCES entries(id)' }
+];
+
+function addMissingColumns(db: Db, columns: readonly AddedColumn[]): void {
+  for (const c of columns) {
+    const has = (db.prepare(`PRAGMA table_info(${c.table})`).all() as { name: string }[]).some((x) => x.name === c.column);
+    if (!has) db.exec(`ALTER TABLE ${c.table} ADD COLUMN ${c.column} ${c.definition}`);
+  }
+}
+
+/**
+ * What a company file needs beside a version's SQL (SQLite only; a server database has its own steps): for 19, its
+ * columns, and version 18's approvals table back as version 18 made it. Some builds made while 2.0 was reviewed gave
+ * that table more columns; it is unused from 19 on (till_approvals took its place) and was only ever a two-minute
+ * approval, so it is made again, empty.
+ */
+function finishV19(db: Db): void {
+  addMissingColumns(db, V19_COLUMNS);
+  const approvals = (db.prepare('PRAGMA table_info(pos_approvals)').all() as { name: string }[]).map((x) => x.name);
+  if (approvals.includes('cashier_id') || approvals.includes('subject')) {
+    const made = /CREATE TABLE pos_approvals \([\s\S]*?\n {2}\);\n(?: {2}CREATE INDEX [^\n]*ON pos_approvals[^\n]*\n)*/.exec(V18);
+    if (!made) throw new Error('version 18 has no pos_approvals');
+    db.exec('DROP TABLE pos_approvals');
+    db.exec(made[0]);
+  }
+}
+
+/**
+ * Version 21 (2.0.0): indexes a big company needs (bench/big-company.ts: 100,000 items, a year of sales). Stock is
+ * summed from an index that holds each move's quantity and value. A barcode
+ * was found by reading every item: the only index on it is the unique one for barcodes that are there, which a lookup
+ * by "barcode = ?" may not use (the value asked for could be empty). And whether a customer or supplier is used
+ * anywhere read whole tables that had no index on their party. On a MariaDB or MySQL server the barcode has a unique
+ * key and each party column is a foreign key, indexed there already: a server gets the stock index only.
+ */
+const V21 =
+  `
+  -- ===== 21 · INDEXES FOR BIG COMPANIES =====
+  CREATE INDEX IF NOT EXISTS items_barcode_find ON items(barcode);
+  -- an item's stock and its value, now or on a day, from the index alone (the till's item list, the items page, low stock)
+  CREATE INDEX IF NOT EXISTS stock_moves_stock ON stock_moves(item_id, warehouse_id, date, qty_milli, value);
+  -- approved entries of a period (the home page's profit, the reports): the status alone said too little
+  CREATE INDEX IF NOT EXISTS entries_status_date ON entries(status, date);
+  CREATE INDEX IF NOT EXISTS invoices_party ON invoices(party_id);
+  -- a till shift's cash: what was posted to its safe while it was open (each sale, at every sale)
+  CREATE INDEX IF NOT EXISTS invoices_cash_posted ON invoices(cash_account, posted_at);
+  CREATE INDEX IF NOT EXISTS invoices_cash_cancelled ON invoices(cash_account, cancelled_at);
+  CREATE INDEX IF NOT EXISTS quotes_party ON quotes(party_id);
+  CREATE INDEX IF NOT EXISTS deals_party ON deals(party_id);
+  CREATE INDEX IF NOT EXISTS purchase_orders_party ON purchase_orders(party_id);
+  CREATE INDEX IF NOT EXISTS cheques_party ON cheques(party_id);
+  CREATE INDEX IF NOT EXISTS re_deposits_party ON re_deposits(party_id);
+  CREATE INDEX IF NOT EXISTS serials_party ON serials(party_id);
+  CREATE INDEX IF NOT EXISTS serials_from_party ON serials(from_party_id);
+`;
+
+/** SQLite-only work of a version, after its SQL and before its rows, in the same transaction (by the version's SQL). */
+const SQLITE_FINISH: ReadonlyMap<string, (db: Db) => void> = new Map([[V19, finishV19]]);
+
 const MIGRATIONS: Migration[] = [
   { sql: V1 }, { sql: V2, rebuild: true }, { sql: V3, rebuild: true }, { sql: V4 }, { sql: V5, rebuild: true },
   { sql: V6, mysql: 'tables' }, { sql: V7, mysql: 'tables' }, { sql: V8, mysql: 'tables' }, { sql: V9, mysql: 'tables' },
@@ -1948,7 +2790,13 @@ const MIGRATIONS: Migration[] = [
   { sql: V13, mysql: { tables: true, steps: () => V13_MYSQL_STEPS } },
   { sql: V14, mysql: { tables: true, steps: () => V14_MYSQL_STEPS } },
   { sql: V15, mysql: { tables: true, steps: () => V15_MYSQL_STEPS } },
-  { sql: V16, mysql: { tables: true, steps: () => V16_MYSQL_STEPS } }
+  { sql: V16, mysql: { tables: true, steps: () => V16_MYSQL_STEPS } },
+  { sql: V17, mysql: { tables: true, steps: () => V17_MYSQL_STEPS } },
+  { sql: V18, mysql: { tables: true, steps: () => V18_MYSQL_STEPS } },
+  { sql: V19, mysql: { tables: true, steps: () => V19_MYSQL_STEPS }, data: keepFeatureAccounts },
+  { sql: V20, mysql: 'tables' },
+  // on a server the barcode and party columns are indexed already: the stock, entry and till cash indexes only
+  { sql: V21, mysql: { tables: true, steps: () => V21_MYSQL_STEPS } }
 ];
 
 /** Server databases began at this version: its schema is in schema-mysql.ts (tables and triggers without `since`). */
@@ -1960,19 +2808,30 @@ export const SCHEMA_VERSION = MIGRATIONS.length;
 export function openDatabase(file: string, options: { now?: () => Date } = {}): Db {
   if (file !== ':memory:') refuseNewerFile(file);
   const db: Db = new DatabaseSync(file);
+  let copy: { target: string; version: number } | null = null;
   try {
     db.exec('PRAGMA foreign_keys = ON');
     if (file !== ':memory:') {
       // WAL + FULL sync: a committed voucher survives a power cut (generator switch-over).
       db.exec('PRAGMA journal_mode = WAL');
       db.exec('PRAGMA synchronous = FULL');
-      copyBeforeUpdate(db, file, options.now?.() ?? new Date());
+      copy = copyBeforeUpdate(db, file, options.now?.() ?? new Date());
     }
     initDatabase(db);
   } catch (error) {
+    // The update did not go through. A copy is only worth keeping once something was updated: when the file is still
+    // at the version it was copied at (the failed version was rolled back whole), this try's copy goes, so tries that
+    // fail again and again never fill the folder and never push out an older copy (the one from before 2.0).
+    if (copy) {
+      try {
+        if (schemaVersion(db) === copy.version) unlinkSync(copy.target);
+      } catch { /* it stays: harmless */ }
+    }
     db.close();
     throw error;
   }
+  // only after the update worked are older copies let go
+  if (copy) pruneUpdateCopies(file);
   return db;
 }
 
@@ -2004,12 +2863,12 @@ function updateCopyStamp(name: string, pattern: RegExp): string {
 
 /**
  * Before this version changes the schema of an existing company file, a consistent copy of it as it is (SQLite's
- * VACUUM INTO, so work still in the write-ahead log is in it) goes beside it, and only the newest
- * UPDATE_COPIES_KEPT are kept. A new file (no schema yet) and a file already up to date are left alone. When the copy
+ * VACUUM INTO, so work still in the write-ahead log is in it) goes beside it, and once the update has worked only the
+ * newest UPDATE_COPIES_KEPT are kept (a try that fails removes nothing but its own copy: openDatabase). A new file (no schema yet) and a file already up to date are left alone. When the copy
  * can't be made (a full disk) the schema is not changed: the file opens on a later try, never updated without a copy.
  * That failure is its own error (update_copy_failed), so the app never takes the file for a damaged one.
  */
-function copyBeforeUpdate(db: Db, file: string, now: Date): string | null {
+function copyBeforeUpdate(db: Db, file: string, now: Date): { target: string; version: number } | null {
   if (!db.prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'schema_version'").get()) return null;
   const version = schemaVersion(db);
   if (version === 0 || version >= MIGRATIONS.length) return null;
@@ -2029,13 +2888,16 @@ function copyBeforeUpdate(db: Db, file: string, now: Date): string | null {
     // the file itself is fine: it is not damaged, there was only no room (or no access) for its copy
     throw new AppError(507, 'update_copy_failed', { reason: (error instanceof Error ? error.message : String(error)).slice(0, 300) });
   }
-  // only this company file's own copies are ever removed, the oldest first
+  return { target, version };
+}
+
+/** Only this company file's own copies are ever removed, the oldest first, and only once an update has worked. */
+function pruneUpdateCopies(file: string): void {
   for (const old of updateCopies(file).slice(UPDATE_COPIES_KEPT)) {
     try {
       unlinkSync(old);
     } catch { /* a copy in use stays until next time */ }
   }
-  return target;
 }
 
 /** Brings any database (a file, or the in-browser demo) to the current schema and fills in the defaults. */
@@ -2079,6 +2941,18 @@ function refuseNewerFile(file: string): void {
   }
 }
 
+/**
+ * A version that could not be applied to a company file. The file is as it was before that version (each runs in one
+ * transaction), so it is not a damaged file and must never be set aside as one: update_failed says so, with the
+ * version and the reason. What SQLite itself calls damage (a malformed image, not a database) stays what it is.
+ */
+function updateFailed(error: unknown, version: number): unknown {
+  if (error instanceof AppError) return error;
+  const reason = error instanceof Error ? error.message : String(error);
+  if (/malformed|not a database|disk image|corrupt/i.test(reason)) return error;
+  return new AppError(500, 'update_failed', { version, reason: reason.slice(0, 300) });
+}
+
 /** Applies pending migrations, optionally stopping at `target` (used by the upgrade test). */
 export function migrate(db: Db, target = MIGRATIONS.length): void {
   if (isMysql(db)) return migrateMysql(db);
@@ -2107,11 +2981,16 @@ export function migrate(db: Db, target = MIGRATIONS.length): void {
         db.exec('PRAGMA foreign_keys = ON');
       }
     } else {
-      transaction(db, () => {
-        db.exec(migration.sql);
-        migration.data?.(db);
-        db.prepare('UPDATE schema_version SET version = ?').run(next);
-      });
+      try {
+        transaction(db, () => {
+          db.exec(migration.sql);
+          SQLITE_FINISH.get(migration.sql)?.(db);
+          migration.data?.(db);
+          db.prepare('UPDATE schema_version SET version = ?').run(next);
+        });
+      } catch (error) {
+        throw updateFailed(error, next);
+      }
     }
     version = next;
   }

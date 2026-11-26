@@ -8,14 +8,15 @@ import { randomBytes } from 'node:crypto';
 import { existsSync, mkdirSync, readFileSync, renameSync, rmSync } from 'node:fs';
 import { DatabaseSync } from 'node:sqlite';
 import { join } from 'node:path';
+import { licenseState } from '@qasa/core';
 import {
-  AppError, conflict, invalid, notFound, noteFirstStartBeforeCarry, readSetting, SCHEMA_VERSION, writeSetting,
+  AppError, conflict, invalid, keyHash, licensingToday, machineId, notFound, noteFirstStart, noteFirstStartBeforeCarry, readActivationToken,
+  readLicenseKey, readSetting, SCHEMA_VERSION, transaction, writeSetting,
   type Actor, type ApiExtension, type ApiRequest, type Db
 } from '@qasa/server';
 import {
   addCompany, backupFileName, chooseCompany, CompanyError, companyDirOf, hasCompanyFile, isCompanyId,
-  readRegistry, renameCompany, writeRegistry, type Registry
-} from './companies.ts';
+  readRegistry, renameCompany, writeRegistry, type Registry, openableCompanies } from './companies.ts';
 
 /**
  * What a new company takes over from the one open now: the licence and this PC's activation of it. Both belong to
@@ -25,6 +26,107 @@ import {
  * signing key with the portal (otherwise its genuine invoices show as unverified for days).
  */
 export const CARRIED_SETTINGS = ['license_key', 'activation_token', 'activation_revoked'] as const;
+
+/** A company's licence as its settings hold it. */
+export interface StoredLicence { key: string | null; token: string | null; revoked: string | null }
+
+const storedLicence = (db: Db): StoredLicence => ({
+  key: readSetting(db, 'license_key') ?? null, token: readSetting(db, 'activation_token') ?? null, revoked: readSetting(db, 'activation_revoked') ?? null
+});
+
+function readLicence(stored: StoredLicence, machine: string) {
+  const info = stored.key ? readLicenseKey(stored.key) : null;
+  const read = stored.token ? readActivationToken(stored.token) : null;
+  // an activation counts only for its own key, on this PC
+  const token = info && stored.key && read && read.lic === info.id && read.key === keyHash(stored.key) && read.machine === machine && read.plan === info.plan ? read : null;
+  let revoked = false;
+  try {
+    revoked = !!stored.key && !!stored.revoked && (JSON.parse(stored.revoked) as { key?: unknown }).key === keyHash(stored.key);
+  } catch { /* a record that doesn't read revokes nothing here; the company's own check decides */ }
+  return { info, token, revoked };
+}
+
+/**
+ * Whether another company on this PC (`theirs`) holds a newer licence than this one (`mine`). The licence belongs to
+ * the PC, so a renewal or a fresh check-in made in one company must count in the others: without this a company that
+ * was not open for weeks came up on Free (its own activation gone stale) while the PC's licence was fine.
+ *
+ * Only a licence activated on this PC, not ended and not revoked, is ever taken over (the portal signed both the key
+ * and the activation, and the company checks them again itself). It is newer when this company has no key that reads;
+ * for the same key, when its activation was issued later; for another key, when this one's has ended, was revoked or
+ * was never activated here, or when theirs was issued later (a renewal).
+ */
+export function isNewerLicence(mine: StoredLicence, theirs: StoredLicence, machine: string, today: string): boolean {
+  const t = readLicence(theirs, machine);
+  if (!t.info || !t.token || t.revoked || licenseState(t.info, today) === 'expired') return false;
+  const m = readLicence(mine, machine);
+  if (!m.info || !mine.key || !theirs.key) return true;
+  if (keyHash(mine.key) === keyHash(theirs.key)) {
+    // a revocation of this very key stays until this company's own check-in lifts it
+    if (m.revoked) return false;
+    return !m.token || t.token.issued > m.token.issued || (t.token.issued === m.token.issued && t.token.checkBy > m.token.checkBy);
+  }
+  if (m.revoked || !m.token || licenseState(m.info, today) === 'expired') return true;
+  return t.info.issued > m.info.issued;
+}
+
+function writeLicence(db: Db, licence: StoredLicence): void {
+  if (licence.key) writeSetting(db, 'license_key', licence.key);
+  if (licence.token) writeSetting(db, 'activation_token', licence.token);
+  if (licence.revoked) writeSetting(db, 'activation_revoked', licence.revoked);
+}
+
+/** The licence settings of a closed company file, read without changing it. Null when it can't be read. */
+function closedLicence(file: string): StoredLicence | null {
+  let other: DatabaseSync;
+  try {
+    other = new DatabaseSync(file, { readOnly: true });
+  } catch {
+    return null;
+  }
+  try {
+    const rows = other.prepare(`SELECT "key" AS k, value AS v FROM settings WHERE "key" IN ('license_key', 'activation_token', 'activation_revoked')`).all() as { k: string; v: string | null }[];
+    const of = (key: string) => rows.find((r) => r.k === key)?.v ?? null;
+    return { key: of('license_key'), token: of('activation_token'), revoked: of('activation_revoked') };
+  } catch {
+    return null;
+  } finally {
+    other.close();
+  }
+}
+
+/**
+ * At the start of a company: takes over the newest licence the other companies on this PC hold (see isNewerLicence),
+ * so the plan, and with it the company limit, is this PC's and not what this one file last saw. The other files are
+ * only read. Returns the company it came from, or null. Never a reason not to start.
+ */
+export function takeNewerLicence(db: Db, userDataDir: string, currentId: string, log: (...parts: unknown[]) => void = () => {}): string | null {
+  let from: string | null = null;
+  try {
+    const machine = machineId(db);
+    const today = licensingToday();
+    let best = storedLicence(db);
+    for (const company of readRegistry(userDataDir).list) {
+      if (company.id === currentId) continue;
+      const dir = companyDirOf(userDataDir, company.id);
+      if (onDatabaseServer(dir) || !hasCompanyFile(dir)) continue;
+      const theirs = closedLicence(join(dir, 'data', 'qasa.sqlite'));
+      if (theirs && isNewerLicence(best, theirs, machine, today)) {
+        best = theirs;
+        from = company.id;
+      }
+    }
+    if (!from) return null;
+    // this company's first start is noted before the key is there: a key taken over never starts a 0.1.8 grace here
+    noteFirstStart(db);
+    transaction(db, () => writeLicence(db, best));
+    log(`the licence of this PC was taken over from company ${from}`);
+    return from;
+  } catch (e) {
+    log(`the PC's licence was not looked up in the other companies (${e instanceof Error ? e.message : String(e)})`);
+    return null;
+  }
+}
 
 /**
  * Whether a closed company file can be opened by this version, read-only and without changing it: not damaged at its
@@ -67,6 +169,8 @@ export interface CompanyApiDeps {
   currentId: string;
   /** The plan's company limit now (null = unlimited). */
   limit(): number | null;
+  /** Whether the company open now is past that limit: it is shown, and refuses changes (the server does that). */
+  viewOnly?(): boolean;
   /** Opens the company file at `file` (made with its tables when new: openDatabase), lets `prepare` write to it, then closes it. */
   makeCompanyFile(file: string, prepare: (db: Db) => void): void;
   chooseFolder(): Promise<string | null>;
@@ -120,8 +224,9 @@ export function companyApi(deps: CompanyApiDeps): ApiExtension {
       current: deps.currentId,
       limit,
       canAdd: limit === null || r.list.length < limit,
-      // the plan's limit only stops adding companies: every company already made always opens, whatever the plan
-      list: r.list.map((c) => ({ ...c, current: c.id === deps.currentId }))
+      // past the plan's limit a company opens to be viewed, not changed (nothing is deleted or hidden): the first
+      // ones made work in full
+      list: r.list.map((c) => ({ ...c, current: c.id === deps.currentId, waiting: !openableCompanies(r, limit).has(c.id) }))
     };
   };
   const idOf = (req: ApiRequest) => {
@@ -145,6 +250,14 @@ export function companyApi(deps: CompanyApiDeps): ApiExtension {
           handler: async (req) => {
             admin(actorOf, req);
             return view(registry());
+          }
+        },
+        {
+          // for everyone signed in: the banner over a company that can be viewed only
+          method: 'GET', path: '/api/companies/state',
+          handler: async (req) => {
+            actorOf(req);
+            return { viewOnly: deps.viewOnly?.() ?? false };
           }
         },
         {
@@ -198,8 +311,9 @@ export function companyApi(deps: CompanyApiDeps): ApiExtension {
             const r = registry();
             if (id === deps.currentId) throw conflict('company_is_current');
             const next = guard(() => chooseCompany(r, id));
-            // never limited by the plan (nobody is locked out of their own books); a file from a newer version is
-            // refused here, before companies.json names it, so the next start never lands on it
+            // a company past the plan's limit opens too, to be viewed (the server refuses changes there): its records
+            // are never out of reach. A file from a newer version is refused here, before companies.json names it, so
+            // the next start never lands on it
             const dir = companyDirOf(deps.userDataDir, id);
             const server = onDatabaseServer(dir);
             if (!server && !hasCompanyFile(dir)) throw notFound('company');
@@ -216,12 +330,15 @@ export function companyApi(deps: CompanyApiDeps): ApiExtension {
                 const value = readSetting(deps.db, key);
                 if (value != null) carried.push([key, value]);
               }
+              const mine = storedLicence(deps.db);
               if (!problem && carried.some(([key]) => key === 'license_key')) {
                 // only a help: damage deeper in the file than its start must not stop it opening, where the app's
                 // start offers Try again or Restore from a backup (the licence can be entered again there)
                 try {
                   deps.makeCompanyFile(file, (other) => {
-                    if (readSetting(other, 'license_key')) return;
+                    // a company with a licence of its own keeps it, unless this PC's is newer (a renewal or a fresh
+                    // check-in made here): then it takes that over, so it never comes up on Free beside a paid PC
+                    if (readSetting(other, 'license_key') && !isNewerLicence(storedLicence(other), mine, machineId(deps.db), licensingToday())) return;
                     // all or nothing: a key without its activation token would never be carried again (the next open
                     // sees the key and stops here)
                     other.exec('BEGIN IMMEDIATE');

@@ -188,6 +188,14 @@ file is installed with the app.
 Fonts: IBM Plex Sans, Noto Sans Arabic and Noto Kufi Arabic (via @fontsource) — SIL Open Font License 1.1.
 Pictures: the phone-shop sample pictures of the website demo (apps/web/src/demo/phone-shop) are own drawings by
 Meroxis — no third-party licence, no credit needed.
+Open data: when a company switches on "Look up product pictures and names online", product names and pictures come
+from Open Food Facts, Open Beauty Facts, Open Products Facts and Open Pet Food Facts (https://world.openfoodfacts.org
+and its sister sites). Their database is made available under the Open Database License
+(https://opendatacommons.org/licenses/odbl/1-0/), its individual contents under the Database Contents License, and
+the product pictures under the Creative Commons Attribution-ShareAlike licence
+(https://creativecommons.org/licenses/by-sa/3.0/). The app keeps the source of each such picture and shows the credit
+"Images: Open Food Facts contributors, CC BY-SA" where the pictures are shown to the public. Pictures of packaging may
+show trademarks and designs that belong to their owners. Nothing of these databases ships with the app.
 The Node.js runtime and Chromium are part of Electron — MIT and BSD-style licences; SQLite (built into Node.js) is in
 the public domain.
 

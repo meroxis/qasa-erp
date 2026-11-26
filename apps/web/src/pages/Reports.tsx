@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { MoreRows, useRowsShown } from '../industry/LongList.tsx';
 import { formatAmount, isReversedRange, todayIso, type Names } from '@qasa/core';
 import { api, type TrialBalanceReport } from '../api.ts';
 import { AccountCombo, ErrorBox, Icon, downloadCsv, useData, useLoad } from '../components.tsx';
@@ -140,6 +141,8 @@ export function Statement({ code: initialCode }: { code?: string }) {
   const [currency, setCurrency] = useState<'' | 'IQD' | 'USD'>('');
   const cur = currency || 'IQD';
   const { data, error } = useLoad(() => (code ? api.statement(code, from || undefined, to || undefined, currency || undefined) : Promise.resolve(null)), [code, from, to, currency]);
+  // a till's safe has a line for every sale: its newest lines first, the earlier ones folded (LongList.tsx)
+  const lines = useRowsShown(data?.rows, { from: 'end', reset: `${code}|${from}|${to}|${currency}` });
 
   function exportCsv() {
     if (!data) return;
@@ -183,7 +186,8 @@ export function Statement({ code: initialCode }: { code?: string }) {
             </thead>
             <tbody>
               <tr><td /><td /><td className="muted">{t('opening')}</td><td /><td /><td className="amount">{i18n.money(data.opening, cur)}</td></tr>
-              {data.rows.map((r, i) => (
+              <MoreRows hidden={lines.hidden} columns={6} earlier onMore={lines.more} onAll={lines.all} />
+              {lines.shown.map((r, i) => (
                 <tr key={r.entryId + i} className="click" onClick={() => go(`entry/${r.entryId}`)}>
                   <td className="num">{i18n.date(r.date)}</td>
                   <td><a className="ltr" href={href(`entry/${r.entryId}`)} onClick={(e) => e.stopPropagation()}>{r.number}</a></td>

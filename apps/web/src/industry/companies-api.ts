@@ -2,11 +2,13 @@ import { request } from '../api.ts';
 
 /** Companies on this PC (Windows app only; the routes come from the app's own server process). */
 
-export interface CompanyView { id: string; name: string; createdAt: string; current: boolean }
+export interface CompanyView { id: string; name: string; createdAt: string; current: boolean; /** past the plan's limit: it opens to be viewed, not changed, until the plan allows it */ waiting?: boolean }
 export interface CompaniesView { current: string; limit: number | null; canAdd: boolean; list: CompanyView[] }
 
 export const companiesApi = {
   list: () => request<CompaniesView>('GET', '/api/companies'),
+  /** Whether the company open now can be viewed only (past the plan's company limit). For everyone signed in. */
+  state: () => request<{ viewOnly: boolean }>('GET', '/api/companies/state'),
   create: (name: string) => request<CompaniesView>('POST', '/api/companies', { name }),
   rename: (id: string, name: string) => request<CompaniesView>('PUT', `/api/companies/${encodeURIComponent(id)}`, { name }),
   open: (id: string) => request<{ ok: true; reload: true }>('POST', `/api/companies/${encodeURIComponent(id)}/open`),

@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import { restoreGiftVouchers, takeBackReturnedVouchers } from './gift-vouchers.ts';
 import {
   accountNames,
   allocateDiscount,
@@ -36,6 +37,7 @@ import { entryInBranchSql } from './branches.ts';
 import { postedRevaluations } from './fx.ts';
 import { cancelLoyalty, invoiceLoyalty, planRedemption, recordSaleLoyalty, type InvoiceLoyaltyView } from './loyalty.ts';
 import { resolveLines } from './item-units.ts';
+import { invoiceOffers, saleOffers, writeOfferLines, type InvoiceOfferView } from './offers.ts';
 import {
   addTaken, allocateOut, assertReversible, batchColumns, batchTracking, cancelBatchMoves, inboundBatch, lineBatchErrors, writeBatchMoves,
   type BatchError, type BatchMove
@@ -44,7 +46,14 @@ import {
 export type InvoiceAction = 'edit' | 'delete' | 'post' | 'cancel' | 'return';
 
 /** A part of a sale paid another way (POS split payments): internal callers only, never from a request. */
-export interface SalePart { accountCode: string; amount: number; partyId?: string | undefined }
+export interface SalePart {
+  accountCode: string;
+  /** a debit; 2.0: a negative part is a credit (the till's dinar rounding up: the customer paid more than the sale) */
+  amount: number;
+  partyId?: string | undefined;
+  /** 2.0: what the part is when it is no payment of money now: a gift voucher, or the till's dinar rounding */
+  kind?: 'voucher' | 'rounding' | undefined;
+}
 
 export interface InvoiceLineView {
   lineNo: number;
@@ -73,6 +82,10 @@ export interface InvoiceLineView {
   batchNo: string | null;
   expiry: string | null;
   batchId: string | null;
+  /** 1.7: the discount offers gave this line (0: none) */
+  offerDiscount: number;
+  /** the line's part of the invoice's whole discount, when it is kept line by line (a sale with offers, a return) */
+  discountShare: number | null;
 }
 
 export interface InvoiceSummary {
@@ -168,6 +181,9 @@ export interface InvoiceView extends InvoiceSummary {
   settlement: InvoiceSettlement | null;
   /** 1.4: a till's cash sale: the cash handed over and the change given back (only when it was typed at the till) */
   tender?: { paid: number; change: number };
+  /** 1.7: the part of `discount` that offers gave (the rest is the discount typed), and the offers themselves */
+  offerDiscount: number;
+  offers: InvoiceOfferView[];
 }
 
 interface InvoiceRow {
@@ -178,6 +194,8 @@ interface InvoiceRow {
   party_code: string | null; party_name: string | null;
   settlement_base: number | null;
   online_paid: number | null;
+  offers_on?: number | null;
+  offer_discount?: number | null;
 }
 
 export const isReturn = (kind: InvoiceDocKind) => kind === 'sale_return' || kind === 'purchase_return';
@@ -255,13 +273,16 @@ export function getInvoice(db: Db, id: string, branch: ReaderBranch = null): Inv
   const w = db.prepare('SELECT code, name_ar, name_en, name_ku FROM warehouses WHERE id = ?').get(r.warehouse_id) as { code: string; name_ar: string; name_en: string; name_ku: string };
   const cash = r.cash_account ? db.prepare('SELECT name_ar, name_en, name_ku FROM accounts WHERE code = ?').get(r.cash_account) as { name_ar: string; name_en: string; name_ku: string } : null;
   const numberOf = (entryId: string | null) => entryId ? (db.prepare('SELECT number FROM entries WHERE id = ?').get(entryId) as { number: string | null }).number : null;
-  const lines = (db.prepare(`SELECT l.line_no, l.item_id, l.description, l.qty_milli, l.unit_price, l.amount, l.cost, l.source_line, l.unit AS line_unit, l.unit_factor_milli, l.unit_qty_milli, l.batch_no, l.expiry, l.batch_id, i.code, i.name_ar, i.name_en, i.name_ku, i.unit, i.track_stock FROM invoice_lines l JOIN items i ON i.id = l.item_id
+  const lines = (db.prepare(`SELECT l.line_no, l.item_id, l.description, l.qty_milli, l.unit_price, l.amount, l.cost, l.source_line, l.unit AS line_unit, l.unit_factor_milli, l.unit_qty_milli, l.batch_no, l.expiry, l.batch_id, l.discount_share, i.code, i.name_ar, i.name_en, i.name_ku, i.unit, i.track_stock FROM invoice_lines l JOIN items i ON i.id = l.item_id
                              WHERE l.invoice_id = ? ORDER BY l.line_no`).all(id) as {
     line_no: number; item_id: string; description: string | null; qty_milli: number; unit_price: number; amount: number; cost: number | null; source_line: number | null;
     code: string; name_ar: string; name_en: string; name_ku: string; unit: UnitCode; track_stock: number;
     line_unit: UnitCode | null; unit_factor_milli: number | null; unit_qty_milli: number | null;
-    batch_no: string | null; expiry: string | null; batch_id: string | null;
+    batch_no: string | null; expiry: string | null; batch_id: string | null; discount_share: number | null;
   }[]);
+  const offers = r.kind === 'sale' ? invoiceOffers(db, id) : [];
+  const offerByLine = new Map<number, number>();
+  for (const o of offers) for (const l of o.lines) offerByLine.set(l.lineNo, (offerByLine.get(l.lineNo) ?? 0) + l.discount);
   const returned = r.status === 'posted' && !isReturn(r.kind) ? returnedByLine(db, id) : new Map<number, { qtyMilli: number; amount: number }>();
   const lineViews: InvoiceLineView[] = lines.map((l) => ({
     lineNo: l.line_no, itemId: l.item_id, itemCode: l.code, itemName: { ar: l.name_ar, en: l.name_en, ku: l.name_ku }, unit: l.unit,
@@ -270,7 +291,8 @@ export function getInvoice(db: Db, id: string, branch: ReaderBranch = null): Inv
     lineUnit: l.line_unit ?? null,
     unitFactorMilli: l.unit_factor_milli === null ? null : Number(l.unit_factor_milli),
     unitQtyMilli: l.unit_qty_milli === null ? null : Number(l.unit_qty_milli),
-    batchNo: l.batch_no ?? null, expiry: l.expiry ?? null, batchId: l.batch_id ?? null
+    batchNo: l.batch_no ?? null, expiry: l.expiry ?? null, batchId: l.batch_id ?? null,
+    offerDiscount: offerByLine.get(l.line_no) ?? 0, discountShare: l.discount_share === null ? null : Number(l.discount_share)
   }));
   const returns = db.prepare('SELECT id, kind, number, date, status, total FROM invoices WHERE return_of = ? ORDER BY date, created_at').all(id) as
     { id: string; kind: InvoiceDocKind; number: string | null; date: string; status: InvoiceStatus; total: number }[];
@@ -289,7 +311,9 @@ export function getInvoice(db: Db, id: string, branch: ReaderBranch = null): Inv
     loyalty: r.status === 'posted' && (r.kind === 'sale' || r.kind === 'sale_return') ? invoiceLoyalty(db, id, r.party_id) : null,
     settlement: invoiceSettlement(db, r, branch),
     ...tenderOf(db, r),
-    ...offlineRefOf(db, id)
+    ...offlineRefOf(db, id),
+    offerDiscount: Number(r.offer_discount ?? 0),
+    offers
   };
 }
 
@@ -352,6 +376,18 @@ function standings(db: Db, partyId: string, kind: 'sale' | 'purchase', branch: R
       if (!of) continue;
       if (p.status === 'approved') of.received += Number(p.amount);
       else of.waiting += Number(p.amount);
+    }
+  }
+  if (kind === 'sale') {
+    // 2.0: a till sale on account partly paid with gift vouchers: that part is paid (less what returns put back on vouchers)
+    const gifts = db.prepare(`SELECT s.invoice_id, s.voucher_paid,
+                                (SELECT COALESCE(SUM(m.amount), 0) FROM gift_voucher_moves m JOIN invoices r ON r.id = m.invoice_id
+                                 WHERE r.return_of = s.invoice_id AND r.status = 'posted' AND m.kind = 'returned') AS back
+                              FROM pos_sales s JOIN invoices v ON v.id = s.invoice_id
+                              WHERE v.party_id = ? AND v.payment = 'credit' AND s.voucher_paid > 0`).all(partyId) as { invoice_id: string; voucher_paid: number; back: number }[];
+    for (const g of gifts) {
+      const of = map.get(g.invoice_id);
+      if (of) of.received += Math.max(0, Number(g.voucher_paid) - Number(g.back));
     }
   }
   // an invoice carries no more than its own total: money typed above it is the party's advance, on the account only
@@ -485,15 +521,34 @@ export function listInvoices(db: Db, f: InvoiceFilters = {}): InvoiceSummary[] {
   if (f.partyId) { where.push('v.party_id = ?'); params.push(f.partyId); }
   if (f.from) { where.push('v.date >= ?'); params.push(f.from); }
   if (f.to) { where.push('v.date <= ?'); params.push(f.to); }
-  const rows = db.prepare(`${SELECT_INVOICE} ${where.length ? 'WHERE ' + where.join(' AND ') : ''} ORDER BY v.date DESC, v.created_at DESC`)
-    .all(...params) as unknown as InvoiceRow[];
+  const limit = f.limit ?? 500;
+  const whereSql = where.length ? 'WHERE ' + where.join(' AND ') : '';
+  const order = 'ORDER BY v.date DESC, v.created_at DESC';
   const q = f.q ? normalizeForSearch(f.q) : '';
-  // a till's offline sale is found by the temporary reference on its receipt too (1.2)
-  const offline = q ? new Map((db.prepare('SELECT invoice_id, reference FROM pos_offline_sales').all() as { invoice_id: string; reference: string }[]).map((o) => [o.invoice_id, o.reference])) : null;
-  return rows
-    .filter((r) => !q || normalizeForSearch(`${r.number ?? ''} ${r.party_code ?? ''} ${r.party_name ?? ''} ${r.notes ?? ''} ${offline?.get(r.id) ?? ''}`).includes(q))
-    .slice(0, f.limit ?? 500)
-    .map(toSummary);
+  // The newest invoices only are read whole (what each was paid with is worked out per invoice): a big company
+  // (bench/big-company.ts, 100,000 sales) worked it out for every invoice it has to show 500 of them.
+  if (!q) {
+    const rows = db.prepare(`${SELECT_INVOICE} ${whereSql} ${order} LIMIT ?`).all(...params, limit) as unknown as InvoiceRow[];
+    return rows.map(toSummary);
+  }
+  // a search: the words of every invoice first (number, customer, notes), then the newest that match, read whole.
+  // A till's offline sale is found by the temporary reference on its receipt too (1.2).
+  const offline = new Map((db.prepare('SELECT invoice_id, reference FROM pos_offline_sales').all() as { invoice_id: string; reference: string }[]).map((o) => [o.invoice_id, o.reference]));
+  const words = db.prepare(`SELECT v.id, v.number, p.code AS party_code, p.name AS party_name, v.notes FROM invoices v LEFT JOIN parties p ON p.id = v.party_id
+                            ${whereSql} ${order}`).all(...params) as { id: string; number: string | null; party_code: string | null; party_name: string | null; notes: string | null }[];
+  const ids: string[] = [];
+  for (const r of words) {
+    if (!normalizeForSearch(`${r.number ?? ''} ${r.party_code ?? ''} ${r.party_name ?? ''} ${r.notes ?? ''} ${offline.get(r.id) ?? ''}`).includes(q)) continue;
+    ids.push(r.id);
+    if (ids.length >= limit) break;
+  }
+  if (!ids.length) return [];
+  const byId = new Map<string, InvoiceRow>();
+  for (let i = 0; i < ids.length; i += 400) {
+    const part = ids.slice(i, i + 400);
+    for (const r of db.prepare(`${SELECT_INVOICE} WHERE v.id IN (${part.map(() => '?').join(', ')})`).all(...part) as unknown as InvoiceRow[]) byId.set(r.id, r);
+  }
+  return ids.map((id) => byId.get(id)!).map(toSummary);
 }
 
 // ——— Validation ———
@@ -543,23 +598,54 @@ function assertInvoice(db: Db, input: InvoiceInput): void {
   if (errors.length) throw invalid(errors);
 }
 
-function writeDraft(db: Db, id: string, input: InvoiceInput): void {
+/**
+ * 1.7: how a draft sale is worked out with offers. `offersAt`: offers apply (the till and the invoice screen), as at
+ * that moment; absent: none (a website order, a converted quotation, a purchase), as before.
+ */
+export interface DraftOptions {
+  offersAt?: Date | undefined;
+  /** the day the offers are those of, when it is not the invoice's own date: a delivery order's, delivered on a later day */
+  offersOn?: string | undefined;
+}
+
+function writeDraft(db: Db, id: string, input: InvoiceInput, opts: DraftOptions = {}): void {
   const totals = invoiceTotals(input.lines, input.discount);
+  const withOffers = input.kind === 'sale' && !!opts.offersAt;
+  const offers = withOffers
+    ? saleOffers(db, { date: input.date, warehouseId: input.warehouseId, currency: input.currency, rateX100: input.rateX100,
+      lines: input.lines.map((l, i) => ({ itemId: l.itemId, qtyMilli: l.qtyMilli, amount: totals.lineAmounts[i] ?? 0 })) }, opts.offersAt!, opts.offersOn)
+    : null;
+  const offerTotal = offers?.total ?? 0;
+  // the discount typed comes off what is left after the offers, and something must still be paid
+  if (offerTotal > 0 && input.discount > totals.subtotal - offerTotal) throw invalid([{ code: 'discount_invalid' }]);
+  if (offerTotal > 0 && totals.subtotal - offerTotal - input.discount <= 0) throw invalid([{ code: 'total_invalid' }]);
+  const discount = input.discount + offerTotal;
+  // a sale with offers keeps each line's part of the discount: its offers, then its share of the discount typed
+  const shares = offerTotal > 0
+    ? (() => {
+      const net = totals.lineAmounts.map((a, i) => a - (offers!.byLine[i + 1] ?? 0));
+      const typed = allocateDiscount(net, input.discount);
+      return totals.lineAmounts.map((_, i) => (offers!.byLine[i + 1] ?? 0) + (typed[i] ?? 0));
+    })()
+    : null;
   db.prepare(`UPDATE invoices SET date = ?, party_id = ?, warehouse_id = ?, currency = ?, rate_x100 = ?, payment = ?, cash_account = ?, discount = ?,
-              subtotal = ?, total = ?, notes = ?, updated_at = ? WHERE id = ?`)
+              subtotal = ?, total = ?, notes = ?, offers_on = ?, offer_discount = ?, updated_at = ? WHERE id = ?`)
     .run(input.date, input.partyId ?? null, input.warehouseId, input.currency, input.rateX100, input.payment, input.cashAccountCode ?? null,
-      input.discount, totals.subtotal, totals.total, input.notes?.trim() || null, new Date().toISOString(), id);
+      discount, totals.subtotal, totals.subtotal - discount, input.notes?.trim() || null, withOffers ? 1 : 0, offerTotal, new Date().toISOString(), id);
+  db.prepare('DELETE FROM invoice_offer_lines WHERE invoice_id = ?').run(id);
   db.prepare('DELETE FROM invoice_lines WHERE invoice_id = ?').run(id);
   const insert = db.prepare(`INSERT INTO invoice_lines (invoice_id, line_no, item_id, description, qty_milli, unit_price, amount, unit, unit_factor_milli, unit_qty_milli,
-                                                        batch_no, expiry, batch_id)
-                             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`);
+                                                        batch_no, expiry, batch_id, discount_share)
+                             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`);
   input.lines.forEach((l, i) => insert.run(id, i + 1, l.itemId, l.description?.trim() || null, l.qtyMilli, l.unitPrice, totals.lineAmounts[i] ?? 0,
     l.unit ?? null, l.unit ? l.unitFactorMilli ?? null : null, l.unit ? l.unitQtyMilli ?? null : null,
     // a purchase line brings a batch in (number, expiry); a sale line may be pinned to one
-    ...(input.kind === 'purchase' ? batchColumns({ batchNo: l.batchNo, expiry: l.expiry }) : batchColumns({ batchId: l.batchId }))));
+    ...(input.kind === 'purchase' ? batchColumns({ batchNo: l.batchNo, expiry: l.expiry }) : batchColumns({ batchId: l.batchId })),
+    shares ? shares[i] ?? 0 : null));
+  if (offers && offerTotal > 0) writeOfferLines(db, id, offers);
 }
 
-export function createInvoice(db: Db, raw: InvoiceInput | InvoiceRequest, user: string): InvoiceView {
+export function createInvoice(db: Db, raw: InvoiceInput | InvoiceRequest, user: string, opts: DraftOptions = {}): InvoiceView {
   const input = normalize(withUnits(db, raw as InvoiceRequest));
   assertInvoice(db, input);
   const id = randomUUID();
@@ -568,7 +654,7 @@ export function createInvoice(db: Db, raw: InvoiceInput | InvoiceRequest, user: 
     db.prepare(`INSERT INTO invoices (id, kind, status, date, warehouse_id, currency, rate_x100, payment, discount, subtotal, total, created_by, created_at, updated_at)
                 VALUES (?, ?, 'draft', ?, ?, ?, ?, ?, 0, 0, 0, ?, ?, ?)`)
       .run(id, input.kind, input.date, input.warehouseId, input.currency, input.rateX100, input.payment, user, now, now);
-    writeDraft(db, id, input);
+    writeDraft(db, id, input, opts);
     audit(db, user, 'create', 'invoice', id, { kind: input.kind });
   });
   return getInvoice(db, id);
@@ -579,14 +665,14 @@ function requireAction(db: Db, row: InvoiceRow, action: InvoiceAction): void {
   if (!actionsFor(db, row, action === 'return').includes(action)) throw conflict('action_not_allowed', { status: row.status, action });
 }
 
-export function updateInvoice(db: Db, id: string, raw: InvoiceInput | InvoiceRequest, user: string): InvoiceView {
+export function updateInvoice(db: Db, id: string, raw: InvoiceInput | InvoiceRequest, user: string, opts: DraftOptions = {}): InvoiceView {
   const row = loadRow(db, id);
   requireAction(db, row, 'edit');
   if (isReturn(row.kind)) throw conflict('action_not_allowed', { status: row.status, action: 'edit' });
   const input = normalize(withUnits(db, { ...(raw as InvoiceRequest), kind: row.kind as InvoiceKind }));
   assertInvoice(db, input);
   transaction(db, () => {
-    writeDraft(db, id, input);
+    writeDraft(db, id, input, opts);
     audit(db, user, 'update', 'invoice', id);
   });
   return getInvoice(db, id);
@@ -608,7 +694,8 @@ export function deleteInvoice(db: Db, id: string, user: string): void {
 function storedInput(view: InvoiceView): InvoiceInput {
   return {
     kind: view.kind as InvoiceKind, date: view.date, warehouseId: view.warehouseId, currency: view.currency, rateX100: view.rateX100, payment: view.payment,
-    discount: view.discount, notes: view.notes,
+    // (what was typed: the offers' part is worked out again)
+    discount: view.discount - view.offerDiscount, notes: view.notes,
     ...(view.partyId ? { partyId: view.partyId } : {}),
     ...(view.cashAccountCode ? { cashAccountCode: view.cashAccountCode } : {}),
     // the factor kept with the line, never the item's factor now: a later change of the factor leaves the line as it was
@@ -646,10 +733,16 @@ export function onlinePaidAmount(db: Db, invoiceId: string): number {
 }
 
 export function postInvoice(
-  db: Db, id: string, user: string, opts: { settledNow?: number; allowExpired?: boolean; split?: readonly SalePart[]; loyaltyPoints?: number | undefined } = {}
+  db: Db, id: string, user: string,
+  opts: { settledNow?: number; allowExpired?: boolean; split?: readonly SalePart[]; loyaltyPoints?: number | undefined; offersAt?: Date | undefined; offersOn?: string | undefined;
+    /** over the customer's credit limit, allowed: a till's credit sale a supervisor approved by PIN (till-rules.ts), or a
+     * wholesale order approved with a warning or an admin's override (wholesale.ts) */
+    overLimit?: boolean | undefined } = {}
 ): InvoiceView {
-  const view = getInvoice(db, id);
   requireAction(db, loadRow(db, id), 'post');
+  // 1.7: a sale that gets offers gets them as they are when it is posted (the server works them out, never the till)
+  refreshOffers(db, id, opts.offersAt ?? new Date(), opts.offersOn);
+  const view = getInvoice(db, id);
   if (opts.loyaltyPoints !== undefined && view.kind !== 'sale') throw invalid([{ code: 'loyalty_points_invalid' }]);
   // money already taken online for this order is on the customer's account: posted as cash too, it would be taken twice
   if (view.kind === 'sale' && (view.payment !== 'credit' || opts.split?.length) && onlinePaidAmount(db, id) > 0) throw conflict('invoice_has_online_payments');
@@ -658,7 +751,7 @@ export function postInvoice(
   const accounts = getPostingAccounts(db);
   const warehouseAccount = (db.prepare('SELECT account_code FROM warehouses WHERE id = ?').get(view.warehouseId) as { account_code: string }).account_code;
   const party = view.partyId ? getParty(db, view.partyId) : null;
-  const { total } = invoiceTotals(input.lines, input.discount);
+  const { total } = invoiceTotals(input.lines, input.discount + view.offerDiscount);
   const baseTotal = toBase(total, view.currency, view.rateX100);
   const counterAccount = view.payment === 'cash' ? view.cashAccountCode! : party!.accountCode;
   const counterParty = view.payment === 'credit' && party ? { partyId: party.id } : {};
@@ -684,7 +777,9 @@ export function postInvoice(
   if (view.kind === 'sale') {
     const settled = Number.isSafeInteger(opts.settledNow) ? Math.min(Math.max(opts.settledNow!, 0), total) : 0;
     const onCredit = baseTotal - (settled ? toBase(settled, view.currency, view.rateX100) : 0) - (redeemed?.value ?? 0);
-    if (party && view.payment === 'credit' && party.creditLimit !== null && party.balance + onCredit > party.creditLimit) {
+    // (a sale with parts is checked below, on the part that goes on the account: what points or gift vouchers pay is not owed)
+    // over the limit goes through only when allowed: a till sale a supervisor approved by PIN, or a wholesale order approved over it
+    if (party && view.payment === 'credit' && !split?.length && party.creditLimit !== null && party.balance + onCredit > party.creditLimit && !opts.overLimit) {
       throw conflict('credit_limit_exceeded', { balance: party.balance, limit: party.creditLimit, total: baseTotal });
     }
     // a split sale (POS): only the part put on the customer's account counts against their credit limit
@@ -693,7 +788,7 @@ export function postInvoice(
       const onAccount = toBase(split.filter((p) => p.partyId).reduce((s, p) => s + p.amount, 0), view.currency, view.rateX100);
       if (onAccount > 0) {
         if (!party || split.some((p) => p.partyId && p.partyId !== party.id)) throw invalid([{ code: 'party_required' }]);
-        if (party.creditLimit !== null && party.balance + onAccount > party.creditLimit) {
+        if (party.creditLimit !== null && party.balance + onAccount > party.creditLimit && !opts.overLimit) {
           throw conflict('credit_limit_exceeded', { balance: party.balance, limit: party.creditLimit, total: onAccount });
         }
       }
@@ -724,7 +819,10 @@ export function postInvoice(
     const totalCost = lineCosts.reduce<number>((s, c) => s + (c ?? 0), 0);
     if (split?.length) {
       // one debit line per part: the safe for cash, a card or wallet account, or the customer for what goes on account
-      for (const p of split) lines.push({ accountCode: p.accountCode, debit: p.amount, credit: 0, ...(p.partyId ? { partyId: p.partyId } : {}) });
+      for (const p of split) {
+        if (p.amount >= 0) lines.push({ accountCode: p.accountCode, debit: p.amount, credit: 0, ...(p.partyId ? { partyId: p.partyId } : {}) });
+        else lines.push({ accountCode: p.accountCode, debit: 0, credit: -p.amount });
+      }
     } else lines.push({ accountCode: counterAccount, debit: total, credit: 0, ...counterParty });
     lines.push({ accountCode: accounts.sales, debit: 0, credit: total });
     if (totalCost > 0) {
@@ -776,7 +874,7 @@ export function postInvoice(
     if (view.kind === 'sale') {
       // the points used, and those earned on what was paid now (not on account, not with points)
       const paidNow = split?.length
-        ? split.filter((p) => !p.partyId && p.accountCode !== redeemed?.accountCode).reduce((s, p) => s + p.amount, 0)
+        ? split.filter((p) => !p.partyId && !p.kind && p.accountCode !== redeemed?.accountCode).reduce((s, p) => s + p.amount, 0)
         : view.payment === 'cash' ? total : 0;
       recordSaleLoyalty(db, { invoiceId: id, partyId: view.partyId, date: view.date, warehouseId: view.warehouseId, paidIqd: toBase(paidNow, view.currency, view.rateX100), redeemed }, user);
     }
@@ -784,6 +882,14 @@ export function postInvoice(
     if (usedExpired) audit(db, user, 'sell_expired', 'invoice', id, { number, batches: batchMoves.map((m) => m.batchId) });
   });
   return getInvoice(db, id);
+}
+
+/** A draft sale that gets offers, worked out again as at `at` (an offer may have ended, or begun, since it was saved). */
+function refreshOffers(db: Db, id: string, at: Date, on?: string): void {
+  const row = loadRow(db, id);
+  if (row.kind !== 'sale' || row.status !== 'draft' || Number(row.offers_on ?? 0) !== 1) return;
+  const input = storedInput(getInvoice(db, id));
+  transaction(db, () => writeDraft(db, id, input, { offersAt: at, offersOn: on }));
 }
 
 /**
@@ -802,11 +908,46 @@ export function assertMayUndoPosSale(db: Db, invoiceId: string, postedBy: string
   if (postedBy && postedBy === actor.name) throw conflict('same_person');
 }
 
+/**
+ * The till shift that paid a cash sales return out of its drawer: the one kept for it when it was made
+ * (pos_shift_refunds); for a return from before that was kept, the newest shift open on its safe when it was posted.
+ * None: paid from a safe no shift was open on.
+ */
+export function shiftOfReturn(db: Db, returnId: string): { id: string; status: string } | null {
+  const kept = db.prepare('SELECT h.id, h.status FROM pos_shift_refunds f JOIN pos_shifts h ON h.id = f.shift_id WHERE f.invoice_id = ?').get(returnId) as { id: string; status: string } | undefined;
+  if (kept) return kept;
+  const old = db.prepare(`SELECT h.id, h.status FROM invoices i JOIN pos_shifts h ON h.cash_account = i.cash_account AND h.opened_at <= i.posted_at
+                            AND (h.closed_at IS NULL OR h.closed_at >= i.posted_at)
+                          WHERE i.id = ? AND i.kind = 'sale_return' AND i.payment = 'cash' ORDER BY h.opened_at DESC, h.id DESC LIMIT 1`).get(returnId) as { id: string; status: string } | undefined;
+  return old ?? null;
+}
+
+/** What a posted cash invoice moved on its own safe, in its currency (a sale: in; a return: out, as a minus). */
+function cashMovedBy(db: Db, invoiceId: string): number {
+  return Number((db.prepare(`SELECT COALESCE(SUM(l.debit - l.credit), 0) AS t FROM invoices i JOIN entry_lines l ON l.entry_id = i.entry_id AND l.account_code = i.cash_account
+                             WHERE i.id = ?`).get(invoiceId) as { t: number }).t);
+}
+
 export function cancelInvoice(db: Db, id: string, user: string, date?: string, actor?: Pick<Actor, 'name' | 'permissions'>): InvoiceView {
   const view = getInvoice(db, id);
   if (view.installmentContract) throw conflict('invoice_has_contract', { contract: view.installmentContract.number });
   requireAction(db, loadRow(db, id), 'cancel');
   if (view.kind === 'sale') assertMayUndoPosSale(db, id, view.postedBy, actor);
+  // a till sale paid in cash whose shift is closed: its money was counted and handed over with that shift, so a cancel
+  // would take it out of a drawer nobody counts it in. The goods come back through a return, which pays from a safe
+  // (and counts in the shift open on it)
+  if (view.kind === 'sale' && view.payment === 'cash') {
+    const shift = db.prepare('SELECT h.status FROM pos_sales s JOIN pos_shifts h ON h.id = s.shift_id WHERE s.invoice_id = ?').get(id) as { status: string } | undefined;
+    if (shift && shift.status !== 'open') throw conflict('pos_sale_shift_closed');
+  }
+  // a cash sales return a till's shift paid out of its drawer (round four of the review): that shift counted the
+  // drawer without that money and is closed, so a cancel would put the money back into a safe no shift expects it in.
+  // The return stands; what was wrong with it is put right with a new sale. (One that paid no cash, all of it back
+  // onto a gift voucher or points, moves no drawer and is cancelled as before.)
+  if (view.kind === 'sale_return' && view.payment === 'cash') {
+    const paid = shiftOfReturn(db, id);
+    if (paid && paid.status !== 'open' && cashMovedBy(db, id) !== 0) throw conflict('pos_return_shift_closed');
+  }
   // (no date: today, or the document's own date when that is later: a reversal is never dated before what it reverses)
   const cancelDate = date ?? (todayIso() < view.date ? view.date : todayIso());
   if (isPeriodLocked(db, cancelDate)) throw invalid([{ code: 'period_locked', period: cancelDate.slice(0, 7) }]);
@@ -840,6 +981,10 @@ export function cancelInvoice(db: Db, id: string, user: string, date?: string, a
       .run(reversalId, user, now, now, id);
     // its loyalty points movements are undone too (the reversal gives the points' value back in the books)
     cancelLoyalty(db, id, cancelDate, user);
+    // 2.0: what it took from gift vouchers goes back on them
+    restoreGiftVouchers(db, id, user);
+    // … and what a sales return put back on vouchers is taken off them again (refused when they spent it since)
+    if (view.kind === 'sale_return') takeBackReturnedVouchers(db, id, user);
     // phones this sale took are back in stock, with no customer and no warranty. A job's bill (solar) keeps its
     // equipment linked: the job shows it waiting for the next bill, and reads it as unsold meanwhile
     if (view.kind === 'sale' && !db.prepare('SELECT 1 FROM jobs WHERE invoice_id = ?').get(id)) {

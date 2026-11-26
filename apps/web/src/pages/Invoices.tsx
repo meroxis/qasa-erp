@@ -17,6 +17,7 @@ import { InvoicesTable } from './Parties.tsx';
 import { averageCost, qtyText, unitName } from './Items.tsx';
 import { InvoiceQr } from '../industry/InvoiceQr.tsx';
 import { pricesApi } from '../industry/prices-api.ts';
+import { offersApi } from '../industry/offers-api.ts';
 import { DesignedPrint } from '../industry/PrintDocument.tsx';
 import { invoiceModel } from '../industry/print-model.ts';
 import { useRatePrefill } from '../industry/fx-prefill.ts';
@@ -33,6 +34,9 @@ import { askControlledOnOpen, RxTick, useControlledPrompt, usePharmacyOn, useRxI
 import { QuickVoucherButton } from '../industry/QuickVoucher.tsx';
 import { invoiceOpen } from '../industry/quick-voucher.ts';
 import { DocAmount } from '../Amount.tsx';
+import { ClothingGridButton, linesIn } from '../industry/ClothingTools.tsx';
+import { sendReturn } from '../industry/returns-api.ts';
+import { useRefundPin } from '../pos/Supervisor.tsx';
 
 const STATUSES: (InvoiceStatus | '')[] = ['', 'draft', 'posted', 'cancelled'];
 
@@ -66,6 +70,7 @@ export function Invoices({ kind }: { kind: InvoiceDocKind }) {
       <ErrorBox error={error} />
       <div className="card">{data && (data.length > 0 ? <InvoicesTable invoices={data} /> : q.trim() || status
         ? <EmptyState compact icon="search" title={t('es_search')} text={t('es_searchText')} />
+        : isReturnKind(kind) ? <EmptyState icon="undo" title={t('ux_noReturnsTitle')} text={t('ux_noReturnsYet')} />
         : <EmptyState icon="invoice" title={t('es_invoices')} text={t('es_invoicesText')} action={isReturnKind(kind) || !mayMake ? undefined : { label: kind === 'sale' ? t('newSale') : t('newPurchase'), icon: 'plus', href: href(`new-invoice/${kind}`) }} />)}</div>
     </div>
   );
@@ -191,7 +196,8 @@ export function InvoiceEditor({ kind: initialKind, id, partyId: initialParty }: 
       setRateText(String(rateFromX100(v.currency === 'USD' ? v.rateX100 : settings?.defaultRateX100 ?? 142000)));
       setPayment(v.payment);
       setCashAccount(v.cashAccountCode ?? settings?.postingAccounts.cash ?? '');
-      setDiscount(v.discount || null);
+      // what was typed: the offers' part is worked out again (1.7)
+      setDiscount((v.discount - (v.offerDiscount ?? 0)) || null);
       setNotes(v.notes);
       setRows(v.lines.map((l) => ({
         key: rowKey++, itemId: l.itemId, qtyMilli: l.lineUnit && l.unitQtyMilli !== null ? l.unitQtyMilli : l.qtyMilli, unitPrice: l.unitPrice,
@@ -212,6 +218,24 @@ export function InvoiceEditor({ kind: initialKind, id, partyId: initialParty }: 
   const itemById = useMemo(() => new Map(allItems.map((it) => [it.id, it])), [allItems]);
   const lines = rows.filter((r) => r.itemId || r.unitPrice);
   const totals = invoiceTotals(lines.map((r) => ({ qtyMilli: r.qtyMilli ?? 0, unitPrice: r.unitPrice ?? 0 })), discount ?? 0);
+  // 1.7: the offers a sale gets, as the server works them out (shown before saving; worked out again when saved)
+  const [offerPreview, setOfferPreview] = useState(0);
+  const offerLines = kind === 'sale' && warehouseId ? lines.filter((r) => r.itemId && (r.qtyMilli ?? 0) > 0).map((r) => ({
+    itemId: r.itemId, qtyMilli: baseQty(itemById.get(r.itemId), r.unit, r.qtyMilli ?? 0) ?? 0,
+    amount: invoiceTotals([{ qtyMilli: r.qtyMilli ?? 0, unitPrice: r.unitPrice ?? 0 }], 0).subtotal
+  })) : [];
+  const offerKey = JSON.stringify([date, warehouseId, currency, rateX100, offerLines]);
+  useEffect(() => {
+    if (!offerLines.length || offerLines.some((l) => l.qtyMilli <= 0)) { setOfferPreview(0); return; }
+    let live = true;
+    const timer = window.setTimeout(() => {
+      offersApi.preview({ date, warehouseId, currency, ...(currency === 'USD' && rateX100 ? { rateX100 } : {}), lines: offerLines })
+        .then((r) => { if (live) setOfferPreview(r.total); }, () => { if (live) setOfferPreview(0); });
+    }, 300);
+    return () => { live = false; window.clearTimeout(timer); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [offerKey]);
+  const dueTotal = Math.max(0, totals.total - offerPreview);
 
   const partyOptions: PickOption[] = (parties.data ?? []).map((p) => ({ id: p.id, code: p.code, label: p.name, search: p.phone, hint: p.balance ? i18n.money(p.balance, 'IQD') : '' }));
   // a category picked above the lines narrows the item list to it and its subcategories (lines already picked stay)
@@ -610,21 +634,28 @@ export function InvoiceEditor({ kind: initialKind, id, partyId: initialParty }: 
         </table>
         <div className="row" style={{ padding: '10px 16px 14px', alignItems: 'flex-start' }}>
           <button type="button" className="btn small" onClick={() => setRows((rs) => [...rs, emptyRow()])}><Icon name="plus" size={15} />{t('addLine')}</button>
+          {/* a clothing shop: a model's quantities by size and colour, as lines (prices in another currency are left to fill) */}
+          <ClothingGridButton kind={kind} onLines={(lines) => setRows((rs) => [
+            ...rs.filter((r) => r.itemId),
+            ...linesIn(lines, currency, (l, price) => ({ ...emptyRow(), itemId: l.itemId, qtyMilli: l.qtyMilli, unitPrice: price })),
+            emptyRow()
+          ])} />
           <span className="spacer" />
           <div className="totals">
             <span className="muted">{t('subtotal')}</span><strong className="num">{i18n.money(totals.subtotal, currency)}</strong>
-            <span className="muted">{t('discount')}</span><div style={{ width: 170 }}><AmountInput value={discount} currency={currency} onChange={setDiscount} ariaLabel={t('discount')} /></div>
+            {offerPreview > 0 && <><span className="muted" title={t('of_previewNote')}>{t('of_offersTotal')}</span><span className="num">− {i18n.money(offerPreview, currency)}</span></>}
+            <span className="muted">{t(offerPreview > 0 ? 'of_typedDiscount' : 'discount')}</span><div style={{ width: 170 }}><AmountInput value={discount} currency={currency} onChange={setDiscount} ariaLabel={t('discount')} /></div>
             {/* (a dinar invoice also shows ≈ its dollars when the company sees both; a dollar one has its own rate below) */}
-            <span>{t('totalDue')}</span><strong className="num" style={{ fontSize: 18 }}><DocAmount value={totals.total} currency={currency} date={date} /></strong>
-            {currency === 'USD' && rateX100 && <><span className="muted small">{t('iqdEquivalent')}</span><span className="num small">{i18n.money(toBase(totals.total, 'USD', rateX100), 'IQD')}</span></>}
+            <span>{t('totalDue')}</span><strong className="num" style={{ fontSize: 18 }}><DocAmount value={dueTotal} currency={currency} date={date} /></strong>
+            {currency === 'USD' && rateX100 && <><span className="muted small">{t('iqdEquivalent')}</span><span className="num small">{i18n.money(toBase(dueTotal, 'USD', rateX100), 'IQD')}</span></>}
           </div>
         </div>
       </div>
 
-      {totals.total > 0 && (
+      {dueTotal > 0 && (
         <div className="card pad">
           <div className="muted small">{t('inWords')}</div>
-          <div className="words">{i18n.digitsOf(amountInWords(totals.total, currency, i18n.lang))}</div>
+          <div className="words">{i18n.digitsOf(amountInWords(dueTotal, currency, i18n.lang))}</div>
         </div>
       )}
 
@@ -699,6 +730,8 @@ export function InvoiceDetail({ id }: { id: string }) {
   const expired = useExpiredConfirm();
   // a pharmacy's sale with controlled medicines: the patient and the prescription, asked once it is posted
   const controlled = useControlledPrompt(id);
+  // a refund out of a till's safe may need a supervisor: their PIN is typed here (pos/Supervisor.tsx)
+  const refundPin = useRefundPin();
 
   if (refused) return null;
   if (error) return <ErrorBox error={error} />;
@@ -774,6 +807,8 @@ export function InvoiceDetail({ id }: { id: string }) {
         {/* without its money (a purchase, for someone who may not read the books) there is no paper to send or print */}
         {priced && <InvoiceWhatsApp company={company} invoice={v} />}
         {priced && <button type="button" className="btn" onClick={() => void printDocument('invoice')}><Icon name="printer" size={16} />{t('print')}</button>}
+        {/* a gold shop's slip: weight, karat, the price a gram and the making charge of each piece */}
+        {v.kind === 'sale' && v.status === 'posted' && settings?.businessTypes?.includes('goldShop') && plan?.features.includes('goldShop') && <a className="btn" href={href(`gold-slip/${v.id}`)}><Icon name="gem" size={16} />{t('gd_slip')}</a>}
       </div>
       <ErrorBox error={cancelling ? null : actionError} />
       {v.kind === 'sale' && v.actions.includes('post') && v.partyId && (
@@ -861,7 +896,8 @@ export function InvoiceDetail({ id }: { id: string }) {
           </div>
           {priced && <div className="totals">
             <span className="muted">{t('subtotal')}</span><span className="num">{i18n.money(v.subtotal, v.currency)}</span>
-            {v.discount > 0 && <><span className="muted">{t('discount')}</span><span className="num">− {i18n.money(v.discount, v.currency)}</span></>}
+            {(v.offers ?? []).map((o) => <Fragment key={o.offerId}><span className="muted">{i18n.name(o.names)}</span><span className="num">− {i18n.money(o.discount, v.currency)}</span></Fragment>)}
+            {v.discount - (v.offerDiscount ?? 0) > 0 && <><span className="muted">{t(v.offerDiscount ? 'of_typedDiscount' : 'discount')}</span><span className="num">− {i18n.money(v.discount - (v.offerDiscount ?? 0), v.currency)}</span></>}
             <span style={{ fontWeight: 700 }}>{t('totalDue')}</span><strong className="num" style={{ fontSize: 18 }}><DocAmount value={v.total} currency={v.currency} date={v.date} /></strong>
             {v.currency === 'USD' && <><span className="muted small">{t('iqdEquivalent')}</span><span className="num small">{i18n.money(v.baseTotal, 'IQD')}</span></>}
             {loyaltyLines(i18n, v.loyalty).map(([label, value]) => <Fragment key={label}><span className="muted small">{label}</span><span className="num small">{value}</span></Fragment>)}
@@ -937,6 +973,7 @@ export function InvoiceDetail({ id }: { id: string }) {
       {expired.dialog}
       {controlled.dialog}
       {returning && <ReturnModal invoice={v} onClose={() => setReturning(false)} />}
+      {refundPin.dialog}
 
       {cancelling && (
         <Modal title={t('cancelTitle')} onClose={() => setCancelling(false)}>
@@ -945,7 +982,7 @@ export function InvoiceDetail({ id }: { id: string }) {
             <label className="field"><span>{t('cancelDate')}</span><input className="input" type="date" min={v.date} value={cancelDate} onChange={(e) => setCancelDate(e.target.value)} /></label>
             <ErrorBox error={actionError} />
             <div className="row">
-              <button type="button" className="btn danger" disabled={busy || !cancelDate} onClick={() => act(() => api.cancelInvoice(id, cancelDate), t('a_cancel'))}>{t('confirm')}</button>
+              <button type="button" className="btn danger" disabled={busy || !cancelDate} onClick={() => act(() => refundPin.run(id, undefined, () => api.cancelInvoice(id, cancelDate)), t('a_cancel'))}>{t('confirm')}</button>
               <button type="button" className="btn" onClick={() => setCancelling(false)}>{t('cancel')}</button>
             </div>
           </div>
@@ -979,6 +1016,7 @@ function ReturnModal({ invoice: v, onClose }: { invoice: InvoiceView; onClose():
   const [inBase, setInBase] = useState<Record<number, boolean>>({});
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<unknown>(null);
+  const refundPin = useRefundPin();
   // a line sold in boxes is returned in boxes: the quantity typed is in the line's unit, at the factor kept with the line
   const unitOf = (l: InvoiceView['lines'][number]) => (l.lineUnit && l.unitFactorMilli ? { unit: l.lineUnit, factor: l.unitFactorMilli } : null);
   const baseFor = (l: InvoiceView['lines'][number], typed: number) => returnQtyBase(l, typed, !!inBase[l.lineNo]);
@@ -998,11 +1036,13 @@ function ReturnModal({ invoice: v, onClose }: { invoice: InvoiceView; onClose():
     setBusy(true);
     setError(null);
     try {
-      const ret = await api.createReturn(v.id, {
-        date, payment, lines: chosen.map((l) => ({ lineNo: l.lineNo, qtyMilli: baseOf(l)! })),
+      const back = chosen.map((l) => ({ lineNo: l.lineNo, qtyMilli: baseOf(l)! }));
+      // a supervisor's PIN is asked for here when the server wants one (cash back out of a till's safe)
+      const ret = await refundPin.run(v.id, back, () => sendReturn(v.id, {
+        date, payment, lines: back,
         ...(payment === 'cash' ? { cashAccountCode: cashAccount } : {}),
         ...(notes.trim() ? { notes: notes.trim() } : {})
-      });
+      }));
       await reloadAccounts();
       toast(t('a_post'));
       go(`invoice/${ret.id}`);
@@ -1015,6 +1055,7 @@ function ReturnModal({ invoice: v, onClose }: { invoice: InvoiceView; onClose():
   return (
     <Modal title={t('returnTitle', { n: v.number ?? '' })} onClose={onClose}>
       <div className="stack return-modal">
+      {refundPin.dialog}
         <table className="table">
           <thead>
             <tr><th>{t('item')}</th><th className="amount">{t('qty')}</th><th className="amount">{t('canReturn')}</th><th className="amount" style={{ width: 130 }}>{t('returnQty')}</th></tr>

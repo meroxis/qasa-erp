@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { tillSource } from './till-source.ts';
 import { readFileSync } from 'node:fs';
 import type { ReactNode } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
@@ -134,11 +135,11 @@ describe('the quick buttons on the till', () => {
   });
 
   it('come for every company that uses the till, not only a phone shop', () => {
-    const pos = readFileSync(new URL('./pages/Pos.tsx', import.meta.url), 'utf8');
+    const pos = tillSource();
     // the row is drawn whatever the business type (the big pictures alone follow it)
     expect(pos).toMatch(/\n\s*<QuickRow items=\{quickItems\}/);
     expect(pos).not.toMatch(/\{\w+ && \(\s*<QuickRow/);
-    expect(pos).toContain("className={'pos' + (bigTiles ? ' pos-big' : '')}");
+    expect(pos).toContain("className={'pos pos-v2' + (bigTiles ? ' pos-big' : '')");
   });
 });
 

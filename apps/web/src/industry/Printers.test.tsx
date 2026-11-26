@@ -173,7 +173,12 @@ describe('Settings → Printers', () => {
   });
 
   it('a first printer starts on the paper its kind usually takes; none is "Ask every time"', () => {
-    expect(withPrinter('receipt', undefined, 'Receipts')).toEqual({ printer: 'Receipts', paper: 'receipt80', margins: 'default', copies: 1, silent: false });
+    // a receipt or label printer chosen for the first time prints without the print window; an invoice printer still asks
+    expect(withPrinter('receipt', undefined, 'Receipts')).toEqual({ printer: 'Receipts', paper: 'receipt80', margins: 'default', copies: 1, silent: true });
+    expect(withPrinter('label', undefined, 'Labels')?.silent).toBe(true);
+    expect(withPrinter('invoice', undefined, 'Office Laser')?.silent).toBe(false);
+    // a choice already made keeps its own answer when the printer changes
+    expect(withPrinter('receipt', { printer: 'Old', paper: 'receipt58', margins: 'none', copies: 2, silent: false }, 'Receipts')).toEqual({ printer: 'Receipts', paper: 'receipt58', margins: 'none', copies: 2, silent: false });
     expect(withPrinter('label', undefined, 'Labels')!.paper).toBe('label38x25');
     expect(withPrinter('receipt', choices.receipt, 'Office Laser')).toEqual({ ...choices.receipt, printer: 'Office Laser' });
     expect(withPrinter('receipt', choices.receipt, null)).toBeNull();

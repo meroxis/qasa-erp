@@ -12,6 +12,8 @@ import {
   type HeldItemKey, type QuickItemFields, type SameItem
 } from './item-quick-add.ts';
 import { sendCorrection, type HeldCorrection } from './StockCorrection.tsx';
+import { NewItemPicture, saveItemPicture, type PreparedPicture } from './ItemImage.tsx';
+import { ProductLookupPanel } from './ProductLookup.tsx';
 
 /**
  * The item box of a sales or purchase invoice, a quotation and a purchase order: the usual search, and for someone who
@@ -132,6 +134,8 @@ export function QuickItemForm({ typed, sale = false, stockOnly = false, warehous
   const expiryDefault = useLoad(() => (asksStock ? batchesApi.settings().then((b) => b.defaultTrackExpiry, () => false) : Promise.resolve(false)), [asksStock]);
   const dated = !!expiryDefault.data;
   const [batch, setBatch] = useState({ batchNo: '', expiry: '' });
+  // 2.0: the new item's picture: found by its barcode (when the company has that on), or a photo or a file
+  const [picture, setPicture] = useState<PreparedPicture | null>(null);
 
   const set = (patch: Partial<QuickItemFields>) => { setFields((f) => ({ ...f, ...patch })); setProblem(null); setSame(null); setChosen(null); };
   /** the item the stock is entered for: the one made here, or one already there that was chosen */
@@ -250,7 +254,12 @@ export function QuickItemForm({ typed, sale = false, stockOnly = false, warehous
         held.current = null;
         item = added.item;
         setMade(item);
-        toast(t('iq_added', { name: i18n.name(item.name), code: item.code }));
+        let pictureSaved = true;
+        if (picture) {
+          // the item exists now; a picture that fails leaves it added, and can be added from its page
+          try { await saveItemPicture(item.id, picture.data, picture.lookupBarcode); } catch { pictureSaved = false; }
+        }
+        toast(pictureSaved ? t('iq_added', { name: i18n.name(item.name), code: item.code }) : t('it_pictureNotSaved'));
       }
       // the item keeps expiry dates of its own (the company's choice could not be read before): its fields show now
       if (stock !== null && item.trackExpiry && !batch.expiry) { setProblem({ field: 'expiry', text: t('iq_expiryNeeded') }); return; }
@@ -302,6 +311,14 @@ export function QuickItemForm({ typed, sale = false, stockOnly = false, warehous
             </label>
           </div>
           {fields.scaleLabel && <span className="muted small">{t('iq_scaleHint', { p: fields.barcode })}</span>}
+          {!made && (
+            <div className="row" style={{ gap: 12, alignItems: 'flex-start', flexWrap: 'nowrap' }}>
+              <NewItemPicture value={picture} onChange={setPicture} size={64} />
+              <div style={{ flex: '1 1 auto', minInlineSize: 0 }}>
+                <ProductLookupPanel barcode={fields.barcode} picture={picture} onPicture={setPicture} onName={(n) => set({ name: n.text.slice(0, QUICK_ITEM_LIMITS.name) })} />
+              </div>
+            </div>
+          )}
           <div className="row" style={{ gap: 8 }}>
             <span className="muted small">{t('iq_pricesCurrency')}</span>
             <div className="track" role="group" aria-label={t('iq_pricesCurrency')}>

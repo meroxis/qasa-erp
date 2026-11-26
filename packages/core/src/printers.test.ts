@@ -141,7 +141,7 @@ describe('the paper labels print on', () => {
     const a4 = { ...label, paper: 'A4' as const };
     expect(devicePrintOptions({ ...choiceForPrint('label', a4, '38x25'), printer }).pageSize).toEqual({ width: 38_000, height: 25_000 });
     expect(devicePrintOptions({ ...choiceForPrint('label', a4, '50x30'), printer }).pageSize).toEqual({ width: 50_000, height: 30_000 });
-    expect(LABEL_LAYOUT_PAPER).toEqual({ '38x25': 'label38x25', '50x30': 'label50x30', a4_3x8: 'A4', a4_4x10: 'A4' });
+    expect(LABEL_LAYOUT_PAPER).toEqual({ '38x25': 'label38x25', '50x30': 'label50x30', a4_3x8: 'A4', a4_4x10: 'A4', a4_shelf_3x7: 'A4' });
   });
 
   it('keeps the saved choice without a layout, for other kinds, and for anything that is not a layout', () => {

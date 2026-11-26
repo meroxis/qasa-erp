@@ -1,4 +1,5 @@
 import { useEffect, useState, type ReactNode } from 'react';
+import { MoreRows, useRowsShown } from '../industry/LongList.tsx';
 import { formatAmount, todayIso } from '@qasa/core';
 import { briefApi, type AgingRowView, type GroupSalesView } from '../industry/brief-api.ts';
 import { ErrorBox, Icon, downloadCsv, useData, useLoad, usePageNav } from '../components.tsx';
@@ -14,9 +15,11 @@ import { Amount, DualNote, DualRateHint, OwedTotal } from '../Amount.tsx';
 
 import { reportTabsFor, type ReportTab } from './tabs.ts';
 import { printDocument } from '../industry/printing.ts';
+import { SlowStock } from './SlowStock.tsx';
 export { isReportTab, REPORT_TABS, type ReportTab } from './tabs.ts';
 const TAB_LABEL: Record<ReportTab, Key> = {
   'sales-items': 'br_rSalesItems', 'sales-categories': 'rp_byCategory', 'sales-brands': 'rp_byBrand', 'sales-customers': 'br_rSalesCustomers', profit: 'br_rProfit',
+  'profit-categories': 'smr_tabProfitCategories', 'profit-brands': 'smr_tabProfitBrands', 'slow-stock': 'smr_tabSlow',
   aging: 'br_rAging', 'supplier-aging': 'br_rSupplierAging', 'stock-value': 'br_rStockValue'
 };
 
@@ -40,7 +43,7 @@ export function MoreReports({ tab: asked = 'sales-items' }: { tab?: ReportTab })
   useEffect(() => { if (closed) window.location.replace(href('reports-more/sales-items')); }, [closed]);
   const [from, setFrom] = useState(monthStart());
   const [to, setTo] = useState(todayIso());
-  const dated = tab === 'aging' || tab === 'supplier-aging' || tab === 'stock-value';
+  const dated = tab === 'aging' || tab === 'supplier-aging' || tab === 'stock-value' || tab === 'slow-stock';
 
   return (
     <div className="stack">
@@ -61,6 +64,9 @@ export function MoreReports({ tab: asked = 'sales-items' }: { tab?: ReportTab })
       {tab === 'profit' && <SalesByItem from={from} to={to} profit />}
       {tab === 'sales-categories' && <SalesByGroup by="category" from={from} to={to} />}
       {tab === 'sales-brands' && <SalesByGroup by="brand" from={from} to={to} />}
+      {tab === 'profit-categories' && <SalesByGroup by="category" from={from} to={to} profitFirst />}
+      {tab === 'profit-brands' && <SalesByGroup by="brand" from={from} to={to} profitFirst />}
+      {tab === 'slow-stock' && <SlowStock date={to} />}
       {tab === 'sales-customers' && <SalesByCustomer from={from} to={to} />}
       {tab === 'aging' && <Aging type="customer" date={to} />}
       {tab === 'supplier-aging' && <Aging type="supplier" date={to} />}
@@ -94,11 +100,23 @@ function Empty() {
  * Sales, cost and profit by category (each subcategory indented under its category, the category's row its total) or
  * by brand, with items that have none last. An item counts where it is now, so older invoices are in too.
  */
-function SalesByGroup({ by, from, to }: { by: 'category' | 'brand'; from: string; to: string }) {
+/** profitFirst (1.7, the profit tabs): sorted by profit, margin or sales (each category's subcategories in the same order). */
+type GroupSort = 'profit' | 'margin' | 'sales';
+export function sortGroups(rows: readonly GroupSalesView[], by: GroupSort): GroupSalesView[] {
+  const key = (r: GroupSalesView) => by === 'sales' ? r.total.sales : by === 'profit' ? r.total.profit ?? 0 : r.total.sales ? (r.total.profit ?? 0) / r.total.sales : -Infinity;
+  // items without a category (or brand) stay last, as in the sales tabs
+  const order = (list: readonly GroupSalesView[]) => [...list].sort((a, b) => (a.id === null ? 1 : 0) - (b.id === null ? 1 : 0) || key(b) - key(a));
+  return order(rows).map((r) => ({ ...r, children: order(r.children) }));
+}
+
+function SalesByGroup({ by, from, to, profitFirst = false }: { by: 'category' | 'brand'; from: string; to: string; profitFirst?: boolean }) {
   const i18n = useI18n();
   const { t } = i18n;
   const books = useData().seesBooks !== false;
-  const { data, error } = useLoad(() => briefApi.salesByGroup(by, { from, to }), [by, from, to]);
+  const [sort, setSort] = useState<GroupSort>('profit');
+  const loaded = useLoad(() => briefApi.salesByGroup(by, { from, to }), [by, from, to]);
+  const { error } = loaded;
+  const data = loaded.data && profitFirst ? { ...loaded.data, rows: sortGroups(loaded.data.rows, sort) } : loaded.data;
   const none = by === 'category' ? t('rp_uncategorised') : t('rp_noBrand');
   const label = (r: GroupSalesView) => (r.name ? i18n.name(r.name) : none);
   const margin = (p: number, s: number) => (s ? `${i18n.int(Math.round((p / s) * 100))}%` : '—');
@@ -117,6 +135,14 @@ function SalesByGroup({ by, from, to }: { by: 'category' | 'brand'; from: string
   const total = data?.total;
   return (
     <>
+      {profitFirst && (
+        <div className="row no-print" style={{ gap: 8, alignItems: 'center' }}>
+          <span className="muted">{t('smr_sortBy')}</span>
+          <div className="tabs" role="group" aria-label={t('smr_sortBy')}>
+            {(['profit', 'margin', 'sales'] as const).map((k) => <button key={k} type="button" aria-pressed={sort === k} onClick={() => setSort(k)}>{t(`smr_sort_${k}`)}</button>)}
+          </div>
+        </div>
+      )}
       <Toolbar onCsv={csv} disabled={!lines.length} />
       <ErrorBox error={error} />
       {data && (lines.length === 0 ? <Card><Empty /></Card> : (
@@ -310,6 +336,8 @@ function StockValue({ date }: { date: string }) {
   const { t } = i18n;
   const { data, error } = useLoad(() => briefApi.stockValue(date), [date]);
   const [open, setOpen] = useState<string | null>(null);
+  // the most valuable first, a few hundred at a time (a big shop has tens of thousands: LongList.tsx)
+  const opened = useRowsShown(open ? (data?.items ?? []).filter((r) => r.warehouseId === open) : [], { reset: `${date}|${open}` });
   const total = (data?.warehouses ?? []).reduce((s, w) => s + w.value, 0);
   const csv = () => data && downloadCsv(`stock-value_${date}.csv`, [
     [t('br_warehouse'), t('code'), t('br_item'), t('br_qty'), t('br_value')],
@@ -342,12 +370,13 @@ function StockValue({ date }: { date: string }) {
             <table className="table">
               <thead><tr><th>{t('code')}</th><th>{t('br_item')}</th><th className="amount">{t('br_qty')}</th><th className="amount">{t('br_value')}</th></tr></thead>
               <tbody>
-                {data.items.filter((r) => r.warehouseId === open).map((r) => (
+                {opened.shown.map((r) => (
                   <tr key={r.itemId} className="click" onClick={() => go(`item/${r.itemId}`)}>
                     <td><span className="tree-code">{i18n.digitsOf(r.code)}</span></td><td>{i18n.name(r.name)}</td>
                     <td className="amount">{qty(i18n, r.qtyMilli)}</td><td className="amount">{i18n.money(r.value, 'IQD')}</td>
                   </tr>
                 ))}
+                <MoreRows hidden={opened.hidden} columns={4} onMore={opened.more} onAll={opened.all} />
               </tbody>
             </table>
           )}

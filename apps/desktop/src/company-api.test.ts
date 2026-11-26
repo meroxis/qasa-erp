@@ -3,11 +3,11 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { generateKeyPairSync, sign } from 'node:crypto';
-import { buildApp, configureLicensing, openDatabase, planStatus, readSetting, SCHEMA_VERSION, writeSetting, type Db } from '@qasa/server';
+import { generateKeyPairSync, sign, type KeyObject } from 'node:crypto';
+import { buildApp, changesRecords, configureLicensing, configureViewOnly, keyHash, machineId, openDatabase, planStatus, readSetting, registeredRoutes, SCHEMA_VERSION, VIEW_ONLY_ALLOWED, writeSetting, type Db } from '@qasa/server';
 import { resetLicensingForTests } from '../../../packages/server/src/activation.ts';
 import { setLicensePublicKeyForTests } from '../../../packages/server/src/license.ts';
-import { companyApi } from './company-api.ts';
+import { companyApi, isNewerLicence, takeNewerLicence, type StoredLicence } from './company-api.ts';
 import { MAIN_COMPANY, readRegistry } from './companies.ts';
 
 const headers = { 'x-qasa-client': '1', 'x-qasa-user': 'Mer' };
@@ -103,18 +103,56 @@ describe('companies on this PC', () => {
     }
   });
 
-  it('a company over the plan limit still opens: the limit only stops adding (never locked out of the books)', async () => {
+  it('a company past the plan limit opens to be viewed: listed as view only, never refused or hidden (security review #10)', async () => {
     await create('B');
     limit = 1;
-    const listed = (await app.inject({ url: '/api/companies', headers })).json() as { canAdd: boolean; list: object[] };
+    const listed = (await app.inject({ url: '/api/companies', headers })).json() as { canAdd: boolean; list: { id: string; waiting: boolean }[] };
     expect(listed.canAdd).toBe(false);
     expect(listed.list).toHaveLength(2);
-    // every company opens, so the list carries no 'openable' flag at all (the screens no longer read one)
-    for (const company of listed.list) expect(company).not.toHaveProperty('openable');
+    expect(listed.list.map((c) => c.waiting)).toEqual([false, true]);
+    // 1.6 opened every company, and a free user who made two in the free month must still reach both
     const opened = await app.inject({ method: 'POST', url: '/api/companies/c01020304/open', headers });
     expect(opened.statusCode, opened.body).toBe(200);
     await new Promise((r) => setTimeout(r, 80));
     expect(switched).toEqual(['c01020304']);
+  });
+
+  it('a view-only company refuses changes on every server, keeps reading, signing in, the licence, companies and backups open, and says so to everyone', async () => {
+    let past = true;
+    await app.close();
+    app = buildApp(db, {
+      extensions: [companyApi({
+        db, userDataDir: dir, currentId: 'c01020304', log: () => {}, limit: () => limit, viewOnly: () => past,
+        makeCompanyFile: makeFile, chooseFolder: async () => folder, switchTo: (id) => { switched.push(id); }
+      })]
+    });
+    configureViewOnly(() => past);
+    try {
+      expect((await app.inject({ url: '/api/companies/state', headers })).json()).toEqual({ viewOnly: true });
+      // reading goes on: nothing is hidden
+      expect((await app.inject({ url: '/api/items', headers })).statusCode).toBe(200);
+      expect((await app.inject({ url: '/api/plan', headers })).statusCode).toBe(200);
+      // a change is refused with its own code, before any handler
+      const refused = await app.inject({ method: 'POST', url: '/api/items', headers, payload: { name: { ar: 'س', en: 'x', ku: 'x' }, unit: 'piece', salePrice: 1000, saleCurrency: 'IQD' } });
+      expect(refused.statusCode).toBe(409);
+      expect(refused.json()).toMatchObject({ error: 'company_view_only' });
+      expect((db.prepare('SELECT COUNT(*) AS n FROM items').get() as { n: number }).n).toBe(0);
+      // the way out stays open: the licence, the companies, a backup, signing in
+      for (const [method, url] of [['POST', '/api/plan/check'], ['POST', '/api/plan/license'], ['PUT', '/api/companies/c01020304'], ['POST', '/api/auth/login'], ['POST', '/api/backup/run'], ['PUT', '/api/usage']] as const) {
+        expect(changesRecords(method, url), url).toBe(false);
+      }
+      for (const [method, url] of [['POST', '/api/invoices'], ['PUT', '/api/settings'], ['POST', '/api/backup/restore'], ['DELETE', '/api/items/x'], ['POST', '/api/pos/shifts/1/sales?x=1']] as const) {
+        expect(changesRecords(method, url), url).toBe(true);
+      }
+      expect(changesRecords('GET', '/api/invoices')).toBe(false);
+      // the plan is back (a check-in, a licence): changes go through again without a restart
+      past = false;
+      expect((await app.inject({ url: '/api/companies/state', headers })).json()).toEqual({ viewOnly: false });
+      const made = await app.inject({ method: 'POST', url: '/api/items', headers, payload: { name: { ar: 'س', en: 'x', ku: 'x' }, unit: 'piece', salePrice: 1000, saleCurrency: 'IQD' } });
+      expect(made.statusCode, made.body).toBe(201);
+    } finally {
+      configureViewOnly(null);
+    }
   });
 
   it('refuses to open a company file from a newer version, and keeps the current company next', async () => {
@@ -267,6 +305,121 @@ describe('companies on this PC', () => {
     }
   });
 
+  describe('the licence is the PC\'s: a company takes over a newer one from the others', () => {
+    const MACHINE_GUID = '6f1c1b6e-3a59-4c1f-9d7e-0b2f4c9a1e11';
+    let pair: { publicKey: KeyObject; privateKey: KeyObject };
+    const signed = (prefix: string, payload: Record<string, unknown>) => {
+      const body = `${prefix}.${Buffer.from(JSON.stringify(payload)).toString('base64url')}`;
+      return `${body}.${sign(null, Buffer.from(body), pair.privateKey).toString('base64url')}`;
+    };
+    const today = () => new Date().toISOString().slice(0, 10);
+    const day = (offset: number) => new Date(Date.now() + offset * 86_400_000).toISOString().slice(0, 10);
+    const key = (id: string, issued: string, expires: string | null = null) => signed('QASA1', { v: 1, id, plan: 'pro', to: 'Mer', issued, expires });
+    const tokenOf = (k: string, issued: string, machine = machineId(db)) => {
+      const p = JSON.parse(Buffer.from(k.split('.')[1]!, 'base64url').toString()) as { id: string; plan: string; expires: string | null };
+      return signed('QACT1', { v: 1, lic: p.id, key: keyHash(k), machine, plan: p.plan, expires: p.expires, issued, checkBy: day(30) });
+    };
+    const lic = (k: string | null, t: string | null = null, revoked: string | null = null): StoredLicence => ({ key: k, token: t, revoked });
+
+    beforeEach(() => {
+      pair = generateKeyPairSync('ed25519');
+      setLicensePublicKeyForTests(pair.publicKey.export({ format: 'jwk' }).x!);
+      configureLicensing({
+        strict: true, dataDir: dir, portalUrl: 'https://portal.test', machineGuid: () => MACHINE_GUID,
+        fetch: (async () => { throw new TypeError('offline'); }) as typeof fetch
+      });
+    });
+    afterEach(() => resetLicensingForTests());
+
+    it('newer means: activated on this PC, not ended, not revoked; a fresher activation of the same key, or a renewal', () => {
+      const m = machineId(db);
+      const k1 = key('QP-2026-0001', day(-200), day(-40));   // ended (past its grace)
+      const k2 = key('QP-2026-0002', day(-20));              // the renewal
+      const fresh = lic(k2, tokenOf(k2, day(-1)));
+      // no key, a key that doesn't read, an ended key, a key never activated: the PC's activated licence is newer
+      expect(isNewerLicence(lic(null), fresh, m, today())).toBe(true);
+      expect(isNewerLicence(lic('QASA-JUNK'), fresh, m, today())).toBe(true);
+      expect(isNewerLicence(lic(k1, tokenOf(k1, day(-100))), fresh, m, today())).toBe(true);
+      expect(isNewerLicence(lic(k2), fresh, m, today())).toBe(true);
+      // the same key: only a later activation
+      expect(isNewerLicence(lic(k2, tokenOf(k2, day(-60))), fresh, m, today())).toBe(true);
+      expect(isNewerLicence(fresh, lic(k2, tokenOf(k2, day(-60))), m, today())).toBe(false);
+      expect(isNewerLicence(fresh, fresh, m, today())).toBe(false);
+      // never taken over: a key without an activation, one activated on another PC, an ended one, a revoked one
+      expect(isNewerLicence(lic(null), lic(k2), m, today())).toBe(false);
+      expect(isNewerLicence(lic(null), lic(k2, tokenOf(k2, day(-1), 'f'.repeat(32))), m, today())).toBe(false);
+      expect(isNewerLicence(lic(null), lic(k1, tokenOf(k1, day(-100))), m, today())).toBe(false);
+      expect(isNewerLicence(lic(null), lic(k2, tokenOf(k2, day(-1)), JSON.stringify({ key: keyHash(k2), reason: 'revoked' })), m, today())).toBe(false);
+      // a revocation of this very key is not undone by another company's token
+      expect(isNewerLicence(lic(k2, tokenOf(k2, day(-60)), JSON.stringify({ key: keyHash(k2), reason: 'revoked' })), fresh, m, today())).toBe(false);
+      // an older licence never replaces a newer one that works
+      const older = key('QP-2026-0003', day(-90));
+      expect(isNewerLicence(fresh, lic(older, tokenOf(older, day(-1))), m, today())).toBe(false);
+    });
+
+    it('a company whose own activation went stale starts on the PC\'s plan, not on Free (the other files are only read)', async () => {
+      // the first company holds this PC's licence, activated yesterday
+      const k = key('QP-2026-0009', day(-30));
+      writeSetting(db, 'license_key', k);
+      writeSetting(db, 'activation_token', tokenOf(k, day(-1)));
+      expect(planStatus(db)).toMatchObject({ plan: 'pro', activation: { state: 'active' } });
+      await create('B');
+      const id = readRegistry(dir).list.find((c) => c.id !== MAIN_COMPANY)!.id;
+      const file = join(dir, 'companies', id, 'data', 'qasa.sqlite');
+      // B was last opened long ago: its activation is past its check-by day and the days offline after it
+      const b = openDatabase(file);
+      try {
+        const p = JSON.parse(Buffer.from(k.split('.')[1]!, 'base64url').toString()) as { id: string };
+        writeSetting(b, 'activation_token', signed('QACT1', { v: 1, lic: p.id, key: keyHash(k), machine: machineId(b), plan: 'pro', expires: null, issued: day(-90), checkBy: day(-60) }));
+        // (its licence no longer counts: alone it would run on Free, or on what is left of the free month)
+        expect(planStatus(b)).toMatchObject({ activation: { state: 'stale' } });
+        expect(planStatus(b).source).not.toBe('license');
+        // at its start it takes the PC's licence over, before anything asks for the plan
+        db.close();
+        const before = new DatabaseSync(join(dir, 'data', 'qasa.sqlite'), { readOnly: true });
+        const main0 = before.prepare('SELECT COUNT(*) AS n FROM settings').get() as { n: number };
+        before.close();
+        expect(takeNewerLicence(b, dir, id)).toBe(MAIN_COMPANY);
+        expect(planStatus(b)).toMatchObject({ plan: 'pro', source: 'license', activation: { state: 'active' } });
+        // nothing newer left to take: a second start changes nothing
+        expect(takeNewerLicence(b, dir, id)).toBeNull();
+        const after = new DatabaseSync(join(dir, 'data', 'qasa.sqlite'), { readOnly: true });
+        expect(after.prepare('SELECT COUNT(*) AS n FROM settings').get()).toEqual(main0);
+        after.close();
+      } finally {
+        b.close();
+        db = openDatabase(join(dir, 'data', 'qasa.sqlite'));
+      }
+    });
+
+    it('opening a company that still holds an ended key gives it the renewal entered here; one with a newer licence keeps its own', async () => {
+      const ended = key('QP-2026-0001', day(-400), day(-40));
+      const renewal = key('QP-2026-0002', day(-10));
+      writeSetting(db, 'license_key', renewal);
+      writeSetting(db, 'activation_token', tokenOf(renewal, day(-1)));
+      await create('B');
+      await create('C');
+      const [bId, cId] = readRegistry(dir).list.map((c) => c.id).filter((x) => x !== MAIN_COMPANY) as [string, string];
+      const fileOf = (x: string) => join(dir, 'companies', x, 'data', 'qasa.sqlite');
+      const newest = key('QP-2026-0003', day(-2));
+      for (const [x, k, issued] of [[bId, ended, day(-300)], [cId, newest, day(-1)]] as const) {
+        const other = openDatabase(fileOf(x));
+        writeSetting(other, 'license_key', k);
+        writeSetting(other, 'activation_token', tokenOf(k, issued, machineId(other)));
+        other.close();
+      }
+      expect((await app.inject({ method: 'POST', url: `/api/companies/${bId}/open`, headers })).statusCode).toBe(200);
+      expect((await app.inject({ method: 'POST', url: `/api/companies/${cId}/open`, headers })).statusCode).toBe(200);
+      const b = openDatabase(fileOf(bId));
+      expect(readSetting(b, 'license_key')).toBe(renewal);
+      expect(planStatus(b)).toMatchObject({ plan: 'pro', activation: { state: 'active' } });
+      b.close();
+      const c = openDatabase(fileOf(cId));
+      expect(readSetting(c, 'license_key')).toBe(newest);
+      c.close();
+    });
+  });
+
   it('backs up the open company and a closed one to the chosen folder', async () => {
     await create('B');
     const own = await app.inject({ method: 'POST', url: '/api/companies/main/backup', headers });
@@ -293,6 +446,16 @@ describe('companies on this PC', () => {
     writeFileSync(join(dir, 'backup.json'), '{"on": true, "secr');
     expect((await app.inject({ method: 'POST', url: '/api/companies/main/backup', headers })).statusCode).toBe(409);
     expect(readdirSync(backups)).toEqual([]);
+  });
+
+  it('keeps the companies\' own routes, each by name, on the list a view-only company still takes (round four)', async () => {
+    await app.ready();
+    const mine = registeredRoutes(app).filter((r) => r.url.startsWith('/api/companies') && !['GET', 'HEAD', 'OPTIONS'].includes(r.method)).map((r) => `${r.method} ${r.url}`).sort();
+    expect(mine).toEqual(['POST /api/companies', 'POST /api/companies/:id/backup', 'POST /api/companies/:id/open', 'PUT /api/companies/:id']);
+    for (const r of mine) expect(VIEW_ONLY_ALLOWED.has(r), r).toBe(true);
+    // … and nothing else under that address is open because it is under it
+    expect(changesRecords('DELETE', '/api/companies/:id')).toBe(true);
+    expect(changesRecords('POST', '/api/companies/:id/restore')).toBe(true);
   });
 
   it('only an admin sees or changes the companies', async () => {

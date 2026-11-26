@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { MoreRows, useRowsShown } from '../industry/LongList.tsx';
 import { api, type InvoiceSummary, type PartyInput, type PartyType, type PartyView } from '../api.ts';
 import { EmptyState, AccountCombo, AmountInput, ErrorBox, Icon, InvoiceStatusChip, LANGUAGE_NAMES, Modal, downloadCsv, useData, useLandHome, useLoad, useMay, usePageNav, useToast } from '../components.tsx';
 import { useI18n } from '../i18n.ts';
@@ -256,6 +257,8 @@ export function PartyDetail({ id, admin = false }: { id: string; admin?: boolean
   const cur = currency || 'IQD';
   usePageNav(data ? (data.party.type === 'customer' ? { key: 'customers', group: 'gSales' } : { key: 'suppliers', group: 'gPurchases' }) : null);
   const invoices = useLoad(() => api.invoices({ partyId: id }), [id]);
+  // the newest lines first, the earlier ones folded: a long-time customer has years of them (LongList.tsx)
+  const lines = useRowsShown(data?.lines, { from: 'end', reset: `${id}|${from}|${to}|${currency}` });
 
   if (useLandHome(error)) return null;
   if (error) return <ErrorBox error={error} />;
@@ -337,7 +340,8 @@ export function PartyDetail({ id, admin = false }: { id: string; admin?: boolean
           </thead>
           <tbody>
             <tr><td /><td /><td className="muted">{t('opening')}</td><td /><td /><td className="amount">{i18n.money(data.opening ?? 0, cur)}</td></tr>
-            {data.lines.map((l, i) => {
+            <MoreRows hidden={lines.hidden} columns={6} earlier onMore={lines.more} onAll={lines.all} />
+            {lines.shown.map((l, i) => {
               const open = lineLink(l);
               return (
               <tr key={i} className={open ? 'click' : undefined} onClick={open ? () => go(open) : undefined}>

@@ -275,6 +275,12 @@
 .lb-a4 .lb-label { padding: 2mm 4mm; }
 .lb-a4 .lb-name { font-size: 8.5pt; }
 .lb-a4 .lb-price { font-size: 11pt; }
+/* 1.7: shelf labels: the price large, the old price crossed out above it, the barcode small */
+.lb-shelf .lb-label { justify-content: space-between; }
+.lb-shelf .lb-name { font-size: 10pt; font-weight: 600; }
+.lb-shelf .lb-bars { max-block-size: 8mm; }
+.lb-shelf .lb-price { font-size: 20pt; line-height: 1.1; }
+.lb-old { font-size: 9pt; color: #555; }
 
 @media print {
   .lb-page .lb-sheet { gap: 0; }

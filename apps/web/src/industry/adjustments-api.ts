@@ -1,6 +1,7 @@
 import type { Lang, Names, UnitCode } from '@qasa/core';
 import { qs, request } from '../api.ts';
 import type { CountChange, CountSessionView } from './count-session.ts';
+import { sendOnce } from './send-once.ts';
 
 /** Stock adjustments (every plan): damaged, lost, expired, used, issued to a job, and stock-count differences. */
 
@@ -89,11 +90,12 @@ export interface CountResult { adjustment: AdjustmentView | null; unknown: { row
 export const adjustmentsApi = {
   list: (f: { status?: AdjustmentStatus; warehouseId?: string; reason?: AdjustmentReason } = {}) => request<AdjustmentSummary[]>('GET', '/api/adjustments' + qs(f)),
   get: (id: string) => request<AdjustmentView>('GET', `/api/adjustments/${encodeURIComponent(id)}`),
-  create: (body: AdjustmentInput) => request<AdjustmentView>('POST', '/api/adjustments', body),
+  // made and posted once, also when sent again after a lost answer (the server keeps the key)
+  create: (body: AdjustmentInput) => sendOnce<AdjustmentView>('POST', '/api/adjustments', body),
   update: (id: string, body: AdjustmentInput) => request<AdjustmentView>('PUT', `/api/adjustments/${encodeURIComponent(id)}`, body),
   remove: (id: string) => request<void>('DELETE', `/api/adjustments/${encodeURIComponent(id)}`),
   /** lang: the language of the words written into the entry (the person's own; the server defaults to Arabic) */
-  post: (id: string, lang: Lang) => request<AdjustmentView>('POST', `/api/adjustments/${encodeURIComponent(id)}/post`, { lang }),
+  post: (id: string, lang: Lang) => sendOnce<AdjustmentView>('POST', `/api/adjustments/${encodeURIComponent(id)}/post`, { lang }),
   cancel: (id: string, date?: string) => request<AdjustmentView>('POST', `/api/adjustments/${encodeURIComponent(id)}/cancel`, date ? { date } : {}),
   settings: () => request<{ accounts: AdjustmentAccounts; defaults: AdjustmentAccounts }>('GET', '/api/adjustments/settings'),
   saveSettings: (patch: Partial<AdjustmentAccounts>) => request<{ accounts: AdjustmentAccounts; defaults: AdjustmentAccounts }>('PUT', '/api/adjustments/settings', patch),

@@ -1,4 +1,5 @@
 import { readdirSync, readFileSync } from 'node:fs';
+import { tillSource } from '../till-source.ts';
 import { expect, it } from 'vitest';
 import { makeI18n } from '../i18n.ts';
 import { labelFace } from './Labels.tsx';
@@ -47,7 +48,7 @@ it('POS: a tile shows the price of the unit a tap adds (the sale unit)', () => {
   expect(tileOffer({ ...med, saleUnit: 'box' }, 'IQD', 142_000)).toEqual({ unit: 'box', price: 25_000 });
   expect(tileOffer({ ...med, saleUnit: null }, 'IQD', 142_000)).toEqual({ unit: null, price: 250 });
   expect(tileOffer({ ...med, saleCurrency: 'USD' }, 'IQD', 0).price).toBeNull();
-  expect(src('./Pos.tsx')).toContain('tileOffer(it, currency, priceRate)');
+  expect(tillSource()).toContain('tileOffer(it, currency, priceRate)');
 });
 
 it('POS: the unit chip merges a line into the line already in that unit, never two lines with the same item and unit', () => {

@@ -69,7 +69,7 @@ describe('point of sale', () => {
     expect(db.prepare('SELECT shift_id FROM pos_sales WHERE invoice_id = ?').get(invoice.id)).toMatchObject({ shift_id: shift.id });
 
     // a walk-in sale in dollars at a rate, and one for a known customer
-    const usd = await post(`/api/pos/shifts/${shift.id}/sales`, { currency: 'USD', rateX100: 131_000, lines: [{ itemId: teaId, qtyMilli: 1000, unitPrice: 200 }] });
+    const usd = await post(`/api/pos/shifts/${shift.id}/sales`, { currency: 'USD', rateX100: 140_000, lines: [{ itemId: teaId, qtyMilli: 1000, unitPrice: 200 }] });
     expect(usd.statusCode, usd.body).toBe(201);
     expect((await post(`/api/pos/shifts/${shift.id}/sales`, { currency: 'USD', lines: [{ itemId: teaId, qtyMilli: 1000, unitPrice: 200 }] })).json()).toMatchObject({ error: 'validation' });
     const known = await post(`/api/pos/shifts/${shift.id}/sales`, { currency: 'IQD', partyId: customerId, lines: [{ itemId: cupId, qtyMilli: 2000, unitPrice: 1_000 }] });
@@ -147,7 +147,7 @@ describe('point of sale', () => {
   it('closes with the counted cash and the difference, by currency, and frees the register', async () => {
     const shift = (await open()).json();
     await post(`/api/pos/shifts/${shift.id}/sales`, { currency: 'IQD', lines: [{ itemId: teaId, qtyMilli: 2000, unitPrice: 2_500 }] });
-    await post(`/api/pos/shifts/${shift.id}/sales`, { currency: 'USD', rateX100: 131_000, lines: [{ itemId: cupId, qtyMilli: 1000, unitPrice: 500 }] });
+    await post(`/api/pos/shifts/${shift.id}/sales`, { currency: 'USD', rateX100: 140_000, lines: [{ itemId: cupId, qtyMilli: 1000, unitPrice: 500 }] });
     const closed = await post(`/api/pos/shifts/${shift.id}/close`, { countedCash: 54_000, countedUsd: 500, notes: 'short 1,000' });
     expect(closed.statusCode, closed.body).toBe(200);
     expect(closed.json()).toMatchObject({
@@ -156,9 +156,11 @@ describe('point of sale', () => {
     });
     const row = db.prepare('SELECT expected_cash, counted_cash, expected_usd, counted_usd, notes FROM pos_shifts WHERE id = ?').get(shift.id);
     expect(row).toMatchObject({ expected_cash: 55_000, counted_cash: 54_000, expected_usd: 500, counted_usd: 500, notes: 'short 1,000' });
-    // a sale cancelled after closing doesn't change what was expected at closing
+    // a cash sale of a closed shift is not cancelled (its money was counted with the shift): it is returned instead,
+    // and what was expected at closing stays (review 2.0)
     const sold = (await get(`/api/pos/shifts/${shift.id}`)).json().invoices[0].invoiceId;
-    expect((await post(`/api/invoices/${sold}/cancel`, { reason: 'test' })).statusCode).toBe(200);
+    expect((await post(`/api/invoices/${sold}/cancel`, { reason: 'test' })).json()).toMatchObject({ error: 'pos_sale_shift_closed' });
+    expect((await get(`/api/invoices/${sold}`)).json().status).toBe('posted');
     expect((await get(`/api/pos/shifts/${shift.id}`)).json()).toMatchObject({ expected: { IQD: 55_000, USD: 500 }, difference: { IQD: -1_000, USD: 0 } });
     expect((await post(`/api/pos/shifts/${shift.id}/close`, { countedCash: 1 })).json()).toMatchObject({ error: 'pos_shift_closed' });
     expect((await open()).statusCode).toBe(201);

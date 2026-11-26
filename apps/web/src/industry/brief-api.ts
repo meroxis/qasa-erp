@@ -1,6 +1,7 @@
 import type { Names } from '@qasa/core';
 import { qs, request } from '../api.ts';
 import type { ChequeCounts, ChequesAheadView } from './ChequesAhead.tsx';
+import type { CashMoves } from './pos-api.ts';
 
 /** The owner's dashboard, the Daily Brief, the management reports and quick expenses. Amounts in IQD unless said. */
 export type Money2 = { IQD: number; USD: number };
@@ -86,6 +87,8 @@ export interface ExpenseAccountTotal { accountCode: string; name: Names; categor
 export const briefApi = {
   brief: (date?: string) => request<BriefView>('GET', '/api/brief' + qs({ date })),
   dashboard: (date?: string) => request<DashboardView>('GET', '/api/brief/dashboard' + qs({ date })),
+  /** The home page's first steps: 1 when the company has any (items, parties, customers, a posted sale), else 0. */
+  firstSteps: () => request<{ items: number; parties: number; customers: number; sales: number }>('GET', '/api/brief/first-steps'),
   settings: () => request<BriefSettings>('GET', '/api/brief/settings'),
   saveSettings: (patch: { ownerPhone?: string; expenseAccounts?: Partial<Record<ExpenseCategory, string>> }) => request<BriefSettings>('PUT', '/api/brief/settings', patch),
   expenses: (month?: string) => request<{ rows: ExpenseRowView[]; byCategory: Partial<Record<ExpenseCategory, number>>; byAccount: ExpenseAccountTotal[]; total: number }>('GET', '/api/brief/expenses' + qs({ month })),
@@ -98,11 +101,13 @@ export const briefApi = {
 };
 
 /** How a sale was paid, on the end-of-day close. */
-export type DayMethod = 'cash' | 'bank' | 'card' | 'fib' | 'zaincash' | 'qi' | 'credit' | 'loyalty';
+export type DayMethod = 'cash' | 'bank' | 'card' | 'fib' | 'zaincash' | 'qi' | 'credit' | 'loyalty' | 'voucher';
 
 export interface DayRegisterView {
   shiftId: string; number: string; register: string; openedBy: string; status: 'open' | 'closed'; openedAt: string; closedAt: string | null;
   sales: Money2; count: number; expected: Money2; counted: Money2 | null; difference: Money2 | null;
+  /** 2.0: the other cash on the register's safe while its shift was open (in `expected`); left out when there was none */
+  cashMoves?: CashMoves;
 }
 export interface DayDebtRowView { partyId: string; code: string; name: string; amount: number }
 
@@ -120,6 +125,8 @@ export interface DayCloseView {
   debts: { collected: number; collectedRows: DayDebtRowView[]; added: number; addedRows: DayDebtRowView[] };
   flow?: { in: number; out: number };
   lowStock: { count: number; top: LowStockView[] };
+  /** 2.0: gift vouchers past their date still owed (for those who keep the books) */
+  giftExpired?: { count: number; amount: number };
   topItems: ItemSalesView[];
   ownerPhone: string;
 }
