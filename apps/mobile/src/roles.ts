@@ -57,7 +57,10 @@ export type Feature =
   | 'receive'
   // ——— phone app 1.2: with an office of Qasa ERP 2.0 on that offers it ———
   /** a new item's picture and names looked up by its barcode (when the office's admin has switched that on) */
-  | 'itemLookup';
+  | 'itemLookup'
+  // ——— with an office of Qasa ERP 2.1 on ———
+  /** what is counted into the open count adds to what it has (a shelf at a time, several phones) */
+  | 'countAdd';
 
 /** The same roles as the office's FIGURES_ROLES (pro/src/phone/rules.ts). */
 export const FIGURES_ROLES: readonly string[] = ['admin', 'preparer', 'checker', 'approver', 'viewer'];
@@ -68,7 +71,7 @@ export const BASE_FEATURES: readonly Feature[] = ['figures', 'lookup', 'newItem'
 /** The features of phone app 1.1, each with what its office must offer for it (phoneLink.offers). */
 export const OFFER_OF = {
   approvals: 'approvals', rate: 'rate', rateSet: 'rate', dayClose: 'dayClose', expense: 'expense', share: 'share', transfer: 'transfer', receive: 'receive',
-  itemLookup: 'itemLookup'
+  itemLookup: 'itemLookup', countAdd: 'countAdd'
 } as const satisfies Partial<Record<Feature, string>>;
 
 type OfferedFeature = keyof typeof OFFER_OF;
@@ -99,6 +102,8 @@ function mayUse(f: OfferedFeature, can: (p: string) => boolean, figures: boolean
     case 'receive': return can('stock') || can('purchases');
     // whoever may add items (the office asks the same of POST /api/items/lookup)
     case 'itemLookup': return can('stock');
+    // whoever counts into the open count (countSession)
+    case 'countAdd': return can('stock');
   }
 }
 

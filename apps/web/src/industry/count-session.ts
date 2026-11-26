@@ -69,6 +69,11 @@ export class CountSaver {
     this.sessionId = sessionId;
   }
 
+  /** An item typed here and not sent yet: what this PC shows of it is its own, newer than the server's. */
+  isPending(itemId: string): boolean {
+    return this.pending.has(itemId);
+  }
+
   /** Something not on the server yet (or on its way). */
   get dirty(): boolean {
     return this.pending.size > 0 || this.metaChanged || this.running !== null;
@@ -229,4 +234,16 @@ export function fromSession(session: CountSessionView): { counted: Map<string, n
     if (l.unitCost !== null && l.unitCost !== undefined) costs.set(l.itemId, l.unitCost);
   }
   return { counted, costs, frozen };
+}
+
+/**
+ * What the page shows of each item after the server answered: the server's quantities (2.1: a phone may have added a
+ * shelf of an item meanwhile), except for what is typed here and not sent yet (`mine`), which stays as typed.
+ */
+export function mergeCounted(local: ReadonlyMap<string, number>, session: CountSessionView, mine: (itemId: string) => boolean): Map<string, number> {
+  const server = fromSession(session).counted;
+  const out = new Map<string, number>();
+  for (const [id, qty] of local) if (mine(id)) out.set(id, qty);
+  for (const [id, qty] of server) if (!mine(id)) out.set(id, qty);
+  return out;
 }

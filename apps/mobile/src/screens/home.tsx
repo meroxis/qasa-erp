@@ -12,7 +12,7 @@ import { OwnerCards } from './owner/cards';
 /** Each 1.1 feature's name in the banner that asks for an update of the office PC (both rate features: one name). */
 const FEATURE_NAME: Partial<Record<Feature, Key>> = {
   approvals: 'featApprovals', rate: 'featRate', rateSet: 'featRate', dayClose: 'featDayClose', expense: 'featExpense', share: 'featShare', transfer: 'featTransfer', receive: 'featReceive',
-  itemLookup: 'featItemLookup'
+  itemLookup: 'featItemLookup', countAdd: 'featCountAdd'
 };
 
 /**
