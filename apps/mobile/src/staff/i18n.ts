@@ -158,5 +158,9 @@ export const STAFF_T = {
   rsStCooking: ['يُحضَّر', 'Cooking', 'ئامادە دەکرێت'],
   rsStReady: ['جاهز', 'Ready', 'ئامادەیە'],
   rsStServed: ['قُدِّم', 'Served', 'پێشکەشکرا'],
-  rsStCancelled: ['أُلغي', 'Cancelled', 'هەڵوەشێنرایەوە']
+  rsStCancelled: ['أُلغي', 'Cancelled', 'هەڵوەشێنرایەوە'],
+  errRsTableBusy: ['فتح أحدٌ هذه الطاولة للتو. افتحها من القائمة.', 'Someone just opened this table. Open it from the list.', 'کەسێک ئێستا ئەم مێزەی کردەوە. لە لیستەکەوە بیکەرەوە.'],
+  errRsOrderClosed: ['دُفع هذا الطلب أو أُغلق.', 'This order is paid or closed.', 'ئەم داواکارییە پارەی دراوە یان داخراوە.'],
+  errRsLineSent: ['وصل هذا إلى المطبخ: يُلغيه المشرف في نقطة البيع.', 'This is in the kitchen: a supervisor cancels it at the till.', 'ئەمە گەیشتووەتە مەتبەخ: سەرپەرشتیار لە خاڵی فرۆشتن هەڵیدەوەشێنێتەوە.'],
+  errRsTooMany: ['في الطلب أطباق كثيرة جداً.', 'The order has too many dishes.', 'خواردنی زۆر زۆر لە داواکارییەکەدایە.']
 } as const satisfies Record<string, readonly [string, string, string]>;

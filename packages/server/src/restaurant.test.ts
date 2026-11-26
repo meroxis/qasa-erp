@@ -423,4 +423,23 @@ describe('recipes', () => {
     // a recipe taken away: the dish sells with no cost again
     expect((await call('PUT', `/api/restaurant/recipes/${m.kebab.id}`, { parts: [] })).json().recipe).toBeNull();
   });
+
+  it('sells a dish on an invoice too; a return of it gives no ingredient back and reverses no cost, as the books do', async () => {
+    await trial();
+    const m = await menu();
+    const lamb = await stockItem('LAMB', 'kg', 10_000, 20_000);
+    await call('PUT', `/api/restaurant/recipes/${m.kebab.id}`, { parts: [{ ingredientId: lamb, qtyMilli: 250 }] });
+    const customer = (await call('POST', '/api/parties', { type: 'customer', name: 'Raz' })).json() as { id: string };
+    const draft = await call('POST', '/api/invoices', {
+      kind: 'sale', date: new Date().toISOString().slice(0, 10), partyId: customer.id, warehouseId, currency: 'IQD', rateX100: 100, payment: 'credit', discount: 0,
+      lines: [{ itemId: m.kebab.id, qtyMilli: 2_000, unitPrice: 12_000 }]
+    });
+    expect(draft.statusCode, draft.body).toBe(201);
+    expect((await call('POST', `/api/invoices/${draft.json().id}/post`)).statusCode).toBe(200);
+    expect(stockOf(lamb)).toEqual({ q: 9_500, v: 190_000 });
+    const back = await call('POST', `/api/invoices/${draft.json().id}/returns`, { date: new Date().toISOString().slice(0, 10), payment: 'credit', lines: [{ lineNo: 1, qtyMilli: 1_000 }] });
+    expect(back.statusCode, back.body).toBe(201);
+    expect(stockOf(lamb)).toEqual({ q: 9_500, v: 190_000 });
+    expect((db.prepare('SELECT cost FROM invoice_lines WHERE invoice_id = ?').get(back.json().id) as { cost: number | null }).cost).toBeNull();
+  });
 });

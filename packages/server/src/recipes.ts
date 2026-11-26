@@ -4,6 +4,7 @@ import { transaction } from './db.ts';
 import { audit } from './audit.ts';
 import { invalid, notFound } from './errors.ts';
 import { seesCost, type Actor } from './auth.ts';
+import { userBranchLists } from './branches.ts';
 
 /**
  * Recipes (2.1, with restaurants and cafés): what one of a dish takes of each ingredient. A dish is an item that keeps
@@ -30,7 +31,7 @@ export interface RecipePartView {
   name: Names;
   unit: string;
   qtyMilli: number;
-  /** what the company has of it, in every warehouse */
+  /** what the company has of it, in every warehouse (a user limited to branches: in theirs) */
   stockMilli: number;
   /** what this much of it costs at its average cost (null: none in stock); only for who sees cost (no key otherwise) */
   cost?: number | null;
@@ -122,9 +123,12 @@ export function listRecipes(db: Db, actor: Actor, only?: string): RecipeView[] {
                            ORDER BY g.code`).all(...dishes.map((d) => d.id)) as unknown as (ItemRow & { item_id: string; qty_milli: number })[];
   const ingredientIds = [...new Set(rows.map((r) => r.id))];
   const stock = new Map<string, { qty: number; value: number }>();
-  if (ingredientIds.length) {
-    for (const s of db.prepare(`SELECT item_id, SUM(qty_milli) AS qty, SUM(value) AS value FROM stock_moves WHERE item_id IN (${marks(ingredientIds.length)}) GROUP BY item_id`)
-      .all(...ingredientIds) as { item_id: string; qty: number | null; value: number | null }[]) {
+  // a user limited to branches: what their own warehouses have
+  const own = userBranchLists(db, actor);
+  if (ingredientIds.length && (!own || own.warehouses.length)) {
+    const where = own ? ` AND warehouse_id IN (${marks(own.warehouses.length)})` : '';
+    for (const s of db.prepare(`SELECT item_id, SUM(qty_milli) AS qty, SUM(value) AS value FROM stock_moves WHERE item_id IN (${marks(ingredientIds.length)})${where} GROUP BY item_id`)
+      .all(...ingredientIds, ...(own ? own.warehouses : [])) as { item_id: string; qty: number | null; value: number | null }[]) {
       stock.set(s.item_id, { qty: Number(s.qty ?? 0), value: Number(s.value ?? 0) });
     }
   }
