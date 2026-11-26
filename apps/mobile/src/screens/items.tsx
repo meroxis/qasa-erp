@@ -32,7 +32,7 @@ export function ItemsScreen() {
     let live = true;
     const timer = setTimeout(() => {
       setBusy(true);
-      api.items(q).then((r) => { if (live) { setResults(r.slice(0, 50)); setError(null); } }, (e: unknown) => { if (live) setError(explain(e)); })
+      api.items(q, 50).then((r) => { if (live) { setResults(r.slice(0, 50)); setError(null); } }, (e: unknown) => { if (live) setError(explain(e)); })
         .finally(() => { if (live) setBusy(false); });
     }, 300);
     return () => { live = false; clearTimeout(timer); };

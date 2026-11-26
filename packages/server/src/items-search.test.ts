@@ -80,3 +80,12 @@ describe('items search', () => {
     for (const it of some) expect(it).toEqual(all.get(it.id));
   });
 });
+
+describe('items and customers, the first so many', () => {
+  it('gives the first items by code when asked for a few (a phone\'s search)', () => {
+    for (let i = 0; i < 30; i++) createItem(db, { code: `L-${String(i).padStart(2, '0')}`, name: { ar: `لبن ${i}`, en: `Laban ${i}`, ku: `ماست ${i}` }, unit: 'piece', salePrice: 1000, saleCurrency: 'IQD' }, user);
+    expect(listItems(db, { q: 'laban', limit: 5 }).map((i) => i.code)).toEqual(['L-00', 'L-01', 'L-02', 'L-03', 'L-04']);
+    expect(listItems(db, { limit: 3 }).map((i) => i.code)).toEqual(['L-00', 'L-01', 'L-02']);
+    expect(listItems(db, { q: 'laban' })).toHaveLength(30);
+  });
+});

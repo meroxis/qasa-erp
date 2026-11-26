@@ -31,7 +31,7 @@ export function CustomersScreen({ pick }: { pick?: 'sale' | undefined }) {
   useEffect(() => {
     let live = true;
     const timer = setTimeout(() => {
-      api.customers(text.trim()).then((r) => { if (live) { setList(r.filter((c) => c.active !== false).slice(0, 60)); setError(null); } }, (e: unknown) => { if (live) setError(explain(e)); });
+      api.customers(text.trim(), 200).then((r) => { if (live) { setList(r.filter((c) => c.active !== false).slice(0, 60)); setError(null); } }, (e: unknown) => { if (live) setError(explain(e)); });
     }, text ? 300 : 0);
     return () => { live = false; clearTimeout(timer); };
   }, [text, api, explain, attempt]);

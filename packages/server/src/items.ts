@@ -216,6 +216,8 @@ export function listItems(
     q?: string | undefined; warehouseId?: string | undefined; active?: boolean | undefined; categoryId?: string | undefined; brandId?: string | undefined;
     /** these items only (a printed document's lines: not the whole list for a few barcodes) */
     ids?: readonly string[] | undefined;
+    /** at most this many, the first by code (a phone's search: its link carries a megabyte at most) */
+    limit?: number | undefined;
   } = {},
   warehouses: WarehouseFilter = null
 ): ItemView[] {
@@ -236,7 +238,8 @@ export function listItems(
   const q = filters.q ? normalizeForSearch(filters.q) : '';
   const units = unitsByItem(db);
   const stockIn = filters.warehouseId ? [filters.warehouseId] : warehouses;
-  if (!q) return itemRows(db, where, params, stockIn, filters.ids).map((r) => toView(r, units.get(r.id)));
+  const limit = filters.limit ?? Number.POSITIVE_INFINITY;
+  if (!q) return itemRows(db, where, params, stockIn, filters.ids).slice(0, limit).map((r) => toView(r, units.get(r.id)));
   // a search: the words of the items first, then the stock of those found only (2.0.0: a big company's search read the
   // stock of all 100,000 items to show a few, bench/big-company.ts). A unit's barcode finds its item too.
   const unitBarcodes = (id: string) => (units.get(id) ?? []).map((u) => u.barcode).join(' ');
@@ -244,7 +247,8 @@ export function listItems(
                              LEFT JOIN brands b ON b.id = i.brand_id ${where} ORDER BY i.code`).all(...params) as
     { id: string; code: string; barcode: string | null; name_ar: string; name_en: string; name_ku: string; brand_name: string | null }[])
     .filter((r) => normalizeForSearch(`${r.code} ${r.barcode ?? ''} ${unitBarcodes(r.id)} ${r.name_ar} ${r.name_en} ${r.name_ku} ${r.brand_name ?? ''}`).includes(q))
-    .map((r) => r.id);
+    .map((r) => r.id)
+    .slice(0, limit);
   const rows: ItemRow[] = [];
   // in code order, a few hundred at a time (a short search finds many: "a" is in most names)
   for (let at = 0; at < found.length; at += 400) {

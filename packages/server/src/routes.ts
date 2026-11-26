@@ -539,13 +539,15 @@ export function apiRoutes(db: Db, options: { demo?: boolean; extensions?: readon
   // customers & suppliers
   const partyFilters = z.object({
     type: z.enum(['customer', 'supplier']).optional(), q: z.string().max(100).optional(), active: z.enum(['true', 'false']).optional(),
-    owing: z.enum(['true', 'false']).optional(), sort: z.enum(['code', 'debt']).optional()
+    owing: z.enum(['true', 'false']).optional(), sort: z.enum(['code', 'debt']).optional(),
+    // 2.0.0: at most this many (a phone's search: its link carries a megabyte at most)
+    limit: z.string().regex(/^[1-9]\d{0,3}$/).optional()
   });
   // a user limited to branches sees balances and statements made of their branches' entries only (as in the aging)
   const branchOfUser = (req: ApiRequest) => userBranchLists(db, actorOf(req));
   app.get('/api/parties', async (req) => {
     const q = parse(partyFilters, req.query);
-    return listParties(db, { type: q.type, q: q.q, active: q.active === undefined ? undefined : q.active === 'true', owing: q.owing === 'true', sort: q.sort }, branchOfUser(req));
+    return listParties(db, { type: q.type, q: q.q, active: q.active === undefined ? undefined : q.active === 'true', owing: q.owing === 'true', sort: q.sort, limit: q.limit === undefined ? undefined : Number(q.limit) }, branchOfUser(req));
   });
   // 1.4: what the customers owe (or the suppliers are owed) in all, per currency; "totals" is never taken for an id
   app.get('/api/parties/totals', async (req) => partyTotals(db, parse(z.object({ type: z.enum(['customer', 'supplier']) }), req.query).type, branchOfUser(req)));
@@ -599,7 +601,9 @@ export function apiRoutes(db: Db, options: { demo?: boolean; extensions?: readon
       barcode: z.string().min(1).max(64).optional(), categoryId: z.string().min(1).max(64).optional(),
       brandId: z.string().min(1).max(64).optional(),
       // 2.0.0: some items by id, comma separated (a printed document's lines), up to 500
-      ids: z.string().max(500 * 65).optional()
+      ids: z.string().max(500 * 65).optional(),
+      // 2.0.0: at most this many (a phone's search: its link carries a megabyte at most)
+      limit: z.string().regex(/^[1-9]\d{0,3}$/).optional()
     }), req.query);
     const ids = q.ids === undefined ? undefined : [...new Set(q.ids.split(',').filter(Boolean))];
     if (ids && (ids.length > 500 || ids.some((id) => id.length > 64))) throw invalid([{ code: 'schema', path: 'ids' }]);
@@ -608,7 +612,7 @@ export function apiRoutes(db: Db, options: { demo?: boolean; extensions?: readon
       return findByBarcode(db, q.barcode, q.warehouseId ? [q.warehouseId] : warehousesOfUser(req));
     }
     // without a warehouse, a user limited to branches gets the stock of their branches' warehouses (null: every one)
-    return listItems(db, { q: q.q, warehouseId: q.warehouseId, active: q.active === undefined ? undefined : q.active === 'true', categoryId: q.categoryId, brandId: q.brandId, ids }, warehousesOfUser(req));
+    return listItems(db, { q: q.q, warehouseId: q.warehouseId, active: q.active === undefined ? undefined : q.active === 'true', categoryId: q.categoryId, brandId: q.brandId, ids, limit: q.limit === undefined ? undefined : Number(q.limit) }, warehousesOfUser(req));
   });
   // 1.1: items at or below their minimum quantity (their own, or their category's), in a warehouse or the user's
   app.get('/api/stock/reorder', async (req) => {

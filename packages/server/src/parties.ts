@@ -165,6 +165,8 @@ export interface PartyListFilters {
   owing?: boolean | undefined;
   /** 1.4: 'debt' puts the biggest balance first (IQD at the book rates, as `balance`); otherwise by code */
   sort?: 'code' | 'debt' | undefined;
+  /** 2.0.0: at most this many, after the sort (a phone's search: its link carries a megabyte at most) */
+  limit?: number | undefined;
 }
 
 export function listParties(db: Db, filters: PartyListFilters = {}, branch: PartyBranch = null): PartyView[] {
@@ -182,7 +184,7 @@ export function listParties(db: Db, filters: PartyListFilters = {}, branch: Part
     .filter((p) => !filters.owing || partyOwes(p));
   // the rows come by code; the sort is stable, so equal balances keep that order
   if (filters.sort === 'debt') list.sort((a, b) => b.balance - a.balance);
-  return list;
+  return filters.limit === undefined ? list : list.slice(0, filters.limit);
 }
 
 /** Each currency's own amounts: dinars in dinars, dollars in cents. */

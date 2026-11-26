@@ -1,8 +1,8 @@
 import { useData } from '../components.tsx';
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { OFFER_KINDS, formatQty, parseQty, todayIso, type Names, type OfferKind } from '@qasa/core';
 import { api } from '../api.ts';
-import { EmptyState, ErrorBox, Icon, Modal, downloadCsv, useLoad, usePageNav, useToast } from '../components.tsx';
+import { EmptyState, ErrorBox, Icon, Modal, SearchCombo, downloadCsv, useLoad, usePageNav, useToast, type PickOption } from '../components.tsx';
 import { useI18n, type I18n, type Key } from '../i18n.ts';
 import { go } from '../router.ts';
 import { categoriesApi } from '../industry/categories-api.ts';
@@ -201,15 +201,19 @@ function GoodsPicker({ label, items, categories, onChange }: {
   const allItems = useLoad(() => api.items({ active: 'true' }), []);
   const allCats = useLoad(() => categoriesApi.list({ active: 'true' }), []);
   const itemName = (id: string) => { const it = allItems.data?.find((x) => x.id === id); return it ? `${it.code} · ${i18n.name(it.name)}` : id; };
+  // a box to search in, not a list of every item (a supermarket has tens of thousands: a plain list could not be used)
+  const itemOptions = useMemo((): PickOption[] => (allItems.data ?? []).map((it) => ({
+    id: it.id, code: it.code, label: i18n.name(it.name), search: `${it.barcode ?? ''} ${it.name.ar} ${it.name.en} ${it.name.ku}`
+  })), [allItems.data, i18n]);
   const catName = (id: string) => { const c = allCats.data?.find((x) => x.id === id); return c ? i18n.name(c.name) : id; };
   return (
     <fieldset className="stack" style={{ gap: 6 }}>
       <legend>{label}</legend>
       <div className="row" style={{ gap: 6 }}>
-        <select className="input" value="" aria-label={t('of_items')} onChange={(e) => { if (e.target.value && !items.includes(e.target.value)) onChange({ items: [...items, e.target.value], categories }); }}>
-          <option value="">{t('of_addItem')}…</option>
-          {(allItems.data ?? []).map((it) => <option key={it.id} value={it.id}>{it.code} · {i18n.name(it.name)}</option>)}
-        </select>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <SearchCombo value="" options={itemOptions} placeholder={`${t('of_addItem')}…`} ariaLabel={t('of_items')}
+            onChange={(id) => { if (id && !items.includes(id)) onChange({ items: [...items, id], categories }); }} />
+        </div>
         <select className="input" value="" aria-label={t('of_categories')} onChange={(e) => { if (e.target.value && !categories.includes(e.target.value)) onChange({ items, categories: [...categories, e.target.value] }); }}>
           <option value="">{t('of_categories')}…</option>
           {(allCats.data ?? []).map((c) => <option key={c.id} value={c.id}>{i18n.name(c.name)}</option>)}

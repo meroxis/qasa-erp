@@ -54,6 +54,9 @@ import { DeliveryFromTill } from '../industry/DeliveryFromTill.tsx';
  *
  * Each sale is a sale invoice posted at once into the shift's safe; the receipt prints on an 80 mm printer.
  */
+/** How often the till reads the whole item list again while it sells (between, only the items sold: refreshSold). */
+const ITEMS_AGAIN_MS = 5 * 60_000;
+
 export function Register({ initial, onClosed }: { initial: ShiftView; onClosed(): void }) {
   const i18n = useI18n();
   const { t } = i18n;
@@ -184,9 +187,28 @@ export function Register({ initial, onClosed }: { initial: ShiftView; onClosed()
   const rateX100 = currency === 'USD' ? rateToX100(Number(toWesternDigits(rateText).replace(/,/g, '')) || 0) : 100;
   const priceRate = priceRateFor(currency, rateX100, settings?.defaultRateX100);
 
+  const fullAt = useRef(0);
   const loadItems = useCallback(() => {
+    fullAt.current = Date.now();
     void fromServerOrTill(() => api.items({ active: 'true' }), (list) => rememberTill(tillWho(), { items: list }), () => tillCache(tillWho())?.items).then(setItems, setError);
   }, []);
+  /**
+   * After a sale: the stock of what was sold, not the whole list again (2.0.0: in a big shop that was megabytes at every
+   * sale). The whole list comes again every few minutes, for the items added or changed on other PCs meanwhile.
+   */
+  const refreshSold = (ids: readonly string[]) => {
+    if (Date.now() - fullAt.current > ITEMS_AGAIN_MS) { loadItems(); return; }
+    void api.itemsByIds([...new Set(ids)].slice(0, 500)).then((fresh) => {
+      if (!fresh.length) return;
+      const got = new Map(fresh.map((it) => [it.id, it]));
+      setItems((list) => {
+        // an item switched off meanwhile leaves the till, as the whole list would leave it out
+        const next = list.flatMap((it) => { const f = got.get(it.id); return !f ? [it] : f.active ? [f] : []; });
+        rememberTill(tillWho(), { items: next });
+        return next;
+      });
+    }, () => { /* the next sale or the next whole list has it */ });
+  };
   const [offerRules, setOfferRules] = useState<OfferRule[]>(() => tillCache(tillWho())?.offers ?? []);
   const loadOffers = useCallback(() => {
     void fromServerOrTill(() => offersApi.till(shift.warehouseId).then((r) => r.offers), (list) => rememberTill(tillWho(), { offers: list }), () => tillCache(tillWho())?.offers)
@@ -628,8 +650,9 @@ export function Register({ initial, onClosed }: { initial: ShiftView; onClosed()
       setReceiptRounding(res.rounding ?? 0);
       if (cashDue > 0) openDrawerForSale();
       setLastDone({ total: i18n.money(total, currency), change: changeNow !== null && changeNow >= 0 ? i18n.money(changeNow, 'IQD') : null, number: res.invoice.number ?? '' });
+      const sold = cart.map((l) => l.item.id);
       clearNow();
-      loadItems();
+      refreshSold(sold);
       toast(t('pos_saved', { n: res.invoice.number ?? '' }));
       controlled.check(res.invoice.id);
     } catch (e) {

@@ -89,7 +89,8 @@ export function coreApi(link: OfficeLink) {
     settings: async () => ok(await link.request<Settings>('GET', '/api/settings')),
     brief: async () => ok(await link.request<Brief>('GET', '/api/brief')),
     warehouses: async () => ok(await link.request<Warehouse[]>('GET', '/api/warehouses')),
-    items: async (text: string) => ok(await link.request<Item[]>('GET', '/api/items' + q({ q: text, active: 'true' }))),
+    /** `limit`: the first so many by code (an office from before 2.0 sends them all; the link carries a megabyte at most) */
+    items: async (text: string, limit?: number) => ok(await link.request<Item[]>('GET', '/api/items' + q({ q: text, active: 'true', ...(limit ? { limit: String(limit) } : {}) }))),
     item: async (id: string) => ok(await link.request<ItemDetail>('GET', `/api/items/${safeId(id)}`)),
     /** car parts: shelf, brand, wholesale price (absent without the feature: null) */
     part: async (id: string): Promise<PartHit | null> => {
@@ -115,7 +116,7 @@ export function coreApi(link: OfficeLink) {
         return NOTHING_FOUND;
       }
     },
-    customers: async (text: string) => ok(await link.request<Party[]>('GET', '/api/parties' + q({ type: 'customer', q: text }))),
+    customers: async (text: string, limit?: number) => ok(await link.request<Party[]>('GET', '/api/parties' + q({ type: 'customer', q: text, ...(limit ? { limit: String(limit) } : {}) }))),
     customer: async (id: string) => ok(await link.request<Party>('GET', `/api/parties/${safeId(id)}`)),
     statement: async (id: string, from?: string) => ok(await link.request<Statement>('GET', `/api/parties/${safeId(id)}/statement${from ? q({ from }) : ''}`)),
     createItem: async (input: { name: Names; barcode?: string; unit: string; salePrice: number; saleCurrency: Currency }) =>

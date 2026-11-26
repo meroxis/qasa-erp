@@ -93,3 +93,23 @@ describe('items by id', () => {
     expect(many.statusCode).toBe(400);
   });
 });
+
+describe('the first so many', () => {
+  it('items and customers answer at most the number asked for, and refuse a number that is no number', async () => {
+    for (let i = 0; i < 12; i++) {
+      await post('/api/items', { code: `L-${String(i).padStart(2, '0')}`, name: { ar: `لبن ${i}`, en: `Laban ${i}`, ku: `ماست ${i}` }, unit: 'piece', salePrice: 1000, saleCurrency: 'IQD' });
+      await post('/api/parties', { type: 'customer', name: `Laban shop ${String(i).padStart(2, '0')}` });
+    }
+    const items = await get('/api/items?q=laban&active=true&limit=4');
+    expect(items.statusCode, items.body).toBe(200);
+    expect(items.json().map((i: { code: string }) => i.code)).toEqual(['L-00', 'L-01', 'L-02', 'L-03']);
+    const customers = await get('/api/parties?type=customer&q=laban&limit=3');
+    expect(customers.statusCode, customers.body).toBe(200);
+    expect(customers.json()).toHaveLength(3);
+    expect((await get('/api/parties?type=customer&q=laban')).json()).toHaveLength(12);
+    for (const bad of ['0', '-1', 'x', '10000', '1.5']) {
+      expect((await get(`/api/items?q=laban&limit=${bad}`)).statusCode, bad).toBe(400);
+      expect((await get(`/api/parties?q=laban&limit=${bad}`)).statusCode, bad).toBe(400);
+    }
+  });
+});

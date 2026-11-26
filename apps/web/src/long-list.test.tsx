@@ -71,3 +71,22 @@ describe('long lists', () => {
     expect(read('./pages/MoreReports.tsx')).toContain('{opened.shown.map((r) => (');
   });
 });
+
+describe('big shops: what is not loaded or drawn whole any more', () => {
+  const read = (file: string) => readFileSync(new URL(file, import.meta.url), 'utf8').replace(/\r\n/g, '\n');
+
+  it('after a sale the till reads the stock of what was sold, and the whole list every few minutes only', () => {
+    const till = read('./pos/Register.tsx');
+    const after = till.slice(till.indexOf('setLastDone({ total: i18n.money(total, currency)'), till.indexOf("toast(t('pos_saved'"));
+    expect(after).toContain('refreshSold(sold);');
+    expect(after).not.toContain('loadItems();');
+    expect(till).toContain('const ITEMS_AGAIN_MS = 5 * 60_000;');
+    expect(till).toContain('api.itemsByIds([...new Set(ids)].slice(0, 500))');
+  });
+
+  it('an offer\'s items are searched for in a box, not picked from a list of every item', () => {
+    const offers = read('./pages/Offers.tsx');
+    expect(offers).toContain('<SearchCombo value="" options={itemOptions}');
+    expect(offers).not.toContain("(allItems.data ?? []).map((it) => <option");
+  });
+});
