@@ -41,9 +41,10 @@ import { dailySuppliersApi } from './daily-suppliers.ts';
 
 import { tillReturnsApi } from './till-returns.ts';
 import { productLookupApi } from './product-lookup.ts';
+import { restaurantApi } from './restaurant.ts';
 /**
  * The app's own features that are built like modules (each in a file of its own, as an ApiExtension): served on every
  * edition, the website demo included, behind the same sign-in, permission and same-site checks as the rest of the API.
  */
 export const BUILT_IN_FEATURES: readonly ApiExtension[] = [posApi, mediaApi, quotesApi, activationApi, briefApi, fxApi, verifyApi, usageApi, branchesApi, bankingApi, assetsApi, adjustmentsApi, purchasingApi, pricesApi, printProfileApi, batchesApi, categoriesApi, brandsApi, outboxApi, dayCloseApi, loyaltyApi, quickVouchersApi, stockCorrectionApi,
-  expensesApi, fuelApi, slowStockApi, shelfLabelsApi, posTillsApi, featureAccountsApi, tillRulesApi, consignmentApi, offersApi, goldApi, wholesaleApi, deliveryApi, debtRemindersApi, priceCheckerApi, dailySuppliersApi, clothingApi, tillReturnsApi, productLookupApi];
+  expensesApi, fuelApi, slowStockApi, shelfLabelsApi, posTillsApi, featureAccountsApi, tillRulesApi, consignmentApi, offersApi, goldApi, wholesaleApi, deliveryApi, debtRemindersApi, priceCheckerApi, dailySuppliersApi, clothingApi, tillReturnsApi, productLookupApi, restaurantApi];

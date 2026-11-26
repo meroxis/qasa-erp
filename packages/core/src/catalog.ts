@@ -78,7 +78,7 @@ export interface StarterList { name: Names; categories: readonly StarterCategory
 
 export const STARTER_TRADES = [
   'general', 'electronics', 'autoParts', 'pharmacy', 'grocery', 'building', 'clothing', 'cosmetics', 'homeAppliances', 'stationery', 'electricalSolar', 'generators',
-  'jewellery'
+  'jewellery', 'restaurant'
 ] as const;
 export type StarterTrade = (typeof STARTER_TRADES)[number];
 
@@ -89,7 +89,7 @@ export function isStarterTrade(value: unknown): value is StarterTrade {
 /** The starter list a business type suggests first (any trade can still be picked). */
 export const BUSINESS_STARTER_TRADE: Record<BusinessType, StarterTrade> = {
   trade: 'general', market: 'grocery', realEstate: 'building', mobileShop: 'electronics', autoParts: 'autoParts', engineeringWorks: 'building',
-  electricalSolar: 'electricalSolar', generators: 'generators', pharmacy: 'pharmacy', petrolStation: 'general', goldShop: 'jewellery', wholesale: 'grocery', clothingShop: 'clothing'
+  electricalSolar: 'electricalSolar', generators: 'generators', pharmacy: 'pharmacy', petrolStation: 'general', goldShop: 'jewellery', wholesale: 'grocery', clothingShop: 'clothing', restaurant: 'restaurant'
 };
 
 /** The suggested trade for a company: its first business type with a list of its own, else general trade. */
@@ -348,6 +348,30 @@ export const STARTER_LISTS: Record<StarterTrade, StarterList> = {
     ]
   },
 
+  // 2.1: a restaurant's or a café's menu, by course and drink; what the kitchen buys
+  restaurant: {
+    name: n('مطاعم ومقاهي', 'Restaurants and cafés', 'چێشتخانە و کافێ'),
+    categories: [
+      { name: n('مقبلات وسلطات', 'Starters and salads', 'پێشخوارن و زەڵاتە'), sub: [n('مقبلات', 'Starters', 'پێشخوارن'), n('سلطات', 'Salads', 'زەڵاتە'), n('شوربات', 'Soups', 'شۆربا')] },
+      { name: n('مشويات', 'Grills', 'برژاو'), sub: [n('كباب وتكة', 'Kebab and tikka', 'کەباب و تکە'), n('دجاج مشوي', 'Grilled chicken', 'مریشکی برژاو')] },
+      { name: n('أطباق رئيسية', 'Main dishes', 'خواردنی سەرەکی'), sub: [n('رز ومرق', 'Rice and stews', 'برنج و شلە'), n('أسماك', 'Fish', 'ماسی')] },
+      { name: n('سندويشات وبرغر', 'Sandwiches and burgers', 'ساندویچ و بێرگەر'), sub: [n('شاورما', 'Shawarma', 'شاورمە'), n('برغر', 'Burgers', 'بێرگەر'), n('فلافل', 'Falafel', 'فەلافل')] },
+      { name: n('بيتزا ومعجنات', 'Pizza and pastries', 'پیتزا و هەویرکاری') },
+      { name: n('حلويات', 'Desserts', 'شیرینی') },
+      { name: n('مشروبات ساخنة', 'Hot drinks', 'خواردنەوەی گەرم'), sub: [n('شاي', 'Tea', 'چا'), n('قهوة', 'Coffee', 'قاوە')] },
+      { name: n('مشروبات باردة', 'Cold drinks', 'خواردنەوەی سارد'), sub: [n('عصائر', 'Juices', 'شەربەت'), n('مشروبات غازية', 'Soft drinks', 'خواردنەوەی گازدار'), n('مياه', 'Water', 'ئاو')] },
+      { name: n('أركيلة', 'Hookah', 'نێرگەلە') },
+      { name: n('مواد المطبخ', 'Kitchen supplies', 'کەرەستەی چێشتخانە'), sub: [n('لحوم ودواجن', 'Meat and poultry', 'گۆشت و مریشک'), n('خضار وفواكه', 'Vegetables and fruit', 'سەوزە و میوە'), n('مواد جافة', 'Dry goods', 'کەرەستەی وشک'), n('تغليف', 'Packaging', 'پاکەتکردن')] }
+    ],
+    brands: [
+      { name: 'Pepsi', ar: 'بيبسي', ku: 'پێپسی', country: 'US' }, { name: 'Coca-Cola', ar: 'كوكا كولا', ku: 'کۆکاکۆلا', country: 'US' }, { name: '7UP', country: 'US' },
+      { name: 'Mirinda', country: 'US' }, { name: 'Red Bull', country: 'AT' }, { name: 'Lipton', country: 'GB' }, { name: 'Ahmad Tea', country: 'GB' },
+      { name: 'Tetley', country: 'GB' }, { name: 'Nescafé', country: 'CH' }, { name: 'Lavazza', country: 'IT' }, { name: 'Nestlé', country: 'CH' },
+      { name: 'Almarai', ar: 'المراعي', ku: 'ئەلمەراعی', country: 'SA' }, { name: 'Al Rabie', ar: 'الربيع', ku: 'ئەلڕەبیع', country: 'SA' },
+      { name: 'Rani', ar: 'راني', ku: 'ڕانی', country: 'SA' }, { name: 'Heinz', country: 'US' }
+    ]
+  },
+
   electricalSolar: {
     name: n('كهربائيات وطاقة شمسية', 'Electrical and solar', 'کارەبا و وزەی خۆر'),
     categories: [
@@ -405,7 +429,9 @@ export const BUSINESS_UNITS: Record<BusinessType, readonly UnitCode[] | null> = 
   petrolStation: ['l', 'bottle', 'piece', 'carton', 'box', 'service'],
   goldShop: ['piece', 'set', 'pair', 'g', 'service'],
   wholesale: ['carton', 'piece', 'pack', 'box', 'dozen', 'bag', 'kg', 'l', 'bottle', 'sachet', 'roll'],
-  clothingShop: ['piece', 'pair', 'set', 'dozen', 'pack', 'box', 'carton', 'm', 'service']
+  clothingShop: ['piece', 'pair', 'set', 'dozen', 'pack', 'box', 'carton', 'm', 'service'],
+  // a dish or a drink is a piece; what the kitchen buys, by weight, volume or the box
+  restaurant: ['piece', 'set', 'bottle', 'kg', 'g', 'l', 'box', 'carton', 'pack', 'bag', 'service']
 };
 
 /**

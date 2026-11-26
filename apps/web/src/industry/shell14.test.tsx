@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs';
 import { describe, expect, it, vi } from 'vitest';
 import type { ReactNode } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
-import type { Lang, PrinterChoices } from '@qasa/core';
+import { PRINT_KINDS, type Lang, type PrinterChoices } from '@qasa/core';
 import type { PartyView } from '../api.ts';
 import { I18nContext, makeI18n, type Key } from '../i18n.ts';
 import { SHELL14_TEXT } from '../i18n/shell14.ts';
@@ -338,7 +338,8 @@ describe('Settings → Printers: this computer’s printers', () => {
   });
 
   it('offers no suggestion once every kind has a printer, and none from an older app that gives no details', () => {
-    const all: PrinterChoices = Object.fromEntries((['invoice', 'voucher', 'quote', 'receipt', 'label', 'report'] as const)
+    // every kind (2.1: kitchen tickets too, which a restaurant's page lists)
+    const all: PrinterChoices = Object.fromEntries(PRINT_KINDS
       .map((k) => [k, { printer: 'Office Laser', paper: 'A4', margins: 'default', copies: 1, silent: false }])) as PrinterChoices;
     const html = wrap(view(all));
     expect(html).not.toContain('Use the suggested printers');
