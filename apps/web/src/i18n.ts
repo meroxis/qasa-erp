@@ -783,7 +783,7 @@ const BASE = {
   err_code_invalid: ['الرمز يحتوي على رموز غير مسموحة', 'The code has characters that aren’t allowed', 'کۆدەکە پیتی ڕێگەپێنەدراوی تێدایە'],
   err_barcode_exists: ['هذا الباركود مستخدم', 'This barcode is already used', 'ئەم بارکۆدە بەکارهاتووە'],
   err_item_has_moves: ['للمادة حركات — لا يمكن حذفها أو تغيير تتبعها', 'The item has moves, so it can’t be deleted or switch tracking', 'کاڵاکە جووڵەی هەیە، بۆیە ناسڕدرێتەوە و بەدواداچوونی بڕەکەی ناگۆڕدرێت'],
-  err_item_in_use: ['المادة مذكورة في عروض أسعار أو أوامر شراء أو مستندات مخزن أو تسويات أو أرقام تسلسلية أو مشاريع، فلا تُحذف.', 'The item is named on quotes, purchase orders, stock documents, adjustments, serial numbers or projects, so it can’t be deleted.', 'کاڵاکە لە عەرزی نرخ، داواکاریی کڕین، بەڵگەی کۆگا، ڕاستکردنەوەی کۆگا، ژمارەی زنجیرەیی یان پرۆژەدا هاتووە، بۆیە ناسڕدرێتەوە.'],
+  err_item_in_use: ['المادة مذكورة في عروض أسعار أو أوامر شراء أو مستندات مخزن أو تسويات أو أرقام تسلسلية أو مشاريع أو طلبات مطعم أو وصفات، فلا تُحذف.', 'The item is named on quotes, purchase orders, stock documents, adjustments, serial numbers, projects, restaurant orders or recipes, so it can’t be deleted.', 'کاڵاکە لە عەرزی نرخ، داواکاریی کڕین، بەڵگەی کۆگا، ڕاستکردنەوەی کۆگا، ژمارەی زنجیرەیی، پرۆژە، داواکاریی چێشتخانە یان ڕەچەتەدا هاتووە، بۆیە ناسڕدرێتەوە.'],
   err_in_use: ['هذا مستخدم في سجلات أخرى، فلا يُحذف.', 'This is used by other records, so it can’t be deleted.', 'ئەمە لە تۆماری تردا بەکارهاتووە، بۆیە ناسڕدرێتەوە.'],
   err_party_has_entries: ['لهذا الاسم حركات — أوقفه بدلاً من حذفه', 'This name has movements — set it inactive instead', 'ئەم ناوە جووڵەی هەیە — لە جیاتی سڕینەوە ناچالاکی بکە'],
   err_wrong_entry_type: ['نوع السند غير صحيح', 'Wrong voucher type', 'جۆری سەنەد هەڵەیە'],

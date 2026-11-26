@@ -1155,9 +1155,10 @@ describe('the release notes of 1.4.3 (never released on its own: What\'s new sho
   });
 
   it('offers phone app 1.0.2, and says plainly what goes to Google: never the codes scanned, maybe the scanner\'s statistics', () => {
-    // (Settings offers 1.1.0 from 1.5.0, with the office's phone link that has its features; 1.0.2 was 1.4.3's; 1.2.0 is app.json's next build, not offered yet)
+    // (Settings offers 1.1.0 from 1.5.0, with the office's phone link that has its features; 1.0.2 was 1.4.3's; 1.2.0 and
+    // 1.3.0 (2.1) are app.json's next builds, not offered yet)
     const mobile = JSON.parse(read('apps/mobile/app.json')) as { expo: { version: string } };
-    expect(['1.0.2', '1.1.0', '1.2.0']).toContain(mobile.expo.version);
+    expect(['1.0.2', '1.1.0', '1.2.0', '1.3.0']).toContain(mobile.expo.version);
     for (const lang of ['ar', 'en', 'ku'] as const) expect(section(lang), lang).toMatch(/1\.0\.2[\s\S]*SHA-256/);
     expect(section('en')).toContain('The barcodes you scan never go to Google, and Google ML Kit’s own usage reports are taken out; Google Play services may still receive brief usage statistics about the scanning.');
     expect(section('ar')).toContain('ما تمسحه من باركود لا يذهب إلى Google أبداً');
@@ -1673,10 +1674,10 @@ describe('the release notes of 1.6.0 (kept as shipped: the petrol station, the t
   });
 });
 
-describe('the release notes of this version (2.0.0: the new till, gold, wholesale, clothing and the market extras; schema 21)', () => {
-  // the app's number: 2.0.0, or one of its betas (2.0.0-beta.N). The 2.0.0 notes are kept ready while a beta is out
-  const appVersion = (JSON.parse(read('apps/desktop/package.json')) as { version: string }).version;
-  const version = appVersion.split('-')[0]!;
+describe('the release notes of 2.0.0 (the new till, gold, wholesale, clothing and the market extras; schema 21; kept as written)', () => {
+  // 2.1 comes after 2.0.0 (its notes and the Store's "What's new" stay 2.0.0's until 2.1.0 goes stable)
+  const appVersion = '2.0.0';
+  const version = appVersion;
   const notes = read(`apps/desktop/release-notes/${version}.md`);
   const section = (lang: 'ar' | 'en' | 'ku') => new RegExp(`^::: ${lang}\\n([\\s\\S]*?)^:::$`, 'm').exec(notes)?.[1] ?? '';
   const before = (lang: 'ar' | 'en' | 'ku') => section(lang).split('\n### ')[0]!;
@@ -1686,12 +1687,8 @@ describe('the release notes of this version (2.0.0: the new till, gold, wholesal
   const LANGS = ['en-us', 'ar', 'ku-arab'] as const;
   const lines = (lang: (typeof LANGS)[number]) => store[lang].releaseNotes.split('\n');
 
-  it('is 2.0.0, the same in the app, the core and the lock file, with a notes file that has Arabic, English and Kurdish', () => {
+  it('is 2.0.0, with a notes file that has Arabic, English and Kurdish', () => {
     expect(version).toBe('2.0.0');
-    expect(appVersion).toMatch(/^2\.0\.0(-beta\.[1-9]\d?)?$/);
-    expect(read('packages/core/src/version.ts')).toContain(`APP_VERSION = '${appVersion}'`);
-    const lock = JSON.parse(read('package-lock.json')) as { packages: Record<string, { version?: string }> };
-    expect(lock.packages['apps/desktop']?.version).toBe(appVersion);
     for (const lang of ['ar', 'en', 'ku'] as const) expect(notes, lang).toMatch(new RegExp(`^::: ${lang}\\n[\\s\\S]+?^:::$`, 'm'));
   });
 
@@ -2035,5 +2032,57 @@ describe('the release checklist (docs/releasing.md) and the handoff notes (docs/
       expect(doc).not.toMatch(/waits for approval|give (that environment|it) a required reviewer|a person approves each release/);
       expect(doc).toMatch(/no\s+(#\s+)?required reviewer/);
     }
+  });
+});
+
+describe('the release notes of this version (2.1.0: restaurants and cafés, recipes, waiters\' phones, counting a shelf at a time; schema 22)', () => {
+  // the app's number: 2.1.0, or one of its betas (2.1.0-beta.N). The 2.1.0 notes are kept ready while a beta is out
+  const appVersion = (JSON.parse(read('apps/desktop/package.json')) as { version: string }).version;
+  const version = appVersion.split('-')[0]!;
+  const files = [`apps/desktop/release-notes/${version}.md`, ...(appVersion.includes('-') ? [`apps/desktop/release-notes/${appVersion}.md`] : [])];
+  const sectionOf = (notes: string, lang: 'ar' | 'en' | 'ku') => new RegExp(`^::: ${lang}\\n([\\s\\S]*?)^:::$`, 'm').exec(notes)?.[1] ?? '';
+
+  it('is 2.1.0 (or its beta), the same in the app, the core and the lock file, with notes in Arabic, English and Kurdish', () => {
+    expect(version).toBe('2.1.0');
+    expect(appVersion).toMatch(/^2\.1\.0(-beta\.[1-9]\d?)?$/);
+    expect(read('packages/core/src/version.ts')).toContain(`APP_VERSION = '${appVersion}'`);
+    const lock = JSON.parse(read('package-lock.json')) as { packages: Record<string, { version?: string }> };
+    expect(lock.packages['apps/desktop']?.version).toBe(appVersion);
+    for (const file of files) for (const lang of ['ar', 'en', 'ku'] as const) expect(sectionOf(read(file), lang).trim().length, `${file} ${lang}`).toBeGreaterThan(1500);
+  });
+
+  it('has the same sections in each language, and says first that the company file goes to schema 22', () => {
+    for (const file of files) {
+      const notes = read(file);
+      const heads = (lang: 'ar' | 'en' | 'ku') => sectionOf(notes, lang).split('\n').filter((l) => l.startsWith('### ')).length;
+      expect(heads('ar'), file).toBe(heads('en'));
+      expect(heads('ku'), file).toBe(heads('en'));
+      for (const lang of ['ar', 'en', 'ku'] as const) expect(sectionOf(notes, lang).split('\n### ')[0], `${file} ${lang}`).toContain('22');
+    }
+    expect(read('packages/server/src/migration-v22.test.ts')).toContain('expect(SCHEMA_VERSION).toBe(22)');
+  });
+
+  it('names what is new in the words of the app, and phone app 1.3 for the phone features', () => {
+    const notes = read(`apps/desktop/release-notes/${version}.md`);
+    expect(sectionOf(notes, 'en')).toContain('Restaurants and cafés');
+    expect(sectionOf(notes, 'ar')).toContain('المطاعم والمقاهي');
+    expect(sectionOf(notes, 'ku')).toContain('چێشتخانە و کافێ');
+    for (const lang of ['ar', 'en', 'ku'] as const) expect(sectionOf(notes, lang), lang).toContain('1.3');
+    expect(JSON.parse(read('apps/mobile/app.json')).expo.version).toBe('1.3.0');
+  });
+
+  it('writes Kurdish with no tatweel and no Arabic letters, and English with one apostrophe', () => {
+    for (const file of files) {
+      const notes = read(file);
+      expect(sectionOf(notes, 'ku'), file).not.toMatch(/[ـىيك]/);
+      expect(notes, file).not.toMatch(/\w'[\w\s]/);
+    }
+  });
+
+  it('has release-day steps: 2.0.0 first, a beta, phone app 1.3.0, then 2.1.0', () => {
+    const day = read('docs/releasing.md').split(/^(?=## )/m).find((d) => d.startsWith('## Release day for 2.1.0 ')) ?? '';
+    expect(day).toContain('**2.1.0 first.**'.replace('2.1.0', '2.0.0'));
+    expect(day).toContain('`2.1.0-beta.1` sorts above `2.0.0-beta.5`');
+    expect(day).toContain('**The phone app 1.3.0**');
   });
 });

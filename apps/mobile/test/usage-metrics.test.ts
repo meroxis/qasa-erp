@@ -119,16 +119,16 @@ describe('no usage reports of ML Kit\'s own to Google', () => {
 });
 
 describe('the app\'s version on the office PC', () => {
-  it('is said to the office in the handshake: the version and build of app.json (1.2.0, build 6)', async () => {
-    expect(app.expo.version).toBe('1.2.0');
-    expect(app.expo.android.versionCode).toBe(6);
+  it('is said to the office in the handshake: the version and build of app.json (1.3.0, build 7)', async () => {
+    expect(app.expo.version).toBe('1.3.0');
+    expect(app.expo.android.versionCode).toBe(7);
     // what App.tsx gives the link
     expect(readFileSync(join(root, 'App.tsx'), 'utf8')).toMatch(/const APP = \{ version: VERSION, build: APP_JSON\.expo\.android\.versionCode \};[\s\S]*new OfficeLink\(\{[^}]*app: APP,/);
     const o = fakeOffice();
     const link = new OfficeLink({ office: o.office, phone: generateKeyPair(), name: 'Samsung', socket: o.socket, app: { version: app.expo.version, build: app.expo.android.versionCode } });
     await link.connect();
     expect(o.claims).toHaveLength(1);
-    expect(o.claims[0]).toMatchObject({ name: 'Samsung', appVersion: '1.2.0', appBuild: 6 });
+    expect(o.claims[0]).toMatchObject({ name: 'Samsung', appVersion: '1.3.0', appBuild: 7 });
     link.close();
     // a link without it (as 1.0.1 was): the office takes it as not said
     const quiet = new OfficeLink({ office: o.office, phone: generateKeyPair(), name: 'Samsung', socket: o.socket });

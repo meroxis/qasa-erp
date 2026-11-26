@@ -199,6 +199,9 @@ beforeAll(async () => {
   const tableOrder = await made(post('/api/restaurant/orders', { kind: 'table', tableId: room.tables[0].id, guests: 2 }));
   await made(post(`/api/restaurant/orders/${tableOrder.id}/lines`, { lines: [{ itemId: teaId, qtyMilli: 2_000 }] }), 200);
   await made(post(`/api/restaurant/orders/${tableOrder.id}/send`, {}), 200);
+  // and a dish whose recipe takes tea: what the plate costs is a cost (kept from those who may not see it)
+  const plate = (await made(post('/api/items', { code: 'PLATE', name: one('Plate'), unit: 'piece', salePrice: 9_000, saleCurrency: 'IQD', trackStock: false }))).id as string;
+  await made(put(`/api/restaurant/recipes/${plate}`, { parts: [{ ingredientId: teaId, qtyMilli: 1_000 }] }), 200);
 
   // what the server worked out: the cost of every line sold or returned, the value of every stock movement and of the stock
   for (const r of db.prepare('SELECT cost AS n FROM invoice_lines WHERE cost IS NOT NULL').all() as { n: number }[]) secrets.add(Math.abs(Number(r.n)));
@@ -349,6 +352,8 @@ const COST_FIELDS = (): [string, string][] => [
   ['/api/items', '[].value'], ['/api/items', '[].purchasePrice'], ['/api/items', '[].purchaseCurrency'],
   [at.search!, '[].value'], [at.scan!, '.item.value'], [at.scan!, '.item.purchasePrice'], [at.boxScan!, '.item.value'],
   [at.item!, '.value'], [at.item!, '.purchasePrice'], [at.item!, '.stock[].value'], [at.item!, '.moves[].value'], [at.syrup!, '.value'],
+  // 2.1: a dish's cost by its recipe, and each ingredient's
+  ['/api/restaurant/recipes', '[].cost'], ['/api/restaurant/recipes', '[].parts[].cost'],
   ['/api/warehouses', '[].value'],
   ['/api/stock-docs', '[].totalValue'], [at.opening!, '.totalValue'], [at.opening!, '.lines[].unitCost'], [at.opening!, '.lines[].value'], [at.transfer!, '.lines[].value'],
   ['/api/adjustments', '[].valueOut'], ['/api/adjustments', '[].valueIn'], [at.adjustment!, '.valueOut'], [at.adjustment!, '.lines[].unitCost'], [at.adjustment!, '.lines[].value'],

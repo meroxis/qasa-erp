@@ -370,7 +370,8 @@ describe('the features of phone app 1.1, by what the office offers and who the p
     expect(needsNewerOffice(user(['storekeeper'], ['rate', 'transfer', 'receive']))).toEqual(['itemLookup', 'countAdd']);
     expect(needsNewerOffice(user(['storekeeper'], ['rate', 'transfer', 'receive', 'itemLookup']))).toEqual(['countAdd']);
     expect(needsNewerOffice(user(['storekeeper'], ['rate', 'transfer', 'receive', 'itemLookup', 'countAdd']))).toEqual([]);
-    expect(needsNewerOffice({ signInRequired: false, user: null })).toEqual(Object.keys(OFFER_OF));
+    // (tables for a waiter are a restaurant's: an office that doesn't offer them is no older office)
+    expect(needsNewerOffice({ signInRequired: false, user: null })).toEqual(Object.keys(OFFER_OF).filter((f) => f !== 'waiter'));
     expect(needsNewerOffice({ signInRequired: false, user: null, phoneLink: { v: 2, offers: ALL_OFFERS } })).toEqual([]);
   });
 

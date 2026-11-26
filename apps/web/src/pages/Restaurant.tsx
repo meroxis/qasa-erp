@@ -13,6 +13,7 @@ import { printReceipt, Receipt } from '../pos/Receipt.tsx';
 import {
   restaurantApi, type AreaView, type FloorView, type OrderLineView, type OrderSummary, type OrderView, type PayResult, type TableView, type TicketView
 } from '../industry/restaurant-api.ts';
+import { KitchenSetup } from './Kitchen.tsx';
 import '../pos.css';
 
 /**
@@ -30,6 +31,8 @@ export interface RestaurantPeople {
   cashier: boolean;
   /** may cancel what the kitchen has (posSupervise) */
   supervisor: boolean;
+  /** may change a dish's recipe (stock, as the items) */
+  stock: boolean;
 }
 
 /** How often the room and an order are read again while open (other PCs take orders too). */
@@ -53,6 +56,7 @@ export function Restaurant({ who }: { who: RestaurantPeople }) {
   const [opening, setOpening] = useState<TableView | null>(null);
   const [delivery, setDelivery] = useState(false);
   const [setup, setSetup] = useState(false);
+  const [kitchenSetup, setKitchenSetup] = useState(false);
   const [now, setNow] = useState(Date.now());
   useEffect(() => {
     const timer = window.setInterval(() => { floor.reload(); setNow(Date.now()); }, REFRESH_MS);
@@ -88,6 +92,9 @@ export function Restaurant({ who }: { who: RestaurantPeople }) {
         <span className="spacer" />
         {who.waiter && data.available && <button type="button" className="btn" onClick={() => void openTakeaway()}><Icon name="cup" size={16} />{t('rs_newTakeaway')}</button>}
         {who.waiter && data.available && <button type="button" className="btn" onClick={() => setDelivery(true)}><Icon name="truck" size={16} />{t('rs_newDelivery')}</button>}
+        <button type="button" className="btn ghost" onClick={() => go('kitchen')}><Icon name="chef" size={16} />{t('rs_kitchenScreen')}</button>
+        {(who.admin || who.stock) && <button type="button" className="btn ghost" onClick={() => go('recipes')}><Icon name="clipboard" size={16} />{t('rs_recipes')}</button>}
+        {who.admin && data.available && <button type="button" className="btn ghost" onClick={() => setKitchenSetup(true)}><Icon name="printer" size={16} />{t('rs_kitchenSettings')}</button>}
         {who.admin && data.available && areas.length > 0 && <button type="button" className="btn ghost" onClick={() => setSetup(true)}><Icon name="sliders" size={16} />{t('rs_setup')}</button>}
       </div>
 
@@ -124,6 +131,7 @@ export function Restaurant({ who }: { who: RestaurantPeople }) {
       {opening && <OpenTable table={opening} onClose={() => setOpening(null)} onBusy={() => { setOpening(null); floor.reload(); }} />}
       {delivery && <NewDelivery onClose={() => setDelivery(false)} />}
       {setup && <RoomSetup onClose={() => { setSetup(false); floor.reload(); }} />}
+      {kitchenSetup && <KitchenSetup onClose={() => setKitchenSetup(false)} />}
     </div>
   );
 }
@@ -132,10 +140,10 @@ function TableTile({ table, order, now, onOpen }: { table: TableView; order: Ord
   const i18n = useI18n();
   const { t } = i18n;
   const label = order
-    ? `${t('rs_table', { t: table.name })}: ${i18n.money(order.paid > 0 ? order.unpaid : order.total, 'IQD')}${order.billPrintedAt ? `, ${t('rs_billPrinted')}` : ''}`
+    ? `${t('rs_table', { t: table.name })}: ${i18n.money(order.paid > 0 ? order.unpaid : order.total, 'IQD')}${order.billPrintedAt ? `, ${t('rs_billPrinted')}` : ''}${order.ready > 0 ? `, ${t('rs_readyN', { n: i18n.int(order.ready) })}` : ''}`
     : `${t('rs_table', { t: table.name })}: ${t('rs_free')}`;
   return (
-    <button type="button" className={'rs-table' + (order ? ' busy' : '') + (order?.billPrintedAt ? ' billed' : '')} onClick={onOpen} aria-label={label}>
+    <button type="button" className={'rs-table' + (order ? ' busy' : '') + (order?.billPrintedAt ? ' billed' : '') + (order && order.ready > 0 ? ' ready' : '')} onClick={onOpen} aria-label={label}>
       <span className="rs-table-name">{table.name}</span>
       {order ? (
         <>
@@ -143,6 +151,8 @@ function TableTile({ table, order, now, onOpen }: { table: TableView; order: Ord
           <strong className="num">{order.paid > 0 ? `${t('rs_left')} ` : ''}{i18n.money(order.paid > 0 ? order.unpaid : order.total, 'IQD')}</strong>
           <span className="small">{[order.guests ? t('rs_guests', { n: i18n.int(order.guests) }) : '', t('rs_minutes', { n: i18n.int(minutesSince(order.openedAt, now)) })].filter(Boolean).join(' · ')}</span>
           {order.unsent > 0 && <span className="chip warn small">{t('rs_unsent', { n: i18n.int(order.unsent) })}</span>}
+          {/* 2.1: dishes the kitchen made ready, waiting to go to the table */}
+          {order.ready > 0 && <span className="chip ok small rs-ready-chip"><Icon name="bell" size={12} /> {t('rs_readyN', { n: i18n.int(order.ready) })}</span>}
           {order.billPrintedAt && <span className="chip info small">{t('rs_billPrinted')}</span>}
         </>
       ) : (
@@ -345,7 +355,10 @@ export function RestaurantOrder({ id, who }: { id: string; who: RestaurantPeople
   const [draft, setDraft] = useState<DraftLine[]>([]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<unknown>(null);
-  const [ticket, setTicket] = useState<TicketView | null>(null);
+  // 2.1: the tickets to print, one per station, one after the other (none when the kitchen works from its screen only)
+  const [queue, setQueue] = useState<TicketView[]>([]);
+  const info = useLoad(() => restaurantApi.info(), []);
+  const onPaper = (info.data?.kitchen.tickets ?? 'print') === 'print';
   const [dialog, setDialog] = useState<null | 'bill' | 'pay' | 'part' | 'details' | 'move' | 'merge' | 'cancel' | { void: OrderLineView }>(null);
   const keyRef = useRef(0);
   const draftRef = useRef(draft);
@@ -395,7 +408,10 @@ export function RestaurantOrder({ id, who }: { id: string; who: RestaurantPeople
     await saveDraft();
     const sent = await restaurantApi.send(o.id);
     order.reload();
-    if (sent.ticket) { setTicket(sent.ticket); toast(t('rs_sent', { n: i18n.int(sent.ticket.ticket) })); }
+    if (sent.tickets.length) {
+      if (onPaper) setQueue(sent.tickets);
+      toast(t('rs_sent', { n: i18n.int(sent.tickets[0]!.ticket) }));
+    }
   });
   const back = () => run(async () => { await saveDraft(); go('restaurant'); });
   const lineCall = (work: () => Promise<OrderView>) => run(async () => { await work(); order.reload(); });
@@ -448,6 +464,8 @@ export function RestaurantOrder({ id, who }: { id: string; who: RestaurantPeople
                   {l.voided ? <span className="chip bad small">{t('rs_voided', { r: l.voided.reason })}</span>
                     : l.ticket === null ? <span className="chip warn small">{t('rs_notSent')}</span>
                       : <span className="chip small">{t('rs_ticketN', { n: i18n.int(l.ticket) })}</span>}
+                  {!l.voided && l.readyAt && !l.servedAt && <span className="chip ok small"><Icon name="bell" size={12} /> {t('rs_ready')}</span>}
+                  {!l.voided && l.servedAt && <span className="chip small">{t('rs_servedChip')}</span>}
                   {l.paidMilli > 0 && <span className="chip ok small">{t('rs_paid')} {qtyText(l.paidMilli)}</span>}
                   <span className="spacer" />
                   {open && who.waiter && l.ticket === null && !l.voided && (
@@ -488,6 +506,9 @@ export function RestaurantOrder({ id, who }: { id: string; who: RestaurantPeople
         {open && (
           <div className="stack" style={{ gap: 8 }}>
             {who.waiter && <button type="button" className="btn primary pos-touch" disabled={busy || toSend === 0} onClick={() => void send()}><Icon name="printer" size={18} />{t('rs_sendKitchen', { n: i18n.int(toSend) })}</button>}
+            {who.waiter && o.ready > 0 && (
+              <button type="button" className="btn pos-touch" disabled={busy} onClick={() => void lineCall(() => restaurantApi.served(o.id))}><Icon name="bell" size={18} />{t('rs_served', { n: i18n.int(o.ready) })}</button>
+            )}
             <div className="row" style={{ gap: 8, flexWrap: 'wrap' }}>
               <button type="button" className="btn" disabled={busy || o.unpaid + draftTotal <= 0} onClick={() => void run(async () => { await saveDraft(); order.reload(); setDialog('bill'); })}><Icon name="receipt" size={16} />{t('rs_printBill')}</button>
               {who.cashier && <button type="button" className="btn primary" disabled={busy || o.unpaid + draftTotal <= 0} onClick={() => void run(async () => { await saveDraft(); order.reload(); setDialog('pay'); })}><Icon name="wallet" size={16} />{t('rs_payAll')}</button>}
@@ -499,7 +520,7 @@ export function RestaurantOrder({ id, who }: { id: string; who: RestaurantPeople
                 {o.kind === 'table' && <button type="button" className="btn ghost small" onClick={() => setDialog('move')}>{t('rs_move')}</button>}
                 {o.kind === 'table' && o.paid === 0 && <button type="button" className="btn ghost small" onClick={() => setDialog('merge')}>{t('rs_merge')}</button>}
                 {o.paid === 0 && <button type="button" className="btn ghost small" onClick={() => setDialog('cancel')}>{t('rs_cancelOrder')}</button>}
-                {o.tickets > 0 && <button type="button" className="btn ghost small" onClick={() => void run(async () => setTicket(await restaurantApi.ticket(o.id, o.tickets)))}>{t('rs_ticketAgain')}</button>}
+                {o.tickets > 0 && <button type="button" className="btn ghost small" onClick={() => void run(async () => setQueue((await restaurantApi.ticket(o.id, o.tickets)).tickets))}>{t('rs_ticketAgain')}</button>}
               </div>
             )}
           </div>
@@ -509,10 +530,10 @@ export function RestaurantOrder({ id, who }: { id: string; who: RestaurantPeople
         )}
       </section>
 
-      {ticket && <KitchenTicket ticket={ticket} onPrinted={() => setTicket(null)} />}
+      {queue[0] && <KitchenTicket key={`${queue[0].ticket}-${queue[0].station}-${queue.length}`} ticket={queue[0]} onPrinted={() => setQueue((q) => q.slice(1))} />}
       {dialog === 'bill' && <BillDialog order={o} onClose={() => { setDialog(null); order.reload(); }} />}
       {(dialog === 'pay' || dialog === 'part') && (
-        <PayDialog order={o} part={dialog === 'part'} onClose={(closed) => { setDialog(null); if (closed) go('restaurant'); else order.reload(); }} />
+        <PayDialog order={o} part={dialog === 'part'} onPaper={onPaper} onClose={(closed) => { setDialog(null); if (closed) go('restaurant'); else order.reload(); }} />
       )}
       {dialog === 'details' && <DetailsDialog order={o} onClose={() => { setDialog(null); order.reload(); }} />}
       {(dialog === 'move' || dialog === 'merge') && <TablePick order={o} merge={dialog === 'merge'} onClose={() => setDialog(null)} />}
@@ -523,7 +544,7 @@ export function RestaurantOrder({ id, who }: { id: string; who: RestaurantPeople
             const r = await restaurantApi.voidLine(o.id, dialog.void.id, { reason, ...(qtyMilli ? { qtyMilli } : {}) });
             setDialog(null);
             order.reload();
-            setTicket(r.ticket);
+            if (onPaper) setQueue([r.ticket]);
           }} />
       )}
     </div>
@@ -685,12 +706,12 @@ export function Bill({ order, people }: { order: OrderView; people: number }) {
 
 /* ---------------- the kitchen ticket ---------------- */
 
-/** A kitchen ticket: drawn, printed on the kitchen's printer, then gone. */
+/** A kitchen ticket: drawn, printed on its station's printer (the kitchen's, the grill's or the bar's), then gone. */
 function KitchenTicket({ ticket, onPrinted }: { ticket: TicketView; onPrinted(): void }) {
   const done = useRef(onPrinted);
   done.current = onPrinted;
   useEffect(() => {
-    const timer = window.setTimeout(() => { void printAlone('kitchen', 'rs-printing-ticket').finally(() => done.current()); }, 60);
+    const timer = window.setTimeout(() => { void printAlone(ticket.station, 'rs-printing-ticket').finally(() => done.current()); }, 60);
     return () => window.clearTimeout(timer);
   }, [ticket]);
   return <TicketPaper ticket={ticket} />;
@@ -704,6 +725,9 @@ function TicketPaper({ ticket }: { ticket: TicketView }) {
   );
 }
 
+/** The station's name on top of its ticket. */
+const stationTitle = (t: I18n['t'], station: TicketView['station']): string => t(station === 'grill' ? 'rs_ticket_grill' : station === 'bar' ? 'rs_ticket_bar' : 'rs_kitchen');
+
 /** What a kitchen ticket says: where, which order and ticket, when and by whom, each dish with its note. */
 export function TicketContent({ ticket }: { ticket: TicketView }) {
   const i18n = useI18n();
@@ -711,7 +735,8 @@ export function TicketContent({ ticket }: { ticket: TicketView }) {
   const where = ticket.tableName ? t('rs_table', { t: ticket.tableName }) : ticket.kind === 'delivery' ? t('rs_delivery') : t('rs_takeaway');
   return (
     <div className="pos-receipt rs-ticket-paper">
-      <div className="pos-r-center rs-ticket-head">{ticket.type === 'cancel' ? `✕ ${t('rs_kitchenCancel')}` : t('rs_kitchen')}</div>
+      {/* the station it is for (2.1): the kitchen, the grill or the drinks bar, on its own printer */}
+      <div className="pos-r-center rs-ticket-head">{ticket.type === 'cancel' ? `✕ ${t('rs_kitchenCancel')} · ${stationTitle(t, ticket.station)}` : stationTitle(t, ticket.station)}</div>
       <div className="pos-r-center rs-ticket-where">{where}</div>
       <div className="pos-r-row small"><span>#{ticket.number} · {t('rs_ticketN', { n: i18n.int(ticket.ticket) })}</span><span>{clock(i18n, new Date(ticket.at))}</span></div>
       <div className="pos-r-row small"><span>{ticket.by}</span><span>{ticket.guests ? t('rs_guests', { n: i18n.int(ticket.guests) }) : ''}</span></div>
@@ -730,7 +755,7 @@ export function TicketContent({ ticket }: { ticket: TicketView }) {
 
 /* ---------------- paying at the till ---------------- */
 
-function PayDialog({ order, part, onClose }: { order: OrderView; part: boolean; onClose(closed: boolean): void }) {
+function PayDialog({ order, part, onPaper, onClose }: { order: OrderView; part: boolean; onPaper: boolean; onClose(closed: boolean): void }) {
   const i18n = useI18n();
   const { t } = i18n;
   const current = useLoad(() => posApi.current(thisTill() || null), []);
@@ -742,7 +767,7 @@ function PayDialog({ order, part, onClose }: { order: OrderView; part: boolean; 
   const [busy, setBusy] = useState(false);
   // what was paid, as it was at that moment (the order is read again meanwhile: what is left changes)
   const [paid, setPaid] = useState<(PayResult & { due: number; change: number | null }) | null>(null);
-  const [ticket, setTicket] = useState<TicketView | null>(null);
+  const [queue, setQueue] = useState<TicketView[]>([]);
   const open = order.lines.filter((l) => !l.voided && l.unpaidMilli > 0);
   const selected = part ? open.filter((l) => (chosen[l.id] ?? 0) > 0).map((l) => ({ line: l, qtyMilli: chosen[l.id]! })) : open.map((l) => ({ line: l, qtyMilli: l.unpaidMilli }));
   const gross = selected.reduce((s, c) => s + rsLineAmount(c.qtyMilli, c.line.unitPrice), 0);
@@ -764,7 +789,7 @@ function PayDialog({ order, part, onClose }: { order: OrderView; part: boolean; 
         ...(method === 'cash' && handed >= due && due > 0 ? { tendered: handed } : {})
       });
       setPaid({ ...result, due, change: method === 'cash' && handed > due ? handed - due : null });
-      if (result.ticket) setTicket(result.ticket);
+      if (onPaper && result.tickets.length) setQueue(result.tickets);
       if (method === 'cash' && due > 0 && inWindowsTill()) void kickDrawer();
     } catch (e) { setError(e); } finally { setBusy(false); }
   };
@@ -783,7 +808,7 @@ function PayDialog({ order, part, onClose }: { order: OrderView; part: boolean; 
           </div>
         </div>
         <Receipt invoice={paid.invoice as InvoiceView} shift={paid.shift} rounding={paid.rounding} />
-        {ticket && <KitchenTicket ticket={ticket} onPrinted={() => setTicket(null)} />}
+        {queue[0] && <KitchenTicket key={`${queue[0].ticket}-${queue[0].station}-${queue.length}`} ticket={queue[0]} onPrinted={() => setQueue((q) => q.slice(1))} />}
       </Modal>
     );
   }

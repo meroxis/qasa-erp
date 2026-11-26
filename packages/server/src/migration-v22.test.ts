@@ -7,10 +7,11 @@ import type { Db } from './db.ts';
 import { migrate, openDatabase, SCHEMA_VERSION } from './db.ts';
 import { MYSQL_TABLES, tableColumns } from './schema-mysql.ts';
 
-// Version 22 (2.1): restaurants and cafés (restaurant.ts): the room's areas and tables, orders and their lines, and
-// what each till sale paid of which line. New tables only, the same on a MariaDB or MySQL server.
+// Version 22 (2.1): restaurants and cafés (restaurant.ts): the room's areas and tables, orders and their lines, what
+// each till sale paid of which line, which station cooks each category; and recipes (recipes.ts): what a dish takes of
+// each ingredient, and what each sale took. New tables only, the same on a MariaDB or MySQL server.
 const onServer = !!process.env.QASA_TEST_DB;
-const RS_TABLES = ['rs_areas', 'rs_tables', 'rs_orders', 'rs_order_lines', 'rs_paid'];
+const RS_TABLES = ['rs_areas', 'rs_tables', 'rs_orders', 'rs_order_lines', 'rs_paid', 'rs_category_stations', 'item_recipes', 'invoice_recipe_moves'];
 
 describe.skipIf(onServer)('version 22', () => {
   it('is the current version', () => { expect(SCHEMA_VERSION).toBe(22); });

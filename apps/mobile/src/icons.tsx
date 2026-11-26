@@ -55,7 +55,10 @@ const ICONS = {
   receipt: (c: string) => <><Path {...S} stroke={c} d="M6 3h12v18l-2-1.4-2 1.4-2-1.4-2 1.4-2-1.4L6 21V3Z" /><Path {...S} stroke={c} d="M9 8h6M9 12h6M9 16h3" /></>,
   share: (c: string) => <><Circle {...S} stroke={c} cx={18} cy={5.5} r={2.5} /><Circle {...S} stroke={c} cx={6} cy={12} r={2.5} /><Circle {...S} stroke={c} cx={18} cy={18.5} r={2.5} /><Path {...S} stroke={c} d="m8.2 10.8 7.6-4M8.2 13.2l7.6 4" /></>,
   truck: (c: string) => <><Path {...S} stroke={c} d="M2.5 6h11v10h-11V6ZM13.5 9.5h4l3 3.5V16h-7" /><Circle {...S} stroke={c} cx={6.5} cy={17.5} r={1.8} /><Circle {...S} stroke={c} cx={17} cy={17.5} r={1.8} /></>,
-  inbox: (c: string) => <><Path {...S} stroke={c} d="M3.5 13.5 6 5h12l2.5 8.5V19a1 1 0 0 1-1 1h-15a1 1 0 0 1-1-1v-5.5Z" /><Path {...S} stroke={c} d="M3.5 13.5h5l1.5 2.5h4l1.5-2.5h5" /><Path {...S} stroke={c} d="M12 3v7M9.5 7.5 12 10l2.5-2.5" /></>
+  inbox: (c: string) => <><Path {...S} stroke={c} d="M3.5 13.5 6 5h12l2.5 8.5V19a1 1 0 0 1-1 1h-15a1 1 0 0 1-1-1v-5.5Z" /><Path {...S} stroke={c} d="M3.5 13.5h5l1.5 2.5h4l1.5-2.5h5" /><Path {...S} stroke={c} d="M12 3v7M9.5 7.5 12 10l2.5-2.5" /></>,
+  // phone app 1.3, a restaurant's waiter: a table (with a plate), and the bell of a dish ready in the kitchen
+  table: (c: string) => <><Path {...S} stroke={c} d="M3 9h18M5 9v11M19 9v11M8 9V6.5a4 4 0 0 1 8 0V9" /></>,
+  bell: (c: string) => <><Path {...S} stroke={c} d="M6 16v-5a6 6 0 0 1 12 0v5l2 2H4l2-2Z" /><Path {...S} stroke={c} d="M10 20a2 2 0 0 0 4 0" /></>,
 } as const;
 
 export type IconName = keyof typeof ICONS;

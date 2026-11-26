@@ -1508,6 +1508,26 @@ a.fx-chip:focus-visible { outline: 2px solid var(--focus-outer); outline-offset:
 .rs-table.busy { background: var(--accent-soft); color: var(--accent-soft-ink); border-color: var(--accent); }
 .rs-table.billed { border-style: dashed; }
 .rs-table-name { font-size: 1.5rem; font-weight: 700; line-height: 1; }
+/* 2.1: a table with dishes ready in the kitchen, waiting to go to it */
+.rs-table.ready { box-shadow: 0 0 0 3px var(--ok); }
+.rs-ready-chip { display: inline-flex; align-items: center; gap: 4px; }
+/* the kitchen screen: big cards, the oldest first; amber, then red, as a ticket waits */
+.rs-kitchen-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 12px; }
+.rs-kticket { display: flex; flex-direction: column; gap: 8px; padding: 14px; border-top: 6px solid var(--accent); }
+.rs-kticket.late { border-top-color: var(--orange); }
+.rs-kticket.very-late { border-top-color: var(--bad); }
+.rs-kticket-head { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; font-size: 1.25rem; }
+.rs-kticket-lines { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; font-size: 1.15rem; }
+.rs-kticket-lines li.voided > span:not(.chip) { text-decoration: line-through; opacity: 0.6; }
+.rs-kqty { font-weight: 700; }
+.rs-kdone { display: inline-flex; align-items: center; gap: 6px; }
+/* recipes: the dishes on one side, the one open on the other */
+.rs-recipes { display: grid; grid-template-columns: minmax(240px, 1fr) 2fr; gap: 12px; align-items: start; }
+@media (max-width: 900px) { .rs-recipes { grid-template-columns: 1fr; } }
+.rs-dish-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; max-height: 65vh; overflow: auto; }
+.rs-dish { width: 100%; display: flex; justify-content: space-between; align-items: center; gap: 8px; padding: 8px 10px; border-radius: 10px;
+  border: 1px solid var(--line); background: var(--surface); color: inherit; font: inherit; cursor: pointer; text-align: start; }
+.rs-dish.on, .rs-dish:hover { border-color: var(--accent); }
 .rs-side { gap: 8px; padding: 12px; }
 .rs-other { display: grid; gap: 2px; padding: 8px 10px; border-radius: 10px; border: 1px solid var(--line); background: var(--surface); color: var(--ink); font: inherit; text-align: start; cursor: pointer; }
 .rs-other:hover { border-color: var(--accent); }

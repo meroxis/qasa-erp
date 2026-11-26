@@ -24,6 +24,7 @@ import { InvoiceScreen, InvoicesScreen } from './src/screens/staff/invoices';
 import { ShareScreen } from './src/screens/staff/share';
 import { TransferScreen } from './src/screens/staff/transfer';
 import { ReceiveOrderScreen, ReceiveScreen } from './src/screens/staff/receive';
+import { TableOrderScreen, TablesScreen } from './src/screens/staff/tables';
 import { readPairingCode } from './src/pairing';
 import { toB64, type KeyPair } from './src/protocol';
 import { featuresOf, lockRequired, type Feature, type Me } from './src/roles';
@@ -392,6 +393,9 @@ function Main() {
                 {route.name === 'transfer' && <TransferScreen />}
                 {route.name === 'receive' && <ReceiveScreen />}
                 {route.name === 'receiveOrder' && <ReceiveOrderScreen key={route.id} id={route.id} />}
+                {/* phone app 1.3, a restaurant's waiter */}
+                {route.name === 'tables' && <TablesScreen />}
+                {route.name === 'tableOrder' && <TableOrderScreen key={route.id} id={route.id} />}
               </View>}
               {route.name !== 'scan' && !pinNeeded && (
                 <TabBar tabs={tabs.filter((x) => x.on)} current={nav.tab} onPress={(tab) => dispatch({ type: 'tab', tab })} />

@@ -330,7 +330,8 @@ const BASE = {
   featTransfer: ['المناقلة بين المخازن', 'moving stock between warehouses', 'گواستنەوەی کاڵا لە نێوان کۆگاکان'],
   featReceive: ['استلام البضاعة', 'receiving goods', 'وەرگرتنی کاڵا'],
   featItemLookup: ['صور وأسماء المواد من الباركود', 'item pictures and names from the barcode', 'وێنە و ناوی کاڵا لە بارکۆدەوە'],
-  featCountAdd: ['الجرد رفاً رفاً ومن أكثر من هاتف', 'counting a shelf at a time, on several phones', 'جەرد ڕەفە بە ڕەفە و لە چەند مۆبایلێکەوە']
+  featCountAdd: ['الجرد رفاً رفاً ومن أكثر من هاتف', 'counting a shelf at a time, on several phones', 'جەرد ڕەفە بە ڕەفە و لە چەند مۆبایلێکەوە'],
+  featWaiter: ['طلبات الطاولات', 'table orders', 'داواکاریی مێزەکان']
 } as const satisfies Record<string, readonly [string, string, string]>;
 
 /**

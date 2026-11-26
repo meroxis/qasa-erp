@@ -1,14 +1,16 @@
 import { randomUUID } from 'node:crypto';
 import { z } from 'zod';
 import {
-  isRsOrderKind, RS_MAX_ADD, RS_MAX_GUESTS, RS_MAX_LINES, RS_MAX_NOTE, RS_MAX_QTY_MILLI, rsLineAmount, type Names, type RsOrderKind
+  isRsOrderKind, isRsStation, RS_KITCHEN_DONE_MINUTES, RS_KITCHEN_HOURS, RS_MAX_ADD, RS_MAX_GUESTS, RS_MAX_LINES, RS_MAX_NOTE, RS_MAX_QTY_MILLI, RS_STATIONS,
+  RS_TICKET_MODES, rsLineAmount, type Names, type RsOrderKind, type RsStation, type RsTicketMode
 } from '@qasa/core';
 import type { Db } from './db.ts';
 import { nextSequence, transaction } from './db.ts';
 import { audit } from './audit.ts';
 import { AppError, conflict, invalid, notFound } from './errors.ts';
 import { planStatus } from './license.ts';
-import { readSetting } from './settings.ts';
+import { readSetting, writeSetting } from './settings.ts';
+import { listRecipes, RECIPE_MAX_PARTS, saveRecipe } from './recipes.ts';
 import { userBranchLists } from './branches.ts';
 import { getShift, sell, type SaleInput, type ShiftView } from './pos.ts';
 import { getInvoice, type InvoiceView } from './invoices.ts';
@@ -164,6 +166,8 @@ export interface OrderLineView {
   /** cancelled after it was sent (it counts for nothing) */
   voided: { at: string; by: string; reason: string } | null;
   paidMilli: number; unpaidMilli: number; addedBy: string;
+  /** where it is made (set when it is sent), when the kitchen said it is ready, and when it went to the table */
+  station: RsStation | null; readyAt: string | null; servedAt: string | null;
 }
 export interface OrderView {
   id: string; number: string; kind: RsOrderKind; tableId: string | null; tableName: string | null; areaId: string | null; areaName: Names | null;
@@ -173,8 +177,9 @@ export interface OrderView {
   lines: OrderLineView[];
   /** what was ordered (lines not cancelled), what is paid of it (sales still standing), and what is left */
   total: number; paid: number; unpaid: number;
-  /** lines the kitchen does not have yet */
+  /** lines the kitchen does not have yet, and lines ready in the kitchen for the waiter to take */
   unsent: number;
+  ready: number;
   /** the till sales that paid it (a cancelled one too: its lines are unpaid again) */
   sales: { invoiceId: string; number: string | null; status: string; total: number }[];
 }
@@ -189,6 +194,7 @@ interface OrderRow {
 interface LineRow {
   id: string; order_id: string; line_no: number; item_id: string; qty_milli: number; unit_price: number; note: string | null; ticket: number | null; sent_at: string | null;
   voided_at: string | null; voided_by: string | null; void_reason: string | null; added_by: string; code: string; name_ar: string; name_en: string; name_ku: string;
+  station: string | null; ready_at: string | null; served_at: string | null;
 }
 
 const ORDER_SELECT = `SELECT o.*, t.name AS t_name, t.area_id, a.name_ar AS a_ar, a.name_en AS a_en, a.name_ku AS a_ku, p.name AS party_name
@@ -215,7 +221,8 @@ function linesOf(db: Db, orderIds: readonly string[]): Map<string, OrderLineView
     const line: OrderLineView = {
       id: r.id, lineNo: Number(r.line_no), itemId: r.item_id, code: r.code, name: names(r), qtyMilli: qty, unitPrice: Number(r.unit_price),
       amount: rsLineAmount(qty, Number(r.unit_price)), note: r.note, ticket: r.ticket === null ? null : Number(r.ticket), sentAt: r.sent_at, voided,
-      paidMilli, unpaidMilli: voided ? 0 : qty - paidMilli, addedBy: r.added_by
+      paidMilli, unpaidMilli: voided ? 0 : qty - paidMilli, addedBy: r.added_by,
+      station: isRsStation(r.station) ? r.station : null, readyAt: r.ready_at, servedAt: r.served_at
     };
     const list = out.get(r.order_id);
     if (list) list.push(line); else out.set(r.order_id, [line]);
@@ -232,7 +239,8 @@ function summaryOf(r: OrderRow, lines: OrderLineView[]): OrderSummary {
     guests: r.guests === null ? null : Number(r.guests), partyId: r.party_id, partyName: r.party_name, phone: r.phone, address: r.address, notes: r.notes,
     status: r.status, warehouseId: r.warehouse_id, openedBy: r.opened_by, openedAt: r.opened_at, closedAt: r.closed_at, closedBy: r.closed_by,
     billPrintedAt: r.bill_printed_at, tickets: Number(r.tickets), cancelReason: r.cancel_reason,
-    total, paid: total - unpaid, unpaid, unsent: live.filter((l) => l.ticket === null).length, lineCount: live.length
+    total, paid: total - unpaid, unpaid, unsent: live.filter((l) => l.ticket === null).length,
+    ready: live.filter((l) => l.readyAt !== null && l.servedAt === null).length, lineCount: live.length
   };
 }
 
@@ -450,6 +458,8 @@ export function removeLine(db: Db, id: string, lineId: string, actor: Actor): Or
 
 export interface TicketView {
   orderId: string; number: string; ticket: number; kind: RsOrderKind; tableName: string | null; areaName: Names | null; guests: number | null;
+  /** the station it is for: printed on that station's printer */
+  station: RsStation;
   by: string; at: string; notes: string | null;
   /** 'cancel': the kitchen stops making these */
   type: 'order' | 'cancel';
@@ -458,9 +468,15 @@ export interface TicketView {
 
 function ticketOf(order: OrderView, ticket: number, by: string, at: string, type: TicketView['type'], lines: OrderLineView[], reason?: string): TicketView {
   return {
-    orderId: order.id, number: order.number, ticket, kind: order.kind, tableName: order.tableName, areaName: order.areaName, guests: order.guests, by, at, notes: order.notes, type,
+    orderId: order.id, number: order.number, ticket, kind: order.kind, tableName: order.tableName, areaName: order.areaName, guests: order.guests,
+    station: lines[0]?.station ?? 'kitchen', by, at, notes: order.notes, type,
     lines: lines.map((l) => ({ itemId: l.itemId, code: l.code, name: l.name, qtyMilli: l.qtyMilli, note: l.note, ...(reason ? { reason } : {}) }))
   };
+}
+
+/** A ticket's lines, one ticket per station (in the stations' order), for the stations that have some. */
+function byStation(order: OrderView, ticket: number, by: string, at: string, lines: OrderLineView[]): TicketView[] {
+  return RS_STATIONS.map((st) => lines.filter((l) => (l.station ?? 'kitchen') === st)).filter((ls) => ls.length).map((ls) => ticketOf(order, ticket, by, at, 'order', ls));
 }
 
 /** Gives the lines the kitchen does not have yet the order's next ticket number, inside the caller's transaction. */
@@ -470,27 +486,30 @@ function sendUnsent(db: Db, id: string, actor: Actor, only?: ReadonlySet<string>
   if (!unsent.length) return null;
   const ticket = Number((db.prepare('SELECT tickets FROM rs_orders WHERE id = ?').get(id) as { tickets: number }).tickets) + 1;
   const at = now();
-  db.prepare(`UPDATE rs_order_lines SET ticket = ?, sent_at = ? WHERE id IN (${marks(unsent)})`).run(ticket, at, ...unsent);
+  // each to its category's station (the kitchen when none is set), kept on the line: a later change leaves it as sent
+  db.prepare(`UPDATE rs_order_lines SET ticket = ?, sent_at = ?,
+                station = COALESCE((SELECT s.station FROM rs_category_stations s JOIN items i ON i.category_id = s.category_id WHERE i.id = rs_order_lines.item_id), 'kitchen')
+              WHERE id IN (${marks(unsent)})`).run(ticket, at, ...unsent);
   db.prepare('UPDATE rs_orders SET tickets = ?, updated_at = ? WHERE id = ?').run(ticket, at, id);
   audit(db, actor.name, 'rs_send', 'rs_order', id, { ticket, lines: unsent.length });
   return { ticket, at };
 }
 
-/** Sends what the kitchen does not have yet: the ticket to print (null: nothing new). */
-export function sendToKitchen(db: Db, id: string, actor: Actor): { order: OrderView; ticket: TicketView | null } {
+/** Sends what the kitchen does not have yet: the tickets to print, one per station (none: nothing new). */
+export function sendToKitchen(db: Db, id: string, actor: Actor): { order: OrderView; tickets: TicketView[] } {
   requirePlan(db);
   requireWaiter(actor);
   const sent = transaction(db, () => { openRow(db, id, actor); return sendUnsent(db, id, actor); });
   const order = getOrder(db, id, actor);
-  return { order, ticket: sent ? ticketOf(order, sent.ticket, actor.name, sent.at, 'order', order.lines.filter((l) => l.ticket === sent.ticket)) : null };
+  return { order, tickets: sent ? byStation(order, sent.ticket, actor.name, sent.at, order.lines.filter((l) => l.ticket === sent.ticket)) : [] };
 }
 
-/** A ticket printed again (the kitchen lost it): as it was sent. */
-export function ticketAgain(db: Db, id: string, ticket: number, actor: Actor): TicketView {
+/** A ticket printed again (the kitchen lost it): as it was sent, one per station. */
+export function ticketAgain(db: Db, id: string, ticket: number, actor: Actor): { tickets: TicketView[] } {
   const order = getOrder(db, id, actor);
   const lines = order.lines.filter((l) => l.ticket === ticket && !l.voided);
   if (!lines.length) throw notFound('rs_ticket');
-  return ticketOf(order, ticket, lines[0]!.addedBy, lines[0]!.sentAt ?? order.openedAt, 'order', lines);
+  return { tickets: byStation(order, ticket, lines[0]!.addedBy, lines[0]!.sentAt ?? order.openedAt, lines) };
 }
 
 /**
@@ -518,8 +537,10 @@ export function voidLine(db: Db, id: string, lineId: string, input: { reason: st
       db.prepare('UPDATE rs_order_lines SET qty_milli = ? WHERE id = ?').run(qty - part, lineId);
       const lineNo = Number((db.prepare('SELECT COALESCE(MAX(line_no), 0) AS n FROM rs_order_lines WHERE order_id = ?').get(id) as { n: number }).n) + 1;
       target = randomUUID();
-      db.prepare(`INSERT INTO rs_order_lines (id, order_id, line_no, item_id, qty_milli, unit_price, note, ticket, sent_at, voided_at, voided_by, void_reason, added_by, added_at)
-                  SELECT ?, order_id, ?, item_id, ?, unit_price, note, ticket, sent_at, NULL, NULL, NULL, added_by, added_at FROM rs_order_lines WHERE id = ?`).run(target, lineNo, part, lineId);
+      db.prepare(`INSERT INTO rs_order_lines (id, order_id, line_no, item_id, qty_milli, unit_price, note, ticket, sent_at, voided_at, voided_by, void_reason, added_by, added_at,
+                    station, ready_at, ready_by, served_at)
+                  SELECT ?, order_id, ?, item_id, ?, unit_price, note, ticket, sent_at, NULL, NULL, NULL, added_by, added_at, station, ready_at, ready_by, served_at
+                  FROM rs_order_lines WHERE id = ?`).run(target, lineNo, part, lineId);
     }
     db.prepare('UPDATE rs_order_lines SET voided_at = ?, voided_by = ?, void_reason = ? WHERE id = ?').run(at, actor.name, reason, target);
     db.prepare('UPDATE rs_orders SET updated_at = ? WHERE id = ?').run(at, id);
@@ -647,7 +668,7 @@ export interface PayInput {
   tendered?: number | undefined;
   approvals?: string[] | undefined;
 }
-export interface PayResult { order: OrderView; invoice: InvoiceView; shift: ShiftView; rounding: number; ticket: TicketView | null }
+export interface PayResult { order: OrderView; invoice: InvoiceView; shift: ShiftView; rounding: number; tickets: TicketView[] }
 
 /**
  * Pays an order, or a part of it, at the cashier's open shift: the till's own sale of those lines (sell), and the order
@@ -691,7 +712,7 @@ export function payOrder(db: Db, id: string, input: PayInput, actor: Actor): Pay
   const s = sent as { ticket: number; at: string } | null;
   return {
     order, invoice: result.invoice, shift: result.shift, rounding: result.rounding,
-    ticket: s ? ticketOf(order, s.ticket, actor.name, s.at, 'order', order.lines.filter((l) => l.ticket === s.ticket && !l.voided)) : null
+    tickets: s ? byStation(order, s.ticket, actor.name, s.at, order.lines.filter((l) => l.ticket === s.ticket && !l.voided)) : []
   };
 }
 
@@ -699,7 +720,146 @@ export function payOrder(db: Db, id: string, input: PayInput, actor: Actor): Pay
 function paidAgain(db: Db, orderId: string, invoiceId: string, actor: Actor): PayResult {
   const shift = db.prepare('SELECT shift_id, rounding FROM pos_sales WHERE invoice_id = ?').get(invoiceId) as { shift_id: string; rounding: number | null } | undefined;
   if (!shift) throw notFound('invoice');
-  return { order: getOrder(db, orderId, actor), invoice: getInvoice(db, invoiceId, userBranchLists(db, actor)), shift: getShift(db, shift.shift_id, actor), rounding: Number(shift.rounding ?? 0), ticket: null };
+  return { order: getOrder(db, orderId, actor), invoice: getInvoice(db, invoiceId, userBranchLists(db, actor)), shift: getShift(db, shift.shift_id, actor), rounding: Number(shift.rounding ?? 0), tickets: [] };
+}
+
+/* ---------------- the kitchen: stations, the kitchen screen, ready and served ---------------- */
+
+export interface KitchenSettings {
+  /** kitchen tickets on paper (and on the screen), or on the kitchen screen only */
+  tickets: RsTicketMode;
+  /** the categories whose dishes another station makes (a category not here: the kitchen) */
+  stations: { categoryId: string; station: RsStation }[];
+}
+
+export function kitchenSettings(db: Db): KitchenSettings {
+  const mode = readSetting(db, 'rs_tickets');
+  return {
+    tickets: mode === 'screen' ? 'screen' : 'print',
+    stations: (db.prepare('SELECT category_id, station FROM rs_category_stations ORDER BY category_id').all() as { category_id: string; station: string }[])
+      .filter((r) => isRsStation(r.station)).map((r) => ({ categoryId: r.category_id, station: r.station as RsStation }))
+  };
+}
+
+/** Saves how tickets go to the kitchen and which station makes each category's dishes (the list given replaces the old). */
+export function saveKitchenSettings(db: Db, input: KitchenSettings, actor: Actor): KitchenSettings {
+  requirePlan(db);
+  const ids = input.stations.map((s) => s.categoryId);
+  if (new Set(ids).size !== ids.length) throw invalid([{ code: 'rs_station_twice' }]);
+  if (ids.length) {
+    const found = (db.prepare(`SELECT id FROM item_categories WHERE id IN (${marks(ids)})`).all(...ids) as { id: string }[]).length;
+    if (found !== ids.length) throw invalid([{ code: 'category_unknown' }]);
+  }
+  const at = now();
+  transaction(db, () => {
+    writeSetting(db, 'rs_tickets', input.tickets);
+    db.prepare('DELETE FROM rs_category_stations').run();
+    const add = db.prepare('INSERT INTO rs_category_stations (category_id, station, updated_at) VALUES (?, ?, ?)');
+    // the kitchen is where a category goes when none is set: only the others are kept
+    for (const s of input.stations) if (s.station !== 'kitchen') add.run(s.categoryId, s.station, at);
+    audit(db, actor.name, 'rs_kitchen', 'rs_kitchen', null, { tickets: input.tickets, stations: input.stations.filter((s) => s.station !== 'kitchen').length });
+  });
+  return kitchenSettings(db);
+}
+
+export interface KitchenTicketView {
+  orderId: string; number: string; kind: RsOrderKind; tableName: string | null; areaName: Names | null; guests: number | null; notes: string | null;
+  ticket: number; station: RsStation; sentAt: string; by: string;
+  /** when the kitchen said it is ready (null: still cooking) */
+  readyAt: string | null;
+  lines: { id: string; code: string; name: Names; qtyMilli: number; note: string | null; voided: boolean; served: boolean }[];
+}
+
+interface KitchenRow {
+  id: string; order_id: string; ticket: number; station: string | null; sent_at: string; ready_at: string | null; served_at: string | null; voided_at: string | null;
+  qty_milli: number; note: string | null; added_by: string; code: string; name_ar: string; name_en: string; name_ku: string;
+  number: string; kind: RsOrderKind; guests: number | null; notes: string | null; status: string; warehouse_id: string;
+  t_name: string | null; a_ar: string | null; a_en: string | null; a_ku: string | null;
+}
+
+/**
+ * The kitchen screen: what is cooking at a station (or at all), the oldest first, and what it finished in the last
+ * half hour (to take back a "ready" pressed by mistake). Only what was sent in the last hours: older tickets were
+ * cooked long ago (a kitchen that works on paper never marks them ready). A dish cancelled while it cooks stays on its
+ * ticket, crossed out, so the cook sees it. Read by anyone signed in, as the floor is; marking ready is a waiter's.
+ */
+export function kitchen(db: Db, station: RsStation | 'all', actor: Actor): { cooking: KitchenTicketView[]; done: KitchenTicketView[]; tickets: RsTicketMode } {
+  // read as the floor and the orders are; "ready" is for whoever takes orders
+  const own = userBranchLists(db, actor);
+  const since = new Date(Date.now() - RS_KITCHEN_HOURS * 3_600_000).toISOString();
+  const doneSince = new Date(Date.now() - RS_KITCHEN_DONE_MINUTES * 60_000).toISOString();
+  const rows = db.prepare(`SELECT l.id, l.order_id, l.ticket, l.station, l.sent_at, l.ready_at, l.served_at, l.voided_at, l.qty_milli, l.note, l.added_by,
+                                  i.code, i.name_ar, i.name_en, i.name_ku, o.number, o.kind, o.guests, o.notes, o.status, o.warehouse_id,
+                                  t.name AS t_name, a.name_ar AS a_ar, a.name_en AS a_en, a.name_ku AS a_ku
+                           FROM rs_order_lines l JOIN rs_orders o ON o.id = l.order_id JOIN items i ON i.id = l.item_id
+                           LEFT JOIN rs_tables t ON t.id = o.table_id LEFT JOIN rs_areas a ON a.id = t.area_id
+                           WHERE l.sent_at >= ? AND o.status <> 'cancelled' ${station === 'all' ? '' : 'AND l.station = ?'}
+                             ${own ? `AND o.warehouse_id IN (${marks(own.warehouses)})` : ''}
+                           ORDER BY l.sent_at, l.order_id, l.ticket, l.line_no`)
+    .all(since, ...(station === 'all' ? [] : [station]), ...(own ? own.warehouses : [])) as unknown as KitchenRow[];
+  const groups = new Map<string, KitchenRow[]>();
+  for (const r of rows) {
+    const key = `${r.order_id}|${r.ticket}|${r.station ?? 'kitchen'}`;
+    const g = groups.get(key);
+    if (g) g.push(r); else groups.set(key, [r]);
+  }
+  const cooking: KitchenTicketView[] = [];
+  const done: KitchenTicketView[] = [];
+  for (const g of groups.values()) {
+    const live = g.filter((r) => !r.voided_at);
+    // a ticket whose every dish was cancelled is gone from the screen (its paper ticket said so)
+    if (!live.length) continue;
+    const first = g[0]!;
+    const readyAt = live.every((r) => r.ready_at) ? live.map((r) => r.ready_at!).sort().at(-1)! : null;
+    if (readyAt && readyAt < doneSince) continue;
+    const view: KitchenTicketView = {
+      orderId: first.order_id, number: first.number, kind: first.kind, tableName: first.t_name,
+      areaName: first.a_ar !== null ? { ar: first.a_ar, en: first.a_en ?? '', ku: first.a_ku ?? '' } : null,
+      guests: first.guests === null ? null : Number(first.guests), notes: first.notes, ticket: Number(first.ticket), station: isRsStation(first.station) ? first.station : 'kitchen',
+      sentAt: first.sent_at, by: first.added_by, readyAt,
+      lines: g.map((r) => ({ id: r.id, code: r.code, name: names(r), qtyMilli: Number(r.qty_milli), note: r.note, voided: !!r.voided_at, served: !!r.served_at }))
+    };
+    (readyAt ? done : cooking).push(view);
+  }
+  done.sort((a, b) => (b.readyAt ?? '').localeCompare(a.readyAt ?? ''));
+  return { cooking, done: done.slice(0, 20), tickets: kitchenSettings(db).tickets };
+}
+
+/** A station's part of a ticket is ready (or, pressed by mistake, not ready after all while nobody took it). */
+export function markReady(db: Db, id: string, input: { ticket: number; station: RsStation; ready: boolean }, actor: Actor): { ok: true } {
+  requirePlan(db);
+  requireWaiter(actor);
+  transaction(db, () => {
+    const row = loadOrder(db, id);
+    assertMine(db, row, actor);
+    if (row.status === 'cancelled') throw conflict('rs_order_closed', { status: row.status });
+    const at = now();
+    const changed = input.ready
+      ? db.prepare(`UPDATE rs_order_lines SET ready_at = ?, ready_by = ? WHERE order_id = ? AND ticket = ? AND station = ? AND voided_at IS NULL AND ready_at IS NULL`)
+        .run(at, actor.name, id, input.ticket, input.station)
+      : db.prepare(`UPDATE rs_order_lines SET ready_at = NULL, ready_by = NULL WHERE order_id = ? AND ticket = ? AND station = ? AND served_at IS NULL AND ready_at IS NOT NULL`)
+        .run(id, input.ticket, input.station);
+    if (Number(changed.changes) > 0) {
+      db.prepare('UPDATE rs_orders SET updated_at = ? WHERE id = ?').run(at, id);
+      audit(db, actor.name, input.ready ? 'rs_ready' : 'rs_not_ready', 'rs_order', id, { ticket: input.ticket, station: input.station });
+    }
+  });
+  return { ok: true };
+}
+
+/** The waiter took what was ready to the table: the table no longer shows it waiting. */
+export function markServed(db: Db, id: string, actor: Actor): OrderView {
+  requirePlan(db);
+  requireWaiter(actor);
+  transaction(db, () => {
+    const row = loadOrder(db, id);
+    assertMine(db, row, actor);
+    if (row.status === 'cancelled') throw conflict('rs_order_closed', { status: row.status });
+    const at = now();
+    const changed = db.prepare('UPDATE rs_order_lines SET served_at = ? WHERE order_id = ? AND ready_at IS NOT NULL AND served_at IS NULL AND voided_at IS NULL').run(at, id);
+    if (Number(changed.changes) > 0) db.prepare('UPDATE rs_orders SET updated_at = ? WHERE id = ?').run(at, id);
+  });
+  return getOrder(db, id, actor);
 }
 
 /* ---------------- the API ---------------- */
@@ -735,6 +895,15 @@ const payBody = z.object({
   tendered: money.optional(), approvals: z.array(z.string().max(64)).max(4).optional()
 }).strict();
 
+const kitchenBody = z.object({
+  tickets: z.enum(RS_TICKET_MODES),
+  stations: z.array(z.object({ categoryId: id, station: z.enum(RS_STATIONS) }).strict()).max(500)
+}).strict();
+const readyBody = z.object({ ticket: z.number().int().min(1).max(100_000), station: z.enum(RS_STATIONS), ready: z.boolean() }).strict();
+const recipeBody = z.object({
+  parts: z.array(z.object({ ingredientId: id, qtyMilli: z.number().int().positive().max(1_000_000_000) }).strict()).max(RECIPE_MAX_PARTS)
+}).strict();
+
 export const restaurantApi: ApiExtension = {
   rules: {
     // the room is set up by an admin
@@ -757,12 +926,46 @@ export const restaurantApi: ApiExtension = {
     'POST /api/restaurant/orders/:id/cancel': null,
     'POST /api/restaurant/orders/:id/reopen': 'posSupervise',
     // paying is a sale at the till: the cashier's, on their own open shift (pos.ts checks it)
-    'POST /api/restaurant/orders/:id/pay': 'pos'
+    'POST /api/restaurant/orders/:id/pay': 'pos',
+    // the kitchen screen's "ready", and the waiter's "served": whoever takes orders (checked by each)
+    'POST /api/restaurant/orders/:id/ready': null,
+    'POST /api/restaurant/orders/:id/served': null,
+    // how tickets go to the kitchen and which station makes what: an admin's; a dish's recipe: whoever keeps the items
+    'PUT /api/restaurant/kitchen-settings': 'admin',
+    'PUT /api/restaurant/recipes/:id': 'stock'
   },
   routes(db, { actorOf }) {
     const actor = (req: ApiRequest) => actorOf(req);
     return [
-      { method: 'GET', path: '/api/restaurant', handler: async () => ({ available: restaurantAvailable(db), areas: listAreas(db), tables: listTables(db) }) },
+      { method: 'GET', path: '/api/restaurant', handler: async () => ({ available: restaurantAvailable(db), areas: listAreas(db), tables: listTables(db), kitchen: kitchenSettings(db) }) },
+      {
+        method: 'PUT', path: '/api/restaurant/kitchen-settings',
+        handler: async (req) => saveKitchenSettings(db, parse(kitchenBody, req.body), actor(req))
+      },
+      {
+        // the kitchen screen: GET …/kitchen?station=grill (all stations without one)
+        method: 'GET', path: '/api/restaurant/kitchen',
+        handler: async (req) => {
+          const q = parse(z.object({ station: z.enum(RS_STATIONS).optional() }).strict(), req.query ?? {});
+          return kitchen(db, q.station ?? 'all', actor(req));
+        }
+      },
+      {
+        method: 'POST', path: '/api/restaurant/orders/:id/ready',
+        handler: async (req) => markReady(db, parse(idParam, req.params).id, parse(readyBody, req.body), actor(req))
+      },
+      { method: 'POST', path: '/api/restaurant/orders/:id/served', handler: async (req) => { parse(z.object({}).strict(), req.body ?? {}); return markServed(db, parse(idParam, req.params).id, actor(req)); } },
+      {
+        method: 'GET', path: '/api/restaurant/recipes',
+        handler: async (req) => listRecipes(db, actor(req))
+      },
+      {
+        method: 'PUT', path: '/api/restaurant/recipes/:id',
+        handler: async (req) => {
+          requirePlan(db);
+          return { recipe: saveRecipe(db, parse(idParam, req.params).id, parse(recipeBody, req.body).parts, actor(req)) };
+        }
+      },
       { method: 'GET', path: '/api/restaurant/floor', handler: async (req) => floor(db, actor(req)) },
       {
         method: 'POST', path: '/api/restaurant/areas',

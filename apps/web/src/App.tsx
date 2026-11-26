@@ -112,6 +112,8 @@ const Clothing = lazyPage(() => import('./pages/Clothing.tsx'), 'Clothing');
 const ClothingModel = lazyPage(() => import('./pages/Clothing.tsx'), 'ClothingModel');
 const Restaurant = lazyPage(() => import('./pages/Restaurant.tsx'), 'Restaurant');
 const RestaurantOrder = lazyPage(() => import('./pages/Restaurant.tsx'), 'RestaurantOrder');
+const KitchenScreen = lazyPage(() => import('./pages/Kitchen.tsx'), 'KitchenScreen');
+const Recipes = lazyPage(() => import('./pages/Kitchen.tsx'), 'Recipes');
 const Offers = lazyPage(() => import('./pages/Offers.tsx'), 'Offers');
 const Delivery = lazyPage(() => import('./pages/Delivery.tsx'), 'Delivery');
 const DebtReminders = lazyPage(() => import('./pages/DebtReminders.tsx'), 'DebtReminders');
@@ -142,7 +144,9 @@ const restaurantPeople = (admin: boolean, permissions: readonly string[]) => ({
   admin,
   waiter: admin || permissions.includes('pos') || permissions.includes('sales'),
   cashier: admin || permissions.includes('pos'),
-  supervisor: admin || permissions.includes('posSupervise')
+  supervisor: admin || permissions.includes('posSupervise'),
+  // 2.1: a dish's recipe is the items' keeper's (as the items are)
+  stock: admin || permissions.includes('stock')
 });
 // the clothing page's tabs (as pages/Clothing.tsx names them)
 const CLOTHING_TABS = ['models', 'colors', 'reports'] as const;
@@ -678,6 +682,14 @@ export function App() {
     case 'restaurant-order':
       title = t('rs_restaurant');
       content = arg ? <RestaurantOrder key={arg} id={arg} who={restaurantPeople(isAdmin, viewer.permissions)} /> : null;
+      break;
+    case 'kitchen':
+      title = t('rs_kitchenScreen');
+      content = <KitchenScreen who={restaurantPeople(isAdmin, viewer.permissions)} />;
+      break;
+    case 'recipes':
+      title = t('rs_recipes');
+      content = <Recipes who={restaurantPeople(isAdmin, viewer.permissions)} />;
       break;
     case 'pharmacy':
       title = t('phm_title');

@@ -38,7 +38,10 @@ export type Route =
   | { name: 'share'; doc: 'invoice' | 'statement'; id: string; from?: string | undefined }
   | { name: 'transfer' }
   | { name: 'receive' }
-  | { name: 'receiveOrder'; id: string };
+  | { name: 'receiveOrder'; id: string }
+  // ——— phone app 1.3, a restaurant's waiter (screens/staff/tables): the room, then a table's order ———
+  | { name: 'tables' }
+  | { name: 'tableOrder'; id: string };
 
 export interface NavState {
   tab: Tab;

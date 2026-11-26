@@ -12,11 +12,13 @@ import {
 } from './printing.ts';
 
 /** Receipts, labels and kitchen tickets go to a printer of their own, one after another: a print window at every one only slows the till. */
-const STRAIGHT_KINDS: readonly PrintKind[] = ['receipt', 'label', 'kitchen'];
+const STRAIGHT_KINDS: readonly PrintKind[] = ['receipt', 'label', 'kitchen', 'grill', 'bar'];
+/** 2.1: a restaurant's stations' tickets (core RS_STATIONS) */
+const STATION_KINDS: readonly PrintKind[] = ['kitchen', 'grill', 'bar'];
 
-/** 2.1: the kinds the page lists: kitchen tickets only for a restaurant or café, so the other shops see the same six rows as before. */
+/** 2.1: the kinds the page lists: the stations' tickets only for a restaurant or café, so the other shops see the same six rows as before. */
 export function printKindsFor(businessTypes: readonly BusinessType[] | null | undefined): readonly PrintKind[] {
-  return PRINT_KINDS.filter((kind) => kind !== 'kitchen' || !!businessTypes?.includes('restaurant'));
+  return PRINT_KINDS.filter((kind) => !STATION_KINDS.includes(kind) || !!businessTypes?.includes('restaurant'));
 }
 
 /**

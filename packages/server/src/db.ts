@@ -2847,9 +2847,39 @@ const V22 =
     void_reason TEXT,
     added_by TEXT NOT NULL,
     added_at TEXT NOT NULL,
+    station TEXT CHECK (station IS NULL OR station IN ('kitchen', 'grill', 'bar')),
+    ready_at TEXT,
+    ready_by TEXT,
+    served_at TEXT,
     UNIQUE (order_id, line_no)
   );
   CREATE INDEX IF NOT EXISTS rs_order_lines_item ON rs_order_lines(item_id);
+  -- the kitchen screen reads the last hours' tickets only
+  CREATE INDEX IF NOT EXISTS rs_order_lines_sent ON rs_order_lines(sent_at);
+  -- which station cooks a category's dishes (none here: the kitchen)
+  CREATE TABLE IF NOT EXISTS rs_category_stations (
+    category_id TEXT PRIMARY KEY REFERENCES item_categories(id),
+    station TEXT NOT NULL CHECK (station IN ('kitchen', 'grill', 'bar')),
+    updated_at TEXT NOT NULL
+  );
+  -- a dish's recipe: what one of it takes of each ingredient (an item kept in stock), in the ingredient's own unit
+  CREATE TABLE IF NOT EXISTS item_recipes (
+    item_id TEXT NOT NULL REFERENCES items(id),
+    ingredient_id TEXT NOT NULL REFERENCES items(id),
+    qty_milli INTEGER NOT NULL CHECK (qty_milli > 0),
+    updated_at TEXT NOT NULL,
+    PRIMARY KEY (item_id, ingredient_id)
+  );
+  CREATE INDEX IF NOT EXISTS item_recipes_ingredient ON item_recipes(ingredient_id);
+  -- what a posted sale took of each ingredient for a line of a dish (given back if the sale is cancelled)
+  CREATE TABLE IF NOT EXISTS invoice_recipe_moves (
+    invoice_id TEXT NOT NULL REFERENCES invoices(id),
+    line_no INTEGER NOT NULL,
+    item_id TEXT NOT NULL REFERENCES items(id),
+    qty_milli INTEGER NOT NULL CHECK (qty_milli > 0),
+    value INTEGER NOT NULL CHECK (value >= 0),
+    PRIMARY KEY (invoice_id, line_no, item_id)
+  );
   CREATE TABLE IF NOT EXISTS rs_paid (
     id TEXT PRIMARY KEY,
     order_id TEXT NOT NULL REFERENCES rs_orders(id),

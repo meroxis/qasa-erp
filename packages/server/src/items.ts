@@ -429,13 +429,14 @@ export function deleteItem(db: Db, id: string, user: string): void {
     throw conflict('item_has_moves');
   }
   // documents that are not in the books yet still name the item: deleting it would break them
-  const usedByTables = ['quote_lines', 'purchase_order_lines', 'stock_doc_lines', 'stock_adjustment_lines', 'serials', 're_projects', 'consignment_doc_lines'];
-  const usedBy = usedByTables.map((table) => `SELECT 1 FROM ${table} WHERE item_id = ?`).join(' UNION ALL ');
-  if (db.prepare(`${usedBy} LIMIT 1`).get(...usedByTables.map(() => id))) throw conflict('item_in_use');
+  // (2.1: a restaurant's orders, and another dish's recipe that takes it)
+  const usedByTables = ['quote_lines', 'purchase_order_lines', 'stock_doc_lines', 'stock_adjustment_lines', 'serials', 're_projects', 'consignment_doc_lines', 'rs_order_lines'];
+  const usedBy = [...usedByTables.map((table) => `SELECT 1 FROM ${table} WHERE item_id = ?`), 'SELECT 1 FROM item_recipes WHERE ingredient_id = ?'].join(' UNION ALL ');
+  if (db.prepare(`${usedBy} LIMIT 1`).get(...usedByTables.map(() => id), id)) throw conflict('item_in_use');
   transaction(db, () => {
     // what belongs to the item alone goes with it: its picture, its price-list prices and its car-part details
     // (and its place on the item list a stock count fixed when it started: that is no document)
-    for (const table of ['item_images', 'item_image_sources', 'item_prices', 'part_fitments', 'part_numbers', 'part_details', 'stock_count_items', 'item_units', 'pharma_details', 'item_batches', 'consignment_items']) {
+    for (const table of ['item_recipes', 'item_images', 'item_image_sources', 'item_prices', 'part_fitments', 'part_numbers', 'part_details', 'stock_count_items', 'item_units', 'pharma_details', 'item_batches', 'consignment_items']) {
       db.prepare(`DELETE FROM ${table} WHERE item_id = ?`).run(id);
     }
     dropShelfFlags(db, id);

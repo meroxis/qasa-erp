@@ -38,6 +38,7 @@ import { postedRevaluations } from './fx.ts';
 import { cancelLoyalty, invoiceLoyalty, planRedemption, recordSaleLoyalty, type InvoiceLoyaltyView } from './loyalty.ts';
 import { resolveLines } from './item-units.ts';
 import { invoiceOffers, saleOffers, writeOfferLines, type InvoiceOfferView } from './offers.ts';
+import { keepRecipeMoves, recipeMovesOf, recipesOf, takeIngredients } from './recipes.ts';
 import {
   addTaken, allocateOut, assertReversible, batchColumns, batchTracking, cancelBatchMoves, inboundBatch, lineBatchErrors, writeBatchMoves,
   type BatchError, type BatchMove
@@ -772,6 +773,7 @@ export function postInvoice(
   // batch items: which batches each line takes (sales) or brings in (purchases, made in the transaction)
   const batchMoves: BatchMove[] = [];
   const inbound: { lineNo: number; itemId: string; qtyMilli: number; batchNo: string | null; expiry: string | null }[] = [];
+  const recipeTakes: { lineNo: number; itemId: string; qtyMilli: number; value: number }[] = [];
   let usedExpired = false;
 
   if (view.kind === 'sale') {
@@ -795,8 +797,20 @@ export function postInvoice(
     }
     const stock = new Map<string, { qtyMilli: number; value: number }>();
     const errors: { code: string; line: number; available: number }[] = [];
+    // 2.1: a dish with a recipe takes its ingredients (recipes.ts); its cost is theirs
+    const recipes = recipesOf(db, view.lines.filter((l) => !l.trackStock).map((l) => l.itemId));
     view.lines.forEach((l, i) => {
-      if (!l.trackStock) { lineCosts.push(null); return; }
+      if (!l.trackStock) {
+        const parts = recipes.get(l.itemId);
+        if (!parts) { lineCosts.push(null); return; }
+        const takes = takeIngredients(parts, l.qtyMilli, stock, (itemId) => stockOf(db, itemId, view.warehouseId));
+        for (const t of takes) {
+          moves.push({ itemId: t.itemId, qtyMilli: -t.qtyMilli, value: -t.value });
+          recipeTakes.push({ lineNo: i + 1, ...t });
+        }
+        lineCosts.push(takes.reduce((sum, t) => sum + t.value, 0));
+        return;
+      }
       const s = stock.get(l.itemId) ?? stockOf(db, l.itemId, view.warehouseId);
       if (s.qtyMilli < l.qtyMilli) errors.push({ code: 'stock_insufficient', line: i + 1, available: Math.max(0, s.qtyMilli) });
       const cost = costOut(s.qtyMilli, s.value, l.qtyMilli);
@@ -863,6 +877,7 @@ export function postInvoice(
     const setCost = db.prepare('UPDATE invoice_lines SET cost = ? WHERE invoice_id = ? AND line_no = ?');
     lineCosts.forEach((c, i) => setCost.run(c, id, i + 1));
     for (const m of moves) addStockMove(db, { ...m, warehouseId: view.warehouseId, date: view.date, sourceType: view.kind, sourceId: id });
+    keepRecipeMoves(db, id, recipeTakes);
     for (const l of inbound) {
       const b = inboundBatch(db, l.itemId, l, l.lineNo, view.date);
       if (b) batchMoves.push({ batchId: b.batchId, itemId: l.itemId, warehouseId: view.warehouseId, qtyMilli: l.qtyMilli, lineNo: l.lineNo });
@@ -958,6 +973,8 @@ export function cancelInvoice(db: Db, id: string, user: string, date?: string, a
     qtyMilli: back ? l.qtyMilli : -l.qtyMilli,
     value: back ? l.cost! : -l.cost!
   }));
+  // 2.1: a sale's dishes give back what they took of each ingredient
+  if (view.kind === 'sale') for (const r of recipeMovesOf(db, id)) moves.push({ itemId: r.itemId, lineNo: r.lineNo, qtyMilli: r.qtyMilli, value: r.value });
   if (!back) {
     const remaining = new Map<string, { qtyMilli: number; value: number }>();
     const errors: { code: string; line: number; available?: number }[] = [];

@@ -106,10 +106,11 @@ describe('orders and the kitchen', () => {
     let o = (await call('POST', `/api/restaurant/orders/${order.id}/lines`, { lines: [{ itemId: kebab.id, qtyMilli: 2_000, note: 'no onion' }, { itemId: tea.id, qtyMilli: 3_000 }] })).json();
     expect(o).toMatchObject({ total: 27_000, unpaid: 27_000, unsent: 2 });
     const sent = (await call('POST', `/api/restaurant/orders/${order.id}/send`)).json();
-    expect(sent.ticket).toMatchObject({ ticket: 1, type: 'order', tableName: '1', guests: 3 });
-    expect(sent.ticket.lines.map((l: { code: string; qtyMilli: number; note: string | null }) => [l.code, l.qtyMilli, l.note])).toEqual([['KEBAB', 2_000, 'no onion'], ['TEA', 3_000, null]]);
+    expect(sent.tickets).toHaveLength(1);
+    expect(sent.tickets[0]).toMatchObject({ ticket: 1, type: 'order', tableName: '1', guests: 3, station: 'kitchen' });
+    expect(sent.tickets[0].lines.map((l: { code: string; qtyMilli: number; note: string | null }) => [l.code, l.qtyMilli, l.note])).toEqual([['KEBAB', 2_000, 'no onion'], ['TEA', 3_000, null]]);
     // nothing new: no ticket
-    expect((await call('POST', `/api/restaurant/orders/${order.id}/send`)).json().ticket).toBeNull();
+    expect((await call('POST', `/api/restaurant/orders/${order.id}/send`)).json().tickets).toEqual([]);
     // a sent line is cooking: no change, no taking off
     const kebabLine = sent.order.lines[0].id;
     expect((await call('PUT', `/api/restaurant/orders/${order.id}/lines/${kebabLine}`, { qtyMilli: 1_000 })).json().error).toBe('rs_line_sent');
@@ -121,10 +122,10 @@ describe('orders and the kitchen', () => {
     expect((await call('DELETE', `/api/restaurant/orders/${order.id}/lines/${extra}`)).json().lines).toHaveLength(2);
     await call('POST', `/api/restaurant/orders/${order.id}/lines`, { lines: [{ itemId: tea.id, qtyMilli: 1_000 }] });
     const second = (await call('POST', `/api/restaurant/orders/${order.id}/send`)).json();
-    expect(second.ticket).toMatchObject({ ticket: 2 });
-    expect(second.ticket.lines).toHaveLength(1);
+    expect(second.tickets[0]).toMatchObject({ ticket: 2 });
+    expect(second.tickets[0].lines).toHaveLength(1);
     // the kitchen lost ticket 1: printed again as it was
-    expect((await call('GET', `/api/restaurant/orders/${order.id}/ticket?n=1`)).json().lines).toHaveLength(2);
+    expect((await call('GET', `/api/restaurant/orders/${order.id}/ticket?n=1`)).json().tickets[0].lines).toHaveLength(2);
   });
 
   it('a line the kitchen has is cancelled by a supervisor only, with a reason, in part or whole; the kitchen gets a cancel ticket', async () => {
@@ -204,7 +205,7 @@ describe('paying at the till', () => {
     expect(made.statusCode, made.body).toBe(201);
     await call('POST', `/api/restaurant/orders/${made.json().id}/lines`, { lines: [{ itemId: tea.id, qtyMilli: 2_000 }, { itemId: cola.id, qtyMilli: 1_000 }] });
     const paid = (await call('POST', `/api/restaurant/orders/${made.json().id}/pay`, { shiftId: s.id, tendered: 5_000 })).json();
-    expect(paid.ticket).toMatchObject({ ticket: 1, kind: 'takeaway', tableName: null });
+    expect(paid.tickets[0]).toMatchObject({ ticket: 1, kind: 'takeaway', tableName: null });
     expect(paid.order).toMatchObject({ status: 'closed', unsent: 0 });
     expect(paid.invoice.total).toBe(3_500);
     expect((await call('GET', '/api/restaurant/floor')).json().orders).toEqual([]);
@@ -278,9 +279,17 @@ describe('who may do what', () => {
     expect((await call('POST', `/api/restaurant/orders/${order.id}/lines/${line}/void`, { reason: 'x' })).statusCode).toBe(403);
     expect((await call('POST', `/api/restaurant/orders/${order.id}/cancel`, { reason: 'x' })).statusCode).toBe(403);
     expect((await call('POST', `/api/restaurant/orders/${order.id}/pay`, { shiftId: 'x' })).statusCode).toBe(403);
-    // a storekeeper takes no orders
+    // the waiter: the kitchen screen and "served", never the kitchen's settings or a recipe
+    expect((await call('GET', '/api/restaurant/kitchen')).statusCode).toBe(200);
+    expect((await call('POST', `/api/restaurant/orders/${order.id}/served`, {})).statusCode).toBe(200);
+    expect((await call('PUT', '/api/restaurant/kitchen-settings', { tickets: 'screen', stations: [] })).statusCode).toBe(403);
+    expect((await call('PUT', `/api/restaurant/recipes/${kebab.id}`, { parts: [] })).statusCode).toBe(403);
+    // a storekeeper takes no orders and says nothing is ready (the screen is read as the floor is); a recipe is theirs
     as = who.keeper!;
     expect((await call('POST', '/api/restaurant/orders', { kind: 'takeaway' })).statusCode).toBe(403);
+    expect((await call('GET', '/api/restaurant/kitchen')).statusCode).toBe(200);
+    expect((await call('POST', `/api/restaurant/orders/${order.id}/ready`, { ticket: 1, station: 'kitchen', ready: true })).statusCode).toBe(403);
+    expect((await call('PUT', `/api/restaurant/recipes/${kebab.id}`, { parts: [] })).statusCode).toBe(200);
     // the supervisor cancels a kebab; the cashier pays on their own shift
     as = who.boss!;
     expect((await call('POST', `/api/restaurant/orders/${order.id}/lines/${line}/void`, { reason: 'Burnt', qtyMilli: 1_000 })).statusCode).toBe(200);
@@ -289,5 +298,129 @@ describe('who may do what', () => {
     const paid = await call('POST', `/api/restaurant/orders/${order.id}/pay`, { shiftId: s.id });
     expect(paid.statusCode, paid.body).toBe(200);
     expect(paid.json().order).toMatchObject({ status: 'closed', total: 12_000 });
+  });
+});
+
+describe('stations, the kitchen screen, ready and served', () => {
+  it('sends each category to its station, one ticket each, and the kitchen screen shows what cooks until it is ready', async () => {
+    await trial();
+    const m = await menu();
+    const r = await room();
+    const drinks = (await call('POST', '/api/item-categories', { name: n('Drinks') })).json() as { id: string };
+    const juice = await call('POST', '/api/items', { code: 'JUICE', name: n('JUICE'), unit: 'piece', salePrice: 2_000, saleCurrency: 'IQD', trackStock: false, categoryId: drinks.id });
+    expect(juice.statusCode, juice.body).toBe(201);
+    // an admin's: drinks to the bar, tickets on the screen only
+    const saved = await call('PUT', '/api/restaurant/kitchen-settings', { tickets: 'screen', stations: [{ categoryId: drinks.id, station: 'bar' }] });
+    expect(saved.statusCode, saved.body).toBe(200);
+    expect((await call('GET', '/api/restaurant')).json().kitchen).toEqual({ tickets: 'screen', stations: [{ categoryId: drinks.id, station: 'bar' }] });
+    expect((await call('PUT', '/api/restaurant/kitchen-settings', { tickets: 'print', stations: [{ categoryId: 'nope', station: 'bar' }] })).json().error).toBe('validation');
+
+    const order = await openAt(r.tables[0]!.id);
+    await call('POST', `/api/restaurant/orders/${order.id}/lines`, { lines: [{ itemId: m.kebab.id, qtyMilli: 2_000 }, { itemId: juice.json().id, qtyMilli: 3_000 }] });
+    const sent = (await call('POST', `/api/restaurant/orders/${order.id}/send`)).json();
+    expect(sent.tickets.map((t: { station: string; lines: unknown[] }) => [t.station, t.lines.length])).toEqual([['kitchen', 1], ['bar', 1]]);
+    // printed again: both stations' parts
+    expect((await call('GET', `/api/restaurant/orders/${order.id}/ticket?n=1`)).json().tickets).toHaveLength(2);
+
+    const bar = (await call('GET', '/api/restaurant/kitchen?station=bar')).json();
+    expect(bar.tickets).toBe('screen');
+    expect(bar.cooking.map((t: { station: string; lines: { code: string }[] }) => [t.station, t.lines.map((l) => l.code)])).toEqual([['bar', ['JUICE']]]);
+    expect((await call('GET', '/api/restaurant/kitchen')).json().cooking).toHaveLength(2);
+    expect((await call('GET', '/api/restaurant/kitchen?station=oven')).statusCode).toBe(400);
+
+    // the bar says the tea is ready: off its screen into "done", and the table shows something to take
+    expect((await call('POST', `/api/restaurant/orders/${order.id}/ready`, { ticket: 1, station: 'bar', ready: true })).statusCode).toBe(200);
+    const after = (await call('GET', '/api/restaurant/kitchen?station=bar')).json();
+    expect(after.cooking).toEqual([]);
+    expect(after.done[0]).toMatchObject({ ticket: 1, station: 'bar' });
+    const table = () => call('GET', '/api/restaurant/floor').then((f) => f.json().areas[0].tables[0].order);
+    expect((await table()).ready).toBe(1);
+    // pressed by mistake: back to cooking; then ready again, and the waiter takes it
+    await call('POST', `/api/restaurant/orders/${order.id}/ready`, { ticket: 1, station: 'bar', ready: false });
+    expect((await call('GET', '/api/restaurant/kitchen?station=bar')).json().cooking).toHaveLength(1);
+    await call('POST', `/api/restaurant/orders/${order.id}/ready`, { ticket: 1, station: 'bar', ready: true });
+    const served = await call('POST', `/api/restaurant/orders/${order.id}/served`, {});
+    expect(served.statusCode, served.body).toBe(200);
+    expect(served.json().lines.find((l: { code: string }) => l.code === 'JUICE').servedAt).not.toBeNull();
+    expect((await table()).ready).toBe(0);
+    // once served, "not ready" changes nothing
+    await call('POST', `/api/restaurant/orders/${order.id}/ready`, { ticket: 1, station: 'bar', ready: false });
+    expect((await call('GET', '/api/restaurant/kitchen?station=bar')).json().cooking).toEqual([]);
+  });
+
+  it('keeps a dish cancelled while it cooks on its ticket, crossed out, and never makes it ready', async () => {
+    await trial();
+    const m = await menu();
+    const r = await room();
+    const order = await openAt(r.tables[0]!.id);
+    await call('POST', `/api/restaurant/orders/${order.id}/lines`, { lines: [{ itemId: m.kebab.id, qtyMilli: 2_000 }] });
+    await call('POST', `/api/restaurant/orders/${order.id}/send`);
+    const line = (await call('GET', `/api/restaurant/orders/${order.id}`)).json().lines[0];
+    await call('POST', `/api/restaurant/orders/${order.id}/lines/${line.id}/void`, { reason: 'Changed', qtyMilli: 1_000 });
+    const cooking = (await call('GET', '/api/restaurant/kitchen')).json().cooking;
+    expect(cooking[0].lines.map((l: { qtyMilli: number; voided: boolean }) => [l.qtyMilli, l.voided])).toEqual([[1_000, false], [1_000, true]]);
+    // ready: the cancelled part stays cancelled, never "ready"
+    await call('POST', `/api/restaurant/orders/${order.id}/ready`, { ticket: 1, station: 'kitchen', ready: true });
+    expect((await call('GET', `/api/restaurant/orders/${order.id}`)).json().lines.map((l: { readyAt: string | null }) => l.readyAt !== null)).toEqual([true, false]);
+  });
+});
+
+describe('recipes', () => {
+  async function stockItem(code: string, unit: string, qtyMilli: number, unitCost: number) {
+    const made = await call('POST', '/api/items', { code, name: n(code), unit, salePrice: 0, saleCurrency: 'IQD', trackStock: true });
+    expect(made.statusCode, made.body).toBe(201);
+    const id = made.json().id as string;
+    const doc = await call('POST', '/api/stock-docs', { kind: 'opening', date: new Date().toISOString().slice(0, 10), warehouseId, counterAccountCode: '21', lines: [{ itemId: id, qtyMilli, unitCost }] });
+    expect(doc.statusCode, doc.body).toBe(201);
+    expect((await call('POST', `/api/stock-docs/${doc.json().id}/post`)).statusCode).toBe(200);
+    return id;
+  }
+  const stockOf = (id: string) => (db.prepare('SELECT COALESCE(SUM(qty_milli), 0) AS q, COALESCE(SUM(value), 0) AS v FROM stock_moves WHERE item_id = ?').get(id) as { q: number; v: number });
+
+  it('takes a dish\'s ingredients out of stock when it is sold, at their cost, and gives them back when the sale is cancelled', async () => {
+    await trial();
+    const m = await menu();
+    const meat = await stockItem('MEAT', 'kg', 10_000, 20_000);
+    const bread = await stockItem('BREAD', 'piece', 100_000, 250);
+    // refused: a dish that keeps stock, itself as an ingredient, an untracked ingredient, twice the same
+    expect((await call('PUT', `/api/restaurant/recipes/${meat}`, { parts: [{ ingredientId: bread, qtyMilli: 1_000 }] })).json().details[0].code).toBe('recipe_item_keeps_stock');
+    const bad = await call('PUT', `/api/restaurant/recipes/${m.kebab.id}`, { parts: [{ ingredientId: m.kebab.id, qtyMilli: 1 }, { ingredientId: m.tea.id, qtyMilli: 1 }, { ingredientId: meat, qtyMilli: 1 }, { ingredientId: meat, qtyMilli: 2 }] });
+    expect(bad.json().details.map((d: { code: string }) => d.code)).toEqual(['recipe_self', 'recipe_ingredient_no_stock', 'recipe_duplicate']);
+    // a kebab plate: 250 g of meat and 2 breads
+    const saved = await call('PUT', `/api/restaurant/recipes/${m.kebab.id}`, { parts: [{ ingredientId: meat, qtyMilli: 250 }, { ingredientId: bread, qtyMilli: 2_000 }] });
+    expect(saved.statusCode, saved.body).toBe(200);
+    expect(saved.json().recipe).toMatchObject({ itemId: m.kebab.id, cost: 5_000 + 500 });
+    expect((await call('GET', '/api/restaurant/recipes')).json()).toHaveLength(1);
+
+    // three plates sold at the till: 750 g of meat and 6 breads come out, and the plates cost what went into them
+    const sh = await shift();
+    const sale = await call('POST', `/api/pos/shifts/${sh.id}/sales`, { lines: [{ itemId: m.kebab.id, qtyMilli: 3_000, unitPrice: 12_000 }], payment: 'cash', currency: 'IQD' });
+    expect(sale.statusCode, sale.body).toBe(201);
+    expect(stockOf(meat)).toEqual({ q: 9_250, v: 185_000 });
+    expect(stockOf(bread)).toEqual({ q: 94_000, v: 23_500 });
+    const invoiceId = sale.json().invoice.id as string;
+    expect((db.prepare('SELECT cost FROM invoice_lines WHERE invoice_id = ?').get(invoiceId) as { cost: number }).cost).toBe(16_500);
+
+    // cancelled: both come back at what they took
+    const cancelled = await call('POST', `/api/invoices/${invoiceId}/cancel`, {});
+    expect(cancelled.statusCode, cancelled.body).toBe(200);
+    expect(stockOf(meat)).toEqual({ q: 10_000, v: 200_000 });
+    expect(stockOf(bread)).toEqual({ q: 100_000, v: 25_000 });
+    // an ingredient can't be deleted while a recipe takes it
+    expect((await call('DELETE', `/api/items/${bread}`)).json().error).toBe('item_has_moves');
+  });
+
+  it('never stops a sale for an ingredient the count is behind on: what there is comes out, never below none', async () => {
+    await trial();
+    const m = await menu();
+    const rice = await stockItem('RICE', 'kg', 1_000, 3_000);
+    await call('PUT', `/api/restaurant/recipes/${m.kebab.id}`, { parts: [{ ingredientId: rice, qtyMilli: 400 }] });
+    const sh = await shift();
+    const sale = await call('POST', `/api/pos/shifts/${sh.id}/sales`, { lines: [{ itemId: m.kebab.id, qtyMilli: 4_000, unitPrice: 12_000 }], payment: 'cash', currency: 'IQD' });
+    expect(sale.statusCode, sale.body).toBe(201);
+    expect(stockOf(rice)).toEqual({ q: 0, v: 0 });
+    expect((db.prepare('SELECT cost FROM invoice_lines WHERE invoice_id = ?').get(sale.json().invoice.id) as { cost: number }).cost).toBe(3_000);
+    // a recipe taken away: the dish sells with no cost again
+    expect((await call('PUT', `/api/restaurant/recipes/${m.kebab.id}`, { parts: [] })).json().recipe).toBeNull();
   });
 });

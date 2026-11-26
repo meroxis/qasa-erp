@@ -52,13 +52,12 @@ describe('the business type', () => {
   it('prints kitchen tickets on a printer of their own, on a receipt roll, without the print window', () => {
     expect(PRINT_KINDS).toContain('kitchen');
     expect(USUAL_PAPER.kitchen).toBe('receipt80');
-    expect(read('../industry/Printers.tsx')).toContain("const STRAIGHT_KINDS: readonly PrintKind[] = ['receipt', 'label', 'kitchen'];");
     expect(isKey('prn_kind_kitchen')).toBe(true);
     expect(isKey('prn_also_kitchen')).toBe(true);
     // the printer page lists the kitchen's row for a restaurant only: a shop's page keeps its six rows
     expect(printKindsFor(['restaurant'])).toContain('kitchen');
     expect(printKindsFor(['market', 'trade'])).not.toContain('kitchen');
-    expect(printKindsFor(null)).toEqual(PRINT_KINDS.filter((k) => k !== 'kitchen'));
+    expect(printKindsFor(null)).toEqual(['invoice', 'voucher', 'quote', 'receipt', 'label', 'report']);
   });
 });
 
@@ -79,7 +78,7 @@ describe('the page', () => {
     const i18n = makeI18n('en', 'western', () => {}, () => {});
     const ticket = {
       orderId: 'o', number: '12', ticket: 2, kind: 'table' as const, tableName: '4', areaName: null, guests: 3, by: 'Las', at: '2026-11-26T18:30:00Z', notes: null,
-      type: 'order' as const, lines: [{ itemId: 'k', code: 'KEBAB', name: { ar: 'كباب', en: 'Kebab', ku: 'کەباب' }, qtyMilli: 2_000, note: 'no onion' }]
+      station: 'kitchen' as const, type: 'order' as const, lines: [{ itemId: 'k', code: 'KEBAB', name: { ar: 'كباب', en: 'Kebab', ku: 'کەباب' }, qtyMilli: 2_000, note: 'no onion' }]
     };
     const html = renderToStaticMarkup(<I18nContext.Provider value={i18n}><TicketContent ticket={ticket} /></I18nContext.Provider>);
     expect(html).toContain('KITCHEN');
@@ -88,8 +87,12 @@ describe('the page', () => {
     expect(html).toContain('Kebab');
     expect(html).toContain('no onion');
     const cancel = renderToStaticMarkup(<I18nContext.Provider value={i18n}><TicketContent ticket={{ ...ticket, type: 'cancel', lines: [{ ...ticket.lines[0]!, reason: 'Burnt' }] }} /></I18nContext.Provider>);
-    expect(cancel).toContain('CANCEL');
+    expect(cancel).toContain('CANCEL · KITCHEN');
     expect(cancel).toContain('Cancelled: Burnt');
+    // 2.1: each station's ticket says whose it is
+    const grill = renderToStaticMarkup(<I18nContext.Provider value={i18n}><TicketContent ticket={{ ...ticket, station: 'grill' }} /></I18nContext.Provider>);
+    expect(grill).toContain('GRILL');
+    expect(grill).not.toContain('KITCHEN');
   });
 });
 
@@ -100,5 +103,54 @@ describe('amounts typed', () => {
     expect(wholeDinars('٢٥٠٠٠')).toBe(25_000);
     expect(wholeDinars('۱۰۰۰')).toBe(1_000);
     expect(wholeDinars('')).toBe(0);
+  });
+});
+
+describe('the kitchen side (2.1): stations, the kitchen screen and recipes', () => {
+  it('names every station in three languages, and each has a printer of its own for a restaurant only', async () => {
+    const { stationKey } = await import('./Kitchen.tsx');
+    const { RS_STATIONS } = await import('@qasa/core');
+    for (const s of RS_STATIONS) {
+      expect(isKey(stationKey(s))).toBe(true);
+      expect(PRINT_KINDS).toContain(s);
+      expect(USUAL_PAPER[s]).toBe('receipt80');
+      expect(isKey(`prn_kind_${s}`)).toBe(true);
+      expect(isKey(`prn_also_${s}`)).toBe(true);
+      expect(printKindsFor(['restaurant'])).toContain(s);
+      expect(printKindsFor(['market'])).not.toContain(s);
+    }
+    expect(read('../industry/Printers.tsx')).toContain("const STRAIGHT_KINDS: readonly PrintKind[] = ['receipt', 'label', 'kitchen', 'grill', 'bar'];");
+  });
+
+  it('turns a ticket amber, then red, as it waits; counts minutes from when it was sent', async () => {
+    const { lateness, minutesAgo, LATE_MINUTES, VERY_LATE_MINUTES } = await import('./Kitchen.tsx');
+    expect([lateness(0), lateness(LATE_MINUTES), lateness(VERY_LATE_MINUTES)]).toEqual(['', 'late', 'very-late']);
+    const now = Date.parse('2026-11-26T18:30:00Z');
+    expect(minutesAgo('2026-11-26T18:12:30Z', now)).toBe(17);
+    expect(minutesAgo('2026-11-26T18:31:00Z', now)).toBe(0);
+  });
+
+  it('reads what a dish takes of an ingredient, in its unit, and the profit of a plate', async () => {
+    const { marginOf, partMilli } = await import('./Kitchen.tsx');
+    expect(partMilli('0.25')).toBe(250);
+    expect(partMilli('٢')).toBe(2_000);
+    expect(partMilli('0')).toBeNull();
+    expect(partMilli('a')).toBeNull();
+    expect(marginOf(12_000, 5_500)).toBe(54);
+    expect(marginOf(12_000, null)).toBeNull();
+    expect(marginOf(0, 100)).toBeNull();
+  });
+
+  it('puts the kitchen screen and the recipes in the menu for restaurants, with their texts', () => {
+    const items = NAV.flatMap((g) => g.items);
+    for (const key of ['rs_kitchenScreen', 'rs_recipes'] as const) {
+      const item = items.find((i) => i.key === key);
+      expect(item?.business).toBe('restaurant');
+      expect(isKey(key)).toBe(true);
+    }
+    for (const key of Object.keys(RESTAURANT_TEXT)) {
+      const words = RESTAURANT_TEXT[key as keyof typeof RESTAURANT_TEXT];
+      expect(words.every((w) => w.trim().length > 0), key).toBe(true);
+    }
   });
 });

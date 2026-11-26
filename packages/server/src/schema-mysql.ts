@@ -2897,8 +2897,13 @@ export const MYSQL_TABLES: readonly MysqlObject[] = [
       void_reason TEXT,
       added_by TEXT NOT NULL,
       added_at ${WHEN} NOT NULL,
+      station ${WORD} CHECK (station IS NULL OR station IN ('kitchen', 'grill', 'bar')),
+      ready_at ${WHEN},
+      ready_by TEXT,
+      served_at ${WHEN},
       UNIQUE KEY rs_order_lines_no (order_id, line_no),
       INDEX rs_order_lines_item (item_id),
+      INDEX rs_order_lines_sent (sent_at),
       FOREIGN KEY (order_id) REFERENCES rs_orders(id),
       FOREIGN KEY (item_id) REFERENCES items(id)
     )`
@@ -2918,6 +2923,44 @@ export const MYSQL_TABLES: readonly MysqlObject[] = [
       FOREIGN KEY (order_id) REFERENCES rs_orders(id),
       FOREIGN KEY (line_id) REFERENCES rs_order_lines(id),
       FOREIGN KEY (invoice_id) REFERENCES invoices(id)
+    )`
+  },
+  {
+    name: 'rs_category_stations',
+    since: 22,
+    sql: `CREATE TABLE rs_category_stations (
+      category_id ${ID} NOT NULL PRIMARY KEY,
+      station ${WORD} NOT NULL CHECK (station IN ('kitchen', 'grill', 'bar')),
+      updated_at ${WHEN} NOT NULL,
+      FOREIGN KEY (category_id) REFERENCES item_categories(id)
+    )`
+  },
+  {
+    name: 'item_recipes',
+    since: 22,
+    sql: `CREATE TABLE item_recipes (
+      item_id ${ID} NOT NULL,
+      ingredient_id ${ID} NOT NULL,
+      qty_milli BIGINT NOT NULL CHECK (qty_milli > 0),
+      updated_at ${WHEN} NOT NULL,
+      PRIMARY KEY (item_id, ingredient_id),
+      INDEX item_recipes_ingredient (ingredient_id),
+      FOREIGN KEY (item_id) REFERENCES items(id),
+      FOREIGN KEY (ingredient_id) REFERENCES items(id)
+    )`
+  },
+  {
+    name: 'invoice_recipe_moves',
+    since: 22,
+    sql: `CREATE TABLE invoice_recipe_moves (
+      invoice_id ${ID} NOT NULL,
+      line_no INT NOT NULL,
+      item_id ${ID} NOT NULL,
+      qty_milli BIGINT NOT NULL CHECK (qty_milli > 0),
+      value BIGINT NOT NULL CHECK (value >= 0),
+      PRIMARY KEY (invoice_id, line_no, item_id),
+      FOREIGN KEY (invoice_id) REFERENCES invoices(id),
+      FOREIGN KEY (item_id) REFERENCES items(id)
     )`
   }
   // ===== end 22 · RESTAURANTS AND CAFÉS =====
