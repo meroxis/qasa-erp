@@ -14,7 +14,7 @@ const V20_TABLES = ['product_lookups', 'item_image_sources'];
 const onServer = !!process.env.QASA_TEST_DB;
 
 describe.skipIf(onServer)('version 20', () => {
-  it('is the current version', () => { expect(SCHEMA_VERSION).toBe(20); });
+  it('comes after version 19 (21: indexes for big companies)', () => { expect(SCHEMA_VERSION).toBeGreaterThanOrEqual(20); });
 
   it('a 2.0 company file (version 19) gets the two tables, empty, and keeps its items and their pictures', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'qasa-v20-'));
@@ -29,7 +29,7 @@ describe.skipIf(onServer)('version 20', () => {
 
       const db = openDatabase(file);
       try {
-        expect(Number((db.prepare('SELECT version FROM schema_version').get() as { version: number }).version)).toBe(20);
+        expect(Number((db.prepare('SELECT version FROM schema_version').get() as { version: number }).version)).toBe(SCHEMA_VERSION);
         for (const t of V20_TABLES) expect(Number((db.prepare(`SELECT COUNT(*) AS n FROM ${t}`).get() as { n: number }).n), t).toBe(0);
         const app = buildApp(db);
         const headers = { 'x-qasa-client': '1' };
@@ -57,7 +57,7 @@ describe.skipIf(onServer)('version 20', () => {
     migrate(raw as unknown as Db, 19);
     raw.exec('CREATE TABLE product_lookups (barcode TEXT PRIMARY KEY, found INTEGER NOT NULL DEFAULT 0 CHECK (found IN (0, 1)), source TEXT, name TEXT, name_ar TEXT, name_en TEXT, name_ku TEXT, brand TEXT, quantity TEXT, image_url TEXT, image_small_url TEXT, page_url TEXT, looked_at TEXT NOT NULL)');
     migrate(raw as unknown as Db);
-    expect(Number((raw.prepare('SELECT version FROM schema_version').get() as { version: number }).version)).toBe(20);
+    expect(Number((raw.prepare('SELECT version FROM schema_version').get() as { version: number }).version)).toBe(SCHEMA_VERSION);
     expect(Number((raw.prepare('SELECT COUNT(*) AS n FROM item_image_sources').get() as { n: number }).n)).toBe(0);
     raw.close();
   });

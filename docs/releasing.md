@@ -238,14 +238,13 @@ and the website never showed it, so both go from 1.5.1 straight to 1.6.0.
    office server PC and every PC that connects to it together, as the notes say (the office server PC's books go to
    schema 16 the first time 1.6.0 opens them, and 1.5.2 or earlier can't open them afterwards).
 
-## Release day for 2.0.0 (the new till, gold, wholesale, clothing and the market extras; schema 20)
+## Release day for 2.0.0 (the new till, gold, wholesale, clothing and the market extras; schema 21)
 
 2.0.0 carries the new till (tills of their own, a Z report for each till, returns at the till, supervisor approvals,
 scale labels in a 2+5+5 or 2+4+6 layout, gift vouchers), the business type picker, and the Gold and jewellery, Wholesale
 and distribution, and Clothing and shoes business types, with offers, consignment, delivery orders, debt reminders,
-price checkers and daily-delivery suppliers for markets. It **upgrades the company file to schema 20** (versions 17, 18,
-19 and 20 run together the first time 2.0.0 opens a 1.6.0 file, on a company file and on a MariaDB/MySQL server database
-alike; 20 is two small tables for product pictures and names from the barcode, `docs/product-lookup.md`): 1.6.0 and earlier can't open it afterwards, as the notes say first. Version 19 holds what the reviews of 2.0
+price checkers and daily-delivery suppliers for markets. It **upgrades the company file to schema 21** (versions 17 to 21 run together the first time 2.0.0 opens a 1.6.0 file, on a company file and on a MariaDB/MySQL server database
+alike; 20 is two small tables for product pictures and names from the barcode, `docs/product-lookup.md`; 21 is indexes a big company needs, SQLite only, `packages/server/bench/big-company.ts`): 1.6.0 and earlier can't open it afterwards, as the notes say first. Version 19 holds what the reviews of 2.0
 added after the first builds (the approvals table `till_approvals`, the counts of wrong PINs, a shift's refunds, the
 items' price history): a file any build of 2.0 left at 18 gets them on its next opening, whether that build's version
 18 had none of them (the first build) or some already (builds made while the reviews went on): 19 makes its tables and

@@ -220,6 +220,7 @@ export const MYSQL_TABLES: readonly MysqlObject[] = [
       checked_by_id ${ID},
       revision INT NOT NULL DEFAULT 0,
       INDEX entries_date (date),
+      INDEX entries_status_date (status, date),
       INDEX entries_status (status),
       FOREIGN KEY (cash_account) REFERENCES accounts(code),
       FOREIGN KEY (reverses_id) REFERENCES entries(id),
@@ -344,6 +345,8 @@ export const MYSQL_TABLES: readonly MysqlObject[] = [
       CHECK ((kind IN ('sale_return', 'purchase_return')) = (return_of IS NOT NULL)),
       INDEX invoices_date (date),
       INDEX invoices_return_of (return_of),
+      INDEX invoices_cash_posted (cash_account, posted_at),
+      INDEX invoices_cash_cancelled (cash_account, cancelled_at),
       FOREIGN KEY (party_id) REFERENCES parties(id),
       FOREIGN KEY (warehouse_id) REFERENCES warehouses(id),
       FOREIGN KEY (cash_account) REFERENCES accounts(code),
@@ -390,6 +393,7 @@ export const MYSQL_TABLES: readonly MysqlObject[] = [
       source_id ${ID},
       created_at ${WHEN} NOT NULL,
       INDEX stock_moves_item (item_id, warehouse_id),
+      INDEX stock_moves_stock (item_id, warehouse_id, date, qty_milli, value),
       FOREIGN KEY (item_id) REFERENCES items(id),
       FOREIGN KEY (warehouse_id) REFERENCES warehouses(id)
     )`
@@ -3027,6 +3031,20 @@ export const V19_MYSQL_STEPS: readonly MysqlStep[] = [
  * (no `indexes`: none yet).
  */
 export interface MysqlSchemaState { columns: ReadonlySet<string>; foreignKeys: ReadonlySet<string>; indexes?: ReadonlySet<string> }
+
+/**
+ * Version 21 (2.0.0): an item's stock read from an index that holds each move's quantity and value (the till's item
+ * list, bench/big-company.ts), and a till shift's cash found by its safe and time. The barcode and party indexes SQLite gets in this version are there already on a server:
+ * a unique key on items.barcode, and every party column is a foreign key.
+ */
+export const V21_MYSQL_STEPS: readonly MysqlStep[] = [
+  mysqlAddIndex('stock_moves', 'stock_moves_stock', ['item_id', 'warehouse_id', 'date', 'qty_milli', 'value']),
+  // approved entries of a period
+  mysqlAddIndex('entries', 'entries_status_date', ['status', 'date']),
+  // a till shift's cash: what was posted to its safe while it was open
+  mysqlAddIndex('invoices', 'invoices_cash_posted', ['cash_account', 'posted_at']),
+  mysqlAddIndex('invoices', 'invoices_cash_cancelled', ['cash_account', 'cancelled_at'])
+];
 
 /** The statements of `steps` not done yet, in order. */
 export function pendingMysqlSteps(steps: readonly MysqlStep[], state: MysqlSchemaState): string[] {

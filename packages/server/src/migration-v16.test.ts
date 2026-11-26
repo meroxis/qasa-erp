@@ -4,7 +4,7 @@ import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { migrate, openDatabase, SCHEMA_VERSION, schemaVersion, type Db, type SqlValue } from './db.ts';
-import { MYSQL_TABLES, tableColumns, V16_MYSQL_STEPS, V17_MYSQL_STEPS, V18_MYSQL_STEPS, V19_MYSQL_STEPS } from './schema-mysql.ts';
+import { MYSQL_TABLES, tableColumns, V16_MYSQL_STEPS, V17_MYSQL_STEPS, V18_MYSQL_STEPS, V19_MYSQL_STEPS, V21_MYSQL_STEPS } from './schema-mysql.ts';
 
 // Version 16: petrol stations (fuel.ts): fuels, tanks, pumps and nozzles, shifts and their readings, tanker deliveries,
 // dips and each tank's moves. New tables only, on a company file and on a server database alike.
@@ -80,7 +80,7 @@ describe('version 16 on a server database', () => {
     const later = new Set(MYSQL_TABLES.filter((t) => (t.since ?? 0) > 16).map((t) => t.name));
     const made = ran.filter((s) => s.startsWith('CREATE TABLE ') && !s.includes('schema_version')).map((s) => s.split(' ')[2]).filter((n) => !later.has(n!));
     expect(made.sort()).toEqual([...FUEL_TABLES].sort());
-    const laterAlters = [...V17_MYSQL_STEPS, ...V18_MYSQL_STEPS, ...V19_MYSQL_STEPS].map((x) => x.sql);
+    const laterAlters = [...V17_MYSQL_STEPS, ...V18_MYSQL_STEPS, ...V19_MYSQL_STEPS, ...V21_MYSQL_STEPS].map((x) => x.sql);
     expect(ran.filter((s) => s.startsWith('ALTER TABLE') && !laterAlters.includes(s))).toEqual([]);
   });
 });

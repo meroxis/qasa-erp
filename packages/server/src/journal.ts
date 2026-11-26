@@ -809,12 +809,18 @@ export function listEntries(db: Db, f: EntryFilters = {}): EntrySummary[] {
 
 /** Lines of approved entries in IQD — the input for every report. */
 export function postedLines(
-  db: Db, opts: { to?: string; partyId?: string; branch?: { warehouses: string[]; accounts: string[] } | null } = {}
+  db: Db, opts: {
+    to?: string; partyId?: string; branch?: { warehouses: string[]; accounts: string[] } | null;
+    /** an account and its sub-accounts only (a statement), and/or one currency's entries only */
+    account?: string; currency?: CurrencyCode;
+  } = {}
 ): (PostedLine & { partyId: string | null; currency: CurrencyCode; ownDebit: number; ownCredit: number; approvedAt: string | null })[] {
   const where = ["e.status = 'approved'"];
-  const params: string[] = [];
+  const params: (string | number)[] = [];
   if (opts.to) { where.push('e.date <= ?'); params.push(opts.to); }
   if (opts.partyId) { where.push('l.party_id = ?'); params.push(opts.partyId); }
+  if (opts.account) { where.push('substr(l.account_code, 1, ?) = ?'); params.push(opts.account.length, opts.account); }
+  if (opts.currency) { where.push('e.currency = ?'); params.push(opts.currency); }
   // one branch's entries only (branches.ts), for a user limited to branches
   if (opts.branch) {
     const [sql, p] = entryInBranchSql('e', opts.branch);
@@ -836,6 +842,41 @@ export function postedLines(
     entryId: r.id, number: r.number, date: r.date, accountCode: r.account_code, debit: r.base_debit, credit: r.base_credit,
     description: r.description, partyId: r.party_id, currency: r.currency, ownDebit: Number(r.debit), ownCredit: Number(r.credit),
     approvedAt: r.approved_at ?? null,
+    ...(r.closing ? { closing: true } : {})
+  }));
+}
+
+/**
+ * The posted lines summed per account, for a report that only adds them up: the trial balance, the final accounts and
+ * the chart of accounts' balances. One line per account and part of the period (before `from`; from `from` to `to`),
+ * apart for the year-end closing entries, dated the first day of its part. Every test those reports make of a line
+ * (its account, before `from`, up to `to`, a closing entry) gives the same answer for each line of a part, so their sums
+ * are exactly what the lines one by one would give. A big company (bench/big-company.ts: a year, 600,000 lines) read
+ * them one by one in seconds, most of it spent making objects of the lines.
+ */
+export function postedTotals(
+  db: Db, opts: { from?: string | undefined; to?: string | undefined; branch?: { warehouses: string[]; accounts: string[] } | null } = {}
+): PostedLine[] {
+  const where = ["e.status = 'approved'"];
+  const params: (string | null)[] = [opts.from ?? null, opts.from ?? null];
+  if (opts.to) { where.push('e.date <= ?'); params.push(opts.to); }
+  if (opts.branch) {
+    const [sql, p] = entryInBranchSql('e', opts.branch);
+    where.push(sql.replace(/^ AND /, ''));
+    params.push(...p);
+  }
+  const rows = db.prepare(`SELECT l.account_code, MIN(e.date) AS date, SUM(l.base_debit) AS debit, SUM(l.base_credit) AS credit,
+                                  CASE WHEN ? IS NOT NULL AND e.date < ? THEN 0 ELSE 1 END AS part,
+                                  CASE WHEN e.type = 'closing' OR (e.type = 'reversal' AND EXISTS (SELECT 1 FROM entries r WHERE r.id = e.reverses_id AND r.type = 'closing'))
+                                       THEN 1 ELSE 0 END AS closing
+                           FROM entry_lines l JOIN entries e ON e.id = l.entry_id
+                           WHERE ${where.join(' AND ')}
+                           GROUP BY l.account_code, part, closing
+                           ORDER BY l.account_code, part, closing`).all(...params) as {
+    account_code: string; date: string; debit: number; credit: number; closing: number;
+  }[];
+  return rows.map((r) => ({
+    entryId: '', number: '', date: r.date, accountCode: r.account_code, debit: Number(r.debit), credit: Number(r.credit), description: '',
     ...(r.closing ? { closing: true } : {})
   }));
 }

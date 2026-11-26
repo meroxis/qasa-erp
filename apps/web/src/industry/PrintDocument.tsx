@@ -77,7 +77,9 @@ export function usePaperData(model: PrintModel, design: PrintDesign, live: boole
   useEffect(() => {
     if (!wantBarcodes || barcodes) return;
     let on = true;
-    api.items().then((list) => { if (on) setBarcodes(new Map(list.filter((it) => it.barcode).map((it) => [it.id, it.barcode]))); }, () => undefined);
+    // the document's own items only (the whole list was megabytes in a big shop, for a few barcodes)
+    const ids = [...new Set(model.lines.map((l) => l.itemId).filter((id): id is string => !!id))].slice(0, 500);
+    api.itemsByIds(ids).then((list) => { if (on) setBarcodes(new Map(list.filter((it) => it.barcode).map((it) => [it.id, it.barcode]))); }, () => undefined);
     return () => { on = false; };
   }, [wantBarcodes]); // eslint-disable-line react-hooks/exhaustive-deps
 

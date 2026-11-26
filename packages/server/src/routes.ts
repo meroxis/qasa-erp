@@ -597,14 +597,18 @@ export function apiRoutes(db: Db, options: { demo?: boolean; extensions?: readon
     const q = parse(z.object({
       q: z.string().max(100).optional(), warehouseId: z.string().max(64).optional(), active: z.enum(['true', 'false']).optional(),
       barcode: z.string().min(1).max(64).optional(), categoryId: z.string().min(1).max(64).optional(),
-      brandId: z.string().min(1).max(64).optional()
+      brandId: z.string().min(1).max(64).optional(),
+      // 2.0.0: some items by id, comma separated (a printed document's lines), up to 500
+      ids: z.string().max(500 * 65).optional()
     }), req.query);
+    const ids = q.ids === undefined ? undefined : [...new Set(q.ids.split(',').filter(Boolean))];
+    if (ids && (ids.length > 500 || ids.some((id) => id.length > 64))) throw invalid([{ code: 'schema', path: 'ids' }]);
     // a scan at the counter: the item and the unit the barcode belongs to (an item's own barcode: its base unit)
     if (q.barcode) {
       return findByBarcode(db, q.barcode, q.warehouseId ? [q.warehouseId] : warehousesOfUser(req));
     }
     // without a warehouse, a user limited to branches gets the stock of their branches' warehouses (null: every one)
-    return listItems(db, { q: q.q, warehouseId: q.warehouseId, active: q.active === undefined ? undefined : q.active === 'true', categoryId: q.categoryId, brandId: q.brandId }, warehousesOfUser(req));
+    return listItems(db, { q: q.q, warehouseId: q.warehouseId, active: q.active === undefined ? undefined : q.active === 'true', categoryId: q.categoryId, brandId: q.brandId, ids }, warehousesOfUser(req));
   });
   // 1.1: items at or below their minimum quantity (their own, or their category's), in a warehouse or the user's
   app.get('/api/stock/reorder', async (req) => {

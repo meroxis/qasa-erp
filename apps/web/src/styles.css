@@ -1492,3 +1492,7 @@ a.fx-chip:focus-visible { outline: 2px solid var(--focus-outer); outline-offset:
 .print-part-paper table { width: 100%; border-collapse: collapse; }
 .print-part-paper th, .print-part-paper td { border-bottom: 1px solid #ccc; padding: 4px 6px; text-align: start; }
 .print-part-paper .num { text-align: end; }
+
+/* 2.0.0: a long table's "not shown yet" row (industry/LongList.tsx) */
+.more-rows td { text-align: center; padding-block: 10px; }
+.more-rows td > * + * { margin-inline-start: 10px; }

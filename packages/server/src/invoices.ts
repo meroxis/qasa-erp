@@ -521,15 +521,34 @@ export function listInvoices(db: Db, f: InvoiceFilters = {}): InvoiceSummary[] {
   if (f.partyId) { where.push('v.party_id = ?'); params.push(f.partyId); }
   if (f.from) { where.push('v.date >= ?'); params.push(f.from); }
   if (f.to) { where.push('v.date <= ?'); params.push(f.to); }
-  const rows = db.prepare(`${SELECT_INVOICE} ${where.length ? 'WHERE ' + where.join(' AND ') : ''} ORDER BY v.date DESC, v.created_at DESC`)
-    .all(...params) as unknown as InvoiceRow[];
+  const limit = f.limit ?? 500;
+  const whereSql = where.length ? 'WHERE ' + where.join(' AND ') : '';
+  const order = 'ORDER BY v.date DESC, v.created_at DESC';
   const q = f.q ? normalizeForSearch(f.q) : '';
-  // a till's offline sale is found by the temporary reference on its receipt too (1.2)
-  const offline = q ? new Map((db.prepare('SELECT invoice_id, reference FROM pos_offline_sales').all() as { invoice_id: string; reference: string }[]).map((o) => [o.invoice_id, o.reference])) : null;
-  return rows
-    .filter((r) => !q || normalizeForSearch(`${r.number ?? ''} ${r.party_code ?? ''} ${r.party_name ?? ''} ${r.notes ?? ''} ${offline?.get(r.id) ?? ''}`).includes(q))
-    .slice(0, f.limit ?? 500)
-    .map(toSummary);
+  // The newest invoices only are read whole (what each was paid with is worked out per invoice): a big company
+  // (bench/big-company.ts, 100,000 sales) worked it out for every invoice it has to show 500 of them.
+  if (!q) {
+    const rows = db.prepare(`${SELECT_INVOICE} ${whereSql} ${order} LIMIT ?`).all(...params, limit) as unknown as InvoiceRow[];
+    return rows.map(toSummary);
+  }
+  // a search: the words of every invoice first (number, customer, notes), then the newest that match, read whole.
+  // A till's offline sale is found by the temporary reference on its receipt too (1.2).
+  const offline = new Map((db.prepare('SELECT invoice_id, reference FROM pos_offline_sales').all() as { invoice_id: string; reference: string }[]).map((o) => [o.invoice_id, o.reference]));
+  const words = db.prepare(`SELECT v.id, v.number, p.code AS party_code, p.name AS party_name, v.notes FROM invoices v LEFT JOIN parties p ON p.id = v.party_id
+                            ${whereSql} ${order}`).all(...params) as { id: string; number: string | null; party_code: string | null; party_name: string | null; notes: string | null }[];
+  const ids: string[] = [];
+  for (const r of words) {
+    if (!normalizeForSearch(`${r.number ?? ''} ${r.party_code ?? ''} ${r.party_name ?? ''} ${r.notes ?? ''} ${offline.get(r.id) ?? ''}`).includes(q)) continue;
+    ids.push(r.id);
+    if (ids.length >= limit) break;
+  }
+  if (!ids.length) return [];
+  const byId = new Map<string, InvoiceRow>();
+  for (let i = 0; i < ids.length; i += 400) {
+    const part = ids.slice(i, i + 400);
+    for (const r of db.prepare(`${SELECT_INVOICE} WHERE v.id IN (${part.map(() => '?').join(', ')})`).all(...part) as unknown as InvoiceRow[]) byId.set(r.id, r);
+  }
+  return ids.map((id) => byId.get(id)!).map(toSummary);
 }
 
 // ——— Validation ———

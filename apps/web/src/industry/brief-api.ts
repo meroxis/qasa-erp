@@ -87,6 +87,8 @@ export interface ExpenseAccountTotal { accountCode: string; name: Names; categor
 export const briefApi = {
   brief: (date?: string) => request<BriefView>('GET', '/api/brief' + qs({ date })),
   dashboard: (date?: string) => request<DashboardView>('GET', '/api/brief/dashboard' + qs({ date })),
+  /** The home page's first steps: 1 when the company has any (items, parties, customers, a posted sale), else 0. */
+  firstSteps: () => request<{ items: number; parties: number; customers: number; sales: number }>('GET', '/api/brief/first-steps'),
   settings: () => request<BriefSettings>('GET', '/api/brief/settings'),
   saveSettings: (patch: { ownerPhone?: string; expenseAccounts?: Partial<Record<ExpenseCategory, string>> }) => request<BriefSettings>('PUT', '/api/brief/settings', patch),
   expenses: (month?: string) => request<{ rows: ExpenseRowView[]; byCategory: Partial<Record<ExpenseCategory, number>>; byAccount: ExpenseAccountTotal[]; total: number }>('GET', '/api/brief/expenses' + qs({ month })),

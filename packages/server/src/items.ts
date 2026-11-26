@@ -187,15 +187,24 @@ export type WarehouseFilter = readonly string[] | null | undefined;
 const whereWarehouse = (col: string, warehouses: WarehouseFilter): [string, string[]] =>
   warehouses ? [` AND ${col} IN (${warehouses.length ? warehouses.map(() => '?').join(', ') : 'NULL'})`, [...warehouses]] : ['', []];
 
-function itemRows(db: Db, where: string, params: string[], warehouses?: WarehouseFilter): ItemRow[] {
-  const [stockFilter, stockParams] = whereWarehouse('m.warehouse_id', warehouses);
-  // hasMoves is about the item itself (it decides whether stock tracking may still be switched), so it counts everywhere
-  return db.prepare(`SELECT i.*, b.name AS brand_name, s.qty, s.value, a.moves FROM items i
+/**
+ * The items with their stock, read in one pass over the stock moves (2.0.0, bench/big-company.ts: 100,000 items and a
+ * year of sales, a till's whole item list read in seconds before). The moves' quantities and values come from the
+ * stock_moves_stock index alone (version 21), and the count of moves (every warehouse: it decides whether stock
+ * tracking may still be switched) from the same pass. `only`: the item (or items) asked for, read from their own moves.
+ */
+function itemRows(db: Db, where: string, params: string[], warehouses?: WarehouseFilter, only?: string | readonly string[]): ItemRow[] {
+  const inStock = warehouses ? `m.warehouse_id IN (${warehouses.length ? warehouses.map(() => '?').join(', ') : 'NULL'})` : '1 = 1';
+  const stockParams = warehouses ? [...warehouses] : [];
+  const one = only === undefined ? '' : typeof only === 'string' ? 'WHERE m.item_id = ?' : `WHERE m.item_id IN (${only.map(() => '?').join(', ')})`;
+  const oneParams = only === undefined ? [] : typeof only === 'string' ? [only] : [...only];
+  // a warehouse's own figures stay empty (NULL) when the item has no move there, as a sum over no rows is
+  return db.prepare(`SELECT i.*, b.name AS brand_name, s.qty, s.value, s.moves FROM items i
                      LEFT JOIN brands b ON b.id = i.brand_id
-                     LEFT JOIN (SELECT item_id, SUM(qty_milli) AS qty, SUM(value) AS value
-                                FROM stock_moves m WHERE 1 = 1${stockFilter} GROUP BY item_id) s ON s.item_id = i.id
-                     LEFT JOIN (SELECT item_id, COUNT(*) AS moves FROM stock_moves GROUP BY item_id) a ON a.item_id = i.id
-                     ${where} ORDER BY i.code`).all(...stockParams, ...params) as unknown as ItemRow[];
+                     LEFT JOIN (SELECT m.item_id, SUM(CASE WHEN ${inStock} THEN m.qty_milli END) AS qty, SUM(CASE WHEN ${inStock} THEN m.value END) AS value,
+                                       COUNT(*) AS moves
+                                FROM stock_moves m ${one} GROUP BY m.item_id) s ON s.item_id = i.id
+                     ${where} ORDER BY i.code`).all(...stockParams, ...stockParams, ...oneParams, ...params) as unknown as ItemRow[];
 }
 
 /**
@@ -203,7 +212,11 @@ function itemRows(db: Db, where: string, params: string[], warehouses?: Warehous
  * branches' warehouses only), or else in every warehouse.
  */
 export function listItems(
-  db: Db, filters: { q?: string | undefined; warehouseId?: string | undefined; active?: boolean | undefined; categoryId?: string | undefined; brandId?: string | undefined } = {},
+  db: Db, filters: {
+    q?: string | undefined; warehouseId?: string | undefined; active?: boolean | undefined; categoryId?: string | undefined; brandId?: string | undefined;
+    /** these items only (a printed document's lines: not the whole list for a few barcodes) */
+    ids?: readonly string[] | undefined;
+  } = {},
   warehouses: WarehouseFilter = null
 ): ItemView[] {
   const conditions: string[] = [];
@@ -214,19 +227,36 @@ export function listItems(
   else if (filters.categoryId) { conditions.push(IN_CATEGORY_SQL('i.category_id')); params.push(filters.categoryId, filters.categoryId); }
   if (filters.brandId === 'none') conditions.push('i.brand_id IS NULL');
   else if (filters.brandId) { conditions.push('i.brand_id = ?'); params.push(filters.brandId); }
+  if (filters.ids) {
+    if (!filters.ids.length) return [];
+    conditions.push(`i.id IN (${filters.ids.map(() => '?').join(', ')})`);
+    params.push(...filters.ids);
+  }
   const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
   const q = filters.q ? normalizeForSearch(filters.q) : '';
   const units = unitsByItem(db);
-  // a unit's barcode finds its item too
+  const stockIn = filters.warehouseId ? [filters.warehouseId] : warehouses;
+  if (!q) return itemRows(db, where, params, stockIn, filters.ids).map((r) => toView(r, units.get(r.id)));
+  // a search: the words of the items first, then the stock of those found only (2.0.0: a big company's search read the
+  // stock of all 100,000 items to show a few, bench/big-company.ts). A unit's barcode finds its item too.
   const unitBarcodes = (id: string) => (units.get(id) ?? []).map((u) => u.barcode).join(' ');
-  return itemRows(db, where, params, filters.warehouseId ? [filters.warehouseId] : warehouses)
-    .filter((r) => !q || normalizeForSearch(`${r.code} ${r.barcode ?? ''} ${unitBarcodes(r.id)} ${r.name_ar} ${r.name_en} ${r.name_ku} ${r.brand_name ?? ''}`).includes(q))
-    .map((r) => toView(r, units.get(r.id)));
+  const found = (db.prepare(`SELECT i.id, i.code, i.barcode, i.name_ar, i.name_en, i.name_ku, b.name AS brand_name FROM items i
+                             LEFT JOIN brands b ON b.id = i.brand_id ${where} ORDER BY i.code`).all(...params) as
+    { id: string; code: string; barcode: string | null; name_ar: string; name_en: string; name_ku: string; brand_name: string | null }[])
+    .filter((r) => normalizeForSearch(`${r.code} ${r.barcode ?? ''} ${unitBarcodes(r.id)} ${r.name_ar} ${r.name_en} ${r.name_ku} ${r.brand_name ?? ''}`).includes(q))
+    .map((r) => r.id);
+  const rows: ItemRow[] = [];
+  // in code order, a few hundred at a time (a short search finds many: "a" is in most names)
+  for (let at = 0; at < found.length; at += 400) {
+    const ids = found.slice(at, at + 400);
+    rows.push(...itemRows(db, `WHERE i.id IN (${ids.map(() => '?').join(', ')})`, ids, stockIn, ids));
+  }
+  return rows.map((r) => toView(r, units.get(r.id)));
 }
 
 /** An item with its stock in `warehouses` (null: every warehouse). */
 export function getItem(db: Db, id: string, warehouses: WarehouseFilter = null): ItemView {
-  const row = itemRows(db, 'WHERE i.id = ?', [id], warehouses)[0];
+  const row = itemRows(db, 'WHERE i.id = ?', [id], warehouses, id)[0];
   if (!row) throw notFound('item');
   return toView(row, unitsByItem(db, [id]).get(id));
 }

@@ -929,6 +929,8 @@ export const api = {
   createWarehouse: (input: { code: string; name: Names }) => request<WarehouseView>('POST', '/api/warehouses', input),
   updateWarehouse: (id: string, input: { name: Names; active?: boolean }) => request<WarehouseView>('PUT', `/api/warehouses/${id}`, input),
   items: (f: { q?: string; warehouseId?: string; active?: string; categoryId?: string; brandId?: string } = {}, options: SendOptions = {}) => request<ItemView[]>('GET', '/api/items' + qs(f), undefined, options),
+  /** Some items by id (up to 500): a document's lines, without the whole list. */
+  itemsByIds: (ids: readonly string[]) => (ids.length ? request<ItemView[]>('GET', '/api/items' + qs({ ids: ids.join(',') })) : Promise.resolve([] as ItemView[])),
   /** A scanned barcode: the item, and the unit when it is one of the item's units' barcodes (null: its own, the base unit). */
   itemByBarcode: (barcode: string, warehouseId?: string) => request<{ item: ItemView | null; unit: UnitCode | null }>('GET', '/api/items' + qs({ barcode, ...(warehouseId ? { warehouseId } : {}) })),
   item: (id: string) => request<ItemDetail>('GET', `/api/items/${id}`),

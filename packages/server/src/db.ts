@@ -5,7 +5,7 @@ import { DatabaseSync } from 'node:sqlite';
 import { brandKey, DEFAULT_POSTING_ACCOUNTS, IRAQI_UNIFIED_CHART, STARTER_SUB_ACCOUNTS } from '@qasa/core';
 import { AppError } from './errors.ts';
 import {
-  MYSQL_TABLES, MYSQL_TRIGGERS, mysqlCollations, mysqlTableSql, pendingMysqlSteps, V10_MYSQL_STEPS, V11_MYSQL_STEPS, V12_MYSQL_STEPS, V13_MYSQL_STEPS, V14_MYSQL_STEPS, V15_MYSQL_STEPS, V16_MYSQL_STEPS, V17_MYSQL_STEPS, V18_MYSQL_STEPS, V19_MYSQL_STEPS, type MysqlCollations, type MysqlStep
+  MYSQL_TABLES, MYSQL_TRIGGERS, mysqlCollations, mysqlTableSql, pendingMysqlSteps, V10_MYSQL_STEPS, V11_MYSQL_STEPS, V12_MYSQL_STEPS, V13_MYSQL_STEPS, V14_MYSQL_STEPS, V15_MYSQL_STEPS, V16_MYSQL_STEPS, V17_MYSQL_STEPS, V18_MYSQL_STEPS, V19_MYSQL_STEPS, V21_MYSQL_STEPS, type MysqlCollations, type MysqlStep
 } from './schema-mysql.ts';
 
 export type SqlParam = null | number | bigint | string | Uint8Array;
@@ -2749,6 +2749,35 @@ function finishV19(db: Db): void {
   }
 }
 
+/**
+ * Version 21 (2.0.0): indexes a big company needs (bench/big-company.ts: 100,000 items, a year of sales). Stock is
+ * summed from an index that holds each move's quantity and value. A barcode
+ * was found by reading every item: the only index on it is the unique one for barcodes that are there, which a lookup
+ * by "barcode = ?" may not use (the value asked for could be empty). And whether a customer or supplier is used
+ * anywhere read whole tables that had no index on their party. On a MariaDB or MySQL server the barcode has a unique
+ * key and each party column is a foreign key, indexed there already: a server gets the stock index only.
+ */
+const V21 =
+  `
+  -- ===== 21 · INDEXES FOR BIG COMPANIES =====
+  CREATE INDEX IF NOT EXISTS items_barcode_find ON items(barcode);
+  -- an item's stock and its value, now or on a day, from the index alone (the till's item list, the items page, low stock)
+  CREATE INDEX IF NOT EXISTS stock_moves_stock ON stock_moves(item_id, warehouse_id, date, qty_milli, value);
+  -- approved entries of a period (the home page's profit, the reports): the status alone said too little
+  CREATE INDEX IF NOT EXISTS entries_status_date ON entries(status, date);
+  CREATE INDEX IF NOT EXISTS invoices_party ON invoices(party_id);
+  -- a till shift's cash: what was posted to its safe while it was open (each sale, at every sale)
+  CREATE INDEX IF NOT EXISTS invoices_cash_posted ON invoices(cash_account, posted_at);
+  CREATE INDEX IF NOT EXISTS invoices_cash_cancelled ON invoices(cash_account, cancelled_at);
+  CREATE INDEX IF NOT EXISTS quotes_party ON quotes(party_id);
+  CREATE INDEX IF NOT EXISTS deals_party ON deals(party_id);
+  CREATE INDEX IF NOT EXISTS purchase_orders_party ON purchase_orders(party_id);
+  CREATE INDEX IF NOT EXISTS cheques_party ON cheques(party_id);
+  CREATE INDEX IF NOT EXISTS re_deposits_party ON re_deposits(party_id);
+  CREATE INDEX IF NOT EXISTS serials_party ON serials(party_id);
+  CREATE INDEX IF NOT EXISTS serials_from_party ON serials(from_party_id);
+`;
+
 /** SQLite-only work of a version, after its SQL and before its rows, in the same transaction (by the version's SQL). */
 const SQLITE_FINISH: ReadonlyMap<string, (db: Db) => void> = new Map([[V19, finishV19]]);
 
@@ -2765,7 +2794,9 @@ const MIGRATIONS: Migration[] = [
   { sql: V17, mysql: { tables: true, steps: () => V17_MYSQL_STEPS } },
   { sql: V18, mysql: { tables: true, steps: () => V18_MYSQL_STEPS } },
   { sql: V19, mysql: { tables: true, steps: () => V19_MYSQL_STEPS }, data: keepFeatureAccounts },
-  { sql: V20, mysql: 'tables' }
+  { sql: V20, mysql: 'tables' },
+  // on a server the barcode and party columns are indexed already: the stock, entry and till cash indexes only
+  { sql: V21, mysql: { tables: true, steps: () => V21_MYSQL_STEPS } }
 ];
 
 /** Server databases began at this version: its schema is in schema-mysql.ts (tables and triggers without `since`). */

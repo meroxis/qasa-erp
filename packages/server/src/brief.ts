@@ -183,13 +183,13 @@ export function cashAccounts(db: Db, asOf: string, branch: BranchFilter = null):
   const accounts = loadAccounts(db).filter((a) => a.postable && a.code.startsWith('18') && (!branch || branch.accounts.includes(a.code)));
   const rows = db.prepare(`SELECT l.account_code AS code, e.currency, SUM(l.debit - l.credit) AS amount, SUM(l.base_debit - l.base_credit) AS base
                            FROM entry_lines l JOIN entries e ON e.id = l.entry_id
-                           WHERE e.status = 'approved' AND l.account_code LIKE '18%' AND e.date <= ?
+                           WHERE e.status = 'approved' AND l.account_code >= '18' AND l.account_code < '19' AND e.date <= ?
                            GROUP BY l.account_code, e.currency`).all(asOf) as { code: string; currency: 'IQD' | 'USD'; amount: number; base: number }[];
   const reval = revaluationEntries(db);
   const revalRows = reval.length
     ? db.prepare(`SELECT l.account_code AS code, e.currency, SUM(l.debit - l.credit) AS amount
                   FROM entry_lines l JOIN entries e ON e.id = l.entry_id
-                  WHERE e.status = 'approved' AND l.account_code LIKE '18%' AND e.date <= ? AND e.id IN (${marks(reval)})
+                  WHERE e.status = 'approved' AND l.account_code >= '18' AND l.account_code < '19' AND e.date <= ? AND e.id IN (${marks(reval)})
                   GROUP BY l.account_code, e.currency`).all(asOf, ...reval) as { code: string; currency: 'IQD' | 'USD'; amount: number }[]
     : [];
   return accounts.map((a) => {
@@ -216,7 +216,7 @@ export function cashFlowOn(db: Db, date: string, branch: BranchFilter = null): {
   const notReval = reval.length ? ` AND e.id NOT IN (${marks(reval)})` : '';
   const r = db.prepare(`SELECT COALESCE(SUM(l.base_debit), 0) AS cin, COALESCE(SUM(l.base_credit), 0) AS cout
                         FROM entry_lines l JOIN entries e ON e.id = l.entry_id
-                        WHERE e.status = 'approved' AND e.date = ? AND l.account_code LIKE '18%'${a}${notReval}
+                        WHERE e.status = 'approved' AND e.date = ? AND l.account_code >= '18' AND l.account_code < '19'${a}${notReval}
                           AND EXISTS (SELECT 1 FROM entry_lines o WHERE o.entry_id = e.id AND o.account_code NOT LIKE '18%')`).get(date, ...ap, ...reval) as { cin: number; cout: number };
   return { in: num(r.cin), out: num(r.cout) };
 }
@@ -264,18 +264,20 @@ function bucketOf(days: number): 0 | 1 | 2 | 3 {
  * is made of the newest charges. Buckets: 0–30, 31–60, 61–90 and over 90 days. Only those who owe (customers) or are
  * owed (suppliers) appear, largest first. For one branch, only the branch's entries count (entryInBranch).
  */
+// The customers (or suppliers) first, then each one's lines by its index (CROSS JOIN keeps that order in SQLite): taken
+// from every approved entry first, a big company's aging read 100,000 entries for 200 customers (bench/big-company.ts).
 export function aging(db: Db, type: 'customer' | 'supplier', asOf: string, branch: BranchFilter = null): AgingRow[] {
   const owed = type === 'customer' ? 'l.base_debit - l.base_credit' : 'l.base_credit - l.base_debit';
   const [b, bp] = entryInBranch('e', branch);
   const parties = db.prepare(`SELECT p.id, p.code, p.name, COALESCE(p.phone, '') AS phone, SUM(${owed}) AS balance
-                              FROM parties p JOIN entry_lines l ON l.party_id = p.id JOIN entries e ON e.id = l.entry_id
+                              FROM parties p CROSS JOIN entry_lines l ON l.party_id = p.id CROSS JOIN entries e ON e.id = l.entry_id
                               WHERE p.type = ? AND e.status = 'approved' AND e.date <= ?${b}
                               GROUP BY p.id HAVING SUM(${owed}) > 0`).all(type, asOf, ...bp) as { id: string; code: string; name: string; phone: string; balance: number }[];
   if (!parties.length) return [];
   // the charges (customer debits, supplier credits), newest first, of everyone above in one go
   const charge = type === 'customer' ? 'l.base_debit' : 'l.base_credit';
   const charges = db.prepare(`SELECT l.party_id AS party, e.date, ${charge} AS amount
-                              FROM entry_lines l JOIN entries e ON e.id = l.entry_id JOIN parties p ON p.id = l.party_id
+                              FROM parties p CROSS JOIN entry_lines l ON l.party_id = p.id CROSS JOIN entries e ON e.id = l.entry_id
                               WHERE p.type = ? AND e.status = 'approved' AND e.date <= ? AND ${charge} > 0
                                 AND e.reversed_by_id IS NULL AND e.reverses_id IS NULL${b}
                               ORDER BY l.party_id, e.date DESC, e.number DESC`).all(type, asOf, ...bp) as { party: string; date: string; amount: number }[];
@@ -288,7 +290,7 @@ export function aging(db: Db, type: 'customer' | 'supplier', asOf: string, branc
   // 1.1: what each owes in each currency, in its own (dollars in dollars; no buckets for dollars yet)
   const own = new Map<string, Money>();
   for (const r of db.prepare(`SELECT l.party_id, e.currency, SUM(${type === 'customer' ? 'l.debit - l.credit' : 'l.credit - l.debit'}) AS owed
-                              FROM entry_lines l JOIN entries e ON e.id = l.entry_id JOIN parties p ON p.id = l.party_id
+                              FROM parties p CROSS JOIN entry_lines l ON l.party_id = p.id CROSS JOIN entries e ON e.id = l.entry_id
                               WHERE p.type = ? AND e.status = 'approved' AND e.date <= ?${b}
                               GROUP BY l.party_id, e.currency`).all(type, asOf, ...bp) as { party_id: string; currency: string; owed: number }[]) {
     if (r.currency !== 'IQD' && r.currency !== 'USD') continue;
@@ -403,6 +405,23 @@ export function lowStock(db: Db, date: string, limit = 20, branch: BranchFilter 
                            ORDER BY sold DESC, qty ASC LIMIT ?`).all(date, ...swp, since, date, ...iwp, limit) as
     { id: string; code: string; name_ar: string; name_en: string; name_ku: string; qty: number; reorder: number | null; sold: number }[];
   return rows.map((r) => ({ itemId: r.id, code: r.code, name: name(r), qtyMilli: num(r.qty), reorderMilli: r.reorder === null ? null : num(r.reorder), soldMilli: num(r.sold) }));
+}
+
+/**
+ * The home page's first steps (Home.tsx FirstSteps): whether the company has items, parties, customers and a posted
+ * sale yet, as 1 or 0. It loaded every item, party and sale for this before, which in a big company was megabytes at
+ * each visit to the home page (bench/big-company.ts). A user limited to branches: the sales of their warehouses, as
+ * their list of invoices shows them.
+ */
+export function firstStepsFacts(db: Db, warehouses: readonly string[] | null = null): { items: number; parties: number; customers: number; sales: number } {
+  const any = (sql: string, params: string[] = []) => (db.prepare(sql).get(...params) ? 1 : 0);
+  const [w, wp] = warehouses ? [` AND warehouse_id IN (${warehouses.length ? warehouses.map(() => '?').join(', ') : 'NULL'})`, [...warehouses]] : ['', []];
+  return {
+    items: any('SELECT 1 AS x FROM items LIMIT 1'),
+    parties: any('SELECT 1 AS x FROM parties LIMIT 1'),
+    customers: any("SELECT 1 AS x FROM parties WHERE type = 'customer' LIMIT 1"),
+    sales: any(`SELECT 1 AS x FROM invoices WHERE kind = 'sale' AND status = 'posted'${w} LIMIT 1`, wp)
+  };
 }
 
 export interface StockValueRow { warehouseId: string; warehouseCode: string; warehouseName: Names; items: number; qtyMilli: number; value: number }
@@ -698,6 +717,8 @@ export const briefApi: ApiExtension = {
         method: 'GET', path: '/api/brief/dashboard',
         handler: async (req) => dashboard(db, parse(z.object({ date: date.optional() }), req.query ?? {}).date ?? todayIso(), branchOf(db, req, actorOf(req)))
       },
+      // the home page's first steps: yes or no for each, not the lists (firstStepsFacts)
+      { method: 'GET', path: '/api/brief/first-steps', handler: async (req) => firstStepsFacts(db, branchOf(db, req, actorOf(req))?.warehouses ?? null) },
       {
         method: 'GET', path: '/api/brief/settings',
         handler: async () => ({ ownerPhone: readSetting(db, 'brief_phone') ?? '', expenseAccounts: expenseAccounts(db) })

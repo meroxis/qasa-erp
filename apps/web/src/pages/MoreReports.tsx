@@ -1,4 +1,5 @@
 import { useEffect, useState, type ReactNode } from 'react';
+import { MoreRows, useRowsShown } from '../industry/LongList.tsx';
 import { formatAmount, todayIso } from '@qasa/core';
 import { briefApi, type AgingRowView, type GroupSalesView } from '../industry/brief-api.ts';
 import { ErrorBox, Icon, downloadCsv, useData, useLoad, usePageNav } from '../components.tsx';
@@ -335,6 +336,8 @@ function StockValue({ date }: { date: string }) {
   const { t } = i18n;
   const { data, error } = useLoad(() => briefApi.stockValue(date), [date]);
   const [open, setOpen] = useState<string | null>(null);
+  // the most valuable first, a few hundred at a time (a big shop has tens of thousands: LongList.tsx)
+  const opened = useRowsShown(open ? (data?.items ?? []).filter((r) => r.warehouseId === open) : [], { reset: `${date}|${open}` });
   const total = (data?.warehouses ?? []).reduce((s, w) => s + w.value, 0);
   const csv = () => data && downloadCsv(`stock-value_${date}.csv`, [
     [t('br_warehouse'), t('code'), t('br_item'), t('br_qty'), t('br_value')],
@@ -367,12 +370,13 @@ function StockValue({ date }: { date: string }) {
             <table className="table">
               <thead><tr><th>{t('code')}</th><th>{t('br_item')}</th><th className="amount">{t('br_qty')}</th><th className="amount">{t('br_value')}</th></tr></thead>
               <tbody>
-                {data.items.filter((r) => r.warehouseId === open).map((r) => (
+                {opened.shown.map((r) => (
                   <tr key={r.itemId} className="click" onClick={() => go(`item/${r.itemId}`)}>
                     <td><span className="tree-code">{i18n.digitsOf(r.code)}</span></td><td>{i18n.name(r.name)}</td>
                     <td className="amount">{qty(i18n, r.qtyMilli)}</td><td className="amount">{i18n.money(r.value, 'IQD')}</td>
                   </tr>
                 ))}
+                <MoreRows hidden={opened.hidden} columns={4} onMore={opened.more} onAll={opened.all} />
               </tbody>
             </table>
           )}

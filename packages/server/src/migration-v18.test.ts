@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { Db, SqlValue } from './db.ts';
 import { migrate, openDatabase, SCHEMA_VERSION } from './db.ts';
-import { MYSQL_TABLES, tableColumns, V18_MYSQL_STEPS, V19_MYSQL_STEPS } from './schema-mysql.ts';
+import { MYSQL_TABLES, tableColumns, V18_MYSQL_STEPS, V19_MYSQL_STEPS, V21_MYSQL_STEPS } from './schema-mysql.ts';
 
 // Version 18 (2.0, the till's rules): supervisors' PINs and approvals, gift vouchers, the customer screen's pictures and
 // pairing codes, and the dinar rounding of a till sale's cash.
@@ -58,6 +58,6 @@ describe.skipIf(onServer)('version 18', () => {
     const made = ran.filter((s) => s.startsWith('CREATE TABLE ') && !s.includes('schema_version')).map((s) => s.split(' ')[2]);
     expect(made.sort()).toEqual(MYSQL_TABLES.filter((t) => (t.since ?? 0) >= 18).map((t) => t.name).sort());
     for (const t of V18_TABLES) expect(made).toContain(t);
-    expect(ran.filter((s) => s.startsWith('ALTER TABLE'))).toEqual([...V18_MYSQL_STEPS, ...V19_MYSQL_STEPS].map((x) => x.sql));
+    expect(ran.filter((s) => s.startsWith('ALTER TABLE'))).toEqual([...V18_MYSQL_STEPS, ...V19_MYSQL_STEPS, ...V21_MYSQL_STEPS].map((x) => x.sql));
   });
 });

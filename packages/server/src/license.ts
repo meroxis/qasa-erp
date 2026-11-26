@@ -131,7 +131,9 @@ export function planStatus(db: Db, today: string = licensingToday()): PlanStatus
   const trialStarted = trustedTrialStart(db, readSetting(db, TRIAL_SETTING) ?? null);
   const resolved = resolvePlan({ license: counts ? license : null, trialStarted, today });
   if (licensingConfig().strict) maybeCheckInBackground(db, activation);
-  const salesThisMonth = count(db, "SELECT COUNT(*) AS n FROM invoices WHERE kind = 'sale' AND status = 'posted' AND date LIKE ?", today.slice(0, 7) + '-%');
+  // the month as a range of days, which the invoices_date index answers (a "LIKE" read every invoice, at every request)
+  const salesThisMonth = count(db, "SELECT COUNT(*) AS n FROM invoices WHERE kind = 'sale' AND status = 'posted' AND date >= ? AND date <= ?",
+    `${today.slice(0, 7)}-01`, `${today.slice(0, 7)}-31`);
   return {
     ...resolved,
     license: license ? { ...license, state: licenseState(license, today) } : null,

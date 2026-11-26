@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { MoreRows, useRowsShown } from '../industry/LongList.tsx';
 import { formatQty, MAX_ITEM_UNITS, roundHalfUp, UNITS, unitsForBusiness, type CurrencyCode, type Names, type UnitCode } from '@qasa/core';
 import { api, type ItemInput, type ItemView, type StockCorrectionResult, type WarehouseView } from '../api.ts';
 import { EmptyState, AmountInput, ErrorBox, Icon, Modal, QtyInput, downloadCsv, useData, useLandHome, useLoad, useMay, useToast } from '../components.tsx';
@@ -65,6 +66,8 @@ export function Items({ tab: initialTab }: { tab?: 'reorder' | 'warehouses' } = 
   const [bulkCategory, setBulkCategory] = useState('');
   const [bulkError, setBulkError] = useState<unknown>(null);
   const items = useLoad(() => api.items({ q: q.trim(), warehouseId, ...(categoryId ? { categoryId } : {}), ...(brandId ? { brandId } : {}) }), [q, warehouseId, categoryId, brandId]);
+  // a few hundred rows at a time: a big shop's whole list on the screen at once stood the app still (LongList.tsx)
+  const rows = useRowsShown(items.data, { reset: `${q}|${warehouseId}|${categoryId}|${brandId}` });
   const warehouses = useLoad(() => api.warehouses(), []);
   const categories = useLoad(() => categoriesApi.list(), []);
   const brands = useLoad(() => brandsApi.list(), []);
@@ -172,7 +175,7 @@ export function Items({ tab: initialTab }: { tab?: 'reorder' | 'warehouses' } = 
                   </tr>
                 </thead>
                 <tbody>
-                  {items.data.map((it) => (
+                  {rows.shown.map((it) => (
                     <tr key={it.id} className="click" onClick={() => go(`item/${it.id}`)}>
                       <td onClick={(e) => e.stopPropagation()}>{can('item') && <input type="checkbox" checked={selected.has(it.id)} onChange={() => toggle(it.id)} aria-label={it.code} />}</td>
                       <td><span className="tree-code">{it.code}</span></td>
@@ -212,6 +215,7 @@ export function Items({ tab: initialTab }: { tab?: 'reorder' | 'warehouses' } = 
                       </td>
                     </tr>
                   ))}
+                  <MoreRows hidden={rows.hidden} columns={cost ? 8 : 6} onMore={rows.more} onAll={rows.all} />
                 </tbody>
                 {cost && (
                   <tfoot>
@@ -805,6 +809,8 @@ export function ItemDetail({ id }: { id: string }) {
   const can = useMay();
   const { seesBooks } = useData();
   const { data, error, reload } = useLoad(() => api.item(id), [id]);
+  // an item that sells every day has a move for every sale: the newest first, the earlier ones folded (LongList.tsx)
+  const moves = useRowsShown(data?.moves, { from: 'end', reset: id });
   if (useLandHome(error)) return null;
   if (error) return <ErrorBox error={error} />;
   if (!data) return null;
@@ -901,7 +907,8 @@ export function ItemDetail({ id }: { id: string }) {
               </tr>
             </thead>
             <tbody>
-              {it.moves.map((m) => {
+              <MoreRows hidden={moves.hidden} columns={6 + (it.stock.length > 1 ? 1 : 0) + (cost ? 1 : 0)} earlier onMore={moves.more} onAll={moves.all} />
+              {moves.shown.map((m) => {
                 const key = sourceKey(m.sourceType);
                 return (
                   <tr key={m.id} className={m.sourceId && opens(m.sourceType) ? 'click' : ''} onClick={() => m.sourceId && opens(m.sourceType) && go(sourcePath(m.sourceType, m.sourceId))}>

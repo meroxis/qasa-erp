@@ -4,7 +4,7 @@ import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { migrate, openDatabase, schemaVersion, SCHEMA_VERSION, type Db, type SqlValue } from './db.ts';
-import { MYSQL_TABLES, tableColumns, V18_MYSQL_STEPS, V19_MYSQL_STEPS } from './schema-mysql.ts';
+import { MYSQL_TABLES, tableColumns, V18_MYSQL_STEPS, V19_MYSQL_STEPS, V21_MYSQL_STEPS } from './schema-mysql.ts';
 
 // Version 18 (market extras): delivery orders, debt reminders, price checker devices and daily-delivery suppliers, on
 // a company file and on a server database. New tables only: no column is added to an older table.
@@ -71,6 +71,6 @@ describe('version 18 on a server database', () => {
     for (const table of MARKET) expect(made).toContain(table);
     const v18 = new Set(MYSQL_TABLES.filter((t) => (t.since ?? 0) >= 18).map((t) => t.name));
     expect(made.filter((n) => !v18.has(n!))).toEqual([]);
-    expect(ran.filter((s) => s.startsWith('ALTER TABLE'))).toEqual([...V18_MYSQL_STEPS, ...V19_MYSQL_STEPS].map((x) => x.sql));
+    expect(ran.filter((s) => s.startsWith('ALTER TABLE'))).toEqual([...V18_MYSQL_STEPS, ...V19_MYSQL_STEPS, ...V21_MYSQL_STEPS].map((x) => x.sql));
   });
 });
